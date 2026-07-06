@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BookOpen,
   FileText,
@@ -10,6 +10,8 @@ import {
   User,
   Clock,
   ArrowRight,
+  Bug,
+  Sparkles,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -75,6 +77,8 @@ export function DashboardView() {
   const setSelectedNovelId = useAppStore((s) => s.setSelectedNovelId);
   const setSelectedNovel = useAppStore((s) => s.setSelectedNovel);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const setEditingNovel = useAppStore((s) => s.setEditingNovel);
+  const setNovelFormOpen = useAppStore((s) => s.setNovelFormOpen);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -95,6 +99,12 @@ export function DashboardView() {
     fetchDashboard();
   }, [fetchDashboard, refreshDashboard]);
 
+  // ─── Quick actions ─────────────────────────────────────────────────────
+  const handleCreateNovel = () => {
+    setEditingNovel(null);
+    setNovelFormOpen(true);
+  };
+
   const handleViewNovel = (novel: DashboardStats['recentNovels'][number]) => {
     setSelectedNovelId(novel.id);
     setSelectedNovel(novel);
@@ -109,9 +119,41 @@ export function DashboardView() {
     fill: statusChartColors[item.status] ?? '#94a3b8',
   })) ?? [];
 
+  // ─── Welcome card helpers ─────────────────────────────────────────────
+  const { greeting, dateStr } = useMemo(() => {
+    const hour = new Date().getHours();
+    let greeting: string;
+    if (hour >= 6 && hour < 12) greeting = '早上好';
+    else if (hour >= 12 && hour < 18) greeting = '下午好';
+    else greeting = '晚上好';
+    const dateStr = new Date().toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long',
+    });
+    return { greeting, dateStr };
+  }, []);
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 p-4 md:p-6">
+      {/* ── Welcome Card ──────────────────────────────────────────────────── */}
+      <Card className="overflow-hidden border-0 bg-gradient-to-r from-slate-50 to-slate-100/50 dark:from-slate-900/50 dark:to-slate-800/50">
+        <CardContent className="relative flex items-center gap-4 p-5 md:p-6">
+          {/* Decorative icon */}
+          <div className="absolute -right-4 -top-4 h-28 w-28 rounded-full bg-emerald-100/40 dark:bg-emerald-900/20" />
+          <div className="absolute -right-8 -bottom-8 h-20 w-20 rounded-full bg-amber-100/30 dark:bg-amber-900/10" />
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm dark:bg-slate-800">
+            <Sparkles className="h-6 w-6 text-emerald-500" />
+          </div>
+          <div className="relative">
+            <h2 className="text-lg font-semibold">{greeting}</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">{dateStr}</p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ── Stats Grid ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {loading
@@ -267,6 +309,57 @@ export function DashboardView() {
                 })}
               </div>
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Quick Actions ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* 新建小说 */}
+        <Card
+          className="cursor-pointer transition-shadow hover:shadow-md"
+          onClick={handleCreateNovel}
+        >
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+              <BookOpen className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">新建小说</p>
+              <p className="text-xs text-muted-foreground">创建新的小说作品</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 采集任务 */}
+        <Card
+          className="cursor-pointer transition-shadow hover:shadow-md"
+          onClick={() => setCurrentView('scrape')}
+        >
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+              <Bug className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">采集任务</p>
+              <p className="text-xs text-muted-foreground">管理采集规则与任务</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 管理分类 */}
+        <Card
+          className="cursor-pointer transition-shadow hover:shadow-md"
+          onClick={() => setCurrentView('categories')}
+        >
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/30">
+              <FolderTree className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">管理分类</p>
+              <p className="text-xs text-muted-foreground">整理小说分类体系</p>
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -1,6 +1,9 @@
 'use client';
 
-import { Plus, BookOpen } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, BookOpen, Search, Sun, Moon } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/stores/app-store';
 import AppSidebar, { MobileSidebar } from '@/components/novel/AppSidebar';
@@ -15,6 +18,7 @@ import { DownloadManagerView } from '@/components/download/DownloadManagerView';
 import { ThemeManagerView } from '@/components/theme/ThemeManagerView';
 import { SiteClusterView } from '@/components/site/SiteClusterView';
 import ScrapeManagerView from '@/components/scrape/ScrapeRuleEditor';
+import CommandPalette from '@/components/novel/CommandPalette';
 
 const VIEW_TITLES: Record<string, { title: string; description: string }> = {
   dashboard: { title: '仪表盘', description: '系统概览与数据统计' },
@@ -28,11 +32,19 @@ const VIEW_TITLES: Record<string, { title: string; description: string }> = {
   sites: { title: '站群管理', description: '管理多站点集群配置' },
 };
 
+// View transition animation variants
+const viewVariants = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+};
+
 export default function Home() {
   const {
     currentView,
     setEditingNovel,
     setNovelFormOpen,
+    setCommandPaletteOpen,
   } = useAppStore();
 
   const viewInfo = VIEW_TITLES[currentView] || VIEW_TITLES.dashboard;
@@ -42,18 +54,66 @@ export default function Home() {
     setNovelFormOpen(true);
   };
 
+  // ─── Time display ──────────────────────────────────────────────────────
+  const [time, setTime] = useState('');
+  useEffect(() => {
+    const update = () => {
+      const now = new Date();
+      setTime(
+        `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+      );
+    };
+    update();
+    const id = setInterval(update, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ─── Dark mode toggle ─────────────────────────────────────────────────
+  const { theme, setTheme } = useTheme();
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+  // ─── View renderer ────────────────────────────────────────────────────
+  const renderView = () => {
+    switch (currentView) {
+      case 'dashboard': return <DashboardView />;
+      case 'novels': return <NovelListView />;
+      case 'novel-detail': return <NovelDetailView />;
+      case 'categories': return <CategoryManagerView />;
+      case 'tags': return <TagManagerView />;
+      case 'scrape': return <ScrapeManagerView />;
+      case 'download': return <DownloadManagerView />;
+      case 'themes': return <ThemeManagerView />;
+      case 'sites': return <SiteClusterView />;
+      default: return <DashboardView />;
+    }
+  };
+
   return (
     <div className="flex min-h-screen">
       {/* Desktop Sidebar */}
       <AppSidebar />
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 bg-background">
         {/* Top Header Bar */}
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b bg-white/80 backdrop-blur-md px-4 sm:px-6 h-14">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b bg-background/80 backdrop-blur-md px-4 sm:px-6 h-14">
           <div className="flex items-center gap-3">
             {/* Mobile menu */}
             <MobileSidebar />
+
+            {/* Search trigger */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden sm:flex gap-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setCommandPaletteOpen(true)}
+            >
+              <Search className="h-3.5 w-3.5" />
+              搜索...
+              <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                ⌘K
+              </kbd>
+            </Button>
 
             {/* Page title */}
             <div className="flex flex-col">
@@ -64,44 +124,62 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Actions */}
-          {currentView === 'novels' && (
-            <Button onClick={handleCreateNovel} size="sm" className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">新建小说</span>
-            </Button>
-          )}
+          {/* Right side: actions + utilities */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {currentView === 'novels' && (
+              <Button onClick={handleCreateNovel} size="sm" className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">新建小说</span>
+              </Button>
+            )}
 
-          {currentView === 'dashboard' && (
-            <Button onClick={handleCreateNovel} size="sm" variant="outline" className="gap-1.5">
-              <BookOpen className="h-4 w-4" />
-              <span className="hidden sm:inline">快速创建</span>
+            {currentView === 'dashboard' && (
+              <Button onClick={handleCreateNovel} size="sm" variant="outline" className="gap-1.5">
+                <BookOpen className="h-4 w-4" />
+                <span className="hidden sm:inline">快速创建</span>
+              </Button>
+            )}
+
+            {/* Time display */}
+            <span className="hidden sm:inline text-xs text-muted-foreground font-mono tabular-nums">
+              {time}
+            </span>
+
+            {/* Dark mode toggle */}
+            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="切换主题" className="relative">
+              <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+              <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
             </Button>
-          )}
+          </div>
         </header>
 
-        {/* Content Area */}
-        <div className="flex-1">
-          {currentView === 'dashboard' && <DashboardView />}
-          {currentView === 'novels' && <NovelListView />}
-          {currentView === 'novel-detail' && <NovelDetailView />}
-          {currentView === 'categories' && <CategoryManagerView />}
-          {currentView === 'tags' && <TagManagerView />}
-          {currentView === 'scrape' && <ScrapeManagerView />}
-          {currentView === 'download' && <DownloadManagerView />}
-          {currentView === 'themes' && <ThemeManagerView />}
-          {currentView === 'sites' && <SiteClusterView />}
+        {/* Content Area with transition */}
+        <div className="flex-1 relative">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentView}
+              variants={viewVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+              className="absolute inset-0"
+            >
+              {renderView()}
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         {/* Footer */}
-        <footer className="border-t bg-white px-4 py-3 text-center text-xs text-muted-foreground">
-          小说管理系统 · 基于 Next.js 构建
+        <footer className="mt-auto border-t bg-background px-4 py-3 text-center text-xs text-muted-foreground">
+          小说管理系统 v1.0.0 · 基于 Next.js 16 构建
         </footer>
       </main>
 
       {/* Dialogs */}
       <NovelFormDialog />
       <ChapterFormDialog />
+      <CommandPalette />
     </div>
   );
 }

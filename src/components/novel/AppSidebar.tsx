@@ -106,10 +106,13 @@ function SidebarContent() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-slate-700/50 px-6 py-4">
+      <div className="border-t border-slate-700/50 px-6 py-4 space-y-2">
         <div className="flex items-center gap-2 text-xs text-slate-500">
-          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          系统运行中
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>系统运行中</span>
+        </div>
+        <div className="text-[10px] text-slate-600">
+          v1.0.0
         </div>
       </div>
     </div>

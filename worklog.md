@@ -655,3 +655,114 @@ Stage Summary:
 - DEPLOY.md provides complete step-by-step deployment instructions for Docker
 - All endpoints verified working correctly with proper security headers
 - Version: 1.0.0
+
+
+---
+
+## Task: Dashboard Enhancements + Header Improvements
+
+### Agent: Main Developer
+### Status: ✅ Completed
+
+### Files Modified:
+1. **`/src/components/novel/DashboardView.tsx`** — Added Welcome Card + Quick Actions section
+2. **`/src/app/page.tsx`** — Enhanced header with search trigger, time display, dark mode toggle
+
+### What was implemented:
+
+#### DashboardView.tsx — Welcome Card
+- Time-of-day greeting: "早上好" (6-12), "下午好" (12-18), "晚上好" (18-6)
+- Chinese formatted date via `toLocaleDateString("zh-CN", { year, month, day, weekday })`
+- Gradient background: `from-slate-50 to-slate-100/50` with dark mode variants
+- Decorative translucent circles (emerald + amber) as background pattern
+- Sparkles icon in a white rounded container
+
+#### DashboardView.tsx — Quick Actions Card
+- 3-column responsive grid (`sm:grid-cols-3`) below status distribution + recent novels
+- "新建小说" — BookOpen icon, emerald, opens NovelFormDialog via store
+- "采集任务" — Bug icon, amber, navigates to scrape view via `setCurrentView("scrape")`
+- "管理分类" — FolderTree icon, violet, navigates to categories view via `setCurrentView("categories")`
+- Each card: hover:shadow-md transition, colored icon circle, title + subtitle
+
+#### page.tsx — Header Enhancements
+- **Search trigger button**: `Button variant="outline" size="sm"` with Search icon + "搜索..." + `⌘K` kbd element, hidden on mobile (`hidden sm:flex`)
+- **Time display**: `HH:mm` format, updated every 60s via `setInterval`, styled with `text-xs text-muted-foreground font-mono tabular-nums`
+- **Dark mode toggle**: `useTheme` from `next-themes`, sun/moon icon with CSS scale/rotate transition animation
+- Right-side items (action buttons + time + theme toggle) grouped in a single flex container for proper `justify-between` layout
+- Footer updated with `mt-auto` and `dark:bg-slate-950` for sticky + dark mode support
+
+### Notes:
+- All existing functionality preserved
+- Lint passes clean
+- Footer remains sticky to viewport bottom via `mt-auto` in flex-col layout
+
+## CommandPalette Component
+
+### Agent: Frontend Developer
+### Status: ✅ Completed
+
+### File Created:
+1. **`/src/components/novel/CommandPalette.tsx`** — Cmd+K command palette for quick navigation
+
+### What was implemented:
+- **`use client`** directive for client-side interactivity
+- **Cmd+K / Ctrl+K** keyboard shortcut registered via `useEffect` + `document.addEventListener('keydown', ...)`
+- Uses shadcn/ui `Dialog` + `Command` components (not `CommandDialog`) for full control over layout
+- **Search input** with built-in filter via `CommandInput` (Search icon prefix from cmdk)
+- **Quick Actions group** with two items:
+  - `新建小说` (Plus icon, shortcut `N`) — opens novel form dialog via `setEditingNovel(null)` + `setNovelFormOpen(true)`
+  - `查看仪表盘` (LayoutDashboard icon, shortcut `G D`) — navigates to dashboard via `setCurrentView('dashboard')`
+- **Navigation group** with all 8 views: dashboard, novels, categories, tags, scrape, download, themes, sites
+  - Each item has a lucide-react icon, Chinese label, and `value` prop for search filtering
+  - Clicking calls `setCurrentView(view)` and closes the dialog
+- **Keyboard navigation** fully handled by the `cmdk` library (arrow keys + Enter) through `CommandItem`
+- **Shortcut display** as styled `<kbd>` elements on the right side of each item
+- **Footer** with "按 ESC 关闭" hint
+- **Framer Motion** `motion.div` wrapper around the Command for smooth entrance animation (`opacity` + `y` slide)
+- **Dialog overlay** with blur/fade animation via shadcn/ui's built-in CSS animations
+- Proper accessibility: `sr-only` DialogHeader with Title + Description
+- Lint passes clean
+
+
+---
+Task ID: cron-review-001-style-and-features
+Agent: Main Agent (Cron Review)
+Task: Auto review, QA, and implement new features + style improvements
+
+Work Log:
+- Checked project status: dev server running, lint zero errors, all APIs healthy
+- QA verified: Health API (2ms latency), Homepage 200 OK (43KB), all security headers present
+- Created CommandPalette component (`/src/components/novel/CommandPalette.tsx`):
+  - Cmd+K / Ctrl+K global keyboard shortcut
+  - Search input with cmdk-powered filtering
+  - Two groups: Quick Actions (new novel, view dashboard) + Page Navigation (8 views)
+  - Keyboard navigation (arrow keys + enter), ESC to close
+  - Styled kbd elements for shortcut display
+  - Framer Motion slide-in animation
+  - Connected to Zustand store via `commandPaletteOpen` state
+- Enhanced Header in page.tsx:
+  - Search trigger button with "搜索..." + ⌘K badge, opens CommandPalette
+  - Real-time clock (HH:mm, updates every minute, font-mono tabular-nums)
+  - Dark mode toggle (sun/moon icon with CSS scale+rotate transition, uses next-themes)
+  - Changed header/footer from `bg-white` to `bg-background` for proper dark mode support
+- Enhanced DashboardView:
+  - Welcome card with time-based Chinese greeting (早上好/下午好/晚上好)
+  - Date display using `toLocaleDateString('zh-CN')` with full format
+  - Decorative gradient circles + Sparkles icon
+  - Quick Actions section: 3 action cards (新建小说/采集任务/管理分类) with colored icons
+- Added view transition animations:
+  - AnimatePresence with motion.div wrapping content area
+  - Fade + slide (y: 8px) transition, 200ms with custom easing
+  - `mode="wait"` for clean exit before enter
+- Enhanced Sidebar footer:
+  - Added `animate-pulse` to the green status dot
+  - Added version number display (v1.0.0)
+- Updated Zustand store: added `commandPaletteOpen` + `setCommandPaletteOpen`
+- Updated footer text to include version number
+
+Stage Summary:
+- 1 new component created (CommandPalette)
+- 5 files modified (page.tsx, DashboardView.tsx, AppSidebar.tsx, app-store.ts, CommandPalette.tsx)
+- Lint: zero errors
+- All new features are functional: Cmd+K palette, dark mode toggle, real-time clock, view transitions
+- Homepage size: 43KB → 51KB (new components)

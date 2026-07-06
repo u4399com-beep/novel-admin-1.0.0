@@ -66,7 +66,11 @@ interface AppState {
   editingSite: Site | null;
   setEditingSite: (site: Site | null) => void;
 
-  // Refresh triggers
+  // Command palette
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+
+  // More refresh triggers
   refreshThemes: number;
   triggerRefreshThemes: () => void;
   refreshSites: number;
@@ -137,7 +141,11 @@ export const useAppStore = create<AppState>((set) => ({
   editingSite: null,
   setEditingSite: (site) => set({ editingSite: site, siteFormOpen: site !== null }),
 
-  // Refresh triggers
+  // Command palette
+  commandPaletteOpen: false,
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+
+  // More refresh triggers
   refreshThemes: 0,
   triggerRefreshThemes: () => set((s) => ({ refreshThemes: s.refreshThemes + 1 })),
   refreshSites: 0,
