@@ -1,0 +1,480 @@
+# Work Log
+
+## Task 2-d: Novel Detail + Chapter Management
+
+### Agent: Frontend Developer
+### Status: ✅ Completed
+
+### Files Created:
+1. **`/src/components/novel/ChapterFormDialog.tsx`** — Dialog component for creating/editing chapters
+2. **`/src/components/novel/NovelDetailView.tsx`** — Full novel detail view with chapter management
+
+### What was implemented:
+
+#### ChapterFormDialog.tsx
+- Dialog with "新建章节" / "编辑章节" dynamic title
+- react-hook-form + zod v4 validation (`@hookform/resolvers/zod`)
+- Form fields: title (Input, required, max 200 chars), content (Textarea, font-mono, 8+ rows)
+- Real-time word count display (`.length` on watched content)
+- Cancel and Save buttons with loading state
+- POST `/api/novels/{id}/chapters` for create, PUT `/api/chapters/{id}` for update
+- Triggers `triggerRefreshChapters()` and `triggerRefreshNovels()` on success
+- Connected to store: `chapterFormOpen`, `editingChapter`, `setChapterFormOpen`, `setEditingChapter`, `selectedNovelId`
+
+#### NovelDetailView.tsx
+- **Back button** — returns to novels list view via store `setCurrentView('novels')`
+- **Novel Header Section**:
+  - Cover image (or gradient placeholder with BookOpen icon)
+  - Title (2xl bold), Author with User icon, Status badge (colored by status), Category badge (colored by category.color), Tag badges
+  - Description in card (line-clamp-3)
+  - Stats row: chapter count, total word count
+  - Action buttons: "编辑小说" (opens NovelFormDialog via store), "删除小说" (AlertDialog confirmation)
+  - Created/Updated timestamps with date-fns zhCN locale
+- **Chapters Section** (resizable panel, left side):
+  - Title "章节列表" with chapter count badge + "新建章节" button
+  - Drag-and-drop sortable table using @dnd-kit/core + @dnd-kit/sortable
+  - Columns: drag handle, 序号, 标题, 字数, 更新时间, 操作 (Edit/Delete)
+  - Hover effects, selected row highlighting
+  - Up/Down reorder buttons at bottom when a chapter is selected
+  - Empty state with icon and text
+  - Loading skeleton state
+- **Chapter Editor Panel** (resizable panel, right side):
+  - Opens when a chapter row is clicked
+  - Fetches full chapter content from `/api/chapters/{id}`
+  - Inline title editor (Input, borderless)
+  - Large Textarea (font-mono, leading-loose, fills panel)
+  - Auto-save with 1.5s debounce, visual save indicator (saving/saved/idle)
+  - Manual save button in footer
+  - Word count and character count in footer
+  - Close button to dismiss editor
+- **Resizable panels** using react-resizable-panels (left: chapter list, right: editor)
+- **Data fetching**: fetches novel details, chapters list on mount and on refresh trigger changes
+- **Delete operations**: DELETE `/api/novels/{id}` and DELETE `/api/chapters/{id}` with confirmation dialogs
+- **Reorder**: PUT updates sortOrder for all chapters after drag or up/down
+
+### Dependencies used:
+- `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` — drag-and-drop
+- `react-resizable-panels` — via shadcn/ui ResizablePanel components
+- `react-hook-form` + `zod` v4 + `@hookform/resolvers/zod` — form validation
+- `date-fns` with `zhCN` locale — date formatting
+- `sonner` — toast notifications
+- All shadcn/ui components: Button, Badge, Card, Input, Textarea, Table, Dialog, AlertDialog, ResizablePanel, ScrollArea, Skeleton, Separator
+
+### Notes:
+- Lint passes with zero errors
+- Uses `use client` directive as required
+- Only uses relative API paths (no absolute URLs)
+- Store actions used: selectedNovelId, editingChapter, setEditingChapter, chapterFormOpen, setChapterFormOpen, triggerRefreshChapters, triggerRefreshNovels
+
+---
+
+## Task 12-a: Web Scraping Mini-Service
+
+### Agent: Scraper Service Developer
+### Status: ✅ Completed
+
+### Files Created:
+1. **`/mini-services/scraper-service/package.json`** — Package config (cheerio, sharp)
+2. **`/mini-services/scraper-service/index.ts`** — Complete scraping engine (~1914 lines)
+
+### What was implemented:
+
+#### Package.json
+- Dependencies: `cheerio` ^1.0.0 (HTML parsing), `sharp` ^0.34.3 (image conversion)
+- Dev script: `bun --hot index.ts`
+
+#### Core Architecture
+- **Bun.serve()** HTTP server on port 3099
+- All endpoints receive JSON, return JSON with CORS headers
+- Health check endpoint at `GET /health`
+- Exported `startServer()` function
+
+#### Endpoints (all POST, JSON in/out):
+
+1. **POST /scrape/list** — Scrape list pages
+   - Input: url, selector (css/xpath/regex), pagination (next/page, maxPage), antiCrawl config
+   - Returns: `{ urls: string[], hasNextPage: bool }`
+   - Multi-page pagination support (next-link or page-number patterns)
+
+2. **POST /scrape/book** — Scrape book info page
+   - Input: url, selectors for title/author/category/keywords/description/cover/status
+   - Returns: `{ title, author, category, keywords, description, coverUrl, status }`
+   - Resolves relative cover URLs
+
+3. **POST /scrape/chapters** — Scrape chapter directory
+   - Input: url, selectors (list container, title, link), pagination, enableShuffle
+   - Returns: `{ chapters: [{title, url, sortOrder}], hasNextPage }`
+   - Supports Fisher-Yates shuffle when enabled
+
+4. **POST /scrape/content** — Scrape chapter content
+   - Input: url, selectors (title, content), pagination for multi-page content
+   - Returns: `{ title, content, wordCount }`
+   - Concatenates multi-page content with double newlines
+
+5. **POST /clean** — Clean scraped HTML content
+   - Removes: script/style/iframe/noscript/object/embed/applet tags
+   - Removes: ad elements by CSS class/ID patterns (ad, advert, sponsor, promo, banner, etc.)
+   - Removes: Chinese ad text patterns (推广, 广告, 下载APP, 关注公众号, etc.)
+   - Normalizes whitespace, line breaks, trims output
+   - Configurable: removeAds, cleanHtml, custom removePatterns, adPatterns
+   - Returns: `{ content, wordCount }`
+
+6. **POST /download-cover** — Download and convert cover to WebP
+   - Downloads image, converts to WebP (quality 80) via sharp
+   - Creates directory structure if needed
+   - Returns: `{ success, path, size }`
+
+7. **POST /execute-task** — Full task orchestration (async, returns immediately)
+   - Fetches task + ScrapeRule from `GET /api/scrape-tasks/{taskId}`
+   - **Step 1**: Scrapes list page → book URLs
+   - **Step 2**: For each book (concurrent with threadCount):
+     - Scrapes book info page
+     - Dedup by URL and/or title (configurable dedupMode)
+     - Checks existing novels for incremental mode (search by title + sourceUrl)
+     - Creates/updates novel via `POST/PUT /api/novels`
+     - Downloads and converts cover if configured
+   - **Step 3**: For each book, scrapes chapter directory
+   - **Step 4**: For each chapter (concurrent with threadCount):
+     - Scrapes chapter content
+     - Cleans content using rule's cleanConfig
+     - Creates chapter via `POST /api/novels/{id}/chapters` (with sortOrder + sourceUrl)
+     - Skips existing chapters in incremental mode
+   - Reports progress via `PUT /api/scrape-tasks/{taskId}` (progress %, currentStep, counts)
+   - Creates scrape logs via `POST /api/scrape-tasks/{taskId}/logs`
+   - Maps raw status text → system enum (ongoing/completed/hiatus)
+
+#### Selector Parsing (`parseSelector` / `parseSelectorMulti`)
+- **CSS**: Direct cheerio `$(selector)` with attr/text extraction
+- **XPath**: Regex-based converter for common patterns:
+  - `//div`, `/html/body`, `//div[@class]`, `//div[@class='val']`, `//text()`
+  - Converts to CSS equivalent; handles text() extraction separately
+- **Regex**: Direct `RegExp` match on raw HTML text
+
+#### Anti-Anti-Scraping
+- **UA Rotation**: Pool of 25 browser User-Agents (Chrome, Firefox, Safari, Edge, Opera; desktop + mobile; Windows/Mac/Linux/Android/iOS)
+- **Cookies**: Sends custom cookies in request headers
+- **Delay**: Random delay between [minDelay, maxDelay] ms using `setTimeout`
+- **JS Rendering**: Adds proper headers (Sec-Fetch-*, etc.); note that full JS rendering would need Playwright
+- **Request headers**: Full browser-like headers (Accept, Accept-Language, Sec-Fetch-*, etc.)
+
+#### Content Cleaning Details
+- 22 default Chinese ad text patterns (推广, 广告, 下载APP, 关注公众号, 天才一秒记住, etc.)
+- 20+ CSS selectors for ad elements (class/id containing ad, advert, sponsor, promo, banner, popup, guanggao, tuijian, etc.)
+- Line-by-line ad pattern removal (removes entire lines matching ad patterns)
+- HTML normalization: CRLF→LF, tab→spaces, collapse whitespace, trim 3+ newlines to 2
+
+#### Error Handling
+- All handlers wrapped in try/catch
+- HTTP timeout: 30 seconds per request
+- Task execution: catches per-book and per-chapter errors, continues processing remaining items
+- Failed items tracked and reported in task stats
+- Fatal task errors set task status to "failed" with error message
+
+### Integration Notes:
+- Calls Next.js API at `http://localhost:3000` for:
+  - `GET /api/scrape-tasks/{taskId}` — fetch task + rule
+  - `PUT /api/scrape-tasks/{taskId}` — update task progress
+  - `POST /api/scrape-tasks/{taskId}/logs` — create scrape logs
+  - `GET/POST /api/novels` — find/create novels
+  - `PUT /api/novels/{id}` — update novels
+  - `POST /api/novels/{id}/chapters` — create chapters
+- These API endpoints are expected to be implemented by another task agent
+
+---
+
+## Task 16-a: Download System + Search Keywords
+
+### Agent: Fullstack Developer
+### Status: ✅ Completed
+
+### Files Created:
+1. **`/src/app/api/download-configs/route.ts`** — GET (list all configs) + POST (create config)
+2. **`/src/app/api/download-configs/[id]/route.ts`** — GET (single config) + PUT (update) + DELETE
+3. **`/src/app/api/download/[novelId]/route.ts`** — GET (generate and download TXT file)
+4. **`/src/app/api/search-keywords/[novelId]/route.ts`** — GET (list keywords) + POST (extract keywords)
+5. **`/src/components/download/DownloadManagerView.tsx`** — Full download management view with config CRUD, download dialog, search keyword extraction
+
+### Files Modified:
+1. **`/src/types/index.ts`** — Added `download` to ViewType, added `DownloadConfig` and `SearchKeyword` interfaces
+2. **`/src/components/novel/AppSidebar.tsx`** — Added `Download` icon import, added "下载中心" nav item
+3. **`/src/app/page.tsx`** — Added `DownloadManagerView` import, added `download` to VIEW_TITLES, added rendering for download view
+
+### What was implemented:
+
+#### API: Download Configs (`/api/download-configs`)
+- **GET**: Returns all download configs ordered by createdAt desc
+- **POST**: Creates a new config with validation (name required). Strips whitespace from text fields. Only stores confusionText/adContent/siteInfoContent when their respective switches are enabled
+- **GET /{id}**: Returns single config, 404 if not found
+- **PUT /{id}**: Partial update with same conditional logic for text fields
+- **DELETE /{id}**: Deletes config (cascade not needed, NovelFile.configId is optional)
+
+#### API: Download Novel (`/api/download/[novelId]`)
+- **GET**: Generates a TXT file for download
+- Query params: `configId` (which config to use), `format` (txt only)
+- Fetches novel with all chapters (ordered by sortOrder)
+- Variable replacement: `{title}`, `{author}`, `{wordCount}`, `{chapterCount}`, `{date}`, `{siteName}`, `{chapterTitle}`
+- **Site info**: Inserted at beginning and end of file if enabled
+- **Confusion**: Random lines from confusionText inserted between paragraphs (1-2 lines, randomly selected)
+- **Ad insertion**: At configured interval (every N chapters), at configured position (start/middle/end)
+- **File naming**: Uses `fileNamePattern` with variable replacement, sanitizes filename
+- **File recording**: Creates a `NovelFile` record in DB after download
+- Returns with `Content-Disposition: attachment; filename*=UTF-8''...` for proper UTF-8 filenames
+- Proper `text/plain; charset=utf-8` content type
+
+#### API: Search Keywords (`/api/search-keywords/[novelId]`)
+- **GET**: Returns all keywords for a novel, ordered by createdAt desc
+- **POST**: Generates smart keyword suggestions
+  - Fetches novel with category and tags
+  - Generates ~20+ keywords based on:
+    - Title + common search suffixes (全文免费阅读, 无弹窗, 最新章节, 笔趣阁, TXT下载, etc.)
+    - Author + suffixes (作品集, 全部小说, 新书)
+    - Category-based (分类小说推荐, 分类小说排行榜, 热门分类小说)
+    - Tag-based (标签小说推荐)
+    - Specific patterns (title+author, title在线阅读, title txt)
+  - Attributes sources: 百度, 搜狗, 必应, 360搜索, 神马搜索
+  - Deletes old keywords and creates new ones (deduped by keyword+source)
+  - Returns `{ keywords, count }`
+
+#### Frontend: DownloadManagerView.tsx
+- **Section 1: 下载配置管理**
+  - Card grid layout (2 columns on desktop)
+  - Each config card shows: name, format badge, settings summary badges (混淆/广告/站点信息 with colored status)
+  - Ad position detail, file name pattern preview
+  - Hover reveals Edit/Delete actions
+  - "使用此配置下载" button per card
+  - Empty state with icon and "创建第一个配置" button
+  - Auto-creates "默认配置" on first visit if none exists
+
+- **Config Form Dialog** (Create/Edit)
+  - 配置名称 (Input, required)
+  - 文件格式: TXT (info display)
+  - === 混淆设置 === section: 启用混淆 (Switch), 混淆文本 (Textarea, font-mono, disabled when off, tooltip)
+  - === 广告插入 === section: 启用广告插入 (Switch), 广告内容 (Textarea, variable hints), 插入频率 (Number 10-200), 插入位置 (Select: 开头/中间/结尾)
+  - === 站点信息 === section: 启用站点信息 (Switch), 站点信息内容 (Textarea, variable hints)
+  - === 文件命名 === section: 文件名模板 (Input, font-mono), available variable hints displayed as code badges
+  - Loading state on save button
+  - Proper separator between sections
+
+- **Section 2: 快速下载**
+  - Novel search with dropdown autocomplete (searches by title/author)
+  - Config selector dropdown
+  - Download button with loading state
+  - Creates blob URL and triggers browser download with correct filename
+
+- **Section 3: 搜索引擎关键词提取**
+  - Novel search input with dropdown filter
+  - "提取关键词" button with Sparkles icon and loading state
+  - Keywords displayed as badges with source engine badges (color-coded by source)
+  - "全部设为辅助标签" button: creates missing tags, updates novel's tag list
+  - Per-keyword "设为标签" button (appears on hover via tooltip)
+  - Empty state when no keywords extracted yet
+
+- **Download Dialog** (from "使用此配置下载" button)
+  - Novel selection dropdown
+  - Format display (TXT)
+  - Config selector
+  - Download button with loading state
+
+- **Delete Confirmation** (AlertDialog)
+  - Shows config name, destructive action button
+
+### Dependencies used:
+- `sonner` — toast notifications
+- All shadcn/ui components: Button, Badge, Card, Input, Textarea, Label, Switch, Separator, Skeleton, ScrollArea, Select, Dialog, AlertDialog, Tooltip
+
+### Notes:
+- Lint passes with zero errors
+- Uses `use client` directive as required
+- Only uses relative API paths (no absolute URLs)
+- DB schema already had DownloadConfig, NovelFile, SearchKeyword models — no migration needed
+- Default "默认配置" created automatically on first visit
+- Variable system: `{title}`, `{author}`, `{wordCount}`, `{chapterCount}`, `{date}`, `{siteName}`, `{chapterTitle}`
+
+---
+
+## Task 13-a: Scrape Rule Management (API + Editor UI)
+
+### Agent: Fullstack Developer
+### Status: ✅ Completed
+
+### Files Created:
+1. **`/src/app/api/scrape-rules/route.ts`** — GET (list with pagination/search) + POST (create rule)
+2. **`/src/app/api/scrape-rules/[id]/route.ts`** — GET (single) + PUT (update) + DELETE
+3. **`/src/app/api/scrape-tasks/route.ts`** — POST (create task from rule, used by execute button)
+4. **`/src/components/scrape/ScrapeRuleEditor.tsx`** — Full editor (9 tabs) + ScrapeRuleList + ScrapeManagerView
+
+### What was implemented:
+
+#### API: `/api/scrape-rules` (route.ts)
+- **GET**: Paginated list with `page`, `pageSize`, `search` query params. Returns `{ rules, total, page, pageSize, totalPages }`. Includes `_count.tasks`.
+- **POST**: Creates a new ScrapeRule. Validates `name` is required. Serializes JSON fields (listSelector, listPagination, chapter selectors, antiCrawlConfig, cleanConfig) before storage.
+
+#### API: `/api/scrape-rules/[id]` (route.ts)
+- **GET**: Fetches single rule by ID, includes task count.
+- **PUT**: Partial update — only sends changed fields. Same JSON serialization as POST.
+- **DELETE**: Cascading delete (removes associated tasks/logs via Prisma schema).
+
+#### API: `/api/scrape-tasks` (route.ts)
+- **POST**: Creates a new ScrapeTask linked to a rule. Validates rule exists. Defaults mode to rule's scrapeMode.
+
+#### ScrapeRuleEditor.tsx (contains 3 exports)
+
+**`SelectorField` component** — Reusable field for CSS/XPath/Regex selectors with:
+- Label + required indicator
+- Select dropdown (CSS选择器 / XPath / 正则表达式)
+- Dynamic input with context-aware placeholder
+- Error message display
+
+**`PaginationField` component** — Reusable pagination config with:
+- Type selector (下一页按钮 / 页码URL模板)
+- Dynamic selector/URL input
+- Max page number input
+
+**`ScrapeRuleEditor` component** — 9-tab form editor:
+1. **基本信息**: Name (required), Description (textarea), Enabled (switch with description)
+2. **列表页规则**: URL template (with {page} hint), selector field, pagination config
+3. **书籍信息规则**: 7 selector fields (书名 required, 作者, 分类, 关键词, 简介, 封面图, 状态) in 2-col grid
+4. **章节目录规则**: Directory URL (with {bookUrl} hint), 3 selectors, pagination
+5. **章节内容规则**: Optional title selector (with hint), required content selector, content pagination
+6. **反爬策略**: JS rendering switch, UA rotation switch, cookies textarea, delay range (min-max ms)
+7. **存储策略**: Database/File mode select, file path (conditional), cover save path, WebP format badge
+8. **采集策略**: Incremental/Full mode, thread count slider (1-10, default 3), delay range, shuffle switch with tooltip, dedup mode select
+9. **内容清洗**: Remove ads switch, HTML normalization switch, custom remove patterns (regex textarea), ad patterns (regex textarea)
+
+- react-hook-form + zod v4 validation
+- Loads existing rule data on edit (parses JSON fields back to objects)
+- Save/Cancel buttons with loading spinner
+
+**`ScrapeRuleList` component**:
+- Header with title + "新建规则" button
+- Search input with icon
+- Table: name+description, status badge, storage mode badge, task count, created time, actions (execute/edit/delete)
+- Loading skeleton state (3 rows)
+- Empty state with icon and "创建第一条规则" link
+- Sticky table header, max-height scrollable body
+- Hover effects on rows
+- Pagination controls
+- Execute button calls POST /api/scrape-tasks
+- Delete with confirm dialog
+
+**`ScrapeManagerView` (default export)**:
+- Shows ScrapeRuleList by default
+- Switches to ScrapeRuleEditor on create/edit
+- Back button to return to list
+- Breadcrumb-style header with separator
+
+### Dependencies used:
+- `react-hook-form` + `zod` v4 + `@hookform/resolvers/zod` — form validation
+- `sonner` — toast notifications
+- `date-fns` with `zhCN` locale — date formatting
+- shadcn/ui: Button, Input, Textarea, Switch, Label, Tabs, Select, Slider, Tooltip, Separator, Badge
+- All lucide-react icons inline (Search, Plus, ArrowLeft, Play, Pencil, Trash2, CircleHelp, FileSearch, Loader2)
+
+### Notes:
+- Lint passes with zero errors
+- All API paths are relative
+- Uses `use client` directive
+- JSON fields (listSelector, listPagination, antiCrawlConfig, cleanConfig, chapter selectors) are stringified on save and parsed on load
+
+---
+
+## Task 14-a: Themes + Site Cluster
+
+### Agent: Fullstack Developer
+### Status: ✅ Completed
+
+### Files Created:
+1. **`/src/app/api/themes/route.ts`** — GET (list all themes) + POST (create theme)
+2. **`/src/app/api/themes/[id]/route.ts`** — GET (single) + PUT (update) + DELETE
+3. **`/src/app/api/sites/route.ts`** — GET (list all sites) + POST (create site)
+4. **`/src/app/api/sites/[id]/route.ts`** — GET (single) + PUT (update) + DELETE
+5. **`/src/components/theme/ThemeManagerView.tsx`** — Full theme management page with 5 pre-built themes
+6. **`/src/components/site/SiteClusterView.tsx`** — Site cluster management with table, form, and preview
+
+### Files Modified:
+1. **`/src/types/index.ts`** — Added ThemeColors, ThemeLayout, ThemeTypography, ThemeSEO, ThemeGeo, ThemeConfig, Theme, Site interfaces; added `themes` and `sites` to ViewType
+2. **`/src/stores/app-store.ts`** — Added theme/site form dialog state, editingTheme/editingSite, refreshThemes/refreshSites triggers
+3. **`/src/components/novel/AppSidebar.tsx`** — Added `themes` and `sites` nav items with Palette/Globe icons
+4. **`/src/app/page.tsx`** — Added ThemeManagerView and SiteClusterView imports, view titles, and rendering
+
+### What was implemented:
+
+#### API: `/api/themes` (route.ts)
+- **GET**: Returns all themes ordered by createdAt desc, includes `_count.sites`
+- **POST**: Creates a theme with name (required), identifier (required, unique), description, config (JSON), enabled. Handles unique constraint errors gracefully.
+
+#### API: `/api/themes/[id]` (route.ts)
+- **GET**: Fetches single theme by ID, includes site count. 404 if not found.
+- **PUT**: Partial update for all fields. Config is stringified if object.
+- **DELETE**: Deletes theme by ID.
+
+#### API: `/api/sites` (route.ts)
+- **GET**: Returns all sites ordered by createdAt desc, includes `theme` relation.
+- **POST**: Creates a site with domain (required, unique), name (required), description, themeId, enabled, SEO fields (siteTitle, siteDescription, siteKeywords), geoConfig (JSON), novelOffset, chapterOffset. Handles unique constraint errors.
+
+#### API: `/api/sites/[id]` (route.ts)
+- **GET**: Fetches single site with theme relation. 404 if not found.
+- **PUT**: Partial update for all fields. geoConfig stringified if object.
+- **DELETE**: Deletes site by ID.
+
+#### ThemeManagerView.tsx
+
+**5 Pre-built Theme Configs** (stored in component state, seeded to DB via button):
+1. **极简白 (minimal-white)** — Clean white, flat cards, slate/gray palette, sans-serif, 4-col grid
+2. **墨绿夜 (dark-emerald)** — Dark #0f1a15 background, emerald #10b981 accents, bordered cards, 3-col grid
+3. **暖橘阳 (warm-sunset)** — Warm orange #f97316, cream #fffbf5 background, rounded cards, 3-col grid
+4. **赛博蓝 (cyber-neon)** — Dark #0a0a1a, neon blue #06b6d4 + pink #ec4899, elevated cards, mono headings, 3-col grid
+5. **古典红 (classic-red)** — Red #dc2626 + gold #ca8a04, parchment #fdf6e3 background, serif fonts, bordered cards
+
+Each config includes: colors (11 color tokens), layout (maxWidth, sidebarPosition, cardStyle, headerStyle, gridColumns), typography (headingFont, bodyFont, headingWeight, lineHeight), seo (defaultTitle, titleTemplate, defaultDescription, defaultKeywords), geo (region, placename, position).
+
+**ThemePreviewCard** — Inline-styled mini preview that renders using the theme's actual colors, fonts, card style, and grid layout. Shows a mini header bar, 3 sample cards in the configured grid, sample text with correct typography, and 6 color swatches.
+
+**Theme Grid** — Cards with: inline-styled preview, theme name, identifier badge, description, site count. Actions: Preview (dialog), Edit (form dialog), Delete (confirm). Framer Motion layout animations.
+
+**ThemeFormDialog** — Create/Edit dialog with:
+- Basic info: name, identifier, description
+- Color picker: 11 color inputs with native `<input type="color">` and hex value display
+- Layout: cardStyle (Select), headerStyle (Select), gridColumns (3/4 Select)
+- Typography: headingFont/bodyFont (sans/serif/mono), headingWeight (700/800), lineHeight (1.5/1.6/1.75)
+- SEO: defaultTitle, titleTemplate, defaultDescription, defaultKeywords
+- Loading state, proper form reset on open
+
+**Seed Button** — "导入预设主题" creates all 5 pre-built themes via POST to /api/themes. Shows when no themes exist; also shows as a link when some are missing.
+
+**Empty State** — Centered card with Palette icon, description, and seed/create buttons.
+
+#### SiteClusterView.tsx
+
+**Tabs**: "站点列表" and "站点预览"
+
+**站点列表 Tab**:
+- Table with columns: 域名 (font-mono), 站点名称 (with description subtitle), 主题 (badge), 状态 (enabled/disabled badge), 小说偏移 (novel/chapter offset), 创建时间, 操作 (preview/edit/delete)
+- Framer Motion row animations
+- Empty state with Globe icon
+
+**Site Form Dialog** — Create/Edit with sections:
+- 基本信息: 域名 (required), 站点名称 (required), 站点描述, 选择主题 (Select from DB themes), 启用状态 (Switch)
+- SEO 配置: 站点标题, 站点描述, 站点关键词 (comma separated)
+- GEO 配置: 地区, 地名, 坐标
+- ID 偏移配置: 小说ID偏移量, 章节ID偏移量 (both with Tooltip explaining purpose for site cluster ID collision avoidance)
+
+**站点预览 Tab**:
+- Shows all sites that have themes assigned
+- Each site renders a `SitePreview` component: a full mini webpage mockup using the theme's actual config
+- Preview includes: header bar (with site title, domain, nav items), "最新小说" section with 3 sample novel cards using actual theme colors/border/shadow/radius, footer with site name and GEO info
+
+**Site Preview Dialog** — Can also preview individual sites from the table via eye icon
+
+### Dependencies used:
+- `sonner` — toast notifications
+- `framer-motion` — layout animations
+- `date-fns` with `zhCN` locale — date formatting
+- All shadcn/ui components: Button, Badge, Card, Input, Textarea, Label, Switch, Skeleton, Select, Dialog, AlertDialog, Tooltip, Table, Tabs
+
+### Notes:
+- Lint passes with zero errors
+- Uses `use client` directive as required
+- Only uses relative API paths (no absolute URLs)
+- All 5 theme configs are complete with distinct visual identities
+- Theme previews use inline styles to accurately represent each theme's appearance

@@ -1,0 +1,899 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback, useRef } from 'react';
+     4→import { toast } from 'sonner';
+     5→import {
+     6→  ArrowLeft,
+     7→  User,
+     8→  BookOpen,
+     9→  FileText,
+    10→  Plus,
+    11→  Pencil,
+    12→  Trash2,
+    13→  GripVertical,
+    14→  ChevronUp,
+    15→  ChevronDown,
+    16→  Loader2,
+    17→  Save,
+    18→  X,
+    19→  Type,
+    20→  Clock,
+    21→  CheckCircle2,
+    22→} from 'lucide-react';
+    23→import { format } from 'date-fns';
+    24→import { zhCN } from 'date-fns/locale';
+    25→import {
+    26→  DndContext,
+    27→  closestCenter,
+    28→  PointerSensor,
+    29→  useSensor,
+    30→  useSensors,
+    31→  type DragEndEvent,
+    32→} from '@dnd-kit/core';
+    33→import {
+    34→  SortableContext,
+    35→  useSortable,
+    36→  verticalListSortingStrategy,
+    37→  arrayMove,
+    38→} from '@dnd-kit/sortable';
+    39→import { CSS } from '@dnd-kit/utilities';
+    40→
+    41→import { Button } from '@/components/ui/button';
+    42→import { Badge } from '@/components/ui/badge';
+    43→import { Card, CardContent } from '@/components/ui/card';
+    44→import { Input } from '@/components/ui/input';
+    45→import { Textarea } from '@/components/ui/textarea';
+    46→import { Separator } from '@/components/ui/separator';
+    47→import { Skeleton } from '@/components/ui/skeleton';
+    48→import { ScrollArea } from '@/components/ui/scroll-area';
+    49→import {
+    50→  Table,
+    51→  TableHeader,
+    52→  TableBody,
+    53→  TableHead,
+    54→  TableRow,
+    55→  TableCell,
+    56→} from '@/components/ui/table';
+    57→import {
+    58→  AlertDialog,
+    59→  AlertDialogAction,
+    60→  AlertDialogCancel,
+    61→  AlertDialogContent,
+    62→  AlertDialogDescription,
+    63→  AlertDialogFooter,
+    64→  AlertDialogHeader,
+    65→  AlertDialogTitle,
+    66→} from '@/components/ui/alert-dialog';
+    67→import {
+    68→  ResizablePanelGroup,
+    69→  ResizablePanel,
+    70→  ResizableHandle,
+    71→} from '@/components/ui/resizable';
+    72→import { useAppStore } from '@/stores/app-store';
+    73→import type { Novel, Chapter } from '@/types';
+    74→
+    75→// ─── Status map ───────────────────────────────────────────────────────────────
+    76→const statusMap: Record<string, { label: string; className: string }> = {
+    77→  ongoing: { label: '连载中', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' },
+    78→  completed: { label: '已完结', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' },
+    79→  hiatus: { label: '暂停', className: 'bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400' },
+    80→};
+    81→
+    82→// ─── Sortable row ─────────────────────────────────────────────────────────────
+    83→function SortableChapterRow({
+    84→  chapter,
+    85→  index,
+    86→  onEdit,
+    87→  onDelete,
+    88→  onSelect,
+    89→  isSelected,
+    90→}: {
+    91→  chapter: Chapter;
+    92→  index: number;
+    93→  onEdit: (ch: Chapter) => void;
+    94→  onDelete: (ch: Chapter) => void;
+    95→  onSelect: (ch: Chapter) => void;
+    96→  isSelected: boolean;
+    97→}) {
+    98→  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    99→    useSortable({ id: chapter.id });
+   100→
+   101→  const style = {
+   102→    transform: CSS.Transform.toString(transform),
+   103→    transition,
+   104→  };
+   105→
+   106→  return (
+   107→    <TableRow
+   108→      ref={setNodeRef}
+   109→      style={style}
+   110→      className={`${isDragging ? 'z-50 opacity-50 shadow-lg' : ''} ${
+   111→        isSelected ? 'bg-accent/60' : ''
+   112→      } group cursor-pointer`}
+   113→      onClick={() => onSelect(chapter)}
+   114→    >
+   115→      <TableCell className="w-10">
+   116→        <button
+   117→          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5"
+   118→          {...attributes}
+   119→          {...listeners}
+   120→          onClick={(e) => e.stopPropagation()}
+   121→        >
+   122→          <GripVertical className="size-4" />
+   123→        </button>
+   124→      </TableCell>
+   125→      <TableCell className="w-16 text-center text-muted-foreground font-mono text-sm">
+   126→        {index + 1}
+   127→      </TableCell>
+   128→      <TableCell
+   129→        className="font-medium max-w-[240px] truncate cursor-pointer hover:text-primary transition-colors"
+   130→        onClick={() => onSelect(chapter)}
+   131→      >
+   132→        {chapter.title}
+   133→      </TableCell>
+   134→      <TableCell className="w-24 text-muted-foreground tabular-nums text-sm">
+   135→        {chapter.wordCount.toLocaleString()}
+   136→      </TableCell>
+   137→      <TableCell className="w-40 text-muted-foreground text-sm">
+   138→        {format(new Date(chapter.updatedAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
+   139→      </TableCell>
+   140→      <TableCell className="w-24 text-right">
+   141→        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+   142→          <Button
+   143→            variant="ghost"
+   144→            size="icon"
+   145→            className="size-8"
+   146→            onClick={(e) => {
+   147→              e.stopPropagation();
+   148→              onEdit(chapter);
+   149→            }}
+   150→          >
+   151→            <Pencil className="size-3.5" />
+   152→            <span className="sr-only">编辑</span>
+   153→          </Button>
+   154→          <Button
+   155→            variant="ghost"
+   156→            size="icon"
+   157→            className="size-8 text-destructive hover:text-destructive"
+   158→            onClick={(e) => {
+   159→              e.stopPropagation();
+   160→              onDelete(chapter);
+   161→            }}
+   162→          >
+   163→            <Trash2 className="size-3.5" />
+   164→            <span className="sr-only">删除</span>
+   165→          </Button>
+   166→        </div>
+   167→      </TableCell>
+   168→    </TableRow>
+   169→  );
+   170→}
+   171→
+   172→// ─── Inline chapter editor panel ──────────────────────────────────────────────
+   173→function ChapterEditorPanel({
+   174→  chapter,
+   175→  onClose,
+   176→  onSaved,
+   177→}: {
+   178→  chapter: Chapter | null;
+   179→  onClose: () => void;
+   180→  onSaved: () => void;
+   181→}) {
+   182→  const [title, setTitle] = useState('');
+   183→  const [content, setContent] = useState('');
+   184→  const [saving, setSaving] = useState(false);
+   185→  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+   186→  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   187→  const initialLoadRef = useRef(false);
+   188→
+   189→  // Load chapter content when selected
+   190→  useEffect(() => {
+   191→    if (!chapter) {
+   192→      setTitle('');
+   193→      setContent('');
+   194→      setSaveStatus('idle');
+   195→      initialLoadRef.current = false;
+   196→      return;
+   197→    }
+   198→
+   199→    // Fetch full chapter content
+   200→    const loadChapter = async () => {
+   201→      try {
+   202→        const res = await fetch(`/api/chapters/${chapter.id}`);
+   203→        if (res.ok) {
+   204→          const data = await res.json();
+   205→          setTitle(data.title);
+   206→          setContent(data.content || '');
+   207→          initialLoadRef.current = true;
+   208→        }
+   209→      } catch {
+   210→        toast.error('加载章节内容失败');
+   211→      }
+   212→    };
+   213→
+   214→    loadChapter();
+   215→  }, [chapter]);
+   216→
+   217→  // Auto-save debounce
+   218→  const saveChapter = useCallback(
+   219→    async (newTitle: string, newContent: string) => {
+   220→      if (!chapter || !initialLoadRef.current) return;
+   221→      if (saving) return;
+   222→
+   223→      setSaving(true);
+   224→      setSaveStatus('saving');
+   225→
+   226→      try {
+   227→        const wordCount = newContent.length;
+   228→        const res = await fetch(`/api/chapters/${chapter.id}`, {
+   229→          method: 'PUT',
+   230→          headers: { 'Content-Type': 'application/json' },
+   231→          body: JSON.stringify({
+   232→            title: newTitle,
+   233→            content: newContent,
+   234→            wordCount,
+   235→          }),
+   236→        });
+   237→
+   238→        if (!res.ok) throw new Error('保存失败');
+   239→
+   240→        setSaveStatus('saved');
+   241→        setTimeout(() => setSaveStatus('idle'), 2000);
+   242→        onSaved();
+   243→      } catch {
+   244→        toast.error('自动保存失败');
+   245→        setSaveStatus('idle');
+   246→      } finally {
+   247→        setSaving(false);
+   248→      }
+   249→    },
+   250→    [chapter, saving, onSaved],
+   251→  );
+   252→
+   253→  // Auto-save on content change
+   254→  useEffect(() => {
+   255→    if (!chapter || !initialLoadRef.current) return;
+   256→
+   257→    if (autoSaveTimerRef.current) {
+   258→      clearTimeout(autoSaveTimerRef.current);
+   259→    }
+   260→
+   261→    autoSaveTimerRef.current = setTimeout(() => {
+   262→      saveChapter(title, content);
+   263→    }, 1500);
+   264→
+   265→    return () => {
+   266→      if (autoSaveTimerRef.current) {
+   267→        clearTimeout(autoSaveTimerRef.current);
+   268→      }
+   269→    };
+   270→  }, [title, content, chapter, saveChapter]);
+   271→
+   272→  const handleManualSave = async () => {
+   273→    if (autoSaveTimerRef.current) {
+   274→      clearTimeout(autoSaveTimerRef.current);
+   275→    }
+   276→    await saveChapter(title, content);
+   277→  };
+   278→
+   279→  if (!chapter) return null;
+   280→
+   281→  const wordCount = content.length;
+   282→  const charCount = content.replace(/\s/g, '').length;
+   283→
+   284→  return (
+   285→    <div className="flex flex-col h-full">
+   286→      {/* Editor header */}
+   287→      <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+   288→        <div className="flex items-center gap-2 min-w-0">
+   289→          <Type className="size-4 text-muted-foreground shrink-0" />
+   290→          <Input
+   291→            value={title}
+   292→            onChange={(e) => setTitle(e.target.value)}
+   293→            className="h-8 text-sm font-medium border-0 bg-transparent focus-visible:ring-0 px-1"
+   294→            placeholder="章节标题"
+   295→          />
+   296→        </div>
+   297→        <div className="flex items-center gap-2 shrink-0">
+   298→          {/* Auto-save indicator */}
+   299→          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+   300→            {saveStatus === 'saving' && (
+   301→              <>
+   302→                <Loader2 className="size-3 animate-spin" />
+   303→                <span>保存中...</span>
+   304→              </>
+   305→            )}
+   306→            {saveStatus === 'saved' && (
+   307→              <>
+   308→                <CheckCircle2 className="size-3 text-emerald-500" />
+   309→                <span className="text-emerald-600 dark:text-emerald-400">已保存</span>
+   310→              </>
+   311→            )}
+   312→            {saveStatus === 'idle' && (
+   313→              <span className="tabular-nums">{wordCount.toLocaleString()} 字</span>
+   314→            )}
+   315→          </div>
+   316→          <Separator orientation="vertical" className="h-4" />
+   317→          <Button
+   318→            variant="ghost"
+   319→            size="icon"
+   320→            className="size-8"
+   321→            onClick={onClose}
+   322→          >
+   323→            <X className="size-4" />
+   324→          </Button>
+   325→        </div>
+   326→      </div>
+   327→
+   328→      {/* Editor content */}
+   329→      <div className="flex-1 overflow-hidden relative">
+   330→        <Textarea
+   331→          value={content}
+   332→          onChange={(e) => setContent(e.target.value)}
+   333→          className="absolute inset-0 resize-none rounded-none border-0 shadow-none focus-visible:ring-0 p-4 font-mono text-sm leading-loose min-h-full h-full"
+   334→          placeholder="开始编写章节内容..."
+   335→        />
+   336→      </div>
+   337→
+   338→      {/* Editor footer */}
+   339→      <div className="flex items-center justify-between px-4 py-2 border-t bg-muted/30 text-xs text-muted-foreground">
+   340→        <div className="flex items-center gap-4">
+   341→          <span>字数: {wordCount.toLocaleString()}</span>
+   342→          <span>字符 (不含空格): {charCount.toLocaleString()}</span>
+   343→        </div>
+   344→        <Button
+   345→          size="sm"
+   346→          onClick={handleManualSave}
+   347→          disabled={saving}
+   348→          className="h-7 text-xs"
+   349→        >
+   350→          <Save className="size-3" />
+   351→          手动保存
+   352→        </Button>
+   353→      </div>
+   354→    </div>
+   355→  );
+   356→}
+   357→
+   358→// ─── Main component ───────────────────────────────────────────────────────────
+   359→export default function NovelDetailView() {
+   360→  const {
+   361→    selectedNovelId,
+   362→    setSelectedNovelId,
+   363→    setSelectedNovel,
+   364→    setCurrentView,
+   365→    setEditingNovel,
+   366→    setNovelFormOpen,
+   367→    setChapterFormOpen,
+   368→    setEditingChapter,
+   369→    triggerRefreshChapters,
+   370→    triggerRefreshNovels,
+   371→    refreshChapters,
+   372→    refreshNovels,
+   373→  } = useAppStore();
+   374→
+   375→  const [novel, setNovel] = useState<Novel | null>(null);
+   376→  const [chapters, setChapters] = useState<Chapter[]>([]);
+   377→  const [loadingNovel, setLoadingNovel] = useState(true);
+   378→  const [loadingChapters, setLoadingChapters] = useState(true);
+   379→  const [deleteNovelOpen, setDeleteNovelOpen] = useState(false);
+   380→  const [deleteChapterOpen, setDeleteChapterOpen] = useState(false);
+   381→  const [deletingChapter, setDeletingChapter] = useState<Chapter | null>(null);
+   382→  const [deleting, setDeleting] = useState(false);
+   383→  const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
+   384→
+   385→  const sensors = useSensors(
+   386→    useSensor(PointerSensor, {
+   387→      activationConstraint: { distance: 8 },
+   388→    }),
+   389→  );
+   390→
+   391→  // Fetch novel details
+   392→  const fetchNovel = useCallback(async () => {
+   393→    if (!selectedNovelId) return;
+   394→    setLoadingNovel(true);
+   395→    try {
+   396→      const res = await fetch(`/api/novels/${selectedNovelId}`);
+   397→      if (res.ok) {
+   398→        const data = await res.json();
+   399→        setNovel(data);
+   400→      } else {
+   401→        toast.error('小说不存在或已被删除');
+   402→        setCurrentView('novels');
+   403→      }
+   404→    } catch {
+   405→      toast.error('获取小说详情失败');
+   406→    } finally {
+   407→      setLoadingNovel(false);
+   408→    }
+   409→  }, [selectedNovelId, setCurrentView]);
+   410→
+   411→  // Fetch chapters
+   412→  const fetchChapters = useCallback(async () => {
+   413→    if (!selectedNovelId) return;
+   414→    setLoadingChapters(true);
+   415→    try {
+   416→      const res = await fetch(`/api/novels/${selectedNovelId}/chapters`);
+   417→      if (res.ok) {
+   418→        const data = await res.json();
+   419→        setChapters(data);
+   420→      }
+   421→    } catch {
+   422→      toast.error('获取章节列表失败');
+   423→    } finally {
+   424→      setLoadingChapters(false);
+   425→    }
+   426→  }, [selectedNovelId]);
+   427→
+   428→  useEffect(() => {
+   429→    fetchNovel();
+   430→  }, [fetchNovel, refreshNovels]);
+   431→
+   432→  useEffect(() => {
+   433→    fetchChapters();
+   434→  }, [fetchChapters, refreshChapters]);
+   435→
+   436→  // ── Handlers ──────────────────────────────────────────────────────────────
+   437→
+   438→  const handleBack = () => {
+   439→    setSelectedNovelId(null);
+   440→    setSelectedNovel(null);
+   441→    setCurrentView('novels');
+   442→  };
+   443→
+   444→  const handleEditNovel = () => {
+   445→    if (!novel) return;
+   446→    setEditingNovel(novel);
+   447→    setNovelFormOpen(true);
+   448→  };
+   449→
+   450→  const handleDeleteNovel = async () => {
+   451→    if (!novel) return;
+   452→    setDeleting(true);
+   453→    try {
+   454→      const res = await fetch(`/api/novels/${novel.id}`, { method: 'DELETE' });
+   455→      if (!res.ok) {
+   456→        const data = await res.json();
+   457→        throw new Error(data.error || '删除失败');
+   458→      }
+   459→      toast.success('小说已删除');
+   460→      triggerRefreshNovels();
+   461→      triggerRefreshDashboard();
+   462→      setCurrentView('novels');
+   463→      setSelectedNovelId(null);
+   464→      setSelectedNovel(null);
+   465→    } catch (error) {
+   466→      toast.error(error instanceof Error ? error.message : '删除小说失败');
+   467→    } finally {
+   468→      setDeleting(false);
+   469→      setDeleteNovelOpen(false);
+   470→    }
+   471→  };
+   472→
+   473→  const handleNewChapter = () => {
+   474→    setEditingChapter(null);
+   475→    setChapterFormOpen(true);
+   476→  };
+   477→
+   478→  const handleEditChapter = (ch: Chapter) => {
+   479→    setEditingChapter(ch);
+   480→    setChapterFormOpen(true);
+   481→  };
+   482→
+   483→  const handleDeleteChapterClick = (ch: Chapter) => {
+   484→    setDeletingChapter(ch);
+   485→    setDeleteChapterOpen(true);
+   486→  };
+   487→
+   488→  const handleDeleteChapter = async () => {
+   489→    if (!deletingChapter) return;
+   490→    setDeleting(true);
+   491→    try {
+   492→      const res = await fetch(`/api/chapters/${deletingChapter.id}`, {
+   493→        method: 'DELETE',
+   494→      });
+   495→      if (!res.ok) {
+   496→        const data = await res.json();
+   497→        throw new Error(data.error || '删除失败');
+   498→      }
+   499→      toast.success('章节已删除');
+   500→      if (selectedChapter?.id === deletingChapter.id) {
+   501→        setSelectedChapter(null);
+   502→      }
+   503→      triggerRefreshChapters();
+   504→      triggerRefreshNovels();
+   505→    } catch (error) {
+   506→      toast.error(error instanceof Error ? error.message : '删除章节失败');
+   507→    } finally {
+   508→      setDeleting(false);
+   509→      setDeleteChapterOpen(false);
+   510→      setDeletingChapter(null);
+   511→    }
+   512→  };
+   513→
+   514→  const handleDragEnd = async (event: DragEndEvent) => {
+   515→    const { active, over } = event;
+   516→    if (!over || active.id === over.id) return;
+   517→
+   518→    const oldIndex = chapters.findIndex((c) => c.id === active.id);
+   519→    const newIndex = chapters.findIndex((c) => c.id === over.id);
+   520→    if (oldIndex === -1 || newIndex === -1) return;
+   521→
+   522→    const reordered = arrayMove(chapters, oldIndex, newIndex);
+   523→    setChapters(reordered);
+   524→
+   525→    // Update sort orders
+   526→    try {
+   527→      await Promise.all(
+   528→        reordered.map((ch, idx) =>
+   529→          fetch(`/api/chapters/${ch.id}`, {
+   530→            method: 'PUT',
+   531→            headers: { 'Content-Type': 'application/json' },
+   532→            body: JSON.stringify({ sortOrder: idx + 1 }),
+   533→          }),
+   534→        ),
+   535→      );
+   536→    } catch {
+   537→      toast.error('排序更新失败');
+   538→      fetchChapters();
+   539→    }
+   540→  };
+   541→
+   542→  const handleMoveChapter = async (chapterId: string, direction: 'up' | 'down') => {
+   543→    const idx = chapters.findIndex((c) => c.id === chapterId);
+   544→    if (idx === -1) return;
+   545→    if (direction === 'up' && idx === 0) return;
+   546→    if (direction === 'down' && idx === chapters.length - 1) return;
+   547→
+   548→    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+   549→    const reordered = arrayMove(chapters, idx, swapIdx);
+   550→    setChapters(reordered);
+   551→
+   552→    try {
+   553→      await Promise.all(
+   554→        reordered.map((ch, i) =>
+   555→          fetch(`/api/chapters/${ch.id}`, {
+   556→            method: 'PUT',
+   557→            headers: { 'Content-Type': 'application/json' },
+   558→            body: JSON.stringify({ sortOrder: i + 1 }),
+   559→          }),
+   560→        ),
+   561→      );
+   562→    } catch {
+   563→      toast.error('排序更新失败');
+   564→      fetchChapters();
+   565→    }
+   566→  };
+   567→
+   568→  const handleChapterSaved = () => {
+   569→    triggerRefreshChapters();
+   570→    fetchNovel(); // refresh novel stats (word count)
+   571→  };
+   572→
+   573→  // ── Loading state ─────────────────────────────────────────────────────────
+   574→
+   575→  if (loadingNovel) {
+   576→    return (
+   577→      <div className="flex-1 p-6 space-y-6">
+   578→        <div className="flex items-center gap-4">
+   579→          <Skeleton className="size-9" />
+   580→          <Skeleton className="h-8 w-48" />
+   581→        </div>
+   582→        <div className="flex gap-6">
+   583→          <Skeleton className="size-40 rounded-lg shrink-0" />
+   584→          <div className="flex-1 space-y-3">
+   585→            <Skeleton className="h-8 w-64" />
+   586→            <Skeleton className="h-4 w-32" />
+   587→            <Skeleton className="h-4 w-20" />
+   588→            <Skeleton className="h-16 w-full" />
+   589→          </div>
+   590→        </div>
+   591→      </div>
+   592→    );
+   593→  }
+   594→
+   595→  if (!novel) return null;
+   596→
+   597→  const statusInfo = statusMap[novel.status] || statusMap.ongoing;
+   598→  const totalWords = chapters.reduce((sum, ch) => sum + ch.wordCount, 0);
+   599→  const chapterCount = novel._count?.chapters ?? chapters.length;
+   600→
+   601→  return (
+   602→    <div className="flex-1 flex flex-col overflow-hidden">
+   603→      {/* ─── Header section ────────────────────────────────────────────── */}
+   604→      <div className="p-6 pb-0">
+   605→        {/* Back button */}
+   606→        <Button
+   607→          variant="ghost"
+   608→          size="sm"
+   609→          className="mb-4 -ml-2 text-muted-foreground"
+   610→          onClick={handleBack}
+   611→        >
+   612→          <ArrowLeft className="size-4" />
+   613→          返回小说列表
+   614→        </Button>
+   615→
+   616→        {/* Novel info card */}
+   617→        <Card className="overflow-hidden">
+   618→          <CardContent className="p-0">
+   619→            <div className="flex flex-col sm:flex-row gap-6 p-6">
+   620→              {/* Cover */}
+   621→              <div className="shrink-0">
+   622→                {novel.coverUrl ? (
+   623→                  <img
+   624→                    src={novel.coverUrl}
+   625→                    alt={novel.title}
+   626→                    className="w-36 h-48 sm:w-40 sm:h-52 object-cover rounded-lg shadow-md"
+   627→                  />
+   628→                ) : (
+   629→                  <div className="w-36 h-48 sm:w-40 sm:h-52 rounded-lg shadow-md bg-gradient-to-br from-violet-500/20 via-fuchsia-500/20 to-rose-500/20 flex items-center justify-center">
+   630→                    <BookOpen className="size-12 text-muted-foreground/50" />
+   631→                  </div>
+   632→                )}
+   633→              </div>
+   634→
+   635→              {/* Info */}
+   636→              <div className="flex-1 min-w-0 space-y-3">
+   637→                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+   638→                  <div className="min-w-0">
+   639→                    <h1 className="text-2xl font-bold tracking-tight truncate">
+   640→                      {novel.title}
+   641→                    </h1>
+   642→                    <div className="flex items-center gap-2 mt-1.5 text-muted-foreground">
+   643→                      <User className="size-3.5" />
+   644→                      <span className="text-sm">{novel.author || '佚名'}</span>
+   645→                    </div>
+   646→                  </div>
+   647→                  <div className="flex items-center gap-2 shrink-0">
+   648→                    <Button variant="outline" size="sm" onClick={handleEditNovel}>
+   649→                      <Pencil className="size-3.5" />
+   650→                      编辑小说
+   651→                    </Button>
+   652→                    <Button
+   653→                      variant="outline"
+   654→                      size="sm"
+   655→                      className="text-destructive hover:text-destructive"
+   656→                      onClick={() => setDeleteNovelOpen(true)}
+   657→                    >
+   658→                      <Trash2 className="size-3.5" />
+   659→                      删除
+   660→                    </Button>
+   661→                  </div>
+   662→                </div>
+   663→
+   664→                {/* Badges */}
+   665→                <div className="flex flex-wrap items-center gap-2">
+   666→                  <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
+   667→                  {novel.category && (
+   668→                    <Badge
+   669→                      variant="outline"
+   670→                      style={{
+   671→                        borderColor: novel.category.color,
+   672→                        color: novel.category.color,
+   673→                      }}
+   674→                    >
+   675→                      {novel.category.name}
+   676→                    </Badge>
+   677→                  )}
+   678→                  {novel.tags.map(({ tag }) => (
+   679→                    <Badge
+   680→                      key={tag.id}
+   681→                      variant="secondary"
+   682→                      className="text-xs"
+   683→                    >
+   684→                      {tag.name}
+   685→                    </Badge>
+   686→                  ))}
+   687→                </div>
+   688→
+   689→                {/* Description */}
+   690→                {novel.description && (
+   691→                  <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
+   692→                    {novel.description}
+   693→                  </p>
+   694→                )}
+   695→
+   696→                {/* Stats */}
+   697→                <div className="flex items-center gap-6 text-sm text-muted-foreground">
+   698→                  <div className="flex items-center gap-1.5">
+   699→                    <FileText className="size-3.5" />
+   700→                    <span>
+   701→                      <strong className="text-foreground">{chapterCount}</strong> 章
+   702→                    </span>
+   703→                  </div>
+   704→                  <div className="flex items-center gap-1.5">
+   705→                    <Type className="size-3.5" />
+   706→                    <span>
+   707→                      <strong className="text-foreground">
+   708→                        {totalWords.toLocaleString()}
+   709→                      </strong>{' '}
+   710→                      字
+   711→                    </span>
+   712→                  </div>
+   713→                </div>
+   714→
+   715→                {/* Timestamps */}
+   716→                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+   717→                  <div className="flex items-center gap-1">
+   718→                    <Clock className="size-3" />
+   719→                    创建: {format(new Date(novel.createdAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
+   720→                  </div>
+   721→                  <div className="flex items-center gap-1">
+   722→                    更新: {format(new Date(novel.updatedAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
+   723→                  </div>
+   724→                </div>
+   725→              </div>
+   726→            </div>
+   727→          </CardContent>
+   728→        </Card>
+   729→      </div>
+   730→
+   731→      {/* ─── Chapters section with resizable panels ───────────────────── */}
+   732→      <div className="flex-1 overflow-hidden p-6 pt-4">
+   733→        <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg border">
+   734→          {/* Left panel: Chapter list */}
+   735→          <ResizablePanel defaultSize={selectedChapter ? 45 : 100} minSize={30}>
+   736→            <div className="flex flex-col h-full">
+   737→              {/* Chapter list header */}
+   738→              <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+   739→                <h2 className="text-base font-semibold flex items-center gap-2">
+   740→                  章节列表
+   741→                  {chapters.length > 0 && (
+   742→                    <Badge variant="secondary" className="text-xs">
+   743→                      {chapters.length}
+   744→                    </Badge>
+   745→                  )}
+   746→                </h2>
+   747→                <Button size="sm" onClick={handleNewChapter}>
+   748→                  <Plus className="size-4" />
+   749→                  新建章节
+   750→                </Button>
+   751→              </div>
+   752→
+   753→              {/* Chapter list content */}
+   754→              <ScrollArea className="flex-1">
+   755→                {loadingChapters ? (
+   756→                  <div className="p-4 space-y-2">
+   757→                    {Array.from({ length: 5 }).map((_, i) => (
+   758→                      <Skeleton key={i} className="h-12 w-full" />
+   759→                    ))}
+   760→                  </div>
+   761→                ) : chapters.length === 0 ? (
+   762→                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+   763→                    <FileText className="size-12 mb-3 opacity-30" />
+   764→                    <p className="text-sm font-medium">暂无章节</p>
+   765→                    <p className="text-xs mt-1">点击"新建章节"开始创作</p>
+   766→                  </div>
+   767→                ) : (
+   768→                  <DndContext
+   769→                    sensors={sensors}
+   770→                    collisionDetection={closestCenter}
+   771→                    onDragEnd={handleDragEnd}
+   772→                  >
+   773→                    <SortableContext
+   774→                      items={chapters.map((c) => c.id)}
+   775→                      strategy={verticalListSortingStrategy}
+   776→                    >
+   777→                      <Table>
+   778→                        <TableHeader>
+   779→                          <TableRow className="hover:bg-transparent">
+   780→                            <TableHead className="w-10" />
+   781→                            <TableHead className="w-16 text-center">序号</TableHead>
+   782→                            <TableHead>标题</TableHead>
+   783→                            <TableHead className="w-24">字数</TableHead>
+   784→                            <TableHead className="w-40">更新时间</TableHead>
+   785→                            <TableHead className="w-24 text-right">操作</TableHead>
+   786→                          </TableRow>
+   787→                        </TableHeader>
+   788→                        <TableBody>
+   789→                          {chapters.map((chapter, index) => (
+   790→                            <SortableChapterRow
+   791→                              key={chapter.id}
+   792→                              chapter={chapter}
+   793→                              index={index}
+   794→                              onEdit={handleEditChapter}
+   795→                              onDelete={handleDeleteChapterClick}
+   796→                              onSelect={setSelectedChapter}
+   797→                              isSelected={selectedChapter?.id === chapter.id}
+   798→                            />
+   799→                          ))}
+   800→                        </TableBody>
+   801→                      </Table>
+   802→                    </SortableContext>
+   803→                  </DndContext>
+   804→                )}
+   805→              </ScrollArea>
+   806→
+   807→              {/* Bottom reorder buttons */}
+   808→              {selectedChapter && chapters.length > 1 && (
+   809→                <div className="flex items-center justify-center gap-2 px-4 py-2 border-t bg-muted/30">
+   810→                  <Button
+   811→                    variant="ghost"
+   812→                    size="sm"
+   813→                    className="h-7 text-xs"
+   814→                    onClick={() => handleMoveChapter(selectedChapter.id, 'up')}
+   815→                    disabled={chapters[0]?.id === selectedChapter.id}
+   816→                  >
+   817→                    <ChevronUp className="size-3.5" />
+   818→                    上移
+   819→                  </Button>
+   820→                  <Button
+   821→                    variant="ghost"
+   822→                    size="sm"
+   823→                    className="h-7 text-xs"
+   824→                    onClick={() => handleMoveChapter(selectedChapter.id, 'down')}
+   825→                    disabled={chapters[chapters.length - 1]?.id === selectedChapter.id}
+   826→                  >
+   827→                    <ChevronDown className="size-3.5" />
+   828→                    下移
+   829→                  </Button>
+   830→                </div>
+   831→              )}
+   832→            </div>
+   833→          </ResizablePanel>
+   834→
+   835→          {/* Right panel: Chapter editor (shown when a chapter is selected) */}
+   836→          {selectedChapter && (
+   837→            <>
+   838→              <ResizableHandle withHandle />
+   839→              <ResizablePanel defaultSize={55} minSize={30}>
+   840→                <ChapterEditorPanel
+   841→                  key={selectedChapter.id}
+   842→                  chapter={selectedChapter}
+   843→                  onClose={() => setSelectedChapter(null)}
+   844→                  onSaved={handleChapterSaved}
+   845→                />
+   846→              </ResizablePanel>
+   847→            </>
+   848→          )}
+   849→        </ResizablePanelGroup>
+   850→      </div>
+   851→
+   852→      {/* ─── Delete novel confirmation ─────────────────────────────────── */}
+   853→      <AlertDialog open={deleteNovelOpen} onOpenChange={setDeleteNovelOpen}>
+   854→        <AlertDialogContent>
+   855→          <AlertDialogHeader>
+   856→            <AlertDialogTitle>确认删除小说</AlertDialogTitle>
+   857→            <AlertDialogDescription>
+   858→              确定要删除「{novel.title}」吗？此操作将同时删除所有关联的章节，且不可撤销。
+   859→            </AlertDialogDescription>
+   860→          </AlertDialogHeader>
+   861→          <AlertDialogFooter>
+   862→            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+   863→            <AlertDialogAction
+   864→              onClick={handleDeleteNovel}
+   865→              disabled={deleting}
+   866→              className="bg-destructive text-white hover:bg-destructive/90"
+   867→            >
+   868→              {deleting && <Loader2 className="size-4 animate-spin" />}
+   869→              确认删除
+   870→            </AlertDialogAction>
+   871→          </AlertDialogFooter>
+   872→        </AlertDialogContent>
+   873→      </AlertDialog>
+   874→
+   875→      {/* ─── Delete chapter confirmation ───────────────────────────────── */}
+   876→      <AlertDialog open={deleteChapterOpen} onOpenChange={setDeleteChapterOpen}>
+   877→        <AlertDialogContent>
+   878→          <AlertDialogHeader>
+   879→            <AlertDialogTitle>确认删除章节</AlertDialogTitle>
+   880→            <AlertDialogDescription>
+   881→              确定要删除「{deletingChapter?.title}」吗？此操作不可撤销。
+   882→            </AlertDialogDescription>
+   883→          </AlertDialogHeader>
+   884→          <AlertDialogFooter>
+   885→            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+   886→            <AlertDialogAction
+   887→              onClick={handleDeleteChapter}
+   888→              disabled={deleting}
+   889→              className="bg-destructive text-white hover:bg-destructive/90"
+   890→            >
+   891→              {deleting && <Loader2 className="size-4 animate-spin" />}
+   892→              确认删除
+   893→            </AlertDialogAction>
+   894→          </AlertDialogFooter>
+   895→        </AlertDialogContent>
+   896→      </AlertDialog>
+   897→    </div>
+   898→  );
+   899→}

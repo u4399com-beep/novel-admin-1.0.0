@@ -1,0 +1,299 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 基础模块 ====================
+
+// 分类
+model Category {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  color       String  @default("#6b7280")
+  sortOrder   Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  novels      Novel[]
+}
+
+// 标签
+model Tag {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  color     String     @default("#6b7280")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  novels    NovelTag[]
+}
+
+// 小说
+model Novel {
+  id              String       @id @default(cuid())
+  title           String
+  author          String       @default("佚名")
+  description     String?
+  coverUrl        String?
+  coverPath       String?       // 本地封面图路径 (webp)
+  status          String       @default("ongoing") // ongoing, completed, hiatus
+  categoryId      String?
+  category        Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags            NovelTag[]
+  wordCount       Int          @default(0)
+  sourceUrl       String?      // 原始来源URL
+  sourceId        String?      // 采集规则ID
+  extraKeywords   String?      // 搜索引擎提取的辅助关键词，逗号分隔
+  seoTitle        String?      // SEO标题
+  seoDescription  String?      // SEO描述
+  seoKeywords     String?      // SEO关键词
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  chapters        Chapter[]
+  fileStorage     NovelFile[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([sourceId])
+}
+
+// 小说-标签关联
+model NovelTag {
+  novelId String
+  tagId   String
+  novel   Novel  @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([novelId, tagId])
+}
+
+// 章节
+model Chapter {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  contentPath String? // 如果存为文件，记录文件路径
+  wordCount Int      @default(0)
+  sortOrder Int      @default(0)
+  novelId   String
+  novel     Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  sourceUrl String?  // 原始章节URL
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([novelId])
+  @@index([sortOrder])
+}
+
+// ==================== 采集系统 ====================
+
+// 采集规则
+model ScrapeRule {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  enabled       Boolean  @default(true)
+
+  // 列表页配置
+  listUrl       String?  // 列表页URL模板
+  listSelector  String?  // 列表页采集规则 (JSON: {type:"css"|"xpath"|"regex", value:"..."})
+  listPagination String? // 列表分页配置 (JSON: {type:"next"|"page", selector:"...", maxPage:100})
+
+  // 书籍信息页配置
+  bookTitleSelector       String? // 书名
+  bookAuthorSelector      String? // 作者
+  bookCategorySelector    String? // 分类
+  bookKeywordsSelector    String? // 关键词
+  bookDescriptionSelector String? // 简介
+  bookCoverSelector       String? // 封面图
+  bookStatusSelector      String? // 状态(连载/完结)
+
+  // 章节目录页配置
+  chapterListUrl      String? // 目录页URL (可使用 {bookUrl} 占位符)
+  chapterListSelector String? // 目录列表选择器
+  chapterTitleSelector String? // 章节标题
+  chapterLinkSelector String? // 章节链接
+  chapterPagination   String? // 目录分页配置
+
+  // 章节内容页配置
+  contentTitleSelector  String? // 内容页标题(可选，不填则用目录标题)
+  contentSelector       String? // 正文选择器
+  contentPagination     String? // 内容分页配置(长页分拆)
+
+  // 反爬策略
+  antiCrawlConfig String? // JSON: {useJsRender:bool, uaRotation:bool, cookies:string[], delay:[min,max]}
+
+  // 存储配置
+  storageMode    String  @default("database") // database, file
+  filePath       String? // 文件存储路径
+  coverSavePath  String? // 封面图保存路径
+
+  // 采集策略
+  scrapeMode     String  @default("incremental") // incremental, full
+  threadCount    Int     @default(3)
+  minDelay       Int     @default(1000) // 最小间隔ms
+  maxDelay       Int     @default(3000) // 最大间隔ms
+  enableShuffle  Boolean @default(false) // 目录乱序
+  dedupMode      String  @default("url") // url, title, both
+
+  // 内容清洗配置
+  cleanConfig    String? // JSON: {removeAds:bool, cleanHtml:bool, removePatterns:["..."], adPatterns:["..."]}
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tasks     ScrapeTask[]
+}
+
+// 采集任务
+model ScrapeTask {
+  id            String   @id @default(cuid())
+  ruleId        String
+  rule          ScrapeRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  status        String   @default("pending") // pending, running, completed, failed, cancelled
+  mode          String   @default("incremental") // incremental, full
+
+  // 统计
+  totalBooks    Int      @default(0)
+  totalChapters Int      @default(0)
+  newBooks      Int      @default(0)
+  newChapters   Int      @default(0)
+  failedItems   Int      @default(0)
+  skippedItems  Int      @default(0)
+
+  // 进度
+  progress      Float    @default(0) // 0-100
+  currentStep   String?  // 当前步骤描述
+
+  // 结果
+  resultUrl     String?  // 结果文件/页面URL
+  errorMessage  String?
+
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  logs          ScrapeLog[]
+}
+
+// 采集日志
+model ScrapeLog {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      ScrapeTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  level     String   @default("info") // info, warn, error, success
+  message   String
+  url       String?  // 相关URL
+  detail    String?  // 详细信息
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+  @@index([level])
+}
+
+// ==================== 站群系统 ====================
+
+// 站点
+model Site {
+  id          String   @id @default(cuid())
+  domain      String   @unique
+  name        String
+  description String?
+  themeId     String?  // 使用的主题ID
+  enabled     Boolean  @default(true)
+
+  // TDK配置
+  siteTitle       String?
+  siteDescription String?
+  siteKeywords    String?
+  geoConfig       String? // JSON: {region, placename, position, icbm}
+
+  // 偏移配置
+  novelOffset     Int      @default(0)  // 小说ID偏移量
+  chapterOffset   Int      @default(0)  // 章节ID偏移量
+
+  // 自定义配置
+  customConfig    String?  // JSON: 自定义配置项
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([domain])
+}
+
+// ==================== 主题系统 ====================
+
+// 主题
+model Theme {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  identifier  String   @unique  // 主题标识符，如 "dark-emerald"
+  preview     String?  // 预览图URL
+  config      String   // JSON: 完整主题配置
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sites       Site[]
+}
+
+// ==================== 下载系统 ====================
+
+// 下载配置
+model DownloadConfig {
+  id              String   @id @default(cuid())
+  name            String
+  enabled         Boolean  @default(true)
+  format          String   @default("txt") // txt
+
+  // 混淆配置
+  insertConfusion Boolean  @default(false)
+  confusionText   String?  // 混淆文本
+
+  // 广告插入
+  insertAd        Boolean  @default(false)
+  adContent       String?  // 广告内容 (支持 {title}, {author}, {siteName} 等变量)
+  adInterval      Int      @default(50) // 每N章插入一次广告
+  adPosition      String   @default("end") // start, middle, end
+
+  // 站点信息
+  insertSiteInfo  Boolean  @default(false)
+  siteInfoContent String?  // 站点信息内容
+
+  // 文件命名
+  fileNamePattern String   @default("{title} - {author}") // 文件名模板
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 小说文件记录
+model NovelFile {
+  id          String   @id @default(cuid())
+  novelId     String
+  novel       Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  fileName    String
+  filePath    String
+  fileSize    Int      @default(0)
+  format      String   @default("txt")
+  configId    String?  // 使用的下载配置ID
+  createdAt   DateTime @default(now())
+
+  @@index([novelId])
+}
+
+// ==================== 搜索引擎关键词 ====================
+
+// 搜索关键词
+model SearchKeyword {
+  id        String   @id @default(cuid())
+  novelId   String
+  keyword   String
+  source    String   @default("") // 来源搜索引擎
+  createdAt DateTime @default(now())
+
+  @@index([novelId])
+  @@unique([novelId, keyword, source])
+}
