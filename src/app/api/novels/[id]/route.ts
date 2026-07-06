@@ -42,6 +42,11 @@ export async function PUT(
       return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
     }
 
+    const validStatuses = ["ongoing", "completed", "hiatus"];
+    if (status !== undefined && !validStatuses.includes(status)) {
+      return NextResponse.json({ error: "无效的小说状态" }, { status: 400 });
+    }
+
     // If tags are provided, delete old ones and create new ones
     if (tags !== undefined) {
       await db.novelTag.deleteMany({ where: { novelId: id } });
@@ -50,9 +55,9 @@ export async function PUT(
     const novel = await db.novel.update({
       where: { id },
       data: {
-        ...(title !== undefined && { title: title.trim() }),
-        ...(author !== undefined && { author: author?.trim() || "佚名" }),
-        ...(description !== undefined && { description: description?.trim() || null }),
+        ...(title !== undefined && { title: title.trim().slice(0, 200) }),
+        ...(author !== undefined && { author: (author?.trim() || "佚名").slice(0, 100) }),
+        ...(description !== undefined && { description: description?.trim()?.slice(0, 5000) || null }),
         ...(coverUrl !== undefined && { coverUrl: coverUrl || null }),
         ...(status !== undefined && { status }),
         ...(categoryId !== undefined && { categoryId: categoryId || null }),

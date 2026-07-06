@@ -1,6 +1,14 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const MAX_NAME_LENGTH = 200;
+const VALID_FORMATS = ["txt", "epub"];
+const VALID_AD_POSITIONS = ["start", "middle", "end"];
+const MAX_CONTENT_LENGTH = 5000;
+const MIN_AD_INTERVAL = 1;
+const MAX_AD_INTERVAL = 1000;
+const MAX_PATTERN_LENGTH = 500;
+
 // GET /api/download-configs - List all download configs
 export async function GET() {
   try {
@@ -35,6 +43,30 @@ export async function POST(request: NextRequest) {
     if (!name?.trim()) {
       return NextResponse.json({ error: "配置名称不能为空" }, { status: 400 });
     }
+    if (name.trim().length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `配置名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+    }
+    if (format && !VALID_FORMATS.includes(format)) {
+      return NextResponse.json({ error: `文件格式只能是: ${VALID_FORMATS.join(", ")}` }, { status: 400 });
+    }
+    if (insertConfusion && confusionText && typeof confusionText === "string" && confusionText.trim().length > MAX_CONTENT_LENGTH) {
+      return NextResponse.json({ error: `混淆文本不能超过${MAX_CONTENT_LENGTH}个字符` }, { status: 400 });
+    }
+    if (insertAd) {
+      if (adContent && typeof adContent === "string" && adContent.trim().length > MAX_CONTENT_LENGTH) {
+        return NextResponse.json({ error: `广告内容不能超过${MAX_CONTENT_LENGTH}个字符` }, { status: 400 });
+      }
+      if (adPosition && !VALID_AD_POSITIONS.includes(adPosition)) {
+        return NextResponse.json({ error: `广告位置只能是: ${VALID_AD_POSITIONS.join(", ")}` }, { status: 400 });
+      }
+    }
+    const parsedInterval = adInterval !== undefined ? Math.min(Math.max(MIN_AD_INTERVAL, Math.floor(Number(adInterval) || 50)), MAX_AD_INTERVAL) : 50;
+    if (insertSiteInfo && siteInfoContent && typeof siteInfoContent === "string" && siteInfoContent.trim().length > MAX_CONTENT_LENGTH) {
+      return NextResponse.json({ error: `站点信息内容不能超过${MAX_CONTENT_LENGTH}个字符` }, { status: 400 });
+    }
+    if (fileNamePattern && typeof fileNamePattern === "string" && fileNamePattern.trim().length > MAX_PATTERN_LENGTH) {
+      return NextResponse.json({ error: `文件名模式不能超过${MAX_PATTERN_LENGTH}个字符` }, { status: 400 });
+    }
 
     const config = await db.downloadConfig.create({
       data: {
@@ -44,7 +76,7 @@ export async function POST(request: NextRequest) {
         confusionText: insertConfusion ? confusionText?.trim() || null : null,
         insertAd: insertAd || false,
         adContent: insertAd ? adContent?.trim() || null : null,
-        adInterval: adInterval || 50,
+        adInterval: parsedInterval,
         adPosition: adPosition || "end",
         insertSiteInfo: insertSiteInfo || false,
         siteInfoContent: insertSiteInfo ? siteInfoContent?.trim() || null : null,

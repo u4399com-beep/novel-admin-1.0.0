@@ -1,6 +1,14 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const MAX_NAME_LENGTH = 200;
+const VALID_FORMATS = ["txt", "epub"];
+const VALID_AD_POSITIONS = ["start", "middle", "end"];
+const MAX_CONTENT_LENGTH = 5000;
+const MIN_AD_INTERVAL = 1;
+const MAX_AD_INTERVAL = 1000;
+const MAX_PATTERN_LENGTH = 500;
+
 // GET /api/download-configs/[id] - Get a single download config
 export async function GET(
   _request: NextRequest,
@@ -47,6 +55,35 @@ export async function PUT(
     if (name !== undefined && !name?.trim()) {
       return NextResponse.json({ error: "配置名称不能为空" }, { status: 400 });
     }
+    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `配置名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+    }
+    if (format !== undefined && !VALID_FORMATS.includes(format)) {
+      return NextResponse.json({ error: `文件格式只能是: ${VALID_FORMATS.join(", ")}` }, { status: 400 });
+    }
+    if (confusionText !== undefined && typeof confusionText === "string" && confusionText.trim().length > MAX_CONTENT_LENGTH) {
+      return NextResponse.json({ error: `混淆文本不能超过${MAX_CONTENT_LENGTH}个字符` }, { status: 400 });
+    }
+    if (adContent !== undefined && typeof adContent === "string" && adContent.trim().length > MAX_CONTENT_LENGTH) {
+      return NextResponse.json({ error: `广告内容不能超过${MAX_CONTENT_LENGTH}个字符` }, { status: 400 });
+    }
+    if (adInterval !== undefined) {
+      const parsed = Math.floor(Number(adInterval) || 50);
+      if (parsed < MIN_AD_INTERVAL || parsed > MAX_AD_INTERVAL) {
+        return NextResponse.json({ error: `广告间隔必须在${MIN_AD_INTERVAL}-${MAX_AD_INTERVAL}之间` }, { status: 400 });
+      }
+    }
+    if (adPosition !== undefined && !VALID_AD_POSITIONS.includes(adPosition)) {
+      return NextResponse.json({ error: `广告位置只能是: ${VALID_AD_POSITIONS.join(", ")}` }, { status: 400 });
+    }
+    if (siteInfoContent !== undefined && typeof siteInfoContent === "string" && siteInfoContent.trim().length > MAX_CONTENT_LENGTH) {
+      return NextResponse.json({ error: `站点信息内容不能超过${MAX_CONTENT_LENGTH}个字符` }, { status: 400 });
+    }
+    if (fileNamePattern !== undefined && typeof fileNamePattern === "string" && fileNamePattern.trim().length > MAX_PATTERN_LENGTH) {
+      return NextResponse.json({ error: `文件名模式不能超过${MAX_PATTERN_LENGTH}个字符` }, { status: 400 });
+    }
+
+    const parsedInterval = adInterval !== undefined ? Math.min(Math.max(MIN_AD_INTERVAL, Math.floor(Number(adInterval) || 50)), MAX_AD_INTERVAL) : undefined;
 
     const config = await db.downloadConfig.update({
       where: { id },
@@ -62,7 +99,7 @@ export async function PUT(
         ...(adContent !== undefined && {
           adContent: insertAd ? adContent?.trim() || null : null,
         }),
-        ...(adInterval !== undefined && { adInterval }),
+        ...(parsedInterval !== undefined && { adInterval: parsedInterval }),
         ...(adPosition !== undefined && { adPosition }),
         ...(insertSiteInfo !== undefined && { insertSiteInfo }),
         ...(siteInfoContent !== undefined && {

@@ -5,8 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = parseInt(searchParams.get("pageSize") || "12");
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
+    const pageSize = Math.min(Math.max(1, parseInt(searchParams.get("pageSize") || "12") || 12), 100);
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
     const categoryId = searchParams.get("categoryId") || "";
@@ -69,13 +69,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
     }
 
+    const validStatuses = ["ongoing", "completed", "hiatus"];
+    const novelStatus = validStatuses.includes(status) ? status : "ongoing";
+
     const novel = await db.novel.create({
       data: {
-        title: title.trim(),
-        author: author?.trim() || "佚名",
-        description: description?.trim() || null,
-        coverUrl: coverUrl || null,
-        status: status || "ongoing",
+        title: title.trim().slice(0, 200),
+        author: (author?.trim() || "佚名").slice(0, 100),
+        description: description?.trim()?.slice(0, 5000) || null,
+        coverUrl: coverUrl?.trim() || null,
+        status: novelStatus,
         categoryId: categoryId || null,
         tags: tags?.length
           ? {

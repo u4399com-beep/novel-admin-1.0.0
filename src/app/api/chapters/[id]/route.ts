@@ -1,6 +1,9 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const MAX_TITLE_LENGTH = 200;
+const MAX_SORT_ORDER = 100000;
+
 // GET /api/chapters/[id] - Get a single chapter
 export async function GET(
   _request: NextRequest,
@@ -37,6 +40,15 @@ export async function PUT(
     if (title !== undefined && !title?.trim()) {
       return NextResponse.json({ error: "章节标题不能为空" }, { status: 400 });
     }
+    if (title !== undefined && title.trim().length > MAX_TITLE_LENGTH) {
+      return NextResponse.json({ error: `章节标题不能超过${MAX_TITLE_LENGTH}个字符` }, { status: 400 });
+    }
+    if (sortOrder !== undefined) {
+      const order = Math.floor(Number(sortOrder) || 0);
+      if (order < 0 || order > MAX_SORT_ORDER) {
+        return NextResponse.json({ error: `排序值必须在0-${MAX_SORT_ORDER}之间` }, { status: 400 });
+      }
+    }
 
     // Get old chapter for word count diff
     const oldChapter = await db.chapter.findUnique({ where: { id } });
@@ -52,7 +64,7 @@ export async function PUT(
       data: {
         ...(title !== undefined && { title: title.trim() }),
         ...(content !== undefined && { content: content || null }),
-        ...(sortOrder !== undefined && { sortOrder }),
+        ...(sortOrder !== undefined && { sortOrder: Math.floor(Number(sortOrder) || 0) }),
         wordCount: newWordCount,
       },
     });

@@ -1,6 +1,9 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const MAX_NAME_LENGTH = 50;
+const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+
 export async function GET() {
   try {
     const tags = await db.tag.findMany({
@@ -21,6 +24,12 @@ export async function POST(request: NextRequest) {
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "标签名称不能为空" }, { status: 400 });
+    }
+    if (name.trim().length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `标签名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+    }
+    if (color && !VALID_COLOR_RE.test(color)) {
+      return NextResponse.json({ error: "颜色格式无效，请使用HEX格式（如#6b7280）" }, { status: 400 });
     }
 
     const tag = await db.tag.create({
@@ -52,12 +61,18 @@ export async function PUT(request: NextRequest) {
     if (name !== undefined && !name?.trim()) {
       return NextResponse.json({ error: "标签名称不能为空" }, { status: 400 });
     }
+    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `标签名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+    }
+    if (color !== undefined && color && !VALID_COLOR_RE.test(color)) {
+      return NextResponse.json({ error: "颜色格式无效，请使用HEX格式（如#6b7280）" }, { status: 400 });
+    }
 
     const tag = await db.tag.update({
       where: { id },
       data: {
         ...(name !== undefined && { name: name.trim() }),
-        ...(color !== undefined && { color }),
+        ...(color !== undefined && { color: color || "#6b7280" }),
       },
       include: { _count: { select: { novels: true } } },
     });

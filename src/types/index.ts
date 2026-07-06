@@ -26,11 +26,18 @@ export interface Novel {
   author: string;
   description: string | null;
   coverUrl: string | null;
+  coverPath: string | null;
   status: NovelStatus;
   categoryId: string | null;
   category: Category | null;
   tags: { tag: Tag }[];
   wordCount: number;
+  sourceUrl: string | null;
+  sourceId: string | null;
+  extraKeywords: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  seoKeywords: string | null;
   createdAt: string;
   updatedAt: string;
   _count?: { chapters: number };

@@ -1,6 +1,14 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const MAX_NAME_LENGTH = 200;
+const MAX_DOMAIN_LENGTH = 500;
+const MAX_DESCRIPTION_LENGTH = 2000;
+const MAX_SITE_TITLE_LENGTH = 200;
+const MAX_SITE_DESC_LENGTH = 500;
+const MAX_KEYWORDS_LENGTH = 500;
+const MAX_OFFSET = 10000;
+
 // GET /api/sites - List all sites
 export async function GET() {
   try {
@@ -39,9 +47,35 @@ export async function POST(request: NextRequest) {
     if (!domain?.trim()) {
       return NextResponse.json({ error: "站点域名不能为空" }, { status: 400 });
     }
+    if (domain.trim().length > MAX_DOMAIN_LENGTH) {
+      return NextResponse.json({ error: `站点域名不能超过${MAX_DOMAIN_LENGTH}个字符` }, { status: 400 });
+    }
     if (!name?.trim()) {
       return NextResponse.json({ error: "站点名称不能为空" }, { status: 400 });
     }
+    if (name.trim().length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `站点名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+    }
+    if (description && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      return NextResponse.json({ error: `站点描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
+    }
+    if (siteTitle && typeof siteTitle === "string" && siteTitle.trim().length > MAX_SITE_TITLE_LENGTH) {
+      return NextResponse.json({ error: `站点标题不能超过${MAX_SITE_TITLE_LENGTH}个字符` }, { status: 400 });
+    }
+    if (siteDescription && typeof siteDescription === "string" && siteDescription.trim().length > MAX_SITE_DESC_LENGTH) {
+      return NextResponse.json({ error: `站点描述不能超过${MAX_SITE_DESC_LENGTH}个字符` }, { status: 400 });
+    }
+    if (siteKeywords && typeof siteKeywords === "string" && siteKeywords.trim().length > MAX_KEYWORDS_LENGTH) {
+      return NextResponse.json({ error: `站点关键词不能超过${MAX_KEYWORDS_LENGTH}个字符` }, { status: 400 });
+    }
+    if (themeId) {
+      const themeExists = await db.theme.findUnique({ where: { id: themeId }, select: { id: true } });
+      if (!themeExists) {
+        return NextResponse.json({ error: "指定的主题不存在" }, { status: 400 });
+      }
+    }
+    const parsedNovelOffset = novelOffset !== undefined ? Math.min(Math.max(0, Math.floor(Number(novelOffset) || 0)), MAX_OFFSET) : 0;
+    const parsedChapterOffset = chapterOffset !== undefined ? Math.min(Math.max(0, Math.floor(Number(chapterOffset) || 0)), MAX_OFFSET) : 0;
 
     const site = await db.site.create({
       data: {
@@ -54,8 +88,8 @@ export async function POST(request: NextRequest) {
         siteDescription: siteDescription?.trim() || null,
         siteKeywords: siteKeywords?.trim() || null,
         geoConfig: geoConfig ? JSON.stringify(geoConfig) : null,
-        novelOffset: novelOffset || 0,
-        chapterOffset: chapterOffset || 0,
+        novelOffset: parsedNovelOffset,
+        chapterOffset: parsedChapterOffset,
         customConfig: customConfig ? JSON.stringify(customConfig) : null,
       },
       include: {

@@ -202,6 +202,7 @@ model Site {
   name        String
   description String?
   themeId     String?  // 使用的主题ID
+  theme       Theme?   @relation(fields: [themeId], references: [id], onDelete: SetNull)
   enabled     Boolean  @default(true)
 
   // TDK配置

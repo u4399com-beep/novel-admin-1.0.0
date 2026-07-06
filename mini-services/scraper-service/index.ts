@@ -990,7 +990,7 @@ interface ScrapeTask {
   rule: ScrapeRule;
 }
 
-const API_BASE = "http://localhost:3000";
+const API_BASE = process.env.MAIN_APP_URL || "http://localhost:3000";
 
 async function apiCall(
   method: string,
@@ -1754,9 +1754,9 @@ async function executeTask(taskId: string) {
 
 // ==================== Server ====================
 
-export function startServer() {
+export function startServer(port: number = 3099) {
   const server = Bun.serve({
-    port: 3099,
+    port,
     async fetch(req) {
       const url = new URL(req.url);
       const path = url.pathname;
@@ -1912,4 +1912,15 @@ export function startServer() {
 }
 
 // Start server if run directly
-startServer();
+const PORT = parseInt(process.env.PORT || "3099", 10);
+console.log(`[Config] API_BASE: ${API_BASE}`);
+console.log(`[Config] PORT: ${PORT}`);
+startServer(PORT);
+
+// Graceful shutdown
+const shutdown = (signal: string) => {
+  console.log(`\n[${new Date().toISOString()}] Received ${signal}, shutting down gracefully...`);
+  process.exit(0);
+};
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

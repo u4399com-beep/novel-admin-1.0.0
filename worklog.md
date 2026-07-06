@@ -478,3 +478,180 @@ Each config includes: colors (11 color tokens), layout (maxWidth, sidebarPositio
 - Only uses relative API paths (no absolute URLs)
 - All 5 theme configs are complete with distinct visual identities
 - Theme previews use inline styles to accurately represent each theme's appearance
+
+---
+
+## Task 8: Rebuild 3 Critical Stub Components (Dashboard, Novel List, Category Manager)
+
+### Agent: Frontend Developer
+### Status: ✅ Completed
+
+### Files Modified:
+1. **`/src/components/novel/DashboardView.tsx`** — Full dashboard with stats, chart, recent novels
+2. **`/src/components/novel/NovelListView.tsx`** — Full novel list with search, filters, grid, pagination
+3. **`/src/components/novel/CategoryManagerView.tsx`** — Full category CRUD with color picker, form validation
+
+### What was implemented:
+
+#### DashboardView.tsx
+- **4 Stat Cards** in responsive grid (1→2→4 cols): 小说总数 (BookOpen, emerald), 章节总数 (FileText, amber), 总字数 (Hash, violet), 分类总数 (FolderTree, rose)
+  - Each card: colored icon background, label, formatted value with `toLocaleString()`
+  - Loading: 4 skeleton card placeholders
+- **Status Distribution Bar Chart**: horizontal BarChart via recharts + shadcn/ui ChartContainer
+  - Custom colors per status: ongoing=#10b981, completed=#f59e0b, hiatus=#94a3b8
+  - Uses Cell components for per-bar coloring, ChartTooltipContent for tooltips
+  - Empty state when no data
+- **Recent Novels List**: scrollable list of 8 most recently updated novels
+  - Each row: gradient placeholder icon, title (truncated), author, chapter count, relative time (date-fns zhCN), status badge
+  - "查看详情" button with ArrowRight icon, visible on hover via group-hover
+  - Clicking navigates via useAppStore: setSelectedNovelId + setSelectedNovel + setCurrentView('novel-detail')
+- **Error state** with retry button
+- Refreshes on `refreshDashboard` trigger from store
+- Loading skeletons for all sections
+
+#### NovelListView.tsx
+- **Search**: debounced (300ms) input with Search icon, resets page to 1
+- **Filters**: two Select dropdowns — status (全部/连载中/已完结/暂停) and category (fetched from GET /api/categories)
+- **Novel Grid**: responsive 1→2→3→4 columns
+  - Each card: cover (gradient placeholder with BookOpen OR actual img), status badge overlay on cover, title, author with User icon, category badge (colored outline), up to 3 tag badges (colored), chapter count + relative time footer, "查看" button (visible on hover)
+  - 6 gradient presets for cover placeholders (cycling)
+  - Click card or button → navigate to novel detail via store
+- **Pagination**: prev/next arrows + smart page numbers with ellipsis (capped at 7 visible)
+- **Loading**: 8 skeleton cards in grid
+- **Empty state**: dashed border card with BookOpen icon, contextual message (different for filtered vs. no-data)
+- **Total count**: Badge showing "共 X 本" next to title
+- Refreshes on `refreshNovels` trigger
+
+#### CategoryManagerView.tsx
+- **CRUD Operations**:
+  - Create: POST /api/categories
+  - Update: PUT /api/categories with {id, ...body}
+  - Delete: DELETE /api/categories?id=X
+- **Category Grid**: responsive 1→2→3→4 columns with framer-motion AnimatePresence + staggerChildren
+  - Each card: 4px colored left border, color dot, name (truncated), description (line-clamp-2), novel count badge, relative creation time
+  - Edit/Delete buttons appear on hover via group-hover opacity transition
+  - layout animation on add/remove via framer-motion layout prop
+- **Dialog Form** (create/edit): react-hook-form + zod v4 validation
+  - Name (required, max 50 chars), Description (textarea, max 200 chars, optional)
+  - Color picker: 16 preset color buttons (circle, active state with scale + border) + native input[type=color] + hex Input
+  - Sort order (number input, min 0)
+  - Loading spinner on save button
+- **Delete Confirmation**: AlertDialog showing category name + warning if novels exist
+  - Destructive-styled action button with loading state
+- **Toast notifications** via sonner for all CRUD success/error
+- **Empty state**: FolderTree icon + "创建第一个" button
+- **Loading skeleton**: 6 card placeholders
+- Refreshes on `refreshCategories` trigger
+
+### Dependencies used:
+- `recharts` — BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+- `framer-motion` — motion, AnimatePresence for card animations
+- `react-hook-form` + `zod` v4 + `@hookform/resolvers/zod` — form validation
+- `date-fns` with `zhCN` locale — relative time formatting
+- `sonner` — toast notifications
+- All shadcn/ui: Card, Badge, Button, Input, Textarea, Label, Skeleton, Select, Dialog, AlertDialog, ChartContainer, ChartTooltip, ChartTooltipContent
+
+### Notes:
+- Lint passes with zero errors
+- Uses `use client` directive
+- Only uses relative API paths
+- Consistent status map pattern matching NovelDetailView
+- `zod/v4` import for zod v4 compatibility
+
+## Task 11: Security Hardening and Performance Optimization
+
+### Agent: General-Purpose
+### Status: ✅ Completed
+
+### Files Created:
+1. **`/src/middleware.ts`** — Rate limiting middleware for API routes
+2. **`/src/lib/sanitize.ts`** — Input sanitization utilities
+3. **`/src/lib/api-utils.ts`** — Consistent API response helpers and pagination utilities
+
+### Files Modified:
+1. **`/src/types/index.ts`** — Added missing fields to Novel interface
+
+### What was implemented:
+
+#### Security Hardening
+
+**Rate Limiting Middleware (`/src/middleware.ts`)**:
+- In-memory IP-based rate limiter: 100 requests/minute per IP
+- Applies only to `/api/:path*` routes via Next.js middleware matcher
+- Returns 429 with `Retry-After: 60` header when limit exceeded
+- Adds `X-Request-ID` header (UUID) to every API response for request tracing
+- Reads IP from `x-forwarded-for` or `x-real-ip` headers, falls back to `'unknown'`
+
+**Input Sanitization (`/src/lib/sanitize.ts`)**:
+- `sanitizeString(input, maxLength)`: Strips null bytes and control characters (except `\n`, `\t`), trims, and enforces max length. Returns `''` for non-string input.
+- `isSafeUrl(url)`: Validates URL protocol is `http:` or `https:` only, preventing `javascript:`, `data:`, etc.
+
+**Novel Type Fix (`/src/types/index.ts`)**:
+- Added 6 missing fields to match Prisma schema: `coverPath`, `sourceUrl`, `sourceId`, `extraKeywords`, `seoTitle`, `seoDescription`, `seoKeywords`
+
+#### Performance Optimization
+
+**Dashboard API (`/api/dashboard/route.ts`)** — Verified:
+- Uses efficient `count()` + `aggregate(_sum)` + `findMany(take: 8)` + `groupBy()` queries
+- No N+1 issues; category is included via `include`
+
+**Prisma/DB (`/src/lib/db.ts`)** — Verified:
+- SQLite doesn't need connection pooling; current singleton pattern with `globalThis` caching is correct
+- Logging set to `error` + `warn` in dev, `error` only in prod
+
+**API Utilities (`/src/lib/api-utils.ts`)**:
+- `apiSuccess<T>(data, status?)`: Consistent success response wrapper
+- `apiError(message, status?)`: Consistent error response wrapper
+- `parsePagination(params)`: Safe pagination parsing with bounds (page ≥ 1, 1 ≤ pageSize ≤ 100)
+- `safeJson<T>(request)`: Type-safe JSON body parsing helper
+
+#### Verified (No Changes Needed)
+- Download API (`/api/download/[novelId]/route.ts`): GET-only route, no request body to validate; already has proper error handling and Content-Security-Policy header on responses
+- `next.config.ts`: Already has `poweredByHeader: false` and security headers (X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy, X-XSS-Protection)
+
+### Lint Result:
+- ✅ Zero errors
+---
+Task ID: audit-and-docker-finalization
+Agent: Main Agent (Continuation Session)
+Task: Complete remaining audit, Docker fixes, deployment docs, and E2E verification
+
+Work Log:
+- Ran `bun run lint` — zero errors confirmed
+- Audited and reinforced input validation on 10 API route files:
+  - `themes/route.ts` + `themes/[id]/route.ts`: Added name length (200), identifier format (alphanumeric/hyphen/underscore), description length (2000) validation
+  - `sites/route.ts` + `sites/[id]/route.ts`: Added domain length (500), name length (200), description/SEO fields length limits, themeId existence check, novelOffset/chapterOffset range validation (0-10000)
+  - `download-configs/route.ts` + `download-configs/[id]/route.ts`: Added name length (200), format enum validation (txt/epub), adInterval range (1-1000), adPosition enum (start/middle/end), content length limits (5000)
+  - `categories/route.ts`: Added name length (100), description length (1000), color HEX format validation
+  - `tags/route.ts`: Added name length (50), color HEX format validation
+  - `chapters/[id]/route.ts`: Added title length (200), sortOrder range (0-100000) validation
+  - `scrape-rules/[id]/route.ts` (PUT): Added scrapeMode/storageMode/dedupMode enum validation, threadCount range (1-20), delay range (0-60000ms), maxDelay >= minDelay cross-validation
+- Fixed Dockerfile:
+  - Added `apt-get install -y --no-install-recommends curl` in runner stage for HEALTHCHECK
+  - Added `node_modules/prisma` copy for Prisma CLI availability in production container
+  - Increased start_period from 30s to 40s for health check
+- Fixed `next.config.ts`: Changed `ignoreBuildErrors: true` back to `false`
+- Improved `docker-entrypoint.sh`:
+  - Added scraper process liveness check after startup
+  - Added graceful shutdown with 15-second timeout before force kill
+  - Added EXIT_CODE capture for better error reporting
+  - Made schema push non-fatal on existing databases
+- Updated `docker-compose.yml`: Added `TZ=Asia/Shanghai` timezone environment variable
+- Created comprehensive `DEPLOY.md` deployment documentation with:
+  - Quick Start (5 minutes), Production Deployment, Nginx reverse proxy config
+  - Common Operations (logs, restart, backup, restore, debugging)
+  - Troubleshooting guide, Architecture diagram, Performance tuning tips
+- Performed end-to-end verification via curl:
+  - All 10 API endpoints return 200 OK
+  - Health endpoint: database connected (62ms latency), version 1.0.0
+  - Homepage: 200 OK, 43KB HTML
+  - Security headers verified: X-Frame-Options, X-Content-Type-Options, Referrer-Policy, X-XSS-Protection
+  - Input validation verified: invalid identifier rejected, empty domain rejected, invalid format rejected
+- Lint: zero errors after all changes
+
+Stage Summary:
+- All API routes now have comprehensive input validation (length limits, enum validation, range checks, format validation, cross-field validation)
+- Docker build is production-ready: multi-stage, non-root user, curl for health checks, Prisma CLI available
+- DEPLOY.md provides complete step-by-step deployment instructions for Docker
+- All endpoints verified working correctly with proper security headers
+- Version: 1.0.0

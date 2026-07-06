@@ -1,6 +1,11 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const VALID_IDENTIFIER_RE = /^[a-zA-Z0-9_-]+$/;
+const MAX_NAME_LENGTH = 200;
+const MAX_DESCRIPTION_LENGTH = 2000;
+const MAX_IDENTIFIER_LENGTH = 100;
+
 // GET /api/themes/[id] - Get a single theme
 export async function GET(
   _request: NextRequest,
@@ -39,6 +44,23 @@ export async function PUT(
     if (name !== undefined && !name?.trim()) {
       return NextResponse.json({ error: "主题名称不能为空" }, { status: 400 });
     }
+    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `主题名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+    }
+    if (identifier !== undefined) {
+      if (!identifier?.trim()) {
+        return NextResponse.json({ error: "主题标识符不能为空" }, { status: 400 });
+      }
+      if (!VALID_IDENTIFIER_RE.test(identifier.trim())) {
+        return NextResponse.json({ error: "主题标识符只能包含字母、数字、下划线和短横线" }, { status: 400 });
+      }
+      if (identifier.trim().length > MAX_IDENTIFIER_LENGTH) {
+        return NextResponse.json({ error: `主题标识符不能超过${MAX_IDENTIFIER_LENGTH}个字符` }, { status: 400 });
+      }
+    }
+    if (description !== undefined && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      return NextResponse.json({ error: `主题描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
+    }
 
     const theme = await db.theme.update({
       where: { id },
@@ -58,9 +80,12 @@ export async function PUT(
     });
 
     return NextResponse.json(theme);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Update theme error:", error);
-    return NextResponse.json({ error: "更新主题失败" }, { status: 500 });
+    const msg = error instanceof Error && error.message.includes("Unique")
+      ? "主题名称或标识符已存在"
+      : "更新主题失败";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 

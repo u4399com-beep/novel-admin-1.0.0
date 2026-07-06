@@ -5,8 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
+    const pageSize = Math.min(Math.max(1, parseInt(searchParams.get("pageSize") || "20") || 20), 100);
     const search = searchParams.get("search") || "";
 
     const where: Record<string, unknown> = {};
@@ -53,6 +53,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "规则名称不能为空" }, { status: 400 });
     }
 
+    const validScrapeModes = ["incremental", "full"];
+    const validStorageModes = ["database", "file"];
+    const validDedupModes = ["url", "title", "both"];
+
+    const scrapeMode = validScrapeModes.includes(body.scrapeMode) ? body.scrapeMode : "incremental";
+    const storageMode = validStorageModes.includes(body.storageMode) ? body.storageMode : "database";
+    const dedupMode = validDedupModes.includes(body.dedupMode) ? body.dedupMode : "url";
+    const threadCount = Math.min(Math.max(1, Number(body.threadCount) || 3), 20);
+    const minDelay = Math.max(0, Number(body.minDelay) || 1000);
+    const maxDelay = Math.max(minDelay, Number(body.maxDelay) || 3000);
+
     const rule = await db.scrapeRule.create({
       data: {
         name: body.name.trim(),
@@ -89,17 +100,17 @@ export async function POST(request: NextRequest) {
         antiCrawlConfig: body.antiCrawlConfig ? JSON.stringify(body.antiCrawlConfig) : null,
 
         // 存储配置
-        storageMode: body.storageMode || "database",
+        storageMode,
         filePath: body.filePath || null,
         coverSavePath: body.coverSavePath || null,
 
         // 采集策略
-        scrapeMode: body.scrapeMode || "incremental",
-        threadCount: body.threadCount || 3,
-        minDelay: body.minDelay ?? 1000,
-        maxDelay: body.maxDelay ?? 3000,
+        scrapeMode,
+        threadCount,
+        minDelay,
+        maxDelay,
         enableShuffle: body.enableShuffle ?? false,
-        dedupMode: body.dedupMode || "url",
+        dedupMode,
 
         // 内容清洗
         cleanConfig: body.cleanConfig ? JSON.stringify(body.cleanConfig) : null,

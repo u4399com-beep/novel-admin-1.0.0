@@ -1,6 +1,10 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const MAX_NAME_LENGTH = 100;
+const MAX_DESCRIPTION_LENGTH = 1000;
+const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+
 export async function GET() {
   try {
     const categories = await db.category.findMany({
@@ -22,13 +26,22 @@ export async function POST(request: NextRequest) {
     if (!name?.trim()) {
       return NextResponse.json({ error: "分类名称不能为空" }, { status: 400 });
     }
+    if (name.trim().length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `分类名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+    }
+    if (description && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      return NextResponse.json({ error: `分类描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
+    }
+    if (color && !VALID_COLOR_RE.test(color)) {
+      return NextResponse.json({ error: "颜色格式无效，请使用HEX格式（如#6b7280）" }, { status: 400 });
+    }
 
     const category = await db.category.create({
       data: {
         name: name.trim(),
         description: description?.trim() || null,
         color: color || "#6b7280",
-        sortOrder: sortOrder || 0,
+        sortOrder: Math.max(0, Math.floor(Number(sortOrder) || 0)),
       },
       include: { _count: { select: { novels: true } } },
     });
@@ -54,14 +67,23 @@ export async function PUT(request: NextRequest) {
     if (name !== undefined && !name?.trim()) {
       return NextResponse.json({ error: "分类名称不能为空" }, { status: 400 });
     }
+    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
+      return NextResponse.json({ error: `分类名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+    }
+    if (description !== undefined && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      return NextResponse.json({ error: `分类描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
+    }
+    if (color !== undefined && color && !VALID_COLOR_RE.test(color)) {
+      return NextResponse.json({ error: "颜色格式无效，请使用HEX格式（如#6b7280）" }, { status: 400 });
+    }
 
     const category = await db.category.update({
       where: { id },
       data: {
         ...(name !== undefined && { name: name.trim() }),
         ...(description !== undefined && { description: description?.trim() || null }),
-        ...(color !== undefined && { color }),
-        ...(sortOrder !== undefined && { sortOrder }),
+        ...(color !== undefined && { color: color || "#6b7280" }),
+        ...(sortOrder !== undefined && { sortOrder: Math.max(0, Math.floor(Number(sortOrder) || 0)) }),
       },
       include: { _count: { select: { novels: true } } },
     });

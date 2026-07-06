@@ -19,7 +19,7 @@ function generateConfusionBlock(confusionText: string): string {
     .split("\n")
     .filter((l) => l.trim())
     .map((l) => l.trim());
-  // Pick 1-2 random lines
+  if (lines.length === 0) return "";
   const count = Math.min(lines.length, Math.floor(Math.random() * 2) + 1);
   const shuffled = [...lines].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count).join("\n");
@@ -56,6 +56,10 @@ export async function GET(
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
     }
 
+    if (novel.chapters.length === 0) {
+      return NextResponse.json({ error: "该小说暂无章节" }, { status: 400 });
+    }
+
     // Fetch download config
     let config = null;
     if (configId) {
@@ -82,22 +86,24 @@ export async function GET(
     };
 
     if (format === "txt") {
-      let textContent = "";
-
-      // Insert site info at beginning
-      if (config?.insertSiteInfo && config.siteInfoContent) {
-        textContent +=
-          replaceVars(config.siteInfoContent, vars) + "\n\n";
-      }
+      const chapterBlocks: string[] = [];
 
       // Process each chapter
       for (let i = 0; i < novel.chapters.length; i++) {
         const chapter = novel.chapters[i];
         const chapterTitle = chapter.title;
         const chapterVars = { ...vars, chapterTitle };
+        let block = "";
+
+        // Insert ad at "start" position before this chapter if needed
+        if (config?.insertAd && config.adContent && config.adInterval > 0 && (i + 1) % config.adInterval === 0) {
+          if (config.adPosition === "start") {
+            block += `\n${replaceVars(config.adContent, chapterVars)}\n\n`;
+          }
+        }
 
         // Chapter title
-        textContent += `\n${chapterTitle}\n\n`;
+        block += `${chapterTitle}\n\n`;
 
         // Chapter content
         if (chapter.content) {
@@ -105,37 +111,53 @@ export async function GET(
             .split("\n")
             .filter((p) => p.trim());
 
+          // Insert ad at "middle" position
+          let middleAdInserted = false;
+          const midPoint = Math.floor(paragraphs.length / 2);
+
           for (let j = 0; j < paragraphs.length; j++) {
-            textContent += paragraphs[j] + "\n\n";
+            // Insert ad in the middle of content
+            if (
+              !middleAdInserted &&
+              config?.insertAd &&
+              config.adContent &&
+              config.adInterval > 0 &&
+              (i + 1) % config.adInterval === 0 &&
+              config.adPosition === "middle" &&
+              j === midPoint
+            ) {
+              block += `\n${replaceVars(config.adContent, chapterVars)}\n\n`;
+              middleAdInserted = true;
+            }
+
+            block += paragraphs[j] + "\n\n";
 
             // Insert confusion text between paragraphs
             if (config?.insertConfusion && config.confusionText && j < paragraphs.length - 1) {
-              textContent += generateConfusionBlock(config.confusionText) + "\n\n";
+              block += generateConfusionBlock(config.confusionText) + "\n\n";
             }
           }
         }
 
-        // Insert ad at configured interval and position
-        if (config?.insertAd && config.adContent && config.adInterval > 0) {
-          if ((i + 1) % config.adInterval === 0) {
-            const adText = replaceVars(config.adContent, chapterVars);
-            if (config.adPosition === "start") {
-              textContent =
-                `\n${adText}\n\n${chapterTitle}\n\n` +
-                textContent.slice((`\n${chapterTitle}\n\n`).length);
-            } else if (config.adPosition === "middle") {
-              // Insert ad roughly in the middle of the chapter content
-              const lines = textContent.split("\n");
-              const midPoint = Math.floor(lines.length / 2);
-              lines.splice(midPoint, 0, "", adText, "");
-              textContent = lines.join("\n");
-            } else {
-              // end (default)
-              textContent += `\n${adText}\n\n`;
-            }
+        // Insert ad at "end" position after this chapter
+        if (config?.insertAd && config.adContent && config.adInterval > 0 && (i + 1) % config.adInterval === 0) {
+          if (config.adPosition === "end") {
+            block += `\n${replaceVars(config.adContent, chapterVars)}\n\n`;
           }
         }
+
+        chapterBlocks.push(block);
       }
+
+      // Assemble final text
+      let textContent = "";
+
+      // Insert site info at beginning
+      if (config?.insertSiteInfo && config.siteInfoContent) {
+        textContent += replaceVars(config.siteInfoContent, vars) + "\n\n";
+      }
+
+      textContent += chapterBlocks.join("\n");
 
       // Insert site info at end
       if (config?.insertSiteInfo && config.siteInfoContent) {
@@ -151,7 +173,7 @@ export async function GET(
       }
 
       // Sanitize filename
-      fileName = fileName.replace(/[<>:"/\\|?*]/g, "_");
+      fileName = fileName.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim();
 
       // Record file in NovelFile
       await db.novelFile.create({
@@ -170,6 +192,7 @@ export async function GET(
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
           "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+          "Content-Security-Policy": "default-src 'none'",
         },
       });
     }

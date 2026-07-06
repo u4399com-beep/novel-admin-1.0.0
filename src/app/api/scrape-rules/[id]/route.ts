@@ -1,6 +1,13 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const VALID_SCRAPE_MODES = ["incremental", "full"];
+const VALID_STORAGE_MODES = ["database", "file"];
+const VALID_DEDUP_MODES = ["url", "title", "both"];
+const MAX_THREAD = 20;
+const MIN_THREAD = 1;
+const MAX_DELAY = 60000;
+
 // GET /api/scrape-rules/[id] - Get a single scrape rule
 export async function GET(
   _request: NextRequest,
@@ -37,6 +44,42 @@ export async function PUT(
 
     if (body.name !== undefined && !body.name?.trim()) {
       return NextResponse.json({ error: "规则名称不能为空" }, { status: 400 });
+    }
+
+    // Validate enums and ranges
+    if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode)) {
+      return NextResponse.json({ error: `采集模式只能是: ${VALID_SCRAPE_MODES.join(", ")}` }, { status: 400 });
+    }
+    if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode)) {
+      return NextResponse.json({ error: `存储模式只能是: ${VALID_STORAGE_MODES.join(", ")}` }, { status: 400 });
+    }
+    if (body.dedupMode !== undefined && !VALID_DEDUP_MODES.includes(body.dedupMode)) {
+      return NextResponse.json({ error: `去重模式只能是: ${VALID_DEDUP_MODES.join(", ")}` }, { status: 400 });
+    }
+    if (body.threadCount !== undefined) {
+      const tc = Math.floor(Number(body.threadCount) || 3);
+      if (tc < MIN_THREAD || tc > MAX_THREAD) {
+        return NextResponse.json({ error: `线程数必须在${MIN_THREAD}-${MAX_THREAD}之间` }, { status: 400 });
+      }
+    }
+    if (body.minDelay !== undefined) {
+      const md = Math.floor(Number(body.minDelay) || 1000);
+      if (md < 0 || md > MAX_DELAY) {
+        return NextResponse.json({ error: `最小延迟必须在0-${MAX_DELAY}ms之间` }, { status: 400 });
+      }
+    }
+    if (body.maxDelay !== undefined) {
+      const mx = Math.floor(Number(body.maxDelay) || 3000);
+      if (mx < 0 || mx > MAX_DELAY) {
+        return NextResponse.json({ error: `最大延迟必须在0-${MAX_DELAY}ms之间` }, { status: 400 });
+      }
+    }
+
+    // Ensure maxDelay >= minDelay if both provided
+    const minD = body.minDelay !== undefined ? Math.max(0, Math.floor(Number(body.minDelay) || 1000)) : undefined;
+    const maxD = body.maxDelay !== undefined ? Math.max(0, Math.floor(Number(body.maxDelay) || 3000)) : undefined;
+    if (minD !== undefined && maxD !== undefined && maxD < minD) {
+      return NextResponse.json({ error: "最大延迟不能小于最小延迟" }, { status: 400 });
     }
 
     const rule = await db.scrapeRule.update({
@@ -102,9 +145,15 @@ export async function PUT(
 
         // 采集策略
         ...(body.scrapeMode !== undefined && { scrapeMode: body.scrapeMode }),
-        ...(body.threadCount !== undefined && { threadCount: body.threadCount }),
-        ...(body.minDelay !== undefined && { minDelay: body.minDelay }),
-        ...(body.maxDelay !== undefined && { maxDelay: body.maxDelay }),
+        ...(body.threadCount !== undefined && {
+          threadCount: Math.min(Math.max(MIN_THREAD, Math.floor(Number(body.threadCount) || 3)), MAX_THREAD),
+        }),
+        ...(body.minDelay !== undefined && {
+          minDelay: Math.max(0, Math.floor(Number(body.minDelay) || 1000)),
+        }),
+        ...(body.maxDelay !== undefined && {
+          maxDelay: Math.max(0, Math.floor(Number(body.maxDelay) || 3000)),
+        }),
         ...(body.enableShuffle !== undefined && { enableShuffle: body.enableShuffle }),
         ...(body.dedupMode !== undefined && { dedupMode: body.dedupMode }),
 
