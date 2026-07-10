@@ -144,6 +144,11 @@ async function fetchPage(
   url: string,
   antiCrawl?: AntiCrawl
 ): Promise<{ html: string; finalUrl: string }> {
+  // SSRF protection
+  if (!isSafeTargetUrl(url)) {
+    throw new Error(`Blocked: target URL is not allowed (${url})`);
+  }
+
   const headers: Record<string, string> = {
     Accept:
       "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -875,8 +880,61 @@ function handleClean(body: CleanRequest) {
   };
 }
 
+// SSRF protection: block internal/private IPs
+function isSafeTargetUrl(targetUrl: string): boolean {
+  try {
+    const parsed = new URL(targetUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const hostname = parsed.hostname.toLowerCase();
+    // Block private/reserved IPs and localhost
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname.endsWith('.local') ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname) ||
+      hostname.startsWith('169.254.') ||
+      hostname.startsWith('127.') ||
+      hostname === '[::1]'
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Path traversal protection
+function isSafeSavePath(savePath: string): boolean {
+  // Must be an absolute path
+  if (!savePath.startsWith('/')) return false;
+  // Block path traversal
+  if (savePath.includes('..')) return false;
+  // Must end with .webp
+  if (!savePath.endsWith('.webp')) return false;
+  // Only allow saving to public/covers directory
+  const normalized = savePath.replace(/\/+/g, '/');
+  const allowedPrefix = '/app/public/covers/';
+  if (!normalized.startsWith(allowedPrefix)) return false;
+  return true;
+}
+
 async function handleDownloadCover(body: DownloadCoverRequest) {
   const { url, savePath } = body;
+
+  // Validate URL for SSRF protection
+  if (!isSafeTargetUrl(url)) {
+    throw new Error('Invalid or blocked target URL');
+  }
+
+  // Validate savePath for path traversal protection
+  if (!isSafeSavePath(savePath)) {
+    throw new Error('Invalid save path');
+  }
 
   console.log(`  [Cover] Downloading from ${url} to ${savePath}`);
 
@@ -1762,11 +1820,17 @@ export function startServer(port: number = 3099) {
       const path = url.pathname;
       const method = req.method;
 
-      // CORS headers
+      // CORS headers - restrict to frontend origin only
+      const allowedOrigins = [
+        process.env.ALLOWED_ORIGIN || "http://localhost:3000",
+      ];
+      const requestOrigin = req.headers.get("origin") || "";
+      const corsOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
       const corsHeaders = {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": corsOrigin,
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "86400",
       };
 
       // Handle CORS preflight
@@ -1890,8 +1954,6 @@ export function startServer(port: number = 3099) {
         return Response.json(
           {
             error: "Internal server error",
-            message: String(err),
-            endpoint: path,
           },
           { status: 500, headers: jsonHeaders }
         );
@@ -1918,9 +1980,16 @@ console.log(`[Config] PORT: ${PORT}`);
 startServer(PORT);
 
 // Graceful shutdown
+let isShuttingDown = false;
 const shutdown = (signal: string) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
   console.log(`\n[${new Date().toISOString()}] Received ${signal}, shutting down gracefully...`);
-  process.exit(0);
+  // Allow 5 seconds for in-flight requests to complete
+  setTimeout(() => {
+    console.log(`[${new Date().toISOString()}] Forced shutdown after grace period.`);
+    process.exit(0);
+  }, 5000);
 };
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));

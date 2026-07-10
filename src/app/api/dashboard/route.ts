@@ -1,27 +1,28 @@
 import { db } from "@/lib/db";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
-    const totalNovels = await db.novel.count();
-    const totalChapters = await db.chapter.count();
-    const totalWords = await db.novel.aggregate({ _sum: { wordCount: true } });
-    const totalCategories = await db.category.count();
-
-    const recentNovels = await db.novel.findMany({
-      take: 8,
-      orderBy: { updatedAt: "desc" },
-      include: {
-        category: true,
-        _count: { select: { chapters: true } },
-      },
-    });
-
-    // Status distribution
-    const statusGroups = await db.novel.groupBy({
-      by: ["status"],
-      _count: { status: true },
-    });
+    // Parallelize all independent database queries
+    const [totalNovels, totalChapters, totalWords, totalCategories, recentNovels, statusGroups] =
+      await Promise.all([
+        db.novel.count(),
+        db.chapter.count(),
+        db.novel.aggregate({ _sum: { wordCount: true } }),
+        db.category.count(),
+        db.novel.findMany({
+          take: 8,
+          orderBy: { updatedAt: "desc" },
+          include: {
+            category: true,
+            _count: { select: { chapters: true } },
+          },
+        }),
+        db.novel.groupBy({
+          by: ["status"],
+          _count: { status: true },
+        }),
+      ]);
 
     const statusDistribution = statusGroups.map((g) => ({
       status: g.status,

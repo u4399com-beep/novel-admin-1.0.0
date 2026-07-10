@@ -1,18 +1,37 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET /api/novels/[id]/chapters - List chapters for a novel
+const MAX_SEARCH_LENGTH = 200;
+
+// GET /api/novels/[id]/chapters - List chapters for a novel (with pagination)
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: novelId } = await params;
-    const chapters = await db.chapter.findMany({
-      where: { novelId },
-      orderBy: { sortOrder: "asc" },
+    const { searchParams } = new URL(request.url);
+
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
+    const pageSize = Math.min(Math.max(1, parseInt(searchParams.get("pageSize") || "100") || 100), 500);
+
+    const [chapters, total] = await Promise.all([
+      db.chapter.findMany({
+        where: { novelId },
+        orderBy: { sortOrder: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      db.chapter.count({ where: { novelId } }),
+    ]);
+
+    return NextResponse.json({
+      chapters,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
     });
-    return NextResponse.json(chapters);
   } catch (error) {
     console.error("List chapters error:", error);
     return NextResponse.json({ error: "获取章节列表失败" }, { status: 500 });
@@ -33,29 +52,36 @@ export async function POST(
       return NextResponse.json({ error: "章节标题不能为空" }, { status: 400 });
     }
 
-    // Get the max sortOrder for this novel
-    const maxOrder = await db.chapter.findFirst({
-      where: { novelId },
-      orderBy: { sortOrder: "desc" },
-      select: { sortOrder: true },
-    });
+    const trimmedTitle = title.trim().slice(0, 200);
+    const trimmedContent = content ? String(content).slice(0, 500000) : null;
+    const wordCount = trimmedContent ? trimmedContent.length : 0;
 
-    const wordCount = content ? content.length : 0;
+    // Use transaction to ensure atomicity
+    const chapter = await db.$transaction(async (tx) => {
+      // Get the max sortOrder for this novel
+      const maxOrder = await tx.chapter.findFirst({
+        where: { novelId },
+        orderBy: { sortOrder: "desc" },
+        select: { sortOrder: true },
+      });
 
-    const chapter = await db.chapter.create({
-      data: {
-        title: title.trim(),
-        content: content || null,
-        wordCount,
-        sortOrder: (maxOrder?.sortOrder || 0) + 1,
-        novelId,
-      },
-    });
+      const newChapter = await tx.chapter.create({
+        data: {
+          title: trimmedTitle,
+          content: trimmedContent,
+          wordCount,
+          sortOrder: (maxOrder?.sortOrder || 0) + 1,
+          novelId,
+        },
+      });
 
-    // Update novel word count
-    await db.novel.update({
-      where: { id: novelId },
-      data: { wordCount: { increment: wordCount } },
+      // Update novel word count atomically
+      await tx.novel.update({
+        where: { id: novelId },
+        data: { wordCount: { increment: wordCount } },
+      });
+
+      return newChapter;
     });
 
     return NextResponse.json(chapter, { status: 201 });

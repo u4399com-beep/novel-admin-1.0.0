@@ -78,7 +78,9 @@ export function NovelListView() {
     fetch('/api/categories')
       .then((r) => r.json())
       .then((data: Category[]) => setCategories(data))
-      .catch(() => {});
+      .catch((err) => {
+        console.error('获取分类列表失败:', err);
+      });
   }, []);
 
   // Fetch novels

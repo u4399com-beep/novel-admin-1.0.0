@@ -16,7 +16,7 @@ if [ ! -f "/app/data/db/custom.db" ]; then
     echo "[Init] Database created successfully."
 else
     echo "[Init] Database exists, checking schema updates..."
-    cd /app && bunx prisma db push --skip-generate --accept-data-loss 2>&1 || echo "[Init] Schema push completed with warnings (non-fatal)."
+    cd /app && bunx prisma db push --skip-generate 2>&1 || echo "[Init] Schema push completed with warnings (non-fatal)."
     echo "[Init] Schema check complete."
 fi
 

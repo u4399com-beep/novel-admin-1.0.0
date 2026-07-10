@@ -766,3 +766,45 @@ Stage Summary:
 - Lint: zero errors
 - All new features are functional: Cmd+K palette, dark mode toggle, real-time clock, view transitions
 - Homepage size: 43KB → 51KB (new components)
+
+---
+Task ID: independent-audit-round1
+Agent: Independent Audit Agent (general-purpose) + Main Agent
+Task: 对小说管理系统进行独立全量代码审计并修复所有发现的问题
+
+Work Log:
+- 派发独立 general-purpose Agent 对项目进行全面审计（安全/API/前端/数据库/配置/性能 6 大维度）
+- 审计发现 5 个严重问题、10 个中等问题、8 个轻微问题，总体评分 5.5/10
+- 🔴 修复1: 启用 middleware.ts（从 .bak 重命名为正式文件），增强速率限制+请求体大小检查(1MB)+自动清理过期IP条目
+- 🔴 修复2: Scraper 服务安全加固：
+  - CORS 从 `*` 限制为仅允许配置的前端来源
+  - 添加 SSRF 防护函数 `isSafeTargetUrl()`（阻止内网IP/localhost/169.254等）
+  - 在 `fetchPage()` 和 `handleDownloadCover()` 入口添加 SSRF 校验
+  - 添加路径穿越防护函数 `isSafeSavePath()`（限制只能写入 /app/public/covers/，禁止 .. 穿越）
+  - 修复错误信息泄露（移除 message 和 endpoint 字段）
+  - 改进优雅关闭（5秒等待期+防重复触发）
+- 🟡 修复3: API 竞态条件修复：
+  - `/api/novels/[id]/chapters` POST: 创建章节+更新字数使用 $transaction
+  - `/api/chapters/[id]` PUT: 读取旧章节+更新新章节+更新字数使用 $transaction
+  - `/api/chapters/[id]` DELETE: 删除章节+更新字数使用 $transaction
+  - `/api/novels/[id]` PUT: 删除旧标签+创建新标签+更新小说使用 $transaction
+- 🟡 修复4: 外键存在性校验：
+  - 创建/更新小说时校验 categoryId 存在性（不存在返回 400）
+  - 创建/更新小说时校验 tagId 批量存在性（数量不匹配返回 400）
+  - coverUrl 使用 isSafeUrl() 校验协议（仅允许 http/https）
+- 🟡 修复5: 搜索和状态参数校验：
+  - `/api/novels` GET: search 参数限制 200 字符
+  - `/api/novels` GET: status 参数白名单校验
+  - `/api/scrape-tasks` GET: status 参数白名单校验
+  - `/api/novels/[id]/chapters` GET: 新增分页支持（默认100条，最大500条）
+- 🟡 修复6: 添加 CSP + HSTS + Permissions-Policy 安全头
+- 🟡 修复7: Dashboard API 从 5 次串行查询改为 Promise.all 并行
+- 🟡 修复8: docker-entrypoint.sh 移除 --accept-data-loss 标志
+- 🟢 修复9: Zod 导入统一为 zod/v4、空 catch 块添加 console.error
+
+Stage Summary:
+- 审计评分: 5.5/10 → 修复后预估 7.5/10
+- 修改文件: 12 个（middleware.ts 新建、next.config.ts、docker-entrypoint.sh、scraper-service/index.ts、4个 API route、NovelListView.tsx、NovelFormDialog.tsx、worklog.md）
+- Lint: 零错误
+- 验证: Health 200、Homepage 200、CSP/HSTS/Permissions-Policy 全部生效、X-Request-ID 已添加、无效 status 返回 400、Dashboard 并行查询正常
+- 未修复项（需架构决策）: 零认证（需产品决策是否启用 NextAuth）、Caddyfile 动态端口转发（平台限制不可修改）

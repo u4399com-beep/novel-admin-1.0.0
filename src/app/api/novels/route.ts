@@ -1,5 +1,9 @@
 import { db } from "@/lib/db";
+import { isSafeUrl } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
+
+const VALID_STATUSES = ["ongoing", "completed", "hiatus"];
+const MAX_SEARCH_LENGTH = 200;
 
 // GET /api/novels - List novels with pagination, search, filter
 export async function GET(request: NextRequest) {
@@ -7,10 +11,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
     const pageSize = Math.min(Math.max(1, parseInt(searchParams.get("pageSize") || "12") || 12), 100);
-    const search = searchParams.get("search") || "";
+    const rawSearch = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
     const categoryId = searchParams.get("categoryId") || "";
     const tagId = searchParams.get("tagId") || "";
+
+    // Validate search length
+    const search = rawSearch.length > MAX_SEARCH_LENGTH
+      ? rawSearch.slice(0, MAX_SEARCH_LENGTH)
+      : rawSearch;
+
+    // Validate status enum
+    if (status && !VALID_STATUSES.includes(status)) {
+      return NextResponse.json({ error: "无效的状态筛选值" }, { status: 400 });
+    }
 
     const where: Record<string, unknown> = {};
 
@@ -69,8 +83,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
     }
 
-    const validStatuses = ["ongoing", "completed", "hiatus"];
-    const novelStatus = validStatuses.includes(status) ? status : "ongoing";
+    const novelStatus = VALID_STATUSES.includes(status) ? status : "ongoing";
+
+    // Validate categoryId existence if provided
+    if (categoryId) {
+      const categoryExists = await db.category.findUnique({ where: { id: categoryId } });
+      if (!categoryExists) {
+        return NextResponse.json({ error: "指定的分类不存在" }, { status: 400 });
+      }
+    }
+
+    // Validate tag IDs existence if provided
+    if (tags?.length) {
+      const tagCount = await db.tag.count({
+        where: { id: { in: tags } },
+      });
+      if (tagCount !== tags.length) {
+        return NextResponse.json({ error: "部分标签ID不存在" }, { status: 400 });
+      }
+    }
+
+    // Validate coverUrl protocol
+    if (coverUrl && !isSafeUrl(coverUrl)) {
+      return NextResponse.json({ error: "封面URL格式不合法，仅允许http/https协议" }, { status: 400 });
+    }
 
     const novel = await db.novel.create({
       data: {

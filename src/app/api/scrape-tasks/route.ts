@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const VALID_STATUSES = ["pending", "running", "completed", "failed", "cancelled"];
+
 // GET /api/scrape-tasks - List all scrape tasks
 export async function GET(request: NextRequest) {
   try {
@@ -11,6 +13,9 @@ export async function GET(request: NextRequest) {
 
     const where: Record<string, unknown> = {};
     if (status) {
+      if (!VALID_STATUSES.includes(status)) {
+        return NextResponse.json({ error: "无效的任务状态筛选值" }, { status: 400 });
+      }
       where.status = status;
     }
 
