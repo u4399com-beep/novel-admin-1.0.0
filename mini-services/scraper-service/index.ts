@@ -511,6 +511,11 @@ const AD_CSS_SELECTORS = [
   '[id*="guanggao"]',
 ];
 
+/** Escape special regex characters in a string */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function cleanHtml(html: string, config: CleanRequest["config"]): string {
   const $ = cheerio.load(html);
 
@@ -543,10 +548,20 @@ function cleanHtml(html: string, config: CleanRequest["config"]): string {
   }
 
   for (const pattern of allAdPatterns) {
-    // Remove lines containing ad patterns
+    // Remove LINES that are predominantly ad content.
+    // A line is considered an "ad line" if the ad pattern appears in it
+    // AND the line (excluding the match) has less than 10 characters of real content.
+    // This prevents accidentally removing a full paragraph that merely mentions an ad word.
     const lines = text.split("\n");
     text = lines
-      .filter((line) => !line.includes(pattern))
+      .filter((line) => {
+        if (!line.includes(pattern)) return true;
+        // Line contains ad pattern — check if it's a standalone ad line
+        const stripped = line.replace(new RegExp(escapeRegExp(pattern), "gi"), "").trim();
+        // If the remaining content after removing the ad pattern is very short,
+        // it's likely a dedicated ad line
+        return stripped.length >= 10;
+      })
       .join("\n");
   }
 
