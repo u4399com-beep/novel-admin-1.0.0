@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { parsePagination } from "@/lib/api-utils";
 
 const VALID_STATUSES = ["pending", "running", "completed", "failed", "cancelled"];
 
@@ -7,8 +8,7 @@ const VALID_STATUSES = ["pending", "running", "completed", "failed", "cancelled"
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
-    const pageSize = Math.min(Math.max(1, parseInt(searchParams.get("pageSize") || "20") || 20), 100);
+    const { page, pageSize, skip } = parsePagination(searchParams);
     const status = searchParams.get("status") || "";
 
     const where: Record<string, unknown> = {};
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const [tasks, total] = await Promise.all([
       db.scrapeTask.findMany({
         where,
-        skip: (page - 1) * pageSize,
+        skip,
         take: pageSize,
         orderBy: { createdAt: "desc" },
         include: {

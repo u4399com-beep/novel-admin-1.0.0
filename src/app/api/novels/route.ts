@@ -1,25 +1,19 @@
 import { db } from "@/lib/db";
-import { isSafeUrl } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
+import { parsePagination, sanitizeField } from "@/lib/api-utils";
 
-const VALID_STATUSES = ["ongoing", "completed", "hiatus"];
 const MAX_SEARCH_LENGTH = 200;
+const VALID_STATUSES = ["ongoing", "completed", "hiatus"];
 
 // GET /api/novels - List novels with pagination, search, filter
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
-    const pageSize = Math.min(Math.max(1, parseInt(searchParams.get("pageSize") || "12") || 12), 100);
-    const rawSearch = searchParams.get("search") || "";
+    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 12 });
+    const search = sanitizeField(searchParams.get("search"), MAX_SEARCH_LENGTH);
     const status = searchParams.get("status") || "";
     const categoryId = searchParams.get("categoryId") || "";
     const tagId = searchParams.get("tagId") || "";
-
-    // Validate search length
-    const search = rawSearch.length > MAX_SEARCH_LENGTH
-      ? rawSearch.slice(0, MAX_SEARCH_LENGTH)
-      : rawSearch;
 
     // Validate status enum
     if (status && !VALID_STATUSES.includes(status)) {
@@ -48,7 +42,7 @@ export async function GET(request: NextRequest) {
     const [novels, total] = await Promise.all([
       db.novel.findMany({
         where,
-        skip: (page - 1) * pageSize,
+        skip,
         take: pageSize,
         orderBy: { updatedAt: "desc" },
         include: {
@@ -79,7 +73,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
-    if (!title?.trim()) {
+    const trimmedTitle = sanitizeField(title, 200);
+    if (!trimmedTitle) {
       return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
     }
 
@@ -104,15 +99,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate coverUrl protocol
-    if (coverUrl && !isSafeUrl(coverUrl)) {
-      return NextResponse.json({ error: "封面URL格式不合法，仅允许http/https协议" }, { status: 400 });
+    if (coverUrl) {
+      const { isSafeUrl } = await import("@/lib/sanitize");
+      if (!isSafeUrl(coverUrl)) {
+        return NextResponse.json({ error: "封面URL格式不合法，仅允许http/https协议" }, { status: 400 });
+      }
     }
 
     const novel = await db.novel.create({
       data: {
-        title: title.trim().slice(0, 200),
-        author: (author?.trim() || "佚名").slice(0, 100),
-        description: description?.trim()?.slice(0, 5000) || null,
+        title: trimmedTitle,
+        author: sanitizeField(author, 100) || "佚名",
+        description: sanitizeField(description, 5000) || null,
         coverUrl: coverUrl?.trim() || null,
         status: novelStatus,
         categoryId: categoryId || null,

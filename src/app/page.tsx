@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, BookOpen, Search, Sun, Moon } from 'lucide-react';
+import { useSession, signOut } from 'next-auth/react';
+import { Plus, BookOpen, Search, Sun, Moon, LogOut } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ const viewVariants = {
 };
 
 export default function Home() {
+  const { data: session, status } = useSession();
   const {
     currentView,
     setEditingNovel,
@@ -71,6 +73,18 @@ export default function Home() {
   // ─── Dark mode toggle ─────────────────────────────────────────────────
   const { theme, setTheme } = useTheme();
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+  // ─── Auth loading state ───────────────────────────────────────────────
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <BookOpen className="h-8 w-8 text-primary animate-pulse" />
+          <p className="text-sm text-muted-foreground">加载中...</p>
+        </div>
+      </div>
+    );
+  }
 
   // ─── View renderer ────────────────────────────────────────────────────
   const renderView = () => {
@@ -150,6 +164,18 @@ export default function Home() {
               <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
               <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
             </Button>
+
+            {/* Logout button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              aria-label="退出登录"
+              title="退出登录"
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
         </header>
 
@@ -173,6 +199,9 @@ export default function Home() {
         {/* Footer */}
         <footer className="mt-auto border-t bg-background px-4 py-3 text-center text-xs text-muted-foreground">
           小说管理系统 v1.0.0 · 基于 Next.js 16 构建
+          {session?.user?.name && (
+            <span className="ml-2">· 当前用户: {session.user.name}</span>
+          )}
         </footer>
       </main>
 

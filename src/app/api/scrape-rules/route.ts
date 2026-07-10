@@ -1,13 +1,13 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { parsePagination, sanitizeField } from "@/lib/api-utils";
 
 // GET /api/scrape-rules - List all scrape rules with pagination and search
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
-    const pageSize = Math.min(Math.max(1, parseInt(searchParams.get("pageSize") || "20") || 20), 100);
-    const search = searchParams.get("search") || "";
+    const { page, pageSize, skip } = parsePagination(searchParams);
+    const search = sanitizeField(searchParams.get("search"), 200);
 
     const where: Record<string, unknown> = {};
 
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const [rules, total] = await Promise.all([
       db.scrapeRule.findMany({
         where,
-        skip: (page - 1) * pageSize,
+        skip,
         take: pageSize,
         orderBy: { updatedAt: "desc" },
         include: {
@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    if (!body.name?.trim()) {
+    const name = sanitizeField(body.name, 200);
+    if (!name) {
       return NextResponse.json({ error: "规则名称不能为空" }, { status: 400 });
     }
 
@@ -66,8 +67,8 @@ export async function POST(request: NextRequest) {
 
     const rule = await db.scrapeRule.create({
       data: {
-        name: body.name.trim(),
-        description: body.description?.trim() || null,
+        name,
+        description: sanitizeField(body.description, 2000) || null,
         enabled: body.enabled ?? true,
 
         // 列表页配置

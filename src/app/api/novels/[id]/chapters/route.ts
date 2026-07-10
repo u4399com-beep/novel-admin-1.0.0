@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-
-const MAX_SEARCH_LENGTH = 200;
+import { parsePagination, sanitizeField } from "@/lib/api-utils";
 
 // GET /api/novels/[id]/chapters - List chapters for a novel (with pagination)
 export async function GET(
@@ -11,15 +10,13 @@ export async function GET(
   try {
     const { id: novelId } = await params;
     const { searchParams } = new URL(request.url);
-
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
-    const pageSize = Math.min(Math.max(1, parseInt(searchParams.get("pageSize") || "100") || 100), 500);
+    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 100, maxPageSize: 500 });
 
     const [chapters, total] = await Promise.all([
       db.chapter.findMany({
         where: { novelId },
         orderBy: { sortOrder: "asc" },
-        skip: (page - 1) * pageSize,
+        skip,
         take: pageSize,
       }),
       db.chapter.count({ where: { novelId } }),
@@ -48,12 +45,12 @@ export async function POST(
     const body = await request.json();
     const { title, content } = body;
 
-    if (!title?.trim()) {
+    const trimmedTitle = sanitizeField(title, 200);
+    if (!trimmedTitle) {
       return NextResponse.json({ error: "章节标题不能为空" }, { status: 400 });
     }
 
-    const trimmedTitle = title.trim().slice(0, 200);
-    const trimmedContent = content ? String(content).slice(0, 500000) : null;
+    const trimmedContent = content ? sanitizeField(content, 500000) : null;
     const wordCount = trimmedContent ? trimmedContent.length : 0;
 
     // Use transaction to ensure atomicity
@@ -76,10 +73,12 @@ export async function POST(
       });
 
       // Update novel word count atomically
-      await tx.novel.update({
-        where: { id: novelId },
-        data: { wordCount: { increment: wordCount } },
-      });
+      if (wordCount > 0) {
+        await tx.novel.update({
+          where: { id: novelId },
+          data: { wordCount: { increment: wordCount } },
+        });
+      }
 
       return newChapter;
     });

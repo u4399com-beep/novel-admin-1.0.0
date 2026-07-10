@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { sanitizeField } from "@/lib/api-utils";
 import { isSafeUrl } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -41,8 +42,11 @@ export async function PUT(
     const body = await request.json();
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
-    if (title !== undefined && !title?.trim()) {
-      return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
+    if (title !== undefined) {
+      const trimmedTitle = sanitizeField(title, 200);
+      if (!trimmedTitle) {
+        return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
+      }
     }
 
     if (status !== undefined && !VALID_STATUSES.includes(status)) {
@@ -82,9 +86,9 @@ export async function PUT(
       return tx.novel.update({
         where: { id },
         data: {
-          ...(title !== undefined && { title: title.trim().slice(0, 200) }),
-          ...(author !== undefined && { author: (author?.trim() || "佚名").slice(0, 100) }),
-          ...(description !== undefined && { description: description?.trim()?.slice(0, 5000) || null }),
+          ...(title !== undefined && { title: sanitizeField(title, 200) }),
+          ...(author !== undefined && { author: sanitizeField(author, 100) || "佚名" }),
+          ...(description !== undefined && { description: sanitizeField(description, 5000) || null }),
           ...(coverUrl !== undefined && { coverUrl: coverUrl || null }),
           ...(status !== undefined && { status }),
           ...(categoryId !== undefined && { categoryId: categoryId || null }),

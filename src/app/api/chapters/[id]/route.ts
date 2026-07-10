@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 
 const MAX_TITLE_LENGTH = 200;
@@ -38,11 +39,11 @@ export async function PUT(
     const body = await request.json();
     const { title, content, sortOrder } = body;
 
-    if (title !== undefined && !title?.trim()) {
-      return NextResponse.json({ error: "章节标题不能为空" }, { status: 400 });
-    }
-    if (title !== undefined && title.trim().length > MAX_TITLE_LENGTH) {
-      return NextResponse.json({ error: `章节标题不能超过${MAX_TITLE_LENGTH}个字符` }, { status: 400 });
+    if (title !== undefined) {
+      const trimmed = sanitizeField(title, MAX_TITLE_LENGTH);
+      if (!trimmed) {
+        return NextResponse.json({ error: "章节标题不能为空" }, { status: 400 });
+      }
     }
     if (sortOrder !== undefined) {
       const order = Math.floor(Number(sortOrder) || 0);
@@ -59,15 +60,17 @@ export async function PUT(
         throw new Error("NOT_FOUND");
       }
 
-      const newContent = content !== undefined ? (content || "") : oldChapter.content || "";
+      const newContent = content !== undefined
+        ? sanitizeField(content, MAX_CONTENT_LENGTH)
+        : oldChapter.content || "";
       const newWordCount = newContent.length;
       const wordDiff = newWordCount - (oldChapter.wordCount || 0);
 
       const updated = await tx.chapter.update({
         where: { id },
         data: {
-          ...(title !== undefined && { title: title.trim() }),
-          ...(content !== undefined && { content: String(content).slice(0, MAX_CONTENT_LENGTH) || null }),
+          ...(title !== undefined && { title: sanitizeField(title, MAX_TITLE_LENGTH) }),
+          ...(content !== undefined && { content: sanitizeField(content, MAX_CONTENT_LENGTH) || null }),
           ...(sortOrder !== undefined && { sortOrder: Math.floor(Number(sortOrder) || 0) }),
           wordCount: newWordCount,
         },
