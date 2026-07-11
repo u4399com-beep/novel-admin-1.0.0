@@ -22,6 +22,7 @@ class CircuitBreaker {
   private lastFailureTime = 0;
   private readonly failureThreshold: number;
   private readonly resetTimeout: number;
+  private _halfOpenInFlight = 0; // Track in-flight requests during half-open
 
   constructor(name: string, failureThreshold = 3, resetTimeout = 30000) {
     this.failureThreshold = failureThreshold;
@@ -36,18 +37,29 @@ class CircuitBreaker {
       // Check if enough time has passed to transition to half-open
       if (Date.now() - this.lastFailureTime >= this.resetTimeout) {
         this.state = "half-open";
+        this._halfOpenInFlight = 0;
       } else {
         throw new Error(`Service ${this._name} is temporarily unavailable (circuit breaker open)`);
       }
+    }
+
+    // In half-open state, only allow ONE request at a time as a probe
+    if (this.state === "half-open") {
+      if (this._halfOpenInFlight > 0) {
+        throw new Error(`Service ${this._name} is in recovery (half-open, probe in flight)`);
+      }
+      this._halfOpenInFlight++;
     }
   }
 
   recordSuccess(): void {
     this.failureCount = 0;
+    this._halfOpenInFlight = 0;
     this.state = "closed";
   }
 
   recordFailure(): void {
+    this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
     this.failureCount++;
     this.lastFailureTime = Date.now();
     if (this.failureCount >= this.failureThreshold) {

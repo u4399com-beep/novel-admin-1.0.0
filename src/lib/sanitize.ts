@@ -5,6 +5,8 @@ export function sanitizeString(input: unknown, maxLength: number = 10000): strin
   if (typeof input !== 'string') return '';
   // Remove null bytes and control characters except newline/tab
   let sanitized = input.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+  // Remove dangerous Unicode characters: zero-width spaces, bidi overrides, BOM
+  sanitized = sanitized.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g, '');
   // Trim and limit length
   sanitized = sanitized.trim().slice(0, maxLength);
   return sanitized;

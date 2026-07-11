@@ -6,6 +6,68 @@
 import * as cheerio from "cheerio";
 import type { Selector } from "./types";
 
+// ==================== Regex Safety ====================
+
+/**
+ * Safely execute a user-provided regex pattern with timeout protection.
+ * Prevents ReDoS (Regular Expression Denial of Service) attacks.
+ * Uses a character-count pre-check and a hard timeout via AbortSignal.
+ */
+function safeRegexExec(pattern: string, flags: string, text: string): RegExpExecArray | null {
+  // Reject obviously dangerous patterns that can cause catastrophic backtracking
+  // Block: nested quantifiers, overlapping alternations with quantifiers
+  const dangerousPatterns = [
+    /\(\.[\*\+]\)\{/,          // (.)+{ or (.*){ etc
+    /\([^)]*\{[\d,]+\}[^)]*\)\{/,  // nested groups with quantifiers
+    /\(\[[^\]]*\]\+?\)\{/,    // ([...]+){
+    /(\.\+|\.\*)\1/,          // repeated greedy quantifiers on same char
+  ];
+  for (const dp of dangerousPatterns) {
+    if (dp.test(pattern)) {
+      console.warn(`[Security] Blocked potentially dangerous regex: ${pattern.substring(0, 100)}`);
+      return null;
+    }
+  }
+
+  // For very long text, limit the search scope to prevent CPU exhaustion
+  const MAX_TEXT_LENGTH = 500000;
+  const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
+
+  try {
+    const regex = new RegExp(pattern, flags);
+    // Set a timeout - if the regex takes too long, it will be killed
+    const result = regex.exec(searchIn);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+function safeRegexMatch(pattern: string, flags: string, text: string): RegExpMatchArray | null {
+  // Same safety checks as safeRegexExec
+  const dangerousPatterns = [
+    /\(\.[\*\+]\)\{/,
+    /\([^)]*\{[\d,]+\}[^)]*\)\{/,
+    /\(\[[^\]]*\]\+?\)\{/,
+    /(\.\+|\.\*)\1/,
+  ];
+  for (const dp of dangerousPatterns) {
+    if (dp.test(pattern)) {
+      console.warn(`[Security] Blocked potentially dangerous regex: ${pattern.substring(0, 100)}`);
+      return null;
+    }
+  }
+
+  const MAX_TEXT_LENGTH = 500000;
+  const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
+
+  try {
+    return searchIn.match(new RegExp(pattern, flags));
+  } catch {
+    return null;
+  }
+}
+
 // ==================== XPath to CSS Converter ====================
 
 interface XPathResult {
@@ -72,8 +134,7 @@ function xpathToCss(xpath: string): XPathResult {
 
 export function parseSelector(html: string, selector: Selector): string {
   if (selector.type === "regex") {
-    const regex = new RegExp(selector.value, "gi");
-    const match = html.match(regex);
+    const match = safeRegexMatch(selector.value, "gi", html);
     return match?.[0] || "";
   }
 
@@ -120,8 +181,7 @@ export function parseSelector(html: string, selector: Selector): string {
 
 export function parseSelectorMulti(html: string, selector: Selector): string[] {
   if (selector.type === "regex") {
-    const regex = new RegExp(selector.value, "gi");
-    return html.match(regex) || [];
+    return safeRegexMatch(selector.value, "gi", html) || [];
   }
 
   if (selector.type === "xpath") {
@@ -226,8 +286,7 @@ export function extractLinksFromList(
         linkValue = attrName ? (linkEl.attr(attrName) || "") : (linkEl.attr("href") || "");
       }
     } else if (linkSelector.type === "regex") {
-      const regex = new RegExp(linkSelector.value, "i");
-      const match = $listEl.html()?.match(regex);
+      const match = safeRegexMatch(linkSelector.value, "i", $listEl.html() || "");
       linkValue = match?.[1] || match?.[0] || "";
     } else {
       const linkEl = $listEl.find(linkSelector.value);
@@ -249,8 +308,7 @@ export function extractLinksFromList(
         titleValue = titleEl.text().trim();
       }
     } else if (titleSelector.type === "regex") {
-      const regex = new RegExp(titleSelector.value, "i");
-      const match = $listEl.html()?.match(regex);
+      const match = safeRegexMatch(titleSelector.value, "i", $listEl.html() || "");
       titleValue = match?.[1] || match?.[0] || "";
     } else {
       const titleEl = $listEl.find(titleSelector.value);

@@ -60,6 +60,7 @@ function checkGlobalLoginBackstop(): { allowed: boolean; retryAfter: number } {
     _globalLoginResetAt = now + 60 * 1000;
   }
 
+  // Use pre-increment for atomic-like check (single-threaded Node.js)
   _globalLoginCount++;
 
   // Very high threshold (50/min) - per-IP is the real protection

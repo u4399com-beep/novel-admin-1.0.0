@@ -87,6 +87,19 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: "封面URL格式不合法，仅允许http/https协议" }, { status: 400 });
     }
 
+    // Validate sourceUrl protocol (SSRF protection)
+    if (body.sourceUrl !== undefined && body.sourceUrl && !isSafeUrl(body.sourceUrl)) {
+      return NextResponse.json({ error: "来源URL格式不合法，仅允许http/https协议" }, { status: 400 });
+    }
+
+    // Validate coverPath to prevent path traversal
+    if (body.coverPath !== undefined && body.coverPath) {
+      const cp = String(body.coverPath);
+      if (cp.includes('..') || !cp.startsWith('/covers/') && !cp.startsWith('/app/public/covers/')) {
+        return NextResponse.json({ error: "封面路径格式不合法" }, { status: 400 });
+      }
+    }
+
     // Use transaction for atomic tag update
     const novel = await db.$transaction(async (tx) => {
       // If tags are provided, delete old ones atomically with the update

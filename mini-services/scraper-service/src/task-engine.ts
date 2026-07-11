@@ -18,7 +18,13 @@ import { handleClean } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
 import { addToQueue, isUrlProcessed, markCompleted, markFailed, getQueueStats, clearTaskQueue } from "./queue";
 
-// ==================== Semaphore ====================
+// ==================== Atomic Counter ====================
+
+class AtomicCounter {
+  private _value = 0;
+  increment(): number { return ++this._value; }
+  get value(): number { return this._value; }
+}
 
 class Semaphore {
   private queue: (() => void)[] = [];
@@ -254,12 +260,12 @@ async function executeTaskBody(
   // 3. Process each book
   const seenTitles = new Set<string>();
   const seenUrls = new Set<string>();
-  let newBooksCount = 0;
-  let skippedBooksCount = 0;
-  let failedItemsCount = 0;
-  let totalChaptersCount = 0;
-  let newChaptersCount = 0;
-  let skippedChaptersCount = 0;
+  let newBooksCount = new AtomicCounter();
+  let skippedBooksCount = new AtomicCounter();
+  let failedItemsCount = new AtomicCounter();
+  let totalChaptersCount = new AtomicCounter();
+  let newChaptersCount = new AtomicCounter();
+  let skippedChaptersCount = new AtomicCounter();
   const booksProcessed: Array<{ id: string; title: string; url: string }> = [];
 
   async function processBook(bookUrl: string, index: number): Promise<void> {
@@ -288,7 +294,7 @@ async function executeTaskBody(
 
       if (!bookInfo.title) {
         console.log(`[Task ${taskId}] Book at ${bookUrl} has no title, skipping`);
-        skippedBooksCount++;
+        skippedBooksCount.increment();
         await addTaskLog(taskId, "warn", `跳过无标题书籍: ${bookUrl}`, bookUrl);
         // No queue item to mark failed since we don't have a queue ID for the book URL
         return;
@@ -297,13 +303,13 @@ async function executeTaskBody(
       // Dedup
       if (dedupMode === "title" || dedupMode === "both") {
         if (seenTitles.has(bookInfo.title)) {
-          skippedBooksCount++;
+          skippedBooksCount.increment();
           return;
         }
       }
       if (dedupMode === "url" || dedupMode === "both") {
         if (seenUrls.has(bookUrl)) {
-          skippedBooksCount++;
+          skippedBooksCount.increment();
           return;
         }
       }
@@ -354,10 +360,10 @@ async function executeTaskBody(
         const { data: createdNovel, status: createStatus } = await apiCall("POST", "/api/novels", novelData);
         if (createStatus === 201 && createdNovel) {
           novelId = (createdNovel as { id: string }).id;
-          newBooksCount++;
+          newBooksCount.increment();
           await addTaskLog(taskId, "success", `新建小说: ${bookInfo.title}`, bookUrl);
         } else {
-          failedItemsCount++;
+          failedItemsCount.increment();
           await addTaskLog(taskId, "error", `创建小说失败: ${bookInfo.title}`, bookUrl, `HTTP ${createStatus}`);
           return;
         }
@@ -383,7 +389,7 @@ async function executeTaskBody(
         }
       }
     } catch (err) {
-      failedItemsCount++;
+      failedItemsCount.increment();
       console.error(`[Task ${taskId}] Error processing book ${bookUrl}:`, err);
       await addTaskLog(taskId, "error", `采集书籍失败: ${bookUrl}`, bookUrl, String(err));
     }
@@ -407,9 +413,9 @@ async function executeTaskBody(
             await updateTaskProgress(taskId, {
               progress: Math.round(bookProgress),
               currentStep: `正在采集书籍信息 (${processed}/${bookUrls.length})...`,
-              newBooks: newBooksCount,
-              failedItems: failedItemsCount,
-              skippedItems: skippedBooksCount + skippedChaptersCount,
+              newBooks: newBooksCount.value,
+              failedItems: failedItemsCount.value,
+              skippedItems: skippedBooksCount.value + skippedChaptersCount.value,
             });
           }
         })()
@@ -420,8 +426,8 @@ async function executeTaskBody(
 
   await processAllBooks();
 
-  console.log(`[Task ${taskId}] Books processed: ${booksProcessed.length} (new: ${newBooksCount}, skipped: ${skippedBooksCount}, failed: ${failedItemsCount})`);
-  await addTaskLog(taskId, "success", `书籍信息采集完成: 新建 ${newBooksCount}, 跳过 ${skippedBooksCount}, 失败 ${failedItemsCount}`);
+  console.log(`[Task ${taskId}] Books processed: ${booksProcessed.length} (new: ${newBooksCount.value}, skipped: ${skippedBooksCount.value}, failed: ${failedItemsCount.value})`);
+  await addTaskLog(taskId, "success", `书籍信息采集完成: 新建 ${newBooksCount.value}, 跳过 ${skippedBooksCount.value}, 失败 ${failedItemsCount.value}`);
 
   if (booksProcessed.length === 0) {
     await updateTaskProgress(taskId, {
@@ -540,7 +546,7 @@ async function executeTaskBody(
         try {
           if (isIncremental) {
             if (existingChapters.has(chapter.url) || existingChapters.has(`title:${chapter.title}`)) {
-              skippedChaptersCount++;
+              skippedChaptersCount.increment();
               return;
             }
           }
@@ -572,7 +578,7 @@ async function executeTaskBody(
 
           if (!chapterContent.trim()) {
             console.log(`[Task ${taskId}] Empty content for chapter: ${chapterTitle}`);
-            skippedChaptersCount++;
+            skippedChaptersCount.increment();
             return;
           }
 
@@ -596,13 +602,13 @@ async function executeTaskBody(
           }
 
           if (chStatus === 201) {
-            newChaptersCount++;
-            totalChaptersCount++;
+            newChaptersCount.increment();
+            totalChaptersCount.increment();
           } else {
-            failedItemsCount++;
+            failedItemsCount.increment();
           }
         } catch (err) {
-          failedItemsCount++;
+          failedItemsCount.increment();
           console.error(`[Task ${taskId}] Error scraping chapter ${chapter.url}:`, err);
         }
       }
@@ -624,10 +630,10 @@ async function executeTaskBody(
       const chapterProgress = 50 + ((bookIdx + 1) / booksProcessed.length) * 45;
       await updateTaskProgress(taskId, {
         progress: Math.round(chapterProgress),
-        totalChapters: totalChaptersCount,
-        newChapters: newChaptersCount,
-        failedItems: failedItemsCount,
-        skippedItems: skippedBooksCount + skippedChaptersCount,
+        totalChapters: totalChaptersCount.value,
+        newChapters: newChaptersCount.value,
+        failedItems: failedItemsCount.value,
+        skippedItems: skippedBooksCount.value + skippedChaptersCount.value,
         currentStep: `已完成 ${book.title} (${chapters.length} 章)`,
       });
 
@@ -636,7 +642,7 @@ async function executeTaskBody(
     } catch (err) {
       console.error(`[Task ${taskId}] Error processing chapters for ${book.title}:`, err);
       await addTaskLog(taskId, "error", `章节目录采集失败: ${book.title}`, book.url, String(err));
-      failedItemsCount++;
+      failedItemsCount.increment();
     }
   }
 
@@ -649,17 +655,17 @@ async function executeTaskBody(
     progress: 100,
     currentStep: "采集完成",
     totalBooks: booksProcessed.length,
-    newBooks: newBooksCount,
-    totalChapters: totalChaptersCount,
-    newChapters: newChaptersCount,
-    failedItems: failedItemsCount,
-    skippedItems: skippedBooksCount + skippedChaptersCount,
+    newBooks: newBooksCount.value,
+    totalChapters: totalChaptersCount.value,
+    newChapters: newChaptersCount.value,
+    failedItems: failedItemsCount.value,
+    skippedItems: skippedBooksCount.value + skippedChaptersCount.value,
   });
 
   await addTaskLog(
     taskId,
     "success",
-    `任务完成! [引擎:${engineType}] 新建小说: ${newBooksCount}, 新建章节: ${newChaptersCount}, 跳过: ${skippedBooksCount}, 失败: ${failedItemsCount}`
+    `任务完成! [引擎:${engineType}] 新建小说: ${newBooksCount.value}, 新建章节: ${newChaptersCount.value}, 跳过: ${skippedBooksCount.value + skippedChaptersCount.value}, 失败: ${failedItemsCount.value}`
   );
 
   console.log(`[Task ${taskId}] Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
@@ -667,11 +673,11 @@ async function executeTaskBody(
   return {
     success: true,
     totalBooks: booksProcessed.length,
-    newBooks: newBooksCount,
-    totalChapters: totalChaptersCount,
-    newChapters: newChaptersCount,
-    failed: failedItemsCount,
-    skipped: skippedBooksCount,
+    newBooks: newBooksCount.value,
+    totalChapters: totalChaptersCount.value,
+    newChapters: newChaptersCount.value,
+    failed: failedItemsCount.value,
+    skipped: skippedBooksCount.value + skippedChaptersCount.value,
     engine: engineType,
     queueStats,
   };

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
+import { isSafeUrl } from "@/lib/sanitize";
 
 const VALID_SELECTOR_TYPES = ["css", "xpath", "regex"] as const;
 const VALID_PAGINATION_TYPES = ["next", "page"] as const;
@@ -149,6 +150,11 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       if (err) return NextResponse.json({ error: err }, { status: 400 });
     }
 
+    // Validate cloudBrowserUrl for SSRF before DB write
+    if (body.cloudBrowserUrl && !isSafeUrl(String(body.cloudBrowserUrl))) {
+      return NextResponse.json({ error: 'Cloud Browser URL 不允许访问内网或私有地址' }, { status: 400 });
+    }
+
     const rule = await db.scrapeRule.create({
       data: {
         name,
@@ -201,12 +207,29 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         // 内容清洗
         cleanConfig: body.cleanConfig ? JSON.stringify(body.cleanConfig) : null,
 
-        // AgentQL & CloudBrowser config
-        agentqlConfig: body.agentqlQueries ? body.agentqlQueries : null,
-        cloudBrowserConfig: body.cloudBrowserUrl ? JSON.stringify({
-          provider: body.cloudBrowserProvider || "browserless",
-          apiUrl: body.cloudBrowserUrl,
-        }) : null,
+        // AgentQL config — validate and stringify for String? DB field
+        agentqlConfig: body.agentqlQueries
+          ? JSON.stringify(
+              typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
+                ? body.agentqlQueries
+                : {},
+              (key, value) => typeof value === 'string' ? value.slice(0, 2000) : value
+            )
+          : null,
+        // CloudBrowser config — validate URL and stringify
+        cloudBrowserConfig: body.cloudBrowserUrl
+          ? (() => {
+              // Validate cloudBrowserUrl is a safe HTTP(S) URL
+              try {
+                const parsed = new URL(body.cloudBrowserUrl);
+                if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+              } catch { return null; }
+              return JSON.stringify({
+                provider: ['browserless', 'steel'].includes(body.cloudBrowserProvider) ? body.cloudBrowserProvider : 'browserless',
+                apiUrl: String(body.cloudBrowserUrl).slice(0, 500),
+              });
+            })()
+          : null,
       },
       include: {
         _count: { select: { tasks: true } },

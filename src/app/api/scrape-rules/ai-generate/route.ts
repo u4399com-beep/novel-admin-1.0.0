@@ -79,7 +79,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             error: `AI 规则生成服务返回错误 (${response.status})`,
-            details: errorText.slice(0, 500),
           },
           { status: 502 },
         );

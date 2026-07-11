@@ -70,58 +70,64 @@ export const PUT = withAuth(async function PUT(
     if (body.resultUrl !== undefined) updateData.resultUrl = sanitizeField(body.resultUrl, 500);
 
     // Wrap status transition check + update in a transaction to prevent TOCTOU races
-    const updated = await db.$transaction(async (tx) => {
-      const task = await tx.scrapeTask.findUniqueOrThrow({ where: { id } });
+    let taskResult: Record<string, unknown> | null = null;
 
-      const validStatuses = ["pending", "running", "completed", "failed", "cancelled"];
-      // Valid state transitions to prevent invalid status changes
-      const validTransitions: Record<string, string[]> = {
-        pending: ["running", "cancelled"],
-        running: ["completed", "failed", "cancelled"],
-        completed: [],
-        failed: ["pending", "running"],  // allow retry
-        cancelled: [],
-      };
+    try {
+      taskResult = await db.$transaction(async (tx) => {
+        const task = await tx.scrapeTask.findUniqueOrThrow({ where: { id } });
 
-      const txUpdateData: Record<string, unknown> = { ...updateData };
+        const validStatuses = ["pending", "running", "completed", "failed", "cancelled"];
+        // Valid state transitions to prevent invalid status changes
+        const validTransitions: Record<string, string[]> = {
+          pending: ["running", "cancelled"],
+          running: ["completed", "failed", "cancelled"],
+          completed: [],
+          failed: ["pending", "running"],  // allow retry
+          cancelled: [],
+        };
 
-      if (body.status !== undefined) {
-        if (!validStatuses.includes(body.status)) {
-          throw new Error(`无效的任务状态: ${body.status}`);
-        }
-        // Enforce state machine transitions
-        const allowed = validTransitions[task.status] || [];
-        if (!allowed.includes(body.status)) {
-          throw new Error(`不允许从 "${task.status}" 转换到 "${body.status}"`);
-        }
-        txUpdateData.status = body.status;
-        if (body.status === "running" && !task.startedAt) {
-          txUpdateData.startedAt = new Date();
-        }
-        if (["completed", "failed", "cancelled"].includes(body.status)) {
-          txUpdateData.completedAt = new Date();
-        }
-      }
+        const txUpdateData: Record<string, unknown> = { ...updateData };
 
-      return tx.scrapeTask.update({
-        where: { id },
-        data: txUpdateData,
-        include: { rule: { select: { id: true, name: true } } },
+        if (body.status !== undefined) {
+          if (!validStatuses.includes(body.status)) {
+            throw new Error(`INVALID_STATUS:${body.status}`);
+          }
+          // Enforce state machine transitions
+          const allowed = validTransitions[task.status] || [];
+          if (!allowed.includes(body.status)) {
+            throw new Error(`INVALID_TRANSITION:${task.status}:${body.status}`);
+          }
+          txUpdateData.status = body.status;
+          if (body.status === "running" && !task.startedAt) {
+            txUpdateData.startedAt = new Date();
+          }
+          if (["completed", "failed", "cancelled"].includes(body.status)) {
+            txUpdateData.completedAt = new Date();
+          }
+        }
+
+        return tx.scrapeTask.update({
+          where: { id },
+          data: txUpdateData,
+          include: { rule: { select: { id: true, name: true } } },
+        });
       });
-    }).catch((e: unknown) => {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.startsWith('无效的任务状态') || msg.startsWith('不允许从')) {
-        return NextResponse.json({ error: msg }, { status: 400 }) as unknown as typeof updated;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.startsWith("INVALID_STATUS:")) {
+        return NextResponse.json({ error: `无效的任务状态: ${msg.split(":")[1]}` }, { status: 400 });
+      }
+      if (msg.startsWith("INVALID_TRANSITION:")) {
+        const [, from, to] = msg.split(":");
+        return NextResponse.json({ error: `不允许从 "${from}" 转换到 "${to}"` }, { status: 400 });
       }
       if (msg.includes('Record to update not found')) {
-        return NextResponse.json({ error: "采集任务不存在" }, { status: 404 }) as unknown as typeof updated;
+        return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
       }
-      throw e;
-    });
+      throw error;
+    }
 
-    if (updated instanceof NextResponse) return updated;
-
-    return NextResponse.json(updated);
+    return NextResponse.json(taskResult);
   } catch (error) {
     console.error("Update scrape task error:", error);
     return NextResponse.json({ error: "更新采集任务失败" }, { status: 500 });

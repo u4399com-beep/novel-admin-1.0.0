@@ -52,7 +52,10 @@ function rateLimit(ip: string): { allowed: boolean; remaining: number; retryAfte
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Login Brute-Force Protection
+// Login Brute-Force Protection (Node.js context — global backstop)
+// Primary per-IP protection is in middleware.ts (Edge Runtime, lower latency).
+// This function serves as a secondary defense-in-depth check for the
+// authorize() callback which runs in Node.js, not Edge.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface LoginRateEntry {

@@ -36,6 +36,39 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Safely create and execute a regex from user-provided pattern.
+ * Blocks patterns with catastrophic backtracking potential (ReDoS protection).
+ */
+function safeRegexReplace(text: string, pattern: string, replacement: string, flags: string): string {
+  // Block dangerous patterns with nested quantifiers
+  const dangerousPatterns = [
+    /\(\.[\*\+]\)\{/,
+    /\([^)]*\{[\d,]+\}[^)]*\)\{/,
+    /\(\[[^\]]*\]\+?\)\{/,
+    /(\.\+|\.\*)\1/,
+    /\([^)]*\+[^)]*\)\+/,       // (x+)+
+    /\([^)]*\*[^)]*\)\*/,       // (x*)*
+    /(\+|\*)\1/,                 // ++ or **
+  ];
+  for (const dp of dangerousPatterns) {
+    if (dp.test(pattern)) {
+      console.warn(`[Cleaning] Blocked dangerous regex pattern: ${pattern.substring(0, 100)}`);
+      return text;
+    }
+  }
+
+  // Limit text size for regex operations
+  const MAX_TEXT_LENGTH = 500000;
+  const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
+
+  try {
+    return searchIn.replace(new RegExp(pattern, flags), replacement);
+  } catch {
+    return text;
+  }
+}
+
 /** Escape special characters for safe embedding in CSS attribute selectors */
 function escapeCssString(str: string): string {
   return str
@@ -94,14 +127,10 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
       .join("\n");
   }
 
-  // Remove custom text patterns
+  // Remove custom text patterns (with ReDoS protection)
   if (config.removePatterns && config.removePatterns.length > 0) {
     for (const pattern of config.removePatterns) {
-      try {
-        text = text.replace(new RegExp(pattern, "gi"), "");
-      } catch {
-        // Invalid regex, skip
-      }
+      text = safeRegexReplace(text, pattern, "", "gi");
     }
   }
 

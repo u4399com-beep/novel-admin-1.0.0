@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
-export async function GET() {
+export const GET = withAuth(async function GET() {
   try {
     const startTime = Date.now();
     await db.$queryRaw`SELECT 1`;
@@ -43,4 +44,4 @@ export async function GET() {
       { status: 503 }
     );
   }
-}
+});
