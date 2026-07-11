@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const VALID_IDENTIFIER_RE = /^[a-zA-Z0-9_-]+$/;
 const MAX_NAME_LENGTH = 200;
@@ -7,10 +9,11 @@ const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_IDENTIFIER_LENGTH = 100;
 
 // GET /api/themes - List all themes
-export async function GET() {
+export const GET = withAuth(async function GET() {
   try {
     const themes = await db.theme.findMany({
       orderBy: { createdAt: "desc" },
+      take: 100,
       include: {
         _count: { select: { sites: true } },
       },
@@ -20,12 +23,17 @@ export async function GET() {
     console.error("List themes error:", error);
     return NextResponse.json({ error: "获取主题列表失败" }, { status: 500 });
   }
-}
+});
 
 // POST /api/themes - Create a theme
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { name, description, identifier, preview, config, enabled } = body;
 
     if (!name?.trim()) {
@@ -72,4 +80,4 @@ export async function POST(request: NextRequest) {
       : "创建主题失败";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
+});

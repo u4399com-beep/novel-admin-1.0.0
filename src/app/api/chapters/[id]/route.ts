@@ -1,13 +1,15 @@
 import { db } from "@/lib/db";
-import { sanitizeField } from "@/lib/api-utils";
+import { sanitizeField, safeJson } from "@/lib/api-utils";
+import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_SORT_ORDER = 100000;
 const MAX_CONTENT_LENGTH = 500000;
 
 // GET /api/chapters/[id] - Get a single chapter
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -27,16 +29,21 @@ export async function GET(
     console.error("Get chapter error:", error);
     return NextResponse.json({ error: "获取章节详情失败" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/chapters/[id] - Update a chapter
-export async function PUT(
+export const PUT = withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { title, content, sortOrder } = body;
 
     if (title !== undefined) {
@@ -87,6 +94,8 @@ export async function PUT(
       return updated;
     });
 
+    invalidateCache("dashboard:stats");
+
     return NextResponse.json(chapter);
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND") {
@@ -95,10 +104,10 @@ export async function PUT(
     console.error("Update chapter error:", error);
     return NextResponse.json({ error: "更新章节失败" }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/chapters/[id] - Delete a chapter
-export async function DELETE(
+export const DELETE = withAuth(async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -123,6 +132,8 @@ export async function DELETE(
       await tx.chapter.delete({ where: { id } });
     });
 
+    invalidateCache("dashboard:stats");
+
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND") {
@@ -131,4 +142,4 @@ export async function DELETE(
     console.error("Delete chapter error:", error);
     return NextResponse.json({ error: "删除章节失败" }, { status: 500 });
   }
-}
+});

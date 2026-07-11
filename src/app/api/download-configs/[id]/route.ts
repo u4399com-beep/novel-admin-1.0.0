@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 200;
 const VALID_FORMATS = ["txt", "epub"];
@@ -10,7 +12,7 @@ const MAX_AD_INTERVAL = 1000;
 const MAX_PATTERN_LENGTH = 500;
 
 // GET /api/download-configs/[id] - Get a single download config
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -27,16 +29,21 @@ export async function GET(
     console.error("Get download config error:", error);
     return NextResponse.json({ error: "获取下载配置失败" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/download-configs/[id] - Update a download config
-export async function PUT(
+export const PUT = withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const {
       name,
       enabled,
@@ -118,10 +125,10 @@ export async function PUT(
     console.error("Update download config error:", error);
     return NextResponse.json({ error: "更新下载配置失败" }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/download-configs/[id] - Delete a download config
-export async function DELETE(
+export const DELETE = withAuth(async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -133,4 +140,4 @@ export async function DELETE(
     console.error("Delete download config error:", error);
     return NextResponse.json({ error: "删除下载配置失败" }, { status: 500 });
   }
-}
+});

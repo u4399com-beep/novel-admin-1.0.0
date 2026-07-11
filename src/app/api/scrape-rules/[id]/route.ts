@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const VALID_SCRAPE_MODES = ["incremental", "full"];
 const VALID_STORAGE_MODES = ["database", "file"];
@@ -9,7 +11,7 @@ const MIN_THREAD = 1;
 const MAX_DELAY = 60000;
 
 // GET /api/scrape-rules/[id] - Get a single scrape rule
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -31,16 +33,21 @@ export async function GET(
     console.error("Get scrape rule error:", error);
     return NextResponse.json({ error: "获取采集规则详情失败" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/scrape-rules/[id] - Update a scrape rule
-export async function PUT(
+export const PUT = withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
 
     if (body.name !== undefined && !body.name?.trim()) {
       return NextResponse.json({ error: "规则名称不能为空" }, { status: 400 });
@@ -172,10 +179,10 @@ export async function PUT(
     console.error("Update scrape rule error:", error);
     return NextResponse.json({ error: "更新采集规则失败" }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/scrape-rules/[id] - Delete a scrape rule
-export async function DELETE(
+export const DELETE = withAuth(async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -187,4 +194,4 @@ export async function DELETE(
     console.error("Delete scrape rule error:", error);
     return NextResponse.json({ error: "删除采集规则失败" }, { status: 500 });
   }
-}
+});

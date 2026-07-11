@@ -1,6 +1,56 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
+import crypto from "crypto";
+
+/**
+ * Timing-safe string comparison to prevent timing attacks.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, "utf-8");
+  const bBuf = Buffer.from(b, "utf-8");
+  if (aBuf.length !== bBuf.length) {
+    crypto.timingSafeEqual(aBuf, aBuf); // dummy comparison
+    return false;
+  }
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Login Brute-Force Protection (global, not per-IP, since authorize
+// callback doesn't have access to request headers)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const loginAttempts: { count: number; resetAt: number } = { count: 0, resetAt: 0 };
+const MAX_LOGIN_ATTEMPTS = 10;    // max failed attempts per window
+const LOGIN_WINDOW_MS = 60 * 1000; // 1 minute window
+const LOGIN_LOCKOUT_MS = 5 * 60 * 1000; // 5 minute lockout after exceeding
+let lockoutUntil = 0;
+
+function checkLoginRateLimit(): { allowed: boolean; retryAfter: number } {
+  const now = Date.now();
+
+  // Check if in lockout period
+  if (now < lockoutUntil) {
+    return { allowed: false, retryAfter: Math.ceil((lockoutUntil - now) / 1000) };
+  }
+
+  // Reset window if expired
+  if (now > loginAttempts.resetAt) {
+    loginAttempts.count = 0;
+    loginAttempts.resetAt = now + LOGIN_WINDOW_MS;
+  }
+
+  loginAttempts.count++;
+
+  // If too many attempts, trigger lockout
+  if (loginAttempts.count > MAX_LOGIN_ATTEMPTS) {
+    lockoutUntil = now + LOGIN_LOCKOUT_MS;
+    return { allowed: false, retryAfter: Math.ceil(LOGIN_LOCKOUT_MS / 1000) };
+  }
+
+  return { allowed: true, retryAfter: 0 };
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -11,13 +61,20 @@ export const authOptions: NextAuthOptions = {
         password: { label: "密码", type: "password" },
       },
       async authorize(credentials) {
-        // Admin credentials from environment variables with secure defaults
+        // Rate limit check BEFORE verifying credentials
+        const rl = checkLoginRateLimit();
+        if (!rl.allowed) {
+          throw new Error(`登录尝试过于频繁，请${rl.retryAfter}秒后再试`);
+        }
+
         const adminUser = process.env.ADMIN_USERNAME || "admin";
         const adminPass = process.env.ADMIN_PASSWORD || "novel2024";
 
         if (
-          credentials?.username === adminUser &&
-          credentials?.password === adminPass
+          credentials?.username &&
+          credentials?.password &&
+          timingSafeEqual(credentials.username, adminUser) &&
+          timingSafeEqual(credentials.password, adminPass)
         ) {
           return {
             id: "admin-1",

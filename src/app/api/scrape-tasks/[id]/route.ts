@@ -1,8 +1,10 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 // GET /api/scrape-tasks/[id] - Get a single scrape task
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -28,16 +30,21 @@ export async function GET(
     console.error("Get scrape task error:", error);
     return NextResponse.json({ error: "获取采集任务详情失败" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/scrape-tasks/[id] - Update a scrape task (progress tracking)
-export async function PUT(
+export const PUT = withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
 
     const task = await db.scrapeTask.findUnique({ where: { id } });
     if (!task) {
@@ -86,10 +93,10 @@ export async function PUT(
     console.error("Update scrape task error:", error);
     return NextResponse.json({ error: "更新采集任务失败" }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/scrape-tasks/[id] - Delete a scrape task
-export async function DELETE(
+export const DELETE = withAuth(async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -108,4 +115,4 @@ export async function DELETE(
     console.error("Delete scrape task error:", error);
     return NextResponse.json({ error: "删除采集任务失败" }, { status: 500 });
   }
-}
+});

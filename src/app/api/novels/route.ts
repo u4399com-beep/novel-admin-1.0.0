@@ -1,12 +1,14 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, sanitizeField } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
+import { invalidateCache } from "@/lib/cache";
+import { withAuth } from "@/lib/api-auth";
 
 const MAX_SEARCH_LENGTH = 200;
 const VALID_STATUSES = ["ongoing", "completed", "hiatus"];
 
 // GET /api/novels - List novels with pagination, search, filter
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 12 });
@@ -65,12 +67,17 @@ export async function GET(request: NextRequest) {
     console.error("List novels error:", error);
     return NextResponse.json({ error: "获取小说列表失败" }, { status: 500 });
   }
-}
+});
 
 // POST /api/novels - Create a novel
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
     const trimmedTitle = sanitizeField(title, 200);
@@ -127,9 +134,11 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    invalidateCache("dashboard:stats");
+
     return NextResponse.json(novel, { status: 201 });
   } catch (error) {
     console.error("Create novel error:", error);
     return NextResponse.json({ error: "创建小说失败" }, { status: 500 });
   }
-}
+});

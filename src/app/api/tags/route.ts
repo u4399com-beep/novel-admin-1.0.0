@@ -1,13 +1,16 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 50;
 const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 
-export async function GET() {
+export const GET = withAuth(async function GET() {
   try {
     const tags = await db.tag.findMany({
       orderBy: { createdAt: "desc" },
+      take: 500,
       include: { _count: { select: { novels: true } } },
     });
     return NextResponse.json(tags);
@@ -15,11 +18,16 @@ export async function GET() {
     console.error("List tags error:", error);
     return NextResponse.json({ error: "获取标签列表失败" }, { status: 500 });
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { name, color } = body;
 
     if (!name?.trim()) {
@@ -48,11 +56,16 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: "创建标签失败" }, { status: 500 });
   }
-}
+});
 
-export async function PUT(request: NextRequest) {
+export const PUT = withAuth(async function PUT(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { id, name, color } = body;
 
     if (!id) {
@@ -85,9 +98,9 @@ export async function PUT(request: NextRequest) {
     }
     return NextResponse.json({ error: "更新标签失败" }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withAuth(async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -102,4 +115,4 @@ export async function DELETE(request: NextRequest) {
     console.error("Delete tag error:", error);
     return NextResponse.json({ error: "删除标签失败" }, { status: 500 });
   }
-}
+});

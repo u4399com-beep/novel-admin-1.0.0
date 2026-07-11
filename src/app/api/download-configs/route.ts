@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 200;
 const VALID_FORMATS = ["txt", "epub"];
@@ -10,22 +12,28 @@ const MAX_AD_INTERVAL = 1000;
 const MAX_PATTERN_LENGTH = 500;
 
 // GET /api/download-configs - List all download configs
-export async function GET() {
+export const GET = withAuth(async function GET() {
   try {
     const configs = await db.downloadConfig.findMany({
       orderBy: { createdAt: "desc" },
+      take: 100,
     });
     return NextResponse.json(configs);
   } catch (error) {
     console.error("List download configs error:", error);
     return NextResponse.json({ error: "获取下载配置列表失败" }, { status: 500 });
   }
-}
+});
 
 // POST /api/download-configs - Create a download config
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const {
       name,
       format,
@@ -89,4 +97,4 @@ export async function POST(request: NextRequest) {
     console.error("Create download config error:", error);
     return NextResponse.json({ error: "创建下载配置失败" }, { status: 500 });
   }
-}
+});

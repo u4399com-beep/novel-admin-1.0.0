@@ -1,9 +1,10 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, sanitizeField } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
+import { withAuth } from "@/lib/api-auth";
 
 // GET /api/scrape-rules - List all scrape rules with pagination and search
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = parsePagination(searchParams);
@@ -42,12 +43,17 @@ export async function GET(request: NextRequest) {
     console.error("List scrape rules error:", error);
     return NextResponse.json({ error: "获取采集规则列表失败" }, { status: 500 });
   }
-}
+});
 
 // POST /api/scrape-rules - Create a new scrape rule
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
 
     const name = sanitizeField(body.name, 200);
     if (!name) {
@@ -72,21 +78,21 @@ export async function POST(request: NextRequest) {
         enabled: body.enabled ?? true,
 
         // 列表页配置
-        listUrl: body.listUrl || null,
+        listUrl: sanitizeField(body.listUrl, 2000) || null,
         listSelector: body.listSelector ? JSON.stringify(body.listSelector) : null,
         listPagination: body.listPagination ? JSON.stringify(body.listPagination) : null,
 
         // 书籍信息页配置
-        bookTitleSelector: body.bookTitleSelector || null,
-        bookAuthorSelector: body.bookAuthorSelector || null,
-        bookCategorySelector: body.bookCategorySelector || null,
-        bookKeywordsSelector: body.bookKeywordsSelector || null,
-        bookDescriptionSelector: body.bookDescriptionSelector || null,
-        bookCoverSelector: body.bookCoverSelector || null,
-        bookStatusSelector: body.bookStatusSelector || null,
+        bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null,
+        bookAuthorSelector: sanitizeField(body.bookAuthorSelector, 500) || null,
+        bookCategorySelector: sanitizeField(body.bookCategorySelector, 500) || null,
+        bookKeywordsSelector: sanitizeField(body.bookKeywordsSelector, 500) || null,
+        bookDescriptionSelector: sanitizeField(body.bookDescriptionSelector, 500) || null,
+        bookCoverSelector: sanitizeField(body.bookCoverSelector, 500) || null,
+        bookStatusSelector: sanitizeField(body.bookStatusSelector, 500) || null,
 
         // 章节目录页配置
-        chapterListUrl: body.chapterListUrl || null,
+        chapterListUrl: sanitizeField(body.chapterListUrl, 2000) || null,
         chapterListSelector: body.chapterListSelector ? JSON.stringify(body.chapterListSelector) : null,
         chapterTitleSelector: body.chapterTitleSelector ? JSON.stringify(body.chapterTitleSelector) : null,
         chapterLinkSelector: body.chapterLinkSelector ? JSON.stringify(body.chapterLinkSelector) : null,
@@ -102,8 +108,8 @@ export async function POST(request: NextRequest) {
 
         // 存储配置
         storageMode,
-        filePath: body.filePath || null,
-        coverSavePath: body.coverSavePath || null,
+        filePath: sanitizeField(body.filePath, 2000) || null,
+        coverSavePath: sanitizeField(body.coverSavePath, 2000) || null,
 
         // 采集策略
         scrapeMode,
@@ -126,4 +132,4 @@ export async function POST(request: NextRequest) {
     console.error("Create scrape rule error:", error);
     return NextResponse.json({ error: "创建采集规则失败" }, { status: 500 });
   }
-}
+});

@@ -1,12 +1,14 @@
 import { db } from "@/lib/db";
-import { sanitizeField } from "@/lib/api-utils";
+import { sanitizeField, safeJson } from "@/lib/api-utils";
 import { isSafeUrl } from "@/lib/sanitize";
+import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const VALID_STATUSES = ["ongoing", "completed", "hiatus"];
 
 // GET /api/novels/[id] - Get a single novel
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -30,16 +32,21 @@ export async function GET(
     console.error("Get novel error:", error);
     return NextResponse.json({ error: "获取小说详情失败" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/novels/[id] - Update a novel
-export async function PUT(
+export const PUT = withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
     if (title !== undefined) {
@@ -108,24 +115,27 @@ export async function PUT(
       });
     });
 
+    invalidateCache("dashboard:stats");
+
     return NextResponse.json(novel);
   } catch (error) {
     console.error("Update novel error:", error);
     return NextResponse.json({ error: "更新小说失败" }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/novels/[id] - Delete a novel
-export async function DELETE(
+export const DELETE = withAuth(async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
     await db.novel.delete({ where: { id } });
+    invalidateCache("dashboard:stats");
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Delete novel error:", error);
     return NextResponse.json({ error: "删除小说失败" }, { status: 500 });
   }
-}
+});

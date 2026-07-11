@@ -1,14 +1,18 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateCache } from "@/lib/cache";
+import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 100;
 const MAX_DESCRIPTION_LENGTH = 1000;
 const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 
-export async function GET() {
+export const GET = withAuth(async function GET() {
   try {
     const categories = await db.category.findMany({
       orderBy: { sortOrder: "asc" },
+      take: 500,
       include: { _count: { select: { novels: true } } },
     });
     return NextResponse.json(categories);
@@ -16,11 +20,16 @@ export async function GET() {
     console.error("List categories error:", error);
     return NextResponse.json({ error: "获取分类列表失败" }, { status: 500 });
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { name, description, color, sortOrder } = body;
 
     if (!name?.trim()) {
@@ -46,6 +55,8 @@ export async function POST(request: NextRequest) {
       include: { _count: { select: { novels: true } } },
     });
 
+    invalidateCache("dashboard:stats");
+
     return NextResponse.json(category, { status: 201 });
   } catch (error: unknown) {
     console.error("Create category error:", error);
@@ -54,11 +65,16 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: "创建分类失败" }, { status: 500 });
   }
-}
+});
 
-export async function PUT(request: NextRequest) {
+export const PUT = withAuth(async function PUT(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { id, name, description, color, sortOrder } = body;
 
     if (!id) {
@@ -88,6 +104,8 @@ export async function PUT(request: NextRequest) {
       include: { _count: { select: { novels: true } } },
     });
 
+    invalidateCache("dashboard:stats");
+
     return NextResponse.json(category);
   } catch (error: unknown) {
     console.error("Update category error:", error);
@@ -96,9 +114,9 @@ export async function PUT(request: NextRequest) {
     }
     return NextResponse.json({ error: "更新分类失败" }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withAuth(async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -108,9 +126,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     await db.category.delete({ where: { id } });
+    invalidateCache("dashboard:stats");
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Delete category error:", error);
     return NextResponse.json({ error: "删除分类失败" }, { status: 500 });
   }
-}
+});

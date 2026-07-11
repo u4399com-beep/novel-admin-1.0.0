@@ -1,20 +1,35 @@
 import { db } from "@/lib/db";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 // POST /api/scrape-tasks/[id]/logs - Create a scrape log entry
-export async function POST(
+export const POST = withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: taskId } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { level, message, url, detail } = body;
 
     if (!taskId) {
       return NextResponse.json({ error: "任务ID不能为空" }, { status: 400 });
     }
-    if (!message?.trim()) {
+
+    // Verify task exists
+    const task = await db.scrapeTask.findUnique({ where: { id: taskId }, select: { id: true } });
+    if (!task) {
+      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+    }
+
+    const sanitizedMessage = sanitizeField(message, 5000);
+    if (!sanitizedMessage) {
       return NextResponse.json({ error: "日志消息不能为空" }, { status: 400 });
     }
 
@@ -25,9 +40,9 @@ export async function POST(
       data: {
         taskId,
         level: logLevel,
-        message: String(message).slice(0, 5000),
-        url: url?.trim()?.slice(0, 2000) || null,
-        detail: detail?.trim()?.slice(0, 10000) || null,
+        message: sanitizedMessage,
+        url: sanitizeField(url, 2000) || null,
+        detail: sanitizeField(detail, 10000) || null,
       },
     });
 
@@ -36,10 +51,10 @@ export async function POST(
     console.error("Create scrape log error:", error);
     return NextResponse.json({ error: "创建采集日志失败" }, { status: 500 });
   }
-}
+});
 
 // GET /api/scrape-tasks/[id]/logs - Get scrape logs for a task
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -65,4 +80,4 @@ export async function GET(
     console.error("Get scrape logs error:", error);
     return NextResponse.json({ error: "获取采集日志失败" }, { status: 500 });
   }
-}
+});

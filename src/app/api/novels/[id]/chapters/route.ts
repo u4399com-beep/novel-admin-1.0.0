@@ -1,9 +1,11 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, sanitizeField } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
+import { invalidateCache } from "@/lib/cache";
+import { withAuth } from "@/lib/api-auth";
 
 // GET /api/novels/[id]/chapters - List chapters for a novel (with pagination)
-export async function GET(
+export const GET = withAuth(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -33,16 +35,21 @@ export async function GET(
     console.error("List chapters error:", error);
     return NextResponse.json({ error: "获取章节列表失败" }, { status: 500 });
   }
-}
+});
 
 // POST /api/novels/[id]/chapters - Create a chapter
-export async function POST(
+export const POST = withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: novelId } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { title, content } = body;
 
     const trimmedTitle = sanitizeField(title, 200);
@@ -83,9 +90,11 @@ export async function POST(
       return newChapter;
     });
 
+    invalidateCache("dashboard:stats");
+
     return NextResponse.json(chapter, { status: 201 });
   } catch (error) {
     console.error("Create chapter error:", error);
     return NextResponse.json({ error: "创建章节失败" }, { status: 500 });
   }
-}
+});

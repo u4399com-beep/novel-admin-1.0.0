@@ -35,10 +35,67 @@ export function parsePagination(
 }
 
 /**
- * Safely parse request body JSON with a size limit.
+ * Recursively validate JSON structure depth and key count.
+ * @throws Error if maxDepth or maxKeys is exceeded.
  */
-export function safeJson<T>(request: Request): Promise<T> {
-  return request.json() as Promise<T>;
+function validateJsonStructure(value: unknown, depth: number, maxDepth: number, maxKeys: number): void {
+  if (depth > maxDepth) {
+    throw new Error(`JSON 嵌套层级超过 ${maxDepth} 限制`);
+  }
+  if (value !== null && typeof value === "object") {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        validateJsonStructure(item, depth + 1, maxDepth, maxKeys);
+      }
+    } else {
+      const keys = Object.keys(value as Record<string, unknown>);
+      if (keys.length > maxKeys) {
+        throw new Error(`JSON 对象键数量超过 ${maxKeys} 限制`);
+      }
+      for (const key of keys) {
+        validateJsonStructure((value as Record<string, unknown>)[key], depth + 1, maxDepth, maxKeys);
+      }
+    }
+  }
+}
+
+/**
+ * Safely parse request body JSON with timeout, depth limit, and key count limit.
+ *
+ * - 10-second AbortController timeout for reading the body stream
+ * - JSON parse error → clear error
+ * - Max nesting depth (default 20) to prevent stack overflow
+ * - Max keys per object (default 200) to prevent memory abuse
+ */
+export async function safeJson<T>(
+  request: Request,
+  maxDepth = 20,
+  maxKeys = 200
+): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    const text = await request.text({ signal: controller.signal });
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error("请求数据格式错误");
+    }
+
+    validateJsonStructure(parsed, 0, maxDepth, maxKeys);
+
+    return parsed as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("请求数据格式错误");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**

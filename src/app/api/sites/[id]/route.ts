@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 200;
 const MAX_DOMAIN_LENGTH = 500;
@@ -10,7 +12,7 @@ const MAX_KEYWORDS_LENGTH = 500;
 const MAX_OFFSET = 10000;
 
 // GET /api/sites/[id] - Get a single site
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -32,16 +34,21 @@ export async function GET(
     console.error("Get site error:", error);
     return NextResponse.json({ error: "获取站点详情失败" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/sites/[id] - Update a site
-export async function PUT(
+export const PUT = withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const {
       domain,
       name,
@@ -58,32 +65,16 @@ export async function PUT(
     } = body;
 
     if (domain !== undefined) {
-      if (!domain?.trim()) {
+      const sanitizedDomain = sanitizeField(domain, MAX_DOMAIN_LENGTH);
+      if (!sanitizedDomain) {
         return NextResponse.json({ error: "站点域名不能为空" }, { status: 400 });
-      }
-      if (domain.trim().length > MAX_DOMAIN_LENGTH) {
-        return NextResponse.json({ error: `站点域名不能超过${MAX_DOMAIN_LENGTH}个字符` }, { status: 400 });
       }
     }
     if (name !== undefined) {
-      if (!name?.trim()) {
+      const sanitizedName = sanitizeField(name, MAX_NAME_LENGTH);
+      if (!sanitizedName) {
         return NextResponse.json({ error: "站点名称不能为空" }, { status: 400 });
       }
-      if (name.trim().length > MAX_NAME_LENGTH) {
-        return NextResponse.json({ error: `站点名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
-      }
-    }
-    if (description !== undefined && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
-      return NextResponse.json({ error: `站点描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
-    }
-    if (siteTitle !== undefined && typeof siteTitle === "string" && siteTitle.trim().length > MAX_SITE_TITLE_LENGTH) {
-      return NextResponse.json({ error: `站点标题不能超过${MAX_SITE_TITLE_LENGTH}个字符` }, { status: 400 });
-    }
-    if (siteDescription !== undefined && typeof siteDescription === "string" && siteDescription.trim().length > MAX_SITE_DESC_LENGTH) {
-      return NextResponse.json({ error: `站点描述不能超过${MAX_SITE_DESC_LENGTH}个字符` }, { status: 400 });
-    }
-    if (siteKeywords !== undefined && typeof siteKeywords === "string" && siteKeywords.trim().length > MAX_KEYWORDS_LENGTH) {
-      return NextResponse.json({ error: `站点关键词不能超过${MAX_KEYWORDS_LENGTH}个字符` }, { status: 400 });
     }
     if (themeId !== undefined && themeId) {
       const themeExists = await db.theme.findUnique({ where: { id: themeId }, select: { id: true } });
@@ -97,14 +88,14 @@ export async function PUT(
     const site = await db.site.update({
       where: { id },
       data: {
-        ...(domain !== undefined && { domain: domain.trim() }),
-        ...(name !== undefined && { name: name.trim() }),
-        ...(description !== undefined && { description: description?.trim() || null }),
+        ...(domain !== undefined && { domain: sanitizeField(domain, MAX_DOMAIN_LENGTH) }),
+        ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
+        ...(description !== undefined && { description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null }),
         ...(themeId !== undefined && { themeId: themeId || null }),
         ...(enabled !== undefined && { enabled }),
-        ...(siteTitle !== undefined && { siteTitle: siteTitle?.trim() || null }),
-        ...(siteDescription !== undefined && { siteDescription: siteDescription?.trim() || null }),
-        ...(siteKeywords !== undefined && { siteKeywords: siteKeywords?.trim() || null }),
+        ...(siteTitle !== undefined && { siteTitle: sanitizeField(siteTitle, MAX_SITE_TITLE_LENGTH) || null }),
+        ...(siteDescription !== undefined && { siteDescription: sanitizeField(siteDescription, MAX_SITE_DESC_LENGTH) || null }),
+        ...(siteKeywords !== undefined && { siteKeywords: sanitizeField(siteKeywords, MAX_KEYWORDS_LENGTH) || null }),
         ...(geoConfig !== undefined && {
           geoConfig: geoConfig ? JSON.stringify(geoConfig) : null,
         }),
@@ -127,10 +118,10 @@ export async function PUT(
       : "更新站点失败";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/sites/[id] - Delete a site
-export async function DELETE(
+export const DELETE = withAuth(async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -142,4 +133,4 @@ export async function DELETE(
     console.error("Delete site error:", error);
     return NextResponse.json({ error: "删除站点失败" }, { status: 500 });
   }
-}
+});

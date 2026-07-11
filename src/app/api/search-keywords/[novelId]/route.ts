@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 // GET /api/search-keywords/[novelId] - Get search keywords for a novel
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ novelId: string }> }
 ) {
@@ -12,6 +13,7 @@ export async function GET(
     const keywords = await db.searchKeyword.findMany({
       where: { novelId },
       orderBy: { createdAt: "desc" },
+      take: 500,
     });
 
     return NextResponse.json(keywords);
@@ -22,7 +24,7 @@ export async function GET(
       { status: 500 }
     );
   }
-}
+});
 
 // Generate smart keyword suggestions based on novel info
 function generateKeywords(
@@ -112,7 +114,7 @@ function generateKeywords(
 }
 
 // POST /api/search-keywords/[novelId] - Trigger keyword extraction for a novel
-export async function POST(
+export const POST = withAuth(async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ novelId: string }> }
 ) {
@@ -183,4 +185,4 @@ export async function POST(
       { status: 500 }
     );
   }
-}
+});

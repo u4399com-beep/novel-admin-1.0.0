@@ -58,6 +58,7 @@ model Novel {
   @@index([categoryId])
   @@index([status])
   @@index([sourceId])
+  @@index([updatedAt])
 }
 
 // 小说-标签关联
@@ -176,6 +177,8 @@ model ScrapeTask {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   logs          ScrapeLog[]
+
+  @@index([createdAt])
 }
 
 // 采集日志
@@ -191,6 +194,7 @@ model ScrapeLog {
 
   @@index([taskId])
   @@index([level])
+  @@index([createdAt])
 }
 
 // ==================== 站群系统 ====================

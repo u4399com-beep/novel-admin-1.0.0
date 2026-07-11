@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination } from "@/lib/api-utils";
+import { parsePagination, safeJson } from "@/lib/api-utils";
+import { withAuth } from "@/lib/api-auth";
 
 const VALID_STATUSES = ["pending", "running", "completed", "failed", "cancelled"];
 
 // GET /api/scrape-tasks - List all scrape tasks
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = parsePagination(searchParams);
@@ -43,12 +44,17 @@ export async function GET(request: NextRequest) {
     console.error("List scrape tasks error:", error);
     return NextResponse.json({ error: "获取采集任务列表失败" }, { status: 500 });
   }
-}
+});
 
 // POST /api/scrape-tasks - Create a new scrape task
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { ruleId, mode } = body;
 
     if (!ruleId) {
@@ -80,4 +86,4 @@ export async function POST(request: NextRequest) {
     console.error("Create scrape task error:", error);
     return NextResponse.json({ error: "创建采集任务失败" }, { status: 500 });
   }
-}
+});

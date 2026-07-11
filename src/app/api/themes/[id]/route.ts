@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
+import { safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 const VALID_IDENTIFIER_RE = /^[a-zA-Z0-9_-]+$/;
 const MAX_NAME_LENGTH = 200;
@@ -7,7 +9,7 @@ const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_IDENTIFIER_LENGTH = 100;
 
 // GET /api/themes/[id] - Get a single theme
-export async function GET(
+export const GET = withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -29,16 +31,21 @@ export async function GET(
     console.error("Get theme error:", error);
     return NextResponse.json({ error: "获取主题详情失败" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/themes/[id] - Update a theme
-export async function PUT(
+export const PUT = withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
     const { name, description, identifier, preview, config, enabled } = body;
 
     if (name !== undefined && !name?.trim()) {
@@ -87,10 +94,10 @@ export async function PUT(
       : "更新主题失败";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/themes/[id] - Delete a theme
-export async function DELETE(
+export const DELETE = withAuth(async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -102,4 +109,4 @@ export async function DELETE(
     console.error("Delete theme error:", error);
     return NextResponse.json({ error: "删除主题失败" }, { status: 500 });
   }
-}
+});
