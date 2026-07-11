@@ -99,3 +99,32 @@ Work Log:
 Stage Summary:
 - 第一轮审计发现16个问题，已修复全部HIGH和关键MEDIUM问题
 - 累计修复: 8（初始）+ 6（审计后）= 14个问题
+
+---
+Task ID: 3
+Agent: Main Orchestrator
+Task: 数据库从 SQLite 迁移到 PostgreSQL
+
+Work Log:
+- 在无 root 权限的 Debian 13 环境中安装 PostgreSQL 17.10
+  - 从 apt 下载 postgresql-17 .deb 包并手动解压
+  - 使用 Python 进行二进制安全补丁，替换编译在 postgres 二进制文件中的 `/usr/share/postgresql/17` 路径
+  - 创建用户空间目录结构：`~/.local/pgsql/{bin,lib,share,data,run}`
+  - 初始化数据库集群、创建 `novel_admin` 数据库、启用 `pg_trgm` 扩展
+  - 配置 unix_socket_directories 指向用户可写目录
+- 更新 Prisma schema：`provider = "postgresql"`
+- 重写 `src/lib/db.ts`：移除 SQLite 特有的 `busy_timeout`/`connection_limit` 参数
+- 更新 `.env` 和 `.env.example` 中的 DATABASE_URL
+- 将 scraper-service 的 queue 模块从 `bun:sqlite` 迁移到 `postgres` npm 包
+  - 所有队列函数从同步改为 async
+  - SQLite 语法转换：`datetime('now')` → `NOW()`、`INSERT OR IGNORE` → `ON CONFLICT DO NOTHING`
+  - 添加 `FOR UPDATE SKIP LOCKED` 防止并发 worker 重复处理
+  - 更新 `task-engine.ts` 中 4 个调用点添加 `await`
+- 创建 `scripts/start-postgres.sh` 启动脚本
+- 通过 agent-browser 端到端验证：登录页面、仪表盘、所有导航模块正常工作
+
+Stage Summary:
+- 数据库完全迁移到 PostgreSQL 17.10（14 张表全部创建）
+- 主应用 + scraper-service 队列系统均使用 PostgreSQL
+- 应用功能验证通过（登录、仪表盘、导航）
+- PostgreSQL 数据目录：`~/.local/pgsql/data`，端口 5432

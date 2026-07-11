@@ -171,7 +171,7 @@ export async function executeTask(taskId: string) {
   console.log(`[Task ${taskId}] Engine: ${engineType}, Rule: ${rule.name}, Mode: ${task.mode || rule.scrapeMode}`);
 
   // Clear any previous queue data for this task
-  clearTaskQueue(taskId);
+  await clearTaskQueue(taskId);
 
   const threadCount = rule.threadCount || 3;
   const isIncremental = (task.mode || rule.scrapeMode) === "incremental";
@@ -235,7 +235,7 @@ async function executeTaskBody(
 
   // Add all book URLs to the queue for resume capability
   for (const bookUrl of bookUrls) {
-    addToQueue({ url: bookUrl, taskId, metadata: { type: "book", taskId } });
+    await addToQueue({ url: bookUrl, taskId, metadata: { type: "book", taskId } });
   }
 
   if (bookUrls.length === 0) {
@@ -502,7 +502,7 @@ async function executeTaskBody(
 
       // Add chapter URLs to queue
       for (const ch of chapters) {
-        addToQueue({
+        await addToQueue({
           url: ch.url,
           taskId,
           metadata: { type: "chapter", bookId: book.id, title: ch.title, sortOrder: ch.sortOrder, taskId },
@@ -647,7 +647,7 @@ async function executeTaskBody(
   }
 
   // 6. Finalize task
-  const queueStats = getQueueStats(taskId);
+  const queueStats = await getQueueStats(taskId);
 
   await updateTaskProgress(taskId, {
     status: "completed",

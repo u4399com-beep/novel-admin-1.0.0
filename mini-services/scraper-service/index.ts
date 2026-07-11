@@ -4,7 +4,7 @@
  *
  * A standalone Bun mini-service handling all web scraping operations.
  * Architecture: Pluggable engine system (Cheerio / Playwright / Firecrawl / AgentQL / CloudBrowser)
- *   + Request Queue (SQLite persistence) + Auto-retry + Multi-engine support
+ *   + Request Queue (PostgreSQL persistence) + Auto-retry + Multi-engine support
  */
 
 import { initEngines, closeAllEngines, getEngineNames } from "./src/engines";
