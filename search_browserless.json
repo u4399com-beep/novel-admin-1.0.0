@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.browserless.io",
+    "name": "Browserless: Headless Browser Automation & Scraping",
+    "snippet": "The real-time browser infrastructure behind 173M+ Docker pulls. Scrape, automate, and run AI agents with Puppeteer or Playwright. No DevOps, no credit card.",
+    "host_name": "www.browserless.io",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.morphllm.com/browserless-api",
+    "name": "Browserless API Guide: REST Endpoints, CDP WebSockets, and",
+    "snippet": "Browserless API gives you two connection models: REST endpoints for screenshot/PDF/scrape, and CDP WebSockets for Playwright or Puppeteer.",
+    "host_name": "www.morphllm.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://heyclau.de/entry/tools/browserless",
+    "name": "Browserless browser automation infrastructure - HeyClaude",
+    "snippet": "Browserless provides managed and self-hostable headless browser infrastructure for Puppeteer, Playwright, REST APIs, BrowserQL, and AI automation.",
+    "host_name": "heyclau.de",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/api-evangelist/browserless",
+    "name": "Browserless is a cloud browser-automation  - GitHub",
+    "snippet": "Browserless is a cloud browser-automation platform that runs managed Chromium, Chrome, Edge, Firefox, and WebKit browsers for Puppeteer, ...",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@s.ayyappangs/modern-browser-less-web-ui-automation-testing-using-puppeteer-playwright-azure-devops-mocha-2f6bcb5fd56e",
+    "name": "Modern Browser-less Web UI Automation Testing using  - Medium",
+    "snippet": "With Puppeteer we can cover only chrome browser, but we can use playwright (another node based JS library for web UI automation)which has ...",
+    "host_name": "medium.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

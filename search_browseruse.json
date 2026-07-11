@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://browser-use.com",
+    "name": "Browser Use - The way AI uses the internet",
+    "snippet": "Browser Harness. Open-source, thin, self-healing harness. Give your agent superpowers to complete any task on the web.",
+    "host_name": "browser-use.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/browser-use/browser-use",
+    "name": "GitHub - browser-use/browser-use: Make websites accessible for AI",
+    "snippet": "Browser Use lets an AI agent use a web browser the same way you do — it opens pages, clicks buttons, types, and fills in forms. You describe the task, ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.firecrawl.dev/blog/best-browser-agents",
+    "name": "11 Best AI Browser Agents in 2026 - Firecrawl",
+    "snippet": "If you're a developer automating browser workflows: Browser Use for Python, Stagehand for TypeScript. Both are open-source, well-documented ... TL;DR: Quick comparison · Top 11 browser agents in 2026",
+    "host_name": "www.firecrawl.dev",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@princekrampah/browser-use-in-ai-agents-course-part-1-371d7c70b1f0",
+    "name": "Browser Use In AI Agents Course Part 1 - Medium",
+    "snippet": "In this comprehensive guide, we'll explore how to harness the power of AI agents for browser automation, covering everything from basic setup to ...",
+    "host_name": "medium.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://machinelearningmastery.com/building-browser-using-ai-agents-in-python",
+    "name": "Building Browser-Using AI Agents in Python - Machine Learning Mastery",
+    "snippet": "In this article, you will learn how to build AI agents that can browse and interact with real websites using Playwright, browser-use, ...",
+    "host_name": "machinelearningmastery.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

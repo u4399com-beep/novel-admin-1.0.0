@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.agentql.com",
+    "name": "Make the Web AI-Ready",
+    "snippet": "AgentQL is a suite of tools for connecting your AI to the web. Featuring a query language and parser for interacting with elements and extracting data quickly.",
+    "host_name": "www.agentql.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://bsky.app/profile/agentql.com",
+    "name": "AgentQL (@agentql.com) — Bluesky",
+    "snippet": "@agentql.com integrates with @llamaindex.bsky.social to bring real-time web data to AI agents. Extract structured data, get financial intel, automate web flows.",
+    "host_name": "bsky.app",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.madebyagents.com/blog/ai-powered-web-scraping-the-future-of-data-extraction",
+    "name": "AI-Powered Web Scraping: The Future of Data Extraction - Made By Agents",
+    "snippet": "AI is revolutionizing web scraping. Discover cost-effective tools, build a robust scraping dashboard, and solve common data extraction challenges.\nCost Structure: Base tools: Free. Additional costs: LLM costs for AI data extraction and proxy servers (depending on website requirements)",
+    "host_name": "www.madebyagents.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=XzmkFSqTgtM",
+    "name": "AgentQL: How Deepseek & OpenAI Supercharge AI Agents for Web",
+    "snippet": "This topic on AI Agents is fascinating! Does anyone know if HasData offers a scraper that works with AgentQL for easier web data extraction?",
+    "host_name": "www.youtube.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.langchain.com/oss/python/integrations/tools/agentql",
+    "name": "Agentql integration - Docs by LangChain",
+    "snippet": "AgentQL tools provides web interaction and structured data extraction from any web page using an AgentQL query or a Natural Language prompt.",
+    "host_name": "docs.langchain.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

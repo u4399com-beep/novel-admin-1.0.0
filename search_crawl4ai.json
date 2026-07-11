@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://github.com/unclecode/crawl4AI",
+    "name": "Crawl4AI: Open-source LLM Friendly Web Crawler & Scraper. - GitHub",
+    "snippet": "✨ Features · 🕶️ Stealth Mode: Avoid bot detection by mimicking real users. · 🏷️ Tag-Based Content Extraction: Refine crawling based on custom tags, ...",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "Jul 8, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.crawl4ai.com",
+    "name": "Home - Crawl4AI Documentation (v0.9.x)",
+    "snippet": "It delivers blazing-fast, AI-ready web crawling tailored for large language models, AI agents, and data pipelines. Fully open source, flexible, and built for ...",
+    "host_name": "docs.crawl4ai.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.firecrawl.dev/blog/best-open-source-web-crawler",
+    "name": "Best open-source web crawlers in 2026 - Firecrawl",
+    "snippet": "Crawl4AI is a local-first Python crawler that outputs clean markdown without requiring external API calls, making it popular for teams building ...",
+    "host_name": "www.firecrawl.dev",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://cobusgreyling.medium.com/open-source-llm-friendly-web-crawler-scraper-cb394a965c14",
+    "name": "Open-source LLM Friendly Web Crawler & Scraper - Cobus Greyling",
+    "snippet": "Crawl4AI, an open-source web crawler and scraper, is designed to extract and format web data into LLM-friendly formats like JSON, clean HTML, or markdown.",
+    "host_name": "cobusgreyling.medium.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=vObqzXFW0I0",
+    "name": "Crawl4AI - Open-source LLM Friendly Web Crawler & Scrapper - YouTube",
+    "snippet": "This video shows how to install and use Crawl4AI which is simplifies asynchronous web crawling and data extraction, making it accessible for ...",
+    "host_name": "www.youtube.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

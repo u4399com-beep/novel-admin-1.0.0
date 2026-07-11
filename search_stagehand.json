@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://github.com/browserbase/stagehand",
+    "name": "browserbase/stagehand: The SDK For Browser Agents - GitHub",
+    "snippet": "Stagehand is a browser automation framework used to control web browsers with natural language and code. By combining the power of AI with the precision of ...",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=PCNMoJhq_Go",
+    "name": "Building an AI-First Browser Automation Framework In TypeScript",
+    "snippet": "... Stagehand, a natural-language-driven browser automation tool ... Browser Automation for AI — Paul Klein IV, Browserbase | re:Invent 2025.",
+    "host_name": "www.youtube.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://stagehand.dev",
+    "name": "Stagehand",
+    "snippet": "The SDK for browser agents. Stagehand is an open source SDK that uses AI to make your browser agents resilient, readable, and production-ready.",
+    "host_name": "stagehand.dev",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.firecrawl.dev/blog/best-browser-agents",
+    "name": "11 Best AI Browser Agents in 2026 - Firecrawl",
+    "snippet": "Stagehand is Browserbase's open-source SDK that bridges the gap between traditional Playwright automation and full AI agents. It's the tool for ...",
+    "host_name": "www.firecrawl.dev",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.loopingagent.com/article/browser-automation",
+    "name": "AI-Powered Browser Automation with TypeScript: Debug Production",
+    "snippet": "Master AI-powered browser automation using Stagehand and Browserbase. Learn how to debug production issues and automate complex web tasks with TypeScript ...",
+    "host_name": "www.loopingagent.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

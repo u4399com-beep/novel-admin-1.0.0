@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.linkedin.com/posts/govinda-s_steeldev-is-an-open-source-browser-api-designed-activity-7276061320481771520-ZxUm",
+    "name": "Steel.dev is an open source browser API designed specifically for AI",
+    "snippet": "Steel.dev is an open source browser API designed specifically for AI agents and applications. It provides a REST API that allows us to control headless ...",
+    "host_name": "www.linkedin.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://railway.com/deploy/steel-browser",
+    "name": "Deploy Steel Browser | Open-Source Headless Browser API - Railway",
+    "snippet": "Steel Browser is an open-source browser sandbox that provides REST and WebSocket APIs on top of Chrome, with built-in session management, anti- ...",
+    "host_name": "railway.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/steel-dev/steel-browser",
+    "name": "GitHub - steel-dev/steel-browser: Open Source Browser API for AI",
+    "snippet": "Anti-Detection: Includes stealth plugins and fingerprint management; Resource Management: Automatic cleanup and browser lifecycle management; Browser Tools ...",
+    "host_name": "github.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://steel.dev/blog/beginner-s-guide-to-steel",
+    "name": "Beginner's Guide to Steel.dev Browser Automation",
+    "snippet": "Steel.dev is revolutionizing browser automation by providing a cloud-based browser API specifically designed for AI agents and modern web ...",
+    "host_name": "steel.dev",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://mcpmarket.com/server/steel-browser",
+    "name": "Steel Browser: Automate Web Interactions for AI Agents - MCP Market",
+    "snippet": "Steel Browser automates web tasks for AI agents with full browser control, proxy management, & anti-detection. Simplify web automation without ...",
+    "host_name": "mcpmarket.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

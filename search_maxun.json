@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.firecrawl.dev/blog/best-open-source-web-scraping-libraries",
+    "name": "Best Open-Source Web Scraping Libraries in 2026 - Firecrawl",
+    "snippet": "This article examines the leading open-source web scraping libraries in 2026, comparing their capabilities, learning curves, and best use cases.",
+    "host_name": "www.firecrawl.dev",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/getmaxun/maxun",
+    "name": "GitHub - getmaxun/maxun: The open-source no-code platform for",
+    "snippet": "Maxun is an open-source no-code web data platform for turning the web into structured, reliable data. It supports extraction, crawling, scraping ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "Jul 5, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://dev.to/karishmashukla/maxun-open-source-no-code-web-data-extraction-platform-4316",
+    "name": "Maxun: Open Source No-Code Web Data Extraction Platform⚡️",
+    "snippet": "Maxun is an open-source no-code web data extraction platform. It lets you build custom robots for data scraping in just a few clicks.",
+    "host_name": "dev.to",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.maxun.dev",
+    "name": "Maxun • Scrape, Extract, Crawl, Search Web Data With No-Code",
+    "snippet": "Turn Any Website Into A Structured API. The unified open-source no-code platform for real-time web scraping, crawling, search and AI data extraction.",
+    "host_name": "www.maxun.dev",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.facebook.com/0xSojalSec/posts/turn-websites-into-structured-apis-in-minutes-with-ai-data-extraction-githubcomg/1443833947271004",
+    "name": "Turn websites into structured APIs in minutes with AI data extraction",
+    "snippet": "Game changer for scraping. This repo lets you easily scrape web pages and have the output in LLM-friendly formats (JSON, cleaned HTML, markdown) ...",
+    "host_name": "www.facebook.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

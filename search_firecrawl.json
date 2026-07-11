@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.firecrawl.dev",
+    "name": "Firecrawl - The context API to search, scrape, and interact with the web at",
+    "snippet": "Power AI agents with clean web data. The complete toolkit to search, scrape, and interact with the web at scale.It's also open source.",
+    "host_name": "www.firecrawl.dev",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/firecrawl/firecrawl",
+    "name": "GitHub - firecrawl/firecrawl: The API to search, scrape, and interact with the",
+    "snippet": "The API to search, scrape, and interact with the web at scale. Open source and available as a hosted service. Covers 96% of the web, including JS-heavy. To ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.firecrawl.dev/blog/best-open-source-web-scraping-libraries",
+    "name": "Best Open-Source Web Scraping Libraries in 2026 - Firecrawl",
+    "snippet": "The open-source version is available under a permissive license for self-hosting, while the cloud API offers enterprise features and support.",
+    "host_name": "www.firecrawl.dev",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.firecrawl.dev/glossary/web-scraping-apis/what-is-open-source-web-scraping",
+    "name": "What is open source web scraping? | Firecrawl Glossary",
+    "snippet": "You manage infrastructure, updates, proxies, and scaling yourself. Firecrawl is fully open source with feature parity between self-hosted and cloud versions.",
+    "host_name": "www.firecrawl.dev",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://aws.amazon.com/marketplace/pp/prodview-cj6pjxbjtrsna",
+    "name": "AWS Marketplace: Firecrawl - Self-Hosted Web Scraping API",
+    "snippet": "Firecrawl is a self-hosted web scraping API that turns websites into clean markdown and structured data for AI, search, and automation workflows.",
+    "host_name": "aws.amazon.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

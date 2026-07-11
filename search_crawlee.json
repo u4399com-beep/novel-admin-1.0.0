@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://crawlee.dev",
+    "name": "Crawlee · Build reliable crawlers. Fast.",
+    "snippet": "Build reliable web scrapers. Fast. Crawlee is a web scraping library for JavaScript and Python. It handles blocking, crawling, proxies, and browsers for you.",
+    "host_name": "crawlee.dev",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/apify/crawlee",
+    "name": "Crawlee—A web scraping and browser automation library  - GitHub",
+    "snippet": "Crawlee covers your crawling and scraping end-to-end and helps you build reliable scrapers. Fast. Your crawlers will appear human-like and fly under the ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://news.ycombinator.com/item?id=32561127",
+    "name": "Crawlee – Web scraping and browser automation library for Node.js",
+    "snippet": "Crawlee is basically a big wrapper around open source tools like Puppeteer, Playwright, Cheerio (I would not call these crawlers though as they don't have any ...",
+    "host_name": "news.ycombinator.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dev.to/mnmkng/launching-crawlee-the-web-scraping-and-browser-automation-library-for-nodejs-e1o",
+    "name": "Launching Crawlee, the web scraping and browser automation library for",
+    "snippet": "Today, drawing on our team's years of experience, we're launching Crawlee, the the web scraping and browser automation library for Node.js ...",
+    "host_name": "dev.to",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=iAk1mb3v5iI",
+    "name": "Learn how to create scrapers in JavaScript and TypeScript - YouTube",
+    "snippet": "Learn how to scrape any website using Crawlee in JavaScript/TypeScript. Discover the modern features and all of Crawlee's capabilities, ...",
+    "host_name": "www.youtube.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

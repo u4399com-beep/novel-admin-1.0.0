@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.skyvern.com/pricing",
+    "name": "Skyvern Pricing — Free to Enterprise Automation Plans",
+    "snippet": "Skyvern pricing: Free (5000 credits/mo), Hobby ($29/mo), Pro ($149/mo), and Enterprise plans. AI-powered browser automation with CAPTCHA solving, ...",
+    "host_name": "www.skyvern.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/skyvern-ai/skyvern",
+    "name": "Skyvern-AI/skyvern: Automate browser based workflows with AI - GitHub",
+    "snippet": "Skyvern is a Playwright extension that adds AI-powered browser automation. It gives you the full power of Playwright with additional AI capabilities—use ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://theaiagentindex.com/agents/skyvern",
+    "name": "Skyvern Review (2026): AI Browser Automation - The AI Agent Index",
+    "snippet": "Skyvern: AI browser automation using computer vision. 21600+ GitHub stars. Free; Hobby $29/mo, Pro $149/mo. Open source, MCP-compatible.",
+    "host_name": "theaiagentindex.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.rtrvr.ai/blog/rtrvr-vs-browser-use-vs-skyvern-vs-firecrawl",
+    "name": "rtrvr.ai vs Browser Use vs Skyvern vs Firecrawl: The Agentic Cloud",
+    "snippet": "Others: 43-66% success, $0.30-1.00/task. The architectural advantages aren't theoretical—they're proven in production across 200,000+ workflows.",
+    "host_name": "www.rtrvr.ai",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.browseanything.io/compare/skyvern",
+    "name": "Browse Anything vs Skyvern",
+    "snippet": "Skyvern: Open-source browser automation focused on enterprise workflows like onboarding, claims, and form processing. See pricing, features, strengths, ...",
+    "host_name": "www.browseanything.io",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "url": "http://crawler.archive.org/index.html",
+    "name": "Heritrix - Home Page - Internet Archive",
+    "snippet": "Heritrix is the Internet Archive's open-source, extensible, web-scale, archival-quality web crawler project.",
+    "host_name": "crawler.archive.org",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/internetarchive/heritrix3",
+    "name": "internetarchive/heritrix3: Heritrix is the Internet Archive's open  - GitHub",
+    "snippet": "Heritrix is the Internet Archive's open-source, extensible, web-scale, archival-quality web crawler project. Heritrix (sometimes spelled heretrix, ... Missing: archiving 2025",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://open-awesome.com/projects/heritrix3",
+    "name": "Heritrix — Web-Scale Archival Web Crawler | Open Awesome",
+    "snippet": "Heritrix is an open-source, extensible web crawler developed by the Internet Archive for large-scale, archival-quality web harvesting. It is ... Missing: features 2025",
+    "host_name": "open-awesome.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://grokipedia.com/page/Heritrix",
+    "name": "Heritrix - Grokipedia",
+    "snippet": "Heritrix is an open-source, extensible, web-scale web crawler designed specifically for high-quality web archiving. Developed by the Internet Archive, ...",
+    "host_name": "grokipedia.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://sourceforge.net/projects/heritrix.mirror",
+    "name": "Heritrix download | SourceForge.net",
+    "snippet": "Heritrix is the Internet Archive's open-source, extensible, web-scale, archival-quality web crawler project. Missing: 2025 | Show results with: 2025",
+    "host_name": "sourceforge.net",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

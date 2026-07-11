@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://projectdiscovery.io/blog/introducing-katana-the-best-cli-web-crawler",
+    "name": "Introducing Katana: The CLI web crawler from PD - ProjectDiscovery.io",
+    "snippet": "One of the defining features of Katana is its ability to use headless browsing to crawl applications. This means that it can crawl single-page ...",
+    "host_name": "projectdiscovery.io",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/projectdiscovery/katana",
+    "name": "projectdiscovery/katana: A next-generation crawling and spidering framework. - GitHub",
+    "snippet": "Features · Fast And fully configurable web crawling · Standard and Headless mode · JavaScript parsing / crawling · Customizable automatic form ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://incyberera.com/blog/the-katana-masterclass-advanced-web-crawler",
+    "name": "Katana: Advanced Web Crawler - inCyberEra",
+    "snippet": "Hybrid Crawling Architecture: Seamlessly switches between lightning-fast standard crawling and JavaScript-rendering headless mode · Intelligent ...",
+    "host_name": "incyberera.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.scribd.com/document/758555637/projectdiscovery-katana-A-next-generation-crawling-and-spidering-framework",
+    "name": "Katana: Next-Gen Web Crawler Guide | PDF | Http Cookie - Scribd",
+    "snippet": "katana requires url or endpoint to crawl and accepts single or multiple inputs. Input URL can be provided using -u option, and multiple values can be provided ...",
+    "host_name": "www.scribd.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://adce626.medium.com/katana-to-kill-switch-mastering-projectdiscoverys-crawler-from-zero-to-pro-with-real-world-62a7dec5a744",
+    "name": "Katana to Kill‑Switch: Mastering ProjectDiscovery's Crawler From Zero to Pro (with Real‑World Scenarios) - adce626",
+    "snippet": "> This guide gives you battle‑tested scenarios (pre‑auth, post‑auth, SPA/JS apps, shadow APIs, GraphQL, mobile web, rate‑limited portals), ...",
+    "host_name": "adce626.medium.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

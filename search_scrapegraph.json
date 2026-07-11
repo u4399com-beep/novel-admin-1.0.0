@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://github.com/ScrapeGraphAI/Scrapegraph-ai",
+    "name": "ScrapeGraphAI/Scrapegraph-ai: Python scraper based on AI - GitHub",
+    "snippet": "ScrapeGraphAI is a web scraping python library that uses LLM and direct graph logic to create scraping pipelines for websites and local documents.",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/data-science-collective/llm-assisted-web-data-extraction-with-scrapegraphai-a-practical-2025-walkthrough-ee56960394db",
+    "name": "ScrapeGraphAI Tutorial | LLM-Powered Web Scraping - Medium",
+    "snippet": "Learn how to easily run ScrapeGraphAI - a flexible LLM pipeline for web data extraction and how to scale it to enterprise grade solutions.",
+    "host_name": "medium.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.capsolver.com/blog/All/scrapegraph-ai",
+    "name": "How to Use ScrapeGraph AI for Web Scraping - CapSolver",
+    "snippet": "ScrapeGraph AI is a Python web scraping library that leverages LLMs and graph-based logic to build scraping pipelines for websites and local documents.",
+    "host_name": "www.capsolver.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://news.ycombinator.com/item?id=40290596",
+    "name": "ScrapeGraphAI: Web scraping using LLM and direct graph logic",
+    "snippet": "Scraper builder that uses LLMs/'magic' to generate optimised scraping rules for any page, ie css selectors and processing rules mapped to output keys.",
+    "host_name": "news.ycombinator.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.datadriveninvestor.com/from-code-to-intelligence-how-ai-is-revolutionizing-web-scraping-in-2025-6468af5cff14",
+    "name": "From Code to Intelligence: How AI is Revolutionizing Web Scraping",
+    "snippet": "LLM-powered content analysis; Multi-source document processing (HTML, XML, JSON, Markdown); Natural language-based extraction instructions ...",
+    "host_name": "medium.datadriveninvestor.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]
