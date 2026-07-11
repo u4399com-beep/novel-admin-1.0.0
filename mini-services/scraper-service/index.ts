@@ -28,6 +28,8 @@ const SERVICE_TOKEN = process.env.SCRAPER_SERVICE_TOKEN || "";
 const MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB max request body
 const SCRAPER_RATE_LIMIT = 60; // requests per minute
 const MAX_SCRAPER_RATE_ENTRIES = 10000;
+const MAX_CONCURRENT_TASKS = 3; // global concurrent task limit
+let activeTaskCount = 0;
 const scraperRateStore = new Map<string, { count: number; resetAt: number }>();
 
 // Track active tasks for graceful shutdown
@@ -310,6 +312,7 @@ export function startServer(port: number = 3099) {
             }).catch(() => {});
           }).finally(() => {
             activeTasks.delete(taskId);
+            activeTaskCount--;
           });
           return Response.json(
             { message: "Task execution started", taskId },
@@ -421,7 +424,7 @@ const terminateTimer = setInterval(() => {
     // Tasks still running after deadline - force terminate
     console.warn(`[${new Date().toISOString()}] Force terminating ${activeTasks.size} active tasks`);
     for (const taskId of activeTasks) {
-      fetch(`${API_BASE}/api/scrape-tasks/${taskId}`, {
+      fetch(`${process.env.MAIN_APP_URL || "http://localhost:3000"}/api/scrape-tasks/${taskId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -435,7 +438,8 @@ const terminateTimer = setInterval(() => {
       }).catch(() => {});
     }
     clearInterval(terminateTimer);
-  }, 3000);
+  }
+}, 3000);
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));

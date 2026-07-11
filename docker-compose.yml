@@ -1,7 +1,45 @@
-version: '3.8'
+# ============================================================
+# Novel Management System - Docker Compose (Production)
+# ============================================================
+# Usage:
+#   1. Copy .env.production to .env and fill in your values
+#   2. docker compose up -d
+#   3. Open http://your-server-ip:3000
+# ============================================================
 
 services:
-  # ============ Main Application ============
+  # ============ PostgreSQL Database ============
+  postgres:
+    image: postgres:17-alpine
+    container_name: novel-postgres
+    restart: unless-stopped
+    ports:
+      # Only expose to host if you need external DB access.
+      # Comment out this line for better security.
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-novel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-novel_admin}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      # Chinese locale support
+      LANG: zh_CN.UTF-8
+      LC_ALL: zh_CN.UTF-8
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-novel} -d ${POSTGRES_DB:-novel_admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ============ Main Application (Next.js + Scraper) ============
   novel-manager:
     build:
       context: .
@@ -10,26 +48,61 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
-      - novel-data:/app/data
+      - app-data:/app/data
     environment:
-      - DATABASE_URL=file:/app/data/db/custom.db
-      - SCRAPER_SERVICE_URL=http://localhost:3099
+      # ─── Database (PostgreSQL) ───
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=10&pool_timeout=30
+      # Scraper queue uses the same database
+      - QUEUE_DB_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=5
+      - DB_PROVIDER=postgresql
+
+      # ─── App Config ───
+      - NODE_ENV=production
       - NEXT_PUBLIC_APP_NAME=${APP_NAME:-小说管理系统}
       - NEXT_PUBLIC_APP_URL=${APP_URL:-http://localhost:3000}
-      - TZ=Asia/Shanghai
+
+      # ─── Authentication ───
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set in .env}
+      - NEXTAUTH_URL=${APP_URL:-http://localhost:3000}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+
+      # ─── Service Auth ───
+      - SCRAPER_SERVICE_TOKEN=${SCRAPER_SERVICE_TOKEN:?SCRAPER_SERVICE_TOKEN must be set in .env}
+      - SCRAPER_SERVICE_URL=http://localhost:3099
+      - MAIN_APP_URL=http://localhost:3000
+
+      # ─── Optional: External Services ───
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-}
+      - AGENTQL_API_KEY=${AGENTQL_API_KEY:-}
+      - AGENTQL_API_URL=${AGENTQL_API_URL:-}
+      - CLOUD_BROWSER_PROVIDER=${CLOUD_BROWSER_PROVIDER:-}
+      - BROWSERLESS_API_KEY=${BROWSERLESS_API_KEY:-}
+      - BROWSERLESS_API_URL=${BROWSERLESS_API_URL:-}
+      - STEEL_API_KEY=${STEEL_API_KEY:-}
+      - STEEL_API_URL=${STEEL_API_URL:-}
+
+      # ─── Misc ───
+      - TZ=${TZ:-Asia/Shanghai}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/csrf"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     logging:
       driver: json-file
       options:
         max-size: "50m"
-        max-file: "3"
+        max-file: "5"
 
 volumes:
-  novel-data:
+  postgres-data:
+    driver: local
+  app-data:
     driver: local
