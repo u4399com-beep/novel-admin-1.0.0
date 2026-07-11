@@ -61,10 +61,12 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
 
     const validScrapeModes = ["incremental", "full"];
+    const validEngines = ["cheerio", "playwright", "firecrawl"];
     const validStorageModes = ["database", "file"];
     const validDedupModes = ["url", "title", "both"];
 
     const scrapeMode = validScrapeModes.includes(body.scrapeMode) ? body.scrapeMode : "incremental";
+    const engine = validEngines.includes(body.engine) ? body.engine : "cheerio";
     const storageMode = validStorageModes.includes(body.storageMode) ? body.storageMode : "database";
     const dedupMode = validDedupModes.includes(body.dedupMode) ? body.dedupMode : "url";
     const threadCount = Math.min(Math.max(1, Number(body.threadCount) || 3), 20);
@@ -113,6 +115,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
         // 采集策略
         scrapeMode,
+        engine,
         threadCount,
         minDelay,
         maxDelay,

@@ -134,6 +134,7 @@ model ScrapeRule {
 
   // 采集策略
   scrapeMode     String  @default("incremental") // incremental, full
+  engine         String  @default("cheerio") // cheerio, playwright, firecrawl
   threadCount    Int     @default(3)
   minDelay       Int     @default(1000) // 最小间隔ms
   maxDelay       Int     @default(3000) // 最大间隔ms

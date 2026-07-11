@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
 const VALID_SCRAPE_MODES = ["incremental", "full"];
+const VALID_ENGINES = ["cheerio", "playwright", "firecrawl"];
 const VALID_STORAGE_MODES = ["database", "file"];
 const VALID_DEDUP_MODES = ["url", "title", "both"];
 const MAX_THREAD = 20;
@@ -56,6 +57,9 @@ export const PUT = withAuth(async function PUT(
     // Validate enums and ranges
     if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode)) {
       return NextResponse.json({ error: `采集模式只能是: ${VALID_SCRAPE_MODES.join(", ")}` }, { status: 400 });
+    }
+    if (body.engine !== undefined && !VALID_ENGINES.includes(body.engine)) {
+      return NextResponse.json({ error: `采集引擎只能是: ${VALID_ENGINES.join(", ")}` }, { status: 400 });
     }
     if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode)) {
       return NextResponse.json({ error: `存储模式只能是: ${VALID_STORAGE_MODES.join(", ")}` }, { status: 400 });
@@ -152,6 +156,7 @@ export const PUT = withAuth(async function PUT(
 
         // 采集策略
         ...(body.scrapeMode !== undefined && { scrapeMode: body.scrapeMode }),
+        ...(body.engine !== undefined && { engine: body.engine }),
         ...(body.threadCount !== undefined && {
           threadCount: Math.min(Math.max(MIN_THREAD, Math.floor(Number(body.threadCount) || 3)), MAX_THREAD),
         }),

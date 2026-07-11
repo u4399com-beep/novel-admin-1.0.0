@@ -91,6 +91,7 @@ export interface ScrapeRuleFormData {
 
   // Scrape strategy
   scrapeMode: 'incremental' | 'full';
+  engine: 'cheerio' | 'playwright' | 'firecrawl';
   threadCount: number;
   minDelay: number;
   maxDelay: number;
@@ -157,6 +158,7 @@ export const scrapeRuleSchema = z.object({
   coverSavePath: z.string(),
 
   scrapeMode: z.enum(['incremental', 'full']),
+  engine: z.enum(['cheerio', 'playwright', 'firecrawl']),
   threadCount: z.number().int().min(1).max(10),
   minDelay: z.number().int().min(0),
   maxDelay: z.number().int().min(0),
@@ -338,6 +340,7 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
       coverSavePath: './data/covers',
 
       scrapeMode: 'incremental',
+      engine: 'cheerio',
       threadCount: 3,
       minDelay: 1000,
       maxDelay: 3000,
@@ -417,6 +420,7 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
           coverSavePath: rule.coverSavePath || './data/covers',
 
           scrapeMode: rule.scrapeMode || 'incremental',
+          engine: (rule.engine as 'cheerio' | 'playwright' | 'firecrawl') || 'cheerio',
           threadCount: rule.threadCount || 3,
           minDelay: rule.minDelay ?? 1000,
           maxDelay: rule.maxDelay ?? 3000,
@@ -849,6 +853,49 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
         {/* Tab 8: Scraping Strategy */}
         <TabsContent value="strategy">
           <div className="space-y-4 rounded-lg border p-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">采集引擎</Label>
+              <Select
+                value={watch('engine')}
+                onValueChange={(v) => {
+                  setValue('engine', v as 'cheerio' | 'playwright' | 'firecrawl', { shouldDirty: true });
+                  // Auto-set useJsRender when playwright selected
+                  if (v === 'playwright') {
+                    setValue('antiCrawlConfig.useJsRender', true, { shouldDirty: true });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-[240px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cheerio">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-green-500" />
+                      Cheerio (快速HTTP)
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="playwright">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-blue-500" />
+                      Playwright (JS渲染)
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="firecrawl">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-orange-500" />
+                      Firecrawl (AI增强)
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Cheerio: 最快，适合静态页面 | Playwright: 支持JS渲染 | Firecrawl: 自动清洗+JS渲染(需部署)
+              </p>
+            </div>
+
+            <Separator />
+
             <div className="space-y-2">
               <Label className="text-sm font-medium">采集模式</Label>
               <Select

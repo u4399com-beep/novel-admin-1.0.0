@@ -1164,3 +1164,32 @@ Stage Summary:
 - 6个定位不匹配(AI Agent自动化)：Browser Use, Stagehand, Skyvern, Puppeteer, Scrapling
 - 3个强烈推荐集成：Crawlee(底层引擎重构), Playwright(JS渲染), Firecrawl(高级采集)
 - 3个场景化可选：AgentQL(智能提取), ScrapeGraph AI(规则自动生成), Maxun(可视化规则构建)
+
+---
+
+Task ID: scraper-v2-refactor
+Agent: Main Agent
+Task: 根据推荐方案改造采集系统 - 集成 Crawlee概念/Playwright/Firecrawl 三引擎架构
+
+Work Log:
+- 安装 playwright 依赖，确认 Chromium 浏览器可用
+- 将 scraper-service/index.ts (2022行单文件) 拆分为模块化架构:
+  - src/types.ts (200行) - 所有类型定义，新增 EngineType/ScrapingEngine/FirecrawlConfig
+  - src/utils.ts (200行) - UA轮换(16个)、URL解析、SSRF/路径穿越防护、指数退避重试
+  - src/selectors.ts (230行) - CSS/XPath/Regex选择器引擎，增强XPath属性提取
+  - src/cleaning.ts (120行) - 内容清洗，新增share/social选择器
+  - src/engines.ts (270行) - 三引擎架构: CheerioEngine/PlaywrightEngine/FirecrawlEngine
+  - src/queue.ts (290行) - SQLite持久化请求队列，支持断点续爬、自动重试
+  - src/scrapers.ts (320行) - 高级采集函数，支持engine参数选择引擎
+  - src/task-engine.ts (430行) - 任务编排引擎，集成引擎选择和请求队列
+  - index.ts (180行) - 精简HTTP路由入口，新增队列管理端点
+- Prisma schema 新增 ScrapeRule.engine 字段
+- 前端 ScrapeRuleEditor 新增采集引擎选择器（Cheerio/Playwright/Firecrawl）
+- API路由 scrape-rules POST/PUT 支持 engine 字段校验
+
+Stage Summary:
+- 采集系统从单引擎(cheerio)升级为三引擎可插拔架构
+- Playwright引擎已验证可正常工作（JS渲染example.com成功提取内容）
+- 请求队列已实现（SQLite持久化），支持断点续爬和失败重试
+- 新增5个队列管理API端点 (stats/requeue/cleanup/clear)
+- 所有原有功能保持兼容，engine默认为cheerio
