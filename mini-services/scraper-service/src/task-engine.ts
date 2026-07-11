@@ -10,13 +10,31 @@ import type {
 } from "./types";
 import {
   parseJsonField, parseSelectorField as _parseSelectorField,
-  mapNovelStatus, randomDelay, retryWithBackoff, getRandomUA,
+  mapNovelStatus, randomDelay, retryWithBackoff, getRandomUA, isSafeSavePath,
 } from "./utils";
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector } from "./selectors";
 import { handleClean } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
 import { addToQueue, isUrlProcessed, markCompleted, markFailed, getQueueStats, clearTaskQueue } from "./queue";
+
+// ==================== Semaphore ====================
+
+class Semaphore {
+  private queue: (() => void)[] = [];
+  private running = 0;
+  constructor(private max: number) {}
+  async acquire(): Promise<void> {
+    if (this.running < this.max) { this.running++; return; }
+    return new Promise<void>(resolve => this.queue.push(resolve));
+  }
+  release(): void {
+    this.running--;
+    if (this.queue.length > 0) { this.running++; this.queue.shift()!(); }
+  }
+}
+
+const dbWriteSemaphore = new Semaphore(3);
 
 // ==================== API Client ====================
 
@@ -31,7 +49,7 @@ async function apiCall(
     method,
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || process.env.NEXTAUTH_SECRET || ""}`,
+      "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
     },
     signal: AbortSignal.timeout(30000),
   };
@@ -352,8 +370,13 @@ async function executeTaskBody(
         try {
           const coverFilename = `${novelId}.webp`;
           const savePath = `${rule.coverSavePath}/${coverFilename}`;
-          await handleDownloadCover(bookInfo.coverUrl, savePath);
-          await apiCall("PUT", `/api/novels/${novelId}`, { coverPath: savePath });
+          if (!isSafeSavePath(savePath)) {
+            console.error(`[Task ${taskId}] Invalid cover save path: ${savePath}`);
+            await addTaskLog(taskId, "warn", `封面保存路径无效: ${savePath}`, bookInfo.coverUrl);
+          } else {
+            await handleDownloadCover(bookInfo.coverUrl, savePath);
+            await apiCall("PUT", `/api/novels/${novelId}`, { coverPath: savePath });
+          }
         } catch (coverErr) {
           console.error(`[Task ${taskId}] Cover download failed for ${bookInfo.title}:`, coverErr);
           await addTaskLog(taskId, "warn", `封面下载失败: ${bookInfo.title}`, bookInfo.coverUrl, String(coverErr));
@@ -554,16 +577,23 @@ async function executeTaskBody(
           }
 
           // Create chapter via API
-          const { status: chStatus } = await apiCall(
-            "POST",
-            `/api/novels/${book.id}/chapters`,
-            {
-              title: chapterTitle,
-              content: chapterContent,
-              sortOrder: chapter.sortOrder,
-              sourceUrl: chapter.url,
-            }
-          );
+          let chStatus: number;
+          await dbWriteSemaphore.acquire();
+          try {
+            const result = await apiCall(
+              "POST",
+              `/api/novels/${book.id}/chapters`,
+              {
+                title: chapterTitle,
+                content: chapterContent,
+                sortOrder: chapter.sortOrder,
+                sourceUrl: chapter.url,
+              }
+            );
+            chStatus = result.status;
+          } finally {
+            dbWriteSemaphore.release();
+          }
 
           if (chStatus === 201) {
             newChaptersCount++;

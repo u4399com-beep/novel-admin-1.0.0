@@ -1,12 +1,14 @@
 type CacheEntry<T> = {
   data: T;
   expiresAt: number;
+  sizeEstimate: number;
 };
 
 const cache = new Map<string, CacheEntry<unknown>>();
 
 const DEFAULT_TTL = 30 * 1000; // 30 seconds
 const MAX_ENTRIES = 500;
+const MAX_VALUE_SIZE = 512000; // 500KB
 const CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 
 // Cleanup stale entries periodically
@@ -38,11 +40,16 @@ export function getCached<T>(key: string): T | null {
 }
 
 export function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
+  // Don't cache values that exceed the size limit
+  const sizeEstimate = JSON.stringify(data).length;
+  if (sizeEstimate > MAX_VALUE_SIZE) {
+    return;
+  }
   // Don't cache if at capacity and this key is new
   if (!cache.has(key) && cache.size >= MAX_ENTRIES) {
     return;
   }
-  cache.set(key, { data, expiresAt: Date.now() + ttl });
+  cache.set(key, { data, expiresAt: Date.now() + ttl, sizeEstimate });
 }
 
 export function invalidateCache(key?: string): void {

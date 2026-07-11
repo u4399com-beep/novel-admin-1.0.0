@@ -36,6 +36,14 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Escape special characters for safe embedding in CSS attribute selectors */
+function escapeCssString(str: string): string {
+  return str
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\]/g, "\\]");
+}
+
 /**
  * Clean HTML content: remove ads, scripts, normalize whitespace.
  */
@@ -49,7 +57,7 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
   if (config.removeAds !== false) {
     const allAdSelectors = [...AD_CSS_SELECTORS];
     if (config.adPatterns && config.adPatterns.length > 0) {
-      allAdSelectors.push(...config.adPatterns.map((p) => `[class*="${p}"], [id*="${p}"]`));
+      allAdSelectors.push(...config.adPatterns.map((p) => `[class*="${escapeCssString(p)}"], [id*="${escapeCssString(p)}"]`));
     }
     $(allAdSelectors.join(", ")).remove();
   }

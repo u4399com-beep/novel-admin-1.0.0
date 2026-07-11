@@ -12,6 +12,55 @@
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
 import { isSafeTargetUrl, buildFetchHeaders, getRandomUA, retryWithBackoff } from "./utils";
 
+// ==================== Circuit Breaker ====================
+
+type CircuitState = "closed" | "open" | "half-open";
+
+class CircuitBreaker {
+  private state: CircuitState = "closed";
+  private failureCount = 0;
+  private lastFailureTime = 0;
+  private readonly failureThreshold: number;
+  private readonly resetTimeout: number;
+
+  constructor(name: string, failureThreshold = 3, resetTimeout = 30000) {
+    this.failureThreshold = failureThreshold;
+    this.resetTimeout = resetTimeout;
+    this._name = name;
+  }
+
+  private _name: string;
+
+  async acquire(): Promise<void> {
+    if (this.state === "open") {
+      // Check if enough time has passed to transition to half-open
+      if (Date.now() - this.lastFailureTime >= this.resetTimeout) {
+        this.state = "half-open";
+      } else {
+        throw new Error(`Service ${this._name} is temporarily unavailable (circuit breaker open)`);
+      }
+    }
+  }
+
+  recordSuccess(): void {
+    this.failureCount = 0;
+    this.state = "closed";
+  }
+
+  recordFailure(): void {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureCount >= this.failureThreshold) {
+      this.state = "open";
+    }
+  }
+}
+
+// One circuit breaker per external engine type
+const firecrawlBreaker = new CircuitBreaker("Firecrawl");
+const agentqlBreaker = new CircuitBreaker("AgentQL");
+const cloudBrowserBreaker = new CircuitBreaker("CloudBrowser");
+
 // ==================== Engine Registry ====================
 
 const engines: Map<EngineType, ScrapingEngine> = new Map();
@@ -42,30 +91,44 @@ class CheerioEngine implements ScrapingEngine {
     const headers = buildFetchHeaders(options?.antiCrawl, options?.userAgent);
     const timeout = options?.timeout || 30000;
 
-    const proxyUrl = options?.proxy || options?.antiCrawl?.proxy;
-
     return retryWithBackoff(
       async () => {
         const fetchOptions: RequestInit = {
           headers,
-          redirect: "follow",
+          redirect: "manual",
           signal: AbortSignal.timeout(timeout),
         };
 
-        // Proxy support via Bun's undici-compatible fetch
-        if (proxyUrl && typeof Bun !== "undefined") {
-          // Bun supports proxy via environment variable approach
-          // We set it temporarily for this request
-        }
+        let currentUrl = url;
+        let response = await fetch(currentUrl, fetchOptions);
+        const MAX_REDIRECTS = 5;
 
-        const response = await fetch(url, fetchOptions);
+        // Manually follow redirects, validating each target
+        for (let i = 0; i < MAX_REDIRECTS; i++) {
+          if (response.status >= 300 && response.status < 400) {
+            const location = response.headers.get("location");
+            if (!location) break;
+
+            // Resolve relative redirect URLs
+            const redirectUrl = new URL(location, currentUrl).href;
+
+            if (!isSafeTargetUrl(redirectUrl)) {
+              throw new Error(`Blocked: redirect target URL is not allowed (${redirectUrl})`);
+            }
+
+            currentUrl = redirectUrl;
+            response = await fetch(currentUrl, fetchOptions);
+          } else {
+            break;
+          }
+        }
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText} for ${url}`);
         }
 
         const html = await response.text();
-        const finalUrl = response.url || url;
+        const finalUrl = response.url || currentUrl;
 
         return { html, finalUrl, statusCode: response.status };
       },
@@ -157,6 +220,19 @@ class PlaywrightEngine implements ScrapingEngine {
         try {
           const page = await context.newPage();
 
+          // Intercept all requests to block unsafe redirect targets
+          await context.route('**/*', (route) => {
+            const routeUrl = route.request().url();
+            if (routeUrl.startsWith('http://') || routeUrl.startsWith('https://')) {
+              // Only block navigation requests, not resources
+              if (route.request().resourceType() === 'document' && !isSafeTargetUrl(routeUrl)) {
+                route.abort();
+                return;
+              }
+            }
+            route.continue();
+          });
+
           // Set extra headers
           await page.setExtraHTTPHeaders({
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -227,6 +303,8 @@ class FirecrawlEngine implements ScrapingEngine {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
+    await firecrawlBreaker.acquire();
+
     const config = getFirecrawlConfig();
     const timeout = options?.timeout || config.timeout || 60000;
 
@@ -252,6 +330,7 @@ class FirecrawlEngine implements ScrapingEngine {
 
         if (!response.ok) {
           const errorBody = await response.text().catch(() => "");
+          firecrawlBreaker.recordFailure();
           throw new Error(`Firecrawl API error: HTTP ${response.status} - ${errorBody}`);
         }
 
@@ -263,12 +342,15 @@ class FirecrawlEngine implements ScrapingEngine {
         };
 
         if (!data.success && data.error) {
+          firecrawlBreaker.recordFailure();
           throw new Error(`Firecrawl error: ${data.error}`);
         }
 
         // Firecrawl returns cleaned HTML (main content only)
         // Reconstruct a full HTML for cheerio to parse
         const html = data.html || `<html><body>${data.markdown || ""}</body></html>`;
+
+        firecrawlBreaker.recordSuccess();
 
         return {
           html,
@@ -366,6 +448,8 @@ class AgentQLEngine implements ScrapingEngine {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
+    await agentqlBreaker.acquire();
+
     const config = getAgentQLConfig();
     const timeout = options?.timeout || config.timeout || 60000;
 
@@ -402,6 +486,7 @@ class AgentQLEngine implements ScrapingEngine {
 
         if (!response.ok) {
           const errorBody = await response.text().catch(() => "");
+          agentqlBreaker.recordFailure();
           throw new Error(`AgentQL API error: HTTP ${response.status} - ${errorBody}`);
         }
 
@@ -411,12 +496,15 @@ class AgentQLEngine implements ScrapingEngine {
         };
 
         if (data.error) {
+          agentqlBreaker.recordFailure();
           throw new Error(`AgentQL error: ${data.error}`);
         }
 
         // Reconstruct HTML from AgentQL structured response
         const extractedData = data.data || {};
         const html = reconstructHtmlFromAgentQL(extractedData);
+
+        agentqlBreaker.recordSuccess();
 
         return {
           html,
@@ -470,6 +558,8 @@ class CloudBrowserEngine implements ScrapingEngine {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
+    await cloudBrowserBreaker.acquire();
+
     const config = getCloudBrowserConfig();
     const timeout = options?.timeout || config.timeout || 60000;
 
@@ -506,6 +596,7 @@ class CloudBrowserEngine implements ScrapingEngine {
 
           if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
+            cloudBrowserBreaker.recordFailure();
             throw new Error(`Steel API error: HTTP ${response.status} - ${errorBody}`);
           }
 
@@ -516,6 +607,7 @@ class CloudBrowserEngine implements ScrapingEngine {
           };
 
           if (data.error) {
+            cloudBrowserBreaker.recordFailure();
             throw new Error(`Steel error: ${data.error}`);
           }
 
@@ -540,6 +632,7 @@ class CloudBrowserEngine implements ScrapingEngine {
 
           if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
+            cloudBrowserBreaker.recordFailure();
             throw new Error(`Browserless API error: HTTP ${response.status} - ${errorBody}`);
           }
 
@@ -550,6 +643,7 @@ class CloudBrowserEngine implements ScrapingEngine {
           };
 
           if (data.error) {
+            cloudBrowserBreaker.recordFailure();
             throw new Error(`Browserless error: ${data.error}`);
           }
 
@@ -570,6 +664,8 @@ class CloudBrowserEngine implements ScrapingEngine {
         if (!html.includes("<html") && !html.includes("<HTML")) {
           html = `<!DOCTYPE html>\n<html><body>${html}</body></html>`;
         }
+
+        cloudBrowserBreaker.recordSuccess();
 
         return {
           html,

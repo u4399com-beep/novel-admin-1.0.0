@@ -92,6 +92,28 @@ export const PUT = withAuth(async function PUT(
 
     const parsedInterval = adInterval !== undefined ? Math.min(Math.max(MIN_AD_INTERVAL, Math.floor(Number(adInterval) || 50)), MAX_AD_INTERVAL) : undefined;
 
+    // If confusionText is being updated but insertConfusion is not provided,
+    // read the existing config to get the current insertConfusion value
+    let effectiveInsertConfusion = insertConfusion;
+    if (confusionText !== undefined && insertConfusion === undefined) {
+      const existingConfig = await db.downloadConfig.findUnique({ where: { id }, select: { insertConfusion: true } });
+      effectiveInsertConfusion = existingConfig?.insertConfusion ?? false;
+    }
+
+    // Similarly for adContent
+    let effectiveInsertAd = insertAd;
+    if (adContent !== undefined && insertAd === undefined) {
+      const existingConfig = await db.downloadConfig.findUnique({ where: { id }, select: { insertAd: true } });
+      effectiveInsertAd = existingConfig?.insertAd ?? false;
+    }
+
+    // Similarly for siteInfoContent
+    let effectiveInsertSiteInfo = insertSiteInfo;
+    if (siteInfoContent !== undefined && insertSiteInfo === undefined) {
+      const existingConfig = await db.downloadConfig.findUnique({ where: { id }, select: { insertSiteInfo: true } });
+      effectiveInsertSiteInfo = existingConfig?.insertSiteInfo ?? false;
+    }
+
     const config = await db.downloadConfig.update({
       where: { id },
       data: {
@@ -100,17 +122,17 @@ export const PUT = withAuth(async function PUT(
         ...(format !== undefined && { format }),
         ...(insertConfusion !== undefined && { insertConfusion }),
         ...(confusionText !== undefined && {
-          confusionText: insertConfusion ? confusionText?.trim() || null : null,
+          confusionText: effectiveInsertConfusion ? confusionText?.trim() || null : null,
         }),
         ...(insertAd !== undefined && { insertAd }),
         ...(adContent !== undefined && {
-          adContent: insertAd ? adContent?.trim() || null : null,
+          adContent: effectiveInsertAd ? adContent?.trim() || null : null,
         }),
         ...(parsedInterval !== undefined && { adInterval: parsedInterval }),
         ...(adPosition !== undefined && { adPosition }),
         ...(insertSiteInfo !== undefined && { insertSiteInfo }),
         ...(siteInfoContent !== undefined && {
-          siteInfoContent: insertSiteInfo
+          siteInfoContent: effectiveInsertSiteInfo
             ? siteInfoContent?.trim() || null
             : null,
         }),

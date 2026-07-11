@@ -10,6 +10,53 @@ const VALID_DEDUP_MODES = ["url", "title", "both"];
 const MAX_THREAD = 20;
 const MIN_THREAD = 1;
 const MAX_DELAY = 60000;
+const VALID_SELECTOR_TYPES = ["css", "xpath", "regex"] as const;
+const VALID_PAGINATION_TYPES = ["next", "page"] as const;
+const MAX_SELECTOR_VALUE_LENGTH = 500;
+const MAX_PAGINATION_SELECTOR_LENGTH = 500;
+const MAX_PAGINATION_MAX_PAGE = 10000;
+
+function validateSelector(value: unknown, fieldName: string): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object" || Array.isArray(value) || value === null) {
+    return `${fieldName}格式错误，必须是包含type和value的对象`;
+  }
+  const obj = value as Record<string, unknown>;
+  if (!VALID_SELECTOR_TYPES.includes(obj.type as typeof VALID_SELECTOR_TYPES[number])) {
+    return `${fieldName}的type必须是: ${VALID_SELECTOR_TYPES.join(", ")}`;
+  }
+  if (typeof obj.value !== "string") {
+    return `${fieldName}的value必须是字符串`;
+  }
+  if (obj.value.length > MAX_SELECTOR_VALUE_LENGTH) {
+    return `${fieldName}的value不能超过${MAX_SELECTOR_VALUE_LENGTH}个字符`;
+  }
+  return null;
+}
+
+function validatePagination(value: unknown, fieldName: string): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object" || Array.isArray(value) || value === null) {
+    return `${fieldName}格式错误，必须是包含type和selector的对象`;
+  }
+  const obj = value as Record<string, unknown>;
+  if (!VALID_PAGINATION_TYPES.includes(obj.type as typeof VALID_PAGINATION_TYPES[number])) {
+    return `${fieldName}的type必须是: ${VALID_PAGINATION_TYPES.join(", ")}`;
+  }
+  if (typeof obj.selector !== "string") {
+    return `${fieldName}的selector必须是字符串`;
+  }
+  if (obj.selector.length > MAX_PAGINATION_SELECTOR_LENGTH) {
+    return `${fieldName}的selector不能超过${MAX_PAGINATION_SELECTOR_LENGTH}个字符`;
+  }
+  if (obj.maxPage !== undefined) {
+    const maxPage = Number(obj.maxPage);
+    if (!Number.isFinite(maxPage) || maxPage < 1 || maxPage > MAX_PAGINATION_MAX_PAGE) {
+      return `${fieldName}的maxPage必须在1-${MAX_PAGINATION_MAX_PAGE}之间`;
+    }
+  }
+  return null;
+}
 
 // GET /api/scrape-rules/[id] - Get a single scrape rule
 export const GET = withAuth(async function GET(
@@ -91,6 +138,35 @@ export const PUT = withAuth(async function PUT(
     const maxD = body.maxDelay !== undefined ? Math.max(0, Math.floor(Number(body.maxDelay) || 3000)) : undefined;
     if (minD !== undefined && maxD !== undefined && maxD < minD) {
       return NextResponse.json({ error: "最大延迟不能小于最小延迟" }, { status: 400 });
+    }
+
+    // Validate selector fields
+    const selectorFields: Array<{ key: string; name: string }> = [
+      { key: "listSelector", name: "列表选择器" },
+      { key: "chapterListSelector", name: "章节列表选择器" },
+      { key: "chapterTitleSelector", name: "章节标题选择器" },
+      { key: "chapterLinkSelector", name: "章节链接选择器" },
+      { key: "contentTitleSelector", name: "内容标题选择器" },
+      { key: "contentSelector", name: "内容选择器" },
+    ];
+    for (const { key, name } of selectorFields) {
+      if (body[key] !== undefined) {
+        const err = validateSelector(body[key], name);
+        if (err) return NextResponse.json({ error: err }, { status: 400 });
+      }
+    }
+
+    // Validate pagination fields
+    const paginationFields: Array<{ key: string; name: string }> = [
+      { key: "listPagination", name: "列表分页" },
+      { key: "chapterPagination", name: "章节分页" },
+      { key: "contentPagination", name: "内容分页" },
+    ];
+    for (const { key, name } of paginationFields) {
+      if (body[key] !== undefined) {
+        const err = validatePagination(body[key], name);
+        if (err) return NextResponse.json({ error: err }, { status: 400 });
+      }
     }
 
     const rule = await db.scrapeRule.update({

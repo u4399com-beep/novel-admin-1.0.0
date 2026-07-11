@@ -8,9 +8,20 @@ import { existsSync } from "fs";
 import { generateId } from "./utils";
 import type { QueueItem } from "./types";
 
-const DB_PATH = process.env.QUEUE_DB_PATH || "/tmp/scraper-queue.db";
+const DB_PATH = process.env.QUEUE_DB_PATH || "/app/data/scraper-queue.db";
 
 let db: Database | null = null;
+
+/**
+ * Escape special LIKE pattern characters in a string.
+ * SQLite LIKE uses `%` (any sequence), `_` (any single char), `\` (escape).
+ */
+function escapeLike(str: string): string {
+  return str
+    .replace(/\\/g, "\\\\")
+    .replace(/%/g, "\\%")
+    .replace(/_/g, "\\_");
+}
 
 function getDB(): Database {
   if (db) return db;
@@ -18,6 +29,7 @@ function getDB(): Database {
   db = new Database(DB_PATH, { create: true });
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
+  db.exec("PRAGMA busy_timeout = 5000");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS request_queue (
@@ -71,7 +83,7 @@ export function addToQueue(options: AddToQueueOptions): string {
   const taskId = options.taskId || "__default__";
   const existing = database.query(
     "SELECT id FROM request_queue WHERE url = ? AND metadata LIKE ? AND status != 'failed'"
-  ).get(options.url, `%"taskId":"${taskId}"%`);
+  ).get(options.url, `%"taskId":"${escapeLike(taskId)}%"`);
 
   if (existing) {
     return (existing as { id: string }).id;
@@ -129,7 +141,7 @@ export function dequeue(taskId?: string): DequeueResult | null {
   const database = getDB();
   const now = new Date().toISOString();
 
-  const likePattern = taskId ? `%"taskId":"${taskId}"%` : "%";
+  const likePattern = taskId ? `%"taskId":"${escapeLike(taskId)}"%` : "%";
 
   const row = database.query(`
     SELECT id, url, method, payload, metadata
@@ -224,7 +236,7 @@ export interface QueueStats {
 
 export function getQueueStats(taskId?: string): QueueStats {
   const database = getDB();
-  const likePattern = taskId ? `%"taskId":"${taskId}"%` : "%";
+  const likePattern = taskId ? `%"taskId":"${escapeLike(taskId)}"%` : "%";
 
   const row = database.query(`
     SELECT
@@ -246,7 +258,7 @@ export function getQueueStats(taskId?: string): QueueStats {
 export function requeueFailed(taskId?: string): number {
   const database = getDB();
   const now = new Date().toISOString();
-  const likePattern = taskId ? `%"taskId":"${taskId}"%` : "%";
+  const likePattern = taskId ? `%"taskId":"${escapeLike(taskId)}"%` : "%";
 
   const result = database.query(`
     UPDATE request_queue
@@ -278,7 +290,7 @@ export function cleanupQueue(olderThanHours: number = 24): number {
  */
 export function clearTaskQueue(taskId: string): void {
   const database = getDB();
-  const likePattern = `%"taskId":"${taskId}"%`;
+  const likePattern = `%"taskId":"${escapeLike(taskId)}"%`;
   database.query("DELETE FROM request_queue WHERE metadata LIKE ?").run(likePattern);
 }
 
@@ -287,7 +299,7 @@ export function clearTaskQueue(taskId: string): void {
  */
 export function isUrlProcessed(url: string, taskId?: string): boolean {
   const database = getDB();
-  const likePattern = taskId ? `%"taskId":"${taskId}"%` : "%";
+  const likePattern = taskId ? `%"taskId":"${escapeLike(taskId)}"%` : "%";
 
   const row = database.query(`
     SELECT id FROM request_queue

@@ -327,13 +327,7 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
     .webp({ quality: 80 })
     .toBuffer();
 
-  // Ensure directory exists
-  const dir = savePath.substring(0, savePath.lastIndexOf("/"));
-  for (let i = 2; i < savePath.split("/").length; i++) {
-    const partialPath = savePath.split("/").slice(0, i + 1).join("/");
-    try { await Bun.write(`${partialPath}/.gitkeep`, ""); } catch { /* ignore */ }
-  }
-
+  // Bun.write automatically creates parent directories if they don't exist
   await Bun.write(savePath, webpBuffer);
 
   console.log(`  [Cover] Saved to ${savePath} (${webpBuffer.length} bytes)`);

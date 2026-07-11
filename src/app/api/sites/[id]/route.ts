@@ -10,6 +10,19 @@ const MAX_SITE_TITLE_LENGTH = 200;
 const MAX_SITE_DESC_LENGTH = 500;
 const MAX_KEYWORDS_LENGTH = 500;
 const MAX_OFFSET = 10000;
+const MAX_JSON_CONFIG_SIZE = 51200; // 50KB
+
+function validateJsonObject(value: unknown, fieldName: string): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return `${fieldName}必须是JSON对象`;
+  }
+  const str = JSON.stringify(value);
+  if (str.length > MAX_JSON_CONFIG_SIZE) {
+    return `${fieldName}大小不能超过${Math.floor(MAX_JSON_CONFIG_SIZE / 1024)}KB`;
+  }
+  return null;
+}
 
 // GET /api/sites/[id] - Get a single site
 export const GET = withAuth(async function GET(
@@ -84,6 +97,19 @@ export const PUT = withAuth(async function PUT(
     }
     const parsedNovelOffset = novelOffset !== undefined ? Math.min(Math.max(0, Math.floor(Number(novelOffset) || 0)), MAX_OFFSET) : undefined;
     const parsedChapterOffset = chapterOffset !== undefined ? Math.min(Math.max(0, Math.floor(Number(chapterOffset) || 0)), MAX_OFFSET) : undefined;
+
+    if (geoConfig !== undefined) {
+      const geoConfigError = validateJsonObject(geoConfig, '地理配置');
+      if (geoConfigError) {
+        return NextResponse.json({ error: geoConfigError }, { status: 400 });
+      }
+    }
+    if (customConfig !== undefined) {
+      const customConfigError = validateJsonObject(customConfig, '自定义配置');
+      if (customConfigError) {
+        return NextResponse.json({ error: customConfigError }, { status: 400 });
+      }
+    }
 
     const site = await db.site.update({
       where: { id },

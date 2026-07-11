@@ -105,7 +105,15 @@ export function startServer(port: number = 3099) {
         });
       }
 
-      // Queue management endpoints
+      // Authentication check for all non-health, non-OPTIONS requests
+      if (!authenticateRequest(req)) {
+        return Response.json(
+          { error: "Unauthorized. Provide valid Bearer token." },
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Queue management endpoints (auth required)
       if (path === "/queue/stats" && method === "GET") {
         const taskId = url.searchParams.get("taskId") || undefined;
         return Response.json(getQueueStats(taskId), {
@@ -139,14 +147,6 @@ export function startServer(port: number = 3099) {
         return Response.json({ cleared: true }, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-      }
-
-      // Authentication check for all non-health, non-OPTIONS requests
-      if (!authenticateRequest(req)) {
-        return Response.json(
-          { error: "Unauthorized. Provide valid Bearer token." },
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
       }
 
       // Rate limiting (per client IP)
@@ -243,7 +243,7 @@ export function startServer(port: number = 3099) {
                 method: "PUT",
                 headers: {
                   "Content-Type": "application/json",
-                  "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || process.env.NEXTAUTH_SECRET || ""}`,
+                  "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
                 },
                 body: JSON.stringify({
                   status: "failed",
@@ -293,22 +293,24 @@ export function startServer(port: number = 3099) {
   });
 
   console.log(`🚀 Scraper Service v3.0 running on port ${server.port}`);
-  console.log(`   Engines: ${getEngineNames().join(", ")}`);
-  console.log(`   Endpoints:`);
-  console.log(`   POST /scrape/list       - Scrape a list page`);
-  console.log(`   POST /scrape/book       - Scrape book info`);
-  console.log(`   POST /scrape/chapters   - Scrape chapter directory`);
-  console.log(`   POST /scrape/content    - Scrape chapter content`);
-  console.log(`   POST /clean             - Clean scraped content`);
-  console.log(`   POST /download-cover    - Download & convert cover`);
-  console.log(`   POST /execute-task      - Execute full scraping task`);
-  console.log(`   GET  /health            - Health check (shows active engines)`);
-  console.log(`   GET  /queue/stats       - Queue statistics`);
-  console.log(`   POST /queue/requeue     - Requeue failed items`);
-  console.log(`   POST /queue/cleanup     - Cleanup old completed items`);
-  console.log(`   DELETE /queue/clear     - Clear task queue`);
-  console.log(`   POST /ai/generate-rule - AI-generate scrape rules from URL`);
-  console.log(`   POST /ai/preview-page   - Fetch page HTML for preview`);
+  if (process.env.DEBUG === "true") {
+    console.log(`   Engines: ${getEngineNames().join(", ")}`);
+    console.log(`   Endpoints:`);
+    console.log(`   POST /scrape/list       - Scrape a list page`);
+    console.log(`   POST /scrape/book       - Scrape book info`);
+    console.log(`   POST /scrape/chapters   - Scrape chapter directory`);
+    console.log(`   POST /scrape/content    - Scrape chapter content`);
+    console.log(`   POST /clean             - Clean scraped content`);
+    console.log(`   POST /download-cover    - Download & convert cover`);
+    console.log(`   POST /execute-task      - Execute full scraping task`);
+    console.log(`   GET  /health            - Health check (shows active engines)`);
+    console.log(`   GET  /queue/stats       - Queue statistics`);
+    console.log(`   POST /queue/requeue     - Requeue failed items`);
+    console.log(`   POST /queue/cleanup     - Cleanup old completed items`);
+    console.log(`   DELETE /queue/clear     - Clear task queue`);
+    console.log(`   POST /ai/generate-rule - AI-generate scrape rules from URL`);
+    console.log(`   POST /ai/preview-page   - Fetch page HTML for preview`);
+  }
 
   return server;
 }

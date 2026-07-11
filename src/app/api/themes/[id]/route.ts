@@ -7,6 +7,7 @@ const VALID_IDENTIFIER_RE = /^[a-zA-Z0-9_-]+$/;
 const MAX_NAME_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_IDENTIFIER_LENGTH = 100;
+const MAX_CONFIG_SIZE = 102400; // 100KB
 
 // GET /api/themes/[id] - Get a single theme
 export const GET = withAuth(async function GET(
@@ -67,6 +68,12 @@ export const PUT = withAuth(async function PUT(
     }
     if (description !== undefined && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
       return NextResponse.json({ error: `主题描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
+    }
+    if (config !== undefined && config) {
+      const configStr = typeof config === "string" ? config : JSON.stringify(config);
+      if (configStr.length > MAX_CONFIG_SIZE) {
+        return NextResponse.json({ error: `主题配置大小不能超过${Math.floor(MAX_CONFIG_SIZE / 1024)}KB` }, { status: 400 });
+      }
     }
 
     const theme = await db.theme.update({

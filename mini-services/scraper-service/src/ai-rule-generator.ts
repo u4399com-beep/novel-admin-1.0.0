@@ -55,7 +55,7 @@ export interface GeneratedRuleResult {
 // ==================== Helpers ====================
 
 const API_BASE = () => process.env.MAIN_APP_URL || "http://localhost:3000";
-const AUTH_TOKEN = () => process.env.SCRAPER_SERVICE_TOKEN || process.env.NEXTAUTH_SECRET || "";
+const AUTH_TOKEN = () => process.env.SCRAPER_SERVICE_TOKEN || "";
 
 /**
  * Extract the <title> from raw HTML.

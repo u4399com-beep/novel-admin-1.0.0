@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { Plus, BookOpen, Search, Sun, Moon, LogOut } from 'lucide-react';
@@ -9,17 +10,49 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/stores/app-store';
 import AppSidebar, { MobileSidebar } from '@/components/novel/AppSidebar';
 import { DashboardView } from '@/components/novel/DashboardView';
-import { NovelListView } from '@/components/novel/NovelListView';
-import NovelDetailView from '@/components/novel/NovelDetailView';
 import NovelFormDialog from '@/components/novel/NovelFormDialog';
 import { ChapterFormDialog } from '@/components/novel/ChapterFormDialog';
-import { CategoryManagerView } from '@/components/novel/CategoryManagerView';
-import TagManagerView from '@/components/novel/TagManagerView';
-import { DownloadManagerView } from '@/components/download/DownloadManagerView';
-import { ThemeManagerView } from '@/components/theme/ThemeManagerView';
-import { SiteClusterView } from '@/components/site/SiteClusterView';
-import ScrapeManagerView from '@/components/scrape/ScrapeRuleEditor';
 import CommandPalette from '@/components/novel/CommandPalette';
+
+// Lazy-loaded view components (not needed on initial dashboard render)
+const viewLoadingFallback = (
+  <div className="flex items-center justify-center h-64">
+    <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+  </div>
+);
+
+const NovelListView = dynamic(() => import('@/components/novel/NovelListView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const NovelDetailView = dynamic(() => import('@/components/novel/NovelDetailView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const CategoryManagerView = dynamic(() => import('@/components/novel/CategoryManagerView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const TagManagerView = dynamic(() => import('@/components/novel/TagManagerView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const ScrapeManagerView = dynamic(() => import('@/components/scrape/ScrapeRuleEditor'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const DownloadManagerView = dynamic(() => import('@/components/download/DownloadManagerView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const ThemeManagerView = dynamic(() => import('@/components/theme/ThemeManagerView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const SiteClusterView = dynamic(() => import('@/components/site/SiteClusterView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
 
 const VIEW_TITLES: Record<string, { title: string; description: string }> = {
   dashboard: { title: '仪表盘', description: '系统概览与数据统计' },

@@ -109,10 +109,18 @@ export const DELETE = withAuth(async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "缺少标签 ID" }, { status: 400 });
     }
 
+    const existing = await db.tag.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "标签不存在" }, { status: 404 });
+    }
+
     await db.tag.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Delete tag error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "标签不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "删除标签失败" }, { status: 500 });
   }
 });

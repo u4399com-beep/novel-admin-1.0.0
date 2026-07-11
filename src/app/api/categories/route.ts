@@ -125,11 +125,19 @@ export const DELETE = withAuth(async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "缺少分类 ID" }, { status: 400 });
     }
 
+    const existing = await db.category.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "分类不存在" }, { status: 404 });
+    }
+
     await db.category.delete({ where: { id } });
     invalidateCache("dashboard:stats");
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Delete category error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "分类不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "删除分类失败" }, { status: 500 });
   }
 });

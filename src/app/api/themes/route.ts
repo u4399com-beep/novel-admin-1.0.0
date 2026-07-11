@@ -7,6 +7,7 @@ const VALID_IDENTIFIER_RE = /^[a-zA-Z0-9_-]+$/;
 const MAX_NAME_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_IDENTIFIER_LENGTH = 100;
+const MAX_CONFIG_SIZE = 102400; // 100KB
 
 // GET /api/themes - List all themes
 export const GET = withAuth(async function GET() {
@@ -56,6 +57,11 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
     if (!config) {
       return NextResponse.json({ error: "主题配置不能为空" }, { status: 400 });
+    }
+
+    const configStr = typeof config === "string" ? config : JSON.stringify(config);
+    if (configStr.length > MAX_CONFIG_SIZE) {
+      return NextResponse.json({ error: `主题配置大小不能超过${Math.floor(MAX_CONFIG_SIZE / 1024)}KB` }, { status: 400 });
     }
 
     const theme = await db.theme.create({
