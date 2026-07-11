@@ -60,12 +60,16 @@ export const PUT = withAuth(async function PUT(
     if (body.currentStep !== undefined) {
       updateData.currentStep = String(body.currentStep).slice(0, 200);
     }
-    if (body.totalBooks !== undefined) updateData.totalBooks = Math.max(0, Number(body.totalBooks));
-    if (body.totalChapters !== undefined) updateData.totalChapters = Math.max(0, Number(body.totalChapters));
-    if (body.newBooks !== undefined) updateData.newBooks = Math.max(0, Number(body.newBooks));
-    if (body.newChapters !== undefined) updateData.newChapters = Math.max(0, Number(body.newChapters));
-    if (body.failedItems !== undefined) updateData.failedItems = Math.max(0, Number(body.failedItems));
-    if (body.skippedItems !== undefined) updateData.skippedItems = Math.max(0, Number(body.skippedItems));
+    const numFields = ['totalBooks', 'totalChapters', 'newBooks', 'newChapters', 'failedItems', 'skippedItems'] as const;
+    for (const field of numFields) {
+      if (body[field] !== undefined) {
+        const v = Number(body[field]);
+        if (!Number.isFinite(v) || v < 0) {
+          return NextResponse.json({ error: `${field} 必须是非负数字` }, { status: 400 });
+        }
+        updateData[field] = v;
+      }
+    }
     if (body.errorMessage !== undefined) updateData.errorMessage = sanitizeField(body.errorMessage, 2000);
     if (body.resultUrl !== undefined) updateData.resultUrl = sanitizeField(body.resultUrl, 500);
 
@@ -141,16 +145,27 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const task = await db.scrapeTask.findUnique({ where: { id } });
-    if (!task) {
-      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
-    }
-    if (task.status === "running") {
-      return NextResponse.json({ error: "运行中的任务无法删除" }, { status: 400 });
-    }
-    await db.scrapeTask.delete({ where: { id } });
+    await db.$transaction(async (tx) => {
+      const task = await tx.scrapeTask.findUnique({ where: { id } });
+      if (!task) {
+        throw new Error("NOT_FOUND");
+      }
+      if (task.status === "running") {
+        throw new Error("TASK_RUNNING");
+      }
+      await tx.scrapeTask.delete({ where: { id } });
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") {
+      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+    }
+    if (error instanceof Error && error.message === "TASK_RUNNING") {
+      return NextResponse.json({ error: "运行中的任务无法删除" }, { status: 400 });
+    }
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+    }
     console.error("Delete scrape task error:", error);
     return NextResponse.json({ error: "删除采集任务失败" }, { status: 500 });
   }

@@ -9,8 +9,8 @@ import type {
   EngineType, CleanRequest,
 } from "./types";
 import {
-  parseJsonField, parseSelectorField as _parseSelectorField,
-  mapNovelStatus, randomDelay, retryWithBackoff, getRandomUA, isSafeSavePath,
+  parseJsonField,
+  mapNovelStatus, randomDelay, isSafeSavePath,
 } from "./utils";
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector } from "./selectors";
@@ -145,8 +145,11 @@ function determineEngine(rule: ScrapeRule, antiCrawlConfig: AntiCrawl): EngineTy
 export async function executeTask(taskId: string) {
   console.log(`[Task ${taskId}] Starting task execution`);
 
+  // AbortController for task cancellation (timeout/cancel/shutdown)
+  const abortController = new AbortController();
+
   // 1. Fetch task + rule from Next.js API
-  const { data: taskData, status } = await apiCall("GET", `/api/scrape-tasks/${taskId}`);
+  const { data: taskData, status } = await apiCall("GET", `/api/scrape-tasks/${taskId}`, { signal: abortController.signal });
 
   if (status !== 200 || !taskData) {
     throw new Error(`Failed to fetch task ${taskId}: HTTP ${status}`);
@@ -201,7 +204,7 @@ export async function executeTask(taskId: string) {
 
   try {
     await Promise.race([
-      executeTaskBody(taskId, task, rule),
+      executeTaskBody(taskId, task, rule, abortController),
       taskTimeoutPromise,
     ]);
   } finally {

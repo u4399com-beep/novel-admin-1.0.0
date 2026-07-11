@@ -12,7 +12,6 @@ import type {
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selectors";
 import { resolveUrl, randomDelay } from "./utils";
-import { addToQueue, isUrlProcessed, markCompleted, markFailed } from "./queue";
 
 // ==================== Pagination Handler ====================
 

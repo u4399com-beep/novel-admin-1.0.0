@@ -30,9 +30,7 @@ const SCRAPER_RATE_LIMIT = 60; // requests per minute
 const MAX_SCRAPER_RATE_ENTRIES = 10000;
 const scraperRateStore = new Map<string, { count: number; resetAt: number }>();
 
-// Global concurrent task limit
-const MAX_CONCURRENT_TASKS = 3;
-let activeTaskCount = 0;
+// Track active tasks for graceful shutdown
 
 let lastScraperRateCleanup = 0;
 function lazyScraperRateCleanup(): void {
@@ -202,7 +200,36 @@ export function startServer(port: number = 3099) {
             { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        body = text.trim() ? JSON.parse(text) : {};
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          return Response.json(
+            { error: "Invalid JSON body" },
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        // Depth and key count validation (mirror Next.js safeJson)
+        const MAX_JSON_DEPTH = 20;
+        const MAX_JSON_KEYS = 200;
+        function validateDepth(value: unknown, depth: number): void {
+          if (depth > MAX_JSON_DEPTH) throw new Error("JSON nested too deep");
+          if (value !== null && typeof value === "object") {
+            if (Array.isArray(value)) value.forEach((item) => validateDepth(item, depth + 1));
+            else {
+              const keys = Object.keys(value as Record<string, unknown>);
+              if (keys.length > MAX_JSON_KEYS) throw new Error("JSON too many keys");
+              for (const k of keys) validateDepth((value as Record<string, unknown>)[k], depth + 1);
+            }
+          }
+        }
+        try { validateDepth(parsed, 0); } catch {
+          return Response.json(
+            { error: "JSON validation failed" },
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        body = parsed;
       } catch {
         return Response.json(
           { error: "Invalid JSON body" },
@@ -264,25 +291,25 @@ export function startServer(port: number = 3099) {
 
           activeTaskCount++;
           // Run task asynchronously
+          activeTasks.add(taskId);
           executeTask(taskId).catch((err) => {
             console.error(`[Task ${taskId}] Fatal error:`, err);
-            import("./src/task-engine").then(({ executeTask: et }) => {
-              // Update task as failed via API
-              fetch(`${process.env.MAIN_APP_URL || "http://localhost:3000"}/api/scrape-tasks/${taskId}`, {
-                method: "PUT",
-                headers: {
-                  "Content-Type": "application/json",
-                  "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
-                },
-                body: JSON.stringify({
-                  status: "failed",
-                  errorMessage: String(err),
-                  completedAt: new Date().toISOString(),
-                }),
-              }).catch(() => {});
-            });
+            activeTasks.delete(taskId);
+            // Update task as failed via API
+            fetch(`${process.env.MAIN_APP_URL || "http://localhost:3000"}/api/scrape-tasks/${taskId}`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
+              },
+              body: JSON.stringify({
+                status: "failed",
+                errorMessage: String(err),
+                completedAt: new Date().toISOString(),
+              }),
+            }).catch(() => {});
           }).finally(() => {
-            activeTaskCount--;
+            activeTasks.delete(taskId);
           });
           return Response.json(
             { message: "Task execution started", taskId },
@@ -362,24 +389,53 @@ startServer(PORT);
 // ==================== Graceful Shutdown ====================
 
 let isShuttingDown = false;
-const shutdown = (signal: string) => {
+const activeTasks = new Set<string>();
+
+const shutdown = async (signal: string) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log(`\n[${new Date().toISOString()}] Received ${signal}, shutting down gracefully...`);
 
-  closeAllEngines().then(() => {
-    console.log(`[${new Date().toISOString()}] Engines closed. Exiting.`);
-    process.exit(0);
-  }).catch(() => {
-    process.exit(0);
-  });
+  // Wait for active tasks to complete (with a 10s hard deadline)
+  const deadline = Date.now() + 10000;
 
-  // Force exit after 10 seconds
-  setTimeout(() => {
-    console.log(`[${new Date().toISOString()}] Forced shutdown after grace period.`);
-    process.exit(0);
-  }, 10000);
+  await Promise.race([
+    new Promise<void>((resolve) => setTimeout(resolve, 10000)),
+    (async () => {
+      // Wait for all active tasks to finish
+      while (activeTasks.size > 0 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }),
+  ]);
+
+  await closeAllEngines().catch(() => {});
+  console.log(`[${new Date().toISOString()}] Active tasks: ${activeTasks.size}, Engines closed. Exiting.`);
+
+  process.exit(0);
 };
+
+// Terminate unfinished tasks if any
+const terminateTimer = setInterval(() => {
+  if (activeTasks.size > 0 && isShuttingDown) {
+    // Tasks still running after deadline - force terminate
+    console.warn(`[${new Date().toISOString()}] Force terminating ${activeTasks.size} active tasks`);
+    for (const taskId of activeTasks) {
+      fetch(`${API_BASE}/api/scrape-tasks/${taskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
+        },
+        body: JSON.stringify({
+          status: "failed",
+          errorMessage: "服务正在关闭",
+          completedAt: new Date().toISOString(),
+        }),
+      }).catch(() => {});
+    }
+    clearInterval(terminateTimer);
+  }, 3000);
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));

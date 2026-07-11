@@ -139,7 +139,7 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(site);
   } catch (error: unknown) {
     console.error("Update site error:", error);
-    const msg = error instanceof Error && error.message.includes("Unique")
+    const msg = (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002")
       ? "站点域名已存在"
       : "更新站点失败";
     return NextResponse.json({ error: msg }, { status: 500 });

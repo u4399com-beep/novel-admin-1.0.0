@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -79,9 +79,9 @@ export const PUT = withAuth(async function PUT(
     const theme = await db.theme.update({
       where: { id },
       data: {
-        ...(name !== undefined && { name: name.trim() }),
-        ...(description !== undefined && { description: description?.trim() || null }),
-        ...(identifier !== undefined && { identifier: identifier.trim() }),
+        ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
+        ...(description !== undefined && { description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null }),
+        ...(identifier !== undefined && { identifier: sanitizeField(identifier, MAX_IDENTIFIER_LENGTH) }),
         ...(preview !== undefined && { preview: preview || null }),
         ...(config !== undefined && {
           config: typeof config === "string" ? config : JSON.stringify(config),
@@ -96,7 +96,7 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(theme);
   } catch (error: unknown) {
     console.error("Update theme error:", error);
-    const msg = error instanceof Error && error.message.includes("Unique")
+    const msg = (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002")
       ? "主题名称或标识符已存在"
       : "更新主题失败";
     return NextResponse.json({ error: msg }, { status: 500 });

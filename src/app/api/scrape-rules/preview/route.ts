@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { isSafeUrl } from '@/lib/sanitize';
+import { safeJson } from '@/lib/api-utils';
 
 const SCRAPER_SERVICE_URL =
   process.env.SCRAPER_SERVICE_URL || 'http://localhost:3099';
@@ -9,7 +10,12 @@ const SCRAPER_SERVICE_URL =
 // Proxies to scraper-service /ai/preview-page
 export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { url?: string };
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+    }
     const url = body.url;
 
     if (!url) {

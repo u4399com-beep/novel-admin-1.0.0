@@ -1,28 +1,25 @@
 /**
- * Request Queue with PostgreSQL Persistence
+ * Request Queue with SQLite Persistence
  * Enables resume-capable crawling with deduplication.
  * Uses a dedicated task_id column for performance and safety.
  */
 
-import postgres from "postgres";
+import Database from 'bun:sqlite';
 import { generateId } from "./utils";
 import type { QueueItem } from "./types";
 
-const DATABASE_URL = process.env.QUEUE_DATABASE_URL || process.env.DATABASE_URL || "postgresql://z@localhost:5432/novel_admin";
+const DB_PATH = process.env.QUEUE_DB_PATH || "queue.db";
 
-let sql: postgres.SqlSqlType | null = null;
+let db: Database.Database | null = null;
 
-function getSql(): postgres.SqlSqlType {
-  if (sql) return sql;
+function getDb(): Database.Database {
+  if (db) return db;
 
-  sql = postgres(DATABASE_URL, {
-    max: 5,
-    idle_timeout: 20,
-    connect_timeout: 10,
-  });
+  db = new Database(DB_PATH, { create: true });
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA busy_timeout = 5000");
 
-  // Ensure the queue table exists
-  sql`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS request_queue (
       id TEXT PRIMARY KEY,
       url TEXT NOT NULL,
@@ -32,26 +29,31 @@ function getSql(): postgres.SqlSqlType {
       max_retries INTEGER NOT NULL DEFAULT 3,
       status TEXT NOT NULL DEFAULT 'pending',
       error TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      completed_at TIMESTAMPTZ,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT,
       task_id TEXT NOT NULL DEFAULT '__default__',
       metadata TEXT
     )
-  `.then(() => {
-    // Create indexes (idempotent)
-    return sql!`
-      CREATE INDEX IF NOT EXISTS idx_queue_status ON request_queue(status);
-      CREATE INDEX IF NOT EXISTS idx_queue_url ON request_queue(url);
-      CREATE INDEX IF NOT EXISTS idx_queue_task_id ON request_queue(task_id);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url ON request_queue(task_id, url, status);
-      CREATE INDEX IF NOT EXISTS idx_queue_status_updated ON request_queue(status, updated_at);
-    `;
-  }).catch((err) => {
-    console.error("[Queue] Failed to initialize table:", err.message);
-  });
+  `);
 
-  return sql;
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_queue_status ON request_queue(status)
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_queue_url ON request_queue(url)
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_queue_task_id ON request_queue(task_id)
+  `);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url ON request_queue(task_id, url, status)
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_queue_status_updated ON request_queue(status, updated_at)
+  `);
+
+  return db;
 }
 
 // ==================== Queue Operations ====================
@@ -69,60 +71,54 @@ export interface AddToQueueOptions {
  * Add a URL to the queue. Returns the queue item ID.
  * Deduplicates by URL + task_id (exact match, no LIKE injection risk).
  */
-export async function addToQueue(options: AddToQueueOptions): Promise<string> {
-  const s = getSql();
+export function addToQueue(options: AddToQueueOptions): string {
+  const d = getDb();
   const id = generateId();
   const taskId = options.taskId || "__default__";
 
   try {
-    const result = await s`
-      INSERT INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
-      VALUES (${id}, ${options.url}, ${options.method || "GET"}, ${options.payload ? JSON.stringify(options.payload) : null}, 0, ${options.maxRetries || 3}, 'pending', NOW(), NOW(), ${taskId}, ${options.metadata ? JSON.stringify(options.metadata) : null})
-      ON CONFLICT DO NOTHING
-      RETURNING id
-    `;
+    const insert = d.prepare(`
+      INSERT OR IGNORE INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
+      VALUES ($1, $2, $3, $4, 0, $5, 'pending', datetime('now'), datetime('now'), $6, $7)
+    `);
+    insert.run(id, options.url, options.method || "GET", options.payload ? JSON.stringify(options.payload) : null, options.maxRetries || 3, taskId, options.metadata ? JSON.stringify(options.metadata) : null);
 
-    if (result.length > 0) return result[0].id;
+    if (d.changes > 0) return id;
   } catch {
     // Ignore constraint violation
   }
 
   // Find existing ID if deduplicated
-  const existing = await s`
-    SELECT id FROM request_queue WHERE url = ${options.url} AND task_id = ${taskId} AND status != 'failed' LIMIT 1
-  `;
-  if (existing.length > 0) return existing[0].id;
-
-  return id;
+  const existing = d.prepare(`SELECT id FROM request_queue WHERE url = $1 AND task_id = $2 AND status != 'failed' LIMIT 1`);
+  const row = existing.get(options.url, taskId) as { id: string } | undefined;
+  return row?.id || id;
 }
 
 /**
  * Add multiple URLs to the queue (batched in a transaction).
  */
-export async function addManyToQueue(items: AddToQueueOptions[]): Promise<string[]> {
-  const s = getSql();
+export function addManyToQueue(items: AddToQueueOptions[]): string[] {
+  const d = getDb();
   const ids: string[] = [];
 
-  await s.begin(async (tx) => {
+  d.transaction(() => {
+    const insert = d.prepare(`
+      INSERT OR IGNORE INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
+      VALUES ($1, $2, $3, $4, 0, $5, 'pending', datetime('now'), datetime('now'), $6, $7)
+    `);
+    const findExisting = d.prepare(`SELECT id FROM request_queue WHERE url = $1 AND task_id = $2 AND status != 'failed' LIMIT 1`);
+
     for (const item of items) {
       const id = generateId();
       const taskId = item.taskId || "__default__";
 
-      const result = await tx`
-        INSERT INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
-        VALUES (${id}, ${item.url}, ${item.method || "GET"}, ${item.payload ? JSON.stringify(item.payload) : null}, 0, ${item.maxRetries || 3}, 'pending', NOW(), NOW(), ${taskId}, ${item.metadata ? JSON.stringify(item.metadata) : null})
-        ON CONFLICT DO NOTHING
-        RETURNING id
-      `;
+      insert.run(id, item.url, item.method || "GET", item.payload ? JSON.stringify(item.payload) : null, item.maxRetries || 3, taskId, item.metadata ? JSON.stringify(item.metadata) : null);
 
-      if (result.length > 0) {
-        ids.push(result[0].id);
+      if (d.changes > 0) {
+        ids.push(id);
       } else {
-        // Dedup: find existing
-        const existing = await tx`
-          SELECT id FROM request_queue WHERE url = ${item.url} AND task_id = ${taskId} AND status != 'failed' LIMIT 1
-        `;
-        if (existing.length > 0) ids.push(existing[0].id);
+        const row = findExisting.get(item.url, taskId) as { id: string } | undefined;
+        if (row) ids.push(row.id);
       }
     }
   });
@@ -142,27 +138,27 @@ export interface DequeueResult {
 
 /**
  * Get the next pending item from the queue for a given task.
- * Uses FOR UPDATE SKIP LOCKED to prevent concurrent workers from grabbing the same item.
  */
-export async function dequeue(taskId?: string): Promise<DequeueResult | null> {
-  const s = getSql();
+export function dequeue(taskId?: string): DequeueResult | null {
+  const d = getDb();
 
-  const rows = await s`
-    UPDATE request_queue
-    SET status = 'in_progress', updated_at = NOW()
-    WHERE id = (
-      SELECT id FROM request_queue
-      WHERE status = 'pending' ${taskId ? sql`AND task_id = ${taskId}` : sql``}
-      ORDER BY created_at ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING id, url, method, payload, metadata
-  `;
+  let query: string;
+  let params: unknown[];
 
-  if (rows.length === 0) return null;
+  if (taskId) {
+    query = `SELECT id, url, method, payload, metadata FROM request_queue WHERE status = 'pending' AND task_id = $1 ORDER BY created_at ASC LIMIT 1`;
+    params = [taskId];
+  } else {
+    query = `SELECT id, url, method, payload, metadata FROM request_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`;
+    params = [];
+  }
 
-  const row = rows[0];
+  const row = d.prepare(query).get(...params) as any;
+  if (!row) return null;
+
+  // Mark as in_progress
+  d.prepare(`UPDATE request_queue SET status = 'in_progress', updated_at = datetime('now') WHERE id = $1`).run(row.id);
+
   return {
     id: row.id,
     url: row.url,
@@ -175,64 +171,57 @@ export async function dequeue(taskId?: string): Promise<DequeueResult | null> {
 /**
  * Get multiple pending items from the queue (batch dequeue).
  */
-export async function dequeueBatch(taskId?: string, limit: number = 10): Promise<DequeueResult[]> {
-  const s = getSql();
-  const where = taskId ? s`status = 'pending' AND task_id = ${taskId}` : s`status = 'pending'`;
-  const rows = await s`
-    WITH next_items AS (
-      SELECT id FROM request_queue
-      WHERE ${where}
-      ORDER BY created_at ASC
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    UPDATE request_queue
-    SET status = 'in_progress', updated_at = NOW()
-    FROM next_items
-    WHERE request_queue.id = next_items.id
-    RETURNING request_queue.id, request_queue.url, request_queue.method, request_queue.payload, request_queue.metadata
-  `;
-  return rows.map((row: any) => ({
-    id: row.id,
-    url: row.url,
-    method: row.method,
-    payload: row.payload ? JSON.parse(row.payload) : null,
-    metadata: row.metadata ? JSON.parse(row.metadata) : null,
-  }));
+export function dequeueBatch(taskId?: string, limit: number = 10): DequeueResult[] {
+  const d = getDb();
+  const results: DequeueResult[] = [];
+
+  d.transaction(() => {
+    let query: string;
+    let params: unknown[];
+
+    if (taskId) {
+      query = `SELECT id, url, method, payload, metadata FROM request_queue WHERE status = 'pending' AND task_id = $1 ORDER BY created_at ASC LIMIT $2`;
+      params = [taskId, limit];
+    } else {
+      query = `SELECT id, url, method, payload, metadata FROM request_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT $1`;
+      params = [limit];
+    }
+
+    const rows = d.prepare(query).all(...params) as any[];
+
+    const update = d.prepare(`UPDATE request_queue SET status = 'in_progress', updated_at = datetime('now') WHERE id = $1`);
+    for (const row of rows) {
+      update.run(row.id);
+      results.push({
+        id: row.id,
+        url: row.url,
+        method: row.method,
+        payload: row.payload ? JSON.parse(row.payload) : null,
+        metadata: row.metadata ? JSON.parse(row.metadata) : null,
+      });
+    }
+  });
+
+  return results;
 }
 
 // ==================== Update Queue Item ====================
 
-export async function markCompleted(id: string): Promise<void> {
-  const s = getSql();
-  await s`
-    UPDATE request_queue SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = ${id}
-  `;
+export function markCompleted(id: string): void {
+  const d = getDb();
+  d.prepare(`UPDATE request_queue SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = $1`).run(id);
 }
 
-export async function markFailed(id: string, error: string): Promise<void> {
-  const s = getSql();
+export function markFailed(id: string, error: string): void {
+  const d = getDb();
 
-  const rows = await s`
-    SELECT retries, max_retries FROM request_queue WHERE id = ${id}
-  `;
+  const row = d.prepare(`SELECT retries, max_retries FROM request_queue WHERE id = $1`).get(id) as any;
+  if (!row) return;
 
-  if (rows.length === 0) return;
-
-  const { retries, max_retries } = rows[0];
-
-  if (retries < max_retries) {
-    await s`
-      UPDATE request_queue
-      SET status = 'pending', retries = retries + 1, error = ${error}, updated_at = NOW()
-      WHERE id = ${id}
-    `;
+  if (row.retries < row.max_retries) {
+    d.prepare(`UPDATE request_queue SET status = 'pending', retries = retries + 1, error = $1, updated_at = datetime('now') WHERE id = $2`).run(error, id);
   } else {
-    await s`
-      UPDATE request_queue
-      SET status = 'failed', error = ${error}, updated_at = NOW(), completed_at = NOW()
-      WHERE id = ${id}
-    `;
+    d.prepare(`UPDATE request_queue SET status = 'failed', error = $1, updated_at = datetime('now'), completed_at = datetime('now') WHERE id = $2`).run(error, id);
   }
 }
 
@@ -246,95 +235,87 @@ export interface QueueStats {
   failed: number;
 }
 
-export async function getQueueStats(taskId?: string): Promise<QueueStats> {
-  const s = getSql();
+export function getQueueStats(taskId?: string): QueueStats {
+  const d = getDb();
 
-  const rows = taskId
-    ? await s`
-        SELECT
-          COUNT(*)::int as total,
-          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0)::int as pending,
-          COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0)::int as "inProgress",
-          COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0)::int as completed,
-          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0)::int as failed
-        FROM request_queue
-        WHERE task_id = ${taskId}
-      `
-    : await s`
-        SELECT
-          COUNT(*)::int as total,
-          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0)::int as pending,
-          COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0)::int as "inProgress",
-          COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0)::int as completed,
-          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0)::int as failed
-        FROM request_queue
-      `;
+  let where = "";
+  const params: unknown[] = [];
+  if (taskId) {
+    where = " WHERE task_id = $1";
+    params.push(taskId);
+  }
 
-  return rows[0] as QueueStats;
+  const row = d.prepare(`
+    SELECT
+      COUNT(*) as total,
+      COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+      COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as "inProgress",
+      COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+      COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed
+    FROM request_queue${where}
+  `).get(...params) as any;
+
+  return {
+    total: row.total,
+    pending: row.pending,
+    inProgress: row.inProgress,
+    completed: row.completed,
+    failed: row.failed,
+  };
 }
 
 /**
  * Requeue failed items (reset to pending for retry).
  */
-export async function requeueFailed(taskId?: string): Promise<number> {
-  const s = getSql();
+export function requeueFailed(taskId?: string): number {
+  const d = getDb();
 
-  const result = taskId
-    ? await s`
-        UPDATE request_queue
-        SET status = 'pending', retries = 0, error = NULL, updated_at = NOW()
-        WHERE status = 'failed' AND task_id = ${taskId}
-      `
-    : await s`
-        UPDATE request_queue
-        SET status = 'pending', retries = 0, error = NULL, updated_at = NOW()
-        WHERE status = 'failed'
-      `;
+  if (taskId) {
+    d.prepare(`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = datetime('now') WHERE status = 'failed' AND task_id = $1`).run(taskId);
+  } else {
+    d.prepare(`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = datetime('now') WHERE status = 'failed'`).run();
+  }
 
-  return result.count;
+  return d.changes;
 }
 
 /**
  * Clear completed/failed items older than a given number of hours.
  */
-export async function cleanupQueue(olderThanHours: number = 24): Promise<number> {
-  const s = getSql();
-  const cutoff = new Date(Date.now() - olderThanHours * 3600000).toISOString();
+export function cleanupQueue(olderThanHours: number = 24): number {
+  const d = getDb();
+  const cutoff = new Date(Date.now() - olderThanHours * 3600000).toISOString().replace('T', ' ').slice(0, 19);
 
-  const result = await s`
-    DELETE FROM request_queue
-    WHERE status IN ('completed', 'failed')
-    AND updated_at < ${cutoff}::timestamptz
-  `;
+  d.prepare(`DELETE FROM request_queue WHERE status IN ('completed', 'failed') AND updated_at < $1`).run(cutoff);
 
-  return result.count;
+  return d.changes;
 }
 
 /**
  * Clear all queue items for a specific task (exact match).
  */
-export async function clearTaskQueue(taskId: string): Promise<void> {
-  const s = getSql();
-  await s`DELETE FROM request_queue WHERE task_id = ${taskId}`;
+export function clearTaskQueue(taskId: string): void {
+  const d = getDb();
+  d.prepare(`DELETE FROM request_queue WHERE task_id = $1`).run(taskId);
 }
 
 /**
  * Check if a URL has already been queued/completed for a task.
  */
-export async function isUrlProcessed(url: string, taskId?: string): Promise<boolean> {
-  const s = getSql();
+export function isUrlProcessed(url: string, taskId?: string): boolean {
+  const d = getDb();
 
-  const rows = taskId
-    ? await s`
-        SELECT id FROM request_queue
-        WHERE url = ${url} AND task_id = ${taskId} AND status IN ('completed', 'in_progress')
-        LIMIT 1
-      `
-    : await s`
-        SELECT id FROM request_queue
-        WHERE url = ${url} AND status IN ('completed', 'in_progress')
-        LIMIT 1
-      `;
+  let query: string;
+  let params: unknown[];
 
-  return rows.length > 0;
+  if (taskId) {
+    query = `SELECT id FROM request_queue WHERE url = $1 AND task_id = $2 AND status IN ('completed', 'in_progress') LIMIT 1`;
+    params = [url, taskId];
+  } else {
+    query = `SELECT id FROM request_queue WHERE url = $1 AND status IN ('completed', 'in_progress') LIMIT 1`;
+    params = [url];
+  }
+
+  const row = d.prepare(query).get(...params);
+  return !!row;
 }

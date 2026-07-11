@@ -12,23 +12,30 @@ const MAX_ENTRIES = 500;
 const MAX_VALUE_SIZE = 512000; // 500KB
 const CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 
-// Cleanup stale entries periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of cache) {
-    if (now > entry.expiresAt) {
-      cache.delete(key);
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+function startCleanupTimer(): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of cache) {
+      if (now > entry.expiresAt) {
+        cache.delete(key);
+      }
     }
-  }
-  // If still over max, remove oldest entries
-  if (cache.size > MAX_ENTRIES) {
-    const entries = Array.from(cache.entries()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-    const toRemove = entries.slice(0, cache.size - MAX_ENTRIES);
-    for (const [key] of toRemove) {
-      cache.delete(key);
+    // If still over max, remove oldest entries
+    if (cache.size > MAX_ENTRIES) {
+      const entries = Array.from(cache.entries()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+      const toRemove = entries.slice(0, cache.size - MAX_ENTRIES);
+      for (const [key] of toRemove) {
+        cache.delete(key);
+      }
     }
-  }
-}, CLEANUP_INTERVAL);
+  }, CLEANUP_INTERVAL);
+}
+
+// Start the cleanup timer when this module is loaded
+startCleanupTimer();
 
 /**
  * Single-flight cache: deduplicates concurrent compute calls for the same key.

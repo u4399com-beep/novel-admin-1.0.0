@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -129,7 +129,7 @@ export const PUT = withAuth(async function PUT(
     const config = await db.downloadConfig.update({
       where: { id },
       data: {
-        ...(name !== undefined && { name: name.trim() }),
+        ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
         ...(enabled !== undefined && { enabled }),
         ...(format !== undefined && { format }),
         ...(insertConfusion !== undefined && { insertConfusion }),

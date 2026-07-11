@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -66,9 +66,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const theme = await db.theme.create({
       data: {
-        name: name.trim(),
-        description: description?.trim() || null,
-        identifier: identifier.trim(),
+        name: sanitizeField(name, MAX_NAME_LENGTH),
+        description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
+        identifier: sanitizeField(identifier, MAX_IDENTIFIER_LENGTH),
         preview: preview || null,
         config: typeof config === "string" ? config : JSON.stringify(config),
         enabled: enabled !== undefined ? enabled : true,
@@ -81,8 +81,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(theme, { status: 201 });
   } catch (error: unknown) {
     console.error("Create theme error:", error);
-    const msg = error instanceof Error && error.message.includes("Unique") 
-      ? "主题名称或标识符已存在" 
+    const msg = (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002")
+      ? "主题名称或标识符已存在"
       : "创建主题失败";
     return NextResponse.json({ error: msg }, { status: 500 });
   }

@@ -268,8 +268,11 @@ export const PUT = withAuth(async function PUT(
     });
 
     return NextResponse.json(rule);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Update scrape rule error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "更新采集规则失败" }, { status: 500 });
   }
 });

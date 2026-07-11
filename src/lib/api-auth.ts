@@ -3,6 +3,19 @@ import { getToken } from 'next-auth/jwt';
 import crypto from 'crypto';
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Timing-safe string comparison
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, 'utf-8');
+  const bBuf = Buffer.from(b, 'utf-8');
+  if (aBuf.length !== bBuf.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Rate Limiter (Token Bucket) - runs in Node.js API route context
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -139,7 +152,7 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       // IMPORTANT: No fallback to NEXTAUTH_SECRET - must use independent token
       const bearer = request.headers.get('authorization');
       const serviceSecret = process.env.SCRAPER_SERVICE_TOKEN;
-      if (!bearer || !serviceSecret || bearer !== `Bearer ${serviceSecret}`) {
+      if (!bearer || !serviceSecret || !timingSafeEqual(bearer, `Bearer ${serviceSecret}`)) {
         const rl = rateLimit(getClientIp(request));
         return NextResponse.json(
           { error: '未授权，请先登录' },

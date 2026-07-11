@@ -8,7 +8,7 @@ const SCRAPER_SERVICE_URL =
 
 // POST /api/scrape-rules/ai-generate
 // Body: { url: string, siteType?: string }
-// Proxies to scraper-service /ai/generate-rule?XTransformPort=3099
+// Proxies to scraper-service /ai/generate-rule
 export const POST = withAuth(async function POST(request: NextRequest) {
   try {
     let body;
@@ -51,7 +51,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     // Proxy to scraper-service
     const targetUrl = new URL('/ai/generate-rule', SCRAPER_SERVICE_URL);
-    targetUrl.searchParams.set('XTransformPort', '3099');
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120_000); // 2min timeout for AI generation
@@ -62,6 +61,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ''}`,
         },
         body: JSON.stringify({
           url,

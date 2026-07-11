@@ -164,6 +164,10 @@ export function isSafeTargetUrl(targetUrl: string): boolean {
     // Block IPv4 multicast
     if (hostname.startsWith("224.")) return false;
 
+    // Block DNS tunneling services
+    const DNS_TUNNEL_SUFFIXES = ['.nip.io', '.sslip.io', '.dns.army', '.dnsdojo.net', '.xip.io', '.localtest.me', '.vcap.me', '.lvh.me', '.fuf.me', '.encr.app'];
+    if (DNS_TUNNEL_SUFFIXES.some(s => hostname.endsWith(s))) return false;
+
     return true;
   } catch {
     return false;

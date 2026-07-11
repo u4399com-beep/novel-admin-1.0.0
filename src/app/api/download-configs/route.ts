@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -78,7 +78,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const config = await db.downloadConfig.create({
       data: {
-        name: name.trim(),
+        name: sanitizeField(name, MAX_NAME_LENGTH),
         format: format || "txt",
         insertConfusion: insertConfusion || false,
         confusionText: insertConfusion ? confusionText?.trim() || null : null,
