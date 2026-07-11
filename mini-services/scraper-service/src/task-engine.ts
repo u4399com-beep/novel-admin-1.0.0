@@ -16,7 +16,7 @@ import { getEngine, selectEngine } from "./engines";
 import { parseSelector } from "./selectors";
 import { handleClean } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
-import { addToQueue, isUrlProcessed, markCompleted, markFailed, getQueueStats, clearTaskQueue } from "./queue";
+import { addToQueue, getQueueStats, clearTaskQueue } from "./queue";
 
 // ==================== Atomic Counter ====================
 
@@ -84,6 +84,11 @@ async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) 
   // Always allow status changes immediately
   if (!updates.status && now - lastUpdate < PROGRESS_THROTTLE_MS) {
     return; // Skip throttled non-critical update
+  }
+
+  // Clean up throttle entry for terminal states to prevent memory leak
+  if (updates.status && ['completed', 'failed', 'cancelled'].includes(updates.status)) {
+    progressThrottle.delete(taskId);
   }
 
   progressThrottle.set(taskId, now);
@@ -189,12 +194,9 @@ export async function executeTask(taskId: string) {
 
   // Overall task timeout (1 hour max)
   const TASK_TIMEOUT_MS = 60 * 60 * 1000;
-  const taskTimeoutId = setTimeout(() => {
-    console.error(`[Task ${taskId}] Overall timeout (${TASK_TIMEOUT_MS / 1000}s) exceeded, aborting`);
-    // Will be caught by the Promise.race below
-  }, TASK_TIMEOUT_MS);
+  let taskTimeoutId: ReturnType<typeof setTimeout>;
   const taskTimeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(`任务执行超时（${TASK_TIMEOUT_MS / 1000 / 60}分钟）`)), TASK_TIMEOUT_MS);
+    taskTimeoutId = setTimeout(() => reject(new Error(`任务执行超时（${TASK_TIMEOUT_MS / 1000 / 60}分钟）`)), TASK_TIMEOUT_MS);
   });
 
   try {
@@ -204,6 +206,8 @@ export async function executeTask(taskId: string) {
     ]);
   } finally {
     clearTimeout(taskTimeoutId);
+    // Clean up throttle entry to prevent memory leak
+    progressThrottle.delete(taskId);
   }
 }
 
@@ -353,20 +357,25 @@ async function executeTaskBody(
       if (bookInfo.category) novelData.categoryName = bookInfo.category;
       if (bookInfo.keywords) novelData.extraKeywords = bookInfo.keywords;
 
-      if (isExisting) {
-        await apiCall("PUT", `/api/novels/${novelId}`, novelData);
-        await addTaskLog(taskId, "info", `更新小说: ${bookInfo.title}`, bookUrl);
-      } else {
-        const { data: createdNovel, status: createStatus } = await apiCall("POST", "/api/novels", novelData);
-        if (createStatus === 201 && createdNovel) {
-          novelId = (createdNovel as { id: string }).id;
-          newBooksCount.increment();
-          await addTaskLog(taskId, "success", `新建小说: ${bookInfo.title}`, bookUrl);
+      await dbWriteSemaphore.acquire();
+      try {
+        if (isExisting) {
+          await apiCall("PUT", `/api/novels/${novelId}`, novelData);
+          await addTaskLog(taskId, "info", `更新小说: ${bookInfo.title}`, bookUrl);
         } else {
-          failedItemsCount.increment();
-          await addTaskLog(taskId, "error", `创建小说失败: ${bookInfo.title}`, bookUrl, `HTTP ${createStatus}`);
-          return;
+          const { data: createdNovel, status: createStatus } = await apiCall("POST", "/api/novels", novelData);
+          if (createStatus === 201 && createdNovel) {
+            novelId = (createdNovel as { id: string }).id;
+            newBooksCount.increment();
+            await addTaskLog(taskId, "success", `新建小说: ${bookInfo.title}`, bookUrl);
+          } else {
+            failedItemsCount.increment();
+            await addTaskLog(taskId, "error", `创建小说失败: ${bookInfo.title}`, bookUrl, `HTTP ${createStatus}`);
+            return;
+          }
         }
+      } finally {
+        dbWriteSemaphore.release();
       }
 
       booksProcessed.push({ id: novelId, title: bookInfo.title, url: bookUrl });

@@ -86,7 +86,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     const shouldAutoStart = autoStart !== false;
     if (shouldAutoStart) {
       const scraperUrl = process.env.SCRAPER_SERVICE_URL || "http://localhost:3099";
-      fetch(`${scraperUrl}/execute-task?XTransformPort=3099`, {
+      fetch(`${scraperUrl}/execute-task`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

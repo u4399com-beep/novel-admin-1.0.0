@@ -45,6 +45,7 @@ function getSql(): postgres.SqlSqlType {
       CREATE INDEX IF NOT EXISTS idx_queue_url ON request_queue(url);
       CREATE INDEX IF NOT EXISTS idx_queue_task_id ON request_queue(task_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url ON request_queue(task_id, url, status);
+      CREATE INDEX IF NOT EXISTS idx_queue_status_updated ON request_queue(status, updated_at);
     `;
   }).catch((err) => {
     console.error("[Queue] Failed to initialize table:", err.message);
@@ -175,13 +176,29 @@ export async function dequeue(taskId?: string): Promise<DequeueResult | null> {
  * Get multiple pending items from the queue (batch dequeue).
  */
 export async function dequeueBatch(taskId?: string, limit: number = 10): Promise<DequeueResult[]> {
-  const results: DequeueResult[] = [];
-  for (let i = 0; i < limit; i++) {
-    const item = await dequeue(taskId);
-    if (!item) break;
-    results.push(item);
-  }
-  return results;
+  const s = getSql();
+  const where = taskId ? s`status = 'pending' AND task_id = ${taskId}` : s`status = 'pending'`;
+  const rows = await s`
+    WITH next_items AS (
+      SELECT id FROM request_queue
+      WHERE ${where}
+      ORDER BY created_at ASC
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE request_queue
+    SET status = 'in_progress', updated_at = NOW()
+    FROM next_items
+    WHERE request_queue.id = next_items.id
+    RETURNING request_queue.id, request_queue.url, request_queue.method, request_queue.payload, request_queue.metadata
+  `;
+  return rows.map((row: any) => ({
+    id: row.id,
+    url: row.url,
+    method: row.method,
+    payload: row.payload ? JSON.parse(row.payload) : null,
+    metadata: row.metadata ? JSON.parse(row.metadata) : null,
+  }));
 }
 
 // ==================== Update Queue Item ====================

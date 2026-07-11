@@ -178,6 +178,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   if (!html || typeof html !== "string") {
     return apiError("html is required and must be a string", 400);
   }
+  if (html.length > 500_000) {
+    return apiError("HTML内容过大", 400);
+  }
   if (!url || typeof url !== "string") {
     return apiError("url is required and must be a string", 400);
   }
@@ -200,7 +203,7 @@ ${html}`;
 
     const completion = await zai.chat.completions.create({
       messages: [
-        { role: "assistant", content: SYSTEM_PROMPT },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userMessage },
       ],
       thinking: { type: "disabled" },

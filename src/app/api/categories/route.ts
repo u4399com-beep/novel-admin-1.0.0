@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -49,8 +49,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const category = await db.category.create({
       data: {
-        name: name.trim(),
-        description: description?.trim() || null,
+        name: sanitizeField(name, MAX_NAME_LENGTH),
+        description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
         color: color || "#6b7280",
         sortOrder: Math.max(0, Math.floor(Number(sortOrder) || 0)),
       },

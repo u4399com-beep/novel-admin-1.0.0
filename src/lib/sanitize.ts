@@ -33,6 +33,12 @@ export function isSafeUrl(url: string): boolean {
 
     const hostname = parsed.hostname.toLowerCase();
 
+    // Block DNS tunneling services (nip.io, sslip.io, etc.)
+    const DNS_TUNNEL_SUFFIXES = ['.nip.io', '.sslip.io', '.dns.army', '.dnsdojo.net', '.xip.io', '.localtest.me', '.vcap.me', '.lvh.me', '.fuf.me', '.encr.app'];
+    if (DNS_TUNNEL_SUFFIXES.some(s => hostname.endsWith(s))) {
+      return false;
+    }
+
     // Block common internal hostnames
     if (['localhost', 'localhost.localdomain'].includes(hostname)) {
       return false;

@@ -627,13 +627,15 @@ class CloudBrowserEngine implements ScrapingEngine {
           statusCode = data.status || response.status;
         } else {
           // Browserless API: POST /content
-          const browserlessUrl = config.apiKey
-            ? `${config.apiUrl}/content?token=${config.apiKey}`
-            : `${config.apiUrl}/content`;
+          // API key passed via Authorization header (not URL query param) to prevent leakage
+          const browserlessHeaders: Record<string, string> = { "Content-Type": "application/json" };
+          if (config.apiKey) {
+            browserlessHeaders["Authorization"] = `Basic ${Buffer.from(`token:${config.apiKey}`).toString("base64")}`;
+          }
 
-          response = await fetch(browserlessUrl, {
+          response = await fetch(`${config.apiUrl}/content`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: browserlessHeaders,
             body: JSON.stringify({
               url,
               waitFor: 3000,

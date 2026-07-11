@@ -115,6 +115,12 @@ export type ApiHandler = (...args: any[]) => Promise<NextResponse<any>>;
 
 /**
  * Wrap an API route handler with authentication and rate limiting.
+ *
+ * IMPORTANT: All user-supplied string fields MUST be passed through
+ * `sanitizeField()` (from @/lib/api-utils) before database writes.
+ * This removes Unicode control characters, zero-width chars, and BOM.
+ * Do NOT rely solely on this wrapper for input sanitization.
+ *
  * Usage in route.ts:
  *   export const GET = withAuth(async (req) => { ... });
  *   export const POST = withAuth(async (req) => { ... });
@@ -122,7 +128,10 @@ export type ApiHandler = (...args: any[]) => Promise<NextResponse<any>>;
 export function withAuth(handler: ApiHandler): ApiHandler {
   return async (...args: unknown[]) => {
     const request = args[0] as NextRequest;
-    // 1. Authentication
+    // 1. Request ID (generated early for both auth paths)
+    const requestId = crypto.randomUUID();
+
+    // 2. Authentication
     // Accept either NextAuth JWT session token or service Bearer token
     const authToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     if (!authToken) {
@@ -131,7 +140,11 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       const bearer = request.headers.get('authorization');
       const serviceSecret = process.env.SCRAPER_SERVICE_TOKEN;
       if (!bearer || !serviceSecret || bearer !== `Bearer ${serviceSecret}`) {
-        return NextResponse.json({ error: '未授权，请先登录' }, { status: 401 });
+        const rl = rateLimit(getClientIp(request));
+        return NextResponse.json(
+          { error: '未授权，请先登录' },
+          { status: 401, headers: { 'X-RateLimit-Remaining': String(rl.remaining) } }
+        );
       }
       // Service token authenticated — also rate limit service calls
       const serviceIp = getClientIp(request);
@@ -144,14 +157,19 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       }
       try {
         const response = await handler(...(args as any[]));
+        response.headers.set('X-Request-ID', requestId);
+        response.headers.set('X-RateLimit-Remaining', String(serviceRl.remaining));
         return response;
       } catch (error) {
         console.error(`[service] API error:`, error);
-        return NextResponse.json({ error: '服务器内部错误' }, { status: 500 });
+        return NextResponse.json(
+          { error: '服务器内部错误' },
+          { status: 500, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(serviceRl.remaining) } }
+        );
       }
     }
 
-    // 2. Content-Length check for write methods
+    // 3. Content-Length check for write methods
     const method = request.method;
     if (['POST', 'PUT', 'PATCH'].includes(method)) {
       const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
@@ -160,7 +178,7 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       }
     }
 
-    // 3. Rate limiting (use secure IP detection)
+    // 4. Rate limiting (use secure IP detection)
     const ip = getClientIp(request);
     const rl = rateLimit(ip);
     if (!rl.allowed) {
@@ -176,9 +194,6 @@ export function withAuth(handler: ApiHandler): ApiHandler {
         }
       );
     }
-
-    // 4. Request ID
-    const requestId = crypto.randomUUID();
 
     // 5. Execute handler
     try {

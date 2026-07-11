@@ -84,6 +84,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (tags && !Array.isArray(tags)) {
       return NextResponse.json({ error: "标签格式错误" }, { status: 400 });
     }
+    if (tags && tags.length > 20) {
+      return NextResponse.json({ error: "标签数量不能超过20个" }, { status: 400 });
+    }
 
     const trimmedTitle = sanitizeField(title, 200);
     if (!trimmedTitle) {

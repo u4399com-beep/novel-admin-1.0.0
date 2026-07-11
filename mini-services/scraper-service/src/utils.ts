@@ -156,6 +156,14 @@ export function isSafeTargetUrl(targetUrl: string): boolean {
     // Block IPv6 loopback / mapped variants
     if (hostname.startsWith("::ffff:") || hostname.startsWith("[::ffff:")) return false;
 
+    // Block IPv6 private/reserved ranges
+    if (hostname.startsWith("fd")) return false;           // IPv6 ULA (Unique Local Address)
+    if (hostname.startsWith("fe80:")) return false;       // IPv6 link-local
+    if (hostname.startsWith("ff")) return false;           // IPv6 multicast
+
+    // Block IPv4 multicast
+    if (hostname.startsWith("224.")) return false;
+
     return true;
   } catch {
     return false;

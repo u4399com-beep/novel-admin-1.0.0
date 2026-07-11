@@ -128,3 +128,211 @@ Stage Summary:
 - 主应用 + scraper-service 队列系统均使用 PostgreSQL
 - 应用功能验证通过（登录、仪表盘、导航）
 - PostgreSQL 数据目录：`~/.local/pgsql/data`，端口 5432
+
+---
+Task ID: 4
+Agent: Code Fix Specialist
+Task: 修复审计HIGH/MEDIUM问题（第二轮，17项）
+
+Work Log:
+- 逐一读取17个涉及的源码文件，精确定位问题代码
+- 完成17项修复（5 HIGH + 12 MEDIUM）
+
+## HIGH 修复
+
+1. **BUG-1: LLM system prompt role错误** (`src/app/api/scrape-rules/ai-analyze/route.ts`)
+   - `messages` 数组中 system prompt 的 role 从 `"assistant"` 改为 `"system"`
+
+2. **BUG-2 + BUG-7: safeJson 超时失效 + Content-Length绕过** (`src/lib/api-utils.ts`)
+   - 在 `request.text()` 之后、JSON.parse 之前添加实际文本大小检查（>1MB 抛错）
+   - 添加注释说明 AbortController signal 在 Next.js Request.text() 中无法传递
+
+3. **VULN-1 + SEC-03: SSRF DNS隧道绕过** (`src/lib/sanitize.ts`)
+   - `isSafeUrl` 函数中添加 `.nip.io`, `.sslip.io`, `.dns.army`, `.dnsdojo.net`, `.xip.io` 后缀检查
+
+4. **VULN-2: scraper-service SSRF IPv6范围缺失** (`mini-services/scraper-service/src/utils.ts`)
+   - `isSafeTargetUrl` 添加 IPv6 ULA (`fd`)、链路本地 (`fe80:`)、多播 (`ff`) 和 IPv4 多播 (`224.`) 检查
+
+5. **SEC-01: 生产环境secret强度校验** (`src/lib/db.ts`)
+   - PrismaClient 初始化前添加 NEXTAUTH_SECRET 长度<32 或包含 'change-this' 时 `process.exit(1)`
+
+## MEDIUM 修复
+
+6. **BUG-4: 章节 sortOrder TOCTOU竞态** (`src/app/api/novels/[id]/chapters/route.ts`)
+   - 用 `$queryRaw` + `FOR UPDATE` 行锁替换 `findFirst`，消除并发创建章节的排序冲突
+
+7. **BUG-6 + SEC-04: scrape-rules PUT路径未验证** (`src/app/api/scrape-rules/[id]/route.ts`)
+   - `filePath` 和 `coverSavePath` 添加 `sanitizeField` 处理 + 路径白名单（必须 `/app/public/` 开头，不能含 `..`）
+
+8. **BUG-8: task-engine死代码(taskTimeoutId)** (`mini-services/scraper-service/src/task-engine.ts`)
+   - 删除无效的 `taskTimeoutId` setTimeout，仅保留 `taskTimeoutPromise`
+
+9. **BUG-9 + REL-03: progressThrottle内存泄漏** (`mini-services/scraper-service/src/task-engine.ts`)
+   - `updateTaskProgress` 中当 status 为 completed/failed/cancelled 时从 Map 中 delete
+   - `executeTask` finally 块中清理该 taskId
+
+10. **SEC-02: ai-analyze HTML大小限制** (`src/app/api/scrape-rules/ai-analyze/route.ts`)
+    - 处理函数开头添加 `html.length > 500_000` 检查，返回 400
+
+11. **VULN-3: Browserless API key URL泄露** (`mini-services/scraper-service/src/engines.ts`)
+    - Browserless API key 从 URL query parameter (`?token=`) 改为 Authorization header (Basic auth)
+
+12. **VULN-4: preview错误信息泄露** (`src/app/api/scrape-rules/preview/route.ts`)
+    - 删除响应中的 `details` 字段，仅返回状态码信息
+
+13. **REL-01: Prisma连接池配置** (`src/lib/db.ts`)
+    - PrismaClient 构造中添加 `datasources.db.url` 追加 `connection_limit=10&pool_timeout=30`
+
+14. **REL-02: scraperRateStore无清理** (`mini-services/scraper-service/index.ts`)
+    - 添加 `lazyScraperRateCleanup` 函数（最大10000条，80%阈值触发，10s节流）
+
+15. **SEC-06: categories/tags未用sanitizeField** (4个文件)
+    - `categories/route.ts`, `categories/[id]/route.ts`, `tags/route.ts`, `tags/[id]/route.ts`
+    - 所有 `name.trim()` / `description?.trim()` 替换为 `sanitizeField(name/description, MAX_LENGTH)`
+
+16. **BUG-10: parsePagination无上限** (`src/lib/api-utils.ts`)
+    - page 参数添加上限 `Math.min(page, 10000)`
+
+17. **BUG-11: Service token路径缺响应头** (`src/lib/api-auth.ts`)
+    - 将 `requestId` 生成提前到认证分支之前
+    - service token 分支的 try/catch 中添加 `X-Request-ID` 和 `X-RateLimit-Remaining` 响应头
+
+## 涉及文件汇总（13个文件，17处修改）
+- `src/app/api/scrape-rules/ai-analyze/route.ts` (BUG-1, SEC-02)
+- `src/lib/api-utils.ts` (BUG-2+BUG-7, BUG-10)
+- `src/lib/sanitize.ts` (VULN-1+SEC-03)
+- `mini-services/scraper-service/src/utils.ts` (VULN-2)
+- `src/lib/db.ts` (SEC-01, REL-01)
+- `src/app/api/novels/[id]/chapters/route.ts` (BUG-4)
+- `src/app/api/scrape-rules/[id]/route.ts` (BUG-6+SEC-04)
+- `mini-services/scraper-service/src/task-engine.ts` (BUG-8, BUG-9+REL-03)
+- `src/app/api/scrape-rules/preview/route.ts` (VULN-4)
+- `mini-services/scraper-service/src/engines.ts` (VULN-3)
+- `mini-services/scraper-service/index.ts` (REL-02)
+- `src/app/api/categories/route.ts` + `[id]/route.ts` (SEC-06)
+- `src/app/api/tags/route.ts` + `[id]/route.ts` (SEC-06)
+- `src/lib/api-auth.ts` (BUG-11)
+
+Stage Summary:
+- 修复17项审计问题（5 HIGH + 12 MEDIUM）
+- 所有修改为精确代码变更，未运行lint/dev server
+
+---
+Task ID: 4
+Agent: Sub-Agent (Round 3-4 Fix)
+Timestamp: 2025-06-04
+
+## 修复第3-4轮审计问题（6 HIGH + 3 MEDIUM）
+
+### HIGH 修复
+
+1. **LOAD-1**: Novel搜索pg_trgm GIN索引
+   - SQL: `CREATE INDEX idx_novel_title_trgm ON "Novel" USING gin(title gin_trgm_ops)`
+   - SQL: `CREATE INDEX idx_novel_author_trgm ON "Novel" USING gin(author gin_trgm_ops)`
+   - 确保 pg_trgm 扩展已启用
+
+2. **LOAD-2**: dequeueBatch逐条循环→CTE单条SQL
+   - 文件: `mini-services/scraper-service/src/queue.ts`
+   - 将 N 次 `SELECT+UPDATE` 循环替换为单条 `WITH...FOR UPDATE SKIP LOCKED UPDATE...RETURNING` CTE
+   - 显著减少高并发下的数据库往返次数
+
+3. **ATK-1**: request.text() 超时防护
+   - 文件: `src/lib/api-utils.ts`
+   - 用 `Promise.race([request.text(), 15s超时Promise])` 包装，防止慢速body读取挂起请求
+   - 保留已有1MB文本大小检查
+
+4. **SCRAPE-3**: 书籍创建添加信号量保护
+   - 文件: `mini-services/scraper-service/src/task-engine.ts`
+   - `processBook` 中 POST/PUT `/api/novels` 调用包裹在 `dbWriteSemaphore.acquire/release` 中
+   - 与已有的章节创建信号量共用同一限额(3)，防止主应用DB连接过载
+
+5. **ATK-4**: 采集任务并发上限
+   - 文件: `mini-services/scraper-service/index.ts`
+   - 新增 `MAX_CONCURRENT_TASKS=3` + `activeTaskCount` 计数器
+   - execute-task handler 先检查并发数，超限返回503
+   - 任务完成/失败后 `.finally(() => activeTaskCount--)` 确保释放
+
+6. **LOAD-3**: ScrapeRule/AiRuleGeneration 缺失索引
+   - SQL: `idx_scrape_rule_enabled (enabled)`, `idx_scrape_rule_engine (engine)`, `idx_ai_rule_created ("createdAt")`
+
+### MEDIUM 修复
+
+7. **DEPTH-11**: 移除内部调用中的XTransformPort
+   - 文件: `src/app/api/scrape-tasks/route.ts`
+   - `fetch(\`${scraperUrl}/execute-task?XTransformPort=3099\`)` → `fetch(\`${scraperUrl}/execute-task\`)`
+
+8. **LOAD-4**: 队列清理复合索引
+   - 文件: `mini-services/scraper-service/src/queue.ts` (表初始化中添加)
+   - SQL: `CREATE INDEX idx_queue_status_updated ON request_queue(status, updated_at)`
+   - 因 request_queue 为懒创建表，索引加入初始化代码而非直接执行SQL
+
+9. **ATK-2**: tags数组长度限制
+   - 文件: `src/app/api/novels/route.ts`
+   - POST handler 中添加 `if (tags.length > 20)` 检查，返回400
+
+Stage Summary:
+- 修复9项审计问题（6 HIGH + 3 MEDIUM）
+- SQL索引4项（LOAD-1/3/4），代码修改5个文件
+- request_queue复合索引因表为懒创建，写入queue.ts初始化代码
+
+---
+Task ID: 5
+Agent: Code Fix Specialist
+Timestamp: 2025-06-04
+
+## 修复第5轮审计回归问题（2 HIGH + 4 MEDIUM）
+
+### HIGH 修复
+
+1. **REGRESS-1**: scraper-service 队列端点 async 函数未 await
+   - 文件: `mini-services/scraper-service/index.ts`
+   - PostgreSQL 迁移后 `getQueueStats`/`requeueFailed`/`cleanupQueue`/`clearTaskQueue` 全部变为 async，但4个队列端点（/queue/stats, /queue/requeue, /queue/cleanup, /queue/clear）仍同步调用
+   - 修复：4处调用全部添加 `await`，`getQueueStats` 提取为 `const stats = await ...` 再传入 Response.json
+
+2. **REGRESS-2**: preview 路由与 scraper-service 方法不匹配
+   - 文件: `src/app/api/scrape-rules/preview/route.ts`
+   - 路由使用 GET + query parameter + 无 Authorization header，但 scraper-service `/ai/preview-page` 端点为 POST + JSON body + Bearer token 认证
+   - 修复：GET → POST，url 从 query param 改为 JSON body `{ url }`，添加 `Authorization: Bearer ${SCRAPER_SERVICE_TOKEN}` header，移除 XTransformPort query param
+
+### MEDIUM 修复
+
+3. **REGRESS-3**: DNS隧道后缀补充
+   - 文件: `src/lib/sanitize.ts`
+   - `DNS_TUNNEL_SUFFIXES` 数组补充5个动态DNS后缀：`.localtest.me`, `.vcap.me`, `.lvh.me`, `.fuf.me`, `.encr.app`
+
+4. **REGRESS-4**: 任务超时定时器泄漏
+   - 文件: `mini-services/scraper-service/src/task-engine.ts`
+   - `taskTimeoutPromise` 内的 `setTimeout` 返回值未保存，Promise.race 完成后定时器无法清除
+   - 修复：将 setTimeout 返回值保存为 `taskTimeoutId`，在 finally 块中 `clearTimeout(taskTimeoutId)`
+
+5. **REGRESS-7**: 用户认证错误路径缺少限流头
+   - 文件: `src/lib/api-auth.ts`
+   - JWT + service token 双重认证失败返回 401 时未附带 `X-RateLimit-Remaining` 响应头
+   - 修复：在 401 返回前调用 `rateLimit(getClientIp(request))` 消耗令牌并附带剩余次数头（同时防止暴力猜测 token）
+
+6. **REGRESS-8**: 未使用的导入清理
+   - 文件: `mini-services/scraper-service/src/task-engine.ts`
+   - `isUrlProcessed`, `markCompleted`, `markFailed` 三个函数已导入但从未在文件中使用
+   - 修复：从 import 语句中移除
+
+### 涉及文件汇总（5个文件，6处修改）
+- `mini-services/scraper-service/index.ts` (REGRESS-1, 4处 await)
+- `src/app/api/scrape-rules/preview/route.ts` (REGRESS-2, 重写)
+- `src/lib/sanitize.ts` (REGRESS-3, 后缀补充)
+- `mini-services/scraper-service/src/task-engine.ts` (REGRESS-4 + REGRESS-8, 2处修改)
+- `src/lib/api-auth.ts` (REGRESS-7, 限流头)
+
+### 5轮审计累计修复汇总
+
+| 轮次 | HIGH | MEDIUM | LOW | 涉及文件 |
+|------|------|--------|-----|---------|
+| 初始审查 | 4 | 4 | - | 8 |
+| 第1轮审计 | 4 | 2 | - | 5 |
+| 第2轮审计 | 5 | 12 | - | 13 |
+| 第3-4轮 | 6 | 3 | - | 5+SQL |
+| 第5轮回归 | 2 | 4 | - | 5 |
+| **合计** | **21** | **25** | **0** | - |
+
+Stage Summary:
+- 修复6项回归问题（2 HIGH + 4 MEDIUM），全部为精确代码变更
+- 5轮审计累计修复46项问题（21 HIGH + 25 MEDIUM）

@@ -227,8 +227,20 @@ export const PUT = withAuth(async function PUT(
 
         // 存储配置
         ...(body.storageMode !== undefined && { storageMode: body.storageMode }),
-        ...(body.filePath !== undefined && { filePath: body.filePath || null }),
-        ...(body.coverSavePath !== undefined && { coverSavePath: body.coverSavePath || null }),
+        ...(body.filePath !== undefined && {
+          filePath: (() => {
+            const val = sanitizeField(body.filePath, 500);
+            if (val && (!val.startsWith('/app/public/') || val.includes('..'))) return null;
+            return val || null;
+          })(),
+        }),
+        ...(body.coverSavePath !== undefined && {
+          coverSavePath: (() => {
+            const val = sanitizeField(body.coverSavePath, 500);
+            if (val && (!val.startsWith('/app/public/') || val.includes('..'))) return null;
+            return val || null;
+          })(),
+        }),
 
         // 采集策略
         ...(body.scrapeMode !== undefined && { scrapeMode: body.scrapeMode }),

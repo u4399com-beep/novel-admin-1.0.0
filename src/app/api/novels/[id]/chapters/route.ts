@@ -72,19 +72,18 @@ export const POST = withAuth(async function POST(
 
     // Use transaction to ensure atomicity
     const chapter = await db.$transaction(async (tx) => {
-      // Get the max sortOrder for this novel
-      const maxOrder = await tx.chapter.findFirst({
-        where: { novelId },
-        orderBy: { sortOrder: "desc" },
-        select: { sortOrder: true },
-      });
+      // Get the max sortOrder for this novel with row-level lock (FOR UPDATE)
+      const maxResult = await tx.$queryRaw<Array<{ max_order: number | null }>>`
+        SELECT COALESCE(MAX("sortOrder"), 0) as max_order FROM "Chapter" WHERE "novelId" = ${novelId} FOR UPDATE
+      `;
+      const sortOrder = (maxResult[0]?.max_order ?? 0) + 1;
 
       const newChapter = await tx.chapter.create({
         data: {
           title: trimmedTitle,
           content: trimmedContent,
           wordCount,
-          sortOrder: (maxOrder?.sortOrder || 0) + 1,
+          sortOrder,
           novelId,
         },
       });

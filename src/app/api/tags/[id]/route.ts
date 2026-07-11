@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -57,7 +57,7 @@ export const PUT = withAuth(async function PUT(
     const tag = await db.tag.update({
       where: { id },
       data: {
-        ...(name !== undefined && { name: name.trim() }),
+        ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
         ...(color !== undefined && { color: color || "#6b7280" }),
       },
       include: { _count: { select: { novels: true } } },

@@ -5,12 +5,12 @@ import { isSafeUrl } from '@/lib/sanitize';
 const SCRAPER_SERVICE_URL =
   process.env.SCRAPER_SERVICE_URL || 'http://localhost:3099';
 
-// GET /api/scrape-rules/preview?url=https://example.com
+// POST /api/scrape-rules/preview  { url: "https://example.com" }
 // Proxies to scraper-service /ai/preview-page
-export const GET = withAuth(async function GET(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const url = searchParams.get('url');
+    const body = await request.json() as { url?: string };
+    const url = body.url;
 
     if (!url) {
       return NextResponse.json({ error: '缺少 URL 参数' }, { status: 400 });
@@ -38,33 +38,32 @@ export const GET = withAuth(async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'URL 不允许访问内网或私有地址' }, { status: 400 });
     }
 
-    // Proxy to scraper-service
+    // Proxy to scraper-service via POST with JSON body and Authorization header
     const targetUrl = new URL('/ai/preview-page', SCRAPER_SERVICE_URL);
-    targetUrl.searchParams.set('url', url);
-    targetUrl.searchParams.set('XTransformPort', '3099');
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30_000); // 30s timeout
 
     try {
       const response = await fetch(targetUrl.toString(), {
+        method: 'POST',
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ''}`,
         },
+        body: JSON.stringify({ url }),
       });
 
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
         console.error(
-          `[preview] Scraper service returned ${response.status}: ${errorText}`,
+          `[preview] Scraper service returned ${response.status}`,
         );
         return NextResponse.json(
           {
             error: `采集服务返回错误 (${response.status})`,
-            details: errorText.slice(0, 500),
           },
           { status: 502 },
         );

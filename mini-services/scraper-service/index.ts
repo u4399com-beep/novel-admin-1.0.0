@@ -27,7 +27,23 @@ import type {
 const SERVICE_TOKEN = process.env.SCRAPER_SERVICE_TOKEN || "";
 const MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB max request body
 const SCRAPER_RATE_LIMIT = 60; // requests per minute
+const MAX_SCRAPER_RATE_ENTRIES = 10000;
 const scraperRateStore = new Map<string, { count: number; resetAt: number }>();
+
+// Global concurrent task limit
+const MAX_CONCURRENT_TASKS = 3;
+let activeTaskCount = 0;
+
+let lastScraperRateCleanup = 0;
+function lazyScraperRateCleanup(): void {
+  const now = Date.now();
+  if (now - lastScraperRateCleanup < 10_000) return;
+  if (scraperRateStore.size < MAX_SCRAPER_RATE_ENTRIES * 0.8) return;
+  lastScraperRateCleanup = now;
+  for (const [ip, entry] of scraperRateStore) {
+    if (now > entry.resetAt) scraperRateStore.delete(ip);
+  }
+}
 
 function authenticateRequest(req: Request): boolean {
   // Health check doesn't need auth
@@ -49,6 +65,8 @@ function authenticateRequest(req: Request): boolean {
 
 function checkScraperRateLimit(ip: string): boolean {
   const now = Date.now();
+  lazyScraperRateCleanup();
+
   let entry = scraperRateStore.get(ip);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + 60000 };
@@ -116,21 +134,22 @@ export function startServer(port: number = 3099) {
       // Queue management endpoints (auth required)
       if (path === "/queue/stats" && method === "GET") {
         const taskId = url.searchParams.get("taskId") || undefined;
-        return Response.json(getQueueStats(taskId), {
+        const stats = await getQueueStats(taskId);
+        return Response.json(stats, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       if (path === "/queue/requeue" && method === "POST") {
         const taskId = url.searchParams.get("taskId") || undefined;
-        const count = requeueFailed(taskId);
+        const count = await requeueFailed(taskId);
         return Response.json({ requeued: count }, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       if (path === "/queue/cleanup" && method === "POST") {
-        const count = cleanupQueue();
+        const count = await cleanupQueue();
         return Response.json({ cleaned: count }, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -143,7 +162,7 @@ export function startServer(port: number = 3099) {
             status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        clearTaskQueue(taskId);
+        await clearTaskQueue(taskId);
         return Response.json({ cleared: true }, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -234,6 +253,16 @@ export function startServer(port: number = 3099) {
           if (!taskId) {
             return Response.json({ error: "taskId is required" }, { status: 400, headers: jsonHeaders });
           }
+
+          // Enforce global concurrent task limit
+          if (activeTaskCount >= MAX_CONCURRENT_TASKS) {
+            return Response.json(
+              { error: "服务器繁忙，采集任务已达并发上限，请稍后再试" },
+              { status: 503, headers: jsonHeaders }
+            );
+          }
+
+          activeTaskCount++;
           // Run task asynchronously
           executeTask(taskId).catch((err) => {
             console.error(`[Task ${taskId}] Fatal error:`, err);
@@ -252,6 +281,8 @@ export function startServer(port: number = 3099) {
                 }),
               }).catch(() => {});
             });
+          }).finally(() => {
+            activeTaskCount--;
           });
           return Response.json(
             { message: "Task execution started", taskId },
