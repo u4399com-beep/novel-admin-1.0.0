@@ -100,7 +100,7 @@ export const PUT = withAuth(async function PUT(
           ...(title !== undefined && { title: sanitizeField(title, 200) }),
           ...(author !== undefined && { author: sanitizeField(author, 100) || "佚名" }),
           ...(description !== undefined && { description: sanitizeField(description, 5000) || null }),
-          ...(coverUrl !== undefined && { coverUrl: coverUrl || null }),
+          ...(coverUrl !== undefined && { coverUrl: sanitizeField(coverUrl, 2048) || null }),
           ...(status !== undefined && { status }),
           ...(categoryId !== undefined && { categoryId: categoryId || null }),
           ...(tags !== undefined && {

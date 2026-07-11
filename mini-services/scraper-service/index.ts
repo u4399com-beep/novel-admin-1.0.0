@@ -318,10 +318,10 @@ export function startServer(port: number = 3099) {
 // ==================== Start ====================
 
 const PORT = parseInt(process.env.PORT || "3099", 10);
-console.log(`[Config] API_BASE: ${process.env.MAIN_APP_URL || "http://localhost:3000"}`);
-console.log(`[Config] PORT: ${PORT}`);
-console.log(`[Config] Auth: ${SERVICE_TOKEN ? "enabled" : "DISABLED (no SCRAPER_SERVICE_TOKEN set)"}`);
+console.log(`[Config] PORT: ${PORT}, Auth: ${SERVICE_TOKEN ? "enabled" : "DISABLED"}`);
+// Only log sensitive service URLs in debug mode
 if (process.env.DEBUG === "true") {
+  console.log(`[Config] API_BASE: ${process.env.MAIN_APP_URL || "http://localhost:3000"}`);
   console.log(`[Config] Firecrawl: ${process.env.FIRECRAWL_API_URL || "not configured"}`);
   console.log(`[Config] AgentQL: ${process.env.AGENTQL_API_URL || "not configured"}`);
   console.log(`[Config] CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"}`);

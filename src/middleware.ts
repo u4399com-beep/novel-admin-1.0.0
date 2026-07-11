@@ -6,7 +6,11 @@ import { NextRequest, NextResponse } from 'next/server';
 // Auth & rate limiting for API routes handled by withAuth() wrapper
 // ─────────────────────────────────────────────────────────────
 
+// XTransformPort whitelist — Caddy also enforces this, but defense-in-depth
 const ALLOWED_TRANSFORM_PORTS = ['3000', '3001', '3003', '4000'];
+// Note: 3099 (scraper-service) is intentionally NOT in this list.
+// Scraper-service is accessed only from Next.js backend (server-to-server),
+// never proxied through the public gateway.
 
 // Login rate limiting (per-IP, for /api/auth/* paths)
 const LOGIN_MAX_1M = 5;         // 5 attempts per minute per IP

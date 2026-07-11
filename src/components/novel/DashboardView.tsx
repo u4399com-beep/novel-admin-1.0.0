@@ -74,8 +74,7 @@ export function DashboardView() {
   const [error, setError] = useState<string | null>(null);
 
   const refreshDashboard = useAppStore((s) => s.refreshDashboard);
-  const setSelectedNovelId = useAppStore((s) => s.setSelectedNovelId);
-  const setSelectedNovel = useAppStore((s) => s.setSelectedNovel);
+  const selectNovel = useAppStore((s) => s.selectNovel);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const setEditingNovel = useAppStore((s) => s.setEditingNovel);
   const setNovelFormOpen = useAppStore((s) => s.setNovelFormOpen);
@@ -106,8 +105,7 @@ export function DashboardView() {
   };
 
   const handleViewNovel = (novel: DashboardStats['recentNovels'][number]) => {
-    setSelectedNovelId(novel.id);
-    setSelectedNovel(novel);
+    selectNovel(novel);
     setCurrentView('novel-detail');
   };
 

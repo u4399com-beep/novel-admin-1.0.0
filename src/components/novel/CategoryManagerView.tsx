@@ -63,7 +63,7 @@ const presetColors = [
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function CategoryManagerView() {
+export default function CategoryManagerView() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -142,12 +142,15 @@ export function CategoryManagerView() {
       };
 
       if (editingCategory) {
-        const res = await fetch('/api/categories', {
+        const res = await fetch(`/api/categories/${editingCategory.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: editingCategory.id, ...body }),
+          body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error();
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || '更新分类失败');
+        }
         toast.success('分类已更新');
       } else {
         const res = await fetch('/api/categories', {
@@ -155,7 +158,10 @@ export function CategoryManagerView() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error();
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || '创建分类失败');
+        }
         toast.success('分类已创建');
       }
 
@@ -173,10 +179,13 @@ export function CategoryManagerView() {
     if (!deleteTarget) return;
     try {
       setDeleting(true);
-      const res = await fetch(`/api/categories?id=${deleteTarget.id}`, {
+      const res = await fetch(`/api/categories/${deleteTarget.id}`, {
         method: 'DELETE',
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || '删除分类失败');
+      }
       toast.success('分类已删除');
       setDeleteTarget(null);
       fetchCategories();

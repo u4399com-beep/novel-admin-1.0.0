@@ -54,7 +54,7 @@ interface PaginatedResponse {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function NovelListView() {
+export default function NovelListView() {
   const [novels, setNovels] = useState<Novel[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -67,8 +67,7 @@ export function NovelListView() {
   const [categories, setCategories] = useState<Category[]>([]);
 
   const refreshNovels = useAppStore((s) => s.refreshNovels);
-  const setSelectedNovelId = useAppStore((s) => s.setSelectedNovelId);
-  const setSelectedNovel = useAppStore((s) => s.setSelectedNovel);
+  const selectNovel = useAppStore((s) => s.selectNovel);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
 
   const pageSize = 12;
@@ -76,7 +75,7 @@ export function NovelListView() {
   // Fetch categories for filter
   useEffect(() => {
     fetch('/api/categories')
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error(r.statusText || '获取分类列表失败'); return r.json(); })
       .then((data: Category[]) => setCategories(data))
       .catch((err) => {
         console.error('获取分类列表失败:', err);
@@ -127,8 +126,7 @@ export function NovelListView() {
   }, [statusFilter, categoryFilter]);
 
   const handleViewNovel = (novel: Novel) => {
-    setSelectedNovelId(novel.id);
-    setSelectedNovel(novel);
+    selectNovel(novel);
     setCurrentView('novel-detail');
   };
 
@@ -294,7 +292,7 @@ export function NovelListView() {
                           {novel.category.name}
                         </Badge>
                       )}
-                      {novel.tags.slice(0, 3).map(({ tag }) => (
+                      {(novel.tags ?? []).slice(0, 3).map(({ tag }) => (
                         <Badge
                           key={tag.id}
                           variant="secondary"

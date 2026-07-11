@@ -3,13 +3,38 @@
 		query XTransformPort=*
 	}
 
-	handle @transform_port_query {
+	# Only allow safe internal ports (exclude scraper-service 3099)
+	# Next.js handles its own whitelist check, but Caddy adds a first layer
+	@safe_port {
+		query XTransformPort=3000
+	}
+	@safe_port {
+		query XTransformPort=3001
+	}
+	@safe_port {
+		query XTransformPort=3003
+	}
+	@safe_port {
+		query XTransformPort=4000
+	}
+
+	handle @safe_port {
 		reverse_proxy localhost:{query.XTransformPort} {
 			header_up Host {host}
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 		}
+	}
+
+	# Block all other port transform attempts at Caddy level
+	@blocked_transform {
+		query XTransformPort=*
+		not @safe_port
+	}
+
+	respond @blocked_transform 400 "Unsupported service port" {
+		close
 	}
 
 	handle {

@@ -7,32 +7,38 @@ export async function GET() {
     await db.$queryRaw`SELECT 1`;
     const dbLatency = Date.now() - startTime;
 
-    // Check scraper-service health (optional — non-blocking)
-    let scraperService: { status: string; latencyMs?: number } = { status: "skipped" };
+    // Check scraper-service health (non-blocking, 3s timeout)
+    let scraperStatus: string = "unreachable";
     try {
       const scraperUrl = process.env.SCRAPER_SERVICE_URL || "http://localhost:3099";
-      const scraperStart = Date.now();
       const scraperRes = await fetch(`${scraperUrl}/health`, { signal: AbortSignal.timeout(3000) });
-      scraperService = { status: scraperRes.ok ? "connected" : "error", latencyMs: Date.now() - scraperStart };
+      scraperStatus = scraperRes.ok ? "ok" : "error";
     } catch {
-      scraperService = { status: "unreachable" };
+      // scraper-service is optional
     }
 
-    return NextResponse.json({
-      status: "healthy",
-      timestamp: new Date().toISOString(),
-      services: {
-        database: { status: "connected", latencyMs: dbLatency },
-        scraperService,
+    const isHealthy = dbLatency < 5000;
+
+    return NextResponse.json(
+      {
+        status: isHealthy ? "healthy" : "degraded",
+        timestamp: new Date().toISOString(),
+        services: {
+          database: dbLatency < 5000 ? "ok" : "slow",
+          scraperService: scraperStatus,
+        },
       },
-    });
-  } catch (error) {
-    console.error("Health check failed:", error);
+      { status: isHealthy ? 200 : 503 }
+    );
+  } catch {
     return NextResponse.json(
       {
         status: "unhealthy",
         timestamp: new Date().toISOString(),
-        error: "Database connection failed",
+        services: {
+          database: "error",
+          scraperService: "unknown",
+        },
       },
       { status: 503 }
     );

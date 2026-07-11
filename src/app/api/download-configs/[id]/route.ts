@@ -92,25 +92,37 @@ export const PUT = withAuth(async function PUT(
 
     const parsedInterval = adInterval !== undefined ? Math.min(Math.max(MIN_AD_INTERVAL, Math.floor(Number(adInterval) || 50)), MAX_AD_INTERVAL) : undefined;
 
+    // Single DB read for all conditional flag lookups (avoids up to 3 redundant queries)
+    let existing: { insertConfusion: boolean; insertAd: boolean; insertSiteInfo: boolean } | null = null;
+    async function getExisting() {
+      if (!existing) {
+        existing = await db.downloadConfig.findUnique({
+          where: { id },
+          select: { insertConfusion: true, insertAd: true, insertSiteInfo: true },
+        });
+      }
+      return existing;
+    }
+
     // If confusionText is being updated but insertConfusion is not provided,
     // read the existing config to get the current insertConfusion value
     let effectiveInsertConfusion = insertConfusion;
     if (confusionText !== undefined && insertConfusion === undefined) {
-      const existingConfig = await db.downloadConfig.findUnique({ where: { id }, select: { insertConfusion: true } });
+      const existingConfig = await getExisting();
       effectiveInsertConfusion = existingConfig?.insertConfusion ?? false;
     }
 
     // Similarly for adContent
     let effectiveInsertAd = insertAd;
     if (adContent !== undefined && insertAd === undefined) {
-      const existingConfig = await db.downloadConfig.findUnique({ where: { id }, select: { insertAd: true } });
+      const existingConfig = await getExisting();
       effectiveInsertAd = existingConfig?.insertAd ?? false;
     }
 
     // Similarly for siteInfoContent
     let effectiveInsertSiteInfo = insertSiteInfo;
     if (siteInfoContent !== undefined && insertSiteInfo === undefined) {
-      const existingConfig = await db.downloadConfig.findUnique({ where: { id }, select: { insertSiteInfo: true } });
+      const existingConfig = await getExisting();
       effectiveInsertSiteInfo = existingConfig?.insertSiteInfo ?? false;
     }
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
@@ -75,6 +76,7 @@ const viewVariants = {
 
 export default function Home() {
   const { data: session, status } = useSession();
+  const router = useRouter();
   const {
     currentView,
     setEditingNovel,
@@ -117,6 +119,12 @@ export default function Home() {
         </div>
       </div>
     );
+  }
+
+  // ─── Auth guard ──────────────────────────────────────────────────────
+  if (!session) {
+    router.push('/login');
+    return null;
   }
 
   // ─── View renderer ────────────────────────────────────────────────────

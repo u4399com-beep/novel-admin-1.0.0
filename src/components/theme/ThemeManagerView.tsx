@@ -405,6 +405,22 @@ function ThemePreviewCard({ config, name }: { config: ThemeConfig; name: string 
   );
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function tryParseJSON(str: string): unknown {
+  try { return JSON.parse(str); } catch { return undefined; }
+}
+
+function defaultThemeConfig(): ThemeConfig {
+  return {
+    colors: { primary: '#334155', secondary: '#64748b', accent: '#0f172a', background: '#ffffff', foreground: '#0f172a', card: '#ffffff', cardForeground: '#1e293b', muted: '#f1f5f9', mutedForeground: '#94a3b8', border: '#e2e8f0', ring: '#334155' },
+    layout: { maxWidth: '1200px', sidebarPosition: 'left', cardStyle: 'rounded', headerStyle: 'static', gridColumns: 3 },
+    typography: { headingFont: 'sans', bodyFont: 'sans', headingWeight: 700, lineHeight: 1.6 },
+    seo: { defaultTitle: '', titleTemplate: '{title} - {siteName}', defaultDescription: '', defaultKeywords: '' },
+    geo: { region: 'CN', placename: '中国', position: '39.9042,116.4074' },
+  };
+}
+
 // ─── Theme Form Dialog ────────────────────────────────────────────────────────
 
 function ThemeFormDialog({
@@ -467,7 +483,7 @@ function ThemeFormDialog({
   useEffect(() => {
     if (editingTheme) {
       const cfg = typeof editingTheme.config === 'string'
-        ? JSON.parse(editingTheme.config) as ThemeConfig
+        ? (tryParseJSON(editingTheme.config) as ThemeConfig ?? defaultThemeConfig())
         : editingTheme.config;
       setForm({
         name: editingTheme.name,
@@ -877,7 +893,7 @@ function ThemePreviewDialog({
 
 // ─── Main Theme Manager View ───────────────────────────────────────────────────
 
-export function ThemeManagerView() {
+export default function ThemeManagerView() {
   const [themes, setThemes] = useState<(Theme & { _count?: { sites: number } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
@@ -894,7 +910,7 @@ export function ThemeManagerView() {
       setThemes(
         data.map((t: Theme & { config: string; _count?: { sites: number } }) => ({
           ...t,
-          config: typeof t.config === 'string' ? JSON.parse(t.config) : t.config,
+          config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : t.config,
         }))
       );
     } catch {
@@ -943,7 +959,7 @@ export function ThemeManagerView() {
   };
 
   const getThemeConfig = (theme: Theme & { config: string | ThemeConfig }): ThemeConfig => {
-    return typeof theme.config === 'string' ? JSON.parse(theme.config) : theme.config;
+    return typeof theme.config === 'string' ? ((tryParseJSON(theme.config) as ThemeConfig) ?? defaultThemeConfig()) : theme.config;
   };
 
   if (loading) {

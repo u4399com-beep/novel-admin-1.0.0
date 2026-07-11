@@ -8,9 +8,8 @@ interface AppState {
 
   // Selected novel for detail view
   selectedNovelId: string | null;
-  setSelectedNovelId: (id: string | null) => void;
   selectedNovel: Novel | null;
-  setSelectedNovel: (novel: Novel | null) => void;
+  selectNovel: (novel: Novel | null) => void;
 
   // Selected chapter for editing
   selectedChapterId: string | null;
@@ -84,9 +83,8 @@ export const useAppStore = create<AppState>((set) => ({
     set({ currentView: view, selectedNovelId: null, selectedNovel: null, selectedChapterId: null }),
 
   selectedNovelId: null,
-  setSelectedNovelId: (id) => set({ selectedNovelId: id, selectedChapterId: null }),
   selectedNovel: null,
-  setSelectedNovel: (novel) => set({ selectedNovel: novel }),
+  selectNovel: (novel) => set({ selectedNovelId: novel?.id ?? null, selectedNovel: novel, selectedChapterId: null }),
 
   selectedChapterId: null,
   setSelectedChapterId: (id) => set({ selectedChapterId: id }),
@@ -97,7 +95,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Novel form
   novelFormOpen: false,
-  setNovelFormOpen: (open) => set({ novelFormOpen: open, editingNovel: open ? null : null }),
+  setNovelFormOpen: (open) => set({ novelFormOpen: open, ...(open && { editingNovel: null }) }),
   editingNovel: null,
   setEditingNovel: (novel) => set({ editingNovel: novel, novelFormOpen: novel !== null }),
 

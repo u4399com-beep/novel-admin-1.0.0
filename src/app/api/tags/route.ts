@@ -6,6 +6,7 @@ import { withAuth } from "@/lib/api-auth";
 const MAX_NAME_LENGTH = 50;
 const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 
+// GET /api/tags - List all tags
 export const GET = withAuth(async function GET() {
   try {
     const tags = await db.tag.findMany({
@@ -20,6 +21,7 @@ export const GET = withAuth(async function GET() {
   }
 });
 
+// POST /api/tags - Create a tag
 export const POST = withAuth(async function POST(request: NextRequest) {
   try {
     let body;
@@ -55,72 +57,5 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: "标签名称已存在" }, { status: 409 });
     }
     return NextResponse.json({ error: "创建标签失败" }, { status: 500 });
-  }
-});
-
-export const PUT = withAuth(async function PUT(request: NextRequest) {
-  try {
-    let body;
-    try {
-      body = await safeJson(request);
-    } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
-    }
-    const { id, name, color } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: "缺少标签 ID" }, { status: 400 });
-    }
-    if (name !== undefined && !name?.trim()) {
-      return NextResponse.json({ error: "标签名称不能为空" }, { status: 400 });
-    }
-    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
-      return NextResponse.json({ error: `标签名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
-    }
-    if (color !== undefined && color && !VALID_COLOR_RE.test(color)) {
-      return NextResponse.json({ error: "颜色格式无效，请使用HEX格式（如#6b7280）" }, { status: 400 });
-    }
-
-    const tag = await db.tag.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name: name.trim() }),
-        ...(color !== undefined && { color: color || "#6b7280" }),
-      },
-      include: { _count: { select: { novels: true } } },
-    });
-
-    return NextResponse.json(tag);
-  } catch (error: unknown) {
-    console.error("Update tag error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
-      return NextResponse.json({ error: "标签名称已存在" }, { status: 409 });
-    }
-    return NextResponse.json({ error: "更新标签失败" }, { status: 500 });
-  }
-});
-
-export const DELETE = withAuth(async function DELETE(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
-
-    if (!id) {
-      return NextResponse.json({ error: "缺少标签 ID" }, { status: 400 });
-    }
-
-    const existing = await db.tag.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: "标签不存在" }, { status: 404 });
-    }
-
-    await db.tag.delete({ where: { id } });
-    return NextResponse.json({ success: true });
-  } catch (error: unknown) {
-    console.error("Delete tag error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
-      return NextResponse.json({ error: "标签不存在" }, { status: 404 });
-    }
-    return NextResponse.json({ error: "删除标签失败" }, { status: 500 });
   }
 });

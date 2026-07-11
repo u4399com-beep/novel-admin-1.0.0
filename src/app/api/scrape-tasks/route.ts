@@ -46,7 +46,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
   }
 });
 
-// POST /api/scrape-tasks - Create a new scrape task
+// POST /api/scrape-tasks - Create a new scrape task and auto-trigger execution
 export const POST = withAuth(async function POST(request: NextRequest) {
   try {
     let body;
@@ -55,7 +55,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
     }
-    const { ruleId, mode } = body;
+    const { ruleId, mode, autoStart } = body;
 
     if (!ruleId) {
       return NextResponse.json({ error: "规则ID不能为空" }, { status: 400 });
@@ -80,6 +80,25 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         rule: { select: { id: true, name: true } },
       },
     });
+
+    // Auto-trigger scraper-service to execute the task (fire-and-forget)
+    // Default: autoStart = true unless explicitly set to false
+    const shouldAutoStart = autoStart !== false;
+    if (shouldAutoStart) {
+      const scraperUrl = process.env.SCRAPER_SERVICE_URL || "http://localhost:3099";
+      fetch(`${scraperUrl}/execute-task?XTransformPort=3099`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
+        },
+        body: JSON.stringify({ taskId: task.id }),
+        signal: AbortSignal.timeout(5000),
+      }).catch((err) => {
+        console.error(`[Scrape Task] Failed to auto-trigger task ${task.id}:`, err);
+        // Task remains "pending" — user can retry manually
+      });
+    }
 
     return NextResponse.json(task, { status: 201 });
   } catch (error) {

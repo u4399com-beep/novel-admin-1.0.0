@@ -198,6 +198,8 @@ model ScrapeTask {
   updatedAt     DateTime @updatedAt
   logs          ScrapeLog[]
 
+  @@index([status, createdAt])
+  @@index([ruleId])
   @@index([createdAt])
 }
 

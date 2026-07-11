@@ -132,7 +132,7 @@ function SortableChapterRow({
         {chapter.title}
       </TableCell>
       <TableCell className="w-24 text-muted-foreground tabular-nums text-sm">
-        {chapter.wordCount.toLocaleString()}
+        {(chapter.wordCount ?? 0).toLocaleString()}
       </TableCell>
       <TableCell className="w-40 text-muted-foreground text-sm">
         {format(new Date(chapter.updatedAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
@@ -215,11 +215,15 @@ function ChapterEditorPanel({
   }, [chapter]);
 
   // Auto-save debounce
+  // NOTE: Uses a ref-based guard instead of a closure `saving` variable
+  // to avoid stale closure issues when the user types quickly.
+  const savingRef = useRef(false);
   const saveChapter = useCallback(
     async (newTitle: string, newContent: string) => {
       if (!chapter || !initialLoadRef.current) return;
-      if (saving) return;
+      if (savingRef.current) return;
 
+      savingRef.current = true;
       setSaving(true);
       setSaveStatus('saving');
 
@@ -244,10 +248,11 @@ function ChapterEditorPanel({
         toast.error('自动保存失败');
         setSaveStatus('idle');
       } finally {
+        savingRef.current = false;
         setSaving(false);
       }
     },
-    [chapter, saving, onSaved],
+    [chapter, onSaved],
   );
 
   // Auto-save on content change
@@ -359,8 +364,7 @@ function ChapterEditorPanel({
 export default function NovelDetailView() {
   const {
     selectedNovelId,
-    setSelectedNovelId,
-    setSelectedNovel,
+    selectNovel,
     setCurrentView,
     setEditingNovel,
     setNovelFormOpen,
@@ -437,8 +441,7 @@ export default function NovelDetailView() {
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleBack = () => {
-    setSelectedNovelId(null);
-    setSelectedNovel(null);
+    selectNovel(null);
     setCurrentView('novels');
   };
 
@@ -461,8 +464,7 @@ export default function NovelDetailView() {
       triggerRefreshNovels();
       triggerRefreshDashboard();
       setCurrentView('novels');
-      setSelectedNovelId(null);
-      setSelectedNovel(null);
+      selectNovel(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '删除小说失败');
     } finally {
@@ -596,7 +598,7 @@ export default function NovelDetailView() {
   if (!novel) return null;
 
   const statusInfo = statusMap[novel.status] || statusMap.ongoing;
-  const totalWords = chapters.reduce((sum, ch) => sum + ch.wordCount, 0);
+  const totalWords = chapters.reduce((sum, ch) => sum + (ch.wordCount ?? 0), 0);
   const chapterCount = novel._count?.chapters ?? chapters.length;
 
   return (

@@ -1,10 +1,12 @@
 /**
  * Request Queue with SQLite Persistence
  * Enables resume-capable crawling with deduplication.
+ * Uses a dedicated task_id column (not LIKE on JSON) for performance and safety.
  */
 
 import { Database } from "bun:sqlite";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
+import { dirname } from "path";
 import { generateId } from "./utils";
 import type { QueueItem } from "./types";
 
@@ -12,24 +14,20 @@ const DB_PATH = process.env.QUEUE_DB_PATH || "/app/data/scraper-queue.db";
 
 let db: Database | null = null;
 
-/**
- * Escape special LIKE pattern characters in a string.
- * SQLite LIKE uses `%` (any sequence), `_` (any single char), `\` (escape).
- */
-function escapeLike(str: string): string {
-  return str
-    .replace(/\\/g, "\\\\")
-    .replace(/%/g, "\\%")
-    .replace(/_/g, "\\_");
-}
-
 function getDB(): Database {
   if (db) return db;
+
+  // Ensure parent directory exists
+  const dir = dirname(DB_PATH);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
 
   db = new Database(DB_PATH, { create: true });
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
   db.exec("PRAGMA busy_timeout = 5000");
+  db.exec("PRAGMA foreign_keys = ON");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS request_queue (
@@ -44,17 +42,15 @@ function getDB(): Database {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT,
+      task_id TEXT NOT NULL DEFAULT '__default__',
       metadata TEXT
     )
   `);
 
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_queue_status ON request_queue(status)
-  `);
-
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_queue_url ON request_queue(url)
-  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_queue_status ON request_queue(status)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_queue_url ON request_queue(url)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_queue_task_id ON request_queue(task_id)");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url ON request_queue(task_id, url, status)");
 
   return db;
 }
@@ -67,47 +63,49 @@ export interface AddToQueueOptions {
   payload?: unknown;
   maxRetries?: number;
   metadata?: Record<string, unknown>;
-  taskId?: string; // Group items by task for isolation
+  taskId?: string;
 }
 
 /**
  * Add a URL to the queue. Returns the queue item ID.
- * Deduplicates by URL within the same task context.
+ * Deduplicates by URL + task_id (exact match, no LIKE injection risk).
  */
 export function addToQueue(options: AddToQueueOptions): string {
   const database = getDB();
   const id = generateId();
   const now = new Date().toISOString();
-
-  // Check for duplicates (same URL + same task)
   const taskId = options.taskId || "__default__";
-  const existing = database.query(
-    "SELECT id FROM request_queue WHERE url = ? AND metadata LIKE ? AND status != 'failed'"
-  ).get(options.url, `%"taskId":"${escapeLike(taskId)}%"`);
 
-  if (existing) {
-    return (existing as { id: string }).id;
+  // Use INSERT OR IGNORE for atomic dedup
+  try {
+    database.query(`
+      INSERT OR IGNORE INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
+      VALUES (?, ?, ?, ?, 0, ?, 'pending', ?, ?, ?, ?)
+    `).run(
+      id,
+      options.url,
+      options.method || "GET",
+      options.payload ? JSON.stringify(options.payload) : null,
+      options.maxRetries || 3,
+      now,
+      now,
+      taskId,
+      options.metadata ? JSON.stringify(options.metadata) : null,
+    );
+  } catch {
+    // Unique constraint violation → URL already queued for this task
+    // Find existing ID
+    const existing = database.query(
+      "SELECT id FROM request_queue WHERE url = ? AND task_id = ? AND status != 'failed' LIMIT 1"
+    ).get(options.url, taskId) as { id: string } | undefined;
+    if (existing) return existing.id;
   }
-
-  database.query(`
-    INSERT INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, metadata)
-    VALUES (?, ?, ?, ?, 0, ?, 'pending', ?, ?, ?)
-  `).run(
-    id,
-    options.url,
-    options.method || "GET",
-    options.payload ? JSON.stringify(options.payload) : null,
-    options.maxRetries || 3,
-    now,
-    now,
-    options.metadata ? JSON.stringify({ ...options.metadata, taskId }) : JSON.stringify({ taskId })
-  );
 
   return id;
 }
 
 /**
- * Add multiple URLs to the queue.
+ * Add multiple URLs to the queue (batched in a transaction).
  */
 export function addManyToQueue(items: AddToQueueOptions[]): string[] {
   const database = getDB();
@@ -135,21 +133,19 @@ export interface DequeueResult {
 
 /**
  * Get the next pending item from the queue for a given task.
- * Marks it as in_progress atomically.
+ * Uses exact task_id match (no LIKE) for performance and security.
  */
 export function dequeue(taskId?: string): DequeueResult | null {
   const database = getDB();
   const now = new Date().toISOString();
 
-  const likePattern = taskId ? `%"taskId":"${escapeLike(taskId)}"%` : "%";
-
   const row = database.query(`
     SELECT id, url, method, payload, metadata
     FROM request_queue
-    WHERE status = 'pending' AND metadata LIKE ?
+    WHERE status = 'pending' ${taskId ? 'AND task_id = ?' : ''}
     ORDER BY created_at ASC
     LIMIT 1
-  `).get(likePattern) as {
+  `).get(...(taskId ? [taskId] : [])) as {
     id: string;
     url: string;
     method: string;
@@ -200,7 +196,6 @@ export function markFailed(id: string, error: string): void {
   const database = getDB();
   const now = new Date().toISOString();
 
-  // Check retries
   const row = database.query(
     "SELECT retries, max_retries FROM request_queue WHERE id = ?"
   ).get(id) as { retries: number; max_retries: number } | undefined;
@@ -208,14 +203,12 @@ export function markFailed(id: string, error: string): void {
   if (!row) return;
 
   if (row.retries < row.max_retries) {
-    // Reset to pending for retry
     database.query(`
       UPDATE request_queue
       SET status = 'pending', retries = retries + 1, error = ?, updated_at = ?
       WHERE id = ?
     `).run(error, now, id);
   } else {
-    // Permanently failed
     database.query(`
       UPDATE request_queue
       SET status = 'failed', error = ?, updated_at = ?, completed_at = ?
@@ -236,7 +229,6 @@ export interface QueueStats {
 
 export function getQueueStats(taskId?: string): QueueStats {
   const database = getDB();
-  const likePattern = taskId ? `%"taskId":"${escapeLike(taskId)}"%` : "%";
 
   const row = database.query(`
     SELECT
@@ -246,8 +238,8 @@ export function getQueueStats(taskId?: string): QueueStats {
       COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
       COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed
     FROM request_queue
-    WHERE metadata LIKE ?
-  `).get(likePattern) as QueueStats;
+    ${taskId ? 'WHERE task_id = ?' : ''}
+  `).get(...(taskId ? [taskId] : [])) as QueueStats;
 
   return row;
 }
@@ -258,13 +250,12 @@ export function getQueueStats(taskId?: string): QueueStats {
 export function requeueFailed(taskId?: string): number {
   const database = getDB();
   const now = new Date().toISOString();
-  const likePattern = taskId ? `%"taskId":"${escapeLike(taskId)}"%` : "%";
 
   const result = database.query(`
     UPDATE request_queue
     SET status = 'pending', retries = 0, error = NULL, updated_at = ?
-    WHERE status = 'failed' AND metadata LIKE ?
-  `).run(now, likePattern);
+    WHERE status = 'failed' ${taskId ? 'AND task_id = ?' : ''}
+  `).run(...(taskId ? [now, taskId] : [now]));
 
   return result.changes;
 }
@@ -286,12 +277,11 @@ export function cleanupQueue(olderThanHours: number = 24): number {
 }
 
 /**
- * Clear all queue items for a specific task.
+ * Clear all queue items for a specific task (exact match).
  */
 export function clearTaskQueue(taskId: string): void {
   const database = getDB();
-  const likePattern = `%"taskId":"${escapeLike(taskId)}"%`;
-  database.query("DELETE FROM request_queue WHERE metadata LIKE ?").run(likePattern);
+  database.query("DELETE FROM request_queue WHERE task_id = ?").run(taskId);
 }
 
 /**
@@ -299,13 +289,12 @@ export function clearTaskQueue(taskId: string): void {
  */
 export function isUrlProcessed(url: string, taskId?: string): boolean {
   const database = getDB();
-  const likePattern = taskId ? `%"taskId":"${escapeLike(taskId)}"%` : "%";
 
   const row = database.query(`
     SELECT id FROM request_queue
-    WHERE url = ? AND metadata LIKE ? AND status IN ('completed', 'in_progress')
+    WHERE url = ? ${taskId ? 'AND task_id = ?' : ''} AND status IN ('completed', 'in_progress')
     LIMIT 1
-  `).get(url, likePattern);
+  `).get(...(taskId ? [url, taskId] : [url]));
 
   return !!row;
 }

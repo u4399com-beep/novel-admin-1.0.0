@@ -184,11 +184,9 @@ export default function TagManagerView() {
   const onSubmit = async (values: TagFormValues) => {
     try {
       setSubmitting(true);
-      const url = '/api/tags';
+      const url = editingTag ? `/api/tags/${editingTag.id}` : '/api/tags';
       const method = editingTag ? 'PUT' : 'POST';
-      const body = editingTag
-        ? { id: editingTag.id, ...values }
-        : values;
+      const body = values;
 
       const res = await fetch(url, {
         method,
@@ -215,7 +213,7 @@ export default function TagManagerView() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await fetch(`/api/tags?id=${deleteTarget.id}`, {
+      const res = await fetch(`/api/tags/${deleteTarget.id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {

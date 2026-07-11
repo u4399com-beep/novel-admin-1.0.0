@@ -5,6 +5,7 @@ type CacheEntry<T> = {
 };
 
 const cache = new Map<string, CacheEntry<unknown>>();
+const inflight = new Map<string, Promise<unknown>>();
 
 const DEFAULT_TTL = 30 * 1000; // 30 seconds
 const MAX_ENTRIES = 500;
@@ -29,7 +30,35 @@ setInterval(() => {
   }
 }, CLEANUP_INTERVAL);
 
-export function getCached<T>(key: string): T | null {
+/**
+ * Single-flight cache: deduplicates concurrent compute calls for the same key.
+ * Use this for all new code instead of getCached/setCache.
+ */
+export async function getOrCompute<T>(
+  key: string,
+  ttl: number = DEFAULT_TTL,
+  computeFn: () => Promise<T>
+): Promise<T> {
+  const cached = getCached<T>(key);
+  if (cached) return cached;
+
+  if (inflight.has(key)) return inflight.get(key) as Promise<T>;
+
+  const promise = computeFn().then(data => {
+    setCache(key, data, ttl);
+    inflight.delete(key);
+    return data;
+  }).catch(e => {
+    inflight.delete(key);
+    throw e;
+  });
+
+  inflight.set(key, promise);
+  return promise;
+}
+
+// Keep getCached/setCache for backward compatibility
+export const getCached = <T>(key: string): T | null => {
   const entry = cache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) {
@@ -37,9 +66,15 @@ export function getCached<T>(key: string): T | null {
     return null;
   }
   return entry.data as T;
-}
+};
 
 export function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
+  // Prune expired entries first to free space
+  const now = Date.now();
+  for (const [k, entry] of cache) {
+    if (now > entry.expiresAt) cache.delete(k);
+  }
+
   // Don't cache values that exceed the size limit
   const sizeEstimate = JSON.stringify(data).length;
   if (sizeEstimate > MAX_VALUE_SIZE) {

@@ -35,7 +35,7 @@ import { Switch } from '@/components/ui/switch';
 import { useAppStore } from '@/stores/app-store';
 import type { DownloadConfig } from '@/types';
 
-export function DownloadManagerView() {
+export default function DownloadManagerView() {
   const { refreshDashboard, triggerRefreshDashboard } = useAppStore();
   const [configs, setConfigs] = useState<DownloadConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,7 +64,7 @@ export function DownloadManagerView() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await fetch(`/api/download-configs/${deleteTarget.id}?XTransformPort=3000`, {
+      const res = await fetch(`/api/download-configs/${deleteTarget.id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -269,8 +269,8 @@ function DownloadConfigFormDialog({
       };
 
       const url = editing
-        ? `/api/download-configs/${editing.id}?XTransformPort=3000`
-        : `/api/download-configs?XTransformPort=3000`;
+        ? `/api/download-configs/${editing.id}`
+        : `/api/download-configs`;
       const method = editing ? 'PUT' : 'POST';
 
       const res = await fetch(url, {

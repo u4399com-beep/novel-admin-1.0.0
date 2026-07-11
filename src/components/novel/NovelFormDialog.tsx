@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -114,6 +114,9 @@ export default function NovelFormDialog() {
       tags: [],
     },
   });
+
+  const watchedTags = useWatch({ control: form.control, name: "tags" });
+  const selectedTagIds = watchedTags ?? [];
 
   // ── Reset form when dialog opens / editingNovel changes ──
   useEffect(() => {
@@ -340,8 +343,7 @@ export default function NovelFormDialog() {
                       </span>
                     ) : (
                       allTags.map((tag) => {
-                        const isSelected = form
-                          .watch("tags")
+                        const isSelected = selectedTagIds
                           .includes(tag.id);
                         return (
                           <label

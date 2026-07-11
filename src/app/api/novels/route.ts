@@ -122,7 +122,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         title: trimmedTitle,
         author: sanitizeField(author, 100) || "佚名",
         description: sanitizeField(description, 5000) || null,
-        coverUrl: coverUrl?.trim() || null,
+        coverUrl: sanitizeField(coverUrl, 2048) || null,
         status: novelStatus,
         categoryId: categoryId || null,
         tags: tags?.length

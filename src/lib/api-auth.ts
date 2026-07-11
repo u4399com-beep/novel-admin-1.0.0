@@ -13,10 +13,13 @@ const ENTRY_TTL = 120 * 1000;
 
 const ipStore = new Map<string, { tokens: number; lastRefill: number }>();
 
-// Lazy cleanup when >80% capacity
+let lastCleanup = 0;
+// Lazy cleanup when >80% capacity, throttled to max once per 10s
 function lazyCleanup(): void {
-  if (ipStore.size < MAX_ENTRIES * 0.8) return;
   const now = Date.now();
+  if (now - lastCleanup < 10_000) return;
+  if (ipStore.size < MAX_ENTRIES * 0.8) return;
+  lastCleanup = now;
   for (const [ip, entry] of ipStore) {
     if (now - entry.lastRefill > ENTRY_TTL) ipStore.delete(ip);
   }
@@ -66,10 +69,13 @@ const LOGIN_WINDOW_1M = 60 * 1000;
 const LOGIN_WINDOW_15M = 15 * 60 * 1000;
 const MAX_LOGIN_ENTRIES = 5000;
 
+let lastLoginCleanup = 0;
+
 export function loginRateLimit(ip: string): { allowed: boolean; retryAfter: number } {
   const now = Date.now();
 
-  if (loginIpStore.size > MAX_LOGIN_ENTRIES * 0.8) {
+  if (loginIpStore.size > MAX_LOGIN_ENTRIES * 0.8 && now - lastLoginCleanup >= 10_000) {
+    lastLoginCleanup = now;
     for (const [key, entry] of loginIpStore) {
       if (now > entry.reset15m) loginIpStore.delete(key);
     }

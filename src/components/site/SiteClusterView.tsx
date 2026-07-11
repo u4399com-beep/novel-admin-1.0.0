@@ -64,6 +64,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAppStore } from '@/stores/app-store';
 import type { Site, Theme, ThemeConfig, ThemeGeo } from '@/types';
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function tryParseJSON(str: string): unknown {
+  try { return JSON.parse(str); } catch { return undefined; }
+}
+
+function defaultThemeConfig(): ThemeConfig {
+  return {
+    colors: { primary: '#334155', secondary: '#64748b', accent: '#0f172a', background: '#ffffff', foreground: '#0f172a', card: '#ffffff', cardForeground: '#1e293b', muted: '#f1f5f9', mutedForeground: '#94a3b8', border: '#e2e8f0', ring: '#334155' },
+    layout: { maxWidth: '1200px', sidebarPosition: 'left', cardStyle: 'rounded', headerStyle: 'static', gridColumns: 3 },
+    typography: { headingFont: 'sans', bodyFont: 'sans', headingWeight: 700, lineHeight: 1.6 },
+    seo: { defaultTitle: '', titleTemplate: '{title} - {siteName}', defaultDescription: '', defaultKeywords: '' },
+    geo: { region: 'CN', placename: '中国', position: '39.9042,116.4074' },
+  };
+}
+
 // ─── Site Form Dialog ──────────────────────────────────────────────────────────
 
 function SiteFormDialog({
@@ -99,7 +115,7 @@ function SiteFormDialog({
   useEffect(() => {
     if (editingSite) {
       const geo = typeof editingSite.geoConfig === 'string'
-        ? JSON.parse(editingSite.geoConfig) as ThemeGeo
+        ? (tryParseJSON(editingSite.geoConfig) as ThemeGeo ?? undefined)
         : editingSite.geoConfig;
       setForm({
         domain: editingSite.domain,
@@ -117,7 +133,7 @@ function SiteFormDialog({
         chapterOffset: editingSite.chapterOffset,
       });
     } else {
-      setForm((p) => ({ ...p, domain: '', name: '', description: '', themeId: '', enabled: true }));
+      setForm((p) => ({ ...p, domain: '', name: '', description: '', themeId: '', enabled: true, novelOffset: 0, chapterOffset: 0 }));
     }
   }, [editingSite, open]);
 
@@ -363,7 +379,7 @@ function SiteFormDialog({
 
 function SitePreview({ site, theme }: { site: Site; theme: Theme }) {
   const config: ThemeConfig = typeof theme.config === 'string'
-    ? JSON.parse(theme.config)
+    ? ((tryParseJSON(theme.config) as ThemeConfig) ?? defaultThemeConfig())
     : theme.config;
   const { colors, typography, layout } = config;
 
@@ -537,7 +553,7 @@ function SitePreview({ site, theme }: { site: Site; theme: Theme }) {
 
 // ─── Main Site Cluster View ────────────────────────────────────────────────────
 
-export function SiteClusterView() {
+export default function SiteClusterView() {
   const [sites, setSites] = useState<Site[]>([]);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
@@ -559,7 +575,7 @@ export function SiteClusterView() {
       setThemes(
         themesData.map((t: Theme & { config: string }) => ({
           ...t,
-          config: typeof t.config === 'string' ? JSON.parse(t.config) : t.config,
+          config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : t.config,
         }))
       );
     } catch {
