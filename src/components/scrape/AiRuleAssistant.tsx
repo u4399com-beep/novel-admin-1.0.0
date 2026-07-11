@@ -121,10 +121,10 @@ function getConfidenceLabel(score: number): string {
   return '低置信度';
 }
 
-function getConfidenceIcon(score: number) {
-  if (score >= 80) return Shield;
-  if (score >= 50) return Info;
-  return AlertTriangle;
+function getConfidenceIcon(score: number): React.ReactNode {
+  if (score >= 80) return <Shield className="h-3 w-3" />;
+  if (score >= 50) return <Info className="h-3 w-3" />;
+  return <AlertTriangle className="h-3 w-3" />;
 }
 
 const SITE_TYPES = [

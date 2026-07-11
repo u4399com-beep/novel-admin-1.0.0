@@ -12,7 +12,7 @@ export const GET = withAuth(async function GET(
   try {
     const { id: novelId } = await params;
     const { searchParams } = new URL(request.url);
-    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 100, maxPageSize: 500 });
+    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 50, maxPageSize: 100 });
 
     const [chapters, total] = await Promise.all([
       db.chapter.findMany({
@@ -20,6 +20,16 @@ export const GET = withAuth(async function GET(
         orderBy: { sortOrder: "asc" },
         skip,
         take: pageSize,
+        // Exclude content field from list to reduce response size by ~95%
+        select: {
+          id: true,
+          title: true,
+          sortOrder: true,
+          wordCount: true,
+          sourceUrl: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
       db.chapter.count({ where: { novelId } }),
     ]);

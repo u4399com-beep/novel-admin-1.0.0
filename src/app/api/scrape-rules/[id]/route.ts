@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -96,12 +96,12 @@ export const PUT = withAuth(async function PUT(
     const rule = await db.scrapeRule.update({
       where: { id },
       data: {
-        ...(body.name !== undefined && { name: body.name.trim() }),
-        ...(body.description !== undefined && { description: body.description?.trim() || null }),
+        ...(body.name !== undefined && { name: sanitizeField(body.name, 200) }),
+        ...(body.description !== undefined && { description: sanitizeField(body.description, 2000) || null }),
         ...(body.enabled !== undefined && { enabled: body.enabled }),
 
         // 列表页配置
-        ...(body.listUrl !== undefined && { listUrl: body.listUrl || null }),
+        ...(body.listUrl !== undefined && { listUrl: sanitizeField(body.listUrl, 2000) || null }),
         ...(body.listSelector !== undefined && {
           listSelector: body.listSelector ? JSON.stringify(body.listSelector) : null,
         }),
@@ -110,16 +110,16 @@ export const PUT = withAuth(async function PUT(
         }),
 
         // 书籍信息页配置
-        ...(body.bookTitleSelector !== undefined && { bookTitleSelector: body.bookTitleSelector || null }),
-        ...(body.bookAuthorSelector !== undefined && { bookAuthorSelector: body.bookAuthorSelector || null }),
-        ...(body.bookCategorySelector !== undefined && { bookCategorySelector: body.bookCategorySelector || null }),
-        ...(body.bookKeywordsSelector !== undefined && { bookKeywordsSelector: body.bookKeywordsSelector || null }),
-        ...(body.bookDescriptionSelector !== undefined && { bookDescriptionSelector: body.bookDescriptionSelector || null }),
-        ...(body.bookCoverSelector !== undefined && { bookCoverSelector: body.bookCoverSelector || null }),
-        ...(body.bookStatusSelector !== undefined && { bookStatusSelector: body.bookStatusSelector || null }),
+        ...(body.bookTitleSelector !== undefined && { bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null }),
+        ...(body.bookAuthorSelector !== undefined && { bookAuthorSelector: sanitizeField(body.bookAuthorSelector, 500) || null }),
+        ...(body.bookCategorySelector !== undefined && { bookCategorySelector: sanitizeField(body.bookCategorySelector, 500) || null }),
+        ...(body.bookKeywordsSelector !== undefined && { bookKeywordsSelector: sanitizeField(body.bookKeywordsSelector, 500) || null }),
+        ...(body.bookDescriptionSelector !== undefined && { bookDescriptionSelector: sanitizeField(body.bookDescriptionSelector, 500) || null }),
+        ...(body.bookCoverSelector !== undefined && { bookCoverSelector: sanitizeField(body.bookCoverSelector, 500) || null }),
+        ...(body.bookStatusSelector !== undefined && { bookStatusSelector: sanitizeField(body.bookStatusSelector, 500) || null }),
 
         // 章节目录页配置
-        ...(body.chapterListUrl !== undefined && { chapterListUrl: body.chapterListUrl || null }),
+        ...(body.chapterListUrl !== undefined && { chapterListUrl: sanitizeField(body.chapterListUrl, 2000) || null }),
         ...(body.chapterListSelector !== undefined && {
           chapterListSelector: body.chapterListSelector ? JSON.stringify(body.chapterListSelector) : null,
         }),

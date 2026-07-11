@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { safeJson } from '@/lib/api-utils';
+import { isSafeUrl } from '@/lib/sanitize';
 
 const SCRAPER_SERVICE_URL =
   process.env.SCRAPER_SERVICE_URL || 'http://localhost:3099';
@@ -37,6 +38,11 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     if (url.length > 2048) {
       return NextResponse.json({ error: 'URL 过长' }, { status: 400 });
+    }
+
+    // SSRF protection - check for private/internal IPs
+    if (!isSafeUrl(url)) {
+      return NextResponse.json({ error: 'URL 不允许访问内网或私有地址' }, { status: 400 });
     }
 
     // Validate siteType if provided

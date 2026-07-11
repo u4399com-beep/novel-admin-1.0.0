@@ -24,7 +24,47 @@ import type {
 
 // ==================== Start ====================
 
+const SERVICE_TOKEN = process.env.SCRAPER_SERVICE_TOKEN || "";
+const MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB max request body
+const SCRAPER_RATE_LIMIT = 60; // requests per minute
+const scraperRateStore = new Map<string, { count: number; resetAt: number }>();
+
+function authenticateRequest(req: Request): boolean {
+  // Health check doesn't need auth
+  const url = new URL(req.url);
+  if (url.pathname === "/health") return true;
+
+  // Check Authorization header
+  const auth = req.headers.get("authorization");
+  if (SERVICE_TOKEN && auth === `Bearer ${SERVICE_TOKEN}`) return true;
+
+  // Reject if no token configured (force security)
+  if (!SERVICE_TOKEN) {
+    console.warn("[Auth] SCRAPER_SERVICE_TOKEN not set - all non-health requests rejected");
+    return false;
+  }
+
+  return false;
+}
+
+function checkScraperRateLimit(ip: string): boolean {
+  const now = Date.now();
+  let entry = scraperRateStore.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + 60000 };
+    scraperRateStore.set(ip, entry);
+  }
+  entry.count++;
+  return entry.count <= SCRAPER_RATE_LIMIT;
+}
+
 export function startServer(port: number = 3099) {
+  // Warn if no service token configured
+  if (!SERVICE_TOKEN) {
+    console.warn("⚠️  SCRAPER_SERVICE_TOKEN not configured! Service will reject all authenticated requests.");
+    console.warn("   Set SCRAPER_SERVICE_TOKEN environment variable to enable API access.");
+  }
+
   // Initialize all engines
   initEngines();
 
@@ -38,13 +78,16 @@ export function startServer(port: number = 3099) {
       // CORS - restrict to frontend origin only
       const allowedOrigins = [process.env.ALLOWED_ORIGIN || "http://localhost:3000"];
       const requestOrigin = req.headers.get("origin") || "";
-      const corsOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
-      const corsHeaders = {
-        "Access-Control-Allow-Origin": corsOrigin,
+      // Only set CORS headers if origin is in whitelist (prevent cross-origin attacks)
+      const corsHeaders: Record<string, string> = {};
+      if (allowedOrigins.includes(requestOrigin)) {
+        corsHeaders["Access-Control-Allow-Origin"] = requestOrigin;
+      }
+      Object.assign(corsHeaders, {
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Max-Age": "86400",
-      };
+      });
 
       if (method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeaders });
@@ -98,6 +141,23 @@ export function startServer(port: number = 3099) {
         });
       }
 
+      // Authentication check for all non-health, non-OPTIONS requests
+      if (!authenticateRequest(req)) {
+        return Response.json(
+          { error: "Unauthorized. Provide valid Bearer token." },
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Rate limiting (per client IP)
+      const clientIp = req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown";
+      if (!checkScraperRateLimit(clientIp)) {
+        return Response.json(
+          { error: "Rate limit exceeded. Try again later." },
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" } }
+        );
+      }
+
       // POST-only for scraping endpoints
       if (method !== "POST") {
         return Response.json(
@@ -106,10 +166,23 @@ export function startServer(port: number = 3099) {
         );
       }
 
-      // Parse JSON body
+      // Parse JSON body with size limit
       let body: unknown;
       try {
+        const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+        if (contentLength > MAX_BODY_SIZE) {
+          return Response.json(
+            { error: `Request body too large. Max ${MAX_BODY_SIZE / 1024 / 1024}MB.` },
+            { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         const text = await req.text();
+        if (text.length > MAX_BODY_SIZE) {
+          return Response.json(
+            { error: `Request body too large. Max ${MAX_BODY_SIZE / 1024 / 1024}MB.` },
+            { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         body = text.trim() ? JSON.parse(text) : {};
       } catch {
         return Response.json(
@@ -210,10 +283,9 @@ export function startServer(port: number = 3099) {
         );
       } catch (err) {
         console.error(`[Server] Error handling ${path}:`, err);
-        // Don't leak internal error details
-        const message = err instanceof Error ? err.message : "Internal server error";
+        // Never leak internal error details to clients
         return Response.json(
-          { error: message },
+          { error: "Internal server error" },
           { status: 500, headers: jsonHeaders }
         );
       }
@@ -246,9 +318,12 @@ export function startServer(port: number = 3099) {
 const PORT = parseInt(process.env.PORT || "3099", 10);
 console.log(`[Config] API_BASE: ${process.env.MAIN_APP_URL || "http://localhost:3000"}`);
 console.log(`[Config] PORT: ${PORT}`);
-console.log(`[Config] Firecrawl: ${process.env.FIRECRAWL_API_URL || "not configured (http://localhost:3002)"}`);
-console.log(`[Config] AgentQL: ${process.env.AGENTQL_API_URL || "not configured (https://api.agentql.com)"}`);
-console.log(`[Config] CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"} (${process.env.BROWSERLESS_API_URL || process.env.STEEL_API_URL || "not configured"})`);
+console.log(`[Config] Auth: ${SERVICE_TOKEN ? "enabled" : "DISABLED (no SCRAPER_SERVICE_TOKEN set)"}`);
+if (process.env.DEBUG === "true") {
+  console.log(`[Config] Firecrawl: ${process.env.FIRECRAWL_API_URL || "not configured"}`);
+  console.log(`[Config] AgentQL: ${process.env.AGENTQL_API_URL || "not configured"}`);
+  console.log(`[Config] CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"}`);
+}
 startServer(PORT);
 
 // ==================== Graceful Shutdown ====================

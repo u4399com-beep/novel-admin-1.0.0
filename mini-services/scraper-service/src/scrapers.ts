@@ -294,8 +294,7 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
   path: string;
   size: number;
 }> {
-  const { isSafeTargetUrl, isSafeSavePath, getRandomUA: _getUA } = await import("./utils");
-  const { getRandomUA: getUA } = await import("./utils");
+  const { isSafeTargetUrl, isSafeSavePath, getRandomUA: getUA } = await import("./utils");
 
   if (!isSafeTargetUrl(url)) {
     throw new Error("Invalid or blocked target URL");

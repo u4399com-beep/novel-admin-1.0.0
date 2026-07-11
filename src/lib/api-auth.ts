@@ -118,12 +118,21 @@ export function withAuth(handler: ApiHandler): ApiHandler {
     const authToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     if (!authToken) {
       // Check for service-to-service Bearer token (used by scraper-service etc.)
+      // IMPORTANT: No fallback to NEXTAUTH_SECRET - must use independent token
       const bearer = request.headers.get('authorization');
-      const serviceSecret = process.env.SCRAPER_SERVICE_TOKEN || process.env.NEXTAUTH_SECRET;
-      if (!bearer || bearer !== `Bearer ${serviceSecret}`) {
+      const serviceSecret = process.env.SCRAPER_SERVICE_TOKEN;
+      if (!bearer || !serviceSecret || bearer !== `Bearer ${serviceSecret}`) {
         return NextResponse.json({ error: '未授权，请先登录' }, { status: 401 });
       }
-      // Service token authenticated — skip rate limiting for service calls
+      // Service token authenticated — also rate limit service calls
+      const serviceIp = getClientIp(request);
+      const serviceRl = rateLimit(serviceIp);
+      if (!serviceRl.allowed) {
+        return NextResponse.json(
+          { error: '请求过于频繁，请稍后再试' },
+          { status: 429, headers: { 'Retry-After': String(serviceRl.retryAfter) } }
+        );
+      }
       try {
         const response = await handler(...(args as any[]));
         return response;
@@ -142,9 +151,8 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       }
     }
 
-    // 3. Rate limiting
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-               request.headers.get('x-real-ip') || 'unknown';
+    // 3. Rate limiting (use secure IP detection)
+    const ip = getClientIp(request);
     const rl = rateLimit(ip);
     if (!rl.allowed) {
       return NextResponse.json(
@@ -187,6 +195,15 @@ export function withAuth(handler: ApiHandler): ApiHandler {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function getClientIp(request: NextRequest): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-         request.headers.get('x-real-ip') || 'unknown';
+  // Prioritize X-Real-IP (set by Caddy, cannot be spoofed by client)
+  // X-Forwarded-For can be forged by clients and should not be trusted alone
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp) return realIp.trim();
+  // Fallback to rightmost X-Forwarded-For (Caddy appends the real client IP)
+  const xff = request.headers.get('x-forwarded-for');
+  if (xff) {
+    const parts = xff.split(',');
+    return (parts[parts.length - 1]?.trim()) || 'unknown';
+  }
+  return 'unknown';
 }

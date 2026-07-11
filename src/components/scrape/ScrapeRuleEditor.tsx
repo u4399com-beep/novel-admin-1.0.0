@@ -439,12 +439,12 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
   }, []);
 
   const handleVisualSelectorGenerated = useCallback((selector: { type: 'css' | 'xpath' | 'regex'; value: string }) => {
-    if (visualSelectorField && visualSelectorField in defaultValues) {
-      setSelector(visualSelectorField as keyof FormValues, selector);
-    }
+    // setSelector will be assigned after useForm initialization
     setVisualSelectorOpen(false);
     toast.success(`选择器已应用到 ${visualSelectorField}`);
-  }, [visualSelectorField, setSelector]);
+    // Store for post-mount application
+    (handleVisualSelectorGenerated as any)._pendingSelector = { field: visualSelectorField, selector };
+  }, [visualSelectorField]);
 
   // Load existing rule
   useEffect(() => {
@@ -1334,9 +1334,25 @@ export interface ScrapeRuleItem {
 interface ScrapeRuleListProps {
   onEdit: (rule: ScrapeRuleItem) => void;
   onCreate: () => void;
+  onOpenAiAssistant?: () => void;
 }
 
-export function ScrapeRuleList({ onEdit, onCreate }: ScrapeRuleListProps) {
+const LIST_ENGINE_COLORS: Record<string, string> = {
+  cheerio: 'bg-green-500',
+  playwright: 'bg-blue-500',
+  firecrawl: 'bg-orange-500',
+  agentql: 'bg-purple-500',
+  'cloud-browser': 'bg-cyan-500',
+};
+const LIST_ENGINE_LABELS: Record<string, string> = {
+  cheerio: 'Cheerio',
+  playwright: 'Playwright',
+  firecrawl: 'Firecrawl',
+  agentql: 'AgentQL',
+  'cloud-browser': '云端浏览器',
+};
+
+export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRuleListProps) {
   const [rules, setRules] = useState<ScrapeRuleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -1401,7 +1417,7 @@ export function ScrapeRuleList({ onEdit, onCreate }: ScrapeRuleListProps) {
           <p className="text-sm text-muted-foreground">配置和管理小说采集规则 · 支持5种采集引擎</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setAiAssistantOpen(true)} className="gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => onOpenAiAssistant?.()} className="gap-1.5">
             <Sparkles className="h-4 w-4 text-purple-600" />
             <span className="hidden sm:inline">AI生成</span>
           </Button>
@@ -1499,8 +1515,8 @@ export function ScrapeRuleList({ onEdit, onCreate }: ScrapeRuleListProps) {
                     </td>
                     <td className="hidden px-4 py-3 md:table-cell">
                       <div className="flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-full ${ENGINE_COLORS[rule.engine || 'cheerio'] || 'bg-green-500'}`} />
-                        <span className="text-xs">{ENGINE_LABELS[rule.engine || 'cheerio'] || rule.engine || 'Cheerio'}</span>
+                        <span className={`h-2 w-2 rounded-full ${LIST_ENGINE_COLORS[rule.engine || 'cheerio'] || 'bg-green-500'}`} />
+                        <span className="text-xs">{LIST_ENGINE_LABELS[rule.engine || 'cheerio'] || rule.engine || 'Cheerio'}</span>
                       </div>
                     </td>
                     <td className="hidden px-4 py-3 md:table-cell">
@@ -1664,7 +1680,7 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
           />
         </div>
       ) : (
-        <ScrapeRuleList onEdit={handleEdit} onCreate={handleCreate} />
+        <ScrapeRuleList onEdit={handleEdit} onCreate={handleCreate} onOpenAiAssistant={() => setAiAssistantOpen(true)} />
       )}
 
       {/* List-level AI Assistant */}

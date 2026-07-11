@@ -52,11 +52,27 @@ export const PUT = withAuth(async function PUT(
     }
 
     const validStatuses = ["pending", "running", "completed", "failed", "cancelled"];
+    // Valid state transitions to prevent invalid status changes
+    const validTransitions: Record<string, string[]> = {
+      pending: ["running", "cancelled"],
+      running: ["completed", "failed", "cancelled"],
+      completed: [],
+      failed: ["pending", "running"],  // allow retry
+      cancelled: [],
+    };
     const updateData: Record<string, unknown> = {};
 
     if (body.status !== undefined) {
       if (!validStatuses.includes(body.status)) {
         return NextResponse.json({ error: "无效的任务状态" }, { status: 400 });
+      }
+      // Enforce state machine transitions
+      const allowed = validTransitions[task.status] || [];
+      if (!allowed.includes(body.status)) {
+        return NextResponse.json(
+          { error: `不允许从 "${task.status}" 转换到 "${body.status}"` },
+          { status: 400 }
+        );
       }
       updateData.status = body.status;
       if (body.status === "running" && !task.startedAt) {
@@ -68,7 +84,11 @@ export const PUT = withAuth(async function PUT(
     }
 
     if (body.progress !== undefined) {
-      updateData.progress = Math.min(100, Math.max(0, Number(body.progress)));
+      const p = parseFloat(body.progress);
+      if (isNaN(p)) {
+        return NextResponse.json({ error: "progress 必须是有效数字" }, { status: 400 });
+      }
+      updateData.progress = Math.min(100, Math.max(0, p));
     }
     if (body.currentStep !== undefined) {
       updateData.currentStep = String(body.currentStep).slice(0, 200);

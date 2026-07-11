@@ -81,24 +81,27 @@ class CheerioEngine implements ScrapingEngine {
 // ==================== 2. Playwright Engine (JS Rendering) ====================
 
 let playwrightBrowser: import("playwright").Browser | null = null;
-let playwrightLaunching = false;
+let playwrightLaunchPromise: Promise<import("playwright").Browser> | null = null;
 
 async function getPlaywrightBrowser(): Promise<import("playwright").Browser> {
   if (playwrightBrowser?.isConnected()) return playwrightBrowser;
 
-  if (playwrightLaunching) {
-    // Wait for existing launch to complete
-    while (playwrightLaunching) {
-      await new Promise((r) => setTimeout(r, 200));
+  if (playwrightLaunchPromise) {
+    // Wait for existing launch to complete (using promise, not busy-wait)
+    try {
+      playwrightBrowser = await playwrightLaunchPromise;
+      if (playwrightBrowser?.isConnected()) return playwrightBrowser;
+    } catch {
+      // Launch failed, will try again below
     }
-    if (playwrightBrowser?.isConnected()) return playwrightBrowser;
   }
 
-  playwrightLaunching = true;
-  try {
+  // Launch with timeout (30s max)
+  playwrightLaunchPromise = (async () => {
     const { chromium } = await import("playwright");
-    playwrightBrowser = await chromium.launch({
+    const browser = await chromium.launch({
       headless: true,
+      timeout: 30000,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -118,12 +121,13 @@ async function getPlaywrightBrowser(): Promise<import("playwright").Browser> {
     playwrightBrowser.on("disconnected", () => {
       console.log("[Playwright] Browser disconnected");
       playwrightBrowser = null;
+      playwrightLaunchPromise = null;
     });
 
     return playwrightBrowser;
-  } finally {
-    playwrightLaunching = false;
-  }
+  })();
+
+  return await playwrightLaunchPromise;
 }
 
 class PlaywrightEngine implements ScrapingEngine {
@@ -614,12 +618,8 @@ export function initEngines(): void {
 
   console.log(`[Engines] Available: ${getEngineNames().join(", ")}`);
 
-  // Pre-warm Playwright browser in background (non-blocking)
-  if (engines.has("playwright")) {
-    getPlaywrightBrowser().catch((err) => {
-      console.warn(`[Playwright] Pre-warm failed (will retry on first use): ${err}`);
-    });
-  }
+  // Note: Playwright is lazy-loaded on first use (saves 200-500MB memory)
+  // Previous pre-warm behavior removed to reduce idle memory consumption
 }
 
 // ==================== Cleanup ====================

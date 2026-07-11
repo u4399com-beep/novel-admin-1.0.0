@@ -49,7 +49,20 @@ async function apiCall(
   return { data, status: response.status };
 }
 
+// Throttled progress updates - max once per 3 seconds
+const progressThrottle = new Map<string, number>();
+const PROGRESS_THROTTLE_MS = 3000;
+
 async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) {
+  const now = Date.now();
+  const lastUpdate = progressThrottle.get(taskId) || 0;
+
+  // Always allow status changes immediately
+  if (!updates.status && now - lastUpdate < PROGRESS_THROTTLE_MS) {
+    return; // Skip throttled non-critical update
+  }
+
+  progressThrottle.set(taskId, now);
   try {
     await apiCall("PUT", `/api/scrape-tasks/${taskId}`, updates);
   } catch (err) {
@@ -150,6 +163,32 @@ export async function executeTask(taskId: string) {
 
   await addTaskLog(taskId, "info", `开始执行采集任务: ${rule.name} [引擎: ${engineType}]`);
 
+  // Overall task timeout (1 hour max)
+  const TASK_TIMEOUT_MS = 60 * 60 * 1000;
+  const taskTimeoutId = setTimeout(() => {
+    console.error(`[Task ${taskId}] Overall timeout (${TASK_TIMEOUT_MS / 1000}s) exceeded, aborting`);
+    // Will be caught by the Promise.race below
+  }, TASK_TIMEOUT_MS);
+  const taskTimeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error(`任务执行超时（${TASK_TIMEOUT_MS / 1000 / 60}分钟）`)), TASK_TIMEOUT_MS);
+  });
+
+  try {
+    await Promise.race([
+      executeTaskBody(taskId, task, rule),
+      taskTimeoutPromise,
+    ]);
+  } finally {
+    clearTimeout(taskTimeoutId);
+  }
+}
+
+async function executeTaskBody(
+  taskId: string,
+  task: ScrapeTask,
+  rule: ScrapeRule
+): Promise<void> {
+
   // 2. Scrape list page
   if (!rule.listUrl || !listSelector) {
     throw new Error("列表页URL和选择器不能为空");
@@ -202,6 +241,7 @@ export async function executeTask(taskId: string) {
   let failedItemsCount = 0;
   let totalChaptersCount = 0;
   let newChaptersCount = 0;
+  let skippedChaptersCount = 0;
   const booksProcessed: Array<{ id: string; title: string; url: string }> = [];
 
   async function processBook(bookUrl: string, index: number): Promise<void> {
@@ -232,7 +272,7 @@ export async function executeTask(taskId: string) {
         console.log(`[Task ${taskId}] Book at ${bookUrl} has no title, skipping`);
         skippedBooksCount++;
         await addTaskLog(taskId, "warn", `跳过无标题书籍: ${bookUrl}`, bookUrl);
-        markFailed(/* queueId for bookUrl */ "", "No title");
+        // No queue item to mark failed since we don't have a queue ID for the book URL
         return;
       }
 
@@ -346,7 +386,7 @@ export async function executeTask(taskId: string) {
               currentStep: `正在采集书籍信息 (${processed}/${bookUrls.length})...`,
               newBooks: newBooksCount,
               failedItems: failedItemsCount,
-              skippedItems: skippedBooksCount,
+              skippedItems: skippedBooksCount + skippedChaptersCount,
             });
           }
         })()
@@ -477,7 +517,7 @@ export async function executeTask(taskId: string) {
         try {
           if (isIncremental) {
             if (existingChapters.has(chapter.url) || existingChapters.has(`title:${chapter.title}`)) {
-              skippedBooksCount++;
+              skippedChaptersCount++;
               return;
             }
           }
@@ -509,7 +549,7 @@ export async function executeTask(taskId: string) {
 
           if (!chapterContent.trim()) {
             console.log(`[Task ${taskId}] Empty content for chapter: ${chapterTitle}`);
-            skippedBooksCount++;
+            skippedChaptersCount++;
             return;
           }
 
@@ -557,7 +597,7 @@ export async function executeTask(taskId: string) {
         totalChapters: totalChaptersCount,
         newChapters: newChaptersCount,
         failedItems: failedItemsCount,
-        skippedItems: skippedBooksCount,
+        skippedItems: skippedBooksCount + skippedChaptersCount,
         currentStep: `已完成 ${book.title} (${chapters.length} 章)`,
       });
 
@@ -583,7 +623,7 @@ export async function executeTask(taskId: string) {
     totalChapters: totalChaptersCount,
     newChapters: newChaptersCount,
     failedItems: failedItemsCount,
-    skippedItems: skippedBooksCount,
+    skippedItems: skippedBooksCount + skippedChaptersCount,
   });
 
   await addTaskLog(

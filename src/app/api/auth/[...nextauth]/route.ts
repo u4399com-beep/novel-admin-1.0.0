@@ -36,37 +36,36 @@ function timingSafeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Login Brute-Force Protection (global, not per-IP, since authorize
-// callback doesn't have access to request headers)
-// ═══════════════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────
+// Login Brute-Force Protection (global backstop with high threshold)
+// Per-IP protection is enforced by middleware on /api/auth/* paths
+// using loginRateLimit() from api-auth.ts
+// ─────────────────────────────────────────────────────────────
 
-const loginAttempts: { count: number; resetAt: number } = { count: 0, resetAt: 0 };
-const MAX_LOGIN_ATTEMPTS = 10;    // max failed attempts per window
-const LOGIN_WINDOW_MS = 60 * 1000; // 1 minute window
-const LOGIN_LOCKOUT_MS = 5 * 60 * 1000; // 5 minute lockout after exceeding
-let lockoutUntil = 0;
+// Global backstop: very high threshold to prevent system-wide DoS
+// Per-IP protection is the primary defense (enforced in middleware)
+let _globalLoginCount = 0;
+let _globalLoginResetAt = Date.now() + 60 * 1000;
+let _globalLockoutUntil = 0;
 
-function checkLoginRateLimit(): { allowed: boolean; retryAfter: number } {
+function checkGlobalLoginBackstop(): { allowed: boolean; retryAfter: number } {
   const now = Date.now();
 
-  // Check if in lockout period
-  if (now < lockoutUntil) {
-    return { allowed: false, retryAfter: Math.ceil((lockoutUntil - now) / 1000) };
+  if (now < _globalLockoutUntil) {
+    return { allowed: false, retryAfter: Math.ceil((_globalLockoutUntil - now) / 1000) };
   }
 
-  // Reset window if expired
-  if (now > loginAttempts.resetAt) {
-    loginAttempts.count = 0;
-    loginAttempts.resetAt = now + LOGIN_WINDOW_MS;
+  if (now > _globalLoginResetAt) {
+    _globalLoginCount = 0;
+    _globalLoginResetAt = now + 60 * 1000;
   }
 
-  loginAttempts.count++;
+  _globalLoginCount++;
 
-  // If too many attempts, trigger lockout
-  if (loginAttempts.count > MAX_LOGIN_ATTEMPTS) {
-    lockoutUntil = now + LOGIN_LOCKOUT_MS;
-    return { allowed: false, retryAfter: Math.ceil(LOGIN_LOCKOUT_MS / 1000) };
+  // Very high threshold (50/min) - per-IP is the real protection
+  if (_globalLoginCount > 50) {
+    _globalLockoutUntil = now + 5 * 60 * 1000;
+    return { allowed: false, retryAfter: 300 };
   }
 
   return { allowed: true, retryAfter: 0 };
@@ -81,14 +80,20 @@ export const authOptions: NextAuthOptions = {
         password: { label: "密码", type: "password" },
       },
       async authorize(credentials) {
-        // Rate limit check BEFORE verifying credentials
-        const rl = checkLoginRateLimit();
+        // Global backstop check
+        const rl = checkGlobalLoginBackstop();
         if (!rl.allowed) {
-          throw new Error(`登录尝试过于频繁，请${rl.retryAfter}秒后再试`);
+          throw new Error(`系统登录已临时锁定，请${rl.retryAfter}秒后再试`);
         }
 
         const adminUser = process.env.ADMIN_USERNAME || "admin";
-        const adminPass = process.env.ADMIN_PASSWORD || "novel2024";
+        const adminPass = process.env.ADMIN_PASSWORD;
+
+        // Require password to be explicitly configured - no default fallback
+        if (!adminPass) {
+          console.error("[Auth] ADMIN_PASSWORD environment variable is not set! Login is disabled.");
+          throw new Error("系统未配置登录密码，请联系管理员设置ADMIN_PASSWORD环境变量");
+        }
 
         if (
           credentials?.username &&
@@ -109,6 +114,17 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
     maxAge: 24 * 60 * 60, // 24 hours
+  },
+  cookies: {
+    sessionToken: {
+      name: `${process.env.NODE_ENV === "production" ? "__Secure-" : ""}next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax" as const,
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      },
+    },
   },
   pages: {
     signIn: "/login",

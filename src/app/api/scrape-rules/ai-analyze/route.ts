@@ -8,6 +8,7 @@
  */
 
 import { apiSuccess, apiError, safeJson } from "@/lib/api-utils";
+import { withAuth } from "@/lib/api-auth";
 import { NextRequest } from "next/server";
 
 // ==================== Types ====================
@@ -164,7 +165,7 @@ function getDefaultRule(url: string): GeneratedRuleResult["rule"] {
 
 // ==================== POST Handler ====================
 
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async function POST(request: NextRequest) {
   let body: AiAnalyzeRequest;
   try {
     body = await safeJson<AiAnalyzeRequest>(request);
@@ -250,10 +251,10 @@ ${html}`;
     return apiSuccess<GeneratedRuleResult>({
       success: false,
       rule: getDefaultRule(url),
-      error: err instanceof Error ? err.message : "Unknown error during AI analysis",
+      error: "AI analysis failed, please try again",
     });
   }
-}
+});
 
 // ==================== Normalization ====================
 
