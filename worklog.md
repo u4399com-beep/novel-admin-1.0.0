@@ -1193,3 +1193,43 @@ Stage Summary:
 - 请求队列已实现（SQLite持久化），支持断点续爬和失败重试
 - 新增5个队列管理API端点 (stats/requeue/cleanup/clear)
 - 所有原有功能保持兼容，engine默认为cheerio
+---
+Task ID: 1-8
+Agent: Main Orchestrator
+Task: 集成AgentQL/ScrapeGraph AI/Maxun/Browserless-Steel四大场景方案到采集系统
+
+Work Log:
+- 读取并分析现有项目架构（scraper-service v2.0、ScrapeRuleEditor、Prisma Schema等）
+- 更新Prisma Schema：新增agentqlConfig、cloudBrowserConfig字段到ScrapeRule模型，新增AiRuleGeneration模型
+- 执行 `bun run db:push` 成功同步数据库
+- scraper-service后端改造：
+  - types.ts：EngineType扩展为5种（+agentql, cloud-browser），新增AgentQLConfig/AgentQLQuery/CloudBrowserConfig接口
+  - engines.ts：新增AgentQLEngine（自然语言提取，调用AgentQL API）和CloudBrowserEngine（支持Browserless/Steel双供应商）
+  - task-engine.ts：determineEngine()支持新引擎类型
+  - index.ts：版本升级到v3.0.0，新增/ai/generate-rule和/ai/preview-page端点
+  - ai-rule-generator.ts：新建文件，实现AI规则生成（获取HTML→截断→调用LLM分析→返回规则）
+- Next.js API路由：
+  - /api/scrape-rules/ai-analyze/route.ts：使用z-ai-web-dev-sdk LLM分析HTML生成采集规则
+  - /api/scrape-rules/preview/route.ts：代理到scraper-service获取页面预览
+  - /api/scrape-rules/ai-generate/route.ts：代理到scraper-service AI规则生成
+  - 更新/api/scrape-rules/route.ts和[id]/route.ts支持新引擎枚举
+- 前端组件：
+  - AiRuleAssistant.tsx（776行）：AI规则助手Dialog，3步流程（输入URL→AI分析→查看结果），置信度评分，AgentQL查询展示
+  - VisualSelectorBuilder.tsx（811行）：可视化选择器构建器，3标签页（页面预览/HTML源码/选择器测试器），AI智能建议
+  - ScrapeRuleEditor.tsx深度改造：
+    - 引擎选择器扩展为5种（含AgentQL自然语言和云端浏览器）
+    - AgentQL引擎选中时显示自然语言查询编辑器（紫色卡片）
+    - CloudBrowser引擎选中时显示供应商/URL配置（青色卡片）
+    - 策略页新增2个AI辅助按钮（智能生成规则+可视化选择器）
+    - 规则列表新增引擎列（彩色圆点+标签）
+    - 列表头新增AI生成快捷按钮
+- ESLint修复：解决set-state-in-effect和static-components警告
+- 最终验证：`bun run lint` 通过，scraper-service v3.0运行正常（5引擎全部可用），Next.js编译成功（200）
+
+Stage Summary:
+- scraper-service 从v2.0升级到v3.0，采集引擎从3种扩展到5种
+- 新增AI智能规则生成能力（ScrapeGraph AI风格），通过LLM分析页面HTML自动生成完整采集规则
+- 新增可视化选择器构建器（Maxun风格），支持页面预览、HTML源码查看、CSS选择器测试
+- 新增AgentQL自然语言提取引擎，无需编写CSS选择器即可采集数据
+- 新增Browserless/Steel云端浏览器引擎，可绕过Cloudflare等高防护站点
+- 所有新功能已集成到现有ScrapeRuleEditor和规则列表界面

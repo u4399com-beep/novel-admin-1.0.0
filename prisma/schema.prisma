@@ -134,7 +134,13 @@ model ScrapeRule {
 
   // 采集策略
   scrapeMode     String  @default("incremental") // incremental, full
-  engine         String  @default("cheerio") // cheerio, playwright, firecrawl
+  engine         String  @default("cheerio") // cheerio, playwright, firecrawl, agentql, cloud-browser
+
+  // AgentQL 自然语言提取配置
+  agentqlConfig  String? // JSON: {apiKey:string, queries:{title:"...", author:"...", content:"..."}}
+
+  // Cloud Browser (Browserless/Steel) 配置
+  cloudBrowserConfig String? // JSON: {provider:"browserless"|"steel", apiUrl:string, apiKey:string, timeout:number}
   threadCount    Int     @default(3)
   minDelay       Int     @default(1000) // 最小间隔ms
   maxDelay       Int     @default(3000) // 最大间隔ms
@@ -147,6 +153,19 @@ model ScrapeRule {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tasks     ScrapeTask[]
+}
+
+// AI 规则生成记录
+model AiRuleGeneration {
+  id            String   @id @default(cuid())
+  url           String   // 目标URL
+  pageHtml      String?  // 页面HTML(截断)
+  generatedRule String?  // AI生成的规则JSON
+  engine        String   @default("agentql") // agentql, manual
+  status        String   @default("completed") // completed, failed
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // 采集任务

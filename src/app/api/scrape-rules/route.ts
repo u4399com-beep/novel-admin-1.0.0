@@ -61,7 +61,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
 
     const validScrapeModes = ["incremental", "full"];
-    const validEngines = ["cheerio", "playwright", "firecrawl"];
+    const validEngines = ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser"];
     const validStorageModes = ["database", "file"];
     const validDedupModes = ["url", "title", "both"];
 
@@ -124,6 +124,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
         // 内容清洗
         cleanConfig: body.cleanConfig ? JSON.stringify(body.cleanConfig) : null,
+
+        // AgentQL & CloudBrowser config
+        agentqlConfig: body.agentqlQueries ? body.agentqlQueries : null,
+        cloudBrowserConfig: body.cloudBrowserUrl ? JSON.stringify({
+          provider: body.cloudBrowserProvider || "browserless",
+          apiUrl: body.cloudBrowserUrl,
+        }) : null,
       },
       include: {
         _count: { select: { tasks: true } },

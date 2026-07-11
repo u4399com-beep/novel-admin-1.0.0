@@ -27,11 +27,12 @@ export interface AntiCrawl {
   delay?: [number, number]; // [minMs, maxMs]
   proxy?: string;
   retries?: number;
+  cloudBrowser?: boolean;
 }
 
 // ==================== Engine Types ====================
 
-export type EngineType = "cheerio" | "playwright" | "firecrawl";
+export type EngineType = "cheerio" | "playwright" | "firecrawl" | "agentql" | "cloud-browser";
 
 export interface FetchResult {
   html: string;
@@ -51,6 +52,40 @@ export interface ScrapingEngine {
   readonly name: EngineType;
   fetch(url: string, options?: EngineOptions): Promise<FetchResult>;
   close?(): Promise<void>;
+}
+
+// ==================== AgentQL Config ====================
+
+export interface AgentQLConfig {
+  apiKey?: string;
+  apiUrl?: string; // default: https://api.agentql.com
+  timeout?: number;
+}
+
+export interface AgentQLQuery {
+  title?: string;
+  author?: string;
+  category?: string;
+  description?: string;
+  cover?: string;
+  status?: string;
+  chapters?: string;  // NL query for chapter list
+  content?: string;   // NL query for main content
+  [key: string]: string | undefined;
+}
+
+// ==================== CloudBrowser Config ====================
+
+export interface CloudBrowserConfig {
+  provider: "browserless" | "steel";
+  apiUrl: string;
+  apiKey?: string;
+  timeout?: number;
+  // Stealth features
+  stealthMode?: boolean;
+  blockResources?: boolean;
+  waitForSelector?: string;
+  extraWait?: number;
 }
 
 // ==================== Scrape Request Types ====================
@@ -203,6 +238,9 @@ export interface ScrapeRule {
   // New fields for engine
   engine?: string;
   proxyConfig?: string | null;
+  // AgentQL & CloudBrowser config (JSON strings stored in DB)
+  agentqlConfig?: string | null;
+  cloudBrowserConfig?: string | null;
 }
 
 export interface ScrapeTask {

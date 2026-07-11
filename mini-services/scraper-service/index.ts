@@ -3,7 +3,7 @@
  * Port: 3099
  *
  * A standalone Bun mini-service handling all web scraping operations.
- * Architecture: Pluggable engine system (Cheerio / Playwright / Firecrawl)
+ * Architecture: Pluggable engine system (Cheerio / Playwright / Firecrawl / AgentQL / CloudBrowser)
  *   + Request Queue (SQLite persistence) + Auto-retry + Multi-engine support
  */
 
@@ -14,6 +14,7 @@ import { handleScrapeChapters } from "./src/scrapers";
 import { handleScrapeContent } from "./src/scrapers";
 import { handleClean } from "./src/cleaning";
 import { handleDownloadCover } from "./src/scrapers";
+import { handleGenerateRule, handlePreviewPage } from "./src/ai-rule-generator";
 import { executeTask } from "./src/task-engine";
 import { getQueueStats, cleanupQueue, requeueFailed, clearTaskQueue } from "./src/queue";
 import type {
@@ -55,7 +56,7 @@ export function startServer(port: number = 3099) {
           status: "ok",
           service: "scraper-service",
           port: 3099,
-          version: "2.0.0",
+          version: "3.0.0",
           engines: getEngineNames(),
           timestamp: new Date().toISOString(),
         });
@@ -185,6 +186,24 @@ export function startServer(port: number = 3099) {
           );
         }
 
+        if (path === "/ai/generate-rule") {
+          const { url, siteType } = body as { url: string; siteType?: string };
+          if (!url) {
+            return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
+          }
+          const result = await handleGenerateRule(url, siteType);
+          return Response.json(result, { headers: jsonHeaders });
+        }
+
+        if (path === "/ai/preview-page") {
+          const { url } = body as { url: string };
+          if (!url) {
+            return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
+          }
+          const result = await handlePreviewPage(url);
+          return Response.json(result, { headers: jsonHeaders });
+        }
+
         return Response.json(
           { error: `Unknown endpoint: ${path}` },
           { status: 404, headers: jsonHeaders }
@@ -201,7 +220,7 @@ export function startServer(port: number = 3099) {
     },
   });
 
-  console.log(`🚀 Scraper Service v2.0 running on port ${server.port}`);
+  console.log(`🚀 Scraper Service v3.0 running on port ${server.port}`);
   console.log(`   Engines: ${getEngineNames().join(", ")}`);
   console.log(`   Endpoints:`);
   console.log(`   POST /scrape/list       - Scrape a list page`);
@@ -216,6 +235,8 @@ export function startServer(port: number = 3099) {
   console.log(`   POST /queue/requeue     - Requeue failed items`);
   console.log(`   POST /queue/cleanup     - Cleanup old completed items`);
   console.log(`   DELETE /queue/clear     - Clear task queue`);
+  console.log(`   POST /ai/generate-rule - AI-generate scrape rules from URL`);
+  console.log(`   POST /ai/preview-page   - Fetch page HTML for preview`);
 
   return server;
 }
@@ -226,6 +247,8 @@ const PORT = parseInt(process.env.PORT || "3099", 10);
 console.log(`[Config] API_BASE: ${process.env.MAIN_APP_URL || "http://localhost:3000"}`);
 console.log(`[Config] PORT: ${PORT}`);
 console.log(`[Config] Firecrawl: ${process.env.FIRECRAWL_API_URL || "not configured (http://localhost:3002)"}`);
+console.log(`[Config] AgentQL: ${process.env.AGENTQL_API_URL || "not configured (https://api.agentql.com)"}`);
+console.log(`[Config] CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"} (${process.env.BROWSERLESS_API_URL || process.env.STEEL_API_URL || "not configured"})`);
 startServer(PORT);
 
 // ==================== Graceful Shutdown ====================

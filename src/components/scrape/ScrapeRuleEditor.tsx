@@ -20,6 +20,11 @@ import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Sparkles, Eye, Crosshair, Cloud, Brain, Bot } from 'lucide-react';
+import { AiRuleAssistant, type GeneratedRule } from './AiRuleAssistant';
+import { VisualSelectorBuilder } from './VisualSelectorBuilder';
 
 // ==================== Types ====================
 
@@ -91,7 +96,14 @@ export interface ScrapeRuleFormData {
 
   // Scrape strategy
   scrapeMode: 'incremental' | 'full';
-  engine: 'cheerio' | 'playwright' | 'firecrawl';
+  engine: 'cheerio' | 'playwright' | 'firecrawl' | 'agentql' | 'cloud-browser';
+
+  // AgentQL queries
+  agentqlQueries: string; // JSON string: {title:"...", author:"...", content:"..."}
+
+  // Cloud Browser config
+  cloudBrowserProvider: 'browserless' | 'steel';
+  cloudBrowserUrl: string;
   threadCount: number;
   minDelay: number;
   maxDelay: number;
@@ -158,7 +170,10 @@ export const scrapeRuleSchema = z.object({
   coverSavePath: z.string(),
 
   scrapeMode: z.enum(['incremental', 'full']),
-  engine: z.enum(['cheerio', 'playwright', 'firecrawl']),
+  engine: z.enum(['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser']),
+  agentqlQueries: z.string(),
+  cloudBrowserProvider: z.enum(['browserless', 'steel']),
+  cloudBrowserUrl: z.string(),
   threadCount: z.number().int().min(1).max(10),
   minDelay: z.number().int().min(0),
   maxDelay: z.number().int().min(0),
@@ -341,6 +356,9 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
 
       scrapeMode: 'incremental',
       engine: 'cheerio',
+      agentqlQueries: '',
+      cloudBrowserProvider: 'browserless',
+      cloudBrowserUrl: 'https://chrome.browserless.io',
       threadCount: 3,
       minDelay: 1000,
       maxDelay: 3000,
@@ -361,6 +379,72 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
   const threadCount = watch('threadCount');
   const antiCrawl = watch('antiCrawlConfig');
   const cleanCfg = watch('cleanConfig');
+  const currentEngine = watch('engine');
+
+  // AI Rule Assistant state
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
+  // Visual Selector state
+  const [visualSelectorOpen, setVisualSelectorOpen] = useState(false);
+  const [visualSelectorField, setVisualSelectorField] = useState<string>('');
+
+  // Apply AI-generated rule to form
+  const handleApplyAiRule = useCallback((rule: GeneratedRule) => {
+    const s = (v?: { type: string; value: string }): SelectorRule => ({
+      type: (v?.type as 'css' | 'xpath' | 'regex') || 'css',
+      value: v?.value || '',
+    });
+    const p = (v?: { type: string; selector: string; maxPage: number }): PaginationConfig => ({
+      type: (v?.type as 'next' | 'page') || 'next',
+      selector: v?.selector || '',
+      maxPage: v?.maxPage || 100,
+    });
+
+    setValue('name', rule.name, { shouldDirty: true });
+    setValue('description', rule.description || '', { shouldDirty: true });
+    setValue('engine', (rule.engine as FormValues['engine']) || 'cheerio', { shouldDirty: true });
+    if (rule.listUrl) setValue('listUrl', rule.listUrl, { shouldDirty: true });
+    if (rule.listSelector) setValue('listSelector', s(rule.listSelector), { shouldDirty: true });
+    if (rule.listPagination) setValue('listPagination', p(rule.listPagination), { shouldDirty: true });
+    if (rule.bookTitleSelector) setValue('bookTitleSelector', s(rule.bookTitleSelector), { shouldDirty: true });
+    if (rule.bookAuthorSelector) setValue('bookAuthorSelector', s(rule.bookAuthorSelector), { shouldDirty: true });
+    if (rule.bookDescriptionSelector) setValue('bookDescriptionSelector', s(rule.bookDescriptionSelector), { shouldDirty: true });
+    if (rule.bookCoverSelector) setValue('bookCoverSelector', s(rule.bookCoverSelector), { shouldDirty: true });
+    if (rule.bookStatusSelector) setValue('bookStatusSelector', s(rule.bookStatusSelector), { shouldDirty: true });
+    if (rule.chapterListSelector) setValue('chapterListSelector', s(rule.chapterListSelector), { shouldDirty: true });
+    if (rule.chapterTitleSelector) setValue('chapterTitleSelector', s(rule.chapterTitleSelector), { shouldDirty: true });
+    if (rule.chapterLinkSelector) setValue('chapterLinkSelector', s(rule.chapterLinkSelector), { shouldDirty: true });
+    if (rule.contentSelector) setValue('contentSelector', s(rule.contentSelector), { shouldDirty: true });
+    if (rule.contentTitleSelector) setValue('contentTitleSelector', s(rule.contentTitleSelector), { shouldDirty: true });
+    if (rule.antiCrawlConfig) {
+      setValue('antiCrawlConfig', {
+        useJsRender: rule.antiCrawlConfig.useJsRender || false,
+        uaRotation: rule.antiCrawlConfig.uaRotation || false,
+        cookies: '',
+        minDelay: rule.antiCrawlConfig.minDelay || 500,
+        maxDelay: rule.antiCrawlConfig.maxDelay || 2000,
+      }, { shouldDirty: true });
+    }
+    if (rule.agentqlQueries) {
+      setValue('agentqlQueries', JSON.stringify(rule.agentqlQueries, null, 2), { shouldDirty: true });
+    }
+
+    setAiAssistantOpen(false);
+    toast.success('AI规则已应用到编辑器');
+  }, [setValue]);
+
+  // Open visual selector for a specific field
+  const openVisualSelector = useCallback((fieldName: string, currentUrl?: string) => {
+    setVisualSelectorField(fieldName);
+    setVisualSelectorOpen(true);
+  }, []);
+
+  const handleVisualSelectorGenerated = useCallback((selector: { type: 'css' | 'xpath' | 'regex'; value: string }) => {
+    if (visualSelectorField && visualSelectorField in defaultValues) {
+      setSelector(visualSelectorField as keyof FormValues, selector);
+    }
+    setVisualSelectorOpen(false);
+    toast.success(`选择器已应用到 ${visualSelectorField}`);
+  }, [visualSelectorField, setSelector]);
 
   // Load existing rule
   useEffect(() => {
@@ -420,7 +504,10 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
           coverSavePath: rule.coverSavePath || './data/covers',
 
           scrapeMode: rule.scrapeMode || 'incremental',
-          engine: (rule.engine as 'cheerio' | 'playwright' | 'firecrawl') || 'cheerio',
+          engine: (rule.engine as FormValues['engine']) || 'cheerio',
+          agentqlQueries: rule.agentqlConfig || '',
+          cloudBrowserProvider: 'browserless',
+          cloudBrowserUrl: 'https://chrome.browserless.io',
           threadCount: rule.threadCount || 3,
           minDelay: rule.minDelay ?? 1000,
           maxDelay: rule.maxDelay ?? 3000,
@@ -858,40 +945,173 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
               <Select
                 value={watch('engine')}
                 onValueChange={(v) => {
-                  setValue('engine', v as 'cheerio' | 'playwright' | 'firecrawl', { shouldDirty: true });
-                  // Auto-set useJsRender when playwright selected
-                  if (v === 'playwright') {
+                  setValue('engine', v as FormValues['engine'], { shouldDirty: true });
+                  // Auto-set useJsRender when playwright/cloud-browser selected
+                  if (v === 'playwright' || v === 'cloud-browser') {
                     setValue('antiCrawlConfig.useJsRender', true, { shouldDirty: true });
                   }
                 }}
               >
-                <SelectTrigger className="w-full sm:w-[240px]">
+                <SelectTrigger className="w-full sm:w-[280px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="cheerio">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-green-500" />
-                      Cheerio (快速HTTP)
+                      <div>
+                        <span className="font-medium">Cheerio</span>
+                        <span className="ml-1 text-xs text-muted-foreground">快速HTTP采集</span>
+                      </div>
                     </div>
                   </SelectItem>
                   <SelectItem value="playwright">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-blue-500" />
-                      Playwright (JS渲染)
+                      <div>
+                        <span className="font-medium">Playwright</span>
+                        <span className="ml-1 text-xs text-muted-foreground">JS渲染引擎</span>
+                      </div>
                     </div>
                   </SelectItem>
                   <SelectItem value="firecrawl">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-orange-500" />
-                      Firecrawl (AI增强)
+                      <div>
+                        <span className="font-medium">Firecrawl</span>
+                        <span className="ml-1 text-xs text-muted-foreground">AI增强采集</span>
+                      </div>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="agentql">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-purple-500" />
+                      <div>
+                        <span className="font-medium">AgentQL</span>
+                        <span className="ml-1 text-xs text-muted-foreground">自然语言提取</span>
+                      </div>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="cloud-browser">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-cyan-500" />
+                      <div>
+                        <span className="font-medium">云端浏览器</span>
+                        <span className="ml-1 text-xs text-muted-foreground">Browserless/Steel</span>
+                      </div>
                     </div>
                   </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Cheerio: 最快，适合静态页面 | Playwright: 支持JS渲染 | Firecrawl: 自动清洗+JS渲染(需部署)
+                Cheerio: 最快 | Playwright: JS渲染 | Firecrawl: AI增强 | AgentQL: 自然语言 | 云端浏览器: 反检测
               </p>
+            </div>
+
+            {/* AgentQL Config - shown when agentql engine selected */}
+            {currentEngine === 'agentql' && (
+              <>
+                <Separator />
+                <Card className="border-purple-200 bg-purple-50/50 dark:border-purple-800 dark:bg-purple-950/20">
+                  <CardHeader className="pb-3 pt-4 px-4">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Brain className="h-4 w-4 text-purple-600" />
+                      AgentQL 自然语言查询
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    <p className="text-xs text-muted-foreground mb-3">
+                      使用自然语言描述要提取的数据，无需编写CSS选择器
+                    </p>
+                    <Textarea
+                      placeholder={'{\n  "title": "小说的标题",\n  "author": "作者名字",\n  "description": "小说简介描述",\n  "chapters": "章节目录列表，包含标题和链接",\n  "content": "章节正文内容"\n}'}
+                      rows={10}
+                      value={watch('agentqlQueries')}
+                      onChange={(e) => setValue('agentqlQueries', e.target.value, { shouldDirty: true })}
+                      className="font-mono text-sm"
+                    />
+                  </CardContent>
+                </Card>
+              </>
+            )}
+
+            {/* Cloud Browser Config - shown when cloud-browser engine selected */}
+            {currentEngine === 'cloud-browser' && (
+              <>
+                <Separator />
+                <Card className="border-cyan-200 bg-cyan-50/50 dark:border-cyan-800 dark:bg-cyan-950/20">
+                  <CardHeader className="pb-3 pt-4 px-4">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Cloud className="h-4 w-4 text-cyan-600" />
+                      云端浏览器配置 (Browserless / Steel)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0 space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      适用于Cloudflare等高防护站点，通过云端无头浏览器绕过反爬检测
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">服务提供商</Label>
+                        <Select
+                          value={watch('cloudBrowserProvider')}
+                          onValueChange={(v) => setValue('cloudBrowserProvider', v as 'browserless' | 'steel', { shouldDirty: true })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="browserless">Browserless</SelectItem>
+                            <SelectItem value="steel">Steel</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">API地址</Label>
+                        <Input
+                          placeholder="https://chrome.browserless.io"
+                          value={watch('cloudBrowserUrl')}
+                          onChange={(e) => setValue('cloudBrowserUrl', e.target.value, { shouldDirty: true })}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Badge variant="outline" className="text-xs">自动处理JS Challenge</Badge>
+                      <Badge variant="outline" className="text-xs">支持Cloudflare</Badge>
+                      <Badge variant="outline" className="text-xs">支持验证码绕过</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+
+            {/* AI Assist Buttons */}
+            <Separator />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto py-3 gap-2 border-dashed"
+                onClick={() => setAiAssistantOpen(true)}
+              >
+                <Sparkles className="h-4 w-4 text-purple-600" />
+                <div className="text-left">
+                  <p className="text-sm font-medium">AI 智能生成规则</p>
+                  <p className="text-[11px] text-muted-foreground">输入URL，AI自动分析页面结构生成采集规则</p>
+                </div>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto py-3 gap-2 border-dashed"
+                onClick={() => openVisualSelector('bookTitleSelector', watch('listUrl'))}
+              >
+                <Crosshair className="h-4 w-4 text-emerald-600" />
+                <div className="text-left">
+                  <p className="text-sm font-medium">可视化选择器</p>
+                  <p className="text-[11px] text-muted-foreground">预览页面，点击元素自动生成选择器</p>
+                </div>
+              </Button>
             </div>
 
             <Separator />
@@ -1076,6 +1296,22 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
           {ruleId ? '保存修改' : '创建规则'}
         </Button>
       </div>
+
+      {/* AI Rule Assistant Dialog */}
+      <AiRuleAssistant
+        open={aiAssistantOpen}
+        onOpenChange={setAiAssistantOpen}
+        onApplyRule={handleApplyAiRule}
+      />
+
+      {/* Visual Selector Builder Dialog */}
+      {visualSelectorOpen && (
+        <VisualSelectorBuilder
+          onSelectorGenerated={handleVisualSelectorGenerated}
+          onClose={() => setVisualSelectorOpen(false)}
+          initialUrl={watch('listUrl')}
+        />
+      )}
     </form>
   );
 }
@@ -1087,6 +1323,7 @@ export interface ScrapeRuleItem {
   name: string;
   description: string | null;
   enabled: boolean;
+  engine?: string;
   storageMode: string;
   scrapeMode: string;
   createdAt: string;
@@ -1161,12 +1398,18 @@ export function ScrapeRuleList({ onEdit, onCreate }: ScrapeRuleListProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">采集规则管理</h2>
-          <p className="text-sm text-muted-foreground">配置和管理小说采集规则</p>
+          <p className="text-sm text-muted-foreground">配置和管理小说采集规则 · 支持5种采集引擎</p>
         </div>
-        <Button onClick={onCreate}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 lucide lucide-plus"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-          新建规则
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setAiAssistantOpen(true)} className="gap-1.5">
+            <Sparkles className="h-4 w-4 text-purple-600" />
+            <span className="hidden sm:inline">AI生成</span>
+          </Button>
+          <Button onClick={onCreate}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 lucide lucide-plus"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            新建规则
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -1191,6 +1434,7 @@ export function ScrapeRuleList({ onEdit, onCreate }: ScrapeRuleListProps) {
             <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
               <tr className="border-b text-left">
                 <th className="px-4 py-3 font-medium">规则名称</th>
+                <th className="hidden px-4 py-3 font-medium md:table-cell">引擎</th>
                 <th className="hidden px-4 py-3 font-medium md:table-cell">状态</th>
                 <th className="hidden px-4 py-3 font-medium lg:table-cell">模式</th>
                 <th className="hidden px-4 py-3 font-medium sm:table-cell">任务数</th>
@@ -1204,6 +1448,9 @@ export function ScrapeRuleList({ onEdit, onCreate }: ScrapeRuleListProps) {
                   <tr key={i} className="border-b last:border-0">
                     <td className="px-4 py-3">
                       <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="h-5 w-16 animate-pulse rounded bg-muted" />
                     </td>
                     <td className="px-4 py-3">
                       <div className="h-5 w-12 animate-pulse rounded bg-muted" />
@@ -1224,7 +1471,7 @@ export function ScrapeRuleList({ onEdit, onCreate }: ScrapeRuleListProps) {
                 ))
               ) : rules.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/50 lucide lucide-file-search"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m14 17-2.5-2.5"/></svg>
                       <span>暂无采集规则</span>
@@ -1248,6 +1495,12 @@ export function ScrapeRuleList({ onEdit, onCreate }: ScrapeRuleListProps) {
                             {rule.description}
                           </p>
                         )}
+                      </div>
+                    </td>
+                    <td className="hidden px-4 py-3 md:table-cell">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`h-2 w-2 rounded-full ${ENGINE_COLORS[rule.engine || 'cheerio'] || 'bg-green-500'}`} />
+                        <span className="text-xs">{ENGINE_LABELS[rule.engine || 'cheerio'] || rule.engine || 'Cheerio'}</span>
                       </div>
                     </td>
                     <td className="hidden px-4 py-3 md:table-cell">
@@ -1342,6 +1595,7 @@ interface ScrapeManagerViewProps {
 export default function ScrapeManagerView({ className }: ScrapeManagerViewProps) {
   const [editingRule, setEditingRule] = useState<ScrapeRuleItem | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
 
   const handleEdit = (rule: ScrapeRuleItem) => {
     setEditingRule(rule);
@@ -1361,6 +1615,32 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
   const handleCancel = () => {
     setEditingRule(null);
     setIsCreating(false);
+  };
+
+  const handleAiApplyAndCreate = (rule: GeneratedRule) => {
+    // When applying from the list-level AI assistant, create a new rule
+    setAiAssistantOpen(false);
+    setIsCreating(true);
+    // The rule will be applied when the editor mounts - store it temporarily
+    setTimeout(() => {
+      // Trigger the editor's apply function via a custom event
+      window.dispatchEvent(new CustomEvent('apply-ai-rule', { detail: rule }));
+    }, 100);
+  };
+
+  const ENGINE_COLORS: Record<string, string> = {
+    cheerio: 'bg-green-500',
+    playwright: 'bg-blue-500',
+    firecrawl: 'bg-orange-500',
+    agentql: 'bg-purple-500',
+    'cloud-browser': 'bg-cyan-500',
+  };
+  const ENGINE_LABELS: Record<string, string> = {
+    cheerio: 'Cheerio',
+    playwright: 'Playwright',
+    firecrawl: 'Firecrawl',
+    agentql: 'AgentQL',
+    'cloud-browser': '云端浏览器',
   };
 
   return (
@@ -1386,6 +1666,13 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
       ) : (
         <ScrapeRuleList onEdit={handleEdit} onCreate={handleCreate} />
       )}
+
+      {/* List-level AI Assistant */}
+      <AiRuleAssistant
+        open={aiAssistantOpen}
+        onOpenChange={setAiAssistantOpen}
+        onApplyRule={handleAiApplyAndCreate}
+      />
     </div>
   );
 }

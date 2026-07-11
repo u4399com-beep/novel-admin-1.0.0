@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
 const VALID_SCRAPE_MODES = ["incremental", "full"];
-const VALID_ENGINES = ["cheerio", "playwright", "firecrawl"];
+const VALID_ENGINES = ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser"];
 const VALID_STORAGE_MODES = ["database", "file"];
 const VALID_DEDUP_MODES = ["url", "title", "both"];
 const MAX_THREAD = 20;
