@@ -62,6 +62,10 @@ export const GET = withAuth(async function GET(
     const { id: taskId } = await params;
     const { searchParams } = new URL(_request.url);
     const level = searchParams.get("level") || "";
+    const validLevels = ["info", "warn", "error", "success"];
+    if (level && !validLevels.includes(level)) {
+      return NextResponse.json({ error: "无效的日志级别" }, { status: 400 });
+    }
     const limit = Math.min(Math.max(1, parseInt(searchParams.get("limit") || "100") || 100), 500);
 
     const where: Record<string, unknown> = { taskId };

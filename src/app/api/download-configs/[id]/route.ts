@@ -134,10 +134,17 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const existing = await db.downloadConfig.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
+    }
     await db.downloadConfig.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Delete download config error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "删除下载配置失败" }, { status: 500 });
   }
 });

@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
+import type { DownloadConfig } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 // Replace variables in a template string
 function replaceVars(
@@ -26,7 +28,7 @@ function generateConfusionBlock(confusionText: string): string {
 }
 
 // GET /api/download/[novelId] - Generate and return a downloadable novel file
-export async function GET(
+export const GET = withAuth(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ novelId: string }> }
 ) {
@@ -61,7 +63,7 @@ export async function GET(
     }
 
     // Fetch download config
-    let config = null;
+    let config: DownloadConfig | null = null;
     if (configId) {
       config = await db.downloadConfig.findUnique({ where: { id: configId } });
       if (!config) {
@@ -96,7 +98,7 @@ export async function GET(
         let block = "";
 
         // Insert ad at "start" position before this chapter if needed
-        if (config?.insertAd && config.adContent && config.adInterval > 0 && (i + 1) % config.adInterval === 0) {
+        if (config && config.insertAd && config.adContent && config.adInterval > 0 && (i + 1) % config.adInterval === 0) {
           if (config.adPosition === "start") {
             block += `\n${replaceVars(config.adContent, chapterVars)}\n\n`;
           }
@@ -119,7 +121,8 @@ export async function GET(
             // Insert ad in the middle of content
             if (
               !middleAdInserted &&
-              config?.insertAd &&
+              config &&
+              config.insertAd &&
               config.adContent &&
               config.adInterval > 0 &&
               (i + 1) % config.adInterval === 0 &&
@@ -133,14 +136,14 @@ export async function GET(
             block += paragraphs[j] + "\n\n";
 
             // Insert confusion text between paragraphs
-            if (config?.insertConfusion && config.confusionText && j < paragraphs.length - 1) {
+            if (config && config.insertConfusion && config.confusionText && j < paragraphs.length - 1) {
               block += generateConfusionBlock(config.confusionText) + "\n\n";
             }
           }
         }
 
         // Insert ad at "end" position after this chapter
-        if (config?.insertAd && config.adContent && config.adInterval > 0 && (i + 1) % config.adInterval === 0) {
+        if (config && config.insertAd && config.adContent && config.adInterval > 0 && (i + 1) % config.adInterval === 0) {
           if (config.adPosition === "end") {
             block += `\n${replaceVars(config.adContent, chapterVars)}\n\n`;
           }
@@ -153,20 +156,20 @@ export async function GET(
       let textContent = "";
 
       // Insert site info at beginning
-      if (config?.insertSiteInfo && config.siteInfoContent) {
+      if (config && config.insertSiteInfo && config.siteInfoContent) {
         textContent += replaceVars(config.siteInfoContent, vars) + "\n\n";
       }
 
       textContent += chapterBlocks.join("\n");
 
       // Insert site info at end
-      if (config?.insertSiteInfo && config.siteInfoContent) {
+      if (config && config.insertSiteInfo && config.siteInfoContent) {
         textContent += "\n" + replaceVars(config.siteInfoContent, vars);
       }
 
       // Generate filename
       let fileName: string;
-      if (config?.fileNamePattern) {
+      if (config && config.fileNamePattern) {
         fileName = replaceVars(config.fileNamePattern, vars) + ".txt";
       } else {
         fileName = replaceVars("{title} - {author}", vars) + ".txt";
@@ -188,13 +191,15 @@ export async function GET(
       });
 
       // Return as download
-      return new Response(textContent, {
+      const downloadResponse = new Response(textContent, {
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
           "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
           "Content-Security-Policy": "default-src 'none'",
         },
       });
+      // Wrap plain Response in NextResponse.json metadata pattern for withAuth compatibility
+      return downloadResponse as unknown as NextResponse;
     }
 
     return NextResponse.json({ error: "不支持的格式" }, { status: 400 });
@@ -202,4 +207,4 @@ export async function GET(
     console.error("Download novel error:", error);
     return NextResponse.json({ error: "生成下载文件失败" }, { status: 500 });
   }
-}
+});

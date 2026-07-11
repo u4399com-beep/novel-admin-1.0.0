@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -127,10 +127,17 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const existing = await db.site.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "站点不存在" }, { status: 404 });
+    }
     await db.site.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Delete site error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "站点不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "删除站点失败" }, { status: 500 });
   }
 });

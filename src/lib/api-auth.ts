@@ -45,7 +45,7 @@ function rateLimit(ip: string): { allowed: boolean; remaining: number; retryAfte
   }
 
   entry.tokens -= 1;
-  return { allowed: true, remaining: Math.floor(entry.tokens) };
+  return { allowed: true, remaining: Math.floor(entry.tokens), retryAfter: 0 };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -114,9 +114,23 @@ export function withAuth(handler: ApiHandler): ApiHandler {
   return async (...args: unknown[]) => {
     const request = args[0] as NextRequest;
     // 1. Authentication
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    if (!token) {
-      return NextResponse.json({ error: '未授权，请先登录' }, { status: 401 });
+    // Accept either NextAuth JWT session token or service Bearer token
+    const authToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    if (!authToken) {
+      // Check for service-to-service Bearer token (used by scraper-service etc.)
+      const bearer = request.headers.get('authorization');
+      const serviceSecret = process.env.SCRAPER_SERVICE_TOKEN || process.env.NEXTAUTH_SECRET;
+      if (!bearer || bearer !== `Bearer ${serviceSecret}`) {
+        return NextResponse.json({ error: '未授权，请先登录' }, { status: 401 });
+      }
+      // Service token authenticated — skip rate limiting for service calls
+      try {
+        const response = await handler(...(args as any[]));
+        return response;
+      } catch (error) {
+        console.error(`[service] API error:`, error);
+        return NextResponse.json({ error: '服务器内部错误' }, { status: 500 });
+      }
     }
 
     // 2. Content-Length check for write methods

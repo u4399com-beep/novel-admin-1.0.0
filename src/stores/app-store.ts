@@ -97,13 +97,13 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Novel form
   novelFormOpen: false,
-  setNovelFormOpen: (open) => set({ novelFormOpen: open, editingNovel: open ? undefined : null }),
+  setNovelFormOpen: (open) => set({ novelFormOpen: open, editingNovel: open ? null : null }),
   editingNovel: null,
   setEditingNovel: (novel) => set({ editingNovel: novel, novelFormOpen: novel !== null }),
 
   // Chapter form
   chapterFormOpen: false,
-  setChapterFormOpen: (open) => set({ chapterFormOpen: open, editingChapter: undefined }),
+  setChapterFormOpen: (open) => set({ chapterFormOpen: open, editingChapter: null }),
   editingChapter: null,
   setEditingChapter: (chapter) => set({ editingChapter: chapter, chapterFormOpen: chapter !== null }),
 
@@ -131,13 +131,13 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Theme form
   themeFormOpen: false,
-  setThemeFormOpen: (open) => set({ themeFormOpen: open, editingTheme: open ? undefined : null }),
+  setThemeFormOpen: (open) => set({ themeFormOpen: open, editingTheme: open ? null : null }),
   editingTheme: null,
   setEditingTheme: (theme) => set({ editingTheme: theme, themeFormOpen: theme !== null }),
 
   // Site form
   siteFormOpen: false,
-  setSiteFormOpen: (open) => set({ siteFormOpen: open, editingSite: open ? undefined : null }),
+  setSiteFormOpen: (open) => set({ siteFormOpen: open, editingSite: open ? null : null }),
   editingSite: null,
   setEditingSite: (site) => set({ editingSite: site, siteFormOpen: site !== null }),
 

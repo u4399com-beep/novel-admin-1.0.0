@@ -3,6 +3,26 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
 import crypto from "crypto";
 
+// Extend NextAuth types to include custom user properties
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name: string;
+      email: string;
+    };
+  }
+  interface User {
+    id: string;
+    name: string;
+    email: string;
+  }
+  interface JWT {
+    id: string;
+    name?: string;
+  }
+}
+
 /**
  * Timing-safe string comparison to prevent timing attacks.
  */

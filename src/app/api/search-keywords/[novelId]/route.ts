@@ -145,10 +145,7 @@ export const POST = withAuth(async function POST(
       existingTags
     );
 
-    // Delete old keywords for this novel
-    await db.searchKeyword.deleteMany({ where: { novelId } });
-
-    // Create new keywords (skip duplicates by using a Set)
+    // Delete old keywords and create new ones atomically
     const seen = new Set<string>();
     const toCreate: { novelId: string; keyword: string; source: string }[] = [];
 
@@ -164,8 +161,11 @@ export const POST = withAuth(async function POST(
       }
     }
 
-    const created = await db.searchKeyword.createMany({
-      data: toCreate,
+    const created = await db.$transaction(async (tx) => {
+      await tx.searchKeyword.deleteMany({ where: { novelId } });
+      return tx.searchKeyword.createMany({
+        data: toCreate,
+      });
     });
 
     // Fetch all created keywords

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
+import { isSafeUrl } from "@/lib/sanitize";
 
 const MAX_SEARCH_LENGTH = 200;
 const VALID_STATUSES = ["ongoing", "completed", "hiatus"];
@@ -80,6 +81,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
+    if (tags && !Array.isArray(tags)) {
+      return NextResponse.json({ error: "标签格式错误" }, { status: 400 });
+    }
+
     const trimmedTitle = sanitizeField(title, 200);
     if (!trimmedTitle) {
       return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
@@ -107,7 +112,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     // Validate coverUrl protocol
     if (coverUrl) {
-      const { isSafeUrl } = await import("@/lib/sanitize");
       if (!isSafeUrl(coverUrl)) {
         return NextResponse.json({ error: "封面URL格式不合法，仅允许http/https协议" }, { status: 400 });
       }

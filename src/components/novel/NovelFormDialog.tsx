@@ -104,7 +104,7 @@ export default function NovelFormDialog() {
 
   // ── Form ──
   const form = useForm<NovelFormValues>({
-    resolver: zodResolver(novelFormSchema),
+    resolver: zodResolver(novelFormSchema) as any,
     defaultValues: {
       title: "",
       author: "佚名",

@@ -103,10 +103,17 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const existing = await db.theme.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
+    }
     await db.theme.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Delete theme error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "删除主题失败" }, { status: 500 });
   }
 });

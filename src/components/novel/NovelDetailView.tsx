@@ -368,6 +368,7 @@ export default function NovelDetailView() {
     setEditingChapter,
     triggerRefreshChapters,
     triggerRefreshNovels,
+    triggerRefreshDashboard,
     refreshChapters,
     refreshNovels,
   } = useAppStore();

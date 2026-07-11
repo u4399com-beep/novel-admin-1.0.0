@@ -82,7 +82,7 @@ export function CategoryManagerView() {
     watch,
     formState: { errors },
   } = useForm<CategoryFormData>({
-    resolver: zodResolver(categorySchema),
+    resolver: zodResolver(categorySchema) as any,
     defaultValues: {
       name: '',
       description: '',

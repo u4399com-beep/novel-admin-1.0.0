@@ -904,19 +904,28 @@ function isSafeTargetUrl(targetUrl: string): boolean {
     // Block private/reserved IPs and localhost
     if (
       hostname === 'localhost' ||
+      hostname === 'localhost.localdomain' ||
       hostname === '127.0.0.1' ||
       hostname === '0.0.0.0' ||
       hostname === '::1' ||
+      hostname === '[::1]' ||
+      hostname === '::ffff:127.0.0.1' ||
       hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
       hostname.startsWith('10.') ||
       hostname.startsWith('192.168.') ||
       /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname) ||
       hostname.startsWith('169.254.') ||
-      hostname.startsWith('127.') ||
-      hostname === '[::1]'
+      hostname.startsWith('127.')
     ) {
       return false;
     }
+    // Block octal IP representations (e.g., 0177.0.0.1)
+    if (/^0[0-7]+\./.test(hostname)) return false;
+    // Block decimal IP representations (e.g., 2130706433)
+    if (/^\d{8,}$/.test(hostname)) return false;
+    // Block IPv6 loopback / mapped variants
+    if (hostname.startsWith('::ffff:') || hostname.startsWith('[::ffff:')) return false;
     return true;
   } catch {
     return false;
@@ -1072,7 +1081,10 @@ async function apiCall(
 ): Promise<{ data: unknown; status: number }> {
   const options: RequestInit = {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || process.env.NEXTAUTH_SECRET || ""}`,
+    },
     signal: AbortSignal.timeout(30000),
   };
   if (body) {

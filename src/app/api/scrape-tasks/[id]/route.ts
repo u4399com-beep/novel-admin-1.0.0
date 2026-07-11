@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson } from "@/lib/api-utils";
+import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -79,8 +79,8 @@ export const PUT = withAuth(async function PUT(
     if (body.newChapters !== undefined) updateData.newChapters = Math.max(0, Number(body.newChapters));
     if (body.failedItems !== undefined) updateData.failedItems = Math.max(0, Number(body.failedItems));
     if (body.skippedItems !== undefined) updateData.skippedItems = Math.max(0, Number(body.skippedItems));
-    if (body.errorMessage !== undefined) updateData.errorMessage = String(body.errorMessage).slice(0, 2000);
-    if (body.resultUrl !== undefined) updateData.resultUrl = String(body.resultUrl).slice(0, 500);
+    if (body.errorMessage !== undefined) updateData.errorMessage = sanitizeField(body.errorMessage, 2000);
+    if (body.resultUrl !== undefined) updateData.resultUrl = sanitizeField(body.resultUrl, 500);
 
     const updated = await db.scrapeTask.update({
       where: { id },

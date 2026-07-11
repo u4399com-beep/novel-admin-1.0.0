@@ -188,10 +188,17 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const existing = await db.scrapeRule.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+    }
     await db.scrapeRule.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Delete scrape rule error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "删除采集规则失败" }, { status: 500 });
   }
 });

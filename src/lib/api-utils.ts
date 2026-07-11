@@ -76,7 +76,7 @@ export async function safeJson<T>(
   const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
   try {
-    const text = await request.text({ signal: controller.signal });
+    const text = await request.text();
 
     let parsed: unknown;
     try {

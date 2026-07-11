@@ -49,6 +49,10 @@ export const PUT = withAuth(async function PUT(
     }
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
+    if (tags !== undefined && !Array.isArray(tags)) {
+      return NextResponse.json({ error: "标签格式错误" }, { status: 400 });
+    }
+
     if (title !== undefined) {
       const trimmedTitle = sanitizeField(title, 200);
       if (!trimmedTitle) {
