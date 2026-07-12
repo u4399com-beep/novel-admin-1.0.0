@@ -125,3 +125,54 @@ export const POST = withAuth(async function POST(
     return NextResponse.json({ error: "创建章节失败" }, { status: 500 });
   }
 });
+
+// PATCH /api/novels/[id]/chapters/batch-reorder - Batch update chapter sort orders
+// Solves N+1 PUT problem in drag-and-drop reordering
+export const PATCH = withAuth(async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: novelId } = await params;
+
+    let body;
+    try {
+      body = await safeJson<{ orders: Array<{ id: string; sortOrder: number }> }>(request);
+    } catch {
+      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+    }
+
+    const { orders } = body;
+    if (!Array.isArray(orders) || orders.length === 0 || orders.length > 5000) {
+      return NextResponse.json({ error: "orders 必须是非空数组(最多5000条)" }, { status: 400 });
+    }
+
+    // Validate structure
+    for (const item of orders) {
+      if (!item.id || typeof item.id !== 'string') {
+        return NextResponse.json({ error: "每条记录必须有有效的id" }, { status: 400 });
+      }
+      const order = Math.floor(Number(item.sortOrder) || 0);
+      if (order < 0 || order > 100000) {
+        return NextResponse.json({ error: `sortOrder必须在0-100000之间(${item.id})` }, { status: 400 });
+      }
+    }
+
+    // Batch update in a single transaction
+    await db.$transaction(
+      orders.map((item) =>
+        db.chapter.updateMany({
+          where: { id: item.id, novelId },
+          data: { sortOrder: Math.floor(Number(item.sortOrder) || 0) },
+        })
+      )
+    );
+
+    invalidateCache("dashboard:stats");
+
+    return NextResponse.json({ success: true, updated: orders.length });
+  } catch (error) {
+    console.error("Batch reorder error:", error);
+    return NextResponse.json({ error: "批量排序更新失败" }, { status: 500 });
+  }
+});

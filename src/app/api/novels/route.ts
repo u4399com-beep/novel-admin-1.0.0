@@ -81,8 +81,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
-    if (tags && !Array.isArray(tags)) {
-      return NextResponse.json({ error: "标签格式错误" }, { status: 400 });
+    if (tags && (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === 'string'))) {
+      return NextResponse.json({ error: "标签格式错误，必须是字符串ID数组" }, { status: 400 });
     }
     if (tags && tags.length > 20) {
       return NextResponse.json({ error: "标签数量不能超过20个" }, { status: 400 });

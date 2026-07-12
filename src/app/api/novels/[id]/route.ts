@@ -49,8 +49,8 @@ export const PUT = withAuth(async function PUT(
     }
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
-    if (tags !== undefined && !Array.isArray(tags)) {
-      return NextResponse.json({ error: "标签格式错误" }, { status: 400 });
+    if (tags !== undefined && (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === 'string'))) {
+      return NextResponse.json({ error: "标签格式错误，必须是字符串ID数组" }, { status: 400 });
     }
 
     if (title !== undefined) {

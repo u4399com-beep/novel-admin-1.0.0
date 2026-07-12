@@ -41,7 +41,10 @@ const NAV_ITEMS: NavItem[] = [
 // ─── Sidebar Content (shared between desktop & mobile) ───────────────────────
 
 function SidebarContent() {
-  const { currentView, setCurrentView } = useAppStore();
+  const { currentView, setCurrentView } = useAppStore((s) => ({
+    currentView: s.currentView,
+    setCurrentView: s.setCurrentView,
+  }));
 
   return (
     <div className="flex h-full flex-col">
@@ -132,7 +135,10 @@ function DesktopSidebar() {
 // ─── Mobile Sidebar (Sheet) ───────────────────────────────────────────────────
 
 function MobileSidebar() {
-  const { currentView, setCurrentView } = useAppStore();
+  const { currentView, setCurrentView } = useAppStore((s) => ({
+    currentView: s.currentView,
+    setCurrentView: s.setCurrentView,
+  }));
   const [open, setOpen] = useState(false);
 
   const handleNav = (view: ViewType) => {

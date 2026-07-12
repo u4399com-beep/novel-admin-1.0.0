@@ -56,7 +56,7 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: `主题名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
     }
     if (identifier !== undefined) {
-      if (!identifier?.trim()) {
+      if (typeof identifier !== 'string' || !identifier.trim()) {
         return NextResponse.json({ error: "主题标识符不能为空" }, { status: 400 });
       }
       if (!VALID_IDENTIFIER_RE.test(identifier.trim())) {

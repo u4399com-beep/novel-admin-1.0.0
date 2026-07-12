@@ -82,7 +82,12 @@ export default function Home() {
     setEditingNovel,
     setNovelFormOpen,
     setCommandPaletteOpen,
-  } = useAppStore();
+  } = useAppStore((s) => ({
+    currentView: s.currentView,
+    setEditingNovel: s.setEditingNovel,
+    setNovelFormOpen: s.setNovelFormOpen,
+    setCommandPaletteOpen: s.setCommandPaletteOpen,
+  }));
 
   const viewInfo = VIEW_TITLES[currentView] || VIEW_TITLES.dashboard;
 

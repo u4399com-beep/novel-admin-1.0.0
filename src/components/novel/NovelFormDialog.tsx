@@ -5,6 +5,9 @@ import { Loader2 } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
+
+// zod/v4 resolver needs type assertion due to @hookform/resolvers type mismatch
+const safeResolver = <T extends z.core.$ZodType>(schema: T) => zodResolver(schema) as any;
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,7 +107,7 @@ export default function NovelFormDialog() {
 
   // ── Form ──
   const form = useForm<NovelFormValues>({
-    resolver: zodResolver(novelFormSchema) as any,
+    resolver: safeResolver(novelFormSchema),
     defaultValues: {
       title: "",
       author: "佚名",

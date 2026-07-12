@@ -124,7 +124,7 @@ const selectorSchema = z.object({
 const paginationSchema = z.object({
   type: z.enum(['next', 'page']),
   selector: z.string(),
-  maxPage: z.number().int().min(1).max(9999),
+  maxPage: z.number().int().min(1).max(100),
 });
 
 const defaultSelector: SelectorRule = { type: 'css', value: '' };
@@ -284,7 +284,7 @@ function PaginationField({ label = '分页配置', value, onChange, errors }: Pa
           <Input
             type="number"
             min={1}
-            max={9999}
+            max={100}
             value={value.maxPage}
             onChange={(e) => onChange({ ...value, maxPage: parseInt(e.target.value) || 1 })}
           />
@@ -439,12 +439,12 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
   }, []);
 
   const handleVisualSelectorGenerated = useCallback((selector: { type: 'css' | 'xpath' | 'regex'; value: string }) => {
-    // setSelector will be assigned after useForm initialization
     setVisualSelectorOpen(false);
-    toast.success(`选择器已应用到 ${visualSelectorField}`);
-    // Store for post-mount application
-    (handleVisualSelectorGenerated as any)._pendingSelector = { field: visualSelectorField, selector };
-  }, [visualSelectorField]);
+    if (visualSelectorField) {
+      setSelector(visualSelectorField, selector);
+      toast.success(`选择器已应用到 ${visualSelectorField}`);
+    }
+  }, [visualSelectorField, setSelector]);
 
   // Load existing rule
   useEffect(() => {
@@ -531,14 +531,15 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
 
   const setSelector = useCallback(
     (field: keyof FormValues, val: SelectorRule) => {
-      setValue(field, val as never, { shouldDirty: true });
+      // Type assertion needed: setValue generic doesn't support union field types
+      setValue(field, val as any, { shouldDirty: true });
     },
     [setValue]
   );
 
   const setPagination = useCallback(
     (field: keyof FormValues, val: PaginationConfig) => {
-      setValue(field, val as never, { shouldDirty: true });
+      setValue(field, val as any, { shouldDirty: true });
     },
     [setValue]
   );

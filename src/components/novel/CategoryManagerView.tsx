@@ -44,6 +44,9 @@ import {
 import { useAppStore } from '@/stores/app-store';
 import type { Category } from '@/types';
 
+// zod/v4 resolver needs type assertion due to @hookform/resolvers type mismatch
+const safeResolver = <T extends z.core.$ZodType>(schema: T) => zodResolver(schema) as any;
+
 // ─── Zod Schema ──────────────────────────────────────────────────────────────
 const categorySchema = z.object({
   name: z.string().min(1, '分类名称不能为空').max(50, '分类名称不能超过50个字符'),
@@ -82,7 +85,7 @@ export default function CategoryManagerView() {
     watch,
     formState: { errors },
   } = useForm<CategoryFormData>({
-    resolver: zodResolver(categorySchema) as any,
+    resolver: safeResolver(categorySchema),
     defaultValues: {
       name: '',
       description: '',

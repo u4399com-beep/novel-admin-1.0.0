@@ -151,6 +151,8 @@ export function isSafeTargetUrl(targetUrl: string): boolean {
 
     // Block octal IP representations
     if (/^0[0-7]+\./.test(hostname)) return false;
+    // Block hex IP representations (e.g., 0x7f.0.0.1, 0xc0a80001)
+    if (/^0x/i.test(hostname)) return false;
     // Block decimal IP representations
     if (/^\d{8,}$/.test(hostname)) return false;
     // Block IPv6 loopback / mapped variants

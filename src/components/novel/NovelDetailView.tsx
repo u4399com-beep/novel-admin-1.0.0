@@ -525,17 +525,16 @@ export default function NovelDetailView() {
     const reordered = arrayMove(chapters, oldIndex, newIndex);
     setChapters(reordered);
 
-    // Update sort orders
+    // Single batch request instead of N individual PUTs
     try {
-      await Promise.all(
-        reordered.map((ch, idx) =>
-          fetch(`/api/chapters/${ch.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sortOrder: idx + 1 }),
-          }),
-        ),
-      );
+      const res = await fetch(`/api/novels/${selectedNovelId}/chapters`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orders: reordered.map((ch, idx) => ({ id: ch.id, sortOrder: idx + 1 })),
+        }),
+      });
+      if (!res.ok) throw new Error();
     } catch {
       toast.error('排序更新失败');
       fetchChapters();
@@ -553,15 +552,14 @@ export default function NovelDetailView() {
     setChapters(reordered);
 
     try {
-      await Promise.all(
-        reordered.map((ch, i) =>
-          fetch(`/api/chapters/${ch.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sortOrder: i + 1 }),
-          }),
-        ),
-      );
+      const res = await fetch(`/api/novels/${selectedNovelId}/chapters`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orders: reordered.map((ch, i) => ({ id: ch.id, sortOrder: i + 1 })),
+        }),
+      });
+      if (!res.ok) throw new Error();
     } catch {
       toast.error('排序更新失败');
       fetchChapters();

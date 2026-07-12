@@ -1,63 +1,21 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
-import { isSafeUrl } from "@/lib/sanitize";
-import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
-
-const VALID_SCRAPE_MODES = ["incremental", "full"];
-const VALID_ENGINES = ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser"];
-const VALID_STORAGE_MODES = ["database", "file"];
-const VALID_DEDUP_MODES = ["url", "title", "both"];
-const MAX_THREAD = 20;
-const MIN_THREAD = 1;
-const MAX_DELAY = 60000;
-const VALID_SELECTOR_TYPES = ["css", "xpath", "regex"] as const;
-const VALID_PAGINATION_TYPES = ["next", "page"] as const;
-const MAX_SELECTOR_VALUE_LENGTH = 500;
-const MAX_PAGINATION_SELECTOR_LENGTH = 500;
-const MAX_PAGINATION_MAX_PAGE = 10000;
-
-function validateSelector(value: unknown, fieldName: string): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== "object" || Array.isArray(value) || value === null) {
-    return `${fieldName}格式错误，必须是包含type和value的对象`;
-  }
-  const obj = value as Record<string, unknown>;
-  if (!VALID_SELECTOR_TYPES.includes(obj.type as typeof VALID_SELECTOR_TYPES[number])) {
-    return `${fieldName}的type必须是: ${VALID_SELECTOR_TYPES.join(", ")}`;
-  }
-  if (typeof obj.value !== "string") {
-    return `${fieldName}的value必须是字符串`;
-  }
-  if (obj.value.length > MAX_SELECTOR_VALUE_LENGTH) {
-    return `${fieldName}的value不能超过${MAX_SELECTOR_VALUE_LENGTH}个字符`;
-  }
-  return null;
-}
-
-function validatePagination(value: unknown, fieldName: string): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== "object" || Array.isArray(value) || value === null) {
-    return `${fieldName}格式错误，必须是包含type和selector的对象`;
-  }
-  const obj = value as Record<string, unknown>;
-  if (!VALID_PAGINATION_TYPES.includes(obj.type as typeof VALID_PAGINATION_TYPES[number])) {
-    return `${fieldName}的type必须是: ${VALID_PAGINATION_TYPES.join(", ")}`;
-  }
-  if (typeof obj.selector !== "string") {
-    return `${fieldName}的selector必须是字符串`;
-  }
-  if (obj.selector.length > MAX_PAGINATION_SELECTOR_LENGTH) {
-    return `${fieldName}的selector不能超过${MAX_PAGINATION_SELECTOR_LENGTH}个字符`;
-  }
-  if (obj.maxPage !== undefined) {
-    const maxPage = Number(obj.maxPage);
-    if (!Number.isFinite(maxPage) || maxPage < 1 || maxPage > MAX_PAGINATION_MAX_PAGE) {
-      return `${fieldName}的maxPage必须在1-${MAX_PAGINATION_MAX_PAGE}之间`;
-    }
-  }
-  return null;
-}
+import {
+  VALID_SCRAPE_MODES,
+  VALID_ENGINES,
+  VALID_STORAGE_MODES,
+  VALID_DEDUP_MODES,
+  MAX_THREAD,
+  MIN_THREAD,
+  MAX_DELAY,
+  validateAllSelectors,
+  validateAllPaginations,
+  validateUrlField,
+  validateSavePath,
+  ValidationError,
+} from "@/lib/scrape-rule-validation";
+import { NextRequest, NextResponse } from "next/server";
 
 // GET /api/scrape-rules/[id] - Get a single scrape rule
 export const GET = withAuth(async function GET(
@@ -68,15 +26,11 @@ export const GET = withAuth(async function GET(
     const { id } = await params;
     const rule = await db.scrapeRule.findUnique({
       where: { id },
-      include: {
-        _count: { select: { tasks: true } },
-      },
+      include: { _count: { select: { tasks: true } } },
     });
-
     if (!rule) {
       return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
     }
-
     return NextResponse.json(rule);
   } catch (error) {
     console.error("Get scrape rule error:", error);
@@ -102,7 +56,7 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: "规则名称不能为空" }, { status: 400 });
     }
 
-    // Validate enums and ranges
+    // Validate enums
     if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode)) {
       return NextResponse.json({ error: `采集模式只能是: ${VALID_SCRAPE_MODES.join(", ")}` }, { status: 400 });
     }
@@ -121,53 +75,39 @@ export const PUT = withAuth(async function PUT(
         return NextResponse.json({ error: `线程数必须在${MIN_THREAD}-${MAX_THREAD}之间` }, { status: 400 });
       }
     }
-    if (body.minDelay !== undefined) {
-      const md = Math.floor(Number(body.minDelay) || 1000);
-      if (md < 0 || md > MAX_DELAY) {
-        return NextResponse.json({ error: `最小延迟必须在0-${MAX_DELAY}ms之间` }, { status: 400 });
+
+    // Validate selectors and pagination (only fields that are defined)
+    const selErr = validateAllSelectors(body, true);
+    if (selErr) return NextResponse.json({ error: selErr }, { status: 400 });
+    const pagErr = validateAllPaginations(body, true);
+    if (pagErr) return NextResponse.json({ error: pagErr }, { status: 400 });
+
+    // Validate URL fields for SSRF — **reject** on failure instead of silently skipping
+    try {
+      if (body.listUrl !== undefined) {
+        const val = sanitizeField(body.listUrl, 2000);
+        if (val) validateUrlField(val, 'listUrl');
       }
-    }
-    if (body.maxDelay !== undefined) {
-      const mx = Math.floor(Number(body.maxDelay) || 3000);
-      if (mx < 0 || mx > MAX_DELAY) {
-        return NextResponse.json({ error: `最大延迟必须在0-${MAX_DELAY}ms之间` }, { status: 400 });
+      if (body.chapterListUrl !== undefined) {
+        const val = sanitizeField(body.chapterListUrl, 2000);
+        if (val) validateUrlField(val, 'chapterListUrl');
       }
+      if (body.cloudBrowserUrl !== undefined) {
+        const val = sanitizeField(body.cloudBrowserUrl, 2000);
+        if (val) validateUrlField(val, 'Cloud Browser URL');
+      }
+    } catch (e) {
+      if (e instanceof ValidationError) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
+      }
+      throw e;
     }
 
-    // Ensure maxDelay >= minDelay if both provided
+    // Validate delay constraints
     const minD = body.minDelay !== undefined ? Math.max(0, Math.floor(Number(body.minDelay) || 1000)) : undefined;
     const maxD = body.maxDelay !== undefined ? Math.max(0, Math.floor(Number(body.maxDelay) || 3000)) : undefined;
     if (minD !== undefined && maxD !== undefined && maxD < minD) {
       return NextResponse.json({ error: "最大延迟不能小于最小延迟" }, { status: 400 });
-    }
-
-    // Validate selector fields
-    const selectorFields: Array<{ key: string; name: string }> = [
-      { key: "listSelector", name: "列表选择器" },
-      { key: "chapterListSelector", name: "章节列表选择器" },
-      { key: "chapterTitleSelector", name: "章节标题选择器" },
-      { key: "chapterLinkSelector", name: "章节链接选择器" },
-      { key: "contentTitleSelector", name: "内容标题选择器" },
-      { key: "contentSelector", name: "内容选择器" },
-    ];
-    for (const { key, name } of selectorFields) {
-      if (body[key] !== undefined) {
-        const err = validateSelector(body[key], name);
-        if (err) return NextResponse.json({ error: err }, { status: 400 });
-      }
-    }
-
-    // Validate pagination fields
-    const paginationFields: Array<{ key: string; name: string }> = [
-      { key: "listPagination", name: "列表分页" },
-      { key: "chapterPagination", name: "章节分页" },
-      { key: "contentPagination", name: "内容分页" },
-    ];
-    for (const { key, name } of paginationFields) {
-      if (body[key] !== undefined) {
-        const err = validatePagination(body[key], name);
-        if (err) return NextResponse.json({ error: err }, { status: 400 });
-      }
     }
 
     const rule = await db.scrapeRule.update({
@@ -177,12 +117,10 @@ export const PUT = withAuth(async function PUT(
         ...(body.description !== undefined && { description: sanitizeField(body.description, 2000) || null }),
         ...(body.enabled !== undefined && { enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined }),
 
-        // 列表页配置
         ...(body.listUrl !== undefined && {
           listUrl: (() => {
-            const val = sanitizeField(body.listUrl, 2000) || null;
-            if (val && !isSafeUrl(val)) return undefined;
-            return val;
+            const val = sanitizeField(body.listUrl, 2000);
+            return val || null;
           })(),
         }),
         ...(body.listSelector !== undefined && {
@@ -192,7 +130,6 @@ export const PUT = withAuth(async function PUT(
           listPagination: body.listPagination ? JSON.stringify(body.listPagination) : null,
         }),
 
-        // 书籍信息页配置
         ...(body.bookTitleSelector !== undefined && { bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null }),
         ...(body.bookAuthorSelector !== undefined && { bookAuthorSelector: sanitizeField(body.bookAuthorSelector, 500) || null }),
         ...(body.bookCategorySelector !== undefined && { bookCategorySelector: sanitizeField(body.bookCategorySelector, 500) || null }),
@@ -201,12 +138,10 @@ export const PUT = withAuth(async function PUT(
         ...(body.bookCoverSelector !== undefined && { bookCoverSelector: sanitizeField(body.bookCoverSelector, 500) || null }),
         ...(body.bookStatusSelector !== undefined && { bookStatusSelector: sanitizeField(body.bookStatusSelector, 500) || null }),
 
-        // 章节目录页配置
         ...(body.chapterListUrl !== undefined && {
           chapterListUrl: (() => {
-            const val = sanitizeField(body.chapterListUrl, 2000) || null;
-            if (val && !isSafeUrl(val)) return undefined;
-            return val;
+            const val = sanitizeField(body.chapterListUrl, 2000);
+            return val || null;
           })(),
         }),
         ...(body.chapterListSelector !== undefined && {
@@ -222,7 +157,6 @@ export const PUT = withAuth(async function PUT(
           chapterPagination: body.chapterPagination ? JSON.stringify(body.chapterPagination) : null,
         }),
 
-        // 章节内容页配置
         ...(body.contentTitleSelector !== undefined && {
           contentTitleSelector: body.contentTitleSelector ? JSON.stringify(body.contentTitleSelector) : null,
         }),
@@ -233,29 +167,14 @@ export const PUT = withAuth(async function PUT(
           contentPagination: body.contentPagination ? JSON.stringify(body.contentPagination) : null,
         }),
 
-        // 反爬策略
         ...(body.antiCrawlConfig !== undefined && {
           antiCrawlConfig: body.antiCrawlConfig ? JSON.stringify(body.antiCrawlConfig) : null,
         }),
 
-        // 存储配置
         ...(body.storageMode !== undefined && { storageMode: body.storageMode }),
-        ...(body.filePath !== undefined && {
-          filePath: (() => {
-            const val = sanitizeField(body.filePath, 500);
-            if (val && (!val.startsWith('/app/public/') || val.includes('..'))) return null;
-            return val || null;
-          })(),
-        }),
-        ...(body.coverSavePath !== undefined && {
-          coverSavePath: (() => {
-            const val = sanitizeField(body.coverSavePath, 500);
-            if (val && (!val.startsWith('/app/public/') || val.includes('..'))) return null;
-            return val || null;
-          })(),
-        }),
+        ...(body.filePath !== undefined && { filePath: validateSavePath(body.filePath) }),
+        ...(body.coverSavePath !== undefined && { coverSavePath: validateSavePath(body.coverSavePath) }),
 
-        // 采集策略
         ...(body.scrapeMode !== undefined && { scrapeMode: body.scrapeMode }),
         ...(body.engine !== undefined && { engine: body.engine }),
         ...(body.threadCount !== undefined && {
@@ -270,14 +189,11 @@ export const PUT = withAuth(async function PUT(
         ...(body.enableShuffle !== undefined && { enableShuffle: body.enableShuffle }),
         ...(body.dedupMode !== undefined && { dedupMode: body.dedupMode }),
 
-        // 内容清洗
         ...(body.cleanConfig !== undefined && {
           cleanConfig: body.cleanConfig ? JSON.stringify(body.cleanConfig) : null,
         }),
       },
-      include: {
-        _count: { select: { tasks: true } },
-      },
+      include: { _count: { select: { tasks: true } } },
     });
 
     return NextResponse.json(rule);
@@ -300,6 +216,14 @@ export const DELETE = withAuth(async function DELETE(
     const existing = await db.scrapeRule.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+    }
+    // Prevent deleting rules with running tasks (cascade would cause silent data loss)
+    const runningCount = await db.scrapeTask.count({ where: { ruleId: id, status: "running" } });
+    if (runningCount > 0) {
+      return NextResponse.json(
+        { error: `无法删除：有 ${runningCount} 个任务正在运行，请先停止任务` },
+        { status: 409 }
+      );
     }
     await db.scrapeRule.delete({ where: { id } });
     return NextResponse.json({ success: true });

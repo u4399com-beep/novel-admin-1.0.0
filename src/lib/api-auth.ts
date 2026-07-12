@@ -125,7 +125,11 @@ export function loginRateLimit(ip: string): { allowed: boolean; retryAfter: numb
 // API Route Auth + Rate Limit Wrapper
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type ApiHandler = (...args: any[]) => Promise<NextResponse<any>>;
+/**
+ * Type for API route handlers. Uses `unknown[]` for forward compatibility;
+ * the actual request/params are destructured inside each handler.
+ */
+export type ApiHandler = (...args: any[]) => Promise<NextResponse<unknown>>;
 
 /**
  * Wrap an API route handler with authentication and rate limiting.

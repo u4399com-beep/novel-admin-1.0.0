@@ -136,11 +136,19 @@ function ensureLogFlusher() {
   logFlushTimer = setInterval(async () => {
     for (const [taskId, logs] of logBuffer) {
       if (logs.length === 0) continue;
-      const batch = logs.splice(0);
+      // Copy logs first; only remove on success
+      const batch = [...logs];
       try {
         await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs: batch });
+        // Remove flushed logs only after successful API call
+        const taskLogs = logBuffer.get(taskId);
+        if (taskLogs) {
+          const removeCount = Math.min(batch.length, taskLogs.length);
+          taskLogs.splice(0, removeCount);
+        }
       } catch (err) {
         console.error(`[Task] Failed to flush ${batch.length} logs for ${taskId}:`, err);
+        // Logs remain in buffer for retry on next flush
       }
     }
   }, LOG_FLUSH_INTERVAL_MS);
