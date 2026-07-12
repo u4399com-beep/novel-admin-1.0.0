@@ -26,7 +26,7 @@ async function handlePagination(
   const seen = new Set<string>();
   let currentUrl = startUrl;
   let hasNextPage = false;
-  const maxPages = pagination?.maxPage || 1;
+  const maxPages = Math.min(pagination?.maxPage || 1, 100);
   const engine = getEngine(engineType);
 
   for (let page = 0; page < maxPages; page++) {
@@ -148,7 +148,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
   const seenUrls = new Set<string>();
   let currentUrl = url;
   let hasNextPage = false;
-  const maxPages = pagination?.maxPage || 1;
+  const maxPages = Math.min(pagination?.maxPage || 1, 100);
 
   for (let page = 0; page < maxPages; page++) {
     console.log(`  [Chapters] Page ${page + 1}/${maxPages}: ${currentUrl}`);
@@ -231,7 +231,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
   let fullContent = "";
   let title = "";
   let currentUrl = url;
-  const maxPages = pagination?.maxPage || 1;
+  const maxPages = Math.min(pagination?.maxPage || 1, 100);
 
   for (let page = 0; page < maxPages; page++) {
     console.log(`  [Content] Page ${page + 1}/${maxPages}: ${currentUrl}`);
@@ -305,16 +305,42 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
 
   console.log(`  [Cover] Downloading from ${url} to ${savePath}`);
 
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": getUA(),
-      Referer: new URL(url).origin,
-    },
-    signal: AbortSignal.timeout(30000),
-  });
+  // Manual redirect following with SSRF validation on each hop
+  const { isSafeTargetUrl: checkSafe } = await import("./utils");
+  let currentUrl = url;
+  let response: Response | null = null;
+  const MAX_REDIRECTS = 5;
 
-  if (!response.ok) {
-    throw new Error(`Failed to download cover: HTTP ${response.status}`);
+  for (let i = 0; i <= MAX_REDIRECTS; i++) {
+    response = await fetch(currentUrl, {
+      headers: {
+        "User-Agent": getUA(),
+        Referer: new URL(currentUrl).origin,
+      },
+      signal: AbortSignal.timeout(30000),
+      redirect: "manual",
+    });
+
+    if (response.status >= 300 && response.status < 400 && i < MAX_REDIRECTS) {
+      const location = response.headers.get("location");
+      if (!location) break;
+      try {
+        const redirectUrl = new URL(location, currentUrl).href;
+        if (!checkSafe(redirectUrl)) {
+          throw new Error(`Blocked: redirect to internal/blocked URL (${redirectUrl})`);
+        }
+        currentUrl = redirectUrl;
+        continue;
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Blocked:")) throw err;
+        break;
+      }
+    }
+    break;
+  }
+
+  if (!response || !response.ok) {
+    throw new Error(`Failed to download cover: HTTP ${response?.status || 'no response'}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();

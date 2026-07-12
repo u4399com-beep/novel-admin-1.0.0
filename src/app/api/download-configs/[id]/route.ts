@@ -134,22 +134,22 @@ export const PUT = withAuth(async function PUT(
         ...(format !== undefined && { format }),
         ...(insertConfusion !== undefined && { insertConfusion }),
         ...(confusionText !== undefined && {
-          confusionText: effectiveInsertConfusion ? confusionText?.trim() || null : null,
+          confusionText: effectiveInsertConfusion ? sanitizeField(confusionText, MAX_CONTENT_LENGTH) || null : null,
         }),
         ...(insertAd !== undefined && { insertAd }),
         ...(adContent !== undefined && {
-          adContent: effectiveInsertAd ? adContent?.trim() || null : null,
+          adContent: effectiveInsertAd ? sanitizeField(adContent, MAX_CONTENT_LENGTH) || null : null,
         }),
         ...(parsedInterval !== undefined && { adInterval: parsedInterval }),
         ...(adPosition !== undefined && { adPosition }),
         ...(insertSiteInfo !== undefined && { insertSiteInfo }),
         ...(siteInfoContent !== undefined && {
           siteInfoContent: effectiveInsertSiteInfo
-            ? siteInfoContent?.trim() || null
+            ? sanitizeField(siteInfoContent, MAX_CONTENT_LENGTH) || null
             : null,
         }),
         ...(fileNamePattern !== undefined && {
-          fileNamePattern: fileNamePattern?.trim() || "{title} - {author}",
+          fileNamePattern: sanitizeField(fileNamePattern, MAX_PATTERN_LENGTH) || "{title} - {author}",
         }),
       },
     });

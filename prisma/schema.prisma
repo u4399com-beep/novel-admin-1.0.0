@@ -58,6 +58,7 @@ model Novel {
   @@index([categoryId])
   @@index([status])
   @@index([sourceId])
+  @@index([sourceUrl])
   @@index([updatedAt])
 }
 
@@ -85,8 +86,7 @@ model Chapter {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([novelId])
-  @@index([sortOrder])
+  @@index([novelId, sortOrder])
 }
 
 // ==================== 采集系统 ====================

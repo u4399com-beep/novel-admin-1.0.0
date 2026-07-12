@@ -1,8 +1,8 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
-import { withAuth } from "@/lib/api-auth";
 
-export const GET = withAuth(async function GET() {
+// Health endpoint - NO AUTH required for load balancer / Docker health checks
+export async function GET() {
   try {
     const startTime = Date.now();
     await db.$queryRaw`SELECT 1`;
@@ -44,4 +44,4 @@ export const GET = withAuth(async function GET() {
       { status: 503 }
     );
   }
-});
+}

@@ -10,6 +10,7 @@ function timingSafeEqual(a: string, b: string): boolean {
   const aBuf = Buffer.from(a, 'utf-8');
   const bBuf = Buffer.from(b, 'utf-8');
   if (aBuf.length !== bBuf.length) {
+    crypto.timingSafeEqual(aBuf, aBuf); // dummy comparison to maintain constant time
     return false;
   }
   return crypto.timingSafeEqual(aBuf, bBuf);
@@ -156,7 +157,7 @@ export function withAuth(handler: ApiHandler): ApiHandler {
         const rl = rateLimit(getClientIp(request));
         return NextResponse.json(
           { error: '未授权，请先登录' },
-          { status: 401, headers: { 'X-RateLimit-Remaining': String(rl.remaining) } }
+          { status: 401, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(rl.remaining) } }
         );
       }
       // Service token authenticated — also rate limit service calls

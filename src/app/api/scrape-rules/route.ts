@@ -31,6 +31,14 @@ function validateSelector(value: unknown, fieldName: string): string | null {
   return null;
 }
 
+/** Validate save path: must start with /app/public/ and contain no path traversal */
+function validateSavePath(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const val = sanitizeField(value, 500);
+  if (val && (!val.startsWith('/app/public/') || val.includes('..'))) return null;
+  return val;
+}
+
 function validatePagination(value: unknown, fieldName: string): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== "object" || Array.isArray(value) || value === null) {
@@ -192,8 +200,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
         // 存储配置
         storageMode,
-        filePath: sanitizeField(body.filePath, 2000) || null,
-        coverSavePath: sanitizeField(body.coverSavePath, 2000) || null,
+        filePath: validateSavePath(body.filePath),
+        coverSavePath: validateSavePath(body.coverSavePath),
 
         // 采集策略
         scrapeMode,

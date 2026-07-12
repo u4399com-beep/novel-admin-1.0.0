@@ -16,7 +16,7 @@ import { getEngine, selectEngine } from "./engines";
 import { parseSelector } from "./selectors";
 import { handleClean } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
-import { addToQueue, getQueueStats, clearTaskQueue } from "./queue";
+import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";
 
 // ==================== Atomic Counter ====================
 
@@ -59,7 +59,7 @@ async function apiCall(
     },
     signal: AbortSignal.timeout(30000),
   };
-  if (body) {
+  if (body && method !== "GET" && method !== "HEAD") {
     options.body = JSON.stringify(body);
   }
 
@@ -106,15 +106,55 @@ async function addTaskLog(
   url?: string,
   detail?: string
 ) {
+  // Truncate to prevent oversized payloads
+  const truncatedMsg = message.length > 500 ? message.slice(0, 500) + "..." : message;
+  const truncatedDetail = detail && detail.length > 1000 ? detail.slice(0, 1000) + "..." : (detail || undefined);
+
+  // Buffer logs and flush every LOG_FLUSH_INTERVAL_MS to prevent API thundering herd
+  if (!logBuffer.has(taskId)) logBuffer.set(taskId, []);
+  const buffer = logBuffer.get(taskId)!;
+  buffer.push({ level, message: truncatedMsg, url: url || undefined, detail: truncatedDetail });
+
+  // If buffer exceeds 50 items, flush immediately to prevent memory buildup
+  if (buffer.length >= 50) {
+    const logs = buffer.splice(0);
+    try {
+      await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs });
+    } catch (err) {
+      console.error(`[Task] Failed to flush ${logs.length} logs:`, err);
+    }
+  }
+}
+
+// Log buffer for batched API calls
+const logBuffer = new Map<string, Array<{ level: string; message: string; url?: string; detail?: string }>>();
+const LOG_FLUSH_INTERVAL_MS = 5000;
+let logFlushTimer: ReturnType<typeof setInterval> | null = null;
+
+function ensureLogFlusher() {
+  if (logFlushTimer) return;
+  logFlushTimer = setInterval(async () => {
+    for (const [taskId, logs] of logBuffer) {
+      if (logs.length === 0) continue;
+      const batch = logs.splice(0);
+      try {
+        await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs: batch });
+      } catch (err) {
+        console.error(`[Task] Failed to flush ${batch.length} logs for ${taskId}:`, err);
+      }
+    }
+  }, LOG_FLUSH_INTERVAL_MS);
+}
+
+// Flush remaining logs for a task (call before task completes)
+async function flushTaskLogs(taskId: string) {
+  const logs = logBuffer.get(taskId);
+  if (!logs || logs.length === 0) return;
+  logBuffer.delete(taskId);
   try {
-    await apiCall("POST", `/api/scrape-tasks/${taskId}/logs`, {
-      level,
-      message,
-      url: url || null,
-      detail: detail || null,
-    });
+    await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs });
   } catch (err) {
-    console.error(`[Task] Failed to add log:`, err);
+    console.error(`[Task] Failed to final-flush logs for ${taskId}:`, err);
   }
 }
 
@@ -149,7 +189,7 @@ export async function executeTask(taskId: string) {
   const abortController = new AbortController();
 
   // 1. Fetch task + rule from Next.js API
-  const { data: taskData, status } = await apiCall("GET", `/api/scrape-tasks/${taskId}`, { signal: abortController.signal });
+  const { data: taskData, status } = await apiCall("GET", `/api/scrape-tasks/${taskId}`);
 
   if (status !== 200 || !taskData) {
     throw new Error(`Failed to fetch task ${taskId}: HTTP ${status}`);
@@ -181,7 +221,7 @@ export async function executeTask(taskId: string) {
   // Clear any previous queue data for this task
   await clearTaskQueue(taskId);
 
-  const threadCount = rule.threadCount || 3;
+  const threadCount = Math.min(rule.threadCount || 3, 10);
   const isIncremental = (task.mode || rule.scrapeMode) === "incremental";
   const dedupMode = rule.dedupMode || "url";
 
@@ -240,9 +280,9 @@ async function executeTaskBody(
 
   await addTaskLog(taskId, "success", `列表页采集完成，共发现 ${bookUrls.length} 本书 [引擎: ${listResult.engine}]`);
 
-  // Add all book URLs to the queue for resume capability
-  for (const bookUrl of bookUrls) {
-    await addToQueue({ url: bookUrl, taskId, metadata: { type: "book", taskId } });
+  // Add all book URLs to the queue for resume capability (batched)
+  if (bookUrls.length > 0) {
+    await addManyToQueue(bookUrls.map(bookUrl => ({ url: bookUrl, taskId, metadata: { type: "book", taskId } })));
   }
 
   if (bookUrls.length === 0) {
@@ -512,13 +552,13 @@ async function executeTaskBody(
 
       await addTaskLog(taskId, "info", `发现 ${chapters.length} 个章节: ${book.title}`, chapterListUrl);
 
-      // Add chapter URLs to queue
-      for (const ch of chapters) {
-        await addToQueue({
+      // Add chapter URLs to queue (batched)
+      if (chapters.length > 0) {
+        await addManyToQueue(chapters.map(ch => ({
           url: ch.url,
           taskId,
           metadata: { type: "chapter", bookId: book.id, title: ch.title, sortOrder: ch.sortOrder, taskId },
-        });
+        })));
       }
 
       // 5. Scrape chapter content

@@ -54,13 +54,20 @@ export const POST = withAuth(async function POST(
 ) {
   try {
     const { id: novelId } = await params;
+
+    // Verify novel exists before any DB operations
+    const novelExists = await db.novel.findUnique({ where: { id: novelId }, select: { id: true } });
+    if (!novelExists) {
+      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+    }
+
     let body;
     try {
       body = await safeJson(request);
     } catch {
       return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
     }
-    const { title, content } = body;
+    const { title, content, sourceUrl, sortOrder: explicitSortOrder } = body;
 
     const trimmedTitle = sanitizeField(title, 200);
     if (!trimmedTitle) {
@@ -69,14 +76,20 @@ export const POST = withAuth(async function POST(
 
     const trimmedContent = content ? sanitizeField(content, 500000) : null;
     const wordCount = trimmedContent ? trimmedContent.length : 0;
+    const trimmedSourceUrl = sourceUrl ? sanitizeField(sourceUrl, 2048) : null;
 
     // Use transaction to ensure atomicity
     const chapter = await db.$transaction(async (tx) => {
-      // Get the max sortOrder for this novel with row-level lock (FOR UPDATE)
-      const maxResult = await tx.$queryRaw<Array<{ max_order: number | null }>>`
-        SELECT COALESCE(MAX("sortOrder"), 0) as max_order FROM "Chapter" WHERE "novelId" = ${novelId} FOR UPDATE
-      `;
-      const sortOrder = (maxResult[0]?.max_order ?? 0) + 1;
+      // Use explicit sortOrder if provided, otherwise auto-calculate
+      let sortOrder: number;
+      if (explicitSortOrder !== undefined) {
+        sortOrder = Math.floor(Number(explicitSortOrder)) || 0;
+      } else {
+        const maxResult = await tx.$queryRaw<Array<{ max_order: number | null }>>`
+          SELECT COALESCE(MAX("sortOrder"), 0) as max_order FROM "Chapter" WHERE "novelId" = ${novelId} FOR UPDATE
+        `;
+        sortOrder = (maxResult[0]?.max_order ?? 0) + 1;
+      }
 
       const newChapter = await tx.chapter.create({
         data: {
@@ -85,6 +98,7 @@ export const POST = withAuth(async function POST(
           wordCount,
           sortOrder,
           novelId,
+          ...(trimmedSourceUrl && { sourceUrl: trimmedSourceUrl }),
         },
       });
 

@@ -81,14 +81,14 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         name: sanitizeField(name, MAX_NAME_LENGTH),
         format: format || "txt",
         insertConfusion: insertConfusion || false,
-        confusionText: insertConfusion ? confusionText?.trim() || null : null,
+        confusionText: insertConfusion ? sanitizeField(confusionText, MAX_CONTENT_LENGTH) || null : null,
         insertAd: insertAd || false,
-        adContent: insertAd ? adContent?.trim() || null : null,
+        adContent: insertAd ? sanitizeField(adContent, MAX_CONTENT_LENGTH) || null : null,
         adInterval: parsedInterval,
         adPosition: adPosition || "end",
         insertSiteInfo: insertSiteInfo || false,
-        siteInfoContent: insertSiteInfo ? siteInfoContent?.trim() || null : null,
-        fileNamePattern: fileNamePattern?.trim() || "{title} - {author}",
+        siteInfoContent: insertSiteInfo ? sanitizeField(siteInfoContent, MAX_CONTENT_LENGTH) || null : null,
+        fileNamePattern: sanitizeField(fileNamePattern, MAX_PATTERN_LENGTH) || "{title} - {author}",
       },
     });
 

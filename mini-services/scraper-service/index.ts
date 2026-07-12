@@ -17,6 +17,7 @@ import { handleDownloadCover } from "./src/scrapers";
 import { handleGenerateRule, handlePreviewPage } from "./src/ai-rule-generator";
 import { executeTask } from "./src/task-engine";
 import { getQueueStats, cleanupQueue, requeueFailed, clearTaskQueue } from "./src/queue";
+import { timingSafeEqual } from "node:crypto";
 import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest,
   ScrapeContentRequest, CleanRequest, DownloadCoverRequest, ExecuteTaskRequest,
@@ -50,9 +51,16 @@ function authenticateRequest(req: Request): boolean {
   const url = new URL(req.url);
   if (url.pathname === "/health") return true;
 
-  // Check Authorization header
+  // Check Authorization header using timing-safe comparison
   const auth = req.headers.get("authorization");
-  if (SERVICE_TOKEN && auth === `Bearer ${SERVICE_TOKEN}`) return true;
+  if (SERVICE_TOKEN && auth) {
+    const expected = `Bearer ${SERVICE_TOKEN}`;
+    const aBuf = Buffer.from(auth, "utf-8");
+    const bBuf = Buffer.from(expected, "utf-8");
+    if (aBuf.length === bBuf.length) {
+      try { if (timingSafeEqual(aBuf, bBuf)) return true; } catch {}
+    }
+  }
 
   // Reject if no token configured (force security)
   if (!SERVICE_TOKEN) {
@@ -169,7 +177,7 @@ export function startServer(port: number = 3099) {
       }
 
       // Rate limiting (per client IP)
-      const clientIp = req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown";
+      const clientIp = req.headers.get("x-real-ip") || "unknown";
       if (!checkScraperRateLimit(clientIp)) {
         return Response.json(
           { error: "Rate limit exceeded. Try again later." },
@@ -413,6 +421,7 @@ const shutdown = async (signal: string) => {
   ]);
 
   await closeAllEngines().catch(() => {});
+  clearInterval(terminateTimer); // Clear force-terminate timer regardless
   console.log(`[${new Date().toISOString()}] Active tasks: ${activeTasks.size}, Engines closed. Exiting.`);
 
   process.exit(0);

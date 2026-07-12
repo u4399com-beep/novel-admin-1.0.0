@@ -140,6 +140,9 @@ class CheerioEngine implements ScrapingEngine {
         }
 
         const html = await response.text();
+        if (html.length > 10 * 1024 * 1024) {
+          throw new Error(`Response body too large: ${html.length} bytes (max 10MB)`);
+        }
         const finalUrl = response.url || currentUrl;
 
         return { html, finalUrl, statusCode: response.status };

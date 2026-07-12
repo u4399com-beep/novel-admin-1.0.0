@@ -72,13 +72,6 @@ export async function safeJson<T>(
   maxDepth = 20,
   maxKeys = 200
 ): Promise<T> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10_000);
-
-  // Note: AbortController signal cannot be passed to Next.js Request.text(),
-  // so we use Promise.race with a 15-second timeout as a fallback.
-  // The separate AbortController timeoutId below guards the JSON parsing phase.
-  // Actual body size is enforced by reading text and checking its length.
   try {
     const text = await Promise.race([
       request.text(),
@@ -107,8 +100,6 @@ export async function safeJson<T>(
       throw new Error("请求数据格式错误");
     }
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 

@@ -67,11 +67,16 @@ export const PUT = withAuth(async function PUT(
         throw new Error("NOT_FOUND");
       }
 
-      const newContent = content !== undefined
+      const shouldUpdateWordCount = content !== undefined;
+      const newContent = shouldUpdateWordCount
         ? sanitizeField(content, MAX_CONTENT_LENGTH)
         : oldChapter.content || "";
-      const newWordCount = newContent.length;
-      const wordDiff = newWordCount - (oldChapter.wordCount || 0);
+      const newWordCount = shouldUpdateWordCount
+        ? newContent.length
+        : oldChapter.wordCount || 0;
+      const wordDiff = shouldUpdateWordCount
+        ? newWordCount - (oldChapter.wordCount || 0)
+        : 0;
 
       const updated = await tx.chapter.update({
         where: { id },
@@ -79,7 +84,7 @@ export const PUT = withAuth(async function PUT(
           ...(title !== undefined && { title: sanitizeField(title, MAX_TITLE_LENGTH) }),
           ...(content !== undefined && { content: sanitizeField(content, MAX_CONTENT_LENGTH) || null }),
           ...(sortOrder !== undefined && { sortOrder: Math.floor(Number(sortOrder) || 0) }),
-          wordCount: newWordCount,
+          ...(shouldUpdateWordCount && { wordCount: newWordCount }),
         },
       });
 

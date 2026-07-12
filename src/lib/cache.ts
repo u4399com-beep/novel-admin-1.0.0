@@ -76,12 +76,6 @@ export const getCached = <T>(key: string): T | null => {
 };
 
 export function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
-  // Prune expired entries first to free space
-  const now = Date.now();
-  for (const [k, entry] of cache) {
-    if (now > entry.expiresAt) cache.delete(k);
-  }
-
   // Don't cache values that exceed the size limit
   const sizeEstimate = JSON.stringify(data).length;
   if (sizeEstimate > MAX_VALUE_SIZE) {
