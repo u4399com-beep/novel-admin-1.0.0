@@ -129,13 +129,13 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Theme form
   themeFormOpen: false,
-  setThemeFormOpen: (open) => set({ themeFormOpen: open, editingTheme: open ? null : null }),
+  setThemeFormOpen: (open) => set({ themeFormOpen: open, ...(open && { editingTheme: null }) }),
   editingTheme: null,
   setEditingTheme: (theme) => set({ editingTheme: theme, themeFormOpen: theme !== null }),
 
   // Site form
   siteFormOpen: false,
-  setSiteFormOpen: (open) => set({ siteFormOpen: open, editingSite: open ? null : null }),
+  setSiteFormOpen: (open) => set({ siteFormOpen: open, ...(open && { editingSite: null }) }),
   editingSite: null,
   setEditingSite: (site) => set({ editingSite: site, siteFormOpen: site !== null }),
 

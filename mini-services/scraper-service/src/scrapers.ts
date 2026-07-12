@@ -343,7 +343,17 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
     throw new Error(`Failed to download cover: HTTP ${response?.status || 'no response'}`);
   }
 
+  // Check response size before reading into memory
+  const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
+  const MAX_COVER_SIZE = 20 * 1024 * 1024; // 20MB
+  if (contentLength > MAX_COVER_SIZE) {
+    throw new Error(`Cover image too large: Content-Length ${contentLength} bytes (max ${MAX_COVER_SIZE})`);
+  }
+
   const arrayBuffer = await response.arrayBuffer();
+  if (arrayBuffer.byteLength > MAX_COVER_SIZE) {
+    throw new Error(`Cover image too large: ${arrayBuffer.byteLength} bytes (max ${MAX_COVER_SIZE})`);
+  }
   const buffer = Buffer.from(arrayBuffer);
 
   // Use sharp to convert to WebP

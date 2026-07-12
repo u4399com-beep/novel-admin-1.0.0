@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
+import { isSafeUrl } from "@/lib/sanitize";
 
 // GET /api/novels/[id]/chapters - List chapters for a novel (with pagination)
 export const GET = withAuth(async function GET(
@@ -77,6 +78,9 @@ export const POST = withAuth(async function POST(
     const trimmedContent = content ? sanitizeField(content, 500000) : null;
     const wordCount = trimmedContent ? trimmedContent.length : 0;
     const trimmedSourceUrl = sourceUrl ? sanitizeField(sourceUrl, 2048) : null;
+    if (trimmedSourceUrl && !isSafeUrl(trimmedSourceUrl)) {
+      return NextResponse.json({ error: "sourceUrl 不允许访问内网或私有地址" }, { status: 400 });
+    }
 
     // Use transaction to ensure atomicity
     const chapter = await db.$transaction(async (tx) => {

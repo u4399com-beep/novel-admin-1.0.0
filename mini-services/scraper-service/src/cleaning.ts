@@ -78,6 +78,17 @@ function escapeCssString(str: string): string {
 }
 
 /**
+ * Normalize patterns to string[] — supports both string (newline-separated) and array inputs.
+ * This handles the case where the frontend sends patterns as a newline-separated string
+ * or the database stores them as a JSON array.
+ */
+function normalizePatterns(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((p): p is string => typeof p === 'string');
+  if (typeof value === 'string') return value.split('\n').map(s => s.trim()).filter(Boolean);
+  return [];
+}
+
+/**
  * Clean HTML content: remove ads, scripts, normalize whitespace.
  */
 export function cleanHtml(html: string, config: CleanRequest["config"]): string {
@@ -86,18 +97,21 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
   // Remove script, style, iframe, noscript tags
   $("script, style, iframe, noscript, object, embed, applet").remove();
 
+  const adPatterns = normalizePatterns(config.adPatterns);
+
   // Remove ad elements if removeAds is true (default)
   if (config.removeAds !== false) {
     const allAdSelectors = [...AD_CSS_SELECTORS];
-    if (config.adPatterns && config.adPatterns.length > 0) {
-      allAdSelectors.push(...config.adPatterns.map((p) => `[class*="${escapeCssString(p)}"], [id*="${escapeCssString(p)}"]`));
+    if (adPatterns.length > 0) {
+      allAdSelectors.push(...adPatterns.map((p) => `[class*="${escapeCssString(p)}"], [id*="${escapeCssString(p)}"]`));
     }
     $(allAdSelectors.join(", ")).remove();
   }
 
-  // Remove elements matching custom CSS patterns
-  if (config.removePatterns && config.removePatterns.length > 0) {
-    for (const pattern of config.removePatterns) {
+  // Remove elements matching custom CSS selectors (first pass — only used as CSS selectors)
+  const removePatterns = normalizePatterns(config.removePatterns);
+  if (removePatterns.length > 0) {
+    for (const pattern of removePatterns) {
       try {
         $(pattern).remove();
       } catch {
@@ -111,8 +125,8 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
 
   // Remove ad text patterns (line-by-line filtering)
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];
-  if (config.adPatterns && config.adPatterns.length > 0) {
-    allAdPatterns.push(...config.adPatterns);
+  if (adPatterns.length > 0) {
+    allAdPatterns.push(...adPatterns);
   }
 
   for (const pattern of allAdPatterns) {
@@ -127,9 +141,9 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
       .join("\n");
   }
 
-  // Remove custom text patterns (with ReDoS protection)
-  if (config.removePatterns && config.removePatterns.length > 0) {
-    for (const pattern of config.removePatterns) {
+  // Remove custom text/regex patterns (second pass — used as regex for text matching)
+  if (removePatterns.length > 0) {
+    for (const pattern of removePatterns) {
       text = safeRegexReplace(text, pattern, "", "gi");
     }
   }

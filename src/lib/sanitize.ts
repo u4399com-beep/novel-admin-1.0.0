@@ -6,7 +6,7 @@ export function sanitizeString(input: unknown, maxLength: number = 10000): strin
   // Remove null bytes and control characters except newline/tab
   let sanitized = input.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
   // Remove dangerous Unicode characters: zero-width spaces, bidi overrides, BOM
-  sanitized = sanitized.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g, '');
+  sanitized = sanitized.replace(/[\u200B-\u200F\u2060-\u2069\uFEFF\u202A-\u202E]/g, '');
   // Trim and limit length
   sanitized = sanitized.trim().slice(0, maxLength);
   return sanitized;
@@ -105,8 +105,8 @@ function parseIpAddress(hostname: string): string | null {
  * Check if an IP address is private/internal/reserved
  */
 function isPrivateIp(ip: string): boolean {
-  // Normalize: remove IPv6 prefix
-  const normalizedIp = ip.replace(/^::ffff:/i, '');
+  // Normalize: remove IPv6 prefix and brackets
+  let normalizedIp = ip.replace(/^\[|\]$/g, '').replace(/^::ffff:/i, '');
 
   // IPv4 checks
   const ipv4Match = normalizedIp.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
@@ -129,15 +129,13 @@ function isPrivateIp(ip: string): boolean {
     return false;
   }
 
-  // IPv6 checks
+  // IPv6 checks — normalizedIp has brackets stripped
   const lower = normalizedIp.toLowerCase();
   // Loopback
   if (lower === '::1' || lower === '::') return true;
-  // IPv4-mapped IPv6
-  if (lower.startsWith('::ffff:')) return true;
   // Link-local fe80::/10
   if (lower.startsWith('fe80:')) return true;
-  // Unique local fc00::/7
+  // Unique local fc00::/7 (fc00-fdff)
   if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
   // Multicast ff00::/8
   if (lower.startsWith('ff')) return true;

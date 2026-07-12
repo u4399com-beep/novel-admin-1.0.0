@@ -131,7 +131,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     const dedupMode = validDedupModes.includes(body.dedupMode) ? body.dedupMode : "url";
     const threadCount = Math.min(Math.max(1, Number(body.threadCount) || 3), 20);
     const minDelay = Math.max(0, Number(body.minDelay) || 1000);
-    const maxDelay = Math.max(minDelay, Number(body.maxDelay) || 3000);
+    const maxDelay = Math.min(60000, Math.max(minDelay, Number(body.maxDelay) || 3000));
 
     // Validate selector fields
     const selectorFields: Array<{ key: string; name: string }> = [
@@ -156,6 +156,14 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     for (const { key, name } of paginationFields) {
       const err = validatePagination(body[key], name);
       if (err) return NextResponse.json({ error: err }, { status: 400 });
+    }
+
+    // Validate listUrl for SSRF
+    if (body.listUrl && !isSafeUrl(String(body.listUrl))) {
+      return NextResponse.json({ error: 'listUrl 不允许访问内网或私有地址' }, { status: 400 });
+    }
+    if (body.chapterListUrl && !isSafeUrl(String(body.chapterListUrl))) {
+      return NextResponse.json({ error: 'chapterListUrl 不允许访问内网或私有地址' }, { status: 400 });
     }
 
     // Validate cloudBrowserUrl for SSRF before DB write

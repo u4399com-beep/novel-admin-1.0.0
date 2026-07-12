@@ -83,6 +83,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (!sanitizedDomain) {
       return NextResponse.json({ error: "站点域名不能为空" }, { status: 400 });
     }
+    const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+    if (!DOMAIN_RE.test(sanitizedDomain)) {
+      return NextResponse.json({ error: "站点域名格式不合法，必须为有效域名（如 example.com）" }, { status: 400 });
+    }
     const sanitizedName = sanitizeField(name, MAX_NAME_LENGTH);
     if (!sanitizedName) {
       return NextResponse.json({ error: "站点名称不能为空" }, { status: 400 });

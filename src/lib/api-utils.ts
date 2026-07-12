@@ -72,11 +72,12 @@ export async function safeJson<T>(
   maxDepth = 20,
   maxKeys = 200
 ): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
   try {
     const text = await Promise.race([
       request.text(),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('请求体读取超时')), 15_000)
+        timeoutId = setTimeout(() => reject(new Error('请求体读取超时')), 15_000)
       ),
     ]);
 
@@ -100,6 +101,8 @@ export async function safeJson<T>(
       throw new Error("请求数据格式错误");
     }
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

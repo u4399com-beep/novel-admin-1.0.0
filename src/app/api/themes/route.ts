@@ -63,15 +63,20 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (configStr.length > MAX_CONFIG_SIZE) {
       return NextResponse.json({ error: `主题配置大小不能超过${Math.floor(MAX_CONFIG_SIZE / 1024)}KB` }, { status: 400 });
     }
+    try {
+      JSON.parse(configStr);
+    } catch {
+      return NextResponse.json({ error: "主题配置必须是合法的JSON" }, { status: 400 });
+    }
 
     const theme = await db.theme.create({
       data: {
         name: sanitizeField(name, MAX_NAME_LENGTH),
         description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
         identifier: sanitizeField(identifier, MAX_IDENTIFIER_LENGTH),
-        preview: preview || null,
+        preview: sanitizeField(preview, 500) || null,
         config: typeof config === "string" ? config : JSON.stringify(config),
-        enabled: enabled !== undefined ? enabled : true,
+        enabled: typeof enabled === 'boolean' ? enabled : true,
       },
       include: {
         _count: { select: { sites: true } },

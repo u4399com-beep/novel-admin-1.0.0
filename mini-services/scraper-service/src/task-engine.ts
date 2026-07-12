@@ -252,10 +252,10 @@ export async function executeTask(taskId: string) {
     ]);
   } finally {
     clearTimeout(taskTimeoutId);
-    // Clean up throttle entry and log buffer to prevent memory leak
+    // Flush logs BEFORE cleaning up buffer (flushTaskLogs manages its own cleanup)
+    await flushTaskLogs(taskId).catch(() => {});
     progressThrottle.delete(taskId);
     logBuffer.delete(taskId);
-    await flushTaskLogs(taskId).catch(() => {});
   }
 }
 

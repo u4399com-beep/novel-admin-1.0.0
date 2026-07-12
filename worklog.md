@@ -615,3 +615,5 @@ Stage Summary:
 - 第3轮确认无新问题
 - 项目累计修复112项问题
 - 剩余7个LOW为架构限制(非bug/漏洞),已记录在worklog
+__workspace_agent_exit_code=$?
+printf "\n<<workspace_agent_exit_code:1783853283994:%s>>\n" "$__workspace_agent_exit_code"

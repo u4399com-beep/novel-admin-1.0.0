@@ -116,6 +116,8 @@ export const PUT = withAuth(async function PUT(
           ...(coverUrl !== undefined && { coverUrl: sanitizeField(coverUrl, 2048) || null }),
           ...(status !== undefined && { status }),
           ...(categoryId !== undefined && { categoryId: categoryId || null }),
+          ...(body.sourceUrl !== undefined && { sourceUrl: sanitizeField(body.sourceUrl, 2048) || null }),
+          ...(body.coverPath !== undefined && { coverPath: body.coverPath ? String(body.coverPath) : null }),
           ...(tags !== undefined && {
             tags: tags.length
               ? {

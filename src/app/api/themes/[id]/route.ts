@@ -74,6 +74,11 @@ export const PUT = withAuth(async function PUT(
       if (configStr.length > MAX_CONFIG_SIZE) {
         return NextResponse.json({ error: `主题配置大小不能超过${Math.floor(MAX_CONFIG_SIZE / 1024)}KB` }, { status: 400 });
       }
+      try {
+        JSON.parse(configStr);
+      } catch {
+        return NextResponse.json({ error: "主题配置必须是合法的JSON" }, { status: 400 });
+      }
     }
 
     const theme = await db.theme.update({
@@ -82,11 +87,11 @@ export const PUT = withAuth(async function PUT(
         ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
         ...(description !== undefined && { description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null }),
         ...(identifier !== undefined && { identifier: sanitizeField(identifier, MAX_IDENTIFIER_LENGTH) }),
-        ...(preview !== undefined && { preview: preview || null }),
+        ...(preview !== undefined && { preview: sanitizeField(preview, 500) || null }),
         ...(config !== undefined && {
           config: typeof config === "string" ? config : JSON.stringify(config),
         }),
-        ...(enabled !== undefined && { enabled }),
+        ...(enabled !== undefined && { enabled: typeof enabled === 'boolean' ? enabled : true }),
       },
       include: {
         _count: { select: { sites: true } },
@@ -98,6 +103,9 @@ export const PUT = withAuth(async function PUT(
     console.error("Update theme error:", error);
     if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
       return NextResponse.json({ error: "主题名称或标识符已存在" }, { status: 409 });
+    }
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "更新主题失败" }, { status: 500 });
   }

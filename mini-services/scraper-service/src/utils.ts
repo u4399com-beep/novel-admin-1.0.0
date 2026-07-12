@@ -99,10 +99,10 @@ export async function retryWithBackoff<T>(
 
       if (attempt >= opts.maxRetries) break;
 
-      // Check if error is retryable
+      // Check if error is retryable (non-HTTP errors like ECONNREFUSED are retryable)
       const statusMatch = lastError.message.match(/HTTP (\d+)/);
       const status = statusMatch ? parseInt(statusMatch[1]) : 0;
-      if (opts.retryableStatuses && !opts.retryableStatuses.includes(status)) {
+      if (status > 0 && opts.retryableStatuses && !opts.retryableStatuses.includes(status)) {
         throw lastError;
       }
 
@@ -158,15 +158,16 @@ export function isSafeTargetUrl(targetUrl: string): boolean {
 
     // Block IPv6 private/reserved ranges (only when hostname contains ':', i.e., IPv6)
     if (hostname.includes(':')) {
-      if (hostname === '::1' || hostname === '::') return false;
-      if (hostname.startsWith('::ffff:')) return false;
-      if (hostname.startsWith('fe80:')) return false;       // IPv6 link-local
-      if (/^f[cd]/i.test(hostname)) return false;           // IPv6 ULA (fc00::/7)
-      if (hostname.startsWith('ff')) return false;           // IPv6 multicast
+      // Strip brackets for IPv6 checks (URL.hostname returns brackets for IPv6)
+      const h = hostname.replace(/^\[|\]$/g, '');
+      if (h === '::1' || h === '::') return false;
+      if (h.startsWith('fe80:')) return false;       // IPv6 link-local
+      if (h.startsWith('fc') || h.startsWith('fd')) return false; // IPv6 ULA (fc00::/7)
+      if (h.startsWith('ff')) return false;           // IPv6 multicast
     }
 
     // Block IPv4 multicast and reserved range (224.0.0.0/4 = 224-255)
-    if (/^(2[2-5]\d)\./.test(hostname)) return false;
+    if (/^(22[4-9]|2[3-5]\d|25[0-5])\./.test(hostname)) return false;
 
     // Block DNS tunneling services
     const DNS_TUNNEL_SUFFIXES = ['.nip.io', '.sslip.io', '.dns.army', '.dnsdojo.net', '.xip.io', '.localtest.me', '.vcap.me', '.lvh.me', '.fuf.me', '.encr.app'];

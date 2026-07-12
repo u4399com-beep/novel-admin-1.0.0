@@ -153,18 +153,19 @@ export function dequeue(taskId?: string): DequeueResult | null {
     params = [];
   }
 
-  const row = d.prepare(query).get(...params) as any;
+  let row: Record<string, unknown> | null = null;
+  d.transaction(() => {
+    const stmt = d.prepare(`UPDATE request_queue SET status = 'in_progress', updated_at = datetime('now') WHERE id = $1 AND status = 'pending' RETURNING *`);
+    row = stmt.get(...params) as Record<string, unknown> | null;
+  });
   if (!row) return null;
 
-  // Mark as in_progress
-  d.prepare(`UPDATE request_queue SET status = 'in_progress', updated_at = datetime('now') WHERE id = $1`).run(row.id);
-
   return {
-    id: row.id,
-    url: row.url,
-    method: row.method,
-    payload: row.payload ? JSON.parse(row.payload) : null,
-    metadata: row.metadata ? JSON.parse(row.metadata) : null,
+    id: row.id as string,
+    url: row.url as string,
+    method: row.method as string,
+    payload: row.payload ? JSON.parse(row.payload as string) : null,
+    metadata: row.metadata ? JSON.parse(row.metadata as string) : null,
   };
 }
 

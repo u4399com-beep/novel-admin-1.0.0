@@ -421,7 +421,7 @@ export default function NovelDetailView() {
       const res = await fetch(`/api/novels/${selectedNovelId}/chapters`);
       if (res.ok) {
         const data = await res.json();
-        setChapters(data);
+        setChapters(data.chapters || []);
       }
     } catch {
       toast.error('获取章节列表失败');

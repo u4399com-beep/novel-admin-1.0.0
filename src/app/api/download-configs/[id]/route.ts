@@ -155,8 +155,11 @@ export const PUT = withAuth(async function PUT(
     });
 
     return NextResponse.json(config);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Update download config error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "更新下载配置失败" }, { status: 500 });
   }
 });
