@@ -201,6 +201,8 @@ ${html}`;
 
     console.log(`[AI Analyze] Analyzing ${url} (${html.length} chars) ...`);
 
+    const llmAbort = new AbortController();
+    let llmTimeoutId: ReturnType<typeof setTimeout>;
     const completion = await Promise.race([
       zai.chat.completions.create({
         messages: [
@@ -209,10 +211,14 @@ ${html}`;
         ],
         thinking: { type: "disabled" },
       }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("LLM request timed out after 120s")), 120_000)
-      ),
+      new Promise<never>((_, reject) => {
+        llmTimeoutId = setTimeout(() => {
+          llmAbort.abort();
+          reject(new Error("LLM request timed out after 120s"));
+        }, 120_000);
+      }),
     ]);
+    clearTimeout(llmTimeoutId);
 
     const rawContent = completion.choices?.[0]?.message?.content;
     if (!rawContent) {

@@ -70,14 +70,8 @@ import {
   ResizableHandle,
 } from '@/components/ui/resizable';
 import { useAppStore } from '@/stores/app-store';
+import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { Novel, Chapter } from '@/types';
-
-// ─── Status map ───────────────────────────────────────────────────────────────
-const statusMap: Record<string, { label: string; className: string }> = {
-  ongoing: { label: '连载中', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' },
-  completed: { label: '已完结', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' },
-  hiatus: { label: '暂停', className: 'bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400' },
-};
 
 // ─── Sortable row ─────────────────────────────────────────────────────────────
 function SortableChapterRow({
@@ -595,7 +589,7 @@ export default function NovelDetailView() {
 
   if (!novel) return null;
 
-  const statusInfo = statusMap[novel.status] || statusMap.ongoing;
+  const statusInfo = NOVEL_STATUS_MAP[novel.status] || NOVEL_STATUS_MAP.ongoing;
   const totalWords = chapters.reduce((sum, ch) => sum + (ch.wordCount ?? 0), 0);
   const chapterCount = novel._count?.chapters ?? chapters.length;
 
@@ -730,7 +724,7 @@ export default function NovelDetailView() {
       </div>
 
       {/* ─── Chapters section with resizable panels ───────────────────── */}
-      <div className="flex-1 overflow-hidden p-6 pt-4">
+      <div className="flex-1 min-h-0 overflow-hidden p-6 pt-4">
         <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg border">
           {/* Left panel: Chapter list */}
           <ResizablePanel defaultSize={selectedChapter ? 45 : 100} minSize={30}>

@@ -26,14 +26,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAppStore } from '@/stores/app-store';
+import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { Novel, Category, NovelStatus } from '@/types';
-
-// ─── Status map ───────────────────────────────────────────────────────────────
-const statusMap: Record<string, { label: string; className: string }> = {
-  ongoing: { label: '连载中', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' },
-  completed: { label: '已完结', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' },
-  hiatus: { label: '暂停', className: 'bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400' },
-};
 
 // ─── Gradient palette for cover placeholders ──────────────────────────────────
 const gradients = [
@@ -240,7 +234,7 @@ export default function NovelListView() {
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {novels.map((novel, idx) => {
-              const statusInfo = statusMap[novel.status as NovelStatus] ?? statusMap.ongoing;
+              const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
               const gradient = gradients[idx % gradients.length];
               return (
                 <Card

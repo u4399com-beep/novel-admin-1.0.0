@@ -253,13 +253,16 @@ function SelectorCard({ label, selector, editable = false }: {
   editable?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(selector?.value || '');
-  const [prevValue, setPrevValue] = useState(selector?.value || '');
+  const [editValue, setEditValue] = useState('');
 
-  if (selector?.value !== prevValue) {
-    setValue(selector?.value || '');
-    setPrevValue(selector?.value || '');
-  }
+  const startEditing = () => {
+    setEditValue(selector?.value || '');
+    setEditing(true);
+  };
+
+  const stopEditing = () => setEditing(false);
+
+  const displayValue = editing ? editValue : (selector?.value || '');
 
   return (
     <div className="flex items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2">
@@ -269,21 +272,21 @@ function SelectorCard({ label, selector, editable = false }: {
       {editing ? (
         <Input
           className="flex-1 h-7 text-xs font-mono"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={() => setEditing(false)}
-          onKeyDown={(e) => e.key === 'Enter' && setEditing(false)}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={stopEditing}
+          onKeyDown={(e) => e.key === 'Enter' && stopEditing()}
           autoFocus
         />
       ) : (
         <code
           className={`flex-1 text-xs font-mono truncate cursor-pointer hover:text-primary transition-colors ${
-            selector?.value ? 'text-foreground/70' : 'text-muted-foreground italic'
+            displayValue ? 'text-foreground/70' : 'text-muted-foreground italic'
           }`}
-          onClick={() => editable && setEditing(true)}
+          onClick={() => editable && startEditing()}
           title={editable ? '点击编辑' : undefined}
         >
-          {selector?.value || '(未设置)'}
+          {displayValue || '(未设置)'}
         </code>
       )}
       {selector?.type && (

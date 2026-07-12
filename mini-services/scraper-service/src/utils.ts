@@ -38,13 +38,6 @@ export function getRandomUA(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-export function getDesktopUA(): string {
-  const desktop = USER_AGENTS.filter(ua =>
-    !ua.includes("Mobile") && !ua.includes("iPhone") && !ua.includes("iPad") && !ua.includes("Android")
-  );
-  return desktop[Math.floor(Math.random() * desktop.length)];
-}
-
 // ==================== URL Resolution ====================
 
 export function resolveUrl(base: string, relative: string): string {

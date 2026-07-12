@@ -6,7 +6,6 @@
 
 import Database from 'bun:sqlite';
 import { generateId } from "./utils";
-import type { QueueItem } from "./types";
 
 const DB_PATH = process.env.QUEUE_DB_PATH || "queue.db";
 
@@ -126,86 +125,6 @@ export function addManyToQueue(items: AddToQueueOptions[]): string[] {
   return ids;
 }
 
-// ==================== Fetch from Queue ====================
-
-export interface DequeueResult {
-  id: string;
-  url: string;
-  method: string;
-  payload: unknown;
-  metadata: Record<string, unknown> | null;
-}
-
-/**
- * Get the next pending item from the queue for a given task.
- */
-export function dequeue(taskId?: string): DequeueResult | null {
-  const d = getDb();
-
-  let query: string;
-  let params: unknown[];
-
-  if (taskId) {
-    query = `SELECT id, url, method, payload, metadata FROM request_queue WHERE status = 'pending' AND task_id = $1 ORDER BY created_at ASC LIMIT 1`;
-    params = [taskId];
-  } else {
-    query = `SELECT id, url, method, payload, metadata FROM request_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`;
-    params = [];
-  }
-
-  let row: Record<string, unknown> | null = null;
-  d.transaction(() => {
-    const stmt = d.prepare(`UPDATE request_queue SET status = 'in_progress', updated_at = datetime('now') WHERE id = $1 AND status = 'pending' RETURNING *`);
-    row = stmt.get(...params) as Record<string, unknown> | null;
-  });
-  if (!row) return null;
-
-  return {
-    id: row.id as string,
-    url: row.url as string,
-    method: row.method as string,
-    payload: row.payload ? JSON.parse(row.payload as string) : null,
-    metadata: row.metadata ? JSON.parse(row.metadata as string) : null,
-  };
-}
-
-/**
- * Get multiple pending items from the queue (batch dequeue).
- */
-export function dequeueBatch(taskId?: string, limit: number = 10): DequeueResult[] {
-  const d = getDb();
-  const results: DequeueResult[] = [];
-
-  d.transaction(() => {
-    let query: string;
-    let params: unknown[];
-
-    if (taskId) {
-      query = `SELECT id, url, method, payload, metadata FROM request_queue WHERE status = 'pending' AND task_id = $1 ORDER BY created_at ASC LIMIT $2`;
-      params = [taskId, limit];
-    } else {
-      query = `SELECT id, url, method, payload, metadata FROM request_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT $1`;
-      params = [limit];
-    }
-
-    const rows = d.prepare(query).all(...params) as any[];
-
-    const update = d.prepare(`UPDATE request_queue SET status = 'in_progress', updated_at = datetime('now') WHERE id = $1`);
-    for (const row of rows) {
-      update.run(row.id);
-      results.push({
-        id: row.id,
-        url: row.url,
-        method: row.method,
-        payload: row.payload ? JSON.parse(row.payload) : null,
-        metadata: row.metadata ? JSON.parse(row.metadata) : null,
-      });
-    }
-  });
-
-  return results;
-}
-
 // ==================== Update Queue Item ====================
 
 export function markCompleted(id: string): void {
@@ -300,23 +219,3 @@ export function clearTaskQueue(taskId: string): void {
   d.prepare(`DELETE FROM request_queue WHERE task_id = $1`).run(taskId);
 }
 
-/**
- * Check if a URL has already been queued/completed for a task.
- */
-export function isUrlProcessed(url: string, taskId?: string): boolean {
-  const d = getDb();
-
-  let query: string;
-  let params: unknown[];
-
-  if (taskId) {
-    query = `SELECT id FROM request_queue WHERE url = $1 AND task_id = $2 AND status IN ('completed', 'in_progress') LIMIT 1`;
-    params = [url, taskId];
-  } else {
-    query = `SELECT id FROM request_queue WHERE url = $1 AND status IN ('completed', 'in_progress') LIMIT 1`;
-    params = [url];
-  }
-
-  const row = d.prepare(query).get(...params);
-  return !!row;
-}

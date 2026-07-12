@@ -105,14 +105,17 @@ class CheerioEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
-        const fetchOptions: RequestInit = {
+        const startTime = Date.now();
+        let remainingTimeout = timeout;
+
+        const makeOptions = (): RequestInit => ({
           headers,
           redirect: "manual",
-          signal: AbortSignal.timeout(timeout),
-        };
+          signal: AbortSignal.timeout(remainingTimeout),
+        });
 
         let currentUrl = url;
-        let response = await fetch(currentUrl, fetchOptions);
+        let response = await fetch(currentUrl, makeOptions());
         const MAX_REDIRECTS = 5;
 
         // Manually follow redirects, validating each target
@@ -128,8 +131,12 @@ class CheerioEngine implements ScrapingEngine {
               throw new Error(`Blocked: redirect target URL is not allowed (${redirectUrl})`);
             }
 
+            // Deduct elapsed time from remaining timeout
+            const elapsed = Date.now() - startTime;
+            remainingTimeout = Math.max(5000, timeout - elapsed); // min 5s per redirect
+
             currentUrl = redirectUrl;
-            response = await fetch(currentUrl, fetchOptions);
+            response = await fetch(currentUrl, makeOptions());
           } else {
             break;
           }
@@ -365,6 +372,11 @@ class FirecrawlEngine implements ScrapingEngine {
           error?: string;
         };
 
+        if (data.html && data.html.length > 10 * 1024 * 1024) {
+          firecrawlBreaker.recordFailure();
+          throw new Error(`Firecrawl HTML too large: ${data.html.length} bytes`);
+        }
+
         if (!data.success && data.error) {
           firecrawlBreaker.recordFailure();
           throw new Error(`Firecrawl error: ${data.error}`);
@@ -516,6 +528,13 @@ class AgentQLEngine implements ScrapingEngine {
           error?: string;
         };
 
+        // Check response data size
+        const dataJsonSize = JSON.stringify(data.data || {});
+        if (dataJsonSize.length > 10 * 1024 * 1024) {
+          agentqlBreaker.recordFailure();
+          throw new Error(`AgentQL response too large`);
+        }
+
         if (data.error) {
           agentqlBreaker.recordFailure();
           throw new Error(`AgentQL error: ${data.error}`);
@@ -626,6 +645,11 @@ class CloudBrowserEngine implements ScrapingEngine {
             error?: string;
           };
 
+          if (data.html && data.html.length > 10 * 1024 * 1024) {
+            cloudBrowserBreaker.recordFailure();
+            throw new Error(`Steel API HTML too large: ${data.html.length} bytes`);
+          }
+
           if (data.error) {
             cloudBrowserBreaker.recordFailure();
             throw new Error(`Steel error: ${data.error}`);
@@ -663,6 +687,11 @@ class CloudBrowserEngine implements ScrapingEngine {
             data?: Array<{ html?: string; results?: Array<{ html?: string }> }>;
             error?: string;
           };
+
+          if (data.html && data.html.length > 10 * 1024 * 1024) {
+            cloudBrowserBreaker.recordFailure();
+            throw new Error(`Browserless response too large: ${data.html.length} bytes`);
+          }
 
           if (data.error) {
             cloudBrowserBreaker.recordFailure();

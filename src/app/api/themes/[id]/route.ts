@@ -118,9 +118,18 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const existing = await db.theme.findUnique({ where: { id } });
+    const existing = await db.theme.findUnique({
+      where: { id },
+      include: { _count: { select: { sites: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ error: "主题不存在" }, { status: 404 });
+    }
+    if (existing._count.sites > 0) {
+      return NextResponse.json(
+        { error: `无法删除：有 ${existing._count.sites} 个站点正在使用此主题` },
+        { status: 409 }
+      );
     }
     await db.theme.delete({ where: { id } });
     return NextResponse.json({ success: true });

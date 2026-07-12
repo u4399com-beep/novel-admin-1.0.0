@@ -165,10 +165,3 @@ export interface DownloadConfig {
   updatedAt: string;
 }
 
-export interface SearchKeyword {
-  id: string;
-  novelId: string;
-  keyword: string;
-  source: string;
-  createdAt: string;
-}

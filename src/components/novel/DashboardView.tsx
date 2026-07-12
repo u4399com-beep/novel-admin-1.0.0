@@ -37,14 +37,8 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { useAppStore } from '@/stores/app-store';
+import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { DashboardStats, NovelStatus } from '@/types';
-
-// ─── Status map ───────────────────────────────────────────────────────────────
-const statusMap: Record<string, { label: string; className: string }> = {
-  ongoing: { label: '连载中', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' },
-  completed: { label: '已完结', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' },
-  hiatus: { label: '暂停', className: 'bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400' },
-};
 
 const statusChartColors: Record<string, string> = {
   ongoing: '#10b981',
@@ -111,7 +105,7 @@ export function DashboardView() {
 
   // ─── Chart data ───────────────────────────────────────────────────────────
   const chartData = stats?.statusDistribution.map((item) => ({
-    name: statusMap[item.status]?.label ?? item.status,
+    name: NOVEL_STATUS_MAP[item.status]?.label ?? item.status,
     status: item.status,
     count: item.count,
     fill: statusChartColors[item.status] ?? '#94a3b8',
@@ -259,7 +253,7 @@ export function DashboardView() {
             ) : (
               <div className="max-h-[280px] space-y-1 overflow-y-auto pr-1">
                 {stats.recentNovels.map((novel) => {
-                  const statusInfo = statusMap[novel.status as NovelStatus] ?? statusMap.ongoing;
+                  const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
                   return (
                     <div
                       key={novel.id}

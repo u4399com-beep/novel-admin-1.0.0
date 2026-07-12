@@ -9,6 +9,10 @@ import {
   validateSavePath,
   parseScrapeParams,
   ValidationError,
+  VALID_SCRAPE_MODES,
+  VALID_ENGINES,
+  VALID_STORAGE_MODES,
+  VALID_DEDUP_MODES,
 } from "@/lib/scrape-rule-validation";
 import { sanitizeField } from "@/lib/api-utils";
 
@@ -82,6 +86,20 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         return NextResponse.json({ error: e.message }, { status: 400 });
       }
       throw e;
+    }
+
+    // Validate enum fields — reject invalid values instead of silently defaulting
+    if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode)) {
+      return NextResponse.json({ error: `采集模式只能是: ${VALID_SCRAPE_MODES.join(', ')}` }, { status: 400 });
+    }
+    if (body.engine !== undefined && !VALID_ENGINES.includes(body.engine)) {
+      return NextResponse.json({ error: `采集引擎只能是: ${VALID_ENGINES.join(', ')}` }, { status: 400 });
+    }
+    if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode)) {
+      return NextResponse.json({ error: `存储模式只能是: ${VALID_STORAGE_MODES.join(', ')}` }, { status: 400 });
+    }
+    if (body.dedupMode !== undefined && !VALID_DEDUP_MODES.includes(body.dedupMode)) {
+      return NextResponse.json({ error: `去重模式只能是: ${VALID_DEDUP_MODES.join(', ')}` }, { status: 400 });
     }
 
     const params = parseScrapeParams(body);

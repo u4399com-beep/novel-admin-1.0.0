@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { Plus, BookOpen, Search, Sun, Moon, LogOut } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -98,6 +98,11 @@ export default function Home() {
 
   // ─── Time display ──────────────────────────────────────────────────────
   const [time, setTime] = useState('');
+  const isMac = useSyncExternalStore(
+    () => () => {},
+    () => navigator.platform?.includes('Mac') ?? false,
+    () => false,
+  );
   useEffect(() => {
     const update = () => {
       const now = new Date();
@@ -171,7 +176,7 @@ export default function Home() {
               <Search className="h-3.5 w-3.5" />
               搜索...
               <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                ⌘K
+                {isMac ? '⌘K' : 'Ctrl+K'}
               </kbd>
             </Button>
 

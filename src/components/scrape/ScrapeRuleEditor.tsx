@@ -301,11 +301,12 @@ function PaginationField({ label = '分页配置', value, onChange, errors }: Pa
 
 interface ScrapeRuleEditorProps {
   ruleId: string | null;
+  initialAiRule?: GeneratedRule | null;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEditorProps) {
+export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }: ScrapeRuleEditorProps) {
   const {
     register,
     handleSubmit,
@@ -386,6 +387,8 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
   // Visual Selector state
   const [visualSelectorOpen, setVisualSelectorOpen] = useState(false);
   const [visualSelectorField, setVisualSelectorField] = useState<string>('');
+  const visualSelectorFieldRef = useRef(visualSelectorField);
+  visualSelectorFieldRef.current = visualSelectorField;
 
   // Apply AI-generated rule to form
   const handleApplyAiRule = useCallback((rule: GeneratedRule) => {
@@ -432,6 +435,13 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
     toast.success('AI规则已应用到编辑器');
   }, [setValue]);
 
+  // Apply initial AI rule when passed from parent (list-level AI assistant)
+  useEffect(() => {
+    if (initialAiRule) {
+      handleApplyAiRule(initialAiRule);
+    }
+  }, [initialAiRule, handleApplyAiRule]);
+
   // Open visual selector for a specific field
   const openVisualSelector = useCallback((fieldName: string, currentUrl?: string) => {
     setVisualSelectorField(fieldName);
@@ -440,11 +450,12 @@ export function ScrapeRuleEditor({ ruleId, onSuccess, onCancel }: ScrapeRuleEdit
 
   const handleVisualSelectorGenerated = useCallback((selector: { type: 'css' | 'xpath' | 'regex'; value: string }) => {
     setVisualSelectorOpen(false);
-    if (visualSelectorField) {
-      setSelector(visualSelectorField, selector);
-      toast.success(`选择器已应用到 ${visualSelectorField}`);
+    const field = visualSelectorFieldRef.current;
+    if (field) {
+      setSelector(field, selector);
+      toast.success(`选择器已应用到 ${field}`);
     }
-  }, [visualSelectorField, setSelector]);
+  }, [setSelector]);
 
   // Load existing rule
   useEffect(() => {
@@ -1642,15 +1653,13 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
     setIsCreating(false);
   };
 
+  const [pendingAiRule, setPendingAiRule] = useState<GeneratedRule | null>(null);
+
   const handleAiApplyAndCreate = (rule: GeneratedRule) => {
     // When applying from the list-level AI assistant, create a new rule
     setAiAssistantOpen(false);
     setIsCreating(true);
-    // The rule will be applied when the editor mounts - store it temporarily
-    setTimeout(() => {
-      // Trigger the editor's apply function via a custom event
-      window.dispatchEvent(new CustomEvent('apply-ai-rule', { detail: rule }));
-    }, 100);
+    setPendingAiRule(rule);
   };
 
   const ENGINE_COLORS: Record<string, string> = {
@@ -1684,8 +1693,9 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
           </div>
           <ScrapeRuleEditor
             ruleId={editingRule?.id || null}
-            onSuccess={handleSuccess}
-            onCancel={handleCancel}
+            initialAiRule={pendingAiRule}
+            onSuccess={() => { handleSuccess(); setPendingAiRule(null); }}
+            onCancel={() => { handleCancel(); setPendingAiRule(null); }}
           />
         </div>
       ) : (

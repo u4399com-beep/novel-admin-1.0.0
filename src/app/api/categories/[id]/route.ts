@@ -93,9 +93,18 @@ export const DELETE = withAuth(async function DELETE(
   try {
     const { id } = await params;
 
-    const existing = await db.category.findUnique({ where: { id } });
+    const existing = await db.category.findUnique({
+      where: { id },
+      include: { _count: { select: { novels: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });
+    }
+    if (existing._count.novels > 0) {
+      return NextResponse.json(
+        { error: `无法删除：有 ${existing._count.novels} 本小说正在使用此分类` },
+        { status: 409 }
+      );
     }
 
     await db.category.delete({ where: { id } });

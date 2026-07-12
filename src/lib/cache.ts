@@ -1,7 +1,6 @@
 type CacheEntry<T> = {
   data: T;
   expiresAt: number;
-  sizeEstimate: number;
 };
 
 const cache = new Map<string, CacheEntry<unknown>>();
@@ -40,7 +39,6 @@ startCleanupTimer();
 
 /**
  * Single-flight cache: deduplicates concurrent compute calls for the same key.
- * Use this for all new code instead of getCached/setCache.
  */
 export async function getOrCompute<T>(
   key: string,
@@ -79,8 +77,7 @@ export async function getOrCompute<T>(
   return promise;
 }
 
-// Keep getCached/setCache for backward compatibility
-export const getCached = <T>(key: string): T | null => {
+function getCached<T>(key: string): T | null {
   const entry = cache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) {
@@ -88,9 +85,9 @@ export const getCached = <T>(key: string): T | null => {
     return null;
   }
   return entry.data as T;
-};
+}
 
-export function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
+function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
   // Don't cache values that exceed the size limit
   const sizeEstimate = JSON.stringify(data).length;
   if (sizeEstimate > MAX_VALUE_SIZE) {
@@ -100,7 +97,7 @@ export function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): vo
   if (!cache.has(key) && cache.size >= MAX_ENTRIES) {
     return;
   }
-  cache.set(key, { data, expiresAt: Date.now() + ttl, sizeEstimate });
+  cache.set(key, { data, expiresAt: Date.now() + ttl });
 }
 
 export function invalidateCache(key?: string): void {

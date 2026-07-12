@@ -297,6 +297,14 @@ export function startServer(port: number = 3099) {
             );
           }
 
+          // Prevent duplicate task execution (same taskId)
+          if (activeTasks.has(taskId)) {
+            return Response.json(
+              { error: "该任务已在执行中，请勿重复提交" },
+              { status: 409, headers: jsonHeaders }
+            );
+          }
+
           activeTaskCount++;
           // Run task asynchronously
           activeTasks.add(taskId);

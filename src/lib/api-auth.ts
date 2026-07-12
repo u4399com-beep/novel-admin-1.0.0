@@ -174,8 +174,8 @@ export function withAuth(handler: ApiHandler): ApiHandler {
         );
       }
       // Service token authenticated — also rate limit service calls
-      const serviceIp = getClientIp(request);
-      const serviceRl = rateLimit(serviceIp);
+      // Use separate bucket namespace for service tokens to avoid starving user requests
+      const serviceRl = rateLimit(`svc:${getClientIp(request)}`);
       if (!serviceRl.allowed) {
         return NextResponse.json(
           { error: '请求过于频繁，请稍后再试' },

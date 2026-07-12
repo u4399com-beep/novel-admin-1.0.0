@@ -84,9 +84,18 @@ export const DELETE = withAuth(async function DELETE(
   try {
     const { id } = await params;
 
-    const existing = await db.tag.findUnique({ where: { id } });
+    const existing = await db.tag.findUnique({
+      where: { id },
+      include: { _count: { select: { novels: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ error: "标签不存在" }, { status: 404 });
+    }
+    if (existing._count.novels > 0) {
+      return NextResponse.json(
+        { error: `无法删除：有 ${existing._count.novels} 本小说正在使用此标签` },
+        { status: 409 }
+      );
     }
 
     await db.tag.delete({ where: { id } });

@@ -159,7 +159,7 @@ export const PATCH = withAuth(async function PATCH(
     }
 
     // Batch update in a single transaction
-    await db.$transaction(
+    const results = await db.$transaction(
       orders.map((item) =>
         db.chapter.updateMany({
           where: { id: item.id, novelId },
@@ -168,9 +168,11 @@ export const PATCH = withAuth(async function PATCH(
       )
     );
 
+    const actualUpdated = results.reduce((sum, r) => sum + r.count, 0);
+
     invalidateCache("dashboard:stats");
 
-    return NextResponse.json({ success: true, updated: orders.length });
+    return NextResponse.json({ success: true, updated: actualUpdated });
   } catch (error) {
     console.error("Batch reorder error:", error);
     return NextResponse.json({ error: "批量排序更新失败" }, { status: 500 });
