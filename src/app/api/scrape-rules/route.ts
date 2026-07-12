@@ -167,7 +167,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       data: {
         name,
         description: sanitizeField(body.description, 2000) || null,
-        enabled: body.enabled ?? true,
+        enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
 
         // 列表页配置
         listUrl: sanitizeField(body.listUrl, 2000) || null,

@@ -5,12 +5,13 @@ type CacheEntry<T> = {
 };
 
 const cache = new Map<string, CacheEntry<unknown>>();
-const inflight = new Map<string, Promise<unknown>>();
+const inflight = new Map<string, { promise: Promise<unknown>; expiresAt: number; gen: number }>();
 
 const DEFAULT_TTL = 30 * 1000; // 30 seconds
 const MAX_ENTRIES = 500;
 const MAX_VALUE_SIZE = 512000; // 500KB
 const CLEANUP_INTERVAL = 60 * 1000; // 1 minute
+const INFLIGHT_TIMEOUT = 60 * 1000; // 1 minute max wait for inflight promises
 
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -49,18 +50,32 @@ export async function getOrCompute<T>(
   const cached = getCached<T>(key);
   if (cached) return cached;
 
-  if (inflight.has(key)) return inflight.get(key) as Promise<T>;
+  const inflightEntry = inflight.get(key);
+  if (inflightEntry && Date.now() < inflightEntry.expiresAt) {
+    // Race with timeout: if the inflight promise hangs, reject after remaining time
+    const remaining = inflightEntry.expiresAt - Date.now();
+    let timeoutId: ReturnType<typeof setTimeout>;
+    return Promise.race([
+      inflightEntry.promise as Promise<T>,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Cache inflight timeout')), remaining);
+      }),
+    ]).finally(() => clearTimeout(timeoutId));
+  }
+  // Stale inflight entry, remove it
+  if (inflightEntry) inflight.delete(key);
 
+  const gen = Date.now();
   const promise = computeFn().then(data => {
+    if (inflight.get(key)?.gen === gen) inflight.delete(key);
     setCache(key, data, ttl);
-    inflight.delete(key);
     return data;
   }).catch(e => {
-    inflight.delete(key);
+    if (inflight.get(key)?.gen === gen) inflight.delete(key);
     throw e;
   });
 
-  inflight.set(key, promise);
+  inflight.set(key, { promise, expiresAt: Date.now() + INFLIGHT_TIMEOUT, gen });
   return promise;
 }
 

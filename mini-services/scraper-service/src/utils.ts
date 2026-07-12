@@ -127,7 +127,7 @@ export function isSafeTargetUrl(targetUrl: string): boolean {
   try {
     const parsed = new URL(targetUrl);
     if (!["http:", "https:"].includes(parsed.protocol)) return false;
-    const hostname = parsed.hostname.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
 
     // Block private/reserved IPs and localhost
     if (
@@ -156,13 +156,17 @@ export function isSafeTargetUrl(targetUrl: string): boolean {
     // Block IPv6 loopback / mapped variants
     if (hostname.startsWith("::ffff:") || hostname.startsWith("[::ffff:")) return false;
 
-    // Block IPv6 private/reserved ranges
-    if (hostname.startsWith("fd")) return false;           // IPv6 ULA (Unique Local Address)
-    if (hostname.startsWith("fe80:")) return false;       // IPv6 link-local
-    if (hostname.startsWith("ff")) return false;           // IPv6 multicast
+    // Block IPv6 private/reserved ranges (only when hostname contains ':', i.e., IPv6)
+    if (hostname.includes(':')) {
+      if (hostname === '::1' || hostname === '::') return false;
+      if (hostname.startsWith('::ffff:')) return false;
+      if (hostname.startsWith('fe80:')) return false;       // IPv6 link-local
+      if (/^f[cd]/i.test(hostname)) return false;           // IPv6 ULA (fc00::/7)
+      if (hostname.startsWith('ff')) return false;           // IPv6 multicast
+    }
 
-    // Block IPv4 multicast
-    if (hostname.startsWith("224.")) return false;
+    // Block IPv4 multicast and reserved range (224.0.0.0/4 = 224-255)
+    if (/^(2[2-5]\d)\./.test(hostname)) return false;
 
     // Block DNS tunneling services
     const DNS_TUNNEL_SUFFIXES = ['.nip.io', '.sslip.io', '.dns.army', '.dnsdojo.net', '.xip.io', '.localtest.me', '.vcap.me', '.lvh.me', '.fuf.me', '.encr.app'];

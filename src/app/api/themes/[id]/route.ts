@@ -96,10 +96,10 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(theme);
   } catch (error: unknown) {
     console.error("Update theme error:", error);
-    const msg = (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002")
-      ? "主题名称或标识符已存在"
-      : "更新主题失败";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
+      return NextResponse.json({ error: "主题名称或标识符已存在" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "更新主题失败" }, { status: 500 });
   }
 });
 

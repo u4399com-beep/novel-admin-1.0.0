@@ -57,9 +57,14 @@ function authenticateRequest(req: Request): boolean {
     const expected = `Bearer ${SERVICE_TOKEN}`;
     const aBuf = Buffer.from(auth, "utf-8");
     const bBuf = Buffer.from(expected, "utf-8");
-    if (aBuf.length === bBuf.length) {
-      try { if (timingSafeEqual(aBuf, bBuf)) return true; } catch {}
-    }
+    try {
+      if (aBuf.length === bBuf.length) {
+        if (timingSafeEqual(aBuf, bBuf)) return true;
+      } else {
+        // Dummy comparison to maintain constant time on length mismatch
+        timingSafeEqual(aBuf, aBuf);
+      }
+    } catch {}
   }
 
   // Reject if no token configured (force security)
@@ -104,16 +109,13 @@ export function startServer(port: number = 3099) {
       // CORS - restrict to frontend origin only
       const allowedOrigins = [process.env.ALLOWED_ORIGIN || "http://localhost:3000"];
       const requestOrigin = req.headers.get("origin") || "";
-      // Only set CORS headers if origin is in whitelist (prevent cross-origin attacks)
       const corsHeaders: Record<string, string> = {};
       if (allowedOrigins.includes(requestOrigin)) {
         corsHeaders["Access-Control-Allow-Origin"] = requestOrigin;
+        corsHeaders["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+        corsHeaders["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+        corsHeaders["Access-Control-Max-Age"] = "86400";
       }
-      Object.assign(corsHeaders, {
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Max-Age": "86400",
-      });
 
       if (method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeaders });
@@ -123,10 +125,6 @@ export function startServer(port: number = 3099) {
       if (path === "/health" && method === "GET") {
         return Response.json({
           status: "ok",
-          service: "scraper-service",
-          port: 3099,
-          version: "3.0.0",
-          engines: getEngineNames(),
           timestamp: new Date().toISOString(),
         });
       }

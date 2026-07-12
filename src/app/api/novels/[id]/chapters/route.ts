@@ -83,7 +83,7 @@ export const POST = withAuth(async function POST(
       // Use explicit sortOrder if provided, otherwise auto-calculate
       let sortOrder: number;
       if (explicitSortOrder !== undefined) {
-        sortOrder = Math.floor(Number(explicitSortOrder)) || 0;
+        sortOrder = Math.max(0, Math.floor(Number(explicitSortOrder)) || 0);
       } else {
         const maxResult = await tx.$queryRaw<Array<{ max_order: number | null }>>`
           SELECT COALESCE(MAX("sortOrder"), 0) as max_order FROM "Chapter" WHERE "novelId" = ${novelId} FOR UPDATE

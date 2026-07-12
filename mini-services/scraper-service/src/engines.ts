@@ -196,13 +196,13 @@ async function getPlaywrightBrowser(): Promise<import("playwright").Browser> {
     console.log("[Playwright] Browser launched successfully");
 
     // Handle browser close
-    playwrightBrowser.on("disconnected", () => {
+    browser.on("disconnected", () => {
       console.log("[Playwright] Browser disconnected");
       playwrightBrowser = null;
       playwrightLaunchPromise = null;
     });
 
-    return playwrightBrowser;
+    return browser;
   })();
 
   return await playwrightLaunchPromise;

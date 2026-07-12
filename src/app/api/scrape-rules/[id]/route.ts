@@ -174,7 +174,7 @@ export const PUT = withAuth(async function PUT(
       data: {
         ...(body.name !== undefined && { name: sanitizeField(body.name, 200) }),
         ...(body.description !== undefined && { description: sanitizeField(body.description, 2000) || null }),
-        ...(body.enabled !== undefined && { enabled: body.enabled }),
+        ...(body.enabled !== undefined && { enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined }),
 
         // 列表页配置
         ...(body.listUrl !== undefined && { listUrl: sanitizeField(body.listUrl, 2000) || null }),

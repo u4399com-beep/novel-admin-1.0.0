@@ -145,7 +145,16 @@ export function withAuth(handler: ApiHandler): ApiHandler {
     // 1. Request ID (generated early for both auth paths)
     const requestId = crypto.randomUUID();
 
-    // 2. Authentication
+    // 2. Content-Length check for write methods (applies to ALL callers)
+    const method = request.method;
+    if (['POST', 'PUT', 'PATCH'].includes(method)) {
+      const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
+      if (contentLength > 1024 * 1024) { // 1MB
+        return NextResponse.json({ error: '请求体过大，最大允许1MB' }, { status: 413 });
+      }
+    }
+
+    // 3. Authentication
     // Accept either NextAuth JWT session token or service Bearer token
     const authToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     if (!authToken) {
@@ -180,15 +189,6 @@ export function withAuth(handler: ApiHandler): ApiHandler {
           { error: '服务器内部错误' },
           { status: 500, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(serviceRl.remaining) } }
         );
-      }
-    }
-
-    // 3. Content-Length check for write methods
-    const method = request.method;
-    if (['POST', 'PUT', 'PATCH'].includes(method)) {
-      const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
-      if (contentLength > 1024 * 1024) { // 1MB
-        return NextResponse.json({ error: '请求体过大，最大允许1MB' }, { status: 413 });
       }
     }
 

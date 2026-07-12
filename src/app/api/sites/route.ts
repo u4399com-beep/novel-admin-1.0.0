@@ -128,9 +128,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(site, { status: 201 });
   } catch (error: unknown) {
     console.error("Create site error:", error);
-    const msg = (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002")
-      ? "站点域名已存在"
-      : "创建站点失败";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
+      return NextResponse.json({ error: "站点域名已存在" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "创建站点失败" }, { status: 500 });
   }
 });

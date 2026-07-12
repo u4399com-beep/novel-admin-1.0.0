@@ -83,7 +83,7 @@ export const PUT = withAuth(async function PUT(
         const validStatuses = ["pending", "running", "completed", "failed", "cancelled"];
         // Valid state transitions to prevent invalid status changes
         const validTransitions: Record<string, string[]> = {
-          pending: ["running", "cancelled"],
+          pending: ["running", "cancelled", "failed"],
           running: ["completed", "failed", "cancelled"],
           completed: [],
           failed: ["pending", "running"],  // allow retry

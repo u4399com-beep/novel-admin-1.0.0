@@ -234,6 +234,7 @@ export async function executeTask(taskId: string) {
   });
 
   await addTaskLog(taskId, "info", `开始执行采集任务: ${rule.name} [引擎: ${engineType}]`);
+  ensureLogFlusher();
 
   // Overall task timeout (1 hour max)
   const TASK_TIMEOUT_MS = 60 * 60 * 1000;
@@ -242,23 +243,41 @@ export async function executeTask(taskId: string) {
     taskTimeoutId = setTimeout(() => reject(new Error(`任务执行超时（${TASK_TIMEOUT_MS / 1000 / 60}分钟）`)), TASK_TIMEOUT_MS);
   });
 
+  const taskCtx: TaskContext = { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode };
+
   try {
     await Promise.race([
-      executeTaskBody(taskId, task, rule, abortController),
+      executeTaskBody(taskId, task, rule, abortController, taskCtx),
       taskTimeoutPromise,
     ]);
   } finally {
     clearTimeout(taskTimeoutId);
-    // Clean up throttle entry to prevent memory leak
+    // Clean up throttle entry and log buffer to prevent memory leak
     progressThrottle.delete(taskId);
+    logBuffer.delete(taskId);
+    await flushTaskLogs(taskId).catch(() => {});
   }
+}
+
+interface TaskContext {
+  listSelector: ReturnType<typeof parseSelectorField>;
+  listPagination: Pagination | undefined;
+  antiCrawlConfig: AntiCrawl;
+  cleanConfig: CleanRequest["config"];
+  engineType: EngineType;
+  threadCount: number;
+  isIncremental: boolean;
+  dedupMode: string;
 }
 
 async function executeTaskBody(
   taskId: string,
   task: ScrapeTask,
-  rule: ScrapeRule
+  rule: ScrapeRule,
+  _abortController: AbortController,
+  ctx: TaskContext
 ): Promise<void> {
+  const { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode } = ctx;
 
   // 2. Scrape list page
   if (!rule.listUrl || !listSelector) {
@@ -579,8 +598,9 @@ async function executeTaskBody(
             "GET",
             `/api/novels/${book.id}/chapters`
           );
-          if (existingStatus === 200 && Array.isArray(existingData)) {
-            for (const ch of existingData as Array<{ id: string; sourceUrl?: string; title: string }>) {
+          if (existingStatus === 200 && existingData) {
+            const chapterList = (existingData as { chapters?: Array<{ id: string; sourceUrl?: string; title: string }> }).chapters || [];
+            for (const ch of chapterList) {
               if (ch.sourceUrl) existingChapters.set(ch.sourceUrl, ch.id);
               existingChapters.set(`title:${ch.title}`, ch.id);
             }

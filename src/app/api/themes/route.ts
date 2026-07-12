@@ -81,9 +81,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(theme, { status: 201 });
   } catch (error: unknown) {
     console.error("Create theme error:", error);
-    const msg = (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002")
-      ? "主题名称或标识符已存在"
-      : "创建主题失败";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
+      return NextResponse.json({ error: "主题名称或标识符已存在" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "创建主题失败" }, { status: 500 });
   }
 });

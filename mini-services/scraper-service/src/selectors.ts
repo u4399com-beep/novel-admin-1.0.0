@@ -15,44 +15,36 @@ import type { Selector } from "./types";
  *   2. Text length truncation (500K char limit)
  *   3. V8 engine's built-in regex execution limit as runtime backstop
  */
-function safeRegexExec(pattern: string, flags: string, text: string): RegExpExecArray | null {
-  // Reject obviously dangerous patterns that can cause catastrophic backtracking
-  // Block: nested quantifiers, overlapping alternations with quantifiers
-  const dangerousPatterns = [
+const DANGEROUS_REGEX_PATTERNS = [
     /\(\.[\*\+]\)\{/,          // (.)+{ or (.*){ etc
     /\([^)]*\{[\d,]+\}[^)]*\)\{/,  // nested groups with quantifiers
     /\(\[[^\]]*\]\+?\)\{/,    // ([...]+){
     /(\.\+|\.\*)\1/,          // repeated greedy quantifiers on same char
+    /\([^)]*\+[^)]*\)\+/,       // (x+)+
+    /\([^)]*\*[^)]*\)\*/,       // (x*)*
+    /(\+|\*)\1/,                // ++ or **
   ];
-  for (const dp of dangerousPatterns) {
+
+function safeRegexExec(pattern: string, flags: string, text: string): RegExpExecArray | null {
+  for (const dp of DANGEROUS_REGEX_PATTERNS) {
     if (dp.test(pattern)) {
       console.warn(`[Security] Blocked potentially dangerous regex: ${pattern.substring(0, 100)}`);
       return null;
     }
   }
 
-  // For very long text, limit the search scope to prevent CPU exhaustion
   const MAX_TEXT_LENGTH = 500000;
   const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
 
   try {
-    const regex = new RegExp(pattern, flags);
-    const result = regex.exec(searchIn);
-    return result;
+    return searchIn.match(new RegExp(pattern, flags));
   } catch {
     return null;
   }
 }
 
 function safeRegexMatch(pattern: string, flags: string, text: string): RegExpMatchArray | null {
-  // Same safety checks as safeRegexExec
-  const dangerousPatterns = [
-    /\(\.[\*\+]\)\{/,
-    /\([^)]*\{[\d,]+\}[^)]*\)\{/,
-    /\(\[[^\]]*\]\+?\)\{/,
-    /(\.\+|\.\*)\1/,
-  ];
-  for (const dp of dangerousPatterns) {
+  for (const dp of DANGEROUS_REGEX_PATTERNS) {
     if (dp.test(pattern)) {
       console.warn(`[Security] Blocked potentially dangerous regex: ${pattern.substring(0, 100)}`);
       return null;

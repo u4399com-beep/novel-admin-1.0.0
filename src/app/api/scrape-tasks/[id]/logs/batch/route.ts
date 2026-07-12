@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withAuth } from "@/lib/api-auth";
-import { sanitizeField } from "@/lib/api-utils";
+import { sanitizeField, safeJson } from "@/lib/api-utils";
 
 const MAX_BATCH_SIZE = 100;
 const MAX_MESSAGE_LENGTH = 500;
@@ -16,11 +16,7 @@ export const POST = withAuth(async function POST(
 
   let body: { logs?: Array<{ level: string; message: string; url?: string; detail?: string }> };
   try {
-    const text = await request.text();
-    if (text.length > 1024 * 1024) {
-      return NextResponse.json({ error: "请求体过大" }, { status: 413 });
-    }
-    body = JSON.parse(text);
+    body = await safeJson(request);
   } catch {
     return NextResponse.json({ error: "无效的JSON" }, { status: 400 });
   }
@@ -30,6 +26,12 @@ export const POST = withAuth(async function POST(
   }
 
   try {
+    // Verify task exists
+    const taskExists = await db.scrapeTask.findUnique({ where: { id }, select: { id: true } });
+    if (!taskExists) {
+      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+    }
+
     const data = body.logs.map((log) => ({
       taskId: id,
       level: VALID_LEVELS.includes(log.level as typeof VALID_LEVELS[number]) ? log.level : "info",

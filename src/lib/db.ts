@@ -7,6 +7,11 @@ if (process.env.NODE_ENV === 'production') {
     console.error('[FATAL] NEXTAUTH_SECRET is not properly configured for production');
     process.exit(1);
   }
+  const serviceToken = process.env.SCRAPER_SERVICE_TOKEN || '';
+  if (serviceToken.length < 32 || serviceToken.includes('change-this')) {
+    console.error('[FATAL] SCRAPER_SERVICE_TOKEN is not properly configured for production');
+    process.exit(1);
+  }
 }
 
 const globalForPrisma = globalThis as unknown as {
@@ -27,7 +32,7 @@ function createPrismaClient(): PrismaClient {
   if (isPostgres) {
     const url = new URL(process.env.DATABASE_URL!);
     if (!url.searchParams.has('connection_limit')) {
-      url.searchParams.set('connection_limit', '10');
+      url.searchParams.set('connection_limit', '20');
     }
     if (!url.searchParams.has('pool_timeout')) {
       url.searchParams.set('pool_timeout', '30');
