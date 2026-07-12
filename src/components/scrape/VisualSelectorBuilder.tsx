@@ -375,10 +375,32 @@ export function VisualSelectorBuilder({
         setMatches(results);
         toast.success(`找到 ${result.snapshotLength} 个匹配`);
       } else if (selectorType === 'regex') {
-        // Regex matching against text content
+        // Regex matching against text content — with ReDoS protection
+        const RE_DANGEROUS_PATTERNS = [
+          /\((?:\([^)]*\)[+*]?\s*)+\+/,
+          /(\.\+|\.\*)\1/,
+          /\[[^\]]*\]\{(\d+),\1\}/,
+          /(\+[+*]|\*[\+*])/,
+          /\(\?[=!:]\([^)]*\)[+*]/,
+        ];
+        for (const dangerousRe of RE_DANGEROUS_PATTERNS) {
+          if (dangerousRe.test(selectorValue)) {
+            toast.error('选择器可能包含危险正则模式，已拒绝执行');
+            setMatches([]);
+            return;
+          }
+        }
+        // Limit input text to prevent CPU exhaustion
+        const allText = (doc.body?.textContent || '').slice(0, 100_000);
         const regex = new RegExp(selectorValue, 'gs');
-        const allText = doc.body?.textContent || '';
+        // Set a timeout-based guard — if matching takes >2s, treat as ReDoS
+        const startTime = Date.now();
         const regexMatches = allText.match(regex) || [];
+        if (Date.now() - startTime > 2000) {
+          toast.error('正则执行时间过长，可能存在回溯爆炸风险');
+          setMatches([]);
+          return;
+        }
         const results: SelectorMatch[] = regexMatches.slice(0, 100).map((m, i) => ({
           index: i,
           tag: 'text',

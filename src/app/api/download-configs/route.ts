@@ -73,7 +73,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: `站点信息内容不能超过${MAX_CONTENT_LENGTH}个字符` }, { status: 400 });
     }
     if (fileNamePattern && (fileNamePattern.includes('..') || fileNamePattern.includes('/') || fileNamePattern.includes('\\'))) {
-      return NextResponse.json({ error: "文件名模式不能包含路径分隔符或..", status: 400 });
+      return NextResponse.json({ error: "文件名模式不能包含路径分隔符或.." }, { status: 400 });
     }
     if (fileNamePattern && typeof fileNamePattern === "string" && fileNamePattern.trim().length > MAX_PATTERN_LENGTH) {
       return NextResponse.json({ error: `文件名模式不能超过${MAX_PATTERN_LENGTH}个字符` }, { status: 400 });

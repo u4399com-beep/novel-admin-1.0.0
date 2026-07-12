@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
+import { isSafeUrl } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -177,7 +178,13 @@ export const PUT = withAuth(async function PUT(
         ...(body.enabled !== undefined && { enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined }),
 
         // 列表页配置
-        ...(body.listUrl !== undefined && { listUrl: sanitizeField(body.listUrl, 2000) || null }),
+        ...(body.listUrl !== undefined && {
+          listUrl: (() => {
+            const val = sanitizeField(body.listUrl, 2000) || null;
+            if (val && !isSafeUrl(val)) return undefined;
+            return val;
+          })(),
+        }),
         ...(body.listSelector !== undefined && {
           listSelector: body.listSelector ? JSON.stringify(body.listSelector) : null,
         }),
@@ -195,7 +202,13 @@ export const PUT = withAuth(async function PUT(
         ...(body.bookStatusSelector !== undefined && { bookStatusSelector: sanitizeField(body.bookStatusSelector, 500) || null }),
 
         // 章节目录页配置
-        ...(body.chapterListUrl !== undefined && { chapterListUrl: sanitizeField(body.chapterListUrl, 2000) || null }),
+        ...(body.chapterListUrl !== undefined && {
+          chapterListUrl: (() => {
+            const val = sanitizeField(body.chapterListUrl, 2000) || null;
+            if (val && !isSafeUrl(val)) return undefined;
+            return val;
+          })(),
+        }),
         ...(body.chapterListSelector !== undefined && {
           chapterListSelector: body.chapterListSelector ? JSON.stringify(body.chapterListSelector) : null,
         }),

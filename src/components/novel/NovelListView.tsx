@@ -59,6 +59,7 @@ export default function NovelListView() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -100,8 +101,9 @@ export default function NovelListView() {
       setNovels(data.novels);
       setTotal(data.total);
       setTotalPages(data.totalPages);
-    } catch {
+    } catch (err) {
       setNovels([]);
+      setError(err instanceof Error ? err.message : '获取小说列表失败');
     } finally {
       setLoading(false);
     }

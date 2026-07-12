@@ -86,8 +86,13 @@ export const PUT = withAuth(async function PUT(
     if (siteInfoContent !== undefined && typeof siteInfoContent === "string" && siteInfoContent.trim().length > MAX_CONTENT_LENGTH) {
       return NextResponse.json({ error: `站点信息内容不能超过${MAX_CONTENT_LENGTH}个字符` }, { status: 400 });
     }
-    if (fileNamePattern !== undefined && typeof fileNamePattern === "string" && fileNamePattern.trim().length > MAX_PATTERN_LENGTH) {
-      return NextResponse.json({ error: `文件名模式不能超过${MAX_PATTERN_LENGTH}个字符` }, { status: 400 });
+    if (fileNamePattern !== undefined && typeof fileNamePattern === "string") {
+      if (fileNamePattern.includes('..') || fileNamePattern.includes('/') || fileNamePattern.includes('\\')) {
+        return NextResponse.json({ error: "文件名模式不能包含路径分隔符或.." }, { status: 400 });
+      }
+      if (fileNamePattern.trim().length > MAX_PATTERN_LENGTH) {
+        return NextResponse.json({ error: `文件名模式不能超过${MAX_PATTERN_LENGTH}个字符` }, { status: 400 });
+      }
     }
 
     const parsedInterval = adInterval !== undefined ? Math.min(Math.max(MIN_AD_INTERVAL, Math.floor(Number(adInterval) || 50)), MAX_AD_INTERVAL) : undefined;

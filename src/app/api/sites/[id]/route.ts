@@ -82,6 +82,10 @@ export const PUT = withAuth(async function PUT(
       if (!sanitizedDomain) {
         return NextResponse.json({ error: "站点域名不能为空" }, { status: 400 });
       }
+      const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+      if (!DOMAIN_RE.test(sanitizedDomain)) {
+        return NextResponse.json({ error: "站点域名格式不合法" }, { status: 400 });
+      }
     }
     if (name !== undefined) {
       const sanitizedName = sanitizeField(name, MAX_NAME_LENGTH);
