@@ -1,7 +1,11 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
-import crypto from "crypto";
+import { timingSafeEqual } from "@/lib/api-auth";
+
+if (!process.env.NEXTAUTH_SECRET || process.env.NEXTAUTH_SECRET === 'change-this-to-a-random-string-min-32-chars') {
+  console.warn('[Auth] NEXTAUTH_SECRET is not properly configured. Authentication may not work correctly.');
+}
 
 // Extend NextAuth types to include custom user properties
 declare module "next-auth" {
@@ -21,19 +25,6 @@ declare module "next-auth" {
     id: string;
     name?: string;
   }
-}
-
-/**
- * Timing-safe string comparison to prevent timing attacks.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  const aBuf = Buffer.from(a, "utf-8");
-  const bBuf = Buffer.from(b, "utf-8");
-  if (aBuf.length !== bBuf.length) {
-    crypto.timingSafeEqual(aBuf, aBuf); // dummy comparison
-    return false;
-  }
-  return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
 // ─────────────────────────────────────────────────────────────

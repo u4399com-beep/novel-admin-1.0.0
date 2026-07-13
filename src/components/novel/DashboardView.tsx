@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { safeFormatDate } from '@/lib/format';
 import {
   BarChart,
   Bar,
@@ -67,7 +68,7 @@ export function DashboardView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshDashboard = useAppStore((s) => s.refreshDashboard);
+  const refreshDashboard = useAppStore((s) => s.refreshVersions['dashboard'] ?? 0);
   const selectNovel = useAppStore((s) => s.selectNovel);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const setEditingNovel = useAppStore((s) => s.setEditingNovel);
@@ -162,7 +163,14 @@ export function DashboardView() {
                 </CardContent>
               </Card>
             ))
-          : statCards.map((card) => {
+          : !stats && error ? (
+            <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
+              <p className="text-sm text-destructive">{error}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={fetchDashboard}>
+                重试
+              </Button>
+            </div>
+          ) : statCards.map((card) => {
               const Icon = card.icon;
               const value = stats?.[card.key] ?? 0;
               return (
@@ -275,10 +283,10 @@ export function DashboardView() {
                           </span>
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
-                            {formatDistanceToNow(new Date(novel.updatedAt), {
+                            {safeFormatDate(novel.updatedAt, (d) => formatDistanceToNow(d, {
                               addSuffix: true,
                               locale: zhCN,
-                            })}
+                            }))}
                           </span>
                         </div>
                       </div>

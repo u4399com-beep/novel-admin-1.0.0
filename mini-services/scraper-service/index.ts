@@ -7,6 +7,15 @@
  *   + Request Queue (PostgreSQL persistence) + Auto-retry + Multi-engine support
  */
 
+// Global error handlers for process resilience
+process.on('unhandledRejection', (reason) => {
+  console.error('[Fatal] Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Fatal] Uncaught exception:', err);
+});
+
 import { initEngines, closeAllEngines, getEngineNames } from "./src/engines";
 import { handleScrapeList } from "./src/scrapers";
 import { handleScrapeBook } from "./src/scrapers";
@@ -15,7 +24,7 @@ import { handleScrapeContent } from "./src/scrapers";
 import { handleClean } from "./src/cleaning";
 import { handleDownloadCover } from "./src/scrapers";
 import { handleGenerateRule, handlePreviewPage } from "./src/ai-rule-generator";
-import { executeTask } from "./src/task-engine";
+import { executeTask, recoverStaleTasks } from "./src/task-engine";
 import { getQueueStats, cleanupQueue, requeueFailed, clearTaskQueue } from "./src/queue";
 import { timingSafeEqual } from "node:crypto";
 import type {
@@ -30,6 +39,9 @@ const MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB max request body
 const SCRAPER_RATE_LIMIT = 60; // requests per minute
 const MAX_SCRAPER_RATE_ENTRIES = 10000;
 const MAX_CONCURRENT_TASKS = 3; // global concurrent task limit
+const MAX_JSON_DEPTH = 20;
+const MAX_JSON_KEYS = 200;
+const ALLOWED_ORIGINS = [process.env.ALLOWED_ORIGIN || "http://localhost:3000"];
 let activeTaskCount = 0;
 const scraperRateStore = new Map<string, { count: number; resetAt: number }>();
 
@@ -89,6 +101,18 @@ function checkScraperRateLimit(ip: string): boolean {
   return entry.count <= SCRAPER_RATE_LIMIT;
 }
 
+function validateDepth(value: unknown, depth: number): void {
+  if (depth > MAX_JSON_DEPTH) throw new Error("JSON nested too deep");
+  if (value !== null && typeof value === "object") {
+    if (Array.isArray(value)) value.forEach((item) => validateDepth(item, depth + 1));
+    else {
+      const keys = Object.keys(value as Record<string, unknown>);
+      if (keys.length > MAX_JSON_KEYS) throw new Error("JSON too many keys");
+      for (const k of keys) validateDepth((value as Record<string, unknown>)[k], depth + 1);
+    }
+  }
+}
+
 export function startServer(port: number = 3099) {
   // Warn if no service token configured
   if (!SERVICE_TOKEN) {
@@ -107,10 +131,9 @@ export function startServer(port: number = 3099) {
       const method = req.method;
 
       // CORS - restrict to frontend origin only
-      const allowedOrigins = [process.env.ALLOWED_ORIGIN || "http://localhost:3000"];
       const requestOrigin = req.headers.get("origin") || "";
       const corsHeaders: Record<string, string> = {};
-      if (allowedOrigins.includes(requestOrigin)) {
+      if (ALLOWED_ORIGINS.includes(requestOrigin)) {
         corsHeaders["Access-Control-Allow-Origin"] = requestOrigin;
         corsHeaders["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
         corsHeaders["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
@@ -175,7 +198,9 @@ export function startServer(port: number = 3099) {
       }
 
       // Rate limiting (per client IP)
-      const clientIp = req.headers.get("x-real-ip") || "unknown";
+      // Use x-forwarded-for (last IP) as primary, fall back to x-real-ip
+      const fwd = req.headers.get("x-forwarded-for");
+      const clientIp = fwd ? fwd.split(",").pop()?.trim() || "unknown" : (req.headers.get("x-real-ip") || "unknown");
       if (!checkScraperRateLimit(clientIp)) {
         return Response.json(
           { error: "Rate limit exceeded. Try again later." },
@@ -218,19 +243,6 @@ export function startServer(port: number = 3099) {
           );
         }
         // Depth and key count validation (mirror Next.js safeJson)
-        const MAX_JSON_DEPTH = 20;
-        const MAX_JSON_KEYS = 200;
-        function validateDepth(value: unknown, depth: number): void {
-          if (depth > MAX_JSON_DEPTH) throw new Error("JSON nested too deep");
-          if (value !== null && typeof value === "object") {
-            if (Array.isArray(value)) value.forEach((item) => validateDepth(item, depth + 1));
-            else {
-              const keys = Object.keys(value as Record<string, unknown>);
-              if (keys.length > MAX_JSON_KEYS) throw new Error("JSON too many keys");
-              for (const k of keys) validateDepth((value as Record<string, unknown>)[k], depth + 1);
-            }
-          }
-        }
         try { validateDepth(parsed, 0); } catch {
           return Response.json(
             { error: "JSON validation failed" },
@@ -401,6 +413,13 @@ if (process.env.DEBUG === "true") {
   console.log(`[Config] AgentQL: ${process.env.AGENTQL_API_URL || "not configured"}`);
   console.log(`[Config] CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"}`);
 }
+
+// Recover any stale tasks from previous crashes before starting server
+const recovered = await recoverStaleTasks();
+if (recovered > 0) {
+  console.log(`[Startup] Recovered ${recovered} stale tasks`);
+}
+
 startServer(PORT);
 
 // ==================== Graceful Shutdown ====================

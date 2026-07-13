@@ -71,7 +71,16 @@ export const PUT = withAuth(async function PUT(
       }
     }
     if (body.errorMessage !== undefined) updateData.errorMessage = sanitizeField(body.errorMessage, 2000);
-    if (body.resultUrl !== undefined) updateData.resultUrl = sanitizeField(body.resultUrl, 500);
+    if (body.resultUrl !== undefined) {
+      const val = sanitizeField(body.resultUrl, 500);
+      if (val) {
+        const { isSafeUrl } = await import("@/lib/sanitize");
+        if (!isSafeUrl(val)) {
+          return NextResponse.json({ error: "resultUrl格式不合法" }, { status: 400 });
+        }
+      }
+      updateData.resultUrl = val;
+    }
 
     // Wrap status transition check + update in a transaction to prevent TOCTOU races
     let taskResult: Record<string, unknown> | null = null;
@@ -125,7 +134,7 @@ export const PUT = withAuth(async function PUT(
         const [, from, to] = msg.split(":");
         return NextResponse.json({ error: `不允许从 "${from}" 转换到 "${to}"` }, { status: 400 });
       }
-      if (msg.includes('Record to update not found')) {
+      if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
         return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
       }
       throw error;

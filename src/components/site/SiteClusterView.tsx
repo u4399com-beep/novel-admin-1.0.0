@@ -560,7 +560,7 @@ export default function SiteClusterView() {
   const [editSite, setEditSite] = useState<Site | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [previewSite, setPreviewSite] = useState<Site | null>(null);
-  const refreshSites = useAppStore((s) => s.refreshSites);
+  const refreshSites = useAppStore((s) => s.refreshVersions['sites'] ?? 0);
 
   const fetchSites = useCallback(async () => {
     try {

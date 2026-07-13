@@ -5,61 +5,8 @@
 
 import * as cheerio from "cheerio";
 import type { Selector } from "./types";
-
-// ==================== Regex Safety ====================
-
-/**
- * Safely execute a user-provided regex pattern with ReDoS protection.
- * Prevents Regular Expression Denial of Service attacks via:
- *   1. Static dangerous-pattern detection (nested/overlapping quantifiers)
- *   2. Text length truncation (500K char limit)
- *   3. V8 engine's built-in regex execution limit as runtime backstop
- */
-const DANGEROUS_REGEX_PATTERNS = [
-    /\(\.[\*\+]\)\{/,          // (.)+{ or (.*){ etc
-    /\([^)]*\{[\d,]+\}[^)]*\)\{/,  // nested groups with quantifiers
-    /\(\[[^\]]*\]\+?\)\{/,    // ([...]+){
-    /(\.\+|\.\*)\1/,          // repeated greedy quantifiers on same char
-    /\([^)]*\+[^)]*\)\+/,       // (x+)+
-    /\([^)]*\*[^)]*\)\*/,       // (x*)*
-    /(\+|\*)\1/,                // ++ or **
-  ];
-
-function safeRegexExec(pattern: string, flags: string, text: string): RegExpExecArray | null {
-  for (const dp of DANGEROUS_REGEX_PATTERNS) {
-    if (dp.test(pattern)) {
-      console.warn(`[Security] Blocked potentially dangerous regex: ${pattern.substring(0, 100)}`);
-      return null;
-    }
-  }
-
-  const MAX_TEXT_LENGTH = 500000;
-  const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
-
-  try {
-    return searchIn.match(new RegExp(pattern, flags));
-  } catch {
-    return null;
-  }
-}
-
-function safeRegexMatch(pattern: string, flags: string, text: string): RegExpMatchArray | null {
-  for (const dp of DANGEROUS_REGEX_PATTERNS) {
-    if (dp.test(pattern)) {
-      console.warn(`[Security] Blocked potentially dangerous regex: ${pattern.substring(0, 100)}`);
-      return null;
-    }
-  }
-
-  const MAX_TEXT_LENGTH = 500000;
-  const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
-
-  try {
-    return searchIn.match(new RegExp(pattern, flags));
-  } catch {
-    return null;
-  }
-}
+import { safeRegexMatch } from "./regex-safety";
+import { resolveUrl } from "./utils";
 
 // ==================== XPath to CSS Converter ====================
 
@@ -127,7 +74,7 @@ function xpathToCss(xpath: string): XPathResult {
 
 export function parseSelector(html: string, selector: Selector): string {
   if (selector.type === "regex") {
-    const match = safeRegexMatch(selector.value, "gi", html);
+    const match = safeRegexMatch(html, selector.value, "gi");
     return match?.[0] || "";
   }
 
@@ -174,7 +121,7 @@ export function parseSelector(html: string, selector: Selector): string {
 
 export function parseSelectorMulti(html: string, selector: Selector): string[] {
   if (selector.type === "regex") {
-    return safeRegexMatch(selector.value, "gi", html) || [];
+    return safeRegexMatch(html, selector.value, "gi") || [];
   }
 
   if (selector.type === "xpath") {
@@ -279,7 +226,7 @@ export function extractLinksFromList(
         linkValue = attrName ? (linkEl.attr(attrName) || "") : (linkEl.attr("href") || "");
       }
     } else if (linkSelector.type === "regex") {
-      const match = safeRegexMatch(linkSelector.value, "i", $listEl.html() || "");
+      const match = safeRegexMatch($listEl.html() || "", linkSelector.value, "i");
       linkValue = match?.[1] || match?.[0] || "";
     } else {
       const linkEl = $listEl.find(linkSelector.value);
@@ -301,7 +248,7 @@ export function extractLinksFromList(
         titleValue = titleEl.text().trim();
       }
     } else if (titleSelector.type === "regex") {
-      const match = safeRegexMatch(titleSelector.value, "i", $listEl.html() || "");
+      const match = safeRegexMatch($listEl.html() || "", titleSelector.value, "i");
       titleValue = match?.[1] || match?.[0] || "";
     } else {
       const titleEl = $listEl.find(titleSelector.value);
@@ -323,11 +270,3 @@ export function extractLinksFromList(
   return results;
 }
 
-// Local import to avoid circular dependency
-function resolveUrl(base: string, relative: string): string {
-  try {
-    return new URL(relative, base).href;
-  } catch {
-    return relative;
-  }
-}

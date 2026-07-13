@@ -14,6 +14,7 @@ import {
   validateUrlField,
   validateSavePath,
   ValidationError,
+  buildCloudBrowserConfig,
 } from "@/lib/scrape-rule-validation";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -191,6 +192,20 @@ export const PUT = withAuth(async function PUT(
 
         ...(body.cleanConfig !== undefined && {
           cleanConfig: body.cleanConfig ? JSON.stringify(body.cleanConfig) : null,
+        }),
+
+        ...(body.agentqlQueries !== undefined && {
+          agentqlConfig: body.agentqlQueries
+            ? JSON.stringify(
+                typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
+                  ? body.agentqlQueries
+                  : {},
+                (key, value) => typeof value === 'string' ? value.slice(0, 2000) : value
+              )
+            : null,
+        }),
+        ...(body.cloudBrowserUrl !== undefined && {
+          cloudBrowserConfig: buildCloudBrowserConfig(body.cloudBrowserUrl, body.cloudBrowserProvider),
         }),
       },
       include: { _count: { select: { tasks: true } } },

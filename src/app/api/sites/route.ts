@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 200;
@@ -11,6 +12,7 @@ const MAX_SITE_DESC_LENGTH = 500;
 const MAX_KEYWORDS_LENGTH = 500;
 const MAX_OFFSET = 10000;
 const MAX_JSON_CONFIG_SIZE = 51200; // 50KB
+const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
 
 function validateJsonObject(value: unknown, fieldName: string): string | null {
   if (value === null || value === undefined) return null;
@@ -30,18 +32,21 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = parsePagination(searchParams);
 
-    const [sites, total] = await Promise.all([
-      db.site.findMany({
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: pageSize,
-        include: {
-          theme: true,
-        },
-      }),
-      db.site.count(),
-    ]);
+    const result = await getOrCompute(`sites:list:${page}:${pageSize}`, 30_000, () =>
+      Promise.all([
+        db.site.findMany({
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: pageSize,
+          include: {
+            theme: true,
+          },
+        }),
+        db.site.count(),
+      ])
+    );
 
+    const [sites, total] = result;
     return NextResponse.json({
       sites,
       total,
@@ -83,7 +88,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (!sanitizedDomain) {
       return NextResponse.json({ error: "站点域名不能为空" }, { status: 400 });
     }
-    const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
     if (!DOMAIN_RE.test(sanitizedDomain)) {
       return NextResponse.json({ error: "站点域名格式不合法，必须为有效域名（如 example.com）" }, { status: 400 });
     }
@@ -128,6 +132,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         theme: true,
       },
     });
+
+    invalidateCache("sites:list");
 
     return NextResponse.json(site, { status: 201 });
   } catch (error: unknown) {

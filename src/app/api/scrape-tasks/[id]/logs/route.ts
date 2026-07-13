@@ -34,12 +34,14 @@ export const POST = withAuth(async function POST(
     }
 
     const validLevels = ["info", "warn", "error", "success"];
-    const logLevel = validLevels.includes(level) ? level : "info";
+    if (!validLevels.includes(level)) {
+      return NextResponse.json({ error: `无效的日志级别: ${level}` }, { status: 400 });
+    }
 
     const log = await db.scrapeLog.create({
       data: {
         taskId,
-        level: logLevel,
+        level: level,
         message: sanitizedMessage,
         url: sanitizeField(url, 2000) || null,
         detail: sanitizeField(detail, 10000) || null,

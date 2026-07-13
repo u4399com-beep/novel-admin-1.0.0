@@ -47,7 +47,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     // Validate siteType if provided
     const validSiteTypes = ['novel', 'manga', 'literature'];
-    const safeSiteType = validSiteTypes.includes(siteType) ? siteType : undefined;
+    if (siteType !== undefined && siteType !== null && !validSiteTypes.includes(siteType)) {
+      return NextResponse.json({ error: `无效的站点类型: ${siteType}，可选值: ${validSiteTypes.join(', ')}` }, { status: 400 });
+    }
 
     // Proxy to scraper-service
     const targetUrl = new URL('/ai/generate-rule', SCRAPER_SERVICE_URL);
@@ -65,7 +67,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           url,
-          siteType: safeSiteType,
+          siteType: siteType || undefined,
         }),
       });
 

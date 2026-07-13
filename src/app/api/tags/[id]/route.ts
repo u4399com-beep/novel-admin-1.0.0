@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 50;
@@ -63,6 +64,8 @@ export const PUT = withAuth(async function PUT(
       include: { _count: { select: { novels: true } } },
     });
 
+    invalidateCache("tags:list");
+
     return NextResponse.json(tag);
   } catch (error: unknown) {
     console.error("Update tag error:", error);
@@ -99,6 +102,7 @@ export const DELETE = withAuth(async function DELETE(
     }
 
     await db.tag.delete({ where: { id } });
+    invalidateCache("tags:list");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete tag error:", error);

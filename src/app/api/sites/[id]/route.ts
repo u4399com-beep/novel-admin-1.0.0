@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 200;
@@ -11,6 +12,7 @@ const MAX_SITE_DESC_LENGTH = 500;
 const MAX_KEYWORDS_LENGTH = 500;
 const MAX_OFFSET = 10000;
 const MAX_JSON_CONFIG_SIZE = 51200; // 50KB
+const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
 
 function validateJsonObject(value: unknown, fieldName: string): string | null {
   if (value === null || value === undefined) return null;
@@ -82,7 +84,6 @@ export const PUT = withAuth(async function PUT(
       if (!sanitizedDomain) {
         return NextResponse.json({ error: "站点域名不能为空" }, { status: 400 });
       }
-      const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
       if (!DOMAIN_RE.test(sanitizedDomain)) {
         return NextResponse.json({ error: "站点域名格式不合法" }, { status: 400 });
       }
@@ -140,6 +141,8 @@ export const PUT = withAuth(async function PUT(
       },
     });
 
+    invalidateCache("sites:list");
+
     return NextResponse.json(site);
   } catch (error: unknown) {
     console.error("Update site error:", error);
@@ -162,6 +165,7 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "站点不存在" }, { status: 404 });
     }
     await db.site.delete({ where: { id } });
+    invalidateCache("sites:list");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete site error:", error);

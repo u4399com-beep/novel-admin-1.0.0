@@ -6,7 +6,7 @@ import crypto from 'crypto';
 // Timing-safe string comparison
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function timingSafeEqual(a: string, b: string): boolean {
+export function timingSafeEqual(a: string, b: string): boolean {
   const aBuf = Buffer.from(a, 'utf-8');
   const bBuf = Buffer.from(b, 'utf-8');
   if (aBuf.length !== bBuf.length) {
@@ -167,7 +167,9 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       const bearer = request.headers.get('authorization');
       const serviceSecret = process.env.SCRAPER_SERVICE_TOKEN;
       if (!bearer || !serviceSecret || !timingSafeEqual(bearer, `Bearer ${serviceSecret}`)) {
-        const rl = rateLimit(getClientIp(request));
+        const unauthIp = getClientIp(request);
+        if (!unauthIp) return noIpResponse(requestId);
+        const rl = rateLimit(unauthIp);
         return NextResponse.json(
           { error: '未授权，请先登录' },
           { status: 401, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(rl.remaining) } }
@@ -175,7 +177,8 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       }
       // Service token authenticated — also rate limit service calls
       // Use separate bucket namespace for service tokens to avoid starving user requests
-      const serviceRl = rateLimit(`svc:${getClientIp(request)}`);
+      const serviceIp = getClientIp(request) || 'svc:internal';
+      const serviceRl = rateLimit(`svc:${serviceIp}`);
       if (!serviceRl.allowed) {
         return NextResponse.json(
           { error: '请求过于频繁，请稍后再试' },
@@ -198,6 +201,7 @@ export function withAuth(handler: ApiHandler): ApiHandler {
 
     // 4. Rate limiting (use secure IP detection)
     const ip = getClientIp(request);
+    if (!ip) return noIpResponse(requestId);
     const rl = rateLimit(ip);
     if (!rl.allowed) {
       return NextResponse.json(
@@ -236,16 +240,29 @@ export function withAuth(handler: ApiHandler): ApiHandler {
 // Client IP Helper
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function getClientIp(request: NextRequest): string {
+export function getClientIp(request: NextRequest): string | null {
   // Prioritize X-Real-IP (set by Caddy, cannot be spoofed by client)
-  // X-Forwarded-For can be forged by clients and should not be trusted alone
+  // Security: Caddy gateway ALWAYS sets x-real-ip. A missing header means
+  // the request bypassed the gateway (direct access attempt). Returning null
+  // lets callers reject the request rather than falling back to a shared
+  // 'unknown' bucket, which would either allow unlimited requests from
+  // attackers who strip the header or block all legitimate users in one bucket.
   const realIp = request.headers.get('x-real-ip');
   if (realIp) return realIp.trim();
   // Fallback to rightmost X-Forwarded-For (Caddy appends the real client IP)
   const xff = request.headers.get('x-forwarded-for');
   if (xff) {
     const parts = xff.split(',');
-    return (parts[parts.length - 1]?.trim()) || 'unknown';
+    const candidate = parts[parts.length - 1]?.trim();
+    if (candidate) return candidate;
   }
-  return 'unknown';
+  return null;
+}
+
+/** 400 response for requests with no identifiable client IP (bypassed gateway) */
+function noIpResponse(requestId: string): NextResponse {
+  return NextResponse.json(
+    { error: '无法识别客户端地址' },
+    { status: 400, headers: { 'X-Request-ID': requestId } }
+  );
 }

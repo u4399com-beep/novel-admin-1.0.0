@@ -900,7 +900,7 @@ export default function ThemeManagerView() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editTheme, setEditTheme] = useState<Theme | null>(null);
   const [previewTheme, setPreviewTheme] = useState<{ config: ThemeConfig; name: string } | null>(null);
-  const refreshThemes = useAppStore((s) => s.refreshThemes);
+  const refreshThemes = useAppStore((s) => s.refreshVersions['themes'] ?? 0);
 
   const fetchThemes = useCallback(async () => {
     try {

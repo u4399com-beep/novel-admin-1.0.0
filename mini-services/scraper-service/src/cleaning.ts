@@ -5,6 +5,7 @@
 
 import * as cheerio from "cheerio";
 import type { CleanRequest } from "./types";
+import { safeRegexReplace } from "./regex-safety";
 
 // ==================== Default Ad Patterns ====================
 
@@ -36,45 +37,14 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Safely create and execute a regex from user-provided pattern.
- * Blocks patterns with catastrophic backtracking potential (ReDoS protection).
- */
-function safeRegexReplace(text: string, pattern: string, replacement: string, flags: string): string {
-  // Block dangerous patterns with nested quantifiers
-  const dangerousPatterns = [
-    /\(\.[\*\+]\)\{/,
-    /\([^)]*\{[\d,]+\}[^)]*\)\{/,
-    /\(\[[^\]]*\]\+?\)\{/,
-    /(\.\+|\.\*)\1/,
-    /\([^)]*\+[^)]*\)\+/,       // (x+)+
-    /\([^)]*\*[^)]*\)\*/,       // (x*)*
-    /(\+|\*)\1/,                 // ++ or **
-  ];
-  for (const dp of dangerousPatterns) {
-    if (dp.test(pattern)) {
-      console.warn(`[Cleaning] Blocked dangerous regex pattern: ${pattern.substring(0, 100)}`);
-      return text;
-    }
-  }
-
-  // Limit text size for regex operations
-  const MAX_TEXT_LENGTH = 500000;
-  const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
-
-  try {
-    return searchIn.replace(new RegExp(pattern, flags), replacement);
-  } catch {
-    return text;
-  }
-}
-
 /** Escape special characters for safe embedding in CSS attribute selectors */
 function escapeCssString(str: string): string {
   return str
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
-    .replace(/\]/g, "\\]");
+    .replace(/\]/g, "\\]")
+    .replace(/\[/g, "\\[")
+    .replace(/\(/g, "\\(");
 }
 
 /**
@@ -97,13 +67,29 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
   // Remove script, style, iframe, noscript tags
   $("script, style, iframe, noscript, object, embed, applet").remove();
 
+  // Strip event handler attributes from remaining elements
+  $("*").each((_, el) => {
+    const attribs = Object.keys(el.attribs);
+    for (const attr of attribs) {
+      if (attr.startsWith("on")) {
+        delete el.attribs[attr];
+      }
+      // Sanitize href/src to remove javascript: URIs
+      if ((attr === "href" || attr === "src") && typeof el.attribs[attr] === "string") {
+        if (el.attribs[attr].trim().toLowerCase().startsWith("javascript:")) {
+          delete el.attribs[attr];
+        }
+      }
+    }
+  });
+
   const adPatterns = normalizePatterns(config.adPatterns);
 
   // Remove ad elements if removeAds is true (default)
   if (config.removeAds !== false) {
     const allAdSelectors = [...AD_CSS_SELECTORS];
     if (adPatterns.length > 0) {
-      allAdSelectors.push(...adPatterns.map((p) => `[class*="${escapeCssString(p)}"], [id*="${escapeCssString(p)}"]`));
+      allAdSelectors.push(...adPatterns.map((p) => `[class*="${escapeCssString(p)}"], [id*="${escapeCssString(p)}"]`).filter(s => !s.includes(",") && !s.includes("{") && !s.includes("}")) );
     }
     $(allAdSelectors.join(", ")).remove();
   }

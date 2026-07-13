@@ -13,7 +13,6 @@ import {
   mapNovelStatus, randomDelay, isSafeSavePath,
 } from "./utils";
 import { getEngine, selectEngine } from "./engines";
-import { parseSelector } from "./selectors";
 import { handleClean } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
 import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";
@@ -77,6 +76,17 @@ async function apiCall(
 const progressThrottle = new Map<string, number>();
 const PROGRESS_THROTTLE_MS = 3000;
 
+// Periodic cleanup of progress throttle entries older than 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  const STALE_THRESHOLD = 5 * 60 * 1000;
+  for (const [taskId, timestamp] of progressThrottle.entries()) {
+    if (now - timestamp > STALE_THRESHOLD) {
+      progressThrottle.delete(taskId);
+    }
+  }
+}, 60 * 1000); // Every minute
+
 async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) {
   const now = Date.now();
   const lastUpdate = progressThrottle.get(taskId) || 0;
@@ -115,6 +125,21 @@ async function addTaskLog(
   const buffer = logBuffer.get(taskId)!;
   buffer.push({ level, message: truncatedMsg, url: url || undefined, detail: truncatedDetail });
 
+  // Prevent unbounded log buffer growth across all tasks
+  let totalEntries = 0;
+  for (const entries of logBuffer.values()) {
+    totalEntries += entries.length;
+  }
+  if (totalEntries > 1000) {
+    // Remove oldest entries from the oldest non-active task
+    for (const [key, entries] of logBuffer.entries()) {
+      if (entries.length > 10) {
+        entries.splice(0, entries.length - 10);
+        break;
+      }
+    }
+  }
+
   // If buffer exceeds 50 items, flush immediately to prevent memory buildup
   if (buffer.length >= 50) {
     const logs = buffer.splice(0);
@@ -150,6 +175,11 @@ function ensureLogFlusher() {
         console.error(`[Task] Failed to flush ${batch.length} logs for ${taskId}:`, err);
         // Logs remain in buffer for retry on next flush
       }
+    }
+    // Auto-clear interval when no pending logs remain
+    if (logBuffer.size === 0 && logFlushTimer) {
+      clearInterval(logFlushTimer);
+      logFlushTimer = null;
     }
   }, LOG_FLUSH_INTERVAL_MS);
 }
@@ -241,6 +271,11 @@ export async function executeTask(taskId: string) {
     progress: 0,
   });
 
+  // Heartbeat: update lastHeartbeatAt every 30 seconds to detect stale tasks
+  const heartbeatInterval = setInterval(() => {
+    updateTaskProgress(taskId, { lastHeartbeatAt: new Date().toISOString() } as any).catch(() => {});
+  }, 30000);
+
   await addTaskLog(taskId, "info", `开始执行采集任务: ${rule.name} [引擎: ${engineType}]`);
   ensureLogFlusher();
 
@@ -259,6 +294,7 @@ export async function executeTask(taskId: string) {
       taskTimeoutPromise,
     ]);
   } finally {
+    clearInterval(heartbeatInterval);
     clearTimeout(taskTimeoutId);
     // Flush logs BEFORE cleaning up buffer (flushTaskLogs manages its own cleanup)
     await flushTaskLogs(taskId).catch(() => {});
@@ -475,6 +511,8 @@ async function executeTaskBody(
   }
 
   // Process books with concurrency pool
+  // TODO(M-14): This worker pool pattern (shared queue + N async workers) is duplicated
+  // for chapter processing below. Consider extracting a reusable `createWorkerPool<T>` utility.
   const bookQueue = [...bookUrls];
 
   async function processAllBooks(): Promise<void> {
@@ -761,4 +799,39 @@ async function executeTaskBody(
     engine: engineType,
     queueStats,
   };
+}
+
+/**
+ * On startup, mark any tasks that have been "running" for too long as "failed".
+ * This handles the case where the scraper-service crashed mid-task.
+ */
+export async function recoverStaleTasks(): Promise<number> {
+  try {
+    const { data, status } = await apiCall("GET", "/api/scrape-tasks?status=running");
+    if (status !== 200 || !Array.isArray(data)) return 0;
+
+    const tasks = data as Array<{ id: string; startedAt?: string }>;
+    const now = Date.now();
+    const STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
+    let recovered = 0;
+
+    for (const task of tasks) {
+      if (task.startedAt) {
+        const started = new Date(task.startedAt).getTime();
+        if (now - started > STALE_THRESHOLD_MS) {
+          await apiCall("PUT", `/api/scrape-tasks/${task.id}`, {
+            status: "failed",
+            error: "Task recovered from crash (was running for over 2 hours)",
+          });
+          recovered++;
+          console.log(`[Recovery] Recovered stale task ${task.id}`);
+        }
+      }
+    }
+
+    return recovered;
+  } catch (err) {
+    console.error("[Recovery] Failed to check stale tasks:", err);
+    return 0;
+  }
 }

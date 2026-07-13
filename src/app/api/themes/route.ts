@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const VALID_IDENTIFIER_RE = /^[a-zA-Z0-9_-]+$/;
@@ -12,13 +13,15 @@ const MAX_CONFIG_SIZE = 102400; // 100KB
 // GET /api/themes - List all themes
 export const GET = withAuth(async function GET() {
   try {
-    const themes = await db.theme.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 100,
-      include: {
-        _count: { select: { sites: true } },
-      },
-    });
+    const themes = await getOrCompute("themes:list", 30_000, () =>
+      db.theme.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        include: {
+          _count: { select: { sites: true } },
+        },
+      })
+    );
     return NextResponse.json(themes);
   } catch (error) {
     console.error("List themes error:", error);
@@ -82,6 +85,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         _count: { select: { sites: true } },
       },
     });
+
+    invalidateCache("themes:list");
 
     return NextResponse.json(theme, { status: 201 });
   } catch (error: unknown) {

@@ -51,7 +51,9 @@ export function resolveUrl(base: string, relative: string): string {
 // ==================== Delay ====================
 
 export function randomDelay(min: number, max: number): Promise<void> {
-  const ms = min + Math.random() * (max - min);
+  const safeMin = Math.max(0, min || 0);
+  const safeMax = Math.max(safeMin, max || 0);
+  const ms = safeMin + Math.random() * (safeMax - safeMin);
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -114,66 +116,6 @@ export async function retryWithBackoff<T>(
   throw lastError || new Error("Retry failed");
 }
 
-// ==================== SSRF Protection ====================
-
-export function isSafeTargetUrl(targetUrl: string): boolean {
-  try {
-    const parsed = new URL(targetUrl);
-    if (!["http:", "https:"].includes(parsed.protocol)) return false;
-    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-
-    // Block private/reserved IPs and localhost
-    if (
-      hostname === "localhost" ||
-      hostname === "localhost.localdomain" ||
-      hostname === "127.0.0.1" ||
-      hostname === "0.0.0.0" ||
-      hostname === "::1" ||
-      hostname === "[::1]" ||
-      hostname === "::ffff:127.0.0.1" ||
-      hostname.endsWith(".local") ||
-      hostname.endsWith(".internal") ||
-      hostname.startsWith("10.") ||
-      hostname.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname) ||
-      hostname.startsWith("169.254.") ||
-      hostname.startsWith("127.")
-    ) {
-      return false;
-    }
-
-    // Block octal IP representations
-    if (/^0[0-7]+\./.test(hostname)) return false;
-    // Block hex IP representations (e.g., 0x7f.0.0.1, 0xc0a80001)
-    if (/^0x/i.test(hostname)) return false;
-    // Block decimal IP representations
-    if (/^\d{8,}$/.test(hostname)) return false;
-    // Block IPv6 loopback / mapped variants
-    if (hostname.startsWith("::ffff:") || hostname.startsWith("[::ffff:")) return false;
-
-    // Block IPv6 private/reserved ranges (only when hostname contains ':', i.e., IPv6)
-    if (hostname.includes(':')) {
-      // Strip brackets for IPv6 checks (URL.hostname returns brackets for IPv6)
-      const h = hostname.replace(/^\[|\]$/g, '');
-      if (h === '::1' || h === '::') return false;
-      if (h.startsWith('fe80:')) return false;       // IPv6 link-local
-      if (h.startsWith('fc') || h.startsWith('fd')) return false; // IPv6 ULA (fc00::/7)
-      if (h.startsWith('ff')) return false;           // IPv6 multicast
-    }
-
-    // Block IPv4 multicast and reserved range (224.0.0.0/4 = 224-255)
-    if (/^(22[4-9]|2[3-5]\d|25[0-5])\./.test(hostname)) return false;
-
-    // Block DNS tunneling services
-    const DNS_TUNNEL_SUFFIXES = ['.nip.io', '.sslip.io', '.dns.army', '.dnsdojo.net', '.xip.io', '.localtest.me', '.vcap.me', '.lvh.me', '.fuf.me', '.encr.app'];
-    if (DNS_TUNNEL_SUFFIXES.some(s => hostname.endsWith(s))) return false;
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // ==================== Path Traversal Protection ====================
 
 export function isSafeSavePath(savePath: string): boolean {
@@ -183,6 +125,16 @@ export function isSafeSavePath(savePath: string): boolean {
   const normalized = savePath.replace(/\/+/g, "/");
   const allowedPrefix = "/app/public/covers/";
   if (!normalized.startsWith(allowedPrefix)) return false;
+
+  // Validate filename: only allow alphanumeric, hyphens, underscores, and dots
+  const filename = normalized.split("/").pop() || "";
+  if (!filename || !/^[a-zA-Z0-9_\-]+\.webp$/.test(filename)) {
+    return false;
+  }
+
+  // Validate total path length
+  if (normalized.length > 4096) return false;
+
   return true;
 }
 
@@ -213,9 +165,18 @@ export function buildFetchHeaders(
   }
 
   if (antiCrawl?.cookies && antiCrawl.cookies.length > 0) {
-    headers["Cookie"] = antiCrawl.cookies
-      .map((c) => `${c.name}=${c.value}`)
-      .join("; ");
+    const sanitizedCookies = antiCrawl.cookies
+      .filter((c) => c.name && c.value)
+      .map((c) => {
+        // Strip control characters (CR, LF, tabs) to prevent header injection
+        const safeName = c.name.replace(/[\r\n\t\x00-\x1f]/g, "");
+        const safeValue = c.value.replace(/[\r\n\t\x00-\x1f]/g, "");
+        return `${safeName}=${safeValue}`;
+      })
+      .filter((c) => c.includes("=")); // Ensure valid cookie format
+    if (sanitizedCookies.length > 0) {
+      headers["Cookie"] = sanitizedCookies.join("; ");
+    }
   }
 
   return headers;

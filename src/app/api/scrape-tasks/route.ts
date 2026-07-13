@@ -62,7 +62,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
 
     // Verify the rule exists
-    const rule = await db.scrapeRule.findUnique({ where: { id: ruleId } });
+    const rule = await db.scrapeRule.findUnique({ where: { id: ruleId }, select: { id: true, scrapeMode: true } });
     if (!rule) {
       return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
     }
@@ -81,7 +81,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       },
     });
 
-    // Auto-trigger scraper-service to execute the task (fire-and-forget)
+    // Auto-trigger scraper-service to execute the task
     // Default: autoStart = true unless explicitly set to false
     const shouldAutoStart = autoStart !== false;
     if (shouldAutoStart) {
@@ -94,9 +94,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         },
         body: JSON.stringify({ taskId: task.id }),
         signal: AbortSignal.timeout(5000),
-      }).catch((err) => {
+      }).catch(async (err) => {
         console.error(`[Scrape Task] Failed to auto-trigger task ${task.id}:`, err);
-        // Task remains "pending" — user can retry manually
+        // Update task status to failed so UI shows accurate state
+        await db.scrapeTask.update({
+          where: { id: task.id },
+          data: { status: "failed", errorMessage: `触发采集服务失败: ${err instanceof Error ? err.message : '未知错误'}`, completedAt: new Date() },
+        }).catch(() => {});
       });
     }
 

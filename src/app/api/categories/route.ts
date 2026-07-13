@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
-import { invalidateCache } from "@/lib/cache";
+import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 100;
@@ -11,11 +11,13 @@ const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 // GET /api/categories - List all categories
 export const GET = withAuth(async function GET() {
   try {
-    const categories = await db.category.findMany({
-      orderBy: { sortOrder: "asc" },
-      take: 500,
-      include: { _count: { select: { novels: true } } },
-    });
+    const categories = await getOrCompute("categories:list", 60_000, () =>
+      db.category.findMany({
+        orderBy: { sortOrder: "asc" },
+        take: 500,
+        include: { _count: { select: { novels: true } } },
+      })
+    );
     return NextResponse.json(categories);
   } catch (error) {
     console.error("List categories error:", error);
@@ -58,6 +60,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     });
 
     invalidateCache("dashboard:stats");
+    invalidateCache("categories:list");
 
     return NextResponse.json(category, { status: 201 });
   } catch (error: unknown) {

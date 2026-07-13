@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const VALID_IDENTIFIER_RE = /^[a-zA-Z0-9_-]+$/;
@@ -98,6 +99,8 @@ export const PUT = withAuth(async function PUT(
       },
     });
 
+    invalidateCache("themes:list");
+
     return NextResponse.json(theme);
   } catch (error: unknown) {
     console.error("Update theme error:", error);
@@ -132,6 +135,7 @@ export const DELETE = withAuth(async function DELETE(
       );
     }
     await db.theme.delete({ where: { id } });
+    invalidateCache("themes:list");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete theme error:", error);

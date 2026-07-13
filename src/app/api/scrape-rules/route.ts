@@ -13,6 +13,7 @@ import {
   VALID_ENGINES,
   VALID_STORAGE_MODES,
   VALID_DEDUP_MODES,
+  buildCloudBrowserConfig,
 } from "@/lib/scrape-rule-validation";
 import { sanitizeField } from "@/lib/api-utils";
 
@@ -156,18 +157,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
               (key, value) => typeof value === 'string' ? value.slice(0, 2000) : value
             )
           : null,
-        cloudBrowserConfig: body.cloudBrowserUrl
-          ? (() => {
-              try {
-                const parsed = new URL(body.cloudBrowserUrl);
-                if (!['http:', 'https:'].includes(parsed.protocol)) return null;
-              } catch { return null; }
-              return JSON.stringify({
-                provider: ['browserless', 'steel'].includes(body.cloudBrowserProvider) ? body.cloudBrowserProvider : 'browserless',
-                apiUrl: String(body.cloudBrowserUrl).slice(0, 500),
-              });
-            })()
-          : null,
+        cloudBrowserConfig: buildCloudBrowserConfig(body.cloudBrowserUrl, body.cloudBrowserProvider),
       },
       include: { _count: { select: { tasks: true } } },
     });

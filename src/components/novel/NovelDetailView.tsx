@@ -18,8 +18,10 @@ import {
   X,
   Type,
   Clock,
+  BookX,
   CheckCircle2,
 } from 'lucide-react';
+import { safeFormatDate } from '@/lib/format';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import {
@@ -129,7 +131,7 @@ function SortableChapterRow({
         {(chapter.wordCount ?? 0).toLocaleString()}
       </TableCell>
       <TableCell className="w-40 text-muted-foreground text-sm">
-        {format(new Date(chapter.updatedAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
+        {safeFormatDate(chapter.updatedAt, (d) => format(d, 'yyyy-MM-dd HH:mm', { locale: zhCN }))}
       </TableCell>
       <TableCell className="w-24 text-right">
         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -364,12 +366,11 @@ export default function NovelDetailView() {
     setNovelFormOpen,
     setChapterFormOpen,
     setEditingChapter,
-    triggerRefreshChapters,
-    triggerRefreshNovels,
-    triggerRefreshDashboard,
-    refreshChapters,
-    refreshNovels,
+    triggerRefresh,
+    refreshVersions,
   } = useAppStore();
+  const refreshNovels = refreshVersions['novels'] ?? 0;
+  const refreshChapters = refreshVersions['chapters'] ?? 0;
 
   const [novel, setNovel] = useState<Novel | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -455,8 +456,8 @@ export default function NovelDetailView() {
         throw new Error(data.error || '删除失败');
       }
       toast.success('小说已删除');
-      triggerRefreshNovels();
-      triggerRefreshDashboard();
+      triggerRefresh('novels');
+      triggerRefresh('dashboard');
       setCurrentView('novels');
       selectNovel(null);
     } catch (error) {
@@ -497,8 +498,8 @@ export default function NovelDetailView() {
       if (selectedChapter?.id === deletingChapter.id) {
         setSelectedChapter(null);
       }
-      triggerRefreshChapters();
-      triggerRefreshNovels();
+      triggerRefresh('chapters');
+      triggerRefresh('novels');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '删除章节失败');
     } finally {
@@ -561,7 +562,7 @@ export default function NovelDetailView() {
   };
 
   const handleChapterSaved = () => {
-    triggerRefreshChapters();
+    triggerRefresh('chapters');
     fetchNovel(); // refresh novel stats (word count)
   };
 
@@ -587,7 +588,19 @@ export default function NovelDetailView() {
     );
   }
 
-  if (!novel) return null;
+  if (!novel) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <BookX className="h-12 w-12 text-muted-foreground mx-auto" />
+          <p className="text-muted-foreground">小说未找到或加载失败</p>
+          <Button variant="outline" onClick={() => setCurrentView('novels')}>
+            返回列表
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const statusInfo = NOVEL_STATUS_MAP[novel.status] || NOVEL_STATUS_MAP.ongoing;
   const totalWords = chapters.reduce((sum, ch) => sum + (ch.wordCount ?? 0), 0);
@@ -670,7 +683,7 @@ export default function NovelDetailView() {
                       {novel.category.name}
                     </Badge>
                   )}
-                  {novel.tags.map(({ tag }) => (
+                  {(novel.tags ?? []).map(({ tag }) => (
                     <Badge
                       key={tag.id}
                       variant="secondary"
@@ -711,10 +724,10 @@ export default function NovelDetailView() {
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <Clock className="size-3" />
-                    创建: {format(new Date(novel.createdAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
+                    创建: {safeFormatDate(novel.createdAt, (d) => format(d, 'yyyy-MM-dd HH:mm', { locale: zhCN }))}
                   </div>
                   <div className="flex items-center gap-1">
-                    更新: {format(new Date(novel.updatedAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
+                    更新: {safeFormatDate(novel.updatedAt, (d) => format(d, 'yyyy-MM-dd HH:mm', { locale: zhCN }))}
                   </div>
                 </div>
               </div>

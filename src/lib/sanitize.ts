@@ -16,11 +16,15 @@ export function sanitizeString(input: unknown, maxLength: number = 10000): strin
  * Validate a URL is safe (SSRF protection).
  * Blocks:
  * - Non-http/https protocols (file://, ftp://, data:, javascript:)
- * - Private/internal IP addresses (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
- * - Link-local addresses (169.254.0.0/16, fe80::/10)
- * - Loopback addresses (::1, localhost)
- * - IPv6 mapped IPv4 (::ffff:127.0.0.1)
- * - 0.0.0.0/8
+ * - DNS tunneling services (nip.io, sslip.io, etc.)
+ * - Internal hostnames (localhost, .local, .internal)
+ * - Private IPv4 ranges (0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16)
+ * - IPv4 multicast (224.0.0.0/4)
+ * - IPv6 loopback, link-local, ULA, multicast
+ * - IPv6-mapped IPv4 (::ffff:x.x.x.x)
+ * - Octal/hex/decimal IP representations
+ * - Trailing dot in hostnames (e.g., "localhost.")
+ * - Numeric IP in hostname (pure digits+dots pattern)
  */
 export function isSafeUrl(url: string): boolean {
   try {
@@ -31,10 +35,14 @@ export function isSafeUrl(url: string): boolean {
       return false;
     }
 
-    const hostname = parsed.hostname.toLowerCase();
+    // Strip trailing dot (e.g., "example.com." is valid DNS but can bypass checks)
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
 
     // Block DNS tunneling services (nip.io, sslip.io, etc.)
-    const DNS_TUNNEL_SUFFIXES = ['.nip.io', '.sslip.io', '.dns.army', '.dnsdojo.net', '.xip.io', '.localtest.me', '.vcap.me', '.lvh.me', '.fuf.me', '.encr.app'];
+    const DNS_TUNNEL_SUFFIXES = [
+      '.nip.io', '.sslip.io', '.dns.army', '.dnsdojo.net', '.xip.io',
+      '.localtest.me', '.vcap.me', '.lvh.me', '.fuf.me', '.encr.app',
+    ];
     if (DNS_TUNNEL_SUFFIXES.some(s => hostname.endsWith(s))) {
       return false;
     }
@@ -49,27 +57,24 @@ export function isSafeUrl(url: string): boolean {
       return false;
     }
 
-    // Block IP-based URLs - check for private/reserved ranges
-    // Use URL parsing to handle IPv6 brackets
+    // Block if hostname is a parseable IP address (IPv4 or IPv6)
     const ipAddress = parseIpAddress(hostname);
     if (ipAddress) {
       return !isPrivateIp(ipAddress);
     }
 
-    // For domain names, resolve and check? No - DNS rebinding makes this unreliable.
-    // Just block known-dangerous patterns
-    if (hostname === '0.0.0.0' || hostname === '0177.0.0.1' || hostname === '2130706433') {
+    // Block octal IP representations (e.g., 0177.0.0.1, 077.0.0.x)
+    if (/^0[0-7]+(\.|$)/.test(hostname)) {
       return false;
     }
 
-    // Block if hostname looks like an IP (contains only digits and dots)
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
-      const ip = hostname;
-      return !isPrivateIp(ip);
+    // Block hex IP representations (e.g., 0x7f.0.0.1, 0xc0a80001)
+    if (/^0x[0-9a-f]+(\.|$)/i.test(hostname)) {
+      return false;
     }
 
-    // Block octal and hex IP representations
-    if (/^0x[0-9a-f]+$/i.test(hostname) || /^0[0-7]+$/i.test(hostname)) {
+    // Block decimal IP representations (e.g., 2130706433)
+    if (/^\d{8,}$/.test(hostname)) {
       return false;
     }
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ViewType, Novel, Chapter, Category, Tag, DashboardStats, Theme, Site } from "@/types";
+import type { ViewType, Novel, Chapter, Category, Tag, Theme, Site } from "@/types";
 
 interface AppState {
   // Navigation
@@ -32,26 +32,14 @@ interface AppState {
   setEditingChapter: (chapter: Chapter | null) => void;
 
   // Refresh triggers
-  refreshNovels: number;
-  triggerRefreshNovels: () => void;
-  refreshChapters: number;
-  triggerRefreshChapters: () => void;
-  refreshCategories: number;
-  triggerRefreshCategories: () => void;
-  refreshTags: number;
-  triggerRefreshTags: () => void;
-  refreshDashboard: number;
-  triggerRefreshDashboard: () => void;
+  refreshVersions: Record<string, number>;
+  triggerRefresh: (key: string) => void;
 
   // Categories and tags for forms
   categories: Category[];
   setCategories: (cats: Category[]) => void;
   tags: Tag[];
   setTags: (t: Tag[]) => void;
-
-  // Dashboard
-  dashboardStats: DashboardStats | null;
-  setDashboardStats: (stats: DashboardStats) => void;
 
   // Theme form dialog
   themeFormOpen: boolean;
@@ -69,11 +57,6 @@ interface AppState {
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
 
-  // More refresh triggers
-  refreshThemes: number;
-  triggerRefreshThemes: () => void;
-  refreshSites: number;
-  triggerRefreshSites: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -106,26 +89,17 @@ export const useAppStore = create<AppState>((set) => ({
   setEditingChapter: (chapter) => set({ editingChapter: chapter, chapterFormOpen: chapter !== null }),
 
   // Refresh triggers
-  refreshNovels: 0,
-  triggerRefreshNovels: () => set((s) => ({ refreshNovels: s.refreshNovels + 1 })),
-  refreshChapters: 0,
-  triggerRefreshChapters: () => set((s) => ({ refreshChapters: s.refreshChapters + 1 })),
-  refreshCategories: 0,
-  triggerRefreshCategories: () => set((s) => ({ refreshCategories: s.refreshCategories + 1 })),
-  refreshTags: 0,
-  triggerRefreshTags: () => set((s) => ({ refreshTags: s.refreshTags + 1 })),
-  refreshDashboard: 0,
-  triggerRefreshDashboard: () => set((s) => ({ refreshDashboard: s.refreshDashboard + 1 })),
+  refreshVersions: {},
+  triggerRefresh: (key) =>
+    set((s) => ({
+      refreshVersions: { ...s.refreshVersions, [key]: (s.refreshVersions[key] ?? 0) + 1 },
+    })),
 
   // Categories and tags
   categories: [],
   setCategories: (cats) => set({ categories: cats }),
   tags: [],
   setTags: (t) => set({ tags: t }),
-
-  // Dashboard
-  dashboardStats: null,
-  setDashboardStats: (stats) => set({ dashboardStats: stats }),
 
   // Theme form
   themeFormOpen: false,
@@ -143,9 +117,5 @@ export const useAppStore = create<AppState>((set) => ({
   commandPaletteOpen: false,
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
 
-  // More refresh triggers
-  refreshThemes: 0,
-  triggerRefreshThemes: () => set((s) => ({ refreshThemes: s.refreshThemes + 1 })),
-  refreshSites: 0,
-  triggerRefreshSites: () => set((s) => ({ refreshSites: s.refreshSites + 1 })),
+
 }));

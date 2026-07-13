@@ -3,7 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod/v4';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
@@ -43,14 +43,13 @@ export function ChapterFormDialog() {
     editingChapter,
     setEditingChapter,
     selectedNovelId,
-    triggerRefreshChapters,
-    triggerRefreshNovels,
+    triggerRefresh,
   } = useAppStore();
 
   const isEditing = !!editingChapter;
 
   const form = useForm<ChapterFormValues>({
-    resolver: zodResolver(chapterSchema),
+    resolver: safeResolver(chapterSchema),
     defaultValues: {
       title: '',
       content: '',
@@ -129,8 +128,8 @@ export function ChapterFormDialog() {
       }
 
       handleClose(false);
-      triggerRefreshChapters();
-      triggerRefreshNovels();
+      triggerRefresh('chapters');
+      triggerRefresh('novels');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '操作失败');
     }

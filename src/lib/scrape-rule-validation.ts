@@ -41,6 +41,24 @@ export const PAGINATION_FIELDS = [
   { key: 'contentPagination', name: '内容分页' },
 ] as const;
 
+// ── Cloud Browser Config ──
+
+/**
+ * Build a cloudBrowserConfig JSON string from raw URL and provider values.
+ * Returns null if url is falsy, has an invalid protocol, or fails URL parsing.
+ */
+export function buildCloudBrowserConfig(url: unknown, provider: unknown): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(String(url));
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+  } catch { return null; }
+  return JSON.stringify({
+    provider: ['browserless', 'steel'].includes(String(provider)) ? provider : 'browserless',
+    apiUrl: String(url).slice(0, 500),
+  });
+}
+
 // ── Validators ──
 
 export function validateSelector(value: unknown, fieldName: string): string | null {
@@ -149,20 +167,12 @@ export function validateAllPaginations(
 /**
  * Parse and clamp thread/delay values from body.
  */
-export function parseScrapeParams(body: Record<string, unknown>) {
+export function parseScrapeParams(body: Record<string, any>) {
   return {
-    scrapeMode: VALID_SCRAPE_MODES.includes(body.scrapeMode as typeof VALID_SCRAPE_MODES[number])
-      ? body.scrapeMode
-      : 'incremental',
-    engine: VALID_ENGINES.includes(body.engine as typeof VALID_ENGINES[number])
-      ? body.engine
-      : 'cheerio',
-    storageMode: VALID_STORAGE_MODES.includes(body.storageMode as typeof VALID_STORAGE_MODES[number])
-      ? body.storageMode
-      : 'database',
-    dedupMode: VALID_DEDUP_MODES.includes(body.dedupMode as typeof VALID_DEDUP_MODES[number])
-      ? body.dedupMode
-      : 'url',
+    scrapeMode: (VALID_SCRAPE_MODES.includes(body.scrapeMode) ? body.scrapeMode : 'incremental') as typeof VALID_SCRAPE_MODES[number],
+    engine: (VALID_ENGINES.includes(body.engine) ? body.engine : 'cheerio') as typeof VALID_ENGINES[number],
+    storageMode: (VALID_STORAGE_MODES.includes(body.storageMode) ? body.storageMode : 'database') as typeof VALID_STORAGE_MODES[number],
+    dedupMode: (VALID_DEDUP_MODES.includes(body.dedupMode) ? body.dedupMode : 'url') as typeof VALID_DEDUP_MODES[number],
     threadCount: Math.min(Math.max(MIN_THREAD, Number(body.threadCount) || 3), MAX_THREAD),
     minDelay: Math.max(0, Number(body.minDelay) || 1000),
     maxDelay: Math.min(MAX_DELAY, Math.max(

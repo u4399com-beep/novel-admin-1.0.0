@@ -10,7 +10,10 @@
  */
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
-import { isSafeTargetUrl, buildFetchHeaders, getRandomUA, retryWithBackoff } from "./utils";
+import { isSafeUrl } from "./ssrf";
+import { buildFetchHeaders, getRandomUA, retryWithBackoff } from "./utils";
+
+const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // ==================== Circuit Breaker ====================
 
@@ -96,12 +99,12 @@ class CheerioEngine implements ScrapingEngine {
   readonly name: EngineType = "cheerio";
 
   async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
-    if (!isSafeTargetUrl(url)) {
+    if (!isSafeUrl(url)) {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
     const headers = buildFetchHeaders(options?.antiCrawl, options?.userAgent);
-    const timeout = options?.timeout || 30000;
+    const timeout = Math.max(5000, Math.min(options?.timeout || 30000, 300000));
 
     return retryWithBackoff(
       async () => {
@@ -115,6 +118,7 @@ class CheerioEngine implements ScrapingEngine {
         });
 
         let currentUrl = url;
+        const visitedUrls = new Set<string>([url]);
         let response = await fetch(currentUrl, makeOptions());
         const MAX_REDIRECTS = 5;
 
@@ -127,9 +131,14 @@ class CheerioEngine implements ScrapingEngine {
             // Resolve relative redirect URLs
             const redirectUrl = new URL(location, currentUrl).href;
 
-            if (!isSafeTargetUrl(redirectUrl)) {
+            if (!isSafeUrl(redirectUrl)) {
               throw new Error(`Blocked: redirect target URL is not allowed (${redirectUrl})`);
             }
+
+            if (visitedUrls.has(redirectUrl)) {
+              throw new Error(`Redirect loop detected: ${redirectUrl}`);
+            }
+            visitedUrls.add(redirectUrl);
 
             // Deduct elapsed time from remaining timeout
             const elapsed = Date.now() - startTime;
@@ -146,14 +155,20 @@ class CheerioEngine implements ScrapingEngine {
           throw new Error(`HTTP ${response.status}: ${response.statusText} for ${url}`);
         }
 
+        // Verify Content-Type is text-based
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType && !contentType.includes("text") && !contentType.includes("html") && !contentType.includes("json") && !contentType.includes("xml")) {
+          throw new Error(`Unexpected Content-Type "${contentType}" for ${url} - expected text/html`);
+        }
+
         // Check Content-Length header first to avoid OOM on large responses
         const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
-        if (contentLength > 10 * 1024 * 1024) {
+        if (contentLength > MAX_RESPONSE_SIZE) {
           throw new Error(`Response Content-Length ${contentLength} exceeds 10MB limit`);
         }
 
-        const html = await response.text();
-        if (html.length > 10 * 1024 * 1024) {
+        const html = (await response.text()).replace(/^\uFEFF/, "");
+        if (html.length > MAX_RESPONSE_SIZE) {
           throw new Error(`Response body too large: ${html.length} bytes (max 10MB)`);
         }
         const finalUrl = response.url || currentUrl;
@@ -225,11 +240,11 @@ class PlaywrightEngine implements ScrapingEngine {
   readonly name: EngineType = "playwright";
 
   async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
-    if (!isSafeTargetUrl(url)) {
+    if (!isSafeUrl(url)) {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
-    const timeout = options?.timeout || 45000;
+    const timeout = Math.max(5000, Math.min(options?.timeout || 45000, 300000));
     const userAgent = options?.userAgent || (options?.antiCrawl?.uaRotation ? getRandomUA() : undefined);
     const cookies = options?.cookies || options?.antiCrawl?.cookies;
 
@@ -254,7 +269,7 @@ class PlaywrightEngine implements ScrapingEngine {
             const resourceType = route.request().resourceType();
             if (routeUrl.startsWith('http://') || routeUrl.startsWith('https://')) {
               // Block navigation, XHR, and fetch requests to unsafe targets
-              if (['document', 'xhr', 'fetch'].includes(resourceType) && !isSafeTargetUrl(routeUrl)) {
+              if (['document', 'xhr', 'fetch'].includes(resourceType) && !isSafeUrl(routeUrl)) {
                 route.abort();
                 return;
               }
@@ -284,7 +299,7 @@ class PlaywrightEngine implements ScrapingEngine {
           });
 
           const html = await page.content();
-          if (html.length > 10 * 1024 * 1024) {
+          if (html.length > MAX_RESPONSE_SIZE) {
             throw new Error(`Playwright page content too large: ${html.length} bytes (max 10MB)`);
           }
           const finalUrl = page.url();
@@ -295,7 +310,10 @@ class PlaywrightEngine implements ScrapingEngine {
             statusCode: response.status(),
           };
         } finally {
-          await context.close().catch(() => {});
+          await Promise.race([
+            context.close(),
+            new Promise<void>((resolve) => setTimeout(resolve, 5000))
+          ]).catch(() => {});
         }
       },
       {
@@ -331,16 +349,17 @@ class FirecrawlEngine implements ScrapingEngine {
   readonly name: EngineType = "firecrawl";
 
   async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
-    if (!isSafeTargetUrl(url)) {
+    if (!isSafeUrl(url)) {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
     const config = getFirecrawlConfig();
-    const timeout = options?.timeout || config.timeout || 60000;
+    const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
 
     return retryWithBackoff(
       async () => {
         await firecrawlBreaker.acquire(); // Check on each retry attempt
+        try {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
         };
@@ -361,24 +380,27 @@ class FirecrawlEngine implements ScrapingEngine {
 
         if (!response.ok) {
           const errorBody = await response.text().catch(() => "");
-          firecrawlBreaker.recordFailure();
           throw new Error(`Firecrawl API error: HTTP ${response.status} - ${errorBody}`);
         }
 
-        const data = await response.json() as {
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(`[Firecrawl] Invalid JSON response from Firecrawl API (HTTP ${response.status})`);
+        }
+        data = data as {
           success?: boolean;
           html?: string;
           markdown?: string;
           error?: string;
         };
 
-        if (data.html && data.html.length > 10 * 1024 * 1024) {
-          firecrawlBreaker.recordFailure();
+        if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
           throw new Error(`Firecrawl HTML too large: ${data.html.length} bytes`);
         }
 
         if (!data.success && data.error) {
-          firecrawlBreaker.recordFailure();
           throw new Error(`Firecrawl error: ${data.error}`);
         }
 
@@ -393,6 +415,10 @@ class FirecrawlEngine implements ScrapingEngine {
           finalUrl: url,
           statusCode: response.status,
         };
+        } catch (err) {
+          firecrawlBreaker.recordFailure();
+          throw err;
+        }
       },
       {
         maxRetries: 2,
@@ -478,12 +504,12 @@ class AgentQLEngine implements ScrapingEngine {
   readonly name: EngineType = "agentql";
 
   async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
-    if (!isSafeTargetUrl(url)) {
+    if (!isSafeUrl(url)) {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
     const config = getAgentQLConfig();
-    const timeout = options?.timeout || config.timeout || 60000;
+    const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
 
     // Build the natural language query from the AgentQL query fields
     // AgentQL uses a structured query object where each field maps to a NL prompt
@@ -498,6 +524,7 @@ class AgentQLEngine implements ScrapingEngine {
     return retryWithBackoff(
       async () => {
         await agentqlBreaker.acquire(); // Check on each retry attempt
+        try {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
         };
@@ -519,24 +546,27 @@ class AgentQLEngine implements ScrapingEngine {
 
         if (!response.ok) {
           const errorBody = await response.text().catch(() => "");
-          agentqlBreaker.recordFailure();
           throw new Error(`AgentQL API error: HTTP ${response.status} - ${errorBody}`);
         }
 
-        const data = await response.json() as {
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(`[AgentQL] Invalid JSON response from AgentQL API (HTTP ${response.status})`);
+        }
+        data = data as {
           data?: Record<string, unknown>;
           error?: string;
         };
 
         // Check response data size
         const dataJsonSize = JSON.stringify(data.data || {});
-        if (dataJsonSize.length > 10 * 1024 * 1024) {
-          agentqlBreaker.recordFailure();
+        if (dataJsonSize.length > MAX_RESPONSE_SIZE) {
           throw new Error(`AgentQL response too large`);
         }
 
         if (data.error) {
-          agentqlBreaker.recordFailure();
           throw new Error(`AgentQL error: ${data.error}`);
         }
 
@@ -551,6 +581,10 @@ class AgentQLEngine implements ScrapingEngine {
           finalUrl: url,
           statusCode: response.status,
         };
+        } catch (err) {
+          agentqlBreaker.recordFailure();
+          throw err;
+        }
       },
       {
         maxRetries: 2,
@@ -594,16 +628,17 @@ class CloudBrowserEngine implements ScrapingEngine {
   readonly name: EngineType = "cloud-browser";
 
   async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
-    if (!isSafeTargetUrl(url)) {
+    if (!isSafeUrl(url)) {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
     const config = getCloudBrowserConfig();
-    const timeout = options?.timeout || config.timeout || 60000;
+    const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
 
     return retryWithBackoff(
       async () => {
         await cloudBrowserBreaker.acquire(); // Check on each retry attempt
+        try {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
         };
@@ -635,23 +670,26 @@ class CloudBrowserEngine implements ScrapingEngine {
 
           if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
-            cloudBrowserBreaker.recordFailure();
             throw new Error(`Steel API error: HTTP ${response.status} - ${errorBody}`);
           }
 
-          const data = await response.json() as {
+          let data;
+          try {
+            data = await response.json();
+          } catch {
+            throw new Error(`[CloudBrowser/Steel] Invalid JSON response from Steel API (HTTP ${response.status})`);
+          }
+          data = data as {
             html?: string;
             status?: number;
             error?: string;
           };
 
-          if (data.html && data.html.length > 10 * 1024 * 1024) {
-            cloudBrowserBreaker.recordFailure();
+          if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
             throw new Error(`Steel API HTML too large: ${data.html.length} bytes`);
           }
 
           if (data.error) {
-            cloudBrowserBreaker.recordFailure();
             throw new Error(`Steel error: ${data.error}`);
           }
 
@@ -678,23 +716,26 @@ class CloudBrowserEngine implements ScrapingEngine {
 
           if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
-            cloudBrowserBreaker.recordFailure();
             throw new Error(`Browserless API error: HTTP ${response.status} - ${errorBody}`);
           }
 
-          const data = await response.json() as {
+          let data;
+          try {
+            data = await response.json();
+          } catch {
+            throw new Error(`[CloudBrowser/Browserless] Invalid JSON response from Browserless API (HTTP ${response.status})`);
+          }
+          data = data as {
             html?: string;
             data?: Array<{ html?: string; results?: Array<{ html?: string }> }>;
             error?: string;
           };
 
-          if (data.html && data.html.length > 10 * 1024 * 1024) {
-            cloudBrowserBreaker.recordFailure();
+          if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
             throw new Error(`Browserless response too large: ${data.html.length} bytes`);
           }
 
           if (data.error) {
-            cloudBrowserBreaker.recordFailure();
             throw new Error(`Browserless error: ${data.error}`);
           }
 
@@ -723,6 +764,10 @@ class CloudBrowserEngine implements ScrapingEngine {
           finalUrl: url,
           statusCode,
         };
+        } catch (err) {
+          cloudBrowserBreaker.recordFailure();
+          throw err;
+        }
       },
       {
         maxRetries: 2,

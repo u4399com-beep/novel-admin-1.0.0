@@ -1,42 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import {
-  LayoutDashboard,
-  BookOpen,
-  FolderTree,
-  Tags,
-  Download,
-  Menu,
-  X,
-  Palette,
-  Globe,
-  Bug,
-} from 'lucide-react';
+import { BookOpen, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
+import { NAV_ITEMS } from '@/lib/nav-config';
 import { useAppStore } from '@/stores/app-store';
-import type { ViewType } from '@/types';
 
 // ─── Nav Items ────────────────────────────────────────────────────────────────
 
-interface NavItem {
-  view: ViewType;
-  label: string;
-  icon: React.ElementType;
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { view: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
-  { view: 'novels', label: '小说管理', icon: BookOpen },
-  { view: 'categories', label: '分类管理', icon: FolderTree },
-  { view: 'tags', label: '标签管理', icon: Tags },
-  { view: 'scrape', label: '采集管理', icon: Bug },
-  { view: 'download', label: '下载中心', icon: Download },
-  { view: 'themes', label: '主题管理', icon: Palette },
-  { view: 'sites', label: '站群管理', icon: Globe },
-];
+import type { ViewType } from '@/types';
 
 // ─── Sidebar Content (shared between desktop & mobile) ───────────────────────
 
@@ -65,13 +39,13 @@ function SidebarContent() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-2 space-y-1">
         {NAV_ITEMS.map((item) => {
-          const isActive = currentView === item.view;
+          const isActive = currentView === item.key;
           const Icon = item.icon;
 
           return (
             <button
-              key={item.view}
-              onClick={() => setCurrentView(item.view)}
+              key={item.key}
+              onClick={() => setCurrentView(item.key)}
               className={`
                 group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5
                 text-sm font-medium transition-all duration-200

@@ -202,7 +202,7 @@ ${html}`;
     console.log(`[AI Analyze] Analyzing ${url} (${html.length} chars) ...`);
 
     const llmAbort = new AbortController();
-    let llmTimeoutId: ReturnType<typeof setTimeout>;
+    let llmTimeoutId: ReturnType<typeof setTimeout> | undefined;
     const completion = await Promise.race([
       zai.chat.completions.create({
         messages: [

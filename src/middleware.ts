@@ -57,7 +57,15 @@ export function middleware(request: NextRequest) {
 
   // Per-IP login rate limiting for auth endpoints
   if (request.nextUrl.pathname.startsWith('/api/auth/')) {
-    const ip = request.headers.get('x-real-ip') || 'unknown';
+    // Security: Caddy gateway ALWAYS sets x-real-ip. A missing header means
+    // the request bypassed the gateway (direct access attempt). Reject with 400
+    // instead of falling back to a shared 'unknown' bucket, which would either
+    // allow unlimited requests from attackers who strip the header or block all
+    // legitimate users behind misconfigured proxies in a single bucket.
+    const ip = request.headers.get('x-real-ip');
+    if (!ip) {
+      return NextResponse.json({ error: '无法识别客户端地址' }, { status: 400 });
+    }
     const rl = checkLoginRateLimit(ip);
     if (!rl.allowed) {
       return NextResponse.json(

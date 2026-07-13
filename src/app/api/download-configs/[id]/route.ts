@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 200;
@@ -159,6 +160,8 @@ export const PUT = withAuth(async function PUT(
       },
     });
 
+    invalidateCache("download-configs:list");
+
     return NextResponse.json(config);
   } catch (error: unknown) {
     console.error("Update download config error:", error);
@@ -181,6 +184,7 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
     }
     await db.downloadConfig.delete({ where: { id } });
+    invalidateCache("download-configs:list");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete download config error:", error);

@@ -11,7 +11,8 @@ import type {
 } from "./types";
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selectors";
-import { resolveUrl, randomDelay } from "./utils";
+import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA } from "./utils";
+import { isSafeUrl } from "./ssrf";
 
 // ==================== Pagination Handler ====================
 
@@ -28,9 +29,16 @@ async function handlePagination(
   let hasNextPage = false;
   const maxPages = Math.min(pagination?.maxPage || 1, 100);
   const engine = getEngine(engineType);
+  const visitedPages = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     console.log(`  [Pagination] Page ${page + 1}/${maxPages}: ${currentUrl}`);
+
+    if (visitedPages.has(currentUrl)) {
+      console.log(`  [Pagination] Detected page loop at ${currentUrl}, stopping.`);
+      break;
+    }
+    visitedPages.add(currentUrl);
 
     const { html } = await engine.fetch(currentUrl, { antiCrawl });
     const results = extractFn(html, currentUrl);
@@ -149,9 +157,16 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
   let currentUrl = url;
   let hasNextPage = false;
   const maxPages = Math.min(pagination?.maxPage || 1, 100);
+  const visitedPages = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     console.log(`  [Chapters] Page ${page + 1}/${maxPages}: ${currentUrl}`);
+
+    if (visitedPages.has(currentUrl)) {
+      console.log(`  [Chapters] Detected page loop at ${currentUrl}, stopping.`);
+      break;
+    }
+    visitedPages.add(currentUrl);
 
     const { html } = await engine.fetch(currentUrl, { antiCrawl });
     const links = extractLinksFromList(html, selectors.list, selectors.link, selectors.title, currentUrl);
@@ -232,9 +247,16 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
   let title = "";
   let currentUrl = url;
   const maxPages = Math.min(pagination?.maxPage || 1, 100);
+  const visitedPages = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
     console.log(`  [Content] Page ${page + 1}/${maxPages}: ${currentUrl}`);
+
+    if (visitedPages.has(currentUrl)) {
+      console.log(`  [Content] Detected page loop at ${currentUrl}, stopping.`);
+      break;
+    }
+    visitedPages.add(currentUrl);
 
     const { html } = await engine.fetch(currentUrl, { antiCrawl });
 
@@ -293,9 +315,7 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
   path: string;
   size: number;
 }> {
-  const { isSafeTargetUrl, isSafeSavePath, getRandomUA: getUA } = await import("./utils");
-
-  if (!isSafeTargetUrl(url)) {
+  if (!isSafeUrl(url)) {
     throw new Error("Invalid or blocked target URL");
   }
 
@@ -306,7 +326,6 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
   console.log(`  [Cover] Downloading from ${url} to ${savePath}`);
 
   // Manual redirect following with SSRF validation on each hop
-  const { isSafeTargetUrl: checkSafe } = await import("./utils");
   let currentUrl = url;
   let response: Response | null = null;
   const MAX_REDIRECTS = 5;
@@ -314,7 +333,7 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     response = await fetch(currentUrl, {
       headers: {
-        "User-Agent": getUA(),
+        "User-Agent": getRandomUA(),
         Referer: new URL(currentUrl).origin,
       },
       signal: AbortSignal.timeout(30000),
@@ -326,7 +345,7 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
       if (!location) break;
       try {
         const redirectUrl = new URL(location, currentUrl).href;
-        if (!checkSafe(redirectUrl)) {
+        if (!isSafeUrl(redirectUrl)) {
           throw new Error(`Blocked: redirect to internal/blocked URL (${redirectUrl})`);
         }
         currentUrl = redirectUrl;

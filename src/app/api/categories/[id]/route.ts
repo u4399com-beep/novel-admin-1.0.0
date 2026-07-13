@@ -71,6 +71,7 @@ export const PUT = withAuth(async function PUT(
     });
 
     invalidateCache("dashboard:stats");
+    invalidateCache("categories:list");
 
     return NextResponse.json(category);
   } catch (error: unknown) {
@@ -109,6 +110,7 @@ export const DELETE = withAuth(async function DELETE(
 
     await db.category.delete({ where: { id } });
     invalidateCache("dashboard:stats");
+    invalidateCache("categories:list");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete category error:", error);

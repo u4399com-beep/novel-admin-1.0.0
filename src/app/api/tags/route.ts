@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 50;
@@ -9,11 +10,13 @@ const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 // GET /api/tags - List all tags
 export const GET = withAuth(async function GET() {
   try {
-    const tags = await db.tag.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 500,
-      include: { _count: { select: { novels: true } } },
-    });
+    const tags = await getOrCompute("tags:list", 60_000, () =>
+      db.tag.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        include: { _count: { select: { novels: true } } },
+      })
+    );
     return NextResponse.json(tags);
   } catch (error) {
     console.error("List tags error:", error);
@@ -49,6 +52,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       },
       include: { _count: { select: { novels: true } } },
     });
+
+    invalidateCache("tags:list");
 
     return NextResponse.json(tag, { status: 201 });
   } catch (error: unknown) {

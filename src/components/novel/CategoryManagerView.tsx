@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod/v4';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { safeResolver } from '@/lib/safe-resolver';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -15,6 +15,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { safeFormatDate } from '@/lib/format';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { ColorPicker } from '@/components/ui/color-picker';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -44,9 +46,6 @@ import {
 import { useAppStore } from '@/stores/app-store';
 import type { Category } from '@/types';
 
-// zod/v4 resolver needs type assertion due to @hookform/resolvers type mismatch
-const safeResolver = <T extends z.core.$ZodType>(schema: T) => zodResolver(schema) as any;
-
 // ─── Zod Schema ──────────────────────────────────────────────────────────────
 const categorySchema = z.object({
   name: z.string().min(1, '分类名称不能为空').max(50, '分类名称不能超过50个字符'),
@@ -56,14 +55,6 @@ const categorySchema = z.object({
 });
 
 type CategoryFormData = z.infer<typeof categorySchema>;
-
-// ─── Preset colors ───────────────────────────────────────────────────────────
-const presetColors = [
-  '#ef4444', '#f97316', '#f59e0b', '#eab308',
-  '#84cc16', '#22c55e', '#10b981', '#14b8a6',
-  '#06b6d4', '#0ea5e9', '#6366f1', '#8b5cf6',
-  '#a855f7', '#d946ef', '#ec4899', '#f43f5e',
-];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CategoryManagerView() {
@@ -75,7 +66,7 @@ export default function CategoryManagerView() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const refreshCategories = useAppStore((s) => s.refreshCategories);
+  const refreshCategories = useAppStore((s) => s.refreshVersions['categories'] ?? 0);
 
   const {
     register,
@@ -290,10 +281,10 @@ export default function CategoryManagerView() {
                             {cat._count?.novels ?? 0} 本小说
                           </Badge>
                           <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(cat.createdAt), {
+                            {safeFormatDate(cat.createdAt, (d) => formatDistanceToNow(d, {
                               addSuffix: true,
                               locale: zhCN,
-                            })}
+                            }))}
                           </span>
                         </div>
                       </div>
@@ -372,34 +363,7 @@ export default function CategoryManagerView() {
             {/* Color */}
             <div className="space-y-2">
               <Label>颜色</Label>
-              <div className="flex flex-wrap items-center gap-2">
-                {presetColors.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className={`h-7 w-7 rounded-full border-2 transition-all ${
-                      selectedColor === c
-                        ? 'scale-110 border-foreground shadow-sm'
-                        : 'border-transparent hover:scale-105'
-                    }`}
-                    style={{ backgroundColor: c }}
-                    onClick={() => setValue('color', c)}
-                  />
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={selectedColor}
-                  onChange={(e) => setValue('color', e.target.value)}
-                  className="h-9 w-12 cursor-pointer rounded border border-input bg-transparent p-0.5"
-                />
-                <Input
-                  placeholder="#000000"
-                  className="flex-1 font-mono text-sm"
-                  {...register('color')}
-                />
-              </div>
+              <ColorPicker value={selectedColor} onChange={(v) => setValue('color', v)} />
               {errors.color && (
                 <p className="text-xs text-destructive">{errors.color.message}</p>
               )}

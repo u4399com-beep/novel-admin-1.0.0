@@ -32,9 +32,16 @@ export const POST = withAuth(async function POST(
       return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
     }
 
+    // Validate all log levels before inserting
+    for (const log of body.logs) {
+      if (!VALID_LEVELS.includes(log.level as typeof VALID_LEVELS[number])) {
+        return NextResponse.json({ error: `无效的日志级别: ${log.level}` }, { status: 400 });
+      }
+    }
+
     const data = body.logs.map((log) => ({
       taskId: id,
-      level: VALID_LEVELS.includes(log.level as typeof VALID_LEVELS[number]) ? log.level : "info",
+      level: log.level,
       message: sanitizeField(log.message, MAX_MESSAGE_LENGTH),
       url: log.url ? sanitizeField(log.url, 2048) : null,
       detail: log.detail ? sanitizeField(log.detail, MAX_DETAIL_LENGTH) : null,

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { safeFormatDate } from '@/lib/format';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -61,7 +62,7 @@ export default function NovelListView() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [categories, setCategories] = useState<Category[]>([]);
 
-  const refreshNovels = useAppStore((s) => s.refreshNovels);
+  const refreshNovels = useAppStore((s) => s.refreshVersions['novels'] ?? 0);
   const selectNovel = useAppStore((s) => s.selectNovel);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
 
@@ -310,10 +311,10 @@ export default function NovelListView() {
                         {novel._count?.chapters ?? 0} 章
                       </span>
                       <span>
-                        {formatDistanceToNow(new Date(novel.updatedAt), {
+                        {safeFormatDate(novel.updatedAt, (d) => formatDistanceToNow(d, {
                           addSuffix: true,
                           locale: zhCN,
-                        })}
+                        }))}
                       </span>
                     </div>
 

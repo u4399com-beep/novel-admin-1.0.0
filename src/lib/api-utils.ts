@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server';
 import { sanitizeString } from './sanitize';
 
-type ApiSuccessResponse<T> = T;
-type ApiErrorResponse = { error: string };
-
 export function apiSuccess<T>(data: T, status?: number) {
-  return NextResponse.json(data as ApiSuccessResponse<T>, { status });
+  return NextResponse.json(data, { status });
 }
 
 export function apiError(message: string, status: number = 500) {
-  return NextResponse.json({ error: message } as ApiErrorResponse, { status });
+  return NextResponse.json({ error: message }, { status });
 }
 
 /**
@@ -67,12 +64,15 @@ function validateJsonStructure(value: unknown, depth: number, maxDepth: number, 
  * - Max nesting depth (default 20) to prevent stack overflow
  * - Max keys per object (default 200) to prevent memory abuse
  */
-export async function safeJson<T>(
+// Default to Record<string, any> for convenience in API routes that perform
+// their own runtime validation. Explicit generic types should be preferred
+// when stricter typing is needed.
+export async function safeJson<T = Record<string, any>>(
   request: Request,
   maxDepth = 20,
   maxKeys = 200
 ): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout>;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     const text = await Promise.race([
       request.text(),

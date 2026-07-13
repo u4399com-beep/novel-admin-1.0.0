@@ -95,7 +95,7 @@ export const PUT = withAuth(async function PUT(
     // Validate coverPath to prevent path traversal
     if (body.coverPath !== undefined && body.coverPath) {
       const cp = String(body.coverPath);
-      if (cp.includes('..') || !cp.startsWith('/covers/') && !cp.startsWith('/app/public/covers/')) {
+      if (cp.includes('..') || (!cp.startsWith('/covers/') && !cp.startsWith('/app/public/covers/'))) {
         return NextResponse.json({ error: "封面路径格式不合法" }, { status: 400 });
       }
     }
@@ -137,8 +137,11 @@ export const PUT = withAuth(async function PUT(
     invalidateCache("dashboard:stats");
 
     return NextResponse.json(novel);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Update novel error:", error);
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+    }
     return NextResponse.json({ error: "更新小说失败" }, { status: 500 });
   }
 });

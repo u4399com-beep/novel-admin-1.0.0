@@ -4,10 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod/v4";
-import { zodResolver } from "@hookform/resolvers/zod";
 
-// zod/v4 resolver needs type assertion due to @hookform/resolvers type mismatch
-const safeResolver = <T extends z.core.$ZodType>(schema: T) => zodResolver(schema) as any;
+import { safeResolver } from "@/lib/safe-resolver";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,8 +61,7 @@ export default function NovelFormDialog() {
     setCategories,
     tags,
     setTags,
-    triggerRefreshNovels,
-    triggerRefreshDashboard,
+    triggerRefresh,
   } = useAppStore();
 
   const [submitting, setSubmitting] = useState(false);
@@ -184,8 +181,8 @@ export default function NovelFormDialog() {
             : `《${values.title}》已创建`,
         });
         setNovelFormOpen(false);
-        triggerRefreshNovels();
-        triggerRefreshDashboard();
+        triggerRefresh('novels');
+        triggerRefresh('dashboard');
       } else {
         const err = await res.json().catch(() => null);
         toast.error(isEditing ? "编辑失败" : "创建失败", {

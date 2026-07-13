@@ -134,7 +134,7 @@ export const POST = withAuth(async function POST(
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
     }
 
-    const existingTags = novel.tags.map((nt) => nt.tag.name);
+    const existingTags = novel.tags.map((nt) => nt.tag?.name).filter(Boolean) as string[];
     const categoryName = novel.category?.name || null;
 
     // Generate keywords

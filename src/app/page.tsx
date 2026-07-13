@@ -77,17 +77,10 @@ const viewVariants = {
 export default function Home() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const {
-    currentView,
-    setEditingNovel,
-    setNovelFormOpen,
-    setCommandPaletteOpen,
-  } = useAppStore((s) => ({
-    currentView: s.currentView,
-    setEditingNovel: s.setEditingNovel,
-    setNovelFormOpen: s.setNovelFormOpen,
-    setCommandPaletteOpen: s.setCommandPaletteOpen,
-  }));
+  const currentView = useAppStore((s) => s.currentView);
+  const setEditingNovel = useAppStore((s) => s.setEditingNovel);
+  const setNovelFormOpen = useAppStore((s) => s.setNovelFormOpen);
+  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
 
   const viewInfo = VIEW_TITLES[currentView] || VIEW_TITLES.dashboard;
 

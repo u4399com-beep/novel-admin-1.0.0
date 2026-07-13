@@ -32,11 +32,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
-import { useAppStore } from '@/stores/app-store';
 import type { DownloadConfig } from '@/types';
 
 export default function DownloadManagerView() {
-  const { refreshDashboard, triggerRefreshDashboard } = useAppStore();
   const [configs, setConfigs] = useState<DownloadConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);

@@ -158,21 +158,25 @@ export const PATCH = withAuth(async function PATCH(
       }
     }
 
-    // Batch update in a single transaction
-    const results = await db.$transaction(
-      orders.map((item) =>
-        db.chapter.updateMany({
+    // Verify novel exists before batch update
+    const novelExists = await db.novel.findUnique({ where: { id: novelId }, select: { id: true } });
+    if (!novelExists) {
+      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+    }
+
+    // Batch update using interactive transaction with increased timeout for large batches
+    await db.$transaction(async (tx) => {
+      for (const item of orders) {
+        await tx.chapter.updateMany({
           where: { id: item.id, novelId },
           data: { sortOrder: Math.floor(Number(item.sortOrder) || 0) },
-        })
-      )
-    );
-
-    const actualUpdated = results.reduce((sum, r) => sum + r.count, 0);
+        });
+      }
+    }, { timeout: Math.max(5_000, orders.length * 100) });
 
     invalidateCache("dashboard:stats");
 
-    return NextResponse.json({ success: true, updated: actualUpdated });
+    return NextResponse.json({ success: true, updated: orders.length });
   } catch (error) {
     console.error("Batch reorder error:", error);
     return NextResponse.json({ error: "批量排序更新失败" }, { status: 500 });

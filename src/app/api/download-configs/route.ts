@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
+import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 200;
@@ -14,10 +15,12 @@ const MAX_PATTERN_LENGTH = 500;
 // GET /api/download-configs - List all download configs
 export const GET = withAuth(async function GET() {
   try {
-    const configs = await db.downloadConfig.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+    const configs = await getOrCompute("download-configs:list", 60_000, () =>
+      db.downloadConfig.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      })
+    );
     return NextResponse.json(configs);
   } catch (error) {
     console.error("List download configs error:", error);
@@ -94,6 +97,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         fileNamePattern: sanitizeField(fileNamePattern, MAX_PATTERN_LENGTH) || "{title} - {author}",
       },
     });
+
+    invalidateCache("download-configs:list");
 
     return NextResponse.json(config, { status: 201 });
   } catch (error) {
