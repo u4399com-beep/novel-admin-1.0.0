@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
@@ -40,7 +40,7 @@ interface ScrapeRuleEditorProps {
 
 export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }: ScrapeRuleEditorProps) {
   const formMethods = useForm<FormValues>({
-    resolver: zodResolver(scrapeRuleSchema),
+    resolver: safeResolver(scrapeRuleSchema),
     defaultValues: {
       name: '',
       description: '',

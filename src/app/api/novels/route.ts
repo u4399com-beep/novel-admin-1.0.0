@@ -4,9 +4,9 @@ import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
+import { VALID_NOVEL_STATUSES } from "@/lib/constants";
 
 const MAX_SEARCH_LENGTH = 200;
-const VALID_STATUSES = ["ongoing", "completed", "hiatus"];
 
 // GET /api/novels - List novels with pagination, search, filter
 export const GET = withAuth(async function GET(request: NextRequest) {
@@ -19,7 +19,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     const tagId = searchParams.get("tagId") || "";
 
     // Validate status enum
-    if (status && !VALID_STATUSES.includes(status)) {
+    if (status && !VALID_NOVEL_STATUSES.includes(status)) {
       return NextResponse.json({ error: "无效的状态筛选值" }, { status: 400 });
     }
 
@@ -93,7 +93,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
     }
 
-    const novelStatus = VALID_STATUSES.includes(status) ? status : "ongoing";
+    const novelStatus = VALID_NOVEL_STATUSES.includes(status) ? status : "ongoing";
 
     // Validate categoryId existence if provided
     if (categoryId) {

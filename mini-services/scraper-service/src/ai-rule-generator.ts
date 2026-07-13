@@ -159,11 +159,20 @@ export async function handleGenerateRule(
     return {
       success: false,
       rule: null as unknown as GeneratedRuleResult["rule"],
-      error: `AI analysis service returned HTTP ${response.status}: ${errorText.substring(0, 500)}`,
+      error: `AI analysis service returned HTTP ${response.status}`,
     };
   }
 
-  const result = await response.json() as GeneratedRuleResult;
+  let result: GeneratedRuleResult;
+  try {
+    result = await response.json() as GeneratedRuleResult;
+  } catch {
+    return {
+      success: false,
+      rule: null as unknown as GeneratedRuleResult["rule"],
+      error: `AI analysis service returned invalid JSON (HTTP ${response.status})`,
+    };
+  }
   console.log(`[AI Rule Gen] Analysis complete. Success: ${result.success}, Confidence: ${result.rule?.confidence}`);
   return result;
 }

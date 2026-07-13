@@ -110,6 +110,7 @@ function SortableChapterRow({
     >
       <TableCell className="w-10">
         <button
+          aria-label="拖拽排序"
           className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5"
           {...attributes}
           {...listeners}
@@ -358,19 +359,16 @@ function ChapterEditorPanel({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function NovelDetailView() {
-  const {
-    selectedNovelId,
-    selectNovel,
-    setCurrentView,
-    setEditingNovel,
-    setNovelFormOpen,
-    setChapterFormOpen,
-    setEditingChapter,
-    triggerRefresh,
-    refreshVersions,
-  } = useAppStore();
-  const refreshNovels = refreshVersions['novels'] ?? 0;
-  const refreshChapters = refreshVersions['chapters'] ?? 0;
+  const selectedNovelId = useAppStore((s) => s.selectedNovelId);
+  const selectNovel = useAppStore((s) => s.selectNovel);
+  const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const setEditingNovel = useAppStore((s) => s.setEditingNovel);
+  const setNovelFormOpen = useAppStore((s) => s.setNovelFormOpen);
+  const setChapterFormOpen = useAppStore((s) => s.setChapterFormOpen);
+  const setEditingChapter = useAppStore((s) => s.setEditingChapter);
+  const triggerRefresh = useAppStore((s) => s.triggerRefresh);
+  const refreshNovels = useAppStore((s) => s.refreshVersions['novels'] ?? 0);
+  const refreshChapters = useAppStore((s) => s.refreshVersions['chapters'] ?? 0);
 
   const [novel, setNovel] = useState<Novel | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);

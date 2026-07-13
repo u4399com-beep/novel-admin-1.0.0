@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -58,6 +58,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (description && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
       return NextResponse.json({ error: `主题描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
     }
+    if (enabled !== undefined && typeof enabled !== 'boolean') {
+      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+    }
     if (!config) {
       return NextResponse.json({ error: "主题配置不能为空" }, { status: 400 });
     }
@@ -78,7 +81,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
         identifier: sanitizeField(identifier, MAX_IDENTIFIER_LENGTH),
         preview: sanitizeField(preview, 500) || null,
-        config: typeof config === "string" ? config : JSON.stringify(config),
+        config: (() => {
+          try {
+            return JSON.stringify(typeof config === "string" ? JSON.parse(config) : config);
+          } catch {
+            return JSON.stringify(config);
+          }
+        })(),
         enabled: typeof enabled === 'boolean' ? enabled : true,
       },
       include: {
@@ -91,7 +100,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(theme, { status: 201 });
   } catch (error: unknown) {
     console.error("Create theme error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
+    if (isPrismaError(error, "P2002")) {
       return NextResponse.json({ error: "主题名称或标识符已存在" }, { status: 409 });
     }
     return NextResponse.json({ error: "创建主题失败" }, { status: 500 });

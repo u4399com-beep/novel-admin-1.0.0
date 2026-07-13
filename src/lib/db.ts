@@ -24,7 +24,7 @@ function createPrismaClient(): PrismaClient {
   const isDev = process.env.NODE_ENV !== 'production';
 
   // Common config
-  const baseConfig: any = {
+  const baseConfig = {
     log: isDev ? ['error', 'warn'] : ['error'],
   };
 

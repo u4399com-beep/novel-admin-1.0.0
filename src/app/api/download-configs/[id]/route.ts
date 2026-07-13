@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -60,6 +60,9 @@ export const PUT = withAuth(async function PUT(
       fileNamePattern,
     } = body;
 
+    if (enabled !== undefined && typeof enabled !== 'boolean') {
+      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+    }
     if (name !== undefined && !name?.trim()) {
       return NextResponse.json({ error: "配置名称不能为空" }, { status: 400 });
     }
@@ -165,7 +168,7 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(config);
   } catch (error: unknown) {
     console.error("Update download config error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "更新下载配置失败" }, { status: 500 });
@@ -188,7 +191,7 @@ export const DELETE = withAuth(async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete download config error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "删除下载配置失败" }, { status: 500 });

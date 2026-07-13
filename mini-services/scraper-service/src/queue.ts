@@ -1,7 +1,10 @@
 /**
- * Request Queue with SQLite Persistence
- * Enables resume-capable crawling with deduplication.
- * Uses a dedicated task_id column for performance and safety.
+ * Request Queue - Audit log for scraping tasks.
+ *
+ * Items are written for observability and deduplication tracking.
+ * Note: Items are NOT consumed for processing — the task engine processes
+ * URLs from in-memory arrays. Resume after crash is not supported;
+ * crashed tasks are marked as failed on restart via recoverStaleTasks().
  */
 
 import Database from 'bun:sqlite';

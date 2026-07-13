@@ -14,6 +14,40 @@ import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selec
 import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA } from "./utils";
 import { isSafeUrl } from "./ssrf";
 
+// ==================== Pagination Helper ====================
+
+/**
+ * Find the next page URL from pagination config.
+ * Extracted as a shared function to avoid triplication across handlePagination,
+ * handleScrapeChapters, and handleScrapeContent.
+ */
+function findNextPageUrl(
+  $: cheerio.CheerioAPI,
+  pagination: Pagination,
+  pageNum: number,
+  currentPageUrl: string
+): string {
+  let nextUrl = "";
+  if (pagination.type === "next") {
+    nextUrl = $(pagination.selector).attr("href") || "";
+  } else if (pagination.type === "page") {
+    const nextPage = pageNum + 2;
+    const nextEl = $(`${pagination.selector}:contains("${nextPage}")`);
+    if (nextEl.length > 0) {
+      nextUrl = nextEl.attr("href") || "";
+    } else {
+      const nextTextEl = $(pagination.selector).filter(
+        (i, el) => {
+          const text = $(el).text().trim();
+          return text.includes("下一页") || text.includes("next") || text === ">";
+        }
+      );
+      nextUrl = nextTextEl.attr("href") || "";
+    }
+  }
+  return nextUrl ? resolveUrl(currentPageUrl, nextUrl) : "";
+}
+
 // ==================== Pagination Handler ====================
 
 async function handlePagination(
@@ -62,28 +96,10 @@ async function handlePagination(
     // Find next page URL
     if (pagination) {
       const $ = cheerio.load(html);
-      let nextUrl = "";
-
-      if (pagination.type === "next") {
-        nextUrl = $(pagination.selector).attr("href") || "";
-      } else if (pagination.type === "page") {
-        const nextPage = page + 2;
-        const nextEl = $(`${pagination.selector}:contains("${nextPage}")`);
-        if (nextEl.length > 0) {
-          nextUrl = nextEl.attr("href") || "";
-        } else {
-          const nextTextEl = $(pagination.selector).filter(
-            (i, el) => {
-              const text = $(el).text().trim();
-              return text.includes("下一页") || text.includes("next") || text === ">";
-            }
-          );
-          nextUrl = nextTextEl.attr("href") || "";
-        }
-      }
+      const nextUrl = findNextPageUrl($, pagination, page, currentUrl);
 
       if (nextUrl) {
-        currentUrl = resolveUrl(currentUrl, nextUrl);
+        currentUrl = nextUrl;
         hasNextPage = true;
         if (antiCrawl?.delay) {
           await randomDelay(antiCrawl.delay[0], antiCrawl.delay[1]);
@@ -189,26 +205,10 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
     // Find next page
     if (pagination) {
       const $ = cheerio.load(html);
-      let nextUrl = "";
-
-      if (pagination.type === "next") {
-        nextUrl = $(pagination.selector).attr("href") || "";
-      } else if (pagination.type === "page") {
-        const nextPage = page + 2;
-        const nextEl = $(`${pagination.selector}:contains("${nextPage}")`);
-        if (nextEl.length > 0) {
-          nextUrl = nextEl.attr("href") || "";
-        } else {
-          const nextTextEl = $(pagination.selector).filter((i, el) => {
-            const text = $(el).text().trim();
-            return text.includes("下一页") || text.includes("next") || text === ">";
-          });
-          nextUrl = nextTextEl.attr("href") || "";
-        }
-      }
+      const nextUrl = findNextPageUrl($, pagination, page, currentUrl);
 
       if (nextUrl) {
-        currentUrl = resolveUrl(currentUrl, nextUrl);
+        currentUrl = nextUrl;
         hasNextPage = true;
         if (antiCrawl?.delay) {
           await randomDelay(antiCrawl.delay[0], antiCrawl.delay[1]);
@@ -243,7 +243,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
   const engineType = selectEngine(requestedEngine, antiCrawl);
   const engine = getEngine(engineType);
 
-  let fullContent = "";
+  const contentParts: string[] = [];
   let title = "";
   let currentUrl = url;
   const maxPages = Math.min(pagination?.maxPage || 1, 100);
@@ -266,31 +266,15 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     }
 
     const content = parseSelector(html, selectors.content);
-    fullContent += (fullContent ? "\n\n" : "") + content;
+    if (content) contentParts.push(content);
 
     // Find next page for content
     if (pagination && page < maxPages - 1) {
       const $ = cheerio.load(html);
-      let nextUrl = "";
-
-      if (pagination.type === "next") {
-        nextUrl = $(pagination.selector).attr("href") || "";
-      } else if (pagination.type === "page") {
-        const nextPage = page + 2;
-        const nextEl = $(`${pagination.selector}:contains("${nextPage}")`);
-        if (nextEl.length > 0) {
-          nextUrl = nextEl.attr("href") || "";
-        } else {
-          const nextTextEl = $(pagination.selector).filter((i, el) => {
-            const text = $(el).text().trim();
-            return text.includes("下一页") || text.includes("next") || text === ">";
-          });
-          nextUrl = nextTextEl.attr("href") || "";
-        }
-      }
+      const nextUrl = findNextPageUrl($, pagination, page, currentUrl);
 
       if (nextUrl) {
-        currentUrl = resolveUrl(currentUrl, nextUrl);
+        currentUrl = nextUrl;
         if (antiCrawl?.delay) {
           await randomDelay(antiCrawl.delay[0], antiCrawl.delay[1]);
         }
@@ -300,6 +284,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     }
   }
 
+  const fullContent = contentParts.join("\n\n");
   return {
     title,
     content: fullContent,

@@ -85,7 +85,11 @@ export function registerEngine(engine: ScrapingEngine): void {
 }
 
 export function getEngine(type: EngineType): ScrapingEngine {
-  const engine = engines.get(type) || engines.get("cheerio")!;
+  const engine = engines.get(type);
+  if (!engine) {
+    console.warn(`[Engine] Requested engine "${type}" not registered, falling back to cheerio`);
+    return engines.get("cheerio")!;
+  }
   return engine;
 }
 
@@ -251,28 +255,38 @@ class PlaywrightEngine implements ScrapingEngine {
     return retryWithBackoff(
       async () => {
         const browser = await getPlaywrightBrowser();
-        const context = await browser.newContext({
-          userAgent,
-          ...(cookies?.length ? {
-            extraHTTPHeaders: {
-              Cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; "),
-            },
-          } : {}),
-        });
+        const context = await browser.newContext({ userAgent });
+        if (cookies?.length) {
+          await context.addCookies(
+            cookies
+              .filter((c) => c.name && c.value)
+              .map((c) => ({
+                name: c.name.replace(/[\r\n\t\x00-\x1f]/g, ""),
+                value: c.value.replace(/[\r\n\t\x00-\x1f]/g, ""),
+                domain: new URL(url).hostname,
+                path: "/",
+              }))
+          );
+        }
 
         try {
           const page = await context.newPage();
 
-          // Intercept all requests to block unsafe redirect targets
+          // Intercept all requests to block unsafe redirect targets and non-HTTP protocols
           await context.route('**/*', (route) => {
             const routeUrl = route.request().url();
             const resourceType = route.request().resourceType();
-            if (routeUrl.startsWith('http://') || routeUrl.startsWith('https://')) {
-              // Block navigation, XHR, and fetch requests to unsafe targets
-              if (['document', 'xhr', 'fetch'].includes(resourceType) && !isSafeUrl(routeUrl)) {
+            // Block ALL non-http/https navigations and fetches
+            if (!routeUrl.startsWith('http://') && !routeUrl.startsWith('https://')) {
+              if (['document', 'xhr', 'fetch'].includes(resourceType)) {
                 route.abort();
                 return;
               }
+            }
+            // Block navigation, XHR, and fetch requests to unsafe targets
+            if (['document', 'xhr', 'fetch'].includes(resourceType) && !isSafeUrl(routeUrl)) {
+              route.abort();
+              return;
             }
             route.continue();
           });

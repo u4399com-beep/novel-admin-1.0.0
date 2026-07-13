@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -70,6 +70,9 @@ export const PUT = withAuth(async function PUT(
     if (description !== undefined && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
       return NextResponse.json({ error: `主题描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
     }
+    if (enabled !== undefined && typeof enabled !== 'boolean') {
+      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+    }
     if (config !== undefined && config) {
       const configStr = typeof config === "string" ? config : JSON.stringify(config);
       if (configStr.length > MAX_CONFIG_SIZE) {
@@ -90,7 +93,13 @@ export const PUT = withAuth(async function PUT(
         ...(identifier !== undefined && { identifier: sanitizeField(identifier, MAX_IDENTIFIER_LENGTH) }),
         ...(preview !== undefined && { preview: sanitizeField(preview, 500) || null }),
         ...(config !== undefined && {
-          config: typeof config === "string" ? config : JSON.stringify(config),
+          config: (() => {
+            try {
+              return JSON.stringify(typeof config === "string" ? JSON.parse(config) : config);
+            } catch {
+              return JSON.stringify(config);
+            }
+          })(),
         }),
         ...(enabled !== undefined && { enabled: typeof enabled === 'boolean' ? enabled : true }),
       },
@@ -104,10 +113,10 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(theme);
   } catch (error: unknown) {
     console.error("Update theme error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
+    if (isPrismaError(error, "P2002")) {
       return NextResponse.json({ error: "主题名称或标识符已存在" }, { status: 409 });
     }
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "主题不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "更新主题失败" }, { status: 500 });
@@ -139,7 +148,7 @@ export const DELETE = withAuth(async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete theme error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "主题不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "删除主题失败" }, { status: 500 });

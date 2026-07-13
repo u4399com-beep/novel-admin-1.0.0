@@ -37,14 +37,12 @@ const chapterSchema = z.object({
 type ChapterFormValues = z.infer<typeof chapterSchema>;
 
 export function ChapterFormDialog() {
-  const {
-    chapterFormOpen,
-    setChapterFormOpen,
-    editingChapter,
-    setEditingChapter,
-    selectedNovelId,
-    triggerRefresh,
-  } = useAppStore();
+  const chapterFormOpen = useAppStore((s) => s.chapterFormOpen);
+  const setChapterFormOpen = useAppStore((s) => s.setChapterFormOpen);
+  const editingChapter = useAppStore((s) => s.editingChapter);
+  const setEditingChapter = useAppStore((s) => s.setEditingChapter);
+  const selectedNovelId = useAppStore((s) => s.selectedNovelId);
+  const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
   const isEditing = !!editingChapter;
 

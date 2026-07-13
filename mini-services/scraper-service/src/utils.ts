@@ -3,6 +3,7 @@
  */
 
 import type { AntiCrawl } from "./types";
+import { randomUUID } from "node:crypto";
 
 // ==================== User-Agent Rotation ====================
 
@@ -206,10 +207,8 @@ export function mapNovelStatus(rawStatus: string): string {
   return "ongoing";
 }
 
-// ==================== Generate CUID ====================
+// ==================== Generate ID ====================
 
 export function generateId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 10);
-  return timestamp + random;
+  return randomUUID();
 }

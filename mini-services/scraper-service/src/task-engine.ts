@@ -13,7 +13,7 @@ import {
   mapNovelStatus, randomDelay, isSafeSavePath,
 } from "./utils";
 import { getEngine, selectEngine } from "./engines";
-import { handleClean } from "./cleaning";
+import { handleClean, cleanText } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
 import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";
 
@@ -686,13 +686,10 @@ async function executeTaskBody(
           });
 
           // Clean content
-          const cleaned = handleClean({
-            html: contentResult.content,
-            config: cleanConfig,
-          });
+          const cleanResult = cleanText(contentResult.content, cleanConfig);
 
           const chapterTitle = contentResult.title || chapter.title;
-          const chapterContent = cleaned.content;
+          const chapterContent = cleanResult;
 
           if (!chapterContent.trim()) {
             console.log(`[Task ${taskId}] Empty content for chapter: ${chapterTitle}`);

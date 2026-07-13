@@ -37,6 +37,9 @@ export const POST = withAuth(async function POST(
       if (!VALID_LEVELS.includes(log.level as typeof VALID_LEVELS[number])) {
         return NextResponse.json({ error: `无效的日志级别: ${log.level}` }, { status: 400 });
       }
+      if (!sanitizeField(log.message, MAX_MESSAGE_LENGTH)) {
+        return NextResponse.json({ error: "日志消息不能为空" }, { status: 400 });
+      }
     }
 
     const data = body.logs.map((log) => ({

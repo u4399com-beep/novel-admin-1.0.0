@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -13,7 +13,13 @@ export const GET = withAuth(async function GET(
     const task = await db.scrapeTask.findUnique({
       where: { id },
       include: {
-        rule: true,
+        rule: {
+          select: {
+            id: true, name: true, enabled: true,
+            listUrl: true, scrapeMode: true, engine: true,
+            storageMode: true, threadCount: true,
+          },
+        },
         logs: {
           select: { id: true, level: true, message: true, url: true, createdAt: true },
           orderBy: { createdAt: "desc" },
@@ -134,7 +140,7 @@ export const PUT = withAuth(async function PUT(
         const [, from, to] = msg.split(":");
         return NextResponse.json({ error: `不允许从 "${from}" 转换到 "${to}"` }, { status: 400 });
       }
-      if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      if (isPrismaError(error, "P2025")) {
         return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
       }
       throw error;
@@ -172,7 +178,7 @@ export const DELETE = withAuth(async function DELETE(
     if (error instanceof Error && error.message === "TASK_RUNNING") {
       return NextResponse.json({ error: "运行中的任务无法删除" }, { status: 400 });
     }
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
     }
     console.error("Delete scrape task error:", error);

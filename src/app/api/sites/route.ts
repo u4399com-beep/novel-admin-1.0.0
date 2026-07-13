@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -138,7 +138,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(site, { status: 201 });
   } catch (error: unknown) {
     console.error("Create site error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
+    if (isPrismaError(error, "P2002")) {
       return NextResponse.json({ error: "站点域名已存在" }, { status: 409 });
     }
     return NextResponse.json({ error: "创建站点失败" }, { status: 500 });

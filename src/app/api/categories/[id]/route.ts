@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -76,10 +76,10 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(category);
   } catch (error: unknown) {
     console.error("Update category error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
+    if (isPrismaError(error, "P2002")) {
       return NextResponse.json({ error: "分类名称已存在" }, { status: 409 });
     }
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "更新分类失败" }, { status: 500 });
@@ -114,7 +114,7 @@ export const DELETE = withAuth(async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete category error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "删除分类失败" }, { status: 500 });

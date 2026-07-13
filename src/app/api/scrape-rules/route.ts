@@ -103,6 +103,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: `去重模式只能是: ${VALID_DEDUP_MODES.join(', ')}` }, { status: 400 });
     }
 
+    if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
+      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+    }
+
     const params = parseScrapeParams(body);
 
     const rule = await db.scrapeRule.create({

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import {
   VALID_SCRAPE_MODES,
@@ -102,6 +102,10 @@ export const PUT = withAuth(async function PUT(
         return NextResponse.json({ error: e.message }, { status: 400 });
       }
       throw e;
+    }
+
+    if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
+      return NextResponse.json({ error: "enableShuffle 必须是布尔值" }, { status: 400 });
     }
 
     // Validate delay constraints
@@ -214,7 +218,7 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(rule);
   } catch (error: unknown) {
     console.error("Update scrape rule error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "更新采集规则失败" }, { status: 500 });
@@ -244,7 +248,7 @@ export const DELETE = withAuth(async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete scrape rule error:", error);
-    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+    if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
     }
     return NextResponse.json({ error: "删除采集规则失败" }, { status: 500 });

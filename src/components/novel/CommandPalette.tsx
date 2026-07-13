@@ -135,7 +135,7 @@ export default function CommandPalette() {
                       <item.icon className="size-4 text-muted-foreground" />
                       <span>{item.label}</span>
                       <span className="ml-auto flex gap-0.5">
-                        {shortcut.split(' ').map((k, i) => (
+                        {shortcut && shortcut.split(' ').filter(Boolean).map((k, i) => (
                           <Kbd key={i}>{k}</Kbd>
                         ))}
                       </span>

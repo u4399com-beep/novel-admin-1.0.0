@@ -93,9 +93,17 @@ function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
   if (sizeEstimate > MAX_VALUE_SIZE) {
     return;
   }
-  // Don't cache if at capacity and this key is new
+  // Don't cache if at capacity and this key is new — evict the entry closest to expiry
   if (!cache.has(key) && cache.size >= MAX_ENTRIES) {
-    return;
+    let oldestKey: string | null = null;
+    let oldestExpiry = Infinity;
+    for (const [k, entry] of cache) {
+      if (entry.expiresAt < oldestExpiry) {
+        oldestExpiry = entry.expiresAt;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) cache.delete(oldestKey);
   }
   cache.set(key, { data, expiresAt: Date.now() + ttl });
 }

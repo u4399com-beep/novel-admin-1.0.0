@@ -113,3 +113,16 @@ export async function safeJson<T = Record<string, any>>(
 export function sanitizeField(input: unknown, maxLength: number): string {
   return sanitizeString(input, maxLength);
 }
+
+/**
+ * Check if a caught error is a Prisma error with a specific code.
+ */
+export function isPrismaError(error: unknown, code: string): boolean {
+  return (
+    error !== null &&
+    error !== undefined &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code: string }).code === code
+  );
+}

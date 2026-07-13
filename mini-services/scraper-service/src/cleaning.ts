@@ -94,14 +94,18 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
     $(allAdSelectors.join(", ")).remove();
   }
 
-  // Remove elements matching custom CSS selectors (first pass — only used as CSS selectors)
+  // Note: removePatterns serve dual purpose:
+  // 1. As CSS selectors for element removal (first pass)
+  // 2. As regex patterns for text matching (second pass)
+  // Patterns that are valid regex but not valid CSS will silently skip the CSS pass.
   const removePatterns = normalizePatterns(config.removePatterns);
   if (removePatterns.length > 0) {
     for (const pattern of removePatterns) {
       try {
         $(pattern).remove();
-      } catch {
-        // Invalid CSS selector, skip
+      } catch (err) {
+        // Pattern is not a valid CSS selector — will be used as regex in text pass
+        console.warn(`[Cleaning] Pattern "${pattern}" is not a valid CSS selector, skipping CSS removal`);
       }
     }
   }
@@ -128,6 +132,49 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
   }
 
   // Remove custom text/regex patterns (second pass — used as regex for text matching)
+  if (removePatterns.length > 0) {
+    for (const pattern of removePatterns) {
+      text = safeRegexReplace(text, pattern, "", "gi");
+    }
+  }
+
+  // Normalize whitespace
+  text = text
+    .replace(/\r\n/g, "\n")
+    .replace(/\t/g, "  ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return text;
+}
+
+/**
+ * Clean plain text content (no HTML parsing).
+ * Used when content has already been extracted from HTML.
+ */
+export function cleanText(text: string, config: CleanRequest["config"]): string {
+  const adPatterns = normalizePatterns(config.adPatterns);
+  const allAdPatterns = [...DEFAULT_AD_PATTERNS];
+  if (adPatterns.length > 0) {
+    allAdPatterns.push(...adPatterns);
+  }
+
+  // Remove ad text patterns (line-by-line filtering)
+  for (const pattern of allAdPatterns) {
+    const lines = text.split("\n");
+    text = lines
+      .filter((line) => {
+        if (!line.includes(pattern)) return true;
+        const stripped = line.replace(new RegExp(escapeRegExp(pattern), "gi"), "").trim();
+        return stripped.length >= 10;
+      })
+      .join("\n");
+  }
+
+  // Remove custom text/regex patterns
+  const removePatterns = normalizePatterns(config.removePatterns);
   if (removePatterns.length > 0) {
     for (const pattern of removePatterns) {
       text = safeRegexReplace(text, pattern, "", "gi");

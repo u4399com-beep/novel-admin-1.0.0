@@ -13,7 +13,8 @@ import {
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { motion, AnimatePresence } from 'framer-motion';
+import { safeFormatDate } from '@/lib/format';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +32,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -186,6 +188,9 @@ function SiteFormDialog({
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingSite ? '编辑站点' : '添加站点'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {editingSite ? '修改站点配置信息' : '添加新的站点到站群'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -684,15 +689,8 @@ export default function SiteClusterView() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <AnimatePresence>
-                      {sites.map((site) => (
-                        <motion.tr
-                          key={site.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0 }}
-                          className="group"
-                        >
+                    {sites.map((site) => (
+                      <TableRow key={site.id} className="group">
                           <TableCell className="font-mono text-sm">{site.domain}</TableCell>
                           <TableCell>
                             <div className="flex flex-col">
@@ -723,7 +721,7 @@ export default function SiteClusterView() {
                             <span>章节: {site.chapterOffset}</span>
                           </TableCell>
                           <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                            {format(new Date(site.createdAt), 'yyyy-MM-dd HH:mm', { locale: zhCN })}
+                            {safeFormatDate(site.createdAt, (d) => format(d, 'yyyy-MM-dd HH:mm', { locale: zhCN }))}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -755,9 +753,8 @@ export default function SiteClusterView() {
                               </Button>
                             </div>
                           </TableCell>
-                        </motion.tr>
-                      ))}
-                    </AnimatePresence>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
@@ -819,7 +816,7 @@ export default function SiteClusterView() {
 
       {/* Form Dialog */}
       <SiteFormDialog
-        open={editSite !== null || false}
+        open={editSite !== null}
         onOpenChange={(open) => {
           if (!open) setEditSite(null);
         }}

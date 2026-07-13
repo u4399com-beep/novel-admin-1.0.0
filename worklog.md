@@ -1175,3 +1175,68 @@ Work Log:
 Stage Summary:
 - 6 client-side edge cases fixed
 - Lint: pass (0 errors)
+
+---
+Task ID: R14
+Agent: Main Orchestrator + 5 Parallel Sub-agents
+Task: 第14轮深度代码审计 - 边缘场景全覆盖 + 全量修复
+
+Work Log:
+- 并行启动3个审计子代理（API路由+库、组件+Store、scraper-service），覆盖全部源码文件
+- 发现 58个新问题: 5 HIGH / 25 MEDIUM / 28 LOW
+- 并行启动5个修复子代理，修复所有HIGH和MEDIUM问题 + 关键LOW问题
+
+## 修复清单（按严重度）
+
+### HIGH (5个)
+1. **R14-1** themes/route.ts + themes/[id]/route.ts + scrape-rules/route.ts: `enabled`字段非布尔值静默转为true → 添加typeof boolean校验
+2. **R14-2** download-configs/[id]/route.ts: `enabled`字段零类型验证 → 添加boolean校验
+3. **R14-3** scrape-tasks/[id]/route.ts GET: 泄露完整rule配置含API密钥 → 改为select排除敏感字段
+4. **R14-C4** NovelFormDialog.tsx: `editingNovel.tags.map()` null崩溃 → 添加`?? []`空值守卫
+5. **R14-S1** engines.ts: Playwright引擎非HTTP协议(file:/data:/blob:)SSRF绕过 → 阻止所有非http/https的document/xhr/fetch请求
+
+### MEDIUM (25个) - 关键修复
+- **R14-9** ai-analyze/route.ts: URL提示注入LLM → 添加`\n\r"`过滤+截断
+- **R14-8** scrape-rules/[id]/route.ts: `enableShuffle`无布尔验证 → 添加校验
+- **R14-C1/C2/C3** NovelFormDialog/ChapterFormDialog/NovelDetailView: useAppStore()无selector导致全量重渲染 → 改为独立selector
+- **R14-C5** ScrapeRuleEditor.tsx: 使用zodResolver而非safeResolver → 统一为safeResolver
+- **R14-C8/C9** DownloadManagerView/SiteClusterView: 缺少DialogDescription(a11y) → 添加sr-only描述
+- **R14-C14** SiteClusterView: AnimatePresence在TableBody内破坏表格布局 → 改为普通TableRow
+- **R14-S2/S14** engines.ts: Playwright Cookie注入绕过清理 + 使用extraHTTPHeaders → 改为context.addCookies()+清理控制字符
+- **R14-S4** ai-rule-generator.ts: response.json()无try/catch → 添加错误处理
+- **R14-S5** scrapers.ts: 分页逻辑三处重复 → 提取共享findNextPageUrl函数
+- **R14-S6** cleaning.ts: removePatterns双用途(CSS+regex)无文档 → 添加注释+警告日志
+- **R14-S7** queue.ts: 队列声称可恢复实际只写 → 修正文档
+- **R14-S10** index.ts: X-Forwarded-For可伪造绕过速率限制 → 优先使用x-real-ip
+- **R14-S13** cleaning.ts+task-engine.ts: handleClean接收纯文本但用HTML解析 → 新增cleanText函数
+- **R14-11** 12个API路由文件: Prisma错误码检查重复24次 → 提取isPrismaError()到api-utils.ts
+- **R14-22** constants.ts + novels routes: VALID_STATUSES与NOVEL_STATUS_MAP重复 → 从map派生
+- **R14-6** logs/batch/route.ts: 批量日志不验证空消息 → 添加空消息校验
+- **R14-7** themes routes: config存储原始用户字符串 → JSON.parse→JSON.stringify规范化
+- **R14-16** scrape-tasks/route.ts: ruleId未验证为string → 添加typeof检查
+
+### LOW (11个关键修复)
+- **R14-C7** CommandPalette: 空字符串shortcut渲染空Kbd → 添加filter(Boolean)
+- **R14-C10** DownloadManagerView: 使用原生textarea而非Textarea组件 → 统一为UI组件
+- **R14-C11** SiteClusterView: 缺少safeFormatDate → 添加
+- **R14-C17** NovelDetailView: 拖拽手柄无aria-label → 添加"拖拽排序"
+- **R14-C18** ThemeManager/SiteCluster: `|| false`冗余 → 简化
+- **R14-S8** scrapers.ts: 字符串拼接O(n²) → 改为数组push+join
+- **R14-S11** index.ts: activeTasks声明在使用之后 → 移到前面
+- **R14-S12** engines.ts: getEngine静默回退 → 添加warn日志
+- **R14-S15** ai-rule-generator.ts: 错误响应泄露内部API细节 → 仅返回HTTP状态码
+- **R14-S16** utils.ts: generateId()不防碰撞 → 改用crypto.randomUUID()
+- **R14-17** db.ts: baseConfig使用any类型 → 移除any由TS推断
+- **R14-18** cache.ts: 缓存满时静默丢弃新条目 → 改为淘汰最近过期的条目
+- **R14-15** novels/[id]/route.ts: body.sourceUrl未解构 → 添加到解构中
+
+## 验证结果
+- ESLint: 0 errors ✅
+- scraper-service编译: 通过 ✅
+- Dev Server: 编译成功，正常响应请求 ✅
+
+## 历史累计修复: 148 + 5(H) + 25(M) + 11(关键L) = 189项
+
+Stage Summary:
+- 第14轮审计发现58个新问题，修复41个（所有HIGH+MEDIUM+关键LOW）
+- 五大目标进展: 减少代码量(-24处Prisma检查→1个函数), 降低复杂度(分页逻辑三合一, 组件selector优化), 统一缓存与队列(cache淘汰策略优化), 增强安全性(boolean校验/API密钥泄露/SSRF/提示注入/Cookie清理), 增强易用性(a11y+安全日期+统一组件)

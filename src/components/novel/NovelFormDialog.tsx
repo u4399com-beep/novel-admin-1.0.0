@@ -53,16 +53,14 @@ type NovelFormValues = z.infer<typeof novelFormSchema>;
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function NovelFormDialog() {
-  const {
-    novelFormOpen,
-    setNovelFormOpen,
-    editingNovel,
-    categories,
-    setCategories,
-    tags,
-    setTags,
-    triggerRefresh,
-  } = useAppStore();
+  const novelFormOpen = useAppStore((s) => s.novelFormOpen);
+  const setNovelFormOpen = useAppStore((s) => s.setNovelFormOpen);
+  const editingNovel = useAppStore((s) => s.editingNovel);
+  const categories = useAppStore((s) => s.categories);
+  const setCategories = useAppStore((s) => s.setCategories);
+  const tags = useAppStore((s) => s.tags);
+  const setTags = useAppStore((s) => s.setTags);
+  const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
   const [submitting, setSubmitting] = useState(false);
   const [apiCategories, setApiCategories] = useState<Category[]>([]);
@@ -128,7 +126,7 @@ export default function NovelFormDialog() {
           description: editingNovel.description || "",
           status: editingNovel.status,
           categoryId: editingNovel.categoryId,
-          tags: editingNovel.tags.map((t) => t.tag.id),
+          tags: (editingNovel.tags ?? []).map((t) => t.tag.id),
         });
       } else {
         form.reset({

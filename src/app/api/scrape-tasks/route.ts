@@ -57,8 +57,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
     const { ruleId, mode, autoStart } = body;
 
-    if (!ruleId) {
-      return NextResponse.json({ error: "规则ID不能为空" }, { status: 400 });
+    if (!ruleId || typeof ruleId !== 'string') {
+      return NextResponse.json({ error: "规则ID格式错误" }, { status: 400 });
     }
 
     // Verify the rule exists

@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -31,6 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import type { DownloadConfig } from '@/types';
 
@@ -297,6 +299,9 @@ function DownloadConfigFormDialog({
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? '编辑下载配置' : '新建下载配置'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {editing ? '修改下载配置的格式和内容选项' : '创建新的下载配置'}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -329,8 +334,8 @@ function DownloadConfigFormDialog({
               <Switch checked={insertConfusion} onCheckedChange={setInsertConfusion} />
             </div>
             {insertConfusion && (
-              <textarea
-                className="mt-2 w-full min-h-[80px] rounded-md border bg-transparent px-3 py-2 text-sm"
+              <Textarea
+                className="mt-2 min-h-[80px]"
                 value={confusionText}
                 onChange={(e) => setConfusionText(e.target.value)}
                 placeholder="每行一条混淆文本"
@@ -348,8 +353,8 @@ function DownloadConfigFormDialog({
             </div>
             {insertAd && (
               <div className="mt-2 space-y-3">
-                <textarea
-                  className="w-full min-h-[80px] rounded-md border bg-transparent px-3 py-2 text-sm"
+                <Textarea
+                  className="min-h-[80px]"
                   value={adContent}
                   onChange={(e) => setAdContent(e.target.value)}
                   placeholder="广告内容，支持变量"
@@ -384,8 +389,8 @@ function DownloadConfigFormDialog({
               <Switch checked={insertSiteInfo} onCheckedChange={setInsertSiteInfo} />
             </div>
             {insertSiteInfo && (
-              <textarea
-                className="mt-2 w-full min-h-[80px] rounded-md border bg-transparent px-3 py-2 text-sm"
+              <Textarea
+                className="mt-2 min-h-[80px]"
                 value={siteInfoContent}
                 onChange={(e) => setSiteInfoContent(e.target.value)}
                 placeholder="站点信息内容，支持变量"

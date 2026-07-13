@@ -1124,7 +1124,7 @@ export default function ThemeManagerView() {
 
       {/* Edit / Create Dialog */}
       <ThemeFormDialog
-        open={editTheme !== null || false}
+        open={editTheme !== null}
         onOpenChange={(open) => {
           if (!open) setEditTheme(null);
         }}

@@ -186,10 +186,11 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   }
 
   // Build user message
+  const safeUrlForPrompt = url.replace(/[\n\r"]/g, '').slice(0, 500);
   const siteTypeHint = siteType
     ? `\n站点类型提示: ${siteType}`
     : "";
-  const userMessage = `URL: ${url}${siteTypeHint}
+  const userMessage = `URL: ${safeUrlForPrompt}${siteTypeHint}
 
 HTML内容:
 ${html}`;

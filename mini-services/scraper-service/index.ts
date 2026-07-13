@@ -46,6 +46,7 @@ let activeTaskCount = 0;
 const scraperRateStore = new Map<string, { count: number; resetAt: number }>();
 
 // Track active tasks for graceful shutdown
+const activeTasks = new Set<string>();
 
 let lastScraperRateCleanup = 0;
 function lazyScraperRateCleanup(): void {
@@ -198,9 +199,9 @@ export function startServer(port: number = 3099) {
       }
 
       // Rate limiting (per client IP)
-      // Use x-forwarded-for (last IP) as primary, fall back to x-real-ip
-      const fwd = req.headers.get("x-forwarded-for");
-      const clientIp = fwd ? fwd.split(",").pop()?.trim() || "unknown" : (req.headers.get("x-real-ip") || "unknown");
+      // Prefer x-real-ip (set by Caddy, not spoofable) over x-forwarded-for
+      const clientIp = req.headers.get("x-real-ip")
+        || (req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown");
       if (!checkScraperRateLimit(clientIp)) {
         return Response.json(
           { error: "Rate limit exceeded. Try again later." },
@@ -425,7 +426,6 @@ startServer(PORT);
 // ==================== Graceful Shutdown ====================
 
 let isShuttingDown = false;
-const activeTasks = new Set<string>();
 
 const shutdown = async (signal: string) => {
   if (isShuttingDown) return;
