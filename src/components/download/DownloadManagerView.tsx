@@ -146,6 +146,7 @@ export default function DownloadManagerView() {
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="编辑配置"
                     onClick={() => { setEditing(config); setFormOpen(true); }}
                   >
                     <Pencil className="h-4 w-4" />
@@ -154,6 +155,7 @@ export default function DownloadManagerView() {
                     variant="ghost"
                     size="icon"
                     className="text-muted-foreground hover:text-destructive"
+                    aria-label="删除配置"
                     onClick={() => setDeleteTarget(config)}
                   >
                     <Trash2 className="h-4 w-4" />

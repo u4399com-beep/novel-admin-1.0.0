@@ -8,7 +8,6 @@ import {
   VALID_DEDUP_MODES,
   MAX_THREAD,
   MIN_THREAD,
-  MAX_DELAY,
   validateAllSelectors,
   validateAllPaginations,
   validateUrlField,

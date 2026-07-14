@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, safeJson } from "@/lib/api-utils";
+import { parsePagination, safeJson, sanitizeField } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import {
   validateAllSelectors,
@@ -15,8 +15,6 @@ import {
   VALID_DEDUP_MODES,
   buildCloudBrowserConfig,
 } from "@/lib/scrape-rule-validation";
-import { sanitizeField } from "@/lib/api-utils";
-
 // GET /api/scrape-rules - List all scrape rules with pagination and search
 export const GET = withAuth(async function GET(request: NextRequest) {
   try {
@@ -105,6 +103,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
       return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+    }
+    if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
+      return NextResponse.json({ error: "enableShuffle 必须是布尔值" }, { status: 400 });
     }
 
     const params = parseScrapeParams(body);

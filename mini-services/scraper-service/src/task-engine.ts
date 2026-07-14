@@ -12,7 +12,7 @@ import {
   parseJsonField,
   mapNovelStatus, randomDelay, isSafeSavePath,
 } from "./utils";
-import { getEngine, selectEngine } from "./engines";
+import { selectEngine } from "./engines";
 import { handleClean, cleanText } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
 import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";

@@ -581,7 +581,7 @@ export function VisualSelectorBuilder({
             获取页面 HTML，测试选择器，智能推荐
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="关闭" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -718,6 +718,7 @@ export function VisualSelectorBuilder({
                     variant="outline"
                     size="icon"
                     className="shrink-0"
+                    aria-label="复制"
                     onClick={handleCopy}
                     title="复制"
                   >

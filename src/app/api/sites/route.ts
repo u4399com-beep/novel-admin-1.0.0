@@ -110,6 +110,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: customConfigError }, { status: 400 });
     }
 
+    if (enabled !== undefined && typeof enabled !== 'boolean') {
+      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+    }
+
     const parsedNovelOffset = novelOffset !== undefined ? Math.min(Math.max(0, Math.floor(Number(novelOffset) || 0)), MAX_OFFSET) : 0;
     const parsedChapterOffset = chapterOffset !== undefined ? Math.min(Math.max(0, Math.floor(Number(chapterOffset) || 0)), MAX_OFFSET) : 0;
 

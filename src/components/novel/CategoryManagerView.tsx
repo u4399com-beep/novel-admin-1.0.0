@@ -295,6 +295,7 @@ export default function CategoryManagerView() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
+                          aria-label="编辑分类"
                           onClick={() => openEdit(cat)}
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -303,6 +304,7 @@ export default function CategoryManagerView() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive"
+                          aria-label="删除分类"
                           onClick={() => setDeleteTarget(cat)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />

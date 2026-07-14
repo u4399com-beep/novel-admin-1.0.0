@@ -25,6 +25,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -544,6 +545,7 @@ function ThemeFormDialog({
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingTheme ? '编辑主题' : '创建主题'}</DialogTitle>
+          <DialogDescription className="sr-only">{editingTheme ? '编辑已有主题的配置' : '创建新的自定义主题'}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -884,6 +886,7 @@ function ThemePreviewDialog({
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>主题预览 — {themeName}</DialogTitle>
+          <DialogDescription className="sr-only">预览主题 {themeName} 的显示效果</DialogDescription>
         </DialogHeader>
         <ThemePreviewCard config={themeConfig} name={themeName} />
       </DialogContent>

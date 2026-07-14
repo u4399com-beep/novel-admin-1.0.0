@@ -730,6 +730,7 @@ export default function SiteClusterView() {
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8"
+                                  aria-label="预览站点"
                                   onClick={() => setPreviewSite(site)}
                                 >
                                   <Eye className="h-3.5 w-3.5" />
@@ -739,6 +740,7 @@ export default function SiteClusterView() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
+                                aria-label="编辑站点"
                                 onClick={() => setEditSite(site)}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
@@ -747,6 +749,7 @@ export default function SiteClusterView() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 text-destructive hover:text-destructive"
+                                aria-label="删除站点"
                                 onClick={() => setDeleteId(site.id)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -808,6 +811,7 @@ export default function SiteClusterView() {
           <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>站点预览 — {previewSite.name}</DialogTitle>
+              <DialogDescription className="sr-only">预览站点 {previewSite.name} 的显示效果</DialogDescription>
             </DialogHeader>
             <SitePreview site={previewSite} theme={getPreviewTheme(previewSite)!} />
           </DialogContent>

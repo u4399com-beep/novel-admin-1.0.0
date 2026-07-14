@@ -85,8 +85,8 @@ export default function NovelFormDialog() {
         setApiTags(ts);
         setTags(ts);
       }
-    } catch {
-      // silent fail – use store data as fallback
+    } catch (err) {
+      console.error('Failed to fetch categories/tags for form:', err);
     }
   }, [setCategories, setTags]);
 

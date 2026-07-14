@@ -94,6 +94,9 @@ export const PUT = withAuth(async function PUT(
         return NextResponse.json({ error: "站点名称不能为空" }, { status: 400 });
       }
     }
+    if (enabled !== undefined && typeof enabled !== 'boolean') {
+      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+    }
     if (themeId !== undefined && themeId) {
       const themeExists = await db.theme.findUnique({ where: { id: themeId }, select: { id: true } });
       if (!themeExists) {

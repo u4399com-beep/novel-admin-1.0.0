@@ -82,6 +82,16 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: `文件名模式不能超过${MAX_PATTERN_LENGTH}个字符` }, { status: 400 });
     }
 
+    if (insertConfusion !== undefined && typeof insertConfusion !== 'boolean') {
+      return NextResponse.json({ error: "insertConfusion 必须是布尔值" }, { status: 400 });
+    }
+    if (insertAd !== undefined && typeof insertAd !== 'boolean') {
+      return NextResponse.json({ error: "insertAd 必须是布尔值" }, { status: 400 });
+    }
+    if (insertSiteInfo !== undefined && typeof insertSiteInfo !== 'boolean') {
+      return NextResponse.json({ error: "insertSiteInfo 必须是布尔值" }, { status: 400 });
+    }
+
     const config = await db.downloadConfig.create({
       data: {
         name: sanitizeField(name, MAX_NAME_LENGTH),

@@ -320,6 +320,7 @@ function ChapterEditorPanel({
             variant="ghost"
             size="icon"
             className="size-8"
+            aria-label="关闭"
             onClick={onClose}
           >
             <X className="size-4" />

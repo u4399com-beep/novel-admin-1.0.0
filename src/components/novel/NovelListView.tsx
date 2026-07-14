@@ -345,6 +345,7 @@ export default function NovelListView() {
                 size="icon"
                 className="h-8 w-8"
                 disabled={page <= 1}
+                aria-label="上一页"
                 onClick={() => setPage((p) => p - 1)}
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -373,6 +374,7 @@ export default function NovelListView() {
                 size="icon"
                 className="h-8 w-8"
                 disabled={page >= totalPages}
+                aria-label="下一页"
                 onClick={() => setPage((p) => p + 1)}
               >
                 <ChevronRight className="h-4 w-4" />

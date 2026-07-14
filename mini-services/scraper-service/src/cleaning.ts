@@ -89,7 +89,14 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
   if (config.removeAds !== false) {
     const allAdSelectors = [...AD_CSS_SELECTORS];
     if (adPatterns.length > 0) {
-      allAdSelectors.push(...adPatterns.map((p) => `[class*="${escapeCssString(p)}"], [id*="${escapeCssString(p)}"]`).filter(s => !s.includes(",") && !s.includes("{") && !s.includes("}")) );
+      allAdSelectors.push(
+        ...adPatterns
+          .filter((p) => !p.includes(",") && !p.includes("{") && !p.includes("}"))
+          .flatMap((p) => [
+            `[class*="${escapeCssString(p)}"]`,
+            `[id*="${escapeCssString(p)}"]`,
+          ])
+      );
     }
     $(allAdSelectors.join(", ")).remove();
   }
