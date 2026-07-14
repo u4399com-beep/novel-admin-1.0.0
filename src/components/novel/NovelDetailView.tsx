@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -20,6 +20,11 @@ import {
   Clock,
   BookX,
   CheckCircle2,
+  Search,
+  Filter,
+  Check,
+  Square,
+  XCircle,
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
 import { format } from 'date-fns';
@@ -56,6 +61,7 @@ import {
   TableRow,
   TableCell,
 } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +81,9 @@ import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { Novel, Chapter } from '@/types';
 
+// ─── Content filter type ─────────────────────────────────────────────────────
+type ContentFilter = 'all' | 'has-content' | 'no-content';
+
 // ─── Sortable row ─────────────────────────────────────────────────────────────
 function SortableChapterRow({
   chapter,
@@ -83,6 +92,9 @@ function SortableChapterRow({
   onDelete,
   onSelect,
   isSelected,
+  isChecked,
+  onCheckChange,
+  isBatchMode,
 }: {
   chapter: Chapter;
   index: number;
@@ -90,6 +102,9 @@ function SortableChapterRow({
   onDelete: (ch: Chapter) => void;
   onSelect: (ch: Chapter) => void;
   isSelected: boolean;
+  isChecked: boolean;
+  onCheckChange: (checked: boolean) => void;
+  isBatchMode: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: chapter.id });
@@ -105,19 +120,30 @@ function SortableChapterRow({
       style={style}
       className={`${isDragging ? 'z-50 opacity-50 shadow-lg' : ''} ${
         isSelected ? 'bg-accent/60' : ''
-      } group cursor-pointer`}
+      } ${isChecked ? 'bg-primary/5' : ''} group cursor-pointer`}
       onClick={() => onSelect(chapter)}
     >
       <TableCell className="w-10">
-        <button
-          aria-label="拖拽排序"
-          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5"
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <GripVertical className="size-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {isBatchMode && (
+            <Checkbox
+              checked={isChecked}
+              onCheckedChange={(val) => { onCheckChange(!!val); }}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`选择第${index + 1}章`}
+              className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+            />
+          )}
+          <button
+            aria-label="拖拽排序"
+            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="size-4" />
+          </button>
+        </div>
       </TableCell>
       <TableCell className="w-16 text-center text-muted-foreground font-mono text-sm">
         {index + 1}
@@ -384,6 +410,51 @@ export default function NovelDetailView() {
   const [deleting, setDeleting] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
 
+  // ── Chapter search & filter state ───────────────────────────────────────
+  const [chapterSearch, setChapterSearch] = useState('');
+  const [contentFilter, setContentFilter] = useState<ContentFilter>('all');
+
+  // ── Batch selection state ───────────────────────────────────────────────
+  const [batchMode, setBatchMode] = useState(false);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+
+  // ── Filtered chapters ───────────────────────────────────────────────────
+  const filteredChapters = useMemo(() => {
+    let result = chapters;
+    if (chapterSearch.trim()) {
+      const q = chapterSearch.trim().toLowerCase();
+      result = result.filter((ch) => ch.title.toLowerCase().includes(q));
+    }
+    if (contentFilter === 'has-content') {
+      result = result.filter((ch) => ch.content && ch.content.trim().length > 0);
+    } else if (contentFilter === 'no-content') {
+      result = result.filter((ch) => !ch.content || ch.content.trim().length === 0);
+    }
+    return result;
+  }, [chapters, chapterSearch, contentFilter]);
+
+  const isAllChecked = filteredChapters.length > 0 && filteredChapters.every((ch) => checkedIds.has(ch.id));
+  const isSomeChecked = filteredChapters.some((ch) => checkedIds.has(ch.id));
+
+  const toggleCheckAll = useCallback(() => {
+    if (isAllChecked) {
+      setCheckedIds(new Set());
+    } else {
+      setCheckedIds(new Set(filteredChapters.map((ch) => ch.id)));
+    }
+  }, [isAllChecked, filteredChapters]);
+
+  const toggleCheck = useCallback((id: string, checked: boolean) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -510,6 +581,52 @@ export default function NovelDetailView() {
       setDeletingChapter(null);
     }
   };
+
+  // ── Batch delete handler ────────────────────────────────────────────────
+  const handleBatchDelete = async () => {
+    if (checkedIds.size === 0) return;
+    setBatchDeleting(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      await Promise.allSettled(
+        Array.from(checkedIds).map(async (id) => {
+          const res = await fetch(`/api/chapters/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        }),
+      );
+
+      if (selectedChapter && checkedIds.has(selectedChapter.id)) {
+        setSelectedChapter(null);
+      }
+
+      if (failCount === 0) {
+        toast.success(`成功删除 ${successCount} 个章节`);
+      } else {
+        toast.warning(`删除完成：${successCount} 成功，${failCount} 失败`);
+      }
+
+      setCheckedIds(new Set());
+      setBatchMode(false);
+      triggerRefresh('chapters');
+      triggerRefresh('novels');
+    } catch {
+      toast.error('批量删除失败');
+    } finally {
+      setBatchDeleting(false);
+      setBatchDeleteOpen(false);
+    }
+  };
+
+  // Exit batch mode when filter changes
+  useEffect(() => {
+    setCheckedIds(new Set());
+  }, [chapterSearch, contentFilter]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -770,15 +887,101 @@ export default function NovelDetailView() {
                   章节列表
                   {chapters.length > 0 && (
                     <Badge variant="secondary" className="text-xs">
-                      {chapters.length}
+                      {filteredChapters.length === chapters.length
+                        ? chapters.length
+                        : `${filteredChapters.length}/${chapters.length}`}
                     </Badge>
                   )}
                 </h2>
-                <Button size="sm" onClick={handleNewChapter}>
-                  <Plus className="size-4" />
-                  新建章节
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant={batchMode ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => {
+                      setBatchMode(!batchMode);
+                      setCheckedIds(new Set());
+                    }}
+                  >
+                    {batchMode ? (
+                      <>
+                        <XCircle className="size-3" />
+                        取消批量
+                      </>
+                    ) : (
+                      <>
+                        <Check className="size-3" />
+                        批量操作
+                      </>
+                    )}
+                  </Button>
+                  <Button size="sm" onClick={handleNewChapter}>
+                    <Plus className="size-4" />
+                    新建章节
+                  </Button>
+                </div>
               </div>
+
+              {/* Search & filter bar */}
+              {chapters.length > 0 && (
+                <div className="flex items-center gap-2 px-4 py-2 border-b bg-background">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                    <Input
+                      value={chapterSearch}
+                      onChange={(e) => setChapterSearch(e.target.value)}
+                      placeholder="搜索章节标题..."
+                      className="h-8 pl-8 text-sm"
+                    />
+                    {chapterSearch && (
+                      <button
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        onClick={() => setChapterSearch('')}
+                        aria-label="清除搜索"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-0.5 rounded-md border bg-background p-0.5">
+                    {([
+                      { key: 'all' as ContentFilter, label: '全部' },
+                      { key: 'has-content' as ContentFilter, label: '有内容' },
+                      { key: 'no-content' as ContentFilter, label: '无内容' },
+                    ]).map((opt) => (
+                      <button
+                        key={opt.key}
+                        onClick={() => setContentFilter(opt.key)}
+                        className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                          contentFilter === opt.key
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Batch action bar */}
+              {batchMode && checkedIds.size > 0 && (
+                <div className="flex items-center justify-between px-4 py-2 border-b bg-primary/5">
+                  <span className="text-sm text-muted-foreground">
+                    已选择 <strong className="text-foreground">{checkedIds.size}</strong> 项
+                  </span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => setBatchDeleteOpen(true)}
+                  >
+                    <Trash2 className="size-3" />
+                    删除选中
+                  </Button>
+                </div>
+              )}
 
               {/* Chapter list content */}
               <ScrollArea className="flex-1">
@@ -794,11 +997,23 @@ export default function NovelDetailView() {
                     <p className="text-sm font-medium">暂无章节</p>
                     <p className="text-xs mt-1">点击"新建章节"开始创作</p>
                   </div>
+                ) : filteredChapters.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <Search className="size-10 mb-3 opacity-30" />
+                    <p className="text-sm font-medium">未找到匹配的章节</p>
+                    <button
+                      className="text-xs mt-2 text-primary hover:underline"
+                      onClick={() => { setChapterSearch(''); setContentFilter('all'); }}
+                    >
+                      清除筛选条件
+                    </button>
+                  </div>
                 ) : (
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
                     onDragEnd={handleDragEnd}
+                    disabled={batchMode}
                   >
                     <SortableContext
                       items={chapters.map((c) => c.id)}
@@ -807,7 +1022,16 @@ export default function NovelDetailView() {
                       <Table>
                         <TableHeader>
                           <TableRow className="hover:bg-transparent">
-                            <TableHead className="w-10" />
+                            <TableHead className="w-10">
+                              {batchMode && (
+                                <Checkbox
+                                  checked={isAllChecked ? true : isSomeChecked ? 'indeterminate' : false}
+                                  onCheckedChange={toggleCheckAll}
+                                  aria-label="全选"
+                                  className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                                />
+                              )}
+                            </TableHead>
                             <TableHead className="w-16 text-center">序号</TableHead>
                             <TableHead>标题</TableHead>
                             <TableHead className="w-24">字数</TableHead>
@@ -816,7 +1040,7 @@ export default function NovelDetailView() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {chapters.map((chapter, index) => (
+                          {filteredChapters.map((chapter, index) => (
                             <SortableChapterRow
                               key={chapter.id}
                               chapter={chapter}
@@ -825,6 +1049,9 @@ export default function NovelDetailView() {
                               onDelete={handleDeleteChapterClick}
                               onSelect={setSelectedChapter}
                               isSelected={selectedChapter?.id === chapter.id}
+                              isChecked={checkedIds.has(chapter.id)}
+                              onCheckChange={(checked) => toggleCheck(chapter.id, checked)}
+                              isBatchMode={batchMode}
                             />
                           ))}
                         </TableBody>
@@ -920,6 +1147,29 @@ export default function NovelDetailView() {
             >
               {deleting && <Loader2 className="size-4 animate-spin" />}
               确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ─── Batch delete confirmation ─────────────────────────────────── */}
+      <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>批量删除章节</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除选中的 <strong>{checkedIds.size}</strong> 个章节吗？此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={batchDeleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBatchDelete}
+              disabled={batchDeleting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {batchDeleting && <Loader2 className="size-4 animate-spin" />}
+              确认删除 {checkedIds.size} 项
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

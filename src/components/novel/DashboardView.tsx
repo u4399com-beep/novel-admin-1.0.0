@@ -14,6 +14,8 @@ import {
   Sparkles,
   Tags,
   Activity,
+  Plus,
+  BarChart3,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -26,6 +28,8 @@ import {
   CartesianGrid,
   ResponsiveContainer,
   Cell,
+  AreaChart,
+  Area,
 } from 'recharts';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,10 +52,18 @@ const statusChartColors: Record<string, string> = {
   hiatus: '#94a3b8',
 };
 
-const chartConfig: ChartConfig = {
+const statusChartConfig: ChartConfig = {
   count: {
     label: '数量',
     color: '#10b981',
+  },
+};
+
+// TODO: Connect to real activity data API
+const activityChartConfig: ChartConfig = {
+  chapters: {
+    label: '新增章节',
+    color: '#a78bfa',
   },
 };
 
@@ -61,8 +73,21 @@ const statCards = [
   { key: 'totalChapters', label: '章节总数', icon: FileText, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
   { key: 'totalWords', label: '总字数', icon: Hash, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20' },
   { key: 'totalCategories', label: '分类总数', icon: FolderTree, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20' },
-  { key: 'totalTags', label: '标签总数', icon: Tags, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+  { key: 'totalTags', label: '标签总数', icon: Tags, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/20' },
 ] as const;
+
+// ─── Quick action cards ───────────────────────────────────────────────────────
+const quickActions = [
+  { key: 'novel', label: '新建小说', desc: '创建新的小说作品', icon: BookOpen, color: 'emerald', view: 'novels' as const, action: 'createNovel' as const },
+  { key: 'scrape', label: '采集任务', desc: '管理采集规则与任务', icon: Bug, color: 'amber', view: 'scrape' as const, action: 'navigate' as const },
+  { key: 'categories', label: '管理分类', desc: '整理小说分类体系', icon: FolderTree, color: 'violet', view: 'categories' as const, action: 'navigate' as const },
+] as const;
+
+const quickActionGradients: Record<string, string> = {
+  emerald: 'hover:from-emerald-50/80 hover:to-emerald-100/40 dark:hover:from-emerald-950/40 dark:hover:to-emerald-900/20 hover:border-emerald-200/60 dark:hover:border-emerald-800/40',
+  amber: 'hover:from-amber-50/80 hover:to-amber-100/40 dark:hover:from-amber-950/40 dark:hover:to-amber-900/20 hover:border-amber-200/60 dark:hover:border-amber-800/40',
+  violet: 'hover:from-violet-50/80 hover:to-violet-100/40 dark:hover:from-violet-950/40 dark:hover:to-violet-900/20 hover:border-violet-200/60 dark:hover:border-violet-800/40',
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export function DashboardView() {
@@ -106,6 +131,14 @@ export function DashboardView() {
     setCurrentView('novel-detail');
   };
 
+  const handleQuickAction = (action: typeof quickActions[number]) => {
+    if (action.action === 'createNovel') {
+      handleCreateNovel();
+    } else {
+      setCurrentView(action.view);
+    }
+  };
+
   // ─── Chart data ───────────────────────────────────────────────────────────
   const chartData = stats?.statusDistribution.map((item) => ({
     name: NOVEL_STATUS_MAP[item.status]?.label ?? item.status,
@@ -113,6 +146,27 @@ export function DashboardView() {
     count: item.count,
     fill: statusChartColors[item.status] ?? '#94a3b8',
   })) ?? [];
+
+  // ─── Placeholder 7-day activity data ────────────────────────────────────
+  // TODO: Connect to real activity data API
+  const activityData = useMemo(() => {
+    const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    const now = new Date();
+    return days.map((day, i) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - (6 - i));
+      const month = d.getMonth() + 1;
+      const date = d.getDate();
+      // Placeholder: simulate some variation
+      const base = stats?.totalChapters ? Math.floor(stats.totalChapters / 30) : 3;
+      const count = Math.max(0, base + Math.floor(Math.sin(i * 1.5) * 2) + (i === 3 ? 4 : 0));
+      return {
+        name: `${month}/${date}`,
+        day,
+        chapters: count,
+      };
+    });
+  }, [stats?.totalChapters]);
 
   // ─── Welcome card helpers ─────────────────────────────────────────────
   const { greeting, dateStr } = useMemo(() => {
@@ -195,15 +249,16 @@ export function DashboardView() {
 
       {/* ── Status Distribution + Recent Novels ─────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Status Distribution Chart */}
-        <Card>
+        {/* Status Distribution Chart — Clickable */}
+        <Card className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <TrendingUp className="h-5 w-5 text-muted-foreground" />
               状态分布
+              <span className="ml-auto text-xs font-normal text-muted-foreground">点击查看详情</span>
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent onClick={() => setCurrentView('novels')}>
             {loading ? (
               <Skeleton className="h-[200px] w-full" />
             ) : chartData.length === 0 ? (
@@ -211,7 +266,7 @@ export function DashboardView() {
                 暂无数据
               </div>
             ) : (
-              <ChartContainer config={chartConfig} className="h-[200px] w-full">
+              <ChartContainer config={statusChartConfig} className="h-[200px] w-full">
                 <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 20, top: 5, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <YAxis
@@ -224,7 +279,7 @@ export function DashboardView() {
                   />
                   <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} />
                   <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                  <Bar dataKey="count" radius={[0, 6, 6, 0]} maxBarSize={28}>
+                  <Bar dataKey="count" radius={[0, 6, 6, 0]} maxBarSize={28} cursor="pointer">
                     {chartData.map((entry, index) => (
                       <Cell key={index} fill={entry.fill} />
                     ))}
@@ -315,58 +370,78 @@ export function DashboardView() {
         </Card>
       </div>
 
+      {/* ── 7-Day Activity Chart ─────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BarChart3 className="h-5 w-5 text-muted-foreground" />
+            近 7 天活动
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {/* TODO: Connect to real activity data API */}
+          <ChartContainer config={activityChartConfig} className="h-[180px] w-full">
+            <AreaChart data={activityData} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
+              <defs>
+                <linearGradient id="chapterGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#a78bfa" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis
+                dataKey="name"
+                tickLine={false}
+                axisLine={false}
+                fontSize={12}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                fontSize={12}
+                allowDecimals={false}
+              />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Area
+                type="monotone"
+                dataKey="chapters"
+                stroke="#a78bfa"
+                strokeWidth={2}
+                fill="url(#chapterGradient)"
+                dot={{ r: 4, fill: '#a78bfa', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                activeDot={{ r: 6, fill: '#a78bfa', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+              />
+            </AreaChart>
+          </ChartContainer>
+        </CardContent>
+      </Card>
+
       {/* ── Quick Actions ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {/* 新建小说 */}
-        <Card
-          className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20"
-          onClick={handleCreateNovel}
-        >
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-              <BookOpen className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium">新建小说</p>
-              <p className="text-xs text-muted-foreground">创建新的小说作品</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 采集任务 */}
-        <Card
-          className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20"
-          onClick={() => setCurrentView('scrape')}
-        >
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
-              <Bug className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium">采集任务</p>
-              <p className="text-xs text-muted-foreground">管理采集规则与任务</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 管理分类 */}
-        <Card
-          className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20"
-          onClick={() => setCurrentView('categories')}
-        >
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/30">
-              <FolderTree className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium">管理分类</p>
-              <p className="text-xs text-muted-foreground">整理小说分类体系</p>
-            </div>
-          </CardContent>
-        </Card>
+        {quickActions.map((action) => {
+          const Icon = action.icon;
+          const gradientClass = quickActionGradients[action.color] ?? '';
+          return (
+            <Card
+              key={action.key}
+              className={`cursor-pointer transition-all duration-200 hover:shadow-md bg-gradient-to-br ${gradientClass}`}
+              onClick={() => handleQuickAction(action)}
+            >
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-${action.color}-100 dark:bg-${action.color}-900/30`}>
+                  <Icon className={`h-5 w-5 text-${action.color}-600 dark:text-${action.color}-400`} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{action.label}</p>
+                  <p className="text-xs text-muted-foreground">{action.desc}</p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* ── Recent Activity ──────────────────────────────────────────── */}
+      {/* ── Recent Activity (Real Data) ─────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -375,30 +450,58 @@ export function DashboardView() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="relative space-y-0">
-            {[
-              { icon: BookOpen, text: '创建了小说《示例小说》', time: '2小时前' },
-              { icon: FileText, text: '更新了3个章节', time: '5小时前' },
-              { icon: FolderTree, text: '新增分类「玄幻」', time: '1天前' },
-            ].map((item, i) => {
-              const ItemIcon = item.icon;
-              return (
-                <div key={i} className="relative flex items-start gap-3 pb-6 last:pb-0">
-                  {/* Timeline line */}
-                  {i < 2 && (
-                    <div className="absolute left-[15px] top-9 h-[calc(100%-12px)] w-px bg-border" />
-                  )}
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <ItemIcon className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1 pt-0.5">
-                    <p className="text-sm">{item.text}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{item.time}</p>
+          {loading ? (
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-3 w-20" />
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          ) : !stats?.recentNovels.length ? (
+            <div className="flex py-8 items-center justify-center text-sm text-muted-foreground">
+              暂无最近活动
+            </div>
+          ) : (
+            <div className="relative space-y-0">
+              {stats.recentNovels.slice(0, 5).map((novel, i) => {
+                const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
+                const isLast = i === Math.min(stats.recentNovels.length, 5) - 1;
+                return (
+                  <div key={novel.id} className="relative flex items-start gap-3 pb-6 last:pb-0 group">
+                    {/* Timeline line */}
+                    {!isLast && (
+                      <div className="absolute left-[15px] top-9 h-[calc(100%-12px)] w-px bg-border" />
+                    )}
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted group-hover:bg-violet-100 dark:group-hover:bg-violet-900/30 transition-colors">
+                      <BookOpen className="h-4 w-4 text-muted-foreground group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors" />
+                    </div>
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <p className="text-sm">
+                        <span className="font-medium">{novel.title}</span>
+                        <span className="text-muted-foreground"> 由 </span>
+                        <span className="font-medium">{novel.author}</span>
+                        <span className="text-muted-foreground"> 更新</span>
+                        <Badge variant="secondary" className={`ml-2 text-[10px] px-1.5 py-0 ${statusInfo.className}`}>
+                          {statusInfo.label}
+                        </Badge>
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {safeFormatDate(novel.updatedAt, (d) => formatDistanceToNow(d, {
+                          addSuffix: true,
+                          locale: zhCN,
+                        }))}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="mt-2 border-t pt-3">
             <button className="text-sm text-muted-foreground transition-colors hover:text-foreground">
               查看全部 →

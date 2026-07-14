@@ -28,6 +28,7 @@ import { StorageTab } from './parts/StorageTab';
 import { StrategyTab } from './parts/StrategyTab';
 import { CleanTab } from './parts/CleanTab';
 import { ScrapeRuleList } from './parts/ScrapeRuleList';
+import { ScrapeTaskMonitor } from './ScrapeTaskMonitor';
 
 // ==================== Main Editor ====================
 
@@ -408,16 +409,19 @@ interface ScrapeManagerViewProps {
 export default function ScrapeManagerView({ className }: ScrapeManagerViewProps) {
   const [editingRule, setEditingRule] = useState<ScrapeRuleItem | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [showTaskMonitor, setShowTaskMonitor] = useState(false);
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
 
   const handleEdit = (rule: ScrapeRuleItem) => {
     setEditingRule(rule);
     setIsCreating(false);
+    setShowTaskMonitor(false);
   };
 
   const handleCreate = () => {
     setEditingRule(null);
     setIsCreating(true);
+    setShowTaskMonitor(false);
   };
 
   const handleSuccess = () => {
@@ -430,12 +434,17 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
     setIsCreating(false);
   };
 
+  const handleBackFromMonitor = () => {
+    setShowTaskMonitor(false);
+  };
+
   const [pendingAiRule, setPendingAiRule] = useState<GeneratedRule | null>(null);
 
   const handleAiApplyAndCreate = (rule: GeneratedRule) => {
     // When applying from the list-level AI assistant, create a new rule
     setAiAssistantOpen(false);
     setIsCreating(true);
+    setShowTaskMonitor(false);
     setPendingAiRule(rule);
   };
 
@@ -460,8 +469,23 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
             onCancel={() => { handleCancel(); setPendingAiRule(null); }}
           />
         </div>
+      ) : showTaskMonitor ? (
+        <ScrapeTaskMonitor onBack={handleBackFromMonitor} />
       ) : (
-        <ScrapeRuleList onEdit={handleEdit} onCreate={handleCreate} onOpenAiAssistant={() => setAiAssistantOpen(true)} />
+        <>
+          <div className="mb-3 flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTaskMonitor(true)}
+              className="gap-1.5"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-clipboard-list"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+              任务记录
+            </Button>
+          </div>
+          <ScrapeRuleList onEdit={handleEdit} onCreate={handleCreate} onOpenAiAssistant={() => setAiAssistantOpen(true)} />
+        </>
       )}
 
       {/* List-level AI Assistant */}

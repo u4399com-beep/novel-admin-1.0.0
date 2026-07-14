@@ -1401,3 +1401,198 @@ Stage Summary:
 - 样式优化5项: Footer、滚动条、选择颜色、焦点环、欢迎卡片动画
 - Dashboard新增: 标签统计卡、活动时间线、hover效果增强
 - 小说列表新增: 搜索清除、结果计数、改进空状态
+
+---
+Task ID: 3b+3c
+Agent: UI Enhancement Agent
+Task: Sidebar Enhancement & Dashboard Chart Enhancement
+
+Work Log:
+
+## Task 1: Sidebar Enhancement (AppSidebar.tsx)
+
+### 1. nav-config.ts — Added description field
+- Added `description: string` to `NavItem` interface
+- Added descriptive text for all 8 nav items (e.g. "查看系统概览和数据统计")
+
+### 2. AppSidebar.tsx — Full enhancement
+- **Section dividers**: Since NAV_ITEMS has no `group` property, added a thin `Separator` after the first 4 items (index 3)
+- **Tooltips**: Wrapped each nav item with shadcn `Tooltip`/`TooltipTrigger`/`TooltipContent` showing `item.description` on hover (right-aligned)
+- **Footer with real data**: Fetches `totalNovels` from `/api/dashboard` on mount using AbortController, displays "N 部小说" with the pulse dot. Added "上次刷新: 刚刚" text that updates every 60 seconds via `setInterval` and a `useRef` timestamp
+- **Keyboard shortcut hints**: Added `⌘1`–`⌘8` labels aligned right on each nav item, visible only on `lg:` breakpoint and only on hover (`opacity-0 group-hover:opacity-100`)
+- **Hover glow on active item**: Enhanced the active glow overlay with `group-hover:from-violet-500/20 group-hover:via-violet-500/5` for a subtle increased glow on hover
+- **Clickable logo**: Changed header from `<div>` to `<button>` that calls `setCurrentView('dashboard')`, added `cursor-pointer` and hover shadow transition on the logo icon
+
+### Lint fix
+- Refactored `useCallback` + `useEffect` pattern to inline async IIFE within a single `useEffect` with `AbortController` to avoid `react-hooks/set-state-in-effect` lint error
+
+## Task 2: Dashboard Chart Enhancement (DashboardView.tsx)
+
+### 2a. Clickable status chart
+- Made the status distribution Card clickable (`cursor-pointer`, `hover:shadow-md`, `hover:border-primary/20`)
+- Added `onClick={() => setCurrentView('novels')}` on CardContent
+- Added subtle "点击查看详情" hint text in the card header
+
+### 2b. 7-Day Activity Area Chart
+- Added new `AreaChart` (recharts) below the status/recent section showing "近 7 天活动"
+- Uses `activityChartConfig` with violet color (`#a78bfa`)
+- Placeholder data: generates 7 days of chapter counts with sine-wave variation based on totalChapters
+- Linear gradient fill (`chapterGradient`) from violet/30% to violet/2% opacity
+- Styled dots and active dots with background color stroke
+- Added `// TODO: Connect to real activity data API` comments
+
+### 2c. Real Recent Activity
+- Replaced hardcoded fake activity timeline with actual data from `stats.recentNovels.slice(0, 5)`
+- Each item shows: novel title (bold), author (bold), "更新" label, status Badge, and relative time via `safeFormatDate` + `formatDistanceToNow`
+- Timeline connector lines between items
+- Hover effect: icon bg changes from `bg-muted` to violet-100/violet-900/30, icon color transitions to violet
+- Loading skeleton state (3 placeholder items)
+- Empty state when no recent novels
+
+### 2d. Gradient hover on quick action cards
+- Refactored quick actions into data-driven array (`quickActions`) with `color` key
+- Added `quickActionGradients` map: emerald/amber/violet → Tailwind gradient classes
+- Each card applies `bg-gradient-to-br` with matching color gradient on hover
+- Added hover border color matching each card's theme
+
+### Design compliance
+- Used shadcn/ui components (Card, Badge, Button, Skeleton, Tooltip, Separator, ChartContainer)
+- No indigo/blue as primary — used emerald, amber, violet, rose, teal color scheme
+- `safeFormatDate` from `@/lib/format` for all date formatting
+- `useAppStore` with individual selectors throughout
+- All icons from lucide-react
+- Responsive design with sm/md/lg/xl breakpoints
+
+## Verification Results
+- ESLint: 0 errors, 1 pre-existing warning (ScrapeTaskMonitor.tsx) ✅
+- Dev Server: HTTP 200, no runtime errors ✅
+
+Stage Summary:
+- Sidebar: 5 enhancements (dividers, tooltips, real footer data, keyboard hints, clickable logo)
+- Dashboard: 4 enhancements (clickable chart, 7-day area chart, real activity timeline, gradient quick actions)
+- Total files modified: 3 (nav-config.ts, AppSidebar.tsx, DashboardView.tsx)
+
+---
+Task ID: 2c
+Agent: Frontend Developer
+Task: Create scrape task monitor panel and integrate into scrape management view
+
+Work Log:
+- Created `src/components/scrape/ScrapeTaskMonitor.tsx` as a self-contained component
+- Integrated into `src/components/scrape/ScrapeRuleEditor.tsx` ScrapeManagerView as a third view state
+
+## New File: ScrapeTaskMonitor.tsx
+
+### Features Implemented:
+1. **Task List with Status Badges** - Color-coded status indicators:
+   - pending: gray with Clock icon
+   - running: sky blue with spinning Loader2 icon
+   - completed: emerald green with CheckCircle2 icon
+   - failed: red with XCircle icon
+   - cancelled: slate with Ban icon
+
+2. **Progress Bar** - Shadcn/ui Progress component for running tasks showing percentage
+
+3. **Expandable Log Viewer** - Click any task card to expand and view its execution logs:
+   - Fetches logs via GET /api/scrape-tasks/[id]
+   - Color-coded log levels: info (default), warn (amber), error (red), success (green)
+   - Each log shows icon, message, optional URL, and timestamp
+   - ScrollArea with max-h-64 for log overflow
+
+4. **Stats Display** - Per-task stats showing:
+   - Total/new books and chapters
+   - Failed and skipped item counts
+   - Creation/start/completion timestamps
+   - Current step for running tasks
+   - Error message for failed tasks
+   - Result URL for completed tasks
+
+5. **Auto-Refresh** - Every 5 seconds when any task has status "running":
+   - Refreshes task list
+   - Also refreshes expanded task logs if it's running
+   - Visual "自动刷新中" indicator badge
+
+6. **Status Filter** - Filter buttons: 全部 / 运行中 / 已完成 / 失败 / 等待中 / 已取消
+
+7. **Delete Functionality** - Trash icon for non-running tasks with AlertDialog confirmation
+
+8. **Pagination** - Previous/next page navigation with page indicator
+
+9. **Empty State** - Friendly empty state with icon and "返回采集规则列表" link
+
+10. **Loading Skeleton** - 3 skeleton card placeholders during initial load
+
+### Integration in ScrapeRuleEditor.tsx:
+- Added `showTaskMonitor` state to ScrapeManagerView (third view state)
+- Added "任务记录" button (clipboard-list icon) above ScrapeRuleList
+- Three-state toggle: rule list → task monitor → rule editor
+- `onBack` prop on ScrapeTaskMonitor navigates back to rule list
+- Import of ScrapeTaskMonitor component added
+
+### Technical Details:
+- Uses: Card, Badge, Button, Skeleton, ScrollArea, Progress, AlertDialog from shadcn/ui
+- Uses: toast from sonner, safeFormatDate from @/lib/format
+- Uses: format from date-fns with zhCN locale (matching existing ScrapeRuleList pattern)
+- Uses: lucide-react icons
+- Responsive design with mobile-friendly layout
+- ESLint: 0 errors, 0 warnings (in new code)
+
+Stage Summary:
+- New file: src/components/scrape/ScrapeTaskMonitor.tsx (~430 lines)
+- Modified file: src/components/scrape/ScrapeRuleEditor.tsx (added import + 3rd view state + "任务记录" button)
+
+---
+Task ID: 17
+Agent: Main Orchestrator
+Task: 持续开发审查 Round 17 — 新功能开发 + 样式优化
+
+Work Log:
+- 修复Dashboard totalTags Bug: API `/api/dashboard/route.ts` 未返回 `totalTags` 字段导致UI显示0
+  - 添加 `db.tag.count()` 到并行查询
+  - 更新 `DashboardStats` TypeScript 类型
+- 小说详情页章节增强 (NovelDetailView.tsx):
+  - 新增章节搜索栏: 按标题实时搜索，带清除按钮
+  - 新增内容过滤: 全部/有内容/无内容 三态切换
+  - 新增批量操作模式: 勾选框、全选/半选、批量删除确认对话框
+  - 批量模式时禁用拖拽排序
+  - 搜索/筛选结果计数 (如 "15/30")
+  - 空搜索结果状态 + 清除筛选链接
+- 采集任务监控面板 (ScrapeTaskMonitor.tsx) [子代理开发]:
+  - 新建组件，含状态筛选、进度条、展开式日志查看器
+  - 自动刷新(5s)，日志级别颜色编码
+  - 分页、删除确认、空状态/骨架屏
+  - 集成到 ScrapeRuleEditor.tsx 作为"任务记录"视图
+- 侧边栏增强 [子代理开发]:
+  - 分组分隔线、Tooltip描述、快捷键提示(hover显示)
+  - 底部显示真实小说数量 + 自动刷新时间
+  - Logo可点击回到仪表盘
+- Dashboard增强 [子代理开发]:
+  - 状态分布图表可点击
+  - 新增7日活动面积图(占位数据)
+  - 最近活动替换为真实数据
+  - 快捷操作卡片hover渐变效果
+- 全局样式优化 (globals.css):
+  - 平滑滚动、滚动条角落透明、按钮按下缩放效果
+  - 表格行hover过渡、checkbox勾选动画
+  - 日志级别颜色类(.log-info/warn/error/success)
+  - 输入框聚焦过渡、对话框层级修正
+
+## 新增/修改文件
+- src/app/api/dashboard/route.ts (添加totalTags)
+- src/types/index.ts (DashboardStats添加totalTags)
+- src/components/novel/NovelDetailView.tsx (搜索+过滤+批量操作)
+- src/components/scrape/ScrapeTaskMonitor.tsx (新建 ~670行)
+- src/components/scrape/ScrapeRuleEditor.tsx (集成任务监控)
+- src/components/novel/AppSidebar.tsx (增强)
+- src/components/novel/DashboardView.tsx (增强)
+- src/lib/nav-config.ts (添加description字段)
+- src/app/globals.css (样式优化)
+
+## 验证结果
+- ESLint: 0 errors ✅
+- Dev Server: HTTP 200, 无运行时错误 ✅
+
+Stage Summary:
+- Bug修复1项: Dashboard totalTags
+- 新功能3项: 章节搜索/过滤/批量操作、采集任务监控面板、Dashboard活动面积图
+- 样式增强: 侧边栏、Dashboard、全局CSS微交互
