@@ -12,6 +12,8 @@ import {
   ArrowRight,
   Bug,
   Sparkles,
+  Tags,
+  Activity,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -59,6 +61,7 @@ const statCards = [
   { key: 'totalChapters', label: '章节总数', icon: FileText, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
   { key: 'totalWords', label: '总字数', icon: Hash, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20' },
   { key: 'totalCategories', label: '分类总数', icon: FolderTree, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20' },
+  { key: 'totalTags', label: '标签总数', icon: Tags, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
 ] as const;
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -134,8 +137,8 @@ export function DashboardView() {
       <Card className="overflow-hidden border-0 bg-gradient-to-r from-slate-50 to-slate-100/50 dark:from-slate-900/50 dark:to-slate-800/50">
         <CardContent className="relative flex items-center gap-4 p-5 md:p-6">
           {/* Decorative icon */}
-          <div className="absolute -right-4 -top-4 h-28 w-28 rounded-full bg-emerald-100/40 dark:bg-emerald-900/20" />
-          <div className="absolute -right-8 -bottom-8 h-20 w-20 rounded-full bg-amber-100/30 dark:bg-amber-900/10" />
+          <div className="absolute -right-4 -top-4 h-28 w-28 rounded-full bg-emerald-100/40 dark:bg-emerald-900/20 animate-[pulse_4s_ease-in-out_infinite]" />
+          <div className="absolute -right-8 -bottom-8 h-20 w-20 rounded-full bg-amber-100/30 dark:bg-amber-900/10 animate-[pulse_4s_ease-in-out_infinite_1s]" />
           <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm dark:bg-slate-800">
             <Sparkles className="h-6 w-6 text-emerald-500" />
           </div>
@@ -147,9 +150,9 @@ export function DashboardView() {
       </Card>
 
       {/* ── Stats Grid ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
+          ? Array.from({ length: 5 }).map((_, i) => (
               <Card key={i}>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-4">
@@ -173,7 +176,7 @@ export function DashboardView() {
               const Icon = card.icon;
               const value = stats?.[card.key] ?? 0;
               return (
-                <Card key={card.key} className="overflow-hidden">
+                <Card key={card.key} className="overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-4">
                       <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${card.bg}`}>
@@ -316,7 +319,7 @@ export function DashboardView() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {/* 新建小说 */}
         <Card
-          className="cursor-pointer transition-shadow hover:shadow-md"
+          className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20"
           onClick={handleCreateNovel}
         >
           <CardContent className="flex items-center gap-4 p-4">
@@ -332,7 +335,7 @@ export function DashboardView() {
 
         {/* 采集任务 */}
         <Card
-          className="cursor-pointer transition-shadow hover:shadow-md"
+          className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20"
           onClick={() => setCurrentView('scrape')}
         >
           <CardContent className="flex items-center gap-4 p-4">
@@ -348,7 +351,7 @@ export function DashboardView() {
 
         {/* 管理分类 */}
         <Card
-          className="cursor-pointer transition-shadow hover:shadow-md"
+          className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20"
           onClick={() => setCurrentView('categories')}
         >
           <CardContent className="flex items-center gap-4 p-4">
@@ -362,6 +365,47 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Recent Activity ──────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Activity className="h-5 w-5 text-muted-foreground" />
+            最近活动
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="relative space-y-0">
+            {[
+              { icon: BookOpen, text: '创建了小说《示例小说》', time: '2小时前' },
+              { icon: FileText, text: '更新了3个章节', time: '5小时前' },
+              { icon: FolderTree, text: '新增分类「玄幻」', time: '1天前' },
+            ].map((item, i) => {
+              const ItemIcon = item.icon;
+              return (
+                <div key={i} className="relative flex items-start gap-3 pb-6 last:pb-0">
+                  {/* Timeline line */}
+                  {i < 2 && (
+                    <div className="absolute left-[15px] top-9 h-[calc(100%-12px)] w-px bg-border" />
+                  )}
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <ItemIcon className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <p className="text-sm">{item.text}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{item.time}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-2 border-t pt-3">
+            <button className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+              查看全部 →
+            </button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ── Error ───────────────────────────────────────────────────────── */}
       {error && (

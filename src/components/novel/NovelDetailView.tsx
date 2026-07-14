@@ -126,7 +126,10 @@ function SortableChapterRow({
         className="font-medium max-w-[240px] truncate cursor-pointer hover:text-primary transition-colors"
         onClick={() => onSelect(chapter)}
       >
-        {chapter.title}
+        <span className="inline-flex items-center gap-2">
+          <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${chapter.content && chapter.content.trim().length > 0 ? 'bg-emerald-500' : 'border border-muted-foreground/30'}`} />
+          {chapter.title}
+        </span>
       </TableCell>
       <TableCell className="w-24 text-muted-foreground tabular-nums text-sm">
         {(chapter.wordCount ?? 0).toLocaleString()}
@@ -742,6 +745,26 @@ export default function NovelDetailView() {
           <ResizablePanel defaultSize={selectedChapter ? 45 : 100} minSize={30}>
             <div className="flex flex-col h-full">
               {/* Chapter list header */}
+              {/* Reading progress bar */}
+              {chapters.length > 0 && (() => {
+                const withContent = chapters.filter(c => c.content && c.content.trim().length > 0).length;
+                const pct = Math.round((withContent / chapters.length) * 100);
+                return (
+                  <div className="px-4 pt-3 space-y-1">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>采集进度</span>
+                      <span>{withContent}/{chapters.length} 章 ({pct}%)</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 dark:from-emerald-600 dark:to-emerald-500 rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
                 <h2 className="text-base font-semibold flex items-center gap-2">
                   章节列表

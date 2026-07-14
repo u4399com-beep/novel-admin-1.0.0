@@ -59,6 +59,7 @@ export interface DashboardStats {
   totalChapters: number;
   totalWords: number;
   totalCategories: number;
+  totalTags: number;
   recentNovels: Novel[];
   statusDistribution: { status: string; count: number }[];
 }

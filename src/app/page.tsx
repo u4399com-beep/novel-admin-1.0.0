@@ -14,6 +14,7 @@ import { DashboardView } from '@/components/novel/DashboardView';
 import NovelFormDialog from '@/components/novel/NovelFormDialog';
 import { ChapterFormDialog } from '@/components/novel/ChapterFormDialog';
 import CommandPalette from '@/components/novel/CommandPalette';
+import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog';
 
 // Lazy-loaded view components (not needed on initial dashboard render)
 const viewLoadingFallback = (
@@ -91,6 +92,7 @@ export default function Home() {
 
   // ─── Time display ──────────────────────────────────────────────────────
   const [time, setTime] = useState('');
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const isMac = useSyncExternalStore(
     () => () => {},
     () => navigator.platform?.includes('Mac') ?? false,
@@ -106,6 +108,18 @@ export default function Home() {
     update();
     const id = setInterval(update, 60_000);
     return () => clearInterval(id);
+  }, []);
+
+  // ─── Keyboard shortcuts listener ──────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === '?' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault();
+        setShortcutsOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   // ─── Dark mode toggle ─────────────────────────────────────────────────
@@ -198,6 +212,18 @@ export default function Home() {
               </Button>
             )}
 
+            {/* Shortcuts hint */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => setShortcutsOpen(prev => !prev)}
+              aria-label="键盘快捷键"
+              title="键盘快捷键"
+            >
+              <span className="text-sm font-medium">?</span>
+            </Button>
+
             {/* Time display */}
             <span className="hidden sm:inline text-xs text-muted-foreground font-mono tabular-nums">
               {time}
@@ -241,11 +267,23 @@ export default function Home() {
         </div>
 
         {/* Footer */}
-        <footer className="mt-auto border-t bg-background px-4 py-3 text-center text-xs text-muted-foreground">
-          小说管理系统 v1.0.0 · 基于 Next.js 16 构建
-          {session?.user?.name && (
-            <span className="ml-2">· 当前用户: {session.user.name}</span>
-          )}
+        <footer className="mt-auto border-t border-border/50 bg-background/80 backdrop-blur-sm px-4 sm:px-6 py-3">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground/70">
+            <div className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1.5">
+              <span className="font-medium text-muted-foreground">小说管理系统</span>
+              <span className="hidden sm:inline text-muted-foreground/40">·</span>
+              <span className="hidden sm:inline">基于 Next.js 16 构建</span>
+              <span className="sm:hidden text-muted-foreground/40">v1.0.0</span>
+            </div>
+            {session?.user?.name && (
+              <div className="flex items-center gap-2">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary">
+                  {session.user.name.charAt(0).toUpperCase()}
+                </div>
+                <span>{session.user.name}</span>
+              </div>
+            )}
+          </div>
         </footer>
       </main>
 
@@ -253,6 +291,7 @@ export default function Home() {
       <NovelFormDialog />
       <ChapterFormDialog />
       <CommandPalette />
+      <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   );
 }

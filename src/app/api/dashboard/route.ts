@@ -10,12 +10,13 @@ export const GET = withAuth(async function GET() {
   try {
     const data = await getOrCompute(DASHBOARD_CACHE_KEY, DASHBOARD_CACHE_TTL, async () => {
       // Parallelize all independent database queries
-      const [totalNovels, totalChapters, totalWords, totalCategories, recentNovels, statusGroups] =
+      const [totalNovels, totalChapters, totalWords, totalCategories, totalTags, recentNovels, statusGroups] =
         await Promise.all([
           db.novel.count(),
           db.chapter.count(),
           db.novel.aggregate({ _sum: { wordCount: true } }),
           db.category.count(),
+          db.tag.count(),
           db.novel.findMany({
             take: 8,
             orderBy: { updatedAt: "desc" },
@@ -40,6 +41,7 @@ export const GET = withAuth(async function GET() {
         totalChapters,
         totalWords: totalWords._sum.wordCount || 0,
         totalCategories,
+        totalTags,
         recentNovels,
         statusDistribution,
       };

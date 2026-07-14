@@ -9,6 +9,10 @@ import {
   ChevronRight,
   FileText,
   BookMarked,
+  LayoutGrid,
+  List,
+  X,
+  Plus,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -61,6 +65,7 @@ export default function NovelListView() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [categories, setCategories] = useState<Category[]>([]);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const refreshNovels = useAppStore((s) => s.refreshVersions['novels'] ?? 0);
   const selectNovel = useAppStore((s) => s.selectNovel);
@@ -163,8 +168,13 @@ export default function NovelListView() {
             placeholder="搜索小说标题或作者..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-9"
+            className="pl-9 pr-8"
           />
+          {searchInput && (
+            <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6" onClick={() => { setSearchInput(''); setSearch(''); }}>
+              <X className="h-3 w-3" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -195,7 +205,21 @@ export default function NovelListView() {
             ))}
           </SelectContent>
         </Select>
+        {/* View mode toggle */}
+        <div className="flex items-center gap-1 rounded-lg border bg-muted p-0.5">
+          <Button variant={viewMode === 'grid' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setViewMode('grid')} aria-label="网格视图">
+            <LayoutGrid className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant={viewMode === 'list' ? 'secondary' : 'ghost'} size="icon" className="h-7 w-7" onClick={() => setViewMode('list')} aria-label="列表视图">
+            <List className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
+
+      {/* ── Result Count ────────────────────────────────────────────────── */}
+      {!loading && novels.length > 0 && (
+        <p className="text-xs text-muted-foreground">共 {total} 部小说</p>
+      )}
 
       {/* ── Loading Skeleton ─────────────────────────────────────────────── */}
       {loading && (
@@ -219,123 +243,200 @@ export default function NovelListView() {
       {/* ── Empty State ─────────────────────────────────────────────────── */}
       {!loading && novels.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-            <BookOpen className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <p className="mt-4 text-sm text-muted-foreground">
-            {search || statusFilter !== 'all' || categoryFilter !== 'all'
-              ? '没有找到匹配的小说'
-              : '还没有小说，去创建第一本吧'}
-          </p>
+          {search || statusFilter !== 'all' || categoryFilter !== 'all' ? (
+            <>
+              <BookMarked className="h-12 w-12 text-muted-foreground/50" />
+              <p className="mt-4 text-sm text-muted-foreground">没有找到匹配的小说</p>
+            </>
+          ) : (
+            <>
+              <BookMarked className="h-12 w-12 text-muted-foreground/50" />
+              <p className="mt-4 text-base font-medium text-foreground">还没有小说</p>
+              <p className="mt-1 text-sm text-muted-foreground">点击「新建小说」开始添加你的第一部作品</p>
+              <Button className="mt-6" onClick={() => setCurrentView('novel-create')}>
+                <Plus className="mr-1.5 h-4 w-4" />
+                新建小说
+              </Button>
+            </>
+          )}
         </div>
       )}
 
       {/* ── Novel Grid ──────────────────────────────────────────────────── */}
       {!loading && novels.length > 0 && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {novels.map((novel, idx) => {
-              const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
-              const gradient = gradients[idx % gradients.length];
-              return (
-                <Card
-                  key={novel.id}
-                  className="group cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
-                  onClick={() => handleViewNovel(novel)}
-                >
-                  {/* Cover */}
-                  <div className={`relative h-40 w-full bg-gradient-to-br ${gradient}`}>
-                    {novel.coverUrl ? (
-                      <img
-                        src={novel.coverUrl}
-                        alt={novel.title}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center">
-                        <BookOpen className="h-12 w-12 text-muted-foreground/40" />
-                      </div>
-                    )}
-                    {/* Status badge on cover */}
-                    <Badge
-                      variant="secondary"
-                      className={`absolute right-2 top-2 ${statusInfo.className}`}
-                    >
-                      {statusInfo.label}
-                    </Badge>
-                  </div>
+          {/* ── Grid View ──────────────────────────────────────────────── */}
+          {viewMode === 'grid' && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {novels.map((novel, idx) => {
+                const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
+                const gradient = gradients[idx % gradients.length];
+                return (
+                  <Card
+                    key={novel.id}
+                    className="group cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+                    onClick={() => handleViewNovel(novel)}
+                  >
+                    {/* Cover */}
+                    <div className={`relative h-40 w-full bg-gradient-to-br ${gradient}`}>
+                      {novel.coverUrl ? (
+                        <img
+                          src={novel.coverUrl}
+                          alt={novel.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <BookOpen className="h-12 w-12 text-muted-foreground/40" />
+                        </div>
+                      )}
+                      {/* Status badge on cover */}
+                      <Badge
+                        variant="secondary"
+                        className={`absolute right-2 top-2 ${statusInfo.className}`}
+                      >
+                        {statusInfo.label}
+                      </Badge>
+                    </div>
 
-                  <CardContent className="space-y-2.5 p-4">
+                    <CardContent className="space-y-2.5 p-4">
+                      {/* Title */}
+                      <h3 className="truncate text-sm font-semibold">{novel.title}</h3>
+
+                      {/* Author */}
+                      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <User className="h-3 w-3" />
+                        {novel.author}
+                      </p>
+
+                      {/* Category + Tags */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {novel.category && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs"
+                            style={{
+                              borderColor: novel.category.color,
+                              color: novel.category.color,
+                            }}
+                          >
+                            {novel.category.name}
+                          </Badge>
+                        )}
+                        {(novel.tags ?? []).slice(0, 3).map(({ tag }) => (
+                          <Badge
+                            key={tag.id}
+                            variant="secondary"
+                            className="text-xs"
+                            style={{
+                              backgroundColor: tag.color + '18',
+                              color: tag.color,
+                            }}
+                          >
+                            {tag.name}
+                          </Badge>
+                        ))}
+                      </div>
+
+                      {/* Footer */}
+                      <div className="flex items-center justify-between border-t pt-2.5 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <FileText className="h-3 w-3" />
+                          {novel._count?.chapters ?? 0} 章
+                        </span>
+                        <span>
+                          {safeFormatDate(novel.updatedAt, (d) => formatDistanceToNow(d, {
+                            addSuffix: true,
+                            locale: zhCN,
+                          }))}
+                        </span>
+                      </div>
+
+                      {/* View Button */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full opacity-0 transition-opacity group-hover:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewNovel(novel);
+                        }}
+                      >
+                        <BookMarked className="mr-1.5 h-3.5 w-3.5" />
+                        查看
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── List View ──────────────────────────────────────────────── */}
+          {viewMode === 'list' && (
+            <div className="divide-y rounded-lg border">
+              {novels.map((novel) => {
+                const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
+                const gradient = gradients[novels.indexOf(novel) % gradients.length];
+                return (
+                  <div
+                    key={novel.id}
+                    className="flex items-center gap-3 py-2 px-3 transition-colors hover:bg-muted/50 cursor-pointer"
+                    onClick={() => handleViewNovel(novel)}
+                  >
+                    {/* Thumbnail */}
+                    <div className={`h-10 w-8 flex-shrink-0 overflow-hidden rounded bg-gradient-to-br ${gradient}`}>
+                      {novel.coverUrl ? (
+                        <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <BookOpen className="h-4 w-4 text-muted-foreground/40" />
+                        </div>
+                      )}
+                    </div>
+
                     {/* Title */}
-                    <h3 className="truncate text-sm font-semibold">{novel.title}</h3>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{novel.title}</span>
 
                     {/* Author */}
-                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <User className="h-3 w-3" />
-                      {novel.author}
-                    </p>
+                    <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:block">{novel.author}</span>
 
-                    {/* Category + Tags */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {novel.category && (
-                        <Badge
-                          variant="outline"
-                          className="text-xs"
-                          style={{
-                            borderColor: novel.category.color,
-                            color: novel.category.color,
-                          }}
-                        >
-                          {novel.category.name}
-                        </Badge>
-                      )}
-                      {(novel.tags ?? []).slice(0, 3).map(({ tag }) => (
-                        <Badge
-                          key={tag.id}
-                          variant="secondary"
-                          className="text-xs"
-                          style={{
-                            backgroundColor: tag.color + '18',
-                            color: tag.color,
-                          }}
-                        >
-                          {tag.name}
-                        </Badge>
-                      ))}
-                    </div>
+                    {/* Status Badge */}
+                    <Badge variant="secondary" className={`text-xs flex-shrink-0 ${statusInfo.className}`}>
+                      {statusInfo.label}
+                    </Badge>
 
-                    {/* Footer */}
-                    <div className="flex items-center justify-between border-t pt-2.5 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <FileText className="h-3 w-3" />
-                        {novel._count?.chapters ?? 0} 章
-                      </span>
-                      <span>
-                        {safeFormatDate(novel.updatedAt, (d) => formatDistanceToNow(d, {
-                          addSuffix: true,
-                          locale: zhCN,
-                        }))}
-                      </span>
-                    </div>
+                    {/* Chapter count */}
+                    <span className="hidden flex-shrink-0 text-xs text-muted-foreground md:flex md:items-center md:gap-1">
+                      <FileText className="h-3 w-3" />
+                      {novel._count?.chapters ?? 0} 章
+                    </span>
 
-                    {/* View Button */}
+                    {/* Updated time */}
+                    <span className="hidden flex-shrink-0 text-xs text-muted-foreground lg:block">
+                      {safeFormatDate(novel.updatedAt, (d) => formatDistanceToNow(d, {
+                        addSuffix: true,
+                        locale: zhCN,
+                      }))}
+                    </span>
+
+                    {/* View button */}
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      className="w-full opacity-0 transition-opacity group-hover:opacity-100"
+                      className="flex-shrink-0 text-xs"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleViewNovel(novel);
                       }}
                     >
-                      <BookMarked className="mr-1.5 h-3.5 w-3.5" />
                       查看
                     </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* ── Pagination ───────────────────────────────────────────────── */}
           {totalPages > 1 && (
