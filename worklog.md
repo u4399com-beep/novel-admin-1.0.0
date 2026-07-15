@@ -1596,3 +1596,60 @@ Stage Summary:
 - Bug修复1项: Dashboard totalTags
 - 新功能3项: 章节搜索/过滤/批量操作、采集任务监控面板、Dashboard活动面积图
 - 样式增强: 侧边栏、Dashboard、全局CSS微交互
+
+---
+Task ID: 18
+Agent: Main Orchestrator
+Task: 设计8套完全不同风格的前端主题模板
+
+Work Log:
+- 分析现有主题系统架构: ThemeConfig(colors/layout/typography/seo/geo)
+- 创建 `src/lib/prebuilt-themes.ts` — 独立预置主题文件，包含13套主题(原有5+新增8)
+- 创建 `src/components/theme/ThemePreviewCard.tsx` — 全新布局预览组件
+- 重构 ThemeManagerView.tsx: 移除内联定义，改为外部导入
+
+## 新增8套主题 — 每套布局/风格完全不同
+
+| # | 名称 | 标识符 | 布局特征 | 排版 | 风格定位 |
+|---|------|--------|---------|------|---------|
+| 1 | 极光紫 | aurora-purple | 宽1400px, 右侧栏, 悬浮卡片, 固定头 | sans 800 | 深紫暗色宽屏 |
+| 2 | 清风竹 | bamboo-breeze | 窄960px, 左侧栏, 边框卡片, 静态头 | 全serif 700 | 竹青线装书感 |
+| 3 | 星空墨 | starry-ink | 宽1400px, 左侧栏, 扁平卡片, 固定头 | mono 800 1.5 | 纯黑极客密排4列 |
+| 4 | 樱花粉 | sakura-pink | 1200px, 左侧栏, 大圆角, 静态头 | sans 700 | 粉色少女温馨 |
+| 5 | 翡翠湖 | emerald-lake | 1200px, 右侧栏, 悬浮卡片, 静态头 | sans 700 1.75 | 青色清爽水调 |
+| 6 | 烈焰金 | flame-gold | 1100px, 左侧栏, 边框卡片, 固定头 | serif 800 1.6 | 深炭金色奢华 |
+| 7 | 冰川灰 | glacier-silver | 宽1400px, 左侧栏, 扁平卡片, 静态头 | sans 700 1.5 | 北欧极简4列 |
+| 8 | 暮色棕 | twilight-brown | 窄960px, 左侧栏, 大圆角, 静态头 | 全serif 700 1.75 | 暖棕咖啡馆复古 |
+
+## 布局差异化维度
+- **maxWidth**: 960px(窄) / 1100px / 1200px(标准) / 1400px(宽)
+- **sidebarPosition**: left(10套) / right(2套: 极光紫, 翡翠湖)
+- **cardStyle**: flat(3) / rounded(3) / bordered(3) / elevated(4)
+- **headerStyle**: static(8) / fixed(5)
+- **gridColumns**: 3列(10) / 4列(3: 极简白/星空墨/冰川灰)
+- **typography**: sans(8) / serif(4) / mono(2) / 全serif(3)
+
+## SEO 优化
+每套主题配置完整SEO字段:
+- defaultTitle: 品牌化站点名
+- titleTemplate: 两种模板格式({title} - {siteName} / {title} | {siteName})
+- defaultDescription: 80-120字SEO描述，含主题特色关键词
+- defaultKeywords: 5-7个精准关键词，覆盖"小说,阅读,主题特色,用户场景"
+
+## 增强预览卡片 (ThemePreviewCard)
+- 展示完整页面布局: Header + 侧边栏 + 主内容区 + Footer
+- 侧边栏根据 sidebarPosition 显示在左或右
+- 网格列数真实反映 gridColumns 配置
+- 卡片样式真实反映 cardStyle (圆角/扁平/边框/悬浮)
+- 底部显示布局参数标签 (宽度/列数/卡片风格/侧栏位置)
+- 色彩点阵展示5个核心色彩
+- 自动检测深色/浅色背景调整阴影
+
+## 文件变更
+- 新建: src/lib/prebuilt-themes.ts (~170行)
+- 新建: src/components/theme/ThemePreviewCard.tsx (~160行)
+- 修改: src/components/theme/ThemeManagerView.tsx (移除355行内联代码, 改为导入)
+
+## 验证
+- ESLint: 0 errors ✅
+- 编译通过, 组件导入引用正确 ✅
