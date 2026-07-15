@@ -767,3 +767,4 @@ Docker 容器架构：
 | 恢复数据库 | `docker compose exec -T postgres psql -U novel novel_admin < backup.sql` |
 | 修改密码 | `nano .env` → 改 `ADMIN_PASSWORD` → `docker compose restart` |
 | 完全卸载 | `docker compose down -v && rm -rf /opt/novel-admin` |
+| **国内镜像** | `echo '{"registry-mirrors":["https://docker.1ms.run","https://docker.xuanyuan.me","https://docker.m.daocloud.io"]}' > /etc/docker/daemon.json && systemctl restart docker` |

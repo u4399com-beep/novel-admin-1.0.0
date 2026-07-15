@@ -135,6 +135,51 @@ if ! docker info &> /dev/null; then
 fi
 ok "Docker daemon is running"
 
+# ─── Configure Docker Mirror (for China / blocked Docker Hub) ───
+step "Configuring Docker registry mirror..."
+
+# Test if Docker Hub is reachable (quick HTTP probe, no image pull)
+HUB_REACHABLE=false
+if curl -sf --connect-timeout 5 https://registry-1.docker.io/v2/ > /dev/null 2>&1; then
+    HUB_REACHABLE=true
+fi
+
+MIRRORS_CONFIGURED=false
+DAEMON_JSON="/etc/docker/daemon.json"
+
+# China mirror list (multi-source for redundancy)
+MIRRORS_LINE='["https://docker.1ms.run","https://docker.xuanyuan.me","https://docker.m.daocloud.io","https://docker.nju.edu.cn","https://hub.rat.dev","https://docker.chenby.cn","https://docker.mirrors.ustc.edu.cn"]'
+
+if [ "$HUB_REACHABLE" = false ]; then
+    warn "Docker Hub (registry-1.docker.io) is NOT reachable."
+    info "Configuring China mirror accelerators..."
+
+    # Backup existing config
+    if [ -f "$DAEMON_JSON" ]; then
+        cp "$DAEMON_JSON" "${DAEMON_JSON}.bak.$(date +%s)"
+    fi
+
+    # Write mirror config (single-line JSON for maximum compatibility)
+    mkdir -p /etc/docker
+    echo "{\"registry-mirrors\": ${MIRRORS_LINE}}" > "$DAEMON_JSON"
+
+    # Restart Docker to apply
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+    sleep 3
+
+    # Verify
+    if docker info 2>/dev/null | grep -q "Registry Mirrors"; then
+        ok "China mirrors configured and active"
+        MIRRORS_CONFIGURED=true
+    else
+        warn "Mirror config written but may not be active (check ${DAEMON_JSON})"
+        MIRRORS_CONFIGURED=true
+    fi
+else
+    ok "Docker Hub is reachable, no mirror needed"
+fi
+
 # Check disk space
 AVAILABLE_GB=$(df -BG /opt 2>/dev/null | awk 'NR==2 {print $4}' | tr -d 'G')
 [ -z "$AVAILABLE_GB" ] && AVAILABLE_GB=$(df -BG . | awk 'NR==2 {print $4}' | tr -d 'G')
