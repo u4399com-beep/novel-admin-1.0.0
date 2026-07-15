@@ -1,562 +1,509 @@
 #!/bin/bash
-# ============================================================
-# 📚 小说管理系统 - 一键安装脚本 (from GitHub)
-# Novel Management System - One-Click Installer
-# ============================================================
-#
-# 使用方法 / Usage:
-#   curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
-#
-# 或者手动下载后运行:
-#   wget https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh
-#   chmod +x install.sh && ./install.sh
-#
-# 本脚本会自动完成:
-#   1. 检测 Docker 环境（未安装则自动安装）
-#   2. 从 GitHub 克隆项目
-#   3. 生成安全的随机密码和密钥
-#   4. 创建 .env 配置文件
-#   5. Docker 构建并启动所有服务
-#   6. 等待健康检查通过，显示登录信息
-# ============================================================
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  📚 小说管理系统 - Docker 一键安装脚本                        ║
+# ║  Novel Admin - One-Click Docker Installer                      ║
+# ║                                                              ║
+# ║  GitHub: github.com/u4399com-beep/novel-admin-1.0.0           ║
+# ║                                                              ║
+# ║  Usage:                                                      ║
+# ║    curl -fsSL https://raw.githubusercontent.com/               ║
+# ║      u4399com-beep/novel-admin-1.0.0/main/install.sh | bash  ║
+# ║                                                              ║
+# ║  Options:                                                     ║
+# ║    -y, --yes        Use all defaults (non-interactive)        ║
+# ║    -d, --dir DIR    Install directory (default: /opt/novel-admin) ║
+# ║    --uninstall      Remove everything (containers, images, data) ║
+# ║    -h, --help       Show this help                            ║
+# ╚══════════════════════════════════════════════════════════════════╝
 
-set -e
+set -euo pipefail
 
-# ─── Colors ───
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-NC='\033[0m'
-BOLD='\033[1m'
-DIM='\033[2m'
-
-# ─── Constants ───
-REPO_URL="https://github.com/u4399com-beep/novel-admin-1.0.0.git"
+# ═══════════════════════════════════════════════════════════════
+# Constants
+# ═══════════════════════════════════════════════════════════════
+REPO="https://github.com/u4399com-beep/novel-admin-1.0.0.git"
 REPO_RAW="https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main"
+# GitHub 国内代理（按优先级尝试）
+GITHUB_PROXIES=(
+    "https://ghfast.top/https://github.com"
+    "https://mirror.ghproxy.com/https://github.com"
+    "https://gh-proxy.com/https://github.com"
+)
+# Docker Hub 国内镜像
+DOCKER_MIRRORS='["https://docker.1ms.run","https://docker.xuanyuan.me","https://docker.m.daocloud.io","https://docker.nju.edu.cn","https://hub.rat.dev","https://docker.chenby.cn","https://docker.mirrors.ustc.edu.cn"]'
+
+# ═══════════════════════════════════════════════════════════════
+# Parse Arguments
+# ═══════════════════════════════════════════════════════════════
+AUTO_YES=false
 INSTALL_DIR="/opt/novel-admin"
+DO_UNINSTALL=false
 
-# ─── Helper Functions ───
-info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
-ok()      { echo -e "${GREEN}  ✓${NC} $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error()   { echo -e "${RED}[ERROR]${NC} $*"; }
-step()    { echo -e "\n${MAGENTA}${BOLD}▶ $*${NC}"; }
-banner()  { echo -e "${CYAN}${BOLD}$*${NC}"; }
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -y|--yes)    AUTO_YES=true; shift ;;
+        -d|--dir)    INSTALL_DIR="$2"; shift 2 ;;
+        --uninstall) DO_UNINSTALL=true; shift ;;
+        -h|--help)
+            head -20 "$0" | grep '^#' | sed 's/^# \?//'
+            exit 0
+            ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
 
-# ─── Trap: cleanup on error ───
-trap 'error "Script interrupted. Partial installation may exist at ${INSTALL_DIR}"; exit 1' INT TERM
+# ═══════════════════════════════════════════════════════════════
+# Color & Output Helpers
+# ═══════════════════════════════════════════════════════════════
+if [ -t 1 ]; then
+    R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m'
+    B='\033[0;34m' C='\033[0;36m' M='\033[0;35m'
+    N='\033[0m'    BD='\033[1m' DM='\033[2m'
+else
+    R= G= Y= B= C= M= N= BD= DM=
+fi
 
-# ============================================================
-# Step 0: Banner
-# ============================================================
-clear
-echo ""
-banner "╔═══════════════════════════════════════════════════════════╗"
-banner "║                                                           ║"
-banner "║        📚 小说管理系统 - Docker 一键安装                 ║"
-banner "║        Novel Management System - One-Click Installer      ║"
-banner "║                                                           ║"
-banner "║        Repo: github.com/u4399com-beep/novel-admin-1.0.0  ║"
-banner "║                                                           ║"
-banner "╚═══════════════════════════════════════════════════════════╝"
-echo ""
+log_info()  { echo -e "${B}[INFO]${N} $*"; }
+log_ok()    { echo -e "${G}  ✓${N} $*"; }
+log_warn()  { echo -e "${Y}[WARN]${N} $*"; }
+log_err()   { echo -e "${R}[ERROR]${N} $*" >&2; }
+log_step()  { echo -e "\n${M}${BD}▶ $*${N}"; }
 
-# ============================================================
-# Step 1: Install / Verify Docker
-# ============================================================
-step "Step 1/6: Checking Docker environment..."
-
-install_docker() {
-    info "Docker not found. Installing Docker..."
-    if command -v apt-get &> /dev/null; then
-        # Debian/Ubuntu
-        apt-get update -qq
-        apt-get install -y -qq ca-certificates curl gnupg > /dev/null 2>&1
-        install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/$(. /etc/os-release && echo "$ID")/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null
-        chmod a+r /etc/apt/keyrings/docker.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$(. /etc/os-release && echo "$ID") $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-        apt-get update -qq
-        apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin > /dev/null 2>&1
-    elif command -v yum &> /dev/null; then
-        # CentOS/RHEL
-        yum install -y -q yum-utils > /dev/null 2>&1
-        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo > /dev/null 2>&1
-        yum install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin > /dev/null 2>&1
-    elif command -v apk &> /dev/null; then
-        # Alpine
-        apk add --no-cache docker docker-compose > /dev/null 2>&1
-    else
-        error "Unsupported OS. Please install Docker manually:"
-        echo "  curl -fsSL https://get.docker.com | sh"
-        exit 1
+ask() {
+    local prompt="$1" default="${2:-}"
+    if $AUTO_YES; then
+        echo "$default"
+        return
     fi
-    systemctl start docker 2>/dev/null || true
-    systemctl enable docker 2>/dev/null || true
-    ok "Docker installed and started"
+    if [ -n "$default" ]; then
+        read -rp "$prompt [$default]: " REPLY
+        echo "${REPLY:-$default}"
+    else
+        read -rp "$prompt: " REPLY
+        echo "$REPLY"
+    fi
 }
 
-if ! command -v docker &> /dev/null; then
-    read -p "Docker is not installed. Install it now? (Y/n): " INSTALL_DOCKER
-    if [[ ! "$INSTALL_DOCKER" =~ ^[Nn]$ ]]; then
-        install_docker
-    else
-        error "Docker is required. Please install it first:"
-        echo "  curl -fsSL https://get.docker.com | sh"
-        exit 1
+ask_yes() {
+    local prompt="$1" default="${2:-Y}"
+    if $AUTO_YES; then
+        return 0
     fi
-fi
-ok "Docker $(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)"
+    local yn
+    read -rp "$prompt (Y/n): " yn
+    [[ -z "$yn" || "$yn" =~ ^[Yy] ]]
+}
 
-# Check Docker Compose
-if docker compose version &> /dev/null; then
-    COMPOSE_CMD="docker compose"
-elif command -v docker-compose &> /dev/null; then
-    COMPOSE_CMD="docker-compose"
-else
-    error "Docker Compose not found!"
-    echo "  Reinstall Docker: curl -fsSL https://get.docker.com | sh"
+die() {
+    log_err "$*"
     exit 1
-fi
-ok "Docker Compose $(docker compose version --short 2>/dev/null || docker-compose --version | grep -oP '\d+\.\d+\.\d+' | head -1)"
+}
 
-# Check Docker daemon
-if ! docker info &> /dev/null; then
-    warn "Docker daemon not running, attempting to start..."
+# ═══════════════════════════════════════════════════════════════
+# Uninstall Mode
+# ═══════════════════════════════════════════════════════════════
+if $DO_UNINSTALL; then
+    if [ -d "$INSTALL_DIR" ]; then
+        cd "$INSTALL_DIR"
+        log_info "Stopping and removing containers and volumes..."
+        docker compose down -v --rmi local 2>/dev/null || true
+        cd /
+        log_info "Removing project directory..."
+        rm -rf "$INSTALL_DIR"
+        log_ok "Uninstall complete. All data has been removed."
+    else
+        log_warn "Not installed at ${INSTALL_DIR}, nothing to remove."
+    fi
+    exit 0
+fi
+
+# ═══════════════════════════════════════════════════════════════
+# Banner
+# ═══════════════════════════════════════════════════════════════
+[ -t 1 ] && clear 2>/dev/null || true
+echo ""
+echo -e "${C}${BD}╔══════════════════════════════════════════════════╗${N}"
+echo -e "${C}${BD}║                                                  ║${N}"
+echo -e "${C}${BD}║    📚 小说管理系统 · Docker 一键安装             ║${N}"
+echo -e "${C}${BD}║    github.com/u4399com-beep/novel-admin-1.0.0    ║${N}"
+echo -e "${C}${BD}║                                                  ║${N}"
+echo -e "${C}${BD}╚══════════════════════════════════════════════════╝${N}"
+echo ""
+
+# ═══════════════════════════════════════════════════════════════
+# Step 1/7: Docker Environment
+# ═══════════════════════════════════════════════════════════════
+log_step "[1/7] Docker 环境"
+
+# --- Install Docker if missing ---
+if ! command -v docker &>/dev/null; then
+    if ! ask_yes "Docker 未安装，是否自动安装？"; then
+        die "请先安装 Docker: curl -fsSL https://get.docker.com | sh"
+    fi
+    log_info "正在安装 Docker..."
+    if command -v apt-get &>/dev/null; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq && apt-get install -y -qq ca-certificates curl gnupg lsb-release >/dev/null 2>&1
+        . /etc/os-release
+        mkdir -p /etc/apt/keyrings
+        curl -fsSL "https://download.docker.com/linux/$ID/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null
+        chmod a+r /etc/apt/keyrings/docker.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" \
+            > /etc/apt/sources.list.d/docker.list
+        apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
+    elif command -v yum &>/dev/null; then
+        yum install -y -q yum-utils >/dev/null 2>&1
+        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo >/dev/null 2>&1
+        yum install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin >/dev/null 2>&1
+    elif command -v apk &>/dev/null; then
+        apk add --no-cache docker docker-compose >/dev/null 2>&1
+    else
+        die "不支持的系统，请手动安装: curl -fsSL https://get.docker.com | sh"
+    fi
+    systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
+    log_ok "Docker 已安装"
+fi
+log_ok "Docker $(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)"
+
+# --- Docker Compose ---
+if docker compose version &>/dev/null; then
+    COMPOSE="docker compose"
+elif command -v docker-compose &>/dev/null; then
+    COMPOSE="docker-compose"
+else
+    die "Docker Compose 未找到，请重装 Docker"
+fi
+log_ok "Compose $(docker compose version --short 2>/dev/null || echo 'ok')"
+
+# --- Daemon running? ---
+if ! docker info &>/dev/null; then
     systemctl start docker 2>/dev/null || service docker start 2>/dev/null || true
     sleep 2
-    if ! docker info &> /dev/null; then
-        error "Docker daemon failed to start!"
-        exit 1
-    fi
+    docker info &>/dev/null || die "Docker 守护进程启动失败"
 fi
-ok "Docker daemon is running"
+log_ok "Docker 运行中"
 
-# ─── Configure Docker Mirror (for China / blocked Docker Hub) ───
-step "Configuring Docker registry mirror..."
+# ═══════════════════════════════════════════════════════════════
+# Step 2/7: Docker Mirror (China)
+# ═══════════════════════════════════════════════════════════════
+log_step "[2/7] 镜像加速"
 
-# Test if Docker Hub is reachable (quick HTTP probe, no image pull)
-HUB_REACHABLE=false
-if curl -sf --connect-timeout 5 https://registry-1.docker.io/v2/ > /dev/null 2>&1; then
-    HUB_REACHABLE=true
-fi
-
-MIRRORS_CONFIGURED=false
 DAEMON_JSON="/etc/docker/daemon.json"
+HUB_OK=false
+curl -sf --connect-timeout 5 "https://registry-1.docker.io/v2/" &>/dev/null && HUB_OK=true
 
-# China mirror list (multi-source for redundancy)
-MIRRORS_LINE='["https://docker.1ms.run","https://docker.xuanyuan.me","https://docker.m.daocloud.io","https://docker.nju.edu.cn","https://hub.rat.dev","https://docker.chenby.cn","https://docker.mirrors.ustc.edu.cn"]'
-
-if [ "$HUB_REACHABLE" = false ]; then
-    warn "Docker Hub (registry-1.docker.io) is NOT reachable."
-    info "Configuring China mirror accelerators..."
-
-    # Backup existing config
-    if [ -f "$DAEMON_JSON" ]; then
-        cp "$DAEMON_JSON" "${DAEMON_JSON}.bak.$(date +%s)"
-    fi
-
-    # Write mirror config (single-line JSON for maximum compatibility)
-    mkdir -p /etc/docker
-    echo "{\"registry-mirrors\": ${MIRRORS_LINE}}" > "$DAEMON_JSON"
-
-    # Restart Docker to apply
-    systemctl daemon-reload 2>/dev/null || true
-    systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
-    sleep 3
-
-    # Verify
-    if docker info 2>/dev/null | grep -q "Registry Mirrors"; then
-        ok "China mirrors configured and active"
-        MIRRORS_CONFIGURED=true
-    else
-        warn "Mirror config written but may not be active (check ${DAEMON_JSON})"
-        MIRRORS_CONFIGURED=true
-    fi
+if $HUB_OK; then
+    log_ok "Docker Hub 可达，无需镜像"
 else
-    ok "Docker Hub is reachable, no mirror needed"
+    log_warn "Docker Hub 不可达，配置国内镜像加速..."
+    [ -f "$DAEMON_JSON" ] && cp "$DAEMON_JSON" "${DAEMON_JSON}.bak.$(date +%s)"
+    mkdir -p /etc/docker
+    printf '{"registry-mirrors":%s}\n' "$DOCKER_MIRRORS" > "$DAEMON_JSON"
+    systemctl daemon-reload 2>/dev/null; systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+    sleep 3
+    if docker info 2>/dev/null | grep -q "Registry Mirrors"; then
+        log_ok "国内镜像已生效"
+    else
+        log_warn "镜像已写入 ${DAEMON_JSON}，但可能未生效"
+    fi
 fi
 
-# Check disk space
-AVAILABLE_GB=$(df -BG /opt 2>/dev/null | awk 'NR==2 {print $4}' | tr -d 'G')
-[ -z "$AVAILABLE_GB" ] && AVAILABLE_GB=$(df -BG . | awk 'NR==2 {print $4}' | tr -d 'G')
-if [ -n "$AVAILABLE_GB" ] && [ "$AVAILABLE_GB" -lt 5 ]; then
-    error "Insufficient disk space: ${AVAILABLE_GB}GB (need at least 5GB)"
-    exit 1
-fi
-ok "Disk space: ${AVAILABLE_GB}GB available"
+# ═══════════════════════════════════════════════════════════════
+# Step 3/7: Disk Space
+# ═══════════════════════════════════════════════════════════════
+log_step "[3/7] 磁盘检查"
 
-# ============================================================
-# Step 2: Clone or Update Project
-# ============================================================
-step "Step 2/6: Preparing project files..."
+AVAIL=$(df -BG "$INSTALL_DIR" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
+[ -z "$AVAIL" ] && AVAIL=$(df -BG / | awk 'NR==2{print $4}' | tr -d 'G')
+if [ "${AVAIL:-0}" -lt 5 ]; then
+    die "磁盘空间不足: ${AVAIL}GB (至少需要 5GB)"
+fi
+log_ok "可用 ${AVAIL}GB"
+
+# ═══════════════════════════════════════════════════════════════
+# Step 4/7: Clone Project
+# ═══════════════════════════════════════════════════════════════
+log_step "[4/7] 获取项目"
+
+clone_repo() {
+    local url="$1"
+    log_info "尝试: $url"
+    git clone --depth 1 "$url" "$INSTALL_DIR" 2>&1
+}
 
 if [ -d "${INSTALL_DIR}/.git" ]; then
-    # Already cloned, pull latest
-    warn "Project directory ${INSTALL_DIR} already exists."
-    read -p "Update to latest version? (Y/n): " DO_PULL
-    if [[ ! "$DO_PULL" =~ ^[Nn]$ ]]; then
-        cd "$INSTALL_DIR"
-        git pull --ff-only 2>&1 || warn "Git pull failed (may be detached HEAD), continuing..."
-        ok "Project updated"
+    cd "$INSTALL_DIR"
+    if ask_yes "项目已存在 (${INSTALL_DIR})，是否更新？"; then
+        git pull --ff-only 2>&1 || log_warn "git pull 失败，继续使用现有版本"
+        log_ok "已更新"
     fi
     cd "$INSTALL_DIR"
 else
     if [ -d "$INSTALL_DIR" ]; then
-        warn "Directory ${INSTALL_DIR} exists but is not a git repo."
-        read -p "Remove and re-clone? (Y/n): " DO_REMOVE
-        if [[ ! "$DO_REMOVE" =~ ^[Nn]$ ]]; then
-            rm -rf "$INSTALL_DIR"
-        else
-            error "Cannot proceed. Please manually remove ${INSTALL_DIR} or choose a different directory."
-            exit 1
+        if ! ask_yes "${INSTALL_DIR} 已存在但非 git 仓库，删除重建？"; then
+            die "请手动处理 ${INSTALL_DIR}"
         fi
+        rm -rf "$INSTALL_DIR"
     fi
 
-    info "Cloning from ${REPO_URL} ..."
-    # Try git clone, fallback to downloading zip
-    if command -v git &> /dev/null; then
-        git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" 2>&1
-        ok "Project cloned to ${INSTALL_DIR}"
-    else
-        info "Git not found, downloading via curl..."
-        mkdir -p "$INSTALL_DIR"
-        curl -fsSL "${REPO_RAW}/archive/refs/heads/main.tar.gz" -o /tmp/novel-admin.tar.gz
-        tar xzf /tmp/novel-admin.tar.gz -C /tmp/
-        cp -r /tmp/novel-admin-1.0.0-*/* "$INSTALL_DIR/" 2>/dev/null || \
-        cp -r /tmp/novel-admin-1.0.0-*/. "$INSTALL_DIR/" 2>/dev/null
-        rm -f /tmp/novel-admin.tar.gz
-        rm -rf /tmp/novel-admin-1.0.0-*
-        ok "Project downloaded to ${INSTALL_DIR}"
+    CLONED=false
+    # 1) 直连 GitHub
+    if command -v git &>/dev/null && ! $CLONED; then
+        if clone_repo "$REPO" 2>/dev/null; then CLONED=true; fi
     fi
+    # 2) 国内代理
+    if command -v git &>/dev/null && ! $CLONED; then
+        for proxy in "${GITHUB_PROXIES[@]}"; do
+            PROXY_URL="${proxy}/u4399com-beep/novel-admin-1.0.0.git"
+            if clone_repo "$PROXY_URL" 2>/dev/null; then
+                CLONED=true
+                # Fix remote to original for future pulls
+                cd "$INSTALL_DIR" && git remote set-url origin "$REPO" 2>/dev/null
+                break
+            fi
+        done
+    fi
+    # 3) curl 下载 tar.gz
+    if ! $CLONED; then
+        log_info "git 克隆失败，尝试 curl 下载..."
+        for base in "$REPO_RAW" "${GITHUB_PROXIES[0]}/raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main"; do
+            if curl -fsSL --connect-timeout 10 "${base}/../archive/refs/heads/main.tar.gz" -o /tmp/novel.tar.gz 2>/dev/null; then
+                mkdir -p "$INSTALL_DIR"
+                tar xzf /tmp/novel.tar.gz -C /tmp/ 2>/dev/null
+                # Find the extracted directory
+                EXTRACTED=$(find /tmp -maxdepth 1 -type d -name "novel-admin*" | head -1)
+                if [ -n "$EXTRACTED" ] && [ "$EXTRACTED" != "$INSTALL_DIR" ]; then
+                    cp -a "$EXTRACTED/." "$INSTALL_DIR/"
+                    rm -rf "$EXTRACTED"
+                fi
+                rm -f /tmp/novel.tar.gz
+                CLONED=true
+                break
+            fi
+        done
+    fi
+
+    $CLONED || die "无法获取项目代码，请检查网络或手动下载: ${REPO}"
     cd "$INSTALL_DIR"
+    log_ok "项目就绪: ${INSTALL_DIR}"
 fi
 
-# Verify key files exist
+# Verify
 for f in Dockerfile docker-compose.yml docker-entrypoint.sh .env.production; do
-    if [ ! -f "$f" ]; then
-        error "Required file missing: $f"
-        error "The repository may be incomplete. Try deleting ${INSTALL_DIR} and re-running this script."
-        exit 1
-    fi
+    [ -f "$f" ] || die "缺少必要文件: $f，仓库可能不完整"
 done
-ok "All required files present"
+log_ok "文件完整性检查通过"
 
-# ============================================================
-# Step 3: Generate Configuration
-# ============================================================
-step "Step 3/6: Generating secure configuration..."
+# ═══════════════════════════════════════════════════════════════
+# Step 5/7: Configuration
+# ═══════════════════════════════════════════════════════════════
+log_step "[5/7] 生成配置"
 
-# Generate random hex string
-generate_hex() {
-    local length=${1:-32}
-    if command -v openssl &> /dev/null; then
-        openssl rand -hex "$length"
+# --- Crypto helpers ---
+rand_hex() {
+    local n=${1:-32}
+    if command -v openssl &>/dev/null; then
+        openssl rand -hex "$n"
     else
-        tr -dc 'a-f0-9' < /dev/urandom | head -c "$((length * 2))"
+        tr -dc 'a-f0-9' </dev/urandom | head -c "$((n * 2))"
     fi
 }
-
-# Generate random password (alphanumeric)
-generate_password() {
-    local length=${1:-16}
-    if command -v openssl &> /dev/null; then
-        openssl rand -base64 "$((length * 3 / 4 + 1))" | tr -d '/+=' | head -c "$length"
+rand_pass() {
+    local n=${1:-14}
+    if command -v openssl &>/dev/null; then
+        openssl rand -base64 "$((n * 4 / 3 + 1))" | tr -d '/+=' | head -c "$n"
     else
-        tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$length"
+        tr -dc 'A-Za-z0-9!@#%' </dev/urandom | head -c "$n"
     fi
 }
-
-# Detect server IP
-detect_ip() {
+my_ip() {
     local ip
     ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-    if [ -z "$ip" ] || [[ "$ip" == "127."* ]]; then
-        ip=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null || echo "")
-    fi
-    if [ -z "$ip" ] || [[ "$ip" == "127."* ]]; then
-        ip=$(curl -s --connect-timeout 3 ip.sb 2>/dev/null || echo "")
-    fi
+    [[ -z "$ip" || "$ip" == 127.* ]] && ip=$(curl -sf --connect-timeout 3 ifconfig.me 2>/dev/null || true)
+    [[ -z "$ip" || "$ip" == 127.* ]] && ip=$(curl -sf --connect-timeout 3 ip.sb 2>/dev/null || true)
     echo "${ip:-YOUR_SERVER_IP}"
 }
 
-# Check existing .env
-CREATE_ENV=false
-if [ -f ".env" ]; then
-    # Extract current values for reuse
+# --- Check existing .env ---
+NEED_ENV=true
+if [ -f .env ]; then
     source .env 2>/dev/null || true
-    warn ".env already exists (created $(grep 'Generated:' .env 2>/dev/null | cut -d: -f2- || echo 'previously'))."
-    echo ""
-    echo "  Current config:"
-    echo "    Port:       ${APP_PORT:-3000}"
-    echo "    Admin:      ${ADMIN_USERNAME:-admin}"
-    echo "    App URL:    ${APP_URL:-http://localhost:3000}"
-    echo ""
-    read -p "  Reconfigure? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        info "Keeping existing .env. Skipping to build."
-        echo ""
-        SKIP_ENV=true
+    if $AUTO_YES || ! ask_yes ".env 已存在 (端口=${APP_PORT:-3000}, 用户=${ADMIN_USERNAME:-admin})，重新配置？"; then
+        log_info "保留现有 .env"
+        NEED_ENV=false
     else
-        cp .env ".env.backup.$(date +%Y%m%d_%H%M%S)"
-        ok "Old .env backed up"
-        CREATE_ENV=true
+        cp .env ".env.bak.$(date +%Y%m%d_%H%M%S)"
+        log_ok "已备份旧 .env"
     fi
-else
-    CREATE_ENV=true
 fi
 
-if [ "$CREATE_ENV" = true ] && [ "$SKIP_ENV" != true ]; then
-    # Generate secrets
-    NEXTAUTH_SECRET=$(generate_hex 32)
-    SCRAPER_TOKEN=$(generate_hex 32)
-    DB_PASSWORD=$(generate_hex 16)
-    AUTO_PASS=$(generate_password 14)
+if $NEED_ENV; then
+    _secret=$(rand_hex 32)
+    _token=$(rand_hex 32)
+    _dbpw=$(rand_hex 16)
+    _autopw=$(rand_pass 14)
 
-    echo ""
-    info "Configure your installation (press Enter for defaults):"
-    echo ""
-
-    # Port
-    read -p "  App port [3000]: " INPUT_PORT
-    APP_PORT="${INPUT_PORT:-3000}"
-
-    # Validate port is numeric and available
-    if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]] || [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt 65535 ]; then
-        warn "Invalid port, using 3000"
-        APP_PORT=3000
+    if ! $AUTO_YES; then
+        echo ""
+        log_info "配置安装参数（回车使用默认值）:"
+        echo ""
     fi
 
-    # Admin username
-    read -p "  Admin username [admin]: " INPUT_USER
-    ADMIN_USER="${INPUT_USER:-admin}"
+    _port=$(ask  "  端口"     "3000")
+    [[ "$_port" =~ ^[0-9]+$ ]] && [ "$_port" -ge 1 ] && [ "$_port" -le 65535 ] || _port=3000
 
-    # Admin password
-    read -p "  Admin password [auto: ${AUTO_PASS}]: " INPUT_PASS
-    ADMIN_PASS="${INPUT_PASS:-$AUTO_PASS}"
-
-    # Server IP / domain
-    AUTO_IP=$(detect_ip)
-    read -p "  Server IP or domain [${AUTO_IP}]: " INPUT_URL
-    SERVER_ADDR="${INPUT_URL:-$AUTO_IP}"
-
-    # Build APP_URL
-    if [[ "$SERVER_ADDR" =~ ^https?:// ]]; then
-        APP_URL="$SERVER_ADDR"
-    else
-        APP_URL="http://${SERVER_ADDR}:${APP_PORT}"
+    # Check port conflict
+    if ss -tlnp 2>/dev/null | grep -q ":${_port} "; then
+        log_warn "端口 ${_port} 已被占用"
+        _port=$(ask "  换个端口" "$(( _port + 1 ))")
     fi
 
-    # Timezone
-    read -p "  Timezone [Asia/Shanghai]: " INPUT_TZ
-    TZ="${INPUT_TZ:-Asia/Shanghai}"
+    _user=$(ask  "  管理员用户名" "admin")
+    _pass=$(ask  "  管理员密码"   "$_autopw")
+    _ip=$(my_ip)
+    _addr=$(ask "  服务器 IP/域名" "$_ip")
 
-    echo ""
+    [[ "$_addr" =~ ^https?:// ]] && _url="$_addr" || _url="http://${_addr}:${_port}"
+    _tz=$(ask "  时区" "Asia/Shanghai")
 
-    # Write .env
-    cat > .env << ENVEOF
-# ============================================================
-# Novel Management System - Auto-generated by install.sh
-# Generated: $(date '+%Y-%m-%d %H:%M:%S')
-# Source: ${REPO_URL}
-# ============================================================
+    cat > .env <<EOF
+# Novel Management System - Auto-generated $(date '+%Y-%m-%d %H:%M:%S')
+# Source: ${REPO}
 
-# ─── Database ────────────────────────────────────────────
+# Database
 POSTGRES_USER=novel
-POSTGRES_PASSWORD=${DB_PASSWORD}
+POSTGRES_PASSWORD=${_dbpw}
 POSTGRES_DB=novel_admin
 DB_PORT=5432
 
-# ─── App Config ──────────────────────────────────────────
-APP_PORT=${APP_PORT}
+# App
+APP_PORT=${_port}
 APP_NAME=小说管理系统
-APP_URL=${APP_URL}
-TZ=${TZ}
+APP_URL=${_url}
+TZ=${_tz}
 
-# ─── Authentication ──────────────────────────────────────
-NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+# Auth
+NEXTAUTH_SECRET=${_secret}
+ADMIN_USERNAME=${_user}
+ADMIN_PASSWORD=${_pass}
+SCRAPER_SERVICE_TOKEN=${_token}
 
-# ─── Admin Account ───────────────────────────────────────
-ADMIN_USERNAME=${ADMIN_USER}
-ADMIN_PASSWORD=${ADMIN_PASS}
-
-# ─── Service-to-Service Auth ─────────────────────────────
-SCRAPER_SERVICE_TOKEN=${SCRAPER_TOKEN}
-
-# ─── Optional: External Scraping Services ────────────────
+# Optional external services (uncomment to enable)
 # FIRECRAWL_API_KEY=
-# FIRECRAWL_API_URL=
 # AGENTQL_API_KEY=
-# AGENTQL_API_URL=
-# CLOUD_BROWSER_PROVIDER=browserless
 # BROWSERLESS_API_KEY=
-# BROWSERLESS_API_URL=
 # STEEL_API_KEY=
-# STEEL_API_URL=
-ENVEOF
-
+EOF
     chmod 600 .env
-    ok ".env created (chmod 600)"
+    log_ok ".env 已生成"
 fi
-
-echo ""
-
-# Always source .env for remaining steps (in case of skip)
-source .env 2>/dev/null || true
-
-# ============================================================
-# Step 4: Build Docker Images
-# ============================================================
-step "Step 4/6: Building Docker images..."
-info "First build may take 5-10 minutes depending on your server."
-echo ""
-
-BUILD_START=$(date +%s)
-
-# Run build and capture output
-set +e
-$COMPOSE_CMD build 2>&1 | tee /tmp/novel-build.log | while IFS= read -r line; do
-    if echo "$line" | grep -qiE "(step [0-9]|=> (=>|RUN|COPY|FROM)|sending build|DONE|successfully tagged|ERROR|failed|WARN)" || [ -z "$line" ]; then
-        echo "  $line"
-    fi
-done
-BUILD_EXIT=${PIPESTATUS[0]}
-set -e
-
-BUILD_ELAPSED=$(( $(date +%s) - BUILD_START ))
-BUILD_MIN=$((BUILD_ELAPSED / 60))
-BUILD_SEC=$((BUILD_ELAPSED % 60))
-
-echo ""
-if [ "$BUILD_EXIT" -ne 0 ]; then
-    error "Docker build failed after ${BUILD_MIN}m${BUILD_SEC}s!"
-    echo ""
-    echo "  Common fixes:"
-    echo "    1. Check network: curl -I https://registry-1.docker.io"
-    echo "    2. Check disk:    df -h"
-    echo "    3. Retry clean:   $COMPOSE_CMD build --no-cache"
-    echo "    4. Full log:      cat /tmp/novel-build.log"
-    exit 1
-fi
-ok "Build completed in ${BUILD_MIN}m${BUILD_SEC}s"
-
-# ============================================================
-# Step 5: Start Services
-# ============================================================
-step "Step 5/6: Starting services..."
-echo ""
-
-set +e
-$COMPOSE_CMD up -d 2>&1
-UP_EXIT=$?
-set -e
-
-if [ "$UP_EXIT" -ne 0 ]; then
-    error "Failed to start services!"
-    echo ""
-    echo "  Check logs: $COMPOSE_CMD logs"
-    echo "  Common cause: port ${APP_PORT:-3000} already in use"
-    echo "    Fix: change APP_PORT in .env, then re-run this script"
-    exit 1
-fi
-ok "Services started"
-
-echo ""
-
-# ============================================================
-# Step 6: Health Check & Show Result
-# ============================================================
-step "Step 6/6: Waiting for system to be ready..."
-echo ""
 
 source .env 2>/dev/null || true
 PORT="${APP_PORT:-3000}"
-MAX_WAIT=180
-ELAPSED=0
-HEALTHY=false
 
-while [ $ELAPSED -lt $MAX_WAIT ]; do
-    # Check containers are alive
-    if ! $COMPOSE_CMD ps 2>/dev/null | grep -q "Up\|running\|healthy"; then
-        error "Containers crashed! Showing logs:"
+# ═══════════════════════════════════════════════════════════════
+# Step 6/7: Build & Start
+# ═══════════════════════════════════════════════════════════════
+log_step "[6/7] 构建并启动"
+log_info "首次构建约需 5-10 分钟，请耐心等待..."
+echo ""
+
+T0=$(date +%s)
+
+set +e
+$COMPOSE build 2>&1 | tee /tmp/novel-build.log | while IFS= read -r line; do
+    echo "$line" | grep -qiE '(^Step|=> (=>|RUN|COPY|FROM)|DONE|ERROR|fail|successfully tag)' && echo "  $line"
+done
+RC=${PIPESTATUS[0]}
+set -e
+
+DT=$(( $(date +%s) - T0 ))
+echo ""
+[ $RC -ne 0 ] && die "构建失败 (${DT}s)! 查看日志: cat /tmp/novel-build.log"
+log_ok "构建完成 (${DT}s)"
+
+echo ""
+set +e
+$COMPOSE up -d 2>&1
+RC=$?
+set -e
+[ $RC -ne 0 ] && die "启动失败! 端口 ${PORT} 可能被占用，修改 .env 中的 APP_PORT 后重试"
+log_ok "服务已启动"
+
+# ═══════════════════════════════════════════════════════════════
+# Step 7/7: Health Check & Result
+# ═══════════════════════════════════════════════════════════════
+log_step "[7/7] 健康检查"
+echo ""
+
+MAX=180; ELAPSED=0; OK=false
+while [ $ELAPSED -lt $MAX ]; do
+    # Crash check
+    if ! $COMPOSE ps 2>/dev/null | grep -qE 'Up|healthy'; then
         echo ""
-        $COMPOSE_CMD logs --tail=30 2>&1
+        log_err "容器异常退出!"
+        $COMPOSE logs --tail=30 2>&1
         exit 1
     fi
 
-    # Try health endpoint
-    if curl -sf "http://localhost:${PORT}/api/auth/csrf" > /dev/null 2>&1; then
-        HEALTHY=true
-        break
-    fi
+    curl -sf "http://localhost:${PORT}/api/auth/csrf" &>/dev/null && { OK=true; break; }
 
-    # Progress bar
-    PCT=$(( ELAPSED * 100 / MAX_WAIT ))
-    FILLED=$(( PCT / 5 ))
-    EMPTY=$(( 20 - FILLED ))
-    BAR=$(printf '%*s' "$FILLED" | tr ' ' '█')
-    DOT=$(printf '%*s' "$EMPTY" | tr ' ' '░')
-    printf "\r  [%s%s] %3d%% (%ds/%ds)" "$BAR" "$DOT" "$PCT" "$ELAPSED" "$MAX_WAIT"
-
-    sleep 3
-    ELAPSED=$((ELAPSED + 3))
+    PCT=$(( ELAPSED * 100 / MAX ))
+    F=$(( PCT / 5 )); E=$(( 20 - F ))
+    BAR=$(printf '%*s' "$F" | tr ' ' '█')$(printf '%*s' "$E" | tr ' ' '░')
+    printf "\r  [%s] %3d%% (%ds/%ds) " "$BAR" "$PCT" "$ELAPSED" "$MAX"
+    sleep 3; ELAPSED=$((ELAPSED + 3))
 done
-
 echo ""
 
-if [ "$HEALTHY" = true ]; then
+# --- Save credentials to file ---
+CRED_FILE="${INSTALL_DIR}/.credentials.txt"
+cat > "$CRED_FILE" <<EOF
+===========================================
+  小说管理系统 - 登录凭据
+  Generated: $(date '+%Y-%m-%d %H:%M:%S')
+===========================================
+
+访问地址:  ${APP_URL:-http://localhost:${PORT}}
+用户名:    ${ADMIN_USERNAME:-admin}
+密码:      ${ADMIN_PASSWORD}
+
+⚠️ 请妥善保管此文件，建议保存后删除。
+EOF
+chmod 600 "$CRED_FILE"
+
+# --- Print result ---
+echo ""
+if $OK; then
+    echo -e "${G}${BD}╔══════════════════════════════════════════════════╗${N}"
+    echo -e "${G}${BD}║              ✅ 安装成功！系统已就绪              ║${N}"
+    echo -e "${G}${BD}╚══════════════════════════════════════════════════╝${N}"
     echo ""
-    echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}${BOLD}║                                                           ║${NC}"
-    echo -e "${GREEN}${BOLD}║            ✅ 安装成功！系统已就绪                      ║${NC}"
-    echo -e "${GREEN}${BOLD}║            Installation Complete!                         ║${NC}"
-    echo -e "${GREEN}${BOLD}║                                                           ║${NC}"
-    echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo -e "  🌐  ${BD}访问地址:${N}  ${C}${APP_URL:-http://localhost:${PORT}}${N}"
+    echo -e "  👤  ${BD}用户名:${N}    ${BD}${ADMIN_USERNAME:-admin}${N}"
+    echo -e "  🔑  ${BD}密码:${N}      ${BD}${ADMIN_PASSWORD}${N}"
     echo ""
-    echo -e "  🌐  ${BOLD}访问地址:${NC}"
-    echo -e "      ${CYAN}${APP_URL:-http://localhost:${PORT}}${NC}"
+    echo -e "  📋  ${BD}常用命令:${N}"
+    echo -e "      查看日志:  ${C}cd ${INSTALL_DIR} && ${COMPOSE} logs -f${N}"
+    echo -e "      停止:      ${C}cd ${INSTALL_DIR} && ${COMPOSE} stop${N}"
+    echo -e "      重启:      ${C}cd ${INSTALL_DIR} && ${COMPOSE} restart${N}"
+    echo -e "      状态:      ${C}cd ${INSTALL_DIR} && ${COMPOSE} ps${N}"
+    echo -e "      备份:      ${C}cd ${INSTALL_DIR} && ${COMPOSE} exec -T postgres pg_dump -U novel novel_admin > backup.sql${N}"
+    echo -e "      卸载:      ${C}cd ${INSTALL_DIR} && ${COMPOSE} down -v && rm -rf ${INSTALL_DIR}${N}"
     echo ""
-    echo -e "  👤  ${BOLD}管理员登录:${NC}"
-    echo -e "      Username: ${BOLD}${ADMIN_USERNAME:-admin}${NC}"
-    echo -e "      Password: ${BOLD}${ADMIN_PASSWORD:-<check .env file>}${NC}"
+    echo -e "  🔄  ${BD}升级:${N}      ${C}cd ${INSTALL_DIR} && git pull && ${COMPOSE} up -d --build${N}"
     echo ""
-    echo -e "  📋  ${BOLD}常用命令:${NC}"
-    echo -e "      日志:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD logs -f${NC}"
-    echo -e "      停止:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD stop${NC}"
-    echo -e "      重启:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD restart${NC}"
-    echo -e "      状态:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD ps${NC}"
-    echo -e "      卸载:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD down -v && rm -rf ${INSTALL_DIR}${NC}"
-    echo -e "      备份数据: ${CYAN}cd ${INSTALL_DIR} && mkdir -p backups && $COMPOSE_CMD exec -T postgres pg_dump -U novel novel_admin > backups/db_\$(date +%Y%m%d).sql${NC}"
+    echo -e "  📁  ${BD}文件:${N}      凭据: ${DM}${INSTALL_DIR}/.credentials.txt${N}"
+    echo -e "                配置: ${DM}${INSTALL_DIR}/.env${N}"
     echo ""
-    echo -e "  📁  ${BOLD}文件位置:${NC}"
-    echo -e "      项目目录: ${DIM}${INSTALL_DIR}${NC}"
-    echo -e "      配置文件: ${DIM}${INSTALL_DIR}/.env${NC}"
-    echo -e "      备份目录: ${DIM}${INSTALL_DIR}/backups/${NC}"
-    echo ""
-    echo -e "  🔄  ${BOLD}更新升级:${NC}"
-    echo -e "      cd ${INSTALL_DIR} && git pull && $COMPOSE_CMD up -d --build"
-    echo ""
-    echo -e "  ${YELLOW}⚠️  请立即保存以上信息！关闭终端后密码不再显示。${NC}"
-    echo ""
+    echo -e "  ${Y}⚠️  请立即保存以上信息！凭据已写入 .credentials.txt${N}"
 else
+    echo -e "${Y}健康检查超时，但服务可能已在启动中。${N}"
     echo ""
-    warn "Health check timed out (${MAX_WAIT}s). This may be normal on slow servers."
-    echo ""
-    echo "  Check status:"
-    echo "    cd ${INSTALL_DIR} && $COMPOSE_CMD ps"
-    echo ""
-    echo "  View logs:"
-    echo "    cd ${INSTALL_DIR} && $COMPOSE_CMD logs -f"
-    echo ""
-    echo "  If containers show 'Up', the system is likely ready."
-    echo "  Try accessing: ${APP_URL:-http://localhost:${PORT}}"
-    echo ""
-    echo "  Login credentials are in ${INSTALL_DIR}/.env"
+    echo -e "  检查:  ${C}cd ${INSTALL_DIR} && ${COMPOSE} ps${N}"
+    echo -e "  日志:  ${C}cd ${INSTALL_DIR} && ${COMPOSE} logs -f${N}"
+    echo -e "  凭据:  ${C}cat ${INSTALL_DIR}/.credentials.txt${N}"
     echo ""
 fi
 
-# Cleanup
 rm -f /tmp/novel-build.log 2>/dev/null
