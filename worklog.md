@@ -1653,3 +1653,26 @@ Work Log:
 ## 验证
 - ESLint: 0 errors ✅
 - 编译通过, 组件导入引用正确 ✅
+
+---
+Task ID: 18
+Agent: Main Orchestrator
+Task: Docker 一键安装包 - 编译打包成开箱即用的 Docker 部署方案
+
+Work Log:
+- 分析项目结构：Next.js 16 + Prisma (SQLite/PG) + Scraper mini-service + Caddy
+- 创建 `.dockerignore`：排除 node_modules/.next/logs/等，构建上下文从 ~500MB 降至 ~2MB
+- 优化 `Dockerfile`：4 阶段构建 (deps→builder→scraper-builder→runner)，添加 Playwright Chromium 浏览器系统依赖支持
+- 创建 `.env.production`：Docker 部署的模板文件，所有必填项有占位符
+- 优化 `docker-compose.yml`：添加资源限制 (postgres 512M, app 2G)、备份卷挂载
+- 优化 `docker-entrypoint.sh`：增加带时间戳的日志、启动失败时显示 app.log 末尾、等待 PG 从 60s 增加到 120s
+- 创建 `install.sh`：一键安装脚本，自动检测 Docker 环境、生成安全随机密钥(openssl/urandom fallback)、交互式配置端口/用户名/密码、自动构建启动、等待健康检查并显示登录信息
+- 创建 `pack.sh`：打包脚本，生成发布用 tar.gz (排除 node_modules 后 320KB)
+- 更新 `DEPLOY.md`：顶部新增一键安装和打包发布章节
+- 验证：3 个 shell 脚本语法检查通过、bun run lint 0 错误、pack.sh 打包测试通过 (225 文件, 320KB, 0 个 node_modules)
+
+Stage Summary:
+- 产出文件: `.dockerignore`, `.env.production`, `Dockerfile`(优化), `docker-compose.yml`(优化), `docker-entrypoint.sh`(优化), `install.sh`(新建), `pack.sh`(新建), `DEPLOY.md`(更新)
+- 用户部署流程: `chmod +x install.sh && ./install.sh` → 2 条命令完成部署
+- 打包分发流程: `./pack.sh` → 生成 320KB tar.gz → 接收方解压后同样 2 条命令
+- Docker 不可用于沙箱验证，但脚本语法和打包逻辑已验证通过

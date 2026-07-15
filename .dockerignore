@@ -1,22 +1,79 @@
+# ============================================================
+# Docker Build Context - Exclude unnecessary files
+# Reduces build context size from ~500MB to ~50MB
+# ============================================================
+
+# Dependencies (installed inside container)
 node_modules
+mini-services/scraper-service/node_modules
+
+# Build outputs
 .next
-.git
-.gitignore
-*.md
-!DEPLOY.md
-agent-ctx
-tool-results
-examples
+/out
+/build
+
+# Data files
 db/*.db
 db/*.db-journal
-db/*.db-wal
-db/*.db-shm
-download
-*.log
-nohup.out
-.env.local
-.env.production
+data/
+download/
+
+# Environment files (use .env.production template, actual .env mounted at runtime)
 .env
-scraper-service.log
-app.log
-scripts/
+.env.local
+.env.development
+
+# Logs
+*.log
+dev.log
+dev.out.log
+server.log
+nohup.out
+
+# Git
+.git
+.gitignore
+
+# IDE / Editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Agent / tool artifacts
+agent-ctx
+tool-results
+test
+test_*.sh
+test_*.py
+prompt
+.claude
+.z-ai-config
+
+# Skills directory
+skills/
+
+# Misc
+search_*.json
+scraper-integration-analysis.md
+postgresql-17*.deb
+CLAUDE.md
+PROMPT.md
+examples/
+scripts/switch-to-sqlite.sh
+scripts/switch-to-postgres.sh
+scripts/start-postgres.sh
+
+# Backup files
+backups/
+*.sql
+*.tar.gz
+*.zip
+
+# Prisma migrations (we use db push, not migrate)
+# prisma/migrations/

@@ -1,10 +1,11 @@
 # ============================================================
-# Novel Management System - Production Docker Build (PostgreSQL)
+# Novel Management System - Production Docker Build
+# Multi-stage: deps → build → scraper-build → runner
+# Database: PostgreSQL (auto-switched from SQLite at build time)
 # ============================================================
-# Usage:
-#   docker compose up -d          # Start everything (PostgreSQL + App)
-#   docker compose logs -f        # View logs
-#   docker compose down           # Stop everything
+# Build:  docker compose build
+# Run:    docker compose up -d
+# Logs:   docker compose logs -f
 # ============================================================
 
 # ============ Base Stage ============
@@ -44,6 +45,12 @@ COPY mini-services/scraper-service/ ./
 # Replace SQLite queue with PostgreSQL queue
 RUN rm -f src/queue.ts && mv src/queue.pg.ts src/queue.ts
 
+# Install Playwright browsers (Chromium only for scraping)
+# This adds ~300MB but is required for headless browser scraping
+RUN bunx playwright install chromium --with-deps 2>/dev/null || \
+    (echo "[WARN] Playwright browser install failed, headless scraping will be unavailable" && \
+     mkdir -p /root/.cache/ms-playwright)
+
 # ============ Production Runner ============
 FROM oven/bun:1 AS runner
 WORKDIR /app
@@ -53,9 +60,32 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV BUN_NO_UPDATE_NOTIF=1
 ENV DB_PROVIDER=postgresql
 
-# Install curl for health checks + ca-certificates for HTTPS
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies: curl for health checks, ca-certificates for HTTPS,
+# libssl for Prisma/PostgreSQL, and Playwright browser system libs for Chromium
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    libssl3 \
+    libnss3 \
+    libnspr4 \
+    libdbus-1-3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libatspi2.0-0 \
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
@@ -75,8 +105,14 @@ COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 # Copy scraper service (with PostgreSQL queue already swapped)
 COPY --from=scraper-builder /scraper ./scraper-service
 
+# Copy Playwright browser cache for headless scraping
+COPY --from=scraper-builder /root/.cache/ms-playwright /root/.cache/ms-playwright
+
+# Set Playwright browser path
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+
 # Create data directories
-RUN mkdir -p /app/data/covers /app/data/downloads /app/data/chapters && \
+RUN mkdir -p /app/data/covers /app/data/downloads /app/data/chapters /app/backups && \
     chown -R nextjs:nodejs /app
 
 USER nextjs
