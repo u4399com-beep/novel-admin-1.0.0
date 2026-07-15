@@ -1,18 +1,25 @@
 #!/bin/bash
 # ============================================================
-# Novel Management System - One-Click Docker Installer
+# 📚 小说管理系统 - 一键安装脚本 (from GitHub)
+# Novel Management System - One-Click Installer
 # ============================================================
-# Usage:
-#   chmod +x install.sh
-#   ./install.sh
 #
-# This script will:
-#   1. Check prerequisites (Docker, Docker Compose)
-#   2. Auto-generate secure random passwords and secrets
-#   3. Create .env from template
-#   4. Build and start all services
-#   5. Wait for health check and show login URL
+# 使用方法 / Usage:
+#   curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
+#
+# 或者手动下载后运行:
+#   wget https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh
+#   chmod +x install.sh && ./install.sh
+#
+# 本脚本会自动完成:
+#   1. 检测 Docker 环境（未安装则自动安装）
+#   2. 从 GitHub 克隆项目
+#   3. 生成安全的随机密码和密钥
+#   4. 创建 .env 配置文件
+#   5. Docker 构建并启动所有服务
+#   6. 等待健康检查通过，显示登录信息
 # ============================================================
+
 set -e
 
 # ─── Colors ───
@@ -21,96 +28,182 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+MAGENTA='\033[0;35m'
+NC='\033[0m'
 BOLD='\033[1m'
+DIM='\033[2m'
+
+# ─── Constants ───
+REPO_URL="https://github.com/u4399com-beep/novel-admin-1.0.0.git"
+REPO_RAW="https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main"
+INSTALL_DIR="/opt/novel-admin"
 
 # ─── Helper Functions ───
 info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
-success() { echo -e "${GREEN}[OK]${NC} $*"; }
+ok()      { echo -e "${GREEN}  ✓${NC} $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*"; }
+step()    { echo -e "\n${MAGENTA}${BOLD}▶ $*${NC}"; }
 banner()  { echo -e "${CYAN}${BOLD}$*${NC}"; }
 
-# ─── Script Directory ───
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# ─── Trap: cleanup on error ───
+trap 'error "Script interrupted. Partial installation may exist at ${INSTALL_DIR}"; exit 1' INT TERM
 
 # ============================================================
 # Step 0: Banner
 # ============================================================
 clear
 echo ""
-banner "╔══════════════════════════════════════════════════╗"
-banner "║                                                  ║"
-banner "║     📚 小说管理系统 - Docker 一键安装            ║"
-banner "║     Novel Management System Installer             ║"
-banner "║                                                  ║"
-banner "╚══════════════════════════════════════════════════╝"
+banner "╔═══════════════════════════════════════════════════════════╗"
+banner "║                                                           ║"
+banner "║        📚 小说管理系统 - Docker 一键安装                 ║"
+banner "║        Novel Management System - One-Click Installer      ║"
+banner "║                                                           ║"
+banner "║        Repo: github.com/u4399com-beep/novel-admin-1.0.0  ║"
+banner "║                                                           ║"
+banner "╚═══════════════════════════════════════════════════════════╝"
 echo ""
 
 # ============================================================
-# Step 1: Check Prerequisites
+# Step 1: Install / Verify Docker
 # ============================================================
-info "Step 1/5: Checking prerequisites..."
+step "Step 1/6: Checking Docker environment..."
 
-# Check Docker
-if ! command -v docker &> /dev/null; then
-    error "Docker is not installed!"
-    echo ""
-    echo "Please install Docker first:"
-    echo "  curl -fsSL https://get.docker.com | sh"
-    echo "  systemctl start docker"
-    echo "  systemctl enable docker"
-    echo ""
-    exit 1
-fi
-success "Docker $(docker --version | grep -oP '\d+\.\d+\.\d+')"
-
-# Check Docker Compose (v2 plugin)
-if docker compose version &> /dev/null; then
-    COMPOSE_CMD="docker compose"
-    success "Docker Compose $(docker compose version --short 2>/dev/null || echo 'v2')"
-elif command -v docker-compose &> /dev/null; then
-    COMPOSE_CMD="docker-compose"
-    success "Docker Compose (standalone) $(docker-compose --version | grep -oP '\d+\.\d+\.\d+')"
-else
-    error "Docker Compose is not installed!"
-    echo ""
-    echo "Docker Compose v2 is included with Docker. Try reinstalling Docker:"
-    echo "  curl -fsSL https://get.docker.com | sh"
-    echo ""
-    exit 1
-fi
-
-# Check Docker daemon is running
-if ! docker info &> /dev/null; then
-    error "Docker daemon is not running!"
-    echo ""
-    echo "Please start Docker:"
-    echo "  systemctl start docker"
-    echo ""
-    exit 1
-fi
-success "Docker daemon is running"
-
-# Check available disk space (need at least 3GB)
-AVAILABLE_GB=$(df -BG "$SCRIPT_DIR" | awk 'NR==2 {print $4}' | tr -d 'G')
-if [ -n "$AVAILABLE_GB" ] && [ "$AVAILABLE_GB" -lt 3 ]; then
-    warn "Low disk space: ${AVAILABLE_GB}GB available (recommended: 10GB+)"
-    read -p "Continue anyway? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+install_docker() {
+    info "Docker not found. Installing Docker..."
+    if command -v apt-get &> /dev/null; then
+        # Debian/Ubuntu
+        apt-get update -qq
+        apt-get install -y -qq ca-certificates curl gnupg > /dev/null 2>&1
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/$(. /etc/os-release && echo "$ID")/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null
+        chmod a+r /etc/apt/keyrings/docker.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$(. /etc/os-release && echo "$ID") $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+        apt-get update -qq
+        apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin > /dev/null 2>&1
+    elif command -v yum &> /dev/null; then
+        # CentOS/RHEL
+        yum install -y -q yum-utils > /dev/null 2>&1
+        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo > /dev/null 2>&1
+        yum install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin > /dev/null 2>&1
+    elif command -v apk &> /dev/null; then
+        # Alpine
+        apk add --no-cache docker docker-compose > /dev/null 2>&1
+    else
+        error "Unsupported OS. Please install Docker manually:"
+        echo "  curl -fsSL https://get.docker.com | sh"
         exit 1
     fi
+    systemctl start docker 2>/dev/null || true
+    systemctl enable docker 2>/dev/null || true
+    ok "Docker installed and started"
+}
+
+if ! command -v docker &> /dev/null; then
+    read -p "Docker is not installed. Install it now? (Y/n): " INSTALL_DOCKER
+    if [[ ! "$INSTALL_DOCKER" =~ ^[Nn]$ ]]; then
+        install_docker
+    else
+        error "Docker is required. Please install it first:"
+        echo "  curl -fsSL https://get.docker.com | sh"
+        exit 1
+    fi
+fi
+ok "Docker $(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)"
+
+# Check Docker Compose
+if docker compose version &> /dev/null; then
+    COMPOSE_CMD="docker compose"
+elif command -v docker-compose &> /dev/null; then
+    COMPOSE_CMD="docker-compose"
 else
-    success "Disk space: ${AVAILABLE_GB}GB available"
+    error "Docker Compose not found!"
+    echo "  Reinstall Docker: curl -fsSL https://get.docker.com | sh"
+    exit 1
+fi
+ok "Docker Compose $(docker compose version --short 2>/dev/null || docker-compose --version | grep -oP '\d+\.\d+\.\d+' | head -1)"
+
+# Check Docker daemon
+if ! docker info &> /dev/null; then
+    warn "Docker daemon not running, attempting to start..."
+    systemctl start docker 2>/dev/null || service docker start 2>/dev/null || true
+    sleep 2
+    if ! docker info &> /dev/null; then
+        error "Docker daemon failed to start!"
+        exit 1
+    fi
+fi
+ok "Docker daemon is running"
+
+# Check disk space
+AVAILABLE_GB=$(df -BG /opt 2>/dev/null | awk 'NR==2 {print $4}' | tr -d 'G')
+[ -z "$AVAILABLE_GB" ] && AVAILABLE_GB=$(df -BG . | awk 'NR==2 {print $4}' | tr -d 'G')
+if [ -n "$AVAILABLE_GB" ] && [ "$AVAILABLE_GB" -lt 5 ]; then
+    error "Insufficient disk space: ${AVAILABLE_GB}GB (need at least 5GB)"
+    exit 1
+fi
+ok "Disk space: ${AVAILABLE_GB}GB available"
+
+# ============================================================
+# Step 2: Clone or Update Project
+# ============================================================
+step "Step 2/6: Preparing project files..."
+
+if [ -d "${INSTALL_DIR}/.git" ]; then
+    # Already cloned, pull latest
+    warn "Project directory ${INSTALL_DIR} already exists."
+    read -p "Update to latest version? (Y/n): " DO_PULL
+    if [[ ! "$DO_PULL" =~ ^[Nn]$ ]]; then
+        cd "$INSTALL_DIR"
+        git pull --ff-only 2>&1 || warn "Git pull failed (may be detached HEAD), continuing..."
+        ok "Project updated"
+    fi
+    cd "$INSTALL_DIR"
+else
+    if [ -d "$INSTALL_DIR" ]; then
+        warn "Directory ${INSTALL_DIR} exists but is not a git repo."
+        read -p "Remove and re-clone? (Y/n): " DO_REMOVE
+        if [[ ! "$DO_REMOVE" =~ ^[Nn]$ ]]; then
+            rm -rf "$INSTALL_DIR"
+        else
+            error "Cannot proceed. Please manually remove ${INSTALL_DIR} or choose a different directory."
+            exit 1
+        fi
+    fi
+
+    info "Cloning from ${REPO_URL} ..."
+    # Try git clone, fallback to downloading zip
+    if command -v git &> /dev/null; then
+        git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" 2>&1
+        ok "Project cloned to ${INSTALL_DIR}"
+    else
+        info "Git not found, downloading via curl..."
+        mkdir -p "$INSTALL_DIR"
+        curl -fsSL "${REPO_RAW}/archive/refs/heads/main.tar.gz" -o /tmp/novel-admin.tar.gz
+        tar xzf /tmp/novel-admin.tar.gz -C /tmp/
+        cp -r /tmp/novel-admin-1.0.0-*/* "$INSTALL_DIR/" 2>/dev/null || \
+        cp -r /tmp/novel-admin-1.0.0-*/. "$INSTALL_DIR/" 2>/dev/null
+        rm -f /tmp/novel-admin.tar.gz
+        rm -rf /tmp/novel-admin-1.0.0-*
+        ok "Project downloaded to ${INSTALL_DIR}"
+    fi
+    cd "$INSTALL_DIR"
 fi
 
-echo ""
+# Verify key files exist
+for f in Dockerfile docker-compose.yml docker-entrypoint.sh .env.production; do
+    if [ ! -f "$f" ]; then
+        error "Required file missing: $f"
+        error "The repository may be incomplete. Try deleting ${INSTALL_DIR} and re-running this script."
+        exit 1
+    fi
+done
+ok "All required files present"
 
 # ============================================================
-# Step 2: Generate Secrets & Create .env
+# Step 3: Generate Configuration
 # ============================================================
-info "Step 2/5: Generating secure configuration..."
+step "Step 3/6: Generating secure configuration..."
 
 # Generate random hex string
 generate_hex() {
@@ -118,80 +211,112 @@ generate_hex() {
     if command -v openssl &> /dev/null; then
         openssl rand -hex "$length"
     else
-        head -c "$((length * 2))" /dev/urandom | xxd -p -c "$((length * 2))"
+        tr -dc 'a-f0-9' < /dev/urandom | head -c "$((length * 2))"
     fi
 }
 
-# Generate random alphanumeric password
+# Generate random password (alphanumeric)
 generate_password() {
     local length=${1:-16}
     if command -v openssl &> /dev/null; then
-        openssl rand -base64 "$((length * 3 / 4))" | tr -d '/+=' | head -c "$length"
+        openssl rand -base64 "$((length * 3 / 4 + 1))" | tr -d '/+=' | head -c "$length"
     else
-        head -c "$length" /dev/urandom | base64 | tr -d '/+=' | head -c "$length"
+        tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$length"
     fi
 }
 
-# Check if .env already exists
+# Detect server IP
+detect_ip() {
+    local ip
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "$ip" ] || [[ "$ip" == "127."* ]]; then
+        ip=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null || echo "")
+    fi
+    if [ -z "$ip" ] || [[ "$ip" == "127."* ]]; then
+        ip=$(curl -s --connect-timeout 3 ip.sb 2>/dev/null || echo "")
+    fi
+    echo "${ip:-YOUR_SERVER_IP}"
+}
+
+# Check existing .env
+CREATE_ENV=false
 if [ -f ".env" ]; then
-    warn ".env already exists!"
-    read -p "Overwrite with new generated secrets? (y/N): " CONFIRM
+    # Extract current values for reuse
+    source .env 2>/dev/null || true
+    warn ".env already exists (created $(grep 'Generated:' .env 2>/dev/null | cut -d: -f2- || echo 'previously'))."
+    echo ""
+    echo "  Current config:"
+    echo "    Port:       ${APP_PORT:-3000}"
+    echo "    Admin:      ${ADMIN_USERNAME:-admin}"
+    echo "    App URL:    ${APP_URL:-http://localhost:3000}"
+    echo ""
+    read -p "  Reconfigure? (y/N): " CONFIRM
     if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        info "Keeping existing .env file."
+        info "Keeping existing .env. Skipping to build."
         echo ""
+        SKIP_ENV=true
     else
-        # Backup old .env
         cp .env ".env.backup.$(date +%Y%m%d_%H%M%S)"
-        warn "Old .env backed up as .env.backup.$(date +%Y%m%d_%H%M%S)"
-        # Fall through to create new .env
+        ok "Old .env backed up"
         CREATE_ENV=true
     fi
+else
+    CREATE_ENV=true
 fi
 
-if [ ! -f ".env" ] || [ "$CREATE_ENV" = true ]; then
+if [ "$CREATE_ENV" = true ] && [ "$SKIP_ENV" != true ]; then
     # Generate secrets
     NEXTAUTH_SECRET=$(generate_hex 32)
     SCRAPER_TOKEN=$(generate_hex 32)
     DB_PASSWORD=$(generate_hex 16)
-    ADMIN_PASS=$(generate_password 12)
-    ADMIN_USER="admin"
+    AUTO_PASS=$(generate_password 14)
 
-    # Ask for custom port
-    DEFAULT_PORT=3000
-    read -p "Which port should the app listen on? (default: ${DEFAULT_PORT}): " CUSTOM_PORT
-    APP_PORT="${CUSTOM_PORT:-$DEFAULT_PORT}"
+    echo ""
+    info "Configure your installation (press Enter for defaults):"
+    echo ""
 
-    # Ask for admin username
-    read -p "Admin username (default: admin): " CUSTOM_USER
-    ADMIN_USER="${CUSTOM_USER:-$ADMIN_USER}"
+    # Port
+    read -p "  App port [3000]: " INPUT_PORT
+    APP_PORT="${INPUT_PORT:-3000}"
 
-    # Ask for admin password (or use generated)
-    read -p "Admin password (press Enter to use auto-generated: ${ADMIN_PASS}): " CUSTOM_PASS
-    ADMIN_PASS="${CUSTOM_PASS:-$ADMIN_PASS}"
-
-    # Ask for app URL
-    detect_ip() {
-        # Try to get the server's main IP
-        local ip
-        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-        if [ -z "$ip" ]; then
-            ip=$(curl -s --connect-timeout 2 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
-        fi
-        echo "$ip"
-    }
-    SERVER_IP=$(detect_ip)
-    read -p "Server IP or domain (default: ${SERVER_IP}): " CUSTOM_URL
-    if [ -n "$CUSTOM_URL" ]; then
-        APP_URL="http://${CUSTOM_URL}:${APP_PORT}"
-    else
-        APP_URL="http://${SERVER_IP}:${APP_PORT}"
+    # Validate port is numeric and available
+    if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]] || [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt 65535 ]; then
+        warn "Invalid port, using 3000"
+        APP_PORT=3000
     fi
 
-    # Create .env
+    # Admin username
+    read -p "  Admin username [admin]: " INPUT_USER
+    ADMIN_USER="${INPUT_USER:-admin}"
+
+    # Admin password
+    read -p "  Admin password [auto: ${AUTO_PASS}]: " INPUT_PASS
+    ADMIN_PASS="${INPUT_PASS:-$AUTO_PASS}"
+
+    # Server IP / domain
+    AUTO_IP=$(detect_ip)
+    read -p "  Server IP or domain [${AUTO_IP}]: " INPUT_URL
+    SERVER_ADDR="${INPUT_URL:-$AUTO_IP}"
+
+    # Build APP_URL
+    if [[ "$SERVER_ADDR" =~ ^https?:// ]]; then
+        APP_URL="$SERVER_ADDR"
+    else
+        APP_URL="http://${SERVER_ADDR}:${APP_PORT}"
+    fi
+
+    # Timezone
+    read -p "  Timezone [Asia/Shanghai]: " INPUT_TZ
+    TZ="${INPUT_TZ:-Asia/Shanghai}"
+
+    echo ""
+
+    # Write .env
     cat > .env << ENVEOF
 # ============================================================
 # Novel Management System - Auto-generated by install.sh
 # Generated: $(date '+%Y-%m-%d %H:%M:%S')
+# Source: ${REPO_URL}
 # ============================================================
 
 # ─── Database ────────────────────────────────────────────
@@ -204,7 +329,7 @@ DB_PORT=5432
 APP_PORT=${APP_PORT}
 APP_NAME=小说管理系统
 APP_URL=${APP_URL}
-TZ=Asia/Shanghai
+TZ=${TZ}
 
 # ─── Authentication ──────────────────────────────────────
 NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
@@ -229,137 +354,164 @@ SCRAPER_SERVICE_TOKEN=${SCRAPER_TOKEN}
 ENVEOF
 
     chmod 600 .env
-    success ".env created with secure random values"
-    echo ""
+    ok ".env created (chmod 600)"
 fi
 
 echo ""
 
+# Always source .env for remaining steps (in case of skip)
+source .env 2>/dev/null || true
+
 # ============================================================
-# Step 3: Build Docker Images
+# Step 4: Build Docker Images
 # ============================================================
-info "Step 3/5: Building Docker images (this may take 5-10 minutes on first run)..."
+step "Step 4/6: Building Docker images..."
+info "First build may take 5-10 minutes depending on your server."
 echo ""
 
-$COMPOSE_CMD build 2>&1 | while IFS= read -r line; do
-    # Show progress but suppress overly verbose output
-    if echo "$line" | grep -qE "(Step|=>|DONE|ERROR|WARN|=> =>)" || [ -z "$line" ]; then
+BUILD_START=$(date +%s)
+
+# Run build and capture output
+set +e
+$COMPOSE_CMD build 2>&1 | tee /tmp/novel-build.log | while IFS= read -r line; do
+    if echo "$line" | grep -qiE "(step [0-9]|=> (=>|RUN|COPY|FROM)|sending build|DONE|successfully tagged|ERROR|failed|WARN)" || [ -z "$line" ]; then
         echo "  $line"
     fi
 done
-
 BUILD_EXIT=${PIPESTATUS[0]}
+set -e
+
+BUILD_ELAPSED=$(( $(date +%s) - BUILD_START ))
+BUILD_MIN=$((BUILD_ELAPSED / 60))
+BUILD_SEC=$((BUILD_ELAPSED % 60))
+
+echo ""
 if [ "$BUILD_EXIT" -ne 0 ]; then
-    error "Docker build failed! Check the output above for errors."
+    error "Docker build failed after ${BUILD_MIN}m${BUILD_SEC}s!"
     echo ""
-    echo "Common fixes:"
-    echo "  1. Check network connectivity (need to download base images)"
-    echo "  2. Ensure enough disk space: df -h"
-    echo "  3. Try again: $COMPOSE_CMD build --no-cache"
+    echo "  Common fixes:"
+    echo "    1. Check network: curl -I https://registry-1.docker.io"
+    echo "    2. Check disk:    df -h"
+    echo "    3. Retry clean:   $COMPOSE_CMD build --no-cache"
+    echo "    4. Full log:      cat /tmp/novel-build.log"
     exit 1
 fi
-
-echo ""
-success "Docker images built successfully!"
-echo ""
+ok "Build completed in ${BUILD_MIN}m${BUILD_SEC}s"
 
 # ============================================================
-# Step 4: Start Services
+# Step 5: Start Services
 # ============================================================
-info "Step 4/5: Starting services..."
+step "Step 5/6: Starting services..."
 echo ""
 
+set +e
 $COMPOSE_CMD up -d 2>&1
-if [ $? -ne 0 ]; then
+UP_EXIT=$?
+set -e
+
+if [ "$UP_EXIT" -ne 0 ]; then
     error "Failed to start services!"
     echo ""
-    echo "Check logs with: $COMPOSE_CMD logs"
+    echo "  Check logs: $COMPOSE_CMD logs"
+    echo "  Common cause: port ${APP_PORT:-3000} already in use"
+    echo "    Fix: change APP_PORT in .env, then re-run this script"
     exit 1
 fi
+ok "Services started"
 
-echo ""
-success "Services started!"
 echo ""
 
 # ============================================================
-# Step 5: Wait for Health Check
+# Step 6: Health Check & Show Result
 # ============================================================
-info "Step 5/5: Waiting for system to be ready..."
+step "Step 6/6: Waiting for system to be ready..."
 echo ""
 
-MAX_WAIT=180  # 3 minutes max
+source .env 2>/dev/null || true
+PORT="${APP_PORT:-3000}"
+MAX_WAIT=180
 ELAPSED=0
 HEALTHY=false
 
 while [ $ELAPSED -lt $MAX_WAIT ]; do
-    # Check container status
-    STATUS=$($COMPOSE_CMD ps --format json 2>/dev/null | docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true)
+    # Check containers are alive
+    if ! $COMPOSE_CMD ps 2>/dev/null | grep -q "Up\|running\|healthy"; then
+        error "Containers crashed! Showing logs:"
+        echo ""
+        $COMPOSE_CMD logs --tail=30 2>&1
+        exit 1
+    fi
 
     # Try health endpoint
-    if curl -sf "http://localhost:${APP_PORT:-3000}/api/auth/csrf" > /dev/null 2>&1; then
+    if curl -sf "http://localhost:${PORT}/api/auth/csrf" > /dev/null 2>&1; then
         HEALTHY=true
         break
     fi
 
-    # Check if containers are still running
-    if ! $COMPOSE_CMD ps 2>/dev/null | grep -q "Up\|running\|healthy"; then
-        error "Containers stopped unexpectedly! Check logs:"
-        echo "  $COMPOSE_CMD logs"
-        exit 1
-    fi
+    # Progress bar
+    PCT=$(( ELAPSED * 100 / MAX_WAIT ))
+    FILLED=$(( PCT / 5 ))
+    EMPTY=$(( 20 - FILLED ))
+    BAR=$(printf '%*s' "$FILLED" | tr ' ' '█')
+    DOT=$(printf '%*s' "$EMPTY" | tr ' ' '░')
+    printf "\r  [%s%s] %3d%% (%ds/%ds)" "$BAR" "$DOT" "$PCT" "$ELAPSED" "$MAX_WAIT"
 
-    printf "\r  Waiting... %ds / %ds" "$ELAPSED" "$MAX_WAIT"
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
+    sleep 3
+    ELAPSED=$((ELAPSED + 3))
 done
 
 echo ""
 
 if [ "$HEALTHY" = true ]; then
-    # Extract login info from .env
-    source .env 2>/dev/null || true
-
     echo ""
-    echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}${BOLD}║                                                  ║${NC}"
-    echo -e "${GREEN}${BOLD}║           ✅ 安装成功！系统已就绪                ║${NC}"
-    echo -e "${GREEN}${BOLD}║           Installation Complete!                  ║${NC}"
-    echo -e "${GREEN}${BOLD}║                                                  ║${NC}"
-    echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}${BOLD}║                                                           ║${NC}"
+    echo -e "${GREEN}${BOLD}║            ✅ 安装成功！系统已就绪                      ║${NC}"
+    echo -e "${GREEN}${BOLD}║            Installation Complete!                         ║${NC}"
+    echo -e "${GREEN}${BOLD}║                                                           ║${NC}"
+    echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  🌐 ${BOLD}访问地址 / URL:${NC}"
-    echo -e "     ${CYAN}${APP_URL:-http://localhost:${APP_PORT:-3000}}${NC}"
+    echo -e "  🌐  ${BOLD}访问地址:${NC}"
+    echo -e "      ${CYAN}${APP_URL:-http://localhost:${PORT}}${NC}"
     echo ""
-    echo -e "  👤 ${BOLD}管理员账号 / Admin Login:${NC}"
-    echo -e "     Username: ${BOLD}${ADMIN_USERNAME:-admin}${NC}"
-    echo -e "     Password: ${BOLD}${ADMIN_PASSWORD:-<see .env file>}${NC}"
+    echo -e "  👤  ${BOLD}管理员登录:${NC}"
+    echo -e "      Username: ${BOLD}${ADMIN_USERNAME:-admin}${NC}"
+    echo -e "      Password: ${BOLD}${ADMIN_PASSWORD:-<check .env file>}${NC}"
     echo ""
-    echo -e "  📋 ${BOLD}常用命令 / Common Commands:${NC}"
-    echo -e "     View logs:    ${CYAN}$COMPOSE_CMD logs -f${NC}"
-    echo -e "     Stop:         ${CYAN}$COMPOSE_CMD stop${NC}"
-    echo -e "     Restart:      ${CYAN}$COMPOSE_CMD restart${NC}"
-    echo -e "     Status:       ${CYAN}$COMPOSE_CMD ps${NC}"
-    echo -e "     Full uninstall: ${CYAN}$COMPOSE_CMD down -v${NC}"
+    echo -e "  📋  ${BOLD}常用命令:${NC}"
+    echo -e "      日志:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD logs -f${NC}"
+    echo -e "      停止:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD stop${NC}"
+    echo -e "      重启:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD restart${NC}"
+    echo -e "      状态:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD ps${NC}"
+    echo -e "      卸载:     ${CYAN}cd ${INSTALL_DIR} && $COMPOSE_CMD down -v && rm -rf ${INSTALL_DIR}${NC}"
+    echo -e "      备份数据: ${CYAN}cd ${INSTALL_DIR} && mkdir -p backups && $COMPOSE_CMD exec -T postgres pg_dump -U novel novel_admin > backups/db_\$(date +%Y%m%d).sql${NC}"
     echo ""
-    echo -e "  📁 ${BOLD}重要文件 / Important Files:${NC}"
-    echo -e "     Config:       ${CYAN}.env${NC}  (所有密码和配置都在这里)"
-    echo -e "     Data backup:  ${CYAN}backups/${NC}  (数据库备份目录)"
+    echo -e "  📁  ${BOLD}文件位置:${NC}"
+    echo -e "      项目目录: ${DIM}${INSTALL_DIR}${NC}"
+    echo -e "      配置文件: ${DIM}${INSTALL_DIR}/.env${NC}"
+    echo -e "      备份目录: ${DIM}${INSTALL_DIR}/backups/${NC}"
     echo ""
-    echo -e "  ⚠️  ${YELLOW}请保存以上信息！关闭此窗口后密码将不再显示。${NC}"
-    echo -e "  ⚠️  ${YELLOW}Save this info! Password won't be shown again.${NC}"
+    echo -e "  🔄  ${BOLD}更新升级:${NC}"
+    echo -e "      cd ${INSTALL_DIR} && git pull && $COMPOSE_CMD up -d --build"
+    echo ""
+    echo -e "  ${YELLOW}⚠️  请立即保存以上信息！关闭终端后密码不再显示。${NC}"
     echo ""
 else
     echo ""
-    warn "System is starting but health check timed out."
-    warn "This is normal on slow servers. Check status with:"
+    warn "Health check timed out (${MAX_WAIT}s). This may be normal on slow servers."
     echo ""
-    echo "  $COMPOSE_CMD ps"
-    echo "  $COMPOSE_CMD logs -f"
+    echo "  Check status:"
+    echo "    cd ${INSTALL_DIR} && $COMPOSE_CMD ps"
     echo ""
-    echo "If the app container shows 'Up', try accessing:"
-    echo "  ${APP_URL:-http://localhost:${APP_PORT:-3000}}"
+    echo "  View logs:"
+    echo "    cd ${INSTALL_DIR} && $COMPOSE_CMD logs -f"
     echo ""
-    echo "Login credentials are in .env:"
-    echo "  ADMIN_USERNAME and ADMIN_PASSWORD"
+    echo "  If containers show 'Up', the system is likely ready."
+    echo "  Try accessing: ${APP_URL:-http://localhost:${PORT}}"
+    echo ""
+    echo "  Login credentials are in ${INSTALL_DIR}/.env"
     echo ""
 fi
+
+# Cleanup
+rm -f /tmp/novel-build.log 2>/dev/null
