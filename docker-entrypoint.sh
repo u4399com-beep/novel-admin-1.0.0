@@ -11,6 +11,16 @@ echo "  Database: PostgreSQL"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
 
+# ─── Validate required secrets (docker-compose :? validates at start, but double-check) ───
+for _var in NEXTAUTH_SECRET ADMIN_PASSWORD SCRAPER_SERVICE_TOKEN; do
+    _val="${!_var:-}"
+    if [ ${#_val} -lt 32 ] || echo "$_val" | grep -q "change-this"; then
+        echo "[FATAL] $_var is not properly configured (too short or still default)."
+        echo "[FATAL] Edit your .env file and set a strong random value."
+        exit 1
+    fi
+done
+
 # ─── Helper: log with timestamp ───
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
