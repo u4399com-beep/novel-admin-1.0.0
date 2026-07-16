@@ -45,10 +45,21 @@ COPY mini-services/scraper-service/ ./
 # Replace SQLite queue with PostgreSQL queue
 RUN rm -f src/queue.ts && mv src/queue.pg.ts src/queue.ts
 
-# Install Playwright browsers (Chromium only for scraping)
-# This adds ~300MB but is required for headless browser scraping
-RUN bunx playwright install chromium --with-deps 2>/dev/null || \
-    (echo "[WARN] Playwright browser install failed, headless scraping will be unavailable" && \
+# Install Chromium system dependencies explicitly (avoids --with-deps failures in China)
+# These must match what playwright install --with-deps would install
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdrm2 libxkbcommon0 libatspi2.0-0 \
+    libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
+    libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright Chromium browser
+# If download fails (network), scraper will still start but headless mode won't work
+ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+RUN bunx playwright install chromium || \
+    (echo "[WARN] Playwright Chromium download failed - headless scraping unavailable" && \
+     echo "[WARN] This usually means the download server is unreachable" && \
      mkdir -p /root/.cache/ms-playwright)
 
 # ============ Production Runner ============
