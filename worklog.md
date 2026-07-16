@@ -1731,3 +1731,37 @@ Stage Summary:
 - deploy.sh v2: 1437行, 10种模式, 全面容错
 - tarball: 332KB, 已推送
 - install.sh: 保持为 deploy.sh 的代理wrapper
+
+---
+Task ID: fix-playwright-oom
+Agent: Main Orchestrator
+Task: 修复 Playwright Chromium 下载导致服务器 OOM 卡死
+
+Work Log:
+- 用户报告: Docker 构建到 #23 [scraper-builder 8/8] RUN bunx playwright install chromium 时服务器卡死, CPU 100%, 内存 100%
+- 分析 playwright-core 源码 (coreBundle.js, 73K行):
+  - bunx 需要加载整个 coreBundle.js 到 V8/Bun 堆 (~800MB)
+  - 然后下载 ~150MB zip + JS 解压 (~400MB)
+  - 峰值 ~1.5GB, 在 2GB 服务器 Docker build 时直接 OOM
+- 逆向分析 Playwright CDN URL 构建逻辑:
+  - browsers.json: revision=1228, browserVersion=149.0.7827.55
+  - Debian x64 使用 cftUrl: builds/cft/{version}/linux64/chrome-linux64.zip
+  - CDN: cdn.playwright.dev + Microsoft 镜像
+  - 安装目录: $PLAYWRIGHT_BROWSERS_PATH/chromium-1228/chrome-linux64/chrome
+  - 需要 INSTALLATION_COMPLETE 标记文件
+- Dockerfile 修复:
+  - 替换 bunx playwright install chromium 为 curl+unzip
+  - 从 browsers.json grep 读取 revision 和 browserVersion
+  - curl 流式下载 (恒定 ~20MB 内存)
+  - 支持 x64 (CFT URL) + arm64 (legacy URL)
+  - 双 CDN 镜像回退
+- docker-entrypoint.sh 修复:
+  - 新增运行时 lazy-download: 如果构建阶段下载失败, 容器启动时自动重试
+  - 下载失败不阻塞主应用 (仅 headless scraping 不可用)
+  - 失败时输出手动修复命令
+- 重新打包推送: commit 3796b66
+
+Stage Summary:
+- Dockerfile: bunx → curl+unzip, 内存占用从 ~1.5GB 降至 ~20MB
+- docker-entrypoint.sh: 运行时兜底下载, 构建失败不影响启动
+- tarball: 336KB, 已推送
