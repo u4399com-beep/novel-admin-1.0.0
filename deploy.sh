@@ -138,6 +138,39 @@ pkg_install() {
     done
 }
 
+# Install Docker via package manager (must be defined before first call for curl|bash compat)
+_install_docker_pkg() {
+    case "$PKG_MGR" in
+        apt)
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq >/dev/null 2>&1
+            apt-get install -y -qq ca-certificates curl gnupg lsb-release >/dev/null 2>&1
+            _os_id=$(. /etc/os-release 2>/dev/null && echo "$ID")
+            _os_ver=$(. /etc/os-release 2>/dev/null && echo "$VERSION_CODENAME")
+            mkdir -p /etc/apt/keyrings
+            curl -fsSL "https://download.docker.com/linux/${_os_id:-debian}/gpg" 2>/dev/null | \
+                gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null || true
+            chmod a+r /etc/apt/keyrings/docker.gpg 2>/dev/null || true
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/${_os_id:-debian} ${_os_ver:-stable} stable" \
+                > /etc/apt/sources.list.d/docker.list 2>/dev/null || true
+            apt-get update -qq >/dev/null 2>&1
+            apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
+            ;;
+        dnf|yum)
+            ${PKG_MGR} install -y -q yum-utils >/dev/null 2>&1
+            ${PKG_MGR}-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo >/dev/null 2>&1
+            ${PKG_MGR} install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin >/dev/null 2>&1
+            ;;
+        apk)
+            apk add --no-cache docker docker-compose docker-cli-compose >/dev/null 2>&1
+            ;;
+        *) die "不支持的系统，手动安装: curl -fsSL https://get.docker.com | sh" ;;
+    esac
+    systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
+    sleep 2
+}
+
 # ═══════════════════════════════════════════════════════════════
 #  MODE: STATUS
 # ═══════════════════════════════════════════════════════════════
@@ -348,38 +381,6 @@ elif command -v docker-compose &>/dev/null; then COMPOSE_CMD="docker-compose"
 else die "未找到 Docker Compose"
 fi
 ok "Docker 运行中"
-
-_install_docker_pkg() {
-    case "$PKG_MGR" in
-        apt)
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -qq >/dev/null 2>&1
-            apt-get install -y -qq ca-certificates curl gnupg lsb-release >/dev/null 2>&1
-            _os_id=$(. /etc/os-release 2>/dev/null && echo "$ID")
-            _os_ver=$(. /etc/os-release 2>/dev/null && echo "$VERSION_CODENAME")
-            mkdir -p /etc/apt/keyrings
-            curl -fsSL "https://download.docker.com/linux/${_os_id:-debian}/gpg" 2>/dev/null | \
-                gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null || true
-            chmod a+r /etc/apt/keyrings/docker.gpg 2>/dev/null || true
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/${_os_id:-debian} ${_os_ver:-stable} stable" \
-                > /etc/apt/sources.list.d/docker.list 2>/dev/null || true
-            apt-get update -qq >/dev/null 2>&1
-            apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
-            ;;
-        dnf|yum)
-            ${PKG_MGR} install -y -q yum-utils >/dev/null 2>&1
-            ${PKG_MGR}-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo >/dev/null 2>&1
-            ${PKG_MGR} install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin >/dev/null 2>&1
-            ;;
-        apk)
-            apk add --no-cache docker docker-compose docker-cli-compose >/dev/null 2>&1
-            ;;
-        *) die "不支持的系统，手动安装: curl -fsSL https://get.docker.com | sh" ;;
-    esac
-    systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
-    sleep 2
-}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  STEP 4: Network & Mirror
