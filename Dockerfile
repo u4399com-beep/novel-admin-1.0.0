@@ -46,21 +46,74 @@ COPY mini-services/scraper-service/ ./
 RUN rm -f src/queue.ts && mv src/queue.pg.ts src/queue.ts
 
 # Install Chromium system dependencies explicitly
-# (avoids playwright --with-deps which bundles apt + download together)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libatspi2.0-0 \
     libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
     libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Download Playwright Chromium browser
-# Store under /scraper so we can COPY it into the runner later
+# ── Download Playwright Chromium (LOW MEMORY) ──
+# WHY NOT `bunx playwright install chromium`:
+#   bunx loads the 73K-line playwright-core bundle into memory,
+#   then downloads + extracts a ~150MB zip — total ~1.5GB RAM spike.
+#   On 2GB servers this causes OOM during docker build.
+#
+# SOLUTION: Pure curl + unzip — constant ~20MB RAM, works on 512MB servers.
+#
+# How it works:
+#   1. Read chromium revision + browserVersion from browsers.json
+#   2. Construct the CDN URL (same logic as playwright-core's registry)
+#   3. curl the zip, unzip to the exact directory playwright expects
+#   4. Create the INSTALLATION_COMPLETE marker file
+#
+# Supports: debian x64 (cftUrl format) + debian arm64 (legacy format)
+
 ENV PLAYWRIGHT_BROWSERS_PATH=/scraper/.playwright-browsers
-RUN bunx playwright install chromium || \
-    (echo "[WARN] Playwright Chromium download failed - headless scraping will be unavailable" && \
-     echo "[WARN] This usually means the download server is unreachable" && \
-     mkdir -p /scraper/.playwright-browsers)
+
+RUN set -ex && \
+    ARCH=$(uname -m) && \
+    BROWSERS_JSON="node_modules/playwright-core/browsers.json" && \
+    REVISION=$(grep -A1 '"name": "chromium"' "$BROWSERS_JSON" | grep '"revision"' | head -1 | grep -o '[0-9]*') && \
+    BROWSER_VERSION=$(grep -A1 '"name": "chromium"' "$BROWSERS_JSON" | grep '"browserVersion"' | head -1 | grep -o '[0-9][^"]*') && \
+    echo "Chromium revision=${REVISION} version=${BROWSER_VERSION} arch=${ARCH}" && \
+    BROWSER_DIR="${PLAYWRIGHT_BROWSERS_PATH}/chromium-${REVISION}" && \
+    mkdir -p "$BROWSER_DIR" && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        # Debian x64 uses CFT (Chrome for Testing) URLs
+        ZIP_NAME="chrome-linux64.zip" && \
+        EXTRACT_DIR="chrome-linux64" && \
+        URLS="https://cdn.playwright.dev/builds/cft/${BROWSER_VERSION}/linux64/${ZIP_NAME} \
+              https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds/cft/${BROWSER_VERSION}/linux64/${ZIP_NAME}"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        # ARM64 uses legacy playwright build URLs
+        ZIP_NAME="chromium-linux-arm64.zip" && \
+        EXTRACT_DIR="chrome-linux" && \
+        URLS="https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${REVISION}/${ZIP_NAME} \
+              https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds/chromium/${REVISION}/${ZIP_NAME}"; \
+    else \
+        echo "[WARN] Unsupported arch ${ARCH} for Playwright Chromium" && exit 0; \
+    fi && \
+    DOWNLOADED=false && \
+    for URL in $URLS; do \
+        echo "Trying ${URL}..." && \
+        if curl -fsSL --connect-timeout 15 --max-time 600 "$URL" -o /tmp/pw-chromium.zip; then \
+            echo "Download OK ($(du -h /tmp/pw-chromium.zip | cut -f1))" && \
+            unzip -qo /tmp/pw-chromium.zip -d "$BROWSER_DIR" && \
+            DOWNLOADED=true && \
+            break; \
+        fi; \
+    done && \
+    rm -f /tmp/pw-chromium.zip && \
+    if $DOWNLOADED && [ -f "${BROWSER_DIR}/${EXTRACT_DIR}/chrome" ]; then \
+        touch "${BROWSER_DIR}/INSTALLATION_COMPLETE" && \
+        echo "Chromium installed: ${BROWSER_DIR}/${EXTRACT_DIR}/chrome" && \
+        ls -lh "${BROWSER_DIR}/${EXTRACT_DIR}/chrome"; \
+    else \
+        echo "[WARN] Chromium download/extract failed - headless scraping will be unavailable at runtime" && \
+        echo "[WARN] The container will attempt to download it on first start"; \
+    fi
 
 # ============ Production Runner ============
 FROM oven/bun:1 AS runner
@@ -96,6 +149,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libcairo2 \
     libasound2 \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user (groupadd/useradd from passwd pkg, always available)
