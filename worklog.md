@@ -1697,3 +1697,37 @@ Stage Summary:
 - deploy.sh: 修复curl|bash场景下的函数前向引用bug
 - tarball已重新打包并推送
 - deploy.sh功能完整：支持install/upgrade/rollback/backup/uninstall/status六种模式，兼容Debian/CentOS/Alpine，自动配置中国Docker镜像，自动生成安全密钥
+
+---
+Task ID: rewrite-deploy-sh-v2
+Agent: Main Orchestrator
+Task: 完全重写 deploy.sh 一键部署脚本 v2
+
+Work Log:
+- 分析旧版 deploy.sh (724行) 发现10+个问题
+- 完全重写为 v2 (1437行)，通过 bash -n 语法检查
+- 修复的Bug:
+  1. 参数解析: for arg in "$@" 中 shift 无效 → 改用 while/shift
+  2. set -u 导致 source .env 崩溃 → 仅用 set -eo pipefail
+  3. exec > >(tee ...) 不兼容 curl|bash → 手动 _log() 函数
+  4. -d 参数完全失效 → 修复参数解析
+  5. 端口检测依赖 ss/lsof → /proc/net/tcp 优先
+  6. daemon.json 覆盖已有配置 → python3 merge
+- 新增功能:
+  1. --logs --restart --stop 命令 (共10种模式)
+  2. -p/--port 端口参数
+  3. -v/--verbose 详细输出
+  4. 内核版本检查 (3.10+)
+  5. CPU架构白名单 (x86_64/aarch64/armhf)
+  6. Docker三级安装 (官方脚本→包管理器→手动二进制)
+  7. IP检测四级回退 (hostname→ip→ifconfig→外部)
+  8. 构建错误5类智能诊断 (OOM/网络/权限/磁盘/编译)
+  9. 升级时自动合并新配置项到 .env
+  10. openSUSE/zypper 包管理器支持
+- 重新打包: novel-admin-1.0.0-20260716.tar.gz (332KB)
+- 推送GitHub: commit e2a6e64
+
+Stage Summary:
+- deploy.sh v2: 1437行, 10种模式, 全面容错
+- tarball: 332KB, 已推送
+- install.sh: 保持为 deploy.sh 的代理wrapper
