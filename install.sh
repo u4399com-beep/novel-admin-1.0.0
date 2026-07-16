@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Legacy wrapper — redirects to deploy.sh
+# Legacy wrapper — redirects to deploy.sh v2
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "${SCRIPT_DIR}/deploy.sh" ]; then
