@@ -1676,3 +1676,24 @@ Stage Summary:
 - 用户部署流程: `chmod +x install.sh && ./install.sh` → 2 条命令完成部署
 - 打包分发流程: `./pack.sh` → 生成 320KB tar.gz → 接收方解压后同样 2 条命令
 - Docker 不可用于沙箱验证，但脚本语法和打包逻辑已验证通过
+
+---
+Task ID: fix-deploy-scripts
+Agent: Main Orchestrator
+Task: 修复install.sh损坏、deploy.sh前向引用bug、重新打包推送
+
+Work Log:
+- 发现install.sh文件损坏：仅含一行 `err "  → 内存不足 (OOM)"`，无任何函数定义
+- 将install.sh重写为deploy.sh的简单代理包装器（exec bash deploy.sh "$@"）
+- 审查deploy.sh（724行），发现_install_docker_pkg()函数定义在第352行但首次调用在第326/331行
+- 虽然bash文件脚本会先解析所有函数定义，但在curl|bash场景下（stdin模式），bash逐行执行会导致前向引用失败
+- 将_install_docker_pkg()移动到pkg_install()之后（第141行），确保在任何调用之前已定义
+- 运行bash -n语法检查通过（deploy.sh和install.sh均通过）
+- 重新运行pack.sh打包：novel-admin-1.0.0-20260716.tar.gz (328KB)
+- 推送到GitHub: commit dc911b3
+
+Stage Summary:
+- install.sh: 修复为deploy.sh代理包装器
+- deploy.sh: 修复curl|bash场景下的函数前向引用bug
+- tarball已重新打包并推送
+- deploy.sh功能完整：支持install/upgrade/rollback/backup/uninstall/status六种模式，兼容Debian/CentOS/Alpine，自动配置中国Docker镜像，自动生成安全密钥
