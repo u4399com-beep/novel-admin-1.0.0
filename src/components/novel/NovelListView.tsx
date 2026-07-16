@@ -252,11 +252,7 @@ export default function NovelListView() {
             <>
               <BookMarked className="h-12 w-12 text-muted-foreground/50" />
               <p className="mt-4 text-base font-medium text-foreground">还没有小说</p>
-              <p className="mt-1 text-sm text-muted-foreground">点击「新建小说」开始添加你的第一部作品</p>
-              <Button className="mt-6" onClick={() => setCurrentView('novel-create')}>
-                <Plus className="mr-1.5 h-4 w-4" />
-                新建小说
-              </Button>
+              <p className="mt-1 text-sm text-muted-foreground">点击顶部「新建小说」开始添加你的第一部作品</p>
             </>
           )}
         </div>

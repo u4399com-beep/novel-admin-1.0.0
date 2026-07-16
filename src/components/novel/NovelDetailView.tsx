@@ -1012,8 +1012,7 @@ export default function NovelDetailView() {
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                    disabled={batchMode}
+                    onDragEnd={batchMode ? undefined : handleDragEnd}
                   >
                     <SortableContext
                       items={chapters.map((c) => c.id)}
