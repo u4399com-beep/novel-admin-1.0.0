@@ -138,6 +138,16 @@ err()   { _log "${C_RED}[ERROR]${C_RST} $*"; }
 step()  { _log "\n${C_MAG}${C_BLD}▶ $*${C_RST}"; }
 die()   { err "$*"; [ -n "$LOG_FILE" ] && echo "  完整日志: ${LOG_FILE}"; exit 1; }
 
+# Detect if stdin is a terminal (false in curl|bash mode)
+if [ -t 0 ]; then
+    _INTERACTIVE=true
+else
+    _INTERACTIVE=false
+    # In non-interactive mode (curl|bash), default to AUTO_YES
+    AUTO_YES=true
+    info "检测到非交互模式 (curl|bash)，自动使用默认值"
+fi
+
 # Interactive prompts (auto-yes mode returns defaults)
 ask() {
     if $AUTO_YES; then echo "${2:-}"; return; fi
@@ -396,19 +406,19 @@ install_docker_via_pkg() {
 https://download.docker.com/linux/${_os_id} ${_os_ver} stable" \
                 > /etc/apt/sources.list.d/docker.list 2>/dev/null || true
 
-            apt-get update -qq >/dev/null 2>&1
-            apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
+            apt-get update -qq >>"$LOG_FILE" 2>&1
+            apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >>"$LOG_FILE" 2>&1
             ;;
         dnf|yum)
-            ${PKG_INSTALL_CMD} install -y -q yum-utils >/dev/null 2>&1 || true
-            ${PKG_INSTALL_CMD}-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo >/dev/null 2>&1 || true
-            ${PKG_INSTALL_CMD} install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin >/dev/null 2>&1
+            ${PKG_INSTALL_CMD} install -y -q yum-utils >>"$LOG_FILE" 2>&1 || true
+            ${PKG_INSTALL_CMD}-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo >>"$LOG_FILE" 2>&1 || true
+            ${PKG_INSTALL_CMD} install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin >>"$LOG_FILE" 2>&1
             ;;
         apk)
-            apk add --no-cache docker docker-compose docker-cli-compose >/dev/null 2>&1
+            apk add --no-cache docker docker-compose docker-cli-compose >>"$LOG_FILE" 2>&1
             ;;
         zypper)
-            zypper --non-interactive install -y docker docker-compose >/dev/null 2>&1
+            zypper --non-interactive install -y docker docker-compose >>"$LOG_FILE" 2>&1
             ;;
         *)
             return 1
@@ -437,28 +447,34 @@ ensure_docker() {
     fi
 
     # Need to install
-    if ! $AUTO_YES && ! ask_y "Docker 未安装，是否自动安装？（需要几分钟）"; then
-        die "请手动安装 Docker: curl -fsSL https://get.docker.com | sh"
+    info "Docker 未安装，开始自动安装..."
+    if ! $AUTO_YES; then
+        ask_y "Docker 未安装，是否自动安装？（需要几分钟）" || die "请手动安装 Docker: curl -fsSL https://get.docker.com | sh"
     fi
 
     info "安装 Docker（可能需要几分钟）..."
 
     # Strategy 1: Official get.docker.com script (most universal)
     _installed=false
+    info "尝试官方安装脚本 (get.docker.com)..."
     if dl_to_file "https://get.docker.com" /tmp/get-docker.sh 2>/dev/null; then
-        sh /tmp/get-docker.sh >/dev/null 2>&1 && _installed=true
+        info "执行 Docker 安装脚本（约需 1-3 分钟）..."
+        sh /tmp/get-docker.sh >> "$LOG_FILE" 2>&1 && _installed=true
         rm -f /tmp/get-docker.sh
+    fi
+    if ! $_installed; then
+        warn "官方脚本安装失败"
     fi
 
     # Strategy 2: Package manager
     if ! $_installed; then
-        warn "官方脚本失败，尝试包管理器..."
-        install_docker_via_pkg && _installed=true
+        info "尝试包管理器安装..."
+        install_docker_via_pkg && _installed=true || warn "包管理器安装失败"
     fi
 
     # Strategy 3: Manual binary download (last resort for minimal systems)
     if ! $_installed; then
-        warn "包管理器也失败，尝试手动下载 Docker 二进制..."
+        info "尝试手动下载 Docker 二进制..."
         _arch=$(uname -m)
         case "$_arch" in
             x86_64)  _docker_arch="x86_64" ;;
