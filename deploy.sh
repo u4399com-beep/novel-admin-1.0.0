@@ -1382,33 +1382,45 @@ done
 
 # ── Save Credentials ──
 CREDS_FILE="${INSTALL_DIR}/.credentials.txt"
-cat > "$CREDS_FILE" <<EOF
+cat > "$CREDS_FILE" <<CREDSEOF
 ===========================================
-  📚 小说管理系统 — 登录凭据
+  📚 小说管理系统 — 登录信息
   生成时间: $(date '+%Y-%m-%d %H:%M:%S')
 ===========================================
 
-  访问地址:  ${SAVE_URL}
-  管理员:    ${SAVE_USER}
-  密码:      ${SAVE_PASS}
+  前台 (登录页):   ${SAVE_URL}
+  后台 (管理面板): ${SAVE_URL}
+  抓取服务 API:    内部端口 3099 (不对外暴露)
+
+  管理员用户名:   ${SAVE_USER}
+  管理员密码:     ${SAVE_PASS}
 
   ⚠️ 请妥善保管此文件！建议保存后删除。
   ⚠️ 删除命令: rm -f ${CREDS_FILE}
-EOF
+CREDSEOF
 chmod 600 "$CREDS_FILE"
 
 # ── Final Result ──
 echo ""
 if $HEALTHY; then
-    echo -e "${C_GRN}${C_BLD}╔═══════════════════════════════════════════╗${C_RST}"
-    echo -e "${C_GRN}${C_BLD}║         ✅ 部署成功！系统已就绪            ║${C_RST}"
-    echo -e "${C_GRN}${C_BLD}╚═══════════════════════════════════════════╝${C_RST}"
+    echo -e "${C_GRN}${C_BLD}╔══════════════════════════════════════════════════╗${C_RST}"
+    echo -e "${C_GRN}${C_BLD}║            ✅ 部署成功！系统已就绪               ║${C_RST}"
+    echo -e "${C_GRN}${C_BLD}╚══════════════════════════════════════════════════╝${C_RST}"
     echo ""
-    echo -e "  🌐  ${C_BLD}地址:${C_RST}  ${C_CYN}${SAVE_URL}${C_RST}"
-    echo -e "  👤  ${C_BLD}用户:${C_RST}  ${C_BLD}${SAVE_USER}${C_RST}"
-    echo -e "  🔑  ${C_BLD}密码:${C_RST}  ${C_BLD}${SAVE_PASS}${C_RST}"
+    echo -e "${C_BLD}┌──────────────────────────────────────────────────┐${C_RST}"
+    echo -e "${C_BLD}│  📚  小说管理系统 · 登录信息                      │${C_RST}"
+    echo -e "${C_BLD}├──────────────────────────────────────────────────┤${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}前台 (登录页):${C_RST}    ${C_CYN}${SAVE_URL}${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}后台 (管理面板):${C_RST}  ${C_CYN}${SAVE_URL}${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}抓取服务 API:${C_RST}    ${C_DIM}内部端口 3099 (不对外暴露)${C_RST}"
+    echo -e "${C_BLD}├──────────────────────────────────────────────────┤${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}管理员用户名:${C_RST}   ${C_CYN}${SAVE_USER}${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}管理员密码:${C_RST}     ${C_CYN}${SAVE_PASS}${C_RST}"
+    echo -e "${C_BLD}└──────────────────────────────────────────────────┘${C_RST}"
     echo ""
-    echo -e "  ${C_BLD}── 常用命令 ──────────────────────────────${C_RST}"
+    echo -e "  ${C_YEL}${C_BLD}⚠️  请立即保存以上信息！关闭终端后将无法再次查看密码${C_RST}"
+    echo ""
+    echo -e "  ${C_BLD}── 常用命令 ────────────────────────────────${C_RST}"
     echo -e "    查看日志:   ${C_CYN}./deploy.sh --logs${C_RST}"
     echo -e "    重启服务:   ${C_CYN}./deploy.sh --restart${C_RST}"
     echo -e "    停止服务:   ${C_CYN}./deploy.sh --stop${C_RST}"
@@ -1418,19 +1430,28 @@ if $HEALTHY; then
     echo -e "    回滚:       ${C_CYN}./deploy.sh --rollback${C_RST}"
     echo -e "    完全卸载:   ${C_CYN}./deploy.sh --uninstall${C_RST}"
     echo ""
-    echo -e "  ${C_BLD}── 文件位置 ──────────────────────────────${C_RST}"
+    echo -e "  ${C_BLD}── 文件位置 ────────────────────────────────${C_RST}"
     echo -e "    安装目录:   ${C_DIM}${INSTALL_DIR}${C_RST}"
     echo -e "    配置文件:   ${C_DIM}${INSTALL_DIR}/.env${C_RST}"
-    echo -e "    登录凭据:   ${C_DIM}${CREDS_FILE}${C_RST}"
+    echo -e "    凭据文件:   ${C_DIM}${CREDS_FILE}${C_RST}"
     echo -e "    部署日志:   ${C_DIM}${LOG_FILE:-无}${C_RST}"
     echo ""
-    echo -e "  ${C_YEL}${C_BLD}⚠️  请立即保存以上登录信息！${C_RST}"
 else
     echo -e "${C_YEL}⏳ 健康检查超时 (${MAX_WAIT}s)，但服务可能仍在启动中...${C_RST}"
     echo ""
+    echo -e "${C_BLD}┌──────────────────────────────────────────────────┐${C_RST}"
+    echo -e "${C_BLD}│  📚  小说管理系统 · 登录信息 (请等待服务就绪)      │${C_RST}"
+    echo -e "${C_BLD}├──────────────────────────────────────────────────┤${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}前台 (登录页):${C_RST}    ${C_CYN}${SAVE_URL}${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}后台 (管理面板):${C_RST}  ${C_CYN}${SAVE_URL}${C_RST}"
+    echo -e "${C_BLD}├──────────────────────────────────────────────────┤${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}管理员用户名:${C_RST}   ${C_CYN}${SAVE_USER}${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}管理员密码:${C_RST}     ${C_CYN}${SAVE_PASS}${C_RST}"
+    echo -e "${C_BLD}└──────────────────────────────────────────────────┘${C_RST}"
+    echo ""
     echo -e "  检查状态:   ${C_CYN}./deploy.sh --status${C_RST}"
-    echo -e "    查看日志:   ${C_CYN}./deploy.sh --logs${C_RST}"
-    echo -e "  登录凭据:   ${C_CYN}cat ${CREDS_FILE}${C_RST}"
+    echo -e "  查看日志:   ${C_CYN}./deploy.sh --logs${C_RST}"
+    echo -e "  凭据文件:   ${C_CYN}cat ${CREDS_FILE}${C_RST}"
     echo -e "  部署日志:   ${C_CYN}${LOG_FILE:-无}${C_RST}"
     echo ""
     echo -e "  ${C_YEL}提示: 首次启动 Prisma 数据库迁移可能需要额外 1-2 分钟${C_RST}"
