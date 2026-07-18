@@ -1425,6 +1425,38 @@ fi
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 step "[8/8] 构建、启动、验证"
 
+# ── Ensure sufficient memory/swap for Docker build ──
+_mem_mb=$(get_mem_mb 2>/dev/null || echo 4096)
+_swap_mb=$(free -m 2>/dev/null | awk '/Swap/{print $2}' || echo 0)
+if [ "$_mem_mb" -lt 2500 ] && [ "${_swap_mb:-0}" -lt 2000 ]; then
+    warn "内存仅 ${_mem_mb}MB，Swap 仅 ${_swap_mb}MB，构建可能 OOM"
+    info "自动创建 4G Swap..."
+    if [ ! -f /swapfile ]; then
+        fallocate -l 4G /swapfile 2>/dev/null && \
+        chmod 600 /swapfile && \
+        mkswap /swapfile >/dev/null 2>&1 && \
+        swapon /swapfile 2>/dev/null && \
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab 2>/dev/null
+        if [ $? -eq 0 ] && swapon --show 2>/dev/null | grep -q swapfile; then
+            ok "Swap 已创建 (4G)"
+        else
+            # fallocate might fail, try dd
+            dd if=/dev/zero of=/swapfile bs=1M count=4096 status=progress 2>/dev/null && \
+            chmod 600 /swapfile && \
+            mkswap /swapfile >/dev/null 2>&1 && \
+            swapon /swapfile 2>/dev/null
+            if swapon --show 2>/dev/null | grep -q swapfile; then
+                ok "Swap 已创建 (4G)"
+            else
+                warn "Swap 创建失败，构建可能因 OOM 失败"
+            fi
+        fi
+    else
+        swapon /swapfile 2>/dev/null || true
+        ok "Swap 已启用"
+    fi
+fi
+
 if $AUTO_YES; then
     info "首次构建约 5-10 分钟，请耐心等待..."
 else

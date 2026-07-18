@@ -33,6 +33,8 @@ RUN bun run db:generate
 # Build Next.js (standalone output)
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# Limit V8 heap to prevent OOM on low-memory servers (1-2GB)
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 RUN bun run build
 
 # ============ Scraper Service Builder ============
