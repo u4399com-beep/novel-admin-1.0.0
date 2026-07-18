@@ -39,6 +39,9 @@
 # undefined variables — `set -u` would kill the script incorrectly.
 set -eo pipefail
 
+# Trap ERR to show which command failed (instead of silent exit)
+trap 'echo -e "\033[0;31m[ERROR] 命令失败退出: ${BASH_COMMAND:-未知}\033[0m" >&2; echo "  完整日志: ${LOG_FILE:-无}" >&2' ERR
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  GLOBALS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -729,28 +732,28 @@ print('merged')
 #  FIREWALL MANAGEMENT
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 open_firewall_port() {
-    local port="$1"
+    local port="${1:-3000}"
     local opened=false
 
     # ufw (Ubuntu/Debian)
     if command -v ufw &>/dev/null; then
         if ufw status 2>/dev/null | grep -qi "active"; then
             if ! ufw status 2>/dev/null | grep -q "${port}"; then
-                ufw allow "${port}/tcp" >/dev/null 2>&1 && opened=true
+                ufw allow "${port}/tcp" >/dev/null 2>&1 && opened=true || true
             fi
         fi
-    fi
+    fi || true
 
     # firewalld (CentOS/RHEL/Rocky/Alma)
     if command -v firewall-cmd &>/dev/null; then
         if systemctl is-active --quiet firewalld 2>/dev/null; then
             if ! firewall-cmd --list-ports 2>/dev/null | grep -q "${port}"; then
-                firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1
-                firewall-cmd --reload >/dev/null 2>&1
+                firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 || true
+                firewall-cmd --reload >/dev/null 2>&1 || true
                 opened=true
             fi
         fi
-    fi
+    fi || true
 
     # iptables (raw, last resort — just inform user)
     if ! $opened && command -v iptables &>/dev/null; then
@@ -758,9 +761,13 @@ open_firewall_port() {
             warn "检测到 iptables 规则，请手动放行端口 ${port}:"
             warn "  iptables -I INPUT -p tcp --dport ${port} -j ACCEPT"
         fi
-    fi
+    fi || true
 
-    $opened && ok "防火墙已放行端口 ${port}" || ok "无需防火墙配置"
+    if $opened; then
+        ok "防火墙已放行端口 ${port}"
+    else
+        ok "无需防火墙配置"
+    fi
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1241,9 +1248,9 @@ step "[6/8] 防火墙"
 
 # Determine port (peek from existing .env or use default/flag)
 _fw_port="${APP_PORT:-3000}"
-[ -f .env ] && _fw_port=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2)
+[ -f .env ] && _fw_port=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2) || true
 _fw_port=${_fw_port:-3000}
-open_firewall_port "$_fw_port"
+open_firewall_port "$_fw_port" || true
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  STEP 7: Configuration (.env generation)
