@@ -1428,25 +1428,31 @@ step "[8/8] 构建、启动、验证"
 # ── Ensure sufficient memory/swap for Docker build ──
 _mem_mb=$(get_mem_mb 2>/dev/null || echo 4096)
 _swap_mb=$(free -m 2>/dev/null | awk '/Swap/{print $2}' || echo 0)
-if [ "$_mem_mb" -lt 2500 ] && [ "${_swap_mb:-0}" -lt 2000 ]; then
-    warn "内存仅 ${_mem_mb}MB，Swap 仅 ${_swap_mb}MB，构建可能 OOM"
-    info "自动创建 4G Swap..."
+# On 1H1G servers, always ensure swap exists (build needs ~1.5GB peak)
+if [ "$_mem_mb" -lt 2500 ] && [ "${_swap_mb:-0}" -lt 1500 ]; then
+    warn "内存仅 ${_mem_mb}MB，Swap 仅 ${_swap_mb}MB，构建需要更多内存"
+    _swap_size="2G"
+    [ "$_mem_mb" -lt 1200 ] && _swap_size="3G"
+    info "自动创建 ${_swap_size} Swap..."
     if [ ! -f /swapfile ]; then
-        fallocate -l 4G /swapfile 2>/dev/null && \
+        fallocate -l $_swap_size /swapfile 2>/dev/null && \
         chmod 600 /swapfile && \
         mkswap /swapfile >/dev/null 2>&1 && \
         swapon /swapfile 2>/dev/null && \
-        echo '/swapfile none swap sw 0 0' >> /etc/fstab 2>/dev/null
-        if [ $? -eq 0 ] && swapon --show 2>/dev/null | grep -q swapfile; then
-            ok "Swap 已创建 (4G)"
+        grep -q swapfile /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        if swapon --show 2>/dev/null | grep -q swapfile; then
+            ok "Swap 已创建 (${_swap_size})"
         else
-            # fallocate might fail, try dd
-            dd if=/dev/zero of=/swapfile bs=1M count=4096 status=progress 2>/dev/null && \
+            # fallocate might fail on some filesystems, try dd
+            rm -f /swapfile
+            _swap_mb_count=$([ "$_swap_size" = "3G" ] && echo 3072 || echo 2048)
+            info "  fallocate 失败，尝试 dd (${_swap_mb_count}MB)..."
+            dd if=/dev/zero of=/swapfile bs=1M count=$_swap_mb_count status=progress 2>/dev/null && \
             chmod 600 /swapfile && \
             mkswap /swapfile >/dev/null 2>&1 && \
             swapon /swapfile 2>/dev/null
             if swapon --show 2>/dev/null | grep -q swapfile; then
-                ok "Swap 已创建 (4G)"
+                ok "Swap 已创建 (${_swap_size})"
             else
                 warn "Swap 创建失败，构建可能因 OOM 失败"
             fi
@@ -1455,10 +1461,16 @@ if [ "$_mem_mb" -lt 2500 ] && [ "${_swap_mb:-0}" -lt 2000 ]; then
         swapon /swapfile 2>/dev/null || true
         ok "Swap 已启用"
     fi
+    # Tune kernel to be more swap-friendly on low-mem servers
+    sysctl -w vm.swappiness=60 >/dev/null 2>&1 || true
 fi
 
 if $AUTO_YES; then
-    info "首次构建约 5-10 分钟，请耐心等待..."
+    if [ "$_mem_mb" -lt 1500 ]; then
+        info "低内存服务器 (${_mem_mb}MB)，构建可能需要 10-20 分钟..."
+    else
+        info "首次构建约 5-10 分钟，请耐心等待..."
+    fi
 else
     info "首次构建约 5-10 分钟"
     info "构建过程输出已保存，仅显示关键步骤..."
@@ -1471,7 +1483,12 @@ BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"
 COMPOSE_CMD_BUILD="$COMPOSE_CMD"  # Save for later use
 
 set +e
-$COMPOSE_CMD_BUILD build 2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
+# Limit Docker build parallelism on low-mem servers
+_BUILD_ARGS=""
+if [ "$_mem_mb" -lt 1500 ]; then
+    _BUILD_ARGS="--parallel false"
+fi
+$COMPOSE_CMD_BUILD build $_BUILD_ARGS 2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
     # Show only important lines to reduce noise
     if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn)'; then
         echo "  $_line"

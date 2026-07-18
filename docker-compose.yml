@@ -1,11 +1,6 @@
 # ============================================================
-# Novel Management System - Docker Compose (Production)
-# ============================================================
-# Quick Start:
-#   chmod +x install.sh && ./install.sh
-# Or manually:
-#   cp .env.production .env  (then edit .env)
-#   docker compose up -d --build
+# Novel Management System - Docker Compose (LOW MEMORY)
+# Optimized for 1H1G servers
 # ============================================================
 
 services:
@@ -14,21 +9,28 @@ services:
     image: postgres:17-alpine
     container_name: novel-postgres
     restart: unless-stopped
-    ports:
-      # Only expose to host if you need external DB access.
-      # Comment out for better security.
-      - "${DB_PORT}:5432"
+    # Do NOT expose DB port to host (saves ~30MB RAM, more secure)
+    # Uncomment if you need external DB access:
+    # ports:
+    #   - "${DB_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-novel}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: ${POSTGRES_DB:-novel_admin}
       PGDATA: /var/lib/postgresql/data/pgdata
-      # Chinese locale support
-      LANG: zh_CN.UTF-8
-      LC_ALL: zh_CN.UTF-8
+      # Low-memory PostgreSQL tuning
+      POSTGRES_INITDB_ARGS: "--no-locale --encoding=UTF8"
+      POSTGRES_SHARED_BUFFERS: 64MB
+      POSTGRES_WORK_MEM: 4MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 32MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 128MB
+      POSTGRES_MAX_CONNECTIONS: 20
+      POSTGRES_WAL_LEVEL: minimal
+      POSTGRES_MAX_WAL_SIZE: 32MB
+      POSTGRES_MIN_WAL_SIZE: 4MB
+      POSTGRES_CHECKPOINT_COMPLETION_TARGET: 0.5
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # Optional: mount backup directory for pg_dump output
       - ${BACKUP_DIR:-./backups}:/backups:rw
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-novel} -d ${POSTGRES_DB:-novel_admin}"]
@@ -39,15 +41,18 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: "20m"
-        max-file: "3"
-    # Resource limits (adjust based on your server)
+        max-size: "10m"
+        max-file: "2"
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 192M
+          cpus: "0.5"
         reservations:
-          memory: 128M
+          memory: 64M
+    # Use tmpfs for PG WAL to reduce disk I/O (faster on low-end servers)
+    tmpfs:
+      - /var/run/postgresql
 
   # ============ Main Application (Next.js + Scraper) ============
   novel-manager:
@@ -65,9 +70,8 @@ services:
       - app-data:/app/data
     environment:
       # ─── Database (PostgreSQL) ───
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=10&pool_timeout=30
-      # Scraper queue uses the same database
-      - QUEUE_DB_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=5
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=5&pool_timeout=30
+      - QUEUE_DB_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=3
       - DB_PROVIDER=postgresql
 
       # ─── App Config ───
@@ -100,23 +104,25 @@ services:
       # ─── Misc ───
       - TZ=${TZ:-Asia/Shanghai}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/csrf"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/csrf || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 90s
+      start_period: 120s
     logging:
       driver: json-file
       options:
-        max-size: "50m"
-        max-file: "5"
-    # Resource limits (adjust based on your server)
+        max-size: "20m"
+        max-file: "3"
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 640M
+          cpus: "0.8"
         reservations:
-          memory: 512M
+          memory: 256M
+    # Shared memory for Node.js (reduce crashes on low-mem)
+    shm_size: 128m
 
 volumes:
   postgres-data:
