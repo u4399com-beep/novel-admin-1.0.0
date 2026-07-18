@@ -42,6 +42,11 @@ set -eo pipefail
 # Trap ERR to show which command failed (instead of silent exit)
 trap 'echo -e "\033[0;31m[ERROR] 命令失败退出: ${BASH_COMMAND:-未知}\033[0m" >&2; echo "  完整日志: ${LOG_FILE:-无}" >&2' ERR
 
+# Make grep return 0 even when no match (avoid set -e + pipefail killing the script)
+# This is safe: callers check the output, not the exit code
+export GREP_OPTIONS=""  # deprecated but harmless
+grep() { command grep "$@" || [ $? -eq 1 ]; }
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  GLOBALS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
