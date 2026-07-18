@@ -1944,3 +1944,64 @@ Work Log:
 Stage Summary:
 - deploy.sh: my_ip() 优先公网 IP、新增 80 行连接诊断逻辑、--status 增强、--logs 增强
 - 云服务器用户部署后现在会看到明确的"安全组放行端口"提示
+
+---
+Task ID: 2
+Agent: Main Orchestrator
+Task: 增强服务器内部防火墙(ufw/firewalld/iptables/nftables)端口放行功能
+
+Work Log:
+- 分析现有 open_firewall_port() 函数，发现以下问题：
+  1. 每个防火墙块末尾的 `|| true` 静默吞掉所有错误
+  2. ufw 使用 `allow` 而非 `--force allow`，在非交互模式(curl|bash)下会因确认提示失败
+  3. iptables 仅检查显式 DROP/REJECT 规则，未检查默认 INPUT 链策略（可能为 DROP）
+  4. 不支持 nftables（Debian 11+/Ubuntu 22.04+ 默认后端）
+  5. 添加规则后无验证步骤
+  6. --status 模式不显示防火墙状态
+
+- 实施增强（deploy.sh 从 2243 行增至 2616 行）：
+
+### 新增函数
+1. **detect_firewall()** — 检测服务器实际活跃的防火墙系统
+   - 按优先级检测: ufw → firewalld → nftables → iptables
+   - 区分"已安装未激活"和"正在过滤"
+   - iptables 检测同时检查默认 INPUT 策略（不仅是显式 DROP 规则）
+   - 设置全局变量 _FW_DETECTED 和 _FW_ACTIVE
+
+2. **show_firewall_status()** — 展示防火墙状态（--status 和 --fix-firewall 使用）
+   - 显示防火墙类型、是否活跃
+   - 显示端口是否已放行（带颜色 ✓/✗）
+   - iptables 显示默认 INPUT 策略
+   - 检测 DOCKER-USER 链冲突
+
+3. **--fix-firewall 独立模式** — 部署后一键修复防火墙
+   - 自动从 .env 或 --port 读取端口号
+   - 先展示诊断信息，再自动修复
+   - 修复后二次展示验证结果
+   - 附带云服务商安全组提醒
+
+### open_firewall_port() 增强
+- ufw: `--force` 作为主要方式（非回退），解决 curl|bash 非交互模式
+- ufw: 添加规则后验证是否生效，未生效则删除重插（insert 1）
+- firewalld: 添加 reload 失败提示
+- firewalld: 添加规则后验证是否生效
+- nftables: 支持直接 nftables 管理（handle-based 插入，持久化保存）
+- iptables: 检查默认 INPUT 策略（DROP/REJECT/ACCEPT）
+- iptables: 使用 `iptables -I INPUT 1`（插入到链首，确保在 DROP 之前）
+- iptables: 增强持久化（netfilter-persistent → /etc/iptables → /etc/sysconfig → .iptables-backup）
+- 所有防火墙失败时返回 1 + 输出手动修复命令
+- 移除所有 blanket `|| true`
+
+### 部署流程集成
+- Step 6 防火墙预检：用 `_FW_NEEDS_FIX` 标记替代 `|| true`，失败时提示
+- .env 生成后二次验证：端口未变时也做规则验证
+- 连接诊断新增：OS 防火墙状态 + 端口放行检查
+- 部署成功输出：新增 `修复防火墙: ./deploy.sh --fix-firewall` 命令
+- 部署成功输出：如果 `_FW_NEEDS_FIX=true`，显示红色警告横幅
+- --status 模式：新增 show_firewall_status() 调用，提示使用 --fix-firewall
+
+Stage Summary:
+- deploy.sh 增强完成（2243→2616 行，+373 行）
+- bash -n 语法检查通过
+- 新增 --fix-firewall 模式，支持 ufw/firewalld/nftables/iptables 四种防火墙
+- 核心改进：ufw --force、规则验证、nftables 支持、错误不再静默吞掉

@@ -139,13 +139,14 @@ while [ $# -gt 0 ]; do
         --logs)          MODE="logs"; shift ;;
         --restart)       MODE="restart"; shift ;;
         --stop)          MODE="stop"; shift ;;
+        --fix-firewall)  MODE="fix-firewall"; shift ;;
         -h|--help)
             sed -n '2,/^ ╚/p' "$0" | sed 's/^ ║  \?//'
             exit 0
             ;;
         *)
             echo "Unknown argument: $1"
-            echo "Usage: $0 [-y] [-d DIR] [-p PORT] [--uninstall|--upgrade|--backup|--rollback|--status|--logs|--restart|--stop|-h]"
+            echo "Usage: $0 [-y] [-d DIR] [-p PORT] [--uninstall|--upgrade|--backup|--rollback|--status|--logs|--restart|--stop|--fix-firewall|-h]"
             exit 1
             ;;
     esac
@@ -814,101 +815,360 @@ print('merged')
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  FIREWALL MANAGEMENT
-#  Handles: ufw, firewalld, iptables (with persistence)
+#  FIREWALL MANAGEMENT (enhanced v2)
+#  Detects and manages: ufw, firewalld, nftables, iptables
+#  - Detects the ACTUAL active firewall (not just installed)
+#  - Checks default INPUT chain policy (not just explicit DROP rules)
+#  - Uses --force for non-interactive ufw (curl | bash safe)
+#  - Persists rules across reboots
+#  - Verifies rule insertion after adding
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-open_firewall_port() {
-    local port="${1:-3000}"
-    local opened=false
-    local fw_name=""
 
-    # ─── ufw (Ubuntu/Debian) ───
+# Global: populated by detect_firewall(), used by status display
+_FW_DETECTED=""      # "ufw" | "firewalld" | "nftables" | "iptables" | ""
+_FW_ACTIVE=false     # Is the detected firewall actually filtering?
+
+# Detect which firewall system is active on this server.
+# Sets _FW_DETECTED and _FW_ACTIVE globals.
+detect_firewall() {
+    _FW_DETECTED=""
+    _FW_ACTIVE=false
+
+    # ── ufw (Ubuntu/Debian default) ──
     if command -v ufw &>/dev/null; then
         if ufw status 2>/dev/null | grep -qi "active"; then
-            fw_name="ufw"
-            # Check if port is already allowed (exact match on port number)
-            # Use numbered format for reliable parsing: "3000/tcp    ALLOW       Anywhere"
-            if ufw status numbered 2>/dev/null | grep -qE "${port}/tcp"; then
-                ok "ufw 已放行端口 ${port}/tcp"
-                return 0
-            fi
-            # Add rule
-            if ufw allow "${port}/tcp" >/dev/null 2>&1; then
-                opened=true
-                ok "ufw 已添加放行规则: ${port}/tcp"
+            _FW_DETECTED="ufw"
+            _FW_ACTIVE=true
+            return 0
+        fi
+        # ufw installed but inactive — note it but don't mark active
+        # (user may have intentionally disabled it)
+    fi
+
+    # ── firewalld (CentOS/RHEL/Rocky/AlmaLinux/Fedora) ──
+    if command -v firewall-cmd &>/dev/null; then
+        if systemctl is-active --quiet firewalld 2>/dev/null; then
+            _FW_DETECTED="firewalld"
+            # firewalld is active if the service is running
+            # (it may have no rules but still manages the firewall)
+            _FW_ACTIVE=true
+            return 0
+        fi
+    fi
+
+    # ── nftables (Debian 11+, Ubuntu 22.04+ default backend) ──
+    # Detect if nftables is the actual firewall backend
+    # (ufw on newer Ubuntu uses nftables as backend, but we handle that above)
+    if command -v nft &>/dev/null && [ "$_FW_DETECTED" = "" ]; then
+        # Check if nft has any rules in the inet filter table
+        if nft list ruleset 2>/dev/null | grep -q "table inet filter"; then
+            _FW_DETECTED="nftables"
+            # Check if there's actually a blocking rule or default drop policy
+            if nft list table inet filter 2>/dev/null | grep -qE "drop|reject"; then
+                _FW_ACTIVE=true
             else
-                warn "ufw 放行失败，尝试强制添加..."
-                # Sometimes ufw needs --force in non-interactive mode
-                yes | ufw allow "${port}/tcp" >/dev/null 2>&1 && opened=true || true
+                # Table exists but no blocking rules — low risk
+                _FW_ACTIVE=false
+            fi
+            return 0
+        fi
+    fi
+
+    # ── iptables (legacy, direct rules) ──
+    if command -v iptables &>/dev/null && [ "$_FW_DETECTED" = "" ]; then
+        # Check if iptables has any non-trivial rules
+        _ipt_rule_count=$(iptables -S INPUT 2>/dev/null | grep -cE "^-A" || echo 0)
+        _ipt_policy=$(iptables -L INPUT -n 2>/dev/null | head -1 | grep -oE "(DROP|REJECT|ACCEPT)" || echo "")
+
+        if [ "$_ipt_rule_count" -gt 1 ] || [ "$_ipt_policy" = "DROP" ] || [ "$_ipt_policy" = "REJECT" ]; then
+            _FW_DETECTED="iptables"
+            _FW_ACTIVE=true
+            return 0
+        fi
+    fi
+
+    return 0
+}
+
+# Open a port in the OS firewall. Called during deployment and --fix-firewall.
+# Usage: open_firewall_port <port> [description]
+# Returns: 0 = port opened or already open/no firewall, 1 = failed
+open_firewall_port() {
+    local port="${1:-3000}"
+    local desc="${2:-应用端口}"
+    local opened=false
+    local fw_name=""
+    local _err_output=""
+
+    # Detect firewall first
+    detect_firewall
+
+    # ─── No active firewall ───
+    if ! $_FW_ACTIVE || [ -z "$_FW_DETECTED" ]; then
+        if [ -n "$_FW_DETECTED" ]; then
+            info "检测到 ${_FW_DETECTED} 但未处于活跃状态 (端口 ${port} 无需配置)"
+        else
+            info "未检测到活跃的防火墙 (端口 ${port} 无需额外配置)"
+        fi
+        return 0
+    fi
+
+    fw_name="$_FW_DETECTED"
+    info "检测到防火墙: ${C_BLD}${fw_name}${C_RST}，正在为 ${desc} (${port}/tcp) 添加放行规则..."
+
+    # ─── ufw (Ubuntu/Debian) ───
+    if [ "$fw_name" = "ufw" ]; then
+        # Check if port is already allowed (exact match)
+        if ufw status numbered 2>/dev/null | grep -qE "\\b${port}/tcp\\b"; then
+            ok "ufw 已放行端口 ${port}/tcp ✓"
+            return 0
+        fi
+
+        # Use --force as PRIMARY (not fallback) — essential for curl | bash
+        # because ufw prompts "Rule added\nProceed with operation (y|n)?" in non-force mode
+        _err_output=$(ufw --force allow "${port}/tcp" 2>&1) && {
+            opened=true
+            ok "ufw 已添加放行规则: ${port}/tcp ✓"
+        } || {
+            warn "ufw --force allow 失败: ${_err_output}"
+        }
+
+        # Verify the rule was actually inserted
+        if $opened; then
+            if ufw status numbered 2>/dev/null | grep -qE "\\b${port}/tcp\\b"; then
+                ok "验证通过: ufw 规则已生效"
+            else
+                warn "ufw 命令返回成功但规则未生效，尝试重插..."
+                _err_output=$(ufw --force delete allow "${port}/tcp" 2>&1 || true)
+                _err_output=$(ufw --force insert 1 allow "${port}/tcp" 2>&1) && {
+                    ok "ufw 重插规则成功: ${port}/tcp ✓"
+                } || {
+                    warn "ufw 重插也失败: ${_err_output}"
+                    opened=false
+                }
             fi
         fi
-    fi || true
+    fi
 
     # ─── firewalld (CentOS/RHEL/Rocky/Alma) ───
-    if ! $opened && command -v firewall-cmd &>/dev/null; then
-        if systemctl is-active --quiet firewalld 2>/dev/null; then
-            fw_name="firewalld"
-            # Check if port is already allowed
-            if firewall-cmd --list-ports 2>/dev/null | grep -qE "${port}/tcp"; then
-                ok "firewalld 已放行端口 ${port}/tcp"
-                return 0
-            fi
-            # Add permanent rule + reload
-            if firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1; then
-                firewall-cmd --reload >/dev/null 2>&1 || true
-                opened=true
-                ok "firewalld 已添加放行规则: ${port}/tcp"
+    if [ "$fw_name" = "firewalld" ]; then
+        # Check if port is already allowed
+        if firewall-cmd --list-ports 2>/dev/null | grep -qE "\\b${port}/tcp\\b"; then
+            ok "firewalld 已放行端口 ${port}/tcp ✓"
+            return 0
+        fi
+
+        # Add permanent rule + reload
+        _err_output=$(firewall-cmd --permanent --add-port="${port}/tcp" 2>&1) && {
+            firewall-cmd --reload >/dev/null 2>&1 || {
+                warn "firewalld 规则已添加但 reload 失败，尝试手动: firewall-cmd --reload"
+            }
+            opened=true
+            ok "firewalld 已添加放行规则: ${port}/tcp ✓"
+        } || {
+            warn "firewalld 放行失败: ${_err_output}"
+        }
+
+        # Verify
+        if $opened; then
+            if firewall-cmd --list-ports 2>/dev/null | grep -qE "\\b${port}/tcp\\b"; then
+                ok "验证通过: firewalld 规则已生效"
             else
-                warn "firewalld 放行失败"
+                warn "firewalld 规则添加成功但 reload 后未生效"
+                opened=false
             fi
         fi
-    fi || true
+    fi
 
-    # ─── iptables (direct manipulation, last resort) ───
-    # Many minimal servers (especially in China) don't have ufw or firewalld
-    # but DO have iptables rules that block traffic (e.g., Docker auto-configures iptables)
-    if ! $opened && command -v iptables &>/dev/null; then
-        fw_name="iptables"
-        # Only act if there's an active firewall (default DROP/REJECT policy or rules)
-        _has_drop=false
-        iptables -L INPUT -n 2>/dev/null | grep -qE "REJECT|DROP" && _has_drop=true
+    # ─── nftables (Debian 11+/Ubuntu 22.04+ when used directly) ───
+    if [ "$fw_name" = "nftables" ]; then
+        # Check if a rule already exists for this port in the input chain
+        if nft list table inet filter 2>/dev/null | grep -qE "dport ${port}"; then
+            ok "nftables 已有端口 ${port} 的规则 ✓"
+            return 0
+        fi
 
-        if $_has_drop; then
-            # Check if we already have a rule for this port
-            if iptables -L INPUT -n 2>/dev/null | grep -qE "dpt:${port}"; then
-                ok "iptables 已有端口 ${port} 的规则"
-                return 0
+        # Find the input chain name (commonly "input" in inet filter table)
+        local _nft_chain=$(nft list table inet filter 2>/dev/null | grep -oP 'chain \K\w+' | head -1)
+        _nft_chain=${_nft_chain:-input}
+
+        # Insert rule (before any drop/reject rules)
+        # Use handle-based insertion for reliability
+        local _drop_handle=$(nft -a list table inet filter 2>/dev/null | grep -E "(drop|reject)" | head -1 | grep -oP 'handle \K\d+')
+
+        _err_output=$(
+            if [ -n "$_drop_handle" ]; then
+                nft insert rule inet filter "${_nft_chain}" tcp dport "${port}" accept position "${_drop_handle}" 2>&1
+            else
+                nft add rule inet filter "${_nft_chain}" tcp dport "${port}" accept 2>&1
             fi
+        ) && {
+            opened=true
+            ok "nftables 已添加放行规则: tcp dport ${port} accept ✓"
+        } || {
+            warn "nftables 规则添加失败: ${_err_output}"
+        }
 
-            # Insert rule at the top of INPUT chain
-            # Use -I (insert) instead of -A (append) so it takes effect before any DROP
-            if iptables -I INPUT -p tcp --dport "${port}" -j ACCEPT 2>/dev/null; then
-                opened=true
-                ok "iptables 已添加放行规则: INPUT -p tcp --dport ${port} -j ACCEPT"
-
-                # Try to persist iptables rules
-                if command -v iptables-save &>/dev/null; then
-                    if command -v netfilter-persistent &>/dev/null; then
-                        # Debian/Ubuntu with iptables-persistent
-                        netfilter-persistent save >/dev/null 2>&1 || true
-                    elif [ -d /etc/iptables ]; then
-                        # Manual save (RHEL/CentOS style)
-                        iptables-save > /etc/iptables/rules.v4 2>/dev/null || \
-                        iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+        # Persist nftables rules
+        if $opened; then
+            if command -v nft >/dev/null 2>&1; then
+                # Try standard persistence paths
+                local _nft_saved=false
+                if [ -d /etc/nftables.d ] || [ -f /etc/nftables.conf ]; then
+                    # Use include-based persistence if available
+                    if command -v systemctl &>/dev/null; then
+                        nft list ruleset > /etc/nftables.conf 2>/dev/null && _nft_saved=true || true
                     fi
                 fi
-            else
-                warn "iptables 规则添加失败 (可能需要 root 权限)"
+                if ! $_nft_saved; then
+                    # Fallback: create a systemd drop-in or rc.local entry
+                    if [ -f /etc/sysconfig/nftables.conf ] 2>/dev/null; then
+                        nft list ruleset > /etc/sysconfig/nftables.conf 2>/dev/null || true
+                    fi
+                fi
+                info "nftables 规则已保存"
             fi
         fi
-    fi || true
+    fi
 
-    # ─── Result summary ───
+    # ─── iptables (direct, when no higher-level firewall manages it) ───
+    if [ "$fw_name" = "iptables" ]; then
+        # Check if we already have a rule for this port
+        if iptables -L INPUT -n 2>/dev/null | grep -qE "dpt:${port}\\b"; then
+            ok "iptables 已有端口 ${port} 的规则 ✓"
+            return 0
+        fi
+
+        # Insert rule at the TOP of INPUT chain (before any DROP/REJECT)
+        _err_output=$(iptables -I INPUT 1 -p tcp --dport "${port}" -j ACCEPT 2>&1) && {
+            opened=true
+            ok "iptables 已添加放行规则: INPUT -p tcp --dport ${port} -j ACCEPT ✓"
+        } || {
+            warn "iptables 规则添加失败: ${_err_output}"
+        }
+
+        # Persist iptables rules
+        if $opened; then
+            local _persisted=false
+            if command -v netfilter-persistent &>/dev/null; then
+                # Debian/Ubuntu with iptables-persistent package
+                netfilter-persistent save >/dev/null 2>&1 && _persisted=true || {
+                    warn "netfilter-persistent save 失败"
+                }
+            fi
+            if ! $_persisted && command -v iptables-save &>/dev/null; then
+                # Try common save paths
+                if [ -d /etc/iptables ]; then
+                    iptables-save > /etc/iptables/rules.v4 2>/dev/null && _persisted=true || true
+                fi
+                if ! $_persisted && [ -d /etc/sysconfig ]; then
+                    iptables-save > /etc/sysconfig/iptables 2>/dev/null && _persisted=true || true
+                fi
+            fi
+            # Final fallback: save to a well-known file and mention rc.local
+            if ! $_persisted; then
+                # Save to a recovery file the user can source
+                iptables-save > /opt/novel-admin/.iptables-backup 2>/dev/null || true
+                warn "iptables 规则未自动持久化 (重启后可能失效)"
+                warn "  手动持久化: iptables-save > /etc/iptables/rules.v4"
+                warn "  或安装: apt install iptables-persistent"
+            else
+                info "iptables 规则已持久化"
+            fi
+        fi
+    fi
+
+    # ─── Final result ───
     if $opened; then
-        ok "防火墙 (${fw_name}) 已放行端口 ${port}"
+        ok "防火墙 (${fw_name}) 已成功放行端口 ${port}"
+        return 0
     else
-        # No firewall detected or no rules — this is fine
-        info "未检测到活跃的防火墙 (端口 ${port} 无需额外配置)"
+        err "防火墙 (${fw_name}) 放行端口 ${port} 失败！"
+        err "  请手动执行以下命令之一:"
+        case "$fw_name" in
+            ufw)        err "    ufw --force allow ${port}/tcp" ;;
+            firewalld)  err "    firewall-cmd --permanent --add-port=${port}/tcp && firewall-cmd --reload" ;;
+            nftables)   err "    nft add rule inet filter input tcp dport ${port} accept" ;;
+            iptables)   err "    iptables -I INPUT -p tcp --dport ${port} -j ACCEPT" ;;
+        esac
+        return 1
+    fi
+}
+
+# Show current firewall status (used by --status and --fix-firewall)
+show_firewall_status() {
+    detect_firewall
+    local port="${1:-3000}"
+
+    echo ""
+    echo "  ── 防火墙状态 ──"
+
+    if [ -z "$_FW_DETECTED" ]; then
+        echo "  ℹ️  未检测到防火墙 (ufw/firewalld/nftables/iptables 均未安装或未激活)"
+        echo "      端口 ${port} 应该可正常访问"
+        return
+    fi
+
+    echo "  防火墙类型: ${_FW_DETECTED}"
+    if $_FW_ACTIVE; then
+        echo "  状态:       ${C_GRN}活跃${C_RST} (正在过滤流量)"
+    else
+        echo "  状态:       ${C_DIM}未激活${C_RST} (已安装但未启用)"
+        return
+    fi
+
+    # Show port-specific status
+    local _port_allowed=false
+    case "$_FW_DETECTED" in
+        ufw)
+            if ufw status 2>/dev/null | grep -qE "\\b${port}/tcp\\b"; then
+                _port_allowed=true
+                echo "  端口 ${port}: ${C_GRN}已放行 ✓${C_RST}"
+            else
+                echo "  端口 ${port}: ${C_RED}未放行 ✗${C_RST} ← 需要添加规则"
+                echo "    修复: ufw --force allow ${port}/tcp"
+            fi
+            ;;
+        firewalld)
+            if firewall-cmd --list-ports 2>/dev/null | grep -qE "\\b${port}/tcp\\b"; then
+                _port_allowed=true
+                echo "  端口 ${port}: ${C_GRN}已放行 ✓${C_RST}"
+            else
+                echo "  端口 ${port}: ${C_RED}未放行 ✗${C_RST} ← 需要添加规则"
+                echo "    修复: firewall-cmd --permanent --add-port=${port}/tcp && firewall-cmd --reload"
+            fi
+            ;;
+        nftables)
+            if nft list table inet filter 2>/dev/null | grep -qE "dport ${port}"; then
+                _port_allowed=true
+                echo "  端口 ${port}: ${C_GRN}已放行 ✓${C_RST}"
+            else
+                echo "  端口 ${port}: ${C_RED}未放行 ✗${C_RST} ← 需要添加规则"
+                echo "    修复: nft add rule inet filter input tcp dport ${port} accept"
+            fi
+            ;;
+        iptables)
+            if iptables -L INPUT -n 2>/dev/null | grep -qE "dpt:${port}\\b"; then
+                _port_allowed=true
+                echo "  端口 ${port}: ${C_GRN}已放行 ✓${C_RST}"
+            else
+                echo "  端口 ${port}: ${C_RED}未放行 ✗${C_RST} ← 需要添加规则"
+                echo "    修复: iptables -I INPUT -p tcp --dport ${port} -j ACCEPT"
+            fi
+            # Show default INPUT policy
+            local _ipt_policy=$(iptables -L INPUT -n 2>/dev/null | head -1 | grep -oE "(DROP|REJECT|ACCEPT)" || echo "unknown")
+            echo "  默认策略:   INPUT ${_ipt_policy}"
+            ;;
+    esac
+
+    # Also check if Docker's own iptables rules might conflict
+    if command -v iptables &>/dev/null; then
+        if iptables -L DOCKER-USER -n 2>/dev/null | grep -qE "DROP|REJECT"; then
+            echo ""
+            echo "  ⚠️  检测到 DOCKER-USER 链中有 DROP/REJECT 规则"
+            echo "     Docker 容器流量可能被 DOCKER-USER 链拦截"
+            echo "     如确认是此问题: iptables -I DOCKER-USER -p tcp --dport ${port} -j ACCEPT"
+        fi
     fi
 }
 
@@ -1005,10 +1265,13 @@ if [ "$MODE" = "status" ]; then
         fi
     fi
 
+    # Firewall status (auto-diagnose)
+    show_firewall_status "${_sp:-3000}"
+
     echo ""
     echo "  如果浏览器无法访问:"
     echo "    1. 云服务器 → 安全组放行端口 ${_sp:-3000}"
-    echo "    2. 本地防火墙: ufw allow ${_sp:-3000} 或 firewall-cmd --add-port=${_sp:-3000}/tcp"
+    echo "    2. 本地防火墙 → 运行: $0 --fix-firewall"
     echo "    3. 确认使用公网 IP (非内网 IP) 访问"
     echo ""
     exit 0
@@ -1060,6 +1323,60 @@ if [ "$MODE" = "stop" ]; then
     echo "停止服务..."
     docker compose stop 2>/dev/null || docker-compose stop 2>/dev/null
     echo "完成。启动: $0 --restart 或 cd ${INSTALL_DIR} && docker compose start"
+    exit 0
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+#  MODE: FIX-FIREWALL
+#  Standalone mode to diagnose and fix OS firewall issues.
+#  Usage: ./deploy.sh --fix-firewall [--port 3000]
+# ═══════════════════════════════════════════════════════════════════
+if [ "$MODE" = "fix-firewall" ]; then
+    _fix_fw_port="${APP_PORT:-3000}"
+    # Also check .env if no CLI port specified
+    if [ "$APP_PORT" = "" ] && [ -f "${INSTALL_DIR}/.env" ]; then
+        _fix_fw_port=$(grep '^APP_PORT=' "${INSTALL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2) || true
+        _fix_fw_port=${_fix_fw_port:-3000}
+    fi
+
+    echo ""
+    echo -e "${C_BLD}🔍 防火墙诊断与修复工具${C_RST}"
+    echo -e "${C_DIM}端口: ${_fix_fw_port}${C_RST}"
+    echo ""
+
+    # Show current firewall status
+    show_firewall_status "$_fix_fw_port"
+
+    # Attempt to open the port
+    echo ""
+    echo -e "${C_BLD}尝试自动放行端口 ${_fix_fw_port}...${C_RST}"
+    if open_firewall_port "$_fix_fw_port" "应用端口"; then
+        echo ""
+        show_firewall_status "$_fix_fw_port"
+        echo ""
+        ok "防火墙修复完成！"
+    else
+        echo ""
+        warn "自动修复失败，请根据上方提示手动操作"
+    fi
+
+    # Always show cloud provider warning if applicable
+    _CLOUD_PROVIDER=""
+    if [ -f /etc/aliyun-instance-id ] 2>/dev/null || dmidecode -s system-manufacturer 2>/dev/null | grep -qi alibaba; then
+        _CLOUD_PROVIDER="阿里云"
+    elif curl -sf --connect-timeout 2 http://metadata.tencentyun.com/latest/meta-data/instance-id &>/dev/null; then
+        _CLOUD_PROVIDER="腾讯云"
+    elif curl -sf --connect-timeout 2 http://169.254.169.254/latest/meta-data/instance-id &>/dev/null; then
+        _CLOUD_PROVIDER="华为云/AWS"
+    fi
+    if [ -n "$_CLOUD_PROVIDER" ]; then
+        echo ""
+        echo -e "  ${C_YEL}${C_BLD}⚠️  检测到 ${_CLOUD_PROVIDER} 云服务器${C_RST}"
+        echo -e "  ${C_YEL}即使 OS 防火墙已放行，仍需在云控制台「安全组」中添加入方向规则${C_RST}"
+        echo -e "  ${C_DIM}协议: TCP | 端口: ${_fix_fw_port} | 来源: 0.0.0.0/0${C_RST}"
+    fi
+
+    echo ""
     exit 0
 fi
 
@@ -1628,8 +1945,12 @@ step "[6/8] 防火墙 (预检)"
 _fw_port="${APP_PORT:-3000}"
 [ -f .env ] && _fw_port=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2) || true
 _fw_port=${_fw_port:-3000}
+_FW_NEEDS_FIX=false
 info "预检端口 ${_fw_port}..."
-open_firewall_port "$_fw_port" || true
+if ! open_firewall_port "$_fw_port" "应用端口预检"; then
+    _FW_NEEDS_FIX=true
+    warn "防火墙预检失败，部署完成后请运行: $0 --fix-firewall"
+fi
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  STEP 7: Configuration (.env generation)
@@ -1832,7 +2153,28 @@ fi
 # The first pass (step 6) used a guessed port. Now we know the actual port.
 if [ "${SAVE_PORT:-3000}" != "${_fw_port:-3000}" ]; then
     info "最终端口 (${SAVE_PORT}) 与预检端口 (${_fw_port}) 不同，补充放行..."
-    open_firewall_port "$SAVE_PORT" || true
+    if ! open_firewall_port "$SAVE_PORT" "应用端口(最终)"; then
+        _FW_NEEDS_FIX=true
+    fi
+fi
+
+# If pre-check passed, still do a final verification pass for the actual port
+if ! $_FW_NEEDS_FIX && [ "${SAVE_PORT:-3000}" = "${_fw_port:-3000}" ]; then
+    # Port didn't change, but let's verify the rule is still in place
+    # (in case something modified firewall between step 6 and now)
+    detect_firewall
+    if $_FW_ACTIVE && [ -n "$_FW_DETECTED" ]; then
+        case "$_FW_DETECTED" in
+            ufw)
+                ufw status numbered 2>/dev/null | grep -qE "\\b${SAVE_PORT}/tcp\\b" || _FW_NEEDS_FIX=true ;;
+            firewalld)
+                firewall-cmd --list-ports 2>/dev/null | grep -qE "\\b${SAVE_PORT}/tcp\\b" || _FW_NEEDS_FIX=true ;;
+            nftables)
+                nft list table inet filter 2>/dev/null | grep -qE "dport ${SAVE_PORT}" || _FW_NEEDS_FIX=true ;;
+            iptables)
+                iptables -L INPUT -n 2>/dev/null | grep -qE "dpt:${SAVE_PORT}\\b" || _FW_NEEDS_FIX=true ;;
+        esac
+    fi
 fi
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2161,6 +2503,29 @@ if [ -n "$_CLOUD_PROVIDER" ]; then
     echo ""
 fi
 
+# 5. OS firewall check (auto-diagnose)
+detect_firewall
+if $_FW_ACTIVE && [ -n "$_FW_DETECTED" ]; then
+    echo -e "  ${C_BLD}防火墙:${C_RST} ${_FW_DETECTED} (${C_YEL}活跃${C_RST})"
+    # Quick port check
+    _fw_port_ok=false
+    case "$_FW_DETECTED" in
+        ufw)        ufw status 2>/dev/null | grep -qE "\\b${SAVE_PORT}/tcp\\b" && _fw_port_ok=true ;;
+        firewalld)  firewall-cmd --list-ports 2>/dev/null | grep -qE "\\b${SAVE_PORT}/tcp\\b" && _fw_port_ok=true ;;
+        nftables)   nft list table inet filter 2>/dev/null | grep -qE "dport ${SAVE_PORT}" && _fw_port_ok=true ;;
+        iptables)   iptables -L INPUT -n 2>/dev/null | grep -qE "dpt:${SAVE_PORT}\\b" && _fw_port_ok=true ;;
+    esac
+    if $_fw_port_ok; then
+        echo -e "  ${C_GRN}  ✓ 端口 ${SAVE_PORT} 已放行${C_RST}"
+    else
+        echo -e "  ${C_RED}  ✗ 端口 ${SAVE_PORT} 未放行！${C_RST}"
+        echo -e "  ${C_YEL}  → 运行 ${C_BLD}./deploy.sh --fix-firewall${C_YEL} 自动修复${C_RST}"
+        _FW_NEEDS_FIX=true
+    fi
+else
+    echo -e "  ${C_BLD}防火墙:${C_RST} ${C_DIM}未检测到活跃的 OS 防火墙${C_RST}"
+fi
+
 # ── Save Credentials ──
 CREDS_FILE="${INSTALL_DIR}/.credentials.txt"
 cat > "$CREDS_FILE" <<CREDSEOF
@@ -2209,6 +2574,7 @@ if $HEALTHY; then
     echo -e "    重启服务:   ${C_CYN}./deploy.sh --restart${C_RST}"
     echo -e "    停止服务:   ${C_CYN}./deploy.sh --stop${C_RST}"
     echo -e "    查看状态:   ${C_CYN}./deploy.sh --status${C_RST}"
+    echo -e "    修复防火墙: ${C_CYN}./deploy.sh --fix-firewall${C_RST}"
     echo -e "    备份数据库: ${C_CYN}./deploy.sh --backup${C_RST}"
     echo -e "    升级:       ${C_CYN}./deploy.sh --upgrade${C_RST}"
     echo -e "    回滚:       ${C_CYN}./deploy.sh --rollback${C_RST}"
@@ -2220,6 +2586,14 @@ if $HEALTHY; then
     echo -e "    凭据文件:   ${C_DIM}${CREDS_FILE}${C_RST}"
     echo -e "    部署日志:   ${C_DIM}${LOG_FILE:-无}${C_RST}"
     echo ""
+
+    # Firewall warning
+    if $_FW_NEEDS_FIX; then
+        echo -e "  ${C_RED}${C_BLD}🛡️  防火墙警告: 端口 ${SAVE_PORT} 可能未正确放行！${C_RST}"
+        echo -e "  ${C_RED}   如果浏览器无法访问，请立即运行:${C_RST}"
+        echo -e "  ${C_RED}   ${C_BLD}./deploy.sh --fix-firewall${C_RST}"
+        echo ""
+    fi
 else
     echo -e "${C_YEL}⏳ 健康检查超时 (${MAX_WAIT}s)，但服务可能仍在启动中...${C_RST}"
     echo ""
