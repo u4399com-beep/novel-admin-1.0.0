@@ -1284,14 +1284,20 @@ step "[7/8] 生成配置"
 
 GENERATE_ENV=true
 if [ -f .env ]; then
-    # Check if .env has ALL required variables (not just some)
+    # Check if .env has ALL required variables WITH non-empty values
     _env_complete=true
     for _req_var in POSTGRES_PASSWORD POSTGRES_DB ADMIN_PASSWORD NEXTAUTH_SECRET SCRAPER_SERVICE_TOKEN APP_PORT DB_PORT; do
-        grep -q "^${_req_var}=" .env 2>/dev/null || { _env_complete=false; break; }
+        _val=$(grep "^${_req_var}=" .env 2>/dev/null | head -1 | cut -d= -f2-)
+        # Trim possible surrounding quotes
+        _val="${_val#\"}"
+        _val="${_val%\"}"
+        _val="${_val#\'}"
+        _val="${_val%\'}"
+        [ -z "$_val" ] && { _env_complete=false; break; }
     done
 
     if ! $_env_complete; then
-        warn ".env 不完整（缺少必需变量），将重新生成"
+        warn ".env 不完整（缺少必需变量或值为空），将重新生成"
         _env_bak=".env.bak.$(date +%Y%m%d_%H%M%S)"
         cp .env "$_env_bak" 2>/dev/null
         rm -f .env
