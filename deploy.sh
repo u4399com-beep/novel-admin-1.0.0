@@ -115,6 +115,26 @@ while [ $# -gt 0 ]; do
 done
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  SELF-UPDATE (for git clone installations)
+#  Ensures we always run the latest code, not a stale local copy.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_SELF_UPDATED=false
+if [ "$MODE" = "install" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
+    _local_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "")
+    _remote_sha=$(git -C "$SCRIPT_DIR" ls-remote --origin HEAD 2>/dev/null | head -1 | cut -f1 || echo "")
+    if [ -n "$_local_sha" ] && [ -n "$_remote_sha" ] && [ "$_local_sha" != "$_remote_sha" ]; then
+        echo -e "\033[0;33m[UPDATE] 检测到新版本，正在更新...\033[0m" >&2
+        if git -C "$SCRIPT_DIR" pull --ff-only 2>/dev/null; then
+            _SELF_UPDATED=true
+            echo -e "\033[0;32m  ✓ 已更新，重新启动...\033[0m" >&2
+            exec bash "$0" "$@"
+        else
+            echo -e "\033[0;33m[WARN] 自动更新失败，使用本地版本继续\033[0m" >&2
+        fi
+    fi
+fi
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  LOGGING
 #  Uses manual tee instead of exec > >(tee ...) for portability.
 #  The process substitution >() may not work in some minimal envs
