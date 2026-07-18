@@ -1264,24 +1264,33 @@ step "[7/8] 生成配置"
 
 GENERATE_ENV=true
 if [ -f .env ]; then
-    # Peek at existing config for display
-    _old_port=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2)
-    _old_user=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | head -1 | cut -d= -f2)
-    _old_port=${_old_port:-3000}
-    _old_user=${_old_user:-admin}
+    # Check if .env has ALL required variables (not just some)
+    _env_complete=true
+    for _req_var in POSTGRES_PASSWORD POSTGRES_DB ADMIN_PASSWORD NEXTAUTH_SECRET SCRAPER_SERVICE_TOKEN APP_PORT DB_PORT; do
+        grep -q "^${_req_var}=" .env 2>/dev/null || { _env_complete=false; break; }
+    done
 
-    if $AUTO_YES || ! ask_y ".env 已存在 (端口=${_old_port}, 用户=${_old_user})，重新生成配置？"; then
-        info "保留现有 .env 配置"
-        GENERATE_ENV=false
-        # Ensure required variables exist (even in old .env)
-        grep -q '^DB_PORT=' .env 2>/dev/null || echo "DB_PORT=5432" >> .env
-        grep -q '^APP_PORT=' .env 2>/dev/null || echo "APP_PORT=3000" >> .env
-        grep -q '^POSTGRES_USER=' .env 2>/dev/null || echo "POSTGRES_USER=novel" >> .env
-        grep -q '^POSTGRES_DB=' .env 2>/dev/null || echo "POSTGRES_DB=novel_admin" >> .env
-    else
+    if ! $_env_complete; then
+        warn ".env 不完整（缺少必需变量），将重新生成"
         _env_bak=".env.bak.$(date +%Y%m%d_%H%M%S)"
-        cp .env "$_env_bak"
+        cp .env "$_env_bak" 2>/dev/null
+        rm -f .env
         ok "旧配置已备份: ${_env_bak}"
+    else
+        # Peek at existing config for display
+        _old_port=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2)
+        _old_user=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | head -1 | cut -d= -f2)
+        _old_port=${_old_port:-3000}
+        _old_user=${_old_user:-admin}
+
+        if $AUTO_YES || ! ask_y ".env 已存在 (端口=${_old_port}, 用户=${_old_user})，重新生成配置？"; then
+            info "保留现有 .env 配置"
+            GENERATE_ENV=false
+        else
+            _env_bak=".env.bak.$(date +%Y%m%d_%H%M%S)"
+            cp .env "$_env_bak"
+            ok "旧配置已备份: ${_env_bak}"
+        fi
     fi
 fi
 
