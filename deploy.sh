@@ -1273,6 +1273,11 @@ if [ -f .env ]; then
     if $AUTO_YES || ! ask_y ".env 已存在 (端口=${_old_port}, 用户=${_old_user})，重新生成配置？"; then
         info "保留现有 .env 配置"
         GENERATE_ENV=false
+        # Ensure required variables exist (even in old .env)
+        grep -q '^DB_PORT=' .env 2>/dev/null || echo "DB_PORT=5432" >> .env
+        grep -q '^APP_PORT=' .env 2>/dev/null || echo "APP_PORT=3000" >> .env
+        grep -q '^POSTGRES_USER=' .env 2>/dev/null || echo "POSTGRES_USER=novel" >> .env
+        grep -q '^POSTGRES_DB=' .env 2>/dev/null || echo "POSTGRES_DB=novel_admin" >> .env
     else
         _env_bak=".env.bak.$(date +%Y%m%d_%H%M%S)"
         cp .env "$_env_bak"
@@ -1418,7 +1423,14 @@ if [ $BUILD_RC -ne 0 ]; then
     # Analyze build log for actionable diagnostics
     info "诊断构建失败原因..."
 
-    if grep -qi 'OOM\|killed\|cannot allocate\|out of memory' "$BUILD_LOG" 2>/dev/null; then
+    if grep -qi 'invalid interpolation\|interpolation format\|variable.*not set\|required.*not set' "$BUILD_LOG" 2>/dev/null; then
+        err "  → docker-compose.yml 变量配置错误"
+        err "  解决方案:"
+        err "    1. 检查 .env 文件是否缺少必需变量"
+        err "    2. 删除 .env 重新生成: rm .env && ./deploy.sh"
+        err "    3. 手动检查: cat ${INSTALL_DIR}/.env"
+
+    elif grep -qi 'OOM\|killed\|cannot allocate\|out of memory' "$BUILD_LOG" 2>/dev/null; then
         err "  → 内存不足 (OOM Killed)"
         err "  解决方案:"
         err "    1. 增加 Swap:"
