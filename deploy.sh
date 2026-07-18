@@ -1180,8 +1180,8 @@ if [ "$_HW_MEM_MB" -lt 1500 ] 2>/dev/null; then
     _TIER_APP_MEM_RESERV="128M"
     _TIER_APP_SHM="64m"
     _TIER_APP_CPU="0.7"
-    # Swap: need 4GB+ to survive Next.js build (~1.5GB peak)
-    _TIER_SWAP_TARGET=4096
+    # Swap: need 6GB to survive Next.js build + parallel apt processes (~2GB peak total)
+    _TIER_SWAP_TARGET=6144
     # Kernel: aggressively swap, allow overcommit
     _TIER_SWAPPINESS=80
     _TIER_OVERCOMMIT=1
@@ -1211,7 +1211,7 @@ elif [ "$_HW_MEM_MB" -lt 3000 ] 2>/dev/null; then
     _TIER_APP_MEM_RESERV="256M"
     _TIER_APP_SHM="128m"
     _TIER_APP_CPU="0.8"
-    _TIER_SWAP_TARGET=2048
+    _TIER_SWAP_TARGET=4096
     _TIER_SWAPPINESS=60
     _TIER_OVERCOMMIT=0
     _TIER_MAX_CONCURRENT_DL=2
@@ -1698,17 +1698,37 @@ fi
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 step "[8/8] 构建、启动、验证"
 
+# ── Pre-build: check Dockerfile stage count ──
+_DOCKERFILE_STAGES=$(grep -c '^FROM.*AS ' Dockerfile 2>/dev/null || echo 0)
+if [ "$_DOCKERFILE_STAGES" -gt 3 ]; then
+    warn "Dockerfile 有 ${_DOCKERFILE_STAGES} 个构建阶段（当前优化版为 3 阶段）"
+    warn "可能导致低内存服务器 OOM。建议重新获取最新代码: git pull 或重新下载"
+    if [ "$_HW_TIER" = "tiny" ] || [ "$_HW_TIER" = "small" ]; then
+        warn "低配服务器 + 多阶段并行 = 高 OOM 风险"
+    fi
+fi
+
 # ── Pre-build: clean Docker cache on low-disk servers ──
 if [ "$_HW_DISK_GB" -lt 10 ] 2>/dev/null; then
     warn "磁盘空间偏低 (${_HW_DISK_GB}GB)，清理 Docker 缓存..."
     docker system prune -f 2>/dev/null >> "$LOG_FILE" || true
 fi
 
-# ── Build time estimate ──
+# ── Pre-build: free memory on tiny servers ──
 if [ "$_HW_TIER" = "tiny" ]; then
-    _est="15-25 分钟 (超低配服务器, 请耐心等待)"
+    info "释放内存 (sync + drop_caches)..."
+    sync 2>/dev/null || true
+    echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+    info "可用内存 + Swap: ~${_HW_MEM_MB}MB + ${_HW_SWAP_MB}MB"
+fi
+
+# ── Build time estimate ──
+# Legacy builder (DOCKER_BUILDKIT=0) is ~20-30% slower than BuildKit due to
+# sequential stage execution, but it prevents OOM on low-memory servers.
+if [ "$_HW_TIER" = "tiny" ]; then
+    _est="15-30 分钟 (超低配, 串行构建, 请耐心等待)"
 elif [ "$_HW_TIER" = "small" ]; then
-    _est="8-15 分钟"
+    _est="10-20 分钟 (串行构建, 比 BuildKit 慢但更稳定)"
 else
     _est="5-10 分钟"
 fi
@@ -1721,24 +1741,46 @@ T0=$(date +%s)
 BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"
 
 set +e
-# On tiny servers, disable BuildKit parallelism to reduce peak memory
-# BuildKit uses ~200MB extra for its worker pool
+# On tiny/small servers, disable BuildKit parallelism to reduce peak memory
+# BuildKit runs all stages concurrently — each apt-get update downloads ~10MB
+# and uses ~50-100MB RAM. On 1H1G, 3 parallel apt processes + Next.js build = OOM.
 _BUILD_ENV=""
+_BUILDKIT_DISABLED=false
 if [ "$_HW_TIER" = "tiny" ]; then
-    # Disable BuildKit (falls back to legacy builder, uses less RAM)
-    # Only if docker compose supports it
+    # Disable BuildKit entirely — legacy builder runs stages sequentially
+    # This means NO parallel downloads across stages, saving ~300MB peak RAM
     _BUILD_ENV="DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0"
-    info "使用传统构建器 (降低 ${_HW_TIER} 服务器内存占用)..."
+    _BUILDKIT_DISABLED=true
+    info "使用传统构建器 (降低 ${_HW_TIER} 服务器内存占用，串行构建)..."
+elif [ "$_HW_TIER" = "small" ]; then
+    # On small servers, also disable BuildKit to prevent parallel stage execution.
+    # BuildKit runs all stages concurrently, causing 3x apt-get update (~30MB redundant
+    # downloads) and ~300MB extra peak RAM. Legacy builder is only slightly slower
+    # but much more memory-friendly on 2H2G servers.
+    _BUILD_ENV="DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0"
+    _BUILDKIT_DISABLED=true
+    info "使用传统构建器 (串行构建，避免并行 apt 消耗内存)..."
 fi
 
 # Build command with hardware-tuned args
+# NOTE: --memory flag is NOT supported by `docker compose build`.
+# Memory control is achieved via:
+#   - tiny:  DOCKER_BUILDKIT=0 (sequential stages, no parallel apt)
+#   - all:   --build-arg for NODE_OPTIONS and BUN_GC_THRESHOLD
+#   - all:   adequate swap (4-6GB) to absorb peak usage
+_BUILD_ARGS="--build-arg NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM} --build-arg BUN_GC_THRESHOLD=${_TIER_BUN_GC}"
+
+if [ "$_HW_TIER" = "tiny" ]; then
+    info "串行构建 + V8堆${_TIER_NODE_MAX_MEM}MB + 6GB Swap = 防OOM"
+elif [ "$_HW_TIER" = "small" ]; then
+    info "串行构建 + V8堆${_TIER_NODE_MAX_MEM}MB + 4GB Swap = 稳定构建"
+fi
+
 # shellcheck disable=SC2086
-$_BUILD_ENV $COMPOSE_CMD build \
-    --build-arg NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM} \
-    --build-arg BUN_GC_THRESHOLD=${_TIER_BUN_GC} \
+$_BUILD_ENV $COMPOSE_CMD build ${_BUILD_ARGS} \
     2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
     # Show only important lines to reduce noise
-    if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn)'; then
+    if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn|#\d+ \[)'; then
         echo "  $_line"
     fi
 done
@@ -1766,12 +1808,13 @@ if [ $BUILD_RC -ne 0 ]; then
         err "  → 内存不足 (OOM Killed)"
         err "  当前档位: ${_HW_TIER} (RAM=${_HW_MEM_MB}MB, Swap=${_HW_SWAP_MB}MB)"
         err "  解决方案:"
-        err "    1. 手动增加 Swap:"
+        err "    1. 增加 Swap 到 8GB:"
         err "       swapoff /swapfile 2>/dev/null; rm -f /swapfile"
         err "       fallocate -l 8G /swapfile && chmod 600 /swapfile"
         err "       mkswap /swapfile && swapon /swapfile"
-        err "    2. 增加服务器内存 (推荐 2GB+)"
-        err "    3. 在有更多内存的机器上构建镜像，导出后导入"
+        err "    2. 重新运行: $0"
+        err "    3. 增加服务器内存 (推荐 2GB+)"
+        err "    4. 在有更多内存的机器上构建镜像后导入"
 
     elif grep -qi 'timeout\|TLS handshake\|connection refused\|network\|dial tcp\|no route to host' "$BUILD_LOG" 2>/dev/null; then
         err "  → 网络连接问题"

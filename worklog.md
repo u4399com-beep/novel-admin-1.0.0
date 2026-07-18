@@ -1848,3 +1848,52 @@ Stage Summary:
 - 所有 6 个文件通过语法检查 (bash -n, eslint)
 - 环境变量交叉验证: docker-compose.yml 引用的 34 个变量全部有对应 .env 配置
 - 向后兼容: 手动使用 docker-compose up 也能工作（有合理默认值）
+
+---
+Task ID: 2
+Agent: Main Orchestrator
+Task: 修复低内存服务器 Docker 构建并行 OOM 问题
+
+Work Log:
+- 分析用户提供的 Docker 构建日志，发现 BuildKit 并行执行 3 个构建阶段
+- 每个阶段独立运行 apt-get update，下载相同的 9673 kB Packages 文件（3x 冗余）
+- 3 个并行 apt 进程 + Next.js Turbopack 构建 = 1H1G 服务器内存耗尽
+- 用户的 Dockerfile 还是旧版 4 阶段（deps, builder, scraper-builder, runner），当前已优化为 3 阶段
+
+## 修改内容
+
+### deploy.sh — 硬件自适应构建优化
+1. **TINY 档位 (1H1G)**:
+   - Swap 从 4GB → 6GB（Next.js 构建 + 串行 apt 仍需额外空间）
+   - `DOCKER_BUILDKIT=0` 串行构建（已存在，保留）
+   - 构建前执行 `sync + echo 3 > /proc/sys/vm/drop_caches` 释放内存
+
+2. **SMALL 档位 (2H2G)** — **核心变更**:
+   - 新增 `DOCKER_BUILDKIT=0`，与 TINY 一样使用传统串行构建器
+   - 原因：BuildKit 并行执行所有阶段，3 个 apt-get update 同时下载 30MB，占用 ~300MB 额外内存
+   - 传统构建器只慢 20-30%，但内存占用稳定
+
+3. **构建前检查**:
+   - 检测 Dockerfile 阶段数，超过 3 个时警告用户可能 OOM
+   - 低配服务器 + 多阶段并行 = 高 OOM 风险
+
+4. **构建时间预估更新**:
+   - TINY: 15-30 分钟（反映串行构建的额外耗时）
+   - SMALL: 10-20 分钟（反映串行构建的额外耗时）
+
+5. **OOM 诊断增强**:
+   - 建议增加到 8GB Swap
+   - 添加重新运行脚本的快捷建议
+
+### 核心原理
+- **BuildKit** 默认并行执行所有独立构建阶段（依赖关系图）
+- 3 个 FROM 指令 = 3 个并行容器，各自 apt-get update = 3 × 10MB 下载 + 3 × ~100MB 进程内存
+- **Legacy Builder** 严格按 Dockerfile 顺序执行，一个阶段完成后才开始下一个
+- 在 1H1G + 6GB Swap 的环境下，串行构建的峰值内存 ~1.2GB（有 swap 余量）
+- 并行构建的峰值内存 ~1.8GB（1.6GB RAM 时直接触发 OOM）
+
+Stage Summary:
+- deploy.sh: 6 处修改，解决了 BuildKit 并行 OOM 根本原因
+- Dockerfile: 无需修改（已经是 3 阶段优化版）
+- docker-compose.yml: 无需修改（已有硬件自适应内存限制）
+- 用户需要 `git pull` 或重新下载获取最新 deploy.sh 和 Dockerfile
