@@ -30,7 +30,11 @@ log_error() { printf "${C_RED}[ERROR]${C_RST} %s\n" "$*" >&2; }
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if [ -f "${SCRIPT_DIR}/deploy.sh" ]; then
-    # Found locally (git clone or tar extract) — delegate directly
+    # If it's a git repo, always pull latest before running
+    if [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
+        log_info "更新部署脚本..."
+        cd "$SCRIPT_DIR" && git pull --ff-only 2>/dev/null || true
+    fi
     exec bash "${SCRIPT_DIR}/deploy.sh" "$@"
 fi
 
