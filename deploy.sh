@@ -587,15 +587,72 @@ detect_compose_cmd() {
         ok "Docker Compose (standalone) $(docker-compose version --short 2>/dev/null)"
         return
     fi
-    # Compose plugin might just not be loaded yet
+
+    # Not found — try to install automatically
+    warn "Docker Compose 未找到，尝试自动安装..."
+    _compose_ok=false
+
+    # Method 1: Package manager
+    case "$PKG_MGR" in
+        apt)
+            _PKG_UPDATED=false
+            apt-get install -y -qq docker-compose-v2 >>"$LOG_FILE" 2>&1 && _compose_ok=true
+            if ! $_compose_ok; then
+                apt-get install -y -qq docker-compose-plugin >>"$LOG_FILE" 2>&1 && _compose_ok=true
+            fi
+            ;;
+        dnf|yum)
+            ${PKG_INSTALL_CMD} install -y -q docker-compose-plugin >>"$LOG_FILE" 2>&1 && _compose_ok=true
+            ;;
+        apk)
+            apk add --no-cache docker-compose docker-cli-compose >>"$LOG_FILE" 2>&1 && _compose_ok=true
+            ;;
+        zypper)
+            zypper --non-interactive install -y docker-compose >>"$LOG_FILE" 2>&1 && _compose_ok=true
+            ;;
+    esac
+
+    # Method 2: Download standalone binary (works on all distros)
+    if ! $_compose_ok; then
+        info "  下载 Docker Compose 独立二进制..."
+        _compose_ver="v2.32.4"
+        _carch=$(uname -m)
+        case "$_carch" in
+            x86_64)  _compose_arch="x86_64" ;;
+            aarch64) _compose_arch="aarch64" ;;
+            armv7l)  _compose_arch="armv7" ;;
+            *)       _compose_arch="x86_64" ;;
+        esac
+        _compose_url="https://github.com/docker/compose/releases/download/${_compose_ver}/docker-compose-linux-${_compose_arch}"
+        # Try direct, then China proxies
+        if dl_to_file "$_compose_url" /usr/local/bin/docker-compose 2>/dev/null; then
+            chmod +x /usr/local/bin/docker-compose && _compose_ok=true
+        else
+            for _dm in "${RAW_PROXIES[@]}"; do
+                info "  尝试镜像 ${_dm%%/*}..."
+                if dl_to_file "${_dm}/${_compose_url}" /usr/local/bin/docker-compose 2>/dev/null; then
+                    chmod +x /usr/local/bin/docker-compose && _compose_ok=true
+                    break
+                fi
+            done
+        fi
+    fi
+
+    # Re-detect after install
     if docker compose version &>/dev/null 2>&1; then
         COMPOSE_CMD="docker compose"
+        ok "Docker Compose (plugin) $(docker compose version --short 2>/dev/null)"
         return
     fi
-    die "未找到 Docker Compose。安装 docker-compose-plugin:
-  apt: apt-get install docker-compose-plugin
-  dnf: dnf install docker-compose-plugin
-  apk: apk add docker-compose"
+    if command -v docker-compose &>/dev/null; then
+        COMPOSE_CMD="docker-compose"
+        ok "Docker Compose (standalone) $(docker-compose version --short 2>/dev/null)"
+        return
+    fi
+
+    die "Docker Compose 自动安装失败。请手动安装:
+  apt:  apt-get install docker-compose-v2
+  通用: https://docs.docker.com/compose/install/"
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
