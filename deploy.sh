@@ -815,44 +815,113 @@ print('merged')
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  FIREWALL MANAGEMENT
+#  Handles: ufw, firewalld, iptables (with persistence)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 open_firewall_port() {
     local port="${1:-3000}"
     local opened=false
+    local fw_name=""
 
-    # ufw (Ubuntu/Debian)
+    # ─── ufw (Ubuntu/Debian) ───
     if command -v ufw &>/dev/null; then
         if ufw status 2>/dev/null | grep -qi "active"; then
-            if ! ufw status 2>/dev/null | grep -q "${port}"; then
-                ufw allow "${port}/tcp" >/dev/null 2>&1 && opened=true || true
+            fw_name="ufw"
+            # Check if port is already allowed (exact match on port number)
+            # Use numbered format for reliable parsing: "3000/tcp    ALLOW       Anywhere"
+            if ufw status numbered 2>/dev/null | grep -qE "${port}/tcp"; then
+                ok "ufw 已放行端口 ${port}/tcp"
+                return 0
+            fi
+            # Add rule
+            if ufw allow "${port}/tcp" >/dev/null 2>&1; then
+                opened=true
+                ok "ufw 已添加放行规则: ${port}/tcp"
+            else
+                warn "ufw 放行失败，尝试强制添加..."
+                # Sometimes ufw needs --force in non-interactive mode
+                yes | ufw allow "${port}/tcp" >/dev/null 2>&1 && opened=true || true
             fi
         fi
     fi || true
 
-    # firewalld (CentOS/RHEL/Rocky/Alma)
-    if command -v firewall-cmd &>/dev/null; then
+    # ─── firewalld (CentOS/RHEL/Rocky/Alma) ───
+    if ! $opened && command -v firewall-cmd &>/dev/null; then
         if systemctl is-active --quiet firewalld 2>/dev/null; then
-            if ! firewall-cmd --list-ports 2>/dev/null | grep -q "${port}"; then
-                firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 || true
+            fw_name="firewalld"
+            # Check if port is already allowed
+            if firewall-cmd --list-ports 2>/dev/null | grep -qE "${port}/tcp"; then
+                ok "firewalld 已放行端口 ${port}/tcp"
+                return 0
+            fi
+            # Add permanent rule + reload
+            if firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1; then
                 firewall-cmd --reload >/dev/null 2>&1 || true
                 opened=true
+                ok "firewalld 已添加放行规则: ${port}/tcp"
+            else
+                warn "firewalld 放行失败"
             fi
         fi
     fi || true
 
-    # iptables (raw, last resort — just inform user)
+    # ─── iptables (direct manipulation, last resort) ───
+    # Many minimal servers (especially in China) don't have ufw or firewalld
+    # but DO have iptables rules that block traffic (e.g., Docker auto-configures iptables)
     if ! $opened && command -v iptables &>/dev/null; then
-        if iptables -L INPUT -n 2>/dev/null | grep -q "REJECT\|DROP"; then
-            warn "检测到 iptables 规则，请手动放行端口 ${port}:"
-            warn "  iptables -I INPUT -p tcp --dport ${port} -j ACCEPT"
+        fw_name="iptables"
+        # Only act if there's an active firewall (default DROP/REJECT policy or rules)
+        _has_drop=false
+        iptables -L INPUT -n 2>/dev/null | grep -qE "REJECT|DROP" && _has_drop=true
+
+        if $_has_drop; then
+            # Check if we already have a rule for this port
+            if iptables -L INPUT -n 2>/dev/null | grep -qE "dpt:${port}"; then
+                ok "iptables 已有端口 ${port} 的规则"
+                return 0
+            fi
+
+            # Insert rule at the top of INPUT chain
+            # Use -I (insert) instead of -A (append) so it takes effect before any DROP
+            if iptables -I INPUT -p tcp --dport "${port}" -j ACCEPT 2>/dev/null; then
+                opened=true
+                ok "iptables 已添加放行规则: INPUT -p tcp --dport ${port} -j ACCEPT"
+
+                # Try to persist iptables rules
+                if command -v iptables-save &>/dev/null; then
+                    if command -v netfilter-persistent &>/dev/null; then
+                        # Debian/Ubuntu with iptables-persistent
+                        netfilter-persistent save >/dev/null 2>&1 || true
+                    elif [ -d /etc/iptables ]; then
+                        # Manual save (RHEL/CentOS style)
+                        iptables-save > /etc/iptables/rules.v4 2>/dev/null || \
+                        iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+                    fi
+                fi
+            else
+                warn "iptables 规则添加失败 (可能需要 root 权限)"
+            fi
         fi
     fi || true
 
+    # ─── Result summary ───
     if $opened; then
-        ok "防火墙已放行端口 ${port}"
+        ok "防火墙 (${fw_name}) 已放行端口 ${port}"
     else
-        ok "无需防火墙配置"
+        # No firewall detected or no rules — this is fine
+        info "未检测到活跃的防火墙 (端口 ${port} 无需额外配置)"
     fi
+}
+
+# Verify a port is actually reachable from localhost (post-check)
+verify_port_reachable() {
+    local port="${1:-3000}"
+    # Check if anything is listening on the port
+    if command -v ss &>/dev/null; then
+        ss -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+    elif command -v netstat &>/dev/null; then
+        netstat -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+    fi
+    return 1
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1549,14 +1618,17 @@ ok "项目文件验证通过"
 chmod +x deploy.sh docker-entrypoint.sh install.sh 2>/dev/null || true
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  STEP 6: Firewall
+#  STEP 6: Firewall (pre-check with known/approximate port)
+#  NOTE: Final port may change after .env generation below.
+#  A second firewall pass runs after .env is generated (see below).
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-step "[6/8] 防火墙"
+step "[6/8] 防火墙 (预检)"
 
-# Determine port (peek from existing .env or use default/flag)
+# Use port from: CLI flag > existing .env > default 3000
 _fw_port="${APP_PORT:-3000}"
 [ -f .env ] && _fw_port=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2) || true
 _fw_port=${_fw_port:-3000}
+info "预检端口 ${_fw_port}..."
 open_firewall_port "$_fw_port" || true
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1754,6 +1826,13 @@ else
     SAVE_USER=${SAVE_USER:-admin}
     SAVE_PORT=${SAVE_PORT:-3000}
     SAVE_URL=${SAVE_URL:-http://localhost:${SAVE_PORT}}
+fi
+
+# ── Firewall second pass: ensure the FINAL port is open ──
+# The first pass (step 6) used a guessed port. Now we know the actual port.
+if [ "${SAVE_PORT:-3000}" != "${_fw_port:-3000}" ]; then
+    info "最终端口 (${SAVE_PORT}) 与预检端口 (${_fw_port}) 不同，补充放行..."
+    open_firewall_port "$SAVE_PORT" || true
 fi
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
