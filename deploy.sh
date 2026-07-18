@@ -408,46 +408,61 @@ install_docker_via_pkg() {
             # Step 1: Install prerequisites (single apt-get update)
             pkg_install ca-certificates curl gnupg lsb-release apt-transport-https
 
-            # Step 2: Add Docker GPG key
+            # Step 2a: Try Docker official repo (with China proxy fallback for GPG)
             mkdir -p /etc/apt/keyrings
+            rm -f /etc/apt/keyrings/docker.gpg /tmp/docker.gpg
             _gpg_ok=false
-            if dl_to_file "https://download.docker.com/linux/${_os_id}/gpg" /tmp/docker.gpg 2>/dev/null; then
-                gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null && _gpg_ok=true
-                chmod a+r /etc/apt/keyrings/docker.gpg 2>/dev/null || true
-            fi
-            if ! $_gpg_ok; then
-                # Try without GPG (insecure but works)
-                warn "GPG key 下载失败，尝试无签名源..."
-                echo "deb [arch=${_arch}] https://download.docker.com/linux/${_os_id} ${_os_ver} stable" \
-                    > /etc/apt/sources.list.d/docker.list
-            else
-                echo "deb [arch=${_arch} signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/${_os_id} ${_os_ver} stable" \
-                    > /etc/apt/sources.list.d/docker.list
-            fi
+            _gpg_urls=(
+                "https://download.docker.com/linux/${_os_id}/gpg"
+            )
+            # Add China mirror proxies for GPG key
+            for _dm in "${DOCKER_MIRRORS[@]}"; do
+                _gpg_urls+=("${_dm}/https://download.docker.com/linux/${_os_id}/gpg")
+            done
+            for _gpg_url in "${_gpg_urls[@]}"; do
+                if dl_to_file "$_gpg_url" /tmp/docker.gpg 2>/dev/null; then
+                    gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null && _gpg_ok=true
+                    chmod a+r /etc/apt/keyrings/docker.gpg 2>/dev/null || true
+                    break
+                fi
+            done
 
-            # Step 3: Reset apt cache and update
-            _PKG_UPDATED=false
-            info "  更新 Docker 软件源..."
-            if ! apt-get update -qq >>"$LOG_FILE" 2>&1; then
-                # If update fails (e.g. unsupported VERSION_CODENAME), try 'stable' fallback
-                warn "  源更新失败，尝试使用 stable 代号..."
+            if $_gpg_ok; then
+                # Map unknown VERSION_CODENAME to closest known one
+                case "$_os_ver" in
+                    noble|plucky)  _apt_codename="noble" ;;   # 24.04 / 24.10
+                    jammy)         _apt_codename="jammy" ;;   # 22.04
+                    focal)         _apt_codename="focal" ;;   # 20.04
+                    *)             _apt_codename="noble" ;;   # default to latest LTS
+                esac
+
                 echo "deb [arch=${_arch} signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/${_os_id} stable stable" \
+https://download.docker.com/linux/${_os_id} ${_apt_codename} stable" \
                     > /etc/apt/sources.list.d/docker.list
+
                 _PKG_UPDATED=false
-                apt-get update -qq >>"$LOG_FILE" 2>&1 || true
+                info "  更新 Docker 软件源..."
+                if apt-get update -qq >>"$LOG_FILE" 2>&1; then
+                    _PKG_UPDATED=true
+                    info "  安装 docker-ce ..."
+                    if apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >>"$LOG_FILE" 2>&1; then
+                        return 0
+                    fi
+                    warn "  docker-ce 安装失败"
+                else
+                    warn "  Docker 官方源不可用"
+                fi
+            else
+                warn "  GPG key 下载失败 (网络不通)"
             fi
-            _PKG_UPDATED=true
 
-            # Step 4: Install Docker packages
-            info "  安装 docker-ce ..."
-            if apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >>"$LOG_FILE" 2>&1; then
-                return 0
-            fi
-            # If docker-ce not available, try docker.io (Ubuntu's bundled Docker)
-            warn "  docker-ce 安装失败，尝试 docker.io ..."
-            apt-get install -y -qq docker.io docker-compose-v2 >>"$LOG_FILE" 2>&1
+            # Step 2b: Fallback — use Ubuntu's built-in docker.io (no external repo needed)
+            warn "  回退到系统自带 docker.io ..."
+            rm -f /etc/apt/sources.list.d/docker.list
+            _PKG_UPDATED=false
+            apt-get install -y -qq docker.io docker-compose-v2 >>"$LOG_FILE" 2>&1 && return 0
+            # Some older Ubuntu don't have docker-compose-v2
+            apt-get install -y -qq docker.io >>"$LOG_FILE" 2>&1
             ;;
         dnf|yum)
             ${PKG_INSTALL_CMD} install -y -q yum-utils >>"$LOG_FILE" 2>&1 || true
