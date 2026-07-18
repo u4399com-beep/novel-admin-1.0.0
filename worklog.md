@@ -2005,3 +2005,26 @@ Stage Summary:
 - bash -n 语法检查通过
 - 新增 --fix-firewall 模式，支持 ufw/firewalld/nftables/iptables 四种防火墙
 - 核心改进：ufw --force、规则验证、nftables 支持、错误不再静默吞掉
+
+---
+Task ID: 3
+Agent: Main Orchestrator
+Task: 修复 docker-compose.yml Invalid interpolation format 错误
+
+Work Log:
+- 用户报错: `Invalid interpolation format for "postgres" option: "${POSTGRES_USER:-novel}"`
+- 根因: docker-compose 某些版本不支持 `${VAR:-default}` 和 `${VAR:?error}` 插值语法
+- docker-compose.yml 中有 30+ 处使用 `:-` 语法
+
+修复:
+1. docker-compose.yml: 所有 `${VAR:-default}` 改为 `${VAR}`（无默认值）
+2. docker-compose.yml: 所有 `${VAR:?error}` 改为 `${VAR}`
+3. deploy.sh .env 模板: 可选 API key 从注释改为空值赋值（FIRECRAWL_API_KEY= 等）
+4. deploy.sh .env 模板: 新增 BACKUP_DIR=./backups
+5. deploy.sh: 构建前新增「变量补全」逻辑，为旧版 .env 自动补充缺失变量
+
+Stage Summary:
+- docker-compose.yml: 0 处 `:-` 或 `:?` 语法（仅注释中提及）
+- bash -n 语法检查通过
+- YAML 格式验证通过
+- 旧版 .env 兼容性通过构建前自动补全保证

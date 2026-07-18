@@ -10,7 +10,9 @@
 #   small   1.5-3GB    192M       640M        128m
 #   normal  3GB+       256M       1024M       256m
 #
-# Default values (without deploy.sh) target 2GB servers.
+# IMPORTANT: All variables MUST be set in .env (no defaults here
+# because ${VAR:-default} syntax breaks older docker-compose versions).
+# deploy.sh auto-generates a complete .env on every deploy.
 # ============================================================
 
 services:
@@ -24,26 +26,26 @@ services:
     # ports:
     #   - "${DB_PORT}:5432"
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-novel}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-      POSTGRES_DB: ${POSTGRES_DB:-novel_admin}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       PGDATA: /var/lib/postgresql/data/pgdata
       # Low-memory PostgreSQL tuning
       POSTGRES_INITDB_ARGS: "--no-locale --encoding=UTF8"
-      POSTGRES_SHARED_BUFFERS: ${PG_SHARED_BUFFERS:-64MB}
-      POSTGRES_WORK_MEM: ${PG_WORK_MEM:-4MB}
-      POSTGRES_MAINTENANCE_WORK_MEM: ${PG_MAINTENANCE_WORK_MEM:-32MB}
-      POSTGRES_EFFECTIVE_CACHE_SIZE: ${PG_EFFECTIVE_CACHE_SIZE:-128MB}
-      POSTGRES_MAX_CONNECTIONS: ${PG_MAX_CONNECTIONS:-20}
+      POSTGRES_SHARED_BUFFERS: ${PG_SHARED_BUFFERS}
+      POSTGRES_WORK_MEM: ${PG_WORK_MEM}
+      POSTGRES_MAINTENANCE_WORK_MEM: ${PG_MAINTENANCE_WORK_MEM}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${PG_EFFECTIVE_CACHE_SIZE}
+      POSTGRES_MAX_CONNECTIONS: ${PG_MAX_CONNECTIONS}
       POSTGRES_WAL_LEVEL: minimal
-      POSTGRES_MAX_WAL_SIZE: ${PG_MAX_WAL_SIZE:-32MB}
-      POSTGRES_MIN_WAL_SIZE: ${PG_MIN_WAL_SIZE:-4MB}
+      POSTGRES_MAX_WAL_SIZE: ${PG_MAX_WAL_SIZE}
+      POSTGRES_MIN_WAL_SIZE: ${PG_MIN_WAL_SIZE}
       POSTGRES_CHECKPOINT_COMPLETION_TARGET: 0.5
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ${BACKUP_DIR:-./backups}:/backups:rw
+      - ${BACKUP_DIR}:/backups:rw
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-novel} -d ${POSTGRES_DB:-novel_admin}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,10 +58,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${PG_MEMORY_LIMIT:-192M}
-          cpus: ${PG_CPU_LIMIT:-0.5}
+          memory: ${PG_MEMORY_LIMIT}
+          cpus: ${PG_CPU_LIMIT}
         reservations:
-          memory: ${PG_MEMORY_RESERVATION:-64M}
+          memory: ${PG_MEMORY_RESERVATION}
     # Use tmpfs for PG WAL to reduce disk I/O (faster on low-end servers)
     tmpfs:
       - /var/run/postgresql
@@ -69,10 +71,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # Pass hardware-tuned build args (defaults for manual use)
+      # Pass hardware-tuned build args
       args:
-        NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-512}
-        BUN_GC_THRESHOLD: ${BUN_GC_THRESHOLD:-100mb}
+        NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE}
+        BUN_GC_THRESHOLD: ${BUN_GC_THRESHOLD}
     container_name: novel-manager
     restart: unless-stopped
     ports:
@@ -84,39 +86,39 @@ services:
       - app-data:/app/data
     environment:
       # ─── Database (PostgreSQL) ───
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=5&pool_timeout=30
-      - QUEUE_DB_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=3
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=5&pool_timeout=30
+      - QUEUE_DB_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=3
       - DB_PROVIDER=postgresql
 
       # ─── App Config ───
       - NODE_ENV=production
-      - NEXT_PUBLIC_APP_NAME=${APP_NAME:-小说管理系统}
-      - NEXT_PUBLIC_APP_URL=${APP_URL:-http://localhost:3000}
+      - NEXT_PUBLIC_APP_NAME=${APP_NAME}
+      - NEXT_PUBLIC_APP_URL=${APP_URL}
 
       # ─── Authentication ───
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set in .env}
-      - NEXTAUTH_URL=${APP_URL:-http://localhost:3000}
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${APP_URL}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
 
       # ─── Service Auth ───
-      - SCRAPER_SERVICE_TOKEN=${SCRAPER_SERVICE_TOKEN:?SCRAPER_SERVICE_TOKEN must be set in .env}
+      - SCRAPER_SERVICE_TOKEN=${SCRAPER_SERVICE_TOKEN}
       - SCRAPER_SERVICE_URL=http://localhost:3099
       - MAIN_APP_URL=http://localhost:3000
 
       # ─── Optional: External Services ───
-      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
-      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-}
-      - AGENTQL_API_KEY=${AGENTQL_API_KEY:-}
-      - AGENTQL_API_URL=${AGENTQL_API_URL:-}
-      - CLOUD_BROWSER_PROVIDER=${CLOUD_BROWSER_PROVIDER:-}
-      - BROWSERLESS_API_KEY=${BROWSERLESS_API_KEY:-}
-      - BROWSERLESS_API_URL=${BROWSERLESS_API_URL:-}
-      - STEEL_API_KEY=${STEEL_API_KEY:-}
-      - STEEL_API_URL=${STEEL_API_URL:-}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL}
+      - AGENTQL_API_KEY=${AGENTQL_API_KEY}
+      - AGENTQL_API_URL=${AGENTQL_API_URL}
+      - CLOUD_BROWSER_PROVIDER=${CLOUD_BROWSER_PROVIDER}
+      - BROWSERLESS_API_KEY=${BROWSERLESS_API_KEY}
+      - BROWSERLESS_API_URL=${BROWSERLESS_API_URL}
+      - STEEL_API_KEY=${STEEL_API_KEY}
+      - STEEL_API_URL=${STEEL_API_URL}
 
       # ─── Misc ───
-      - TZ=${TZ:-Asia/Shanghai}
+      - TZ=${TZ}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/csrf || exit 1"]
       interval: 30s
@@ -131,12 +133,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${APP_MEMORY_LIMIT:-640M}
-          cpus: ${APP_CPU_LIMIT:-0.8}
+          memory: ${APP_MEMORY_LIMIT}
+          cpus: ${APP_CPU_LIMIT}
         reservations:
-          memory: ${APP_MEMORY_RESERVATION:-256M}
+          memory: ${APP_MEMORY_RESERVATION}
     # Shared memory for Node.js (reduce crashes on low-mem)
-    shm_size: ${APP_SHM_SIZE:-128m}
+    shm_size: ${APP_SHM_SIZE}
 
 volumes:
   postgres-data:

@@ -2099,15 +2099,18 @@ ADMIN_PASSWORD=${_admin_pw}
 SCRAPER_SERVICE_TOKEN=${_gen_token}
 
 # ─── Optional External Services (uncomment to enable) ─
-# FIRECRAWL_API_KEY=
-# FIRECRAWL_API_URL=
-# AGENTQL_API_KEY=
-# AGENTQL_API_URL=
-# CLOUD_BROWSER_PROVIDER=browserless
-# BROWSERLESS_API_KEY=
-# BROWSERLESS_API_URL=
-# STEEL_API_KEY=
-# STEEL_API_URL=
+FIRECRAWL_API_KEY=
+FIRECRAWL_API_URL=
+AGENTQL_API_KEY=
+AGENTQL_API_URL=
+CLOUD_BROWSER_PROVIDER=
+BROWSERLESS_API_KEY=
+BROWSERLESS_API_URL=
+STEEL_API_KEY=
+STEEL_API_URL=
+
+# ─── Paths ────────────────────────────────────────────
+BACKUP_DIR=./backups
 
 # ─── Hardware-Adaptive Resource Limits ────────────────
 # Auto-configured for ${_HW_TIER} tier (${_HW_CORES} cores, ${_HW_MEM_MB}MB RAM)
@@ -2219,6 +2222,33 @@ fi
 info "首次构建预计 ${_est}"
 info "V8 堆限制: ${_TIER_NODE_MAX_MEM}MB | Bun GC: ${_TIER_BUN_GC} | Swap: ${_HW_SWAP_MB}MB"
 echo ""
+
+# ── Ensure ALL docker-compose variables exist in .env ──
+# Older deploy.sh versions may have generated .env without some vars.
+# docker-compose.yml now uses plain ${VAR} (no defaults), so missing vars
+# cause interpolation errors. This block backfills any missing variables.
+_env_missing=false
+for _kv in \
+    "BACKUP_DIR=./backups" \
+    "FIRECRAWL_API_KEY=" \
+    "FIRECRAWL_API_URL=" \
+    "AGENTQL_API_KEY=" \
+    "AGENTQL_API_URL=" \
+    "CLOUD_BROWSER_PROVIDER=" \
+    "BROWSERLESS_API_KEY=" \
+    "BROWSERLESS_API_URL=" \
+    "STEEL_API_KEY=" \
+    "STEEL_API_URL="; do
+    _key="${_kv%%=*}"
+    _value="${_kv#*=}"
+    if ! grep -q "^${_key}=" .env 2>/dev/null; then
+        echo "${_key}=${_value}" >> .env
+        _env_missing=true
+    fi
+done
+if $_env_missing; then
+    info "已补充 .env 中缺失的变量"
+fi
 
 # ── Build with tier-appropriate settings ──
 T0=$(date +%s)
