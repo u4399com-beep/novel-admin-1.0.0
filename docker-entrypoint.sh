@@ -2,6 +2,7 @@
 # ============================================================
 # Novel Management System - Docker Entrypoint (Production)
 # PostgreSQL + Next.js + Scraper Service
+# Optimized for low-memory servers (1H1G)
 # ============================================================
 set -e
 
@@ -10,6 +11,9 @@ echo "  Novel Management System (Production)"
 echo "  Database: PostgreSQL"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
+
+# ─── Helper: log with timestamp ───
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 # ─── Validate required secrets (docker-compose :? validates at start, but double-check) ───
 for _var in NEXTAUTH_SECRET ADMIN_PASSWORD SCRAPER_SERVICE_TOKEN; do
@@ -21,8 +25,18 @@ for _var in NEXTAUTH_SECRET ADMIN_PASSWORD SCRAPER_SERVICE_TOKEN; do
     fi
 done
 
-# ─── Helper: log with timestamp ───
-log() { echo "[$(date '+%H:%M:%S')] $*"; }
+# ─── Detect available memory and adjust runtime behavior ───
+_AVAIL_MEM_KB=$(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}')
+_AVAIL_MEM_KB=${_AVAIL_MEM_KB:-524288}
+_AVAIL_MEM_MB=$(( _AVAIL_MEM_KB / 1024 ))
+
+if [ "$_AVAIL_MEM_MB" -lt 600 ]; then
+    log "[MEM] Low memory detected (${_AVAIL_MEM_MB}MB available)"
+    log "[MEM] Using sequential startup with memory cleanup between services"
+    _LOW_MEM=true
+else
+    _LOW_MEM=false
+fi
 
 # ─── Wait for PostgreSQL to be ready ───
 log "[DB] Waiting for PostgreSQL..."
@@ -30,8 +44,9 @@ MAX_RETRIES=60
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if bunx prisma db execute --stdin <<< "SELECT 1" >/dev/null 2>&1; then
-        log "[DB] PostgreSQL is ready!"
+    # Use lighter check: just TCP connect, not a full query
+    if (echo > /dev/tcp/localhost/5432) 2>/dev/null; then
+        log "[DB] PostgreSQL port is open!"
         break
     fi
     RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -65,6 +80,14 @@ log "[DB] Database ready."
 
 # ─── Ensure data directories ───
 mkdir -p /app/data/covers /app/data/downloads /app/data/chapters /app/backups
+
+# ─── Release Prisma/Bun memory before starting app processes ───
+if $_LOW_MEM; then
+    log "[MEM] Releasing memory after DB init..."
+    # Prisma generate keeps a lot in memory; the CLI process will exit naturally
+    # but Bun's runtime may hold onto memory. This sync helps the OS reclaim it.
+    sync 2>/dev/null || true
+fi
 
 # ─── Lazy-download Playwright Chromium (if build-time download failed) ───
 # Uses the same curl+unzip logic as Dockerfile but runs at container start.
@@ -120,7 +143,7 @@ nohup bun index.ts > /app/scraper-service.log 2>&1 &
 SCRAPER_PID=$!
 log "[Scraper] PID: $SCRAPER_PID"
 
-sleep 3
+sleep 2
 
 if kill -0 "$SCRAPER_PID" 2>/dev/null; then
     log "[Scraper] Started."
@@ -132,10 +155,25 @@ else
     HAS_SCRAPER=false
 fi
 
+# ─── On low-mem: release memory before starting Next.js ───
+if $_LOW_MEM; then
+    sync 2>/dev/null || true
+    # Try to drop page cache to free memory for Next.js
+    echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+fi
+
 # ─── Start Next.js ───
 log "[App] Starting on port 3000..."
 cd /app
-nohup bun .next/standalone/server.js > /app/app.log 2>&1 &
+
+# On low-mem servers, set runtime NODE_OPTIONS to limit V8 heap
+_APP_NODE_OPTS=""
+if $_LOW_MEM; then
+    _APP_NODE_OPTS="--max-old-space-size=256"
+    log "[MEM] Low-mem mode: NODE_OPTIONS=--max-old-space-size=256"
+fi
+
+nohup env NODE_OPTIONS="$_APP_NODE_OPTS" bun .next/standalone/server.js > /app/app.log 2>&1 &
 APP_PID=$!
 log "[App] PID: $APP_PID"
 
@@ -153,6 +191,7 @@ echo "  ✓ System is running!"
 echo "  App:     http://0.0.0.0:3000"
 $HAS_SCRAPER && echo "  Scraper: http://localhost:3099"
 echo "  DB:      PostgreSQL"
+echo "  Memory:  ${_AVAIL_MEM_MB}MB available at start"
 echo "=========================================="
 
 # ─── Graceful Shutdown ───

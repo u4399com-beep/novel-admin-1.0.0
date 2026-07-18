@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  // Disable image optimization entirely — saves significant build memory & runtime RAM
+  // Novel admin serves pre-uploaded cover images; no need for server-side resizing
+  images: {
+    unoptimized: true,
+  },
   // Experimental: reduce build memory for low-end servers
   experimental: {
     // Optimize package imports to reduce bundle size

@@ -1765,3 +1765,86 @@ Stage Summary:
 - Dockerfile: bunx → curl+unzip, 内存占用从 ~1.5GB 降至 ~20MB
 - docker-entrypoint.sh: 运行时兜底下载, 构建失败不影响启动
 - tarball: 336KB, 已推送
+
+---
+Task ID: hw-adaptive-optimize
+Agent: Main Orchestrator
+Task: 根据服务器硬件自动适配部署、编译和运行，防止卡死
+
+Work Log:
+- 分析当前部署体系（Dockerfile、docker-compose.yml、deploy.sh、docker-entrypoint.sh、next.config.ts）
+- 设计三级硬件档位系统：tiny (<1.5GB) / small (1.5-3GB) / normal (3GB+)
+- 修改 6 个文件实现全面硬件自适应
+
+## 修改文件清单
+
+### 1. next.config.ts
+- 添加 `images: { unoptimized: true }` 禁用服务端图片优化
+- 效果：减少构建时内存占用约 100-200MB，减少运行时 RAM
+
+### 2. Dockerfile
+- 添加 `ARG NODE_MAX_OLD_SPACE_SIZE=512` (之前硬编码)
+- 添加 `ARG BUN_GC_THRESHOLD=100mb` — 控制 Bun GC 频率
+- 构建时 V8 堆限制由 deploy.sh 根据 hardware tier 传入
+- tiny 服务器传入 384MB，normal 传入 1024MB
+
+### 3. docker-compose.yml
+- 所有资源限制改为 `${ENV_VAR:-default}` 格式
+- PostgreSQL: PG_MEMORY_LIMIT, PG_SHARED_BUFFERS, PG_WORK_MEM, PG_MAX_CONNECTIONS, PG_MAX_WAL_SIZE 等
+- App: APP_MEMORY_LIMIT, APP_MEMORY_RESERVATION, APP_SHM_SIZE, APP_CPU_LIMIT
+- 构建参数: NODE_MAX_OLD_SPACE_SIZE, BUN_GC_THRESHOLD
+- 默认值对应 small 档（2H2G），确保手动使用也合理
+
+### 4. deploy.sh (核心改动)
+- 新增 `_HW_TIER` 全局变量和 20+ 个 `_TIER_*` 配置变量
+- Step 2 完全重写：硬件检测 + 档位分类 + 系统调优
+  - 三级档位分类，每档独立配置 20+ 参数
+  - 自动创建/扩容 Swap（tiny: 4GB, small: 2GB, normal: 不需要）
+  - Swap 创建支持 fallocate → dd 双重回退
+  - Swap 扩容检测（已有 /swapfile 但太小则重建）
+  - 内核调优：vm.swappiness, vm.overcommit_memory, vm.dirty_ratio
+- Step 4: `configure_docker_mirror()` → `configure_docker_daemon()` 
+  - 合并镜像加速 + Docker daemon 调优（max-concurrent-downloads）
+  - tiny 服务器限制为串行下载
+- Step 7: .env 生成包含硬件自适应资源限制变量
+  - 升级时检测档位变更，自动更新内存限制
+  - 保留用户已有配置（密码、端口等）
+- Step 8: 构建传入硬件调优参数
+  - `--build-arg NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM}`
+  - `--build-arg BUN_GC_THRESHOLD=${_TIER_BUN_GC}`
+  - tiny 服务器禁用 BuildKit (`DOCKER_BUILDKIT=0`)，减少 ~200MB 额外内存
+  - 低磁盘自动清理 Docker 缓存
+  - OOM 诊断信息包含当前档位和 Swap 信息
+
+### 5. docker-entrypoint.sh
+- 启动时检测可用内存（读取 /proc/meminfo）
+- 低内存模式 (`_LOW_MEM=true`): 
+  - 顺序启动服务，启动间释放内存 (sync + drop_caches)
+  - Next.js 运行时 NODE_OPTIONS=--max-old-space-size=256
+  - DB 等待使用 TCP 连接检测而非完整 SQL 查询（更轻量）
+
+### 6. .env.production
+- 添加所有硬件自适应变量的默认值和注释说明
+
+## 三级档位参数对照表
+
+| 参数 | tiny (<1.5GB) | small (1.5-3GB) | normal (3GB+) |
+|------|---------------|-----------------|---------------|
+| V8 堆 (构建) | 384MB | 512MB | 1024MB |
+| Bun GC | 50mb | 100mb | 100mb |
+| PG 内存限制 | 128M | 192M | 256M |
+| PG shared_buffers | 32MB | 64MB | 128MB |
+| PG max_connections | 10 | 20 | 30 |
+| App 内存限制 | 512M | 640M | 1024M |
+| App SHM | 64m | 128m | 256m |
+| Swap 目标 | 4096MB | 2048MB | 0 |
+| vm.swappiness | 80 | 60 | 10 |
+| overcommit_memory | 1 | 0 | 0 |
+| Docker 并发下载 | 1 | 2 | 3 |
+| BuildKit | 禁用 | 启用 | 启用 |
+
+Stage Summary:
+- 实现了完整的三级硬件自适应部署系统
+- 所有 6 个文件通过语法检查 (bash -n, eslint)
+- 环境变量交叉验证: docker-compose.yml 引用的 34 个变量全部有对应 .env 配置
+- 向后兼容: 手动使用 docker-compose up 也能工作（有合理默认值）

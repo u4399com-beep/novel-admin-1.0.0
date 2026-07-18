@@ -1,6 +1,16 @@
 # ============================================================
-# Novel Management System - Docker Compose (LOW MEMORY)
-# Optimized for 1H1G servers
+# Novel Management System - Docker Compose (ADAPTIVE MEMORY)
+#
+# Memory limits are set via .env variables, which are auto-configured
+# by deploy.sh based on detected server hardware:
+#
+#   Tier    RAM        PG Limit   App Limit   App SHM
+#   ───────────────────────────────────────────────────
+#   tiny    <1.5GB     128M       512M        64m
+#   small   1.5-3GB    192M       640M        128m
+#   normal  3GB+       256M       1024M       256m
+#
+# Default values (without deploy.sh) target 2GB servers.
 # ============================================================
 
 services:
@@ -12,7 +22,7 @@ services:
     # Do NOT expose DB port to host (saves ~30MB RAM, more secure)
     # Uncomment if you need external DB access:
     # ports:
-    #   - "${DB_PORT:-5432}:5432"
+    #   - "${DB_PORT}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-novel}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
@@ -20,14 +30,14 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
       # Low-memory PostgreSQL tuning
       POSTGRES_INITDB_ARGS: "--no-locale --encoding=UTF8"
-      POSTGRES_SHARED_BUFFERS: 64MB
-      POSTGRES_WORK_MEM: 4MB
-      POSTGRES_MAINTENANCE_WORK_MEM: 32MB
-      POSTGRES_EFFECTIVE_CACHE_SIZE: 128MB
-      POSTGRES_MAX_CONNECTIONS: 20
+      POSTGRES_SHARED_BUFFERS: ${PG_SHARED_BUFFERS:-64MB}
+      POSTGRES_WORK_MEM: ${PG_WORK_MEM:-4MB}
+      POSTGRES_MAINTENANCE_WORK_MEM: ${PG_MAINTENANCE_WORK_MEM:-32MB}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${PG_EFFECTIVE_CACHE_SIZE:-128MB}
+      POSTGRES_MAX_CONNECTIONS: ${PG_MAX_CONNECTIONS:-20}
       POSTGRES_WAL_LEVEL: minimal
-      POSTGRES_MAX_WAL_SIZE: 32MB
-      POSTGRES_MIN_WAL_SIZE: 4MB
+      POSTGRES_MAX_WAL_SIZE: ${PG_MAX_WAL_SIZE:-32MB}
+      POSTGRES_MIN_WAL_SIZE: ${PG_MIN_WAL_SIZE:-4MB}
       POSTGRES_CHECKPOINT_COMPLETION_TARGET: 0.5
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -46,10 +56,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 192M
-          cpus: "0.5"
+          memory: ${PG_MEMORY_LIMIT:-192M}
+          cpus: ${PG_CPU_LIMIT:-0.5}
         reservations:
-          memory: 64M
+          memory: ${PG_MEMORY_RESERVATION:-64M}
     # Use tmpfs for PG WAL to reduce disk I/O (faster on low-end servers)
     tmpfs:
       - /var/run/postgresql
@@ -59,6 +69,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Pass hardware-tuned build args (defaults for manual use)
+      args:
+        NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-512}
+        BUN_GC_THRESHOLD: ${BUN_GC_THRESHOLD:-100mb}
     container_name: novel-manager
     restart: unless-stopped
     ports:
@@ -117,12 +131,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 640M
-          cpus: "0.8"
+          memory: ${APP_MEMORY_LIMIT:-640M}
+          cpus: ${APP_CPU_LIMIT:-0.8}
         reservations:
-          memory: 256M
+          memory: ${APP_MEMORY_RESERVATION:-256M}
     # Shared memory for Node.js (reduce crashes on low-mem)
-    shm_size: 128m
+    shm_size: ${APP_SHM_SIZE:-128m}
 
 volumes:
   postgres-data:

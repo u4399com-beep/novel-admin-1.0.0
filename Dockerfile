@@ -1,18 +1,27 @@
 # ============================================================
 # Novel Management System - LOW MEMORY Docker Build
-# Optimized for 1H1G servers
+# Hardware-adaptive: build args control memory usage per tier
 #
 # Key optimizations vs standard Dockerfile:
 #   1. Chromium NOT downloaded at build time (runtime-only, saves ~200MB build RAM)
-#   2. V8 heap capped at 512MB (was 1024MB)
-#   3. Minimal runtime deps (no Chromium libs in image)
-#   4. 3 stages instead of 4 (scraper deps installed in runner)
+#   2. V8 heap capped via BUILD_ARG (default 512MB, deploy.sh sets lower for 1H1G)
+#   3. NEXT_WORKER_THREADS=1 for single-threaded build
+#   4. BUN_GC_THRESHOLD for aggressive GC during bun install
+#   5. Minimal runtime deps (no Chromium libs in image)
+#   6. 3 stages: deps → builder → runner
+#
+# Build Args (set by deploy.sh based on detected hardware):
+#   NODE_MAX_OLD_SPACE_SIZE  — V8 heap cap during Next.js build
+#   BUN_GC_THRESHOLD        — Bun GC threshold during bun install
 # ============================================================
 
 # ============ Stage 1: Dependencies ============
 FROM oven/bun:1 AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
+# Lower GC threshold so Bun releases memory more aggressively on low-mem servers
+ARG BUN_GC_THRESHOLD=100mb
+ENV BUN_GC_THRESHOLD=${BUN_GC_THRESHOLD}
 RUN bun install --frozen-lockfile
 
 # ============ Stage 2: Build ============
@@ -28,10 +37,11 @@ RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
 RUN bun run db:generate
 
 # Build Next.js — LOW MEMORY settings
+# NODE_MAX_OLD_SPACE_SIZE is passed as build-arg by deploy.sh based on hardware tier
+ARG NODE_MAX_OLD_SPACE_SIZE=512
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-# 512MB heap cap: enough for this small app, prevents OOM on 1GB servers
-ENV NODE_OPTIONS="--max-old-space-size=512"
+ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
 # Single-threaded build to reduce peak memory
 ENV NEXT_WORKER_THREADS=1
 RUN bun run build

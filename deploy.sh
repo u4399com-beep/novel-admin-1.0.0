@@ -8,6 +8,7 @@
 # ║    • 兼容精简/最小化安装的 Linux 服务器                              ║
 # ║    • 自动处理所有缺失工具 (curl, git, wget, docker...)              ║
 # ║    • 完整的中国大陆网络环境支持                                      ║
+# ║    • 根据服务器硬件自动适配 (1H1G / 2H2G / 4H4G+)                  ║
 # ║                                                                     ║
 # ║  支持场景:                                                          ║
 # ║    • tar.gz 压缩包解压后直接运行 (推荐, 离线部署)                    ║
@@ -84,6 +85,42 @@ APP_PORT=""
 MODE="install"
 AUTO_YES=false
 VERBOSE=false
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  HARDWARE TIER CONFIGURATION
+#  These globals are set by detect_hardware_tier() and used
+#  throughout the script (swap creation, kernel tuning, .env, build args)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_HW_TIER=""              # "tiny" | "small" | "normal"
+_HW_MEM_MB=0
+_HW_CORES=0
+_HW_SWAP_MB=0
+# Build-time settings
+_TIER_NODE_MAX_MEM=512   # NODE_OPTIONS --max-old-space-size for Next.js build
+_TIER_BUN_GC="100mb"     # BUN_GC_THRESHOLD for bun install
+# Runtime PostgreSQL settings
+_TIER_PG_MEM_LIMIT="192M"
+_TIER_PG_MEM_RESERV="64M"
+_TIER_PG_SHARED_BUFFERS="64MB"
+_TIER_PG_WORK_MEM="4MB"
+_TIER_PG_MAINT_WORK_MEM="32MB"
+_TIER_PG_EFF_CACHE="128MB"
+_TIER_PG_MAX_CONN="20"
+_TIER_PG_MAX_WAL="32MB"
+_TIER_PG_MIN_WAL="4MB"
+_TIER_PG_CPU="0.5"
+# Runtime App settings
+_TIER_APP_MEM_LIMIT="640M"
+_TIER_APP_MEM_RESERV="256M"
+_TIER_APP_SHM="128m"
+_TIER_APP_CPU="0.8"
+# Swap & kernel
+_TIER_SWAP_TARGET=0
+_TIER_SWAPPINESS=10
+_TIER_OVERCOMMIT=0
+# Docker daemon tuning
+_TIER_MAX_CONCURRENT_DL=3
+_TIER_MAX_CONCURRENT_UL=3
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  PARSE ARGUMENTS (proper while/shift loop)
@@ -272,7 +309,7 @@ port_in_use() {
     return 1
 }
 
-# Get available memory in MB (works without free)
+# Get total memory in MB (works without free)
 get_mem_mb() {
     if command -v free &>/dev/null; then
         free -m 2>/dev/null | awk '/^Mem:/{print $2}'
@@ -281,6 +318,15 @@ get_mem_mb() {
     # Fallback: /proc/meminfo
     if [ -f /proc/meminfo ]; then
         awk '/^MemTotal:/{printf "%.0f", $2/1024}' /proc/meminfo 2>/dev/null
+        return
+    fi
+    echo "0"
+}
+
+# Get swap in MB
+get_swap_mb() {
+    if command -v free &>/dev/null; then
+        free -m 2>/dev/null | awk '/^Swap:/{print $2}'
         return
     fi
     echo "0"
@@ -700,55 +746,67 @@ docker_hub_reachable() {
     curl -sf --connect-timeout 5 "https://registry-1.docker.io/v2/" &>/dev/null
 }
 
-# Configure Docker mirror (merges with existing daemon.json)
-configure_docker_mirror() {
-    if docker_hub_reachable; then
-        ok "Docker Hub 直连正常"
-        return
-    fi
+# Configure Docker mirror and daemon settings (merges with existing daemon.json)
+configure_docker_daemon() {
+    _hub_reachable=false
+    docker_hub_reachable && _hub_reachable=true
 
-    warn "Docker Hub 不可达，配置国内镜像加速..."
+    if $_hub_reachable; then
+        ok "Docker Hub 直连正常"
+    else
+        warn "Docker Hub 不可达，配置国内镜像加速..."
+    fi
 
     # Backup existing config
     if [ -f /etc/docker/daemon.json ]; then
         cp /etc/docker/daemon.json "/etc/docker/daemon.json.bak.$(date +%s)" 2>/dev/null || true
     fi
 
-    # Build mirror list JSON
-    _mirror_json="["
-    _sep=""
-    for _m in "${DOCKER_MIRRORS[@]}"; do
-        _mirror_json="${_mirror_json}${_sep}\"${_m}\""
-        _sep=", "
-    done
-    _mirror_json="${_mirror_json}]"
+    # Build the new daemon.json content as a shell variable
+    # We'll use python3 if available for proper JSON merging, else build manually
+    _new_mirror_json=""
+    if ! $_hub_reachable; then
+        _mirror_json="["
+        _sep=""
+        for _m in "${DOCKER_MIRRORS[@]}"; do
+            _mirror_json="${_mirror_json}${_sep}\"${_m}\""
+            _sep=", "
+        done
+        _mirror_json="${_mirror_json}]"
+        _new_mirror_json="\"registry-mirrors\": ${_mirror_json},"
+    fi
 
-    # Merge with existing config if present
+    # Add hardware-tuned concurrent download limits
+    _new_daemon_json="{${_new_mirror_json}\"max-concurrent-downloads\": ${_TIER_MAX_CONCURRENT_DL}, \"max-concurrent-uploads\": ${_TIER_MAX_CONCURRENT_UL}}"
+
+    # Merge with existing config if present (using python3)
     if command -v python3 &>/dev/null && [ -f /etc/docker/daemon.json ]; then
         python3 -c "
 import json, sys
 try:
     cfg = json.load(open('/etc/docker/daemon.json'))
 except: cfg = {}
-cfg['registry-mirrors'] = json.loads('''${_mirror_json}''')
+# Merge new settings (new values override old)
+for k, v in json.loads('''${_new_daemon_json}''').items():
+    cfg[k] = v
 json.dump(cfg, open('/etc/docker/daemon.json','w'), indent=2)
 print('merged')
-" 2>/dev/null && ok "镜像加速已配置（合并已有配置）" && return
+" 2>/dev/null && ok "Docker 守护进程已配置 (合并已有配置)" && return
     fi
 
     # Simple: just write new config
     mkdir -p /etc/docker
-    echo "{\"registry-mirrors\":${_mirror_json}}" > /etc/docker/daemon.json
+    echo "$_new_daemon_json" > /etc/docker/daemon.json
 
     # Restart Docker to apply
     systemctl daemon-reload 2>/dev/null || true
     systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
     sleep 3
 
-    if docker info 2>/dev/null | grep -q "Registry Mirrors"; then
-        ok "镜像加速已配置 (${#DOCKER_MIRRORS[@]} 个源)"
+    if docker info 2>/dev/null | grep -q "Registry Mirrors\|Max Concurrent Downloads"; then
+        ok "Docker 守护进程已配置"
     else
-        warn "镜像配置已写入但可能未生效"
+        warn "Docker 配置已写入但可能未生效"
         warn "如构建时报网络错误，请手动重启: systemctl restart docker"
     fi
 }
@@ -823,6 +881,8 @@ if [ "$MODE" = "status" ]; then
         echo "  端口:      ${_sp:-3000}"
         echo "  地址:      ${_sa:-未配置}"
         echo "  管理员:    ${_su:-admin}"
+        _tier=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2)
+        [ -n "$_tier" ] && echo "  硬件档位:  ${_tier}"
     fi
     echo ""
     exit 0
@@ -999,13 +1059,13 @@ if [ "$MODE" = "upgrade" ]; then
     # Handle .env migration (add new variables, keep existing values)
     if [ -f .env.production ]; then
         info "检查配置项更新..."
-        # Source existing .env to get current values
         # We read specific keys instead of 'source' to avoid set -u issues
         for _key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DB_PORT APP_PORT APP_NAME APP_URL \
                      TZ NEXTAUTH_SECRET NEXTAUTH_URL ADMIN_USERNAME ADMIN_PASSWORD SCRAPER_SERVICE_TOKEN \
                      FIRECRAWL_API_KEY FIRECRAWL_API_URL AGENTQL_API_KEY AGENTQL_API_URL \
                      CLOUD_BROWSER_PROVIDER BROWSERLESS_API_KEY BROWSERLESS_API_URL \
-                     STEEL_API_KEY STEEL_API_URL; do
+                     STEEL_API_KEY STEEL_API_URL \
+                     PG_MEMORY_LIMIT APP_MEMORY_LIMIT NODE_MAX_OLD_SPACE_SIZE; do
             _existing=$(grep "^${_key}=" .env 2>/dev/null | head -1)
             _template=$(grep "^${_key}=" .env.production 2>/dev/null | head -1)
             # If template has it but .env doesn't, add it
@@ -1080,53 +1140,212 @@ detect_pkg_mgr
 info "包管理器: ${PKG_MGR:-未知}"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  STEP 2: Resource Check
+#  STEP 2: Hardware Detection + Tier Classification + Auto-Tuning
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-step "[2/8] 资源检查"
+step "[2/8] 硬件检测与自动调优"
 
-# Memory
-_mem_mb=$(get_mem_mb)
-_mem_mb=${_mem_mb:-0}
-if [ "$_mem_mb" -lt 1500 ] 2>/dev/null; then
-    warn "内存仅 ${_mem_mb}MB（建议 2GB+）"
-    _swap_mb=$(free -m 2>/dev/null | awk '/^Swap:/{print $2}')
-    _swap_mb=${_swap_mb:-0}
-    if [ "$_swap_mb" -lt 1000 ] 2>/dev/null; then
-        warn "Swap 不足或不存在，低内存可能导致构建失败 (OOM)"
-        if ask_y "自动创建 2GB swap 文件？"; then
-            _swapfile="/swapfile"
-            if [ ! -f "$_swapfile" ]; then
-                info "创建 swap 文件（可能需要一分钟）..."
-                dd if=/dev/zero of="$_swapfile" bs=1M count=2048 2>/dev/null
-                chmod 600 "$_swapfile"
-                mkswap "$_swapfile" >/dev/null 2>&1
-                swapon "$_swapfile" 2>/dev/null
-                grep -q 'swapfile' /etc/fstab 2>/dev/null || echo "$_swapfile none swap sw 0 0" >> /etc/fstab
-            fi
-            _swap_now=$(free -m 2>/dev/null | awk '/^Swap:/{print $2}')
-            ok "Swap 已创建: ${_swap_now:-?}MB"
+# Gather hardware info
+_HW_MEM_MB=$(get_mem_mb 2>/dev/null || echo 4096)
+_HW_MEM_MB=${_HW_MEM_MB:-0}
+_HW_CORES=$(get_cpu_count 2>/dev/null || echo 1)
+_HW_CORES=${_HW_CORES:-1}
+_HW_SWAP_MB=$(get_swap_mb 2>/dev/null || echo 0)
+_HW_SWAP_MB=${_HW_SWAP_MB:-0}
+_HW_DISK_GB=$(get_disk_gb "$(dirname "$INSTALL_DIR" 2>/dev/null || echo /)")
+_HW_DISK_GB=${_HW_DISK_GB:-0}
+
+# ── Classify into hardware tier ──
+#    tiny:   <1.5GB RAM  (1H1G, 1H1.5G, 2H1G)  — aggressive tuning
+#    small:  1.5-3GB RAM (2H2G, 1H2G)           — moderate tuning
+#    normal: 3GB+ RAM     (2H4G, 4H4G+)          — minimal tuning
+if [ "$_HW_MEM_MB" -lt 1500 ] 2>/dev/null; then
+    _HW_TIER="tiny"
+    # ── TINY: 1H1G servers ──
+    # Build: ultra-low V8 heap, aggressive Bun GC
+    _TIER_NODE_MAX_MEM=384
+    _TIER_BUN_GC="50mb"
+    # PostgreSQL: bare minimum
+    _TIER_PG_MEM_LIMIT="128M"
+    _TIER_PG_MEM_RESERV="32M"
+    _TIER_PG_SHARED_BUFFERS="32MB"
+    _TIER_PG_WORK_MEM="2MB"
+    _TIER_PG_MAINT_WORK_MEM="16MB"
+    _TIER_PG_EFF_CACHE="64MB"
+    _TIER_PG_MAX_CONN="10"
+    _TIER_PG_MAX_WAL="16MB"
+    _TIER_PG_MIN_WAL="2MB"
+    _TIER_PG_CPU="0.3"
+    # App: strict memory cap
+    _TIER_APP_MEM_LIMIT="512M"
+    _TIER_APP_MEM_RESERV="128M"
+    _TIER_APP_SHM="64m"
+    _TIER_APP_CPU="0.7"
+    # Swap: need 4GB+ to survive Next.js build (~1.5GB peak)
+    _TIER_SWAP_TARGET=4096
+    # Kernel: aggressively swap, allow overcommit
+    _TIER_SWAPPINESS=80
+    _TIER_OVERCOMMIT=1
+    # Docker: serial downloads to reduce memory
+    _TIER_MAX_CONCURRENT_DL=1
+    _TIER_MAX_CONCURRENT_UL=1
+
+    _tier_label="🔴 TINY"
+    _tier_desc="超低配 (1H1G)"
+
+elif [ "$_HW_MEM_MB" -lt 3000 ] 2>/dev/null; then
+    _HW_TIER="small"
+    # ── SMALL: 2H2G servers ──
+    _TIER_NODE_MAX_MEM=512
+    _TIER_BUN_GC="100mb"
+    _TIER_PG_MEM_LIMIT="192M"
+    _TIER_PG_MEM_RESERV="64M"
+    _TIER_PG_SHARED_BUFFERS="64MB"
+    _TIER_PG_WORK_MEM="4MB"
+    _TIER_PG_MAINT_WORK_MEM="32MB"
+    _TIER_PG_EFF_CACHE="128MB"
+    _TIER_PG_MAX_CONN="20"
+    _TIER_PG_MAX_WAL="32MB"
+    _TIER_PG_MIN_WAL="4MB"
+    _TIER_PG_CPU="0.5"
+    _TIER_APP_MEM_LIMIT="640M"
+    _TIER_APP_MEM_RESERV="256M"
+    _TIER_APP_SHM="128m"
+    _TIER_APP_CPU="0.8"
+    _TIER_SWAP_TARGET=2048
+    _TIER_SWAPPINESS=60
+    _TIER_OVERCOMMIT=0
+    _TIER_MAX_CONCURRENT_DL=2
+    _TIER_MAX_CONCURRENT_UL=2
+
+    _tier_label="🟡 SMALL"
+    _tier_desc="低配 (2H2G)"
+
+else
+    _HW_TIER="normal"
+    # ── NORMAL: 4G+ servers ──
+    _TIER_NODE_MAX_MEM=1024
+    _TIER_BUN_GC="100mb"
+    _TIER_PG_MEM_LIMIT="256M"
+    _TIER_PG_MEM_RESERV="64M"
+    _TIER_PG_SHARED_BUFFERS="128MB"
+    _TIER_PG_WORK_MEM="8MB"
+    _TIER_PG_MAINT_WORK_MEM="64MB"
+    _TIER_PG_EFF_CACHE="256MB"
+    _TIER_PG_MAX_CONN="30"
+    _TIER_PG_MAX_WAL="64MB"
+    _TIER_PG_MIN_WAL="8MB"
+    _TIER_PG_CPU="1.0"
+    _TIER_APP_MEM_LIMIT="1024M"
+    _TIER_APP_MEM_RESERV="256M"
+    _TIER_APP_SHM="256m"
+    _TIER_APP_CPU="1.0"
+    _TIER_SWAP_TARGET=0
+    _TIER_SWAPPINESS=10
+    _TIER_OVERCOMMIT=0
+    _TIER_MAX_CONCURRENT_DL=3
+    _TIER_MAX_CONCURRENT_UL=3
+
+    _tier_label="🟢 NORMAL"
+    _tier_desc="标准 (${_HW_CORES}H${_HW_MEM_MB}M)"
+fi
+
+# Display hardware info and tier
+echo ""
+info "  ┌─────────────────────────────────────┐"
+info "  │  硬件:  ${C_BLD}${_HW_CORES}核 CPU / ${_HW_MEM_MB}MB RAM / ${_HW_DISK_GB}GB 磁盘${C_RST}"
+info "  │  Swap:  ${_HW_SWAP_MB}MB"
+info "  │  档位:  ${C_BLD}${_tier_label} — ${_tier_desc}${C_RST}"
+info "  └─────────────────────────────────────┘"
+echo ""
+
+# ── Auto-create/resize swap if needed ──
+if [ "${_TIER_SWAP_TARGET}" -gt 0 ] && [ "${_HW_SWAP_MB:-0}" -lt "${_TIER_SWAP_TARGET}" ]; then
+    _swap_size_mb=$_TIER_SWAP_TARGET
+    # If /swapfile already exists but is too small, resize it
+    if [ -f /swapfile ]; then
+        _existing_swap_bytes=$(stat -c%s /swapfile 2>/dev/null || echo 0)
+        _existing_swap_mb=$(( _existing_swap_bytes / 1048576 ))
+        if [ "$_existing_swap_mb" -ge "$_swap_size_mb" ]; then
+            # Just ensure it's active
+            swapon /swapfile 2>/dev/null || true
+            ok "Swap 已存在且大小足够 (${_existing_swap_mb}MB)"
+        else
+            warn "现有 Swap ${_existing_swap_mb}MB 不足，需要 ${_swap_size_mb}MB，重建..."
+            swapoff /swapfile 2>/dev/null || true
+            rm -f /swapfile
+            _create_swap=true
         fi
     else
-        ok "已有 Swap: ${_swap_mb}MB"
+        _create_swap=true
+    fi
+
+    if [ "${_create_swap:-false}" = "true" ]; then
+        info "创建 ${_swap_size_mb}MB Swap 文件..."
+        _swap_created=false
+
+        # Method 1: fallocate (fast, but may fail on some filesystems)
+        fallocate -l ${_swap_size_mb}M /swapfile 2>/dev/null && _swap_created=true
+
+        # Method 2: dd fallback (slower but universal)
+        if ! $_swap_created; then
+            warn "  fallocate 不可用，使用 dd (较慢)..."
+            dd if=/dev/zero of=/swapfile bs=1M count=$_swap_size_mb status=none 2>/dev/null && _swap_created=true
+        fi
+
+        if $_swap_created; then
+            chmod 600 /swapfile && \
+            mkswap /swapfile >/dev/null 2>&1 && \
+            swapon /swapfile 2>/dev/null
+            if swapon --show 2>/dev/null | grep -q swapfile; then
+                # Persist in fstab
+                grep -q 'swapfile' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+                ok "Swap 已创建并启用 (${_swap_size_mb}MB)"
+                _HW_SWAP_MB=$_swap_size_mb
+            else
+                warn "Swap 创建失败，构建可能因 OOM 失败"
+            fi
+        else
+            warn "Swap 文件创建失败，构建可能因 OOM 失败"
+        fi
     fi
 else
-    ok "内存 ${_mem_mb}MB"
+    ok "内存 ${_HW_MEM_MB}MB"
+    [ "${_HW_SWAP_MB:-0}" -gt 0 ] && ok " + Swap ${_HW_SWAP_MB}MB"
 fi
 
-# Disk
-_disk_gb=$(get_disk_gb "$(dirname "$INSTALL_DIR" 2>/dev/null || echo /)")
-_disk_gb=${_disk_gb:-0}
-if [ "$_disk_gb" -lt 5 ] 2>/dev/null; then
-    die "磁盘空间不足: ${_disk_gb}GB 可用（至少需要 5GB）"
+# ── Tune kernel parameters for low-memory servers ──
+if [ "$_HW_TIER" = "tiny" ] || [ "$_HW_TIER" = "small" ]; then
+    info "调优内核参数 (swappiness=${_TIER_SWAPPINESS})..."
+    sysctl -w vm.swappiness=${_TIER_SWAPPINESS} >/dev/null 2>&1 || true
+    # Make persistent
+    if [ -f /etc/sysctl.conf ]; then
+        grep -q 'vm.swappiness' /etc/sysctl.conf 2>/dev/null || \
+            echo "vm.swappiness=${_TIER_SWAPPINESS}" >> /etc/sysctl.conf
+    fi
 fi
-ok "磁盘 ${_disk_gb}GB 可用"
 
-# CPU
-_cores=$(get_cpu_count)
-if [ "$_cores" -lt 2 ] 2>/dev/null; then
-    warn "仅 ${_cores} 核 CPU，Docker 构建可能较慢（预计 10-15 分钟）"
+if [ "$_HW_TIER" = "tiny" ]; then
+    # Allow overcommit — prevents OOM killer from being too aggressive
+    # during build spikes (V8 may briefly allocate large chunks)
+    info "  启用内存过量提交 (overcommit_memory=1)..."
+    sysctl -w vm.overcommit_memory=1 >/dev/null 2>&1 || true
+    # Lower dirty page ratio — flush to disk sooner, free RAM faster
+    sysctl -w vm.dirty_ratio=10 >/dev/null 2>&1 || true
+    sysctl -w vm.dirty_background_ratio=5 >/dev/null 2>&1 || true
+    ok "内核已针对低内存调优"
+fi
+
+# Disk check
+if [ "$_HW_DISK_GB" -lt 5 ] 2>/dev/null; then
+    die "磁盘空间不足: ${_HW_DISK_GB}GB 可用（至少需要 5GB）"
+fi
+ok "磁盘 ${_HW_DISK_GB}GB 可用"
+
+# CPU warning for single-core
+if [ "$_HW_CORES" -lt 2 ] 2>/dev/null; then
+    warn "仅 ${_HW_CORES} 核 CPU，Docker 构建预计 10-20 分钟"
 else
-    ok "CPU ${_cores} 核"
+    ok "CPU ${_HW_CORES} 核"
 fi
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1138,12 +1357,12 @@ ensure_docker
 detect_compose_cmd
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  STEP 4: Network & Mirror
+#  STEP 4: Network & Mirror & Daemon Tuning
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-step "[4/8] 网络与镜像加速"
+step "[4/8] 网络与 Docker 调优"
 
 ensure_downloader
-configure_docker_mirror
+configure_docker_daemon
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  STEP 5: Get Project Files
@@ -1312,6 +1531,39 @@ if [ -f .env ]; then
         if $AUTO_YES || ! ask_y ".env 已存在 (端口=${_old_port}, 用户=${_old_user})，重新生成配置？"; then
             info "保留现有 .env 配置"
             GENERATE_ENV=false
+            # Still update memory limits if hardware tier changed
+            _old_tier=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2)
+            if [ "$_old_tier" != "$_HW_TIER" ]; then
+                warn "硬件档位变更 (${_old_tier:-未知} → ${_HW_TIER})，更新内存限制..."
+                # Update memory-related vars in .env
+                for _kv in \
+                    "PG_MEMORY_LIMIT=${_TIER_PG_MEM_LIMIT}" \
+                    "PG_MEMORY_RESERVATION=${_TIER_PG_MEM_RESERV}" \
+                    "PG_SHARED_BUFFERS=${_TIER_PG_SHARED_BUFFERS}" \
+                    "PG_WORK_MEM=${_TIER_PG_WORK_MEM}" \
+                    "PG_MAINTENANCE_WORK_MEM=${_TIER_PG_MAINT_WORK_MEM}" \
+                    "PG_EFFECTIVE_CACHE_SIZE=${_TIER_PG_EFF_CACHE}" \
+                    "PG_MAX_CONNECTIONS=${_TIER_PG_MAX_CONN}" \
+                    "PG_MAX_WAL_SIZE=${_TIER_PG_MAX_WAL}" \
+                    "PG_MIN_WAL_SIZE=${_TIER_PG_MIN_WAL}" \
+                    "PG_CPU_LIMIT=${_TIER_PG_CPU}" \
+                    "APP_MEMORY_LIMIT=${_TIER_APP_MEM_LIMIT}" \
+                    "APP_MEMORY_RESERVATION=${_TIER_APP_MEM_RESERV}" \
+                    "APP_SHM_SIZE=${_TIER_APP_SHM}" \
+                    "APP_CPU_LIMIT=${_TIER_APP_CPU}" \
+                    "NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM}" \
+                    "BUN_GC_THRESHOLD=${_TIER_BUN_GC}" \
+                    "_HW_TIER=${_HW_TIER}"; do
+                    _key="${_kv%%=*}"
+                    _value="${_kv#*=}"
+                    if grep -q "^${_key}=" .env 2>/dev/null; then
+                        sed -i "s|^${_key}=.*|${_key}=${_value}|" .env
+                    else
+                        echo "${_key}=${_value}" >> .env
+                    fi
+                done
+                ok "内存限制已更新为 ${_HW_TIER} 档位"
+            fi
         else
             _env_bak=".env.bak.$(date +%Y%m%d_%H%M%S)"
             cp .env "$_env_bak"
@@ -1360,7 +1612,7 @@ if $GENERATE_ENV; then
     # Timezone
     _tz=$(ask "  时区" "Asia/Shanghai")
 
-    # Write .env
+    # Write .env (includes hardware-tuned memory limits)
     cat > .env <<EOF
 # ══════════════════════════════════════════════════════
 # Novel Admin — 自动生成 $(date '+%Y-%m-%d %H:%M:%S')
@@ -1400,9 +1652,30 @@ SCRAPER_SERVICE_TOKEN=${_gen_token}
 # BROWSERLESS_API_URL=
 # STEEL_API_KEY=
 # STEEL_API_URL=
+
+# ─── Hardware-Adaptive Resource Limits ────────────────
+# Auto-configured for ${_HW_TIER} tier (${_HW_CORES} cores, ${_HW_MEM_MB}MB RAM)
+# DO NOT change unless you know what you're doing.
+_HW_TIER=${_HW_TIER}
+NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM}
+BUN_GC_THRESHOLD=${_TIER_BUN_GC}
+PG_MEMORY_LIMIT=${_TIER_PG_MEM_LIMIT}
+PG_MEMORY_RESERVATION=${_TIER_PG_MEM_RESERV}
+PG_SHARED_BUFFERS=${_TIER_PG_SHARED_BUFFERS}
+PG_WORK_MEM=${_TIER_PG_WORK_MEM}
+PG_MAINTENANCE_WORK_MEM=${_TIER_PG_MAINT_WORK_MEM}
+PG_EFFECTIVE_CACHE_SIZE=${_TIER_PG_EFF_CACHE}
+PG_MAX_CONNECTIONS=${_TIER_PG_MAX_CONN}
+PG_MAX_WAL_SIZE=${_TIER_PG_MAX_WAL}
+PG_MIN_WAL_SIZE=${_TIER_PG_MIN_WAL}
+PG_CPU_LIMIT=${_TIER_PG_CPU}
+APP_MEMORY_LIMIT=${_TIER_APP_MEM_LIMIT}
+APP_MEMORY_RESERVATION=${_TIER_APP_MEM_RESERV}
+APP_SHM_SIZE=${_TIER_APP_SHM}
+APP_CPU_LIMIT=${_TIER_APP_CPU}
 EOF
     chmod 600 .env
-    ok ".env 已生成 (权限 600)"
+    ok ".env 已生成 (权限 600, 档位: ${_HW_TIER})"
 
     # Save values for final display
     SAVE_USER="$_admin_user"
@@ -1425,70 +1698,45 @@ fi
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 step "[8/8] 构建、启动、验证"
 
-# ── Ensure sufficient memory/swap for Docker build ──
-_mem_mb=$(get_mem_mb 2>/dev/null || echo 4096)
-_swap_mb=$(free -m 2>/dev/null | awk '/Swap/{print $2}' || echo 0)
-# On 1H1G servers, always ensure swap exists (build needs ~1.5GB peak)
-if [ "$_mem_mb" -lt 2500 ] && [ "${_swap_mb:-0}" -lt 1500 ]; then
-    warn "内存仅 ${_mem_mb}MB，Swap 仅 ${_swap_mb}MB，构建需要更多内存"
-    _swap_size="2G"
-    [ "$_mem_mb" -lt 1200 ] && _swap_size="3G"
-    info "自动创建 ${_swap_size} Swap..."
-    if [ ! -f /swapfile ]; then
-        fallocate -l $_swap_size /swapfile 2>/dev/null && \
-        chmod 600 /swapfile && \
-        mkswap /swapfile >/dev/null 2>&1 && \
-        swapon /swapfile 2>/dev/null && \
-        grep -q swapfile /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-        if swapon --show 2>/dev/null | grep -q swapfile; then
-            ok "Swap 已创建 (${_swap_size})"
-        else
-            # fallocate might fail on some filesystems, try dd
-            rm -f /swapfile
-            _swap_mb_count=$([ "$_swap_size" = "3G" ] && echo 3072 || echo 2048)
-            info "  fallocate 失败，尝试 dd (${_swap_mb_count}MB)..."
-            dd if=/dev/zero of=/swapfile bs=1M count=$_swap_mb_count status=progress 2>/dev/null && \
-            chmod 600 /swapfile && \
-            mkswap /swapfile >/dev/null 2>&1 && \
-            swapon /swapfile 2>/dev/null
-            if swapon --show 2>/dev/null | grep -q swapfile; then
-                ok "Swap 已创建 (${_swap_size})"
-            else
-                warn "Swap 创建失败，构建可能因 OOM 失败"
-            fi
-        fi
-    else
-        swapon /swapfile 2>/dev/null || true
-        ok "Swap 已启用"
-    fi
-    # Tune kernel to be more swap-friendly on low-mem servers
-    sysctl -w vm.swappiness=60 >/dev/null 2>&1 || true
+# ── Pre-build: clean Docker cache on low-disk servers ──
+if [ "$_HW_DISK_GB" -lt 10 ] 2>/dev/null; then
+    warn "磁盘空间偏低 (${_HW_DISK_GB}GB)，清理 Docker 缓存..."
+    docker system prune -f 2>/dev/null >> "$LOG_FILE" || true
 fi
 
-if $AUTO_YES; then
-    if [ "$_mem_mb" -lt 1500 ]; then
-        info "低内存服务器 (${_mem_mb}MB)，构建可能需要 10-20 分钟..."
-    else
-        info "首次构建约 5-10 分钟，请耐心等待..."
-    fi
+# ── Build time estimate ──
+if [ "$_HW_TIER" = "tiny" ]; then
+    _est="15-25 分钟 (超低配服务器, 请耐心等待)"
+elif [ "$_HW_TIER" = "small" ]; then
+    _est="8-15 分钟"
 else
-    info "首次构建约 5-10 分钟"
-    info "构建过程输出已保存，仅显示关键步骤..."
+    _est="5-10 分钟"
 fi
+info "首次构建预计 ${_est}"
+info "V8 堆限制: ${_TIER_NODE_MAX_MEM}MB | Bun GC: ${_TIER_BUN_GC} | Swap: ${_HW_SWAP_MB}MB"
 echo ""
 
-# ── Build ──
+# ── Build with tier-appropriate settings ──
 T0=$(date +%s)
 BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"
-COMPOSE_CMD_BUILD="$COMPOSE_CMD"  # Save for later use
 
 set +e
-# Limit Docker build parallelism on low-mem servers
-_BUILD_ARGS=""
-if [ "$_mem_mb" -lt 1500 ]; then
-    _BUILD_ARGS="--parallel false"
+# On tiny servers, disable BuildKit parallelism to reduce peak memory
+# BuildKit uses ~200MB extra for its worker pool
+_BUILD_ENV=""
+if [ "$_HW_TIER" = "tiny" ]; then
+    # Disable BuildKit (falls back to legacy builder, uses less RAM)
+    # Only if docker compose supports it
+    _BUILD_ENV="DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0"
+    info "使用传统构建器 (降低 ${_HW_TIER} 服务器内存占用)..."
 fi
-$COMPOSE_CMD_BUILD build $_BUILD_ARGS 2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
+
+# Build command with hardware-tuned args
+# shellcheck disable=SC2086
+$_BUILD_ENV $COMPOSE_CMD build \
+    --build-arg NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM} \
+    --build-arg BUN_GC_THRESHOLD=${_TIER_BUN_GC} \
+    2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
     # Show only important lines to reduce noise
     if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn)'; then
         echo "  $_line"
@@ -1516,12 +1764,14 @@ if [ $BUILD_RC -ne 0 ]; then
 
     elif grep -qi 'OOM\|killed\|cannot allocate\|out of memory' "$BUILD_LOG" 2>/dev/null; then
         err "  → 内存不足 (OOM Killed)"
+        err "  当前档位: ${_HW_TIER} (RAM=${_HW_MEM_MB}MB, Swap=${_HW_SWAP_MB}MB)"
         err "  解决方案:"
-        err "    1. 增加 Swap:"
-        err "       fallocate -l 4G /swapfile && chmod 600 /swapfile"
+        err "    1. 手动增加 Swap:"
+        err "       swapoff /swapfile 2>/dev/null; rm -f /swapfile"
+        err "       fallocate -l 8G /swapfile && chmod 600 /swapfile"
         err "       mkswap /swapfile && swapon /swapfile"
-        err "    2. 降低 docker-compose.yml 中的 memory limits"
-        err "    3. 使用更大内存的服务器 (推荐 2GB+)"
+        err "    2. 增加服务器内存 (推荐 2GB+)"
+        err "    3. 在有更多内存的机器上构建镜像，导出后导入"
 
     elif grep -qi 'timeout\|TLS handshake\|connection refused\|network\|dial tcp\|no route to host' "$BUILD_LOG" 2>/dev/null; then
         err "  → 网络连接问题"
@@ -1568,7 +1818,7 @@ if [ $BUILD_RC -ne 0 ]; then
     exit 1
 fi
 
-ok "构建完成 (${BUILD_TIME}s)"
+ok "构建完成 (${BUILD_TIME}s, 档位: ${_HW_TIER})"
 rm -f "$BUILD_LOG" 2>/dev/null
 
 # ── Start ──
@@ -1642,6 +1892,7 @@ cat > "$CREDS_FILE" <<CREDSEOF
 ===========================================
   📚 小说管理系统 — 登录信息
   生成时间: $(date '+%Y-%m-%d %H:%M:%S')
+  硬件档位: ${_HW_TIER} (${_HW_CORES}核 / ${_HW_MEM_MB}MB RAM)
 ===========================================
 
   前台 (登录页):   ${SAVE_URL}
@@ -1672,6 +1923,8 @@ if $HEALTHY; then
     echo -e "${C_BLD}├──────────────────────────────────────────────────┤${C_RST}"
     echo -e "${C_BLD}│${C_RST}  ${C_BLD}管理员用户名:${C_RST}   ${C_CYN}${SAVE_USER}${C_RST}"
     echo -e "${C_BLD}│${C_RST}  ${C_BLD}管理员密码:${C_RST}     ${C_CYN}${SAVE_PASS}${C_RST}"
+    echo -e "${C_BLD}├──────────────────────────────────────────────────┤${C_RST}"
+    echo -e "${C_BLD}│${C_RST}  ${C_BLD}硬件档位:${C_RST}       ${C_DIM}${_HW_TIER} (${_HW_CORES}核 / ${_HW_MEM_MB}MB RAM)${C_RST}"
     echo -e "${C_BLD}└──────────────────────────────────────────────────┘${C_RST}"
     echo ""
     echo -e "  ${C_YEL}${C_BLD}⚠️  请立即保存以上信息！关闭终端后将无法再次查看密码${C_RST}"
