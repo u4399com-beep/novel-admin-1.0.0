@@ -592,17 +592,22 @@ detect_compose_cmd() {
     warn "Docker Compose 未找到，尝试自动安装..."
     _compose_ok=false
 
-    # Method 1: Package manager
+    # Method 1: Package manager (must update cache first)
     case "$PKG_MGR" in
         apt)
-            _PKG_UPDATED=false
-            apt-get install -y -qq docker-compose-v2 >>"$LOG_FILE" 2>&1 && _compose_ok=true
-            if ! $_compose_ok; then
-                apt-get install -y -qq docker-compose-plugin >>"$LOG_FILE" 2>&1 && _compose_ok=true
-            fi
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq >>"$LOG_FILE" 2>&1 || true
+            for _pkg in docker-compose-v2 docker-compose-plugin docker-compose; do
+                info "  尝试 apt install ${_pkg} ..."
+                if apt-get install -y -qq "$_pkg" >>"$LOG_FILE" 2>&1; then
+                    _compose_ok=true; break
+                fi
+            done
             ;;
         dnf|yum)
-            ${PKG_INSTALL_CMD} install -y -q docker-compose-plugin >>"$LOG_FILE" 2>&1 && _compose_ok=true
+            for _pkg in docker-compose-plugin docker-compose; do
+                ${PKG_INSTALL_CMD} install -y -q "$_pkg" >>"$LOG_FILE" 2>&1 && _compose_ok=true && break
+            done
             ;;
         apk)
             apk add --no-cache docker-compose docker-cli-compose >>"$LOG_FILE" 2>&1 && _compose_ok=true
@@ -624,18 +629,20 @@ detect_compose_cmd() {
             *)       _compose_arch="x86_64" ;;
         esac
         _compose_url="https://github.com/docker/compose/releases/download/${_compose_ver}/docker-compose-linux-${_compose_arch}"
-        # Try direct, then China proxies
-        if dl_to_file "$_compose_url" /usr/local/bin/docker-compose 2>/dev/null; then
-            chmod +x /usr/local/bin/docker-compose && _compose_ok=true
-        else
-            for _dm in "${RAW_PROXIES[@]}"; do
-                info "  尝试镜像 ${_dm%%/*}..."
-                if dl_to_file "${_dm}/${_compose_url}" /usr/local/bin/docker-compose 2>/dev/null; then
-                    chmod +x /usr/local/bin/docker-compose && _compose_ok=true
-                    break
-                fi
-            done
-        fi
+        # Build list of URLs to try (direct + China proxies)
+        _compose_urls=("$_compose_url")
+        for _dm in "${RAW_PROXIES[@]}"; do
+            _compose_urls+=("${_dm}/${_compose_url}")
+        done
+        for _curl in "${_compose_urls[@]}"; do
+            if dl_to_file "$_curl" /tmp/docker-compose 2>/dev/null && [ -f /tmp/docker-compose ] && [ -s /tmp/docker-compose ]; then
+                mv -f /tmp/docker-compose /usr/local/bin/docker-compose
+                chmod +x /usr/local/bin/docker-compose
+                _compose_ok=true
+                break
+            fi
+            rm -f /tmp/docker-compose
+        done
     fi
 
     # Re-detect after install
@@ -652,7 +659,8 @@ detect_compose_cmd() {
 
     die "Docker Compose 自动安装失败。请手动安装:
   apt:  apt-get install docker-compose-v2
-  通用: https://docs.docker.com/compose/install/"
+  通用: https://docs.docker.com/compose/install/
+  详见日志: ${LOG_FILE}"
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
