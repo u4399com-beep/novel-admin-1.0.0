@@ -260,25 +260,27 @@ rand_pass() {
 
 # Detect server IP (multiple strategies)
 my_ip() {
-    # Strategy 1: hostname -I (most Linux distros)
+    # Strategy 1: Try public IP first (essential for cloud servers like Aliyun/Tencent)
+    # Internal IPs (10.x, 172.16-31.x, 192.168.x) are useless for external access
+    if command -v curl &>/dev/null; then
+        for s in ifconfig.me ip.sb ipinfo.io/ip myip.ipip.net; do
+            _ip=$(curl -sf --connect-timeout 3 "https://$s" 2>/dev/null | tr -d '[:space:]') && \
+            [[ "$_ip" =~ ^[0-9.]+$ ]] && [[ ! "$_ip" =~ ^127\. ]] && [[ ! "$_ip" =~ ^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.) ]] && \
+            { echo "$_ip"; return; }
+        done
+    fi
+
+    # Strategy 2: hostname -I (most Linux distros)
     _ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     if [[ -n "$_ip" && ! "$_ip" =~ ^127\. ]]; then echo "$_ip"; return; fi
 
-    # Strategy 2: ip command
+    # Strategy 3: ip command
     _ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1)
     if [[ -n "$_ip" && ! "$_ip" =~ ^127\. ]]; then echo "$_ip"; return; fi
 
-    # Strategy 3: ifconfig
+    # Strategy 4: ifconfig
     _ip=$(ifconfig 2>/dev/null | awk '/inet / && !/127.0.0.1/{print $2}' | head -1 | tr -d 'addr:')
     if [[ -n "$_ip" && ! "$_ip" =~ ^127\. ]]; then echo "$_ip"; return; fi
-
-    # Strategy 4: external service (only if curl exists)
-    if command -v curl &>/dev/null; then
-        for s in ifconfig.me ip.sb ipinfo.io/ip; do
-            _ip=$(curl -sf --connect-timeout 3 "https://$s" 2>/dev/null) && \
-            [[ "$_ip" =~ ^[0-9.]+$ ]] && { echo "$_ip"; return; }
-        done
-    fi
 
     echo "YOUR_SERVER_IP"
 }
@@ -878,12 +880,67 @@ if [ "$MODE" = "status" ]; then
         _sp=$(grep '^APP_PORT=' .env 2>/dev/null | cut -d= -f2)
         _su=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | cut -d= -f2)
         _sa=$(grep '^APP_URL=' .env 2>/dev/null | cut -d= -f2)
-        echo "  端口:      ${_sp:-3000}"
-        echo "  地址:      ${_sa:-未配置}"
-        echo "  管理员:    ${_su:-admin}"
         _tier=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2)
+        [ -n "$_sp" ] && echo "  端口:      ${_sp}"
+        [ -n "$_sa" ] && echo "  配置地址:  ${_sa}"
+        [ -n "$_su" ] && echo "  管理员:    ${_su}"
         [ -n "$_tier" ] && echo "  硬件档位:  ${_tier}"
+
+        # Connectivity diagnostic
+        _sp=${_sp:-3000}
+        echo ""
+        echo "  ── 连接诊断 ──"
+
+        # Check port listening
+        _listening=false
+        if command -v ss &>/dev/null && ss -tlnp 2>/dev/null | grep -q ":${_sp} "; then
+            _listening=true
+        elif command -v netstat &>/dev/null && netstat -tlnp 2>/dev/null | grep -q ":${_sp} "; then
+            _listening=true
+        fi
+        if $_listening; then
+            echo "  ✅ 端口 ${_sp} 正在监听"
+        else
+            echo "  ❌ 端口 ${_sp} 未监听 (容器可能已停止)"
+            echo "     启动: docker compose up -d"
+        fi
+
+        # Check localhost health
+        if command -v curl &>/dev/null; then
+            if curl -sf --connect-timeout 2 "http://localhost:${_sp}/api/auth/csrf" &>/dev/null; then
+                echo "  ✅ 本地健康检查通过"
+            else
+                echo "  ❌ 本地健康检查失败 (服务可能未就绪或已崩溃)"
+                echo "     日志: docker compose logs --tail=30"
+            fi
+        fi
+
+        # Check if IP is private
+        _my_internal=$(hostname -I 2>/dev/null | awk '{print $1}')
+        if [[ -n "$_my_internal" ]]; then
+            case "$_my_internal" in
+                10.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|192.168.*)
+                    echo "  ⚠️  内网 IP: ${_my_internal}"
+                    echo "     浏览器需要使用公网 IP 访问，不是 ${_my_internal}"
+                    ;;
+            esac
+        fi
+
+        # Cloud provider detection
+        if [ -f /etc/aliyun-instance-id ] 2>/dev/null; then
+            echo "  ⚠️  阿里云: 需要在安全组中放行 TCP ${_sp} (入方向)"
+            echo "     控制台 → ECS → 安全组 → 入方向 → 添加规则"
+        elif curl -sf --connect-timeout 2 http://metadata.tencentyun.com/latest/meta-data/instance-id &>/dev/null; then
+            echo "  ⚠️  腾讯云: 需要在安全组中放行 TCP ${_sp} (入站规则)"
+            echo "     控制台 → 云服务器 → 安全组 → 入站规则 → 添加规则"
+        fi
     fi
+
+    echo ""
+    echo "  如果浏览器无法访问:"
+    echo "    1. 云服务器 → 安全组放行端口 ${_sp:-3000}"
+    echo "    2. 本地防火墙: ufw allow ${_sp:-3000} 或 firewall-cmd --add-port=${_sp:-3000}/tcp"
+    echo "    3. 确认使用公网 IP (非内网 IP) 访问"
     echo ""
     exit 0
 fi
@@ -897,6 +954,12 @@ if [ "$MODE" = "logs" ]; then
         exit 1
     fi
     cd "$INSTALL_DIR"
+    # Quick status before showing logs
+    _lg_port=$(grep '^APP_PORT=' .env 2>/dev/null | cut -d= -f2)
+    _lg_port=${_lg_port:-3000}
+    echo "  端口: ${_lg_port} | 日志实时输出 (Ctrl+C 退出)"
+    echo "  无法访问? 先运行: $0 --status"
+    echo ""
     docker compose logs -f --tail=100 2>/dev/null || docker-compose logs -f --tail=100 2>/dev/null
     exit 0
 fi
@@ -1928,6 +1991,96 @@ done
 
 # Clear progress line
 [ -t 2 ] && printf "\r%*s\r" 60 "" >&2
+
+# ── Post-deploy Connectivity Diagnostic ──
+# This is the #1 support issue: deployment succeeds (localhost health check passes)
+# but users can't access via IP:port from their browser. Causes:
+#   1. Cloud provider security group blocking the port (Aliyun/Tencent/Huawei #1 cause)
+#   2. my_ip() returned internal IP instead of public IP
+#   3. OS firewall (ufw/firewalld/iptables) blocking
+#   4. Docker not actually listening on the port
+echo ""
+info "网络连接诊断..."
+
+# 1. Check if Docker is actually listening on the port
+_PORT_LISTENING=false
+if command -v ss &>/dev/null; then
+    ss -tlnp 2>/dev/null | grep -q ":${SAVE_PORT} " && _PORT_LISTENING=true
+elif command -v netstat &>/dev/null; then
+    netstat -tlnp 2>/dev/null | grep -q ":${SAVE_PORT} " && _PORT_LISTENING=true
+fi
+
+if $_PORT_LISTENING; then
+    ok "Docker 已在端口 ${SAVE_PORT} 监听"
+else
+    err "端口 ${SAVE_PORT} 未监听！容器可能未正常启动"
+    err "  排查: cd ${INSTALL_DIR} && docker compose ps"
+    err "  日志: cd ${INSTALL_DIR} && docker compose logs --tail=50"
+fi
+
+# 2. Distinguish public IP vs internal IP
+_PUBLIC_IP=""
+_INTERNAL_IP=""
+if command -v curl &>/dev/null; then
+    _PUBLIC_IP=$(curl -sf --connect-timeout 3 "https://ifconfig.me" 2>/dev/null | tr -d '[:space:]') || true
+fi
+if command -v hostname &>/dev/null; then
+    _INTERNAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || true
+fi
+
+_IS_PRIVATE=false
+if [[ -n "$_INTERNAL_IP" ]]; then
+    case "$_INTERNAL_IP" in
+        10.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|192.168.*) _IS_PRIVATE=true ;;
+    esac
+fi
+
+if [ -n "$_PUBLIC_IP" ] && [ -n "$_INTERNAL_IP" ] && $_IS_PRIVATE && [ "$_PUBLIC_IP" != "$_INTERNAL_IP" ]; then
+    # Cloud server with NAT — most common case (Aliyun ECS, Tencent CVM, etc.)
+    info "公网 IP: ${C_CYN}${_PUBLIC_IP}${C_RST}  (内网: ${_INTERNAL_IP})"
+    # Update the URL to use public IP
+    SAVE_URL="http://${_PUBLIC_IP}:${SAVE_PORT}"
+    _CLOUD_SERVER=true
+elif [ -n "$_PUBLIC_IP" ]; then
+    info "公网 IP: ${C_CYN}${_PUBLIC_IP}${C_RST}"
+    SAVE_URL="http://${_PUBLIC_IP}:${SAVE_PORT}"
+    _CLOUD_SERVER=false
+elif $_IS_PRIVATE; then
+    warn "检测到内网 IP (${_INTERNAL_IP})，未获取到公网 IP"
+    warn "  如果是云服务器，请在云控制台查看公网 IP"
+    _CLOUD_SERVER=true
+else
+    info "IP: ${C_CYN}${_INTERNAL_IP:-未知}${C_RST}"
+    _CLOUD_SERVER=false
+fi
+
+# 3. Detect cloud provider
+_CLOUD_PROVIDER=""
+if [ -f /etc/aliyun-instance-id ] 2>/dev/null || dmidecode -s system-manufacturer 2>/dev/null | grep -qi alibaba; then
+    _CLOUD_PROVIDER="阿里云 (Alibaba Cloud / Aliyun ECS)"
+elif curl -sf --connect-timeout 2 http://metadata.tencentyun.com/latest/meta-data/instance-id &>/dev/null; then
+    _CLOUD_PROVIDER="腾讯云 (Tencent Cloud / CVM)"
+elif curl -sf --connect-timeout 2 http://169.254.169.254/latest/meta-data/instance-id &>/dev/null; then
+    _CLOUD_PROVIDER="华为云 (HUAWEI Cloud / ECS) 或 AWS"
+fi
+
+# 4. Security group warning (the #1 cause of "can't access")
+if [ -n "$_CLOUD_PROVIDER" ]; then
+    echo ""
+    echo -e "  ${C_YEL}${C_BLD}⚠️  检测到云服务器: ${_CLOUD_PROVIDER}${C_RST}"
+    echo -e "  ${C_YEL}${C_BLD}⚠️  如果浏览器无法访问，需要在云控制台「安全组」中放行端口 ${SAVE_PORT}${C_RST}"
+    echo ""
+    echo -e "  ${C_DIM}    操作步骤 (各云厂商):${C_RST}"
+    if echo "$_CLOUD_PROVIDER" | grep -qi aliyun; then
+        echo -e "    ${C_DIM}    阿里云: 控制台 → ECS → 安全组 → 入方向 → 添加规则 → TCP ${SAVE_PORT}${C_RST}"
+    elif echo "$_CLOUD_PROVIDER" | grep -qi tencent; then
+        echo -e "    ${C_DIM}    腾讯云: 控制台 → 云服务器 → 安全组 → 入站规则 → 添加规则 → TCP ${SAVE_PORT}${C_RST}"
+    else
+        echo -e "    ${C_DIM}    云控制台 → 安全组 → 入方向规则 → 添加 TCP ${SAVE_PORT}${C_RST}"
+    fi
+    echo -e "    ${C_DIM}    协议: TCP | 端口: ${SAVE_PORT} | 来源: 0.0.0.0/0${C_RST}"
+    echo ""
+fi
 
 # ── Save Credentials ──
 CREDS_FILE="${INSTALL_DIR}/.credentials.txt"

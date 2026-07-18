@@ -1897,3 +1897,50 @@ Stage Summary:
 - Dockerfile: 无需修改（已经是 3 阶段优化版）
 - docker-compose.yml: 无需修改（已有硬件自适应内存限制）
 - 用户需要 `git pull` 或重新下载获取最新 deploy.sh 和 Dockerfile
+
+---
+Task ID: 3
+Agent: Main Orchestrator
+Task: 修复部署后 IP:端口 无法访问问题
+
+Work Log:
+- 分析根因：中国云服务器（阿里云/腾讯云/华为云）的 #1 问题
+- my_ip() 优先返回内网 IP（172.16.x.x），用户用内网 IP 无法从浏览器访问
+- 健康检查用 localhost（通过），但外部访问被云安全组拦截
+- --status 模式不显示任何连接诊断信息
+
+## 修改内容
+
+### 1. my_ip() — 优先获取公网 IP
+- 调整策略顺序：先尝试 ifconfig.me/ip.sb 等公网 IP 服务
+- 过滤内网 IP 段（10.x, 172.16-31.x, 192.168.x）
+- 内网 IP 作为 fallback（物理机/VMware 等场景）
+
+### 2. 部署后连接诊断（新增）
+- 检查 Docker 是否真正在端口上监听（ss/netstat）
+- 区分公网 IP 和内网 IP，自动修正显示的访问 URL
+- 检测云服务商（阿里云/腾讯云/华为云/AWS）并给出安全组操作指引
+- 在最终结果中显示公网 URL + 安全组警告
+
+### 3. --status 模式增强
+- 端口监听检查（✅/❌）
+- 本地健康检查（curl localhost:port）
+- 内网 IP 警告
+- 云服务商自动识别 + 安全组操作步骤
+- 底部显示"无法访问"排查清单
+
+### 4. --logs 模式增强
+- 显示端口信息
+- 提示运行 --status 排查连接问题
+
+## 根因分析
+| 原因 | 概率 | 排查方法 |
+|------|------|----------|
+| 云安全组未放行端口 | 90% | 阿里云控制台→安全组→入方向→添加 TCP 端口 |
+| 使用内网 IP 访问 | 80% | 需使用公网 IP，不是 172.16.x.x |
+| 容器未正常启动 | 10% | docker compose ps / docker compose logs |
+| OS 防火墙拦截 | 5% | ufw status / firewall-cmd --list-ports |
+
+Stage Summary:
+- deploy.sh: my_ip() 优先公网 IP、新增 80 行连接诊断逻辑、--status 增强、--logs 增强
+- 云服务器用户部署后现在会看到明确的"安全组放行端口"提示
