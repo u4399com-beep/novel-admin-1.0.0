@@ -46,13 +46,18 @@ else
 fi
 
 # ─── Wait for PostgreSQL to be ready ───
-log "[DB] Waiting for PostgreSQL..."
+# Extract host:port from DATABASE_URL (format: postgresql://user:pass@host:port/db)
+_DB_HOST=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):\([0-9]*\)/.*|\1|p')
+_DB_PORT=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):\([0-9]*\)/.*|\2|p')
+_DB_HOST=${_DB_HOST:-localhost}
+_DB_PORT=${_DB_PORT:-5432}
+log "[DB] Waiting for PostgreSQL at ${_DB_HOST}:${_DB_PORT}..."
 MAX_RETRIES=60
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     # Use lighter check: just TCP connect, not a full query
-    if (echo > /dev/tcp/localhost/5432) 2>/dev/null; then
+    if (echo > /dev/tcp/"${_DB_HOST}"/"${_DB_PORT}") 2>/dev/null; then
         log "[DB] PostgreSQL port is open!"
         break
     fi
@@ -63,7 +68,7 @@ done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
     log "[DB] ERROR: PostgreSQL unavailable after $((MAX_RETRIES * 2))s"
-    log "[DB] Check DATABASE_URL and that the postgres container is running."
+    log "[DB] Check DATABASE_URL (${_DB_HOST}:${_DB_PORT}) and that the postgres container is running."
     exit 1
 fi
 
