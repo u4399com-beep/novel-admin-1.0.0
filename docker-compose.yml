@@ -15,6 +15,8 @@
 # deploy.sh auto-generates a complete .env on every deploy.
 # ============================================================
 
+version: '3.8'
+
 services:
   # ============ PostgreSQL Database ============
   postgres:

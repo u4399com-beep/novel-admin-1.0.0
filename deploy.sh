@@ -2286,6 +2286,7 @@ fi
 #     but the current process is still the old code)
 info "生成 docker-compose.yml..."
 cat > docker-compose.yml << 'COMPOSE_EOF'
+version: '3.8'
 services:
   postgres:
     image: postgres:17-alpine
