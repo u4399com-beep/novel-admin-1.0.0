@@ -570,8 +570,41 @@ https://download.docker.com/linux/${_os_id} ${_apt_codename} stable" \
             apt-get install -y -qq docker.io >>"$LOG_FILE" 2>&1
             ;;
         dnf|yum)
+            _os_id_rh=$(. /etc/os-release 2>/dev/null && echo "${ID:-centos}")
             ${PKG_INSTALL_CMD} install -y -q yum-utils >>"$LOG_FILE" 2>&1 || true
-            ${PKG_INSTALL_CMD}-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo >>"$LOG_FILE" 2>&1 || true
+
+            # Docker CE repo URLs — direct + China mirrors
+            # Rocky/RHEL use 'rhel', CentOS uses 'centos', AlmaLinux uses 'rhel'
+            case "$_os_id_rh" in
+                rocky|almalinux|rhel)  _docker_repo_os="rhel" ;;
+                *)                      _docker_repo_os="centos" ;;
+            esac
+            _repo_urls=(
+                "https://download.docker.com/linux/${_docker_repo_os}/docker-ce.repo"
+                "https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo"
+                "https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/centos/docker-ce.repo"
+            )
+            _repo_added=false
+            for _repo_url in "${_repo_urls[@]}"; do
+                info "  尝试 Docker 源: ${_repo_url%%/*}..."
+                rm -f /etc/yum.repos.d/docker-ce.repo
+                if ${PKG_INSTALL_CMD}-config-manager --add-repo "$_repo_url" >>"$LOG_FILE" 2>&1; then
+                    _repo_added=true
+                    break
+                fi
+            done
+            if ! $_repo_added; then
+                warn "  Docker 源添加失败"
+                return 1
+            fi
+            # Rocky Linux 9: $releasever in repo file may not match Docker's path.
+            # Force sed to ensure the repo file uses the correct major version.
+            if [ -f /etc/yum.repos.d/docker-ce.repo ]; then
+                _os_ver_major=$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID%%.*}")
+                if [ -n "$_os_ver_major" ]; then
+                    sed -i "s|\$releasever|${_os_ver_major}|g" /etc/yum.repos.d/docker-ce.repo 2>/dev/null || true
+                fi
+            fi
             ${PKG_INSTALL_CMD} install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin >>"$LOG_FILE" 2>&1
             ;;
         apk)
@@ -617,13 +650,21 @@ ensure_docker() {
     # Strategy 1: Official get.docker.com script (most universal)
     _installed=false
     info "尝试官方安装脚本 (get.docker.com)..."
-    if dl_to_file "https://get.docker.com" /tmp/get-docker.sh 2>/dev/null; then
+    if ! dl_to_file "https://get.docker.com" /tmp/get-docker.sh 2>/dev/null; then
+        # China network: try raw file proxies for get.docker.com
+        for _rp in "${RAW_PROXIES[@]}"; do
+            if dl_to_file "${_rp}/https://get.docker.com" /tmp/get-docker.sh 2>/dev/null; then
+                info "  通过镜像 ${_rp} 下载成功"
+                break
+            fi
+        done
+    fi
+    if [ -f /tmp/get-docker.sh ]; then
         info "执行 Docker 安装脚本（约需 1-3 分钟）..."
         sh /tmp/get-docker.sh >> "$LOG_FILE" 2>&1 && _installed=true
         rm -f /tmp/get-docker.sh
-    fi
-    if ! $_installed; then
-        warn "官方脚本安装失败"
+    else
+        warn "官方脚本下载失败（网络不通）"
     fi
 
     # Strategy 2: Package manager
@@ -645,7 +686,16 @@ ensure_docker() {
         _docker_ver="27.5.1"
         _docker_url="https://download.docker.com/linux/static/stable/${_docker_arch}/docker-${_docker_ver}.tgz"
         if ! dl_to_file "$_docker_url" /tmp/docker.tgz 2>/dev/null; then
-            # Try China mirrors for Docker binary
+            # Try China raw proxies (generic HTTPS proxy)
+            for _rp in "${RAW_PROXIES[@]}"; do
+                info "  尝试镜像 ${_rp}..."
+                if dl_to_file "${_rp}/${_docker_url}" /tmp/docker.tgz 2>/dev/null; then
+                    break
+                fi
+            done
+        fi
+        if [ ! -f /tmp/docker.tgz ]; then
+            # Try Docker Hub mirrors as last resort
             for _dm in "${DOCKER_MIRRORS[@]}"; do
                 info "  尝试镜像 ${_dm%%/*}..."
                 if dl_to_file "${_dm}/https://download.docker.com/linux/static/stable/${_docker_arch}/docker-${_docker_ver}.tgz" /tmp/docker.tgz 2>/dev/null; then
