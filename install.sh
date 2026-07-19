@@ -26,14 +26,57 @@ log_info()  { printf "${C_GRN}[INFO]${C_RST}  %s\n" "$*" >&2; }
 log_warn()  { printf "${C_YLW}[WARN]${C_RST}  %s\n" "$*" >&2; }
 log_error() { printf "${C_RED}[ERROR]${C_RST} %s\n" "$*" >&2; }
 
-# ── Try to find deploy.sh ──
+# ── Helper: force-sync git repo, preserving .env ──
+# Handles dirty working trees, merge conflicts, etc.
+git_force_sync() {
+    local dir="$1"
+    [ -d "$dir/.git" ] || return 1
+    command -v git &>/dev/null || return 1
+
+    # Save .env if it exists (contains user's credentials)
+    local _env_backup=""
+    if [ -f "$dir/.env" ]; then
+        _env_backup="/tmp/.env.novel-install.$$.bak"
+        cp "$dir/.env" "$_env_backup" 2>/dev/null || true
+    fi
+
+    # Discard ALL local changes to tracked files
+    git -C "$dir" checkout -- . 2>/dev/null || true
+
+    # Try fast-forward pull first
+    local _pulled=false
+    if git -C "$dir" pull --ff-only 2>&1; then
+        _pulled=true
+    else
+        # Pull failed (maybe diverged) — force reset to remote
+        log_warn "git pull 失败，尝试强制同步..."
+        if git -C "$dir" fetch origin main 2>/dev/null; then
+            git -C "$dir" reset --hard origin/main 2>/dev/null && _pulled=true || true
+        fi
+    fi
+
+    # Restore .env
+    if [ -n "$_env_backup" ] && [ -f "$_env_backup" ]; then
+        cp "$_env_backup" "$dir/.env" 2>/dev/null || true
+        rm -f "$_env_backup"
+    fi
+
+    $_pulled && return 0
+    return 1
+}
+
+# ── Try to find deploy.sh locally ──
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if [ -f "${SCRIPT_DIR}/deploy.sh" ]; then
-    # If it's a git repo, always pull latest before running
-    if [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
-        log_info "更新部署脚本..."
-        cd "$SCRIPT_DIR" && git pull --ff-only 2>/dev/null || true
+    # If it's a git repo, force-sync before running
+    if [ -d "${SCRIPT_DIR}/.git" ]; then
+        log_info "同步最新代码..."
+        if git_force_sync "$SCRIPT_DIR"; then
+            log_info "代码已更新"
+        else
+            log_warn "代码同步失败，使用本地版本继续"
+        fi
     fi
     exec bash "${SCRIPT_DIR}/deploy.sh" "$@"
 fi
@@ -44,8 +87,11 @@ log_info "正在从 GitHub 获取部署脚本..."
 # Check if already cloned at install dir
 if [ -d "${INSTALL_DIR}/.git" ] && [ -f "${INSTALL_DIR}/deploy.sh" ]; then
     log_info "检测到已有安装目录，更新代码..."
-    cd "$INSTALL_DIR" && git pull --ff-only 2>/dev/null && \
+    if git_force_sync "$INSTALL_DIR"; then
         exec bash "${INSTALL_DIR}/deploy.sh" "$@"
+    fi
+    # If sync failed, try running existing deploy.sh anyway
+    exec bash "${INSTALL_DIR}/deploy.sh" "$@"
 fi
 
 # Not found anywhere — clone the repo

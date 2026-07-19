@@ -155,6 +155,7 @@ done
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  SELF-UPDATE (for git clone installations)
 #  Ensures we always run the latest code, not a stale local copy.
+#  Handles: dirty working tree, network errors, re-exec after update.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 _SELF_UPDATED=false
 if [ "$MODE" = "install" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
@@ -162,12 +163,39 @@ if [ "$MODE" = "install" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/d
     _remote_sha=$(git -C "$SCRIPT_DIR" ls-remote --origin HEAD 2>/dev/null | head -1 | cut -f1 || echo "")
     if [ -n "$_local_sha" ] && [ -n "$_remote_sha" ] && [ "$_local_sha" != "$_remote_sha" ]; then
         echo -e "\033[0;33m[UPDATE] 检测到新版本，正在更新...\033[0m" >&2
-        if git -C "$SCRIPT_DIR" pull --ff-only 2>/dev/null; then
+        # Save user's .env before any git operations
+        _env_saved=false
+        if [ -f "${SCRIPT_DIR}/.env" ]; then
+            cp "${SCRIPT_DIR}/.env" "/tmp/.env.novel-backup.$$" 2>/dev/null && _env_saved=true
+        fi
+        # Discard local changes to tracked files (NOT .env, which may have user data)
+        # This handles cases where a previous deploy.sh run modified files
+        git -C "$SCRIPT_DIR" checkout -- . 2>/dev/null || true
+        if git -C "$SCRIPT_DIR" pull --ff-only 2>&1; then
+            # Restore .env if it was overwritten by pull
+            if $_env_saved && [ -f "/tmp/.env.novel-backup.$$" ]; then
+                cp "/tmp/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
+                rm -f "/tmp/.env.novel-backup.$$"
+            fi
             _SELF_UPDATED=true
             echo -e "\033[0;32m  ✓ 已更新，重新启动...\033[0m" >&2
             exec bash "$0" "$@"
         else
-            echo -e "\033[0;33m[WARN] 自动更新失败，使用本地版本继续\033[0m" >&2
+            # Restore .env even on failure
+            if $_env_saved && [ -f "/tmp/.env.novel-backup.$$" ]; then
+                cp "/tmp/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
+                rm -f "/tmp/.env.novel-backup.$$"
+            fi
+            echo -e "\033[0;33m[WARN] 自动更新失败，尝试强制同步...\033[0m" >&2
+            # Last resort: force reset to remote
+            if git -C "$SCRIPT_DIR" fetch origin main 2>/dev/null && \
+               git -C "$SCRIPT_DIR" reset --hard origin/main 2>/dev/null; then
+                echo -e "\033[0;32m  ✓ 强制同步成功，重新启动...\033[0m" >&2
+                exec bash "$0" "$@"
+            else
+                echo -e "\033[0;31m[ERROR] 更新失败，使用本地版本继续\033[0m" >&2
+                echo -e "\033[0;31m  手动修复: cd $(pwd) && git checkout -- . && git pull && ./deploy.sh\033[0m" >&2
+            fi
         fi
     fi
 fi
@@ -2250,28 +2278,125 @@ if $_env_missing; then
     info "已补充 .env 中缺失的变量"
 fi
 
-# ── Sanitize docker-compose.yml: remove :- and :? default values ──
-# Older versions used ${VAR:-default} and ${VAR:?error} which breaks
-# some docker-compose versions. Since deploy.sh always generates a
-# complete .env, these defaults are unnecessary and harmful.
-if [ -f docker-compose.yml ] && grep -qE '\$\{[A-Z_]+:[\-\?]' docker-compose.yml 2>/dev/null; then
-    warn "检测到 docker-compose.yml 含有兼容性问题语法 (\${VAR:-default})"
-    info "正在自动修复..."
-    # ${VAR:-anything} → ${VAR}
-    # ${VAR:?anything} → ${VAR}
-    # Pattern: ${NAME:-...} or ${NAME:?...}
-    #   [^}:}]*  matches var name (no : or } allowed in var name)
-    #   [:-]     matches the : operator (- or ?)
-    #   [^}]*   matches the default/error value (everything until closing })
-    sed -i 's/\${\([^}:}]*\):-[^}]*}/${\1}/g; s/\${\([^}:}]*\):?[^}]*}/${\1}/g' docker-compose.yml
-    _fix_count=$(grep -cE '\$\{[A-Z_]+:[\-\?]' docker-compose.yml 2>/dev/null || echo 0)
-    if [ "$_fix_count" -eq 0 ]; then
-        ok "docker-compose.yml 已修复 (所有 \${VAR:-default} 已移除)"
-    else
-        warn "自动修复可能不完整，仍有 ${_fix_count} 处兼容语法"
-        warn "  如继续报错，请手动检查: cat docker-compose.yml | grep ':-'"
-    fi
-fi
+# ── Generate docker-compose.yml (always fresh, never from git) ──
+# This guarantees correctness even when:
+#   - git pull failed or was skipped
+#   - user has an old docker-compose.yml from a previous version
+#   - the running deploy.sh is an older version (self-update loaded new file to disk,
+#     but the current process is still the old code)
+info "生成 docker-compose.yml..."
+cat > docker-compose.yml << 'COMPOSE_EOF'
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: novel-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_INITDB_ARGS: "--no-locale --encoding=UTF8"
+      POSTGRES_SHARED_BUFFERS: ${PG_SHARED_BUFFERS}
+      POSTGRES_WORK_MEM: ${PG_WORK_MEM}
+      POSTGRES_MAINTENANCE_WORK_MEM: ${PG_MAINTENANCE_WORK_MEM}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${PG_EFFECTIVE_CACHE_SIZE}
+      POSTGRES_MAX_CONNECTIONS: ${PG_MAX_CONNECTIONS}
+      POSTGRES_WAL_LEVEL: minimal
+      POSTGRES_MAX_WAL_SIZE: ${PG_MAX_WAL_SIZE}
+      POSTGRES_MIN_WAL_SIZE: ${PG_MIN_WAL_SIZE}
+      POSTGRES_CHECKPOINT_COMPLETION_TARGET: 0.5
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ${BACKUP_DIR}:/backups:rw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: ${PG_MEMORY_LIMIT}
+          cpus: ${PG_CPU_LIMIT}
+        reservations:
+          memory: ${PG_MEMORY_RESERVATION}
+    tmpfs:
+      - /var/run/postgresql
+
+  novel-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE}
+        BUN_GC_THRESHOLD: ${BUN_GC_THRESHOLD}
+    container_name: novel-manager
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - app-data:/app/data
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=5&pool_timeout=30
+      - QUEUE_DB_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=3
+      - DB_PROVIDER=postgresql
+      - NODE_ENV=production
+      - NEXT_PUBLIC_APP_NAME=${APP_NAME}
+      - NEXT_PUBLIC_APP_URL=${APP_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${APP_URL}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - SCRAPER_SERVICE_TOKEN=${SCRAPER_SERVICE_TOKEN}
+      - SCRAPER_SERVICE_URL=http://localhost:3099
+      - MAIN_APP_URL=http://localhost:3000
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL}
+      - AGENTQL_API_KEY=${AGENTQL_API_KEY}
+      - AGENTQL_API_URL=${AGENTQL_API_URL}
+      - CLOUD_BROWSER_PROVIDER=${CLOUD_BROWSER_PROVIDER}
+      - BROWSERLESS_API_KEY=${BROWSERLESS_API_KEY}
+      - BROWSERLESS_API_URL=${BROWSERLESS_API_URL}
+      - STEEL_API_KEY=${STEEL_API_KEY}
+      - STEEL_API_URL=${STEEL_API_URL}
+      - TZ=${TZ}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/csrf || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: ${APP_MEMORY_LIMIT}
+          cpus: ${APP_CPU_LIMIT}
+        reservations:
+          memory: ${APP_MEMORY_RESERVATION}
+    shm_size: ${APP_SHM_SIZE}
+
+volumes:
+  postgres-data:
+    driver: local
+  app-data:
+    driver: local
+COMPOSE_EOF
+ok "docker-compose.yml 已生成"
 
 # ── Build with tier-appropriate settings ──
 T0=$(date +%s)
