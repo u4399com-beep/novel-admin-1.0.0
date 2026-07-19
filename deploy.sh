@@ -2406,12 +2406,12 @@ set +e
 # On tiny/small servers, disable BuildKit parallelism to reduce peak memory
 # BuildKit runs all stages concurrently — each apt-get update downloads ~10MB
 # and uses ~50-100MB RAM. On 1H1G, 3 parallel apt processes + Next.js build = OOM.
-_BUILD_ENV=""
 _BUILDKIT_DISABLED=false
 if [ "$_HW_TIER" = "tiny" ]; then
     # Disable BuildKit entirely — legacy builder runs stages sequentially
     # This means NO parallel downloads across stages, saving ~300MB peak RAM
-    _BUILD_ENV="DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0"
+    export DOCKER_BUILDKIT=0
+    export COMPOSE_DOCKER_CLI_BUILD=0
     _BUILDKIT_DISABLED=true
     info "使用传统构建器 (降低 ${_HW_TIER} 服务器内存占用，串行构建)..."
 elif [ "$_HW_TIER" = "small" ]; then
@@ -2419,7 +2419,8 @@ elif [ "$_HW_TIER" = "small" ]; then
     # BuildKit runs all stages concurrently, causing 3x apt-get update (~30MB redundant
     # downloads) and ~300MB extra peak RAM. Legacy builder is only slightly slower
     # but much more memory-friendly on 2H2G servers.
-    _BUILD_ENV="DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0"
+    export DOCKER_BUILDKIT=0
+    export COMPOSE_DOCKER_CLI_BUILD=0
     _BUILDKIT_DISABLED=true
     info "使用传统构建器 (串行构建，避免并行 apt 消耗内存)..."
 fi
@@ -2439,7 +2440,7 @@ elif [ "$_HW_TIER" = "small" ]; then
 fi
 
 # shellcheck disable=SC2086
-$_BUILD_ENV $COMPOSE_CMD build ${_BUILD_ARGS} \
+$COMPOSE_CMD build ${_BUILD_ARGS} \
     2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
     # Show only important lines to reduce noise
     if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn|#\d+ \[)'; then
