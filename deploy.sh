@@ -2285,8 +2285,20 @@ fi
 #   - the running deploy.sh is an older version (self-update loaded new file to disk,
 #     but the current process is still the old code)
 info "生成 docker-compose.yml..."
-cat > docker-compose.yml << 'COMPOSE_EOF'
-version: '3.8'
+
+# Detect compose file version compatibility
+# - Compose v2 (docker compose plugin): no version needed, or any 3.x
+# - Compose v1 (docker-compose standalone): max supported is 3.3
+_COMPOSE_FILE_VER=""
+if $COMPOSE_CMD version 2>/dev/null | grep -qE 'v2\.|compose version v2'; then
+    _COMPOSE_FILE_VER=""  # v2: omit version key
+else
+    _COMPOSE_FILE_VER="3.3"  # v1: use 3.3 for max compatibility
+fi
+
+{
+    [ -n "$_COMPOSE_FILE_VER" ] && echo "version: '${_COMPOSE_FILE_VER}'"
+    cat << 'COMPOSE_EOF'
 services:
   postgres:
     image: postgres:17-alpine
@@ -2397,7 +2409,8 @@ volumes:
   app-data:
     driver: local
 COMPOSE_EOF
-ok "docker-compose.yml 已生成"
+} > docker-compose.yml
+ok "docker-compose.yml 已生成 (compose file version: ${_COMPOSE_FILE_VER:-none/omitted})"
 
 # ── Build with tier-appropriate settings ──
 T0=$(date +%s)
