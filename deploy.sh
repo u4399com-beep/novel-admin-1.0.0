@@ -2319,7 +2319,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
     logging:
       driver: json-file
       options:
@@ -2347,8 +2346,7 @@ services:
     ports:
       - "${APP_PORT}:3000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
     volumes:
       - app-data:/app/data
     environment:
@@ -2380,7 +2378,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
     logging:
       driver: json-file
       options:
@@ -2402,6 +2399,15 @@ volumes:
     driver: local
 COMPOSE_EOF
 ok "docker-compose.yml 已生成"
+
+# ── Validate compose file before build ──
+if ! $COMPOSE_CMD config > /dev/null 2>&1; then
+    error "docker-compose.yml 校验失败！详细错误："
+    $COMPOSE_CMD config 2>&1 | head -20
+    error "请检查上方错误信息，或删除 docker-compose.yml 后重新运行: ./deploy.sh"
+    exit 1
+fi
+ok "docker-compose.yml 校验通过"
 
 # ── Build with tier-appropriate settings ──
 T0=$(date +%s)

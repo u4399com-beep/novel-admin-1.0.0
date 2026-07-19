@@ -15,7 +15,7 @@
 # deploy.sh auto-generates a complete .env on every deploy.
 # ============================================================
 
-version: '3.8'
+version: '3.3'
 
 services:
   # ============ PostgreSQL Database ============
@@ -51,7 +51,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
     logging:
       driver: json-file
       options:
@@ -82,8 +81,7 @@ services:
     ports:
       - "${APP_PORT}:3000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
     volumes:
       - app-data:/app/data
     environment:
@@ -126,7 +124,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
     logging:
       driver: json-file
       options:

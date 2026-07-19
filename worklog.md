@@ -2028,3 +2028,27 @@ Stage Summary:
 - bash -n 语法检查通过
 - YAML 格式验证通过
 - 旧版 .env 兼容性通过构建前自动补全保证
+
+---
+Task ID: 4
+Agent: Main Orchestrator
+Task: 修复 docker-compose v1.25.0 兼容性（start_period + depends_on 格式）
+
+Work Log:
+- 用户报错（docker-compose v1.25.0 standalone on Debian 11）:
+  1. `services.postgres.healthcheck: 'start_period' was unexpected`
+  2. `services.novel-manager.healthcheck: 'start_period' was unexpected`
+  3. `services.novel-manager.depends_on contains an invalid type, it should be an array`
+- 根因: docker-compose v1.25.0 不支持 `start_period`（v1.28+ 才引入）和长格式 `depends_on`（condition: service_healthy 是 v2/v3 compose spec 扩展格式，v1.25.0 只接受简单数组）
+
+修复:
+1. deploy.sh heredoc: 移除 postgres healthcheck 的 `start_period: 10s`
+2. deploy.sh heredoc: 移除 novel-manager healthcheck 的 `start_period: 120s`
+3. deploy.sh heredoc: `depends_on` 从长格式 `{postgres: {condition: service_healthy}}` 改为简单数组 `[- postgres]`
+4. deploy.sh: 新增构建前验证步骤（`$COMPOSE_CMD config > /dev/null`），校验失败时立即报错并退出
+5. docker-compose.yml (参考文件): 同步修复（version 改为 3.3，移除 start_period，depends_on 改数组）
+
+Stage Summary:
+- docker-compose.yml 兼容 docker-compose v1.25.0（standalone）
+- 部署前自动校验 compose 文件，提前拦截格式问题
+- bash -n 语法检查通过
