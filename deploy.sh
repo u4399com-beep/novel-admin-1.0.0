@@ -2250,6 +2250,29 @@ if $_env_missing; then
     info "已补充 .env 中缺失的变量"
 fi
 
+# ── Sanitize docker-compose.yml: remove :- and :? default values ──
+# Older versions used ${VAR:-default} and ${VAR:?error} which breaks
+# some docker-compose versions. Since deploy.sh always generates a
+# complete .env, these defaults are unnecessary and harmful.
+if [ -f docker-compose.yml ] && grep -qE '\$\{[A-Z_]+:[\-\?]' docker-compose.yml 2>/dev/null; then
+    warn "检测到 docker-compose.yml 含有兼容性问题语法 (\${VAR:-default})"
+    info "正在自动修复..."
+    # ${VAR:-anything} → ${VAR}
+    # ${VAR:?anything} → ${VAR}
+    # Pattern: ${NAME:-...} or ${NAME:?...}
+    #   [^}:}]*  matches var name (no : or } allowed in var name)
+    #   [:-]     matches the : operator (- or ?)
+    #   [^}]*   matches the default/error value (everything until closing })
+    sed -i 's/\${\([^}:}]*\):-[^}]*}/${\1}/g; s/\${\([^}:}]*\):?[^}]*}/${\1}/g' docker-compose.yml
+    _fix_count=$(grep -cE '\$\{[A-Z_]+:[\-\?]' docker-compose.yml 2>/dev/null || echo 0)
+    if [ "$_fix_count" -eq 0 ]; then
+        ok "docker-compose.yml 已修复 (所有 \${VAR:-default} 已移除)"
+    else
+        warn "自动修复可能不完整，仍有 ${_fix_count} 处兼容语法"
+        warn "  如继续报错，请手动检查: cat docker-compose.yml | grep ':-'"
+    fi
+fi
+
 # ── Build with tier-appropriate settings ──
 T0=$(date +%s)
 BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"

@@ -11,7 +11,7 @@
 #   normal  3GB+       256M       1024M       256m
 #
 # IMPORTANT: All variables MUST be set in .env (no defaults here
-# because ${VAR:-default} syntax breaks older docker-compose versions).
+# because the colon-default syntax breaks older docker-compose versions).
 # deploy.sh auto-generates a complete .env on every deploy.
 # ============================================================
 
