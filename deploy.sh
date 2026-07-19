@@ -278,12 +278,15 @@ rand_hex() {
     echo
 }
 
-# Generate random password (alphanumeric + symbols, 14 chars)
+# Generate random password (alphanumeric + symbols, 20 chars by default)
 rand_pass() {
+    local _len=${1:-20}
     if command -v openssl &>/dev/null; then
-        openssl rand -base64 12 2>/dev/null | tr -d '=/+' | head -c 14 && echo && return
+        # openssl rand -base64 N produces ~4N/3 chars; trim to desired length
+        local _raw=$(( (_len * 3 + 2) / 3 + 2 ))
+        openssl rand -base64 "$_raw" 2>/dev/null | tr -d '=/+' | head -c "$_len" && echo && return
     fi
-    tr -dc 'A-Za-z0-9!@#%' </dev/urandom 2>/dev/null | head -c 14
+    tr -dc 'A-Za-z0-9!@#%' </dev/urandom 2>/dev/null | head -c "$_len"
     echo
 }
 
@@ -2111,7 +2114,7 @@ if $GENERATE_ENV; then
     _gen_db_pw=$(rand_hex 16)
     _gen_secret=$(rand_hex 32)
     _gen_token=$(rand_hex 32)
-    _gen_admin_pw=$(rand_pass 14)
+    _gen_admin_pw=$(rand_pass 20)
 
     if ! $AUTO_YES; then
         echo ""
@@ -2136,8 +2139,14 @@ if $GENERATE_ENV; then
 
     # Admin
     _admin_user=$(ask "  管理员用户名" "admin")
-    _admin_pw=$(ask "  管理员密码" "$_gen_admin_pw")
-    [ -z "$_admin_pw" ] && _admin_pw="$_gen_admin_pw"
+    while true; do
+        _admin_pw=$(ask "  管理员密码 (≥8字符)" "$_gen_admin_pw")
+        [ -z "$_admin_pw" ] && _admin_pw="$_gen_admin_pw"
+        if [ ${#_admin_pw} -ge 8 ]; then
+            break
+        fi
+        warn "  密码太短！至少需要 8 个字符，请重新输入。"
+    done
 
     # Server address
     _server_addr=$(ask "  服务器 IP 或域名" "$(my_ip)")
