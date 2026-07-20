@@ -55,11 +55,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV BUN_NO_UPDATE_NOTIF=1
 ENV DB_PROVIDER=postgresql
 
-# Minimal runtime deps: curl (healthcheck) + SSL (PostgreSQL) + basic libs
+# Minimal runtime deps: curl (healthcheck) + SSL (PostgreSQL) + basic libs + netcat (DB check)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     libssl3 \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -109,7 +110,7 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=90s \
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:3000/api/auth/csrf || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

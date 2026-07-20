@@ -49,15 +49,24 @@ fi
 # Extract host:port from DATABASE_URL (format: postgresql://user:pass@host:port/db)
 _DB_HOST=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):\([0-9]*\)/.*|\1|p')
 _DB_PORT=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):\([0-9]*\)/.*|\2|p')
-_DB_HOST=${_DB_HOST:-localhost}
+_DB_HOST=${_DB_HOST:-postgres}
 _DB_PORT=${_DB_PORT:-5432}
 log "[DB] Waiting for PostgreSQL at ${_DB_HOST}:${_DB_PORT}..."
+
+# TCP check with multiple fallback methods
+_db_tcp_check() {
+    # Method 1: bash /dev/tcp (built-in, no external deps)
+    (echo > /dev/tcp/"$1"/"$2") 2>/dev/null && return 0
+    # Method 2: nc (netcat-openbsd, installed in Dockerfile)
+    nc -z -w2 "$1" "$2" 2>/dev/null && return 0
+    return 1
+}
+
 MAX_RETRIES=60
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    # Use lighter check: just TCP connect, not a full query
-    if (echo > /dev/tcp/"${_DB_HOST}"/"${_DB_PORT}") 2>/dev/null; then
+    if _db_tcp_check "$_DB_HOST" "$_DB_PORT"; then
         log "[DB] PostgreSQL port is open!"
         break
     fi
@@ -68,7 +77,8 @@ done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
     log "[DB] ERROR: PostgreSQL unavailable after $((MAX_RETRIES * 2))s"
-    log "[DB] Check DATABASE_URL (${_DB_HOST}:${_DB_PORT}) and that the postgres container is running."
+    log "[DB] Target: ${_DB_HOST}:${_DB_PORT}"
+    log "[DB] Check that the postgres container is running: docker compose ps postgres"
     exit 1
 fi
 
