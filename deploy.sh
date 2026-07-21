@@ -2345,11 +2345,11 @@ fi
 #     but the current process is still the old code)
 info "生成 docker-compose.yml..."
 
-# Always use version '3.3' — works with BOTH docker-compose v1 AND v2.
-# v1 (standalone): requires it, max supported is 3.3
-# v2 (plugin): accepts it, ignores it (no harm)
+# Omit 'version' field — docker compose v2 ignores it (warns "obsolete"),
+# and modern v2 on Rocky/RHEL/Ubuntu 24+ all work fine without it.
+# If user has docker-compose v1 (Debian 11), deploy.sh detects it and
+# injects 'version: "3.3"' automatically via sed.
 cat > docker-compose.yml << 'COMPOSE_EOF'
-version: '3.3'
 services:
   postgres:
     image: postgres:17-alpine
@@ -2458,6 +2458,13 @@ volumes:
     driver: local
 COMPOSE_EOF
 ok "docker-compose.yml 已生成"
+
+# ── If docker-compose v1 (standalone), inject 'version: "3.3"' ──
+# v2 doesn't need it (and warns if present), v1 requires it.
+if [ "${COMPOSE_CMD}" = "docker-compose" ]; then
+    sed -i '1i version: "3.3"' docker-compose.yml
+    info "检测到 docker-compose v1，已添加 version 字段"
+fi
 
 # ── Validate compose file before build ──
 if ! $COMPOSE_CMD config > /dev/null 2>&1; then

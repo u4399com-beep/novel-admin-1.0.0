@@ -2052,3 +2052,33 @@ Stage Summary:
 - docker-compose.yml 兼容 docker-compose v1.25.0（standalone）
 - 部署前自动校验 compose 文件，提前拦截格式问题
 - bash -n 语法检查通过
+
+---
+Task ID: 6
+Agent: Main Orchestrator
+Task: 修复 Docker 构建失败 — Debian Trixie 404 + docker compose v2 兼容
+
+Work Log:
+- 诊断根因：用户执行 `docker compose up -d --build` 无任何输出，`docker compose ps` 无容器
+- 用户提供了完整构建日志，发现 `apt-get update` 失败：
+  ```
+  Failed to fetch http://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages 404 Not Found
+  failed to solve: process "/bin/sh -c apt-get update && apt-get install ..." exit code: 100
+  ```
+- 根因：`oven/bun:1` Docker 镜像内置了过期的 Debian Trixie 快照源（如 `trixie-2024XXXXX`），
+  该快照已从 Debian 镜像站移除，导致 `apt-get update` 返回 404，构建彻底失败
+- 修复 Dockerfile：在 `apt-get update` 之前重写 `/etc/apt/sources.list`，指向活跃的 codename 源：
+  ```dockerfile
+  RUN rm -f /etc/apt/sources.list.d/*.sources \
+      && printf 'deb http://deb.debian.org/debian trixie main\ndeb http://deb.debian.org/debian trixie-updates main\n' > /etc/apt/sources.list \
+      && apt-get update && apt-get install ...
+  ```
+- 移除 docker-compose.yml 中的 `version: '3.3'`（docker compose v2 认为已过时）
+- 更新 deploy.sh：
+  - 默认生成的 docker-compose.yml 不含 version 字段（适配 v2）
+  - 检测到 docker-compose v1（standalone）时自动注入 `version: "3.3"`
+
+Stage Summary:
+- **核心修复**：Dockerfile 重写 apt sources 解决 Trixie 快照 404 → 构建可以完成
+- **兼容性**：docker-compose.yml 适配 v2（无 version），deploy.sh 自动为 v1 添加
+- 用户需要 `git pull` 后重新 `docker compose up -d --build`

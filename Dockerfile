@@ -55,12 +55,19 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV BUN_NO_UPDATE_NOTIF=1
 ENV DB_PROVIDER=postgresql
 
-# Minimal runtime deps: curl (healthcheck) + SSL (PostgreSQL) + basic libs + netcat (DB check)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    libssl3 \
-    netcat-openbsd \
+# Minimal runtime deps: curl (healthcheck) + SSL (PostgreSQL) + netcat (DB check)
+# IMPORTANT FIX: oven/bun:1 ships with a stale Debian Trixie snapshot in its
+# sources.list (e.g. trixie-2024XXXXX). That snapshot gets removed from mirrors,
+# causing "404 Not Found" on apt-get update and build failure.
+# We rewrite sources.list to the live codename repos before installing.
+RUN rm -f /etc/apt/sources.list.d/*.sources \
+    && printf 'deb http://deb.debian.org/debian trixie main\ndeb http://deb.debian.org/debian trixie-updates main\n' > /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+       curl \
+       ca-certificates \
+       libssl3 \
+       netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
