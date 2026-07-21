@@ -53,12 +53,15 @@ _DB_HOST=${_DB_HOST:-postgres}
 _DB_PORT=${_DB_PORT:-5432}
 log "[DB] Waiting for PostgreSQL at ${_DB_HOST}:${_DB_PORT}..."
 
-# TCP check with multiple fallback methods
+# TCP port check
+# IMPORTANT: Use nc -z FIRST — it does a clean TCP handshake without sending
+# application data. The bash /dev/tcp method sends data to the port which causes
+# PostgreSQL to log "incomplete startup packet" errors on every retry.
 _db_tcp_check() {
-    # Method 1: bash /dev/tcp (built-in, no external deps)
-    (echo > /dev/tcp/"$1"/"$2") 2>/dev/null && return 0
-    # Method 2: nc (netcat-openbsd, installed in Dockerfile)
+    # Method 1: nc (netcat-openbsd, installed in Dockerfile) — clean check
     nc -z -w2 "$1" "$2" 2>/dev/null && return 0
+    # Method 2: bash /dev/tcp (built-in fallback, may cause PG log spam)
+    (echo > /dev/tcp/"$1"/"$2") 2>/dev/null && return 0
     return 1
 }
 
@@ -85,19 +88,20 @@ fi
 # ─── Sync Database Schema ───
 log "[DB] Syncing schema..."
 cd /app
-bunx prisma db push --skip-generate --accept-data-loss 2>&1 || \
+# NOTE: --skip-generate was removed in Prisma 6+. Omit it for compatibility.
+bunx prisma db push --accept-data-loss --schema ./prisma/schema.prisma 2>&1 || \
     log "[DB] Schema sync had warnings (usually safe)."
 
 # ─── Create pg_trgm extension + performance indexes ───
 log "[DB] Creating extensions and indexes..."
-bunx prisma db execute --stdin <<< "CREATE EXTENSION IF NOT EXISTS pg_trgm;" 2>/dev/null || true
-bunx prisma db execute --stdin <<< "
+echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bunx prisma db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
+echo "
 CREATE INDEX IF NOT EXISTS idx_novel_title_trgm ON \"Novel\" USING gin(title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_novel_author_trgm ON \"Novel\" USING gin(author gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_scrape_rule_enabled ON \"ScrapeRule\"(enabled);
 CREATE INDEX IF NOT EXISTS idx_scrape_rule_engine ON \"ScrapeRule\"(engine);
 CREATE INDEX IF NOT EXISTS idx_ai_rule_created ON \"AiRuleGeneration\"(\"createdAt\");
-" 2>/dev/null || true
+" | bunx prisma db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
 log "[DB] Database ready."
 
 # ─── Ensure data directories ───

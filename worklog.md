@@ -2082,3 +2082,26 @@ Stage Summary:
 - **核心修复**：Dockerfile 重写 apt sources 解决 Trixie 快照 404 → 构建可以完成
 - **兼容性**：docker-compose.yml 适配 v2（无 version），deploy.sh 自动为 v1 添加
 - 用户需要 `git pull` 后重新 `docker compose up -d --build`
+
+---
+Task ID: 7
+Agent: Main Orchestrator
+Task: 修复 entrypoint — PostgreSQL 日志洪水 + Prisma 6 兼容性
+
+Work Log:
+- 构建成功后容器启动，但健康检查仍失败
+- 诊断日志发现两个问题：
+  1. PostgreSQL 每 13 秒刷 "incomplete startup packet" — 由 entrypoint 的 `/dev/tcp/` 检查引起
+     （`echo > /dev/tcp/host/port` 向 PG 端口发送数据，PG 无法识别为有效协议）
+  2. `prisma db push --skip-generate` 打印帮助文本后退出，schema 未被推送
+     （Prisma 6+ 移除了 `--skip-generate` 参数，导致命令解析失败）
+- 修复 docker-entrypoint.sh：
+  1. DB 端口检查改为 nc -z 优先（干净 TCP 握手，不发送应用层数据）
+  2. `prisma db push` 移除 `--skip-generate`，添加 `--schema ./prisma/schema.prisma`
+  3. `prisma db execute` 添加 `--schema`，改用 `echo "SQL" | prisma db execute --stdin` 管道
+
+Stage Summary:
+- **incomplete startup packet**：改用 nc -z 优先 → 消除 PG 日志洪水
+- **prisma db push**：移除已废弃参数 → schema 正常推送到数据库
+- **prisma db execute**：添加 --schema → 扩展和索引能正常创建
+- 用户需重新构建镜像：`git pull && docker compose up -d --build`
