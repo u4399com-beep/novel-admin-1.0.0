@@ -15,6 +15,18 @@ echo "=========================================="
 # ─── Helper: log with timestamp ───
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
+# ─── Prisma CLI — use LOCAL binary, NEVER bunx (which downloads latest) ───
+# bunx prisma resolves to Prisma 7.x (latest) from npm, breaking our v6 schema.
+# The Dockerfile copies node_modules/prisma from the builder stage.
+_PRISMA="/app/node_modules/prisma/build/index.js"
+if [ ! -f "$_PRISMA" ]; then
+    log "[FATAL] Prisma CLI not found at $_PRISMA"
+    log "[FATAL] The Dockerfile must COPY --from=builder /app/node_modules/prisma"
+    exit 1
+fi
+# Show version for debugging
+log "[Prisma] Using local CLI: $(bun $_PRISMA --version 2>&1 | head -1)"
+
 # ─── Validate required secrets ───
 # Machine secrets need ≥32 chars; admin password needs ≥8 chars
 for _var in NEXTAUTH_SECRET SCRAPER_SERVICE_TOKEN; do
@@ -89,19 +101,19 @@ fi
 log "[DB] Syncing schema..."
 cd /app
 # NOTE: --skip-generate was removed in Prisma 6+. Omit it for compatibility.
-bunx prisma db push --accept-data-loss --schema ./prisma/schema.prisma 2>&1 || \
+bun $_PRISMA db push --accept-data-loss --schema ./prisma/schema.prisma 2>&1 || \
     log "[DB] Schema sync had warnings (usually safe)."
 
 # ─── Create pg_trgm extension + performance indexes ───
 log "[DB] Creating extensions and indexes..."
-echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bunx prisma db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
+echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bun $_PRISMA db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
 echo "
 CREATE INDEX IF NOT EXISTS idx_novel_title_trgm ON \"Novel\" USING gin(title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_novel_author_trgm ON \"Novel\" USING gin(author gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_scrape_rule_enabled ON \"ScrapeRule\"(enabled);
 CREATE INDEX IF NOT EXISTS idx_scrape_rule_engine ON \"ScrapeRule\"(engine);
 CREATE INDEX IF NOT EXISTS idx_ai_rule_created ON \"AiRuleGeneration\"(\"createdAt\");
-" | bunx prisma db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
+" | bun $_PRISMA db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
 log "[DB] Database ready."
 
 # ─── Ensure data directories ───

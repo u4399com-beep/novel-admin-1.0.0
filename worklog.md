@@ -2105,3 +2105,53 @@ Stage Summary:
 - **prisma db push**：移除已废弃参数 → schema 正常推送到数据库
 - **prisma db execute**：添加 --schema → 扩展和索引能正常创建
 - 用户需重新构建镜像：`git pull && docker compose up -d --build`
+
+---
+Task ID: 8
+Agent: Main Orchestrator
+Task: 修复 Prisma 7.x 被意外加载导致 schema 验证失败
+
+Work Log:
+- 用户构建成功后容器启动，但 `prisma db push` 仍然失败
+- 错误信息：
+  ```
+  Error: Prisma schema validation - (get-config wasm)
+  error: The datasource property `url` is no longer supported in schema files.
+  Prisma CLI Version : 7.9.0
+  ```
+- 根因分析：
+  1. `package.json` 声明 `"prisma": "^6.11.1"`，本地安装了 Prisma 6.19.2
+  2. `docker-entrypoint.sh` 使用 `bunx prisma` 调用 CLI
+  3. `bunx` 未使用本地 node_modules 中的 prisma 6.x，回退到 npm 下载最新版 7.9.0
+  4. Prisma 7 废除了 `datasource.url` 属性（必须迁移到 `prisma.config.ts`），与项目 v6 schema 不兼容
+  5. **注意**：之前 Task 7 的修复（移除 --skip-generate、添加 --schema）是正确的，但因未推送到 git，服务器从未拉取到这些修复
+
+## 修复内容
+
+### docker-entrypoint.sh
+1. 新增 `_PRISMA` 变量，指向本地 prisma 二进制绝对路径：
+   ```bash
+   _PRISMA="/app/node_modules/prisma/build/index.js"
+   ```
+2. 启动时验证二进制存在 + 打印版本号（方便调试）
+3. 所有 `bunx prisma` 替换为 `bun $_PRISMA`（3 处）
+   - `bun $_PRISMA db push --accept-data-loss --schema ./prisma/schema.prisma`
+   - `echo "SQL" | bun $_PRISMA db execute --stdin --schema ./prisma/schema.prisma`
+
+### Dockerfile
+- 无需修改。已有的 COPY 指令覆盖了 prisma CLI 运行所需全部依赖：
+  - `node_modules/prisma/` — CLI 二进制 (build/index.js)
+  - `node_modules/@prisma/` — @prisma/config, @prisma/engines, @prisma/engines-version, @prisma/get-platform, @prisma/fetch-engine
+  - `node_modules/.prisma/` — 生成的 Prisma Client
+
+### 根因链
+```
+bunx prisma → 找不到/不用本地 node_modules → 从 npm 下载最新 → Prisma 7.9.0
+→ 读取 schema.prisma → "url no longer supported" → schema push 失败 → 表不存在 → 应用崩溃
+```
+
+Stage Summary:
+- **核心修复**：`bunx prisma` → `bun /app/node_modules/prisma/build/index.js` → 锁定使用 Prisma 6.19.2
+- **防御措施**：启动时验证二进制存在 + 打印版本号
+- **Dockerfile**：无需修改，已有 COPY 指令覆盖全部依赖
+- **部署命令**：用户需 `git pull && docker compose down && docker compose up -d --build`
