@@ -2155,3 +2155,37 @@ Stage Summary:
 - **防御措施**：启动时验证二进制存在 + 打印版本号
 - **Dockerfile**：无需修改，已有 COPY 指令覆盖全部依赖
 - **部署命令**：用户需 `git pull && docker compose down && docker compose up -d --build`
+
+---
+Task ID: 9
+Agent: Main Orchestrator
+Task: 修复 Dockerfile 构建阶段 npx 下载 Prisma 7 覆盖本地 v6
+
+Work Log:
+- Task 8 修复推送后，用户重新部署仍显示 Prisma 7.9.0
+- 分析 Dockerfile 构建流程发现第二层问题：
+  1. `bun run db:generate` → 展开为 `npx prisma generate`
+  2. `npx` 检测到本地有 prisma，但仍然从 npm 下载最新版 7.9.0
+  3. 下载的 prisma 7 **覆盖**了 `node_modules/prisma/` 中的 6.19.2
+  4. Runner 阶段 `COPY --from=builder /app/node_modules/prisma` 拷贝的就是 prisma 7
+  5. Entrypoint 中 `$_PRISMA` 指向的文件已经是 prisma 7 的二进制
+
+## 修复内容
+
+### Dockerfile
+- `RUN bun run db:generate` → `RUN ./node_modules/prisma/build/index.js generate --schema ./prisma/schema.prisma`
+- 绕过 npx/bunx，直接使用本地安装的 prisma 6.19.2 二进制
+- 确保 builder 阶段不会下载 prisma 7 覆盖本地安装
+
+### 完整修复链（Task 8 + Task 9）
+| 阶段 | 修复前 | 修复后 |
+|------|--------|--------|
+| Dockerfile 构建时 | `bun run db:generate` → npx 下载 prisma 7 | `./node_modules/prisma/build/index.js generate` → 用本地 v6 |
+| Entrypoint 运行时 | `bunx prisma db push` → 下载 prisma 7 | `bun $_PRISMA db push` → 用本地 v6 |
+| Runner node_modules | 从 builder 拷贝（已被 prisma 7 覆盖） | 从 builder 拷贝（现在 builder 保持 prisma 6） |
+
+Stage Summary:
+- **双重修复**：构建时（Dockerfile）+ 运行时（entrypoint）全部绕过 npx/bunx
+- **根因**：npx/bunx 总是倾向下载 npm 最新版，不使用本地安装
+- **两个 commit**：c9ff8db（entrypoint）+ f54c0a0（Dockerfile）
+- **部署**：用户需 `bash deploy.sh`（deploy.sh 自带 git pull + 重建）
