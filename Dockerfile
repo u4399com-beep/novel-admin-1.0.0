@@ -84,10 +84,12 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
 # Copy Prisma schema and client (needed for db push on first start)
+# Also copy transitive runtime deps of the Prisma CLI (@prisma/config needs 'effect').
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/effect ./node_modules/effect
 
 # Copy scraper service source + deps
 COPY mini-services/scraper-service/package.json /tmp/scraper-deps/
