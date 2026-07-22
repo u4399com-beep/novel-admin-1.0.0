@@ -1933,11 +1933,34 @@ fi
 if ! $_got && [ -d "${INSTALL_DIR}/.git" ] && command -v git &>/dev/null; then
     if ask_y "检测到已有 Git 安装 (${INSTALL_DIR})，更新代码？"; then
         cd "$INSTALL_DIR"
+        # Save .env (contains user credentials — never discard)
+        _env_bak=""
+        if [ -f .env ]; then
+            _env_bak="/tmp/.env.novel-deploy.$$.bak"
+            cp .env "$_env_bak" 2>/dev/null || true
+        fi
+        # Discard local changes to tracked files (e.g. deploy.sh-injected version: field)
+        # so git pull doesn't fail with merge conflicts
+        git checkout -- . 2>/dev/null || true
+        git clean -fd 2>/dev/null || true
         if git pull --ff-only 2>&1; then
             ok "代码已更新"
             _got=true
         else
-            warn "git pull 失败"
+            # Fast-forward failed (diverged) — force reset to remote
+            warn "git pull --ff-only 失败，尝试强制同步..."
+            if git fetch origin main 2>/dev/null && git reset --hard origin/main 2>/dev/null; then
+                ok "代码已强制同步到最新"
+                _got=true
+            else
+                warn "代码同步失败，使用本地版本继续"
+                _got=true
+            fi
+        fi
+        # Restore .env
+        if [ -n "$_env_bak" ] && [ -f "$_env_bak" ]; then
+            cp "$_env_bak" .env 2>/dev/null || true
+            rm -f "$_env_bak"
         fi
     else
         _got=true
@@ -2516,8 +2539,12 @@ elif [ "$_HW_TIER" = "small" ]; then
     info "串行构建 + V8堆${_TIER_NODE_MAX_MEM}MB + 4GB Swap = 稳定构建"
 fi
 
+# Always use --no-cache to ensure code changes (especially docker-entrypoint.sh)
+# are reflected in the image. On low-spec servers DOCKER_BUILDKIT=0 (legacy builder)
+# which caches based on mtime; without --no-cache, stale COPY layers may be reused.
+# First-time builds have no cache anyway, so this adds no overhead there.
 # shellcheck disable=SC2086
-$COMPOSE_CMD build ${_BUILD_ARGS} \
+$COMPOSE_CMD build --no-cache ${_BUILD_ARGS} \
     2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
     # Show only important lines to reduce noise
     if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn|#\d+ \[)'; then
