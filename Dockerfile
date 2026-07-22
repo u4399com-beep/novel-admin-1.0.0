@@ -72,6 +72,7 @@ RUN rm -f /etc/apt/sources.list.d/*.sources \
        ca-certificates \
        libssl3 \
        netcat-openbsd \
+       unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -84,12 +85,16 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
 # Copy Prisma schema and client (needed for db push on first start)
-# Also copy transitive runtime deps of the Prisma CLI (@prisma/config needs 'effect').
+# Also copy ALL transitive runtime deps of the Prisma CLI.
+# @prisma/config dynamically imports several packages at runtime.
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/effect ./node_modules/effect
+COPY --from=builder /app/node_modules/c12 ./node_modules/c12
+COPY --from=builder /app/node_modules/deepmerge-ts ./node_modules/deepmerge-ts
+COPY --from=builder /app/node_modules/empathic ./node_modules/empathic
 
 # Copy scraper service source + deps
 COPY mini-services/scraper-service/package.json /tmp/scraper-deps/

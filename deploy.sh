@@ -43,10 +43,10 @@ set -eo pipefail
 # Trap ERR to show which command failed (instead of silent exit)
 trap 'echo -e "\033[0;31m[ERROR] 命令失败退出: ${BASH_COMMAND:-未知}\033[0m" >&2; echo "  完整日志: ${LOG_FILE:-无}" >&2' ERR
 
-# Make grep return 0 even when no match (avoid set -e + pipefail killing the script)
-# This is safe: callers check the output, not the exit code
-export GREP_OPTIONS=""  # deprecated but harmless
-grep() { command grep "$@" || [ $? -eq 1 ]; }
+# Safe grep that returns 0 even when no match (avoid set -e + pipefail killing the script).
+# Use _grep_safe in places where "no match" is acceptable.
+# DO NOT override the builtin grep — it breaks if-conditions that rely on exit code.
+_grep_safe() { command grep "$@" 2>/dev/null || true; }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  GLOBALS
@@ -1595,7 +1595,7 @@ if [ "$MODE" = "upgrade" ]; then
                      FIRECRAWL_API_KEY FIRECRAWL_API_URL AGENTQL_API_KEY AGENTQL_API_URL \
                      CLOUD_BROWSER_PROVIDER BROWSERLESS_API_KEY BROWSERLESS_API_URL \
                      STEEL_API_KEY STEEL_API_URL \
-                     PG_MEMORY_LIMIT APP_MEMORY_LIMIT NODE_MAX_OLD_SPACE_SIZE; do
+                     PG_MEMORY_LIMIT APP_MEMORY_LIMIT NODE_MAX_OLD_SPACE_SIZE BACKUP_DIR; do
             _existing=$(grep "^${_key}=" .env 2>/dev/null | head -1)
             _template=$(grep "^${_key}=" .env.production 2>/dev/null | head -1)
             # If template has it but .env doesn't, add it
@@ -2220,7 +2220,7 @@ STEEL_API_KEY=
 STEEL_API_URL=
 
 # ─── Paths ────────────────────────────────────────────
-BACKUP_DIR=./backups
+BACKUP_DIR=${INSTALL_DIR}/backups
 
 # ─── Hardware-Adaptive Resource Limits ────────────────
 # Auto-configured for ${_HW_TIER} tier (${_HW_CORES} cores, ${_HW_MEM_MB}MB RAM)
@@ -2339,7 +2339,7 @@ echo ""
 # cause interpolation errors. This block backfills any missing variables.
 _env_missing=false
 for _kv in \
-    "BACKUP_DIR=./backups" \
+    "BACKUP_DIR=${INSTALL_DIR}/backups" \
     "FIRECRAWL_API_KEY=" \
     "FIRECRAWL_API_URL=" \
     "AGENTQL_API_KEY=" \
@@ -2491,9 +2491,9 @@ fi
 
 # ── Validate compose file before build ──
 if ! $COMPOSE_CMD config > /dev/null 2>&1; then
-    error "docker-compose.yml 校验失败！详细错误："
+    err "docker-compose.yml 校验失败！详细错误："
     $COMPOSE_CMD config 2>&1 | head -20
-    error "请检查上方错误信息，或删除 docker-compose.yml 后重新运行: ./deploy.sh"
+    err "请检查上方错误信息，或删除 docker-compose.yml 后重新运行: ./deploy.sh"
     exit 1
 fi
 ok "docker-compose.yml 校验通过"
