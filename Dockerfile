@@ -34,7 +34,11 @@ COPY . .
 RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
 
 # Generate Prisma client
-RUN bun run db:generate
+# CRITICAL: Use the LOCAL prisma binary directly (./node_modules/prisma/build/index.js).
+# 'bun run db:generate' expands to 'npx prisma generate', and npx/bunx
+# downloads the LATEST prisma CLI (7.x) from npm, overwriting our v6 install.
+# Prisma 7 breaks schema.prisma 'url' property → build failure.
+RUN ./node_modules/prisma/build/index.js generate --schema ./prisma/schema.prisma
 
 # Build Next.js — LOW MEMORY settings
 # NODE_MAX_OLD_SPACE_SIZE is passed as build-arg by deploy.sh based on hardware tier
