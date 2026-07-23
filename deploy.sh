@@ -370,10 +370,10 @@ get_swap_mb() {
 get_disk_gb() {
     local path="${1:-/}"
     # Try df -BG first (available on GNU coreutils)
-    _val=$(df -BG "$path" 2>/dev/null | awk 'NR==2{gsub(/G/,"",$4); print $4}')
+    _val=$(df -BG "$path" 2>/dev/null | awk 'NR==2{gsub(/G/,"",$4); print $4}' || true)
     if [ -n "$_val" ] && [ "$_val" -gt 0 ] 2>/dev/null; then echo "$_val"; return; fi
     # Fallback: df -k (POSIX)
-    _val=$(df -k "$path" 2>/dev/null | awk 'NR==2{printf "%.0f", $4/1024/1024}')
+    _val=$(df -k "$path" 2>/dev/null | awk 'NR==2{printf "%.0f", $4/1024/1024}' || true)
     echo "${_val:-0}"
 }
 
@@ -963,7 +963,8 @@ detect_firewall() {
     # ── iptables (legacy, direct rules) ──
     if command -v iptables &>/dev/null && [ "$_FW_DETECTED" = "" ]; then
         # Check if iptables has any non-trivial rules
-        _ipt_rule_count=$(iptables -S INPUT 2>/dev/null | grep -cE "^-A" || echo 0)
+        _ipt_rule_count=$(iptables -S INPUT 2>/dev/null | grep -cE "^-A" || true)
+        _ipt_rule_count=${_ipt_rule_count:-0}
         _ipt_policy=$(iptables -L INPUT -n 2>/dev/null | head -1 | grep -oE "(DROP|REJECT|ACCEPT)" || echo "")
 
         if [ "$_ipt_rule_count" -gt 1 ] || [ "$_ipt_policy" = "DROP" ] || [ "$_ipt_policy" = "REJECT" ]; then
@@ -1075,12 +1076,12 @@ open_firewall_port() {
         fi
 
         # Find the input chain name (commonly "input" in inet filter table)
-        local _nft_chain=$(nft list table inet filter 2>/dev/null | grep -oP 'chain \K\w+' | head -1)
+        local _nft_chain=$(nft list table inet filter 2>/dev/null | grep -oP 'chain \K\w+' | head -1 || true)
         _nft_chain=${_nft_chain:-input}
 
         # Insert rule (before any drop/reject rules)
         # Use handle-based insertion for reliability
-        local _drop_handle=$(nft -a list table inet filter 2>/dev/null | grep -E "(drop|reject)" | head -1 | grep -oP 'handle \K\d+')
+        local _drop_handle=$(nft -a list table inet filter 2>/dev/null | grep -E "(drop|reject)" | head -1 | grep -oP 'handle \K\d+' || true)
 
         _err_output=$(
             if [ -n "$_drop_handle" ]; then
@@ -1373,7 +1374,7 @@ if [ "$MODE" = "logs" ]; then
     fi
     cd "$INSTALL_DIR"
     # Quick status before showing logs
-    _lg_port=$(grep '^APP_PORT=' .env 2>/dev/null | cut -d= -f2)
+    _lg_port=$(grep '^APP_PORT=' .env 2>/dev/null | cut -d= -f2 || true)
     _lg_port=${_lg_port:-3000}
     echo "  端口: ${_lg_port} | 日志实时输出 (Ctrl+C 退出)"
     echo "  无法访问? 先运行: $0 --status"
@@ -1514,7 +1515,7 @@ if [ "$MODE" = "backup" ]; then
     _db_name=${_db_name:-novel_admin}
 
     if docker compose exec -T postgres pg_dump -U "$_db_user" "$_db_name" > "$_bf" 2>/dev/null; then
-        _sz=$(du -h "$_bf" 2>/dev/null | cut -f1)
+        _sz=$(du -h "$_bf" 2>/dev/null | cut -f1 || true)
         ok "备份完成: ${INSTALL_DIR}/${_bf} (${_sz})"
     else
         err "备份失败（PostgreSQL 容器可能未运行）"
@@ -1601,8 +1602,8 @@ if [ "$MODE" = "upgrade" ]; then
                      CLOUD_BROWSER_PROVIDER BROWSERLESS_API_KEY BROWSERLESS_API_URL \
                      STEEL_API_KEY STEEL_API_URL \
                      PG_MEMORY_LIMIT APP_MEMORY_LIMIT NODE_MAX_OLD_SPACE_SIZE BACKUP_DIR; do
-            _existing=$(grep "^${_key}=" .env 2>/dev/null | head -1)
-            _template=$(grep "^${_key}=" .env.production 2>/dev/null | head -1)
+            _existing=$(grep "^${_key}=" .env 2>/dev/null | head -1 || true)
+            _template=$(grep "^${_key}=" .env.production 2>/dev/null | head -1 || true)
             # If template has it but .env doesn't, add it
             if [ -n "$_template" ] && [ -z "$_existing" ]; then
                 echo "$_template" >> .env
@@ -2071,7 +2072,7 @@ if [ -f .env ]; then
     # Check if .env has ALL required variables WITH non-empty values
     _env_complete=true
     for _req_var in POSTGRES_PASSWORD POSTGRES_DB ADMIN_PASSWORD NEXTAUTH_SECRET SCRAPER_SERVICE_TOKEN APP_PORT DB_PORT; do
-        _val=$(grep "^${_req_var}=" .env 2>/dev/null | head -1 | cut -d= -f2-)
+        _val=$(grep "^${_req_var}=" .env 2>/dev/null | head -1 | cut -d= -f2- || true)
         # Trim possible surrounding quotes
         _val="${_val#\"}"
         _val="${_val%\"}"
@@ -2088,8 +2089,8 @@ if [ -f .env ]; then
         ok "旧配置已备份: ${_env_bak}"
     else
         # Peek at existing config for display
-        _old_port=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2)
-        _old_user=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | head -1 | cut -d= -f2)
+        _old_port=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
+        _old_user=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
         _old_port=${_old_port:-3000}
         _old_user=${_old_user:-admin}
 
@@ -2097,7 +2098,7 @@ if [ -f .env ]; then
             info "保留现有 .env 配置"
             GENERATE_ENV=false
             # Still update memory limits if hardware tier changed
-            _old_tier=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2)
+            _old_tier=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2 || true)
             if [ "$_old_tier" != "$_HW_TIER" ]; then
                 warn "硬件档位变更 (${_old_tier:-未知} → ${_HW_TIER})，更新内存限制..."
                 # Update memory-related vars in .env
@@ -2258,10 +2259,10 @@ EOF
     SAVE_PORT="$_port"
 else
     # Read from existing .env
-    SAVE_USER=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | head -1 | cut -d= -f2)
-    SAVE_PASS=$(grep '^ADMIN_PASSWORD=' .env 2>/dev/null | head -1 | cut -d= -f2)
-    SAVE_URL=$(grep '^APP_URL=' .env 2>/dev/null | head -1 | cut -d= -f2)
-    SAVE_PORT=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2)
+    SAVE_USER=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
+    SAVE_PASS=$(grep '^ADMIN_PASSWORD=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
+    SAVE_URL=$(grep '^APP_URL=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
+    SAVE_PORT=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
     SAVE_USER=${SAVE_USER:-admin}
     SAVE_PORT=${SAVE_PORT:-3000}
     SAVE_URL=${SAVE_URL:-http://localhost:${SAVE_PORT}}
@@ -2301,7 +2302,8 @@ fi
 step "[8/8] 构建、启动、验证"
 
 # ── Pre-build: check Dockerfile stage count ──
-_DOCKERFILE_STAGES=$(grep -c '^FROM.*AS ' Dockerfile 2>/dev/null || echo 0)
+_DOCKERFILE_STAGES=$(grep -c '^FROM.*AS ' Dockerfile 2>/dev/null || true)
+_DOCKERFILE_STAGES=${_DOCKERFILE_STAGES:-0}
 if [ "$_DOCKERFILE_STAGES" -gt 3 ]; then
     warn "Dockerfile 有 ${_DOCKERFILE_STAGES} 个构建阶段（当前优化版为 3 阶段）"
     warn "可能导致低内存服务器 OOM。建议重新获取最新代码: git pull 或重新下载"
