@@ -99,6 +99,7 @@ TMP_CLONE=""
 
 # Method 1: git clone (if git is available)
 if command -v git &>/dev/null; then
+    rm -rf "$INSTALL_DIR" 2>/dev/null || true
     log_info "git clone ${GIT_URL} ..."
     if git clone --depth 1 "$GIT_URL" "$INSTALL_DIR" 2>/dev/null; then
         TMP_CLONE="$INSTALL_DIR"
@@ -106,6 +107,7 @@ if command -v git &>/dev/null; then
         # Try China proxies
         for proxy in "${RAW_PROXIES[@]}"; do
             log_info "  尝试镜像 ${proxy%%/*}..."
+            rm -rf "$INSTALL_DIR" 2>/dev/null || true
             if git clone --depth 1 "${proxy}/${GIT_URL}" "$INSTALL_DIR" 2>/dev/null; then
                 cd "$INSTALL_DIR"
                 git remote set-url origin "$GIT_URL" 2>/dev/null || true

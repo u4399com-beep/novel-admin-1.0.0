@@ -92,6 +92,9 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/effect ./node_modules/effect
+# effect/dist/cjs/index.js eagerly requires ./FastCheck.js → require("fast-check") → require("pure-rand")
+COPY --from=builder /app/node_modules/fast-check ./node_modules/fast-check
+COPY --from=builder /app/node_modules/pure-rand ./node_modules/pure-rand
 COPY --from=builder /app/node_modules/c12 ./node_modules/c12
 COPY --from=builder /app/node_modules/deepmerge-ts ./node_modules/deepmerge-ts
 COPY --from=builder /app/node_modules/empathic ./node_modules/empathic
@@ -102,8 +105,9 @@ COPY mini-services/scraper-service/bun.lock /tmp/scraper-deps/
 COPY mini-services/scraper-service/ ./scraper-service/
 
 # Install scraper deps in-place (no separate build stage)
-RUN cd /tmp/scraper-deps && bun install --frozen-lockfile --production 2>/dev/null || true && \
-    cp -r node_modules /app/scraper-service/ && \
+RUN cd /tmp/scraper-deps && \
+    (bun install --frozen-lockfile --production 2>&1 || echo "[WARN] Scraper deps install failed, headless scraping will be unavailable"); \
+    if [ -d node_modules ]; then cp -r node_modules /app/scraper-service/; else echo "[WARN] No scraper node_modules produced"; fi; \
     rm -rf /tmp/scraper-deps
 
 # Swap scraper queue to PostgreSQL version
@@ -128,7 +132,7 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:3000/api/auth/csrf || exit 1
+# HEALTHCHECK is defined in docker-compose.yml with start_period.
+# Not defined here to avoid confusion (compose overrides Dockerfile HEALTHCHECK).
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

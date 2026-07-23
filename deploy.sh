@@ -160,7 +160,7 @@ done
 _SELF_UPDATED=false
 if [ "$MODE" = "install" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
     _local_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "")
-    _remote_sha=$(git -C "$SCRIPT_DIR" ls-remote --origin HEAD 2>/dev/null | head -1 | cut -f1 || echo "")
+    _remote_sha=$(timeout 10 git -C "$SCRIPT_DIR" ls-remote --origin HEAD 2>/dev/null | head -1 | cut -f1 || echo "")
     if [ -n "$_local_sha" ] && [ -n "$_remote_sha" ] && [ "$_local_sha" != "$_remote_sha" ]; then
         echo -e "\033[0;33m[UPDATE] 检测到新版本，正在更新...\033[0m" >&2
         # Save user's .env before any git operations
@@ -574,6 +574,7 @@ https://download.docker.com/linux/${_os_id} ${_apt_codename} stable" \
             ;;
         dnf|yum)
             _os_id_rh=$(. /etc/os-release 2>/dev/null && echo "${ID:-centos}")
+            ${PKG_INSTALL_CMD} install -y -q dnf-plugins-core >>"$LOG_FILE" 2>&1 || \
             ${PKG_INSTALL_CMD} install -y -q yum-utils >>"$LOG_FILE" 2>&1 || true
 
             # Docker CE repo URLs — direct + China mirrors
@@ -653,6 +654,10 @@ ensure_docker() {
     # Strategy 1: Official get.docker.com script (most universal)
     _installed=false
     info "尝试官方安装脚本 (get.docker.com)..."
+    # ensure_downloader sets DL_CMD/DL_OPTS used by dl_to_file.
+    # In the main flow, ensure_downloader runs at Step 4 (line ~1894),
+    # but ensure_docker is Step 3 — so DL_CMD may be unset here.
+    [ -z "${DL_CMD:-}" ] && ensure_downloader
     if ! dl_to_file "https://get.docker.com" /tmp/get-docker.sh 2>/dev/null; then
         # China network: try raw file proxies for get.docker.com
         for _rp in "${RAW_PROXIES[@]}"; do
@@ -1996,7 +2001,7 @@ if ! $_got; then
 
     for _url in "$ARCHIVE_URL"; do
         for _proxy in "" "${RAW_PROXIES[@]}"; do
-            _full_url="${_proxy}${_url}"
+            _full_url="${_proxy:+${_proxy}/}${_url}"
             info "  尝试 ${_full_url%%\?*}..."
             if dl_to_file "$_full_url" /tmp/novel-admin.tar.gz 2>/dev/null; then
                 mkdir -p /tmp/novel-tmp && rm -rf /tmp/novel-tmp/*
@@ -2428,7 +2433,8 @@ services:
     ports:
       - "${APP_PORT}:3000"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
       - app-data:/app/data
     environment:
@@ -2457,6 +2463,7 @@ services:
       - TZ=${TZ}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/csrf || exit 1"]
+      start_period: 120s
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2485,7 +2492,7 @@ ok "docker-compose.yml 已生成"
 # ── If docker-compose v1 (standalone), inject 'version: "3.3"' ──
 # v2 doesn't need it (and warns if present), v1 requires it.
 if [ "${COMPOSE_CMD}" = "docker-compose" ]; then
-    sed -i '1i version: "3.3"' docker-compose.yml
+    sed -i '1i version: "3.8"' docker-compose.yml
     info "检测到 docker-compose v1，已添加 version 字段"
 fi
 

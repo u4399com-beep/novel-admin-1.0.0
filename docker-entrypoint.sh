@@ -117,7 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_rule_created ON \"AiRuleGeneration\"(\"created
 log "[DB] Database ready."
 
 # ─── Ensure data directories ───
-mkdir -p /app/data/covers /app/data/downloads /app/data/chapters /app/backups
+mkdir -p /app/data/logs /app/data/covers /app/data/downloads /app/data/chapters /app/backups
 
 # ─── Release Prisma/Bun memory before starting app processes ───
 if $_LOW_MEM; then
@@ -177,7 +177,7 @@ fi
 # ─── Start Scraper Service ───
 log "[Scraper] Starting on port 3099..."
 cd /app/scraper-service
-nohup bun index.ts > /app/scraper-service.log 2>&1 &
+nohup bun index.ts > /app/data/logs/scraper-service.log 2>&1 &
 SCRAPER_PID=$!
 log "[Scraper] PID: $SCRAPER_PID"
 
@@ -188,7 +188,7 @@ if kill -0 "$SCRAPER_PID" 2>/dev/null; then
     HAS_SCRAPER=true
 else
     log "[Scraper] WARNING: Failed to start. Headless scraping unavailable."
-    log "[Scraper] See /app/scraper-service.log"
+    log "[Scraper] See /app/data/logs/scraper-service.log"
     SCRAPER_PID=""
     HAS_SCRAPER=false
 fi
@@ -197,6 +197,7 @@ fi
 if $_LOW_MEM; then
     sync 2>/dev/null || true
     # Try to drop page cache to free memory for Next.js
+    # NOTE: Requires root — silently no-ops as appuser (non-root container).
     echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 fi
 
@@ -211,7 +212,7 @@ if $_LOW_MEM; then
     log "[MEM] Low-mem mode: NODE_OPTIONS=--max-old-space-size=256"
 fi
 
-nohup env NODE_OPTIONS="$_APP_NODE_OPTS" bun .next/standalone/server.js > /app/app.log 2>&1 &
+nohup env NODE_OPTIONS="$_APP_NODE_OPTS" bun server.js > /app/app.log 2>&1 &
 APP_PID=$!
 log "[App] PID: $APP_PID"
 
@@ -227,7 +228,7 @@ echo ""
 echo "=========================================="
 echo "  ✓ System is running!"
 echo "  App:     http://0.0.0.0:3000"
-$HAS_SCRAPER && echo "  Scraper: http://localhost:3099"
+if [ "$HAS_SCRAPER" = "true" ]; then echo "  Scraper: http://localhost:3099"; fi
 echo "  DB:      PostgreSQL"
 echo "  Memory:  ${_AVAIL_MEM_MB}MB available at start"
 echo "=========================================="
