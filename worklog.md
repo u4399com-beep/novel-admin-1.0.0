@@ -2189,3 +2189,44 @@ Stage Summary:
 - **根因**：npx/bunx 总是倾向下载 npm 最新版，不使用本地安装
 - **两个 commit**：c9ff8db（entrypoint）+ f54c0a0（Dockerfile）
 - **部署**：用户需 `bash deploy.sh`（deploy.sh 自带 git pull + 重建）
+
+---
+Task ID: 1
+Agent: main
+Task: Fix container crash after banner — add missing @prisma/engines, improve crash diagnostics
+
+Work Log:
+- Analyzed container crash: banner prints but no DIAG/FATAL output visible
+- Discovered @prisma/engines (17MB libquery_engine + 19MB schema-engine binary) was NOT copied to runner stage
+- Discovered @standard-schema/spec (effect dependency) was also missing
+- Identified deploy.sh log truncation: --tail=50 | tail-30 hid error details
+- Identified stderr/stdout separation causing invisible errors in Docker logs
+
+- Rewrote docker-entrypoint.sh:
+  - Added 'exec 2>&1' to merge stderr into stdout at very start
+  - Added persistent crash log at /app/data/entrypoint-debug.log (survives restarts)
+  - Added @prisma/engines existence checks in diagnostics
+  - Made DIAG section more robust (pre-assign vars before echo)
+  - Log all secret validation steps with lengths
+
+- Updated Dockerfile:
+  - Added COPY for @prisma/engines (native binaries needed by prisma db push)
+  - Added COPY for @standard-schema (effect dependency)
+
+- Updated deploy.sh:
+  - Changed log capture from '--tail=50 | tail-30' to '--tail=200' (no truncation)
+  - Added persistent crash log reader from Docker volume
+  - Added docker exec suggestion for reading crash log
+
+Stage Summary:
+- Most likely root cause: @prisma/engines missing → prisma db push fails immediately
+- Secondary: stderr not visible in docker logs due to stream separation
+- Tertiary: deploy.sh log truncation hid any error that was produced
+- Committed and pushed as ea5eda0
+- User needs to re-run deploy on server (git pull + deploy.sh -y) to test
+
+Unresolved:
+- Cannot confirm root cause without full container logs — the improved diagnostics
+  will reveal the actual error on next test
+- If @prisma/engines was not the issue, the persistent debug log will show exactly
+  what fails after the banner
