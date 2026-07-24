@@ -4,19 +4,51 @@
 # PostgreSQL + Next.js + Scraper Service
 # Optimized for low-memory servers (1H1G)
 # ============================================================
+
+# CRITICAL: Merge stderr into stdout ASAP so ALL output is visible in docker logs.
+# Without this, errors from command substitutions may go to a separate stream
+# that Docker's json-file driver buffers independently, causing "silent crashes".
+exec 2>&1
+
+# Persistent crash log — written to the volume-mounted /app/data/ so it
+# survives container restarts and can be read by deploy.sh for diagnostics.
+_DEBUG_LOG="/app/data/entrypoint-debug.log"
+
+# Log a message to both stdout and the persistent debug file
+log_debug() {
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+    echo "$msg"
+    echo "$msg" >> "$_DEBUG_LOG" 2>/dev/null || true
+}
+
+# Initialize debug log
+: > "$_DEBUG_LOG" 2>/dev/null || true
+log_debug "=== Entrypoint started (PID: $$) ==="
+
+# Use set -e but with explicit error trapping for visibility.
+# We keep set -e to catch unexpected failures, but the trap below
+# ensures we always log WHAT failed before exiting.
 set -e
 
 # ─── Crash diagnostics: print info when the script exits unexpectedly ───
-_ENTRYPOINT_STARTED=true
 _trap_exit() {
     local _code=$?
+    log_debug "=== EXIT TRIGGERED (code: $_code) ==="
     if [ "$_code" -ne 0 ] 2>/dev/null; then
-        echo ""
-        echo "[FATAL] Entrypoint exited with code $_code"
-        echo "[FATAL] Available memory: $(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}')KB"
-        echo "[FATAL] Container memory limit: $(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo 'unknown')"
-        echo "[FATAL] Last 10 lines of app log:"
-        tail -10 /app/app.log 2>/dev/null | sed 's/^/  /' || true
+        log_debug "[FATAL] Entrypoint exited with code $_code"
+        log_debug "[FATAL] Available memory: $(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}')KB"
+        log_debug "[FATAL] Container memory limit: $(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo 'unknown')"
+        log_debug "[FATAL] Last 20 lines of app log:"
+        tail -20 /app/app.log 2>/dev/null | while IFS= read -r _line; do
+            log_debug "  $_line"
+        done || true
+        log_debug "[FATAL] Environment check (secrets redacted):"
+        log_debug "  NEXTAUTH_SECRET set: $(test -n "$NEXTAUTH_SECRET" && echo 'yes (${#NEXTAUTH_SECRET} chars)' || echo 'NO')"
+        log_debug "  SCRAPER_SERVICE_TOKEN set: $(test -n "$SCRAPER_SERVICE_TOKEN" && echo 'yes (${#SCRAPER_SERVICE_TOKEN} chars)' || echo 'NO')"
+        log_debug "  ADMIN_PASSWORD set: $(test -n "$ADMIN_PASSWORD" && echo 'yes (${#ADMIN_PASSWORD} chars)' || echo 'NO')"
+        log_debug "  DATABASE_URL set: $(test -n "$DATABASE_URL" && echo 'yes' || echo 'NO')"
+        log_debug "  NODE_ENV=$NODE_ENV"
+        log_debug "  DB_PROVIDER=$DB_PROVIDER"
     fi
 }
 trap _trap_exit EXIT
@@ -26,17 +58,25 @@ echo "  Novel Management System (Production)"
 echo "  Database: PostgreSQL"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
+log_debug "Banner printed successfully"
 
-# ─── Startup diagnostics ───
-echo "[DIAG] Memory available: $(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}')KB"
+# ─── Startup diagnostics (safe under set -e — all guarded) ───
+_DIAG_MEM=$(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}') || _DIAG_MEM="?"
+echo "[DIAG] Memory available: ${_DIAG_MEM}KB"
+log_debug "DIAG: Memory=${_DIAG_MEM}KB"
+
 echo "[DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js"
-echo "[DIAG] Prisma CLI exists: $(test -f /app/node_modules/prisma/build/index.js && echo YES || echo NO)"
-echo "[DIAG] Schema exists: $(test -f /app/prisma/schema.prisma && echo YES || echo NO)"
-echo "[DIAG] server.js exists: $(test -f /app/server.js && echo YES || echo NO)"
+log_debug "DIAG: Prisma CLI exists: $(test -f /app/node_modules/prisma/build/index.js && echo YES || echo NO)"
+log_debug "DIAG: Schema exists: $(test -f /app/prisma/schema.prisma && echo YES || echo NO)"
+log_debug "DIAG: server.js exists: $(test -f /app/server.js && echo YES || echo NO)"
+log_debug "DIAG: @prisma/engines exists: $(test -d /app/node_modules/@prisma/engines && echo YES || echo NO)"
+log_debug "DIAG: libquery_engine exists: $(test -f /app/node_modules/@prisma/engines/libquery_engine-debian-openssl-3.0.x.so.node && echo YES || echo NO)"
+log_debug "DIAG: schema-engine exists: $(test -f /app/node_modules/@prisma/engines/schema-engine-debian-openssl-3.0.x && echo YES || echo NO)"
+log_debug "DIAG: DATABASE_URL set: $(test -n "$DATABASE_URL" && echo YES || echo NO)"
 echo "[DIAG] DATABASE_URL set: $(test -n "$DATABASE_URL" && echo YES || echo NO)"
 
 # ─── Helper: log with timestamp ───
-log() { echo "[$(date '+%H:%M:%S')] $*"; }
+log() { log_debug "$*"; }
 
 # ─── Prisma CLI — use LOCAL binary, NEVER bunx (which downloads latest) ───
 # bunx prisma resolves to Prisma 7.x (latest) from npm, breaking our v6 schema.
@@ -48,7 +88,13 @@ if [ ! -f "$_PRISMA" ]; then
     exit 1
 fi
 
-# Show version for debugging (wrapped in subshell + || true to survive set -e)
+# Check for critical @prisma/engines binaries
+if [ ! -d "/app/node_modules/@prisma/engines" ]; then
+    log "[FATAL] @prisma/engines directory not found!"
+    log "[FATAL] The Dockerfile must COPY --from=builder /app/node_modules/@prisma/engines"
+    exit 1
+fi
+
 log "[Prisma] Checking CLI version..."
 _PRISMA_VER=$(bun "$_PRISMA" --version 2>&1 | head -1 || echo "FAILED")
 log "[Prisma] Using local CLI: ${_PRISMA_VER:-unknown}"
@@ -57,18 +103,23 @@ log "[Prisma] Using local CLI: ${_PRISMA_VER:-unknown}"
 # Machine secrets need ≥32 chars; admin password needs ≥8 chars
 for _var in NEXTAUTH_SECRET SCRAPER_SERVICE_TOKEN; do
     _val="${!_var:-}"
-    if [ ${#_val} -lt 32 ]; then
-        echo "[FATAL] $_var is not properly configured (too short, need ≥32 chars)."
+    _val_len=${#_val}
+    log "[Auth] Checking $_var (length: $_val_len)..."
+    if [ "$_val_len" -lt 32 ]; then
+        echo "[FATAL] $_var is not properly configured (too short: ${_val_len} chars, need ≥32)."
         echo "[FATAL] Edit your .env file and set a strong random value."
         exit 1
     fi
 done
 _val="${ADMIN_PASSWORD:-}"
-if [ ${#_val} -lt 8 ]; then
-    echo "[FATAL] ADMIN_PASSWORD is too short (need ≥8 chars)."
+_val_len=${#_val}
+log "[Auth] ADMIN_PASSWORD length: $_val_len"
+if [ "$_val_len" -lt 8 ]; then
+    echo "[FATAL] ADMIN_PASSWORD is too short (${_val_len} chars, need ≥8)."
     echo "[FATAL] Edit your .env file and set a strong password."
     exit 1
 fi
+log "[Auth] All secrets validated."
 
 # ─── Detect available memory and adjust runtime behavior ───
 _AVAIL_MEM_KB=$(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}')
@@ -92,9 +143,6 @@ _DB_PORT=${_DB_PORT:-5432}
 log "[DB] Waiting for PostgreSQL at ${_DB_HOST}:${_DB_PORT}..."
 
 # TCP port check
-# IMPORTANT: Use nc -z FIRST — it does a clean TCP handshake without sending
-# application data. The bash /dev/tcp method sends data to the port which causes
-# PostgreSQL to log "incomplete startup packet" errors on every retry.
 _db_tcp_check() {
     # Method 1: nc (netcat-openbsd, installed in Dockerfile) — clean check
     nc -z -w2 "$1" "$2" 2>/dev/null && return 0
@@ -124,7 +172,7 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
 fi
 
 # ─── Sync Database Schema ───
-log "[DB] Syncing schema..."
+log "[DB] Syncing schema with: bun $_PRISMA db push --accept-data-loss --schema ./prisma/schema.prisma"
 cd /app
 # NOTE: --skip-generate was removed in Prisma 6+. Omit it for compatibility.
 if ! bun "$_PRISMA" db push --accept-data-loss --schema ./prisma/schema.prisma 2>&1; then
@@ -153,8 +201,6 @@ if $_LOW_MEM; then
 fi
 
 # ─── Lazy-download Playwright Chromium (if build-time download failed) ───
-# Uses the same curl+unzip logic as Dockerfile but runs at container start.
-# This is the fallback — build-time download should succeed in most cases.
 _pw_chrome=$(find /app/.playwright-browsers -name chrome -type f 2>/dev/null | head -1)
 if [ -z "$_pw_chrome" ]; then
     log "[Chromium] Not found in image, downloading at runtime..."
@@ -237,6 +283,7 @@ if $_LOW_MEM; then
     log "[MEM] Low-mem mode: NODE_OPTIONS=--max-old-space-size=256"
 fi
 
+log "[App] Running: env NODE_OPTIONS=\"$_APP_NODE_OPTS\" bun server.js"
 nohup env NODE_OPTIONS="$_APP_NODE_OPTS" bun server.js > /app/app.log 2>&1 &
 APP_PID=$!
 log "[App] PID: $APP_PID"
@@ -245,7 +292,10 @@ sleep 3
 
 if ! kill -0 "$APP_PID" 2>/dev/null; then
     log "[App] ERROR: Failed to start!"
-    tail -20 /app/app.log 2>/dev/null || true
+    log "[App] Last 20 lines of app.log:"
+    tail -20 /app/app.log 2>/dev/null | while IFS= read -r _line; do
+        log "  $_line"
+    done || true
     exit 1
 fi
 
@@ -257,6 +307,7 @@ if [ "$HAS_SCRAPER" = "true" ]; then echo "  Scraper: http://localhost:3099"; fi
 echo "  DB:      PostgreSQL"
 echo "  Memory:  ${_AVAIL_MEM_MB}MB available at start"
 echo "=========================================="
+log_debug "=== System running successfully ==="
 
 # Disable the crash diagnostics trap — we're now running normally
 trap - EXIT

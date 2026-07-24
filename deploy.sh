@@ -2691,13 +2691,26 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         err "容器状态:"
         docker compose ps 2>/dev/null
         echo ""
-        err "最近日志 (novel-manager):"
-        docker compose logs --tail=50 novel-manager 2>/dev/null | tail -30
+        err "容器完整日志 (novel-manager):"
+        docker compose logs --tail=200 novel-manager 2>/dev/null
         echo ""
+        # Try to read the persistent crash diagnostic file from the volume
+        # (written by docker-entrypoint.sh to /app/data/entrypoint-debug.log)
+        _debug_vol=$(docker volume ls -q 2>/dev/null | grep app-data || true)
+        if [ -n "$_debug_vol" ]; then
+            _debug_mount=$(docker volume inspect "$_debug_vol" --format='{{.Mountpoint}}' 2>/dev/null || echo "")
+            if [ -n "$_debug_mount" ] && [ -f "$_debug_mount/entrypoint-debug.log" ]; then
+                echo ""
+                warn "持久化崩溃诊断日志 (entrypoint-debug.log):"
+                cat "$_debug_mount/entrypoint-debug.log"
+                echo ""
+            fi
+        fi
         err "排查建议:"
-        err "  1. 查看完整日志: docker compose logs --tail=100 novel-manager"
+        err "  1. 查看完整日志: docker compose logs --tail=200 novel-manager"
         err "  2. 检查 OOM: docker inspect novel-manager --format='{{.State.OOMKilled}}'"
         err "  3. 检查退出码: docker inspect novel-manager --format='{{.State.ExitCode}}'"
+        err "  4. 崩溃诊断: docker compose exec novel-manager cat /app/data/entrypoint-debug.log 2>/dev/null"
         exit 1
     fi
 
@@ -2708,8 +2721,19 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         if [ "$_CRASH_SEEN" -ge 5 ]; then
             echo ""
             err "容器反复重启 (${_CRASH_SEEN} 次)，可能存在启动错误"
-            err "最近日志:"
-            docker compose logs --tail=50 novel-manager 2>/dev/null | tail -30
+            err "容器完整日志:"
+            docker compose logs --tail=200 novel-manager 2>/dev/null
+            echo ""
+            # Try persistent crash log from volume
+            _debug_vol=$(docker volume ls -q 2>/dev/null | grep app-data || true)
+            if [ -n "$_debug_vol" ]; then
+                _debug_mount=$(docker volume inspect "$_debug_vol" --format='{{.Mountpoint}}' 2>/dev/null || echo "")
+                if [ -n "$_debug_mount" ] && [ -f "$_debug_mount/entrypoint-debug.log" ]; then
+                    warn "持久化崩溃诊断日志:"
+                    cat "$_debug_mount/entrypoint-debug.log"
+                    echo ""
+                fi
+            fi
             exit 1
         fi
         sleep 5
