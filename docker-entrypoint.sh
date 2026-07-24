@@ -6,11 +6,34 @@
 # ============================================================
 set -e
 
+# ─── Crash diagnostics: print info when the script exits unexpectedly ───
+_ENTRYPOINT_STARTED=true
+_trap_exit() {
+    local _code=$?
+    if [ "$_code" -ne 0 ] 2>/dev/null; then
+        echo ""
+        echo "[FATAL] Entrypoint exited with code $_code"
+        echo "[FATAL] Available memory: $(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}')KB"
+        echo "[FATAL] Container memory limit: $(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo 'unknown')"
+        echo "[FATAL] Last 10 lines of app log:"
+        tail -10 /app/app.log 2>/dev/null | sed 's/^/  /' || true
+    fi
+}
+trap _trap_exit EXIT
+
 echo "=========================================="
 echo "  Novel Management System (Production)"
 echo "  Database: PostgreSQL"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=========================================="
+
+# ─── Startup diagnostics ───
+echo "[DIAG] Memory available: $(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}')KB"
+echo "[DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js"
+echo "[DIAG] Prisma CLI exists: $(test -f /app/node_modules/prisma/build/index.js && echo YES || echo NO)"
+echo "[DIAG] Schema exists: $(test -f /app/prisma/schema.prisma && echo YES || echo NO)"
+echo "[DIAG] server.js exists: $(test -f /app/server.js && echo YES || echo NO)"
+echo "[DIAG] DATABASE_URL set: $(test -n "$DATABASE_URL" && echo YES || echo NO)"
 
 # ─── Helper: log with timestamp ───
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -24,8 +47,11 @@ if [ ! -f "$_PRISMA" ]; then
     log "[FATAL] The Dockerfile must COPY --from=builder /app/node_modules/prisma"
     exit 1
 fi
-# Show version for debugging
-log "[Prisma] Using local CLI: $(bun $_PRISMA --version 2>&1 | head -1)"
+
+# Show version for debugging (wrapped in subshell + || true to survive set -e)
+log "[Prisma] Checking CLI version..."
+_PRISMA_VER=$(bun "$_PRISMA" --version 2>&1 | head -1 || echo "FAILED")
+log "[Prisma] Using local CLI: ${_PRISMA_VER:-unknown}"
 
 # ─── Validate required secrets ───
 # Machine secrets need ≥32 chars; admin password needs ≥8 chars
@@ -48,10 +74,10 @@ fi
 _AVAIL_MEM_KB=$(cat /proc/meminfo 2>/dev/null | awk '/MemAvailable/{print $2}')
 _AVAIL_MEM_KB=${_AVAIL_MEM_KB:-524288}
 _AVAIL_MEM_MB=$(( _AVAIL_MEM_KB / 1024 ))
+log "[MEM] ${_AVAIL_MEM_MB}MB available"
 
 if [ "$_AVAIL_MEM_MB" -lt 600 ]; then
-    log "[MEM] Low memory detected (${_AVAIL_MEM_MB}MB available)"
-    log "[MEM] Using sequential startup with memory cleanup between services"
+    log "[MEM] Low memory detected, using sequential startup"
     _LOW_MEM=true
 else
     _LOW_MEM=false
@@ -101,19 +127,20 @@ fi
 log "[DB] Syncing schema..."
 cd /app
 # NOTE: --skip-generate was removed in Prisma 6+. Omit it for compatibility.
-bun $_PRISMA db push --accept-data-loss --schema ./prisma/schema.prisma 2>&1 || \
-    log "[DB] Schema sync had warnings (usually safe)."
+if ! bun "$_PRISMA" db push --accept-data-loss --schema ./prisma/schema.prisma 2>&1; then
+    log "[DB] Schema sync had warnings (usually safe, continuing)."
+fi
 
 # ─── Create pg_trgm extension + performance indexes ───
 log "[DB] Creating extensions and indexes..."
-echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bun $_PRISMA db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
+echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
 echo "
 CREATE INDEX IF NOT EXISTS idx_novel_title_trgm ON \"Novel\" USING gin(title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_novel_author_trgm ON \"Novel\" USING gin(author gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_scrape_rule_enabled ON \"ScrapeRule\"(enabled);
 CREATE INDEX IF NOT EXISTS idx_scrape_rule_engine ON \"ScrapeRule\"(engine);
 CREATE INDEX IF NOT EXISTS idx_ai_rule_created ON \"AiRuleGeneration\"(\"createdAt\");
-" | bun $_PRISMA db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
+" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
 log "[DB] Database ready."
 
 # ─── Ensure data directories ───
@@ -122,8 +149,6 @@ mkdir -p /app/data/logs /app/data/covers /app/data/downloads /app/data/chapters 
 # ─── Release Prisma/Bun memory before starting app processes ───
 if $_LOW_MEM; then
     log "[MEM] Releasing memory after DB init..."
-    # Prisma generate keeps a lot in memory; the CLI process will exit naturally
-    # but Bun's runtime may hold onto memory. This sync helps the OS reclaim it.
     sync 2>/dev/null || true
 fi
 
@@ -232,6 +257,9 @@ if [ "$HAS_SCRAPER" = "true" ]; then echo "  Scraper: http://localhost:3099"; fi
 echo "  DB:      PostgreSQL"
 echo "  Memory:  ${_AVAIL_MEM_MB}MB available at start"
 echo "=========================================="
+
+# Disable the crash diagnostics trap — we're now running normally
+trap - EXIT
 
 # ─── Graceful Shutdown ───
 cleanup() {

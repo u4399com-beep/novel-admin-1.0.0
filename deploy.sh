@@ -2662,23 +2662,59 @@ ok "容器已启动"
 # ── Health Check ──
 echo ""
 info "等待服务就绪（最长 3 分钟）..."
-
-ELAPSED=0
+# Give the container a few seconds to actually start the entrypoint
+# (docker compose up -d returns when the container is CREATED, not RUNNING)
+sleep 5
+ELAPSED=5
 MAX_WAIT=180
 HEALTHY=false
+_CRASH_SEEN=0
 
 while [ $ELAPSED -lt $MAX_WAIT ]; do
-    # Check if containers are still running
-    if ! docker compose ps 2>/dev/null | grep -qE 'Up|running'; then
+    # Check novel-manager container state specifically
+    _mgr_status=$(docker inspect --format='{{.State.Status}}' novel-manager 2>/dev/null || echo "unknown")
+    _mgr_exit=$(docker inspect --format='{{.State.ExitCode}}' novel-manager 2>/dev/null || echo "?")
+    _mgr_oom=$(docker inspect --format='{{.State.OOMKilled}}' novel-manager 2>/dev/null || echo "false")
+    _mgr_restarts=$(docker inspect --format='{{.RestartCount}}' novel-manager 2>/dev/null || echo "0")
+
+    # Container in a fatal state (exited, not just restarting)
+    if [ "$_mgr_status" = "exited" ] || [ "$_mgr_oom" = "true" ]; then
         echo ""
-        err "容器异常退出！"
+        if [ "$_mgr_oom" = "true" ]; then
+            err "容器因内存不足被 OOM Kill！"
+            err "  当前内存限制: ${APP_MEMORY_LIMIT:-未设置}"
+            err "  建议: 增大 APP_MEMORY_LIMIT 或升级服务器内存"
+        else
+            err "容器异常退出 (exit code: ${_mgr_exit}, restarts: ${_mgr_restarts})！"
+        fi
         echo ""
         err "容器状态:"
         docker compose ps 2>/dev/null
         echo ""
         err "最近日志 (novel-manager):"
-        docker compose logs --tail=30 novel-manager 2>/dev/null | tail -20
+        docker compose logs --tail=50 novel-manager 2>/dev/null | tail -30
+        echo ""
+        err "排查建议:"
+        err "  1. 查看完整日志: docker compose logs --tail=100 novel-manager"
+        err "  2. 检查 OOM: docker inspect novel-manager --format='{{.State.OOMKilled}}'"
+        err "  3. 检查退出码: docker inspect novel-manager --format='{{.State.ExitCode}}'"
         exit 1
+    fi
+
+    # If container is restarting, log it but don't fail immediately
+    # (Docker restart policy will retry — give it a chance)
+    if [ "$_mgr_status" = "restarting" ]; then
+        _CRASH_SEEN=$((_CRASH_SEEN + 1))
+        if [ "$_CRASH_SEEN" -ge 5 ]; then
+            echo ""
+            err "容器反复重启 (${_CRASH_SEEN} 次)，可能存在启动错误"
+            err "最近日志:"
+            docker compose logs --tail=50 novel-manager 2>/dev/null | tail -30
+            exit 1
+        fi
+        sleep 5
+        ELAPSED=$((ELAPSED + 5))
+        continue
     fi
 
     # HTTP health check
