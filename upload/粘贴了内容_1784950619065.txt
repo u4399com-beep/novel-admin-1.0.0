@@ -1,0 +1,523 @@
+root@iZha8wl8anacflZ:/opt/novel-admin# ./deploy.sh --status
+
+NAME             IMAGE                       COMMAND                  SERVICE         CREATED          STATUS                            PORTS
+novel-manager    novel-admin-novel-manager   "/app/docker-entrypo…"   novel-manager   14 minutes ago   Up 7 seconds (health: starting)   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp
+novel-postgres   postgres:17-alpine          "docker-entrypoint.s…"   postgres        37 hours ago     Up 37 hours (healthy)             5432/tcp
+
+  安装目录:  /opt/novel-admin
+  磁盘占用:  39M
+  端口:      3000
+  配置地址:  http://8.153.67.171:3000
+  管理员:    admin
+  硬件档位:  small
+
+  ── 连接诊断 ──
+  ✅ 端口 3000 正在监听
+  ❌ 本地健康检查失败 (服务可能未就绪或已崩溃)
+     日志: docker compose logs --tail=30
+  ⚠️  内网 IP: 172.19.249.28
+     浏览器需要使用公网 IP 访问，不是 172.19.249.28
+
+  ── 防火墙状态 ──
+  ℹ️  未检测到防火墙 (ufw/firewalld/nftables/iptables 均未安装或未激活)
+      端口 3000 应该可正常访问
+
+  如果浏览器无法访问:
+    1. 云服务器 → 安全组放行端口 3000
+    2. 本地防火墙 → 运行: ./deploy.sh --fix-firewall
+    3. 确认使用公网 IP (非内网 IP) 访问
+
+root@iZha8wl8anacflZ:/opt/novel-admin# ./deploy.sh --logs
+  端口: 3000 | 日志实时输出 (Ctrl+C 退出)
+  无法访问? 先运行: ./deploy.sh --status
+
+novel-postgres  | The files belonging to this database system will be owned by user "postgres".
+novel-postgres  | This user must also own the server process.
+novel-postgres  | 
+novel-postgres  | The database cluster will be initialized with locale "C".
+novel-postgres  | The default text search configuration will be set to "english".
+novel-postgres  | 
+novel-postgres  | Data page checksums are disabled.
+novel-postgres  | 
+novel-postgres  | fixing permissions on existing directory /var/lib/postgresql/data/pgdata ... ok
+novel-postgres  | creating subdirectories ... ok
+novel-postgres  | selecting dynamic shared memory implementation ... posix
+novel-postgres  | selecting default "max_connections" ... 100
+novel-postgres  | selecting default "shared_buffers" ... 128MB
+novel-postgres  | selecting default time zone ... UTC
+novel-postgres  | creating configuration files ... ok
+novel-postgres  | running bootstrap script ... ok
+novel-postgres  | sh: locale: not found
+novel-postgres  | 2026-07-23 14:17:45.128 UTC [35] WARNING:  no usable system locales were found
+novel-postgres  | performing post-bootstrap initialization ... ok
+novel-postgres  | initdb: warning: enabling "trust" authentication for local connections
+novel-postgres  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+novel-postgres  | syncing data to disk ... ok
+novel-postgres  | 
+novel-postgres  | 
+novel-postgres  | Success. You can now start the database server using:
+novel-postgres  | 
+novel-postgres  |     pg_ctl -D /var/lib/postgresql/data/pgdata -l logfile start
+novel-postgres  | 
+novel-postgres  | waiting for server to start....2026-07-23 14:17:46.807 UTC [41] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+novel-postgres  | 2026-07-23 14:17:46.807 UTC [41] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+novel-postgres  | 2026-07-23 14:17:46.815 UTC [44] LOG:  database system was shut down at 2026-07-23 14:17:46 UTC
+novel-postgres  | 2026-07-23 14:17:46.823 UTC [41] LOG:  database system is ready to accept connections
+novel-postgres  |  done
+novel-postgres  | server started
+novel-postgres  | CREATE DATABASE
+novel-postgres  | 
+novel-postgres  | 
+novel-postgres  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+novel-postgres  | 
+novel-postgres  | waiting for server to shut down....2026-07-23 14:17:47.045 UTC [41] LOG:  received fast shutdown request
+novel-postgres  | 2026-07-23 14:17:47.048 UTC [41] LOG:  aborting any active transactions
+novel-postgres  | 2026-07-23 14:17:47.059 UTC [41] LOG:  background worker "logical replication launcher" (PID 47) exited with exit code 1
+novel-postgres  | 2026-07-23 14:17:47.101 UTC [42] LOG:  shutting down
+novel-postgres  | 2026-07-23 14:17:47.103 UTC [42] LOG:  checkpoint starting: shutdown immediate
+novel-postgres  | 2026-07-23 14:17:47.176 UTC [42] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.034 s, sync=0.031 s, total=0.075 s; sync files=301, longest=0.003 s, average=0.001 s; distance=4266 kB, estimate=4266 kB; lsn=0/191C758, redo lsn=0/191C758
+novel-postgres  | 2026-07-23 14:17:47.183 UTC [41] LOG:  database system is shut down
+novel-postgres  |  done
+novel-postgres  | server stopped
+novel-postgres  | 
+novel-postgres  | PostgreSQL init process complete; ready for start up.
+novel-postgres  | 
+novel-postgres  | 2026-07-23 14:17:47.292 UTC [1] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+novel-postgres  | 2026-07-23 14:17:47.292 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+novel-postgres  | 2026-07-23 14:17:47.292 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+novel-postgres  | 2026-07-23 14:17:47.295 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+novel-postgres  | 2026-07-23 14:17:47.302 UTC [57] LOG:  database system was shut down at 2026-07-23 14:17:47 UTC
+novel-postgres  | 2026-07-23 14:17:47.311 UTC [1] LOG:  database system is ready to accept connections
+novel-postgres  | 2026-07-23 14:22:47.402 UTC [55] LOG:  checkpoint starting: time
+novel-postgres  | 2026-07-23 14:22:50.651 UTC [55] LOG:  checkpoint complete: wrote 35 buffers (0.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=3.228 s, sync=0.004 s, total=3.250 s; sync files=11, longest=0.002 s, average=0.001 s; distance=161 kB, estimate=161 kB; lsn=0/1944F88, redo lsn=0/1944F30
+novel-manager   | [2026-07-25 11:33:34] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:33:37] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:33:37] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:33:37] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:33:37] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:33:37] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:33:37] [MEM] 990MB available
+novel-manager   | [2026-07-25 11:33:37] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:33:37] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:33:37] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:33:40] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:33:40] [DB] Creating extensions and indexes...
+novel-manager   | [2026-07-25 11:33:47] [DB] Database ready.
+novel-manager   | [2026-07-25 11:33:47] [Chromium] Not found in image, downloading at runtime...
+novel-manager   | [2026-07-25 11:33:47] === EXIT TRIGGERED (code: 1) ===
+novel-manager   | [2026-07-25 11:33:47] [FATAL] Entrypoint exited with code 1
+novel-manager   | [2026-07-25 11:33:47] [FATAL] Available memory: 969968KB
+novel-manager   | [2026-07-25 11:33:47] [FATAL] Container memory limit: 671088640
+novel-manager   | [2026-07-25 11:33:47] [FATAL] Last 20 lines of app log:
+novel-manager   | [2026-07-25 11:33:47] [FATAL] Environment check (secrets redacted):
+novel-manager   | [2026-07-25 11:33:47]   NEXTAUTH_SECRET set: yes (${#NEXTAUTH_SECRET} chars)
+novel-manager   | [2026-07-25 11:33:47]   SCRAPER_SERVICE_TOKEN set: yes (${#SCRAPER_SERVICE_TOKEN} chars)
+novel-manager   | [2026-07-25 11:33:47]   ADMIN_PASSWORD set: yes (${#ADMIN_PASSWORD} chars)
+novel-manager   | [2026-07-25 11:33:47]   DATABASE_URL set: yes
+novel-manager   | [2026-07-25 11:33:47]   NODE_ENV=production
+novel-manager   | [2026-07-25 11:33:47]   DB_PROVIDER=postgresql
+novel-manager   | [2026-07-25 11:33:47] === Entrypoint started (PID: 1) ===
+novel-manager   | ==========================================
+novel-manager   |   Novel Management System (Production)
+novel-manager   |   Database: PostgreSQL
+novel-manager   |   2026-07-25 11:33:47
+novel-manager   | ==========================================
+novel-manager   | [2026-07-25 11:33:47] Banner printed successfully
+novel-manager   | [DIAG] Memory available: 965036KB
+novel-manager   | [2026-07-25 11:33:47] DIAG: Memory=965036KB
+novel-manager   | [DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js
+novel-manager   | [2026-07-25 11:33:47] DIAG: Prisma CLI exists: YES
+novel-manager   | [2026-07-25 11:33:47] DIAG: Schema exists: YES
+novel-manager   | [2026-07-25 11:33:47] DIAG: server.js exists: YES
+novel-manager   | [2026-07-25 11:33:47] DIAG: @prisma/engines exists: YES
+novel-manager   | [2026-07-25 11:33:47] DIAG: libquery_engine exists: YES
+novel-manager   | [2026-07-25 11:33:47] DIAG: schema-engine exists: YES
+novel-manager   | [2026-07-25 11:33:47] DIAG: DATABASE_URL set: YES
+novel-manager   | [DIAG] DATABASE_URL set: YES
+novel-manager   | [2026-07-25 11:33:47] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:33:51] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:33:51] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:33:51] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:33:51] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:33:51] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:33:51] [MEM] 998MB available
+novel-manager   | [2026-07-25 11:33:51] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:33:51] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:33:51] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:33:54] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:33:54] [DB] Creating extensions and indexes...
+novel-manager   | [2026-07-25 11:34:00] [DB] Database ready.
+novel-manager   | [2026-07-25 11:34:00] [Chromium] Not found in image, downloading at runtime...
+novel-manager   | [2026-07-25 11:34:00] === EXIT TRIGGERED (code: 1) ===
+novel-manager   | [2026-07-25 11:34:00] [FATAL] Entrypoint exited with code 1
+novel-manager   | [2026-07-25 11:34:00] [FATAL] Available memory: 1054928KB
+novel-manager   | [2026-07-25 11:34:00] [FATAL] Container memory limit: 671088640
+novel-manager   | [2026-07-25 11:34:00] [FATAL] Last 20 lines of app log:
+novel-manager   | [2026-07-25 11:34:00] [FATAL] Environment check (secrets redacted):
+novel-manager   | [2026-07-25 11:34:00]   NEXTAUTH_SECRET set: yes (${#NEXTAUTH_SECRET} chars)
+novel-manager   | [2026-07-25 11:34:00]   SCRAPER_SERVICE_TOKEN set: yes (${#SCRAPER_SERVICE_TOKEN} chars)
+novel-manager   | [2026-07-25 11:34:00]   ADMIN_PASSWORD set: yes (${#ADMIN_PASSWORD} chars)
+novel-manager   | [2026-07-25 11:34:00]   DATABASE_URL set: yes
+novel-manager   | [2026-07-25 11:34:00]   NODE_ENV=production
+novel-manager   | [2026-07-25 11:34:00]   DB_PROVIDER=postgresql
+novel-manager   | [2026-07-25 11:34:01] === Entrypoint started (PID: 1) ===
+novel-manager   | ==========================================
+novel-manager   |   Novel Management System (Production)
+novel-manager   |   Database: PostgreSQL
+novel-manager   |   2026-07-25 11:34:01
+novel-manager   | ==========================================
+novel-manager   | [2026-07-25 11:34:01] Banner printed successfully
+novel-manager   | [DIAG] Memory available: 1038036KB
+novel-manager   | [2026-07-25 11:34:01] DIAG: Memory=1038036KB
+novel-manager   | [DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js
+novel-manager   | [2026-07-25 11:34:01] DIAG: Prisma CLI exists: YES
+novel-manager   | [2026-07-25 11:34:01] DIAG: Schema exists: YES
+novel-manager   | [2026-07-25 11:34:01] DIAG: server.js exists: YES
+novel-manager   | [2026-07-25 11:34:01] DIAG: @prisma/engines exists: YES
+novel-manager   | [2026-07-25 11:34:01] DIAG: libquery_engine exists: YES
+novel-manager   | [2026-07-25 11:34:01] DIAG: schema-engine exists: YES
+novel-manager   | [2026-07-25 11:34:01] DIAG: DATABASE_URL set: YES
+novel-manager   | [DIAG] DATABASE_URL set: YES
+novel-manager   | [2026-07-25 11:34:01] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:34:04] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:04] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:34:04] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:34:04] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:34:04] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:34:04] [MEM] 1021MB available
+novel-manager   | [2026-07-25 11:34:04] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:34:04] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:34:04] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:07] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:34:07] [DB] Creating extensions and indexes...
+novel-manager   | [2026-07-25 11:34:14] [DB] Database ready.
+novel-manager   | [2026-07-25 11:34:14] [Chromium] Not found in image, downloading at runtime...
+novel-manager   | [2026-07-25 11:34:14] === EXIT TRIGGERED (code: 1) ===
+novel-manager   | [2026-07-25 11:34:14] [FATAL] Entrypoint exited with code 1
+novel-manager   | [2026-07-25 11:34:14] [FATAL] Available memory: 979576KB
+novel-manager   | [2026-07-25 11:34:14] [FATAL] Container memory limit: 671088640
+novel-manager   | [2026-07-25 11:34:14] [FATAL] Last 20 lines of app log:
+novel-manager   | [2026-07-25 11:34:14] [FATAL] Environment check (secrets redacted):
+novel-manager   | [2026-07-25 11:34:14]   NEXTAUTH_SECRET set: yes (${#NEXTAUTH_SECRET} chars)
+novel-manager   | [2026-07-25 11:34:14]   SCRAPER_SERVICE_TOKEN set: yes (${#SCRAPER_SERVICE_TOKEN} chars)
+novel-manager   | [2026-07-25 11:34:14]   ADMIN_PASSWORD set: yes (${#ADMIN_PASSWORD} chars)
+novel-manager   | [2026-07-25 11:34:14]   DATABASE_URL set: yes
+novel-manager   | [2026-07-25 11:34:14]   NODE_ENV=production
+novel-manager   | [2026-07-25 11:34:14]   DB_PROVIDER=postgresql
+novel-manager exited with code 0
+novel-manager   |   2026-07-25 11:34:15
+novel-manager   | ==========================================
+novel-manager   | [2026-07-25 11:34:15] Banner printed successfully
+novel-manager   | [DIAG] Memory available: 971552KB
+novel-manager   | [2026-07-25 11:34:15] DIAG: Memory=971552KB
+novel-manager   | [DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js
+novel-manager   | [2026-07-25 11:34:15] DIAG: Prisma CLI exists: YES
+novel-manager   | [2026-07-25 11:34:15] DIAG: Schema exists: YES
+novel-manager   | [2026-07-25 11:34:15] DIAG: server.js exists: YES
+novel-manager   | [2026-07-25 11:34:15] DIAG: @prisma/engines exists: YES
+novel-manager   | [2026-07-25 11:34:15] DIAG: libquery_engine exists: YES
+novel-manager   | [2026-07-25 11:34:15] DIAG: schema-engine exists: YES
+novel-manager   | [2026-07-25 11:34:15] DIAG: DATABASE_URL set: YES
+novel-manager   | [DIAG] DATABASE_URL set: YES
+novel-manager   | [2026-07-25 11:34:15] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:34:18] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:18] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:34:18] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:34:18] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:34:18] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:34:18] [MEM] 973MB available
+novel-manager   | [2026-07-25 11:34:18] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:34:18] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:34:18] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:21] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:34:21] [DB] Creating extensions and indexes...
+novel-manager   | [2026-07-25 11:34:27] [DB] Database ready.
+novel-manager   | [2026-07-25 11:34:27] [Chromium] Not found in image, downloading at runtime...
+novel-manager   | [2026-07-25 11:34:27] === EXIT TRIGGERED (code: 1) ===
+novel-manager   | [2026-07-25 11:34:27] [FATAL] Entrypoint exited with code 1
+novel-manager   | [2026-07-25 11:34:27] [FATAL] Available memory: 999432KB
+novel-manager   | [2026-07-25 11:34:27] [FATAL] Container memory limit: 671088640
+novel-manager   | [2026-07-25 11:34:27] [FATAL] Last 20 lines of app log:
+novel-manager   | [2026-07-25 11:34:27] [FATAL] Environment check (secrets redacted):
+novel-manager   | [2026-07-25 11:34:27]   NEXTAUTH_SECRET set: yes (${#NEXTAUTH_SECRET} chars)
+novel-manager   | [2026-07-25 11:34:27]   SCRAPER_SERVICE_TOKEN set: yes (${#SCRAPER_SERVICE_TOKEN} chars)
+novel-manager   | [2026-07-25 11:34:27]   ADMIN_PASSWORD set: yes (${#ADMIN_PASSWORD} chars)
+novel-manager   | [2026-07-25 11:34:27]   DATABASE_URL set: yes
+novel-manager   | [2026-07-25 11:34:27]   NODE_ENV=production
+novel-manager   | [2026-07-25 11:34:27]   DB_PROVIDER=postgresql
+novel-manager exited with code 0
+novel-manager   | [DIAG] Memory available: 998456KB
+novel-manager   | [2026-07-25 11:34:28] DIAG: Memory=998456KB
+novel-manager   | [DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js
+novel-manager   | [2026-07-25 11:34:28] DIAG: Prisma CLI exists: YES
+novel-manager   | [2026-07-25 11:34:28] DIAG: Schema exists: YES
+novel-manager   | [2026-07-25 11:34:28] DIAG: server.js exists: YES
+novel-manager   | [2026-07-25 11:34:28] DIAG: @prisma/engines exists: YES
+novel-manager   | [2026-07-25 11:34:28] DIAG: libquery_engine exists: YES
+novel-manager   | [2026-07-25 11:34:28] DIAG: schema-engine exists: YES
+novel-manager   | [2026-07-25 11:34:28] DIAG: DATABASE_URL set: YES
+novel-manager   | [DIAG] DATABASE_URL set: YES
+novel-manager   | [2026-07-25 11:34:28] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:34:31] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:31] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:34:31] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:34:31] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:34:31] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:34:31] [MEM] 1007MB available
+novel-manager   | [2026-07-25 11:34:31] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:34:31] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:34:31] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:34] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:34:34] [DB] Creating extensions and indexes...
+novel-manager   | [2026-07-25 11:34:41] [DB] Database ready.
+novel-manager   | [2026-07-25 11:34:41] [Chromium] Not found in image, downloading at runtime...
+novel-manager   | [2026-07-25 11:34:41] === EXIT TRIGGERED (code: 1) ===
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Entrypoint exited with code 1
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Available memory: 1003456KB
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Container memory limit: 671088640
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Last 20 lines of app log:
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Environment check (secrets redacted):
+novel-manager   | [2026-07-25 11:34:41]   NEXTAUTH_SECRET set: yes (${#NEXTAUTH_SECRET} chars)
+novel-manager   | [2026-07-25 11:34:41]   SCRAPER_SERVICE_TOKEN set: yes (${#SCRAPER_SERVICE_TOKEN} chars)
+novel-manager   | [2026-07-25 11:34:41]   ADMIN_PASSWORD set: yes (${#ADMIN_PASSWORD} chars)
+novel-manager   | [2026-07-25 11:34:41]   DATABASE_URL set: yes
+novel-manager   | [2026-07-25 11:34:41]   NODE_ENV=production
+novel-manager   | [2026-07-25 11:34:41]   DB_PROVIDER=postgresql
+novel-manager exited with code 0
+novel-manager   |   2026-07-25 11:34:41
+novel-manager   | ==========================================
+novel-manager   | [2026-07-25 11:34:41] Banner printed successfully
+novel-manager   | [DIAG] Memory available: 992872KB
+novel-manager   | [2026-07-25 11:34:41] DIAG: Memory=992872KB
+novel-manager   | [DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js
+novel-manager   | [2026-07-25 11:34:41] DIAG: Prisma CLI exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: Schema exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: server.js exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: @prisma/engines exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: libquery_engine exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: schema-engine exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: DATABASE_URL set: YES
+novel-manager   | [DIAG] DATABASE_URL set: YES
+novel-manager   | [2026-07-25 11:34:41] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:34:45] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:45] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:34:45] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:34:45] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:34:45] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:34:45] [MEM] 975MB available
+novel-manager   | [2026-07-25 11:34:45] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:34:45] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:34:45] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:48] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:34:48] [DB] Creating extensions and indexes...
+novel-manager   | [2026-07-25 11:34:54] [DB] Database ready.
+novel-manager   | [2026-07-25 11:34:54] [Chromium] Not found in image, downloading at runtime...
+novel-manager   | [2026-07-25 11:34:54] === EXIT TRIGGERED (code: 1) ===
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Entrypoint exited with code 1
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Available memory: 1030388KB
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Container memory limit: 671088640
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Last 20 lines of app log:
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Environment check (secrets redacted):
+novel-manager   | [2026-07-25 11:34:54]   NEXTAUTH_SECRET set: yes (${#NEXTAUTH_SECRET} chars)
+novel-manager   | [2026-07-25 11:34:54]   SCRAPER_SERVICE_TOKEN set: yes (${#SCRAPER_SERVICE_TOKEN} chars)
+novel-manager   | [2026-07-25 11:34:54]   ADMIN_PASSWORD set: yes (${#ADMIN_PASSWORD} chars)
+novel-manager   | [2026-07-25 11:34:54]   DATABASE_URL set: yes
+novel-manager   | [2026-07-25 11:34:54]   NODE_ENV=production
+novel-manager   | [2026-07-25 11:34:54]   DB_PROVIDER=postgresql
+novel-manager exited with code 0
+novel-manager   | ==========================================
+novel-manager   |   Novel Management System (Production)
+novel-manager   |   Database: PostgreSQL
+novel-manager   |   2026-07-25 11:34:55
+novel-manager   | ==========================================
+novel-manager   | [2026-07-25 11:34:55] Banner printed successfully
+novel-manager   | [DIAG] Memory available: 1036572KB
+novel-manager   | [2026-07-25 11:34:55] DIAG: Memory=1036572KB
+novel-manager   | [DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js
+novel-manager   | [2026-07-25 11:34:55] DIAG: Prisma CLI exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: Schema exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: server.js exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: @prisma/engines exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: libquery_engine exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: schema-engine exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: DATABASE_URL set: YES
+novel-manager   | [DIAG] DATABASE_URL set: YES
+novel-manager   | [2026-07-25 11:34:55] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:34:58] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:58] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:34:58] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:34:58] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:34:58] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:34:58] [MEM] 1003MB available
+novel-manager   | [2026-07-25 11:34:58] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:34:58] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:34:58] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:35:01] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:35:01] [DB] Creating extensions and indexes...
+  novel-postgres  | The files belonging to this database system will be owned by user "postgres".
+novel-postgres  | This user must also own the server process.
+novel-postgres  | 
+novel-postgres  | The database cluster will be initialized with locale "C".
+novel-postgres  | The default text search configuration will be set to "english".
+novel-postgres  | 
+novel-postgres  | Data page checksums are disabled.
+novel-postgres  | 
+novel-postgres  | fixing permissions on existing directory /var/lib/postgresql/data/pgdata ... ok
+novel-postgres  | creating subdirectories ... ok
+novel-postgres  | selecting dynamic shared memory implementation ... posix
+novel-postgres  | selecting default "max_connections" ... 100
+novel-postgres  | selecting default "shared_buffers" ... 128MB
+novel-postgres  | selecting default time zone ... UTC
+novel-postgres  | creating configuration files ... ok
+novel-postgres  | running bootstrap script ... ok
+novel-postgres  | sh: locale: not found
+novel-postgres  | 2026-07-23 14:17:45.128 UTC [35] WARNING:  no usable system locales were found
+novel-postgres  | performing post-bootstrap initialization ... ok
+novel-postgres  | initdb: warning: enabling "trust" authentication for local connections
+novel-postgres  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+novel-postgres  | syncing data to disk ... ok
+novel-postgres  | 
+novel-postgres  | 
+novel-postgres  | Success. You can now start the database server using:
+novel-postgres  | 
+novel-postgres  |     pg_ctl -D /var/lib/postgresql/data/pgdata -l logfile start
+novel-postgres  | 
+novel-postgres  | waiting for server to start....2026-07-23 14:17:46.807 UTC [41] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+novel-postgres  | 2026-07-23 14:17:46.807 UTC [41] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+novel-postgres  | 2026-07-23 14:17:46.815 UTC [44] LOG:  database system was shut down at 2026-07-23 14:17:46 UTC
+novel-postgres  | 2026-07-23 14:17:46.823 UTC [41] LOG:  database system is ready to accept connections
+novel-postgres  |  done
+novel-postgres  | server started
+novel-postgres  | CREATE DATABASE
+novel-postgres  | 
+novel-postgres  | 
+novel-postgres  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+novel-postgres  | 
+novel-postgres  | waiting for server to shut down....2026-07-23 14:17:47.045 UTC [41] LOG:  received fast shutdown request
+novel-postgres  | 2026-07-23 14:17:47.048 UTC [41] LOG:  aborting any active transactions
+novel-postgres  | 2026-07-23 14:17:47.059 UTC [41] LOG:  background worker "logical replication launcher" (PID 47) exited with exit code 1
+novel-postgres  | 2026-07-23 14:17:47.101 UTC [42] LOG:  shutting down
+novel-postgres  | 2026-07-23 14:17:47.103 UTC [42] LOG:  checkpoint starting: shutdown immediate
+novel-postgres  | 2026-07-23 14:17:47.176 UTC [42] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.034 s, sync=0.031 s, total=0.075 s; sync files=301, longest=0.003 s, average=0.001 s; distance=4266 kB, estimate=4266 kB; lsn=0/191C758, redo lsn=0/191C758
+novel-postgres  | 2026-07-23 14:17:47.183 UTC [41] LOG:  database system is shut down
+novel-postgres  |  done
+novel-postgres  | server stopped
+novel-postgres  | 
+novel-postgres  | PostgreSQL init process complete; ready for start up.
+novel-postgres  | 
+novel-postgres  | 2026-07-23 14:17:47.292 UTC [1] LOG:  starting PostgreSQL 17.10 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+novel-postgres  | 2026-07-23 14:17:47.292 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+novel-postgres  | 2026-07-23 14:17:47.292 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+novel-postgres  | 2026-07-23 14:17:47.295 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+novel-postgres  | 2026-07-23 14:17:47.302 UTC [57] LOG:  database system was shut down at 2026-07-23 14:17:47 UTC
+novel-postgres  | 2026-07-23 14:17:47.311 UTC [1] LOG:  database system is ready to accept connections
+novel-postgres  | 2026-07-23 14:22:47.402 UTC [55] LOG:  checkpoint starting: time
+novel-postgres  | 2026-07-23 14:22:50.651 UTC [55] LOG:  checkpoint complete: wrote 35 buffers (0.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=3.228 s, sync=0.004 s, total=3.250 s; sync files=11, longest=0.002 s, average=0.001 s; distance=161 kB, estimate=161 kB; lsn=0/1944F88, redo lsn=0/1944F30
+novel-manager   | [2026-07-25 11:34:31] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:34:31] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:34:31] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:34:31] [MEM] 1007MB available
+novel-manager   | [2026-07-25 11:34:31] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:34:31] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:34:31] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:34] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:34:34] [DB] Creating extensions and indexes...
+novel-manager   | [2026-07-25 11:34:41] [DB] Database ready.
+novel-manager   | [2026-07-25 11:34:41] [Chromium] Not found in image, downloading at runtime...
+novel-manager   | [2026-07-25 11:34:41] === EXIT TRIGGERED (code: 1) ===
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Entrypoint exited with code 1
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Available memory: 1003456KB
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Container memory limit: 671088640
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Last 20 lines of app log:
+novel-manager   | [2026-07-25 11:34:41] [FATAL] Environment check (secrets redacted):
+novel-manager   | [2026-07-25 11:34:41]   NEXTAUTH_SECRET set: yes (${#NEXTAUTH_SECRET} chars)
+novel-manager   | [2026-07-25 11:34:41]   SCRAPER_SERVICE_TOKEN set: yes (${#SCRAPER_SERVICE_TOKEN} chars)
+novel-manager   | [2026-07-25 11:34:41]   ADMIN_PASSWORD set: yes (${#ADMIN_PASSWORD} chars)
+novel-manager   | [2026-07-25 11:34:41]   DATABASE_URL set: yes
+novel-manager   | [2026-07-25 11:34:41]   NODE_ENV=production
+novel-manager   | [2026-07-25 11:34:41]   DB_PROVIDER=postgresql
+novel-manager   | [2026-07-25 11:34:41] === Entrypoint started (PID: 1) ===
+novel-manager   | ==========================================
+novel-manager   |   Novel Management System (Production)
+novel-manager   |   Database: PostgreSQL
+novel-manager   |   2026-07-25 11:34:41
+novel-manager   | ==========================================
+novel-manager   | [2026-07-25 11:34:41] Banner printed successfully
+novel-manager   | [DIAG] Memory available: 992872KB
+novel-manager   | [2026-07-25 11:34:41] DIAG: Memory=992872KB
+novel-manager   | [DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js
+novel-manager   | [2026-07-25 11:34:41] DIAG: Prisma CLI exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: Schema exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: server.js exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: @prisma/engines exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: libquery_engine exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: schema-engine exists: YES
+novel-manager   | [2026-07-25 11:34:41] DIAG: DATABASE_URL set: YES
+novel-manager   | [DIAG] DATABASE_URL set: YES
+novel-manager   | [2026-07-25 11:34:41] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:34:45] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:45] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:34:45] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:34:45] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:34:45] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:34:45] [MEM] 975MB available
+novel-manager   | [2026-07-25 11:34:45] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:34:45] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:34:45] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:48] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:34:48] [DB] Creating extensions and indexes...
+novel-manager   | [2026-07-25 11:34:54] [DB] Database ready.
+novel-manager   | [2026-07-25 11:34:54] [Chromium] Not found in image, downloading at runtime...
+novel-manager   | [2026-07-25 11:34:54] === EXIT TRIGGERED (code: 1) ===
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Entrypoint exited with code 1
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Available memory: 1030388KB
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Container memory limit: 671088640
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Last 20 lines of app log:
+novel-manager   | [2026-07-25 11:34:54] [FATAL] Environment check (secrets redacted):
+novel-manager   | [2026-07-25 11:34:54]   NEXTAUTH_SECRET set: yes (${#NEXTAUTH_SECRET} chars)
+novel-manager   | [2026-07-25 11:34:54]   SCRAPER_SERVICE_TOKEN set: yes (${#SCRAPER_SERVICE_TOKEN} chars)
+novel-manager   | [2026-07-25 11:34:54]   ADMIN_PASSWORD set: yes (${#ADMIN_PASSWORD} chars)
+novel-manager   | [2026-07-25 11:34:54]   DATABASE_URL set: yes
+novel-manager   | [2026-07-25 11:34:54]   NODE_ENV=production
+novel-manager   | [2026-07-25 11:34:54]   DB_PROVIDER=postgresql
+novel-manager   | [2026-07-25 11:34:55] === Entrypoint started (PID: 1) ===
+novel-manager   | ==========================================
+novel-manager   |   Novel Management System (Production)
+novel-manager   |   Database: PostgreSQL
+novel-manager   |   2026-07-25 11:34:55
+novel-manager   | ==========================================
+novel-manager   | [2026-07-25 11:34:55] Banner printed successfully
+novel-manager   | [DIAG] Memory available: 1036572KB
+novel-manager   | [2026-07-25 11:34:55] DIAG: Memory=1036572KB
+novel-manager   | [DIAG] Prisma CLI path: /app/node_modules/prisma/build/index.js
+novel-manager   | [2026-07-25 11:34:55] DIAG: Prisma CLI exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: Schema exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: server.js exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: @prisma/engines exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: libquery_engine exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: schema-engine exists: YES
+novel-manager   | [2026-07-25 11:34:55] DIAG: DATABASE_URL set: YES
+novel-manager   | [DIAG] DATABASE_URL set: YES
+novel-manager   | [2026-07-25 11:34:55] [Prisma] Checking CLI version...
+novel-manager   | [2026-07-25 11:34:58] [Prisma] Using local CLI: Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:34:58] [Auth] Checking NEXTAUTH_SECRET (length: 64)...
+novel-manager   | [2026-07-25 11:34:58] [Auth] Checking SCRAPER_SERVICE_TOKEN (length: 64)...
+novel-manager   | [2026-07-25 11:34:58] [Auth] ADMIN_PASSWORD length: 20
+novel-manager   | [2026-07-25 11:34:58] [Auth] All secrets validated.
+novel-manager   | [2026-07-25 11:34:58] [MEM] 1003MB available
+novel-manager   | [2026-07-25 11:34:58] [DB] Waiting for PostgreSQL at postgres:5432...
+novel-manager   | [2026-07-25 11:34:58] [DB] PostgreSQL port is open!
+novel-manager   | [2026-07-25 11:34:58] [DB] Syncing schema with: bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
+novel-manager   | Unknown error during config file loading: ResolveMessage: Cannot find package 'perfect-debounce' from '/app/node_modules/c12/dist/index.mjs'
+novel-manager   | [2026-07-25 11:35:01] [DB] Schema sync had warnings (usually safe, continuing).
+novel-manager   | [2026-07-25 11:35:01] [DB] Creating extensions and indexes...
+^C[ERROR] 命令失败退出: docker-compose logs -f --tail=100 2> /dev/null

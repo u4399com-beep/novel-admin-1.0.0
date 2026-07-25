@@ -201,9 +201,15 @@ if $_LOW_MEM; then
 fi
 
 # ─── Lazy-download Playwright Chromium (if build-time download failed) ───
+# This entire section is best-effort (non-fatal). Temporarily disable set -e
+# because grep pipelines inside browsers.json parsing may fail if the JSON
+# format differs between playwright-core versions.
+(
+set +e
 _pw_chrome=$(find /app/.playwright-browsers -name chrome -type f 2>/dev/null | head -1)
 if [ -z "$_pw_chrome" ]; then
-    log "[Chromium] Not found in image, downloading at runtime..."
+    log_debug "[Chromium] Not found in image, downloading at runtime..."
+    echo "[Chromium] Not found in image, downloading at runtime..."
     _pw_json="/app/scraper-service/node_modules/playwright-core/browsers.json"
     if [ -f "$_pw_json" ]; then
         _pw_rev=$(grep -A1 '"name": "chromium"' "$_pw_json" | grep '"revision"' | head -1 | grep -o '[0-9]*')
@@ -220,30 +226,41 @@ if [ -z "$_pw_chrome" ]; then
         fi
         if [ -n "${_pw_urls:-}" ]; then
             for _pw_url in $_pw_urls; do
-                log "[Chromium] Trying $_pw_url..."
+                log_debug "[Chromium] Trying $_pw_url..."
+                echo "[Chromium] Trying $_pw_url..."
                 if curl -fsSL --connect-timeout 15 --max-time 600 "$_pw_url" -o /tmp/pw-chromium.zip 2>/dev/null; then
                     unzip -qo /tmp/pw-chromium.zip -d "$_pw_dir" 2>/dev/null && \
                         touch "$_pw_dir/INSTALLATION_COMPLETE" && \
-                        log "[Chromium] Downloaded and installed" && \
+                        log_debug "[Chromium] Downloaded and installed" && \
+                        echo "[Chromium] Downloaded and installed" && \
                         break
                 fi
-                log "[Chromium] Failed, trying next mirror..."
+                log_debug "[Chromium] Failed, trying next mirror..."
+                echo "[Chromium] Failed, trying next mirror..."
             done
             rm -f /tmp/pw-chromium.zip 2>/dev/null
+        else
+            log_debug "[Chromium] No download URLs constructed (rev=$_pw_rev, ver=$_pw_ver, arch=$_pw_arch)"
+            echo "[Chromium] WARNING: Could not determine browser version from browsers.json"
         fi
     else
-        log "[Chromium] WARNING: browsers.json not found, cannot auto-download"
+        log_debug "[Chromium] WARNING: browsers.json not found, cannot auto-download"
+        echo "[Chromium] WARNING: browsers.json not found, cannot auto-download"
     fi
     _pw_chrome=$(find /app/.playwright-browsers -name chrome -type f 2>/dev/null | head -1)
     if [ -z "$_pw_chrome" ]; then
-        log "[Chromium] WARNING: All download attempts failed. Headless scraping will be unavailable."
-        log "[Chromium] To fix: docker exec novel-manager bash -c 'curl -fsSL https://cdn.playwright.dev/builds/cft/149.0.7827.55/linux64/chrome-linux64.zip -o /tmp/c.zip && unzip -qo /tmp/c.zip -d /app/.playwright-browsers/chromium-1228 && rm /tmp/c.zip'"
+        log_debug "[Chromium] WARNING: All download attempts failed. Headless scraping will be unavailable."
+        echo "[Chromium] WARNING: Headless scraping unavailable (Chromium not found after download attempts)"
     else
-        log "[Chromium] Ready: $_pw_chrome"
+        log_debug "[Chromium] Ready: $_pw_chrome"
+        echo "[Chromium] Ready: $_pw_chrome"
     fi
 else
-    log "[Chromium] Found in image: $_pw_chrome"
+    log_debug "[Chromium] Found in image: $_pw_chrome"
+    echo "[Chromium] Found in image: $_pw_chrome"
 fi
+) # end subshell — any failure here is contained and non-fatal
+log_debug "[Chromium] Check complete (non-fatal section)"
 
 # ─── Start Scraper Service ───
 log "[Scraper] Starting on port 3099..."
