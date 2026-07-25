@@ -263,9 +263,12 @@ fi
 log_debug "[Chromium] Check complete (non-fatal section)"
 
 # ─── Start Scraper Service ───
+# CRITICAL: The scraper reads process.env.PORT (defaults to 3099), but this
+# container sets PORT=3000 for the main Next.js app. We MUST override PORT
+# for the scraper, otherwise it steals port 3000 and the app gets EADDRINUSE.
 log "[Scraper] Starting on port 3099..."
 cd /app/scraper-service
-nohup bun index.ts > /app/data/logs/scraper-service.log 2>&1 &
+PORT=3099 nohup bun index.ts > /app/data/logs/scraper-service.log 2>&1 &
 SCRAPER_PID=$!
 log "[Scraper] PID: $SCRAPER_PID"
 

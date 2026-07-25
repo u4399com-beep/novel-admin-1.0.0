@@ -98,8 +98,9 @@ COPY --from=builder /app/node_modules/pure-rand ./node_modules/pure-rand
 COPY --from=builder /app/node_modules/c12 ./node_modules/c12
 COPY --from=builder /app/node_modules/deepmerge-ts ./node_modules/deepmerge-ts
 COPY --from=builder /app/node_modules/empathic ./node_modules/empathic
-# c12 depends on perfect-debounce at runtime (used by @prisma/config)
+# c12 depends on perfect-debounce and pathe at runtime (used by @prisma/config)
 COPY --from=builder /app/node_modules/perfect-debounce ./node_modules/perfect-debounce
+COPY --from=builder /app/node_modules/pathe ./node_modules/pathe
 # CRITICAL: @prisma/engines contains the native query engine (.so.node) and
 # schema-engine binary needed by 'prisma db push'. Without these, Prisma CLI fails.
 COPY --from=builder /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
