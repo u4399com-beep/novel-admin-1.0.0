@@ -2256,3 +2256,28 @@ Stage Summary:
 
 Unresolved:
 - Need server re-test to confirm the fix works end-to-end
+
+---
+Task ID: 3
+Agent: main
+Task: Fix EADDRINUSE (port 3000 conflict) + add missing pathe package
+
+Work Log:
+- Analyzed server logs showing container gets past Chromium section now (subshell fix worked)
+- Identified EADDRINUSE: 'Error: Failed to start server. Is port 3000 in use?'
+- Traced root cause: scraper-service/index.ts reads `process.env.PORT || '3099'`
+- Container sets PORT=3000 for Next.js app, scraper inherits this env var
+- Scraper binds to 3000 first, then Next.js app fails with EADDRINUSE
+- Fix: prefix scraper start command with `PORT=3099` in docker-entrypoint.sh
+- Also found 'pathe' missing (c12 eagerly imports it in shared chunk)
+- Verified c12 only eagerly imports pathe + perfect-debounce (no other deps needed)
+
+Stage Summary:
+- EADDRINUSE root cause: PORT env var collision between app (3000) and scraper (3099)
+- Fix: `PORT=3099 nohup bun index.ts ...` in docker-entrypoint.sh
+- Added pathe to Dockerfile COPY list
+- Pushed as commit 845dfc6
+
+Unresolved:
+- Need server re-test to confirm app starts successfully
+- Chromium download URLs have empty version (grep failed), URLs are '/cft//linux64/' — cosmetic, non-fatal
