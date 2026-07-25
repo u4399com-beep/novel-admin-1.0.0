@@ -2230,3 +2230,29 @@ Unresolved:
   will reveal the actual error on next test
 - If @prisma/engines was not the issue, the persistent debug log will show exactly
   what fails after the banner
+
+---
+Task ID: 2
+Agent: main
+Task: Fix container crash — Chromium download grep fails under set -e + add perfect-debounce
+
+Work Log:
+- Analyzed full container logs from user's server test
+- Identified EXACT crash point: [Chromium] Not found in image, downloading at runtime... → EXIT code 1
+- Root cause: `grep -o '[0-9]*'` pipeline in Chromium download section fails under `set -e`
+  when browsers.json parsing doesn't produce expected output
+- The grep is inside a variable assignment `_pw_rev=$(grep ... | grep ... | grep ...)`,
+  and under `set -e`, a failing assignment kills the script
+- Fixed by wrapping entire Chromium section in a subshell `( set +e; ... )` — any failure
+  is contained and non-fatal (Chromium download is best-effort anyway)
+- Added `perfect-debounce` to Dockerfile (c12 dependency, eliminates Prisma warning)
+
+Stage Summary:
+- Container crash was NOT caused by missing @prisma/engines (those were added in previous commit
+  and confirmed present by DIAG checks)
+- Container crash was NOT OOM (990MB available, 640MB limit, never hit)
+- Container crash was the Chromium download grep failing under `set -e`
+- All 3 commits pushed: ea5eda0, 1edc217, a4cc261
+
+Unresolved:
+- Need server re-test to confirm the fix works end-to-end
