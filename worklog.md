@@ -2281,3 +2281,31 @@ Stage Summary:
 Unresolved:
 - Need server re-test to confirm app starts successfully
 - Chromium download URLs have empty version (grep failed), URLs are '/cft//linux64/' — cosmetic, non-fatal
+
+---
+Task ID: 4
+Agent: main
+Task: Fix Docker build failure — deb.debian.org unreachable from China servers
+
+Work Log:
+- User reported 4th server test: build failed after 3562s (59 min) with apt-get update stuck
+- Error: "W: Tried to start delayed item http://deb.debian.org/debian trixie-updates/main amd64 Packages, but failed" repeated hundreds of times
+- Root cause: Dockerfile's runner stage runs `apt-get update` against deb.debian.org, which is unreachable/slow from Chinese servers
+- Fix 1: Dockerfile — replaced `deb.debian.org` with `mirrors.aliyun.com` via `ARG DEBIAN_MIRROR=mirrors.aliyun.com`
+- Fix 2: Dockerfile — added apt timeout config: `Acquire::Retries "3"; Acquire::http::Timeout "30";`
+- Fix 3: Dockerfile — added Chinese npm registry for both deps stage (`BUN_CONFIG_REGISTRY`) and scraper install (`NPM_REGISTRY`)
+- Fix 4: deploy.sh — added `--build-arg DEBIAN_MIRROR=mirrors.aliyun.com --build-arg NPM_REGISTRY=https://registry.npmmirror.com` to build args
+- Fix 5: deploy.sh — added diagnostic pattern for "delayed item" apt failures with actionable instructions
+- Fix 6: Dockerfile — added PORT=3000 comment explaining the scraper override requirement
+- Confirmed EADDRINUSE and pathe fixes from previous session are still in place
+- Removed invalid Dockerfile COPY lines (2>/dev/null || true is not valid Dockerfile syntax)
+
+Stage Summary:
+- Build failure was 100% network: apt-get update from deb.debian.org times out on Chinese servers
+- All three mirrors (Debian apt, npm registry, Docker Hub) are now defaulted to Chinese mirrors
+- Non-Chinese users can override via: --build-arg DEBIAN_MIRROR=deb.debian.org
+- Changes are in Dockerfile + deploy.sh, not yet committed/pushed
+
+Unresolved:
+- Need to commit and push for user to test on server
+- Chromium download URLs still have empty version (low priority, non-fatal)

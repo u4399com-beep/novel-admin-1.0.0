@@ -2540,7 +2540,7 @@ fi
 #   - tiny:  DOCKER_BUILDKIT=0 (sequential stages, no parallel apt)
 #   - all:   --build-arg for NODE_OPTIONS and BUN_GC_THRESHOLD
 #   - all:   adequate swap (4-6GB) to absorb peak usage
-_BUILD_ARGS="--build-arg NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM} --build-arg BUN_GC_THRESHOLD=${_TIER_BUN_GC}"
+_BUILD_ARGS="--build-arg NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM} --build-arg BUN_GC_THRESHOLD=${_TIER_BUN_GC} --build-arg DEBIAN_MIRROR=mirrors.aliyun.com --build-arg NPM_REGISTRY=https://registry.npmmirror.com"
 
 if [ "$_HW_TIER" = "tiny" ]; then
     info "串行构建 + V8堆${_TIER_NODE_MAX_MEM}MB + 6GB Swap = 防OOM"
@@ -2619,6 +2619,16 @@ if [ $BUILD_RC -ne 0 ]; then
         err "  解决方案:"
         err "    1. 查看具体错误: grep -B2 -A5 'Type error\\|error TS' ${BUILD_LOG}"
         err "    2. 可能是版本不兼容，请确认下载了完整发布包"
+
+    elif grep -qi 'delayed item\|Could not connect\|Failed to fetch\|Unable to locate package\|E: Failed' "$BUILD_LOG" 2>/dev/null; then
+        err "  → apt 软件源连接失败 (Debian 镜像不可达)"
+        err "  原因: Docker 构建过程中 apt-get update 无法连接 deb.debian.org"
+        err "  解决方案:"
+        err "    1. 本项目已内置阿里云镜像 (mirrors.aliyun.com)，此错误不应再出现"
+        err "    2. 如果仍然失败，可能是阿里云镜像也暂时不可用，请稍后重试"
+        err "    3. 手动指定其他镜像重新构建:"
+        err "       cd ${INSTALL_DIR}"
+        err "       docker compose build --no-cache --build-arg DEBIAN_MIRROR=mirrors.tuna.tsinghua.edu.cn"
 
     else
         err "  → 未知错误类型"

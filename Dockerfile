@@ -22,6 +22,9 @@ COPY package.json bun.lock ./
 # Lower GC threshold so Bun releases memory more aggressively on low-mem servers
 ARG BUN_GC_THRESHOLD=100mb
 ENV BUN_GC_THRESHOLD=${BUN_GC_THRESHOLD}
+# Use Chinese npm mirror by default (can be overridden via --build-arg)
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ENV BUN_CONFIG_REGISTRY=${NPM_REGISTRY}
 RUN bun install --frozen-lockfile
 
 # ============ Stage 2: Build ============
@@ -60,12 +63,16 @@ ENV BUN_NO_UPDATE_NOTIF=1
 ENV DB_PROVIDER=postgresql
 
 # Minimal runtime deps: curl (healthcheck) + SSL (PostgreSQL) + netcat (DB check)
-# IMPORTANT FIX: oven/bun:1 ships with a stale Debian Trixie snapshot in its
+# IMPORTANT: oven/bun:1 ships with a stale Debian Trixie snapshot in its
 # sources.list (e.g. trixie-2024XXXXX). That snapshot gets removed from mirrors,
 # causing "404 Not Found" on apt-get update and build failure.
-# We rewrite sources.list to the live codename repos before installing.
+# We rewrite sources.list to use a Chinese mirror (default: mirrors.aliyun.com)
+# because the target audience is Chinese servers where deb.debian.org is unreachable.
+# DEBIAN_MIRROR can be overridden via --build-arg for non-Chinese environments.
+ARG DEBIAN_MIRROR=mirrors.aliyun.com
 RUN rm -f /etc/apt/sources.list.d/*.sources \
-    && printf 'deb http://deb.debian.org/debian trixie main\ndeb http://deb.debian.org/debian trixie-updates main\n' > /etc/apt/sources.list \
+    && printf 'deb http://${DEBIAN_MIRROR}/debian trixie main\ndeb http://${DEBIAN_MIRROR}/debian trixie-updates main\n' > /etc/apt/sources.list \
+    && printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/99timeout \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
        curl \
@@ -73,7 +80,7 @@ RUN rm -f /etc/apt/sources.list.d/*.sources \
        libssl3 \
        netcat-openbsd \
        unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/99timeout
 
 # Create non-root user
 RUN groupadd --system --gid 1001 appuser && \
@@ -106,6 +113,9 @@ COPY --from=builder /app/node_modules/pathe ./node_modules/pathe
 COPY --from=builder /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
 # effect depends on @standard-schema/spec at runtime
 COPY --from=builder /app/node_modules/@standard-schema ./node_modules/@standard-schema
+# NOTE: If Prisma CLI at runtime reports "Cannot find package 'X'",
+# add: COPY --from=builder /app/node_modules/X ./node_modules/X
+# Common c12/effect transitive deps already copied above.
 
 # Copy scraper service source + deps
 COPY mini-services/scraper-service/package.json /tmp/scraper-deps/
@@ -113,8 +123,10 @@ COPY mini-services/scraper-service/bun.lock /tmp/scraper-deps/
 COPY mini-services/scraper-service/ ./scraper-service/
 
 # Install scraper deps in-place (no separate build stage)
+# NOTE: bun install needs network — use Chinese npm registry for Chinese servers
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 RUN cd /tmp/scraper-deps && \
-    (bun install --frozen-lockfile --production 2>&1 || echo "[WARN] Scraper deps install failed, headless scraping will be unavailable"); \
+    BUN_CONFIG_REGISTRY=${NPM_REGISTRY} bun install --frozen-lockfile --production 2>&1 || echo "[WARN] Scraper deps install failed, headless scraping will be unavailable"; \
     if [ -d node_modules ]; then cp -r node_modules /app/scraper-service/; else echo "[WARN] No scraper node_modules produced"; fi; \
     rm -rf /tmp/scraper-deps
 
@@ -137,6 +149,9 @@ USER appuser
 
 EXPOSE 3000
 
+# PORT is set here for the main Next.js app (server.js).
+# CRITICAL: The scraper service MUST override this with PORT=3099
+# when started in docker-entrypoint.sh, otherwise it steals port 3000.
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
