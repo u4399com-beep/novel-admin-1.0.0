@@ -147,7 +147,10 @@ if [ -z "$TMP_CLONE" ]; then
     if $_dl_ok; then
         mkdir -p "$INSTALL_DIR"
         # Extract, strip the top-level directory (novel-admin-1.0.0-main/)
-        tar xzf /tmp/novel-admin.tar.gz -C "$INSTALL_DIR" --strip-components=1 2>/dev/null
+        # Guard with if: under set -eo pipefail, a tar failure would kill the script
+        if tar xzf /tmp/novel-admin.tar.gz -C "$INSTALL_DIR" --strip-components=1 2>/dev/null; then
+            : # extraction succeeded
+        fi
         rm -f /tmp/novel-admin.tar.gz
         if [ -f "${INSTALL_DIR}/deploy.sh" ]; then
             TMP_CLONE="$INSTALL_DIR"

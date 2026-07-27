@@ -77,9 +77,10 @@ RUN rm -f /etc/apt/sources.list.d/*.sources \
     && apt-get install -y --no-install-recommends \
        curl \
        ca-certificates \
-       libssl3 \
        netcat-openbsd \
        unzip \
+    # libssl3 renamed to libssl3t64 in Debian Trixie (oven/bun:1 has its own OpenSSL)
+    && apt-get install -y --no-install-recommends libssl3t64 2>/dev/null || true \
     && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/99timeout
 
 # Create non-root user
