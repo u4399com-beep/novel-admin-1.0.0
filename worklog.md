@@ -2309,3 +2309,31 @@ Stage Summary:
 Unresolved:
 - Need to commit and push for user to test on server
 - Chromium download URLs still have empty version (low priority, non-fatal)
+
+---
+Task ID: 5
+Agent: main
+Task: Full deployment audit (install.sh + Dockerfile + deploy.sh + entrypoint + compose)
+
+Work Log:
+- Syntax checked all shell scripts (bash -n)
+- Verified no Windows line endings (grep -cP '\r' all files = 0)
+- Verified all Dockerfile COPY source files exist
+- Verified next.config.ts has output: standalone
+- Verified scraper reads process.env.PORT || '3099' (PORT=3099 override works)
+- Verified docker-compose.yml port mapping and env var consistency
+- Verified build args word splitting safety
+- Verified DOCKER_BUILDKIT=0 compatibility
+- Verified .dockerignore excludes .git/, node_modules/, .next/
+
+Stage Summary:
+- 2 CRITICAL bugs found and fixed:
+  1. Dockerfile: libssl3 renamed to libssl3t64 in Debian Trixie (apt-get would fail)
+  2. install.sh: tar extraction unguarded under set -eo pipefail (silent exit on corruption)
+- 1 LOW issue noted (non-critical): install.sh git clone via raw file proxies unlikely to work
+- All previous fixes (EADDRINUSE, pathe, Chinese mirrors) confirmed still in place
+- Commits: 41c45bd (Chinese mirrors), d813172 (audit fixes)
+
+Unresolved:
+- Need server re-test to confirm the full flow works end-to-end
+- Chromium download URLs still have empty version (low priority, non-fatal)
