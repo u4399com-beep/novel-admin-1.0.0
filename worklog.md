@@ -2337,3 +2337,27 @@ Stage Summary:
 Unresolved:
 - Need server re-test to confirm the full flow works end-to-end
 - Chromium download URLs still have empty version (low priority, non-fatal)
+
+---
+Task ID: 5
+Agent: Main Orchestrator
+Task: Fix Dockerfile printf single-quote bug causing ${DEBIAN_MIRROR} not to expand
+
+Work Log:
+- 5th server test: build failed after 2216s with `Could not resolve '${DEBIAN_MIRROR}'`
+- Root cause: Dockerfile line 74 used `printf '...${DEBIAN_MIRROR}...'` with single quotes
+- In shell, single quotes prevent ALL variable expansion → literal string written to sources.list
+- Fix: Changed to `printf "...${DEBIAN_MIRROR}..."` (double quotes)
+- Audited all 5 ARG usages across 3 Dockerfile stages — only this one was broken
+- Added `Could not resolve` to deploy.sh diagnostic pattern
+- Added sub-diagnostic for literal `${DEBIAN_MIRROR}` pattern (detects future quoting bugs)
+
+Stage Summary:
+- Root cause: single-line shell quoting mistake in Dockerfile
+- Fix: Dockerfile line 74, single quotes → double quotes
+- deploy.sh: enhanced apt failure diagnostic with DNS resolution pattern + quoting bug detection
+- Status: Ready for commit and push, needs server re-test
+
+Unresolved:
+- Need server re-test to confirm the full flow works end-to-end
+- Chromium download URLs still have empty version (low priority, non-fatal)

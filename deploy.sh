@@ -2620,15 +2620,22 @@ if [ $BUILD_RC -ne 0 ]; then
         err "    1. 查看具体错误: grep -B2 -A5 'Type error\\|error TS' ${BUILD_LOG}"
         err "    2. 可能是版本不兼容，请确认下载了完整发布包"
 
-    elif grep -qi 'delayed item\|Could not connect\|Failed to fetch\|Unable to locate package\|E: Failed' "$BUILD_LOG" 2>/dev/null; then
-        err "  → apt 软件源连接失败 (Debian 镜像不可达)"
-        err "  原因: Docker 构建过程中 apt-get update 无法连接 deb.debian.org"
-        err "  解决方案:"
-        err "    1. 本项目已内置阿里云镜像 (mirrors.aliyun.com)，此错误不应再出现"
-        err "    2. 如果仍然失败，可能是阿里云镜像也暂时不可用，请稍后重试"
-        err "    3. 手动指定其他镜像重新构建:"
-        err "       cd ${INSTALL_DIR}"
-        err "       docker compose build --no-cache --build-arg DEBIAN_MIRROR=mirrors.tuna.tsinghua.edu.cn"
+    elif grep -qi 'delayed item\|Could not connect\|Failed to fetch\|Unable to locate package\|E: Failed\|Could not resolve' "$BUILD_LOG" 2>/dev/null; then
+        if grep -q '\$[{]DEBIAN_MIRROR[}]' "$BUILD_LOG" 2>/dev/null; then
+            err "  → Dockerfile 引号错误: \${DEBIAN_MIRROR} 未展开"
+            err "  原因: Dockerfile 中 printf 使用了单引号 ('...')，导致变量不被 shell 展开"
+            err "  解决方案: 将 printf '...\${DEBIAN_MIRROR}...' 改为 printf \"...\${DEBIAN_MIRROR}...\""
+            err "  这是代码 bug，请提交 issue: https://github.com/u4399com-beep/novel-admin-1.0.0/issues"
+        else
+            err "  → apt 软件源连接失败 (Debian 镜像不可达)"
+            err "  原因: Docker 构建过程中 apt-get update 无法连接镜像源"
+            err "  解决方案:"
+            err "    1. 本项目已内置阿里云镜像 (mirrors.aliyun.com)，此错误不应再出现"
+            err "    2. 如果仍然失败，可能是阿里云镜像也暂时不可用，请稍后重试"
+            err "    3. 手动指定其他镜像重新构建:"
+            err "       cd ${INSTALL_DIR}"
+            err "       docker compose build --no-cache --build-arg DEBIAN_MIRROR=mirrors.tuna.tsinghua.edu.cn"
+        fi
 
     else
         err "  → 未知错误类型"

@@ -71,7 +71,7 @@ ENV DB_PROVIDER=postgresql
 # DEBIAN_MIRROR can be overridden via --build-arg for non-Chinese environments.
 ARG DEBIAN_MIRROR=mirrors.aliyun.com
 RUN rm -f /etc/apt/sources.list.d/*.sources \
-    && printf 'deb http://${DEBIAN_MIRROR}/debian trixie main\ndeb http://${DEBIAN_MIRROR}/debian trixie-updates main\n' > /etc/apt/sources.list \
+    && printf "deb http://${DEBIAN_MIRROR}/debian trixie main\ndeb http://${DEBIAN_MIRROR}/debian trixie-updates main\n" > /etc/apt/sources.list \
     && printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/99timeout \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
