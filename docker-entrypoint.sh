@@ -212,36 +212,70 @@ if [ -z "$_pw_chrome" ]; then
     echo "[Chromium] Not found in image, downloading at runtime..."
     _pw_json="/app/scraper-service/node_modules/playwright-core/browsers.json"
     if [ -f "$_pw_json" ]; then
-        _pw_rev=$(grep -A1 '"name": "chromium"' "$_pw_json" | grep '"revision"' | head -1 | grep -o '[0-9]*')
-        _pw_ver=$(grep -A1 '"name": "chromium"' "$_pw_json" | grep '"browserVersion"' | head -1 | grep -o '[0-9][^"]*')
-        _pw_arch=$(uname -m)
-        _pw_dir="/app/.playwright-browsers/chromium-${_pw_rev}"
-        mkdir -p "$_pw_dir"
-        if [ "$_pw_arch" = "x86_64" ]; then
-            _pw_zip="chrome-linux64.zip"
-            _pw_urls="https://cdn.playwright.dev/builds/cft/${_pw_ver}/linux64/${_pw_zip} https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds/cft/${_pw_ver}/linux64/${_pw_zip}"
-        elif [ "$_pw_arch" = "aarch64" ]; then
-            _pw_zip="chromium-linux-arm64.zip"
-            _pw_urls="https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${_pw_rev}/${_pw_zip} https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds/chromium/${_pw_rev}/${_pw_zip}"
+        # Parse browsers.json to get chromium revision.
+        # browsers.json is a flat JSON file: {"browsers":{"chromium":{"revision":"1161",...},...}}
+        # Use python3 for reliable JSON parsing; fall back to grep if python3 unavailable.
+        _pw_rev=""
+        if command -v python3 &>/dev/null; then
+            _pw_rev=$(python3 -c "
+import json, sys
+try:
+    data = json.load(open('$_pw_json'))
+    print(data.get('browsers', data).get('chromium', {}).get('revision', ''))
+except Exception:
+    pass
+" 2>/dev/null)
         fi
-        if [ -n "${_pw_urls:-}" ]; then
-            for _pw_url in $_pw_urls; do
-                log_debug "[Chromium] Trying $_pw_url..."
-                echo "[Chromium] Trying $_pw_url..."
-                if curl -fsSL --connect-timeout 15 --max-time 600 "$_pw_url" -o /tmp/pw-chromium.zip 2>/dev/null; then
-                    unzip -qo /tmp/pw-chromium.zip -d "$_pw_dir" 2>/dev/null && \
-                        touch "$_pw_dir/INSTALLATION_COMPLETE" && \
-                        log_debug "[Chromium] Downloaded and installed" && \
-                        echo "[Chromium] Downloaded and installed" && \
-                        break
-                fi
-                log_debug "[Chromium] Failed, trying next mirror..."
-                echo "[Chromium] Failed, trying next mirror..."
-            done
-            rm -f /tmp/pw-chromium.zip 2>/dev/null
+        # Fallback: extract revision via grep (fragile but works for known formats)
+        if [ -z "$_pw_rev" ]; then
+            _pw_rev=$(grep -o '"chromium"[[:space:]]*:[[:space:]]*{[^}]*"revision"[[:space:]]*:[[:space:]]*"[0-9]*"' "$_pw_json" 2>/dev/null | grep -o '"revision"[[:space:]]*:[[:space:]]*"[0-9]*"' | grep -o '[0-9]*' | head -1)
+        fi
+        # Additional fallback: try simpler grep patterns
+        if [ -z "$_pw_rev" ]; then
+            _pw_rev=$(python3 -c "
+import re, sys
+try:
+    with open('$_pw_json') as f:
+        content = f.read()
+    # Find chromium revision in any JSON structure
+    m = re.search(r'\"chromium\".*?\"revision\"\s*:\s*\"(\d+)\"', content, re.DOTALL)
+    if m:
+        print(m.group(1))
+except Exception:
+    pass
+" 2>/dev/null)
+        fi
+        _pw_arch=$(uname -m)
+        _pw_dir="/app/.playwright-browsers/chromium-$_pw_rev"
+        mkdir -p "$_pw_dir"
+        if [ -z "$_pw_rev" ]; then
+            log_debug "[Chromium] WARNING: Could not extract chromium revision from browsers.json"
+            echo "[Chromium] WARNING: Could not determine browser revision from browsers.json"
         else
-            log_debug "[Chromium] No download URLs constructed (rev=$_pw_rev, ver=$_pw_ver, arch=$_pw_arch)"
-            echo "[Chromium] WARNING: Could not determine browser version from browsers.json"
+            # Playwright CDN download URLs (revision-based, no version needed)
+            if [ "$_pw_arch" = "x86_64" ]; then
+                _pw_zip="chrome-linux64.zip"
+                _pw_urls="https://cdn.playwright.dev/builds/chromium/${_pw_rev}/${_pw_zip} https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds/chromium/${_pw_rev}/${_pw_zip}"
+            elif [ "$_pw_arch" = "aarch64" ]; then
+                _pw_zip="chromium-linux-arm64.zip"
+                _pw_urls="https://cdn.playwright.dev/builds/chromium/${_pw_rev}/${_pw_zip} https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds/chromium/${_pw_rev}/${_pw_zip}"
+            fi
+            if [ -n "${_pw_urls:-}" ]; then
+                for _pw_url in $_pw_urls; do
+                    log_debug "[Chromium] Trying $_pw_url..."
+                    echo "[Chromium] Trying $_pw_url..."
+                    if curl -fsSL --connect-timeout 15 --max-time 600 "$_pw_url" -o /tmp/pw-chromium.zip 2>/dev/null; then
+                        unzip -qo /tmp/pw-chromium.zip -d "$_pw_dir" 2>/dev/null && \
+                            touch "$_pw_dir/INSTALLATION_COMPLETE" && \
+                            log_debug "[Chromium] Downloaded and installed" && \
+                            echo "[Chromium] Downloaded and installed" && \
+                            break
+                    fi
+                    log_debug "[Chromium] Failed, trying next mirror..."
+                    echo "[Chromium] Failed, trying next mirror..."
+                done
+                rm -f /tmp/pw-chromium.zip 2>/dev/null
+            fi
         fi
     else
         log_debug "[Chromium] WARNING: browsers.json not found, cannot auto-download"
@@ -365,5 +399,5 @@ log "[App] Exited with code $EXIT_CODE"
 
 # Try to stop scraper if still running
 [ -n "$SCRAPER_PID" ] && kill -TERM "$SCRAPER_PID" 2>/dev/null || true
-wait 2>/dev/null || true
+wait "$SCRAPER_PID" 2>/dev/null || true
 exit $EXIT_CODE

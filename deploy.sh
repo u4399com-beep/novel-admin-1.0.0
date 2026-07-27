@@ -56,11 +56,10 @@ REPO="u4399com-beep/novel-admin-1.0.0"
 GIT_URL="https://github.com/${REPO}.git"
 ARCHIVE_URL="https://github.com/${REPO}/archive/refs/heads/main.tar.gz"
 
-# China GitHub proxies (for git clone)
-GIT_PROXIES=(
-    "https://ghfast.top/https://github.com"
-    "https://mirror.ghproxy.com/https://github.com"
-    "https://gh-proxy.com/https://github.com"
+# China git clone proxies (actual git protocol mirrors, NOT raw file proxies)
+GIT_CLONE_PROXIES=(
+    "https://gitclone.com/github.com/${REPO}"
+    "https://kkgithub.com/${REPO}"
 )
 # China raw file proxies (for curl/wget download)
 RAW_PROXIES=("https://ghfast.top" "https://mirror.ghproxy.com")
@@ -141,7 +140,7 @@ while [ $# -gt 0 ]; do
         --stop)          MODE="stop"; shift ;;
         --fix-firewall)  MODE="fix-firewall"; shift ;;
         -h|--help)
-            sed -n '2,/^ ╚/p' "$0" | sed 's/^ ║  \?//'
+            sed -n '2,/^ ╚/p' "$0" 2>/dev/null | sed 's/^ ║  \?//' || true
             exit 0
             ;;
         *)
@@ -158,7 +157,13 @@ done
 #  Handles: dirty working tree, network errors, re-exec after update.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 _SELF_UPDATED=false
-if [ "$MODE" = "install" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
+# Guard against infinite re-exec loop after self-update
+if [ "${_SELF_UPDATE_REEXEC:-false}" = "true" ]; then
+    _SELF_UPDATE_REEXEC=false
+else
+_SELF_UPDATE_SKIP=false
+fi
+if [ "$MODE" = "install" ] && [ "${_SELF_UPDATE_REEXEC:-false}" != "true" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
     _local_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "")
     _remote_sha=$(timeout 10 git -C "$SCRIPT_DIR" ls-remote --origin HEAD 2>/dev/null | head -1 | cut -f1 || echo "")
     if [ -n "$_local_sha" ] && [ -n "$_remote_sha" ] && [ "$_local_sha" != "$_remote_sha" ]; then
@@ -179,7 +184,7 @@ if [ "$MODE" = "install" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/d
             fi
             _SELF_UPDATED=true
             echo -e "\033[0;32m  ✓ 已更新，重新启动...\033[0m" >&2
-            exec bash "$0" "$@"
+            _SELF_UPDATE_REEXEC=true exec bash "$0" "$@"
         else
             # Restore .env even on failure
             if $_env_saved && [ -f "/tmp/.env.novel-backup.$$" ]; then
@@ -191,7 +196,7 @@ if [ "$MODE" = "install" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/d
             if git -C "$SCRIPT_DIR" fetch origin main 2>/dev/null && \
                git -C "$SCRIPT_DIR" reset --hard origin/main 2>/dev/null; then
                 echo -e "\033[0;32m  ✓ 强制同步成功，重新启动...\033[0m" >&2
-                exec bash "$0" "$@"
+                _SELF_UPDATE_REEXEC=true exec bash "$0" "$@"
             else
                 echo -e "\033[0;31m[ERROR] 更新失败，使用本地版本继续\033[0m" >&2
                 echo -e "\033[0;31m  手动修复: cd $(pwd) && git checkout -- . && git pull && ./deploy.sh\033[0m" >&2
@@ -270,11 +275,16 @@ ask_n() {
 
 # Generate random hex string (N bytes → 2N hex chars)
 rand_hex() {
+    local _result
     if command -v openssl &>/dev/null; then
-        openssl rand -hex "${1:-32}" 2>/dev/null && return
+        _result=$(openssl rand -hex "${1:-32}" 2>/dev/null)
+        if [ -n "$_result" ]; then echo "$_result"; return; fi
     fi
     # Fallback: /dev/urandom (always available on Linux)
-    tr -dc 'a-f0-9' </dev/urandom 2>/dev/null | head -c "$(( ${1:-32} * 2 ))"
+    _result=$(tr -dc 'a-f0-9' </dev/urandom 2>/dev/null | head -c "$(( ${1:-32} * 2 ))")
+    if [ -n "$_result" ]; then echo "$_result"; return; fi
+    # Last resort: timestamp + PID + random
+    echo "$(date +%s)$$${RANDOM:-0}$(date +%N)" | tr -dc 'a-f0-9' | head -c "$(( ${1:-32} * 2 ))"
     echo
 }
 
@@ -494,8 +504,8 @@ dl_to_stdout() {
 }
 dl_to_file() {
     case "$DL_CMD" in
-        curl) curl $DL_OPTS "$1" -o "$2" 2>/dev/null ;;
-        wget) wget $DL_OPTS -O "$2" "$1" 2>/dev/null ;;
+        curl) curl $DL_OPTS "$1" -o "$2" ;;
+        wget) wget $DL_OPTS -O "$2" "$1" ;;
     esac
 }
 
@@ -541,6 +551,9 @@ install_docker_via_pkg() {
                     noble|plucky)  _apt_codename="noble" ;;   # 24.04 / 24.10
                     jammy)         _apt_codename="jammy" ;;   # 22.04
                     focal)         _apt_codename="focal" ;;   # 20.04
+                    bookworm)      _apt_codename="bookworm" ;;  # Debian 12
+                    bullseye)      _apt_codename="bullseye" ;;  # Debian 11
+                    bionic)        _apt_codename="bionic" ;;   # Ubuntu 18.04
                     *)             _apt_codename="noble" ;;   # default to latest LTS
                 esac
 
@@ -714,7 +727,7 @@ ensure_docker() {
         if [ -f /tmp/docker.tgz ]; then
             info "  解压 Docker 二进制..."
             tar xzf /tmp/docker.tgz -C /tmp >>"$LOG_FILE" 2>&1 && \
-            cp /tmp/docker/* /usr/local/bin/ >>"$LOG_FILE" 2>&1 && \
+            cp /tmp/docker/docker* /usr/local/bin/ >>"$LOG_FILE" 2>&1 && \
             rm -rf /tmp/docker /tmp/docker.tgz && _installed=true
         fi
     fi
@@ -870,17 +883,20 @@ configure_docker_daemon() {
 
     # Merge with existing config if present (using python3)
     if command -v python3 &>/dev/null && [ -f /etc/docker/daemon.json ]; then
-        python3 -c "
+        export _NEW_DAEMON_JSON="$_new_daemon_json"
+        python3 << 'PYEOF' 2>/dev/null && ok "Docker 守护进程已配置 (合并已有配置)" && return
 import json, sys
 try:
     cfg = json.load(open('/etc/docker/daemon.json'))
 except: cfg = {}
-# Merge new settings (new values override old)
-for k, v in json.loads('''${_new_daemon_json}''').items():
+# Merge new settings from env var
+import os
+_tmp_json = os.environ.get('_NEW_DAEMON_JSON', '{}')
+for k, v in json.loads(_tmp_json).items():
     cfg[k] = v
 json.dump(cfg, open('/etc/docker/daemon.json','w'), indent=2)
 print('merged')
-" 2>/dev/null && ok "Docker 守护进程已配置 (合并已有配置)" && return
+PYEOF
     fi
 
     # Simple: just write new config
@@ -1275,7 +1291,7 @@ verify_port_reachable() {
 #  COMPOSE SHORTCUT (wraps detected COMPOSE_CMD)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 compose() {
-    $COMPOSE_CMD "$@"
+    "$COMPOSE_CMD" "$@"
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1481,6 +1497,7 @@ if [ "$MODE" = "uninstall" ]; then
     warn "  • Docker 镜像: 本地构建的镜像"
     warn "  • 数据卷: PostgreSQL 数据（永久丢失）"
     echo ""
+    # Never auto-confirm destructive operations, even with -y
     if ! ask_y "确认完全卸载？"; then
         echo "已取消。"
         exit 0
@@ -1820,12 +1837,12 @@ if [ "${_TIER_SWAP_TARGET}" -gt 0 ] && [ "${_HW_SWAP_MB:-0}" -lt "${_TIER_SWAP_T
         _swap_created=false
 
         # Method 1: fallocate (fast, but may fail on some filesystems)
-        fallocate -l ${_swap_size_mb}M /swapfile 2>/dev/null && _swap_created=true
+        fallocate -l "${_swap_size_mb}M" /swapfile 2>/dev/null && _swap_created=true
 
         # Method 2: dd fallback (slower but universal)
         if ! $_swap_created; then
             warn "  fallocate 不可用，使用 dd (较慢)..."
-            dd if=/dev/zero of=/swapfile bs=1M count=$_swap_size_mb status=none 2>/dev/null && _swap_created=true
+            dd if=/dev/zero of=/swapfile bs=1M count="$_swap_size_mb" status=none 2>/dev/null && _swap_created=true
         fi
 
         if $_swap_created; then
@@ -1929,7 +1946,9 @@ if [ -f "${SCRIPT_DIR}/Dockerfile" ] && [ -f "${SCRIPT_DIR}/docker-compose.yml" 
         fi
         info "复制项目文件到 ${INSTALL_DIR}..."
         mkdir -p "$INSTALL_DIR"
-        cp -a "$SCRIPT_DIR/." "$INSTALL_DIR/"
+        # Exclude .git (large), node_modules/.next (stale), .env (secrets)
+        rsync -a --exclude='.git' --exclude='node_modules' --exclude='.next' --exclude='.env' "$SCRIPT_DIR/" "$INSTALL_DIR/" 2>/dev/null || \
+        tar cf - --exclude='.git' --exclude='node_modules' --exclude='.next' --exclude='.env' -C "$SCRIPT_DIR" . | tar xf - -C "$INSTALL_DIR/"
         _got=true
         ok "项目文件已复制"
     fi
@@ -1983,9 +2002,9 @@ if ! $_got && command -v git &>/dev/null; then
 
     # Case C2: Git clone via proxy
     if ! $_got; then
-        for _px in "${GIT_PROXIES[@]}"; do
+        for _px in "${GIT_CLONE_PROXIES[@]}"; do
             info "  尝试代理 ${_px%%/*}..."
-            if git clone --depth 1 "${_px}/${REPO}.git" "$INSTALL_DIR" 2>&1; then
+            if git clone --depth 1 "$_px" "$INSTALL_DIR" 2>&1; then
                 cd "$INSTALL_DIR"
                 git remote set-url origin "$GIT_URL" 2>/dev/null || true
                 _got=true; ok "通过代理克隆成功"
@@ -2123,7 +2142,7 @@ if [ -f .env ]; then
                     _key="${_kv%%=*}"
                     _value="${_kv#*=}"
                     if grep -q "^${_key}=" .env 2>/dev/null; then
-                        sed -i "s|^${_key}=.*|${_key}=${_value}|" .env
+                        sed -i.bak "s|^${_key}=.*|${_key}=${_value}|" .env && rm -f .env.bak
                     else
                         echo "${_key}=${_value}" >> .env
                     fi
@@ -2215,15 +2234,15 @@ ADMIN_PASSWORD=${_admin_pw}
 SCRAPER_SERVICE_TOKEN=${_gen_token}
 
 # ─── Optional External Services (uncomment to enable) ─
-FIRECRAWL_API_KEY=
-FIRECRAWL_API_URL=
-AGENTQL_API_KEY=
-AGENTQL_API_URL=
-CLOUD_BROWSER_PROVIDER=
-BROWSERLESS_API_KEY=
-BROWSERLESS_API_URL=
-STEEL_API_KEY=
-STEEL_API_URL=
+#FIRECRAWL_API_KEY=
+#FIRECRAWL_API_URL=
+#AGENTQL_API_KEY=
+#AGENTQL_API_URL=
+#CLOUD_BROWSER_PROVIDER=
+#BROWSERLESS_API_KEY=
+#BROWSERLESS_API_URL=
+#STEEL_API_KEY=
+#STEEL_API_URL=
 
 # ─── Paths ────────────────────────────────────────────
 BACKUP_DIR=${INSTALL_DIR}/backups
@@ -2499,9 +2518,9 @@ if [ "${COMPOSE_CMD}" = "docker-compose" ]; then
 fi
 
 # ── Validate compose file before build ──
-if ! $COMPOSE_CMD config > /dev/null 2>&1; then
+if ! "$COMPOSE_CMD" config > /dev/null 2>&1; then
     err "docker-compose.yml 校验失败！详细错误："
-    $COMPOSE_CMD config 2>&1 | head -20
+    "$COMPOSE_CMD" config 2>&1 | head -20
     err "请检查上方错误信息，或删除 docker-compose.yml 后重新运行: ./deploy.sh"
     exit 1
 fi
@@ -2659,8 +2678,18 @@ rm -f "$BUILD_LOG" 2>/dev/null
 
 # ── Start ──
 echo ""
+# Pre-create BACKUP_DIR on host (docker-compose mounts it)
+mkdir -p "${INSTALL_DIR}/backups"
+
+# Pre-flight port check (port may have been taken during the build)
+if port_in_use "${SAVE_PORT}"; then
+    err "端口 ${SAVE_PORT} 在构建期间被其他程序占用！"
+    err "  修改 .env 中 APP_PORT 后重试: ${COMPOSE_CMD:-docker compose} up -d"
+    exit 1
+fi
+
 set +e
-$COMPOSE_CMD up -d 2>&1
+"$COMPOSE_CMD" up -d 2>&1
 START_RC=$?
 set -e
 
@@ -2687,6 +2716,7 @@ MAX_WAIT=180
 HEALTHY=false
 _CRASH_SEEN=0
 
+set +e
 while [ $ELAPSED -lt $MAX_WAIT ]; do
     # Check novel-manager container state specifically
     _mgr_status=$(docker inspect --format='{{.State.Status}}' novel-manager 2>/dev/null || echo "unknown")
@@ -2778,6 +2808,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
     sleep 3
     ELAPSED=$((ELAPSED + 3))
 done
+set -e
 
 # Clear progress line
 [ -t 2 ] && printf "\r%*s\r" 60 "" >&2

@@ -104,11 +104,11 @@ if command -v git &>/dev/null; then
     if git clone --depth 1 "$GIT_URL" "$INSTALL_DIR" 2>/dev/null; then
         TMP_CLONE="$INSTALL_DIR"
     else
-        # Try China proxies
-        for proxy in "${RAW_PROXIES[@]}"; do
+        # Try China git clone proxies (NOT raw file proxies — those don't support git protocol)
+        for proxy in "https://gitclone.com/github.com/${REPO}" "https://kkgithub.com/${REPO}"; do
             log_info "  尝试镜像 ${proxy%%/*}..."
             rm -rf "$INSTALL_DIR" 2>/dev/null || true
-            if git clone --depth 1 "${proxy}/${GIT_URL}" "$INSTALL_DIR" 2>/dev/null; then
+            if git clone --depth 1 "$proxy" "$INSTALL_DIR" 2>/dev/null; then
                 cd "$INSTALL_DIR"
                 git remote set-url origin "$GIT_URL" 2>/dev/null || true
                 TMP_CLONE="$INSTALL_DIR"
