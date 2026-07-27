@@ -62,7 +62,7 @@ GIT_CLONE_PROXIES=(
     "https://kkgithub.com/${REPO}"
 )
 # China raw file proxies (for curl/wget download)
-RAW_PROXIES=("https://ghfast.top" "https://mirror.ghproxy.com")
+RAW_PROXIES=("https://ghfast.top" "https://mirror.ghproxy.com" "https://gh-proxy.com")
 # China Docker Hub mirrors
 DOCKER_MIRRORS=(
     "https://docker.1ms.run"
@@ -158,12 +158,11 @@ done
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 _SELF_UPDATED=false
 # Guard against infinite re-exec loop after self-update
-if [ "${_SELF_UPDATE_REEXEC:-false}" = "true" ]; then
-    _SELF_UPDATE_REEXEC=false
-else
 _SELF_UPDATE_SKIP=false
+if [ "${_SELF_UPDATE_REEXEC:-false}" = "true" ]; then
+    _SELF_UPDATE_SKIP=true
 fi
-if [ "$MODE" = "install" ] && [ "${_SELF_UPDATE_REEXEC:-false}" != "true" ] && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
+if [ "$MODE" = "install" ] && ! $_SELF_UPDATE_SKIP && [ -d "${SCRIPT_DIR}/.git" ] && command -v git &>/dev/null; then
     _local_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "")
     _remote_sha=$(timeout 10 git -C "$SCRIPT_DIR" ls-remote --origin HEAD 2>/dev/null | head -1 | cut -f1 || echo "")
     if [ -n "$_local_sha" ] && [ -n "$_remote_sha" ] && [ "$_local_sha" != "$_remote_sha" ]; then
@@ -899,9 +898,16 @@ print('merged')
 PYEOF
     fi
 
-    # Simple: just write new config
+    # Simple: just write new config (merge manually if no python3)
     mkdir -p /etc/docker
-    echo "$_new_daemon_json" > /etc/docker/daemon.json
+    if [ -f /etc/docker/daemon.json ] && command -v jq &>/dev/null; then
+        # jq fallback: merge new keys into existing config
+        _merged=$(jq -s '.[0] * .[1]' /etc/docker/daemon.json <(echo "$_new_daemon_json") 2>/dev/null) && \
+            echo "$_merged" > /etc/docker/daemon.json || \
+            echo "$_new_daemon_json" > /etc/docker/daemon.json
+    else
+        echo "$_new_daemon_json" > /etc/docker/daemon.json
+    fi
 
     # Restart Docker to apply
     systemctl daemon-reload 2>/dev/null || true
@@ -1846,9 +1852,13 @@ if [ "${_TIER_SWAP_TARGET}" -gt 0 ] && [ "${_HW_SWAP_MB:-0}" -lt "${_TIER_SWAP_T
         fi
 
         if $_swap_created; then
-            chmod 600 /swapfile && \
-            mkswap /swapfile >/dev/null 2>&1 && \
-            swapon /swapfile 2>/dev/null
+            if chmod 600 /swapfile && \
+               mkswap /swapfile >/dev/null 2>&1 && \
+               swapon /swapfile 2>/dev/null; then
+                : # swap activated successfully
+            else
+                warn "Swap 激活失败，构建可能因 OOM 失败"
+            fi
             if swapon --show 2>/dev/null | grep -q swapfile; then
                 # Persist in fstab
                 grep -q 'swapfile' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
@@ -1947,8 +1957,13 @@ if [ -f "${SCRIPT_DIR}/Dockerfile" ] && [ -f "${SCRIPT_DIR}/docker-compose.yml" 
         info "复制项目文件到 ${INSTALL_DIR}..."
         mkdir -p "$INSTALL_DIR"
         # Exclude .git (large), node_modules/.next (stale), .env (secrets)
-        rsync -a --exclude='.git' --exclude='node_modules' --exclude='.next' --exclude='.env' "$SCRIPT_DIR/" "$INSTALL_DIR/" 2>/dev/null || \
-        tar cf - --exclude='.git' --exclude='node_modules' --exclude='.next' --exclude='.env' -C "$SCRIPT_DIR" . | tar xf - -C "$INSTALL_DIR/"
+        if rsync -a --exclude='.git' --exclude='node_modules' --exclude='.next' --exclude='.env' "$SCRIPT_DIR/" "$INSTALL_DIR/" 2>/dev/null; then
+            : # rsync succeeded
+        elif tar cf - --exclude='.git' --exclude='node_modules' --exclude='.next' --exclude='.env' -C "$SCRIPT_DIR" . 2>/dev/null | tar xf - -C "$INSTALL_DIR/" 2>/dev/null; then
+            : # tar fallback succeeded
+        else
+            die "文件复制失败 (rsync 和 tar 均不可用)"
+        fi
         _got=true
         ok "项目文件已复制"
     fi
@@ -2397,7 +2412,7 @@ info "生成 docker-compose.yml..."
 # Omit 'version' field — docker compose v2 ignores it (warns "obsolete"),
 # and modern v2 on Rocky/RHEL/Ubuntu 24+ all work fine without it.
 # If user has docker-compose v1 (Debian 11), deploy.sh detects it and
-# injects 'version: "3.3"' automatically via sed.
+# injects 'version: "3.8"' automatically via sed.
 cat > docker-compose.yml << 'COMPOSE_EOF'
 services:
   postgres:
