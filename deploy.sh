@@ -85,7 +85,7 @@ DOCKER_MIRRORS=(
 REQUIRED_FILES=(Dockerfile docker-compose.yml docker-entrypoint.sh .env.production)
 
 # Defaults
-LOG_FILE="/tmp/novel-deploy-$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE=$(mktemp /tmp/novel-deploy.XXXXXX.log 2>/dev/null) || LOG_FILE="/tmp/novel-deploy-$(date +%Y%m%d_%H%M%S).log"
 INSTALL_DIR="/opt/novel-admin"
 APP_PORT=""
 MODE="install"
@@ -134,6 +134,7 @@ _TIER_MAX_CONCURRENT_UL=3
 while [ $# -gt 0 ]; do
     case "$1" in
         -y|--yes)        AUTO_YES=true; shift ;;
+        --force)         _FORCE=true; shift ;;
         -d|--dir)        INSTALL_DIR="${2:-}"; [ -z "$INSTALL_DIR" ] && { echo "Error: -d requires a path"; exit 1; }; shift 2 ;;
         -p|--port)       APP_PORT="${2:-}"; [ -z "$APP_PORT" ] && { echo "Error: -p requires a port number"; exit 1; }; shift 2 ;;
         -v|--verbose)    VERBOSE=true; shift ;;
@@ -202,7 +203,7 @@ if [ "$MODE" = "install" ] && ! $_SELF_UPDATE_SKIP && [ -d "${SCRIPT_DIR}/.git" 
             if git -C "$SCRIPT_DIR" fetch origin main 2>/dev/null && \
                git -C "$SCRIPT_DIR" reset --hard origin/main 2>/dev/null; then
                 echo -e "\033[0;32m  ✓ 强制同步成功，重新启动...\033[0m" >&2
-                _SELF_UPDATE_REEXEC=true exec bash "$0" "$@"
+                _SELF_UPDATE_REEXEC=true exec bash "$0" "${_ORIG_ARGS[@]}"
             else
                 echo -e "\033[0;31m[ERROR] 更新失败，使用本地版本继续\033[0m" >&2
                 echo -e "\033[0;31m  手动修复: cd $(pwd) && git checkout -- . && git pull && ./deploy.sh\033[0m" >&2
@@ -227,7 +228,7 @@ else
 fi
 
 # Initialize log file
-: > "$LOG_FILE" 2>/dev/null || LOG_FILE=""
+: > "$LOG_FILE" 2>/dev/null || LOG_FILE="/dev/null"
 
 # Unified output: prints to terminal AND appends to log file
 _log() {
@@ -302,7 +303,7 @@ rand_pass() {
         local _raw=$(( (_len * 3 + 2) / 3 + 2 ))
         openssl rand -base64 "$_raw" 2>/dev/null | tr -d '=/+' | head -c "$_len" && echo && return
     fi
-    tr -dc 'A-Za-z0-9!@#%' </dev/urandom 2>/dev/null | head -c "$_len"
+    tr -dc 'A-Za-z0-9!@#$%^&*()-_=+' </dev/urandom 2>/dev/null | head -c "$_len"
     echo
 }
 
@@ -330,7 +331,8 @@ my_ip() {
     _ip=$(ifconfig 2>/dev/null | awk '/inet / && !/127.0.0.1/{print $2}' | head -1 | tr -d 'addr:')
     if [[ -n "$_ip" && ! "$_ip" =~ ^127\. ]]; then echo "$_ip"; return; fi
 
-    echo "YOUR_SERVER_IP"
+    # Fill in fallback (zero bytes) — head -c returns nothing
+    _ip=$(command -v hostname -I 2>/dev/null | awk '{print $1}') || echo "YOUR_SERVER_IP"
 }
 
 # Check if a TCP port is in use (works without ss/lsof/netstat)
@@ -458,8 +460,8 @@ pkg_install() {
         # Verify — for library packages, check dpkg/rpm instead of command
         _found=false
         command -v "$pkg" &>/dev/null && _found=true
-        dpkg -s "$pkg" &>/dev/null 2>&1 && _found=true
-        rpm -q "$pkg" &>/dev/null 2>&1 && _found=true
+        dpkg -s "$pkg" &>/dev/null && _found=true
+        rpm -q "$pkg" &>/dev/null && _found=true
         if $_found; then
             ok "  ${pkg} ✓"
         else
@@ -589,7 +591,7 @@ https://download.docker.com/linux/${_os_id} ${_apt_codename} stable" \
             _PKG_UPDATED=false
             apt-get install -y -qq docker.io docker-compose-v2 >>"$LOG_FILE" 2>&1 && return 0
             # Some older Ubuntu don't have docker-compose-v2
-            apt-get install -y -qq docker.io >>"$LOG_FILE" 2>&1
+            apt-get install -y -qq docker.io >>"$LOG_FILE" 2>&1 || true
             ;;
         dnf|yum)
             _os_id_rh=$(. /etc/os-release 2>/dev/null && echo "${ID:-centos}")
@@ -710,7 +712,9 @@ ensure_docker() {
             armv7l)  _docker_arch="armhf" ;;
             *)       die "不支持的架构: $_arch" ;;
         esac
-        _docker_ver="27.5.1"
+        # Docker image uses floating major-version tags → pin for supply-chain safety
+    _BUN_VER="1.1.40"
+    _PG_VER="17.4-alpine3.20"
         _docker_url="https://download.docker.com/linux/static/stable/${_docker_arch}/docker-${_docker_ver}.tgz"
         if ! dl_to_file "$_docker_url" /tmp/docker.tgz 2>/dev/null; then
             # Try China raw proxies (generic HTTPS proxy)
@@ -1133,7 +1137,7 @@ open_firewall_port() {
                 if [ -d /etc/nftables.d ] || [ -f /etc/nftables.conf ]; then
                     # Use include-based persistence if available
                     if command -v systemctl &>/dev/null; then
-                        nft list ruleset > /etc/nftables.conf 2>/dev/null && _nft_saved=true || true
+                nft list ruleset > /etc/nftables.conf 2>/dev/null && _nft_saved=true || true
                     fi
                 fi
                 if ! $_nft_saved; then
@@ -1448,12 +1452,12 @@ fi
 #  Usage: ./deploy.sh --fix-firewall [--port 3000]
 # ═══════════════════════════════════════════════════════════════════
 if [ "$MODE" = "fix-firewall" ]; then
-    _fix_fw_port="${APP_PORT:-3000}"
-    # Also check .env if no CLI port specified
-    if [ "$APP_PORT" = "" ] && [ -f "${INSTALL_DIR}/.env" ]; then
+    if [ "$_fix_fw_port" = "" ] && [ -f "${INSTALL_DIR}/.env" ]; then
         _fix_fw_port=$(grep '^APP_PORT=' "${INSTALL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2) || true
         _fix_fw_port=${_fix_fw_port:-3000}
     fi
+    # Validate port is numeric and in range
+    if ! [[ "$_fix_fw_port" =~ ^[0-9]+$ ]] || [ "$_fix_fw_port" -lt 1 ] || [ "$_fix_fw_port" -gt 65535 ]; then
 
     echo ""
     echo -e "${C_BLD}🔍 防火墙诊断与修复工具${C_RST}"
@@ -1510,7 +1514,10 @@ if [ "$MODE" = "uninstall" ]; then
     warn "  • Docker 镜像: 本地构建的镜像"
     warn "  • 数据卷: PostgreSQL 数据（永久丢失）"
     echo ""
-    # Never auto-confirm destructive operations, even with -y
+    # Never auto-confirm destructive operations, even with -y (require --force)
+    if $AUTO_YES && ! ${_FORCE:-false}; then
+        die "卸载需要交互确认。请去掉 -y 参数或添加 --force。"
+    fi
     if ! ask_y "确认完全卸载？"; then
         echo "已取消。"
         exit 0
@@ -1544,7 +1551,9 @@ if [ "$MODE" = "backup" ]; then
     _db_user=${_db_user:-novel}
     _db_name=${_db_name:-novel_admin}
 
-    if docker compose exec -T postgres pg_dump -U "$_db_user" "$_db_name" > "$_bf" 2>/dev/null; then
+    ( umask 077 && docker compose exec -T postgres pg_dump -U "$_db_user" "$_db_name" > "$_bf" 2>/dev/null ) || true
+    if [ -s "$_bf" ]; then
+        chmod 600 "$_bf"
         _sz=$(du -h "$_bf" 2>/dev/null | cut -f1 || true)
         ok "备份完成: ${INSTALL_DIR}/${_bf} (${_sz})"
     else
@@ -1631,7 +1640,11 @@ if [ "$MODE" = "upgrade" ]; then
                      FIRECRAWL_API_KEY FIRECRAWL_API_URL AGENTQL_API_KEY AGENTQL_API_URL \
                      CLOUD_BROWSER_PROVIDER BROWSERLESS_API_KEY BROWSERLESS_API_URL \
                      STEEL_API_KEY STEEL_API_URL \
-                     PG_MEMORY_LIMIT APP_MEMORY_LIMIT NODE_MAX_OLD_SPACE_SIZE BACKUP_DIR; do
+                     PG_MEMORY_LIMIT PG_MEMORY_RESERVATION PG_SHARED_BUFFERS PG_WORK_MEM \
+                     PG_MAINTENANCE_WORK_MEM PG_EFFECTIVE_CACHE_SIZE PG_MAX_CONNECTIONS \
+                     PG_MAX_WAL_SIZE PG_MIN_WAL_SIZE PG_CPU_LIMIT \
+                     APP_MEMORY_LIMIT APP_MEMORY_RESERVATION APP_SHM_SIZE APP_CPU_LIMIT \
+                     NODE_MAX_OLD_SPACE_SIZE BUN_GC_THRESHOLD BACKUP_DIR; do
             _existing=$(grep "^${_key}=" .env 2>/dev/null | head -1 || true)
             _template=$(grep "^${_key}=" .env.production 2>/dev/null | head -1 || true)
             # If template has it but .env doesn't, add it
@@ -1988,8 +2001,8 @@ if ! $_got && [ -d "${INSTALL_DIR}/.git" ] && command -v git &>/dev/null; then
         fi
         # Discard local changes to tracked files (e.g. deploy.sh-injected version: field)
         # so git pull doesn't fail with merge conflicts
+    # Only clean tracked files, never user data
         git checkout -- . 2>/dev/null || true
-        git clean -fd 2>/dev/null || true
         if git pull --ff-only 2>&1; then
             ok "代码已更新"
             _got=true
@@ -2218,15 +2231,35 @@ if $GENERATE_ENV; then
         warn "  密码太短！至少需要 8 个字符，请重新输入。"
     done
 
-    # Server address
+    # Server address - sanitize
     _server_addr=$(ask "  服务器 IP 或域名" "$(my_ip)")
-    [[ "$_server_addr" =~ ^https?:// ]] && _app_url="$_server_addr" || _app_url="http://${_server_addr}:${_port}"
+    if [[ ! "$_server_addr" =~ ^https?:// ]] && [[ ! "$_server_addr" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        warn "  无效的服务器地址，使用默认值"
+        _server_addr="$(my_ip)"
+    fi
+    # Ensure URL has port when user enters a full URL without port
+    if [[ "$_server_addr" =~ ^https?:// ]]; then
+        if [[ "$_server_addr" =~ ^https?://[^:/]+:[0-9]+ ]]; then
+            _app_url="$_server_addr"
+        else
+            _app_url="${_server_addr%%/*}:${_port}"
+        fi
+    else
+        _app_url="http://${_server_addr}:${_port}"
+    fi
 
     # Timezone
     _tz=$(ask "  时区" "Asia/Shanghai")
 
-    # Write .env (includes hardware-tuned memory limits)
-    cat > .env <<EOF
+    # Create .env with restricted permissions from the start
+    _old_umask=$(umask)
+    umask 077
+    _env_tmp=".env.tmp.$$"
+    _old_umask=$(umask)
+    umask 077
+    umask 077
+    _env_tmp=".env.tmp.$$"
+    cat > "$_env_tmp" <<EOF
 # ══════════════════════════════════════════════════════
 # Novel Admin — 自动生成 $(date '+%Y-%m-%d %H:%M:%S')
 # ⚠️ 包含密钥信息，请勿提交到版本控制
@@ -2290,7 +2323,9 @@ APP_MEMORY_RESERVATION=${_TIER_APP_MEM_RESERV}
 APP_SHM_SIZE=${_TIER_APP_SHM}
 APP_CPU_LIMIT=${_TIER_APP_CPU}
 EOF
+    mv -f "$_env_tmp" .env
     chmod 600 .env
+    umask "$_old_umask"
     ok ".env 已生成 (权限 600, 档位: ${_HW_TIER})"
 
     # Save values for final display
@@ -2421,7 +2456,9 @@ info "生成 docker-compose.yml..."
 # If user has docker-compose v1 (Debian 11), deploy.sh detects it and
 # injects 'version: "3.8"' automatically via sed.
 cat > docker-compose.yml << 'COMPOSE_EOF'
-services:
+# NOTE: deploy.sh generates the actual docker-compose.yml on every deploy. Do not edit this file
+# manually unless you understand the implications.
+cat > docker-compose.yml << 'COMPOSE_EOF'
   postgres:
     image: postgres:17-alpine
     container_name: novel-postgres
@@ -2532,7 +2569,11 @@ volumes:
 COMPOSE_EOF
 ok "docker-compose.yml 已生成"
 
-# ── If docker-compose v1 (standalone), inject 'version: "3.3"' ──
+# ── If docker-compose v1 (standalone), inject 'version: "3.8"' ──
+if command -v docker-compose &>/dev/null && ! docker compose version &>/dev/null 2>&1; then
+    sed -i '1i version: "3.8"' docker-compose.yml
+    info "检测到 docker-compose v1，已添加 version 字段"
+fi
 # v2 doesn't need it (and warns if present), v1 requires it.
 if [ "${COMPOSE_CMD}" = "docker-compose" ]; then
     sed -i '1i version: "3.8"' docker-compose.yml
@@ -2550,7 +2591,7 @@ ok "docker-compose.yml 校验通过"
 
 # ── Build with tier-appropriate settings ──
 T0=$(date +%s)
-BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"
+    _BUILD_LOG=$(mktemp /tmp/novel-build.XXXXXX.log 2>/dev/null) || BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"
 
 set +e
 # On tiny/small servers, disable BuildKit parallelism to reduce peak memory
@@ -2606,7 +2647,7 @@ set -e
 BUILD_TIME=$(( $(date +%s) - T0 ))
 echo ""
 
-if [ $BUILD_RC -ne 0 ]; then
+if [ "${BUILD_RC:-0}" -ne 0 ]; then
     echo ""
     err "构建失败！(耗时 ${BUILD_TIME}s)"
     echo ""
@@ -2691,7 +2732,7 @@ if [ $BUILD_RC -ne 0 ]; then
     echo ""
     err "完整日志: cat ${BUILD_LOG}"
     err "重试: cd ${INSTALL_DIR} && docker compose build --no-cache 2>&1 | tee build.log"
-    rm -f "$BUILD_LOG" 2>/dev/null
+    # Keep build log for diagnostics — it will be cleaned on next successful deploy
     exit 1
 fi
 
@@ -2715,7 +2756,7 @@ set +e
 START_RC=$?
 set -e
 
-if [ $START_RC -ne 0 ]; then
+if [ "${START_RC:-0}" -ne 0 ]; then
     err "启动失败！(退出码: ${START_RC})"
     if port_in_use "${SAVE_PORT}"; then
         err "  端口 ${SAVE_PORT} 已被其他程序占用"
@@ -2867,8 +2908,8 @@ _INTERNAL_IP=""
 if command -v curl &>/dev/null; then
     _PUBLIC_IP=$(curl -sf --connect-timeout 3 "https://ifconfig.me" 2>/dev/null | tr -d '[:space:]') || true
 fi
-if command -v hostname &>/dev/null; then
-    _INTERNAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || true
+    if command -v hostname &>/dev/null; then
+        _INTERNAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || true
 fi
 
 _IS_PRIVATE=false
