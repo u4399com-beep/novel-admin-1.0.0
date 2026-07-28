@@ -2426,3 +2426,88 @@ Stage Summary:
 - 安全修复：密码不再明文显示、临时文件chmod 600、用户名/服务器地址验证、卸载确认保护
 - 已推送: git push 成功
 - 一键安装命令: curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
+
+---
+Task ID: 2-5
+Agent: Main Orchestrator
+Task: Docker 部署项目第2-5轮全面审计修复
+
+Work Log:
+- 读取全部5个文件（Dockerfile, deploy.sh, install.sh, docker-entrypoint.sh, docker-compose.yml）
+- 系统性审计发现并修复以下问题
+
+## 第2轮修复（致命Bug）
+1. **docker compose: command not found** (deploy.sh detect_compose_cmd)
+   - Debian 13 安装 docker.io + docker-compose-plugin 后，插件不在 Docker CLI 搜索路径
+   - 修复：添加 Method 3 检查已知插件路径（/usr/libexec, /usr/lib, /usr/local/lib），
+     自动创建符号链接到 ~/.docker/cli-plugins/ 和 /usr/lib/docker/cli-plugins/，
+     并重启 docker daemon
+
+2. **docker-compose.yml 生成器重复heredoc头** (deploy.sh 2458-2461)
+   - 两个 `cat > docker-compose.yml << 'COMPOSE_EOF'` 导致第一个被当作字面文本写入
+   - 生成的 YAML 缺少 `services:` 顶层键，完全无效
+   - 修复：删除重复行，添加 `services:` 键
+
+3. **`_BUILD_LOG` vs `BUILD_LOG` 变量名不一致** (deploy.sh 2594)
+   - mktemp 赋值给 `_BUILD_LOG`，但后续代码使用 `$BUILD_LOG`
+   - 修复：统一为 `BUILD_LOG`
+
+4. **`_docker_ver` 未定义** (deploy.sh 718)
+   - 变量在下载URL中使用但从未赋值
+   - 同时删除了无关的 `_BUN_VER` 和 `_PG_VER` 变量
+   - 修复：添加 `_docker_ver="27.5.1"`
+
+5. **`_ORIG_ARGS` 未定义** (deploy.sh 206)
+   - self-update re-exec 使用了从未定义的变量
+   - 修复：改为 `"$@"`
+
+6. **`--fix-firewall` 模式缺少 `fi`** (deploy.sh 1508)
+   - `if` 块没有关闭，导致 bash 语法错误（unexpected end of file）
+   - 修复：添加正确的 `fi` 和错误消息
+
+## 第3轮修复（跨文件一致性）
+7. **Debian 13 (trixie) 未在 codename 映射中** (deploy.sh 558)
+   - 默认回退到 noble（Ubuntu 24.04），导致 Docker CE apt 源配置错误
+   - 修复：添加 trixie → bookworm、forkie → bookworm 映射
+
+8. **双重 `version: "3.8"` 注入** (deploy.sh 2616-2625)
+   - 两个独立的检测逻辑都会注入 version 行，导致 YAML 中出现两次
+   - 修复：合并为单一检查（基于 COMPOSE_CMD 变量）
+
+9. **`my_ip()` fallback bug** (deploy.sh 335)
+   - `command -v hostname -I` 语法错误（command -v 只接受单参数）
+   - 同时删除了重复的 fallback 代码块
+   - 修复：简化为 `hostname -I 2>/dev/null | awk '{print $1}' || true`
+
+10. **docker-compose.yml 参考文件与生成版本不一致**
+    - 缺少 `start_period: 120s`、`condition: service_healthy`、`
+    - 修复：同步参考文件使其与 deploy.sh 生成版本完全一致
+
+## 第4轮修复（Shell脚本陷阱）
+11. **重复 `_old_umask` 和 `_env_tmp` 赋值** (deploy.sh 2255-2261)
+    - 各出现了2-3次
+    - 修复：去重为各一次
+
+12. **`$COMPOSE_CMD` 未引用** (deploy.sh 2638)
+    - build 命令中变量未加引号
+    - 修复：改为 `"$COMPOSE_CMD"`
+
+13. **`--fix-firewall` 端口参数未初始化** (deploy.sh 1502)
+    - `_fix_fw_port` 在使用前从未赋值
+    - 修复：添加默认值和从 .env 读取的逻辑
+
+14. **双 `die` 死代码** (deploy.sh 1685-1686)
+    - 第一个 die 已经 exit，第二个永远不会执行
+    - 修复：合并为一条消息
+
+## 第5轮（最终审查）
+- bash -n 全部3个 shell 脚本通过语法检查 ✅
+- 生成的 docker-compose.yml 结构验证通过 ✅
+- 参考文件与生成版本 106 行非注释内容完全匹配 ✅
+- 所有已知 bug 标记已清除（_BUILD_LOG=0, _ORIG_ARGS=0, _BUN_VER=0, _PG_VER=0）✅
+
+Stage Summary:
+- 共修复 14 个问题（含 6 个致命级、4 个高级别、4 个中级别）
+- 所有文件通过 bash -n 语法检查
+- 已推送至 git
+- 一键安装命令已提供

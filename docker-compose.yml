@@ -1,6 +1,10 @@
 # ============================================================
 # Novel Management System - Docker Compose (ADAPTIVE MEMORY)
 #
+# NOTE: deploy.sh OVERWRITES this file on every deploy.
+# Do not edit manually unless you understand the implications.
+# This file serves as a reference/template for development.
+#
 # Memory limits are set via .env variables, which are auto-configured
 # by deploy.sh based on detected server hardware:
 #
@@ -79,7 +83,8 @@ services:
     ports:
       - "${APP_PORT}:3000"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     volumes:
       - app-data:/app/data
     environment:
@@ -119,6 +124,7 @@ services:
       - TZ=${TZ}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/csrf || exit 1"]
+      start_period: 120s
       interval: 30s
       timeout: 10s
       retries: 3

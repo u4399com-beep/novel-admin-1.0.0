@@ -203,7 +203,7 @@ if [ "$MODE" = "install" ] && ! $_SELF_UPDATE_SKIP && [ -d "${SCRIPT_DIR}/.git" 
             if git -C "$SCRIPT_DIR" fetch origin main 2>/dev/null && \
                git -C "$SCRIPT_DIR" reset --hard origin/main 2>/dev/null; then
                 echo -e "\033[0;32m  ✓ 强制同步成功，重新启动...\033[0m" >&2
-                _SELF_UPDATE_REEXEC=true exec bash "$0" "${_ORIG_ARGS[@]}"
+                _SELF_UPDATE_REEXEC=true exec bash "$0" "$@"
             else
                 echo -e "\033[0;31m[ERROR] 更新失败，使用本地版本继续\033[0m" >&2
                 echo -e "\033[0;31m  手动修复: cd $(pwd) && git checkout -- . && git pull && ./deploy.sh\033[0m" >&2
@@ -331,8 +331,8 @@ my_ip() {
     _ip=$(ifconfig 2>/dev/null | awk '/inet / && !/127.0.0.1/{print $2}' | head -1 | tr -d 'addr:')
     if [[ -n "$_ip" && ! "$_ip" =~ ^127\. ]]; then echo "$_ip"; return; fi
 
-    # Fill in fallback (zero bytes) — head -c returns nothing
-    _ip=$(command -v hostname -I 2>/dev/null | awk '{print $1}') || echo "YOUR_SERVER_IP"
+    # Fill in fallback
+    echo "YOUR_SERVER_IP"
 }
 
 # Check if a TCP port is in use (works without ss/lsof/netstat)
@@ -556,6 +556,8 @@ install_docker_via_pkg() {
             if $_gpg_ok; then
                 # Map unknown VERSION_CODENAME to closest known one
                 case "$_os_ver" in
+                    trixie)        _apt_codename="bookworm" ;;  # Debian 13 (use bookworm as closest)
+                    forkie)        _apt_codename="bookworm" ;;  # Debian 14 (testing)
                     noble|plucky)  _apt_codename="noble" ;;   # 24.04 / 24.10
                     jammy)         _apt_codename="jammy" ;;   # 22.04
                     focal)         _apt_codename="focal" ;;   # 20.04
@@ -712,9 +714,7 @@ ensure_docker() {
             armv7l)  _docker_arch="armhf" ;;
             *)       die "不支持的架构: $_arch" ;;
         esac
-        # Docker image uses floating major-version tags → pin for supply-chain safety
-    _BUN_VER="1.1.40"
-    _PG_VER="17.4-alpine3.20"
+            _docker_ver="27.5.1"
         _docker_url="https://download.docker.com/linux/static/stable/${_docker_arch}/docker-${_docker_ver}.tgz"
         if ! dl_to_file "$_docker_url" /tmp/docker.tgz 2>/dev/null; then
             # Try China raw proxies (generic HTTPS proxy)
@@ -763,22 +763,58 @@ ensure_docker() {
 
 # Detect Docker Compose command (V2 plugin vs standalone V1)
 detect_compose_cmd() {
+    # Method 1: Check 'docker compose' subcommand (Docker CE v2 plugin)
     if docker compose version &>/dev/null 2>&1; then
         COMPOSE_CMD="docker compose"
         ok "Docker Compose (plugin) $(docker compose version --short 2>/dev/null)"
         return
     fi
+
+    # Method 2: Check standalone docker-compose binary
     if command -v docker-compose &>/dev/null; then
         COMPOSE_CMD="docker-compose"
         ok "Docker Compose (standalone) $(docker-compose version --short 2>/dev/null)"
         return
     fi
 
+    # Method 3: Plugin binary exists but docker can't find it.
+    # This happens on Debian when docker.io (not Docker CE) is installed
+    # and docker-compose-plugin is added via apt. The plugin lands at
+    # /usr/libexec/docker/cli-plugins/docker-compose but docker.io's CLI
+    # may not scan that directory.
+    _PLUGIN_PATHS=(
+        /usr/libexec/docker/cli-plugins/docker-compose
+        /usr/lib/docker/cli-plugins/docker-compose
+        /usr/local/lib/docker/cli-plugins/docker-compose
+    )
+    for _pp in "${_PLUGIN_PATHS[@]}"; do
+        if [ -f "$_pp" ] && [ -x "$_pp" ]; then
+            # Ensure the CLI plugins directory exists and is scanned
+            _cli_plugins_dir=$(dirname "$_pp")
+            mkdir -p /root/.docker/cli-plugins 2>/dev/null || true
+            ln -sf "$_pp" /root/.docker/cli-plugins/docker-compose 2>/dev/null || true
+            # Also try to ensure system-wide access
+            if [ "$_cli_plugins_dir" != "/usr/lib/docker/cli-plugins" ]; then
+                mkdir -p /usr/lib/docker/cli-plugins 2>/dev/null || true
+                ln -sf "$_pp" /usr/lib/docker/cli-plugins/docker-compose 2>/dev/null || true
+            fi
+            # Restart docker daemon to pick up the new plugin path
+            systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+            sleep 2
+            # Re-check
+            if docker compose version &>/dev/null 2>&1; then
+                COMPOSE_CMD="docker compose"
+                ok "Docker Compose (plugin, fixed path) $(docker compose version --short 2>/dev/null)"
+                return
+            fi
+        fi
+    done
+
     # Not found — try to install automatically
     warn "Docker Compose 未找到，尝试自动安装..."
     _compose_ok=false
 
-    # Method 1: Package manager (must update cache first)
+    # Method 4: Package manager (must update cache first)
     case "$PKG_MGR" in
         apt)
             export DEBIAN_FRONTEND=noninteractive
@@ -789,6 +825,20 @@ detect_compose_cmd() {
                     _compose_ok=true; break
                 fi
             done
+            # After apt install, re-check the plugin paths and fix if needed
+            if $_compose_ok; then
+                for _pp in "${_PLUGIN_PATHS[@]}"; do
+                    if [ -f "$_pp" ] && [ -x "$_pp" ]; then
+                        mkdir -p /root/.docker/cli-plugins 2>/dev/null || true
+                        ln -sf "$_pp" /root/.docker/cli-plugins/docker-compose 2>/dev/null || true
+                        mkdir -p /usr/lib/docker/cli-plugins 2>/dev/null || true
+                        ln -sf "$_pp" /usr/lib/docker/cli-plugins/docker-compose 2>/dev/null || true
+                        systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+                        sleep 2
+                        break
+                    fi
+                done
+            fi
             ;;
         dnf|yum)
             for _pkg in docker-compose-plugin docker-compose; do
@@ -803,7 +853,7 @@ detect_compose_cmd() {
             ;;
     esac
 
-    # Method 2: Download standalone binary (works on all distros)
+    # Method 5: Download standalone binary (works on all distros)
     if ! $_compose_ok; then
         info "  下载 Docker Compose 独立二进制..."
         _compose_ver="v2.32.4"
@@ -820,8 +870,8 @@ detect_compose_cmd() {
         for _dm in "${RAW_PROXIES[@]}"; do
             _compose_urls+=("${_dm}/${_compose_url}")
         done
-        for _curl in "${_compose_urls[@]}"; do
-            if dl_to_file "$_curl" /tmp/docker-compose 2>/dev/null && [ -f /tmp/docker-compose ] && [ -s /tmp/docker-compose ]; then
+        for _curl_url in "${_compose_urls[@]}"; do
+            if dl_to_file "$_curl_url" /tmp/docker-compose 2>/dev/null && [ -f /tmp/docker-compose ] && [ -s /tmp/docker-compose ]; then
                 mv -f /tmp/docker-compose /usr/local/bin/docker-compose
                 chmod +x /usr/local/bin/docker-compose
                 _compose_ok=true
@@ -831,7 +881,7 @@ detect_compose_cmd() {
         done
     fi
 
-    # Re-detect after install
+    # Final re-detect after all install attempts
     if docker compose version &>/dev/null 2>&1; then
         COMPOSE_CMD="docker compose"
         ok "Docker Compose (plugin) $(docker compose version --short 2>/dev/null)"
@@ -1449,15 +1499,20 @@ fi
 # ═══════════════════════════════════════════════════════════════════
 #  MODE: FIX-FIREWALL
 #  Standalone mode to diagnose and fix OS firewall issues.
-#  Usage: ./deploy.sh --fix-firewall [--port 3000]
+#  Usage: ./deploy.sh --fix-firewall [PORT]
 # ═══════════════════════════════════════════════════════════════════
+_fix_fw_port="${1:-3000}"  # First positional arg after --fix-firewall
 if [ "$MODE" = "fix-firewall" ]; then
-    if [ "$_fix_fw_port" = "" ] && [ -f "${INSTALL_DIR}/.env" ]; then
-        _fix_fw_port=$(grep '^APP_PORT=' "${INSTALL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2) || true
-        _fix_fw_port=${_fix_fw_port:-3000}
+    if [ -f "${INSTALL_DIR}/.env" ]; then
+        _env_port=$(grep '^APP_PORT=' "${INSTALL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2 || true)
+        _env_port=${_env_port%%[\"\']*}  # Trim trailing quotes
+        [ -n "$_env_port" ] && _fix_fw_port="$_env_port"
     fi
+    _fix_fw_port=${_fix_fw_port:-3000}
     # Validate port is numeric and in range
     if ! [[ "$_fix_fw_port" =~ ^[0-9]+$ ]] || [ "$_fix_fw_port" -lt 1 ] || [ "$_fix_fw_port" -gt 65535 ]; then
+        die "无效端口号: $_fix_fw_port (需要 1-65535)"
+    fi
 
     echo ""
     echo -e "${C_BLD}🔍 防火墙诊断与修复工具${C_RST}"
@@ -1627,8 +1682,7 @@ if [ "$MODE" = "upgrade" ]; then
             warn "git pull 失败，尝试手动解决或使用 tarball 方式升级"
         fi
     else
-        die "无法升级: 非 git 仓库且找不到新版本文件"
-        die "请下载最新 tarball，解压后在新目录运行: ./deploy.sh --upgrade"
+        die "无法升级: 非 git 仓库且找不到新版本文件\n  请下载最新 tarball，解压后在新目录运行: ./deploy.sh --upgrade"
     fi
 
     # Handle .env migration (add new variables, keep existing values)
@@ -2255,10 +2309,6 @@ if $GENERATE_ENV; then
     _old_umask=$(umask)
     umask 077
     _env_tmp=".env.tmp.$$"
-    _old_umask=$(umask)
-    umask 077
-    umask 077
-    _env_tmp=".env.tmp.$$"
     cat > "$_env_tmp" <<EOF
 # ══════════════════════════════════════════════════════
 # Novel Admin — 自动生成 $(date '+%Y-%m-%d %H:%M:%S')
@@ -2456,9 +2506,7 @@ info "生成 docker-compose.yml..."
 # If user has docker-compose v1 (Debian 11), deploy.sh detects it and
 # injects 'version: "3.8"' automatically via sed.
 cat > docker-compose.yml << 'COMPOSE_EOF'
-# NOTE: deploy.sh generates the actual docker-compose.yml on every deploy. Do not edit this file
-# manually unless you understand the implications.
-cat > docker-compose.yml << 'COMPOSE_EOF'
+services:
   postgres:
     image: postgres:17-alpine
     container_name: novel-postgres
@@ -2570,10 +2618,6 @@ COMPOSE_EOF
 ok "docker-compose.yml 已生成"
 
 # ── If docker-compose v1 (standalone), inject 'version: "3.8"' ──
-if command -v docker-compose &>/dev/null && ! docker compose version &>/dev/null 2>&1; then
-    sed -i '1i version: "3.8"' docker-compose.yml
-    info "检测到 docker-compose v1，已添加 version 字段"
-fi
 # v2 doesn't need it (and warns if present), v1 requires it.
 if [ "${COMPOSE_CMD}" = "docker-compose" ]; then
     sed -i '1i version: "3.8"' docker-compose.yml
@@ -2591,7 +2635,7 @@ ok "docker-compose.yml 校验通过"
 
 # ── Build with tier-appropriate settings ──
 T0=$(date +%s)
-    _BUILD_LOG=$(mktemp /tmp/novel-build.XXXXXX.log 2>/dev/null) || BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"
+BUILD_LOG=$(mktemp /tmp/novel-build.XXXXXX.log 2>/dev/null) || BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"
 
 set +e
 # On tiny/small servers, disable BuildKit parallelism to reduce peak memory
@@ -2635,7 +2679,7 @@ fi
 # which caches based on mtime; without --no-cache, stale COPY layers may be reused.
 # First-time builds have no cache anyway, so this adds no overhead there.
 # shellcheck disable=SC2086
-$COMPOSE_CMD build --no-cache ${_BUILD_ARGS} \
+"$COMPOSE_CMD" build --no-cache ${_BUILD_ARGS} \
     2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
     # Show only important lines to reduce noise
     if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn|#\d+ \[)'; then
