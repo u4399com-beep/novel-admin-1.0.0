@@ -175,8 +175,18 @@ fi
 log "[DB] Syncing schema with: bun $_PRISMA db push --accept-data-loss --schema ./prisma/schema.prisma"
 cd /app
 # NOTE: --skip-generate was removed in Prisma 6+. Omit it for compatibility.
-if ! bun "$_PRISMA" db push --accept-data-loss --schema ./prisma/schema.prisma 2>&1; then
-    log "[DB] Schema sync had warnings (usually safe, continuing)."
+# Retry schema push (DB may need a moment to be fully ready)
+_SCHEMA_OK=false
+for _schema_attempt in 1 2 3; do
+    if bun "$_PRISMA" db push --accept-data-loss --schema ./prisma/schema.prisma 2>&1; then
+        _SCHEMA_OK=true
+        break
+    fi
+    log "[DB] Schema push attempt $_schema_attempt/3 failed, retrying in 5s..."
+    sleep 5
+done
+if ! $_SCHEMA_OK; then
+    log "[DB] Schema sync failed after 3 attempts (usually safe to continue)."
 fi
 
 # ─── Create pg_trgm extension + performance indexes ───
