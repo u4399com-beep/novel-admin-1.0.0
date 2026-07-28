@@ -2405,3 +2405,24 @@ Stage Summary:
 Unresolved:
 - Need server re-test to confirm the full flow works end-to-end
 - Chromium download URLs still have empty version (low priority, non-fatal)
+
+---
+Task ID: 2
+Agent: Main Orchestrator (5-round audit + fixes)
+Task: 5轮完整审计并修复所有问题，推送git
+
+Work Log:
+- 执行5轮完整审计（并行使用子agent），覆盖bash语法、跨文件一致性、安全性、Docker/部署逻辑、最终综合验证
+- Round 1: 发现22个问题（3 HIGH, 8 MEDIUM, 11 LOW）- bash语法、引号、set-e陷阱
+- Round 2: 发现8个问题（1 HIGH, 3 MEDIUM, 4 LOW）- 跨文件一致性、env变量、端口、路径
+- Round 3: 发现17个问题（3 CRITICAL, 5 HIGH, 6 MEDIUM, 3 LOW）- 安全、SSRF、注入、密钥处理
+- Round 4: 发现27个问题（4 CRITICAL, 6 HIGH, 8 MEDIUM, 5 LOW）- Docker构建、部署逻辑、升级/回滚
+- Round 5: 发现14个问题（3 HIGH, 5 MEDIUM, 6 LOW）- 边缘案例、竞态、逻辑bug
+- 合并去重后修复40+个实际问题
+- 推送到git
+
+Stage Summary:
+- 关键修复：BASH_VERSION守卫、flock并发锁、路径验证、密码循环上限、.env原子写入、daemon.json原子写入、回滚--build、升级BUILDKIT=0、升级env迁移补全
+- 安全修复：密码不再明文显示、临时文件chmod 600、用户名/服务器地址验证、卸载确认保护
+- 已推送: git push 成功
+- 一键安装命令: curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash

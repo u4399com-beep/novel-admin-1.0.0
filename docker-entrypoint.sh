@@ -384,7 +384,7 @@ cleanup() {
     [ -n "$SCRAPER_PID" ] && kill -TERM "$SCRAPER_PID" 2>/dev/null || true
 
     local timeout=15
-    while [ $timeout -gt 0 ]; do
+    while [ "$timeout" -gt 0 ]; do
         local alive=false
         kill -0 "$APP_PID" 2>/dev/null && alive=true
         [ -n "$SCRAPER_PID" ] && kill -0 "$SCRAPER_PID" 2>/dev/null && alive=true

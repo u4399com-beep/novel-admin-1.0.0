@@ -127,14 +127,16 @@ COPY mini-services/scraper-service/ ./scraper-service/
 # NOTE: bun install needs network — use Chinese npm registry for Chinese servers
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 RUN cd /tmp/scraper-deps && \
-    BUN_CONFIG_REGISTRY=${NPM_REGISTRY} bun install --frozen-lockfile --production 2>&1 || echo "[WARN] Scraper deps install failed, headless scraping will be unavailable"; \
-    if [ -d node_modules ]; then cp -r node_modules /app/scraper-service/; else echo "[WARN] No scraper node_modules produced"; fi; \
+    if BUN_CONFIG_REGISTRY=${NPM_REGISTRY} bun install --frozen-lockfile --production 2>&1; then \
+        if [ -d node_modules ]; then cp -r node_modules /app/scraper-service/; fi; \
+    else echo "[WARN] Scraper deps install failed, headless scraping will be unavailable"; fi; \
     rm -rf /tmp/scraper-deps
 
 # Swap scraper queue to PostgreSQL version
 RUN cd /app/scraper-service && \
     rm -f src/queue.ts && \
-    mv src/queue.pg.ts src/queue.ts
+    if [ -f src/queue.pg.ts ]; then mv src/queue.pg.ts src/queue.ts; \
+    else echo "FATAL: src/queue.pg.ts not found"; exit 1; fi
 
 # Create data directories and set ownership
 RUN mkdir -p /app/data/covers /app/data/downloads /app/data/chapters /app/backups && \

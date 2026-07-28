@@ -38,6 +38,13 @@
 # NOTE: We intentionally use `set -eo pipefail` but NOT `set -u`.
 # Deployment scripts source external .env files which may reference
 # undefined variables — `set -u` would kill the script incorrectly.
+
+# Require bash — PIPESTATUS and other bash-isms are used throughout
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "ERROR: This script requires bash.  Run with: bash $0 $*" >&2
+    exit 1
+fi
+
 set -eo pipefail
 
 # Trap ERR to show which command failed (instead of silent exit)
