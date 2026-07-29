@@ -76,4 +76,4 @@ backups/
 *.zip
 
 # Prisma migrations (we use db push, not migrate)
-# prisma/migrations/
+# prisma/migrations/deploy.sh

@@ -7,6 +7,7 @@
 #   3. tar xzf novel-admin-*.tar.gz && cd novel-admin-* && bash install.sh
 # ============================================================
 set -eo pipefail
+trap 'rm -f /tmp/novel-admin.tar.gz; rm -rf /tmp/novel-tmp' EXIT
 
 REPO="u4399com-beep/novel-admin-1.0.0"
 GIT_URL="https://github.com/${REPO}.git"
@@ -36,7 +37,7 @@ git_force_sync() {
     # Save .env if it exists (contains user's credentials)
     local _env_backup=""
     if [ -f "$dir/.env" ]; then
-        _env_backup="/root/.env.novel-install.$$.bak"
+        _env_backup="${TMPDIR:-/tmp}/.env.novel-install.$$.bak"
         cp "$dir/.env" "$_env_backup" 2>/dev/null || true
     fi
 
@@ -150,6 +151,8 @@ if [ -z "$TMP_CLONE" ]; then
         # Guard with if: under set -eo pipefail, a tar failure would kill the script
         if tar xzf /tmp/novel-admin.tar.gz -C "$INSTALL_DIR" --strip-components=1 2>/dev/null; then
             : # extraction succeeded
+        else
+            log_warn "压缩包解压失败，文件可能已损坏"
         fi
         rm -f /tmp/novel-admin.tar.gz
         if [ -f "${INSTALL_DIR}/deploy.sh" ]; then

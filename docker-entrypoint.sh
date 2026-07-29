@@ -21,14 +21,15 @@ log_debug() {
     echo "$msg" >> "$_DEBUG_LOG" 2>/dev/null || true
 }
 
-# Initialize debug log
-: > "$_DEBUG_LOG" 2>/dev/null || true
+# Initialize debug log — append session separator (don't truncate, preserves crash history)
+echo "" >> "$_DEBUG_LOG" 2>/dev/null || true
+echo "=== $(date '+%Y-%m-%d %H:%M:%S') NEW SESSION (PID: $$) ===" >> "$_DEBUG_LOG" 2>/dev/null || true
 log_debug "=== Entrypoint started (PID: $$) ==="
 
 # Use set -e but with explicit error trapping for visibility.
 # We keep set -e to catch unexpected failures, but the trap below
 # ensures we always log WHAT failed before exiting.
-set -e
+set -eo pipefail
 
 # ─── Crash diagnostics: print info when the script exits unexpectedly ───
 _trap_exit() {
@@ -136,8 +137,11 @@ fi
 
 # ─── Wait for PostgreSQL to be ready ───
 # Extract host:port from DATABASE_URL (format: postgresql://user:pass@host:port/db)
-_DB_HOST=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):\([0-9]*\)/.*|\1|p')
-_DB_PORT=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):\([0-9]*\)/.*|\2|p')
+# Use bash parameter expansion — robust against @ or : in password.
+_DB_REST="${DATABASE_URL#*@}"
+_DB_HOSTPORT="${_DB_REST%%/*}"
+_DB_HOST="${_DB_HOSTPORT%:*}"
+_DB_PORT="${_DB_HOSTPORT#*:}"
 _DB_HOST=${_DB_HOST:-postgres}
 _DB_PORT=${_DB_PORT:-5432}
 log "[DB] Waiting for PostgreSQL at ${_DB_HOST}:${_DB_PORT}..."
@@ -196,13 +200,16 @@ if echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bun "$_PRISMA" db execute --
 else
     log "[DB] WARNING: pg_trgm extension failed — trigram text search will be unavailable"
 fi
-echo "
-CREATE INDEX IF NOT EXISTS idx_novel_title_trgm ON \"Novel\" USING gin(title gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_novel_author_trgm ON \"Novel\" USING gin(author gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_scrape_rule_enabled ON \"ScrapeRule\"(enabled);
-CREATE INDEX IF NOT EXISTS idx_scrape_rule_engine ON \"ScrapeRule\"(engine);
-CREATE INDEX IF NOT EXISTS idx_ai_rule_created ON \"AiRuleGeneration\"(\"createdAt\");
-" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
+# Execute each index creation separately to avoid partial-failure silent loss
+for _idx_sql in \
+    'CREATE INDEX IF NOT EXISTS idx_novel_title_trgm ON "Novel" USING gin(title gin_trgm_ops)' \
+    'CREATE INDEX IF NOT EXISTS idx_novel_author_trgm ON "Novel" USING gin(author gin_trgm_ops)' \
+    'CREATE INDEX IF NOT EXISTS idx_scrape_rule_enabled ON "ScrapeRule"(enabled)' \
+    'CREATE INDEX IF NOT EXISTS idx_scrape_rule_engine ON "ScrapeRule"(engine)' \
+    'CREATE INDEX IF NOT EXISTS idx_ai_rule_created ON "AiRuleGeneration"("createdAt")'; do
+    echo "$_idx_sql" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null \
+        || log "[DB] WARNING: Index creation failed: $_idx_sql"
+done
 log "[DB] Database ready."
 
 # ─── Ensure data directories ───
@@ -260,12 +267,12 @@ except Exception:
 " 2>/dev/null)
         fi
         _pw_arch=$(uname -m)
-        _pw_dir="/app/.playwright-browsers/chromium-$_pw_rev"
-        mkdir -p "$_pw_dir"
         if [ -z "$_pw_rev" ]; then
             log_debug "[Chromium] WARNING: Could not extract chromium revision from browsers.json"
             echo "[Chromium] WARNING: Could not determine browser revision from browsers.json"
         else
+            _pw_dir="/app/.playwright-browsers/chromium-$_pw_rev"
+            mkdir -p "$_pw_dir"
             # Playwright CDN download URLs (revision-based, no version needed)
             if [ "$_pw_arch" = "x86_64" ]; then
                 _pw_zip="chrome-linux64.zip"
@@ -371,7 +378,7 @@ echo ""
 echo "=========================================="
 echo "  ✓ System is running!"
 echo "  App:     http://0.0.0.0:3000"
-if [ "$HAS_SCRAPER" = "true" ]; then echo "  Scraper: http://localhost:3099"; fi
+if [ "$HAS_SCRAPER" = "true" ]; then echo "  Scraper: http://localhost:3099 (internal only)"; fi
 echo "  DB:      PostgreSQL"
 echo "  Memory:  ${_AVAIL_MEM_MB}MB available at start"
 echo "=========================================="
@@ -384,21 +391,26 @@ trap - EXIT
 cleanup() {
     echo ""
     log "[Shutdown] Stopping services (graceful, 15s timeout)..."
-    kill -TERM "$APP_PID" 2>/dev/null || true
-    [ -n "$SCRAPER_PID" ] && kill -TERM "$SCRAPER_PID" 2>/dev/null || true
+    [ -n "$APP_PID" ] && kill -TERM "$APP_PID" 2>/dev/null || true
+    [ -n "${SCRAPER_PID:-}" ] && kill -TERM "$SCRAPER_PID" 2>/dev/null || true
 
     local timeout=15
     while [ "$timeout" -gt 0 ]; do
         local alive=false
-        kill -0 "$APP_PID" 2>/dev/null && alive=true
-        [ -n "$SCRAPER_PID" ] && kill -0 "$SCRAPER_PID" 2>/dev/null && alive=true
+        [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null && alive=true
+        [ -n "${SCRAPER_PID:-}" ] && kill -0 "$SCRAPER_PID" 2>/dev/null && alive=true
         $alive || break
         sleep 1
         timeout=$((timeout - 1))
     done
 
-    kill -9 "$APP_PID" 2>/dev/null || true
-    [ -n "$SCRAPER_PID" ] && kill -9 "$SCRAPER_PID" 2>/dev/null || true
+    local _force=false
+    [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null && { kill -9 "$APP_PID" 2>/dev/null || true; _force=true; }
+    [ -n "${SCRAPER_PID:-}" ] && kill -0 "$SCRAPER_PID" 2>/dev/null && { kill -9 "$SCRAPER_PID" 2>/dev/null || true; _force=true; }
+    if $_force; then
+        log "[Shutdown] WARNING: Processes did not shut down gracefully (SIGKILL used)"
+        exit 137
+    fi
     log "[Shutdown] Done."
     exit 0
 }
@@ -412,6 +424,6 @@ EXIT_CODE=$?
 log "[App] Exited with code $EXIT_CODE"
 
 # Try to stop scraper if still running
-[ -n "$SCRAPER_PID" ] && kill -TERM "$SCRAPER_PID" 2>/dev/null || true
-wait "$SCRAPER_PID" 2>/dev/null || true
+[ -n "${SCRAPER_PID:-}" ] && kill -TERM "$SCRAPER_PID" 2>/dev/null || true
+[ -n "${SCRAPER_PID:-}" ] && wait "$SCRAPER_PID" 2>/dev/null || true
 exit $EXIT_CODE

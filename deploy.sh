@@ -201,25 +201,25 @@ if [ "$MODE" = "install" ] && ! $_SELF_UPDATE_SKIP && [ -d "${SCRIPT_DIR}/.git" 
         # Save user's .env before any git operations
         _env_saved=false
         if [ -f "${SCRIPT_DIR}/.env" ]; then
-            cp "${SCRIPT_DIR}/.env" "/root/.env.novel-backup.$$" 2>/dev/null && _env_saved=true
+            cp "${SCRIPT_DIR}/.env" "${HOME:-/root}/.env.novel-backup.$$" 2>/dev/null && _env_saved=true
         fi
         # Discard local changes to tracked files (NOT .env, which may have user data)
         # This handles cases where a previous deploy.sh run modified files
         git -C "$SCRIPT_DIR" checkout -- . 2>/dev/null || true
         if git -C "$SCRIPT_DIR" pull --ff-only 2>&1; then
             # Restore .env if it was overwritten by pull
-            if $_env_saved && [ -f "/root/.env.novel-backup.$$" ]; then
-                cp "/root/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
-                rm -f "/root/.env.novel-backup.$$"
+            if $_env_saved && [ -f "${HOME:-/root}/.env.novel-backup.$$" ]; then
+                cp "${HOME:-/root}/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
+                rm -f "${HOME:-/root}/.env.novel-backup.$$"
             fi
             _SELF_UPDATED=true
             echo -e "\033[0;32m  ✓ 已更新，重新启动...\033[0m" >&2
             _SELF_UPDATE_REEXEC=true exec bash "$0" "$@"
         else
             # Restore .env even on failure
-            if $_env_saved && [ -f "/root/.env.novel-backup.$$" ]; then
-                cp "/root/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
-                rm -f "/root/.env.novel-backup.$$"
+            if $_env_saved && [ -f "${HOME:-/root}/.env.novel-backup.$$" ]; then
+                cp "${HOME:-/root}/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
+                rm -f "${HOME:-/root}/.env.novel-backup.$$"
             fi
             echo -e "\033[0;33m[WARN] 自动更新失败，尝试强制同步...\033[0m" >&2
             # Last resort: force reset to remote
@@ -815,8 +815,8 @@ detect_compose_cmd() {
         if [ -f "$_pp" ] && [ -x "$_pp" ]; then
             # Ensure the CLI plugins directory exists and is scanned
             _cli_plugins_dir=$(dirname "$_pp")
-            mkdir -p /root/.docker/cli-plugins 2>/dev/null || true
-            ln -sf "$_pp" /root/.docker/cli-plugins/docker-compose 2>/dev/null || true
+            mkdir -p "${HOME:-/root}/.docker/cli-plugins" 2>/dev/null || true
+            ln -sf "$_pp" "${HOME:-/root}/.docker/cli-plugins/docker-compose" 2>/dev/null || true
             # Also try to ensure system-wide access
             if [ "$_cli_plugins_dir" != "/usr/lib/docker/cli-plugins" ]; then
                 mkdir -p /usr/lib/docker/cli-plugins 2>/dev/null || true
@@ -853,8 +853,8 @@ detect_compose_cmd() {
             if $_compose_ok; then
                 for _pp in "${_PLUGIN_PATHS[@]}"; do
                     if [ -f "$_pp" ] && [ -x "$_pp" ]; then
-                        mkdir -p /root/.docker/cli-plugins 2>/dev/null || true
-                        ln -sf "$_pp" /root/.docker/cli-plugins/docker-compose 2>/dev/null || true
+                        mkdir -p "${HOME:-/root}/.docker/cli-plugins" 2>/dev/null || true
+                        ln -sf "$_pp" "${HOME:-/root}/.docker/cli-plugins/docker-compose" 2>/dev/null || true
                         mkdir -p /usr/lib/docker/cli-plugins 2>/dev/null || true
                         ln -sf "$_pp" /usr/lib/docker/cli-plugins/docker-compose 2>/dev/null || true
                         systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
@@ -945,7 +945,9 @@ configure_docker_daemon() {
 
     # Backup existing config
     if [ -f /etc/docker/daemon.json ]; then
-        cp /etc/docker/daemon.json "/etc/docker/daemon.json.bak.$(date +%s)" 2>/dev/null || true
+        if ! cp /etc/docker/daemon.json "/etc/docker/daemon.json.bak.$(date +%s)" 2>/dev/null; then
+            warn "daemon.json 备份失败，继续操作有配置丢失风险"
+        fi
     fi
 
     # Build the new daemon.json content as a shell variable
@@ -969,16 +971,19 @@ configure_docker_daemon() {
     if command -v python3 &>/dev/null && [ -f /etc/docker/daemon.json ]; then
         export _NEW_DAEMON_JSON="$_new_daemon_json"
         python3 << 'PYEOF' 2>/dev/null && ok "Docker 守护进程已配置 (合并已有配置)" && return
-import json, sys
+import json, os, sys
 try:
-    cfg = json.load(open('/etc/docker/daemon.json'))
-except: cfg = {}
-# Merge new settings from env var
-import os
+    with open('/etc/docker/daemon.json') as f:
+        cfg = json.load(f)
+except (json.JSONDecodeError, IOError, OSError):
+    cfg = {}
 _tmp_json = os.environ.get('_NEW_DAEMON_JSON', '{}')
 for k, v in json.loads(_tmp_json).items():
     cfg[k] = v
-json.dump(cfg, open('/etc/docker/daemon.json','w'), indent=2)
+with open('/etc/docker/daemon.json', 'w') as f:
+    json.dump(cfg, f, indent=2)
+    f.flush()
+    os.fsync(f.fileno())
 print('merged')
 PYEOF
     fi
@@ -1183,12 +1188,12 @@ open_firewall_port() {
         fi
 
         # Find the input chain name (commonly "input" in inet filter table)
-        local _nft_chain=$(nft list table inet filter 2>/dev/null | grep -oP 'chain \K\w+' | head -1 || true)
+        local _nft_chain=$(nft list table inet filter 2>/dev/null | grep 'chain ' | head -1 | sed 's/.*chain \([^ ]*\).*/\1/' || true)
         _nft_chain=${_nft_chain:-input}
 
         # Insert rule (before any drop/reject rules)
         # Use handle-based insertion for reliability
-        local _drop_handle=$(nft -a list table inet filter 2>/dev/null | grep -E "(drop|reject)" | head -1 | grep -oP 'handle \K\d+' || true)
+        local _drop_handle=$(nft -a list table inet filter 2>/dev/null | grep -E '(drop|reject)' | head -1 | grep -oE 'handle [0-9]+' | awk '{print $2}' || true)
 
         _err_output=$(
             if [ -n "$_drop_handle" ]; then
@@ -1262,7 +1267,7 @@ open_firewall_port() {
             # Final fallback: save to a well-known file and mention rc.local
             if ! $_persisted; then
                 # Save to a recovery file the user can source
-                iptables-save > /opt/novel-admin/.iptables-backup 2>/dev/null || true
+                iptables-save > "${INSTALL_DIR}/.iptables-backup" 2>/dev/null || true
                 warn "iptables 规则未自动持久化 (重启后可能失效)"
                 warn "  手动持久化: iptables-save > /etc/iptables/rules.v4"
                 warn "  或安装: apt install iptables-persistent"
@@ -1785,7 +1790,8 @@ step "[1/8] 系统检测"
 # OS info
 if [ -f /etc/os-release ]; then
     # shellcheck source=/dev/null
-    . /etc/os-release
+    . /etc/os-release 2>/dev/null || true
+    # Only extract needed vars to avoid polluting global namespace
     info "系统: ${NAME:-Unknown} (${ID:-unknown}) ${VERSION_ID:-}"
 else
     warn "无法检测系统版本（缺少 /etc/os-release）"
@@ -1940,7 +1946,7 @@ if [ "${_TIER_SWAP_TARGET}" -gt 0 ] && [ "${_HW_SWAP_MB:-0}" -lt "${_TIER_SWAP_T
     _swap_size_mb=$_TIER_SWAP_TARGET
     # If /swapfile already exists but is too small, resize it
     if [ -f /swapfile ]; then
-        _existing_swap_bytes=$(stat -c%s /swapfile 2>/dev/null || echo 0)
+        _existing_swap_bytes=$(ls -l /swapfile 2>/dev/null | awk '{print $5}' || echo 0)
         _existing_swap_mb=$(( _existing_swap_bytes / 1048576 ))
         if [ "$_existing_swap_mb" -ge "$_swap_size_mb" ]; then
             # Just ensure it's active
@@ -2107,7 +2113,9 @@ if ! $_got && [ -d "${INSTALL_DIR}/.git" ] && command -v git &>/dev/null; then
         else
             # Fast-forward failed (diverged) — force reset to remote
             warn "git pull --ff-only 失败，尝试强制同步..."
-            if git fetch origin main 2>/dev/null && git reset --hard origin/main 2>/dev/null; then
+            _upstream_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+            _upstream_branch=${_upstream_branch:-main}
+            if git fetch origin "$_upstream_branch" 2>/dev/null && git reset --hard "origin/$_upstream_branch" 2>/dev/null; then
                 ok "代码已强制同步到最新"
                 _got=true
             else
@@ -2275,7 +2283,7 @@ if [ -f .env ]; then
                     _key="${_kv%%=*}"
                     _value="${_kv#*=}"
                     if grep -q "^${_key}=" .env 2>/dev/null; then
-                        sed -i.bak "s|^${_key}=.*|${_key}=${_value}|" .env && rm -f .env.bak
+                        awk -v k="$_key" -v v="$_value" 'BEGIN{FS=OFS="="} $1==k{$2=v} {print}' .env > .env.tmp && mv .env.tmp .env
                     else
                         echo "${_key}=${_value}" >> .env
                     fi
@@ -2679,7 +2687,7 @@ ok "docker-compose.yml 校验通过"
 
 # ── Build with tier-appropriate settings ──
 T0=$(date +%s)
-BUILD_LOG=$(mktemp /tmp/novel-build.XXXXXX.log 2>/dev/null) || BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).log"
+BUILD_LOG=$(mktemp /tmp/novel-build.XXXXXX.log 2>/dev/null) || BUILD_LOG="/tmp/novel-build-$(date +%Y%m%d_%H%M%S).$$.log"
 
 set +e
 # On tiny/small servers, disable BuildKit parallelism to reduce peak memory
@@ -2876,6 +2884,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
     if [ "$_mgr_status" = "exited" ] || [ "$_mgr_oom" = "true" ]; then
         echo ""
         if [ "$_mgr_oom" = "true" ]; then
+            APP_MEMORY_LIMIT=$(grep '^APP_MEMORY_LIMIT=' .env 2>/dev/null | head -1 | cut -d= -f2- || true)
             err "容器因内存不足被 OOM Kill！"
             err "  当前内存限制: ${APP_MEMORY_LIMIT:-未设置}"
             err "  建议: 增大 APP_MEMORY_LIMIT 或升级服务器内存"

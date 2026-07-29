@@ -66,6 +66,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV BUN_NO_UPDATE_NOTIF=1
 ENV DB_PROVIDER=postgresql
 
+# tini as PID 1 init — reaps zombie processes, handles signals correctly.
+# Without tini, bash as PID 1 does NOT reap orphans, eventually exhausting
+# the container's PID limit and causing fork(2) failures.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/*
+
 # Minimal runtime deps: curl (healthcheck) + SSL (PostgreSQL) + netcat (DB check)
 # IMPORTANT: oven/bun:1 ships with a stale Debian Trixie snapshot in its
 # sources.list (e.g. trixie-2024XXXXX). That snapshot gets removed from mirrors,
@@ -122,19 +129,22 @@ COPY --from=builder /app/node_modules/@standard-schema ./node_modules/@standard-
 # add: COPY --from=builder /app/node_modules/X ./node_modules/X
 # Common c12/effect transitive deps already copied above.
 
-# Copy scraper service source + deps
+# Copy scraper service package files FIRST (for layer caching)
+# NOTE: bun install needs network — use Chinese npm registry for Chinese servers
+# NPM_REGISTRY is stage-scoped; must be re-declared here even if set in deps stage.
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 COPY mini-services/scraper-service/package.json /tmp/scraper-deps/
 COPY mini-services/scraper-service/bun.lock /tmp/scraper-deps/
-COPY mini-services/scraper-service/ ./scraper-service/
 
-# Install scraper deps in-place (no separate build stage)
-# NOTE: bun install needs network — use Chinese npm registry for Chinese servers
-ARG NPM_REGISTRY=https://registry.npmmirror.com
+# Install scraper deps (layer-cached by lockfile hash, invalidated only if package.json/bun.lock change)
 RUN cd /tmp/scraper-deps && \
     if BUN_CONFIG_REGISTRY=${NPM_REGISTRY} bun install --frozen-lockfile --production 2>&1; then \
         if [ -d node_modules ]; then cp -r node_modules /app/scraper-service/; fi; \
     else echo "[WARN] Scraper deps install failed, headless scraping will be unavailable"; fi; \
     rm -rf /tmp/scraper-deps
+
+# THEN copy scraper source (only invalidated by source code changes)
+COPY mini-services/scraper-service/ ./scraper-service/
 
 # Swap scraper queue to PostgreSQL version
 RUN cd /app/scraper-service && \
@@ -143,7 +153,8 @@ RUN cd /app/scraper-service && \
     else echo "FATAL: src/queue.pg.ts not found"; exit 1; fi
 
 # Create data directories and set ownership
-RUN mkdir -p /app/data/covers /app/data/downloads /app/data/chapters /app/backups && \
+# NOTE: docker-compose.yml mounts backup volume at /backups (not /app/backups)
+RUN mkdir -p /app/data/covers /app/data/downloads /app/data/chapters /backups && \
     chown -R appuser:appuser /app
 
 # Copy and set permissions for entrypoint
@@ -160,9 +171,12 @@ EXPOSE 3000
 # CRITICAL: The scraper service MUST override this with PORT=3099
 # when started in docker-entrypoint.sh, otherwise it steals port 3000.
 ENV PORT=3000
+# Next.js standalone reads HOSTNAME as the bind address (default: 0.0.0.0).
+# NOTE: This shadows the POSIX $HOSTNAME (machine hostname), but Next.js
+# explicitly checks process.env.HOSTNAME, so this is intentional and required.
 ENV HOSTNAME="0.0.0.0"
 
 # HEALTHCHECK is defined in docker-compose.yml with start_period.
 # Not defined here to avoid confusion (compose overrides Dockerfile HEALTHCHECK).
 
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+ENTRYPOINT ["tini", "--", "/app/docker-entrypoint.sh"]
