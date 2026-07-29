@@ -167,7 +167,7 @@ done
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
     log "[DB] ERROR: PostgreSQL unavailable after $((MAX_RETRIES * 2))s"
     log "[DB] Target: ${_DB_HOST}:${_DB_PORT}"
-    log "[DB] Check that the postgres container is running: docker compose ps postgres"
+    log "[DB] Check that the postgres container is running: docker compose ps postgres (or: docker-compose ps postgres)"
     exit 1
 fi
 
@@ -191,7 +191,11 @@ fi
 
 # ─── Create pg_trgm extension + performance indexes ───
 log "[DB] Creating extensions and indexes..."
-echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null || true
+if echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null; then
+    log "[DB] pg_trgm extension created"
+else
+    log "[DB] WARNING: pg_trgm extension failed — trigram text search will be unavailable"
+fi
 echo "
 CREATE INDEX IF NOT EXISTS idx_novel_title_trgm ON \"Novel\" USING gin(title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_novel_author_trgm ON \"Novel\" USING gin(author gin_trgm_ops);

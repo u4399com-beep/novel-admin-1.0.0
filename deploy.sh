@@ -85,12 +85,19 @@ DOCKER_MIRRORS=(
 REQUIRED_FILES=(Dockerfile docker-compose.yml docker-entrypoint.sh .env.production)
 
 # Defaults
-LOG_FILE=$(mktemp /tmp/novel-deploy.XXXXXX.log 2>/dev/null) || LOG_FILE="/tmp/novel-deploy-$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE=$(mktemp /tmp/novel-deploy.XXXXXX.log 2>/dev/null) || LOG_FILE="/tmp/novel-deploy-$(date +%Y%m%d_%H%M%S).$$-$RANDOM.log"
 INSTALL_DIR="/opt/novel-admin"
 APP_PORT=""
 MODE="install"
 AUTO_YES=false
 VERBOSE=false
+
+# Docker Compose command — properly detected by detect_compose_cmd() in the main
+# install flow.  Initialized to "docker compose" (V2 plugin) as a sensible default
+# so that --status/--logs/--backup/--upgrade etc. can use $COMPOSE_CMD even
+# before detect_compose_cmd() runs.  If the plugin is absent, the "|| docker-compose"
+# fallbacks in each mode section handle it.
+COMPOSE_CMD="docker compose"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  HARDWARE TIER CONFIGURATION
@@ -146,7 +153,15 @@ while [ $# -gt 0 ]; do
         --logs)          MODE="logs"; shift ;;
         --restart)       MODE="restart"; shift ;;
         --stop)          MODE="stop"; shift ;;
-        --fix-firewall)  MODE="fix-firewall"; shift ;;
+        --fix-firewall)
+  MODE="fix-firewall"
+  # Capture optional port argument
+  if [[ "${2:-}" =~ ^[0-9]+$ ]] && [ "${2:-}" -ge 1 ] && [ "${2:-}" -le 65535 ]; then
+      _FIX_FW_PORT_OVERRIDE="$2"; shift 2
+  else
+      shift
+  fi
+  ;;
         -h|--help)
             sed -n '2,/^ ╚/p' "$0" 2>/dev/null | sed 's/^ ║  \?//' || true
             exit 0
@@ -158,6 +173,14 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
+
+# ── Validate INSTALL_DIR is not a system-critical path ──
+# This prevents catastrophic rm -rf if someone passes -d / or -d /etc
+case "$INSTALL_DIR" in
+    /|/usr|/usr/|/etc|/etc/|/var|/var/|/bin|/sbin|/boot|/lib|/lib/|/root|/home|/home/|/opt|/opt/|/tmp|/tmp/)
+        echo "Error: -d cannot be a system directory ($INSTALL_DIR)" >&2; exit 1 ;;
+esac
+[[ "$INSTALL_DIR" != /* ]] && { echo "Error: -d requires an absolute path (got: $INSTALL_DIR)" >&2; exit 1; }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  SELF-UPDATE (for git clone installations)
@@ -178,25 +201,25 @@ if [ "$MODE" = "install" ] && ! $_SELF_UPDATE_SKIP && [ -d "${SCRIPT_DIR}/.git" 
         # Save user's .env before any git operations
         _env_saved=false
         if [ -f "${SCRIPT_DIR}/.env" ]; then
-            cp "${SCRIPT_DIR}/.env" "/tmp/.env.novel-backup.$$" 2>/dev/null && _env_saved=true
+            cp "${SCRIPT_DIR}/.env" "/root/.env.novel-backup.$$" 2>/dev/null && _env_saved=true
         fi
         # Discard local changes to tracked files (NOT .env, which may have user data)
         # This handles cases where a previous deploy.sh run modified files
         git -C "$SCRIPT_DIR" checkout -- . 2>/dev/null || true
         if git -C "$SCRIPT_DIR" pull --ff-only 2>&1; then
             # Restore .env if it was overwritten by pull
-            if $_env_saved && [ -f "/tmp/.env.novel-backup.$$" ]; then
-                cp "/tmp/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
-                rm -f "/tmp/.env.novel-backup.$$"
+            if $_env_saved && [ -f "/root/.env.novel-backup.$$" ]; then
+                cp "/root/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
+                rm -f "/root/.env.novel-backup.$$"
             fi
             _SELF_UPDATED=true
             echo -e "\033[0;32m  ✓ 已更新，重新启动...\033[0m" >&2
             _SELF_UPDATE_REEXEC=true exec bash "$0" "$@"
         else
             # Restore .env even on failure
-            if $_env_saved && [ -f "/tmp/.env.novel-backup.$$" ]; then
-                cp "/tmp/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
-                rm -f "/tmp/.env.novel-backup.$$"
+            if $_env_saved && [ -f "/root/.env.novel-backup.$$" ]; then
+                cp "/root/.env.novel-backup.$$" "${SCRIPT_DIR}/.env" 2>/dev/null || true
+                rm -f "/root/.env.novel-backup.$$"
             fi
             echo -e "\033[0;33m[WARN] 自动更新失败，尝试强制同步...\033[0m" >&2
             # Last resort: force reset to remote
@@ -691,6 +714,7 @@ ensure_docker() {
         done
     fi
     if [ -f /tmp/get-docker.sh ]; then
+        chmod 700 /tmp/get-docker.sh
         info "执行 Docker 安装脚本（约需 1-3 分钟）..."
         sh /tmp/get-docker.sh >> "$LOG_FILE" 2>&1 && _installed=true
         rm -f /tmp/get-docker.sh
@@ -764,7 +788,7 @@ ensure_docker() {
 # Detect Docker Compose command (V2 plugin vs standalone V1)
 detect_compose_cmd() {
     # Method 1: Check 'docker compose' subcommand (Docker CE v2 plugin)
-    if docker compose version &>/dev/null 2>&1; then
+    if docker compose version &>/dev/null; then
         COMPOSE_CMD="docker compose"
         ok "Docker Compose (plugin) $(docker compose version --short 2>/dev/null)"
         return
@@ -802,7 +826,7 @@ detect_compose_cmd() {
             systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
             sleep 2
             # Re-check
-            if docker compose version &>/dev/null 2>&1; then
+            if docker compose version &>/dev/null; then
                 COMPOSE_CMD="docker compose"
                 ok "Docker Compose (plugin, fixed path) $(docker compose version --short 2>/dev/null)"
                 return
@@ -882,7 +906,7 @@ detect_compose_cmd() {
     fi
 
     # Final re-detect after all install attempts
-    if docker compose version &>/dev/null 2>&1; then
+    if docker compose version &>/dev/null; then
         COMPOSE_CMD="docker compose"
         ok "Docker Compose (plugin) $(docker compose version --short 2>/dev/null)"
         return
@@ -1357,8 +1381,14 @@ verify_port_reachable() {
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  COMPOSE SHORTCUT (wraps detected COMPOSE_CMD)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# IMPORTANT: COMPOSE_CMD may be "docker compose" (with space, V2 plugin)
+# or "docker-compose" (standalone V1). We must NOT quote $COMPOSE_CMD
+# because bash quoting suppresses word splitting — "docker compose" would
+# be treated as a single executable name (which doesn't exist).
+# Unquoted $COMPOSE_CMD correctly splits into "docker" + "compose".
+# This is safe because docker/docker-compose paths never contain spaces.
 compose() {
-    "$COMPOSE_CMD" "$@"
+    $COMPOSE_CMD "$@"
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1371,7 +1401,7 @@ if [ "$MODE" = "status" ]; then
     fi
     cd "$INSTALL_DIR"
     echo ""
-    docker compose ps 2>/dev/null || docker-compose ps 2>/dev/null || echo "无法获取容器状态"
+    $COMPOSE_CMD ps 2>/dev/null || docker-compose ps 2>/dev/null || echo "无法获取容器状态"
     echo ""
     echo "  安装目录:  ${INSTALL_DIR}"
     echo "  磁盘占用:  $(du -sh . 2>/dev/null | cut -f1)"
@@ -1462,7 +1492,7 @@ if [ "$MODE" = "logs" ]; then
     echo "  端口: ${_lg_port} | 日志实时输出 (Ctrl+C 退出)"
     echo "  无法访问? 先运行: $0 --status"
     echo ""
-    docker compose logs -f --tail=100 2>/dev/null || docker-compose logs -f --tail=100 2>/dev/null
+    $COMPOSE_CMD logs -f --tail=100 2>/dev/null || docker-compose logs -f --tail=100 2>/dev/null
     exit 0
 fi
 
@@ -1476,7 +1506,7 @@ if [ "$MODE" = "restart" ]; then
     fi
     cd "$INSTALL_DIR"
     echo "重启服务..."
-    docker compose restart 2>/dev/null || docker-compose restart 2>/dev/null
+    $COMPOSE_CMD restart 2>/dev/null || docker-compose restart 2>/dev/null
     echo "完成。查看日志: $0 --logs"
     exit 0
 fi
@@ -1491,7 +1521,7 @@ if [ "$MODE" = "stop" ]; then
     fi
     cd "$INSTALL_DIR"
     echo "停止服务..."
-    docker compose stop 2>/dev/null || docker-compose stop 2>/dev/null
+    $COMPOSE_CMD stop 2>/dev/null || docker-compose stop 2>/dev/null
     echo "完成。启动: $0 --restart 或 cd ${INSTALL_DIR} && docker compose start"
     exit 0
 fi
@@ -1501,7 +1531,7 @@ fi
 #  Standalone mode to diagnose and fix OS firewall issues.
 #  Usage: ./deploy.sh --fix-firewall [PORT]
 # ═══════════════════════════════════════════════════════════════════
-_fix_fw_port="${1:-3000}"  # First positional arg after --fix-firewall
+_fix_fw_port="${_FIX_FW_PORT_OVERRIDE:-3000}"  # From --fix-firewall [PORT] arg, or default 3000
 if [ "$MODE" = "fix-firewall" ]; then
     if [ -f "${INSTALL_DIR}/.env" ]; then
         _env_port=$(grep '^APP_PORT=' "${INSTALL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2 || true)
@@ -1578,7 +1608,7 @@ if [ "$MODE" = "uninstall" ]; then
         exit 0
     fi
     cd "$INSTALL_DIR"
-    docker compose down -v --rmi local 2>/dev/null || docker-compose down -v --rmi local 2>/dev/null || true
+    $COMPOSE_CMD down -v --rmi local 2>/dev/null || docker-compose down -v --rmi local 2>/dev/null || true
     cd /
     rm -rf "$INSTALL_DIR"
     ok "已完全卸载"
@@ -1606,14 +1636,14 @@ if [ "$MODE" = "backup" ]; then
     _db_user=${_db_user:-novel}
     _db_name=${_db_name:-novel_admin}
 
-    ( umask 077 && docker compose exec -T postgres pg_dump -U "$_db_user" "$_db_name" > "$_bf" 2>/dev/null ) || true
+    ( umask 077 && $COMPOSE_CMD exec -T postgres pg_dump -U "$_db_user" "$_db_name" > "$_bf" 2>/dev/null ) || true
     if [ -s "$_bf" ]; then
         chmod 600 "$_bf"
         _sz=$(du -h "$_bf" 2>/dev/null | cut -f1 || true)
         ok "备份完成: ${INSTALL_DIR}/${_bf} (${_sz})"
     else
         err "备份失败（PostgreSQL 容器可能未运行）"
-        err "先启动服务: cd ${INSTALL_DIR} && docker compose up -d"
+        err "先启动服务: cd ${INSTALL_DIR} && docker compose up -d 2>/dev/null || docker-compose up -d"
         exit 1
     fi
     exit 0
@@ -1628,14 +1658,14 @@ if [ "$MODE" = "rollback" ]; then
         die "未找到回滚备份 (${_rollback_dir})"
     fi
     info "停止当前服务..."
-    cd "$INSTALL_DIR" && docker compose down 2>/dev/null || docker-compose down 2>/dev/null || true
+    cd "$INSTALL_DIR" && $COMPOSE_CMD down 2>/dev/null || docker-compose down 2>/dev/null || true
     info "执行回滚..."
     rm -rf "${INSTALL_DIR}.bak2" 2>/dev/null || true
     mv "$INSTALL_DIR" "${INSTALL_DIR}.bak2"
     mv "$_rollback_dir" "$INSTALL_DIR"
     cd "$INSTALL_DIR"
     info "启动回滚版本..."
-    docker compose up -d 2>/dev/null || docker-compose up -d 2>/dev/null
+    $COMPOSE_CMD up -d 2>/dev/null || docker-compose up -d 2>/dev/null
     ok "已回滚到上一版本"
     warn "旧版本备份在: ${INSTALL_DIR}.bak2（可手动删除）"
     exit 0
@@ -1656,9 +1686,13 @@ if [ "$MODE" = "upgrade" ]; then
     _db_user="novel"; _db_name="novel_admin"
     [ -f .env ] && _db_user=$(grep '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2)
     [ -f .env ] && _db_name=$(grep '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2)
-    docker compose exec -T postgres pg_dump -U "${_db_user:-novel}" "${_db_name:-novel_admin}" \
+    $COMPOSE_CMD exec -T postgres pg_dump -U "${_db_user:-novel}" "${_db_name:-novel_admin}" \
         > "backups/pre_upgrade_${_ts}.sql" 2>/dev/null || warn "数据库备份失败（容器可能未运行）"
-    ok "数据库已备份: backups/pre_upgrade_${_ts}.sql"
+    if [ -s "backups/pre_upgrade_${_ts}.sql" ]; then
+        ok "数据库已备份: backups/pre_upgrade_${_ts}.sql"
+    else
+        warn "数据库备份失败 — 继续升级有数据丢失风险"
+    fi
 
     # Replace files from tarball source
     if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ] && [ -f "${SCRIPT_DIR}/Dockerfile" ]; then
@@ -1710,7 +1744,7 @@ if [ "$MODE" = "upgrade" ]; then
     fi
 
     info "重新构建并启动..."
-    docker compose up -d --build 2>&1
+    $COMPOSE_CMD up -d --build 2>&1
     ok "升级完成！"
     echo ""
     echo "  如有问题回滚:  $0 --rollback"
@@ -1721,6 +1755,16 @@ fi
 # ═══════════════════════════════════════════════════════════════════
 #  MODE: INSTALL (main flow)
 # ═══════════════════════════════════════════════════════════════════
+
+# ── Exclusive lock to prevent concurrent deploy.sh instances ──
+_DEPLOY_LOCK_FILE="/tmp/novel-deploy.lock"
+exec 200>"$_DEPLOY_LOCK_FILE"
+if ! flock -n 200; then
+    _OTHER_PID=$(cat "$_DEPLOY_LOCK_FILE" 2>/dev/null || echo "unknown")
+    die "另一个 deploy.sh 正在运行 (PID: ${_OTHER_PID})。请等待其完成后再试。"
+fi
+echo $$ > "$_DEPLOY_LOCK_FILE"
+trap 'rm -f "$_DEPLOY_LOCK_FILE"' EXIT
 
 # ── 0. Root Check ──
 check_root "$@"
@@ -2055,7 +2099,7 @@ if ! $_got && [ -d "${INSTALL_DIR}/.git" ] && command -v git &>/dev/null; then
         fi
         # Discard local changes to tracked files (e.g. deploy.sh-injected version: field)
         # so git pull doesn't fail with merge conflicts
-    # Only clean tracked files, never user data
+        # Only clean tracked files, never user data
         git checkout -- . 2>/dev/null || true
         if git pull --ff-only 2>&1; then
             ok "代码已更新"
@@ -2528,7 +2572,7 @@ services:
       POSTGRES_CHECKPOINT_COMPLETION_TARGET: 0.5
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ${BACKUP_DIR}:/backups:rw
+      - "${BACKUP_DIR}":/backups:rw
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -2625,9 +2669,9 @@ if [ "${COMPOSE_CMD}" = "docker-compose" ]; then
 fi
 
 # ── Validate compose file before build ──
-if ! "$COMPOSE_CMD" config > /dev/null 2>&1; then
+if ! $COMPOSE_CMD config > /dev/null 2>&1; then
     err "docker-compose.yml 校验失败！详细错误："
-    "$COMPOSE_CMD" config 2>&1 | head -20
+    $COMPOSE_CMD config 2>&1 | head -20
     err "请检查上方错误信息，或删除 docker-compose.yml 后重新运行: ./deploy.sh"
     exit 1
 fi
@@ -2641,13 +2685,11 @@ set +e
 # On tiny/small servers, disable BuildKit parallelism to reduce peak memory
 # BuildKit runs all stages concurrently — each apt-get update downloads ~10MB
 # and uses ~50-100MB RAM. On 1H1G, 3 parallel apt processes + Next.js build = OOM.
-_BUILDKIT_DISABLED=false
 if [ "$_HW_TIER" = "tiny" ]; then
     # Disable BuildKit entirely — legacy builder runs stages sequentially
     # This means NO parallel downloads across stages, saving ~300MB peak RAM
     export DOCKER_BUILDKIT=0
     export COMPOSE_DOCKER_CLI_BUILD=0
-    _BUILDKIT_DISABLED=true
     info "使用传统构建器 (降低 ${_HW_TIER} 服务器内存占用，串行构建)..."
 elif [ "$_HW_TIER" = "small" ]; then
     # On small servers, also disable BuildKit to prevent parallel stage execution.
@@ -2656,7 +2698,6 @@ elif [ "$_HW_TIER" = "small" ]; then
     # but much more memory-friendly on 2H2G servers.
     export DOCKER_BUILDKIT=0
     export COMPOSE_DOCKER_CLI_BUILD=0
-    _BUILDKIT_DISABLED=true
     info "使用传统构建器 (串行构建，避免并行 apt 消耗内存)..."
 fi
 
@@ -2679,7 +2720,7 @@ fi
 # which caches based on mtime; without --no-cache, stale COPY layers may be reused.
 # First-time builds have no cache anyway, so this adds no overhead there.
 # shellcheck disable=SC2086
-"$COMPOSE_CMD" build --no-cache ${_BUILD_ARGS} \
+$COMPOSE_CMD build --no-cache ${_BUILD_ARGS} \
     2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
     # Show only important lines to reduce noise
     if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn|#\d+ \[)'; then
@@ -2796,7 +2837,7 @@ if port_in_use "${SAVE_PORT}"; then
 fi
 
 set +e
-"$COMPOSE_CMD" up -d 2>&1
+$COMPOSE_CMD up -d 2>&1
 START_RC=$?
 set -e
 
@@ -2843,10 +2884,10 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         fi
         echo ""
         err "容器状态:"
-        docker compose ps 2>/dev/null
+        $COMPOSE_CMD ps 2>/dev/null || docker-compose ps 2>/dev/null
         echo ""
         err "容器完整日志 (novel-manager):"
-        docker compose logs --tail=200 novel-manager 2>/dev/null
+        $COMPOSE_CMD logs --tail=200 novel-manager 2>/dev/null || docker-compose logs --tail=200 novel-manager 2>/dev/null
         echo ""
         # Try to read the persistent crash diagnostic file from the volume
         # (written by docker-entrypoint.sh to /app/data/entrypoint-debug.log)
@@ -2864,7 +2905,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         err "  1. 查看完整日志: docker compose logs --tail=200 novel-manager"
         err "  2. 检查 OOM: docker inspect novel-manager --format='{{.State.OOMKilled}}'"
         err "  3. 检查退出码: docker inspect novel-manager --format='{{.State.ExitCode}}'"
-        err "  4. 崩溃诊断: docker compose exec novel-manager cat /app/data/entrypoint-debug.log 2>/dev/null"
+        err "  4. 崩溃诊断: docker exec novel-manager cat /app/data/entrypoint-debug.log 2>/dev/null"
         exit 1
     fi
 
@@ -2876,7 +2917,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
             echo ""
             err "容器反复重启 (${_CRASH_SEEN} 次)，可能存在启动错误"
             err "容器完整日志:"
-            docker compose logs --tail=200 novel-manager 2>/dev/null
+            $COMPOSE_CMD logs --tail=200 novel-manager 2>/dev/null || docker-compose logs --tail=200 novel-manager 2>/dev/null
             echo ""
             # Try persistent crash log from volume
             _debug_vol=$(docker volume ls -q 2>/dev/null | grep app-data || true)
@@ -2944,6 +2985,7 @@ else
     err "端口 ${SAVE_PORT} 未监听！容器可能未正常启动"
     err "  排查: cd ${INSTALL_DIR} && docker compose ps"
     err "  日志: cd ${INSTALL_DIR} && docker compose logs --tail=50"
+    err "  或:     cd ${INSTALL_DIR} && docker-compose ps"
 fi
 
 # 2. Distinguish public IP vs internal IP

@@ -36,7 +36,7 @@ git_force_sync() {
     # Save .env if it exists (contains user's credentials)
     local _env_backup=""
     if [ -f "$dir/.env" ]; then
-        _env_backup="/tmp/.env.novel-install.$$.bak"
+        _env_backup="/root/.env.novel-install.$$.bak"
         cp "$dir/.env" "$_env_backup" 2>/dev/null || true
     fi
 
