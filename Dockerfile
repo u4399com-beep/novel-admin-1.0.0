@@ -66,26 +66,26 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV BUN_NO_UPDATE_NOTIF=1
 ENV DB_PROVIDER=postgresql
 
-# tini as PID 1 init — reaps zombie processes, handles signals correctly.
-# Without tini, bash as PID 1 does NOT reap orphans, eventually exhausting
-# the container's PID limit and causing fork(2) failures.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends tini \
-    && rm -rf /var/lib/apt/lists/*
-
-# Minimal runtime deps: curl (healthcheck) + SSL (PostgreSQL) + netcat (DB check)
 # IMPORTANT: oven/bun:1 ships with a stale Debian Trixie snapshot in its
 # sources.list (e.g. trixie-2024XXXXX). That snapshot gets removed from mirrors,
 # causing "404 Not Found" on apt-get update and build failure.
-# We rewrite sources.list to use a Chinese mirror (default: mirrors.aliyun.com)
-# because the target audience is Chinese servers where deb.debian.org is unreachable.
+# We rewrite sources.list BEFORE any apt-get to use a Chinese mirror (default:
+# mirrors.aliyun.com) because the target audience is Chinese servers where
+# deb.debian.org is unreachable.
 # DEBIAN_MIRROR can be overridden via --build-arg for non-Chinese environments.
 ARG DEBIAN_MIRROR=mirrors.aliyun.com
 RUN rm -f /etc/apt/sources.list.d/*.sources \
     && printf "deb http://${DEBIAN_MIRROR}/debian trixie main\ndeb http://${DEBIAN_MIRROR}/debian trixie-updates main\n" > /etc/apt/sources.list \
-    && printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/99timeout \
-    && apt-get update \
+    && printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/99timeout
+
+# tini as PID 1 init — reaps zombie processes, handles signals correctly.
+# Without tini, bash as PID 1 does NOT reap orphans, eventually exhausting
+# the container's PID limit and causing fork(2) failures.
+# Minimal runtime deps: curl (healthcheck) + SSL (PostgreSQL) + netcat (DB check)
+# All installed in a SINGLE apt-get after rewriting sources.list.
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+       tini \
        curl \
        ca-certificates \
        netcat-openbsd \
