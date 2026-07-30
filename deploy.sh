@@ -1749,6 +1749,9 @@ if [ "$MODE" = "upgrade" ]; then
     fi
 
     info "重新构建并启动..."
+    # Detect compose command (COMPOSE_CMD defaults to v2 plugin at line 100,
+    # but user may only have standalone docker-compose v1)
+    detect_compose_cmd
     # On tiny/small servers, disable BuildKit (same as initial install)
     # to prevent parallel stage execution causing OOM
     _HW_TIER_UPGRADE=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2 || true)
