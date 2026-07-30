@@ -2548,3 +2548,23 @@ Stage Summary:
 - 4轮审计未发现新的需修复问题
 - 已推送: git push 成功 (0b07028..66114a0)
 - 一键安装命令: curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
+---
+Task ID: 4
+Agent: Main Orchestrator
+Task: 修复实际部署报错 (apt-get无法连接deb.debian.org) + 补充审计
+
+Work Log:
+- 分析用户部署日志: Step 27/62 apt-get update连接deb.debian.org超时
+- 根因: Dockerfile runner阶段有TWO个apt-get块, tini安装在sources.list重写之前
+- 修复: 将DEBIAN_MIRROR sources.list重写移到第一个RUN指令, 合并为单次apt-get
+- 审计deploy.sh --upgrade路径: 发现缺少detect_compose_cmd()调用
+- 修复: 在--upgrade模式添加detect_compose_cmd
+- bash -n 语法检查: deploy.sh✅ docker-entrypoint.sh✅ install.sh✅
+- 推送: 66114a0..2029567 main->main
+
+Stage Summary:
+- 修复2个问题 (1个CRITICAL + 1个MEDIUM)
+- CRITICAL: Dockerfile apt-get顺序 - tini安装使用默认deb.debian.org源(国内不可达)
+- MEDIUM: --upgrade路径缺少detect_compose_cmd(), v1用户升级会失败
+- 已推送至git, 用户可重新运行一键安装
+- 一键安装命令: curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
