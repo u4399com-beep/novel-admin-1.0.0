@@ -138,6 +138,10 @@ _TIER_MAX_CONCURRENT_UL=3
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  PARSE ARGUMENTS (proper while/shift loop)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Save original args before shift loop consumes them
+# (needed for self-update re-exec at lines ~217, ~229)
+_ORIG_ARGS=("$@")
+
 while [ $# -gt 0 ]; do
     case "$1" in
         -y|--yes)        AUTO_YES=true; shift ;;
@@ -214,7 +218,7 @@ if [ "$MODE" = "install" ] && ! $_SELF_UPDATE_SKIP && [ -d "${SCRIPT_DIR}/.git" 
             fi
             _SELF_UPDATED=true
             echo -e "\033[0;32m  ✓ 已更新，重新启动...\033[0m" >&2
-            _SELF_UPDATE_REEXEC=true exec bash "$0" "$@"
+            _SELF_UPDATE_REEXEC=true exec bash "$0" "${_ORIG_ARGS[@]}"
         else
             # Restore .env even on failure
             if $_env_saved && [ -f "${HOME:-/root}/.env.novel-backup.$$" ]; then
@@ -226,7 +230,7 @@ if [ "$MODE" = "install" ] && ! $_SELF_UPDATE_SKIP && [ -d "${SCRIPT_DIR}/.git" 
             if git -C "$SCRIPT_DIR" fetch origin main 2>/dev/null && \
                git -C "$SCRIPT_DIR" reset --hard origin/main 2>/dev/null; then
                 echo -e "\033[0;32m  ✓ 强制同步成功，重新启动...\033[0m" >&2
-                _SELF_UPDATE_REEXEC=true exec bash "$0" "$@"
+                _SELF_UPDATE_REEXEC=true exec bash "$0" "${_ORIG_ARGS[@]}"
             else
                 echo -e "\033[0;31m[ERROR] 更新失败，使用本地版本继续\033[0m" >&2
                 echo -e "\033[0;31m  手动修复: cd $(pwd) && git checkout -- . && git pull && ./deploy.sh\033[0m" >&2
@@ -493,16 +497,18 @@ pkg_install() {
     done
 }
 
-# Ensure curl is available (critical dependency)
-ensure_curl() {
-    if command -v curl &>/dev/null; then return; fi
-    info "curl 未安装，尝试安装..."
-    if command -v wget &>/dev/null; then return; fi  # wget is also acceptable for downloads
-    pkg_install curl
-    if ! command -v curl &>/dev/null; then
-        die "无法安装 curl。请手动安装后重试。"
-    fi
-}
+# Read a value from .env, stripping surrounding quotes
+# Usage: _val=$(env_val KEY [file])
+env_val() {
+    local v
+    v=$(grep "^${1}=" "${2:-.env}" 2>/dev/null | head -1 | cut -d= -f2- || true)
+    # Strip leading/trailing quotes (both single and double)
+    v="${v#\"}"
+    v="${v%\"}"
+    v="${v#\'}"
+    v="${v%\'}"
+    echo "$v"
+} 
 
 # Ensure a download tool exists (curl or wget)
 ensure_downloader() {
@@ -1182,7 +1188,7 @@ open_firewall_port() {
     # ─── nftables (Debian 11+/Ubuntu 22.04+ when used directly) ───
     if [ "$fw_name" = "nftables" ]; then
         # Check if a rule already exists for this port in the input chain
-        if nft list table inet filter 2>/dev/null | grep -qE "dport ${port}"; then
+        if nft list table inet filter 2>/dev/null | grep -qE "dport ${port}\\b"; then
             ok "nftables 已有端口 ${port} 的规则 ✓"
             return 0
         fi
@@ -1338,7 +1344,7 @@ show_firewall_status() {
             fi
             ;;
         nftables)
-            if nft list table inet filter 2>/dev/null | grep -qE "dport ${port}"; then
+            if nft list table inet filter 2>/dev/null | grep -qE "dport ${port}\\b"; then
                 _port_allowed=true
                 echo "  端口 ${port}: ${C_GRN}已放行 ✓${C_RST}"
             else
@@ -1411,10 +1417,10 @@ if [ "$MODE" = "status" ]; then
     echo "  安装目录:  ${INSTALL_DIR}"
     echo "  磁盘占用:  $(du -sh . 2>/dev/null | cut -f1)"
     if [ -f .env ]; then
-        _sp=$(grep '^APP_PORT=' .env 2>/dev/null | cut -d= -f2)
-        _su=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | cut -d= -f2)
-        _sa=$(grep '^APP_URL=' .env 2>/dev/null | cut -d= -f2)
-        _tier=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2)
+        _sp=$(env_val APP_PORT)
+        _su=$(env_val ADMIN_USERNAME)
+        _sa=$(env_val APP_URL)
+        _tier=$(env_val _HW_TIER)
         [ -n "$_sp" ] && echo "  端口:      ${_sp}"
         [ -n "$_sa" ] && echo "  配置地址:  ${_sa}"
         [ -n "$_su" ] && echo "  管理员:    ${_su}"
@@ -1441,7 +1447,7 @@ if [ "$MODE" = "status" ]; then
 
         # Check localhost health
         if command -v curl &>/dev/null; then
-            if curl -sf --connect-timeout 2 "http://localhost:${_sp}/api/auth/csrf" &>/dev/null; then
+            if curl -sf --connect-timeout 2 --max-time 5 "http://localhost:${_sp}/api/auth/csrf" &>/dev/null; then
                 echo "  ✅ 本地健康检查通过"
             else
                 echo "  ❌ 本地健康检查失败 (服务可能未就绪或已崩溃)"
@@ -1492,12 +1498,12 @@ if [ "$MODE" = "logs" ]; then
     fi
     cd "$INSTALL_DIR"
     # Quick status before showing logs
-    _lg_port=$(grep '^APP_PORT=' .env 2>/dev/null | cut -d= -f2 || true)
+    _lg_port=$(env_val APP_PORT)
     _lg_port=${_lg_port:-3000}
     echo "  端口: ${_lg_port} | 日志实时输出 (Ctrl+C 退出)"
     echo "  无法访问? 先运行: $0 --status"
     echo ""
-    $COMPOSE_CMD logs -f --tail=100 2>/dev/null || docker-compose logs -f --tail=100 2>/dev/null
+    $COMPOSE_CMD logs -f --tail=100 2>/dev/null || docker-compose logs -f --tail=100 2>/dev/null || true
     exit 0
 fi
 
@@ -1511,7 +1517,7 @@ if [ "$MODE" = "restart" ]; then
     fi
     cd "$INSTALL_DIR"
     echo "重启服务..."
-    $COMPOSE_CMD restart 2>/dev/null || docker-compose restart 2>/dev/null
+    $COMPOSE_CMD restart 2>/dev/null || docker-compose restart 2>/dev/null || true
     echo "完成。查看日志: $0 --logs"
     exit 0
 fi
@@ -1526,7 +1532,7 @@ if [ "$MODE" = "stop" ]; then
     fi
     cd "$INSTALL_DIR"
     echo "停止服务..."
-    $COMPOSE_CMD stop 2>/dev/null || docker-compose stop 2>/dev/null
+    $COMPOSE_CMD stop 2>/dev/null || docker-compose stop 2>/dev/null || true
     echo "完成。启动: $0 --restart 或 cd ${INSTALL_DIR} && docker compose start"
     exit 0
 fi
@@ -1636,8 +1642,8 @@ if [ "$MODE" = "backup" ]; then
     # Get DB user from .env if available
     _db_user="novel"
     _db_name="novel_admin"
-    [ -f .env ] && _db_user=$(grep '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2)
-    [ -f .env ] && _db_name=$(grep '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2)
+    _db_user=$(env_val POSTGRES_USER)
+    _db_name=$(env_val POSTGRES_DB)
     _db_user=${_db_user:-novel}
     _db_name=${_db_name:-novel_admin}
 
@@ -1670,7 +1676,7 @@ if [ "$MODE" = "rollback" ]; then
     mv "$_rollback_dir" "$INSTALL_DIR"
     cd "$INSTALL_DIR"
     info "启动回滚版本..."
-    $COMPOSE_CMD up -d 2>/dev/null || docker-compose up -d 2>/dev/null
+    $COMPOSE_CMD up -d 2>/dev/null || docker-compose up -d 2>/dev/null || true
     ok "已回滚到上一版本"
     warn "旧版本备份在: ${INSTALL_DIR}.bak2（可手动删除）"
     exit 0
@@ -1688,9 +1694,8 @@ if [ "$MODE" = "upgrade" ]; then
     # Pre-upgrade backup
     _ts=$(date +%Y%m%d_%H%M%S)
     mkdir -p backups
-    _db_user="novel"; _db_name="novel_admin"
-    [ -f .env ] && _db_user=$(grep '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2)
-    [ -f .env ] && _db_name=$(grep '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2)
+    _db_user=$(env_val POSTGRES_USER)
+    _db_name=$(env_val POSTGRES_DB)
     $COMPOSE_CMD exec -T postgres pg_dump -U "${_db_user:-novel}" "${_db_name:-novel_admin}" \
         > "backups/pre_upgrade_${_ts}.sql" 2>/dev/null || warn "数据库备份失败（容器可能未运行）"
     if [ -s "backups/pre_upgrade_${_ts}.sql" ]; then
@@ -1754,7 +1759,7 @@ if [ "$MODE" = "upgrade" ]; then
     detect_compose_cmd
     # On tiny/small servers, disable BuildKit (same as initial install)
     # to prevent parallel stage execution causing OOM
-    _HW_TIER_UPGRADE=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2 || true)
+    _HW_TIER_UPGRADE=$(env_val _HW_TIER)
     if [ "$_HW_TIER_UPGRADE" = "tiny" ] || [ "$_HW_TIER_UPGRADE" = "small" ]; then
         export DOCKER_BUILDKIT=0
         export COMPOSE_DOCKER_CLI_BUILD=0
@@ -2478,7 +2483,7 @@ if ! $_FW_NEEDS_FIX && [ "${SAVE_PORT:-3000}" = "${_fw_port:-3000}" ]; then
             firewalld)
                 firewall-cmd --list-ports 2>/dev/null | grep -qE "\\b${SAVE_PORT}/tcp\\b" || _FW_NEEDS_FIX=true ;;
             nftables)
-                nft list table inet filter 2>/dev/null | grep -qE "dport ${SAVE_PORT}" || _FW_NEEDS_FIX=true ;;
+                nft list table inet filter 2>/dev/null | grep -qE "dport ${SAVE_PORT}\\b" || _FW_NEEDS_FIX=true ;;
             iptables)
                 iptables -L INPUT -n 2>/dev/null | grep -qE "dpt:${SAVE_PORT}\\b" || _FW_NEEDS_FIX=true ;;
         esac
@@ -2778,7 +2783,7 @@ if [ "${BUILD_RC:-0}" -ne 0 ]; then
         err "    3. 增加服务器内存 (推荐 2GB+)"
         err "    4. 在有更多内存的机器上构建镜像后导入"
 
-    elif grep -qi 'timeout\|TLS handshake\|connection refused\|network\|dial tcp\|no route to host' "$BUILD_LOG" 2>/dev/null; then
+    elif grep -qi 'timeout\|TLS handshake\|connection refused\|network error\|network is unreachable\|network unreachable\|dial tcp\|no route to host' "$BUILD_LOG" 2>/dev/null; then
         err "  → 网络连接问题"
         err "  解决方案:"
         err "    1. 检查 Docker 镜像加速: docker info | grep -A10 'Registry Mirrors'"
@@ -2911,7 +2916,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         echo ""
         # Try to read the persistent crash diagnostic file from the volume
         # (written by docker-entrypoint.sh to /app/data/entrypoint-debug.log)
-        _debug_vol=$(docker volume ls -q 2>/dev/null | grep app-data || true)
+        _debug_vol=$(docker volume ls -q 2>/dev/null | grep app-data | head -1 || true)
         if [ -n "$_debug_vol" ]; then
             _debug_mount=$(docker volume inspect "$_debug_vol" --format='{{.Mountpoint}}' 2>/dev/null || echo "")
             if [ -n "$_debug_mount" ] && [ -f "$_debug_mount/entrypoint-debug.log" ]; then
@@ -2940,7 +2945,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
             $COMPOSE_CMD logs --tail=200 novel-manager 2>/dev/null || docker-compose logs --tail=200 novel-manager 2>/dev/null
             echo ""
             # Try persistent crash log from volume
-            _debug_vol=$(docker volume ls -q 2>/dev/null | grep app-data || true)
+            _debug_vol=$(docker volume ls -q 2>/dev/null | grep app-data | head -1 || true)
             if [ -n "$_debug_vol" ]; then
                 _debug_mount=$(docker volume inspect "$_debug_vol" --format='{{.Mountpoint}}' 2>/dev/null || echo "")
                 if [ -n "$_debug_mount" ] && [ -f "$_debug_mount/entrypoint-debug.log" ]; then
@@ -2958,7 +2963,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
 
     # HTTP health check
     if command -v curl &>/dev/null; then
-        if curl -sf --connect-timeout 2 "http://localhost:${SAVE_PORT}/api/auth/csrf" &>/dev/null; then
+        if curl -sf --connect-timeout 2 --max-time 5 "http://localhost:${SAVE_PORT}/api/auth/csrf" &>/dev/null; then
             HEALTHY=true
             break
         fi
@@ -3030,18 +3035,14 @@ if [ -n "$_PUBLIC_IP" ] && [ -n "$_INTERNAL_IP" ] && $_IS_PRIVATE && [ "$_PUBLIC
     info "公网 IP: ${C_CYN}${_PUBLIC_IP}${C_RST}  (内网: ${_INTERNAL_IP})"
     # Update the URL to use public IP
     SAVE_URL="http://${_PUBLIC_IP}:${SAVE_PORT}"
-    _CLOUD_SERVER=true
 elif [ -n "$_PUBLIC_IP" ]; then
     info "公网 IP: ${C_CYN}${_PUBLIC_IP}${C_RST}"
     SAVE_URL="http://${_PUBLIC_IP}:${SAVE_PORT}"
-    _CLOUD_SERVER=false
 elif $_IS_PRIVATE; then
     warn "检测到内网 IP (${_INTERNAL_IP})，未获取到公网 IP"
     warn "  如果是云服务器，请在云控制台查看公网 IP"
-    _CLOUD_SERVER=true
 else
     info "IP: ${C_CYN}${_INTERNAL_IP:-未知}${C_RST}"
-    _CLOUD_SERVER=false
 fi
 
 # 3. Detect cloud provider
@@ -3081,7 +3082,7 @@ if $_FW_ACTIVE && [ -n "$_FW_DETECTED" ]; then
     case "$_FW_DETECTED" in
         ufw)        ufw status 2>/dev/null | grep -qE "\\b${SAVE_PORT}/tcp\\b" && _fw_port_ok=true ;;
         firewalld)  firewall-cmd --list-ports 2>/dev/null | grep -qE "\\b${SAVE_PORT}/tcp\\b" && _fw_port_ok=true ;;
-        nftables)   nft list table inet filter 2>/dev/null | grep -qE "dport ${SAVE_PORT}" && _fw_port_ok=true ;;
+        nftables)   nft list table inet filter 2>/dev/null | grep -qE "dport ${SAVE_PORT}\\b" && _fw_port_ok=true ;;
         iptables)   iptables -L INPUT -n 2>/dev/null | grep -qE "dpt:${SAVE_PORT}\\b" && _fw_port_ok=true ;;
     esac
     if $_fw_port_ok; then
