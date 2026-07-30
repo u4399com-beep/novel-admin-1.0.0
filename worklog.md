@@ -2511,3 +2511,40 @@ Stage Summary:
 - 所有文件通过 bash -n 语法检查
 - 已推送至 git
 - 一键安装命令已提供
+
+---
+Task ID: 3
+Agent: Main Orchestrator
+Task: 第2-5轮部署脚本审计 + unhealthy根因修复 + git推送
+
+Work Log:
+- 验证YAML修复（heredoc生成的docker-compose.yml解析通过✅）
+- 确认COMPOSE_CMD覆盖所有实际命令调用点（echo/err消息中的硬编码不计）
+- 深度比对heredoc生成版本与参考docker-compose.yml（去除注释后完全一致✅）
+- bash -n 语法检查：deploy.sh✅ docker-entrypoint.sh✅ install.sh✅
+- ESLint: 0错误✅
+
+## 发现并修复的问题
+
+### CRITICAL: middleware拦截/api/auth/csrf导致Docker健康检查失败
+- **根因**: middleware.ts对所有/api/auth/*路径要求x-real-ip header（Caddy网关设置），但Docker健康检查`curl http://localhost:3000/api/auth/csrf`在容器内直接请求，无x-real-ip → 返回400 → 容器标记unhealthy
+- **修复**: 速率限制仅应用于登录POST请求（/api/auth/signin/*, /api/auth/callback/*），不拦截/api/auth/csrf等公开GET端点
+
+### HIGH: 升级流程缺少DOCKER_BUILDKIT=0
+- **根因**: deploy.sh --upgrade执行`docker compose up --build`，在tiny/small服务器上使用BuildKit并行构建，导致OOM
+- **修复**: 升级时从.env读取_HW_TIER，对tiny/small设置DOCKER_BUILDKIT=0
+
+### 审计确认（第2-5轮）
+- heredoc与参考文件结构100%一致
+- .env不被source（避免set -u问题和密钥泄漏）
+- 密码仅显示到终端（echo），不写入日志文件（_log/info/ok函数）
+- DEBIAN_MIRROR和NPM_REGISTRY在Dockerfile有正确默认值，升级无需额外传参
+- rollback正确使用up -d（不rebuild，使用已有镜像）
+- flock并发锁正确
+- 无残留的_BUILD_LOG、_ORIG_ARGS、_BUN_VER、_PG_VER引用
+
+Stage Summary:
+- 修复2个问题（1个CRITICAL + 1个HIGH）
+- 4轮审计未发现新的需修复问题
+- 已推送: git push 成功 (0b07028..66114a0)
+- 一键安装命令: curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
