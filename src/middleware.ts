@@ -12,7 +12,7 @@ const ALLOWED_TRANSFORM_PORTS = ['3000', '3001', '3003', '4000'];
 // Scraper-service is accessed only from Next.js backend (server-to-server),
 // never proxied through the public gateway.
 
-// Login rate limiting (per-IP, for /api/auth/* paths)
+// Login rate limiting (per-IP, for /api/auth/signin/* POST paths)
 const LOGIN_MAX_1M = 5;         // 5 attempts per minute per IP
 const LOGIN_MAX_15M = 15;       // 15 attempts per 15 minutes per IP
 const loginStore = new Map<string, { c1m: number; r1m: number; c15m: number; r15m: number }>();
@@ -49,14 +49,22 @@ function checkLoginRateLimit(ip: string): { allowed: boolean; retryAfter: number
   return { allowed: true, retryAfter: 0 };
 }
 
+// Paths that require rate limiting (login attempts only).
+// /api/auth/csrf (GET) is intentionally excluded — it's a public read-only
+// endpoint used by NextAuth clients and Docker health checks. Blocking it
+// would cause container health checks to fail (curl without x-real-ip header).
+const RATE_LIMITED_AUTH_PATHS = ['/api/auth/signin/', '/api/auth/callback/'];
+
 export function middleware(request: NextRequest) {
   const xPort = request.nextUrl.searchParams.get('XTransformPort');
   if (xPort && !ALLOWED_TRANSFORM_PORTS.includes(xPort)) {
     return NextResponse.json({ error: '非法的端口参数' }, { status: 400 });
   }
 
-  // Per-IP login rate limiting for auth endpoints
-  if (request.nextUrl.pathname.startsWith('/api/auth/')) {
+  // Per-IP login rate limiting — only for actual login POST requests
+  // (not for /api/auth/csrf, /api/auth/session, etc.)
+  const pathname = request.nextUrl.pathname;
+  if (RATE_LIMITED_AUTH_PATHS.some(p => pathname.startsWith(p)) && request.method === 'POST') {
     // Security: Caddy gateway ALWAYS sets x-real-ip. A missing header means
     // the request bypassed the gateway (direct access attempt). Reject with 400
     // instead of falling back to a shared 'unknown' bucket, which would either

@@ -1749,6 +1749,14 @@ if [ "$MODE" = "upgrade" ]; then
     fi
 
     info "重新构建并启动..."
+    # On tiny/small servers, disable BuildKit (same as initial install)
+    # to prevent parallel stage execution causing OOM
+    _HW_TIER_UPGRADE=$(grep '^_HW_TIER=' .env 2>/dev/null | cut -d= -f2 || true)
+    if [ "$_HW_TIER_UPGRADE" = "tiny" ] || [ "$_HW_TIER_UPGRADE" = "small" ]; then
+        export DOCKER_BUILDKIT=0
+        export COMPOSE_DOCKER_CLI_BUILD=0
+        info "使用传统构建器 (串行构建, 防止 OOM)"
+    fi
     $COMPOSE_CMD up -d --build 2>&1
     ok "升级完成！"
     echo ""
