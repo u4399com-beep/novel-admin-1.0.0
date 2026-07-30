@@ -2568,3 +2568,25 @@ Stage Summary:
 - MEDIUM: --upgrade路径缺少detect_compose_cmd(), v1用户升级会失败
 - 已推送至git, 用户可重新运行一键安装
 - 一键安装命令: curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
+---
+Task ID: 5
+Agent: Main Orchestrator
+Task: 第6轮全面审计 (4个并行agent覆盖deploy.sh全量3190行)
+
+Work Log:
+- Agent 1: 审计第1-900行 → 发现3个问题
+- Agent 2: 审计第900-1800行 → 发现4个问题
+- Agent 3: 审计第1800-2700行 → 发现1个问题(LOW)
+- Agent 4: 审计第2700-3183行 → 发现6个问题
+- 去重后修复9个问题 (1 HIGH + 3 MEDIUM + 5 LOW)
+- bash -n 语法检查通过 ✅
+- 推送: 2029567..1e25292 main->main
+
+Stage Summary:
+- HIGH: 自更新re-exec $@在shift后为空 → _ORIG_ARGS数组保存
+- MEDIUM: nftables 4处grep缺少\b词边界 (端口子串误匹配)
+- MEDIUM: .env 9处cut -d= -f2不剥离引号 → 新增env_val()函数
+- MEDIUM: grep app-data匹配多卷 → head -1
+- LOW: 4处compose fallback缺||true、curl缺--max-time、network模式过宽、_CLOUD_SERVER死代码、ensure_curl死代码
+- 已推送至git
+- 一键安装命令: curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
