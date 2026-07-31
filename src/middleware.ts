@@ -65,15 +65,12 @@ export function middleware(request: NextRequest) {
   // (not for /api/auth/csrf, /api/auth/session, etc.)
   const pathname = request.nextUrl.pathname;
   if (RATE_LIMITED_AUTH_PATHS.some(p => pathname.startsWith(p)) && request.method === 'POST') {
-    // Security: Caddy gateway ALWAYS sets x-real-ip. A missing header means
-    // the request bypassed the gateway (direct access attempt). Reject with 400
-    // instead of falling back to a shared 'unknown' bucket, which would either
-    // allow unlimited requests from attackers who strip the header or block all
-    // legitimate users behind misconfigured proxies in a single bucket.
-    const ip = request.headers.get('x-real-ip');
-    if (!ip) {
-      return NextResponse.json({ error: '无法识别客户端地址' }, { status: 400 });
-    }
+    // Security: Caddy gateway sets x-real-ip. When absent (direct access),
+    // fall back to request IP. On Edge Runtime, request.ip is available via
+    // the x-forwarded-for header or the connection remote address.
+    const ip = request.headers.get('x-real-ip')
+      || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || 'direct';
     const rl = checkLoginRateLimit(ip);
     if (!rl.allowed) {
       return NextResponse.json(
