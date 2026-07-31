@@ -1,0 +1,297 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { useState, useEffect, useSyncExternalStore } from 'react';
+import { useSession, signOut } from 'next-auth/react';
+import { Plus, BookOpen, Search, Sun, Moon, LogOut, Shield } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/stores/app-store';
+import AppSidebar, { MobileSidebar } from '@/components/novel/AppSidebar';
+import { DashboardView } from '@/components/novel/DashboardView';
+import NovelFormDialog from '@/components/novel/NovelFormDialog';
+import { ChapterFormDialog } from '@/components/novel/ChapterFormDialog';
+import CommandPalette from '@/components/novel/CommandPalette';
+import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog';
+
+// Lazy-loaded view components (not needed on initial dashboard render)
+const viewLoadingFallback = (
+  <div className="flex items-center justify-center h-64">
+    <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+  </div>
+);
+
+const NovelListView = dynamic(() => import('@/components/novel/NovelListView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const NovelDetailView = dynamic(() => import('@/components/novel/NovelDetailView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const CategoryManagerView = dynamic(() => import('@/components/novel/CategoryManagerView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const TagManagerView = dynamic(() => import('@/components/novel/TagManagerView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const ScrapeManagerView = dynamic(() => import('@/components/scrape/ScrapeRuleEditor'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const DownloadManagerView = dynamic(() => import('@/components/download/DownloadManagerView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const ThemeManagerView = dynamic(() => import('@/components/theme/ThemeManagerView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+const SiteClusterView = dynamic(() => import('@/components/site/SiteClusterView'), {
+  ssr: false,
+  loading: () => viewLoadingFallback,
+});
+
+const VIEW_TITLES: Record<string, { title: string; description: string }> = {
+  dashboard: { title: '仪表盘', description: '系统概览与数据统计' },
+  novels: { title: '小说管理', description: '管理所有小说作品' },
+  'novel-detail': { title: '小说详情', description: '查看小说详情与章节管理' },
+  categories: { title: '分类管理', description: '管理小说分类' },
+  tags: { title: '标签管理', description: '管理小说标签' },
+  scrape: { title: '采集管理', description: '采集规则与任务管理' },
+  download: { title: '下载中心', description: '下载配置与搜索引擎关键词' },
+  themes: { title: '主题管理', description: '管理站点外观主题与配色' },
+  sites: { title: '站群管理', description: '管理多站点集群配置' },
+};
+
+// View transition animation variants
+const viewVariants = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+};
+
+export default function AdminPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const currentView = useAppStore((s) => s.currentView);
+  const setEditingNovel = useAppStore((s) => s.setEditingNovel);
+  const setNovelFormOpen = useAppStore((s) => s.setNovelFormOpen);
+  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
+
+  const viewInfo = VIEW_TITLES[currentView] || VIEW_TITLES.dashboard;
+
+  const handleCreateNovel = () => {
+    setEditingNovel(null);
+    setNovelFormOpen(true);
+  };
+
+  // ─── Time display ──────────────────────────────────────────────────────
+  const [time, setTime] = useState('');
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const isMac = useSyncExternalStore(
+    () => () => {},
+    () => navigator.platform?.includes('Mac') ?? false,
+    () => false,
+  );
+  useEffect(() => {
+    const update = () => {
+      const now = new Date();
+      setTime(
+        `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+      );
+    };
+    update();
+    const id = setInterval(update, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ─── Keyboard shortcuts listener ──────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === '?' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault();
+        setShortcutsOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // ─── Dark mode toggle ─────────────────────────────────────────────────
+  const { theme, setTheme } = useTheme();
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+  // ─── Auth loading state ───────────────────────────────────────────────
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Shield className="h-8 w-8 text-primary animate-pulse" />
+          <p className="text-sm text-muted-foreground">加载管理后台...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Auth guard ──────────────────────────────────────────────────────
+  if (!session) {
+    router.push('/login');
+    return null;
+  }
+
+  // ─── View renderer ────────────────────────────────────────────────────
+  const renderView = () => {
+    switch (currentView) {
+      case 'dashboard': return <DashboardView />;
+      case 'novels': return <NovelListView />;
+      case 'novel-detail': return <NovelDetailView />;
+      case 'categories': return <CategoryManagerView />;
+      case 'tags': return <TagManagerView />;
+      case 'scrape': return <ScrapeManagerView />;
+      case 'download': return <DownloadManagerView />;
+      case 'themes': return <ThemeManagerView />;
+      case 'sites': return <SiteClusterView />;
+      default: return <DashboardView />;
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen">
+      {/* Desktop Sidebar */}
+      <AppSidebar />
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0 bg-background">
+        {/* Top Header Bar */}
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b bg-background/80 backdrop-blur-md px-4 sm:px-6 h-14">
+          <div className="flex items-center gap-3">
+            {/* Mobile menu */}
+            <MobileSidebar />
+
+            {/* Search trigger */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden sm:flex gap-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setCommandPaletteOpen(true)}
+            >
+              <Search className="h-3.5 w-3.5" />
+              搜索...
+              <kbd className="pointer-events-none ml-2 inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                {isMac ? '⌘K' : 'Ctrl+K'}
+              </kbd>
+            </Button>
+
+            {/* Page title */}
+            <div className="flex flex-col">
+              <h2 className="text-sm font-semibold leading-none">{viewInfo.title}</h2>
+              <p className="text-[11px] text-muted-foreground mt-0.5 hidden sm:block">
+                {viewInfo.description}
+              </p>
+            </div>
+          </div>
+
+          {/* Right side: actions + utilities */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {currentView === 'novels' && (
+              <Button onClick={handleCreateNovel} size="sm" className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">新建小说</span>
+              </Button>
+            )}
+
+            {currentView === 'dashboard' && (
+              <Button onClick={handleCreateNovel} size="sm" variant="outline" className="gap-1.5">
+                <BookOpen className="h-4 w-4" />
+                <span className="hidden sm:inline">快速创建</span>
+              </Button>
+            )}
+
+            {/* Shortcuts hint */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => setShortcutsOpen(prev => !prev)}
+              aria-label="键盘快捷键"
+              title="键盘快捷键"
+            >
+              <span className="text-sm font-medium">?</span>
+            </Button>
+
+            {/* Time display */}
+            <span className="hidden sm:inline text-xs text-muted-foreground font-mono tabular-nums">
+              {time}
+            </span>
+
+            {/* Dark mode toggle */}
+            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="切换主题" className="relative">
+              <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+              <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+            </Button>
+
+            {/* Logout button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              aria-label="退出登录"
+              title="退出登录"
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        </header>
+
+        {/* Content Area with transition */}
+        <div className="flex-1 relative">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentView}
+              variants={viewVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+              className="absolute inset-0"
+            >
+              {renderView()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Footer */}
+        <footer className="mt-auto border-t border-border/50 bg-background/80 backdrop-blur-sm px-4 sm:px-6 py-3">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground/70">
+            <div className="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1.5">
+              <span className="font-medium text-muted-foreground">小说管理系统</span>
+              <span className="hidden sm:inline text-muted-foreground/40">·</span>
+              <span className="hidden sm:inline">管理后台</span>
+              <span className="sm:hidden text-muted-foreground/40">v1.0.0</span>
+            </div>
+            {session?.user?.name && (
+              <div className="flex items-center gap-2">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary">
+                  {session.user.name.charAt(0).toUpperCase()}
+                </div>
+                <span>{session.user.name}</span>
+              </div>
+            )}
+          </div>
+        </footer>
+      </main>
+
+      {/* Dialogs */}
+      <NovelFormDialog />
+      <ChapterFormDialog />
+      <CommandPalette />
+      <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+    </div>
+  );
+}

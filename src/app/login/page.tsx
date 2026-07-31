@@ -37,7 +37,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError('用户名或密码错误');
       } else if (result?.ok) {
-        router.push('/');
+        router.push('/admin');
         router.refresh();
       }
     } catch {

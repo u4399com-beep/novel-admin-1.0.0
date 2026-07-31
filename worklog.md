@@ -2590,3 +2590,30 @@ Stage Summary:
 - LOW: 4处compose fallback缺||true、curl缺--max-time、network模式过宽、_CLOUD_SERVER死代码、ensure_curl死代码
 - 已推送至git
 - 一键安装命令: curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
+---
+Task ID: route-restructure
+Agent: Main Orchestrator
+Task: 修改管理后台入口到/login，主页显示前端页面
+
+Work Log:
+- 读取并分析当前路由结构：/ → 管理后台（含auth guard），/login → 登录页
+- 创建 `/src/app/admin/page.tsx`：将原 page.tsx 的管理后台完整代码移至此路径
+- 创建 `/src/app/api/public/novels/route.ts`：公共小说列表API（无需认证），支持分页/搜索/分类筛选
+- 创建 `/src/app/api/public/categories/route.ts`：公共分类API（无需认证）
+- 重写 `/src/app/page.tsx`：全新前端首页「小说阁」
+  - 固定顶栏导航（首页/分类/排行榜 + 主题切换 + 管理后台入口）
+  - Hero区域：渐变背景 + 搜索栏
+  - 分类筛选条（可横向滚动）
+  - 小说卡片网格（响应式 2/3/4/5列）
+  - 封面占位图（首字渐变）
+  - Framer Motion 动画
+  - 分页组件
+  - 粘性 Footer
+- 更新 `/src/app/login/page.tsx`：登录成功后跳转从 / 改为 /admin
+- 修复 ESLint 错误（set-state-in-effect）
+
+Stage Summary:
+- 路由变更：/ → 公共首页，/login → 管理后台入口，/admin → 管理后台（需认证）
+- 新增公共API：GET /api/public/novels, GET /api/public/categories
+- ESLint 全部通过
+- Agent-browser 验证：首页正常渲染，管理后台按钮跳转正确，/admin未认证重定向到/login，移动端响应式正常，无console错误
