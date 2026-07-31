@@ -22,7 +22,7 @@
 services:
   # ============ PostgreSQL Database ============
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17
     container_name: novel-postgres
     restart: unless-stopped
     # Do NOT expose DB port to host (saves ~30MB RAM, more secure)

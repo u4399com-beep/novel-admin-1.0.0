@@ -90,6 +90,8 @@ RUN apt-get update \
        ca-certificates \
        netcat-openbsd \
        unzip \
+       chromium \
+       fonts-wqy-zenhei \
     # libssl3 renamed to libssl3t64 in Debian Trixie (oven/bun:1 has its own OpenSSL)
     && apt-get install -y --no-install-recommends libssl3t64 2>/dev/null || true \
     && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/99timeout
@@ -175,6 +177,10 @@ ENV PORT=3000
 # NOTE: This shadows the POSIX $HOSTNAME (machine hostname), but Next.js
 # explicitly checks process.env.HOSTNAME, so this is intentional and required.
 ENV HOSTNAME="0.0.0.0"
+# Tell Playwright to use system Chromium (installed via apt-get) instead of
+# downloading its own bundled browser at runtime.
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # HEALTHCHECK is defined in docker-compose.yml with start_period.
 # Not defined here to avoid confusion (compose overrides Dockerfile HEALTHCHECK).

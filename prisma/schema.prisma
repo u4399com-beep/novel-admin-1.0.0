@@ -150,6 +150,9 @@ model ScrapeRule {
   // 内容清洗配置
   cleanConfig    String? // JSON: {removeAds:bool, cleanHtml:bool, removePatterns:["..."], adPatterns:["..."]}
 
+  @@index([enabled])
+  @@index([engine])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tasks     ScrapeTask[]

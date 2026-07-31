@@ -2576,7 +2576,7 @@ info "生成 docker-compose.yml..."
 cat > docker-compose.yml << 'COMPOSE_EOF'
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17
     container_name: novel-postgres
     restart: unless-stopped
     environment:

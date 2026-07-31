@@ -193,23 +193,23 @@ if ! $_SCHEMA_OK; then
     log "[DB] Schema sync failed after 3 attempts (usually safe to continue)."
 fi
 
-# ─── Create pg_trgm extension + performance indexes ───
-log "[DB] Creating extensions and indexes..."
+# ─── Create pg_trgm extension + GIN indexes for fuzzy search ───
+log "[DB] Creating pg_trgm extension and GIN indexes..."
 if echo "CREATE EXTENSION IF NOT EXISTS pg_trgm;" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null; then
     log "[DB] pg_trgm extension created"
+    # Create GIN indexes for trigram search (cannot be expressed in Prisma schema)
+    for _idx_sql in \
+        'CREATE INDEX IF NOT EXISTS idx_novel_title_trgm ON "Novel" USING gin(title gin_trgm_ops)' \
+        'CREATE INDEX IF NOT EXISTS idx_novel_author_trgm ON "Novel" USING gin(author gin_trgm_ops)'; do
+        if echo "$_idx_sql" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null; then
+            log "[DB] Index created: $(echo "$_idx_sql" | awk '{print $6}')"
+        else
+            log "[DB] WARNING: Index creation failed: $_idx_sql"
+        fi
+    done
 else
-    log "[DB] WARNING: pg_trgm extension failed — trigram text search will be unavailable"
+    log "[DB] WARNING: pg_trgm extension failed — fuzzy search will be unavailable"
 fi
-# Execute each index creation separately to avoid partial-failure silent loss
-for _idx_sql in \
-    'CREATE INDEX IF NOT EXISTS idx_novel_title_trgm ON "Novel" USING gin(title gin_trgm_ops)' \
-    'CREATE INDEX IF NOT EXISTS idx_novel_author_trgm ON "Novel" USING gin(author gin_trgm_ops)' \
-    'CREATE INDEX IF NOT EXISTS idx_scrape_rule_enabled ON "ScrapeRule"(enabled)' \
-    'CREATE INDEX IF NOT EXISTS idx_scrape_rule_engine ON "ScrapeRule"(engine)' \
-    'CREATE INDEX IF NOT EXISTS idx_ai_rule_created ON "AiRuleGeneration"("createdAt")'; do
-    echo "$_idx_sql" | bun "$_PRISMA" db execute --stdin --schema ./prisma/schema.prisma 2>/dev/null \
-        || log "[DB] WARNING: Index creation failed: $_idx_sql"
-done
 log "[DB] Database ready."
 
 # ─── Ensure data directories ───
@@ -221,101 +221,14 @@ if $_LOW_MEM; then
     sync 2>/dev/null || true
 fi
 
-# ─── Lazy-download Playwright Chromium (if build-time download failed) ───
-# This entire section is best-effort (non-fatal). Temporarily disable set -e
-# because grep pipelines inside browsers.json parsing may fail if the JSON
-# format differs between playwright-core versions.
-(
-set +e
-_pw_chrome=$(find /app/.playwright-browsers -name chrome -type f 2>/dev/null | head -1)
-if [ -z "$_pw_chrome" ]; then
-    log_debug "[Chromium] Not found in image, downloading at runtime..."
-    echo "[Chromium] Not found in image, downloading at runtime..."
-    _pw_json="/app/scraper-service/node_modules/playwright-core/browsers.json"
-    if [ -f "$_pw_json" ]; then
-        # Parse browsers.json to get chromium revision.
-        # browsers.json is a flat JSON file: {"browsers":{"chromium":{"revision":"1161",...},...}}
-        # Use python3 for reliable JSON parsing; fall back to grep if python3 unavailable.
-        _pw_rev=""
-        if command -v python3 &>/dev/null; then
-            _pw_rev=$(python3 -c "
-import json, sys
-try:
-    data = json.load(open('$_pw_json'))
-    print(data.get('browsers', data).get('chromium', {}).get('revision', ''))
-except Exception:
-    pass
-" 2>/dev/null)
-        fi
-        # Fallback: extract revision via grep (fragile but works for known formats)
-        if [ -z "$_pw_rev" ]; then
-            _pw_rev=$(grep -o '"chromium"[[:space:]]*:[[:space:]]*{[^}]*"revision"[[:space:]]*:[[:space:]]*"[0-9]*"' "$_pw_json" 2>/dev/null | grep -o '"revision"[[:space:]]*:[[:space:]]*"[0-9]*"' | grep -o '[0-9]*' | head -1)
-        fi
-        # Additional fallback: try simpler grep patterns
-        if [ -z "$_pw_rev" ]; then
-            _pw_rev=$(python3 -c "
-import re, sys
-try:
-    with open('$_pw_json') as f:
-        content = f.read()
-    # Find chromium revision in any JSON structure
-    m = re.search(r'\"chromium\".*?\"revision\"\s*:\s*\"(\d+)\"', content, re.DOTALL)
-    if m:
-        print(m.group(1))
-except Exception:
-    pass
-" 2>/dev/null)
-        fi
-        _pw_arch=$(uname -m)
-        if [ -z "$_pw_rev" ]; then
-            log_debug "[Chromium] WARNING: Could not extract chromium revision from browsers.json"
-            echo "[Chromium] WARNING: Could not determine browser revision from browsers.json"
-        else
-            _pw_dir="/app/.playwright-browsers/chromium-$_pw_rev"
-            mkdir -p "$_pw_dir"
-            # Playwright CDN download URLs (revision-based, no version needed)
-            if [ "$_pw_arch" = "x86_64" ]; then
-                _pw_zip="chrome-linux64.zip"
-                _pw_urls="https://cdn.playwright.dev/builds/chromium/${_pw_rev}/${_pw_zip} https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds/chromium/${_pw_rev}/${_pw_zip}"
-            elif [ "$_pw_arch" = "aarch64" ]; then
-                _pw_zip="chromium-linux-arm64.zip"
-                _pw_urls="https://cdn.playwright.dev/builds/chromium/${_pw_rev}/${_pw_zip} https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds/chromium/${_pw_rev}/${_pw_zip}"
-            fi
-            if [ -n "${_pw_urls:-}" ]; then
-                for _pw_url in $_pw_urls; do
-                    log_debug "[Chromium] Trying $_pw_url..."
-                    echo "[Chromium] Trying $_pw_url..."
-                    if curl -fsSL --connect-timeout 15 --max-time 600 "$_pw_url" -o /tmp/pw-chromium.zip 2>/dev/null; then
-                        unzip -qo /tmp/pw-chromium.zip -d "$_pw_dir" 2>/dev/null && \
-                            touch "$_pw_dir/INSTALLATION_COMPLETE" && \
-                            log_debug "[Chromium] Downloaded and installed" && \
-                            echo "[Chromium] Downloaded and installed" && \
-                            break
-                    fi
-                    log_debug "[Chromium] Failed, trying next mirror..."
-                    echo "[Chromium] Failed, trying next mirror..."
-                done
-                rm -f /tmp/pw-chromium.zip 2>/dev/null
-            fi
-        fi
-    else
-        log_debug "[Chromium] WARNING: browsers.json not found, cannot auto-download"
-        echo "[Chromium] WARNING: browsers.json not found, cannot auto-download"
-    fi
-    _pw_chrome=$(find /app/.playwright-browsers -name chrome -type f 2>/dev/null | head -1)
-    if [ -z "$_pw_chrome" ]; then
-        log_debug "[Chromium] WARNING: All download attempts failed. Headless scraping will be unavailable."
-        echo "[Chromium] WARNING: Headless scraping unavailable (Chromium not found after download attempts)"
-    else
-        log_debug "[Chromium] Ready: $_pw_chrome"
-        echo "[Chromium] Ready: $_pw_chrome"
-    fi
+# ─── Check Chromium availability (installed via apt-get in Dockerfile) ───
+HAS_CHROMIUM=false
+if [ -x "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-/usr/bin/chromium}" ]; then
+    HAS_CHROMIUM=true
+    log "[Chromium] System Chromium: ${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-/usr/bin/chromium}"
 else
-    log_debug "[Chromium] Found in image: $_pw_chrome"
-    echo "[Chromium] Found in image: $_pw_chrome"
+    log "[Chromium] WARNING: System Chromium not found — headless scraping will use cheerio only"
 fi
-) # end subshell — any failure here is contained and non-fatal
-log_debug "[Chromium] Check complete (non-fatal section)"
 
 # ─── Start Scraper Service ───
 # CRITICAL: The scraper reads process.env.PORT (defaults to 3099), but this
@@ -330,11 +243,10 @@ log "[Scraper] PID: $SCRAPER_PID"
 sleep 2
 
 if kill -0 "$SCRAPER_PID" 2>/dev/null; then
-    log "[Scraper] Started."
+    log "[Scraper] Started${HAS_CHROMIUM:+ (Chromium available)}"
     HAS_SCRAPER=true
 else
-    log "[Scraper] WARNING: Failed to start. Headless scraping unavailable."
-    log "[Scraper] See /app/data/logs/scraper-service.log"
+    log "[Scraper] WARNING: Failed to start. See /app/data/logs/scraper-service.log"
     SCRAPER_PID=""
     HAS_SCRAPER=false
 fi
