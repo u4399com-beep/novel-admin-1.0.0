@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import crypto from 'crypto';
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // Timing-safe string comparison
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 export function timingSafeEqual(a: string, b: string): boolean {
   const aBuf = Buffer.from(a, 'utf-8');
@@ -16,9 +16,9 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // Rate Limiter (Token Bucket) - runs in Node.js API route context
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 const BUCKET_CAPACITY = 30;
 const REFILL_RATE = 2;              // tokens per second
@@ -65,7 +65,7 @@ function rateLimit(ip: string): { allowed: boolean; remaining: number; retryAfte
   return { allowed: true, remaining: Math.floor(entry.tokens), retryAfter: 0 };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // Login Brute-Force Protection (Node.js context — global backstop)
 // Primary per-IP protection is in middleware.ts (Edge Runtime, lower latency).
 // This function serves as a secondary defense-in-depth check for the
@@ -121,9 +121,29 @@ export function loginRateLimit(ip: string): { allowed: boolean; retryAfter: numb
   return { allowed: true, retryAfter: 0 };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Client IP Helper
+// ═══════════════════════════════════════════════════════════════════
+
+export function getClientIp(request: NextRequest): string {
+  // Prioritize X-Real-IP (set by Caddy, cannot be spoofed by client)
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp) return realIp.trim();
+  // Fallback to rightmost X-Forwarded-For (Caddy appends the real client IP)
+  const xff = request.headers.get('x-forwarded-for');
+  if (xff) {
+    const parts = xff.split(',');
+    const candidate = parts[parts.length - 1]?.trim();
+    if (candidate) return candidate;
+  }
+  // Fallback: Docker direct port access or dev environment without proxy.
+  // Use 'direct' as a shared bucket — acceptable for single-admin systems.
+  return 'direct';
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // API Route Auth + Rate Limit Wrapper
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
 /**
  * Type for API route handlers. Uses `unknown[]` for forward compatibility;
@@ -160,50 +180,52 @@ export function withAuth(handler: ApiHandler): ApiHandler {
 
     // 3. Authentication
     // Accept either NextAuth JWT session token or service Bearer token
-    const authToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    if (!authToken) {
-      // Check for service-to-service Bearer token (used by scraper-service etc.)
-      // IMPORTANT: No fallback to NEXTAUTH_SECRET - must use independent token
-      const bearer = request.headers.get('authorization');
-      const serviceSecret = process.env.SCRAPER_SERVICE_TOKEN;
-      if (!bearer || !serviceSecret || !timingSafeEqual(bearer, `Bearer ${serviceSecret}`)) {
-        const unauthIp = getClientIp(request);
-        if (!unauthIp) return noIpResponse(requestId);
-        const rl = rateLimit(unauthIp);
-        return NextResponse.json(
-          { error: '未授权，请先登录' },
-          { status: 401, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(rl.remaining) } }
-        );
-      }
-      // Service token authenticated — also rate limit service calls
-      // Use separate bucket namespace for service tokens to avoid starving user requests
-      const serviceIp = getClientIp(request) || 'svc:internal';
-      const serviceRl = rateLimit(`svc:${serviceIp}`);
-      if (!serviceRl.allowed) {
-        return NextResponse.json(
-          { error: '请求过于频繁，请稍后再试' },
-          { status: 429, headers: { 'Retry-After': String(serviceRl.retryAfter) } }
-        );
-      }
-      try {
-        const response = await handler(...(args as any[]));
-        response.headers.set('X-Request-ID', requestId);
-        response.headers.set('X-RateLimit-Remaining', String(serviceRl.remaining));
-        return response;
-      } catch (error) {
-        console.error(`[service] API error:`, error);
-        return NextResponse.json(
-          { error: '服务器内部错误' },
-          { status: 500, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(serviceRl.remaining) } }
-        );
-      }
+    let authToken;
+    try {
+      authToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    } catch (err) {
+      // JWT verification failed (e.g. malformed token, secret mismatch)
+      console.error(`[${requestId}] getToken error:`, err);
     }
 
-    // 4. Rate limiting (use secure IP detection)
-    // Fall back to 'direct' when no proxy header is present (e.g. Docker
-    // direct port access without Caddy/gateway). Auth is already verified
-    // above, so this is purely for rate-limit bucketing.
-    const ip = getClientIp(request) || 'direct';
+    if (!authToken) {
+      // Check for service-to-service Bearer token (used by scraper-service etc.)
+      const bearer = request.headers.get('authorization');
+      const serviceSecret = process.env.SCRAPER_SERVICE_TOKEN;
+      if (bearer && serviceSecret && timingSafeEqual(bearer, `Bearer ${serviceSecret}`)) {
+        // Service token authenticated — rate limit with separate namespace
+        const serviceIp = getClientIp(request);
+        const serviceRl = rateLimit(`svc:${serviceIp}`);
+        if (!serviceRl.allowed) {
+          return NextResponse.json(
+            { error: '请求过于频繁，请稍后再试' },
+            { status: 429, headers: { 'Retry-After': String(serviceRl.retryAfter) } }
+          );
+        }
+        try {
+          const response = await handler(...(args as any[]));
+          response.headers.set('X-Request-ID', requestId);
+          response.headers.set('X-RateLimit-Remaining', String(serviceRl.remaining));
+          return response;
+        } catch (error) {
+          console.error(`[service][${requestId}] API error:`, error);
+          return NextResponse.json(
+            { error: '服务器内部错误' },
+            { status: 500, headers: { 'X-Request-ID': requestId } }
+          );
+        }
+      }
+
+      // Unauthenticated — return 401
+      const rl = rateLimit(getClientIp(request));
+      return NextResponse.json(
+        { error: '未授权，请先登录' },
+        { status: 401, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(rl.remaining) } }
+      );
+    }
+
+    // 4. Rate limiting (auth already verified above)
+    const ip = getClientIp(request);
     const rl = rateLimit(ip);
     if (!rl.allowed) {
       return NextResponse.json(
@@ -229,42 +251,8 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       console.error(`[${requestId}] API error:`, error);
       return NextResponse.json(
         { error: '服务器内部错误' },
-        {
-          status: 500,
-          headers: { 'X-Request-ID': requestId },
-        }
+        { status: 500, headers: { 'X-Request-ID': requestId } }
       );
     }
   };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Client IP Helper
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export function getClientIp(request: NextRequest): string | null {
-  // Prioritize X-Real-IP (set by Caddy, cannot be spoofed by client)
-  // Security: Caddy gateway ALWAYS sets x-real-ip. A missing header means
-  // the request bypassed the gateway (direct access attempt). Returning null
-  // lets callers reject the request rather than falling back to a shared
-  // 'unknown' bucket, which would either allow unlimited requests from
-  // attackers who strip the header or block all legitimate users in one bucket.
-  const realIp = request.headers.get('x-real-ip');
-  if (realIp) return realIp.trim();
-  // Fallback to rightmost X-Forwarded-For (Caddy appends the real client IP)
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const parts = xff.split(',');
-    const candidate = parts[parts.length - 1]?.trim();
-    if (candidate) return candidate;
-  }
-  return null;
-}
-
-/** 400 response for requests with no identifiable client IP (bypassed gateway) */
-function noIpResponse(requestId: string): NextResponse {
-  return NextResponse.json(
-    { error: '无法识别客户端地址' },
-    { status: 400, headers: { 'X-Request-ID': requestId } }
-  );
 }
