@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { signIn } from 'next-auth/react';
 import { BookOpen, Loader2, Eye, EyeOff, Sun, Moon } from 'lucide-react';
@@ -11,7 +10,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function LoginPage() {
-  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -37,8 +35,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError('用户名或密码错误');
       } else if (result?.ok) {
-        router.push('/admin');
-        router.refresh();
+        window.location.href = '/admin';
       }
     } catch {
       setError('登录失败，请重试');

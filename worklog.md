@@ -2617,3 +2617,20 @@ Stage Summary:
 - 新增公共API：GET /api/public/novels, GET /api/public/categories
 - ESLint 全部通过
 - Agent-browser 验证：首页正常渲染，管理后台按钮跳转正确，/admin未认证重定向到/login，移动端响应式正常，无console错误
+---
+Task ID: fix-login
+Agent: Main Orchestrator
+Task: 修复登录后无法进入管理后台的问题
+
+Work Log:
+- 用 agent-browser 复现问题：POST /api/auth/callback/credentials 返回 401
+- 检查 .env 文件，发现缺少 NEXTAUTH_SECRET 和 ADMIN_PASSWORD
+- authorize() 中 `if (!adminPass)` 直接 throw，导致所有登录失败
+- 在 .env 中添加 NEXTAUTH_SECRET（随机64字符hex）和 ADMIN_PASSWORD=admin
+- 优化登录跳转：将 `router.push('/admin') + router.refresh()` 改为 `window.location.href = '/admin'`，避免 session cookie 时序竞争
+- 清理 login/page.tsx 中不再需要的 useRouter 导入
+
+Stage Summary:
+- 根因：.env 缺少 ADMIN_PASSWORD 和 NEXTAUTH_SECRET，authorize() 函数因 adminPass 为 undefined 直接抛异常
+- 修复：.env 添加认证环境变量，登录跳转改用硬导航确保 cookie 生效
+- ESLint 全部通过
