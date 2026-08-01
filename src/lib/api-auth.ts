@@ -200,8 +200,10 @@ export function withAuth(handler: ApiHandler): ApiHandler {
     }
 
     // 4. Rate limiting (use secure IP detection)
-    const ip = getClientIp(request);
-    if (!ip) return noIpResponse(requestId);
+    // Fall back to 'direct' when no proxy header is present (e.g. Docker
+    // direct port access without Caddy/gateway). Auth is already verified
+    // above, so this is purely for rate-limit bucketing.
+    const ip = getClientIp(request) || 'direct';
     const rl = rateLimit(ip);
     if (!rl.allowed) {
       return NextResponse.json(
