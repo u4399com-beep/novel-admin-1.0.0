@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 /**
  * Public categories API — no auth required.
- * Returns all categories with novel count.
+ * Returns all categories with novel count, slug, and icon.
  */
 export async function GET() {
   try {
@@ -12,8 +12,11 @@ export async function GET() {
       select: {
         id: true,
         name: true,
+        slug: true,
         description: true,
         color: true,
+        icon: true,
+        sortOrder: true,
         _count: { select: { novels: true } },
       },
     });

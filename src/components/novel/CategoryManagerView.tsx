@@ -11,6 +11,7 @@ import {
   Trash2,
   FolderTree,
   Loader2,
+  Tag,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -49,6 +50,12 @@ import type { Category } from '@/types';
 // ─── Zod Schema ──────────────────────────────────────────────────────────────
 const categorySchema = z.object({
   name: z.string().min(1, '分类名称不能为空').max(50, '分类名称不能超过50个字符'),
+  slug: z
+    .string()
+    .min(1, '分类标识符不能为空')
+    .max(50, '分类标识符不能超过50个字符')
+    .regex(/^[a-z0-9_-]+$/, '只能包含小写字母、数字、下划线和连字符'),
+  icon: z.string().max(50, '图标名称不能超过50个字符').optional().default(''),
   description: z.string().max(200, '描述不能超过200个字符').optional().default(''),
   color: z.string().min(1, '请选择颜色'),
   sortOrder: z.coerce.number().int().min(0).default(0),
@@ -79,6 +86,8 @@ export default function CategoryManagerView() {
     resolver: safeResolver(categorySchema),
     defaultValues: {
       name: '',
+      slug: '',
+      icon: '',
       description: '',
       color: '#10b981',
       sortOrder: 0,
@@ -86,6 +95,9 @@ export default function CategoryManagerView() {
   });
 
   const selectedColor = watch('color');
+
+  // Auto-generate slug from name
+  const watchedName = watch('name');
 
   // ── Fetch categories ─────────────────────────────────────────────────────
   const fetchCategories = useCallback(async () => {
@@ -106,10 +118,23 @@ export default function CategoryManagerView() {
     fetchCategories();
   }, [fetchCategories, refreshCategories]);
 
+  // Auto-generate slug from name when creating (not editing)
+  useEffect(() => {
+    if (!editingCategory && watchedName && !watch('slug')) {
+      const slug = watchedName
+        .toLowerCase()
+        .replace(/[\u4e00-\u9fa5]/g, '') // remove Chinese chars
+        .replace(/[^a-z0-9_-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+      if (slug) setValue('slug', slug);
+    }
+  }, [watchedName, editingCategory, setValue, watch]);
+
   // ── Open dialog for create/edit ──────────────────────────────────────────
   const openCreate = () => {
     setEditingCategory(null);
-    reset({ name: '', description: '', color: '#10b981', sortOrder: 0 });
+    reset({ name: '', slug: '', icon: '', description: '', color: '#10b981', sortOrder: 0 });
     setDialogOpen(true);
   };
 
@@ -117,6 +142,8 @@ export default function CategoryManagerView() {
     setEditingCategory(cat);
     reset({
       name: cat.name,
+      slug: cat.slug,
+      icon: cat.icon ?? '',
       description: cat.description ?? '',
       color: cat.color,
       sortOrder: cat.sortOrder,
@@ -130,6 +157,8 @@ export default function CategoryManagerView() {
       setSaving(true);
       const body = {
         name: data.name.trim(),
+        slug: data.slug.trim(),
+        icon: data.icon?.trim() || null,
         description: data.description?.trim() || null,
         color: data.color,
         sortOrder: data.sortOrder,
@@ -161,8 +190,8 @@ export default function CategoryManagerView() {
 
       setDialogOpen(false);
       fetchCategories();
-    } catch {
-      toast.error(editingCategory ? '更新分类失败' : '创建分类失败');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : (editingCategory ? '更新分类失败' : '创建分类失败'));
     } finally {
       setSaving(false);
     }
@@ -270,6 +299,16 @@ export default function CategoryManagerView() {
                             style={{ backgroundColor: cat.color }}
                           />
                           <h3 className="truncate text-sm font-semibold">{cat.name}</h3>
+                          {cat.icon && (
+                            <span className="text-xs" title={cat.icon}>
+                              {cat.icon}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <code className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded">
+                            {cat.slug}
+                          </code>
                         </div>
                         {cat.description && (
                           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
@@ -345,6 +384,43 @@ export default function CategoryManagerView() {
               />
               {errors.name && (
                 <p className="text-xs text-destructive">{errors.name.message}</p>
+              )}
+            </div>
+
+            {/* Slug */}
+            <div className="space-y-2">
+              <Label htmlFor="cat-slug">
+                标识符 (Slug) <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="cat-slug"
+                placeholder="如: yanqing, dushi, xianxia"
+                {...register('slug')}
+              />
+              <p className="text-xs text-muted-foreground">
+                URL 友好标识符，只能包含小写字母、数字、下划线和连字符
+              </p>
+              {errors.slug && (
+                <p className="text-xs text-destructive">{errors.slug.message}</p>
+              )}
+            </div>
+
+            {/* Icon */}
+            <div className="space-y-2">
+              <Label htmlFor="cat-icon" className="flex items-center gap-1.5">
+                <Tag className="h-3.5 w-3.5" />
+                图标
+              </Label>
+              <Input
+                id="cat-icon"
+                placeholder="Emoji 或 Lucide 图标名（如: 💕, Sword, Flame）"
+                {...register('icon')}
+              />
+              <p className="text-xs text-muted-foreground">
+                支持 Emoji 或 Lucide 图标名称，用于前台展示
+              </p>
+              {errors.icon && (
+                <p className="text-xs text-destructive">{errors.icon.message}</p>
               )}
             </div>
 

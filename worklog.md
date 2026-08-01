@@ -2617,20 +2617,35 @@ Stage Summary:
 - 新增公共API：GET /api/public/novels, GET /api/public/categories
 - ESLint 全部通过
 - Agent-browser 验证：首页正常渲染，管理后台按钮跳转正确，/admin未认证重定向到/login，移动端响应式正常，无console错误
+
 ---
-Task ID: fix-login
+Task ID: clone-23qb-categories
 Agent: Main Orchestrator
-Task: 修复登录后无法进入管理后台的问题
+Task: 完整克隆 https://www.23qb.net/ 的分类设置
 
 Work Log:
-- 用 agent-browser 复现问题：POST /api/auth/callback/credentials 返回 401
-- 检查 .env 文件，发现缺少 NEXTAUTH_SECRET 和 ADMIN_PASSWORD
-- authorize() 中 `if (!adminPass)` 直接 throw，导致所有登录失败
-- 在 .env 中添加 NEXTAUTH_SECRET（随机64字符hex）和 ADMIN_PASSWORD=admin
-- 优化登录跳转：将 `router.push('/admin') + router.refresh()` 改为 `window.location.href = '/admin'`，避免 session cookie 时序竞争
-- 清理 login/page.tsx 中不再需要的 useRouter 导入
+- 通过 web-search 抓取 23qb.net 网站分类结构
+- 确认 23qb.net 分类体系: 13个分类 + 7个字数区间 + 8个排序方式 + 3个状态选项
+- 更新 Prisma schema: Category 模型新增 slug(URL标识符) 和 icon(图标/emoji) 字段
+- 重置数据库并推送 schema 变更
+- 创建种子数据 API: POST /api/public/seed-categories
+- 通过 Prisma 直接导入 13 个 23qb.net 分类（含名称、slug、描述、颜色、图标emoji、排序）
+- 更新 public categories API: 返回 slug/icon/sortOrder
+- 更新 admin categories API POST: 支持 slug/icon 字段校验
+- 更新 admin categories [id] API PUT: 支持 slug 更新
+- 更新 types/index.ts: Category 接口添加 slug/icon
+- 更新 CategoryManagerView: 表单支持 slug/icon 字段编辑
+- 重写 public novels API: 支持 categorySlug/wordCount/status/sort 筛选参数
+- 重写首页 page.tsx: 完整克隆 23qb.net 4行筛选系统（分类/状态/字数/排序）
+  - 紧凑搜索栏替代原 Hero 区域
+  - 4行 FilterRow 组件: 分类(动态) + 状态 + 字数 + 排序
+  - 每行有标签+横向可滚动选项+滚动箭头
+  - 支持筛选重置按钮和筛选摘要显示
 
 Stage Summary:
-- 根因：.env 缺少 ADMIN_PASSWORD 和 NEXTAUTH_SECRET，authorize() 函数因 adminPass 为 undefined 直接抛异常
-- 修复：.env 添加认证环境变量，登录跳转改用硬导航确保 cookie 生效
-- ESLint 全部通过
+- 23qb.net 13个分类已导入数据库（言情小说/都市小说/耽美百合/穿越转生/青春校园/玄幻魔法/修真武侠/历史军事/游戏竞技/科幻空间/悬疑惊悚/同人小说/官场职场）
+- 7个字数区间: 30万以下/30-50万/50-100万/100-200万/200-300万/400万以上
+- 8个排序方式: 最近更新/新书入库/新书热门/周点击榜/月点击榜/周推荐榜/月推荐榜/收藏榜
+- 3个状态选项: 全部/连载中/已完结
+- ESLint 0错误
+- Dev server 所有路由 200 正常

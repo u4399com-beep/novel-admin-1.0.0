@@ -13,12 +13,16 @@ datasource db {
 model Category {
   id          String  @id @default(cuid())
   name        String  @unique
+  slug        String  @unique  // URL友好标识符，如 "yanqing", "dushi"
   description String?
   color       String  @default("#6b7280")
+  icon        String?            // 图标名称(lucide)或emoji
   sortOrder   Int     @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   novels      Novel[]
+
+  @@index([slug])
 }
 
 // 标签

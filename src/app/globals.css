@@ -228,3 +228,12 @@ button:active:not(:disabled) {
 .dark .log-warn { color: oklch(0.8 0.18 85); }
 .dark .log-error { color: oklch(0.704 0.191 22.216); }
 .dark .log-success { color: oklch(0.696 0.17 162.48); }
+
+/* Hide scrollbar utility */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

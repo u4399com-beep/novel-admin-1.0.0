@@ -34,10 +34,16 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
     }
-    const { name, description, color, sortOrder } = body;
+    const { name, slug, icon, description, color, sortOrder } = body;
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "分类名称不能为空" }, { status: 400 });
+    }
+    if (!slug?.trim()) {
+      return NextResponse.json({ error: "分类标识符不能为空" }, { status: 400 });
+    }
+    if (!/^[a-z0-9_-]+$/.test(slug.trim())) {
+      return NextResponse.json({ error: "分类标识符只能包含小写字母、数字、下划线和连字符" }, { status: 400 });
     }
     if (name.trim().length > MAX_NAME_LENGTH) {
       return NextResponse.json({ error: `分类名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
@@ -52,6 +58,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     const category = await db.category.create({
       data: {
         name: sanitizeField(name, MAX_NAME_LENGTH),
+        slug: slug.trim(),
+        icon: icon?.trim() || null,
         description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
         color: color || "#6b7280",
         sortOrder: Math.max(0, Math.floor(Number(sortOrder) || 0)),

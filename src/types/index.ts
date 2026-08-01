@@ -3,8 +3,10 @@ export type NovelStatus = "ongoing" | "completed" | "hiatus";
 export interface Category {
   id: string;
   name: string;
+  slug: string;
   description: string | null;
   color: string;
+  icon: string | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

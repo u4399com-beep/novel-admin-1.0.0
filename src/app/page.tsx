@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Search, Sun, Moon, Shield,
-  ChevronLeft, ChevronRight, Sparkles, TrendingUp,
+  ChevronLeft, ChevronRight, RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface Category {
   id: string;
   name: string;
+  slug: string;
+  icon: string | null;
   description: string | null;
   color: string;
   _count: { novels: number };
@@ -32,13 +34,42 @@ interface Novel {
   coverPath: string | null;
   status: string;
   wordCount: number;
-  category: { id: string; name: string; color: string } | null;
+  category: { id: string; name: string; slug: string; color: string; icon: string | null } | null;
   _count: { chapters: number };
   createdAt: string;
   updatedAt: string;
 }
 
-const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
+// ─── 23qb.net Filter Config ──────────────────────────────────────────
+
+const STATUS_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'ongoing', label: '连载中' },
+  { value: 'completed', label: '已完结' },
+];
+
+const WORD_COUNT_OPTIONS = [
+  { value: 'all', label: '全部' },
+  { value: 'under_30w', label: '30万字以下' },
+  { value: '30w_50w', label: '30-50万字' },
+  { value: '50w_100w', label: '50-100万字' },
+  { value: '100w_200w', label: '100-200万字' },
+  { value: '200w_300w', label: '200-300万字' },
+  { value: 'over_400w', label: '400万字以上' },
+];
+
+const SORT_OPTIONS = [
+  { value: 'last_update', label: '最近更新' },
+  { value: 'new_entry', label: '新书入库' },
+  { value: 'new_hot', label: '新书热门' },
+  { value: 'weekly_click', label: '周点击榜' },
+  { value: 'monthly_click', label: '月点击榜' },
+  { value: 'weekly_rec', label: '周推荐榜' },
+  { value: 'monthly_rec', label: '月推荐榜' },
+  { value: 'favorites', label: '收藏榜' },
+];
+
+const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
   ongoing: { label: '连载中', variant: 'default' },
   completed: { label: '已完结', variant: 'secondary' },
   hiatus: { label: '暂停中', variant: 'outline' },
@@ -86,6 +117,21 @@ function SkeletonGrid() {
       {Array.from({ length: 10 }).map((_, i) => (
         <NovelCardSkeleton key={i} />
       ))}
+    </div>
+  );
+}
+
+// ─── Filter Row Skeleton ─────────────────────────────────────────────
+
+function FilterRowSkeleton() {
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <Skeleton className="h-4 w-12 shrink-0" />
+      <div className="flex items-center gap-2 overflow-hidden">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-6 w-16 shrink-0 rounded-full" />
+        ))}
+      </div>
     </div>
   );
 }
@@ -157,11 +203,126 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
   );
 }
 
+// ─── Filter Row Component ────────────────────────────────────────────
+
+function FilterRow<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  loading,
+}: {
+  label: string;
+  options: { value: T; label: string; icon?: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  loading?: boolean;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(false);
+
+  const checkArrows = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setShowLeftArrow(el.scrollLeft > 4);
+    setShowRightArrow(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    checkArrows();
+    const el = scrollRef.current;
+    if (el) {
+      el.addEventListener('scroll', checkArrows, { passive: true });
+      // Also check on resize
+      const ro = new ResizeObserver(checkArrows);
+      ro.observe(el);
+      return () => {
+        el.removeEventListener('scroll', checkArrows);
+        ro.disconnect();
+      };
+    }
+  }, [checkArrows, options]);
+
+  const scroll = (dir: 'left' | 'right') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === 'left' ? -200 : 200, behavior: 'smooth' });
+  };
+
+  if (loading) {
+    return <FilterRowSkeleton />;
+  }
+
+  return (
+    <div className="relative flex items-center gap-3 py-2">
+      {/* Label */}
+      <span className="shrink-0 text-sm font-medium text-muted-foreground w-12 text-right">
+        {label}
+      </span>
+
+      {/* Scroll container with arrows */}
+      <div className="relative flex-1 min-w-0">
+        {/* Left arrow */}
+        {showLeftArrow && (
+          <button
+            onClick={() => scroll('left')}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm hover:bg-accent transition-colors"
+            aria-label="向左滚动"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        {/* Scrollable options */}
+        <div
+          ref={scrollRef}
+          className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none"
+          style={{
+            paddingLeft: showLeftArrow ? '28px' : '4px',
+            paddingRight: showRightArrow ? '28px' : '4px',
+          }}
+        >
+          {options.map((opt) => {
+            const isActive = opt.value === value;
+            return (
+              <button
+                key={opt.value || '__all__'}
+                onClick={() => onChange(opt.value)}
+                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground font-medium shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                }`}
+              >
+                {opt.icon && <span className="mr-1">{opt.icon}</span>}
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right arrow */}
+        {showRightArrow && (
+          <button
+            onClick={() => scroll('right')}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm hover:bg-accent transition-colors"
+            aria-label="向右滚动"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────
 
 export default function HomePage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+
   // Data state
   const [novels, setNovels] = useState<Novel[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -170,9 +331,12 @@ export default function HomePage() {
 
   // Filter state
   const [page, setPage] = useState(1);
-  const [activeCategory, setActiveCategory] = useState('');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [activeCategorySlug, setActiveCategorySlug] = useState('');
+  const [activeStatus, setActiveStatus] = useState('');
+  const [activeWordCount, setActiveWordCount] = useState('all');
+  const [activeSort, setActiveSort] = useState('last_update');
 
   // Loading state
   const [loadingNovels, setLoadingNovels] = useState(true);
@@ -203,7 +367,10 @@ export default function HomePage() {
       setLoadingNovels(true);
       try {
         const params = new URLSearchParams({ page: String(page), pageSize: '15' });
-        if (activeCategory) params.set('categoryId', activeCategory);
+        if (activeCategorySlug) params.set('categorySlug', activeCategorySlug);
+        if (activeStatus) params.set('status', activeStatus);
+        if (activeWordCount && activeWordCount !== 'all') params.set('wordCount', activeWordCount);
+        if (activeSort) params.set('sort', activeSort);
         if (search) params.set('search', search);
         const res = await fetch(`/api/public/novels?${params}`);
         if (!cancelled && res.ok) {
@@ -217,7 +384,7 @@ export default function HomePage() {
     }
     load();
     return () => { cancelled = true; };
-  }, [page, activeCategory, search]);
+  }, [page, activeCategorySlug, activeStatus, activeWordCount, activeSort, search]);
 
   // ─── Handlers ────────────────────────────────────────────────────
   const handleSearch = (e: React.FormEvent) => {
@@ -226,9 +393,66 @@ export default function HomePage() {
     setPage(1);
   };
 
-  const handleCategoryClick = (catId: string) => {
-    setActiveCategory(catId === activeCategory ? '' : catId);
+  const handleCategoryChange = (slug: string) => {
+    setActiveCategorySlug(slug === activeCategorySlug ? '' : slug);
     setPage(1);
+  };
+
+  const handleStatusChange = (status: string) => {
+    setActiveStatus(status === activeStatus ? '' : status);
+    setPage(1);
+  };
+
+  const handleWordCountChange = (wc: string) => {
+    setActiveWordCount(wc === activeWordCount ? 'all' : wc);
+    setPage(1);
+  };
+
+  const handleSortChange = (sort: string) => {
+    setActiveSort(sort);
+    setPage(1);
+  };
+
+  const resetAllFilters = () => {
+    setActiveCategorySlug('');
+    setActiveStatus('');
+    setActiveWordCount('all');
+    setActiveSort('last_update');
+    setSearch('');
+    setSearchInput('');
+    setPage(1);
+  };
+
+  // ─── Build category options for filter ──────────────────────────
+  const categoryOptions = [
+    { value: '' as const, label: '全部' },
+    ...categories.map((cat) => ({
+      value: cat.slug as string & '',
+      label: cat.name,
+      icon: cat.icon ?? undefined,
+    })),
+  ];
+
+  // ─── Check if any filter is active ──────────────────────────────
+  const hasActiveFilter = activeCategorySlug || activeStatus || (activeWordCount !== 'all') || (activeSort !== 'last_update') || search;
+
+  // ─── Build active filter summary ────────────────────────────────
+  const getFilterSummary = () => {
+    const parts: string[] = [];
+    if (search) parts.push(`搜索: ${search}`);
+    if (activeCategorySlug) {
+      const cat = categories.find((c) => c.slug === activeCategorySlug);
+      if (cat) parts.push(cat.name);
+    }
+    if (activeStatus) {
+      const opt = STATUS_OPTIONS.find((o) => o.value === activeStatus);
+      if (opt) parts.push(opt.label);
+    }
+    if (activeWordCount !== 'all') {
+      const opt = WORD_COUNT_OPTIONS.find((o) => o.value === activeWordCount);
+      if (opt) parts.push(opt.label);
+    }
+    return parts.length > 0 ? parts.join(' · ') : '全部小说';
   };
 
   // ─── Pagination range ────────────────────────────────────────────
@@ -270,7 +494,7 @@ export default function HomePage() {
               首页
             </button>
             <button
-              onClick={() => document.getElementById('categories-section')?.scrollIntoView({ behavior: 'smooth' })}
+              onClick={() => document.getElementById('filter-section')?.scrollIntoView({ behavior: 'smooth' })}
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
               分类
@@ -291,10 +515,10 @@ export default function HomePage() {
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               aria-label="切换主题"
               className="h-8 w-8"
-              >
-                <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-                <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-              </Button>
+            >
+              <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
+              <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -308,100 +532,98 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* ─── Hero Section ────────────────────────────────────────── */}
-      <section className="relative overflow-hidden border-b">
-        {/* Decorative elements */}
-        <div className="absolute top-10 -left-20 w-72 h-72 bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 -right-20 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-radial from-primary/3 to-transparent rounded-full" />
-
-        <div className="relative max-w-3xl mx-auto text-center px-4 py-16 sm:py-24">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-6">
-              <Sparkles className="h-3 w-3" />
-              海量好书，等你探索
-            </div>
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-4">
-              发现你的{' '}
-              <span className="text-primary">下一本好书</span>
+      {/* ─── Compact Search Bar ──────────────────────────────────── */}
+      <section className="border-b bg-muted/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
+          <div className="flex items-center gap-3">
+            <h1 className="hidden sm:block text-xl font-bold tracking-tight shrink-0">
+              小说搜索
             </h1>
-            <p className="text-base sm:text-lg text-muted-foreground mb-8 max-w-lg mx-auto">
-              沉浸式小说阅读体验，精选优质内容，随时随地畅享阅读
-            </p>
-          </motion.div>
-
-          {/* Search bar */}
-          <motion.form
-            onSubmit={handleSearch}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="relative max-w-xl mx-auto"
-          >
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="搜索小说名、作者..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="h-12 pl-11 pr-24 text-base rounded-xl border-border/60 bg-background/60 backdrop-blur-sm"
-            />
-            <Button
-              type="submit"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-9 px-4 rounded-lg"
-            >
-              搜索
-            </Button>
-          </motion.form>
+            <form onSubmit={handleSearch} className="relative flex-1 max-w-2xl">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="搜索小说名、作者..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="h-10 pl-10 pr-20 text-sm rounded-lg"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md"
+              >
+                搜索
+              </Button>
+            </form>
+            {search && (
+              <Badge variant="secondary" className="shrink-0 text-xs">
+                &quot;{search}&quot;
+                <button
+                  onClick={() => { setSearch(''); setSearchInput(''); setPage(1); }}
+                  className="ml-1 hover:text-foreground"
+                  aria-label="清除搜索"
+                >
+                  ×
+                </button>
+              </Badge>
+            )}
+          </div>
         </div>
       </section>
 
-      {/* ─── Categories Section ──────────────────────────────────── */}
-      <section id="categories-section" className="border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
-          <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none">
-            {!loadingCategories ? (
-              <>
-                <button
-                  onClick={() => handleCategoryClick('')}
-                  className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
-                    activeCategory === ''
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                  }`}
-                >
-                  全部
-                </button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => handleCategoryClick(cat.id)}
-                    className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
-                      activeCategory === cat.id
-                        ? 'text-white shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                    style={
-                      activeCategory === cat.id
-                        ? { backgroundColor: cat.color }
-                        : { backgroundColor: `${cat.color}15` }
-                    }
-                  >
-                    {cat.name}
-                    <span className="ml-1.5 text-xs opacity-70">{cat._count.novels}</span>
-                  </button>
-                ))}
-              </>
-            ) : (
-              Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="shrink-0 h-8 w-20 rounded-full" />
-              ))
-            )}
+      {/* ─── 23qb.net 4-Row Filter System ───────────────────────── */}
+      <section id="filter-section" className="border-b bg-background">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="divide-y divide-border/50 py-1">
+            {/* Row 1: 分类 */}
+            <FilterRow
+              label="分类"
+              options={categoryOptions}
+              value={activeCategorySlug}
+              onChange={handleCategoryChange}
+              loading={loadingCategories}
+            />
+
+            {/* Row 2: 状态 */}
+            <FilterRow
+              label="状态"
+              options={STATUS_OPTIONS}
+              value={activeStatus}
+              onChange={handleStatusChange}
+            />
+
+            {/* Row 3: 字数 */}
+            <FilterRow
+              label="字数"
+              options={WORD_COUNT_OPTIONS}
+              value={activeWordCount}
+              onChange={handleWordCountChange}
+            />
+
+            {/* Row 4: 排序 */}
+            <FilterRow
+              label="排序"
+              options={SORT_OPTIONS}
+              value={activeSort}
+              onChange={handleSortChange}
+            />
           </div>
+
+          {/* Reset button when filters active */}
+          {hasActiveFilter && (
+            <div className="flex items-center justify-end py-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetAllFilters}
+                className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1"
+              >
+                <RotateCcw className="h-3 w-3" />
+                重置筛选
+              </Button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -411,10 +633,7 @@ export default function HomePage() {
           {/* Section header */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">
-                {search ? `搜索: ${search}` : activeCategory ? categories.find(c => c.id === activeCategory)?.name || '小说' : '全部小说'}
-              </h2>
+              <h2 className="text-lg font-semibold">{getFilterSummary()}</h2>
               <span className="text-sm text-muted-foreground">
                 共 {total} 本
               </span>
@@ -430,12 +649,12 @@ export default function HomePage() {
                 <BookOpen className="h-8 w-8 text-muted-foreground" />
               </div>
               <h3 className="text-base font-medium mb-1">暂无小说</h3>
-              <p className="text-sm text-muted-foreground">试试其他关键词或分类</p>
+              <p className="text-sm text-muted-foreground">试试其他关键词或筛选条件</p>
             </div>
           ) : (
             <AnimatePresence mode="wait">
               <motion.div
-                key={`${activeCategory}-${search}-${page}`}
+                key={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}`}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
