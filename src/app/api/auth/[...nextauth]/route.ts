@@ -63,6 +63,11 @@ function checkGlobalLoginBackstop(): { allowed: boolean; retryAfter: number } {
   return { allowed: true, retryAfter: 0 };
 }
 
+// Detect HTTPS from NEXTAUTH_URL — not from NODE_ENV.
+// Deploying on HTTP (e.g. direct port access without TLS) requires
+// non-secure cookies; browsers silently drop __Secure- cookies over HTTP.
+const isHttps = (process.env.NEXTAUTH_URL || '').startsWith('https://');
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -109,11 +114,14 @@ export const authOptions: NextAuthOptions = {
   },
   cookies: {
     sessionToken: {
-      name: `${process.env.NODE_ENV === "production" ? "__Secure-" : ""}next-auth.session-token`,
+      // Only use __Secure- prefix and secure flag when actually behind HTTPS.
+      // Deploying via HTTP (direct port access) must set cookies without secure flag,
+      // otherwise browsers silently drop the cookie and login never works.
+      name: `${isHttps ? "__Secure-" : ""}next-auth.session-token`,
       options: {
         httpOnly: true,
         sameSite: "lax" as const,
-        secure: process.env.NODE_ENV === "production",
+        secure: isHttps,
         path: "/",
       },
     },
