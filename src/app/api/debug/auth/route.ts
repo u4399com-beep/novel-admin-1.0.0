@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
         name: token.name,
         iat: token.iat,
         exp: token.exp,
-        expRelative: token.exp ? `${Math.max(0, token.exp - Math.floor(Date.now() / 1000))}s remaining` : 'N/A',
+        expRelative: token.exp ? `${Math.max(0, Number(token.exp) - Math.floor(Date.now() / 1000))}s remaining` : 'N/A',
       };
     }
   } catch (err) {
