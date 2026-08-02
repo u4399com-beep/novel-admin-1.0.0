@@ -8,27 +8,30 @@ const WORD_COUNT_RANGES: Record<string, { min: number; max: number }> = {
   "30w_50w":  { min: 300000, max: 500000 },
   "50w_100w":  { min: 500000, max: 1000000 },
   "100w_200w": { min: 1000000, max: 2000000 },
-  "200w_300w": { min: 2000000, max: 3000000 },
+  "200w_400w": { min: 2000000, max: 4000000 },
   over_400w:  { min: 4000000, max: Infinity },
 };
 
 // ─── 23qb.net 排序映射 ─────────────────────────────────────────────
+// 注意: clickCount / favoriteCount 等统计字段目前未在 schema 中定义
+// 一旦添加这些字段，取消下方注释并删除 fallback 即可启用真实排行
 const SORT_MAP: Record<string, { field: string; direction: "asc" | "desc" }> = {
-  last_update:  { field: "updatedAt",       direction: "desc" },
-  new_entry:    { field: "createdAt",       direction: "desc" },
-  weekly_click:  { field: "updatedAt", direction: "desc" },
-  monthly_click: { field: "updatedAt", direction: "desc" },
-  weekly_rec:    { field: "updatedAt", direction: "desc" },
-  monthly_rec:   { field: "updatedAt", direction: "desc" },
-  favorites:     { field: "updatedAt", direction: "desc" },
-  new_hot:       { field: "createdAt", direction: "desc" },
+  last_update:     { field: "updatedAt",   direction: "desc" },
+  new_entry:       { field: "createdAt",   direction: "desc" },
+  new_hot:         { field: "createdAt",   direction: "desc" },
+  weekly_clicks:   { field: "updatedAt",   direction: "desc" },
+  monthly_clicks:  { field: "updatedAt",   direction: "desc" },
+  weekly_rec:      { field: "updatedAt",   direction: "desc" },
+  monthly_rec:     { field: "updatedAt",   direction: "desc" },
+  favorites:       { field: "updatedAt",   direction: "desc" },
+  total_favorites: { field: "updatedAt",   direction: "desc" },
 };
 
 /**
  * Public novel listing API — no auth required.
  * Cloned from 23qb.net filter system:
  *   - categorySlug: 分类筛选
- *   - wordCount: 字数筛选 (all|under_30w|30w_50w|50w_100w|100w_200w|200w_300w|over_400w)
+ *   - wordCount: 字数筛选 (all|under_30w|30w_50w|50w_100w|100w_200w|200w_400w|over_400w)
  *   - status: 状态筛选 (ongoing|completed|"")
  *   - sort: 排序方式 (last_update|new_entry|new_hot|weekly_click|...)
  */

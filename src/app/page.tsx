@@ -56,7 +56,7 @@ const WORD_COUNT_OPTIONS = [
   { value: '30w_50w', label: '30-50万字' },
   { value: '50w_100w', label: '50-100万字' },
   { value: '100w_200w', label: '100-200万字' },
-  { value: '200w_300w', label: '200-300万字' },
+  { value: '200w_400w', label: '200-400万字' },
   { value: 'over_400w', label: '400万字以上' },
 ];
 
