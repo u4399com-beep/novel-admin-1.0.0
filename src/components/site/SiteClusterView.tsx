@@ -9,6 +9,9 @@ import {
   Loader2,
   Eye,
   Monitor,
+  Check,
+  X,
+  Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
@@ -73,6 +76,43 @@ function tryParseJSON(str: string): unknown {
   try { return JSON.parse(str); } catch { return undefined; }
 }
 
+function formatRelativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—';
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '—';
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return '刚刚';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}个月前`;
+  const years = Math.floor(months / 12);
+  return `${years}年前`;
+}
+
+type SiteHealthStatus = 'active' | 'error' | 'unknown';
+
+function SiteStatusDot({ status }: { status: SiteHealthStatus }) {
+  const config: Record<SiteHealthStatus, { color: string; label: string }> = {
+    active: { color: 'bg-emerald-500', label: '正常' },
+    error: { color: 'bg-red-500', label: '异常' },
+    unknown: { color: 'bg-gray-400 dark:bg-gray-500', label: '未知' },
+  };
+  const c = config[status];
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`h-2 w-2 rounded-full ${c.color}`} />
+      <span className="text-xs">{c.label}</span>
+    </span>
+  );
+}
+
 function defaultThemeConfig(): ThemeConfig {
   return {
     colors: { primary: '#334155', secondary: '#64748b', accent: '#0f172a', background: '#ffffff', foreground: '#0f172a', card: '#ffffff', cardForeground: '#1e293b', muted: '#f1f5f9', mutedForeground: '#94a3b8', border: '#e2e8f0', ring: '#334155' },
@@ -91,14 +131,17 @@ function SiteFormDialog({
   editingSite,
   themes,
   onSaved,
+  onUrlTested,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingSite: Site | null;
   themes: Theme[];
   onSaved: () => void;
+  onUrlTested?: (domain: string, reachable: boolean) => void;
 }) {
   const [loading, setLoading] = useState(false);
+  const [urlTestState, setUrlTestState] = useState<'idle' | 'testing' | 'reachable' | 'unreachable'>('idle');
   const [form, setForm] = useState({
     domain: '',
     name: '',
@@ -138,7 +181,31 @@ function SiteFormDialog({
     } else {
       setForm((p) => ({ ...p, domain: '', name: '', description: '', themeId: '', enabled: true, novelOffset: 0, chapterOffset: 0 }));
     }
+    setUrlTestState('idle');
   }, [editingSite, open]);
+
+  const handleTestUrl = async () => {
+    const domain = form.domain.trim();
+    if (!domain) {
+      toast.error('请先输入域名');
+      return;
+    }
+    setUrlTestState('testing');
+    try {
+      const fullUrl = domain.startsWith('http') ? domain : `https://${domain}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      await fetch(fullUrl, { mode: 'no-cors', signal: controller.signal });
+      clearTimeout(timeout);
+      setUrlTestState('reachable');
+      toast.success('站点可达');
+      onUrlTested?.(domain, true);
+    } catch {
+      setUrlTestState('unreachable');
+      toast.error('站点不可达，请检查域名是否正确');
+      onUrlTested?.(domain, false);
+    }
+  };
 
   const handleSave = async () => {
     if (!form.domain.trim() || !form.name.trim()) {
@@ -195,11 +262,39 @@ function SiteFormDialog({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>域名 *</Label>
-                <Input
-                  value={form.domain}
-                  onChange={(e) => setForm((p) => ({ ...p, domain: e.target.value }))}
-                  placeholder="novel1.example.com"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    value={form.domain}
+                    onChange={(e) => { setForm((p) => ({ ...p, domain: e.target.value })); setUrlTestState('idle'); }}
+                    placeholder="novel1.example.com"
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 gap-1.5"
+                    disabled={!form.domain.trim() || urlTestState === 'testing'}
+                    onClick={handleTestUrl}
+                  >
+                    {urlTestState === 'testing' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : urlTestState === 'reachable' ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-500" />
+                    ) : urlTestState === 'unreachable' ? (
+                      <X className="h-3.5 w-3.5 text-red-500" />
+                    ) : (
+                      <Activity className="h-3.5 w-3.5" />
+                    )}
+                    {urlTestState === 'testing' ? '测试中' : '测试连接'}
+                  </Button>
+                </div>
+                {urlTestState === 'reachable' && (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">连接成功，站点可达</p>
+                )}
+                {urlTestState === 'unreachable' && (
+                  <p className="text-xs text-red-600 dark:text-red-400">连接失败，请检查域名是否正确</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>站点名称 *</Label>
@@ -561,6 +656,7 @@ export default function SiteClusterView() {
   const [formOpen, setFormOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [previewSite, setPreviewSite] = useState<Site | null>(null);
+  const [siteHealthMap, setSiteHealthMap] = useState<Record<string, SiteHealthStatus>>({});
   const refreshSites = useAppStore((s) => s.refreshVersions['sites'] ?? 0);
 
   const fetchSites = useCallback(async () => {
@@ -569,7 +665,17 @@ export default function SiteClusterView() {
         apiFetch<Site[]>('/api/sites'),
         apiFetch<(Theme & { config: string })[]>('/api/themes'),
       ]);
-      setSites(sitesData);
+      const parsedSites = Array.isArray(sitesData) ? sitesData : (sitesData as any)?.sites ?? [];
+      setSites(parsedSites);
+      setSiteHealthMap((prev) => {
+        const next: Record<string, SiteHealthStatus> = { ...prev };
+        for (const s of parsedSites) {
+          if (!(s.id in next)) {
+            next[s.id] = s.enabled ? 'active' : 'error';
+          }
+        }
+        return next;
+      });
       setThemes(
         themesData.map((t) => ({      
           ...t,
@@ -652,13 +758,13 @@ export default function SiteClusterView() {
           {sites.length === 0 ? (
             <Card className="p-12 text-center">
               <Globe className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
-              <h4 className="text-base font-medium text-muted-foreground mb-2">暂无站点</h4>
+              <h4 className="text-base font-medium text-muted-foreground mb-2">暂无站点配置</h4>
               <p className="text-sm text-muted-foreground/70 mb-6">
                 添加第一个站点以开始构建你的小说站群
               </p>
               <Button onClick={() => { setEditSite(null); setFormOpen(true); }}>
                 <Plus className="h-4 w-4 mr-1.5" />
-                添加站点
+                添加第一个站点
               </Button>
             </Card>
           ) : (
@@ -679,7 +785,17 @@ export default function SiteClusterView() {
                   <TableBody>
                     {sites.map((site) => (
                       <TableRow key={site.id} className="group">
-                          <TableCell className="font-mono text-sm">{site.domain}</TableCell>
+                          <TableCell>
+                            <span className="font-mono text-sm">{site.domain}</span>
+                            {(site as any)._count?.novels != null && (
+                              <span className="text-xs text-muted-foreground block mt-0.5">
+                                关联小说: {(site as any)._count.novels} 部
+                              </span>
+                            )}
+                            <span className="text-xs text-muted-foreground/60 block mt-0.5">
+                              最近更新: {formatRelativeTime(site.updatedAt)}
+                            </span>
+                          </TableCell>
                           <TableCell>
                             <div className="flex flex-col">
                               <span className="font-medium text-sm">{site.name}</span>
@@ -696,12 +812,7 @@ export default function SiteClusterView() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Badge
-                              variant={site.enabled ? 'default' : 'secondary'}
-                              className={site.enabled ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : ''}
-                            >
-                              {site.enabled ? '已启用' : '已禁用'}
-                            </Badge>
+                            <SiteStatusDot status={siteHealthMap[site.id] ?? (site.enabled ? 'active' : 'error')} />
                           </TableCell>
                           <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                             <span>小说: {site.novelOffset}</span>
@@ -813,6 +924,15 @@ export default function SiteClusterView() {
         editingSite={editSite}
         themes={themes}
         onSaved={fetchSites}
+        onUrlTested={(domain, reachable) => {
+          setSiteHealthMap((prev) => {
+            const site = sites.find((s) => s.domain === domain);
+            if (site) {
+              return { ...prev, [site.id]: reachable ? 'active' : 'error' };
+            }
+            return prev;
+          });
+        }}
       />
 
       {/* Delete Confirmation */}

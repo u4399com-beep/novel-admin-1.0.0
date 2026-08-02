@@ -103,6 +103,7 @@ export interface ScrapeRuleItem {
   scrapeMode: string;
   createdAt: string;
   updatedAt: string;
+  lastRunAt?: string | null;
   _count: { tasks: number };
 }
 

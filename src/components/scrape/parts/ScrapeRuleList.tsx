@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Code, Bug, Globe, Cloud, Zap, Bot } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
 
 import { Button } from '@/components/ui/button';
@@ -24,12 +24,21 @@ import {
 import type { ScrapeRuleItem } from './types';
 
 const LIST_ENGINE_COLORS: Record<string, string> = {
-  cheerio: 'bg-green-500',
-  playwright: 'bg-blue-500',
-  firecrawl: 'bg-orange-500',
-  agentql: 'bg-purple-500',
-  'cloud-browser': 'bg-cyan-500',
+  cheerio: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20',
+  playwright: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20',
+  firecrawl: 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20',
+  agentql: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20',
+  'cloud-browser': 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/20',
 };
+
+const LIST_ENGINE_ICONS: Record<string, typeof Bug> = {
+  cheerio: Bug,
+  playwright: Globe,
+  firecrawl: Zap,
+  agentql: Bot,
+  'cloud-browser': Cloud,
+};
+
 const LIST_ENGINE_LABELS: Record<string, string> = {
   cheerio: 'Cheerio',
   playwright: 'Playwright',
@@ -151,7 +160,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
                 <th className="hidden px-4 py-3 font-medium md:table-cell">状态</th>
                 <th className="hidden px-4 py-3 font-medium lg:table-cell">模式</th>
                 <th className="hidden px-4 py-3 font-medium sm:table-cell">任务数</th>
-                <th className="hidden px-4 py-3 font-medium lg:table-cell">创建时间</th>
+                <th className="hidden px-4 py-3 font-medium lg:table-cell">最近执行</th>
                 <th className="px-4 py-3 text-right font-medium">操作</th>
               </tr>
             </thead>
@@ -185,11 +194,16 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
               ) : rules.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                    <div className="flex flex-col items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/50 lucide lucide-file-search"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="m14 17-2.5-2.5"/></svg>
-                      <span>暂无采集规则</span>
-                      <Button variant="link" size="sm" onClick={onCreate}>
-                        创建第一条规则
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                        <Code className="h-7 w-7 text-muted-foreground/60" />
+                      </div>
+                      <div className="text-center">
+                        <span className="text-sm font-medium">暂无采集规则</span>
+                        <p className="mt-1 text-xs text-muted-foreground">创建您的第一条采集规则，开始自动化采集小说</p>
+                      </div>
+                      <Button size="sm" onClick={onCreate}>
+                        创建采集规则
                       </Button>
                     </div>
                   </td>
@@ -212,12 +226,25 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
                     </td>
                     <td className="hidden px-4 py-3 md:table-cell">
                       <div className="flex items-center gap-1.5">
-                        <span className={`h-2 w-2 rounded-full ${LIST_ENGINE_COLORS[rule.engine || 'cheerio'] || 'bg-green-500'}`} />
+                        {(() => {
+                          const EngineIcon = LIST_ENGINE_ICONS[rule.engine || 'cheerio'] || Bug;
+                          const colorClasses = LIST_ENGINE_COLORS[rule.engine || 'cheerio'] || LIST_ENGINE_COLORS.cheerio;
+                          return (
+                            <div className={`flex h-6 w-6 items-center justify-center rounded-md ${colorClasses}`}>
+                              <EngineIcon className="h-3.5 w-3.5" />
+                            </div>
+                          );
+                        })()}
                         <span className="text-xs">{LIST_ENGINE_LABELS[rule.engine || 'cheerio'] || rule.engine || 'Cheerio'}</span>
                       </div>
                     </td>
                     <td className="hidden px-4 py-3 md:table-cell">
-                      <Badge variant={rule.enabled ? 'default' : 'secondary'}>
+                      <Badge
+                        className={rule.enabled
+                          ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 border-0'
+                          : 'bg-muted text-muted-foreground hover:bg-muted border-0'
+                        }
+                      >
                         {rule.enabled ? '已启用' : '已禁用'}
                       </Badge>
                     </td>
@@ -230,7 +257,9 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
                       <span className="text-muted-foreground">{rule._count?.tasks || 0}</span>
                     </td>
                     <td className="hidden px-4 py-3 lg:table-cell text-muted-foreground">
-                      {safeFormatDate(rule.createdAt, (d) => format(d, 'yyyy-MM-dd HH:mm', { locale: zhCN }))}
+                      {rule.lastRunAt
+                        ? safeFormatDate(rule.lastRunAt, (d) => formatDistanceToNow(d, { addSuffix: true, locale: zhCN }))
+                        : '从未执行'}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">

@@ -44,14 +44,30 @@ export const GET = withAuth(async function GET(request: NextRequest) {
         where,
         skip,
         take: pageSize,
-        orderBy: { updatedAt: "desc" },
-        include: { _count: { select: { tasks: true } } },
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          _count: { select: { tasks: true } },
+          tasks: {
+            select: { startedAt: true },
+            take: 1,
+            orderBy: { startedAt: 'desc' },
+          },
+        },
       }),
       db.scrapeRule.count({ where }),
     ]);
 
+    // Extract lastRunAt from the latest task and remove tasks array
+    const rulesWithLastRun = rules.map((rule) => {
+      const { tasks, ...rest } = rule;
+      return {
+        ...rest,
+        lastRunAt: tasks[0]?.startedAt?.toISOString() ?? null,
+      };
+    });
+
     return NextResponse.json({
-      rules,
+      rules: rulesWithLastRun,
       total,
       page,
       pageSize,

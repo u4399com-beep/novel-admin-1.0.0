@@ -238,3 +238,60 @@ button:active:not(:disabled) {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* Dark mode: card shadow refinement */
+.dark .shadow-sm {
+  --tw-shadow-color: oklch(0 0 0 / 0.3);
+}
+.dark .shadow-md {
+  --tw-shadow-color: oklch(0 0 0 / 0.4);
+}
+.dark .shadow-lg {
+  --tw-shadow-color: oklch(0 0 0 / 0.5);
+}
+
+/* Dark mode: more visible borders */
+.dark {
+  --border: oklch(0.85 0 0 / 14%);
+}
+
+/* Dark mode: visible focus-visible rings */
+.dark *:focus-visible {
+  outline-color: oklch(0.708 0.1 264);
+  outline-offset: 2px;
+}
+
+/* Code/pre blocks styling */
+pre {
+  background: oklch(0.96 0 0);
+  border: 1px solid oklch(0.922 0 0);
+  border-radius: var(--radius);
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.dark pre {
+  background: oklch(0.178 0 0);
+  border-color: oklch(1 0 0 / 12%);
+}
+code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+}
+pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+}
+:where(:not(pre)) > code {
+  background: oklch(0.96 0 0);
+  border: 1px solid oklch(0.922 0 0);
+  border-radius: calc(var(--radius) - 4px);
+  padding: 0.125rem 0.375rem;
+}
+.dark :where(:not(pre)) > code {
+  background: oklch(0.269 0 0);
+  border-color: oklch(1 0 0 / 12%);
+}

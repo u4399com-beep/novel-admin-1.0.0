@@ -284,6 +284,11 @@ function RankingTabContent({ tab }: { tab: TabConfig }) {
 // ─── Page Component ──────────────────────────────────────────────────
 
 export default function RankingsPage() {
+  // ─── SEO: set document title ──────────────────────────────────────
+  useEffect(() => {
+    document.title = '排行榜 - 小说阁';
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:py-10">

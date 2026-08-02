@@ -10,16 +10,16 @@ import {
   User,
   Clock,
   ArrowRight,
-  Bug,
   Sparkles,
   Tags,
   Activity,
   PlusCircle,
   Globe,
-  Upload,
   BarChart3,
   CheckCircle2,
   ArrowUpRight,
+  Settings,
+  Server,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -107,11 +107,23 @@ const statCards = [
 ] as const;
 
 // ─── Quick action items ───────────────────────────────────────────────────────
-const quickActionItems = [
-  { key: 'create-novel', label: '新建小说', desc: '创建新的小说作品', icon: PlusCircle, view: 'createNovel' as const },
-  { key: 'scrape-rules', label: '采集规则', desc: '管理采集规则与任务', icon: Globe, view: 'scrape' as const },
-  { key: 'import-categories', label: '导入分类', desc: '整理小说分类体系', icon: Upload, view: 'categories' as const },
-] as const;
+interface QuickActionItem {
+  key: string;
+  label: string;
+  desc: string;
+  icon: typeof PlusCircle;
+  view: ViewType | 'createNovel';
+  color: string;
+  bg: string;
+}
+
+const quickActionItems: QuickActionItem[] = [
+  { key: 'create-novel', label: '新建小说', desc: '创建新的小说作品', icon: PlusCircle, view: 'createNovel', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+  { key: 'scrape-rules', label: '采集规则', desc: '管理采集规则与任务', icon: Globe, view: 'scrape', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+  { key: 'categories', label: '分类管理', desc: '整理小说分类体系', icon: FolderTree, view: 'categories', color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20' },
+  { key: 'sites', label: '站点管理', desc: '管理站点与主题配置', icon: Server, view: 'sites', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20' },
+  { key: 'settings', label: '系统设置', desc: '配置系统参数与选项', icon: Settings, view: 'settings', color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800/50' },
+];
 
 // ─── Event metadata helper ──────────────────────────────────────────────────
 function getEventMeta(type: string) {
@@ -302,6 +314,59 @@ export function DashboardView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Welcome (empty state) */}
+      {!loading && stats && stats.totalNovels === 0 && stats.totalChapters === 0 && (
+        <Card className="border-0 bg-gradient-to-br from-emerald-50 to-teal-50/50 dark:from-emerald-950/30 dark:to-teal-950/20">
+          <CardContent className="p-6">
+            <div className="text-center mb-6">
+              <h3 className="text-xl font-semibold">欢迎使用小说阁</h3>
+              <p className="mt-1.5 text-sm text-muted-foreground">开始您的第一步：创建分类、添加小说或配置采集规则</p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <button
+                type="button"
+                className="group flex flex-col items-center gap-3 rounded-xl border border-emerald-200/60 bg-white/80 p-5 transition-all duration-200 hover:shadow-lg hover:-translate-y-1 dark:border-emerald-800/40 dark:bg-emerald-950/30"
+                onClick={() => setCurrentView('categories')}
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 transition-transform duration-200 group-hover:scale-110">
+                  <FolderTree className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">创建分类</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">为小说建立分类体系</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="group flex flex-col items-center gap-3 rounded-xl border border-emerald-200/60 bg-white/80 p-5 transition-all duration-200 hover:shadow-lg hover:-translate-y-1 dark:border-emerald-800/40 dark:bg-emerald-950/30"
+                onClick={handleCreateNovel}
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30 transition-transform duration-200 group-hover:scale-110">
+                  <PlusCircle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">添加小说</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">手动创建或导入小说</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="group flex flex-col items-center gap-3 rounded-xl border border-emerald-200/60 bg-white/80 p-5 transition-all duration-200 hover:shadow-lg hover:-translate-y-1 dark:border-emerald-800/40 dark:bg-emerald-950/30"
+                onClick={() => setCurrentView('scrape')}
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/30 transition-transform duration-200 group-hover:scale-110">
+                  <Globe className="h-6 w-6 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">配置采集规则</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">自动化采集网络小说</p>
+                </div>
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Stats Grid ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -601,25 +666,37 @@ export function DashboardView() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex flex-wrap gap-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-32 rounded-md" />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
+                  <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                </div>
               ))}
             </div>
           ) : (
-            <div className="flex flex-wrap gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               {quickActionItems.map((action) => {
                 const Icon = action.icon;
                 return (
-                  <Button
+                  <button
                     key={action.key}
-                    variant="outline"
-                    className="h-10 gap-2"
+                    type="button"
+                    className="group flex items-center gap-3 rounded-lg border p-3 text-left transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
                     onClick={() => handleQuickAction(action)}
                   >
-                    <Icon className="h-4 w-4" />
-                    {action.label}
-                  </Button>
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${action.bg} transition-transform duration-200 group-hover:scale-110`}>
+                      <Icon className={`h-5 w-5 ${action.color}`} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{action.label}</p>
+                      <p className="text-xs text-muted-foreground truncate">{action.desc}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground" />
+                  </button>
                 );
               })}
             </div>

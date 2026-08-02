@@ -83,9 +83,22 @@ export async function generateMetadata({
   const novel = await getNovel(id);
   if (!novel) return { title: '小说未找到' };
 
+  const title = `${novel.title} - ${novel.author} - 小说阁`;
+  const chapterCount = novel._count.chapters;
+  const wordCountStr = novel.wordCount >= 10000
+    ? `${(novel.wordCount / 10000).toFixed(1)}万字`
+    : `${novel.wordCount}字`;
+  const fallbackDesc = `${novel.title} by ${novel.author}, ${wordCountStr}, ${chapterCount}章`;
+  const description = (novel.description || fallbackDesc).slice(0, 160);
+
   return {
-    title: `${novel.title} - ${novel.author}`,
-    description: novel.description || `${novel.title}，作者${novel.author}，共${novel._count.chapters}章`,
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'article',
+    },
   };
 }
 

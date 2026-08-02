@@ -132,6 +132,11 @@ export default function CategoriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // ── SEO: set document title ──────────────────────────────────────────
+  useEffect(() => {
+    document.title = '分类浏览 - 小说阁';
+  }, []);
+
   // ── Fetch categories ──────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -203,7 +208,7 @@ export default function CategoriesPage() {
         </div>
 
         {/* ── Search ──────────────────────────────────────────────────── */}
-        <div className="mb-6 max-w-md">
+        <div className="mb-6 max-w-full sm:max-w-md">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -218,7 +223,7 @@ export default function CategoriesPage() {
         {/* ── Loading State ───────────────────────────────────────────── */}
         {loading && (
           <motion.div
-            className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
             variants={containerVariants}
             initial="hidden"
             animate="show"
@@ -278,7 +283,7 @@ export default function CategoriesPage() {
         {/* ── Category Grid ──────────────────────────────────────────── */}
         {!loading && !error && filteredCategories.length > 0 && (
           <motion.div
-            className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
             variants={containerVariants}
             initial="hidden"
             animate="show"

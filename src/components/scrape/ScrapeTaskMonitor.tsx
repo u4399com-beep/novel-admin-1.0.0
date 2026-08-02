@@ -23,6 +23,7 @@ import {
   ArrowLeft,
   RefreshCw,
   ListChecks,
+  Activity,
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
 
@@ -110,8 +111,8 @@ const STATUS_CONFIG: Record<
   },
   cancelled: {
     label: '已取消',
-    color: 'text-slate-400',
-    bgColor: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+    color: 'text-amber-500',
+    bgColor: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
     icon: Ban,
   },
 };
@@ -400,11 +401,37 @@ interface TaskCardProps {
   onDelete: () => void;
 }
 
+function formatDuration(startStr: string | null, endStr: string | null): string {
+  if (!startStr) return '';
+  const start = new Date(startStr).getTime();
+  const end = endStr ? new Date(endStr).getTime() : Date.now();
+  if (isNaN(start) || isNaN(end)) return '';
+  const diffMs = end - start;
+  if (diffMs < 0) return '';
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) {
+    if (minutes > 0) return `${hours}小时${minutes}分`;
+    return `${hours}小时`;
+  }
+  if (minutes > 0) return `${minutes}分`;
+  return `${Math.floor(totalSeconds / 60) || 1}分`;
+}
+
 function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExpand, onDelete }: TaskCardProps) {
   const config = STATUS_CONFIG[task.status];
   const StatusIcon = config.icon;
   const isRunning = task.status === 'running';
+  const isCompleted = task.status === 'completed';
   const canDelete = task.status !== 'running';
+
+  // Calculate progress from totalSteps/completedSteps if available
+  const progressPercent = task.progress ?? 0;
+
+  // Time tracking
+  const runningElapsed = isRunning ? formatDuration(task.startedAt, null) : null;
+  const completedTotal = isCompleted ? formatDuration(task.startedAt, task.completedAt) : null;
 
   return (
     <Card className="overflow-hidden transition-all hover:shadow-sm">
@@ -432,7 +459,7 @@ function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExp
                   <span className="text-xs font-mono text-muted-foreground">
                     {task.id.slice(0, 8)}
                   </span>
-                  <Badge className={config.bgColor} variant="secondary">
+                  <Badge className={`${config.bgColor} ${isRunning ? 'animate-pulse' : ''}`} variant="secondary">
                     <StatusIcon
                       className={`h-3 w-3 mr-0.5 ${isRunning ? 'animate-spin' : ''}`}
                     />
@@ -474,13 +501,13 @@ function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExp
 
       <CardContent className="p-4 pt-3">
         {/* Progress bar for running tasks */}
-        {isRunning && (
+        {(isRunning || (isCompleted && progressPercent > 0 && progressPercent < 100)) && (
           <div className="mb-3">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-muted-foreground">进度</span>
-              <span className="text-xs font-medium tabular-nums">{task.progress}%</span>
+              <span className="text-xs font-medium tabular-nums">{Math.round(progressPercent)}%</span>
             </div>
-            <Progress value={task.progress} className="h-1.5" />
+            <Progress value={progressPercent} className="h-1.5" />
           </div>
         )}
 
@@ -497,6 +524,16 @@ function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExp
           <span className="text-muted-foreground/60">
             创建于 {formatDate(task.createdAt)}
           </span>
+          {runningElapsed && (
+            <span className="text-sky-600 dark:text-sky-400 font-medium">
+              运行 {runningElapsed}
+            </span>
+          )}
+          {completedTotal && (
+            <span className="text-emerald-600 dark:text-emerald-400">
+              总耗时 {completedTotal}
+            </span>
+          )}
         </div>
 
         {/* Error message for failed tasks */}
@@ -637,17 +674,18 @@ function EmptyState({ onBack }: { onBack?: () => void }) {
     <Card>
       <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
         <div className="rounded-full bg-muted p-4">
-          <ListChecks className="h-8 w-8 text-muted-foreground/50" />
+          <Activity className="h-8 w-8 text-muted-foreground/50" />
         </div>
         <div className="text-center">
-          <p className="text-sm text-muted-foreground">暂无任务记录</p>
+          <p className="text-sm text-muted-foreground">暂无采集任务</p>
           <p className="text-xs text-muted-foreground/70 mt-1">
             在采集规则列表中执行规则后，任务将显示在此处
           </p>
         </div>
         {onBack && (
-          <Button variant="link" size="sm" onClick={onBack}>
-            返回采集规则列表
+          <Button variant="link" size="sm" onClick={onBack} className="gap-1.5">
+            <Activity className="h-3.5 w-3.5" />
+            创建采集任务
           </Button>
         )}
       </CardContent>

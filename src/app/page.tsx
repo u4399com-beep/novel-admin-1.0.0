@@ -337,6 +337,11 @@ export default function HomePage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
 
+  // ─── SEO: set document title ──────────────────────────────────────
+  useEffect(() => {
+    document.title = '小说阁 - 免费小说在线阅读';
+  }, []);
+
   // Data state
   const [novels, setNovels] = useState<Novel[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -718,7 +723,7 @@ export default function HomePage() {
             <h1 className="hidden sm:block text-xl font-bold tracking-tight shrink-0">
               小说搜索
             </h1>
-            <div className="flex-1 max-w-2xl" ref={searchRef}>
+            <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>
               <form onSubmit={handleSearch} className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
                 <Input
@@ -734,7 +739,7 @@ export default function HomePage() {
                   }}
                   onKeyDown={(e) => { if (e.key === 'Escape') setSuggestionsOpen(false); }}
                   onFocus={() => { if (suggestions.length > 0) setSuggestionsOpen(true); }}
-                  className="h-10 pl-10 pr-20 text-sm rounded-lg"
+                  className="h-10 pl-10 pr-20 text-sm rounded-lg w-full"
                 />
                 <Button
                   type="submit"
