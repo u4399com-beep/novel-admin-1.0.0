@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BackToTop } from '@/components/BackToTop';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -1047,6 +1048,7 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
+      <BackToTop />
     </div>
   );
 }

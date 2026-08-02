@@ -36,6 +36,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BackToTop } from '@/components/BackToTop';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -350,6 +351,7 @@ export default function CategoriesPage() {
           </div>
         )}
       </div>
+      <BackToTop />
     </div>
   );
 }

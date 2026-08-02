@@ -1,0 +1,138 @@
+'use client';
+
+import { useState, useCallback, useSyncExternalStore } from 'react';
+
+// ─── Reading Themes ─────────────────────────────────────────────────
+
+export interface ReadingTheme {
+  key: string;
+  label: string;
+  bg: string;
+  text: string;
+  preview: string;
+}
+
+export const READING_THEMES: ReadingTheme[] = [
+  {
+    key: 'light',
+    label: '默认',
+    bg: 'bg-white dark:bg-zinc-900',
+    text: 'text-zinc-800 dark:text-zinc-200',
+    preview: '#fff',
+  },
+  {
+    key: 'sepia',
+    label: '护眼',
+    bg: 'bg-[#f5f0e8] dark:bg-[#2a2520]',
+    text: 'text-[#5b4636] dark:text-[#d4c5b0]',
+    preview: '#f5f0e8',
+  },
+  {
+    key: 'green',
+    label: '绿意',
+    bg: 'bg-[#e8f5e9] dark:bg-[#1a2e1c]',
+    text: 'text-[#2e4a2f] dark:text-[#b0d4b2]',
+    preview: '#e8f5e9',
+  },
+  {
+    key: 'dark',
+    label: '夜间',
+    bg: 'bg-zinc-900 dark:bg-zinc-950',
+    text: 'text-zinc-300 dark:text-zinc-400',
+    preview: '#18181b',
+  },
+];
+
+export interface ReadingSettings {
+  fontSize: number;
+  lineHeight: number;
+  themeKey: string;
+  fontFamily: string;
+}
+
+const STORAGE_KEY = 'novel-reading-settings';
+
+const DEFAULT_SETTINGS: ReadingSettings = {
+  fontSize: 16,
+  lineHeight: 1.9,
+  themeKey: 'light',
+  fontFamily: 'serif',
+};
+
+function loadSettings(): ReadingSettings {
+  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved) as Partial<ReadingSettings>;
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_SETTINGS;
+}
+
+export const FONT_FAMILIES = [
+  { key: 'serif', label: '宋体', css: 'font-serif' },
+  { key: 'sans', label: '黑体', css: 'font-sans' },
+  { key: 'mono', label: '等宽', css: 'font-mono' },
+];
+
+export function useReadingSettings() {
+  const [settings, setSettings] = useState<ReadingSettings>(loadSettings);
+
+  const updateSettings = useCallback((partial: Partial<ReadingSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...partial };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const currentTheme = READING_THEMES.find((t) => t.key === settings.themeKey) || READING_THEMES[0];
+  const currentFont = FONT_FAMILIES.find((f) => f.key === settings.fontFamily) || FONT_FAMILIES[0];
+
+  return { settings, updateSettings, currentTheme, currentFont };
+}
+
+// ─── Reading Progress ───────────────────────────────────────────────
+
+function loadProgress(key: string, max: number): number | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const index = parseInt(saved, 10);
+      if (!isNaN(index) && index >= 0 && index < max) return index;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function useReadingProgress(novelId: string, chapters: { id: string }[]) {
+  const PROGRESS_KEY = `novel-progress-${novelId}`;
+  const [lastChapterIndex, setLastChapterIndex] = useState<number | null>(
+    () => loadProgress(PROGRESS_KEY, chapters.length)
+  );
+
+  const saveProgress = useCallback(
+    (chapterIndex: number) => {
+      try {
+        localStorage.setItem(PROGRESS_KEY, String(chapterIndex));
+      } catch {
+        // ignore
+      }
+      setLastChapterIndex(chapterIndex);
+    },
+    [PROGRESS_KEY]
+  );
+
+  return { lastChapterIndex, saveProgress };
+}

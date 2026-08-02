@@ -6,6 +6,7 @@ import { Trophy, Medal, BookOpen } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BackToTop } from '@/components/BackToTop';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -334,6 +335,7 @@ export default function RankingsPage() {
           ))}
         </Tabs>
       </div>
+      <BackToTop />
     </div>
   );
 }

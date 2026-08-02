@@ -295,3 +295,169 @@ pre code {
   background: oklch(0.269 0 0);
   border-color: oklch(1 0 0 / 12%);
 }
+
+/* ─── Enhanced Micro-Interactions ─────────────────────────── */
+
+/* Smooth card hover lift */
+@keyframes card-lift {
+  from { transform: translateY(0); box-shadow: 0 1px 3px oklch(0 0 0 / 0.1); }
+  to { transform: translateY(-2px); box-shadow: 0 8px 25px oklch(0 0 0 / 0.12); }
+}
+
+/* Pulse glow for primary elements */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.488 0.243 264.376 / 0.4); }
+  50% { box-shadow: 0 0 0 8px oklch(0.488 0.243 264.376 / 0); }
+}
+
+/* Fade in up */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Subtle shimmer for skeleton loading */
+.skeleton-shimmer {
+  background: linear-gradient(90deg, transparent, oklch(0.95 0 0), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.dark .skeleton-shimmer {
+  background: linear-gradient(90deg, transparent, oklch(0.25 0 0), transparent);
+  background-size: 200% 100%;
+}
+
+/* Ripple effect on interactive elements */
+.ripple-effect {
+  position: relative;
+  overflow: hidden;
+}
+.ripple-effect::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%), oklch(0 0 0 / 0.08), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.ripple-effect:active::after {
+  opacity: 1;
+}
+
+/* Link underline animation */
+a, [role="link"] {
+  text-decoration: none;
+  background-image: linear-gradient(oklch(0.488 0.243 264.376), oklch(0.488 0.243 264.376));
+  background-size: 0% 1px;
+  background-position: left bottom;
+  background-repeat: no-x-repeat;
+  transition: background-size 0.25s ease;
+}
+a:hover, [role="link"]:hover {
+  background-size: 100% 1px;
+}
+
+/* Badge hover scale */
+.badge-interactive {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.badge-interactive:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.1);
+}
+
+/* Tabular numbers for aligned digits */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smooth image load */
+img {
+  transition: opacity 0.3s ease;
+}
+img[loading="lazy"] {
+  opacity: 0;
+}
+img[loading="lazy"].loaded,
+img[loading="lazy"]:not([src]) {
+  opacity: 1;
+}
+
+/* Smooth border radius transitions */
+.rounded-xl, .rounded-2xl, .rounded-full {
+  transition: border-radius 0.2s ease;
+}
+
+/* Focus within group highlight */
+.group:focus-within {
+  border-color: oklch(0.488 0.243 264.376 / 0.3);
+}
+
+/* Touch-friendly targets on mobile */
+@media (max-width: 640px) {
+  button, [role="button"], a, [role="link"], input, select, textarea {
+    min-height: 36px;
+  }
+}
+
+/* Progress bar animation */
+@keyframes progress-indeterminate {
+  0% { width: 30%; margin-left: -30%; }
+  50% { width: 50%; margin-left: 20%; }
+  100% { width: 30%; margin-left: 100%; }
+}
+
+/* Number counter animation */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Stagger animation helper */
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+.stagger-children > *:nth-child(9) { animation-delay: 400ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 450ms; }
+
+/* Toast/sonner enhanced styling */
+[data-sonner-toast] {
+  border-radius: var(--radius) !important;
+  box-shadow: 0 8px 30px oklch(0 0 0 / 0.12) !important;
+}
+.dark [data-sonner-toast] {
+  box-shadow: 0 8px 30px oklch(0 0 0 / 0.4) !important;
+}
+
+/* Hover card with subtle border glow */
+.hover-glow {
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.hover-glow:hover {
+  box-shadow: 0 0 0 1px oklch(0.488 0.243 264.376 / 0.15), 0 4px 20px oklch(0 0 0 / 0.08);
+  border-color: oklch(0.488 0.243 264.376 / 0.2);
+}
+
+/* Tooltip animation enhancement */
+[data-radix-tooltip-content] {
+  animation: fade-in-up 0.15s ease !important;
+}
+
+/* Dropdown menu animation */
+[data-radix-dropdown-menu-content] {
+  animation: fade-in-up 0.15s ease !important;
+}
+
+/* Reading progress bar glow */
+.reading-progress-bar {
+ box-shadow: 0 0 8px oklch(0.488 0.243 264.376 / 0.4);
+}
+.dark .reading-progress-bar {
+  box-shadow: 0 0 8px oklch(0.708 0.1 264 / 0.4);
+}

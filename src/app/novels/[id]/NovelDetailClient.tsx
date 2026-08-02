@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
   BookOpen,
@@ -10,7 +10,12 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  Maximize2,
+  Minimize2,
   Loader2,
+  Settings2,
+  List,
+  BookmarkCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +26,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { BackToTop } from '@/components/BackToTop';
+import {
+  useReadingSettings,
+  useReadingProgress,
+  FONT_FAMILIES,
+  READING_THEMES,
+} from '@/lib/use-reading-settings';
+import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -90,6 +108,18 @@ function formatDate(dateStr: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// ─── Animation variants ─────────────────────────────────────────────
+
+const containerVariants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.03 } },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, x: -8 },
+  show: { opacity: 1, x: 0, transition: { duration: 0.2, ease: 'easeOut' as const } },
+};
+
 // ─── Component ───────────────────────────────────────────────────────
 
 export default function NovelDetailClient({ novel, chapters }: { novel: Novel; chapters: Chapter[] }) {
@@ -99,10 +129,22 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
 
   // ─── Reader state ────────────────────────────────────────────────
   const [readerOpen, setReaderOpen] = useState(false);
+  const [readerFullscreen, setReaderFullscreen] = useState(false);
+  const [showChapterSidebar, setShowChapterSidebar] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [chapterContent, setChapterContent] = useState<string | null>(null);
   const [chapterTitle, setChapterTitle] = useState('');
   const [loadingChapter, setLoadingChapter] = useState(false);
+  const [scrollPercent, setScrollPercent] = useState(0);
+  const readerContentRef = useRef<HTMLDivElement>(null);
+  const readerDialogRef = useRef<HTMLDivElement>(null);
+
+  // ─── Reading settings ────────────────────────────────────────────
+  const { settings, updateSettings, currentTheme, currentFont } = useReadingSettings();
+
+  // ─── Reading progress ────────────────────────────────────────────
+  const { lastChapterIndex, saveProgress } = useReadingProgress(novel.id, chapters);
 
   const openReader = useCallback(
     (index: number) => {
@@ -110,6 +152,8 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
       setChapterContent(null);
       setChapterTitle(chapters[index].title);
       setReaderOpen(true);
+      setShowSettings(false);
+      setShowChapterSidebar(false);
     },
     [chapters]
   );
@@ -149,10 +193,57 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
       const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
       if (newIndex >= 0 && newIndex < chapters.length) {
         loadChapter(newIndex);
+        saveProgress(newIndex);
       }
     },
-    [currentIndex, chapters.length, loadChapter]
+    [currentIndex, chapters.length, loadChapter, saveProgress]
   );
+
+  // Save progress when changing chapters
+  useEffect(() => {
+    if (readerOpen && !loadingChapter && chapterContent) {
+      saveProgress(currentIndex);
+    }
+  }, [currentIndex, readerOpen, loadingChapter, chapterContent, saveProgress]);
+
+  // ─── Scroll progress tracking ────────────────────────────────────
+  useEffect(() => {
+    if (!readerOpen) return;
+    const container = readerContentRef.current;
+    if (!container) return;
+    function onScroll() {
+      const el = container;
+      if (!el) return;
+      if (el.scrollTop === 0) { setScrollPercent(0); return; }
+      const scrollable = el.scrollHeight - el.clientHeight;
+      if (scrollable <= 0) { setScrollPercent(100); return; }
+      setScrollPercent(Math.round((el.scrollTop / scrollable) * 100));
+    }
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
+  }, [readerOpen]);
+
+  // ─── Fullscreen API ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!readerOpen) return;
+    if (readerFullscreen) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {});
+      }
+    }
+  }, [readerFullscreen, readerOpen]);
+
+  useEffect(() => {
+ function handleFullscreenChange() {
+ if (!document.fullscreenElement && readerFullscreen) {
+ setReaderFullscreen(false);
+ }
+ }
+ document.addEventListener('fullscreenchange', handleFullscreenChange);
+ return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+ }, [readerFullscreen]);
 
   // ─── Keyboard navigation ─────────────────────────────────────────
   useEffect(() => {
@@ -165,12 +256,26 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
         e.preventDefault();
         goToChapter('next');
       } else if (e.key === 'Escape') {
-        setReaderOpen(false);
+        if (readerFullscreen) {
+          setReaderFullscreen(false);
+        } else if (showChapterSidebar) {
+          setShowChapterSidebar(false);
+        } else if (showSettings) {
+          setShowSettings(false);
+        } else {
+          setReaderOpen(false);
+        }
+      } else if (e.key === 'f' && !e.metaKey && !e.ctrlKey) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          setReaderFullscreen((p) => !p);
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [readerOpen, goToChapter]);
+  }, [readerOpen, readerFullscreen, showChapterSidebar, showSettings, goToChapter]);
 
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < chapters.length - 1;
@@ -190,11 +295,21 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
         </Button>
 
         {/* ─── Novel info section ─────────────────────────────── */}
-        <section className="rounded-2xl border bg-gradient-to-br from-muted/40 via-background to-muted/20 p-6 sm:p-8">
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut' as const }}
+          className="rounded-2xl border bg-gradient-to-br from-muted/40 via-background to-muted/20 p-6 sm:p-8"
+        >
           <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
             {/* Cover */}
             <div className="shrink-0">
-              <div className="w-48 h-64 overflow-hidden rounded-xl shadow-lg">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4, delay: 0.1 }}
+                className="w-48 h-64 overflow-hidden rounded-xl shadow-lg"
+              >
                 {novel.coverUrl ? (
                   <img
                     src={novel.coverUrl}
@@ -210,7 +325,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                     </span>
                   </div>
                 )}
-              </div>
+              </motion.div>
             </div>
 
             {/* Meta */}
@@ -219,6 +334,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                 <motion.h1
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.15 }}
                   className="text-2xl sm:text-3xl font-bold leading-tight"
                 >
                   {novel.title}
@@ -226,14 +342,21 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                 <Button
                   size="sm"
                   disabled={chapters.length === 0}
-                  onClick={() => openReader(0)}
+                  onClick={() => openReader(lastChapterIndex ?? 0)}
                   className="shrink-0 mt-1 gap-1.5"
                 >
                   <BookOpen className="h-4 w-4" />
-                  开始阅读
+                  {lastChapterIndex !== null ? '继续阅读' : '开始阅读'}
                 </Button>
               </div>
-              <p className="text-sm text-muted-foreground">{novel.author}</p>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="text-sm text-muted-foreground"
+              >
+                {novel.author}
+              </motion.p>
 
               {/* Status & Category */}
               <div className="flex flex-wrap items-center gap-2">
@@ -258,7 +381,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   {novel.tags.map((tag) => (
                     <span
                       key={tag.id}
-                      className="text-xs px-2 py-0.5 rounded-full border"
+                      className="text-xs px-2 py-0.5 rounded-full border transition-colors hover:border-foreground/30"
                       style={{
                         borderColor: `${tag.color}40`,
                         color: tag.color,
@@ -283,36 +406,80 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                 </div>
               )}
 
-              {/* Prominent stats below description */}
+              {/* Stats */}
               <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-2">
-                <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2">
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25 }}
+                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2"
+                >
                   <FileText className="h-4 w-4 text-primary" />
                   <div>
-                    <div className="text-lg font-semibold leading-none">{formatWordCount(novel.wordCount)}</div>
+                    <div className="text-lg font-semibold leading-none tabular-nums">{formatWordCount(novel.wordCount)}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">总字数</div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2">
+                </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2"
+                >
                   <BookOpen className="h-4 w-4 text-primary" />
                   <div>
-                    <div className="text-lg font-semibold leading-none">{novel._count.chapters}</div>
+                    <div className="text-lg font-semibold leading-none tabular-nums">{novel._count.chapters}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">总章节</div>
                   </div>
-                </div>
-                <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                </motion.div>
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.35 }}
+                  className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"
+                >
                   <Clock className="h-3.5 w-3.5" />
                   更新于 {formatDate(novel.updatedAt)}
-                </span>
+                </motion.span>
               </div>
             </div>
           </div>
-        </section>
+        </motion.section>
+
+        {/* ─── Reading progress indicator ──────────────────────── */}
+        {lastChapterIndex !== null && chapters.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="mt-4 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary/5 border border-primary/10"
+          >
+            <BookmarkCheck className="h-4 w-4 text-primary shrink-0" />
+            <span className="text-sm text-muted-foreground">
+              上次阅读到{' '}
+              <button
+                onClick={() => openReader(lastChapterIndex)}
+                className="text-primary hover:underline font-medium"
+              >
+                第{chapters[lastChapterIndex].sortOrder}章 {chapters[lastChapterIndex].title}
+              </button>
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-7 text-xs"
+              onClick={() => openReader(lastChapterIndex)}
+            >
+              继续阅读
+            </Button>
+          </motion.div>
+        )}
 
         {/* ─── Chapter list section ────────────────────────────── */}
         <section className="py-8">
           <div className="flex items-center justify-between border-b pb-3 mb-4">
             <h2 className="text-lg font-semibold">章节目录</h2>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-muted-foreground tabular-nums">
               共 {chapters.length} 章
             </span>
           </div>
@@ -323,40 +490,83 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
               <p className="mt-3 text-sm text-muted-foreground">暂无章节</p>
             </div>
           ) : (
-            <div className="max-h-[600px] overflow-y-auto rounded-lg border">
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="show"
+              className="max-h-[600px] overflow-y-auto rounded-lg border"
+            >
               {chapters.map((chapter, index) => (
                 <motion.button
                   key={chapter.id}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.2, delay: Math.min(index * 0.02, 0.5) }}
+                  variants={itemVariants}
                   onClick={() => openReader(index)}
-                  className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors border-b last:border-b-0 group ${index % 2 === 0 ? '' : 'bg-muted/30'}`}
+                  className={
+                    'flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors border-b last:border-b-0 group ' +
+                    (index % 2 === 0 ? '' : 'bg-muted/30') +
+                    (lastChapterIndex === index ? ' bg-primary/5 border-l-2 border-l-primary' : '')
+                  }
                 >
-                  <span className="text-sm truncate group-hover:text-primary transition-colors">
-                    第{chapter.sortOrder}章 {chapter.title}{chapter.wordCount > 0 ? ` (${chapter.wordCount}字)` : ''}
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">{chapter.sortOrder}.</span>
+                    <span className="text-sm truncate group-hover:text-primary transition-colors">
+                      {chapter.title}
+                    </span>
+                    {chapter.wordCount > 0 && (
+                      <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
+                        {chapter.wordCount}字
+                      </span>
+                    )}
+                  </div>
+                  {lastChapterIndex === index && (
+                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 text-primary border-primary/30">
+                      上次
+                    </Badge>
+                  )}
                 </motion.button>
               ))}
-            </div>
+            </motion.div>
           )}
         </section>
 
         {/* ─── Bottom nav hint ─────────────────────────────────── */}
         <div className="border-t py-6 text-center text-xs text-muted-foreground">
-          点击章节开始阅读
+          点击章节开始阅读 · 支持键盘翻页
         </div>
       </div>
 
+      <BackToTop threshold={300} />
+
       {/* ─── Reader Dialog ────────────────────────────────────── */}
-      <Dialog open={readerOpen} onOpenChange={setReaderOpen}>
-        <DialogContent className="sm:max-w-3xl h-[85vh] max-h-[85vh] flex flex-col p-0 gap-0">
-          {/* Progress indicator */}
-          <div className="shrink-0 border-b px-6 py-2 bg-muted/40">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground font-medium">
+      <Dialog open={readerOpen} onOpenChange={(open) => { if (!open) { setReaderFullscreen(false); setReaderOpen(false); } }}>
+        <DialogContent
+          ref={readerDialogRef}
+          className={
+            'flex flex-col p-0 gap-0 transition-all duration-300 ' +
+            (readerFullscreen
+              ? 'w-screen h-screen !max-w-[100vw] !max-h-[100vh] rounded-none'
+              : 'sm:max-w-3xl h-[85vh] max-h-[85vh]')
+          }
+        >
+          {/* ── Top bar ─────────────────────────────────────────── */}
+          <div className="shrink-0 border-b bg-muted/30">
+            {/* Progress bar */}
+            <div className="h-0.5 bg-muted overflow-hidden">
+              <motion.div
+                className="h-full bg-primary"
+                initial={false}
+                animate={{ width: `${scrollPercent}%` }}
+                transition={{ duration: 0.15 }}
+              />
+            </div>
+            <div className="px-4 py-2 flex items-center justify-between gap-2">
+              {/* Left: progress text */}
+              <span className="text-xs text-muted-foreground font-medium tabular-nums min-w-0 truncate">
                 第 {currentIndex + 1}/{chapters.length} 章
+                <span className="ml-2 text-muted-foreground/60">{scrollPercent}%</span>
               </span>
+
+              {/* Center: nav buttons */}
               <div className="flex items-center gap-1 shrink-0">
                 <Button
                   variant="ghost"
@@ -379,61 +589,179 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
+
+              {/* Right: tools */}
+              <div className="flex items-center gap-0.5 shrink-0">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setShowChapterSidebar((p) => !p)}
+                    >
+                      <List className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">章节目录</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={
+                        'h-7 w-7 ' + (showSettings ? 'bg-primary/10 text-primary' : '')
+                      }
+                      onClick={() => setShowSettings((p) => !p)}
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">阅读设置</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setReaderFullscreen((p) => !p)}
+                    >
+                      {readerFullscreen ? (
+                        <Minimize2 className="h-3.5 w-3.5" />
+                      ) : (
+                        <Maximize2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">全屏 (F)</TooltipContent>
+                </Tooltip>
+              </div>
             </div>
+
+            {/* Settings panel (collapsible) */}
+            <AnimatePresence>
+              {showSettings && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-4 py-2.5 border-t bg-muted/20">
+                    <ReadingSettingsPanel settings={settings} onUpdate={updateSettings} />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* Header */}
+          {/* ── Chapter title ──────────────────────────────────── */}
           <DialogHeader className="shrink-0 px-6 pt-4 pb-2">
             <DialogTitle className="text-base font-semibold truncate">
               {chapterTitle}
             </DialogTitle>
           </DialogHeader>
 
-          {/* Content */}
-          <ScrollArea className="flex-1">
-            <div className="px-6 py-6 sm:px-10 sm:py-8">
-              {loadingChapter ? (
-                <div className="flex items-center justify-center py-20">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  <span className="ml-3 text-sm text-muted-foreground">加载中...</span>
-                </div>
-              ) : chapterContent ? (
-                <div className="mx-auto max-w-3xl">
-                  <h3 className="text-lg font-semibold mb-6 pb-4 border-b text-center">{chapterTitle}</h3>
-                  <article className="font-serif text-base leading-[1.9] text-foreground/90 whitespace-pre-wrap">
-                    {chapterContent.split('\n').map((paragraph, i) => (
-                      <p
-                        key={i}
-                        className={paragraph.trim() ? 'text-indent-[2em] mb-0' : 'h-4'}
+          {/* ── Content area (with optional sidebar) ────────── */}
+          <div className="flex-1 flex overflow-hidden relative">
+            {/* Chapter sidebar */}
+            <AnimatePresence>
+              {showChapterSidebar && (
+                <motion.div
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: 220, opacity: 1 }}
+                  exit={{ width: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="shrink-0 border-r overflow-hidden"
+                >
+                  <div className="w-[220px] h-full overflow-y-auto p-3">
+                    <div className="text-xs font-medium text-muted-foreground mb-2 px-1">
+                      目录 ({chapters.length}章)
+                    </div>
+                    {chapters.map((ch, idx) => (
+                      <button
+                        key={ch.id}
+                        onClick={() => {
+                          loadChapter(idx);
+                          saveProgress(idx);
+                        }}
+                        className={
+                          'block w-full text-left text-xs px-2 py-1.5 rounded-md truncate transition-colors ' +
+                          (idx === currentIndex
+                            ? 'bg-primary/10 text-primary font-medium'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/50') +
+                          (lastChapterIndex === idx ? ' border-l-2 border-primary/50' : '')
+                        }
                       >
-                        {paragraph.trim() || '\u00A0'}
-                      </p>
+                        {ch.sortOrder}. {ch.title}
+                      </button>
                     ))}
-                  </article>
-                </div>
-              ) : null}
-            </div>
-          </ScrollArea>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          {/* Footer nav */}
-          <div className="shrink-0 border-t px-6 py-3 flex items-center justify-between">
+            {/* Reader content */}
+            <div ref={readerContentRef} className="flex-1 overflow-y-auto">
+              <div className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-colors duration-300`}>
+                {loadingChapter ? (
+                  <div className="flex items-center justify-center py-20">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <span className="ml-3 text-sm text-muted-foreground">加载中...</span>
+                  </div>
+                ) : chapterContent ? (
+                  <div className="mx-auto max-w-3xl">
+                    <h3 className={`text-lg font-semibold mb-6 pb-4 border-b text-center ${currentTheme.text} transition-colors duration-300`}>
+                      {chapterTitle}
+                    </h3>
+                    <article
+                      className={`whitespace-pre-wrap transition-all duration-300 ${currentTheme.text} ${currentFont.css}`}
+                      style={{
+                        fontSize: `${settings.fontSize}px`,
+                        lineHeight: settings.lineHeight,
+                      }}
+                    >
+                      {chapterContent.split('\n').map((paragraph, i) => (
+                        <p
+                          key={i}
+                          className={paragraph.trim() ? 'text-indent-[2em] mb-0' : 'h-4'}
+                        >
+                          {paragraph.trim() || '\u00A0'}
+                        </p>
+                      ))}
+                    </article>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Bottom nav bar ────────────────────────────────── */}
+          <div className="shrink-0 border-t px-4 py-2.5 flex items-center justify-between bg-muted/30">
             <Button
               variant="outline"
               size="sm"
               disabled={!hasPrev || loadingChapter}
               onClick={() => goToChapter('prev')}
+              className="h-8"
             >
               <ChevronLeft className="h-4 w-4 mr-1" />
               上一章
             </Button>
-            <span className="text-xs text-muted-foreground">
-              ← → 键盘翻页 · Esc 关闭
+            <span className="text-[11px] text-muted-foreground hidden sm:block">
+              ← → 翻页 · F 全屏 · Esc 关闭
             </span>
             <Button
               variant="outline"
               size="sm"
               disabled={!hasNext || loadingChapter}
               onClick={() => goToChapter('next')}
+              className="h-8"
             >
               下一章
               <ChevronRight className="h-4 w-4 ml-1" />

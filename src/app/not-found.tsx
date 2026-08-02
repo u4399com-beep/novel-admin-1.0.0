@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Home, ShieldCheck } from 'lucide-react';
+import { Home, ShieldCheck, Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 
@@ -25,28 +25,53 @@ export default function GlobalNotFound() {
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="h-36 w-36 rounded-full bg-muted/70 blur-3xl" />
           </div>
-          <div className="relative flex h-28 w-28 items-center justify-center rounded-3xl border bg-gradient-to-br from-muted to-muted/50 shadow-sm">
-            <Home className="h-14 w-14 text-muted-foreground/60" strokeWidth={1.5} />
-          </div>
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="relative flex h-28 w-28 items-center justify-center rounded-3xl border bg-gradient-to-br from-muted to-muted/50 shadow-sm"
+          >
+            <Compass className="h-14 w-14 text-muted-foreground/60" strokeWidth={1.5} />
+          </motion.div>
         </div>
 
         {/* Text content */}
         <div className="space-y-2">
-          <p className="text-7xl font-bold tabular-nums text-muted-foreground/15 select-none">
+          <motion.p
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+            className="text-8xl font-black tabular-nums text-muted-foreground/10 select-none tracking-tighter"
+          >
             404
-          </p>
-          <h1 className="text-xl font-semibold tracking-tight">
+          </motion.p>
+          <motion.h1
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.3 }}
+            className="text-xl font-semibold tracking-tight"
+          >
             页面不存在
-          </h1>
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, delay: 0.35 }}
+            className="text-sm leading-relaxed text-muted-foreground"
+          >
             您访问的页面可能已被移动或删除，
             <br className="hidden sm:inline" />
             请检查链接地址是否正确。
-          </p>
+          </motion.p>
         </div>
 
         {/* Actions */}
-        <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.4 }}
+          className="flex flex-col sm:flex-row items-center gap-3 pt-2"
+        >
           <Button asChild>
             <Link href="/" className="gap-1.5">
               <Home className="h-4 w-4" />
@@ -59,7 +84,17 @@ export default function GlobalNotFound() {
               管理后台
             </Link>
           </Button>
-        </div>
+        </motion.div>
+
+        {/* Subtle hint */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6 }}
+          className="text-xs text-muted-foreground/50 pt-4"
+        >
+          如果您认为这是一个错误，请联系管理员
+        </motion.p>
       </motion.div>
     </main>
   );

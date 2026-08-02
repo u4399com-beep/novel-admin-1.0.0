@@ -1,0 +1,32 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+
+export function ScrollProgress() {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    function handleScroll() {
+      const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+      if (scrollable <= 0) { setProgress(0); return; }
+      setProgress(Math.round((window.scrollY / scrollable) * 100));
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  if (progress === 0) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-50 h-0.5 bg-transparent pointer-events-none">
+      <motion.div
+        className="h-full reading-progress-bar"
+        initial={false}
+        animate={{ width: `${progress}%` }}
+        transition={{ duration: 0.15 }}
+        style={{ background: 'var(--primary)' }}
+      />
+    </div>
+  );
+}
