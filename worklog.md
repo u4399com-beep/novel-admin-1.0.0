@@ -2791,3 +2791,81 @@ Stage Summary:
 - /api/public/health 可用于远程诊断系统状态
 - seed-categories 可无认证调用，安全幂等
 - lint: 0 errors, 3 warnings (均为预存的React Compiler警告)
+
+---
+Task ID: qa-and-features
+Agent: Main Orchestrator
+Task: QA测试 + 修复生产环境bug + 新功能开发
+
+Work Log:
+
+## 项目状态评估
+- 阅读完整 worklog (2793行)，了解项目全貌
+- 项目经过多轮审计(5+轮)，代码库已稳定
+- 发现4个未推送的commit包含关键修复
+
+## QA测试结果
+- agent-browser测试: 首页渲染正常，登录页正常
+- 登录测试: 发现本地.env缺少认证变量(ADMIN_PASSWORD等) → 修复
+- dev server在此环境不稳定(Turbopack内存问题)，通过curl间歇性验证API
+- API测试: seed-categories成功(upsert 13个分类), public/health正常, public/categories正常
+
+## 生产环境"获取xxx失败" + seed-categories 失败 根因分析
+
+### 根因: 代码未部署
+- 本地代码库有4个未推送的commit，包含:
+  1. apiFetch工具(显示实际错误而非"获取xxx失败")
+  2. 所有API端点增加detail字段
+  3. seed-categories移除withAuth + 改为upsert
+  4. 前端组件迁移到apiFetch
+- 用户生产服务器运行的是旧代码(这些修复之前)
+- 旧代码: `if (!res.ok) throw new Error('获取xxx失败')` 吞掉了实际错误
+- 旧代码: seed-categories有withAuth包装 + deleteMany+createMany事务
+
+### 修复1: apiFetch重复toast问题
+- apiFetch已为401/429/500自动toast
+- 但9个组件的catch块又toast了"获取xxx失败" → 用户看到2个toast
+- 修复: apiFetch改为始终toast(除422验证错误)
+- 移除9个组件中25个重复toast.error()调用
+
+### 修复2: health端点eslint警告
+- 移除未使用的eslint-disable指令
+
+### 修复3: seed-categories(上一轮已完成，确认在commit中)
+- 移除withAuth(公共初始化端点)
+- deleteMany+createMany → 逐条upsert(幂等、不怕外键)
+- 错误响应增加detail字段
+
+## 新功能开发
+
+### 1. 首页加载骨架屏
+- 小说网格加载时显示骨架卡片
+- 标题区域加载时显示骨架(不再闪现"共 0 本")
+- 骨架→内容平滑过渡动画
+
+### 2. Dashboard增强
+- 统计卡片可点击导航(小说→列表, 分类→分类管理, etc.)
+- 趋势指标: 已完结数、平均章节数、平均字数
+- 大数字格式化(≥10000显示X.X万)
+- 图表骨架加载改进
+- 快捷操作区: 新建小说、采集规则、导入分类
+
+### 3. 章节阅读器
+- 每个章节行添加"阅读"按钮(BookOpen图标)
+- 全屏Dialog阅读模式
+- 阅读优化排版(serif字体、1.9行高、2em首行缩进)
+- 键盘导航: ←上一章, →下一章, Esc关闭
+- 上/下一章按钮(边界禁用)
+- 智能内容解析(内联内容直接用，否则fetch)
+- 加载骨架屏
+
+## Git操作
+- 推送5个commit到origin/main (f5c2921..57f89d6)
+- ESLint: 0 errors (3 warnings均为预存的React Compiler警告)
+
+Stage Summary:
+- 生产环境"获取xxx失败": 根因是代码未推送部署，现已推送
+- seed-categories失败: 根因同上(旧代码有withAuth+事务风险)，现已修复并推送
+- 重复toast: 移除25个，apiFetch统一处理
+- 新功能: 首页骨架屏、Dashboard增强、章节阅读器
+- 用户需在服务器执行: cd /opt/novel-admin && git pull && bash deploy.sh
