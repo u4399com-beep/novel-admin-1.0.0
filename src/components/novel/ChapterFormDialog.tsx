@@ -140,9 +140,7 @@ export function ChapterFormDialog() {
       handleClose(false);
       triggerRefresh('chapters');
       triggerRefresh('novels');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '操作失败');
-    }
+    } catch { /* handled by apiFetch */ }
   };
 
   return (

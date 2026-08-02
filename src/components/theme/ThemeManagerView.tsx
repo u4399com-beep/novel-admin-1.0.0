@@ -167,9 +167,7 @@ function ThemeFormDialog({
       toast.success(editingTheme ? '主题已更新' : '主题已创建');
       onOpenChange(false);
       onSaved();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '操作失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
     }
   };
@@ -559,9 +557,7 @@ export default function ThemeManagerView() {
           config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : t.config,
         }))
       );
-    } catch {
-      toast.error('获取主题列表失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
     }
   }, []);
@@ -601,9 +597,7 @@ export default function ThemeManagerView() {
       toast.success('主题已删除');
       setDeleteId(null);
       fetchThemes();
-    } catch {
-      toast.error('删除失败');
-    }
+    } catch { /* handled by apiFetch */ }
   };
 
   const getThemeConfig = (theme: Theme & { config: string | ThemeConfig }): ThemeConfig => {

@@ -83,16 +83,12 @@ export async function apiFetch<T = unknown>(
   const displayMsg = serverMsg || res.statusText || `请求失败 (${res.status})`;
   const fullMsg = serverDetail ? `${displayMsg}：${serverDetail}` : displayMsg;
 
-  // Toast common HTTP errors
-  if (res.status === 401) {
+  // Always toast the error — callers should NOT add duplicate toasts in catch blocks.
+  // This ensures the user sees the actual server message (e.g. "未授权，请先登录")
+  // instead of a generic "获取xxx失败".
+  if (res.status !== 422) {
+    // 422 = validation error — the caller (form) shows field-level errors, don't double-toast
     toast.error(displayMsg);
-  } else if (res.status === 429) {
-    toast.error(displayMsg);
-  } else if (res.status >= 500) {
-    // Only toast 500+ if we have no detail (detail means it's a known issue)
-    if (!serverDetail) {
-      toast.error(displayMsg);
-    }
   }
 
   throw new FetchError(fullMsg, res.status, serverDetail);

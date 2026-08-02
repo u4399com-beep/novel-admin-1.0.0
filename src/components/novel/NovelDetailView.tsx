@@ -230,9 +230,7 @@ function ChapterEditorPanel({
         setTitle(data.title);
         setContent(data.content || '');
         initialLoadRef.current = true;
-      } catch {
-        toast.error('加载章节内容失败');
-      }
+      } catch { /* handled by apiFetch */ }
     };
 
     loadChapter();
@@ -267,7 +265,6 @@ function ChapterEditorPanel({
         setTimeout(() => setSaveStatus('idle'), 2000);
         onSaved();
       } catch {
-        toast.error('自动保存失败');
         setSaveStatus('idle');
       } finally {
         savingRef.current = false;
@@ -465,7 +462,6 @@ export default function NovelDetailView() {
       const data = await apiFetch(`/api/novels/${selectedNovelId}`);
       setNovel(data);
     } catch {
-      toast.error('获取小说详情失败');
       setCurrentView('novels');
     } finally {
       setLoadingNovel(false);
@@ -479,9 +475,7 @@ export default function NovelDetailView() {
     try {
       const data = await apiFetch<{ chapters?: Chapter[] }>(`/api/novels/${selectedNovelId}/chapters`);
       setChapters(data.chapters || []);
-    } catch {
-      toast.error('获取章节列表失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoadingChapters(false);
     }
   }, [selectedNovelId]);
@@ -517,9 +511,7 @@ export default function NovelDetailView() {
       triggerRefresh('dashboard');
       setCurrentView('novels');
       selectNovel(null);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '删除小说失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setDeleting(false);
       setDeleteNovelOpen(false);
     }
@@ -553,9 +545,7 @@ export default function NovelDetailView() {
       }
       triggerRefresh('chapters');
       triggerRefresh('novels');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '删除章节失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setDeleting(false);
       setDeleteChapterOpen(false);
       setDeletingChapter(null);
@@ -632,7 +622,6 @@ export default function NovelDetailView() {
         }),
       });
     } catch {
-      toast.error('排序更新失败');
       fetchChapters();
     }
   };
@@ -656,7 +645,6 @@ export default function NovelDetailView() {
         }),
       });
     } catch {
-      toast.error('排序更新失败');
       fetchChapters();
     }
   };

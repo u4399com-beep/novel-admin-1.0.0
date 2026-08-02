@@ -267,9 +267,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
             adPatterns: '',
           }),
         });
-      } catch {
-        toast.error('加载规则失败');
-      }
+      } catch { /* handled by apiFetch */ }
     }
 
     loadRule();
@@ -291,9 +289,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
 
       toast.success(ruleId ? '规则已更新' : '规则已创建');
       onSuccess();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '保存失败');
-    }
+    } catch { /* handled by apiFetch */ }
   };
 
   // Build form access object for sub-components

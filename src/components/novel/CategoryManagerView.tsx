@@ -106,9 +106,7 @@ export default function CategoryManagerView() {
       setLoading(true);
       const data: Category[] = await apiFetch('/api/categories');
       setCategories(data);
-    } catch {
-      toast.error('获取分类列表失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
     }
   }, []);
@@ -181,9 +179,7 @@ export default function CategoryManagerView() {
 
       setDialogOpen(false);
       fetchCategories();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : (editingCategory ? '更新分类失败' : '创建分类失败'));
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setSaving(false);
     }
   };
@@ -199,9 +195,7 @@ export default function CategoryManagerView() {
       toast.success('分类已删除');
       setDeleteTarget(null);
       fetchCategories();
-    } catch {
-      toast.error('删除分类失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setDeleting(false);
     }
   };

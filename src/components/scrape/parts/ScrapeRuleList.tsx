@@ -65,9 +65,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
       const data = await apiFetch(`/api/scrape-rules?${params}`);
       setRules(data.rules || []);
       setTotalPages(data.totalPages || 1);
-    } catch {
-      toast.error('获取规则列表失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
     }
   }, [page, search]);
@@ -87,9 +85,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
       await apiFetch(`/api/scrape-rules/${id}`, { method: 'DELETE' });
       toast.success('规则已删除');
       fetchRules();
-    } catch {
-      toast.error('删除失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setDeleteTarget(null);
     }
   };
@@ -102,9 +98,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
         body: JSON.stringify({ ruleId: rule.id, mode: rule.scrapeMode || 'incremental' }),
       });
       toast.success(`任务已创建: ${task.id.slice(0, 8)}...`);
-    } catch {
-      toast.error('创建任务失败，请确认采集任务API可用');
-    }
+    } catch { /* handled by apiFetch */ }
   };
 
   return (

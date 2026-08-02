@@ -86,9 +86,7 @@ export default function TagManagerView() {
       setLoading(true);
       const data = await apiFetch('/api/tags');
       setTags(data);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '获取标签失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
     }
   }, []);
@@ -144,9 +142,7 @@ export default function TagManagerView() {
       toast.success(editingTag ? '标签已更新' : '标签已创建');
       resetAndClose();
       triggerRefresh('tags');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '操作失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setSubmitting(false);
     }
   };
@@ -161,9 +157,7 @@ export default function TagManagerView() {
       toast.success('标签已删除');
       setDeleteTarget(null);
       triggerRefresh('tags');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败');
-    }
+    } catch { /* handled by apiFetch */ }
   };
 
   // ─── Render ───────────────────────────────────────────────────────────

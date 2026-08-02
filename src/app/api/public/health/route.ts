@@ -31,8 +31,9 @@ export async function GET() {
     // Prisma throws a recognizable error.
     for (const model of expectedModels) {
       try {
+        // Dynamic model access needed for health check loop
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (db as any)[model.toLowerCase()].count({ take: 1 });
+        void (db as any)[model.toLowerCase()].count({ take: 1 });
       } catch {
         missing.push(model);
       }

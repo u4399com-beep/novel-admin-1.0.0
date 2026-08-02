@@ -173,9 +173,7 @@ function SiteFormDialog({
       toast.success(editingSite ? '站点已更新' : '站点已创建');
       onOpenChange(false);
       onSaved();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '操作失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
     }
   };
@@ -578,9 +576,7 @@ export default function SiteClusterView() {
           config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : t.config,
         }))
       );
-    } catch {
-      toast.error('获取站点数据失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
     }
   }, []);
@@ -596,9 +592,7 @@ export default function SiteClusterView() {
       toast.success('站点已删除');
       setDeleteId(null);
       fetchSites();
-    } catch {
-      toast.error('删除失败');
-    }
+    } catch { /* handled by apiFetch */ }
   };
 
   const getThemeName = (themeId: string | null) => {

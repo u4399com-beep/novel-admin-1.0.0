@@ -169,9 +169,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
       setTasks(data.tasks || []);
       setTotalPages(data.totalPages || 1);
       setTotal(data.total || 0);
-    } catch {
-      toast.error('获取任务列表失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
     }
   }, [page, statusFilter]);
@@ -215,9 +213,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
       setExpandedLogs(task.logs || []);
       // Also update the task in the list with fresh data
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...task, logs: undefined } : t)));
-    } catch {
-      toast.error('获取任务详情失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setLogsLoading(false);
     }
   }, []);
@@ -249,9 +245,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
         setExpandedLogs([]);
       }
       fetchTasks();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败');
-    } finally {
+    } catch { /* handled by apiFetch */ } finally {
       setDeleting(false);
       setDeleteTarget(null);
     }
