@@ -40,6 +40,9 @@ export default function LoginPage() {
         errorKeyRef.current += 1;
       } else if (result?.ok) {
         window.location.href = '/admin';
+      } else {
+        setError('登录服务无响应，请重试');
+        errorKeyRef.current += 1;
       }
     } catch {
       setError('登录失败，请重试');

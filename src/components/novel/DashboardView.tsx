@@ -30,7 +30,6 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  ResponsiveContainer,
   Cell,
   AreaChart,
   Area,

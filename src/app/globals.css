@@ -565,3 +565,96 @@ img[loading="lazy"]:not([src]) {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ─── New Micro-interaction Utilities ──────────────────────── */
+
+/* Subtle scale on hover for interactive cards */
+.scale-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.scale-hover:hover {
+  transform: scale(1.02);
+}
+.scale-hover:active {
+  transform: scale(0.98);
+}
+
+/* Focus ring visible for keyboard nav only */
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  outline: 2px solid oklch(0.65 0.2 260);
+  outline-offset: 2px;
+  border-radius: 0.375rem;
+}
+
+/* Skeleton shimmer refined */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.94 0 0) 25%,
+    oklch(0.97 0 0) 50%,
+    oklch(0.94 0 0) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.dark .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.22 0 0) 25%,
+    oklch(0.26 0 0) 50%,
+    oklch(0.22 0 0) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* Smooth text color transition */
+.text-color-transition {
+  transition: color 0.15s ease;
+}
+
+/* Badge bounce on appear */
+@keyframes badge-pop {
+  0% { transform: scale(0.8); opacity: 0; }
+  70% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.badge-pop {
+  animation: badge-pop 0.3s ease forwards;
+}
+
+/* Pagination button hover effect */
+.page-btn {
+  transition: all 0.15s ease;
+}
+.page-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px oklch(0 0 0 / 0.08);
+}
+.page-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Smooth border-color for all elements */
+.border-transition {
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+/* Gradient text utility */
+.gradient-text {
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Glass morphism card */
+.glass {
+  background: oklch(1 0 0 / 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.dark .glass {
+  background: oklch(0.15 0 0 / 0.7);
+}

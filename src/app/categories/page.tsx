@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -127,7 +126,6 @@ function SkeletonCard() {
 
 // ─── Component ──────────────────────────────────────────────────────────
 export default function CategoriesPage() {
-  const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,10 +170,6 @@ export default function CategoriesPage() {
 
   const maxNovels = Math.max(1, ...categories.map((c) => c._count.novels));
 
-  // ── Handle card click ────────────────────────────────────────────────
-  const handleCardClick = (slug: string) => {
-    router.push(`/?categorySlug=${slug}`);
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -296,59 +290,63 @@ export default function CategoriesPage() {
               const Icon = getCategoryIcon(category.icon);
               return (
                 <motion.div key={category.id} variants={cardVariants}>
-                  <Card
-                    className="group cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-lg hover:-translate-y-1"
-                    style={{ borderLeftWidth: '4px', borderLeftColor: category.color }}
-                    onClick={() => handleCardClick(category.slug)}
+                  <Link
+                    href={`/?categorySlug=${category.slug}`}
+                    className="block"
                   >
-                    {/* Hover color wash */}
-                    <div
-                      className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
-                      style={{ backgroundColor: `${category.color}08` }}
-                    />
-                    <CardContent className="p-5 relative">
-                      <div className="flex flex-col items-center text-center">
-                        {/* Icon */}
-                        <div
-                          className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-200"
-                          style={{
-                            backgroundColor: `${category.color}15`,
-                          }}
-                        >
-                          <Icon
-                            className="h-6 w-6 transition-all duration-200 group-hover:scale-110"
-                          />
-                        </div>
-
-                        {/* Name */}
-                        <h3 className="mb-2 text-sm font-bold group-hover:text-primary transition-colors">{category.name}</h3>
-
-                        {/* Novel count with bar */}
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="h-1 flex-1 max-w-[60px] rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{
-                                width: `${Math.min(100, (category._count.novels / Math.max(1, maxNovels)) * 100)}%`,
-                                backgroundColor: category.color,
-                              }}
+                    <Card
+                      className="group overflow-hidden transition-all duration-200 hover:shadow-lg hover:-translate-y-1"
+                      style={{ borderLeftWidth: '4px', borderLeftColor: category.color }}
+                    >
+                      {/* Hover color wash */}
+                      <div
+                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                        style={{ backgroundColor: `${category.color}08` }}
+                      />
+                      <CardContent className="p-5 relative">
+                        <div className="flex flex-col items-center text-center">
+                          {/* Icon */}
+                          <div
+                            className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-200"
+                            style={{
+                              backgroundColor: `${category.color}15`,
+                            }}
+                          >
+                            <Icon
+                              className="h-6 w-6 transition-all duration-200 group-hover:scale-110"
                             />
                           </div>
-                          <span className="text-xs text-muted-foreground">{category._count.novels}</span>
+
+                          {/* Name */}
+                          <h3 className="mb-2 text-sm font-bold group-hover:text-primary transition-colors">{category.name}</h3>
+
+                          {/* Novel count with bar */}
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="h-1 flex-1 max-w-[60px] rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{
+                                  width: `${Math.min(100, (category._count.novels / Math.max(1, maxNovels)) * 100)}%`,
+                                  backgroundColor: category.color,
+                                }}
+                              />
+                            </div>
+                            <span className="text-xs text-muted-foreground">{category._count.novels}</span>
+                          </div>
+
+                          {/* Description */}
+                          {category.description && (
+                            <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                              {category.description}
+                            </p>
+                          )}
+
+                          {/* Navigate hint */}
+                          <ChevronRight className="mt-2 h-4 w-4 text-muted-foreground/0 group-hover:text-muted-foreground transition-all duration-200 group-hover:translate-x-0.5" />
                         </div>
-
-                        {/* Description */}
-                        {category.description && (
-                          <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                            {category.description}
-                          </p>
-                        )}
-
-                        {/* Navigate hint */}
-                        <ChevronRight className="mt-2 h-4 w-4 text-muted-foreground/0 group-hover:text-muted-foreground transition-all duration-200 group-hover:translate-x-0.5" />
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  </Link>
                 </motion.div>
               );
             })}

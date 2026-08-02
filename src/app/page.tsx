@@ -457,10 +457,12 @@ export default function HomePage() {
   const [suggestions, setSuggestions] = useState<{ id: string; title: string; author: string; category: { name: string; color: string } | null }[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const searchRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // ─── Fetch categories ────────────────────────────────────────────
+  const [categoriesError, setCategoriesError] = useState(false);
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -469,8 +471,12 @@ export default function HomePage() {
         if (!cancelled && res.ok) {
           const data = await res.json();
           setCategories(data);
+        } else if (!cancelled) {
+          setCategoriesError(true);
         }
-      } catch { /* ignore */ }
+      } catch {
+        if (!cancelled) setCategoriesError(true);
+      }
       if (!cancelled) setLoadingCategories(false);
     }
     load();
@@ -478,10 +484,12 @@ export default function HomePage() {
   }, []);
 
   // ─── Fetch novels ────────────────────────────────────────────────
+  const [novelsError, setNovelsError] = useState(false);
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoadingNovels(true);
+      setNovelsError(false);
       try {
         const params = new URLSearchParams({ page: String(page), pageSize: '15' });
         if (activeCategorySlug) params.set('categorySlug', activeCategorySlug);
@@ -495,8 +503,12 @@ export default function HomePage() {
           setNovels(data.novels || []);
           setTotalPages(data.totalPages || 0);
           setTotal(data.total || 0);
+        } else if (!cancelled) {
+          setNovelsError(true);
         }
-      } catch { /* ignore */ }
+      } catch {
+        if (!cancelled) setNovelsError(true);
+      }
       if (!cancelled) setLoadingNovels(false);
     }
     load();
@@ -519,20 +531,32 @@ export default function HomePage() {
   useEffect(() => {
     if (!hasQuery) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    let cancelled = false;
+    let abortController: AbortController | undefined;
     debounceRef.current = setTimeout(async () => {
+      abortController = new AbortController();
       setSuggestionsLoading(true);
       try {
-        const res = await fetch(`/api/public/search-suggestions?q=${encodeURIComponent(query)}`);
-        if (res.ok) {
+        const res = await fetch(`/api/public/search-suggestions?q=${encodeURIComponent(query)}`, {
+          signal: abortController.signal,
+        });
+        if (!cancelled && res.ok) {
           const data = await res.json();
           setSuggestions(data.suggestions || []);
+          setActiveSuggestion(-1);
           setSuggestionsOpen(true);
         }
-      } catch { /* ignore */ }
-      setSuggestionsLoading(false);
+      } catch (err) {
+        if (!cancelled && !(err instanceof DOMException && err.name === 'AbortError')) {
+          // Network error — silently ignore for search suggestions
+        }
+      }
+      if (!cancelled) setSuggestionsLoading(false);
     }, 300);
     return () => {
+      cancelled = true;
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      abortController?.abort();
     };
   }, [hasQuery, query]);
 
@@ -661,18 +685,18 @@ export default function HomePage() {
             >
               首页
             </button>
-            <button
-              onClick={() => router.push('/categories')}
+            <Link
+              href="/categories"
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
               分类
-            </button>
-            <button
-              onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); router.push('/rankings'); }}
+            </Link>
+            <Link
+              href="/rankings"
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
               排行榜
-            </button>
+            </Link>
           </nav>
 
           {/* Right actions */}
@@ -826,7 +850,23 @@ export default function HomePage() {
                       setSuggestionsOpen(false);
                     }
                   }}
-                  onKeyDown={(e) => { if (e.key === 'Escape') setSuggestionsOpen(false); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setSuggestionsOpen(false);
+                      setActiveSuggestion(-1);
+                    } else if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setActiveSuggestion((prev) => Math.min(prev + 1, suggestions.length - 1));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setActiveSuggestion((prev) => Math.max(prev - 1, -1));
+                    } else if (e.key === 'Enter' && activeSuggestion >= 0 && suggestions[activeSuggestion]) {
+                      e.preventDefault();
+                      router.push(`/novels/${suggestions[activeSuggestion].id}`);
+                      setSuggestionsOpen(false);
+                      setActiveSuggestion(-1);
+                    }
+                  }}
                   onFocus={() => { if (suggestions.length > 0) setSuggestionsOpen(true); }}
                   className="h-10 pl-10 pr-20 text-sm rounded-lg w-full"
                 />
@@ -855,15 +895,19 @@ export default function HomePage() {
                         搜索中...
                       </div>
                     ) : (
-                      <div className="max-h-80 overflow-y-auto py-1">
-                        {suggestions.map((item) => (
-                          <button
+                      <ul role="listbox" className="max-h-80 overflow-y-auto py-1">
+                        {suggestions.map((item, idx) => (
+                          <li
                             key={item.id}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-accent transition-colors"
+                            role="option"
+                            aria-selected={idx === activeSuggestion}
+                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer ${idx === activeSuggestion ? 'bg-accent' : 'hover:bg-accent/70'}`}
                             onClick={() => {
                               router.push(`/novels/${item.id}`);
                               setSuggestionsOpen(false);
+                              setActiveSuggestion(-1);
                             }}
+                            onMouseEnter={() => setActiveSuggestion(idx)}
                           >
                             <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <div className="min-w-0 flex-1">
@@ -885,9 +929,9 @@ export default function HomePage() {
                                 {item.category.name}
                               </span>
                             )}
-                          </button>
+                          </li>
                         ))}
-                      </div>
+                      </ul>
                     )}
                   </motion.div>
                 )}
@@ -1024,6 +1068,33 @@ export default function HomePage() {
               >
                 <SkeletonGrid />
               </motion.div>
+            ) : novelsError ? (
+              <motion.div
+                key="error-state"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="flex flex-col items-center justify-center py-20 text-center"
+              >
+                <div className="h-16 w-16 rounded-2xl bg-destructive/10 flex items-center justify-center mb-4">
+                  <FileText className="h-8 w-8 text-destructive/60" />
+                </div>
+                <h3 className="text-base font-medium mb-1">加载失败</h3>
+                <p className="text-sm text-muted-foreground mb-4">无法获取小说列表，请检查网络后重试</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setNovelsError(false);
+                    setPage((p) => p); // trigger re-fetch
+                  }}
+                  className="gap-1.5"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  重试
+                </Button>
+              </motion.div>
             ) : novels.length === 0 ? (
               <motion.div
                 key="empty-state"
@@ -1083,7 +1154,7 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-8 w-8 page-btn"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
@@ -1099,7 +1170,7 @@ export default function HomePage() {
                     key={p}
                     variant={p === page ? 'default' : 'outline'}
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-8 w-8 page-btn"
                     onClick={() => setPage(p)}
                   >
                     {p}
@@ -1109,7 +1180,7 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-8 w-8 page-btn"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >

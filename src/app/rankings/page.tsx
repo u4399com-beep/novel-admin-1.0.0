@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Trophy, Medal, BookOpen } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BackToTop } from '@/components/BackToTop';
 import {
@@ -109,7 +111,6 @@ function NovelRow({
   statLabel: string;
   index?: number;
 }) {
-  const router = useRouter();
   const isTop3 = rank <= 3;
   const style = RANK_STYLES[rank];
 
@@ -120,21 +121,15 @@ function NovelRow({
       initial={{ opacity: 0, y: 12, x: -8 }}
       animate={{ opacity: 1, y: 0, x: 0 }}
       transition={{ duration: 0.3, delay: index * 0.04, ease: 'easeOut' as const }}
-      role="button"
-      tabIndex={0}
-      onClick={() => router.push(`/novels/${novel.id}`)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          router.push(`/novels/${novel.id}`);
-        }
-      }}
-      className={
-        isTop3
-          ? `relative rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 cursor-pointer group overflow-hidden ${style?.border}`
-          : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 cursor-pointer group'
-      }
     >
+      <Link
+        href={`/novels/${novel.id}`}
+        className={
+          isTop3
+            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden ${style?.border}`
+            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group'
+        }
+      >
       {/* Top 3 gradient background */}
       {isTop3 && (
         <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-background via-muted/30 to-background pointer-events-none" />
@@ -185,11 +180,12 @@ function NovelRow({
         {/* Stat column */}
         <div className="shrink-0 text-right">
           <div className={isTop3 ? 'text-base sm:text-lg font-bold' : 'text-sm font-semibold'}>
-            —
+            {novel.updatedAt ? formatDistanceToNow(new Date(novel.updatedAt), { addSuffix: true, locale: zhCN }) : '—'}
           </div>
-          <div className="text-[11px] text-muted-foreground">{statLabel}</div>
+          <div className="text-[11px] text-muted-foreground">更新于</div>
         </div>
       </div>
+      </Link>
     </motion.div>
   );
 }
@@ -233,28 +229,37 @@ function EmptyState() {
 
 // ─── Tab Content ─────────────────────────────────────────────────────
 
-function RankingTabContent({ tab }: { tab: TabConfig }) {
+function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean }) {
   const [novels, setNovels] = useState<RankingNovel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  const fetchNovels = useCallback(async () => {
+  const fetchNovels = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
+    setError(false);
     try {
-      const res = await fetch(`/api/public/novels?sort=${tab.sortParam}&pageSize=30`);
+      const res = await fetch(`/api/public/novels?sort=${tab.sortParam}&pageSize=30`, { signal });
       if (res.ok) {
         const data = await res.json();
         setNovels(data.novels || []);
+      } else if (!signal?.aborted) {
+        setError(true);
       }
-    } catch {
-      // silently ignore
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        setError(true);
+      }
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [tab.sortParam]);
 
   useEffect(() => {
-    fetchNovels();
-  }, [fetchNovels]);
+    if (!active) return;
+    const abortController = new AbortController();
+    fetchNovels(abortController.signal);
+    return () => abortController.abort();
+  }, [active, fetchNovels]);
 
   if (loading) {
     return (
@@ -262,6 +267,18 @@ function RankingTabContent({ tab }: { tab: TabConfig }) {
         {Array.from({ length: 10 }).map((_, i) => (
           <SkeletonRow key={i} />
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <BookOpen className="w-10 h-10 text-muted-foreground/30 mb-3" />
+        <p className="text-sm text-muted-foreground mb-3">加载排行榜数据失败</p>
+        <Button variant="outline" size="sm" onClick={() => fetchNovels()}>
+          重试
+        </Button>
       </div>
     );
   }
@@ -306,6 +323,8 @@ function RankingTabContent({ tab }: { tab: TabConfig }) {
 // ─── Page Component ──────────────────────────────────────────────────
 
 export default function RankingsPage() {
+  const [activeTab, setActiveTab] = useState('weekly');
+
   // ─── SEO: set document title ──────────────────────────────────────
   useEffect(() => {
     document.title = '排行榜 - 小说阁';
@@ -350,7 +369,7 @@ export default function RankingsPage() {
         </motion.div>
 
         {/* Tabs */}
-        <Tabs defaultValue="weekly" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full sm:w-auto">
             {TABS.map((tab) => (
               <TabsTrigger key={tab.key} value={tab.key}>
@@ -361,7 +380,7 @@ export default function RankingsPage() {
 
           {TABS.map((tab) => (
             <TabsContent key={tab.key} value={tab.key} className="mt-6">
-              <RankingTabContent tab={tab} />
+              <RankingTabContent tab={tab} active={activeTab === tab.key} />
             </TabsContent>
           ))}
         </Tabs>

@@ -186,9 +186,21 @@ export default function AdminPage() {
   }
 
   // ─── Auth guard ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!session) {
+      router.push('/login');
+    }
+  }, [session, router]);
+
   if (!session) {
-    router.push('/login');
-    return null;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Shield className="h-8 w-8 text-primary animate-pulse" />
+          <p className="text-sm text-muted-foreground">正在跳转登录...</p>
+        </div>
+      </div>
+    );
   }
 
   // ─── View renderer ────────────────────────────────────────────────────

@@ -181,11 +181,15 @@ export default function NovelListView() {
     if (selectedIds.size === 0 || deleting) return;
     setDeleting(true);
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         Array.from(selectedIds).map((id) =>
           apiFetch(`/api/novels/${id}`, { method: 'DELETE' }),
         ),
       );
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length > 0) {
+        console.warn(`Batch delete: ${failed.length}/${results.length} failed`);
+      }
       setSelectedIds(new Set());
       triggerRefresh('novels');
     } catch {

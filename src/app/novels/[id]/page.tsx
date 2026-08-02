@@ -110,10 +110,16 @@ export default async function NovelDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [novel, chapters] = await Promise.all([
-    getNovel(id),
-    getChapters(id),
-  ]);
+  let novel: NovelDetail | null = null;
+  let chapters: Chapter[] = [];
+  try {
+    [novel, chapters] = await Promise.all([
+      getNovel(id),
+      getChapters(id),
+    ]);
+  } catch (error) {
+    console.error('Failed to load novel detail:', error);
+  }
 
   if (!novel) {
     notFound();
