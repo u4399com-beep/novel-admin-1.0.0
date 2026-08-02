@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { BookOpen, Menu } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
@@ -37,20 +38,15 @@ function SidebarContent() {
 
   // Fetch total novels count for footer & start refresh timer on mount
   useEffect(() => {
-    const controller = new AbortController();
-
     // Fetch novel count
     (async () => {
       try {
-        const res = await fetch('/api/dashboard', { signal: controller.signal });
-        if (res.ok) {
-          const data = await res.json();
-          if (typeof data.totalNovels === 'number') {
-            setTotalNovels(data.totalNovels);
-          }
+        const data = await apiFetch<{ totalNovels?: number }>('/api/dashboard');
+        if (typeof data.totalNovels === 'number') {
+          setTotalNovels(data.totalNovels);
         }
       } catch {
-        // silently fail – footer will show fallback
+        // apiFetch toasts errors; footer will show fallback
       }
     })();
 
@@ -68,7 +64,6 @@ function SidebarContent() {
     }, 60000);
 
     return () => {
-      controller.abort();
       clearInterval(timer);
     };
   }, []);
@@ -203,11 +198,6 @@ function MobileSidebar() {
   // Close sheet when view changes (e.g. nav via SidebarContent)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setOpen(false); }, [currentView]);
-
-  const handleNav = (view: ViewType) => {
-    setCurrentView(view);
-    setOpen(false);
-  };
 
   return (
     <div className="lg:hidden">

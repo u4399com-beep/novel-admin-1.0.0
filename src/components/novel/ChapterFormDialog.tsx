@@ -118,7 +118,6 @@ export function ChapterFormDialog() {
 
   // Auto-suggest next chapter number for new chapters
   const [titlePlaceholder, setTitlePlaceholder] = useState('请输入章节标题');
-  const nextChapterNumRef = useRef<number | null>(null);
 
   // Fetch existing chapters to determine next chapter number
   useEffect(() => {
@@ -131,7 +130,6 @@ export function ChapterFormDialog() {
 
         if (chapters.length === 0) {
           setTitlePlaceholder('请输入章节标题，如：第一章 开始');
-          nextChapterNumRef.current = null;
           return;
         }
 
@@ -145,11 +143,9 @@ export function ChapterFormDialog() {
         }
 
         const nextNum = maxNum + 1;
-        nextChapterNumRef.current = nextNum;
         setTitlePlaceholder(`第${nextNum}章`);
       } catch {
         setTitlePlaceholder('请输入章节标题');
-        nextChapterNumRef.current = null;
       }
     };
 
@@ -208,9 +204,9 @@ export function ChapterFormDialog() {
         if (isEditing && editingChapter) {
         // Update existing chapter
         const body: Record<string, unknown> = { title: values.title };
-        // Only include content if we actually have it (fetched or new chapter)
+        // Only send content if we successfully fetched it or user typed new content
         // Never send empty string for content on edit — it would erase existing content
-        if (fetchedContent !== null || !isEditing) {
+        if (fetchedContent !== null || values.content.trim()) {
           body.content = values.content;
         }
         await apiFetch(`/api/chapters/${editingChapter.id}`, {

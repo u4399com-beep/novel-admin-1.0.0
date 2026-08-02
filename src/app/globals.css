@@ -925,3 +925,146 @@ img[loading="lazy"]:not([src]) {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
 }
+
+/* ─── New Utilities (Round 00:08) ──────────────────────── */
+
+/* Fade in from right for slide-in panels */
+.slide-in-right {
+  animation: slide-in-right-in 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes slide-in-right-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Button press scale effect */
+.btn-press {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.btn-press:active {
+  transform: scale(0.95);
+}
+
+/* Subtle background color shift on hover */
+.bg-shift {
+  transition: background-color 0.2s ease;
+}
+.bg-shift:hover {
+  background-color: hsl(var(--accent));
+}
+
+/* Text shadow for hero headings */
+.text-shadow-sm {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.dark .text-shadow-sm {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Underline animation for nav links */
+.nav-underline {
+  position: relative;
+}
+.nav-underline::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: hsl(var(--primary));
+  transition: width 0.2s ease, left 0.2s ease;
+  border-radius: 1px;
+}
+.nav-underline:hover::after,
+.nav-underline.active::after {
+  width: 100%;
+  left: 0;
+}
+
+/* Pulse ring for notification dots */
+.pulse-ring {
+  position: relative;
+}
+.pulse-ring::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid hsl(var(--primary));
+  opacity: 0;
+  animation: pulse-ring-anim 1.5s ease-out infinite;
+}
+@keyframes pulse-ring-anim {
+  0% { opacity: 0.6; transform: scale(0.8); }
+  100% { opacity: 0; transform: scale(1.4); }
+}
+
+/* Smooth color transition for status badges */
+.badge-transition {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Content fade mask for scroll containers */
+.scroll-fade-bottom {
+  mask-image: linear-gradient(to bottom, black 90%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent);
+}
+
+/* Skeleton text shimmer for longer blocks */
+.skeleton-text {
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.08) 50%, hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-text-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+  color: transparent !important;
+}
+@keyframes skeleton-text-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Focus visible ring for interactive items */
+.focus-visible-ring:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* Hover grow effect for icons */
+.icon-grow {
+  transition: transform 0.2s ease;
+}
+.icon-grow:hover {
+  transform: scale(1.15);
+}
+
+/* Divider with fade edges */
+.divider-fade {
+  height: 1px;
+  background: linear-gradient(to right, transparent, hsl(var(--border)) 20%, hsl(var(--border)) 80%, transparent);
+}
+
+/* Text selection color */
+::selection {
+  background-color: hsl(var(--primary) / 0.2);
+}
+
+/* Smooth scrollbar for custom scrollbars */
+.scrollbar-thin {
+  scrollbar-width: 6px;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.5);
+}

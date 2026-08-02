@@ -283,31 +283,22 @@ export default function NovelFormDialog() {
       const url = isEditing ? `/api/novels/${editingNovel.id}` : "/api/novels";
       const method = isEditing ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
-      if (res.ok) {
-        toast.success(isEditing ? "编辑成功" : "创建成功", {
-          description: isEditing
-            ? `《${values.title}》已更新`
-            : `《${values.title}》已创建`,
-        });
-        setNovelFormOpen(false);
-        triggerRefresh('novels');
-        triggerRefresh('dashboard');
-      } else {
-        const err = await res.json().catch(() => null);
-        toast.error(isEditing ? "编辑失败" : "创建失败", {
-          description: err?.error || "请稍后重试",
-        });
-      }
-    } catch {
-      toast.error(isEditing ? "编辑失败" : "创建失败", {
-        description: "网络错误，请稍后重试",
+      toast.success(isEditing ? "编辑成功" : "创建成功", {
+        description: isEditing
+          ? `《${values.title}》已更新`
+          : `《${values.title}》已创建`,
       });
+      setNovelFormOpen(false);
+      triggerRefresh('novels');
+      triggerRefresh('dashboard');
+    } catch {
+      /* apiFetch already shows error toast */
     } finally {
       setSubmitting(false);
     }
@@ -351,10 +342,10 @@ export default function NovelFormDialog() {
 
             {/* Slug (auto-generated, read-only) */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+              <span className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
                 URL标识
                 <span className="text-xs text-muted-foreground/60 font-normal">(自动生成)</span>
-              </label>
+              </span>
               <div className="flex items-center h-9 rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground font-mono truncate">
                 {slug || '—'}
               </div>

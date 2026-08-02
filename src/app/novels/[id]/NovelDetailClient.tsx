@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
   BookOpen,
+  CheckCircle2,
+  Circle,
   FileText,
   Clock,
   ChevronLeft,
@@ -182,6 +184,14 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
 
   // ─── Reading progress ────────────────────────────────────────────
   const { lastChapterIndex, saveProgress } = useReadingProgress(novel.id, chapters);
+  // Clamp to valid range (chapters may have been deleted since progress was saved)
+  const safeLastChapterIndex = lastChapterIndex !== null && lastChapterIndex < chapters.length
+    ? lastChapterIndex : null;
+
+  // Chapter content progress (wordCount > 0 as proxy for "has content")
+  const chaptersWithContent = chapters.filter((c) => c.wordCount > 0).length;
+  const contentProgress = chapters.length > 0
+    ? Math.round((chaptersWithContent / chapters.length) * 100) : 0;
 
   const openReader = useCallback(
     (index: number) => {
@@ -397,11 +407,11 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                 <Button
                   size="sm"
                   disabled={chapters.length === 0}
-                  onClick={() => openReader(lastChapterIndex ?? 0)}
+                  onClick={() => openReader(safeLastChapterIndex ?? 0)}
                   className="shrink-0 mt-1 gap-1.5"
                 >
                   <BookOpen className="h-4 w-4" />
-                  {lastChapterIndex !== null ? '继续阅读' : '开始阅读'}
+                  {safeLastChapterIndex !== null ? '继续阅读' : '开始阅读'}
                 </Button>
               </div>
               <motion.p
@@ -502,7 +512,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
         </motion.section>
 
         {/* ─── Reading progress indicator ──────────────────────── */}
-        {lastChapterIndex !== null && chapters.length > 0 && (
+        {safeLastChapterIndex !== null && chapters.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -513,17 +523,17 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
             <span className="text-sm text-muted-foreground">
               上次阅读到{' '}
               <button
-                onClick={() => openReader(lastChapterIndex)}
+                onClick={() => openReader(safeLastChapterIndex)}
                 className="text-primary hover:underline font-medium"
               >
-                第{chapters[lastChapterIndex].sortOrder}章 {chapters[lastChapterIndex].title}
+                第{chapters[safeLastChapterIndex].sortOrder}章 {chapters[safeLastChapterIndex].title}
               </button>
             </span>
             <Button
               variant="ghost"
               size="sm"
               className="ml-auto h-7 text-xs"
-              onClick={() => openReader(lastChapterIndex)}
+              onClick={() => openReader(safeLastChapterIndex)}
             >
               继续阅读
             </Button>
@@ -534,10 +544,30 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
         <section className="py-8">
           <div className="flex items-center justify-between border-b pb-3 mb-4">
             <h2 className="text-lg font-semibold">章节目录</h2>
-            <span className="text-sm text-muted-foreground tabular-nums">
-              共 {chapters.length} 章
-            </span>
+            <div className="flex items-center gap-2">
+              {chaptersWithContent > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  <span className="text-foreground font-medium tabular-nums">{chaptersWithContent}</span>/{chapters.length} 有内容
+                </span>
+              )}
+              <span className="text-sm text-muted-foreground tabular-nums">
+                共 {chapters.length} 章
+              </span>
+            </div>
           </div>
+
+          {/* Content progress bar */}
+          {chapters.length > 0 && (
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-primary/70 progress-smooth"
+                  style={{ width: `${contentProgress}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground tabular-nums">{contentProgress}%</span>
+            </div>
+          )}
 
           {chapters.length === 0 ? (
             <div className="py-16 text-center">
@@ -549,7 +579,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
               variants={containerVariants}
               initial="hidden"
               animate="show"
-              className="max-h-[600px] overflow-y-auto rounded-lg border"
+              className="max-h-[600px] overflow-y-auto rounded-lg border scrollbar-thin"
             >
               {chapters.map((chapter, index) => (
                 <motion.button
@@ -564,6 +594,10 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-xs text-muted-foreground tabular-nums shrink-0">{chapter.sortOrder}.</span>
+                    {chapter.wordCount > 0
+                      ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500/60" />
+                      : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/30" />
+                    }
                     <span className="text-sm truncate group-hover:text-primary transition-colors">
                       {chapter.title}
                     </span>
@@ -574,7 +608,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                     )}
                   </div>
                   {lastChapterIndex === index && (
-                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 text-primary border-primary/30">
+                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 text-primary border-primary/30 badge-transition">
                       上次
                     </Badge>
                   )}
@@ -653,6 +687,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
+                      aria-label="章节目录"
                       onClick={() => setShowChapterSidebar((p) => !p)}
                     >
                       <List className="h-3.5 w-3.5" />
@@ -666,6 +701,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label="阅读设置"
                       className={
                         'h-7 w-7 ' + (showSettings ? 'bg-primary/10 text-primary' : '')
                       }
@@ -683,6 +719,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
+                      aria-label={readerFullscreen ? "退出全屏" : "全屏"}
                       onClick={() => setReaderFullscreen((p) => !p)}
                     >
                       {readerFullscreen ? (

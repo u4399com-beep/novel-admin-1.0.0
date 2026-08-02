@@ -93,7 +93,7 @@ export default function LoginPage() {
           <motion.div
             className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/25"
             animate={{ y: [0, -4, 0] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' as const }}
           >
             <BookOpen className="h-7 w-7 text-primary-foreground" />
           </motion.div>
