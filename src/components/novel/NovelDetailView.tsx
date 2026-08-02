@@ -27,6 +27,7 @@ import {
   Check,
   Square,
   XCircle,
+  Download,
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
@@ -599,6 +600,7 @@ export default function NovelDetailView() {
   const [deleteChapterOpen, setDeleteChapterOpen] = useState(false);
   const [deletingChapter, setDeletingChapter] = useState<Chapter | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
   const [readingChapter, setReadingChapter] = useState<Chapter | null>(null);
   const [readerOpen, setReaderOpen] = useState(false);
@@ -712,6 +714,29 @@ export default function NovelDetailView() {
     if (!novel) return;
     setEditingNovel(novel);
     setNovelFormOpen(true);
+  };
+
+  const handleExport = async () => {
+    if (!novel || exporting) return;
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/novels/${novel.id}/export?format=json`, { credentials: 'include' });
+      if (!res.ok) throw new Error('导出失败');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${novel.title.replace(/[\\/:*?"<>|]/g, '_')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('导出成功');
+    } catch {
+      toast.error('导出失败，请重试');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDeleteNovel = async () => {
@@ -978,6 +1003,10 @@ export default function NovelDetailView() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="outline" size="sm" disabled={exporting} onClick={handleExport}>
+                      {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                      {exporting ? '导出中...' : '导出'}
+                    </Button>
                     <Button variant="outline" size="sm" onClick={handleEditNovel}>
                       <Pencil className="size-3.5" />
                       编辑小说

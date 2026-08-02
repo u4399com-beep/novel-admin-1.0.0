@@ -164,6 +164,7 @@ export function DashboardView() {
   const [activityData, setActivityData] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activityError, setActivityError] = useState(false);
 
   const refreshDashboard = useAppStore((s) => s.refreshVersions['dashboard'] ?? 0);
   const selectNovel = useAppStore((s) => s.selectNovel);
@@ -186,6 +187,8 @@ export function DashboardView() {
       }
       if (activityRes.status === 'fulfilled') {
         setActivityData(activityRes.value);
+      } else {
+        setActivityError(true);
       }
     } finally {
       setLoading(false);
@@ -726,6 +729,16 @@ export function DashboardView() {
                   </div>
                 </div>
               ))}
+            </div>
+          ) : activityError ? (
+            <div className="flex py-8 flex-col items-center justify-center text-sm text-muted-foreground">
+              <p>活动数据加载失败</p>
+              <button
+                className="mt-1.5 text-xs text-muted-foreground hover:text-foreground hover-underline transition-colors"
+                onClick={() => fetchDashboard()}
+              >
+                重试
+              </button>
             </div>
           ) : !activityData?.recentEvents.length ? (
             <div className="flex py-8 items-center justify-center text-sm text-muted-foreground">

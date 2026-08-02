@@ -354,12 +354,15 @@ export default function RankingsPage() {
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40">
               <Trophy className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             </div>
-            <div>
+            <div className="flex-1">
               <h1 className="text-xl sm:text-2xl font-bold">排行榜</h1>
               <p className="text-sm text-muted-foreground">热门小说排行，发现好书</p>
             </div>
-          </motion.div>
-        </motion.div>
+            <div className="hidden sm:flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5">
+              <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Top 30</span>
+            </div>
+          </motion.div>        </motion.div>
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

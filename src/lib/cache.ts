@@ -37,6 +37,8 @@ function startCleanupTimer(): void {
       else break;
     }
   }, CLEANUP_INTERVAL);
+  // Allow process to exit even if timer is active
+  if (cleanupTimer.unref) cleanupTimer.unref();
 }
 
 // Start the cleanup timer when this module is loaded

@@ -210,14 +210,26 @@ export default function CategoriesPage() {
         </nav>
 
         {/* ── Page Header ────────────────────────────────────────────── */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            分类浏览
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            探索各类小说分类，找到你感兴趣的故事
-          </p>
-        </div>
+        <motion.div
+          className="mb-8"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/25">
+              <Compass className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+                分类浏览
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                探索各类小说分类，找到你感兴趣的故事
+              </p>
+            </div>
+          </div>
+        </motion.div>
 
         {/* ── Search ──────────────────────────────────────────────────── */}
         <div className="mb-6 max-w-full sm:max-w-md">

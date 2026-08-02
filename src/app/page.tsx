@@ -311,6 +311,11 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
         <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors duration-200">
           {novel.title}
         </h3>
+        {novel.description && (
+          <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-1">
+            {novel.description}
+          </p>
+        )}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="line-clamp-1">{novel.author}</span>
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
