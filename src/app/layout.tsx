@@ -38,7 +38,15 @@ export default function RootLayout({
       >
         <Providers>
           <ScrollProgress />
-          {children}
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999] focus:rounded-md focus:bg-primary focus:px-3 focus:py-1.5 focus:text-primary-foreground focus:text-sm focus:shadow-md focus:outline-none"
+          >
+            跳到主要内容
+          </a>
+          <main id="main-content">
+            {children}
+          </main>
           <Toaster richColors position="top-right" />
         </Providers>
       </body>

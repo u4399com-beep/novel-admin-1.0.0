@@ -201,7 +201,13 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     coverRef.current.style.transform = 'rotateY(0deg) rotateX(0deg)';
   }, []);
 
-  // ─── Reader state ────────────────────────────────────────────────
+  const [filterBookmarks, setFilterBookmarks] = useState(false);
+  const displayedChapters = useMemo(() => {
+    if (filterBookmarks && bookmarks.length > 0) return chapters.filter((_, idx) => isBookmarked(idx));
+    return chapters;
+  }, [chapters, bookmarks.length, filterBookmarks, isBookmarked]);
+
+  // ─── Reader state ───────────────────────────────────────────────
   const [readerOpen, setReaderOpen] = useState(false);
   const [readerFullscreen, setReaderFullscreen] = useState(false);
   const [showChapterSidebar, setShowChapterSidebar] = useState(false);
@@ -842,10 +848,34 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             </div>
           )}
 
-          {chapters.length === 0 ? (
+          {/* Chapter list header with bookmark filter */}
+          {chapters.length > 0 && (
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-muted-foreground">
+                章节目录{bookmarks.length > 0 && ` (${bookmarks.length}个书签)`}
+              </span>
+              <button
+                onClick={() => setFilterBookmarks((p) => !p)}
+                className={`text-xs px-2 py-1 rounded-md transition-colors ${filterBookmarks ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+              >
+                {filterBookmarks ? '显示全部' : '仅书签'}
+              </button>
+            </div>
+          )}
+
+          {displayedChapters.length === 0 ? (
             <div className="py-16 text-center">
-              <FileText className="mx-auto h-10 w-10 text-muted-foreground/40" />
-              <p className="mt-3 text-sm text-muted-foreground">暂无章节</p>
+              {filterBookmarks ? (
+                <>
+                  <BookmarkCheck className="mx-auto h-10 w-10 text-muted-foreground/40" />
+                  <p className="mt-3 text-sm text-muted-foreground">暂无书签</p>
+                </>
+              ) : (
+                <>
+                  <FileText className="mx-auto h-10 w-10 text-muted-foreground/40" />
+                  <p className="mt-3 text-sm text-muted-foreground">暂无章节</p>
+                </>
+              )}
             </div>
           ) : (
             <>

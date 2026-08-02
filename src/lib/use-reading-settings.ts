@@ -66,7 +66,12 @@ function loadSettings(): ReadingSettings {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved) as Partial<ReadingSettings>;
-      return { ...DEFAULT_SETTINGS, ...parsed };
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        fontSize: Math.max(12, Math.min(28, parsed.fontSize ?? 16)),
+        lineHeight: Math.max(1.2, Math.min(3.0, parsed.lineHeight ?? 1.9)),
+      };
     }
   } catch {
     // ignore

@@ -2836,3 +2836,85 @@ nav button[data-active='true'] {
   .cover-zoom > div { transition: none; }
   .hover-lift { transition: none; }
 }
+
+/* ─── Round N+2 CSS utilities ────────────────────────────────────── */
+
+/* Bookmark active state pulse */
+.bookmark-active {
+  color: hsl(45 90% 50%);
+  animation: bookmarkPulse 0.3s ease-out;
+}
+@keyframes bookmarkPulse {
+  0% { transform: scale(1); }
+ 50% { transform: scale(1.2); }
+ 100% { transform: scale(1); }
+}
+
+/* Smooth number transition for stat counters */
+.count-animate {
+  display: inline-block;
+  transition: all 0.3s ease-out;
+}
+
+/* Subtle border glow on hover */
+.glow-border {
+  border: 1px solid hsl(var(--border));
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.glow-border:hover {
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.15);
+}
+
+/* Chapter row reading indicator */
+.chapter-reading {
+  position: relative;
+}
+.chapter-reading::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+ transform: translateY(-50%);
+  width: 2px;
+  height: 60%;
+  background: hsl(var(--primary));
+  border-radius: 1px;
+  opacity: 0.5;
+}
+
+/* Skeleton text line placeholder */
+.skeleton-line {
+  height: 1em;
+  border-radius: 0.25em;
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.06) 50%, hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Focus group container */
+.focus-group:focus-within {
+ outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Staggered list animation */
+.list-stagger > * {
+  opacity: 0;
+  transform: translateY(4px);
+  animation: listFadeIn 0.3s ease-out forwards;
+}
+.list-stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.list-stagger > *:nth-child(2) { animation-delay: 0.04s; }
+.list-stagger > *:nth-child(3) { animation-delay: 0.06s; }
+.list-stagger > *:nth-child(4) { animation-delay: 0.08s; }
+.list-stagger > *:nth-child(5) { animation-delay: 0.10s; }
+.list-stagger > *:nth-child(6) { animation-delay: 0.12s; }
+.list-stagger > *:nth-child(7) { animation-delay: 0.14s; }
+.list-stagger > *:nth-child(8) { animation-delay: 0.16s; }
+.list-stagger > *:nth-child(9) { animation-delay: 0.18s; }
+.list-stagger > *:nth-child(10) { animation-delay: 0.20s; }
+@keyframes listFadeIn {
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -3,6 +3,34 @@ import { NextRequest, NextResponse } from "next/server";
 import { sanitizeField } from "@/lib/api-utils";
 import { withPublicRateLimit } from "@/lib/api-auth";
 
+// ─── Simple IP-based rate limiter for public endpoints ──────────────
+const _rateStore = new Map<string, { count: number; resetAt: number }>();
+const PUBLIC_RATE_LIMIT = 60; // requests per minute
+const PUBLIC_RATE_WINDOW = 60_000; // 1 minute
+
+function publicRateLimit(request: NextRequest): boolean {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const now = Date.now();
+  const entry = _rateStore.get(ip);
+  if (!entry || now > entry.resetAt) {
+    _rateStore.set(ip, { count: 1, resetAt: now + PUBLIC_RATE_WINDOW });
+    return true;
+  }
+  entry.count++;
+  if (entry.count > PUBLIC_RATE_LIMIT) return false;
+  return true;
+}
+
+// Cleanup expired entries periodically
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, val] of _rateStore) {
+      if (now > val.resetAt) _rateStore.delete(key);
+    }
+  }, 60_000);
+}
+
 // ─── 23qb.net 字数区间映射 ─────────────────────────────────────────
 const WORD_COUNT_RANGES: Record<string, { min: number; max: number }> = {
   all:        { min: 0,     max: Infinity },
