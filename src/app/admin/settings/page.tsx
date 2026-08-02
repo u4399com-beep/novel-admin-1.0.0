@@ -107,15 +107,22 @@ export default function SettingsPage() {
   // Import categories
   const handleImportCategories = useCallback(async () => {
     try {
-      await fetch('/api/public/seed-categories', { method: 'POST' });
+      const res = await fetch('/api/public/seed-categories', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || '导入失败');
+      }
       toast.success('分类导入成功');
-    } catch {
-      toast.error('分类导入失败');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '分类导入失败');
     }
   }, []);
 
   // Clear cache
   const handleClearCache = useCallback(() => {
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n))));
+    }
     toast.success('缓存已清空');
   }, []);
 

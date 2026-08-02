@@ -544,6 +544,7 @@ export default function ThemeManagerView() {
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [editTheme, setEditTheme] = useState<Theme | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [previewTheme, setPreviewTheme] = useState<{ config: ThemeConfig; name: string } | null>(null);
@@ -594,12 +595,15 @@ export default function ThemeManagerView() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
+    setDeleting(true);
     try {
       await apiFetch(`/api/themes/${deleteId}`, { method: 'DELETE' });
       toast.success('主题已删除');
       setDeleteId(null);
       fetchThemes();
-    } catch { /* handled by apiFetch */ }
+    } catch { /* handled by apiFetch */ } finally {
+      setDeleting(false);
+    }
   };
 
   const getThemeConfig = (theme: Theme & { config: string | ThemeConfig }): ThemeConfig => {
@@ -866,7 +870,7 @@ export default function ThemeManagerView() {
       {/* Edit / Create Dialog */}
       <ThemeFormDialog
         open={formOpen}
-        onOpenChange={(open) => { if (!open) { setFormOpen(false); setEditTheme(null as any); } }}
+        onOpenChange={(open) => { if (!open) { setFormOpen(false); setEditTheme(null); } }}
         editingTheme={editTheme}
         onSaved={fetchThemes}
       />
@@ -894,8 +898,12 @@ export default function ThemeManagerView() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              删除
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleDelete(); }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? '删除中...' : '删除'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

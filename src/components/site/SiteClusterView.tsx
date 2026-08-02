@@ -655,6 +655,7 @@ export default function SiteClusterView() {
   const [editSite, setEditSite] = useState<Site | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [previewSite, setPreviewSite] = useState<Site | null>(null);
   const [siteHealthMap, setSiteHealthMap] = useState<Record<string, SiteHealthStatus>>({});
   const refreshSites = useAppStore((s) => s.refreshVersions['sites'] ?? 0);
@@ -693,12 +694,15 @@ export default function SiteClusterView() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
+    setDeleting(true);
     try {
       await apiFetch(`/api/sites/${deleteId}`, { method: 'DELETE' });
       toast.success('站点已删除');
       setDeleteId(null);
       fetchSites();
-    } catch { /* handled by apiFetch */ }
+    } catch { /* handled by apiFetch */ } finally {
+      setDeleting(false);
+    }
   };
 
   const getThemeName = (themeId: string | null) => {
@@ -920,7 +924,7 @@ export default function SiteClusterView() {
       {/* Form Dialog */}
       <SiteFormDialog
         open={formOpen}
-        onOpenChange={(open) => { if (!open) { setFormOpen(false); setEditSite(null as any); } }}
+        onOpenChange={(open) => { if (!open) { setFormOpen(false); setEditSite(null); } }}
         editingSite={editSite}
         themes={themes}
         onSaved={fetchSites}
@@ -946,8 +950,12 @@ export default function SiteClusterView() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              删除
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleDelete(); }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? '删除中...' : '删除'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

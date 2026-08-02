@@ -7,7 +7,7 @@ import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Search, Sun, Moon, Shield, User, BookMarked, FileText,
-  ChevronLeft, ChevronRight, RotateCcw,
+  ChevronLeft, ChevronRight, RotateCcw, History,
   Menu, X, Book, Loader2, Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -84,6 +84,40 @@ function formatWordCount(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万字`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}千字`;
   return `${n}字`;
+}
+
+// ─── Recently Viewed Tracker ───────────────────────────────────────
+const RECENT_KEY = 'novel-recently-viewed';
+const MAX_RECENT = 12;
+
+interface RecentNovel {
+  id: string;
+  title: string;
+  author: string;
+  coverUrl: string | null;
+  category: { name: string; color: string } | null;
+  viewedAt: number;
+}
+
+function getRecentlyViewed(): RecentNovel[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+  } catch { return []; }
+}
+
+function addToRecentlyViewed(novel: { id: string; title: string; author: string; coverUrl: string | null; category: { name: string; color: string } | null }) {
+  if (typeof window === 'undefined') return;
+  try {
+    const list = getRecentlyViewed().filter((n) => n.id !== novel.id);
+    list.unshift({ ...novel, viewedAt: Date.now() });
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT)));
+  } catch { /* ignore */ }
+}
+
+function clearRecentlyViewed() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(RECENT_KEY);
 }
 
 // ─── Cover placeholder gradient colors ────────────────────────────────
@@ -436,6 +470,20 @@ export default function HomePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [totalPages, setTotalPages] = useState(0);
   const [total, setTotal] = useState(0);
+  const [recentNovels, setRecentNovels] = useState<RecentNovel[]>([]);
+  const [showRecent, setShowRecent] = useState(true);
+
+  // ─── Load recently viewed ─────────────────────────────────────
+  useEffect(() => {
+    setRecentNovels(getRecentlyViewed());
+  }, []);
+
+  // Listen for storage changes from other tabs
+  useEffect(() => {
+    const handler = () => setRecentNovels(getRecentlyViewed());
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, []);
 
   // Filter state
   const [page, setPage] = useState(1);
@@ -953,6 +1001,48 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Recently Viewed */}
+      {showRecent && recentNovels.length > 0 && (
+        <section className="border-b bg-muted/20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <History className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground">最近浏览</span>
+                <span className="text-[10px] text-muted-foreground/60">{recentNovels.length}</span>
+              </div>
+              <button
+                onClick={() => { clearRecentlyViewed(); setRecentNovels([]); }}
+                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              >
+                清除
+              </button>
+            </div>
+            <div className="flex items-center gap-3 overflow-x-auto scrollbar-none pb-1">
+              {recentNovels.slice(0, 8).map((rn) => (
+                <Link
+                  key={rn.id}
+                  href={`/novels/${rn.id}`}
+                  className="shrink-0 flex items-center gap-2.5 rounded-lg border bg-background px-3 py-2 transition-all hover:shadow-sm hover:border-primary/30 hover:-translate-y-0.5 group"
+                >
+                  <div className="h-8 w-6 rounded overflow-hidden shrink-0">
+                    {rn.coverUrl ? (
+                      <img src={rn.coverUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className={`h-full w-full bg-gradient-to-br ${getGradient(rn.title)}`} />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium line-clamp-1 group-hover:text-primary transition-colors">{rn.title}</p>
+                    <p className="text-[10px] text-muted-foreground line-clamp-1">{rn.author}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ─── 23qb.net 4-Row Filter System ───────────────────────── */}
       <section id="filter-section" className="border-b bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -1194,16 +1284,23 @@ export default function HomePage() {
       {/* ─── Footer ──────────────────────────────────────────────── */}
       <footer className="mt-auto border-t bg-background/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-          <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
+          <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
-              <div className="h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center">
-                <BookOpen className="h-3.5 w-3.5 text-primary/70" />
+              <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                <BookOpen className="h-4 w-4 text-primary/70" />
               </div>
-              <span className="font-semibold text-foreground/80">© 2026 小说阁</span>
-              <span className="text-muted-foreground/30">—</span>
-              <span className="text-muted-foreground/70">小说管理系统</span>
+              <span className="font-semibold text-foreground/80">小说阁</span>
             </div>
-            <p className="text-xs text-muted-foreground/50">基于 Next.js 16 构建</p>
+            <div className="flex items-center gap-4 text-xs">
+              <Link href="/categories" className="text-muted-foreground/60 hover:text-foreground transition-colors">分类</Link>
+              <span className="text-muted-foreground/20">·</span>
+              <Link href="/rankings" className="text-muted-foreground/60 hover:text-foreground transition-colors">排行榜</Link>
+              <span className="text-muted-foreground/20">·</span>
+              <Link href="/login" className="text-muted-foreground/60 hover:text-foreground transition-colors">管理</Link>
+            </div>
+            <p className="text-[11px] text-muted-foreground/40">
+              © 2026 小说阁 · 基于 Next.js 16 + Prisma + Tailwind CSS 构建
+            </p>
           </div>
         </div>
       </footer>

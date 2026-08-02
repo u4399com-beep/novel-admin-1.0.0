@@ -128,6 +128,26 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
   const statusInfo = STATUS_MAP[novel.status] || STATUS_MAP.ongoing;
   const coverRef = useRef<HTMLDivElement>(null);
 
+  // ─── Track recently viewed ─────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const RECENT_KEY = 'novel-recently-viewed';
+    const MAX_RECENT = 12;
+    try {
+      const list: Array<{ id: string; title: string; author: string; coverUrl: string | null; category: { name: string; color: string } | null; viewedAt: number }> = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+      const filtered = list.filter((n) => n.id !== novel.id);
+      filtered.unshift({
+        id: novel.id,
+        title: novel.title,
+        author: novel.author,
+        coverUrl: novel.coverUrl,
+        category: novel.category ? { name: novel.category.name, color: novel.category.color } : null,
+        viewedAt: Date.now(),
+      });
+      localStorage.setItem(RECENT_KEY, JSON.stringify(filtered.slice(0, MAX_RECENT)));
+    } catch { /* ignore */ }
+  }, [novel.id, novel.title, novel.author, novel.coverUrl, novel.category]);
+
   // ─── 3D Cover tilt handlers ──────────────────────────────────
   const handleCoverMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
     if (!coverRef.current) return;
@@ -259,17 +279,25 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
  }
  }
  document.addEventListener('fullscreenchange', handleFullscreenChange);
- return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+ return () => {
+   document.removeEventListener('fullscreenchange', handleFullscreenChange);
+   if (document.fullscreenElement) document.exitFullscreen?.();
+ };
  }, [readerFullscreen]);
 
   // ─── Keyboard navigation ─────────────────────────────────────────
   useEffect(() => {
     if (!readerOpen) return;
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'ArrowLeft') {
+      // Don't intercept when user is interacting with form elements
+      const tag = (e.target as HTMLElement).tagName;
+      const isInteractive = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+        !!(e.target as HTMLElement).closest('[role="listbox"], [role="combobox"], [role="slider"]');
+
+      if (e.key === 'ArrowLeft' && !isInteractive) {
         e.preventDefault();
         goToChapter('prev');
-      } else if (e.key === 'ArrowRight') {
+      } else if (e.key === 'ArrowRight' && !isInteractive) {
         e.preventDefault();
         goToChapter('next');
       } else if (e.key === 'Escape') {

@@ -42,6 +42,7 @@ export default function DownloadManagerView() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<DownloadConfig | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DownloadConfig | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchConfigs = useCallback(async () => {
     try {
@@ -63,6 +64,7 @@ export default function DownloadManagerView() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    setDeleting(true);
     try {
       const res = await fetch(`/api/download-configs/${deleteTarget.id}`, {
         method: 'DELETE',
@@ -76,10 +78,10 @@ export default function DownloadManagerView() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '删除失败');
     } finally {
+      setDeleting(false);
       setDeleteTarget(null);
     }
   };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -176,7 +178,7 @@ export default function DownloadManagerView() {
       />
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
@@ -186,8 +188,12 @@ export default function DownloadManagerView() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              删除
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleDelete(); }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? '删除中...' : '删除'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
