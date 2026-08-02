@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { Save, Download, Upload, Trash2 } from 'lucide-react';
 import {
   Card,
@@ -107,11 +108,7 @@ export default function SettingsPage() {
   // Import categories
   const handleImportCategories = useCallback(async () => {
     try {
-      const res = await fetch('/api/public/seed-categories', { method: 'POST' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || '导入失败');
-      }
+      await apiFetch('/api/public/seed-categories', { method: 'POST' });
       toast.success('分类导入成功');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '分类导入失败');

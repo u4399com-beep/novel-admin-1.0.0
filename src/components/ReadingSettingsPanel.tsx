@@ -1,6 +1,6 @@
 'use client';
 
-import { Minus, Plus, Type, Palette, Check } from 'lucide-react';
+import { Plus, Type, Palette, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -29,6 +29,7 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
             variant="ghost"
             size="icon"
             className="h-7 w-7"
+            aria-label="缩小字号"
             onClick={() => onUpdate({ fontSize: Math.max(12, settings.fontSize - 1) })}
           >
             <Type className="h-3 w-3" />
@@ -47,6 +48,7 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
             variant="ghost"
             size="icon"
             className="h-7 w-7"
+            aria-label="放大字号"
             onClick={() => onUpdate({ fontSize: Math.min(28, settings.fontSize + 1) })}
           >
             <Plus className="h-3 w-3" />
@@ -64,6 +66,7 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
             <TooltipTrigger asChild>
               <button
                 onClick={() => onUpdate({ themeKey: theme.key })}
+                aria-label={`阅读主题: ${theme.label}`}
                 className={
                   'relative h-5 w-5 rounded-full border-2 transition-all duration-150 hover:scale-110 ' +
                   (settings.themeKey === theme.key
@@ -93,6 +96,7 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
             <TooltipTrigger asChild>
               <button
                 onClick={() => onUpdate({ fontFamily: font.key })}
+                aria-label={`字体: ${font.label}`}
                 className={
                   'px-1.5 py-0.5 rounded text-[11px] transition-colors ' +
                   (settings.fontFamily === font.key

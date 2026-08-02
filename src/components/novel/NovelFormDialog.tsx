@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, ImageIcon } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod/v4";
@@ -135,19 +135,17 @@ export default function NovelFormDialog() {
   // ── Fetch categories & tags on mount ──
   const fetchOptions = useCallback(async () => {
     try {
-      const [catRes, tagRes] = await Promise.all([
-        fetch("/api/categories"),
-        fetch("/api/tags"),
+      const [catRes, tagRes] = await Promise.allSettled([
+        apiFetch<Category[]>("/api/categories"),
+        apiFetch<Tag[]>("/api/tags"),
       ]);
-      if (catRes.ok) {
-        const cats: Category[] = await catRes.json();
-        setApiCategories(cats);
-        setCategories(cats);
+      if (catRes.status === 'fulfilled') {
+        setApiCategories(catRes.value);
+        setCategories(catRes.value);
       }
-      if (tagRes.ok) {
-        const ts: Tag[] = await tagRes.json();
-        setApiTags(ts);
-        setTags(ts);
+      if (tagRes.status === 'fulfilled') {
+        setApiTags(tagRes.value);
+        setTags(tagRes.value);
       }
     } catch (err) {
       console.error('Failed to fetch categories/tags for form:', err);

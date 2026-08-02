@@ -205,6 +205,8 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
     [chapters]
   );
 
+  const loadChapterAbortRef = useRef<AbortController | null>(null);
+
   const loadChapter = useCallback(
     async (index: number) => {
       if (index < 0 || index >= chapters.length) return;
@@ -214,15 +216,24 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
       setChapterTitle(chapter.title);
       setLoadingChapter(true);
 
+      // Cancel any in-flight chapter load
+      loadChapterAbortRef.current?.abort();
+      const abortController = new AbortController();
+      loadChapterAbortRef.current = abortController;
+
       try {
-        const res = await fetch(`/api/public/chapters/${chapter.id}`);
+        const res = await fetch(`/api/public/chapters/${chapter.id}`, {
+          signal: abortController.signal,
+        });
         if (!res.ok) throw new Error('获取失败');
         const data = await res.json();
         setChapterContent(data.content || '（本章暂无内容）');
-      } catch {
-        setChapterContent('加载章节内容失败，请稍后重试。');
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          setChapterContent('加载章节内容失败，请稍后重试。');
+        }
       } finally {
-        setLoadingChapter(false);
+        if (!abortController.signal.aborted) setLoadingChapter(false);
       }
     },
     [chapters]
@@ -233,6 +244,9 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
     if (readerOpen) {
       loadChapter(currentIndex);
     }
+    return () => {
+      loadChapterAbortRef.current?.abort();
+    };
   }, [readerOpen, loadChapter]);
 
   const goToChapter = useCallback(

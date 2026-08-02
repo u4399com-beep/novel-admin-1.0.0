@@ -539,29 +539,32 @@ export default function HomePage() {
   // ─── Fetch categories ────────────────────────────────────────────
   const [categoriesError, setCategoriesError] = useState(false);
   useEffect(() => {
-    let cancelled = false;
+    const abortController = new AbortController();
     async function load() {
       try {
-        const res = await fetch('/api/public/categories');
-        if (!cancelled && res.ok) {
+        const res = await fetch('/api/public/categories', { signal: abortController.signal });
+        if (res.ok) {
           const data = await res.json();
           setCategories(data);
-        } else if (!cancelled) {
+        } else if (!abortController.signal.aborted) {
           setCategoriesError(true);
         }
-      } catch {
-        if (!cancelled) setCategoriesError(true);
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          setCategoriesError(true);
+        }
+      } finally {
+        if (!abortController.signal.aborted) setLoadingCategories(false);
       }
-      if (!cancelled) setLoadingCategories(false);
     }
     load();
-    return () => { cancelled = true; };
+    return () => abortController.abort();
   }, []);
 
   // ─── Fetch novels ────────────────────────────────────────────────
   const [novelsError, setNovelsError] = useState(false);
   useEffect(() => {
-    let cancelled = false;
+    const abortController = new AbortController();
     async function load() {
       setLoadingNovels(true);
       setNovelsError(false);
@@ -572,22 +575,25 @@ export default function HomePage() {
         if (activeWordCount && activeWordCount !== 'all') params.set('wordCount', activeWordCount);
         if (activeSort) params.set('sort', activeSort);
         if (search) params.set('search', search);
-        const res = await fetch(`/api/public/novels?${params}`);
-        if (!cancelled && res.ok) {
+        const res = await fetch(`/api/public/novels?${params}`, { signal: abortController.signal });
+        if (res.ok) {
           const data = await res.json();
           setNovels(data.novels || []);
           setTotalPages(data.totalPages || 0);
           setTotal(data.total || 0);
-        } else if (!cancelled) {
+        } else if (!abortController.signal.aborted) {
           setNovelsError(true);
         }
-      } catch {
-        if (!cancelled) setNovelsError(true);
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          setNovelsError(true);
+        }
+      } finally {
+        if (!abortController.signal.aborted) setLoadingNovels(false);
       }
-      if (!cancelled) setLoadingNovels(false);
     }
     load();
-    return () => { cancelled = true; };
+    return () => abortController.abort();
   }, [page, activeCategorySlug, activeStatus, activeWordCount, activeSort, search]);
 
   // ─── Handlers ────────────────────────────────────────────────────
@@ -622,7 +628,6 @@ export default function HomePage() {
   useEffect(() => {
     if (!hasQuery) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    let cancelled = false;
     let abortController: AbortController | undefined;
     debounceRef.current = setTimeout(async () => {
       abortController = new AbortController();
@@ -631,21 +636,21 @@ export default function HomePage() {
         const res = await fetch(`/api/public/search-suggestions?q=${encodeURIComponent(query)}`, {
           signal: abortController.signal,
         });
-        if (!cancelled && res.ok) {
+        if (res.ok) {
           const data = await res.json();
           setSuggestions(data.suggestions || []);
           setActiveSuggestion(-1);
           setSuggestionsOpen(true);
         }
       } catch (err) {
-        if (!cancelled && !(err instanceof DOMException && err.name === 'AbortError')) {
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
           // Network error — silently ignore for search suggestions
         }
+      } finally {
+        if (!abortController.signal.aborted) setSuggestionsLoading(false);
       }
-      if (!cancelled) setSuggestionsLoading(false);
     }, 300);
     return () => {
-      cancelled = true;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       abortController?.abort();
     };
@@ -924,7 +929,7 @@ export default function HomePage() {
       <section className="border-b bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
           <div className="flex items-center gap-3">
-            <h1 className="hidden sm:block text-xl font-bold tracking-tight shrink-0">
+            <h1 className="hidden sm:block text-xl font-bold tracking-tight shrink-0 text-glow-subtle">
               小说搜索
             </h1>
             <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>
@@ -1303,7 +1308,7 @@ export default function HomePage() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.3, ease: 'easeOut' }}
+                transition={{ duration: 0.3, ease: 'easeOut' as const }}
                 className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6"
               >
                 {novels.map((novel, i) => (
@@ -1337,6 +1342,7 @@ export default function HomePage() {
                     size="icon"
                     className="h-8 w-8 page-btn"
                     onClick={() => setPage(p)}
+                    aria-current={p === page ? 'page' : undefined}
                   >
                     {p}
                   </Button>

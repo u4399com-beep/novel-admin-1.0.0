@@ -133,11 +133,14 @@ export const DELETE = withAuth(async function DELETE(
         throw new Error("NOT_FOUND");
       }
 
-      // Update novel word count before deleting
-      if (chapter.wordCount > 0) {
+      // Update novel word count before deleting (clamp to avoid negative)
+      const currentNovel = await tx.novel.findUnique({ where: { id: chapter.novelId }, select: { wordCount: true } });
+      const currentNovelWC = currentNovel?.wordCount || 0;
+      const clampedDecrement = Math.min(chapter.wordCount, currentNovelWC);
+      if (clampedDecrement > 0) {
         await tx.novel.update({
           where: { id: chapter.novelId },
-          data: { wordCount: { decrement: chapter.wordCount } },
+          data: { wordCount: { decrement: clampedDecrement } },
         });
       }
 

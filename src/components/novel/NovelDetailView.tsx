@@ -1308,7 +1308,7 @@ export default function NovelDetailView() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteNovel}
+              onClick={(e) => { e.preventDefault(); handleDeleteNovel(); }}
               disabled={deleting}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
@@ -1331,7 +1331,7 @@ export default function NovelDetailView() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteChapter}
+              onClick={(e) => { e.preventDefault(); handleDeleteChapter(); }}
               disabled={deleting}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
@@ -1354,7 +1354,7 @@ export default function NovelDetailView() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={batchDeleting}>取消</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleBatchDelete}
+              onClick={(e) => { e.preventDefault(); handleBatchDelete(); }}
               disabled={batchDeleting}
               className="bg-destructive text-white hover:bg-destructive/90"
             >

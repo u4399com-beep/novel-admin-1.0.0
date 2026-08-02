@@ -1068,3 +1068,122 @@ img[loading="lazy"]:not([src]) {
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background-color: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* ─── New Micro-interactions (Round N+1) ─────────────────────────── */
+
+/* Hover lift with shadow (for cards) */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px hsl(var(--foreground) / 0.1), 0 4px 10px -6px hsl(var(--foreground) / 0.06);
+}
+
+/* Tap feedback for mobile (quick scale down then up) */
+.tap-feedback {
+  transition: transform 0.1s ease;
+}
+.tap-feedback:active {
+  transform: scale(0.97);
+}
+
+/* Smooth underline animation for nav links */
+.nav-link-underline {
+  position: relative;
+}
+.nav-link-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: hsl(var(--primary));
+  transition: width 0.25s ease, left 0.25s ease;
+  border-radius: 1px;
+}
+.nav-link-underline:hover::after,
+.nav-link-underline.active::after {
+  width: 100%;
+  left: 0;
+}
+
+/* Gradient border on hover */
+.gradient-border-hover {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.gradient-border-hover::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, hsl(var(--primary) / 0), hsl(var(--primary) / 0));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition: background 0.3s ease;
+  pointer-events: none;
+}
+.gradient-border-hover:hover::before {
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.5), hsl(var(--primary) / 0.15));
+}
+
+/* Number count-up animation */
+.stat-number {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Reading progress bar gradient shimmer */
+.reading-progress-bar {
+  background: linear-gradient(90deg, var(--primary), hsl(var(--primary) / 0.7), var(--primary));
+  background-size: 200% 100%;
+  animation: progress-shimmer 2s ease-in-out infinite;
+}
+@keyframes progress-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Rank card shine effect */
+.rank-shine {
+  background: linear-gradient(105deg, transparent 40%, hsl(var(--background) / 0.8) 45%, hsl(var(--foreground) / 0.04) 50%, hsl(var(--background) / 0.8) 55%, transparent 60%);
+  background-size: 200% 100%;
+  animation: rank-shine-move 3s ease-in-out infinite;
+}
+@keyframes rank-shine-move {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Smooth scrollbar-none for horizontal scroll containers */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Subtle text glow for important headings */
+.text-glow-subtle {
+  text-shadow: 0 0 20px hsl(var(--primary) / 0.15);
+}
+
+/* Card glass effect */
+.glass {
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  background: hsl(var(--background) / 0.75);
+}
+
+/* Scrollbar horizontal fade for category scroll containers */
+.scroll-fade-x {
+  mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+}

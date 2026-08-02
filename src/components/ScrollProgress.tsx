@@ -19,13 +19,19 @@ export function ScrollProgress() {
   if (progress === 0) return null;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 h-0.5 bg-transparent pointer-events-none">
+    <div
+      className="fixed top-0 left-0 right-0 z-50 h-0.5 bg-transparent pointer-events-none"
+      role="progressbar"
+      aria-valuenow={progress}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label="页面阅读进度"
+    >
       <motion.div
         className="h-full reading-progress-bar"
         initial={false}
         animate={{ width: `${progress}%` }}
         transition={{ duration: 0.15 }}
-        style={{ background: 'var(--primary)' }}
       />
     </div>
   );

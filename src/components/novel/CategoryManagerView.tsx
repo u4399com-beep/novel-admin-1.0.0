@@ -17,7 +17,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { apiFetch, FetchError } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
 import { safeFormatDate } from '@/lib/format';
 
 import { Card, CardContent } from '@/components/ui/card';

@@ -137,26 +137,44 @@ export default function CategoriesPage() {
   }, []);
 
   // ── Fetch categories ──────────────────────────────────────────────────
+  useEffect(() => {
+    const abortController = new AbortController();
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await fetch('/api/public/categories', { signal: abortController.signal });
+        if (!res.ok) throw new Error('获取分类失败');
+        const data = await res.json();
+        setCategories(data);
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          setError(err instanceof Error ? err.message : '未知错误');
+        }
+      } finally {
+        if (!abortController.signal.aborted) setLoading(false);
+      }
+    }
+    load();
+    return () => abortController.abort();
+  }, []);
+
   const fetchCategories = useCallback(async () => {
-    let cancelled = false;
     try {
       setLoading(true);
       setError(null);
       const res = await fetch('/api/public/categories');
       if (!res.ok) throw new Error('获取分类失败');
       const data = await res.json();
-      if (!cancelled) setCategories(data);
+      setCategories(data);
     } catch (err) {
-      if (!cancelled) setError(err instanceof Error ? err.message : '未知错误');
+      setError(err instanceof Error ? err.message : '未知错误');
     } finally {
-      if (!cancelled) setLoading(false);
+      setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    fetchCategories();
-  }, [fetchCategories]);
+  // Note: fetchCategories (without AbortController) is used by the retry button
 
   // ── Filter categories by search ──────────────────────────────────────
   const filteredCategories = useMemo(() => {

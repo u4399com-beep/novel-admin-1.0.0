@@ -3,8 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Trophy, Medal, BookOpen } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -39,13 +37,12 @@ interface TabConfig {
   key: string;
   label: string;
   sortParam: string;
-  statLabel: string;
 }
 
 const TABS: TabConfig[] = [
-  { key: 'weekly', label: '周点击榜', sortParam: 'weekly_clicks', statLabel: '周点击' },
-  { key: 'monthly', label: '月点击榜', sortParam: 'monthly_clicks', statLabel: '月点击' },
-  { key: 'favorites', label: '总收藏榜', sortParam: 'total_favorites', statLabel: '收藏' },
+  { key: 'weekly', label: '周点击榜', sortParam: 'weekly_clicks' },
+  { key: 'monthly', label: '月点击榜', sortParam: 'monthly_clicks' },
+  { key: 'favorites', label: '总收藏榜', sortParam: 'total_favorites' },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -103,12 +100,10 @@ function RankNumber({ rank }: { rank: number }) {
 function NovelRow({
   novel,
   rank,
-  statLabel,
   index = 0,
 }: {
   novel: RankingNovel;
   rank: number;
-  statLabel: string;
   index?: number;
 }) {
   const isTop3 = rank <= 3;
@@ -277,8 +272,7 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
         <BookOpen className="w-10 h-10 text-muted-foreground/30 mb-3" />
         <p className="text-sm text-muted-foreground mb-3">加载排行榜数据失败</p>
         <Button variant="outline" size="sm" onClick={() => {
-          const ac = new AbortController();
-          fetchNovels(ac.signal);
+          fetchNovels();
         }}>
           重试
         </Button>
@@ -299,7 +293,6 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
             key={novel.id}
             novel={novel}
             rank={i + 1}
-            statLabel={tab.statLabel}
             index={i}
           />
         ))}
@@ -313,7 +306,6 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
               key={novel.id}
               novel={novel}
               rank={i + 4}
-              statLabel={tab.statLabel}
               index={i + 3}
             />
           ))}
