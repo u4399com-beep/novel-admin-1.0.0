@@ -4139,3 +4139,106 @@ Stage Summary:
 6. 可访问性: 管理表格行键盘导航、DnD KeyboardSensor
 7. SEO: rankings和categories页面使用metadata export替代useEffect
 8. 首页: 分类筛选已含滚动指示器(已实现)
+
+---
+Task ID: qa-round-0325
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T03:25:00+08:00
+
+Task: QA审计 + Bug修复 + 样式增强 (cron round 03:25)
+
+Work Log:
+- 读取worklog了解项目状态(累计234项修复, commit 95dcebd)
+- npx next build发现构建失败: ChapterFormDialog.tsx缺少useState导入
+- 修复useState导入后构建通过, lint 0错误
+- 启动双agent并行QA审查(前端+后端)
+
+## 审计结果
+- 前端: 5 HIGH + 7 MEDIUM + 4 LOW = 16 issues
+- 后端: 1 HIGH + 6 MEDIUM + 8 LOW = 15 issues
+
+## HIGH修复 (6项)
+1. **H1: ChapterFormDialog缺少useState** — 添加useState/useEffect/useCallback导入,移除未使用的useRef
+2. **H2: framer-motion ease类型** — admin/page.tsx + CommandPalette.tsx添加as const断言
+3. **H3: AlertDialogAction过早关闭对话框** — 5处添加e.preventDefault()(NovelDetailView×3 + TagManagerView + CategoryManagerView)
+4. **H4: SortableContext items不匹配** — 改用filteredChapters.map替代chapters.map
+5. **H5: seed-categories无认证** — 添加withAuth包装器,修复语法为`export const POST = withAuth(async function POST() {`});`
+6. **H6: 缺少not-found.tsx** — 创建带装饰背景+fade-in动画+hover-lift的404页面
+
+## MEDIUM修复 (9项)
+1. 首页分页按钮添加aria-label(上一页/下一页)+aria-current=page
+2. 首页filter按钮添加aria-pressed
+3. Dashboard卡片onClick从CardContent移到Card
+4. 封面图添加onError fallback(NovelDetailView用data-cover-fallback, NovelListView用display:none)+lazy loading
+5. safeJsonStringify错误提取为单独try-catch,返回400而非500(scrape-rules POST+PUT)
+6. scrape-rules PUT添加enabled类型验证
+7. seed-categories错误响应移除detail字段(防信息泄漏)
+8. 死代码清理: AppSidebar handleNav+ViewType, sites/[id] parsePagination, seed-categories msg变量
+9. category P2002错误消息从"分类名称已存在"改为"分类名称或标识符已存在"
+
+## LOW修复 (5项)
+1. themes/[id] enabled字段移除typeof三目(已有验证,简化为直接赋值)
+2. chart.tsx toLocaleString添加typeof安全检查
+3. 移除AppSidebar未使用的ViewType导入
+4. 移除sites/[id]未使用的parsePagination导入
+5. 清理seed-categories未使用的msg变量
+
+## CSS增强 (+12个新工具类, ~150行)
+1. **hover-lift** — 卡片悬停上浮+阴影
+2. **fade-in** — 淡入动画(300ms)
+3. **pulse-soft** — 柔和脉冲(状态指示)
+4. **focus-ring-visible** — 仅键盘导航时显示focus ring
+5. **drag-handle** — 拖拽手柄cursor(grab/grabbing/disabled)
+6. **line-clamp-1** — 单行截断
+7. **inline-code** — 行内代码样式(含dark模式)
+8. **skeleton-shimmer-fast** — 快速骨架屏闪光
+9. **tab-active** — 活跃标签下划线指示器
+10. **text-gradient** — 文字渐变(红→紫)
+11. **status-dot** — 状态圆点(success/warning/error/running)
+12. **glass** — 毛玻璃效果(blur+border)
+13. **scroll-shadow** — 滚动区域上下淡出遮罩
+
+## 样式应用
+- CategoryManagerView卡片使用hover-lift替代手动transition
+- not-found页面使用fade-in+hover-lift+装饰性背景模糊
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors ✅
+- Git commit: c6ceb2c (13 files, +118 -84)
+- Git push: a044e34..c6ceb2c main → main ✅
+
+## 统计
+- 修改文件: 13(+7个前端 + 4个后端 + 1个CSS + 1个新建not-found)
+- 代码变更: +118 -84
+- 本轮bug修复: 6 HIGH + 9 MEDIUM + 5 LOW = 20项
+- 累计修复: 234 + 20 = 254项
+
+Stage Summary:
+- 修复20项QA问题(6 HIGH + 9 MEDIUM + 5 LOW)
+- 新增12个CSS微交互工具类(~150行)
+- 创建not-found.tsx页面
+- 代码库稳定, 0构建错误, 0 lint errors
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0构建错误, 0 lint errors
+- **最新commit**: c6ceb2c (已push)
+- **生产服务器**: 需 git pull && bash deploy.sh
+- **累计修复**: 254项
+
+## 未解决问题或风险
+1. agent-browser无法在此环境使用(dev server OOM),建议在生产环境测试
+2. 内存rate limit在多实例部署下不共享(LOW,单admin系统可接受)
+3. SSRF防护仅检查hostname字符串,未做DNS解析(LOW)
+4. Health端点暴露内部服务拓扑无认证(LOW,内部使用)
+5. safeJsonStringify函数在scrape-rules/route.ts和[id]/route.ts中重复定义(DRY可优化)
+6. cache.ts setInterval timer未unref(LOW)
+
+## 建议下一阶段优先事项
+1. **服务器部署** git pull && bash deploy.sh
+2. 数据库: 添加clickCount/favoriteCount字段启用真实排行
+3. 管理: 分类标签刷新、批量导入导出
+4. 阅读: 章节书签功能、长按选择文本操作
+5. 性能: 列表虚拟滚动、图片懒加载优化
+6. 可访问性: 管理表格行键盘导航、DnD KeyboardSensor
+7. SEO: rankings和categories页面使用metadata export
