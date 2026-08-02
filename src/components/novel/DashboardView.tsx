@@ -503,7 +503,7 @@ export function DashboardView() {
             </div>
           )}
           <div className="mt-2 border-t pt-3">
-            <button className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+            <button className="text-sm text-muted-foreground transition-colors hover:text-foreground" onClick={() => setCurrentView('novels')}>
               查看全部 →
             </button>
           </div>
@@ -511,7 +511,7 @@ export function DashboardView() {
       </Card>
 
       {/* ── Error ───────────────────────────────────────────────────────── */}
-      {error && (
+      {error && !stats && (
         <Card className="border-destructive/50">
           <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
             {error}

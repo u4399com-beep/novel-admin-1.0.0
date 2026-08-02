@@ -48,7 +48,8 @@ const API_BASE = process.env.MAIN_APP_URL || "http://localhost:3000";
 async function apiCall(
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
+  signal?: AbortSignal
 ): Promise<{ data: unknown; status: number }> {
   const options: RequestInit = {
     method,
@@ -56,7 +57,7 @@ async function apiCall(
       "Content-Type": "application/json",
       "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
     },
-    signal: AbortSignal.timeout(30000),
+    signal: signal || AbortSignal.timeout(30000),
   };
   if (body && method !== "GET" && method !== "HEAD") {
     options.body = JSON.stringify(body);
@@ -77,7 +78,7 @@ const progressThrottle = new Map<string, number>();
 const PROGRESS_THROTTLE_MS = 3000;
 
 // Periodic cleanup of progress throttle entries older than 5 minutes
-setInterval(() => {
+export const progressThrottleCleanupTimer = setInterval(() => {
   const now = Date.now();
   const STALE_THRESHOLD = 5 * 60 * 1000;
   for (const [taskId, timestamp] of progressThrottle.entries()) {
@@ -236,6 +237,10 @@ export async function executeTask(taskId: string) {
   const task = taskData as ScrapeTask;
   const rule = task.rule;
 
+  if (!rule) {
+    throw new Error(`Task ${taskId} has no associated scrape rule`);
+  }
+
   // Parse rule configurations
   const listSelector = parseSelectorField(rule.listSelector);
   const listPagination = parseJsonField<Pagination>(rule.listPagination, undefined);
@@ -318,7 +323,7 @@ async function executeTaskBody(
   taskId: string,
   task: ScrapeTask,
   rule: ScrapeRule,
-  _abortController: AbortController,
+  abortController: AbortController,
   ctx: TaskContext
 ): Promise<void> {
   const { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode } = ctx;
@@ -434,7 +439,9 @@ async function executeTaskBody(
       if (isIncremental) {
         const { data: searchResult, status: searchStatus } = await apiCall(
           "GET",
-          `/api/novels?pageSize=100&search=${encodeURIComponent(bookInfo.title)}`
+          `/api/novels?pageSize=100&search=${encodeURIComponent(bookInfo.title)}`,
+          undefined,
+          abortController.signal
         );
 
         if (searchStatus === 200 && searchResult) {
@@ -466,10 +473,10 @@ async function executeTaskBody(
       await dbWriteSemaphore.acquire();
       try {
         if (isExisting) {
-          await apiCall("PUT", `/api/novels/${novelId}`, novelData);
+          await apiCall("PUT", `/api/novels/${novelId}`, novelData, abortController.signal);
           await addTaskLog(taskId, "info", `更新小说: ${bookInfo.title}`, bookUrl);
         } else {
-          const { data: createdNovel, status: createStatus } = await apiCall("POST", "/api/novels", novelData);
+          const { data: createdNovel, status: createStatus } = await apiCall("POST", "/api/novels", novelData, abortController.signal);
           if (createStatus === 201 && createdNovel) {
             novelId = (createdNovel as { id: string }).id;
             newBooksCount.increment();
@@ -496,7 +503,7 @@ async function executeTaskBody(
             await addTaskLog(taskId, "warn", `封面保存路径无效: ${savePath}`, bookInfo.coverUrl);
           } else {
             await handleDownloadCover(bookInfo.coverUrl, savePath);
-            await apiCall("PUT", `/api/novels/${novelId}`, { coverPath: savePath });
+            await apiCall("PUT", `/api/novels/${novelId}`, { coverPath: savePath }, abortController.signal);
           }
         } catch (coverErr) {
           console.error(`[Task ${taskId}] Cover download failed for ${bookInfo.title}:`, coverErr);
@@ -618,13 +625,12 @@ async function executeTaskBody(
       await addTaskLog(taskId, "info", `发现 ${chapters.length} 个章节: ${book.title}`, chapterListUrl);
 
       // Add chapter URLs to queue (batched)
-      if (chapters.length > 0) {
-        await addManyToQueue(chapters.map(ch => ({
-          url: ch.url,
-          taskId,
-          metadata: { type: "chapter", bookId: book.id, title: ch.title, sortOrder: ch.sortOrder, taskId },
-        })));
-      }
+      await addManyToQueue(chapters.map(ch => ({
+        url: ch.url,
+        taskId,
+        metadata: { type: "chapter", bookId: book.id, title: ch.title, sortOrder: ch.sortOrder, taskId },
+      })));
+
 
       // 5. Scrape chapter content
       const contentSelector = parseSelectorField(rule.contentSelector);
@@ -642,7 +648,9 @@ async function executeTaskBody(
         try {
           const { data: existingData, status: existingStatus } = await apiCall(
             "GET",
-            `/api/novels/${book.id}/chapters`
+            `/api/novels/${book.id}/chapters`,
+            undefined,
+            abortController.signal
           );
           if (existingStatus === 200 && existingData) {
             const chapterList = (existingData as { chapters?: Array<{ id: string; sourceUrl?: string; title: string }> }).chapters || [];
@@ -709,7 +717,8 @@ async function executeTaskBody(
                 content: chapterContent,
                 sortOrder: chapter.sortOrder,
                 sourceUrl: chapter.url,
-              }
+              },
+              abortController.signal
             );
             chStatus = result.status;
           } finally {

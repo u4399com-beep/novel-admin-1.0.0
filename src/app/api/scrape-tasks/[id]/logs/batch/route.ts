@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/api-auth";
 import { sanitizeField, safeJson } from "@/lib/api-utils";
 
 const MAX_BATCH_SIZE = 100;
-const MAX_MESSAGE_LENGTH = 500;
+const MAX_MESSAGE_LENGTH = 5000;
 const MAX_DETAIL_LENGTH = 1000;
 const VALID_LEVELS = ["info", "warn", "error", "success"] as const;
 

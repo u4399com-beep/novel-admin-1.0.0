@@ -88,12 +88,17 @@ export const PUT = withAuth(async function PUT(
         },
       });
 
-      // Update novel word count atomically
+      // Update novel word count atomically (clamp to 0 minimum)
       if (wordDiff !== 0) {
-        await tx.novel.update({
-          where: { id: oldChapter.novelId },
-          data: { wordCount: { increment: wordDiff } },
-        });
+        const currentNovel = await tx.novel.findUnique({ where: { id: oldChapter.novelId }, select: { wordCount: true } });
+        const currentNovelWC = currentNovel?.wordCount || 0;
+        const clampedDiff = Math.max(-currentNovelWC, wordDiff);
+        if (clampedDiff !== 0) {
+          await tx.novel.update({
+            where: { id: oldChapter.novelId },
+            data: { wordCount: { increment: clampedDiff } },
+          });
+        }
       }
 
       return updated;

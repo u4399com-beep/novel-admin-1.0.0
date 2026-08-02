@@ -9,6 +9,7 @@ export async function GET() {
   try {
     const categories = await db.category.findMany({
       orderBy: { sortOrder: "asc" },
+      take: 500,
       select: {
         id: true,
         name: true,

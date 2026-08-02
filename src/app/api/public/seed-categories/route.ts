@@ -1,9 +1,10 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 /**
  * Seed 23qb.net categories into the database.
- * This is a one-time setup endpoint.
+ * Protected — requires admin authentication.
  */
 const CATEGORIES_23QB = [
   {
@@ -112,16 +113,14 @@ const CATEGORIES_23QB = [
   },
 ];
 
-export async function POST() {
+export const POST = withAuth(async function POST() {
   try {
-    // Clear existing categories
-    const deleteResult = await db.category.deleteMany();
+    // Atomic: delete + create in a single transaction to prevent data loss
+    const [deleteResult, created] = await db.$transaction([
+      db.category.deleteMany(),
+      db.category.createMany({ data: CATEGORIES_23QB }),
+    ]);
     console.log(`[Seed] Deleted ${deleteResult.count} existing categories`);
-
-    // Create new categories (SQLite doesn't support skipDuplicates)
-    const created = await db.category.createMany({
-      data: CATEGORIES_23QB,
-    });
 
     // Fetch all created categories to return
     const categories = await db.category.findMany({
@@ -146,4 +145,4 @@ export async function POST() {
     console.error("Seed categories error:", error);
     return NextResponse.json({ error: "导入分类失败" }, { status: 500 });
   }
-}
+});

@@ -5,6 +5,7 @@ import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_NAME_LENGTH = 100;
+const MAX_SLUG_LENGTH = 100;
 const MAX_DESCRIPTION_LENGTH = 1000;
 const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 
@@ -54,6 +55,9 @@ export const PUT = withAuth(async function PUT(
     }
     if (slug !== undefined && slug.trim() && !/^[a-z0-9_-]+$/.test(slug.trim())) {
       return NextResponse.json({ error: "分类标识符只能包含小写字母、数字、下划线和连字符" }, { status: 400 });
+    }
+    if (slug !== undefined && slug.trim().length > MAX_SLUG_LENGTH) {
+      return NextResponse.json({ error: `分类标识符不能超过${MAX_SLUG_LENGTH}个字符` }, { status: 400 });
     }
     if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
       return NextResponse.json({ error: `分类名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });

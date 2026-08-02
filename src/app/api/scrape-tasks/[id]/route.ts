@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
+import { isSafeUrl } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -80,7 +81,7 @@ export const PUT = withAuth(async function PUT(
     if (body.resultUrl !== undefined) {
       const val = sanitizeField(body.resultUrl, 500);
       if (val) {
-        const { isSafeUrl } = await import("@/lib/sanitize");
+        // isSafeUrl is statically imported at the top of this file
         if (!isSafeUrl(val)) {
           return NextResponse.json({ error: "resultUrl格式不合法" }, { status: 400 });
         }

@@ -58,19 +58,38 @@ export function ChapterFormDialog() {
   const wordCount = watchedContent ? watchedContent.length : 0;
 
   // Reset form when dialog opens/closes or editingChapter changes
+  const [fetchedContent, setFetchedContent] = useState<string | null>(null);
+
   useEffect(() => {
     if (chapterFormOpen) {
       if (editingChapter) {
-        form.reset({
-          title: editingChapter.title,
-          content: editingChapter.content || '',
-        });
+        // Fetch full chapter content since list API doesn't include it
+        fetch(`/api/chapters/${editingChapter.id}`)
+          .then((r) => r.json())
+          .then((full: Chapter) => {
+            form.reset({
+              title: full.title,
+              content: full.content || '',
+            });
+            setFetchedContent(full.content || '');
+          })
+          .catch(() => {
+            // Fallback to editingChapter data (content may be undefined)
+            form.reset({
+              title: editingChapter.title,
+              content: '',
+            });
+            setFetchedContent(null);
+          });
       } else {
         form.reset({
           title: '',
           content: '',
         });
+        setFetchedContent(null);
       }
+    } else {
+      setFetchedContent(null);
     }
   }, [chapterFormOpen, editingChapter, form]);
 
@@ -91,13 +110,16 @@ export function ChapterFormDialog() {
     try {
       if (isEditing && editingChapter) {
         // Update existing chapter
+        const body: Record<string, unknown> = { title: values.title };
+        // Only include content if we actually have it (fetched or new chapter)
+        // Never send empty string for content on edit — it would erase existing content
+        if (fetchedContent !== null || !isEditing) {
+          body.content = values.content;
+        }
         const res = await fetch(`/api/chapters/${editingChapter.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: values.title,
-            content: values.content,
-          }),
+          body: JSON.stringify(body),
         });
 
         if (!res.ok) {

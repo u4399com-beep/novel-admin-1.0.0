@@ -15,6 +15,15 @@ import {
   VALID_DEDUP_MODES,
   buildCloudBrowserConfig,
 } from "@/lib/scrape-rule-validation";
+
+function safeJsonStringify(value: unknown, fieldName: string, maxSize = 50000): string | null {
+  if (value == null) return null;
+  const str = JSON.stringify(value);
+  if (str && str.length > maxSize) {
+    throw new Error(`${fieldName}配置过大（最大${Math.floor(maxSize / 1024)}KB）`);
+  }
+  return str;
+}
 // GET /api/scrape-rules - List all scrape rules with pagination and search
 export const GET = withAuth(async function GET(request: NextRequest) {
   try {
@@ -117,8 +126,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
 
         listUrl: sanitizeField(body.listUrl, 2000) || null,
-        listSelector: body.listSelector ? JSON.stringify(body.listSelector) : null,
-        listPagination: body.listPagination ? JSON.stringify(body.listPagination) : null,
+        listSelector: safeJsonStringify(body.listSelector, 'listSelector'),
+        listPagination: safeJsonStringify(body.listPagination, 'listPagination'),
 
         bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null,
         bookAuthorSelector: sanitizeField(body.bookAuthorSelector, 500) || null,
@@ -129,16 +138,16 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         bookStatusSelector: sanitizeField(body.bookStatusSelector, 500) || null,
 
         chapterListUrl: sanitizeField(body.chapterListUrl, 2000) || null,
-        chapterListSelector: body.chapterListSelector ? JSON.stringify(body.chapterListSelector) : null,
-        chapterTitleSelector: body.chapterTitleSelector ? JSON.stringify(body.chapterTitleSelector) : null,
-        chapterLinkSelector: body.chapterLinkSelector ? JSON.stringify(body.chapterLinkSelector) : null,
-        chapterPagination: body.chapterPagination ? JSON.stringify(body.chapterPagination) : null,
+        chapterListSelector: safeJsonStringify(body.chapterListSelector, 'chapterListSelector'),
+        chapterTitleSelector: safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector'),
+        chapterLinkSelector: safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector'),
+        chapterPagination: safeJsonStringify(body.chapterPagination, 'chapterPagination'),
 
-        contentTitleSelector: body.contentTitleSelector ? JSON.stringify(body.contentTitleSelector) : null,
-        contentSelector: body.contentSelector ? JSON.stringify(body.contentSelector) : null,
-        contentPagination: body.contentPagination ? JSON.stringify(body.contentPagination) : null,
+        contentTitleSelector: safeJsonStringify(body.contentTitleSelector, 'contentTitleSelector'),
+        contentSelector: safeJsonStringify(body.contentSelector, 'contentSelector'),
+        contentPagination: safeJsonStringify(body.contentPagination, 'contentPagination'),
 
-        antiCrawlConfig: body.antiCrawlConfig ? JSON.stringify(body.antiCrawlConfig) : null,
+        antiCrawlConfig: safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig'),
 
         storageMode: params.storageMode,
         filePath: validateSavePath(body.filePath),
@@ -152,16 +161,14 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         enableShuffle: body.enableShuffle ?? false,
         dedupMode: params.dedupMode,
 
-        cleanConfig: body.cleanConfig ? JSON.stringify(body.cleanConfig) : null,
+        cleanConfig: safeJsonStringify(body.cleanConfig, 'cleanConfig'),
 
-        agentqlConfig: body.agentqlQueries
-          ? JSON.stringify(
+        agentqlConfig: safeJsonStringify(
               typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
                 ? body.agentqlQueries
-                : {},
-              (key, value) => typeof value === 'string' ? value.slice(0, 2000) : value
-            )
-          : null,
+                : null,
+              'agentqlConfig'
+            ),
         cloudBrowserConfig: buildCloudBrowserConfig(body.cloudBrowserUrl, body.cloudBrowserProvider),
       },
       include: { _count: { select: { tasks: true } } },

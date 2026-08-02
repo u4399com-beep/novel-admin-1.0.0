@@ -563,6 +563,7 @@ export default function SiteClusterView() {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
   const [editSite, setEditSite] = useState<Site | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [previewSite, setPreviewSite] = useState<Site | null>(null);
   const refreshSites = useAppStore((s) => s.refreshVersions['sites'] ?? 0);
@@ -639,7 +640,7 @@ export default function SiteClusterView() {
         </div>
         <Button
           size="sm"
-          onClick={() => setEditSite(null)}
+          onClick={() => { setEditSite(null); setFormOpen(true); }}
           className="gap-1.5"
         >
           <Plus className="h-4 w-4" />
@@ -668,7 +669,7 @@ export default function SiteClusterView() {
               <p className="text-sm text-muted-foreground/70 mb-6">
                 添加第一个站点以开始构建你的小说站群
               </p>
-              <Button onClick={() => setEditSite(null)}>
+              <Button onClick={() => { setEditSite(null); setFormOpen(true); }}>
                 <Plus className="h-4 w-4 mr-1.5" />
                 添加站点
               </Button>
@@ -741,7 +742,7 @@ export default function SiteClusterView() {
                                 size="icon"
                                 className="h-8 w-8"
                                 aria-label="编辑站点"
-                                onClick={() => setEditSite(site)}
+                                onClick={() => { setEditSite(site); setFormOpen(true); }}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -820,10 +821,8 @@ export default function SiteClusterView() {
 
       {/* Form Dialog */}
       <SiteFormDialog
-        open={editSite !== null}
-        onOpenChange={(open) => {
-          if (!open) setEditSite(null);
-        }}
+        open={formOpen}
+        onOpenChange={(open) => { if (!open) { setFormOpen(false); setEditSite(null as any); } }}
         editingSite={editSite}
         themes={themes}
         onSaved={fetchSites}

@@ -59,7 +59,7 @@ function validateJsonStructure(value: unknown, depth: number, maxDepth: number, 
 /**
  * Safely parse request body JSON with timeout, depth limit, and key count limit.
  *
- * - 10-second AbortController timeout for reading the body stream
+ * - 15-second AbortController timeout for reading the body stream
  * - JSON parse error → clear error
  * - Max nesting depth (default 20) to prevent stack overflow
  * - Max keys per object (default 200) to prevent memory abuse

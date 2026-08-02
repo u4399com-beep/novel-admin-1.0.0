@@ -180,7 +180,7 @@ class CheerioEngine implements ScrapingEngine {
         return { html, finalUrl, statusCode: response.status };
       },
       {
-        maxRetries: options?.antiCrawl?.retries || 3,
+        maxRetries: options?.antiCrawl?.retries ?? 3,
         baseDelay: 1000,
         maxDelay: 15000,
       }
@@ -331,7 +331,7 @@ class PlaywrightEngine implements ScrapingEngine {
         }
       },
       {
-        maxRetries: options?.antiCrawl?.retries || 2,
+        maxRetries: options?.antiCrawl?.retries ?? 2,
         baseDelay: 2000,
         maxDelay: 20000,
       }

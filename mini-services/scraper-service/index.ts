@@ -14,6 +14,7 @@ process.on('unhandledRejection', (reason) => {
 
 process.on('uncaughtException', (err) => {
   console.error('[Fatal] Uncaught exception:', err);
+  process.exit(1);
 });
 
 import { initEngines, closeAllEngines, getEngineNames } from "./src/engines";
@@ -199,9 +200,8 @@ export function startServer(port: number = 3099) {
       }
 
       // Rate limiting (per client IP)
-      // Prefer x-real-ip (set by Caddy, not spoofable) over x-forwarded-for
-      const clientIp = req.headers.get("x-real-ip")
-        || (req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() || "unknown");
+      // Only use x-real-ip (set by Caddy, not spoofable)
+      const clientIp = req.headers.get('x-real-ip') || 'unknown';
       if (!checkScraperRateLimit(clientIp)) {
         return Response.json(
           { error: "Rate limit exceeded. Try again later." },
@@ -263,11 +263,17 @@ export function startServer(port: number = 3099) {
       try {
         // Route to handlers
         if (path === "/scrape/list") {
+          if (!body || typeof body !== 'object' || typeof (body as any).url !== 'string') {
+            return Response.json({ error: 'url is required and must be a string' }, { status: 400, headers: jsonHeaders });
+          }
           const result = await handleScrapeList(body as ScrapeListRequest);
           return Response.json(result, { headers: jsonHeaders });
         }
 
         if (path === "/scrape/book") {
+          if (!body || typeof body !== 'object' || typeof (body as any).url !== 'string') {
+            return Response.json({ error: 'url is required and must be a string' }, { status: 400, headers: jsonHeaders });
+          }
           const result = await handleScrapeBook(body as ScrapeBookRequest);
           return Response.json(result, { headers: jsonHeaders });
         }
@@ -297,10 +303,10 @@ export function startServer(port: number = 3099) {
         }
 
         if (path === "/execute-task") {
-          const { taskId } = body as ExecuteTaskRequest;
-          if (!taskId) {
-            return Response.json({ error: "taskId is required" }, { status: 400, headers: jsonHeaders });
+          if (!body || typeof body !== 'object' || typeof (body as any).taskId !== 'string') {
+            return Response.json({ error: 'taskId is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
+          const { taskId } = body as ExecuteTaskRequest;
 
           // Enforce global concurrent task limit
           if (activeTaskCount >= MAX_CONCURRENT_TASKS) {

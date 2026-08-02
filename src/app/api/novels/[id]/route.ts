@@ -51,6 +51,9 @@ export const PUT = withAuth(async function PUT(
     if (tags !== undefined && (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === 'string'))) {
       return NextResponse.json({ error: "标签格式错误，必须是字符串ID数组" }, { status: 400 });
     }
+    if (tags && tags.length > 20) {
+      return NextResponse.json({ error: "标签数量不能超过20个" }, { status: 400 });
+    }
 
     if (title !== undefined) {
       const trimmedTitle = sanitizeField(title, 200);

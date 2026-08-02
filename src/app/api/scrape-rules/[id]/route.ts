@@ -17,6 +17,15 @@ import {
 } from "@/lib/scrape-rule-validation";
 import { NextRequest, NextResponse } from "next/server";
 
+function safeJsonStringify(value: unknown, fieldName: string, maxSize = 50000): string | null {
+  if (value == null) return null;
+  const str = JSON.stringify(value);
+  if (str && str.length > maxSize) {
+    throw new Error(`${fieldName}配置过大（最大${Math.floor(maxSize / 1024)}KB）`);
+  }
+  return str;
+}
+
 // GET /api/scrape-rules/[id] - Get a single scrape rule
 export const GET = withAuth(async function GET(
   _request: NextRequest,
@@ -128,10 +137,10 @@ export const PUT = withAuth(async function PUT(
           })(),
         }),
         ...(body.listSelector !== undefined && {
-          listSelector: body.listSelector ? JSON.stringify(body.listSelector) : null,
+          listSelector: safeJsonStringify(body.listSelector, 'listSelector'),
         }),
         ...(body.listPagination !== undefined && {
-          listPagination: body.listPagination ? JSON.stringify(body.listPagination) : null,
+          listPagination: safeJsonStringify(body.listPagination, 'listPagination'),
         }),
 
         ...(body.bookTitleSelector !== undefined && { bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null }),
@@ -149,30 +158,30 @@ export const PUT = withAuth(async function PUT(
           })(),
         }),
         ...(body.chapterListSelector !== undefined && {
-          chapterListSelector: body.chapterListSelector ? JSON.stringify(body.chapterListSelector) : null,
+          chapterListSelector: safeJsonStringify(body.chapterListSelector, 'chapterListSelector'),
         }),
         ...(body.chapterTitleSelector !== undefined && {
-          chapterTitleSelector: body.chapterTitleSelector ? JSON.stringify(body.chapterTitleSelector) : null,
+          chapterTitleSelector: safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector'),
         }),
         ...(body.chapterLinkSelector !== undefined && {
-          chapterLinkSelector: body.chapterLinkSelector ? JSON.stringify(body.chapterLinkSelector) : null,
+          chapterLinkSelector: safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector'),
         }),
         ...(body.chapterPagination !== undefined && {
-          chapterPagination: body.chapterPagination ? JSON.stringify(body.chapterPagination) : null,
+          chapterPagination: safeJsonStringify(body.chapterPagination, 'chapterPagination'),
         }),
 
         ...(body.contentTitleSelector !== undefined && {
-          contentTitleSelector: body.contentTitleSelector ? JSON.stringify(body.contentTitleSelector) : null,
+          contentTitleSelector: safeJsonStringify(body.contentTitleSelector, 'contentTitleSelector'),
         }),
         ...(body.contentSelector !== undefined && {
-          contentSelector: body.contentSelector ? JSON.stringify(body.contentSelector) : null,
+          contentSelector: safeJsonStringify(body.contentSelector, 'contentSelector'),
         }),
         ...(body.contentPagination !== undefined && {
-          contentPagination: body.contentPagination ? JSON.stringify(body.contentPagination) : null,
+          contentPagination: safeJsonStringify(body.contentPagination, 'contentPagination'),
         }),
 
         ...(body.antiCrawlConfig !== undefined && {
-          antiCrawlConfig: body.antiCrawlConfig ? JSON.stringify(body.antiCrawlConfig) : null,
+          antiCrawlConfig: safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig'),
         }),
 
         ...(body.storageMode !== undefined && { storageMode: body.storageMode }),
@@ -194,17 +203,21 @@ export const PUT = withAuth(async function PUT(
         ...(body.dedupMode !== undefined && { dedupMode: body.dedupMode }),
 
         ...(body.cleanConfig !== undefined && {
-          cleanConfig: body.cleanConfig ? JSON.stringify(body.cleanConfig) : null,
+          cleanConfig: safeJsonStringify(body.cleanConfig, 'cleanConfig'),
         }),
 
         ...(body.agentqlQueries !== undefined && {
           agentqlConfig: body.agentqlQueries
-            ? JSON.stringify(
-                typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
+            ? (() => {
+                const obj = typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
                   ? body.agentqlQueries
-                  : {},
-                (key, value) => typeof value === 'string' ? value.slice(0, 2000) : value
-              )
+                  : {};
+                const str = JSON.stringify(obj, (key, value) => typeof value === 'string' ? value.slice(0, 2000) : value);
+                if (str && str.length > 50000) {
+                  throw new Error('agentqlConfig配置过大（最大48KB）');
+                }
+                return str;
+              })()
             : null,
         }),
         ...(body.cloudBrowserUrl !== undefined && {

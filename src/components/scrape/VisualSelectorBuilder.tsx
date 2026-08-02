@@ -666,7 +666,7 @@ export function VisualSelectorBuilder({
                     ref={iframeRef}
                     srcDoc={iframeSrcdoc}
                     className="w-full h-full border-0"
-                    sandbox="allow-same-origin"
+                    sandbox=""
                     title="页面预览"
                   />
                 </div>

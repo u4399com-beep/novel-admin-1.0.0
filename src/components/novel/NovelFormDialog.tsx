@@ -91,10 +91,10 @@ export default function NovelFormDialog() {
   }, [setCategories, setTags]);
 
   useEffect(() => {
-    if (novelFormOpen) {
+    if (novelFormOpen && (categories.length === 0 || tags.length === 0)) {
       fetchOptions();
     }
-  }, [novelFormOpen, fetchOptions]);
+  }, [novelFormOpen, fetchOptions, categories.length, tags.length]);
 
   // ── Merge store data with fetched data ──
   const allCategories = categories.length > 0 ? categories : apiCategories;

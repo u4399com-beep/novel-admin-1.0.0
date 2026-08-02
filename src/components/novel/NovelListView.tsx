@@ -12,7 +12,6 @@ import {
   LayoutGrid,
   List,
   X,
-  Plus,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -216,6 +215,16 @@ export default function NovelListView() {
         </div>
       </div>
 
+      {/* ── Error State ────────────────────────────────────────────── */}
+      {error && (
+        <Card className="border-destructive/50">
+          <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
+            {error}
+            <Button variant="outline" size="sm" className="ml-auto" onClick={fetchNovels}>重试</Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Result Count ────────────────────────────────────────────────── */}
       {!loading && novels.length > 0 && (
         <p className="text-xs text-muted-foreground">共 {total} 部小说</p>
@@ -371,9 +380,9 @@ export default function NovelListView() {
           {/* ── List View ──────────────────────────────────────────────── */}
           {viewMode === 'list' && (
             <div className="divide-y rounded-lg border">
-              {novels.map((novel) => {
+              {novels.map((novel, idx) => {
                 const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
-                const gradient = gradients[novels.indexOf(novel) % gradients.length];
+                const gradient = gradients[idx % gradients.length];
                 return (
                   <div
                     key={novel.id}

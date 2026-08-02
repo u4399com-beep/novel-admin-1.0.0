@@ -63,7 +63,7 @@ export function buildCloudBrowserConfig(url: unknown, provider: unknown): string
 
 export function validateSelector(value: unknown, fieldName: string): string | null {
   if (value === null || value === undefined) return null;
-  if (typeof value !== 'object' || Array.isArray(value) || value === null) {
+  if (typeof value !== 'object' || Array.isArray(value)) {
     return `${fieldName}格式错误，必须是包含type和value的对象`;
   }
   const obj = value as Record<string, unknown>;
@@ -81,7 +81,7 @@ export function validateSelector(value: unknown, fieldName: string): string | nu
 
 export function validatePagination(value: unknown, fieldName: string): string | null {
   if (value === null || value === undefined) return null;
-  if (typeof value !== 'object' || Array.isArray(value) || value === null) {
+  if (typeof value !== 'object' || Array.isArray(value)) {
     return `${fieldName}格式错误，必须是包含type和selector的对象`;
   }
   const obj = value as Record<string, unknown>;

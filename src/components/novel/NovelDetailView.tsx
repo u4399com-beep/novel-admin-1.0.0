@@ -590,16 +590,20 @@ export default function NovelDetailView() {
     let failCount = 0;
 
     try {
-      await Promise.allSettled(
-        Array.from(checkedIds).map(async (id) => {
+      const CHUNK_SIZE = 5;
+      const ids = Array.from(checkedIds);
+      for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE);
+        const results = await Promise.allSettled(chunk.map(async (id) => {
           const res = await fetch(`/api/chapters/${id}`, { method: 'DELETE' });
-          if (res.ok) {
-            successCount++;
-          } else {
-            failCount++;
-          }
-        }),
-      );
+          if (!res.ok) throw new Error(`Failed to delete chapter ${id}`);
+          return id;
+        }));
+        results.forEach((r) => {
+          if (r.status === 'fulfilled') successCount++;
+          else failCount++;
+        });
+      }
 
       if (selectedChapter && checkedIds.has(selectedChapter.id)) {
         setSelectedChapter(null);

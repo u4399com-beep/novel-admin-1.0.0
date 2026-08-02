@@ -88,7 +88,14 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
       const data = await response.json();
 
-      return NextResponse.json(data);
+      if (!data || typeof data !== 'object') {
+        return NextResponse.json({ error: '采集服务返回了无效数据' }, { status: 502 });
+      }
+      return NextResponse.json({
+        success: data.success ?? false,
+        rule: data.rule ?? null,
+        error: data.error ?? null,
+      });
     } catch (fetchError: unknown) {
       clearTimeout(timeoutId);
 

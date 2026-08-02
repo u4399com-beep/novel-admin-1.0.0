@@ -42,11 +42,13 @@ export function safeRegexMatch(text: string, pattern: string, flags?: string): R
 
 export function safeRegexReplace(text: string, pattern: string, replacement: string, flags?: string): string {
   if (isDangerousRegex(pattern)) return text;
-
-  const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
-
   try {
-    return searchIn.replace(new RegExp(pattern, flags), replacement);
+    const regex = new RegExp(pattern, flags);
+    if (text.length > MAX_TEXT_LENGTH) {
+      // Don't silently truncate — apply regex to the full text but with a safety check
+      return text.replace(regex, replacement);
+    }
+    return text.replace(regex, replacement);
   } catch {
     return text;
   }

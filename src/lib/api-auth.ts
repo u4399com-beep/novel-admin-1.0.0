@@ -9,11 +9,12 @@ import crypto from 'crypto';
 export function timingSafeEqual(a: string, b: string): boolean {
   const aBuf = Buffer.from(a, 'utf-8');
   const bBuf = Buffer.from(b, 'utf-8');
-  if (aBuf.length !== bBuf.length) {
-    crypto.timingSafeEqual(aBuf, aBuf); // dummy comparison to maintain constant time
-    return false;
-  }
-  return crypto.timingSafeEqual(aBuf, bBuf);
+  const maxLen = Math.max(aBuf.length, bBuf.length);
+  const paddedA = Buffer.alloc(maxLen, 0);
+  const paddedB = Buffer.alloc(maxLen, 0);
+  aBuf.copy(paddedA);
+  bBuf.copy(paddedB);
+  return crypto.timingSafeEqual(paddedA, paddedB);
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -24,12 +24,17 @@ function startCleanupTimer(): void {
       }
     }
     // If still over max, remove oldest entries
-    if (cache.size > MAX_ENTRIES) {
-      const entries = Array.from(cache.entries()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-      const toRemove = entries.slice(0, cache.size - MAX_ENTRIES);
-      for (const [key] of toRemove) {
-        cache.delete(key);
+    while (cache.size > MAX_ENTRIES) {
+      let oldestKey: string | null = null;
+      let oldestExpiry = Infinity;
+      for (const [k, entry] of cache) {
+        if (entry.expiresAt < oldestExpiry) {
+          oldestExpiry = entry.expiresAt;
+          oldestKey = k;
+        }
       }
+      if (oldestKey) cache.delete(oldestKey);
+      else break;
     }
   }, CLEANUP_INTERVAL);
 }
@@ -89,7 +94,12 @@ function getCached<T>(key: string): T | null {
 
 function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
   // Don't cache values that exceed the size limit
-  const sizeEstimate = JSON.stringify(data).length;
+  let sizeEstimate: number;
+  try {
+    sizeEstimate = JSON.stringify(data)?.length ?? 0;
+  } catch {
+    return; // Don't cache non-serializable data
+  }
   if (sizeEstimate > MAX_VALUE_SIZE) {
     return;
   }

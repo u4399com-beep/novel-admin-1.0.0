@@ -549,6 +549,7 @@ export default function ThemeManagerView() {
   const [seeding, setSeeding] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editTheme, setEditTheme] = useState<Theme | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [previewTheme, setPreviewTheme] = useState<{ config: ThemeConfig; name: string } | null>(null);
   const refreshThemes = useAppStore((s) => s.refreshVersions['themes'] ?? 0);
 
@@ -584,6 +585,9 @@ export default function ThemeManagerView() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, identifier, description, config }),
+        }).then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res;
         });
       })
     );
@@ -646,7 +650,7 @@ export default function ThemeManagerView() {
           )}
           <Button
             size="sm"
-            onClick={() => setEditTheme(null)}
+            onClick={() => { setEditTheme(null); setFormOpen(true); }}
             className="gap-1.5"
           >
             <Plus className="h-4 w-4" />
@@ -668,7 +672,7 @@ export default function ThemeManagerView() {
               {seeding ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Download className="h-4 w-4 mr-1.5" />}
               导入预设主题
             </Button>
-            <Button onClick={() => setEditTheme(null)}>
+            <Button onClick={() => { setEditTheme(null); setFormOpen(true); }}>
               <Plus className="h-4 w-4 mr-1.5" />
               创建主题
             </Button>
@@ -737,7 +741,7 @@ export default function ThemeManagerView() {
                         variant="ghost"
                         size="sm"
                         className="flex-1 h-9 rounded-none text-xs gap-1"
-                        onClick={() => setEditTheme(theme)}
+                        onClick={() => { setEditTheme(theme); setFormOpen(true); }}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                         编辑
@@ -774,10 +778,8 @@ export default function ThemeManagerView() {
 
       {/* Edit / Create Dialog */}
       <ThemeFormDialog
-        open={editTheme !== null}
-        onOpenChange={(open) => {
-          if (!open) setEditTheme(null);
-        }}
+        open={formOpen}
+        onOpenChange={(open) => { if (!open) { setFormOpen(false); setEditTheme(null as any); } }}
         editingTheme={editTheme}
         onSaved={fetchThemes}
       />

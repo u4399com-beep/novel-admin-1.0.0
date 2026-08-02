@@ -204,70 +204,76 @@ ${html}`;
 
     const llmAbort = new AbortController();
     let llmTimeoutId: ReturnType<typeof setTimeout> | undefined;
-    const completion = await Promise.race([
-      zai.chat.completions.create({
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMessage },
-        ],
-        thinking: { type: "disabled" },
-      }),
-      new Promise<never>((_, reject) => {
-        llmTimeoutId = setTimeout(() => {
-          llmAbort.abort();
-          reject(new Error("LLM request timed out after 120s"));
-        }, 120_000);
-      }),
-    ]);
-    clearTimeout(llmTimeoutId);
-
-    const rawContent = completion.choices?.[0]?.message?.content;
-    if (!rawContent) {
-      console.error("[AI Analyze] LLM returned empty content");
-      return apiSuccess<GeneratedRuleResult>({
-        success: false,
-        rule: getDefaultRule(url),
-        error: "LLM returned empty response",
-      });
-    }
-
-    // Parse the JSON from the LLM response
-    // LLM may wrap the JSON in markdown code blocks
-    let jsonStr = rawContent.trim();
-    const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      jsonStr = codeBlockMatch[1].trim();
-    }
-
-    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(jsonStr);
-    } catch (parseErr) {
-      console.error("[AI Analyze] Failed to parse LLM JSON response:", parseErr);
-      console.error("[AI Analyze] Raw response:", rawContent.substring(0, 1000));
+      const completion = await Promise.race([
+        zai.chat.completions.create({
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userMessage },
+          ],
+          thinking: { type: "disabled" },
+          signal: llmAbort.signal,
+        }),
+        new Promise<never>((_, reject) => {
+          llmTimeoutId = setTimeout(() => {
+            llmAbort.abort();
+            reject(new Error("LLM request timed out after 120s"));
+          }, 120_000);
+        }),
+      ]);
+
+      const rawContent = completion.choices?.[0]?.message?.content;
+      if (!rawContent) {
+        console.error("[AI Analyze] LLM returned empty content");
+        return apiSuccess<GeneratedRuleResult>({
+          success: false,
+          rule: getDefaultRule(url),
+          error: "LLM returned empty response",
+        });
+      }
+
+      // Parse the JSON from the LLM response
+      // LLM may wrap the JSON in markdown code blocks
+      let jsonStr = rawContent.trim();
+      const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        jsonStr = codeBlockMatch[1].trim();
+      }
+
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (parseErr) {
+        console.error("[AI Analyze] Failed to parse LLM JSON response:", parseErr);
+        console.error("[AI Analyze] Raw response:", rawContent.substring(0, 1000));
+        return apiSuccess<GeneratedRuleResult>({
+          success: false,
+          rule: getDefaultRule(url),
+          error: "LLM returned invalid JSON structure",
+        });
+      }
+
+      // Validate and normalize the rule
+      const rule = normalizeRule(parsed, url);
+
+      console.log(`[AI Analyze] Rule generated. Confidence: ${rule.confidence}, Engine: ${rule.engine}`);
+
+      return apiSuccess<GeneratedRuleResult>({
+        success: true,
+        rule,
+      });
+    } catch (err) {
+      console.error("[AI Analyze] Error:", err);
       return apiSuccess<GeneratedRuleResult>({
         success: false,
         rule: getDefaultRule(url),
-        error: `LLM returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : "parse error"}`,
+        error: "AI analysis failed, please try again",
       });
+    } finally {
+      clearTimeout(llmTimeoutId);
     }
-
-    // Validate and normalize the rule
-    const rule = normalizeRule(parsed, url);
-
-    console.log(`[AI Analyze] Rule generated. Confidence: ${rule.confidence}, Engine: ${rule.engine}`);
-
-    return apiSuccess<GeneratedRuleResult>({
-      success: true,
-      rule,
-    });
-  } catch (err) {
-    console.error("[AI Analyze] Error:", err);
-    return apiSuccess<GeneratedRuleResult>({
-      success: false,
-      rule: getDefaultRule(url),
-      error: "AI analysis failed, please try again",
-    });
+  } catch {
+    return apiError("AI analysis failed", 500);
   }
 });
 

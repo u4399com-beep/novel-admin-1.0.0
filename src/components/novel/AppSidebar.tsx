@@ -23,9 +23,17 @@ const DIVIDER_AFTER_INDEX = 3; // after 4th item (index 3)
 function SidebarContent() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const refreshVersions = useAppStore((s) => s.refreshVersions);
   const [totalNovels, setTotalNovels] = useState<number | null>(null);
   const [lastRefreshText, setLastRefreshText] = useState('刚刚');
   const lastRefreshStartRef = useRef(Date.now());
+
+  // Update refresh timer when any refresh version changes
+  const refreshCounter = Object.values(refreshVersions).reduce((a, b) => a + b, 0);
+  useEffect(() => {
+    lastRefreshStartRef.current = Date.now();
+    setLastRefreshText('刚刚');
+  }, [refreshCounter]);
 
   // Fetch total novels count for footer & start refresh timer on mount
   useEffect(() => {
@@ -191,6 +199,10 @@ function MobileSidebar() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const [open, setOpen] = useState(false);
+
+  // Close sheet when view changes (e.g. nav via SidebarContent)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setOpen(false); }, [currentView]);
 
   const handleNav = (view: ViewType) => {
     setCurrentView(view);

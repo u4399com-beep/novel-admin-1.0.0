@@ -74,7 +74,7 @@ export function isSafeUrl(url: string): boolean {
     }
 
     // Block decimal IP representations (e.g., 2130706433)
-    if (/^\d{8,}$/.test(hostname)) {
+    if (/^\d{7,}$/.test(hostname)) {
       return false;
     }
 
