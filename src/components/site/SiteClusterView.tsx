@@ -566,15 +566,15 @@ export default function SiteClusterView() {
   const fetchSites = useCallback(async () => {
     try {
       const [sitesData, themesData] = await Promise.all([
-        apiFetch('/api/sites'),
-        apiFetch('/api/themes'),
+        apiFetch<Site[]>('/api/sites'),
+        apiFetch<(Theme & { config: string })[]>('/api/themes'),
       ]);
       setSites(sitesData);
       setThemes(
-        themesData.map((t: Theme & { config: string }) => ({
+        themesData.map((t) => ({      
           ...t,
-          config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : t.config,
-        }))
+          config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : (t.config as ThemeConfig),
+        })) as Theme[]
       );
     } catch { /* handled by apiFetch */ } finally {
       setLoading(false);

@@ -23,18 +23,6 @@ import { NAV_ITEMS } from '@/lib/nav-config';
 import { useAppStore } from '@/stores/app-store';
 import type { ViewType } from '@/types';
 
-const NAV_SHORTCUTS: Record<ViewType, string> = {
-  dashboard: 'G D',
-  novels: 'G N',
-  categories: 'G C',
-  tags: 'G T',
-  scrape: 'G S',
-  download: 'G O',
-  themes: 'G H',
-  sites: 'G W',
-  'novel-detail': '',
-};
-
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
     <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground">
@@ -107,41 +95,26 @@ export default function CommandPalette() {
                 <CommandItem onSelect={handleNewNovel}>
                   <Plus className="size-4 text-muted-foreground" />
                   <span>新建小说</span>
-                  <span className="ml-auto flex gap-0.5">
-                    <Kbd>N</Kbd>
-                  </span>
                 </CommandItem>
                 <CommandItem onSelect={handleViewDashboard}>
                   <LayoutDashboard className="size-4 text-muted-foreground" />
                   <span>查看仪表盘</span>
-                  <span className="ml-auto flex gap-0.5">
-                    <Kbd>G</Kbd>
-                    <Kbd>D</Kbd>
-                  </span>
                 </CommandItem>
               </CommandGroup>
 
               <CommandSeparator />
 
               <CommandGroup heading="页面导航">
-                {NAV_ITEMS.map((item) => {
-                  const shortcut = NAV_SHORTCUTS[item.key];
-                  return (
-                    <CommandItem
-                      key={item.key}
-                      onSelect={() => handleNavSelect(item.key)}
-                      value={`${item.label} ${shortcut}`}
-                    >
-                      <item.icon className="size-4 text-muted-foreground" />
-                      <span>{item.label}</span>
-                      <span className="ml-auto flex gap-0.5">
-                        {shortcut && shortcut.split(' ').filter(Boolean).map((k, i) => (
-                          <Kbd key={i}>{k}</Kbd>
-                        ))}
-                      </span>
-                    </CommandItem>
-                  );
-                })}
+                {NAV_ITEMS.map((item) => (
+                  <CommandItem
+                    key={item.key}
+                    onSelect={() => handleNavSelect(item.key)}
+                    value={item.label}
+                  >
+                    <item.icon className="size-4 text-muted-foreground" />
+                    <span>{item.label}</span>
+                  </CommandItem>
+                ))}
               </CommandGroup>
             </CommandList>
 

@@ -62,7 +62,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
         pageSize: '20',
         ...(search ? { search } : {}),
       });
-      const data = await apiFetch(`/api/scrape-rules?${params}`);
+      const data = await apiFetch<{ rules: ScrapeRuleItem[]; totalPages: number }>(`/api/scrape-rules?${params}`);
       setRules(data.rules || []);
       setTotalPages(data.totalPages || 1);
     } catch { /* handled by apiFetch */ } finally {
@@ -92,7 +92,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
 
   const handleExecute = async (rule: ScrapeRuleItem) => {
     try {
-      const task = await apiFetch('/api/scrape-tasks', {
+      const task = await apiFetch<{ id: string }>('/api/scrape-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ruleId: rule.id, mode: rule.scrapeMode || 'incremental' }),

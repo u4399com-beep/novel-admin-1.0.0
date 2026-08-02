@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import type { ViewType } from '@/types';
 import { useState, useEffect, useSyncExternalStore } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { Plus, BookOpen, Search, Sun, Moon, LogOut, Shield } from 'lucide-react';
@@ -9,6 +10,8 @@ import { useTheme } from 'next-themes';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/stores/app-store';
+import { NAV_ITEMS } from '@/lib/nav-config';
+import { AdminViewSkeletons } from '@/components/admin/AdminViewSkeletons';
 import AppSidebar, { MobileSidebar } from '@/components/novel/AppSidebar';
 import { DashboardView } from '@/components/novel/DashboardView';
 import NovelFormDialog from '@/components/novel/NovelFormDialog';
@@ -16,44 +19,43 @@ import { ChapterFormDialog } from '@/components/novel/ChapterFormDialog';
 import CommandPalette from '@/components/novel/CommandPalette';
 import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog';
 
-// Lazy-loaded view components (not needed on initial dashboard render)
-const viewLoadingFallback = (
-  <div className="flex items-center justify-center h-64">
-    <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
-  </div>
-);
+// View key mapping: Cmd/Ctrl+1 → NAV_ITEMS[0], Cmd/Ctrl+2 → NAV_ITEMS[1], etc.
+const VIEW_KEY_MAP: Record<string, string> = {};
+NAV_ITEMS.forEach((item, idx) => {
+  VIEW_KEY_MAP[String(idx + 1)] = item.key;
+});
 
 const NovelListView = dynamic(() => import('@/components/novel/NovelListView'), {
   ssr: false,
-  loading: () => viewLoadingFallback,
+  loading: () => <AdminViewSkeletons view="novels" />,
 });
 const NovelDetailView = dynamic(() => import('@/components/novel/NovelDetailView'), {
   ssr: false,
-  loading: () => viewLoadingFallback,
+  loading: () => <AdminViewSkeletons view="novels" />,
 });
 const CategoryManagerView = dynamic(() => import('@/components/novel/CategoryManagerView'), {
   ssr: false,
-  loading: () => viewLoadingFallback,
+  loading: () => <AdminViewSkeletons view="categories" />,
 });
 const TagManagerView = dynamic(() => import('@/components/novel/TagManagerView'), {
   ssr: false,
-  loading: () => viewLoadingFallback,
+  loading: () => <AdminViewSkeletons view="tags" />,
 });
 const ScrapeManagerView = dynamic(() => import('@/components/scrape/ScrapeRuleEditor'), {
   ssr: false,
-  loading: () => viewLoadingFallback,
+  loading: () => <AdminViewSkeletons view="scrape" />,
 });
 const DownloadManagerView = dynamic(() => import('@/components/download/DownloadManagerView'), {
   ssr: false,
-  loading: () => viewLoadingFallback,
+  loading: () => <AdminViewSkeletons view="scrape" />,
 });
 const ThemeManagerView = dynamic(() => import('@/components/theme/ThemeManagerView'), {
   ssr: false,
-  loading: () => viewLoadingFallback,
+  loading: () => <AdminViewSkeletons view="themes" />,
 });
 const SiteClusterView = dynamic(() => import('@/components/site/SiteClusterView'), {
   ssr: false,
-  loading: () => viewLoadingFallback,
+  loading: () => <AdminViewSkeletons view="sites" />,
 });
 
 const VIEW_TITLES: Record<string, { title: string; description: string }> = {
@@ -110,17 +112,33 @@ export default function AdminPage() {
     return () => clearInterval(id);
   }, []);
 
+  const setCurrentView = useAppStore((s) => s.setCurrentView);
+
   // ─── Keyboard shortcuts listener ──────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === '?' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isInputFocused = tag && ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag);
+
+      // Cmd/Ctrl + 1-8: switch nav view
+      if ((e.metaKey || e.ctrlKey) && !isInputFocused) {
+        const viewKey = VIEW_KEY_MAP[e.key];
+        if (viewKey) {
+          e.preventDefault();
+          setCurrentView(viewKey as ViewType);
+          return;
+        }
+      }
+
+      // ? key: toggle shortcuts dialog
+      if (e.key === '?' && !isInputFocused) {
         e.preventDefault();
         setShortcutsOpen(prev => !prev);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [setCurrentView]);
 
   // ─── Dark mode toggle ─────────────────────────────────────────────────
   const { theme, setTheme } = useTheme();

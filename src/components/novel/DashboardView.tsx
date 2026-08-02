@@ -51,6 +51,22 @@ import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { DashboardStats, NovelStatus, ViewType } from '@/types';
 
+// ─── Activity API types ─────────────────────────────────────────────────────
+interface ActivityData {
+  dailyActivity: {
+    date: string;
+    novelsCreated: number;
+    chaptersCreated: number;
+    scrapeRuns: number;
+  }[];
+  recentEvents: {
+    type: string;
+    title: string;
+    novelTitle?: string | null;
+    timestamp: string;
+  }[];
+}
+
 const statusChartColors: Record<string, string> = {
   ongoing: '#10b981',
   completed: '#f59e0b',
@@ -64,11 +80,18 @@ const statusChartConfig: ChartConfig = {
   },
 };
 
-// TODO: Connect to real activity data API
 const activityChartConfig: ChartConfig = {
-  chapters: {
+  chaptersCreated: {
     label: '新增章节',
     color: '#a78bfa',
+  },
+  novelsCreated: {
+    label: '新增小说',
+    color: '#10b981',
+  },
+  scrapeRuns: {
+    label: '采集任务',
+    color: '#f59e0b',
   },
 };
 
@@ -88,9 +111,44 @@ const quickActionItems = [
   { key: 'import-categories', label: '导入分类', desc: '整理小说分类体系', icon: Upload, view: 'categories' as const },
 ] as const;
 
+// ─── Event metadata helper ──────────────────────────────────────────────────
+function getEventMeta(type: string) {
+  switch (type) {
+    case 'novel_created':
+      return {
+        icon: PlusCircle,
+        color: 'text-emerald-600 dark:text-emerald-400',
+        hoverBg: 'group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30',
+        label: '创建小说 ',
+      };
+    case 'chapter_added':
+      return {
+        icon: FileText,
+        color: 'text-violet-600 dark:text-violet-400',
+        hoverBg: 'group-hover:bg-violet-100 dark:group-hover:bg-violet-900/30',
+        label: '新增章节 ',
+      };
+    case 'scrape_run':
+      return {
+        icon: Globe,
+        color: 'text-amber-600 dark:text-amber-400',
+        hoverBg: 'group-hover:bg-amber-100 dark:group-hover:bg-amber-900/30',
+        label: '执行采集 ',
+      };
+    default:
+      return {
+        icon: Activity,
+        color: 'text-muted-foreground',
+        hoverBg: '',
+        label: '',
+      };
+  }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export function DashboardView() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [activityData, setActivityData] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,10 +162,18 @@ export function DashboardView() {
     try {
       setLoading(true);
       setError(null);
-      const data: DashboardStats = await apiFetch('/api/dashboard');
-      setStats(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '未知错误');
+      const [statsRes, activityRes] = await Promise.allSettled([
+        apiFetch<DashboardStats>('/api/dashboard'),
+        apiFetch<ActivityData>('/api/dashboard/activity'),
+      ]);
+      if (statsRes.status === 'fulfilled') {
+        setStats(statsRes.value);
+      } else {
+        setError(statsRes.reason instanceof Error ? statsRes.reason.message : '未知错误');
+      }
+      if (activityRes.status === 'fulfilled') {
+        setActivityData(activityRes.value);
+      }
     } finally {
       setLoading(false);
     }
@@ -154,26 +220,21 @@ export function DashboardView() {
     return { completedCount, avgChapters, avgWords };
   }, [stats]);
 
-  // ─── Placeholder 7-day activity data ────────────────────────────────────
-  // TODO: Connect to real activity data API
-  const activityData = useMemo(() => {
-    const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-    const now = new Date();
-    return days.map((day, i) => {
-      const d = new Date(now);
-      d.setDate(d.getDate() - (6 - i));
-      const month = d.getMonth() + 1;
-      const date = d.getDate();
-      // Placeholder: simulate some variation
-      const base = stats?.totalChapters ? Math.floor(stats.totalChapters / 30) : 3;
-      const count = Math.max(0, base + Math.floor(Math.sin(i * 1.5) * 2) + (i === 3 ? 4 : 0));
+  // ─── 7-day activity chart data (from real API) ─────────────────────────
+  const chartActivityData = useMemo(() => {
+    if (!activityData?.dailyActivity.length) return [];
+    return activityData.dailyActivity.map((d) => {
+      const date = new Date(d.date + 'T00:00:00Z');
+      const month = date.getUTCMonth() + 1;
+      const day = date.getUTCDate();
       return {
-        name: `${month}/${date}`,
-        day,
-        chapters: count,
+        name: `${month}/${day}`,
+        novelsCreated: d.novelsCreated,
+        chaptersCreated: d.chaptersCreated,
+        scrapeRuns: d.scrapeRuns,
       };
     });
-  }, [stats?.totalChapters]);
+  }, [activityData]);
 
   // ─── Welcome card helpers ─────────────────────────────────────────────
   const { greeting, dateStr } = useMemo(() => {
@@ -447,13 +508,25 @@ export function DashboardView() {
                 ))}
               </div>
             </div>
+          ) : chartActivityData.length === 0 ? (
+            <div className="flex h-[180px] items-center justify-center text-sm text-muted-foreground">
+              暂无活动数据
+            </div>
           ) : (
             <ChartContainer config={activityChartConfig} className="h-[180px] w-full">
-              <AreaChart data={activityData} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
+              <AreaChart data={chartActivityData} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
                 <defs>
                   <linearGradient id="chapterGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} />
                     <stop offset="95%" stopColor="#a78bfa" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="novelGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="scrapeGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -472,7 +545,25 @@ export function DashboardView() {
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Area
                   type="monotone"
-                  dataKey="chapters"
+                  dataKey="scrapeRuns"
+                  stroke="#f59e0b"
+                  strokeWidth={1.5}
+                  fill="url(#scrapeGradient)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="novelsCreated"
+                  stroke="#10b981"
+                  strokeWidth={1.5}
+                  fill="url(#novelGradient)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="chaptersCreated"
                   stroke="#a78bfa"
                   strokeWidth={2}
                   fill="url(#chapterGradient)"
@@ -542,36 +633,33 @@ export function DashboardView() {
                 </div>
               ))}
             </div>
-          ) : !stats?.recentNovels.length ? (
+          ) : !activityData?.recentEvents.length ? (
             <div className="flex py-8 items-center justify-center text-sm text-muted-foreground">
               暂无最近活动
             </div>
           ) : (
             <div className="relative space-y-0">
-              {stats.recentNovels.slice(0, 5).map((novel, i) => {
-                const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
-                const isLast = i === Math.min(stats.recentNovels.length, 5) - 1;
+              {activityData.recentEvents.map((event, i) => {
+                const isLast = i === activityData.recentEvents.length - 1;
+                const { icon: EventIcon, color: iconColor, hoverBg, label } = getEventMeta(event.type);
                 return (
-                  <div key={novel.id} className="relative flex items-start gap-3 pb-6 last:pb-0 group">
-                    {/* Timeline line */}
+                  <div key={`${event.type}-${event.timestamp}-${i}`} className="relative flex items-start gap-3 pb-6 last:pb-0 group">
                     {!isLast && (
                       <div className="absolute left-[15px] top-9 h-[calc(100%-12px)] w-px bg-border" />
                     )}
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted group-hover:bg-violet-100 dark:group-hover:bg-violet-900/30 transition-colors">
-                      <BookOpen className="h-4 w-4 text-muted-foreground group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors" />
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ${hoverBg} transition-colors`}>
+                      <EventIcon className={`h-4 w-4 text-muted-foreground ${iconColor} transition-colors`} />
                     </div>
                     <div className="min-w-0 flex-1 pt-0.5">
                       <p className="text-sm">
-                        <span className="font-medium">{novel.title}</span>
-                        <span className="text-muted-foreground"> 由 </span>
-                        <span className="font-medium">{novel.author}</span>
-                        <span className="text-muted-foreground"> 更新</span>
-                        <Badge variant="secondary" className={`ml-2 text-[10px] px-1.5 py-0 ${statusInfo.className}`}>
-                          {statusInfo.label}
-                        </Badge>
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="font-medium">{event.title}</span>
+                        {event.novelTitle && (
+                          <span className="text-muted-foreground"> · {event.novelTitle}</span>
+                        )}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {safeFormatDate(novel.updatedAt, (d) => formatDistanceToNow(d, {
+                        {safeFormatDate(event.timestamp, (d) => formatDistanceToNow(d, {
                           addSuffix: true,
                           locale: zhCN,
                         }))}

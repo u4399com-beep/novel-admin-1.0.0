@@ -17,8 +17,9 @@ import { VisualSelectorBuilder } from './VisualSelectorBuilder';
 export type { ScrapeRuleFormData, ScrapeRuleItem, SelectorRule, PaginationConfig, AntiCrawlConfig, CleanConfig } from './parts/types';
 
 // Internal imports
-import type { SelectorRule, PaginationConfig, ScrapeRuleItem } from './parts/types';
-import { scrapeRuleSchema, defaultSelector, defaultPagination, type FormValues } from './parts/schema';
+import type { SelectorRule, PaginationConfig, ScrapeRuleItem, ScrapeRuleFormData } from './parts/types';
+import type { FormValues } from './parts/schema';
+import { scrapeRuleSchema, defaultSelector, defaultPagination } from './parts/schema';
 import { BasicInfoTab } from './parts/BasicInfoTab';
 import { ListPageTab } from './parts/ListPageTab';
 import { BookInfoTab } from './parts/BookInfoTab';
@@ -203,19 +204,22 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
 
     async function loadRule() {
       try {
-        const rule = await apiFetch(`/api/scrape-rules/${ruleId}`);
+        const rule = await apiFetch<Record<string, unknown>>(`/api/scrape-rules/${ruleId}`);
 
-        const parseJSON = (str: string | null, fallback: unknown) => {
-          if (!str) return fallback;
-          try { return JSON.parse(str); } catch { return fallback; }
+        const str = (k: string) => (rule[k] as string | null) ?? null;
+        const num = (k: string) => (rule[k] as number | null) ?? null;
+        const bool = (k: string) => (rule[k] as boolean | null) ?? null;
+        const parseJSON = <T,>(val: unknown, fallback: T): T => {
+          if (!val) return fallback;
+          try { return JSON.parse(val as string) as T; } catch { return fallback; }
         };
 
         reset({
-          name: rule.name || '',
-          description: rule.description || '',
-          enabled: rule.enabled ?? true,
+          name: (rule.name as string) || '',
+          description: (rule.description as string) || '',
+          enabled: (rule.enabled as boolean) ?? true,
 
-          listUrl: rule.listUrl || '',
+          listUrl: str('listUrl') || '',
           listSelector: parseJSON(rule.listSelector, defaultSelector),
           listPagination: parseJSON(rule.listPagination, defaultPagination),
 
@@ -227,7 +231,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
           bookCoverSelector: parseJSON(rule.bookCoverSelector, defaultSelector),
           bookStatusSelector: parseJSON(rule.bookStatusSelector, defaultSelector),
 
-          chapterListUrl: rule.chapterListUrl || '',
+          chapterListUrl: str('chapterListUrl') || '',
           chapterListSelector: parseJSON(rule.chapterListSelector, defaultSelector),
           chapterTitleSelector: parseJSON(rule.chapterTitleSelector, defaultSelector),
           chapterLinkSelector: parseJSON(rule.chapterLinkSelector, defaultSelector),
@@ -245,20 +249,20 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
             maxDelay: 2000,
           }),
 
-          storageMode: rule.storageMode || 'database',
-          filePath: rule.filePath || './data/novels',
-          coverSavePath: rule.coverSavePath || './data/covers',
+          storageMode: (str('storageMode') as FormValues['storageMode']) || 'database',
+          filePath: str('filePath') || './data/novels',
+          coverSavePath: str('coverSavePath') || './data/covers',
 
-          scrapeMode: rule.scrapeMode || 'incremental',
-          engine: (rule.engine as FormValues['engine']) || 'cheerio',
-          agentqlQueries: rule.agentqlConfig || '',
+          scrapeMode: (str('scrapeMode') as FormValues['scrapeMode']) || 'incremental',
+          engine: (str('engine') as FormValues['engine']) || 'cheerio',
+          agentqlQueries: str('agentqlConfig') || '',
           cloudBrowserProvider: 'browserless',
           cloudBrowserUrl: 'https://chrome.browserless.io',
-          threadCount: rule.threadCount || 3,
-          minDelay: rule.minDelay ?? 1000,
-          maxDelay: rule.maxDelay ?? 3000,
-          enableShuffle: rule.enableShuffle ?? false,
-          dedupMode: rule.dedupMode || 'url',
+          threadCount: num('threadCount') || 3,
+          minDelay: num('minDelay') ?? 1000,
+          maxDelay: num('maxDelay') ?? 3000,
+          enableShuffle: bool('enableShuffle') ?? false,
+          dedupMode: (str('dedupMode') as FormValues['dedupMode']) || 'url',
 
           cleanConfig: parseJSON(rule.cleanConfig, {
             removeAds: true,

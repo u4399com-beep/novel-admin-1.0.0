@@ -149,6 +149,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.3, delay: index * 0.04 }}
       className="group cursor-pointer"
+      onClick={() => window.location.href = `/novels/${novel.id}`}
     >
       {/* Cover */}
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-xl transition-all duration-300 group-hover:-translate-y-1">

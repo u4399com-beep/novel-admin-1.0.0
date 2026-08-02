@@ -2869,3 +2869,108 @@ Stage Summary:
 - 重复toast: 移除25个，apiFetch统一处理
 - 新功能: 首页骨架屏、Dashboard增强、章节阅读器
 - 用户需在服务器执行: cd /opt/novel-admin && git pull && bash deploy.sh
+---
+Task ID: cron-qa-20260802-1732
+Agent: Main Orchestrator
+Task: QA测试 + 修复构建错误 + 新功能开发
+
+Work Log:
+
+## 项目状态评估
+- 阅读完整 worklog (2871行)，了解项目全貌
+- 项目经过5+轮审计，代码库已稳定
+- 112项历史修复 + 37项上轮修复
+
+## 第一阶段：构建错误修复 (3个)
+
+### 1. ChapterFormDialog 缺少 useState 导入
+- `src/components/novel/ChapterFormDialog.tsx:62` — 使用了 useState 但未导入
+- 修复: 添加 `useState` 到 import 语句
+
+### 2. apiFetch 类型安全问题 (10处)
+- 所有未类型化的 apiFetch 调用返回 `unknown`，TypeScript 构建失败
+- 修复 8 个 HIGH + 2 个 MEDIUM:
+  - ScrapeTaskMonitor: 2处添加 `{tasks, totalPages, total}` 和 `ScrapeTask` 泛型
+  - ScrapeRuleEditor: 使用 `Record<string,unknown>` + `str/num/bool` 访问器 + `parseJSON<T>` 泛型
+  - ScrapeRuleList: 2处添加 `{rules, totalPages}` 和 `{id}` 泛型
+  - ThemeManagerView: 添加 `(Theme & {config: string})[]` 泛型 + ThemeConfig cast
+  - TagManagerView: 添加 `Tag[]` 泛型
+  - SiteClusterView: 添加 `Site[]` 和 `(Theme & {config: string})[]` 泛型
+  - DashboardView: `const data: DashboardStats` → `apiFetch<DashboardStats>`
+  - CategoryManagerView: `const data: Category[]` → `apiFetch<Category[]>`
+
+### 3. health 端点误报“缺少表”
+- `src/app/api/public/health/route.ts:36` — `void (db...).count()` 丢弃了 Promise，try/catch 无法捕获
+- 修复: `void` → `await`
+
+## 第二阶段：API QA 测试
+- 环境限制: 容器内 Next.js dev server 和 standalone server 均无法持续运行 (进程被杀)
+- 通过 standalone server 短暂存活的窗口期进行 API 测试:
+  - GET /api/public/health → 200 ✅ (修复后)
+  - POST /api/public/seed-categories → 200 ✅ (13个分类)
+  - GET /api/public/categories → 200 ✅
+  - GET /api/public/novels → 200 ✅
+  - GET /api/auth/csrf → 200 ✅
+- Build: TypeScript 0 errors ✅
+- ESLint: 0 errors on all new/modified files ✅
+
+## 第三阶段：新功能开发 (3大功能)
+
+### 1. 公开小说详情页 + 章节阅读器
+- 新增页面路由: `/novels/[id]`
+  - 服务端组件: 直接通过 Prisma 获取小说+章节数据
+  - SEO: generateMetadata 生成标题和描述
+  - loading.tsx: 骨架屏 (封面+元信息+12行章节骨架)
+  - not-found.tsx: 404 页面
+- 新增客户端组件: `NovelDetailClient.tsx`
+  - 小说信息区: 封面(渐变回退)、标题、作者、状态、分类、标签、字数、章节数
+  - 章节列表: 可滚动、编号、点击打开阅读器
+  - 阅读器 Dialog: 衬线字体、1.9行高、2em首行缩进
+  - 键盘导航: ← 上一章, → 下一章, Esc 关闭
+- 新增 3 个公共 API (无需认证):
+  - GET /api/public/novels/[id] — 小说详情+分类+标签+章节数
+  - GET /api/public/novels/[id]/chapters — 章节列表(不含内容)
+  - GET /api/public/chapters/[id] — 章节全文+所属小说
+- 首页小说卡片: 添加 onClick 导航到详情页
+
+### 2. Dashboard 真实活动数据
+- 新增 API: `GET /api/dashboard/activity` (需认证)
+  - dailyActivity: 7天每日新建小说/章节数/采集任务数 (日期填充确保每天有数据)
+  - recentEvents: 最近10条活动事件 (小说创建/章节添加/采集运行)
+  - 使用 SQLite 原生 SQL, LEFT JOIN 日期填充, UNION ALL 合并多来源
+  - 60秒缓存 (getOrCompute)
+- 更新 DashboardView.tsx:
+  - 移除 Math.sin 模拟数据和 TODO 注释
+  - 并行获取 dashboard stats + activity 数据
+  - 7天图表改为三色区域图 (紫色=章节, 绿色=小说, 琥珀色=采集)
+  - "最近活动"时间线改为真实事件+类型图标+时间格式化
+
+### 3. 键盘快捷键 + 视图骨架屏
+- 键盘快捷键 (admin/page.tsx):
+  - Ctrl/Cmd + 1-8 切换8个管理视图
+  - 自动跳过 INPUT/TEXTAREA/SELECT 元素
+  - 阻止浏览器默认行为
+- CommandPalette.tsx:
+  - 移除所有误导性快捷键标签 (G D, G N 等实际未实现的快捷键)
+- AdminViewSkeletons.tsx (新组件):
+  - Dashboard: 5统计卡+图表区+最近列表骨架
+  - Novels: 搜索栏+8卡片网格骨架
+  - Categories/Tags: 标题+操作按钮+6行表格骨架
+  - Themes: 6卡片网格(名称+描述+颜色+操作按钮)
+  - Sites: 4卡片网格(名称+描述+状态+操作)
+  - Scrape/Download: 通用表格骨架
+- admin/page.tsx: 替换通用旋转器为视图特定骨架
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- eslint: 0 errors ✅
+- API测试: 5个端点全部 200 ✅
+
+Stage Summary:
+- 修复3个构建阻断错误 (useState缺失 + 10处apiFetch类型 + health端点)
+- 新增3大功能: 公开小说详情页+阅读器, Dashboard真实数据, 快捷键+骨架屏
+- 新增6个文件: 3个公共API, 1个页面, 1个loading, 1个not-found
+- 新增1个组件: AdminViewSkeletons
+- 修改8个文件: 类型安全修复+Dashboard+快捷键+骨架屏
+- 项目累计修复: 112 + 37 + 13 = 162项
+- **重要**: 代码未推送到远程仓库，用户需在服务器 git pull

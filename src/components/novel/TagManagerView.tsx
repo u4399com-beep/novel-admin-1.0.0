@@ -84,7 +84,7 @@ export default function TagManagerView() {
   const fetchTags = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiFetch('/api/tags');
+      const data = await apiFetch<Tag[]>('/api/tags');
       setTags(data);
     } catch { /* handled by apiFetch */ } finally {
       setLoading(false);

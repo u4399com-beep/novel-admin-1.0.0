@@ -646,7 +646,7 @@ export default function NovelDetailView() {
     if (!selectedNovelId) return;
     setLoadingNovel(true);
     try {
-      const data = await apiFetch(`/api/novels/${selectedNovelId}`);
+      const data = await apiFetch<Novel>(`/api/novels/${selectedNovelId}`);
       setNovel(data);
     } catch {
       setCurrentView('novels');

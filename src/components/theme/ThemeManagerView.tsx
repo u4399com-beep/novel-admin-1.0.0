@@ -550,11 +550,11 @@ export default function ThemeManagerView() {
 
   const fetchThemes = useCallback(async () => {
     try {
-      const data = await apiFetch('/api/themes');
+      const data = await apiFetch<(Theme & { config: string; _count?: { sites: number } })[]>('/api/themes');
       setThemes(
-        data.map((t: Theme & { config: string; _count?: { sites: number } }) => ({
+        data.map((t) => ({
           ...t,
-          config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : t.config,
+          config: (typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : t.config) as ThemeConfig,
         }))
       );
     } catch { /* handled by apiFetch */ } finally {

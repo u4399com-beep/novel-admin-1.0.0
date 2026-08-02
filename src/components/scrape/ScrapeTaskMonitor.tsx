@@ -165,7 +165,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
         pageSize: String(PAGE_SIZE),
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
       });
-      const data = await apiFetch(`/api/scrape-tasks?${params}`);
+      const data = await apiFetch<{ tasks: ScrapeTask[]; totalPages: number; total: number }>(`/api/scrape-tasks?${params}`);
       setTasks(data.tasks || []);
       setTotalPages(data.totalPages || 1);
       setTotal(data.total || 0);
@@ -209,7 +209,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
   const fetchTaskLogs = useCallback(async (taskId: string) => {
     setLogsLoading(true);
     try {
-      const task = await apiFetch(`/api/scrape-tasks/${taskId}`);
+      const task = await apiFetch<ScrapeTask>(`/api/scrape-tasks/${taskId}`);
       setExpandedLogs(task.logs || []);
       // Also update the task in the list with fresh data
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...task, logs: undefined } : t)));

@@ -104,7 +104,7 @@ export default function CategoryManagerView() {
   const fetchCategories = useCallback(async () => {
     try {
       setLoading(true);
-      const data: Category[] = await apiFetch('/api/categories');
+      const data = await apiFetch<Category[]>('/api/categories');
       setCategories(data);
     } catch { /* handled by apiFetch */ } finally {
       setLoading(false);
