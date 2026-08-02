@@ -3262,3 +3262,149 @@ Stage Summary:
 - 新增SEO metadata + 暗色模式优化 + 移动端适配
 - standalone环境Turbopack chunk加载问题(非代码bug)
 - 代码已commit未推送, 用户需 git push + 服务器部署
+---
+Task ID: cron-qa-20260802-2039
+Agent: Main Orchestrator
+Task: QA测试 + 阅读器全屏/阅读设置/进度持久化 + 全局动效增强
+
+Work Log:
+
+## 项目状态评估
+- 阅读完整 worklog (3265行)，了解项目全貌
+- 累计168项修复，代码库稳定
+- 上一轮(19:53)已完成管理组件增强+SEO+暗色模式+移动端适配
+- 5个未推送commit
+
+## 第一阶段：构建验证 + QA测试
+
+### 构建验证
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 3 warnings (预存React Compiler) ✅
+
+### API测试 (dev server)
+- GET /api/public/health → 200 healthy ✅
+- POST /api/public/seed-categories → 200 (13个分类) ✅
+- GET /api/public/categories → 200 (13个分类) ✅
+- GET /api/public/novels → 200 (0 novels) ✅
+- GET /api/public/search-suggestions?q=test → 200 [] ✅
+- GET /api/auth/csrf → 200 ✅
+- GET / → 200 (38KB) ✅
+- GET /categories → 200 (90KB) ✅
+- GET /rankings → 200 (136KB) ✅
+- GET /login → 200 (40KB) ✅
+- GET /nonexistent → 404 ✅
+
+### agent-browser QA
+- 环境限制: dev server进程在容器中被杀(内存限制)，无法持续运行agent-browser
+- 通过curl全面验证所有端点和页面，均正常
+- 已知非代码问题: standalone+Turbopack环境chunk加载限制(Docker部署正常)
+
+## 第二阶段：新功能开发
+
+### 1. 阅读器全屏模式
+- Fullscreen API集成(F键快捷切换)
+- 全屏时Dialog扩展为100vw×100vh
+- ESC优先退出全屏→关闭侧边栏→关闭设置→关闭阅读器
+- document.fullscreenchange事件监听自动同步状态
+
+### 2. 阅读设置面板 (ReadingSettingsPanel)
+- 字号调节: 12-28px，实时显示当前值
+- 4种阅读主题: 默认(白) / 护眼(米黄) / 绿意(浅绿) / 夜间(深色)
+- 主题色块选择器，当前主题带Check标记
+- 3种字体: 宋体(serif) / 黑体(sans) / 等宽(mono)
+- 所有设置localStorage持久化
+- 面板折叠动画(AnimatePresence + height auto)
+
+### 3. 阅读进度持久化
+- 每本小说独立存储最后阅读章节index
+- 详情页显示"上次阅读到第X章"提示栏
+- "继续阅读"按钮(跳转到上次位置)
+- 章节列表中上次阅读章节高亮标记
+- useState lazy initializer避免React Compiler警告
+
+### 4. 章节侧边栏导航
+- 阅读器内可展开的章节目录面板
+- 220px宽度，滚动浏览全部章节
+- 当前章节高亮 + 上次阅读章节左侧标记
+- 点击跳转并保存进度
+- 滑入/滑出动画
+
+### 5. 阅读进度条
+- 阅读器顶部0.5px进度条
+- 滚动实时追踪百分比
+- 顶部显示"第X/Y章 Z%"信息
+- motion.div动画过渡
+
+### 6. BackToTop组件
+- 滚动超过400px显示
+- framer-motion入场/退场动画
+- 固定在右下角，primary色圆形按钮
+- 已添加到: 首页/分类/排行榜/小说详情页
+
+### 7. ScrollProgress全局滚动条
+- 页面顶部2px滚动进度指示器
+- 固定定位z-50
+- reading-progress-bar发光效果(CSS)
+- 添加到RootLayout，全局生效
+
+## 第三阶段：CSS动效增强 (globals.css +166行)
+
+### 新增动画
+- card-lift: 卡片悬浮抬升+阴影
+- pulse-glow: 主色脉冲发光
+- fade-in-up: 淡入上移(用于tooltip/dropdown)
+- skeleton-shimmer: 骨架屏光泽扫过
+- progress-indeterminate: 不确定进度条
+- count-up: 数字计数器动画
+
+### 交互增强
+- ripple-effect: 点击涟漪效果
+- 链接下划线渐入动画
+- badge-interactive: Badge hover缩放
+- hover-glow: 卡片悬停发光边框
+- 懒加载图片淡入(opacity 0→1)
+- 移动端最小点击区域36px
+- stagger-children: 子元素交错动画(10级)
+
+### 组件样式增强
+- [data-sonner-toast]: 圆角+增强阴影
+- [data-radix-tooltip-content]: fade-in-up入场
+- [data-radix-dropdown-menu-content]: fade-in-up入场
+- reading-progress-bar: 发光阴影
+
+## 第四阶段：404页面增强
+- 图标改为Compass(更贴切"迷路"主题)
+- 404数字放大(8xl/black/超低透明度) + tracking-tighter
+- 分层延迟动画: 图标→数字→标题→描述→按钮
+- 新增底部提示"如果您认为这是一个错误，请联系管理员"
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 3 warnings (预存React Compiler) ✅
+- Git commit: b99ee19 (12 files changed, +951 -78)
+
+## 统计
+- 新增文件: 4 (BackToTop/ReadingSettingsPanel/ScrollProgress/use-reading-settings)
+- 修改文件: 8
+- 代码变更: +951 -78
+- 项目累计修复: 168 + 0 = 168项
+
+Stage Summary:
+- 代码库稳定，构建通过
+- 阅读器全面升级: 全屏+设置+进度+侧边栏
+- 4个新组件 + 全局CSS动效系统
+- 代码已commit未推送，用户需 git push + 服务器 git pull && bash deploy.sh
+
+## 项目当前状态
+- **代码库状态**: 稳定，168项累计修复，0构建错误
+- **未推送commit**: 6个(含本轮b99ee19)
+- **生产服务器**: 运行旧代码(需 git push + 部署)
+- **已知环境限制**: 容器内dev server/standalone不稳定(非代码bug)
+
+## 建议下一阶段优先事项
+1. **git push + 服务器部署** (最高优先，所有新功能未生效)
+2. 阅读器: 字数统计显示、章节书签功能、内容目录(TOC)自动生成
+3. 首页: 小说卡片hover预览弹窗(Popover显示简介/标签/章节)
+4. 管理: 批量导入导出小说、采集任务实际执行逻辑完善
+5. 性能: 图片懒加载优化、列表虚拟滚动(大列表场景)
+6. Rounds 2-5 全面审计(一直被新功能开发打断)
