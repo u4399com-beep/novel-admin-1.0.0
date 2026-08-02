@@ -146,21 +146,21 @@ function FilterRowSkeleton() {
 function NovelCard({ novel, index }: { novel: Novel; index: number }) {
   const gradient = getGradient(novel.title);
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const handleMouseEnter = useCallback(() => {
-    clearTimeout(leaveTimer.current);
+    if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) clearTimeout(leaveTimer.current);
     enterTimer.current = setTimeout(() => setPopoverOpen(true), 400);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    clearTimeout(enterTimer.current);
+    if (enterTimer.current) if (enterTimer.current) if (enterTimer.current) if (enterTimer.current) if (enterTimer.current) if (enterTimer.current) clearTimeout(enterTimer.current);
     leaveTimer.current = setTimeout(() => setPopoverOpen(false), 200);
   }, []);
 
   const handlePopoverEnter = useCallback(() => {
-    clearTimeout(leaveTimer.current);
+    if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) clearTimeout(leaveTimer.current);
   }, []);
 
   const handlePopoverLeave = useCallback(() => {
@@ -450,7 +450,7 @@ export default function HomePage() {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // ─── Fetch categories ────────────────────────────────────────────
   useEffect(() => {

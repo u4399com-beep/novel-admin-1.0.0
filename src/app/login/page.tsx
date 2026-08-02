@@ -84,10 +84,14 @@ export default function LoginPage() {
       >
         {/* Logo / Brand */}
         <div className="flex flex-col items-center mb-8">
-          <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/25">
+          <motion.div
+            className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/25"
+            animate={{ y: [0, -4, 0] }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+          >
             <BookOpen className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">小说阁</h1>
+          </motion.div>
+          <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-foreground via-foreground/80 to-foreground bg-clip-text text-transparent">小说阁</h1>
           <p className="text-sm text-muted-foreground mt-1">管理后台登录</p>
         </div>
 

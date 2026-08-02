@@ -170,6 +170,8 @@ export default function CategoriesPage() {
     return categories.filter((c) => c.name.toLowerCase().includes(q));
   }, [categories, searchQuery]);
 
+  const maxNovels = Math.max(1, ...categories.map((c) => c._count.novels));
+
   // ── Handle card click ────────────────────────────────────────────────
   const handleCardClick = (slug: string) => {
     router.push(`/?categorySlug=${slug}`);
@@ -299,34 +301,51 @@ export default function CategoriesPage() {
                     style={{ borderLeftWidth: '4px', borderLeftColor: category.color }}
                     onClick={() => handleCardClick(category.slug)}
                   >
-                    <CardContent className="p-5">
+                    {/* Hover color wash */}
+                    <div
+                      className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                      style={{ backgroundColor: `${category.color}08` }}
+                    />
+                    <CardContent className="p-5 relative">
                       <div className="flex flex-col items-center text-center">
                         {/* Icon */}
                         <div
-                          className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-colors"
+                          className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-200"
                           style={{
                             backgroundColor: `${category.color}15`,
                           }}
                         >
                           <Icon
-                            className="h-6 w-6 transition-transform duration-200 group-hover:scale-110"
+                            className="h-6 w-6 transition-all duration-200 group-hover:scale-110"
                           />
                         </div>
 
                         {/* Name */}
-                        <h3 className="mb-2 text-sm font-bold">{category.name}</h3>
+                        <h3 className="mb-2 text-sm font-bold group-hover:text-primary transition-colors">{category.name}</h3>
 
-                        {/* Novel count badge */}
-                        <Badge variant="secondary" className="mb-3 text-xs">
-                          {category._count.novels} 本小说
-                        </Badge>
+                        {/* Novel count with bar */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="h-1 flex-1 max-w-[60px] rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${Math.min(100, (category._count.novels / Math.max(1, maxNovels)) * 100)}%`,
+                                backgroundColor: category.color,
+                              }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{category._count.novels}</span>
+                        </div>
 
-                        {/* Description (truncated to 2 lines) */}
+                        {/* Description */}
                         {category.description && (
                           <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                             {category.description}
                           </p>
                         )}
+
+                        {/* Navigate hint */}
+                        <ChevronRight className="mt-2 h-4 w-4 text-muted-foreground/0 group-hover:text-muted-foreground transition-all duration-200 group-hover:translate-x-0.5" />
                       </div>
                     </CardContent>
                   </Card>
@@ -345,7 +364,7 @@ export default function CategoriesPage() {
                 {' '}
                 · 搜索「
                 <span className="font-medium text-foreground">{searchQuery}</span>
-                」的结果
+                {'」的结果'}
               </span>
             )}
           </div>

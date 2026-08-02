@@ -109,6 +109,8 @@ function NovelRow({
   const isTop3 = rank <= 3;
   const style = RANK_STYLES[rank];
 
+  const rankPercent = 1 - (rank - 1) / 30; // visual weight for progress bar
+
   return (
     <div
       role="button"
@@ -122,7 +124,7 @@ function NovelRow({
       }}
       className={
         isTop3
-          ? `relative rounded-xl border-2 p-4 transition-all hover:shadow-md cursor-pointer group ${style?.border}`
+          ? `relative rounded-xl border-2 p-4 transition-all hover:shadow-md cursor-pointer group overflow-hidden ${style?.border}`
           : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-colors hover:bg-muted/50 cursor-pointer group'
       }
     >
@@ -130,6 +132,15 @@ function NovelRow({
       {isTop3 && (
         <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-background via-muted/30 to-background pointer-events-none" />
       )}
+      {/* Rank progress indicator */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1 transition-all duration-500"
+        style={{
+          backgroundColor: isTop3 ? 'var(--primary)' : 'hsl(var(--muted-foreground) / 0.3)',
+          opacity: Math.max(0.2, rankPercent),
+          borderRadius: isTop3 ? '0.5rem 0 0 0.5rem' : '0',
+        }}
+      />
 
       <div className={isTop3 ? 'relative flex items-start gap-4' : 'flex items-center gap-4 w-full'}>
         {/* Rank */}

@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "小说管理系统 - Novel Management",
-  description: "专业的小说管理平台，轻松管理你的小说创作和阅读",
+  title: "小说阁 - 小说管理系统",
+  description: "小说阁 — 专业的小说管理与阅读平台，轻松管理小说创作、分类、采集和阅读体验",
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
