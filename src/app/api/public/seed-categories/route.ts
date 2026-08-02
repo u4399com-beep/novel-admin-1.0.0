@@ -1,9 +1,10 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { withAuth } from "@/lib/api-auth";
 
 /**
  * Seed default categories into the database.
- * Public endpoint — used for initial setup before login.
+ * Authenticated endpoint — prevents unauthorized category resets.
  * Uses upsert so it's idempotent and safe to call multiple times.
  */
 const CATEGORIES_23QB = [
@@ -113,7 +114,7 @@ const CATEGORIES_23QB = [
   },
 ];
 
-export async function POST() {
+export const POST = withAuth(async function POST() {
   try {
     // Use upsert for each category — idempotent, safe to call repeatedly.
     // Unlike deleteMany+createMany, this preserves existing data and
@@ -168,4 +169,4 @@ export async function POST() {
       { status: 500 }
     );
   }
-}
+});

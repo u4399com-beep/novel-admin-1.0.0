@@ -17,7 +17,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div role="alert" className="min-h-screen flex items-center justify-center bg-background p-4">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -40,7 +40,9 @@ export default function GlobalError({
             页面出现了问题
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {error.message || '发生了意外错误，请尝试刷新页面。'}
+            {process.env.NODE_ENV === 'development'
+              ? error.message
+              : '发生了意外错误，请尝试刷新页面。'}
           </p>
         </div>
 

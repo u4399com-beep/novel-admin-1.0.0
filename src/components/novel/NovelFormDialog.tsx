@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, ImageIcon } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod/v4";
@@ -49,7 +49,7 @@ const novelFormSchema = z.object({
   categoryId: z.string().nullable().default(null),
   tags: z.array(z.string()).default([]),
   coverUrl: z.string().max(500, "封面URL不能超过500个字符").default(""),
-  wordCount: z.number().min(0, "字数不能为负数").default(0),
+
 });
 
 type NovelFormValues = z.infer<typeof novelFormSchema>;
@@ -62,30 +62,7 @@ const STATUS_BADGE_CONFIG: Record<string, { label: string; className: string }> 
   hiatus: { label: '暂停中', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/50' },
 };
 
-// ─── Generate slug from title ─────────────────────────────────────────────────
 
-function generateSlug(title: string, existingId?: string): string {
-  if (!title.trim()) return existingId ? existingId.slice(0, 8) : '';
-  // For Chinese characters, just use a shortened ID-like format
-  // since pinyin transliteration would require a large library
-  const hasChinese = /[\u4e00-\u9fff]/.test(title);
-  if (hasChinese) {
-    // Use title hash-like approach: take first 4 chars hex of simple hash
-    let hash = 0;
-    for (let i = 0; i < title.length; i++) {
-      hash = ((hash << 5) - hash + title.charCodeAt(i)) | 0;
-    }
-    const hex = Math.abs(hash).toString(16).slice(0, 6);
-    return `novel-${hex}`;
-  }
-  // For non-Chinese titles, slugify normally
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-}
 
 // ─── Cover Image Preview ─────────────────────────────────────────────────────
 
@@ -127,6 +104,7 @@ export default function NovelFormDialog() {
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
   const [submitting, setSubmitting] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
   const [apiCategories, setApiCategories] = useState<Category[]>([]);
   const [apiTags, setApiTags] = useState<Tag[]>([]);
 
@@ -139,11 +117,11 @@ export default function NovelFormDialog() {
         apiFetch<Category[]>("/api/categories"),
         apiFetch<Tag[]>("/api/tags"),
       ]);
-      if (catRes.status === 'fulfilled') {
+      if (catRes.status === 'fulfilled' && !cancelled) {
         setApiCategories(catRes.value);
         setCategories(catRes.value);
       }
-      if (tagRes.status === 'fulfilled') {
+      if (tagRes.status === 'fulfilled' && !cancelled) {
         setApiTags(tagRes.value);
         setTags(tagRes.value);
       }
@@ -153,9 +131,12 @@ export default function NovelFormDialog() {
   }, [setCategories, setTags]);
 
   useEffect(() => {
-    if (novelFormOpen && (categories.length === 0 || tags.length === 0)) {
+    if (!novelFormOpen) return;
+    if (categories.length === 0 || tags.length === 0) {
+      setCancelled(false);
       fetchOptions();
     }
+    return () => { setCancelled(true); };
   }, [novelFormOpen, fetchOptions, categories.length, tags.length]);
 
   // ── Merge store data with fetched data ──
@@ -173,7 +154,6 @@ export default function NovelFormDialog() {
       categoryId: null,
       tags: [],
       coverUrl: "",
-      wordCount: 0,
     },
   });
 
@@ -186,26 +166,11 @@ export default function NovelFormDialog() {
   const watchedDescription = useWatch({ control: form.control, name: "description" }) ?? '';
   const watchedStatus = useWatch({ control: form.control, name: "status" });
   const watchedCoverUrl = useWatch({ control: form.control, name: "coverUrl" }) ?? '';
-  const watchedWordCount = useWatch({ control: form.control, name: "wordCount" });
 
   // ── Derived values ──
   const titleCharCount = typeof watchedTitle === 'string' ? watchedTitle.length : 0;
   const authorCharCount = typeof watchedAuthor === 'string' ? watchedAuthor.length : 0;
   const descriptionCharCount = typeof watchedDescription === 'string' ? watchedDescription.length : 0;
-
-  // Auto-generated slug
-  const slug = useMemo(() => {
-    return generateSlug(watchedTitle, isEditing ? editingNovel!.id : undefined);
-  }, [watchedTitle, isEditing, editingNovel]);
-
-  // Word count formatted display
-  const wordCountFormatted = useMemo(() => {
-    const wc = typeof watchedWordCount === 'number' ? watchedWordCount : 0;
-    if (wc >= 10000) {
-      return `${(wc / 10000).toFixed(1)}万字`;
-    }
-    return `${wc.toLocaleString()}字`;
-  }, [watchedWordCount]);
 
   // Status badge preview config
   const statusBadge = watchedStatus ? STATUS_BADGE_CONFIG[watchedStatus] : null;
@@ -222,7 +187,6 @@ export default function NovelFormDialog() {
           categoryId: editingNovel.categoryId,
           tags: (editingNovel.tags ?? []).map((t) => t.tag.id),
           coverUrl: editingNovel.coverUrl || "",
-          wordCount: editingNovel.wordCount || 0,
         });
       } else {
         form.reset({
@@ -233,7 +197,6 @@ export default function NovelFormDialog() {
           categoryId: null,
           tags: [],
           coverUrl: "",
-          wordCount: 0,
         });
       }
     }
@@ -246,13 +209,6 @@ export default function NovelFormDialog() {
       ? current.filter((id) => id !== tagId)
       : [...current, tagId];
     form.setValue("tags", updated);
-  };
-
-  // ── Word count input handler ──
-  const handleWordCountInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/[^0-9]/g, '');
-    const num = raw === '' ? 0 : parseInt(raw, 10);
-    form.setValue('wordCount', isNaN(num) ? 0 : num, { shouldValidate: true });
   };
 
   // ── Submit ──
@@ -271,11 +227,6 @@ export default function NovelFormDialog() {
       // Only include coverUrl if provided
       if (values.coverUrl.trim()) {
         body.coverUrl = values.coverUrl.trim();
-      }
-
-      // Only include wordCount if non-zero or editing
-      if (values.wordCount > 0 || isEditing) {
-        body.wordCount = values.wordCount;
       }
 
       const url = isEditing ? `/api/novels/${editingNovel.id}` : "/api/novels";
@@ -337,17 +288,6 @@ export default function NovelFormDialog() {
                 </FormItem>
               )}
             />
-
-            {/* Slug (auto-generated, read-only) */}
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
-                URL标识
-                <span className="text-xs text-muted-foreground/60 font-normal">(自动生成)</span>
-              </span>
-              <div className="flex items-center h-9 rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground font-mono truncate">
-                {slug || '—'}
-              </div>
-            </div>
 
             {/* Author with char count */}
             <FormField
@@ -428,32 +368,6 @@ export default function NovelFormDialog() {
               )}
             />
 
-            {/* Word Count with formatted display */}
-            <FormField
-              control={form.control}
-              name="wordCount"
-              render={() => (
-                <FormItem>
-                  <div className="flex items-center justify-between">
-                    <FormLabel>总字数</FormLabel>
-                    <span className="text-xs font-medium text-muted-foreground tabular-nums">
-                      {wordCountFormatted}
-                    </span>
-                  </div>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="输入总字数，如 150000"
-                      value={typeof watchedWordCount === 'number' && watchedWordCount > 0 ? watchedWordCount : ''}
-                      onChange={handleWordCountInput}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             {/* Cover URL with preview */}
             <FormField
               control={form.control}
@@ -522,7 +436,8 @@ export default function NovelFormDialog() {
               render={() => (
                 <FormItem>
                   <FormLabel>标签</FormLabel>
-                  <div className="flex flex-wrap gap-2 rounded-md border border-input p-3 min-h-[44px]">
+                  <div role="group" aria-labelledby="tag-label" className="flex flex-wrap gap-2 rounded-md border border-input p-3 min-h-[44px]">
+                    <span id="tag-label" className="sr-only">标签选择</span>
                     {allTags.length === 0 ? (
                       <span className="text-sm text-muted-foreground">
                         暂无标签，请先创建标签

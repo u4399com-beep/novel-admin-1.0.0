@@ -41,6 +41,7 @@ export default function GlobalNotFound() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.4, delay: 0.2 }}
+            aria-hidden="true"
             className="text-8xl font-black tabular-nums text-muted-foreground/10 select-none tracking-tighter"
           >
             404

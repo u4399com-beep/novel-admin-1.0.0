@@ -1187,3 +1187,100 @@ img[loading="lazy"]:not([src]) {
   mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
 }
+
+/* ─── Round N+1 CSS utilities ────────────────────────────────────── */
+
+/* Smooth fade-in on mount (use with framer-motion or mount transitions) */
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Subtle pulse for empty states */
+.pulse-soft {
+  animation: pulseSoft 2s ease-in-out infinite;
+}
+@keyframes pulseSoft {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.8; }
+}
+
+/* Focus ring visible only on keyboard navigation */
+.focus-ring-visible {
+  outline: none;
+}
+.focus-ring-visible:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* No scrollbar for horizontal scroll containers */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Drag handle visual hint */
+.drag-handle {
+  cursor: grab;
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+}
+.drag-handle:hover {
+  opacity: 1;
+}
+.drag-handle:active {
+  cursor: grabbing;
+}
+.drag-handle.disabled {
+  cursor: not-allowed;
+  opacity: 0.2;
+}
+
+/* Truncate with ellipsis — single line */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+/* Inline code styling for settings/code displays */
+.inline-code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 0.8em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+
+/* Loading skeleton animation variant — shimmer from left */
+.skeleton-shimmer-fast {
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.08) 50%, hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1s linear infinite;
+}
+
+/* Tab-style button group active indicator */
+.tab-active {
+  position: relative;
+}
+.tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 2px;
+  background: hsl(var(--primary));
+  border-radius: 1px;
+}

@@ -27,9 +27,9 @@ export const GET = withAuth(async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { title: { contains: search } },
-        { author: { contains: search } },
-        { description: { contains: search } },
+        { title: { contains: search, mode: 'insensitive' } },
+        { author: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
       ];
     }
     if (status) {
@@ -49,8 +49,8 @@ export const GET = withAuth(async function GET(request: NextRequest) {
         take: pageSize,
         orderBy: { updatedAt: "desc" },
         include: {
-          category: true,
-          tags: { include: { tag: true } },
+          category: { select: { id: true, name: true, color: true, slug: true } },
+          tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
           _count: { select: { chapters: true } },
         },
       }),

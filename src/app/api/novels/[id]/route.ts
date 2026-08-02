@@ -98,7 +98,8 @@ export const PUT = withAuth(async function PUT(
     // Validate coverPath to prevent path traversal
     if (coverPath !== undefined && coverPath) {
       const cp = String(coverPath);
-      if (cp.includes('..') || (!cp.startsWith('/covers/') && !cp.startsWith('/app/public/covers/'))) {
+      const decoded = decodeURIComponent(cp).replace(/\\/g, '/');
+      if (decoded.includes('..') || (!decoded.startsWith('/covers/') && !decoded.startsWith('/app/public/covers/'))) {
         return NextResponse.json({ error: "封面路径格式不合法" }, { status: 400 });
       }
     }

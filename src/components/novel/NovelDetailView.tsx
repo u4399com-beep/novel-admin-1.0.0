@@ -148,7 +148,7 @@ function SortableChapterRow({
           )}
           <button
             aria-label="拖拽排序"
-            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5"
+            className="drag-handle text-muted-foreground hover:text-foreground p-0.5"
             {...attributes}
             {...listeners}
             onClick={(e) => e.stopPropagation()}
@@ -165,7 +165,7 @@ function SortableChapterRow({
         onClick={() => onSelect(chapter)}
       >
         <span className="inline-flex items-center gap-2">
-          <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${chapter.content && chapter.content.trim().length > 0 ? 'bg-emerald-500' : 'border border-muted-foreground/30'}`} />
+          <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${(chapter.wordCount ?? 0) > 0 ? 'bg-emerald-500' : 'border border-muted-foreground/30'}`} />
           {chapter.title}
         </span>
       </TableCell>
@@ -622,9 +622,9 @@ export default function NovelDetailView() {
       result = result.filter((ch) => ch.title.toLowerCase().includes(q));
     }
     if (contentFilter === 'has-content') {
-      result = result.filter((ch) => ch.content && ch.content.trim().length > 0);
+      result = result.filter((ch) => (ch.wordCount ?? 0) > 0);
     } else if (contentFilter === 'no-content') {
-      result = result.filter((ch) => !ch.content || ch.content.trim().length === 0);
+      result = result.filter((ch) => (ch.wordCount ?? 0) === 0);
     }
     return result;
   }, [chapters, chapterSearch, contentFilter]);
@@ -648,6 +648,14 @@ export default function NovelDetailView() {
       return next;
     });
   }, []);
+
+  // ── Content progress memo ─────────────────────────────────────────────
+  const contentProgress = useMemo(() => {
+    if (chapters.length === 0) return null;
+    const withContent = chapters.filter(c => (c.wordCount ?? 0) > 0).length;
+    const pct = Math.round((withContent / chapters.length) * 100);
+    return { withContent, pct };
+  }, [chapters]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -1043,24 +1051,20 @@ export default function NovelDetailView() {
             <div className="flex flex-col h-full">
               {/* Chapter list header */}
               {/* Reading progress bar */}
-              {chapters.length > 0 && (() => {
-                const withContent = chapters.filter(c => c.content && c.content.trim().length > 0).length;
-                const pct = Math.round((withContent / chapters.length) * 100);
-                return (
-                  <div className="px-4 pt-3 space-y-1">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>采集进度</span>
-                      <span>{withContent}/{chapters.length} 章 ({pct}%)</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 dark:from-emerald-600 dark:to-emerald-500 rounded-full transition-all duration-500 ease-out"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
+              {contentProgress && (
+                <div className="px-4 pt-3 space-y-1">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>采集进度</span>
+                    <span>{contentProgress.withContent}/{chapters.length} 章 ({contentProgress.pct}%)</span>
                   </div>
-                );
-              })()}
+                  <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 dark:from-emerald-600 dark:to-emerald-500 rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${contentProgress.pct}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
                 <h2 className="text-base font-semibold flex items-center gap-2">
@@ -1123,7 +1127,7 @@ export default function NovelDetailView() {
                       </button>
                     )}
                   </div>
-                  <div className="flex items-center gap-0.5 rounded-md border bg-background p-0.5">
+                  <div className="flex items-center gap-0.5 rounded-md border bg-background p-0.5" role="tablist" aria-label="内容筛选">
                     {([
                       { key: 'all' as ContentFilter, label: '全部' },
                       { key: 'has-content' as ContentFilter, label: '有内容' },
@@ -1131,6 +1135,8 @@ export default function NovelDetailView() {
                     ]).map((opt) => (
                       <button
                         key={opt.key}
+                        role="tab"
+                        aria-selected={contentFilter === opt.key}
                         onClick={() => setContentFilter(opt.key)}
                         className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
                           contentFilter === opt.key
@@ -1190,9 +1196,9 @@ export default function NovelDetailView() {
                   </div>
                 ) : (
                   <DndContext
-                    sensors={sensors}
+                    sensors={batchMode || chapterSearch || contentFilter !== 'all' ? [] : sensors}
                     collisionDetection={closestCenter}
-                    onDragEnd={batchMode ? undefined : handleDragEnd}
+                    onDragEnd={batchMode || chapterSearch || contentFilter !== 'all' ? undefined : handleDragEnd}
                   >
                     <SortableContext
                       items={filteredChapters.map((c) => c.id)}

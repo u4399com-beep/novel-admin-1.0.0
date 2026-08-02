@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod/v4';
 import { safeResolver } from '@/lib/safe-resolver';
@@ -33,7 +33,7 @@ import type { Chapter } from '@/types';
 
 const chapterSchema = z.object({
   title: z.string().min(1, '章节标题不能为空').max(200, '标题最多200个字符'),
-  content: z.string().max(1000000, '内容过长'),
+  content: z.string().max(500000, '内容不能超过50万字'),
 });
 
 type ChapterFormValues = z.infer<typeof chapterSchema>;
@@ -113,8 +113,10 @@ export function ChapterFormDialog() {
   // Preview mode toggle
   const [isPreview, setIsPreview] = useState(false);
 
-  // Reset form when dialog opens/closes or editingChapter changes
+  // Track fetched content to distinguish new input from original
   const [fetchedContent, setFetchedContent] = useState<string | null>(null);
+  const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Auto-suggest next chapter number for new chapters
   const [titlePlaceholder, setTitlePlaceholder] = useState('请输入章节标题');
@@ -156,23 +158,30 @@ export function ChapterFormDialog() {
     if (chapterFormOpen) {
       setIsPreview(false);
       if (editingChapter) {
-        // Fetch full chapter content since list API doesn't include it
-        apiFetch<Chapter>(`/api/chapters/${editingChapter.id}`)
+        setIsLoadingContent(true);
+        const ac = new AbortController();
+        abortRef.current = ac;
+        apiFetch<Chapter>(`/api/chapters/${editingChapter.id}`, { signal: ac.signal })
           .then((full) => {
+            if (ac.signal.aborted) return;
             form.reset({
               title: full.title,
               content: full.content || '',
             });
             setFetchedContent(full.content || '');
           })
-          .catch(() => {
-            // Fallback to editingChapter data (content may be undefined)
+          .catch((err) => {
+            if (ac.signal.aborted) return;
             form.reset({
               title: editingChapter.title,
               content: '',
             });
             setFetchedContent(null);
+          })
+          .finally(() => {
+            if (!ac.signal.aborted) setIsLoadingContent(false);
           });
+        return () => { ac.abort(); abortRef.current = null; };
       } else {
         form.reset({
           title: '',
@@ -182,6 +191,7 @@ export function ChapterFormDialog() {
       }
     } else {
       setFetchedContent(null);
+      setIsLoadingContent(false);
     }
   }, [chapterFormOpen, editingChapter, form]);
 
@@ -204,11 +214,14 @@ export function ChapterFormDialog() {
         if (isEditing && editingChapter) {
         // Update existing chapter
         const body: Record<string, unknown> = { title: values.title };
-        // Only send content if we successfully fetched it or user typed new content
-        // Never send empty string for content on edit — it would erase existing content
-        if (fetchedContent !== null || values.content.trim()) {
+        // Only send content if user explicitly changed it from the fetched version
+        if (fetchedContent !== null && values.content !== fetchedContent) {
+          body.content = values.content;
+        } else if (fetchedContent === null && values.content.trim()) {
+          // Fetch failed but user typed new content
           body.content = values.content;
         }
+        // Otherwise omit content entirely to preserve existing server-side content
         await apiFetch(`/api/chapters/${editingChapter.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -258,6 +271,13 @@ export function ChapterFormDialog() {
             {isEditing ? '修改章节的标题和内容' : '为新小说创建一个章节'}
           </DialogDescription>
         </DialogHeader>
+
+        {isLoadingContent && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">正在加载章节内容...</span>
+          </div>
+        )}
 
         <Form {...form}>
           <form
