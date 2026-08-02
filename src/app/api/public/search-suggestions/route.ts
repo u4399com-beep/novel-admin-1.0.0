@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
+import { sanitizeField } from '@/lib/api-utils';
 
 /**
  * Public search-suggestions API — no auth required.
@@ -9,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const q = (searchParams.get('q') || '').trim();
+    const q = sanitizeField(searchParams.get('q'), 100);
 
     if (q.length < 1) {
       return NextResponse.json({ suggestions: [] });

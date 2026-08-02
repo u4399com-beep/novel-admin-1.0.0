@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, ImageIcon } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod/v4";
@@ -104,7 +104,7 @@ export default function NovelFormDialog() {
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
   const [submitting, setSubmitting] = useState(false);
-  const [cancelled, setCancelled] = useState(false);
+  const cancelledRef = useRef(false);
   const [apiCategories, setApiCategories] = useState<Category[]>([]);
   const [apiTags, setApiTags] = useState<Tag[]>([]);
 
@@ -117,11 +117,11 @@ export default function NovelFormDialog() {
         apiFetch<Category[]>("/api/categories"),
         apiFetch<Tag[]>("/api/tags"),
       ]);
-      if (catRes.status === 'fulfilled' && !cancelled) {
+      if (catRes.status === 'fulfilled' && !cancelledRef.current) {
         setApiCategories(catRes.value);
         setCategories(catRes.value);
       }
-      if (tagRes.status === 'fulfilled' && !cancelled) {
+      if (tagRes.status === 'fulfilled' && !cancelledRef.current) {
         setApiTags(tagRes.value);
         setTags(tagRes.value);
       }
@@ -133,10 +133,10 @@ export default function NovelFormDialog() {
   useEffect(() => {
     if (!novelFormOpen) return;
     if (categories.length === 0 || tags.length === 0) {
-      setCancelled(false);
+      cancelledRef.current = false;
       fetchOptions();
     }
-    return () => { setCancelled(true); };
+    return () => { cancelledRef.current = true; };
   }, [novelFormOpen, fetchOptions, categories.length, tags.length]);
 
   // ── Merge store data with fetched data ──

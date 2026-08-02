@@ -36,11 +36,12 @@ function SidebarContent() {
 
   // Fetch total novels count for footer & start refresh timer on mount
   useEffect(() => {
+    const ac = new AbortController();
     // Fetch novel count
     (async () => {
       try {
-        const data = await apiFetch<{ totalNovels?: number }>('/api/dashboard');
-        if (typeof data.totalNovels === 'number') {
+        const data = await apiFetch<{ totalNovels?: number }>('/api/dashboard', { signal: ac.signal });
+        if (!ac.signal.aborted && typeof data.totalNovels === 'number') {
           setTotalNovels(data.totalNovels);
         }
       } catch {
@@ -62,6 +63,7 @@ function SidebarContent() {
     }, 60000);
 
     return () => {
+      ac.abort();
       clearInterval(timer);
     };
   }, []);

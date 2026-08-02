@@ -56,7 +56,6 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("List sites error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "获取站点列表失败"}, { status: 500 });
   }
 });
@@ -146,7 +145,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (isPrismaError(error, "P2002")) {
       return NextResponse.json({ error: "站点域名已存在" }, { status: 409 });
     }
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "创建站点失败"}, { status: 500 });
   }
 });

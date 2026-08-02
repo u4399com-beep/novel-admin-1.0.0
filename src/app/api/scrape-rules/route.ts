@@ -68,7 +68,6 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("List scrape rules error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "获取采集规则列表失败"}, { status: 500 });
   }
 });
@@ -210,7 +209,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(rule, { status: 201 });
   } catch (error) {
     console.error("Create scrape rule error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "创建采集规则失败"}, { status: 500 });
   }
 });

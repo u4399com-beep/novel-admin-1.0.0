@@ -28,6 +28,8 @@ interface NovelDetail {
   coverPath: string | null;
   status: string;
   wordCount: number;
+  clickCount: number;
+  favoriteCount: number;
   categoryId: string | null;
   sourceUrl: string | null;
   sourceId: string | null;

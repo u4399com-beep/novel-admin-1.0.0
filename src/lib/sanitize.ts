@@ -4,7 +4,7 @@
 export function sanitizeString(input: unknown, maxLength: number = 10000): string {
   if (typeof input !== 'string') return '';
   // Remove null bytes and control characters except newline/tab
-  let sanitized = input.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+  let sanitized = input.replace(/[\x00-\x08\x0b\x0c\x0d\x0e-\x1f\x7f]/g, '');
   // Remove dangerous Unicode characters: zero-width spaces, bidi overrides, BOM
   sanitized = sanitized.replace(/[\u200B-\u200F\u2060-\u2069\uFEFF\u202A-\u202E]/g, '');
   // Trim and limit length
@@ -155,25 +155,6 @@ function isPrivateIp(ip: string): boolean {
   if (expanded.startsWith('fc') || expanded.startsWith('fd')) return true;
   // Multicast ff00::/8
   if (expanded.startsWith('ff')) return true;
-
-  // Check for IPv6-mapped IPv4 in expanded form (e.g., 0:0:0:0:0:ffff:127.0.0.1)
-  const v4mapped = expanded.match(
-    /^0000:0000:0000:0000:0000:ffff:([0-9a-f]{2}):([0-9a-f]{2}):([0-9a-f]{2}):([0-9a-f]{2})$/
-  );
-  if (v4mapped) {
-    const a = parseInt(v4mapped[1], 16);
-    const b = parseInt(v4mapped[2], 16);
-    const c = parseInt(v4mapped[3], 16);
-    const d = parseInt(v4mapped[4], 16);
-    // Reuse IPv4 private checks
-    if (a === 0) return true;
-    if (a === 10) return true;
-    if (a === 127) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a >= 224) return true;
-  }
 
   return false;
 }

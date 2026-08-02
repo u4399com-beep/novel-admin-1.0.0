@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BackToTop } from '@/components/BackToTop';
+import { formatWordCount } from '@/lib/format';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -27,6 +28,8 @@ interface RankingNovel {
   description: string | null;
   status: string;
   wordCount: number;
+  clickCount: number;
+  favoriteCount: number;
   category: { id: string; name: string; slug: string; color: string; icon: string | null } | null;
   _count: { chapters: number };
   createdAt: string;
@@ -44,14 +47,6 @@ const TABS: TabConfig[] = [
   { key: 'monthly', label: '月点击榜', sortParam: 'monthly_clicks' },
   { key: 'favorites', label: '总收藏榜', sortParam: 'total_favorites' },
 ];
-
-// ─── Helpers ─────────────────────────────────────────────────────────
-
-function formatWordCount(n: number): string {
-  if (n >= 10000) return `${(n / 10000).toFixed(1)}万字`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}千字`;
-  return `${n}字`;
-}
 
 // ─── Medal Colors ────────────────────────────────────────────────────
 
@@ -101,13 +96,19 @@ function NovelRow({
   novel,
   rank,
   index = 0,
+  activeTab,
 }: {
   novel: RankingNovel;
   rank: number;
   index?: number;
+  activeTab: string;
 }) {
   const isTop3 = rank <= 3;
   const style = RANK_STYLES[rank];
+  const statValue = activeTab === 'favorites'
+    ? novel.favoriteCount.toLocaleString()
+    : novel.clickCount.toLocaleString();
+  const statLabel = activeTab === 'favorites' ? '收藏' : '点击';
 
   const rankPercent = 1 - (rank - 1) / 30; // visual weight for progress bar
 
@@ -172,12 +173,12 @@ function NovelRow({
           </div>
         </div>
 
-        {/* Stat column — word count (real data available) */}
+        {/* Stat column — real click/favorite data */}
         <div className="shrink-0 text-right">
           <div className={isTop3 ? 'text-base sm:text-lg font-bold stat-number' : 'text-sm font-semibold stat-number'}>
-            {formatWordCount(novel.wordCount)}
+            {statValue}
           </div>
-          <div className="text-[11px] text-muted-foreground">总字数</div>
+          <div className="text-[11px] text-muted-foreground">{statLabel}</div>
         </div>
       </div>
       </Link>
@@ -294,6 +295,7 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
             novel={novel}
             rank={i + 1}
             index={i}
+            activeTab={tab.key}
           />
         ))}
       </div>
@@ -307,6 +309,7 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
               novel={novel}
               rank={i + 4}
               index={i + 3}
+              activeTab={tab.key}
             />
           ))}
         </div>
@@ -319,11 +322,6 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
 
 export default function RankingsPage() {
   const [activeTab, setActiveTab] = useState('weekly');
-
-  // ─── SEO: set document title ──────────────────────────────────────
-  useEffect(() => {
-    document.title = '排行榜 - 小说阁';
-  }, []);
 
   return (
     <div className="min-h-screen bg-background">

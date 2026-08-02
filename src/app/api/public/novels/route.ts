@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { sanitizeField } from "@/lib/api-utils";
 
 // ─── 23qb.net 字数区间映射 ─────────────────────────────────────────
 const WORD_COUNT_RANGES: Record<string, { min: number; max: number }> = {
@@ -13,18 +14,16 @@ const WORD_COUNT_RANGES: Record<string, { min: number; max: number }> = {
 };
 
 // ─── 23qb.net 排序映射 ─────────────────────────────────────────────
-// 注意: clickCount / favoriteCount 等统计字段目前未在 schema 中定义
-// 一旦添加这些字段，取消下方注释并删除 fallback 即可启用真实排行
 const SORT_MAP: Record<string, { field: string; direction: "asc" | "desc" }> = {
-  last_update:     { field: "updatedAt",   direction: "desc" },
-  new_entry:       { field: "createdAt",   direction: "desc" },
-  new_hot:         { field: "createdAt",   direction: "desc" },
-  weekly_clicks:   { field: "updatedAt",   direction: "desc" },
-  monthly_clicks:  { field: "updatedAt",   direction: "desc" },
-  weekly_rec:      { field: "updatedAt",   direction: "desc" },
-  monthly_rec:     { field: "updatedAt",   direction: "desc" },
-  favorites:       { field: "updatedAt",   direction: "desc" },
-  total_favorites: { field: "updatedAt",   direction: "desc" },
+  last_update:     { field: "updatedAt",     direction: "desc" },
+  new_entry:       { field: "createdAt",     direction: "desc" },
+  new_hot:         { field: "createdAt",     direction: "desc" },
+  weekly_clicks:   { field: "clickCount",    direction: "desc" },
+  monthly_clicks:  { field: "clickCount",    direction: "desc" },
+  weekly_rec:      { field: "favoriteCount", direction: "desc" },
+  monthly_rec:     { field: "favoriteCount", direction: "desc" },
+  favorites:       { field: "favoriteCount", direction: "desc" },
+  total_favorites: { field: "favoriteCount", direction: "desc" },
 };
 
 /**
@@ -44,7 +43,7 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(50, Math.max(1, parseInt(rawSize, 10) || 15));
     const skip = (page - 1) * pageSize;
 
-    const search = (searchParams.get("search") || "").trim().slice(0, 100);
+    const search = sanitizeField(searchParams.get("search"), 100);
     const categorySlug = searchParams.get("categorySlug") || "";
     const categoryId = searchParams.get("categoryId") || "";
     const wordCountKey = searchParams.get("wordCount") || "all";
@@ -109,6 +108,8 @@ export async function GET(request: NextRequest) {
             select: { tag: { select: { id: true, name: true, color: true } } },
           },
           _count: { select: { chapters: true } },
+          clickCount: true,
+          favoriteCount: true,
           createdAt: true,
           updatedAt: true,
         },

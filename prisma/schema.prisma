@@ -48,6 +48,8 @@ model Novel {
   category        Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   tags            NovelTag[]
   wordCount       Int          @default(0)
+  clickCount      Int          @default(0) // 点击/浏览次数
+  favoriteCount   Int          @default(0) // 收藏次数
   sourceUrl       String?      // 原始来源URL
   sourceId        String?      // 采集规则ID
   extraKeywords   String?      // 搜索引擎提取的辅助关键词，逗号分隔
@@ -64,6 +66,8 @@ model Novel {
   @@index([sourceId])
   @@index([sourceUrl])
   @@index([updatedAt])
+  @@index([clickCount])
+  @@index([favoriteCount])
 }
 
 // 小说-标签关联

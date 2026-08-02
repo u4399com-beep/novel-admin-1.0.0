@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BackToTop } from '@/components/BackToTop';
+import { formatWordCount } from '@/lib/format';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -79,12 +80,6 @@ const SORT_OPTIONS = [
   { value: 'monthly_rec', label: '月推荐榜' },
   { value: 'favorites', label: '收藏榜' },
 ];
-
-function formatWordCount(n: number): string {
-  if (n >= 10000) return `${(n / 10000).toFixed(1)}万字`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}千字`;
-  return `${n}字`;
-}
 
 // ─── Recently Viewed Tracker ───────────────────────────────────────
 const RECENT_KEY = 'novel-recently-viewed';

@@ -664,37 +664,41 @@ export default function NovelDetailView() {
   );
 
   // Fetch novel details
-  const fetchNovel = useCallback(async () => {
+  const fetchNovel = useCallback(async (signal?: AbortSignal) => {
     if (!selectedNovelId) return;
     setLoadingNovel(true);
     try {
-      const data = await apiFetch<Novel>(`/api/novels/${selectedNovelId}`);
-      setNovel(data);
+      const data = await apiFetch<Novel>(`/api/novels/${selectedNovelId}`, { signal });
+      if (!signal?.aborted) setNovel(data);
     } catch {
-      setCurrentView('novels');
+      if (!signal?.aborted) setCurrentView('novels');
     } finally {
-      setLoadingNovel(false);
+      if (!signal?.aborted) setLoadingNovel(false);
     }
   }, [selectedNovelId, setCurrentView]);
 
   // Fetch chapters
-  const fetchChapters = useCallback(async () => {
+  const fetchChapters = useCallback(async (signal?: AbortSignal) => {
     if (!selectedNovelId) return;
     setLoadingChapters(true);
     try {
-      const data = await apiFetch<{ chapters?: Chapter[] }>(`/api/novels/${selectedNovelId}/chapters`);
-      setChapters(data.chapters || []);
+      const data = await apiFetch<{ chapters?: Chapter[] }>(`/api/novels/${selectedNovelId}/chapters`, { signal });
+      if (!signal?.aborted) setChapters(data.chapters || []);
     } catch { /* handled by apiFetch */ } finally {
-      setLoadingChapters(false);
+      if (!signal?.aborted) setLoadingChapters(false);
     }
   }, [selectedNovelId]);
 
   useEffect(() => {
-    fetchNovel();
+    const ac = new AbortController();
+    fetchNovel(ac.signal);
+    return () => ac.abort();
   }, [fetchNovel, refreshNovels]);
 
   useEffect(() => {
-    fetchChapters();
+    const ac = new AbortController();
+    fetchChapters(ac.signal);
+    return () => ac.abort();
   }, [fetchChapters, refreshChapters]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────

@@ -29,7 +29,6 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(novel);
   } catch (error) {
     console.error("Get novel error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "获取小说详情失败"}, { status: 500 });
   }
 });
@@ -146,7 +145,6 @@ export const PUT = withAuth(async function PUT(
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
     }
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "更新小说失败"}, { status: 500 });
   }
 });
@@ -170,7 +168,6 @@ export const DELETE = withAuth(async function DELETE(
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
     }
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "删除小说失败"}, { status: 500 });
   }
 });

@@ -337,7 +337,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteTarget && handleDelete(deleteTarget.id)}
+              onClick={(e) => { e.preventDefault(); if (deleteTarget) handleDelete(deleteTarget.id); }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               删除

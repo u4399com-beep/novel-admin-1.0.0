@@ -36,7 +36,6 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(task);
   } catch (error) {
     console.error("Get scrape task error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "获取采集任务详情失败"}, { status: 500 });
   }
 });
@@ -151,7 +150,6 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(taskResult);
   } catch (error) {
     console.error("Update scrape task error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "更新采集任务失败"}, { status: 500 });
   }
 });
@@ -185,7 +183,6 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
     }
     console.error("Delete scrape task error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "删除采集任务失败"}, { status: 500 });
   }
 });

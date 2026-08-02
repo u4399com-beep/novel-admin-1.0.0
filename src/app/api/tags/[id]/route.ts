@@ -26,7 +26,6 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(tag);
   } catch (error) {
     console.error("Get tag error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "获取标签详情失败"}, { status: 500 });
   }
 });
@@ -76,7 +75,6 @@ export const PUT = withAuth(async function PUT(
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "标签不存在" }, { status: 404 });
     }
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "更新标签失败"}, { status: 500 });
   }
 });
@@ -111,7 +109,6 @@ export const DELETE = withAuth(async function DELETE(
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "标签不存在" }, { status: 404 });
     }
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "删除标签失败"}, { status: 500 });
   }
 });

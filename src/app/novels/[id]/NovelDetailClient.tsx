@@ -10,6 +10,7 @@ import {
   Circle,
   FileText,
   Clock,
+  Eye,
   ChevronLeft,
   ChevronRight,
   Maximize2,
@@ -38,10 +39,12 @@ import { BackToTop } from '@/components/BackToTop';
 import {
   useReadingSettings,
   useReadingProgress,
+  useChapterBookmarks,
   FONT_FAMILIES,
   READING_THEMES,
 } from '@/lib/use-reading-settings';
 import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
+import { formatWordCount } from '@/lib/format';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -68,6 +71,8 @@ interface Novel {
   coverPath: string | null;
   status: string;
   wordCount: number;
+  clickCount: number;
+  favoriteCount: number;
   category: { id: string; name: string; slug: string; color: string; icon: string | null } | null;
   tags: Tag[];
   _count: { chapters: number };
@@ -98,12 +103,6 @@ function getGradient(title: string): string {
   let hash = 0;
   for (let i = 0; i < title.length; i++) hash = title.charCodeAt(i) + ((hash << 5) - hash);
   return COVER_GRADIENTS[Math.abs(hash) % COVER_GRADIENTS.length];
-}
-
-function formatWordCount(n: number): string {
-  if (n >= 10000) return `${(n / 10000).toFixed(1)}万字`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}千字`;
-  return `${n}字`;
 }
 
 function formatDate(dateStr: string): string {
@@ -151,6 +150,11 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
     } catch { /* ignore */ }
   }, [novel.id, novel.title, novel.author, novel.coverUrl, novel.category?.name, novel.category?.color]);
 
+  // ─── Track click count (fire-and-forget) ────────────────────────
+  useEffect(() => {
+    fetch(`/api/public/novels/${novel.id}/click`, { method: 'POST' }).catch(() => {});
+  }, [novel.id]);
+
   // ─── 3D Cover tilt handlers ──────────────────────────────────
   const handleCoverMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
     if (!coverRef.current) return;
@@ -186,6 +190,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
 
   // ─── Reading progress ────────────────────────────────────────────
   const { lastChapterIndex, saveProgress } = useReadingProgress(novel.id, chapters);
+  const { bookmarks, addBookmark, removeBookmark, isBookmarked } = useChapterBookmarks(novel.id);
   // Clamp to valid range (chapters may have been deleted since progress was saved)
   const safeLastChapterIndex = lastChapterIndex !== null && lastChapterIndex < chapters.length
     ? lastChapterIndex : null;
@@ -515,10 +520,34 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                     <div className="text-xs text-muted-foreground mt-0.5">总章节</div>
                   </div>
                 </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.35 }}
+                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2"
+                >
+                  <Eye className="h-4 w-4 text-primary" />
+                  <div>
+                    <div className="text-lg font-semibold leading-none tabular-nums">{novel.clickCount.toLocaleString()}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">点击</div>
+                  </div>
+                </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2"
+                >
+                  <BookmarkCheck className="h-4 w-4 text-primary" />
+                  <div>
+                    <div className="text-lg font-semibold leading-none tabular-nums">{novel.favoriteCount.toLocaleString()}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">收藏</div>
+                  </div>
+                </motion.div>
                 <motion.span
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ delay: 0.35 }}
+                  transition={{ delay: 0.45 }}
                   className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"
                 >
                   <Clock className="h-3.5 w-3.5" />
@@ -619,6 +648,9 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                     <span className="text-sm truncate group-hover:text-primary transition-colors">
                       {chapter.title}
                     </span>
+                    {isBookmarked(index) && (
+                      <BookmarkCheck className="h-3 w-3 shrink-0 text-amber-500" />
+                    )}
                     {chapter.wordCount > 0 && (
                       <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
                         {chapter.wordCount}字
@@ -712,6 +744,32 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">章节目录</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="书签"
+                      className={
+                        'h-7 w-7 transition-colors ' +
+                        (isBookmarked(currentIndex) ? 'text-amber-500' : '')
+                      }
+                      onClick={() => {
+                        if (isBookmarked(currentIndex)) {
+                          removeBookmark(currentIndex);
+                        } else {
+                          addBookmark(currentIndex, chapterTitle, scrollPercent / 100);
+                        }
+                      }}
+                    >
+                      <BookmarkCheck className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {isBookmarked(currentIndex) ? '移除书签' : '添加书签'}
+                  </TooltipContent>
                 </Tooltip>
 
                 <Tooltip>

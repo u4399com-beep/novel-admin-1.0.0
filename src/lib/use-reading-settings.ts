@@ -136,3 +136,81 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
 
   return { lastChapterIndex, saveProgress };
 }
+
+// ─── Chapter Bookmarks ──────────────────────────────────────────
+
+const BOOKMARKS_PREFIX = 'novel-bookmarks-';
+const MAX_BOOKMARKS = 100;
+
+interface BookmarkEntry {
+  chapterIndex: number;
+  chapterTitle: string;
+  timestamp: number;
+  scrollPercent: number;
+}
+
+function loadBookmarks(novelId: string): BookmarkEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const saved = localStorage.getItem(`${BOOKMARKS_PREFIX}${novelId}`);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function saveBookmarks(novelId: string, bookmarks: BookmarkEntry[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(`${BOOKMARKS_PREFIX}${novelId}`, JSON.stringify(bookmarks));
+  } catch {
+    // ignore
+  }
+}
+
+export function useChapterBookmarks(novelId: string) {
+  const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(
+    () => loadBookmarks(novelId)
+  );
+
+  const addBookmark = useCallback(
+    (chapterIndex: number, chapterTitle: string, scrollPercent: number) => {
+    setBookmarks((prev) => {
+      // Remove existing bookmark for this chapter
+      const filtered = prev.filter((b) => b.chapterIndex !== chapterIndex);
+      const entry: BookmarkEntry = {
+        chapterIndex,
+        chapterTitle,
+        timestamp: Date.now(),
+        scrollPercent: Math.round(scrollPercent * 10) / 10,
+      };
+      const next = [entry, ...filtered].slice(0, MAX_BOOKMARKS);
+      saveBookmarks(novelId, next);
+      return next;
+    });
+  },
+  [novelId]
+  );
+
+  const removeBookmark = useCallback(
+    (chapterIndex: number) => {
+    setBookmarks((prev) => {
+      const next = prev.filter((b) => b.chapterIndex !== chapterIndex);
+      saveBookmarks(novelId, next);
+      return next;
+    });
+  },
+  [novelId]
+  );
+
+  const isBookmarked = useCallback(
+    (chapterIndex: number) => bookmarks.some((b) => b.chapterIndex === chapterIndex),
+    [bookmarks]
+  );
+
+  return { bookmarks, addBookmark, removeBookmark, isBookmarked };
+}
