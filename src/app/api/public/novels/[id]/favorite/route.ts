@@ -1,42 +1,51 @@
 import { db } from '@/lib/db';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 /**
  * Toggle novel favorite (no auth required).
+ * Rate limited: 10 burst, 0.2/sec (5/min) per IP.
  * Uses localStorage-based tracking on client; this endpoint
  * increments/decrements the server-side favoriteCount.
  * POST /api/public/novels/[id]/favorite?action=toggle|add|remove
  */
-export async function POST(
-  request: NextRequest,
+export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async (
+  request,
   { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const action = searchParams.get('action') || 'toggle';
+) => {
+  const { id } = await params;
+  const { searchParams } = new URL(request.url);
+  const action = searchParams.get('action') || 'toggle';
 
-    // Atomic increment/decrement — no read-then-write race condition
-    const increment = (action === 'remove') ? -1 : 1;
-
-    let updated;
-    try {
-      updated = await db.novel.update({
-        where: { id },
-        data: { favoriteCount: { increment } },
-        select: { favoriteCount: true },
-      });
-    } catch {
-      // RecordNotFound error when novel doesn't exist
+  // For remove: prevent favoriteCount going negative
+  if (action === 'remove') {
+    const current = await db.novel.findUnique({
+      where: { id },
+      select: { favoriteCount: true },
+    });
+    if (!current) {
       return NextResponse.json({ error: '小说不存在' }, { status: 404 });
     }
-
+    if (current.favoriteCount <= 0) {
+      return NextResponse.json({ favoriteCount: 0 });
+    }
+    const updated = await db.novel.update({
+      where: { id },
+      data: { favoriteCount: { decrement: 1 } },
+      select: { favoriteCount: true },
+    });
     return NextResponse.json({ favoriteCount: updated.favoriteCount });
-  } catch (error) {
-    console.error('Favorite API error:', error);
-    return NextResponse.json(
-      { error: '操作失败' },
-      { status: 500 },
-    );
   }
-}
+
+  // For add/toggle: atomic increment
+  try {
+    const updated = await db.novel.update({
+      where: { id },
+      data: { favoriteCount: { increment: 1 } },
+      select: { favoriteCount: true },
+    });
+    return NextResponse.json({ favoriteCount: updated.favoriteCount });
+  } catch {
+    return NextResponse.json({ error: '小说不存在' }, { status: 404 });
+  }
+});

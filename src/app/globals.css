@@ -183,11 +183,6 @@
   50% { opacity: 0.6; }
 }
 
-/* Smooth number transition */
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-
 /* Table row hover transition */
 tbody tr {
   transition: background-color 150ms ease;
@@ -229,15 +224,6 @@ button:active:not(:disabled) {
 .dark .log-warn { color: oklch(0.8 0.18 85); }
 .dark .log-error { color: oklch(0.704 0.191 22.216); }
 .dark .log-success { color: oklch(0.696 0.17 162.48); }
-
-/* Hide scrollbar utility */
-.scrollbar-none {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.scrollbar-none::-webkit-scrollbar {
-  display: none;
-}
 
 /* Dark mode: card shadow refinement */
 .dark .shadow-sm {
@@ -316,17 +302,6 @@ pre code {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Subtle shimmer for skeleton loading */
-.skeleton-shimmer {
-  background: linear-gradient(90deg, transparent, oklch(0.95 0 0), transparent);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
-}
-.dark .skeleton-shimmer {
-  background: linear-gradient(90deg, transparent, oklch(0.25 0 0), transparent);
-  background-size: 200% 100%;
-}
-
 /* Ripple effect on interactive elements */
 .ripple-effect {
   position: relative;
@@ -345,8 +320,8 @@ pre code {
   opacity: 1;
 }
 
-/* Link underline animation */
-a, [role="link"] {
+/* Link underline animation — apply .link-animated to enable */
+a.link-animated, [role="link"].link-animated {
   text-decoration: none;
   background-image: linear-gradient(oklch(0.488 0.243 264.376), oklch(0.488 0.243 264.376));
   background-size: 0% 1px;
@@ -354,7 +329,7 @@ a, [role="link"] {
   background-repeat: no-x-repeat;
   transition: background-size 0.25s ease;
 }
-a:hover, [role="link"]:hover {
+a.link-animated:hover, [role="link"].link-animated:hover {
   background-size: 100% 1px;
 }
 
@@ -367,21 +342,14 @@ a:hover, [role="link"]:hover {
   box-shadow: 0 2px 8px oklch(0 0 0 / 0.1);
 }
 
-/* Tabular numbers for aligned digits */
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Smooth image load */
+/* Smooth image load — fade in on decode */
 img {
-  transition: opacity 0.3s ease;
+  transition: opacity 0.4s ease;
 }
-img[loading="lazy"] {
-  opacity: 0;
-}
-img[loading="lazy"].loaded,
-img[loading="lazy"]:not([src]) {
-  opacity: 1;
+@supports (content-visibility: auto) {
+  img[loading="lazy"] {
+    content-visibility: auto;
+  }
 }
 
 /* Smooth border radius transitions */
@@ -406,12 +374,6 @@ img[loading="lazy"]:not([src]) {
   0% { width: 30%; margin-left: -30%; }
   50% { width: 50%; margin-left: 20%; }
   100% { width: 30%; margin-left: 100%; }
-}
-
-/* Number counter animation */
-@keyframes count-up {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Stagger animation helper */
@@ -610,11 +572,6 @@ img[loading="lazy"]:not([src]) {
   background-size: 200% 100%;
 }
 
-/* Smooth text color transition */
-.text-color-transition {
-  transition: color 0.15s ease;
-}
-
 /* Badge bounce on appear */
 @keyframes badge-pop {
   0% { transform: scale(0.8); opacity: 0; }
@@ -679,14 +636,7 @@ img[loading="lazy"]:not([src]) {
   width: 100%;
 }
 
-/* Animated counter number */
-@keyframes count-up {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.stat-number {
-  animation: count-up 0.4s ease forwards;
-}
+/* stat-number defined in later section */
 
 /* Tooltip appear animation */
 .tooltip-appear {
@@ -806,14 +756,7 @@ img[loading="lazy"]:not([src]) {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Tap/press feedback for buttons and cards */
-.tap-feedback {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.tap-feedback:active {
-  transform: scale(0.97);
-  box-shadow: none !important;
-}
+/* Tap feedback defined in later section */
 
 /* Stagger children animation (use with inline style --animation-delay) */
 .stagger-child {
@@ -854,30 +797,7 @@ img[loading="lazy"]:not([src]) {
   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Hover lift for cards with shadow */
-.hover-lift {
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-.hover-lift:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -6px rgba(0, 0, 0, 0.1);
-}
-.dark .hover-lift:hover {
-  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3), 0 4px 10px -6px rgba(0, 0, 0, 0.3);
-}
-
-/* Number count tabular-nums for aligned digits */
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Truncate with ellipsis (multi-line safe) */
-.line-clamp-1 {
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+/* Truncate with ellipsis (multi-line safe) — see duplicate-removed below */
 
 /* Animated dashed border for empty states */
 .border-dash-animated {
@@ -1047,13 +967,13 @@ img[loading="lazy"]:not([src]) {
 
 /* Text selection color */
 ::selection {
-  background-color: hsl(var(--primary) / 0.2);
+  background-color: color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 /* Smooth scrollbar for custom scrollbars */
 .scrollbar-thin {
   scrollbar-width: 6px;
-  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent) transparent;
 }
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
@@ -1062,11 +982,11 @@ img[loading="lazy"]:not([src]) {
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground) / 0.3);
+  background-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
   border-radius: 3px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--muted-foreground) / 0.5);
+  background-color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
 }
 
 /* ─── New Micro-interactions (Round N+1) ─────────────────────────── */
@@ -1161,18 +1081,9 @@ img[loading="lazy"]:not([src]) {
   100% { background-position: -200% 0; }
 }
 
-/* Smooth scrollbar-none for horizontal scroll containers */
-.scrollbar-none {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.scrollbar-none::-webkit-scrollbar {
-  display: none;
-}
-
 /* Subtle text glow for important headings */
 .text-glow-subtle {
-  text-shadow: 0 0 20px hsl(var(--primary) / 0.15);
+  text-shadow: 0 0 20px color-mix(in srgb, var(--primary) 15%, transparent);
 }
 
 /* Card glass effect */
@@ -1411,8 +1322,8 @@ img[loading="lazy"]:not([src]) {
 .glass-card {
   backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  background: hsl(var(--background) / 0.6);
-  border: 1px solid hsl(var(--foreground) / 0.06);
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 /* Dot separator between inline elements */
@@ -1426,4 +1337,101 @@ img[loading="lazy"]:not([src]) {
 .safe-area-padded {
   padding-left: max(env(safe-area-inset-left), 1rem);
   padding-right: max(env(safe-area-inset-right), 1rem);
+}
+
+/* ─── Round 06:38 Style Utilities ────────────────────────────────── */
+
+/* Subtle inner shadow for inset cards */
+.inset-shadow-sm {
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+/* Smooth border-radius transition for all interactive elements */
+button, [role='button'], a, input, select, textarea {
+  transition: border-radius 0.2s ease;
+}
+
+/* Card hover glow that follows theme primary color */
+.card-primary-glow {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.card-primary-glow:hover {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent),
+              0 4px 16px -4px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+/* Status indicator dot with glow */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.status-dot-active {
+  background: oklch(0.723 0.219 149.579);
+  box-shadow: 0 0 6px oklch(0.723 0.219 149.579 / 0.5);
+}
+.status-dot-idle {
+  background: oklch(0.556 0 0);
+}
+.status-dot-error {
+  background: oklch(0.577 0.245 27.325);
+  box-shadow: 0 0 6px oklch(0.577 0.245 27.325 / 0.5);
+}
+
+/* Chapter row reading indicator */
+.chapter-reading-indicator {
+  position: relative;
+}
+.chapter-reading-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary);
+}
+
+/* Smooth number transition for counters */
+.counter-animate {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Focus ring for search inputs */
+.search-focus-ring:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 30%, transparent);
+  border-color: var(--ring);
+}
+
+/* Hover scale for cover images */
+.cover-zoom {
+  overflow: hidden;
+}
+.cover-zoom img {
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.cover-zoom:hover img {
+  transform: scale(1.08);
+}
+
+/* Subtle text shadow for dark mode readability */
+.dark .text-glow {
+  text-shadow: 0 0 12px color-mix(in srgb, var(--foreground) 20%, transparent);
+}
+
+/* Page transition fade */
+.page-enter {
+  animation: pageEnter 0.3s ease forwards;
+}
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Badge with subtle gradient background */
+.badge-gradient {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, transparent), color-mix(in srgb, var(--primary) 5%, transparent));
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
 }

@@ -248,12 +248,12 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
       className="group cursor-pointer"
     >
       {/* Cover */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-2xl group-hover:shadow-primary/10 transition-all duration-300 ease-out group-hover:-translate-y-1.5 group-hover:ring-1 group-hover:ring-primary/20">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-2xl group-hover:shadow-primary/10 transition-all duration-300 ease-out group-hover:-translate-y-1.5 group-hover:ring-1 group-hover:ring-primary/20 cover-zoom">
         {novel.coverUrl ? (
           <img
             src={novel.coverUrl}
             alt={novel.title}
-            className="h-full w-full object-cover transition-all duration-500 group-hover:scale-110 group-hover:brightness-75"
+            className="h-full w-full object-cover transition-all duration-500 group-hover:brightness-75"
             loading="lazy"
           />
         ) : (
@@ -518,6 +518,7 @@ export default function HomePage() {
 
   // Filter state
   const [page, setPage] = useState(1);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [activeCategorySlug, setActiveCategorySlug] = useState('');
@@ -608,7 +609,7 @@ export default function HomePage() {
     }
     load();
     return () => abortController.abort();
-  }, [page, activeCategorySlug, activeStatus, activeWordCount, activeSort, search]);
+  }, [page, activeCategorySlug, activeStatus, activeWordCount, activeSort, search, refreshKey]);
 
   // ─── Handlers ────────────────────────────────────────────────────
   const handleSearch = (e: React.FormEvent) => {
@@ -947,7 +948,7 @@ export default function HomePage() {
               小说搜索
             </h1>
             <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>
-              <form onSubmit={handleSearch} className="relative">
+              <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
                 <Input
                   type="text"
@@ -1271,7 +1272,7 @@ export default function HomePage() {
                   size="sm"
                   onClick={() => {
                     setNovelsError(false);
-                    setPage((p) => p); // trigger re-fetch
+                    setRefreshKey((k) => k + 1);
                   }}
                   className="gap-1.5"
                 >

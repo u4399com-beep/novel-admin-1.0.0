@@ -134,7 +134,7 @@ function NovelRow({
       <div
         className="absolute left-0 top-0 bottom-0 w-1 transition-all duration-500"
         style={{
-          backgroundColor: isTop3 ? 'var(--primary)' : 'hsl(var(--muted-foreground) / 0.3)',
+          backgroundColor: isTop3 ? 'var(--primary)' : 'color-mix(in srgb, var(--muted-foreground) 30%, transparent)',
           opacity: Math.max(0.2, rankPercent),
           borderRadius: isTop3 ? '0.5rem 0 0 0.5rem' : '0',
         }}
@@ -324,7 +324,7 @@ export default function RankingsPage() {
   const [activeTab, setActiveTab] = useState('weekly');
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background page-enter">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:py-10">
         {/* Header */}
         <motion.div

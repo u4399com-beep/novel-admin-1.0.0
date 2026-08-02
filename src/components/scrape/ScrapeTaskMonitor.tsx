@@ -154,6 +154,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
   const [deleting, setDeleting] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const expandedTaskIdRef = useRef<string | null>(null);
 
   // Check if any running tasks exist
   const hasRunningTasks = tasks.some((t) => t.status === 'running');
@@ -187,11 +188,8 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
       autoRefreshRef.current = setInterval(() => {
         fetchTasks();
         // Also refresh expanded task logs if it's a running task
-        if (expandedTaskId) {
-          const expandedTask = tasks.find((t) => t.id === expandedTaskId);
-          if (expandedTask?.status === 'running') {
-            fetchTaskLogs(expandedTaskId);
-          }
+        if (expandedTaskIdRef.current) {
+          fetchTaskLogs(expandedTaskIdRef.current);
         }
       }, 5000);
     } else if (autoRefreshRef.current) {
@@ -204,7 +202,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
         autoRefreshRef.current = null;
       }
     };
-  }, [hasRunningTasks, expandedTaskId, tasks, fetchTasks]);
+  }, [hasRunningTasks, fetchTasks]);
 
   // Fetch task logs for expanded task
   const fetchTaskLogs = useCallback(async (taskId: string) => {
@@ -224,9 +222,11 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     (taskId: string) => {
       if (expandedTaskId === taskId) {
         setExpandedTaskId(null);
+        expandedTaskIdRef.current = null;
         setExpandedLogs([]);
       } else {
         setExpandedTaskId(taskId);
+        expandedTaskIdRef.current = taskId;
         setExpandedLogs([]);
         fetchTaskLogs(taskId);
       }
@@ -243,6 +243,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
       toast.success('任务已删除');
       if (expandedTaskId === deleteTarget.id) {
         setExpandedTaskId(null);
+        expandedTaskIdRef.current = null;
         setExpandedLogs([]);
       }
       fetchTasks();

@@ -40,9 +40,12 @@ function lazyCleanup(): void {
   }
 }
 
-function rateLimit(ip: string): { allowed: boolean; remaining: number; retryAfter: number } {
+export function rateLimit(ip: string, opts?: { capacity?: number; refillRate?: number }): { allowed: boolean; remaining: number; retryAfter: number } {
   const now = Date.now();
   lazyCleanup();
+
+  const cap = opts?.capacity ?? BUCKET_CAPACITY;
+  const refill = opts?.refillRate ?? REFILL_RATE;
 
   if (!ipStore.has(ip) && ipStore.size >= MAX_ENTRIES) {
     return { allowed: false, remaining: 0, retryAfter: 60 };
@@ -50,16 +53,16 @@ function rateLimit(ip: string): { allowed: boolean; remaining: number; retryAfte
 
   let entry = ipStore.get(ip);
   if (!entry) {
-    entry = { tokens: BUCKET_CAPACITY, lastRefill: now };
+    entry = { tokens: cap, lastRefill: now };
     ipStore.set(ip, entry);
   } else {
     const elapsed = (now - entry.lastRefill) / 1000;
-    entry.tokens = Math.min(BUCKET_CAPACITY, entry.tokens + elapsed * REFILL_RATE);
+    entry.tokens = Math.min(cap, entry.tokens + elapsed * refill);
     entry.lastRefill = now;
   }
 
   if (entry.tokens < 1) {
-    return { allowed: false, remaining: 0, retryAfter: Math.ceil((1 - entry.tokens) / REFILL_RATE) };
+    return { allowed: false, remaining: 0, retryAfter: Math.ceil((1 - entry.tokens) / refill) };
   }
 
   entry.tokens -= 1;
@@ -198,6 +201,62 @@ export function withAuth(handler: ApiHandler): ApiHandler {
         { error: '服务器内部错误' },
         { status: 500, headers: { 'X-Request-ID': requestId } }
       );
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Public Rate Limit Wrapper (no auth required)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface PublicRateLimitOptions {
+  /** Burst capacity (default: 60 for GET, 10 for POST) */
+  capacity?: number;
+  /** Tokens per second (default: 1) */
+  refillRate?: number;
+}
+
+/**
+ * Rate-limit wrapper for public endpoints (no authentication).
+ * Uses a separate IP namespace ('pub:' prefix) to avoid collisions with admin routes.
+ *
+ * Usage:
+ *   export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async (req) => { ... });
+ *   export const GET  = withPublicRateLimit(async (req) => { ... });
+ */
+export function withPublicRateLimit(optsOrHandler: PublicRateLimitOptions | ApiHandler, maybeHandler?: ApiHandler): ApiHandler {
+  const opts: PublicRateLimitOptions = typeof optsOrHandler === 'function' ? {} : optsOrHandler;
+  const handler: ApiHandler = typeof optsOrHandler === 'function' ? optsOrHandler : maybeHandler!;
+
+  const isPost = opts.capacity !== undefined || opts.refillRate !== undefined;
+  const capacity = opts.capacity ?? (isPost ? 10 : 60);
+  const refillRate = opts.refillRate ?? 1;
+
+  return async (...args: unknown[]) => {
+    const request = args[0] as NextRequest;
+    const ip = `pub:${getClientIp(request)}`;
+    const rl = rateLimit(ip, { capacity, refillRate });
+
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: '请求过于频繁，请稍后再试' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rl.retryAfter),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
+
+    try {
+      const response = await handler(...(args as any[]));
+      response.headers.set('X-RateLimit-Remaining', String(rl.remaining));
+      return response;
+    } catch (error) {
+      console.error('Public API error:', error);
+      return NextResponse.json({ error: '服务器内部错误' }, { status: 500 });
     }
   };
 }

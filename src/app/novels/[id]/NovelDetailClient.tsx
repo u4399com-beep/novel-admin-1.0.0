@@ -195,6 +195,21 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
   const safeLastChapterIndex = lastChapterIndex !== null && lastChapterIndex < chapters.length
     ? lastChapterIndex : null;
 
+  // ─── Chapter list pagination (client-side) ───────────────
+  const CHAPTERS_PER_PAGE = 100;
+  const [chapterPage, setChapterPage] = useState(1);
+  const chapterTotalPages = Math.ceil(chapters.length / CHAPTERS_PER_PAGE);
+  const visibleChapters = chapters.slice(
+    (chapterPage - 1) * CHAPTERS_PER_PAGE,
+    chapterPage * CHAPTERS_PER_PAGE,
+  );
+  // Auto-jump to page containing lastChapterIndex
+  useEffect(() => {
+    if (lastChapterIndex !== null && lastChapterIndex >= chapterPage * CHAPTERS_PER_PAGE) {
+      setChapterPage(Math.floor(lastChapterIndex / CHAPTERS_PER_PAGE) + 1);
+    }
+  }, [lastChapterIndex, chapterPage]);
+
   // Chapter content progress (wordCount > 0 as proxy for "has content")
   const chaptersWithContent = chapters.filter((c) => c.wordCount > 0).length;
   const contentProgress = chapters.length > 0
@@ -622,49 +637,84 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
               <p className="mt-3 text-sm text-muted-foreground">暂无章节</p>
             </div>
           ) : (
-            <motion.div
-              variants={containerVariants}
-              initial="hidden"
-              animate="show"
-              className="max-h-[600px] overflow-y-auto rounded-lg border scrollbar-thin"
-            >
-              {chapters.map((chapter, index) => (
-                <motion.button
-                  key={chapter.id}
-                  variants={itemVariants}
-                  onClick={() => openReader(index)}
-                  className={
-                    'chapter-row flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0 group ' +
-                    (index % 2 === 0 ? '' : 'bg-muted/30') +
-                    (lastChapterIndex === index ? ' bg-primary/5 border-l-2 border-l-primary' : '')
-                  }
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">{chapter.sortOrder}.</span>
-                    {chapter.wordCount > 0
-                      ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500/60" />
-                      : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/30" />
-                    }
-                    <span className="text-sm truncate group-hover:text-primary transition-colors">
-                      {chapter.title}
-                    </span>
-                    {isBookmarked(index) && (
-                      <BookmarkCheck className="h-3 w-3 shrink-0 text-amber-500" />
-                    )}
-                    {chapter.wordCount > 0 && (
-                      <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
-                        {chapter.wordCount}字
-                      </span>
-                    )}
-                  </div>
-                  {lastChapterIndex === index && (
-                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 text-primary border-primary/30 badge-transition">
-                      上次
-                    </Badge>
-                  )}
-                </motion.button>
-              ))}
-            </motion.div>
+            <>
+              <motion.div
+                variants={containerVariants}
+                initial="hidden"
+                animate="show"
+                key={chapterPage}
+                className="max-h-[600px] overflow-y-auto rounded-lg border scrollbar-thin"
+              >
+                {visibleChapters.map((chapter, localIndex) => {
+                  const globalIndex = (chapterPage - 1) * CHAPTERS_PER_PAGE + localIndex;
+                  return (
+                    <motion.button
+                      key={chapter.id}
+                      variants={itemVariants}
+                      onClick={() => openReader(globalIndex)}
+                      className={
+                        'chapter-row flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0 group ' +
+                        (globalIndex % 2 === 0 ? '' : 'bg-muted/30') +
+                        (lastChapterIndex === globalIndex ? ' bg-primary/5 border-l-2 border-l-primary' : '')
+                      }
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-xs text-muted-foreground tabular-nums shrink-0">{chapter.sortOrder}.</span>
+                        {chapter.wordCount > 0
+                          ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500/60" />
+                          : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/30" />
+                        }
+                        <span className="text-sm truncate group-hover:text-primary transition-colors">
+                          {chapter.title}
+                        </span>
+                        {isBookmarked(globalIndex) && (
+                          <BookmarkCheck className="h-3 w-3 shrink-0 text-amber-500" />
+                        )}
+                        {chapter.wordCount > 0 && (
+                          <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
+                            {chapter.wordCount}字
+                          </span>
+                        )}
+                      </div>
+                      {lastChapterIndex === globalIndex && (
+                        <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 text-primary border-primary/30 badge-transition">
+                          上次
+                        </Badge>
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </motion.div>
+              {/* Chapter pagination */}
+              {chapterTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={chapterPage <= 1}
+                    onClick={() => setChapterPage((p) => p - 1)}
+                    className="gap-1"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    上一页
+                  </Button>
+                  <span className="text-sm text-muted-foreground tabular-nums">
+                    {chapterPage} / {chapterTotalPages}
+                    <span className="ml-1.5 text-xs">(第{(chapterPage - 1) * CHAPTERS_PER_PAGE + 1}-{Math.min(chapterPage * CHAPTERS_PER_PAGE, chapters.length)}章)</span>
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={chapterPage >= chapterTotalPages}
+                    onClick={() => setChapterPage((p) => p + 1)}
+                    className="gap-1"
+                  >
+                    下一页
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </section>
 

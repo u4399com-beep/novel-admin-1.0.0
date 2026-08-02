@@ -79,8 +79,8 @@ export async function GET() {
   // 3. Auth config check
   const isHttps = (process.env.NEXTAUTH_URL || '').startsWith('https://');
   checks.auth = {
-    ok: true,
-    detail: `NEXTAUTH_URL=${process.env.NEXTAUTH_URL || '未设置'}, cookie=${isHttps ? '__Secure-next-auth.session-token' : 'next-auth.session-token'}`,
+    ok: !!process.env.NEXTAUTH_URL,
+    detail: `cookie策略: ${isHttps ? 'Secure (HTTPS)' : '标准 (HTTP)'}`,
   };
 
   const allOk = Object.values(checks).every((c) => c.ok);
