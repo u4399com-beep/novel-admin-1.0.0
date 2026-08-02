@@ -658,3 +658,139 @@ img[loading="lazy"]:not([src]) {
 .dark .glass {
   background: oklch(0.15 0 0 / 0.7);
 }
+/* ─── New Utilities (Round 23:27) ──────────────────────── */
+
+/* Smooth underline animation for links */
+.link-underline {
+  position: relative;
+}
+.link-underline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 0;
+  height: 1.5px;
+  background: currentColor;
+  transition: width 0.2s ease;
+  border-radius: 1px;
+}
+.link-underline:hover::after {
+  width: 100%;
+}
+
+/* Animated counter number */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stat-number {
+  animation: count-up 0.4s ease forwards;
+}
+
+/* Tooltip appear animation */
+.tooltip-appear {
+  animation: tooltip-in 0.2s ease forwards;
+}
+@keyframes tooltip-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* Shimmer border effect for loading cards */
+.shimmer-border {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer-border::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(90deg, transparent 0%, rgba(148,163,184,0.15) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer-border 2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes shimmer-border {
+   0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+/* Subtle pulse for notification badges */
+.badge-pulse {
+  animation: badge-pulse-anim 2s ease-in-out infinite;
+}
+@keyframes badge-pulse-anim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+/* Text gradient animation for section titles */
+.text-gradient-animate {
+  background: linear-gradient(90deg, var(--foreground) 0%, var(--foreground) 50%, var(--foreground) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-gradient-move 3s linear infinite;
+}
+@keyframes text-gradient-move {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+/* Card hover glow with color variable */
+.card-glow {
+  --glow-color: hsl(var(--primary));
+  transition: box-shadow 0.3s ease;
+}
+.card-glow:hover {
+  box-shadow: 0 0 20px -4px color-mix(in srgb, var(--glow-color) 20%, transparent),
+                0 0 40px -8px color-mix(in srgb, var(--glow-color) 10%, transparent);
+}
+
+/* Smooth scale for interactive elements */
+.scale-subtle {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.scale-subtle:hover {
+  transform: scale(1.015);
+}
+.scale-subtle:active {
+  transform: scale(0.985);
+}
+/* Focus visible outline for keyboard users */
+.focus-ring-inset:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: -2px;
+  border-radius: 0.25rem;
+}
+
+/* Active nav item indicator */
+.nav-active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+ transform: translateX(-50%);
+  width: 20px;
+  height: 2px;
+  background: hsl(var(--primary));
+  border-radius: 1px;
+}
+
+/* Skeleton pulse for empty states */
+.skeleton-pulse {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Subtle rotate for loading icons */
+.icon-spin-slow {
+  animation: icon-spin-slow 2s linear infinite;
+}
+@keyframes icon-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

@@ -471,7 +471,6 @@ export default function HomePage() {
   const [totalPages, setTotalPages] = useState(0);
   const [total, setTotal] = useState(0);
   const [recentNovels, setRecentNovels] = useState<RecentNovel[]>([]);
-  const [showRecent, setShowRecent] = useState(true);
 
   // ─── Load recently viewed ─────────────────────────────────────
   useEffect(() => {
@@ -1002,7 +1001,7 @@ export default function HomePage() {
       </section>
 
       {/* Recently Viewed */}
-      {showRecent && recentNovels.length > 0 && (
+      {recentNovels.length > 0 && (
         <section className="border-b bg-muted/20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex items-center justify-between mb-2">
@@ -1027,7 +1026,7 @@ export default function HomePage() {
                 >
                   <div className="h-8 w-6 rounded overflow-hidden shrink-0">
                     {rn.coverUrl ? (
-                      <img src={rn.coverUrl} alt="" className="h-full w-full object-cover" />
+                      <img src={rn.coverUrl} alt={rn.title} className="h-full w-full object-cover" loading="lazy" />
                     ) : (
                       <div className={`h-full w-full bg-gradient-to-br ${getGradient(rn.title)}`} />
                     )}

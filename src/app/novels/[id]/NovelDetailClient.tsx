@@ -146,7 +146,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
       });
       localStorage.setItem(RECENT_KEY, JSON.stringify(filtered.slice(0, MAX_RECENT)));
     } catch { /* ignore */ }
-  }, [novel.id, novel.title, novel.author, novel.coverUrl, novel.category]);
+  }, [novel.id, novel.title, novel.author, novel.coverUrl, novel.category?.name, novel.category?.color]);
 
   // ─── 3D Cover tilt handlers ──────────────────────────────────
   const handleCoverMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {

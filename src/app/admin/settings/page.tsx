@@ -119,11 +119,16 @@ export default function SettingsPage() {
   }, []);
 
   // Clear cache
-  const handleClearCache = useCallback(() => {
-    if (typeof window !== 'undefined' && 'caches' in window) {
-      caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n))));
+  const handleClearCache = useCallback(async () => {
+    try {
+      if (typeof window !== 'undefined' && 'caches' in window) {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+      }
+      toast.success('缓存已清空');
+    } catch {
+      toast.error('清空缓存失败');
     }
-    toast.success('缓存已清空');
   }, []);
 
   return (
@@ -196,7 +201,7 @@ export default function SettingsPage() {
                 type="number"
                 min={1}
                 value={settings.scrapeInterval}
-                onChange={(e) => update('scrapeInterval', Number(e.target.value))}
+                onChange={(e) => update('scrapeInterval', Math.max(1, Number(e.target.value) || 30))}
                 className="w-32"
               />
               <span className="text-sm text-muted-foreground">分钟</span>
@@ -332,9 +337,10 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            <Button variant="outline" onClick={() => toast.success('数据导出已开始')}>
+            <Button variant="outline" disabled onClick={() => toast.success('数据导出已开始')}>
               <Download className="mr-2 h-4 w-4" />
               导出所有数据
+              <span className="ml-1.5 text-[10px] text-muted-foreground">即将推出</span>
             </Button>
             <Button variant="outline" onClick={handleImportCategories}>
               <Upload className="mr-2 h-4 w-4" />

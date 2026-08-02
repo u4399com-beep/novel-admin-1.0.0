@@ -247,16 +247,20 @@ function ChapterEditorPanel({
     }
 
     // Fetch full chapter content
+    let cancelled = false;
     const loadChapter = async () => {
       try {
         const data = await apiFetch<{ title: string; content: string }>(`/api/chapters/${chapter.id}`);
-        setTitle(data.title);
-        setContent(data.content || '');
-        initialLoadRef.current = true;
+        if (!cancelled) {
+          setTitle(data.title);
+          setContent(data.content || '');
+          initialLoadRef.current = true;
+        }
       } catch { /* handled by apiFetch */ }
     };
 
     loadChapter();
+    return () => { cancelled = true; };
   }, [chapter]);
 
   // Auto-save debounce
@@ -1181,7 +1185,7 @@ export default function NovelDetailView() {
                     onDragEnd={batchMode ? undefined : handleDragEnd}
                   >
                     <SortableContext
-                      items={chapters.map((c) => c.id)}
+                      items={filteredChapters.map((c) => c.id)}
                       strategy={verticalListSortingStrategy}
                     >
                       <Table>
