@@ -631,42 +631,80 @@ export default function HomePage() {
       <section id="novels-section" className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
           {/* Section header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold">{getFilterSummary()}</h2>
-              <span className="text-sm text-muted-foreground">
-                共 {total} 本
-              </span>
-            </div>
-          </div>
-
-          {/* Novel grid */}
-          {loadingNovels ? (
-            <SkeletonGrid />
-          ) : novels.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                <BookOpen className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <h3 className="text-base font-medium mb-1">暂无小说</h3>
-              <p className="text-sm text-muted-foreground">试试其他关键词或筛选条件</p>
-            </div>
-          ) : (
-            <AnimatePresence mode="wait">
+          <AnimatePresence mode="wait">
+            {loadingNovels ? (
               <motion.div
-                key={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}`}
+                key="skeleton-header"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
+                className="flex items-center gap-2 mb-6"
+              >
+                <Skeleton className="h-6 w-28" />
+                <Skeleton className="h-4 w-16" />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="real-header"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="flex items-center justify-between mb-6"
+              >
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold">{getFilterSummary()}</h2>
+                  <span className="text-sm text-muted-foreground">
+                    共 {total} 本
+                  </span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Novel grid */}
+          <AnimatePresence mode="wait">
+            {loadingNovels ? (
+              <motion.div
+                key="skeleton-grid"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SkeletonGrid />
+              </motion.div>
+            ) : novels.length === 0 ? (
+              <motion.div
+                key="empty-state"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="flex flex-col items-center justify-center py-20 text-center"
+              >
+                <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+                  <BookOpen className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-base font-medium mb-1">暂无小说</h3>
+                <p className="text-sm text-muted-foreground">试试其他关键词或筛选条件</p>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}`}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
                 className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6"
               >
                 {novels.map((novel, i) => (
                   <NovelCard key={novel.id} novel={novel} index={i} />
                 ))}
               </motion.div>
-            </AnimatePresence>
-          )}
+            )}
+          </AnimatePresence>
 
           {/* Pagination */}
           {totalPages > 1 && (

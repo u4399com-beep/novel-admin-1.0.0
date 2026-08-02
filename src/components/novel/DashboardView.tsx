@@ -14,8 +14,12 @@ import {
   Sparkles,
   Tags,
   Activity,
-  Plus,
+  PlusCircle,
+  Globe,
+  Upload,
   BarChart3,
+  CheckCircle2,
+  ArrowUpRight,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -45,7 +49,7 @@ import {
 import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
-import type { DashboardStats, NovelStatus } from '@/types';
+import type { DashboardStats, NovelStatus, ViewType } from '@/types';
 
 const statusChartColors: Record<string, string> = {
   ongoing: '#10b981',
@@ -70,25 +74,19 @@ const activityChartConfig: ChartConfig = {
 
 // ─── Stat card data ───────────────────────────────────────────────────────────
 const statCards = [
-  { key: 'totalNovels', label: '小说总数', icon: BookOpen, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-  { key: 'totalChapters', label: '章节总数', icon: FileText, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-  { key: 'totalWords', label: '总字数', icon: Hash, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20' },
-  { key: 'totalCategories', label: '分类总数', icon: FolderTree, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20' },
-  { key: 'totalTags', label: '标签总数', icon: Tags, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/20' },
+  { key: 'totalNovels', label: '小说总数', icon: BookOpen, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20', view: 'novels' as ViewType },
+  { key: 'totalChapters', label: '章节总数', icon: FileText, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20', view: 'novels' as ViewType },
+  { key: 'totalWords', label: '总字数', icon: Hash, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20', view: 'novels' as ViewType },
+  { key: 'totalCategories', label: '分类总数', icon: FolderTree, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20', view: 'categories' as ViewType },
+  { key: 'totalTags', label: '标签总数', icon: Tags, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/20', view: 'tags' as ViewType },
 ] as const;
 
-// ─── Quick action cards ───────────────────────────────────────────────────────
-const quickActions = [
-  { key: 'novel', label: '新建小说', desc: '创建新的小说作品', icon: BookOpen, color: 'emerald', view: 'novels' as const, action: 'createNovel' as const },
-  { key: 'scrape', label: '采集任务', desc: '管理采集规则与任务', icon: Bug, color: 'amber', view: 'scrape' as const, action: 'navigate' as const },
-  { key: 'categories', label: '管理分类', desc: '整理小说分类体系', icon: FolderTree, color: 'violet', view: 'categories' as const, action: 'navigate' as const },
+// ─── Quick action items ───────────────────────────────────────────────────────
+const quickActionItems = [
+  { key: 'create-novel', label: '新建小说', desc: '创建新的小说作品', icon: PlusCircle, view: 'createNovel' as const },
+  { key: 'scrape-rules', label: '采集规则', desc: '管理采集规则与任务', icon: Globe, view: 'scrape' as const },
+  { key: 'import-categories', label: '导入分类', desc: '整理小说分类体系', icon: Upload, view: 'categories' as const },
 ] as const;
-
-const quickActionGradients: Record<string, string> = {
-  emerald: 'hover:from-emerald-50/80 hover:to-emerald-100/40 dark:hover:from-emerald-950/40 dark:hover:to-emerald-900/20 hover:border-emerald-200/60 dark:hover:border-emerald-800/40',
-  amber: 'hover:from-amber-50/80 hover:to-amber-100/40 dark:hover:from-amber-950/40 dark:hover:to-amber-900/20 hover:border-amber-200/60 dark:hover:border-amber-800/40',
-  violet: 'hover:from-violet-50/80 hover:to-violet-100/40 dark:hover:from-violet-950/40 dark:hover:to-violet-900/20 hover:border-violet-200/60 dark:hover:border-violet-800/40',
-};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export function DashboardView() {
@@ -130,8 +128,8 @@ export function DashboardView() {
     setCurrentView('novel-detail');
   };
 
-  const handleQuickAction = (action: typeof quickActions[number]) => {
-    if (action.action === 'createNovel') {
+  const handleQuickAction = (action: typeof quickActionItems[number]) => {
+    if (action.view === 'createNovel') {
       handleCreateNovel();
     } else {
       setCurrentView(action.view);
@@ -145,6 +143,16 @@ export function DashboardView() {
     count: item.count,
     fill: statusChartColors[item.status] ?? '#94a3b8',
   })) ?? [];
+
+  // ─── Trend indicators ─────────────────────────────────────────────────────
+  const trendData = useMemo(() => {
+    if (!stats) return { completedCount: 0, avgChapters: 0, avgWords: 0 };
+    const completedEntry = stats.statusDistribution.find((s) => s.status === 'completed');
+    const completedCount = completedEntry?.count ?? 0;
+    const avgChapters = stats.totalNovels > 0 ? Math.round(stats.totalChapters / stats.totalNovels) : 0;
+    const avgWords = stats.totalNovels > 0 ? Math.round(stats.totalWords / stats.totalNovels) : 0;
+    return { completedCount, avgChapters, avgWords };
+  }, [stats]);
 
   // ─── Placeholder 7-day activity data ────────────────────────────────────
   // TODO: Connect to real activity data API
@@ -183,6 +191,36 @@ export function DashboardView() {
     return { greeting, dateStr };
   }, []);
 
+  // ─── Helper: get trend indicator for a stat card ────────────────────────
+  const getTrendIndicator = (cardKey: string) => {
+    if (!stats) return null;
+    switch (cardKey) {
+      case 'totalNovels':
+        return trendData.completedCount > 0 ? (
+          <span className="flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+            <CheckCircle2 className="h-3 w-3" />
+            已完结 {trendData.completedCount}
+          </span>
+        ) : null;
+      case 'totalChapters':
+        return stats.totalNovels > 0 ? (
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <ArrowUpRight className="h-3 w-3" />
+            均 {trendData.avgChapters} 章/部
+          </span>
+        ) : null;
+      case 'totalWords':
+        return stats.totalNovels > 0 ? (
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <ArrowUpRight className="h-3 w-3" />
+            均 {trendData.avgWords.toLocaleString()} 字/部
+          </span>
+        ) : null;
+      default:
+        return null;
+    }
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -213,6 +251,7 @@ export function DashboardView() {
                     <div className="flex-1 space-y-2">
                       <Skeleton className="h-4 w-16" />
                       <Skeleton className="h-8 w-24" />
+                      <Skeleton className="h-3 w-20" />
                     </div>
                   </div>
                 </CardContent>
@@ -228,8 +267,16 @@ export function DashboardView() {
           ) : statCards.map((card) => {
               const Icon = card.icon;
               const value = stats?.[card.key] ?? 0;
+              const trend = getTrendIndicator(card.key);
+              const displayValue = card.key === 'totalWords'
+                ? value >= 10000 ? `${(value / 10000).toFixed(1)}万` : value.toLocaleString()
+                : value.toLocaleString();
               return (
-                <Card key={card.key} className="overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5">
+                <Card
+                  key={card.key}
+                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
+                  onClick={() => setCurrentView(card.view)}
+                >
                   <CardContent className="p-4">
                     <div className="flex items-center gap-4">
                       <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${card.bg}`}>
@@ -237,7 +284,8 @@ export function DashboardView() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-muted-foreground">{card.label}</p>
-                        <p className="text-2xl font-bold tabular-nums">{value.toLocaleString()}</p>
+                        <p className="text-2xl font-bold tabular-nums">{displayValue}</p>
+                        {trend && <div className="mt-0.5">{trend}</div>}
                       </div>
                     </div>
                   </CardContent>
@@ -259,7 +307,15 @@ export function DashboardView() {
           </CardHeader>
           <CardContent onClick={() => setCurrentView('novels')}>
             {loading ? (
-              <Skeleton className="h-[200px] w-full" />
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-4 w-14" />
+                    <Skeleton className="h-6 flex-1 rounded-full" />
+                    <Skeleton className="h-4 w-8" />
+                  </div>
+                ))}
+              </div>
             ) : chartData.length === 0 ? (
               <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
                 暂无数据
@@ -378,67 +434,92 @@ export function DashboardView() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* TODO: Connect to real activity data API */}
-          <ChartContainer config={activityChartConfig} className="h-[180px] w-full">
-            <AreaChart data={activityData} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
-              <defs>
-                <linearGradient id="chapterGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#a78bfa" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis
-                dataKey="name"
-                tickLine={false}
-                axisLine={false}
-                fontSize={12}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                fontSize={12}
-                allowDecimals={false}
-              />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Area
-                type="monotone"
-                dataKey="chapters"
-                stroke="#a78bfa"
-                strokeWidth={2}
-                fill="url(#chapterGradient)"
-                dot={{ r: 4, fill: '#a78bfa', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
-                activeDot={{ r: 6, fill: '#a78bfa', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
-              />
-            </AreaChart>
-          </ChartContainer>
+          {loading ? (
+            <div className="space-y-4">
+              <div className="flex items-end justify-between gap-2">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <Skeleton key={i} className="h-[120px] flex-1 rounded-t-md" style={{ height: `${60 + Math.sin(i * 1.5) * 30 + 30}px` }} />
+                ))}
+              </div>
+              <div className="flex justify-between">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <Skeleton key={i} className="h-3 w-8" />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <ChartContainer config={activityChartConfig} className="h-[180px] w-full">
+              <AreaChart data={activityData} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="chapterGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#a78bfa" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  tickLine={false}
+                  axisLine={false}
+                  fontSize={12}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  fontSize={12}
+                  allowDecimals={false}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Area
+                  type="monotone"
+                  dataKey="chapters"
+                  stroke="#a78bfa"
+                  strokeWidth={2}
+                  fill="url(#chapterGradient)"
+                  dot={{ r: 4, fill: '#a78bfa', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                  activeDot={{ r: 6, fill: '#a78bfa', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                />
+              </AreaChart>
+            </ChartContainer>
+          )}
         </CardContent>
       </Card>
 
       {/* ── Quick Actions ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {quickActions.map((action) => {
-          const Icon = action.icon;
-          const gradientClass = quickActionGradients[action.color] ?? '';
-          return (
-            <Card
-              key={action.key}
-              className={`cursor-pointer transition-all duration-200 hover:shadow-md bg-gradient-to-br ${gradientClass}`}
-              onClick={() => handleQuickAction(action)}
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-${action.color}-100 dark:bg-${action.color}-900/30`}>
-                  <Icon className={`h-5 w-5 text-${action.color}-600 dark:text-${action.color}-400`} />
-                </div>
-                <div>
-                  <p className="text-sm font-medium">{action.label}</p>
-                  <p className="text-xs text-muted-foreground">{action.desc}</p>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-5 w-5 text-muted-foreground" />
+            快捷操作
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex flex-wrap gap-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-32 rounded-md" />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {quickActionItems.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Button
+                    key={action.key}
+                    variant="outline"
+                    className="h-10 gap-2"
+                    onClick={() => handleQuickAction(action)}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {action.label}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ── Recent Activity (Real Data) ─────────────────────────────────── */}
       <Card>
