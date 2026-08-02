@@ -3493,3 +3493,100 @@ Stage Summary:
 3. 管理: 批量导入导出小说、采集任务执行逻辑完善
 4. 性能: 列表虚拟滚动、图片懒加载优化
 5. 数据库: 添加clickCount/favoriteCount字段启用真实排行
+
+---
+Task ID: cron-qa-20260802-2214
+Agent: Main Orchestrator
+Task: QA验证 + 8个Bug状态确认 + UI交互全面增强
+
+Work Log:
+- 读取worklog.md(3495行)了解完整项目历史
+- 逐一验证上轮发现的8个bug当前状态
+- npx next build: 0 TypeScript errors ✅
+- bun run lint: 0 errors, 3 warnings(预存React Compiler) ✅
+
+## Bug状态确认(8/8已修复)
+
+1. **排行榜sort key匹配** ✅ — API有weekly_clicks/monthly_clicks/total_favorites, 前端TABS一致
+2. **字数筛选300-400万空缺** ✅ — 已修复为200w_400w
+3. **NovelListView双请求** ✅ — prevFiltersRef已正确接入fetchNovels, setPage(1)+return模式正确
+4. **删除对话框异步关闭** ✅ — AlertDialogAction已用e.preventDefault()+disabled
+5. **排行榜面包屑** ✅ — 已用asChild+Link
+6. **首页卡片window.location.href** ✅ — 仅login页有,是有意重定向
+7. **DashboardView查看全部** ✅ — 已有!loading&&activityData?.recentEvents.length守卫
+8. **Admin第9个nav快捷键** ✅ — VIEW_KEY_MAP从NAV_ITEMS动态构建,支持任意数量
+
+## 新发现并修复
+9. **首页NovelCard重复if检查** — handleMouseEnter/handleMouseLeave/handlePopoverEnter中存在6重嵌套if(xxx) if(xxx)... → 清理为单次检查
+
+## UI交互增强(5文件, +219 -49)
+
+### 1. 首页小说卡片增强 (page.tsx)
+- hover CTA覆盖层: 黑色半透明背景 + "阅读"按钮从下方滑入
+- 封面hover: scale 110%(原105%) + brightness-75暗化效果
+- 卡片提升: -translate-y-1.5(原0.5) + shadow-2xl + shadow-primary/10
+- 边框发光: group-hover:ring-1 ring-primary/20
+- 分类徽章: 添加backdrop-blur-sm
+- 信息区: 作者和章数合并为一行,中间圆点分隔
+- 修复: 清理3处重复if检查bug
+
+### 2. 排行榜Framer Motion入场动画 (rankings/page.tsx)
+- NovelRow: div→motion.div, 添加opacity/y/x入场动画(40ms交错延迟)
+- 头部: 添加motion.div面包屑淡入 + 图标区域横向滑入
+- Top3卡片: hover增强 -translate-y-0.5 + shadow-lg
+- 普通行: hover添加translate-x-1微移效果
+- RankNumber: 奖牌添加rank-shine光泽动画
+- 传递index prop控制交错延迟
+
+### 3. 小说详情3D封面倾斜 (NovelDetailClient.tsx)
+- 新增coverRef + handleCoverMouseMove/handleCoverMouseLeave
+- 鼠标跟踪: perspective 800px + rotateY/rotateX最大15度
+- transition-transform 200ms ease-out平滑回弹
+- backface-visibility: hidden防止翻转闪烁
+- cursor-grab/grabbing交互暗示
+- 封面底部阴影: 模糊渐变条
+- 标签: 应用badge-interactive类(hover scale 1.05+shadow)
+- 章节列表: 应用chapter-row类(hover左侧3px primary边框揭示+padding-left过渡)
+
+### 4. 登录页错误动画 (login/page.tsx)
+- 错误信息: div→motion.div + AnimatePresence
+- 弹簧动画: stiffness 500, damping 30, x轴-8→0→8位移
+- errorKeyRef: 每次错误递增触发重新动画
+- 输入框: focus:ring-2 focus:ring-primary/30 focus:border-primary
+
+### 5. globals.css新增CSS工具类(+104行)
+- `.hover-glow-accent`: 带颜色变量的卡片发光(--glow-color)
+- `.text-shimmer`: 文字渐变闪光动画
+- `.card-press`: 深层按压缩放效果
+- `.chapter-row`: 左侧边框揭示+padding过渡
+- `.filter-pill-active`: 底部primary指示条
+- `.rank-shine`: 排名奖牌光泽扫过
+- `.list-hover`: 列表项hover背景色过渡
+- `@keyframes label-float`: 标签浮动动画
+- `.border`: 全局border-color过渡
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 3 warnings(预存) ✅
+- Git commit: f85796c (5 files, +219 -49)
+- Git push: 24b3365..f85796c main → main ✅
+
+Stage Summary:
+- 8个历史bug全部确认已修复,额外修复1个新bug(重复if)
+- 5个页面/组件UI交互增强
+- 9个新CSS动画/工具类
+- 已commit+push
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0构建错误, 0 lint errors
+- **最新commit**: f85796c (已push)
+- **生产服务器**: 需 git pull && bash deploy.sh
+- **累计修复**: 168 + 1(重复if) = 169项
+
+## 建议下一阶段优先事项
+1. **服务器部署** git pull && bash deploy.sh (所有新UI增强未生效)
+2. 首页: 搜索建议下拉增强、分类筛选横向滚动指示器
+3. 管理: 批量导入导出小说、采集任务执行逻辑
+4. 阅读: 章节书签功能、长按选择文本操作
+5. 数据库: 添加clickCount/favoriteCount字段启用真实排行
+6. 性能: 列表虚拟滚动(大列表场景)
