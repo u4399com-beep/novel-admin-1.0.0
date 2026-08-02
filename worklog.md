@@ -3908,8 +3908,101 @@ Stage Summary:
 ## 建议下一阶段优先事项
 1. **服务器部署** git pull && bash deploy.sh
 2. 数据库: 添加clickCount/favoriteCount字段启用真实排行
-3. 管理: NovelFormDialog用apiFetch替代raw fetch、分类标签刷新
-4. 阅读: 章节书签功能、内容目录(TOC)
+3. 管理: 分类标签刷新、批量导入导出
+4. 阅读: 章节书签功能、长按选择文本操作
+5. 性能: 列表虚拟滚动、图片懒加载优化
+6. 可访问性: 管理表格行键盘导航、DnD KeyboardSensor
+7. SEO: rankings和categories页面使用metadata export替代useEffect
+8. 首页: 分类筛选横向滚动指示器
+
+---
+Task ID: cron-qa-20260803-0008
+Agent: Main Orchestrator
+Task: QA审查(14问题) + 10 bug修复 + 章节TOC进度条 + 12 CSS工具类
+
+Work Log:
+- npx next build: 0 TypeScript errors
+- bun run lint: 0 errors, 3 warnings(预存React Compiler)
+- 使用sub-agent对8个未审查文件进行深度QA
+- QA发现14个问题(3 HIGH, 6 MEDIUM, 5 LOW)
+- 修复3个HIGH + 6个MEDIUM + 1个LOW bug
+- 新增章节目录内容进度条+状态图标
+- 新增12个CSS微交互工具类
+
+## Bug Fixes (10)
+
+### HIGH
+1. **ChapterFormDialog内容静默丢失** (ChapterFormDialog.tsx)
+   - 问题: 编辑章节时fetch失败→fetchedContent=null→提交不发送content
+   - 修复: 条件改为`fetchedContent !== null || values.content.trim()`
+
+2. **NovelDetailClient lastChapterIndex越界崩溃** (NovelDetailClient.tsx)
+   - 问题: 章节删除后localStorage中的index超出数组范围
+   - 修复: 新增safeLastChapterIndex, 所有数组索引处使用安全值
+
+3. **NovelFormDialog用raw fetch** (NovelFormDialog.tsx)
+   - 问题: 提交小说用raw fetch, 错误信息丢失
+   - 修复: 改为apiFetch, 自动toast错误
+
+### MEDIUM
+4. **login framer-motion ease缺as const** (login/page.tsx)
+5. **阅读器3个工具栏按钮缺aria-label** (NovelDetailClient.tsx)
+6. **NovelFormDialog label→span** (NovelFormDialog.tsx)
+7. **ChapterFormDialog死代码nextChapterNumRef** (ChapterFormDialog.tsx)
+8. **AppSidebar raw fetch→apiFetch** (AppSidebar.tsx)
+
+### LOW
+9. **AppSidebar死代码handleNav** (AppSidebar.tsx)
+
+## 新功能
+
+### 1. 章节目录内容进度条 (NovelDetailClient.tsx)
+- 显示“X/Y 有内容”(wordCount>0作为代理)
+- 渐变进度条(progress-smooth动画)
+- 百分比显示
+
+### 2. 章节内容状态图标 (NovelDetailClient.tsx)
+- 有内容: 绿色CheckCircle2图标
+- 无内容: 灰色Circle图标
+
+### 3. 阅读器章节列表滚动条美化
+- 应用scrollbar-thin工具类
+
+### 4. CSS微交互工具类 (+130行 globals.css)
+- slide-in-right, btn-press, bg-shift, text-shadow-sm
+- nav-underline, pulse-ring, badge-transition
+- scroll-fade-bottom, skeleton-text, focus-visible-ring
+- icon-grow, divider-fade, scrollbar-thin, ::selection
+
+## 验证结果
+- next build: 0 TypeScript errors
+- ESLint: 0 errors, 3 warnings(预存)
+- Git commit: 37f33e3 (8 files, +211 -54)
+- Git push: 5bde80a..37f33e3 main → main
+
+## 统计
+- 修改文件: 8
+- 代码变更: +211 -54
+- 本轮bug修复: 10
+- 累计修复: 206 + 10 = 216项
+
+Stage Summary:
+- 修复10个QA bug(3 HIGH + 6 MEDIUM + 1 LOW)
+- 新增章节目录内容进度条和状态图标
+- 12个新CSS微交互工具类
+- 代码库稳定, 0构建错误, 0 lint errors
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0构建错误, 0 lint errors
+- **最新commit**: 37f33e3 (已push)
+- **生产服务器**: 需 git pull && bash deploy.sh
+- **累计修复**: 216项
+
+## 建议下一阶段优先事项
+1. **服务器部署** git pull && bash deploy.sh
+2. 数据库: 添加clickCount/favoriteCount字段启用真实排行
+3. 管理: 分类标签刷新、批量导入导出
+4. 阅读: 章节书签功能、长按选择文本操作
 5. 性能: 列表虚拟滚动、图片懒加载优化
 6. 可访问性: 管理表格行键盘导航、DnD KeyboardSensor
 7. SEO: rankings和categories页面使用metadata export替代useEffect
