@@ -86,8 +86,20 @@ export default function NovelListView() {
     apiFetch<Category[]>('/api/categories').then(setCategories).catch(() => {});
   }, []);
 
+  // Track previous filter values to auto-reset page on filter change
+  const prevFiltersRef = useRef({ status: statusFilter, category: categoryFilter });
+
   // Fetch novels
   const fetchNovels = useCallback(async () => {
+    // Auto-reset to page 1 when filters change
+    if (
+      prevFiltersRef.current.status !== statusFilter ||
+      prevFiltersRef.current.category !== categoryFilter
+    ) {
+      prevFiltersRef.current = { status: statusFilter, category: categoryFilter };
+      setPage(1);
+      return; // will re-trigger via page state change
+    }
     try {
       setLoading(true);
       const params = new URLSearchParams({
@@ -182,11 +194,6 @@ export default function NovelListView() {
       setDeleting(false);
     }
   };
-
-  // Reset page when filters change
-  useEffect(() => {
-    setPage(1);
-  }, [statusFilter, categoryFilter]);
 
   const handleViewNovel = (novel: Novel) => {
     selectNovel(novel);

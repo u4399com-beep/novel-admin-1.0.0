@@ -518,12 +518,12 @@ export default function CategoryManagerView() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
+              onClick={(e) => { e.preventDefault(); handleDelete(); }}
               disabled={deleting}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
               {deleting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              删除
+              {deleting ? "删除中..." : "删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

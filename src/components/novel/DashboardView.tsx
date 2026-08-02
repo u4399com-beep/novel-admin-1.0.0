@@ -762,11 +762,13 @@ export function DashboardView() {
               })}
             </div>
           )}
-          <div className="mt-2 border-t pt-3">
-            <button className="text-sm text-muted-foreground transition-colors hover:text-foreground" onClick={() => setCurrentView('novels')}>
-              查看全部 →
-            </button>
-          </div>
+          {!loading && activityData?.recentEvents.length ? (
+            <div className="mt-2 border-t pt-3">
+              <button className="text-sm text-muted-foreground transition-colors hover:text-foreground" onClick={() => setCurrentView('novels')}>
+                查看全部 →
+              </button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

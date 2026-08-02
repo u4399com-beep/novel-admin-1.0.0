@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Search, Sun, Moon, Shield,
+  BookOpen, Search, Sun, Moon, Shield, User, BookMarked, FileText,
   ChevronLeft, ChevronRight, RotateCcw,
   Menu, X, Book, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,6 +29,12 @@ interface Category {
   _count: { novels: number };
 }
 
+interface TagItem {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface Novel {
   id: string;
   title: string;
@@ -37,6 +45,7 @@ interface Novel {
   status: string;
   wordCount: number;
   category: { id: string; name: string; slug: string; color: string; icon: string | null } | null;
+  tags: { tag: TagItem }[];
   _count: { chapters: number };
   createdAt: string;
   updatedAt: string;
@@ -136,15 +145,45 @@ function FilterRowSkeleton() {
 
 function NovelCard({ novel, index }: { novel: Novel; index: number }) {
   const gradient = getGradient(novel.title);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = useCallback(() => {
+    clearTimeout(leaveTimer.current);
+    enterTimer.current = setTimeout(() => setPopoverOpen(true), 400);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    clearTimeout(enterTimer.current);
+    leaveTimer.current = setTimeout(() => setPopoverOpen(false), 200);
+  }, []);
+
+  const handlePopoverEnter = useCallback(() => {
+    clearTimeout(leaveTimer.current);
+  }, []);
+
+  const handlePopoverLeave = useCallback(() => {
+    leaveTimer.current = setTimeout(() => setPopoverOpen(false), 150);
+  }, []);
+
+  const statusLabel = novel.status === 'ongoing' ? '连载中' : novel.status === 'completed' ? '已完结' : '暂停中';
+  const statusColor = novel.status === 'ongoing'
+    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+    : novel.status === 'completed'
+      ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
 
   return (
+    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+    <PopoverTrigger asChild>
+    <Link href={`/novels/${novel.id}`} className="block" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.3, delay: index * 0.04 }}
       className="group cursor-pointer"
-      onClick={() => window.location.href = `/novels/${novel.id}`}
     >
       {/* Cover */}
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-xl transition-all duration-200 group-hover:-translate-y-0.5">
@@ -186,13 +225,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
                   ? 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]'
                   : 'bg-gray-400'
             }`}
-            title={
-              novel.status === 'ongoing'
-                ? '连载中'
-                : novel.status === 'completed'
-                  ? '已完结'
-                  : '暂停中'
-            }
+            title={statusLabel}
           />
         </div>
         {/* Chapter count overlay */}
@@ -215,6 +248,53 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
         <p className="text-xs text-muted-foreground line-clamp-1">{novel.author}</p>
       </div>
     </motion.div>
+    </Link>
+    </PopoverTrigger>
+    <PopoverContent
+      className="w-72 p-4"
+      side="right"
+      sideOffset={8}
+      align="start"
+      onMouseEnter={handlePopoverEnter}
+      onMouseLeave={handlePopoverLeave}
+      onOpenAutoFocus={(e) => e.preventDefault()}
+    >
+      <h4 className="font-bold text-sm leading-snug mb-1 line-clamp-1">{novel.title}</h4>
+      <p className="text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
+        <User className="h-3 w-3 shrink-0" />
+        <span className="line-clamp-1">{novel.author}</span>
+      </p>
+      {novel.description && (
+        <p className="text-xs text-muted-foreground/90 leading-relaxed line-clamp-3 mb-2">{novel.description}</p>
+      )}
+      {novel.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {novel.tags.map(({ tag }) => (
+            <span
+              key={tag.id}
+              className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+              style={{ backgroundColor: `${tag.color}20`, color: tag.color, border: `1px solid ${tag.color}40` }}
+            >
+              {tag.name}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-3 pt-2 border-t">
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <BookMarked className="h-3 w-3" />
+          {novel._count.chapters} 章
+        </span>
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <FileText className="h-3 w-3" />
+          {formatWordCount(novel.wordCount)}
+        </span>
+        <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusColor}`}>
+          {statusLabel}
+        </span>
+      </div>
+    </PopoverContent>
+    </Popover>
   );
 }
 

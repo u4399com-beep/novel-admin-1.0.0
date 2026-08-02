@@ -433,10 +433,11 @@ export default function TagManagerView() {
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
+              onClick={(e) => { e.preventDefault(); handleDelete(); }}
+              disabled={submitting}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              删除
+              {submitting ? "删除中..." : "删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

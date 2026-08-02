@@ -105,6 +105,9 @@ export async function GET(request: NextRequest) {
           category: {
             select: { id: true, name: true, slug: true, color: true, icon: true },
           },
+          tags: {
+            select: { tag: { select: { id: true, name: true, color: true } } },
+          },
           _count: { select: { chapters: true } },
           createdAt: true,
           updatedAt: true,

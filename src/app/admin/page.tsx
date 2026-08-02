@@ -98,7 +98,7 @@ const viewVariants = {
 };
 
 // ─── Keyboard shortcut keys ─────────────────────────────────────────────────
-const SHORTCUT_KEYS = ['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8'] as const;
+const SHORTCUT_KEYS = ['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8', '⌘9'] as const;
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
