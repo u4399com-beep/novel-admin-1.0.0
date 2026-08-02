@@ -3794,3 +3794,123 @@ Stage Summary:
 4. 阅读: 章节书签功能、内容目录(TOC)
 5. 性能: 列表虚拟滚动、图片懒加载优化
 6. 可访问性: 管理表格行键盘导航
+
+---
+Task ID: cron-qa-20260802-2353
+Agent: Main Orchestrator
+Task: Lint修复 + QA审查(29问题) + 11 bug修复 + 搜索历史 + CSS微交互
+
+Work Log:
+- 发现3个lint error(2 error + 1 warning): admin条件useEffect, page.tsx setState-in-effect, health stale eslint-disable
+- 修复全部3个lint问题
+- npx next build: 0 TypeScript errors
+- bun run lint: 0 errors, 3 warnings(预存React Compiler)
+- 使用sub-agent对8个核心文件进行深度QA审查
+- QA发现29个问题(4 HIGH, 9 MEDIUM, 15 LOW)
+- 修复4个HIGH + 7个MEDIUM bug
+- 新增搜索历史功能(最近5条, localStorage持久化)
+- 新增键盘快捷键提示(搜索建议底部)
+- 新增13个CSS微交互工具类
+
+## Lint Fixes (3)
+1. **admin条件useEffect** — useEffect移到early return之前, 添加status守卫
+2. **page.tsx setState-in-effect** — recentNovels改用useState惰性初始化, 删除单独useEffect
+3. **health/route.ts** — 删除无用的eslint-disable-next-line注释
+
+## Bug Fixes (11)
+
+### HIGH
+1. **NovelListView page-1 filter stale data** (NovelListView.tsx)
+   - 问题: ref-based guard在page=1时setPage(1)为no-op, 导致筛选后数据不刷新
+   - 修复: 移除ref逻辑, 改用独立useEffect监听filter变化reset page
+
+2. **排行榜stat列显示updatedAt而非排行值** (rankings/page.tsx)
+   - 问题: clickCount/favoriteCount字段不存在, stat列永远显示"更新于"
+   - 修复: 改为显示总字数(真实可用数据), label改为"总字数"
+
+3. **TagManagerView删除按钮可连点** (TagManagerView.tsx)
+   - 问题: handleDelete异步但按钮disabled绑定的是submitting状态
+   - 修复: 新增独立deleting状态, 删除期间禁用按钮+显示loading
+
+4. **排行榜status只有二态** (rankings/page.tsx)
+   - 问题: hiatus状态显示为"连载中"
+   - 修复: 使用status map支持ongoing/completed/hiatus
+
+### MEDIUM
+5. **操作按钮键盘不可见** (NovelDetailView + NovelListView)
+   - 修复: 添加group-focus-within:opacity-100
+
+6. **auto-save setTimeout未cleanup** (NovelDetailView)
+   - 修复: 新增saveStatusTimerRef, unmount时清理
+
+7. **DashboardView重复错误卡片** (DashboardView)
+   - 修复: 删除底部重复的错误显示(内联错误已足够)
+
+8. **ChartLegend nameKey错误** (DashboardView)
+   - 修复: 删除nameKey="name", 让ChartLegendContent使用默认行为
+
+9. **排行榜重试不传AbortController** (rankings/page.tsx)
+   - 修复: 重试按钮创建new AbortController
+
+10. **分类页error retry用reload** (categories/page.tsx)
+    - 修复: 提取fetchCategories为useCallback, retry调用fetchCategories
+
+11. **NovelListView键盘快捷键依赖novels数组** (NovelListView.tsx)
+    - 修复: 使用novelsRef避免频繁re-register事件监听
+
+## 新功能
+
+### 1. 搜索历史 (page.tsx)
+- localStorage持久化, 最多5条记录
+- 空输入聚焦时显示历史记录下拉
+- 每项带History图标, 可点击重新搜索
+- "清除"按钮一键清空历史
+- 搜索提交时自动记录
+
+### 2. 键盘快捷键提示 (page.tsx)
+- 搜索建议下拉底部显示 ↑↓导航 / Enter选择 / Esc关闭
+
+### 3. CSS微交互工具类 (+131行 globals.css)
+- slide-up, tap-feedback, stagger-child, glow-soft
+- border-hover-accent, text-fade-in, progress-smooth
+- hover-lift, tabular-nums, line-clamp-1
+- border-dash-animated, row-hover, shake, modal-enter
+
+### 4. 样式增强
+- 分类卡片应用hover-lift + tap-feedback
+- 分类进度条应用progress-smooth
+
+## 验证结果
+- next build: 0 TypeScript errors
+- ESLint: 0 errors, 3 warnings(预存)
+- Git commit: 122d0f2 (10 files, +285 -80)
+- Git push: 20a9090..122d0f2 main → main
+
+## 统计
+- 修改文件: 10
+- 代码变更: +285 -80
+- 本轮bug修复: 3 lint + 11 QA = 14
+- 累计修复: 192 + 14 = 206项
+
+Stage Summary:
+- 修复3个lint error(从2 errors降至0)
+- 修复11个QA bug(4 HIGH + 7 MEDIUM)
+- 新增搜索历史功能(首页搜索增强)
+- 13个新CSS微交互工具类
+- 代码库稳定, 0构建错误, 0 lint errors
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0构建错误, 0 lint errors
+- **最新commit**: 122d0f2 (已push)
+- **生产服务器**: 需 git pull && bash deploy.sh
+- **累计修复**: 206项
+
+## 建议下一阶段优先事项
+1. **服务器部署** git pull && bash deploy.sh
+2. 数据库: 添加clickCount/favoriteCount字段启用真实排行
+3. 管理: NovelFormDialog用apiFetch替代raw fetch、分类标签刷新
+4. 阅读: 章节书签功能、内容目录(TOC)
+5. 性能: 列表虚拟滚动、图片懒加载优化
+6. 可访问性: 管理表格行键盘导航、DnD KeyboardSensor
+7. SEO: rankings和categories页面使用metadata export替代useEffect
+8. 首页: 分类筛选横向滚动指示器
