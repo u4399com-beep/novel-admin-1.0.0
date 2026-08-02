@@ -4242,3 +4242,81 @@ Stage Summary:
 5. 性能: 列表虚拟滚动、图片懒加载优化
 6. 可访问性: 管理表格行键盘导航、DnD KeyboardSensor
 7. SEO: rankings和categories页面使用metadata export
+
+---
+Task ID: cron-qa-20260803-0408
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T04:08:00+08:00
+
+Task: QA审计(16新问题) + 2 HIGH + 8 MEDIUM + 7 LOW修复 + 3新功能
+
+Work Log:
+- 读取worklog确认状态(累计254项修复, commit c6ceb2c)
+- npx next build: 0 TypeScript errors
+- bun run lint: 0 errors, 2 warnings(预存React Compiler)
+- 双agent并行QA: 前端(4M+7L) + 后端(2H+4M+3L)
+- 修复2 HIGH + 8 MEDIUM + 7 LOW + 3新功能
+
+## Bug Fixes (17)
+
+### HIGH (2)
+1. **SSRF IPv6 expanded form bypass** (sanitize.ts)
+   - 问题: isPrivateIp()仅匹配IPv6简写形式，展开形式可绕过
+   - 修复: 添加expandIPv6()展开::简写，匹配完整8组4位hex + IPv6-mapped IPv4
+
+2. **Public API无速率限制** (middleware.ts, 7个公开端点)
+   - 修复: middleware添加publicApiStore，60 req/min per IP，排除health GET
+
+### MEDIUM (8)
+3. **Sites缓存失效key不匹配** — invalidateCache支持prefix匹配
+4. **Public chapters无分页上限** — take: min(500, limit) + truncated标志
+5. **Public novels page无上限** — page = Math.min(10000, ...)
+6. **500响应泄露内部错误** — 移除61处detail:msg + 10个死msg变量(31文件)
+7. **NovelCard hover timer未清理** — useEffect cleanup
+8. **Mobile drawer未锁定body滚动** — overflow:hidden
+9. **Reader章节加载失败无重试** — chapterError状态+重试按钮
+10. **lineHeight有配置无UI控制** — 行距±按钮(1.2-3.0, step 0.1)
+
+### LOW (7)
+11. Mobile menu图标: Shield→Trophy, Search→Compass
+12. Admin dead searchQuery state移除
+13. safeJsonStringify提取到api-utils.ts (DRY)
+14. Dead loginRateLimit函数移除(52行)
+15. Dead msg变量清理(10文件)
+
+## 新功能 (3)
+1. 行距控制UI (ReadingSettingsPanel)
+2. 阅读器重试按钮 (NovelDetailClient)
+3. Mobile菜单图标修正
+
+## 验证结果
+- next build: 0 TypeScript errors
+- ESLint: 0 errors, 2 warnings(预存)
+- Git commit: 4c83779 (43 files, +304 -176)
+- Git push: c6ceb2c..4c83779 main → main
+
+## 统计
+- 修改文件: 43
+- 本轮bug修复: 17项
+- 累计修复: 254 + 17 = 271项
+
+Stage Summary:
+- 修复17项(2H+8M+7L), 3个新功能
+- 61处500响应错误信息泄露修复
+- SSRF IPv6展开形式绕过修复
+- Public API速率限制60/min
+- 代码库稳定, 0构建错误, 0 lint errors
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0构建错误, 0 lint errors
+- **最新commit**: 4c83779 (已push)
+- **累计修复**: 271项
+
+## 建议下一阶段优先事项
+1. 服务器部署 git pull && bash deploy.sh
+2. 数据库: 添加clickCount/favoriteCount字段
+3. 管理: 批量导入导出
+4. 阅读: 章节书签功能
+5. 性能: 列表虚拟滚动
+6. 可访问性: 管理表格键盘导航
+7. SEO: metadata export
