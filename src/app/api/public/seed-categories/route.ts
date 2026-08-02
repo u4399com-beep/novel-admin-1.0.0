@@ -163,9 +163,8 @@ export const POST = withAuth(async function POST() {
     });
   } catch (error) {
     console.error("Seed categories error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "导入分类失败", detail: msg },
+      { error: "导入分类失败"},
       { status: 500 }
     );
   }

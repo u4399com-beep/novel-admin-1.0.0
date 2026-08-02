@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, Type, Palette, Check } from 'lucide-react';
+import { Plus, Minus, Type, Palette, Check, AlignVerticalSpaceAround } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -55,6 +55,43 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">放大字号</TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="mx-1 h-4" />
+
+      {/* Line height controls */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            aria-label="减小行距"
+            onClick={() => onUpdate({ lineHeight: Math.max(1.2, +(settings.lineHeight - 0.1).toFixed(1)) })}
+          >
+            <AlignVerticalSpaceAround className="h-3 w-3" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">减小行距 (当前 {settings.lineHeight})</TooltipContent>
+      </Tooltip>
+
+      <span className="min-w-[2.5rem] text-center text-xs tabular-nums text-muted-foreground">
+        {settings.lineHeight}
+      </span>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            aria-label="增大行距"
+            onClick={() => onUpdate({ lineHeight: Math.min(3.0, +(settings.lineHeight + 0.1).toFixed(1)) })}
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">增大行距</TooltipContent>
       </Tooltip>
 
       <Separator orientation="vertical" className="mx-1 h-4" />

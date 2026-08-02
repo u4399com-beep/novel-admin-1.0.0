@@ -24,7 +24,6 @@ export async function GET() {
     return NextResponse.json(categories);
   } catch (error) {
     console.error("Public categories API error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取分类失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取分类失败"}, { status: 500 });
   }
 }

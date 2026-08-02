@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError, safeJsonStringify } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import {
   VALID_SCRAPE_MODES,
@@ -17,14 +17,7 @@ import {
 } from "@/lib/scrape-rule-validation";
 import { NextRequest, NextResponse } from "next/server";
 
-function safeJsonStringify(value: unknown, fieldName: string, maxSize = 50000): string | null {
-  if (value == null) return null;
-  const str = JSON.stringify(value);
-  if (str && str.length > maxSize) {
-    throw new Error(`${fieldName}配置过大（最大${Math.floor(maxSize / 1024)}KB）`);
-  }
-  return str;
-}
+
 
 // GET /api/scrape-rules/[id] - Get a single scrape rule
 export const GET = withAuth(async function GET(
@@ -44,7 +37,7 @@ export const GET = withAuth(async function GET(
   } catch (error) {
     console.error("Get scrape rule error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取采集规则详情失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取采集规则详情失败"}, { status: 500 });
   }
 });
 
@@ -232,7 +225,7 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "更新采集规则失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "更新采集规则失败"}, { status: 500 });
   }
 });
 
@@ -263,6 +256,6 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "删除采集规则失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "删除采集规则失败"}, { status: 500 });
   }
 });

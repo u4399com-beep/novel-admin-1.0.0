@@ -120,7 +120,15 @@ function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
 
 export function invalidateCache(key?: string): void {
   if (key) {
-    cache.delete(key);
+    // Support prefix matching with "key:*" suffix
+    if (key.endsWith(':*')) {
+      const prefix = key.slice(0, -2);
+      for (const k of cache.keys()) {
+        if (k.startsWith(prefix)) cache.delete(k);
+      }
+    } else {
+      cache.delete(key);
+    }
   } else {
     cache.clear();
   }

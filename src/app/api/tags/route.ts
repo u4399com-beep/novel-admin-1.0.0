@@ -21,7 +21,7 @@ export const GET = withAuth(async function GET() {
   } catch (error) {
     console.error("List tags error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取标签列表失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取标签列表失败"}, { status: 500 });
   }
 });
 
@@ -63,6 +63,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: "标签名称已存在" }, { status: 409 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "创建标签失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "创建标签失败"}, { status: 500 });
   }
 });

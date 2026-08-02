@@ -67,7 +67,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
   } catch (error) {
     console.error("List novels error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取小说列表失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取小说列表失败"}, { status: 500 });
   }
 });
 
@@ -148,6 +148,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Create novel error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "创建小说失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "创建小说失败"}, { status: 500 });
   }
 });

@@ -36,9 +36,8 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     console.error('Dashboard activity error:', error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: '获取活动数据失败', detail: msg },
+      { error: '获取活动数据失败'},
       { status: 500 },
     );
   }

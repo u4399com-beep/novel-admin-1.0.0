@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const rawPage = searchParams.get("page") || "1";
     const rawSize = searchParams.get("pageSize") || "15";
-    const page = Math.max(1, parseInt(rawPage, 10) || 1);
+    const page = Math.min(10000, Math.max(1, parseInt(rawPage, 10) || 1));
     const pageSize = Math.min(50, Math.max(1, parseInt(rawSize, 10) || 15));
     const skip = (page - 1) * pageSize;
 
@@ -125,7 +125,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Public novels API error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取小说列表失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取小说列表失败" }, { status: 500 });
   }
 }

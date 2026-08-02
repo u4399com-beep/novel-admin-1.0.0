@@ -55,7 +55,6 @@ export const POST = withAuth(async function POST(
     return NextResponse.json({ created: data.length });
   } catch (error) {
     console.error("Batch create logs error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "批量创建日志失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "批量创建日志失败"}, { status: 500 });
   }
 });

@@ -21,7 +21,7 @@ export const GET = withAuth(async function GET(
     console.error("Get search keywords error:", error);
     const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "获取搜索关键词失败", detail: msg },
+      { error: "获取搜索关键词失败"},
       { status: 500 }
     );
   }
@@ -183,7 +183,7 @@ export const POST = withAuth(async function POST(
     console.error("Extract search keywords error:", error);
     const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "提取搜索关键词失败", detail: msg },
+      { error: "提取搜索关键词失败"},
       { status: 500 }
     );
   }

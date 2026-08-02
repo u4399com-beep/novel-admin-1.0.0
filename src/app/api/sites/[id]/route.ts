@@ -48,7 +48,7 @@ export const GET = withAuth(async function GET(
   } catch (error) {
     console.error("Get site error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取站点详情失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取站点详情失败"}, { status: 500 });
   }
 });
 
@@ -145,7 +145,7 @@ export const PUT = withAuth(async function PUT(
       },
     });
 
-    invalidateCache("sites:list");
+    invalidateCache("sites:list:*");
 
     return NextResponse.json(site);
   } catch (error: unknown) {
@@ -154,7 +154,7 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: "站点域名已存在" }, { status: 409 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "更新站点失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "更新站点失败"}, { status: 500 });
   }
 });
 
@@ -170,7 +170,7 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "站点不存在" }, { status: 404 });
     }
     await db.site.delete({ where: { id } });
-    invalidateCache("sites:list");
+    invalidateCache("sites:list:*");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete site error:", error);
@@ -178,6 +178,6 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "站点不存在" }, { status: 404 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "删除站点失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "删除站点失败"}, { status: 500 });
   }
 });

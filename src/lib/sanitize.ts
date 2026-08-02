@@ -134,16 +134,46 @@ function isPrivateIp(ip: string): boolean {
     return false;
   }
 
-  // IPv6 checks — normalizedIp has brackets stripped
-  const lower = normalizedIp.toLowerCase();
-  // Loopback
-  if (lower === '::1' || lower === '::') return true;
+  // IPv6 checks — normalize expanded form before comparing
+  function expandIPv6(ip: string): string {
+    if (!ip.includes('::')) return ip.toLowerCase();
+    const halves = ip.split('::', 2);
+    const left = halves[0] ? halves[0].split(':') : [];
+    const right = halves[1] ? halves[1].split(':') : [];
+    const missing = 8 - left.length - right.length;
+    const full = [...left, ...Array(missing).fill('0000'), ...right];
+    return full.map(s => s.toLowerCase().padStart(4, '0')).join(':');
+  }
+
+  const expanded = expandIPv6(normalizedIp);
+  // Loopback (::1 and 0:0:0:0:0:0:0:1)
+  if (expanded === '0000:0000:0000:0000:0000:0000:0000:0001' ||
+      expanded === '0000:0000:0000:0000:0000:0000:0000:0000') return true;
   // Link-local fe80::/10
-  if (lower.startsWith('fe80:')) return true;
+  if (expanded.startsWith('fe80:')) return true;
   // Unique local fc00::/7 (fc00-fdff)
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
+  if (expanded.startsWith('fc') || expanded.startsWith('fd')) return true;
   // Multicast ff00::/8
-  if (lower.startsWith('ff')) return true;
+  if (expanded.startsWith('ff')) return true;
+
+  // Check for IPv6-mapped IPv4 in expanded form (e.g., 0:0:0:0:0:ffff:127.0.0.1)
+  const v4mapped = expanded.match(
+    /^0000:0000:0000:0000:0000:ffff:([0-9a-f]{2}):([0-9a-f]{2}):([0-9a-f]{2}):([0-9a-f]{2})$/
+  );
+  if (v4mapped) {
+    const a = parseInt(v4mapped[1], 16);
+    const b = parseInt(v4mapped[2], 16);
+    const c = parseInt(v4mapped[3], 16);
+    const d = parseInt(v4mapped[4], 16);
+    // Reuse IPv4 private checks
+    if (a === 0) return true;
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a >= 224) return true;
+  }
 
   return false;
 }

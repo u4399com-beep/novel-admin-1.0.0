@@ -43,9 +43,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ suggestions });
   } catch (error) {
     console.error('Search suggestions API error:', error);
-    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: '获取搜索建议失败', detail: msg },
+      { error: '获取搜索建议失败'},
       { status: 500 },
     );
   }

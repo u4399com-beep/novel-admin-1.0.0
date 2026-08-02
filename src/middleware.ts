@@ -55,15 +55,40 @@ function checkLoginRateLimit(ip: string): { allowed: boolean; retryAfter: number
 // would cause container health checks to fail (curl without x-real-ip header).
 const RATE_LIMITED_AUTH_PATHS = ['/api/auth/signin/', '/api/auth/callback/'];
 
+// Public API rate limiting (per-IP, for unauthenticated public endpoints)
+const PUBLIC_API_MAX_PER_MIN = 60;
+const publicApiStore = new Map<string, { count: number; resetAt: number }>();
+
+function checkPublicApiRateLimit(ip: string): { allowed: boolean; retryAfter: number } {
+  const now = Date.now();
+  if (publicApiStore.size > 5000) {
+    const toDelete: string[] = [];
+    publicApiStore.forEach((entry, key) => {
+      if (now > entry.resetAt) toDelete.push(key);
+    });
+    toDelete.forEach((key) => publicApiStore.delete(key));
+  }
+  let entry = publicApiStore.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + 60000 };
+    publicApiStore.set(ip, entry);
+  }
+  if (entry.count >= PUBLIC_API_MAX_PER_MIN) {
+    return { allowed: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
+  }
+  entry.count++;
+  return { allowed: true, retryAfter: 0 };
+}
+
 export function middleware(request: NextRequest) {
   const xPort = request.nextUrl.searchParams.get('XTransformPort');
   if (xPort && !ALLOWED_TRANSFORM_PORTS.includes(xPort)) {
     return NextResponse.json({ error: '非法的端口参数' }, { status: 400 });
   }
 
-  // Per-IP login rate limiting — only for actual login POST requests
-  // (not for /api/auth/csrf, /api/auth/session, etc.)
   const pathname = request.nextUrl.pathname;
+
+  // Per-IP login rate limiting — only for actual login POST requests
   if (RATE_LIMITED_AUTH_PATHS.some(p => pathname.startsWith(p)) && request.method === 'POST') {
     // Security: Caddy gateway sets x-real-ip (not spoofable). When absent (direct access),
     // use rightmost X-Forwarded-For entry (appended by Caddy), not the leftmost (client-supplied).
@@ -74,6 +99,27 @@ export function middleware(request: NextRequest) {
     if (!rl.allowed) {
       return NextResponse.json(
         { error: `登录尝试过于频繁，请${rl.retryAfter}秒后再试` },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rl.retryAfter),
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
+  }
+
+  // Public API rate limiting — 60 req/min per IP for unauthenticated public endpoints
+  // Excludes /api/public/health (health check, GET only)
+  if (pathname.startsWith('/api/public/') && !(pathname === '/api/public/health' && request.method === 'GET')) {
+    const ip = request.headers.get('x-real-ip')
+      || request.headers.get('x-forwarded-for')?.split(',').pop()?.trim()
+      || 'direct';
+    const rl = checkPublicApiRateLimit(ip);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: `请求过于频繁，请${rl.retryAfter}秒后再试` },
         {
           status: 429,
           headers: {

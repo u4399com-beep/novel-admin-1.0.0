@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, safeJson, sanitizeField } from "@/lib/api-utils";
+import { parsePagination, safeJson, sanitizeField, safeJsonStringify } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import {
   validateAllSelectors,
@@ -16,14 +16,7 @@ import {
   buildCloudBrowserConfig,
 } from "@/lib/scrape-rule-validation";
 
-function safeJsonStringify(value: unknown, fieldName: string, maxSize = 50000): string | null {
-  if (value == null) return null;
-  const str = JSON.stringify(value);
-  if (str && str.length > maxSize) {
-    throw new Error(`${fieldName}配置过大（最大${Math.floor(maxSize / 1024)}KB）`);
-  }
-  return str;
-}
+
 // GET /api/scrape-rules - List all scrape rules with pagination and search
 export const GET = withAuth(async function GET(request: NextRequest) {
   try {
@@ -76,7 +69,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
   } catch (error) {
     console.error("List scrape rules error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取采集规则列表失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取采集规则列表失败"}, { status: 500 });
   }
 });
 
@@ -218,6 +211,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Create scrape rule error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "创建采集规则失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "创建采集规则失败"}, { status: 500 });
   }
 });

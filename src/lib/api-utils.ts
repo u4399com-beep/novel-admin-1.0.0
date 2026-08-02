@@ -126,3 +126,17 @@ export function isPrismaError(error: unknown, code: string): boolean {
     (error as { code: string }).code === code
   );
 }
+
+/**
+ * Safely JSON.stringify a value with size limit.
+ * Used for storing JSON config objects into String database fields.
+ * @throws Error if the stringified value exceeds maxSize.
+ */
+export function safeJsonStringify(value: unknown, fieldName: string, maxSize = 50000): string | null {
+  if (value == null) return null;
+  const str = JSON.stringify(value);
+  if (str && str.length > maxSize) {
+    throw new Error(`${fieldName}配置过大（最大${Math.floor(maxSize / 1024)}KB）`);
+  }
+  return str;
+}

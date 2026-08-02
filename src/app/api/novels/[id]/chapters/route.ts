@@ -45,7 +45,7 @@ export const GET = withAuth(async function GET(
   } catch (error) {
     console.error("List chapters error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取章节列表失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取章节列表失败"}, { status: 500 });
   }
 });
 
@@ -124,7 +124,7 @@ export const POST = withAuth(async function POST(
   } catch (error) {
     console.error("Create chapter error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "创建章节失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "创建章节失败"}, { status: 500 });
   }
 });
 
@@ -182,6 +182,6 @@ export const PATCH = withAuth(async function PATCH(
   } catch (error) {
     console.error("Batch reorder error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "批量排序更新失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "批量排序更新失败"}, { status: 500 });
   }
 });

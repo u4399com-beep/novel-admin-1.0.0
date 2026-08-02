@@ -278,7 +278,7 @@ ${html}`;
   } catch (error) {
     console.error("[AI Analyze] Fatal error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "AI analysis failed", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "AI analysis failed"}, { status: 500 });
   }
 });
 

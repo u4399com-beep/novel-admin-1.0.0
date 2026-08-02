@@ -32,7 +32,7 @@ export const GET = withAuth(async function GET(
   } catch (error) {
     console.error("Get theme error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取主题详情失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取主题详情失败"}, { status: 500 });
   }
 });
 
@@ -121,7 +121,7 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: "主题不存在" }, { status: 404 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "更新主题失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "更新主题失败"}, { status: 500 });
   }
 });
 
@@ -154,6 +154,6 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "主题不存在" }, { status: 404 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "删除主题失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "删除主题失败"}, { status: 500 });
   }
 });

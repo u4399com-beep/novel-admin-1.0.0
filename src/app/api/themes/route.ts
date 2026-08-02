@@ -26,7 +26,7 @@ export const GET = withAuth(async function GET() {
   } catch (error) {
     console.error("List themes error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取主题列表失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取主题列表失败"}, { status: 500 });
   }
 });
 
@@ -105,6 +105,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: "主题名称或标识符已存在" }, { status: 409 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "创建主题失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "创建主题失败"}, { status: 500 });
   }
 });

@@ -32,7 +32,6 @@ export async function GET(
     });
   } catch (error) {
     console.error("Public chapter content API error:", error);
-    const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取章节内容失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取章节内容失败"}, { status: 500 });
   }
 }

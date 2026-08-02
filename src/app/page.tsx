@@ -7,7 +7,7 @@ import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Search, Sun, Moon, Shield, User, BookMarked, FileText,
-  ChevronLeft, ChevronRight, RotateCcw, History,
+  ChevronLeft, ChevronRight, RotateCcw, History, Trophy, Compass,
   Menu, X, Book, Loader2, Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -224,6 +224,14 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
 
   const handlePopoverLeave = useCallback(() => {
     leaveTimer.current = setTimeout(() => setPopoverOpen(false), 150);
+  }, []);
+
+  // Cleanup timers on unmount to prevent state updates on unmounted component
+  useEffect(() => {
+    return () => {
+      if (enterTimer.current) clearTimeout(enterTimer.current);
+      if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    };
   }, []);
 
   const statusLabel = novel.status === 'ongoing' ? '连载中' : novel.status === 'completed' ? '已完结' : '暂停中';
@@ -523,6 +531,12 @@ export default function HomePage() {
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Lock body scroll when mobile drawer is open
+  useEffect(() => {
+    document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenuOpen]);
 
   // Search suggestions state
   const [suggestions, setSuggestions] = useState<{ id: string; title: string; author: string; category: { name: string; color: string } | null }[]>([]);
@@ -879,7 +893,7 @@ export default function HomePage() {
                       }}
                       className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
                     >
-                      <Search className="h-4 w-4 text-muted-foreground" />
+                      <Compass className="h-4 w-4 text-muted-foreground" />
                       分类
                     </button>
                     <button
@@ -890,7 +904,7 @@ export default function HomePage() {
                       }}
                       className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
                     >
-                      <Shield className="h-4 w-4 text-muted-foreground" />
+                      <Trophy className="h-4 w-4 text-muted-foreground" />
                       排行榜
                     </button>
                   </nav>

@@ -67,62 +67,6 @@ function rateLimit(ip: string): { allowed: boolean; remaining: number; retryAfte
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Login Brute-Force Protection (Node.js context — global backstop)
-// Primary per-IP protection is in middleware.ts (Edge Runtime, lower latency).
-// This function serves as a secondary defense-in-depth check for the
-// authorize() callback which runs in Node.js, not Edge.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface LoginRateEntry {
-  count1m: number;
-  reset1m: number;
-  count15m: number;
-  reset15m: number;
-}
-
-const loginIpStore = new Map<string, LoginRateEntry>();
-const LOGIN_MAX_1M = 5;
-const LOGIN_MAX_15M = 15;
-const LOGIN_WINDOW_1M = 60 * 1000;
-const LOGIN_WINDOW_15M = 15 * 60 * 1000;
-const MAX_LOGIN_ENTRIES = 5000;
-
-let lastLoginCleanup = 0;
-
-export function loginRateLimit(ip: string): { allowed: boolean; retryAfter: number } {
-  const now = Date.now();
-
-  if (loginIpStore.size > MAX_LOGIN_ENTRIES * 0.8 && now - lastLoginCleanup >= 10_000) {
-    lastLoginCleanup = now;
-    for (const [key, entry] of loginIpStore) {
-      if (now > entry.reset15m) loginIpStore.delete(key);
-    }
-  }
-
-  let entry = loginIpStore.get(ip);
-  if (!entry || now > entry.reset15m) {
-    entry = { count1m: 0, reset1m: now + LOGIN_WINDOW_1M, count15m: 0, reset15m: now + LOGIN_WINDOW_15M };
-    loginIpStore.set(ip, entry);
-  }
-
-  if (now > entry.reset1m) {
-    entry.count1m = 0;
-    entry.reset1m = now + LOGIN_WINDOW_1M;
-  }
-
-  if (entry.count15m >= LOGIN_MAX_15M) {
-    return { allowed: false, retryAfter: Math.ceil((entry.reset15m - now) / 1000) };
-  }
-  if (entry.count1m >= LOGIN_MAX_1M) {
-    return { allowed: false, retryAfter: Math.ceil((entry.reset1m - now) / 1000) };
-  }
-
-  entry.count1m++;
-  entry.count15m++;
-  return { allowed: true, retryAfter: 0 };
-}
-
-// ═══════════════════════════════════════════════════════════════════
 // Client IP Helper
 // ═══════════════════════════════════════════════════════════════════
 
@@ -250,9 +194,8 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       return response;
     } catch (error) {
       console.error(`[${requestId}] API error:`, error);
-      const detail = error instanceof Error ? error.message : String(error);
       return NextResponse.json(
-        { error: '服务器内部错误', detail },
+        { error: '服务器内部错误' },
         { status: 500, headers: { 'X-Request-ID': requestId } }
       );
     }

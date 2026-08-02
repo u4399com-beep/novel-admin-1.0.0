@@ -120,9 +120,6 @@ export default function AdminPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
 
-  // ─── Search state ───────────────────────────────────────────────────────
-  const [searchQuery, setSearchQuery] = useState('');
-
   // ─── Time display ──────────────────────────────────────────────────────
   const [time, setTime] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -389,8 +386,6 @@ export default function AdminPage() {
               <Input
                 type="text"
                 placeholder="搜索..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-8 w-48 lg:w-56 pl-8 text-sm bg-muted/50 border-transparent focus:border-border focus:bg-background"
                 onFocus={() => setCommandPaletteOpen(true)}
                 readOnly

@@ -29,7 +29,7 @@ export const GET = withAuth(async function GET(
   } catch (error) {
     console.error("Get download config error:", error);
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "获取下载配置失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "获取下载配置失败"}, { status: 500 });
   }
 });
 
@@ -173,7 +173,7 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "更新下载配置失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "更新下载配置失败"}, { status: 500 });
   }
 });
 
@@ -197,6 +197,6 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
     }
     const msg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "删除下载配置失败", detail: msg }, { status: 500 });
+    return NextResponse.json({ error: "删除下载配置失败"}, { status: 500 });
   }
 });

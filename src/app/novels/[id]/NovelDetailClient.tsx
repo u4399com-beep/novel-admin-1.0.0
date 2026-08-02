@@ -18,6 +18,7 @@ import {
   Settings2,
   List,
   BookmarkCheck,
+  RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -173,6 +174,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
   const [showSettings, setShowSettings] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [chapterContent, setChapterContent] = useState<string | null>(null);
+  const [chapterError, setChapterError] = useState(false);
   const [chapterTitle, setChapterTitle] = useState('');
   const [loadingChapter, setLoadingChapter] = useState(false);
   const [scrollPercent, setScrollPercent] = useState(0);
@@ -213,6 +215,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
       const chapter = chapters[index];
       setCurrentIndex(index);
       setChapterContent(null);
+      setChapterError(false);
       setChapterTitle(chapter.title);
       setLoadingChapter(true);
 
@@ -230,7 +233,8 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
         setChapterContent(data.content || '（本章暂无内容）');
       } catch (err) {
         if (!(err instanceof DOMException && err.name === 'AbortError')) {
-          setChapterContent('加载章节内容失败，请稍后重试。');
+          setChapterError(true);
+          setChapterContent('');
         }
       } finally {
         if (!abortController.signal.aborted) setLoadingChapter(false);
@@ -819,6 +823,19 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   <div className="flex items-center justify-center py-20">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     <span className="ml-3 text-sm text-muted-foreground">加载中...</span>
+                  </div>
+                ) : chapterError ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-4">
+                    <p className="text-sm text-muted-foreground">加载章节内容失败</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => loadChapter(currentIndex)}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      重试
+                    </Button>
                   </div>
                 ) : chapterContent ? (
                   <div className="mx-auto max-w-3xl">
