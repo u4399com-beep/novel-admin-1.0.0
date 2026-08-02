@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { toast } from 'sonner';
 import { safeFormatDate } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
 
@@ -183,7 +184,9 @@ export default function NovelListView() {
       );
       const failed = results.filter((r) => r.status === 'rejected');
       if (failed.length > 0) {
-        console.warn(`Batch delete: ${failed.length}/${results.length} failed`);
+        toast.warning(`批量删除: ${failed.length}/${results.length} 项失败`);
+      } else {
+        toast.success(`已删除 ${results.length} 本小说`);
       }
       setSelectedIds(new Set());
       triggerRefresh('novels');
@@ -382,6 +385,7 @@ export default function NovelListView() {
                           src={novel.coverUrl}
                           alt={novel.title}
                           className="h-full w-full object-cover"
+                          loading="lazy"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">

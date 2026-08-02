@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * Public chapters list API — no auth required.
  * Returns chapter metadata (id, title, wordCount, sortOrder, createdAt) — NO content.
- * Capped at 500 chapters per request to prevent unbounded responses.
+ * Supports pagination via page/pageSize params.
  */
 export async function GET(
   request: NextRequest,
@@ -22,28 +22,36 @@ export async function GET(
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
     }
 
-    // Cap result size to prevent unbounded responses on novels with 10K+ chapters
     const { searchParams } = new URL(request.url);
-    const rawLimit = parseInt(searchParams.get("limit") || "500", 10) || 500;
-    const limit = Math.min(500, Math.max(1, rawLimit));
+    const rawPage = searchParams.get("page") || "1";
+    const rawSize = searchParams.get("pageSize") || "500";
+    const page = Math.max(1, parseInt(rawPage, 10) || 1);
+    const pageSize = Math.min(500, Math.max(1, parseInt(rawSize, 10) || 500));
+    const skip = (page - 1) * pageSize;
 
-    const chapters = await db.chapter.findMany({
-      where: { novelId },
-      orderBy: { sortOrder: "asc" },
-      take: limit,
-      select: {
-        id: true,
-        title: true,
-        wordCount: true,
-        sortOrder: true,
-        createdAt: true,
-      },
-    });
+    const [chapters, total] = await Promise.all([
+      db.chapter.findMany({
+        where: { novelId },
+        orderBy: { sortOrder: "asc" },
+        skip,
+        take: pageSize,
+        select: {
+          id: true,
+          title: true,
+          wordCount: true,
+          sortOrder: true,
+          createdAt: true,
+        },
+      }),
+      db.chapter.count({ where: { novelId } }),
+    ]);
 
     return NextResponse.json({
       chapters,
-      total: chapters.length,
-      truncated: chapters.length === limit,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
     });
   } catch (error) {
     console.error("Public chapters list API error:", error);

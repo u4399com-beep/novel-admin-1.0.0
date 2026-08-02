@@ -83,6 +83,7 @@ export default function CategoryManagerView() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const refreshCategories = useAppStore((s) => s.refreshVersions['categories'] ?? 0);
 
   const {
@@ -187,7 +188,7 @@ export default function CategoryManagerView() {
       }
 
       setDialogOpen(false);
-      fetchCategories();
+      triggerRefresh('categories');
     } catch { /* handled by apiFetch */ } finally {
       setSaving(false);
     }
@@ -203,7 +204,7 @@ export default function CategoryManagerView() {
       });
       toast.success('分类已删除');
       setDeleteTarget(null);
-      fetchCategories();
+      triggerRefresh('categories');
     } catch { /* handled by apiFetch */ } finally {
       setDeleting(false);
     }

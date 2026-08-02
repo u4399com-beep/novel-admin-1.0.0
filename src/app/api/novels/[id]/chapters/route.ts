@@ -164,15 +164,18 @@ export const PATCH = withAuth(async function PATCH(
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
     }
 
-    // Batch update using interactive transaction with increased timeout for large batches
+    // Batch update using a single raw SQL CASE statement (avoids N+1 per-chapter UPDATE)
     await db.$transaction(async (tx) => {
-      for (const item of orders) {
-        await tx.chapter.updateMany({
-          where: { id: item.id, novelId },
-          data: { sortOrder: Math.floor(Number(item.sortOrder) || 0) },
-        });
-      }
-    }, { timeout: Math.max(5_000, orders.length * 100) });
+      // Build a single UPDATE with CASE for all sortOrder changes
+      const caseParts = orders
+        .map((item) => `WHEN '${item.id.replace(/'/g, "''")}' THEN ${Math.floor(Number(item.sortOrder) || 0)}`)
+        .join(' ');
+      const idList = orders.map((item) => `'${item.id.replace(/'/g, "''")}'`).join(',');
+
+      await tx.$executeRawUnsafe(
+        `UPDATE "Chapter" SET "sortOrder" = CASE id ${caseParts} END WHERE id IN (${idList}) AND "novelId" = '${novelId.replace(/'/g, "''")}'`
+      );
+    });
 
     invalidateCache("dashboard:stats");
 

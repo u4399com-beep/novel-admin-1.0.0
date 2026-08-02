@@ -318,7 +318,7 @@ export default function AdminPage() {
     <div className="flex min-h-screen">
       {/* ─── Desktop Sidebar ──────────────────────────────────────────────── */}
       <aside
-        className={`hidden lg:flex h-screen flex-col border-r border-slate-800 bg-slate-900 shrink-0 sticky top-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+        className={`hidden lg:flex h-screen flex-col border-r border-slate-800 bg-slate-900 shrink-0 sticky top-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] overflow-hidden ${
           sidebarCollapsed ? 'w-16' : 'w-64'
         }`}
       >

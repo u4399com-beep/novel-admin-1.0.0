@@ -97,6 +97,7 @@ export default function NovelFormDialog() {
   const novelFormOpen = useAppStore((s) => s.novelFormOpen);
   const setNovelFormOpen = useAppStore((s) => s.setNovelFormOpen);
   const editingNovel = useAppStore((s) => s.editingNovel);
+  const setEditingNovel = useAppStore((s) => s.setEditingNovel);
   const categories = useAppStore((s) => s.categories);
   const setCategories = useAppStore((s) => s.setCategories);
   const tags = useAppStore((s) => s.tags);
@@ -254,7 +255,10 @@ export default function NovelFormDialog() {
   };
 
   return (
-    <Dialog open={novelFormOpen} onOpenChange={setNovelFormOpen}>
+    <Dialog open={novelFormOpen} onOpenChange={(open) => {
+      if (!open) setEditingNovel(null);
+      setNovelFormOpen(open);
+    }}>
       <DialogContent className="sm:max-w-[580px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "编辑小说" : "新建小说"}</DialogTitle>

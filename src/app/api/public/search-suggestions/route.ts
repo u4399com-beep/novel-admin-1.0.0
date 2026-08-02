@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const q = sanitizeField(searchParams.get('q'), 100);
 
-    if (q.length < 1) {
+    if (q.length < 2) {
       return NextResponse.json({ suggestions: [] });
     }
 

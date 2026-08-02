@@ -103,11 +103,14 @@ export function validatePagination(value: unknown, fieldName: string): string | 
   return null;
 }
 
-/** Validate save path: must start with /app/public/ and contain no path traversal */
+/** Validate save path: must start with /app/public/ and contain no path traversal. Throws ValidationError if provided but invalid. */
 export function validateSavePath(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
+  if (value === null || value === undefined || value === '') return null;
   const val = sanitizeField(value, 500);
-  if (val && (!val.startsWith('/app/public/') || val.includes('..'))) return null;
+  if (!val) return null;
+  if (!val.startsWith('/app/public/') || val.includes('..')) {
+    throw new ValidationError('保存路径必须以 /app/public/ 开头且不能包含 ..');
+  }
   return val;
 }
 

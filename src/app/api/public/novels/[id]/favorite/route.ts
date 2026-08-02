@@ -16,31 +16,22 @@ export async function POST(
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action') || 'toggle';
 
-    const novel = await db.novel.findUnique({
-      where: { id },
-      select: { id: true, favoriteCount: true },
-    });
+    // Atomic increment/decrement — no read-then-write race condition
+    const increment = (action === 'remove') ? -1 : 1;
 
-    if (!novel) {
+    let updated;
+    try {
+      updated = await db.novel.update({
+        where: { id },
+        data: { favoriteCount: { increment } },
+        select: { favoriteCount: true },
+      });
+    } catch {
+      // RecordNotFound error when novel doesn't exist
       return NextResponse.json({ error: '小说不存在' }, { status: 404 });
     }
 
-    let newCount = novel.favoriteCount;
-    if (action === 'add') {
-      newCount += 1;
-    } else if (action === 'remove') {
-      newCount = Math.max(0, newCount - 1);
-    } else {
-      // toggle: client decides, but we just increment for simplicity
-      newCount += 1;
-    }
-
-    await db.novel.update({
-      where: { id },
-      data: { favoriteCount: newCount },
-    });
-
-    return NextResponse.json({ favoriteCount: newCount });
+    return NextResponse.json({ favoriteCount: updated.favoriteCount });
   } catch (error) {
     console.error('Favorite API error:', error);
     return NextResponse.json(

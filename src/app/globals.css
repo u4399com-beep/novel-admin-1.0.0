@@ -1284,3 +1284,146 @@ img[loading="lazy"]:not([src]) {
   background: hsl(var(--primary));
   border-radius: 1px;
 }
+
+/* ─── New Utilities (Round 05:53) ──────────────────────── */
+
+/* Smooth card border glow on hover with primary color */
+.card-border-glow {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.card-border-glow:hover {
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.1);
+}
+
+/* Text ellipsis with fade mask (single line) */
+.text-ellipsis-fade {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  mask-image: linear-gradient(to right, black 85%, transparent);
+  -webkit-mask-image: linear-gradient(to right, black 85%, transparent);
+}
+
+/* Skeleton bar — for inline text placeholders */
+.skeleton-bar {
+  display: inline-block;
+  height: 1em;
+  border-radius: 4px;
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.06) 50%, hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+/* Hover underline reveal for text links */
+.hover-underline {
+  position: relative;
+  text-decoration: none;
+}
+.hover-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: currentColor;
+  transition: width 0.25s ease;
+}
+.hover-underline:hover::after {
+  width: 100%;
+}
+
+/* Counter badge — small notification dot */
+.counter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Scroll shadow top/bottom for scrollable containers */
+.scroll-shadow-y {
+  box-shadow: inset 0 8px 6px -6px hsl(var(--foreground) / 0.04),
+              inset 0 -8px 6px -6px hsl(var(--foreground) / 0.04);
+}
+
+/* Bounce subtle for attention-grabbing elements */
+.bounce-subtle {
+  animation: bounceSubtle 0.5s ease;
+}
+@keyframes bounceSubtle {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-4px); }
+  60% { transform: translateY(-2px); }
+}
+
+/* Focus-within highlight for form groups */
+.focus-within-highlight {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.focus-within-highlight:focus-within {
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+}
+
+/* Text color transition for status changes */
+.text-color-transition {
+  transition: color 0.3s ease;
+}
+
+/* Container with max-width for content readability */
+.prose-container {
+  max-width: 72ch;
+  line-height: 1.75;
+}
+
+/* Horizontal scroll container with snap points */
+.scroll-snap-x {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.scroll-snap-x > * {
+  scroll-snap-align: start;
+}
+
+/* Smooth opacity transition for show/hide */
+.opacity-transition {
+  transition: opacity 0.2s ease;
+}
+
+/* Truncated cell for tables — prevents layout shift */
+.cell-truncate {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Glassmorphism card variant */
+.glass-card {
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  background: hsl(var(--background) / 0.6);
+  border: 1px solid hsl(var(--foreground) / 0.06);
+}
+
+/* Dot separator between inline elements */
+.dot-separator::before {
+  content: '\00B7';
+  margin: 0 0.5em;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Responsive container with safe area padding */
+.safe-area-padded {
+  padding-left: max(env(safe-area-inset-left), 1rem);
+  padding-right: max(env(safe-area-inset-right), 1rem);
+}

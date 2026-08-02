@@ -14,21 +14,20 @@ export async function POST(
 
     const novel = await db.novel.findUnique({
       where: { id },
-      select: { id: true, clickCount: true },
+      select: { id: true },
     });
 
     if (!novel) {
       return NextResponse.json({ error: '小说不存在' }, { status: 404 });
     }
 
-    await db.novel.update({
+    const updated = await db.novel.update({
       where: { id },
       data: { clickCount: { increment: 1 } },
+      select: { clickCount: true },
     });
 
-    return NextResponse.json({
-      clickCount: novel.clickCount + 1,
-    });
+    return NextResponse.json({ clickCount: updated.clickCount });
   } catch (error) {
     console.error('Click count API error:', error);
     return NextResponse.json(
