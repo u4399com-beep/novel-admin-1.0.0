@@ -935,11 +935,25 @@ export default function NovelDetailView() {
               {/* Cover */}
               <div className="shrink-0">
                 {novel.coverUrl ? (
-                  <img
-                    src={novel.coverUrl}
-                    alt={novel.title}
-                    className="w-36 h-48 sm:w-40 sm:h-52 object-cover rounded-lg shadow-md"
-                  />
+                  <div className="relative w-36 h-48 sm:w-40 sm:h-52">
+                    <img
+                      src={novel.coverUrl}
+                      alt={novel.title}
+                      className="object-cover rounded-lg shadow-md w-full h-full"
+                      onError={(e) => {
+                        const img = e.currentTarget;
+                        img.style.display = 'none';
+                        const fallback = img.parentElement?.querySelector('[data-cover-fallback]');
+                        fallback?.classList.remove('hidden');
+                      }}
+                    />
+                    <div
+                      data-cover-fallback
+                      className="hidden absolute inset-0 rounded-lg shadow-md bg-gradient-to-br from-violet-500/20 via-fuchsia-500/20 to-rose-500/20 flex items-center justify-center"
+                    >
+                      <BookOpen className="size-12 text-muted-foreground/50" />
+                    </div>
+                  </div>
                 ) : (
                   <div className="w-36 h-48 sm:w-40 sm:h-52 rounded-lg shadow-md bg-gradient-to-br from-violet-500/20 via-fuchsia-500/20 to-rose-500/20 flex items-center justify-center">
                     <BookOpen className="size-12 text-muted-foreground/50" />

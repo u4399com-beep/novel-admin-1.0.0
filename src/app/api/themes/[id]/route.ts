@@ -102,7 +102,7 @@ export const PUT = withAuth(async function PUT(
             }
           })(),
         }),
-        ...(enabled !== undefined && { enabled: typeof enabled === 'boolean' ? enabled : true }),
+        ...(enabled !== undefined && { enabled }),
       },
       include: {
         _count: { select: { sites: true } },

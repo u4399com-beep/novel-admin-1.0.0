@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { parsePagination, sanitizeField, safeJson, isPrismaError } from "@/lib/api-utils";
+import { sanitizeField, safeJson, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";

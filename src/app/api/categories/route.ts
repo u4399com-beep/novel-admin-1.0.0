@@ -79,7 +79,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error("Create category error:", error);
     if (isPrismaError(error, "P2002")) {
-      return NextResponse.json({ error: "分类名称已存在" }, { status: 409 });
+      return NextResponse.json({ error: "分类名称或标识符已存在" }, { status: 409 });
     }
     const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "创建分类失败", detail: msg }, { status: 500 });

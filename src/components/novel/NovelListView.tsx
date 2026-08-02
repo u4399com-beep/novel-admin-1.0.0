@@ -501,7 +501,7 @@ export default function NovelListView() {
                     {/* Thumbnail */}
                     <div className={`h-10 w-8 flex-shrink-0 overflow-hidden rounded bg-gradient-to-br ${gradient}`}>
                       {novel.coverUrl ? (
-                        <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover" />
+                        <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
                           <BookOpen className="h-4 w-4 text-muted-foreground/40" />

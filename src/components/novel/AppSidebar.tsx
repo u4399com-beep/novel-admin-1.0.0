@@ -11,8 +11,6 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { NAV_ITEMS } from '@/lib/nav-config';
 import { useAppStore } from '@/stores/app-store';
 
-import type { ViewType } from '@/types';
-
 // ─── Keyboard shortcut map (desktop only) ──────────────────────────────────────
 const SHORTCUT_KEYS = ['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8'] as const;
 
@@ -192,7 +190,6 @@ function DesktopSidebar() {
 
 function MobileSidebar() {
   const currentView = useAppStore((s) => s.currentView);
-  const setCurrentView = useAppStore((s) => s.setCurrentView);
   const [open, setOpen] = useState(false);
 
   // Close sheet when view changes (e.g. nav via SidebarContent)

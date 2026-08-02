@@ -490,7 +490,7 @@ export default function AdminPage() {
               initial="initial"
               animate="animate"
               exit="exit"
-              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] as const }}
               className="absolute inset-0"
             >
               {renderView()}

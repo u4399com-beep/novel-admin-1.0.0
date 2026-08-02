@@ -424,7 +424,10 @@ export function DashboardView() {
       {/* ── Status Distribution + Recent Novels ─────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Status Distribution Chart — Clickable */}
-        <Card className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20">
+        <Card
+          className="cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/20"
+          onClick={() => setCurrentView('novels')}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <TrendingUp className="h-5 w-5 text-muted-foreground" />
@@ -432,7 +435,7 @@ export function DashboardView() {
               <span className="ml-auto text-xs font-normal text-muted-foreground">点击查看详情</span>
             </CardTitle>
           </CardHeader>
-          <CardContent onClick={() => setCurrentView('novels')}>
+          <CardContent>
             {loading ? (
               <div className="space-y-3">
                 {Array.from({ length: 3 }).map((_, i) => (

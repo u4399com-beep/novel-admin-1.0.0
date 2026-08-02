@@ -90,7 +90,7 @@ export const PUT = withAuth(async function PUT(
   } catch (error: unknown) {
     console.error("Update category error:", error);
     if (isPrismaError(error, "P2002")) {
-      return NextResponse.json({ error: "分类名称已存在" }, { status: 409 });
+      return NextResponse.json({ error: "分类名称或标识符已存在" }, { status: 409 });
     }
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });

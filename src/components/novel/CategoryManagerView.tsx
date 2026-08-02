@@ -273,7 +273,7 @@ export default function CategoryManagerView() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
               >
-                <Card className="group relative overflow-hidden transition-shadow hover:shadow-md">
+                <Card className="group relative overflow-hidden hover-lift">
                   {/* Colored left border */}
                   <div
                     className="absolute left-0 top-0 h-full w-1"

@@ -113,6 +113,9 @@ export const PUT = withAuth(async function PUT(
       throw e;
     }
 
+    if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
+      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+    }
     if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
       return NextResponse.json({ error: "enableShuffle 必须是布尔值" }, { status: 400 });
     }
@@ -124,12 +127,41 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: "最大延迟不能小于最小延迟" }, { status: 400 });
     }
 
+    // Build JSON fields — capture validation errors as 400
+    let jsonFields: Record<string, string | null> = {};
+    try {
+      if (body.listSelector !== undefined) jsonFields.listSelector = safeJsonStringify(body.listSelector, 'listSelector');
+      if (body.listPagination !== undefined) jsonFields.listPagination = safeJsonStringify(body.listPagination, 'listPagination');
+      if (body.chapterListSelector !== undefined) jsonFields.chapterListSelector = safeJsonStringify(body.chapterListSelector, 'chapterListSelector');
+      if (body.chapterTitleSelector !== undefined) jsonFields.chapterTitleSelector = safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector');
+      if (body.chapterLinkSelector !== undefined) jsonFields.chapterLinkSelector = safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector');
+      if (body.chapterPagination !== undefined) jsonFields.chapterPagination = safeJsonStringify(body.chapterPagination, 'chapterPagination');
+      if (body.contentTitleSelector !== undefined) jsonFields.contentTitleSelector = safeJsonStringify(body.contentTitleSelector, 'contentTitleSelector');
+      if (body.contentSelector !== undefined) jsonFields.contentSelector = safeJsonStringify(body.contentSelector, 'contentSelector');
+      if (body.contentPagination !== undefined) jsonFields.contentPagination = safeJsonStringify(body.contentPagination, 'contentPagination');
+      if (body.antiCrawlConfig !== undefined) jsonFields.antiCrawlConfig = safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig');
+      if (body.cleanConfig !== undefined) jsonFields.cleanConfig = safeJsonStringify(body.cleanConfig, 'cleanConfig');
+      if (body.agentqlQueries !== undefined) {
+        jsonFields.agentqlConfig = safeJsonStringify(
+          typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
+            ? body.agentqlQueries
+            : null,
+          'agentqlConfig'
+        );
+      }
+    } catch (e) {
+      if (e instanceof Error) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
+      }
+      throw e;
+    }
+
     const rule = await db.scrapeRule.update({
       where: { id },
       data: {
         ...(body.name !== undefined && { name: sanitizeField(body.name, 200) }),
         ...(body.description !== undefined && { description: sanitizeField(body.description, 2000) || null }),
-        ...(body.enabled !== undefined && { enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined }),
+        ...(body.enabled !== undefined && { enabled: body.enabled }),
 
         ...(body.listUrl !== undefined && {
           listUrl: (() => {
@@ -137,12 +169,8 @@ export const PUT = withAuth(async function PUT(
             return val || null;
           })(),
         }),
-        ...(body.listSelector !== undefined && {
-          listSelector: safeJsonStringify(body.listSelector, 'listSelector'),
-        }),
-        ...(body.listPagination !== undefined && {
-          listPagination: safeJsonStringify(body.listPagination, 'listPagination'),
-        }),
+        ...(body.listSelector !== undefined && { listSelector: jsonFields.listSelector }),
+        ...(body.listPagination !== undefined && { listPagination: jsonFields.listPagination }),
 
         ...(body.bookTitleSelector !== undefined && { bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null }),
         ...(body.bookAuthorSelector !== undefined && { bookAuthorSelector: sanitizeField(body.bookAuthorSelector, 500) || null }),
@@ -158,32 +186,16 @@ export const PUT = withAuth(async function PUT(
             return val || null;
           })(),
         }),
-        ...(body.chapterListSelector !== undefined && {
-          chapterListSelector: safeJsonStringify(body.chapterListSelector, 'chapterListSelector'),
-        }),
-        ...(body.chapterTitleSelector !== undefined && {
-          chapterTitleSelector: safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector'),
-        }),
-        ...(body.chapterLinkSelector !== undefined && {
-          chapterLinkSelector: safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector'),
-        }),
-        ...(body.chapterPagination !== undefined && {
-          chapterPagination: safeJsonStringify(body.chapterPagination, 'chapterPagination'),
-        }),
+        ...(body.chapterListSelector !== undefined && { chapterListSelector: jsonFields.chapterListSelector }),
+        ...(body.chapterTitleSelector !== undefined && { chapterTitleSelector: jsonFields.chapterTitleSelector }),
+        ...(body.chapterLinkSelector !== undefined && { chapterLinkSelector: jsonFields.chapterLinkSelector }),
+        ...(body.chapterPagination !== undefined && { chapterPagination: jsonFields.chapterPagination }),
 
-        ...(body.contentTitleSelector !== undefined && {
-          contentTitleSelector: safeJsonStringify(body.contentTitleSelector, 'contentTitleSelector'),
-        }),
-        ...(body.contentSelector !== undefined && {
-          contentSelector: safeJsonStringify(body.contentSelector, 'contentSelector'),
-        }),
-        ...(body.contentPagination !== undefined && {
-          contentPagination: safeJsonStringify(body.contentPagination, 'contentPagination'),
-        }),
+        ...(body.contentTitleSelector !== undefined && { contentTitleSelector: jsonFields.contentTitleSelector }),
+        ...(body.contentSelector !== undefined && { contentSelector: jsonFields.contentSelector }),
+        ...(body.contentPagination !== undefined && { contentPagination: jsonFields.contentPagination }),
 
-        ...(body.antiCrawlConfig !== undefined && {
-          antiCrawlConfig: safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig'),
-        }),
+        ...(body.antiCrawlConfig !== undefined && { antiCrawlConfig: jsonFields.antiCrawlConfig }),
 
         ...(body.storageMode !== undefined && { storageMode: body.storageMode }),
         ...(body.filePath !== undefined && { filePath: validateSavePath(body.filePath) }),
@@ -203,24 +215,9 @@ export const PUT = withAuth(async function PUT(
         ...(body.enableShuffle !== undefined && { enableShuffle: body.enableShuffle }),
         ...(body.dedupMode !== undefined && { dedupMode: body.dedupMode }),
 
-        ...(body.cleanConfig !== undefined && {
-          cleanConfig: safeJsonStringify(body.cleanConfig, 'cleanConfig'),
-        }),
+        ...(body.cleanConfig !== undefined && { cleanConfig: jsonFields.cleanConfig }),
 
-        ...(body.agentqlQueries !== undefined && {
-          agentqlConfig: body.agentqlQueries
-            ? (() => {
-                const obj = typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
-                  ? body.agentqlQueries
-                  : {};
-                const str = JSON.stringify(obj, (key, value) => typeof value === 'string' ? value.slice(0, 2000) : value);
-                if (str && str.length > 50000) {
-                  throw new Error('agentqlConfig配置过大（最大48KB）');
-                }
-                return str;
-              })()
-            : null,
-        }),
+        ...(body.agentqlQueries !== undefined && { agentqlConfig: jsonFields.agentqlConfig }),
         ...(body.cloudBrowserUrl !== undefined && {
           cloudBrowserConfig: buildCloudBrowserConfig(body.cloudBrowserUrl, body.cloudBrowserProvider),
         }),

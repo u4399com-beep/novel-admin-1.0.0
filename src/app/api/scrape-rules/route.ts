@@ -136,6 +136,35 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const params = parseScrapeParams(body);
 
+    // Build JSON fields — capture validation errors separately
+    let jsonFields: Record<string, string | null>;
+    try {
+      jsonFields = {
+        listSelector: safeJsonStringify(body.listSelector, 'listSelector'),
+        listPagination: safeJsonStringify(body.listPagination, 'listPagination'),
+        chapterListSelector: safeJsonStringify(body.chapterListSelector, 'chapterListSelector'),
+        chapterTitleSelector: safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector'),
+        chapterLinkSelector: safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector'),
+        chapterPagination: safeJsonStringify(body.chapterPagination, 'chapterPagination'),
+        contentTitleSelector: safeJsonStringify(body.contentTitleSelector, 'contentTitleSelector'),
+        contentSelector: safeJsonStringify(body.contentSelector, 'contentSelector'),
+        contentPagination: safeJsonStringify(body.contentPagination, 'contentPagination'),
+        antiCrawlConfig: safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig'),
+        cleanConfig: safeJsonStringify(body.cleanConfig, 'cleanConfig'),
+        agentqlConfig: safeJsonStringify(
+          typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
+            ? body.agentqlQueries
+            : null,
+          'agentqlConfig'
+        ),
+      };
+    } catch (e) {
+      if (e instanceof Error) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
+      }
+      throw e;
+    }
+
     const rule = await db.scrapeRule.create({
       data: {
         name,
@@ -143,8 +172,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
 
         listUrl: sanitizeField(body.listUrl, 2000) || null,
-        listSelector: safeJsonStringify(body.listSelector, 'listSelector'),
-        listPagination: safeJsonStringify(body.listPagination, 'listPagination'),
+        listSelector: jsonFields.listSelector,
+        listPagination: jsonFields.listPagination,
 
         bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null,
         bookAuthorSelector: sanitizeField(body.bookAuthorSelector, 500) || null,
@@ -155,16 +184,16 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         bookStatusSelector: sanitizeField(body.bookStatusSelector, 500) || null,
 
         chapterListUrl: sanitizeField(body.chapterListUrl, 2000) || null,
-        chapterListSelector: safeJsonStringify(body.chapterListSelector, 'chapterListSelector'),
-        chapterTitleSelector: safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector'),
-        chapterLinkSelector: safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector'),
-        chapterPagination: safeJsonStringify(body.chapterPagination, 'chapterPagination'),
+        chapterListSelector: jsonFields.chapterListSelector,
+        chapterTitleSelector: jsonFields.chapterTitleSelector,
+        chapterLinkSelector: jsonFields.chapterLinkSelector,
+        chapterPagination: jsonFields.chapterPagination,
 
-        contentTitleSelector: safeJsonStringify(body.contentTitleSelector, 'contentTitleSelector'),
-        contentSelector: safeJsonStringify(body.contentSelector, 'contentSelector'),
-        contentPagination: safeJsonStringify(body.contentPagination, 'contentPagination'),
+        contentTitleSelector: jsonFields.contentTitleSelector,
+        contentSelector: jsonFields.contentSelector,
+        contentPagination: jsonFields.contentPagination,
 
-        antiCrawlConfig: safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig'),
+        antiCrawlConfig: jsonFields.antiCrawlConfig,
 
         storageMode: params.storageMode,
         filePath: validateSavePath(body.filePath),
@@ -178,14 +207,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         enableShuffle: body.enableShuffle ?? false,
         dedupMode: params.dedupMode,
 
-        cleanConfig: safeJsonStringify(body.cleanConfig, 'cleanConfig'),
-
-        agentqlConfig: safeJsonStringify(
-              typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
-                ? body.agentqlQueries
-                : null,
-              'agentqlConfig'
-            ),
+        cleanConfig: jsonFields.cleanConfig,
+        agentqlConfig: jsonFields.agentqlConfig,
         cloudBrowserConfig: buildCloudBrowserConfig(body.cloudBrowserUrl, body.cloudBrowserProvider),
       },
       include: { _count: { select: { tasks: true } } },
