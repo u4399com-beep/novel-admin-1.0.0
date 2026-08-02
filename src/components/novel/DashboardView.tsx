@@ -620,7 +620,7 @@ export function DashboardView() {
                 />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <ChartLegend
-                  content={<ChartLegendContent nameKey="name" />}
+                  content={<ChartLegendContent />}
                 />
                 <Area
                   type="monotone"
@@ -771,17 +771,7 @@ export function DashboardView() {
         </CardContent>
       </Card>
 
-      {/* ── Error ───────────────────────────────────────────────────────── */}
-      {error && !stats && (
-        <Card className="border-destructive/50">
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
-            {error}
-            <Button variant="outline" size="sm" className="ml-auto" onClick={fetchDashboard}>
-              重试
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+
     </div>
   );
 }

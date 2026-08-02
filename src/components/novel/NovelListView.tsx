@@ -86,20 +86,8 @@ export default function NovelListView() {
     apiFetch<Category[]>('/api/categories').then(setCategories).catch(() => {});
   }, []);
 
-  // Track previous filter values to auto-reset page on filter change
-  const prevFiltersRef = useRef({ status: statusFilter, category: categoryFilter });
-
   // Fetch novels
   const fetchNovels = useCallback(async () => {
-    // Auto-reset to page 1 when filters change
-    if (
-      prevFiltersRef.current.status !== statusFilter ||
-      prevFiltersRef.current.category !== categoryFilter
-    ) {
-      prevFiltersRef.current = { status: statusFilter, category: categoryFilter };
-      setPage(1);
-      return; // will re-trigger via page state change
-    }
     try {
       setLoading(true);
       const params = new URLSearchParams({
@@ -122,6 +110,11 @@ export default function NovelListView() {
     }
   }, [page, search, statusFilter, categoryFilter]);
 
+  // Auto-reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, categoryFilter]);
+
   useEffect(() => {
     fetchNovels();
   }, [fetchNovels, refreshNovels]);
@@ -136,6 +129,8 @@ export default function NovelListView() {
   }, [searchInput]);
 
   // Ctrl/Cmd+K to focus search, Ctrl+A to select all
+  const novelsRef = useRef(novels);
+  novelsRef.current = novels;
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
@@ -144,14 +139,14 @@ export default function NovelListView() {
         e.preventDefault();
         searchInputRef.current?.focus();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'a' && !isInput && novels.length > 0) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'a' && !isInput && novelsRef.current.length > 0) {
         e.preventDefault();
-        setSelectedIds(new Set(novels.map((n) => n.id)));
+        setSelectedIds(new Set(novelsRef.current.map((n) => n.id)));
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [novels]);
+  }, []);
 
   // Clear selection when novels list changes (e.g. page change)
   useEffect(() => {
@@ -459,7 +454,7 @@ export default function NovelListView() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="w-full opacity-0 transition-opacity group-hover:opacity-100"
+                        className="w-full opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleViewNovel(novel);

@@ -794,3 +794,134 @@ img[loading="lazy"]:not([src]) {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ─── New Utilities (Round 23:53) ──────────────────────── */
+
+/* Slide up fade-in for cards and list items */
+.slide-up {
+  animation: slide-up-in 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes slide-up-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Tap/press feedback for buttons and cards */
+.tap-feedback {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.tap-feedback:active {
+  transform: scale(0.97);
+  box-shadow: none !important;
+}
+
+/* Stagger children animation (use with inline style --animation-delay) */
+.stagger-child {
+  opacity: 0;
+  animation: slide-up-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Soft glow pulse for highlighted items */
+.glow-soft {
+  animation: glow-soft-pulse 2.5s ease-in-out infinite;
+}
+@keyframes glow-soft-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent); }
+  50% { box-shadow: 0 0 12px 2px color-mix(in srgb, var(--primary) 15%, transparent); }
+}
+
+/* Hover border color shift */
+.border-hover-accent {
+  transition: border-color 0.2s ease;
+}
+.border-hover-accent:hover {
+  border-color: hsl(var(--primary) / 0.5);
+}
+
+/* Text fade in on scroll (use with IntersectionObserver) */
+.text-fade-in {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.text-fade-in.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Smooth width transition for progress bars */
+.progress-smooth {
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover lift for cards with shadow */
+.hover-lift {
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -6px rgba(0, 0, 0, 0.1);
+}
+.dark .hover-lift:hover {
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.3), 0 4px 10px -6px rgba(0, 0, 0, 0.3);
+}
+
+/* Number count tabular-nums for aligned digits */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Truncate with ellipsis (multi-line safe) */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Animated dashed border for empty states */
+.border-dash-animated {
+  background-image: repeating-linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground) / 0.3) 0px,
+    hsl(var(--muted-foreground) / 0.3) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+  background-position: 0 0;
+  background-size: 12px 1px;
+  background-repeat: repeat-x;
+  animation: dash-scroll 0.8s linear infinite;
+}
+@keyframes dash-scroll {
+  to { background-position: 12px 0; }
+}
+
+/* Row highlight on hover for table rows */
+.row-hover {
+  transition: background-color 0.15s ease;
+}
+.row-hover:hover {
+  background-color: hsl(var(--accent) / 0.5);
+}
+
+/* Shake animation for error feedback */
+.shake {
+  animation: shake-anim 0.4s ease-in-out;
+}
+@keyframes shake-anim {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+/* Fade scale in for modals and dialogs */
+.modal-enter {
+  animation: modal-in 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}

@@ -120,6 +120,31 @@ function clearRecentlyViewed() {
   localStorage.removeItem(RECENT_KEY);
 }
 
+// ─── Search History ────────────────────────────────────────────
+const SEARCH_HISTORY_KEY = 'novel-search-history';
+const MAX_SEARCH_HISTORY = 5;
+
+function getSearchHistory(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    return JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]');
+  } catch { return []; }
+}
+
+function addSearchHistory(term: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const list = getSearchHistory().filter((t) => t !== term);
+    list.unshift(term);
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(list.slice(0, MAX_SEARCH_HISTORY)));
+  } catch { /* ignore */ }
+}
+
+function clearSearchHistory() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(SEARCH_HISTORY_KEY);
+}
+
 // ─── Cover placeholder gradient colors ────────────────────────────────
 const COVER_GRADIENTS = [
   'from-rose-500/80 to-orange-500/80',
@@ -470,12 +495,11 @@ export default function HomePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [totalPages, setTotalPages] = useState(0);
   const [total, setTotal] = useState(0);
-  const [recentNovels, setRecentNovels] = useState<RecentNovel[]>([]);
-
-  // ─── Load recently viewed ─────────────────────────────────────
-  useEffect(() => {
-    setRecentNovels(getRecentlyViewed());
-  }, []);
+  // ─── Recently viewed (initialized from localStorage, synced cross-tab) ─
+  const [recentNovels, setRecentNovels] = useState<RecentNovel[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return getRecentlyViewed();
+  });
 
   // Listen for storage changes from other tabs
   useEffect(() => {
@@ -505,6 +529,10 @@ export default function HomePage() {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return getSearchHistory();
+  });
   const searchRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -566,9 +594,25 @@ export default function HomePage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = searchInput.trim();
+    if (trimmed) addSearchHistory(trimmed);
     setSearch(trimmed);
     setPage(1);
     setSuggestionsOpen(false);
+    setSearchHistory(getSearchHistory());
+  };
+
+  const handleHistoryClear = () => {
+    clearSearchHistory();
+    setSearchHistory([]);
+  };
+
+  const handleHistorySelect = (term: string) => {
+    setSearchInput(term);
+    setSearch(term);
+    setPage(1);
+    setSuggestionsOpen(false);
+    addSearchHistory(term);
+    setSearchHistory(getSearchHistory());
   };
 
   // ─── Search suggestions (debounced) ─────────────────────────
@@ -914,7 +958,10 @@ export default function HomePage() {
                       setActiveSuggestion(-1);
                     }
                   }}
-                  onFocus={() => { if (suggestions.length > 0) setSuggestionsOpen(true); }}
+                  onFocus={() => {
+                    if (query.length >= 1 && suggestions.length > 0) setSuggestionsOpen(true);
+                    else if (query.length === 0 && searchHistory.length > 0) setSuggestionsOpen(true);
+                  }}
                   className="h-10 pl-10 pr-20 text-sm rounded-lg w-full"
                 />
                 <Button
@@ -928,7 +975,7 @@ export default function HomePage() {
 
               {/* Suggestions Dropdown */}
               <AnimatePresence>
-                {suggestionsOpen && (suggestionsLoading || suggestions.length > 0) && (
+                {suggestionsOpen && (suggestionsLoading || suggestions.length > 0 || (query.length === 0 && searchHistory.length > 0)) && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -940,6 +987,29 @@ export default function HomePage() {
                       <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         搜索中...
+                      </div>
+                    ) : query.length === 0 && searchHistory.length > 0 ? (
+                      <div className="py-1">
+                        <div className="flex items-center justify-between px-4 py-1.5">
+                          <span className="text-xs font-medium text-muted-foreground">搜索历史</span>
+                          <button
+                            onClick={handleHistoryClear}
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label="清除搜索历史"
+                          >
+                            清除
+                          </button>
+                        </div>
+                        {searchHistory.map((term) => (
+                          <button
+                            key={term}
+                            className="w-full flex items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent/70"
+                            onClick={() => handleHistorySelect(term)}
+                          >
+                            <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            <span className="text-sm truncate">{term}</span>
+                          </button>
+                        ))}
                       </div>
                     ) : (
                       <ul role="listbox" className="max-h-80 overflow-y-auto py-1">
@@ -978,6 +1048,12 @@ export default function HomePage() {
                             )}
                           </li>
                         ))}
+                        {/* Keyboard hint footer */}
+                        <li className="flex items-center gap-2 px-4 py-1.5 border-t mt-1 text-[10px] text-muted-foreground/60">
+                          <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">↑↓</kbd> 导航
+                          <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Enter</kbd> 选择
+                          <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Esc</kbd> 关闭
+                        </li>
                       </ul>
                     )}
                   </motion.div>

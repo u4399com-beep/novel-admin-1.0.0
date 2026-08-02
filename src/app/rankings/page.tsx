@@ -167,7 +167,7 @@ function NovelRow({
               variant={novel.status === 'completed' ? 'secondary' : 'outline'}
               className="shrink-0 text-[11px] px-1.5 py-0"
             >
-              {novel.status === 'completed' ? '已完结' : '连载中'}
+              {{ ongoing: '连载中', completed: '已完结', hiatus: '暂停' }[novel.status] ?? novel.status}
             </Badge>
           </div>
           <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
@@ -177,12 +177,12 @@ function NovelRow({
           </div>
         </div>
 
-        {/* Stat column */}
+        {/* Stat column — word count (real data available) */}
         <div className="shrink-0 text-right">
-          <div className={isTop3 ? 'text-base sm:text-lg font-bold' : 'text-sm font-semibold'}>
-            {novel.updatedAt ? formatDistanceToNow(new Date(novel.updatedAt), { addSuffix: true, locale: zhCN }) : '—'}
+          <div className={isTop3 ? 'text-base sm:text-lg font-bold stat-number' : 'text-sm font-semibold stat-number'}>
+            {formatWordCount(novel.wordCount)}
           </div>
-          <div className="text-[11px] text-muted-foreground">更新于</div>
+          <div className="text-[11px] text-muted-foreground">总字数</div>
         </div>
       </div>
       </Link>
@@ -276,7 +276,10 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <BookOpen className="w-10 h-10 text-muted-foreground/30 mb-3" />
         <p className="text-sm text-muted-foreground mb-3">加载排行榜数据失败</p>
-        <Button variant="outline" size="sm" onClick={() => fetchNovels()}>
+        <Button variant="outline" size="sm" onClick={() => {
+          const ac = new AbortController();
+          fetchNovels(ac.signal);
+        }}>
           重试
         </Button>
       </div>

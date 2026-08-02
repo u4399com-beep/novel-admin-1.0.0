@@ -176,7 +176,7 @@ function SortableChapterRow({
         {safeFormatDate(chapter.updatedAt, (d) => format(d, 'yyyy-MM-dd HH:mm', { locale: zhCN }))}
       </TableCell>
       <TableCell className="w-32 text-right">
-        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="icon"
@@ -234,7 +234,16 @@ function ChapterEditorPanel({
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(false);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+    };
+  }, []);
 
   // Load chapter content when selected
   useEffect(() => {
@@ -289,7 +298,8 @@ function ChapterEditorPanel({
         });
 
         setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
+        if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+        saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
         onSaved();
       } catch {
         setSaveStatus('idle');

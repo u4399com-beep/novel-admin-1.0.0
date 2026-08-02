@@ -173,6 +173,13 @@ export default function AdminPage() {
   const { theme, setTheme } = useTheme();
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
+  // ─── Auth guard ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (status !== 'loading' && !session) {
+      router.push('/login');
+    }
+  }, [session, status, router]);
+
   // ─── Auth loading state ───────────────────────────────────────────────
   if (status === 'loading') {
     return (
@@ -184,13 +191,6 @@ export default function AdminPage() {
       </div>
     );
   }
-
-  // ─── Auth guard ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!session) {
-      router.push('/login');
-    }
-  }, [session, router]);
 
   if (!session) {
     return (

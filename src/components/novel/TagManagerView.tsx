@@ -95,6 +95,7 @@ export default function TagManagerView() {
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Tag | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // ─── Fetch tags ───────────────────────────────────────────────────────
   const fetchTags = useCallback(async () => {
@@ -165,15 +166,18 @@ export default function TagManagerView() {
 
   // ─── Delete ───────────────────────────────────────────────────────────
   const handleDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleting) return;
     try {
+      setDeleting(true);
       await apiFetch(`/api/tags/${deleteTarget.id}`, {
         method: 'DELETE',
       });
       toast.success('标签已删除');
       setDeleteTarget(null);
       triggerRefresh('tags');
-    } catch { /* handled by apiFetch */ }
+    } catch { /* handled by apiFetch */ } finally {
+      setDeleting(false);
+    }
   };
 
   // ─── Render ───────────────────────────────────────────────────────────
@@ -434,10 +438,10 @@ export default function TagManagerView() {
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => { e.preventDefault(); handleDelete(); }}
-              disabled={submitting}
+              disabled={deleting}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              {submitting ? "删除中..." : "删除"}
+              {deleting ? "删除中..." : "删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

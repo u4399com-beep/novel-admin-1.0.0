@@ -37,7 +37,6 @@ export async function GET() {
     const missing: string[] = [];
     for (const model of expectedModels) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (db as any)[modelToProperty[model]].count({ take: 1 });
       } catch {
         missing.push(model);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -137,29 +137,26 @@ export default function CategoriesPage() {
   }, []);
 
   // ── Fetch categories ──────────────────────────────────────────────────
-  useEffect(() => {
+  const fetchCategories = useCallback(async () => {
     let cancelled = false;
-    async function fetchCategories() {
-      try {
-        setLoading(true);
-        setError(null);
-        const res = await fetch('/api/public/categories');
-        if (!res.ok) throw new Error('获取分类失败');
-        const data = await res.json();
-        if (!cancelled) setCategories(data);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : '未知错误');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch('/api/public/categories');
+      if (!res.ok) throw new Error('获取分类失败');
+      const data = await res.json();
+      if (!cancelled) setCategories(data);
+    } catch (err) {
+      if (!cancelled) setError(err instanceof Error ? err.message : '未知错误');
+    } finally {
+      if (!cancelled) setLoading(false);
     }
-    fetchCategories();
-    return () => {
-      cancelled = true;
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   // ── Filter categories by search ──────────────────────────────────────
   const filteredCategories = useMemo(() => {
@@ -243,7 +240,7 @@ export default function CategoriesPage() {
             <p className="text-sm text-destructive">{error}</p>
             <button
               className="mt-3 text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => window.location.reload()}
+              onClick={() => fetchCategories()}
             >
               点击重试
             </button>
@@ -295,7 +292,7 @@ export default function CategoriesPage() {
                     className="block"
                   >
                     <Card
-                      className="group overflow-hidden transition-all duration-200 hover:shadow-lg hover:-translate-y-1"
+                      className="group overflow-hidden tap-feedback hover-lift"
                       style={{ borderLeftWidth: '4px', borderLeftColor: category.color }}
                     >
                       {/* Hover color wash */}
@@ -324,7 +321,7 @@ export default function CategoriesPage() {
                           <div className="flex items-center gap-2 mb-3">
                             <div className="h-1 flex-1 max-w-[60px] rounded-full bg-muted overflow-hidden">
                               <div
-                                className="h-full rounded-full transition-all duration-500"
+                                className="h-full rounded-full progress-smooth"
                                 style={{
                                   width: `${Math.min(100, (category._count.novels / Math.max(1, maxNovels)) * 100)}%`,
                                   backgroundColor: category.color,
