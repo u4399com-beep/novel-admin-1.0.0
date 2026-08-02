@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Search, Sun, Moon, Shield, User, BookMarked, FileText,
   ChevronLeft, ChevronRight, RotateCcw,
-  Menu, X, Book, Loader2,
+  Menu, X, Book, Loader2, Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
@@ -150,17 +150,17 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const handleMouseEnter = useCallback(() => {
-    if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
     enterTimer.current = setTimeout(() => setPopoverOpen(true), 400);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    if (enterTimer.current) if (enterTimer.current) if (enterTimer.current) if (enterTimer.current) if (enterTimer.current) if (enterTimer.current) clearTimeout(enterTimer.current);
+    if (enterTimer.current) clearTimeout(enterTimer.current);
     leaveTimer.current = setTimeout(() => setPopoverOpen(false), 200);
   }, []);
 
   const handlePopoverEnter = useCallback(() => {
-    if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) if (leaveTimer.current) clearTimeout(leaveTimer.current);
+    if (leaveTimer.current) clearTimeout(leaveTimer.current);
   }, []);
 
   const handlePopoverLeave = useCallback(() => {
@@ -186,16 +186,16 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
       className="group cursor-pointer"
     >
       {/* Cover */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-xl transition-all duration-200 group-hover:-translate-y-0.5">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-2xl group-hover:shadow-primary/10 transition-all duration-300 ease-out group-hover:-translate-y-1.5 group-hover:ring-1 group-hover:ring-primary/20">
         {novel.coverUrl ? (
           <img
             src={novel.coverUrl}
             alt={novel.title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover transition-all duration-500 group-hover:scale-110 group-hover:brightness-75"
             loading="lazy"
           />
         ) : (
-          <div className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center`}>
+          <div className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center transition-all duration-500 group-hover:brightness-110`}>
             <span className="text-4xl font-bold text-white/90 select-none">
               {novel.title.charAt(0)}
             </span>
@@ -205,7 +205,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
         {novel.category && (
           <div className="absolute top-2 left-2">
             <span
-              className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+              className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm"
               style={{
                 backgroundColor: `${novel.category.color}cc`,
                 color: '#fff',
@@ -228,8 +228,15 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
             title={statusLabel}
           />
         </div>
+        {/* Hover CTA Overlay */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 opacity-0 group-hover:opacity-100">
+          <span className="flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-black/70 px-4 py-2 text-sm font-medium text-foreground backdrop-blur-sm shadow-lg translate-y-3 group-hover:translate-y-0 transition-transform duration-300">
+            <Eye className="h-4 w-4" />
+            阅读
+          </span>
+        </div>
         {/* Chapter count overlay */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3 pt-8">
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-3 pt-10">
           <p className="text-[11px] text-white/80 flex items-center gap-1">
             <BookOpen className="h-3 w-3" />
             {novel._count.chapters} 章 · {formatWordCount(novel.wordCount)}
@@ -239,13 +246,14 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
 
       {/* Info */}
       <div className="mt-3 space-y-1 px-0.5">
-        <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors">
+        <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors duration-200">
           {novel.title}
         </h3>
-        <p className="text-xs text-muted-foreground line-clamp-1">
-          {novel._count.chapters}章
-        </p>
-        <p className="text-xs text-muted-foreground line-clamp-1">{novel.author}</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="line-clamp-1">{novel.author}</span>
+          <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+          <span>{novel._count.chapters}章</span>
+        </div>
       </div>
     </motion.div>
     </Link>

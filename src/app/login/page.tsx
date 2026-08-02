@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { signIn } from 'next-auth/react';
 import { BookOpen, Loader2, Eye, EyeOff, Sun, Moon, ArrowLeft } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mounted, setMounted] = useState(false);
+  const errorKeyRef = useRef(0);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -36,11 +37,13 @@ export default function LoginPage() {
 
       if (result?.error) {
         setError('用户名或密码错误');
+        errorKeyRef.current += 1;
       } else if (result?.ok) {
         window.location.href = '/admin';
       }
     } catch {
       setError('登录失败，请重试');
+        errorKeyRef.current += 1;
     } finally {
       setLoading(false);
     }
@@ -104,11 +107,20 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <AnimatePresence mode="wait">
               {error && (
-                <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+                <motion.div
+                  key={errorKeyRef.current}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 8 }}
+                  transition={{ duration: 0.3, type: 'spring', stiffness: 500, damping: 30 }}
+                  className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive"
+                >
                   {error}
-                </div>
+                </motion.div>
               )}
+              </AnimatePresence>
 
               <div className="space-y-2">
                 <Label htmlFor="username" className="text-sm">用户名</Label>
@@ -122,7 +134,7 @@ export default function LoginPage() {
                   autoFocus
                   autoComplete="username"
                   disabled={loading}
-                  className="h-10"
+                  className="h-10 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:border-primary"
                 />
               </div>
 
@@ -138,7 +150,7 @@ export default function LoginPage() {
                     required
                     autoComplete="current-password"
                     disabled={loading}
-                    className="h-10 pr-10"
+                    className="h-10 pr-10 transition-all duration-200 focus:ring-2 focus:ring-primary/30 focus:border-primary"
                   />
                   <Button
                     type="button"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -126,6 +126,23 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
   const router = useRouter();
   const gradient = getGradient(novel.title);
   const statusInfo = STATUS_MAP[novel.status] || STATUS_MAP.ongoing;
+  const coverRef = useRef<HTMLDivElement>(null);
+
+  // ─── 3D Cover tilt handlers ──────────────────────────────────
+  const handleCoverMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    if (!coverRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    const rotateY = x * 15;
+    const rotateX = -y * 15;
+    coverRef.current.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg)`;
+  }, []);
+
+  const handleCoverMouseLeave = useCallback(() => {
+    if (!coverRef.current) return;
+    coverRef.current.style.transform = 'rotateY(0deg) rotateX(0deg)';
+  }, []);
 
   // ─── Reader state ────────────────────────────────────────────────
   const [readerOpen, setReaderOpen] = useState(false);
@@ -302,30 +319,40 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
           className="rounded-2xl border bg-gradient-to-br from-muted/40 via-background to-muted/20 p-6 sm:p-8"
         >
           <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
-            {/* Cover */}
+            {/* Cover with 3D tilt */}
             <div className="shrink-0">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.4, delay: 0.1 }}
-                className="w-48 h-64 overflow-hidden rounded-xl shadow-lg"
+                className="w-48 h-64 overflow-hidden rounded-xl shadow-lg cursor-grab active:cursor-grabbing"
+                style={{ perspective: '800px' }}
+                onMouseMove={handleCoverMouseMove}
+                onMouseLeave={handleCoverMouseLeave}
               >
-                {novel.coverUrl ? (
-                  <img
-                    src={novel.coverUrl}
-                    alt={novel.title}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div
-                    className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center`}
-                  >
-                    <span className="text-6xl font-bold text-white/90 select-none">
-                      {novel.title.charAt(0)}
-                    </span>
-                  </div>
-                )}
+                <div
+                  ref={coverRef}
+                  className="w-full h-full transition-transform duration-200 ease-out [transform-style:preserve-3d]"
+                >
+                  {novel.coverUrl ? (
+                    <img
+                      src={novel.coverUrl}
+                      alt={novel.title}
+                      className="h-full w-full object-cover [backface-visibility:hidden]"
+                    />
+                  ) : (
+                    <div
+                      className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center [backface-visibility:hidden]`}
+                    >
+                      <span className="text-6xl font-bold text-white/90 select-none">
+                        {novel.title.charAt(0)}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </motion.div>
+              {/* Cover shadow that responds to tilt */}
+              <div className="mx-3 mt-2 h-4 rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent blur-sm transition-all duration-300" />
             </div>
 
             {/* Meta */}
@@ -381,7 +408,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   {novel.tags.map((tag) => (
                     <span
                       key={tag.id}
-                      className="text-xs px-2 py-0.5 rounded-full border transition-colors hover:border-foreground/30"
+                      className="badge-interactive text-xs px-2 py-0.5 rounded-full border"
                       style={{
                         borderColor: `${tag.color}40`,
                         color: tag.color,
@@ -502,7 +529,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   variants={itemVariants}
                   onClick={() => openReader(index)}
                   className={
-                    'flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors border-b last:border-b-0 group ' +
+                    'chapter-row flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0 group ' +
                     (index % 2 === 0 ? '' : 'bg-muted/30') +
                     (lastChapterIndex === index ? ' bg-primary/5 border-l-2 border-l-primary' : '')
                   }

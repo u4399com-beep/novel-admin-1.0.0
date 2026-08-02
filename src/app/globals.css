@@ -461,3 +461,107 @@ img[loading="lazy"]:not([src]) {
 .dark .reading-progress-bar {
   box-shadow: 0 0 8px oklch(0.708 0.1 264 / 0.4);
 }
+
+/* ─── Round 2 Enhanced Micro-Interactions ────────────── */
+
+/* Hover card glow with color accent (use via style) */
+.hover-glow-accent {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+}
+.hover-glow-accent:hover {
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--glow-color, var(--primary)) 20%, transparent),
+              0 8px 30px oklch(0 0 0 / 0.1);
+  transform: translateY(-1px);
+}
+
+/* Text shimmer for decorative headings */
+@keyframes text-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.text-shimmer {
+  background: linear-gradient(90deg, var(--foreground) 40%, var(--primary) 50%, var(--foreground) 60%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 3s ease-in-out infinite;
+}
+
+/* Smooth card press (deeper than button) */
+.card-press:active:not(:disabled) {
+  transform: scale(0.985) translateY(1px);
+  transition: transform 0.15s ease;
+}
+
+/* Chapter row left border reveal */
+.chapter-row {
+  position: relative;
+  transition: background-color 0.15s ease, padding-left 0.2s ease;
+}
+.chapter-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: var(--primary);
+  border-radius: 0 2px 2px 0;
+  transition: width 0.2s ease;
+}
+.chapter-row:hover::before {
+  width: 3px;
+}
+.chapter-row:hover {
+  padding-left: 12px;
+}
+
+/* Tab/Filter pill active indicator */
+.filter-pill-active {
+  position: relative;
+}
+.filter-pill-active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 1px;
+}
+
+/* Smooth border color transition for all bordered elements */
+.border {
+  transition: border-color 0.2s ease;
+}
+
+/* Rank number shine effect */
+@keyframes rank-shine {
+  0% { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
+.rank-shine {
+  background: linear-gradient(90deg, transparent 30%, oklch(1 0 0 / 0.3) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: rank-shine 3s ease-in-out infinite;
+}
+
+/* Smooth hover background for list items */
+.list-hover {
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+.list-hover:hover {
+  background-color: oklch(0.96 0 0);
+}
+.dark .list-hover:hover {
+  background-color: oklch(0.22 0 0);
+}
+
+/* Input label float animation */
+@keyframes label-float {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Trophy, Medal, BookOpen } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -82,8 +83,9 @@ function RankNumber({ rank }: { rank: number }) {
   const style = RANK_STYLES[rank];
   if (style) {
     return (
-      <div className={`flex items-center justify-center w-8 h-8 rounded-full ${style.bg} ring-2 ${style.ring}`}>
+      <div className={`relative flex items-center justify-center w-8 h-8 rounded-full ${style.bg} ring-2 ${style.ring} overflow-hidden`}>
         <Medal className={`w-4 h-4 ${style.text}`} />
+        <div className="absolute inset-0 rank-shine pointer-events-none" />
       </div>
     );
   }
@@ -100,10 +102,12 @@ function NovelRow({
   novel,
   rank,
   statLabel,
+  index = 0,
 }: {
   novel: RankingNovel;
   rank: number;
   statLabel: string;
+  index?: number;
 }) {
   const router = useRouter();
   const isTop3 = rank <= 3;
@@ -112,7 +116,10 @@ function NovelRow({
   const rankPercent = 1 - (rank - 1) / 30; // visual weight for progress bar
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 12, x: -8 }}
+      animate={{ opacity: 1, y: 0, x: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.04, ease: 'easeOut' as const }}
       role="button"
       tabIndex={0}
       onClick={() => router.push(`/novels/${novel.id}`)}
@@ -124,8 +131,8 @@ function NovelRow({
       }}
       className={
         isTop3
-          ? `relative rounded-xl border-2 p-4 transition-all hover:shadow-md cursor-pointer group overflow-hidden ${style?.border}`
-          : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-colors hover:bg-muted/50 cursor-pointer group'
+          ? `relative rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 cursor-pointer group overflow-hidden ${style?.border}`
+          : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 cursor-pointer group'
       }
     >
       {/* Top 3 gradient background */}
@@ -183,7 +190,7 @@ function NovelRow({
           <div className="text-[11px] text-muted-foreground">{statLabel}</div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -273,6 +280,7 @@ function RankingTabContent({ tab }: { tab: TabConfig }) {
             novel={novel}
             rank={i + 1}
             statLabel={tab.statLabel}
+            index={i}
           />
         ))}
       </div>
@@ -286,6 +294,7 @@ function RankingTabContent({ tab }: { tab: TabConfig }) {
               novel={novel}
               rank={i + 4}
               statLabel={tab.statLabel}
+              index={i + 3}
             />
           ))}
         </div>
@@ -306,7 +315,12 @@ export default function RankingsPage() {
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:py-10">
         {/* Header */}
-        <div className="mb-6 sm:mb-8">
+        <motion.div
+          className="mb-6 sm:mb-8"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
@@ -319,7 +333,12 @@ export default function RankingsPage() {
             </BreadcrumbList>
           </Breadcrumb>
 
-          <div className="flex items-center gap-3 mt-4">
+          <motion.div
+            className="flex items-center gap-3 mt-4"
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, delay: 0.15 }}
+          >
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40">
               <Trophy className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             </div>
@@ -327,8 +346,8 @@ export default function RankingsPage() {
               <h1 className="text-xl sm:text-2xl font-bold">排行榜</h1>
               <p className="text-sm text-muted-foreground">热门小说排行，发现好书</p>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Tabs */}
         <Tabs defaultValue="weekly" className="w-full">
