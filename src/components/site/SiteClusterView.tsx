@@ -11,6 +11,7 @@ import {
   Monitor,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { safeFormatDate } from '@/lib/format';
@@ -148,7 +149,7 @@ function SiteFormDialog({
     try {
       const url = editingSite ? `/api/sites/${editingSite.id}` : '/api/sites';
       const method = editingSite ? 'PUT' : 'POST';
-      const res = await fetch(url, {
+      await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -169,10 +170,6 @@ function SiteFormDialog({
           chapterOffset: form.chapterOffset,
         }),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '操作失败');
-      }
       toast.success(editingSite ? '站点已更新' : '站点已创建');
       onOpenChange(false);
       onSaved();
@@ -570,13 +567,10 @@ export default function SiteClusterView() {
 
   const fetchSites = useCallback(async () => {
     try {
-      const [sitesRes, themesRes] = await Promise.all([
-        fetch('/api/sites'),
-        fetch('/api/themes'),
+      const [sitesData, themesData] = await Promise.all([
+        apiFetch('/api/sites'),
+        apiFetch('/api/themes'),
       ]);
-      if (!sitesRes.ok || !themesRes.ok) throw new Error('Failed');
-      const sitesData = await sitesRes.json();
-      const themesData = await themesRes.json();
       setSites(sitesData);
       setThemes(
         themesData.map((t: Theme & { config: string }) => ({
@@ -598,8 +592,7 @@ export default function SiteClusterView() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      const res = await fetch(`/api/sites/${deleteId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
+      await apiFetch(`/api/sites/${deleteId}`, { method: 'DELETE' });
       toast.success('站点已删除');
       setDeleteId(null);
       fetchSites();

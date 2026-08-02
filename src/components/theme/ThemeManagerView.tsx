@@ -13,6 +13,7 @@ import {
   Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -153,7 +154,7 @@ function ThemeFormDialog({
     try {
       const url = editingTheme ? `/api/themes/${editingTheme.id}` : '/api/themes';
       const method = editingTheme ? 'PUT' : 'POST';
-      const res = await fetch(url, {
+      await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -163,10 +164,6 @@ function ThemeFormDialog({
           config: form.config,
         }),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '操作失败');
-      }
       toast.success(editingTheme ? '主题已更新' : '主题已创建');
       onOpenChange(false);
       onSaved();
@@ -555,9 +552,7 @@ export default function ThemeManagerView() {
 
   const fetchThemes = useCallback(async () => {
     try {
-      const res = await fetch('/api/themes');
-      if (!res.ok) throw new Error('Failed');
-      const data = await res.json();
+      const data = await apiFetch('/api/themes');
       setThemes(
         data.map((t: Theme & { config: string; _count?: { sites: number } }) => ({
           ...t,
@@ -581,13 +576,10 @@ export default function ThemeManagerView() {
       PREBUILT_THEMES.map((t) => {
         const { name, identifier, description, seo, geo, ...rest } = t;
         const config: ThemeConfig = { ...rest, seo, geo };
-        return fetch('/api/themes', {
+        return apiFetch('/api/themes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, identifier, description, config }),
-        }).then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res;
         });
       })
     );
@@ -605,8 +597,7 @@ export default function ThemeManagerView() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      const res = await fetch(`/api/themes/${deleteId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
+      await apiFetch(`/api/themes/${deleteId}`, { method: 'DELETE' });
       toast.success('主题已删除');
       setDeleteId(null);
       fetchThemes();

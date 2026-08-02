@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod/v4';
 import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { Loader2 } from 'lucide-react';
 
 import {
@@ -64,9 +65,8 @@ export function ChapterFormDialog() {
     if (chapterFormOpen) {
       if (editingChapter) {
         // Fetch full chapter content since list API doesn't include it
-        fetch(`/api/chapters/${editingChapter.id}`)
-          .then((r) => r.json())
-          .then((full: Chapter) => {
+        apiFetch<Chapter>(`/api/chapters/${editingChapter.id}`)
+          .then((full) => {
             form.reset({
               title: full.title,
               content: full.content || '',
@@ -108,7 +108,7 @@ export function ChapterFormDialog() {
     if (!selectedNovelId) return;
 
     try {
-      if (isEditing && editingChapter) {
+        if (isEditing && editingChapter) {
         // Update existing chapter
         const body: Record<string, unknown> = { title: values.title };
         // Only include content if we actually have it (fetched or new chapter)
@@ -116,21 +116,16 @@ export function ChapterFormDialog() {
         if (fetchedContent !== null || !isEditing) {
           body.content = values.content;
         }
-        const res = await fetch(`/api/chapters/${editingChapter.id}`, {
+        await apiFetch(`/api/chapters/${editingChapter.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
 
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || '更新章节失败');
-        }
-
         toast.success('章节已更新');
       } else {
         // Create new chapter
-        const res = await fetch(`/api/novels/${selectedNovelId}/chapters`, {
+        await apiFetch(`/api/novels/${selectedNovelId}/chapters`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -138,11 +133,6 @@ export function ChapterFormDialog() {
             content: values.content,
           }),
         });
-
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || '创建章节失败');
-        }
 
         toast.success('章节已创建');
       }

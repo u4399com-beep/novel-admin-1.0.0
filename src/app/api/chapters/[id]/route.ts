@@ -27,7 +27,8 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(chapter);
   } catch (error) {
     console.error("Get chapter error:", error);
-    return NextResponse.json({ error: "获取章节详情失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "获取章节详情失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -112,7 +113,8 @@ export const PUT = withAuth(async function PUT(
       return NextResponse.json({ error: "章节不存在" }, { status: 404 });
     }
     console.error("Update chapter error:", error);
-    return NextResponse.json({ error: "更新章节失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "更新章节失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -150,6 +152,7 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "章节不存在" }, { status: 404 });
     }
     console.error("Delete chapter error:", error);
-    return NextResponse.json({ error: "删除章节失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "删除章节失败", detail: msg }, { status: 500 });
   }
 });

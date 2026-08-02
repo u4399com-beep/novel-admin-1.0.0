@@ -1,0 +1,91 @@
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+
+/**
+ * Public health-check endpoint — NO authentication required.
+ *
+ * Purpose:
+ *   1. Docker healthcheck uses /api/auth/csrf (also public), but
+ *      that only proves Next.js is alive, not the database.
+ *   2. This endpoint proves the FULL stack works: Next.js + Prisma + DB.
+ *   3. Returns enough detail to diagnose "获取xxx失败" issues
+ *      without exposing secrets.
+ *
+ * Called by:
+ *   - curl http://host:port/api/public/health
+ *   - deploy.sh --diagnose
+ */
+export async function GET() {
+  const checks: Record<string, { ok: boolean; detail?: string; ms?: number }> = {};
+
+  // 1. Database connectivity + key table existence
+  const dbStart = Date.now();
+  try {
+    // Basic connectivity test
+    await db.$queryRaw`SELECT 1 AS ok`;
+
+    // Check key tables via Prisma (works for both SQLite and PostgreSQL)
+    const expectedModels = ['Category', 'Novel', 'Chapter', 'ScrapeRule', 'ScrapeTask'];
+    const missing: string[] = [];
+    // Try a lightweight count on each model — if the table doesn't exist,
+    // Prisma throws a recognizable error.
+    for (const model of expectedModels) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (db as any)[model.toLowerCase()].count({ take: 1 });
+      } catch {
+        missing.push(model);
+      }
+    }
+
+    if (missing.length > 0) {
+      checks.database = {
+        ok: false,
+        detail: `缺少表: ${missing.join(', ')}`,
+        ms: Date.now() - dbStart,
+      };
+    } else {
+      checks.database = { ok: true, ms: Date.now() - dbStart };
+    }
+  } catch (err) {
+    checks.database = {
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+      ms: Date.now() - dbStart,
+    };
+  }
+
+  // 2. Environment sanity check
+  const envChecks: string[] = [];
+  if (!process.env.NEXTAUTH_SECRET || process.env.NEXTAUTH_SECRET.length < 32) {
+    envChecks.push('NEXTAUTH_SECRET 未配置或过短');
+  }
+  if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 8) {
+    envChecks.push('ADMIN_PASSWORD 未配置或过短');
+  }
+  if (!process.env.DATABASE_URL) {
+    envChecks.push('DATABASE_URL 未配置');
+  }
+  checks.environment = {
+    ok: envChecks.length === 0,
+    detail: envChecks.length > 0 ? envChecks.join('; ') : '环境变量正常',
+  };
+
+  // 3. Auth config check
+  const isHttps = (process.env.NEXTAUTH_URL || '').startsWith('https://');
+  checks.auth = {
+    ok: true,
+    detail: `NEXTAUTH_URL=${process.env.NEXTAUTH_URL || '未设置'}, cookie=${isHttps ? '__Secure-next-auth.session-token' : 'next-auth.session-token'}`,
+  };
+
+  const allOk = Object.values(checks).every((c) => c.ok);
+
+  return NextResponse.json(
+    {
+      status: allOk ? 'healthy' : 'unhealthy',
+      timestamp: new Date().toISOString(),
+      checks,
+    },
+    { status: allOk ? 200 : 503 },
+  );
+}

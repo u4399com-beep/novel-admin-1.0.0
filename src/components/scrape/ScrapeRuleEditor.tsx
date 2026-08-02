@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -202,9 +203,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
 
     async function loadRule() {
       try {
-        const res = await fetch(`/api/scrape-rules/${ruleId}`);
-        if (!res.ok) throw new Error('Failed to load');
-        const rule = await res.json();
+        const rule = await apiFetch(`/api/scrape-rules/${ruleId}`);
 
         const parseJSON = (str: string | null, fallback: unknown) => {
           if (!str) return fallback;
@@ -284,16 +283,11 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
 
       const url = ruleId ? `/api/scrape-rules/${ruleId}` : '/api/scrape-rules';
       const method = ruleId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
+      await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || '操作失败');
-      }
 
       toast.success(ruleId ? '规则已更新' : '规则已创建');
       onSuccess();

@@ -42,7 +42,8 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("List scrape tasks error:", error);
-    return NextResponse.json({ error: "获取采集任务列表失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "获取采集任务列表失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -107,6 +108,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(task, { status: 201 });
   } catch (error) {
     console.error("Create scrape task error:", error);
-    return NextResponse.json({ error: "创建采集任务失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "创建采集任务失败", detail: msg }, { status: 500 });
   }
 });

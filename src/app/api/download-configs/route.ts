@@ -24,7 +24,8 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json(configs);
   } catch (error) {
     console.error("List download configs error:", error);
-    return NextResponse.json({ error: "获取下载配置列表失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "获取下载配置列表失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -113,6 +114,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(config, { status: 201 });
   } catch (error) {
     console.error("Create download config error:", error);
-    return NextResponse.json({ error: "创建下载配置失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "创建下载配置失败", detail: msg }, { status: 500 });
   }
 });

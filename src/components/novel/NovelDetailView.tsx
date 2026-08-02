@@ -27,6 +27,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
+import { apiFetch } from '@/lib/api-fetch';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import {
@@ -225,13 +226,10 @@ function ChapterEditorPanel({
     // Fetch full chapter content
     const loadChapter = async () => {
       try {
-        const res = await fetch(`/api/chapters/${chapter.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setTitle(data.title);
-          setContent(data.content || '');
-          initialLoadRef.current = true;
-        }
+        const data = await apiFetch<{ title: string; content: string }>(`/api/chapters/${chapter.id}`);
+        setTitle(data.title);
+        setContent(data.content || '');
+        initialLoadRef.current = true;
       } catch {
         toast.error('加载章节内容失败');
       }
@@ -255,7 +253,7 @@ function ChapterEditorPanel({
 
       try {
         const wordCount = newContent.length;
-        const res = await fetch(`/api/chapters/${chapter.id}`, {
+        await apiFetch(`/api/chapters/${chapter.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -264,8 +262,6 @@ function ChapterEditorPanel({
             wordCount,
           }),
         });
-
-        if (!res.ok) throw new Error('保存失败');
 
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 2000);
@@ -466,16 +462,11 @@ export default function NovelDetailView() {
     if (!selectedNovelId) return;
     setLoadingNovel(true);
     try {
-      const res = await fetch(`/api/novels/${selectedNovelId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setNovel(data);
-      } else {
-        toast.error('小说不存在或已被删除');
-        setCurrentView('novels');
-      }
+      const data = await apiFetch(`/api/novels/${selectedNovelId}`);
+      setNovel(data);
     } catch {
       toast.error('获取小说详情失败');
+      setCurrentView('novels');
     } finally {
       setLoadingNovel(false);
     }
@@ -486,11 +477,8 @@ export default function NovelDetailView() {
     if (!selectedNovelId) return;
     setLoadingChapters(true);
     try {
-      const res = await fetch(`/api/novels/${selectedNovelId}/chapters`);
-      if (res.ok) {
-        const data = await res.json();
-        setChapters(data.chapters || []);
-      }
+      const data = await apiFetch<{ chapters?: Chapter[] }>(`/api/novels/${selectedNovelId}/chapters`);
+      setChapters(data.chapters || []);
     } catch {
       toast.error('获取章节列表失败');
     } finally {
@@ -523,11 +511,7 @@ export default function NovelDetailView() {
     if (!novel) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/novels/${novel.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '删除失败');
-      }
+      await apiFetch(`/api/novels/${novel.id}`, { method: 'DELETE' });
       toast.success('小说已删除');
       triggerRefresh('novels');
       triggerRefresh('dashboard');
@@ -560,13 +544,9 @@ export default function NovelDetailView() {
     if (!deletingChapter) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/chapters/${deletingChapter.id}`, {
+      await apiFetch(`/api/chapters/${deletingChapter.id}`, {
         method: 'DELETE',
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '删除失败');
-      }
       toast.success('章节已删除');
       if (selectedChapter?.id === deletingChapter.id) {
         setSelectedChapter(null);
@@ -595,8 +575,7 @@ export default function NovelDetailView() {
       for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const results = await Promise.allSettled(chunk.map(async (id) => {
-          const res = await fetch(`/api/chapters/${id}`, { method: 'DELETE' });
-          if (!res.ok) throw new Error(`Failed to delete chapter ${id}`);
+          await apiFetch(`/api/chapters/${id}`, { method: 'DELETE' });
           return id;
         }));
         results.forEach((r) => {
@@ -645,14 +624,13 @@ export default function NovelDetailView() {
 
     // Single batch request instead of N individual PUTs
     try {
-      const res = await fetch(`/api/novels/${selectedNovelId}/chapters`, {
+      await apiFetch(`/api/novels/${selectedNovelId}/chapters`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orders: reordered.map((ch, idx) => ({ id: ch.id, sortOrder: idx + 1 })),
         }),
       });
-      if (!res.ok) throw new Error();
     } catch {
       toast.error('排序更新失败');
       fetchChapters();
@@ -670,14 +648,13 @@ export default function NovelDetailView() {
     setChapters(reordered);
 
     try {
-      const res = await fetch(`/api/novels/${selectedNovelId}/chapters`, {
+      await apiFetch(`/api/novels/${selectedNovelId}/chapters`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orders: reordered.map((ch, i) => ({ id: ch.id, sortOrder: i + 1 })),
         }),
       });
-      if (!res.ok) throw new Error();
     } catch {
       toast.error('排序更新失败');
       fetchChapters();

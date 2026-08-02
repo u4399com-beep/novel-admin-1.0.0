@@ -16,6 +16,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { safeFormatDate } from '@/lib/format';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -74,12 +75,7 @@ export default function NovelListView() {
 
   // Fetch categories for filter
   useEffect(() => {
-    fetch('/api/categories')
-      .then((r) => { if (!r.ok) throw new Error(r.statusText || '获取分类列表失败'); return r.json(); })
-      .then((data: Category[]) => setCategories(data))
-      .catch((err) => {
-        console.error('获取分类列表失败:', err);
-      });
+    apiFetch<Category[]>('/api/categories').then(setCategories).catch(() => {});
   }, []);
 
   // Fetch novels
@@ -94,9 +90,7 @@ export default function NovelListView() {
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (categoryFilter !== 'all') params.set('categoryId', categoryFilter);
 
-      const res = await fetch(`/api/novels?${params}`);
-      if (!res.ok) throw new Error('获取小说列表失败');
-      const data: PaginatedResponse = await res.json();
+      const data = await apiFetch<PaginatedResponse>(`/api/novels?${params}`);
       setNovels(data.novels);
       setTotal(data.total);
       setTotalPages(data.totalPages);

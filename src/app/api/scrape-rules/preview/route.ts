@@ -97,8 +97,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error('[preview] Error:', error);
+    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: '获取页面预览失败' },
+      { error: '获取页面预览失败', detail: msg },
       { status: 500 },
     );
   }

@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod/v4';
 import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -83,9 +84,7 @@ export default function TagManagerView() {
   const fetchTags = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/tags');
-      if (!res.ok) throw new Error('获取标签失败');
-      const data = await res.json();
+      const data = await apiFetch('/api/tags');
       setTags(data);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '获取标签失败');
@@ -136,16 +135,11 @@ export default function TagManagerView() {
       const method = editingTag ? 'PUT' : 'POST';
       const body = values;
 
-      const res = await fetch(url, {
+      await apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || (editingTag ? '更新失败' : '创建失败'));
-      }
 
       toast.success(editingTag ? '标签已更新' : '标签已创建');
       resetAndClose();
@@ -161,13 +155,9 @@ export default function TagManagerView() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await fetch(`/api/tags/${deleteTarget.id}`, {
+      await apiFetch(`/api/tags/${deleteTarget.id}`, {
         method: 'DELETE',
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || '删除失败');
-      }
       toast.success('标签已删除');
       setDeleteTarget(null);
       triggerRefresh('tags');

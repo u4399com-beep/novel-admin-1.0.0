@@ -50,6 +50,7 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     console.error("Dashboard stats error:", error);
-    return NextResponse.json({ error: "获取统计数据失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "获取统计数据失败", detail: msg }, { status: 500 });
   }
 });

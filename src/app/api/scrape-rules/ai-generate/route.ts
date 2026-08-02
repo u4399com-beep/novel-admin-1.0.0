@@ -110,8 +110,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error('[ai-generate] Error:', error);
+    const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: 'AI 规则生成失败' },
+      { error: 'AI 规则生成失败', detail: msg },
       { status: 500 },
     );
   }

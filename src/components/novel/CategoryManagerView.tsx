@@ -16,6 +16,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { safeFormatDate } from '@/lib/format';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -103,9 +104,7 @@ export default function CategoryManagerView() {
   const fetchCategories = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/categories');
-      if (!res.ok) throw new Error('获取分类失败');
-      const data: Category[] = await res.json();
+      const data: Category[] = await apiFetch('/api/categories');
       setCategories(data);
     } catch {
       toast.error('获取分类列表失败');
@@ -165,26 +164,18 @@ export default function CategoryManagerView() {
       };
 
       if (editingCategory) {
-        const res = await fetch(`/api/categories/${editingCategory.id}`, {
+        await apiFetch(`/api/categories/${editingCategory.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || '更新分类失败');
-        }
         toast.success('分类已更新');
       } else {
-        const res = await fetch('/api/categories', {
+        await apiFetch('/api/categories', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || '创建分类失败');
-        }
         toast.success('分类已创建');
       }
 
@@ -202,13 +193,9 @@ export default function CategoryManagerView() {
     if (!deleteTarget) return;
     try {
       setDeleting(true);
-      const res = await fetch(`/api/categories/${deleteTarget.id}`, {
+      await apiFetch(`/api/categories/${deleteTarget.id}`, {
         method: 'DELETE',
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || '删除分类失败');
-      }
       toast.success('分类已删除');
       setDeleteTarget(null);
       fetchCategories();

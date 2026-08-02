@@ -119,6 +119,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Public novels API error:", error);
-    return NextResponse.json({ error: "获取小说列表失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "获取小说列表失败", detail: msg }, { status: 500 });
   }
 }

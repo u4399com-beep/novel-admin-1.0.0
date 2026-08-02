@@ -28,7 +28,8 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(category);
   } catch (error) {
     console.error("Get category error:", error);
-    return NextResponse.json({ error: "获取分类详情失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "获取分类详情失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -94,7 +95,8 @@ export const PUT = withAuth(async function PUT(
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });
     }
-    return NextResponse.json({ error: "更新分类失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "更新分类失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -129,6 +131,7 @@ export const DELETE = withAuth(async function DELETE(
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });
     }
-    return NextResponse.json({ error: "删除分类失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "删除分类失败", detail: msg }, { status: 500 });
   }
 });

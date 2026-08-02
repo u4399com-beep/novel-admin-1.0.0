@@ -250,8 +250,9 @@ export function withAuth(handler: ApiHandler): ApiHandler {
       return response;
     } catch (error) {
       console.error(`[${requestId}] API error:`, error);
+      const detail = error instanceof Error ? error.message : String(error);
       return NextResponse.json(
-        { error: '服务器内部错误' },
+        { error: '服务器内部错误', detail },
         { status: 500, headers: { 'X-Request-ID': requestId } }
       );
     }

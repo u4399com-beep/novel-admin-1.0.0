@@ -9,7 +9,7 @@
 
 import { apiSuccess, apiError, safeJson } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 // ==================== Types ====================
 
@@ -55,6 +55,7 @@ interface GeneratedRuleResult {
     notes: string[];
   };
   error?: string;
+  detail?: string;
 }
 
 // ==================== System Prompt ====================
@@ -264,16 +265,20 @@ ${html}`;
       });
     } catch (err) {
       console.error("[AI Analyze] Error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
       return apiSuccess<GeneratedRuleResult>({
         success: false,
         rule: getDefaultRule(url),
         error: "AI analysis failed, please try again",
+        detail: msg,
       });
     } finally {
       clearTimeout(llmTimeoutId);
     }
-  } catch {
-    return apiError("AI analysis failed", 500);
+  } catch (error) {
+    console.error("[AI Analyze] Fatal error:", error);
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "AI analysis failed", detail: msg }, { status: 500 });
   }
 });
 

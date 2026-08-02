@@ -42,6 +42,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
+import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { DashboardStats, NovelStatus } from '@/types';
@@ -105,9 +106,7 @@ export function DashboardView() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/dashboard');
-      if (!res.ok) throw new Error('获取仪表盘数据失败');
-      const data: DashboardStats = await res.json();
+      const data: DashboardStats = await apiFetch('/api/dashboard');
       setStats(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : '未知错误');

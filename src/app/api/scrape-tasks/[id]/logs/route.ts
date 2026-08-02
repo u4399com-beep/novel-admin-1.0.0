@@ -51,7 +51,8 @@ export const POST = withAuth(async function POST(
     return NextResponse.json(log, { status: 201 });
   } catch (error) {
     console.error("Create scrape log error:", error);
-    return NextResponse.json({ error: "创建采集日志失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "创建采集日志失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -84,6 +85,7 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(logs);
   } catch (error) {
     console.error("Get scrape logs error:", error);
-    return NextResponse.json({ error: "获取采集日志失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "获取采集日志失败", detail: msg }, { status: 500 });
   }
 });

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Sparkles } from 'lucide-react';
@@ -61,9 +62,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
         pageSize: '20',
         ...(search ? { search } : {}),
       });
-      const res = await fetch(`/api/scrape-rules?${params}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await apiFetch(`/api/scrape-rules?${params}`);
       setRules(data.rules || []);
       setTotalPages(data.totalPages || 1);
     } catch {
@@ -85,8 +84,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/scrape-rules/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
+      await apiFetch(`/api/scrape-rules/${id}`, { method: 'DELETE' });
       toast.success('规则已删除');
       fetchRules();
     } catch {
@@ -98,13 +96,11 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
 
   const handleExecute = async (rule: ScrapeRuleItem) => {
     try {
-      const res = await fetch('/api/scrape-tasks', {
+      const task = await apiFetch('/api/scrape-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ruleId: rule.id, mode: rule.scrapeMode || 'incremental' }),
       });
-      if (!res.ok) throw new Error();
-      const task = await res.json();
       toast.success(`任务已创建: ${task.id.slice(0, 8)}...`);
     } catch {
       toast.error('创建任务失败，请确认采集任务API可用');

@@ -2749,3 +2749,45 @@ Stage Summary:
 - “获取xxx失败”根因：.env缺少认证环境变量
 - 5轮深度审计最终2轮无新问题，代码库稳定
 - 关键功能修复：创建主题/站点对话框、编辑章节不清空内容
+
+---
+Task ID: fix-get-errors
+Agent: Main Orchestrator
+Task: 修复"获取xxx失败"核心bug + 前端错误链路全面重构
+
+Work Log:
+- 根因分析：所有前端组件使用 `if (!res.ok) throw new Error('获取xxx失败')` 吞掉了API实际错误消息
+  - 401 "未授权" 和 500 "数据库错误" 都显示为同样的 "获取xxx失败"
+  - 用户无法区分是认证问题还是数据库问题
+
+- 修复1: 创建共享 apiFetch 工具 (`src/lib/api-fetch.ts`)
+  - 自动从响应体提取 `error` 和 `detail` 字段
+  - 401/429/500 自动 toast 提示
+  - 抛出 FetchError 包含实际服务器错误消息和状态码
+
+- 修复2: 更新所有前端组件使用 apiFetch (10个组件, 40+个fetch调用)
+  - NovelListView, DashboardView, CategoryManagerView, TagManagerView
+  - NovelDetailView, ChapterFormDialog, ThemeManagerView
+  - SiteClusterView, ScrapeTaskMonitor, ScrapeRuleEditor, ScrapeRuleList
+
+- 修复3: 所有API端点(55个catch块)增加 `detail` 字段
+  - `withAuth` 包装器的 500 响应增加 detail
+  - 27个API路由文件的全部catch块增加 detail
+  - 现在错误响应格式: `{ error: "获取xxx失败", detail: "实际Prisma/网络错误" }`
+
+- 修复4: 创建公共诊断端点 `/api/public/health` (无需认证)
+  - 检查数据库连接 + 5个核心表是否存在
+  - 检查环境变量 (NEXTAUTH_SECRET, ADMIN_PASSWORD, DATABASE_URL)
+  - 显示 NEXTAUTH_URL 和 cookie 名称
+  - 兼容 SQLite 和 PostgreSQL
+
+- 修复5: seed-categories 端点修复
+  - 移除 withAuth (公共初始化端点，登录前就要能用)
+  - deleteMany+createMany → 逐条 upsert (幂等、不怕外键约束)
+
+Stage Summary:
+- 前端现在会显示实际API错误消息（如 "未授权，请先登录" 或具体DB错误）
+- 所有API错误响应包含 detail 字段用于调试
+- /api/public/health 可用于远程诊断系统状态
+- seed-categories 可无认证调用，安全幂等
+- lint: 0 errors, 3 warnings (均为预存的React Compiler警告)

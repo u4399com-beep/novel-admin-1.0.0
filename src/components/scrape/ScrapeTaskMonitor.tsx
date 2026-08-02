@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import {
@@ -164,9 +165,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
         pageSize: String(PAGE_SIZE),
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
       });
-      const res = await fetch(`/api/scrape-tasks?${params}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await apiFetch(`/api/scrape-tasks?${params}`);
       setTasks(data.tasks || []);
       setTotalPages(data.totalPages || 1);
       setTotal(data.total || 0);
@@ -212,9 +211,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
   const fetchTaskLogs = useCallback(async (taskId: string) => {
     setLogsLoading(true);
     try {
-      const res = await fetch(`/api/scrape-tasks/${taskId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const task = await res.json();
+      const task = await apiFetch(`/api/scrape-tasks/${taskId}`);
       setExpandedLogs(task.logs || []);
       // Also update the task in the list with fresh data
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...task, logs: undefined } : t)));
@@ -245,11 +242,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/scrape-tasks/${deleteTarget.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || '删除失败');
-      }
+      await apiFetch(`/api/scrape-tasks/${deleteTarget.id}`, { method: 'DELETE' });
       toast.success('任务已删除');
       if (expandedTaskId === deleteTarget.id) {
         setExpandedTaskId(null);

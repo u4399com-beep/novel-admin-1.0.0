@@ -28,7 +28,8 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(config);
   } catch (error) {
     console.error("Get download config error:", error);
-    return NextResponse.json({ error: "获取下载配置失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "获取下载配置失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -171,7 +172,8 @@ export const PUT = withAuth(async function PUT(
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
     }
-    return NextResponse.json({ error: "更新下载配置失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "更新下载配置失败", detail: msg }, { status: 500 });
   }
 });
 
@@ -194,6 +196,7 @@ export const DELETE = withAuth(async function DELETE(
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "下载配置不存在" }, { status: 404 });
     }
-    return NextResponse.json({ error: "删除下载配置失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "删除下载配置失败", detail: msg }, { status: 500 });
   }
 });
