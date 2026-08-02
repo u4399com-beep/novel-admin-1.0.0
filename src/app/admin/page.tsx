@@ -72,6 +72,10 @@ const SiteClusterView = dynamic(() => import('@/components/site/SiteClusterView'
   ssr: false,
   loading: () => <AdminViewSkeletons view="sites" />,
 });
+const SettingsPage = dynamic(() => import('@/app/admin/settings/page'), {
+  ssr: false,
+  loading: () => <AdminViewSkeletons view="settings" />,
+});
 
 const VIEW_TITLES: Record<string, { title: string; description: string }> = {
   dashboard: { title: '仪表盘', description: '系统概览与数据统计' },
@@ -83,6 +87,7 @@ const VIEW_TITLES: Record<string, { title: string; description: string }> = {
   sites: { title: '站点集群', description: '管理多站点集群配置' },
   scrape: { title: '采集规则', description: '管理采集规则配置' },
   download: { title: '采集任务', description: '管理采集任务和下载' },
+  settings: { title: '系统设置', description: '配置系统参数和偏好' },
 };
 
 // View transition animation variants
@@ -198,6 +203,7 @@ export default function AdminPage() {
       case 'download': return <DownloadManagerView />;
       case 'themes': return <ThemeManagerView />;
       case 'sites': return <SiteClusterView />;
+      case 'settings': return <SettingsPage />;
       default: return <DashboardView />;
     }
   };
@@ -222,7 +228,7 @@ export default function AdminPage() {
               ${
                 isActive
                   ? 'bg-white/10 text-white'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                  : 'text-slate-400 hover:bg-accent/50 hover:text-slate-200'
               }
               ${sidebarCollapsed ? 'justify-center px-0' : ''}
             `}

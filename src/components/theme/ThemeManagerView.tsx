@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Palette,
   Plus,
@@ -9,6 +9,7 @@ import {
   Trash2,
   Star,
   Download,
+  Upload,
   Loader2,
   Check,
 } from 'lucide-react';
@@ -546,6 +547,7 @@ export default function ThemeManagerView() {
   const [editTheme, setEditTheme] = useState<Theme | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [previewTheme, setPreviewTheme] = useState<{ config: ThemeConfig; name: string } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const refreshThemes = useAppStore((s) => s.refreshVersions['themes'] ?? 0);
 
   const fetchThemes = useCallback(async () => {
@@ -604,6 +606,62 @@ export default function ThemeManagerView() {
     return typeof theme.config === 'string' ? ((tryParseJSON(theme.config) as ThemeConfig) ?? defaultThemeConfig()) : theme.config;
   };
 
+  // ─── Export theme ────────────────────────────────────────
+  const handleExport = (theme: Theme & { config: string | ThemeConfig }) => {
+    const config = getThemeConfig(theme);
+    const exportData = {
+      name: theme.name,
+      description: theme.description || '',
+      identifier: theme.identifier,
+      config,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `theme-${theme.identifier}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`已导出主题「${theme.name}」`);
+  };
+
+  // ─── Import theme ────────────────────────────────────────
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = tryParseJSON(text) as Record<string, unknown> | undefined;
+      if (!data || typeof data.name !== 'string' || !data.name.trim()) {
+        toast.error('无效的主题文件：缺少主题名称');
+        return;
+      }
+      const name = String(data.name).trim();
+      const description = typeof data.description === 'string' ? String(data.description).trim() : '';
+      const identifier = typeof data.identifier === 'string' ? String(data.identifier).trim() : `imported-${Date.now()}`;
+      let config: ThemeConfig = defaultThemeConfig();
+      if (data.config && typeof data.config === 'object') {
+        const configObj = data.config as Record<string, unknown>;
+        config = { ...defaultThemeConfig(), ...(configObj as Partial<ThemeConfig>) };
+        if (configObj.colors && typeof configObj.colors === 'object') {
+          config.colors = { ...defaultThemeConfig().colors, ...(configObj.colors as Partial<ThemeConfig['colors']>) };
+        }
+      }
+      await apiFetch('/api/themes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description: description || null, identifier, config }),
+      });
+      toast.success(`已导入主题「${name}」`);
+      fetchThemes();
+    } catch {
+      toast.error('导入失败：文件格式不正确');
+    }
+    if (importInputRef.current) importInputRef.current.value = '';
+  };
+
   if (loading) {
     return (
       <div className="p-6 space-y-4">
@@ -633,6 +691,34 @@ export default function ThemeManagerView() {
               导入预设主题
             </Button>
           )}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleImport}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => importInputRef.current?.click()}
+            className="gap-1.5"
+          >
+            <Upload className="h-4 w-4" />
+            导入主题
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (themes.length > 0) handleExport(themes[0]);
+            }}
+            disabled={themes.length === 0}
+            className="gap-1.5"
+          >
+            <Download className="h-4 w-4" />
+            导出主题
+          </Button>
           <Button
             size="sm"
             onClick={() => { setEditTheme(null); setFormOpen(true); }}
@@ -647,10 +733,12 @@ export default function ThemeManagerView() {
       {/* Empty State */}
       {themes.length === 0 && (
         <Card className="p-12 text-center">
-          <Palette className="h-12 w-12 mx-auto text-muted-foreground/40 mb-4" />
-          <h4 className="text-base font-medium text-muted-foreground mb-2">暂无主题</h4>
+          <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+            <Palette className="h-8 w-8 text-muted-foreground/50" />
+          </div>
+          <h4 className="text-base font-medium text-muted-foreground mb-2">暂无主题配置</h4>
           <p className="text-sm text-muted-foreground/70 mb-6">
-            点击「导入预设主题」快速加载 5 个精心设计的主题方案，或手动创建自定义主题
+            点击「创建第一个主题」开始自定义站点外观，或导入预设主题快速上手
           </p>
           <div className="flex items-center justify-center gap-3">
             <Button variant="outline" onClick={handleSeed} disabled={seeding}>
@@ -659,7 +747,7 @@ export default function ThemeManagerView() {
             </Button>
             <Button onClick={() => { setEditTheme(null); setFormOpen(true); }}>
               <Plus className="h-4 w-4 mr-1.5" />
-              创建主题
+              创建第一个主题
             </Button>
           </div>
         </Card>
@@ -690,6 +778,24 @@ export default function ThemeManagerView() {
 
                     {/* Info */}
                     <div className="px-4 pb-2">
+                      {/* Color swatch bar */}
+                      <div className="flex items-center gap-1.5 mb-3">
+                        {[
+                          config.colors.primary,
+                          config.colors.secondary,
+                          config.colors.accent,
+                          config.colors.background,
+                          config.colors.muted,
+                        ].map((color, i) => (
+                          <div
+                            key={i}
+                            className="h-5 flex-1 rounded-sm border"
+                            style={{ background: color, borderColor: config.colors.border }}
+                            title={color}
+                          />
+                        ))}
+                      </div>
+
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <h4 className="font-semibold text-sm leading-tight">{theme.name}</h4>
                         <Badge variant="secondary" className="text-[10px] shrink-0">
@@ -704,10 +810,6 @@ export default function ThemeManagerView() {
                           <Star className="h-3 w-3" />
                           {siteCount} 个站点使用
                         </span>
-                        <span
-                          className="inline-block w-3 h-3 rounded-full border"
-                          style={{ background: config.colors.primary, borderColor: config.colors.border }}
-                        />
                       </div>
                     </div>
 

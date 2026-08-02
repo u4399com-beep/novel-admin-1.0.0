@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod/v4';
 import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff, Type } from 'lucide-react';
 
 import {
   Dialog,
@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   Form,
   FormField,
@@ -36,6 +37,56 @@ const chapterSchema = z.object({
 });
 
 type ChapterFormValues = z.infer<typeof chapterSchema>;
+
+// ─── Format word count display ──────────────────────────────────────────────
+
+function formatWordCount(count: number): string {
+  const thousands = (count / 1000).toFixed(1);
+  return `${count.toLocaleString()}字 (约${thousands}千字)`;
+}
+
+// ─── Extract chapter number from title ─────────────────────────────────────
+
+function extractChapterNumber(title: string): number | null {
+  // Match patterns like "第12章", "第十二章", "Chapter 12", etc.
+  const patterns = [
+    /第([一二三四五六七八九十百千万零\d]+)章/,
+    /chapter\s*(\d+)/i,
+    /(\d+)\s*$/,
+  ];
+  for (const pattern of patterns) {
+    const match = title.match(pattern);
+    if (match) {
+      const raw = match[1];
+      // Try to convert Chinese numerals
+      const chineseMap: Record<string, number> = {
+        '零': 0, '一': 1, '二': 2, '三': 3, '四': 4,
+        '五': 5, '六': 6, '七': 7, '八': 8, '九': 9,
+        '十': 10, '百': 100, '千': 1000, '万': 10000,
+      };
+      const numericMatch = raw.match(/^\d+$/);
+      if (numericMatch) return parseInt(numericMatch[0], 10);
+      // Simple Chinese numeral conversion (supports 1-999)
+      let result = 0;
+      let current = 0;
+      for (const char of raw) {
+        if (chineseMap[char] !== undefined) {
+          const val = chineseMap[char];
+          if (val >= 10) {
+            if (current === 0) current = 1;
+            result += current * val;
+            current = 0;
+          } else {
+            current = val;
+          }
+        }
+      }
+      result += current;
+      return result > 0 ? result : null;
+    }
+  }
+  return null;
+}
 
 export function ChapterFormDialog() {
   const chapterFormOpen = useAppStore((s) => s.chapterFormOpen);
@@ -56,13 +107,58 @@ export function ChapterFormDialog() {
   });
 
   const watchedContent = form.watch('content');
+  const watchedTitle = form.watch('title');
   const wordCount = watchedContent ? watchedContent.length : 0;
+
+  // Preview mode toggle
+  const [isPreview, setIsPreview] = useState(false);
 
   // Reset form when dialog opens/closes or editingChapter changes
   const [fetchedContent, setFetchedContent] = useState<string | null>(null);
 
+  // Auto-suggest next chapter number for new chapters
+  const [titlePlaceholder, setTitlePlaceholder] = useState('请输入章节标题');
+  const nextChapterNumRef = useRef<number | null>(null);
+
+  // Fetch existing chapters to determine next chapter number
+  useEffect(() => {
+    if (!chapterFormOpen || isEditing || !selectedNovelId) return;
+
+    const fetchChapterCount = async () => {
+      try {
+        const data = await apiFetch<{ chapters?: Chapter[] }>(`/api/novels/${selectedNovelId}/chapters`);
+        const chapters = data.chapters || [];
+
+        if (chapters.length === 0) {
+          setTitlePlaceholder('请输入章节标题，如：第一章 开始');
+          nextChapterNumRef.current = null;
+          return;
+        }
+
+        // Find the highest chapter number
+        let maxNum = 0;
+        for (const ch of chapters) {
+          const num = extractChapterNumber(ch.title);
+          if (num !== null && num > maxNum) {
+            maxNum = num;
+          }
+        }
+
+        const nextNum = maxNum + 1;
+        nextChapterNumRef.current = nextNum;
+        setTitlePlaceholder(`第${nextNum}章`);
+      } catch {
+        setTitlePlaceholder('请输入章节标题');
+        nextChapterNumRef.current = null;
+      }
+    };
+
+    fetchChapterCount();
+  }, [chapterFormOpen, isEditing, selectedNovelId]);
+
   useEffect(() => {
     if (chapterFormOpen) {
+      setIsPreview(false);
       if (editingChapter) {
         // Fetch full chapter content since list API doesn't include it
         apiFetch<Chapter>(`/api/chapters/${editingChapter.id}`)
@@ -99,6 +195,7 @@ export function ChapterFormDialog() {
         setChapterFormOpen(false);
         setEditingChapter(null);
         form.reset({ title: '', content: '' });
+        setIsPreview(false);
       }
     },
     [setChapterFormOpen, setEditingChapter, form],
@@ -143,6 +240,19 @@ export function ChapterFormDialog() {
     } catch { /* handled by apiFetch */ }
   };
 
+  // Rendered content for preview mode
+  const previewContent = useMemo(() => {
+    if (!watchedContent) return null;
+    return watchedContent.split('\n').map((paragraph, i) => (
+      <p
+        key={i}
+        className={paragraph.trim() === '' ? 'h-4' : 'text-indent-[2em] mb-2 leading-[1.9]'}
+      >
+        {paragraph.trim()}
+      </p>
+    ));
+  }, [watchedContent]);
+
   return (
     <Dialog open={chapterFormOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
@@ -166,7 +276,7 @@ export function ChapterFormDialog() {
                   <FormLabel>章节标题</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="请输入章节标题"
+                      placeholder={titlePlaceholder}
                       {...field}
                     />
                   </FormControl>
@@ -180,18 +290,55 @@ export function ChapterFormDialog() {
               name="content"
               render={({ field }) => (
                 <FormItem className="flex-1 flex flex-col overflow-hidden">
+                  {/* Content toolbar */}
                   <div className="flex items-center justify-between">
-                    <FormLabel>章节内容</FormLabel>
+                    <div className="flex items-center gap-2">
+                      <FormLabel className="mb-0">章节内容</FormLabel>
+                      <Button
+                        type="button"
+                        variant={isPreview ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 text-xs gap-1.5"
+                        onClick={() => setIsPreview(!isPreview)}
+                      >
+                        {isPreview ? (
+                          <>
+                            <Type className="size-3.5" />
+                            编辑
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="size-3.5" />
+                            预览
+                          </>
+                        )}
+                      </Button>
+                    </div>
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      {wordCount.toLocaleString()} 字
+                      {formatWordCount(wordCount)}
                     </span>
                   </div>
+
+                  <Separator className="my-1" />
+
                   <FormControl>
-                    <Textarea
-                      placeholder="请输入章节内容..."
-                      className="flex-1 min-h-[300px] resize-none font-mono text-sm leading-relaxed"
-                      {...field}
-                    />
+                    {isPreview ? (
+                      <div className="flex-1 min-h-[300px] overflow-y-auto max-h-[50vh] rounded-md border border-input bg-background p-4 text-foreground leading-[1.9] tracking-wide text-sm">
+                        {watchedContent && watchedContent.trim() ? (
+                          previewContent
+                        ) : (
+                          <p className="text-muted-foreground text-center py-8">
+                            暂无内容可预览
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <Textarea
+                        placeholder="请输入章节内容..."
+                        className="flex-1 min-h-[300px] resize-none font-mono text-sm leading-relaxed"
+                        {...field}
+                      />
+                    )}
                   </FormControl>
                   <FormMessage />
                 </FormItem>

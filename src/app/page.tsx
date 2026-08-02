@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Search, Sun, Moon, Shield,
   ChevronLeft, ChevronRight, RotateCcw,
-  Menu, X, Book,
+  Menu, X, Book, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,12 +69,6 @@ const SORT_OPTIONS = [
   { value: 'monthly_rec', label: '月推荐榜' },
   { value: 'favorites', label: '收藏榜' },
 ];
-
-const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
-  ongoing: { label: '连载中', variant: 'default' },
-  completed: { label: '已完结', variant: 'secondary' },
-  hiatus: { label: '暂停中', variant: 'outline' },
-};
 
 function formatWordCount(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万字`;
@@ -140,7 +134,6 @@ function FilterRowSkeleton() {
 // ─── Novel Card ──────────────────────────────────────────────────────
 
 function NovelCard({ novel, index }: { novel: Novel; index: number }) {
-  const statusInfo = STATUS_MAP[novel.status] || STATUS_MAP.ongoing;
   const gradient = getGradient(novel.title);
 
   return (
@@ -153,7 +146,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
       onClick={() => window.location.href = `/novels/${novel.id}`}
     >
       {/* Cover */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-xl transition-all duration-300 group-hover:-translate-y-1">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-xl transition-all duration-200 group-hover:-translate-y-0.5">
         {novel.coverUrl ? (
           <img
             src={novel.coverUrl}
@@ -168,11 +161,38 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
             </span>
           </div>
         )}
-        {/* Status badge overlay */}
-        <div className="absolute top-2 left-2">
-          <Badge variant={statusInfo.variant} className="text-[10px] px-1.5 py-0">
-            {statusInfo.label}
-          </Badge>
+        {/* Category badge - top left */}
+        {novel.category && (
+          <div className="absolute top-2 left-2">
+            <span
+              className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+              style={{
+                backgroundColor: `${novel.category.color}cc`,
+                color: '#fff',
+              }}
+            >
+              {novel.category.name}
+            </span>
+          </div>
+        )}
+        {/* Status dot - top right */}
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              novel.status === 'ongoing'
+                ? 'bg-blue-400 shadow-[0_0_6px_rgba(96,165,250,0.6)]'
+                : novel.status === 'completed'
+                  ? 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]'
+                  : 'bg-gray-400'
+            }`}
+            title={
+              novel.status === 'ongoing'
+                ? '连载中'
+                : novel.status === 'completed'
+                  ? '已完结'
+                  : '暂停中'
+            }
+          />
         </div>
         {/* Chapter count overlay */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3 pt-8">
@@ -184,22 +204,14 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
       </div>
 
       {/* Info */}
-      <div className="mt-3 space-y-1.5 px-0.5">
+      <div className="mt-3 space-y-1 px-0.5">
         <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors">
           {novel.title}
         </h3>
+        <p className="text-xs text-muted-foreground line-clamp-1">
+          {novel._count.chapters}章
+        </p>
         <p className="text-xs text-muted-foreground line-clamp-1">{novel.author}</p>
-        {novel.category && (
-          <span
-            className="inline-block text-[10px] px-1.5 py-0.5 rounded-full"
-            style={{
-              backgroundColor: `${novel.category.color}18`,
-              color: novel.category.color,
-            }}
-          >
-            {novel.category.name}
-          </span>
-        )}
       </div>
     </motion.div>
   );
@@ -347,6 +359,13 @@ export default function HomePage() {
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Search suggestions state
+  const [suggestions, setSuggestions] = useState<{ id: string; title: string; author: string; category: { name: string; color: string } | null }[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ─── Fetch categories ────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -393,9 +412,60 @@ export default function HomePage() {
   // ─── Handlers ────────────────────────────────────────────────────
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setSearch(searchInput.trim());
+    const trimmed = searchInput.trim();
+    setSearch(trimmed);
     setPage(1);
+    setSuggestionsOpen(false);
   };
+
+  // ─── Search suggestions (debounced) ─────────────────────────
+  const query = searchInput.trim();
+  const hasQuery = query.length >= 1;
+
+  useEffect(() => {
+    if (!hasQuery) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setSuggestionsLoading(true);
+      try {
+        const res = await fetch(`/api/public/search-suggestions?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSuggestions(data.suggestions || []);
+          setSuggestionsOpen(true);
+        }
+      } catch { /* ignore */ }
+      setSuggestionsLoading(false);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [hasQuery, query]);
+
+  // ─── Close suggestions on outside click ─────────────────────
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSuggestionsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  // ─── Highlight matching part of title ───────────────────────
+  function highlightTitle(title: string) {
+    if (!query) return title;
+    const idx = title.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return title;
+    return (
+      <>
+        {title.slice(0, idx)}
+        <span className="font-bold text-primary">{title.slice(idx, idx + query.length)}</span>
+        {title.slice(idx + query.length)}
+      </>
+    );
+  }
 
   const handleCategoryChange = (slug: string) => {
     setActiveCategorySlug(slug === activeCategorySlug ? '' : slug);
@@ -648,23 +718,87 @@ export default function HomePage() {
             <h1 className="hidden sm:block text-xl font-bold tracking-tight shrink-0">
               小说搜索
             </h1>
-            <form onSubmit={handleSearch} className="relative flex-1 max-w-2xl">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="搜索小说名、作者..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="h-10 pl-10 pr-20 text-sm rounded-lg"
-              />
-              <Button
-                type="submit"
-                size="sm"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md"
-              >
-                搜索
-              </Button>
-            </form>
+            <div className="flex-1 max-w-2xl" ref={searchRef}>
+              <form onSubmit={handleSearch} className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+                <Input
+                  type="text"
+                  placeholder="搜索小说名、作者..."
+                  value={searchInput}
+                  onChange={(e) => {
+                    setSearchInput(e.target.value);
+                    if (!e.target.value.trim()) {
+                      setSuggestions([]);
+                      setSuggestionsOpen(false);
+                    }
+                  }}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setSuggestionsOpen(false); }}
+                  onFocus={() => { if (suggestions.length > 0) setSuggestionsOpen(true); }}
+                  className="h-10 pl-10 pr-20 text-sm rounded-lg"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md z-10"
+                >
+                  搜索
+                </Button>
+              </form>
+
+              {/* Suggestions Dropdown */}
+              <AnimatePresence>
+                {suggestionsOpen && (suggestionsLoading || suggestions.length > 0) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border bg-popover shadow-lg overflow-hidden"
+                  >
+                    {suggestionsLoading ? (
+                      <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        搜索中...
+                      </div>
+                    ) : (
+                      <div className="max-h-80 overflow-y-auto py-1">
+                        {suggestions.map((item) => (
+                          <button
+                            key={item.id}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-accent transition-colors"
+                            onClick={() => {
+                              router.push(`/novels/${item.id}`);
+                              setSuggestionsOpen(false);
+                            }}
+                          >
+                            <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm leading-tight truncate">
+                                {highlightTitle(item.title)}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                {item.author}
+                              </p>
+                            </div>
+                            {item.category && (
+                              <span
+                                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full"
+                                style={{
+                                  backgroundColor: `${item.category.color}18`,
+                                  color: item.category.color,
+                                }}
+                              >
+                                {item.category.name}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
             {search && (
               <Badge variant="secondary" className="shrink-0 text-xs">
                 &quot;{search}&quot;

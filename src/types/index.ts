@@ -148,7 +148,7 @@ export interface Site {
   updatedAt: string;
 }
 
-export type ViewType = "dashboard" | "novels" | "novel-detail" | "categories" | "tags" | "scrape" | "download" | "themes" | "sites";
+export type ViewType = "dashboard" | "novels" | "novel-detail" | "categories" | "tags" | "scrape" | "download" | "themes" | "sites" | "settings";
 
 export interface DownloadConfig {
   id: string;

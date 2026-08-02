@@ -12,11 +12,13 @@ import {
   LayoutGrid,
   List,
   X,
+  Trash2,
+  XCircle,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { safeFormatDate } from '@/lib/format';
-import { apiFetch, FetchError } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { Novel, Category, NovelStatus } from '@/types';
@@ -66,7 +69,11 @@ export default function NovelListView() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [categories, setCategories] = useState<Category[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
   const refreshNovels = useAppStore((s) => s.refreshVersions['novels'] ?? 0);
   const selectNovel = useAppStore((s) => s.selectNovel);
@@ -116,17 +123,65 @@ export default function NovelListView() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Ctrl/Cmd+K keyboard shortcut to focus search
+  // Ctrl/Cmd+K to focus search, Ctrl+A to select all
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA';
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         searchInputRef.current?.focus();
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'a' && !isInput && novels.length > 0) {
+        e.preventDefault();
+        setSelectedIds(new Set(novels.map((n) => n.id)));
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [novels]);
+
+  // Clear selection when novels list changes (e.g. page change)
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [novels]);
+
+  const allSelected = novels.length > 0 && selectedIds.size === novels.length;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(novels.map((n) => n.id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0 || deleting) return;
+    setDeleting(true);
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map((id) =>
+          apiFetch(`/api/novels/${id}`, { method: 'DELETE' }),
+        ),
+      );
+      setSelectedIds(new Set());
+      triggerRefresh('novels');
+    } catch {
+      // error handled silently; list will refresh on version bump
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Reset page when filters change
   useEffect(() => {
@@ -156,7 +211,7 @@ export default function NovelListView() {
   };
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
+    <div className="relative space-y-4 p-4 md:p-6">
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
@@ -286,15 +341,34 @@ export default function NovelListView() {
           {/* ── Grid View ──────────────────────────────────────────────── */}
           {viewMode === 'grid' && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {/* Select all row */}
+              <div className="col-span-full flex items-center gap-2 px-1">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="全选"
+                />
+                <span className="text-xs text-muted-foreground">全选</span>
+              </div>
               {novels.map((novel, idx) => {
                 const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
                 const gradient = gradients[idx % gradients.length];
                 return (
                   <Card
                     key={novel.id}
-                    className="group cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+                    className="group cursor-pointer overflow-hidden transition-shadow hover:shadow-md relative"
                     onClick={() => handleViewNovel(novel)}
                   >
+                    {/* Checkbox overlay */}
+                    <div className="absolute left-2 top-2 z-10">
+                      <Checkbox
+                        checked={selectedIds.has(novel.id)}
+                        onCheckedChange={() => toggleSelect(novel.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`选择 ${novel.title}`}
+                        className="bg-background/80 backdrop-blur-sm border-foreground/20"
+                      />
+                    </div>
                     {/* Cover */}
                     <div className={`relative h-40 w-full bg-gradient-to-br ${gradient}`}>
                       {novel.coverUrl ? (
@@ -393,15 +467,31 @@ export default function NovelListView() {
           {/* ── List View ──────────────────────────────────────────────── */}
           {viewMode === 'list' && (
             <div className="divide-y rounded-lg border">
+              {/* Select all header */}
+              <div className="flex items-center gap-3 px-3 py-2 bg-muted/30">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="全选"
+                />
+                <span className="text-xs text-muted-foreground">全选</span>
+              </div>
               {novels.map((novel, idx) => {
                 const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
                 const gradient = gradients[idx % gradients.length];
                 return (
                   <div
                     key={novel.id}
-                    className="flex items-center gap-3 py-2 px-3 transition-colors hover:bg-muted/50 cursor-pointer"
+                    className={`flex items-center gap-3 py-2 px-3 transition-colors hover:bg-muted/50 cursor-pointer ${selectedIds.has(novel.id) ? 'bg-primary/5' : ''}`}
                     onClick={() => handleViewNovel(novel)}
                   >
+                    {/* Checkbox */}
+                    <Checkbox
+                      checked={selectedIds.has(novel.id)}
+                      onCheckedChange={() => toggleSelect(novel.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`选择 ${novel.title}`}
+                    />
                     {/* Thumbnail */}
                     <div className={`h-10 w-8 flex-shrink-0 overflow-hidden rounded bg-gradient-to-br ${gradient}`}>
                       {novel.coverUrl ? (
@@ -501,6 +591,39 @@ export default function NovelListView() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Batch Action Bar ─────────────────────────────────────────── */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-xl border bg-background/95 px-5 py-3 shadow-2xl backdrop-blur-sm">
+          <span className="text-sm font-medium">已选择 {selectedIds.size} 项</span>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={deleting}
+            onClick={handleBatchDelete}
+          >
+            {deleting ? (
+              <span className="flex items-center gap-1.5">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                删除中...
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                <Trash2 className="h-3.5 w-3.5" />
+                批量删除
+              </span>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            <XCircle className="mr-1.5 h-3.5 w-3.5" />
+            取消选择
+          </Button>
+        </div>
       )}
     </div>
   );
