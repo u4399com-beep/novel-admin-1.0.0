@@ -1,10 +1,10 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
-import { withAuth } from "@/lib/api-auth";
 
 /**
- * Seed 23qb.net categories into the database.
- * Protected — requires admin authentication.
+ * Seed default categories into the database.
+ * Public endpoint — used for initial setup before login.
+ * Uses upsert so it's idempotent and safe to call multiple times.
  */
 const CATEGORIES_23QB = [
   {
@@ -113,16 +113,35 @@ const CATEGORIES_23QB = [
   },
 ];
 
-export const POST = withAuth(async function POST() {
+export async function POST() {
   try {
-    // Atomic: delete + create in a single transaction to prevent data loss
-    const [deleteResult, created] = await db.$transaction([
-      db.category.deleteMany(),
-      db.category.createMany({ data: CATEGORIES_23QB }),
-    ]);
-    console.log(`[Seed] Deleted ${deleteResult.count} existing categories`);
+    // Use upsert for each category — idempotent, safe to call repeatedly.
+    // Unlike deleteMany+createMany, this preserves existing data and
+    // won't fail due to foreign key constraints.
+    let createdCount = 0;
+    let updatedCount = 0;
 
-    // Fetch all created categories to return
+    for (const cat of CATEGORIES_23QB) {
+      const result = await db.category.upsert({
+        where: { slug: cat.slug },
+        update: {
+          name: cat.name,
+          description: cat.description,
+          color: cat.color,
+          icon: cat.icon,
+          sortOrder: cat.sortOrder,
+        },
+        create: cat,
+      });
+      // If updatedAt equals createdAt, it was just created
+      if (result.createdAt.getTime() === result.updatedAt.getTime()) {
+        createdCount++;
+      } else {
+        updatedCount++;
+      }
+    }
+
+    // Fetch all categories to return
     const categories = await db.category.findMany({
       orderBy: { sortOrder: "asc" },
       select: {
@@ -138,11 +157,15 @@ export const POST = withAuth(async function POST() {
     });
 
     return NextResponse.json({
-      message: `成功导入 ${created.count} 个分类`,
+      message: `成功导入分类：新建 ${createdCount} 个，更新 ${updatedCount} 个`,
       categories,
     });
   } catch (error) {
     console.error("Seed categories error:", error);
-    return NextResponse.json({ error: "导入分类失败" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      { error: "导入分类失败", detail: msg },
+      { status: 500 }
+    );
   }
-});
+}
