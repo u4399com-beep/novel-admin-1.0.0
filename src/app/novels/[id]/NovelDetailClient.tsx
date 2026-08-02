@@ -177,8 +177,8 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* ─── Back button ────────────────────────────────────── */}
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* ─── Back button ────────────────────────────── */}
         <Button
           variant="ghost"
           size="sm"
@@ -190,11 +190,11 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
         </Button>
 
         {/* ─── Novel info section ─────────────────────────────── */}
-        <section className="border-b pb-8">
+        <section className="rounded-2xl border bg-gradient-to-br from-muted/40 via-background to-muted/20 p-6 sm:p-8">
           <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
             {/* Cover */}
             <div className="shrink-0">
-              <div className="w-40 sm:w-48 aspect-[3/4] overflow-hidden rounded-xl shadow-lg">
+              <div className="w-48 h-64 overflow-hidden rounded-xl shadow-lg">
                 {novel.coverUrl ? (
                   <img
                     src={novel.coverUrl}
@@ -215,7 +215,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
 
             {/* Meta */}
             <div className="flex-1 min-w-0 space-y-4">
-              <div>
+              <div className="flex items-start gap-3">
                 <motion.h1
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -223,8 +223,17 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                 >
                   {novel.title}
                 </motion.h1>
-                <p className="mt-1.5 text-sm text-muted-foreground">{novel.author}</p>
+                <Button
+                  size="sm"
+                  disabled={chapters.length === 0}
+                  onClick={() => openReader(0)}
+                  className="shrink-0 mt-1 gap-1.5"
+                >
+                  <BookOpen className="h-4 w-4" />
+                  开始阅读
+                </Button>
               </div>
+              <p className="text-sm text-muted-foreground">{novel.author}</p>
 
               {/* Status & Category */}
               <div className="flex flex-wrap items-center gap-2">
@@ -241,22 +250,6 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                     {novel.category.name}
                   </span>
                 )}
-              </div>
-
-              {/* Stats row */}
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <FileText className="h-3.5 w-3.5" />
-                  总字数 {formatWordCount(novel.wordCount)}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <BookOpen className="h-3.5 w-3.5" />
-                  共 {novel._count.chapters} 章
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" />
-                  更新于 {formatDate(novel.updatedAt)}
-                </span>
               </div>
 
               {/* Tags */}
@@ -289,6 +282,28 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   </p>
                 </div>
               )}
+
+              {/* Prominent stats below description */}
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-2">
+                <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                  <div>
+                    <div className="text-lg font-semibold leading-none">{formatWordCount(novel.wordCount)}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">总字数</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2">
+                  <BookOpen className="h-4 w-4 text-primary" />
+                  <div>
+                    <div className="text-lg font-semibold leading-none">{novel._count.chapters}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">总章节</div>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Clock className="h-3.5 w-3.5" />
+                  更新于 {formatDate(novel.updatedAt)}
+                </span>
+              </div>
             </div>
           </div>
         </section>
@@ -304,7 +319,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
 
           {chapters.length === 0 ? (
             <div className="py-16 text-center">
-              <BookOpen className="mx-auto h-10 w-10 text-muted-foreground/40" />
+              <FileText className="mx-auto h-10 w-10 text-muted-foreground/40" />
               <p className="mt-3 text-sm text-muted-foreground">暂无章节</p>
             </div>
           ) : (
@@ -316,18 +331,10 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.2, delay: Math.min(index * 0.02, 0.5) }}
                   onClick={() => openReader(index)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors border-b last:border-b-0 group"
+                  className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/60 transition-colors border-b last:border-b-0 group ${index % 2 === 0 ? '' : 'bg-muted/30'}`}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="shrink-0 text-xs text-muted-foreground w-8 text-right tabular-nums">
-                      {chapter.sortOrder}
-                    </span>
-                    <span className="text-sm truncate group-hover:text-primary transition-colors">
-                      {chapter.title}
-                    </span>
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {formatWordCount(chapter.wordCount)}
+                  <span className="text-sm truncate group-hover:text-primary transition-colors">
+                    第{chapter.sortOrder}章 {chapter.title}{chapter.wordCount > 0 ? ` (${chapter.wordCount}字)` : ''}
                   </span>
                 </motion.button>
               ))}
@@ -344,30 +351,27 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
       {/* ─── Reader Dialog ────────────────────────────────────── */}
       <Dialog open={readerOpen} onOpenChange={setReaderOpen}>
         <DialogContent className="sm:max-w-3xl h-[85vh] max-h-[85vh] flex flex-col p-0 gap-0">
-          {/* Header */}
-          <DialogHeader className="shrink-0 border-b px-6 py-4">
+          {/* Progress indicator */}
+          <div className="shrink-0 border-b px-6 py-2 bg-muted/40">
             <div className="flex items-center justify-between">
-              <DialogTitle className="text-base font-semibold truncate pr-4">
-                {chapterTitle}
-              </DialogTitle>
+              <span className="text-xs text-muted-foreground font-medium">
+                第 {currentIndex + 1}/{chapters.length} 章
+              </span>
               <div className="flex items-center gap-1 shrink-0">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-7 w-7"
                   disabled={!hasPrev || loadingChapter}
                   onClick={() => goToChapter('prev')}
                   title="上一章 (←)"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-xs text-muted-foreground tabular-nums px-2">
-                  {currentIndex + 1} / {chapters.length}
-                </span>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-7 w-7"
                   disabled={!hasNext || loadingChapter}
                   onClick={() => goToChapter('next')}
                   title="下一章 (→)"
@@ -376,6 +380,13 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                 </Button>
               </div>
             </div>
+          </div>
+
+          {/* Header */}
+          <DialogHeader className="shrink-0 px-6 pt-4 pb-2">
+            <DialogTitle className="text-base font-semibold truncate">
+              {chapterTitle}
+            </DialogTitle>
           </DialogHeader>
 
           {/* Content */}
@@ -387,7 +398,8 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   <span className="ml-3 text-sm text-muted-foreground">加载中...</span>
                 </div>
               ) : chapterContent ? (
-                <div className="mx-auto max-w-2xl">
+                <div className="mx-auto max-w-3xl">
+                  <h3 className="text-lg font-semibold mb-6 pb-4 border-b text-center">{chapterTitle}</h3>
                   <article className="font-serif text-base leading-[1.9] text-foreground/90 whitespace-pre-wrap">
                     {chapterContent.split('\n').map((paragraph, i) => (
                       <p

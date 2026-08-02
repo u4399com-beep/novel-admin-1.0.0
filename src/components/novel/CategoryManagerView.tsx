@@ -12,6 +12,7 @@ import {
   FolderTree,
   Loader2,
   Tag,
+  SmilePlus,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -63,6 +64,14 @@ const categorySchema = z.object({
 });
 
 type CategoryFormData = z.infer<typeof categorySchema>;
+
+// ─── Emoji presets for icon picker ─────────────────────────────────────────
+const ICON_EMOJIS = [
+  '📚', '📖', '✨', '🔥', '💪', '💕', '🌟', '⚔️',
+  '🏰', '🐉', '🧙', '👑', '🗡️', '🌊', '🌙', '⚡',
+  '🌸', '🍃', '👻', '🚀', '🎭', '🎵', '🎲', '🔮',
+  '🐱', '🦊', '🐯', '🦅', '💎', '🎯', '🏆', '❤️',
+];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CategoryManagerView() {
@@ -272,19 +281,20 @@ export default function CategoryManagerView() {
                   />
                   <CardContent className="p-4 pl-5">
                     <div className="flex items-start gap-3">
-                      {/* Color dot + Info */}
+                      {/* Color dot + Icon + Info */}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <div
-                            className="h-3 w-3 shrink-0 rounded-full"
-                            style={{ backgroundColor: cat.color }}
-                          />
-                          <h3 className="truncate text-sm font-semibold">{cat.name}</h3>
-                          {cat.icon && (
-                            <span className="text-xs" title={cat.icon}>
+                          {cat.icon ? (
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-base" style={{ backgroundColor: cat.color + '20' }}>
                               {cat.icon}
                             </span>
+                          ) : (
+                            <div
+                              className="h-3.5 w-3.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: cat.color }}
+                            />
                           )}
+                          <h3 className="truncate text-sm font-semibold">{cat.name}</h3>
                         </div>
                         <div className="mt-0.5 flex items-center gap-2">
                           <code className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded">
@@ -389,16 +399,44 @@ export default function CategoryManagerView() {
             {/* Icon */}
             <div className="space-y-2">
               <Label htmlFor="cat-icon" className="flex items-center gap-1.5">
-                <Tag className="h-3.5 w-3.5" />
+                <SmilePlus className="h-3.5 w-3.5" />
                 图标
               </Label>
-              <Input
-                id="cat-icon"
-                placeholder="Emoji 或 Lucide 图标名（如: 💕, Sword, Flame）"
-                {...register('icon')}
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  id="cat-icon"
+                  placeholder="点击下方选择 Emoji"
+                  {...register('icon')}
+                  className="flex-1"
+                />
+                {watch('icon') && (
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted text-lg">
+                    {watch('icon')}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/50 p-2">
+                {ICON_EMOJIS.map((emoji) => {
+                  const isSelected = watch('icon') === emoji;
+                  return (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setValue('icon', isSelected ? '' : emoji)}
+                      className={`flex h-8 w-8 items-center justify-center rounded-md text-base transition-all hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                        isSelected
+                          ? 'bg-primary/15 ring-2 ring-primary scale-110'
+                          : 'hover:bg-muted'
+                      }`}
+                      aria-label={`选择图标 ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  );
+                })}
+              </div>
               <p className="text-xs text-muted-foreground">
-                支持 Emoji 或 Lucide 图标名称，用于前台展示
+                选择一个 Emoji 或手动输入 Lucide 图标名称（如 Sword、Flame）
               </p>
               {errors.icon && (
                 <p className="text-xs text-destructive">{errors.icon.message}</p>

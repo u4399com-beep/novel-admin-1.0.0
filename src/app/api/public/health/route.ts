@@ -26,13 +26,19 @@ export async function GET() {
 
     // Check key tables via Prisma (works for both SQLite and PostgreSQL)
     const expectedModels = ['Category', 'Novel', 'Chapter', 'ScrapeRule', 'ScrapeTask'];
+    // Prisma model names use camelCase for client access (e.g. db.scrapeRule, NOT db.scraperule)
+    const modelToProperty: Record<string, string> = {
+      Category: 'category',
+      Novel: 'novel',
+      Chapter: 'chapter',
+      ScrapeRule: 'scrapeRule',
+      ScrapeTask: 'scrapeTask',
+    };
     const missing: string[] = [];
-    // Try a lightweight count on each model — if the table doesn't exist,
-    // Prisma throws a recognizable error.
     for (const model of expectedModels) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (db as any)[model.toLowerCase()].count({ take: 1 });
+        await (db as any)[modelToProperty[model]].count({ take: 1 });
       } catch {
         missing.push(model);
       }

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Search, Sun, Moon, Shield,
   ChevronLeft, ChevronRight, RotateCcw,
+  Menu, X, Book,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -343,11 +344,13 @@ export default function HomePage() {
   const [loadingNovels, setLoadingNovels] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(true);
 
+  // Mobile menu state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   // ─── Fetch categories ────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      setLoadingCategories(true);
       try {
         const res = await fetch('/api/public/categories');
         if (!cancelled && res.ok) {
@@ -443,17 +446,17 @@ export default function HomePage() {
     if (search) parts.push(`搜索: ${search}`);
     if (activeCategorySlug) {
       const cat = categories.find((c) => c.slug === activeCategorySlug);
-      if (cat) parts.push(cat.name);
+      if (cat) parts.push(`分类: ${cat.name}`);
     }
     if (activeStatus) {
       const opt = STATUS_OPTIONS.find((o) => o.value === activeStatus);
-      if (opt) parts.push(opt.label);
+      if (opt) parts.push(`状态: ${opt.label}`);
     }
     if (activeWordCount !== 'all') {
       const opt = WORD_COUNT_OPTIONS.find((o) => o.value === activeWordCount);
-      if (opt) parts.push(opt.label);
+      if (opt) parts.push(`字数: ${opt.label}`);
     }
-    return parts.length > 0 ? parts.join(' · ') : '全部小说';
+    return parts.length > 0 ? parts.join(' | ') : '全部小说';
   };
 
   // ─── Pagination range ────────────────────────────────────────────
@@ -495,13 +498,13 @@ export default function HomePage() {
               首页
             </button>
             <button
-              onClick={() => document.getElementById('filter-section')?.scrollIntoView({ behavior: 'smooth' })}
+              onClick={() => router.push('/categories')}
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
               分类
             </button>
             <button
-              onClick={() => document.getElementById('novels-section')?.scrollIntoView({ behavior: 'smooth' })}
+              onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); router.push('/rankings'); }}
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
               排行榜
@@ -510,12 +513,22 @@ export default function HomePage() {
 
           {/* Right actions */}
           <div className="flex items-center gap-2">
+            {/* Hamburger menu - mobile only */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 sm:hidden"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="打开菜单"
+            >
+              <Menu className="h-4.5 w-4.5" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               aria-label="切换主题"
-              className="h-8 w-8"
+              className="h-8 w-8 hidden sm:inline-flex"
             >
               <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
               <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
@@ -524,12 +537,107 @@ export default function HomePage() {
               variant="ghost"
               size="sm"
               onClick={() => router.push('/login')}
-              className="gap-1.5 text-muted-foreground hover:text-foreground h-8"
+              className="gap-1.5 text-muted-foreground hover:text-foreground h-8 hidden sm:inline-flex"
             >
               <Shield className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">管理后台</span>
+              <span>管理后台</span>
             </Button>
           </div>
+
+          {/* Mobile Drawer Overlay */}
+          <AnimatePresence>
+            {mobileMenuOpen && (
+              <>
+                <motion.div
+                  key="drawer-overlay"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="fixed inset-0 z-[100] bg-black/50"
+                  onClick={() => setMobileMenuOpen(false)}
+                />
+                <motion.div
+                  key="drawer-panel"
+                  initial={{ x: '100%' }}
+                  animate={{ x: 0 }}
+                  exit={{ x: '100%' }}
+                  transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+                  className="fixed top-0 right-0 bottom-0 z-[101] w-72 bg-background border-l shadow-2xl"
+                >
+                  <div className="flex items-center justify-between p-4 border-b">
+                    <span className="font-semibold">菜单</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setMobileMenuOpen(false)}
+                      aria-label="关闭菜单"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <nav className="flex flex-col p-4 gap-1">
+                    <button
+                      onClick={() => {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                    >
+                      <BookOpen className="h-4 w-4 text-muted-foreground" />
+                      首页
+                    </button>
+                    <button
+                      onClick={() => {
+                        router.push('/categories');
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                    >
+                      <Search className="h-4 w-4 text-muted-foreground" />
+                      分类
+                    </button>
+                    <button
+                      onClick={() => {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        router.push('/rankings');
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                    >
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                      排行榜
+                    </button>
+                  </nav>
+                  <div className="border-t mx-4" />
+                  <div className="flex flex-col gap-1 p-4">
+                    <button
+                      onClick={() => {
+                        setTheme(theme === 'dark' ? 'light' : 'dark');
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                    >
+                      <Sun className="h-4 w-4 text-muted-foreground dark:hidden" />
+                      <Moon className="h-4 w-4 text-muted-foreground hidden dark:block" />
+                      {theme === 'dark' ? '浅色模式' : '深色模式'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        router.push('/login');
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                    >
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                      管理后台
+                    </button>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
         </div>
       </header>
 
@@ -625,6 +733,18 @@ export default function HomePage() {
               </Button>
             </div>
           )}
+
+          {/* Filter summary bar when filters are active */}
+          {hasActiveFilter && !loadingNovels && (
+            <div className="py-2.5 border-t">
+              <p className="text-center text-xs text-muted-foreground/70 bg-muted/30 rounded-md py-1.5 px-3">
+                找到 <span className="font-medium text-muted-foreground">{total}</span> 本小说
+                {getFilterSummary() !== '全部小说' && (
+                  <span className="ml-2 text-muted-foreground/50">{getFilterSummary()}</span>
+                )}
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
@@ -657,7 +777,7 @@ export default function HomePage() {
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-semibold">{getFilterSummary()}</h2>
                   <span className="text-sm text-muted-foreground">
-                    共 {total} 本
+                    共 {total} 本小说
                   </span>
                 </div>
               </motion.div>
@@ -685,11 +805,33 @@ export default function HomePage() {
                 transition={{ duration: 0.3 }}
                 className="flex flex-col items-center justify-center py-20 text-center"
               >
-                <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                  <BookOpen className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <h3 className="text-base font-medium mb-1">暂无小说</h3>
-                <p className="text-sm text-muted-foreground">试试其他关键词或筛选条件</p>
+                {hasActiveFilter ? (
+                  <>
+                    <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+                      <BookOpen className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-base font-medium mb-1">暂无匹配结果</h3>
+                    <p className="text-sm text-muted-foreground">试试其他关键词或筛选条件</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="h-20 w-20 rounded-2xl bg-muted flex items-center justify-center mb-5">
+                      <Book className="h-10 w-10 text-muted-foreground/50" />
+                    </div>
+                    <h3 className="text-xl font-semibold mb-2">暂无小说</h3>
+                    <p className="text-sm text-muted-foreground mb-6 max-w-xs">
+                      开始添加您的第一本小说，或等待采集任务自动入库
+                    </p>
+                    <Button
+                      variant="default"
+                      onClick={() => router.push('/login')}
+                      className="gap-2"
+                    >
+                      <Shield className="h-4 w-4" />
+                      前往管理后台
+                    </Button>
+                  </>
+                )}
               </motion.div>
             ) : (
               <motion.div
@@ -752,15 +894,17 @@ export default function HomePage() {
 
       {/* ─── Footer ──────────────────────────────────────────────── */}
       <footer className="mt-auto border-t bg-background/80 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-muted-foreground">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
-              <BookOpen className="h-4 w-4" />
-              <span className="font-medium">小说阁</span>
-              <span className="text-muted-foreground/40">·</span>
-              <span className="text-xs">沉浸式小说阅读体验</span>
+              <div className="h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center">
+                <BookOpen className="h-3.5 w-3.5 text-primary/70" />
+              </div>
+              <span className="font-semibold text-foreground/80">© 2026 小说阁</span>
+              <span className="text-muted-foreground/30">—</span>
+              <span className="text-muted-foreground/70">小说管理系统</span>
             </div>
-            <p className="text-xs text-muted-foreground/60">基于 Next.js 16 构建</p>
+            <p className="text-xs text-muted-foreground/50">基于 Next.js 16 构建</p>
           </div>
         </div>
       </footer>

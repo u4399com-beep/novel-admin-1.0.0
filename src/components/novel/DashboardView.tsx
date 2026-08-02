@@ -44,6 +44,8 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
   type ChartConfig,
 } from '@/components/ui/chart';
 import { apiFetch } from '@/lib/api-fetch';
@@ -82,7 +84,7 @@ const statusChartConfig: ChartConfig = {
 
 const activityChartConfig: ChartConfig = {
   chaptersCreated: {
-    label: '新增章节',
+    label: '章节更新',
     color: '#a78bfa',
   },
   novelsCreated: {
@@ -509,12 +511,15 @@ export function DashboardView() {
               </div>
             </div>
           ) : chartActivityData.length === 0 ? (
-            <div className="flex h-[180px] items-center justify-center text-sm text-muted-foreground">
-              暂无活动数据
+            <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
+              <div className="text-center">
+                <BarChart3 className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
+                <p>暂无数据</p>
+              </div>
             </div>
           ) : (
-            <ChartContainer config={activityChartConfig} className="h-[180px] w-full">
-              <AreaChart data={chartActivityData} margin={{ left: 0, right: 10, top: 5, bottom: 5 }}>
+            <ChartContainer config={activityChartConfig} className="h-[250px] w-full">
+              <AreaChart data={chartActivityData} margin={{ left: 0, right: 10, top: 5, bottom: 0 }}>
                 <defs>
                   <linearGradient id="chapterGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} />
@@ -529,7 +534,7 @@ export function DashboardView() {
                     <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.15} />
                 <XAxis
                   dataKey="name"
                   tickLine={false}
@@ -541,8 +546,18 @@ export function DashboardView() {
                   axisLine={false}
                   fontSize={12}
                   allowDecimals={false}
+                  label={{
+                    value: '数量',
+                    angle: -90,
+                    position: 'insideLeft',
+                    offset: -2,
+                    style: { fontSize: 12, fill: 'hsl(var(--muted-foreground))' },
+                  }}
                 />
                 <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend
+                  content={<ChartLegendContent nameKey="name" />}
+                />
                 <Area
                   type="monotone"
                   dataKey="scrapeRuns"

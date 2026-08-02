@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { signIn } from 'next-auth/react';
-import { BookOpen, Loader2, Eye, EyeOff, Sun, Moon } from 'lucide-react';
+import { BookOpen, Loader2, Eye, EyeOff, Sun, Moon, ArrowLeft } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,14 +47,23 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted/30 p-4 relative overflow-hidden">
-      {/* Decorative background elements */}
-      <div className="absolute top-1/4 -left-32 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-1/4 -right-32 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-background">
+      {/* Decorative background pattern */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,rgba(120,80,220,0.06),transparent_50%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(120,80,220,0.04),transparent_50%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_80%,rgba(100,60,200,0.05),transparent_50%)]" />
+      {/* Subtle dot pattern overlay */}
+      <div
+        className="absolute inset-0 opacity-[0.015] dark:opacity-[0.03]"
+        style={{
+          backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
+      />
 
       {/* Theme toggle */}
       {mounted && (
-        <div className="absolute top-4 right-4">
+        <div className="absolute top-4 right-4 z-20">
           <Button
             variant="ghost"
             size="icon"
@@ -65,17 +76,22 @@ export default function LoginPage() {
         </div>
       )}
 
-      <div className="w-full max-w-sm relative z-10">
+      <motion.div
+        className="w-full max-w-sm relative z-10"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+      >
         {/* Logo / Brand */}
         <div className="flex flex-col items-center mb-8">
-          <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
+          <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/25">
             <BookOpen className="h-7 w-7 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">小说管理系统</h1>
-          <p className="text-sm text-muted-foreground mt-1">Novel Management System</p>
+          <h1 className="text-2xl font-bold tracking-tight">小说阁</h1>
+          <p className="text-sm text-muted-foreground mt-1">管理后台登录</p>
         </div>
 
-        <Card className="border-border/50 shadow-xl shadow-black/5">
+        <Card className="border-border/60 shadow-2xl shadow-black/[0.08] dark:shadow-black/20 backdrop-blur-sm">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-lg text-center">登录</CardTitle>
             <CardDescription className="text-center text-xs">
@@ -143,14 +159,24 @@ export default function LoginPage() {
                   '登录'
                 )}
               </Button>
+
+              <div className="pt-1">
+                <Link
+                  href="/"
+                  className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  返回首页
+                </Link>
+              </div>
             </form>
           </CardContent>
         </Card>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Novel Management System v1.0.0
+          小说阁 v1.0.0
         </p>
-      </div>
+      </motion.div>
     </div>
   );
 }

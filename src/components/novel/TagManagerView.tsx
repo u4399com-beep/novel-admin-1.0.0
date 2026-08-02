@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod/v4';
 import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
-import { apiFetch, FetchError } from '@/lib/api-fetch';
+import { apiFetch } from '@/lib/api-fetch';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -16,8 +16,6 @@ import {
   Loader2,
   Palette,
 } from 'lucide-react';
-import { ColorPicker } from '@/components/ui/color-picker';
-
 import { useAppStore } from '@/stores/app-store';
 import type { Tag } from '@/types';
 
@@ -67,6 +65,24 @@ const tagSchema = z.object({
 });
 
 type TagFormValues = z.infer<typeof tagSchema>;
+
+// ─── Hash-based color generator ───────────────────────────────────────────
+function hashColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 65%, 55%)`;
+}
+
+const TAG_PRESET_COLORS = [
+  '#ef4444', '#f97316', '#f59e0b', '#eab308',
+  '#84cc16', '#22c55e', '#14b8a6', '#06b6d4',
+  '#0ea5e9', '#6366f1', '#8b5cf6', '#d946ef',
+  '#ec4899', '#f43f5e', '#78716c', '#64748b',
+];
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function TagManagerView() {
@@ -322,9 +338,62 @@ export default function TagManagerView() {
                         颜色
                       </span>
                     </FormLabel>
-                    <FormControl>
-                      <ColorPicker value={field.value} onChange={field.onChange} />
-                    </FormControl>
+                    <div className="space-y-3">
+                      {/* Preview */}
+                      <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
+                        <span
+                          className="inline-block h-5 w-5 shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/10"
+                          style={{ backgroundColor: field.value }}
+                        />
+                        <span
+                          className="rounded-md px-2 py-0.5 text-sm font-medium"
+                          style={{ backgroundColor: field.value + '20', color: field.value }}
+                        >
+                          {form.watch('name') || '标签预览'}
+                        </span>
+                      </div>
+                      {/* Preset color buttons */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {TAG_PRESET_COLORS.map((c) => {
+                          const isActive = field.value.toLowerCase() === c.toLowerCase();
+                          return (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => field.onChange(c)}
+                              className={`h-7 w-7 rounded-full border-2 transition-all hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                                isActive
+                                  ? 'border-foreground scale-110 ring-2 ring-ring ring-offset-2 ring-offset-background'
+                                  : 'border-transparent'
+                              }`}
+                              style={{ backgroundColor: c }}
+                              aria-label={`选择颜色 ${c}`}
+                            />
+                          );
+                        })}
+                      </div>
+                      {/* Custom color input */}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={field.value}
+                          onChange={(e) => field.onChange(e.target.value)}
+                          className="h-8 w-8 cursor-pointer rounded-md border border-input bg-transparent p-0.5 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-none"
+                        />
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {field.value}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="ml-auto text-xs"
+                          onClick={() => field.onChange(hashColor(form.watch('name') || 'tag'))}
+                        >
+                          自动取色
+                        </Button>
+                      </div>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -340,7 +409,7 @@ export default function TagManagerView() {
                   取消
                 </Button>
                 <Button type="submit" disabled={submitting}>
-                  {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {submitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                   {submitting ? '保存中...' : '保存'}
                 </Button>
               </DialogFooter>

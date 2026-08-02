@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search,
   BookOpen,
@@ -66,6 +66,7 @@ export default function NovelListView() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [categories, setCategories] = useState<Category[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const refreshNovels = useAppStore((s) => s.refreshVersions['novels'] ?? 0);
   const selectNovel = useAppStore((s) => s.selectNovel);
@@ -115,6 +116,18 @@ export default function NovelListView() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // Ctrl/Cmd+K keyboard shortcut to focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
@@ -158,6 +171,7 @@ export default function NovelListView() {
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             placeholder="搜索小说标题或作者..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -221,7 +235,12 @@ export default function NovelListView() {
 
       {/* ── Result Count ────────────────────────────────────────────────── */}
       {!loading && novels.length > 0 && (
-        <p className="text-xs text-muted-foreground">共 {total} 部小说</p>
+        <p className="text-xs text-muted-foreground">
+          {search ? `搜索结果 (${total})` : `共 ${total} 部小说`}
+          <kbd className="ml-2 hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground sm:inline-block">
+            Ctrl+K
+          </kbd>
+        </p>
       )}
 
       {/* ── Loading Skeleton ─────────────────────────────────────────────── */}
