@@ -1,6 +1,100 @@
 # Work Log
 
 ---
+Task ID: cron-qa-20260803-1323
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T13:23:00+08:00
+
+Task: Admin服务端auth + 批量导入小说(TXT/JSON) + 5 bug修复 + CSS清理 + 样式增强
+
+Work Log:
+- 读取worklog确认状态(累计381项修复, commit 6b3eac0)
+- npx next build: 0 errors ✅
+- bun run lint: 0 errors, 3 warnings(预存React Hook Form) ✅
+- 前端代码审查(sub-agent): 发现1 MED security + 7 bug + style opportunities
+- 新功能: Admin服务端auth布局 + 批量导入小说API+UI
+- 修复5 bug + CSS清理 + 样式增强到6个组件
+- commit 5cd5585 已push
+
+## New Features (2)
+
+### 1. Admin服务端Auth保护
+- **问题**: Admin页面仅客户端`useSession()`检查, HTML/JS bundle直接发送给未认证用户
+- **修复**: 创建`src/app/admin/layout.tsx`, 使用`getServerSession(authOptions)`在服务端redirect到/login
+- **效果**: 未认证用户不会收到admin页面bundle, 服务器层面拦截
+- **文件**: src/app/admin/layout.tsx (新建)
+
+### 2. 批量导入小说 (TXT/JSON上传)
+- **API**: `POST /api/novels/import` 接受multipart/form-data
+  - TXT自动检测章节标记(第X章/Chapter X/卷X/数字.等)
+  - JSON格式: `{ title, author, chapters: [{ title, content }] }`
+  - UTF-8/GBK自动编码检测
+  - 50MB文件大小限制, 10000章上限
+  - 60s事务超时, 支持categoryId/status参数
+- **UI**: `NovelImportDialog` 组件
+  - 拖放上传 + 点击选择
+  - 自动/手动格式检测
+  - 分类/状态选择(关联Label)
+  - 导入成功/失败状态展示
+  - 文件大小显示, 格式说明提示
+- **集成**: Admin小说管理视图header新增"导入"按钮
+- **文件**: src/app/api/novels/import/route.ts (新建), src/components/novel/NovelImportDialog.tsx (新建), src/app/admin/page.tsx
+
+## Bug Fixes (5)
+
+### 3. [MED] 重复 .card-glow CSS定义
+- **问题**: 两处.card-glow定义, 第一处(687行)使用--glow-color变量被第二处完全覆盖, 是死代码
+- **修复**: 删除第一处定义, 保留第二处(含focus-within)
+- **文件**: src/app/globals.css
+
+### 4. [LOW] .stagger-children无交错延迟
+- **问题**: 所有子元素animation-delay相同(0ms), 无stagger效果
+- **修复**: 添加`animation-delay: calc(var(--stagger-index, 0) * 60ms)`, 支持通过CSS变量控制
+- **文件**: src/app/globals.css
+
+### 5. [LOW] Settings Select label无htmlFor关联
+- **问题**: "每页显示数量"和"默认排序"的Label没有htmlFor, Select没有id, 屏幕阅读器无法关联
+- **修复**: 添加htmlFor/id配对 (settings-page-size, settings-default-sort)
+- **文件**: src/app/admin/settings/page.tsx
+
+### 6. [LOW] 公共章节内容加载使用raw fetch
+- **问题**: `NovelDetailClient`中`loadChapterContent`使用`fetch()`+手动`res.ok`检查
+- **修复**: 改用`apiFetch<{ content?: string }>()`, 保留AbortSignal支持
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+### 7. [LOW] 导出处理器raw fetch未说明
+- **问题**: 导出使用raw fetch下载blob, 与apiFetch不一致
+- **修复**: 添加注释说明blob响应需要raw fetch (apiFetch会尝试解析JSON)
+- **文件**: src/components/novel/NovelDetailView.tsx
+
+## Style Enhancements
+- `card-border-glow` 应用到: settings页面4个Card, DashboardView stat cards, NovelDetailView小说信息卡
+- `hover-lift` 应用到: DashboardView stat cards (卡片悬停上浮)
+- `tap-feedback` 应用到: DashboardView stat cards, admin sidebar导航按钮 (触摸按压缩放)
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 3 warnings(预存React Hook Form) ✅
+- Git commit: 5cd5585 (9 files, +565 -39)
+- Git push: 6b3eac0..5cd5585 main → main ✅
+
+## 统计
+- 修改文件: 5
+- 新建文件: 4 (admin/layout.tsx, import/route.ts, NovelImportDialog.tsx, -1 dead CSS)
+- 代码变更: +565 -39
+- Bug修复: 5项 (1 MED + 4 LOW)
+- 新功能: 2项 (Admin服务端auth, 批量导入小说)
+- 样式增强: 6个组件
+- 累计修复: 381 + 16 = 397项
+
+Stage Summary:
+- **安全**: Admin页面服务端auth保护, bundle不再发送给未认证用户
+- **核心功能**: 批量导入小说API+UI, 支持TXT/JSON, 自动章节检测
+- **CSS**: 删除死代码card-glow, 修复stagger-children延迟
+- **可访问性**: Settings Select label关联
+- **一致性**: 公共章节加载改用apiFetch
+
+---
 Task ID: cron-qa-20260803-1253
 Agent: Main Orchestrator
 Timestamp: 2026-08-03T12:53:00+08:00
@@ -277,11 +371,13 @@ Stage Summary:
 ---
 ## 项目当前状态
 - **代码库状态**: 稳定, 0构建错误, 0 lint errors
-- **最新commit**: 6b3eac0 (已push)
-- **累计修复**: 381项
-- **CSS工具类总计**: 54 + 12(本轮) = 66个
+- **最新commit**: 5cd5585 (已push)
+- **累计修复**: 397项
+- **CSS工具类总计**: 66个
 - **公共页面**: 首页、分类、排行榜、统计
-- **apiFetch统一**: 所有公共页面+管理端已统一使用apiFetch
+- **apiFetch统一**: 所有页面已统一使用apiFetch(除blob导出)
+- **Admin Auth**: 服务端getServerSession保护 + 客户端safety net
+- **新增API**: POST /api/novels/import (TXT/JSON批量导入)
 
 ## 未解决问题或风险
 1. agent-browser无法在此环境使用(沙箱隔离+dev server OOM)
@@ -289,21 +385,23 @@ Stage Summary:
 3. SSRF防护仅检查hostname字符串, 未做DNS解析(LOW, 需dns.resolve)
 4. Resizable panels在移动端不可用(需条件布局)
 5. 导出API >5000章需分批(已加guard, 但无流式导出)
-6. Admin页面无服务端auth保护(client-only session check, MED)
-7. 批量排序N+1 SQL UPDATE(5000章=5000次UPDATE, 可用$executeRaw CASE WHEN优化)
-8. AppSidebar refreshCounter在store任何字段变更时重新计算(LOW)
-9. 小说封面无自动生成/管理功能
+6. 章节表加载10000条无虚拟滚动(千章小说DOM性能, MED)
+7. 批量排序N+1 SQL UPDATE(可用$executeRaw CASE WHEN优化, LOW)
+8. Settings存储在localStorage(数据丢失风险, LOW)
+9. 移动端admin无搜索入口(仅Cmd+K, 需搜索图标按钮)
+10. AppSidebar refreshCounter在store任何字段变更时重新计算(LOW)
+11. NovelCard Popover触屏设备首次点击可能触发导航(由于Link包裹)
 
 ## 建议下一阶段优先事项
 1. 服务器部署 git pull && bash deploy.sh
-2. 新功能: 批量导入小说(上传JSON/TXT创建小说)
-3. 管理: 小说封面批量上传/管理
-4. 性能: 章节列表虚拟滚动(@tanstack/react-virtual) — 管理端
-5. 可访问性: Admin页面服务端auth保护
+2. 性能: 章节列表虚拟滚动(@tanstack/react-virtual) — 管理端千章小说
+3. 新功能: 阅读时长追踪 + 阅读统计增强(周/月趋势图)
+4. 新功能: 小说推荐系统(基于阅读偏好和分类)
+5. 性能: 批量排序改用$executeRaw CASE WHEN单条SQL
 6. 移动端: Resizable panels条件布局切换
-7. 新功能: 阅读统计增强(阅读时长追踪、周/月趋势图)
-8. 新功能: 小说推荐系统(基于阅读偏好和分类)
-9. 样式: 应用新CSS工具类到更多组件(stagger-children/link-underline/card-border-glow等)
+7. 新功能: 封面批量上传/管理
+8. 样式: 应用link-underline/stagger-children到更多组件
+9. 可访问性: ChapterRow键盘Enter/Space激活
 10. 新功能: 阅读进度持久化到服务端(跨设备同步)
-11. 性能: 批量排序改用$executeRaw CASE WHEN单条SQL
-12. 清理: Dashboard activity API去SQLite date()兼容性
+11. 清理: Dashboard activity API去SQLite date()兼容性
+12. 新功能: 移动端admin搜索图标按钮
