@@ -1172,6 +1172,7 @@ export default function NovelDetailView() {
                   <Button
                     variant={batchMode ? 'default' : 'outline'}
                     size="sm"
+                    aria-label="批量操作"
                     className="h-7 text-xs gap-1"
                     onClick={() => {
                       setBatchMode(!batchMode);
@@ -1190,7 +1191,7 @@ export default function NovelDetailView() {
                       </>
                     )}
                   </Button>
-                  <Button size="sm" onClick={handleNewChapter}>
+                  <Button size="sm" aria-label="新建章节" onClick={handleNewChapter}>
                     <Plus className="size-4" />
                     新建章节
                   </Button>

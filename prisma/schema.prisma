@@ -69,6 +69,7 @@ model Novel {
   @@index([updatedAt])
   @@index([clickCount])
   @@index([favoriteCount])
+  @@index([title])
 }
 
 // 小说-标签关联
@@ -79,6 +80,7 @@ model NovelTag {
   tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([novelId, tagId])
+  @@index([tagId])
 }
 
 // 章节
@@ -96,6 +98,7 @@ model Chapter {
   updatedAt DateTime @updatedAt
 
   @@index([novelId, sortOrder])
+  @@index([novelId, sourceUrl])
 }
 
 // ==================== 采集系统 ====================
@@ -161,6 +164,7 @@ model ScrapeRule {
 
   @@index([enabled])
   @@index([engine])
+  @@index([updatedAt])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -178,6 +182,8 @@ model AiRuleGeneration {
   errorMessage  String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([createdAt])
 }
 
 // 采集任务
@@ -229,6 +235,7 @@ model ScrapeLog {
   @@index([taskId])
   @@index([level])
   @@index([createdAt])
+  @@index([taskId, createdAt])
 }
 
 // ==================== 站群系统 ====================

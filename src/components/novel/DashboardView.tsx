@@ -176,8 +176,8 @@ export function DashboardView() {
       setLoading(true);
       setError(null);
       const [statsRes, activityRes] = await Promise.allSettled([
-        apiFetch<DashboardStats>('/api/dashboard'),
-        apiFetch<ActivityData>('/api/dashboard/activity'),
+        apiFetch<DashboardStats>('/api/dashboard', { signal }),
+        apiFetch<ActivityData>('/api/dashboard/activity', { signal }),
       ]);
       if (signal?.aborted) return;
       if (statsRes.status === 'fulfilled') {
@@ -196,9 +196,9 @@ export function DashboardView() {
   }, []);
 
   useEffect(() => {
-    const ac = new AbortController();
-    fetchDashboard(ac.signal);
-    return () => ac.abort();
+    const controller = new AbortController();
+    fetchDashboard(controller.signal);
+    return () => { controller.abort(); };
   }, [fetchDashboard, refreshDashboard]);
 
   // ─── Quick actions ─────────────────────────────────────────────────────

@@ -571,26 +571,29 @@ export default function ThemeManagerView() {
 
   const handleSeed = async () => {
     setSeeding(true);
-    const results = await Promise.allSettled(
-      PREBUILT_THEMES.map((t) => {
-        const { name, identifier, description, seo, geo, ...rest } = t;
-        const config: ThemeConfig = { ...rest, seo, geo };
-        return apiFetch('/api/themes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, identifier, description, config }),
-        });
-      })
-    );
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    const okCount = results.filter((r) => r.status === 'fulfilled').length;
-    if (failed > 0) {
-      toast.warning(`成功导入 ${okCount} 个主题，${failed} 个已存在或失败`);
-    } else {
-      toast.success(`预设主题已导入（${okCount} 个）`);
+    try {
+      const results = await Promise.allSettled(
+        PREBUILT_THEMES.map((t) => {
+          const { name, identifier, description, seo, geo, ...rest } = t;
+          const config: ThemeConfig = { ...rest, seo, geo };
+          return apiFetch('/api/themes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, identifier, description, config }),
+          });
+        })
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      const okCount = results.filter((r) => r.status === 'fulfilled').length;
+      if (failed > 0) {
+        toast.warning(`成功导入 ${okCount} 个主题，${failed} 个已存在或失败`);
+      } else {
+        toast.success(`预设主题已导入（${okCount} 个）`);
+      }
+      fetchThemes();
+    } finally {
+      setSeeding(false);
     }
-    fetchThemes();
-    setSeeding(false);
   };
 
   const handleDelete = async () => {

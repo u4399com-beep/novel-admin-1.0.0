@@ -1,41 +1,18 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { sanitizeField } from '@/lib/api-utils';
-import { withPublicRateLimit } from '@/lib/api-auth';
-
-// ─── Simple IP-based rate limiter ──────────────────────────────────
-const _rateStore = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 60;
-const RATE_WINDOW = 60_000;
-
-function publicRateLimit(request: NextRequest): boolean {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  const now = Date.now();
-  const entry = _rateStore.get(ip);
-  if (!entry || now > entry.resetAt) {
-    _rateStore.set(ip, { count: 1, resetAt: now + RATE_WINDOW });
-    return true;
-  }
-  entry.count++;
-  if (entry.count > RATE_LIMIT) return false;
-  return true;
-}
-
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, val] of _rateStore) {
-      if (now > val.resetAt) _rateStore.delete(key);
-    }
-  }, 60_000);
-}
+import { getClientIp, publicRateLimit } from '@/lib/public-rate-limit';
 
 /**
  * Public search-suggestions API — no auth required.
  * Returns top 8 novel titles matching the query (case-insensitive).
  * GET ?q=keyword
  */
-export const GET = withPublicRateLimit({ capacity: 30, refillRate: 2 }, async function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
+  if (publicRateLimit(getClientIp(request))) {
+    return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const q = sanitizeField(searchParams.get('q'), 100);
@@ -77,4 +54,4 @@ export const GET = withPublicRateLimit({ capacity: 30, refillRate: 2 }, async fu
       { status: 500 },
     );
   }
-});
+}

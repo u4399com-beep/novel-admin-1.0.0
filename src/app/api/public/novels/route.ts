@@ -1,35 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeField } from "@/lib/api-utils";
-import { withPublicRateLimit } from "@/lib/api-auth";
-
-// ─── Simple IP-based rate limiter for public endpoints ──────────────
-const _rateStore = new Map<string, { count: number; resetAt: number }>();
-const PUBLIC_RATE_LIMIT = 60; // requests per minute
-const PUBLIC_RATE_WINDOW = 60_000; // 1 minute
-
-function publicRateLimit(request: NextRequest): boolean {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  const now = Date.now();
-  const entry = _rateStore.get(ip);
-  if (!entry || now > entry.resetAt) {
-    _rateStore.set(ip, { count: 1, resetAt: now + PUBLIC_RATE_WINDOW });
-    return true;
-  }
-  entry.count++;
-  if (entry.count > PUBLIC_RATE_LIMIT) return false;
-  return true;
-}
-
-// Cleanup expired entries periodically
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, val] of _rateStore) {
-      if (now > val.resetAt) _rateStore.delete(key);
-    }
-  }, 60_000);
-}
+import { getClientIp, publicRateLimit } from "@/lib/public-rate-limit";
 
 // ─── 23qb.net 字数区间映射 ─────────────────────────────────────────
 const WORD_COUNT_RANGES: Record<string, { min: number; max: number }> = {
@@ -63,7 +35,12 @@ const SORT_MAP: Record<string, { field: string; direction: "asc" | "desc" }> = {
  *   - status: 状态筛选 (ongoing|completed|"")
  *   - sort: 排序方式 (last_update|new_entry|new_hot|weekly_click|...)
  */
-export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
+  // Rate limit check
+  if (publicRateLimit(getClientIp(request))) {
+    return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const rawPage = searchParams.get("page") || "1";
@@ -172,4 +149,4 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     console.error("Public novels API error:", error);
     return NextResponse.json({ error: "获取小说列表失败" }, { status: 500 });
   }
-});
+}

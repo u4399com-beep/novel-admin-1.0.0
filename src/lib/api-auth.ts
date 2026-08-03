@@ -214,8 +214,9 @@ export function withAuth(handlerOrOpts: ApiHandler | WithAuthOptions, maybeHandl
       return response;
     } catch (error) {
       console.error(`[${requestId}] API error:`, error);
+      const detail = process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined;
       return NextResponse.json(
-        { error: '服务器内部错误' },
+        { error: '服务器内部错误', ...(detail !== undefined ? { detail } : {}) },
         { status: 500, headers: { 'X-Request-ID': requestId } }
       );
     }

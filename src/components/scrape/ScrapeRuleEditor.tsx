@@ -202,9 +202,13 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
       return;
     }
 
+    const controller = new AbortController();
+
     async function loadRule() {
       try {
-        const rule = await apiFetch<Record<string, unknown>>(`/api/scrape-rules/${ruleId}`);
+        const rule = await apiFetch<Record<string, unknown>>(`/api/scrape-rules/${ruleId}`, {
+          signal: controller.signal,
+        });
 
         const str = (k: string) => (rule[k] as string | null) ?? null;
         const num = (k: string) => (rule[k] as number | null) ?? null;
@@ -275,6 +279,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
     }
 
     loadRule();
+    return () => { controller.abort(); };
   }, [ruleId, reset]);
 
   const onSubmit = async (data: FormValues) => {

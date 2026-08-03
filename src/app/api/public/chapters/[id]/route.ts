@@ -1,43 +1,16 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { withPublicRateLimit } from "@/lib/api-auth";
-
-// ─── Simple IP-based rate limiter ──────────────────────────────────
-const _rateStore = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 120;
-const RATE_WINDOW = 60_000;
-
-function publicRateLimit(request: NextRequest): boolean {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  const now = Date.now();
-  const entry = _rateStore.get(ip);
-  if (!entry || now > entry.resetAt) {
-    _rateStore.set(ip, { count: 1, resetAt: now + RATE_WINDOW });
-    return true;
-  }
-  entry.count++;
-  if (entry.count > RATE_LIMIT) return false;
-  return true;
-}
-
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, val] of _rateStore) {
-      if (now > val.resetAt) _rateStore.delete(key);
-    }
-  }, 60_000);
-}
+import { getClientIp, publicRateLimit } from "@/lib/public-rate-limit";
 
 /**
  * Public chapter content API — no auth required.
  * Returns full chapter (id, title, content, wordCount) with parent novel info.
  */
-export const GET = withPublicRateLimit(async function GET(
+export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!publicRateLimit(request)) {
+  if (publicRateLimit(getClientIp(request), 120)) {
     return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
   }
 
@@ -66,4 +39,4 @@ export const GET = withPublicRateLimit(async function GET(
     console.error("Public chapter content API error:", error);
     return NextResponse.json({ error: '获取章节内容失败' }, { status: 500 });
   }
-});
+}

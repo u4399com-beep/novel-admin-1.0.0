@@ -32,6 +32,6 @@ export const GET = withPublicRateLimit(async function GET(
     return NextResponse.json({ ...rest, tags: tagList });
   } catch (error) {
     console.error("Public novel detail API error:", error);
-    return NextResponse.json({ error: "获取小说详情失败"}, { status: 500 });
+    return NextResponse.json({ error: "获取小说详情失败" }, { status: 500 });
   }
 });

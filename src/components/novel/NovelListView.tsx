@@ -94,9 +94,9 @@ export default function NovelListView() {
 
   // Fetch categories for filter
   useEffect(() => {
-    const ac = new AbortController();
-    apiFetch<Category[]>('/api/categories', { signal: ac.signal }).then(setCategories).catch(() => {});
-    return () => ac.abort();
+    const controller = new AbortController();
+    apiFetch<Category[]>('/api/categories', { signal: controller.signal }).then(setCategories).catch(() => {});
+    return () => { controller.abort(); };
   }, []);
 
   // Fetch novels (unified effect to avoid double requests on filter change)
@@ -399,8 +399,11 @@ export default function NovelListView() {
                 return (
                   <Card
                     key={novel.id}
+                    role="article"
+                    tabIndex={0}
                     className="group cursor-pointer overflow-hidden transition-shadow hover:shadow-md relative"
                     onClick={() => handleViewNovel(novel)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleViewNovel(novel); }}
                   >
                     {/* Checkbox overlay */}
                     <div className="absolute left-2 top-2 z-10">
@@ -527,8 +530,11 @@ export default function NovelListView() {
                 return (
                   <div
                     key={novel.id}
+                    role="article"
+                    tabIndex={0}
                     className={`flex items-center gap-3 py-2 px-3 transition-colors hover:bg-muted/50 cursor-pointer ${selectedIds.has(novel.id) ? 'bg-primary/5' : ''}`}
                     onClick={() => handleViewNovel(novel)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleViewNovel(novel); }}
                   >
                     {/* Checkbox */}
                     <Checkbox

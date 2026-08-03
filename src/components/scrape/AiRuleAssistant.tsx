@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   Sparkles,
   Loader2,
@@ -536,15 +537,23 @@ export function AiRuleAssistant({
   // Cleanup on unmount
   useEffect(() => () => generateAcRef.current?.abort(), []);
 
+  const abortRef = useRef<AbortController | null>(null);
+
   // Reset state when dialog opens/closes
   useEffect(() => {
     if (open) {
       setStep('input');
       setError(null);
       setGeneratedRule(null);
-      generateAcRef.current?.abort();
+    } else {
+      abortRef.current?.abort();
     }
   }, [open]);
+
+  // Abort on unmount
+  useEffect(() => {
+    return () => { abortRef.current?.abort(); };
+  }, []);
 
   // ═══════════════════════════════════════════════════════════════════════
   // Generate rule via AI
@@ -555,43 +564,34 @@ export function AiRuleAssistant({
       return;
     }
 
-    // Abort previous in-flight request
-    generateAcRef.current?.abort();
-    const ac = new AbortController();
-    generateAcRef.current = ac;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     setGenerating(true);
     setError(null);
     setStep('analyzing');
 
     try {
-      const response = await fetch('/api/scrape-rules/ai-generate', {
+      const data = await apiFetch<GeneratedRule>('/api/scrape-rules/ai-generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: url.trim(),
           siteType: siteType || undefined,
         }),
-        signal: ac.signal,
+        signal: controller.signal,
       });
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `请求失败 (${response.status})`);
-      }
-
-      const data = await response.json();
-      if (ac.signal.aborted) return;
-      setGeneratedRule(data as GeneratedRule);
+      setGeneratedRule(data);
       setStep('result');
       toast.success('AI 规则生成成功');
     } catch (err: unknown) {
-      if (ac.signal.aborted) return;
+      if (controller.signal.aborted) return;
       const message =
         err instanceof Error ? err.message : 'AI 规则生成失败';
       setError(message);
       setStep('input');
-      toast.error(message);
     } finally {
       if (!ac.signal.aborted) setGenerating(false);
     }

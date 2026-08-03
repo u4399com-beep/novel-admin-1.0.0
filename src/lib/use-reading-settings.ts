@@ -86,15 +86,15 @@ export const FONT_FAMILIES = [
 ];
 
 export function useReadingSettings() {
-  // Use a ref to track whether we've synced from localStorage on the client.
-  // This avoids both hydration mismatch (SSR returns defaults) and the
-  // react-hooks/set-state-in-effect lint error.
-  const [settings, setSettings] = useState<ReadingSettings>(() => {
-    // On server, return defaults. On client first render, also return defaults
-    // to match SSR, then sync in the same initializer (React handles this correctly
-    // for useState initializer functions that only run once).
-    return loadSettings();
-  });
+  const [settings, setSettings] = useState<ReadingSettings>(DEFAULT_SETTINGS);
+
+  // Hydrate from localStorage after mount (SSR-safe)
+  useEffect(() => {
+    const stored = loadSettings();
+    if (JSON.stringify(stored) !== JSON.stringify(DEFAULT_SETTINGS)) {
+      queueMicrotask(() => setSettings(stored));
+    }
+  }, []);
 
   const updateSettings = useCallback((partial: Partial<ReadingSettings>) => {
     setSettings((prev) => {
@@ -137,9 +137,13 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
   const chaptersRef = useRef(chapters);
   useEffect(() => { chaptersRef.current = chapters; }, [chapters]);
 
-  const [lastChapterIndex, setLastChapterIndex] = useState<number | null>(
-    () => loadProgress(PROGRESS_KEY) // Don't validate against chapters.length yet — may be incomplete
-  );
+  // Hydrate from localStorage after mount (SSR-safe)
+  useEffect(() => {
+    const idx = loadProgress(PROGRESS_KEY, chapters.length);
+    if (idx !== null) {
+      queueMicrotask(() => setLastChapterIndex(idx));
+    }
+  }, [PROGRESS_KEY, chapters.length]);
 
   const saveProgress = useCallback(
     (chapterIndex: number, sp?: number) => {

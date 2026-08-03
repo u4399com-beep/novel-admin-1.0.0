@@ -73,8 +73,8 @@ function SidebarContent() {
       {/* Header — clickable to go to dashboard */}
       <button
         onClick={() => setCurrentView('dashboard')}
-        className="relative overflow-hidden px-6 py-6 pb-5 text-left w-full cursor-pointer"
         aria-label="返回仪表盘"
+        className="relative overflow-hidden px-6 py-6 pb-5 text-left w-full cursor-pointer"
       >
         <div className="absolute inset-0 bg-gradient-to-br from-violet-600/20 via-purple-600/10 to-transparent transition-opacity hover:opacity-80" />
         <div className="relative flex items-center gap-3">
@@ -101,6 +101,7 @@ function SidebarContent() {
             <button
               key={item.key}
               onClick={() => setCurrentView(item.key)}
+              aria-current={isActive ? 'page' : undefined}
               className={`
                 group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5
                 text-sm font-medium transition-all duration-200

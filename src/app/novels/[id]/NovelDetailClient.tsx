@@ -855,6 +855,8 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                 章节目录{bookmarks.length > 0 && ` (${bookmarks.length}个书签)`}
               </span>
               <button
+                role="switch"
+                aria-checked={filterBookmarks}
                 onClick={() => setFilterBookmarks((p) => !p)}
                 className={`text-xs px-2 py-1 rounded-md transition-colors ${filterBookmarks ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
               >
