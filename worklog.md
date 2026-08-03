@@ -1,6 +1,133 @@
 # Work Log
 
 ---
+Task ID: cron-qa-20260803-1715
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T17:15:00+08:00
+
+Task: 代码审查8项 → 1 HIGH + 3 MED + 2 LOW bug修复 + 阅读热力图 + 6新CSS类+应用
+
+Work Log:
+- 读取worklog确认状态(累计453项修复, commit 9f6d963)
+- npx next build: 0 errors ✅
+- bun run lint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- 深度代码审查(sub-agent): 1 HIGH + 5 MED + 3 LOW + 功能建议
+- 修复1 HIGH + 3 MED + 2 LOW = 6项bug (跳过双 重rate limit和favorite计数, 属架构级需单独处理)
+- 新功能: 阅读热力图API + GitHub-style贡献图组件
+- 6个新CSS工具类 + 5处组件应用
+- commit feeaa2f 已push
+
+## High Bug Fix (1)
+
+### 1. [HIGH] Cache single-flight竞态条件
+- **问题**: getOrCompute中computeFn()在line 74调用, 但inflight.set()在line 83才注册。并发调用在74-83之间到达时找不到inflight, 启动重复计算
+- **修复**: 使用Promise resolver模式 — 先创建placeholder Promise注册到inflight, 再调用computeFn(), 最后resolve真实promise
+- **文件**: src/lib/cache.ts
+
+## Medium Bug Fixes (3)
+
+### 2. [MED] Reading stats时区bug
+- **问题**: calculateReadingStreak使用toISOString().slice(0,10)获取日期字符串, 返回UTC时区。UTC+8用户23:30阅读的记录被算到第二天, 导致连续阅读天数断链
+- **修复**: 新增toLocalDateStr()使用toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }), 替换streak计算中所有日期比较
+- **文件**: src/app/api/public/reading-stats/route.ts
+
+### 3. [MED] Reading stats totalBooks不一致 + 冗余查询
+- **问题1**: totalBooks用COUNT查询(无限制), completedBooks+ongoingBooks基于take:100, 用户>100本书时总数不匹配
+- **问题2**: calculateReadingStreak单独查询365条记录, 但父函数已获取相同数据
+- **修复**: 移除单独COUNT查询, totalBooks=completed+ongoing; streak改为接收Date[]参数复用已有数据(同步函数, 无DB调用)
+- **文件**: src/app/api/public/reading-stats/route.ts
+
+### 4. [MED] Public categories绕过缓存
+- **问题**: admin /api/categories使用getOrCompute("categories:list", 60s)缓存, admin增删改时invalidateCache。但public /api/public/categories直接查DB, admin的缓存失效对其无效
+- **修复**: public端也使用getOrCompute("categories:list", 60_000, ...)共享同一缓存key
+- **文件**: src/app/api/public/categories/route.ts
+
+## Low Bug Fixes (2)
+
+### 5. [LOW] DELETE reading-progress sessionId长度验证缺失
+- **问题**: GET/POST要求sessionId.length>=10, DELETE只检查!sessionId
+- **修复**: DELETE添加sessionId.length < 10检查
+- **文件**: src/app/api/public/reading-progress/route.ts
+
+### 6. [LOW] SQLite搜索大小写敏感
+- **问题**: Prisma contains在SQLite中大小写敏感, 搜索"harry"不匹配"Harry Potter"
+- **修复**: title/author的contains添加mode: "insensitive"
+- **文件**: src/app/api/public/novels/route.ts
+
+## New Feature: 阅读热力图
+
+### API: GET /api/public/reading-heatMap?sessionId=xxx
+- 查询最近90天阅读进度, 按本地日期分组
+- 每天统计不重复章节数(chapterIndex去重)
+- 5分钟缓存(getOrCompute)
+- 文件: src/app/api/public/reading-heatMap/route.ts (新建)
+
+### 组件: ReadingHeatMap
+- GitHub-style贡献图, 13周×7天网格
+- 4级绿色(0/1-2/3-5/6+章)
+- 月份标签(遇1号显示) + 星期标签(Mon/Wed/Fri)
+- 底部图例(少→多)
+- 悬停tooltip显示日期+章节数
+- 总章节数显示(stat-value类)
+- 移动端水平滚动
+- 集成位置: stats页面streak卡片与分类分布之间
+- 文件: src/components/ReadingHeatMap.tsx (新建, 202行), src/app/stats/page.tsx
+
+## New CSS Utilities (6)
+
+| Class | Effect | Applied To |
+|-------|--------|------------|
+| `.hover-scale-sm` | 悬停1.02x缩放 | DashboardView统计卡 |
+| `.text-shadow-sm` | oklch文字阴影 | 首页hero标题 |
+| `.border-gradient` | 动画渐变边框(135deg) | (可用) |
+| `.hover-glow` | primary色box-shadow发光 | 排行榜列表项 |
+| `.fade-in-up` | 淡入上滑入场动画 | Stats分类柱状图 |
+| `.truncate-2` | 2行截断 | NovelCard描述 |
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- Git commit: feeaa2f (12 files, +410 -72)
+- Git push: 9f6d963..feeaa2f main → main ✅
+
+## 统计
+- 修改文件: 10
+- 新建文件: 2 (heatMap API, ReadingHeatMap组件)
+- 代码变更: +410 -72
+- Bug修复: 6项 (1 HIGH + 3 MED + 2 LOW)
+- 新功能: 1项 (阅读热力图API+组件)
+- 新CSS工具类: 6个
+- CSS应用: 5处
+- 累计修复: 453 + 6 = 459项
+
+Stage Summary:
+- **关键修复**: Cache single-flight竞态(高并发下防止重复DB查询), 阅读连续天数时区修正(UTC+8深夜用户), 统计数据一致性
+- **性能**: streak计算复用已获取数据(省1次DB), public categories共享缓存(省重复查询)
+- **功能**: 阅读热力图(GitHub-style, 90天, 4级绿色, 月份/星期标签)
+- **CSS**: 6个新工具类(缩放/文字阴影/渐变边框/发光/淡入/2行截断)
+
+## 项目当前状态
+- **构建**: 0 TypeScript errors, 0 ESLint errors ✅
+- **最新commit**: feeaa2f
+- **累计修复**: 459项
+- **架构**: Next.js 16.1.3 App Router + Prisma + PostgreSQL/SQLite + Docker(Caddy)
+
+## 未解决问题/建议下一阶段优先事项
+1. **[HIGH] Favorite计数无去重** → 需Favorite表+unique约束, 架构级改动
+2. **[MED] 双重rate limit(middleware+route)** → 移除middleware的public API rate limiter
+3. **[MED] Admin设置仅localStorage** → siteName/itemsPerPage需后端持久化
+4. **[MED] Public reading-progress DELETE无所有权验证**
+5. **[FEATURE] EPUB/TXT单本导出** → epub-gen库
+6. **[FEATURE] 智能推荐"猜你喜欢"** → 基于分类/标签关联
+7. **[FEATURE] 每日阅读目标设定** → 基于热力图数据+目标进度环
+8. **[FEATURE] 阅读笔记/标注** → 章节内高亮+旁注
+9. **[STYLE] 更多CSS动画细节** → loading骨架屏优化、过渡效果
+10. **[STYLE] 移动端适配完善** → 阅读器/管理端响应式
+
+
+# Work Log
+
+---
 Task ID: cron-qa-20260803-1638
 Agent: Main Orchestrator
 Timestamp: 2026-08-03T16:38:00+08:00
