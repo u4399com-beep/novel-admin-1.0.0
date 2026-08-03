@@ -127,7 +127,7 @@ export default function NovelFormDialog() {
         setTags(tagRes.value);
       }
     } catch (err) {
-      console.error('Failed to fetch categories/tags for form:', err);
+      if (process.env.NODE_ENV === 'development') console.error('Failed to fetch categories/tags for form:', err);
     }
   }, [setCategories, setTags]);
 

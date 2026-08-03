@@ -14,6 +14,11 @@ const ROWS = 7;
 const DAY_LABELS = ['一', '', '三', '', '五', '', '日'];
 const MONTH_NAMES = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
+// Detect user timezone dynamically instead of hardcoding
+const USER_TZ = typeof Intl !== 'undefined'
+  ? Intl.DateTimeFormat().resolvedOptions().timeZone
+  : 'Asia/Shanghai';
+
 function getLevel(count: number): number {
   if (count === 0) return 0;
   if (count <= 2) return 1;
@@ -57,7 +62,7 @@ export default function ReadingHeatMap({ data }: ReadingHeatMapProps) {
     const d = new Date(gridStart);
     for (let col = 0; col < COLS; col++) {
       for (let row = 0; row < ROWS; row++) {
-        const dateStr = d.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+        const dateStr = d.toLocaleString('sv-SE', { timeZone: USER_TZ }).slice(0, 10);
         const inRange = d >= startDate && d <= today;
         gridCells.push({
           date: dateStr,

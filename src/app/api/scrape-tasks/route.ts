@@ -109,7 +109,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         } catch (dbErr) {
           console.error(`[Scrape Task] Failed to update task ${task.id} status after trigger failure:`, dbErr);
         }
-      }).catch(() => {}); // Top-level safety net for any unhandled rejection
+      }).catch((dbErr) => { console.error('[Scrape Task] Unhandled error in failure handler:', dbErr); });
     }
 
     return NextResponse.json(task, { status: 201 });

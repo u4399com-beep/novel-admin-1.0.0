@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
   Globe,
@@ -275,6 +275,10 @@ export function VisualSelectorBuilder({
   const [activeTab, setActiveTab] = useState('preview');
   const [error, setError] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const fetchPageAcRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => () => fetchPageAcRef.current?.abort(), []);
 
   // ═══════════════════════════════════════════════════════════════════════
   // Fetch page preview
@@ -285,6 +289,11 @@ export function VisualSelectorBuilder({
       return;
     }
 
+    // Abort previous in-flight request
+    fetchPageAcRef.current?.abort();
+    const ac = new AbortController();
+    fetchPageAcRef.current = ac;
+
     setLoading(true);
     setError(null);
     setHtml('');
@@ -294,6 +303,7 @@ export function VisualSelectorBuilder({
     try {
       const response = await fetch(
         `/api/scrape-rules/preview?url=${encodeURIComponent(url.trim())}`,
+        { signal: ac.signal },
       );
 
       if (!response.ok) {
@@ -302,17 +312,19 @@ export function VisualSelectorBuilder({
       }
 
       const data = await response.json();
+      if (ac.signal.aborted) return;
       setHtml(data.html || '');
       setPageTitle(data.title || '');
       setActiveTab('preview');
       toast.success('页面获取成功');
     } catch (err: unknown) {
+      if (ac.signal.aborted) return;
       const message =
         err instanceof Error ? err.message : '获取页面失败';
       setError(message);
       toast.error(message);
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   }, [url]);
 

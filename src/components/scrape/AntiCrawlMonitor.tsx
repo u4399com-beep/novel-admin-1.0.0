@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, ShieldAlert, Fingerprint, Globe, Monitor, Type, Lock,
@@ -181,6 +181,7 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
   const [events, setEvents] = useState<AntiCrawlEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
+  const fetchAcRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -191,23 +192,28 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
           { signal, timeout: 15000 }
         ),
       ]);
+      if (signal?.aborted) return;
       setStats(dashData);
       setEvents(eventsData.events || []);
     } catch {
       // handled by apiFetch
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [eventTypeFilter]);
 
   useEffect(() => {
+    fetchAcRef.current?.abort();
     const ac = new AbortController();
+    fetchAcRef.current = ac;
     fetchData(ac.signal);
-    return () => ac.abort();
+    return () => { fetchAcRef.current?.abort(); fetchAcRef.current = null; };
   }, [fetchData]);
 
   const handleRefresh = () => {
+    fetchAcRef.current?.abort();
     const ac = new AbortController();
+    fetchAcRef.current = ac;
     setLoading(true);
     fetchData(ac.signal);
   };

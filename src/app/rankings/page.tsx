@@ -152,9 +152,9 @@ function NovelRow({
         {/* Title + Author + Category + Status */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-semibold text-sm sm:text-base truncate group-hover:text-primary transition-colors">
+            <span className="font-semibold text-sm sm:text-base truncate group-hover:text-primary transition-colors">
               {novel.title}
-            </h3>
+            </span>
             {novel.category && (
               <Badge
                 variant="outline"

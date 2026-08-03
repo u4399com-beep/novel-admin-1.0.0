@@ -175,10 +175,10 @@ export default function NovelListView() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Clear selection when novels list changes (e.g. page change)
+  // Clear selection when page/search/filter changes (not on every novels ref change)
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [novels]);
+  }, [page, search, statusFilter, categoryFilter]);
 
   const allSelected = novels.length > 0 && selectedIds.size === novels.length;
 

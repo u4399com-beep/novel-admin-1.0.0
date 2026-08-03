@@ -233,10 +233,20 @@ export function useChapterBookmarks(novelId: string) {
   [novelId]
   );
 
+  const clearAllBookmarks = useCallback(
+    () => {
+      setBookmarks(() => {
+        saveBookmarks(novelId, []);
+        return [];
+      });
+    },
+    [novelId]
+  );
+
   const isBookmarked = useCallback(
     (chapterIndex: number) => bookmarks.some((b) => b.chapterIndex === chapterIndex),
     [bookmarks]
   );
 
-  return { bookmarks, addBookmark, removeBookmark, isBookmarked };
+  return { bookmarks, addBookmark, removeBookmark, clearAllBookmarks, isBookmarked };
 }

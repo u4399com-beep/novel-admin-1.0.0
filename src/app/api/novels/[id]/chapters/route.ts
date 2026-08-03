@@ -13,7 +13,7 @@ export const GET = withAuth(async function GET(
   try {
     const { id: novelId } = await params;
     const { searchParams } = new URL(request.url);
-    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 50, maxPageSize: 10000 });
+    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 50, maxPageSize: 500 });
 
     const [chapters, total] = await Promise.all([
       db.chapter.findMany({
@@ -192,18 +192,12 @@ export const PATCH = withAuth(async function PATCH(
       }
     }
 
-    // Single raw SQL with CASE WHEN — one query instead of N individual UPDATEs
-    // Security: all IDs are validated as strings from the request body;
-    // sortOrder values are clamped to 0-100000 integers.
-    // No user-provided strings are used in SQL construction.
-    const sqlParts = orders.map(
-      (item) => `WHEN '${item.id.replace(/'/g, "''")}' THEN ${Math.floor(Number(item.sortOrder) || 0)}`
-    );
-    const idList = orders.map((item) => `'${item.id.replace(/'/g, "''")}'`).join(',');
-    const safeNovelId = novelId.replace(/'/g, "''");
-
-    await db.$executeRawUnsafe(
-      `UPDATE "Chapter" SET "sortOrder" = CASE id ${sqlParts.join(' ')} END WHERE "novelId" = '${safeNovelId}' AND id IN (${idList})`
+    // Parameterized updates in a transaction for SQL injection prevention.
+    // Each update uses Prisma tagged template literal with bound parameters.
+    await db.$transaction(
+      orders.map((item) =>
+        db.$executeRaw`UPDATE "Chapter" SET "sortOrder" = ${Math.floor(Number(item.sortOrder) || 0)} WHERE id = ${item.id} AND "novelId" = ${novelId}`
+      )
     );
 
     invalidateCache("dashboard:stats");

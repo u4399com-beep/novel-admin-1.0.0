@@ -113,7 +113,12 @@ export const GET = withAuth(async function GET(request: NextRequest) {
 // POST /api/admin/anti-crawl/events - Record a new anti-crawl event
 export const POST = withAuth(async function POST(request: NextRequest) {
   try {
-    const body = await safeJson(request);
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+    }
 
     const eventType = sanitizeField(body.eventType, 100);
     if (!eventType || !VALID_EVENT_TYPES.includes(eventType)) {

@@ -125,37 +125,36 @@ const quickActionItems: QuickActionItem[] = [
 ];
 
 // ─── Event metadata helper ──────────────────────────────────────────────────
+// Cache event meta objects to avoid creating new objects on each call
+const EVENT_META_MAP: Record<string, { icon: typeof PlusCircle; color: string; hoverBg: string; label: string }> = {
+  novel_created: {
+    icon: PlusCircle,
+    color: 'text-emerald-600 dark:text-emerald-400',
+    hoverBg: 'group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30',
+    label: '创建小说 ',
+  },
+  chapter_added: {
+    icon: FileText,
+    color: 'text-violet-600 dark:text-violet-400',
+    hoverBg: 'group-hover:bg-violet-100 dark:group-hover:bg-violet-900/30',
+    label: '新增章节 ',
+  },
+  scrape_run: {
+    icon: Globe,
+    color: 'text-amber-600 dark:text-amber-400',
+    hoverBg: 'group-hover:bg-amber-100 dark:group-hover:bg-amber-900/30',
+    label: '执行采集 ',
+  },
+};
+const DEFAULT_EVENT_META = {
+  icon: Activity,
+  color: 'text-muted-foreground',
+  hoverBg: '',
+  label: '',
+};
+
 function getEventMeta(type: string) {
-  switch (type) {
-    case 'novel_created':
-      return {
-        icon: PlusCircle,
-        color: 'text-emerald-600 dark:text-emerald-400',
-        hoverBg: 'group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30',
-        label: '创建小说 ',
-      };
-    case 'chapter_added':
-      return {
-        icon: FileText,
-        color: 'text-violet-600 dark:text-violet-400',
-        hoverBg: 'group-hover:bg-violet-100 dark:group-hover:bg-violet-900/30',
-        label: '新增章节 ',
-      };
-    case 'scrape_run':
-      return {
-        icon: Globe,
-        color: 'text-amber-600 dark:text-amber-400',
-        hoverBg: 'group-hover:bg-amber-100 dark:group-hover:bg-amber-900/30',
-        label: '执行采集 ',
-      };
-    default:
-      return {
-        icon: Activity,
-        color: 'text-muted-foreground',
-        hoverBg: '',
-        label: '',
-      };
-  }
+  return EVENT_META_MAP[type] || DEFAULT_EVENT_META;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

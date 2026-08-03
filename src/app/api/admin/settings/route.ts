@@ -55,9 +55,12 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
     };
 
     const entries: [string, string][] = [];
+    const ignoredKeys: string[] = [];
     for (const [key, rawValue] of Object.entries(body)) {
-      if (!ALLOWED_KEYS.has(key)) continue;
-
+      if (!ALLOWED_KEYS.has(key)) {
+        ignoredKeys.push(key);
+        continue;
+      }
       if (INTEGER_KEYS.has(key)) {
         const n = Number(rawValue);
         const [min, max] = INTEGER_RANGE[key];
@@ -105,7 +108,7 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
       result[key] = String(value);
     }
 
-    return NextResponse.json({ success: true, updated: result });
+    return NextResponse.json({ success: true, updated: result, ...(ignoredKeys.length > 0 ? { ignoredKeys } : {}) });
   } catch (error) {
     console.error('Save settings error:', error);
     return NextResponse.json({ error: '保存设置失败' }, { status: 500 });

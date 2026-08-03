@@ -244,7 +244,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
 
   // ─── Reading progress ────────────────────────────────────────────
   const { lastChapterIndex, saveProgress } = useReadingProgress(novel.id, chapters);
-  const { bookmarks, addBookmark, removeBookmark, isBookmarked } = useChapterBookmarks(novel.id);
+  const { bookmarks, addBookmark, removeBookmark, clearAllBookmarks, isBookmarked } = useChapterBookmarks(novel.id);
   // Fetch remaining chapters if SSR only provided 200
   useEffect(() => {
     const total = initialTotal ?? novel._count.chapters;
@@ -269,10 +269,10 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   );
   // Auto-jump to page containing lastChapterIndex
   useEffect(() => {
-    if (lastChapterIndex !== null && lastChapterIndex >= chapterPage * CHAPTERS_PER_PAGE) {
+    if (lastChapterIndex !== null && chapters.length > 0 && lastChapterIndex >= chapterPage * CHAPTERS_PER_PAGE) {
       setChapterPage(Math.floor(lastChapterIndex / CHAPTERS_PER_PAGE) + 1);
     }
-  }, [lastChapterIndex, chapterPage]);
+  }, [lastChapterIndex, chapterPage, chapters.length]);
 
   // ─── Reader sidebar pagination ──────────────────────────────
   const sidebarTotalPages = Math.ceil(chapters.length / SIDEBAR_PAGE_SIZE);
@@ -283,8 +283,8 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   // Auto-jump sidebar page when chapter changes
   useEffect(() => {
     const targetPage = Math.floor(currentIndex / SIDEBAR_PAGE_SIZE) + 1;
-    if (targetPage !== sidebarPage) setSidebarPage(targetPage);
-  }, [currentIndex, sidebarPage, SIDEBAR_PAGE_SIZE]);
+    setSidebarPage(targetPage);
+  }, [currentIndex]);
 
   // Chapter content progress (wordCount > 0 as proxy for "has content")
   const chaptersWithContent = chapters.filter((c) => c.wordCount > 0).length;
@@ -306,6 +306,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const loadChapterAbortRef = useRef<AbortController | null>(null);
   // Use ref for chapters so loadChapter identity stays stable when remaining chapters load (H2 fix)
   const chaptersRef = useRef(chapters);
+  const prevIndexRef = useRef(currentIndex);
   chaptersRef.current = chapters;
 
   const loadChapter = useCallback(
@@ -335,7 +336,10 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           const resp = await fetch(`/api/public/reading-progress?sessionId=${encodeURIComponent(sid)}`);
           if (resp.ok) {
             const data = await resp.json();
-            const items = (data.progress || []) as Array<{ chapterIndex: number; scrollPercent: number | null }>;
+            const rawProgress = data.progress || [];
+            const items = Array.isArray(rawProgress)
+              ? rawProgress as Array<{ chapterIndex: number; scrollPercent: number | null }>
+              : [];
             const saved = items.find((p: { chapterIndex: number }) => p.chapterIndex === index);
             if (saved && typeof saved.scrollPercent === 'number' && saved.scrollPercent > 0) {
               pendingScrollRestore.current = saved.scrollPercent;
@@ -404,9 +408,10 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   // Save progress when changing chapters
   useEffect(() => {
     if (readerOpen && !loadingChapter && chapterContent) {
-      saveProgress(currentIndex, scrollPercent);
+      saveProgress(prevIndexRef.current, scrollPercent);
     }
-  }, [currentIndex, readerOpen, loadingChapter, chapterContent, saveProgress]);
+    prevIndexRef.current = currentIndex;
+  }, [currentIndex, readerOpen, loadingChapter, chapterContent, saveProgress, scrollPercent]);
 
   // ─── Scroll progress tracking (throttled via rAF) ───────────────
   useEffect(() => {
@@ -483,11 +488,13 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       } else if (e.key === 'ArrowUp' && !isInteractive) {
         // Scroll reader content up
         e.preventDefault();
-        window.scrollBy({ top: -200, behavior: 'smooth' });
+        const target = readerContentRef.current || window;
+        target.scrollBy({ top: -200, behavior: 'smooth' });
       } else if (e.key === 'ArrowDown' && !isInteractive) {
         // Scroll reader content down
         e.preventDefault();
-        window.scrollBy({ top: 200, behavior: 'smooth' });
+        const target = readerContentRef.current || window;
+        target.scrollBy({ top: 200, behavior: 'smooth' });
       } else if (e.key === 'Escape') {
         if (searchOpen) {
           setSearchOpen(false);
@@ -1207,9 +1214,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                       {bookmarks.length > 0 && (
                         <button
                           className="text-[10px] text-destructive/60 hover:text-destructive transition-colors"
-                          onClick={() => {
-                            bookmarks.forEach((b) => removeBookmark(b.chapterIndex));
-                          }}
+                          onClick={() => clearAllBookmarks()}
                         >
                           清空
                         </button>
@@ -1297,6 +1302,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                       onChange={(e) => { setSearchQuery(e.target.value); setCurrentMatch(0); }}
                       onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setSearchOpen(false); setSearchQuery(''); setCurrentMatch(0); } if (e.key === 'Enter') { e.preventDefault(); handleSearchNext(); } }}
                       placeholder="搜索本章内容..."
+                      aria-label="搜索本章内容"
                       className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none rounded"
                     />
                     {searchQuery.trim() && (

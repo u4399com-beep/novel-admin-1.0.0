@@ -26,16 +26,19 @@ export const POST = withAuth(async function POST(
   }
 
   try {
-    // Verify task exists
-    const taskExists = await db.scrapeTask.findUnique({ where: { id }, select: { id: true } });
-    if (!taskExists) {
+    // Verify task exists and is still accepting logs
+    const task = await db.scrapeTask.findUnique({ where: { id }, select: { id: true, status: true } });
+    if (!task) {
       return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+    }
+    if (task.status !== 'pending' && task.status !== 'running') {
+      return NextResponse.json({ error: "任务已完成或取消，无法追加日志" }, { status: 400 });
     }
 
     // Validate all log levels before inserting
     for (const log of body.logs) {
       if (!VALID_LEVELS.includes(log.level as typeof VALID_LEVELS[number])) {
-        return NextResponse.json({ error: `无效的日志级别: ${log.level}` }, { status: 400 });
+        return NextResponse.json({ error: '无效的日志级别，允许值: info, warn, error, success' }, { status: 400 });
       }
       if (!sanitizeField(log.message, MAX_MESSAGE_LENGTH)) {
         return NextResponse.json({ error: "日志消息不能为空" }, { status: 400 });

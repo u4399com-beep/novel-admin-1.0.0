@@ -37,6 +37,18 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
       return NextResponse.json({ error: '请选择要导入的文件' }, { status: 400 });
     }
 
+    // Validate file extension whitelist
+    const fileName = file.name.toLowerCase();
+    if (!/\.(txt|json)$/i.test(fileName)) {
+      return NextResponse.json({ error: '仅支持 .txt 和 .json 格式的文件' }, { status: 400 });
+    }
+
+    // Validate format parameter
+    const VALID_FORMATS = ['auto', 'json', 'txt'];
+    if (format && !VALID_FORMATS.includes(format)) {
+      return NextResponse.json({ error: '无效的 format 参数，允许值: auto, json, txt' }, { status: 400 });
+    }
+
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json({ error: `文件大小超过限制(最大${MAX_FILE_SIZE / 1024 / 1024}MB)` }, { status: 400 });
     }

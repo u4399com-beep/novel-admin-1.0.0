@@ -122,7 +122,8 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async f
  * DELETE /api/public/reading-progress?sessionId=xxx&novelId=yyy
  * Remove reading progress for a specific novel.
  */
-export const DELETE = withPublicRateLimit(async function DELETE(request: NextRequest) {
+// DELETE uses stricter rate limit: 5 burst, 0.1/sec (~1/min) — destructive operation
+export const DELETE = withPublicRateLimit({ capacity: 5, refillRate: 0.1 }, async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Sparkles,
@@ -531,6 +531,10 @@ export function AiRuleAssistant({
   const [generatedRule, setGeneratedRule] = useState<GeneratedRule | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const generateAcRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => () => generateAcRef.current?.abort(), []);
 
   // Reset state when dialog opens/closes
   useEffect(() => {
@@ -538,6 +542,7 @@ export function AiRuleAssistant({
       setStep('input');
       setError(null);
       setGeneratedRule(null);
+      generateAcRef.current?.abort();
     }
   }, [open]);
 
@@ -549,6 +554,11 @@ export function AiRuleAssistant({
       toast.error('请输入目标 URL');
       return;
     }
+
+    // Abort previous in-flight request
+    generateAcRef.current?.abort();
+    const ac = new AbortController();
+    generateAcRef.current = ac;
 
     setGenerating(true);
     setError(null);
@@ -562,6 +572,7 @@ export function AiRuleAssistant({
           url: url.trim(),
           siteType: siteType || undefined,
         }),
+        signal: ac.signal,
       });
 
       if (!response.ok) {
@@ -570,17 +581,19 @@ export function AiRuleAssistant({
       }
 
       const data = await response.json();
+      if (ac.signal.aborted) return;
       setGeneratedRule(data as GeneratedRule);
       setStep('result');
       toast.success('AI 规则生成成功');
     } catch (err: unknown) {
+      if (ac.signal.aborted) return;
       const message =
         err instanceof Error ? err.message : 'AI 规则生成失败';
       setError(message);
       setStep('input');
       toast.error(message);
     } finally {
-      setGenerating(false);
+      if (!ac.signal.aborted) setGenerating(false);
     }
   }, [url, siteType]);
 

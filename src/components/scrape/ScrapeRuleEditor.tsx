@@ -113,17 +113,17 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
   const visualSelectorFieldRef = useRef(visualSelectorField);
   visualSelectorFieldRef.current = visualSelectorField;
 
-  // Form helpers
+  // Form helpers — use setValue with type assertion via FieldPath for type safety
   const setSelector = useCallback(
     (field: keyof FormValues, val: SelectorRule) => {
-      setValue(field, val as any, { shouldDirty: true });
+      setValue(field as Parameters<typeof setValue>[0], val as Parameters<typeof setValue>[1], { shouldDirty: true });
     },
     [setValue]
   );
 
   const setPagination = useCallback(
     (field: keyof FormValues, val: PaginationConfig) => {
-      setValue(field, val as any, { shouldDirty: true });
+      setValue(field as Parameters<typeof setValue>[0], val as Parameters<typeof setValue>[1], { shouldDirty: true });
     },
     [setValue]
   );
@@ -181,7 +181,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
   }, [initialAiRule, handleApplyAiRule]);
 
   // Open visual selector for a specific field
-  const openVisualSelector = useCallback((fieldName: string, currentUrl?: string) => {
+  const openVisualSelector = useCallback((fieldName: string, _currentUrl?: string) => {
     setVisualSelectorField(fieldName as keyof FormValues);
     setVisualSelectorOpen(true);
   }, []);
@@ -385,6 +385,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
       {/* Visual Selector Builder Dialog */}
       {visualSelectorOpen && (
         <VisualSelectorBuilder
+          key={`vs-${visualSelectorField}`}
           onSelectorGenerated={handleVisualSelectorGenerated}
           onClose={() => setVisualSelectorOpen(false)}
           initialUrl={watch('listUrl')}

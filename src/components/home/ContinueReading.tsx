@@ -73,9 +73,9 @@ export function ContinueReading() {
     const ac = new AbortController();
     const sessionId = getSessionId();
     apiFetch<{ progress: ReadingProgressItem[] }>(`/api/public/reading-progress?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
-      .then((data) => setProgress(data.progress || []))
+      .then((data) => { if (!ac.signal.aborted) setProgress(data.progress || []); })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
     return () => ac.abort();
   }, []);
 

@@ -22,10 +22,9 @@ const DIVIDER_AFTER_INDEX = 3; // after 4th item (index 3)
 function SidebarContent() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
-  // Subscribe to the computed counter directly to avoid re-rendering on every store change
-  const refreshCounter = useAppStore(
-    (s) => Object.values(s.refreshVersions).reduce((a, b) => a + b, 0)
-  );
+  // Subscribe only to novels refresh version to avoid unnecessary re-renders
+  const novelsRefresh = useAppStore((s) => s.refreshVersions['novels'] ?? 0);
+  void novelsRefresh; // used to trigger re-fetch below
   const [totalNovels, setTotalNovels] = useState<number | null>(null);
   const [lastRefreshText, setLastRefreshText] = useState('刚刚');
   const lastRefreshStartRef = useRef(Date.now());
@@ -33,7 +32,7 @@ function SidebarContent() {
   useEffect(() => {
     lastRefreshStartRef.current = Date.now();
     setLastRefreshText('刚刚');
-  }, [refreshCounter]);
+  }, [novelsRefresh]);
 
   // Fetch total novels count for footer & start refresh timer on mount
   useEffect(() => {

@@ -4,8 +4,8 @@ import { withPublicRateLimit } from '@/lib/api-auth';
 import { sanitizeField } from '@/lib/api-utils';
 import { getOrCompute } from '@/lib/cache';
 
-function toLocalDateStr(d: Date): string {
-  return d.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+function toLocalDateStr(d: Date, tz?: string): string {
+  return d.toLocaleString('sv-SE', { timeZone: tz || 'Asia/Shanghai' }).slice(0, 10);
 }
 
 /**
@@ -17,11 +17,14 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', 100);
+    const tz = sanitizeField(searchParams.get('tz') || '', 50) || undefined;
     if (!sessionId || sessionId.length < 10) {
       return NextResponse.json({ dates: {} });
     }
 
-    const data = await getOrCompute(`heatMap:${sessionId}`, 300_000, async () => {
+    // Hash sessionId to avoid cache key collision with `:` characters
+    const cacheKeySid = sessionId.replace(/:/g, '_');
+    const data = await getOrCompute(`heatMap:${cacheKeySid}`, 300_000, async () => {
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
       ninetyDaysAgo.setHours(0, 0, 0, 0);
@@ -38,7 +41,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
       // Group by local date, count unique chapters per day
       const dateMap: Record<string, Set<number>> = {};
       for (const p of progress) {
-        const dateStr = toLocalDateStr(p.lastReadAt);
+        const dateStr = toLocalDateStr(p.lastReadAt, tz);
         if (!dateMap[dateStr]) dateMap[dateStr] = new Set();
         dateMap[dateStr].add(p.chapterIndex);
       }
