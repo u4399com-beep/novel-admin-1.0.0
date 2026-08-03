@@ -1,160 +1,151 @@
 # Work Log
 
 ---
-Task ID: cron-qa-20260803-1038
+Task ID: cron-qa-20260803-1153
 Agent: Main Orchestrator
-Timestamp: 2026-08-03T10:38:00+08:00
+Timestamp: 2026-08-03T11:53:00+08:00
 
-Task: QA审查 + 安全修复 + Bug修复 + 样式增强
+Task: QA审查 + Critical Build Fix + 9 Bug修复 + 阅读统计新功能 + 14 CSS工具类
 
 Work Log:
-- 读取worklog确认状态(累计317项修复, commit 4d7a1c2)
-- npx next build: 0 errors ✅
-- bun run lint: 0 errors, 3 warnings(预存React Compiler) ✅
-- agent-browser QA: 沙箱隔离无法访问localhost(dev server OOM退出)
-- 双agent并行代码审查(API层+前端层), 发现2 CRITICAL + 5 HIGH + 10 MED + 10 LOW
-- 修复2个CRITICAL + 5个HIGH + 6个MEDIUM + 5个LOW = 18项
+- 读取worklog确认状态(累计335项修复, commit 19410fb)
+- npx next build: **1 error** (缺失 ContinueReading 组件导致 Module not found)
+- 创建ContinueReading组件 → build通过
+- bun run lint: 1 error (use-reading-settings useCallback deps) → 修复 → 0 errors
+- 前端代码审查(agent): 发现3 CRITICAL + 3 HIGH + 5 MEDIUM + 3 LOW
+- 修复3个CRITICAL + 3个HIGH + 4个MEDIUM + 2个LOW + 1 LINT = 13项
+- 新增阅读统计页面 /stats + API /api/public/reading-stats
 - 新增14个CSS工具类
-- commit 19410fb 已push
+- 应用 card-glow/text-shimmer/list-item-compact 等到已有组件
+- commit 439905c 已push
 
-## Security Fixes (2 CRITICAL + 2 HIGH + 2 MEDIUM)
+## Critical Build Fix (1)
 
-### 1. [CRITICAL] SSRF绕过：纯数字hostname (sanitize.ts)
-- **问题**: `http://0/`、`http://1/` 等纯数字hostname通过所有检查, Linux上解析为0.0.0.0(本机)
-- **修复**: 新增 `^\d+$` 和 `^\d(\.\d+)*$` 两个正则拦截
-- **文件**: src/lib/sanitize.ts
+### 1. [CRITICAL] 缺失 ContinueReading 组件导致构建失败
+- **问题**: page.tsx 导入 `@/components/home/ContinueReading` 但组件文件不存在
+- **修复**: 创建完整组件, 从reading-progress API获取服务端进度, 展示继续阅读卡片
+- **文件**: src/components/home/ContinueReading.tsx (新建)
 
-### 2. [CRITICAL] Export API OOM防护 (export/route.ts)
-- **问题**: `findMany` 无take限制, 万章小说全量加载到内存
-- **修复**: 新增 `MAX_EXPORT_CHAPTERS=5000` 预检查, 超限拒绝导出
-- **文件**: src/app/api/novels/[id]/export/route.ts
+## Bug Fixes (9)
 
-### 3. [HIGH] 6个公开API无速率限制
-- **问题**: novels、novel/[id]、chapters、chapters/[id]、search-suggestions、categories 六个公开端点裸导出, 可被无限调用
-- **修复**: 全部包装 `withPublicRateLimit`（novels/chapters用60/2, search-suggestions用30/2）
-- **文件**: 6个route.ts文件
+### 2. [CRITICAL] Math.random() 导致 hydration mismatch (AdminViewSkeletons)
+- **问题**: Dashboard骨架屏用 `Math.random()` 生成高度, 服务端/客户端值不同, React报hydration错误
+- **修复**: 改为确定性公式 `((i * 37 + 13) % 60) + 40`
+- **文件**: src/components/admin/AdminViewSkeletons.tsx
 
-### 4. [HIGH] Scrape task竞态条件 (scrape-tasks/route.ts)
-- **问题**: fire-and-forget fetch失败后无条件update为failed, 可能覆盖scraper-service已设置的running/completed状态
-- **修复**: 改用 `updateMany({ where: { id, status: 'pending' } })`, count=0时跳过
-- **文件**: src/app/api/scrape-tasks/route.ts
+### 3. [CRITICAL] NovelListView 过滤器切换双重fetch (stale closure)
+- **问题**: 两个useEffect分别监听filters和page/search, filter变化时Effect1用旧fetchNovels闭包发送stale请求, Effect2再发正确请求
+- **修复**: 将 `fetchNovels` 加入Effect1依赖数组
+- **文件**: src/components/novel/NovelListView.tsx
 
-### 5. [HIGH] Chapter更新加载完整内容 (chapters/[id]/route.ts)
-- **问题**: PUT更新章节时 `findUnique` 无select, 加载全部字段(含500KB content), 但仅需wordCount
-- **修复**: 改为 `select: { id: true, novelId: true, wordCount: true }`, 移除对oldChapter.content的引用
-- **文件**: src/app/api/chapters/[id]/route.ts
+### 4. [CRITICAL] SHORTCUT_KEYS 数组越界
+- **问题**: NAV_ITEMS有9项(含"系统设置"), SHORTCUT_KEYS只有8个, `SHORTCUT_KEYS[8]` 为undefined渲染空badge
+- **修复**: 添加 `'⌘9'` (admin/page.tsx已有9个, AppSidebar缺失)
+- **文件**: src/components/novel/AppSidebar.tsx
 
-### 6. [MEDIUM] 公开health端点泄露配置 (public/health/route.ts)
-- **问题**: 暴露NEXTAUTH_SECRET、ADMIN_PASSWORD配置状态, 攻击者可判断是否使用默认配置
-- **修复**: 移除密码相关检查, 仅保留DATABASE_URL
-- **文件**: src/app/api/public/health/route.ts
+### 5. [HIGH] CategoryManagerView watch() 在useEffect依赖中导致无限执行
+- **问题**: `watch` 函数每次渲染都是新引用, 作为useEffect依赖导致每次渲染都执行slug自动生成
+- **修复**: 用 `getValues('slug')` 代替 `watch('slug')`, 移除 `watch` 从依赖数组
+- **文件**: src/components/novel/CategoryManagerView.tsx
 
-### 7. [MEDIUM] 空Bearer token (ai-generate, preview, scrape-tasks)
-- **问题**: SCRAPER_SERVICE_TOKEN未配置时发送 `Bearer ` (空值), 可能意外认证或泄露意图
-- **修复**: 提取 `getScraperServiceHeaders()` 到constants.ts, 仅在token存在时添加Authorization头
-- **文件**: src/lib/constants.ts (新增函数), 3个route.ts
+### 6. [HIGH] CategoryManagerView watch('icon') 每次渲染调用3次
+- **问题**: JSX中直接调用 `watch('icon')` 3次, 每次订阅独立, 浪费性能
+- **修复**: 提取为 `watchedIcon = watch('icon')` 单次调用
+- **文件**: src/components/novel/CategoryManagerView.tsx
 
-## Bug Fixes (1 HIGH + 3 MEDIUM + 3 LOW)
+### 7. [MEDIUM] FilterRow按钮缺少aria-pressed
+- **修复**: 为每个筛选按钮添加 `aria-pressed={isActive}`
+- **文件**: src/app/page.tsx
 
-### 8. [MEDIUM] not-found.tsx ease缺失as const
-- **文件**: src/app/novels/[id]/not-found.tsx
+### 8. [MEDIUM] NovelListView网格视图img缺少onError处理
+- **问题**: 封面URL存在但加载失败时显示空白框, 列表视图有onError但网格视图缺失
+- **修复**: 添加 `onError` 隐藏图片, 显示渐变占位背景
+- **文件**: src/components/novel/NovelListView.tsx
 
-### 9. [MEDIUM] layoutId sidebar-active冲突
-- **问题**: AppSidebar(mobile)和admin/page.tsx(desktop)使用相同layoutId, 动画在两个DOM位置间跳动
-- **修复**: mobile用 `sidebar-active-mobile`, desktop用 `sidebar-active-desktop`
-- **文件**: src/components/novel/AppSidebar.tsx, src/app/admin/page.tsx
+### 9. [MEDIUM] NovelDetailView重试fetch无AbortSignal
+- **问题**: DnD拖拽排序和移动章节失败后的重试调用 `fetchChapters()` 无signal, 组件卸载后可能更新已卸载状态
+- **修复**: 创建 `new AbortController()` 传入signal
+- **文件**: src/components/novel/NovelDetailView.tsx
 
-### 10. [MEDIUM] ScrollProgress顶部消失
-- **问题**: progress===0时return null, bar从DOM移除再出现产生跳动
-- **修复**: 改为opacity过渡, 始终渲染容器
-- **文件**: src/components/ScrollProgress.tsx
-
-### 11. [MEDIUM] Scrape rule PUT maxDelay<minDelay绕过
-- **问题**: 仅传maxDelay时绕过交叉校验
-- **修复**: 单独传maxDelay/minDelay时读取现有值交叉检查
-- **文件**: src/app/api/scrape-rules/[id]/route.ts
-
-### 12. [LOW] Unused import useSyncExternalStore
+### 10. [LINT] use-reading-settings useCallback 依赖数组缺少PROGRESS_KEY
+- **修复**: 添加 `PROGRESS_KEY` 到依赖数组
 - **文件**: src/lib/use-reading-settings.ts
 
-### 13. [LOW] 硬编码版权年份 © 2026
-- **修复**: 改为 `new Date().getFullYear()`
-- **文件**: src/app/page.tsx
+### 11. [LINT] NovelListView 移除unused eslint-disable指令
+- **修复**: 移除 `// eslint-disable-line react-hooks/exhaustive-deps`
+- **文件**: src/components/novel/NovelListView.tsx
 
-### 14. [LOW] currentStep未sanitize
-- **修复**: `String(body.currentStep).slice(0,200)` → `sanitizeField(String(body.currentStep), 200)`
-- **文件**: src/app/api/scrape-tasks/[id]/route.ts
+## New Feature: 阅读统计页面
 
-## Refactor (3)
+### /api/public/reading-stats
+- GET端点, 通过sessionId获取匿名用户阅读统计
+- 统计项: 在读书籍数、读完书籍数、已读章节数、阅读连续天数
+- 阅读偏好分布(按分类)
+- 最近阅读活动(最近10条)
+- 连续阅读天数计算(从今天/昨天往前追溯)
+- 包装 `withPublicRateLimit({ capacity: 60, refillRate: 2 })`
 
-### 15. 提取共享常量 SCRAPER_SERVICE_URL + getScraperServiceHeaders
-- 消除3个文件中的硬编码回退值
-- **文件**: src/lib/constants.ts, 3个消费方route.ts
-
-### 16. Prisma category: true → select优化
-- novels POST和dashboard API改为仅取必要字段
-- **文件**: src/app/api/novels/route.ts, src/app/api/dashboard/route.ts
-
-### 17. seed-categories PG兼容时间比较
-- `createdAt.getTime() === updatedAt.getTime()` → 差值<2s判断(PG微秒精度不兼容)
-- **文件**: src/app/api/public/seed-categories/route.ts
-
-## UX & Accessibility (2)
-
-### 18. FilterRow应用scroll-fade-edges + a11y
-- 筛选行容器添加 `scroll-fade-edges` 类 + `role=toolbar` + `aria-label`
-- 箭头按钮添加 `no-fade-left` / `no-fade-right`
-- **文件**: src/app/page.tsx
+### /stats 页面
+- 4个统计卡片: 在读书籍、读完书籍、已读章节、连续阅读天数
+- 阅读偏好条形图(动画进度条)
+- 最近阅读列表(SVG进度环 + 小说信息)
+- 空状态(无数据时引导去阅读)
+- 导航集成: 顶部nav、移动端drawer、footer均添加"统计"入口
+- 使用新CSS类: card-glow, text-shimmer, list-item-compact
 
 ## New CSS Utilities (14)
 
-1. `.glass-card` — 毛玻璃卡片(backdrop-filter blur)
-2. `.breathe` — 呼吸灯动画(2.5s周期)
-3. `.focus-ring-offset` — 键盘导航粗聚焦环(2px offset 3px)
-4. `.text-color-transition` — 颜色/背景/边框统一过渡
-5. `.line-clamp-1/2/3` — 多行文本截断
-6. `.hover-scale-subtle` — 微悬停上浮(scale 1.03)
-7. `.skeleton-circle` — 圆形骨架屏
-8. `.fade-in-on-scroll` — 滚动入场(opacity+translateY, 需JS配合)
-9. `.truncate-end` — 单行截断省略号
-10. `.chip-dot` — 带圆点指示器的标签
-11. `.inset-shadow` — 内阴影容器
-12. `.scrollbar-thin` — 细滚动条(6px, 自动隐藏)
-13. `.badge-count` — 紧凑数字徽章(18px高)
-14. `.link-underline-animated` — 从中心展开的下划线动画
+1. `.progress-bar-sm` — 3px平滑动画进度条
+2. `.text-shimmer` — 文字微光效果(空状态用)
+3. `.tap-feedback` — 按压缩放反馈
+4. `.hover-lift` — 增强悬停上浮+阴影
+5. `.status-pulse` — 状态指示器脉冲环
+6. `.scroll-compact` — 4px细滚动条(侧边栏/抽屉)
+7. `.step-indicator` — 圆形数字步骤指示器
+8. `.divider-label` — 带居中标签的分隔线
+9. `.card-glow` — 卡片hover/focus微光效果
+10. `.scroll-snap-x` — 惯性水平滚动+吸附
+11. `.text-highlight` — 微妙文字背景高亮
+12. `.border-gradient` — hover时渐变边框动画
+13. `.list-item-compact` — 紧凑列表项(10px gap, 8px padding)
+14. `.fab` — 浮动操作按钮(固定定位, 阴影, 按压反馈)
+
+## Style Applications
+- `card-glow` 应用到 ContinueReading 卡片
+- `text-shimmer` 应用到首页和统计页空状态标题
+- `list-item-compact` 应用到统计页最近阅读列表项
 
 ## 验证结果
 - next build: 0 TypeScript errors ✅
-- ESLint: 0 errors, 3 warnings(预存) ✅
-- Git commit: 19410fb (27 files, +263 -64)
-- Git push: 4d7a1c2..19410fb main → main ✅
+- ESLint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- Git commit: 439905c (17 files, +1465 -85)
+- Git push: 19410fb..439905c main → main ✅
 
 ## 统计
-- 修改文件: 27
-- 代码变更: +263 -64
-- 安全修复: 7项 (2 CRITICAL + 2 HIGH + 2 MEDIUM + 1 byproduct)
-- Bug修复: 7项 (1 HIGH + 3 MEDIUM + 3 LOW)
-- 重构: 3项
-- UX/a11y: 2项 (filter scroll-fade + role=toolbar)
+- 修改文件: 12
+- 新建文件: 5 (ContinueReading.tsx, reading-stats/route.ts, stats/page.tsx, reading-session.ts 已存在, patch脚本)
+- 代码变更: +1465 -85
+- 构建修复: 1项 (CRITICAL)
+- Bug修复: 10项 (3 CRITICAL + 2 HIGH + 4 MEDIUM + 1 LINT)
+- 新功能: 1项 (阅读统计页面 + API)
 - 新CSS工具类: 14个
-- 累计修复: 317 + 18 = 335项
+- 样式应用: 3处
+- 累计修复: 335 + 11 = 346项
 
 Stage Summary:
-- 修复SSRF纯数字hostname绕过漏洞(CRITICAL)
-- 修复Export API OOM风险(CRITICAL)
-- 6个公开API端点统一添加rate limiting(HIGH)
-- 修复scrape task竞态条件、章节更新内存浪费
-- 修复framer-motion layoutId冲突、ScrollProgress跳动、ease as const
-- 消除空Bearer token泄露、health端点配置暴露
-- 提取共享常量、优化Prisma查询、修复PG兼容性
-- 新增14个CSS工具类(毛玻璃/呼吸灯/滚动条/徽章/下划线动画等)
+- **紧急修复**: 缺失ContinueReading组件导致构建完全失败
+- **关键Bug**: hydration mismatch, stale closure双重fetch, 数组越界
+- **性能Bug**: watch()无限执行, 重复watch()订阅
+- **新功能**: 阅读统计页面(/stats) + API, 含阅读连续天数和偏好分析
+- **CSS**: 新增14个工具类(进度条/微光/脉冲环/细滚动条/渐变边框/FAB等)
 
 ---
 ## 项目当前状态
 - **代码库状态**: 稳定, 0构建错误, 0 lint errors
-- **最新commit**: 19410fb (已push)
-- **累计修复**: 335项
-- **CSS工具类总计**: 11(上轮) + 10(09:53轮) + 14(本轮) = 35个
+- **最新commit**: 439905c (已push)
+- **累计修复**: 346项
+- **CSS工具类总计**: 35 + 14(本轮) = 49个
+- **公共页面**: 首页、分类、排行榜、**统计(新)**
 
 ## 未解决问题或风险
 1. agent-browser无法在此环境使用(沙箱隔离+dev server OOM)
@@ -168,17 +159,18 @@ Stage Summary:
 9. 读者对话框中章节侧边栏无虚拟化(>1000章DOM性能, MEDIUM)
 10. NovelCard Popover在触屏设备上hover无效(LOW)
 11. tailwind.config.ts遗留文件含hsl(var())(v4下不影响但应清理)
+12. ScrapeTaskMonitor formatDuration <60s显示"1分"而非秒数(LOW)
 
 ## 建议下一阶段优先事项
 1. 服务器部署 git pull && bash deploy.sh
 2. 新功能: 批量导入小说(上传JSON/TXT创建小说)
-3. 新功能: 阅读进度持久化到服务端(localStorage→DB)
-4. 新功能: 阅读统计仪表板(阅读时长/完成率/偏好分析)
-5. 管理: 小说封面批量上传/管理
-6. 性能: 章节列表虚拟滚动(@tanstack/react-virtual)
-7. 可访问性: Admin页面服务端auth保护
-8. 移动端: Resizable panels条件布局切换
-9. 迁移准备: Dashboard activity API去SQLite date()
-10. 新功能: 最近浏览跨设备同步(localStorage→DB)
-11. 样式: 应用新CSS工具类到更多组件(glass-card/breathe/badge-count等)
-12. 清理: 删除遗留tailwind.config.ts, 公共页面统一apiFetch
+3. 管理: 小说封面批量上传/管理
+4. 性能: 章节列表虚拟滚动(@tanstack/react-virtual)
+5. 可访问性: Admin页面服务端auth保护
+6. 移动端: Resizable panels条件布局切换
+7. 迁移准备: Dashboard activity API去SQLite date()
+8. 新功能: 最近浏览跨设备同步(localStorage→DB) — 基础已就绪(reading-session.ts + reading-progress API)
+9. 样式: 应用新CSS工具类到更多组件(glass-card/breathe/badge-count/scroll-compact等)
+10. 清理: 删除遗留tailwind.config.ts, 公共页面统一apiFetch
+11. 新功能: 阅读统计增强(阅读时长追踪、周/月趋势图、个人阅读报告)
+12. 新功能: 小说推荐系统(基于阅读偏好和分类)
