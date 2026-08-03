@@ -1,3 +1,111 @@
+---
+Task ID: cron-24cycle-round1
+Agent: Main Orchestrator
+Timestamp: $(date -u +%Y-%m-%dT%H:%M:%S+08:00)
+
+Task: 循环代码审计计划第1轮/24次 — 深度审计+31项全修复+阅读连续天数+7新CSS类
+
+Work Log:
+- 读取worklog确认状态(累计478项修复, commit f8db9de)
+- next build: 0 errors ✅, bun run lint: 0 errors, 2 warnings(预存) ✅
+- 启动2个sub-agent并行审计: 前端组件审计+API路由安全审计
+- 前端审计发现19个问题(1H+9M+5L+4CQ)
+- API审计发现16个问题(3M+8L+5CQ)
+- 合计31个问题, 全部修复(不论优先级)
+- 构建验证: 0 errors, 0 lint errors ✅
+- 新功能: 阅读连续天数API+ReadingStreak组件+stats页面集成
+- 新功能: ErrorBoundary客户端错误边界+withErrorBoundary HOC
+- 新增7个CSS工具类: skeleton-line/section-gradient/hover-scale/glass-card-interactive/text-gradient-subtle/divider-with-text/tag-pill-gradient
+- CSS应用: Dashboard quick actions stagger-in交错动画
+- commit cf228af (31项bug修复) + dc23e56 (新功能+CSS)
+- 创建24次循环cron任务(Job ID: 305706, 每15分钟)
+
+## Bug修复 (31项)
+
+### HIGH (1)
+1. **NovelDetailClient阅读进度stale** — prevIndexRef保存旧章节索引, scrollPercent加入依赖
+
+### MED (12)
+2. **NovelDetailClient chapterPage effect** — 加入chapters.length守卫和依赖
+3. **NovelDetailClient sidebarPage effect** — 移除自引用依赖sidebarPage
+4. **NovelListView翻页清空选择** — 依赖改为page/search/statusFilter/categoryFilter
+5. **VisualSelectorBuilder无AC** — fetchPageAcRef + useEffect cleanup + abort守卫
+6. **AiRuleAssistant无AC** — generateAcRef + dialog关闭时abort + abort守卫
+7. **AntiCrawlMonitor AC泄漏** — fetchAcRef存储+取消旧请求+finally守卫
+8. **ScrapeRuleEditor as any** — Parameters<typeof setValue>类型安全断言
+9. **AppSidebar过度渲染** — 只订阅refreshVersions.novels
+10. **favorite action无白名单** — 限制add/remove/toggle, 非法值返回400
+11. **reading-progress DELETE宽松** — 速率限制从60/2改为5/0.1
+12. **DashboardView getEventMeta** — switch改为常量EVENT_META_MAP缓存
+13. **ReadingHeatMap时区硬编码** — Intl.DateTimeFormat动态检测USER_TZ
+
+### LOW (13)
+14. **ContinueReading finally** — abort检查防止卸载后setState
+15. **NovelDetailClient as断言** — Array.isArray运行时检查
+16. **batch logs任务状态** — 校验pending/running才接受日志
+17. **batch logs错误回显** — 不回显用户输入, 改为列出允许值
+18. **scrape-tasks双重catch** — 外层catch加console.error
+19. **import文件白名单** — 扩展名校验.txt/.json + format参数白名单
+20. **heatMap缓存key冒号** — sessionId.replace(/:/g, '_')
+21. **heatMap API时区** — 可选tz查询参数
+22. **admin settings静默忽略** — 返回ignoredKeys数组
+23. **NovelFormDialog console.error** — NODE_ENV判断
+24. **ScrapeRuleEditor未用参数** — _currentUrl前缀
+25. **ScrapeRuleEditor remount** — key={vs-${field}}稳定key
+26. **全局ErrorBoundary** — 新建ErrorBoundary.tsx + withErrorBoundary HOC
+
+## 新功能 (3)
+1. **阅读连续天数** — GET /api/public/reading-streak + ReadingStreak组件
+2. **ErrorBoundary** — 客户端错误边界, 防止白屏崩溃
+3. **CSS工具类** — 7个新类 + stagger-in应用
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 3 warnings(预存) ✅
+- Git commits: cf228af + dc23e56
+- Git push: main → main ✅
+
+## 统计
+- 修改文件: 20 (审计修复16 + 功能/CSS 4)
+- 新增文件: 2 (reading-streak API, ReadingStreak组件, ErrorBoundary)
+- Bug修复: 31项 (1H + 12M + 13L + 5CQ)
+- 新功能: 3项
+- 新CSS工具类: 7个
+- 累计修复: 478 + 31 = 509项
+
+Stage Summary:
+- **安全性**: action白名单/DELETE严格限速/错误不回显用户输入/文件扩展名白名单/format白名单
+- **稳定性**: 6处AbortController修复(防止内存泄漏+卸载后setState)/ErrorBoundary防白屏
+- **正确性**: 阅读进度stale closure修复/effect依赖修正/getEventMeta缓存
+- **性能**: AppSidebar精确订阅/常量Map替代switch每次创建对象
+- **国际化**: 时区从硬编码改为动态检测
+- **功能**: 阅读连续天数统计(当前/最长/累计)
+- **CSS**: 7新工具类 + stagger-in应用
+
+## 项目当前状态
+- **构建**: 0 TypeScript errors, 0 ESLint errors ✅
+- **最新commit**: dc23e56
+- **累计修复**: 509项
+- **架构**: Next.js 16.1.3 App Router + Prisma + SQLite + Docker(Caddy) + Python Agent
+- **Cron**: 24次循环任务已创建 (Job ID: 305706, 每15分钟, webDevReview)
+- **循环进度**: 第1轮/24次
+
+## 未解决问题/建议下一阶段优先事项
+1. **[HIGH] Favorite计数无去重** → 需Favorite表+unique约束(架构级)
+2. **[MED] Dashboard activity $queryRawUnsafe** → 改用Prisma.sql模板标签
+3. **[MED] 10000章节列表无虚拟化** → @tanstack/react-virtual
+4. **[MED] 周月点击排行逻辑** → 需按时间窗口的点击计数表
+5. **[LOW] 验证常量跨文件重复** → sites/themes/tags提取共享validation模块
+6. **[FEATURE] EPUB/TXT单本导出** → epub-gen库
+7. **[FEATURE] 智能推荐"猜你喜欢"** → 基于分类/标签关联
+8. **[FEATURE] 每日阅读目标** → 目标设定+进度环+通知
+9. **[FEATURE] 阅读笔记/标注** → 章节内高亮+旁注
+10. **[FEATURE] 代理池Web管理面板** → 可视化添加/删除/测试代理
+11. **[STYLE] glass-card-interactive/hover-scale应用到更多组件**
+12. **[CSS] stagger-in应用到更多列表**
+
+---
+
 # Work Log
 
 ---

@@ -103,7 +103,6 @@ export default function StatsPage() {
   const [stats, setStats] = useState<ReadingStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [heatMapData, setHeatMapData] = useState<{ dates: Record<string, number> } | null>(null);
   const [streakData, setStreakData] = useState<{ currentStreak: number; maxStreak: number; totalDays: number } | null>(null);
 
   const fetchStats = useCallback(async (signal?: AbortSignal) => {
@@ -127,13 +126,10 @@ export default function StatsPage() {
   useEffect(() => {
     const ac = new AbortController();
     fetchStats(ac.signal);
-    // Fetch heat map data in parallel
-    const sessionId = getSessionId();
-    if (sessionId) {
-      apiFetch<{ dates: Record<string, number> }>(`/api/public/reading-heatMap?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
-        .then(setHeatMapData)
-        .catch(() => {});
-      apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
+    // Fetch streak data in parallel
+    const sid = getSessionId();
+    if (sid) {
+      apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`, { signal: ac.signal })
         .then(setStreakData)
         .catch(() => {});
     }
@@ -231,7 +227,7 @@ export default function StatsPage() {
               </div>
 
               {/* Reading Heat Map */}
-              <ReadingHeatMap sessionId={sessionId || ''} className="mt-6" />
+              <ReadingHeatMap sessionId={getSessionId() || ''} className="mt-6" />
 
               {/* Genre Distribution */}
               {stats.genreDistribution.length > 0 && (
