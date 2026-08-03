@@ -11,22 +11,27 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
   _request,
   { params }: { params: Promise<{ id: string }> },
 ) => {
-  const { id } = await params;
+  try {
+    const { id } = await params;
 
-  const novel = await db.novel.findUnique({
-    where: { id },
-    select: { id: true },
-  });
+    const novel = await db.novel.findUnique({
+      where: { id },
+      select: { id: true },
+    });
 
-  if (!novel) {
-    return NextResponse.json({ error: '小说不存在' }, { status: 404 });
+    if (!novel) {
+      return NextResponse.json({ error: '小说不存在' }, { status: 404 });
+    }
+
+    const updated = await db.novel.update({
+      where: { id },
+      data: { clickCount: { increment: 1 } },
+      select: { clickCount: true },
+    });
+
+    return NextResponse.json({ clickCount: updated.clickCount });
+  } catch (error) {
+    console.error('Click tracking error:', error);
+    return NextResponse.json({ error: '操作失败' }, { status: 500 });
   }
-
-  const updated = await db.novel.update({
-    where: { id },
-    data: { clickCount: { increment: 1 } },
-    select: { clickCount: true },
-  });
-
-  return NextResponse.json({ clickCount: updated.clickCount });
 });

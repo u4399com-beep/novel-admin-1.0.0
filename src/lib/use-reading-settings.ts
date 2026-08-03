@@ -124,7 +124,7 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
   );
 
   const saveProgress = useCallback(
-    (chapterIndex: number) => {
+    (chapterIndex: number, sp?: number) => {
       try {
         localStorage.setItem(PROGRESS_KEY, String(chapterIndex));
       } catch {
@@ -148,7 +148,7 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
           apiFetch('/api/public/reading-progress', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: sid, novelId, chapterId, chapterIndex }),
+            body: JSON.stringify({ sessionId: sid, novelId, chapterId, chapterIndex, scrollPercent: sp }),
             silent: true,
             timeout: 5000,
           }).catch(() => {});

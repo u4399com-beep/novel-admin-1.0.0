@@ -180,9 +180,9 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     } catch { /* ignore */ }
   }, [novel.id, novel.title, novel.author, novel.coverUrl, novel.category?.name, novel.category?.color]);
 
-  // ─── Track click count (fire-and-forget) ────────────────────────
+  // ─── Track click count (fire-and-forget with timeout) ─────────
   useEffect(() => {
-    fetch(`/api/public/novels/${novel.id}/click`, { method: 'POST' }).catch(() => {});
+    apiFetch(`/api/public/novels/${novel.id}/click`, { method: 'POST', silent: true, timeout: 5000 }).catch(() => {});
   }, [novel.id]);
 
   // ─── 3D Cover tilt handlers ──────────────────────────────────
@@ -225,6 +225,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const readerContentRef = useRef<HTMLDivElement>(null);
   const readerDialogRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const pendingScrollRestore = useRef<number | null>(null);
   const [readStartTime] = useState(() => Date.now());
   const [readDuration, setReadDuration] = useState(0);
 
@@ -326,6 +327,23 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         readerContentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
       });
 
+      // Check if there's a saved scroll position for this chapter
+      try {
+        const SK = 'novel-session-id';
+        const sid = localStorage.getItem(SK) || '';
+        if (sid) {
+          const resp = await fetch(`/api/public/reading-progress?sessionId=${encodeURIComponent(sid)}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            const items = (data.progress || []) as Array<{ chapterIndex: number; scrollPercent: number | null }>;
+            const saved = items.find((p: { chapterIndex: number }) => p.chapterIndex === index);
+            if (saved && typeof saved.scrollPercent === 'number' && saved.scrollPercent > 0) {
+              pendingScrollRestore.current = saved.scrollPercent;
+            }
+          }
+        }
+      } catch { /* best-effort */ }
+
       // Cancel any in-flight chapter load
       loadChapterAbortRef.current?.abort();
       const abortController = new AbortController();
@@ -336,6 +354,20 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           signal: abortController.signal,
         });
         setChapterContent(data.content || '（本章暂无内容）');
+        // Restore saved scroll position after content renders
+        if (pendingScrollRestore.current !== null) {
+          const sp = pendingScrollRestore.current;
+          pendingScrollRestore.current = null;
+          requestAnimationFrame(() => {
+            const el = readerContentRef.current;
+            if (el && el.scrollHeight > el.clientHeight) {
+              el.scrollTo({
+                top: (sp / 100) * (el.scrollHeight - el.clientHeight),
+                behavior: 'instant' as ScrollBehavior,
+              });
+            }
+          });
+        }
       } catch (err) {
         if (!(err instanceof DOMException && err.name === 'AbortError')) {
           setChapterError(true);
@@ -372,7 +404,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   // Save progress when changing chapters
   useEffect(() => {
     if (readerOpen && !loadingChapter && chapterContent) {
-      saveProgress(currentIndex);
+      saveProgress(currentIndex, scrollPercent);
     }
   }, [currentIndex, readerOpen, loadingChapter, chapterContent, saveProgress]);
 
@@ -439,26 +471,15 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       } else if (e.key === 'ArrowRight' && !isInteractive) {
         e.preventDefault();
         goToChapter('next');
-      } else if ((e.key === 'j' || e.key === 'J') && !e.metaKey && !e.ctrlKey) {
-        // Vim-style next chapter
-        const tag = (e.target as HTMLElement).tagName;
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
-          e.preventDefault();
-          goToChapter('next');
-        }
-      } else if ((e.key === 'k' || e.key === 'K') && !e.metaKey && !e.ctrlKey) {
-        // Vim-style prev chapter
-        const tag = (e.target as HTMLElement).tagName;
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
-          e.preventDefault();
-          goToChapter('prev');
-        }
-      } else if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
-        const tag = (e.target as HTMLElement).tagName;
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
-          e.preventDefault();
-          setShowShortcutsHelp((p) => !p);
-        }
+      } else if ((e.key === 'j' || e.key === 'J') && !e.metaKey && !e.ctrlKey && !isInteractive) {
+        e.preventDefault();
+        goToChapter('next');
+      } else if ((e.key === 'k' || e.key === 'K') && !e.metaKey && !e.ctrlKey && !isInteractive) {
+        e.preventDefault();
+        goToChapter('prev');
+      } else if (e.key === '?' && !e.metaKey && !e.ctrlKey && !isInteractive) {
+        e.preventDefault();
+        setShowShortcutsHelp((p) => !p);
       } else if (e.key === 'ArrowUp' && !isInteractive) {
         // Scroll reader content up
         e.preventDefault();
@@ -1136,7 +1157,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                         key={ch.id}
                         onClick={() => loadChapter(globalIdx)}
                         className={
-                          'block w-full text-left text-xs px-2 py-1.5 rounded-md truncate transition-colors ' +
+                          'block w-full text-left text-xs px-2 py-1.5 rounded-md truncate transition-colors focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none ' +
                           (globalIdx === currentIndex
                             ? 'bg-primary/10 text-primary font-medium'
                             : 'text-muted-foreground hover:text-foreground hover:bg-muted/50') +
@@ -1276,7 +1297,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                       onChange={(e) => { setSearchQuery(e.target.value); setCurrentMatch(0); }}
                       onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setSearchOpen(false); setSearchQuery(''); setCurrentMatch(0); } if (e.key === 'Enter') { e.preventDefault(); handleSearchNext(); } }}
                       placeholder="搜索本章内容..."
-                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus-ring-bright rounded"
+                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none rounded"
                     />
                     {searchQuery.trim() && (
                       <>

@@ -19,7 +19,7 @@ export const GET = withPublicRateLimit({ capacity: 30, refillRate: 2 }, async fu
 
     const novels = await db.novel.findMany({
       where: {
-        title: { contains: q },
+        title: { contains: q, mode: 'insensitive' },
       },
       select: {
         id: true,

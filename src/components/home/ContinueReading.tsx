@@ -62,22 +62,6 @@ export function ContinueReading() {
   const [loading, setLoading] = useState(true);
   const [dismissed, setDismissed] = useState(false);
 
-  const fetchProgress = useCallback(async () => {
-    const sessionId = getSessionId();
-    if (!sessionId) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const data = await apiFetch<{ progress: ReadingProgressItem[] }>(`/api/public/reading-progress?sessionId=${encodeURIComponent(sessionId)}`);
-      setProgress(data.progress || []);
-    } catch {
-      // Silently fail - reading progress is a nice-to-have feature
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     // Check if user previously dismissed this section
     try {

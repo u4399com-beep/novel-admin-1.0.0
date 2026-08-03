@@ -67,6 +67,7 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
     // Invalidate caches that may depend on settings
     invalidateCache('dashboard:stats');
     invalidateCache('categories:list');
+    invalidateCache('public:settings');
 
     const result: Record<string, string> = {};
     for (const [key, value] of entries) {

@@ -122,19 +122,23 @@ export const POST = withAuth(async function POST() {
     let createdCount = 0;
     let updatedCount = 0;
 
-    for (const cat of CATEGORIES_23QB) {
-      const result = await db.category.upsert({
-        where: { slug: cat.slug },
-        update: {
-          name: cat.name,
-          description: cat.description,
-          color: cat.color,
-          icon: cat.icon,
-          sortOrder: cat.sortOrder,
-        },
-        create: cat,
-      });
-      // Track created vs updated (PG-safe: don't rely on time equality)
+    const results = await db.$transaction(
+      CATEGORIES_23QB.map((cat) =>
+        db.category.upsert({
+          where: { slug: cat.slug },
+          update: {
+            name: cat.name,
+            description: cat.description,
+            color: cat.color,
+            icon: cat.icon,
+            sortOrder: cat.sortOrder,
+          },
+          create: cat,
+        })
+      )
+    );
+
+    for (const result of results) {
       if (!result.updatedAt || result.updatedAt.getTime() - result.createdAt.getTime() < 2000) {
         createdCount++;
       } else {
