@@ -211,5 +211,68 @@ Stage Summary:
 - antiCrawlLevel (1-5) now configurable per scrape rule
 
 ---
+Task ID: 3
+Agent: Main Orchestrator
+Task: 前端反爬5级配置面板 + 监控大屏 + lint修复 + CSS新类
+
+Work Log:
+- 修复3个setState-in-effect lint error: ContinueReading/RecentlyViewed/useSiteName
+- 重写AntiCrawlTab: 5级选择器(彩色+图标+锁定状态) + 7模块网格(按标签着色) + 精细调参
+- AntiCrawlTab自动配置: 选Lv.2自动开启UA轮换, Lv.3自动开启JS渲染
+- 新建AntiCrawlMonitor: 4统计卡(24h事件/验证码/代理/未解决) + 验证码趋势图 + 事件分布图 + 代理池状态 + TOP5域名 + 事件流
+- 更新schema.ts: 新增antiCrawlLevel zod验证(1-5 int)
+- 更新ScrapeRuleEditor: defaultValues + loadRule + AntiCrawlMonitor集成 + 反爬监控按钮
+- 7个新CSS工具类: pulse-dot, level-glow, scrollbar-thin, stat-value, mini-progress, status-dot, card-lift
+- 增强reduced-motion: pulse-dot和level-glow禁用
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- Git commit: f8db9de (24 files, +6296 -1)
+- Git push: f8db9de main → main ✅
+
+## 统计
+- 修改/新增文件: 24
+- 代码变更: +6296 -1
+- Python Agent: 17文件, 5315行
+- 后端API: 3新路由 + 2新Prisma模型
+- 前端: 2新组件 + 1重构 + schema/editor更新
+- CSS: 7新工具类
+- Bug修复: 3项setState-in-effect + 1项JSX解析
+- 累计修复: 474 + 4 = 478项
+
+Stage Summary:
+- **Python Agent**: 6大反反爬模块完整代码(curl_cffi/Playwright/fontTools/ddddocr/OpenCV/Poisson)
+- **5级反爬系统**: Lv.1静态→Lv.5全拟人化, 前端可视化选择器自动联动配置
+- **监控大屏**: 4统计卡 + 验证码趋势 + 事件分布 + 代理池 + TOP5域名
+- **后端**: AntiCrawlEvent/ProxyPoolStats模型 + 5个监控API(含自动解决逻辑)
+- **CSS**: 7新工具类 + 增强reduced-motion
+
+## 项目当前状态
+- **构建**: 0 TypeScript errors, 0 ESLint errors ✅
+- **最新commit**: f8db9de
+- **累计修复**: 478项
+- **架构**: Next.js 16.1.3 App Router + Prisma + SQLite + Docker(Caddy) + Python Agent
+- **新增模型**: SiteSetting, AntiCrawlEvent, ProxyPoolStats
+- **新增Python模块**: python_crawler_agent/ (17文件, 5315行)
+
+## 未解决问题/建议下一阶段优先事项
+1. **[HIGH] Favorite计数无去重** → 需Favorite表+unique约束(架构级, 需仔细设计)
+2. **[MED] Reading progress DELETE无所有权验证** → 匿名session固有风险, 实际可接受(UUID v4)
+3. **[MED] Dashboard activity $queryRawUnsafe** → 可考虑Prisma Client API或DailyStats物化表
+4. **[LOW] 验证常量跨文件重复** → sites/themes/tags提取共享validation模块
+5. **[LOW] Regex超时无法中断(VisualSelector)** → Web Worker或regex库
+6. **[FEATURE] EPUB/TXT单本导出** → epub-gen库
+7. **[FEATURE] 智能推荐"猜你喜欢"** → 基于分类/标签关联
+8. **[FEATURE] 每日阅读目标** → 目标设定+进度环+通知
+9. **[FEATURE] 阅读笔记/标注** → 章节内高亮+旁注
+10. **[FEATURE] 首页读取admin siteName** → 调用/api/public/settings获取站点名称
+11. **[STYLE] 移动端适配完善** → 阅读器/管理端响应式
+12. **[CSS] 新工具类推广应用** → glass-card-glow/stagger-in/focus-ring-soft/card-lift应用到更多组件
+13. **[FEATURE] 代理池Web管理面板** → 可视化添加/删除/测试代理
+14. **[FEATURE] 反爬事件自动告警** → WebSocket实时推送 + 邮件通知
+15. **[FEATURE] 采集任务cron调度** → 管理后台配置定时采集
+
+---
 
 # Work Log
