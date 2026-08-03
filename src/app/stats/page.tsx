@@ -7,7 +7,7 @@ import {
   BookOpen, Trophy, TrendingUp, Library, CheckCircle2,
   Clock, BarChart3, ArrowLeft, Loader2, BookMarked, RotateCcw,
 } from 'lucide-react';
-import ReadingHeatMap from '@/components/ReadingHeatMap';
+import { ReadingHeatMap } from '@/components/ReadingHeatMap';
 import ReadingStreak from '@/components/ReadingStreak';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
@@ -231,7 +231,7 @@ export default function StatsPage() {
               </div>
 
               {/* Reading Heat Map */}
-              <ReadingHeatMap data={heatMapData?.dates ?? {}} />
+              <ReadingHeatMap sessionId={sessionId || ''} className="mt-6" />
 
               {/* Genre Distribution */}
               {stats.genreDistribution.length > 0 && (
