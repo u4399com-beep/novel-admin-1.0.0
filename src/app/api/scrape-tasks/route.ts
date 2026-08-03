@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { parsePagination, safeJson } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
+import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from "@/lib/constants";
 
 const VALID_STATUSES = ["pending", "running", "completed", "failed", "cancelled"];
 
@@ -85,22 +86,22 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     // Default: autoStart = true unless explicitly set to false
     const shouldAutoStart = autoStart !== false;
     if (shouldAutoStart) {
-      const scraperUrl = process.env.SCRAPER_SERVICE_URL || "http://localhost:3099";
+      const scraperUrl = SCRAPER_SERVICE_URL;
       fetch(`${scraperUrl}/execute-task`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
-        },
+        headers: getScraperServiceHeaders(),
         body: JSON.stringify({ taskId: task.id }),
         signal: AbortSignal.timeout(5000),
       }).catch(async (err) => {
         console.error(`[Scrape Task] Failed to auto-trigger task ${task.id}:`, err);
-        // Update task status to failed so UI shows accurate state
-        await db.scrapeTask.update({
-          where: { id: task.id },
+        // Only update to failed if still pending (avoid overwriting running/completed)
+        const { count } = await db.scrapeTask.updateMany({
+          where: { id: task.id, status: "pending" },
           data: { status: "failed", errorMessage: `触发采集服务失败: ${err instanceof Error ? err.message : '未知错误'}`, completedAt: new Date() },
-        }).catch(() => {});
+        });
+        if (count === 0) {
+          console.log(`[Scrape Task] Task already in progress`);
+        }
       });
     }
 

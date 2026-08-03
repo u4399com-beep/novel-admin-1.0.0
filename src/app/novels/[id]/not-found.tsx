@@ -11,7 +11,7 @@ export default function NovelNotFound() {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: 'easeOut' }}
+        transition={{ duration: 0.45, ease: 'easeOut' as const }}
         className="flex flex-col items-center gap-6 text-center max-w-sm"
       >
         {/* Large decorative icon group */}

@@ -1,12 +1,13 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { withPublicRateLimit } from "@/lib/api-auth";
 
 /**
  * Public chapters list API — no auth required.
  * Returns chapter metadata (id, title, wordCount, sortOrder, createdAt) — NO content.
  * Supports pagination via page/pageSize params.
  */
-export async function GET(
+export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -57,4 +58,4 @@ export async function GET(
     console.error("Public chapters list API error:", error);
     return NextResponse.json({ error: "获取章节列表失败" }, { status: 500 });
   }
-}
+});

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeField } from "@/lib/api-utils";
+import { withPublicRateLimit } from "@/lib/api-auth";
 
 // ─── 23qb.net 字数区间映射 ─────────────────────────────────────────
 const WORD_COUNT_RANGES: Record<string, { min: number; max: number }> = {
@@ -34,7 +35,7 @@ const SORT_MAP: Record<string, { field: string; direction: "asc" | "desc" }> = {
  *   - status: 状态筛选 (ongoing|completed|"")
  *   - sort: 排序方式 (last_update|new_entry|new_hot|weekly_click|...)
  */
-export async function GET(request: NextRequest) {
+export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const rawPage = searchParams.get("page") || "1";
@@ -128,4 +129,4 @@ export async function GET(request: NextRequest) {
     console.error("Public novels API error:", error);
     return NextResponse.json({ error: "获取小说列表失败" }, { status: 500 });
   }
-}
+});

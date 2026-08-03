@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { withPublicRateLimit } from "@/lib/api-auth";
 
 /**
  * Public categories API — no auth required.
  * Returns all categories with novel count, slug, and icon.
  */
-export async function GET() {
+export const GET = withPublicRateLimit(async function GET() {
   try {
     const categories = await db.category.findMany({
       orderBy: { sortOrder: "asc" },
@@ -26,4 +27,4 @@ export async function GET() {
     console.error("Public categories API error:", error);
     return NextResponse.json({ error: "获取分类失败"}, { status: 500 });
   }
-}
+});

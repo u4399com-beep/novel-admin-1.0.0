@@ -3,8 +3,7 @@ import { withAuth } from '@/lib/api-auth';
 import { isSafeUrl } from '@/lib/sanitize';
 import { safeJson } from '@/lib/api-utils';
 
-const SCRAPER_SERVICE_URL =
-  process.env.SCRAPER_SERVICE_URL || 'http://localhost:3099';
+import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 
 // POST /api/scrape-rules/preview  { url: "https://example.com" }
 // Proxies to scraper-service /ai/preview-page
@@ -54,10 +53,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       const response = await fetch(targetUrl.toString(), {
         method: 'POST',
         signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ''}`,
-        },
+        headers: getScraperServiceHeaders(),
         body: JSON.stringify({ url }),
       });
 

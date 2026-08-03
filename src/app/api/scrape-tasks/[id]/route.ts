@@ -65,7 +65,7 @@ export const PUT = withAuth(async function PUT(
       updateData.progress = Math.min(100, Math.max(0, p));
     }
     if (body.currentStep !== undefined) {
-      updateData.currentStep = String(body.currentStep).slice(0, 200);
+      updateData.currentStep = sanitizeField(String(body.currentStep), 200);
     }
     const numFields = ['totalBooks', 'totalChapters', 'newBooks', 'newChapters', 'failedItems', 'skippedItems'] as const;
     for (const field of numFields) {

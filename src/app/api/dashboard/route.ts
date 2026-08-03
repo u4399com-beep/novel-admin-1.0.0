@@ -21,7 +21,7 @@ export const GET = withAuth(async function GET() {
             take: 8,
             orderBy: { updatedAt: "desc" },
             include: {
-              category: true,
+              category: { select: { id: true, name: true, color: true, slug: true, icon: true } },
               _count: { select: { chapters: true } },
             },
           }),

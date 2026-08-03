@@ -60,20 +60,14 @@ export async function GET() {
     };
   }
 
-  // 2. Environment sanity check
+  // 2. Environment sanity check (minimal — no secret details exposed)
   const envChecks: string[] = [];
-  if (!process.env.NEXTAUTH_SECRET || process.env.NEXTAUTH_SECRET.length < 32) {
-    envChecks.push('NEXTAUTH_SECRET 未配置或过短');
-  }
-  if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 8) {
-    envChecks.push('ADMIN_PASSWORD 未配置或过短');
-  }
   if (!process.env.DATABASE_URL) {
     envChecks.push('DATABASE_URL 未配置');
   }
   checks.environment = {
     ok: envChecks.length === 0,
-    detail: envChecks.length > 0 ? envChecks.join('; ') : '环境变量正常',
+    detail: envChecks.length > 0 ? envChecks.join('; ') : 'ok',
   };
 
   // 3. Auth config check

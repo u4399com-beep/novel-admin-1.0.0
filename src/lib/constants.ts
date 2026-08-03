@@ -7,3 +7,21 @@ export const NOVEL_STATUS_MAP: Record<string, { label: string; className: string
 };
 
 export const VALID_NOVEL_STATUSES = Object.keys(NOVEL_STATUS_MAP) as string[];
+
+/** Scraper service URL — used by scrape-tasks, ai-generate, preview */
+export const SCRAPER_SERVICE_URL =
+  process.env.SCRAPER_SERVICE_URL || 'http://localhost:3099';
+
+/**
+ * Build Authorization header for scraper-service.
+ * Returns undefined (no header) when token is not configured,
+ * avoiding sending an empty "Bearer " string.
+ */
+export function getScraperServiceHeaders(): HeadersInit {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  const token = process.env.SCRAPER_SERVICE_TOKEN;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}

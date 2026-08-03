@@ -1,13 +1,14 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { sanitizeField } from '@/lib/api-utils';
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 /**
  * Public search-suggestions API — no auth required.
  * Returns top 8 novel titles matching the query (case-insensitive).
  * GET ?q=keyword
  */
-export async function GET(request: NextRequest) {
+export const GET = withPublicRateLimit({ capacity: 30, refillRate: 2 }, async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const q = sanitizeField(searchParams.get('q'), 100);
@@ -49,4 +50,4 @@ export async function GET(request: NextRequest) {
       { status: 500 },
     );
   }
-}
+});

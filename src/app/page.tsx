@@ -439,12 +439,12 @@ function FilterRow<T extends string>({
       </span>
 
       {/* Scroll container with arrows */}
-      <div className="relative flex-1 min-w-0">
+      <div className="relative flex-1 min-w-0 scroll-fade-edges" role="toolbar" aria-label={label}>
         {/* Left arrow */}
         {showLeftArrow && (
           <button
             onClick={() => scroll('left')}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm hover:bg-accent transition-colors"
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm hover:bg-accent transition-colors no-fade-left"
             aria-label="向左滚动"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
@@ -483,7 +483,7 @@ function FilterRow<T extends string>({
         {showRightArrow && (
           <button
             onClick={() => scroll('right')}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm hover:bg-accent transition-colors"
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm hover:bg-accent transition-colors no-fade-right"
             aria-label="向右滚动"
           >
             <ChevronRight className="h-3.5 w-3.5" />
@@ -1372,7 +1372,7 @@ export default function HomePage() {
               <Link href="/login" className="text-muted-foreground/60 hover:text-foreground transition-colors">管理</Link>
             </div>
             <p className="text-[11px] text-muted-foreground/40">
-              © 2026 小说阁 · 基于 Next.js 16 + Prisma + Tailwind CSS 构建
+              © {new Date().getFullYear()} 小说阁 · 基于 Next.js 16 + Prisma + Tailwind CSS 构建
             </p>
           </div>
         </div>

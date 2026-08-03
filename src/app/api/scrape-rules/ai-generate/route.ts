@@ -3,8 +3,7 @@ import { withAuth } from '@/lib/api-auth';
 import { safeJson } from '@/lib/api-utils';
 import { isSafeUrl } from '@/lib/sanitize';
 
-const SCRAPER_SERVICE_URL =
-  process.env.SCRAPER_SERVICE_URL || 'http://localhost:3099';
+import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 
 // POST /api/scrape-rules/ai-generate
 // Body: { url: string, siteType?: string }
@@ -61,10 +60,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       const response = await fetch(targetUrl.toString(), {
         method: 'POST',
         signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ''}`,
-        },
+        headers: getScraperServiceHeaders(),
         body: JSON.stringify({
           url,
           siteType: siteType || undefined,

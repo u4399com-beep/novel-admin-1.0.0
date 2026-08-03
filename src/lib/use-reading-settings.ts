@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useSyncExternalStore } from 'react';
+import { useState, useCallback } from 'react';
 
 // ─── Reading Themes ─────────────────────────────────────────────────
 

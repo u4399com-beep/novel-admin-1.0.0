@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { withPublicRateLimit } from "@/lib/api-auth";
 
 /**
  * Public novel detail API — no auth required.
  * Returns novel with category, tags, and chapter count.
  */
-export async function GET(
+export const GET = withPublicRateLimit(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -33,4 +34,4 @@ export async function GET(
     console.error("Public novel detail API error:", error);
     return NextResponse.json({ error: "获取小说详情失败"}, { status: 500 });
   }
-}
+});

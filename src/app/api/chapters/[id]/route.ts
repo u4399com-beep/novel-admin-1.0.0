@@ -62,7 +62,7 @@ export const PUT = withAuth(async function PUT(
     // Use transaction for atomic read-modify-write
     const chapter = await db.$transaction(async (tx) => {
       // Get old chapter for word count diff
-      const oldChapter = await tx.chapter.findUnique({ where: { id } });
+      const oldChapter = await tx.chapter.findUnique({ where: { id }, select: { id: true, novelId: true, wordCount: true } });
       if (!oldChapter) {
         throw new Error("NOT_FOUND");
       }
@@ -70,7 +70,7 @@ export const PUT = withAuth(async function PUT(
       const shouldUpdateWordCount = content !== undefined;
       const newContent = shouldUpdateWordCount
         ? sanitizeField(content, MAX_CONTENT_LENGTH)
-        : oldChapter.content || "";
+        : "";
       const newWordCount = shouldUpdateWordCount
         ? newContent.length
         : oldChapter.wordCount || 0;

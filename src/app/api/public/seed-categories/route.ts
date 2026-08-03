@@ -134,8 +134,8 @@ export const POST = withAuth(async function POST() {
         },
         create: cat,
       });
-      // If updatedAt equals createdAt, it was just created
-      if (result.createdAt.getTime() === result.updatedAt.getTime()) {
+      // Track created vs updated (PG-safe: don't rely on time equality)
+      if (!result.updatedAt || result.updatedAt.getTime() - result.createdAt.getTime() < 2000) {
         createdCount++;
       } else {
         updatedCount++;

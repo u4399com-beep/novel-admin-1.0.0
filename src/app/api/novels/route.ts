@@ -135,8 +135,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
           : undefined,
       },
       include: {
-        category: true,
-        tags: { include: { tag: true } },
+        category: { select: { id: true, name: true, color: true, slug: true, icon: true } },
+        tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
         _count: { select: { chapters: true } },
       },
     });

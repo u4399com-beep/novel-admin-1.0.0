@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { withPublicRateLimit } from "@/lib/api-auth";
 
 /**
  * Public chapter content API — no auth required.
  * Returns full chapter (id, title, content, wordCount) with parent novel info.
  */
-export async function GET(
+export const GET = withPublicRateLimit(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -34,4 +35,4 @@ export async function GET(
     console.error("Public chapter content API error:", error);
     return NextResponse.json({ error: "获取章节内容失败"}, { status: 500 });
   }
-}
+});

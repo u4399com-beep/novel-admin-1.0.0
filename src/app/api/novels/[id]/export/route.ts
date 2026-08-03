@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
+const MAX_EXPORT_CHAPTERS = 5000;
+
 /**
  * Export a novel with all chapters.
  * GET /api/novels/[id]/export?format=json|txt
@@ -32,6 +34,15 @@ export const GET = withAuth(async function GET(
 
     if (!novel) {
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+    }
+
+    // Pre-check chapter count to prevent OOM
+    const chapterCount = await db.chapter.count({ where: { novelId: id } });
+    if (chapterCount > MAX_EXPORT_CHAPTERS) {
+      return NextResponse.json(
+        { error: `章节数量(${chapterCount})超过导出上限(${MAX_EXPORT_CHAPTERS})，请分批导出` },
+        { status: 400 }
+      );
     }
 
     const chapters = await db.chapter.findMany({

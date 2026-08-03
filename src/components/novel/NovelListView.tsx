@@ -119,8 +119,7 @@ export default function NovelListView() {
   useEffect(() => {
     setPage(1);
     fetchNovels(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, categoryFilter]);
+  }, [statusFilter, categoryFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch when page or search changes (not triggered by filter reset above)
   useEffect(() => {

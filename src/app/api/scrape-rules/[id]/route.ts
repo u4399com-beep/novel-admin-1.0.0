@@ -118,6 +118,20 @@ export const PUT = withAuth(async function PUT(
     if (minD !== undefined && maxD !== undefined && maxD < minD) {
       return NextResponse.json({ error: "最大延迟不能小于最小延迟" }, { status: 400 });
     }
+    // Cross-validate: if only maxD is provided, ensure it >= existing minDelay
+    if (minD === undefined && maxD !== undefined) {
+      const existing = await db.scrapeRule.findUnique({ where: { id }, select: { minDelay: true } });
+      if (existing && maxD < (existing.minDelay || 1000)) {
+        return NextResponse.json({ error: `最大延迟(${maxD}ms)不能小于当前最小延迟(${existing.minDelay || 1000}ms)` }, { status: 400 });
+      }
+    }
+    // Cross-validate: if only minD is provided, ensure it <= existing maxDelay
+    if (maxD === undefined && minD !== undefined) {
+      const existing = await db.scrapeRule.findUnique({ where: { id }, select: { maxDelay: true } });
+      if (existing && minD > (existing.maxDelay || 3000)) {
+        return NextResponse.json({ error: `最小延迟(${minD}ms)不能大于当前最大延迟(${existing.maxDelay || 3000}ms)` }, { status: 400 });
+      }
+    }
 
     // Build JSON fields — capture validation errors as 400
     let jsonFields: Record<string, string | null> = {};
