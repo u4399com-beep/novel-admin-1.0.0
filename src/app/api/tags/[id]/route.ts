@@ -65,6 +65,7 @@ export const PUT = withAuth(async function PUT(
     });
 
     invalidateCache("tags:list");
+    invalidateCache("dashboard:stats");
 
     return NextResponse.json(tag);
   } catch (error: unknown) {
@@ -102,6 +103,7 @@ export const DELETE = withAuth(async function DELETE(
       return tag;
     });
     invalidateCache("tags:list");
+    invalidateCache("dashboard:stats");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete tag error:", error);

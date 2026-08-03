@@ -73,8 +73,9 @@ export const PUT = withAuth(async function PUT(
     if (enabled !== undefined && typeof enabled !== 'boolean') {
       return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
     }
+    let configStr: string | undefined;
     if (config !== undefined) {
-      const configStr = typeof config === "string" ? config : JSON.stringify(config);
+      configStr = typeof config === "string" ? config : JSON.stringify(config);
       if (configStr.length > MAX_CONFIG_SIZE) {
         return NextResponse.json({ error: `主题配置大小不能超过${Math.floor(MAX_CONFIG_SIZE / 1024)}KB` }, { status: 400 });
       }
@@ -92,7 +93,7 @@ export const PUT = withAuth(async function PUT(
         ...(description !== undefined && { description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null }),
         ...(identifier !== undefined && { identifier: sanitizeField(identifier, MAX_IDENTIFIER_LENGTH) }),
         ...(preview !== undefined && { preview: sanitizeField(preview, 500) || null }),
-        ...(config !== undefined && { config }),
+        ...(config !== undefined && { config: configStr }),
         ...(enabled !== undefined && { enabled }),
       },
       include: {

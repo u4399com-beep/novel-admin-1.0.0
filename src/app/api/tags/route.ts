@@ -54,6 +54,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     });
 
     invalidateCache("tags:list");
+    invalidateCache("dashboard:stats");
 
     return NextResponse.json(tag, { status: 201 });
   } catch (error: unknown) {

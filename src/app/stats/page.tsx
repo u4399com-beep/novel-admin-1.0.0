@@ -54,7 +54,7 @@ function StatCard({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border bg-card p-4 card-glow card-border-glow"
+      className="rounded-xl border bg-card p-4 card-glow card-border-glow focus-ring-soft"
     >
       <div className="flex items-center gap-2 mb-2">
         <div
@@ -232,7 +232,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
-                  className="rounded-xl border bg-card p-5 card-glow card-border-glow"
+                  className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft"
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -259,7 +259,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="rounded-xl border bg-card p-5 card-glow card-border-glow"
+                  className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft"
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <Clock className="h-4 w-4 text-muted-foreground" />

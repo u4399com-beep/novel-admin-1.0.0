@@ -106,7 +106,7 @@ export default function ReadingHeatMap({ data }: ReadingHeatMapProps) {
   }, [data]);
 
   return (
-    <div className="rounded-xl border bg-card p-5 card-glow card-border-glow">
+    <div className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow">
       <div className="flex items-center gap-2 mb-4">
         <Flame className="h-4 w-4 text-muted-foreground" />
         <h2 className="text-sm font-semibold link-underline inline-block">阅读活跃度</h2>

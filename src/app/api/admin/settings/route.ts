@@ -39,15 +39,46 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
       return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
     }
 
-    // Allowed setting keys for security
+    // Allowed setting keys and per-key value validation
     const ALLOWED_KEYS = new Set([
       'siteName', 'siteDescription', 'itemsPerPage', 'scrapeInterval',
       'concurrentTasks', 'autoPublish', 'defaultSort', 'themeColor', 'showWordCount',
     ]);
 
-    const entries = Object.entries(body).filter(
-      ([key]) => ALLOWED_KEYS.has(key)
-    );
+    const INTEGER_KEYS = new Set(['itemsPerPage', 'scrapeInterval', 'concurrentTasks']);
+    const BOOLEAN_KEYS = new Set(['autoPublish', 'showWordCount']);
+    const STRING_MAX: Record<string, number> = {
+      siteName: 100, siteDescription: 500, defaultSort: 50, themeColor: 20,
+    };
+    const INTEGER_RANGE: Record<string, [number, number]> = {
+      itemsPerPage: [1, 100], scrapeInterval: [1, 3600], concurrentTasks: [1, 20],
+    };
+
+    const entries: [string, string][] = [];
+    for (const [key, rawValue] of Object.entries(body)) {
+      if (!ALLOWED_KEYS.has(key)) continue;
+
+      if (INTEGER_KEYS.has(key)) {
+        const n = Number(rawValue);
+        const [min, max] = INTEGER_RANGE[key];
+        if (!Number.isFinite(n) || n < min || n > max || !Number.isInteger(n)) {
+          return NextResponse.json({ error: `${key} 必须是 ${min}-${max} 之间的整数` }, { status: 400 });
+        }
+        entries.push([key, String(n)]);
+      } else if (BOOLEAN_KEYS.has(key)) {
+        if (rawValue !== 'true' && rawValue !== 'false' && rawValue !== true && rawValue !== false) {
+          return NextResponse.json({ error: `${key} 必须是 true 或 false` }, { status: 400 });
+        }
+        entries.push([key, String(rawValue)]);
+      } else {
+        const maxLen = STRING_MAX[key];
+        const val = String(rawValue ?? '').slice(0, maxLen);
+        if (key === 'themeColor' && val && !/^#[0-9A-Fa-f]{3,8}$/.test(val)) {
+          return NextResponse.json({ error: 'themeColor 格式无效，请使用HEX颜色' }, { status: 400 });
+        }
+        entries.push([key, val]);
+      }
+    }
 
     if (entries.length === 0) {
       return NextResponse.json({ error: '没有有效的设置项' }, { status: 400 });
@@ -58,15 +89,15 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
       entries.map(([key, value]) =>
         db.siteSetting.upsert({
           where: { key },
-          update: { value: String(value) },
-          create: { key, value: String(value) },
+          update: { value },
+          create: { key, value },
         })
       )
     );
 
     // Invalidate caches that may depend on settings
     invalidateCache('dashboard:stats');
-    invalidateCache('categories:list');
+    invalidateCache('categories:*');
     invalidateCache('public:settings');
 
     const result: Record<string, string> = {};

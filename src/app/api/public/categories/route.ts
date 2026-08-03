@@ -6,11 +6,12 @@ import { getOrCompute } from "@/lib/cache";
 /**
  * Public categories API — no auth required.
  * Returns all categories with novel count, slug, and icon.
- * Shares cache with admin /api/categories so invalidation works.
+ * Uses cache key "categories:public" (vs "categories:admin") to avoid shape collision.
+ * Both are invalidated by "categories:*" wildcard.
  */
 export const GET = withPublicRateLimit(async function GET() {
   try {
-    const categories = await getOrCompute("categories:list", 60_000, () =>
+    const categories = await getOrCompute("categories:public", 60_000, () =>
       db.category.findMany({
         orderBy: { sortOrder: "asc" },
         take: 500,

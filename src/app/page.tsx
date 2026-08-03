@@ -26,6 +26,7 @@ import { BackToTop } from '@/components/BackToTop';
 import { ContinueReading } from '@/components/home/ContinueReading';
 import { formatWordCount } from '@/lib/format';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
+import { useSiteName } from '@/lib/use-site-name';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -256,7 +257,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.3, delay: index * 0.04 }}
-      className="group cursor-pointer"
+      className="group cursor-pointer shine-hover"
     >
       {/* Cover */}
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
@@ -511,6 +512,7 @@ export default function HomePage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const siteName = useSiteName();
   useEffect(() => { setMounted(true); }, []);
 
 
@@ -786,32 +788,32 @@ export default function HomePage() {
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
               <BookOpen className="h-4.5 w-4.5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-bold tracking-tight">小说阁</span>
+            <span className="text-lg font-bold tracking-tight">{siteName}</span>
           </div>
 
           {/* Nav links - desktop */}
           <nav className="hidden sm:flex items-center gap-6 text-sm">
             <button
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-muted-foreground hover:text-foreground transition-colors animated-underline"
             >
               首页
             </button>
             <Link
               href="/categories"
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-muted-foreground hover:text-foreground transition-colors animated-underline"
             >
               分类
             </Link>
             <Link
               href="/rankings"
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-muted-foreground hover:text-foreground transition-colors animated-underline"
             >
               排行榜
             </Link>
             <Link
               href="/stats"
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-muted-foreground hover:text-foreground transition-colors animated-underline"
             >
               统计
             </Link>
@@ -1380,7 +1382,7 @@ export default function HomePage() {
               <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
                 <BookOpen className="h-4 w-4 text-primary/70" />
               </div>
-              <span className="font-semibold text-foreground/80">小说阁</span>
+              <span className="font-semibold text-foreground/80">{siteName}</span>
             </div>
             <div className="flex items-center gap-4 text-xs">
               <Link href="/categories" className="text-muted-foreground/60 hover:text-foreground transition-colors">分类</Link>
@@ -1392,7 +1394,7 @@ export default function HomePage() {
               <Link href="/login" className="text-muted-foreground/60 hover:text-foreground transition-colors">管理</Link>
             </div>
             <p className="text-[11px] text-muted-foreground/40">
-              © {new Date().getFullYear()} 小说阁 · 基于 Next.js 16 + Prisma + Tailwind CSS 构建
+              © {new Date().getFullYear()} {siteName} · 基于 Next.js 16 + Prisma + Tailwind CSS 构建
             </p>
           </div>
         </div>

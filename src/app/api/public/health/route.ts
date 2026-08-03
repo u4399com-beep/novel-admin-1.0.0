@@ -53,9 +53,10 @@ export async function GET() {
       checks.database = { ok: true, ms: Date.now() - dbStart };
     }
   } catch (err) {
+    console.error('Health check DB error:', err);
     checks.database = {
       ok: false,
-      detail: err instanceof Error ? err.message : String(err),
+      detail: '数据库连接失败',
       ms: Date.now() - dbStart,
     };
   }

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, ChevronRight, X, Loader2 } from 'lucide-react';
+import { Clock, ChevronRight, X } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/format';
 import { getCoverGradient } from '@/lib/cover-gradient';
 
@@ -33,23 +33,22 @@ function RecentlyViewedSkeleton() {
   );
 }
 
-export function RecentlyViewed() {
-  const [novels, setNovels] = useState<RecentNovel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    if (dismissed) return;
-    try {
-      const raw = localStorage.getItem(RECENT_KEY);
-      if (!raw) { setLoading(false); return; }
+function loadRecentFromStorage(): RecentNovel[] {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    if (raw) {
       const list: RecentNovel[] = JSON.parse(raw);
-      if (Array.isArray(list) && list.length > 0) {
-        setNovels(list.slice(0, MAX_ITEMS));
-      }
-    } catch { /* ignore */ }
-    setLoading(false);
-  }, [dismissed]);
+      if (Array.isArray(list) && list.length > 0) return list.slice(0, MAX_ITEMS);
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+export function RecentlyViewed() {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem('recently-viewed-dismissed') === 'true'; } catch { return false; }
+  });
+  const novels = useMemo(() => (dismissed ? [] : loadRecentFromStorage()), [dismissed]);
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);
@@ -58,7 +57,7 @@ export function RecentlyViewed() {
 
   // Don't render if dismissed or no data
   if (dismissed) return null;
-  if (!loading && novels.length === 0) return null;
+  if (novels.length === 0) return null;
 
   return (
     <div className="group relative">
@@ -71,7 +70,7 @@ export function RecentlyViewed() {
             <span className="text-[10px] text-muted-foreground/60">{novels.length}</span>
           )}
         </div>
-        {!loading && novels.length > 0 && (
+        {novels.length > 0 && (
           <button
             onClick={handleDismiss}
             className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground transition-colors opacity-0 group-hover:opacity-100"
@@ -84,17 +83,6 @@ export function RecentlyViewed() {
 
       {/* Content */}
       <AnimatePresence mode="wait">
-        {loading ? (
-          <motion.div
-            key="skeleton"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <RecentlyViewedSkeleton />
-          </motion.div>
-        ) : (
           <motion.div
             key="content"
             initial={{ opacity: 0, y: 8 }}
@@ -150,7 +138,6 @@ export function RecentlyViewed() {
               ))}
             </div>
           </motion.div>
-        )}
       </AnimatePresence>
     </div>
   );

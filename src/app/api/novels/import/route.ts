@@ -132,6 +132,7 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
     }, { timeout: 60000 }); // 60s timeout for large imports
 
     invalidateCache('dashboard:stats');
+    invalidateCache('dashboard:activity');
 
     return NextResponse.json({
       success: true,

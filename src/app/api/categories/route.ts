@@ -12,7 +12,7 @@ const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 // GET /api/categories - List all categories
 export const GET = withAuth(async function GET() {
   try {
-    const categories = await getOrCompute("categories:list", 60_000, () =>
+    const categories = await getOrCompute("categories:admin", 60_000, () =>
       db.category.findMany({
         orderBy: { sortOrder: "asc" },
         take: 500,
@@ -72,7 +72,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     });
 
     invalidateCache("dashboard:stats");
-    invalidateCache("categories:list");
+    invalidateCache("categories:*");
 
     return NextResponse.json(category, { status: 201 });
   } catch (error: unknown) {

@@ -53,6 +53,8 @@ export function buildCloudBrowserConfig(url: unknown, provider: unknown): string
     const parsed = new URL(String(url));
     if (!['http:', 'https:'].includes(parsed.protocol)) return null;
   } catch { return null; }
+  // Self-protect against SSRF regardless of caller validation
+  if (!isSafeUrl(String(url))) return null;
   return JSON.stringify({
     provider: ['browserless', 'steel'].includes(String(provider)) ? provider : 'browserless',
     apiUrl: String(url).slice(0, 500),

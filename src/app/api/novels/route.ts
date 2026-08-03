@@ -142,6 +142,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     });
 
     invalidateCache("dashboard:stats");
+    invalidateCache("dashboard:activity");
 
     return NextResponse.json(novel, { status: 201 });
   } catch (error) {

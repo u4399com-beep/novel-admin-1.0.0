@@ -94,6 +94,9 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     // Calculate reading streak (consecutive days with activity)
     const streak = calculateReadingStreak(progressItems.map(p => p.lastReadAt));
 
+    // Heatmap data: count of reading days per day for the last 120 days
+    const heatmap = buildHeatmapData(progressItems.map(p => p.lastReadAt), 120);
+
     const totalBooks = completedBooks + ongoingBooks;
 
     return NextResponse.json({
@@ -104,6 +107,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
       genreDistribution,
       recentActivity,
       streak,
+      heatmap,
     });
   } catch (error) {
     console.error('Get reading stats error:', error);
@@ -142,4 +146,25 @@ function calculateReadingStreak(dates: Date[]): number {
   }
 
   return streak;
+}
+
+/**
+ * Build heatmap data: array of { date, count } for the last N days.
+ */
+function buildHeatmapData(dates: Date[], days: number): Array<{ date: string; count: number }> {
+  const dayCount = new Map<string, number>();
+  for (const d of dates) {
+    const key = toLocalDateStr(d);
+    dayCount.set(key, (dayCount.get(key) || 0) + 1);
+  }
+
+  const result: Array<{ date: string; count: number }> = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const key = toLocalDateStr(d);
+    result.push({ date: key, count: dayCount.get(key) || 0 });
+  }
+  return result;
 }

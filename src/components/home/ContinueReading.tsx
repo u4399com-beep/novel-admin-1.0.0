@@ -58,24 +58,20 @@ function ContinueReadingSkeleton() {
 // ─── Main Component ────────────────────────────────────────────────
 
 export function ContinueReading() {
+  const shouldLoad = (() => {
+    try {
+      if (localStorage.getItem('continue-reading-dismissed') === 'true') return false;
+    } catch { /* ignore */ }
+    return !!getSessionId();
+  })();
   const [progress, setProgress] = useState<ReadingProgressItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dismissed, setDismissed] = useState(false);
+  const [loading, setLoading] = useState(shouldLoad);
+  const [dismissed, setDismissed] = useState(!shouldLoad);
 
   useEffect(() => {
-    // Check if user previously dismissed this section
-    try {
-      if (localStorage.getItem('continue-reading-dismissed') === 'true') {
-        setDismissed(true);
-        return;
-      }
-    } catch { /* ignore */ }
+    if (!shouldLoad) return;
     const ac = new AbortController();
     const sessionId = getSessionId();
-    if (!sessionId) {
-      setLoading(false);
-      return;
-    }
     apiFetch<{ progress: ReadingProgressItem[] }>(`/api/public/reading-progress?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
       .then((data) => setProgress(data.progress || []))
       .catch(() => {})

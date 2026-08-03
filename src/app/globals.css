@@ -2496,5 +2496,21 @@ nav button[data-active='true'] {
 /* 8. Truncate with ellipsis (single line) */
 .line-clamp-1 {  overflow: hidden;  display: -webkit-box;  -webkit-box-orient: vertical;  -webkit-line-clamp: 1;}
 
+/* 9. Subtle shine effect on hover (for cards and buttons) */
+.shine-hover {  position: relative;  overflow: hidden;}
+.shine-hover::after {  content: '';  position: absolute;  inset: 0;  background: linear-gradient(  105deg,    transparent 40%,    color-mix(in srgb, var(--foreground) 6%, transparent) 45%,    color-mix(in srgb, var(--foreground) 6%, transparent) 55%,    transparent 60%  );  transform: translateX(-100%);  transition: transform 0.5s ease;  pointer-events: none;}
+.shine-hover:hover::after {  transform: translateX(100%);}
+
+/* 10. Number/tabular alignment helper */
+.tabular-nums {  font-variant-numeric: tabular-nums;}
+
+/* 11. Glassmorphism for overlays and toolbars */
+.glass-toolbar {  background: color-mix(in srgb, var(--background) 75%, transparent);  backdrop-filter: blur(20px) saturate(1.4);  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);}
+
+/* 12. Animated underline for links */
+.animated-underline {  position: relative;  display: inline-block;}
+.animated-underline::after {  content: '';  position: absolute;  left: 0;  bottom: -1px;  width: 0;  height: 1.5px;  background: oklch(var(--primary));  transition: width 0.25s ease;}
+.animated-underline:hover::after {  width: 100%;}
+
 /* ─── Enhanced Reduced Motion ───────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {  .float-gentle {    animation: none;  }  .stagger-in > * {    opacity: 1;    animation: none;  }  .shimmer-border::before {    animation: none;  }}
+@media (prefers-reduced-motion: reduce) {  .float-gentle {    animation: none;  }  .stagger-in > * {    opacity: 1;    animation: none;  }  .shimmer-border::before {    animation: none;  }  .shine-hover::after {    transition: none;  transform: none;  }  .animated-underline::after {    transition: none;  }}
