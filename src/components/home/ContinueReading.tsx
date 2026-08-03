@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, ChevronRight, X, Loader2, Clock } from 'lucide-react';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime, formatWordCount } from '@/lib/format';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -28,23 +29,7 @@ interface ReadingProgressItem {
   };
 }
 
-// ─── Cover gradient placeholder (same as page.tsx) ────────────────
-const COVER_GRADIENTS = [
-  'from-rose-500/80 to-orange-500/80',
-  'from-emerald-500/80 to-teal-500/80',
-  'from-violet-500/80 to-purple-500/80',
-  'from-amber-500/80 to-yellow-500/80',
-  'from-cyan-500/80 to-sky-500/80',
-  'from-fuchsia-500/80 to-pink-500/80',
-  'from-lime-500/80 to-green-500/80',
-  'from-red-500/80 to-rose-500/80',
-];
-
-function getGradient(title: string): string {
-  let hash = 0;
-  for (let i = 0; i < title.length; i++) hash = title.charCodeAt(i) + ((hash << 5) - hash);
-  return COVER_GRADIENTS[Math.abs(hash) % COVER_GRADIENTS.length];
-}
+import { getCoverGradient } from '@/lib/cover-gradient';
 
 // ─── Skeleton ──────────────────────────────────────────────────────
 
@@ -84,11 +69,8 @@ export function ContinueReading() {
       return;
     }
     try {
-      const res = await fetch(`/api/public/reading-progress?sessionId=${encodeURIComponent(sessionId)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setProgress(data.progress || []);
-      }
+      const data = await apiFetch<{ progress: ReadingProgressItem[] }>(`/api/public/reading-progress?sessionId=${encodeURIComponent(sessionId)}`);
+      setProgress(data.progress || []);
     } catch {
       // Silently fail - reading progress is a nice-to-have feature
     } finally {
@@ -189,7 +171,7 @@ export function ContinueReading() {
                           loading="lazy"
                         />
                       ) : (
-                        <div className={`h-full w-full bg-gradient-to-br ${getGradient(item.novel.title)}`} />
+                        <div className={`h-full w-full bg-gradient-to-br ${getCoverGradient(item.novel.title)}`} />
                       )}
                       {/* Progress indicator bar */}
                       <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-black/20">

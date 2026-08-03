@@ -265,7 +265,7 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
               <div className="text-xs">
                 <p className="font-medium text-emerald-700 dark:text-emerald-300">导入成功</p>
                 <p className="text-emerald-600 dark:text-emerald-400 mt-0.5">
-                  {result.title} · {result.author} · {result.chapterCount}章 · {(result.wordCount / 10000).toFixed(1)}万字
+                  {result.title} · {result.author} · {result.chapterCount}章 · {((result.wordCount ?? 0) / 10000).toFixed(1)}万字
                 </p>
               </div>
             </div>

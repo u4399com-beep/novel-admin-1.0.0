@@ -149,23 +149,7 @@ function clearSearchHistory() {
   localStorage.removeItem(SEARCH_HISTORY_KEY);
 }
 
-// ─── Cover placeholder gradient colors ────────────────────────────────
-const COVER_GRADIENTS = [
-  'from-rose-500/80 to-orange-500/80',
-  'from-emerald-500/80 to-teal-500/80',
-  'from-violet-500/80 to-purple-500/80',
-  'from-amber-500/80 to-yellow-500/80',
-  'from-cyan-500/80 to-sky-500/80',
-  'from-fuchsia-500/80 to-pink-500/80',
-  'from-lime-500/80 to-green-500/80',
-  'from-red-500/80 to-rose-500/80',
-];
-
-function getGradient(title: string): string {
-  let hash = 0;
-  for (let i = 0; i < title.length; i++) hash = title.charCodeAt(i) + ((hash << 5) - hash);
-  return COVER_GRADIENTS[Math.abs(hash) % COVER_GRADIENTS.length];
-}
+import { getCoverGradient } from '@/lib/cover-gradient';
 
 // ─── Skeleton Grid ───────────────────────────────────────────────────
 
@@ -207,7 +191,7 @@ function FilterRowSkeleton() {
 // ─── Novel Card ──────────────────────────────────────────────────────
 
 function NovelCard({ novel, index }: { novel: Novel; index: number }) {
-  const gradient = getGradient(novel.title);
+  const gradient = getCoverGradient(novel.title);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -523,10 +507,7 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  // ─── SEO: set document title ──────────────────────────────────────
-  useEffect(() => {
-    document.title = '小说阁 - 免费小说在线阅读';
-  }, []);
+
 
   // Data state
   const [novels, setNovels] = useState<Novel[]>([]);
@@ -1127,7 +1108,7 @@ export default function HomePage() {
                     {rn.coverUrl ? (
                       <img src={rn.coverUrl} alt={rn.title} className="h-full w-full object-cover" loading="lazy" />
                     ) : (
-                      <div className={`h-full w-full bg-gradient-to-br ${getGradient(rn.title)}`} />
+                      <div className={`h-full w-full bg-gradient-to-br ${getCoverGradient(rn.title)}`} />
                     )}
                   </div>
                   <div className="min-w-0">

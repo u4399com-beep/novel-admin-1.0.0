@@ -383,12 +383,13 @@ export default function AdminPage() {
             {/* Mobile menu */}
             <MobileSidebar />
 
-            {/* Search input */}
+            {/* Search input (desktop) */}
             <div className="relative hidden sm:block">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 type="text"
                 placeholder="搜索..."
+                aria-label="搜索小说"
                 className="h-8 w-48 lg:w-56 pl-8 text-sm bg-muted/50 border-transparent focus:border-border focus:bg-background"
                 onFocus={() => setCommandPaletteOpen(true)}
                 readOnly
@@ -397,6 +398,16 @@ export default function AdminPage() {
                 {isMac ? '⌘K' : '^K'}
               </kbd>
             </div>
+            {/* Search button (mobile) */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="sm:hidden h-8 w-8"
+              onClick={() => setCommandPaletteOpen(true)}
+              aria-label="搜索"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
 
             {/* Page title */}
             <div className="flex flex-col">

@@ -22,13 +22,14 @@ const DIVIDER_AFTER_INDEX = 3; // after 4th item (index 3)
 function SidebarContent() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
-  const refreshVersions = useAppStore((s) => s.refreshVersions);
+  // Subscribe to the computed counter directly to avoid re-rendering on every store change
+  const refreshCounter = useAppStore(
+    (s) => Object.values(s.refreshVersions).reduce((a, b) => a + b, 0)
+  );
   const [totalNovels, setTotalNovels] = useState<number | null>(null);
   const [lastRefreshText, setLastRefreshText] = useState('刚刚');
   const lastRefreshStartRef = useRef(Date.now());
 
-  // Update refresh timer when any refresh version changes
-  const refreshCounter = Object.values(refreshVersions).reduce((a, b) => a + b, 0);
   useEffect(() => {
     lastRefreshStartRef.current = Date.now();
     setLastRefreshText('刚刚');

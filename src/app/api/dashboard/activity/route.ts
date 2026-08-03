@@ -47,6 +47,12 @@ export const GET = withAuth(async function GET() {
 // Uses app-level date math instead of SQLite-specific date() functions.
 // Compatible with both SQLite and PostgreSQL.
 
+/** Format a Date to YYYY-MM-DD in the server's local timezone (not UTC) */
+function toLocalDateStr(d: Date): string {
+  const tz = process.env.TZ || 'Asia/Shanghai';
+  return d.toLocaleString('sv-SE', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
 async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
   // Build date range in app layer (works for both SQLite and PG)
   const now = new Date();
@@ -58,7 +64,7 @@ async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
     const end = new Date(d);
     end.setDate(end.getDate() + 1);
     days.push({
-      date: d.toISOString().slice(0, 10), // YYYY-MM-DD
+      date: toLocalDateStr(d), // YYYY-MM-DD in server timezone
       start: d,
       end,
     });
@@ -83,21 +89,21 @@ async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
     }),
   ]);
 
-  // Group by date in app layer
+  // Group by date in app layer (using local timezone, not UTC)
   const novelsByDate = new Map<string, number>();
   const chaptersByDate = new Map<string, number>();
   const tasksByDate = new Map<string, number>();
 
   for (const n of novels) {
-    const key = n.createdAt.toISOString().slice(0, 10);
+    const key = toLocalDateStr(n.createdAt);
     novelsByDate.set(key, (novelsByDate.get(key) || 0) + 1);
   }
   for (const c of chapters) {
-    const key = c.createdAt.toISOString().slice(0, 10);
+    const key = toLocalDateStr(c.createdAt);
     chaptersByDate.set(key, (chaptersByDate.get(key) || 0) + 1);
   }
   for (const t of tasks) {
-    const key = t.createdAt.toISOString().slice(0, 10);
+    const key = toLocalDateStr(t.createdAt);
     tasksByDate.set(key, (tasksByDate.get(key) || 0) + 1);
   }
 

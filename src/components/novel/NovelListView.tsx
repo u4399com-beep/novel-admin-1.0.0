@@ -34,6 +34,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { Novel, Category, NovelStatus } from '@/types';
@@ -115,7 +125,7 @@ export default function NovelListView() {
     }
   }, [page, search, statusFilter, categoryFilter]);
 
-  // Reset page and fetch when filters change
+  // Reset page when filters change — let the page effect handle the actual fetch
   const statusFilterRef = useRef(statusFilter);
   const categoryFilterRef = useRef(categoryFilter);
   useEffect(() => {
@@ -124,9 +134,8 @@ export default function NovelListView() {
     categoryFilterRef.current = categoryFilter;
     if (filterChanged) {
       setPage(1);
-      fetchNovels(1);
     }
-  }, [statusFilter, categoryFilter, fetchNovels]);
+  }, [statusFilter, categoryFilter]);
 
   // Fetch when page, search, or external refresh changes
   useEffect(() => {
@@ -188,25 +197,33 @@ export default function NovelListView() {
     }
   };
 
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0 || deleting) return;
     setDeleting(true);
     try {
-      const results = await Promise.allSettled(
-        Array.from(selectedIds).map((id) =>
-          apiFetch(`/api/novels/${id}`, { method: 'DELETE' }),
-        ),
-      );
-      const failed = results.filter((r) => r.status === 'rejected');
-      if (failed.length > 0) {
-        toast.warning(`批量删除: ${failed.length}/${results.length} 项失败`);
+      // Chunk into batches of 5 to avoid overwhelming the server
+      const ids = Array.from(selectedIds);
+      const CHUNK_SIZE = 5;
+      let failed = 0;
+      for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE);
+        const results = await Promise.allSettled(
+          chunk.map((id) => apiFetch(`/api/novels/${id}`, { method: 'DELETE' })),
+        );
+        failed += results.filter((r) => r.status === 'rejected').length;
+      }
+      if (failed > 0) {
+        toast.warning(`批量删除: ${failed}/${ids.length} 项失败`);
       } else {
-        toast.success(`已删除 ${results.length} 本小说`);
+        toast.success(`已删除 ${ids.length} 本小说`);
       }
       setSelectedIds(new Set());
+      setBatchDeleteOpen(false);
       triggerRefresh('novels');
     } catch {
-      // error handled silently; list will refresh on version bump
+      // error handled silently
     } finally {
       setDeleting(false);
     }
@@ -627,7 +644,7 @@ export default function NovelListView() {
             variant="destructive"
             size="sm"
             disabled={deleting}
-            onClick={handleBatchDelete}
+            onClick={() => setBatchDeleteOpen(true)}
           >
             {deleting ? (
               <span className="flex items-center gap-1.5">
@@ -651,6 +668,27 @@ export default function NovelListView() {
           </Button>
         </div>
       )}
+      {/* ── Batch Delete Confirmation ────────────────────────────────── */}
+      <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认批量删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除选中的 {selectedIds.size} 本小说吗？此操作将同时删除所有关联章节，且不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleBatchDelete(); }}
+              disabled={deleting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deleting ? '删除中...' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

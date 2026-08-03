@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime, formatWordCount } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
+import { getGenreColor } from '@/lib/cover-gradient';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -202,7 +203,7 @@ export default function StatsPage() {
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                    <h2 className="text-sm font-semibold">阅读偏好</h2>
+                    <h2 className="text-sm font-semibold link-underline inline-block">阅读偏好</h2>
                   </div>
                   <div className="space-y-1">
                     {stats.genreDistribution.map((genre) => (
@@ -211,6 +212,7 @@ export default function StatsPage() {
                         name={genre.name}
                         count={genre.count}
                         maxCount={stats.genreDistribution[0].count}
+                        color={getGenreColor(genre.name)}
                       />
                     ))}
                   </div>

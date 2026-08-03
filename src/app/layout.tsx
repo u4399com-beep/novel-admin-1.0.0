@@ -16,7 +16,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "小说阁 - 小说管理系统",
+  title: {
+    default: '小说阁 - 免费小说在线阅读',
+    template: '%s - 小说阁',
+  },
   description: "小说阁 — 专业的小说管理与阅读平台，轻松管理小说创作、分类、采集和阅读体验",
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",

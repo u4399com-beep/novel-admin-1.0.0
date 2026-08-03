@@ -228,7 +228,7 @@ function ChapterEditorPanel({
 }: {
   chapter: Chapter | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (updated?: { id?: string; wordCount?: number; title?: string }) => void;
 }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -301,7 +301,7 @@ function ChapterEditorPanel({
         setSaveStatus('saved');
         if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
         saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
-        onSaved();
+        onSaved({ id: chapter.id, wordCount, title: newTitle });
       } catch {
         setSaveStatus('idle');
       } finally {
@@ -850,9 +850,11 @@ export default function NovelDetailView() {
     setCheckedIds(new Set());
   }, [chapterSearch, contentFilter]);
 
+  const [reordering, setReordering] = useState(false);
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    if (!over || active.id === over.id || !selectedNovelId) return;
 
     const oldIndex = chapters.findIndex((c) => c.id === active.id);
     const newIndex = chapters.findIndex((c) => c.id === over.id);
@@ -860,22 +862,31 @@ export default function NovelDetailView() {
 
     const reordered = arrayMove(chapters, oldIndex, newIndex);
     setChapters(reordered);
+    setReordering(true);
 
-    // Single batch request instead of N individual PUTs
+    // Only send the affected range to minimize payload
+    const start = Math.min(oldIndex, newIndex);
+    const end = Math.max(oldIndex, newIndex) + 1;
+    const affected = reordered.slice(start, end);
+
     try {
       await apiFetch(`/api/novels/${selectedNovelId}/chapters`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          orders: reordered.map((ch, idx) => ({ id: ch.id, sortOrder: idx + 1 })),
+          action: 'reorder',
+          orders: affected.map((ch, i) => ({ id: ch.id, sortOrder: start + i + 1 })),
         }),
       });
     } catch {
       triggerRefresh('chapters');
+    } finally {
+      setReordering(false);
     }
   };
 
   const handleMoveChapter = async (chapterId: string, direction: 'up' | 'down') => {
+    if (!selectedNovelId) return;
     const idx = chapters.findIndex((c) => c.id === chapterId);
     if (idx === -1) return;
     if (direction === 'up' && idx === 0) return;
@@ -884,17 +895,23 @@ export default function NovelDetailView() {
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
     const reordered = arrayMove(chapters, idx, swapIdx);
     setChapters(reordered);
+    setReordering(true);
 
+    // Use swap action — only 2 SQL UPDATEs instead of N
     try {
       await apiFetch(`/api/novels/${selectedNovelId}/chapters`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          orders: reordered.map((ch, i) => ({ id: ch.id, sortOrder: i + 1 })),
+          action: 'swap',
+          id1: chapterId,
+          id2: chapters[swapIdx].id,
         }),
       });
     } catch {
       triggerRefresh('chapters');
+    } finally {
+      setReordering(false);
     }
   };
 
@@ -909,8 +926,17 @@ export default function NovelDetailView() {
     }
   }, [selectedNovelId]);
 
-  const handleChapterSaved = () => {
-    triggerRefresh('chapters');
+  // Optimistic update on chapter save: update wordCount locally, avoid full 10K-chapter refetch
+  const handleChapterSaved = (updatedChapter?: { id?: string; wordCount?: number; title?: string }) => {
+    if (updatedChapter?.id && updatedChapter.wordCount !== undefined) {
+      setChapters((prev) =>
+        prev.map((ch) =>
+          ch.id === updatedChapter.id
+            ? { ...ch, wordCount: updatedChapter.wordCount ?? ch.wordCount, title: updatedChapter.title ?? ch.title }
+            : ch
+        )
+      );
+    }
     refreshNovelStats();
   };
 
@@ -1102,9 +1128,30 @@ export default function NovelDetailView() {
         </Card>
       </div>
 
-      {/* ─── Chapters section with resizable panels ───────────────────── */}
-      <div className="flex-1 min-h-0 overflow-hidden p-6 pt-4">
-        <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg border">
+      {/* ─── Chapters section with responsive layout ───────────────────── */}
+      <div className="flex-1 min-h-0 overflow-hidden p-4 sm:p-6 pt-3 sm:pt-4">
+        {/* Mobile: full-screen editor when chapter selected */}
+        {selectedChapter && (
+          <div className="flex flex-col lg:hidden h-full">
+            <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedChapter(null)}>
+                <ChevronLeft className="size-3.5 mr-1" />
+                返回列表
+              </Button>
+              <span className="text-sm font-medium truncate">{selectedChapter.title}</span>
+            </div>
+            <div className="flex-1 min-h-0">
+              <ChapterEditorPanel
+                key={selectedChapter.id}
+                chapter={selectedChapter}
+                onClose={() => setSelectedChapter(null)}
+                onSaved={handleChapterSaved}
+              />
+            </div>
+          </div>
+        )}
+
+        <ResizablePanelGroup direction="horizontal" className={`h-full rounded-lg border ${selectedChapter ? 'hidden lg:flex' : 'flex'}`}>
           {/* Left panel: Chapter list */}
           <ResizablePanel defaultSize={selectedChapter ? 45 : 100} minSize={30}>
             <div className="flex flex-col h-full">
@@ -1314,7 +1361,7 @@ export default function NovelDetailView() {
                     size="sm"
                     className="h-7 text-xs"
                     onClick={() => handleMoveChapter(selectedChapter.id, 'up')}
-                    disabled={chapters[0]?.id === selectedChapter.id}
+                    disabled={chapters[0]?.id === selectedChapter.id || reordering}
                   >
                     <ChevronUp className="size-3.5" />
                     上移
@@ -1324,7 +1371,7 @@ export default function NovelDetailView() {
                     size="sm"
                     className="h-7 text-xs"
                     onClick={() => handleMoveChapter(selectedChapter.id, 'down')}
-                    disabled={chapters[chapters.length - 1]?.id === selectedChapter.id}
+                    disabled={chapters[chapters.length - 1]?.id === selectedChapter.id || reordering}
                   >
                     <ChevronDown className="size-3.5" />
                     下移

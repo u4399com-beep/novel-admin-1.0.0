@@ -89,22 +89,7 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
   hiatus: { label: '暂停中', variant: 'outline' },
 };
 
-const COVER_GRADIENTS = [
-  'from-rose-500/80 to-orange-500/80',
-  'from-emerald-500/80 to-teal-500/80',
-  'from-violet-500/80 to-purple-500/80',
-  'from-amber-500/80 to-yellow-500/80',
-  'from-cyan-500/80 to-sky-500/80',
-  'from-fuchsia-500/80 to-pink-500/80',
-  'from-lime-500/80 to-green-500/80',
-  'from-red-500/80 to-rose-500/80',
-];
-
-function getGradient(title: string): string {
-  let hash = 0;
-  for (let i = 0; i < title.length; i++) hash = title.charCodeAt(i) + ((hash << 5) - hash);
-  return COVER_GRADIENTS[Math.abs(hash) % COVER_GRADIENTS.length];
-}
+import { getCoverGradient } from '@/lib/cover-gradient';
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -127,7 +112,7 @@ const itemVariants = {
 
 export default function NovelDetailClient({ novel, chapters }: { novel: Novel; chapters: Chapter[] }) {
   const router = useRouter();
-  const gradient = getGradient(novel.title);
+  const gradient = getCoverGradient(novel.title);
   const statusInfo = STATUS_MAP[novel.status] || STATUS_MAP.ongoing;
   const coverRef = useRef<HTMLDivElement>(null);
 

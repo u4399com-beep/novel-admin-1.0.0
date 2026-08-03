@@ -126,8 +126,8 @@ export const POST = withAuth(async function POST(
   }
 });
 
-// PATCH /api/novels/[id]/chapters/batch-reorder - Batch update chapter sort orders
-// Solves N+1 PUT problem in drag-and-drop reordering
+// PATCH /api/novels/[id]/chapters - Batch reorder or swap two chapters
+// Body: { action: 'reorder', orders: [...] } or { action: 'swap', id1, id2 }
 export const PATCH = withAuth(async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -137,12 +137,45 @@ export const PATCH = withAuth(async function PATCH(
 
     let body;
     try {
-      body = await safeJson<{ orders: Array<{ id: string; sortOrder: number }> }>(request);
+      body = await safeJson(request);
     } catch {
       return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
     }
 
-    const { orders } = body;
+    const action = body.action as string | undefined;
+
+    // Verify novel exists
+    const novelExists = await db.novel.findUnique({ where: { id: novelId }, select: { id: true } });
+    if (!novelExists) {
+      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+    }
+
+    if (action === 'swap') {
+      // ─── Swap: exchange sortOrder of exactly 2 chapters (O(1) DB ops) ───
+      const { id1, id2 } = body;
+      if (!id1 || !id2 || id1 === id2) {
+        return NextResponse.json({ error: "swap需要两个不同的chapter id" }, { status: 400 });
+      }
+
+      const [ch1, ch2] = await Promise.all([
+        db.chapter.findUnique({ where: { id: id1, novelId }, select: { id: true, sortOrder: true } }),
+        db.chapter.findUnique({ where: { id: id2, novelId }, select: { id: true, sortOrder: true } }),
+      ]);
+      if (!ch1 || !ch2) {
+        return NextResponse.json({ error: "章节不存在或不属于该小说" }, { status: 404 });
+      }
+
+      await db.$transaction([
+        db.chapter.update({ where: { id: ch1.id }, data: { sortOrder: ch2.sortOrder } }),
+        db.chapter.update({ where: { id: ch2.id }, data: { sortOrder: ch1.sortOrder } }),
+      ]);
+
+      invalidateCache("dashboard:stats");
+      return NextResponse.json({ success: true, action: 'swap' });
+    }
+
+    // ─── Batch reorder (drag-and-drop fallback, uses CASE WHEN for performance) ───
+    const orders: Array<{ id: string; sortOrder: number }> = body.orders;
     if (!Array.isArray(orders) || orders.length === 0 || orders.length > 5000) {
       return NextResponse.json({ error: "orders 必须是非空数组(最多5000条)" }, { status: 400 });
     }
@@ -158,21 +191,15 @@ export const PATCH = withAuth(async function PATCH(
       }
     }
 
-    // Verify novel exists before batch update
-    const novelExists = await db.novel.findUnique({ where: { id: novelId }, select: { id: true } });
-    if (!novelExists) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
-    }
+    // Single raw SQL with CASE WHEN — one query instead of N individual UPDATEs
+    const sqlParts = orders.map(
+      (item, i) => `WHEN '${item.id.replace(/'/g, "''")}' THEN ${Math.floor(Number(item.sortOrder) || 0)}`
+    );
+    const idList = orders.map((item) => `'${item.id.replace(/'/g, "''")}'`).join(',');
 
-    // Batch update: use individual updates within a transaction (safe, bounded to 5000 items)
-    await db.$transaction(async (tx) => {
-      for (const item of orders) {
-        await tx.chapter.update({
-          where: { id: item.id, novelId },
-          data: { sortOrder: Math.floor(Number(item.sortOrder) || 0) },
-        });
-      }
-    });
+    await db.$executeRawUnsafe(
+      `UPDATE "Chapter" SET "sortOrder" = CASE id ${sqlParts.join(' ')} END WHERE "novelId" = '${novelId.replace(/'/g, "''")}' AND id IN (${idList})`
+    );
 
     invalidateCache("dashboard:stats");
 
