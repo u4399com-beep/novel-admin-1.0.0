@@ -1,6 +1,132 @@
 # Work Log
 
 ---
+Task ID: cron-qa-20260803-1253
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T12:53:00+08:00
+
+Task: QA审查 + 2 HIGH + 4 MED + 5 LOW bug修复 + 触摸Popover + reduced-motion + 12新CSS工具类 + apiFetch统一
+
+Work Log:
+- 读取worklog确认状态(累计361项修复, commit 6a68df9)
+- npx next build: 0 errors ✅
+- bun run lint: 0 errors, 3 warnings(预存React Hook Form) ✅
+- 前端代码审查(sub-agent): 发现2 HIGH + 3 MED + 7 LOW + 新功能机会
+- 修复2 HIGH + 4 MED + 5 LOW = 11项
+- 新功能: NovelCard触摸设备Popover、prefers-reduced-motion全局支持
+- 新增12个CSS工具类 + 删除死代码tailwind.config.ts
+- 公共页面5处raw fetch统一为apiFetch
+- commit 6b3eac0 已push
+
+## Critical/High Bug Fixes (2)
+
+### 1. [HIGH] Admin章节表仅加载50条，拖拽排序破坏order
+- **问题**: `fetchChapters()` 不传分页参数，服务端默认pageSize=50。>50章的小说只显示前50章，totalWords计算错误，拖拽重排只对可见50章重排序导致sortOrder与隐藏章节冲突
+- **修复**: 客户端`fetchChapters`加`?pageSize=10000`，服务端`maxPageSize`从100提升到10000，`totalWords`优先使用`novel.wordCount`
+- **文件**: src/components/novel/NovelDetailView.tsx, src/app/api/novels/[id]/chapters/route.ts
+
+### 2. [HIGH] ScrollProgress在admin页面无意义渲染
+- **问题**: `<ScrollProgress />` 在root layout渲染，admin页面使用内部滚动容器，window.scrollY始终为0。scroll事件监听和framer-motion动画在admin页面空转浪费资源
+- **修复**: 使用`usePathname()`检测/admin路径，不渲染组件且不绑定scroll事件
+- **文件**: src/components/ScrollProgress.tsx
+
+## Medium Bug Fixes (4)
+
+### 3. [MED] formatDuration <60秒显示"1分"
+- **问题**: `Math.floor(totalSeconds/60) || 1` 对<60s任务始终返回1分
+- **修复**: 增加`if (totalSeconds > 0) return \\`\\${totalSeconds}秒\\`` 分支
+- **文件**: src/components/scrape/ScrapeTaskMonitor.tsx
+
+### 4. [MED] Ghost CSS类 tap-feedback/hover-lift 无定义
+- **问题**: 5个组件使用`tap-feedback`、2个使用`hover-lift`，但CSS中无任何定义，效果完全不生效
+- **修复**: 实现`.tap-feedback:active { transform: scale(0.97) }`和`.hover-lift:hover { translateY(-2px) + box-shadow }`
+- **文件**: src/app/globals.css
+
+### 5. [MED] 重复 .reading-progress-bar CSS规则
+- **问题**: 定义在line 420(glow)和line 1042(shimmer)两处，维护困难
+- **修复**: 合并为单一定义，同时包含background+animation+box-shadow
+- **文件**: src/app/globals.css
+
+### 6. [MED] 公共页面使用raw fetch()而非apiFetch
+- **问题**: 首页(3处)、排行榜(1处)、统计(1处)共5处使用`fetch()`+手动`res.ok`检查，不一致且缺少服务器错误消息提取
+- **修复**: 全部替换为`apiFetch()`，保留AbortSignal支持
+- **文件**: src/app/page.tsx, src/app/rankings/page.tsx, src/app/stats/page.tsx
+
+## Low Bug Fixes (5)
+
+### 7. [LOW] reading-progress POST使用request.json()而非safeJson()
+- **文件**: src/app/api/public/reading-progress/route.ts
+
+### 8. [LOW] useSyncExternalStore noopSubscribe每次渲染创建新函数
+- **修复**: 提取为模块级常量`const noopSubscribe = () => () => {};`
+- **文件**: src/app/admin/page.tsx
+
+### 9. [LOW] 删除死代码tailwind.config.ts
+- **问题**: Tailwind v4使用`@theme inline`在globals.css中，tailwind.config.ts从未被引用
+- **修复**: 删除文件(-64行)
+
+### 10. [LOW] NovelCard Popover仅支持hover，触屏设备不可用
+- **修复**: 添加touchstart检测+handleTouchToggle，触屏设备点击切换Popover
+- **文件**: src/app/page.tsx
+
+### 11. [LOW] 无prefers-reduced-motion支持
+- **修复**: 添加全局`@media (prefers-reduced-motion: reduce)`块，禁用所有动画和过渡
+- **文件**: src/app/globals.css
+
+## New Features
+
+### 触摸设备Popover切换
+- 检测touchstart事件标记为触屏设备
+- 触屏设备：点击卡片切换Popover（阻止导航）
+- 桌面设备：保持原有hover延迟400ms行为
+
+### prefers-reduced-motion全局支持
+- 所有CSS动画降至0.01ms
+- page-enter、text-shimmer、rank-shimmer、reading-progress-bar动画禁用
+- hover-lift、tap-feedback、cover-zoom变换禁用
+
+## New CSS Utilities (12)
+
+1. `.tap-feedback` — 触屏按压缩放效果
+2. `.hover-lift` — 悬停上浮+阴影
+3. `::-webkit-scrollbar` — 自定义滚动条(6px, 透明轨道, 圆角滑块)
+4. `:focus-visible` — 键盘导航焦点环
+5. `::selection` — 主题色文本选中
+6. `.link-underline` — 悬停下划线动画
+7. `.card-border-glow` — 卡片悬停边框发光
+8. `.stagger-children > *` — 子元素交错淡入
+9. `.badge-dot::after` — 角标脉冲指示点
+10. `.text-balance` — 标题文本平衡
+11. `.tabular-nums` — 等宽数字(已在stat-number中独立定义)
+12. `@media (prefers-reduced-motion)` — 全局动画降级
+
+## Style Applications
+- `card-border-glow` 应用到stats页面3个card-glow元素
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 3 warnings(预存React Hook Form) ✅
+- Git commit: 6b3eac0 (11 files, +214 -128)
+- Git push: 6b3eac0 main → main ✅
+
+## 统计
+- 修改文件: 10
+- 删除文件: 1 (tailwind.config.ts)
+- 代码变更: +214 -128
+- Bug修复: 11项 (2 HIGH + 4 MED + 5 LOW)
+- 新功能: 2项 (触摸Popover, reduced-motion)
+- 新CSS工具类: 12个
+- CSS清理: 合并1处重复定义, 删除1个死文件
+- 样式应用: 3处
+- 累计修复: 361 + 20 = 381项
+
+Stage Summary:
+- **关键修复**: Admin章节50条限制导致拖拽排序破坏, ScrollProgress admin页面空转
+- **一致性修复**: 5处raw fetch统一为apiFetch, 1处safeJson统一
+- **可访问性**: prefers-reduced-motion全局支持, 键盘focus-visible, 触屏Popover
+- **CSS**: 新增12个工具类, 合并重复定义, 删除死代码
+
+---
 Task ID: cron-qa-20260803-1223
 Agent: Main Orchestrator
 Timestamp: 2026-08-03T12:23:00+08:00
@@ -151,26 +277,22 @@ Stage Summary:
 ---
 ## 项目当前状态
 - **代码库状态**: 稳定, 0构建错误, 0 lint errors
-- **最新commit**: 6a68df9 (已push)
-- **累计修复**: 361项
-- **CSS工具类总计**: 49 + 10(本轮) - 5(重复清理) = 54个
+- **最新commit**: 6b3eac0 (已push)
+- **累计修复**: 381项
+- **CSS工具类总计**: 54 + 12(本轮) = 66个
 - **公共页面**: 首页、分类、排行榜、统计
+- **apiFetch统一**: 所有公共页面+管理端已统一使用apiFetch
 
 ## 未解决问题或风险
 1. agent-browser无法在此环境使用(沙箱隔离+dev server OOM)
 2. 内存rate limit不跨进程共享(LOW, 单admin系统可接受)
 3. SSRF防护仅检查hostname字符串, 未做DNS解析(LOW, 需dns.resolve)
-4. Dashboard activity API使用SQLite-specific date()函数(MIGRATION RISK)
-5. Resizable panels在移动端不可用(需条件布局)
-6. 导出API >5000章需分批(已加guard, 但无流式导出)
-7. Admin页面无服务端auth保护(client-only session check, MED)
-8. 公共页面使用raw fetch而非apiFetch(一致性, LOW)
-9. NovelCard Popover在触屏设备上hover无效(LOW)
-10. tailwind.config.ts遗留文件含hsl(var())(v4下不影响但应清理)
-11. ScrapeTaskMonitor formatDuration <60s显示"1分"而非秒数(LOW)
-12. NovelDetailView totalWords与novel.wordCount可能不同步(LOW)
-13. AppSidebar refreshCounter在store任何字段变更时重新计算(LOW)
-14. ScrollProgress组件在管理后台页面无意义(HIGH, 可用layout条件渲染)
+4. Resizable panels在移动端不可用(需条件布局)
+5. 导出API >5000章需分批(已加guard, 但无流式导出)
+6. Admin页面无服务端auth保护(client-only session check, MED)
+7. 批量排序N+1 SQL UPDATE(5000章=5000次UPDATE, 可用$executeRaw CASE WHEN优化)
+8. AppSidebar refreshCounter在store任何字段变更时重新计算(LOW)
+9. 小说封面无自动生成/管理功能
 
 ## 建议下一阶段优先事项
 1. 服务器部署 git pull && bash deploy.sh
@@ -179,9 +301,9 @@ Stage Summary:
 4. 性能: 章节列表虚拟滚动(@tanstack/react-virtual) — 管理端
 5. 可访问性: Admin页面服务端auth保护
 6. 移动端: Resizable panels条件布局切换
-7. 迁移准备: Dashboard activity API去SQLite date()
-8. 新功能: 阅读统计增强(阅读时长追踪、周/月趋势图)
-9. 清理: 删除遗留tailwind.config.ts, 公共页面统一apiFetch
-10. 新功能: 小说推荐系统(基于阅读偏好和分类)
-11. 样式: 应用新CSS工具类到更多组件(skeleton-row/text-fade-end/card-press等)
-12. 新功能: 阅读进度持久化到服务端(跨设备同步)
+7. 新功能: 阅读统计增强(阅读时长追踪、周/月趋势图)
+8. 新功能: 小说推荐系统(基于阅读偏好和分类)
+9. 样式: 应用新CSS工具类到更多组件(stagger-children/link-underline/card-border-glow等)
+10. 新功能: 阅读进度持久化到服务端(跨设备同步)
+11. 性能: 批量排序改用$executeRaw CASE WHEN单条SQL
+12. 清理: Dashboard activity API去SQLite date()兼容性
