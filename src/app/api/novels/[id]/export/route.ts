@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
 const MAX_EXPORT_CHAPTERS = 5000;
+const MAX_EXPORT_CHARS = 20_000_000; // ~20M chars (~40MB in memory for JSON)
 
 /**
  * Export a novel with all chapters.
@@ -36,11 +37,24 @@ export const GET = withAuth(async function GET(
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
     }
 
-    // Pre-check chapter count to prevent OOM
+    // Pre-check chapter count and total content size to prevent OOM
     const chapterCount = await db.chapter.count({ where: { novelId: id } });
     if (chapterCount > MAX_EXPORT_CHAPTERS) {
       return NextResponse.json(
         { error: `章节数量(${chapterCount})超过导出上限(${MAX_EXPORT_CHAPTERS})，请分批导出` },
+        { status: 400 }
+      );
+    }
+
+    // Check total content size to prevent OOM (wordCount approximates char count for CJK)
+    const { _sum } = await db.chapter.aggregate({
+      where: { novelId: id },
+      _sum: { wordCount: true },
+    });
+    const totalWords = _sum.wordCount ?? 0;
+    if (totalWords > MAX_EXPORT_CHARS) {
+      return NextResponse.json(
+        { error: `小说总字数(${totalWords.toLocaleString()})过大，超过导出上限(${(MAX_EXPORT_CHARS / 10000).toFixed(0)}万字)，请联系管理员分批处理` },
         { status: 400 }
       );
     }

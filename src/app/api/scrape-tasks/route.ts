@@ -95,14 +95,18 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       }).catch(async (err) => {
         console.error(`[Scrape Task] Failed to auto-trigger task ${task.id}:`, err);
         // Only update to failed if still pending (avoid overwriting running/completed)
-        const { count } = await db.scrapeTask.updateMany({
-          where: { id: task.id, status: "pending" },
-          data: { status: "failed", errorMessage: `触发采集服务失败: ${err instanceof Error ? err.message : '未知错误'}`, completedAt: new Date() },
-        });
-        if (count === 0) {
-          console.log(`[Scrape Task] Task already in progress`);
+        try {
+          const { count } = await db.scrapeTask.updateMany({
+            where: { id: task.id, status: "pending" },
+            data: { status: "failed", errorMessage: `触发采集服务失败: ${err instanceof Error ? err.message : '未知错误'}`, completedAt: new Date() },
+          });
+          if (count === 0) {
+            console.log(`[Scrape Task] Task already in progress`);
+          }
+        } catch (dbErr) {
+          console.error(`[Scrape Task] Failed to update task ${task.id} status after trigger failure:`, dbErr);
         }
-      });
+      }).catch(() => {}); // Top-level safety net for any unhandled rejection
     }
 
     return NextResponse.json(task, { status: 201 });

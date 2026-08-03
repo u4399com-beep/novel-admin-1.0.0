@@ -56,6 +56,7 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
   const [errorMsg, setErrorMsg] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const resetState = useCallback(() => {
     setFile(null);
@@ -67,7 +68,11 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
   }, []);
 
   const handleClose = (open: boolean) => {
-    if (!open) resetState();
+    if (!open) {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      resetState();
+    }
     onOpenChange(open);
   };
 
@@ -100,6 +105,9 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
     setImportState('uploading');
     setErrorMsg('');
 
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -112,6 +120,7 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
         {
           method: 'POST',
           body: formData,
+          signal: abortController.signal,
           silent: true, // We show inline error card below, suppress auto-toast (M1 fix)
         },
       );
@@ -125,9 +134,13 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
         throw new Error(data.error || '导入失败');
       }
     } catch (err) {
+      if (abortController.signal.aborted) return;
       setImportState('error');
       const msg = err instanceof FetchError ? err.message : err instanceof Error ? err.message : '导入失败';
       setErrorMsg(msg);
+    } finally {
+      if (abortController.signal.aborted) return;
+      abortRef.current = null;
     }
   };
 
@@ -153,7 +166,7 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
         <div className="space-y-4 py-2">
           {/* File drop zone */}
           <div
-            className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${
+            className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer focus-ring-bright ${
               dragOver
                 ? 'border-primary bg-primary/5'
                 : file

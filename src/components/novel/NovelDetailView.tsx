@@ -258,21 +258,22 @@ function ChapterEditorPanel({
     }
 
     // Fetch full chapter content
-    let cancelled = false;
+    const ac = new AbortController();
     const loadChapter = async () => {
       try {
-        const data = await apiFetch<{ title: string; content: string }>(`/api/chapters/${chapter.id}`);
-        if (!cancelled) {
-          setTitle(data.title);
-          setContent(data.content || '');
-          initialLoadRef.current = true;
+        const data = await apiFetch<{ title: string; content: string }>(`/api/chapters/${chapter.id}`, { signal: ac.signal });
+        setTitle(data.title);
+        setContent(data.content || '');
+        initialLoadRef.current = true;
         dirtyRef.current = false;
-        }
-      } catch { /* handled by apiFetch */ }
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        /* handled by apiFetch */
+      }
     };
 
     loadChapter();
-    return () => { cancelled = true; };
+    return () => ac.abort();
   }, [chapter]);
 
   // Auto-save debounce
@@ -459,23 +460,22 @@ function ChapterReaderDialog({
     if (!chapter || !open) return;
     if (chapter.content?.trim()) return;
 
-    let cancelled = false;
+    const ac = new AbortController();
     const loadContent = async () => {
       try {
-        const data = await apiFetch<{ title: string; content: string }>(`/api/chapters/${chapter.id}`);
-        if (!cancelled) setContent(data.content || '');
-      } catch {
-        if (!cancelled) setContent('');
+        const data = await apiFetch<{ title: string; content: string }>(`/api/chapters/${chapter.id}`, { signal: ac.signal });
+        setContent(data.content || '');
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        setContent('');
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
     };
 
     loadContent();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => ac.abort();
   }, [chapter, open]);
 
   // Keyboard navigation

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, type MouseEvent, type ReactNode, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -13,9 +13,12 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Maximize2,
   Minimize2,
   Loader2,
+  Search,
   Settings2,
   List,
   BookmarkCheck,
@@ -114,6 +117,34 @@ const itemVariants = {
 const SIDEBAR_PAGE_SIZE = 200;
 const CHAPTERS_PER_PAGE = 100;
 
+// ─── Reader search highlight helper ─────────────────────────────────
+// Splits text around matches and wraps them in <mark> elements (React, not raw HTML).
+function highlightText(text: string, query: string, activeIndex: number): ReactNode {
+  if (!query.trim()) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
+  const regex = new RegExp(`(${escaped})`, 'gi');
+  const parts = text.split(regex);
+  let matchCount = 0;
+  return parts.map((part, i) => {
+    if (regex.test(part)) {
+      regex.lastIndex = 0; // reset for next test
+      const idx = matchCount++;
+      const isActive = idx === activeIndex;
+      return (
+        <mark
+          key={i}
+          className={`rounded-sm px-0.5 ${isActive ? 'bg-amber-400/70 dark:bg-amber-500/60 ring-2 ring-amber-400/50' : 'bg-amber-200/70 dark:bg-amber-500/25'}`}
+          data-match-index={idx}
+        >
+          {part}
+        </mark>
+      );
+    }
+    regex.lastIndex = 0;
+    return part;
+  });
+}
+
 export default function NovelDetailClient({ novel, chapters: initialChapters, totalChapters: initialTotal }: { novel: Novel; chapters: Chapter[]; totalChapters?: number }) {
   const router = useRouter();
   const gradient = getCoverGradient(novel.title);
@@ -178,8 +209,22 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const [chapterTitle, setChapterTitle] = useState('');
   const [loadingChapter, setLoadingChapter] = useState(false);
   const [scrollPercent, setScrollPercent] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMatch, setCurrentMatch] = useState(0);
   const readerContentRef = useRef<HTMLDivElement>(null);
   const readerDialogRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // ─── Search match count ─────────────────────────────────────────
+  const matchCount = useMemo(() => {
+    if (!chapterContent || !searchQuery.trim()) return 0;
+    const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
+    const matches = chapterContent.match(new RegExp(escaped, 'gi'));
+    return matches ? matches.length : 0;
+  }, [chapterContent, searchQuery]);
+
+  const getMatchCount = useCallback(() => matchCount, [matchCount]);
 
   // ─── Reading settings ────────────────────────────────────────────
   const { settings, updateSettings, currentTheme, currentFont } = useReadingSettings();
@@ -191,11 +236,11 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   useEffect(() => {
     const total = initialTotal ?? novel._count.chapters;
     if (total <= 200 || initialChapters.length >= total) return;
-    let cancelled = false;
-    apiFetch<{ chapters?: Chapter[] }>(`/api/public/novels/${novel.id}/chapters?pageSize=${total}`).then((data) => {
-      if (!cancelled && data.chapters) setAllChapters(data.chapters);
+    const ac = new AbortController();
+    apiFetch<{ chapters?: Chapter[] }>(`/api/public/novels/${novel.id}/chapters?pageSize=${total}`, { signal: ac.signal }).then((data) => {
+      if (data.chapters) setAllChapters(data.chapters);
     }).catch(() => {});
-    return () => { cancelled = true; };
+    return () => ac.abort();
   }, []);
 
   // Clamp to valid range (chapters may have been deleted since progress was saved)
@@ -260,6 +305,9 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       setChapterError(false);
       setChapterTitle(chapter.title);
       setLoadingChapter(true);
+      setSearchOpen(false);
+      setSearchQuery('');
+      setCurrentMatch(0);
 
       // Scroll reader content to top on chapter change (H3 fix)
       requestAnimationFrame(() => {
@@ -380,7 +428,11 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         e.preventDefault();
         goToChapter('next');
       } else if (e.key === 'Escape') {
-        if (showSettings) {
+        if (searchOpen) {
+          setSearchOpen(false);
+          setSearchQuery('');
+          setCurrentMatch(0);
+        } else if (showSettings) {
           setShowSettings(false);
         } else if (showBookmarks) {
           setShowBookmarks(false);
@@ -403,14 +455,54 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           e.preventDefault();
           setReaderFullscreen((p) => !p);
         }
+      } else if (e.key === 'f' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setSearchOpen((p) => !p);
+        if (!searchOpen) {
+          setSearchQuery('');
+          setCurrentMatch(0);
+        }
+      } else if (e.key === 'Enter' && searchOpen && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        // Ctrl+Enter / Cmd+Enter cycles to next match
+        setCurrentMatch((p) => {
+          const total = getMatchCount();
+          return total > 0 ? (p + 1) % total : 0;
+        });
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [readerOpen, readerFullscreen, showChapterSidebar, showBookmarks, showSettings, goToChapter]);
+  }, [readerOpen, readerFullscreen, showChapterSidebar, showBookmarks, showSettings, goToChapter, searchOpen, getMatchCount]);
 
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < chapters.length - 1;
+
+  // ─── Auto-focus search input ─────────────────────────────────────
+  useEffect(() => {
+    if (searchOpen) {
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [searchOpen]);
+
+  // ─── Scroll active match into view ───────────────────────────────
+  useEffect(() => {
+    if (!searchOpen || matchCount === 0) return;
+    const container = readerContentRef.current;
+    if (!container) return;
+    const activeMark = container.querySelector(`[data-match-index="${currentMatch}"]`);
+    if (activeMark) {
+      activeMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [currentMatch, searchOpen, matchCount]);
+
+  const handleSearchPrev = useCallback(() => {
+    setCurrentMatch((p) => (matchCount > 0 ? (p - 1 + matchCount) % matchCount : 0));
+  }, [matchCount]);
+
+  const handleSearchNext = useCallback(() => {
+    setCurrentMatch((p) => (matchCount > 0 ? (p + 1) % matchCount : 0));
+  }, [matchCount]);
 
   return (
     <main className="min-h-screen bg-background">
@@ -431,7 +523,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: 'easeOut' as const }}
-          className="rounded-2xl border bg-gradient-to-br from-muted/40 via-background to-muted/20 p-6 sm:p-8"
+          className="rounded-2xl border bg-gradient-to-br from-muted/40 via-background to-muted/20 p-6 sm:p-8 glass-card"
         >
           <div className="flex flex-col sm:flex-row gap-6 sm:gap-8">
             {/* Cover with 3D tilt */}
@@ -766,7 +858,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       <BackToTop threshold={300} />
 
       {/* ─── Reader Dialog ────────────────────────────────────── */}
-      <Dialog open={readerOpen} onOpenChange={(open) => { if (!open) { setReaderFullscreen(false); setReaderOpen(false); } }}>
+      <Dialog open={readerOpen} onOpenChange={(open) => { if (!open) { setReaderFullscreen(false); setSearchOpen(false); setSearchQuery(''); setCurrentMatch(0); setReaderOpen(false); } }}>
         <DialogContent
           ref={readerDialogRef}
           className={
@@ -1101,6 +1193,62 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               )}
             </AnimatePresence>
 
+            {/* Reader search bar */}
+            <AnimatePresence>
+              {searchOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.15 }}
+                  className="shrink-0 px-3 py-2"
+                >
+                  <div className="glass-card flex items-center gap-2 rounded-lg border px-3 py-1.5">
+                    <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => { setSearchQuery(e.target.value); setCurrentMatch(0); }}
+                      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setSearchOpen(false); setSearchQuery(''); setCurrentMatch(0); } if (e.key === 'Enter') { e.preventDefault(); handleSearchNext(); } }}
+                      placeholder="搜索本章内容..."
+                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus-ring-bright rounded"
+                    />
+                    {searchQuery.trim() && (
+                      <>
+                        <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
+                          {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : '无结果'}
+                        </span>
+                        <button
+                          onClick={handleSearchPrev}
+                          disabled={matchCount === 0}
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted/80 disabled:opacity-30 transition-colors"
+                          aria-label="上一个匹配"
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={handleSearchNext}
+                          disabled={matchCount === 0}
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted/80 disabled:opacity-30 transition-colors"
+                          aria-label="下一个匹配"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={() => { setSearchOpen(false); setSearchQuery(''); setCurrentMatch(0); }}
+                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted/80 text-muted-foreground/60 hover:text-foreground transition-colors"
+                      aria-label="关闭搜索"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Reader content */}
             <div ref={readerContentRef} className="flex-1 overflow-y-auto">
               <div className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-colors duration-300`}>
@@ -1134,14 +1282,29 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                         lineHeight: settings.lineHeight,
                       }}
                     >
-                      {chapterContent.split('\n').map((paragraph, i) => (
-                        <p
-                          key={i}
-                          className={paragraph.trim() ? 'text-indent-[2em] mb-0' : 'h-4'}
-                        >
-                          {paragraph.trim() || '\u00A0'}
-                        </p>
-                      ))}
+                      {(() => {
+                        const isSearching = searchOpen && searchQuery.trim();
+                        let runningMatches = 0;
+                        return chapterContent.split('\n').map((paragraph, i) => {
+                          const text = paragraph.trim() || '\u00A0';
+                          const matchOffset = runningMatches;
+                          if (isSearching && paragraph.trim()) {
+                            const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
+                            const matches = paragraph.match(new RegExp(escaped, 'gi'));
+                            runningMatches += matches ? matches.length : 0;
+                          }
+                          return (
+                            <p
+                              key={i}
+                              className={paragraph.trim() ? 'text-indent-[2em] mb-0' : 'h-4'}
+                            >
+                              {isSearching && paragraph.trim()
+                                ? highlightText(text, searchQuery, currentMatch - matchOffset)
+                                : text}
+                            </p>
+                          );
+                        });
+                      })()}
                     </article>
                   </div>
                 ) : null}
@@ -1162,7 +1325,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               上一章
             </Button>
             <span className="text-[11px] text-muted-foreground hidden sm:block">
-              ← → 翻页 · B 书签 · F 全屏 · Esc 关闭
+              ← → 翻页 · B 书签 · F 全屏 · Ctrl+F 搜索 · Esc 关闭
             </span>
             <Button
               variant="outline"

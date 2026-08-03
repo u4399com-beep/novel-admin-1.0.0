@@ -99,6 +99,11 @@ export function getClientIp(request: NextRequest): string {
  */
 export type ApiHandler = (...args: any[]) => Promise<NextResponse<unknown>>;
 
+export interface WithAuthOptions {
+  /** Max request body size in bytes for write methods (default: 1MB). Set higher for upload routes. */
+  maxBodySize?: number;
+}
+
 /**
  * Wrap an API route handler with authentication and rate limiting.
  *
@@ -110,8 +115,14 @@ export type ApiHandler = (...args: any[]) => Promise<NextResponse<unknown>>;
  * Usage in route.ts:
  *   export const GET = withAuth(async (req) => { ... });
  *   export const POST = withAuth(async (req) => { ... });
+ *
+ *   // For file upload routes:
+ *   export const POST = withAuth({ maxBodySize: 50 * 1024 * 1024 }, async (req) => { ... });
  */
-export function withAuth(handler: ApiHandler): ApiHandler {
+export function withAuth(handlerOrOpts: ApiHandler | WithAuthOptions, maybeHandler?: ApiHandler): ApiHandler {
+  const opts: WithAuthOptions = typeof handlerOrOpts === 'function' ? {} : handlerOrOpts;
+  const handler: ApiHandler = typeof handlerOrOpts === 'function' ? handlerOrOpts : maybeHandler!;
+
   return async (...args: unknown[]) => {
     const request = args[0] as NextRequest;
     // 1. Request ID (generated early for both auth paths)
@@ -119,10 +130,12 @@ export function withAuth(handler: ApiHandler): ApiHandler {
 
     // 2. Content-Length check for write methods (applies to ALL callers)
     const method = request.method;
+    const maxBody = opts.maxBodySize ?? (1024 * 1024); // default 1MB
     if (['POST', 'PUT', 'PATCH'].includes(method)) {
       const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
-      if (contentLength > 1024 * 1024) { // 1MB
-        return NextResponse.json({ error: '请求体过大，最大允许1MB' }, { status: 413 });
+      if (contentLength > maxBody) {
+        const maxMB = Math.round(maxBody / (1024 * 1024));
+        return NextResponse.json({ error: `请求体过大，最大允许${maxMB}MB` }, { status: 413 });
       }
     }
 

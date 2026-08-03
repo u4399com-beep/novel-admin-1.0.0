@@ -259,7 +259,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
       className="group cursor-pointer"
     >
       {/* Cover */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md group-hover:shadow-2xl group-hover:shadow-primary/10 transition-all duration-300 ease-out group-hover:-translate-y-1.5 group-hover:ring-1 group-hover:ring-primary/20 cover-zoom">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift">
         {novel.coverUrl ? (
           <img
             src={novel.coverUrl}
@@ -379,6 +379,12 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
           {statusLabel}
         </span>
       </div>
+      <Link
+        href={`/novels/${novel.id}`}
+        className="mt-2 block w-full text-center text-xs font-medium text-primary hover:text-primary/80 hover:underline rounded-md py-1.5 bg-primary/5 hover:bg-primary/10 transition-colors"
+      >
+        查看详情
+      </Link>
     </PopoverContent>
     </Popover>
   );
@@ -471,7 +477,7 @@ function FilterRow<T extends string>({
                 key={opt.value || '__all__'}
                 onClick={() => onChange(opt.value)}
                 aria-pressed={isActive}
-                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap ${
+                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap tap-feedback ${
                   isActive
                     ? 'bg-primary text-primary-foreground font-medium shadow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
@@ -615,6 +621,7 @@ export default function HomePage() {
     setPage(1);
     setSuggestionsOpen(false);
     setSearchHistory(getSearchHistory());
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleHistoryClear = () => {
@@ -689,21 +696,25 @@ export default function HomePage() {
   const handleCategoryChange = (slug: string) => {
     setActiveCategorySlug(slug === activeCategorySlug ? '' : slug);
     setPage(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleStatusChange = (status: string) => {
     setActiveStatus(status === activeStatus ? '' : status);
     setPage(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleWordCountChange = (wc: string) => {
     setActiveWordCount(wc === activeWordCount ? 'all' : wc);
     setPage(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSortChange = (sort: string) => {
     setActiveSort(sort);
     setPage(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const resetAllFilters = () => {
@@ -1102,7 +1113,7 @@ export default function HomePage() {
                 <Link
                   key={rn.id}
                   href={`/novels/${rn.id}`}
-                  className="shrink-0 flex items-center gap-2.5 rounded-lg border bg-background px-3 py-2 transition-all hover:shadow-sm hover:border-primary/30 hover:-translate-y-0.5 group"
+                  className="shrink-0 flex items-center gap-2.5 rounded-lg border bg-background px-3 py-2 transition-all hover:shadow-sm hover:border-primary/30 group hover-lift tap-feedback"
                 >
                   <div className="h-8 w-6 rounded overflow-hidden shrink-0">
                     {rn.coverUrl ? (
@@ -1325,7 +1336,7 @@ export default function HomePage() {
                 size="icon"
                 className="h-8 w-8 page-btn"
                 disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => { setPage((p) => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -1340,7 +1351,7 @@ export default function HomePage() {
                     variant={p === page ? 'default' : 'outline'}
                     size="icon"
                     className="h-8 w-8 page-btn"
-                    onClick={() => setPage(p)}
+                    onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                     aria-current={p === page ? 'page' : undefined}
                   >
                     {p}
@@ -1352,7 +1363,7 @@ export default function HomePage() {
                 size="icon"
                 className="h-8 w-8 page-btn"
                 disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 
@@ -13,10 +13,16 @@ export function ScrollProgress() {
 
   useEffect(() => {
     if (isAdmin) return;
+    let ticking = false;
     function handleScroll() {
-      const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-      if (scrollable <= 0) { setProgress(0); return; }
-      setProgress(Math.round((window.scrollY / scrollable) * 100));
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        if (scrollable <= 0) { setProgress(0); ticking = false; return; }
+        setProgress(Math.round((window.scrollY / scrollable) * 100));
+        ticking = false;
+      });
     }
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);

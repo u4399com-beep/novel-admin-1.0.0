@@ -51,21 +51,43 @@ export class FetchError extends Error {
 export interface ApiFetchOptions extends RequestInit {
   /** If true, suppress automatic error toasts (caller handles errors) */
   silent?: boolean;
+  /** Request timeout in ms (default: 30000). Set 0 to disable. */
+  timeout?: number;
 }
 
 export async function apiFetch<T = unknown>(
   url: string,
   init?: ApiFetchOptions,
 ): Promise<T> {
+  const timeoutMs = init?.timeout ?? 30000;
+  // Merge caller's signal with our timeout signal
+  const controller = new AbortController();
+  const timeoutId: ReturnType<typeof setTimeout> | null = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  // If caller already provided a signal, forward its abort to our controller
+  const outerSignal = init?.signal;
+  if (outerSignal) {
+    if (outerSignal.aborted) { clearTimeout(timeoutId!); controller.abort(); }
+    else outerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  // Exclude our custom 'timeout' and 'silent' options from native fetch
+  const { timeout: _t, silent: _s, ...restInit } = (init ?? {}) as RequestInit & { timeout?: number; silent?: boolean };
+  const mergedInit: RequestInit = { ...restInit, signal: controller.signal };
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, mergedInit);
   } catch (err) {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+    if (controller.signal.aborted && !outerSignal?.aborted) {
+      const msg = '请求超时，请稍后重试';
+      if (!init?.silent) toast.error(msg);
+      throw new FetchError(msg, 0);
+    }
     // Network error (DNS failure, connection refused, CORS, etc.)
     const msg = err instanceof Error ? err.message : '网络连接失败';
     toast.error(msg);
     throw new FetchError(msg, 0);
   }
+  if (timeoutId !== null) clearTimeout(timeoutId);
 
   if (res.ok) {
     // 204 No Content

@@ -25,7 +25,7 @@ interface ImportJson {
  * Upload a TXT or JSON file to create a novel with chapters.
  * Accepts multipart/form-data with a 'file' field.
  */
-export const POST = withAuth(async function POST(request: NextRequest) {
+export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
