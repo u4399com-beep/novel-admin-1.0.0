@@ -3,9 +3,7 @@ import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
-
-const MAX_NAME_LENGTH = 50;
-const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+import { MAX_NAME_LENGTH, VALID_COLOR_RE } from "@/lib/validation/tags";
 
 // GET /api/tags - List all tags
 export const GET = withAuth(async function GET() {

@@ -5,8 +5,8 @@ import { sanitizeField } from '@/lib/api-utils';
 
 const MAX_SESSION_ID_LENGTH = 100;
 
-function toLocalDateStr(d: Date): string {
-  return d.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+function toLocalDateStr(d: Date, tz?: string): string {
+  return d.toLocaleString('sv-SE', { timeZone: tz || 'Asia/Shanghai' }).slice(0, 10);
 }
 
 /**
@@ -17,6 +17,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
+    const tz = searchParams.get('tz') || undefined;
     if (!sessionId || sessionId.length < 10) {
       return NextResponse.json({
         totalBooks: 0,
@@ -92,10 +93,10 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     }));
 
     // Calculate reading streak (consecutive days with activity)
-    const streak = calculateReadingStreak(progressItems.map(p => p.lastReadAt));
+    const streak = calculateReadingStreak(progressItems.map(p => p.lastReadAt), tz);
 
     // Heatmap data: count of reading days per day for the last 120 days
-    const heatmap = buildHeatmapData(progressItems.map(p => p.lastReadAt), 120);
+    const heatmap = buildHeatmapData(progressItems.map(p => p.lastReadAt), 120, tz);
 
     const totalBooks = completedBooks + ongoingBooks;
 
@@ -118,20 +119,20 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
 /**
  * Calculate reading streak — consecutive days with activity ending today or yesterday.
  */
-function calculateReadingStreak(dates: Date[]): number {
+function calculateReadingStreak(dates: Date[], tz?: string): number {
   if (dates.length === 0) return 0;
 
   const dateSet = new Set<string>();
   for (const d of dates) {
-    dateSet.add(toLocalDateStr(d));
+    dateSet.add(toLocalDateStr(d, tz));
   }
 
   // Check if today or yesterday has activity
   const now = new Date();
-  const todayStr = toLocalDateStr(now);
+  const todayStr = toLocalDateStr(now, tz);
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = toLocalDateStr(yesterday);
+  const yesterdayStr = toLocalDateStr(yesterday, tz);
 
   if (!dateSet.has(todayStr) && !dateSet.has(yesterdayStr)) return 0;
 
@@ -140,7 +141,7 @@ function calculateReadingStreak(dates: Date[]): number {
   let streak = 0;
   const checkDate = new Date(startDate);
 
-  while (dateSet.has(toLocalDateStr(checkDate))) {
+  while (dateSet.has(toLocalDateStr(checkDate, tz))) {
     streak++;
     checkDate.setDate(checkDate.getDate() - 1);
   }
@@ -151,10 +152,10 @@ function calculateReadingStreak(dates: Date[]): number {
 /**
  * Build heatmap data: array of { date, count } for the last N days.
  */
-function buildHeatmapData(dates: Date[], days: number): Array<{ date: string; count: number }> {
+function buildHeatmapData(dates: Date[], days: number, tz?: string): Array<{ date: string; count: number }> {
   const dayCount = new Map<string, number>();
   for (const d of dates) {
-    const key = toLocalDateStr(d);
+    const key = toLocalDateStr(d, tz);
     dayCount.set(key, (dayCount.get(key) || 0) + 1);
   }
 

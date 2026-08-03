@@ -4,8 +4,8 @@ import { withPublicRateLimit } from '@/lib/api-auth';
 import { sanitizeField } from '@/lib/api-utils';
 import { z } from 'zod';
 
-function toLocalDateStr(d: Date): string {
-  return d.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+function toLocalDateStr(d: Date, tz?: string): string {
+  return d.toLocaleString('sv-SE', { timeZone: tz || 'Asia/Shanghai' }).slice(0, 10);
 }
 
 const querySchema = z.object({
@@ -20,6 +20,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
   try {
     const { searchParams } = new URL(request.url);
     const rawSessionId = sanitizeField(searchParams.get('sessionId') || '', 200);
+    const tz = searchParams.get('tz') || undefined;
 
     const parsed = querySchema.safeParse({ sessionId: rawSessionId });
     if (!parsed.success) {
@@ -38,24 +39,24 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
       return NextResponse.json({ currentStreak: 0, maxStreak: 0, totalDays: 0 });
     }
 
-    // Bucket by local date (Asia/Shanghai)
+    // Bucket by local date
     const dateSet = new Set<string>();
     for (const p of progress) {
-      dateSet.add(toLocalDateStr(p.lastReadAt));
+      dateSet.add(toLocalDateStr(p.lastReadAt, tz));
     }
 
     const sortedDates = Array.from(dateSet).sort();
     const totalDays = sortedDates.length;
 
     // Calculate current streak: from today backwards
-    const today = toLocalDateStr(new Date());
+    const today = toLocalDateStr(new Date(), tz);
     let currentStreak = 0;
     if (dateSet.has(today)) {
       currentStreak = 1;
       for (let i = 1; ; i++) {
         const checkDate = new Date();
         checkDate.setDate(checkDate.getDate() - i);
-        if (dateSet.has(toLocalDateStr(checkDate))) {
+        if (dateSet.has(toLocalDateStr(checkDate, tz))) {
           currentStreak++;
         } else {
           break;

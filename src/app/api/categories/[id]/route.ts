@@ -3,11 +3,7 @@ import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
-
-const MAX_NAME_LENGTH = 100;
-const MAX_SLUG_LENGTH = 100;
-const MAX_DESCRIPTION_LENGTH = 1000;
-const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+import { MAX_NAME_LENGTH, MAX_SLUG_LENGTH, MAX_DESCRIPTION_LENGTH, VALID_COLOR_RE } from "@/lib/validation/categories";
 
 // GET /api/categories/[id] - Get a single category
 export const GET = withAuth(async function GET(
@@ -128,6 +124,9 @@ export const DELETE = withAuth(async function DELETE(
     console.error("Delete category error:", error);
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "分类不存在" }, { status: 404 });
+    }
+    if (isPrismaError(error, "P2003")) {
+      return NextResponse.json({ error: "无法删除：有小说正在使用此分类" }, { status: 409 });
     }
     return NextResponse.json({ error: "删除分类失败"}, { status: 500 });
   }

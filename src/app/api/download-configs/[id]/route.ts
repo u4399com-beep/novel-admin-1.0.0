@@ -3,14 +3,7 @@ import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
-
-const MAX_NAME_LENGTH = 200;
-const VALID_FORMATS = ["txt", "epub"];
-const VALID_AD_POSITIONS = ["start", "middle", "end"];
-const MAX_CONTENT_LENGTH = 5000;
-const MIN_AD_INTERVAL = 1;
-const MAX_AD_INTERVAL = 1000;
-const MAX_PATTERN_LENGTH = 500;
+import { MAX_NAME_LENGTH, VALID_FORMATS, VALID_AD_POSITIONS, MAX_CONTENT_LENGTH, MIN_AD_INTERVAL, MAX_AD_INTERVAL, MAX_PATTERN_LENGTH } from "@/lib/validation/download-configs";
 
 // GET /api/download-configs/[id] - Get a single download config
 export const GET = withAuth(async function GET(

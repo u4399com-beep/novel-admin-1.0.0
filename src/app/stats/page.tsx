@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { ReadingHeatMap } from '@/components/ReadingHeatMap';
 import ReadingStreak from '@/components/ReadingStreak';
+import { ReadingGoalCard } from '@/components/ReadingGoalCard';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime, formatWordCount } from '@/lib/format';
@@ -168,7 +169,7 @@ export default function StatsPage() {
             </div>
             <h2 className="text-lg font-semibold mb-2">加载失败</h2>
             <p className="text-sm text-muted-foreground mb-6 max-w-xs">{error}</p>
-            <Button variant="outline" onClick={() => fetchStats()}>
+            <Button variant="outline" onClick={() => { fetchStats(); const sid = getSessionId(); if (sid) { apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`).then(setStreakData).catch(() => {}); } }}>
               <RotateCcw className="mr-1.5 h-4 w-4" />
               重试
             </Button>
@@ -196,7 +197,7 @@ export default function StatsPage() {
         ) : (
           stats && (
             <>
-              {/* Reading Streak + Stat Cards */}
+              {/* Reading Streak + Goal + Stat Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {streakData && (
                   <motion.div
@@ -225,6 +226,15 @@ export default function StatsPage() {
                   value={stats.totalChaptersRead.toLocaleString()}
                 />
               </div>
+
+              {/* Daily Reading Goal */}
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 }}
+              >
+                <ReadingGoalCard />
+              </motion.div>
 
               {/* Reading Heat Map */}
               <ReadingHeatMap sessionId={getSessionId() || ''} className="mt-6" />

@@ -3,28 +3,12 @@ import { parsePagination, sanitizeField, safeJson, isPrismaError } from "@/lib/a
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
-
-const MAX_NAME_LENGTH = 200;
-const MAX_DOMAIN_LENGTH = 500;
-const MAX_DESCRIPTION_LENGTH = 2000;
-const MAX_SITE_TITLE_LENGTH = 200;
-const MAX_SITE_DESC_LENGTH = 500;
-const MAX_KEYWORDS_LENGTH = 500;
-const MAX_OFFSET = 10000;
-const MAX_JSON_CONFIG_SIZE = 51200; // 50KB
-const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
-
-function validateJsonObject(value: unknown, fieldName: string): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    return `${fieldName}必须是JSON对象`;
-  }
-  const str = JSON.stringify(value);
-  if (str.length > MAX_JSON_CONFIG_SIZE) {
-    return `${fieldName}大小不能超过${Math.floor(MAX_JSON_CONFIG_SIZE / 1024)}KB`;
-  }
-  return null;
-}
+import {
+  MAX_NAME_LENGTH, MAX_DOMAIN_LENGTH, MAX_DESCRIPTION_LENGTH,
+  MAX_SITE_TITLE_LENGTH, MAX_SITE_DESC_LENGTH, MAX_KEYWORDS_LENGTH,
+  MAX_OFFSET, MAX_JSON_CONFIG_SIZE, DOMAIN_RE,
+} from "@/lib/validation/sites";
+import { validateJsonObject } from "@/lib/validation/common";
 
 // GET /api/sites - List all sites with pagination
 export const GET = withAuth(async function GET(request: NextRequest) {

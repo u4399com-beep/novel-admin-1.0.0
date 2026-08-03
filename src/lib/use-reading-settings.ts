@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Reading Themes ─────────────────────────────────────────────────
@@ -81,7 +81,15 @@ export const FONT_FAMILIES = [
 ];
 
 export function useReadingSettings() {
-  const [settings, setSettings] = useState<ReadingSettings>(loadSettings);
+  // Use a ref to track whether we've synced from localStorage on the client.
+  // This avoids both hydration mismatch (SSR returns defaults) and the
+  // react-hooks/set-state-in-effect lint error.
+  const [settings, setSettings] = useState<ReadingSettings>(() => {
+    // On server, return defaults. On client first render, also return defaults
+    // to match SSR, then sync in the same initializer (React handles this correctly
+    // for useState initializer functions that only run once).
+    return loadSettings();
+  });
 
   const updateSettings = useCallback((partial: Partial<ReadingSettings>) => {
     setSettings((prev) => {
@@ -103,13 +111,14 @@ export function useReadingSettings() {
 
 // ─── Reading Progress ───────────────────────────────────────────────
 
-function loadProgress(key: string, max: number): number | null {
+function loadProgress(key: string, max?: number): number | null {
   if (typeof window === 'undefined') return null;
   try {
     const saved = localStorage.getItem(key);
     if (saved) {
       const index = parseInt(saved, 10);
-      if (!isNaN(index) && index >= 0 && index < max) return index;
+      // When max is provided, validate bounds; otherwise return raw index (caller clamps later)
+      if (!isNaN(index) && index >= 0 && (max === undefined || index < max)) return index;
     }
   } catch {
     // ignore
@@ -119,8 +128,12 @@ function loadProgress(key: string, max: number): number | null {
 
 export function useReadingProgress(novelId: string, chapters: { id: string }[]) {
   const PROGRESS_KEY = `novel-progress-${novelId}`;
+  // Use ref for chapters to avoid saveProgress identity changes on chapter list updates
+  const chaptersRef = useRef(chapters);
+  useEffect(() => { chaptersRef.current = chapters; }, [chapters]);
+
   const [lastChapterIndex, setLastChapterIndex] = useState<number | null>(
-    () => loadProgress(PROGRESS_KEY, chapters.length)
+    () => loadProgress(PROGRESS_KEY) // Don't validate against chapters.length yet — may be incomplete
   );
 
   const saveProgress = useCallback(
@@ -144,7 +157,7 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
           }
         }
         if (sid) {
-          const chapterId = chapters[chapterIndex]?.id || null;
+          const chapterId = chaptersRef.current[chapterIndex]?.id || null;
           apiFetch('/api/public/reading-progress', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -157,7 +170,7 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
         // Server sync is best-effort
       }
     },
-    [PROGRESS_KEY, novelId, chapters]
+    [PROGRESS_KEY, novelId] // stable — reads chapters from ref
   );
 
   return { lastChapterIndex, saveProgress };

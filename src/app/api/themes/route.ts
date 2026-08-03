@@ -3,12 +3,7 @@ import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
-
-const VALID_IDENTIFIER_RE = /^[a-zA-Z0-9_-]+$/;
-const MAX_NAME_LENGTH = 200;
-const MAX_DESCRIPTION_LENGTH = 2000;
-const MAX_IDENTIFIER_LENGTH = 100;
-const MAX_CONFIG_SIZE = 102400; // 100KB
+import { VALID_IDENTIFIER_RE, MAX_NAME_LENGTH, MAX_DESCRIPTION_LENGTH, MAX_IDENTIFIER_LENGTH, MAX_CONFIG_SIZE } from "@/lib/validation/themes";
 
 // GET /api/themes - List all themes
 export const GET = withAuth(async function GET() {

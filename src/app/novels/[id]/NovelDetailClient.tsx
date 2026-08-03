@@ -328,12 +328,19 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         readerContentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
       });
 
+      // Cancel any in-flight chapter load
+      loadChapterAbortRef.current?.abort();
+      const abortController = new AbortController();
+      loadChapterAbortRef.current = abortController;
+
       // Check if there's a saved scroll position for this chapter
       try {
         const SK = 'novel-session-id';
         const sid = localStorage.getItem(SK) || '';
         if (sid) {
-          const resp = await fetch(`/api/public/reading-progress?sessionId=${encodeURIComponent(sid)}`);
+          const resp = await fetch(`/api/public/reading-progress?sessionId=${encodeURIComponent(sid)}`, {
+            signal: abortController.signal,
+          });
           if (resp.ok) {
             const data = await resp.json();
             const rawProgress = data.progress || [];
@@ -346,12 +353,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             }
           }
         }
-      } catch { /* best-effort */ }
-
-      // Cancel any in-flight chapter load
-      loadChapterAbortRef.current?.abort();
-      const abortController = new AbortController();
-      loadChapterAbortRef.current = abortController;
+      } catch { /* best-effort, abort is ok */ }
 
       try {
         const data = await apiFetch<{ content?: string }>(`/api/public/chapters/${chapter.id}`, {

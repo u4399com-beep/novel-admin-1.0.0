@@ -3,11 +3,7 @@ import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
-
-const MAX_NAME_LENGTH = 100;
-const MAX_SLUG_LENGTH = 100;
-const MAX_DESCRIPTION_LENGTH = 1000;
-const VALID_COLOR_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+import { MAX_NAME_LENGTH, MAX_SLUG_LENGTH, MAX_DESCRIPTION_LENGTH, VALID_COLOR_RE } from "@/lib/validation/categories";
 
 // GET /api/categories - List all categories
 export const GET = withAuth(async function GET() {

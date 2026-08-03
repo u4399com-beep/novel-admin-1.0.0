@@ -83,9 +83,10 @@ export const GET = withAuth(async function GET(request: NextRequest) {
       db.antiCrawlEvent.count({ where }),
     ]);
 
-    // Get counts by event type (for badges/summary)
+    // Get counts by event type (for badges/summary) — apply same where filter
     const countsByType = await db.antiCrawlEvent.groupBy({
       by: ['eventType'],
+      where,
       _count: { eventType: true },
     });
 

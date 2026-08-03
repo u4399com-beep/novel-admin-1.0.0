@@ -5,8 +5,13 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // POST /api/admin/anti-crawl/proxy-stats - Record proxy pool stats
 export const POST = withAuth(async function POST(request: NextRequest) {
+  let body;
   try {
-    const body = await safeJson(request);
+    body = await safeJson(request);
+  } catch {
+    return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+  }
+  try {
 
     const totalProxies = Math.max(0, Math.floor(Number(body.totalProxies) || 0));
     const activeProxies = Math.max(0, Math.floor(Number(body.activeProxies) || 0));

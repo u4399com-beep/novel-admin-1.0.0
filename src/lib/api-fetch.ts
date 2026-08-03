@@ -67,7 +67,7 @@ export async function apiFetch<T = unknown>(
   const outerSignal = init?.signal;
   if (outerSignal) {
     if (outerSignal.aborted) { clearTimeout(timeoutId!); controller.abort(); }
-    else outerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    else outerSignal.addEventListener('abort', () => { clearTimeout(timeoutId!); controller.abort(); }, { once: true });
   }
   // Exclude our custom 'timeout' and 'silent' options from native fetch
   const { timeout: _t, silent: _s, ...restInit } = (init ?? {}) as RequestInit & { timeout?: number; silent?: boolean };
@@ -92,7 +92,14 @@ export async function apiFetch<T = unknown>(
   if (res.ok) {
     // 204 No Content
     if (res.status === 204) return undefined as T;
-    return res.json() as Promise<T>;
+    // Wrap res.json() in try-catch: a 200 with non-JSON body (e.g. HTML error page
+    // from a misconfigured proxy, or an empty body) must not propagate a raw
+    // SyntaxError — callers check for FetchError, not generic Error.
+    try {
+      return await res.json() as T;
+    } catch {
+      throw new FetchError('无效的服务器响应', 0);
+    }
   }
 
   // Non-2xx: extract the server's error message

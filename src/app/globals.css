@@ -2706,3 +2706,130 @@ nav button[data-active='true'] {
   .glass-card-interactive { transition: none; }
   .animated-underline::after { transition: none; }
 }
+
+/* ─── Round 3: New Utility Classes ────────────────────────────────── */
+
+/* Subtle noise texture overlay for depth */
+.noise-bg {
+  position: relative;
+}
+.noise-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+.noise-bg > * { position: relative; z-index: 1; }
+
+/* Pill-shaped tag with gradient border */
+.pill-glow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  transition: all 0.2s ease;
+}
+.pill-glow:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+/* Card with bottom accent line */
+.card-accent-bottom {
+  position: relative;
+}
+.card-accent-bottom::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 1rem;
+  right: 1rem;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.card-accent-bottom:hover::after {
+  opacity: 0.6;
+}
+
+/* Subtle float animation for decorative elements */
+.float-subtle {
+  animation: float-subtle 6s ease-in-out infinite;
+}
+@keyframes float-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* Text with subtle gradient for headings */
+.text-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--foreground) 0%,
+    var(--primary) 50%,
+    var(--foreground) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 3s linear infinite;
+}
+@keyframes text-shimmer {
+  to { background-position: -200% center; }
+}
+
+/* Compact list item with hover highlight */
+.list-item-compact-v2 {
+  padding: 0.5rem 0.5rem;
+  border-radius: 0.5rem;
+  transition: background 0.15s ease;
+}
+.list-item-compact-v2:hover {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+/* Progress bar with glow effect */
+.progress-glow {
+  box-shadow: 0 0 6px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+/* Number tabular with fixed width */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scroll indicator for scrollable containers */
+.scroll-indicator-right {
+  position: relative;
+}
+.scroll-indicator-right::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1.5rem;
+  background: linear-gradient(to left, var(--card), transparent);
+  pointer-events: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* Additional reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .float-subtle { animation: none; }
+  .text-shimmer { animation: none; -webkit-text-fill-color: var(--foreground); }
+  .card-accent-bottom::after { transition: none; }
+}

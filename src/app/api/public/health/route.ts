@@ -25,8 +25,6 @@ export async function GET() {
     await db.$queryRaw`SELECT 1 AS ok`;
 
     // Check key tables via Prisma (works for both SQLite and PostgreSQL)
-    const expectedModels = ['Category', 'Novel', 'Chapter', 'ScrapeRule', 'ScrapeTask'];
-    // Prisma model names use camelCase for client access (e.g. db.scrapeRule, NOT db.scraperule)
     const modelToProperty: Record<string, string> = {
       Category: 'category',
       Novel: 'novel',
@@ -35,7 +33,7 @@ export async function GET() {
       ScrapeTask: 'scrapeTask',
     };
     const missing: string[] = [];
-    for (const model of expectedModels) {
+    for (const model of Object.keys(modelToProperty)) {
       try {
         await (db as any)[modelToProperty[model]].count({ take: 1 });
       } catch {
@@ -46,7 +44,8 @@ export async function GET() {
     if (missing.length > 0) {
       checks.database = {
         ok: false,
-        detail: `缺少表: ${missing.join(', ')}`,
+        // Don't expose table names to unauthenticated callers
+        detail: `数据库表不完整 (${missing.length}个表异常)`,
         ms: Date.now() - dbStart,
       };
     } else {

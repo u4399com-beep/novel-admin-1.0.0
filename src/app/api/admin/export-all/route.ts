@@ -16,30 +16,32 @@ export const GET = withAuth(async function GET(request: NextRequest) {
       return NextResponse.json({ error: '仅支持 json 格式' }, { status: 400 });
     }
 
-    // Parallel fetch all data
-    const [
-      novels,
-      categories,
-      tags,
-      sites,
-      scrapeRules,
-      siteSettings,
-    ] = await Promise.all([
-      // Novels with chapters (content included for full backup)
-      db.novel.findMany({
-        include: {
-          category: { select: { id: true, name: true, slug: true, color: true, icon: true } },
-          tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
-          chapters: {
-            orderBy: { sortOrder: 'asc' },
-            select: {
-              id: true, title: true, content: true, sortOrder: true,
-              wordCount: true, sourceUrl: true, createdAt: true, updatedAt: true,
-            },
+    // Pre-check: estimate total data size to prevent OOM
+    const novelCount = await db.novel.count();
+    const totalChapters = await db.chapter.count();
+    // Rough estimate: ~5KB avg per chapter content; reject if >100MB
+    if (totalChapters > 20000) {
+      return NextResponse.json({
+        error: `数据量过大（${novelCount}本小说，${totalChapters}个章节），请分批导出或使用单本导出`,
+      }, { status: 413 });
+    }
+
+    // Fetch novels with chapters content, then other data in parallel
+    const novels = await db.novel.findMany({
+      include: {
+        category: { select: { id: true, name: true, slug: true, color: true, icon: true } },
+        tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
+        chapters: {
+          orderBy: { sortOrder: 'asc' },
+          select: {
+            id: true, title: true, content: true, sortOrder: true,
+            wordCount: true, sourceUrl: true, createdAt: true, updatedAt: true,
           },
         },
-        orderBy: { createdAt: 'desc' },
-      }),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const [categories, tags, sites, scrapeRules, siteSettings] = await Promise.all([
       db.category.findMany({ orderBy: { name: 'asc' } }),
       db.tag.findMany({ orderBy: { name: 'asc' } }),
       db.site.findMany({ orderBy: { name: 'asc' } }),
