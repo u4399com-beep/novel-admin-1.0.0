@@ -684,7 +684,7 @@ export default function NovelDetailView() {
     if (!selectedNovelId) return;
     setLoadingChapters(true);
     try {
-      const data = await apiFetch<{ chapters?: Chapter[] }>(`/api/novels/${selectedNovelId}/chapters`, { signal });
+      const data = await apiFetch<{ chapters?: Chapter[]; total?: number }>(`/api/novels/${selectedNovelId}/chapters?pageSize=10000`, { signal });
       if (!signal?.aborted) setChapters(data.chapters || []);
     } catch { /* handled by apiFetch */ } finally {
       if (!signal?.aborted) setLoadingChapters(false);
@@ -950,7 +950,7 @@ export default function NovelDetailView() {
   }
 
   const statusInfo = NOVEL_STATUS_MAP[novel.status] || NOVEL_STATUS_MAP.ongoing;
-  const totalWords = chapters.reduce((sum, ch) => sum + (ch.wordCount ?? 0), 0);
+  const totalWords = novel.wordCount ?? chapters.reduce((sum, ch) => sum + (ch.wordCount ?? 0), 0);
   const chapterCount = novel._count?.chapters ?? chapters.length;
 
   return (

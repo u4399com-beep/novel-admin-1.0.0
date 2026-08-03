@@ -1038,16 +1038,7 @@ img {
   letter-spacing: -0.02em;
 }
 
-/* Reading progress bar gradient shimmer */
-.reading-progress-bar {
-  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 70%, transparent), var(--primary));
-  background-size: 200% 100%;
-  animation: progress-shimmer 2s ease-in-out infinite;
-}
-@keyframes progress-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
+/* .reading-progress-bar consolidated above */
 
 /* Rank card shine effect */
 .rank-shine {
@@ -2145,3 +2136,154 @@ img {
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* ─── Missing CSS Utility Classes ─────────────────────────────────── */
+
+/* Tap feedback for touch devices */
+.tap-feedback {
+ transition: transform 0.1s ease;
+}
+.tap-feedback:active {
+ transform: scale(0.97);
+}
+
+/* Hover lift effect */
+.hover-lift {
+ transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-lift:hover {
+ transform: translateY(-2px);
+ box-shadow: 0 4px 12px color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+/* ─── Accessibility: Reduced Motion ──────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+ *, *::before, *::after {
+ animation-duration: 0.01ms !important;
+ animation-iteration-count: 1 !important;
+ transition-duration: 0.01ms !important;
+ scroll-behavior: auto !important;
+ }
+ .page-enter {
+ opacity: 1;
+ transform: none;
+ }
+ .text-shimmer,
+ .rank-shine,
+ .progress-shimmer,
+ .reading-progress-bar {
+ animation: none;
+ }
+ .hover-lift:hover,
+ .tap-feedback:active {
+ transform: none;
+ }
+ .cover-zoom img:hover {
+ transform: none;
+ }
+}
+
+/* ─── Round 13: Enhanced Style Details ────────────────────────────── */
+
+/* 1. Smooth scrollbar styling for WebKit browsers */
+::-webkit-scrollbar {
+ width: 6px;
+ height: 6px;
+}
+::-webkit-scrollbar-track {
+ background: transparent;
+}
+::-webkit-scrollbar-thumb {
+ background: color-mix(in srgb, var(--muted-foreground) 25%, transparent);
+ border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+ background: color-mix(in srgb, var(--muted-foreground) 40%, transparent);
+}
+
+/* 2. Focus visible ring for keyboard navigation */
+:focus-visible {
+ outline: 2px solid var(--ring);
+ outline-offset: 2px;
+ border-radius: var(--radius-sm);
+}
+
+/* 3. Selection color theming */
+::selection {
+ background: color-mix(in srgb, var(--primary) 30%, transparent);
+ color: var(--foreground);
+}
+
+/* 4. Subtle text selection for code/mono */
+:is(code, pre, .font-mono)::selection {
+ background: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* 5. Link underline animation */
+.link-underline {
+ background-image: linear-gradient(var(--foreground), var(--foreground));
+ background-size: 0% 1px;
+ background-position: left bottom;
+ background-repeat: no-repeat;
+ transition: background-size 0.25s ease;
+}
+.link-underline:hover {
+ background-size: 100% 1px;
+}
+
+/* 6. Card hover border glow */
+.card-border-glow {
+ border: 1px solid transparent;
+ transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.card-border-glow:hover {
+ border-color: color-mix(in srgb, var(--primary) 25%, transparent);
+ box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent),
+              0 4px 16px color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+/* 7. Stagger children animation helper */
+.stagger-children > * {
+ animation: stagger-fade-in 0.3s ease both;
+}
+@keyframes stagger-fade-in {
+ from {
+ opacity: 0;
+ transform: translateY(8px);
+ }
+ to {
+ opacity: 1;
+ transform: translateY(0);
+ }
+}
+
+/* 8. Badge pulse dot indicator */
+.badge-dot {
+ position: relative;
+}
+.badge-dot::after {
+ content: '';
+ position: absolute;
+ top: -1px;
+ right: -1px;
+ width: 6px;
+ height: 6px;
+ border-radius: 50%;
+ background: var(--destructive);
+ animation: badge-dot-pulse 2s ease-in-out infinite;
+}
+@keyframes badge-dot-pulse {
+ 0%, 100% { opacity: 1; transform: scale(1); }
+ 50% { opacity: 0.5; transform: scale(1.3); }
+}
+
+/* 9. Text balance for headings */
+.text-balance {
+ text-wrap: balance;
+}
+
+/* 10. Number tabular nums utility */
+.tabular-nums {
+ font-variant-numeric: tabular-nums;
+}
+

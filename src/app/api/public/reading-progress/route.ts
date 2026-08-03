@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { sanitizeField } from '@/lib/api-utils';
+import { sanitizeField, safeJson } from '@/lib/api-utils';
 
 const MAX_SESSION_ID_LENGTH = 100;
 const MAX_PROGRESS_ITEMS = 50; // 每个会话最多追踪50本小说
@@ -62,7 +62,7 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async f
   try {
     let body;
     try {
-      body = await request.json();
+      body = await safeJson(request);
     } catch {
       return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
     }

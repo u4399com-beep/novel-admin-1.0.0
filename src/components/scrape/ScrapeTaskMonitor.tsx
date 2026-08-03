@@ -417,7 +417,8 @@ function formatDuration(startStr: string | null, endStr: string | null): string 
     return `${hours}小时`;
   }
   if (minutes > 0) return `${minutes}分`;
-  return `${Math.floor(totalSeconds / 60) || 1}分`;
+  if (totalSeconds > 0) return `${totalSeconds}秒`;
+  return '';
 }
 
 function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExpand, onDelete }: TaskCardProps) {

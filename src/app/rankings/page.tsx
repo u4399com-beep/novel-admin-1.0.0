@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BackToTop } from '@/components/BackToTop';
 import { formatWordCount } from '@/lib/format';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -236,13 +237,8 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
     setLoading(true);
     setError(false);
     try {
-      const res = await fetch(`/api/public/novels?sort=${tab.sortParam}&pageSize=30`, { signal });
-      if (res.ok) {
-        const data = await res.json();
-        setNovels(data.novels || []);
-      } else if (!signal?.aborted) {
-        setError(true);
-      }
+      const data = await apiFetch<{ novels?: RankingNovel[] }>(`/api/public/novels?sort=${tab.sortParam}&pageSize=30`, { signal });
+      setNovels(data.novels || []);
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         setError(true);

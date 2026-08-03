@@ -13,7 +13,7 @@ export const GET = withAuth(async function GET(
   try {
     const { id: novelId } = await params;
     const { searchParams } = new URL(request.url);
-    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 50, maxPageSize: 100 });
+    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 50, maxPageSize: 10000 });
 
     const [chapters, total] = await Promise.all([
       db.chapter.findMany({

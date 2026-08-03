@@ -1,12 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
+
+const ADMIN_PREFIX = '/admin';
 
 export function ScrollProgress() {
   const [progress, setProgress] = useState(0);
+  const pathname = usePathname();
+  const isAdmin = pathname.startsWith(ADMIN_PREFIX);
 
   useEffect(() => {
+    if (isAdmin) return;
     function handleScroll() {
       const scrollable = document.documentElement.scrollHeight - window.innerHeight;
       if (scrollable <= 0) { setProgress(0); return; }
@@ -14,7 +20,9 @@ export function ScrollProgress() {
     }
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [isAdmin]);
+
+  if (isAdmin) return null;
 
   return (
     <div

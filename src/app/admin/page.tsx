@@ -123,8 +123,9 @@ export default function AdminPage() {
   // ─── Time display ──────────────────────────────────────────────────────
   const [time, setTime] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const noopSubscribe = () => () => {};
   const isMac = useSyncExternalStore(
-    () => () => {},
+    noopSubscribe,
     () => navigator.platform?.includes('Mac') ?? false,
     () => false,
   );

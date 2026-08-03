@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime, formatWordCount } from '@/lib/format';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ function StatCard({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border bg-card p-4 card-glow"
+      className="rounded-xl border bg-card p-4 card-glow card-border-glow"
     >
       <div className="flex items-center gap-2 mb-2">
         <div
@@ -104,13 +105,10 @@ export default function StatsPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/public/reading-stats?sessionId=${encodeURIComponent(sessionId)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
+      const data = await apiFetch<ReadingStats>(`/api/public/reading-stats?sessionId=${encodeURIComponent(sessionId)}`);
+      setStats(data);
     } catch {
-      // Silently fail
+      // Silently fail for stats page
     } finally {
       setLoading(false);
     }
@@ -200,7 +198,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
-                  className="rounded-xl border bg-card p-5 card-glow"
+                  className="rounded-xl border bg-card p-5 card-glow card-border-glow"
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -225,7 +223,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="rounded-xl border bg-card p-5 card-glow"
+                  className="rounded-xl border bg-card p-5 card-glow card-border-glow"
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <Clock className="h-4 w-4 text-muted-foreground" />

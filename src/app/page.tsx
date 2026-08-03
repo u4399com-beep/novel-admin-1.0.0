@@ -25,6 +25,7 @@ import {
 import { BackToTop } from '@/components/BackToTop';
 import { ContinueReading } from '@/components/home/ContinueReading';
 import { formatWordCount } from '@/lib/format';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -210,13 +211,23 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const isTouchDevice = useRef(false);
+
+  // Detect touch vs pointer — touch devices get tap-to-toggle, desktop gets hover
+  useEffect(() => {
+    const onTouch = () => { isTouchDevice.current = true; };
+    window.addEventListener('touchstart', onTouch, { once: true });
+    return () => window.removeEventListener('touchstart', onTouch);
+  }, []);
 
   const handleMouseEnter = useCallback(() => {
+    if (isTouchDevice.current) return;
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     enterTimer.current = setTimeout(() => setPopoverOpen(true), 400);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
+    if (isTouchDevice.current) return;
     if (enterTimer.current) clearTimeout(enterTimer.current);
     leaveTimer.current = setTimeout(() => setPopoverOpen(false), 200);
   }, []);
@@ -226,7 +237,15 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
   }, []);
 
   const handlePopoverLeave = useCallback(() => {
+    if (isTouchDevice.current) return;
     leaveTimer.current = setTimeout(() => setPopoverOpen(false), 150);
+  }, []);
+
+  const handleTouchToggle = useCallback((e: React.MouseEvent) => {
+    if (!isTouchDevice.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setPopoverOpen((prev) => !prev);
   }, []);
 
   // Cleanup timers on unmount to prevent state updates on unmounted component
@@ -247,7 +266,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
   return (
     <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
     <PopoverTrigger asChild>
-    <Link href={`/novels/${novel.id}`} className="block" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+    <Link href={`/novels/${novel.id}`} className="block" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleTouchToggle}>
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -562,13 +581,8 @@ export default function HomePage() {
     const abortController = new AbortController();
     async function load() {
       try {
-        const res = await fetch('/api/public/categories', { signal: abortController.signal });
-        if (res.ok) {
-          const data = await res.json();
-          setCategories(data);
-        } else if (!abortController.signal.aborted) {
-          setCategoriesError(true);
-        }
+        const data = await apiFetch<Category[]>('/api/public/categories', { signal: abortController.signal });
+        setCategories(data);
       } catch (err) {
         if (!(err instanceof DOMException && err.name === 'AbortError')) {
           setCategoriesError(true);
@@ -595,15 +609,10 @@ export default function HomePage() {
         if (activeWordCount && activeWordCount !== 'all') params.set('wordCount', activeWordCount);
         if (activeSort) params.set('sort', activeSort);
         if (search) params.set('search', search);
-        const res = await fetch(`/api/public/novels?${params}`, { signal: abortController.signal });
-        if (res.ok) {
-          const data = await res.json();
-          setNovels(data.novels || []);
-          setTotalPages(data.totalPages || 0);
-          setTotal(data.total || 0);
-        } else if (!abortController.signal.aborted) {
-          setNovelsError(true);
-        }
+        const data = await apiFetch<{ novels?: Novel[]; totalPages?: number; total?: number }>(`/api/public/novels?${params}`, { signal: abortController.signal });
+        setNovels(data.novels || []);
+        setTotalPages(data.totalPages || 0);
+        setTotal(data.total || 0);
       } catch (err) {
         if (!(err instanceof DOMException && err.name === 'AbortError')) {
           setNovelsError(true);
@@ -653,19 +662,14 @@ export default function HomePage() {
       abortController = new AbortController();
       setSuggestionsLoading(true);
       try {
-        const res = await fetch(`/api/public/search-suggestions?q=${encodeURIComponent(query)}`, {
+        const data = await apiFetch<{ suggestions?: Array<{ id: string; title: string; author: string; category: { name: string; color: string } | null }> }>(`/api/public/search-suggestions?q=${encodeURIComponent(query)}`, {
           signal: abortController.signal,
         });
-        if (res.ok) {
-          const data = await res.json();
-          setSuggestions(data.suggestions || []);
-          setActiveSuggestion(-1);
-          setSuggestionsOpen(true);
-        }
-      } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
-          // Network error — silently ignore for search suggestions
-        }
+        setSuggestions(data.suggestions || []);
+        setActiveSuggestion(-1);
+        setSuggestionsOpen(true);
+      } catch {
+        // Network error — silently ignore for search suggestions
       } finally {
         if (!abortController.signal.aborted) setSuggestionsLoading(false);
       }
