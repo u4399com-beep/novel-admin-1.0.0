@@ -337,6 +337,17 @@ model SearchKeyword {
   @@unique([novelId, keyword, source])
 }
 
+// ==================== 系统设置 ====================
+
+// 站点设置 (key-value存储)
+model SiteSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique  // 设置键名, 如 "siteName", "itemsPerPage"
+  value     String            // 设置值(JSON字符串, 支持字符串/数字/布尔)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
 // ==================== 阅读进度 ====================
 
 // 阅读进度（匿名用户通过sessionId追踪，未来可扩展userId）

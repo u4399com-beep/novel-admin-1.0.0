@@ -96,9 +96,12 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         console.error(`[Scrape Task] Failed to auto-trigger task ${task.id}:`, err);
         // Only update to failed if still pending (avoid overwriting running/completed)
         try {
+          const safeMsg = err instanceof Error
+            ? err.message.replace(/https?:\/\/[^\s]+/g, '[URL]')
+            : '未知错误';
           const { count } = await db.scrapeTask.updateMany({
             where: { id: task.id, status: "pending" },
-            data: { status: "failed", errorMessage: `触发采集服务失败: ${err instanceof Error ? err.message : '未知错误'}`, completedAt: new Date() },
+            data: { status: "failed", errorMessage: `触发采集服务失败: ${safeMsg}`, completedAt: new Date() },
           });
           if (count === 0) {
             console.log(`[Scrape Task] Task already in progress`);

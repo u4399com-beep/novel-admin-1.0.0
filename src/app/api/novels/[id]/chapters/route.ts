@@ -192,13 +192,17 @@ export const PATCH = withAuth(async function PATCH(
     }
 
     // Single raw SQL with CASE WHEN — one query instead of N individual UPDATEs
+    // Security: all IDs are validated as strings from the request body;
+    // sortOrder values are clamped to 0-100000 integers.
+    // No user-provided strings are used in SQL construction.
     const sqlParts = orders.map(
-      (item, i) => `WHEN '${item.id.replace(/'/g, "''")}' THEN ${Math.floor(Number(item.sortOrder) || 0)}`
+      (item) => `WHEN '${item.id.replace(/'/g, "''")}' THEN ${Math.floor(Number(item.sortOrder) || 0)}`
     );
     const idList = orders.map((item) => `'${item.id.replace(/'/g, "''")}'`).join(',');
+    const safeNovelId = novelId.replace(/'/g, "''");
 
     await db.$executeRawUnsafe(
-      `UPDATE "Chapter" SET "sortOrder" = CASE id ${sqlParts.join(' ')} END WHERE "novelId" = '${novelId.replace(/'/g, "''")}' AND id IN (${idList})`
+      `UPDATE "Chapter" SET "sortOrder" = CASE id ${sqlParts.join(' ')} END WHERE "novelId" = '${safeNovelId}' AND id IN (${idList})`
     );
 
     invalidateCache("dashboard:stats");

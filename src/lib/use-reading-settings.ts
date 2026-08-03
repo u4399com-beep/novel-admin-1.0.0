@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Reading Themes ─────────────────────────────────────────────────
 
@@ -144,10 +145,12 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
         }
         if (sid) {
           const chapterId = chapters[chapterIndex]?.id || null;
-          fetch('/api/public/reading-progress', {
+          apiFetch('/api/public/reading-progress', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: sid, novelId, chapterId, chapterIndex }),
+            silent: true,
+            timeout: 5000,
           }).catch(() => {});
         }
       } catch {

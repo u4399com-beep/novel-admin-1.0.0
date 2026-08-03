@@ -24,6 +24,7 @@ import {
   BookmarkCheck,
   RotateCcw,
   X,
+  Keyboard,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -206,6 +207,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const [showChapterSidebar, setShowChapterSidebar] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [sidebarPage, setSidebarPage] = useState(1);
   const [currentIndex, setCurrentIndex] = useState(0);
   // ─── Full chapter list (may load more from server on demand) ────────
@@ -437,6 +439,34 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       } else if (e.key === 'ArrowRight' && !isInteractive) {
         e.preventDefault();
         goToChapter('next');
+      } else if ((e.key === 'j' || e.key === 'J') && !e.metaKey && !e.ctrlKey) {
+        // Vim-style next chapter
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          goToChapter('next');
+        }
+      } else if ((e.key === 'k' || e.key === 'K') && !e.metaKey && !e.ctrlKey) {
+        // Vim-style prev chapter
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          goToChapter('prev');
+        }
+      } else if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          setShowShortcutsHelp((p) => !p);
+        }
+      } else if (e.key === 'ArrowUp' && !isInteractive) {
+        // Scroll reader content up
+        e.preventDefault();
+        window.scrollBy({ top: -200, behavior: 'smooth' });
+      } else if (e.key === 'ArrowDown' && !isInteractive) {
+        // Scroll reader content down
+        e.preventDefault();
+        window.scrollBy({ top: 200, behavior: 'smooth' });
       } else if (e.key === 'Escape') {
         if (searchOpen) {
           setSearchOpen(false);
@@ -1024,6 +1054,23 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label="快捷键帮助"
+                      className={
+                        'h-7 w-7 press-effect ' + (showShortcutsHelp ? 'bg-primary/10 text-primary' : '')
+                      }
+                      onClick={() => setShowShortcutsHelp((p) => !p)}
+                    >
+                      <Keyboard className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">快捷键 (?)</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-7 w-7 press-effect"
                       aria-label={readerFullscreen ? "退出全屏" : "全屏"}
                       onClick={() => setReaderFullscreen((p) => !p)}
@@ -1343,7 +1390,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             </Button>
             <div className="flex items-center gap-3">
               <span className="text-[11px] text-muted-foreground hidden sm:block">
-                ← → 翻页 · B 书签 · F 全屏 · Ctrl+F 搜索 · Esc 关闭
+                ← → J/K 翻页 · ↑↓ 滚动 · B 书签 · F 全屏 · ? 帮助
               </span>
               {formatReadDuration(readDuration) && (
                 <span className="text-xs text-muted-foreground/60 flex items-center gap-1">
@@ -1362,6 +1409,44 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               下一章
               <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Keyboard shortcuts help dialog */}
+      <Dialog open={showShortcutsHelp} onOpenChange={setShowShortcutsHelp}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Keyboard className="h-4 w-4" />
+              阅读器快捷键
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 pt-1">
+            {[
+              { keys: ['←', '→'], label: '上一章/下一章' },
+              { keys: ['J', 'K'], label: '下一章/上一章' },
+              { keys: ['↑', '↓'], label: '向上/下滚动' },
+              { keys: ['B'], label: '书签面板' },
+              { keys: ['F'], label: '全屏切换' },
+              { keys: ['Ctrl+F'], label: '搜索内容' },
+              { keys: ['?'], label: '本帮助面板' },
+              { keys: ['Esc'], label: '关闭面板' },
+            ].map((s) => (
+              <div key={s.label} className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">{s.label}</span>
+                <div className="flex items-center gap-0.5">
+                  {s.keys.map((k) => (
+                    <kbd
+                      key={k}
+                      className="inline-flex h-5 min-w-5 select-none items-center justify-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
+                    >
+                      {k}
+                    </kbd>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </DialogContent>
       </Dialog>

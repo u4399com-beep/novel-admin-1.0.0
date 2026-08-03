@@ -50,6 +50,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     const wordCountKey = searchParams.get("wordCount") || "all";
     const status = searchParams.get("status") || "";
     const sortKey = searchParams.get("sort") || "last_update";
+    const timeRange = searchParams.get("timeRange") || "all";
 
     // Build where clause
     const where: Record<string, unknown> = {};
@@ -82,6 +83,20 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     // Status filter
     if (status && (status === "ongoing" || status === "completed" || status === "hiatus")) {
       where.status = status;
+    }
+
+    // Time range filter for click-based rankings
+    if (timeRange !== "all" && (sortKey === "weekly_clicks" || sortKey === "monthly_clicks")) {
+      const now = new Date();
+      const startDate = new Date();
+      if (timeRange === "week") {
+        startDate.setDate(now.getDate() - 7);
+      } else if (timeRange === "month") {
+        startDate.setMonth(now.getMonth() - 1);
+      }
+      // Filter novels that were updated within the time range
+      // (clickCount is a cumulative field; we filter by recent activity via updatedAt)
+      where.updatedAt = { gte: startDate };
     }
 
     // Sort

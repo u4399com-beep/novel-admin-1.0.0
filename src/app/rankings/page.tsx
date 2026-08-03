@@ -120,7 +120,7 @@ function NovelRow({
       initial={{ opacity: 0, y: 12, x: -8 }}
       animate={{ opacity: 1, y: 0, x: 0 }}
       transition={{ duration: 0.3, delay: index * 0.04, ease: 'easeOut' as const }}
-      className="fade-in-up"
+      className="hover-brightness"
       style={{ animationDelay: `${index * 50}ms` }}
     >
       <Link
@@ -242,9 +242,9 @@ function RankingTabContent({ tab, active, timeRange }: { tab: TabConfig; active:
       const data = await apiFetch<{ novels?: RankingNovel[] }>(`/api/public/novels?sort=${tab.sortParam}&pageSize=30&timeRange=${timeRange}`, { signal });
       setNovels(data.novels || []);
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) {
-        setError(true);
-      }
+      // apiFetch wraps all errors in FetchError; status 0 = abort/timeout
+      if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 0) return;
+      setError(true);
     } finally {
       if (!signal?.aborted) setLoading(false);
     }

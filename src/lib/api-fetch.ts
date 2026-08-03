@@ -77,14 +77,14 @@ export async function apiFetch<T = unknown>(
     res = await fetch(url, mergedInit);
   } catch (err) {
     if (timeoutId !== null) clearTimeout(timeoutId);
-    if (controller.signal.aborted && !outerSignal?.aborted) {
-      const msg = '请求超时，请稍后重试';
-      if (!init?.silent) toast.error(msg);
-      throw new FetchError(msg, 0);
+    // Don't toast abort errors from outer signal — they're intentional cancellations
+    // (e.g. tab switch, component unmount, navigation)
+    if (controller.signal.aborted) {
+      throw new FetchError('请求已取消', 0);
     }
     // Network error (DNS failure, connection refused, CORS, etc.)
     const msg = err instanceof Error ? err.message : '网络连接失败';
-    toast.error(msg);
+    if (!init?.silent) toast.error(msg);
     throw new FetchError(msg, 0);
   }
   if (timeoutId !== null) clearTimeout(timeoutId);

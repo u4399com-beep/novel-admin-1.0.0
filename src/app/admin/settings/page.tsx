@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
-import { Save, Download, Upload, Trash2 } from 'lucide-react';
+import { Save, Download, Upload, Trash2, Loader2 } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -73,7 +73,7 @@ const SORT_OPTIONS = [
 const PAGE_SIZE_OPTIONS = ['10', '15', '20', '30'];
 
 // ─── Helpers ───────────────────────────────────────────────────────────
-function loadSettings(): SiteSettings {
+function loadLocalSettings(): SiteSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -88,20 +88,64 @@ function loadSettings(): SiteSettings {
 
 // ─── Component ──────────────────────────────────────────────────────────
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SiteSettings>(loadSettings);
+  const [settings, setSettings] = useState<SiteSettings>(loadLocalSettings);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // Load settings from backend on mount, merge with localStorage fallback
+  useEffect(() => {
+    const controller = new AbortController();
+    apiFetch<Record<string, string>>('/api/admin/settings', { signal: controller.signal })
+      .then((data) => {
+        if (data && typeof data === 'object') {
+          setSettings((prev) => {
+            const merged = { ...prev };
+            for (const [key, value] of Object.entries(data)) {
+              if (key in prev) {
+                const typedKey = key as keyof SiteSettings;
+                const prevValue = prev[typedKey];
+                if (typeof prevValue === 'boolean') {
+                  (merged as Record<string, unknown>)[key] = value === 'true';
+                } else if (typeof prevValue === 'number') {
+                  (merged as Record<string, unknown>)[key] = Number(value) || prevValue;
+                } else {
+                  (merged as Record<string, unknown>)[key] = value;
+                }
+              }
+            }
+            // Sync to localStorage as well
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)); } catch { /* ignore */ }
+            return merged;
+          });
+        }
+      })
+      .catch(() => { /* use localStorage fallback */ })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, []);
 
   // Update a single field
   const update = useCallback(<K extends keyof SiteSettings>(key: K, value: SiteSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  // Persist to localStorage
-  const saveSettings = useCallback(() => {
+  // Persist to backend + localStorage
+  const saveSettings = useCallback(async () => {
+    setSaving(true);
     try {
+      // Save to backend
+      await apiFetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      // Also save to localStorage as local cache
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
       toast.success('设置已保存');
     } catch {
       toast.error('保存失败，请重试');
+    } finally {
+      setSaving(false);
     }
   }, [settings]);
 
@@ -353,9 +397,9 @@ export default function SettingsPage() {
 
       {/* ── Save button ──────────────────────────────────────────── */}
       <div className="flex justify-end">
-        <Button onClick={saveSettings} className="gap-2">
-          <Save className="h-4 w-4" />
-          保存设置
+        <Button onClick={saveSettings} disabled={saving || loading} className="gap-2">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {saving ? '保存中...' : '保存设置'}
         </Button>
       </div>
     </div>
