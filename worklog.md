@@ -1,6 +1,124 @@
 # Work Log
 
 ---
+Task ID: cron-qa-20260803-1638
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T16:38:00+08:00
+
+Task: 代码审查6项 → 3 MED + 2 LOW bug修复 + 阅读计时器 + 快捷键提示 + 8新CSS类+应用
+
+Work Log:
+- 读取worklog确认状态(累计448项修复, commit 5bc03a2)
+- npx next build: 0 errors ✅
+- bun run lint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- 深度代码审查(sub-agent): 2 MED + 4 LOW新问题 + 3功能建议
+- 修复3 MED + 2 LOW = 5项bug
+- 新功能: 阅读器章节计时器 + 设置面板快捷键提示
+- 8个新CSS工具类 + 8处组件应用
+- commit 9f6d963 已push
+
+## Medium Bug Fixes (3)
+
+### 1. [MED] Ctrl+F在搜索输入框内关闭搜索栏
+- **问题**: 搜索栏打开时再按Ctrl+F, handler执行toggle关闭搜索栏, 用户丢失正在输入的查询
+- **修复**: searchOpen为true时不拦截Ctrl+F, 让浏览器原生搜索可用; 仅在关闭状态打开搜索栏
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+### 2. [MED] ContinueReading fetch无AbortController
+- **问题**: useEffect调用fetchProgress()无cleanup, unmount后响应仍触发setState
+- **修复**: 内联fetch+AbortController, cleanup时abort
+- **文件**: src/components/home/ContinueReading.tsx
+
+### 3. [MED] stats/page.tsx fetch无AbortController
+- **问题**: fetchStats()无signal参数, useEffect无cleanup
+- **修复**: fetchStats接受可选signal参数, useEffect创建AbortController
+- **文件**: src/app/stats/page.tsx
+
+## Low Bug Fixes (2)
+
+### 4. [LOW] 侧边栏点击章节双重saveProgress
+- **问题**: 侧边栏onClick同时调用loadChapter和saveProgress, useEffect也监听currentIndex调用saveProgress, 每次点击2次保存
+- **修复**: 移除onClick中的saveProgress调用, 由useEffect统一处理
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+### 5. [LOW] DashboardView retry按钮无loading保护
+- **问题**: 错误状态retry按钮无disabled, 快速点击触发并发fetch, 慢响应覆盖新数据
+- **修复**: 两个retry按钮添加disabled={loading}
+- **文件**: src/components/novel/DashboardView.tsx
+
+## New Features (3)
+
+### 1. 阅读器章节计时器
+- **功能**: 进入阅读器后开始计时, 每30秒更新, 底部工具栏显示阅读时长
+- **格式**: <60s不显示, 1-59min显示Xmin, ≥1h显示XhYm
+- **实现**: useState(Date.now())初始化 + setInterval 30s + readerOpen条件
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+### 2. 阅读器设置面板快捷键提示
+- **位置**: ReadingSettingsPanel底部, 分隔线以下
+- **内容**: 6个快捷键(↑↓翻页/B书签/F全屏/Esc关闭/S目录/Ctrl+F搜索)
+- **样式**: 2列网格, kbd元素(圆角bg-muted边框)
+- **文件**: src/components/ReadingSettingsPanel.tsx
+
+### 3. 阅读器底部工具栏视觉增强
+- **改动**: 工具栏容器添加glass-card毛玻璃效果
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+## New CSS Utilities (8)
+
+| Class | Effect | Applied To |
+|-------|--------|------------|
+|  | 封面全息光泽扫过效果 | NovelCard封面(page.tsx) |
+|  | 绿色脉冲运行状态指示 | 采集任务运行中Badge |
+|  | 等宽数字+弹跳动画 | DashboardView 5个统计卡 |
+|  | 进度条primary色发光 | ScrollProgress条 |
+|  | 骨架屏微光行(替代animate-pulse) | ContinueReading 3个骨架行 |
+|  | 3D透视悬停深度+阴影 | DashboardView 5个统计卡 |
+|  | 紧凑药丸标签+亮度悬停 | 首页FilterRow按钮 |
+|  | foreground渐变弱化文字 | 首页空状态描述 |
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- Git commit: 9f6d963 (9 files, +178 -28)
+- Git push: 5bc03a2..9f6d963 main → main ✅
+
+## 统计
+- 修改文件: 9
+- 代码变更: +178 -28
+- Bug修复: 5项 (3 MED + 2 LOW)
+- 新功能: 3项 (计时器 + 快捷键提示 + 工具栏glass)
+- 新CSS工具类: 8个
+- CSS应用: 8处
+- 累计修复: 448 + 5 = 453项
+
+Stage Summary:
+- **Bug修复**: Ctrl+F搜索栏UX修复, 3处AbortController完善, 双重saveProgress消除, retry防重复
+- **功能**: 阅读计时器让用户感知阅读时长, 快捷键提示降低学习成本
+- **CSS**: 8个新视觉工具类(封面光泽/脉冲点/统计弹跳/进度发光/骨架行/3D深度/标签药丸/渐变文字)
+- **CSS应用**: 全部8个新类已应用到对应组件
+
+## 项目当前状态
+- **构建**: 0 TypeScript errors, 0 ESLint errors ✅
+- **最新commit**: 9f6d963
+- **累计修复**: 453项
+- **架构**: Next.js 16.1.3 App Router + Prisma + PostgreSQL/SQLite + Docker(Caddy)
+
+## 未解决问题/建议下一阶段优先事项
+1. **[MED] Dashboard activity 21个COUNT查询** → 3个UNION ALL聚合查询
+2. **[MED] Admin设置仅localStorage** → siteName/itemsPerPage需后端持久化
+3. **[MED] Public reading-progress DELETE无所有权验证**
+4. **[LOW] Tags list 500无分页信号** → 返回total count
+5. **[LOW] Scrape logs无分页** → cursor/offset分页
+6. **[FEATURE] 阅读热力图/连续阅读天数** → GitHub-style贡献图
+7. **[FEATURE] EPUB/TXT单本导出** → epub-gen库生成EPUB
+8. **[FEATURE] 章节内容diff/版本历史** → 自动快照+对比
+9. **[FEATURE] 每日阅读目标** → 基于计时器的目标设定+进度环
+10. **[FEATURE] 阅读笔记/标注** → 章节内高亮+旁注
+
+# Work Log
+
+---
 Task ID: cron-qa-20260803-1526
 Agent: Main Orchestrator
 Timestamp: 2026-08-03T15:26:00+08:00
