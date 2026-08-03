@@ -720,6 +720,7 @@ export default function NovelDetailView() {
     if (!novel || exporting) return;
     setExporting(true);
     try {
+      // Raw fetch required for blob response — apiFetch would try to parse JSON
       const res = await fetch(`/api/novels/${novel.id}/export?format=json`, { credentials: 'include' });
       if (!res.ok) throw new Error('导出失败');
       const blob = await res.blob();
@@ -969,7 +970,7 @@ export default function NovelDetailView() {
         </Button>
 
         {/* Novel info card */}
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden card-border-glow">
           <CardContent className="p-0">
             <div className="flex flex-col sm:flex-row gap-6 p-6">
               {/* Cover */}

@@ -131,7 +131,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* ── 1. 基本设置 ────────────────────────────────────────────── */}
-      <Card>
+      <Card className="card-border-glow">
         <CardHeader>
           <CardTitle className="text-base">基本设置</CardTitle>
           <CardDescription>配置站点基本信息和显示参数</CardDescription>
@@ -162,12 +162,12 @@ export default function SettingsPage() {
 
           {/* 每页显示数量 */}
           <div className="space-y-2">
-            <Label>每页显示数量</Label>
+            <Label htmlFor="settings-page-size">每页显示数量</Label>
             <Select
               value={settings.itemsPerPage}
               onValueChange={(v) => update('itemsPerPage', v)}
             >
-              <SelectTrigger className="w-32">
+              <SelectTrigger id="settings-page-size" className="w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -183,7 +183,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* ── 2. 采集设置 ────────────────────────────────────────────── */}
-      <Card>
+      <Card className="card-border-glow">
         <CardHeader>
           <CardTitle className="text-base">采集设置</CardTitle>
           <CardDescription>配置采集任务的默认行为参数</CardDescription>
@@ -244,7 +244,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* ── 3. 显示设置 ────────────────────────────────────────────── */}
-      <Card>
+      <Card className="card-border-glow">
         <CardHeader>
           <CardTitle className="text-base">显示设置</CardTitle>
           <CardDescription>自定义前台页面的显示偏好</CardDescription>
@@ -252,12 +252,12 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           {/* 默认排序 */}
           <div className="space-y-2">
-            <Label>默认排序</Label>
+            <Label htmlFor="settings-default-sort">默认排序</Label>
             <Select
               value={settings.defaultSort}
               onValueChange={(v) => update('defaultSort', v)}
             >
-              <SelectTrigger className="w-48">
+              <SelectTrigger id="settings-default-sort" className="w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -327,7 +327,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* ── 4. 数据管理 ────────────────────────────────────────────── */}
-      <Card>
+      <Card className="card-border-glow">
         <CardHeader>
           <CardTitle className="text-base">数据管理</CardTitle>
           <CardDescription>导出、导入和清理系统数据</CardDescription>

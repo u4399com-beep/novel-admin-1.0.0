@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import type { ViewType } from '@/types';
 import { useState, useEffect, useSyncExternalStore, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { Plus, BookOpen, Search, Sun, Moon, LogOut, Shield, User, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Plus, Upload, BookOpen, Search, Sun, Moon, LogOut, Shield, User, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,9 @@ import {
 } from '@/components/ui/tooltip';
 import { useAppStore } from '@/stores/app-store';
 import { NAV_ITEMS } from '@/lib/nav-config';
+import { apiFetch } from '@/lib/api-fetch';
 import { AdminViewSkeletons } from '@/components/admin/AdminViewSkeletons';
+import { NovelImportDialog } from '@/components/novel/NovelImportDialog';
 import { MobileSidebar } from '@/components/novel/AppSidebar';
 import { DashboardView } from '@/components/novel/DashboardView';
 import NovelFormDialog from '@/components/novel/NovelFormDialog';
@@ -116,6 +118,14 @@ export default function AdminPage() {
     setNovelFormOpen(true);
   };
 
+  const handleImportOpen = async () => {
+    try {
+      const data = await apiFetch<Array<{ id: string; name: string; color: string }>>('/api/categories');
+      setCategories(data);
+    } catch { /* handled */ }
+    setImportOpen(true);
+  };
+
   // ─── Sidebar collapse state ──────────────────────────────────────────────
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
@@ -123,6 +133,8 @@ export default function AdminPage() {
   // ─── Time display ──────────────────────────────────────────────────────
   const [time, setTime] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [categories, setCategories] = useState<Array<{ id: string; name: string; color: string }>>([]);
   const noopSubscribe = () => () => {};
   const isMac = useSyncExternalStore(
     noopSubscribe,
@@ -171,7 +183,7 @@ export default function AdminPage() {
   const { theme, setTheme } = useTheme();
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
-  // ─── Auth guard ──────────────────────────────────────────────────────
+  // ─── Auth guard (server-side layout handles redirect, this is a safety net) ──────────────
   useEffect(() => {
     if (status !== 'loading' && !session) {
       router.push('/login');
@@ -185,17 +197,6 @@ export default function AdminPage() {
         <div className="flex flex-col items-center gap-3">
           <Shield className="h-8 w-8 text-primary animate-pulse" />
           <p className="text-sm text-muted-foreground">加载管理后台...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Shield className="h-8 w-8 text-primary animate-pulse" />
-          <p className="text-sm text-muted-foreground">正在跳转登录...</p>
         </div>
       </div>
     );
@@ -241,6 +242,7 @@ export default function AdminPage() {
                   : 'text-slate-400 hover:bg-accent/50 hover:text-slate-200'
               }
               ${sidebarCollapsed ? 'justify-center px-0' : ''}
+              tap-feedback
             `}
           >
             {/* Active indicator bar */}
@@ -408,10 +410,16 @@ export default function AdminPage() {
           {/* Right side: actions + utilities */}
           <div className="flex items-center gap-1.5 sm:gap-2">
             {currentView === 'novels' && (
-              <Button onClick={handleCreateNovel} size="sm" className="gap-1.5">
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">新建小说</span>
-              </Button>
+              <>
+                <Button onClick={handleCreateNovel} size="sm" className="gap-1.5">
+                  <Plus className="h-4 w-4" />
+                  <span className="hidden sm:inline">新建小说</span>
+                </Button>
+                <Button onClick={handleImportOpen} size="sm" variant="outline" className="gap-1.5">
+                  <Upload className="h-4 w-4" />
+                  <span className="hidden sm:inline">导入</span>
+                </Button>
+              </>
             )}
 
             {currentView === 'dashboard' && (
@@ -515,6 +523,7 @@ export default function AdminPage() {
 
       {/* Dialogs */}
       <NovelFormDialog />
+      <NovelImportDialog open={importOpen} onOpenChange={setImportOpen} categories={categories} />
       <ChapterFormDialog />
       <CommandPalette />
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />

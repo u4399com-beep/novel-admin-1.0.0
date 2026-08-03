@@ -683,15 +683,7 @@ img {
   0% { background-position: 0% 50%; }
   100% { background-position: 200% 50%; }
 }
-/* Card hover glow with color variable */
-.card-glow {
-  --glow-color: var(--primary);
-  transition: box-shadow 0.3s ease;
-}
-.card-glow:hover {
-  box-shadow: 0 0 20px -4px color-mix(in srgb, var(--glow-color) 20%, transparent),
-                0 0 40px -8px color-mix(in srgb, var(--glow-color) 10%, transparent);
-}
+/* .card-glow consolidated below (line ~1934) */
 
 /* Smooth scale for interactive elements */
 .scale-subtle {
@@ -2245,6 +2237,7 @@ img {
 /* 7. Stagger children animation helper */
 .stagger-children > * {
  animation: stagger-fade-in 0.3s ease both;
+ animation-delay: calc(var(--stagger-index, 0) * 60ms);
 }
 @keyframes stagger-fade-in {
  from {

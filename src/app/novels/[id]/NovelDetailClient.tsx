@@ -45,6 +45,7 @@ import {
 } from '@/lib/use-reading-settings';
 import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
 import { formatWordCount } from '@/lib/format';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -260,11 +261,9 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
       loadChapterAbortRef.current = abortController;
 
       try {
-        const res = await fetch(`/api/public/chapters/${chapter.id}`, {
+        const data = await apiFetch<{ content?: string }>(`/api/public/chapters/${chapter.id}`, {
           signal: abortController.signal,
         });
-        if (!res.ok) throw new Error('获取失败');
-        const data = await res.json();
         setChapterContent(data.content || '（本章暂无内容）');
       } catch (err) {
         if (!(err instanceof DOMException && err.name === 'AbortError')) {
