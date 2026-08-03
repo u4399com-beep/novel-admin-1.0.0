@@ -286,7 +286,7 @@ function RankingTabContent({ tab, active, timeRange }: { tab: TabConfig; active:
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 stagger-in">
       {/* Top 3 cards */}
       <div className="grid gap-2 sm:gap-3 sm:grid-cols-3">
         {novels.slice(0, 3).map((novel, i) => (

@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  BookOpen, Trophy, Flame, TrendingUp, Library, CheckCircle2,
+  BookOpen, Trophy, TrendingUp, Library, CheckCircle2,
   Clock, BarChart3, ArrowLeft, Loader2, BookMarked, RotateCcw,
 } from 'lucide-react';
 import ReadingHeatMap from '@/components/ReadingHeatMap';
+import ReadingStreak from '@/components/ReadingStreak';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime, formatWordCount } from '@/lib/format';
@@ -67,7 +68,7 @@ function StatCard({
         </div>
         <span className="text-xs text-muted-foreground">{label}</span>
       </div>
-      <p className="text-2xl font-bold tabular-nums">{value}</p>
+      <p role="status" aria-label={`${label}: ${value}`} className="text-2xl font-bold tabular-nums">{value}</p>
       {sub && <p className="text-[11px] text-muted-foreground/60 mt-0.5">{sub}</p>}
     </motion.div>
   );
@@ -82,6 +83,8 @@ function GenreBar({ name, count, maxCount, color }: { name: string; count: numbe
       <span className="text-xs text-muted-foreground w-16 shrink-0 truncate">{name}</span>
       <div className="flex-1 h-5 rounded-full bg-muted/50 overflow-hidden">
         <motion.div
+          role="progressbar"
+          aria-valuenow={count}
           className="h-full rounded-full"
           style={{ backgroundColor: color || 'var(--primary)' }}
           initial={{ width: 0 }}
@@ -101,6 +104,7 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [heatMapData, setHeatMapData] = useState<{ dates: Record<string, number> } | null>(null);
+  const [streakData, setStreakData] = useState<{ currentStreak: number; maxStreak: number; totalDays: number } | null>(null);
 
   const fetchStats = useCallback(async (signal?: AbortSignal) => {
     const sessionId = getSessionId();
@@ -129,12 +133,12 @@ export default function StatsPage() {
       apiFetch<{ dates: Record<string, number> }>(`/api/public/reading-heatMap?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
         .then(setHeatMapData)
         .catch(() => {});
+      apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
+        .then(setStreakData)
+        .catch(() => {});
     }
     return () => ac.abort();
   }, [fetchStats]);
-
-  // Streak level
-  const streakLevel = (stats?.streak ?? 0) >= 7 ? '🔥' : (stats?.streak ?? 0) >= 3 ? '⭐' : '';
 
   const hasData = stats && (stats.totalBooks > 0 || stats.totalChaptersRead > 0);
 
@@ -196,8 +200,17 @@ export default function StatsPage() {
         ) : (
           stats && (
             <>
-              {/* Stat Cards */}
+              {/* Reading Streak + Stat Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {streakData && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="col-span-2 sm:col-span-1"
+                  >
+                    <ReadingStreak data={streakData} />
+                  </motion.div>
+                )}
                 <StatCard
                   icon={Library}
                   label="在读书籍"
@@ -208,18 +221,12 @@ export default function StatsPage() {
                   icon={CheckCircle2}
                   label="读完书籍"
                   value={stats.completedBooks}
-                  accent="#10b981"
+                  accent="var(--chart-emerald)"
                 />
                 <StatCard
                   icon={BookMarked}
                   label="已读章节"
                   value={stats.totalChaptersRead.toLocaleString()}
-                />
-                <StatCard
-                  icon={Flame}
-                  label="连续阅读"
-                  value={`${streakLevel} ${stats.streak}天`}
-                  accent={stats.streak >= 7 ? '#f97316' : stats.streak >= 3 ? '#eab308' : undefined}
                 />
               </div>
 
@@ -278,7 +285,7 @@ export default function StatsPage() {
                         >
                           {/* Progress ring */}
                           <div className="relative h-10 w-10 shrink-0 flex items-center justify-center">
-                            <svg className="h-10 w-10 -rotate-90" viewBox="0 0 36 36">
+                            <svg role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label="阅读进度" className="h-10 w-10 -rotate-90" viewBox="0 0 36 36">
                               <circle
                                 cx="18" cy="18" r="15.5"
                                 fill="none"

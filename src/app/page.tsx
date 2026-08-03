@@ -1004,7 +1004,7 @@ export default function HomePage() {
                           <span className="text-xs font-medium text-muted-foreground">搜索历史</span>
                           <button
                             onClick={handleHistoryClear}
-                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors focus-ring-soft"
                             aria-label="清除搜索历史"
                           >
                             清除
@@ -1075,7 +1075,7 @@ export default function HomePage() {
                 &quot;{search}&quot;
                 <button
                   onClick={() => { setSearch(''); setSearchInput(''); setPage(1); }}
-                  className="ml-1 hover:text-foreground"
+                  className="ml-1 hover:text-foreground focus-ring-soft"
                   aria-label="清除搜索"
                 >
                   ×
@@ -1105,7 +1105,7 @@ export default function HomePage() {
               </div>
               <button
                 onClick={() => { clearRecentlyViewed(); setRecentNovels([]); }}
-                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors focus-ring-soft"
               >
                 清除
               </button>
@@ -1321,7 +1321,7 @@ export default function HomePage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3, ease: 'easeOut' as const }}
-                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6"
+                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6 stagger-in"
               >
                 {novels.map((novel, i) => (
                   <NovelCard key={novel.id} novel={novel} index={i} />

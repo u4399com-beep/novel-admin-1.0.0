@@ -91,6 +91,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<SiteSettings>(loadLocalSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Load settings from backend on mount, merge with localStorage fallback
   useEffect(() => {
@@ -169,6 +170,30 @@ export default function SettingsPage() {
       toast.success('缓存已清空');
     } catch {
       toast.error('清空缓存失败');
+    }
+  }, []);
+
+  const handleExportAll = useCallback(async () => {
+    setExporting(true);
+    try {
+      const response = await fetch('/api/admin/export-all', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('next-auth.session-token') || ''}` },
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `novel-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('数据导出成功');
+    } catch {
+      toast.error('导出数据失败，请重试');
+    } finally {
+      setExporting(false);
     }
   }, []);
 
@@ -378,10 +403,9 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            <Button variant="outline" disabled onClick={() => toast.success('数据导出已开始')}>
-              <Download className="mr-2 h-4 w-4" />
-              导出所有数据
-              <span className="ml-1.5 text-[10px] text-muted-foreground">即将推出</span>
+            <Button variant="outline" disabled={exporting} onClick={handleExportAll}>
+              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              {exporting ? '正在导出...' : '导出所有数据'}
             </Button>
             <Button variant="outline" onClick={handleImportCategories}>
               <Upload className="mr-2 h-4 w-4" />

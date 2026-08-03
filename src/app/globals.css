@@ -76,6 +76,11 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --chart-emerald: #10b981;
+  --chart-amber: #f59e0b;
+  --chart-violet: #a78bfa;
+  --chart-slate: #94a3b8;
+  --chart-orange: #f97316;
 }
 
 .dark {
@@ -2596,4 +2601,108 @@ nav button[data-active='true'] {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--foreground) 6%, transparent);
   border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* ─── Round 21: Additional Utility Classes ──────────────────────────── */
+
+/* 8. Skeleton line animation for loading states */
+.skeleton-line {
+  height: 1em;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--muted-foreground) 10%, transparent) 25%,
+    color-mix(in srgb, var(--muted-foreground) 18%, transparent) 50%,
+    color-mix(in srgb, var(--muted-foreground) 10%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 9. Subtle gradient background for section headers */
+.section-gradient {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primary) 3%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+/* 10. Hover scale with smooth transition for interactive cards */
+.hover-scale {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-scale:hover {
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+/* 11. Glass card with subtle border glow on hover */
+.glass-card-interactive {
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.glass-card-interactive:hover {
+  border-color: color-mix(in srgb, var(--primary) 25%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent),
+              0 4px 16px color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+/* 12. Text with muted gradient for secondary headings */
+.text-gradient-subtle {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--foreground) 80%, transparent),
+    color-mix(in srgb, var(--muted-foreground) 60%, transparent)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 13. Horizontal divider with centered text */
+.divider-with-text {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.divider-with-text::before,
+.divider-with-text::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* 14. Pill-shaped tag with subtle gradient */
+.tag-pill-gradient {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 15%, transparent),
+    color-mix(in srgb, var(--primary) 5%, transparent)
+  );
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.tag-pill-gradient:hover {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 20%, transparent),
+    color-mix(in srgb, var(--primary) 10%, transparent)
+  );
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+/* ─── Additional Reduced Motion Rules ─────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line { animation: none; }
+  .hover-scale:hover { transform: none; }
+  .glass-card-interactive { transition: none; }
+  .animated-underline::after { transition: none; }
 }

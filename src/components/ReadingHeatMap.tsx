@@ -1,207 +1,186 @@
 'use client';
 
-import { useMemo } from 'react';
-import { Flame } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { apiFetch } from '@/lib/api-fetch';
+import { Loader2 } from 'lucide-react';
 
-interface ReadingHeatMapProps {
-  data: Record<string, number>;
+interface HeatMapProps {
+  sessionId: string;
+  days?: number;
+  className?: string;
 }
 
-const CELL_SIZE = 12;
-const GAP = 2;
-const COLS = 13;
-const ROWS = 7;
-const DAY_LABELS = ['一', '', '三', '', '五', '', '日'];
-const MONTH_NAMES = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
-
-// Detect user timezone dynamically instead of hardcoding
-const USER_TZ = typeof Intl !== 'undefined'
-  ? Intl.DateTimeFormat().resolvedOptions().timeZone
-  : 'Asia/Shanghai';
-
-function getLevel(count: number): number {
-  if (count === 0) return 0;
-  if (count <= 2) return 1;
-  if (count <= 5) return 2;
-  return 3;
+interface HeatMapData {
+  dates: Record<string, number>;
 }
 
-function getCellColor(level: number): string {
-  switch (level) {
-    case 0: return 'var(--border)';
-    case 1: return 'oklch(0.72 0.19 142)';
-    case 2: return 'oklch(0.6 0.24 142)';
-    case 3: return 'oklch(0.45 0.24 142)';
-    default: return 'var(--border)';
-  }
+const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
+
+function getIntensity(count: number, max: number): string {
+  if (count === 0) return 'bg-muted/30';
+  const ratio = max > 0 ? count / max : 0;
+  if (ratio <= 0.25) return 'bg-primary/20';
+  if (ratio <= 0.5) return 'bg-primary/40';
+  if (ratio <= 0.75) return 'bg-primary/60';
+  return 'bg-primary';
 }
 
-export default function ReadingHeatMap({ data }: ReadingHeatMapProps) {
-  // Build grid: 13 columns (weeks) × 7 rows (Mon-Sun)
-  const { cells, monthLabels, totalChapters } = useMemo(() => {
+function getDateStr(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export function ReadingHeatMap({ sessionId, days = 84, className = '' }: HeatMapProps) {
+  const [data, setData] = useState<HeatMapData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tooltip, setTooltip] = useState<{ date: string; count: number; x: number; y: number } | null>(null);
+
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const result = await apiFetch<HeatMapData>(
+        `/api/public/reading-heatMap?sessionId=${encodeURIComponent(sessionId)}`,
+        { signal, timeout: 10000, silent: true }
+      );
+      if (!signal?.aborted) setData(result);
+    } catch {
+      // silent
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) { setLoading(false); return; }
+    const ac = new AbortController();
+    fetchData(ac.signal);
+    return () => ac.abort();
+  }, [fetchData, sessionId]);
+
+  // Build grid: rows = weekdays (Mon-Sun), cols = weeks
+  const grid = useMemo(() => {
     const today = new Date();
-    // Align to Monday of the current week
-    const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon, ...
-    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const endDate = new Date(today);
-    endDate.setDate(endDate.getDate() - mondayOffset); // this week's Monday
+    today.setHours(0, 0, 0, 0);
+    // Align to Monday
+    const startDay = new Date(today);
+    startDay.setDate(startDay.getDate() - (days - 1));
+    // Go back to previous Monday
+    const dayOfWeek = startDay.getDay();
+    const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    startDay.setDate(startDay.getDate() - diff);
 
-    // We want exactly 13 weeks (91 days) ending at this week's Monday
-    // But we only display 90 days, so start from 90 days ago
-    const startDate = new Date(today);
-    startDate.setDate(startDate.getDate() - 89); // 90 days including today
-
-    // Align start to Monday
-    const startDay = startDate.getDay();
-    const startMondayOffset = startDay === 0 ? 6 : startDay - 1;
-    const gridStart = new Date(startDate);
-    gridStart.setDate(gridStart.getDate() - startMondayOffset);
-
-    // Build cells: 13 weeks × 7 days
-    const gridCells: { date: string; count: number; inRange: boolean }[] = [];
-    const d = new Date(gridStart);
-    for (let col = 0; col < COLS; col++) {
-      for (let row = 0; row < ROWS; row++) {
-        const dateStr = d.toLocaleString('sv-SE', { timeZone: USER_TZ }).slice(0, 10);
-        const inRange = d >= startDate && d <= today;
-        gridCells.push({
-          date: dateStr,
-          count: inRange ? (data[dateStr] ?? 0) : 0,
-          inRange,
-        });
-        d.setDate(d.getDate() + 1);
-      }
+    const cells: Array<{ date: string; count: number; row: number; col: number; isFuture: boolean }> = [];
+    const current = new Date(startDay);
+    let col = 0;
+    while (current <= today || current.getDay() !== 1) {
+      if (current.getDay() === 1 && col > 0 && current > today) break;
+      const dateStr = getDateStr(current);
+      const isFuture = current > today;
+      const count = isFuture ? 0 : (data?.dates?.[dateStr] || 0);
+      const row = current.getDay() === 0 ? 6 : current.getDay() - 1;
+      cells.push({ date: dateStr, count, row, col, isFuture });
+      current.setDate(current.getDate() + 1);
+      if (current.getDay() === 1) col++;
     }
+    return { cells, totalCols: col + 1 };
+  }, [data, days]);
 
-    // Month labels: show month when the first day of month falls in that week column
-    const labels: { col: number; text: string }[] = [];
-    const labelSet = new Set<string>();
-    for (let col = 0; col < COLS; col++) {
-      // Check Monday of this column
-      const monIdx = col * 7; // Monday is row 0
-      const cell = gridCells[monIdx];
-      if (!cell.inRange) continue;
-      // Check if any day in this week is the 1st
-      for (let row = 0; row < ROWS; row++) {
-        const c = gridCells[col * 7 + row];
-        if (!c.inRange) continue;
-        const parts = c.date.split('-');
-        if (parts[2] === '01') {
-          const monthText = MONTH_NAMES[parseInt(parts[1]) - 1];
-          if (!labelSet.has(monthText)) {
-            labelSet.add(monthText);
-            labels.push({ col, text: monthText });
-          }
-          break;
-        }
-      }
-    }
+  const maxCount = Math.max(1, ...Object.values(data?.dates || {}));
 
-    // Total chapters in range
-    let total = 0;
-    for (const [date, count] of Object.entries(data)) {
-      const dParts = date.split('-');
-      const dDate = new Date(parseInt(dParts[0]), parseInt(dParts[1]) - 1, parseInt(dParts[2]));
-      if (dDate >= startDate && dDate <= today) {
-        total += count;
-      }
-    }
+  if (loading) {
+    return (
+      <div className={`flex items-center justify-center py-8 ${className}`}>
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
-    return { cells: gridCells, monthLabels: labels, totalChapters: total };
-  }, [data]);
+  const totalChapters = Object.values(data?.dates || {}).reduce((s, c) => s + c, 0);
+  const activeDays = Object.values(data?.dates || {}).filter(c => c > 0).length;
 
   return (
-    <div className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow">
-      <div className="flex items-center gap-2 mb-4">
-        <Flame className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-sm font-semibold link-underline inline-block">阅读活跃度</h2>
-        {totalChapters > 0 && (
-          <span className="text-xs text-muted-foreground ml-auto">
-            过去 90 天共读 <span className="stat-value font-medium text-foreground">{totalChapters}</span> 章
-          </span>
-        )}
+    <div className={className}>
+      {/* Summary */}
+      <div className="flex items-center gap-4 mb-3 text-xs text-muted-foreground">
+        <span>过去 {days} 天阅读 <strong className="text-foreground">{totalChapters}</strong> 章</span>
+        <span className="dot-sep"></span>
+        <span>活跃 <strong className="text-foreground">{activeDays}</strong> 天</span>
+        <span className="dot-sep"></span>
+        <span>日均 <strong className="text-foreground">{activeDays > 0 ? (totalChapters / Math.min(days, activeDays) || 0).toFixed(1) : '0'}</strong> 章</span>
       </div>
 
-      <div className="overflow-x-auto pb-2 -mx-1 px-1">
-        <div className="inline-flex flex-col gap-0" style={{ minWidth: 'fit-content' }}>
-          {/* Month labels row */}
-          <div className="flex gap-0" style={{ paddingLeft: `${CELL_SIZE + 8}px` }}>
-            {Array.from({ length: COLS }).map((_, col) => {
-              const label = monthLabels.find(l => l.col === col);
-              return (
-                <div
-                  key={`month-${col}`}
-                  className="text-[10px] text-muted-foreground truncate"
-                  style={{ width: CELL_SIZE, minWidth: CELL_SIZE, marginRight: GAP }}
-                >
-                  {label ? label.text : ''}
-                </div>
-              );
-            })}
+      {/* Heatmap grid */}
+      <div className="relative overflow-x-auto">
+        <div className="inline-flex gap-[3px]" onMouseLeave={() => setTooltip(null)}>
+          {/* Weekday labels */}
+          <div className="flex flex-col gap-[3px] mr-1">
+            {[1, 3, 5].map(row => (
+              <div
+                key={row}
+                className="w-4 h-[11px] text-[9px] text-muted-foreground/60 flex items-center justify-end"
+                style={{ gridRow: row + 1 }}
+              >
+                {WEEKDAYS[row - 1]}
+              </div>
+            ))}
           </div>
 
-          {/* Grid rows with day labels */}
-          {Array.from({ length: ROWS }).map((_, row) => (
-            <div key={`row-${row}`} className="flex items-center gap-0">
-              {/* Day label */}
-              <div
-                className="text-[10px] text-muted-foreground pr-2 text-right"
-                style={{ width: CELL_SIZE + 6 }}
-              >
-                {DAY_LABELS[row]}
-              </div>
-
-              {/* Cells */}
-              {Array.from({ length: COLS }).map((_, col) => {
-                const cell = cells[col * 7 + row];
-                const level = cell.inRange ? getLevel(cell.count) : -1;
-                const bgColor = level === -1 ? 'transparent' : getCellColor(level);
-                const opacity = level === 0 ? 0.3 : level === -1 ? 0 : 1;
+          {/* Grid columns (weeks) */}
+          {Array.from({ length: grid.totalCols }, (_, colIdx) => (
+            <div key={colIdx} className="flex flex-col gap-[3px]">
+              {Array.from({ length: 7 }, (_, rowIdx) => {
+                const cell = grid.cells.find(c => c.row === rowIdx && c.col === colIdx);
+                if (!cell) return <div key={rowIdx} className="w-[11px] h-[11px] rounded-sm" />;
                 return (
                   <div
-                    key={`cell-${col}-${row}`}
-                    title={cell.inRange ? `${cell.date}：${cell.count > 0 ? `${cell.count} 章` : '无记录'}` : ''}
-                    className="rounded-sm"
-                    style={{
-                      width: CELL_SIZE,
-                      height: CELL_SIZE,
-                      minWidth: CELL_SIZE,
-                      minHeight: CELL_SIZE,
-                      marginRight: GAP,
-                      marginBottom: GAP,
-                      backgroundColor: bgColor,
-                      opacity,
-                      border: level === 0 && cell.inRange ? '1px solid var(--border)' : 'none',
-                      transition: 'transform 0.1s ease',
+                    key={rowIdx}
+                    className={`w-[11px] h-[11px] rounded-sm transition-colors ${
+                      cell.isFuture ? 'bg-transparent' : getIntensity(cell.count, maxCount)
+                    }`}
+                    onMouseEnter={(e) => {
+                      if (!cell.isFuture) {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setTooltip({
+                          date: cell.date,
+                          count: cell.count,
+                          x: rect.left + rect.width / 2,
+                          y: rect.top,
+                        });
+                      }
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.3)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
                   />
                 );
               })}
             </div>
           ))}
-
-          {/* Legend */}
-          <div className="flex items-center gap-1.5 mt-2" style={{ paddingLeft: `${CELL_SIZE + 8}px` }}>
-            <span className="text-[10px] text-muted-foreground">少</span>
-            {[0, 1, 2, 3].map((level) => (
-              <div
-                key={`legend-${level}`}
-                className="rounded-sm"
-                style={{
-                  width: CELL_SIZE,
-                  height: CELL_SIZE,
-                  backgroundColor: getCellColor(level),
-                  opacity: level === 0 ? 0.3 : 1,
-                  border: level === 0 ? '1px solid var(--border)' : 'none',
-                }}
-              />
-            ))}
-            <span className="text-[10px] text-muted-foreground">多</span>
-          </div>
         </div>
+
+        {/* Tooltip */}
+        {tooltip && (
+          <div
+            className="fixed z-50 px-2 py-1.5 text-[11px] rounded-md bg-popover text-popover-foreground border shadow-md pointer-events-none"
+            style={{
+              left: tooltip.x,
+              top: tooltip.y - 8,
+              transform: 'translate(-50%, -100%)',
+            }}
+          >
+            <div className="font-medium">{tooltip.date}</div>
+            <div className="text-muted-foreground">{tooltip.count} 章已读</div>
+          </div>
+        )}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-1.5 mt-3 text-[10px] text-muted-foreground">
+        <span>少</span>
+        <div className="w-[11px] h-[11px] rounded-sm bg-muted/30" />
+        <div className="w-[11px] h-[11px] rounded-sm bg-primary/20" />
+        <div className="w-[11px] h-[11px] rounded-sm bg-primary/40" />
+        <div className="w-[11px] h-[11px] rounded-sm bg-primary/60" />
+        <div className="w-[11px] h-[11px] rounded-sm bg-primary" />
+        <span>多</span>
       </div>
     </div>
   );
 }
+
+

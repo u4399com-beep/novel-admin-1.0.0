@@ -132,7 +132,7 @@ export function ContinueReading() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.3 }}
           >
-            <div className="flex items-center gap-3 overflow-x-auto scrollbar-none no-scrollbar pb-1 scroll-fade-edges">
+            <div className="flex items-center gap-3 overflow-x-auto scrollbar-none no-scrollbar pb-1 scroll-fade-edges stagger-in">
               {progress.slice(0, 8).map((item) => {
                 const totalChapters = item.novel._count.chapters;
                 const currentCh = item.chapterIndex + 1;
