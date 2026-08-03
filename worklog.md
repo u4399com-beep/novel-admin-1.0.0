@@ -274,14 +274,121 @@ Stage Summary:
 # Work Log
 
 ---
-Task ID: 1
-Agent: Python Anti-Crawl Agent Builder
-Task: Create comprehensive Python crawler agent with 6 anti-anti-crawl modules
+Task ID: cron-24cycle-round2
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T20:53:00+08:00
+
+Task: 循环代码审计计划第2轮/24次 — 20项bug修复 + 导出所有数据 + 阅读热力图 + CSS类推广 + A11Y
 
 Work Log:
-- Created python_crawler_agent/ with 17 files (5315 lines of Python code)
-- Module 1: Network layer & fingerprint (curl_cffi TLS/JA3 impersonation for chrome120/safari/edge, full sec-ch-ua/sec-fetch-* browser headers via fake-useragent)
-- Module 2: Dynamic IP proxy pool (Redis-backed Sorted Set with 10pt initial scoring, +1/-2 success/fail, ZPOPMAX priority scheduling, round-robin/random/least-used strategies, domain affinity tracking)
+- 读取worklog确认状态(累计509项修复, commit dc23e56)
+- next build: 0 errors ✅, bun run lint: 0 errors, 2 warnings(预存) ✅
+- 启动2个sub-agent并行深度审计: API安全审计(opus) + 前端组件样式审计
+- API安全审计发现22个问题(3H+12M+7L)
+- 前端组件审计发现27个问题(2H+7M+9L+11STYLE)
+- 全部修复20项bug + 6项样式 + 3项a11y
+- 新功能: 导出所有数据API + 阅读热力图重写
+- commit a04d245 + git push ✅
+
+## Bug修复 (20项)
+
+### HIGH (4)
+1. **withPublicRateLimit/withAuth response空指针** — handler返回非NextResponse时headers.set崩溃, 添加instanceof检查 (3处)
+2. **chapters批量排序SQL注入** — $executeRawUnsafe字符串拼接→$queryRaw参数化事务循环
+3. **chapters maxPageSize 10000→500** — 防止单次请求过大响应导致OOM
+4. **阅读器ArrowUp/Down滚动target** — window.scrollBy→readerContentRef.scrollBy (Dialog内滚动)
+
+### MED (10)
+5. **favorite API去重** — IP+novelId 24h内存去重Map, 防刷数
+6. **click API去重** — IP+novelId 5min内存去重Map, 防刷量
+7. **anti-crawl/events POST safeJson** — 添加try-catch返回400
+8. **clearAllBookmarks** — 新增方法替代forEach循环N次setState
+9. **排行榜h3→span** — 修复30个h3标签语义错误
+10. **搜索input aria-label** — 阅读器搜索框无障碍标注
+11. **AntiCrawlMonitor useRef** — import缺失useRef
+12. **safeResolver文档** — 添加why-any说明注释
+13. **admin设置导出** — disabled→实现handleExportAll
+14. **stats冗余状态** — 移除heatMapData(组件自获取)
+
+### LOW/STYLE (6)
+15. 首页小说卡片网格stagger-in
+16. 首页清除按钮focus-ring-soft×3
+17. 排行榜列表stagger-in
+18. ContinueReading stagger-in
+19. 管理后台侧边栏bg-violet-400→bg-primary
+20. stats页硬编码颜色→CSS变量(--chart-emerald等)×3
+
+## A11Y改进 (3)
+1. SVG进度环 role=progressbar + aria-valuenow/min/max
+2. StatCard role=status + aria-label
+3. GenreBar role=progressbar + aria-valuenow
+
+## 新功能 (2)
+1. **导出所有数据** — GET /api/admin/export-all (novels+chapters+categories+tags+sites+settings)
+2. **阅读热力图重写** — GitHub-style grid组件, 自获取数据, tooltip, summary统计
+
+## 新CSS变量 (5)
+--chart-emerald: #10b981, --chart-amber: #f59e0b, --chart-violet: #a78bfa, --chart-slate: #94a3b8, --chart-orange: #f97316
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- Git commit: a04d245
+- Git push: main → main ✅
+
+## 统计
+- 修改文件: 15
+- 新增文件: 2 (export-all API, ReadingHeatMap重写)
+- Bug修复: 20项 (4H + 10M + 6L)
+- A11Y改进: 3项
+- 样式改进: 7处
+- 新功能: 2项
+- 新CSS变量: 5个
+- 累计修复: 509 + 20 = 529项
+
+Stage Summary:
+- **安全**: SQL注入修复(参数化查询), favorite/click去重防刷, response空指针保护
+- **正确性**: 阅读器滚动target修复, 语义HTML(h3→span), aria-label
+- **功能**: 导出所有数据(管理设置), 阅读热力图GitHub-style重写
+- **可访问性**: SVG进度环/StatCard/GenreBar无障碍标注
+- **样式**: 7处stagger-in/focus-ring-soft/bg-primary应用, 5个图表CSS变量
+
+## 项目当前状态
+- **构建**: 0 TypeScript errors, 0 ESLint errors ✅
+- **最新commit**: a04d245
+- **累计修复**: 529项
+- **架构**: Next.js 16.1.3 App Router + Prisma + SQLite + Docker(Caddy) + Python Agent
+- **Cron**: 24次循环任务 (Job ID: 305706, 每15分钟)
+- **循环进度**: 第2轮/24次
+
+## 未解决问题/建议下一阶段优先事项
+1. **[HIGH] Favorite计数无去重** → ✅已修复(IP+novelId 24h去重)
+2. **[MED] Dashboard activity $queryRawUnsafe** → 可考虑Prisma Client API或DailyStats物化表
+3. **[MED] React.memo关键组件** → NovelCard/FilterRow/RankNumber/StatCard记忆化
+4. **[MED] EPUB/TXT单本导出** → epub-gen库
+5. **[LOW] 验证常量跨文件重复** → sites/themes/tags提取共享validation模块
+6. **[FEATURE] 智能推荐"猜你喜欢"** → 基于分类/标签关联
+7. **[FEATURE] 每日阅读目标** → 目标设定+进度环+通知
+8. **[FEATURE] 阅读笔记/标注** → 章节内高亮+旁注
+9. **[FEATURE] 代理池Web管理面板** → 可视化添加/删除/测试代理
+10. **[STYLE] glass-card-glow/card-lift应用到更多组件**
+11. **[STYLE] DashboardView图表硬编码颜色→CSS变量**
+12. **[FEATURE] 首页读取admin siteName** → 调用/api/public/settings
+
+---
+
+# Work Log
+
+---
+Task ID: cron-qa-20260803-1808
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T18:08:00+08:00
+
+Task: 深度代码审查 → 2 HIGH + 3 MED + 3 CQ bug修复 + Admin设置后端持久化 + 键盘快捷键章节导航 + 8新CSS类
+
+Work Log:
+- 读取worklog确认状态(累计466项修复, commit 117964d)
+- npx next build: 0 errors ✅
 - Module 3: Dynamic rendering & browser stealth (Playwright stealth plugin: navigator.webdriver masking, chrome.runtime forgery, WebGL renderer spoofing, Permissions API masking, BrowserContext isolation for cookie separation)
 - Module 4: Font anti-crawl specialist (fontTools WOFF/TTF parsing, glyph contour → PIL image rendering, ddddocr OCR unicode→real_char mapping, CSS @font-face URL extraction, hash-based change detection, Redis TTL cache, OCR→hash→manual fallback chain)
 - Module 5: CAPTCHA solving (OpenCV Canny edge detection + template matching for slider gap positioning, human-like drag trajectory with accelerate/decelerate/jitter/overshoot, ddddocr target detection for click CAPTCHA coordinates, OCR arithmetic recognition with preprocessing retry, rate-limiting auto-concurrency reduction)
