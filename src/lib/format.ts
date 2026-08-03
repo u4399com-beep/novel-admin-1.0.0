@@ -14,8 +14,7 @@ export function safeFormatDate(dateStr: string | null | undefined, formatFn?: (d
  */
 export function formatWordCount(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万字`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}千字`;
-  return `${n}字`;
+  return `${n.toLocaleString()}字`;
 }
 
 /**

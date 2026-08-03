@@ -124,8 +124,8 @@ function NovelRow({
         href={`/novels/${novel.id}`}
         className={
           isTop3
-            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden ${style?.border}`
-            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group'
+            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden tap-feedback ${style?.border}`
+            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group tap-feedback'
         }
       >
       {/* Top 3 gradient background */}
@@ -337,6 +337,7 @@ export default function RankingsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
+          <nav aria-label="breadcrumb">
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
@@ -348,6 +349,7 @@ export default function RankingsPage() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
+          </nav>
 
           <motion.div
             className="flex items-center gap-3 mt-4"

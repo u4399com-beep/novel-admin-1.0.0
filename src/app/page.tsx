@@ -501,6 +501,8 @@ function FilterRow<T extends string>({
 export default function HomePage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   // ─── SEO: set document title ──────────────────────────────────────
   useEffect(() => {
@@ -541,12 +543,6 @@ export default function HomePage() {
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Lock body scroll when mobile drawer is open
-  useEffect(() => {
-    document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [mobileMenuOpen]);
 
   // Search suggestions state
   const [suggestions, setSuggestions] = useState<{ id: string; title: string; author: string; category: { name: string; color: string } | null }[]>([]);
@@ -843,6 +839,7 @@ export default function HomePage() {
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               aria-label="切换主题"
               className="h-8 w-8 hidden sm:inline-flex"
+              {...(!mounted && { tabIndex: -1, 'aria-disabled': true })}
             >
               <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
               <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
@@ -917,7 +914,7 @@ export default function HomePage() {
                 >
                   <Sun className="h-4 w-4 text-muted-foreground dark:hidden" />
                   <Moon className="h-4 w-4 text-muted-foreground hidden dark:block" />
-                  {theme === 'dark' ? '浅色模式' : '深色模式'}
+                  {mounted && (theme === 'dark' ? '浅色模式' : '深色模式')}
                 </button>
                 <button
                   onClick={() => {
@@ -939,7 +936,7 @@ export default function HomePage() {
       <section className="border-b bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
           <div className="flex items-center gap-3">
-            <h1 className="hidden sm:block text-xl font-bold tracking-tight shrink-0 text-glow-subtle">
+            <h1 className="sm:block text-xl font-bold tracking-tight shrink-0 text-glow-subtle sr-only sm:not-sr-only">
               小说搜索
             </h1>
             <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>

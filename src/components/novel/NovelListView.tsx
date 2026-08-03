@@ -87,7 +87,7 @@ export default function NovelListView() {
     apiFetch<Category[]>('/api/categories').then(setCategories).catch(() => {});
   }, []);
 
-  // Fetch novels
+  // Fetch novels (unified effect to avoid double requests on filter change)
   const fetchNovels = useCallback(async (overridePage?: number, signal?: AbortSignal) => {
     const p = overridePage ?? page;
     try {
@@ -115,11 +115,20 @@ export default function NovelListView() {
     }
   }, [page, search, statusFilter, categoryFilter]);
 
-  // Auto-reset to page 1 when filters change & fetch
+  // Reset page and fetch when filters change
+  const statusFilterRef = useRef(statusFilter);
+  const categoryFilterRef = useRef(categoryFilter);
   useEffect(() => {
-    setPage(1);
-    fetchNovels(1);
+    const filterChanged = statusFilterRef.current !== statusFilter || categoryFilterRef.current !== categoryFilter;
+    statusFilterRef.current = statusFilter;
+    categoryFilterRef.current = categoryFilter;
+    if (filterChanged) {
+      setPage(1);
+      fetchNovels(1);
+    }
   }, [statusFilter, categoryFilter, fetchNovels]);
+
+  // Fetch when page, search, or external refresh changes
   useEffect(() => {
     const ac = new AbortController();
     fetchNovels(page, ac.signal);

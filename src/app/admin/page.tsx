@@ -486,7 +486,7 @@ export default function AdminPage() {
               animate="animate"
               exit="exit"
               transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] as const }}
-              className="absolute inset-0"
+              className="absolute inset-0 overflow-y-auto"
             >
               {renderView()}
             </motion.div>

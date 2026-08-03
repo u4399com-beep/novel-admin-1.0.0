@@ -987,23 +987,6 @@ img {
 
 /* ─── New Micro-interactions (Round N+1) ─────────────────────────── */
 
-/* Hover lift with shadow (for cards) */
-.hover-lift {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.hover-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px -5px color-mix(in srgb, var(--foreground) 10%, transparent), 0 4px 10px -6px color-mix(in srgb, var(--foreground) 6%, transparent);
-}
-
-/* Tap feedback for mobile (quick scale down then up) */
-.tap-feedback {
-  transition: transform 0.1s ease;
-}
-.tap-feedback:active {
-  transform: scale(0.97);
-}
-
 /* Smooth underline animation for nav links */
 .nav-link-underline {
   position: relative;
@@ -1463,15 +1446,6 @@ img {
   box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--primary) 30%, transparent);
 }
 
-/* Subtle hover lift for interactive cards */
-.hover-lift {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.hover-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--foreground) 8%, transparent);
-}
-
 /* Text shimmer animation for decorative headings */
 .text-shimmer {
   background: linear-gradient(
@@ -1897,45 +1871,7 @@ img {
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 2. Subtle text shine/shimmer effect for empty states */
-.text-shimmer {
-  background: linear-gradient(
-    110deg,
-    var(--muted-foreground) 0%,
-    var(--muted-foreground) 40%,
-    color-mix(in srgb, var(--muted-foreground) 50%, var(--foreground)) 50%,
-    var(--muted-foreground) 60%,
-    var(--muted-foreground) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: text-shimmer 2.5s ease-in-out infinite;
-}
-@keyframes text-shimmer {
-  0% { background-position: 200% center; }
-  100% { background-position: -200% center; }
-}
-
-/* 3. Press/hover feedback for tap targets */
-.tap-feedback {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.tap-feedback:active {
-  transform: scale(0.97);
-}
-
-/* 4. Hover lift with shadow (enhanced version) */
-.hover-lift {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.hover-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--foreground) 8%, transparent);
-}
-
-/* 5. Status indicator dot with pulse ring */
+/* 2. Status indicator dot with pulse ring */
 .status-pulse {
   position: relative;
 }
@@ -1953,7 +1889,7 @@ img {
   100% { transform: scale(2.2); opacity: 0; }
 }
 
-/* 6. Compact scrollable area for sidebars/drawers */
+/* 3. Compact scrollable area for sidebars/drawers */
 .scroll-compact {
   overflow-y: auto;
   scrollbar-width: thin;
@@ -2110,4 +2046,102 @@ img {
 }
 .fab:active {
   transform: scale(0.95);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Round 12 — CSS Utilities (12:23)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 1. Subtle inner glow for input focus */
+.input-glow:focus {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+
+/* 2. Skeleton shimmer for wider blocks (table rows, list items) */
+.skeleton-row {
+  height: 48px;
+  background: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    color-mix(in srgb, var(--muted-foreground) 5%, transparent) 50%,
+    var(--muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* 3. Smooth card press effect (scale down slightly, shadow reduces) */
+.card-press {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-press:active {
+  transform: scale(0.985);
+  box-shadow: none !important;
+}
+
+/* 4. Text ellipsis with fade mask (better than truncate for text) */
+.text-fade-end {
+  -webkit-mask-image: linear-gradient(to right, black 80%, transparent);
+  mask-image: linear-gradient(to right, black 80%, transparent);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 5. Scrollable container with fade edges (both left and right) */
+.scroll-fade-edges {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+  mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+}
+
+/* 6. Focus visible outline for keyboard nav on dark backgrounds */
+.focus-ring-bright:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 70%, white);
+  outline-offset: 2px;
+}
+
+/* 7. Subtle background noise texture for sections */
+.section-noise {
+  position: relative;
+}
+.section-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.015;
+  background: repeating-conic-gradient(var(--foreground) 0% 25%, transparent 0% 50%) 0 0 / 3px 3px;
+  pointer-events: none;
+}
+
+/* 8. Smooth counter/number animation */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.count-animate {
+  animation: countUp 0.3s ease forwards;
+}
+
+/* 9. Link with arrow that slides in on hover */
+.link-arrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.link-arrow > .link-arrow-icon {
+  transform: translateX(-4px);
+  opacity: 0;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.link-arrow:hover > .link-arrow-icon {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+/* 10. Gradient text using primary color */
+.text-gradient-primary {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 60%, var(--accent)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }

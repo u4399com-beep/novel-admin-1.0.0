@@ -870,8 +870,7 @@ export default function NovelDetailView() {
         }),
       });
     } catch {
-      const ac = new AbortController();
-      fetchChapters(ac.signal);
+      triggerRefresh('chapters');
     }
   };
 
@@ -894,14 +893,24 @@ export default function NovelDetailView() {
         }),
       });
     } catch {
-      const ac = new AbortController();
-      fetchChapters(ac.signal);
+      triggerRefresh('chapters');
     }
   };
 
+  // Silent novel stats refresh (no loading state, no navigation on error)
+  const refreshNovelStats = useCallback(async () => {
+    if (!selectedNovelId) return;
+    try {
+      const data = await apiFetch<Novel>(`/api/novels/${selectedNovelId}`);
+      setNovel(data);
+    } catch {
+      // Silent fail - don't navigate away or show loading
+    }
+  }, [selectedNovelId]);
+
   const handleChapterSaved = () => {
     triggerRefresh('chapters');
-    fetchNovel(); // refresh novel stats (word count)
+    refreshNovelStats();
   };
 
   // ── Loading state ─────────────────────────────────────────────────────────

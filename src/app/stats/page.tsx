@@ -200,7 +200,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
-                  className="rounded-xl border bg-card p-5"
+                  className="rounded-xl border bg-card p-5 card-glow"
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -225,7 +225,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="rounded-xl border bg-card p-5"
+                  className="rounded-xl border bg-card p-5 card-glow"
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <Clock className="h-4 w-4 text-muted-foreground" />

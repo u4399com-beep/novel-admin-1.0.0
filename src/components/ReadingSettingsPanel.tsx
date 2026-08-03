@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, Minus, Type, Palette, Check, AlignVerticalSpaceAround } from 'lucide-react';
+import { Plus, Minus, Palette, Check, AlignVerticalSpaceAround } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -32,7 +32,7 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
             aria-label="缩小字号"
             onClick={() => onUpdate({ fontSize: Math.max(12, settings.fontSize - 1) })}
           >
-            <Type className="h-3 w-3" />
+            <Minus className="h-3 w-3" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">缩小字号 (当前 {settings.fontSize}px)</TooltipContent>

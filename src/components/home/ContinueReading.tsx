@@ -176,11 +176,7 @@ export function ContinueReading() {
                 return (
                   <Link
                     key={item.id}
-                    href={
-                      item.chapterId
-                        ? `/novels/${item.novelId}/read/${item.chapterId}`
-                        : `/novels/${item.novelId}`
-                    }
+                    href={`/novels/${item.novelId}`}
                     className="shrink-0 flex items-center gap-3 rounded-xl border bg-background/80 backdrop-blur-sm p-3 w-[280px] transition-all hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 group/item card-glow"
                   >
                     {/* Cover Thumbnail */}

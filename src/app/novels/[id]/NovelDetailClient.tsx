@@ -176,6 +176,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
   const [readerFullscreen, setReaderFullscreen] = useState(false);
   const [showChapterSidebar, setShowChapterSidebar] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarPage, setSidebarPage] = useState(1);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [chapterContent, setChapterContent] = useState<string | null>(null);
   const [chapterError, setChapterError] = useState(false);
@@ -204,11 +205,25 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
     chapterPage * CHAPTERS_PER_PAGE,
   );
   // Auto-jump to page containing lastChapterIndex
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (lastChapterIndex !== null && lastChapterIndex >= chapterPage * CHAPTERS_PER_PAGE) {
       setChapterPage(Math.floor(lastChapterIndex / CHAPTERS_PER_PAGE) + 1);
     }
   }, [lastChapterIndex, chapterPage]);
+
+  // ─── Reader sidebar pagination ──────────────────────────────
+  const SIDEBAR_PAGE_SIZE = 200;
+  const sidebarTotalPages = Math.ceil(chapters.length / SIDEBAR_PAGE_SIZE);
+  const sidebarChapters = chapters.slice(
+    (sidebarPage - 1) * SIDEBAR_PAGE_SIZE,
+    sidebarPage * SIDEBAR_PAGE_SIZE,
+  );
+  // Auto-jump sidebar page when chapter changes
+  useEffect(() => {
+    const targetPage = Math.floor(currentIndex / SIDEBAR_PAGE_SIZE) + 1;
+    if (targetPage !== sidebarPage) setSidebarPage(targetPage);
+  }, [currentIndex, sidebarPage, SIDEBAR_PAGE_SIZE]);
 
   // Chapter content progress (wordCount > 0 as proxy for "has content")
   const chaptersWithContent = chapters.filter((c) => c.wordCount > 0).length;
@@ -291,18 +306,24 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
     }
   }, [currentIndex, readerOpen, loadingChapter, chapterContent, saveProgress]);
 
-  // ─── Scroll progress tracking ────────────────────────────────────
+  // ─── Scroll progress tracking (throttled via rAF) ───────────────
   useEffect(() => {
     if (!readerOpen) return;
     const container = readerContentRef.current;
     if (!container) return;
+    let ticking = false;
     function onScroll() {
-      const el = container;
-      if (!el) return;
-      if (el.scrollTop === 0) { setScrollPercent(0); return; }
-      const scrollable = el.scrollHeight - el.clientHeight;
-      if (scrollable <= 0) { setScrollPercent(100); return; }
-      setScrollPercent(Math.round((el.scrollTop / scrollable) * 100));
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const el = container;
+        if (!el) return;
+        if (el.scrollTop === 0) { setScrollPercent(0); ticking = false; return; }
+        const scrollable = el.scrollHeight - el.clientHeight;
+        if (scrollable <= 0) { setScrollPercent(100); ticking = false; return; }
+        setScrollPercent(Math.round((el.scrollTop / scrollable) * 1000) / 10);
+        ticking = false;
+      });
     }
     container.addEventListener('scroll', onScroll, { passive: true });
     return () => container.removeEventListener('scroll', onScroll);
@@ -349,12 +370,12 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
         e.preventDefault();
         goToChapter('next');
       } else if (e.key === 'Escape') {
-        if (readerFullscreen) {
-          setReaderFullscreen(false);
+        if (showSettings) {
+          setShowSettings(false);
         } else if (showChapterSidebar) {
           setShowChapterSidebar(false);
-        } else if (showSettings) {
-          setShowSettings(false);
+        } else if (readerFullscreen) {
+          setReaderFullscreen(false);
         } else {
           setReaderOpen(false);
         }
@@ -897,28 +918,48 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                   transition={{ duration: 0.2 }}
                   className="shrink-0 border-r overflow-hidden"
                 >
-                  <div className="w-[220px] h-full overflow-y-auto p-3">
+                  <div className="w-[220px] h-full overflow-y-auto p-3 flex flex-col">
                     <div className="text-xs font-medium text-muted-foreground mb-2 px-1">
                       目录 ({chapters.length}章)
                     </div>
-                    {chapters.map((ch, idx) => (
+                    <div className="flex-1 space-y-px">
+                    {sidebarChapters.map((ch, idx) => {
+                      const globalIdx = (sidebarPage - 1) * SIDEBAR_PAGE_SIZE + idx;
+                      return (
                       <button
                         key={ch.id}
                         onClick={() => {
-                          loadChapter(idx);
-                          saveProgress(idx);
+                          loadChapter(globalIdx);
+                          saveProgress(globalIdx);
                         }}
                         className={
                           'block w-full text-left text-xs px-2 py-1.5 rounded-md truncate transition-colors ' +
-                          (idx === currentIndex
+                          (globalIdx === currentIndex
                             ? 'bg-primary/10 text-primary font-medium'
                             : 'text-muted-foreground hover:text-foreground hover:bg-muted/50') +
-                          (lastChapterIndex === idx ? ' border-l-2 border-primary/50' : '')
+                          (lastChapterIndex === globalIdx ? ' border-l-2 border-primary/50' : '')
                         }
                       >
                         {ch.sortOrder}. {ch.title}
                       </button>
-                    ))}
+                      );
+                    })}
+                    </div>
+                    {sidebarTotalPages > 1 && (
+                      <div className="flex items-center justify-center gap-1 pt-2 border-t mt-2">
+                        <button
+                          className="h-6 w-6 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30"
+                          disabled={sidebarPage <= 1}
+                          onClick={() => setSidebarPage((p) => p - 1)}
+                        ><ChevronLeft className="h-3 w-3" /></button>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">{sidebarPage}/{sidebarTotalPages}</span>
+                        <button
+                          className="h-6 w-6 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30"
+                          disabled={sidebarPage >= sidebarTotalPages}
+                          onClick={() => setSidebarPage((p) => p + 1)}
+                        ><ChevronRight className="h-3 w-3" /></button>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -979,7 +1020,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
               size="sm"
               disabled={!hasPrev || loadingChapter}
               onClick={() => goToChapter('prev')}
-              className="h-8"
+              className="h-8 tap-feedback"
             >
               <ChevronLeft className="h-4 w-4 mr-1" />
               上一章
@@ -992,7 +1033,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
               size="sm"
               disabled={!hasNext || loadingChapter}
               onClick={() => goToChapter('next')}
-              className="h-8"
+              className="h-8 tap-feedback"
             >
               下一章
               <ChevronRight className="h-4 w-4 ml-1" />
