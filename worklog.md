@@ -1,6 +1,113 @@
 # Work Log
 
 ---
+Task ID: cron-qa-20260803-1454
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T14:54:00+08:00
+
+Task: 代码审查 → 4 HIGH + 5 MED bug修复 + 书签面板UI + Dashboard SQL优化 + 6处CSS增强
+
+Work Log:
+- 读取worklog确认状态(累计426项修复, commit 89ba2c6)
+- npx next build: 0 errors ✅
+- bun run lint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- 前端代码审查(sub-agent): 发现4 HIGH + 8 MED + 5 LOW = 17项问题
+- 修复4 HIGH + 5 MED = 9项
+- 新功能: 书签面板UI(B快捷键、计数徽章、清空、点击导航)
+- Dashboard activity API优化: 21个COUNT查询替代全量加载
+- apiFetch新增silent选项
+- 6处CSS工具类应用到组件
+- commit 2648556 已push
+
+## Critical/High Bug Fixes (4)
+
+### 1. [HIGH] ChapterEditorPanel双重挂载(桌面端)
+- **问题**: 桌面端同时渲染2个ChapterEditorPanel(移动端hidden lg:hidden + 桌面端ResizablePanel), 导致双重API fetch + 双重auto-save计时器
+- **修复**: 删除移动端独立面板, 将返回按钮移入ResizablePanel内部, 用CSS hidden控制显示
+- **文件**: src/components/novel/NovelDetailView.tsx
+
+### 2. [HIGH] 剩余章节加载触发当前章节重fetch
+- **问题**: 大小说(>200章)客户端加载剩余章节时, chapters state变更导致loadChapter回调重建, useEffect重新执行, 当前阅读中的章节内容被重新fetch并闪烁
+- **修复**: 使用chaptersRef保持loadChapter回调稳定(依赖[]), 内部从ref读取最新chapters
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+### 3. [HIGH] 章节导航不滚动到顶部
+- **问题**: 点击上/下一章时, readerContentRef保持上一章的滚动位置, 新章节显示在中间或底部
+- **修复**: loadChapter开头添加requestAnimationFrame(() => readerContentRef.current?.scrollTo({ top: 0 }))
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+### 4. [HIGH] 导入成功不刷新小说列表
+- **问题**: NovelImportDialog的onImportSuccess prop未传递, 导入成功后admin列表不更新
+- **修复**: 传递onImportSuccess回调, 调用triggerRefresh('novels')和triggerRefresh('dashboard')
+- **文件**: src/app/admin/page.tsx
+
+## Medium Bug Fixes (5)
+
+### 5. [MED] 导入失败双重错误提示
+- **问题**: apiFetch自动toast错误, NovelImportDialog又显示内联错误卡片, 用户看到2个相同错误
+- **修复**: apiFetch新增silent选项, 导入请求传silent: true, 仅显示内联错误
+- **文件**: src/lib/api-fetch.ts, src/components/novel/NovelImportDialog.tsx
+
+### 6. [MED] Admin主题切换hydration前可点击
+- **问题**: theme在hydration前为undefined, 点击切换按钮执行setTheme('light'), 暗色用户被切换到亮色
+- **修复**: 使用useSyncExternalStore检测mounted(SSR返回false, 客户端返回true), 未mounted时禁用按钮
+- **文件**: src/app/admin/page.tsx
+
+### 7. [MED] 章节导航重复保存阅读进度
+- **问题**: goToChapter显式调用saveProgress, useEffect也监听currentIndex变更调用saveProgress, 每次翻页2次保存
+- **修复**: 移除goToChapter中的saveProgress调用, 由useEffect统一处理
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+### 8. [MED] Dashboard activity加载全部记录到内存
+- **问题**: 3个findMany查询加载7天内所有记录(可能数千条)到Node.js内存做JS分组
+- **修复**: 改为21个COUNT查询(7天×3实体), 每个只返回数字, 内存从O(N)降到O(1)
+- **文件**: src/app/api/dashboard/activity/route.ts
+
+### 9. [MED] SVG进度环100%不完全闭合
+- **问题**: strokeDasharray使用0.975近似值, 100%时仍有微小缺口
+- **修复**: 使用精确圆周长2π×15.5=97.39, 100%时dasharray为"97.39 97.39"
+- **文件**: src/app/stats/page.tsx
+
+## New Feature: 书签面板UI
+- **位置**: 阅读器右侧面板(与章节目录对称)
+- **功能**: 书签列表(标题+进度百分比+日期)、点击导航、悬浮删除、清空全部、空状态提示
+- **交互**: B键快捷键切换、书签计数徽章、Escape关闭(优先级: 设置>书签>目录>全屏>关闭)
+- **视觉**: 当前章节高亮(amber边框)、书签图标fill区分已标记/未标记
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+## CSS Enhancements (6处)
+1. `glass-card` → CommandPalette搜索结果 + KeyboardShortcutsDialog
+2. `dot-pattern` → 登录页背景
+3. `text-fade-end` → 小说列表标题/作者名
+4. `skeleton-shimmer` → 基础Skeleton组件(全局生效)
+5. `count-animate` → DashboardView统计数字
+6. `focus-ring-bright` → 小说搜索框 + 章节搜索框
+
+## Other Fixes
+- 移除NovelDetailClient中未使用的eslint-disable指令
+- 修复react-hooks/set-state-in-effect lint错误(useSyncExternalStore替代useState+useEffect)
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- Git commit: 2648556 (13 files, +204 -84)
+- Git push: 89ba2c6..2648556 main → main ✅
+
+## 统计
+- 修改文件: 13
+- 代码变更: +204 -84
+- Bug修复: 9项 (4 HIGH + 5 MED)
+- 新功能: 1项 (书签面板UI)
+- CSS增强: 6处
+- 累计修复: 426 + 9 = 435项
+
+Stage Summary:
+- **性能**: 消除双编辑器实例(2x API+2x auto-save), 稳定loadChapter回调(无多余refetch), Dashboard COUNT查询(O(N)→O(1))
+- **UX**: 章节导航滚动到顶, 导入后自动刷新, 主题切换hydration保护, 书签面板完整UI
+- **代码质量**: apiFetch silent选项, useSyncExternalStore mounted检测, 移除未用eslint-disable
+- **CSS**: 6个组件应用现有工具类
+
+---
 Task ID: cron-qa-20260803-1423
 Agent: Main Orchestrator
 Timestamp: 2026-08-03T14:23:00+08:00
@@ -622,15 +729,16 @@ Stage Summary:
 ---
 ## 项目当前状态
 - **代码库状态**: 稳定, 0构建错误, 0 lint errors
-- **最新commit**: 2a6e546 (已push)
-- **累计修复**: 416项
-- **CSS工具类总计**: 78个 (66 + 12新增)
+- **最新commit**: 2648556 (已push)
+- **累计修复**: 435项
+- **CSS工具类总计**: 78个
 - **公共页面**: 首页、分类、排行榜、统计
-- **apiFetch统一**: 所有页面已统一使用apiFetch(除blob导出)
-- **Admin Auth**: 服务端getServerSession保护 + 客户端safety net
+- **apiFetch**: 统一所有请求, 新增silent选项
+- **Admin Auth**: 服务端getServerSession保护 + 客户端safety net + mounted检测
 - **章节排序**: swap API(O(1)) + CASE WHEN批量排序 + 拖拽范围优化
-- **移动端**: 全屏章节编辑器 + admin搜索图标按钮
-- **共享模块**: lib/cover-gradient.ts (封面渐变+分类颜色)
+- **阅读器**: 书签面板UI + B快捷键 + 章节导航scroll-to-top + 稳定loadChapter
+- **Dashboard**: COUNT聚合查询(已优化) + 实时时钟 + mounted问候语
+- **共享模块**: lib/cover-gradient.ts, lib/api-fetch.ts (silent支持)
 
 ## 未解决问题或风险
 1. agent-browser无法在此环境使用(沙箱隔离+dev server OOM)
@@ -640,21 +748,22 @@ Stage Summary:
 5. 章节表加载10000条无虚拟滚动(千章小说DOM性能, MED)
 6. Settings存储在localStorage(数据丢失风险, LOW)
 7. NovelCard Popover触屏设备首次点击可能触发导航(由于Link包裹, LOW)
-8. Dashboard activity仍fetch-all-then-count(可用SQL GROUP BY优化, LOW)
+8. 阅读进度基于chapter index而非chapter ID(重排/删除后错位, LOW)
 9. 4个路由段缺少error.tsx (admin, novels/[id], stats, rankings, MED)
 10. Export API大小说内存OOM风险(需streaming, MED)
-11. NovelCard Popover onOpenChange可能在触屏上冲突(LOW)
+11. Import事务60s超时对万章小说可能不足(MED)
+12. 批量删除时apiFetch逐个toast+汇总toast双重通知(LOW)
 
 ## 建议下一阶段优先事项
 1. 服务器部署 git pull && bash deploy.sh
 2. 性能: 章节列表虚拟滚动(@tanstack/react-virtual) — 管理端千章小说
-3. 新功能: 阅读时长追踪 + 阅读统计增强(周/月趋势图)
-4. 新功能: 小说推荐系统(基于阅读偏好和分类)
-5. 新功能: 封面批量上传/管理
-6. 可访问性: ChapterRow键盘Enter/Space激活
-7. 新功能: 阅读进度持久化到服务端(跨设备同步)
-8. 可靠性: 4个路由段添加error.tsx
-9. 性能: Dashboard activity改用SQL GROUP BY聚合
-10. 性能: 导出API流式响应(TransformStream)
-11. 样式: 应用gradient-border/glass-card/dot-pattern到更多组件
-12. 新功能: 章节内容AI摘要/续写辅助
+3. 新功能: 小说全文搜索(章节内容LIKE查询)
+4. 新功能: 导出为TXT/EPUB格式
+5. 新功能: 阅读时长追踪 + 阅读统计增强(周/月趋势图)
+6. 新功能: 小说推荐系统(基于阅读偏好和分类)
+7. 可靠性: 4个路由段添加error.tsx
+8. 性能: 导出API流式响应(TransformStream)
+9. 新功能: 阅读进度改用chapter ID存储(跨重排/删除稳定)
+10. 样式: 继续应用gradient-border/inset-shadow-sm等未用CSS类
+11. 新功能: 章节内容AI摘要/续写辅助
+12. UX: 阅读进度服务端持久化(跨设备同步)
