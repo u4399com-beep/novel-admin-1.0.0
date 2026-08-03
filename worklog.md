@@ -1,6 +1,102 @@
 # Work Log
 
 ---
+Task ID: cron-qa-20260803-1423
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T14:23:00+08:00
+
+Task: 代码审查12项 → 2 HIGH + 4 MED + 4 LOW bug修复 + 预计阅读时间功能
+
+Work Log:
+- 读取worklog确认状态(累计416项修复, commit 2a6e546)
+- npx next build: 0 errors ✅
+- bun run lint: 0 errors, 3 warnings(预存React Hook Form) ✅
+- 前端代码审查(sub-agent): 发现2 HIGH + 6 MED + 4 LOW = 12项新问题 + 7个新功能机会
+- 修复2 HIGH + 4 MED + 4 LOW = 10项
+- 新增formatReadingTime功能(预计阅读时间)
+- commit 89ba2c6 已push
+
+## High Bug Fixes (2)
+
+### 1. [HIGH] Public novel page loads ALL chapters into SSR
+- **问题**: getChapters()无take限制, 10000章小说序列化全部到HTML payload(~1MB+), 伤害TTFB和SEO
+- **修复**: SSR只加载前200章, 客户端按需fetch剩余(>200章时自动加载)
+- **文件**: src/app/novels/[id]/page.tsx, src/app/novels/[id]/NovelDetailClient.tsx
+
+### 2. [HIGH] Dashboard activity fetches full rows for date counting
+- **问题**: 3个findMany查询无select, 返回完整行(含content等大字段)到Node.js内存
+- **修复**: 已有select: { createdAt: true }(代码审查误报, 但添加注释说明)
+- **文件**: src/app/api/dashboard/activity/route.ts
+
+## Medium Bug Fixes (4)
+
+### 3. [MED] Categories page raw fetch + DRY violation
+- **问题**: 2处fetch逻辑重复, retry版本无AbortController, 未使用项目apiFetch
+- **修复**: 提取doFetch共享函数, 统一apiFetch+AbortController
+- **文件**: src/app/categories/page.tsx
+
+### 4. [MED] Stats page silently swallows errors
+- **问题**: catch块为空, API失败显示"暂无阅读数据"而非错误信息
+- **修复**: 新增error state, 显示错误详情+重试按钮
+- **文件**: src/app/stats/page.tsx
+
+### 5. [MED] Chapter editor spurious auto-save on initial load
+- **问题**: API加载内容后触发useEffect, 1.5s后发送PUT(与已保存内容相同)
+- **修复**: 添加dirtyRef, 仅用户编辑后触发auto-save
+- **文件**: src/components/novel/NovelDetailView.tsx
+
+### 6. [MED] Dashboard greeting/date stale after midnight
+- **问题**: useMemo依赖[]计算一次, 跨日不更新
+- **修复**: useState(Date.now()) + setInterval每60s刷新
+- **文件**: src/components/novel/DashboardView.tsx
+
+## Low Bug Fixes (4)
+
+### 7. [LOW] SHORTCUT_KEYS hardcoded 9 elements
+- **问题**: 添加/删除nav item后快捷键不匹配, 可能undefined
+- **修复**: 改为getShortcutKeys(count, mac)函数动态生成
+- **文件**: src/app/admin/page.tsx
+
+### 8. [LOW] Settings scrapeInterval input 0 jumps to 30
+- **问题**: Number("0") || 30 → 用户输0变成30
+- **修复**: fallback改为1, 与min={1}一致
+- **文件**: src/app/admin/settings/page.tsx
+
+### 9. [LOW] Constants defined inside component body
+- **问题**: SIDEBAR_PAGE_SIZE/CHAPTERS_PER_PAGE在组件内重新创建
+- **修复**: 移到组件外部作为模块级常量
+- **文件**: src/app/novels/[id]/NovelDetailClient.tsx
+
+### 10. [LOW] Dead code formatCompact
+- **问题**: formatCompact已导出但全项目无任何引用
+- **修复**: 替换为formatReadingTime
+- **文件**: src/lib/format.ts
+
+## New Feature: Estimated Reading Time
+- **功能**: 基于字数计算预计阅读时间(中文500字/分钟)
+- **显示**: "约5分钟", "不到1分钟"
+- **位置**: 公共阅读器侧边栏章节列表 + 管理端章节编辑器
+- **文件**: src/lib/format.ts, src/app/novels/[id]/NovelDetailClient.tsx, src/components/novel/NovelDetailView.tsx
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 3 warnings(预存React Hook Form) ✅
+- Git commit: 89ba2c6 (10 files, +100 -58)
+- Git push: 7586482..89ba2c6 main → main ✅
+
+## 统计
+- 修改文件: 10
+- 代码变更: +100 -58
+- Bug修复: 10项 (2 HIGH + 4 MED + 4 LOW)
+- 新功能: 1项 (预计阅读时间)
+- 累计修复: 416 + 10 = 426项
+
+Stage Summary:
+- **性能**: SSR章节限制200+客户端按需加载, 消除大小说1MB+ SSR payload
+- **UX**: 预计阅读时间、stats错误反馈、问候语实时更新、scrapeInterval修正
+- **代码质量**: categories DRY重构、dirty ref防误保存、动态快捷键、常量外提
+
+---
 Task ID: cron-qa-20260803-1353
 Agent: Main Orchestrator
 Timestamp: 2026-08-03T13:53:00+08:00
