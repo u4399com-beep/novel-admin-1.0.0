@@ -164,3 +164,52 @@ Stage Summary:
 ---
 
 # Work Log
+
+---
+Task ID: 1
+Agent: Python Anti-Crawl Agent Builder
+Task: Create comprehensive Python crawler agent with 6 anti-anti-crawl modules
+
+Work Log:
+- Created python_crawler_agent/ with 17 files (5315 lines of Python code)
+- Module 1: Network layer & fingerprint (curl_cffi TLS/JA3 impersonation for chrome120/safari/edge, full sec-ch-ua/sec-fetch-* browser headers via fake-useragent)
+- Module 2: Dynamic IP proxy pool (Redis-backed Sorted Set with 10pt initial scoring, +1/-2 success/fail, ZPOPMAX priority scheduling, round-robin/random/least-used strategies, domain affinity tracking)
+- Module 3: Dynamic rendering & browser stealth (Playwright stealth plugin: navigator.webdriver masking, chrome.runtime forgery, WebGL renderer spoofing, Permissions API masking, BrowserContext isolation for cookie separation)
+- Module 4: Font anti-crawl specialist (fontTools WOFF/TTF parsing, glyph contour → PIL image rendering, ddddocr OCR unicode→real_char mapping, CSS @font-face URL extraction, hash-based change detection, Redis TTL cache, OCR→hash→manual fallback chain)
+- Module 5: CAPTCHA solving (OpenCV Canny edge detection + template matching for slider gap positioning, human-like drag trajectory with accelerate/decelerate/jitter/overshoot, ddddocr target detection for click CAPTCHA coordinates, OCR arithmetic recognition with preprocessing retry, rate-limiting auto-concurrency reduction)
+- Module 6: Behavior simulation (numpy Poisson-distributed delays, bezier curve mouse trajectories with ease-in-out, non-uniform scroll patterns with occasional backscroll, reading speed WPM variation, viewport size randomization from real resolution distribution)
+- Celery worker entry point with task registration, beat schedule, and async bridge
+- Multi-stage novel crawling pipeline (list→book_info→chapters→content) with per-level component activation
+- 5-level anti-crawl escalation system (Level 1: static TLS → Level 5: full stealth+proxy+font+CAPTCHA+behavior)
+- HTML parsers: CSS selector (BeautifulSoup4), XPath (lxml), Regex with timeout protection (SIGALRM/thread fallback)
+- Ad cleaning: 20+ preset regex rules for novel site ads, HTML entity decoding, NFC normalization, content deduplication
+- SQLAlchemy async DB client with ProxyModel, FontMappingModel, CrawlStatsModel, CrawlLogModel
+- API callback to Next.js app for progress reporting and chapter content submission
+
+Stage Summary:
+- Full Python agent codebase created with 6 anti-crawl modules (17 files, 5315 lines)
+- Supports 5 anti-crawl levels (1→5 escalating countermeasures)
+- Integrates with existing Next.js scraper service via HTTP callback to /api/scrape-tasks/callback
+- Redis-backed proxy pool, font mapping cache, and monitoring state
+- Celery-based task queue with rate limiting and retry policies
+
+---
+Task ID: 2
+Agent: Backend API Builder
+Task: Prisma schema update + anti-crawl monitoring API routes
+
+Work Log:
+- Updated prisma/schema.prisma: added antiCrawlLevel to ScrapeRule, new AntiCrawlEvent + ProxyPoolStats models
+- Ran db:push to apply schema changes
+- Created 5 new API routes for anti-crawl monitoring
+- Updated scrape-rules [id] route for antiCrawlLevel
+
+Stage Summary:
+- AntiCrawlEvent model: 10 fields, 5 indexes, supports 6 event types
+- ProxyPoolStats model: 7 fields for proxy pool health monitoring
+- API: events CRUD, dashboard aggregation, proxy stats recording
+- antiCrawlLevel (1-5) now configurable per scrape rule
+
+---
+
+# Work Log

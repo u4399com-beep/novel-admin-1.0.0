@@ -2513,4 +2513,87 @@ nav button[data-active='true'] {
 .animated-underline:hover::after {  width: 100%;}
 
 /* ─── Enhanced Reduced Motion ───────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {  .float-gentle {    animation: none;  }  .stagger-in > * {    opacity: 1;    animation: none;  }  .shimmer-border::before {    animation: none;  }  .shine-hover::after {    transition: none;  transform: none;  }  .animated-underline::after {    transition: none;  }}
+@media (prefers-reduced-motion: reduce) {  .float-gentle {    animation: none;  }  .stagger-in > * {    opacity: 1;    animation: none;  }  .shimmer-border::before {    animation: none;  }  .shine-hover::after {    transition: none;  transform: none;  }  .animated-underline::after {    transition: none;  }  .pulse-dot {    animation: none;  }  .level-glow {    animation: none;  }}
+
+/* ─── Round 19: Anti-Crawl Monitor Styles ────────────────────────────── */
+
+/* 1. Pulse dot for live indicators */
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(0.7 0.15 145);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.7 0.15 145 / 0.4); }
+  50% { box-shadow: 0 0 0 6px oklch(0.7 0.15 145 / 0); }
+}
+
+/* 2. Level selector glow ring */
+.level-glow {
+  animation: level-pulse 2.5s ease-in-out infinite;
+}
+@keyframes level-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 20%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 0%, transparent); }
+}
+
+/* 3. Custom scrollbar for event lists */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 20%, transparent) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar { width: 4px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted-foreground) 20%, transparent);
+  border-radius: 4px;
+}
+
+/* 4. Stat value hover depth effect */
+.stat-value { transition: transform 0.2s ease; }
+.stat-value:hover { transform: scale(1.03); }
+
+/* 5. Mini progress bar with glow */
+.mini-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted-foreground) 15%, transparent);
+  overflow: hidden;
+}
+.mini-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
+/* 6. Status dot variants */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot-active {
+  background: oklch(0.7 0.15 145);
+  box-shadow: 0 0 6px oklch(0.7 0.15 145 / 0.3);
+}
+.status-dot-warning {
+  background: oklch(0.8 0.18 85);
+  box-shadow: 0 0 6px oklch(0.8 0.18 85 / 0.3);
+}
+.status-dot-error {
+  background: oklch(0.65 0.2 25);
+  box-shadow: 0 0 6px oklch(0.65 0.2 25 / 0.3);
+}
+
+/* 7. Card hover lift with border glow */
+.card-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.card-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--foreground) 6%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+}
