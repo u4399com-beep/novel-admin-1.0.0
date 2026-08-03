@@ -259,7 +259,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
       className="group cursor-pointer"
     >
       {/* Cover */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
         {novel.coverUrl ? (
           <img
             src={novel.coverUrl}
@@ -477,7 +477,7 @@ function FilterRow<T extends string>({
                 key={opt.value || '__all__'}
                 onClick={() => onChange(opt.value)}
                 aria-pressed={isActive}
-                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap tap-feedback ${
+                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap tap-feedback tag-pill ${
                   isActive
                     ? 'bg-primary text-primary-foreground font-medium shadow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
@@ -1298,7 +1298,7 @@ export default function HomePage() {
                       <Book className="h-10 w-10 text-muted-foreground/50" />
                     </div>
                     <h3 className="text-xl font-semibold mb-2 text-shimmer">暂无小说</h3>
-                    <p className="text-sm text-muted-foreground mb-6 max-w-xs">
+                    <p className="text-sm text-muted-foreground mb-6 max-w-xs text-gradient-muted">
                       开始添加您的第一本小说，或等待采集任务自动入库
                     </p>
                     <Button

@@ -100,7 +100,7 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (signal?: AbortSignal) => {
     const sessionId = getSessionId();
     if (!sessionId) {
       setLoading(false);
@@ -108,9 +108,10 @@ export default function StatsPage() {
     }
     try {
       setError(null);
-      const data = await apiFetch<ReadingStats>(`/api/public/reading-stats?sessionId=${encodeURIComponent(sessionId)}`);
+      const data = await apiFetch<ReadingStats>(`/api/public/reading-stats?sessionId=${encodeURIComponent(sessionId)}`, { signal });
       setStats(data);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err.message : '获取统计失败');
     } finally {
       setLoading(false);
@@ -118,7 +119,9 @@ export default function StatsPage() {
   }, []);
 
   useEffect(() => {
-    fetchStats();
+    const ac = new AbortController();
+    fetchStats(ac.signal);
+    return () => ac.abort();
   }, [fetchStats]);
 
   // Streak level

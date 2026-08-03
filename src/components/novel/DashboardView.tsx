@@ -399,7 +399,7 @@ export function DashboardView() {
           : !stats && error ? (
             <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
               <p className="text-sm text-destructive">{error}</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchDashboard()}>
+              <Button variant="outline" size="sm" className="mt-3" disabled={loading} onClick={() => fetchDashboard()}>
                 重试
               </Button>
             </div>
@@ -413,7 +413,7 @@ export function DashboardView() {
               return (
                 <Card
                   key={card.key}
-                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback"
+                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback depth-hover"
                   onClick={() => setCurrentView(card.view)}
                 >
                   <CardContent className="p-4">
@@ -423,7 +423,7 @@ export function DashboardView() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-muted-foreground">{card.label}</p>
-                        <p className="text-2xl font-bold tabular-nums counter-animate count-animate">{displayValue}</p>
+                        <p className="text-2xl font-bold tabular-nums counter-animate count-animate stat-value">{displayValue}</p>
                         {trend && <div className="mt-0.5">{trend}</div>}
                       </div>
                     </div>
@@ -744,7 +744,7 @@ export function DashboardView() {
               <p>活动数据加载失败</p>
               <button
                 className="mt-1.5 text-xs text-muted-foreground hover:text-foreground hover-underline transition-colors"
-                onClick={() => fetchDashboard()}
+                disabled={loading} onClick={() => fetchDashboard()}
               >
                 重试
               </button>

@@ -21,7 +21,8 @@ interface ReadingSettingsPanelProps {
 
 export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPanelProps) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1">
       {/* Font size controls */}
       <Tooltip>
         <TooltipTrigger asChild>
@@ -148,6 +149,18 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
             <TooltipContent side="bottom">{font.label}字体</TooltipContent>
           </Tooltip>
         ))}
+      </div>
+      </div>
+      <div className="mt-4 pt-3 border-t border-border/50">
+        <p className="text-[10px] text-muted-foreground/50 mb-1.5">快捷键</p>
+        <div className="grid grid-cols-2 gap-1 text-[10px] text-muted-foreground/60">
+          <span><kbd className="px-1 py-0.5 rounded bg-muted/80 text-[9px] font-mono border border-border/50">↑↓</kbd> 翻页</span>
+          <span><kbd className="px-1 py-0.5 rounded bg-muted/80 text-[9px] font-mono border border-border/50">B</kbd> 书签</span>
+          <span><kbd className="px-1 py-0.5 rounded bg-muted/80 text-[9px] font-mono border border-border/50">F</kbd> 全屏</span>
+          <span><kbd className="px-1 py-0.5 rounded bg-muted/80 text-[9px] font-mono border border-border/50">Esc</kbd> 关闭</span>
+          <span><kbd className="px-1 py-0.5 rounded bg-muted/80 text-[9px] font-mono border border-border/50">S</kbd> 目录</span>
+          <span><kbd className="px-1 py-0.5 rounded bg-muted/80 text-[9px] font-mono border border-border/50">Ctrl+F</kbd> 搜索</span>
+        </div>
       </div>
     </div>
   );

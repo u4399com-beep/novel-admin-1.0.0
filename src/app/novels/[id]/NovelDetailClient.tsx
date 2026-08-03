@@ -112,6 +112,14 @@ const itemVariants = {
   show: { opacity: 1, x: 0, transition: { duration: 0.2, ease: 'easeOut' as const } },
 };
 
+function formatReadDuration(seconds: number): string {
+  if (seconds < 60) return '';
+  const m = Math.floor(seconds / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h${m % 60}m`;
+  return `${m}min`;
+}
+
 // ─── Component ───────────────────────────────────────────────────────
 
 const SIDEBAR_PAGE_SIZE = 200;
@@ -215,6 +223,8 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const readerContentRef = useRef<HTMLDivElement>(null);
   const readerDialogRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [readStartTime] = useState(() => Date.now());
+  const [readDuration, setReadDuration] = useState(0);
 
   // ─── Search match count ─────────────────────────────────────────
   const matchCount = useMemo(() => {
@@ -456,12 +466,13 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           setReaderFullscreen((p) => !p);
         }
       } else if (e.key === 'f' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setSearchOpen((p) => !p);
         if (!searchOpen) {
+          e.preventDefault();
+          setSearchOpen(true);
           setSearchQuery('');
           setCurrentMatch(0);
         }
+        // When search is already open, let browser Ctrl+F work natively
       } else if (e.key === 'Enter' && searchOpen && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         // Ctrl+Enter / Cmd+Enter cycles to next match
@@ -477,6 +488,15 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
 
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < chapters.length - 1;
+
+  // ─── Reading timer (updates every 30s) ──────────────────────────
+  useEffect(() => {
+    if (!readerOpen) return;
+    const interval = setInterval(() => {
+      setReadDuration(Math.floor((Date.now() - readStartTime) / 1000));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [readerOpen, readStartTime]);
 
   // ─── Auto-focus search input ─────────────────────────────────────
   useEffect(() => {
@@ -1067,10 +1087,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                       return (
                       <button
                         key={ch.id}
-                        onClick={() => {
-                          loadChapter(globalIdx);
-                          saveProgress(globalIdx);
-                        }}
+                        onClick={() => loadChapter(globalIdx)}
                         className={
                           'block w-full text-left text-xs px-2 py-1.5 rounded-md truncate transition-colors ' +
                           (globalIdx === currentIndex
@@ -1313,7 +1330,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           </div>
 
           {/* ── Bottom nav bar ────────────────────────────────── */}
-          <div className="shrink-0 border-t px-4 py-2.5 flex items-center justify-between bg-muted/30">
+          <div className="shrink-0 border-t px-4 py-2.5 flex items-center justify-between bg-muted/30 glass-card">
             <Button
               variant="outline"
               size="sm"
@@ -1324,9 +1341,17 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               <ChevronLeft className="h-4 w-4 mr-1" />
               上一章
             </Button>
-            <span className="text-[11px] text-muted-foreground hidden sm:block">
-              ← → 翻页 · B 书签 · F 全屏 · Ctrl+F 搜索 · Esc 关闭
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-muted-foreground hidden sm:block">
+                ← → 翻页 · B 书签 · F 全屏 · Ctrl+F 搜索 · Esc 关闭
+              </span>
+              {formatReadDuration(readDuration) && (
+                <span className="text-xs text-muted-foreground/60 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {formatReadDuration(readDuration)}
+                </span>
+              )}
+            </div>
             <Button
               variant="outline"
               size="sm"

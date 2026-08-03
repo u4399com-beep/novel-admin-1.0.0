@@ -461,7 +461,7 @@ function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExp
                   <span className="text-xs font-mono text-muted-foreground">
                     {task.id.slice(0, 8)}
                   </span>
-                  <Badge className={`${config.bgColor} ${isRunning ? 'animate-pulse' : ''}`} variant="secondary">
+                  <Badge className={`${config.bgColor} ${isRunning ? 'animate-pulse pulse-dot' : ''}`} variant="secondary">
                     <StatusIcon
                       className={`h-3 w-3 mr-0.5 ${isRunning ? 'animate-spin' : ''}`}
                     />

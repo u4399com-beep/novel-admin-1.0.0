@@ -41,7 +41,7 @@ export function ScrollProgress() {
       style={{ opacity: progress > 0 ? 1 : 0, transition: 'opacity 0.2s' }}
     >
       <motion.div
-        className="h-full reading-progress-bar"
+        className="h-full reading-progress-bar reading-progress-bar-glow"
         initial={false}
         animate={{ width: `${Math.max(progress, 0)}%` }}
         transition={{ duration: 0.15 }}

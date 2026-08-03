@@ -44,9 +44,9 @@ function ContinueReadingSkeleton() {
           >
             <div className="h-14 w-10 rounded-md animate-pulse bg-muted" />
             <div className="flex-1 min-w-0 space-y-2">
-              <div className="h-3.5 w-3/4 rounded animate-pulse bg-muted" />
-              <div className="h-3 w-1/2 rounded animate-pulse bg-muted" />
-              <div className="h-2.5 w-2/3 rounded animate-pulse bg-muted" />
+              <div className="h-3.5 w-3/4 rounded skeleton-line" />
+              <div className="h-3 w-1/2 rounded skeleton-line" />
+              <div className="h-2.5 w-2/3 rounded skeleton-line" />
             </div>
           </div>
         ))}
@@ -86,8 +86,18 @@ export function ContinueReading() {
         return;
       }
     } catch { /* ignore */ }
-    fetchProgress();
-  }, [fetchProgress]);
+    const ac = new AbortController();
+    const sessionId = getSessionId();
+    if (!sessionId) {
+      setLoading(false);
+      return;
+    }
+    apiFetch<{ progress: ReadingProgressItem[] }>(`/api/public/reading-progress?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
+      .then((data) => setProgress(data.progress || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+    return () => ac.abort();
+  }, []);
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);
