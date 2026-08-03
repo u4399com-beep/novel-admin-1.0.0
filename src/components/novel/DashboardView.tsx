@@ -172,7 +172,7 @@ export function DashboardView() {
   const setEditingNovel = useAppStore((s) => s.setEditingNovel);
   const setNovelFormOpen = useAppStore((s) => s.setNovelFormOpen);
 
-  const fetchDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
       setError(null);
@@ -180,6 +180,7 @@ export function DashboardView() {
         apiFetch<DashboardStats>('/api/dashboard'),
         apiFetch<ActivityData>('/api/dashboard/activity'),
       ]);
+      if (signal?.aborted) return;
       if (statsRes.status === 'fulfilled') {
         setStats(statsRes.value);
       } else {
@@ -191,12 +192,14 @@ export function DashboardView() {
         setActivityError(true);
       }
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchDashboard();
+    const ac = new AbortController();
+    fetchDashboard(ac.signal);
+    return () => ac.abort();
   }, [fetchDashboard, refreshDashboard]);
 
   // ─── Quick actions ─────────────────────────────────────────────────────
@@ -404,7 +407,7 @@ export function DashboardView() {
               return (
                 <Card
                   key={card.key}
-                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
+                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow"
                   onClick={() => setCurrentView(card.view)}
                 >
                   <CardContent className="p-4">
@@ -414,7 +417,7 @@ export function DashboardView() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-muted-foreground">{card.label}</p>
-                        <p className="text-2xl font-bold tabular-nums">{displayValue}</p>
+                        <p className="text-2xl font-bold tabular-nums counter-animate">{displayValue}</p>
                         {trend && <div className="mt-0.5">{trend}</div>}
                       </div>
                     </div>

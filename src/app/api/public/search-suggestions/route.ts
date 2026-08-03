@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     const novels = await db.novel.findMany({
       where: {
-        title: { contains: q },
+        title: { contains: q, mode: 'insensitive' },
       },
       select: {
         id: true,

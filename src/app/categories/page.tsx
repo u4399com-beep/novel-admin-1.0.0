@@ -131,10 +131,6 @@ export default function CategoriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ── SEO: set document title ──────────────────────────────────────────
-  useEffect(() => {
-    document.title = '分类浏览 - 小说阁';
-  }, []);
 
   // ── Fetch categories ──────────────────────────────────────────────────
   useEffect(() => {

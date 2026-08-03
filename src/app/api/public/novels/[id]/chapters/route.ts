@@ -25,7 +25,7 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const rawPage = searchParams.get("page") || "1";
     const rawSize = searchParams.get("pageSize") || "500";
-    const page = Math.max(1, parseInt(rawPage, 10) || 1);
+    const page = Math.min(10000, Math.max(1, parseInt(rawPage, 10) || 1));
     const pageSize = Math.min(500, Math.max(1, parseInt(rawSize, 10) || 500));
     const skip = (page - 1) * pageSize;
 

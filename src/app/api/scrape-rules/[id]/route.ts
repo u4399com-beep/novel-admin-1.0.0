@@ -239,14 +239,21 @@ export const DELETE = withAuth(async function DELETE(
       return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
     }
     // Prevent deleting rules with running tasks (cascade would cause silent data loss)
-    const runningCount = await db.scrapeTask.count({ where: { ruleId: id, status: "running" } });
-    if (runningCount > 0) {
+    // Use transaction to prevent TOCTOU race between count and delete
+    const deleted = await db.$transaction(async (tx) => {
+      const runningCount = await tx.scrapeTask.count({ where: { ruleId: id, status: 'running' } });
+      if (runningCount > 0) {
+        return { conflict: true, runningCount } as const;
+      }
+      await tx.scrapeRule.delete({ where: { id } });
+      return { conflict: false } as const;
+    });
+    if (deleted.conflict) {
       return NextResponse.json(
-        { error: `无法删除：有 ${runningCount} 个任务正在运行，请先停止任务` },
+        { error: `无法删除：有 ${deleted.runningCount} 个任务正在运行，请先停止任务` },
         { status: 409 }
       );
     }
-    await db.scrapeRule.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete scrape rule error:", error);
