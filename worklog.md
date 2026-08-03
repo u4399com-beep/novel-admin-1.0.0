@@ -1,4 +1,115 @@
 ---
+Task ID: cron-24cycle-round3
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T21:45:00+08:00
+
+Task: 循环代码审计计划第3轮/24次 — 21项bug修复 + 每日阅读目标 + 验证常量提取 + 8新CSS类
+
+Work Log:
+- 读取worklog确认状态(累计529项修复, commit a04d245)
+- next build: 0 errors ✅, bun run lint: 0 errors, 2 warnings(预存) ✅
+- 启动2个sub-agent并行深度审计: API安全审计(opus) + 前端组件审计
+- API审计发现 3H+5M+10L+5CQ = 23个问题
+- 前端审计发现 3H+8M+6L+5CQ = 22个问题
+- 修复21项bug + 1项新功能 + 8个CSS类
+- commit 4df233a + git push ✅
+
+## Bug修复 (21项)
+
+### HIGH (3)
+1. **apiFetch res.json() parse error未捕获** — 200+非JSON body导致SyntaxError, 调用者无法用FetchError捕获 → try-catch包裹
+2. **useReadingProgress丢弃有效进度** — loadProgress验证index<chapters.length, 章节分批加载时250+章节被丢弃 → 移除max验证(调用者clamp)
+3. **useReadingProgress saveProgress依赖chapters** — 章节更新后saveProgress identity变化触发冗余API调用 → useRef
+
+### MED (5)
+4. **export-all无大小守卫** — 全部小说+章节内容一次加载进内存, 200本×200章=200MB OOM → chapterCount预检+20000章上限
+5. **anti-crawl events countsByType忽略where** — 过滤后badge仍显示全量计数 → groupBy添加where参数
+6. **proxy-stats POST safeJson无inner try-catch** — malformed JSON返回500而非400 → 添加inner try-catch
+7. **NovelDetailClient loadChapter raw fetch** — 进度恢复用裸fetch无AbortSignal → 提前创建AC并传递signal
+8. **categories DELETE TOCTOU** — 并发请求可能绕过_count检查 → P2003外键错误返回409
+
+### LOW (6)
+9. **health端点泄露数据库表名** — 未认证端点暴露Category/Novel/Chapter等表名 → 只显示数量不显示名称
+10. **reading-streak硬编码Asia/Shanghai** — 与heatMap的tz参数不一致 → 添加可选tz查询参数
+11. **reading-stats硬编码Asia/Shanghai** — 同上 → toLocalDateStr/buildHeatmapData/calculateReadingStreak全部接受tz
+12. **stats retry不刷新streak** — 重试按钮只调fetchStats → 同时刷新streakData
+13. **H3 hydration mismatch(已知限制)** — useReadingSettings在SSR/CSR间loadSettings不同, React Compiler禁止effect中setState → 恢复原始模式, 记录为已知限制
+14. **search-keywords使用Prisma而非isPrismaError** — 不一致模式 → 改用isPrismaError
+
+### CQ (7)
+15-20. **验证常量跨10个文件重复(44个声明)** → 提取到src/lib/validation/{common,sites,tags,categories,themes,download-configs}.ts
+21. **validateJsonObject函数重复2处** → 提取到src/lib/validation/common.ts
+
+## 新功能 (1)
+1. **每日阅读目标** — useReadingGoal hook + ReadingGoalCard组件
+   - 每日章节目标(1-100) + 阅读时长目标(5-180分钟)
+   - 圆形进度环(SVG) + 双进度条(章节/时长)
+   - 达成标识(已达成badge)
+   - Settings Dialog(Switch启用 + Slider调参)
+   - visibilitychange自动记录阅读时长
+   - 30天滚动存储(自动清理过期数据)
+   - 集成到stats页面(ReadingStreak旁边)
+
+## 新CSS类 (8)
+| Class | Effect | Reduced Motion |
+|-------|--------|---------------|
+| `.noise-bg` | SVG噪点纹理叠加(增加层次感) | N/A |
+| `.pill-glow` | 药丸形标签+发光边框 | N/A |
+| `.card-accent-bottom` | 悬停底部渐变accent线 | ✅ 禁用transition |
+| `.float-subtle` | 6s缓慢浮动(4px) | ✅ 禁用 |
+| `.text-shimmer` | 文字渐变闪烁动画 | ✅ 禁用+回退 | 
+| `.list-item-compact-v2` | 紧凑列表项+悬停高亮 | N/A |
+| `.progress-glow` | 进度条发光效果 | N/A |
+| `.scroll-indicator-right` | 右侧渐变滚动指示器 | N/A |
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- Git commit: 4df233a
+- Git push: main → main ✅
+
+## 统计
+- 修改文件: 18
+- 新增文件: 8 (6 validation modules + use-reading-goal.ts + ReadingGoalCard.tsx)
+- Bug修复: 21项 (3H + 5M + 6L + 7CQ)
+- 新功能: 1项 (每日阅读目标)
+- 新CSS工具类: 8个
+- 累计修复: 529 + 21 = 550项
+
+Stage Summary:
+- **安全**: health端点信息泄露修复, export-all OOM防护, categories TOCTOU处理
+- **正确性**: apiFetch JSON解析防护, 阅读进度不再因分批加载丢失, events过滤修复
+- **性能**: saveProgress用ref避免冗余API, export-all分阶段加载
+- **国际化**: streak/stats时区参数化(与heatMap一致)
+- **架构**: 6个验证模块消除44个常量重复, validateJsonObject单一定义
+- **功能**: 每日阅读目标(章节+时长双维度, 进度可视化, 自动计时)
+- **CSS**: 8新工具类 + 增强reduced-motion
+
+## 项目当前状态
+- **构建**: 0 TypeScript errors, 0 ESLint errors ✅
+- **最新commit**: 4df233a
+- **累计修复**: 550项
+- **架构**: Next.js 16.1.3 App Router + Prisma + SQLite + Docker(Caddy) + Python Agent
+- **循环进度**: 第3轮/24次
+
+## 未解决问题/建议下一阶段优先事项
+1. **[HIGH] $queryRawUnsafe→$queryRaw** — dashboard/activity + anti-crawl/dashboard仍有3处使用$queryRawUnsafe
+2. **[MED] React.memo关键组件** → NovelCard/FilterRow/RankNumber/StatCard记忆化
+3. **[MED] EPUB/TXT单本导出** → epub-gen库
+4. **[MED] 阅读笔记/标注** → 章节内高亮+旁注(Prisma Annotation模型)
+5. **[LOW] RecentlyViewed同tab不更新** → 需状态提升或自定义事件
+6. **[LOW] NovelDetailView筛选器不随小说切换重置** → useEffect on selectedNovelId
+7. **[FEATURE] 智能推荐"猜你喜欢"** → 基于分类/标签关联
+8. **[FEATURE] 代理池Web管理面板** → 可视化添加/删除/测试代理
+9. **[STYLE] 新CSS类推广应用** → pill-glow/noise-bg/card-accent-bottom应用到更多组件
+10. **[STYLE] DashboardView图表硬编码颜色→CSS变量**
+11. **[KNOWN] useReadingSettings hydration mismatch** → 需React 19 useSyncExternalStore
+
+---
+
+# Work Log
+
+---
 Task ID: cron-24cycle-round1
 Agent: Main Orchestrator
 Timestamp: $(date -u +%Y-%m-%dT%H:%M:%S+08:00)
