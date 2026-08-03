@@ -112,6 +112,7 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
         {
           method: 'POST',
           body: formData,
+          silent: true, // We show inline error card below, suppress auto-toast (M1 fix)
         },
       );
 

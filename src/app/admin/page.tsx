@@ -183,6 +183,8 @@ export default function AdminPage() {
 
   // ─── Dark mode toggle ─────────────────────────────────────────────────
   const { theme, setTheme } = useTheme();
+  // Use sync external store for mounted detection (avoids set-state-in-effect lint error)
+  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
   // ─── Auth guard (server-side layout handles redirect, this is a safety net) ──────────────
@@ -460,7 +462,7 @@ export default function AdminPage() {
             </span>
 
             {/* Dark mode toggle */}
-            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="切换主题" className="relative">
+            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="切换主题" className="relative" disabled={!mounted} tabIndex={mounted ? 0 : -1} aria-disabled={!mounted}>
               <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
               <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
             </Button>
@@ -536,7 +538,11 @@ export default function AdminPage() {
 
       {/* Dialogs */}
       <NovelFormDialog />
-      <NovelImportDialog open={importOpen} onOpenChange={setImportOpen} categories={categories} />
+      <NovelImportDialog open={importOpen} onOpenChange={setImportOpen} categories={categories} onImportSuccess={() => {
+        const store = useAppStore.getState();
+        store.triggerRefresh('novels');
+        store.triggerRefresh('dashboard');
+      }} />
       <ChapterFormDialog />
       <CommandPalette />
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />

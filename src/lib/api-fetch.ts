@@ -48,9 +48,14 @@ export class FetchError extends Error {
  * }
  * ```
  */
+export interface ApiFetchOptions extends RequestInit {
+  /** If true, suppress automatic error toasts (caller handles errors) */
+  silent?: boolean;
+}
+
 export async function apiFetch<T = unknown>(
   url: string,
-  init?: RequestInit,
+  init?: ApiFetchOptions,
 ): Promise<T> {
   let res: Response;
   try {
@@ -83,10 +88,10 @@ export async function apiFetch<T = unknown>(
   const displayMsg = serverMsg || res.statusText || `请求失败 (${res.status})`;
   const fullMsg = serverDetail ? `${displayMsg}：${serverDetail}` : displayMsg;
 
-  // Always toast the error — callers should NOT add duplicate toasts in catch blocks.
+  // Always toast the error unless caller opts out (e.g. batch operations, import dialog).
   // This ensures the user sees the actual server message (e.g. "未授权，请先登录")
   // instead of a generic "获取xxx失败".
-  if (res.status !== 422) {
+  if (!init?.silent && res.status !== 422) {
     // 422 = validation error — the caller (form) shows field-level errors, don't double-toast
     toast.error(displayMsg);
   }

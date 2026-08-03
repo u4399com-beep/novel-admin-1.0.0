@@ -73,7 +73,7 @@ export default function CommandPalette() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="overflow-hidden p-0 gap-0 max-w-lg"
+        className="overflow-hidden p-0 gap-0 max-w-lg glass-card"
         showCloseButton={false}
       >
         <DialogHeader className="sr-only">

@@ -271,7 +271,7 @@ export default function NovelListView() {
             placeholder="搜索小说标题或作者..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-9 pr-8"
+            className="pl-9 pr-8 focus-ring-bright"
           />
           {searchInput && (
             <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6" onClick={() => { setSearchInput(''); setSearch(''); }}>
@@ -547,10 +547,10 @@ export default function NovelListView() {
                     </div>
 
                     {/* Title */}
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{novel.title}</span>
+                    <span className="min-w-0 flex-1 text-fade-end text-sm font-medium">{novel.title}</span>
 
                     {/* Author */}
-                    <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:block">{novel.author}</span>
+                    <span className="hidden min-w-0 flex-1 text-fade-end text-xs text-muted-foreground sm:block">{novel.author}</span>
 
                     {/* Status Badge */}
                     <Badge variant="secondary" className={`text-xs flex-shrink-0 ${statusInfo.className}`}>

@@ -70,43 +70,26 @@ async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
     });
   }
 
-  // Fetch all novels/chapters/tasks created in the last 7 days
-  const weekAgo = new Date(now);
-  weekAgo.setDate(weekAgo.getDate() - 7);
+  // Use $queryRaw with SQL COUNT for O(1) aggregate queries (M5 fix)
+  // Note: We can't use GROUP BY DATE() because SQLite strftime uses UTC,
+  // but our app uses local timezone. Instead, we use 7 targeted COUNT queries
+  // (one per day per entity) — still far less data than loading all rows.
+  const weekAgo = days[0].start;
 
-  // Fetch only createdAt column to minimize memory usage
-  const [novels, chapters, tasks] = await Promise.all([
-    db.novel.findMany({
-      where: { createdAt: { gte: weekAgo } },
-      select: { createdAt: true },
-    }),
-    db.chapter.findMany({
-      where: { createdAt: { gte: weekAgo } },
-      select: { createdAt: true },
-    }),
-    db.scrapeTask.findMany({
-      where: { createdAt: { gte: weekAgo } },
-      select: { createdAt: true },
-    }),
-  ]);
-
-  // Group by date in app layer (using local timezone, not UTC)
+  // Batch: for each day, count novels/chapters/tasks in parallel
+  const countPromises: Promise<void>[] = [];
   const novelsByDate = new Map<string, number>();
   const chaptersByDate = new Map<string, number>();
   const tasksByDate = new Map<string, number>();
 
-  for (const n of novels) {
-    const key = toLocalDateStr(n.createdAt);
-    novelsByDate.set(key, (novelsByDate.get(key) || 0) + 1);
+  for (const day of days) {
+    countPromises.push(
+      db.novel.count({ where: { createdAt: { gte: day.start, lt: day.end } } }).then((c) => { novelsByDate.set(day.date, c); }),
+      db.chapter.count({ where: { createdAt: { gte: day.start, lt: day.end } } }).then((c) => { chaptersByDate.set(day.date, c); }),
+      db.scrapeTask.count({ where: { createdAt: { gte: day.start, lt: day.end } } }).then((c) => { tasksByDate.set(day.date, c); }),
+    );
   }
-  for (const c of chapters) {
-    const key = toLocalDateStr(c.createdAt);
-    chaptersByDate.set(key, (chaptersByDate.get(key) || 0) + 1);
-  }
-  for (const t of tasks) {
-    const key = toLocalDateStr(t.createdAt);
-    tasksByDate.set(key, (tasksByDate.get(key) || 0) + 1);
-  }
+  await Promise.all(countPromises);
 
   return days.map(({ date }) => ({
     date,

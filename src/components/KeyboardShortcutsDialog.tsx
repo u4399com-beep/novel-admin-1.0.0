@@ -43,7 +43,7 @@ export default function KeyboardShortcutsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 pt-2">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 pt-2 glass-card rounded-lg p-4">
           {shortcuts.map((shortcut) => {
             const displayKey = shortcut.keys.length === 2
               ? (isMac ? shortcut.keys[0] : shortcut.keys[1])

@@ -276,7 +276,7 @@ export default function StatsPage() {
                                 stroke="var(--primary)"
                                 strokeWidth="2.5"
                                 strokeLinecap="round"
-                                strokeDasharray={`${Math.min(progress, 100) * 0.975} 100`}
+                                strokeDasharray={`${(Math.min(progress, 100) / 100) * 97.39} 97.39`}
                                 className="transition-all duration-500"
                               />
                             </svg>

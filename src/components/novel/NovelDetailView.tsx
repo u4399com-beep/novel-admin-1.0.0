@@ -1136,27 +1136,6 @@ export default function NovelDetailView() {
 
       {/* ─── Chapters section with responsive layout ───────────────────── */}
       <div className="flex-1 min-h-0 overflow-hidden p-4 sm:p-6 pt-3 sm:pt-4">
-        {/* Mobile: full-screen editor when chapter selected */}
-        {selectedChapter && (
-          <div className="flex flex-col lg:hidden h-full">
-            <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedChapter(null)}>
-                <ChevronLeft className="size-3.5 mr-1" />
-                返回列表
-              </Button>
-              <span className="text-sm font-medium truncate">{selectedChapter.title}</span>
-            </div>
-            <div className="flex-1 min-h-0">
-              <ChapterEditorPanel
-                key={selectedChapter.id}
-                chapter={selectedChapter}
-                onClose={() => setSelectedChapter(null)}
-                onSaved={handleChapterSaved}
-              />
-            </div>
-          </div>
-        )}
-
         <ResizablePanelGroup direction="horizontal" className={`h-full rounded-lg border ${selectedChapter ? 'hidden lg:flex' : 'flex'}`}>
           {/* Left panel: Chapter list */}
           <ResizablePanel defaultSize={selectedChapter ? 45 : 100} minSize={30}>
@@ -1227,7 +1206,7 @@ export default function NovelDetailView() {
                       value={chapterSearch}
                       onChange={(e) => setChapterSearch(e.target.value)}
                       placeholder="搜索章节标题..."
-                      className="h-8 pl-8 text-sm"
+                      className="h-8 pl-8 text-sm focus-ring-bright"
                     />
                     {chapterSearch && (
                       <button
@@ -1392,12 +1371,22 @@ export default function NovelDetailView() {
             <>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={55} minSize={30}>
-                <ChapterEditorPanel
-                  key={selectedChapter.id}
-                  chapter={selectedChapter}
-                  onClose={() => setSelectedChapter(null)}
-                  onSaved={handleChapterSaved}
-                />
+                {/* Mobile back button shown above editor on small screens */}
+                <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0 lg:hidden">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedChapter(null)}>
+                    <ChevronLeft className="size-3.5 mr-1" />
+                    返回列表
+                  </Button>
+                  <span className="text-sm font-medium truncate">{selectedChapter.title}</span>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <ChapterEditorPanel
+                    key={selectedChapter.id}
+                    chapter={selectedChapter}
+                    onClose={() => setSelectedChapter(null)}
+                    onSaved={handleChapterSaved}
+                  />
+                </div>
               </ResizablePanel>
             </>
           )}

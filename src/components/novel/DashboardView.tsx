@@ -423,7 +423,7 @@ export function DashboardView() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-muted-foreground">{card.label}</p>
-                        <p className="text-2xl font-bold tabular-nums counter-animate">{displayValue}</p>
+                        <p className="text-2xl font-bold tabular-nums counter-animate count-animate">{displayValue}</p>
                         {trend && <div className="mt-0.5">{trend}</div>}
                       </div>
                     </div>

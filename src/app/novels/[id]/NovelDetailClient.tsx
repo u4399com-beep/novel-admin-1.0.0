@@ -20,6 +20,7 @@ import {
   List,
   BookmarkCheck,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -164,6 +165,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const [readerOpen, setReaderOpen] = useState(false);
   const [readerFullscreen, setReaderFullscreen] = useState(false);
   const [showChapterSidebar, setShowChapterSidebar] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarPage, setSidebarPage] = useState(1);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -208,7 +210,6 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     chapterPage * CHAPTERS_PER_PAGE,
   );
   // Auto-jump to page containing lastChapterIndex
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (lastChapterIndex !== null && lastChapterIndex >= chapterPage * CHAPTERS_PER_PAGE) {
       setChapterPage(Math.floor(lastChapterIndex / CHAPTERS_PER_PAGE) + 1);
@@ -245,16 +246,25 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   );
 
   const loadChapterAbortRef = useRef<AbortController | null>(null);
+  // Use ref for chapters so loadChapter identity stays stable when remaining chapters load (H2 fix)
+  const chaptersRef = useRef(chapters);
+  chaptersRef.current = chapters;
 
   const loadChapter = useCallback(
     async (index: number) => {
-      if (index < 0 || index >= chapters.length) return;
-      const chapter = chapters[index];
+      const chs = chaptersRef.current;
+      if (index < 0 || index >= chs.length) return;
+      const chapter = chs[index];
       setCurrentIndex(index);
       setChapterContent(null);
       setChapterError(false);
       setChapterTitle(chapter.title);
       setLoadingChapter(true);
+
+      // Scroll reader content to top on chapter change (H3 fix)
+      requestAnimationFrame(() => {
+        readerContentRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+      });
 
       // Cancel any in-flight chapter load
       loadChapterAbortRef.current?.abort();
@@ -275,7 +285,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         if (!abortController.signal.aborted) setLoadingChapter(false);
       }
     },
-    [chapters]
+    [] // stable — reads chapters from ref
   );
 
   // Load chapter content when dialog opens
@@ -293,10 +303,10 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
       if (newIndex >= 0 && newIndex < chapters.length) {
         loadChapter(newIndex);
-        saveProgress(newIndex);
+        // Progress save is handled by the useEffect below — no duplicate save here (M3 fix)
       }
     },
-    [currentIndex, chapters.length, loadChapter, saveProgress]
+    [currentIndex, chapters.length, loadChapter]
   );
 
   // Save progress when changing chapters
@@ -372,12 +382,20 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       } else if (e.key === 'Escape') {
         if (showSettings) {
           setShowSettings(false);
+        } else if (showBookmarks) {
+          setShowBookmarks(false);
         } else if (showChapterSidebar) {
           setShowChapterSidebar(false);
         } else if (readerFullscreen) {
           setReaderFullscreen(false);
         } else {
           setReaderOpen(false);
+        }
+      } else if (e.key === 'b' && !e.metaKey && !e.ctrlKey) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          e.preventDefault();
+          setShowBookmarks((p) => !p);
         }
       } else if (e.key === 'f' && !e.metaKey && !e.ctrlKey) {
         const tag = (e.target as HTMLElement).tagName;
@@ -389,7 +407,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [readerOpen, readerFullscreen, showChapterSidebar, showSettings, goToChapter]);
+  }, [readerOpen, readerFullscreen, showChapterSidebar, showBookmarks, showSettings, goToChapter]);
 
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < chapters.length - 1;
@@ -822,7 +840,32 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="书签"
+                      aria-label="书签列表"
+                      className={
+                        'h-7 w-7 relative transition-colors ' +
+                        (showBookmarks ? ' bg-amber-500/10 text-amber-500' : '')
+                      }
+                      onClick={() => setShowBookmarks((p) => !p)}
+                    >
+                      <BookmarkCheck className="h-3.5 w-3.5" />
+                      {bookmarks.length > 0 && !showBookmarks && (
+                        <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 flex items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white leading-none">
+                          {bookmarks.length > 9 ? '9+' : bookmarks.length}
+                        </span>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {showBookmarks ? '关闭书签列表 (B)' : `书签 (${bookmarks.length})`}
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={isBookmarked(currentIndex) ? '移除书签' : '添加书签'}
                       className={
                         'h-7 w-7 transition-colors ' +
                         (isBookmarked(currentIndex) ? 'text-amber-500' : '')
@@ -835,7 +878,11 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                         }
                       }}
                     >
-                      <BookmarkCheck className="h-3.5 w-3.5" />
+                      {isBookmarked(currentIndex) ? (
+                        <BookmarkCheck className="h-3.5 w-3.5 fill-amber-500" />
+                      ) : (
+                        <BookmarkCheck className="h-3.5 w-3.5" />
+                      )}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
@@ -965,6 +1012,95 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               )}
             </AnimatePresence>
 
+            {/* Bookmarks panel (right side) */}
+            <AnimatePresence>
+              {showBookmarks && (
+                <motion.div
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: 200, opacity: 1 }}
+                  exit={{ width: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="shrink-0 border-l overflow-hidden"
+                >
+                  <div className="w-[200px] h-full overflow-y-auto p-3 flex flex-col">
+                    <div className="flex items-center justify-between mb-2 px-1">
+                      <div className="text-xs font-medium text-muted-foreground">
+                        书签 ({bookmarks.length})
+                      </div>
+                      {bookmarks.length > 0 && (
+                        <button
+                          className="text-[10px] text-destructive/60 hover:text-destructive transition-colors"
+                          onClick={() => {
+                            bookmarks.forEach((b) => removeBookmark(b.chapterIndex));
+                          }}
+                        >
+                          清空
+                        </button>
+                      )}
+                    </div>
+
+                    {bookmarks.length === 0 ? (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-2 py-8">
+                        <BookmarkCheck className="h-6 w-6 text-muted-foreground/30" />
+                        <p className="text-[11px] text-muted-foreground/60 text-center">点击工具栏书签图标<br />添加当前章节</p>
+                      </div>
+                    ) : (
+                      <div className="flex-1 space-y-1">
+                        {bookmarks.map((bm) => {
+                          const ch = chapters[bm.chapterIndex];
+                          if (!ch) return null;
+                          const isCurrent = bm.chapterIndex === currentIndex;
+                          return (
+                            <button
+                              key={bm.chapterIndex}
+                              onClick={() => {
+                                loadChapter(bm.chapterIndex);
+                                saveProgress(bm.chapterIndex);
+                              }}
+                              className={
+                                'block w-full text-left rounded-md px-2 py-2 transition-colors group ' +
+                                (isCurrent
+                                  ? 'bg-amber-500/10 border border-amber-500/20'
+                                  : 'hover:bg-muted/50 border border-transparent')
+                              }
+                            >
+                              <div className="flex items-start gap-1.5">
+                                <BookmarkCheck className={`h-3 w-3 mt-0.5 shrink-0 ${isCurrent ? 'text-amber-500' : 'text-amber-500/50'}`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-[11px] leading-tight truncate ${isCurrent ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-foreground'}`}>
+                                    {bm.chapterTitle}
+                                  </p>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[9px] text-muted-foreground/60 tabular-nums">
+                                      {bm.scrollPercent}%
+                                    </span>
+                                    <span className="text-muted-foreground/30">·</span>
+                                    <span className="text-[9px] text-muted-foreground/60">
+                                      {new Date(bm.timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                                    </span>
+                                  </div>
+                                </div>
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 h-4 w-4 flex items-center justify-center rounded hover:bg-destructive/10 text-muted-foreground/40 hover:text-destructive transition-all shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeBookmark(bm.chapterIndex);
+                                  }}
+                                  aria-label={`移除书签: ${bm.chapterTitle}`}
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Reader content */}
             <div ref={readerContentRef} className="flex-1 overflow-y-auto">
               <div className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-colors duration-300`}>
@@ -1026,7 +1162,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               上一章
             </Button>
             <span className="text-[11px] text-muted-foreground hidden sm:block">
-              ← → 翻页 · F 全屏 · Esc 关闭
+              ← → 翻页 · B 书签 · F 全屏 · Esc 关闭
             </span>
             <Button
               variant="outline"
