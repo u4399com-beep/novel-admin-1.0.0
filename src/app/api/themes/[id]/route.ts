@@ -73,7 +73,7 @@ export const PUT = withAuth(async function PUT(
     if (enabled !== undefined && typeof enabled !== 'boolean') {
       return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
     }
-    if (config !== undefined && config) {
+    if (config !== undefined) {
       const configStr = typeof config === "string" ? config : JSON.stringify(config);
       if (configStr.length > MAX_CONFIG_SIZE) {
         return NextResponse.json({ error: `主题配置大小不能超过${Math.floor(MAX_CONFIG_SIZE / 1024)}KB` }, { status: 400 });
@@ -92,15 +92,7 @@ export const PUT = withAuth(async function PUT(
         ...(description !== undefined && { description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null }),
         ...(identifier !== undefined && { identifier: sanitizeField(identifier, MAX_IDENTIFIER_LENGTH) }),
         ...(preview !== undefined && { preview: sanitizeField(preview, 500) || null }),
-        ...(config !== undefined && {
-          config: (() => {
-            try {
-              return JSON.stringify(typeof config === "string" ? JSON.parse(config) : config);
-            } catch {
-              return JSON.stringify(config);
-            }
-          })(),
-        }),
+        ...(config !== undefined && { config }),
         ...(enabled !== undefined && { enabled }),
       },
       include: {
@@ -130,24 +122,34 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const existing = await db.theme.findUnique({
-      where: { id },
-      include: { _count: { select: { sites: true } } },
+    const existing = await db.$transaction(async (tx) => {
+      const theme = await tx.theme.findUnique({
+        where: { id },
+        include: { _count: { select: { sites: true } } },
+      });
+      if (!theme) {
+        throw new Error('NOT_FOUND');
+      }
+      if (theme._count.sites > 0) {
+        throw new Error(`HAS_SITES:${theme._count.sites}`);
+      }
+      await tx.theme.delete({ where: { id } });
+      return theme;
     });
-    if (!existing) {
-      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
-    }
-    if (existing._count.sites > 0) {
-      return NextResponse.json(
-        { error: `无法删除：有 ${existing._count.sites} 个站点正在使用此主题` },
-        { status: 409 }
-      );
-    }
-    await db.theme.delete({ where: { id } });
     invalidateCache("themes:list");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete theme error:", error);
+    if (error instanceof Error && error.message === 'NOT_FOUND') {
+      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
+    }
+    if (error instanceof Error && error.message.startsWith('HAS_SITES:')) {
+      const count = error.message.split(':')[1];
+      return NextResponse.json(
+        { error: `无法删除：有 ${count} 个站点正在使用此主题` },
+        { status: 409 }
+      );
+    }
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "主题不存在" }, { status: 404 });
     }

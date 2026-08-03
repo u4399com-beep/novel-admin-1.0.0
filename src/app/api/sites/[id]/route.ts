@@ -163,15 +163,20 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const existing = await db.site.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: "站点不存在" }, { status: 404 });
-    }
-    await db.site.delete({ where: { id } });
+    await db.$transaction(async (tx) => {
+      const site = await tx.site.findUnique({ where: { id } });
+      if (!site) {
+        throw new Error('NOT_FOUND');
+      }
+      await tx.site.delete({ where: { id } });
+    });
     invalidateCache("sites:list:*");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete site error:", error);
+    if (error instanceof Error && error.message === 'NOT_FOUND') {
+      return NextResponse.json({ error: "站点不存在" }, { status: 404 });
+    }
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "站点不存在" }, { status: 404 });
     }

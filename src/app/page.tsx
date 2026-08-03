@@ -264,11 +264,11 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
           <img
             src={novel.coverUrl}
             alt={novel.title}
-            className="h-full w-full object-cover transition-all duration-500 group-hover:brightness-75"
+            className="h-full w-full object-cover transition-all duration-500 group-hover:brightness-75 hover-brightness"
             loading="lazy"
           />
         ) : (
-          <div className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center transition-all duration-500 group-hover:brightness-110`}>
+          <div className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center transition-all duration-500 group-hover:brightness-110 hover-brightness`}>
             <span className="text-4xl font-bold text-white/90 select-none">
               {novel.title.charAt(0)}
             </span>

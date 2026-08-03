@@ -87,25 +87,34 @@ export const DELETE = withAuth(async function DELETE(
   try {
     const { id } = await params;
 
-    const existing = await db.tag.findUnique({
-      where: { id },
-      include: { _count: { select: { novels: true } } },
+    const existing = await db.$transaction(async (tx) => {
+      const tag = await tx.tag.findUnique({
+        where: { id },
+        include: { _count: { select: { novels: true } } },
+      });
+      if (!tag) {
+        throw new Error('NOT_FOUND');
+      }
+      if (tag._count.novels > 0) {
+        throw new Error(`HAS_NOVELS:${tag._count.novels}`);
+      }
+      await tx.tag.delete({ where: { id } });
+      return tag;
     });
-    if (!existing) {
-      return NextResponse.json({ error: "标签不存在" }, { status: 404 });
-    }
-    if (existing._count.novels > 0) {
-      return NextResponse.json(
-        { error: `无法删除：有 ${existing._count.novels} 本小说正在使用此标签` },
-        { status: 409 }
-      );
-    }
-
-    await db.tag.delete({ where: { id } });
     invalidateCache("tags:list");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete tag error:", error);
+    if (error instanceof Error && error.message === 'NOT_FOUND') {
+      return NextResponse.json({ error: "标签不存在" }, { status: 404 });
+    }
+    if (error instanceof Error && error.message.startsWith('HAS_NOVELS:')) {
+      const count = error.message.split(':')[1];
+      return NextResponse.json(
+        { error: `无法删除：有 ${count} 本小说正在使用此标签` },
+        { status: 409 }
+      );
+    }
     if (isPrismaError(error, "P2025")) {
       return NextResponse.json({ error: "标签不存在" }, { status: 404 });
     }

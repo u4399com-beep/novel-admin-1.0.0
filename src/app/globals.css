@@ -2393,3 +2393,70 @@ nav button[data-active='true'] {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ─── Detail Enhancements v3 ─── */
+
+/* 1. Hover brightness */
+.hover-brightness {
+  filter: brightness(1);
+  transition: filter 0.2s ease;
+}
+.hover-brightness:hover {
+  filter: brightness(1.1);
+}
+
+/* 2. Hide scrollbar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 3. Text outline */
+.text-outline {
+  -webkit-text-stroke: 1px oklch(var(--foreground) / 0.2);
+  color: transparent;
+}
+
+/* 4. Dot pattern background */
+.bg-dots {
+  background-image: radial-gradient(oklch(var(--muted) / 0.3) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* 5. Shimmer border */
+.shimmer-border {
+  position: relative;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.shimmer-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: conic-gradient(from 0deg, transparent, oklch(var(--primary) / 0.4), transparent, oklch(var(--primary) / 0.4), transparent);
+  animation: shimmer-rotate 3s linear infinite;
+  z-index: -1;
+  border-radius: inherit;
+}
+.shimmer-border::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: var(--background);
+  border-radius: inherit;
+  z-index: -1;
+}
+@keyframes shimmer-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 6. Press effect */
+.press-effect {
+  transition: transform 0.1s ease;
+}
+.press-effect:active {
+  transform: scale(0.98);
+}

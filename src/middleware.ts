@@ -110,26 +110,8 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // Public API rate limiting — 60 req/min per IP for unauthenticated public endpoints
-  // Excludes /api/public/health (health check, GET only)
-  if (pathname.startsWith('/api/public/') && !(pathname === '/api/public/health' && request.method === 'GET')) {
-    const ip = request.headers.get('x-real-ip')
-      || request.headers.get('x-forwarded-for')?.split(',').pop()?.trim()
-      || 'direct';
-    const rl = checkPublicApiRateLimit(ip);
-    if (!rl.allowed) {
-      return NextResponse.json(
-        { error: `请求过于频繁，请${rl.retryAfter}秒后再试` },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': String(rl.retryAfter),
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-    }
-  }
+  // NOTE: Rate limiting for /api/public/* is handled at the route level via
+  // `withPublicRateLimit`. We do NOT rate-limit here to avoid double-counting.
 
   return NextResponse.next();
 }

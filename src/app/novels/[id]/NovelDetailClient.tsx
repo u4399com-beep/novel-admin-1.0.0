@@ -911,7 +911,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-7 w-7 press-effect"
                   disabled={!hasPrev || loadingChapter}
                   onClick={() => goToChapter('prev')}
                   title="上一章 (←)"
@@ -921,7 +921,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-7 w-7 press-effect"
                   disabled={!hasNext || loadingChapter}
                   onClick={() => goToChapter('next')}
                   title="下一章 (→)"
@@ -937,7 +937,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
+                      className="h-7 w-7 press-effect"
                       aria-label="章节目录"
                       onClick={() => setShowChapterSidebar((p) => !p)}
                     >
@@ -954,7 +954,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                       size="icon"
                       aria-label="书签列表"
                       className={
-                        'h-7 w-7 relative transition-colors ' +
+                        'h-7 w-7 relative transition-colors press-effect ' +
                         (showBookmarks ? ' bg-amber-500/10 text-amber-500' : '')
                       }
                       onClick={() => setShowBookmarks((p) => !p)}
@@ -979,7 +979,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                       size="icon"
                       aria-label={isBookmarked(currentIndex) ? '移除书签' : '添加书签'}
                       className={
-                        'h-7 w-7 transition-colors ' +
+                        'h-7 w-7 transition-colors press-effect ' +
                         (isBookmarked(currentIndex) ? 'text-amber-500' : '')
                       }
                       onClick={() => {
@@ -1009,7 +1009,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                       size="icon"
                       aria-label="阅读设置"
                       className={
-                        'h-7 w-7 ' + (showSettings ? 'bg-primary/10 text-primary' : '')
+                        'h-7 w-7 press-effect ' + (showSettings ? 'bg-primary/10 text-primary' : '')
                       }
                       onClick={() => setShowSettings((p) => !p)}
                     >
@@ -1024,7 +1024,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
+                      className="h-7 w-7 press-effect"
                       aria-label={readerFullscreen ? "退出全屏" : "全屏"}
                       onClick={() => setReaderFullscreen((p) => !p)}
                     >
@@ -1336,7 +1336,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               size="sm"
               disabled={!hasPrev || loadingChapter}
               onClick={() => goToChapter('prev')}
-              className="h-8 tap-feedback"
+              className="h-8 tap-feedback press-effect"
             >
               <ChevronLeft className="h-4 w-4 mr-1" />
               上一章
@@ -1357,7 +1357,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               size="sm"
               disabled={!hasNext || loadingChapter}
               onClick={() => goToChapter('next')}
-              className="h-8 tap-feedback"
+              className="h-8 tap-feedback press-effect"
             >
               下一章
               <ChevronRight className="h-4 w-4 ml-1" />

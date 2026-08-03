@@ -79,7 +79,7 @@ function RankNumber({ rank }: { rank: number }) {
   if (style) {
     return (
       <div className={`relative flex items-center justify-center w-8 h-8 rounded-full ${style.bg} ring-2 ${style.ring} overflow-hidden`}>
-        <Medal className={`w-4 h-4 ${style.text}`} />
+        <Medal className={`w-4 h-4 ${style.text} ${rank === 1 ? 'text-outline' : ''}`} />
         <div className="absolute inset-0 rank-shine pointer-events-none" />
       </div>
     );
@@ -120,13 +120,15 @@ function NovelRow({
       initial={{ opacity: 0, y: 12, x: -8 }}
       animate={{ opacity: 1, y: 0, x: 0 }}
       transition={{ duration: 0.3, delay: index * 0.04, ease: 'easeOut' as const }}
+      className="fade-in-up"
+      style={{ animationDelay: `${index * 50}ms` }}
     >
       <Link
         href={`/novels/${novel.id}`}
         className={
           isTop3
-            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden tap-feedback hover-glow ${style?.border}`
-            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group tap-feedback hover-glow'
+            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden tap-feedback hover-glow depth-hover ${style?.border}`
+            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group tap-feedback hover-glow depth-hover'
         }
       >
       {/* Top 3 gradient background */}
@@ -228,7 +230,7 @@ function EmptyState() {
 
 // ─── Tab Content ─────────────────────────────────────────────────────
 
-function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean }) {
+function RankingTabContent({ tab, active, timeRange }: { tab: TabConfig; active: boolean; timeRange: string }) {
   const [novels, setNovels] = useState<RankingNovel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -237,7 +239,7 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
     setLoading(true);
     setError(false);
     try {
-      const data = await apiFetch<{ novels?: RankingNovel[] }>(`/api/public/novels?sort=${tab.sortParam}&pageSize=30`, { signal });
+      const data = await apiFetch<{ novels?: RankingNovel[] }>(`/api/public/novels?sort=${tab.sortParam}&pageSize=30&timeRange=${timeRange}`, { signal });
       setNovels(data.novels || []);
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
@@ -246,7 +248,7 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [tab.sortParam]);
+  }, [tab.sortParam, timeRange]);
 
   useEffect(() => {
     if (!active) return;
@@ -322,6 +324,7 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
 
 export default function RankingsPage() {
   const [activeTab, setActiveTab] = useState('weekly');
+  const [timeRange, setTimeRange] = useState<'week' | 'month' | 'all'>('all');
 
   return (
     <div className="min-h-screen bg-background page-enter">
@@ -366,6 +369,27 @@ export default function RankingsPage() {
             </div>
           </motion.div>        </motion.div>
 
+        {/* Time Range Tabs */}
+        <div className='flex gap-2 mb-6'>
+          {([
+            { value: 'week', label: '本周' },
+            { value: 'month', label: '本月' },
+            { value: 'all', label: '全部' },
+          ] as const).map(({ value, label }) => (
+            <button
+              key={value}
+              onClick={() => setTimeRange(value)}
+              className={`tag-pill text-xs px-3 py-1.5 transition-all ${
+                timeRange === value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full sm:w-auto">
@@ -378,7 +402,7 @@ export default function RankingsPage() {
 
           {TABS.map((tab) => (
             <TabsContent key={tab.key} value={tab.key} className="mt-6">
-              <RankingTabContent tab={tab} active={activeTab === tab.key} />
+              <RankingTabContent tab={tab} active={activeTab === tab.key} timeRange={timeRange} />
             </TabsContent>
           ))}
         </Tabs>

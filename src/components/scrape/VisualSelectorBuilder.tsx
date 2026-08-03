@@ -466,7 +466,10 @@ export function VisualSelectorBuilder({
           type: 'content',
           label: '正文内容',
           selector: article.tagName.toLowerCase() === 'article' ? 'article' :
-            (article.id ? `#${article.id}` : `.${article.className.split(' ')[0]}`),
+            (article.id ? `#${article.id}` : (() => {
+              const firstClass = article.className && article.className.split ? article.className.split(/\s+/)[0] : '';
+              return firstClass && /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(firstClass) ? `.${firstClass}` : 'article';
+            })()),
         });
       }
 
@@ -475,7 +478,10 @@ export function VisualSelectorBuilder({
       if (linkList) {
         const selector = linkList.id
           ? `#${linkList.id} a`
-          : `.${linkList.className.split(' ')[0]} a`;
+          : (() => {
+              const firstClass = linkList.className && linkList.className.split ? linkList.className.split(/\s+/)[0] : '';
+              return firstClass && /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(firstClass) ? `.${firstClass} a` : 'ul a';
+            })();
         suggestions.push({
           type: 'chapterList',
           label: '章节列表',

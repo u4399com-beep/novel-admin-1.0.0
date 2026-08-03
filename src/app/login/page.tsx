@@ -53,7 +53,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-background dot-pattern">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-background dot-pattern bg-dots">
       {/* Decorative background pattern */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,rgba(120,80,220,0.06),transparent_50%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(120,80,220,0.04),transparent_50%)]" />

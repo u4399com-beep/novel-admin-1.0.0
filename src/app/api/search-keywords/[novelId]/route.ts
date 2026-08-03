@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
+import { Prisma } from '@prisma/client';
 
 // GET /api/search-keywords/[novelId] - Get search keywords for a novel
 export const GET = withAuth(async function GET(
@@ -179,6 +180,9 @@ export const POST = withAuth(async function POST(
       count: created.count,
     });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json({ error: '操作冲突，请稍后重试' }, { status: 409 });
+    }
     console.error("Extract search keywords error:", error);
     return NextResponse.json(
       { error: "提取搜索关键词失败"},
