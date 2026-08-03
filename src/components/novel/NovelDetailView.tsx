@@ -870,7 +870,8 @@ export default function NovelDetailView() {
         }),
       });
     } catch {
-      fetchChapters();
+      const ac = new AbortController();
+      fetchChapters(ac.signal);
     }
   };
 
@@ -893,7 +894,8 @@ export default function NovelDetailView() {
         }),
       });
     } catch {
-      fetchChapters();
+      const ac = new AbortController();
+      fetchChapters(ac.signal);
     }
   };
 

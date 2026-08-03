@@ -60,6 +60,7 @@ model Novel {
   updatedAt       DateTime     @updatedAt
   chapters        Chapter[]
   fileStorage     NovelFile[]
+  readingProgress ReadingProgress[]
 
   @@index([categoryId])
   @@index([status])
@@ -334,4 +335,25 @@ model SearchKeyword {
 
   @@index([novelId])
   @@unique([novelId, keyword, source])
+}
+
+// ==================== 阅读进度 ====================
+
+// 阅读进度（匿名用户通过sessionId追踪，未来可扩展userId）
+model ReadingProgress {
+  id        String   @id @default(cuid())
+  sessionId String   // 客户端生成的唯一标识（localStorage）
+  novelId   String
+   chapterId String?  // 当前阅读的章节ID
+  chapterIndex Int    @default(0) // 当前章节序号（用于排序）
+  scrollPercent  Float? // 章节内滚动进度 0-100
+  lastReadAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, novelId]) // 每个会话每本小说只有一条进度
+  @@index([sessionId, lastReadAt])
+  @@index([novelId])
 }

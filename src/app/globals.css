@@ -1754,3 +1754,360 @@ img {
   width: 100%;
   left: 0;
 }
+
+/* ──────────────── New Utility Classes (11:23 round) ──────────────── */
+
+/* 1. Gradient text for special headings */
+.text-gradient {
+  background-variant-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 2. Soft pulse for notification dots */
+@keyframes softPulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 40%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 20%, transparent); }
+}
+.soft-pulse {
+  animation: softPulse 2s ease-in-out infinite;
+}
+
+/* 3. Noise texture overlay for cards */
+.noise-bg {
+  position: relative;
+}
+.noise-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.5'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='0.5'/%3E%3CfeComponentTransfer%3E%3CfeFuncG type='linear' slope='0.5'/%3E%3CfeComponentTransfer%3E%3CfeFuncB type='linear' slope='0.5'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3CfeBlend in='SourceGraphic'/%3E%3C/filter%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* 4. Subtle hover brightness lift for cards */
+.hover-brighten:hover {
+  filter: brightness(1.05);
+}
+
+/* 5. Animated border gradient */
+@keyframes borderRotate {
+  0% { --angle: 0deg; }
+ 100% { --angle: 360deg; }
+}
+.border-animated {
+  --angle: 0deg;
+  border: 2px solid transparent;
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  background-image: linear-gradient(var(--background), var(--background)),
+    conic-gradient(from var(--angle), var(--primary), color-mix(in srgb, var(--primary) 30%, transparent), var(--primary));
+  animation: borderRotate 3s linear infinite;
+}
+
+/* 6. Text shadow glow for hero elements */
+.text-glow-subtle {
+  text-shadow: 0 0 20px color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+/* 7. Scroll indicator dots — horizontal scrollbar progress hint */
+.scroll-hint-x {
+  background-image: radial-gradient(circle at 100% 50%, color-mix(in srgb, var(--primary) 20%, transparent) 0%, transparent 100%);
+  background-size: 40px 100%;
+  background-position: right center;
+  background-repeat: no-repeat;
+}
+
+/* 8. Stacked shadow for elevated cards */
+.shadow-elevated {
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--foreground) 3%, transparent),
+    0 4px 8px color-mix(in srgb, var(--foreground) 3%, transparent),
+    0 12px 24px color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+/* 9. Fade in up animation (for use with JS) */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up {
+  animation: fadeInUp 0.4s ease forwards;
+}
+
+/* 10. Shimmer loading effect for broader elements */
+.shimmer-block {
+  background: linear-gradient(110deg, var(--muted) 30%, color-mix(in srgb, var(--muted-foreground) 8%, transparent) 50%, var(--muted) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* 11. Accent underline for active tabs/links */
+.underline-accent {
+  position: relative;
+}
+.underline-accent::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 1px;
+}
+
+/* 12. Compact info chip with subtle bg */
+.info-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 80%, transparent);
+  color: var(--muted-foreground);
+}
+
+/* 13. Fade mask for horizontal scroll containers — right edge */
+.fade-right {
+  -webkit-mask-image: linear-gradient(to right, black 70%, transparent);
+  mask-image: linear-gradient(to right, black 70%, transparent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Round 11 — CSS Utilities (11:53)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 1. Progress bar with smooth animated fill */
+.progress-bar-sm {
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+  overflow: hidden;
+}
+.progress-bar-sm > .progress-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 2. Subtle text shine/shimmer effect for empty states */
+.text-shimmer {
+  background: linear-gradient(
+    110deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 40%,
+    color-mix(in srgb, var(--muted-foreground) 50%, var(--foreground)) 50%,
+    var(--muted-foreground) 60%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 2.5s ease-in-out infinite;
+}
+@keyframes text-shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+/* 3. Press/hover feedback for tap targets */
+.tap-feedback {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.tap-feedback:active {
+  transform: scale(0.97);
+}
+
+/* 4. Hover lift with shadow (enhanced version) */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+/* 5. Status indicator dot with pulse ring */
+.status-pulse {
+  position: relative;
+}
+.status-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0;
+  animation: status-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes status-ping {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* 6. Compact scrollable area for sidebars/drawers */
+.scroll-compact {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--border) 80%, transparent) transparent;
+}
+.scroll-compact::-webkit-scrollbar { width: 4px; }
+.scroll-compact::-webkit-scrollbar-track { background: transparent; }
+.scroll-compact::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 4px;
+}
+
+/* 7. Numbered step indicator */
+.step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  border: 1.5px solid var(--border);
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+.step-indicator.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* 8. Divider with centered label */
+.divider-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.divider-label::before,
+.divider-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* 9. Subtle glow for active/focused cards */
+.card-glow {
+  box-shadow: 0 0 0 1px var(--border), 0 1px 3px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  transition: box-shadow 0.2s ease;
+}
+.card-glow:hover,
+.card-glow:focus-within {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent),
+    0 0 16px -4px color-mix(in srgb, var(--primary) 15%, transparent),
+    0 2px 8px -2px color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+/* 10. Smooth horizontal scroll with momentum snapping */
+.scroll-snap-x {
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-snap-x::-webkit-scrollbar { display: none; }
+.scroll-snap-x > * {
+  scroll-snap-align: start;
+}
+
+/* 11. Text with subtle background highlight */
+.text-highlight {
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--primary) 12%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 12%, transparent) 100%
+  );
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin: 0 -2px;
+}
+
+/* 12. Animated border gradient */
+.border-gradient {
+  position: relative;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+}
+.border-gradient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    var(--primary) 0%,
+    color-mix(in srgb, var(--primary) 30%, var(--accent)) 50%,
+    var(--primary) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.border-gradient:hover::before {
+  opacity: 1;
+}
+
+/* 13. Compact list item style for dense UIs */
+.list-item-compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+.list-item-compact:hover {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+/* 14. Floating action button (mobile-optimized) */
+.fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow:
+    0 2px 8px color-mix(in srgb, var(--primary) 30%, transparent),
+    0 4px 16px -4px color-mix(in srgb, var(--foreground) 10%, transparent);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.fab:hover {
+  transform: scale(1.05);
+  box-shadow:
+    0 4px 12px color-mix(in srgb, var(--primary) 40%, transparent),
+    0 6px 20px -4px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+.fab:active {
+  transform: scale(0.95);
+}

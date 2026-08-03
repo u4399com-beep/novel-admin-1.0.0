@@ -12,7 +12,7 @@ import { NAV_ITEMS } from '@/lib/nav-config';
 import { useAppStore } from '@/stores/app-store';
 
 // ─── Keyboard shortcut map (desktop only) ──────────────────────────────────────
-const SHORTCUT_KEYS = ['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8'] as const;
+const SHORTCUT_KEYS = ['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8', '⌘9'] as const;
 
 // ─── Divider after first N items ───────────────────────────────────────────────
 const DIVIDER_AFTER_INDEX = 3; // after 4th item (index 3)

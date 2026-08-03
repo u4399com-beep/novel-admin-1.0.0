@@ -119,9 +119,7 @@ export default function NovelListView() {
   useEffect(() => {
     setPage(1);
     fetchNovels(1);
-  }, [statusFilter, categoryFilter]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Fetch when page or search changes (not triggered by filter reset above)
+  }, [statusFilter, categoryFilter, fetchNovels]);
   useEffect(() => {
     const ac = new AbortController();
     fetchNovels(page, ac.signal);
@@ -394,6 +392,7 @@ export default function NovelListView() {
                           alt={novel.title}
                           className="h-full w-full object-cover"
                           loading="lazy"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">

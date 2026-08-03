@@ -23,6 +23,7 @@ import {
   SheetClose,
 } from '@/components/ui/sheet';
 import { BackToTop } from '@/components/BackToTop';
+import { ContinueReading } from '@/components/home/ContinueReading';
 import { formatWordCount } from '@/lib/format';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -466,6 +467,7 @@ function FilterRow<T extends string>({
               <button
                 key={opt.value || '__all__'}
                 onClick={() => onChange(opt.value)}
+                aria-pressed={isActive}
                 className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap ${
                   isActive
                     ? 'bg-primary text-primary-foreground font-medium shadow-sm'
@@ -815,6 +817,12 @@ export default function HomePage() {
             >
               排行榜
             </Link>
+            <Link
+              href="/stats"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              统计
+            </Link>
           </nav>
 
           {/* Right actions */}
@@ -886,6 +894,16 @@ export default function HomePage() {
                 >
                   <Trophy className="h-4 w-4 text-muted-foreground" />
                   排行榜
+                </button>
+                <button
+                  onClick={() => {
+                    router.push('/stats');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                >
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  阅读统计
                 </button>
               </nav>
               <div className="border-t mx-4" />
@@ -1070,6 +1088,13 @@ export default function HomePage() {
               </Badge>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* Continue Reading */}
+      <section className="border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
+          <ContinueReading />
         </div>
       </section>
 
@@ -1279,7 +1304,7 @@ export default function HomePage() {
                     <div className="h-20 w-20 rounded-2xl bg-muted flex items-center justify-center mb-5">
                       <Book className="h-10 w-10 text-muted-foreground/50" />
                     </div>
-                    <h3 className="text-xl font-semibold mb-2">暂无小说</h3>
+                    <h3 className="text-xl font-semibold mb-2 text-shimmer">暂无小说</h3>
                     <p className="text-sm text-muted-foreground mb-6 max-w-xs">
                       开始添加您的第一本小说，或等待采集任务自动入库
                     </p>
@@ -1368,6 +1393,8 @@ export default function HomePage() {
               <Link href="/categories" className="text-muted-foreground/60 hover:text-foreground transition-colors">分类</Link>
               <span className="text-muted-foreground/20">·</span>
               <Link href="/rankings" className="text-muted-foreground/60 hover:text-foreground transition-colors">排行榜</Link>
+              <span className="text-muted-foreground/20">·</span>
+              <Link href="/stats" className="text-muted-foreground/60 hover:text-foreground transition-colors">统计</Link>
               <span className="text-muted-foreground/20">·</span>
               <Link href="/login" className="text-muted-foreground/60 hover:text-foreground transition-colors">管理</Link>
             </div>

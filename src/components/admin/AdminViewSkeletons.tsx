@@ -67,7 +67,7 @@ function DashboardSkeleton() {
                 <Skeleton
                   className="w-full rounded-t"
                   style={{
-                    height: `${Math.max(30, Math.random() * 100 + 40)}%`,
+                    height: `${Math.max(30, ((i * 37 + 13) % 60) + 40)}%`,
                     animationDelay: `${i * 60}ms`,
                   }}
                 />

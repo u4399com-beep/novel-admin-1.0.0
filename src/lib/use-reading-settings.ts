@@ -130,8 +130,31 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
         // ignore
       }
       setLastChapterIndex(chapterIndex);
+
+      // Persist to server (fire-and-forget, non-blocking)
+      try {
+        let sid = '';
+        if (typeof localStorage !== 'undefined') {
+          const SK = 'novel-session-id';
+          sid = localStorage.getItem(SK) || '';
+          if (!sid) {
+            sid = crypto.randomUUID();
+            localStorage.setItem(SK, sid);
+          }
+        }
+        if (sid) {
+          const chapterId = chapters[chapterIndex]?.id || null;
+          fetch('/api/public/reading-progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: sid, novelId, chapterId, chapterIndex }),
+          }).catch(() => {});
+        }
+      } catch {
+        // Server sync is best-effort
+      }
     },
-    [PROGRESS_KEY]
+    [PROGRESS_KEY, novelId, chapters]
   );
 
   return { lastChapterIndex, saveProgress };

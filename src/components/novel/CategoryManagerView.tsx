@@ -91,6 +91,7 @@ export default function CategoryManagerView() {
     handleSubmit,
     reset,
     setValue,
+    getValues,
     watch,
     formState: { errors },
   } = useForm<CategoryFormData>({
@@ -106,6 +107,7 @@ export default function CategoryManagerView() {
   });
 
   const selectedColor = watch('color');
+  const watchedIcon = watch('icon');
 
   // Auto-generate slug from name
   const watchedName = watch('name');
@@ -127,16 +129,19 @@ export default function CategoryManagerView() {
 
   // Auto-generate slug from name when creating (not editing)
   useEffect(() => {
-    if (!editingCategory && watchedName && !watch('slug')) {
-      const slug = watchedName
-        .toLowerCase()
-        .replace(/[\u4e00-\u9fa5]/g, '') // remove Chinese chars
-        .replace(/[^a-z0-9_-]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-      if (slug) setValue('slug', slug);
+    if (!editingCategory && watchedName) {
+      const currentSlug = getValues('slug');
+      if (!currentSlug) {
+        const slug = watchedName
+          .toLowerCase()
+          .replace(/[\u4e00-\u9fa5]/g, '') // remove Chinese chars
+          .replace(/[^a-z0-9_-]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        if (slug) setValue('slug', slug);
+      }
     }
-  }, [watchedName, editingCategory, setValue, watch]);
+  }, [watchedName, editingCategory, setValue]);
 
   // ── Open dialog for create/edit ──────────────────────────────────────────
   const openCreate = () => {
@@ -410,15 +415,15 @@ export default function CategoryManagerView() {
                   {...register('icon')}
                   className="flex-1"
                 />
-                {watch('icon') && (
+                {watchedIcon && (
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted text-lg">
-                    {watch('icon')}
+                    {watchedIcon}
                   </span>
                 )}
               </div>
               <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/50 p-2">
                 {ICON_EMOJIS.map((emoji) => {
-                  const isSelected = watch('icon') === emoji;
+                  const isSelected = watchedIcon === emoji;
                   return (
                     <button
                       key={emoji}

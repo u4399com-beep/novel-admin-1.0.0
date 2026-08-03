@@ -37,81 +37,127 @@ export const GET = withAuth(async function GET() {
   } catch (error) {
     console.error('Dashboard activity error:', error);
     return NextResponse.json(
-      { error: '获取活动数据失败'},
+      { error: '获取活动数据失败' },
       { status: 500 },
     );
   }
 });
 
 // ─── Daily Activity (last 7 days) ───────────────────────────────────────────
+// Uses app-level date math instead of SQLite-specific date() functions.
+// Compatible with both SQLite and PostgreSQL.
 
 async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
-  // Generate a date spine for the last 7 days so every day appears even with 0 counts.
-  // SQLite's date('now') returns UTC; we use that consistently.
-  const rows = await db.$queryRaw<DailyActivityRow[]>`
-    SELECT
-      d.date,
-      COALESCE(n.cnt, 0) AS novelsCreated,
-      COALESCE(ch.cnt, 0) AS chaptersCreated,
-      COALESCE(s.cnt, 0) AS scrapeRuns
-    FROM (
-      SELECT date('now', '-6 days') AS date
-      UNION ALL SELECT date('now', '-5 days')
-      UNION ALL SELECT date('now', '-4 days')
-      UNION ALL SELECT date('now', '-3 days')
-      UNION ALL SELECT date('now', '-2 days')
-      UNION ALL SELECT date('now', '-1 days')
-      UNION ALL SELECT date('now', '0 days')
-    ) d
-    LEFT JOIN (
-      SELECT date(createdAt) AS date, COUNT(*) AS cnt
-      FROM Novel
-      WHERE createdAt >= date('now', '-7 days')
-      GROUP BY date(createdAt)
-    ) n ON d.date = n.date
-    LEFT JOIN (
-      SELECT date(createdAt) AS date, COUNT(*) AS cnt
-      FROM Chapter
-      WHERE createdAt >= date('now', '-7 days')
-      GROUP BY date(createdAt)
-    ) ch ON d.date = ch.date
-    LEFT JOIN (
-      SELECT date(createdAt) AS date, COUNT(*) AS cnt
-      FROM ScrapeTask
-      WHERE createdAt >= date('now', '-7 days')
-      GROUP BY date(createdAt)
-    ) s ON d.date = s.date
-    ORDER BY d.date
-  `;
+  // Build date range in app layer (works for both SQLite and PG)
+  const now = new Date();
+  const days: { date: string; start: Date; end: Date }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    const end = new Date(d);
+    end.setDate(end.getDate() + 1);
+    days.push({
+      date: d.toISOString().slice(0, 10), // YYYY-MM-DD
+      start: d,
+      end,
+    });
+  }
 
-  return rows;
+  // Fetch all novels/chapters/tasks created in the last 7 days
+  const weekAgo = new Date(now);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  const [novels, chapters, tasks] = await Promise.all([
+    db.novel.findMany({
+      where: { createdAt: { gte: weekAgo } },
+      select: { createdAt: true },
+    }),
+    db.chapter.findMany({
+      where: { createdAt: { gte: weekAgo } },
+      select: { createdAt: true },
+    }),
+    db.scrapeTask.findMany({
+      where: { createdAt: { gte: weekAgo } },
+      select: { createdAt: true },
+    }),
+  ]);
+
+  // Group by date in app layer
+  const novelsByDate = new Map<string, number>();
+  const chaptersByDate = new Map<string, number>();
+  const tasksByDate = new Map<string, number>();
+
+  for (const n of novels) {
+    const key = n.createdAt.toISOString().slice(0, 10);
+    novelsByDate.set(key, (novelsByDate.get(key) || 0) + 1);
+  }
+  for (const c of chapters) {
+    const key = c.createdAt.toISOString().slice(0, 10);
+    chaptersByDate.set(key, (chaptersByDate.get(key) || 0) + 1);
+  }
+  for (const t of tasks) {
+    const key = t.createdAt.toISOString().slice(0, 10);
+    tasksByDate.set(key, (tasksByDate.get(key) || 0) + 1);
+  }
+
+  return days.map(({ date }) => ({
+    date,
+    novelsCreated: novelsByDate.get(date) || 0,
+    chaptersCreated: chaptersByDate.get(date) || 0,
+    scrapeRuns: tasksByDate.get(date) || 0,
+  }));
 }
 
 // ─── Recent Events (last 10) ────────────────────────────────────────────────
 
 async function fetchRecentEvents(): Promise<RecentEventRow[]> {
-  const rows = await db.$queryRaw<RecentEventRow[]>`
-    SELECT type, title, novelTitle, timestamp FROM (
-      SELECT 'novel_created' AS type, title, NULL AS novelTitle, createdAt AS timestamp
-      FROM Novel
-      ORDER BY createdAt DESC
-      LIMIT 10
-      UNION ALL
-      SELECT 'chapter_added' AS type, c.title, n.title AS novelTitle, c.createdAt AS timestamp
-      FROM Chapter c
-      INNER JOIN Novel n ON c."novelId" = n.id
-      ORDER BY c.createdAt DESC
-      LIMIT 10
-      UNION ALL
-      SELECT 'scrape_run' AS type, r.name, NULL AS novelTitle, t.createdAt AS timestamp
-      FROM ScrapeTask t
-      INNER JOIN ScrapeRule r ON t."ruleId" = r.id
-      ORDER BY t.createdAt DESC
-      LIMIT 10
-    )
-    ORDER BY timestamp DESC
-    LIMIT 10
-  `;
+  const recentNovels = await db.novel.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: { title: true, createdAt: true },
+  });
 
-  return rows;
+  const recentChapters = await db.chapter.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: {
+      title: true,
+      createdAt: true,
+      novel: { select: { title: true } },
+    },
+  });
+
+  const recentTasks = await db.scrapeTask.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: {
+      createdAt: true,
+      rule: { select: { name: true } },
+    },
+  });
+
+  const events: RecentEventRow[] = [
+    ...recentNovels.map(n => ({
+      type: 'novel_created',
+      title: n.title,
+      novelTitle: null,
+      timestamp: n.createdAt.toISOString(),
+    })),
+    ...recentChapters.map(c => ({
+      type: 'chapter_added',
+      title: c.title,
+      novelTitle: c.novel.title,
+      timestamp: c.createdAt.toISOString(),
+    })),
+    ...recentTasks.map(t => ({
+      type: 'scrape_run',
+      title: t.rule.name,
+      novelTitle: null,
+      timestamp: t.createdAt.toISOString(),
+    })),
+  ];
+
+  events.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  return events.slice(0, 10);
 }
