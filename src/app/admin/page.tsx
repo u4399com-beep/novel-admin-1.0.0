@@ -100,7 +100,9 @@ const viewVariants = {
 };
 
 // ─── Keyboard shortcut keys ─────────────────────────────────────────────────
-const SHORTCUT_KEYS = ['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8', '⌘9'] as const;
+function getShortcutKeys(count: number, mac: boolean): string[] {
+  return Array.from({ length: count }, (_, i) => `${mac ? '\u2318' : '^'}${i + 1}`);
+}
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
@@ -267,7 +269,7 @@ export default function AdminPage() {
             {/* Keyboard shortcut hint — desktop only, visible on hover */}
             {!sidebarCollapsed && (
               <span className="hidden lg:inline-block text-[10px] font-mono text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
-                {SHORTCUT_KEYS[index]}
+                {getShortcutKeys(NAV_ITEMS.length, isMac)[index]}
               </span>
             )}
 

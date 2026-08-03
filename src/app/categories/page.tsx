@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BackToTop } from '@/components/BackToTop';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -133,44 +134,26 @@ export default function CategoriesPage() {
 
 
   // ── Fetch categories ──────────────────────────────────────────────────
-  useEffect(() => {
-    const abortController = new AbortController();
-    async function load() {
-      try {
-        setLoading(true);
-        setError(null);
-        const res = await fetch('/api/public/categories', { signal: abortController.signal });
-        if (!res.ok) throw new Error('获取分类失败');
-        const data = await res.json();
-        setCategories(data);
-      } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
-          setError(err instanceof Error ? err.message : '未知错误');
-        }
-      } finally {
-        if (!abortController.signal.aborted) setLoading(false);
-      }
-    }
-    load();
-    return () => abortController.abort();
-  }, []);
-
-  const fetchCategories = useCallback(async () => {
+  const doFetch = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/public/categories');
-      if (!res.ok) throw new Error('获取分类失败');
-      const data = await res.json();
+      const data = await apiFetch<Category[]>('/api/public/categories', { signal });
       setCategories(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '未知错误');
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        setError(err instanceof Error ? err.message : '未知错误');
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Note: fetchCategories (without AbortController) is used by the retry button
+  useEffect(() => {
+    const ac = new AbortController();
+    doFetch(ac.signal);
+    return () => ac.abort();
+  }, [doFetch]);
 
   // ── Filter categories by search ──────────────────────────────────────
   const filteredCategories = useMemo(() => {
@@ -266,7 +249,7 @@ export default function CategoriesPage() {
             <p className="text-sm text-destructive">{error}</p>
             <button
               className="mt-3 text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => fetchCategories()}
+              onClick={() => doFetch()}
             >
               点击重试
             </button>

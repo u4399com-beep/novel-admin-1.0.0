@@ -44,7 +44,7 @@ import {
   READING_THEMES,
 } from '@/lib/use-reading-settings';
 import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
-import { formatWordCount } from '@/lib/format';
+import { formatWordCount, formatReadingTime } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -110,7 +110,10 @@ const itemVariants = {
 
 // ─── Component ───────────────────────────────────────────────────────
 
-export default function NovelDetailClient({ novel, chapters }: { novel: Novel; chapters: Chapter[] }) {
+const SIDEBAR_PAGE_SIZE = 200;
+const CHAPTERS_PER_PAGE = 100;
+
+export default function NovelDetailClient({ novel, chapters: initialChapters, totalChapters: initialTotal }: { novel: Novel; chapters: Chapter[]; totalChapters?: number }) {
   const router = useRouter();
   const gradient = getCoverGradient(novel.title);
   const statusInfo = STATUS_MAP[novel.status] || STATUS_MAP.ongoing;
@@ -164,6 +167,10 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarPage, setSidebarPage] = useState(1);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // ─── Full chapter list (may load more from server on demand) ────────
+  const [allChapters, setAllChapters] = useState(initialChapters);
+  // Use alias so all existing references work without changes
+  const chapters = allChapters;
   const [chapterContent, setChapterContent] = useState<string | null>(null);
   const [chapterError, setChapterError] = useState(false);
   const [chapterTitle, setChapterTitle] = useState('');
@@ -178,12 +185,22 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
   // ─── Reading progress ────────────────────────────────────────────
   const { lastChapterIndex, saveProgress } = useReadingProgress(novel.id, chapters);
   const { bookmarks, addBookmark, removeBookmark, isBookmarked } = useChapterBookmarks(novel.id);
+  // Fetch remaining chapters if SSR only provided 200
+  useEffect(() => {
+    const total = initialTotal ?? novel._count.chapters;
+    if (total <= 200 || initialChapters.length >= total) return;
+    let cancelled = false;
+    apiFetch<{ chapters?: Chapter[] }>(`/api/public/novels/${novel.id}/chapters?pageSize=${total}`).then((data) => {
+      if (!cancelled && data.chapters) setAllChapters(data.chapters);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Clamp to valid range (chapters may have been deleted since progress was saved)
-  const safeLastChapterIndex = lastChapterIndex !== null && lastChapterIndex < chapters.length
+  const safeLastChapterIndex = lastChapterIndex !== null && lastChapterIndex < allChapters.length
     ? lastChapterIndex : null;
 
   // ─── Chapter list pagination (client-side) ───────────────
-  const CHAPTERS_PER_PAGE = 100;
   const [chapterPage, setChapterPage] = useState(1);
   const chapterTotalPages = Math.ceil(chapters.length / CHAPTERS_PER_PAGE);
   const visibleChapters = chapters.slice(
@@ -199,7 +216,6 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
   }, [lastChapterIndex, chapterPage]);
 
   // ─── Reader sidebar pagination ──────────────────────────────
-  const SIDEBAR_PAGE_SIZE = 200;
   const sidebarTotalPages = Math.ceil(chapters.length / SIDEBAR_PAGE_SIZE);
   const sidebarChapters = chapters.slice(
     (sidebarPage - 1) * SIDEBAR_PAGE_SIZE,
@@ -677,7 +693,7 @@ export default function NovelDetailClient({ novel, chapters }: { novel: Novel; c
                         )}
                         {chapter.wordCount > 0 && (
                           <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
-                            {chapter.wordCount}字
+                            {chapter.wordCount}字{formatReadingTime(chapter.wordCount) && ` · ${formatReadingTime(chapter.wordCount)}`}
                           </span>
                         )}
                       </div>

@@ -74,6 +74,7 @@ async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
 
+  // Fetch only createdAt column to minimize memory usage
   const [novels, chapters, tasks] = await Promise.all([
     db.novel.findMany({
       where: { createdAt: { gte: weekAgo } },

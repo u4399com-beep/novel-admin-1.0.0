@@ -40,11 +40,13 @@ export function formatRelativeTime(dateStr: string): string {
 }
 
 /**
- * Format a number with compact notation.
- * 1500 → 1.5K, 1500000 → 1.5M
+ * Format estimated reading time based on word count.
+ * Chinese reading speed: ~500 chars/min.
+ * Returns e.g. "约5分钟", "不到1分钟"
  */
-export function formatCompact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
+export function formatReadingTime(wordCount: number): string {
+  if (wordCount <= 0) return '';
+  const minutes = Math.ceil(wordCount / 500);
+  if (minutes <= 1) return '不到1分钟';
+  return `约${minutes}分钟`;
 }

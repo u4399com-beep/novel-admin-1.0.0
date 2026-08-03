@@ -29,7 +29,7 @@ import {
   XCircle,
   Download,
 } from 'lucide-react';
-import { safeFormatDate } from '@/lib/format';
+import { safeFormatDate, formatReadingTime } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -237,6 +237,7 @@ function ChapterEditorPanel({
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(false);
+  const dirtyRef = useRef(false);
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -265,6 +266,7 @@ function ChapterEditorPanel({
           setTitle(data.title);
           setContent(data.content || '');
           initialLoadRef.current = true;
+        dirtyRef.current = false;
         }
       } catch { /* handled by apiFetch */ }
     };
@@ -312,9 +314,13 @@ function ChapterEditorPanel({
     [chapter, onSaved],
   );
 
-  // Auto-save on content change
+  // Mark dirty on user input (not on initial API load)
+  const handleTitleChange = useCallback((v: string) => { setTitle(v); dirtyRef.current = true; }, []);
+  const handleContentChange = useCallback((v: string) => { setContent(v); dirtyRef.current = true; }, []);
+
+  // Auto-save on content change (only if user has actually edited)
   useEffect(() => {
-    if (!chapter || !initialLoadRef.current) return;
+    if (!chapter || !initialLoadRef.current || !dirtyRef.current) return;
 
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
@@ -351,7 +357,7 @@ function ChapterEditorPanel({
           <Type className="size-4 text-muted-foreground shrink-0" />
           <Input
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => handleTitleChange(e.target.value)}
             className="h-8 text-sm font-medium border-0 bg-transparent focus-visible:ring-0 px-1"
             placeholder="章节标题"
           />
@@ -372,7 +378,7 @@ function ChapterEditorPanel({
               </>
             )}
             {saveStatus === 'idle' && (
-              <span className="tabular-nums">{wordCount.toLocaleString()} 字</span>
+              <span className="tabular-nums">{wordCount.toLocaleString()} 字{formatReadingTime(wordCount) && ` · ${formatReadingTime(wordCount)}`}</span>
             )}
           </div>
           <Separator orientation="vertical" className="h-4" />
@@ -392,7 +398,7 @@ function ChapterEditorPanel({
       <div className="flex-1 overflow-hidden relative">
         <Textarea
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => handleContentChange(e.target.value)}
           className="absolute inset-0 resize-none rounded-none border-0 shadow-none focus-visible:ring-0 p-4 font-mono text-sm leading-loose min-h-full h-full"
           placeholder="开始编写章节内容..."
         />

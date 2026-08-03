@@ -255,21 +255,27 @@ export function DashboardView() {
     });
   }, [activityData]);
 
-  // ─── Welcome card helpers ─────────────────────────────────────────────
+  // ─── Welcome card helpers (refresh every 60s) ──────────────────────
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const { greeting, dateStr } = useMemo(() => {
-    const hour = new Date().getHours();
+    const hour = new Date(now).getHours();
     let greeting: string;
     if (hour >= 6 && hour < 12) greeting = '早上好';
     else if (hour >= 12 && hour < 18) greeting = '下午好';
     else greeting = '晚上好';
-    const dateStr = new Date().toLocaleDateString('zh-CN', {
+    const dateStr = new Date(now).toLocaleDateString('zh-CN', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
       weekday: 'long',
     });
     return { greeting, dateStr };
-  }, []);
+  }, [now]);
 
   // ─── Helper: get trend indicator for a stat card ────────────────────────
   const getTrendIndicator = (cardKey: string) => {

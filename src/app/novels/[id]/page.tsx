@@ -61,9 +61,11 @@ async function getNovel(id: string): Promise<NovelDetail | null> {
 }
 
 async function getChapters(novelId: string): Promise<Chapter[]> {
+  // Limit SSR chapters to 200 for performance; client fetches more on demand
   return db.chapter.findMany({
     where: { novelId },
     orderBy: { sortOrder: 'asc' },
+    take: 200,
     select: {
       id: true,
       title: true,
@@ -127,5 +129,11 @@ export default async function NovelDetailPage({
     notFound();
   }
 
-  return <NovelDetailClient novel={JSON.parse(JSON.stringify(novel))} chapters={JSON.parse(JSON.stringify(chapters))} />;
+  return (
+    <NovelDetailClient
+      novel={JSON.parse(JSON.stringify(novel))}
+      chapters={JSON.parse(JSON.stringify(chapters))}
+      totalChapters={novel._count.chapters}
+    />
+  );
 }

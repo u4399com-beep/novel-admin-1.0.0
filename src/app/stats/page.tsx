@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   BookOpen, Trophy, Flame, TrendingUp, Library, CheckCircle2,
-  Clock, BarChart3, ArrowLeft, Loader2, BookMarked,
+  Clock, BarChart3, ArrowLeft, Loader2, BookMarked, RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
@@ -98,6 +98,7 @@ function GenreBar({ name, count, maxCount, color }: { name: string; count: numbe
 export default function StatsPage() {
   const [stats, setStats] = useState<ReadingStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchStats = useCallback(async () => {
     const sessionId = getSessionId();
@@ -106,10 +107,11 @@ export default function StatsPage() {
       return;
     }
     try {
+      setError(null);
       const data = await apiFetch<ReadingStats>(`/api/public/reading-stats?sessionId=${encodeURIComponent(sessionId)}`);
       setStats(data);
-    } catch {
-      // Silently fail for stats page
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '获取统计失败');
     } finally {
       setLoading(false);
     }
@@ -143,6 +145,22 @@ export default function StatsPage() {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        ) : error ? (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center justify-center py-24 text-center"
+          >
+            <div className="h-20 w-20 rounded-2xl bg-destructive/10 flex items-center justify-center mb-5">
+              <BarChart3 className="h-10 w-10 text-destructive/50" />
+            </div>
+            <h2 className="text-lg font-semibold mb-2">加载失败</h2>
+            <p className="text-sm text-muted-foreground mb-6 max-w-xs">{error}</p>
+            <Button variant="outline" onClick={() => fetchStats()}>
+              <RotateCcw className="mr-1.5 h-4 w-4" />
+              重试
+            </Button>
+          </motion.div>
         ) : !hasData ? (
           <motion.div
             initial={{ opacity: 0, y: 16 }}

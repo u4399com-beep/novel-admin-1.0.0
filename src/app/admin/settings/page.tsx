@@ -198,7 +198,7 @@ export default function SettingsPage() {
                 type="number"
                 min={1}
                 value={settings.scrapeInterval}
-                onChange={(e) => update('scrapeInterval', Math.max(1, Number(e.target.value) || 30))}
+                onChange={(e) => update('scrapeInterval', Math.max(1, Number(e.target.value) || 1))}
                 className="w-32"
               />
               <span className="text-sm text-muted-foreground">分钟</span>
