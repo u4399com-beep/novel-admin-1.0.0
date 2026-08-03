@@ -413,7 +413,7 @@ export function DashboardView() {
               return (
                 <Card
                   key={card.key}
-                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback depth-hover"
+                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback depth-hover hover-scale-sm"
                   onClick={() => setCurrentView(card.view)}
                 >
                   <CardContent className="p-4">

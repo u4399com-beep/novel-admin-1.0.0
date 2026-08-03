@@ -351,7 +351,7 @@ function NovelCard({ novel, index }: { novel: Novel; index: number }) {
         <span className="line-clamp-1">{novel.author}</span>
       </p>
       {novel.description && (
-        <p className="text-xs text-muted-foreground/90 leading-relaxed line-clamp-3 mb-2">{novel.description}</p>
+        <p className="text-xs text-muted-foreground/90 leading-relaxed line-clamp-3 mb-2 truncate-2">{novel.description}</p>
       )}
       {novel.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
@@ -932,7 +932,7 @@ export default function HomePage() {
       <section className="border-b bg-muted/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
           <div className="flex items-center gap-3">
-            <h1 className="sm:block text-xl font-bold tracking-tight shrink-0 text-glow-subtle sr-only sm:not-sr-only">
+            <h1 className="sm:block text-xl font-bold tracking-tight shrink-0 text-glow-subtle sr-only sm:not-sr-only text-shadow-sm">
               小说搜索
             </h1>
             <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>

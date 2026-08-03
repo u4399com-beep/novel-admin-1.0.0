@@ -125,8 +125,8 @@ function NovelRow({
         href={`/novels/${novel.id}`}
         className={
           isTop3
-            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden tap-feedback ${style?.border}`
-            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group tap-feedback'
+            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden tap-feedback hover-glow ${style?.border}`
+            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group tap-feedback hover-glow'
         }
       >
       {/* Top 3 gradient background */}

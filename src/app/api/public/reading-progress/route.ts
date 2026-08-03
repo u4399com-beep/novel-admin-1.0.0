@@ -128,7 +128,7 @@ export const DELETE = withPublicRateLimit(async function DELETE(request: NextReq
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
     const novelId = sanitizeField(searchParams.get('novelId') || '', 50);
 
-    if (!sessionId || !novelId) {
+    if (!sessionId || sessionId.length < 10 || !novelId) {
       return NextResponse.json({ error: '缺少 sessionId 或 novelId' }, { status: 400 });
     }
 

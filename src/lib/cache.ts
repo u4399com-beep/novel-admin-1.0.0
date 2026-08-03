@@ -71,6 +71,12 @@ export async function getOrCompute<T>(
   if (inflightEntry) inflight.delete(key);
 
   const gen = Date.now();
+  // Register inflight BEFORE calling computeFn to prevent race condition
+  // where concurrent calls start duplicate computations
+  let resolveInflight!: (promise: Promise<unknown>) => void;
+  const inflightPromise = new Promise<unknown>((resolve) => { resolveInflight = resolve; });
+  inflight.set(key, { promise: inflightPromise, expiresAt: Date.now() + INFLIGHT_TIMEOUT, gen });
+
   const promise = computeFn().then(data => {
     if (inflight.get(key)?.gen === gen) inflight.delete(key);
     setCache(key, data, ttl);
@@ -80,7 +86,7 @@ export async function getOrCompute<T>(
     throw e;
   });
 
-  inflight.set(key, { promise, expiresAt: Date.now() + INFLIGHT_TIMEOUT, gen });
+  resolveInflight(promise);
   return promise;
 }
 

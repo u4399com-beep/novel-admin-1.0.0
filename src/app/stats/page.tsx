@@ -7,6 +7,7 @@ import {
   BookOpen, Trophy, Flame, TrendingUp, Library, CheckCircle2,
   Clock, BarChart3, ArrowLeft, Loader2, BookMarked, RotateCcw,
 } from 'lucide-react';
+import ReadingHeatMap from '@/components/ReadingHeatMap';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime, formatWordCount } from '@/lib/format';
@@ -99,6 +100,7 @@ export default function StatsPage() {
   const [stats, setStats] = useState<ReadingStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [heatMapData, setHeatMapData] = useState<{ dates: Record<string, number> } | null>(null);
 
   const fetchStats = useCallback(async (signal?: AbortSignal) => {
     const sessionId = getSessionId();
@@ -121,6 +123,13 @@ export default function StatsPage() {
   useEffect(() => {
     const ac = new AbortController();
     fetchStats(ac.signal);
+    // Fetch heat map data in parallel
+    const sessionId = getSessionId();
+    if (sessionId) {
+      apiFetch<{ dates: Record<string, number> }>(`/api/public/reading-heatMap?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
+        .then(setHeatMapData)
+        .catch(() => {});
+    }
     return () => ac.abort();
   }, [fetchStats]);
 
@@ -214,6 +223,9 @@ export default function StatsPage() {
                 />
               </div>
 
+              {/* Reading Heat Map */}
+              <ReadingHeatMap data={heatMapData?.dates ?? {}} />
+
               {/* Genre Distribution */}
               {stats.genreDistribution.length > 0 && (
                 <motion.div
@@ -228,13 +240,14 @@ export default function StatsPage() {
                   </div>
                   <div className="space-y-1">
                     {stats.genreDistribution.map((genre) => (
-                      <GenreBar
-                        key={genre.name}
-                        name={genre.name}
-                        count={genre.count}
-                        maxCount={stats.genreDistribution[0].count}
-                        color={getGenreColor(genre.name)}
-                      />
+                      <div key={genre.name} className="fade-in-up">
+                        <GenreBar
+                          name={genre.name}
+                          count={genre.count}
+                          maxCount={stats.genreDistribution[0].count}
+                          color={getGenreColor(genre.name)}
+                        />
+                      </div>
                     ))}
                   </div>
                 </motion.div>

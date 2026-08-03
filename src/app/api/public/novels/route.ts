@@ -56,8 +56,8 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
 
     if (search) {
       where.OR = [
-        { title: { contains: search } },
-        { author: { contains: search } },
+        { title: { contains: search, mode: "insensitive" } },
+        { author: { contains: search, mode: "insensitive" } },
       ];
     }
 
