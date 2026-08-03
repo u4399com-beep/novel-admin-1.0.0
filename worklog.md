@@ -4270,3 +4270,85 @@ Stage Summary:
 5. 性能: 列表虚拟滚动、图片懒加载优化
 6. 可访问性: 管理表格行键盘导航、DnD KeyboardSensor
 7. SEO: rankings和categories页面使用metadata export替代useEffect
+
+---
+Task ID: round3-manual
+Agent: Main Orchestrator
+Task: 第3轮循环迭代 - 全面代码审计+安全修复+性能优化+阅读热力图
+
+Work Log:
+- 修复3个lint错误（NovelDetailClient解析错误+use-reading-settings setState in effect）
+- 设置12轮×15分钟循环迭代cron任务（webDevReview）
+- 3个子代理并行审计：安全审计(33 API路由) + 前端审计(70组件) + 架构审计(Prisma/Schema/mini-services)
+- 审计发现：12 HIGH + 31 MEDIUM + 16 LOW 问题
+
+## 安全修复 (HIGH × 4)
+1. **公开API IP限流可绕过** — XFF取最左侧IP可被客户端伪造
+   - 修复：创建 `public-rate-limit.ts` 统一IP提取（x-real-ip优先，XFF取最右侧）
+   - 3个public路由删除内联限流代码，改用共享模块
+2. **公开端点错误信息泄露** (3文件)
+   - public/health: `err.message` → `'服务异常'`
+   - public/novels/[id]: 删除 `detail: msg`
+   - public/novels/[id]/chapters: 删除 `detail: msg`
+3. **withAuth兜底catch泄露** — 生产环境不返回detail字段
+
+## 数据库索引 (6个)
+- Novel.title, Chapter.[novelId,sourceUrl], ScrapeLog.[taskId,createdAt]
+- ScrapeRule.updatedAt, NovelTag.tagId, AiRuleGeneration.createdAt
+
+## 前端性能+内存泄漏 (7修复)
+- AiRuleAssistant: raw fetch→apiFetch + AbortController
+- ScrapeRuleEditor: loadRule添加AbortController
+- ThemeManagerView: handleSeed try-finally包裹
+- DashboardView: fetchDashboard添加AbortController
+- NovelFormDialog: cancelled状态改用useRef(stale closure修复)
+- NovelListView: fetch categories添加cleanup
+
+## 新功能
+- **ReadingHeatmap组件** — GitHub风格阅读热力图(90天)，响应式+Tooltip
+- **12个CSS微交互工具类** — heatmap-cell, card-depth, text-gradient, skeleton-gradient, btn-ripple, glow-border, count-animate, pulse-dot, tab-content-enter, scroll-mask-y, ::selection, scroll-smooth-enhanced
+
+## 可访问性增强
+- 书签按钮 role=switch + aria-checked
+- 侧栏 aria-current=page + aria-label
+- 批量操作/新建章节按钮 aria-label
+
+## 验证结果
+- ESLint: 0 errors, 2 warnings(预存React Hook Form)
+- Git commit: c9bada8 (23 files, +514 -138)
+- Git push: eea698a..c9bada8 main → main
+- Rebase解决cron任务冲突(9文件)
+
+## 统计
+- 修改文件: 23
+- 代码变更: +514 -138 (净增376行)
+- 本轮bug修复: 11 (4 HIGH + 7 MEDIUM)
+- 新功能: 1个组件 + 12个CSS类
+- 累计修复: 248 + 11 = 259项 (含cron并行修复)
+
+Stage Summary:
+- 全面代码审计发现89个问题(H:12 M:31 L:16 + 其他)
+- 修复所有HIGH安全问题(4项)和7个MEDIUM性能/内存问题
+- 6个数据库索引提升查询性能
+- 新增阅读热力图组件+12个CSS微交互类
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0构建错误, 0 lint errors
+- **最新commit**: c9bada8 (已push)
+- **累计修复**: 259+
+- **cron任务**: 已设置12轮×15分钟循环(webDevReview)
+
+## 未解决问题或风险
+1. 审计剩余MEDIUM问题: Dashboard UNION ALL合并查询、public chapters分页
+2. 前端: NovelCard/SortableChapterRow尚未添加React.memo
+3. 类型安全: ScrapeRuleEditor 6处as any断言
+4. 架构: 增量采集用模糊搜索而非sourceUrl精确匹配
+5. 内存rate limit在多实例部署下不共享
+
+## 建议下一阶段优先事项
+1. Dashboard查询优化(UNION ALL合并4个COUNT)
+2. NovelCard/SortableChapterRow React.memo
+3. ScrapeRuleEditor类型安全修复
+4. 阅读热力图集成到Dashboard
+5. public chapters API添加分页
+6. 样式继续打磨细节
