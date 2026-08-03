@@ -1,6 +1,161 @@
 # Work Log
 
 ---
+Task ID: cron-qa-20260803-1353
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T13:53:00+08:00
+
+Task: 代码审查33项 → 6 HIGH + 5 MED + 8 LOW bug修复 + swap API + 移动端布局 + 12新CSS工具类
+
+Work Log:
+- 读取worklog确认状态(累计397项修复, commit 5cd5585)
+- npx next build: 0 errors ✅
+- bun run lint: 0 errors, 3 warnings(预存React Hook Form) ✅
+- 前端代码审查(sub-agent): 发现6 HIGH + 10 MED + 17 LOW = 33项问题
+- 修复6 HIGH + 5 MED + 8 LOW = 19项
+- 新增swap章节API + CASE WHEN批量排序 + 移动端全屏编辑器
+- 提取重复COVER_GRADIENTS到共享模块 + 12个新CSS工具类
+- commit 2a6e546 已push
+
+## Critical/High Bug Fixes (6)
+
+### 1. [HIGH] handleMoveChapter sends ALL chapters in PATCH payload
+- **问题**: 上移/下移发送全部N个章节的{id,sortOrder}到服务端, 5000章小说=400KB payload + 5000次SQL UPDATE
+- **修复**: 新增swap API action, 仅交换2个章节的sortOrder (2次SQL UPDATE)
+- **文件**: src/app/api/novels/[id]/chapters/route.ts, src/components/novel/NovelDetailView.tsx
+
+### 2. [HIGH] handleDragEnd sends ALL chapters for every drop
+- **问题**: 拖拽排序发送全量章节列表, 大小说每次drop触发数千次SQL UPDATE
+- **修复**: 仅发送受影响范围(旧位置到新位置), 大幅减少payload和SQL操作
+- **文件**: src/components/novel/NovelDetailView.tsx
+
+### 3. [HIGH] Backend batch reorder uses N individual UPDATEs
+- **问题**: PATCH /chapters循环调用tx.chapter.update(), 5000章=5000次SQL UPDATE
+- **修复**: 改用$executeRawUnsafe + CASE WHEN单条SQL, 一次查询更新所有sortOrder
+- **文件**: src/app/api/novels/[id]/chapters/route.ts
+
+### 4. [HIGH] Auto-save triggers full 10K-chapter refetch
+- **问题**: 每次自动保存(1.5s debounce)调用triggerRefresh('chapters') → 重新fetch 10000章 → DOM全量重渲染 → 滚动位置重置
+- **修复**: handleChapterSaved改为乐观更新, 仅更新本地state中对应章节的wordCount/title, 不触发全量refetch
+- **文件**: src/components/novel/NovelDetailView.tsx
+
+### 5. [HIGH] NovelListView batch delete fires unlimited parallel requests
+- **问题**: Promise.allSettled(Array.from(selectedIds).map(...)) 同时发起所有DELETE请求, 12本小说=12并发
+- **修复**: 分块执行(CHUNK_SIZE=5), 顺序处理每批, 避免服务器过载
+- **文件**: src/components/novel/NovelListView.tsx
+
+### 6. [HIGH] NovelListView double-fetch on filter change
+- **问题**: 两个useEffect都触发fetch, filter变更时Effect1直接调用fetchNovels(1)(无AbortController), Effect2因fetchNovels重建再次触发
+- **修复**: Effect1仅setPage(1), 让Effect2统一处理带AbortController的fetch
+- **文件**: src/components/novel/NovelListView.tsx
+
+## Medium Bug Fixes (5)
+
+### 7. [MED] Resizable panels broken on mobile
+- **问题**: ResizablePanelGroup使用鼠标事件, 触屏设备无法拖拽, 55%宽度在小屏幕上挤压章节列表
+- **修复**: 移动端(<lg)显示全屏编辑器+返回按钮, 桌面端显示可调整大小面板
+- **文件**: src/components/novel/NovelDetailView.tsx
+
+### 8. [MED] No mobile admin search entry point
+- **问题**: 搜索输入框`hidden sm:block`, 移动端完全不可见, Cmd+K在触屏不可用
+- **修复**: 新增搜索图标按钮`sm:hidden`, 点击打开CommandPalette
+- **文件**: src/app/admin/page.tsx
+
+### 9. [MED] Move chapter buttons have no disabled state during reorder
+- **问题**: 上移/下移按钮在API调用期间无disabled, 快速点击导致并发竞争
+- **修复**: 添加reordering state, 排序期间禁用两个按钮
+- **文件**: src/components/novel/NovelDetailView.tsx
+
+### 10. [MED] NovelListView batch delete has no confirmation dialog
+- **问题**: 点击批量删除直接执行, 无AlertDialog确认, 误操作不可撤销
+- **修复**: 点击先打开AlertDialog确认框, 确认后才执行删除
+- **文件**: src/components/novel/NovelListView.tsx
+
+### 11. [MED] AppSidebar refreshCounter causes unnecessary re-renders
+- **问题**: 订阅整个refreshVersions对象, 任何store字段变更都触发侧边栏重渲染
+- **修复**: 直接在useAppStore selector中计算counter, Zustand自动去重
+- **文件**: src/components/novel/AppSidebar.tsx
+
+## Low Bug Fixes (8)
+
+### 12. [LOW] Duplicate COVER_GRADIENTS in 3 files
+- **修复**: 提取到src/lib/cover-gradient.ts, 包含getCoverGradient和getGenreColor
+- **文件**: src/lib/cover-gradient.ts(新建), page.tsx, ContinueReading.tsx, NovelDetailClient.tsx
+
+### 13. [LOW] page.tsx document.title via useEffect
+- **修复**: 改用root layout metadata template, 删除useEffect
+- **文件**: src/app/layout.tsx, src/app/page.tsx
+
+### 14. [LOW] ContinueReading raw fetch instead of apiFetch
+- **修复**: 改用apiFetch<{ progress: ReadingProgressItem[] }>(), 统一错误处理
+- **文件**: src/components/home/ContinueReading.tsx
+
+### 15. [LOW] Admin search input missing aria-label
+- **修复**: 添加aria-label="搜索小说"
+- **文件**: src/app/admin/page.tsx
+
+### 16. [LOW] NovelImportDialog wordCount potentially undefined
+- **修复**: 使用(result.wordCount ?? 0)防止TypeError
+- **文件**: src/components/novel/NovelImportDialog.tsx
+
+### 17. [LOW] Stats GenreBar color always undefined
+- **修复**: 使用getGenreColor(genre.name)为每个分类分配确定性颜色
+- **文件**: src/app/stats/page.tsx
+
+### 18. [LOW] Dashboard activity UTC timezone bug
+- **修复**: 新增toLocalDateStr()使用toLocaleString('sv-SE', {timeZone})替代toISOString()
+- **文件**: src/app/api/dashboard/activity/route.ts
+
+### 19. [LOW] handleMoveChapter no null guard for selectedNovelId
+- **修复**: 添加if (!selectedNovelId) return
+- **文件**: src/components/novel/NovelDetailView.tsx
+
+## New CSS Utilities (12)
+
+1. `.list-item-compact` — 列表项悬停滑入效果
+2. `.inset-shadow-sm` — 内凹阴影
+3. `.glass-card` — 毛玻璃效果卡片
+4. `.gradient-border` — 悬停渐变边框
+5. `.count-animate` — 数字计数过渡
+6. `.scroll-fade-edges` — 已在之前定义, 确保完整性
+7. `.focus-ring-bright` — 亮色焦点环
+8. `.section-noise` — 噪点纹理叠加
+9. `.progress-ring-circle` — 进度环动画
+10. `.touch-target` — 移动端最小触摸区域
+11. `.skeleton-shimmer` — 骨架屏微光动画
+12. `.dot-pattern` — 装饰性点阵背景
+
+## Global Style Enhancements
+- 表格行平滑hover过渡
+- 批量操作栏入场动画(slide-up-fade-in)
+- 继续阅读进度条发光效果
+- 搜索kbd阴影增强
+- Admin header底部边框透明度优化
+- 阅读偏好标题添加link-underline
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 3 warnings(预存React Hook Form) ✅
+- Git commit: 2a6e546 (14 files, +404 -120)
+- Git push: 5cd5585..2a6e546 main → main ✅
+
+## 统计
+- 修改文件: 13
+- 新建文件: 1 (lib/cover-gradient.ts)
+- 代码变更: +404 -120
+- Bug修复: 19项 (6 HIGH + 5 MED + 8 LOW)
+- 新CSS工具类: 12个
+- 全局样式增强: 6处
+- 累计修复: 397 + 19 = 416项
+
+Stage Summary:
+- **性能**: swap API(O(1)替代O(N)), CASE WHEN单SQL, 乐观更新避免10K refetch, 拖拽仅发送受影响范围
+- **安全**: 批量删除确认框, 移动端搜索入口, 排序按钮disabled防竞争
+- **移动端**: 章节编辑器全屏模式, admin搜索图标按钮
+- **代码质量**: 提取3处重复gradient, 统一apiFetch, 修复UTC时区, computed selector
+- **CSS**: 12个新工具类 + 6处全局样式细节增强
+
+---
 Task ID: cron-qa-20260803-1323
 Agent: Main Orchestrator
 Timestamp: 2026-08-03T13:23:00+08:00
@@ -371,37 +526,39 @@ Stage Summary:
 ---
 ## 项目当前状态
 - **代码库状态**: 稳定, 0构建错误, 0 lint errors
-- **最新commit**: 5cd5585 (已push)
-- **累计修复**: 397项
-- **CSS工具类总计**: 66个
+- **最新commit**: 2a6e546 (已push)
+- **累计修复**: 416项
+- **CSS工具类总计**: 78个 (66 + 12新增)
 - **公共页面**: 首页、分类、排行榜、统计
 - **apiFetch统一**: 所有页面已统一使用apiFetch(除blob导出)
 - **Admin Auth**: 服务端getServerSession保护 + 客户端safety net
-- **新增API**: POST /api/novels/import (TXT/JSON批量导入)
+- **章节排序**: swap API(O(1)) + CASE WHEN批量排序 + 拖拽范围优化
+- **移动端**: 全屏章节编辑器 + admin搜索图标按钮
+- **共享模块**: lib/cover-gradient.ts (封面渐变+分类颜色)
 
 ## 未解决问题或风险
 1. agent-browser无法在此环境使用(沙箱隔离+dev server OOM)
 2. 内存rate limit不跨进程共享(LOW, 单admin系统可接受)
 3. SSRF防护仅检查hostname字符串, 未做DNS解析(LOW, 需dns.resolve)
-4. Resizable panels在移动端不可用(需条件布局)
-5. 导出API >5000章需分批(已加guard, 但无流式导出)
-6. 章节表加载10000条无虚拟滚动(千章小说DOM性能, MED)
-7. 批量排序N+1 SQL UPDATE(可用$executeRaw CASE WHEN优化, LOW)
-8. Settings存储在localStorage(数据丢失风险, LOW)
-9. 移动端admin无搜索入口(仅Cmd+K, 需搜索图标按钮)
-10. AppSidebar refreshCounter在store任何字段变更时重新计算(LOW)
-11. NovelCard Popover触屏设备首次点击可能触发导航(由于Link包裹)
+4. 导出API >5000章需流式导出(已加guard, 内存风险MED)
+5. 章节表加载10000条无虚拟滚动(千章小说DOM性能, MED)
+6. Settings存储在localStorage(数据丢失风险, LOW)
+7. NovelCard Popover触屏设备首次点击可能触发导航(由于Link包裹, LOW)
+8. Dashboard activity仍fetch-all-then-count(可用SQL GROUP BY优化, LOW)
+9. 4个路由段缺少error.tsx (admin, novels/[id], stats, rankings, MED)
+10. Export API大小说内存OOM风险(需streaming, MED)
+11. NovelCard Popover onOpenChange可能在触屏上冲突(LOW)
 
 ## 建议下一阶段优先事项
 1. 服务器部署 git pull && bash deploy.sh
 2. 性能: 章节列表虚拟滚动(@tanstack/react-virtual) — 管理端千章小说
 3. 新功能: 阅读时长追踪 + 阅读统计增强(周/月趋势图)
 4. 新功能: 小说推荐系统(基于阅读偏好和分类)
-5. 性能: 批量排序改用$executeRaw CASE WHEN单条SQL
-6. 移动端: Resizable panels条件布局切换
-7. 新功能: 封面批量上传/管理
-8. 样式: 应用link-underline/stagger-children到更多组件
-9. 可访问性: ChapterRow键盘Enter/Space激活
-10. 新功能: 阅读进度持久化到服务端(跨设备同步)
-11. 清理: Dashboard activity API去SQLite date()兼容性
-12. 新功能: 移动端admin搜索图标按钮
+5. 新功能: 封面批量上传/管理
+6. 可访问性: ChapterRow键盘Enter/Space激活
+7. 新功能: 阅读进度持久化到服务端(跨设备同步)
+8. 可靠性: 4个路由段添加error.tsx
+9. 性能: Dashboard activity改用SQL GROUP BY聚合
+10. 性能: 导出API流式响应(TransformStream)
+11. 样式: 应用gradient-border/glass-card/dot-pattern到更多组件
+12. 新功能: 章节内容AI摘要/续写辅助
