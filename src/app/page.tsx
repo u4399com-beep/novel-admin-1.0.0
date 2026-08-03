@@ -15,6 +15,13 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetClose,
+} from '@/components/ui/sheet';
 import { BackToTop } from '@/components/BackToTop';
 import { formatWordCount } from '@/lib/format';
 
@@ -843,100 +850,70 @@ export default function HomePage() {
             </Button>
           </div>
 
-          {/* Mobile Drawer Overlay */}
-          <AnimatePresence>
-            {mobileMenuOpen && (
-              <>
-                <motion.div
-                  key="drawer-overlay"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="fixed inset-0 z-[100] bg-black/50"
-                  onClick={() => setMobileMenuOpen(false)}
-                />
-                <motion.div
-                  key="drawer-panel"
-                  initial={{ x: '100%' }}
-                  animate={{ x: 0 }}
-                  exit={{ x: '100%' }}
-                  transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-                  className="fixed top-0 right-0 bottom-0 z-[101] w-72 bg-background border-l shadow-2xl"
+          {/* Mobile Menu Sheet - proper a11y with focus trap + Escape */}
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+            <SheetContent side="right" className="w-72 p-0">
+              <SheetHeader className="border-b px-4 py-3">
+                <SheetTitle className="text-left">菜单</SheetTitle>
+              </SheetHeader>
+              <nav className="flex flex-col p-4 gap-1">
+                <button
+                  onClick={() => {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
                 >
-                  <div className="flex items-center justify-between p-4 border-b">
-                    <span className="font-semibold">菜单</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => setMobileMenuOpen(false)}
-                      aria-label="关闭菜单"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <nav className="flex flex-col p-4 gap-1">
-                    <button
-                      onClick={() => {
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                        setMobileMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
-                    >
-                      <BookOpen className="h-4 w-4 text-muted-foreground" />
-                      首页
-                    </button>
-                    <button
-                      onClick={() => {
-                        router.push('/categories');
-                        setMobileMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
-                    >
-                      <Compass className="h-4 w-4 text-muted-foreground" />
-                      分类
-                    </button>
-                    <button
-                      onClick={() => {
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                        router.push('/rankings');
-                        setMobileMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
-                    >
-                      <Trophy className="h-4 w-4 text-muted-foreground" />
-                      排行榜
-                    </button>
-                  </nav>
-                  <div className="border-t mx-4" />
-                  <div className="flex flex-col gap-1 p-4">
-                    <button
-                      onClick={() => {
-                        setTheme(theme === 'dark' ? 'light' : 'dark');
-                        setMobileMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
-                    >
-                      <Sun className="h-4 w-4 text-muted-foreground dark:hidden" />
-                      <Moon className="h-4 w-4 text-muted-foreground hidden dark:block" />
-                      {theme === 'dark' ? '浅色模式' : '深色模式'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        router.push('/login');
-                        setMobileMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
-                    >
-                      <Shield className="h-4 w-4 text-muted-foreground" />
-                      管理后台
-                    </button>
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
+                  <BookOpen className="h-4 w-4 text-muted-foreground" />
+                  首页
+                </button>
+                <button
+                  onClick={() => {
+                    router.push('/categories');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                >
+                  <Compass className="h-4 w-4 text-muted-foreground" />
+                  分类
+                </button>
+                <button
+                  onClick={() => {
+                    router.push('/rankings');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                >
+                  <Trophy className="h-4 w-4 text-muted-foreground" />
+                  排行榜
+                </button>
+              </nav>
+              <div className="border-t mx-4" />
+              <div className="flex flex-col gap-1 p-4">
+                <button
+                  onClick={() => {
+                    setTheme(theme === 'dark' ? 'light' : 'dark');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                >
+                  <Sun className="h-4 w-4 text-muted-foreground dark:hidden" />
+                  <Moon className="h-4 w-4 text-muted-foreground hidden dark:block" />
+                  {theme === 'dark' ? '浅色模式' : '深色模式'}
+                </button>
+                <button
+                  onClick={() => {
+                    router.push('/login');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
+                >
+                  <Shield className="h-4 w-4 text-muted-foreground" />
+                  管理后台
+                </button>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </header>
 

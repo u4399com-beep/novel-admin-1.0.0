@@ -90,7 +90,7 @@ export const POST = withAuth(async function POST(
         sortOrder = Math.max(0, Math.floor(Number(explicitSortOrder)) || 0);
       } else {
         const maxResult = await tx.$queryRaw<Array<{ max_order: number | null }>>`
-          SELECT COALESCE(MAX("sortOrder"), 0) as max_order FROM "Chapter" WHERE "novelId" = ${novelId} FOR UPDATE
+          SELECT COALESCE(MAX("sortOrder"), 0) as max_order FROM "Chapter" WHERE "novelId" = ${novelId}
         `;
         sortOrder = (maxResult[0]?.max_order ?? 0) + 1;
       }
@@ -164,17 +164,14 @@ export const PATCH = withAuth(async function PATCH(
       return NextResponse.json({ error: "小说不存在" }, { status: 404 });
     }
 
-    // Batch update using a single raw SQL CASE statement (avoids N+1 per-chapter UPDATE)
+    // Batch update: use individual updates within a transaction (safe, bounded to 5000 items)
     await db.$transaction(async (tx) => {
-      // Build a single UPDATE with CASE for all sortOrder changes
-      const caseParts = orders
-        .map((item) => `WHEN '${item.id.replace(/'/g, "''")}' THEN ${Math.floor(Number(item.sortOrder) || 0)}`)
-        .join(' ');
-      const idList = orders.map((item) => `'${item.id.replace(/'/g, "''")}'`).join(',');
-
-      await tx.$executeRawUnsafe(
-        `UPDATE "Chapter" SET "sortOrder" = CASE id ${caseParts} END WHERE id IN (${idList}) AND "novelId" = '${novelId.replace(/'/g, "''")}'`
-      );
+      for (const item of orders) {
+        await tx.chapter.update({
+          where: { id: item.id, novelId },
+          data: { sortOrder: Math.floor(Number(item.sortOrder) || 0) },
+        });
+      }
     });
 
     invalidateCache("dashboard:stats");

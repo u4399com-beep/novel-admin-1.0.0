@@ -48,7 +48,7 @@ export const GET = withAuth(async function GET() {
 async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
   // Generate a date spine for the last 7 days so every day appears even with 0 counts.
   // SQLite's date('now') returns UTC; we use that consistently.
-  const rows = await db.$queryRawUnsafe<DailyActivityRow[]>(`
+  const rows = await db.$queryRaw<DailyActivityRow[]>`
     SELECT
       d.date,
       COALESCE(n.cnt, 0) AS novelsCreated,
@@ -82,7 +82,7 @@ async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
       GROUP BY date(createdAt)
     ) s ON d.date = s.date
     ORDER BY d.date
-  `);
+  `;
 
   return rows;
 }
@@ -90,7 +90,7 @@ async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
 // ─── Recent Events (last 10) ────────────────────────────────────────────────
 
 async function fetchRecentEvents(): Promise<RecentEventRow[]> {
-  const rows = await db.$queryRawUnsafe<RecentEventRow[]>(`
+  const rows = await db.$queryRaw<RecentEventRow[]>`
     SELECT type, title, novelTitle, timestamp FROM (
       SELECT 'novel_created' AS type, title, NULL AS novelTitle, createdAt AS timestamp
       FROM Novel
@@ -111,7 +111,7 @@ async function fetchRecentEvents(): Promise<RecentEventRow[]> {
     )
     ORDER BY timestamp DESC
     LIMIT 10
-  `);
+  `;
 
   return rows;
 }

@@ -97,11 +97,13 @@ function NovelRow({
   rank,
   index = 0,
   activeTab,
+  totalItems = 30,
 }: {
   novel: RankingNovel;
   rank: number;
   index?: number;
   activeTab: string;
+  totalItems?: number;
 }) {
   const isTop3 = rank <= 3;
   const style = RANK_STYLES[rank];
@@ -110,7 +112,7 @@ function NovelRow({
     : novel.clickCount.toLocaleString();
   const statLabel = activeTab === 'favorites' ? '收藏' : '点击';
 
-  const rankPercent = 1 - (rank - 1) / 30; // visual weight for progress bar
+  const rankPercent = 1 - (rank - 1) / Math.max(totalItems, 1);
 
   return (
     <motion.div
@@ -296,6 +298,7 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
             rank={i + 1}
             index={i}
             activeTab={tab.key}
+            totalItems={novels.length}
           />
         ))}
       </div>
@@ -310,6 +313,7 @@ function RankingTabContent({ tab, active }: { tab: TabConfig; active: boolean })
               rank={i + 4}
               index={i + 3}
               activeTab={tab.key}
+              totalItems={novels.length}
             />
           ))}
         </div>

@@ -178,28 +178,29 @@ export const GET = withAuth(async function GET(
       // Sanitize filename
       fileName = fileName.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim();
 
-      // Record file in NovelFile
-      await db.novelFile.create({
-        data: {
-          novelId,
-          fileName,
-          filePath: `/downloads/${fileName}`,
-          fileSize: Buffer.byteLength(textContent, "utf-8"),
-          format: "txt",
-          configId: configId || null,
-        },
+      // Record file in NovelFile (update existing or create new)
+      const existingFile = await db.novelFile.findFirst({
+        where: { novelId, format: "txt", configId: configId ?? null },
       });
+      if (existingFile) {
+        await db.novelFile.update({
+          where: { id: existingFile.id },
+          data: { fileName, filePath: `/downloads/${fileName}`, fileSize: Buffer.byteLength(textContent, "utf-8") },
+        });
+      } else {
+        await db.novelFile.create({
+          data: { novelId, fileName, filePath: `/downloads/${fileName}`, fileSize: Buffer.byteLength(textContent, "utf-8"), format: "txt", configId: configId || null },
+        });
+      }
 
-      // Return as download
-      const downloadResponse = new Response(textContent, {
+      // Return as NextResponse (not plain Response) for withAuth header compatibility
+      return new NextResponse(textContent, {
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
           "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
           "Content-Security-Policy": "default-src 'none'",
         },
       });
-      // Wrap plain Response in NextResponse.json metadata pattern for withAuth compatibility
-      return downloadResponse as unknown as NextResponse;
     }
 
     return NextResponse.json({ error: "不支持的格式" }, { status: 400 });

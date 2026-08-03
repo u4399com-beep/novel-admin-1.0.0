@@ -21,7 +21,7 @@ export default function GlobalError({
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
+        transition={{ duration: 0.4, ease: 'easeOut' as const }}
         className="flex flex-col items-center gap-5 max-w-md text-center"
       >
         {/* Decorative icon with glow */}

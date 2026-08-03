@@ -16,7 +16,7 @@ export default function GlobalNotFound() {
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
+        transition={{ duration: 0.5, ease: 'easeOut' as const }}
         className="relative z-10 flex flex-col items-center gap-6 text-center max-w-sm"
       >
         {/* Large decorative icon group */}

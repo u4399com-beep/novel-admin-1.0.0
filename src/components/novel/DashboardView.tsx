@@ -393,7 +393,7 @@ export function DashboardView() {
           : !stats && error ? (
             <div className="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
               <p className="text-sm text-destructive">{error}</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={fetchDashboard}>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchDashboard()}>
                 重试
               </Button>
             </div>
@@ -624,7 +624,7 @@ export function DashboardView() {
                     angle: -90,
                     position: 'insideLeft',
                     offset: -2,
-                    style: { fontSize: 12, fill: 'hsl(var(--muted-foreground))' },
+                    style: { fontSize: 12, fill: 'var(--muted-foreground)' },
                   }}
                 />
                 <ChartTooltip content={<ChartTooltipContent />} />
@@ -638,7 +638,7 @@ export function DashboardView() {
                   strokeWidth={1.5}
                   fill="url(#scrapeGradient)"
                   dot={false}
-                  activeDot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                  activeDot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: 'var(--background)' }}
                 />
                 <Area
                   type="monotone"
@@ -647,7 +647,7 @@ export function DashboardView() {
                   strokeWidth={1.5}
                   fill="url(#novelGradient)"
                   dot={false}
-                  activeDot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                  activeDot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: 'var(--background)' }}
                 />
                 <Area
                   type="monotone"
@@ -655,8 +655,8 @@ export function DashboardView() {
                   stroke="#a78bfa"
                   strokeWidth={2}
                   fill="url(#chapterGradient)"
-                  dot={{ r: 4, fill: '#a78bfa', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
-                  activeDot={{ r: 6, fill: '#a78bfa', strokeWidth: 2, stroke: 'hsl(var(--background))' }}
+                  dot={{ r: 4, fill: '#a78bfa', strokeWidth: 2, stroke: 'var(--background)' }}
+                  activeDot={{ r: 6, fill: '#a78bfa', strokeWidth: 2, stroke: 'var(--background)' }}
                 />
               </AreaChart>
             </ChartContainer>

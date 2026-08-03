@@ -19,10 +19,10 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
   try {
     // For remove: atomic MAX(0, count-1) via raw SQL to prevent race condition
     if (action === 'remove') {
-      // Use raw SQL for atomic floor-clamped decrement
-      const result = await db.$executeRawUnsafe(
-        `UPDATE "Novel" SET "favoriteCount" = MAX(0, "favoriteCount" - 1) WHERE id = '${id.replace(/'/g, "''")}' AND "favoriteCount" > 0`
-      );
+      // Use parameterized raw SQL for atomic floor-clamped decrement
+      const result = await db.$executeRaw`
+        UPDATE "Novel" SET "favoriteCount" = MAX(0, "favoriteCount" - 1) WHERE id = ${id} AND "favoriteCount" > 0
+      `;
       if (result === 0) {
         // Either novel doesn't exist or count was already 0
         const current = await db.novel.findUnique({

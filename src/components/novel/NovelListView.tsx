@@ -88,37 +88,46 @@ export default function NovelListView() {
   }, []);
 
   // Fetch novels
-  const fetchNovels = useCallback(async () => {
+  const fetchNovels = useCallback(async (overridePage?: number, signal?: AbortSignal) => {
+    const p = overridePage ?? page;
     try {
       setLoading(true);
+      setError(null);
       const params = new URLSearchParams({
-        page: String(page),
+        page: String(p),
         pageSize: String(pageSize),
       });
       if (search) params.set('search', search);
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (categoryFilter !== 'all') params.set('categoryId', categoryFilter);
 
-      const data = await apiFetch<PaginatedResponse>(`/api/novels?${params}`);
+      const data = await apiFetch<PaginatedResponse>(`/api/novels?${params}`, { signal });
+      if (signal?.aborted) return;
       setNovels(data.novels);
       setTotal(data.total);
       setTotalPages(data.totalPages);
     } catch (err) {
+      if (signal?.aborted) return;
       setNovels([]);
       setError(err instanceof Error ? err.message : '获取小说列表失败');
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [page, search, statusFilter, categoryFilter]);
 
-  // Auto-reset to page 1 when filters change
+  // Auto-reset to page 1 when filters change & fetch
   useEffect(() => {
     setPage(1);
+    fetchNovels(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, categoryFilter]);
 
+  // Fetch when page or search changes (not triggered by filter reset above)
   useEffect(() => {
-    fetchNovels();
-  }, [fetchNovels, refreshNovels]);
+    const ac = new AbortController();
+    fetchNovels(page, ac.signal);
+    return () => ac.abort();
+  }, [page, search, fetchNovels, refreshNovels]);
 
   // Search debounce
   useEffect(() => {
@@ -292,7 +301,7 @@ export default function NovelListView() {
         <Card className="border-destructive/50">
           <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
             {error}
-            <Button variant="outline" size="sm" className="ml-auto" onClick={fetchNovels}>重试</Button>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => fetchNovels()}>重试</Button>
           </CardContent>
         </Card>
       )}
