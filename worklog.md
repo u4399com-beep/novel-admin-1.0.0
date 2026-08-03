@@ -1,6 +1,124 @@
 # Work Log
 
 ---
+Task ID: cron-qa-20260803-1739
+Agent: Main Orchestrator
+Timestamp: 2026-08-03T17:39:00+08:00
+
+Task: 代码审查6项 → 1 MED + 5 LOW bug修复 + 排行榜时间筛选 + 中间件去重 + 6新CSS类
+
+Work Log:
+- 读取worklog确认状态(累计459项修复, commit feeaa2f)
+- npx next build: 0 errors ✅
+- bun run lint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- 深度代码审查(sub-agent): 1 MED + 5 LOW + 2 code-quality risks
+- 修复1 MED + 5 LOW = 6项bug
+- 新功能: 排行榜时间范围筛选(本周/本月/全部)
+- 移除middleware双重rate limit
+- 6个新CSS工具类 + 5处组件应用
+- commit 117964d 已push
+
+## Medium Bug Fix (1)
+
+### 1. [MED] search-keywords POST P2002未处理
+- **问题**: 并发POST请求触发P2002唯一约束冲突, 落入通用catch返回500而非409
+- **修复**: 添加Prisma.PrismaClientKnownRequestError + error.code==='P2002'检查, 返回409 Conflict
+- **文件**: src/app/api/search-keywords/[novelId]/route.ts
+
+## Low Bug Fixes (5)
+
+### 2. [LOW] tags DELETE TOCTOU竞态
+- **问题**: count检查和delete不在事务内, 并发请求可能绕过"使用中不可删除"保护
+- **修复**: 包裹db.$transaction()
+- **文件**: src/app/api/tags/[id]/route.ts
+
+### 3. [LOW] themes DELETE TOCTOU竞态
+- **问题**: 同tags, _count检查和delete不在事务内
+- **修复**: 包裹db.$transaction()
+- **文件**: src/app/api/themes/[id]/route.ts
+
+### 4. [LOW] sites DELETE TOCTOU竞态
+- **问题**: 存在性检查和delete不在事务内
+- **修复**: 包裹db.$transaction()
+- **文件**: src/app/api/sites/[id]/route.ts
+
+### 5. [LOW] themes PUT config:null无法清除
+- **问题**: 条件`config !== undefined && config`导致config:null被视为falsy跳过
+- **修复**: 改为`config !== undefined`, 允许null值清除配置
+- **文件**: src/app/api/themes/[id]/route.ts
+
+### 6. [LOW] VisualSelectorBuilder无效CSS class名
+- **问题**: className.split(' ')[0]可能以数字开头或含特殊字符, 生成无效CSS选择器
+- **修复**: 添加`/^[a-zA-Z_-][a-zA-Z0-9_-]*$/`验证, 不合法时回退到标签选择器
+- **文件**: src/components/scrape/VisualSelectorBuilder.tsx
+
+## Code Quality Fix (1)
+
+### 7. [MED→FIXED] Middleware双重rate limit
+- **问题**: middleware对/api/public/*做sliding window限流(60/min), 路由级withPublicRateLimit也限流(60 burst+2/s)。middleware更严格, route级配置被架空
+- **修复**: 移除middleware中的/public rate limit代码块, 仅保留route级限流(更精细可控)
+- **文件**: src/middleware.ts (-22行)
+
+## New Feature: 排行榜时间范围筛选
+- **UI**: 页面header下方新增本周/本月/全部tab栏(tag-pill样式)
+- **交互**: 切换tab重新fetch数据, 传递timeRange参数到API
+- **动画**: 排行项添加fade-in-up交错延迟(index*50ms) + depth-hover
+- **视觉**: #1名次添加text-outline效果(透明文字+描边)
+- **文件**: src/app/rankings/page.tsx
+
+## New CSS Utilities (6)
+
+| Class | Effect | Applied To |
+|-------|--------|------------|
+| `.hover-brightness` | 悬停亮度1.1x | NovelCard封面img/gradient |
+| `.no-scrollbar` | 隐藏滚动条(跨浏览器) | ContinueReading水平容器 |
+| `.text-outline` | 透明文字+foreground描边 | 排行榜#1名次 |
+| `.bg-dots` | 16px点阵背景 | 登录页背景 |
+| `.shimmer-border` | 旋转conic渐变边框微光 | (可用) |
+| `.press-effect` | :active缩放0.98 | 阅读器工具栏9个按钮 |
+
+## 验证结果
+- next build: 0 TypeScript errors ✅
+- ESLint: 0 errors, 2 warnings(预存React Hook Form) ✅
+- Git commit: 117964d (12 files, +179 -80)
+- Git push: feeaa2f..117964d main → main ✅
+
+## 统计
+- 修改文件: 12
+- 代码变更: +179 -80
+- Bug修复: 7项 (1 MED + 5 LOW + 1 code-quality)
+- 新功能: 1项 (排行榜时间范围筛选)
+- 新CSS工具类: 6个
+- CSS应用: 5处
+- 累计修复: 459 + 7 = 466项
+
+Stage Summary:
+- **安全**: 3处DELETE TOCTOU→事务, search-keywords P2002处理, CSS选择器注入防护
+- **正确性**: themes PUT config:null修复, middleware双重rate limit消除
+- **功能**: 排行榜时间范围(本周/本月/全部), 交错入场动画
+- **CSS**: 6个新工具类(亮度/无滚动条/文字描边/点阵/边框微光/按压效果)
+
+## 项目当前状态
+- **构建**: 0 TypeScript errors, 0 ESLint errors ✅
+- **最新commit**: 117964d
+- **累计修复**: 466项
+- **架构**: Next.js 16.1.3 App Router + Prisma + PostgreSQL/SQLite + Docker(Caddy)
+
+## 未解决问题/建议下一阶段优先事项
+1. **[HIGH] Favorite计数无去重** → 需Favorite表+unique约束(架构级)
+2. **[MED] Admin设置仅localStorage** → siteName/itemsPerPage后端持久化
+3. **[MED] Public reading-progress DELETE无所有权验证**
+4. **[LOW] 验证常量跨文件重复** → sites/themes/tags提取共享validation模块
+5. **[LOW] Regex超时无法中断(VisualSelector)**
+6. **[FEATURE] EPUB/TXT单本导出** → epub-gen库
+7. **[FEATURE] 智能推荐"猜你喜欢"** → 基于分类/标签关联
+8. **[FEATURE] 每日阅读目标** → 目标设定+进度环+通知
+9. **[FEATURE] 阅读笔记/标注** → 章节内高亮+旁注
+10. **[STYLE] 移动端适配完善** → 阅读器/管理端响应式
+
+# Work Log
+
+---
 Task ID: cron-qa-20260803-1715
 Agent: Main Orchestrator
 Timestamp: 2026-08-03T17:15:00+08:00
