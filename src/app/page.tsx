@@ -6,12 +6,11 @@ import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Search, Sun, Moon, Shield, User, BookMarked, FileText,
+  BookOpen, Search, Sun, Moon, Shield, FileText,
   ChevronLeft, ChevronRight, RotateCcw, History, Trophy, Compass,
-  Menu, X, Book, Loader2, Eye,
+  Menu, X, Book, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,9 +23,12 @@ import {
 } from '@/components/ui/sheet';
 import { BackToTop } from '@/components/BackToTop';
 import { ContinueReading } from '@/components/home/ContinueReading';
+import { LayoutSwitcher } from '@/components/home/LayoutSwitcher';
+import { NovelGridLayout, NovelMagazineLayout, NovelListLayout } from '@/components/home/layouts';
 import { formatWordCount } from '@/lib/format';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { useSiteName } from '@/lib/use-site-name';
+import { useLayoutTheme, type LayoutTheme } from '@/lib/use-layout-theme';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -189,208 +191,6 @@ function FilterRowSkeleton() {
   );
 }
 
-// ─── Novel Card ──────────────────────────────────────────────────────
-
-function NovelCard({ novel, index }: { novel: Novel; index: number }) {
-  const gradient = getCoverGradient(novel.title);
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const isTouchDevice = useRef(false);
-
-  // Detect touch vs pointer — touch devices get tap-to-toggle, desktop gets hover
-  useEffect(() => {
-    const onTouch = () => { isTouchDevice.current = true; };
-    window.addEventListener('touchstart', onTouch, { once: true });
-    return () => window.removeEventListener('touchstart', onTouch);
-  }, []);
-
-  const handleMouseEnter = useCallback(() => {
-    if (isTouchDevice.current) return;
-    if (leaveTimer.current) clearTimeout(leaveTimer.current);
-    enterTimer.current = setTimeout(() => setPopoverOpen(true), 400);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    if (isTouchDevice.current) return;
-    if (enterTimer.current) clearTimeout(enterTimer.current);
-    leaveTimer.current = setTimeout(() => setPopoverOpen(false), 200);
-  }, []);
-
-  const handlePopoverEnter = useCallback(() => {
-    if (leaveTimer.current) clearTimeout(leaveTimer.current);
-  }, []);
-
-  const handlePopoverLeave = useCallback(() => {
-    if (isTouchDevice.current) return;
-    leaveTimer.current = setTimeout(() => setPopoverOpen(false), 150);
-  }, []);
-
-  const handleTouchToggle = useCallback((e: React.MouseEvent) => {
-    if (!isTouchDevice.current) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setPopoverOpen((prev) => !prev);
-  }, []);
-
-  // Cleanup timers on unmount to prevent state updates on unmounted component
-  useEffect(() => {
-    return () => {
-      if (enterTimer.current) clearTimeout(enterTimer.current);
-      if (leaveTimer.current) clearTimeout(leaveTimer.current);
-    };
-  }, []);
-
-  const statusLabel = novel.status === 'ongoing' ? '连载中' : novel.status === 'completed' ? '已完结' : '暂停中';
-  const statusColor = novel.status === 'ongoing'
-    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-    : novel.status === 'completed'
-      ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
-
-  return (
-    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-    <PopoverTrigger asChild>
-    <Link href={`/novels/${novel.id}`} className="block" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleTouchToggle}>
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ duration: 0.3, delay: index * 0.04 }}
-      className="group cursor-pointer shine-hover"
-    >
-      {/* Cover */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
-        {novel.coverUrl ? (
-          <img
-            src={novel.coverUrl}
-            alt={novel.title}
-            className="h-full w-full object-cover transition-all duration-500 group-hover:brightness-75 hover-brightness"
-            loading="lazy"
-          />
-        ) : (
-          <div className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center transition-all duration-500 group-hover:brightness-110 hover-brightness`}>
-            <span className="text-4xl font-bold text-white/90 select-none">
-              {novel.title.charAt(0)}
-            </span>
-          </div>
-        )}
-        {/* Category badge - top left */}
-        {novel.category && (
-          <div className="absolute top-2 left-2">
-            <span
-              className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm"
-              style={{
-                backgroundColor: `${novel.category.color}cc`,
-                color: '#fff',
-              }}
-            >
-              {novel.category.name}
-            </span>
-          </div>
-        )}
-        {/* Status dot - top right */}
-        <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
-          <span
-            className={`inline-block h-2 w-2 rounded-full ${
-              novel.status === 'ongoing'
-                ? 'bg-blue-400 shadow-[0_0_6px_rgba(96,165,250,0.6)]'
-                : novel.status === 'completed'
-                  ? 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]'
-                  : 'bg-gray-400'
-            }`}
-            title={statusLabel}
-          />
-        </div>
-        {/* Hover CTA Overlay */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 opacity-0 group-hover:opacity-100">
-          <span className="flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-black/70 px-4 py-2 text-sm font-medium text-foreground backdrop-blur-sm shadow-lg translate-y-3 group-hover:translate-y-0 transition-transform duration-300">
-            <Eye className="h-4 w-4" />
-            阅读
-          </span>
-        </div>
-        {/* Chapter count overlay */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-3 pt-10">
-          <p className="text-[11px] text-white/80 flex items-center gap-1">
-            <BookOpen className="h-3 w-3" />
-            {novel._count.chapters} 章 · {formatWordCount(novel.wordCount)}
-          </p>
-        </div>
-      </div>
-
-      {/* Info */}
-      <div className="mt-3 space-y-1 px-0.5">
-        <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors duration-200">
-          {novel.title}
-        </h3>
-        {novel.description && (
-          <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-1">
-            {novel.description}
-          </p>
-        )}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="line-clamp-1">{novel.author}</span>
-          <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-          <span>{novel._count.chapters}章</span>
-        </div>
-      </div>
-    </motion.div>
-    </Link>
-    </PopoverTrigger>
-    <PopoverContent
-      className="w-72 p-4"
-      side="right"
-      sideOffset={8}
-      align="start"
-      onMouseEnter={handlePopoverEnter}
-      onMouseLeave={handlePopoverLeave}
-      onOpenAutoFocus={(e) => e.preventDefault()}
-    >
-      <h4 className="font-bold text-sm leading-snug mb-1 line-clamp-1">{novel.title}</h4>
-      <p className="text-xs text-muted-foreground flex items-center gap-1.5 mb-2">
-        <User className="h-3 w-3 shrink-0" />
-        <span className="line-clamp-1">{novel.author}</span>
-      </p>
-      {novel.description && (
-        <p className="text-xs text-muted-foreground/90 leading-relaxed line-clamp-3 mb-2 truncate-2">{novel.description}</p>
-      )}
-      {novel.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-2">
-          {novel.tags.map(({ tag }) => (
-            <span
-              key={tag.id}
-              className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-              style={{ backgroundColor: `${tag.color}20`, color: tag.color, border: `1px solid ${tag.color}40` }}
-            >
-              {tag.name}
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center gap-3 pt-2 border-t">
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <BookMarked className="h-3 w-3" />
-          {novel._count.chapters} 章
-        </span>
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <FileText className="h-3 w-3" />
-          {formatWordCount(novel.wordCount)}
-        </span>
-        <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusColor}`}>
-          {statusLabel}
-        </span>
-      </div>
-      <Link
-        href={`/novels/${novel.id}`}
-        className="mt-2 block w-full text-center text-xs font-medium text-primary hover:text-primary/80 hover:underline rounded-md py-1.5 bg-primary/5 hover:bg-primary/10 transition-colors"
-      >
-        查看详情
-      </Link>
-    </PopoverContent>
-    </Popover>
-  );
-}
-
 // ─── Filter Row Component ────────────────────────────────────────────
 
 function FilterRow<T extends string>({
@@ -511,6 +311,7 @@ function FilterRow<T extends string>({
 export default function HomePage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { theme: layoutTheme } = useLayoutTheme();
   const [mounted, setMounted] = useState(false);
   const siteName = useSiteName();
   useEffect(() => { setMounted(true); }, []);
@@ -573,7 +374,7 @@ export default function HomePage() {
         const data = await apiFetch<Category[]>('/api/public/categories', { signal: abortController.signal });
         setCategories(data);
       } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        if (!(err instanceof FetchError && err.status === 0)) {
           setCategoriesError(true);
         }
       } finally {
@@ -603,7 +404,7 @@ export default function HomePage() {
         setTotalPages(data.totalPages || 0);
         setTotal(data.total || 0);
       } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        if (!(err instanceof FetchError && err.status === 0)) {
           setNovelsError(true);
         }
       } finally {
@@ -842,6 +643,7 @@ export default function HomePage() {
               <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
               <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
             </Button>
+            <LayoutSwitcher />
             <Button
               variant="ghost"
               size="sm"
@@ -897,7 +699,7 @@ export default function HomePage() {
                   }}
                   className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted transition-colors text-left"
                 >
-                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  <BookOpen className="h-4 w-4 text-muted-foreground" />
                   阅读统计
                 </button>
               </nav>
@@ -1316,16 +1118,15 @@ export default function HomePage() {
               </motion.div>
             ) : (
               <motion.div
-                key={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}`}
+                key={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}-${layoutTheme}`}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3, ease: 'easeOut' as const }}
-                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6 stagger-in"
               >
-                {novels.map((novel, i) => (
-                  <NovelCard key={novel.id} novel={novel} index={i} />
-                ))}
+                {layoutTheme === 'grid' && <NovelGridLayout novels={novels} />}
+                {layoutTheme === 'magazine' && <NovelMagazineLayout novels={novels} />}
+                {layoutTheme === 'list' && <NovelListLayout novels={novels} />}
               </motion.div>
             )}
           </AnimatePresence>

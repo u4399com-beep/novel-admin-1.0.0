@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { getOrCompute } from '@/lib/cache';
 import { withAuth } from '@/lib/api-auth';
+import { Prisma } from '@prisma/client';
 
 const ACTIVITY_CACHE_KEY = 'dashboard:activity';
 const ACTIVITY_CACHE_TTL = 60 * 1000; // 60 seconds
@@ -76,14 +77,22 @@ async function fetchDailyActivity(): Promise<DailyActivityRow[]> {
   const weekAgo = days[0].start;
   const weekEnd = days[days.length - 1].end;
 
-  const buildCaseQuery = (table: string) => {
-    // Table name is a hardcoded constant (no user input), safe for string interpolation
-    // Dates are ISO strings constructed from JS Date objects, safe for SQL
-    const whens = days.map(
-      (day) => `WHEN "createdAt" >= '${day.start.toISOString()}' AND "createdAt" < '${day.end.toISOString()}' THEN '${day.date}'`
+  // Safe table identifier mapping — hardcoded, no user input
+  const TABLE_IDENTS = {
+    Novel: Prisma.sql`"Novel"`,
+    Chapter: Prisma.sql`"Chapter"`,
+    ScrapeTask: Prisma.sql`"ScrapeTask"`,
+  } as const;
+
+  const buildCaseQuery = (table: 'Novel' | 'Chapter' | 'ScrapeTask') => {
+    // Build CASE WHEN parts using Prisma.sql for parameterized date values
+    const whenParts = days.map(
+      (day) =>
+        Prisma.sql`WHEN "createdAt" >= ${day.start.toISOString()} AND "createdAt" < ${day.end.toISOString()} THEN ${day.date}`
     );
-    return db.$queryRawUnsafe<Array<{ bucket: string; cnt: number }>>(
-      `SELECT CASE ${whens.join(' ')} END AS bucket, COUNT(*) AS cnt FROM "${table}" WHERE "createdAt" >= '${weekAgo.toISOString()}' AND "createdAt" < '${weekEnd.toISOString()}' GROUP BY bucket`
+    // Prisma.join safely concatenates Prisma.Sql objects with proper parameterization
+    return db.$queryRaw<Array<{ bucket: string; cnt: number }>>(
+      Prisma.sql`SELECT CASE ${Prisma.join(whenParts, ' ')} END AS bucket, COUNT(*) AS cnt FROM ${TABLE_IDENTS[table]} WHERE "createdAt" >= ${weekAgo.toISOString()} AND "createdAt" < ${weekEnd.toISOString()} GROUP BY bucket`
     );
   };
 

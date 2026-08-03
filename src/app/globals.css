@@ -2832,4 +2832,7 @@ nav button[data-active='true'] {
   .float-subtle { animation: none; }
   .text-shimmer { animation: none; -webkit-text-fill-color: var(--foreground); }
   .card-accent-bottom::after { transition: none; }
+  .cover-zoom img,
+  .cover-zoom > div { transition: none; }
+  .hover-lift { transition: none; }
 }

@@ -50,7 +50,7 @@ import {
 } from '@/lib/use-reading-settings';
 import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
 import { formatWordCount, formatReadingTime } from '@/lib/format';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -375,7 +375,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           });
         }
       } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        if (!(err instanceof FetchError && err.status === 0)) {
           setChapterError(true);
           setChapterContent('');
         }

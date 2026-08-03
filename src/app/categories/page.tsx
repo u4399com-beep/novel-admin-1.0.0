@@ -36,7 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BackToTop } from '@/components/BackToTop';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -141,7 +141,7 @@ export default function CategoriesPage() {
       const data = await apiFetch<Category[]>('/api/public/categories', { signal });
       setCategories(data);
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+      if (!(err instanceof FetchError && err.status === 0)) {
         setError(err instanceof Error ? err.message : '未知错误');
       }
     } finally {
