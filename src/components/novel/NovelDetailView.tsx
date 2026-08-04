@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -96,7 +96,7 @@ import type { Novel, Chapter } from '@/types';
 type ContentFilter = 'all' | 'has-content' | 'no-content';
 
 // ─── Sortable row ─────────────────────────────────────────────────────────────
-function SortableChapterRow({
+const SortableChapterRow = React.memo(function SortableChapterRow({
   chapter,
   index,
   onEdit,
@@ -218,7 +218,7 @@ function SortableChapterRow({
       </TableCell>
     </TableRow>
   );
-}
+});
 
 // ─── Inline chapter editor panel ──────────────────────────────────────────────
 function ChapterEditorPanel({

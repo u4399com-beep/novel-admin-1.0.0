@@ -225,22 +225,13 @@ export default function CategoriesPage() {
 
         {/* ── Loading State ───────────────────────────────────────────── */}
         {loading && (
-          <motion.div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-            variants={containerVariants}
-            initial="hidden"
-            animate="show"
-          >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <motion.div
-                key={i}
-                variants={cardVariants}
-                style={{ animationDelay: `${i * 60}ms` }}
-              >
+              <div key={i}>
                 <SkeletonCard />
-              </motion.div>
+              </div>
             ))}
-          </motion.div>
+          </div>
         )}
 
         {/* ── Error State ─────────────────────────────────────────────── */}

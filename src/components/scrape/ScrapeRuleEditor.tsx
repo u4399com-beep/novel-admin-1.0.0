@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
@@ -33,6 +33,11 @@ import { ScrapeRuleList } from './parts/ScrapeRuleList';
 import { ScrapeTaskMonitor } from './ScrapeTaskMonitor';
 
 // ==================== Main Editor ====================
+
+/** Runtime-validated valid selector types */
+const VALID_SELECTOR_TYPES = new Set(['css', 'xpath', 'regex']);
+/** Runtime-validated valid pagination types */
+const VALID_PAGINATION_TYPES = new Set(['next', 'page']);
 
 interface ScrapeRuleEditorProps {
   ruleId: string | null;
@@ -113,29 +118,37 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
   const visualSelectorFieldRef = useRef(visualSelectorField);
   visualSelectorFieldRef.current = visualSelectorField;
 
-  // Form helpers — use setValue with type assertion via FieldPath for type safety
+  // Type-safe setValue wrapper — avoids `as any` by constraining through Parameters utility type
+  type FormField = Parameters<typeof formMethods.setValue>[0];
+  const safeSetValue = useCallback(
+    (field: string, value: unknown, options?: Parameters<typeof formMethods.setValue>[2]) => {
+      formMethods.setValue(field as FormField, value as never, options);
+    },
+    [formMethods.setValue]
+  );
+
   const setSelector = useCallback(
     (field: keyof FormValues, val: SelectorRule) => {
-      setValue(field as Parameters<typeof setValue>[0], val as Parameters<typeof setValue>[1], { shouldDirty: true });
+      safeSetValue(field, val, { shouldDirty: true });
     },
-    [setValue]
+    [safeSetValue]
   );
 
   const setPagination = useCallback(
     (field: keyof FormValues, val: PaginationConfig) => {
-      setValue(field as Parameters<typeof setValue>[0], val as Parameters<typeof setValue>[1], { shouldDirty: true });
+      safeSetValue(field, val, { shouldDirty: true });
     },
-    [setValue]
+    [safeSetValue]
   );
 
   // Apply AI-generated rule to form
   const handleApplyAiRule = useCallback((rule: GeneratedRule) => {
     const s = (v?: { type: string; value: string }): SelectorRule => ({
-      type: (v?.type as 'css' | 'xpath' | 'regex') || 'css',
+      type: (v?.type != null && VALID_SELECTOR_TYPES.has(v.type) ? v.type : 'css') as 'css' | 'xpath' | 'regex',
       value: v?.value || '',
     });
     const p = (v?: { type: string; selector: string; maxPage: number }): PaginationConfig => ({
-      type: (v?.type as 'next' | 'page') || 'next',
+      type: (v?.type != null && VALID_PAGINATION_TYPES.has(v.type) ? v.type : 'next') as 'next' | 'page',
       selector: v?.selector || '',
       maxPage: v?.maxPage || 100,
     });
@@ -302,7 +315,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
   };
 
   // Build form access object for sub-components
-  const formAccess = { form: formMethods, setSelector, setPagination };
+  const formAccess = useMemo(() => ({ form: formMethods, setSelector, setPagination }), [formMethods, setSelector, setPagination]);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

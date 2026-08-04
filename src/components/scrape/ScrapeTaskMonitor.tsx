@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
 import { format } from 'date-fns';
@@ -421,7 +421,7 @@ function formatDuration(startStr: string | null, endStr: string | null): string 
   return '';
 }
 
-function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExpand, onDelete }: TaskCardProps) {
+const TaskCard = React.memo(function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExpand, onDelete }: TaskCardProps) {
   const config = STATUS_CONFIG[task.status];
   const StatusIcon = config.icon;
   const isRunning = task.status === 'running';
@@ -614,7 +614,7 @@ function TaskCard({ task, isExpanded, logs, logsLoading, formatDate, onToggleExp
       </CardContent>
     </Card>
   );
-}
+});
 
 // ==================== Stat Item ====================
 

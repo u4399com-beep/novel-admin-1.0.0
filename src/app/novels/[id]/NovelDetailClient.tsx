@@ -310,6 +310,18 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   );
 
   const loadChapterAbortRef = useRef<AbortController | null>(null);
+
+  const HEATMAP_KEY = 'reading-heatmap';
+  function recordReadingActivity() {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const raw = localStorage.getItem(HEATMAP_KEY);
+      const data = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+      data[today] = (data[today] || 0) + 1;
+      localStorage.setItem(HEATMAP_KEY, JSON.stringify(data));
+    } catch { /* ignore */ }
+  }
+
   // Use ref for chapters so loadChapter identity stays stable when remaining chapters load (H2 fix)
   const chaptersRef = useRef(chapters);
   const prevIndexRef = useRef(currentIndex);
@@ -366,6 +378,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           signal: abortController.signal,
         });
         setChapterContent(data.content || '（本章暂无内容）');
+        recordReadingActivity();
         // Restore saved scroll position after content renders
         if (pendingScrollRestore.current !== null) {
           const sp = pendingScrollRestore.current;

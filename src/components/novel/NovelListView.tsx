@@ -623,6 +623,7 @@ export default function NovelListView() {
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => setPage(p)}
+                    aria-label={`第${p}页`}
                   >
                     {p}
                   </Button>

@@ -51,6 +51,7 @@ import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { DashboardStats, NovelStatus, ViewType } from '@/types';
+import { ReadingHeatmap } from '@/components/ReadingHeatmap';
 
 // ─── Activity API types ─────────────────────────────────────────────────────
 interface ActivityData {
@@ -412,7 +413,7 @@ export function DashboardView() {
               return (
                 <Card
                   key={card.key}
-                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback depth-hover hover-scale-sm"
+                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback depth-hover hover-scale-sm card-depth"
                   onClick={() => setCurrentView(card.view)}
                 >
                   <CardContent className="p-4">
@@ -666,6 +667,16 @@ export function DashboardView() {
               </AreaChart>
             </ChartContainer>
           )}
+        </CardContent>
+      </Card>
+
+      {/* ── Reading Heatmap ─────────────────────────────────────────────── */}
+      <Card className="col-span-full">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">阅读活跃度</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ReadingHeatmap />
         </CardContent>
       </Card>
 

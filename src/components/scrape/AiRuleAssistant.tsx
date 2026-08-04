@@ -673,6 +673,8 @@ export function AiRuleAssistant({
                   {SITE_TYPES.map((type) => (
                     <button
                       key={type.value}
+                      role="radio"
+                      aria-checked={siteType === type.value}
                       className={`relative flex flex-col items-center gap-2 rounded-xl border-2 px-4 py-4 transition-all hover:bg-muted/40 ${
                         siteType === type.value
                           ? 'border-primary bg-primary/5 text-primary'

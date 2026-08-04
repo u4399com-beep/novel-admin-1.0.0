@@ -1137,7 +1137,7 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8 page-btn"
+                className="h-8 w-8 page-btn btn-ripple"
                 disabled={page <= 1}
                 onClick={() => { setPage((p) => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
               >
@@ -1153,7 +1153,7 @@ export default function HomePage() {
                     key={p}
                     variant={p === page ? 'default' : 'outline'}
                     size="icon"
-                    className="h-8 w-8 page-btn"
+                    className="h-8 w-8 page-btn btn-ripple"
                     onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                     aria-current={p === page ? 'page' : undefined}
                   >
@@ -1164,7 +1164,7 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8 page-btn"
+                className="h-8 w-8 page-btn btn-ripple"
                 disabled={page >= totalPages}
                 onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
               >
