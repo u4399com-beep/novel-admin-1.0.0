@@ -1,70 +1,36 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Search, Sun, Moon, Shield, FileText,
-  ChevronLeft, ChevronRight, RotateCcw, History, Trophy, Compass,
-  Menu, X, Book, Loader2,
+  BookOpen, Sun, Moon, Shield, Menu, History, Trophy, Compass,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetClose,
 } from '@/components/ui/sheet';
 import { BackToTop } from '@/components/BackToTop';
 import { ContinueReading } from '@/components/home/ContinueReading';
 import { LayoutSwitcher } from '@/components/home/LayoutSwitcher';
-import { NovelGridLayout, NovelMagazineLayout, NovelListLayout } from '@/components/home/layouts';
-import { formatWordCount } from '@/lib/format';
+import { HeroSection } from '@/components/home/HeroSection';
+import { NovelGrid } from '@/components/home/NovelGrid';
+import type { Category } from '@/components/home/HeroSection';
+import type { NovelCardData } from '@/components/home/shared-types';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { useSiteName } from '@/lib/use-site-name';
-import { useLayoutTheme, type LayoutTheme } from '@/lib/use-layout-theme';
+import { useLayoutTheme } from '@/lib/use-layout-theme';
+import { getCoverGradient } from '@/lib/cover-gradient';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
-interface Category {
-  id: string;
-  name: string;
-  slug: string;
-  icon: string | null;
-  description: string | null;
-  color: string;
-  _count: { novels: number };
-}
+type Novel = NovelCardData;
 
-interface TagItem {
-  id: string;
-  name: string;
-  color: string;
-}
-
-interface Novel {
-  id: string;
-  title: string;
-  author: string;
-  description: string | null;
-  coverUrl: string | null;
-  coverPath: string | null;
-  status: string;
-  wordCount: number;
-  category: { id: string; name: string; slug: string; color: string; icon: string | null } | null;
-  tags: { tag: TagItem }[];
-  _count: { chapters: number };
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ─── 23qb.net Filter Config ──────────────────────────────────────────
+// ─── Filter Config (for getFilterSummary) ────────────────────────────
 
 const STATUS_OPTIONS = [
   { value: '', label: '全部' },
@@ -80,17 +46,6 @@ const WORD_COUNT_OPTIONS = [
   { value: '100w_200w', label: '100-200万字' },
   { value: '200w_400w', label: '200-400万字' },
   { value: 'over_400w', label: '400万字以上' },
-];
-
-const SORT_OPTIONS = [
-  { value: 'last_update', label: '最近更新' },
-  { value: 'new_entry', label: '新书入库' },
-  { value: 'new_hot', label: '新书热门' },
-  { value: 'weekly_click', label: '周点击榜' },
-  { value: 'monthly_click', label: '月点击榜' },
-  { value: 'weekly_rec', label: '周推荐榜' },
-  { value: 'monthly_rec', label: '月推荐榜' },
-  { value: 'favorites', label: '收藏榜' },
 ];
 
 // ─── Recently Viewed Tracker ───────────────────────────────────────
@@ -127,185 +82,6 @@ function clearRecentlyViewed() {
   localStorage.removeItem(RECENT_KEY);
 }
 
-// ─── Search History ────────────────────────────────────────────
-const SEARCH_HISTORY_KEY = 'novel-search-history';
-const MAX_SEARCH_HISTORY = 5;
-
-function getSearchHistory(): string[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    return JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]');
-  } catch { return []; }
-}
-
-function addSearchHistory(term: string) {
-  if (typeof window === 'undefined') return;
-  try {
-    const list = getSearchHistory().filter((t) => t !== term);
-    list.unshift(term);
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(list.slice(0, MAX_SEARCH_HISTORY)));
-  } catch { /* ignore */ }
-}
-
-function clearSearchHistory() {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(SEARCH_HISTORY_KEY);
-}
-
-import { getCoverGradient } from '@/lib/cover-gradient';
-
-// ─── Skeleton Grid ───────────────────────────────────────────────────
-
-function NovelCardSkeleton() {
-  return (
-    <div className="space-y-3">
-      <Skeleton className="aspect-[3/4] w-full rounded-xl" />
-      <Skeleton className="h-4 w-3/4" />
-      <Skeleton className="h-3 w-1/2" />
-    </div>
-  );
-}
-
-function SkeletonGrid() {
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
-      {Array.from({ length: 10 }).map((_, i) => (
-        <NovelCardSkeleton key={i} />
-      ))}
-    </div>
-  );
-}
-
-// ─── Filter Row Skeleton ─────────────────────────────────────────────
-
-function FilterRowSkeleton() {
-  return (
-    <div className="flex items-center gap-3 py-2">
-      <Skeleton className="h-4 w-12 shrink-0" />
-      <div className="flex items-center gap-2 overflow-hidden">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-6 w-16 shrink-0 rounded-full" />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Filter Row Component ────────────────────────────────────────────
-
-function FilterRow<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-  loading,
-}: {
-  label: string;
-  options: { value: T; label: string; icon?: string }[];
-  value: T;
-  onChange: (v: T) => void;
-  loading?: boolean;
-}) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [showLeftArrow, setShowLeftArrow] = useState(false);
-  const [showRightArrow, setShowRightArrow] = useState(false);
-
-  const checkArrows = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setShowLeftArrow(el.scrollLeft > 4);
-    setShowRightArrow(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  }, []);
-
-  useEffect(() => {
-    checkArrows();
-    const el = scrollRef.current;
-    if (el) {
-      el.addEventListener('scroll', checkArrows, { passive: true });
-      // Also check on resize
-      const ro = new ResizeObserver(checkArrows);
-      ro.observe(el);
-      return () => {
-        el.removeEventListener('scroll', checkArrows);
-        ro.disconnect();
-      };
-    }
-  }, [checkArrows, options]);
-
-  const scroll = (dir: 'left' | 'right') => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollBy({ left: dir === 'left' ? -200 : 200, behavior: 'smooth' });
-  };
-
-  if (loading) {
-    return <FilterRowSkeleton />;
-  }
-
-  return (
-    <div className="relative flex items-center gap-3 py-2">
-      {/* Label */}
-      <span className="shrink-0 text-sm font-medium text-muted-foreground w-12 text-right">
-        {label}
-      </span>
-
-      {/* Scroll container with arrows */}
-      <div className="relative flex-1 min-w-0 scroll-fade-edges" role="toolbar" aria-label={label}>
-        {/* Left arrow */}
-        {showLeftArrow && (
-          <button
-            onClick={() => scroll('left')}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm hover:bg-accent transition-colors no-fade-left"
-            aria-label="向左滚动"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-        )}
-
-        {/* Scrollable options */}
-        <div
-          ref={scrollRef}
-          className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none"
-          style={{
-            paddingLeft: showLeftArrow ? '28px' : '4px',
-            paddingRight: showRightArrow ? '28px' : '4px',
-          }}
-        >
-          {options.map((opt) => {
-            const isActive = opt.value === value;
-            return (
-              <button
-                key={opt.value || '__all__'}
-                onClick={() => onChange(opt.value)}
-                aria-pressed={isActive}
-                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap tap-feedback tag-pill ${
-                  isActive
-                    ? 'bg-primary text-primary-foreground font-medium shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                }`}
-              >
-                {opt.icon && <span className="mr-1">{opt.icon}</span>}
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right arrow */}
-        {showRightArrow && (
-          <button
-            onClick={() => scroll('right')}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-background border shadow-sm hover:bg-accent transition-colors no-fade-right"
-            aria-label="向右滚动"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main Page ───────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -340,7 +116,6 @@ export default function HomePage() {
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
   const [activeCategorySlug, setActiveCategorySlug] = useState('');
   const [activeStatus, setActiveStatus] = useState('');
   const [activeWordCount, setActiveWordCount] = useState('all');
@@ -352,18 +127,6 @@ export default function HomePage() {
 
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Search suggestions state
-  const [suggestions, setSuggestions] = useState<{ id: string; title: string; author: string; category: { name: string; color: string } | null }[]>([]);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [activeSuggestion, setActiveSuggestion] = useState(-1);
-  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
-    return getSearchHistory();
-  });
-  const searchRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // ─── Fetch categories ────────────────────────────────────────────
   const [categoriesError, setCategoriesError] = useState(false);
@@ -416,85 +179,10 @@ export default function HomePage() {
   }, [page, activeCategorySlug, activeStatus, activeWordCount, activeSort, search, refreshKey]);
 
   // ─── Handlers ────────────────────────────────────────────────────
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = searchInput.trim();
-    if (trimmed) addSearchHistory(trimmed);
-    setSearch(trimmed);
-    setPage(1);
-    setSuggestionsOpen(false);
-    setSearchHistory(getSearchHistory());
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleHistoryClear = () => {
-    clearSearchHistory();
-    setSearchHistory([]);
-  };
-
-  const handleHistorySelect = (term: string) => {
-    setSearchInput(term);
+  const handleNovelSearch = (term: string) => {
     setSearch(term);
     setPage(1);
-    setSuggestionsOpen(false);
-    addSearchHistory(term);
-    setSearchHistory(getSearchHistory());
   };
-
-  // ─── Search suggestions (debounced) ─────────────────────────
-  const query = searchInput.trim();
-  const hasQuery = query.length >= 1;
-
-  useEffect(() => {
-    if (!hasQuery) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    let abortController: AbortController | undefined;
-    debounceRef.current = setTimeout(async () => {
-      abortController = new AbortController();
-      setSuggestionsLoading(true);
-      try {
-        const data = await apiFetch<{ suggestions?: Array<{ id: string; title: string; author: string; category: { name: string; color: string } | null }> }>(`/api/public/search-suggestions?q=${encodeURIComponent(query)}`, {
-          signal: abortController.signal,
-        });
-        setSuggestions(data.suggestions || []);
-        setActiveSuggestion(-1);
-        setSuggestionsOpen(true);
-      } catch {
-        // Network error — silently ignore for search suggestions
-      } finally {
-        if (!abortController.signal.aborted) setSuggestionsLoading(false);
-      }
-    }, 300);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      abortController?.abort();
-    };
-  }, [hasQuery, query]);
-
-  // ─── Close suggestions on outside click ─────────────────────
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSuggestionsOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
-
-  // ─── Highlight matching part of title ───────────────────────
-  function highlightTitle(title: string) {
-    if (!query) return title;
-    const idx = title.toLowerCase().indexOf(query.toLowerCase());
-    if (idx === -1) return title;
-    return (
-      <>
-        {title.slice(0, idx)}
-        <span className="font-bold text-primary">{title.slice(idx, idx + query.length)}</span>
-        {title.slice(idx + query.length)}
-      </>
-    );
-  }
 
   const handleCategoryChange = (slug: string) => {
     setActiveCategorySlug(slug === activeCategorySlug ? '' : slug);
@@ -526,24 +214,23 @@ export default function HomePage() {
     setActiveWordCount('all');
     setActiveSort('last_update');
     setSearch('');
-    setSearchInput('');
     setPage(1);
   };
 
-  // ─── Build category options for filter ──────────────────────────
-  const categoryOptions = [
-    { value: '' as const, label: '全部' },
-    ...categories.map((cat) => ({
-      value: cat.slug as string & '',
-      label: cat.name,
-      icon: cat.icon ?? undefined,
-    })),
-  ];
+  const handlePageChange = (p: number) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleRetry = () => {
+    setNovelsError(false);
+    setRefreshKey((k) => k + 1);
+  };
 
   // ─── Check if any filter is active ──────────────────────────────
-  const hasActiveFilter = activeCategorySlug || activeStatus || (activeWordCount !== 'all') || (activeSort !== 'last_update') || search;
+  const hasActiveFilter = !!(activeCategorySlug || activeStatus || (activeWordCount !== 'all') || (activeSort !== 'last_update') || search);
 
-  // ─── Build active filter summary ────────────────────────────────
+  // ─── Build filter summary ────────────────────────────────────────
   const getFilterSummary = () => {
     const parts: string[] = [];
     if (search) parts.push(`搜索: ${search}`);
@@ -562,22 +249,7 @@ export default function HomePage() {
     return parts.length > 0 ? parts.join(' | ') : '全部小说';
   };
 
-  // ─── Pagination range ────────────────────────────────────────────
-  const getPageNumbers = () => {
-    const pages: (number | string)[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (page > 3) pages.push('...');
-      const start = Math.max(2, page - 1);
-      const end = Math.min(totalPages - 1, page + 1);
-      for (let i = start; i <= end; i++) pages.push(i);
-      if (page < totalPages - 2) pages.push('...');
-      pages.push(totalPages);
-    }
-    return pages;
-  };
+  const filterSummary = getFilterSummary();
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -732,161 +404,26 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* ─── Compact Search Bar ──────────────────────────────────── */}
-      <section className="border-b bg-muted/30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
-          <div className="flex items-center gap-3">
-            <h1 className="sm:block text-xl font-bold tracking-tight shrink-0 text-glow-subtle sr-only sm:not-sr-only text-shadow-sm">
-              小说搜索
-            </h1>
-            <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>
-              <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
-                <Input
-                  type="text"
-                  placeholder="搜索小说名、作者..."
-                  value={searchInput}
-                  onChange={(e) => {
-                    setSearchInput(e.target.value);
-                    if (!e.target.value.trim()) {
-                      setSuggestions([]);
-                      setSuggestionsOpen(false);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setSuggestionsOpen(false);
-                      setActiveSuggestion(-1);
-                    } else if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setActiveSuggestion((prev) => Math.min(prev + 1, suggestions.length - 1));
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setActiveSuggestion((prev) => Math.max(prev - 1, -1));
-                    } else if (e.key === 'Enter' && activeSuggestion >= 0 && suggestions[activeSuggestion]) {
-                      e.preventDefault();
-                      router.push(`/novels/${suggestions[activeSuggestion].id}`);
-                      setSuggestionsOpen(false);
-                      setActiveSuggestion(-1);
-                    }
-                  }}
-                  onFocus={() => {
-                    if (query.length >= 1 && suggestions.length > 0) setSuggestionsOpen(true);
-                    else if (query.length === 0 && searchHistory.length > 0) setSuggestionsOpen(true);
-                  }}
-                  className="h-10 pl-10 pr-20 text-sm rounded-lg w-full"
-                />
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md z-10"
-                >
-                  搜索
-                </Button>
-              </form>
-
-              {/* Suggestions Dropdown */}
-              <AnimatePresence>
-                {suggestionsOpen && (suggestionsLoading || suggestions.length > 0 || (query.length === 0 && searchHistory.length > 0)) && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border bg-popover shadow-lg overflow-hidden"
-                  >
-                    {suggestionsLoading ? (
-                      <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        搜索中...
-                      </div>
-                    ) : query.length === 0 && searchHistory.length > 0 ? (
-                      <div className="py-1">
-                        <div className="flex items-center justify-between px-4 py-1.5">
-                          <span className="text-xs font-medium text-muted-foreground">搜索历史</span>
-                          <button
-                            onClick={handleHistoryClear}
-                            className="text-xs text-muted-foreground hover:text-foreground transition-colors focus-ring-soft"
-                            aria-label="清除搜索历史"
-                          >
-                            清除
-                          </button>
-                        </div>
-                        {searchHistory.map((term) => (
-                          <button
-                            key={term}
-                            className="w-full flex items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent/70"
-                            onClick={() => handleHistorySelect(term)}
-                          >
-                            <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            <span className="text-sm truncate">{term}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <ul role="listbox" className="max-h-80 overflow-y-auto py-1">
-                        {suggestions.map((item, idx) => (
-                          <li
-                            key={item.id}
-                            role="option"
-                            aria-selected={idx === activeSuggestion}
-                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer ${idx === activeSuggestion ? 'bg-accent' : 'hover:bg-accent/70'}`}
-                            onClick={() => {
-                              router.push(`/novels/${item.id}`);
-                              setSuggestionsOpen(false);
-                              setActiveSuggestion(-1);
-                            }}
-                            onMouseEnter={() => setActiveSuggestion(idx)}
-                          >
-                            <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm leading-tight truncate">
-                                {highlightTitle(item.title)}
-                              </p>
-                              <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                {item.author}
-                              </p>
-                            </div>
-                            {item.category && (
-                              <span
-                                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full"
-                                style={{
-                                  backgroundColor: `${item.category.color}18`,
-                                  color: item.category.color,
-                                }}
-                              >
-                                {item.category.name}
-                              </span>
-                            )}
-                          </li>
-                        ))}
-                        {/* Keyboard hint footer */}
-                        <li className="flex items-center gap-2 px-4 py-1.5 border-t mt-1 text-[10px] text-muted-foreground/60">
-                          <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">↑↓</kbd> 导航
-                          <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Enter</kbd> 选择
-                          <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Esc</kbd> 关闭
-                        </li>
-                      </ul>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-            {search && (
-              <Badge variant="secondary" className="shrink-0 text-xs">
-                &quot;{search}&quot;
-                <button
-                  onClick={() => { setSearch(''); setSearchInput(''); setPage(1); }}
-                  className="ml-1 hover:text-foreground focus-ring-soft"
-                  aria-label="清除搜索"
-                >
-                  ×
-                </button>
-              </Badge>
-            )}
-          </div>
-        </div>
-      </section>
+      {/* ─── Hero Section: Search + Filters ─────────────────────── */}
+      <HeroSection
+        search={search}
+        onSearch={handleNovelSearch}
+        categories={categories}
+        loadingCategories={loadingCategories}
+        loadingNovels={loadingNovels}
+        activeCategorySlug={activeCategorySlug}
+        activeStatus={activeStatus}
+        activeWordCount={activeWordCount}
+        activeSort={activeSort}
+        onCategoryChange={handleCategoryChange}
+        onStatusChange={handleStatusChange}
+        onWordCountChange={handleWordCountChange}
+        onSortChange={handleSortChange}
+        hasActiveFilter={hasActiveFilter}
+        resetAllFilters={resetAllFilters}
+        total={total}
+        filterSummary={filterSummary}
+      />
 
       {/* Continue Reading */}
       <section className="border-b">
@@ -937,243 +474,22 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ─── 23qb.net 4-Row Filter System ───────────────────────── */}
-      <section id="filter-section" className="border-b bg-background">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="divide-y divide-border/50 py-1">
-            {/* Row 1: 分类 */}
-            <FilterRow
-              label="分类"
-              options={categoryOptions}
-              value={activeCategorySlug}
-              onChange={handleCategoryChange}
-              loading={loadingCategories}
-            />
-
-            {/* Row 2: 状态 */}
-            <FilterRow
-              label="状态"
-              options={STATUS_OPTIONS}
-              value={activeStatus}
-              onChange={handleStatusChange}
-            />
-
-            {/* Row 3: 字数 */}
-            <FilterRow
-              label="字数"
-              options={WORD_COUNT_OPTIONS}
-              value={activeWordCount}
-              onChange={handleWordCountChange}
-            />
-
-            {/* Row 4: 排序 */}
-            <FilterRow
-              label="排序"
-              options={SORT_OPTIONS}
-              value={activeSort}
-              onChange={handleSortChange}
-            />
-          </div>
-
-          {/* Reset button when filters active */}
-          {hasActiveFilter && (
-            <div className="flex items-center justify-end py-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetAllFilters}
-                className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1"
-              >
-                <RotateCcw className="h-3 w-3" />
-                重置筛选
-              </Button>
-            </div>
-          )}
-
-          {/* Filter summary bar when filters are active */}
-          {hasActiveFilter && !loadingNovels && (
-            <div className="py-2.5 border-t">
-              <p className="text-center text-xs text-muted-foreground/70 bg-muted/30 rounded-md py-1.5 px-3">
-                找到 <span className="font-medium text-muted-foreground">{total}</span> 本小说
-                {getFilterSummary() !== '全部小说' && (
-                  <span className="ml-2 text-muted-foreground/50">{getFilterSummary()}</span>
-                )}
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ─── Novels Section ──────────────────────────────────────── */}
-      <section id="novels-section" className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-          {/* Section header */}
-          <AnimatePresence mode="wait">
-            {loadingNovels ? (
-              <motion.div
-                key="skeleton-header"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="flex items-center gap-2 mb-6"
-              >
-                <Skeleton className="h-6 w-28" />
-                <Skeleton className="h-4 w-16" />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="real-header"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
-                className="flex items-center justify-between mb-6"
-              >
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold">{getFilterSummary()}</h2>
-                  <span className="text-sm text-muted-foreground">
-                    共 {total} 本小说
-                  </span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Novel grid */}
-          <AnimatePresence mode="wait">
-            {loadingNovels ? (
-              <motion.div
-                key="skeleton-grid"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-              >
-                <SkeletonGrid />
-              </motion.div>
-            ) : novelsError ? (
-              <motion.div
-                key="error-state"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3 }}
-                className="flex flex-col items-center justify-center py-20 text-center"
-              >
-                <div className="h-16 w-16 rounded-2xl bg-destructive/10 flex items-center justify-center mb-4">
-                  <FileText className="h-8 w-8 text-destructive/60" />
-                </div>
-                <h3 className="text-base font-medium mb-1">加载失败</h3>
-                <p className="text-sm text-muted-foreground mb-4">无法获取小说列表，请检查网络后重试</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setNovelsError(false);
-                    setRefreshKey((k) => k + 1);
-                  }}
-                  className="gap-1.5"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  重试
-                </Button>
-              </motion.div>
-            ) : novels.length === 0 ? (
-              <motion.div
-                key="empty-state"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3 }}
-                className="flex flex-col items-center justify-center py-20 text-center"
-              >
-                {hasActiveFilter ? (
-                  <>
-                    <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-                      <BookOpen className="h-8 w-8 text-muted-foreground" />
-                    </div>
-                    <h3 className="text-base font-medium mb-1">暂无匹配结果</h3>
-                    <p className="text-sm text-muted-foreground">试试其他关键词或筛选条件</p>
-                  </>
-                ) : (
-                  <>
-                    <div className="h-20 w-20 rounded-2xl bg-muted flex items-center justify-center mb-5">
-                      <Book className="h-10 w-10 text-muted-foreground/50" />
-                    </div>
-                    <h3 className="text-xl font-semibold mb-2 text-shimmer">暂无小说</h3>
-                    <p className="text-sm text-muted-foreground mb-6 max-w-xs text-gradient-muted">
-                      开始添加您的第一本小说，或等待采集任务自动入库
-                    </p>
-                    <Button
-                      variant="default"
-                      onClick={() => router.push('/login')}
-                      className="gap-2"
-                    >
-                      <Shield className="h-4 w-4" />
-                      前往管理后台
-                    </Button>
-                  </>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div
-                key={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}-${layoutTheme}`}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3, ease: 'easeOut' as const }}
-              >
-                {layoutTheme === 'grid' && <NovelGridLayout novels={novels} />}
-                {layoutTheme === 'magazine' && <NovelMagazineLayout novels={novels} />}
-                {layoutTheme === 'list' && <NovelListLayout novels={novels} />}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-1.5 mt-10">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 page-btn btn-ripple"
-                disabled={page <= 1}
-                onClick={() => { setPage((p) => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              {getPageNumbers().map((p, i) =>
-                typeof p === 'string' ? (
-                  <span key={`dots-${i}`} className="px-1 text-muted-foreground">
-                    ...
-                  </span>
-                ) : (
-                  <Button
-                    key={p}
-                    variant={p === page ? 'default' : 'outline'}
-                    size="icon"
-                    className="h-8 w-8 page-btn btn-ripple"
-                    onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                    aria-current={p === page ? 'page' : undefined}
-                  >
-                    {p}
-                  </Button>
-                ),
-              )}
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8 page-btn btn-ripple"
-                disabled={page >= totalPages}
-                onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </div>
-      </section>
+      {/* ─── Novels Section ─────────────────────────────────────── */}
+      <NovelGrid
+        novels={novels}
+        loading={loadingNovels}
+        novelsError={novelsError}
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        hasActiveFilter={hasActiveFilter}
+        filterSummary={filterSummary}
+        layoutTheme={layoutTheme}
+        animKey={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}-${layoutTheme}`}
+        onPageChange={handlePageChange}
+        onRetry={handleRetry}
+        onLoginClick={() => router.push('/login')}
+      />
 
       {/* ─── Footer ──────────────────────────────────────────────── */}
       <footer className="mt-auto border-t bg-background/80 backdrop-blur-sm">

@@ -192,13 +192,18 @@ export const PATCH = withAuth(async function PATCH(
       }
     }
 
-    // Parameterized updates in a transaction for SQL injection prevention.
-    // Each update uses Prisma tagged template literal with bound parameters.
-    await db.$transaction(
-      orders.map((item) =>
-        db.$executeRaw`UPDATE "Chapter" SET "sortOrder" = ${Math.floor(Number(item.sortOrder) || 0)} WHERE id = ${item.id} AND "novelId" = ${novelId}`
-      )
-    );
+    // Single SQL UPDATE with VALUES clause for batch reorder (O(1) DB ops).
+    // IDs are validated as cuid format from the frontend; escape single quotes.
+    const values = orders
+      .map((item) => `('${item.id.replace(/'/g, "''")}', ${Math.floor(Number(item.sortOrder) || 0)})`)
+      .join(',');
+    await db.$executeRaw`
+      UPDATE "Chapter"
+      SET "sortOrder" = v.sort_order
+      FROM (VALUES ${Prisma.raw(values)}) AS v(id TEXT, sort_order INTEGER)
+      WHERE "Chapter"."id" = v.id
+      AND "Chapter"."novelId" = ${novelId}
+    `;
 
     invalidateCache("dashboard:stats");
 

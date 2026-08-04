@@ -18,7 +18,7 @@ const HeroCard = React.memo(function HeroCard({ novel }: { novel: NovelCardData 
       transition={{ duration: 0.5, ease: 'easeOut' as const }}
     >
       <Link href={`/novels/${novel.id}`} className="block group">
-        <div className="relative overflow-hidden rounded-2xl bg-card border shadow-lg hover:shadow-xl transition-all duration-500">
+        <div className="relative overflow-hidden rounded-2xl bg-card border shadow-lg hover:shadow-xl transition-all duration-500 card-depth">
           <div className="relative h-48 sm:h-64 md:h-72 overflow-hidden">
             {novel.coverUrl ? (
               <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" loading="lazy" />
@@ -76,7 +76,7 @@ const MagazineCard = React.memo(function MagazineCard({ novel, index }: { novel:
       transition={{ duration: 0.4, delay: 0.1 + index * 0.06, ease: 'easeOut' as const }}
     >
       <Link href={`/novels/${novel.id}`} className="block group">
-        <div className={`flex gap-4 rounded-xl border bg-card p-3 transition-all duration-300 hover:shadow-md hover:border-primary/20 card-accent-bottom ${isReversed ? 'flex-row-reverse' : ''}`}>
+        <div className={`flex gap-4 rounded-xl border bg-card p-3 transition-all duration-300 hover:shadow-md hover:border-primary/20 card-accent-bottom card-depth ${isReversed ? 'flex-row-reverse' : ''}`}>
           <div className="relative h-28 w-20 sm:h-32 sm:w-24 shrink-0 overflow-hidden rounded-lg shadow-sm">
             {novel.coverUrl ? (
               <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />

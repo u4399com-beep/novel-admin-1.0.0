@@ -375,3 +375,15 @@ model ReadingProgress {
   @@index([sessionId, lastReadAt])
   @@index([novelId])
 }
+
+// ==================== 每日阅读统计 ====================
+
+model ReadingDaily {
+  id        String   @id @default(cuid())
+  date      String   @unique  // YYYY-MM-DD
+  chapters  Int      @default(0)
+  words     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}

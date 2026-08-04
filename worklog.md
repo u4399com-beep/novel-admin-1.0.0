@@ -4352,3 +4352,81 @@ Stage Summary:
 4. 阅读热力图集成到Dashboard
 5. public chapters API添加分页
 6. 样式继续打磨细节
+
+---
+Task ID: round4-manual
+Agent: Main Orchestrator
+Task: 第4轮循环迭代 - Dashboard优化+React.memo+类型安全+热力图集成
+
+Work Log:
+- 3个子代理并行执行后端优化/前端性能/类型安全
+- Dashboard 4个独立COUNT查询合并为单条UNION ALL
+- public chapters API分页参数调整
+- 3个关键组件添加React.memo
+- ScrapeRuleEditor消除as any
+- 阅读热力图集成到Dashboard
+- 7项可访问性+样式增强
+
+## 修改清单
+
+### 后端优化 (3)
+1. Dashboard UNION ALL: 4次db.count()→1次Prisma.$queryRaw
+2. public chapters分页: pageSize默认200,最大1000
+3. dashboard/activity: 已确认使用范围查询，无需修改
+
+### React性能 (3)
+4. SortableChapterRow添加React.memo
+5. TaskCard添加React.memo
+6. ScrapeRuleEditor formAccess用useMemo包裹
+
+### 类型安全 (1)
+7. ScrapeRuleEditor: 2处as any→safeSetValue+运行时校验
+
+### 新功能 (2)
+8. 阅读热力图集成到Dashboard(Card包裹)
+9. 章节阅读时recordReadingActivity写入localStorage
+
+### 可访问性+样式 (7)
+10. NovelListView分页按钮aria-label
+11. AiRuleAssistant网站类型role=radio+aria-checked
+12. rankings transition添加ease as const
+13. categories骨架屏移除Framer Motion
+14. Dashboard stat卡片card-depth
+15. 排行卡片rank-shine
+16. 首页分页btn-ripple
+
+## 验证结果
+- ESLint: 0 errors, 2 warnings(预存)
+- Git commit: 4d7f7bb (12 files, +103 -59)
+- Git push: c9bada8..4d7f7bb main → main
+
+## 统计
+- 修改文件: 12
+- 代码变更: +103 -59
+- 本轮优化/修复: 16项
+- 累计修复: 259 + 16 = 275项
+
+Stage Summary:
+- Dashboard查询从5次往返减至2次(UNION ALL)
+- 3个关键组件React.memo减少re-render
+- 类型安全改进消除as any
+- 阅读热力图端到端集成完成
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0 lint errors
+- **最新commit**: 4d7f7bb (已push)
+- **累计修复**: 275+
+
+## 未解决问题或风险
+1. 首页page.tsx仍为1205行单组件(待拆分)
+2. 审计剩余: 50+管理路由catch块detail泄露(MEDIUM)
+3. NovelCard尚未独立抽取(已由cron完成,待确认)
+4. 增量采集用模糊搜索而非sourceUrl精确匹配(HIGH)
+5. ScrapeRuleEditor仍有3-4处非any但不够严格的类型断言
+
+## 建议下一阶段优先事项
+1. 首页page.tsx拆分子组件
+2. 批量章节排序改用单SQL UPDATE
+3. 增量采集添加by-source-url API
+4. 更多新功能: EPUB/TXT导出、每日目标进度条
+5. 样式继续打磨(更多动画/过渡效果)

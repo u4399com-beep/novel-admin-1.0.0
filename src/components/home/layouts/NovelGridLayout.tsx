@@ -66,7 +66,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index }: { novel: Novel
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: index * 0.04 }}
-            className="group cursor-pointer shine-hover"
+            className="group cursor-pointer shine-hover card-depth"
           >
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
               {novel.coverUrl ? (
@@ -95,7 +95,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index }: { novel: Novel
                 </p>
               </div>
             </div>
-            <div className="mt-3 space-y-1 px-0.5">
+            <div className="mt-3 space-y-1 px-0.5 tab-content-enter">
               <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors duration-200">{novel.title}</h3>
               {novel.description && <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-1">{novel.description}</p>}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">

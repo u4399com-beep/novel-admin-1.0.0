@@ -18,7 +18,7 @@ const NovelListItem = React.memo(function NovelListItem({ novel, index }: { nove
       transition={{ duration: 0.3, delay: index * 0.03, ease: 'easeOut' as const }}
     >
       <Link href={`/novels/${novel.id}`} className="block group">
-        <div className="flex items-center gap-4 rounded-lg border bg-card p-3 sm:p-4 transition-all duration-200 hover:shadow-sm hover:border-primary/15 hover:bg-accent/30">
+        <div className="flex items-center gap-4 rounded-lg border bg-card p-3 sm:p-4 transition-all duration-200 hover:shadow-sm hover:border-primary/15 hover:bg-accent/30 card-depth tab-content-enter">
           {/* Rank number */}
           <span className="hidden sm:flex w-6 shrink-0 items-center justify-center text-sm font-bold text-muted-foreground/40 tabular-nums">
             {index + 1}
