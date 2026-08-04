@@ -96,7 +96,8 @@ export const POST = withAuth(async function POST(
     }
 
     const trimmedContent = content ? sanitizeField(content, 500000) : null;
-    const wordCount = trimmedContent ? trimmedContent.length : 0;
+    // Count pure text characters (strip HTML tags and whitespace)
+    const wordCount = trimmedContent ? trimmedContent.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length : 0;
     const trimmedSourceUrl = sourceUrl ? sanitizeField(sourceUrl, 2048) : null;
     if (trimmedSourceUrl && !isSafeUrl(trimmedSourceUrl)) {
       return NextResponse.json({ error: "sourceUrl 不允许访问内网或私有地址" }, { status: 400 });

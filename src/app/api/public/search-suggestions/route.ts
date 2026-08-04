@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 
     const novels = await db.novel.findMany({
       where: {
-        title: { contains: q },
+        title: { startsWith: q, mode: 'insensitive' },
       },
       select: {
         id: true,
@@ -46,7 +46,9 @@ export async function GET(request: NextRequest) {
         : null,
     }));
 
-    return NextResponse.json({ suggestions });
+    return NextResponse.json({ suggestions }, {
+      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
+    });
   } catch (error) {
     console.error('Search suggestions API error:', error);
     return NextResponse.json(
