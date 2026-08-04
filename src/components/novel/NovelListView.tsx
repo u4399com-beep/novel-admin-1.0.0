@@ -433,7 +433,7 @@ export default function NovelListView() {
                       {/* Status badge on cover */}
                       <Badge
                         variant="secondary"
-                        className={`absolute right-2 top-2 ${statusInfo.className}`}
+                        className={`absolute right-2 top-2 ${statusInfo.className} status-${novel.status}`}
                       >
                         {statusInfo.label}
                       </Badge>
@@ -561,7 +561,7 @@ export default function NovelListView() {
                     <span className="hidden min-w-0 flex-1 text-fade-end text-xs text-muted-foreground sm:block">{novel.author}</span>
 
                     {/* Status Badge */}
-                    <Badge variant="secondary" className={`text-xs flex-shrink-0 ${statusInfo.className}`}>
+                    <Badge variant="secondary" className={`text-xs flex-shrink-0 ${statusInfo.className} status-${novel.status}`}>
                       {statusInfo.label}
                     </Badge>
 

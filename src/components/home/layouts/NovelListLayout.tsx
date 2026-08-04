@@ -45,7 +45,7 @@ const NovelListItem = React.memo(function NovelListItem({ novel, index, search }
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5"><HighlightText text={novel.author} query={search} /></p>
               </div>
-              <span className={`inline-flex items-center shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass}`}>
+              <span className={`inline-flex items-center shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass} status-${novel.status}`}>
                 {statusInfo.label}
               </span>
             </div>

@@ -83,7 +83,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
                 </div>
               )}
               <div className="absolute top-2.5 right-2.5">
-                <span className={`inline-block h-2 w-2 rounded-full ${statusInfo.dotClass}`} title={statusInfo.label} />
+                <span className={`inline-block h-2 w-2 rounded-full ${statusInfo.dotClass} status-${novel.status}`} title={statusInfo.label} />
               </div>
               <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 opacity-0 group-hover:opacity-100">
                 <span className="flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-black/70 px-4 py-2 text-sm font-medium text-foreground backdrop-blur-sm shadow-lg translate-y-3 group-hover:translate-y-0 transition-transform duration-300">
@@ -122,7 +122,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
         <div className="flex items-center gap-3 pt-2 border-t">
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><BookMarked className="h-3 w-3" />{novel._count.chapters} 章</span>
           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><FileText className="h-3 w-3" />{formatWordCount(novel.wordCount)}</span>
-          <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass}`}>{statusInfo.label}</span>
+          <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass} status-${novel.status}`}>{statusInfo.label}</span>
         </div>
         <Link href={`/novels/${novel.id}`} className="mt-2 block w-full text-center text-xs font-medium text-primary hover:text-primary/80 hover:underline rounded-md py-1.5 bg-primary/5 hover:bg-primary/10 transition-colors">
           查看详情
