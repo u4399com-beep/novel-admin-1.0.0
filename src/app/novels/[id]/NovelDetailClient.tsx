@@ -903,7 +903,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           {/* Content progress bar */}
           {chapters.length > 0 && (
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+              <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden progress-bar-animated">
                 <div
                   className="h-full rounded-full bg-primary/70 progress-smooth"
                   style={{ width: `${contentProgress}%` }}

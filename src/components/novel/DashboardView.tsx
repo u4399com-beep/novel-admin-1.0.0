@@ -52,6 +52,7 @@ import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { DashboardStats, NovelStatus, ViewType } from '@/types';
 import { ReadingHeatmap } from '@/components/ReadingHeatmap';
+import { ReadingStatsCard } from '@/components/ReadingStatsCard';
 
 // ─── Activity API types ─────────────────────────────────────────────────────
 interface ActivityData {
@@ -671,15 +672,20 @@ export function DashboardView() {
         </CardContent>
       </Card>
 
-      {/* ── Reading Heatmap ─────────────────────────────────────────────── */}
-      <Card className="col-span-full">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">阅读活跃度</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ReadingHeatmap />
-        </CardContent>
-      </Card>
+      {/* ── Reading Heatmap + Stats ─────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">阅读活跃度</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ReadingHeatmap />
+          </CardContent>
+        </Card>
+        <div className="md:col-span-1">
+          <ReadingStatsCard className="h-full" />
+        </div>
+      </div>
 
       {/* ── Quick Actions ─────────────────────────────────────────────────── */}
       <Card>
@@ -710,7 +716,7 @@ export function DashboardView() {
                   <button
                     key={action.key}
                     type="button"
-                    className="group flex items-center gap-3 rounded-lg border p-3 text-left transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
+                    className="group flex items-center gap-3 rounded-lg border p-3 text-left transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20 card-depth appear-smooth"
                     onClick={() => handleQuickAction(action)}
                   >
                     <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${action.bg} transition-transform duration-200 group-hover:scale-110`}>
