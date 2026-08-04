@@ -26,6 +26,7 @@ import {
   X,
   Keyboard,
   Download,
+  Heart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -238,6 +239,32 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const pendingScrollRestore = useRef<number | null>(null);
   const [readStartTime] = useState(() => Date.now());
   const [readDuration, setReadDuration] = useState(0);
+
+  // ─── Favorite state (optimistic UI) ───────────────────────────────
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [localFavoriteCount, setLocalFavoriteCount] = useState(novel.favoriteCount);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+
+  const handleToggleFavorite = useCallback(async () => {
+    if (favoriteLoading) return;
+    const nextFav = !isFavorited;
+    // Optimistic update
+    setIsFavorited(nextFav);
+    setLocalFavoriteCount((c) => (nextFav ? c + 1 : Math.max(0, c - 1)));
+    try {
+      const res = await apiFetch<{ favoriteCount: number }>(`/api/novels/${novel.id}/favorite`, {
+        method: 'POST',
+        body: JSON.stringify({ favorite: nextFav }),
+      });
+      setLocalFavoriteCount(res.favoriteCount);
+    } catch {
+      // Revert on error
+      setIsFavorited(!nextFav);
+      setLocalFavoriteCount((c) => (nextFav ? Math.max(0, c - 1) : c + 1));
+    } finally {
+      setFavoriteLoading(false);
+    }
+  }, [favoriteLoading, isFavorited, novel.id]);
 
   // ─── Search match count ─────────────────────────────────────────
   const matchCount = useMemo(() => {
@@ -697,6 +724,15 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                   <BookOpen className="h-4 w-4" />
                   {safeLastChapterIndex !== null ? '继续阅读' : '开始阅读'}
                 </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={`shrink-0 mt-1 h-9 w-9 transition-colors ${isFavorited ? 'text-red-500 hover:text-red-600' : 'text-muted-foreground hover:text-red-400'}`}
+                  onClick={handleToggleFavorite}
+                  aria-label={isFavorited ? '取消收藏' : '收藏'}
+                >
+                  <Heart className={`h-5 w-5 ${isFavorited ? 'fill-current' : ''}`} />
+                </Button>
               </div>
               <motion.p
                 initial={{ opacity: 0 }}
@@ -801,7 +837,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                 >
                   <BookmarkCheck className="h-4 w-4 text-primary" />
                   <div>
-                    <div className="text-lg font-semibold leading-none tabular-nums">{novel.favoriteCount.toLocaleString()}</div>
+                    <div className="text-lg font-semibold leading-none tabular-nums">{localFavoriteCount.toLocaleString()}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">收藏</div>
                   </div>
                 </motion.div>

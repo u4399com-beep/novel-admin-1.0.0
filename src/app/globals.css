@@ -3220,3 +3220,30 @@ mark {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* ─── 分隔线渐变 ────────────────────────────────────── */
+.divider-gradient {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    oklch(var(--border)) 20%,
+    oklch(var(--border)) 80%,
+    transparent
+  );
+}
+
+/* ─── 徽章pulse动画 ──────────────────────────────────── */
+.badge-pulse {
+  animation: badge-pulse-anim 2s ease-in-out infinite;
+}
+@keyframes badge-pulse-anim {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(var(--primary) / 0.4); }
+  50% { box-shadow: 0 0 0 4px oklch(var(--primary) / 0); }
+}
+
+/* ─── 响应式隐藏 ────────────────────────────────────── */
+.hide-mobile { display: none; }
+@media (min-width: 768px) { .hide-mobile { display: initial; } }
+.hide-desktop { display: initial; }
+@media (min-width: 768px) { .hide-desktop { display: none; } }

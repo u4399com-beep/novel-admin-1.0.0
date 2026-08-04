@@ -78,7 +78,7 @@ function RankNumber({ rank }: { rank: number }) {
   const style = RANK_STYLES[rank];
   if (style) {
     return (
-      <div className={`relative flex items-center justify-center w-8 h-8 rounded-full ${style.bg} ring-2 ${style.ring} overflow-hidden`}>
+      <div className={`relative flex items-center justify-center w-8 h-8 rounded-full ${style.bg} ring-2 ${style.ring} overflow-hidden badge-pulse`}>
         <Medal className={`w-4 h-4 ${style.text} ${rank === 1 ? 'text-outline' : ''}`} />
         <div className="absolute inset-0 rank-shine pointer-events-none" />
       </div>
