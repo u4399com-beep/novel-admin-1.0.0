@@ -19,6 +19,8 @@ export const GET = withAuth(async function GET() {
         SELECT 'categories', COUNT(*)::bigint FROM "Category"
         UNION ALL
         SELECT 'tags', COUNT(*)::bigint FROM "Tag"
+        UNION ALL
+        SELECT 'favorites' as kind, COALESCE(SUM("favoriteCount"), 0)::bigint as cnt FROM "Novel"
       `);
 
       const getCount = (kind: string) => Number(counts.find((r) => r.kind === kind)?.cnt ?? 0n);
@@ -26,6 +28,7 @@ export const GET = withAuth(async function GET() {
       const totalChapters = getCount('chapters');
       const totalCategories = getCount('categories');
       const totalTags = getCount('tags');
+      const totalFavorites = getCount('favorites');
 
       // Run remaining queries in parallel
       const [totalWords, recentNovels, statusGroups] = await Promise.all([
@@ -55,6 +58,7 @@ export const GET = withAuth(async function GET() {
         totalWords: totalWords._sum.wordCount || 0,
         totalCategories,
         totalTags,
+        totalFavorites,
         recentNovels,
         statusDistribution,
       };

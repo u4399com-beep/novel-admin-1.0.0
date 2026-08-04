@@ -3312,3 +3312,25 @@ mark {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
+
+/* ─── 导出按钮特殊样式 ────────────────────────────── */
+.export-btn {
+  position: relative;
+  overflow: hidden;
+}
+.export-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, oklch(var(--primary) / 0.1), transparent);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.export-btn:hover::before {
+  opacity: 1;
+}
+
+/* ─── 状态标签颜色映射 ──────────────────────────────── */
+.status-ongoing { color: oklch(0.7 0.15 160); }
+.status-completed { color: oklch(0.7 0.15 250); }
+.status-hiatus { color: oklch(0.7 0.1 60); }

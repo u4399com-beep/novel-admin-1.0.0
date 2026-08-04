@@ -20,6 +20,7 @@ import {
   ArrowUpRight,
   Settings,
   Server,
+  Heart,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -105,6 +106,7 @@ const statCards = [
   { key: 'totalWords', label: '总字数', icon: Hash, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20', view: 'novels' as ViewType },
   { key: 'totalCategories', label: '分类总数', icon: FolderTree, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20', view: 'categories' as ViewType },
   { key: 'totalTags', label: '标签总数', icon: Tags, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/20', view: 'tags' as ViewType },
+  { key: 'totalFavorites', label: '总收藏数', icon: Heart, color: 'text-red-500 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20', view: 'novels' as ViewType },
 ] as const;
 
 // ─── Quick action items ───────────────────────────────────────────────────────

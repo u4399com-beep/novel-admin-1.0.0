@@ -733,6 +733,15 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                 >
                   <Heart className={`h-5 w-5 ${isFavorited ? 'fill-current' : ''}`} />
                 </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="shrink-0 mt-1 h-9 w-9 text-muted-foreground hover:text-foreground transition-colors export-btn"
+                  onClick={() => window.open(`/api/novels/${novel.id}/export/epub`)}
+                  aria-label="导出"
+                >
+                  <Download className="h-5 w-5" />
+                </Button>
               </div>
               <motion.p
                 initial={{ opacity: 0 }}
