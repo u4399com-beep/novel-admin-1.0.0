@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { BookOpen, Menu } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
@@ -103,7 +102,7 @@ function SidebarContent() {
               onClick={() => setCurrentView(item.key)}
               aria-current={isActive ? 'page' : undefined}
               className={`
-                group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5
+                nav-indicator group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5
                 text-sm font-medium transition-all duration-200
                 ${
                   isActive
@@ -112,15 +111,6 @@ function SidebarContent() {
                 }
               `}
             >
-              {/* Active indicator bar */}
-              {isActive && (
-                <motion.div
-                  layoutId="sidebar-active-mobile"
-                  className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-violet-400"
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                />
-              )}
-
               <Icon
                 className={`h-4.5 w-4.5 shrink-0 transition-colors ${
                   isActive ? 'text-violet-300' : 'text-slate-500 group-hover:text-slate-400'

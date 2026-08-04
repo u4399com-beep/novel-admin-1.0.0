@@ -91,7 +91,7 @@ export function ContinueReading() {
   if (!loading && progress.length === 0) return null;
 
   return (
-    <div className="group relative">
+    <div className="group relative stagger-in">
       {/* Section Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
@@ -149,7 +149,7 @@ export function ContinueReading() {
                   <Link
                     key={item.id}
                     href={`/novels/${item.novelId}`}
-                    className="shrink-0 flex items-center gap-3 rounded-xl border bg-background/80 backdrop-blur-sm p-3 w-[280px] transition-all hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 group/item card-glow"
+                    className="relative shrink-0 flex items-center gap-3 rounded-xl border bg-background/80 backdrop-blur-sm p-3 pb-4 w-[280px] transition-all hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 group/item card-glow card-depth"
                   >
                     {/* Cover Thumbnail */}
                     <div className="h-14 w-10 rounded-md overflow-hidden shrink-0 relative">
@@ -205,6 +205,16 @@ export function ContinueReading() {
 
                     {/* Arrow */}
                     <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-hover/item:text-primary/50 shrink-0 transition-colors" />
+
+                    {/* Progress bar */}
+                    <div className="absolute bottom-0 left-3 right-3">
+                      <div className="h-[2px] rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary/60 transition-all"
+                          style={{ width: `${Math.min(readPercent, 100)}%` }}
+                        />
+                      </div>
+                    </div>
                   </Link>
                 );
               })}

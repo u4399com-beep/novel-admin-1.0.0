@@ -51,6 +51,7 @@ import {
 } from '@/lib/use-reading-settings';
 import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
 import { DailyReadingGoal } from '@/components/DailyReadingGoal';
+import { BookmarkManager } from '@/components/BookmarkManager';
 import { formatWordCount, formatReadingTime } from '@/lib/format';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 
@@ -204,6 +205,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   }, []);
 
   const [filterBookmarks, setFilterBookmarks] = useState(false);
+  const [bookmarkManagerOpen, setBookmarkManagerOpen] = useState(false);
   const displayedChapters = useMemo(() => {
     if (filterBookmarks && bookmarks.length > 0) return chapters.filter((_, idx) => isBookmarked(idx));
     return chapters;
@@ -863,20 +865,36 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             </div>
           )}
 
+          {/* Daily reading goal */}
+          <div className="flex justify-center mb-4">
+            <DailyReadingGoal />
+          </div>
+
           {/* Chapter list header with bookmark filter */}
           {chapters.length > 0 && (
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium text-muted-foreground">
                 章节目录{bookmarks.length > 0 && ` (${bookmarks.length}个书签)`}
               </span>
-              <button
-                role="switch"
-                aria-checked={filterBookmarks}
-                onClick={() => setFilterBookmarks((p) => !p)}
-                className={`text-xs px-2 py-1 rounded-md transition-colors ${filterBookmarks ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
-              >
-                {filterBookmarks ? '显示全部' : '仅书签'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  role="switch"
+                  aria-checked={filterBookmarks}
+                  onClick={() => setFilterBookmarks((p) => !p)}
+                  className={`text-xs px-2 py-1 rounded-md transition-colors ${filterBookmarks ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+                >
+                  {filterBookmarks ? '显示全部' : '仅书签'}
+                </button>
+                {bookmarks.length > 0 && (
+                  <button
+                    onClick={() => setBookmarkManagerOpen(true)}
+                    className="text-xs px-2 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  >
+                    <BookmarkCheck className="h-3 w-3 inline-block mr-0.5 -mt-px" />
+                    书签管理
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -1545,6 +1563,20 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Bookmark manager dialog */}
+      <BookmarkManager
+        bookmarks={bookmarks}
+        chapters={chapters.map((ch) => ({
+          id: ch.id,
+          title: ch.title,
+          sortOrder: ch.sortOrder,
+        }))}
+        onJump={openReader}
+        onRemove={removeBookmark}
+        open={bookmarkManagerOpen}
+        onOpenChange={setBookmarkManagerOpen}
+      />
     </main>
   );
 }

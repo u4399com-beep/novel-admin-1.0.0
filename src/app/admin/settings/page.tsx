@@ -199,6 +199,17 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
+      {/* ── 说明提示 ──────────────────────────────────────────── */}
+      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+        <p className="font-medium mb-1">关于这些设置</p>
+        <ul className="list-disc list-inside space-y-0.5 text-xs opacity-90">
+          <li><b>站点名称</b>已在前台页面实时生效（侧栏标题、浏览器标签等）</li>
+          <li><b>每页显示数量 / 默认排序 / 显示字数统计</b>已存储至数据库，供前台 API 调用，后续新版本的前台组件将消费这些值</li>
+          <li><b>采集间隔 / 并发数 / 自动发布</b>已存储至数据库，供 scraper-service 采集任务读取使用</li>
+          <li>设置会同时保存到浏览器本地和服务器数据库，本地副本作为离线缓存和编辑回显</li>
+        </ul>
+      </div>
+
       {/* ── 1. 基本设置 ────────────────────────────────────────────── */}
       <Card className="card-border-glow">
         <CardHeader>
