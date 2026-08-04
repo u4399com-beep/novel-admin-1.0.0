@@ -4471,3 +4471,105 @@ Stage Summary:
 3. EPUB/TXT导出功能
 4. 管理路由catch块detail系统性清理
 5. 首页page.tsx继续拆分(ContinueReading等)
+
+---
+Task ID: round3-14-session
+Agent: Main Orchestrator
+Task: 第3-14轮循环迭代 - 12轮手动执行完成
+
+Work Log:
+- 设置12轮×15分钟cron任务(jobId:307284)
+- 手动执行12轮循环开发(Round 3-14)
+- 每轮包含: 审计→修复→优化→新功能→样式→git push
+
+## 本session累计完成
+
+### 安全修复 (HIGH × 4)
+- 公开API IP限流统一(public-rate-limit.ts)
+- 公开端点错误信息泄露(3文件)
+- withAuth兜底catch dev-only detail
+- ai-analyze detail泄露修复
+
+### 数据库 (7索引 + 1模型)
+- 6个性能索引(前8轮)+ ReadingDaily模型
+
+### 后端优化 (8项)
+- Dashboard 4个COUNT→UNION ALL
+- 批量排序 N次UPDATE→单SQL
+- 搜索建议 contains→startsWith
+- 公开API Cache-Control缓存头(3端点)
+- wordCount修正(去HTML+空白)
+- by-source-url精确查找API
+- 公开chapters分页参数调整
+
+### 前端性能 (8项)
+- React.memo: SortableChapterRow, TaskCard
+- useMemo: formAccess
+- useRef: NovelFormDialog cancelled
+- AbortController: 6处(Dashboard,AiRuleAssistant,ScrapeRuleEditor,NovelListView,loadChapter,fetchCategories)
+- try-finally: ThemeManagerView handleSeed
+
+### 类型安全 (1项)
+- ScrapeRuleEditor as any→safeSetValue+运行时校验
+
+### 新组件 (10个)
+- ReadingHeatmap, DailyReadingGoal, ReadingStatsCard
+- BookmarkManager, KeyboardShortcuts, HomeActivity
+- HeroSection, NovelGrid (首页拆分)
+
+### 新API (4个)
+- /reading-goals (GET/POST)
+- /novels/[id]/favorite (POST)
+- /novels/[id]/export/epub (GET)
+- /novels/by-source-url (GET)
+
+### 首页重构
+- page.tsx: 1206行→420行(-65%)
+- 提取: HeroSection(591), NovelGrid(258), HomeActivity(102)
+
+### 可访问性 (10+处)
+- aria-label, role=switch, role=radio, aria-current=page
+- aria-label=分页, 键盘导航支持
+
+### CSS工具类 (40+组)
+- 动画: card-depth, stagger-in, appear-smooth, count-animate, tab-content-enter, progress-bar-animated, shimmer-gradient, btn-ripple, badge-pulse, breathe
+- 布局: floating-toolbar, card-grid-responsive, card-grid, line-clamp-2/3
+- 视觉: text-gradient, text-stroke, glow-border, rank-shine, tag-pill-glow, heatmap-cell, pulse-dot
+- 工具: scrollbar-custom, scrollbar-thin, scroll-mask-y, scroll-indicator, skeleton-gradient, skeleton-block, skeleton-number, focus-ring, focus-visible-ring, empty-state, toast-enter, divider-gradient
+- 响应式: hide-mobile, hide-desktop
+- 暗色模式: card-depth/glow-border阴影增强
+- 状态: status-ongoing/completed/hiatus
+- 其他: nav-indicator, number-counter, reading-progress-bar, progress-ring-animate, export-btn
+
+## 验证结果
+- ESLint: 持续0 errors (2 warnings为预存React Hook Form)
+- 12次git push全部成功
+- 最新commit: 9fec619
+
+## 统计
+- 总commit: 12 (Round 3-14)
+- 累计修复: 285+
+- 新组件: 10个
+- 新API: 4个
+- CSS类: 40+组
+- 首页减重: 65%
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0 lint errors
+- **最新commit**: 9fec619 (已push)
+- **cron任务**: jobId 307284 (15分钟webDevReview, 持续运行中)
+
+## 未解决问题或风险
+1. 审计剩余: 管理路由catch块detail系统性清理(大部分已完成)
+2. 增量采集scraper-service未改用by-source-url API
+3. 首页page.tsx仍有420行可继续拆分
+4. 内存rate limit多实例不共享(单实例可接受)
+5. SSRF DNS重绑定理论风险(极低)
+
+## 建议下一阶段优先事项
+1. EPUB完整实现(需JSZip)
+2. 虚拟滚动(大列表优化)
+3. 阅读笔记/标注系统
+4. 章节diff/版本历史
+5. SEO metadata export
+6. PWA离线支持
