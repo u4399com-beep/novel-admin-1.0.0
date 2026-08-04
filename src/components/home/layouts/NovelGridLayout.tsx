@@ -7,8 +7,9 @@ import { Eye, BookOpen, User, BookMarked, FileText } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { getCoverGradient, formatWordCount, getStatusInfo } from '@/components/home/shared-types';
 import type { NovelCardData } from '@/components/home/shared-types';
+import { HighlightText } from '@/components/home/NovelGrid';
 
-const NovelCard = React.memo(function NovelCard({ novel, index }: { novel: NovelCardData; index: number }) {
+const NovelCard = React.memo(function NovelCard({ novel, index, search }: { novel: NovelCardData; index: number; search: string }) {
   const gradient = getCoverGradient(novel.title);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -96,10 +97,10 @@ const NovelCard = React.memo(function NovelCard({ novel, index }: { novel: Novel
               </div>
             </div>
             <div className="mt-3 space-y-1 px-0.5 tab-content-enter">
-              <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors duration-200">{novel.title}</h3>
+              <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors duration-200"><HighlightText text={novel.title} query={search} /></h3>
               {novel.description && <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-1">{novel.description}</p>}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="line-clamp-1">{novel.author}</span>
+                <span className="line-clamp-1"><HighlightText text={novel.author} query={search} /></span>
                 <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
                 <span>{novel._count.chapters}章</span>
               </div>
@@ -131,11 +132,11 @@ const NovelCard = React.memo(function NovelCard({ novel, index }: { novel: Novel
   );
 });
 
-export function NovelGridLayout({ novels }: { novels: NovelCardData[] }) {
+export function NovelGridLayout({ novels, search }: { novels: NovelCardData[]; search?: string }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6 stagger-in">
       {novels.map((novel, i) => (
-        <NovelCard key={novel.id} novel={novel} index={i} />
+        <NovelCard key={novel.id} novel={novel} index={i} search={search ?? ''} />
       ))}
     </div>
   );

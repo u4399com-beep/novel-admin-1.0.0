@@ -6,8 +6,9 @@ import { motion } from 'framer-motion';
 import { BookOpen, FileText, ArrowRight } from 'lucide-react';
 import { getCoverGradient, formatWordCount, getStatusInfo } from '@/components/home/shared-types';
 import type { NovelCardData } from '@/components/home/shared-types';
+import { HighlightText } from '@/components/home/NovelGrid';
 
-const NovelListItem = React.memo(function NovelListItem({ novel, index }: { novel: NovelCardData; index: number }) {
+const NovelListItem = React.memo(function NovelListItem({ novel, index, search }: { novel: NovelCardData; index: number; search: string }) {
   const gradient = getCoverGradient(novel.title);
   const statusInfo = getStatusInfo(novel.status);
 
@@ -40,9 +41,9 @@ const NovelListItem = React.memo(function NovelListItem({ novel, index }: { nove
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="text-sm font-semibold leading-snug line-clamp-1 group-hover:text-primary transition-colors duration-200">
-                  {novel.title}
+                  <HighlightText text={novel.title} query={search} />
                 </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">{novel.author}</p>
+                <p className="text-xs text-muted-foreground mt-0.5"><HighlightText text={novel.author} query={search} /></p>
               </div>
               <span className={`inline-flex items-center shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass}`}>
                 {statusInfo.label}
@@ -84,11 +85,11 @@ const NovelListItem = React.memo(function NovelListItem({ novel, index }: { nove
   );
 });
 
-export function NovelListLayout({ novels }: { novels: NovelCardData[] }) {
+export function NovelListLayout({ novels, search }: { novels: NovelCardData[]; search?: string }) {
   return (
     <div className="flex flex-col gap-2.5 sm:gap-3">
       {novels.map((novel, i) => (
-        <NovelListItem key={novel.id} novel={novel} index={i} />
+        <NovelListItem key={novel.id} novel={novel} index={i} search={search ?? ''} />
       ))}
     </div>
   );

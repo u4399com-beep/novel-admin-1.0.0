@@ -486,6 +486,7 @@ export default function HomePage() {
         filterSummary={filterSummary}
         layoutTheme={layoutTheme}
         animKey={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}-${layoutTheme}`}
+        search={search}
         onPageChange={handlePageChange}
         onRetry={handleRetry}
         onLoginClick={() => router.push('/login')}

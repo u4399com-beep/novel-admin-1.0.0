@@ -14,6 +14,21 @@ import type { NovelCardData } from '@/components/home/shared-types';
 // Re-export for convenience
 export type Novel = NovelCardData;
 
+// ─── HighlightText ─────────────────────────────────────────────────
+
+export function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-primary/20 text-foreground rounded px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
 // ─── Skeleton Grid ───────────────────────────────────────────────────
 
 function NovelCardSkeleton() {
@@ -67,6 +82,7 @@ export interface NovelGridProps {
   filterSummary: string;
   layoutTheme: LayoutTheme;
   animKey: string;
+  search?: string;
   onPageChange: (page: number) => void;
   onRetry: () => void;
   onLoginClick: () => void;
@@ -83,6 +99,7 @@ export function NovelGrid({
   filterSummary,
   layoutTheme,
   animKey,
+  search = '',
   onPageChange,
   onRetry,
   onLoginClick,
@@ -204,9 +221,9 @@ export function NovelGrid({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' as const }}
             >
-              {layoutTheme === 'grid' && <NovelGridLayout novels={novels} />}
-              {layoutTheme === 'magazine' && <NovelMagazineLayout novels={novels} />}
-              {layoutTheme === 'list' && <NovelListLayout novels={novels} />}
+              {layoutTheme === 'grid' && <NovelGridLayout novels={novels} search={search} />}
+              {layoutTheme === 'magazine' && <NovelMagazineLayout novels={novels} search={search} />}
+              {layoutTheme === 'list' && <NovelListLayout novels={novels} search={search} />}
             </motion.div>
           )}
         </AnimatePresence>

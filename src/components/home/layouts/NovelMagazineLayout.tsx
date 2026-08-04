@@ -6,8 +6,9 @@ import { motion } from 'framer-motion';
 import { BookOpen, FileText, ArrowRight, Sparkles } from 'lucide-react';
 import { getCoverGradient, formatWordCount, getStatusInfo } from '@/components/home/shared-types';
 import type { NovelCardData } from '@/components/home/shared-types';
+import { HighlightText } from '@/components/home/NovelGrid';
 
-const HeroCard = React.memo(function HeroCard({ novel }: { novel: NovelCardData }) {
+const HeroCard = React.memo(function HeroCard({ novel, search }: { novel: NovelCardData; search: string }) {
   const gradient = getCoverGradient(novel.title);
   const statusInfo = getStatusInfo(novel.status);
 
@@ -41,9 +42,9 @@ const HeroCard = React.memo(function HeroCard({ novel }: { novel: NovelCardData 
                   {novel.category.name}
                 </span>
               )}
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white leading-tight mb-2 line-clamp-2 drop-shadow-lg">{novel.title}</h2>
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white leading-tight mb-2 line-clamp-2 drop-shadow-lg"><HighlightText text={novel.title} query={search} /></h2>
               <div className="flex items-center gap-3 text-white/80 text-xs sm:text-sm">
-                <span>{novel.author}</span>
+                <span><HighlightText text={novel.author} query={search} /></span>
                 <span className="h-1 w-1 rounded-full bg-white/40" />
                 <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{novel._count.chapters} 章</span>
                 <span className="h-1 w-1 rounded-full bg-white/40" />
@@ -64,7 +65,7 @@ const HeroCard = React.memo(function HeroCard({ novel }: { novel: NovelCardData 
   );
 });
 
-const MagazineCard = React.memo(function MagazineCard({ novel, index }: { novel: NovelCardData; index: number }) {
+const MagazineCard = React.memo(function MagazineCard({ novel, index, search }: { novel: NovelCardData; index: number; search: string }) {
   const gradient = getCoverGradient(novel.title);
   const statusInfo = getStatusInfo(novel.status);
   const isReversed = index % 2 === 1;
@@ -96,8 +97,8 @@ const MagazineCard = React.memo(function MagazineCard({ novel, index }: { novel:
                   {novel.category.name}
                 </span>
               )}
-              <h3 className="text-sm font-bold leading-snug line-clamp-2 group-hover:text-primary transition-colors duration-200">{novel.title}</h3>
-              <p className="text-xs text-muted-foreground mt-1">{novel.author}</p>
+              <h3 className="text-sm font-bold leading-snug line-clamp-2 group-hover:text-primary transition-colors duration-200"><HighlightText text={novel.title} query={search} /></h3>
+              <p className="text-xs text-muted-foreground mt-1"><HighlightText text={novel.author} query={search} /></p>
             </div>
             <div className={`flex items-center gap-2.5 text-[11px] text-muted-foreground mt-2 ${isReversed ? 'flex-row-reverse' : ''}`}>
               <span className="flex items-center gap-0.5"><BookOpen className="h-3 w-3" />{novel._count.chapters}章</span>
@@ -111,16 +112,16 @@ const MagazineCard = React.memo(function MagazineCard({ novel, index }: { novel:
   );
 });
 
-export function NovelMagazineLayout({ novels }: { novels: NovelCardData[] }) {
+export function NovelMagazineLayout({ novels, search }: { novels: NovelCardData[]; search?: string }) {
   const [featured, ...rest] = novels;
   if (!featured) return null;
 
   return (
     <div className="space-y-6">
-      <HeroCard novel={featured} />
+      <HeroCard novel={featured} search={search ?? ''} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {rest.map((novel, i) => (
-          <MagazineCard key={novel.id} novel={novel} index={i} />
+          <MagazineCard key={novel.id} novel={novel} index={i} search={search ?? ''} />
         ))}
       </div>
     </div>

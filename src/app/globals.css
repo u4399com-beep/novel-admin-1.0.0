@@ -3145,3 +3145,78 @@ nav button[data-active='true'] {
 .nav-indicator[aria-current="page"]::before {
   height: 60%;
 }
+
+/* ─── 搜索高亮样式 ────────────────────────────────────── */
+mark {
+  background: oklch(var(--primary) / 0.15);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* ─── 响应式卡片网格增强 ──────────────────────────────── */
+.card-grid-responsive {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+}
+
+/* ─── 自定义滚动条 ────────────────────────────────────── */
+.scrollbar-custom {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(var(--border)) transparent;
+}
+.scrollbar-custom::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-custom::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-custom::-webkit-scrollbar-thumb {
+  background: oklch(var(--border));
+  border-radius: 3px;
+}
+.scrollbar-custom::-webkit-scrollbar-thumb:hover {
+  background: oklch(var(--muted-foreground) / 0.5);
+}
+
+/* ─── 焦点可见状态增强 ────────────────────────────────── */
+.focus-ring {
+ outline: 2px solid oklch(var(--primary));
+  outline-offset: 2px;
+}
+
+/* ─── 空状态容器 ──────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+.empty-state svg {
+  opacity: 0.3;
+}
+
+/* ─── 加载骨架屏增强 ──────────────────────────────────── */
+.skeleton-block {
+  background: oklch(var(--muted));
+  border-radius: 6px;
+  animation: skeleton-block-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-block-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ─── Toast/通知增强 ──────────────────────────────────── */
+.toast-enter {
+  animation: toast-slide-in 0.3s ease-out;
+}
+@keyframes toast-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

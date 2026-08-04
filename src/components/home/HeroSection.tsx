@@ -349,8 +349,21 @@ export function HeroSection({
     return (
       <>
         {title.slice(0, idx)}
-        <span className="font-bold text-primary">{title.slice(idx, idx + query.length)}</span>
+        <mark className="bg-primary/20 text-foreground rounded px-0.5">{title.slice(idx, idx + query.length)}</mark>
         {title.slice(idx + query.length)}
+      </>
+    );
+  }
+
+  function highlightAuthor(author: string) {
+    if (!query) return author;
+    const idx = author.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return author;
+    return (
+      <>
+        {author.slice(0, idx)}
+        <mark className="bg-primary/20 text-foreground rounded px-0.5">{author.slice(idx, idx + query.length)}</mark>
+        {author.slice(idx + query.length)}
       </>
     );
   }
@@ -476,7 +489,7 @@ export function HeroSection({
                                 {highlightTitle(item.title)}
                               </p>
                               <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                {item.author}
+                                {highlightAuthor(item.author)}
                               </p>
                             </div>
                             {item.category && (
