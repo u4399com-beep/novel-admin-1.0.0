@@ -4430,3 +4430,44 @@ Stage Summary:
 3. 增量采集添加by-source-url API
 4. 更多新功能: EPUB/TXT导出、每日目标进度条
 5. 样式继续打磨(更多动画/过渡效果)
+
+---
+Task ID: round5-manual
+Agent: Main Orchestrator
+Task: 第5轮循环迭代 - 首页拆分+批量排序+阅读目标API
+
+Work Log:
+- 首页page.tsx从1206行拆分至522行(-56.7%)
+- 提取HeroSection(591行)和NovelGrid(258行)独立组件
+- 批量章节排序改用单SQL UPDATE
+- 新增ReadingDaily模型和reading-goals API
+- 三种布局模式添加card-depth/tab-content-enter效果
+
+## 修改清单
+1. 首页拆分: HeroSection(搜索+筛选) + NovelGrid(网格+分页)
+2. 批量排序: N次tx.chapter.updateMany→单条$executeRaw VALUES+JOIN
+3. ReadingDaily模型: date+chapters+words
+4. reading-goals API: GET(进度+连续天数) + POST(upsert累加)
+5. 卡片hover: card-depth + tab-content-enter
+
+## 验证结果
+- ESLint: 0 errors, 2 warnings
+- Git commit: be8045b (11 files, +1156 -756)
+- Git push: 4d7f7bb..be8045b
+
+## 统计
+- 修改/新增文件: 11
+- 代码变更: +1156 -756
+- 累计修复: 278+
+
+Stage Summary:
+- 首页组件化大幅提升可维护性
+- 批量排序性能从O(N)→O(1)
+- 阅读目标API为后续每日目标UI提供后端支持
+
+## 建议下一阶段优先事项
+1. 阅读目标UI集成(NovelDetailClient进度条)
+2. 更多CSS动画细节打磨
+3. EPUB/TXT导出功能
+4. 管理路由catch块detail系统性清理
+5. 首页page.tsx继续拆分(ContinueReading等)

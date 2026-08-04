@@ -4,6 +4,7 @@ import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
+import { notFound } from "next/navigation";
 
 // GET /api/novels/[id]/chapters - List chapters for a novel (with pagination)
 export const GET = withAuth(async function GET(
@@ -13,6 +14,25 @@ export const GET = withAuth(async function GET(
   try {
     const { id: novelId } = await params;
     const { searchParams } = new URL(request.url);
+
+    // ─── Single-chapter TXT export ──────────────────────────────────
+    if (searchParams.get('export') === 'txt') {
+      const chapterId = searchParams.get('chapterId');
+      if (!chapterId) return NextResponse.json({ error: 'chapterId is required' }, { status: 400 });
+      const [novel, chapter] = await Promise.all([
+        db.novel.findUnique({ where: { id: novelId }, select: { title: true } }),
+        db.chapter.findUnique({ where: { id: chapterId }, select: { title: true, content: true } }),
+      ]);
+      if (!chapter || !chapter.content) return notFound();
+      const filename = `${novel?.title || 'novel'}_${chapter.title}.txt`;
+      return new Response(chapter.content, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        },
+      });
+    }
+
     const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 50, maxPageSize: 500 });
 
     const [chapters, total] = await Promise.all([

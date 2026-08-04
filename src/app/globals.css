@@ -3059,3 +3059,89 @@ nav button[data-active='true'] {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
+
+/* ─── 阅读进度环动画 ────────────────────────────────── */
+@keyframes progress-ring {
+  from { stroke-dashoffset: var(--ring-circumference); }
+  to { stroke-dashoffset: var(--ring-offset); }
+}
+
+.progress-ring-animate {
+  animation: progress-ring 0.8s ease-out forwards;
+}
+
+/* ─── 卡片交错入场 ────────────────────────────────────── */
+.stagger-in > * {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: stagger-fade-in 0.3s ease-out forwards;
+}
+
+.stagger-in > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-in > *:nth-child(2) { animation-delay: 40ms; }
+.stagger-in > *:nth-child(3) { animation-delay: 80ms; }
+.stagger-in > *:nth-child(4) { animation-delay: 120ms; }
+.stagger-in > *:nth-child(5) { animation-delay: 160ms; }
+.stagger-in > *:nth-child(6) { animation-delay: 200ms; }
+.stagger-in > *:nth-child(7) { animation-delay: 240ms; }
+.stagger-in > *:nth-child(8) { animation-delay: 280ms; }
+.stagger-in > *:nth-child(n+9) { animation-delay: 320ms; }
+
+@keyframes stagger-fade-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── 标签pill增强 ────────────────────────────────────── */
+.tag-pill-glow {
+  position: relative;
+}
+.tag-pill-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: inherit;
+  filter: blur(6px);
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: -1;
+}
+.tag-pill-glow:hover::after {
+  opacity: 0.4;
+}
+
+/* ─── 数字递增动画占位 ──────────────────────────────── */
+.number-counter {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 平滑出现 ────────────────────────────────────────── */
+.appear-smooth {
+  animation: appear-smooth 0.4s ease-out;
+}
+
+@keyframes appear-smooth {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ─── 侧栏导航项活跃指示器 ────────────────────────────── */
+.nav-indicator {
+  position: relative;
+}
+.nav-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0;
+  background: oklch(var(--primary));
+  border-radius: 0 2px 2px 0;
+  transition: height 0.2s ease;
+}
+.nav-indicator[aria-current="page"]::before {
+  height: 60%;
+}

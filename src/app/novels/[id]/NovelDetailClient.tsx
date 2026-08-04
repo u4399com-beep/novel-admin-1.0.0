@@ -25,6 +25,7 @@ import {
   RotateCcw,
   X,
   Keyboard,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +50,7 @@ import {
   READING_THEMES,
 } from '@/lib/use-reading-settings';
 import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
+import { DailyReadingGoal } from '@/components/DailyReadingGoal';
 import { formatWordCount, formatReadingTime } from '@/lib/format';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 
@@ -1129,6 +1131,24 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label="导出本章TXT"
+                      className="h-7 w-7 press-effect"
+                      onClick={() => {
+                        const ch = chapters[currentIndex];
+                        if (ch) window.open(`/api/novels/${novel.id}/chapters?chapterId=${ch.id}&export=txt`);
+                      }}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">导出TXT</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       aria-label="快捷键帮助"
                       className={
                         'h-7 w-7 press-effect ' + (showShortcutsHelp ? 'bg-primary/10 text-primary' : '')
@@ -1466,6 +1486,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               <span className="text-[11px] text-muted-foreground hidden sm:block">
                 ← → J/K 翻页 · ↑↓ 滚动 · B 书签 · F 全屏 · ? 帮助
               </span>
+              <DailyReadingGoal />
               {formatReadDuration(readDuration) && (
                 <span className="text-xs text-muted-foreground/60 flex items-center gap-1">
                   <Clock className="h-3 w-3" />

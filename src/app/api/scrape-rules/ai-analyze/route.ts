@@ -270,7 +270,7 @@ ${html}`;
         success: false,
         rule: getDefaultRule(url),
         error: "AI analysis failed, please try again",
-        detail: msg,
+        detail: process.env.NODE_ENV === 'development' ? msg : undefined,
       });
     } finally {
       clearTimeout(llmTimeoutId);
