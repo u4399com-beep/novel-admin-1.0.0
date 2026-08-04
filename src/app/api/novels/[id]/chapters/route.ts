@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
+import { paginatedList } from "@/lib/crud-helpers";
 import { isSafeUrl } from "@/lib/sanitize";
 import { notFound } from "next/navigation";
 
@@ -33,34 +34,24 @@ export const GET = withAuth(async function GET(
       });
     }
 
-    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 50, maxPageSize: 500 });
+    const { page, pageSize } = parsePagination(searchParams, { defaultPageSize: 50, maxPageSize: 500 });
 
-    const [chapters, total] = await Promise.all([
-      db.chapter.findMany({
-        where: { novelId },
-        orderBy: { sortOrder: "asc" },
-        skip,
-        take: pageSize,
-        // Exclude content field from list to reduce response size by ~95%
-        select: {
-          id: true,
-          title: true,
-          sortOrder: true,
-          wordCount: true,
-          sourceUrl: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      db.chapter.count({ where: { novelId } }),
-    ]);
-
-    return NextResponse.json({
-      chapters,
-      total,
+    return paginatedList(db.chapter, {
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
+      where: { novelId },
+      orderBy: { sortOrder: "asc" },
+      // Exclude content field from list to reduce response size by ~95%
+      select: {
+        id: true,
+        title: true,
+        sortOrder: true,
+        wordCount: true,
+        sourceUrl: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      itemsKey: 'chapters',
     });
   } catch (error) {
     console.error("List chapters error:", error);

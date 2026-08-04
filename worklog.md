@@ -4739,3 +4739,154 @@ Stage Summary:
 3. 批量章节翻译功能
 4. 更多新功能: 阅读笔记/标注、虚拟滚动
 5. 样式继续打磨(主题模板多样化)
+---
+Task ID: 1-a
+Agent: Code Splitter
+Task: NovelDetailClient拆分子组件
+
+Work Log:
+- 读取NovelDetailClient.tsx全文件(1653行)分析结构
+- 识别6个可提取子组件区域: ReaderToolbar, ChapterSidebar, BookmarksPanel, ReaderSearchBar, ReaderContent, BottomNav, KeyboardShortcutsPanel
+- 创建 src/app/novels/[id]/reader/ 目录
+- 提取共享类型到 reader/types.ts (Tag, Chapter, Novel, BookmarkEntry)
+- 提取 ReaderToolbar (286行) - 阅读器顶部工具栏(进度条、翻页、书签、设置、导出、翻译、快捷键、全屏)
+- 提取 ChapterSidebar (82行) - 左侧章节目录侧边栏
+- 提取 BookmarksPanel (115行) - 右侧书签面板
+- 提取 ReaderSearchBar (99行) - 章节内搜索栏(含自动聚焦)
+- 提取 ReaderContent (128行) - 主阅读内容区(含高亮逻辑)
+- 提取 BottomNav (66行) - 底部导航栏(含阅读计时)
+- 提取 KeyboardShortcutsPanel (65行) - 快捷键帮助对话框
+- 重写 NovelDetailClient.tsx 为编排器(1108行)，仅保留状态管理和主要页面布局
+- 所有子组件使用'use client'指令
+- 所有子组件定义TypeScript接口props
+- 保持framer-motion 'ease'使用as const
+- 未传递style prop给lucide-react图标
+- 运行bun run lint确认0错误
+
+Stage Summary:
+- NovelDetailClient.tsx: 1653行 → 1108行 (减少33%)
+- 新增7个子组件文件 + 1个类型文件, 总计881行
+- ESLint: 0 errors, 0 new warnings
+- 功能和行为完全不变，纯代码重组
+---
+task: 1-b
+agent: css-stylist
+date: 2025-06-27
+status: completed
+summary: Added 20+ new CSS utility classes to globals.css and applied 3 classes to existing components.
+
+## Changes Made
+
+### globals.css — 7 new organized sections appended:
+1. **Glassmorphism depth levels**: `.glass-subtle`, `.glass-medium`, `.glass-heavy` with dark mode variants
+2. **Micro-interactions**: `.magnetic-hover`, `.focus-ring-animated`, `.float-subtle`, `.skeleton-pulse` (with dark mode)
+3. **Typography**: `.text-balance`, `.drop-cap`, `.prose-reading` (paragraph rhythm with text-indent)
+4. **Layout & spacing**: `.safe-bottom`, `.safe-top`, `.container-narrow`, `.container-wide`, `.aspect-video`, `.aspect-square`, `.aspect-book`
+5. **Card variants**: `.card-glass` (glassmorphism card with hover dark mode), `.card-outline-gradient` (gradient border via mask)
+6. **Scroll & overflow**: `.scroll-x-snap` (horizontal snap, no scrollbar), noted existing `.scroll-fade-edges` (avoided duplicate)
+7. **Status & indicators**: `.status-dot-pulse`, `.cursor-blink`
+
+### Component changes:
+- **DashboardView.tsx**: Added `card-glass` class to stat cards for glassmorphism effect
+- **NovelGrid.tsx**: Replaced manual `grid-cols-*` with `grid-auto-fit` on skeleton grid
+- **HeroSection.tsx**: Added `magnetic-hover` to search button
+
+### Lint: 0 errors, 2 pre-existing warnings (unrelated)
+
+---
+Task ID: 1-c
+Agent: Code Consolidator
+Task: Consolidate repeated API patterns
+
+Work Log:
+- Verified `parsePagination` already exists in `src/lib/api-utils.ts` and is properly used in 6 routes
+- Found 1 route (`scrape-tasks/[id]/logs/route.ts`) using manual `parseInt` pagination (non-page-based, just limit), left as-is since it's a different pattern
+
+## Created `src/lib/crud-helpers.ts`
+- `paginatedList(model, options)`: Runs `findMany` + `count` in parallel, returns consistent `{ [itemsKey], total, page, pageSize, totalPages }` shape. Supports `where`, `orderBy`, `include`, `select`, and configurable `itemsKey`.
+- `getOrFail(model, where, errorMessage)`: Fetches a single record or throws `NotFoundError` (custom 404 error class).
+- `requireFields(body, fields)`: Validates that required string fields are present and non-empty. Returns discriminated union for type-safe checking.
+
+## Refactored 3 routes to use `paginatedList`
+1. **`src/app/api/scrape-tasks/route.ts`** — GET handler now uses `paginatedList(db.scrapeTask, { ..., itemsKey: 'tasks' })`. Removed manual `Promise.all([findMany, count])` and response assembly. Removed unused `skip` destructuring.
+2. **`src/app/api/novels/route.ts`** — GET handler now uses `paginatedList(db.novel, { ..., itemsKey: 'novels' })`. Removed manual `Promise.all` and response assembly. Removed unused `skip` destructuring.
+3. **`src/app/api/novels/[id]/chapters/route.ts`** — GET handler's paginated branch now uses `paginatedList(db.chapter, { ..., itemsKey: 'chapters' })`. Removed manual `Promise.all` and response assembly.
+
+## Cleaned up unused imports
+1. **`src/app/api/categories/route.ts`** — Removed unused `apiSuccess` import.
+2. **`src/app/api/chapters/[id]/route.ts`** — Removed unused `apiError` and `apiSuccess` imports, added missing `NextResponse` import.
+
+## Verification
+- `bun run lint`: 0 errors (2 pre-existing warnings unrelated to changes)
+
+---
+Task ID: round1-cycle3
+Agent: Main Orchestrator
+Task: 第1轮/第3循环 - 高密度代码精简 + 样式大幅提升
+
+Work Log:
+## 代码精简整合 (3个子代理并行)
+
+### 1. NovelDetailClient拆分 (1652→1108行, -33%)
+- 提取7个子组件到 src/app/novels/[id]/reader/:
+  - types.ts: 共享TypeScript接口(40行)
+  - ReaderToolbar.tsx: 顶部工具栏(286行)
+  - ChapterSidebar.tsx: 章节侧边栏(82行)
+  - BookmarksPanel.tsx: 书签管理面板(115行)
+  - ReaderSearchBar.tsx: 章内搜索栏(99行)
+  - ReaderContent.tsx: 阅读内容区(128行)
+  - BottomNav.tsx: 底部导航(66行)
+  - KeyboardShortcutsPanel.tsx: 快捷键面板(65行)
+- highlightText和formatReadDuration辅助函数移动到各自消费者
+
+### 2. CRUD辅助函数提取
+- 新建 src/lib/crud-helpers.ts:
+  - paginatedList(): 标准化分页列表查询
+  - getOrFail(): 单条记录获取+404
+  - requireFields(): 必填字段验证
+- 重构3个API路由使用paginatedList:
+  - scrape-tasks/route.ts
+  - novels/route.ts
+  - novels/[id]/chapters/route.ts
+- 清理未使用导入: categories/route.ts, chapters/[id]/route.ts
+
+### 3. CSS样式大幅提升 (20+新类)
+- Glassmorphism: glass-subtle/medium/heavy + 暗色模式
+- 微交互: magnetic-hover, focus-ring-animated, float-subtle, skeleton-pulse
+- 排版: text-balance, drop-cap, prose-reading
+- 布局: safe-bottom/top, container-narrow/wide, aspect-video/square/book
+- 卡片: card-glass, card-outline-gradient + 暗色模式
+- 滚动: scroll-x-snap
+- 指示器: status-dot-pulse, cursor-blink
+- 应用: DashboardView→card-glass, NovelGrid→grid-auto-fit, HeroSection→magnetic-hover
+
+## 验证结果
+- ESLint: 0 errors, 2 warnings(预存)
+- NovelDetailClient: 1652→1108行(-33%)
+- 新增文件: 9 (7 reader子组件 + crud-helpers + 20+CSS类)
+
+## 统计
+- 代码精简: NovelDetailClient -544行
+- 新辅助模块: crud-helpers.ts (129行)
+- 新子组件: 8个
+- 新CSS类: 20+个
+- API重构: 3个路由
+- cron任务: jobId 308234 (120轮×15分钟)
+
+Stage Summary:
+- 最大单文件从1652行减至1108行
+- CRUD辅助函数消除3个路由中的重复分页逻辑
+- 20+个新CSS工具类覆盖glassmorphism/微交互/排版/布局
+- 累计修复: 333 + 3(API重构) + 8(组件拆分) = 344+
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0 lint errors
+- **最大文件**: NovelDetailView.tsx (1476行, 下轮拆分目标)
+- **cron任务**: jobId 308234 (120轮, 15分钟间隔, webDevReview)
+
+## 建议下一阶段优先事项
+1. NovelDetailView.tsx拆分(1476行)
+2. SiteClusterView.tsx拆分(964行)
+3. ThemeManagerView.tsx拆分(915行)
+4. 更多API路由使用crud-helpers
+5. 样式继续打磨(组件级视觉优化)

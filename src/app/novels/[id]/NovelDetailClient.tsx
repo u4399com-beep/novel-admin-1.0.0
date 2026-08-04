@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, type MouseEvent, type ReactNode, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   BookOpen,
@@ -13,18 +13,7 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
-  ChevronDown,
-  Maximize2,
-  Minimize2,
-  Loader2,
-  Search,
-  Settings2,
-  List,
   BookmarkCheck,
-  RotateCcw,
-  X,
-  Keyboard,
   Download,
   Heart,
 } from 'lucide-react';
@@ -36,60 +25,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { BackToTop } from '@/components/BackToTop';
+import { DailyReadingGoal } from '@/components/DailyReadingGoal';
+import { BookmarkManager } from '@/components/BookmarkManager';
 import {
   useReadingSettings,
   useReadingProgress,
   useChapterBookmarks,
-  FONT_FAMILIES,
-  READING_THEMES,
 } from '@/lib/use-reading-settings';
-import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
-import { DailyReadingGoal } from '@/components/DailyReadingGoal';
-import { BookmarkManager } from '@/components/BookmarkManager';
-import { TranslateButton } from '@/components/translate/TranslateButton';
 import { formatWordCount, formatReadingTime } from '@/lib/format';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
-
-// ─── Types ───────────────────────────────────────────────────────────
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-}
-
-interface Chapter {
-  id: string;
-  title: string;
-  wordCount: number;
-  sortOrder: number;
-  createdAt: string;
-}
-
-interface Novel {
-  id: string;
-  title: string;
-  author: string;
-  description: string | null;
-  coverUrl: string | null;
-  coverPath: string | null;
-  status: string;
-  wordCount: number;
-  clickCount: number;
-  favoriteCount: number;
-  category: { id: string; name: string; slug: string; color: string; icon: string | null } | null;
-  tags: Tag[];
-  _count: { chapters: number };
-  createdAt: string;
-  updatedAt: string;
-}
+import { getCoverGradient } from '@/lib/cover-gradient';
+import type { Novel, Chapter, Tag } from './reader/types';
+import { ReaderToolbar } from './reader/ReaderToolbar';
+import { ChapterSidebar } from './reader/ChapterSidebar';
+import { BookmarksPanel } from './reader/BookmarksPanel';
+import { ReaderSearchBar } from './reader/ReaderSearchBar';
+import { ReaderContent } from './reader/ReaderContent';
+import { BottomNav } from './reader/BottomNav';
+import { KeyboardShortcutsPanel } from './reader/KeyboardShortcutsPanel';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -98,8 +52,6 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
   completed: { label: '已完结', variant: 'secondary' },
   hiatus: { label: '暂停中', variant: 'outline' },
 };
-
-import { getCoverGradient } from '@/lib/cover-gradient';
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -118,46 +70,10 @@ const itemVariants = {
   show: { opacity: 1, x: 0, transition: { duration: 0.2, ease: 'easeOut' as const } },
 };
 
-function formatReadDuration(seconds: number): string {
-  if (seconds < 60) return '';
-  const m = Math.floor(seconds / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h${m % 60}m`;
-  return `${m}min`;
-}
-
 // ─── Component ───────────────────────────────────────────────────────
 
 const SIDEBAR_PAGE_SIZE = 200;
 const CHAPTERS_PER_PAGE = 100;
-
-// ─── Reader search highlight helper ─────────────────────────────────
-// Splits text around matches and wraps them in <mark> elements (React, not raw HTML).
-function highlightText(text: string, query: string, activeIndex: number): ReactNode {
-  if (!query.trim()) return text;
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
-  const regex = new RegExp(`(${escaped})`, 'gi');
-  const parts = text.split(regex);
-  let matchCount = 0;
-  return parts.map((part, i) => {
-    if (regex.test(part)) {
-      regex.lastIndex = 0; // reset for next test
-      const idx = matchCount++;
-      const isActive = idx === activeIndex;
-      return (
-        <mark
-          key={i}
-          className={`rounded-sm px-0.5 ${isActive ? 'bg-amber-400/70 dark:bg-amber-500/60 ring-2 ring-amber-400/50' : 'bg-amber-200/70 dark:bg-amber-500/25'}`}
-          data-match-index={idx}
-        >
-          {part}
-        </mark>
-      );
-    }
-    regex.lastIndex = 0;
-    return part;
-  });
-}
 
 export default function NovelDetailClient({ novel, chapters: initialChapters, totalChapters: initialTotal }: { novel: Novel; chapters: Chapter[]; totalChapters?: number }) {
   const router = useRouter();
@@ -208,10 +124,6 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
 
   const [filterBookmarks, setFilterBookmarks] = useState(false);
   const [bookmarkManagerOpen, setBookmarkManagerOpen] = useState(false);
-  const displayedChapters = useMemo(() => {
-    if (filterBookmarks && bookmarks.length > 0) return chapters.filter((_, idx) => isBookmarked(idx));
-    return chapters;
-  }, [chapters, bookmarks.length, filterBookmarks, isBookmarked]);
 
   // ─── Reader state ───────────────────────────────────────────────
   const [readerOpen, setReaderOpen] = useState(false);
@@ -236,7 +148,6 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const [currentMatch, setCurrentMatch] = useState(0);
   const readerContentRef = useRef<HTMLDivElement>(null);
   const readerDialogRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const pendingScrollRestore = useRef<number | null>(null);
   const [readStartTime] = useState(() => Date.now());
   const [readDuration, setReadDuration] = useState(0);
@@ -268,12 +179,12 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   }, [favoriteLoading, isFavorited, novel.id]);
 
   // ─── Search match count ─────────────────────────────────────────
-  const matchCount = useMemo(() => {
+  const matchCount = (() => {
     if (!chapterContent || !searchQuery.trim()) return 0;
-    const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
+    const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const matches = chapterContent.match(new RegExp(escaped, 'gi'));
     return matches ? matches.length : 0;
-  }, [chapterContent, searchQuery]);
+  })();
 
   const getMatchCount = useCallback(() => matchCount, [matchCount]);
 
@@ -283,6 +194,12 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   // ─── Reading progress ────────────────────────────────────────────
   const { lastChapterIndex, saveProgress } = useReadingProgress(novel.id, chapters);
   const { bookmarks, addBookmark, removeBookmark, clearAllBookmarks, isBookmarked } = useChapterBookmarks(novel.id);
+
+  const displayedChapters = (() => {
+    if (filterBookmarks && bookmarks.length > 0) return chapters.filter((_, idx) => isBookmarked(idx));
+    return chapters;
+  })();
+
   // Fetch remaining chapters if SSR only provided 200
   useEffect(() => {
     const total = initialTotal ?? novel._count.chapters;
@@ -514,17 +431,17 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   }, [readerFullscreen, readerOpen]);
 
   useEffect(() => {
- function handleFullscreenChange() {
- if (!document.fullscreenElement && readerFullscreen) {
- setReaderFullscreen(false);
- }
- }
- document.addEventListener('fullscreenchange', handleFullscreenChange);
- return () => {
-   document.removeEventListener('fullscreenchange', handleFullscreenChange);
-   if (document.fullscreenElement) document.exitFullscreen?.();
- };
- }, [readerFullscreen]);
+    function handleFullscreenChange() {
+      if (!document.fullscreenElement && readerFullscreen) {
+        setReaderFullscreen(false);
+      }
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      if (document.fullscreenElement) document.exitFullscreen?.();
+    };
+  }, [readerFullscreen]);
 
   // ─── Keyboard navigation ─────────────────────────────────────────
   useEffect(() => {
@@ -621,13 +538,6 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     return () => clearInterval(interval);
   }, [readerOpen, readStartTime]);
 
-  // ─── Auto-focus search input ─────────────────────────────────────
-  useEffect(() => {
-    if (searchOpen) {
-      requestAnimationFrame(() => searchInputRef.current?.focus());
-    }
-  }, [searchOpen]);
-
   // ─── Scroll active match into view ───────────────────────────────
   useEffect(() => {
     if (!searchOpen || matchCount === 0) return;
@@ -639,13 +549,12 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     }
   }, [currentMatch, searchOpen, matchCount]);
 
-  const handleSearchPrev = useCallback(() => {
-    setCurrentMatch((p) => (matchCount > 0 ? (p - 1 + matchCount) % matchCount : 0));
-  }, [matchCount]);
-
-  const handleSearchNext = useCallback(() => {
-    setCurrentMatch((p) => (matchCount > 0 ? (p + 1) % matchCount : 0));
-  }, [matchCount]);
+  // ─── Close search handler ────────────────────────────────────────
+  const handleCloseSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setCurrentMatch(0);
+  }, []);
 
   return (
     <main className="min-h-screen bg-background">
@@ -1072,221 +981,35 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           }
         >
           {/* ── Top bar ─────────────────────────────────────────── */}
-          <div className="shrink-0 border-b bg-muted/30">
-            {/* Progress bar */}
-            <div className="h-0.5 bg-muted overflow-hidden">
-              <motion.div
-                className="h-full bg-primary"
-                initial={false}
-                animate={{ width: `${scrollPercent}%` }}
-                transition={{ duration: 0.15 }}
-              />
-            </div>
-            <div className="px-4 py-2 flex items-center justify-between gap-2">
-              {/* Left: progress text */}
-              <span className="text-xs text-muted-foreground font-medium tabular-nums min-w-0 truncate">
-                第 {currentIndex + 1}/{chapters.length} 章
-                <span className="ml-2 text-muted-foreground/60">{scrollPercent}%</span>
-              </span>
-
-              {/* Center: nav buttons */}
-              <div className="flex items-center gap-1 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 press-effect"
-                  disabled={!hasPrev || loadingChapter}
-                  onClick={() => goToChapter('prev')}
-                  title="上一章 (←)"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 press-effect"
-                  disabled={!hasNext || loadingChapter}
-                  onClick={() => goToChapter('next')}
-                  title="下一章 (→)"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {/* Right: tools */}
-              <div className="flex items-center gap-0.5 shrink-0">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 press-effect"
-                      aria-label="章节目录"
-                      onClick={() => setShowChapterSidebar((p) => !p)}
-                    >
-                      <List className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">章节目录</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="书签列表"
-                      className={
-                        'h-7 w-7 relative transition-colors press-effect ' +
-                        (showBookmarks ? ' bg-amber-500/10 text-amber-500' : '')
-                      }
-                      onClick={() => setShowBookmarks((p) => !p)}
-                    >
-                      <BookmarkCheck className="h-3.5 w-3.5" />
-                      {bookmarks.length > 0 && !showBookmarks && (
-                        <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 flex items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white leading-none">
-                          {bookmarks.length > 9 ? '9+' : bookmarks.length}
-                        </span>
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {showBookmarks ? '关闭书签列表 (B)' : `书签 (${bookmarks.length})`}
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={isBookmarked(currentIndex) ? '移除书签' : '添加书签'}
-                      className={
-                        'h-7 w-7 transition-colors press-effect ' +
-                        (isBookmarked(currentIndex) ? 'text-amber-500' : '')
-                      }
-                      onClick={() => {
-                        if (isBookmarked(currentIndex)) {
-                          removeBookmark(currentIndex);
-                        } else {
-                          addBookmark(currentIndex, chapterTitle, scrollPercent / 100);
-                        }
-                      }}
-                    >
-                      {isBookmarked(currentIndex) ? (
-                        <BookmarkCheck className="h-3.5 w-3.5 fill-amber-500" />
-                      ) : (
-                        <BookmarkCheck className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    {isBookmarked(currentIndex) ? '移除书签' : '添加书签'}
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="阅读设置"
-                      className={
-                        'h-7 w-7 press-effect ' + (showSettings ? 'bg-primary/10 text-primary' : '')
-                      }
-                      onClick={() => setShowSettings((p) => !p)}
-                    >
-                      <Settings2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">阅读设置</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="导出本章TXT"
-                      className="h-7 w-7 press-effect"
-                      onClick={() => {
-                        const ch = chapters[currentIndex];
-                        if (ch) window.open(`/api/novels/${novel.id}/chapters?chapterId=${ch.id}&export=txt`);
-                      }}
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">导出TXT</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <TranslateButton
-                        content={chapterContent || ''}
-                        className="h-7 w-7 press-effect text-amber-600 hover:text-amber-700 dark:text-amber-400"
-                      />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">翻译</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="快捷键帮助"
-                      className={
-                        'h-7 w-7 press-effect ' + (showShortcutsHelp ? 'bg-primary/10 text-primary' : '')
-                      }
-                      onClick={() => setShowShortcutsHelp((p) => !p)}
-                    >
-                      <Keyboard className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">快捷键 (?)</TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 press-effect"
-                      aria-label={readerFullscreen ? "退出全屏" : "全屏"}
-                      onClick={() => setReaderFullscreen((p) => !p)}
-                    >
-                      {readerFullscreen ? (
-                        <Minimize2 className="h-3.5 w-3.5" />
-                      ) : (
-                        <Maximize2 className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">全屏 (F)</TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-
-            {/* Settings panel (collapsible) */}
-            <AnimatePresence>
-              {showSettings && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="px-4 py-2.5 border-t bg-muted/20">
-                    <ReadingSettingsPanel settings={settings} onUpdate={updateSettings} />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          <ReaderToolbar
+            scrollPercent={scrollPercent}
+            currentIndex={currentIndex}
+            totalChapters={chapters.length}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            loadingChapter={loadingChapter}
+            showSettings={showSettings}
+            showBookmarks={showBookmarks}
+            showShortcutsHelp={showShortcutsHelp}
+            bookmarksCount={bookmarks.length}
+            isCurrentBookmarked={isBookmarked(currentIndex)}
+            chapterContent={chapterContent}
+            settings={settings}
+            readerFullscreen={readerFullscreen}
+            onGoToChapter={goToChapter}
+            onToggleChapterSidebar={() => setShowChapterSidebar((p) => !p)}
+            onToggleBookmarks={() => setShowBookmarks((p) => !p)}
+            onToggleSettings={() => setShowSettings((p) => !p)}
+            onToggleShortcuts={() => setShowShortcutsHelp((p) => !p)}
+            onToggleBookmark={() => addBookmark(currentIndex, chapterTitle, scrollPercent / 100)}
+            onRemoveBookmark={() => removeBookmark(currentIndex)}
+            onExportChapter={() => {
+              const ch = chapters[currentIndex];
+              if (ch) window.open(`/api/novels/${novel.id}/chapters?chapterId=${ch.id}&export=txt`);
+            }}
+            onToggleFullscreen={() => setReaderFullscreen((p) => !p)}
+            onUpdateSettings={updateSettings}
+          />
 
           {/* ── Chapter title ──────────────────────────────────── */}
           <DialogHeader className="shrink-0 px-6 pt-4 pb-2">
@@ -1298,341 +1021,74 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           {/* ── Content area (with optional sidebar) ────────── */}
           <div className="flex-1 flex overflow-hidden relative">
             {/* Chapter sidebar */}
-            <AnimatePresence>
-              {showChapterSidebar && (
-                <motion.div
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 220, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="shrink-0 border-r overflow-hidden"
-                >
-                  <div className="w-[220px] h-full overflow-y-auto p-3 flex flex-col">
-                    <div className="text-xs font-medium text-muted-foreground mb-2 px-1">
-                      目录 ({chapters.length}章)
-                    </div>
-                    <div className="flex-1 space-y-px">
-                    {sidebarChapters.map((ch, idx) => {
-                      const globalIdx = (sidebarPage - 1) * SIDEBAR_PAGE_SIZE + idx;
-                      return (
-                      <button
-                        key={ch.id}
-                        onClick={() => loadChapter(globalIdx)}
-                        className={
-                          'block w-full text-left text-xs px-2 py-1.5 rounded-md truncate transition-colors focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none ' +
-                          (globalIdx === currentIndex
-                            ? 'bg-primary/10 text-primary font-medium'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/50') +
-                          (lastChapterIndex === globalIdx ? ' border-l-2 border-primary/50' : '')
-                        }
-                      >
-                        {ch.sortOrder}. {ch.title}
-                      </button>
-                      );
-                    })}
-                    </div>
-                    {sidebarTotalPages > 1 && (
-                      <div className="flex items-center justify-center gap-1 pt-2 border-t mt-2">
-                        <button
-                          className="h-6 w-6 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30"
-                          disabled={sidebarPage <= 1}
-                          onClick={() => setSidebarPage((p) => p - 1)}
-                        ><ChevronLeft className="h-3 w-3" /></button>
-                        <span className="text-[10px] text-muted-foreground tabular-nums">{sidebarPage}/{sidebarTotalPages}</span>
-                        <button
-                          className="h-6 w-6 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30"
-                          disabled={sidebarPage >= sidebarTotalPages}
-                          onClick={() => setSidebarPage((p) => p + 1)}
-                        ><ChevronRight className="h-3 w-3" /></button>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <ChapterSidebar
+              visible={showChapterSidebar}
+              chapters={sidebarChapters}
+              sidebarPage={sidebarPage}
+              sidebarTotalPages={sidebarTotalPages}
+              currentIndex={currentIndex}
+              lastChapterIndex={lastChapterIndex}
+              onLoadChapter={loadChapter}
+              onSidebarPageChange={setSidebarPage}
+            />
 
             {/* Bookmarks panel (right side) */}
-            <AnimatePresence>
-              {showBookmarks && (
-                <motion.div
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 200, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="shrink-0 border-l overflow-hidden"
-                >
-                  <div className="w-[200px] h-full overflow-y-auto p-3 flex flex-col">
-                    <div className="flex items-center justify-between mb-2 px-1">
-                      <div className="text-xs font-medium text-muted-foreground">
-                        书签 ({bookmarks.length})
-                      </div>
-                      {bookmarks.length > 0 && (
-                        <button
-                          className="text-[10px] text-destructive/60 hover:text-destructive transition-colors"
-                          onClick={() => clearAllBookmarks()}
-                        >
-                          清空
-                        </button>
-                      )}
-                    </div>
-
-                    {bookmarks.length === 0 ? (
-                      <div className="flex-1 flex flex-col items-center justify-center gap-2 py-8">
-                        <BookmarkCheck className="h-6 w-6 text-muted-foreground/30" />
-                        <p className="text-[11px] text-muted-foreground/60 text-center">点击工具栏书签图标<br />添加当前章节</p>
-                      </div>
-                    ) : (
-                      <div className="flex-1 space-y-1">
-                        {bookmarks.map((bm) => {
-                          const ch = chapters[bm.chapterIndex];
-                          if (!ch) return null;
-                          const isCurrent = bm.chapterIndex === currentIndex;
-                          return (
-                            <button
-                              key={bm.chapterIndex}
-                              onClick={() => {
-                                loadChapter(bm.chapterIndex);
-                                saveProgress(bm.chapterIndex);
-                              }}
-                              className={
-                                'block w-full text-left rounded-md px-2 py-2 transition-colors group ' +
-                                (isCurrent
-                                  ? 'bg-amber-500/10 border border-amber-500/20'
-                                  : 'hover:bg-muted/50 border border-transparent')
-                              }
-                            >
-                              <div className="flex items-start gap-1.5">
-                                <BookmarkCheck className={`h-3 w-3 mt-0.5 shrink-0 ${isCurrent ? 'text-amber-500' : 'text-amber-500/50'}`} />
-                                <div className="flex-1 min-w-0">
-                                  <p className={`text-[11px] leading-tight truncate ${isCurrent ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-foreground'}`}>
-                                    {bm.chapterTitle}
-                                  </p>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className="text-[9px] text-muted-foreground/60 tabular-nums">
-                                      {bm.scrollPercent}%
-                                    </span>
-                                    <span className="text-muted-foreground/30">·</span>
-                                    <span className="text-[9px] text-muted-foreground/60">
-                                      {new Date(bm.timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
-                                    </span>
-                                  </div>
-                                </div>
-                                <button
-                                  className="opacity-0 group-hover:opacity-100 h-4 w-4 flex items-center justify-center rounded hover:bg-destructive/10 text-muted-foreground/40 hover:text-destructive transition-all shrink-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    removeBookmark(bm.chapterIndex);
-                                  }}
-                                  aria-label={`移除书签: ${bm.chapterTitle}`}
-                                >
-                                  <X className="h-2.5 w-2.5" />
-                                </button>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <BookmarksPanel
+              visible={showBookmarks}
+              bookmarks={bookmarks}
+              chapters={chapters}
+              currentIndex={currentIndex}
+              onLoadChapter={loadChapter}
+              onSaveProgress={saveProgress}
+              onRemoveBookmark={removeBookmark}
+              onClearAllBookmarks={clearAllBookmarks}
+            />
 
             {/* Reader search bar */}
-            <AnimatePresence>
-              {searchOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.15 }}
-                  className="shrink-0 px-3 py-2"
-                >
-                  <div className="glass-card flex items-center gap-2 rounded-lg border px-3 py-1.5">
-                    <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => { setSearchQuery(e.target.value); setCurrentMatch(0); }}
-                      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setSearchOpen(false); setSearchQuery(''); setCurrentMatch(0); } if (e.key === 'Enter') { e.preventDefault(); handleSearchNext(); } }}
-                      placeholder="搜索本章内容..."
-                      aria-label="搜索本章内容"
-                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none rounded"
-                    />
-                    {searchQuery.trim() && (
-                      <>
-                        <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
-                          {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : '无结果'}
-                        </span>
-                        <button
-                          onClick={handleSearchPrev}
-                          disabled={matchCount === 0}
-                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted/80 disabled:opacity-30 transition-colors"
-                          aria-label="上一个匹配"
-                        >
-                          <ChevronUp className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={handleSearchNext}
-                          disabled={matchCount === 0}
-                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted/80 disabled:opacity-30 transition-colors"
-                          aria-label="下一个匹配"
-                        >
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                    <button
-                      onClick={() => { setSearchOpen(false); setSearchQuery(''); setCurrentMatch(0); }}
-                      className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted/80 text-muted-foreground/60 hover:text-foreground transition-colors"
-                      aria-label="关闭搜索"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <ReaderSearchBar
+              visible={searchOpen}
+              searchQuery={searchQuery}
+              matchCount={matchCount}
+              currentMatch={currentMatch}
+              onSearchQueryChange={setSearchQuery}
+              onCurrentMatchChange={setCurrentMatch}
+              onClose={handleCloseSearch}
+            />
 
             {/* Reader content */}
-            <div ref={readerContentRef} className="flex-1 overflow-y-auto">
-              <div className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-colors duration-300`}>
-                {loadingChapter ? (
-                  <div className="flex items-center justify-center py-20">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    <span className="ml-3 text-sm text-muted-foreground">加载中...</span>
-                  </div>
-                ) : chapterError ? (
-                  <div className="flex flex-col items-center justify-center py-20 gap-4">
-                    <p className="text-sm text-muted-foreground">加载章节内容失败</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => loadChapter(currentIndex)}
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      重试
-                    </Button>
-                  </div>
-                ) : chapterContent ? (
-                  <div className="mx-auto max-w-3xl">
-                    <h3 className={`text-lg font-semibold mb-6 pb-4 border-b text-center ${currentTheme.text} transition-colors duration-300`}>
-                      {chapterTitle}
-                    </h3>
-                    <article
-                      className={`whitespace-pre-wrap transition-all duration-300 ${currentTheme.text} ${currentFont.css}`}
-                      style={{
-                        fontSize: `${settings.fontSize}px`,
-                        lineHeight: settings.lineHeight,
-                      }}
-                    >
-                      {(() => {
-                        const isSearching = searchOpen && searchQuery.trim();
-                        let runningMatches = 0;
-                        return chapterContent.split('\n').map((paragraph, i) => {
-                          const text = paragraph.trim() || '\u00A0';
-                          const matchOffset = runningMatches;
-                          if (isSearching && paragraph.trim()) {
-                            const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
-                            const matches = paragraph.match(new RegExp(escaped, 'gi'));
-                            runningMatches += matches ? matches.length : 0;
-                          }
-                          return (
-                            <p
-                              key={i}
-                              className={paragraph.trim() ? 'text-indent-[2em] mb-0' : 'h-4'}
-                            >
-                              {isSearching && paragraph.trim()
-                                ? highlightText(text, searchQuery, currentMatch - matchOffset)
-                                : text}
-                            </p>
-                          );
-                        });
-                      })()}
-                    </article>
-                  </div>
-                ) : null}
-              </div>
-            </div>
+            <ReaderContent
+              contentRef={readerContentRef}
+              loading={loadingChapter}
+              error={chapterError}
+              content={chapterContent}
+              chapterTitle={chapterTitle}
+              currentTheme={currentTheme}
+              currentFontCss={currentFont.css}
+              fontSize={settings.fontSize}
+              lineHeight={settings.lineHeight}
+              searchOpen={searchOpen}
+              searchQuery={searchQuery}
+              currentMatch={currentMatch}
+              onRetry={() => loadChapter(currentIndex)}
+            />
           </div>
 
           {/* ── Bottom nav bar ────────────────────────────────── */}
-          <div className="shrink-0 border-t px-4 py-2.5 flex items-center justify-between bg-muted/30 glass-card">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!hasPrev || loadingChapter}
-              onClick={() => goToChapter('prev')}
-              className="h-8 tap-feedback press-effect"
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              上一章
-            </Button>
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-muted-foreground hidden sm:block">
-                ← → J/K 翻页 · ↑↓ 滚动 · B 书签 · F 全屏 · ? 帮助
-              </span>
-              <DailyReadingGoal />
-              {formatReadDuration(readDuration) && (
-                <span className="text-xs text-muted-foreground/60 flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  {formatReadDuration(readDuration)}
-                </span>
-              )}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!hasNext || loadingChapter}
-              onClick={() => goToChapter('next')}
-              className="h-8 tap-feedback press-effect"
-            >
-              下一章
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          </div>
+          <BottomNav
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            loadingChapter={loadingChapter}
+            onGoToChapter={goToChapter}
+            readDuration={readDuration}
+          />
         </DialogContent>
       </Dialog>
 
       {/* Keyboard shortcuts help dialog */}
-      <Dialog open={showShortcutsHelp} onOpenChange={setShowShortcutsHelp}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Keyboard className="h-4 w-4" />
-              阅读器快捷键
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 pt-1">
-            {[
-              { keys: ['←', '→'], label: '上一章/下一章' },
-              { keys: ['J', 'K'], label: '下一章/上一章' },
-              { keys: ['↑', '↓'], label: '向上/下滚动' },
-              { keys: ['B'], label: '书签面板' },
-              { keys: ['F'], label: '全屏切换' },
-              { keys: ['Ctrl+F'], label: '搜索内容' },
-              { keys: ['?'], label: '本帮助面板' },
-              { keys: ['Esc'], label: '关闭面板' },
-            ].map((s) => (
-              <div key={s.label} className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">{s.label}</span>
-                <div className="flex items-center gap-0.5">
-                  {s.keys.map((k) => (
-                    <kbd
-                      key={k}
-                      className="inline-flex h-5 min-w-5 select-none items-center justify-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
-                    >
-                      {k}
-                    </kbd>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <KeyboardShortcutsPanel
+        open={showShortcutsHelp}
+        onOpenChange={setShowShortcutsHelp}
+      />
 
       {/* Bookmark manager dialog */}
       <BookmarkManager

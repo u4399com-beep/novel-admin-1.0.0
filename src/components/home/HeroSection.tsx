@@ -424,7 +424,7 @@ export function HeroSection({
                 <Button
                   type="submit"
                   size="sm"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md z-10"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md z-10 magnetic-hover"
                 >
                   搜索
                 </Button>

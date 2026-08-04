@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { parsePagination, sanitizeField, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
+import { paginatedList } from "@/lib/crud-helpers";
 import { isSafeUrl } from "@/lib/sanitize";
 import { VALID_NOVEL_STATUSES } from "@/lib/constants";
 
@@ -12,7 +13,7 @@ const MAX_SEARCH_LENGTH = 200;
 export const GET = withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 12 });
+    const { page, pageSize } = parsePagination(searchParams, { defaultPageSize: 12 });
     const search = sanitizeField(searchParams.get("search"), MAX_SEARCH_LENGTH);
     const status = searchParams.get("status") || "";
     const categoryId = searchParams.get("categoryId") || "";
@@ -42,27 +43,17 @@ export const GET = withAuth(async function GET(request: NextRequest) {
       where.tags = { some: { tagId } };
     }
 
-    const [novels, total] = await Promise.all([
-      db.novel.findMany({
-        where,
-        skip,
-        take: pageSize,
-        orderBy: { updatedAt: "desc" },
-        include: {
-          category: { select: { id: true, name: true, color: true, slug: true } },
-          tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
-          _count: { select: { chapters: true } },
-        },
-      }),
-      db.novel.count({ where }),
-    ]);
-
-    return NextResponse.json({
-      novels,
-      total,
+    return paginatedList(db.novel, {
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
+      where,
+      orderBy: { updatedAt: "desc" },
+      include: {
+        category: { select: { id: true, name: true, color: true, slug: true } },
+        tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
+        _count: { select: { chapters: true } },
+      },
+      itemsKey: 'novels',
     });
   } catch (error) {
     console.error("List novels error:", error);

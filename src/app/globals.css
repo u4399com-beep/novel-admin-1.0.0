@@ -3484,3 +3484,257 @@ mark {
 :is(.dark .scrollbar-amber)::-webkit-scrollbar-thumb {
   background: oklch(0.5 0.1 70);
 }
+
+/* =====================================================================
+   GLASSMORPHISM DEPTH LEVELS
+   ===================================================================== */
+
+.glass-subtle {
+  background: oklch(1 0 0 / 0.6);
+  backdrop-filter: blur(8px) saturate(1.2);
+  border: 1px solid oklch(1 0 0 / 0.1);
+}
+.glass-medium {
+  background: oklch(1 0 0 / 0.7);
+  backdrop-filter: blur(12px) saturate(1.3);
+  border: 1px solid oklch(1 0 0 / 0.15);
+}
+.glass-heavy {
+  background: oklch(1 0 0 / 0.85);
+  backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid oklch(1 0 0 / 0.2);
+}
+:is(.dark .glass-subtle) {
+  background: oklch(0.15 0 0 / 0.6);
+  border-color: oklch(1 0 0 / 0.08);
+}
+:is(.dark .glass-medium) {
+  background: oklch(0.15 0 0 / 0.7);
+  border-color: oklch(1 0 0 / 0.12);
+}
+:is(.dark .glass-heavy) {
+  background: oklch(0.15 0 0 / 0.85);
+  border-color: oklch(1 0 0 / 0.15);
+}
+
+/* =====================================================================
+   MICRO-INTERACTIONS
+   ===================================================================== */
+
+/* Magnetic hover effect */
+.magnetic-hover {
+  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.magnetic-hover:hover {
+  transform: translateY(-1px) scale(1.01);
+}
+
+/* Focus ring animation */
+.focus-ring-animated:focus-visible {
+  outline: 2px solid oklch(0.7 0.15 150);
+  outline-offset: 2px;
+  animation: focusRingPulse 1.5s ease-out;
+}
+@keyframes focusRingPulse {
+  0% { outline-color: oklch(0.7 0.15 150); box-shadow: 0 0 0 4px oklch(0.7 0.15 150 / 0.2); }
+  100% { outline-color: oklch(0.7 0.15 150); box-shadow: 0 0 0 0px oklch(0.7 0.15 150 / 0); }
+}
+
+/* Subtle float animation */
+.float-subtle {
+  animation: floatSubtle 3s ease-in-out infinite;
+}
+@keyframes floatSubtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* Skeleton pulse variation */
+.skeleton-pulse {
+  background: linear-gradient(90deg, oklch(0.95 0 0) 25%, oklch(0.92 0.01 250) 50%, oklch(0.95 0 0) 75%);
+  background-size: 200% 100%;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+@keyframes skeletonPulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+:is(.dark .skeleton-pulse) {
+  background: linear-gradient(90deg, oklch(0.2 0 0) 25%, oklch(0.25 0.01 250) 50%, oklch(0.2 0 0) 75%);
+  background-size: 200% 100%;
+}
+
+/* =====================================================================
+   TYPOGRAPHY
+   ===================================================================== */
+
+/* Balanced text for reading */
+.text-balance {
+  text-wrap: balance;
+}
+
+/* Pretty drop cap for reading */
+.drop-cap::first-letter {
+  float: left;
+  font-size: 3.5em;
+  line-height: 0.8;
+  padding-right: 0.1em;
+  margin-top: 0.05em;
+  font-weight: 700;
+  color: oklch(0.55 0.2 30);
+}
+
+/* Reading paragraph rhythm */
+.prose-reading p {
+  text-indent: 2em;
+  margin-bottom: 0.75em;
+  line-height: 1.9;
+}
+.prose-reading p:first-child {
+  text-indent: 0;
+}
+.prose-reading p:first-child::first-letter {
+  font-size: 2em;
+  font-weight: 700;
+  color: oklch(0.55 0.2 30);
+}
+
+/* =====================================================================
+   LAYOUT & SPACING
+   ===================================================================== */
+
+/* Safe area padding for mobile */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Content container with max-width */
+.container-narrow {
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+.container-wide {
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+/* Aspect ratio utilities */
+.aspect-video {
+  aspect-ratio: 16 / 9;
+}
+.aspect-square {
+  aspect-ratio: 1 / 1;
+}
+.aspect-book {
+  aspect-ratio: 2 / 3;
+}
+
+/* =====================================================================
+   CARD VARIANTS
+   ===================================================================== */
+
+/* Glass card */
+.card-glass {
+  background: oklch(1 0 0 / 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid oklch(1 0 0 / 0.12);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.06), 0 4px 12px oklch(0 0 0 / 0.04);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card-glass:hover {
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.08), 0 8px 24px oklch(0 0 0 / 0.06);
+}
+:is(.dark .card-glass) {
+  background: oklch(0.2 0 0 / 0.7);
+  border-color: oklch(1 0 0 / 0.08);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.2), 0 4px 12px oklch(0 0 0 / 0.15);
+}
+:is(.dark .card-glass:hover) {
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.25), 0 8px 24px oklch(0 0 0 / 0.2);
+}
+
+/* Outlined card with gradient border */
+.card-outline-gradient {
+  position: relative;
+  border-radius: 0.75rem;
+  background: oklch(1 0 0);
+}
+.card-outline-gradient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, oklch(0.7 0.15 150), oklch(0.7 0.15 30));
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+:is(.dark .card-outline-gradient) {
+  background: oklch(0.15 0 0);
+}
+:is(.dark .card-outline-gradient)::before {
+  background: linear-gradient(135deg, oklch(0.5 0.15 150), oklch(0.5 0.15 30));
+}
+
+/* =====================================================================
+   SCROLL & OVERFLOW
+   ===================================================================== */
+
+/* Horizontal scroll snap */
+.scroll-x-snap {
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-x-snap::-webkit-scrollbar {
+  display: none;
+}
+.scroll-x-snap > * {
+  scroll-snap-align: start;
+}
+
+/* Fade edges for horizontal scroll — simple variant (advanced version with no-fade-left/right exists above) */
+
+/* =====================================================================
+   STATUS & INDICATORS
+   ===================================================================== */
+
+/* Status dot with pulse */
+.status-dot-pulse {
+  position: relative;
+}
+.status-dot-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.4;
+  animation: statusDotPulse 2s ease-in-out infinite;
+}
+@keyframes statusDotPulse {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.8); opacity: 0; }
+}
+
+/* Typing cursor blink */
+.cursor-blink::after {
+  content: '|';
+  animation: cursorBlink 1s step-end infinite;
+}
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

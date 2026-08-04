@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { NextRequest } from "next/server";
 import { parsePagination, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
+import { paginatedList } from "@/lib/crud-helpers";
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from "@/lib/constants";
 
 const VALID_STATUSES = ["pending", "running", "completed", "failed", "cancelled"];
@@ -10,7 +11,7 @@ const VALID_STATUSES = ["pending", "running", "completed", "failed", "cancelled"
 export const GET = withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const { page, pageSize, skip } = parsePagination(searchParams);
+    const { page, pageSize } = parsePagination(searchParams);
     const status = searchParams.get("status") || "";
 
     const where: Record<string, unknown> = {};
@@ -21,25 +22,15 @@ export const GET = withAuth(async function GET(request: NextRequest) {
       where.status = status;
     }
 
-    const [tasks, total] = await Promise.all([
-      db.scrapeTask.findMany({
-        where,
-        skip,
-        take: pageSize,
-        orderBy: { createdAt: "desc" },
-        include: {
-          rule: { select: { id: true, name: true } },
-        },
-      }),
-      db.scrapeTask.count({ where }),
-    ]);
-
-    return NextResponse.json({
-      tasks,
-      total,
+    return paginatedList(db.scrapeTask, {
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        rule: { select: { id: true, name: true } },
+      },
+      itemsKey: 'tasks',
     });
   } catch (error) {
     console.error("List scrape tasks error:", error);
