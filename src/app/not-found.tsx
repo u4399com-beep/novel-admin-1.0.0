@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 
 export default function GlobalNotFound() {
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center px-4 overflow-hidden">
+    <main className="relative flex min-h-screen flex-col items-center justify-center px-4 overflow-hidden appear-smooth">
       {/* Subtle background gradient */}
       <div className="absolute inset-0 bg-gradient-to-b from-muted/40 via-background to-muted/30" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(120,80,220,0.05),transparent_50%)]" />
@@ -42,7 +42,7 @@ export default function GlobalNotFound() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.4, delay: 0.2 }}
             aria-hidden="true"
-            className="text-8xl font-black tabular-nums text-muted-foreground/10 select-none tracking-tighter"
+            className="text-8xl font-black tabular-nums text-muted-foreground/10 select-none tracking-tighter text-gradient"
           >
             404
           </motion.p>
@@ -73,7 +73,7 @@ export default function GlobalNotFound() {
           transition={{ duration: 0.3, delay: 0.4 }}
           className="flex flex-col sm:flex-row items-center gap-3 pt-2"
         >
-          <Button asChild>
+          <Button asChild className="btn-ripple">
             <Link href="/" className="gap-1.5">
               <Home className="h-4 w-4" />
               返回首页

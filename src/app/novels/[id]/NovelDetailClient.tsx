@@ -326,6 +326,17 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     } catch { /* ignore */ }
   }
 
+  // 记录阅读目标到服务器（fire-and-forget，不阻塞阅读体验）
+  function reportReadingGoal(words: number) {
+    apiFetch('/api/reading-goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chaptersRead: 1, words }),
+      silent: true,
+      timeout: 5000,
+    }).catch(() => { /* 静默 */ });
+  }
+
   // Use ref for chapters so loadChapter identity stays stable when remaining chapters load (H2 fix)
   const chaptersRef = useRef(chapters);
   const prevIndexRef = useRef(currentIndex);
@@ -383,6 +394,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         });
         setChapterContent(data.content || '（本章暂无内容）');
         recordReadingActivity();
+        reportReadingGoal(data.content?.length || 0);
         // Restore saved scroll position after content renders
         if (pendingScrollRestore.current !== null) {
           const sp = pendingScrollRestore.current;
@@ -718,7 +730,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                   {novel.tags.map((tag) => (
                     <span
                       key={tag.id}
-                      className="badge-interactive text-xs px-2 py-0.5 rounded-full border"
+                      className="badge-interactive tag-pill-glow text-xs px-2 py-0.5 rounded-full border"
                       style={{
                         borderColor: `${tag.color}40`,
                         color: tag.color,

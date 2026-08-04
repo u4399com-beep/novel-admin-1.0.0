@@ -513,7 +513,7 @@ export function DashboardView() {
                 暂无小说
               </div>
             ) : (
-              <div className="max-h-[280px] space-y-1 overflow-y-auto pr-1 scrollbar-custom">
+              <div className="max-h-[280px] space-y-1 overflow-y-auto pr-1 scrollbar-custom stagger-in">
                 {stats.recentNovels.map((novel) => {
                   const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
                   return (

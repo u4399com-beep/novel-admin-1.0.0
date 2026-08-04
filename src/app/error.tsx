@@ -17,7 +17,7 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <div role="alert" className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div role="alert" className="min-h-screen flex items-center justify-center bg-background p-4 appear-smooth">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -57,7 +57,7 @@ export default function GlobalError({
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
-          <Button onClick={reset} className="gap-2">
+          <Button onClick={reset} className="gap-2 btn-ripple">
             <RotateCcw className="h-4 w-4" />
             重试
           </Button>

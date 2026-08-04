@@ -467,7 +467,7 @@ export default function NovelListView() {
                           <Badge
                             key={tag.id}
                             variant="secondary"
-                            className="text-xs"
+                            className="text-xs tag-pill-glow"
                             style={{
                               backgroundColor: tag.color + '18',
                               color: tag.color,
