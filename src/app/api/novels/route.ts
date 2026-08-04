@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
+import { NextRequest } from "next/server";
+import { parsePagination, sanitizeField, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
@@ -20,7 +20,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
 
     // Validate status enum
     if (status && !VALID_NOVEL_STATUSES.includes(status)) {
-      return NextResponse.json({ error: "无效的状态筛选值" }, { status: 400 });
+      return apiError("无效的状态筛选值", 400);
     }
 
     const where: Record<string, unknown> = {};
@@ -66,7 +66,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("List novels error:", error);
-    return NextResponse.json({ error: "获取小说列表失败"}, { status: 500 });
+    return apiError("获取小说列表失败");
   }
 });
 
@@ -77,20 +77,20 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
     const { title, author, description, coverUrl, status, categoryId, tags } = body;
 
     if (tags && (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === 'string'))) {
-      return NextResponse.json({ error: "标签格式错误，必须是字符串ID数组" }, { status: 400 });
+      return apiError("标签格式错误，必须是字符串ID数组", 400);
     }
     if (tags && tags.length > 20) {
-      return NextResponse.json({ error: "标签数量不能超过20个" }, { status: 400 });
+      return apiError("标签数量不能超过20个", 400);
     }
 
     const trimmedTitle = sanitizeField(title, 200);
     if (!trimmedTitle) {
-      return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
+      return apiError("小说标题不能为空", 400);
     }
 
     const novelStatus = VALID_NOVEL_STATUSES.includes(status) ? status : "ongoing";
@@ -99,7 +99,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (categoryId) {
       const categoryExists = await db.category.findUnique({ where: { id: categoryId } });
       if (!categoryExists) {
-        return NextResponse.json({ error: "指定的分类不存在" }, { status: 400 });
+        return apiError("指定的分类不存在", 400);
       }
     }
 
@@ -109,14 +109,14 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         where: { id: { in: tags } },
       });
       if (tagCount !== tags.length) {
-        return NextResponse.json({ error: "部分标签ID不存在" }, { status: 400 });
+        return apiError("部分标签ID不存在", 400);
       }
     }
 
     // Validate coverUrl protocol
     if (coverUrl) {
       if (!isSafeUrl(coverUrl)) {
-        return NextResponse.json({ error: "封面URL格式不合法，仅允许http/https协议" }, { status: 400 });
+        return apiError("封面URL格式不合法，仅允许http/https协议", 400);
       }
     }
 
@@ -144,9 +144,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     invalidateCache("dashboard:stats");
     invalidateCache("dashboard:activity");
 
-    return NextResponse.json(novel, { status: 201 });
+    return apiSuccess(novel, 201);
   } catch (error) {
     console.error("Create novel error:", error);
-    return NextResponse.json({ error: "创建小说失败"}, { status: 500 });
+    return apiError("创建小说失败");
   }
 });

@@ -32,7 +32,7 @@ export interface AntiCrawl {
 
 // ==================== Engine Types ====================
 
-export type EngineType = "cheerio" | "playwright" | "firecrawl" | "agentql" | "cloud-browser";
+export type EngineType = "cheerio" | "playwright" | "firecrawl" | "agentql" | "cloud-browser" | "scrapling";
 
 export interface FetchResult {
   html: string;

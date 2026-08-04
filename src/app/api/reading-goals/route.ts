@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
-import { safeJson, sanitizeField } from "@/lib/api-utils";
+import { safeJson, sanitizeField, apiError } from "@/lib/api-utils";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_DAILY_GOAL = 10;
@@ -44,7 +44,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Reading goals GET error:", error);
-    return NextResponse.json({ error: "获取阅读进度失败" }, { status: 500 });
+    return apiError("获取阅读进度失败");
   }
 });
 
@@ -59,7 +59,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
 
     const { date: dateParam, chaptersRead: chaptersParam, words: wordsParam } = body;
@@ -102,7 +102,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Reading goals POST error:", error);
-    return NextResponse.json({ error: "记录阅读数据失败" }, { status: 500 });
+    return apiError("记录阅读数据失败");
   }
 });
 

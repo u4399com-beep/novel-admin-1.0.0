@@ -1,8 +1,9 @@
 /**
- * Utilities - UA rotation, URL resolution, security, delay, retry
+ * Utilities - UA rotation, URL resolution, security, delay, retry, redirect following
  */
 
 import type { AntiCrawl } from "./types";
+import { isSafeUrl } from "./ssrf";
 import { randomUUID } from "node:crypto";
 
 // ==================== User-Agent Rotation ====================
@@ -211,4 +212,66 @@ export function mapNovelStatus(rawStatus: string): string {
 
 export function generateId(): string {
   return randomUUID();
+}
+
+// ==================== Redirect Following ====================
+
+/** Options for the shared redirect-following utility. */
+export interface FollowRedirectsOptions {
+  /** Maximum number of redirect hops to follow (default: 5). */
+  maxRedirects?: number;
+  /**
+   * Called to make each HTTP request. Receives the URL to fetch.
+   * The caller controls headers, timeout, etc. via this callback.
+   */
+  makeRequest: (url: string) => Promise<Response>;
+  /** Optional callback fired after each redirect hop is resolved. */
+  onRedirect?: (fromUrl: string, toUrl: string, hop: number) => void;
+}
+
+/**
+ * Shared redirect-following utility with SSRF validation on each hop.
+ * Used by CheerioEngine.fetch and handleDownloadCover to eliminate
+ * duplicated manual redirect loops.
+ */
+export async function followRedirects(
+  startUrl: string,
+  options: FollowRedirectsOptions
+): Promise<{ response: Response; finalUrl: string }> {
+  const { maxRedirects = 5, onRedirect, makeRequest } = options;
+  let currentUrl = startUrl;
+  const visitedUrls = new Set<string>([startUrl]);
+  let response: Response | null = null;
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    response = await makeRequest(currentUrl);
+
+    if (response.status >= 300 && response.status < 400 && hop < maxRedirects) {
+      const location = response.headers.get("location");
+      if (!location) break;
+
+      let redirectUrl: string;
+      try {
+        redirectUrl = new URL(location, currentUrl).href;
+      } catch {
+        break; // Invalid URL, stop following
+      }
+
+      if (!isSafeUrl(redirectUrl)) {
+        throw new Error(`Blocked: redirect target URL is not allowed (${redirectUrl})`);
+      }
+
+      if (visitedUrls.has(redirectUrl)) {
+        throw new Error(`Redirect loop detected: ${redirectUrl}`);
+      }
+      visitedUrls.add(redirectUrl);
+
+      onRedirect?.(currentUrl, redirectUrl, hop);
+      currentUrl = redirectUrl;
+    } else {
+      break;
+    }
+  }
+
+  return { response: response!, finalUrl: currentUrl };
 }

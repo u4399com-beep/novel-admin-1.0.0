@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { parsePagination, sanitizeField, safeJson, isPrismaError } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -40,7 +40,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("List sites error:", error);
-    return NextResponse.json({ error: "获取站点列表失败"}, { status: 500 });
+    return apiError("获取站点列表失败");
   }
 });
 
@@ -51,7 +51,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
     const {
       domain,
@@ -70,32 +70,32 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const sanitizedDomain = sanitizeField(domain, MAX_DOMAIN_LENGTH);
     if (!sanitizedDomain) {
-      return NextResponse.json({ error: "站点域名不能为空" }, { status: 400 });
+      return apiError("站点域名不能为空", 400);
     }
     if (!DOMAIN_RE.test(sanitizedDomain)) {
-      return NextResponse.json({ error: "站点域名格式不合法，必须为有效域名（如 example.com）" }, { status: 400 });
+      return apiError("站点域名格式不合法，必须为有效域名（如 example.com）", 400);
     }
     const sanitizedName = sanitizeField(name, MAX_NAME_LENGTH);
     if (!sanitizedName) {
-      return NextResponse.json({ error: "站点名称不能为空" }, { status: 400 });
+      return apiError("站点名称不能为空", 400);
     }
     if (themeId) {
       const themeExists = await db.theme.findUnique({ where: { id: themeId }, select: { id: true } });
       if (!themeExists) {
-        return NextResponse.json({ error: "指定的主题不存在" }, { status: 400 });
+        return apiError("指定的主题不存在", 400);
       }
     }
     const geoConfigError = validateJsonObject(geoConfig, '地理配置');
     if (geoConfigError) {
-      return NextResponse.json({ error: geoConfigError }, { status: 400 });
+      return apiError(geoConfigError, 400);
     }
     const customConfigError = validateJsonObject(customConfig, '自定义配置');
     if (customConfigError) {
-      return NextResponse.json({ error: customConfigError }, { status: 400 });
+      return apiError(customConfigError, 400);
     }
 
     if (enabled !== undefined && typeof enabled !== 'boolean') {
-      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+      return apiError("enabled 必须是布尔值", 400);
     }
 
     const parsedNovelOffset = novelOffset !== undefined ? Math.min(Math.max(0, Math.floor(Number(novelOffset) || 0)), MAX_OFFSET) : 0;
@@ -127,8 +127,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error("Create site error:", error);
     if (isPrismaError(error, "P2002")) {
-      return NextResponse.json({ error: "站点域名已存在" }, { status: 409 });
+      return apiError("站点域名已存在", 409);
     }
-    return NextResponse.json({ error: "创建站点失败"}, { status: 500 });
+    return apiError("创建站点失败");
   }
 });

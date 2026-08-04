@@ -11,7 +11,7 @@
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
 import { isSafeUrl } from "./ssrf";
-import { buildFetchHeaders, getRandomUA, retryWithBackoff } from "./utils";
+import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects } from "./utils";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -75,6 +75,7 @@ class CircuitBreaker {
 const firecrawlBreaker = new CircuitBreaker("Firecrawl");
 const agentqlBreaker = new CircuitBreaker("AgentQL");
 const cloudBrowserBreaker = new CircuitBreaker("CloudBrowser");
+const scraplingBreaker = new CircuitBreaker("Scrapling");
 
 // ==================== Engine Registry ====================
 
@@ -94,7 +95,7 @@ export function getEngine(type: EngineType): ScrapingEngine {
 }
 
 export function getEngineNames(): EngineType[] {
-  return ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser"].filter((t) => engines.has(t));
+  return ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling"].filter((t) => engines.has(t));
 }
 
 // ==================== 1. Cheerio Engine (Enhanced HTTP) ====================
@@ -115,45 +116,20 @@ class CheerioEngine implements ScrapingEngine {
         const startTime = Date.now();
         let remainingTimeout = timeout;
 
-        const makeOptions = (): RequestInit => ({
-          headers,
-          redirect: "manual",
-          signal: AbortSignal.timeout(remainingTimeout),
-        });
-
-        let currentUrl = url;
-        const visitedUrls = new Set<string>([url]);
-        let response = await fetch(currentUrl, makeOptions());
-        const MAX_REDIRECTS = 5;
-
-        // Manually follow redirects, validating each target
-        for (let i = 0; i < MAX_REDIRECTS; i++) {
-          if (response.status >= 300 && response.status < 400) {
-            const location = response.headers.get("location");
-            if (!location) break;
-
-            // Resolve relative redirect URLs
-            const redirectUrl = new URL(location, currentUrl).href;
-
-            if (!isSafeUrl(redirectUrl)) {
-              throw new Error(`Blocked: redirect target URL is not allowed (${redirectUrl})`);
-            }
-
-            if (visitedUrls.has(redirectUrl)) {
-              throw new Error(`Redirect loop detected: ${redirectUrl}`);
-            }
-            visitedUrls.add(redirectUrl);
-
-            // Deduct elapsed time from remaining timeout
+        const { response, finalUrl } = await followRedirects(url, {
+          maxRedirects: 5,
+          onRedirect: () => {
+            // Deduct elapsed time from remaining timeout on each hop
             const elapsed = Date.now() - startTime;
             remainingTimeout = Math.max(5000, timeout - elapsed); // min 5s per redirect
-
-            currentUrl = redirectUrl;
-            response = await fetch(currentUrl, makeOptions());
-          } else {
-            break;
-          }
-        }
+          },
+          makeRequest: (fetchUrl) =>
+            fetch(fetchUrl, {
+              headers,
+              redirect: "manual",
+              signal: AbortSignal.timeout(remainingTimeout),
+            }),
+        });
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText} for ${url}`);
@@ -175,7 +151,6 @@ class CheerioEngine implements ScrapingEngine {
         if (html.length > MAX_RESPONSE_SIZE) {
           throw new Error(`Response body too large: ${html.length} bytes (max 10MB)`);
         }
-        const finalUrl = response.url || currentUrl;
 
         return { html, finalUrl, statusCode: response.status };
       },
@@ -792,6 +767,76 @@ class CloudBrowserEngine implements ScrapingEngine {
   }
 }
 
+// ==================== 6. Scrapling Engine (Python anti-bot) ====================
+
+const SCRAPLING_SERVICE_URL = process.env.SCRAPLING_SERVICE_URL || "http://127.0.0.1:3031";
+
+class ScraplingEngine implements ScrapingEngine {
+  readonly name: EngineType = "scrapling";
+
+  async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
+    if (!isSafeUrl(url)) {
+      throw new Error(`Blocked: target URL is not allowed (${url})`);
+    }
+
+    const timeout = Math.max(10000, Math.min(options?.timeout || 30000, 120000));
+
+    return retryWithBackoff(
+      async () => {
+        try {
+          const response = await fetch(`${SCRAPLING_SERVICE_URL}/fetch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url,
+              timeout,
+              stealth: true,
+            }),
+            signal: AbortSignal.timeout(timeout + 10000),
+          });
+
+          if (!response.ok) {
+            const errorBody = await response.text().catch(() => "");
+            throw new Error(`Scrapling service error: HTTP ${response.status} - ${errorBody}`);
+          }
+
+          let data: { html?: string; final_url?: string; status_code?: number; error?: string };
+          try {
+            data = await response.json();
+          } catch {
+            throw new Error(`Scrapling service returned invalid JSON`);
+          }
+
+          if (data.error) {
+            throw new Error(`Scrapling error: ${data.error}`);
+          }
+
+          const html = data.html || "";
+          if (html.length > MAX_RESPONSE_SIZE) {
+            throw new Error(`Scrapling HTML too large: ${html.length} bytes`);
+          }
+
+          scraplingBreaker.recordSuccess();
+
+          return {
+            html,
+            finalUrl: data.final_url || url,
+            statusCode: data.status_code || 200,
+          };
+        } catch (err) {
+          scraplingBreaker.recordFailure();
+          throw err;
+        }
+      },
+      {
+        maxRetries: 2,
+        baseDelay: 3000,
+        maxDelay: 30000,
+      }
+    );
+  }
+}
+
 // ==================== Smart Engine Selector ====================
 
 /**
@@ -821,6 +866,7 @@ export function initEngines(): void {
   registerEngine(new FirecrawlEngine());
   registerEngine(new AgentQLEngine());
   registerEngine(new CloudBrowserEngine());
+  registerEngine(new ScraplingEngine());
 
   console.log(`[Engines] Available: ${getEngineNames().join(", ")}`);
 

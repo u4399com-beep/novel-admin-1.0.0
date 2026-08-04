@@ -53,6 +53,7 @@ import {
 import { ReadingSettingsPanel } from '@/components/ReadingSettingsPanel';
 import { DailyReadingGoal } from '@/components/DailyReadingGoal';
 import { BookmarkManager } from '@/components/BookmarkManager';
+import { TranslateButton } from '@/components/translate/TranslateButton';
 import { formatWordCount, formatReadingTime } from '@/lib/format';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 
@@ -1217,6 +1218,18 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">导出TXT</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <TranslateButton
+                        content={chapterContent || ''}
+                        className="h-7 w-7 press-effect text-amber-600 hover:text-amber-700 dark:text-amber-400"
+                      />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">翻译</TooltipContent>
                 </Tooltip>
 
                 <Tooltip>

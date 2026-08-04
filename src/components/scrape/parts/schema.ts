@@ -63,7 +63,7 @@ export const scrapeRuleSchema = z.object({
   coverSavePath: z.string(),
 
   scrapeMode: z.enum(['incremental', 'full']),
-  engine: z.enum(['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser']),
+  engine: z.enum(['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling']),
   agentqlQueries: z.string(),
   cloudBrowserProvider: z.enum(['browserless', 'steel']),
   cloudBrowserUrl: z.string(),

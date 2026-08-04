@@ -4573,3 +4573,169 @@ Work Log:
 4. 章节diff/版本历史
 5. SEO metadata export
 6. PWA离线支持
+---
+Task ID: 2-a
+Agent: Translation Service Builder
+Task: 创建LibreTranslate翻译微服务
+
+Work Log:
+- 检查LibreTranslate是否已安装：未安装
+- 安装了LibreTranslate 1.9.6（含argostranslate依赖）到虚拟环境
+- 创建了 mini-services/translate-service/ 目录
+- 创建了 requirements.txt（flask, flask-cors, requests）
+- 创建了 config.py（端口3032, LT后端URL 5674）
+- 创建了 translator.py — 内置BasicTranslator回退翻译器
+  - 200+ 英语→中文词条
+  - 200+ 日语→中文词条
+  - 200+ 韩语→中文词条
+  - 自动构建反向映射（zh↔en, zh↔ja, zh↔ko, en↔ja, en↔ko）
+  - 语言检测功能（CJK/Katakana/Hiragana/Hangul/Latin脚本分析）
+  - HTML感知翻译（保留标签）
+  - 段落级翻译
+  - CJK用最长匹配，Latin用词边界正则
+- 创建了 app.py — Flask API服务器（端口3032）
+  - GET /health — 健康检查+后端状态+可用语言
+  - GET /languages — 返回支持语言列表
+  - POST /translate — 主翻译端点（支持text/html格式）
+  - POST /translate/batch — 批量翻译
+  - POST /detect — 语言检测
+  - 优先连接LibreTranslate（127.0.0.1:5674），不可用时回退到内置翻译
+- 创建了 start.sh 启动脚本
+- LibreTranslate安装成功但启动时需下载语言模型（100+模型），未完成下载
+  - LT安装存在但暂未在5674端口运行，需手动下载模型后启动
+- Flask translate-service已启动并通过curl验证所有端点
+
+Stage Summary:
+- Flask翻译服务运行在端口3032，健康检查正常
+- 后端模式：basic-fallback（LibreTranslate未运行）
+- 支持语言：zh, en, ja, ko
+- 所有API端点验证通过：health, languages, translate, translate/batch, detect
+- 内置翻译器为词典级别（置信度0.35），适合基本小说词汇翻译
+- LibreTranslate已安装(pip3)但需要下载语言模型才能使用，启动命令：libretranslate --port 5674 --host 127.0.0.1
+- 文件：app.py, config.py, translator.py, requirements.txt, start.sh
+
+---
+Task ID: 4
+Agent: Code Optimizer
+Task: 代码优化精简整合 + CSS样式提升
+
+Work Log:
+- Checked followRedirects utility: already exists in mini-services/scraper-service/src/utils.ts and is already imported/used by engines.ts CheerioEngine — no changes needed
+- Converted 5 API routes to use apiError() helper from @/lib/api-utils:
+  - src/app/api/categories/route.ts: 10 error responses converted
+  - src/app/api/sites/route.ts: 11 error responses converted
+  - src/app/api/tags/route.ts: 7 error responses converted
+  - src/app/api/themes/route.ts: 14 error responses converted
+  - src/app/api/reading-goals/route.ts: 3 error responses converted
+- Organized globals.css (3500+ lines) with section comments across all incremental "Round" sections:
+  - Added /* ===== Animations & Transitions ===== */ headers
+  - Added /* ===== Visual Effects ===== */ headers
+  - Added /* ===== Layout Helpers ===== */ headers
+  - Added /* ===== Scrollbar Styles ===== */ headers
+  - Added /* ===== Dark Mode Enhancements ===== */ headers
+  - Added /* ===== Status Indicators ===== */ headers
+  - Added /* ===== Reading Specific ===== */ headers
+- Added new CSS utility classes to globals.css:
+  - Translation panel animation (.translate-slide-in, @keyframes translateSlideIn)
+  - Translating shimmer effect (.translate-shimmer, @keyframes translateShimmer)
+  - Card press effect (.card-press with transition + active scale)
+  - Gradient text warm (.text-gradient-warm) and cool (.text-gradient-cool)
+  - Scroll progress indicator (.scroll-progress with ::after pseudo-element)
+  - Responsive grid helpers (.grid-auto-fit, .grid-auto-fill)
+  - Amber scrollbar for translation panels (.scrollbar-amber with dark mode support)
+- Ran bun run lint: 0 errors, 2 pre-existing warnings (React Hook Form watch incompatibility)
+
+Stage Summary:
+- followRedirects utility already existed — no action needed
+- 45 error responses across 5 routes consolidated to use apiError() helper
+- globals.css organized with 15+ section comment headers for better navigation
+- 10 new CSS utility classes added for translation, cards, grids, and scrollbars
+- Zero lint errors introduced
+---
+Task ID: round2-cycle2
+Agent: Main Orchestrator
+Task: 第2轮循环 - Scrapling集成 + LibreTranslate翻译服务 + 代码优化
+
+Work Log:
+## Scrapling Python反检测引擎集成
+1. 创建 mini-services/scrapling-service/ Python微服务(端口3031)
+   - app.py: Flask API, /health + /fetch 端点
+   - config.py: SSRF防护、超时、响应大小限制
+   - SSRF防护: 私有IP、DNS重绑定域名、IPv6、IP混淆检测
+   - 验证: health→ok, SSRF拦截→403, 采集example.com→200
+2. 在 scraper-service 引擎系统中添加 ScraplingEngine
+   - types.ts: EngineType 添加 'scrapling'
+   - engines.ts: ScraplingEngine类 + 熔断器 + 注册
+   - getEngineNames() 更新
+3. 前端 StrategyTab.tsx 添加 scrapling 选项
+   - 引擎选择器新增 Scrapling (amber色标识)
+   - 配置面板: 反检测能力说明 + Badge标签
+   - schema.ts: z.enum 添加 'scrapling'
+
+## LibreTranslate 多语言翻译系统
+1. 创建 mini-services/translate-service/ Python微服务(端口3032)
+   - app.py: Flask API, 5个端点(health/languages/translate/batch/detect)
+   - translator.py: 内置词典翻译器(zh↔en/ja/ko, 200+词条/语言对)
+   - HTML感知翻译(保留标签), CJK最长匹配, 拉丁词边界正则
+   - LibreTranslate代理: 自动检测LT服务(端口5674), 不可用回退到内置
+2. Next.js API 代理路由
+   - /api/translate (POST): 翻译代理 + IP限流(100次/分) + 输入验证
+   - /api/translate/languages (GET): 语言列表代理 + 5分钟缓存
+   - /api/translate/detect (POST): 语言检测代理
+3. 前端翻译组件
+   - TranslatePanel: 完整翻译面板(语言选择/交换/检测/翻译/复制/对比显示)
+   - TranslateButton: 快速翻译Popover(一键翻译为中文)
+   - TranslationSettings: 全局翻译设置(目标语言/自动翻译/显示模式)
+4. 阅读器集成
+   - NovelDetailClient.tsx 工具栏添加翻译按钮(amber色)
+
+## 代码优化精简整合
+1. 45个API错误响应统一使用 apiError() 辅助函数(5个路由文件)
+   - categories/route.ts (10处)
+   - sites/route.ts (11处)
+   - tags/route.ts (7处)
+   - themes/route.ts (14处)
+   - reading-goals/route.ts (3处)
+2. globals.css 组织: 15+个段落注释标题
+3. 10个新CSS工具类(翻译动画/卡片交互/渐变文字/滚动进度/响应式网格/amber滚动条)
+
+## 验证结果
+- ESLint: 0 errors, 2 warnings(预存React Hook Form)
+- scrapling-service: GET /health → ok ✓
+- translate-service: GET /health → ok, POST /translate → 正确翻译 ✓
+- Next.js dev server: 正常运行
+
+## 统计
+- 新增微服务: 2 (scrapling 3031, translate 3032)
+- 新增API路由: 3 (/api/translate, /languages, /detect)
+- 新增前端组件: 3 (TranslatePanel, TranslateButton, TranslationSettings)
+- 代码优化: 45处API错误响应统一
+- 新CSS类: 10个
+- 引擎系统: 新增第6个引擎(scrapling)
+- cron任务: jobId 307567 (12轮×15分钟)
+
+Stage Summary:
+- Scrapling Python反检测引擎完整集成到采集系统
+- LibreTranslate翻译系统端到端(微服务→API→UI→阅读器)
+- 45处代码整合优化, 10个新CSS工具类
+- 累计修复: 285 + 45(优化) + 3(lint fix) = 333+
+
+## 项目当前状态
+- **代码库状态**: 稳定, 0 lint errors
+- **微服务**: scraper(3001) + scrapling(3031) + translate(3032)
+- **引擎数**: 6个 (cheerio/playwright/firecrawl/agentql/cloud-browser/scrapling)
+- **cron任务**: jobId 307567 (12轮webDevReview, 15分钟间隔)
+
+## 未解决问题或风险
+1. LibreTranslate本地模型未下载(需100+MB, 当前使用内置词典回退)
+2. 翻译质量有限(内置词典仅200+词条/语言对)
+3. translate-service/scrapling-service无进程守护(重启后需手动启动)
+4. EPUB导出未完整实现(需JSZip)
+5. 首页page.tsx仍有400+行可继续拆分
+
+## 建议下一阶段优先事项
+1. 下载LibreTranslate语言模型提升翻译质量
+2. 翻译缓存(localStorage/DB)避免重复翻译
+3. 批量章节翻译功能
+4. 更多新功能: 阅读笔记/标注、虚拟滚动
+5. 样式继续打磨(主题模板多样化)

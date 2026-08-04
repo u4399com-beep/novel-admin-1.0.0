@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, safeJson } from "@/lib/api-utils";
+import { NextRequest } from "next/server";
+import { parsePagination, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from "@/lib/constants";
 
@@ -16,7 +16,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
     if (status) {
       if (!VALID_STATUSES.includes(status)) {
-        return NextResponse.json({ error: "无效的任务状态筛选值" }, { status: 400 });
+        return apiError("无效的任务状态筛选值", 400);
       }
       where.status = status;
     }
@@ -43,7 +43,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("List scrape tasks error:", error);
-    return NextResponse.json({ error: "获取采集任务列表失败"}, { status: 500 });
+    return apiError("获取采集任务列表失败");
   }
 });
 
@@ -54,18 +54,18 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
     const { ruleId, mode, autoStart } = body;
 
     if (!ruleId || typeof ruleId !== 'string') {
-      return NextResponse.json({ error: "规则ID格式错误" }, { status: 400 });
+      return apiError("规则ID格式错误", 400);
     }
 
     // Verify the rule exists
     const rule = await db.scrapeRule.findUnique({ where: { id: ruleId }, select: { id: true, scrapeMode: true } });
     if (!rule) {
-      return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+      return apiError("采集规则不存在", 404);
     }
 
     const validModes = ["incremental", "full"];
@@ -112,9 +112,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       }).catch((dbErr) => { console.error('[Scrape Task] Unhandled error in failure handler:', dbErr); });
     }
 
-    return NextResponse.json(task, { status: 201 });
+    return apiSuccess(task, 201);
   } catch (error) {
     console.error("Create scrape task error:", error);
-    return NextResponse.json({ error: "创建采集任务失败"}, { status: 500 });
+    return apiError("创建采集任务失败");
   }
 });

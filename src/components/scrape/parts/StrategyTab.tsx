@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Crosshair, Cloud, Brain } from 'lucide-react';
+import { Sparkles, Crosshair, Cloud, Brain, Shield } from 'lucide-react';
 import type { FormValues } from './schema';
 import type { EditorFormAccess } from './types';
 
@@ -34,7 +34,7 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
           onValueChange={(v) => {
             setValue('engine', v as FormValues['engine'], { shouldDirty: true });
             // Auto-set useJsRender when playwright/cloud-browser selected
-            if (v === 'playwright' || v === 'cloud-browser') {
+            if (v === 'playwright' || v === 'cloud-browser' || v === 'scrapling') {
               setValue('antiCrawlConfig.useJsRender', true, { shouldDirty: true });
             }
           }}
@@ -88,10 +88,19 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
                 </div>
               </div>
             </SelectItem>
+            <SelectItem value="scrapling">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                <div>
+                  <span className="font-medium">Scrapling</span>
+                  <span className="ml-1 text-xs text-muted-foreground">Python反检测引擎</span>
+                </div>
+              </div>
+            </SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Cheerio: 最快 | Playwright: JS渲染 | Firecrawl: AI增强 | AgentQL: 自然语言 | 云端浏览器: 反检测
+          Cheerio: 最快 | Playwright: JS渲染 | Firecrawl: AI增强 | AgentQL: 自然语言 | 云端浏览器: 反检测 | Scrapling: Python反爬
         </p>
       </div>
 
@@ -166,6 +175,32 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
                 <Badge variant="outline" className="text-xs">自动处理JS Challenge</Badge>
                 <Badge variant="outline" className="text-xs">支持Cloudflare</Badge>
                 <Badge variant="outline" className="text-xs">支持验证码绕过</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* Scrapling Config - shown when scrapling engine selected */}
+      {currentEngine === 'scrapling' && (
+        <>
+          <Separator />
+          <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20">
+            <CardHeader className="pb-3 pt-4 px-4">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Shield className="h-4 w-4 text-amber-600" />
+                Scrapling 反检测引擎
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                基于Python Scrapling库，内置反机器人检测绕过，支持Cloudflare、DataDome等高防护站点
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="text-xs">自动指纹伪装</Badge>
+                <Badge variant="outline" className="text-xs">TLS指纹模拟</Badge>
+                <Badge variant="outline" className="text-xs">Canvas/WebGL混淆</Badge>
+                <Badge variant="outline" className="text-xs">Cloudflare绕过</Badge>
               </div>
             </CardContent>
           </Card>

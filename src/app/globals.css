@@ -155,14 +155,6 @@
   background: oklch(0.4 0 0 / 0.6);
 }
 
-/* Selection color */
-::selection {
-  background: color-mix(in oklch, var(--primary) 20%, transparent);
-}
-.dark ::selection {
-  background: color-mix(in oklch, var(--primary) 30%, transparent);
-}
-
 /* Focus ring */
 *:focus-visible {
   outline: 2px solid var(--ring);
@@ -186,11 +178,6 @@
 @keyframes badge-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
-}
-
-/* Table row hover transition */
-tbody tr {
-  transition: background-color 150ms ease;
 }
 
 /* Dialog backdrop blur improvement */
@@ -286,6 +273,8 @@ pre code {
   background: oklch(0.269 0 0);
   border-color: oklch(1 0 0 / 12%);
 }
+
+/* ===== Animations & Transitions ===== */
 
 /* ─── Enhanced Micro-Interactions ─────────────────────────── */
 
@@ -433,6 +422,8 @@ img {
 .dark .reading-progress-bar {
   box-shadow: 0 0 8px oklch(0.708 0.1 264 / 0.4);
 }
+
+/* ===== Visual Effects ===== */
 
 /* ─── Round 2 Enhanced Micro-Interactions ────────────── */
 
@@ -628,6 +619,7 @@ img {
 .dark .glass {
   background: oklch(0.15 0 0 / 0.7);
 }
+
 /* ─── New Utilities (Round 23:27) ──────────────────────── */
 
 /* Smooth underline animation for links */
@@ -748,6 +740,8 @@ img {
   to { transform: rotate(360deg); }
 }
 
+/* ===== Visual Effects ===== */
+
 /* ─── New Utilities (Round 23:53) ──────────────────────── */
 
 /* Slide up fade-in for cards and list items */
@@ -848,6 +842,8 @@ img {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
 }
+
+/* ===== Layout Helpers ===== */
 
 /* ─── New Utilities (Round 00:08) ──────────────────────── */
 
@@ -968,11 +964,6 @@ img {
   background: linear-gradient(to right, transparent, var(--border) 20%, var(--border) 80%, transparent);
 }
 
-/* Text selection color */
-::selection {
-  background-color: color-mix(in srgb, var(--primary) 20%, transparent);
-}
-
 /* Smooth scrollbar for custom scrollbars */
 .scrollbar-thin {
   scrollbar-width: 6px;
@@ -992,6 +983,8 @@ img {
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
 }
+
+/* ===== Scrollbar Styles ===== */
 
 /* ─── New Micro-interactions (Round N+1) ─────────────────────────── */
 
@@ -1302,6 +1295,8 @@ img {
   padding-right: max(env(safe-area-inset-right), 1rem);
 }
 
+/* ===== Dark Mode Enhancements ===== */
+
 /* ─── Round 06:38 Style Utilities ────────────────────────────────── */
 
 /* Subtle inner shadow for inset cards */
@@ -1393,6 +1388,8 @@ img {
   background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, transparent), color-mix(in srgb, var(--primary) 5%, transparent));
   border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
 }
+
+/* ===== Status Indicators ===== */
 
 /* ─── Round 09:53 Style Utilities ────────────────────────────────── */
 
@@ -1519,6 +1516,8 @@ img {
   transform: scaleX(1);
 }
 
+/* ===== Reading Specific ===== */
+
 /* ──────────────── New Utility Classes (10:38 round) ──────────────── */
 
 /* 2. Subtle breathing glow animation for status indicators */
@@ -1639,6 +1638,8 @@ img {
   width: 100%;
   left: 0;
 }
+
+/* ===== Animations & Transitions (cont.) ===== */
 
 /* ──────────────── New Utility Classes (11:23 round) ──────────────── */
 
@@ -2081,40 +2082,15 @@ img {
  }
 }
 
+/* ===== Status Indicators ===== */
+
 /* ─── Round 13: Enhanced Style Details ────────────────────────────── */
 
-/* 1. Smooth scrollbar styling for WebKit browsers */
-::-webkit-scrollbar {
- width: 6px;
- height: 6px;
-}
-::-webkit-scrollbar-track {
- background: transparent;
-}
-::-webkit-scrollbar-thumb {
- background: color-mix(in srgb, var(--muted-foreground) 25%, transparent);
- border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover {
- background: color-mix(in srgb, var(--muted-foreground) 40%, transparent);
-}
-
-/* 2. Focus visible ring for keyboard navigation */
-:focus-visible {
+/* 1. Focus visible ring for keyboard navigation */
+*:focus-visible {
  outline: 2px solid var(--ring);
  outline-offset: 2px;
  border-radius: var(--radius-sm);
-}
-
-/* 3. Selection color theming */
-::selection {
- background: color-mix(in srgb, var(--primary) 30%, transparent);
- color: var(--foreground);
-}
-
-/* 4. Subtle text selection for code/mono */
-:is(code, pre, .font-mono)::selection {
- background: color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
 /* ─── Additional utilities ────────────────────────────────────────────── */
@@ -2464,6 +2440,8 @@ nav button[data-active='true'] {
 }
 .press-effect:active {  transform: scale(0.98);}
 
+/* ===== Animations & Transitions (cont.) ===== */
+
 /* ─── Round 18: New CSS Utilities & Enhanced Reduced Motion ────────────── */
 
 /* 1. Glass card with subtle inner glow */
@@ -2519,6 +2497,8 @@ nav button[data-active='true'] {
 
 /* ─── Enhanced Reduced Motion ───────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {  .float-gentle {    animation: none;  }  .stagger-in > * {    opacity: 1;    animation: none;  }  .shimmer-border::before {    animation: none;  }  .shine-hover::after {    transition: none;  transform: none;  }  .animated-underline::after {    transition: none;  }  .pulse-dot {    animation: none;  }  .level-glow {    animation: none;  }}
+
+/* ===== Reading Specific ===== */
 
 /* ─── Round 19: Anti-Crawl Monitor Styles ────────────────────────────── */
 
@@ -2602,6 +2582,8 @@ nav button[data-active='true'] {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--foreground) 6%, transparent);
   border-color: color-mix(in srgb, var(--primary) 20%, transparent);
 }
+
+/* ===== Layout Helpers (cont.) ===== */
 
 /* ─── Round 21: Additional Utility Classes ──────────────────────────── */
 
@@ -2706,6 +2688,8 @@ nav button[data-active='true'] {
   .glass-card-interactive { transition: none; }
   .animated-underline::after { transition: none; }
 }
+
+/* ===== Visual Effects (cont.) ===== */
 
 /* ─── Round 3: New Utility Classes ────────────────────────────────── */
 
@@ -2836,6 +2820,8 @@ nav button[data-active='true'] {
   .cover-zoom > div { transition: none; }
   .hover-lift { transition: none; }
 }
+
+/* ===== Scrollbar Styles (cont.) ===== */
 
 /* ─── Round N+2 CSS utilities ────────────────────────────────────── */
 
@@ -3009,6 +2995,8 @@ nav button[data-active='true'] {
   opacity: 1;
 }
 
+/* ===== Animations & Transitions (cont.) ===== */
+
 /* ─── 数字滚动动画 ────────────────────────────────────── */
 @keyframes count-up {
   from { opacity: 0; transform: translateY(8px); }
@@ -3154,6 +3142,8 @@ mark {
   padding: 0 2px;
 }
 
+/* ===== Layout Helpers (cont.) ===== */
+
 /* ─── 响应式卡片网格增强 ──────────────────────────────── */
 .card-grid-responsive {
   display: grid;
@@ -3242,11 +3232,15 @@ mark {
   50% { box-shadow: 0 0 0 4px oklch(var(--primary) / 0); }
 }
 
+/* ===== Layout Helpers (cont.) ===== */
+
 /* ─── 响应式隐藏 ────────────────────────────────────── */
 .hide-mobile { display: none; }
 @media (min-width: 768px) { .hide-mobile { display: initial; } }
 .hide-desktop { display: initial; }
 @media (min-width: 768px) { .hide-desktop { display: none; } }
+
+/* ===== Layout Helpers (cont.) ===== */
 
 /* ─── 悬浮工具栏 ────────────────────────────────────── */
 .floating-toolbar {
@@ -3273,6 +3267,8 @@ mark {
   border-radius: 4px;
   vertical-align: middle;
 }
+
+/* ===== Status Indicators (cont.) ===== */
 
 /* ─── 进度条变体 ────────────────────────────────────── */
 .progress-bar-animated {
@@ -3330,6 +3326,8 @@ mark {
   opacity: 1;
 }
 
+/* ===== Status Indicators (cont.) ===== */
+
 /* ─── 状态标签颜色映射 ──────────────────────────────── */
 .status-ongoing { color: oklch(0.7 0.15 160); }
 .status-completed { color: oklch(0.7 0.15 250); }
@@ -3359,6 +3357,8 @@ mark {
   overflow: hidden;
 }
 
+/* ===== Scrollbar Styles (cont.) ===== */
+
 /* ─── 滚动指示器 ────────────────────────────────────── */
 .scroll-indicator {
   position: relative;
@@ -3374,6 +3374,8 @@ mark {
   pointer-events: none;
 }
 
+/* ===== Dark Mode Enhancements (cont.) ===== */
+
 /* ─── 暗色模式增强 ──────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   .glow-border:hover::before {
@@ -3384,4 +3386,101 @@ mark {
     0 10px 15px -3px oklch(0 0 0 / 0.2),
     0 20px 25px -5px oklch(0 0 0 / 0.1);
   }
+}
+
+/* ===== Translation & Card Enhancements ===== */
+
+/* Translation panel animation */
+.translate-slide-in {
+  animation: translateSlideIn 0.3s ease-out;
+}
+@keyframes translateSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Translating shimmer effect */
+.translate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, oklch(0.9 0.05 85) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: translateShimmer 1.5s infinite;
+}
+@keyframes translateShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Card press effect */
+.card-press {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-press:active {
+  transform: scale(0.98);
+}
+
+/* Gradient text v2 - warm */
+.text-gradient-warm {
+  background: linear-gradient(135deg, oklch(0.7 0.2 60), oklch(0.65 0.25 30));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Gradient text v2 - cool */
+.text-gradient-cool {
+  background: linear-gradient(135deg, oklch(0.65 0.15 180), oklch(0.6 0.2 250));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ===== Layout Helpers (cont.) ===== */
+
+/* Scroll progress indicator */
+.scroll-progress {
+  position: relative;
+}
+.scroll-progress::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: oklch(0.7 0.2 60);
+  transition: width 0.1s linear;
+  border-radius: 1px;
+}
+
+/* Responsive grid helpers */
+.grid-auto-fit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 1rem;
+}
+
+.grid-auto-fill {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 1rem;
+}
+
+/* ===== Scrollbar Styles (cont.) ===== */
+
+/* Dark mode scrollbar for translation panels */
+.scrollbar-amber::-webkit-scrollbar-track {
+  background: oklch(0.95 0.02 85);
+  border-radius: 4px;
+}
+.scrollbar-amber::-webkit-scrollbar-thumb {
+  background: oklch(0.75 0.12 70);
+  border-radius: 4px;
+}
+.scrollbar-amber::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.65 0.15 65);
+}
+:is(.dark .scrollbar-amber)::-webkit-scrollbar-track {
+  background: oklch(0.2 0.02 85);
+}
+:is(.dark .scrollbar-amber)::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0.1 70);
 }

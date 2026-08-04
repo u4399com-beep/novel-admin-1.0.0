@@ -11,15 +11,14 @@ import type {
 } from "./types";
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selectors";
-import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA } from "./utils";
+import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects } from "./utils";
 import { isSafeUrl } from "./ssrf";
 
-// ==================== Pagination Helper ====================
+// ==================== Pagination Helpers ====================
 
 /**
  * Find the next page URL from pagination config.
- * Extracted as a shared function to avoid triplication across handlePagination,
- * handleScrapeChapters, and handleScrapeContent.
+ * Shared across all paginated scraping operations.
  */
 function findNextPageUrl(
   $: cheerio.CheerioAPI,
@@ -48,50 +47,46 @@ function findNextPageUrl(
   return nextUrl ? resolveUrl(currentPageUrl, nextUrl) : "";
 }
 
-// ==================== Pagination Handler ====================
+// ==================== Shared Paginated Fetch Loop ====================
 
-async function handlePagination(
-  startUrl: string,
-  pagination: Pagination | undefined,
-  antiCrawl: AntiCrawl | undefined,
-  engineType: EngineType,
-  extractFn: (html: string, url: string) => string[]
-): Promise<{ results: string[]; hasNextPage: boolean }> {
-  const allResults: string[] = [];
-  const seen = new Set<string>();
-  let currentUrl = startUrl;
-  let hasNextPage = false;
+/**
+ * Shared pagination loop that eliminates the triplicated page-fetching
+ * logic in handleScrapeList, handleScrapeChapters, and handleScrapeContent.
+ *
+ * Handles: visited-page loop detection, max page limit, next-page URL
+ * resolution, and anti-crawl delay. The caller provides an `onPage`
+ * callback for per-page data extraction; returning `false` stops early.
+ */
+interface PaginatedFetchOptions {
+  startUrl: string;
+  pagination: Pagination | undefined;
+  antiCrawl: AntiCrawl | undefined;
+  engineType: EngineType;
+  logPrefix: string;
+  /** Called for each fetched page. Return false to stop paginating. */
+  onPage: (html: string, url: string, pageIndex: number) => void | boolean | Promise<void | boolean>;
+}
+
+async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNextPage: boolean }> {
+  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage } = options;
   const maxPages = Math.min(pagination?.maxPage || 1, 100);
   const engine = getEngine(engineType);
   const visitedPages = new Set<string>();
+  let currentUrl = startUrl;
+  let hasNextPage = false;
 
   for (let page = 0; page < maxPages; page++) {
-    console.log(`  [Pagination] Page ${page + 1}/${maxPages}: ${currentUrl}`);
+    console.log(`  [${logPrefix}] Page ${page + 1}/${maxPages}: ${currentUrl}`);
 
     if (visitedPages.has(currentUrl)) {
-      console.log(`  [Pagination] Detected page loop at ${currentUrl}, stopping.`);
+      console.log(`  [${logPrefix}] Detected page loop at ${currentUrl}, stopping.`);
       break;
     }
     visitedPages.add(currentUrl);
 
     const { html } = await engine.fetch(currentUrl, { antiCrawl });
-    const results = extractFn(html, currentUrl);
-
-    let newCount = 0;
-    for (const r of results) {
-      if (r && !seen.has(r)) {
-        seen.add(r);
-        allResults.push(r);
-        newCount++;
-      }
-    }
-
-    console.log(`  [Pagination] Found ${results.length} items, ${newCount} new`);
-
-    if (newCount === 0 && page > 0) {
-      console.log(`  [Pagination] No new items found, stopping`);
-      break;
-    }
+    const shouldContinue = await onPage(html, currentUrl, page);
+    if (shouldContinue === false) break;
 
     // Find next page URL
     if (pagination) {
@@ -101,12 +96,13 @@ async function handlePagination(
       if (nextUrl) {
         currentUrl = nextUrl;
         hasNextPage = true;
-        if (antiCrawl?.delay) {
+        // Only delay if there will be another page to fetch
+        if (antiCrawl?.delay && page < maxPages - 1) {
           await randomDelay(antiCrawl.delay[0], antiCrawl.delay[1]);
         }
       } else {
         hasNextPage = false;
-        console.log(`  [Pagination] No next page found`);
+        console.log(`  [${logPrefix}] No next page found`);
         break;
       }
     } else {
@@ -114,7 +110,7 @@ async function handlePagination(
     }
   }
 
-  return { results: allResults, hasNextPage };
+  return { hasNextPage };
 }
 
 // ==================== Scrape List ====================
@@ -123,18 +119,35 @@ export async function handleScrapeList(body: ScrapeListRequest) {
   const { url, selector, pagination, antiCrawl, engine: requestedEngine } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
 
-  const { results, hasNextPage } = await handlePagination(
-    url,
+  const allUrls: string[] = [];
+  const seen = new Set<string>();
+
+  const { hasNextPage } = await paginatedFetch({
+    startUrl: url,
     pagination,
     antiCrawl,
     engineType,
-    (html, pageUrl) => {
+    logPrefix: "Pagination",
+    onPage: (html, pageUrl, page) => {
       const items = parseSelectorMulti(html, selector);
-      return items.map((item) => resolveUrl(pageUrl, item));
-    }
-  );
+      let newCount = 0;
+      for (const item of items) {
+        const resolvedUrl = resolveUrl(pageUrl, item);
+        if (resolvedUrl && !seen.has(resolvedUrl)) {
+          seen.add(resolvedUrl);
+          allUrls.push(resolvedUrl);
+          newCount++;
+        }
+      }
+      console.log(`  [Pagination] Found ${items.length} items, ${newCount} new`);
+      if (newCount === 0 && page > 0) {
+        console.log(`  [Pagination] No new items found, stopping`);
+        return false;
+      }
+    },
+  });
 
-  return { urls: results, hasNextPage, engine: engineType };
+  return { urls: allUrls, hasNextPage, engine: engineType };
 }
 
 // ==================== Scrape Book Info ====================
@@ -166,61 +179,33 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
 export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
   const { url, selectors, pagination, antiCrawl, enableShuffle, engine: requestedEngine } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
-  const engine = getEngine(engineType);
 
   const allChapters: ChapterLink[] = [];
   const seenUrls = new Set<string>();
-  let currentUrl = url;
-  let hasNextPage = false;
-  const maxPages = Math.min(pagination?.maxPage || 1, 100);
-  const visitedPages = new Set<string>();
 
-  for (let page = 0; page < maxPages; page++) {
-    console.log(`  [Chapters] Page ${page + 1}/${maxPages}: ${currentUrl}`);
-
-    if (visitedPages.has(currentUrl)) {
-      console.log(`  [Chapters] Detected page loop at ${currentUrl}, stopping.`);
-      break;
-    }
-    visitedPages.add(currentUrl);
-
-    const { html } = await engine.fetch(currentUrl, { antiCrawl });
-    const links = extractLinksFromList(html, selectors.list, selectors.link, selectors.title, currentUrl);
-
-    let newCount = 0;
-    for (const link of links) {
-      if (link.url && !seenUrls.has(link.url)) {
-        seenUrls.add(link.url);
-        allChapters.push({
-          title: link.title || `第${allChapters.length + 1}章`,
-          url: link.url,
-          sortOrder: allChapters.length + 1,
-        });
-        newCount++;
-      }
-    }
-
-    console.log(`  [Chapters] Found ${links.length} chapters, ${newCount} new`);
-
-    // Find next page
-    if (pagination) {
-      const $ = cheerio.load(html);
-      const nextUrl = findNextPageUrl($, pagination, page, currentUrl);
-
-      if (nextUrl) {
-        currentUrl = nextUrl;
-        hasNextPage = true;
-        if (antiCrawl?.delay) {
-          await randomDelay(antiCrawl.delay[0], antiCrawl.delay[1]);
+  const { hasNextPage } = await paginatedFetch({
+    startUrl: url,
+    pagination,
+    antiCrawl,
+    engineType,
+    logPrefix: "Chapters",
+    onPage: (html, currentUrl) => {
+      const links = extractLinksFromList(html, selectors.list, selectors.link, selectors.title, currentUrl);
+      let newCount = 0;
+      for (const link of links) {
+        if (link.url && !seenUrls.has(link.url)) {
+          seenUrls.add(link.url);
+          allChapters.push({
+            title: link.title || `第${allChapters.length + 1}章`,
+            url: link.url,
+            sortOrder: allChapters.length + 1,
+          });
+          newCount++;
         }
-      } else {
-        hasNextPage = false;
-        break;
       }
-    } else {
-      break;
-    }
-  }
+      console.log(`  [Chapters] Found ${links.length} chapters, ${newCount} new`);
+    },
+  });
 
   // Shuffle if enabled
   if (enableShuffle) {
@@ -241,48 +226,25 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
 export async function handleScrapeContent(body: ScrapeContentRequest) {
   const { url, selectors, pagination, antiCrawl, engine: requestedEngine } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
-  const engine = getEngine(engineType);
 
   const contentParts: string[] = [];
   let title = "";
-  let currentUrl = url;
-  const maxPages = Math.min(pagination?.maxPage || 1, 100);
-  const visitedPages = new Set<string>();
 
-  for (let page = 0; page < maxPages; page++) {
-    console.log(`  [Content] Page ${page + 1}/${maxPages}: ${currentUrl}`);
-
-    if (visitedPages.has(currentUrl)) {
-      console.log(`  [Content] Detected page loop at ${currentUrl}, stopping.`);
-      break;
-    }
-    visitedPages.add(currentUrl);
-
-    const { html } = await engine.fetch(currentUrl, { antiCrawl });
-
-    // Extract title from first page only
-    if (page === 0 && selectors.title) {
-      title = parseSelector(html, selectors.title);
-    }
-
-    const content = parseSelector(html, selectors.content);
-    if (content) contentParts.push(content);
-
-    // Find next page for content
-    if (pagination && page < maxPages - 1) {
-      const $ = cheerio.load(html);
-      const nextUrl = findNextPageUrl($, pagination, page, currentUrl);
-
-      if (nextUrl) {
-        currentUrl = nextUrl;
-        if (antiCrawl?.delay) {
-          await randomDelay(antiCrawl.delay[0], antiCrawl.delay[1]);
-        }
-      } else {
-        break;
+  await paginatedFetch({
+    startUrl: url,
+    pagination,
+    antiCrawl,
+    engineType,
+    logPrefix: "Content",
+    onPage: (html, _pageUrl, page) => {
+      // Extract title from first page only
+      if (page === 0 && selectors.title) {
+        title = parseSelector(html, selectors.title);
       }
-    }
-  }
+      const content = parseSelector(html, selectors.content);
+      if (content) contentParts.push(content);
+    },
+  });
 
   const fullContent = contentParts.join("\n\n");
   return {
@@ -310,41 +272,22 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
 
   console.log(`  [Cover] Downloading from ${url} to ${savePath}`);
 
-  // Manual redirect following with SSRF validation on each hop
-  let currentUrl = url;
-  let response: Response | null = null;
-  const MAX_REDIRECTS = 5;
+  // Use shared redirect-following utility with SSRF validation on each hop
+  const { response } = await followRedirects(url, {
+    maxRedirects: 5,
+    makeRequest: (fetchUrl) =>
+      fetch(fetchUrl, {
+        headers: {
+          "User-Agent": getRandomUA(),
+          Referer: new URL(fetchUrl).origin,
+        },
+        signal: AbortSignal.timeout(30000),
+        redirect: "manual",
+      }),
+  });
 
-  for (let i = 0; i <= MAX_REDIRECTS; i++) {
-    response = await fetch(currentUrl, {
-      headers: {
-        "User-Agent": getRandomUA(),
-        Referer: new URL(currentUrl).origin,
-      },
-      signal: AbortSignal.timeout(30000),
-      redirect: "manual",
-    });
-
-    if (response.status >= 300 && response.status < 400 && i < MAX_REDIRECTS) {
-      const location = response.headers.get("location");
-      if (!location) break;
-      try {
-        const redirectUrl = new URL(location, currentUrl).href;
-        if (!isSafeUrl(redirectUrl)) {
-          throw new Error(`Blocked: redirect to internal/blocked URL (${redirectUrl})`);
-        }
-        currentUrl = redirectUrl;
-        continue;
-      } catch (err) {
-        if (err instanceof Error && err.message.startsWith("Blocked:")) throw err;
-        break;
-      }
-    }
-    break;
-  }
-
-  if (!response || !response.ok) {
-    throw new Error(`Failed to download cover: HTTP ${response?.status || 'no response'}`);
+  if (!response.ok) {
+    throw new Error(`Failed to download cover: HTTP ${response.status}`);
   }
 
   // Check response size before reading into memory

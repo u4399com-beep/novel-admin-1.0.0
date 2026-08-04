@@ -1,0 +1,5 @@
+flask>=3.0,<4.0
+scrapling>=0.4,<1.0
+curl_cffi>=0.7,<1.0
+browserforge>=1.0,<2.0
+flask-cors>=5.0,<6.0
