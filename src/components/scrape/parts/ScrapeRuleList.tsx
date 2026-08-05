@@ -54,7 +54,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
   const [deleteTarget, setDeleteTarget] = useState<ScrapeRuleItem | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchRules = useCallback(async () => {
+  const fetchRules = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -62,16 +62,22 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
         pageSize: '20',
         ...(search ? { search } : {}),
       });
-      const data = await apiFetch<{ rules: ScrapeRuleItem[]; totalPages: number }>(`/api/scrape-rules?${params}`);
+      const data = await apiFetch<{ rules: ScrapeRuleItem[]; totalPages: number }>(`/api/scrape-rules?${params}`, { signal });
+      if (signal?.aborted) return;
       setRules(data.rules || []);
       setTotalPages(data.totalPages || 1);
-    } catch { /* handled by apiFetch */ } finally {
-      setLoading(false);
+    } catch {
+      if (signal?.aborted) return;
+      /* handled by apiFetch */
+    } finally {
+      if (!signal?.aborted) setLoading(false);
     }
   }, [page, search]);
 
   useEffect(() => {
-    fetchRules();
+    const ac = new AbortController();
+    fetchRules(ac.signal);
+    return () => ac.abort();
   }, [fetchRules]);
 
   useEffect(() => {

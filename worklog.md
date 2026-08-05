@@ -5017,3 +5017,37 @@ Lint: 0 errors, 2 pre-existing warnings (unrelated)
 
 ### Lint Result
 - 0 errors, 2 warnings (pre-existing react-hooks/incompatible-library warnings)
+
+---
+
+## fix-4: Split large files, fix AbortController, add CSS classes
+
+### Task A: Split SiteClusterView.tsx (971 → ~260 lines orchestrator)
+Extracted into `src/components/site/cluster/`:
+- `helpers.ts` — `tryParseJSON`, `formatRelativeTime`, `defaultThemeConfig`, `SiteHealthStatus` type
+- `SiteStatusDot.tsx` — status indicator dot component
+- `SiteFormDialog.tsx` — site create/edit form dialog (URL test, SEO, GEO, ID offsets)
+- `SitePreview.tsx` — theme-based site preview rendering
+- Orchestrator (`SiteClusterView.tsx`) keeps all state, imports sub-components
+
+### Task B: Split ThemeManagerView.tsx (915 → ~230 lines orchestrator)
+Extracted into `src/components/theme/manager/`:
+- `helpers.ts` — `tryParseJSON`, `defaultThemeConfig`
+- `ThemeFormDialog.tsx` — theme create/edit form (colors, layout, typography, SEO)
+- `ThemePreviewDialog.tsx` — theme preview dialog wrapper
+- `ThemeCardGrid.tsx` — animated grid of theme cards with actions
+- Orchestrator (`ThemeManagerView.tsx`) keeps all state, imports sub-components
+
+### Task C: Fix AbortController
+- `ScrapeRuleList.tsx` — Added AbortController + signal + cleanup to fetchRules useEffect
+- `ThemeManagerView.tsx` — Added AbortController + signal + cleanup to fetchThemes useEffect (during rewrite)
+- `use-reading-settings.ts` — No fetch in any useEffect (only fire-and-forget POST in callback); no change needed
+
+### Task D: CSS Enhancements
+Added to `globals.css`:
+- `.reading-progress-bar` / `.fill` — reading progress bar with dark mode
+- `.chapter-fade-enter` / `.chapter-fade-enter-active` — chapter transition fade
+- `.shadow-top` / `.shadow-bottom` — scroll shadow indicators with dark mode
+
+### Lint Result
+- 0 errors, 2 warnings (pre-existing react-hooks/incompatible-library warnings)
