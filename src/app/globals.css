@@ -3954,3 +3954,46 @@ mark {
   max-height: 2000px;
   opacity: 1;
 }
+
+/* ===== Scrollbar Enhancements ===== */
+.scrollbar-rounded::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar-rounded::-webkit-scrollbar-track { background: transparent; border-radius: 4px; }
+.scrollbar-rounded::-webkit-scrollbar-thumb { background: oklch(0.85 0.01 250); border-radius: 4px; }
+.scrollbar-rounded::-webkit-scrollbar-thumb:hover { background: oklch(0.75 0.02 250); }
+:is(.dark .scrollbar-rounded)::-webkit-scrollbar-thumb { background: oklch(0.35 0.01 250); }
+:is(.dark .scrollbar-rounded)::-webkit-scrollbar-thumb:hover { background: oklch(0.45 0.02 250); }
+
+/* ===== Card Hover Variants ===== */
+.card-hover-bright:hover { filter: brightness(1.02); }
+.card-hover-scale:hover { transform: scale(1.01); }
+:is(.dark .card-hover-bright):hover { filter: brightness(1.1); }
+
+/* ===== Text Effects ===== */
+.text-shadow-sm { text-shadow: 0 1px 2px oklch(0 0 0 / 0.1); }
+.text-shadow-md { text-shadow: 0 2px 4px oklch(0 0 0 / 0.15); }
+:is(.dark .text-shadow-sm) { text-shadow: 0 1px 2px oklch(0 0 0 / 0.3); }
+:is(.dark .text-shadow-md) { text-shadow: 0 2px 4px oklch(0 0 0 / 0.4); }
+
+/* ===== Container Queries ===== */
+.container-query { container-type: inline-size; }
+
+/* ===== Transition Utilities ===== */
+.transition-colors-fast { transition: color 0.1s ease, background-color 0.1s ease, border-color 0.1s ease; }
+.transition-all-fast { transition: all 0.1s ease; }
+
+/* ===== Divider Variants ===== */
+.divider-gradient-v {
+ width: 1px;
+ background: linear-gradient(to bottom, transparent, oklch(0 0 0 / 0.15), transparent);
+}
+:is(.dark .divider-gradient-v) {
+  background: linear-gradient(to bottom, transparent, oklch(1 0 0 / 0.1), transparent);
+}
+
+/* ===== Selection Color ===== */
+::selection {
+  background: oklch(0.75 0.15 150 / 0.3);
+}
+:is(.dark ::selection) {
+  background: oklch(0.5 0.15 150 / 0.4);
+}

@@ -5083,3 +5083,28 @@ Appended to `globals.css`:
 - `.collapse-content` — Animated collapsible section via `data-collapsed` attribute
 
 ### Lint: 0 errors, 2 pre-existing warnings (unrelated react-hooks/incompatible-library)
+
+---
+Task ID: fix-6
+Agent: Main
+
+## Task A: Split AiRuleAssistant.tsx (795→~200 lines main + 6 modules)
+- Created src/components/scrape/ai-assistant/types.ts (GeneratedRule, AiRuleAssistantProps, Step)
+- Created src/components/scrape/ai-assistant/helpers.tsx (getConfidenceColor/Label/Icon, SITE_TYPES)
+- Created src/components/scrape/ai-assistant/AiStatusIndicator.tsx (StepIndicator component)
+- Created src/components/scrape/ai-assistant/AiAnalyzeForm.tsx (URL input + site type selection + generate button)
+- Created src/components/scrape/ai-assistant/AiAnalyzingView.tsx (animated progress during AI analysis)
+- Created src/components/scrape/ai-assistant/SelectorCard.tsx (editable selector display)
+- Created src/components/scrape/ai-assistant/AiSuggestionList.tsx (ResultView with all selector cards)
+- Refactored AiRuleAssistant.tsx to import from sub-modules; fixed original bug (ac.signal → controller.signal)
+
+## Task B: Split DashboardView.tsx (820→~450 lines main + 3 modules)
+- Created src/components/novel/dashboard/StatCard.tsx (StatCard component + statCards config with icons)
+- Created src/components/novel/dashboard/RecentActivity.tsx (RecentActivity component + ActivityData types + event meta helpers)
+- Created src/components/novel/dashboard/QuickActions.tsx (QuickActions component + quickActionItems config)
+- Refactored DashboardView.tsx to import from sub-modules; export path unchanged
+
+## Task C: CSS Visual Polish
+- Added scrollbar-rounded, card-hover-bright/scale, text-shadow-sm/md, container-query, transition-colors-fast/all-fast, divider-gradient-v, selection color utilities
+
+## Lint: 0 errors (2 pre-existing warnings unrelated to changes)

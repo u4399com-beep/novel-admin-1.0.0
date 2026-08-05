@@ -4,23 +4,18 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BookOpen,
   FileText,
-  Hash,
-  FolderTree,
-  TrendingUp,
   User,
   Clock,
   ArrowRight,
   Sparkles,
-  Tags,
   Activity,
   PlusCircle,
   Globe,
+  FolderTree,
+  TrendingUp,
   BarChart3,
   CheckCircle2,
   ArrowUpRight,
-  Settings,
-  Server,
-  Heart,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -51,26 +46,18 @@ import {
 import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
-import type { DashboardStats, NovelStatus, ViewType } from '@/types';
+import type { DashboardStats, NovelStatus } from '@/types';
 import { ReadingHeatmap } from '@/components/ReadingHeatmap';
 import { ReadingStatsCard } from '@/components/ReadingStatsCard';
 
-// ─── Activity API types ─────────────────────────────────────────────────────
-interface ActivityData {
-  dailyActivity: {
-    date: string;
-    novelsCreated: number;
-    chaptersCreated: number;
-    scrapeRuns: number;
-  }[];
-  recentEvents: {
-    type: string;
-    title: string;
-    novelTitle?: string | null;
-    timestamp: string;
-  }[];
-}
+import { StatCard, statCards } from './dashboard/StatCard';
+import type { StatCardConfig } from './dashboard/StatCard';
+import { RecentActivity } from './dashboard/RecentActivity';
+import type { ActivityData } from './dashboard/RecentActivity';
+import { QuickActions } from './dashboard/QuickActions';
+import type { QuickActionItem } from './dashboard/QuickActions';
 
+// ─── Chart configs ────────────────────────────────────────────────────────
 const statusChartColors: Record<string, string> = {
   ongoing: '#10b981',
   completed: '#f59e0b',
@@ -98,68 +85,6 @@ const activityChartConfig: ChartConfig = {
     color: '#f59e0b',
   },
 };
-
-// ─── Stat card data ───────────────────────────────────────────────────────────
-const statCards = [
-  { key: 'totalNovels', label: '小说总数', icon: BookOpen, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20', view: 'novels' as ViewType },
-  { key: 'totalChapters', label: '章节总数', icon: FileText, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20', view: 'novels' as ViewType },
-  { key: 'totalWords', label: '总字数', icon: Hash, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20', view: 'novels' as ViewType },
-  { key: 'totalCategories', label: '分类总数', icon: FolderTree, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20', view: 'categories' as ViewType },
-  { key: 'totalTags', label: '标签总数', icon: Tags, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/20', view: 'tags' as ViewType },
-  { key: 'totalFavorites', label: '总收藏数', icon: Heart, color: 'text-red-500 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20', view: 'novels' as ViewType },
-] as const;
-
-// ─── Quick action items ───────────────────────────────────────────────────────
-interface QuickActionItem {
-  key: string;
-  label: string;
-  desc: string;
-  icon: typeof PlusCircle;
-  view: ViewType | 'createNovel';
-  color: string;
-  bg: string;
-}
-
-const quickActionItems: QuickActionItem[] = [
-  { key: 'create-novel', label: '新建小说', desc: '创建新的小说作品', icon: PlusCircle, view: 'createNovel', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-  { key: 'scrape-rules', label: '采集规则', desc: '管理采集规则与任务', icon: Globe, view: 'scrape', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-  { key: 'categories', label: '分类管理', desc: '整理小说分类体系', icon: FolderTree, view: 'categories', color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20' },
-  { key: 'sites', label: '站点管理', desc: '管理站点与主题配置', icon: Server, view: 'sites', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20' },
-  { key: 'settings', label: '系统设置', desc: '配置系统参数与选项', icon: Settings, view: 'settings', color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800/50' },
-];
-
-// ─── Event metadata helper ──────────────────────────────────────────────────
-// Cache event meta objects to avoid creating new objects on each call
-const EVENT_META_MAP: Record<string, { icon: typeof PlusCircle; color: string; hoverBg: string; label: string }> = {
-  novel_created: {
-    icon: PlusCircle,
-    color: 'text-emerald-600 dark:text-emerald-400',
-    hoverBg: 'group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30',
-    label: '创建小说 ',
-  },
-  chapter_added: {
-    icon: FileText,
-    color: 'text-violet-600 dark:text-violet-400',
-    hoverBg: 'group-hover:bg-violet-100 dark:group-hover:bg-violet-900/30',
-    label: '新增章节 ',
-  },
-  scrape_run: {
-    icon: Globe,
-    color: 'text-amber-600 dark:text-amber-400',
-    hoverBg: 'group-hover:bg-amber-100 dark:group-hover:bg-amber-900/30',
-    label: '执行采集 ',
-  },
-};
-const DEFAULT_EVENT_META = {
-  icon: Activity,
-  color: 'text-muted-foreground',
-  hoverBg: '',
-  label: '',
-};
-
-function getEventMeta(type: string) {
-  return EVENT_META_MAP[type] || DEFAULT_EVENT_META;
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export function DashboardView() {
@@ -216,7 +141,7 @@ export function DashboardView() {
     setCurrentView('novel-detail');
   };
 
-  const handleQuickAction = (action: typeof quickActionItems[number]) => {
+  const handleQuickAction = (action: QuickActionItem) => {
     if (action.view === 'createNovel') {
       handleCreateNovel();
     } else {
@@ -408,31 +333,15 @@ export function DashboardView() {
               </Button>
             </div>
           ) : statCards.map((card) => {
-              const Icon = card.icon;
-              const value = stats?.[card.key] ?? 0;
               const trend = getTrendIndicator(card.key);
-              const displayValue = card.key === 'totalWords'
-                ? value >= 10000 ? `${(value / 10000).toFixed(1)}万` : value.toLocaleString()
-                : value.toLocaleString();
               return (
-                <Card
+                <StatCard
                   key={card.key}
-                  className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback depth-hover hover-scale-sm card-depth card-glass"
-                  onClick={() => setCurrentView(card.view)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-4">
-                      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${card.bg}`}>
-                        <Icon className={`h-6 w-6 ${card.color}`} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-muted-foreground">{card.label}</p>
-                        <p className="text-2xl font-bold tabular-nums counter-animate count-animate stat-value">{displayValue}</p>
-                        {trend && <div className="mt-0.5">{trend}</div>}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                  card={card}
+                  stats={stats}
+                  trend={trend}
+                  onClick={setCurrentView}
+                />
               );
             })}
       </div>
@@ -690,130 +599,16 @@ export function DashboardView() {
       </div>
 
       {/* ── Quick Actions ─────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="h-5 w-5 text-muted-foreground" />
-            快捷操作
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
-                  <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
-                  <div className="flex-1 space-y-1.5">
-                    <Skeleton className="h-4 w-16" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 stagger-in">
-              {quickActionItems.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <button
-                    key={action.key}
-                    type="button"
-                    className="group flex items-center gap-3 rounded-lg border p-3 text-left transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20 card-depth appear-smooth"
-                    onClick={() => handleQuickAction(action)}
-                  >
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${action.bg} transition-transform duration-200 group-hover:scale-110`}>
-                      <Icon className={`h-5 w-5 ${action.color}`} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{action.label}</p>
-                      <p className="text-xs text-muted-foreground truncate">{action.desc}</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground" />
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <QuickActions loading={loading} onAction={handleQuickAction} />
 
       {/* ── Recent Activity (Real Data) ─────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Activity className="h-5 w-5 text-muted-foreground" />
-            最近活动
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="space-y-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <Skeleton className="h-8 w-8 rounded-full shrink-0" />
-                  <div className="flex-1 space-y-1.5">
-                    <Skeleton className="h-4 w-48" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : activityError ? (
-            <div className="flex py-8 flex-col items-center justify-center text-sm text-muted-foreground">
-              <p>活动数据加载失败</p>
-              <button
-                className="mt-1.5 text-xs text-muted-foreground hover:text-foreground hover-underline transition-colors"
-                disabled={loading} onClick={() => fetchDashboard()}
-              >
-                重试
-              </button>
-            </div>
-          ) : !activityData?.recentEvents.length ? (
-            <div className="flex py-8 items-center justify-center text-sm text-muted-foreground">
-              暂无最近活动
-            </div>
-          ) : (
-            <div className="relative space-y-0">
-              {activityData.recentEvents.map((event, i) => {
-                const isLast = i === activityData.recentEvents.length - 1;
-                const { icon: EventIcon, color: iconColor, hoverBg, label } = getEventMeta(event.type);
-                return (
-                  <div key={`${event.type}-${event.timestamp}-${i}`} className="relative flex items-start gap-3 pb-6 last:pb-0 group">
-                    {!isLast && (
-                      <div className="absolute left-[15px] top-9 h-[calc(100%-12px)] w-px bg-border" />
-                    )}
-                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ${hoverBg} transition-colors`}>
-                      <EventIcon className={`h-4 w-4 text-muted-foreground ${iconColor} transition-colors`} />
-                    </div>
-                    <div className="min-w-0 flex-1 pt-0.5">
-                      <p className="text-sm">
-                        <span className="text-muted-foreground">{label}</span>
-                        <span className="font-medium">{event.title}</span>
-                        {event.novelTitle && (
-                          <span className="text-muted-foreground"> · {event.novelTitle}</span>
-                        )}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {safeFormatDate(event.timestamp, (d) => formatDistanceToNow(d, {
-                          addSuffix: true,
-                          locale: zhCN,
-                        }))}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {!loading && activityData?.recentEvents.length ? (
-            <div className="mt-2 border-t pt-3">
-              <button className="text-sm text-muted-foreground transition-colors hover:text-foreground" onClick={() => setCurrentView('novels')}>
-                查看全部 →
-              </button>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+      <RecentActivity
+        loading={loading}
+        activityData={activityData}
+        activityError={activityError}
+        onRetry={() => fetchDashboard()}
+        onViewAll={() => setCurrentView('novels')}
+      />
 
 
     </div>
