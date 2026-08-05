@@ -1,8 +1,8 @@
 import { db } from "@/lib/db";
 import { parsePagination, sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
-import { NextRequest, NextResponse } from "next/server";
-import { getOrCompute, invalidateCache } from "@/lib/cache";
+import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/api-auth";
+import { paginatedList } from "@/lib/crud-helpers";
 import {
   MAX_NAME_LENGTH, MAX_DOMAIN_LENGTH, MAX_DESCRIPTION_LENGTH,
   MAX_SITE_TITLE_LENGTH, MAX_SITE_DESC_LENGTH, MAX_KEYWORDS_LENGTH,
@@ -14,29 +14,13 @@ import { validateJsonObject } from "@/lib/validation/common";
 export const GET = withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const { page, pageSize, skip } = parsePagination(searchParams);
-
-    const result = await getOrCompute(`sites:list:${page}:${pageSize}`, 30_000, () =>
-      Promise.all([
-        db.site.findMany({
-          orderBy: { createdAt: "desc" },
-          skip,
-          take: pageSize,
-          include: {
-            theme: true,
-          },
-        }),
-        db.site.count(),
-      ])
-    );
-
-    const [sites, total] = result;
-    return NextResponse.json({
-      sites,
-      total,
+    const { page, pageSize } = parsePagination(searchParams);
+    return paginatedList(db.site, {
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
+      orderBy: { createdAt: "desc" },
+      include: { theme: true },
+      itemsKey: 'sites',
     });
   } catch (error) {
     console.error("List sites error:", error);

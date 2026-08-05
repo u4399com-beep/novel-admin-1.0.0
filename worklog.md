@@ -5285,3 +5285,84 @@ Agent: Main Agent
 
 ## Lint Results
 - 0 errors, 4 warnings (all pre-existing react-hooks/incompatible-library warnings from useForm/watch)
+
+---
+Task ID: fix-11-14
+Agent: Main
+Task: Rounds 11-14: Component splits, API refactoring, Notes UI, CSS utilities
+
+Work Log:
+
+## Round 11: Component Splits
+
+### 11a. NovelFormDialog split (518→~80 lines)
+- Created src/components/novel/form/types.ts — extracted novelFormSchema + NovelFormValues type
+- Created src/components/novel/form/NovelMetaFields.tsx — title, author, description, status, category, tags fields with char counts, status badge preview, tag checkbox toggling
+- Created src/components/novel/form/NovelCoverUpload.tsx — cover URL input with live CoverImagePreview component
+- Refactored NovelFormDialog.tsx to use extracted sub-components, reduced to ~80 lines of orchestration
+
+### 11b. HeroSection split (604→~30 lines)
+- Created src/components/home/hero/SearchBar.tsx — search input with debounced suggestions, search history, keyboard navigation (↑↓/Enter/Esc), highlight matching text
+- Created src/components/home/hero/FilterChips.tsx — FilterRow component with scroll arrows, 4-row filter system (分类/状态/字数/排序), reset button, filter summary bar
+- Refactored HeroSection.tsx to compose SearchBar + FilterChips
+
+### 11c. admin/page.tsx split (550→~280 lines)
+- Created src/components/admin/AdminDesktopSidebar.tsx — full desktop sidebar with brand header, animated nav items with active indicator (layoutId), collapse/expand toggle, tooltip support in collapsed mode
+- Refactored admin/page.tsx to use AdminDesktopSidebar
+
+## Round 12: API Refactoring + CSS
+
+### 12a. API route refactoring
+- Refactored /api/sites GET handler to use paginatedList() from crud-helpers.ts with itemsKey:'sites'
+- Note: /api/scrape-rules kept manual pagination due to custom lastRunAt post-processing
+- Note: /api/tags kept as-is (no pagination — returns all tags for tag picker)
+
+### 12b. CSS class applications
+- Added `card-interactive` to novel cards in NovelCards.tsx (grid view)
+- Added `card-interactive` to TaskCard.tsx
+- Added `border-glow` to SearchBar form wrapper in hero/SearchBar.tsx
+
+### 12c. CSS additions (globals.css)
+- Enhanced Badges: .badge-soft, .badge-soft-success/warning/danger/info with dark mode variants
+- Skeleton Variants: .skeleton-text, .skeleton-heading, .skeleton-avatar, .skeleton-rect
+- Overlay: .overlay-blur with backdrop-filter and dark mode
+
+## Round 13: Chapter Reading Notes UI
+
+### 13a. NotesPanel component
+- Created src/components/reading/NotesPanel.tsx
+- Props: { chapterId, visible, className }
+- Fetches notes from /api/chapters/[id]/notes
+- Displays note list with content preview (line-clamp-4) and formatted timestamps
+- Add new note button with expandable textarea form
+- Delete note button (appears on hover)
+- Styled with amber accent, card-glass, notes-panel border
+
+### 13b. Reader integration
+- Added showNotes state to NovelDetailClient.tsx
+- Added StickyNote icon button to ReaderToolbar with toggle support
+- Added NotesPanel alongside ReaderContent in the reader dialog
+
+### 13c. CSS additions
+- .notes-panel — amber left border
+- .note-item — hover transition
+- .note-timestamp — small timestamp styling
+
+## Round 14: Admin Settings Split + CSS
+
+### 14a. Settings page split (442→~150 lines)
+- Created src/components/admin/settings/GeneralSettings.tsx — site name, description, page size
+- Created src/components/admin/settings/ScraperSettings.tsx — scrape interval, concurrent tasks, auto-publish toggle
+- Created src/components/admin/settings/SecuritySettings.tsx — default sort, theme color picker, word count toggle
+- Refactored admin/settings/page.tsx to compose the three sub-components + data management card
+
+### 14b. CSS additions
+- .form-group — flex column with gap for form fields
+- .form-row — responsive grid layout
+- .form-hint — small hint text styling
+- @keyframes countUp + .count-up — animated counter
+- .stack-responsive — column on mobile, row on desktop
+
+## Verification
+- ESLint: 0 errors, 4 pre-existing warnings (all react-hooks/incompatible-library in existing code)
+- All component splits preserve identical functionality and props interfaces

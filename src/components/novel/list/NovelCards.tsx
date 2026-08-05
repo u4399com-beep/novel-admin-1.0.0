@@ -61,7 +61,7 @@ function NovelGridView({ novels, selectedIds, allSelected, onToggleSelect, onTog
             key={novel.id}
             role="article"
             tabIndex={0}
-            className="group cursor-pointer overflow-hidden transition-shadow hover:shadow-md relative"
+            className="group cursor-pointer overflow-hidden transition-shadow hover:shadow-md relative card-interactive"
             onClick={() => onViewNovel(novel)}
             onKeyDown={(e) => { if (e.key === 'Enter') onViewNovel(novel); }}
           >

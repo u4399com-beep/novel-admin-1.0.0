@@ -4,28 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
 import { Save, Download, Upload, Trash2, Loader2 } from 'lucide-react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { Separator } from '@/components/ui/separator';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { GeneralSettings } from '@/components/admin/settings/GeneralSettings';
+import { ScraperSettings } from '@/components/admin/settings/ScraperSettings';
+import { SecuritySettings } from '@/components/admin/settings/SecuritySettings';
 
-// ─── Settings type ─────────────────────────────────────────────────────
 interface SiteSettings {
   siteName: string;
   siteDescription: string;
@@ -52,27 +36,6 @@ const DEFAULT_SETTINGS: SiteSettings = {
   showWordCount: true,
 };
 
-const THEME_COLORS = [
-  '#8b5cf6',
-  '#ef4444',
-  '#f97316',
-  '#eab308',
-  '#22c55e',
-  '#06b6d4',
-  '#ec4899',
-  '#64748b',
-];
-
-const SORT_OPTIONS = [
-  { value: 'newest', label: '最新发布' },
-  { value: 'oldest', label: '最早发布' },
-  { value: 'title', label: '按标题排序' },
-  { value: 'wordCount', label: '按字数排序' },
-];
-
-const PAGE_SIZE_OPTIONS = ['10', '15', '20', '30'];
-
-// ─── Helpers ───────────────────────────────────────────────────────────
 function loadLocalSettings(): SiteSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -80,20 +43,16 @@ function loadLocalSettings(): SiteSettings {
       const parsed = JSON.parse(raw) as Partial<SiteSettings>;
       return { ...DEFAULT_SETTINGS, ...parsed };
     }
-  } catch {
-    // ignore parse errors
-  }
+  } catch { /* ignore parse errors */ }
   return DEFAULT_SETTINGS;
 }
 
-// ─── Component ──────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SiteSettings>(loadLocalSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // Load settings from backend on mount, merge with localStorage fallback
   useEffect(() => {
     const controller = new AbortController();
     apiFetch<Record<string, string>>('/api/admin/settings', { signal: controller.signal })
@@ -114,7 +73,6 @@ export default function SettingsPage() {
                 }
               }
             }
-            // Sync to localStorage as well
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)); } catch { /* ignore */ }
             return merged;
           });
@@ -125,22 +83,18 @@ export default function SettingsPage() {
     return () => controller.abort();
   }, []);
 
-  // Update a single field
   const update = useCallback(<K extends keyof SiteSettings>(key: K, value: SiteSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  // Persist to backend + localStorage
   const saveSettings = useCallback(async () => {
     setSaving(true);
     try {
-      // Save to backend
       await apiFetch('/api/admin/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
       });
-      // Also save to localStorage as local cache
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
       toast.success('设置已保存');
     } catch {
@@ -150,7 +104,6 @@ export default function SettingsPage() {
     }
   }, [settings]);
 
-  // Import categories
   const handleImportCategories = useCallback(async () => {
     try {
       await apiFetch('/api/public/seed-categories', { method: 'POST' });
@@ -160,7 +113,6 @@ export default function SettingsPage() {
     }
   }, []);
 
-  // Clear cache
   const handleClearCache = useCallback(async () => {
     try {
       if (typeof window !== 'undefined' && 'caches' in window) {
@@ -199,218 +151,40 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* ── 说明提示 ──────────────────────────────────────────── */}
       <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
         <p className="font-medium mb-1">关于这些设置</p>
         <ul className="list-disc list-inside space-y-0.5 text-xs opacity-90">
           <li><b>站点名称</b>已在前台页面实时生效（侧栏标题、浏览器标签等）</li>
-          <li><b>每页显示数量 / 默认排序 / 显示字数统计</b>已存储至数据库，供前台 API 调用，后续新版本的前台组件将消费这些值</li>
+          <li><b>每页显示数量 / 默认排序 / 显示字数统计</b>已存储至数据库，供前台 API 调用</li>
           <li><b>采集间隔 / 并发数 / 自动发布</b>已存储至数据库，供 scraper-service 采集任务读取使用</li>
           <li>设置会同时保存到浏览器本地和服务器数据库，本地副本作为离线缓存和编辑回显</li>
         </ul>
       </div>
 
-      {/* ── 1. 基本设置 ────────────────────────────────────────────── */}
-      <Card className="card-border-glow">
-        <CardHeader>
-          <CardTitle className="text-base">基本设置</CardTitle>
-          <CardDescription>配置站点基本信息和显示参数</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* 站点名称 */}
-          <div className="space-y-2">
-            <Label htmlFor="siteName">站点名称</Label>
-            <Input
-              id="siteName"
-              value={settings.siteName}
-              onChange={(e) => update('siteName', e.target.value)}
-              placeholder="请输入站点名称"
-            />
-          </div>
+      <GeneralSettings
+        siteName={settings.siteName}
+        siteDescription={settings.siteDescription}
+        itemsPerPage={settings.itemsPerPage}
+        onUpdate={update}
+      />
 
-          {/* 站点描述 */}
-          <div className="space-y-2">
-            <Label htmlFor="siteDescription">站点描述</Label>
-            <Textarea
-              id="siteDescription"
-              value={settings.siteDescription}
-              onChange={(e) => update('siteDescription', e.target.value)}
-              placeholder="请输入站点描述"
-              rows={3}
-            />
-          </div>
+      <ScraperSettings
+        scrapeInterval={settings.scrapeInterval}
+        concurrentTasks={settings.concurrentTasks}
+        autoPublish={settings.autoPublish}
+        onUpdate={update}
+      />
 
-          {/* 每页显示数量 */}
-          <div className="space-y-2">
-            <Label htmlFor="settings-page-size">每页显示数量</Label>
-            <Select
-              value={settings.itemsPerPage}
-              onValueChange={(v) => update('itemsPerPage', v)}
-            >
-              <SelectTrigger id="settings-page-size" className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PAGE_SIZE_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt} 条
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+      <SecuritySettings
+        defaultSort={settings.defaultSort}
+        themeColor={settings.themeColor}
+        showWordCount={settings.showWordCount}
+        onUpdate={update}
+      />
 
-      {/* ── 2. 采集设置 ────────────────────────────────────────────── */}
-      <Card className="card-border-glow">
-        <CardHeader>
-          <CardTitle className="text-base">采集设置</CardTitle>
-          <CardDescription>配置采集任务的默认行为参数</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* 默认采集间隔 */}
-          <div className="space-y-2">
-            <Label htmlFor="scrapeInterval">默认采集间隔</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="scrapeInterval"
-                type="number"
-                min={1}
-                value={settings.scrapeInterval}
-                onChange={(e) => update('scrapeInterval', Math.max(1, Number(e.target.value) || 1))}
-                className="w-32"
-              />
-              <span className="text-sm text-muted-foreground">分钟</span>
-            </div>
-          </div>
-
-          {/* 并发采集数 */}
-          <div className="space-y-2">
-            <Label htmlFor="concurrentTasks">并发采集数</Label>
-            <Input
-              id="concurrentTasks"
-              type="number"
-              min={1}
-              max={10}
-              value={settings.concurrentTasks}
-              onChange={(e) =>
-                update(
-                  'concurrentTasks',
-                  Math.min(10, Math.max(1, Number(e.target.value))),
-                )
-              }
-              className="w-32"
-            />
-            <p className="text-xs text-muted-foreground">建议值 1-10，过高可能导致服务器压力过大</p>
-          </div>
-
-          <Separator />
-
-          {/* 自动发布 */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>自动发布</Label>
-              <p className="text-xs text-muted-foreground">
-                采集完成后自动发布小说和章节
-              </p>
-            </div>
-            <Switch
-              checked={settings.autoPublish}
-              onCheckedChange={(v) => update('autoPublish', v)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 3. 显示设置 ────────────────────────────────────────────── */}
-      <Card className="card-border-glow">
-        <CardHeader>
-          <CardTitle className="text-base">显示设置</CardTitle>
-          <CardDescription>自定义前台页面的显示偏好</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* 默认排序 */}
-          <div className="space-y-2">
-            <Label htmlFor="settings-default-sort">默认排序</Label>
-            <Select
-              value={settings.defaultSort}
-              onValueChange={(v) => update('defaultSort', v)}
-            >
-              <SelectTrigger id="settings-default-sort" className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SORT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* 主题色 */}
-          <div className="space-y-2">
-            <Label>主题色</Label>
-            <div className="flex items-center gap-2 flex-wrap">
-              {THEME_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  onClick={() => update('themeColor', color)}
-                  className={`
-                    relative h-8 w-8 rounded-full border-2 transition-all duration-150
-                    ${
-                      settings.themeColor === color
-                        ? 'border-foreground scale-110 ring-2 ring-offset-2 ring-offset-background ring-foreground/30'
-                        : 'border-transparent hover:scale-105'
-                    }
-                  `}
-                  style={{ backgroundColor: color }}
-                  aria-label={`选择颜色 ${color}`}
-                >
-                  {settings.themeColor === color && (
-                    <svg
-                      className="absolute inset-0 m-auto h-4 w-4 text-white"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={3}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M20 6 9 17l-5-5" />
-                    </svg>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* 显示字数统计 */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>显示字数统计</Label>
-              <p className="text-xs text-muted-foreground">
-                在小说列表中显示总字数统计
-              </p>
-            </div>
-            <Switch
-              checked={settings.showWordCount}
-              onCheckedChange={(v) => update('showWordCount', v)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 4. 数据管理 ────────────────────────────────────────────── */}
       <Card className="card-border-glow">
         <CardHeader>
           <CardTitle className="text-base">数据管理</CardTitle>
-          <CardDescription>导出、导入和清理系统数据</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
@@ -430,7 +204,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* ── Save button ──────────────────────────────────────────── */}
       <div className="flex justify-end">
         <Button onClick={saveSettings} disabled={saving || loading} className="gap-2">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

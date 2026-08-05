@@ -53,7 +53,7 @@ export const TaskCard = React.memo(function TaskCard({
   const completedTotal = isCompleted ? formatDuration(task.startedAt, task.completedAt) : null;
 
   return (
-    <Card className="overflow-hidden transition-all hover:shadow-sm">
+    <Card className="overflow-hidden transition-all hover:shadow-sm card-interactive">
       {/* Card Header - Clickable for expand */}
       <button
         onClick={onToggleExpand}

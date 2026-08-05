@@ -44,6 +44,7 @@ import { ReaderSearchBar } from './reader/ReaderSearchBar';
 import { ReaderContent } from './reader/ReaderContent';
 import { BottomNav } from './reader/BottomNav';
 import { KeyboardShortcutsPanel } from './reader/KeyboardShortcutsPanel';
+import { NotesPanel } from '@/components/reading/NotesPanel';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
   const [sidebarPage, setSidebarPage] = useState(1);
   const [currentIndex, setCurrentIndex] = useState(0);
   // ─── Full chapter list (may load more from server on demand) ────────
@@ -993,6 +995,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             showSettings={showSettings}
             showBookmarks={showBookmarks}
             showShortcutsHelp={showShortcutsHelp}
+            showNotes={showNotes}
             bookmarksCount={bookmarks.length}
             isCurrentBookmarked={isBookmarked(currentIndex)}
             chapterContent={chapterContent}
@@ -1003,6 +1006,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             onToggleBookmarks={() => setShowBookmarks((p) => !p)}
             onToggleSettings={() => setShowSettings((p) => !p)}
             onToggleShortcuts={() => setShowShortcutsHelp((p) => !p)}
+            onToggleNotes={() => setShowNotes((p) => !p)}
             onToggleBookmark={() => addBookmark(currentIndex, chapterTitle, scrollPercent / 100)}
             onRemoveBookmark={() => removeBookmark(currentIndex)}
             onExportChapter={() => {
@@ -1072,6 +1076,13 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
               searchQuery={searchQuery}
               currentMatch={currentMatch}
               onRetry={() => loadChapter(currentIndex)}
+            />
+
+            {/* Notes panel */}
+            <NotesPanel
+              chapterId={chapters[currentIndex]?.id || ''}
+              visible={showNotes}
+              className="card-glass"
             />
           </div>
 

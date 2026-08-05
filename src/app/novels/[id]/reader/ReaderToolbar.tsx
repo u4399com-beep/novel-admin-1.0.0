@@ -11,6 +11,7 @@ import {
   Keyboard,
   Maximize2,
   Minimize2,
+  StickyNote,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +33,7 @@ export interface ReaderToolbarProps {
   showSettings: boolean;
   showBookmarks: boolean;
   showShortcutsHelp: boolean;
+  showNotes: boolean;
   bookmarksCount: number;
   isCurrentBookmarked: boolean;
   chapterContent: string | null;
@@ -42,6 +44,7 @@ export interface ReaderToolbarProps {
   onToggleBookmarks: () => void;
   onToggleSettings: () => void;
   onToggleShortcuts: () => void;
+  onToggleNotes: () => void;
   onToggleBookmark: () => void;
   onRemoveBookmark: () => void;
   onExportChapter: () => void;
@@ -59,6 +62,7 @@ export function ReaderToolbar({
   showSettings,
   showBookmarks,
   showShortcutsHelp,
+  showNotes,
   bookmarksCount,
   isCurrentBookmarked,
   chapterContent,
@@ -69,6 +73,7 @@ export function ReaderToolbar({
   onToggleBookmarks,
   onToggleSettings,
   onToggleShortcuts,
+  onToggleNotes,
   onToggleBookmark,
   onRemoveBookmark,
   onExportChapter,
@@ -181,6 +186,23 @@ export function ReaderToolbar({
             <TooltipContent side="bottom">
               {isCurrentBookmarked ? '移除书签' : '添加书签'}
             </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="阅读笔记"
+                className={
+                  'h-7 w-7 press-effect ' + (showNotes ? 'bg-amber-500/10 text-amber-500' : '')
+                }
+                onClick={onToggleNotes}
+              >
+                <StickyNote className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">阅读笔记</TooltipContent>
           </Tooltip>
 
           <Tooltip>
