@@ -118,7 +118,7 @@ export function ReadingGoalCard() {
         <div className="flex items-center gap-2 mb-4">
           <Target className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">今日目标</span>
-          <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={openSettings}>
+          <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={openSettings} aria-label="目标设置">
             <Settings2 className="h-3.5 w-3.5" />
           </Button>
         </div>

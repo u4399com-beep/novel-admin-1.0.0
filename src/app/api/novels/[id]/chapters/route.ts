@@ -194,9 +194,10 @@ export const PATCH = withAuth(async function PATCH(
     }
 
     // Validate structure
+    const CUID_RE = /^[a-z0-9]{20,}$/;
     for (const item of orders) {
-      if (!item.id || typeof item.id !== 'string') {
-        return NextResponse.json({ error: "每条记录必须有有效的id" }, { status: 400 });
+      if (!item.id || typeof item.id !== 'string' || !CUID_RE.test(item.id)) {
+        return NextResponse.json({ error: "无效的ID格式" }, { status: 400 });
       }
       const order = Math.floor(Number(item.sortOrder) || 0);
       if (order < 0 || order > 100000) {

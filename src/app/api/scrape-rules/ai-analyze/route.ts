@@ -171,7 +171,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   try {
     body = await safeJson<AiAnalyzeRequest>(request);
   } catch (err) {
-    return apiError(err instanceof Error ? err.message : "Invalid request body", 400);
+    return apiError("请求体解析失败", 400);
   }
 
   const { html, url, siteType } = body;

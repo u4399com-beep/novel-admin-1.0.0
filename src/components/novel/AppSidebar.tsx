@@ -194,7 +194,7 @@ function MobileSidebar() {
     <div className="lg:hidden">
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="shrink-0">
+          <Button variant="ghost" size="icon" className="shrink-0" aria-label="菜单">
             <Menu className="h-5 w-5" />
             <span className="sr-only">菜单</span>
           </Button>

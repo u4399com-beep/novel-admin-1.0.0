@@ -144,7 +144,7 @@ export default function StatsPage() {
       {/* Header */}
       <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8" asChild aria-label="返回首页">
             <Link href="/">
               <ArrowLeft className="h-4 w-4" />
             </Link>

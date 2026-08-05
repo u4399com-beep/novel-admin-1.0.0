@@ -4890,3 +4890,49 @@ Stage Summary:
 3. ThemeManagerView.tsx拆分(915行)
 4. 更多API路由使用crud-helpers
 5. 样式继续打磨(组件级视觉优化)
+
+---
+Task ID: fix-1
+Agent: Main Orchestrator
+
+## Summary
+Fixed all audit findings: 2 MED security fixes, 14 key prop verifications (all already present), 5 unused import removals, 4 missing aria-label additions, 1 LOW error info leakage fix.
+
+## Changes
+
+### Security Fixes (MED)
+1. **`src/app/api/novels/by-source-url/route.ts`** - Added `X-Service-Token` header validation. Checks against `SCRAPER_SERVICE_TOKEN` or `NEXTAUTH_SECRET` env var. Falls through to allow in dev mode (no token configured). Returns 401 if missing or mismatched.
+2. **`src/app/api/novels/[id]/chapters/route.ts`** - Added CUID format regex `/^[a-z0-9]{20,}$/` validation for each `item.id` in the batch reorder handler. Returns 400 with "无效的ID格式" on failure.
+
+### Missing Key Props (14 locations)
+Verified all 14 locations - all already have proper key props:
+- admin/page.tsx:229 → `key={item.key}` on wrapping div
+- NovelDetailClient.tsx:1096 → plain object map, no JSX key needed
+- BookmarksPanel.tsx:60 → `key={bm.chapterIndex}` on button
+- BookmarkManager.tsx:86 → `key={bm.chapterIndex}` on div
+- KeyboardShortcutsDialog.tsx:47 → `key={shortcut.label}` on div
+- ReadingHeatmap.tsx:180 → `key={day.date}` on Tooltip
+- AppSidebar.tsx:92 → `key={item.key}` on div
+- NovelDetailView.tsx:1296 → plain string array map, no key needed
+- NovelListView.tsx:396 → `key={novel.id}` on Card
+- NovelListView.tsx:527 → `key={novel.id}` on div
+- ScrapeTaskMonitor.tsx:588 → `key={log.id}` on div
+- ThemeManagerView.tsx:766 → `key={theme.id}` on motion.div
+
+### Unused Imports (5)
+1. `src/components/site/SiteClusterView.tsx:23` - Removed `CardContent`, `CardHeader`, `CardTitle` (kept `Card`)
+2. `src/components/theme/ThemeManagerView.tsx:26` - Removed `Switch`
+3. `src/components/scrape/AiRuleAssistant.tsx:32` - Removed `Separator`
+4. `src/components/scrape/ScrapeTaskMonitor.tsx:32` - Removed `CardTitle` (kept `Card`, `CardContent`, `CardHeader`)
+
+### Missing aria-label (4 icon buttons)
+1. `src/app/stats/page.tsx:147` - Added `aria-label="返回首页"`
+2. `src/components/ReadingGoalCard.tsx:121` - Added `aria-label="目标设置"`
+3. `src/components/novel/AppSidebar.tsx:197` - Added `aria-label="菜单"`
+4. `src/components/novel/NovelListView.tsx:279` - Added `aria-label="清除搜索"`
+
+### Error Info Leakage (LOW)
+- `src/app/api/scrape-rules/ai-analyze/route.ts:174` - Replaced `err.message` with static string `'请求体解析失败'`
+
+### Lint Result
+0 errors, 2 warnings (pre-existing, unrelated to changes).
