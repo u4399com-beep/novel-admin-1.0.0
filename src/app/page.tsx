@@ -382,6 +382,7 @@ export default function HomePage() {
       <HomeActivity />
 
       {/* ─── Novels Section ─────────────────────────────────────── */}
+      <div className="stagger-children">
       <NovelGrid
         novels={novels}
         loading={loadingNovels}
@@ -398,6 +399,7 @@ export default function HomePage() {
         onRetry={handleRetry}
         onLoginClick={() => router.push('/login')}
       />
+      </div>
 
       {/* ─── Footer ──────────────────────────────────────────────── */}
       <footer className="mt-auto border-t bg-background/80 backdrop-blur-sm">

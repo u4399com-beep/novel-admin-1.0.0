@@ -5108,3 +5108,41 @@ Agent: Main
 - Added scrollbar-rounded, card-hover-bright/scale, text-shadow-sm/md, container-query, transition-colors-fast/all-fast, divider-gradient-v, selection color utilities
 
 ## Lint: 0 errors (2 pre-existing warnings unrelated to changes)
+
+---
+Task ID: fix-7
+Agent: Main Agent
+Task: Split ScrapeTaskMonitor.tsx & NovelListView.tsx, apply CSS classes, add new CSS
+
+## Task A: Split ScrapeTaskMonitor.tsx (680→155 lines main + 6 sub-files)
+- Created `src/components/scrape/task-monitor/types.ts` — Types (ScrapeTask, ScrapeTaskLog, TaskStatus), constants (STATUS_CONFIG, LOG_LEVEL_CONFIG, STATUS_FILTERS, PAGE_SIZE), and formatDuration helper
+- Created `src/components/scrape/task-monitor/TaskStatusBadge.tsx` — Status badge with icon, label, and running pulse animation
+- Created `src/components/scrape/task-monitor/TaskProgress.tsx` — Progress bar shown for running or partially completed tasks
+- Created `src/components/scrape/task-monitor/TaskLogPanel.tsx` — Expandable log panel with level-colored icons, scroll area, and skeleton loading
+- Created `src/components/scrape/task-monitor/TaskActions.tsx` — TaskActionsHeader (back button, refresh, running indicator), TaskStatusFilter (status filter buttons), TaskPagination (prev/next)
+- Created `src/components/scrape/task-monitor/TaskCard.tsx` — Full task card combining TaskStatusBadge, TaskProgress, TaskLogPanel, stats row, error/result display
+- Created `src/components/scrape/task-monitor/LoadingSkeleton.tsx` — LoadingSkeleton and EmptyState components
+- Created `src/components/scrape/task-monitor/index.ts` — Barrel exports
+- Rewrote `src/components/scrape/ScrapeTaskMonitor.tsx` to import all sub-components
+
+## Task B: Split NovelListView.tsx (681→173 lines main + 3 sub-files)
+- Created `src/components/novel/list/NovelFilters.tsx` — Header with search input, status/category selects, view mode toggle
+- Created `src/components/novel/list/NovelCards.tsx` — NovelCards container with NovelGridView (card grid) and NovelListView (list rows), including selection, cover gradients, status badges, tags
+- Created `src/components/novel/list/NovelListActions.tsx` — NovelListPagination, NovelListLoadingSkeleton, NovelListEmptyState, NovelBatchActions (floating bar + confirm dialog)
+- Created `src/components/novel/list/index.ts` — Barrel exports
+- Rewrote `src/components/novel/NovelListView.tsx` to import all sub-components, keeping hooks and state management
+
+## Task C: Apply CSS Classes
+1. DashboardView StatCard — already had `hover-lift` ✓
+2. HeroSection.tsx — added `fade-in-up` to the hero section `<section>` container
+3. page.tsx — wrapped NovelGrid in `<div className="stagger-children">`
+4. NovelGridLayout.tsx — added `hover-lift` to the `motion.div` card wrapper
+
+## Task D: Added New CSS to globals.css
+- `.notification-dot` — absolute-positioned red dot with 2px solid border, dark mode support
+- `.card-interactive` — cursor pointer, translateY hover/active with box-shadow transitions, dark mode shadow
+- `.gradient-border-animated` — animated gradient border using CSS mask + `@property --gradient-angle` rotation
+- `.loading-dots::after` — steps-based dot animation (empty → . → .. → ...)
+- `.text-responsive` / `.text-responsive-lg` — clamp-based fluid typography
+
+## Lint: 0 errors (2 pre-existing warnings unrelated to changes)

@@ -67,7 +67,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: index * 0.04 }}
-            className="group cursor-pointer shine-hover card-depth"
+            className="group cursor-pointer shine-hover card-depth hover-lift"
           >
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
               {novel.coverUrl ? (

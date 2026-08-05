@@ -3997,3 +3997,79 @@ mark {
 :is(.dark ::selection) {
   background: oklch(0.5 0.15 150 / 0.4);
 }
+
+/* ===== Notification Badge ===== */
+.notification-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  background: oklch(0.6 0.25 25);
+  border-radius: 50%;
+  border: 2px solid oklch(1 0 0);
+}
+:is(.dark .notification-dot) {
+  border-color: oklch(0.15 0 0);
+}
+
+/* ===== Interactive Card States ===== */
+.card-interactive {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.card-interactive:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.08);
+}
+.card-interactive:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.06);
+}
+:is(.dark .card-interactive):hover {
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.25);
+}
+
+/* ===== Gradient Border Animation ===== */
+.gradient-border-animated {
+  position: relative;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+.gradient-border-animated::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 2px;
+  border-radius: inherit;
+  background: linear-gradient(var(--gradient-angle, 135deg), oklch(0.65 0.2 150), oklch(0.65 0.2 30), oklch(0.65 0.2 260));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: gradientRotate 4s linear infinite;
+  pointer-events: none;
+}
+@keyframes gradientRotate {
+  0% { --gradient-angle: 0deg; }
+  100% { --gradient-angle: 360deg; }
+}
+
+/* ===== Loading Dots ===== */
+.loading-dots::after {
+  content: '';
+  animation: loadingDots 1.5s steps(4, end) infinite;
+}
+@keyframes loadingDots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
+/* ===== Responsive Text ===== */
+.text-responsive {
+  font-size: clamp(0.875rem, 1vw + 0.5rem, 1.25rem);
+}
+.text-responsive-lg {
+  font-size: clamp(1.125rem, 1.5vw + 0.5rem, 1.875rem);
+}
