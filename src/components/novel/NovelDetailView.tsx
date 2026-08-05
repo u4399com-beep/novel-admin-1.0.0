@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import { BookX, Loader2, ChevronLeft } from 'lucide-react';
+import { BookX, ChevronLeft } from 'lucide-react';
 import {
   PointerSensor,
   useSensor,
@@ -13,16 +13,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -549,73 +540,37 @@ export default function NovelDetailView() {
       />
 
       {/* ─── Delete novel confirmation ─────────────────────────────────── */}
-      <AlertDialog open={deleteNovelOpen} onOpenChange={setDeleteNovelOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除小说</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要删除「{novel.title}」吗？此操作将同时删除所有关联的章节，且不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); handleDeleteNovel(); }}
-              disabled={deleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {deleting && <Loader2 className="size-4 animate-spin" />}
-              确认删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDeleteDialog
+        open={deleteNovelOpen}
+        onOpenChange={setDeleteNovelOpen}
+        title="确认删除小说"
+        description={`确定要删除「${novel.title}」吗？此操作将同时删除所有关联的章节，且不可撤销。`}
+        confirmText="确认删除"
+        loading={deleting}
+        onConfirm={handleDeleteNovel}
+      />
 
       {/* ─── Delete chapter confirmation ───────────────────────────────── */}
-      <AlertDialog open={deleteChapterOpen} onOpenChange={setDeleteChapterOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除章节</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要删除「{deletingChapter?.title}」吗？此操作不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); handleDeleteChapter(); }}
-              disabled={deleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {deleting && <Loader2 className="size-4 animate-spin" />}
-              确认删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDeleteDialog
+        open={deleteChapterOpen}
+        onOpenChange={setDeleteChapterOpen}
+        title="确认删除章节"
+        description={`确定要删除「${deletingChapter?.title}」吗？此操作不可撤销。`}
+        confirmText="确认删除"
+        loading={deleting}
+        onConfirm={handleDeleteChapter}
+      />
 
       {/* ─── Batch delete confirmation ─────────────────────────────────── */}
-      <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>批量删除章节</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要删除选中的 <strong>{checkedIds.size}</strong> 个章节吗？此操作不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={batchDeleting}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); handleBatchDelete(); }}
-              disabled={batchDeleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {batchDeleting && <Loader2 className="size-4 animate-spin" />}
-              确认删除 {checkedIds.size} 项
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDeleteDialog
+        open={batchDeleteOpen}
+        onOpenChange={setBatchDeleteOpen}
+        title="批量删除章节"
+        description={`确定要删除选中的 ${checkedIds.size} 个章节吗？此操作不可撤销。`}
+        confirmText={`确认删除 ${checkedIds.size} 项`}
+        loading={batchDeleting}
+        onConfirm={handleBatchDelete}
+      />
     </div>
   );
 }

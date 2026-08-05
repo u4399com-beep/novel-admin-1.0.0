@@ -13,16 +13,7 @@ import { apiFetch } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
 import { useAppStore } from '@/stores/app-store';
 import { PREBUILT_THEMES } from '@/lib/prebuilt-themes';
 import { tryParseJSON, defaultThemeConfig } from './manager/helpers';
@@ -300,26 +291,14 @@ export default function ThemeManagerView() {
       )}
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除主题？</AlertDialogTitle>
-            <AlertDialogDescription>
-              删除后使用该主题的站点将失去主题配置，此操作不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); handleDelete(); }}
-              disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleting ? '删除中...' : '删除'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDeleteDialog
+        open={!!deleteId}
+        onOpenChange={(open) => !open && setDeleteId(null)}
+        title="确认删除主题？"
+        description="删除后使用该主题的站点将失去主题配置，此操作不可撤销。"
+        loading={deleting}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

@@ -5051,3 +5051,35 @@ Added to `globals.css`:
 
 ### Lint Result
 - 0 errors, 2 warnings (pre-existing react-hooks/incompatible-library warnings)
+
+## fix-5 — 2025-07-26
+
+### Task A: Split VisualSelectorBuilder.tsx (852→~300 lines)
+- Created `src/components/scrape/visual-selector/` directory with:
+  - `types.ts` — Shared interfaces (SelectorMatch, AiSuggestion, VisualSelectorBuilderProps)
+  - `SelectorPreview.tsx` — iframe page preview with browser chrome (srcdoc injection)
+  - `SelectorResults.tsx` — Tester tab: selector input, type selector, test/copy buttons, MatchedElements list
+  - `SelectorControls.tsx` — Header, URL input bar, error display, AI smart suggest collapsible, footer actions, AiSuggestions sub-component
+  - `HtmlPreview.tsx` — Expandable HTML source viewer with ScrollArea
+  - `index.ts` — Barrel exports
+- Main `VisualSelectorBuilder.tsx` now imports from `visual-selector/` and keeps only state logic, handlers, and composition (LoadingOverlay + EmptyState stay inline as tiny helpers)
+
+### Task B: Refactor 6 files to use ConfirmDeleteDialog
+Replaced inline AlertDialog delete patterns with `ConfirmDeleteDialog` from `@/components/ui/confirm-delete-dialog`:
+1. **NovelDetailView.tsx** — 3 dialogs (delete novel, delete chapter, batch delete chapters). Removed AlertDialog imports + Loader2 import (no longer needed).
+2. **NovelListView.tsx** — 1 dialog (batch delete novels). Removed AlertDialog imports.
+3. **ScrapeTaskMonitor.tsx** — 1 dialog (delete task). Removed AlertDialog imports.
+4. **DownloadManagerView.tsx** — 1 dialog (delete download config). Removed AlertDialog imports.
+5. **SiteClusterView.tsx** — 1 dialog (delete site). Removed AlertDialog imports.
+6. **ThemeManagerView.tsx** — 1 dialog (delete theme). Removed AlertDialog imports.
+
+### Task C: CSS Visual Improvements
+Appended to `globals.css`:
+- `.tooltip-arrow` — Tooltip with CSS arrow pseudo-element
+- `.radius-transition` — Smooth border-radius transition on hover
+- `.text-highlight` — Marker highlight effect (light/dark variants)
+- `.skeleton-wave` — Wave shimmer skeleton animation (light/dark)
+- `.pill-tag` — Inline pill tag with hover effects (light/dark)
+- `.collapse-content` — Animated collapsible section via `data-collapsed` attribute
+
+### Lint: 0 errors, 2 pre-existing warnings (unrelated react-hooks/incompatible-library)

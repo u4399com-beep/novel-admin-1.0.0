@@ -34,16 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
 import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { Novel, Category, NovelStatus } from '@/types';
@@ -678,26 +669,14 @@ export default function NovelListView() {
         </div>
       )}
       {/* ── Batch Delete Confirmation ────────────────────────────────── */}
-      <AlertDialog open={batchDeleteOpen} onOpenChange={setBatchDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认批量删除</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要删除选中的 {selectedIds.size} 本小说吗？此操作将同时删除所有关联章节，且不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); handleBatchDelete(); }}
-              disabled={deleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {deleting ? '删除中...' : '确认删除'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDeleteDialog
+        open={batchDeleteOpen}
+        onOpenChange={setBatchDeleteOpen}
+        title="确认批量删除"
+        description={`确定要删除选中的 ${selectedIds.size} 本小说吗？此操作将同时删除所有关联章节，且不可撤销。`}
+        loading={deleting}
+        onConfirm={handleBatchDelete}
+      />
     </div>
   );
 }

@@ -3859,3 +3859,98 @@ mark {
 :is(.dark .shadow-bottom) {
   box-shadow: inset 0 -8px 6px -6px oklch(0 0 0 / 0.2);
 }
+
+/* ===== Enhanced Interactions ===== */
+
+/* Tooltip with arrow */
+.tooltip-arrow {
+  position: relative;
+}
+.tooltip-arrow::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  border: 1px solid inherit;
+}
+
+/* Smooth border radius transition */
+.radius-transition {
+  transition: border-radius 0.3s ease;
+}
+.radius-transition:hover {
+  border-radius: 1rem;
+}
+
+/* Text highlight marker effect */
+.text-highlight {
+  background: linear-gradient(120deg, oklch(0.95 0.05 85) 0%, oklch(0.95 0.05 85) 100%);
+  background-repeat: no-repeat;
+  background-size: 100% 40%;
+  background-position: 0 90%;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+:is(.dark .text-highlight) {
+  background: linear-gradient(120deg, oklch(0.3 0.05 85) 0%, oklch(0.3 0.05 85) 100%);
+  background-repeat: no-repeat;
+  background-size: 100% 40%;
+  background-position: 0 90%;
+}
+
+/* Skeleton with wave shimmer */
+.skeleton-wave {
+  background: linear-gradient(90deg, oklch(0.94 0 0) 0%, oklch(0.97 0.01 250 / 0.5) 30%, oklch(0.94 0 0) 60%);
+  background-size: 300% 100%;
+  animation: skeletonWave 2s ease-in-out infinite;
+  border-radius: 0.375rem;
+}
+@keyframes skeletonWave {
+  0% { background-position: 200% 0; }
+  100% { background-position: -100% 0; }
+}
+:is(.dark .skeleton-wave) {
+  background: linear-gradient(90deg, oklch(0.2 0 0) 0%, oklch(0.25 0.01 250 / 0.5) 30%, oklch(0.2 0 0) 60%);
+  background-size: 300% 100%;
+}
+
+/* Pill tag with hover */
+.pill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  transition: all 0.15s ease;
+  border: 1px solid oklch(0 0 0 / 0.1);
+}
+.pill-tag:hover {
+  border-color: oklch(0 0 0 / 0.2);
+  background: oklch(0.96 0 0);
+}
+:is(.dark .pill-tag) {
+  border-color: oklch(1 0 0 / 0.1);
+}
+:is(.dark .pill-tag):hover {
+  border-color: oklch(1 0 0 / 0.2);
+  background: oklch(0.22 0 0);
+}
+
+/* Collapsible section with animation */
+.collapse-content {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.2s ease;
+}
+.collapse-content[data-collapsed="true"] {
+  max-height: 0;
+  opacity: 0;
+}
+.collapse-content[data-collapsed="false"] {
+  max-height: 2000px;
+  opacity: 1;
+}
