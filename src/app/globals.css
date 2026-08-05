@@ -4208,3 +4208,88 @@ mark {
     align-items: center;
   }
 }
+
+/* ===== Round 16: Decorative Elements ===== */
+.dot-pattern {
+  background-image: radial-gradient(oklch(0 0 0 / 0.08) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+:is(.dark .dot-pattern) {
+  background-image: radial-gradient(oklch(1 0 0 / 0.05) 1px, transparent 1px);
+}
+
+.grid-pattern {
+  background-image:
+    linear-gradient(oklch(0 0 0 / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0 0 0 / 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+:is(.dark .grid-pattern) {
+  background-image:
+    linear-gradient(oklch(1 0 0 / 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(1 0 0 / 0.03) 1px, transparent 1px);
+}
+
+/* ===== Text Decoration ===== */
+.text-stroke {
+  -webkit-text-stroke: 1px currentColor;
+  -webkit-text-fill-color: transparent;
+}
+.text-stroke-thin {
+  -webkit-text-stroke: 0.5px currentColor;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ===== Overlay Gradient ===== */
+.overlay-gradient-bottom {
+  background: linear-gradient(to top, oklch(1 0 0 / 0.9), transparent);
+}
+.overlay-gradient-top {
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.9), transparent);
+}
+:is(.dark .overlay-gradient-bottom) {
+  background: linear-gradient(to top, oklch(0.1 0 0 / 0.9), transparent);
+}
+:is(.dark .overlay-gradient-top) {
+  background: linear-gradient(to bottom, oklch(0.1 0 0 / 0.9), transparent);
+}
+
+/* ===== Round 18: Stats Visualization ===== */
+.stat-ring {
+  transform: rotate(-90deg);
+}
+.stat-ring circle {
+  transition: stroke-dashoffset 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.stat-bar-animated {
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  overflow: hidden;
+  background: oklch(0.94 0 0);
+}
+.stat-bar-animated .fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+:is(.dark .stat-bar-animated) {
+  background: oklch(0.25 0 0);
+}
+
+.mini-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 2rem;
+}
+.mini-chart .bar {
+  flex: 1;
+  border-radius: 1px 1px 0 0;
+  background: oklch(0.7 0.15 150);
+  transition: height 0.3s ease;
+  min-height: 2px;
+}
+.mini-chart .bar:hover {
+  opacity: 0.8;
+}

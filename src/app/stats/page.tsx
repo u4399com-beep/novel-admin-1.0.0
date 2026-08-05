@@ -10,6 +10,7 @@ import {
 import { ReadingHeatMap } from '@/components/ReadingHeatMap';
 import ReadingStreak from '@/components/ReadingStreak';
 import { ReadingGoalCard } from '@/components/ReadingGoalCard';
+import { ReadingOverview } from '@/components/stats/ReadingOverview';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime, formatWordCount } from '@/lib/format';
@@ -197,6 +198,9 @@ export default function StatsPage() {
         ) : (
           stats && (
             <>
+              {/* Reading Overview (Admin Stats) */}
+              <ReadingOverview />
+
               {/* Reading Streak + Goal + Stat Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {streakData && (

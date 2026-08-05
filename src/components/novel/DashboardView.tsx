@@ -51,7 +51,6 @@ import { ReadingHeatmap } from '@/components/ReadingHeatmap';
 import { ReadingStatsCard } from '@/components/ReadingStatsCard';
 
 import { StatCard, statCards } from './dashboard/StatCard';
-import type { StatCardConfig } from './dashboard/StatCard';
 import { RecentActivity } from './dashboard/RecentActivity';
 import type { ActivityData } from './dashboard/RecentActivity';
 import { QuickActions } from './dashboard/QuickActions';
@@ -309,7 +308,7 @@ export function DashboardView() {
 
       {/* ── Stats Grid ─────────────────────────────────────────────────── */}
       <div className="divider-gradient mb-4" aria-hidden="true" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5 stagger-in">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5 stagger-in stagger-children">
         {loading
           ? Array.from({ length: 5 }).map((_, i) => (
               <Card key={i}>

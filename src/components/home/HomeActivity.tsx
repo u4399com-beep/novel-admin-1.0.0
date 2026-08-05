@@ -50,7 +50,7 @@ export function HomeActivity() {
   return (
     <>
       {/* Continue Reading */}
-      <section className="border-b">
+      <section className="border-b card-glass">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
           <ContinueReading />
         </div>
@@ -58,7 +58,7 @@ export function HomeActivity() {
 
       {/* Recently Viewed */}
       {recentNovels.length > 0 && (
-        <section className="border-b bg-muted/20">
+        <section className="border-b bg-muted/20 card-glass">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">

@@ -86,7 +86,7 @@ export function NotesPanel({ chapterId, visible, className = '' }: NotesPanelPro
   if (!visible) return null;
 
   return (
-    <div className={`w-72 shrink-0 border-l bg-card overflow-y-auto ${className}`}>
+    <div className={`w-72 shrink-0 border-l bg-card overflow-y-auto fade-in-up ${className}`}>
       <div className="p-4 notes-panel">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">

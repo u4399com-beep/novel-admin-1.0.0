@@ -5366,3 +5366,54 @@ Work Log:
 ## Verification
 - ESLint: 0 errors, 4 pre-existing warnings (all react-hooks/incompatible-library in existing code)
 - All component splits preserve identical functionality and props interfaces
+
+---
+Task ID: fix-15-18
+Agent: Main Agent (Rounds 15-18)
+
+## Summary
+Executed 4 rounds of optimizations: component splits, CSS enhancements, new feature, and cleanup.
+
+## Round 15: Split remaining 500+ files
+- **15a. ScrapeRuleEditor.tsx**: Extracted `RuleFormTabs` (tab navigation with all tab triggers/content) into `src/components/scrape/rule-editor/RuleFormTabs.tsx`. Created `types.ts` for shared FormAccess interface. Main file reduced from 512→~370 lines.
+- **15b. ThemeFormDialog.tsx**: Extracted `ColorFieldGroup` (11 color pickers), `TypographyFieldGroup` (4 typography selects), `LayoutFieldGroup` (3 layout selects) into `src/components/theme/manager/form/`. Main file reduced from 467→~180 lines.
+- **15c. DownloadManagerView.tsx**: Extracted `DownloadList` (config card list with empty state) into `src/components/download/DownloadList.tsx` and `DownloadActions` (form dialog with all form fields) into `src/components/download/DownloadActions.tsx`. Main file reduced from 398→~90 lines.
+- **15d. ChapterFormDialog.tsx**: Extracted `ChapterContentEditor` (rich textarea with preview toggle, word count) into `src/components/novel/chapter/ChapterContentEditor.tsx` and `ChapterMetaFields` (title input with placeholder) into `src/components/novel/chapter/ChapterMetaFields.tsx`. Main file reduced from 389→~220 lines.
+
+## Round 16: Apply CSS classes + enhance component visuals
+- **16a. Applied CSS classes**:
+  - `card-glass` added to continue-reading and recently-viewed sections in `HomeActivity.tsx`
+  - `hover-lift` added to top-3 ranking cards in `rankings/page.tsx`
+  - `stagger-children` added to DashboardView stat cards grid (alongside existing `stagger-in`)
+  - `fade-in-up` added to NotesPanel outer container
+- **16b. Added CSS utilities**:
+  - `.dot-pattern` — radial gradient dot background (light/dark)
+  - `.grid-pattern` — linear gradient grid background (light/dark)
+  - `.text-stroke` / `.text-stroke-thin` — webkit text stroke effects
+  - `.overlay-gradient-bottom` / `.overlay-gradient-top` — fade overlay gradients (light/dark)
+
+## Round 17: Reading Statistics Enhancement
+- **17a. Created API route** `src/app/api/stats/reading/route.ts`:
+  - GET endpoint with `withAuth` protection
+  - Returns: totalReadingTime, totalWordsRead, totalChaptersRead, novelsCompleted, avgWordsPerSession, readingStreak, favoriteGenre, mostActiveHour
+  - Uses Prisma queries on ReadingProgress, Chapter, Novel, ReadingDaily models
+- **17b. Created `src/components/stats/ReadingOverview.tsx`**:
+  - Dashboard card with 8 mini stat cards in a 2x4 responsive grid
+  - Fetches from `/api/stats/reading`
+  - Icons from lucide-react, uses card-glass and hover-lift styling
+  - Loading skeleton and error states
+- **17c. Integrated** ReadingOverview into `src/app/stats/page.tsx` at the top of the stats content area.
+
+## Round 18: Optimizations
+- **18a. Cleaned up unused imports**:
+  - Removed unused `register`, `errors` from ScrapeRuleEditor.tsx destructuring
+  - Removed unused `StatCardConfig` type import from DashboardView.tsx
+  - Removed unused `EyeOff` import from ChapterContentEditor.tsx
+- **18b. Added CSS for reading stats visualization**:
+  - `.stat-ring` — SVG rotation for progress rings with smooth stroke-dashoffset transition
+  - `.stat-bar-animated` — animated progress bar with `.fill` child
+  - `.mini-chart` — flex bar chart with hover opacity
+
+## Verification
+- ESLint: 0 errors, 4 warnings (all pre-existing react-hooks/incompatible-library)
+- Dev server compiles successfully, all routes responding with 200
