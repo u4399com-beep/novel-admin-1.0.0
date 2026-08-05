@@ -219,6 +219,7 @@ export default function CategoriesPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
+              aria-label="搜索分类"
             />
           </div>
         </div>

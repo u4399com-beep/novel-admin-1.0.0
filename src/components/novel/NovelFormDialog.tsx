@@ -105,24 +105,24 @@ export default function NovelFormDialog() {
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
   const [submitting, setSubmitting] = useState(false);
-  const cancelledRef = useRef(false);
   const [apiCategories, setApiCategories] = useState<Category[]>([]);
   const [apiTags, setApiTags] = useState<Tag[]>([]);
 
   const isEditing = !!editingNovel;
 
   // ── Fetch categories & tags on mount ──
-  const fetchOptions = useCallback(async () => {
+  const fetchOptions = useCallback(async (signal?: AbortSignal) => {
     try {
       const [catRes, tagRes] = await Promise.allSettled([
-        apiFetch<Category[]>("/api/categories"),
-        apiFetch<Tag[]>("/api/tags"),
+        apiFetch<Category[]>("/api/categories", { signal }),
+        apiFetch<Tag[]>("/api/tags", { signal }),
       ]);
-      if (catRes.status === 'fulfilled' && !cancelledRef.current) {
+      if (signal?.aborted) return;
+      if (catRes.status === 'fulfilled') {
         setApiCategories(catRes.value);
         setCategories(catRes.value);
       }
-      if (tagRes.status === 'fulfilled' && !cancelledRef.current) {
+      if (tagRes.status === 'fulfilled') {
         setApiTags(tagRes.value);
         setTags(tagRes.value);
       }
@@ -134,10 +134,10 @@ export default function NovelFormDialog() {
   useEffect(() => {
     if (!novelFormOpen) return;
     if (categories.length === 0 || tags.length === 0) {
-      cancelledRef.current = false;
-      fetchOptions();
+      const ac = new AbortController();
+      fetchOptions(ac.signal);
+      return () => ac.abort();
     }
-    return () => { cancelledRef.current = true; };
   }, [novelFormOpen, fetchOptions, categories.length, tags.length]);
 
   // ── Merge store data with fetched data ──
@@ -385,6 +385,7 @@ export default function NovelFormDialog() {
                         <Input
                           placeholder="https://example.com/cover.jpg"
                           {...field}
+                          aria-label="封面图片URL"
                         />
                       </FormControl>
                       <FormMessage />

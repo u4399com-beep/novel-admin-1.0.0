@@ -25,7 +25,7 @@ export function SelectorField({ label, required, value, onChange, errors }: Sele
           value={value.type}
           onValueChange={(t) => onChange({ ...value, type: t as 'css' | 'xpath' | 'regex' })}
         >
-          <SelectTrigger className="w-[120px] shrink-0">
+          <SelectTrigger className="w-[120px] shrink-0" aria-label="选择器类型">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -39,6 +39,7 @@ export function SelectorField({ label, required, value, onChange, errors }: Sele
           placeholder={value.type === 'css' ? '.class-name' : value.type === 'xpath' ? '//div[@class="x"]' : '正则表达式'}
           value={value.value}
           onChange={(e) => onChange({ ...value, value: e.target.value })}
+          aria-label={label + ' 值'}
         />
       </div>
       {errors?.type?.message && (

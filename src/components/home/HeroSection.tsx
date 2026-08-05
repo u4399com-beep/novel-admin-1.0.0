@@ -390,6 +390,7 @@ export function HeroSection({
                 <Input
                   type="text"
                   placeholder="搜索小说名、作者..."
+                  aria-label="搜索小说名、作者"
                   value={searchInput}
                   onChange={(e) => {
                     setSearchInput(e.target.value);

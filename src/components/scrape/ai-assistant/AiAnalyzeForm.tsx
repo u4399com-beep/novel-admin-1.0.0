@@ -41,6 +41,7 @@ export function AiAnalyzeForm({
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
             className="text-sm pl-4 pr-4 h-11"
+            aria-label="目标网站 URL"
             onKeyDown={(e) => {
               if (e.key === 'Enter') onGenerate();
             }}

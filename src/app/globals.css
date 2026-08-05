@@ -4073,3 +4073,43 @@ mark {
 .text-responsive-lg {
   font-size: clamp(1.125rem, 1.5vw + 0.5rem, 1.875rem);
 }
+
+/* ===== Note/Annotation Styles ===== */
+.note-highlight {
+  background: oklch(0.92 0.06 85);
+  border-bottom: 2px solid oklch(0.75 0.15 85);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.note-highlight:hover {
+  background: oklch(0.88 0.08 85);
+}
+:is(.dark .note-highlight) {
+  background: oklch(0.25 0.05 85);
+  border-bottom-color: oklch(0.55 0.12 85);
+}
+
+/* Tooltip with delay */
+.tooltip-delay {
+  transition-delay: 0.3s;
+}
+
+/* Tap highlight for mobile */
+.tap-highlight {
+  -webkit-tap-highlight-color: oklch(0.85 0.1 150 / 0.3);
+}
+
+/* No drag selection */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Focus visible only (keyboard navigation) */
+.focus-keyboard-only:focus:not(:focus-visible) {
+  outline: none;
+}
+.focus-keyboard-only:focus-visible {
+  outline: 2px solid oklch(0.7 0.15 150);
+  outline-offset: 2px;
+}

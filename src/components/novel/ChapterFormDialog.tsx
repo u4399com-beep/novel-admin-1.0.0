@@ -125,9 +125,11 @@ export function ChapterFormDialog() {
   useEffect(() => {
     if (!chapterFormOpen || isEditing || !selectedNovelId) return;
 
+    const ac = new AbortController();
     const fetchChapterCount = async () => {
       try {
-        const data = await apiFetch<{ chapters?: Chapter[] }>(`/api/novels/${selectedNovelId}/chapters`);
+        const data = await apiFetch<{ chapters?: Chapter[] }>(`/api/novels/${selectedNovelId}/chapters`, { signal: ac.signal });
+        if (ac.signal.aborted) return;
         const chapters = data.chapters || [];
 
         if (chapters.length === 0) {
@@ -152,6 +154,7 @@ export function ChapterFormDialog() {
     };
 
     fetchChapterCount();
+    return () => ac.abort();
   }, [chapterFormOpen, isEditing, selectedNovelId]);
 
   useEffect(() => {
@@ -294,6 +297,7 @@ export function ChapterFormDialog() {
                     <Input
                       placeholder={titlePlaceholder}
                       {...field}
+                      aria-label="章节标题"
                     />
                   </FormControl>
                   <FormMessage />
@@ -353,6 +357,7 @@ export function ChapterFormDialog() {
                         placeholder="请输入章节内容..."
                         className="flex-1 min-h-[300px] resize-none font-mono text-sm leading-relaxed"
                         {...field}
+                        aria-label="章节内容"
                       />
                     )}
                   </FormControl>

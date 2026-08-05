@@ -96,6 +96,7 @@ model Chapter {
   sourceUrl String?  // 原始章节URL
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  notes     ReadingNote[]
 
   @@index([novelId, sortOrder])
   @@index([novelId, sourceUrl])
@@ -386,4 +387,20 @@ model ReadingDaily {
   createdAt DateTime @default(now())
 
   @@index([date])
+}
+
+// ==================== 阅读笔记 ====================
+
+model ReadingNote {
+  id        String   @id @default(cuid())
+  userId    String?
+  chapterId String
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  content   String
+  position  Int      // character offset in chapter
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([chapterId])
+  @@index([userId])
 }
