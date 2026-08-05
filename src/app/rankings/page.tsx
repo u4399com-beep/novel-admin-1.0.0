@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Trophy, Medal, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -93,7 +93,7 @@ function RankNumber({ rank }: { rank: number }) {
 
 // ─── Novel Row Component ─────────────────────────────────────────────
 
-function NovelRow({
+const NovelRow = React.memo(function NovelRow({
   novel,
   rank,
   index = 0,
@@ -189,7 +189,7 @@ function NovelRow({
       </Link>
     </motion.div>
   );
-}
+});
 
 // ─── Skeleton Row ────────────────────────────────────────────────────
 

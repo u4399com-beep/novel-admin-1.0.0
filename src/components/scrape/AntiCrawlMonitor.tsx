@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, ShieldAlert, Fingerprint, Globe, Monitor, Type, Lock,
@@ -92,7 +92,7 @@ function StatCard({ icon: Icon, label, value, sub, trend, color }: {
 
 // ==================== Event Row ====================
 
-function EventRow({ event }: { event: AntiCrawlEvent }) {
+const EventRow = React.memo(function EventRow({ event }: { event: AntiCrawlEvent }) {
   const meta = EVENT_META[event.eventType] || {
     label: event.eventType,
     icon: AlertTriangle,
@@ -143,7 +143,7 @@ function EventRow({ event }: { event: AntiCrawlEvent }) {
       </div>
     </motion.div>
   );
-}
+});
 
 // ==================== Mini Bar Chart ====================
 

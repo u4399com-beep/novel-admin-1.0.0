@@ -36,16 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
 import { useAppStore } from '@/stores/app-store';
 import type { Category } from '@/types';
 
@@ -512,34 +503,17 @@ export default function CategoryManagerView() {
       </Dialog>
 
       {/* ── Delete Confirmation ────────────────────────────────────────── */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => {
-        if (!open) setDeleteTarget(null);
-      }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要删除分类「{deleteTarget?.name}」吗？此操作不可撤销。
-              {deleteTarget && (deleteTarget._count?.novels ?? 0) > 0 && (
-                <span className="mt-1 block text-destructive">
-                  该分类下还有 {deleteTarget._count?.novels} 本小说。
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); handleDelete(); }}
-              disabled={deleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {deleting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              {deleting ? "删除中..." : "删除"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        description={
+          deleteTarget
+            ? `确定要删除分类「${deleteTarget.name}」吗？此操作不可撤销。${(deleteTarget._count?.novels ?? 0) > 0 ? ` 该分类下还有 ${deleteTarget._count?.novels} 本小说。` : ''}`
+            : ''
+        }
+        loading={deleting}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

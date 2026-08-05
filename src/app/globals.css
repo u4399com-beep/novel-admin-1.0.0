@@ -3738,3 +3738,80 @@ mark {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+/* ===== Component Patterns ===== */
+
+/* Fade in from bottom */
+.fade-in-up {
+  animation: fadeInUp 0.4s ease-out;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Stagger children animation (apply to parent, children animate in sequence) */
+.stagger-children > * {
+  animation: fadeInUp 0.3s ease-out both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 40ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 80ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 120ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 160ms; }
+.stagger-children > *:nth-child(n+6) { animation-delay: 200ms; }
+
+/* Number counter animation */
+.counter-animate {
+  display: inline-block;
+  transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Hover lift with shadow */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.1);
+}
+:is(.dark .hover-lift):hover {
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.3);
+}
+
+/* Subtle border glow on focus */
+.border-glow:focus-within {
+  border-color: oklch(0.7 0.15 150);
+  box-shadow: 0 0 0 3px oklch(0.7 0.15 150 / 0.15);
+}
+
+/* Text truncate with ellipsis (single line) */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Smooth underline animation */
+.hover-underline {
+  position: relative;
+}
+.hover-underline::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  height: 1.5px;
+  background: currentColor;
+  transition: width 0.2s ease;
+}
+.hover-underline:hover::after {
+  width: 100%;
+}
+
+/* Badge glow effect */
+.badge-glow {
+  box-shadow: 0 0 8px oklch(0.7 0.15 var(--glow-hue, 150) / 0.3);
+}

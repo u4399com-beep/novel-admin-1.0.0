@@ -4988,3 +4988,32 @@ Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 - **SiteClusterView.tsx:691** - Modified `fetchSites` to accept optional `AbortSignal`, passed signal to both parallel `apiFetch` calls in Promise.all, added AbortController in useEffect with cleanup, added abort guards
 
 Lint: 0 errors, 2 pre-existing warnings (unrelated)
+
+## fix-3 Work Record
+
+### Task A: Extract ConfirmDeleteDialog component
+- Created `src/components/ui/confirm-delete-dialog.tsx` — reusable AlertDialog wrapper with loading state, customizable title/description/variant
+- Refactored 3 files to use ConfirmDeleteDialog:
+  - `src/components/novel/CategoryManagerView.tsx` — replaced inline AlertDialog with ConfirmDeleteDialog, dynamic description includes category name and novel count warning
+  - `src/components/novel/TagManagerView.tsx` — replaced inline AlertDialog with ConfirmDeleteDialog, custom title "确认删除标签"
+  - `src/components/scrape/parts/ScrapeRuleList.tsx` — replaced inline AlertDialog with ConfirmDeleteDialog, custom title and description
+- Removed unused AlertDialog import from all 3 files
+
+### Task B: React.memo for list-rendered components
+- `src/components/scrape/ScrapeTaskMonitor.tsx` — TaskCard was already wrapped with React.memo; moved TaskCardProps interface, formatDuration helper, and TaskCard component above the main ScrapeTaskMonitor component (was below, now above for code organization)
+- `src/app/rankings/page.tsx` — added `import React`, wrapped NovelRow with `React.memo()` (was already extracted above parent)
+- `src/components/scrape/AntiCrawlMonitor.tsx` — added `import React`, wrapped EventRow with `React.memo()` (was already extracted above parent)
+
+### Task C: CSS utility classes
+- Appended 8 new utility classes to `src/app/globals.css`:
+  - `.fade-in-up` + `@keyframes fadeInUp` — fade in from bottom animation
+  - `.stagger-children` — staggered child animation with nth-child delays
+  - `.counter-animate` — number counter transition
+  - `.hover-lift` — hover lift with shadow (light/dark mode)
+  - `.border-glow` — subtle green border glow on focus-within
+  - `.line-clamp-1` — single line text truncation with ellipsis
+  - `.hover-underline` — smooth underline animation on hover
+  - `.badge-glow` — badge glow effect with CSS custom property
+
+### Lint Result
+- 0 errors, 2 warnings (pre-existing react-hooks/incompatible-library warnings)

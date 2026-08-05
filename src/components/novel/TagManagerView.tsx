@@ -39,16 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
 import {
   Form,
   FormControl,
@@ -423,29 +414,14 @@ export default function TagManagerView() {
       </Dialog>
 
       {/* Delete Confirmation */}
-      <AlertDialog
+      <ConfirmDeleteDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除标签</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要删除标签「{deleteTarget?.name}」吗？此操作无法撤销。该标签将从所有小说中移除。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); handleDelete(); }}
-              disabled={deleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {deleting ? "删除中..." : "删除"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="确认删除标签"
+        description={deleteTarget ? `确定要删除标签「${deleteTarget.name}」吗？此操作无法撤销。该标签将从所有小说中移除。` : ''}
+        loading={deleting}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }
