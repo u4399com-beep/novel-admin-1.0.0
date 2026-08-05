@@ -4936,3 +4936,55 @@ Verified all 14 locations - all already have proper key props:
 
 ### Lint Result
 0 errors, 2 warnings (pre-existing, unrelated to changes).
+
+---
+Task ID: fix-2
+Agent: Main Orchestrator
+Date: $(date -u '+%Y-%m-%d %H:%M:%S') UTC
+
+### Summary
+Split the massive `NovelDetailView.tsx` (1477 lines) into 7 focused sub-components in `src/components/novel/detail/`. The orchestrator is now 621 lines, with extracted components ranging from 25–304 lines each.
+
+### Changes
+
+#### New files created in `src/components/novel/detail/`
+- **`NovelHeader.tsx`** (182 lines) — Novel info card with cover image, status badge, category/tags, description, word/chapter count stats, timestamps, and action buttons (edit, delete, export).
+- **`StatsBar.tsx`** (25 lines) — Content collection progress bar showing `X/Y chapters (Z%)`.
+- **`ChapterActions.tsx`** (144 lines) — Chapter list header with title/badge, batch mode toggle, new chapter button, search input, content filter tabs (all/has-content/no-content), and batch delete action bar. Exports `ContentFilter` type.
+- **`ChapterTable.tsx`** (304 lines) — Scrollable area containing loading skeletons, empty states (via `EmptyState`), the DnD sortable table (`SortableChapterRow` memoized inside), and bottom reorder buttons (up/down).
+- **`EmptyState.tsx`** (35 lines) — Two variants: `no-chapters` (file icon + "暂无章节") and `no-results` (search icon + "未找到匹配的章节" with clear filter link).
+- **`ChapterEditorPanel.tsx`** (213 lines) — Inline chapter editor with auto-save (1.5s debounce), manual save, title input, textarea, word/char count footer, and save status indicator.
+- **`ChapterReaderDialog.tsx`** (176 lines) — Full chapter reader dialog with loading skeletons, serif typography, keyboard navigation (arrow keys), prev/next chapter buttons.
+- **`index.ts`** (20 lines) — Barrel export file with all components and their prop types.
+
+#### Modified files
+- **`src/components/novel/NovelDetailView.tsx`** — Reduced from 1477 → 621 lines. Now acts as orchestrator: all state, data fetching, handlers, and business logic remain here. Renders extracted components with only necessary props. Removed unused imports (`DndContext`, `closestCenter`, `useRef`).
+
+### Rules followed
+- ✅ All extracted components use `'use client'`
+- ✅ Only necessary props passed via TypeScript interfaces
+- ✅ NovelDetailView.tsx remains the orchestrator (all state stays there)
+- ✅ No functionality changed
+- ✅ No imports broken
+- ✅ No `style` prop passed to lucide-react icons
+- ✅ No `import Link from 'next/link'` (not needed here)
+- ✅ No `as const` needed (no framer-motion ease used)
+
+### Lint Result
+0 errors, 2 warnings (pre-existing, unrelated to changes).
+
+## fix-2b: Integrate ErrorBoundary + Fix AbortController Issues
+Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+### Task A: Integrate ErrorBoundary
+- Added `reloadOnReset` prop to `ErrorBoundary` component (`src/components/ErrorBoundary.tsx`) - when true, the reset button calls `window.location.reload()` instead of resetting state
+- Wrapped `{children}` in `src/app/layout.tsx` with `<ErrorBoundary name="root" reloadOnReset>` for root-level error catching
+
+### Task B: Fix AbortController Issues
+- **NovelDetailClient.tsx:105** - Added AbortController to click-tracking useEffect with cleanup
+- **NovelListView.tsx** - Already had AbortController in all fetch useEffects (lines 96-100, 143-147). Non-fetch effects (debounce, keydown, selection reset) do not need it. No changes needed.
+- **CategoryManagerView.tsx:126** - Modified `fetchCategories` to accept optional `AbortSignal`, added AbortController in the useEffect with cleanup, added abort guards on state setters
+- **ScrapeTaskMonitor.tsx:180,186** - Modified `fetchTasks` and `fetchTaskLogs` to accept optional `AbortSignal`, added AbortController in both useEffects (initial fetch + polling interval) with cleanup, added abort guards
+- **SiteClusterView.tsx:691** - Modified `fetchSites` to accept optional `AbortSignal`, passed signal to both parallel `apiFetch` calls in Promise.all, added AbortController in useEffect with cleanup, added abort guards
+
+Lint: 0 errors, 2 pre-existing warnings (unrelated)

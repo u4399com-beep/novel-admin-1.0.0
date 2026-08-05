@@ -103,7 +103,9 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
 
   // ─── Track click count (fire-and-forget with timeout) ─────────
   useEffect(() => {
-    apiFetch(`/api/public/novels/${novel.id}/click`, { method: 'POST', silent: true, timeout: 5000 }).catch(() => {});
+    const ac = new AbortController();
+    apiFetch(`/api/public/novels/${novel.id}/click`, { method: 'POST', silent: true, timeout: 5000, signal: ac.signal }).catch(() => {});
+    return () => ac.abort();
   }, [novel.id]);
 
   // ─── 3D Cover tilt handlers ──────────────────────────────────

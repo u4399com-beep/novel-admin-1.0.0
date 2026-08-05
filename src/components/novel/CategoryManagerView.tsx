@@ -113,18 +113,24 @@ export default function CategoryManagerView() {
   const watchedName = watch('name');
 
   // ── Fetch categories ─────────────────────────────────────────────────────
-  const fetchCategories = useCallback(async () => {
+  const fetchCategories = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
-      const data = await apiFetch<Category[]>('/api/categories');
+      const data = await apiFetch<Category[]>('/api/categories', { signal });
+      if (signal?.aborted) return;
       setCategories(data);
-    } catch { /* handled by apiFetch */ } finally {
-      setLoading(false);
+    } catch {
+      if (signal?.aborted) return;
+      /* handled by apiFetch */
+    } finally {
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchCategories();
+    const ac = new AbortController();
+    fetchCategories(ac.signal);
+    return () => ac.abort();
   }, [fetchCategories, refreshCategories]);
 
   // Auto-generate slug from name when creating (not editing)

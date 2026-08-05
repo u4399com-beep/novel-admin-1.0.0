@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 import { Providers } from "@/components/Providers";
 import { ScrollProgress } from "@/components/ScrollProgress";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,7 +46,9 @@ export default function RootLayout({
             跳到主要内容
           </a>
           <main id="main-content">
-            {children}
+            <ErrorBoundary name="root" reloadOnReset>
+              {children}
+            </ErrorBoundary>
           </main>
           <Toaster richColors position="top-right" />
         </Providers>

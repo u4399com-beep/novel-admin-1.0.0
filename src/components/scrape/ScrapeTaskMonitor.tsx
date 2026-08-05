@@ -160,36 +160,43 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
   const hasRunningTasks = tasks.some((t) => t.status === 'running');
 
   // Fetch task list
-  const fetchTasks = useCallback(async () => {
+  const fetchTasks = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(PAGE_SIZE),
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
       });
-      const data = await apiFetch<{ tasks: ScrapeTask[]; totalPages: number; total: number }>(`/api/scrape-tasks?${params}`);
+      const data = await apiFetch<{ tasks: ScrapeTask[]; totalPages: number; total: number }>(`/api/scrape-tasks?${params}`, { signal });
+      if (signal?.aborted) return;
       setTasks(data.tasks || []);
       setTotalPages(data.totalPages || 1);
       setTotal(data.total || 0);
-    } catch { /* handled by apiFetch */ } finally {
-      setLoading(false);
+    } catch {
+      if (signal?.aborted) return;
+      /* handled by apiFetch */
+    } finally {
+      if (!signal?.aborted) setLoading(false);
     }
   }, [page, statusFilter]);
 
   // Initial fetch + refetch on page/filter/refresh changes
   useEffect(() => {
+    const ac = new AbortController();
     setLoading(true);
-    fetchTasks();
+    fetchTasks(ac.signal);
+    return () => ac.abort();
   }, [fetchTasks, refreshKey]);
 
   // Auto-refresh every 5s when running tasks exist
   useEffect(() => {
+    const ac = new AbortController();
     if (hasRunningTasks) {
       autoRefreshRef.current = setInterval(() => {
-        fetchTasks();
+        fetchTasks(ac.signal);
         // Also refresh expanded task logs if it's a running task
         if (expandedTaskIdRef.current) {
-          fetchTaskLogs(expandedTaskIdRef.current);
+          fetchTaskLogs(expandedTaskIdRef.current, ac.signal);
         }
       }, 5000);
     } else if (autoRefreshRef.current) {
@@ -197,6 +204,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
       autoRefreshRef.current = null;
     }
     return () => {
+      ac.abort();
       if (autoRefreshRef.current) {
         clearInterval(autoRefreshRef.current);
         autoRefreshRef.current = null;
@@ -205,10 +213,11 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
   }, [hasRunningTasks, fetchTasks]);
 
   // Fetch task logs for expanded task
-  const fetchTaskLogs = useCallback(async (taskId: string) => {
+  const fetchTaskLogs = useCallback(async (taskId: string, signal?: AbortSignal) => {
     setLogsLoading(true);
     try {
-      const task = await apiFetch<ScrapeTask>(`/api/scrape-tasks/${taskId}`);
+      const task = await apiFetch<ScrapeTask>(`/api/scrape-tasks/${taskId}`, { signal });
+      if (signal?.aborted) return;
       setExpandedLogs(task.logs || []);
       // Also update the task in the list with fresh data
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...task, logs: undefined } : t)));

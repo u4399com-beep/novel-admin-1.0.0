@@ -660,12 +660,13 @@ export default function SiteClusterView() {
   const [siteHealthMap, setSiteHealthMap] = useState<Record<string, SiteHealthStatus>>({});
   const refreshSites = useAppStore((s) => s.refreshVersions['sites'] ?? 0);
 
-  const fetchSites = useCallback(async () => {
+  const fetchSites = useCallback(async (signal?: AbortSignal) => {
     try {
       const [sitesData, themesData] = await Promise.all([
-        apiFetch<Site[]>('/api/sites'),
-        apiFetch<(Theme & { config: string })[]>('/api/themes'),
+        apiFetch<Site[]>('/api/sites', { signal }),
+        apiFetch<(Theme & { config: string })[]>('/api/themes', { signal }),
       ]);
+      if (signal?.aborted) return;
       const parsedSites = Array.isArray(sitesData) ? sitesData : (sitesData as any)?.sites ?? [];
       setSites(parsedSites);
       setSiteHealthMap((prev) => {
@@ -683,13 +684,18 @@ export default function SiteClusterView() {
           config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : (t.config as ThemeConfig),
         })) as Theme[]
       );
-    } catch { /* handled by apiFetch */ } finally {
-      setLoading(false);
+    } catch {
+      if (signal?.aborted) return;
+      /* handled by apiFetch */
+    } finally {
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchSites();
+    const ac = new AbortController();
+    fetchSites(ac.signal);
+    return () => ac.abort();
   }, [fetchSites, refreshSites]);
 
   const handleDelete = async () => {

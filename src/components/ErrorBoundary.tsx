@@ -9,6 +9,8 @@ interface Props {
   fallback?: ReactNode;
   /** Optional label for identifying which component boundary caught the error */
   name?: string;
+  /** When true, the reset button calls window.location.reload() instead of resetting state */
+  reloadOnReset?: boolean;
 }
 
 interface State {
@@ -40,6 +42,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   handleReset = () => {
+    if (this.props.reloadOnReset) {
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false, error: null });
   };
 
@@ -61,7 +67,7 @@ export class ErrorBoundary extends Component<Props, State> {
           </div>
           <Button variant="outline" size="sm" onClick={this.handleReset} className="gap-1.5">
             <RotateCcw className="h-3.5 w-3.5" />
-            重试
+            {this.props.reloadOnReset ? '重新加载' : '重试'}
           </Button>
         </div>
       );
