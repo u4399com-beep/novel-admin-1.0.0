@@ -5908,3 +5908,43 @@ Stage Summary:
 - 修复: 19项 (7 HIGH + 7 perf + 5 MEDIUM)
 - 累计修复: 1233+19 = 1252+
 - Cron: ID 310769 (每15分钟触发下一轮)
+
+---
+Task ID: cycle2-120
+Agent: Main Orchestrator
+Task: 120轮循环第2轮 - API一致性 + TOCTOU + 死代码清理
+
+Work Log:
+## 审计范围 (并行2个Explore子代理)
+1. API一致性: 分页模式、响应格式、DELETE处理器、硬编码限制
+2. 组件质量: 未使用导出、TODO/FIXME、内联样式、硬编码URL、console.log
+
+## 修复清单 (16项)
+
+### HIGH (1项)
+1. **scrape-rules/[id] DELETE TOCTOU** - findUnique移入$transaction内部
+
+### MEDIUM (11项)
+2. **reading-progress DELETE** - 添加404 (deleteMany count===0)
+3. **reading-history** - 重构为parsePagination + 返回分页元数据
+4. **health route** - SCRAPER_SERVICE_URL去重(从constants导入)
+5. **admin/activity** - Response.json → NextResponse.json
+6-8. **3个console.log** → console.debug
+9-12. **scrape-rule-validation** 4个内部函数移除export
+
+### 死代码清理 (4项)
+13. 删除 getReadingProgressKey() (reading-session.ts)
+14. 删除 MAX_JSON_CONFIG_SIZE (validation/sites.ts)
+15. 删除 middleware.ts.bak (45行)
+16. 删除 NovelDetailClient.tsx.bak (945行)
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- Agent-browser: 首页正常
+- Git: pushed
+- 净删除: 990行 (主要是.bak文件)
+
+Stage Summary:
+- 修复: 16项 (1 HIGH + 11 MEDIUM + 4 dead code)
+- 累计修复: 1252+16 = 1268+
+- 代码净减少: ~990行
