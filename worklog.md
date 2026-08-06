@@ -5542,3 +5542,22 @@ Stage Summary:
 - 零lint errors
 - 所有页面渲染正常
 - 累计修复: 490 + 130 = 620+
+
+---
+Task ID: round20-dashboard-api-features
+Agent: Main Orchestrator
+Task: 第20轮 - Dashboard拆分+API重构+新功能+样式增强
+
+Work Log:
+- DashboardView 615→323行(-47%): 提取StatusChart/ActivityChart/RecentNovels/DailyTip
+- 5个API路由用getOrFail重构(categories/tags/themes/novels/chapters [id])
+- 新增: DailyTip每日提示、SimilarNovels同类推荐
+- 新增API: /api/chapters/batch、/api/stats/word-count
+- 样式: NovelDetailView+NovelHeader+ChapterTable应用新CSS类
+- Lint: 0 errors
+
+Stage Summary:
+- 累计修复: 620+130+30(本轮) = 780+
+- 最大自定义文件: DashboardView 323行, NovelDetailClient 593行
+- 新组件: 7个(StatusChart/ActivityChart/RecentNovels/DailyTip/SimilarNovels/DownloadList/DownloadActions)
+- 新API: 2个(batch-update/word-count)
