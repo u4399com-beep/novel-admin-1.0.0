@@ -1,0 +1,85 @@
+import { db } from '@/lib/db';
+import { withAuth } from '@/lib/api-auth';
+import { NextRequest, NextResponse } from 'next/server';
+import { safeJson, apiError, apiSuccess } from '@/lib/api-utils';
+import { requireFields } from '@/lib/crud-helpers';
+
+const MAX_REORDER_ITEMS = 500;
+
+// PATCH /api/chapters/reorder - Batch reorder chapters
+// Body: { items: { id: string, sortOrder: number }[] }
+export const PATCH = withAuth(async function PATCH(request: NextRequest) {
+  try {
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return apiError('请求数据格式错误', 400);
+    }
+
+    const check = requireFields(body, ['items']);
+    if (!check.valid) return check.response;
+
+    const { items } = body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return apiError('items必须为非空数组', 400);
+    }
+    if (items.length > MAX_REORDER_ITEMS) {
+      return apiError(`单次最多排序${MAX_REORDER_ITEMS}个章节`, 400);
+    }
+
+    // Validate each item
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item || typeof item !== 'object') {
+        return apiError(`items[${i}]格式错误`, 400);
+      }
+      if (typeof item.id !== 'string' || !item.id.trim()) {
+        return apiError(`items[${i}].id必须为非空字符串`, 400);
+      }
+      if (typeof item.sortOrder !== 'number' || !Number.isInteger(item.sortOrder) || item.sortOrder < 0) {
+        return apiError(`items[${i}].sortOrder必须为非负整数`, 400);
+      }
+    }
+
+    // Check for duplicate IDs
+    const idSet = new Set<string>();
+    for (const item of items) {
+      if (idSet.has(item.id)) {
+        return apiError(`重复的章节ID: ${item.id}`, 400);
+      }
+      idSet.add(item.id);
+    }
+
+    // Verify all chapters exist
+    const existingChapters = await db.chapter.findMany({
+      where: { id: { in: items.map((item: { id: string }) => item.id) } },
+      select: { id: true },
+    });
+    if (existingChapters.length !== items.length) {
+      const existingIds = new Set(existingChapters.map((c) => c.id));
+      const missing = items
+        .map((item: { id: string }) => item.id)
+        .filter((id: string) => !existingIds.has(id));
+      return apiError(`以下章节不存在: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`, 400);
+    }
+
+    // Use transaction to update all sortOrder values
+    let updated = 0;
+    await db.$transaction(
+      items.map((item: { id: string; sortOrder: number }) =>
+        db.chapter.update({
+          where: { id: item.id },
+          data: { sortOrder: item.sortOrder },
+        })
+      )
+    );
+    updated = items.length;
+
+    return apiSuccess({ updated });
+  } catch (error) {
+    console.error('Reorder chapters error:', error);
+    return apiError('章节排序失败');
+  }
+});

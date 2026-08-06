@@ -61,6 +61,7 @@ model Novel {
   chapters        Chapter[]
   fileStorage     NovelFile[]
   readingProgress ReadingProgress[]
+  favorites       Favorite[]
 
   @@index([categoryId])
   @@index([status])
@@ -387,6 +388,19 @@ model ReadingDaily {
   createdAt DateTime @default(now())
 
   @@index([date])
+}
+
+// 收藏（按用户追踪）
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  novelId   String
+  createdAt DateTime @default(now())
+  novel     Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, novelId])
+  @@index([userId, createdAt])
+  @@index([novelId])
 }
 
 // ==================== 阅读笔记 ====================

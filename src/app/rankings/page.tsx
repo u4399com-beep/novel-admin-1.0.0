@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Trophy, Medal, BookOpen } from 'lucide-react';
+import { Trophy, Medal, BookOpen, Award, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -74,12 +74,26 @@ const RANK_STYLES: Record<number, { text: string; bg: string; border: string; ri
 
 // ─── Rank Number Component ───────────────────────────────────────────
 
+const RANK_BADGE_CLASSES: Record<number, string> = {
+  1: 'rank-badge-gold',
+  2: 'rank-badge-silver',
+  3: 'rank-badge-bronze',
+};
+
+const RANK_COLOR_CLASSES: Record<number, string> = {
+  1: 'rank-gold',
+  2: 'rank-silver',
+  3: 'rank-bronze',
+};
+
 function RankNumber({ rank }: { rank: number }) {
   const style = RANK_STYLES[rank];
+  const badgeClass = RANK_BADGE_CLASSES[rank];
+  const colorClass = RANK_COLOR_CLASSES[rank];
   if (style) {
     return (
-      <div className={`relative flex items-center justify-center w-8 h-8 rounded-full ${style.bg} ring-2 ${style.ring} overflow-hidden badge-pulse`}>
-        <Medal className={`w-4 h-4 ${style.text} ${rank === 1 ? 'text-outline' : ''}`} />
+      <div className={`relative flex items-center justify-center w-8 h-8 rounded-full overflow-hidden badge-pulse badge-glow ${badgeClass || ''}`}>
+        <Medal className={`w-4 h-4 ${rank <= 3 ? 'text-white' : style.text} ${rank === 1 ? 'text-outline' : ''}`} />
         <div className="absolute inset-0 rank-shine pointer-events-none" />
       </div>
     );
@@ -108,6 +122,7 @@ const NovelRow = React.memo(function NovelRow({
 }) {
   const isTop3 = rank <= 3;
   const style = RANK_STYLES[rank];
+  const rankColorClass = RANK_COLOR_CLASSES[rank];
   const statValue = activeTab === 'favorites'
     ? novel.favoriteCount.toLocaleString()
     : novel.clickCount.toLocaleString();
@@ -120,14 +135,14 @@ const NovelRow = React.memo(function NovelRow({
       initial={{ opacity: 0, y: 12, x: -8 }}
       animate={{ opacity: 1, y: 0, x: 0 }}
       transition={{ duration: 0.3, delay: index * 0.04, ease: 'easeOut' as const }}
-      className="hover-brightness"
+      className="hover-brightness hover-scale"
       style={{ animationDelay: `${index * 50}ms` }}
     >
       <Link
         href={`/novels/${novel.id}`}
         className={
           isTop3
-            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden tap-feedback hover-glow depth-hover rank-shine hover-lift ${style?.border}`
+            ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden tap-feedback hover-glow depth-hover rank-shine hover-lift card-glass card-hover-glow ${style?.border}`
             : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group tap-feedback hover-glow depth-hover rank-shine'
         }
       >
@@ -152,7 +167,7 @@ const NovelRow = React.memo(function NovelRow({
         {/* Title + Author + Category + Status */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm sm:text-base truncate group-hover:text-primary transition-colors">
+            <span className={`font-semibold text-sm sm:text-base truncate group-hover:text-primary transition-colors ${rankColorClass || ''}`}>
               {novel.title}
             </span>
             {novel.category && (
@@ -180,7 +195,7 @@ const NovelRow = React.memo(function NovelRow({
 
         {/* Stat column — real click/favorite data */}
         <div className="shrink-0 text-right">
-          <div className={isTop3 ? 'text-base sm:text-lg font-bold stat-number' : 'text-sm font-semibold stat-number'}>
+          <div className={`animate-count-up ${isTop3 ? 'text-base sm:text-lg font-bold stat-number' : 'text-sm font-semibold stat-number'}`}>
             {statValue}
           </div>
           <div className="text-[11px] text-muted-foreground">{statLabel}</div>
@@ -221,10 +236,28 @@ function SkeletonRow() {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-      <BookOpen className="w-12 h-12 mb-4 opacity-30" />
-      <p className="text-sm">暂无排行数据</p>
-    </div>
+    <motion.div
+      className="flex flex-col items-center justify-center py-20 text-muted-foreground"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.4, ease: 'easeOut' as const }}
+    >
+      <div className="relative mb-6">
+        <div className="w-20 h-20 rounded-2xl bg-muted/50 flex items-center justify-center">
+          <Trophy className="w-10 h-10 text-muted-foreground/30" />
+        </div>
+        <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+          <Award className="w-3.5 h-3.5 text-amber-500" />
+        </div>
+      </div>
+      <div className="text-center space-y-2">
+        <p className="text-sm font-medium text-muted-foreground">暂无排行数据</p>
+        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/60">
+          <TrendingUp className="w-3.5 h-3.5" />
+          <span>数据更新后将自动显示</span>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -286,9 +319,9 @@ function RankingTabContent({ tab, active, timeRange }: { tab: TabConfig; active:
   }
 
   return (
-    <div className="space-y-3 stagger-in">
+    <div className="space-y-3 stagger-in stagger-children">
       {/* Top 3 cards */}
-      <div className="grid gap-2 sm:gap-3 sm:grid-cols-3">
+      <div className="grid gap-2 sm:gap-3 sm:grid-cols-3 stagger-children">
         {novels.slice(0, 3).map((novel, i) => (
           <NovelRow
             key={novel.id}
@@ -303,7 +336,7 @@ function RankingTabContent({ tab, active, timeRange }: { tab: TabConfig; active:
 
       {/* Remaining rows */}
       {novels.length > 3 && (
-        <div className="rounded-lg border overflow-hidden">
+        <div className="rounded-lg border overflow-hidden stagger-children">
           {novels.slice(3).map((novel, i) => (
             <NovelRow
               key={novel.id}
@@ -327,7 +360,7 @@ export default function RankingsPage() {
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'all'>('all');
 
   return (
-    <div className="min-h-screen bg-background page-enter">
+    <div className="min-h-screen bg-background page-enter fade-in-up">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:py-10">
         {/* Header */}
         <motion.div

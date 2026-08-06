@@ -1,48 +1,110 @@
 import { db } from "@/lib/db";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/api-auth";
-import { isPrismaError, apiError, safeJson } from "@/lib/api-utils";
+import { isPrismaError, apiError, apiSuccess } from "@/lib/api-utils";
+import { getToken } from "next-auth/jwt";
 
-// POST /api/novels/[id]/favorite - Toggle favorite count
-export const POST = withAuth(async function POST(
+// Helper to get the authenticated user's ID from the request
+async function getUserId(request: NextRequest): Promise<string | null> {
+  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  return token?.id ? String(token.id) : null;
+}
+
+// GET /api/novels/[id]/favorite - Check if current user has favorited this novel
+export const GET = withAuth(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-
-    let body;
-    try {
-      body = await safeJson(request);
-    } catch {
-      return apiError('请求数据格式错误', 400);
-    }
-    const { favorite } = body;
-
-    if (typeof favorite !== "boolean") {
-      return apiError("favorite 必须是布尔值", 400);
+    const userId = await getUserId(request);
+    if (!userId) {
+      return apiError("无法获取用户信息", 401);
     }
 
     const novel = await db.novel.findUnique({
       where: { id },
       select: { id: true },
     });
-
     if (!novel) {
       return apiError("小说不存在", 404);
     }
 
-    const updated = await db.novel.update({
-      where: { id },
-      data: {
-        favoriteCount: {
-          [favorite ? "increment" : "decrement"]: 1,
-        },
-      },
-      select: { favoriteCount: true },
+    const favorite = await db.favorite.findUnique({
+      where: { userId_novelId: { userId, novelId: id } },
+      select: { id: true, createdAt: true },
     });
 
-    return NextResponse.json({ favoriteCount: Math.max(0, updated.favoriteCount) });
+    return apiSuccess({
+      isFavorited: !!favorite,
+      ...(favorite ? { favoritedAt: favorite.createdAt.toISOString() } : {}),
+    });
+  } catch (error: unknown) {
+    console.error("Check favorite error:", error);
+    if (isPrismaError(error, "P2025")) {
+      return apiError("小说不存在", 404);
+    }
+    return apiError("操作失败", 500);
+  }
+});
+
+// POST /api/novels/[id]/favorite - Toggle favorite (add if not exists, remove if exists)
+export const POST = withAuth(async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const userId = await getUserId(request);
+    if (!userId) {
+      return apiError("无法获取用户信息", 401);
+    }
+
+    const novel = await db.novel.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!novel) {
+      return apiError("小说不存在", 404);
+    }
+
+    // Check if already favorited
+    const existing = await db.favorite.findUnique({
+      where: { userId_novelId: { userId, novelId: id } },
+    });
+
+    if (existing) {
+      // Remove favorite + atomic floor-clamped decrement in transaction
+      await db.$transaction([
+        db.favorite.delete({ where: { id: existing.id } }),
+        db.$executeRaw`UPDATE "Novel" SET "favoriteCount" = MAX(0, "favoriteCount" - 1) WHERE id = ${id}`,
+      ]);
+
+      const updated = await db.novel.findUnique({
+        where: { id },
+        select: { favoriteCount: true },
+      });
+
+      return apiSuccess({
+        isFavorited: false,
+        favoriteCount: Math.max(0, updated?.favoriteCount ?? 0),
+      });
+    } else {
+      // Add favorite
+      await db.favorite.create({
+        data: { userId, novelId: id },
+      });
+      const updated = await db.novel.update({
+        where: { id },
+        data: { favoriteCount: { increment: 1 } },
+        select: { favoriteCount: true },
+      });
+
+      return apiSuccess({
+        isFavorited: true,
+        favoriteCount: updated.favoriteCount,
+      });
+    }
   } catch (error: unknown) {
     console.error("Toggle favorite error:", error);
     if (isPrismaError(error, "P2025")) {
