@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { sanitizeString } from './sanitize';
 
-export function apiSuccess<T>(data: T, status?: number) {
+export function apiSuccess<T>(data: T, status?: number): NextResponse {
   return NextResponse.json(data, { status });
 }
 
-export function apiError(message: string, status: number = 500) {
+export function apiError(message: string, status: number = 500): NextResponse {
   return NextResponse.json({ error: message }, { status });
 }
 
@@ -16,7 +16,7 @@ export function apiError(message: string, status: number = 500) {
 export function parsePagination(
   params: URLSearchParams,
   defaults: { defaultPage?: number; defaultPageSize?: number; maxPageSize?: number } = {}
-) {
+): { page: number; pageSize: number; skip: number } {
   const {
     defaultPage = 1,
     defaultPageSize = 20,

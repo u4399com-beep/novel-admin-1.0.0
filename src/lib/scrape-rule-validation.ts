@@ -172,7 +172,17 @@ export function validateAllPaginations(
 /**
  * Parse and clamp thread/delay values from body.
  */
-export function parseScrapeParams(body: Record<string, unknown>) {
+export interface ScrapeParams {
+  scrapeMode: typeof VALID_SCRAPE_MODES[number];
+  engine: typeof VALID_ENGINES[number];
+  storageMode: typeof VALID_STORAGE_MODES[number];
+  dedupMode: typeof VALID_DEDUP_MODES[number];
+  threadCount: number;
+  minDelay: number;
+  maxDelay: number;
+}
+
+export function parseScrapeParams(body: Record<string, unknown>): ScrapeParams {
   return {
     scrapeMode: (VALID_SCRAPE_MODES.includes(body.scrapeMode) ? body.scrapeMode : 'incremental') as typeof VALID_SCRAPE_MODES[number],
     engine: (VALID_ENGINES.includes(body.engine) ? body.engine : 'cheerio') as typeof VALID_ENGINES[number],
