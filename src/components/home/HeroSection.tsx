@@ -2,20 +2,9 @@
 
 import { SearchBar } from './hero/SearchBar';
 import { FilterChips } from './hero/FilterChips';
+import type { Category } from '@/types';
 
-export type { Category } from './hero/FilterChips';
-
-// Re-export Category type via a local interface for backwards compatibility
-export interface Category {
-  id: string;
-  name: string;
-  slug: string;
-  icon: string | null;
-  description: string | null;
-  color: string;
-  _count: { novels: number };
-}
-
+export type { Category } from '@/types';
 export interface HeroSectionProps {
   search: string;
   onSearch: (term: string) => void;

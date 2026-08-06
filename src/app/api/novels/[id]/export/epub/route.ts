@@ -1,8 +1,7 @@
 import { db } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { apiError } from '@/lib/api-utils';
-import { NextRequest } from 'next/server';
-import { notFound } from 'next/navigation';
 
 export const GET = withAuth(async function GET(
   _request: NextRequest,
@@ -26,7 +25,7 @@ export const GET = withAuth(async function GET(
     return apiError('查询小说失败');
   }
 
-  if (!novel || novel.chapters.length === 0) return notFound();
+  if (!novel || novel.chapters.length === 0) return apiError('小说不存在或无章节', 404);
 
   // 简化版EPUB：返回包含所有章节的TXT
   // 完整EPUB需要JSZip库，这里先返回合并TXT
@@ -36,7 +35,7 @@ export const GET = withAuth(async function GET(
 
   const header = `书名：${novel.title}\n作者：${novel.author}\n总字数：${novel.wordCount}\n状态：${novel.status}\n导出时间：${new Date().toLocaleString('zh-CN')}\n${'='.repeat(40)}\n`;
 
-  return new Response(header + fullText, {
+  return new NextResponse(header + fullText, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(`${novel.title}_全本.txt`)}`,

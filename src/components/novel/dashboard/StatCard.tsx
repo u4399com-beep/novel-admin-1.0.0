@@ -38,7 +38,8 @@ interface StatCardProps {
 
 export function StatCard({ card, stats, trend, onClick }: StatCardProps) {
   const Icon = card.icon;
-  const value = stats?.[card.key] ?? 0;
+  const raw = stats?.[card.key] ?? 0;
+  const value = typeof raw === 'number' ? raw : 0;
   const displayValue = card.key === 'totalWords'
     ? value >= 10000 ? `${(value / 10000).toFixed(1)}万` : value.toLocaleString()
     : value.toLocaleString();

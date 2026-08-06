@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { safeResolver } from "lib/safe-resolver";
+import { safeResolver } from "@/lib/safe-resolver";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -77,7 +77,8 @@ export default function NovelFormDialog() {
 
   // ── Form ──
   const form = useForm<NovelFormValues>({
-    resolver: safeResolver(novelFormSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: safeResolver(novelFormSchema) as any,
     defaultValues: {
       title: "",
       author: "佚名",

@@ -5,7 +5,7 @@ import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { paginatedList } from "@/lib/crud-helpers";
 import { isSafeUrl } from "@/lib/sanitize";
-import { notFound } from "next/navigation";
+import { Prisma } from "@prisma/client";
 
 // GET /api/novels/[id]/chapters - List chapters for a novel (with pagination)
 export const GET = withAuth(async function GET(
@@ -24,9 +24,9 @@ export const GET = withAuth(async function GET(
         db.novel.findUnique({ where: { id: novelId }, select: { title: true } }),
         db.chapter.findUnique({ where: { id: chapterId }, select: { title: true, content: true } }),
       ]);
-      if (!chapter || !chapter.content) return notFound();
+      if (!chapter || !chapter.content) return apiError('章节内容为空', 404);
       const filename = `${novel?.title || 'novel'}_${chapter.title}.txt`;
-      return new Response(chapter.content, {
+      return new NextResponse(chapter.content, {
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
           'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,

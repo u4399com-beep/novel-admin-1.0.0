@@ -24,7 +24,7 @@ export const GET = withAuth(async function GET() {
         SELECT 'favorites' as kind, COALESCE(SUM("favoriteCount"), 0)::bigint as cnt FROM "Novel"
       `);
 
-      const getCount = (kind: string) => Number(counts.find((r) => r.kind === kind)?.cnt ?? 0n);
+      const getCount = (kind: string) => Number(counts.find((r) => r.kind === kind)?.cnt ?? BigInt(0));
       const totalNovels = getCount('novels');
       const totalChapters = getCount('chapters');
       const totalCategories = getCount('categories');

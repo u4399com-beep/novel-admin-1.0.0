@@ -23,12 +23,13 @@ export async function GET(request: NextRequest) {
 
     const novels = await db.novel.findMany({
       where: {
-        title: { startsWith: q, mode: 'insensitive' },
+        title: { startsWith: q },
       },
       select: {
         id: true,
         title: true,
         author: true,
+        categoryId: true,
         category: {
           select: { name: true, color: true },
         },

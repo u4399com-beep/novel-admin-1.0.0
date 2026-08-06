@@ -41,10 +41,10 @@ export function NovelCards({
   onViewNovel,
 }: NovelCardsProps) {
   if (viewMode === 'list') {
-    return <NovelListView novels={novels} selectedIds={selectedIds} allSelected={allSelected} onToggleSelect={onToggleSelect} onToggleSelectAll={onToggleSelectAll} onViewNovel={onViewNovel} />;
+    return <NovelListView novels={novels} viewMode={viewMode} selectedIds={selectedIds} allSelected={allSelected} onToggleSelect={onToggleSelect} onToggleSelectAll={onToggleSelectAll} onViewNovel={onViewNovel} />;
   }
 
-  return <NovelGridView novels={novels} selectedIds={selectedIds} allSelected={allSelected} onToggleSelect={onToggleSelect} onToggleSelectAll={onToggleSelectAll} onViewNovel={onViewNovel} />;
+  return <NovelGridView novels={novels} viewMode={viewMode} selectedIds={selectedIds} allSelected={allSelected} onToggleSelect={onToggleSelect} onToggleSelectAll={onToggleSelectAll} onViewNovel={onViewNovel} />;
 }
 
 function NovelGridView({ novels, selectedIds, allSelected, onToggleSelect, onToggleSelectAll, onViewNovel }: NovelCardsProps) {

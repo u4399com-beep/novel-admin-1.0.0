@@ -5561,3 +5561,31 @@ Stage Summary:
 - 最大自定义文件: DashboardView 323行, NovelDetailClient 593行
 - 新组件: 7个(StatusChart/ActivityChart/RecentNovels/DailyTip/SimilarNovels/DownloadList/DownloadActions)
 - 新API: 2个(batch-update/word-count)
+
+---
+Task ID: rounds21-22
+Agent: Main Orchestrator
+Task: 第21-22轮 - API统一+样式增强+收藏系统+批量操作
+
+Work Log:
+## Round 21
+- 39个API路由统一为apiError()（~280处替换）
+- 2个request.json()改为safeJson()
+- 新增WordCountStats字数统计组件
+- 首页样式: card-glass/stagger-children/hover-scale/badge-glow
+- NovelGrid/3种布局/FilterChips全量CSS类应用
+- BackToTop移至root layout全局可用
+
+## Round 22
+- 收藏系统: Favorite Prisma模型+收藏切换/列表API
+- 小说列表API返回isFavorited
+- 批量API: chapters/reorder排序 + novels/batch操作
+- 排行榜: 金银铜牌渐变徽章+card-hover-glow+空状态重设计
+- 新CSS: 76行(rank样式+微交互+文本截断+计数动画)
+
+Stage Summary:
+- 累计修复: 780+280(21轮)+25(22轮) = 1085+
+- 新API: 6个(favorites/chapters/reorder/novels/batch/stats/word-count/batch)
+- 新组件: 8个(DailyTip/SimilarNovels/WordCountStats/StatusChart/ActivityChart/RecentNovels/DownloadList/DownloadActions)
+- CSS工具类: 90+个
+- 所有API路由统一使用apiError()标准模式

@@ -74,7 +74,7 @@ export const POST = withAuth(async function POST(
     const note = await db.readingNote.create({
       data: {
         chapterId: id,
-        content: sanitizeField(content.trim()),
+        content: sanitizeField(content.trim(), 5000),
         position: Math.round(position),
       },
     });

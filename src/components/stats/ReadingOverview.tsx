@@ -158,10 +158,9 @@ export function ReadingOverview() {
             className="rounded-lg border bg-muted/20 p-3 transition-all hover:bg-muted/40 hover:border-primary/20"
           >
             <div className="flex items-center gap-1.5 mb-1.5">
-              <item.icon
-                className="h-3.5 w-3.5"
-                style={item.accent ? { color: item.accent } : { color: 'var(--muted-foreground)' }}
-              />
+              <span style={item.accent ? { color: item.accent } : { color: 'var(--muted-foreground)' }}>
+                <item.icon className="h-3.5 w-3.5" />
+              </span>
               <span className="text-[11px] text-muted-foreground">{item.label}</span>
             </div>
             <p className="text-base font-bold tabular-nums truncate">{item.value}</p>
