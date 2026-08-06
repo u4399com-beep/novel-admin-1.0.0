@@ -5861,3 +5861,50 @@ Stage Summary:
 - 累计修复: 1223 + 10 = 1233+
 - CSS精简: 99行无用代码移除
 - 类型安全: 5个核心工具函数添加返回类型
+
+---
+Task ID: cycle1-120
+Agent: Main Orchestrator
+Task: 120轮循环第1轮 - 全面代码审计修复
+
+Work Log:
+## 审计范围 (并行2个Explore子代理)
+1. 错误易发模式: localStorage无try-catch, fetch→apiFetch, JSON.parse, parseInt
+2. React性能: React.memo缺失, useCallback缺失, O(n²)算法, setTimeout清理
+
+## 修复清单 (19项)
+
+### HIGH (7项)
+1. **reading-session.ts** localStorage无try-catch → 包裹try-catch返回''
+2. **ReadingProgressBar** raw fetch → apiFetch<Novel>
+3. **TranslateButton** 2处raw fetch → apiFetch
+4. **TranslatePanel** 3处raw fetch → apiFetch
+5. **VisualSelectorBuilder** raw fetch → apiFetch
+6. **settings page** blob download添加AbortSignal.timeout(60000)
+7. **NovelDetailView** export blob添加AbortSignal.timeout(30000)
+
+### React性能 (7项)
+8. **NovelCards** 提取MemoizedGridCard + MemoizedListItem (React.memo)
+9. **ChapterListSection** 提取MemoizedChapterItem (100项→memoized)
+10. **ScrapeTaskMonitor** formatDate用useCallback包裹
+11. **ScrapeTaskMonitor** onToggleExpand/onDelete改为稳定引用
+12. **TaskCard** props接口调整接收taskId
+13. **ChapterTable** onCheckChange改为稳定引用
+14. **ReadingHeatMap** O(n²)→O(1) Map查找
+
+### MEDIUM (5项)
+15-16. **TranslateButton/Panel** setTimeout添加useRef清理
+17. **TranslationSettings** localStorage.getItem移入try块
+18. **TranslatePanel** localStorage.getItem移入try块
+19. **TranslatePanel** localStorage.setItem添加try-catch
+
+## 验证结果
+- ESLint: 0 errors, 7 warnings (pre-existing)
+- Agent-browser: 首页/分类/排行榜/统计页全部正常
+- Dev server: 无运行时错误
+- Git: pushed to main
+
+Stage Summary:
+- 修复: 19项 (7 HIGH + 7 perf + 5 MEDIUM)
+- 累计修复: 1233+19 = 1252+
+- Cron: ID 310769 (每15分钟触发下一轮)
