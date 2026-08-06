@@ -146,7 +146,7 @@ export function SearchBar({ search, onSearch, onReset: _onReset }: SearchBarProp
             小说搜索
           </h1>
           <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>
-            <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg border-glow">
+            <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg border-glow card-glass stagger-children">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
               <Input
                 type="text"
@@ -231,7 +231,7 @@ export function SearchBar({ search, onSearch, onReset: _onReset }: SearchBarProp
                       ))}
                     </div>
                   ) : (
-                    <ul role="listbox" className="max-h-80 overflow-y-auto py-1">
+                    <ul role="listbox" className="max-h-80 overflow-y-auto py-1 scrollbar-thin">
                       {suggestions.map((item, idx) => (
                         <li
                           key={item.id}

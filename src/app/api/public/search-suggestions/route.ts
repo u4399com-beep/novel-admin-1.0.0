@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
-import { sanitizeField } from '@/lib/api-utils';
+import { sanitizeField, apiError } from "@/lib/api-utils";
 import { getClientIp, publicRateLimit } from '@/lib/public-rate-limit';
 
 /**
@@ -10,7 +10,7 @@ import { getClientIp, publicRateLimit } from '@/lib/public-rate-limit';
  */
 export async function GET(request: NextRequest) {
   if (publicRateLimit(getClientIp(request))) {
-    return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
+    return apiError('请求过于频繁，请稍后再试', 429);
   }
 
   try {
@@ -51,9 +51,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Search suggestions API error:', error);
-    return NextResponse.json(
-      { error: '获取搜索建议失败' },
-      { status: 500 },
-    );
+        return apiError('获取搜索建议失败', 500);;
   }
 }

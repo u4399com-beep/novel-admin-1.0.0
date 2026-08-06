@@ -100,7 +100,7 @@ function FilterRow<T extends string>({
   }
 
   return (
-    <div className="relative flex items-center gap-3 py-2">
+    <div className="relative flex items-center gap-3 py-2 stagger-children">
       {/* Label */}
       <span className="shrink-0 text-sm font-medium text-muted-foreground w-12 text-right">
         {label}
@@ -122,7 +122,7 @@ function FilterRow<T extends string>({
         {/* Scrollable options */}
         <div
           ref={scrollRef}
-          className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none"
+          className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none scrollbar-thin"
           style={{
             paddingLeft: showLeftArrow ? '28px' : '4px',
             paddingRight: showRightArrow ? '28px' : '4px',
@@ -135,9 +135,9 @@ function FilterRow<T extends string>({
                 key={opt.value || '__all__'}
                 onClick={() => onChange(opt.value)}
                 aria-pressed={isActive}
-                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap tap-feedback tag-pill ${
+                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap tap-feedback tag-pill hover-scale ${
                   isActive
-                    ? 'bg-primary text-primary-foreground font-medium shadow-sm'
+                    ? 'bg-primary text-primary-foreground font-medium shadow-sm badge-glow'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
                 }`}
               >
@@ -210,7 +210,7 @@ export function FilterChips({
   ];
 
   return (
-    <section id="filter-section" className="border-b bg-background">
+    <section id="filter-section" className="border-b bg-background stagger-children">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="divide-y divide-border/50 py-1">
           {/* Row 1: 分类 */}

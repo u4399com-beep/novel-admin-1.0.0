@@ -11,6 +11,7 @@ import { ReadingHeatMap } from '@/components/ReadingHeatMap';
 import ReadingStreak from '@/components/ReadingStreak';
 import { ReadingGoalCard } from '@/components/ReadingGoalCard';
 import { ReadingOverview } from '@/components/stats/ReadingOverview';
+import { WordCountStats } from '@/components/stats/WordCountStats';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime } from '@/lib/format';
@@ -201,8 +202,11 @@ export default function StatsPage() {
               {/* Reading Overview (Admin Stats) */}
               <ReadingOverview />
 
+              {/* Word Count Statistics */}
+              <WordCountStats />
+
               {/* Reading Streak + Goal + Stat Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 hover-scale stagger-children">
                 {streakData && (
                   <motion.div
                     initial={{ opacity: 0, y: 12 }}
@@ -236,12 +240,20 @@ export default function StatsPage() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.05 }}
+                className="fade-in-up"
               >
                 <ReadingGoalCard />
               </motion.div>
 
               {/* Reading Heat Map */}
-              <ReadingHeatMap sessionId={getSessionId() || ''} className="mt-6" />
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08 }}
+                className="fade-in-up"
+              >
+                <ReadingHeatMap sessionId={getSessionId() || ''} className="mt-6" />
+              </motion.div>
 
               {/* Genre Distribution */}
               {stats.genreDistribution.length > 0 && (
@@ -249,7 +261,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
-                  className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft"
+                  className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft card-accent-top fade-in-up"
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -276,7 +288,7 @@ export default function StatsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft"
+                  className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft fade-in-up"
                 >
                   <div className="flex items-center gap-2 mb-4">
                     <Clock className="h-4 w-4 text-muted-foreground" />

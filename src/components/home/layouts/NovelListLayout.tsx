@@ -19,7 +19,7 @@ const NovelListItem = React.memo(function NovelListItem({ novel, index, search }
       transition={{ duration: 0.3, delay: index * 0.03, ease: 'easeOut' as const }}
     >
       <Link href={`/novels/${novel.id}`} className="block group">
-        <div className="flex items-center gap-4 rounded-lg border bg-card p-3 sm:p-4 transition-all duration-200 hover:shadow-sm hover:border-primary/15 hover:bg-accent/30 card-depth tab-content-enter">
+        <div className="flex items-center gap-4 rounded-lg border bg-card p-3 sm:p-4 transition-all duration-200 hover:shadow-sm hover:border-primary/15 hover:bg-accent/30 card-depth tab-content-enter hover-scale list-item-compact">
           {/* Rank number */}
           <span className="hidden sm:flex w-6 shrink-0 items-center justify-center text-sm font-bold text-muted-foreground/40 tabular-nums">
             {index + 1}
@@ -45,7 +45,7 @@ const NovelListItem = React.memo(function NovelListItem({ novel, index, search }
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5"><HighlightText text={novel.author} query={search} /></p>
               </div>
-              <span className={`inline-flex items-center shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass} status-${novel.status}`}>
+              <span className={`inline-flex items-center shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass} status-${novel.status} badge-glow`}>
                 {statusInfo.label}
               </span>
             </div>
@@ -87,7 +87,7 @@ const NovelListItem = React.memo(function NovelListItem({ novel, index, search }
 
 export function NovelListLayout({ novels, search }: { novels: NovelCardData[]; search?: string }) {
   return (
-    <div className="flex flex-col gap-2.5 sm:gap-3">
+    <div className="flex flex-col gap-2.5 sm:gap-3 stagger-children">
       {novels.map((novel, i) => (
         <NovelListItem key={novel.id} novel={novel} index={i} search={search ?? ''} />
       ))}

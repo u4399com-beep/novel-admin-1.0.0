@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { withPublicRateLimit } from "@/lib/api-auth";
 import { getOrCompute } from "@/lib/cache";
+import { apiError } from "@/lib/api-utils"
 
 /**
  * Public categories API — no auth required.
@@ -32,6 +33,6 @@ export const GET = withPublicRateLimit(async function GET() {
     });
   } catch (error) {
     console.error("Public categories API error:", error);
-    return NextResponse.json({ error: "获取分类失败" }, { status: 500 });
+    return apiError("获取分类失败", 500);
   }
 });

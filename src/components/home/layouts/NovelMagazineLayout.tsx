@@ -19,7 +19,7 @@ const HeroCard = React.memo(function HeroCard({ novel, search }: { novel: NovelC
       transition={{ duration: 0.5, ease: 'easeOut' as const }}
     >
       <Link href={`/novels/${novel.id}`} className="block group">
-        <div className="relative overflow-hidden rounded-2xl bg-card border shadow-lg hover:shadow-xl transition-all duration-500 card-depth">
+        <div className="relative overflow-hidden rounded-2xl bg-card border shadow-lg hover:shadow-xl transition-all duration-500 card-depth hover-scale">
           <div className="relative h-48 sm:h-64 md:h-72 overflow-hidden">
             {novel.coverUrl ? (
               <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" loading="lazy" />
@@ -34,7 +34,7 @@ const HeroCard = React.memo(function HeroCard({ novel, search }: { novel: NovelC
               </span>
             </div>
             <div className="absolute top-4 right-4">
-              <span className={`inline-block h-2.5 w-2.5 rounded-full ${statusInfo.dotClass}`} />
+              <span className={`inline-block h-2.5 w-2.5 rounded-full ${statusInfo.dotClass} badge-glow`} />
             </div>
             <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-6">
               {novel.category && (
@@ -77,7 +77,7 @@ const MagazineCard = React.memo(function MagazineCard({ novel, index, search }: 
       transition={{ duration: 0.4, delay: 0.1 + index * 0.06, ease: 'easeOut' as const }}
     >
       <Link href={`/novels/${novel.id}`} className="block group">
-        <div className={`flex gap-4 rounded-xl border bg-card p-3 transition-all duration-300 hover:shadow-md hover:border-primary/20 card-accent-bottom card-depth ${isReversed ? 'flex-row-reverse' : ''}`}>
+        <div className={`flex gap-4 rounded-xl border bg-card p-3 transition-all duration-300 hover:shadow-md hover:border-primary/20 card-accent-bottom card-depth hover-scale ${isReversed ? 'flex-row-reverse' : ''}`}>
           <div className="relative h-28 w-20 sm:h-32 sm:w-24 shrink-0 overflow-hidden rounded-lg shadow-sm">
             {novel.coverUrl ? (
               <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
@@ -103,7 +103,7 @@ const MagazineCard = React.memo(function MagazineCard({ novel, index, search }: 
             <div className={`flex items-center gap-2.5 text-[11px] text-muted-foreground mt-2 ${isReversed ? 'flex-row-reverse' : ''}`}>
               <span className="flex items-center gap-0.5"><BookOpen className="h-3 w-3" />{novel._count.chapters}章</span>
               <span className="flex items-center gap-0.5"><FileText className="h-3 w-3" />{formatWordCount(novel.wordCount)}</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass}`}>{statusInfo.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass} badge-glow`}>{statusInfo.label}</span>
             </div>
           </div>
         </div>
@@ -117,9 +117,9 @@ export function NovelMagazineLayout({ novels, search }: { novels: NovelCardData[
   if (!featured) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 stagger-children">
       <HeroCard novel={featured} search={search ?? ''} />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 stagger-children">
         {rest.map((novel, i) => (
           <MagazineCard key={novel.id} novel={novel} index={i} search={search ?? ''} />
         ))}

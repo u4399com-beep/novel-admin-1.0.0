@@ -14,7 +14,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { BackToTop } from '@/components/BackToTop';
 import { HomeActivity } from '@/components/home/HomeActivity';
 import { LayoutSwitcher } from '@/components/home/LayoutSwitcher';
 import { HeroSection } from '@/components/home/HeroSection';
@@ -426,7 +425,6 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
-      <BackToTop />
     </div>
   );
 }

@@ -49,7 +49,7 @@ export function HomeActivity() {
   return (
     <>
       {/* Continue Reading */}
-      <section className="border-b card-glass">
+      <section className="border-b card-glass stagger-children">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
           <ContinueReading />
         </div>
@@ -57,7 +57,7 @@ export function HomeActivity() {
 
       {/* Recently Viewed */}
       {recentNovels.length > 0 && (
-        <section className="border-b bg-muted/20 card-glass">
+        <section className="border-b bg-muted/20 card-glass stagger-children">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
@@ -77,7 +77,7 @@ export function HomeActivity() {
                 <Link
                   key={rn.id}
                   href={`/novels/${rn.id}`}
-                  className="shrink-0 flex items-center gap-2.5 rounded-lg border bg-background px-3 py-2 transition-all hover:shadow-sm hover:border-primary/30 group hover-lift tap-feedback"
+                  className="shrink-0 flex items-center gap-2.5 rounded-lg border bg-background px-3 py-2 transition-all hover:shadow-sm hover:border-primary/30 group hover-lift tap-feedback hover-scale list-item-compact"
                 >
                   <div className="h-8 w-6 rounded overflow-hidden shrink-0">
                     {rn.coverUrl ? (

@@ -80,7 +80,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
 
     const check = requireFields(body, ['name']);
@@ -90,9 +90,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     // Validate selectors and pagination
     const selErr = validateAllSelectors(body);
-    if (selErr) return NextResponse.json({ error: selErr }, { status: 400 });
+    if (selErr) return apiError(selErr, 400);
     const pagErr = validateAllPaginations(body);
-    if (pagErr) return NextResponse.json({ error: pagErr }, { status: 400 });
+    if (pagErr) return apiError(pagErr, 400);
 
     // Validate URL fields for SSRF
     try {
@@ -101,30 +101,30 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       if (body.cloudBrowserUrl) validateUrlField(body.cloudBrowserUrl, 'Cloud Browser URL');
     } catch (e) {
       if (e instanceof ValidationError) {
-        return NextResponse.json({ error: e.message }, { status: 400 });
+        return apiError(e.message, 400);
       }
       throw e;
     }
 
     // Validate enum fields — reject invalid values instead of silently defaulting
     if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode)) {
-      return NextResponse.json({ error: `采集模式只能是: ${VALID_SCRAPE_MODES.join(', ')}` }, { status: 400 });
+      return apiError(`采集模式只能是: ${VALID_SCRAPE_MODES.join(', ')}`, 400);
     }
     if (body.engine !== undefined && !VALID_ENGINES.includes(body.engine)) {
-      return NextResponse.json({ error: `采集引擎只能是: ${VALID_ENGINES.join(', ')}` }, { status: 400 });
+      return apiError(`采集引擎只能是: ${VALID_ENGINES.join(', ')}`, 400);
     }
     if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode)) {
-      return NextResponse.json({ error: `存储模式只能是: ${VALID_STORAGE_MODES.join(', ')}` }, { status: 400 });
+      return apiError(`存储模式只能是: ${VALID_STORAGE_MODES.join(', ')}`, 400);
     }
     if (body.dedupMode !== undefined && !VALID_DEDUP_MODES.includes(body.dedupMode)) {
-      return NextResponse.json({ error: `去重模式只能是: ${VALID_DEDUP_MODES.join(', ')}` }, { status: 400 });
+      return apiError(`去重模式只能是: ${VALID_DEDUP_MODES.join(', ')}`, 400);
     }
 
     if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
-      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+      return apiError("enabled 必须是布尔值", 400);
     }
     if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
-      return NextResponse.json({ error: "enableShuffle 必须是布尔值" }, { status: 400 });
+      return apiError("enableShuffle 必须是布尔值", 400);
     }
 
     const params = parseScrapeParams(body);
@@ -153,7 +153,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       };
     } catch (e) {
       if (e instanceof Error) {
-        return NextResponse.json({ error: e.message }, { status: 400 });
+        return apiError(e.message, 400);
       }
       throw e;
     }
@@ -210,6 +210,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(rule, { status: 201 });
   } catch (error) {
     console.error("Create scrape rule error:", error);
-    return NextResponse.json({ error: "创建采集规则失败"}, { status: 500 });
+    return apiError("创建采集规则失败", 500);
   }
 });

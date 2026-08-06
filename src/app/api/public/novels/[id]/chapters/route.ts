@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withPublicRateLimit } from "@/lib/api-auth";
+import { apiError } from "@/lib/api-utils"
 
 /**
  * Public chapters list API — no auth required.
@@ -20,7 +21,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
       select: { id: true },
     });
     if (!novel) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
 
     const { searchParams } = new URL(request.url);
@@ -56,6 +57,6 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     });
   } catch (error) {
     console.error("Public chapters list API error:", error);
-    return NextResponse.json({ error: "获取章节列表失败" }, { status: 500 });
+    return apiError("获取章节列表失败", 500);
   }
 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { isSafeUrl } from '@/lib/sanitize';
-import { safeJson } from '@/lib/api-utils';
+import { safeJson, apiError } from "@/lib/api-utils";
 
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 
@@ -13,12 +13,12 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+      return apiError('请求数据格式错误', 400);
     }
     const url = body.url;
 
     if (!url) {
-      return NextResponse.json({ error: '缺少 URL 参数' }, { status: 400 });
+      return apiError('缺少 URL 参数', 400);
     }
 
     // Basic URL validation
@@ -26,21 +26,21 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       parsedUrl = new URL(url);
     } catch {
-      return NextResponse.json({ error: '无效的 URL 格式' }, { status: 400 });
+      return apiError('无效的 URL 格式', 400);
     }
 
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-      return NextResponse.json({ error: '仅支持 http/https 协议' }, { status: 400 });
+      return apiError('仅支持 http/https 协议', 400);
     }
 
     // Limit URL length
     if (url.length > 2048) {
-      return NextResponse.json({ error: 'URL 过长' }, { status: 400 });
+      return apiError('URL 过长', 400);
     }
 
     // SSRF protection - check for private/internal IPs
     if (!isSafeUrl(url)) {
-      return NextResponse.json({ error: 'URL 不允许访问内网或私有地址' }, { status: 400 });
+      return apiError('URL 不允许访问内网或私有地址', 400);
     }
 
     // Proxy to scraper-service via POST with JSON body and Authorization header
@@ -63,12 +63,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         console.error(
           `[preview] Scraper service returned ${response.status}`,
         );
-        return NextResponse.json(
-          {
-            error: `采集服务返回错误 (${response.status})`,
-          },
-          { status: 502 },
-        );
+                return apiError('采集服务返回错误 (${response.status})', 502);;
       }
 
       const data = await response.json();
@@ -83,19 +78,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       clearTimeout(timeoutId);
 
       if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
-        return NextResponse.json(
-          { error: '请求采集服务超时，请稍后重试' },
-          { status: 504 },
-        );
+                return apiError('请求采集服务超时，请稍后重试', 504);;
       }
 
       throw fetchError;
     }
   } catch (error) {
     console.error('[preview] Error:', error);
-    return NextResponse.json(
-      { error: '获取页面预览失败'},
-      { status: 500 },
-    );
+        return apiError('获取页面预览失败', 500);;
   }
 });

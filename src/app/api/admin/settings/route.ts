@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { safeJson } from '@/lib/api-utils';
+import { safeJson, apiError } from "@/lib/api-utils";
 import { invalidateCache } from '@/lib/cache';
 
 // GET /api/admin/settings - Get all settings as key-value object
@@ -20,7 +20,7 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json(settings);
   } catch (error) {
     console.error('Get settings error:', error);
-    return NextResponse.json({ error: '获取设置失败' }, { status: 500 });
+    return apiError('获取设置失败', 500);
   }
 });
 
@@ -32,11 +32,11 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+      return apiError('请求数据格式错误', 400);
     }
 
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+      return apiError('请求数据格式错误', 400);
     }
 
     // Allowed setting keys and per-key value validation
@@ -65,26 +65,26 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
         const n = Number(rawValue);
         const [min, max] = INTEGER_RANGE[key];
         if (!Number.isFinite(n) || n < min || n > max || !Number.isInteger(n)) {
-          return NextResponse.json({ error: `${key} 必须是 ${min}-${max} 之间的整数` }, { status: 400 });
+          return apiError(`${key} 必须是 ${min}-${max} 之间的整数`, 400);
         }
         entries.push([key, String(n)]);
       } else if (BOOLEAN_KEYS.has(key)) {
         if (rawValue !== 'true' && rawValue !== 'false' && rawValue !== true && rawValue !== false) {
-          return NextResponse.json({ error: `${key} 必须是 true 或 false` }, { status: 400 });
+          return apiError(`${key} 必须是 true 或 false`, 400);
         }
         entries.push([key, String(rawValue)]);
       } else {
         const maxLen = STRING_MAX[key];
         const val = String(rawValue ?? '').slice(0, maxLen);
         if (key === 'themeColor' && val && !/^#[0-9A-Fa-f]{3,8}$/.test(val)) {
-          return NextResponse.json({ error: 'themeColor 格式无效，请使用HEX颜色' }, { status: 400 });
+          return apiError('themeColor 格式无效，请使用HEX颜色', 400);
         }
         entries.push([key, val]);
       }
     }
 
     if (entries.length === 0) {
-      return NextResponse.json({ error: '没有有效的设置项' }, { status: 400 });
+      return apiError('没有有效的设置项', 400);
     }
 
     // Upsert each setting in a transaction
@@ -111,6 +111,6 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
     return NextResponse.json({ success: true, updated: result, ...(ignoredKeys.length > 0 ? { ignoredKeys } : {}) });
   } catch (error) {
     console.error('Save settings error:', error);
-    return NextResponse.json({ error: '保存设置失败' }, { status: 500 });
+    return apiError('保存设置失败', 500);
   }
 });

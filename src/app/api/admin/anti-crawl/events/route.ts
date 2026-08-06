@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
-import { parsePagination, sanitizeField, safeJson } from '@/lib/api-utils';
+import { parsePagination, sanitizeField, safeJson, apiError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from 'next/server';
 
 const VALID_EVENT_TYPES = [
@@ -107,7 +107,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('List anti-crawl events error:', error);
-    return NextResponse.json({ error: '获取反爬事件列表失败' }, { status: 500 });
+    return apiError('获取反爬事件列表失败', 500);
   }
 });
 
@@ -118,7 +118,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+      return apiError('请求数据格式错误', 400);
     }
 
     const eventType = sanitizeField(body.eventType, 100);
@@ -175,6 +175,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(record, { status: 201 });
   } catch (error) {
     console.error('Create anti-crawl event error:', error);
-    return NextResponse.json({ error: '记录反爬事件失败' }, { status: 500 });
+    return apiError('记录反爬事件失败', 500);
   }
 });

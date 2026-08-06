@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
-import { isPrismaError } from "@/lib/api-utils";
+import { isPrismaError, apiError } from "@/lib/api-utils";
 
 // GET /api/search-keywords/[novelId] - Get search keywords for a novel
 export const GET = withAuth(async function GET(
@@ -20,10 +20,7 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(keywords);
   } catch (error) {
     console.error("Get search keywords error:", error);
-    return NextResponse.json(
-      { error: "获取搜索关键词失败"},
-      { status: 500 }
-    );
+        return apiError('获取搜索关键词失败', 500);;
   }
 });
 
@@ -132,7 +129,7 @@ export const POST = withAuth(async function POST(
     });
 
     if (!novel) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
 
     const existingTags = novel.tags.map((nt) => nt.tag?.name).filter(Boolean) as string[];
@@ -181,12 +178,9 @@ export const POST = withAuth(async function POST(
     });
   } catch (error) {
     if (isPrismaError(error, 'P2002')) {
-      return NextResponse.json({ error: '操作冲突，请稍后重试' }, { status: 409 });
+      return apiError('操作冲突，请稍后重试', 409);
     }
     console.error("Extract search keywords error:", error);
-    return NextResponse.json(
-      { error: "提取搜索关键词失败"},
-      { status: 500 }
-    );
+        return apiError('提取搜索关键词失败', 500);;
   }
 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withAuth } from "@/lib/api-auth";
-import { sanitizeField, safeJson } from "@/lib/api-utils";
+import { sanitizeField, safeJson, apiError } from "@/lib/api-utils";
 
 const MAX_BATCH_SIZE = 100;
 const MAX_MESSAGE_LENGTH = 5000;
@@ -18,30 +18,30 @@ export const POST = withAuth(async function POST(
   try {
     body = await safeJson(request);
   } catch {
-    return NextResponse.json({ error: "无效的JSON" }, { status: 400 });
+    return apiError("无效的JSON", 400);
   }
 
   if (!Array.isArray(body.logs) || body.logs.length === 0 || body.logs.length > MAX_BATCH_SIZE) {
-    return NextResponse.json({ error: `logs必须是1-${MAX_BATCH_SIZE}条记录的数组` }, { status: 400 });
+    return apiError(`logs必须是1-${MAX_BATCH_SIZE}条记录的数组`, 400);
   }
 
   try {
     // Verify task exists and is still accepting logs
     const task = await db.scrapeTask.findUnique({ where: { id }, select: { id: true, status: true } });
     if (!task) {
-      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+      return apiError("采集任务不存在", 404);
     }
     if (task.status !== 'pending' && task.status !== 'running') {
-      return NextResponse.json({ error: "任务已完成或取消，无法追加日志" }, { status: 400 });
+      return apiError("任务已完成或取消，无法追加日志", 400);
     }
 
     // Validate all log levels before inserting
     for (const log of body.logs) {
       if (!VALID_LEVELS.includes(log.level as typeof VALID_LEVELS[number])) {
-        return NextResponse.json({ error: '无效的日志级别，允许值: info, warn, error, success' }, { status: 400 });
+        return apiError('无效的日志级别，允许值: info, warn, error, success', 400);
       }
       if (!sanitizeField(log.message, MAX_MESSAGE_LENGTH)) {
-        return NextResponse.json({ error: "日志消息不能为空" }, { status: 400 });
+        return apiError("日志消息不能为空", 400);
       }
     }
 
@@ -58,6 +58,6 @@ export const POST = withAuth(async function POST(
     return NextResponse.json({ created: data.length });
   } catch (error) {
     console.error("Batch create logs error:", error);
-    return NextResponse.json({ error: "批量创建日志失败"}, { status: 500 });
+    return apiError("批量创建日志失败", 500);
   }
 });

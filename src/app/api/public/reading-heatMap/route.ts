@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { sanitizeField } from '@/lib/api-utils';
+import { sanitizeField, apiError } from "@/lib/api-utils";
 import { getOrCompute } from '@/lib/cache';
 
 function toLocalDateStr(d: Date, tz?: string): string {
@@ -57,6 +57,6 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     return NextResponse.json(data);
   } catch (error) {
     console.error('Get reading heat map error:', error);
-    return NextResponse.json({ error: '获取阅读热力图失败' }, { status: 500 });
+    return apiError('获取阅读热力图失败', 500);
   }
 });

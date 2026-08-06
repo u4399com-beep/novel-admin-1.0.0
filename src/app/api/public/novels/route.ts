@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { sanitizeField } from "@/lib/api-utils";
+import { sanitizeField, apiError } from "@/lib/api-utils";
 import { getClientIp, publicRateLimit } from "@/lib/public-rate-limit";
 
 // ─── 23qb.net 字数区间映射 ─────────────────────────────────────────
@@ -38,7 +38,7 @@ const SORT_MAP: Record<string, { field: string; direction: "asc" | "desc" }> = {
 export async function GET(request: NextRequest) {
   // Rate limit check
   if (publicRateLimit(getClientIp(request))) {
-    return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
+    return apiError('请求过于频繁，请稍后再试', 429);
   }
 
   try {
@@ -149,6 +149,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Public novels API error:", error);
-    return NextResponse.json({ error: "获取小说列表失败" }, { status: 500 });
+    return apiError("获取小说列表失败", 500);
   }
 }

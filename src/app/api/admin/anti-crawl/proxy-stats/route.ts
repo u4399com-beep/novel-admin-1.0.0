@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
-import { safeJson, sanitizeField, safeJsonStringify } from '@/lib/api-utils';
+import { safeJson, sanitizeField, safeJsonStringify, apiError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from 'next/server';
 
 // POST /api/admin/anti-crawl/proxy-stats - Record proxy pool stats
@@ -9,7 +9,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   try {
     body = await safeJson(request);
   } catch {
-    return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+    return apiError('请求数据格式错误', 400);
   }
   try {
 
@@ -23,10 +23,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     let domainsTracked: string | null = null;
     if (body.domainsTracked !== undefined) {
       if (!Array.isArray(body.domainsTracked)) {
-        return NextResponse.json(
-          { error: 'domainsTracked 必须是字符串数组' },
-          { status: 400 },
-        );
+                return apiError('domainsTracked 必须是字符串数组', 400);;
       }
       // Sanitize each domain and limit length
       const sanitized = body.domainsTracked
@@ -50,10 +47,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(record, { status: 201 });
   } catch (error) {
     console.error('Create proxy pool stats error:', error);
-    return NextResponse.json(
-      { error: '记录代理池统计失败' },
-      { status: 500 },
-    );
+        return apiError('记录代理池统计失败', 500);;
   }
 });
 
@@ -67,9 +61,6 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json({ stats: latest || null });
   } catch (error) {
     console.error('Get proxy pool stats error:', error);
-    return NextResponse.json(
-      { error: '获取代理池统计失败' },
-      { status: 500 },
-    );
+        return apiError('获取代理池统计失败', 500);;
   }
 });

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, safeJsonStringify } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError, safeJsonStringify, apiError } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import {
   VALID_SCRAPE_MODES,
@@ -31,12 +31,12 @@ export const GET = withAuth(async function GET(
       include: { _count: { select: { tasks: true } } },
     });
     if (!rule) {
-      return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+      return apiError("采集规则不存在", 404);
     }
     return NextResponse.json(rule);
   } catch (error) {
     console.error("Get scrape rule error:", error);
-    return NextResponse.json({ error: "获取采集规则详情失败"}, { status: 500 });
+    return apiError("获取采集规则详情失败", 500);
   }
 });
 
@@ -51,38 +51,38 @@ export const PUT = withAuth(async function PUT(
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
 
     if (body.name !== undefined && !body.name?.trim()) {
-      return NextResponse.json({ error: "规则名称不能为空" }, { status: 400 });
+      return apiError("规则名称不能为空", 400);
     }
 
     // Validate enums
     if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode)) {
-      return NextResponse.json({ error: `采集模式只能是: ${VALID_SCRAPE_MODES.join(", ")}` }, { status: 400 });
+      return apiError(`采集模式只能是: ${VALID_SCRAPE_MODES.join(", ")}`, 400);
     }
     if (body.engine !== undefined && !VALID_ENGINES.includes(body.engine)) {
-      return NextResponse.json({ error: `采集引擎只能是: ${VALID_ENGINES.join(", ")}` }, { status: 400 });
+      return apiError(`采集引擎只能是: ${VALID_ENGINES.join(", ")}`, 400);
     }
     if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode)) {
-      return NextResponse.json({ error: `存储模式只能是: ${VALID_STORAGE_MODES.join(", ")}` }, { status: 400 });
+      return apiError(`存储模式只能是: ${VALID_STORAGE_MODES.join(", ")}`, 400);
     }
     if (body.dedupMode !== undefined && !VALID_DEDUP_MODES.includes(body.dedupMode)) {
-      return NextResponse.json({ error: `去重模式只能是: ${VALID_DEDUP_MODES.join(", ")}` }, { status: 400 });
+      return apiError(`去重模式只能是: ${VALID_DEDUP_MODES.join(", ")}`, 400);
     }
     if (body.threadCount !== undefined) {
       const tc = Math.floor(Number(body.threadCount) || 3);
       if (tc < MIN_THREAD || tc > MAX_THREAD) {
-        return NextResponse.json({ error: `线程数必须在${MIN_THREAD}-${MAX_THREAD}之间` }, { status: 400 });
+        return apiError(`线程数必须在${MIN_THREAD}-${MAX_THREAD}之间`, 400);
       }
     }
 
     // Validate selectors and pagination (only fields that are defined)
     const selErr = validateAllSelectors(body, true);
-    if (selErr) return NextResponse.json({ error: selErr }, { status: 400 });
+    if (selErr) return apiError(selErr, 400);
     const pagErr = validateAllPaginations(body, true);
-    if (pagErr) return NextResponse.json({ error: pagErr }, { status: 400 });
+    if (pagErr) return apiError(pagErr, 400);
 
     // Validate URL fields for SSRF — **reject** on failure instead of silently skipping
     try {
@@ -100,21 +100,21 @@ export const PUT = withAuth(async function PUT(
       }
     } catch (e) {
       if (e instanceof ValidationError) {
-        return NextResponse.json({ error: e.message }, { status: 400 });
+        return apiError(e.message, 400);
       }
       throw e;
     }
 
     if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
-      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+      return apiError("enabled 必须是布尔值", 400);
     }
     if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
-      return NextResponse.json({ error: "enableShuffle 必须是布尔值" }, { status: 400 });
+      return apiError("enableShuffle 必须是布尔值", 400);
     }
     if (body.antiCrawlLevel !== undefined) {
       const acl = Math.floor(Number(body.antiCrawlLevel));
       if (isNaN(acl) || acl < 1 || acl > 5) {
-        return NextResponse.json({ error: "antiCrawlLevel 必须是 1-5 之间的整数" }, { status: 400 });
+        return apiError("antiCrawlLevel 必须是 1-5 之间的整数", 400);
       }
     }
 
@@ -122,20 +122,20 @@ export const PUT = withAuth(async function PUT(
     const minD = body.minDelay !== undefined ? Math.max(0, Math.floor(Number(body.minDelay) || 1000)) : undefined;
     const maxD = body.maxDelay !== undefined ? Math.max(0, Math.floor(Number(body.maxDelay) || 3000)) : undefined;
     if (minD !== undefined && maxD !== undefined && maxD < minD) {
-      return NextResponse.json({ error: "最大延迟不能小于最小延迟" }, { status: 400 });
+      return apiError("最大延迟不能小于最小延迟", 400);
     }
     // Cross-validate: if only maxD is provided, ensure it >= existing minDelay
     if (minD === undefined && maxD !== undefined) {
       const existing = await db.scrapeRule.findUnique({ where: { id }, select: { minDelay: true } });
       if (existing && maxD < (existing.minDelay || 1000)) {
-        return NextResponse.json({ error: `最大延迟(${maxD}ms)不能小于当前最小延迟(${existing.minDelay || 1000}ms)` }, { status: 400 });
+        return apiError(`最大延迟(${maxD}ms)不能小于当前最小延迟(${existing.minDelay || 1000}ms)`, 400);
       }
     }
     // Cross-validate: if only minD is provided, ensure it <= existing maxDelay
     if (maxD === undefined && minD !== undefined) {
       const existing = await db.scrapeRule.findUnique({ where: { id }, select: { maxDelay: true } });
       if (existing && minD > (existing.maxDelay || 3000)) {
-        return NextResponse.json({ error: `最小延迟(${minD}ms)不能大于当前最大延迟(${existing.maxDelay || 3000}ms)` }, { status: 400 });
+        return apiError(`最小延迟(${minD}ms)不能大于当前最大延迟(${existing.maxDelay || 3000}ms)`, 400);
       }
     }
 
@@ -163,7 +163,7 @@ export const PUT = withAuth(async function PUT(
       }
     } catch (e) {
       if (e instanceof Error) {
-        return NextResponse.json({ error: e.message }, { status: 400 });
+        return apiError(e.message, 400);
       }
       throw e;
     }
@@ -242,9 +242,9 @@ export const PUT = withAuth(async function PUT(
   } catch (error: unknown) {
     console.error("Update scrape rule error:", error);
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+      return apiError("采集规则不存在", 404);
     }
-    return NextResponse.json({ error: "更新采集规则失败"}, { status: 500 });
+    return apiError("更新采集规则失败", 500);
   }
 });
 
@@ -257,7 +257,7 @@ export const DELETE = withAuth(async function DELETE(
     const { id } = await params;
     const existing = await db.scrapeRule.findUnique({ where: { id } });
     if (!existing) {
-      return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+      return apiError("采集规则不存在", 404);
     }
     // Prevent deleting rules with running tasks (cascade would cause silent data loss)
     // Use transaction to prevent TOCTOU race between count and delete
@@ -270,17 +270,14 @@ export const DELETE = withAuth(async function DELETE(
       return { conflict: false } as const;
     });
     if (deleted.conflict) {
-      return NextResponse.json(
-        { error: `无法删除：有 ${deleted.runningCount} 个任务正在运行，请先停止任务` },
-        { status: 409 }
-      );
+            return apiError('无法删除：有 ${deleted.runningCount} 个任务正在运行，请先停止任务', 409);;
     }
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error("Delete scrape rule error:", error);
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "采集规则不存在" }, { status: 404 });
+      return apiError("采集规则不存在", 404);
     }
-    return NextResponse.json({ error: "删除采集规则失败"}, { status: 500 });
+    return apiError("删除采集规则失败", 500);
   }
 });

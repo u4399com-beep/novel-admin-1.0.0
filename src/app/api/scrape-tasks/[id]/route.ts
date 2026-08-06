@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
 import { isSafeUrl } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
@@ -30,13 +30,13 @@ export const GET = withAuth(async function GET(
     });
 
     if (!task) {
-      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+      return apiError("采集任务不存在", 404);
     }
 
     return NextResponse.json(task);
   } catch (error) {
     console.error("Get scrape task error:", error);
-    return NextResponse.json({ error: "获取采集任务详情失败"}, { status: 500 });
+    return apiError("获取采集任务详情失败", 500);
   }
 });
 
@@ -51,7 +51,7 @@ export const PUT = withAuth(async function PUT(
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
 
     // Build update data outside the transaction for fields that don't depend on current state
@@ -60,7 +60,7 @@ export const PUT = withAuth(async function PUT(
     if (body.progress !== undefined) {
       const p = parseFloat(body.progress);
       if (isNaN(p)) {
-        return NextResponse.json({ error: "progress 必须是有效数字" }, { status: 400 });
+        return apiError("progress 必须是有效数字", 400);
       }
       updateData.progress = Math.min(100, Math.max(0, p));
     }
@@ -72,7 +72,7 @@ export const PUT = withAuth(async function PUT(
       if (body[field] !== undefined) {
         const v = Number(body[field]);
         if (!Number.isFinite(v) || v < 0) {
-          return NextResponse.json({ error: `${field} 必须是非负数字` }, { status: 400 });
+          return apiError(`${field} 必须是非负数字`, 400);
         }
         updateData[field] = v;
       }
@@ -83,7 +83,7 @@ export const PUT = withAuth(async function PUT(
       if (val) {
         // isSafeUrl is statically imported at the top of this file
         if (!isSafeUrl(val)) {
-          return NextResponse.json({ error: "resultUrl格式不合法" }, { status: 400 });
+          return apiError("resultUrl格式不合法", 400);
         }
       }
       updateData.resultUrl = val;
@@ -135,14 +135,14 @@ export const PUT = withAuth(async function PUT(
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       if (msg.startsWith("INVALID_STATUS:")) {
-        return NextResponse.json({ error: `无效的任务状态: ${msg.split(":")[1]}` }, { status: 400 });
+        return apiError(`无效的任务状态: ${msg.split(":")[1]}`, 400);
       }
       if (msg.startsWith("INVALID_TRANSITION:")) {
         const [, from, to] = msg.split(":");
-        return NextResponse.json({ error: `不允许从 "${from}" 转换到 "${to}"` }, { status: 400 });
+        return apiError(`不允许从 "${from}" 转换到 "${to}"`, 400);
       }
       if (isPrismaError(error, "P2025")) {
-        return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+        return apiError("采集任务不存在", 404);
       }
       throw error;
     }
@@ -150,7 +150,7 @@ export const PUT = withAuth(async function PUT(
     return NextResponse.json(taskResult);
   } catch (error) {
     console.error("Update scrape task error:", error);
-    return NextResponse.json({ error: "更新采集任务失败"}, { status: 500 });
+    return apiError("更新采集任务失败", 500);
   }
 });
 
@@ -174,15 +174,15 @@ export const DELETE = withAuth(async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND") {
-      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+      return apiError("采集任务不存在", 404);
     }
     if (error instanceof Error && error.message === "TASK_RUNNING") {
-      return NextResponse.json({ error: "运行中的任务无法删除" }, { status: 400 });
+      return apiError("运行中的任务无法删除", 400);
     }
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "采集任务不存在" }, { status: 404 });
+      return apiError("采集任务不存在", 404);
     }
     console.error("Delete scrape task error:", error);
-    return NextResponse.json({ error: "删除采集任务失败"}, { status: 500 });
+    return apiError("删除采集任务失败", 500);
   }
 });

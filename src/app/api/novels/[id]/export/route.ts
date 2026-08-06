@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
+import { apiError } from "@/lib/api-utils"
 
 const MAX_EXPORT_CHAPTERS = 5000;
 const MAX_EXPORT_CHARS = 20_000_000; // ~20M chars (~40MB in memory for JSON)
@@ -22,7 +23,7 @@ export const GET = withAuth(async function GET(
     const format = searchParams.get("format") || "json";
 
     if (!["json", "txt"].includes(format)) {
-      return NextResponse.json({ error: "format 必须是 json 或 txt" }, { status: 400 });
+      return apiError("format 必须是 json 或 txt", 400);
     }
 
     const novel = await db.novel.findUnique({
@@ -34,16 +35,13 @@ export const GET = withAuth(async function GET(
     });
 
     if (!novel) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
 
     // Pre-check chapter count and total content size to prevent OOM
     const chapterCount = await db.chapter.count({ where: { novelId: id } });
     if (chapterCount > MAX_EXPORT_CHAPTERS) {
-      return NextResponse.json(
-        { error: `章节数量(${chapterCount})超过导出上限(${MAX_EXPORT_CHAPTERS})，请分批导出` },
-        { status: 400 }
-      );
+            return apiError('章节数量(${chapterCount})超过导出上限(${MAX_EXPORT_CHAPTERS})，请分批导出', 400);;
     }
 
     // Check total content size to prevent OOM (wordCount approximates char count for CJK)
@@ -53,10 +51,7 @@ export const GET = withAuth(async function GET(
     });
     const totalWords = _sum.wordCount ?? 0;
     if (totalWords > MAX_EXPORT_CHARS) {
-      return NextResponse.json(
-        { error: `小说总字数(${totalWords.toLocaleString()})过大，超过导出上限(${(MAX_EXPORT_CHARS / 10000).toFixed(0)}万字)，请联系管理员分批处理` },
-        { status: 400 }
-      );
+            return apiError('小说总字数(${totalWords.toLocaleString()})过大，超过导出上限(${(MAX_EXPORT_CHARS / 10000).toFixed(0)}万字)，请联系管理员分批处理', 400);;
     }
 
     const chapters = await db.chapter.findMany({
@@ -138,6 +133,6 @@ export const GET = withAuth(async function GET(
     });
   } catch (error) {
     console.error("Export novel error:", error);
-    return NextResponse.json({ error: "导出失败" }, { status: 500 });
+    return apiError("导出失败", 500);
   }
 });

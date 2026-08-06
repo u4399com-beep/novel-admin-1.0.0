@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { getOrCompute } from '@/lib/cache';
 import { withPublicRateLimit } from '@/lib/api-auth';
+import { apiError } from "@/lib/api-utils"
 
 // GET /api/public/settings - Get public-facing settings (siteName, siteDescription)
 export const GET = withPublicRateLimit({ capacity: 120, refillRate: 4 }, async function GET() {
@@ -22,6 +23,6 @@ export const GET = withPublicRateLimit({ capacity: 120, refillRate: 4 }, async f
     return NextResponse.json(data);
   } catch (error) {
     console.error('Get public settings error:', error);
-    return NextResponse.json({ error: '获取设置失败' }, { status: 500 });
+    return apiError('获取设置失败', 500);
   }
 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { safeJson } from '@/lib/api-utils';
+import { safeJson, apiError } from "@/lib/api-utils";
 import { isSafeUrl } from '@/lib/sanitize';
 
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
@@ -14,13 +14,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+      return apiError('请求数据格式错误', 400);
     }
 
     const { url, siteType } = body;
 
     if (!url || typeof url !== 'string') {
-      return NextResponse.json({ error: '缺少必需的 url 参数' }, { status: 400 });
+      return apiError('缺少必需的 url 参数', 400);
     }
 
     // Basic URL validation
@@ -28,26 +28,26 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     try {
       parsedUrl = new URL(url);
     } catch {
-      return NextResponse.json({ error: '无效的 URL 格式' }, { status: 400 });
+      return apiError('无效的 URL 格式', 400);
     }
 
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-      return NextResponse.json({ error: '仅支持 http/https 协议' }, { status: 400 });
+      return apiError('仅支持 http/https 协议', 400);
     }
 
     if (url.length > 2048) {
-      return NextResponse.json({ error: 'URL 过长' }, { status: 400 });
+      return apiError('URL 过长', 400);
     }
 
     // SSRF protection - check for private/internal IPs
     if (!isSafeUrl(url)) {
-      return NextResponse.json({ error: 'URL 不允许访问内网或私有地址' }, { status: 400 });
+      return apiError('URL 不允许访问内网或私有地址', 400);
     }
 
     // Validate siteType if provided
     const validSiteTypes = ['novel', 'manga', 'literature'];
     if (siteType !== undefined && siteType !== null && !validSiteTypes.includes(siteType)) {
-      return NextResponse.json({ error: `无效的站点类型: ${siteType}，可选值: ${validSiteTypes.join(', ')}` }, { status: 400 });
+      return apiError(`无效的站点类型: ${siteType}，可选值: ${validSiteTypes.join(', ')}`, 400);
     }
 
     // Proxy to scraper-service
@@ -74,18 +74,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         console.error(
           `[ai-generate] Scraper service returned ${response.status}: ${errorText}`,
         );
-        return NextResponse.json(
-          {
-            error: `AI 规则生成服务返回错误 (${response.status})`,
-          },
-          { status: 502 },
-        );
+                return apiError('AI 规则生成服务返回错误 (${response.status})', 502);;
       }
 
       const data = await response.json();
 
       if (!data || typeof data !== 'object') {
-        return NextResponse.json({ error: '采集服务返回了无效数据' }, { status: 502 });
+        return apiError('采集服务返回了无效数据', 502);
       }
       return NextResponse.json({
         success: data.success ?? false,
@@ -96,19 +91,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       clearTimeout(timeoutId);
 
       if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
-        return NextResponse.json(
-          { error: 'AI 规则生成超时，请稍后重试或简化请求' },
-          { status: 504 },
-        );
+                return apiError('AI 规则生成超时，请稍后重试或简化请求', 504);;
       }
 
       throw fetchError;
     }
   } catch (error) {
     console.error('[ai-generate] Error:', error);
-    return NextResponse.json(
-      { error: 'AI 规则生成失败'},
-      { status: 500 },
-    );
+        return apiError('AI 规则生成失败', 500);;
   }
 });

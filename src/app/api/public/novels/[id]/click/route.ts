@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { isPrismaError } from '@/lib/api-utils';
+import { isPrismaError, apiError } from "@/lib/api-utils";
 
 /** In-memory dedup: IP+novelId → timestamp. TTL 5min. Prevents click spam. */
 const clickDedup = new Map<string, number>();
@@ -57,12 +57,12 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
       return NextResponse.json({ clickCount: updated.clickCount });
     } catch (error) {
       if (isPrismaError(error, 'P2025')) {
-        return NextResponse.json({ error: '小说不存在' }, { status: 404 });
+        return apiError('小说不存在', 404);
       }
       throw error;
     }
   } catch (error) {
     console.error('Click tracking error:', error);
-    return NextResponse.json({ error: '操作失败' }, { status: 500 });
+    return apiError('操作失败', 500);
   }
 });

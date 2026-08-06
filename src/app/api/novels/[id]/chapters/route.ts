@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, sanitizeField, safeJson } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, apiError } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { paginatedList } from "@/lib/crud-helpers";
@@ -19,7 +19,7 @@ export const GET = withAuth(async function GET(
     // ─── Single-chapter TXT export ──────────────────────────────────
     if (searchParams.get('export') === 'txt') {
       const chapterId = searchParams.get('chapterId');
-      if (!chapterId) return NextResponse.json({ error: 'chapterId is required' }, { status: 400 });
+      if (!chapterId) return apiError('chapterId is required', 400);
       const [novel, chapter] = await Promise.all([
         db.novel.findUnique({ where: { id: novelId }, select: { title: true } }),
         db.chapter.findUnique({ where: { id: chapterId }, select: { title: true, content: true } }),
@@ -55,7 +55,7 @@ export const GET = withAuth(async function GET(
     });
   } catch (error) {
     console.error("List chapters error:", error);
-    return NextResponse.json({ error: "获取章节列表失败"}, { status: 500 });
+    return apiError("获取章节列表失败", 500);
   }
 });
 
@@ -70,20 +70,20 @@ export const POST = withAuth(async function POST(
     // Verify novel exists before any DB operations
     const novelExists = await db.novel.findUnique({ where: { id: novelId }, select: { id: true } });
     if (!novelExists) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
 
     let body;
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
     const { title, content, sourceUrl, sortOrder: explicitSortOrder } = body;
 
     const trimmedTitle = sanitizeField(title, 200);
     if (!trimmedTitle) {
-      return NextResponse.json({ error: "章节标题不能为空" }, { status: 400 });
+      return apiError("章节标题不能为空", 400);
     }
 
     const trimmedContent = content ? sanitizeField(content, 500000) : null;
@@ -91,7 +91,7 @@ export const POST = withAuth(async function POST(
     const wordCount = trimmedContent ? trimmedContent.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length : 0;
     const trimmedSourceUrl = sourceUrl ? sanitizeField(sourceUrl, 2048) : null;
     if (trimmedSourceUrl && !isSafeUrl(trimmedSourceUrl)) {
-      return NextResponse.json({ error: "sourceUrl 不允许访问内网或私有地址" }, { status: 400 });
+      return apiError("sourceUrl 不允许访问内网或私有地址", 400);
     }
 
     // Use transaction to ensure atomicity
@@ -135,7 +135,7 @@ export const POST = withAuth(async function POST(
     return NextResponse.json(chapter, { status: 201 });
   } catch (error) {
     console.error("Create chapter error:", error);
-    return NextResponse.json({ error: "创建章节失败"}, { status: 500 });
+    return apiError("创建章节失败", 500);
   }
 });
 
@@ -152,7 +152,7 @@ export const PATCH = withAuth(async function PATCH(
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
 
     const action = body.action as string | undefined;
@@ -160,14 +160,14 @@ export const PATCH = withAuth(async function PATCH(
     // Verify novel exists
     const novelExists = await db.novel.findUnique({ where: { id: novelId }, select: { id: true } });
     if (!novelExists) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
 
     if (action === 'swap') {
       // ─── Swap: exchange sortOrder of exactly 2 chapters (O(1) DB ops) ───
       const { id1, id2 } = body;
       if (!id1 || !id2 || id1 === id2) {
-        return NextResponse.json({ error: "swap需要两个不同的chapter id" }, { status: 400 });
+        return apiError("swap需要两个不同的chapter id", 400);
       }
 
       const [ch1, ch2] = await Promise.all([
@@ -175,7 +175,7 @@ export const PATCH = withAuth(async function PATCH(
         db.chapter.findUnique({ where: { id: id2, novelId }, select: { id: true, sortOrder: true } }),
       ]);
       if (!ch1 || !ch2) {
-        return NextResponse.json({ error: "章节不存在或不属于该小说" }, { status: 404 });
+        return apiError("章节不存在或不属于该小说", 404);
       }
 
       await db.$transaction([
@@ -190,18 +190,18 @@ export const PATCH = withAuth(async function PATCH(
     // ─── Batch reorder (drag-and-drop fallback, uses CASE WHEN for performance) ───
     const orders: Array<{ id: string; sortOrder: number }> = body.orders;
     if (!Array.isArray(orders) || orders.length === 0 || orders.length > 5000) {
-      return NextResponse.json({ error: "orders 必须是非空数组(最多5000条)" }, { status: 400 });
+      return apiError("orders 必须是非空数组(最多5000条)", 400);
     }
 
     // Validate structure
     const CUID_RE = /^[a-z0-9]{20,}$/;
     for (const item of orders) {
       if (!item.id || typeof item.id !== 'string' || !CUID_RE.test(item.id)) {
-        return NextResponse.json({ error: "无效的ID格式" }, { status: 400 });
+        return apiError("无效的ID格式", 400);
       }
       const order = Math.floor(Number(item.sortOrder) || 0);
       if (order < 0 || order > 100000) {
-        return NextResponse.json({ error: `sortOrder必须在0-100000之间(${item.id})` }, { status: 400 });
+        return apiError(`sortOrder必须在0-100000之间(${item.id})`, 400);
       }
     }
 
@@ -223,6 +223,6 @@ export const PATCH = withAuth(async function PATCH(
     return NextResponse.json({ success: true, updated: orders.length });
   } catch (error) {
     console.error("Batch reorder error:", error);
-    return NextResponse.json({ error: "批量排序更新失败"}, { status: 500 });
+    return apiError("批量排序更新失败", 500);
   }
 });

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getOrCompute } from '@/lib/cache';
 import { withAuth } from '@/lib/api-auth';
 import { Prisma } from '@prisma/client';
+import { apiError } from "@/lib/api-utils"
 
 const ACTIVITY_CACHE_KEY = 'dashboard:activity';
 const ACTIVITY_CACHE_TTL = 60 * 1000; // 60 seconds
@@ -37,10 +38,7 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     console.error('Dashboard activity error:', error);
-    return NextResponse.json(
-      { error: '获取活动数据失败' },
-      { status: 500 },
-    );
+        return apiError('获取活动数据失败', 500);;
   }
 });
 

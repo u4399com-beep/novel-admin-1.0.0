@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
+import { apiError } from "@/lib/api-utils"
 
 /**
  * Seed default categories into the database.
@@ -167,9 +168,6 @@ export const POST = withAuth(async function POST() {
     });
   } catch (error) {
     console.error("Seed categories error:", error);
-    return NextResponse.json(
-      { error: "导入分类失败"},
-      { status: 500 }
-    );
+        return apiError('导入分类失败', 500);;
   }
 });

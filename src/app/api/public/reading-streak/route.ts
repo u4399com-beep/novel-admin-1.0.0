@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { sanitizeField } from '@/lib/api-utils';
+import { sanitizeField, apiError } from "@/lib/api-utils";
 import { z } from 'zod';
 
 function toLocalDateStr(d: Date, tz?: string): string {
@@ -24,7 +24,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
 
     const parsed = querySchema.safeParse({ sessionId: rawSessionId });
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError(parsed.error.issues[0].message, 400);
     }
 
     const sessionId = parsed.data.sessionId;
@@ -83,6 +83,6 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     return NextResponse.json({ currentStreak, maxStreak, totalDays });
   } catch (error) {
     console.error('Get reading streak error:', error);
-    return NextResponse.json({ error: '获取阅读连续天数失败' }, { status: 500 });
+    return apiError('获取阅读连续天数失败', 500);
   }
 });

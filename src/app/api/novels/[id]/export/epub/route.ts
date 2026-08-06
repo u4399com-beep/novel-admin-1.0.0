@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
+import { apiError } from '@/lib/api-utils';
 import { NextRequest } from 'next/server';
 import { notFound } from 'next/navigation';
 
@@ -22,10 +23,7 @@ export const GET = withAuth(async function GET(
     });
   } catch (error) {
     console.error('EPUB export DB error:', error);
-    return new Response(JSON.stringify({ error: '查询小说失败' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return apiError('查询小说失败');
   }
 
   if (!novel || novel.chapters.length === 0) return notFound();

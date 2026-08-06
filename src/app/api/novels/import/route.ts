@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { sanitizeField } from '@/lib/api-utils';
+import { sanitizeField, apiError } from "@/lib/api-utils";
 import { invalidateCache } from '@/lib/cache';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -34,23 +34,23 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
     const format = (formData.get('format') as string) || 'auto';
 
     if (!file) {
-      return NextResponse.json({ error: '请选择要导入的文件' }, { status: 400 });
+      return apiError('请选择要导入的文件', 400);
     }
 
     // Validate file extension whitelist
     const fileName = file.name.toLowerCase();
     if (!/\.(txt|json)$/i.test(fileName)) {
-      return NextResponse.json({ error: '仅支持 .txt 和 .json 格式的文件' }, { status: 400 });
+      return apiError('仅支持 .txt 和 .json 格式的文件', 400);
     }
 
     // Validate format parameter
     const VALID_FORMATS = ['auto', 'json', 'txt'];
     if (format && !VALID_FORMATS.includes(format)) {
-      return NextResponse.json({ error: '无效的 format 参数，允许值: auto, json, txt' }, { status: 400 });
+      return apiError('无效的 format 参数，允许值: auto, json, txt', 400);
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: `文件大小超过限制(最大${MAX_FILE_SIZE / 1024 / 1024}MB)` }, { status: 400 });
+      return apiError(`文件大小超过限制(最大${MAX_FILE_SIZE / 1024 / 1024}MB)`, 400);
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -63,7 +63,7 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
       try {
         text = new TextDecoder('gbk', { fatal: false }).decode(buffer);
       } catch {
-        return NextResponse.json({ error: '无法解码文件内容，请确保文件为UTF-8或GBK编码' }, { status: 400 });
+        return apiError('无法解码文件内容，请确保文件为UTF-8或GBK编码', 400);
       }
     }
 
@@ -92,22 +92,22 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
     }
 
     if (!novelTitle) {
-      return NextResponse.json({ error: '无法提取小说标题，请使用JSON格式或在文件名中指定' }, { status: 400 });
+      return apiError('无法提取小说标题，请使用JSON格式或在文件名中指定', 400);
     }
 
     if (chapters.length === 0) {
-      return NextResponse.json({ error: '未找到任何章节内容' }, { status: 400 });
+      return apiError('未找到任何章节内容', 400);
     }
 
     if (chapters.length > 10000) {
-      return NextResponse.json({ error: `章节数量(${chapters.length})超过限制(最多10000章)` }, { status: 400 });
+      return apiError(`章节数量(${chapters.length})超过限制(最多10000章)`, 400);
     }
 
     // Validate categoryId if provided
     if (categoryId) {
       const cat = await db.category.findUnique({ where: { id: categoryId }, select: { id: true } });
       if (!cat) {
-        return NextResponse.json({ error: '指定分类不存在' }, { status: 400 });
+        return apiError('指定分类不存在', 400);
       }
     }
 
@@ -157,10 +157,10 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
     });
   } catch (error) {
     if (error instanceof SyntaxError) {
-      return NextResponse.json({ error: 'JSON格式错误，请检查文件内容' }, { status: 400 });
+      return apiError('JSON格式错误，请检查文件内容', 400);
     }
     console.error('Import novel error:', error);
-    return NextResponse.json({ error: '导入失败' }, { status: 500 });
+    return apiError('导入失败', 500);
   }
 });
 

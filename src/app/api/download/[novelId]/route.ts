@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import type { DownloadConfig } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
+import { apiError } from "@/lib/api-utils"
 
 // Replace variables in a template string
 function replaceVars(
@@ -55,11 +56,11 @@ export const GET = withAuth(async function GET(
     });
 
     if (!novel) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
 
     if (novel.chapters.length === 0) {
-      return NextResponse.json({ error: "该小说暂无章节" }, { status: 400 });
+      return apiError("该小说暂无章节", 400);
     }
 
     // Fetch download config
@@ -67,10 +68,7 @@ export const GET = withAuth(async function GET(
     if (configId) {
       config = await db.downloadConfig.findUnique({ where: { id: configId } });
       if (!config) {
-        return NextResponse.json(
-          { error: "下载配置不存在" },
-          { status: 400 }
-        );
+                return apiError('下载配置不存在', 400);;
       }
     }
 
@@ -203,9 +201,9 @@ export const GET = withAuth(async function GET(
       });
     }
 
-    return NextResponse.json({ error: "不支持的格式" }, { status: 400 });
+    return apiError("不支持的格式", 400);
   } catch (error) {
     console.error("Download novel error:", error);
-    return NextResponse.json({ error: "生成下载文件失败" }, { status: 500 });
+    return apiError("生成下载文件失败", 500);
   }
 });

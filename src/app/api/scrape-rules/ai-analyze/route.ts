@@ -277,7 +277,7 @@ ${html}`;
     }
   } catch (error) {
     console.error("[AI Analyze] Fatal error:", error);
-    return NextResponse.json({ error: "AI analysis failed"}, { status: 500 });
+    return apiError("AI analysis failed", 500);
   }
 });
 

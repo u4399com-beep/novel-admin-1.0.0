@@ -203,6 +203,7 @@ export function NovelGrid({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' as const }}
+              className="stagger-children"
             >
               {layoutTheme === 'grid' && <NovelGridLayout novels={novels} search={search} />}
               {layoutTheme === 'magazine' && <NovelMagazineLayout novels={novels} search={search} />}

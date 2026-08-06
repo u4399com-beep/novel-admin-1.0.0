@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
-import { isPrismaError } from "@/lib/api-utils";
+import { isPrismaError, apiError, safeJson } from "@/lib/api-utils";
 
 // POST /api/novels/[id]/favorite - Toggle favorite count
 export const POST = withAuth(async function POST(
@@ -11,11 +11,16 @@ export const POST = withAuth(async function POST(
   try {
     const { id } = await params;
 
-    const body = await request.json();
+    let body;
+    try {
+      body = await safeJson(request);
+    } catch {
+      return apiError('请求数据格式错误', 400);
+    }
     const { favorite } = body;
 
     if (typeof favorite !== "boolean") {
-      return NextResponse.json({ error: "favorite 必须是布尔值" }, { status: 400 });
+      return apiError("favorite 必须是布尔值", 400);
     }
 
     const novel = await db.novel.findUnique({
@@ -24,7 +29,7 @@ export const POST = withAuth(async function POST(
     });
 
     if (!novel) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
 
     const updated = await db.novel.update({
@@ -41,8 +46,8 @@ export const POST = withAuth(async function POST(
   } catch (error: unknown) {
     console.error("Toggle favorite error:", error);
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
-    return NextResponse.json({ error: "操作失败" }, { status: 500 });
+    return apiError("操作失败", 500);
   }
 });

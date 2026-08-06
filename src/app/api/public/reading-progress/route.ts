@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { sanitizeField, safeJson } from '@/lib/api-utils';
+import { sanitizeField, safeJson, apiError } from "@/lib/api-utils";
 
 const MAX_SESSION_ID_LENGTH = 100;
 const MAX_PROGRESS_ITEMS = 50; // 每个会话最多追踪50本小说
@@ -49,7 +49,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     return NextResponse.json({ progress });
   } catch (error) {
     console.error('Get reading progress error:', error);
-    return NextResponse.json({ error: '获取阅读进度失败' }, { status: 500 });
+    return apiError('获取阅读进度失败', 500);
   }
 });
 
@@ -64,7 +64,7 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async f
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+      return apiError('请求数据格式错误', 400);
     }
 
     const { sessionId, novelId, chapterId, chapterIndex, scrollPercent } = body;
@@ -72,11 +72,11 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async f
     // Validate required fields
     const sid = sanitizeField(sessionId, MAX_SESSION_ID_LENGTH);
     if (!sid || sid.length < 10) {
-      return NextResponse.json({ error: 'sessionId 无效' }, { status: 400 });
+      return apiError('sessionId 无效', 400);
     }
     const nid = sanitizeField(novelId, 50);
     if (!nid) {
-      return NextResponse.json({ error: 'novelId 无效' }, { status: 400 });
+      return apiError('novelId 无效', 400);
     }
 
     const ci = typeof chapterIndex === 'number'
@@ -90,7 +90,7 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async f
     // Verify novel exists
     const novel = await db.novel.findUnique({ where: { id: nid }, select: { id: true } });
     if (!novel) {
-      return NextResponse.json({ error: '小说不存在' }, { status: 404 });
+      return apiError('小说不存在', 404);
     }
 
     // Upsert reading progress
@@ -114,7 +114,7 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async f
     return NextResponse.json({ success: true, id: progress.id });
   } catch (error) {
     console.error('Save reading progress error:', error);
-    return NextResponse.json({ error: '保存阅读进度失败' }, { status: 500 });
+    return apiError('保存阅读进度失败', 500);
   }
 });
 
@@ -130,7 +130,7 @@ export const DELETE = withPublicRateLimit({ capacity: 5, refillRate: 0.1 }, asyn
     const novelId = sanitizeField(searchParams.get('novelId') || '', 50);
 
     if (!sessionId || sessionId.length < 10 || !novelId) {
-      return NextResponse.json({ error: '缺少 sessionId 或 novelId' }, { status: 400 });
+      return apiError('缺少 sessionId 或 novelId', 400);
     }
 
     await db.readingProgress.deleteMany({
@@ -140,6 +140,6 @@ export const DELETE = withPublicRateLimit({ capacity: 5, refillRate: 0.1 }, asyn
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Delete reading progress error:', error);
-    return NextResponse.json({ error: '删除阅读进度失败' }, { status: 500 });
+    return apiError('删除阅读进度失败', 500);
   }
 });

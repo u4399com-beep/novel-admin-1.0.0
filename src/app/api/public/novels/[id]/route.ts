@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withPublicRateLimit } from "@/lib/api-auth";
+import { apiError } from "@/lib/api-utils"
 
 /**
  * Public novel detail API — no auth required.
@@ -22,7 +23,7 @@ export const GET = withPublicRateLimit(async function GET(
     });
 
     if (!novel) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
 
     // Transform tags to a flat array
@@ -32,6 +33,6 @@ export const GET = withPublicRateLimit(async function GET(
     return NextResponse.json({ ...rest, tags: tagList });
   } catch (error) {
     console.error("Public novel detail API error:", error);
-    return NextResponse.json({ error: "获取小说详情失败" }, { status: 500 });
+    return apiError("获取小说详情失败", 500);
   }
 });

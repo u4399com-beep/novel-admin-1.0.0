@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { getClientIp, publicRateLimit } from "@/lib/public-rate-limit";
+import { apiError } from "@/lib/api-utils"
 
 /**
  * Public chapter content API — no auth required.
@@ -11,7 +12,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   if (publicRateLimit(getClientIp(request), 120)) {
-    return NextResponse.json({ error: '请求过于频繁，请稍后再试' }, { status: 429 });
+    return apiError('请求过于频繁，请稍后再试', 429);
   }
 
   try {
@@ -24,7 +25,7 @@ export async function GET(
     });
 
     if (!chapter) {
-      return NextResponse.json({ error: "章节不存在" }, { status: 404 });
+      return apiError("章节不存在", 404);
     }
 
     return NextResponse.json({
@@ -37,6 +38,6 @@ export async function GET(
     });
   } catch (error) {
     console.error("Public chapter content API error:", error);
-    return NextResponse.json({ error: '获取章节内容失败' }, { status: 500 });
+    return apiError('获取章节内容失败', 500);
   }
 }

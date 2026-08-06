@@ -1,6 +1,7 @@
 import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
+import { apiError } from "@/lib/api-utils"
 
 /**
  * Diagnostic endpoint — helps identify why API auth fails.
@@ -9,7 +10,7 @@ import { withAuth } from '@/lib/api-auth';
 export const GET = withAuth(async function GET(request: NextRequest) {
   // Block in production — no diagnostics needed
   if (process.env.NODE_ENV === 'production') {
-    return NextResponse.json({ error: 'Not available in production' }, { status: 404 });
+    return apiError('Not available in production', 404);
   }
 
   const info: Record<string, unknown> = {

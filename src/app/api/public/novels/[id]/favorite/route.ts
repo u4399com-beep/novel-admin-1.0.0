@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { isPrismaError } from '@/lib/api-utils';
+import { isPrismaError, apiError } from "@/lib/api-utils";
 
 /** In-memory dedup: IP+novelId → timestamp. TTL 24h. Prevents count manipulation. */
 const favoriteDedup = new Map<string, number>();
@@ -37,7 +37,7 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
 
   // Validate action whitelist (prevent arbitrary values from triggering increment)
   if (!['add', 'remove', 'toggle'].includes(action)) {
-    return NextResponse.json({ error: '无效的 action，允许值: add, remove, toggle' }, { status: 400 });
+    return apiError('无效的 action，允许值: add, remove, toggle', 400);
   }
 
   try {
@@ -66,7 +66,7 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
           select: { favoriteCount: true },
         });
         if (!current) {
-          return NextResponse.json({ error: '小说不存在' }, { status: 404 });
+          return apiError('小说不存在', 404);
         }
         return NextResponse.json({ favoriteCount: current.favoriteCount });
       }
@@ -87,9 +87,9 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
   } catch (error) {
     // Only return 404 for record-not-found; re-throw everything else as 500
     if (isPrismaError(error, 'P2025')) {
-      return NextResponse.json({ error: '小说不存在' }, { status: 404 });
+      return apiError('小说不存在', 404);
     }
     console.error('Favorite API error:', error);
-    return NextResponse.json({ error: '操作失败' }, { status: 500 });
+    return apiError('操作失败', 500);
   }
 });

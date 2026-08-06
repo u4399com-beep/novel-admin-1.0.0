@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getOrCompute } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { Prisma } from "@prisma/client";
+import { apiError } from "@/lib/api-utils"
 
 const DASHBOARD_CACHE_KEY = "dashboard:stats";
 const DASHBOARD_CACHE_TTL = 30 * 1000; // 30 seconds
@@ -67,6 +68,6 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     console.error("Dashboard stats error:", error);
-    return NextResponse.json({ error: "获取统计数据失败"}, { status: 500 });
+    return apiError("获取统计数据失败", 500);
   }
 });

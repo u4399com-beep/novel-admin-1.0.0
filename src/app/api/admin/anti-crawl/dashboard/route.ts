@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
+import { apiError } from "@/lib/api-utils"
 
 // GET /api/admin/anti-crawl/dashboard - Aggregated monitoring stats
 export const GET = withAuth(async function GET(_request: NextRequest) {
@@ -105,6 +106,6 @@ export const GET = withAuth(async function GET(_request: NextRequest) {
     });
   } catch (error) {
     console.error('Anti-crawl dashboard error:', error);
-    return NextResponse.json({ error: '获取反爬监控面板数据失败' }, { status: 500 });
+    return apiError('获取反爬监控面板数据失败', 500);
   }
 });

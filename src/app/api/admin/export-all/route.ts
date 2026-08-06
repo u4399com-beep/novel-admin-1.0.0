@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
+import { apiError } from "@/lib/api-utils"
 
 /**
  * Export all system data as JSON (admin only).
@@ -13,7 +14,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
   try {
     const format = new URL(request.url).searchParams.get('format') || 'json';
     if (format !== 'json') {
-      return NextResponse.json({ error: '仅支持 json 格式' }, { status: 400 });
+      return apiError('仅支持 json 格式', 400);
     }
 
     // Pre-check: estimate total data size to prevent OOM
@@ -86,6 +87,6 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Export all data error:', error);
-    return NextResponse.json({ error: '导出数据失败' }, { status: 500 });
+    return apiError('导出数据失败', 500);
   }
 });

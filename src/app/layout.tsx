@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import { Providers } from "@/components/Providers";
 import { ScrollProgress } from "@/components/ScrollProgress";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { BackToTop } from "@/components/BackToTop";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,6 +52,7 @@ export default function RootLayout({
             </ErrorBoundary>
           </main>
           <Toaster richColors position="top-right" />
+          <BackToTop />
         </Providers>
       </body>
     </html>
