@@ -46,7 +46,7 @@ export function StatCard({ card, stats, trend, onClick }: StatCardProps) {
 
   return (
     <Card
-      className="cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback depth-hover hover-scale-sm card-depth card-glass"
+      className="card-elevated cursor-pointer overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 card-primary-glow card-border-glow hover-lift tap-feedback depth-hover hover-scale-sm card-depth card-glass"
       onClick={() => onClick(card.view)}
     >
       <CardContent className="p-4">

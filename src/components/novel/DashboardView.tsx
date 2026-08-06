@@ -27,6 +27,7 @@ import { StatusChart } from './dashboard/StatusChart';
 import { ActivityChart } from './dashboard/ActivityChart';
 import { RecentNovels } from './dashboard/RecentNovels';
 import { DailyTip } from './dashboard/DailyTip';
+import { ActivityFeed } from '@/components/admin/ActivityFeed';
 
 // ─── Component ────────────────────────────────────────────────────────────
 export function DashboardView() {
@@ -230,7 +231,7 @@ export function DashboardView() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5 stagger-in stagger-children">
         {loading
           ? Array.from({ length: 5 }).map((_, i) => (
-              <Card key={i} className="card-glass">
+              <Card key={i} className="card-elevated card-glass">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-4">
                     <Skeleton className="h-12 w-12 rounded-lg" />
@@ -307,6 +308,11 @@ export function DashboardView() {
         <div className="lg:col-span-1 flex items-start">
           <DailyTip />
         </div>
+      </div>
+
+      {/* ── Activity Feed ──────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ActivityFeed />
       </div>
 
       {/* ── Recent Activity (Real Data) ─────────────────────────────────── */}

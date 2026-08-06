@@ -24,7 +24,7 @@ export function DailyTip() {
   }, [key]);
 
   return (
-    <div className="rounded-xl border bg-card p-4 card-glow hover-scale">
+    <div className="card-elevated rounded-xl border bg-card p-4 card-glow hover-scale">
       <div className="flex items-center gap-2 mb-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10">
           <Lightbulb className="h-3.5 w-3.5 text-amber-500" />

@@ -21,7 +21,7 @@ interface RecentNovelsProps {
 // ─── Component ────────────────────────────────────────────────────────────
 export function RecentNovels({ recentNovels, loading, onViewNovel }: RecentNovelsProps) {
   return (
-    <Card className="card-glass hover-scale">
+    <Card className="card-subtle card-glass hover-scale">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <BookOpen className="h-5 w-5 text-muted-foreground" />
@@ -52,7 +52,7 @@ export function RecentNovels({ recentNovels, loading, onViewNovel }: RecentNovel
               return (
                 <div
                   key={novel.id}
-                  className="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/50"
+                  className="group flex items-center gap-3 rounded-lg px-3 py-2.5 list-hover-highlight"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700">
                     <BookOpen className="h-5 w-5 text-slate-500 dark:text-slate-400" />

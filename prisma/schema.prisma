@@ -62,6 +62,7 @@ model Novel {
   fileStorage     NovelFile[]
   readingProgress ReadingProgress[]
   favorites       Favorite[]
+  readingHistory  ReadingHistory[]
 
   @@index([categoryId])
   @@index([status])
@@ -400,6 +401,25 @@ model Favorite {
 
   @@unique([userId, novelId])
   @@index([userId, createdAt])
+  @@index([novelId])
+}
+
+// ==================== 阅读历史 ====================
+
+// 阅读历史（匿名用户通过sessionId追踪，反规范化novelTitle/chapterTitle加速查询）
+model ReadingHistory {
+  id           String    @id @default(cuid())
+  sessionId    String    // anonymous session ID from cookie
+  novelId      String
+  chapterId    String?   // last read chapter
+  novelTitle   String    // denormalized for fast queries
+  chapterTitle String?   // denormalized
+  readAt       DateTime  @default(now())
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([sessionId, readAt])
   @@index([novelId])
 }
 

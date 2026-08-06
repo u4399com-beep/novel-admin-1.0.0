@@ -5617,3 +5617,89 @@ Stage Summary:
 - 新API: 8个
 - 新组件: 10+
 - CSS工具类: 90+个
+
+---
+Task ID: 25a
+Agent: Sub Agent
+Task: Extract useNovelChapters hook from NovelDetailView
+
+Work Log:
+- Read NovelDetailView.tsx (582 lines) and identified all chapter-related state, callbacks, effects, and sensors
+- Created /home/z/my-project/src/hooks/useNovelChapters.ts with:
+  - 17 state variables (chapters, loadingChapters, chapterSearch, contentFilter, batchMode, checkedIds, batchDeleteOpen, batchDeleting, deleteChapterOpen, deletingChapter, chapterDeleting, selectedChapter, readingChapter, readerOpen, readerSession, reordering)
+  - 4 derived values (filteredChapters, isAllChecked, isSomeChecked, contentProgress)
+  - 14 callbacks (fetchChapters, toggleCheckAll, toggleCheck, handleBatchDelete, handleDragEnd, handleMoveChapter, handleNewChapter, handleEditChapter, handleReadChapter, handleReaderNavigate, handleDeleteChapterClick, handleDeleteChapter, handleChapterSaved, refreshNovelStats)
+  - 1 effect (filter clear with queueMicrotask)
+  - 1 sensor config (useSensors with PointerSensor)
+- Updated NovelDetailView.tsx to use the hook (582 → 247 lines, 57% reduction)
+- Component retains only novel-level concerns: novel fetch, edit, export, delete
+- Added onUpdateNovel prop to hook for silent novel stats refresh
+- Added aria-label to mobile back button
+- No 'use client' in hook file
+- No 'as any' usage
+
+## Verification Results
+- ESLint: 0 errors, 7 warnings (all pre-existing) ✅
+- NovelDetailView.tsx: 247 lines (< 250 target) ✅
+- useNovelChapters.ts: ~410 lines
+
+---
+Task ID: 25b
+Agent: general-purpose
+Task: Create reading history tracking system
+
+Work Log:
+- Added `ReadingHistory` model to `prisma/schema.prisma` with fields: id, sessionId, novelId, chapterId, novelTitle, chapterTitle, readAt
+- Added `readingHistory ReadingHistory[]` relation to `Novel` model
+- Added composite indexes: [sessionId], [sessionId, readAt], [novelId]
+- Ran `bun run db:push` — schema synced successfully
+- Created `src/app/api/public/reading-history/route.ts` with three endpoints:
+  - **GET** — paginated reading history by sessionId (limit/offset, ordered readAt desc)
+  - **POST** — upsert reading history entry (sessionId + novelId uniqueness via findFirst + create/update)
+  - **DELETE** — delete by id + sessionId (session-scoped security)
+- All endpoints use `publicRateLimit` from `@/lib/public-rate-limit`
+- POST/DELETE use stricter rate limit (30/min vs default 60/min)
+- Input validation via `safeJson`, `requireFields`, `sanitizeField`
+- Error responses via `apiError()`
+- Lint: 0 errors (7 pre-existing warnings)
+
+Stage Summary:
+- Reading history tracking API fully implemented with GET/POST/DELETE
+- Database schema updated and synced
+- All code follows project conventions
+
+---
+Task ID: 25c
+Agent: General-purpose sub-agent
+Task: Add CSS utility classes + reading history UI
+
+Work Log:
+- Added 10 new CSS utility class groups to `globals.css` (Reading History, Enhanced Card Variants, Text Utilities, Interactive List, Status Indicators, Divider, Container Utilities, Scrollbar Compact, Tooltip Enhancement)
+- Created `/src/components/home/ReadingHistoryPanel.tsx` — client component that fetches reading history from `/api/public/reading-history` and displays in a scrollable panel with `card-subtle`, `history-item`, `list-hover-highlight`, `scrollbar-compact` classes
+- Applied `card-elevated` to stat cards in `StatCard.tsx` and `DashboardView.tsx` skeleton cards
+- Applied `card-subtle` and `list-hover-highlight` to `RecentNovels.tsx`
+- Applied `card-elevated` to `DailyTip.tsx`
+
+## Verification
+- ESLint: 0 errors (7 pre-existing warnings)
+- All new classes use `@apply` syntax consistent with existing codebase
+- `ReadingHistoryPanel` uses AbortController for fetch cleanup, `queueMicrotask` for setState in effects, proper `'use client'` directive
+- `import Link from 'next/link'` used (not destructured)
+- All icon-only buttons have `aria-label`
+
+---
+Task ID: 25d
+Agent: General-purpose sub-agent
+Task: Create Activity Feed Component + API
+
+Work Log:
+- Created `/src/app/api/admin/activity/route.ts` — GET endpoint wrapped with `withAuth`, queries 3 data sources (20 recent novels by updatedAt, 10 recent chapters by createdAt, 5 recent scrape tasks by createdAt), maps to unified `ActivityItem[]` format sorted by timestamp desc
+- Created `/src/components/admin/ActivityFeed.tsx` — `'use client'` component with vertical timeline (left border + dots), type-based icons (BookOpen/FileText/Zap) and dot colors, `formatRelativeTime` timestamps, `apiFetch` with AbortController + `queueMicrotask` for setState, click-to-navigate via `useAppStore` (selectNovel + setCurrentView), loading skeleton, error state, empty state, `card-subtle` container, `list-hover-highlight` on clickable items, `max-h-96 overflow-y-auto scrollbar-compact`, keyboard accessibility (Enter/Space)
+- Integrated `ActivityFeed` into `DashboardView.tsx` in a new responsive grid row after DailyTip
+
+## Verification
+- ESLint: 0 errors (7 pre-existing warnings)
+- API uses `withAuth` for authentication and `apiError` for error responses
+- Component uses `apiFetch` with `silent: true`, AbortController cleanup, `queueMicrotask` for setState
+- Novel links navigate via `useAppStore` store actions
+- All required CSS classes applied: `card-subtle`, `list-hover-highlight`, `scrollbar-compact`, `border-l-2 border-border ml-[7px]`
