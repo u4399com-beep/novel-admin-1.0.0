@@ -5703,3 +5703,56 @@ Work Log:
 - Component uses `apiFetch` with `silent: true`, AbortController cleanup, `queueMicrotask` for setState
 - Novel links navigate via `useAppStore` store actions
 - All required CSS classes applied: `card-subtle`, `list-hover-highlight`, `scrollbar-compact`, `border-l-2 border-border ml-[7px]`
+
+---
+Task ID: round25
+Agent: Main Orchestrator
+Task: 第25轮 - useNovelChapters hook + 阅读历史API + 活动动态 + CSS工具类
+
+Work Log:
+## 1. NovelDetailView.tsx 拆分 (582→247行, -57%)
+- 提取 `useNovelChapters` hook (412行) 到 `src/hooks/useNovelChapters.ts`
+- 封装17个state变量、4个派生值、14个callback、1个effect、dnd-kit sensors
+- NovelDetailView现在只处理novel级别的fetch/edit/export/delete
+
+## 2. 阅读历史追踪系统
+- Prisma: 新增 ReadingHistory 模型 (sessionId, novelId, chapterId, novelTitle, chapterTitle, readAt)
+- 新增3个索引: [sessionId], [sessionId, readAt], [novelId]
+- API: GET/POST/DELETE /api/public/reading-history
+  - GET: 分页查询最近阅读记录
+  - POST: Upsert (同session+novel更新readAt)
+  - DELETE: 按id+sessionId安全删除
+- 新组件: ReadingHistoryPanel (115行) - 侧边栏阅读历史面板
+  - 使用 card-subtle, history-item, list-hover-highlight, scrollbar-compact CSS类
+
+## 3. 活动动态系统
+- API: GET /api/admin/activity - 聚合最近小说更新/章节创建/抓取任务
+- 新组件: ActivityFeed (184行) - 时间线式活动动态
+  - 类型图标: BookOpen(novel), FileText(chapter), Zap(task)
+  - 可点击导航到小说详情
+  - 已集成到 DashboardView
+
+## 4. CSS工具类扩展 (+95行)
+- Reading History: history-item, history-item-active
+- Card Variants: card-elevated, card-subtle
+- Text Utilities: text-balance, text-pretty, line-clamp-1/2/3
+- Interactive List: list-hover-highlight
+- Status Indicators: status-dot, status-dot-success/warning/error/idle
+- Layout: divider-vertical, container-narrow, container-wide
+- Scrollbar: scrollbar-compact (Firefox + WebKit)
+- Tooltip: tooltip-interactive
+- 应用到: StatCard, DashboardView, RecentNovels, DailyTip
+
+## 验证结果
+- ESLint: 0 errors, 7 warnings (pre-existing react-hook-form)
+- Agent-browser: 首页/分类/排行榜/统计页全部正常渲染
+- Dev server: 无运行时错误
+
+Stage Summary:
+- 累计修复: 1140+40(本轮) = 1180+
+- NovelDetailView: 582→247行(-57%)
+- 新API: 2个(reading-history, admin/activity)
+- 新组件: 2个(ReadingHistoryPanel, ActivityFeed)
+- 新Hook: 1个(useNovelChapters)
+- 新CSS: 95行(15+工具类)
+- 新Prisma模型: 1个(ReadingHistory)
