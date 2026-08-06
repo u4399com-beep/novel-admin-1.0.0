@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-utils';
 import { withAuth } from '@/lib/api-auth';
 
@@ -115,7 +116,7 @@ export const GET = withAuth(async function GET() {
     // Sort by timestamp descending
     activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    return Response.json({ activities });
+    return NextResponse.json({ activities });
   } catch (error) {
     console.error('Get activity error:', error);
     return apiError('获取活动记录失败', 500);

@@ -1,16 +1,15 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientIp, publicRateLimit } from '@/lib/public-rate-limit';
-import { apiError, safeJson, sanitizeField } from '@/lib/api-utils';
+import { apiError, safeJson, sanitizeField, parsePagination } from '@/lib/api-utils';
 import { requireFields } from '@/lib/crud-helpers';
 
 const MAX_SESSION_ID_LENGTH = 100;
 const MAX_TITLE_LENGTH = 200;
 const MAX_ID_LENGTH = 100;
-const MAX_LIMIT = 50;
 
 /**
- * GET /api/public/reading-history?sessionId=xxx&limit=20&offset=0
+ * GET /api/public/reading-history?sessionId=xxx&page=1&pageSize=20
  * Returns reading history for a session, ordered by readAt desc.
  */
 export async function GET(request: NextRequest) {
@@ -25,15 +24,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ items: [], total: 0 });
     }
 
-    const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(searchParams.get('limit') || '20') || 20));
-    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0') || 0);
+    const { page, pageSize, skip } = parsePagination(searchParams, { maxPageSize: 50 });
 
     const [items, total] = await Promise.all([
       db.readingHistory.findMany({
         where: { sessionId },
         orderBy: { readAt: 'desc' },
-        take: limit,
-        skip: offset,
+        take: pageSize,
+        skip,
         select: {
           id: true,
           sessionId: true,
@@ -49,7 +47,7 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    return NextResponse.json({ items, total });
+    return NextResponse.json({ items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
   } catch (error) {
     console.error('Get reading history error:', error);
     return apiError('获取阅读历史失败', 500);

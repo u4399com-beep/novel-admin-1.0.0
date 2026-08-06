@@ -201,7 +201,7 @@ ${html}`;
     const ZAI = (await import("z-ai-web-dev-sdk")).default;
     const zai = await ZAI.create();
 
-    console.log(`[AI Analyze] Analyzing ${url} (${html.length} chars) ...`);
+    console.debug(`[AI Analyze] Analyzing ${url} (${html.length} chars) ...`);
 
     const llmAbort = new AbortController();
     let llmTimeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -257,7 +257,7 @@ ${html}`;
       // Validate and normalize the rule
       const rule = normalizeRule(parsed, url);
 
-      console.log(`[AI Analyze] Rule generated. Confidence: ${rule.confidence}, Engine: ${rule.engine}`);
+      console.debug(`[AI Analyze] Rule generated. Confidence: ${rule.confidence}, Engine: ${rule.engine}`);
 
       return apiSuccess<GeneratedRuleResult>({
         success: true,

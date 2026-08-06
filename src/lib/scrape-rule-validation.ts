@@ -26,7 +26,7 @@ export const MAX_DELAY = 60000;
 
 // ── Selector field names for iteration ──
 
-export const SELECTOR_FIELDS = [
+const SELECTOR_FIELDS = [
   { key: 'listSelector', name: '列表选择器' },
   { key: 'chapterListSelector', name: '章节列表选择器' },
   { key: 'chapterTitleSelector', name: '章节标题选择器' },
@@ -35,7 +35,7 @@ export const SELECTOR_FIELDS = [
   { key: 'contentSelector', name: '内容选择器' },
 ] as const;
 
-export const PAGINATION_FIELDS = [
+const PAGINATION_FIELDS = [
   { key: 'listPagination', name: '列表分页' },
   { key: 'chapterPagination', name: '章节分页' },
   { key: 'contentPagination', name: '内容分页' },
@@ -63,7 +63,7 @@ export function buildCloudBrowserConfig(url: unknown, provider: unknown): string
 
 // ── Validators ──
 
-export function validateSelector(value: unknown, fieldName: string): string | null {
+function validateSelector(value: unknown, fieldName: string): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'object' || Array.isArray(value)) {
     return `${fieldName}格式错误，必须是包含type和value的对象`;
@@ -81,7 +81,7 @@ export function validateSelector(value: unknown, fieldName: string): string | nu
   return null;
 }
 
-export function validatePagination(value: unknown, fieldName: string): string | null {
+function validatePagination(value: unknown, fieldName: string): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'object' || Array.isArray(value)) {
     return `${fieldName}格式错误，必须是包含type和selector的对象`;

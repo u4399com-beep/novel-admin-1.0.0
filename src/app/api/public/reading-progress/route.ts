@@ -133,9 +133,13 @@ export const DELETE = withPublicRateLimit({ capacity: 5, refillRate: 0.1 }, asyn
       return apiError('缺少 sessionId 或 novelId', 400);
     }
 
-    await db.readingProgress.deleteMany({
+    const { count } = await db.readingProgress.deleteMany({
       where: { sessionId, novelId },
     });
+
+    if (count === 0) {
+      return apiError('阅读进度记录不存在', 404);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

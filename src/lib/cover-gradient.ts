@@ -1,6 +1,6 @@
 // ─── Cover placeholder gradient colors (shared across 3 consumers) ─────────
 
-export const COVER_GRADIENTS = [
+const COVER_GRADIENTS = [
   'from-rose-500/80 to-orange-500/80',
   'from-emerald-500/80 to-teal-500/80',
   'from-violet-500/80 to-purple-500/80',

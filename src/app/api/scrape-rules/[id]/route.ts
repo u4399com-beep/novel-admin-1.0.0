@@ -255,22 +255,25 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const existing = await db.scrapeRule.findUnique({ where: { id } });
-    if (!existing) {
-      return apiError("采集规则不存在", 404);
-    }
-    // Prevent deleting rules with running tasks (cascade would cause silent data loss)
-    // Use transaction to prevent TOCTOU race between count and delete
+    // Use transaction to prevent TOCTOU race: existence check, running-task guard, and delete
+    // must all happen atomically within the same transaction.
     const deleted = await db.$transaction(async (tx) => {
+      const existing = await tx.scrapeRule.findUnique({ where: { id } });
+      if (!existing) {
+        return { notFound: true } as const;
+      }
       const runningCount = await tx.scrapeTask.count({ where: { ruleId: id, status: 'running' } });
       if (runningCount > 0) {
         return { conflict: true, runningCount } as const;
       }
       await tx.scrapeRule.delete({ where: { id } });
-      return { conflict: false } as const;
+      return { deleted: true } as const;
     });
+    if (deleted.notFound) {
+      return apiError("采集规则不存在", 404);
+    }
     if (deleted.conflict) {
-            return apiError(`无法删除：有 ${deleted.runningCount} 个任务正在运行，请先停止任务`, 409);
+      return apiError(`无法删除：有 ${deleted.runningCount} 个任务正在运行，请先停止任务`, 409);
     }
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

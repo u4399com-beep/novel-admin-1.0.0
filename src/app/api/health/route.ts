@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { SCRAPER_SERVICE_URL } from "@/lib/constants";
 
 // Health endpoint - NO AUTH required for load balancer / Docker health checks
 export async function GET() {
@@ -11,7 +12,7 @@ export async function GET() {
     // Check scraper-service health (non-blocking, 3s timeout)
     let scraperStatus: string = "unreachable";
     try {
-      const scraperUrl = process.env.SCRAPER_SERVICE_URL || "http://localhost:3099";
+      const scraperUrl = SCRAPER_SERVICE_URL;
       const scraperRes = await fetch(`${scraperUrl}/health`, { signal: AbortSignal.timeout(3000) });
       scraperStatus = scraperRes.ok ? "ok" : "error";
     } catch {

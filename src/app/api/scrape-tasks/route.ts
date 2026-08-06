@@ -95,7 +95,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
             data: { status: "failed", errorMessage: `触发采集服务失败: ${safeMsg}`, completedAt: new Date() },
           });
           if (count === 0) {
-            console.log(`[Scrape Task] Task already in progress`);
+            console.debug(`[Scrape Task] Task already in progress`);
           }
         } catch (dbErr) {
           console.error(`[Scrape Task] Failed to update task ${task.id} status after trigger failure:`, dbErr);

@@ -19,7 +19,3 @@ export function getSessionId(): string {
     return '';
   }
 }
-
-export function getReadingProgressKey(novelId: string): string {
-  return `reading-progress-${novelId}`;
-}
