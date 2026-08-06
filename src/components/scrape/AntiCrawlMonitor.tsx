@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert, ArrowLeft, RefreshCw, Loader2, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api-fetch';
 import { EventList } from './anti-crawl/EventList';
-import { type AntiCrawlEvent, EVENT_META } from './anti-crawl/EventList';
+import { type AntiCrawlEvent } from './anti-crawl/EventList';
 import { MonitorStats } from './anti-crawl/MonitorStats';
 import { type DashboardStats } from './anti-crawl/MonitorStats';
 import { MonitorFilters } from './anti-crawl/MonitorFilters';

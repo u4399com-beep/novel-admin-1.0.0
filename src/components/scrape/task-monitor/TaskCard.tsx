@@ -25,7 +25,7 @@ interface TaskCardProps {
 
 function StatItem({
   icon: Icon,
-  label,
+  label: _label,
   value,
   className,
 }: {

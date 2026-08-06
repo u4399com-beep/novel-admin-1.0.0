@@ -20,7 +20,7 @@ import { apiFetch } from "@/lib/api-fetch";
 import { novelFormSchema, type NovelFormValues } from "@/components/novel/form/types";
 import { NovelMetaFields } from "@/components/novel/form/NovelMetaFields";
 import { NovelCoverUpload } from "@/components/novel/form/NovelCoverUpload";
-import type { Category, Tag, Novel } from "@/types";
+import type { Category, Tag } from "@/types";
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 

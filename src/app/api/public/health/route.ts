@@ -32,10 +32,17 @@ export async function GET() {
       ScrapeRule: 'scrapeRule',
       ScrapeTask: 'scrapeTask',
     };
+    const dbModels: Record<string, { count: (args: { take: number }) => Promise<number> }> = {
+      category: db.category,
+      novel: db.novel,
+      chapter: db.chapter,
+      scrapeRule: db.scrapeRule,
+      scrapeTask: db.scrapeTask,
+    };
     const missing: string[] = [];
     for (const model of Object.keys(modelToProperty)) {
       try {
-        await (db as any)[modelToProperty[model]].count({ take: 1 });
+        await dbModels[modelToProperty[model]].count({ take: 1 });
       } catch {
         missing.push(model);
       }

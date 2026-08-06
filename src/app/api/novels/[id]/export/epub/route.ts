@@ -1,23 +1,32 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { notFound } from 'next/navigation';
 
 export const GET = withAuth(async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
-  const novel = await db.novel.findUnique({
-    where: { id },
-    include: {
-      chapters: {
-        orderBy: { sortOrder: 'asc' },
-        select: { title: true, content: true, sortOrder: true },
+  let novel;
+  try {
+    novel = await db.novel.findUnique({
+      where: { id },
+      include: {
+        chapters: {
+          orderBy: { sortOrder: 'asc' },
+          select: { title: true, content: true, sortOrder: true },
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    console.error('EPUB export DB error:', error);
+    return new Response(JSON.stringify({ error: '查询小说失败' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   if (!novel || novel.chapters.length === 0) return notFound();
 

@@ -8,7 +8,6 @@ import {
   Clock,
   ArrowRight,
   Sparkles,
-  Activity,
   PlusCircle,
   Globe,
   FolderTree,
@@ -47,7 +46,7 @@ import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { DashboardStats, NovelStatus } from '@/types';
-import { ReadingHeatmap } from '@/components/ReadingHeatmap';
+import { ReadingHeatMap } from '@/components/ReadingHeatMap';
 import { ReadingStatsCard } from '@/components/ReadingStatsCard';
 
 import { StatCard, statCards } from './dashboard/StatCard';
@@ -589,7 +588,7 @@ export function DashboardView() {
             <CardTitle className="text-base">阅读活跃度</CardTitle>
           </CardHeader>
           <CardContent>
-            <ReadingHeatmap />
+            <ReadingHeatMap sessionId="" />
           </CardContent>
         </Card>
         <div className="md:col-span-1">

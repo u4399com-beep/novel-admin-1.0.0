@@ -1,21 +1,23 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
+import { parsePagination, safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
-import { getOrCompute, invalidateCache } from "@/lib/cache";
+import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
+import { paginatedList, requireFields } from "@/lib/crud-helpers";
 import { MAX_NAME_LENGTH, MAX_SLUG_LENGTH, MAX_DESCRIPTION_LENGTH, VALID_COLOR_RE } from "@/lib/validation/categories";
 
-// GET /api/categories - List all categories
-export const GET = withAuth(async function GET() {
+// GET /api/categories - List all categories with pagination
+export const GET = withAuth(async function GET(request: NextRequest) {
   try {
-    const categories = await getOrCompute("categories:admin", 60_000, () =>
-      db.category.findMany({
-        orderBy: { sortOrder: "asc" },
-        take: 500,
-        include: { _count: { select: { novels: true } } },
-      })
-    );
-    return NextResponse.json(categories);
+    const { searchParams } = new URL(request.url);
+    const { page, pageSize } = parsePagination(searchParams);
+    return paginatedList(db.category, {
+      page,
+      pageSize,
+      orderBy: { sortOrder: "asc" },
+      include: { _count: { select: { novels: true } } },
+      itemsKey: 'categories',
+    });
   } catch (error) {
     console.error("List categories error:", error);
     return apiError("获取分类列表失败");
@@ -31,14 +33,12 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     } catch {
       return apiError("请求数据格式错误", 400);
     }
+
+    const check = requireFields(body, ['name', 'slug']);
+    if (!check.valid) return check.response;
+
     const { name, slug, icon, description, color, sortOrder } = body;
 
-    if (!name?.trim()) {
-      return apiError("分类名称不能为空", 400);
-    }
-    if (!slug?.trim()) {
-      return apiError("分类标识符不能为空", 400);
-    }
     if (!/^[a-z0-9_-]+$/.test(slug.trim())) {
       return apiError("分类标识符只能包含小写字母、数字、下划线和连字符", 400);
     }

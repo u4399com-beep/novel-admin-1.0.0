@@ -4,15 +4,12 @@ import { Activity } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { safeFormatDate } from '@/lib/format';
 import {
   PlusCircle,
   FileText,
   Globe,
 } from 'lucide-react';
-
-type ViewType = 'dashboard' | 'novels' | 'novel-detail' | 'categories' | 'tags' | 'scrape' | 'sites' | 'settings';
 
 interface RecentEvent {
   type: string;

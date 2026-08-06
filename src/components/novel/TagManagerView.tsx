@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
+import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 import { useAppStore } from '@/stores/app-store';
 import type { Tag } from '@/types';
 import { TagFormDialog } from './tag/TagFormDialog';
@@ -21,9 +22,8 @@ export default function TagManagerView() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Tag | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const { deleteTarget, setDeleteTarget, deleting, handleDelete: confirmDelete } = useDeleteConfirm<Tag>();
 
   // ─── Fetch tags ───────────────────────────────────────────────────────
   const fetchTags = useCallback(async (signal?: AbortSignal) => {
@@ -80,20 +80,14 @@ export default function TagManagerView() {
   };
 
   // ─── Delete ───────────────────────────────────────────────────────────
-  const handleDelete = async () => {
-    if (!deleteTarget || deleting) return;
-    try {
-      setDeleting(true);
-      await apiFetch(`/api/tags/${deleteTarget.id}`, {
-        method: 'DELETE',
-      });
-      toast.success('标签已删除');
-      setDeleteTarget(null);
-      triggerRefresh('tags');
-    } catch { /* handled by apiFetch */ } finally {
-      setDeleting(false);
-    }
-  };
+  const handleDelete = useCallback(() => confirmDelete(async () => {
+    if (!deleteTarget) return;
+    await apiFetch(`/api/tags/${deleteTarget.id}`, {
+      method: 'DELETE',
+    });
+    toast.success('标签已删除');
+    triggerRefresh('tags');
+  }), [confirmDelete, deleteTarget, triggerRefresh]);
 
   // ─── Render ───────────────────────────────────────────────────────────
   return (

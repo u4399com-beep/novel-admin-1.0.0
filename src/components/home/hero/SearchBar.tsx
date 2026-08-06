@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, Search, History, Loader2 } from 'lucide-react';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api-fetch';
+import { hexToRgba } from '@/lib/color-utils';
 
 // ─── Search History ─────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ export interface SearchBarProps {
   onReset: () => void;
 }
 
-export function SearchBar({ search, onSearch, onReset }: SearchBarProps) {
+export function SearchBar({ search, onSearch, onReset: _onReset }: SearchBarProps) {
   const router = useRouter();
   const [searchInput, setSearchInput] = useState('');
   const [suggestions, setSuggestions] = useState<{ id: string; title: string; author: string; category: { name: string; color: string } | null }[]>([]);
@@ -257,7 +258,7 @@ export function SearchBar({ search, onSearch, onReset }: SearchBarProps) {
                             <span
                               className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full"
                               style={{
-                                backgroundColor: `${item.category.color}18`,
+                                backgroundColor: hexToRgba(item.category.color, 0.09),
                                 color: item.category.color,
                               }}
                             >

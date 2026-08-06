@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  BookOpen, Trophy, TrendingUp, Library, CheckCircle2,
+  BookOpen, TrendingUp, Library, CheckCircle2,
   Clock, BarChart3, ArrowLeft, Loader2, BookMarked, RotateCcw,
 } from 'lucide-react';
 import { ReadingHeatMap } from '@/components/ReadingHeatMap';
@@ -13,7 +13,7 @@ import { ReadingGoalCard } from '@/components/ReadingGoalCard';
 import { ReadingOverview } from '@/components/stats/ReadingOverview';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
-import { formatRelativeTime, formatWordCount } from '@/lib/format';
+import { formatRelativeTime } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
 import { getGenreColor } from '@/lib/cover-gradient';
 

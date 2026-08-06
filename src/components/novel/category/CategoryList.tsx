@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { hexToRgba } from '@/lib/color-utils';
 import type { Category } from '@/types';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ function CategoryGrid({ categories, onEdit, onDelete }: {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       {cat.icon ? (
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-base" style={{ backgroundColor: cat.color + '20' }}>
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-base" style={{ backgroundColor: hexToRgba(cat.color, 0.12) }}>
                           {cat.icon}
                         </span>
                       ) : (

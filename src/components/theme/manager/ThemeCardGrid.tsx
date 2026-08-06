@@ -9,7 +9,7 @@ import { ThemePreviewCard } from '@/components/theme/ThemePreviewCard';
 import type { Theme, ThemeConfig } from '@/types';
 import { tryParseJSON, defaultThemeConfig } from './helpers';
 
-interface ThemeItem extends Theme {
+interface ThemeItem extends Omit<Theme, 'config'> {
   config: string | ThemeConfig;
   _count?: { sites: number };
 }
@@ -103,7 +103,7 @@ export function ThemeCardGrid({ themes, onPreview, onEdit, onDelete }: ThemeCard
                       variant="ghost"
                       size="sm"
                       className="flex-1 h-9 rounded-none text-xs gap-1"
-                      onClick={() => onEdit(theme)}
+                      onClick={() => onEdit(theme as Theme)}
                     >
                       <Pencil className="h-3.5 w-3.5" />
                       编辑

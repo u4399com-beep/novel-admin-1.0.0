@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, ChevronRight, X, Loader2, Clock } from 'lucide-react';
+import { BookOpen, ChevronRight, X, Clock } from 'lucide-react';
 import { getSessionId } from '@/lib/reading-session';
-import { formatRelativeTime, formatWordCount } from '@/lib/format';
+import { formatRelativeTime } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ─────────────────────────────────────────────────────────

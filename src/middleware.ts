@@ -55,31 +55,6 @@ function checkLoginRateLimit(ip: string): { allowed: boolean; retryAfter: number
 // would cause container health checks to fail (curl without x-real-ip header).
 const RATE_LIMITED_AUTH_PATHS = ['/api/auth/signin/', '/api/auth/callback/'];
 
-// Public API rate limiting (per-IP, for unauthenticated public endpoints)
-const PUBLIC_API_MAX_PER_MIN = 60;
-const publicApiStore = new Map<string, { count: number; resetAt: number }>();
-
-function checkPublicApiRateLimit(ip: string): { allowed: boolean; retryAfter: number } {
-  const now = Date.now();
-  if (publicApiStore.size > 5000) {
-    const toDelete: string[] = [];
-    publicApiStore.forEach((entry, key) => {
-      if (now > entry.resetAt) toDelete.push(key);
-    });
-    toDelete.forEach((key) => publicApiStore.delete(key));
-  }
-  let entry = publicApiStore.get(ip);
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + 60000 };
-    publicApiStore.set(ip, entry);
-  }
-  if (entry.count >= PUBLIC_API_MAX_PER_MIN) {
-    return { allowed: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
-  }
-  entry.count++;
-  return { allowed: true, retryAfter: 0 };
-}
-
 export function middleware(request: NextRequest) {
   const xPort = request.nextUrl.searchParams.get('XTransformPort');
   if (xPort && !ALLOWED_TRANSFORM_PORTS.includes(xPort)) {

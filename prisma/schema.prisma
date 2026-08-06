@@ -404,3 +404,32 @@ model ReadingNote {
   @@index([chapterId])
   @@index([userId])
 }
+
+// ==================== 反爬事件 ====================
+
+model AntiCrawlEvent {
+  id          String   @id @default(cuid())
+  eventType   String
+  level       Int      @default(1)
+  taskId      String?
+  ruleId      String?
+  detail      String?
+  domain      String?
+  proxyIp     String?
+  resolved    Boolean  @default(false)
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+}
+
+// ==================== 代理池统计 ====================
+
+model ProxyPoolStats {
+  id              String   @id @default(cuid())
+  totalProxies    Int      @default(0)
+  activeProxies   Int      @default(0)
+  avgScore        Float    @default(0)
+  domainsTracked  String?
+  totalRequests   Int      @default(0)
+  successRate     Float    @default(0)
+  capturedAt      DateTime @default(now())
+}

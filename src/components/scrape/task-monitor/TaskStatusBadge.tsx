@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import type { TaskStatus } from './types';
 import { STATUS_CONFIG } from './types';

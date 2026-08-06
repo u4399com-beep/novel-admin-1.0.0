@@ -1,6 +1,7 @@
 'use client';
 
-import { Plus, Minus, Palette, Check, AlignVerticalSpaceAround } from 'lucide-react';
+import { Plus, Minus, Check, AlignVerticalSpaceAround } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -105,12 +106,12 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
               <button
                 onClick={() => onUpdate({ themeKey: theme.key })}
                 aria-label={`阅读主题: ${theme.label}`}
-                className={
-                  'relative h-5 w-5 rounded-full border-2 transition-all duration-150 hover:scale-110 ' +
-                  (settings.themeKey === theme.key
+                className={cn(
+                  'relative h-5 w-5 rounded-full border-2 transition-all duration-150 hover:scale-110',
+                  settings.themeKey === theme.key
                     ? 'border-primary ring-1 ring-primary/30'
-                    : 'border-muted-foreground/30 hover:border-muted-foreground/60')
-                }
+                    : 'border-muted-foreground/30 hover:border-muted-foreground/60'
+                )}
                 style={{ backgroundColor: theme.preview }}
               >
                 {settings.themeKey === theme.key && (
@@ -135,12 +136,12 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
               <button
                 onClick={() => onUpdate({ fontFamily: font.key })}
                 aria-label={`字体: ${font.label}`}
-                className={
-                  'px-1.5 py-0.5 rounded text-[11px] transition-colors ' +
-                  (settings.fontFamily === font.key
+                className={cn(
+                  'px-1.5 py-0.5 rounded text-[11px] transition-colors',
+                  settings.fontFamily === font.key
                     ? 'bg-primary text-primary-foreground font-medium'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted')
-                }
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
                 style={{ fontFamily: font.key === 'serif' ? 'serif' : font.key === 'mono' ? 'monospace' : 'sans-serif' }}
               >
                 {font.label}

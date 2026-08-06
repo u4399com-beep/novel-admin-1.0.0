@@ -10,7 +10,6 @@ export const GET = withAuth(async () => {
       _sum: { chapterIndex: true },
     });
     const totalChaptersRead = chaptersReadResult._count || 0;
-    const totalChapterIndices = Number(chaptersReadResult._sum?.chapterIndex || 0);
 
     // Total words read (sum of wordCount for chapters)
     const totalWordsReadResult = await db.chapter.aggregate({

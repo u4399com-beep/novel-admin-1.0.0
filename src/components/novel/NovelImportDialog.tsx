@@ -200,6 +200,7 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 shrink-0"
+                  aria-label="移除文件"
                   onClick={(e) => { e.stopPropagation(); setFile(null); setImportState('idle'); }}
                 >
                   <X className="h-3.5 w-3.5" />

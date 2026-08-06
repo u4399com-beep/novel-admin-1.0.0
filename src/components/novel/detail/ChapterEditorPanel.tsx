@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Loader2, Save, X, Type, CheckCircle2 } from 'lucide-react';
 import { formatReadingTime } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';

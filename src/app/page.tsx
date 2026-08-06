@@ -82,7 +82,7 @@ export default function HomePage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // ─── Fetch categories ────────────────────────────────────────────
-  const [categoriesError, setCategoriesError] = useState(false);
+  const [, setCategoriesError] = useState(false);
   useEffect(() => {
     const abortController = new AbortController();
     async function load() {

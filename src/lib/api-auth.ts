@@ -164,7 +164,7 @@ export function withAuth(handlerOrOpts: ApiHandler | WithAuthOptions, maybeHandl
           );
         }
         try {
-          const response = await handler(...(args as any[]));
+          const response = await handler(...(args as Parameters<typeof handler>));
           if (response instanceof NextResponse) {
             response.headers.set('X-Request-ID', requestId);
             response.headers.set('X-RateLimit-Remaining', String(serviceRl.remaining));
@@ -206,7 +206,7 @@ export function withAuth(handlerOrOpts: ApiHandler | WithAuthOptions, maybeHandl
 
     // 5. Execute handler
     try {
-      const response = await handler(...(args as any[]));
+      const response = await handler(...(args as Parameters<typeof handler>));
       if (response instanceof NextResponse) {
         response.headers.set('X-Request-ID', requestId);
         response.headers.set('X-RateLimit-Remaining', String(rl.remaining));
@@ -269,7 +269,7 @@ export function withPublicRateLimit(optsOrHandler: PublicRateLimitOptions | ApiH
     }
 
     try {
-      const response = await handler(...(args as any[]));
+      const response = await handler(...(args as Parameters<typeof handler>));
       if (response instanceof NextResponse) {
         response.headers.set('X-RateLimit-Remaining', String(rl.remaining));
       }

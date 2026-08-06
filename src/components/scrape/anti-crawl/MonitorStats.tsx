@@ -1,14 +1,12 @@
 'use client';
 
-import React from 'react';
 import { motion } from 'framer-motion';
 import {
   Shield, Lock, Server, XCircle,
   TrendingUp, TrendingDown, Minus,
-  Clock, Eye, Bot, BarChart3, Globe, Wifi,
+  Eye, BarChart3, Globe, Wifi,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { formatRelativeTime } from '@/lib/format';
 import { EVENT_META } from './EventList';
 

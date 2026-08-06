@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { safeFormatDate } from '@/lib/format';
+import { hexToRgba } from '@/lib/color-utils';
 import { NOVEL_STATUS_MAP } from '@/lib/constants';
 import type { Novel, NovelStatus } from '@/types';
 
@@ -99,7 +100,7 @@ function NovelGridView({ novels, selectedIds, allSelected, onToggleSelect, onTog
                   </Badge>
                 )}
                 {(novel.tags ?? []).slice(0, 3).map(({ tag }) => (
-                  <Badge key={tag.id} variant="secondary" className="text-xs tag-pill-glow" style={{ backgroundColor: tag.color + '18', color: tag.color }}>
+                  <Badge key={tag.id} variant="secondary" className="text-xs tag-pill-glow" style={{ backgroundColor: hexToRgba(tag.color, 0.09), color: tag.color }}>
                     {tag.name}
                   </Badge>
                 ))}

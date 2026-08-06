@@ -182,6 +182,7 @@ export function TranslatePanel({ content, sourceLang, className, onClose }: Tran
             variant="ghost"
             size="icon"
             className="h-8 w-8 shrink-0"
+            aria-label="交换语言"
             onClick={handleSwap}
             title="交换语言"
             disabled={source === 'auto'}

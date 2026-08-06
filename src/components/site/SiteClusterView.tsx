@@ -36,6 +36,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 import { useAppStore } from '@/stores/app-store';
 import { tryParseJSON, formatRelativeTime, defaultThemeConfig } from './cluster/helpers';
 import type { SiteHealthStatus } from './cluster/helpers';
@@ -44,14 +45,18 @@ import { SiteFormDialog } from './cluster/SiteFormDialog';
 import { SitePreview } from './cluster/SitePreview';
 import type { Site, Theme, ThemeConfig } from '@/types';
 
+/** Site type extended with Prisma include count from the API response. */
+interface SiteWithCount extends Site {
+  _count?: { novels: number };
+}
+
 export default function SiteClusterView() {
-  const [sites, setSites] = useState<Site[]>([]);
+  const [sites, setSites] = useState<SiteWithCount[]>([]);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
   const [editSite, setEditSite] = useState<Site | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const { deleteTarget: deleteId, setDeleteTarget: setDeleteId, deleting, handleDelete: confirmDelete } = useDeleteConfirm<string>();
   const [previewSite, setPreviewSite] = useState<Site | null>(null);
   const [siteHealthMap, setSiteHealthMap] = useState<Record<string, SiteHealthStatus>>({});
   const refreshSites = useAppStore((s) => s.refreshVersions['sites'] ?? 0);
@@ -63,7 +68,7 @@ export default function SiteClusterView() {
         apiFetch<(Theme & { config: string })[]>('/api/themes', { signal }),
       ]);
       if (signal?.aborted) return;
-      const parsedSites = Array.isArray(sitesData) ? sitesData : (sitesData as any)?.sites ?? [];
+      const parsedSites = Array.isArray(sitesData) ? sitesData : (sitesData as { sites?: SiteWithCount[] }).sites ?? [];
       setSites(parsedSites);
       setSiteHealthMap((prev) => {
         const next: Record<string, SiteHealthStatus> = { ...prev };
@@ -94,18 +99,12 @@ export default function SiteClusterView() {
     return () => ac.abort();
   }, [fetchSites, refreshSites]);
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(() => confirmDelete(async () => {
     if (!deleteId) return;
-    setDeleting(true);
-    try {
-      await apiFetch(`/api/sites/${deleteId}`, { method: 'DELETE' });
-      toast.success('站点已删除');
-      setDeleteId(null);
-      fetchSites();
-    } catch { /* handled by apiFetch */ } finally {
-      setDeleting(false);
-    }
-  };
+    await apiFetch(`/api/sites/${deleteId}`, { method: 'DELETE' });
+    toast.success('站点已删除');
+    fetchSites();
+  }), [confirmDelete, deleteId, fetchSites]);
 
   const getThemeName = (themeId: string | null) => {
     if (!themeId) return '未设置';
@@ -193,9 +192,9 @@ export default function SiteClusterView() {
                       <TableRow key={site.id} className="group">
                           <TableCell>
                             <span className="font-mono text-sm">{site.domain}</span>
-                            {(site as any)._count?.novels != null && (
+                            {site._count?.novels != null && (
                               <span className="text-xs text-muted-foreground block mt-0.5">
-                                关联小说: {(site as any)._count.novels} 部
+                                关联小说: {site._count.novels} 部
                               </span>
                             )}
                             <span className="text-xs text-muted-foreground/60 block mt-0.5">

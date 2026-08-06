@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { BookOpen, FileText, Pencil, Trash2, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
+import { BookOpen, Pencil, Trash2, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';

@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, safeJson, sanitizeField, safeJsonStringify } from "@/lib/api-utils";
+import { parsePagination, safeJson, sanitizeField, safeJsonStringify, apiError } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
+import { requireFields } from "@/lib/crud-helpers";
 import {
   validateAllSelectors,
   validateAllPaginations,
@@ -68,7 +69,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("List scrape rules error:", error);
-    return NextResponse.json({ error: "获取采集规则列表失败"}, { status: 500 });
+    return apiError("获取采集规则列表失败");
   }
 });
 
@@ -82,10 +83,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
     }
 
+    const check = requireFields(body, ['name']);
+    if (!check.valid) return check.response;
+
     const name = sanitizeField(body.name, 200);
-    if (!name) {
-      return NextResponse.json({ error: "规则名称不能为空" }, { status: 400 });
-    }
 
     // Validate selectors and pagination
     const selErr = validateAllSelectors(body);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { BookmarkCheck, X, Trash2 } from 'lucide-react';
+import { BookmarkCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {

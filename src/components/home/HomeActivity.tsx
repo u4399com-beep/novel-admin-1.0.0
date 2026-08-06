@@ -9,7 +9,6 @@ import { getCoverGradient } from '@/lib/cover-gradient';
 // ─── Recently Viewed ──────────────────────────────────────────────
 
 const RECENT_KEY = 'novel-recently-viewed';
-const MAX_RECENT = 12;
 
 interface RecentNovel {
   id: string;

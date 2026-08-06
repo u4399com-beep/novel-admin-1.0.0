@@ -1,12 +1,12 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError } from "@/lib/api-utils";
+import { sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import {
   MAX_NAME_LENGTH, MAX_DOMAIN_LENGTH, MAX_DESCRIPTION_LENGTH,
   MAX_SITE_TITLE_LENGTH, MAX_SITE_DESC_LENGTH, MAX_KEYWORDS_LENGTH,
-  MAX_OFFSET, MAX_JSON_CONFIG_SIZE, DOMAIN_RE,
+  MAX_OFFSET, DOMAIN_RE,
 } from "@/lib/validation/sites";
 import { validateJsonObject } from "@/lib/validation/common";
 
@@ -25,13 +25,13 @@ export const GET = withAuth(async function GET(
     });
 
     if (!site) {
-      return NextResponse.json({ error: "站点不存在" }, { status: 404 });
+      return apiError("站点不存在", 404);
     }
 
     return NextResponse.json(site);
   } catch (error) {
     console.error("Get site error:", error);
-    return NextResponse.json({ error: "获取站点详情失败"}, { status: 500 });
+    return apiError("获取站点详情失败");
   }
 });
 
@@ -46,7 +46,7 @@ export const PUT = withAuth(async function PUT(
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
     const {
       domain,
@@ -66,25 +66,25 @@ export const PUT = withAuth(async function PUT(
     if (domain !== undefined) {
       const sanitizedDomain = sanitizeField(domain, MAX_DOMAIN_LENGTH);
       if (!sanitizedDomain) {
-        return NextResponse.json({ error: "站点域名不能为空" }, { status: 400 });
+        return apiError("站点域名不能为空", 400);
       }
       if (!DOMAIN_RE.test(sanitizedDomain)) {
-        return NextResponse.json({ error: "站点域名格式不合法" }, { status: 400 });
+        return apiError("站点域名格式不合法", 400);
       }
     }
     if (name !== undefined) {
       const sanitizedName = sanitizeField(name, MAX_NAME_LENGTH);
       if (!sanitizedName) {
-        return NextResponse.json({ error: "站点名称不能为空" }, { status: 400 });
+        return apiError("站点名称不能为空", 400);
       }
     }
     if (enabled !== undefined && typeof enabled !== 'boolean') {
-      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+      return apiError("enabled 必须是布尔值", 400);
     }
     if (themeId !== undefined && themeId) {
       const themeExists = await db.theme.findUnique({ where: { id: themeId }, select: { id: true } });
       if (!themeExists) {
-        return NextResponse.json({ error: "指定的主题不存在" }, { status: 400 });
+        return apiError("指定的主题不存在", 400);
       }
     }
     const parsedNovelOffset = novelOffset !== undefined ? Math.min(Math.max(0, Math.floor(Number(novelOffset) || 0)), MAX_OFFSET) : undefined;
@@ -93,13 +93,13 @@ export const PUT = withAuth(async function PUT(
     if (geoConfig !== undefined) {
       const geoConfigError = validateJsonObject(geoConfig, '地理配置');
       if (geoConfigError) {
-        return NextResponse.json({ error: geoConfigError }, { status: 400 });
+        return apiError(geoConfigError, 400);
       }
     }
     if (customConfig !== undefined) {
       const customConfigError = validateJsonObject(customConfig, '自定义配置');
       if (customConfigError) {
-        return NextResponse.json({ error: customConfigError }, { status: 400 });
+        return apiError(customConfigError, 400);
       }
     }
 
@@ -134,9 +134,9 @@ export const PUT = withAuth(async function PUT(
   } catch (error: unknown) {
     console.error("Update site error:", error);
     if (isPrismaError(error, "P2002")) {
-      return NextResponse.json({ error: "站点域名已存在" }, { status: 409 });
+      return apiError("站点域名已存在", 409);
     }
-    return NextResponse.json({ error: "更新站点失败"}, { status: 500 });
+    return apiError("更新站点失败");
   }
 });
 
@@ -159,11 +159,11 @@ export const DELETE = withAuth(async function DELETE(
   } catch (error: unknown) {
     console.error("Delete site error:", error);
     if (error instanceof Error && error.message === 'NOT_FOUND') {
-      return NextResponse.json({ error: "站点不存在" }, { status: 404 });
+      return apiError("站点不存在", 404);
     }
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "站点不存在" }, { status: 404 });
+      return apiError("站点不存在", 404);
     }
-    return NextResponse.json({ error: "删除站点失败"}, { status: 500 });
+    return apiError("删除站点失败");
   }
 });

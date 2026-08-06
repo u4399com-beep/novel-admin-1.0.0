@@ -135,6 +135,7 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
   const PROGRESS_KEY = `novel-progress-${novelId}`;
   // Use ref for chapters to avoid saveProgress identity changes on chapter list updates
   const chaptersRef = useRef(chapters);
+  const [lastChapterIndex, setLastChapterIndex] = useState<number>(0);
   useEffect(() => { chaptersRef.current = chapters; }, [chapters]);
 
   // Hydrate from localStorage after mount (SSR-safe)

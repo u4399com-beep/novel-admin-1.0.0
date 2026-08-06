@@ -104,6 +104,7 @@ function TagGrid({ tags, onEdit, onDelete }: {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
+                      aria-label="编辑标签"
                       onClick={() => onEdit(tag)}
                     >
                       <Pencil className="h-3 w-3" />
@@ -113,6 +114,7 @@ function TagGrid({ tags, onEdit, onDelete }: {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-destructive hover:text-destructive"
+                      aria-label="删除标签"
                       onClick={() => onDelete(tag)}
                     >
                       <Trash2 className="h-3 w-3" />

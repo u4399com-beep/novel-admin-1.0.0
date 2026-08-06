@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
+import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 import { useAppStore } from '@/stores/app-store';
 import { PREBUILT_THEMES } from '@/lib/prebuilt-themes';
 import { tryParseJSON, defaultThemeConfig } from './manager/helpers';
@@ -27,8 +28,7 @@ export default function ThemeManagerView() {
   const [themes, setThemes] = useState<(Theme & { _count?: { sites: number } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const { deleteTarget: deleteId, setDeleteTarget: setDeleteId, deleting, handleDelete: confirmDelete } = useDeleteConfirm<string>();
   const [editTheme, setEditTheme] = useState<Theme | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [previewTheme, setPreviewTheme] = useState<{ config: ThemeConfig; name: string } | null>(null);
@@ -86,18 +86,12 @@ export default function ThemeManagerView() {
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(() => confirmDelete(async () => {
     if (!deleteId) return;
-    setDeleting(true);
-    try {
-      await apiFetch(`/api/themes/${deleteId}`, { method: 'DELETE' });
-      toast.success('主题已删除');
-      setDeleteId(null);
-      fetchThemes();
-    } catch { /* handled by apiFetch */ } finally {
-      setDeleting(false);
-    }
-  };
+    await apiFetch(`/api/themes/${deleteId}`, { method: 'DELETE' });
+    toast.success('主题已删除');
+    fetchThemes();
+  }), [confirmDelete, deleteId, fetchThemes]);
 
   const getThemeConfig = (theme: Theme & { config: string | ThemeConfig }): ThemeConfig => {
     return typeof theme.config === 'string' ? ((tryParseJSON(theme.config) as ThemeConfig) ?? defaultThemeConfig()) : theme.config;
@@ -252,7 +246,7 @@ export default function ThemeManagerView() {
 
       {/* Theme Grid */}
       <ThemeCardGrid
-        themes={themes as any[]}
+        themes={themes}
         onPreview={(config, name) => setPreviewTheme({ config, name })}
         onEdit={(theme) => { setEditTheme(theme); setFormOpen(true); }}
         onDelete={(id) => setDeleteId(id)}

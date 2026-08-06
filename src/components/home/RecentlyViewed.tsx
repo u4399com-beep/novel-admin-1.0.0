@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, ChevronRight, X } from 'lucide-react';
+import { Clock, X } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/format';
 import { getCoverGradient } from '@/lib/cover-gradient';
 
@@ -18,20 +18,6 @@ interface RecentNovel {
 
 const RECENT_KEY = 'novel-recently-viewed';
 const MAX_ITEMS = 8;
-
-function RecentlyViewedSkeleton() {
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="rounded-xl border bg-background p-3">
-          <div className="aspect-[3/4] rounded-lg animate-pulse bg-muted mb-2.5" />
-          <div className="h-3.5 w-3/4 rounded skeleton-line" />
-          <div className="h-3 w-1/2 rounded skeleton-line mt-1.5" />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function loadRecentFromStorage(): RecentNovel[] {
   try {

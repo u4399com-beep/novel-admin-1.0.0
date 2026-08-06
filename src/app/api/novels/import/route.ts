@@ -69,7 +69,6 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
 
     // Determine format
     const isJson = format === 'json' || (format === 'auto' && (file.name.endsWith('.json') || text.trimStart().startsWith('{')));
-    const isTxt = !isJson;
 
     let novelTitle = '';
     let novelAuthor = '佚名';

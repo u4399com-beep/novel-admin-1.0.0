@@ -1,7 +1,7 @@
 'use client';
 
 import { SearchBar } from './hero/SearchBar';
-import { FilterChips, type FilterChipsProps } from './hero/FilterChips';
+import { FilterChips } from './hero/FilterChips';
 
 export type { Category } from './hero/FilterChips';
 

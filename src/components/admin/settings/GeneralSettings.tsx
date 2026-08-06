@@ -24,7 +24,7 @@ interface GeneralSettingsProps {
   siteName: string;
   siteDescription: string;
   itemsPerPage: string;
-  onUpdate: <K extends string>(key: string, value: string) => void;
+  onUpdate: (key: string, value: string) => void;
 }
 
 export function GeneralSettings({ siteName, siteDescription, itemsPerPage, onUpdate }: GeneralSettingsProps) {

@@ -16,13 +16,12 @@ import { VisualSelectorBuilder } from './VisualSelectorBuilder';
 export type { ScrapeRuleFormData, ScrapeRuleItem, SelectorRule, PaginationConfig, AntiCrawlConfig, CleanConfig } from './parts/types';
 
 // Internal imports
-import type { SelectorRule, PaginationConfig, ScrapeRuleItem, ScrapeRuleFormData } from './parts/types';
+import type { SelectorRule, PaginationConfig, ScrapeRuleItem } from './parts/types';
 import type { FormValues } from './parts/schema';
 import { scrapeRuleSchema, defaultSelector, defaultPagination } from './parts/schema';
 import { ScrapeRuleList } from './parts/ScrapeRuleList';
 import { ScrapeTaskMonitor } from './ScrapeTaskMonitor';
 import { RuleFormTabs } from './rule-editor/RuleFormTabs';
-import type { FormAccess } from './rule-editor/types';
 
 // ==================== Main Editor ====================
 

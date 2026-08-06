@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
+import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 
 import { TaskCard, TaskActionsHeader, TaskStatusFilter, TaskPagination, LoadingSkeleton, EmptyState } from './task-monitor';
 import type { ScrapeTask, ScrapeTaskLog, TaskStatus } from './task-monitor';
@@ -23,8 +24,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [expandedLogs, setExpandedLogs] = useState<ScrapeTaskLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<ScrapeTask | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const { deleteTarget, setDeleteTarget, deleting, handleDelete: confirmDelete } = useDeleteConfirm<ScrapeTask>();
   const [refreshKey, setRefreshKey] = useState(0);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const expandedTaskIdRef = useRef<string | null>(null);
@@ -108,23 +108,17 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     [expandedTaskId, fetchTaskLogs],
   );
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(() => confirmDelete(async () => {
     if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await apiFetch(`/api/scrape-tasks/${deleteTarget.id}`, { method: 'DELETE' });
-      toast.success('任务已删除');
-      if (expandedTaskId === deleteTarget.id) {
-        setExpandedTaskId(null);
-        expandedTaskIdRef.current = null;
-        setExpandedLogs([]);
-      }
-      fetchTasks();
-    } catch { /* handled by apiFetch */ } finally {
-      setDeleting(false);
-      setDeleteTarget(null);
+    await apiFetch(`/api/scrape-tasks/${deleteTarget.id}`, { method: 'DELETE' });
+    toast.success('任务已删除');
+    if (expandedTaskId === deleteTarget.id) {
+      setExpandedTaskId(null);
+      expandedTaskIdRef.current = null;
+      setExpandedLogs([]);
     }
-  };
+    fetchTasks();
+  }), [confirmDelete, deleteTarget, expandedTaskId, fetchTasks]);
 
   const handleRefresh = () => setRefreshKey((k) => k + 1);
 

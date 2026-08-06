@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NovelGridLayout, NovelMagazineLayout, NovelListLayout } from '@/components/home/layouts';
+import { getPageNumbers } from '@/lib/pagination';
 import type { LayoutTheme } from '@/lib/use-layout-theme';
 import type { NovelCardData } from '@/components/home/shared-types';
 
@@ -49,24 +50,6 @@ function SkeletonGrid() {
       ))}
     </div>
   );
-}
-
-// ─── Pagination Helper ───────────────────────────────────────────────
-
-function getPageNumbers(page: number, totalPages: number): (number | string)[] {
-  const pages: (number | string)[] = [];
-  if (totalPages <= 7) {
-    for (let i = 1; i <= totalPages; i++) pages.push(i);
-  } else {
-    pages.push(1);
-    if (page > 3) pages.push('...');
-    const start = Math.max(2, page - 1);
-    const end = Math.min(totalPages - 1, page + 1);
-    for (let i = start; i <= end; i++) pages.push(i);
-    if (page < totalPages - 2) pages.push('...');
-    pages.push(totalPages);
-  }
-  return pages;
 }
 
 // ─── NovelGrid ───────────────────────────────────────────────────────
@@ -235,6 +218,7 @@ export function NovelGrid({
               variant="outline"
               size="icon"
               className="h-8 w-8 page-btn btn-ripple"
+              aria-label="上一页"
               disabled={page <= 1}
               onClick={() => { onPageChange(Math.max(1, page - 1)); }}
             >
@@ -262,6 +246,7 @@ export function NovelGrid({
               variant="outline"
               size="icon"
               className="h-8 w-8 page-btn btn-ripple"
+              aria-label="下一页"
               disabled={page >= totalPages}
               onClick={() => { onPageChange(Math.min(totalPages, page + 1)); }}
             >

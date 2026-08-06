@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Sparkles, Code, Bug, Globe, Cloud, Zap, Bot } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
+import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 import type { ScrapeRuleItem } from './types';
 
 const LIST_ENGINE_COLORS: Record<string, string> = {
@@ -51,7 +52,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchInput, setSearchInput] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<ScrapeRuleItem | null>(null);
+  const { deleteTarget, setDeleteTarget, deleting, handleDelete: confirmDelete } = useDeleteConfirm<ScrapeRuleItem>();
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchRules = useCallback(async (signal?: AbortSignal) => {
@@ -86,15 +87,12 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
     };
   }, []);
 
-  const handleDelete = async (id: string) => {
-    try {
-      await apiFetch(`/api/scrape-rules/${id}`, { method: 'DELETE' });
-      toast.success('规则已删除');
-      fetchRules();
-    } catch { /* handled by apiFetch */ } finally {
-      setDeleteTarget(null);
-    }
-  };
+  const handleDelete = useCallback(() => confirmDelete(async () => {
+    if (!deleteTarget) return;
+    await apiFetch(`/api/scrape-rules/${deleteTarget.id}`, { method: 'DELETE' });
+    toast.success('规则已删除');
+    fetchRules();
+  }), [confirmDelete, deleteTarget, fetchRules]);
 
   const handleExecute = async (rule: ScrapeRuleItem) => {
     try {
@@ -328,7 +326,8 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="确定要删除这条采集规则吗？"
         description="删除后相关任务也会被删除，此操作无法撤销。"
-        onConfirm={() => { if (deleteTarget) handleDelete(deleteTarget.id); }}
+        loading={deleting}
+        onConfirm={handleDelete}
       />
     </div>
   );

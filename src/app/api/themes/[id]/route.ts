@@ -118,7 +118,7 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const existing = await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       const theme = await tx.theme.findUnique({
         where: { id },
         include: { _count: { select: { sites: true } } },

@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Eye } from 'lucide-react';
 
 interface SelectorPreviewProps {
   html: string;

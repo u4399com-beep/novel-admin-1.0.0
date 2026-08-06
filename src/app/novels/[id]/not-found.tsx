@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { BookX, ArrowLeft, Home, Search } from 'lucide-react';
+import { BookX, Home, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 

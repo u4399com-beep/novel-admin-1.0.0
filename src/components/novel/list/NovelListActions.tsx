@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
+import { getPageNumbers } from '@/lib/pagination';
 
 interface NovelListPaginationProps {
   page: number;
@@ -13,28 +14,12 @@ interface NovelListPaginationProps {
 }
 
 export function NovelListPagination({ page, totalPages, onPageChange }: NovelListPaginationProps) {
-  const getPageNumbers = () => {
-    const pages: (number | '...')[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (page > 3) pages.push('...');
-      const start = Math.max(2, page - 1);
-      const end = Math.min(totalPages - 1, page + 1);
-      for (let i = start; i <= end; i++) pages.push(i);
-      if (page < totalPages - 2) pages.push('...');
-      pages.push(totalPages);
-    }
-    return pages;
-  };
-
   return (
     <div className="flex items-center justify-center gap-1.5 pt-2">
       <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} aria-label="上一页" onClick={() => onPageChange(page - 1)}>
         <ChevronLeft className="h-4 w-4" />
       </Button>
-      {getPageNumbers().map((p, i) =>
+      {getPageNumbers(page, totalPages).map((p, i) =>
         p === '...' ? (
           <span key={`dots-${i}`} className="px-1 text-sm text-muted-foreground">...</span>
         ) : (

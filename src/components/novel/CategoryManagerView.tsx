@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
+import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 import { useAppStore } from '@/stores/app-store';
 import type { Category } from '@/types';
 import { CategoryFormDialog } from './category/CategoryFormDialog';
@@ -18,9 +19,8 @@ export default function CategoryManagerView() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const { deleteTarget, setDeleteTarget, deleting, handleDelete: confirmDelete } = useDeleteConfirm<Category>();
 
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const refreshCategories = useAppStore((s) => s.refreshVersions['categories'] ?? 0);
@@ -94,20 +94,14 @@ export default function CategoryManagerView() {
   };
 
   // ── Delete handler ──────────────────────────────────────────────────────
-  const handleDelete = async () => {
+  const handleDelete = useCallback(() => confirmDelete(async () => {
     if (!deleteTarget) return;
-    try {
-      setDeleting(true);
-      await apiFetch(`/api/categories/${deleteTarget.id}`, {
-        method: 'DELETE',
-      });
-      toast.success('分类已删除');
-      setDeleteTarget(null);
-      triggerRefresh('categories');
-    } catch { /* handled by apiFetch */ } finally {
-      setDeleting(false);
-    }
-  };
+    await apiFetch(`/api/categories/${deleteTarget.id}`, {
+      method: 'DELETE',
+    });
+    toast.success('分类已删除');
+    triggerRefresh('categories');
+  }), [confirmDelete, deleteTarget, triggerRefresh]);
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (

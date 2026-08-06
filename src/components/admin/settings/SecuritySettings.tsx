@@ -39,7 +39,7 @@ interface SecuritySettingsProps {
   defaultSort: string;
   themeColor: string;
   showWordCount: boolean;
-  onUpdate: <K extends string>(key: string, value: unknown) => void;
+  onUpdate: (key: string, value: unknown) => void;
 }
 
 export function SecuritySettings({ defaultSort, themeColor, showWordCount, onUpdate }: SecuritySettingsProps) {

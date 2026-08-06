@@ -1,12 +1,13 @@
 import { db } from "@/lib/db";
 import { parsePagination, sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { paginatedList } from "@/lib/crud-helpers";
 import {
   MAX_NAME_LENGTH, MAX_DOMAIN_LENGTH, MAX_DESCRIPTION_LENGTH,
   MAX_SITE_TITLE_LENGTH, MAX_SITE_DESC_LENGTH, MAX_KEYWORDS_LENGTH,
-  MAX_OFFSET, MAX_JSON_CONFIG_SIZE, DOMAIN_RE,
+  MAX_OFFSET, DOMAIN_RE,
 } from "@/lib/validation/sites";
 import { validateJsonObject } from "@/lib/validation/common";
 

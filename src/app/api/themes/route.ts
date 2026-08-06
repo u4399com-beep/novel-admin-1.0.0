@@ -1,23 +1,25 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
+import { parsePagination, safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
-import { getOrCompute, invalidateCache } from "@/lib/cache";
+import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
+import { paginatedList, requireFields } from "@/lib/crud-helpers";
 import { VALID_IDENTIFIER_RE, MAX_NAME_LENGTH, MAX_DESCRIPTION_LENGTH, MAX_IDENTIFIER_LENGTH, MAX_CONFIG_SIZE } from "@/lib/validation/themes";
 
-// GET /api/themes - List all themes
-export const GET = withAuth(async function GET() {
+// GET /api/themes - List all themes with pagination
+export const GET = withAuth(async function GET(request: NextRequest) {
   try {
-    const themes = await getOrCompute("themes:list", 30_000, () =>
-      db.theme.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 100,
-        include: {
-          _count: { select: { sites: true } },
-        },
-      })
-    );
-    return NextResponse.json(themes);
+    const { searchParams } = new URL(request.url);
+    const { page, pageSize } = parsePagination(searchParams);
+    return paginatedList(db.theme, {
+      page,
+      pageSize,
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: { select: { sites: true } },
+      },
+      itemsKey: 'themes',
+    });
   } catch (error) {
     console.error("List themes error:", error);
     return apiError("获取主题列表失败");
@@ -33,16 +35,17 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     } catch {
       return apiError("请求数据格式错误", 400);
     }
+
+    const check = requireFields(body, ['name', 'identifier', 'config']);
+    if (!check.valid) return check.response;
+
     const { name, description, identifier, preview, config, enabled } = body;
 
-    if (!name?.trim()) {
-      return apiError("主题名称不能为空", 400);
-    }
     if (name.trim().length > MAX_NAME_LENGTH) {
       return apiError(`主题名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
-    if (typeof identifier !== 'string' || !identifier.trim()) {
-      return apiError("主题标识符不能为空", 400);
+    if (typeof identifier !== 'string') {
+      return apiError("主题标识符必须是字符串", 400);
     }
     if (!VALID_IDENTIFIER_RE.test(identifier.trim())) {
       return apiError("主题标识符只能包含字母、数字、下划线和短横线", 400);
@@ -55,9 +58,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
     if (enabled !== undefined && typeof enabled !== 'boolean') {
       return apiError("enabled 必须是布尔值", 400);
-    }
-    if (!config) {
-      return apiError("主题配置不能为空", 400);
     }
 
     const configStr = typeof config === "string" ? config : JSON.stringify(config);

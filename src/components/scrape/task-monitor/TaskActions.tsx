@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

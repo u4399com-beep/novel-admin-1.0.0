@@ -16,7 +16,7 @@ interface ScraperSettingsProps {
   scrapeInterval: number;
   concurrentTasks: number;
   autoPublish: boolean;
-  onUpdate: <K extends string>(key: string, value: unknown) => void;
+  onUpdate: (key: string, value: unknown) => void;
 }
 
 export function ScraperSettings({ scrapeInterval, concurrentTasks, autoPublish, onUpdate }: ScraperSettingsProps) {

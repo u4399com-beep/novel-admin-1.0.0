@@ -1,6 +1,5 @@
 'use client';
 
-import { useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
