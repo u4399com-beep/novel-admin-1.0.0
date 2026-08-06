@@ -29,6 +29,8 @@ import {
   Skull,
   Scroll,
   Landmark,
+  BookMarked,
+  PenLine,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -81,6 +83,8 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Skull,
   Scroll,
   Landmark,
+  BookMarked,
+  PenLine,
 };
 
 function getCategoryIcon(iconName: string | null): React.ComponentType<{ className?: string }> {
@@ -110,7 +114,7 @@ const cardVariants = {
 // ─── Skeleton Card ──────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden card-glass">
       <CardContent className="p-5">
         <div className="flex flex-col items-center text-center">
           <Skeleton className="mb-3 h-12 w-12 rounded-xl" />
@@ -165,7 +169,7 @@ export default function CategoriesPage() {
 
 
   return (
-    <div className="min-h-screen bg-background page-enter">
+    <div className="min-h-screen bg-background fade-in-up">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
         {/* ── Breadcrumb ──────────────────────────────────────────────── */}
         <nav aria-label="breadcrumb" className="mb-6">
@@ -211,13 +215,13 @@ export default function CategoriesPage() {
 
         {/* ── Search ──────────────────────────────────────────────────── */}
         <div className="mb-6 max-w-full sm:max-w-md">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />
             <Input
               placeholder="搜索分类..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-card/50 border-border/50 focus-visible:border-primary/50 focus-visible:ring-primary/20 transition-all"
               aria-label="搜索分类"
             />
           </div>
@@ -225,7 +229,7 @@ export default function CategoriesPage() {
 
         {/* ── Loading State ───────────────────────────────────────────── */}
         {loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger-children">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i}>
                 <SkeletonCard />
@@ -236,10 +240,13 @@ export default function CategoriesPage() {
 
         {/* ── Error State ─────────────────────────────────────────────── */}
         {!loading && error && (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20">
-            <p className="text-sm text-destructive">{error}</p>
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-destructive/30 bg-destructive/5 py-20">
+            <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-destructive/10 mb-4">
+              <Flame className="h-7 w-7 text-destructive" />
+            </div>
+            <p className="text-sm font-medium text-destructive">{error}</p>
             <button
-              className="mt-3 text-sm text-muted-foreground hover:text-foreground"
+              className="mt-3 text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
               onClick={() => doFetch()}
             >
               点击重试
@@ -249,10 +256,12 @@ export default function CategoriesPage() {
 
         {/* ── Empty State (no categories at all) ─────────────────────── */}
         {!loading && !error && categories.length === 0 && (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20">
-            <BookOpen className="mb-3 h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">暂无分类</p>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/30 py-20">
+            <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-muted/50 mb-4">
+              <BookOpen className="h-8 w-8 text-muted-foreground/60" />
+            </div>
+            <p className="font-medium text-muted-foreground">暂无分类</p>
+            <p className="mt-1.5 text-sm text-muted-foreground/70">
               管理员尚未添加任何分类
             </p>
           </div>
@@ -260,13 +269,15 @@ export default function CategoriesPage() {
 
         {/* ── Empty State (search no match) ──────────────────────────── */}
         {!loading && !error && categories.length > 0 && filteredCategories.length === 0 && (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20">
-            <Search className="mb-3 h-12 w-12 text-muted-foreground/50" />
-            <p className="text-muted-foreground">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/30 py-20">
+            <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-muted/50 mb-4">
+              <Search className="h-8 w-8 text-muted-foreground/60" />
+            </div>
+            <p className="font-medium text-muted-foreground">
               未找到匹配「{searchQuery}」的分类
             </p>
             <button
-              className="mt-3 text-sm text-muted-foreground hover:text-foreground"
+              className="mt-3 text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
               onClick={() => setSearchQuery('')}
             >
               清除搜索
@@ -277,7 +288,7 @@ export default function CategoriesPage() {
         {/* ── Category Grid ──────────────────────────────────────────── */}
         {!loading && !error && filteredCategories.length > 0 && (
           <motion.div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger-children"
             variants={containerVariants}
             initial="hidden"
             animate="show"
@@ -292,19 +303,19 @@ export default function CategoriesPage() {
                     className="block"
                   >
                     <Card
-                      className="group overflow-hidden tap-feedback hover-lift"
+                      className="group overflow-hidden tap-feedback hover-scale card-glass card-hover-glow"
                       style={{ borderLeftWidth: '4px', borderLeftColor: category.color }}
                     >
                       {/* Hover color wash */}
                       <div
-                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-xl"
                         style={{ backgroundColor: `${category.color}08` }}
                       />
                       <CardContent className="p-5 relative">
                         <div className="flex flex-col items-center text-center">
                           {/* Icon */}
                           <div
-                            className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-200"
+                            className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-200 group-hover:scale-110"
                             style={{
                               backgroundColor: `${category.color}15`,
                             }}
@@ -317,19 +328,36 @@ export default function CategoriesPage() {
                           {/* Name */}
                           <h3 className="mb-2 text-sm font-bold group-hover:text-primary transition-colors">{category.name}</h3>
 
-                          {/* Novel count with bar */}
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className="h-1 flex-1 max-w-[60px] rounded-full bg-muted overflow-hidden">
-                              <div
-                                className="h-full rounded-full progress-smooth"
-                                style={{
-                                  width: `${Math.min(100, (category._count.novels / Math.max(1, maxNovels)) * 100)}%`,
-                                  backgroundColor: category.color,
-                                }}
-                              />
+                          {/* Novel count badge */}
+                          {category._count.novels > 0 && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium badge-glow mb-3"
+                              style={{
+                                backgroundColor: `${category.color}15`,
+                                color: category.color,
+                                '--glow-hue': '150',
+                              } as React.CSSProperties}
+                            >
+                              <BookOpen className="h-3 w-3" />
+                              {category._count.novels} 本小说
+                            </span>
+                          )}
+
+                          {/* Novel count with bar (shown when no novels) */}
+                          {category._count.novels === 0 && (
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="h-1 flex-1 max-w-[60px] rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className="h-full rounded-full progress-smooth"
+                                  style={{
+                                    width: '0%',
+                                    backgroundColor: category.color,
+                                  }}
+                                />
+                              </div>
+                              <span className="text-xs text-muted-foreground">0</span>
                             </div>
-                            <span className="text-xs text-muted-foreground">{category._count.novels}</span>
-                          </div>
+                          )}
 
                           {/* Description */}
                           {category.description && (

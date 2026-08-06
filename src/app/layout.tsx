@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 import { Providers } from "@/components/Providers";
 import { ScrollProgress } from "@/components/ScrollProgress";
+import { ReadingProgressBar } from "@/components/reading/ReadingProgressBar";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BackToTop } from "@/components/BackToTop";
 
@@ -39,6 +40,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <Providers>
+          <ReadingProgressBar />
           <ScrollProgress />
           <a
             href="#main-content"
