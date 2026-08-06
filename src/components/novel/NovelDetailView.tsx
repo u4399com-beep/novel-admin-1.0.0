@@ -90,7 +90,7 @@ export default function NovelDetailView() {
     if (!novel || exporting) return;
     setExporting(true);
     try {
-      const res = await fetch(`/api/novels/${novel.id}/export?format=json`, { credentials: 'include' });
+      const res = await fetch(`/api/novels/${novel.id}/export?format=json`, { credentials: 'include', signal: AbortSignal.timeout(30000) });
       if (!res.ok) throw new Error('导出失败');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

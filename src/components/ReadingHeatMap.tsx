@@ -83,6 +83,14 @@ export function ReadingHeatMap({ sessionId, days = 84, className = '' }: HeatMap
     return { cells, totalCols: col + 1 };
   }, [data, days]);
 
+  const cellMap = useMemo(() => {
+    const map = new Map<string, (typeof grid.cells)[number]>();
+    for (const cell of grid.cells) {
+      map.set(`${cell.row}-${cell.col}`, cell);
+    }
+    return map;
+  }, [grid.cells]);
+
   const maxCount = Math.max(1, ...Object.values(data?.dates || {}));
 
   if (loading) {
@@ -127,7 +135,7 @@ export function ReadingHeatMap({ sessionId, days = 84, className = '' }: HeatMap
           {Array.from({ length: grid.totalCols }, (_, colIdx) => (
             <div key={colIdx} className="flex flex-col gap-[3px]">
               {Array.from({ length: 7 }, (_, rowIdx) => {
-                const cell = grid.cells.find(c => c.row === rowIdx && c.col === colIdx);
+                const cell = cellMap.get(`${rowIdx}-${colIdx}`);
                 if (!cell) return <div key={rowIdx} className="w-[11px] h-[11px] rounded-sm" />;
                 return (
                   <div

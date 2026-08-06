@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { apiFetch } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,22 +38,22 @@ export function TranslatePanel({ content, sourceLang, className, onClose }: Tran
   const [isTranslating, setIsTranslating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
-    const saved = localStorage.getItem('translation-settings');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('translation-settings');
+      if (saved) {
         const settings = JSON.parse(saved);
         if (settings.defaultTargetLang) {
           queueMicrotask(() => setTarget(settings.defaultTargetLang));
         }
-      } catch { /* ignore */ }
-    }
+      }
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
-    fetch('/api/translate/languages')
-      .then((r) => r.json())
+    apiFetch<Language[]>('/api/translate/languages')
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
           setLanguages(data);
@@ -74,18 +75,11 @@ export function TranslatePanel({ content, sourceLang, className, onClose }: Tran
         return;
       }
 
-      const resp = await fetch('/api/translate', {
+      const data = await apiFetch<{translated_text: string}>('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: content, source: effectiveSource, target, format: 'text' }),
       });
-
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        throw new Error(data.error || `翻译失败 (${resp.status})`);
-      }
-
-      const data = await resp.json();
       setTranslatedText(data.translated_text || '');
     } catch (err) {
       setError(err instanceof Error ? err.message : '翻译请求失败');
@@ -96,15 +90,12 @@ export function TranslatePanel({ content, sourceLang, className, onClose }: Tran
 
   const detectLanguage = async (text: string): Promise<string | null> => {
     try {
-      const resp = await fetch('/api/translate/detect', {
+      const data = await apiFetch<{detected_language: string}>('/api/translate/detect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.slice(0, 500) }),
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        return data.detected_language || null;
-      }
+      return data.detected_language || null;
     } catch { /* ignore */ }
     return null;
   };
@@ -121,8 +112,11 @@ export function TranslatePanel({ content, sourceLang, className, onClose }: Tran
     if (!translatedText) return;
     await navigator.clipboard.writeText(translatedText);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 2000);
   };
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   const handleDetect = async () => {
     if (!content.trim()) return;

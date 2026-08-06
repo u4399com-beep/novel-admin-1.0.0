@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { motion } from 'framer-motion';
 import {
   CheckCircle2,
@@ -26,6 +27,66 @@ const itemVariants = {
   hidden: { opacity: 0, x: -8 },
   show: { opacity: 1, x: 0, transition: { duration: 0.2, ease: 'easeOut' as const } },
 };
+
+/* ------------------------------------------------------------------ */
+/*  Memoized Chapter Item                                             */
+/* ------------------------------------------------------------------ */
+
+interface MemoizedChapterItemProps {
+  chapter: Chapter;
+  globalIndex: number;
+  isBookmarked: boolean;
+  isLastChapter: boolean;
+  onOpenReader: (index: number) => void;
+}
+
+const MemoizedChapterItem = React.memo(function MemoizedChapterItem({
+  chapter,
+  globalIndex,
+  isBookmarked,
+  isLastChapter,
+  onOpenReader,
+}: MemoizedChapterItemProps) {
+  return (
+    <motion.button
+      variants={itemVariants}
+      onClick={() => onOpenReader(globalIndex)}
+      className={
+        'chapter-row flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0 group ' +
+        (globalIndex % 2 === 0 ? '' : 'bg-muted/30') +
+        (isLastChapter ? ' bg-primary/5 border-l-2 border-l-primary' : '')
+      }
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-xs text-muted-foreground tabular-nums shrink-0">{chapter.sortOrder}.</span>
+        {chapter.wordCount > 0
+          ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500/60" />
+          : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/30" />
+        }
+        <span className="text-sm truncate group-hover:text-primary transition-colors">
+          {chapter.title}
+        </span>
+        {isBookmarked && (
+          <BookmarkCheck className="h-3 w-3 shrink-0 text-amber-500" />
+        )}
+        {chapter.wordCount > 0 && (
+          <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
+            {chapter.wordCount}字{formatReadingTime(chapter.wordCount) && ` · ${formatReadingTime(chapter.wordCount)}`}
+          </span>
+        )}
+      </div>
+      {isLastChapter && (
+        <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 text-primary border-primary/30 badge-transition">
+          上次
+        </Badge>
+      )}
+    </motion.button>
+  );
+});
+
+/* ------------------------------------------------------------------ */
+/*  Main exported component                                           */
+/* ------------------------------------------------------------------ */
 
 export interface ChapterListSectionProps {
   chapters: Chapter[];
@@ -153,40 +214,14 @@ export function ChapterListSection({
             {visibleChapters.map((chapter, localIndex) => {
               const globalIndex = (chapterPage - 1) * CHAPTERS_PER_PAGE + localIndex;
               return (
-                <motion.button
+                <MemoizedChapterItem
                   key={chapter.id}
-                  variants={itemVariants}
-                  onClick={() => onOpenReader(globalIndex)}
-                  className={
-                    'chapter-row flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0 group ' +
-                    (globalIndex % 2 === 0 ? '' : 'bg-muted/30') +
-                    (lastChapterIndex === globalIndex ? ' bg-primary/5 border-l-2 border-l-primary' : '')
-                  }
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">{chapter.sortOrder}.</span>
-                    {chapter.wordCount > 0
-                      ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500/60" />
-                      : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/30" />
-                    }
-                    <span className="text-sm truncate group-hover:text-primary transition-colors">
-                      {chapter.title}
-                    </span>
-                    {isBookmarked(globalIndex) && (
-                      <BookmarkCheck className="h-3 w-3 shrink-0 text-amber-500" />
-                    )}
-                    {chapter.wordCount > 0 && (
-                      <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
-                        {chapter.wordCount}字{formatReadingTime(chapter.wordCount) && ` · ${formatReadingTime(chapter.wordCount)}`}
-                      </span>
-                    )}
-                  </div>
-                  {lastChapterIndex === globalIndex && (
-                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 text-primary border-primary/30 badge-transition">
-                      上次
-                    </Badge>
-                  )}
-                </motion.button>
+                  chapter={chapter}
+                  globalIndex={globalIndex}
+                  isBookmarked={isBookmarked(globalIndex)}
+                  isLastChapter={lastChapterIndex === globalIndex}
+                  onOpenReader={onOpenReader}
+                />
               );
             })}
           </motion.div>

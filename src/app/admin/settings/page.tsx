@@ -130,6 +130,7 @@ export default function SettingsPage() {
     try {
       const response = await fetch('/api/admin/export-all', {
         headers: { Authorization: `Bearer ${localStorage.getItem('next-auth.session-token') || ''}` },
+        signal: AbortSignal.timeout(60000),
       });
       if (!response.ok) throw new Error('Export failed');
       const blob = await response.blob();

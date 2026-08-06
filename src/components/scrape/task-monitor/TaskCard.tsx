@@ -19,8 +19,8 @@ interface TaskCardProps {
   logs: ScrapeTaskLog[];
   logsLoading: boolean;
   formatDate: (d: string | null | undefined) => string;
-  onToggleExpand: () => void;
-  onDelete: () => void;
+  onToggleExpand: (taskId: string) => void;
+  onDelete: (task: ScrapeTask) => void;
 }
 
 function StatItem({
@@ -56,7 +56,7 @@ export const TaskCard = React.memo(function TaskCard({
     <Card className="overflow-hidden transition-all hover:shadow-sm card-interactive">
       {/* Card Header - Clickable for expand */}
       <button
-        onClick={onToggleExpand}
+        onClick={() => onToggleExpand(task.id)}
         className="w-full text-left"
         aria-expanded={isExpanded}
       >
@@ -102,7 +102,7 @@ export const TaskCard = React.memo(function TaskCard({
                 className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDelete();
+                  onDelete(task);
                 }}
                 title="删除任务"
               >

@@ -127,8 +127,13 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     setPage(1);
   };
 
-  const formatDate = (dateStr: string | null | undefined) =>
-    safeFormatDate(dateStr, (d) => format(d, 'yyyy-MM-dd HH:mm:ss', { locale: zhCN }));
+  const formatDate = useCallback((dateStr: string | null | undefined) =>
+    safeFormatDate(dateStr, (d) => format(d, 'yyyy-MM-dd HH:mm:ss', { locale: zhCN })),
+  []);
+
+  const handleTaskDelete = useCallback((task: ScrapeTask) => {
+    setDeleteTarget(task);
+  }, [setDeleteTarget]);
 
   return (
     <div className="space-y-4">
@@ -155,8 +160,8 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
               logs={expandedLogs}
               logsLoading={logsLoading}
               formatDate={formatDate}
-              onToggleExpand={() => handleToggleExpand(task.id)}
-              onDelete={() => setDeleteTarget(task)}
+              onToggleExpand={handleToggleExpand}
+              onDelete={handleTaskDelete}
             />
           ))}
         </div>

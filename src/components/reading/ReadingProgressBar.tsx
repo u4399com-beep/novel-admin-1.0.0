@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
+import { apiFetch } from '@/lib/api-fetch';
+import type { Novel } from '@/types';
 
 /**
  * ReadingProgressBar — thin progress bar fixed at the very top of the viewport.
@@ -52,11 +54,7 @@ export function ReadingProgressBar() {
     const chapterIndex = loadProgressFromStorage(novelId);
     // Try to figure out total chapters from the progress API response
     // We'll fetch the novel to get chapter count
-    fetch(`/api/novels/${novelId}`, { credentials: 'include' })
-      .then((res) => {
-        if (res.ok) return res.json();
-        throw new Error('Failed to fetch novel');
-      })
+    apiFetch<Novel>(`/api/novels/${novelId}`)
       .then((novel) => {
         const total = novel._count?.chapters ?? 0;
         setTotalChapters(total);

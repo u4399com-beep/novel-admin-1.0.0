@@ -35,19 +35,19 @@ export function TranslationSettings() {
   const [settings, setSettings] = useState<TranslationSettings>(DEFAULTS);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
         const parsed = JSON.parse(saved);
         queueMicrotask(() => setSettings(parsed));
-      } catch { /* use defaults */ }
-    }
+      }
+    } catch { /* use defaults */ }
   }, []);
 
   const updateSetting = <K extends keyof TranslationSettings>(key: K, value: TranslationSettings[K]) => {
     const next = { ...settings, [key]: value };
     setSettings(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   };
 
   return (

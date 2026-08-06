@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { Globe, Loader2 } from 'lucide-react';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -90,17 +91,10 @@ export function VisualSelectorBuilder({
     setAiSuggestions([]);
 
     try {
-      const response = await fetch(
+      const data = await apiFetch<{html: string; title: string}>(
         `/api/scrape-rules/preview?url=${encodeURIComponent(url.trim())}`,
         { signal: ac.signal },
       );
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `请求失败 (${response.status})`);
-      }
-
-      const data = await response.json();
       if (ac.signal.aborted) return;
       setHtml(data.html || '');
       setPageTitle(data.title || '');

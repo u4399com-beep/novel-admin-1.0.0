@@ -54,7 +54,7 @@ const SortableChapterRow = React.memo(function SortableChapterRow({
   onSelect: (ch: Chapter) => void;
   isSelected: boolean;
   isChecked: boolean;
-  onCheckChange: (checked: boolean) => void;
+  onCheckChange: (id: string, checked: boolean) => void;
   isBatchMode: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -79,7 +79,7 @@ const SortableChapterRow = React.memo(function SortableChapterRow({
           {isBatchMode && (
             <Checkbox
               checked={isChecked}
-              onCheckedChange={(val) => { onCheckChange(!!val); }}
+              onCheckedChange={(val) => { onCheckChange(chapter.id, !!val); }}
               onClick={(e) => e.stopPropagation()}
               aria-label={`选择第${index + 1}章`}
               className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
@@ -263,7 +263,7 @@ export function ChapterTable({
                       onSelect={onSelect}
                       isSelected={selectedChapter?.id === chapter.id}
                       isChecked={checkedIds.has(chapter.id)}
-                      onCheckChange={(checked) => onToggleCheck(chapter.id, checked)}
+                      onCheckChange={onToggleCheck}
                       isBatchMode={batchMode}
                     />
                   ))}

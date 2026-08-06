@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { apiFetch } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -22,6 +23,7 @@ export function TranslateButton({ content, sourceLang, targetLang = 'zh', classN
   const [isTranslating, setIsTranslating] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleQuickTranslate = useCallback(async () => {
     if (!content.trim()) return;
@@ -39,33 +41,23 @@ export function TranslateButton({ content, sourceLang, targetLang = 'zh', classN
         body.source = sourceLang;
       } else {
         try {
-          const detectResp = await fetch('/api/translate/detect', {
+          const detectData = await apiFetch<{detected_language: string}>('/api/translate/detect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: content.slice(0, 500) }),
           });
-          if (detectResp.ok) {
-            const detectData = await detectResp.json();
-            if (detectData.detected_language) {
-              body.source = detectData.detected_language;
-            }
+          if (detectData.detected_language) {
+            body.source = detectData.detected_language;
           }
         } catch { /* proceed */ }
         if (!body.source) body.source = 'en';
       }
 
-      const resp = await fetch('/api/translate', {
+      const data = await apiFetch<{translated_text: string}>('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        throw new Error(data.error || '翻译失败');
-      }
-
-      const data = await resp.json();
       setTranslatedText(data.translated_text || '');
     } catch (err) {
       setError(err instanceof Error ? err.message : '翻译请求失败');
@@ -78,8 +70,11 @@ export function TranslateButton({ content, sourceLang, targetLang = 'zh', classN
     if (!translatedText) return;
     await navigator.clipboard.writeText(translatedText);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 2000);
   };
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   return (
     <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setTranslatedText(''); setError(''); } }}>
