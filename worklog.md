@@ -5833,3 +5833,31 @@ Stage Summary:
 - 新组件: NovelCover (共享封面组件)
 - 代码重复消除: 3文件封面渲染统一
 - 类型安全提升: 4处any→unknown, 1处类型守卫, 1处callback强类型
+
+---
+Task ID: audit-round26-cleanup
+Agent: Main Orchestrator
+Task: 第26轮补充 - 返回类型标注 + CSS清理 + ScrapeParams接口
+
+Work Log:
+## 返回类型标注 (5个函数)
+1. `cn()`: 添加 `: string` 返回类型
+2. `apiSuccess()`: 添加 `: NextResponse` 返回类型
+3. `apiError()`: 添加 `: NextResponse` 返回类型
+4. `parsePagination()`: 添加 `: { page: number; pageSize: number; skip: number }` 返回类型
+5. `parseScrapeParams()`: 创建并导出 `ScrapeParams` 接口作为返回类型
+
+## CSS清理 (99行移除)
+- 移除16个未使用的CSS类定义
+- 包括: status-dot-*, container-narrow/wide, divider-vertical, text-pretty, tooltip-interactive
+- 移除3个重复的 text-balance 定义（Tailwind v4内置）
+
+## 验证结果
+- ESLint: 0 errors, 7 warnings (pre-existing)
+- Git push: 成功
+
+Stage Summary:
+- 本轮审计总计修复: 43 + 10 = 53项
+- 累计修复: 1223 + 10 = 1233+
+- CSS精简: 99行无用代码移除
+- 类型安全: 5个核心工具函数添加返回类型
