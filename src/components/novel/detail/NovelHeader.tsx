@@ -47,7 +47,7 @@ export function NovelHeader({
       </Button>
 
       {/* Novel info card */}
-      <Card className="overflow-hidden card-border-glow">
+      <Card className="overflow-hidden card-border-glow card-accent-top card-glass">
         <CardContent className="p-0">
           <div className="flex flex-col sm:flex-row gap-6 p-6">
             {/* Cover */}
@@ -92,18 +92,18 @@ export function NovelHeader({
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Button variant="outline" size="sm" disabled={exporting} onClick={onExport}>
+                  <Button variant="outline" size="sm" disabled={exporting} onClick={onExport} className="hover-scale">
                     {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
                     {exporting ? '导出中...' : '导出'}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={onEdit}>
+                  <Button variant="outline" size="sm" onClick={onEdit} className="hover-scale">
                     <Pencil className="size-3.5" />
                     编辑小说
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="text-destructive hover:text-destructive"
+                    className="text-destructive hover:text-destructive hover-scale"
                     onClick={onDelete}
                   >
                     <Trash2 className="size-3.5" />
@@ -113,8 +113,8 @@ export function NovelHeader({
               </div>
 
               {/* Badges */}
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className={statusInfo.className}>{statusInfo.label}</Badge>
+              <div className="flex flex-wrap items-center gap-2 stagger-children">
+                <Badge className={`${statusInfo.className} badge-glow`}>{statusInfo.label}</Badge>
                 {novel.category && (
                   <Badge
                     variant="outline"
@@ -149,13 +149,13 @@ export function NovelHeader({
                 <div className="flex items-center gap-1.5">
                   <FileText className="size-3.5" />
                   <span>
-                    <strong className="text-foreground">{chapterCount}</strong> 章
+                    <strong className="text-foreground tabular-nums">{chapterCount}</strong> 章
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Type className="size-3.5" />
                   <span>
-                    <strong className="text-foreground">
+                    <strong className="text-foreground tabular-nums">
                       {totalWords.toLocaleString()}
                     </strong>{' '}
                     字

@@ -1,16 +1,18 @@
 import { apiError } from './api-utils';
 import { NextResponse } from 'next/server';
 
+type PrismaArgs = any;
+
 /** Prisma model subset needed for list/get operations */
 type ListModel = {
-  findMany: (...args: unknown[]) => Promise<unknown[]>;
-  count: (...args: unknown[]) => Promise<number>;
+  findMany: (args: PrismaArgs) => Promise<any[]>;
+  count: (args: PrismaArgs) => Promise<number>;
 };
 
 /** Prisma model subset needed for single-item lookup */
 type GetModel = {
-  findUnique: (...args: unknown[]) => Promise<unknown>;
-  findFirst: (...args: unknown[]) => Promise<unknown>;
+  findUnique: (args: PrismaArgs) => Promise<any>;
+  findFirst: (args: PrismaArgs) => Promise<any>;
 };
 
 export interface PaginatedListOptions {

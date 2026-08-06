@@ -30,6 +30,7 @@ import {
   ChapterTable,
   ChapterEditorPanel,
   ChapterReaderDialog,
+  SimilarNovels,
 } from './detail';
 import type { ContentFilter } from './detail';
 
@@ -434,7 +435,7 @@ export default function NovelDetailView() {
   const chapterCount = novel._count?.chapters ?? chapters.length;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden fade-in-up">
       {/* ─── Header section ────────────────────────────────────────────── */}
       <NovelHeader
         novel={novel}
@@ -571,6 +572,11 @@ export default function NovelDetailView() {
         loading={batchDeleting}
         onConfirm={handleBatchDelete}
       />
+
+      {/* ─── Similar novels recommendation ──────────────────────────────── */}
+      <div className="px-4 sm:px-6 pb-6">
+        <SimilarNovels categoryId={novel.categoryId} currentNovelId={novel.id} novelTitle={novel.title} />
+      </div>
     </div>
   );
 }

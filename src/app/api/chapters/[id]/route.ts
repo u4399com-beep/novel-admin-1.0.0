@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson } from "@/lib/api-utils";
+import { sanitizeField, safeJson, apiError } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
+import { getOrFail, NotFoundError } from "@/lib/crud-helpers";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_SORT_ORDER = 100000;
@@ -15,19 +16,18 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
+    await getOrFail(db.chapter, { id }, '章节不存在');
     const chapter = await db.chapter.findUnique({
       where: { id },
       include: { novel: { select: { id: true, title: true } } },
     });
-
-    if (!chapter) {
-      return NextResponse.json({ error: "章节不存在" }, { status: 404 });
-    }
-
-    return NextResponse.json(chapter);
+    return NextResponse.json(chapter!);
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
+    }
     console.error("Get chapter error:", error);
-    return NextResponse.json({ error: "获取章节详情失败"}, { status: 500 });
+    return apiError("获取章节详情失败");
   }
 });
 
@@ -42,30 +42,27 @@ export const PUT = withAuth(async function PUT(
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
     const { title, content, sortOrder } = body;
 
     if (title !== undefined) {
       const trimmed = sanitizeField(title, MAX_TITLE_LENGTH);
       if (!trimmed) {
-        return NextResponse.json({ error: "章节标题不能为空" }, { status: 400 });
+        return apiError("章节标题不能为空", 400);
       }
     }
     if (sortOrder !== undefined) {
       const order = Math.floor(Number(sortOrder) || 0);
       if (order < 0 || order > MAX_SORT_ORDER) {
-        return NextResponse.json({ error: `排序值必须在0-${MAX_SORT_ORDER}之间` }, { status: 400 });
+        return apiError(`排序值必须在0-${MAX_SORT_ORDER}之间`, 400);
       }
     }
 
     // Use transaction for atomic read-modify-write
     const chapter = await db.$transaction(async (tx) => {
       // Get old chapter for word count diff
-      const oldChapter = await tx.chapter.findUnique({ where: { id }, select: { id: true, novelId: true, wordCount: true } });
-      if (!oldChapter) {
-        throw new Error("NOT_FOUND");
-      }
+      const oldChapter = await getOrFail<{ id: string; novelId: string; wordCount: number | null }>(tx.chapter, { id }, '章节不存在');
 
       const shouldUpdateWordCount = content !== undefined;
       const newContent = shouldUpdateWordCount
@@ -108,11 +105,11 @@ export const PUT = withAuth(async function PUT(
 
     return NextResponse.json(chapter);
   } catch (error) {
-    if (error instanceof Error && error.message === "NOT_FOUND") {
-      return NextResponse.json({ error: "章节不存在" }, { status: 404 });
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
     }
     console.error("Update chapter error:", error);
-    return NextResponse.json({ error: "更新章节失败"}, { status: 500 });
+    return apiError("更新章节失败");
   }
 });
 
@@ -126,15 +123,12 @@ export const DELETE = withAuth(async function DELETE(
 
     // Use transaction for atomic delete + word count update
     await db.$transaction(async (tx) => {
-      const chapter = await tx.chapter.findUnique({ where: { id } });
-      if (!chapter) {
-        throw new Error("NOT_FOUND");
-      }
+      const chapter = await getOrFail<{ id: string; novelId: string; wordCount: number | null }>(tx.chapter, { id }, '章节不存在');
 
       // Update novel word count before deleting (clamp to avoid negative)
       const currentNovel = await tx.novel.findUnique({ where: { id: chapter.novelId }, select: { wordCount: true } });
       const currentNovelWC = currentNovel?.wordCount || 0;
-      const clampedDecrement = Math.min(chapter.wordCount, currentNovelWC);
+      const clampedDecrement = Math.min(chapter.wordCount || 0, currentNovelWC);
       if (clampedDecrement > 0) {
         await tx.novel.update({
           where: { id: chapter.novelId },
@@ -149,10 +143,10 @@ export const DELETE = withAuth(async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "NOT_FOUND") {
-      return NextResponse.json({ error: "章节不存在" }, { status: 404 });
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
     }
     console.error("Delete chapter error:", error);
-    return NextResponse.json({ error: "删除章节失败"}, { status: 500 });
+    return apiError("删除章节失败");
   }
 });

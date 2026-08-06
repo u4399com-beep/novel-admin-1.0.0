@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
+import { getOrFail, NotFoundError } from "@/lib/crud-helpers";
 import { VALID_IDENTIFIER_RE, MAX_NAME_LENGTH, MAX_DESCRIPTION_LENGTH, MAX_IDENTIFIER_LENGTH, MAX_CONFIG_SIZE } from "@/lib/validation/themes";
 
 // GET /api/themes/[id] - Get a single theme
@@ -12,21 +13,20 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
+    await getOrFail(db.theme, { id }, '主题不存在');
     const theme = await db.theme.findUnique({
       where: { id },
       include: {
         _count: { select: { sites: true } },
       },
     });
-
-    if (!theme) {
-      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
-    }
-
-    return NextResponse.json(theme);
+    return NextResponse.json(theme!);
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
+    }
     console.error("Get theme error:", error);
-    return NextResponse.json({ error: "获取主题详情失败"}, { status: 500 });
+    return apiError("获取主题详情失败");
   }
 });
 
@@ -37,47 +37,49 @@ export const PUT = withAuth(async function PUT(
 ) {
   try {
     const { id } = await params;
+    await getOrFail(db.theme, { id }, '主题不存在');
+
     let body;
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
     const { name, description, identifier, preview, config, enabled } = body;
 
     if (name !== undefined && !name?.trim()) {
-      return NextResponse.json({ error: "主题名称不能为空" }, { status: 400 });
+      return apiError("主题名称不能为空", 400);
     }
     if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
-      return NextResponse.json({ error: `主题名称不能超过${MAX_NAME_LENGTH}个字符` }, { status: 400 });
+      return apiError(`主题名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
     if (identifier !== undefined) {
       if (typeof identifier !== 'string' || !identifier.trim()) {
-        return NextResponse.json({ error: "主题标识符不能为空" }, { status: 400 });
+        return apiError("主题标识符不能为空", 400);
       }
       if (!VALID_IDENTIFIER_RE.test(identifier.trim())) {
-        return NextResponse.json({ error: "主题标识符只能包含字母、数字、下划线和短横线" }, { status: 400 });
+        return apiError("主题标识符只能包含字母、数字、下划线和短横线", 400);
       }
       if (identifier.trim().length > MAX_IDENTIFIER_LENGTH) {
-        return NextResponse.json({ error: `主题标识符不能超过${MAX_IDENTIFIER_LENGTH}个字符` }, { status: 400 });
+        return apiError(`主题标识符不能超过${MAX_IDENTIFIER_LENGTH}个字符`, 400);
       }
     }
     if (description !== undefined && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
-      return NextResponse.json({ error: `主题描述不能超过${MAX_DESCRIPTION_LENGTH}个字符` }, { status: 400 });
+      return apiError(`主题描述不能超过${MAX_DESCRIPTION_LENGTH}个字符`, 400);
     }
     if (enabled !== undefined && typeof enabled !== 'boolean') {
-      return NextResponse.json({ error: "enabled 必须是布尔值" }, { status: 400 });
+      return apiError("enabled 必须是布尔值", 400);
     }
     let configStr: string | undefined;
     if (config !== undefined) {
       configStr = typeof config === "string" ? config : JSON.stringify(config);
       if (configStr.length > MAX_CONFIG_SIZE) {
-        return NextResponse.json({ error: `主题配置大小不能超过${Math.floor(MAX_CONFIG_SIZE / 1024)}KB` }, { status: 400 });
+        return apiError(`主题配置大小不能超过${Math.floor(MAX_CONFIG_SIZE / 1024)}KB`, 400);
       }
       try {
         JSON.parse(configStr);
       } catch {
-        return NextResponse.json({ error: "主题配置必须是合法的JSON" }, { status: 400 });
+        return apiError("主题配置必须是合法的JSON", 400);
       }
     }
 
@@ -100,14 +102,17 @@ export const PUT = withAuth(async function PUT(
 
     return NextResponse.json(theme);
   } catch (error: unknown) {
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
+    }
     console.error("Update theme error:", error);
     if (isPrismaError(error, "P2002")) {
-      return NextResponse.json({ error: "主题名称或标识符已存在" }, { status: 409 });
+      return apiError("主题名称或标识符已存在", 409);
     }
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
+      return apiError("主题不存在", 404);
     }
-    return NextResponse.json({ error: "更新主题失败"}, { status: 500 });
+    return apiError("更新主题失败");
   }
 });
 
@@ -119,36 +124,27 @@ export const DELETE = withAuth(async function DELETE(
   try {
     const { id } = await params;
     await db.$transaction(async (tx) => {
-      const theme = await tx.theme.findUnique({
-        where: { id },
-        include: { _count: { select: { sites: true } } },
-      });
-      if (!theme) {
-        throw new Error('NOT_FOUND');
-      }
-      if (theme._count.sites > 0) {
-        throw new Error(`HAS_SITES:${theme._count.sites}`);
+      await getOrFail(tx.theme, { id }, '主题不存在');
+      const siteCount = await tx.site.count({ where: { themeId: id } });
+      if (siteCount > 0) {
+        throw new Error(`HAS_SITES:${siteCount}`);
       }
       await tx.theme.delete({ where: { id } });
-      return theme;
     });
     invalidateCache("themes:list");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    console.error("Delete theme error:", error);
-    if (error instanceof Error && error.message === 'NOT_FOUND') {
-      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
     }
     if (error instanceof Error && error.message.startsWith('HAS_SITES:')) {
       const count = error.message.split(':')[1];
-      return NextResponse.json(
-        { error: `无法删除：有 ${count} 个站点正在使用此主题` },
-        { status: 409 }
-      );
+      return apiError(`无法删除：有 ${count} 个站点正在使用此主题`, 409);
     }
+    console.error("Delete theme error:", error);
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "主题不存在" }, { status: 404 });
+      return apiError("主题不存在", 404);
     }
-    return NextResponse.json({ error: "删除主题失败"}, { status: 500 });
+    return apiError("删除主题失败");
   }
 });

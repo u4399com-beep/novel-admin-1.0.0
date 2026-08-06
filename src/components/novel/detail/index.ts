@@ -16,5 +16,7 @@ export type { EmptyStateProps } from './EmptyState';
 export { ChapterEditorPanel } from './ChapterEditorPanel';
 export type { ChapterEditorPanelProps } from './ChapterEditorPanel';
 
+export { SimilarNovels } from './SimilarNovels';
+
 export { ChapterReaderDialog } from './ChapterReaderDialog';
 export type { ChapterReaderDialogProps } from './ChapterReaderDialog';

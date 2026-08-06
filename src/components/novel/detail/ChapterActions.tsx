@@ -55,7 +55,7 @@ export function ChapterActions({
             variant={batchMode ? 'default' : 'outline'}
             size="sm"
             aria-label="批量操作"
-            className="h-7 text-xs gap-1"
+            className="h-7 text-xs gap-1 hover-scale"
             onClick={onToggleBatchMode}
           >
             {batchMode ? (
@@ -70,7 +70,7 @@ export function ChapterActions({
               </>
             )}
           </Button>
-          <Button size="sm" aria-label="新建章节" onClick={onNewChapter}>
+          <Button size="sm" aria-label="新建章节" onClick={onNewChapter} className="hover-scale">
             <Plus className="size-4" />
             新建章节
           </Button>

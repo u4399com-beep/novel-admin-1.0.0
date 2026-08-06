@@ -1,9 +1,10 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError } from "@/lib/api-utils";
+import { sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
 import { isSafeUrl } from "@/lib/sanitize";
 import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
+import { getOrFail, NotFoundError } from "@/lib/crud-helpers";
 import { VALID_NOVEL_STATUSES } from "@/lib/constants";
 
 // GET /api/novels/[id] - Get a single novel
@@ -13,6 +14,7 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
+    await getOrFail(db.novel, { id }, '小说不存在');
     const novel = await db.novel.findUnique({
       where: { id },
       include: {
@@ -21,15 +23,13 @@ export const GET = withAuth(async function GET(
         _count: { select: { chapters: true } },
       },
     });
-
-    if (!novel) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
-    }
-
-    return NextResponse.json(novel);
+    return NextResponse.json(novel!);
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
+    }
     console.error("Get novel error:", error);
-    return NextResponse.json({ error: "获取小说详情失败"}, { status: 500 });
+    return apiError("获取小说详情失败");
   }
 });
 
@@ -40,37 +40,39 @@ export const PUT = withAuth(async function PUT(
 ) {
   try {
     const { id } = await params;
+    await getOrFail(db.novel, { id }, '小说不存在');
+
     let body;
     try {
       body = await safeJson(request);
     } catch {
-      return NextResponse.json({ error: "请求数据格式错误" }, { status: 400 });
+      return apiError("请求数据格式错误", 400);
     }
     const { title, author, description, coverUrl, status, categoryId, tags, sourceUrl, coverPath } = body;
 
     if (tags !== undefined && (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === 'string'))) {
-      return NextResponse.json({ error: "标签格式错误，必须是字符串ID数组" }, { status: 400 });
+      return apiError("标签格式错误，必须是字符串ID数组", 400);
     }
     if (tags && tags.length > 20) {
-      return NextResponse.json({ error: "标签数量不能超过20个" }, { status: 400 });
+      return apiError("标签数量不能超过20个", 400);
     }
 
     if (title !== undefined) {
       const trimmedTitle = sanitizeField(title, 200);
       if (!trimmedTitle) {
-        return NextResponse.json({ error: "小说标题不能为空" }, { status: 400 });
+        return apiError("小说标题不能为空", 400);
       }
     }
 
     if (status !== undefined && !VALID_NOVEL_STATUSES.includes(status)) {
-      return NextResponse.json({ error: "无效的小说状态" }, { status: 400 });
+      return apiError("无效的小说状态", 400);
     }
 
     // Validate categoryId existence if provided
     if (categoryId !== undefined && categoryId) {
       const categoryExists = await db.category.findUnique({ where: { id: categoryId } });
       if (!categoryExists) {
-        return NextResponse.json({ error: "指定的分类不存在" }, { status: 400 });
+        return apiError("指定的分类不存在", 400);
       }
     }
 
@@ -80,18 +82,18 @@ export const PUT = withAuth(async function PUT(
         where: { id: { in: tags } },
       });
       if (tagCount !== tags.length) {
-        return NextResponse.json({ error: "部分标签ID不存在" }, { status: 400 });
+        return apiError("部分标签ID不存在", 400);
       }
     }
 
     // Validate coverUrl protocol
     if (coverUrl !== undefined && coverUrl && !isSafeUrl(coverUrl)) {
-      return NextResponse.json({ error: "封面URL格式不合法，仅允许http/https协议" }, { status: 400 });
+      return apiError("封面URL格式不合法，仅允许http/https协议", 400);
     }
 
     // Validate sourceUrl protocol (SSRF protection)
     if (sourceUrl !== undefined && sourceUrl && !isSafeUrl(sourceUrl)) {
-      return NextResponse.json({ error: "来源URL格式不合法，仅允许http/https协议" }, { status: 400 });
+      return apiError("来源URL格式不合法，仅允许http/https协议", 400);
     }
 
     // Validate coverPath to prevent path traversal
@@ -99,7 +101,7 @@ export const PUT = withAuth(async function PUT(
       const cp = String(coverPath);
       const decoded = decodeURIComponent(cp).replace(/\\/g, '/');
       if (decoded.includes('..') || (!decoded.startsWith('/covers/') && !decoded.startsWith('/app/public/covers/'))) {
-        return NextResponse.json({ error: "封面路径格式不合法" }, { status: 400 });
+        return apiError("封面路径格式不合法", 400);
       }
     }
 
@@ -141,11 +143,14 @@ export const PUT = withAuth(async function PUT(
 
     return NextResponse.json(novel);
   } catch (error: unknown) {
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
+    }
     console.error("Update novel error:", error);
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
-    return NextResponse.json({ error: "更新小说失败"}, { status: 500 });
+    return apiError("更新小说失败");
   }
 });
 
@@ -156,18 +161,18 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const existing = await db.novel.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
-    }
+    await getOrFail(db.novel, { id }, '小说不存在');
     await db.novel.delete({ where: { id } });
     invalidateCache("dashboard:stats");
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
+    }
     console.error("Delete novel error:", error);
     if (isPrismaError(error, "P2025")) {
-      return NextResponse.json({ error: "小说不存在" }, { status: 404 });
+      return apiError("小说不存在", 404);
     }
-    return NextResponse.json({ error: "删除小说失败"}, { status: 500 });
+    return apiError("删除小说失败");
   }
 });

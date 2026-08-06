@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 import type { ViewType } from '@/types';
 
-interface QuickActionItem {
+export interface QuickActionItem {
   key: string;
   label: string;
   desc: string;

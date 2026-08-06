@@ -71,7 +71,7 @@ const SortableChapterRow = React.memo(function SortableChapterRow({
       style={style}
       className={`${isDragging ? 'z-50 opacity-50 shadow-lg' : ''} ${
         isSelected ? 'bg-accent/60' : ''
-      } ${isChecked ? 'bg-primary/5' : ''} group cursor-pointer`}
+      } ${isChecked ? 'bg-primary/5' : ''} group cursor-pointer list-item-compact`}
       onClick={() => onSelect(chapter)}
     >
       <TableCell className="w-10">
@@ -108,7 +108,7 @@ const SortableChapterRow = React.memo(function SortableChapterRow({
           {chapter.title}
         </span>
       </TableCell>
-      <TableCell className="w-24 text-muted-foreground tabular-nums text-sm">
+      <TableCell className="w-24 text-muted-foreground tabular-nums text-sm font-mono">
         {(chapter.wordCount ?? 0).toLocaleString()}
       </TableCell>
       <TableCell className="w-40 text-muted-foreground text-sm">

@@ -12,7 +12,7 @@ export function StatsBar({ contentProgress, totalChapters }: StatsBarProps) {
     <div className="px-4 pt-3 space-y-1">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>采集进度</span>
-        <span>{contentProgress.withContent}/{totalChapters} 章 ({contentProgress.pct}%)</span>
+        <span className="tabular-nums">{contentProgress.withContent}/{totalChapters} 章 ({contentProgress.pct}%)</span>
       </div>
       <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
         <div
