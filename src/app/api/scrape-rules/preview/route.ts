@@ -63,7 +63,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         console.error(
           `[preview] Scraper service returned ${response.status}`,
         );
-                return apiError('采集服务返回错误 (${response.status})', 502);;
+                return apiError(`采集服务返回错误 (${response.status})`, 502);
       }
 
       const data = await response.json();
@@ -78,13 +78,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       clearTimeout(timeoutId);
 
       if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
-                return apiError('请求采集服务超时，请稍后重试', 504);;
+                return apiError('请求采集服务超时，请稍后重试', 504);
       }
 
       throw fetchError;
     }
   } catch (error) {
     console.error('[preview] Error:', error);
-        return apiError('获取页面预览失败', 500);;
+        return apiError('获取页面预览失败', 500);
   }
 });

@@ -9,7 +9,6 @@ import {
   Settings,
   Clock,
   FolderTree,
-  BookOpen,
   Loader2,
 } from 'lucide-react';
 import {

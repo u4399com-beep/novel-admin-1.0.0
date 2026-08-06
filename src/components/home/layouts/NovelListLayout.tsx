@@ -4,12 +4,12 @@ import React from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { BookOpen, FileText, ArrowRight } from 'lucide-react';
-import { getCoverGradient, formatWordCount, getStatusInfo } from '@/components/home/shared-types';
+import { formatWordCount, getStatusInfo } from '@/components/home/shared-types';
+import { NovelCover } from '@/components/shared/NovelCover';
 import type { NovelCardData } from '@/components/home/shared-types';
 import { HighlightText } from '@/components/home/NovelGrid';
 
 const NovelListItem = React.memo(function NovelListItem({ novel, index, search }: { novel: NovelCardData; index: number; search: string }) {
-  const gradient = getCoverGradient(novel.title);
   const statusInfo = getStatusInfo(novel.status);
 
   return (
@@ -27,13 +27,11 @@ const NovelListItem = React.memo(function NovelListItem({ novel, index, search }
 
           {/* Cover - square thumbnail */}
           <div className="relative h-16 w-12 sm:h-20 sm:w-[60px] shrink-0 overflow-hidden rounded-md shadow-sm transition-transform duration-300 group-hover:scale-105">
-            {novel.coverUrl ? (
-              <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover" loading="lazy" />
-            ) : (
-              <div className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center`}>
-                <span className="text-lg font-bold text-white/90 select-none">{novel.title.charAt(0)}</span>
-              </div>
-            )}
+            <NovelCover
+              coverUrl={novel.coverUrl}
+              title={novel.title}
+              textClassName="text-lg"
+            />
           </div>
 
           {/* Info section */}

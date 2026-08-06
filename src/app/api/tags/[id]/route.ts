@@ -13,15 +13,14 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
-    await getOrFail(db.tag, { id }, '标签不存在');
-    const tag = await db.tag.findUnique({
+    const tag = await db.tag.findUniqueOrThrow({
       where: { id },
       include: { _count: { select: { novels: true } } },
     });
-    return NextResponse.json(tag!);
+    return NextResponse.json(tag);
   } catch (error) {
-    if (error instanceof NotFoundError) {
-      return apiError(error.message, 404);
+    if (isPrismaError(error, 'P2025')) {
+      return apiError('标签不存在', 404);
     }
     console.error("Get tag error:", error);
     return apiError("获取标签详情失败");

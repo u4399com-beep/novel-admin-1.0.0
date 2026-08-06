@@ -13,15 +13,14 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
-    await getOrFail(db.category, { id }, '分类不存在');
-    const category = await db.category.findUnique({
+    const category = await db.category.findUniqueOrThrow({
       where: { id },
       include: { _count: { select: { novels: true } } },
     });
-    return NextResponse.json(category!);
+    return NextResponse.json(category);
   } catch (error) {
-    if (error instanceof NotFoundError) {
-      return apiError(error.message, 404);
+    if (isPrismaError(error, 'P2025')) {
+      return apiError('分类不存在', 404);
     }
     console.error("Get category error:", error);
     return apiError("获取分类详情失败");

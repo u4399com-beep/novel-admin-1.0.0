@@ -20,7 +20,7 @@ export const GET = withAuth(async function GET(
     return NextResponse.json(keywords);
   } catch (error) {
     console.error("Get search keywords error:", error);
-        return apiError('获取搜索关键词失败', 500);;
+        return apiError('获取搜索关键词失败', 500);
   }
 });
 
@@ -132,7 +132,7 @@ export const POST = withAuth(async function POST(
       return apiError("小说不存在", 404);
     }
 
-    const existingTags = novel.tags.map((nt) => nt.tag?.name).filter(Boolean) as string[];
+    const existingTags = novel.tags.map((nt) => nt.tag?.name).filter((x): x is string => typeof x === 'string');
     const categoryName = novel.category?.name || null;
 
     // Generate keywords
@@ -181,6 +181,6 @@ export const POST = withAuth(async function POST(
       return apiError('操作冲突，请稍后重试', 409);
     }
     console.error("Extract search keywords error:", error);
-        return apiError('提取搜索关键词失败', 500);;
+        return apiError('提取搜索关键词失败', 500);
   }
 });

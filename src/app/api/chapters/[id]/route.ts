@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, apiError } from "@/lib/api-utils";
+import { sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
@@ -16,15 +16,14 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
-    await getOrFail(db.chapter, { id }, '章节不存在');
-    const chapter = await db.chapter.findUnique({
+    const chapter = await db.chapter.findUniqueOrThrow({
       where: { id },
       include: { novel: { select: { id: true, title: true } } },
     });
-    return NextResponse.json(chapter!);
+    return NextResponse.json(chapter);
   } catch (error) {
-    if (error instanceof NotFoundError) {
-      return apiError(error.message, 404);
+    if (isPrismaError(error, 'P2025')) {
+      return apiError('章节不存在', 404);
     }
     console.error("Get chapter error:", error);
     return apiError("获取章节详情失败");

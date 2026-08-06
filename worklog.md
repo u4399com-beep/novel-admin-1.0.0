@@ -5756,3 +5756,30 @@ Stage Summary:
 - 新Hook: 1个(useNovelChapters)
 - 新CSS: 95行(15+工具类)
 - 新Prisma模型: 1个(ReadingHistory)
+
+---
+Task ID: audit-fix-1
+Agent: general-purpose
+Task: 修复5处错误的模板字面量（单引号+${}不插值）
+
+Work Log:
+- 扫描4个文件中所有 `'...${...}...'` 错误模板字面量模式
+- 共发现5处bug，全部修复为反引号 `` `...${...}...` ``
+- 同时修复了多余的 `;;` 语句结尾
+
+## 修复清单
+
+1. `src/app/api/scrape-rules/preview/route.ts` L66
+   - `'采集服务返回错误 (${response.status})'` → 反引号版本
+2. `src/app/api/scrape-rules/ai-generate/route.ts` L77
+   - `'AI 规则生成服务返回错误 (${response.status})'` → 反引号版本
+3. `src/app/api/novels/[id]/export/route.ts` L44
+   - `'章节数量(${chapterCount})...'` → 反引号版本
+4. `src/app/api/novels/[id]/export/route.ts` L54
+   - `'小说总字数(${totalWords.toLocaleString()})...'` → 反引号版本
+5. `src/app/api/scrape-rules/[id]/route.ts` L273
+   - `'无法删除：有 ${deleted.runningCount}...'` → 反引号版本
+
+Stage Summary:
+- 修复5处模板字面量bug，`${variable}` 现在可正确插值
+- Lint通过：0 errors, 7 warnings（均为已有warnings）

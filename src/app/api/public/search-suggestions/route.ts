@@ -52,6 +52,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Search suggestions API error:', error);
-        return apiError('获取搜索建议失败', 500);;
+        return apiError('获取搜索建议失败', 500);
   }
 }

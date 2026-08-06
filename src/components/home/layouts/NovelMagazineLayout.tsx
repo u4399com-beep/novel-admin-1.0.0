@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { BookOpen, FileText, ArrowRight, Sparkles } from 'lucide-react';
 import { getCoverGradient, formatWordCount, getStatusInfo } from '@/components/home/shared-types';
+import { NovelCover } from '@/components/shared/NovelCover';
 import type { NovelCardData } from '@/components/home/shared-types';
 import { HighlightText } from '@/components/home/NovelGrid';
 
@@ -66,7 +67,6 @@ const HeroCard = React.memo(function HeroCard({ novel, search }: { novel: NovelC
 });
 
 const MagazineCard = React.memo(function MagazineCard({ novel, index, search }: { novel: NovelCardData; index: number; search: string }) {
-  const gradient = getCoverGradient(novel.title);
   const statusInfo = getStatusInfo(novel.status);
   const isReversed = index % 2 === 1;
 
@@ -79,13 +79,12 @@ const MagazineCard = React.memo(function MagazineCard({ novel, index, search }: 
       <Link href={`/novels/${novel.id}`} className="block group">
         <div className={`flex gap-4 rounded-xl border bg-card p-3 transition-all duration-300 hover:shadow-md hover:border-primary/20 card-accent-bottom card-depth hover-scale ${isReversed ? 'flex-row-reverse' : ''}`}>
           <div className="relative h-28 w-20 sm:h-32 sm:w-24 shrink-0 overflow-hidden rounded-lg shadow-sm">
-            {novel.coverUrl ? (
-              <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
-            ) : (
-              <div className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center transition-transform duration-500 group-hover:scale-110`}>
-                <span className="text-2xl font-bold text-white/90 select-none">{novel.title.charAt(0)}</span>
-              </div>
-            )}
+            <NovelCover
+              coverUrl={novel.coverUrl}
+              title={novel.title}
+              className="transition-transform duration-500 group-hover:scale-110"
+              textClassName="text-2xl"
+            />
             <div className="absolute top-1.5 right-1.5">
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${statusInfo.dotClass}`} />
             </div>

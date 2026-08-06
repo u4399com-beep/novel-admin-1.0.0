@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { publicRateLimit, getClientIp } from '@/lib/public-rate-limit';
+import { apiError } from '@/lib/api-utils';
 
 // GET /api/novels/by-source-url?sourceUrl=xxx
 // 供scraper-service精确查找已存在小说
@@ -10,17 +11,17 @@ export async function GET(request: NextRequest) {
   if (serviceToken) {
     const provided = request.headers.get('X-Service-Token');
     if (provided !== serviceToken) {
-      return NextResponse.json({ error: '未授权' }, { status: 401 });
+      return apiError('未授权', 401);
     }
   }
 
   if (publicRateLimit(getClientIp(request), 120)) {
-    return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
+    return apiError('请求过于频繁', 429);
   }
 
   const sourceUrl = request.nextUrl.searchParams.get('sourceUrl');
   if (!sourceUrl) {
-    return NextResponse.json({ error: '缺少sourceUrl参数' }, { status: 400 });
+    return apiError('缺少sourceUrl参数', 400);
   }
 
   try {
@@ -49,6 +50,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('By-source-url query error:', error);
-    return NextResponse.json({ error: '查询小说失败' }, { status: 500 });
+    return apiError('查询小说失败');
   }
 }

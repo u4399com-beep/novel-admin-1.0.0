@@ -123,10 +123,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const eventType = sanitizeField(body.eventType, 100);
     if (!eventType || !VALID_EVENT_TYPES.includes(eventType)) {
-      return NextResponse.json(
-        { error: `eventType 必须是: ${VALID_EVENT_TYPES.join(', ')}` },
-        { status: 400 },
-      );
+      return apiError(`eventType 必须是: ${VALID_EVENT_TYPES.join(', ')}`, 400);
     }
 
     const level = body.level !== undefined ? Math.min(5, Math.max(1, Math.floor(Number(body.level)) || 1)) : 1;

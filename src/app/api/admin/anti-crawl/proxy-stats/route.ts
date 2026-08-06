@@ -23,7 +23,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     let domainsTracked: string | null = null;
     if (body.domainsTracked !== undefined) {
       if (!Array.isArray(body.domainsTracked)) {
-                return apiError('domainsTracked 必须是字符串数组', 400);;
+                return apiError('domainsTracked 必须是字符串数组', 400);
       }
       // Sanitize each domain and limit length
       const sanitized = body.domainsTracked
@@ -47,7 +47,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     return NextResponse.json(record, { status: 201 });
   } catch (error) {
     console.error('Create proxy pool stats error:', error);
-        return apiError('记录代理池统计失败', 500);;
+        return apiError('记录代理池统计失败', 500);
   }
 });
 
@@ -61,6 +61,6 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json({ stats: latest || null });
   } catch (error) {
     console.error('Get proxy pool stats error:', error);
-        return apiError('获取代理池统计失败', 500);;
+        return apiError('获取代理池统计失败', 500);
   }
 });

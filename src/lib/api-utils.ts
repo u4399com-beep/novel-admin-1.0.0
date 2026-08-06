@@ -67,7 +67,7 @@ function validateJsonStructure(value: unknown, depth: number, maxDepth: number, 
 // Default to Record<string, any> for convenience in API routes that perform
 // their own runtime validation. Explicit generic types should be preferred
 // when stricter typing is needed.
-export async function safeJson<T = Record<string, any>>(
+export async function safeJson<T = Record<string, unknown>>(
   request: Request,
   maxDepth = 20,
   maxKeys = 200

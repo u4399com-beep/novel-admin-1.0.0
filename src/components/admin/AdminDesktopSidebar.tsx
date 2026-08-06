@@ -56,6 +56,7 @@ export function AdminDesktopSidebar({ collapsed, currentView, isMac, onToggleCol
           const navButton = (
             <button
               key={item.key}
+              aria-label={item.label}
               onClick={() => onViewChange(item.key as ViewType)}
               className={`
                 group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5

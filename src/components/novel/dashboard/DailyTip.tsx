@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Lightbulb, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -17,11 +17,14 @@ const TIPS = [
 
 export function DailyTip() {
   const [tip, setTip] = useState(TIPS[0]);
-  const [key, setKey] = useState(0);
 
   useEffect(() => {
     queueMicrotask(() => setTip(TIPS[Math.floor(Math.random() * TIPS.length)]));
-  }, [key]);
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    setTip(TIPS[Math.floor(Math.random() * TIPS.length)]);
+  }, []);
 
   return (
     <div className="card-elevated rounded-xl border bg-card p-4 card-glow hover-scale">
@@ -34,7 +37,7 @@ export function DailyTip() {
           variant="ghost"
           size="icon"
           className="ml-auto h-6 w-6"
-          onClick={() => setKey((k) => k + 1)}
+          onClick={handleRefresh}
           aria-label="换一条提示"
         >
           <RefreshCw className="h-3 w-3" />

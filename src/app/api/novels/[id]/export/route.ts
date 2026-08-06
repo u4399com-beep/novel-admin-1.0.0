@@ -41,7 +41,7 @@ export const GET = withAuth(async function GET(
     // Pre-check chapter count and total content size to prevent OOM
     const chapterCount = await db.chapter.count({ where: { novelId: id } });
     if (chapterCount > MAX_EXPORT_CHAPTERS) {
-            return apiError('章节数量(${chapterCount})超过导出上限(${MAX_EXPORT_CHAPTERS})，请分批导出', 400);;
+            return apiError(`章节数量(${chapterCount})超过导出上限(${MAX_EXPORT_CHAPTERS})，请分批导出`, 400);
     }
 
     // Check total content size to prevent OOM (wordCount approximates char count for CJK)
@@ -51,7 +51,7 @@ export const GET = withAuth(async function GET(
     });
     const totalWords = _sum.wordCount ?? 0;
     if (totalWords > MAX_EXPORT_CHARS) {
-            return apiError('小说总字数(${totalWords.toLocaleString()})过大，超过导出上限(${(MAX_EXPORT_CHARS / 10000).toFixed(0)}万字)，请联系管理员分批处理', 400);;
+            return apiError(`小说总字数(${totalWords.toLocaleString()})过大，超过导出上限(${(MAX_EXPORT_CHARS / 10000).toFixed(0)}万字)，请联系管理员分批处理`, 400);
     }
 
     const chapters = await db.chapter.findMany({

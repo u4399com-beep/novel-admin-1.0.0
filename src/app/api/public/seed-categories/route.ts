@@ -168,6 +168,6 @@ export const POST = withAuth(async function POST() {
     });
   } catch (error) {
     console.error("Seed categories error:", error);
-        return apiError('导入分类失败', 500);;
+        return apiError('导入分类失败', 500);
   }
 });

@@ -270,7 +270,7 @@ export const DELETE = withAuth(async function DELETE(
       return { conflict: false } as const;
     });
     if (deleted.conflict) {
-            return apiError('无法删除：有 ${deleted.runningCount} 个任务正在运行，请先停止任务', 409);;
+            return apiError(`无法删除：有 ${deleted.runningCount} 个任务正在运行，请先停止任务`, 409);
     }
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

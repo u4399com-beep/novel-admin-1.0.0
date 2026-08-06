@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { db } from '@/lib/db';
+import { apiError } from '@/lib/api-utils';
 
 // GET /api/stats/word-count - Aggregate word count statistics
 export const GET = withAuth(async () => {
@@ -35,6 +36,6 @@ export const GET = withAuth(async () => {
     });
   } catch (error) {
     console.error('Word count stats error:', error);
-    return NextResponse.json({ error: '获取字数统计失败' }, { status: 500 });
+    return apiError('获取字数统计失败');
   }
 });

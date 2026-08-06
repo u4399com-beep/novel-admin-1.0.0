@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { db } from '@/lib/db';
+import { apiError } from '@/lib/api-utils';
 
 export const GET = withAuth(async () => {
   try {
@@ -109,6 +110,6 @@ export const GET = withAuth(async () => {
     });
   } catch (error) {
     console.error('Reading stats error:', error);
-    return NextResponse.json({ error: '获取阅读统计失败' }, { status: 500 });
+    return apiError('获取阅读统计失败');
   }
 });

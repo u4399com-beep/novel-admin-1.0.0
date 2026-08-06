@@ -14,8 +14,7 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
-    await getOrFail(db.novel, { id }, '小说不存在');
-    const novel = await db.novel.findUnique({
+    const novel = await db.novel.findUniqueOrThrow({
       where: { id },
       include: {
         category: true,
@@ -23,10 +22,10 @@ export const GET = withAuth(async function GET(
         _count: { select: { chapters: true } },
       },
     });
-    return NextResponse.json(novel!);
+    return NextResponse.json(novel);
   } catch (error) {
-    if (error instanceof NotFoundError) {
-      return apiError(error.message, 404);
+    if (isPrismaError(error, 'P2025')) {
+      return apiError('小说不存在', 404);
     }
     console.error("Get novel error:", error);
     return apiError("获取小说详情失败");

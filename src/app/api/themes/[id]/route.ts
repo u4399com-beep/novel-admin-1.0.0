@@ -13,17 +13,16 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
-    await getOrFail(db.theme, { id }, '主题不存在');
-    const theme = await db.theme.findUnique({
+    const theme = await db.theme.findUniqueOrThrow({
       where: { id },
       include: {
         _count: { select: { sites: true } },
       },
     });
-    return NextResponse.json(theme!);
+    return NextResponse.json(theme);
   } catch (error) {
-    if (error instanceof NotFoundError) {
-      return apiError(error.message, 404);
+    if (isPrismaError(error, 'P2025')) {
+      return apiError('主题不存在', 404);
     }
     console.error("Get theme error:", error);
     return apiError("获取主题详情失败");

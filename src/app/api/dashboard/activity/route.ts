@@ -38,7 +38,7 @@ export const GET = withAuth(async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     console.error('Dashboard activity error:', error);
-        return apiError('获取活动数据失败', 500);;
+        return apiError('获取活动数据失败', 500);
   }
 });
 

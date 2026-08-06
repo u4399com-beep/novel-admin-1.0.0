@@ -74,7 +74,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         console.error(
           `[ai-generate] Scraper service returned ${response.status}: ${errorText}`,
         );
-                return apiError('AI 规则生成服务返回错误 (${response.status})', 502);;
+                return apiError(`AI 规则生成服务返回错误 (${response.status})`, 502);
       }
 
       const data = await response.json();
@@ -91,13 +91,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       clearTimeout(timeoutId);
 
       if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
-                return apiError('AI 规则生成超时，请稍后重试或简化请求', 504);;
+                return apiError('AI 规则生成超时，请稍后重试或简化请求', 504);
       }
 
       throw fetchError;
     }
   } catch (error) {
     console.error('[ai-generate] Error:', error);
-        return apiError('AI 规则生成失败', 500);;
+        return apiError('AI 规则生成失败', 500);
   }
 });

@@ -30,6 +30,7 @@ interface ReadingProgressItem {
 }
 
 import { getCoverGradient } from '@/lib/cover-gradient';
+import { getStatusInfo } from '@/components/home/shared-types';
 
 // ─── Skeleton ──────────────────────────────────────────────────────
 
@@ -139,11 +140,7 @@ export function ContinueReading() {
                 const readPercent = totalChapters > 0
                   ? Math.round((currentCh / totalChapters) * 100)
                   : 0;
-                const statusLabel = item.novel.status === 'ongoing'
-                  ? '连载中'
-                  : item.novel.status === 'completed'
-                    ? '已完结'
-                    : '暂停中';
+                const statusInfo = getStatusInfo(item.novel.status);
 
                 return (
                   <Link
@@ -179,7 +176,7 @@ export function ContinueReading() {
                       </p>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[10px] text-muted-foreground/60">
-                          {statusLabel}
+                          {statusInfo.label}
                         </span>
                         {item.novel.category && (
                           <span

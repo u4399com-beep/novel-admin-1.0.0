@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { safeJson, apiError, apiSuccess } from '@/lib/api-utils';
 import { requireFields } from '@/lib/crud-helpers';
 

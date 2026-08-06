@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Eye, BookOpen, User, BookMarked, FileText } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
-import { getCoverGradient, formatWordCount, getStatusInfo } from '@/components/home/shared-types';
+import { formatWordCount, getStatusInfo } from '@/components/home/shared-types';
+import { NovelCover } from '@/components/shared/NovelCover';
 import type { NovelCardData } from '@/components/home/shared-types';
 import { HighlightText } from '@/components/home/NovelGrid';
 
 const NovelCard = React.memo(function NovelCard({ novel, index, search }: { novel: NovelCardData; index: number; search: string }) {
-  const gradient = getCoverGradient(novel.title);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -70,13 +70,13 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
             className="group cursor-pointer shine-hover card-depth hover-lift hover-scale"
           >
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
-              {novel.coverUrl ? (
-                <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover transition-all duration-500 group-hover:brightness-75 hover-brightness" loading="lazy" />
-              ) : (
-                <div className={`h-full w-full bg-gradient-to-br ${gradient} flex items-center justify-center transition-all duration-500 group-hover:brightness-110 hover-brightness`}>
-                  <span className="text-4xl font-bold text-white/90 select-none">{novel.title.charAt(0)}</span>
-                </div>
-              )}
+              <NovelCover
+                coverUrl={novel.coverUrl}
+                title={novel.title}
+                className="transition-all duration-500 group-hover:brightness-75 hover-brightness"
+                gradientClassName="group-hover:brightness-110"
+                textClassName="text-4xl"
+              />
               {novel.category && (
                 <div className="absolute top-2 left-2">
                   <span className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm" style={{ backgroundColor: `${novel.category.color}cc`, color: '#fff' }}>{novel.category.name}</span>
