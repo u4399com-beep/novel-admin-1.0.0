@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, sanitizeField, safeJson, apiError } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { paginatedList } from "@/lib/crud-helpers";
@@ -132,7 +132,7 @@ export const POST = withAuth(async function POST(
     invalidateCache("dashboard:stats");
     invalidateCache("dashboard:activity");
 
-    return NextResponse.json(chapter, { status: 201 });
+    return apiSuccess(chapter, 201);
   } catch (error) {
     console.error("Create chapter error:", error);
     return apiError("创建章节失败", 500);

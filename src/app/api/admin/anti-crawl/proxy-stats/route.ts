@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
-import { safeJson, sanitizeField, safeJsonStringify, apiError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from 'next/server';
 
 // POST /api/admin/anti-crawl/proxy-stats - Record proxy pool stats
@@ -44,7 +44,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(record, { status: 201 });
+    return apiSuccess(record, 201);
   } catch (error) {
     console.error('Create proxy pool stats error:', error);
         return apiError('记录代理池统计失败', 500);

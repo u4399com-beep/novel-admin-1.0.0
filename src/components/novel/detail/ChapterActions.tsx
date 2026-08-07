@@ -7,6 +7,12 @@ import { Input } from '@/components/ui/input';
 
 export type ContentFilter = 'all' | 'has-content' | 'no-content';
 
+const CONTENT_FILTER_OPTIONS: { key: ContentFilter; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'has-content', label: '有内容' },
+  { key: 'no-content', label: '无内容' },
+];
+
 export interface ChapterActionsProps {
   chaptersLength: number;
   filteredChaptersLength: number;
@@ -99,11 +105,7 @@ export function ChapterActions({
             )}
           </div>
           <div className="flex items-center gap-0.5 rounded-md border bg-background p-0.5" role="tablist" aria-label="内容筛选">
-            {([
-              { key: 'all' as ContentFilter, label: '全部' },
-              { key: 'has-content' as ContentFilter, label: '有内容' },
-              { key: 'no-content' as ContentFilter, label: '无内容' },
-            ]).map((opt) => (
+            {CONTENT_FILTER_OPTIONS.map((opt) => (
               <button
                 key={opt.key}
                 role="tab"

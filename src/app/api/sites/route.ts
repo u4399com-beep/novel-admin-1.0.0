@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { parsePagination, sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
-import { NextRequest, NextResponse } from "next/server";
+import { parsePagination, sanitizeField, safeJson, isPrismaError, apiError, apiSuccess } from "@/lib/api-utils";
+import { NextRequest } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { paginatedList } from "@/lib/crud-helpers";
@@ -108,7 +108,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     invalidateCache("sites:list:*");
 
-    return NextResponse.json(site, { status: 201 });
+    return apiSuccess(site, 201);
   } catch (error: unknown) {
     console.error("Create site error:", error);
     if (isPrismaError(error, "P2002")) {

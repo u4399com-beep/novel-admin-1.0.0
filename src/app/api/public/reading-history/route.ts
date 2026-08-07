@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientIp, publicRateLimit } from '@/lib/public-rate-limit';
-import { apiError, safeJson, sanitizeField, parsePagination } from '@/lib/api-utils';
+import { apiError, safeJson, sanitizeField, parsePagination, apiDeleted } from '@/lib/api-utils';
 import { requireFields } from '@/lib/crud-helpers';
 
 const MAX_SESSION_ID_LENGTH = 100;
@@ -155,7 +155,7 @@ export async function DELETE(request: NextRequest) {
       return apiError('记录不存在', 404);
     }
 
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error) {
     console.error('Delete reading history error:', error);
     return apiError('删除阅读历史失败', 500);

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, safeJson, sanitizeField, safeJsonStringify, apiError } from "@/lib/api-utils";
+import { parsePagination, safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import { requireFields } from "@/lib/crud-helpers";
 import {
@@ -207,7 +207,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       include: { _count: { select: { tasks: true } } },
     });
 
-    return NextResponse.json(rule, { status: 201 });
+    return apiSuccess(rule, 201);
   } catch (error) {
     console.error("Create scrape rule error:", error);
     return apiError("创建采集规则失败", 500);

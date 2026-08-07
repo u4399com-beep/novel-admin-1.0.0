@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { isSafeUrl } from "@/lib/sanitize";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
@@ -171,7 +171,7 @@ export const DELETE = withAuth(async function DELETE(
       }
       await tx.scrapeTask.delete({ where: { id } });
     });
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND") {
       return apiError("采集任务不存在", 404);

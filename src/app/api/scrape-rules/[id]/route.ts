@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, safeJsonStringify, apiError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError, safeJsonStringify, apiError, apiDeleted } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import {
   VALID_SCRAPE_MODES,
@@ -275,7 +275,7 @@ export const DELETE = withAuth(async function DELETE(
     if (deleted.conflict) {
       return apiError(`无法删除：有 ${deleted.runningCount} 个任务正在运行，请先停止任务`, 409);
     }
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error: unknown) {
     console.error("Delete scrape rule error:", error);
     if (isPrismaError(error, "P2025")) {

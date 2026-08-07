@@ -10,6 +10,8 @@ import {
   closestCenter,
   type SensorDescriptor,
   type DragEndEvent,
+  type PointerSensor,
+  type KeyboardSensor,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -170,7 +172,7 @@ export interface ChapterTableProps {
   checkedIds: Set<string>;
   isAllChecked: boolean;
   isSomeChecked: boolean;
-  sensors: SensorDescriptor<any>[];
+  sensors: SensorDescriptor<PointerSensor | KeyboardSensor>[];
   onDragEnd: (event: DragEndEvent) => void;
   onEdit: (ch: Chapter) => void;
   onDelete: (ch: Chapter) => void;

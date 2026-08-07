@@ -74,23 +74,23 @@ export function DashboardView() {
   }, [fetchDashboard, refreshDashboard]);
 
   // ─── Quick actions ─────────────────────────────────────────────────────
-  const handleCreateNovel = () => {
+  const handleCreateNovel = useCallback(() => {
     setEditingNovel(null);
     setNovelFormOpen(true);
-  };
+  }, [setEditingNovel, setNovelFormOpen]);
 
-  const handleViewNovel = (novel: Novel) => {
+  const handleViewNovel = useCallback((novel: Novel) => {
     selectNovel(novel);
     setCurrentView('novel-detail');
-  };
+  }, [selectNovel, setCurrentView]);
 
-  const handleQuickAction = (action: QuickActionItem) => {
+  const handleQuickAction = useCallback((action: QuickActionItem) => {
     if (action.view === 'createNovel') {
       handleCreateNovel();
     } else {
       setCurrentView(action.view);
     }
-  };
+  }, [handleCreateNovel, setCurrentView]);
 
   // ─── Trend indicators ─────────────────────────────────────────────────────
   const trendData = useMemo(() => {

@@ -123,8 +123,14 @@ export function useNovelChapters({
     return result;
   }, [chapters, chapterSearch, contentFilter]);
 
-  const isAllChecked = filteredChapters.length > 0 && filteredChapters.every((ch) => checkedIds.has(ch.id));
-  const isSomeChecked = filteredChapters.some((ch) => checkedIds.has(ch.id));
+  const isAllChecked = useMemo(
+    () => filteredChapters.length > 0 && filteredChapters.every((ch) => checkedIds.has(ch.id)),
+    [filteredChapters, checkedIds]
+  );
+  const isSomeChecked = useMemo(
+    () => filteredChapters.some((ch) => checkedIds.has(ch.id)),
+    [filteredChapters, checkedIds]
+  );
 
   // ── Content progress memo ─────────────────────────────────────────────
   const contentProgress = useMemo(() => {

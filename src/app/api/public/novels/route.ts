@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { sanitizeField, apiError } from "@/lib/api-utils";
+import { sanitizeField, apiError, parsePagination } from "@/lib/api-utils";
 import { getClientIp, publicRateLimit } from "@/lib/public-rate-limit";
 
 // ─── 23qb.net 字数区间映射 ─────────────────────────────────────────
@@ -43,11 +43,11 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const rawPage = searchParams.get("page") || "1";
-    const rawSize = searchParams.get("pageSize") || "15";
-    const page = Math.min(10000, Math.max(1, parseInt(rawPage, 10) || 1));
-    const pageSize = Math.min(50, Math.max(1, parseInt(rawSize, 10) || 15));
-    const skip = (page - 1) * pageSize;
+    const { page, pageSize, skip } = parsePagination(searchParams, {
+      defaultPage: 1,
+      defaultPageSize: 15,
+      maxPageSize: 50,
+    });
 
     const search = sanitizeField(searchParams.get("search"), 100);
     const categorySlug = searchParams.get("categorySlug") || "";

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, apiError, safeJson } from "@/lib/api-utils";
+import { sanitizeField, apiError, safeJson, apiDeleted, apiSuccess } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -79,7 +79,7 @@ export const POST = withAuth(async function POST(
       },
     });
 
-    return NextResponse.json(note, { status: 201 });
+    return apiSuccess(note, 201);
   } catch (err) {
     console.error("Failed to create note:", err);
     return apiError("创建笔记失败", 500);
@@ -113,7 +113,7 @@ export const DELETE = withAuth(async function DELETE(
       where: { id: noteId },
     });
 
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (err) {
     console.error("Failed to delete note:", err);
     return apiError("删除笔记失败", 500);

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
+import { sanitizeField, safeJson, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { isSafeUrl } from "@/lib/sanitize";
 import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
@@ -163,7 +163,7 @@ export const DELETE = withAuth(async function DELETE(
     await getOrFail(db.novel, { id }, '小说不存在');
     await db.novel.delete({ where: { id } });
     invalidateCache("dashboard:stats");
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error: unknown) {
     if (error instanceof NotFoundError) {
       return apiError(error.message, 404);

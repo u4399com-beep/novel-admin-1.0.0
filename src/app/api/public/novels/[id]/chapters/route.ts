@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withPublicRateLimit } from "@/lib/api-auth";
-import { apiError } from "@/lib/api-utils"
+import { apiError, parsePagination } from "@/lib/api-utils";
 
 /**
  * Public chapters list API — no auth required.
@@ -25,11 +25,11 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     }
 
     const { searchParams } = new URL(request.url);
-    const rawPage = searchParams.get("page") || "1";
-    const rawSize = searchParams.get("pageSize") || "200";
-    const page = Math.max(1, parseInt(rawPage, 10) || 1);
-    const pageSize = Math.min(1000, Math.max(1, parseInt(rawSize, 10) || 200));
-    const skip = (page - 1) * pageSize;
+    const { page, pageSize, skip } = parsePagination(searchParams, {
+      defaultPage: 1,
+      defaultPageSize: 200,
+      maxPageSize: 1000,
+    });
 
     const [chapters, total] = await Promise.all([
       db.chapter.findMany({

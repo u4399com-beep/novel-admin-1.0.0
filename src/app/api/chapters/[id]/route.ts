@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError, apiError } from "@/lib/api-utils";
+import { sanitizeField, safeJson, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
@@ -140,7 +140,7 @@ export const DELETE = withAuth(async function DELETE(
 
     invalidateCache("dashboard:stats");
 
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error) {
     if (error instanceof NotFoundError) {
       return apiError(error.message, 404);

@@ -22,9 +22,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     const totalChapters = await db.chapter.count();
     // Rough estimate: ~5KB avg per chapter content; reject if >100MB
     if (totalChapters > 20000) {
-      return NextResponse.json({
-        error: `数据量过大（${novelCount}本小说，${totalChapters}个章节），请分批导出或使用单本导出`,
-      }, { status: 413 });
+      return apiError(`数据量过大（${novelCount}本小说，${totalChapters}个章节），请分批导出或使用单本导出`, 413);
     }
 
     // Fetch novels with chapters content, then other data in parallel

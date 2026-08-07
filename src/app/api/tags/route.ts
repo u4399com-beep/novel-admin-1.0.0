@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { parsePagination, safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
-import { NextRequest, NextResponse } from "next/server";
+import { parsePagination, safeJson, sanitizeField, isPrismaError, apiError, apiSuccess } from "@/lib/api-utils";
+import { NextRequest } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { paginatedList, requireFields } from "@/lib/crud-helpers";
@@ -57,7 +57,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     invalidateCache("tags:list");
     invalidateCache("dashboard:stats");
 
-    return NextResponse.json(tag, { status: 201 });
+    return apiSuccess(tag, 201);
   } catch (error: unknown) {
     console.error("Create tag error:", error);
     if (isPrismaError(error, "P2002")) {

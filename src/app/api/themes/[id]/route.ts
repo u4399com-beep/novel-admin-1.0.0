@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -131,7 +131,7 @@ export const DELETE = withAuth(async function DELETE(
       await tx.theme.delete({ where: { id } });
     });
     invalidateCache("themes:list");
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error: unknown) {
     if (error instanceof NotFoundError) {
       return apiError(error.message, 404);

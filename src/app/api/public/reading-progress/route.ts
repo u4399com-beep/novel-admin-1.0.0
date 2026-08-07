@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { sanitizeField, safeJson, apiError } from "@/lib/api-utils";
+import { sanitizeField, safeJson, apiError, apiDeleted } from "@/lib/api-utils";
 
 const MAX_SESSION_ID_LENGTH = 100;
 const MAX_PROGRESS_ITEMS = 50; // 每个会话最多追踪50本小说
@@ -141,7 +141,7 @@ export const DELETE = withPublicRateLimit({ capacity: 5, refillRate: 0.1 }, asyn
       return apiError('阅读进度记录不存在', 404);
     }
 
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error) {
     console.error('Delete reading progress error:', error);
     return apiError('删除阅读进度失败', 500);

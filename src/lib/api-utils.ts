@@ -10,6 +10,13 @@ export function apiError(message: string, status: number = 500): NextResponse {
 }
 
 /**
+ * Standard 204 No Content response for DELETE operations.
+ */
+export function apiDeleted(): NextResponse {
+  return new NextResponse(null, { status: 204 });
+}
+
+/**
  * Parse and validate pagination parameters from URL search params.
  * Returns validated page, pageSize, and computed skip value.
  */

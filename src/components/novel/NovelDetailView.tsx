@@ -82,6 +82,11 @@ export default function NovelDetailView() {
     return () => ac.abort();
   }, [ch.fetchChapters, refreshChapters]);
 
+  // ── Memoized chapter callbacks (before early returns to satisfy hook rules) ──
+  const handleToggleBatchMode = useCallback(() => { ch.setBatchMode(!ch.batchMode); ch.setCheckedIds(new Set()); }, [ch.batchMode, ch.setBatchMode, ch.setCheckedIds]);
+  const handleClearSearch = useCallback(() => ch.setChapterSearch(''), [ch.setChapterSearch]);
+  const handleClearFilters = useCallback(() => { ch.setChapterSearch(''); ch.setContentFilter('all'); }, [ch.setChapterSearch, ch.setContentFilter]);
+
   // ── Novel handlers ───────────────────────────────────────────────────────
   const handleBack = () => { selectNovel(null); setCurrentView('novels'); };
   const handleEditNovel = () => { if (!novel) return; setEditingNovel(novel); setNovelFormOpen(true); };
@@ -176,9 +181,9 @@ export default function NovelDetailView() {
                 chaptersLength={ch.chapters.length} filteredChaptersLength={ch.filteredChapters.length}
                 batchMode={ch.batchMode} chapterSearch={ch.chapterSearch} contentFilter={ch.contentFilter}
                 checkedIdsCount={ch.checkedIds.size}
-                onToggleBatchMode={() => { ch.setBatchMode(!ch.batchMode); ch.setCheckedIds(new Set()); }}
+                onToggleBatchMode={handleToggleBatchMode}
                 onNewChapter={ch.handleNewChapter} onSearchChange={ch.setChapterSearch}
-                onClearSearch={() => ch.setChapterSearch('')} onContentFilterChange={ch.setContentFilter}
+                onClearSearch={handleClearSearch} onContentFilterChange={ch.setContentFilter}
                 onBatchDelete={() => ch.setBatchDeleteOpen(true)}
               />
               <ChapterTable
@@ -190,7 +195,7 @@ export default function NovelDetailView() {
                 onRead={ch.handleReadChapter} onSelect={ch.setSelectedChapter}
                 onToggleCheckAll={ch.toggleCheckAll} onToggleCheck={ch.toggleCheck}
                 onMoveChapter={ch.handleMoveChapter} reordering={ch.reordering}
-                onClearFilters={() => { ch.setChapterSearch(''); ch.setContentFilter('all'); }}
+                onClearFilters={handleClearFilters}
               />
             </div>
           </ResizablePanel>

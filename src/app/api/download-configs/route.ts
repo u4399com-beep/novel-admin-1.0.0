@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, apiError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, apiError, apiSuccess } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -103,7 +103,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     invalidateCache("download-configs:list");
 
-    return NextResponse.json(config, { status: 201 });
+    return apiSuccess(config, 201);
   } catch (error) {
     console.error("Create download config error:", error);
     return apiError("创建下载配置失败", 500);

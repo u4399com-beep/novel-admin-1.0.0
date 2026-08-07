@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -181,7 +181,7 @@ export const DELETE = withAuth(async function DELETE(
     }
     await db.downloadConfig.delete({ where: { id } });
     invalidateCache("download-configs:list");
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error: unknown) {
     console.error("Delete download config error:", error);
     if (isPrismaError(error, "P2025")) {

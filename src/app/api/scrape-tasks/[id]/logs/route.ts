@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, apiError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, apiError, apiSuccess } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 
@@ -48,7 +48,7 @@ export const POST = withAuth(async function POST(
       },
     });
 
-    return NextResponse.json(log, { status: 201 });
+    return apiSuccess(log, 201);
   } catch (error) {
     console.error("Create scrape log error:", error);
     return apiError("创建采集日志失败", 500);

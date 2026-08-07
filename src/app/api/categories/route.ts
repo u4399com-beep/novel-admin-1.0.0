@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { parsePagination, safeJson, sanitizeField, isPrismaError, apiError } from "@/lib/api-utils";
-import { NextRequest, NextResponse } from "next/server";
+import { parsePagination, safeJson, sanitizeField, isPrismaError, apiError, apiSuccess } from "@/lib/api-utils";
+import { NextRequest } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { paginatedList, requireFields } from "@/lib/crud-helpers";
@@ -70,7 +70,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     invalidateCache("dashboard:stats");
     invalidateCache("categories:*");
 
-    return NextResponse.json(category, { status: 201 });
+    return apiSuccess(category, 201);
   } catch (error: unknown) {
     console.error("Create category error:", error);
     if (isPrismaError(error, "P2002")) {

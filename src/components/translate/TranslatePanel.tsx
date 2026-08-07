@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -126,10 +127,10 @@ export function TranslatePanel({ content, sourceLang, className, onClose }: Tran
     }
   };
 
-  const panelClass = [
-    'border-amber-200/50 bg-amber-50/30 dark:border-amber-800/50 dark:bg-amber-950/10',
-    className || '',
-  ].filter(Boolean).join(' ');
+  const panelClass = useMemo(
+    () => cn('border-amber-200/50 bg-amber-50/30 dark:border-amber-800/50 dark:bg-amber-950/10', className),
+    [className]
+  );
 
   return (
     <Card className={panelClass}>

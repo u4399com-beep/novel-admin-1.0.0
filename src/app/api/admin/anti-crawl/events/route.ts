@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
-import { parsePagination, sanitizeField, safeJson, apiError } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from 'next/server';
 
 const VALID_EVENT_TYPES = [
@@ -97,12 +97,10 @@ export const GET = withAuth(async function GET(request: NextRequest) {
 
     return NextResponse.json({
       events,
-      pagination: {
-        page,
-        pageSize,
-        total,
-        totalPages: Math.ceil(total / pageSize),
-      },
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
       countsByType: typeCountMap,
     });
   } catch (error) {
@@ -169,7 +167,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(record, { status: 201 });
+    return apiSuccess(record, 201);
   } catch (error) {
     console.error('Create anti-crawl event error:', error);
     return apiError('记录反爬事件失败', 500);
