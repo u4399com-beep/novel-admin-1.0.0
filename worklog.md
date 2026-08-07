@@ -5948,3 +5948,49 @@ Stage Summary:
 - 修复: 16项 (1 HIGH + 11 MEDIUM + 4 dead code)
 - 累计修复: 1252+16 = 1268+
 - 代码净减少: ~990行
+
+---
+Task ID: cycle3-120
+Agent: Main Orchestrator
+Task: 120轮循环第3轮 - API一致性 + React性能优化
+
+Work Log:
+## 审计范围 (并行2个Explore子代理)
+1. API响应格式一致性: 分页模式、POST/DELETE响应格式、错误处理统一
+2. 组件接口与性能: 内联props类型、深层React性能、Hook质量、CSS一致性
+
+## 修复清单 (36项)
+
+### HIGH (3项)
+1. **admin/export-all** NextResponse.json({error}) → apiError()
+2. **ChapterTable** SensorDescriptor<any> → SensorDescriptor<PointerSensor|KeyboardSensor>
+3. **NovelDetailView** 3个内联箭头函数→useCallback(修复hook rules违反)
+
+### MEDIUM - API一致性 (26项)
+4. **新增apiDeleted()** 工具函数 (204 No Content)
+5. **12个DELETE路由统一** → apiDeleted()
+   - novels, chapters, notes, categories, tags, sites, themes, scrape-rules, scrape-tasks, download-configs, reading-progress, reading-history
+6. **11个POST路由统一** → apiSuccess(entity, 201)
+   - novels, chapters, notes, categories, tags, sites, themes, scrape-rules, anti-crawl/events, anti-crawl/proxy-stats, download-configs, scrape-tasks/[id]/logs
+7. **public/novels** 手动分页→parsePagination()
+8. **public/novels/[id]/chapters** 手动分页→parsePagination()
+9. **anti-crawl/events** 分页响应嵌套pagination→扁平结构
+
+### MEDIUM - React性能 (6项)
+10. **useNovelChapters** isAllChecked/isSomeChecked→useMemo
+11. **DashboardView** handleCreateNovel/handleViewNovel/handleQuickAction→useCallback
+12. **TranslatePanel** panelClass数组重建→useMemo+cn()
+13. **ChapterActions** 内联filter选项→模块常量CONTENT_FILTER_OPTIONS
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- Agent-browser: 首页/分类/排行榜正常
+- Dev server: 无运行时错误
+- 33文件修改, +112/-93行
+- Git: pushed to main
+
+Stage Summary:
+- 修复: 36项 (3 HIGH + 26 API一致性 + 6 React性能 + 1 工具函数)
+- 累计修复: 1268+36 = 1304+
+- API标准化: DELETE→204, POST→apiSuccess, 分页→parsePagination
+- Cron: ID 310769 (每15分钟触发下一轮)
