@@ -205,15 +205,16 @@ export const PATCH = withAuth(async function PATCH(
       }
     }
 
-    // Single SQL UPDATE with VALUES clause for batch reorder (O(1) DB ops).
-    // IDs are validated as cuid format from the frontend; escape single quotes.
-    const values = orders
-      .map((item) => `('${item.id.replace(/'/g, "''")}', ${Math.floor(Number(item.sortOrder) || 0)})`)
-      .join(',');
+    // Single SQL UPDATE with parameterized VALUES clause for batch reorder (O(1) DB ops).
+    // Each value is properly parameterized via Prisma.sql to prevent SQL injection.
+    const sqlParts = orders.map((item) =>
+      Prisma.sql`(${item.id}, ${Math.floor(Number(item.sortOrder) || 0)})`,
+    );
+    const valuesSql = Prisma.join(sqlParts, Prisma.sql`, `);
     await db.$executeRaw`
       UPDATE "Chapter"
       SET "sortOrder" = v.sort_order
-      FROM (VALUES ${Prisma.raw(values)}) AS v(id TEXT, sort_order INTEGER)
+      FROM (VALUES ${valuesSql}) AS v(id TEXT, sort_order INTEGER)
       WHERE "Chapter"."id" = v.id
       AND "Chapter"."novelId" = ${novelId}
     `;

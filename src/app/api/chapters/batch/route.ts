@@ -37,7 +37,7 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
     }
     if (updates.sortOrder !== undefined) {
       const order = Math.floor(Number(updates.sortOrder));
-      if (isNaN(order) || order < 0) return apiError('sortOrder必须为非负整数', 400);
+      if (isNaN(order) || order < 0 || order > 100000) return apiError('sortOrder必须在0-100000之间', 400);
       data.sortOrder = order;
     }
     if (updates.status !== undefined) {

@@ -70,8 +70,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       date = todayString();
     }
 
-    const chaptersRead = Math.max(0, Math.floor(Number(chaptersParam) || 0));
-    const words = Math.max(0, Math.floor(Number(wordsParam) || 0));
+    const MAX_CHAPTERS_PER_UPDATE = 10000;
+    const MAX_WORDS_PER_UPDATE = 5000000;
+    const chaptersRead = Math.min(MAX_CHAPTERS_PER_UPDATE, Math.max(0, Math.floor(Number(chaptersParam) || 0)));
+    const words = Math.min(MAX_WORDS_PER_UPDATE, Math.max(0, Math.floor(Number(wordsParam) || 0)));
 
     // Upsert: increment existing record or create new
     await db.readingDaily.upsert({
