@@ -1,5 +1,4 @@
-import { Shield, Info, AlertTriangle } from 'lucide-react';
-import { BookOpen, Palette, Globe } from 'lucide-react';
+import { Shield, Info, AlertTriangle, BookOpen, Palette, Globe } from 'lucide-react';
 
 export function getConfidenceColor(score: number): string {
   if (score >= 80) return 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30';

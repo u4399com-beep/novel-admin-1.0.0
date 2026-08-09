@@ -51,10 +51,14 @@ export function ReadingOverview() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    apiFetch<ReadingOverviewStats>('/api/stats/reading')
-      .then(setStats)
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
+    const ac = new AbortController();
+    apiFetch<ReadingOverviewStats>('/api/stats/reading', { signal: ac.signal })
+      .then((data) => {
+        if (!ac.signal.aborted) setStats(data);
+      })
+      .catch(() => { if (!ac.signal.aborted) setError(true); })
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+    return () => ac.abort();
   }, []);
 
   if (loading) {

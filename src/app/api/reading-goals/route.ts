@@ -112,16 +112,30 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
 /**
  * Calculate consecutive reading streak ending at the given date.
- * Counts backwards from `date` while each day has chapters > 0.
+ * Fetches all daily records for the past year in a single query,
+ * then computes the streak in memory.
  */
 async function calculateStreak(date: string): Promise<number> {
+  const ninetyDaysAgo = new Date(date);
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 366);
+  const dateStr = ninetyDaysAgo.toISOString().slice(0, 10);
+
+  const records = await db.readingDaily.findMany({
+    where: { date: { gte: dateStr, lte: date } },
+    select: { date: true, chapters: true },
+    orderBy: { date: 'desc' },
+  });
+
+  // Build a Set of dates that have chapters > 0 for O(1) lookup
+  const activeDates = new Set<string>();
+  for (const r of records) {
+    if (r.chapters > 0) activeDates.add(r.date);
+  }
+
   let streak = 0;
   let checkDate = date;
-
-  // Check up to 365 days back
   for (let i = 0; i < 365; i++) {
-    const record = await db.readingDaily.findUnique({ where: { date: checkDate } });
-    if (record && record.chapters > 0) {
+    if (activeDates.has(checkDate)) {
       streak++;
     } else if (i === 0) {
       // Today has no data yet — that's ok, don't count but keep checking yesterday

@@ -39,8 +39,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const { name, color } = body;
 
-    if (name.trim().length > MAX_NAME_LENGTH) {
-      return apiError(`标签名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
+    if (typeof name !== 'string' || name.trim().length > MAX_NAME_LENGTH) {
+      return apiError(`标签名称必须是字符串且不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
     if (color && !VALID_COLOR_RE.test(color)) {
       return apiError("颜色格式无效，请使用HEX格式（如#6b7280）", 400);

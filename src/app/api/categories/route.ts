@@ -39,14 +39,14 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const { name, slug, icon, description, color, sortOrder } = body;
 
-    if (!/^[a-z0-9_-]+$/.test(slug.trim())) {
-      return apiError("分类标识符只能包含小写字母、数字、下划线和连字符", 400);
+    if (typeof slug !== 'string' || !/^[a-z0-9_-]+$/.test(slug.trim())) {
+      return apiError("分类标识符必须是字符串且只能包含小写字母、数字、下划线和连字符", 400);
     }
     if (slug.trim().length > MAX_SLUG_LENGTH) {
       return apiError(`分类标识符不能超过${MAX_SLUG_LENGTH}个字符`, 400);
     }
-    if (name.trim().length > MAX_NAME_LENGTH) {
-      return apiError(`分类名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
+    if (typeof name !== 'string' || name.trim().length > MAX_NAME_LENGTH) {
+      return apiError(`分类名称必须是字符串且不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
     if (description && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
       return apiError(`分类描述不能超过${MAX_DESCRIPTION_LENGTH}个字符`, 400);

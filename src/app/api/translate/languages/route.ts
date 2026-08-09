@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-utils';
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 // GET /api/translate/languages
-export async function GET() {
+export const GET = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async function GET() {
   try {
     const resp = await fetch('/languages?XTransformPort=3032', {
       method: 'GET',
@@ -24,4 +25,4 @@ export async function GET() {
     console.error('[translate/languages] Error:', error);
     return apiError('语言列表服务暂时不可用', 502);
   }
-}
+});

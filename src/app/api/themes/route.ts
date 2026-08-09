@@ -41,8 +41,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const { name, description, identifier, preview, config, enabled } = body;
 
-    if (name.trim().length > MAX_NAME_LENGTH) {
-      return apiError(`主题名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
+    if (typeof name !== 'string' || name.trim().length > MAX_NAME_LENGTH) {
+      return apiError(`主题名称必须是字符串且不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
     if (typeof identifier !== 'string') {
       return apiError("主题标识符必须是字符串", 400);

@@ -17,7 +17,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
-    const tz = searchParams.get('tz') || undefined;
+    const tz = sanitizeField(searchParams.get('tz') || '', 50) || undefined;
     if (!sessionId || sessionId.length < 10) {
       return NextResponse.json({
         totalBooks: 0,

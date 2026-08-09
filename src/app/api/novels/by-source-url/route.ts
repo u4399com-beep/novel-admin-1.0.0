@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { publicRateLimit, getClientIp } from '@/lib/public-rate-limit';
 import { apiError } from '@/lib/api-utils';
+import { timingSafeEqual } from '@/lib/api-auth';
 
 // GET /api/novels/by-source-url?sourceUrl=xxx
 // 供scraper-service精确查找已存在小说
 export async function GET(request: NextRequest) {
-  // Service token auth
+  // Service token auth (timing-safe comparison to prevent timing attacks)
   const serviceToken = process.env.SCRAPER_SERVICE_TOKEN || process.env.NEXTAUTH_SECRET;
   if (serviceToken) {
     const provided = request.headers.get('X-Service-Token');
-    if (provided !== serviceToken) {
+    if (!provided || !timingSafeEqual(provided, serviceToken)) {
       return apiError('未授权', 401);
     }
   }

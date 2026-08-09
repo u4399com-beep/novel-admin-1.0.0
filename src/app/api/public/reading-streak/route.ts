@@ -20,7 +20,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
   try {
     const { searchParams } = new URL(request.url);
     const rawSessionId = sanitizeField(searchParams.get('sessionId') || '', 200);
-    const tz = searchParams.get('tz') || undefined;
+    const tz = sanitizeField(searchParams.get('tz') || '', 50) || undefined;
 
     const parsed = querySchema.safeParse({ sessionId: rawSessionId });
     if (!parsed.success) {

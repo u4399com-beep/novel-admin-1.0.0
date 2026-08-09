@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { sanitizeField, apiError } from "@/lib/api-utils";
 import { invalidateCache } from '@/lib/cache';
+import { VALID_NOVEL_STATUSES } from '@/lib/constants';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -39,7 +40,7 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
 
     // Validate file extension whitelist
     const fileName = file.name.toLowerCase();
-    if (!/\.(txt|json)$/i.test(fileName)) {
+    if (!/\.(txt|json)$/.test(fileName)) {
       return apiError('仅支持 .txt 和 .json 格式的文件', 400);
     }
 
@@ -112,8 +113,7 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
     }
 
     // Validate status
-    const validStatuses = ['ongoing', 'completed', 'hiatus'];
-    const finalStatus = validStatuses.includes(status) ? status : 'ongoing';
+    const finalStatus = VALID_NOVEL_STATUSES.includes(status) ? status : 'ongoing';
 
     // Create novel + chapters in transaction
     const novel = await db.$transaction(async (tx) => {

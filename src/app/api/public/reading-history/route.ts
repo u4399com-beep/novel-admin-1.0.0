@@ -95,6 +95,10 @@ export async function POST(request: NextRequest) {
       : undefined;
 
     // Upsert: find existing entry for (sessionId, novelId) or create new
+    // NOTE: This uses findFirst+update/create instead of Prisma upsert because
+    // there's no composite unique constraint on (sessionId, novelId). A rare
+    // TOCTOU race could create a duplicate, but this is acceptable for anonymous
+    // session tracking. If duplicates become a problem, add a unique index.
     const existing = await db.readingHistory.findFirst({
       where: { sessionId, novelId },
     });

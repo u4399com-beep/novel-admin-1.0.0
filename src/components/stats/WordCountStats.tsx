@@ -152,15 +152,19 @@ export function WordCountStats() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    apiFetch<WordCountData>('/api/stats/word-count', { silent: true })
+    const ac = new AbortController();
+    apiFetch<WordCountData>('/api/stats/word-count', { signal: ac.signal, silent: true })
       .then((res) => {
-        setData(res);
-        setError(false);
+        if (!ac.signal.aborted) {
+          setData(res);
+          setError(false);
+        }
       })
       .catch(() => {
-        setError(true);
+        if (!ac.signal.aborted) setError(true);
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+    return () => ac.abort();
   }, []);
 
   if (loading) return <LoadingSkeleton />;

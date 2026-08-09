@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { parsePagination, sanitizeField, safeJson, isPrismaError, apiError, apiSuccess } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, isPrismaError, safeJsonStringify, apiError, apiSuccess } from "@/lib/api-utils";
 import { NextRequest } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -96,10 +96,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         siteTitle: sanitizeField(siteTitle, MAX_SITE_TITLE_LENGTH) || null,
         siteDescription: sanitizeField(siteDescription, MAX_SITE_DESC_LENGTH) || null,
         siteKeywords: sanitizeField(siteKeywords, MAX_KEYWORDS_LENGTH) || null,
-        geoConfig: geoConfig ? JSON.stringify(geoConfig) : null,
+        geoConfig: geoConfig ? safeJsonStringify(geoConfig, '地理配置') : null,
         novelOffset: parsedNovelOffset,
         chapterOffset: parsedChapterOffset,
-        customConfig: customConfig ? JSON.stringify(customConfig) : null,
+        customConfig: customConfig ? safeJsonStringify(customConfig, '自定义配置') : null,
       },
       include: {
         theme: true,

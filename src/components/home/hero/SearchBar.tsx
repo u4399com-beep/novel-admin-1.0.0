@@ -56,10 +56,9 @@ function highlightText(text: string, query: string) {
 export interface SearchBarProps {
   search: string;
   onSearch: (term: string) => void;
-  onReset: () => void;
 }
 
-export function SearchBar({ search, onSearch, onReset: _onReset }: SearchBarProps) {
+export function SearchBar({ search, onSearch }: SearchBarProps) {
   const router = useRouter();
   const [searchInput, setSearchInput] = useState('');
   const [suggestions, setSuggestions] = useState<{ id: string; title: string; author: string; category: { name: string; color: string } | null }[]>([]);

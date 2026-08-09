@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
+import { sanitizeField, safeJson, safeJsonStringify, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -115,12 +115,12 @@ export const PUT = withAuth(async function PUT(
         ...(siteDescription !== undefined && { siteDescription: sanitizeField(siteDescription, MAX_SITE_DESC_LENGTH) || null }),
         ...(siteKeywords !== undefined && { siteKeywords: sanitizeField(siteKeywords, MAX_KEYWORDS_LENGTH) || null }),
         ...(geoConfig !== undefined && {
-          geoConfig: geoConfig ? JSON.stringify(geoConfig) : null,
+          geoConfig: geoConfig ? safeJsonStringify(geoConfig, '地理配置') : null,
         }),
         ...(parsedNovelOffset !== undefined && { novelOffset: parsedNovelOffset }),
         ...(parsedChapterOffset !== undefined && { chapterOffset: parsedChapterOffset }),
         ...(customConfig !== undefined && {
-          customConfig: customConfig ? JSON.stringify(customConfig) : null,
+          customConfig: customConfig ? safeJsonStringify(customConfig, '自定义配置') : null,
         }),
       },
       include: {

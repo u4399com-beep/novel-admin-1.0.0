@@ -46,7 +46,7 @@ export function HeroSection({
 }: HeroSectionProps) {
   return (
     <>
-      <SearchBar search={search} onSearch={onSearch} onReset={resetAllFilters} />
+      <SearchBar search={search} onSearch={onSearch} />
       <FilterChips
         categories={categories}
         loadingCategories={loadingCategories}
