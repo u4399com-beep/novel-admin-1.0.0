@@ -54,13 +54,16 @@ export function TranslatePanel({ content, sourceLang, className, onClose }: Tran
   }, []);
 
   useEffect(() => {
-    apiFetch<Language[]>('/api/translate/languages')
+    const ac = new AbortController();
+    apiFetch<Language[]>('/api/translate/languages', { signal: ac.signal })
       .then((data) => {
+        if (ac.signal.aborted) return;
         if (Array.isArray(data) && data.length > 0) {
           setLanguages(data);
         }
       })
       .catch(() => { /* use defaults */ });
+    return () => ac.abort();
   }, []);
 
   const handleTranslate = useCallback(async () => {

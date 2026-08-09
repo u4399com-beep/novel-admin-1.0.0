@@ -131,7 +131,7 @@ function MiniBar({
           className="h-full rounded-full fill"
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.7, ease: 'easeOut', delay: 0.2 + index * 0.06 }}
+          transition={{ duration: 0.7, ease: 'easeOut' as const, delay: 0.2 + index * 0.06 }}
           style={{
             background: `linear-gradient(90deg, var(--chart-blue) 0%, var(--chart-emerald) ${pct}%)`,
           }}
@@ -173,7 +173,7 @@ export function WordCountStats() {
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
+      transition={{ duration: 0.4, ease: 'easeOut' as const }}
     >
       <Card className="card-glass card-border-glow hover-lift">
         <CardHeader className="pb-3">
@@ -193,7 +193,7 @@ export function WordCountStats() {
                 className="text-3xl font-bold tabular-nums tracking-tight"
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5, ease: 'easeOut', delay: 0.1 }}
+                transition={{ duration: 0.5, ease: 'easeOut' as const, delay: 0.1 }}
               >
                 {formatCompact(data.totalWords)}
               </motion.span>

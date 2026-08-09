@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { apiFetch } from '@/lib/api-fetch';
 import type { Novel } from '@/types';
@@ -49,33 +49,27 @@ export function ReadingProgressBar() {
   }, [novelId]);
 
   // Load progress when novelId changes
-  const refreshProgress = useCallback(() => {
+  useEffect(() => {
     if (!novelId) return;
+    const ac = new AbortController();
     const chapterIndex = loadProgressFromStorage(novelId);
-    // Try to figure out total chapters from the progress API response
-    // We'll fetch the novel to get chapter count
-    apiFetch<Novel>(`/api/novels/${novelId}`)
+    apiFetch<Novel>(`/api/novels/${novelId}`, { signal: ac.signal })
       .then((novel) => {
+        if (ac.signal.aborted) return;
         const total = novel._count?.chapters ?? 0;
         setTotalChapters(total);
         if (total > 0) {
-          // Calculate percentage: current chapter / total chapters
-          const pct = Math.min(100, Math.round(((chapterIndex + 1) / total) * 100));
-          setProgress(pct);
+          setProgress(Math.min(100, Math.round(((chapterIndex + 1) / total) * 100)));
         } else {
-          // If no chapter count, show 0
           setProgress(0);
         }
       })
       .catch(() => {
-        // If API fails, still show the raw progress if there is one
+        if (ac.signal.aborted) return;
         setProgress(chapterIndex > 0 ? Math.min(chapterIndex, 100) : 0);
       });
+    return () => ac.abort();
   }, [novelId]);
-
-  useEffect(() => {
-    refreshProgress();
-  }, [novelId, refreshProgress]);
 
   // Listen for storage changes (e.g., progress updated in another tab or by the reader)
   useEffect(() => {

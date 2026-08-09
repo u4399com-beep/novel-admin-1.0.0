@@ -112,16 +112,24 @@ export default function CommandPalette() {
   // ─── Load data when opened ──────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
+    const ac = new AbortController();
 
     // Load recent novels from localStorage
     queueMicrotask(() => setRecentNovels(loadRecentFromStorage()));
 
     // Fetch categories
     queueMicrotask(() => setLoadingCategories(true));
-    apiFetch<Category[]>('/api/categories', { silent: true })
-      .then((data) => setCategories(Array.isArray(data) ? data : []))
-      .catch(() => setCategories([]))
-      .finally(() => setLoadingCategories(false));
+    apiFetch<Category[]>('/api/categories', { signal: ac.signal, silent: true })
+      .then((data) => {
+        if (!ac.signal.aborted) setCategories(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setCategories([]);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setLoadingCategories(false);
+      });
+    return () => ac.abort();
   }, [open]);
 
   // Mark as mounted for SSR safety

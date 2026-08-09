@@ -142,13 +142,15 @@ export default function CategoriesPage() {
       setLoading(true);
       setError(null);
       const data = await apiFetch<Category[]>('/api/public/categories', { signal });
+      if (signal?.aborted) return;
       setCategories(data);
     } catch (err) {
+      if (signal?.aborted) return;
       if (!(err instanceof FetchError && err.status === 0)) {
         setError(err instanceof Error ? err.message : '未知错误');
       }
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
