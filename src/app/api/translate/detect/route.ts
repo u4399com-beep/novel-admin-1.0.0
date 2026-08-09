@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const resp = await fetch('/detect?XTransformPort=3032', {
+    const resp = await fetch('http://localhost:3032/detect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: body.text }),

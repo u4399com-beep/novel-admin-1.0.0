@@ -1,6 +1,6 @@
 'use client';
 
-import { type MouseEvent, type RefObject } from 'react';
+import { type MouseEvent, type RefObject, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   BookOpen,
@@ -10,6 +10,7 @@ import {
   BookmarkCheck,
   Download,
   Heart,
+  Share2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -57,6 +58,21 @@ export function NovelInfoSection({
 }: NovelInfoSectionProps) {
   const statusInfo = STATUS_MAP[novel.status] || STATUS_MAP.ongoing;
   const readingTime = estimateReadingTime(novel.wordCount);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+
+  const handleShare = useCallback(async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: novel.title, url: window.location.href });
+        return;
+      }
+      await navigator.clipboard.writeText(window.location.href);
+      setShareFeedback('链接已复制');
+    } catch {
+      setShareFeedback('复制失败');
+    }
+    setTimeout(() => setShareFeedback(null), 2000);
+  }, [novel.title]);
   const remainingTime =
     safeLastChapterIndex !== null
       ? estimateReadingTime(
@@ -148,6 +164,22 @@ export function NovelInfoSection({
             >
               <Download className="h-5 w-5" />
             </Button>
+            <div className="relative shrink-0 mt-1">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-9 w-9 text-muted-foreground hover:text-foreground transition-colors"
+                onClick={handleShare}
+                aria-label="分享"
+              >
+                <Share2 className="h-5 w-5" />
+              </Button>
+              {shareFeedback && (
+                <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-0.5 text-[11px] text-background shadow-md animate-in fade-in-0 zoom-in-95 duration-200">
+                  {shareFeedback}
+                </span>
+              )}
+            </div>
           </div>
           <motion.p
             initial={{ opacity: 0 }}

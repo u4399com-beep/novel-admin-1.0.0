@@ -6360,3 +6360,61 @@ Stage Summary:
 - 累计修复: 1391+7 = 1398+
 - 新增功能累计: 热力图+阅读时间估算+卡片微交互
 - Cron: 每轮结束设置
+
+---
+Task ID: cycle10-120-features
+Agent: Sub-agent
+Task: 分享按钮+错误页动画+BackToTop
+
+Work Log:
+- 在 NovelInfoSection.tsx 中添加了 Share2 图标导入和 useState/useCallback 导入
+- 实现了 handleShare 函数：优先使用 Web Share API（navigator.share），回退到 clipboard.writeText
+- 添加了分享按钮，样式与其他操作按钮一致（size=icon, variant=ghost, h-9 w-9）
+- 实现了基于状态的绝对定位提示（链接已复制/复制失败），使用 animate-in 动画
+- 更新 novels/[id]/error.tsx：添加 motion.div 包裹、装饰性发光效果、bg-gradient-to-br、error.digest 显示
+- 更新 admin/error.tsx：同样添加 motion.div 动画、发光效果、bg-gradient-to-br、error.digest 显示
+- 在 page.tsx 中导入并渲染 BackToTop 组件，放置在 footer 之前
+- 运行 lint 检查：0 错误，6 个预存 warning
+
+Stage Summary:
+- 分享按钮：Web Share API 优先 + clipboard 回退 + 内联提示，完整实现
+- 错误页动画：两个页面错误页均已添加与全局错误页一致的 framer-motion 动画和发光装饰
+- BackToTop：已添加到首页 footer 前
+- 所有变更通过 lint 检查
+---
+Task ID: cycle10-120
+Agent: Main Orchestrator
+Task: 120轮循环第10轮 - API路由修复+阅读器快捷键+新功能
+
+Work Log:
+## 审计 (1个Explore子代理)
+- 深度审计12个维度，发现3个BUG + 3个改进 + 1个新功能
+
+## 修复清单 (6项)
+
+### HIGH (2项)
+1. **Translate路由不可达fetch URL** → /api/translate/route.ts和detect/route.ts使用相对URL '/translate?XTransformPort=3032'，服务端fetch解析为localhost:3000而非3032 → 改为绝对URL http://localhost:3032/translate 和 /detect
+2. **SimilarNovels使用auth保护API** → /novels/[id]是公开页面，SimilarNovels组件调用/api/novels(auth)会401 → 改为/api/public/novels，兼容novels/items两种响应格式
+
+### MEDIUM (2项)
+3. **阅读器'S'快捷键文档存在但未实现** → useReaderKeyboard.ts缺少S键处理 → 添加onToggleChapterSidebar回调和's'/'S'按键处理
+4. **错误页动画不一致** → novels/[id]/error.tsx和admin/error.tsx为纯静态HTML → 添加framer-motion fade+slide动画+装饰性glow效果+渐变图标容器，匹配全局error.tsx风格
+
+### LOW (2项)
+5. **BackToTop仅小说详情页** → 首页缺少回到顶部按钮 → 导入并添加到page.tsx footer前
+6. **翻译路由rateLimit Map无周期清理** → 现有清理逻辑仅在超阈值时触发，改为setInterval+unref模式(与R9 click/favorite修复一致)
+
+## 新功能 (1项)
+7. **小说分享按钮** → NovelInfoSection.tsx添加Share2图标按钮，优先使用Web Share API(移动端原生分享)，fallback到clipboard.copyText+内联提示'链接已复制'/'复制失败'，2s自动消失
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- Agent-browser: 首页✅(BackToTop可见), 统计页✅, 分类页✅, 排行榜✅
+- Dev server: 无运行时错误
+- 8文件修改
+
+Stage Summary:
+- 修复: 6项 (2 HIGH + 2 MEDIUM + 2 LOW)
+- 新功能: 1项 (分享按钮)
+- 累计修复: 1398+6 = 1404+
+- Cron: ID 314971 (每15分钟)

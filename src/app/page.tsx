@@ -23,6 +23,7 @@ import type { NovelCardData } from '@/components/home/shared-types';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { useSiteName } from '@/lib/use-site-name';
 import { useLayoutTheme } from '@/lib/use-layout-theme';
+import { BackToTop } from '@/components/BackToTop';
 
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -401,6 +402,7 @@ export default function HomePage() {
       </div>
 
       {/* ─── Footer ──────────────────────────────────────────────── */}
+      <BackToTop />
       <footer className="mt-auto border-t bg-background/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
           <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground">

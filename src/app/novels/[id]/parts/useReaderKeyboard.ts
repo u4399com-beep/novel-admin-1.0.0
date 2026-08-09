@@ -18,6 +18,7 @@ export interface UseReaderKeyboardProps {
   onCycleMatch: () => void;
   onToggleBookmarks: () => void;
   onToggleFullscreen: () => void;
+  onToggleChapterSidebar: () => void;
   onEscape: () => void;
 }
 
@@ -41,6 +42,7 @@ export function useReaderKeyboard({
   onCycleMatch,
   onToggleBookmarks,
   onToggleFullscreen,
+  onToggleChapterSidebar,
   onEscape,
 }: UseReaderKeyboardProps) {
   useEffect(() => {
@@ -75,6 +77,9 @@ export function useReaderKeyboard({
         target.scrollBy({ top: 200, behavior: 'smooth' });
       } else if (e.key === 'Escape') {
         onEscape();
+      } else if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !isInteractive) {
+        e.preventDefault();
+        onToggleChapterSidebar();
       } else if (e.key === 'b' && !e.metaKey && !e.ctrlKey) {
         const t = (e.target as HTMLElement).tagName;
         if (t !== 'INPUT' && t !== 'TEXTAREA') {
@@ -99,5 +104,5 @@ export function useReaderKeyboard({
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [readerOpen, searchOpen, showBookmarks, showChapterSidebar, readerFullscreen, goToChapter, getMatchCount, readerContentRef, onToggleShortcutsHelp, onCloseSearch, onOpenSearch, onCycleMatch, onToggleBookmarks, onToggleFullscreen, onEscape]);
+  }, [readerOpen, searchOpen, showBookmarks, showChapterSidebar, readerFullscreen, goToChapter, getMatchCount, readerContentRef, onToggleShortcutsHelp, onCloseSearch, onOpenSearch, onCycleMatch, onToggleBookmarks, onToggleFullscreen, onToggleChapterSidebar, onEscape]);
 }

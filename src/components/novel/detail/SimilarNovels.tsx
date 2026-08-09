@@ -25,9 +25,10 @@ export function SimilarNovels({ categoryId, currentNovelId, novelTitle }: { cate
     if (!categoryId) { queueMicrotask(() => setLoading(false)); return; }
 
     const controller = new AbortController();
-    apiFetch<{ items: SimilarNovel[] }>(`/api/novels?categoryId=${categoryId}&pageSize=6`, { signal: controller.signal })
+    apiFetch<{ novels?: SimilarNovel[]; items?: SimilarNovel[] }>(`/api/public/novels?categoryId=${categoryId}&pageSize=6`, { signal: controller.signal })
       .then((data) => {
-        setNovels((data.items || []).filter((n) => n.id !== currentNovelId).slice(0, 5));
+        const items = data.novels || data.items || [];
+        setNovels(items.filter((n) => n.id !== currentNovelId).slice(0, 5));
       })
       .catch(() => {})
       .finally(() => setLoading(false));

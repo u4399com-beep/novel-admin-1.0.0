@@ -389,6 +389,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     onCycleMatch: handleCycleMatch,
     onToggleBookmarks: () => setShowBookmarks((p) => !p),
     onToggleFullscreen: () => setReaderFullscreen((p) => !p),
+    onToggleChapterSidebar: () => setShowChapterSidebar((p) => !p),
     onEscape: handleEscape,
   });
 
