@@ -12,9 +12,9 @@ const LOG_LEVEL_CONFIG: Record<
   { color: string; icon: React.ElementType }
 > = {
   info: { color: 'text-foreground', icon: Info },
-  warn: { color: 'text-amber-500', icon: AlertTriangle },
-  error: { color: 'text-red-500', icon: CircleX },
-  success: { color: 'text-emerald-500', icon: CircleCheck },
+  warn: { color: 'text-chart-amber', icon: AlertTriangle },
+  error: { color: 'text-destructive', icon: CircleX },
+  success: { color: 'text-chart-emerald', icon: CircleCheck },
 };
 
 interface TaskLogPanelProps {

@@ -195,9 +195,9 @@ export function SiteFormDialog({
                     {urlTestState === 'testing' ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : urlTestState === 'reachable' ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-500" />
+                      <Check className="h-3.5 w-3.5 text-chart-emerald" />
                     ) : urlTestState === 'unreachable' ? (
-                      <X className="h-3.5 w-3.5 text-red-500" />
+                      <X className="h-3.5 w-3.5 text-destructive" />
                     ) : (
                       <Activity className="h-3.5 w-3.5" />
                     )}
@@ -205,10 +205,10 @@ export function SiteFormDialog({
                   </Button>
                 </div>
                 {urlTestState === 'reachable' && (
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400">连接成功，站点可达</p>
+                  <p className="text-xs text-chart-emerald">连接成功，站点可达</p>
                 )}
                 {urlTestState === 'unreachable' && (
-                  <p className="text-xs text-red-600 dark:text-red-400">连接失败，请检查域名是否正确</p>
+                  <p className="text-xs text-destructive">连接失败，请检查域名是否正确</p>
                 )}
               </div>
               <div className="space-y-2">

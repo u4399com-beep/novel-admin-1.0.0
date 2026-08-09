@@ -275,11 +275,11 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
 
           {/* Import result */}
           {importState === 'success' && result && (
-            <div className="rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 p-3 flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+            <div className="rounded-md bg-chart-emerald/5 dark:bg-emerald-950/30 border border-chart-emerald/20 p-3 flex items-start gap-2">
+              <CheckCircle2 className="h-4 w-4 text-chart-emerald mt-0.5 shrink-0" />
               <div className="text-xs">
-                <p className="font-medium text-emerald-700 dark:text-emerald-300">导入成功</p>
-                <p className="text-emerald-600 dark:text-emerald-400 mt-0.5">
+                <p className="font-medium text-emerald-700">导入成功</p>
+                <p className="text-chart-emerald mt-0.5">
                   {result.title} · {result.author} · {result.chapterCount}章 · {((result.wordCount ?? 0) / 10000).toFixed(1)}万字
                 </p>
               </div>
@@ -287,9 +287,9 @@ export function NovelImportDialog({ open, onOpenChange, categories, onImportSucc
           )}
 
           {importState === 'error' && errorMsg && (
-            <div className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 p-3 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
-              <p className="text-xs text-red-600 dark:text-red-400">{errorMsg}</p>
+            <div className="rounded-md bg-destructive/5 border border-destructive/20 p-3 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+              <p className="text-xs text-destructive">{errorMsg}</p>
             </div>
           )}
         </div>

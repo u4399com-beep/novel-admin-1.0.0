@@ -239,7 +239,7 @@ export function TranslatePanel({ content, sourceLang, className, onClose }: Tran
 
         {/* Error */}
         {error && (
-          <div className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+          <div className="rounded-md bg-destructive/5 border border-destructive/20 dark:border-red-800 px-3 py-2 text-xs text-destructive">
             {error}
           </div>
         )}

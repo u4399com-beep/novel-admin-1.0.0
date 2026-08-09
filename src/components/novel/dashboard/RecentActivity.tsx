@@ -32,8 +32,8 @@ interface ActivityData {
 const EVENT_META_MAP: Record<string, { icon: typeof PlusCircle; color: string; hoverBg: string; label: string }> = {
   novel_created: {
     icon: PlusCircle,
-    color: 'text-emerald-600 dark:text-emerald-400',
-    hoverBg: 'group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30',
+    color: 'text-chart-emerald',
+    hoverBg: 'group-hover:bg-chart-emerald/10',
     label: '创建小说 ',
   },
   chapter_added: {
@@ -44,7 +44,7 @@ const EVENT_META_MAP: Record<string, { icon: typeof PlusCircle; color: string; h
   },
   scrape_run: {
     icon: Globe,
-    color: 'text-amber-600 dark:text-amber-400',
+    color: 'text-chart-amber',
     hoverBg: 'group-hover:bg-amber-100 dark:group-hover:bg-amber-900/30',
     label: '执行采集 ',
   },

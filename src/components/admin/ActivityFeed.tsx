@@ -28,10 +28,10 @@ interface ActivityResponse {
 
 const TYPE_CONFIG: Record<ActivityItem['type'], { icon: typeof BookOpen; dotClass: string }> = {
   novel_updated: { icon: BookOpen, dotClass: 'bg-blue-500' },
-  chapter_created: { icon: FileText, dotClass: 'bg-emerald-500' },
-  task_created: { icon: Zap, dotClass: 'bg-amber-500' },
-  task_completed: { icon: Zap, dotClass: 'bg-emerald-500' },
-  task_failed: { icon: Zap, dotClass: 'bg-red-500' },
+  chapter_created: { icon: FileText, dotClass: 'bg-chart-emerald' },
+  task_created: { icon: Zap, dotClass: 'bg-chart-amber' },
+  task_completed: { icon: Zap, dotClass: 'bg-chart-emerald' },
+  task_failed: { icon: Zap, dotClass: 'bg-destructive' },
 };
 
 function extractNovelId(link: string | undefined): string | null {

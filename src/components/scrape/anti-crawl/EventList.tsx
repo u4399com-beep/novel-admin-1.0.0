@@ -27,10 +27,10 @@ export interface AntiCrawlEvent {
 }
 
 export const EVENT_META: Record<string, { label: string; icon: typeof Shield; color: string; bg: string }> = {
-  captcha_triggered: { label: '验证码触发', icon: Lock, color: 'text-red-500', bg: 'bg-red-500/10' },
+  captcha_triggered: { label: '验证码触发', icon: Lock, color: 'text-destructive', bg: 'bg-destructive/10' },
   proxy_exhausted: { label: '代理耗尽', icon: Wifi, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   font_updated: { label: '字体更新', icon: Type, color: 'text-sky-500', bg: 'bg-sky-500/10' },
-  tls_blocked: { label: 'TLS拦截', icon: Fingerprint, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+  tls_blocked: { label: 'TLS拦截', icon: Fingerprint, color: 'text-chart-amber', bg: 'bg-chart-amber/10' },
   rate_limited: { label: '频率限制', icon: Activity, color: 'text-yellow-500', bg: 'bg-yellow-500/10' },
   behavior_flagged: { label: '行为标记', icon: MousePointer, color: 'text-violet-500', bg: 'bg-violet-500/10' },
 };
@@ -62,9 +62,9 @@ const EventRow = React.memo(function EventRow({ event }: { event: AntiCrawlEvent
             Lv.{event.level}
           </Badge>
           {event.resolved ? (
-            <CheckCircle className="h-3 w-3 text-emerald-500" />
+            <CheckCircle className="h-3 w-3 text-chart-emerald" />
           ) : (
-            <XCircle className="h-3 w-3 text-red-400" />
+            <XCircle className="h-3 w-3 text-destructive" />
           )}
         </div>
         <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">

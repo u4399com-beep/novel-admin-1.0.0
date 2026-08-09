@@ -161,8 +161,8 @@ export function ChapterEditorPanel({ chapter, onClose, onSaved }: ChapterEditorP
             )}
             {saveStatus === 'saved' && (
               <>
-                <CheckCircle2 className="size-3 text-emerald-500" />
-                <span className="text-emerald-600 dark:text-emerald-400">已保存</span>
+                <CheckCircle2 className="size-3 text-chart-emerald" />
+                <span className="text-chart-emerald">已保存</span>
               </>
             )}
             {saveStatus === 'idle' && (

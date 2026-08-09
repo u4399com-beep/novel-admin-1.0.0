@@ -47,8 +47,8 @@ function StatCard({ icon: Icon, label, value, sub, trend, color }: {
           <div className={`rounded-lg p-2 ${color}`}>
             <Icon className="h-4 w-4" />
           </div>
-          {trend === 'up' && <TrendingUp className="h-3.5 w-3.5 text-red-500" />}
-          {trend === 'down' && <TrendingDown className="h-3.5 w-3.5 text-emerald-500" />}
+          {trend === 'up' && <TrendingUp className="h-3.5 w-3.5 text-destructive" />}
+          {trend === 'down' && <TrendingDown className="h-3.5 w-3.5 text-chart-emerald" />}
           {trend === 'flat' && <Minus className="h-3.5 w-3.5 text-muted-foreground" />}
         </div>
         <div className="mt-3">
@@ -119,7 +119,7 @@ export function MonitorStats({ stats }: MonitorStatsProps) {
           value={captchaCount24h}
           sub={`7天 ${captchaCount7d}`}
           trend={captchaTrend}
-          color="bg-red-500/10"
+          color="bg-destructive/10"
         />
         <StatCard
           icon={Server}
@@ -133,7 +133,7 @@ export function MonitorStats({ stats }: MonitorStatsProps) {
           label="未解决事件"
           value={stats.unresolvedCount}
           sub="需要关注"
-          color="bg-amber-500/10"
+          color="bg-chart-amber/10"
         />
       </div>
 
@@ -149,7 +149,7 @@ export function MonitorStats({ stats }: MonitorStatsProps) {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {stats.captchaTrend && stats.captchaTrend.length > 0 ? (
-              <MiniBarChart data={stats.captchaTrend} maxValue={maxCaptchaTrend} color="bg-red-500/70" />
+              <MiniBarChart data={stats.captchaTrend} maxValue={maxCaptchaTrend} color="bg-destructive/70" />
             ) : (
               <div className="flex items-center justify-center h-16 text-xs text-muted-foreground">
                 暂无数据
@@ -272,7 +272,7 @@ export function MonitorStats({ stats }: MonitorStatsProps) {
                           initial={{ width: 0 }}
                           animate={{ width: `${pct}%` }}
                           transition={{ duration: 0.6, delay: i * 0.05 }}
-                          className="h-full rounded-full bg-amber-500/60"
+                          className="h-full rounded-full bg-chart-amber/60"
                         />
                       </div>
                       <span className="text-[11px] font-mono text-muted-foreground w-6 text-right">

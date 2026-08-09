@@ -106,7 +106,7 @@ const SortableChapterRow = React.memo(function SortableChapterRow({
         onClick={() => onSelect(chapter)}
       >
         <span className="inline-flex items-center gap-2">
-          <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${(chapter.wordCount ?? 0) > 0 ? 'bg-emerald-500' : 'border border-muted-foreground/30'}`} />
+          <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${(chapter.wordCount ?? 0) > 0 ? 'bg-chart-emerald' : 'border border-muted-foreground/30'}`} />
           {chapter.title}
         </span>
       </TableCell>

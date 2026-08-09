@@ -122,7 +122,7 @@ export const TaskCard = React.memo(function TaskCard({
           <StatItem icon={BookOpen} label="书籍" value={`${task.totalBooks} 总 / ${task.newBooks} 新`} />
           <StatItem icon={FileText} label="章节" value={`${task.totalChapters} 总 / ${task.newChapters} 新`} />
           {task.failedItems > 0 && (
-            <StatItem icon={XCircle} label="失败" value={String(task.failedItems)} className="text-red-500" />
+            <StatItem icon={XCircle} label="失败" value={String(task.failedItems)} className="text-destructive" />
           )}
           {task.skippedItems > 0 && (
             <StatItem icon={Ban} label="跳过" value={String(task.skippedItems)} className="text-slate-500" />
@@ -136,7 +136,7 @@ export const TaskCard = React.memo(function TaskCard({
             </span>
           )}
           {completedTotal && (
-            <span className="text-emerald-600 dark:text-emerald-400">
+            <span className="text-chart-emerald">
               总耗时 {completedTotal}
             </span>
           )}
@@ -144,8 +144,8 @@ export const TaskCard = React.memo(function TaskCard({
 
         {/* Error message for failed tasks */}
         {task.status === 'failed' && task.errorMessage && (
-          <div className="mt-2 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 px-3 py-2">
-            <p className="text-xs text-red-600 dark:text-red-400 break-words">
+          <div className="mt-2 rounded-md bg-destructive/5 border border-destructive/20 px-3 py-2">
+            <p className="text-xs text-destructive break-words">
               {task.errorMessage}
             </p>
           </div>
@@ -156,7 +156,7 @@ export const TaskCard = React.memo(function TaskCard({
           <div className="mt-2">
             <p className="text-xs text-muted-foreground">
               结果文件:{' '}
-              <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400 break-all">
+              <span className="font-mono text-xs text-chart-emerald break-all">
                 {task.resultUrl}
               </span>
             </p>

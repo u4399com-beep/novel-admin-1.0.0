@@ -44,32 +44,32 @@ export const STATUS_CONFIG: Record<
 > = {
   pending: {
     label: '等待中',
-    color: 'text-gray-500 dark:text-gray-400',
-    bgColor: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
+    color: 'text-muted-foreground',
+    bgColor: 'bg-muted text-muted-foreground',
     icon: Clock,
   },
   running: {
     label: '运行中',
-    color: 'text-sky-500',
-    bgColor: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+    color: 'text-chart-slate',
+    bgColor: 'bg-chart-slate/10 text-chart-slate',
     icon: Loader2,
   },
   completed: {
     label: '已完成',
-    color: 'text-emerald-500',
-    bgColor: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    color: 'text-chart-emerald',
+    bgColor: 'bg-chart-emerald/10 text-chart-emerald',
     icon: CheckCircle2,
   },
   failed: {
     label: '失败',
-    color: 'text-red-500',
-    bgColor: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+    color: 'text-destructive',
+    bgColor: 'bg-destructive/10 text-destructive',
     icon: XCircle,
   },
   cancelled: {
     label: '已取消',
-    color: 'text-amber-500',
-    bgColor: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    color: 'text-chart-amber',
+    bgColor: 'bg-chart-amber/10 text-chart-amber',
     icon: Ban,
   },
 };
@@ -79,9 +79,9 @@ export const LOG_LEVEL_CONFIG: Record<
   { color: string; icon: React.ElementType }
 > = {
   info: { color: 'text-foreground', icon: () => null },
-  warn: { color: 'text-amber-500', icon: () => null },
-  error: { color: 'text-red-500', icon: () => null },
-  success: { color: 'text-emerald-500', icon: () => null },
+  warn: { color: 'text-chart-amber', icon: () => null },
+  error: { color: 'text-destructive', icon: () => null },
+  success: { color: 'text-chart-emerald', icon: () => null },
 };
 
 export const STATUS_FILTERS: { value: TaskStatus | 'all'; label: string }[] = [
