@@ -256,33 +256,44 @@ export default function CategoriesPage() {
 
         {/* ── Empty State (no categories at all) ─────────────────────── */}
         {!loading && !error && categories.length === 0 && (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/30 py-20">
-            <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-muted/50 mb-4">
-              <BookOpen className="h-8 w-8 text-muted-foreground/60" />
+          <motion.div
+            className="flex flex-col items-center justify-center py-24 text-center"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="h-20 w-20 rounded-2xl bg-muted flex items-center justify-center mb-5">
+              <BookOpen className="h-10 w-10 text-muted-foreground/40" />
             </div>
-            <p className="font-medium text-muted-foreground">暂无分类</p>
-            <p className="mt-1.5 text-sm text-muted-foreground/70">
+            <h2 className="text-lg font-semibold mb-2">暂无分类数据</h2>
+            <p className="text-sm text-muted-foreground max-w-xs">
               管理员尚未添加任何分类
             </p>
-          </div>
+          </motion.div>
         )}
 
         {/* ── Empty State (search no match) ──────────────────────────── */}
         {!loading && !error && categories.length > 0 && filteredCategories.length === 0 && (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/30 py-20">
-            <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-muted/50 mb-4">
-              <Search className="h-8 w-8 text-muted-foreground/60" />
+          <motion.div
+            className="flex flex-col items-center justify-center py-24 text-center"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="h-20 w-20 rounded-2xl bg-muted flex items-center justify-center mb-5">
+              <Search className="h-10 w-10 text-muted-foreground/40" />
             </div>
-            <p className="font-medium text-muted-foreground">
+            <h2 className="text-lg font-semibold mb-2">
               未找到匹配「{searchQuery}」的分类
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-xs">
+              尝试使用其他关键词搜索
             </p>
             <button
-              className="mt-3 text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+              className="mt-4 text-sm text-primary hover:underline underline-offset-4 transition-colors"
               onClick={() => setSearchQuery('')}
             >
               清除搜索
             </button>
-          </div>
+          </motion.div>
         )}
 
         {/* ── Category Grid ──────────────────────────────────────────── */}
@@ -300,10 +311,10 @@ export default function CategoriesPage() {
                 <motion.div key={category.id} variants={cardVariants}>
                   <Link
                     href={`/?categorySlug=${category.slug}`}
-                    className="block"
+                    className="block focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none rounded-xl"
                   >
                     <Card
-                      className="group overflow-hidden tap-feedback hover-scale card-glass card-hover-glow"
+                      className="group overflow-hidden tap-feedback hover-scale hover:scale-[1.02] transition-transform card-glass card-hover-glow"
                       style={{ borderLeftWidth: '4px', borderLeftColor: category.color }}
                     >
                       {/* Hover color wash */}

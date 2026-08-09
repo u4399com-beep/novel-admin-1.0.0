@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Trophy, Medal, BookOpen, Award, TrendingUp } from 'lucide-react';
+import { Trophy, Medal, BookOpen, Award } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -142,7 +142,7 @@ const NovelRow = React.memo(function NovelRow({
         className={
           isTop3
             ? `relative flex rounded-xl border-2 p-4 transition-all hover:shadow-lg hover:-translate-y-0.5 group overflow-hidden tap-feedback hover-glow depth-hover rank-shine hover-lift card-glass card-hover-glow ${style?.border}`
-            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-all duration-200 hover:bg-muted/50 hover:translate-x-1 group tap-feedback hover-glow depth-hover rank-shine'
+            : 'flex items-center gap-4 px-4 py-3 border-b last:border-b-0 transition-colors duration-200 hover:bg-muted/30 hover:translate-x-1 group tap-feedback hover-glow depth-hover rank-shine'
         }
       >
       {/* Top 3 gradient background */}
@@ -236,26 +236,17 @@ function SkeletonRow() {
 function EmptyState() {
   return (
     <motion.div
-      className="flex flex-col items-center justify-center py-20 text-muted-foreground"
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.4, ease: 'easeOut' as const }}
+      className="flex flex-col items-center justify-center py-24 text-center"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
     >
-      <div className="relative mb-6">
-        <div className="w-20 h-20 rounded-2xl bg-muted/50 flex items-center justify-center">
-          <Trophy className="w-10 h-10 text-muted-foreground/30" />
-        </div>
-        <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
-          <Award className="w-3.5 h-3.5 text-amber-500" />
-        </div>
+      <div className="h-20 w-20 rounded-2xl bg-muted flex items-center justify-center mb-5">
+        <Award className="h-10 w-10 text-muted-foreground/40" />
       </div>
-      <div className="text-center space-y-2">
-        <p className="text-sm font-medium text-muted-foreground">暂无排行数据</p>
-        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/60">
-          <TrendingUp className="w-3.5 h-3.5" />
-          <span>数据更新后将自动显示</span>
-        </div>
-      </div>
+      <h2 className="text-lg font-semibold mb-2">暂无排行数据</h2>
+      <p className="text-sm text-muted-foreground max-w-xs">
+        添加小说后，这里会展示各类排行榜
+      </p>
     </motion.div>
   );
 }
@@ -411,7 +402,7 @@ export default function RankingsPage() {
             <button
               key={value}
               onClick={() => setTimeRange(value)}
-              className={`tag-pill text-xs px-3 py-1.5 transition-all ${
+              className={`tag-pill text-xs px-3 py-1.5 transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none ${
                 timeRange === value
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-muted/50 text-muted-foreground hover:text-foreground'

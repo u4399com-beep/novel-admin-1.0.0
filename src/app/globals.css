@@ -4529,3 +4529,125 @@ mark {
   background: var(--border);
   border-radius: 4px;
 }
+
+/* =====================================================================
+   CYCLE 11 — Style Polish & Micro-Interactions
+   ===================================================================== */
+
+/* ─── Task 1: New Utility Classes ─────────────────────────────── */
+
+/* Card hover lift — smooth cubic-bezier transition */
+.card-hover-lift {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+}
+:is(.dark .card-hover-lift):hover {
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.35);
+}
+
+/* Glass card — dark mode variant */
+.dark .glass-card {
+  background: color-mix(in srgb, var(--background) 55%, transparent);
+  border-color: color-mix(in srgb, var(--foreground) 8%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+/* Text gradient — primary to primary-foreground */
+.text-gradient-primary-strong {
+  background: linear-gradient(135deg, var(--primary), var(--primary-foreground));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Shimmer border — animated conic-gradient variant */
+@keyframes shimmer-border-conic {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.shimmer-border-animated {
+  position: relative;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.shimmer-border-animated::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    color-mix(in srgb, var(--primary) 25%, transparent) 10%,
+    transparent 20%
+  );
+  animation: shimmer-border-conic 3s linear infinite;
+}
+
+/* ─── Task 6: Enhanced skeleton shimmer ─── */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--muted) 70%, var(--muted-foreground)) 25%,
+    var(--muted) 50%,
+    color-mix(in srgb, var(--muted) 70%, var(--muted-foreground)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.dark .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--muted) 60%, var(--muted-foreground)) 25%,
+    var(--muted) 50%,
+    color-mix(in srgb, var(--muted) 60%, var(--muted-foreground)) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* ─── Task 3: Hero animated mesh gradient blobs ─── */
+@keyframes hero-blob-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -20px) scale(1.05); }
+  50% { transform: translate(-20px, 15px) scale(0.95); }
+  75% { transform: translate(15px, 25px) scale(1.02); }
+}
+@keyframes hero-blob-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-25px, 20px) scale(0.97); }
+  50% { transform: translate(20px, -15px) scale(1.04); }
+  75% { transform: translate(-10px, -25px) scale(1.01); }
+}
+.hero-gradient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.12;
+}
+.hero-gradient-blob-1 {
+  width: 400px;
+  height: 400px;
+  top: -100px;
+  left: 10%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--primary) 50%, transparent), transparent 70%);
+  animation: hero-blob-drift-1 20s ease-in-out infinite;
+}
+.hero-gradient-blob-2 {
+  width: 350px;
+  height: 350px;
+  top: -50px;
+  right: 15%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--foreground) 20%, transparent), transparent 70%);
+  animation: hero-blob-drift-2 25s ease-in-out infinite;
+}
+:is(.dark .hero-gradient-blob-1) {
+  opacity: 0.06;
+}
+:is(.dark .hero-gradient-blob-2) {
+  opacity: 0.04;
+}

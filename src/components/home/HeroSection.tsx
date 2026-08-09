@@ -45,7 +45,12 @@ export function HeroSection({
   filterSummary,
 }: HeroSectionProps) {
   return (
-    <>
+    <div className="relative overflow-hidden">
+      {/* Subtle animated mesh gradient background */}
+      <div className="absolute inset-0 pointer-events-none -z-10" aria-hidden="true">
+        <div className="hero-gradient-blob hero-gradient-blob-1" />
+        <div className="hero-gradient-blob hero-gradient-blob-2" />
+      </div>
       <SearchBar search={search} onSearch={onSearch} />
       <FilterChips
         categories={categories}
@@ -64,6 +69,6 @@ export function HeroSection({
         total={total}
         filterSummary={filterSummary}
       />
-    </>
+    </div>
   );
 }

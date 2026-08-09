@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { safeJson, apiError } from '@/lib/api-utils';
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 interface DetectRequestBody {
   text: string;
 }
 
 // POST /api/translate/detect
-export async function POST(request: NextRequest) {
+export const POST = withPublicRateLimit({ capacity: 20, refillRate: 0.5 }, async function POST(request: NextRequest) {
   let body: DetectRequestBody;
   try {
     body = await safeJson<DetectRequestBody>(request);
@@ -58,4 +59,4 @@ export async function POST(request: NextRequest) {
     console.error('[translate/detect] Error:', error);
     return apiError('语言检测服务暂时不可用', 502);
   }
-}
+});

@@ -69,7 +69,7 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
       case 'hide': {
         const result = await db.novel.updateMany({
           where: { id: { in: ids } },
-          data: { status: 'draft' },
+          data: { status: 'hiatus' },
         });
         updated = result.count;
         break;

@@ -6418,3 +6418,77 @@ Stage Summary:
 - 新功能: 1项 (分享按钮)
 - 累计修复: 1398+6 = 1404+
 - Cron: ID 314971 (每15分钟)
+
+---
+Task ID: cycle11-120
+Agent: Main Orchestrator
+Task: 120轮循环第11轮 - 安全修复+SQLite搜索+分类环形图+样式全面增强
+
+Work Log:
+## 审计 (1个Explore子代理)
+- 深度审计12个维度，发现6个问题
+- 重点：translate端点无速率限制、SQLite不敏感搜索静默失效、batch hide写入无效status
+
+## 修复清单 (8项)
+
+### HIGH (3项)
+1. **translate/detect无速率限制** → 两个端点从hand-rolled Map改为withPublicRateLimit包装(detect: 20/0.5, translate: 30/0.5)，移除自维护的rateLimitMap(消除内存泄漏风险)
+2. **SQLite case-insensitive搜索失效** → novels/route.ts和search-suggestions/route.ts的mode:"insensitive"在SQLite被静默忽略，改为$queryRaw + COLLATE NOCASE实现真正的大小写不敏感搜索
+3. **batch hide写入无效draft状态** → status: 'draft'改为status: 'hiatus'(在VALID_NOVEL_STATUSES中)
+
+### MEDIUM (3项)
+4. **EPUB路由名不副实** → /export/epub/实际返回text/plain TXT文件，重命名为/export/txt/并更新客户端引用
+5. **sessionId最小长度不足** → 所有reading-progress/history/stats/streak/heatMap路由的sessionId.length < 10改为< 20(UUID为36字符，不受影响)
+6. **ContinueReading TS类型错误** → itemVariants的ease属性添加as const满足Variants类型
+
+### LOW (2项)
+7. **translate route未正确闭合** → withPublicRateLimit包装后函数缺少});闭合括号
+8. **未使用的getClientIp导入** → detect/route.ts中移除
+
+## 新功能 (4项)
+1. **分类分布环形图** → CategoryDonut.tsx(~230行)，纯SVG实现(no libraries)，带hover高亮/中心文字切换/动画入场/图例/响应式尺寸/ARIA描述，集成stats页GenreBar上方
+2. **最近阅读横滑组件** → ContinueReading.tsx重写，封面缩略图+进度条+百分比+横向滚动+骨架加载+可关闭(dismiss到localStorage)
+3. **搜索栏增强** → 清除按钮(X)有输入时显示、键盘快捷键(/或⌘K/Ctrl+K)聚焦搜索框、Kbd提示元素(Mac显示⌘K)
+4. **Grid布局状态Badge** → NovelGridLayout卡片添加连载中/已完结/暂停中状态标签( Magazine/List已有)
+
+## 样式改进 (12项)
+1. **glass-card暗色模式增强** → 添加color-mix背景+更强backdrop-filter
+2. **text-gradient-primary-strong** → 渐变文字工具类(135度primary→primary-foreground)
+3. **shimmer-border-animated** → conic-gradient旋转动画边框
+4. **card-hover-lift** → 悬停上浮2px+阴影扩散(含暗色模式)
+5. **Hero区域背景** → 两个模糊渐变blob，20-25s慢速漂移动画
+6. **Footer链接** → hover:text-primary+hover:underline+underline-offset-2+transition-colors
+7. **Breadcrumb** → link hover:text-primary transition，当前项font-medium
+8. **Category卡片** → hover:scale-[1.02]+focus-visible ring
+9. **Ranking行** → hover:bg-muted/30(更柔和)+time range按钮focus-visible ring
+10. **Homepage filter pills** → focus-visible ring
+11. **Skeleton shimmer增强** → color-mix增强对比度(亮/暗模式分别调优)
+12. **排行榜/分类空状态** → 一致的motion.div动画+Award图标+引导文案
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- TypeScript: 所有新代码无类型错误
+- Dev server: HTTP 200 (OOM限制导致agent-browser无法并行运行，但curl验证页面正常)
+- 15+文件修改, 2文件新建, 1目录重命名
+
+Stage Summary:
+- 修复: 8项 (3 HIGH + 3 MEDIUM + 2 LOW)
+- 新功能: 4项 (环形图+最近阅读+搜索增强+状态Badge)
+- 样式: 12项改进
+- 累计修复: 1404+8 = 1412+
+- 累计新功能: 热力图+阅读时间+分享按钮+环形图+最近阅读+搜索增强+状态Badge
+
+## 项目当前状态描述/判断
+- 代码质量基线优秀: ESLint 0 error, 安全审计通过, 所有API有速率限制
+- 前端功能丰富: 首页(搜索+筛选+继续阅读+多布局)、分类页、排行榜、统计页(热力图+环形图+进度环)
+- 已知限制: 容器内存有限(~4GB)，Next.js Turbopack + agent-browser(Chromium)同时运行会触发OOM
+
+## 建议下一阶段优先事项
+1. P1: ErrorBoundary包裹ReaderContent等高风险组件
+2. P1: 移除或采用zod依赖(当前未使用)
+3. P2: 管理后台移动端响应式改进
+4. P2: 阅读器主题/字体大小设置持久化
+5. P3: 小说标签云可视化
+6. P3: 导出功能增强(实际EPUB生成)
+
+---

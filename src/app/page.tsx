@@ -413,13 +413,13 @@ export default function HomePage() {
               <span className="font-semibold text-foreground/80">{siteName}</span>
             </div>
             <div className="flex items-center gap-4 text-xs">
-              <Link href="/categories" className="text-muted-foreground/60 hover:text-foreground transition-colors">分类</Link>
+              <Link href="/categories" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">分类</Link>
               <span className="text-muted-foreground/20">·</span>
-              <Link href="/rankings" className="text-muted-foreground/60 hover:text-foreground transition-colors">排行榜</Link>
+              <Link href="/rankings" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">排行榜</Link>
               <span className="text-muted-foreground/20">·</span>
-              <Link href="/stats" className="text-muted-foreground/60 hover:text-foreground transition-colors">统计</Link>
+              <Link href="/stats" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">统计</Link>
               <span className="text-muted-foreground/20">·</span>
-              <Link href="/login" className="text-muted-foreground/60 hover:text-foreground transition-colors">管理</Link>
+              <Link href="/login" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">管理</Link>
             </div>
             <p className="text-[11px] text-muted-foreground/40">
               © {new Date().getFullYear()} {siteName} · 基于 Next.js 16 + Prisma + Tailwind CSS 构建

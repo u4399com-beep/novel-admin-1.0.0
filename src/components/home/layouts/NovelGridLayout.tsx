@@ -103,6 +103,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
                 <span className="line-clamp-1"><HighlightText text={novel.author} query={search} /></span>
                 <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
                 <span>{novel._count.chapters}章</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusInfo.colorClass} status-${novel.status} badge-glow`}>{statusInfo.label}</span>
               </div>
             </div>
           </motion.div>

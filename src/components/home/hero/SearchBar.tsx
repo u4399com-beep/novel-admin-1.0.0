@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, Search, History, Loader2 } from 'lucide-react';
+import { BookOpen, Search, History, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -51,6 +51,17 @@ function highlightText(text: string, query: string) {
   );
 }
 
+// ─── Keyboard shortcut helpers ──────────────────────────────────────
+
+function isMac(): boolean {
+  if (typeof window === 'undefined') return false;
+  return navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+}
+
+function getShortcutLabel(): string {
+  return isMac() ? '⌘K' : 'Ctrl+K';
+}
+
 // ─── Component ──────────────────────────────────────────────────────
 
 export interface SearchBarProps {
@@ -70,7 +81,31 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
     return getSearchHistory();
   });
   const searchRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // ─── Focus the input ────────────────────────────────────────────
+  const focusInput = useCallback(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  // ─── Global keyboard shortcut: / or Ctrl+K / ⌘K ─────────────────
+  useEffect(() => {
+    function handleGlobalKeydown(e: KeyboardEvent) {
+      // Ignore if user is already typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+      if (e.key === '/' || ((e.metaKey || e.ctrlKey) && e.key === 'k')) {
+        e.preventDefault();
+        focusInput();
+      }
+    }
+
+    document.addEventListener('keydown', handleGlobalKeydown);
+    return () => document.removeEventListener('keydown', handleGlobalKeydown);
+  }, [focusInput]);
 
   // ─── Handlers ──────────────────────────────────────────────────
   const handleSearch = (e: React.FormEvent) => {
@@ -82,6 +117,14 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
     setSearchHistory(getSearchHistory());
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const handleClear = useCallback(() => {
+    setSearchInput('');
+    onSearch('');
+    setSuggestions([]);
+    setSuggestionsOpen(false);
+    inputRef.current?.focus();
+  }, [onSearch]);
 
   const handleHistoryClear = () => {
     clearSearchHistory();
@@ -137,6 +180,10 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // ─── Shortcut label (recompute on client) ─────────────────────────
+  const [shortcutLabel, setShortcutLabel] = useState('⌘K');
+  useEffect(() => { setShortcutLabel(getShortcutLabel()); }, []);
+
   return (
     <section className="border-b bg-muted/30 fade-in-up">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
@@ -148,6 +195,7 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
             <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg border-glow card-glass stagger-children">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
               <Input
+                ref={inputRef}
                 type="text"
                 placeholder="搜索小说名、作者..."
                 aria-label="搜索小说名、作者"
@@ -180,15 +228,32 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
                   if (query.length >= 1 && suggestions.length > 0) setSuggestionsOpen(true);
                   else if (query.length === 0 && searchHistory.length > 0) setSuggestionsOpen(true);
                 }}
-                className="h-10 pl-10 pr-20 text-sm rounded-lg w-full"
+                className="h-10 pl-10 pr-10 sm:pr-20 text-sm rounded-lg w-full"
               />
+              {/* Clear button (visible when there's text) */}
+              {searchInput.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="absolute right-2 sm:right-16 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors z-10 focus-ring-soft"
+                  aria-label="清除搜索"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
               <Button
                 type="submit"
                 size="sm"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md z-10 magnetic-hover"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md z-10 magnetic-hover hidden sm:inline-flex"
               >
                 搜索
               </Button>
+              {/* Keyboard shortcut hint */}
+              {!searchInput && (
+                <kbd className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden sm:flex items-center h-6 px-2 rounded border bg-muted/60 text-[10px] font-mono text-muted-foreground/50 pointer-events-none select-none">
+                  {shortcutLabel}
+                </kbd>
+              )}
             </form>
 
             {/* Suggestions Dropdown */}

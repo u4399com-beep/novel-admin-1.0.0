@@ -49,8 +49,8 @@ export function HomeActivity() {
   return (
     <>
       {/* Continue Reading */}
-      <section className="border-b card-glass stagger-children">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
+      <section className="border-b card-glass">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
           <ContinueReading />
         </div>
       </section>

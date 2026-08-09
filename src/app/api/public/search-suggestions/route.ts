@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { sanitizeField, apiError } from "@/lib/api-utils";
@@ -21,29 +22,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ suggestions: [] });
     }
 
-    const novels = await db.novel.findMany({
-      where: {
-        title: { startsWith: q },
-      },
-      select: {
-        id: true,
-        title: true,
-        author: true,
-        categoryId: true,
-        category: {
-          select: { name: true, color: true },
-        },
-      },
-      take: 8,
-      orderBy: { updatedAt: 'desc' },
-    });
+    // SQLite does not support mode: "insensitive" — use $queryRaw with COLLATE NOCASE
+    const novels = await db.$queryRaw<Array<{
+      id: string;
+      title: string;
+      author: string;
+      categoryId: string | null;
+      categoryName: string | null;
+      categoryColor: string | null;
+    }>>(
+      Prisma.sql`SELECT n.id, n.title, n.author, n."categoryId",
+        c.name AS "categoryName", c.color AS "categoryColor"
+        FROM Novel n LEFT JOIN Category c ON n."categoryId" = c.id
+        WHERE n.title LIKE ${q + '%'} COLLATE NOCASE
+        ORDER BY n."updatedAt" DESC LIMIT 8`
+    );
 
     const suggestions = novels.map((n) => ({
       id: n.id,
       title: n.title,
       author: n.author,
-      category: n.category
-        ? { name: n.category.name, color: n.category.color }
+      category: n.categoryName
+        ? { name: n.categoryName, color: n.categoryColor }
         : null,
     }));
 

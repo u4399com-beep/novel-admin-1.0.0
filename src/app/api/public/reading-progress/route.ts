@@ -16,7 +16,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
-    if (!sessionId || sessionId.length < 10) {
+    if (!sessionId || sessionId.length < 20) {
       return NextResponse.json({ progress: [] });
     }
 
@@ -71,7 +71,7 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async f
 
     // Validate required fields
     const sid = sanitizeField(sessionId, MAX_SESSION_ID_LENGTH);
-    if (!sid || sid.length < 10) {
+    if (!sid || sid.length < 20) {
       return apiError('sessionId 无效', 400);
     }
     const nid = sanitizeField(novelId, 50);
@@ -129,7 +129,7 @@ export const DELETE = withPublicRateLimit({ capacity: 5, refillRate: 0.1 }, asyn
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
     const novelId = sanitizeField(searchParams.get('novelId') || '', 50);
 
-    if (!sessionId || sessionId.length < 10 || !novelId) {
+    if (!sessionId || sessionId.length < 20 || !novelId) {
       return apiError('缺少 sessionId 或 novelId', 400);
     }
 

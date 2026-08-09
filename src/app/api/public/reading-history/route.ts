@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
-    if (!sessionId || sessionId.length < 10) {
+    if (!sessionId || sessionId.length < 20) {
       return NextResponse.json({ items: [], total: 0 });
     }
 
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     if (!check.valid) return check.response;
 
     const sessionId = sanitizeField(body.sessionId, MAX_SESSION_ID_LENGTH);
-    if (!sessionId || sessionId.length < 10) {
+    if (!sessionId || sessionId.length < 20) {
       return apiError('sessionId 无效', 400);
     }
     const novelId = sanitizeField(body.novelId, MAX_ID_LENGTH);

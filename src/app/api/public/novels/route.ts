@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeField, apiError, parsePagination } from "@/lib/api-utils";
@@ -61,10 +62,18 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
 
     if (search) {
-      where.OR = [
-        { title: { contains: search, mode: "insensitive" } },
-        { author: { contains: search, mode: "insensitive" } },
-      ];
+      // SQLite does not support mode: "insensitive" — use $queryRaw with COLLATE NOCASE
+      const novels = await db.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`SELECT id FROM Novel WHERE title LIKE ${'%' + search + '%'} COLLATE NOCASE OR author LIKE ${'%' + search + '%'} COLLATE NOCASE LIMIT 200`
+      );
+      if (novels.length > 0) {
+        where.id = { in: novels.map((n) => n.id) };
+      } else {
+        // No matches — return empty result early
+        return NextResponse.json({ novels: [], total: 0, page, pageSize, totalPages: 0 }, {
+          headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' },
+        });
+      }
     }
 
     // Category filter: support both slug and id

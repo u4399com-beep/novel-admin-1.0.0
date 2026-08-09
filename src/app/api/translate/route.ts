@@ -1,27 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { safeJson, apiError } from '@/lib/api-utils';
-
-// Simple in-memory rate limiter (public endpoint, no auth)
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 100;
-const RATE_WINDOW = 60_000; // 1 minute
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  let entry = rateLimitMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + RATE_WINDOW };
-    rateLimitMap.set(ip, entry);
-  }
-  entry.count++;
-  // Periodic cleanup to prevent memory leaks
-  if (rateLimitMap.size > 10000) {
-    for (const [key, val] of rateLimitMap) {
-      if (now > val.resetAt) rateLimitMap.delete(key);
-    }
-  }
-  return entry.count <= RATE_LIMIT;
-}
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 interface TranslateRequestBody {
   text: string;
@@ -31,15 +10,7 @@ interface TranslateRequestBody {
 }
 
 // POST /api/translate
-export async function POST(request: NextRequest) {
-  const ip =
-    request.headers.get('x-real-ip') ||
-    request.headers.get('x-forwarded-for')?.split(',').pop()?.trim() ||
-    'unknown';
-
-  if (!checkRateLimit(ip)) {
-    return apiError('请求过于频繁，请稍后再试', 429);
-  }
+export const POST = withPublicRateLimit({ capacity: 30, refillRate: 0.5 }, async function POST(request: NextRequest) {
 
   let body: TranslateRequestBody;
   try {
@@ -107,4 +78,4 @@ export async function POST(request: NextRequest) {
     console.error('[translate] Error:', error);
     return apiError('翻译服务暂时不可用', 502);
   }
-}
+});

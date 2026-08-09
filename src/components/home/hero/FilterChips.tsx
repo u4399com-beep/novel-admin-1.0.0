@@ -135,7 +135,7 @@ function FilterRow<T extends string>({
                 key={opt.value || '__all__'}
                 onClick={() => onChange(opt.value)}
                 aria-pressed={isActive}
-                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap tap-feedback tag-pill hover-scale ${
+                className={`shrink-0 px-3 py-1 rounded-full text-sm transition-all duration-150 whitespace-nowrap tap-feedback tag-pill hover-scale focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none ${
                   isActive
                     ? 'bg-primary text-primary-foreground font-medium shadow-sm badge-glow'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'

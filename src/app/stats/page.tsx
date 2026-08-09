@@ -17,6 +17,7 @@ import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
 import { getGenreColor } from '@/lib/cover-gradient';
+import { CategoryDonut } from '@/components/stats/CategoryDonut';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -256,6 +257,22 @@ export default function StatsPage() {
               </motion.div>
 
 
+
+              {/* Category Donut Chart */}
+              {stats.genreDistribution.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.08 }}
+                  className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft fade-in-up"
+                >
+                  <div className="flex items-center gap-2 mb-4">
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    <h2 className="text-sm font-semibold">分类分布</h2>
+                  </div>
+                  <CategoryDonut data={stats.genreDistribution} />
+                </motion.div>
+              )}
 
               {/* Genre Distribution */}
               {stats.genreDistribution.length > 0 && (
