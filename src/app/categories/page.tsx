@@ -167,8 +167,6 @@ export default function CategoriesPage() {
     return categories.filter((c) => c.name.toLowerCase().includes(q));
   }, [categories, searchQuery]);
 
-  const maxNovels = Math.max(1, ...categories.map((c) => c._count.novels));
-
 
   return (
     <div className="min-h-screen bg-background fade-in-up">

@@ -51,7 +51,6 @@ export interface ReaderDialogProps {
   lastChapterIndex: number | null;
   bookmarks: import('../reader/types').BookmarkEntry[];
   readerContentRef: RefObject<HTMLDivElement | null>;
-  novelId: string;
   // Callbacks
   onClose: () => void;
   onGoToChapter: (direction: 'prev' | 'next') => void;
@@ -109,7 +108,6 @@ export function ReaderDialog({
   lastChapterIndex,
   bookmarks,
   readerContentRef,
-  novelId,
   onClose,
   onGoToChapter,
   onLoadChapter,

@@ -23,7 +23,7 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
     const check = requireFields(body, ['ids', 'action']);
     if (!check.valid) return check.response;
 
-    const { ids, action, data } = body;
+    const { ids, action } = body;
 
     // Validate ids
     if (!Array.isArray(ids) || ids.length === 0) {

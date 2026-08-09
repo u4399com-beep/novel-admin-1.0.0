@@ -134,7 +134,7 @@ function SidebarContent() {
           // Wrap with tooltip on desktop
           const tooltipContent = (
             <TooltipContent side="right" sideOffset={8}>
-              <p className="text-xs text-slate-800 dark:text-slate-200">{item.description}</p>
+              <p className="text-xs text-slate-200">{item.description}</p>
             </TooltipContent>
           );
 

@@ -114,6 +114,7 @@ export function SecuritySettings({ defaultSort, themeColor, showWordCount, onUpd
             </p>
           </div>
           <Switch
+            aria-label="显示字数统计"
             checked={showWordCount}
             onCheckedChange={(v) => onUpdate('showWordCount', v)}
           />

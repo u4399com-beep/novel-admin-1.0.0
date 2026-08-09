@@ -42,6 +42,7 @@ export function BasicInfoTab({ form }: EditorFormAccess) {
           <p className="text-xs text-muted-foreground">关闭后该规则不会被执行</p>
         </div>
         <Switch
+          aria-label="启用状态"
           checked={enabled}
           onCheckedChange={(v) => setValue('enabled', v, { shouldDirty: true })}
         />

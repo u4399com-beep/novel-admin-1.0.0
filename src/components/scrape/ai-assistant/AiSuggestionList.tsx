@@ -26,13 +26,11 @@ import type { GeneratedRule } from './types';
 import { getConfidenceColor, getConfidenceIcon, getConfidenceLabel } from './helpers';
 import { SelectorCard } from './SelectorCard';
 
-export function ResultView({
-  rule,
-}: {
+interface ResultViewProps {
   rule: GeneratedRule;
-  onApply: () => void;
-  onRegenerate: () => void;
-}) {
+}
+
+export function ResultView({ rule }: ResultViewProps) {
   const [notesOpen, setNotesOpen] = useState(false);
   const [agentqlOpen, setAgentqlOpen] = useState(false);
   const confidenceIconEmoji = getConfidenceIcon(rule.confidence);

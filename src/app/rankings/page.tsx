@@ -89,7 +89,6 @@ const RANK_COLOR_CLASSES: Record<number, string> = {
 function RankNumber({ rank }: { rank: number }) {
   const style = RANK_STYLES[rank];
   const badgeClass = RANK_BADGE_CLASSES[rank];
-  const colorClass = RANK_COLOR_CLASSES[rank];
   if (style) {
     return (
       <div className={`relative flex items-center justify-center w-8 h-8 rounded-full overflow-hidden badge-pulse badge-glow ${badgeClass || ''}`}>

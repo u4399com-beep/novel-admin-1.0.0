@@ -66,6 +66,7 @@ export function ScraperSettings({ scrapeInterval, concurrentTasks, autoPublish, 
             </p>
           </div>
           <Switch
+            aria-label="自动发布"
             checked={autoPublish}
             onCheckedChange={(v) => onUpdate('autoPublish', v)}
           />

@@ -543,7 +543,6 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         lastChapterIndex={lastChapterIndex}
         bookmarks={bookmarks}
         readerContentRef={readerContentRef}
-        novelId={novel.id}
         onClose={handleCloseReader}
         onGoToChapter={goToChapter}
         onLoadChapter={loadChapter}

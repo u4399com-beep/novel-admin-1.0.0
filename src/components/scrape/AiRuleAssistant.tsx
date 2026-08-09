@@ -159,11 +159,7 @@ export function AiRuleAssistant({
           {/* Step 3: Result */}
           {step === 'result' && generatedRule && (
             <div className="h-full px-6 py-4">
-              <ResultView
-                rule={generatedRule}
-                onApply={handleApply}
-                onRegenerate={handleRegenerate}
-              />
+              <ResultView rule={generatedRule} />
             </div>
           )}
         </div>

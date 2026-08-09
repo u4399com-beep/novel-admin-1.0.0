@@ -148,6 +148,7 @@ export function ChapterEditorPanel({ chapter, onClose, onSaved }: ChapterEditorP
             onChange={(e) => handleTitleChange(e.target.value)}
             className="h-8 text-sm font-medium border-0 bg-transparent focus-visible:ring-0 px-1"
             placeholder="章节标题"
+            aria-label="章节标题"
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -189,6 +190,7 @@ export function ChapterEditorPanel({ chapter, onClose, onSaved }: ChapterEditorP
           onChange={(e) => handleContentChange(e.target.value)}
           className="absolute inset-0 resize-none rounded-none border-0 shadow-none focus-visible:ring-0 p-4 font-mono text-sm leading-loose min-h-full h-full"
           placeholder="开始编写章节内容..."
+          aria-label="章节内容"
         />
       </div>
 
