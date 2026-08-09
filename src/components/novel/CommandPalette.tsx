@@ -171,13 +171,11 @@ export default function CommandPalette() {
   );
 
   const handleCategorySelect = useCallback(
-    (categoryId: string) => {
-      setCurrentView('novels');
+    (slug: string) => {
       setOpen(false);
-      // Navigate to categories page filtered by this category
-      router.push(`/categories`);
+      router.push(`/?categorySlug=${slug}`);
     },
-    [setCurrentView, router, setOpen],
+    [router, setOpen],
   );
 
   // Don't render until mounted (SSR safety)
@@ -271,7 +269,7 @@ export default function CommandPalette() {
                     {categories.slice(0, 6).map((cat) => (
                       <CommandItem
                         key={`cat-${cat.id}`}
-                        onSelect={() => handleCategorySelect(cat.id)}
+                        onSelect={() => handleCategorySelect(cat.slug)}
                         value={`category-${cat.name}`}
                         className="gap-3"
                       >

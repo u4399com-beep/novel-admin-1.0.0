@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ViewType, Novel, Chapter, Category, Tag, Theme, Site } from "@/types";
+import type { ViewType, Novel, Chapter, Category, Tag } from "@/types";
 
 interface AppState {
   // Navigation
@@ -8,16 +8,11 @@ interface AppState {
 
   // Selected novel for detail view
   selectedNovelId: string | null;
-  selectedNovel: Novel | null;
   selectNovel: (novel: Novel | null) => void;
 
   // Selected chapter for editing
   selectedChapterId: string | null;
   setSelectedChapterId: (id: string | null) => void;
-
-  // Sidebar
-  sidebarOpen: boolean;
-  setSidebarOpen: (open: boolean) => void;
 
   // Novel form dialog
   novelFormOpen: boolean;
@@ -41,18 +36,6 @@ interface AppState {
   tags: Tag[];
   setTags: (t: Tag[]) => void;
 
-  // Theme form dialog
-  themeFormOpen: boolean;
-  setThemeFormOpen: (open: boolean) => void;
-  editingTheme: Theme | null;
-  setEditingTheme: (theme: Theme | null) => void;
-
-  // Site form dialog
-  siteFormOpen: boolean;
-  setSiteFormOpen: (open: boolean) => void;
-  editingSite: Site | null;
-  setEditingSite: (site: Site | null) => void;
-
   // Command palette
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -63,18 +46,13 @@ export const useAppStore = create<AppState>((set) => ({
   // Navigation
   currentView: "dashboard",
   setCurrentView: (view) =>
-    set({ currentView: view, selectedNovelId: null, selectedNovel: null, selectedChapterId: null }),
+    set({ currentView: view, selectedNovelId: null, selectedChapterId: null }),
 
   selectedNovelId: null,
-  selectedNovel: null,
-  selectNovel: (novel) => set({ selectedNovelId: novel?.id ?? null, selectedNovel: novel, selectedChapterId: null }),
+  selectNovel: (novel) => set({ selectedNovelId: novel?.id ?? null, selectedChapterId: null }),
 
   selectedChapterId: null,
   setSelectedChapterId: (id) => set({ selectedChapterId: id }),
-
-  // Sidebar
-  sidebarOpen: true,
-  setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
   // Novel form
   novelFormOpen: false,
@@ -101,21 +79,7 @@ export const useAppStore = create<AppState>((set) => ({
   tags: [],
   setTags: (t) => set({ tags: t }),
 
-  // Theme form
-  themeFormOpen: false,
-  setThemeFormOpen: (open) => set({ themeFormOpen: open, ...(open && { editingTheme: null }) }),
-  editingTheme: null,
-  setEditingTheme: (theme) => set({ editingTheme: theme, themeFormOpen: theme !== null }),
-
-  // Site form
-  siteFormOpen: false,
-  setSiteFormOpen: (open) => set({ siteFormOpen: open, ...(open && { editingSite: null }) }),
-  editingSite: null,
-  setEditingSite: (site) => set({ editingSite: site, siteFormOpen: site !== null }),
-
   // Command palette
   commandPaletteOpen: false,
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
-
-
 }));

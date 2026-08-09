@@ -78,29 +78,7 @@ export function ActivityFeed() {
   const handleClick = useCallback((item: ActivityItem) => {
     const novelId = extractNovelId(item.link);
     if (novelId) {
-      // Build a minimal Novel object for selectNovel
-      const novel: Novel = {
-        id: novelId,
-        title: item.meta?.novelTitle ? String(item.meta.novelTitle) : item.title,
-        author: '',
-        description: null,
-        coverUrl: null,
-        coverPath: null,
-        status: (item.meta?.status as Novel['status']) ?? 'ongoing',
-        categoryId: null,
-        category: null,
-        tags: [],
-        wordCount: Number(item.meta?.wordCount ?? 0),
-        sourceUrl: null,
-        sourceId: null,
-        extraKeywords: null,
-        seoTitle: null,
-        seoDescription: null,
-        seoKeywords: null,
-        createdAt: item.timestamp,
-        updatedAt: item.timestamp,
-      };
-      selectNovel(novel);
+      selectNovel({ id: novelId } as Novel);
       setCurrentView('novel-detail');
     }
   }, [selectNovel, setCurrentView]);
