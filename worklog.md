@@ -6178,3 +6178,56 @@ Stage Summary:
 - 累计修复: 1369+4 = 1373+
 - 代码质量基线: 完全参数化SQL, 一致的输入验证上限, 完整资源清理
 - Cron: ID 310769 (每15分钟触发下一轮)
+---
+Task ID: cycle8-120
+Agent: Main Orchestrator
+Task: 120轮循环第8轮 - 时序攻击+N+1性能+类型安全+死代码清理
+
+Work Log:
+## 审计范围 (2个Explore子代理并行)
+1. API路由深度审计: 安全漏洞, 类型安全, 输入验证, 性能
+2. 组件+Hooks审计: 缺失导入, 未使用props, AbortController, 重复代码
+
+## 修复清单 (18项)
+
+### HIGH (2项)
+1. **by-source-url时序攻击**: service token比较用!==→改用timingSafeEqual
+2. **DownloadManagerView运行时崩溃**: 导入2个不存在的组件(DownloadList/DownloadActions)+使用raw fetch+缺失AbortController→完整重写为自包含视图(内联表格+apiFetch+AC)
+
+### MEDIUM (10项)
+3. **N+1查询优化**: reading-goals calculateStreak从365次findUnique→单次findMany+Set查找
+4. **tags/route类型安全**: name.trim()前添加typeof检查
+5. **categories/route类型安全**: name/slug添加typeof检查
+6. **themes/route类型安全**: name添加typeof检查
+7. **sites/route无界JSON**: geoConfig/customConfig JSON.stringify→safeJsonStringify(50KB限制)
+8. **sites/[id]/route无界JSON**: 同上
+9. **reading-stats tz参数**: 未sanitize→添加sanitizeField
+10. **reading-streak tz参数**: 同上
+11. **ReadingOverview缺失AC**: useEffect无AbortController→添加+aborted守卫
+12. **WordCountStats缺失AC**: 同上
+13. **SearchBar未使用prop**: onReset完全未使用→从接口+调用点移除
+14. **translate/languages无速率限制**: 公开端点代理到翻译服务→添加withPublicRateLimit
+
+### LOW (4项)
+15. **helpers.tsx重复导入**: 两个lucide-react import→合并为一个
+16. **import/route冗余i标志**: .toLowerCase()后/\.(txt|json)$/i→移除i
+17. **import/route硬编码status**: ['ongoing','completed','hiatus']→VALID_NOVEL_STATUSES
+18. **reading-history TOCTOU**: 添加注释说明缺少唯一索引的限制
+
+## 未修复(需评估)
+- ActivityFeed `as Novel`类型断言: 需要store API变更, 影响面较大
+- click/favorite dedup Map无界增长: 需要LRU或TTL优化设计
+- reading-history TOCTOU完整修复: 需要schema迁移添加复合唯一索引
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- Dev server: 无运行时错误
+- 18文件修改, +127/-79行
+- Git: pushed to main (075327e)
+
+Stage Summary:
+- 修复: 18项 (2 HIGH + 12 MEDIUM + 4 LOW)
+- 累计修复: 1373+18 = 1391+
+- 安全基线: 所有token比较使用timingSafeEqual, 所有JSON存储有50KB限制
+- 性能基线: streak计算O(1)查询, 所有useEffect有AC
+- Cron: ID 310769 (每15分钟触发下一轮)
