@@ -9,7 +9,7 @@ import { isSafeUrl } from './sanitize';
 // ── Valid option sets ──
 
 export const VALID_SCRAPE_MODES = ['incremental', 'full'] as const;
-export const VALID_ENGINES = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser'] as const;
+export const VALID_ENGINES = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling'] as const;
 export const VALID_STORAGE_MODES = ['database', 'file'] as const;
 export const VALID_DEDUP_MODES = ['url', 'title', 'both'] as const;
 export const VALID_SELECTOR_TYPES = ['css', 'xpath', 'regex'] as const;

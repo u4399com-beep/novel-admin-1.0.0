@@ -111,12 +111,8 @@ export const PUT = withAuth(async function PUT(
     if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
       return apiError("enableShuffle 必须是布尔值", 400);
     }
-    if (body.antiCrawlLevel !== undefined) {
-      const acl = Math.floor(Number(body.antiCrawlLevel));
-      if (isNaN(acl) || acl < 1 || acl > 5) {
-        return apiError("antiCrawlLevel 必须是 1-5 之间的整数", 400);
-      }
-    }
+    // antiCrawlLevel removed: field does not exist in Prisma schema
+    // Accept and silently ignore to maintain backward compatibility with clients
 
     // Validate delay constraints
     const minD = body.minDelay !== undefined ? Math.max(0, Math.floor(Number(body.minDelay) || 1000)) : undefined;
@@ -208,7 +204,7 @@ export const PUT = withAuth(async function PUT(
         ...(body.contentPagination !== undefined && { contentPagination: jsonFields.contentPagination }),
 
         ...(body.antiCrawlConfig !== undefined && { antiCrawlConfig: jsonFields.antiCrawlConfig }),
-        ...(body.antiCrawlLevel !== undefined && { antiCrawlLevel: Math.min(5, Math.max(1, Math.floor(Number(body.antiCrawlLevel)))) }),
+        // antiCrawlLevel: removed from schema, ignore gracefully
 
         ...(body.storageMode !== undefined && { storageMode: body.storageMode }),
         ...(body.filePath !== undefined && { filePath: validateSavePath(body.filePath) }),

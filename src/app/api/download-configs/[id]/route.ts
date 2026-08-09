@@ -175,11 +175,16 @@ export const DELETE = withAuth(async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const existing = await db.downloadConfig.findUnique({ where: { id } });
-    if (!existing) {
+    // Use transaction to prevent TOCTOU race
+    const deleted = await db.$transaction(async (tx) => {
+      const existing = await tx.downloadConfig.findUnique({ where: { id } });
+      if (!existing) return false;
+      await tx.downloadConfig.delete({ where: { id } });
+      return true;
+    });
+    if (!deleted) {
       return apiError("下载配置不存在", 404);
     }
-    await db.downloadConfig.delete({ where: { id } });
     invalidateCache("download-configs:list");
     return apiDeleted();
   } catch (error: unknown) {
