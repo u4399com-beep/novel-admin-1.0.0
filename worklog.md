@@ -6036,3 +6036,53 @@ Stage Summary:
 - 累计修复: 1304+7 = 1311+
 - 代码质量基线: 0 any(已知例外), 0 @ts-ignore, 完整AbortController覆盖
 - Cron: ID 310769 (每15分钟触发下一轮)
+
+---
+Task ID: cycle5-120
+Agent: Main Orchestrator
+Task: 120轮循环第5轮 - CSS变量统一(硬编码颜色→语义token)
+
+Work Log:
+## 审计范围
+- CSS硬编码颜色扫描(39个组件文件)
+- 识别出52处可替换的语义色(25个文件)
+
+## 修复清单 (~40处)
+
+### P0 (1项)
+1. **globals.css** @theme inline注册5个chart颜色: --color-chart-emerald/amber/violet/orange/slate
+
+### P1 - destructive统一 (11文件)
+2. text-red-500/600 → text-destructive
+3. bg-red-50 → bg-destructive/5, border-red-200 → border-destructive/20
+4. 删除所有dark:red变体(destructive自动处理dark mode)
+
+### P1 - 状态色集中化 (3文件)
+5. task-monitor/types.ts: STATUS_CONFIG 5状态→chart-*/destructive/muted
+6. task-monitor/types.ts: LOG_LEVEL_CONFIG 4级别→chart-*/destructive
+7. TaskLogPanel.tsx: 同步日志色配置
+
+### P1 - 状态色批量替换 (12文件)
+8. NovelMetaFields: STATUS_BADGE_CONFIG blue/emerald/amber→chart-*
+9. 11个组件中emerald状态色→text/bg-chart-emerald
+10. 6个组件中amber状态色→text/bg-chart-amber
+11. 站点状态圆点→bg-chart-emerald/bg-destructive
+
+## 保留不替换(正确决策)
+- 翻译面板amber品牌色
+- 书签/连续天数/目标达成装饰色
+- 引擎标识色(green/blue/orange/purple/cyan)
+- AppSidebar violet渐变品牌色
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- Agent-browser: 首页正常
+- Dev server: 无运行时错误
+- 17文件修改, +67/-62行
+- Git: pushed to main
+
+Stage Summary:
+- 修复: ~40处颜色替换 + 1个主题配置
+- 累计修复: 1311+40 = 1351+
+- CSS变量覆盖率: 语义状态色从0%→~80%(剩余为装饰/品牌色)
+- Cron: ID 310769 (每15分钟触发下一轮)
