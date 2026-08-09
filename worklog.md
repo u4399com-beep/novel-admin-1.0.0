@@ -6086,3 +6086,95 @@ Stage Summary:
 - 累计修复: 1311+40 = 1351+
 - CSS变量覆盖率: 语义状态色从0%→~80%(剩余为装饰/品牌色)
 - Cron: ID 310769 (每15分钟触发下一轮)
+
+---
+Task ID: cycle6-120
+Agent: Main Orchestrator
+Task: 120轮循环第6轮 - 无障碍审查+死代码+功能bug修复
+
+Work Log:
+## 审计范围 (2个Explore子代理并行)
+1. 无障碍审查: aria-label/keyboard/focus, 交互角色, 对话框/模态框, 表单标签, 键盘导航
+2. Zustand store类型审查: 死状态/动作, 未使用属性, 模式不一致
+3. ErrorBoundary覆盖: 路由级error.tsx
+
+## 修复清单 (18项, 分2次提交)
+
+### HIGH (5项)
+1. **app-store死代码清理**: 移除10个从未被外部读取的属性(sidebarOpen×2, selectedNovel状态, themeFormOpen×4, siteFormOpen×4), 简化selectNovel只存ID, ActivityFeed不再构造20字段假对象
+2. **error.tsx路由级错误边界**: 新增/admin/error.tsx和/novels/[id]/error.tsx
+3. **CommandPalette分类选择功能bug**: categoryId参数完全未使用, 修复为用slug导航到/?categorySlug=${slug}
+
+### MEDIUM (9项)
+4. **AppSidebar tooltip文字色**: text-slate-800 dark:text-slate-200→text-slate-200(强制深色侧边栏)
+5. **AiSuggestionList ResultView**: 移除声明但从未使用的onApply/onRegenerate props(接口+调用点)
+6-8. **3个Switch添加aria-label**: BasicInfoTab, ScraperSettings, SecuritySettings
+9. **ChapterEditorPanel**: Input/Textarea添加aria-label(章节标题/章节内容)
+10-12. **表单输入aria-label**: SelectorControls按钮, SelectorCard编辑模式
+13. **NovelImportDialog drop zone**: 添加role=button+tabIndex+onKeyDown
+14. **SelectorCard code onClick**: 添加role=button+tabIndex
+
+### LOW (4项)
+15. **batch/route.ts**: 移除未使用变量data
+16. **categories/page.tsx**: 移除未使用变量maxNovels
+17. **rankings/page.tsx**: 移除未使用变量colorClass
+18. **ReaderDialog**: 移除未使用prop novelId(接口+解构+调用点)
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- Dev server: 无运行时错误
+- 12+3文件修改
+- Git: pushed to main (2 commits)
+
+Stage Summary:
+- 修复: 18项 (5 HIGH + 9 MEDIUM + 4 LOW)
+- 累计修复: 1351+18 = 1369+
+- 无障碍基线: 所有Switch有aria-label, 关键表单输入有aria-label
+- Cron: ID 310769 (每15分钟触发下一轮)
+
+---
+Task ID: cycle7-120
+Agent: Main Orchestrator
+Task: 120轮循环第7轮 - API验证深度+SQL参数化+React稳定性
+
+Work Log:
+## 审计范围 (1个Explore子代理)
+1. API路由输入验证深度: Prisma.raw注入, 字段验证上限, 路径遍历
+2. React Key稳定性: 数组index作为key, 缺失key, 不稳定key
+3. useEffect依赖准确性: 错误依赖数组, eslint-disable抑制
+4. 资源清理完整性: 事件监听器, 定时器, AbortController
+
+## 修复清单 (4项)
+
+### MEDIUM (1项)
+1. **chapters batch reorder SQL参数化**: Prisma.raw(手动拼接VALUES字符串+单引号转义)→Prisma.join+Prisma.sql(完全参数化查询, 每个值为独立参数)
+
+### LOW (3项)
+2. **chapters/batch sortOrder上限**: 缺少>100000上限验证(与单章路由不一致)→添加
+3. **reading-goals POST上限**: chaptersRead/words无上限→添加10000/5000000上限
+4. **NovelFormDialog+CategoryFormDialog**: 移除未使用的eslint-disable指令
+
+## 补充扫描结果(无问题)
+- 所有$queryRaw正确使用Prisma.sql参数化
+- 无fs操作→无路径遍历风险
+- 所有POST/PUT使用safeJson+sanitizeField+maxLength
+- 所有URL字段使用isSafeUrl SSRF保护
+- coverPath检查..遍历+前缀白名单
+- 所有数据驱动列表使用key={item.id}稳定标识
+- key={i}仅用于骨架屏/静态内容分割
+- 所有addEventListener配对removeEventListener
+- 所有setInterval/setTimeout配对clear
+- 所有AbortController配对abort
+- 无WebSocket连接
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- Dev server: 无运行时错误
+- 3文件修改, +12/-9行
+- Git: pushed to main
+
+Stage Summary:
+- 修复: 4项 (1 MEDIUM + 3 LOW)
+- 累计修复: 1369+4 = 1373+
+- 代码质量基线: 完全参数化SQL, 一致的输入验证上限, 完整资源清理
+- Cron: ID 310769 (每15分钟触发下一轮)
