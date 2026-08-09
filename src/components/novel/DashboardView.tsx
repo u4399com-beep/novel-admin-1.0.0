@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
 import type { DashboardStats, Novel } from '@/types';
-import { ReadingHeatMap } from '@/components/ReadingHeatMap';
+import { ReadingHeatmap } from '@/components/stats/ReadingHeatmap';
 import { ReadingStatsCard } from '@/components/ReadingStatsCard';
 
 import { StatCard, statCards } from './dashboard/StatCard';
@@ -292,7 +292,7 @@ export function DashboardView() {
             <CardTitle className="text-base">阅读活跃度</CardTitle>
           </CardHeader>
           <CardContent>
-            <ReadingHeatMap sessionId="" />
+            <ReadingHeatmap />
           </CardContent>
         </Card>
         <div className="md:col-span-1">

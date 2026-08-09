@@ -31,7 +31,7 @@ export function GeneralSettings({ siteName, siteDescription, itemsPerPage, onUpd
   return (
     <Card className="card-border-glow">
       <CardHeader>
-        <CardTitle className="text-base">基本设置</CardTitle>
+        <CardTitle className="text-base settings-section-title">基本设置</CardTitle>
         <CardDescription>配置站点基本信息和显示参数</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

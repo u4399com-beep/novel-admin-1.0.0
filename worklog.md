@@ -6231,3 +6231,132 @@ Stage Summary:
 - 安全基线: 所有token比较使用timingSafeEqual, 所有JSON存储有50KB限制
 - 性能基线: streak计算O(1)查询, 所有useEffect有AC
 - Cron: ID 310769 (每15分钟触发下一轮)
+
+---
+Task ID: cycle9-120-heatmap
+Agent: Sub-agent
+Task: 阅读热力图组件 + 集成到统计页
+
+Work Log:
+- 读取项目上下文：worklog最后50行、stats/page.tsx、api-fetch.ts、ReadingDaily schema、reading-stats API
+- 确认API实际返回 `heatmap` 数组（{date, count}）而非 `dailyStats`，组件做兼容处理
+- 创建 `src/components/stats/ReadingHeatmap.tsx`：
+  - GitHub风格绿色热力图，展示~6个月（183天）阅读活动
+  - 5级绿色色阶（#ebedf0 → #216e39），按比例映射章节阅读量
+  - 网格布局：7行（周一至周日）× N列（周），周一对齐
+  - 顶部月份标签（Jan-Dec），左侧星期标签（Mon/Wed/Fri，移动端隐藏）
+  - 固定定位tooltip，hover时显示日期、章节、字数、阅读时间
+  - hover:scale-110 微交互
+  - 右下角图例（少→多）
+  - 汇总统计（总章节数、活跃天数）
+  - 使用apiFetch + AbortController获取数据，silent模式
+  - 使用queueMicrotask避免sync setState in effect lint错误
+  - 加载骨架态（Skeleton组件）
+  - 空状态（无阅读数据提示）
+  - 响应式：overflow-x-auto横向滚动，day标签hidden sm:flex
+- 集成到stats/page.tsx：在WordCountStats下方、stat cards上方添加ReadingHeatmap
+- 运行lint：0 errors（6 warnings均为pre-existing）
+
+Stage Summary:
+- 新增文件：src/components/stats/ReadingHeatmap.tsx（~500行）
+- 修改文件：src/app/stats/page.tsx（+12行导入+集成）
+- ESLint：通过（0 errors）
+- Dev server：无运行时错误
+
+---
+Task ID: cycle9-120-style
+Agent: Sub-agent
+Task: 样式改进 + 死代码清理
+
+Work Log:
+- 读取项目上下文：worklog最后50行、admin/settings/page.tsx、GeneralSettings/ScraperSettings/SecuritySettings子组件、ErrorBoundary.tsx、NovelCards.tsx、globals.css
+- 确认withErrorBoundary仅在ErrorBoundary.tsx中定义，全项目无任何导入使用（仅存在注释和导出）
+- Part 1 - Admin Settings样式改进：
+  - globals.css: 为.form-group添加`transition: all 0.2s ease`，新增`.form-group:focus-within`微上浮效果
+  - globals.css: 新增`.settings-section-title`类，使用`::before`伪元素实现左侧渐变装饰条（3px宽，primary色渐变）
+  - GeneralSettings.tsx: CardTitle添加`settings-section-title`类
+  - ScraperSettings.tsx: CardTitle添加`settings-section-title`类
+  - SecuritySettings.tsx: CardTitle添加`settings-section-title`类；主题色按钮添加`focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`；transition duration从150ms升级到200ms
+  - settings/page.tsx: 数据管理CardTitle添加`settings-section-title`类
+  - settings/page.tsx: 导出/导入/清空缓存按钮：移除图标mr-2，改用按钮级gap-1.5布局；添加`transition-all duration-200`和`focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`
+  - settings/page.tsx: 保存按钮添加`transition-all duration-200`和`focus-visible`样式
+- Part 2 - 死代码清理：
+  - ErrorBoundary.tsx: 删除withErrorBoundary函数（lines 80-95），保留ErrorBoundary类完整
+  - ErrorBoundary.tsx: 修正import顺序（ErrorInfo在ReactNode前）
+- Part 3 - NovelCard微交互：
+  - NovelCards.tsx MemoizedGridCard:
+    - Card: `transition-shadow hover:shadow-md` → `transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/5`（更明显的hover抬起+主色阴影光晕）
+    - 封面容器div: 添加`overflow-hidden`防止scale溢出
+    - 封面img: 添加`transition-transform duration-500 group-hover:scale-105`（hover时图片缓慢放大）
+    - 查看按钮: `transition-opacity` → `transition-all duration-200`，添加`active:scale-[0.97]`（按下缩放反馈）
+- 运行lint：0 errors，6 warnings（均为pre-existing React Hook Form react-hooks/incompatible-library）
+
+Stage Summary:
+- 修改文件：globals.css、GeneralSettings.tsx、ScraperSettings.tsx、SecuritySettings.tsx、admin/settings/page.tsx、ErrorBoundary.tsx、NovelCards.tsx（7文件）
+- 删除死代码：withErrorBoundary HOC（~16行）
+- 新增CSS类：.settings-section-title（渐变装饰条）、.form-group过渡增强
+- 微交互：卡片hover抬起+阴影光晕、封面图片缩放、按钮按下缩放
+- 无障碍：所有设置页交互元素添加focus-visible环
+- ESLint：0 errors（6 warnings pre-existing）
+- Dev server：无运行时错误
+
+---
+Task ID: cycle9-120-reading-time
+Agent: Sub-agent
+Task: 阅读时间估算功能
+
+Work Log:
+- 创建 `src/lib/reading-time.ts` 工具函数，默认阅读速度 300字/分钟
+- 函数 `estimateReadingTime(wordCount, wordsPerMinute?)` 返回 `{ hours, minutes, totalMinutes, display }`
+- 显示格式：「约X小时Y分钟」（不足1小时时仅显示分钟）
+- 修改 `src/app/novels/[id]/parts/NovelInfoSection.tsx`：
+  - 导入 `estimateReadingTime` 和 `Tooltip`/`TooltipTrigger`/`TooltipContent`
+  - 在组件内计算 `readingTime`（基于小说总字数）和 `remainingTime`（基于未读章节字数之和，仅在有阅读进度时显示）
+  - 在统计区域添加新的 Clock 图标统计卡片，样式与现有统计行一致
+  - 卡片显示总预计阅读时间，有进度时副标题显示「剩余 X小时Y分钟」
+  - 添加 Tooltip 提示「基于平均阅读速度 300字/分钟」
+- 运行 `bun run lint`：0 errors，6 warnings（均为 pre-existing）
+
+Stage Summary:
+- 新增文件：`src/lib/reading-time.ts`
+- 修改文件：`src/app/novels/[id]/parts/NovelInfoSection.tsx`
+- 功能：小说详情页显示预计总阅读时间，有阅读进度时显示剩余阅读时间
+- ESLint：0 errors
+---
+Task ID: cycle9-120
+Agent: Main Orchestrator
+Task: 120轮循环第9轮 - 遗留bug修复+热力图+样式+阅读时间
+
+Work Log:
+## 审计+修复
+
+### HIGH (3项)
+1. **ActivityFeed as Novel类型断言** → store新增selectNovelById(id:string|null)方法，ActivityFeed改用selectNovelById(novelId)消除unsafe cast
+2. **click/favorite dedup Map无界增长** → 两个dedup Map添加setInterval(60s)周期清理+unref，阈值从10K/5K降至5K/5K，保留inline emergency cleanup
+3. **reading-history TOCTOU** → schema添加@@unique([sessionId, novelId])，POST路由从findFirst+update/create改为原子upsert
+
+### MEDIUM (3项)
+4. **重复热力图组件** → stats/page.tsx同时渲染ReadingHeatMap(旧)和ReadingHeatmap(新)，删除旧文件+更新stats和DashboardView引用
+5. **withErrorBoundary死代码** → HOC定义16行从未被任何文件导入，已删除
+6. **管理后台settings页样式** → 添加settings-section-title渐变装饰条、form-group focus-within微上浮、按钮focus-visible环、gap-1.5布局
+
+### LOW (1项)
+7. **NovelCard微交互** → 卡片hover:-translate-y-1+shadow-lg+shadow-primary/5，封面hover:scale-105，按钮active:scale-[0.97]
+
+## 新功能 (3项)
+8. **GitHub风格阅读热力图** → 新建ReadingHeatmap组件(~500行)，6个月绿色色阶网格，tooltip/month labels/day labels/legend，集成stats页
+9. **阅读时间估算** → 新建reading-time.ts工具(300字/分钟)，小说详情页显示总阅读时间+剩余时间(有进度时)，Tooltip说明
+10. **dashboard热力图升级** → DashboardView的旧ReadingHeatMap替换为新ReadingHeatmap
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- Agent-browser: 首页✅, 分类页✅, 排行榜✅, 统计页✅ (全部无console error)
+- Dev server: 无运行时错误
+- 10+文件修改, 2文件新建, 1文件删除
+
+Stage Summary:
+- 修复: 7项 (3 HIGH + 3 MEDIUM + 1 LOW)
+- 新功能: 3项
+- 累计修复: 1391+7 = 1398+
+- 新增功能累计: 热力图+阅读时间估算+卡片微交互
+- Cron: 每轮结束设置

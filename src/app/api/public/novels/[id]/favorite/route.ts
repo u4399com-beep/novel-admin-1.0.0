@@ -6,17 +6,25 @@ import { isPrismaError, apiError } from "@/lib/api-utils";
 /** In-memory dedup: IP+novelId → timestamp. TTL 24h. Prevents count manipulation. */
 const favoriteDedup = new Map<string, number>();
 const FAVORITE_TTL = 24 * 60 * 60 * 1000;
+const FAVORITE_MAX_SIZE = 5000;
+
+/** Periodic cleanup every 60s to prevent unbounded growth. */
+function cleanupFavoriteDedup() {
+  const now = Date.now();
+  for (const [k, v] of favoriteDedup) {
+    if (now - v > FAVORITE_TTL) favoriteDedup.delete(k);
+  }
+}
+setInterval(cleanupFavoriteDedup, 60 * 1000).unref();
+
 function isFavoriteDeduplicated(ip: string, novelId: string): boolean {
   const key = `${ip}:${novelId}`;
   const ts = favoriteDedup.get(key);
   if (ts && Date.now() - ts < FAVORITE_TTL) return true;
   favoriteDedup.set(key, Date.now());
-  // Lazy cleanup: remove expired entries when map grows
-  if (favoriteDedup.size > 5000) {
-    const now = Date.now();
-    for (const [k, v] of favoriteDedup) {
-      if (now - v > FAVORITE_TTL) favoriteDedup.delete(k);
-    }
+  // Emergency cap: if periodic cleanup missed, do inline cleanup
+  if (favoriteDedup.size > FAVORITE_MAX_SIZE) {
+    cleanupFavoriteDedup();
   }
   return false;
 }

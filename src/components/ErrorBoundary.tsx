@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Component, type ReactNode, type ErrorInfo } from 'react';
+import React, { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -75,21 +75,4 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return this.props.children;
   }
-}
-
-/**
- * HOC to wrap a component with ErrorBoundary.
- * Usage: export default withErrorBoundary(MyComponent, 'MyComponentName')
- */
-export function withErrorBoundary<P extends object>(
-  WrappedComponent: React.ComponentType<P>,
-  name?: string,
-) {
-  return function ErrorBoundaryWrapper(props: P) {
-    return (
-      <ErrorBoundary name={name}>
-        <WrappedComponent {...props} />
-      </ErrorBoundary>
-    );
-  };
 }

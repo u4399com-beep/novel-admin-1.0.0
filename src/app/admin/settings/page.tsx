@@ -185,20 +185,20 @@ export default function SettingsPage() {
 
       <Card className="card-border-glow">
         <CardHeader>
-          <CardTitle className="text-base">数据管理</CardTitle>
+          <CardTitle className="text-base settings-section-title">数据管理</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            <Button variant="outline" disabled={exporting} onClick={handleExportAll}>
-              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            <Button variant="outline" disabled={exporting} onClick={handleExportAll} className="gap-1.5 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               {exporting ? '正在导出...' : '导出所有数据'}
             </Button>
-            <Button variant="outline" onClick={handleImportCategories}>
-              <Upload className="mr-2 h-4 w-4" />
+            <Button variant="outline" onClick={handleImportCategories} className="gap-1.5 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              <Upload className="h-4 w-4" />
               导入分类
             </Button>
-            <Button variant="outline" onClick={handleClearCache}>
-              <Trash2 className="mr-2 h-4 w-4" />
+            <Button variant="outline" onClick={handleClearCache} className="gap-1.5 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              <Trash2 className="h-4 w-4" />
               清空缓存
             </Button>
           </div>
@@ -206,7 +206,7 @@ export default function SettingsPage() {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={saveSettings} disabled={saving || loading} className="gap-2">
+        <Button onClick={saveSettings} disabled={saving || loading} className="gap-2 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? '保存中...' : '保存设置'}
         </Button>

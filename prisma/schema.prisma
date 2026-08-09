@@ -421,6 +421,7 @@ model ReadingHistory {
   @@index([sessionId])
   @@index([sessionId, readAt])
   @@index([novelId])
+  @@unique([sessionId, novelId])
 }
 
 // ==================== 阅读笔记 ====================

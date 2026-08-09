@@ -94,36 +94,23 @@ export async function POST(request: NextRequest) {
       ? sanitizeField(body.chapterTitle, MAX_TITLE_LENGTH) || undefined
       : undefined;
 
-    // Upsert: find existing entry for (sessionId, novelId) or create new
-    // NOTE: This uses findFirst+update/create instead of Prisma upsert because
-    // there's no composite unique constraint on (sessionId, novelId). A rare
-    // TOCTOU race could create a duplicate, but this is acceptable for anonymous
-    // session tracking. If duplicates become a problem, add a unique index.
-    const existing = await db.readingHistory.findFirst({
-      where: { sessionId, novelId },
+    // Upsert: use database-level unique constraint for atomicity
+    await db.readingHistory.upsert({
+      where: { sessionId_novelId: { sessionId, novelId } },
+      update: {
+        chapterId: chapterId ?? null,
+        chapterTitle: chapterTitle ?? null,
+        novelTitle,
+        readAt: new Date(),
+      },
+      create: {
+        sessionId,
+        novelId,
+        novelTitle,
+        chapterId: chapterId ?? null,
+        chapterTitle: chapterTitle ?? null,
+      },
     });
-
-    if (existing) {
-      await db.readingHistory.update({
-        where: { id: existing.id },
-        data: {
-          chapterId: chapterId ?? null,
-          chapterTitle: chapterTitle ?? null,
-          novelTitle,
-          readAt: new Date(),
-        },
-      });
-    } else {
-      await db.readingHistory.create({
-        data: {
-          sessionId,
-          novelId,
-          novelTitle,
-          chapterId: chapterId ?? null,
-          chapterTitle: chapterTitle ?? null,
-        },
-      });
-    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

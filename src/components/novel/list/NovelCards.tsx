@@ -46,7 +46,7 @@ const MemoizedGridCard = React.memo(function MemoizedGridCard({
     <Card
       role="article"
       tabIndex={0}
-      className="group cursor-pointer overflow-hidden transition-shadow hover:shadow-md relative card-interactive"
+      className="group cursor-pointer overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/5 relative card-interactive"
       onClick={() => onViewNovel(novel)}
       onKeyDown={(e) => { if (e.key === 'Enter') onViewNovel(novel); }}
     >
@@ -59,9 +59,9 @@ const MemoizedGridCard = React.memo(function MemoizedGridCard({
           className="bg-background/80 backdrop-blur-sm border-foreground/20"
         />
       </div>
-      <div className={`relative h-40 w-full bg-gradient-to-br ${gradient}`}>
+      <div className={`relative h-40 w-full overflow-hidden bg-gradient-to-br ${gradient}`}>
         {novel.coverUrl ? (
-          <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          <img src={novel.coverUrl} alt={novel.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <BookOpen className="h-12 w-12 text-muted-foreground/40" />
@@ -101,7 +101,7 @@ const MemoizedGridCard = React.memo(function MemoizedGridCard({
         <Button
           variant="outline"
           size="sm"
-          className="w-full opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          className="w-full opacity-0 transition-all duration-200 group-hover:opacity-100 group-focus-within:opacity-100 active:scale-[0.97]"
           onClick={(e) => { e.stopPropagation(); onViewNovel(novel); }}
         >
           <BookMarked className="mr-1.5 h-3.5 w-3.5" />

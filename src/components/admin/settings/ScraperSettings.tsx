@@ -23,7 +23,7 @@ export function ScraperSettings({ scrapeInterval, concurrentTasks, autoPublish, 
   return (
     <Card className="card-border-glow">
       <CardHeader>
-        <CardTitle className="text-base">采集设置</CardTitle>
+        <CardTitle className="text-base settings-section-title">采集设置</CardTitle>
         <CardDescription>配置采集任务的默认行为参数</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

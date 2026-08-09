@@ -9,6 +9,7 @@ interface AppState {
   // Selected novel for detail view
   selectedNovelId: string | null;
   selectNovel: (novel: Novel | null) => void;
+  selectNovelById: (id: string | null) => void;
 
   // Selected chapter for editing
   selectedChapterId: string | null;
@@ -50,6 +51,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   selectedNovelId: null,
   selectNovel: (novel) => set({ selectedNovelId: novel?.id ?? null, selectedChapterId: null }),
+  selectNovelById: (id) => set({ selectedNovelId: id, selectedChapterId: null }),
 
   selectedChapterId: null,
   setSelectedChapterId: (id) => set({ selectedChapterId: id }),

@@ -13,7 +13,13 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui/tooltip';
 import { formatWordCount } from '@/lib/format';
+import { estimateReadingTime } from '@/lib/reading-time';
 import type { Novel, Chapter } from '../reader/types';
 
 const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
@@ -50,6 +56,15 @@ export function NovelInfoSection({
   onOpenReader,
 }: NovelInfoSectionProps) {
   const statusInfo = STATUS_MAP[novel.status] || STATUS_MAP.ongoing;
+  const readingTime = estimateReadingTime(novel.wordCount);
+  const remainingTime =
+    safeLastChapterIndex !== null
+      ? estimateReadingTime(
+          chapters
+            .slice(safeLastChapterIndex + 1)
+            .reduce((sum, ch) => sum + ch.wordCount, 0),
+        )
+      : null;
 
   return (
     <motion.section
@@ -241,10 +256,32 @@ export function NovelInfoSection({
                 <div className="text-xs text-muted-foreground mt-0.5">收藏</div>
               </div>
             </motion.div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.45 }}
+                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 cursor-default"
+                >
+                  <Clock className="h-4 w-4 text-primary" />
+                  <div>
+                    <div className="text-lg font-semibold leading-none tabular-nums">
+                      {readingTime.display}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {remainingTime
+                        ? `剩余 ${remainingTime.display}`
+                        : '预计阅读'}</div>
+                  </div>
+                </motion.div>
+              </TooltipTrigger>
+              <TooltipContent>基于平均阅读速度 300字/分钟</TooltipContent>
+            </Tooltip>
             <motion.span
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.45 }}
+              transition={{ delay: 0.5 }}
               className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"
             >
               <Clock className="h-3.5 w-3.5" />

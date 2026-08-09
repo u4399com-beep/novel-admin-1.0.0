@@ -7,11 +7,11 @@ import {
   BookOpen, TrendingUp, Library, CheckCircle2,
   Clock, BarChart3, ArrowLeft, Loader2, BookMarked, RotateCcw,
 } from 'lucide-react';
-import { ReadingHeatMap } from '@/components/ReadingHeatMap';
 import ReadingStreak from '@/components/ReadingStreak';
 import { ReadingGoalCard } from '@/components/ReadingGoalCard';
 import { ReadingOverview } from '@/components/stats/ReadingOverview';
 import { WordCountStats } from '@/components/stats/WordCountStats';
+import ReadingHeatmap from '@/components/stats/ReadingHeatmap';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime } from '@/lib/format';
@@ -205,6 +205,16 @@ export default function StatsPage() {
               {/* Word Count Statistics */}
               <WordCountStats />
 
+              {/* Reading Heatmap (GitHub-style, 6 months) */}
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.03 }}
+                className="fade-in-up"
+              >
+                <ReadingHeatmap />
+              </motion.div>
+
               {/* Reading Streak + Goal + Stat Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 hover-scale stagger-children">
                 {streakData && (
@@ -245,15 +255,7 @@ export default function StatsPage() {
                 <ReadingGoalCard />
               </motion.div>
 
-              {/* Reading Heat Map */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.08 }}
-                className="fade-in-up"
-              >
-                <ReadingHeatMap sessionId={getSessionId() || ''} className="mt-6" />
-              </motion.div>
+
 
               {/* Genre Distribution */}
               {stats.genreDistribution.length > 0 && (

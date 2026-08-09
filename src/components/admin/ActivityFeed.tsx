@@ -6,7 +6,6 @@ import { apiFetch } from '@/lib/api-fetch';
 import { formatRelativeTime } from '@/lib/format';
 import { useAppStore } from '@/stores/app-store';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { Novel } from '@/types';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -47,7 +46,7 @@ export function ActivityFeed() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const selectNovel = useAppStore((s) => s.selectNovel);
+  const selectNovelById = useAppStore((s) => s.selectNovelById);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
 
   const fetchActivities = useCallback(async (signal?: AbortSignal) => {
@@ -78,10 +77,10 @@ export function ActivityFeed() {
   const handleClick = useCallback((item: ActivityItem) => {
     const novelId = extractNovelId(item.link);
     if (novelId) {
-      selectNovel({ id: novelId } as Novel);
+      selectNovelById(novelId);
       setCurrentView('novel-detail');
     }
-  }, [selectNovel, setCurrentView]);
+  }, [selectNovelById, setCurrentView]);
 
   // ─── Loading skeleton ─────────────────────────────────────────────────
   if (loading) {

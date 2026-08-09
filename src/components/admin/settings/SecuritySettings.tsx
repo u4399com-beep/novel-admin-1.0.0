@@ -46,7 +46,7 @@ export function SecuritySettings({ defaultSort, themeColor, showWordCount, onUpd
   return (
     <Card className="card-border-glow">
       <CardHeader>
-        <CardTitle className="text-base">显示设置</CardTitle>
+        <CardTitle className="text-base settings-section-title">显示设置</CardTitle>
         <CardDescription>自定义前台页面的显示偏好</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -78,7 +78,8 @@ export function SecuritySettings({ defaultSort, themeColor, showWordCount, onUpd
                 type="button"
                 onClick={() => onUpdate('themeColor', color)}
                 className={`
-                  relative h-8 w-8 rounded-full border-2 transition-all duration-150
+                  relative h-8 w-8 rounded-full border-2 transition-all duration-200
+                  focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
                   ${
                     themeColor === color
                       ? 'border-foreground scale-110 ring-2 ring-offset-2 ring-offset-background ring-foreground/30'
