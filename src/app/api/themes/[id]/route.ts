@@ -38,18 +38,19 @@ export const PUT = withAuth(async function PUT(
     const { id } = await params;
     await getOrFail(db.theme, { id }, '主题不存在');
 
-    let body;
+    let body: Record<string, unknown>;
     try {
-      body = await safeJson(request);
+      body = await safeJson(request) as Record<string, unknown>;
     } catch {
       return apiError("请求数据格式错误", 400);
     }
+
     const { name, description, identifier, preview, config, enabled } = body;
 
-    if (name !== undefined && !name?.trim()) {
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
       return apiError("主题名称不能为空", 400);
     }
-    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
+    if (name !== undefined && typeof name === 'string' && name.trim().length > MAX_NAME_LENGTH) {
       return apiError(`主题名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
     if (identifier !== undefined) {

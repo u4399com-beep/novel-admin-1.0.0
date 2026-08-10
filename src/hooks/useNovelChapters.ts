@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   PointerSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type SensorDescriptor,
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 
@@ -44,7 +46,7 @@ export interface UseNovelChaptersReturn {
   filteredChapters: Chapter[];
   isAllChecked: boolean;
   isSomeChecked: boolean;
-  sensors: ReturnType<typeof useSensors>;
+  sensors: SensorDescriptor<PointerSensor | KeyboardSensor>[];
 
   // Setters needed by the component
   setChapterSearch: (v: string) => void;
@@ -145,7 +147,7 @@ export function useNovelChapters({
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     }),
-  );
+  ) as SensorDescriptor<PointerSensor | KeyboardSensor>[];
 
   // ── Fetch chapters ───────────────────────────────────────────────────────
   const fetchChapters = useCallback(async (signal?: AbortSignal) => {

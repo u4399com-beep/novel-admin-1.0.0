@@ -23,7 +23,7 @@ export function TranslateButton({ content, sourceLang, targetLang = 'zh', classN
   const [isTranslating, setIsTranslating] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const handleQuickTranslate = useCallback(async () => {
     if (!content.trim()) return;

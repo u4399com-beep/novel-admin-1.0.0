@@ -36,33 +36,33 @@ export const PUT = withAuth(async function PUT(
     const { id } = await params;
     await getOrFail(db.category, { id }, '分类不存在');
 
-    let body;
+    let body: Record<string, unknown>;
     try {
-      body = await safeJson(request);
+      body = await safeJson(request) as Record<string, unknown>;
     } catch {
       return apiError("请求数据格式错误", 400);
     }
     const { name, slug, icon, description, color, sortOrder } = body;
 
-    if (name !== undefined && !name?.trim()) {
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
       return apiError("分类名称不能为空", 400);
     }
-    if (slug !== undefined && !slug?.trim()) {
+    if (slug !== undefined && (typeof slug !== 'string' || !slug.trim())) {
       return apiError("分类标识符不能为空", 400);
     }
-    if (slug !== undefined && slug.trim() && !/^[a-z0-9_-]+$/.test(slug.trim())) {
+    if (slug !== undefined && typeof slug === 'string' && slug.trim() && !/^[a-z0-9_-]+$/.test(slug.trim())) {
       return apiError("分类标识符只能包含小写字母、数字、下划线和连字符", 400);
     }
-    if (slug !== undefined && slug.trim().length > MAX_SLUG_LENGTH) {
+    if (slug !== undefined && typeof slug === 'string' && slug.trim().length > MAX_SLUG_LENGTH) {
       return apiError(`分类标识符不能超过${MAX_SLUG_LENGTH}个字符`, 400);
     }
-    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
+    if (name !== undefined && typeof name === 'string' && name.trim().length > MAX_NAME_LENGTH) {
       return apiError(`分类名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
     if (description !== undefined && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
       return apiError(`分类描述不能超过${MAX_DESCRIPTION_LENGTH}个字符`, 400);
     }
-    if (color !== undefined && color && !VALID_COLOR_RE.test(color)) {
+    if (color !== undefined && typeof color === 'string' && color && !VALID_COLOR_RE.test(color)) {
       return apiError("颜色格式无效，请使用HEX格式（如#6b7280）", 400);
     }
 
@@ -70,8 +70,8 @@ export const PUT = withAuth(async function PUT(
       where: { id },
       data: {
         ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
-        ...(slug !== undefined && { slug: slug.trim() }),
-        ...(icon !== undefined && { icon: icon?.trim() || null }),
+        ...(slug !== undefined && typeof slug === 'string' && { slug: slug.trim() }),
+        ...(icon !== undefined && { icon: (typeof icon === 'string' ? icon.trim() : '') || null }),
         ...(description !== undefined && { description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null }),
         ...(color !== undefined && { color: color || "#6b7280" }),
         ...(sortOrder !== undefined && { sortOrder: Math.max(0, Math.floor(Number(sortOrder) || 0)) }),

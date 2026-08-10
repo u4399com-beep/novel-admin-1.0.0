@@ -37,7 +37,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     const check = requireFields(body, ['name']);
     if (!check.valid) return check.response;
 
-    const { name, color } = body;
+    const { name, color: rawColor } = body;
+    const color = typeof rawColor === 'string' ? rawColor : '';
 
     if (typeof name !== 'string' || name.trim().length > MAX_NAME_LENGTH) {
       return apiError(`标签名称必须是字符串且不能超过${MAX_NAME_LENGTH}个字符`, 400);

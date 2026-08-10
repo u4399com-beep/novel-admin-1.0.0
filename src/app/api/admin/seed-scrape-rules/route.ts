@@ -42,34 +42,35 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
       const params = parseScrapeParams(raw as Record<string, unknown>);
 
+      // safeJsonStringify returns string | null; Prisma accepts null for nullable String fields
       const data = {
         name,
         description: sanitizeField(raw.description, 2000) || null,
         enabled: typeof raw.enabled === 'boolean' ? raw.enabled : true,
 
-        listUrl: listUrl,
-        listSelector: safeJsonStringify(raw.listSelector, 'listSelector'),
-        listPagination: safeJsonStringify(raw.listPagination, 'listPagination'),
+        listUrl,
+        listSelector: safeJsonStringify(raw.listSelector, 'listSelector') ?? null,
+        listPagination: safeJsonStringify(raw.listPagination, 'listPagination') ?? null,
 
-        bookTitleSelector: safeJsonStringify(raw.bookTitleSelector, 'bookTitleSelector'),
-        bookAuthorSelector: safeJsonStringify(raw.bookAuthorSelector, 'bookAuthorSelector'),
-        bookCategorySelector: safeJsonStringify(raw.bookCategorySelector, 'bookCategorySelector'),
-        bookKeywordsSelector: safeJsonStringify(raw.bookKeywordsSelector, 'bookKeywordsSelector'),
-        bookDescriptionSelector: safeJsonStringify(raw.bookDescriptionSelector, 'bookDescriptionSelector'),
-        bookCoverSelector: safeJsonStringify(raw.bookCoverSelector, 'bookCoverSelector'),
-        bookStatusSelector: safeJsonStringify(raw.bookStatusSelector, 'bookStatusSelector'),
+        bookTitleSelector: safeJsonStringify(raw.bookTitleSelector, 'bookTitleSelector') ?? null,
+        bookAuthorSelector: safeJsonStringify(raw.bookAuthorSelector, 'bookAuthorSelector') ?? null,
+        bookCategorySelector: safeJsonStringify(raw.bookCategorySelector, 'bookCategorySelector') ?? null,
+        bookKeywordsSelector: safeJsonStringify(raw.bookKeywordsSelector, 'bookKeywordsSelector') ?? null,
+        bookDescriptionSelector: safeJsonStringify(raw.bookDescriptionSelector, 'bookDescriptionSelector') ?? null,
+        bookCoverSelector: safeJsonStringify(raw.bookCoverSelector, 'bookCoverSelector') ?? null,
+        bookStatusSelector: safeJsonStringify(raw.bookStatusSelector, 'bookStatusSelector') ?? null,
 
         chapterListUrl: sanitizeField(raw.chapterListUrl, 2000) || null,
-        chapterListSelector: safeJsonStringify(raw.chapterListSelector, 'chapterListSelector'),
-        chapterTitleSelector: safeJsonStringify(raw.chapterTitleSelector, 'chapterTitleSelector'),
-        chapterLinkSelector: safeJsonStringify(raw.chapterLinkSelector, 'chapterLinkSelector'),
-        chapterPagination: safeJsonStringify(raw.chapterPagination, 'chapterPagination'),
+        chapterListSelector: safeJsonStringify(raw.chapterListSelector, 'chapterListSelector') ?? null,
+        chapterTitleSelector: safeJsonStringify(raw.chapterTitleSelector, 'chapterTitleSelector') ?? null,
+        chapterLinkSelector: safeJsonStringify(raw.chapterLinkSelector, 'chapterLinkSelector') ?? null,
+        chapterPagination: safeJsonStringify(raw.chapterPagination, 'chapterPagination') ?? null,
 
-        contentTitleSelector: safeJsonStringify(raw.contentTitleSelector, 'contentTitleSelector'),
-        contentSelector: safeJsonStringify(raw.contentSelector, 'contentSelector'),
-        contentPagination: safeJsonStringify(raw.contentPagination, 'contentPagination'),
+        contentTitleSelector: safeJsonStringify(raw.contentTitleSelector, 'contentTitleSelector') ?? null,
+        contentSelector: safeJsonStringify(raw.contentSelector, 'contentSelector') ?? null,
+        contentPagination: safeJsonStringify(raw.contentPagination, 'contentPagination') ?? null,
 
-        antiCrawlConfig: safeJsonStringify(raw.antiCrawlConfig, 'antiCrawlConfig'),
+        antiCrawlConfig: safeJsonStringify(raw.antiCrawlConfig, 'antiCrawlConfig') ?? null,
 
         storageMode: params.storageMode,
         filePath: (() => { try { return validateSavePath(raw.filePath); } catch { return null; } })(),
@@ -83,8 +84,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         enableShuffle: raw.enableShuffle ?? false,
         dedupMode: params.dedupMode,
 
-        cleanConfig: safeJsonStringify(raw.cleanConfig, 'cleanConfig'),
-        agentqlConfig: safeJsonStringify(raw.agentqlConfig, 'agentqlConfig'),
+        cleanConfig: safeJsonStringify(raw.cleanConfig, 'cleanConfig') ?? null,
+        agentqlConfig: safeJsonStringify(raw.agentqlConfig, 'agentqlConfig') ?? null,
         cloudBrowserConfig: buildCloudBrowserConfig(raw.cloudBrowserUrl, raw.cloudBrowserProvider),
       };
 

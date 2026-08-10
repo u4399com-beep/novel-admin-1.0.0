@@ -83,8 +83,8 @@ export default function SettingsPage() {
     return () => controller.abort();
   }, []);
 
-  const update = useCallback((key: keyof SiteSettings, value: SiteSettings[keyof SiteSettings]) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
+  const update = useCallback((key: string, value: unknown) => {
+    setSettings((prev) => ({ ...prev, [key as keyof SiteSettings]: value as SiteSettings[keyof SiteSettings] }));
   }, []);
 
   const saveSettings = useCallback(async () => {

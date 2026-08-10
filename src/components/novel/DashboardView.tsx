@@ -17,7 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
 import type { DashboardStats, Novel } from '@/types';
-import { ReadingHeatmap } from '@/components/stats/ReadingHeatmap';
+import ReadingHeatmap from '@/components/stats/ReadingHeatmap';
 import { ReadingStatsCard } from '@/components/ReadingStatsCard';
 
 import { StatCard, statCards } from './dashboard/StatCard';

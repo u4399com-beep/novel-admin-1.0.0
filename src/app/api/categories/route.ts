@@ -58,7 +58,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     const category = await db.category.create({
       data: {
         name: sanitizeField(name, MAX_NAME_LENGTH),
-        slug: slug.trim(),
+        slug: typeof slug === 'string' ? slug.trim() : '',
         icon: icon?.trim() || null,
         description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
         color: color || "#6b7280",

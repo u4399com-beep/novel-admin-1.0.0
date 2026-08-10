@@ -193,11 +193,15 @@ export interface ScrapeParams {
 }
 
 export function parseScrapeParams(body: Record<string, unknown>): ScrapeParams {
+  const sm = typeof body.scrapeMode === 'string' && VALID_SCRAPE_MODES.includes(body.scrapeMode) ? body.scrapeMode : 'incremental';
+  const en = typeof body.engine === 'string' && VALID_ENGINES.includes(body.engine) ? body.engine : 'cheerio';
+  const st = typeof body.storageMode === 'string' && VALID_STORAGE_MODES.includes(body.storageMode) ? body.storageMode : 'database';
+  const dd = typeof body.dedupMode === 'string' && VALID_DEDUP_MODES.includes(body.dedupMode) ? body.dedupMode : 'url';
   return {
-    scrapeMode: (VALID_SCRAPE_MODES.includes(body.scrapeMode) ? body.scrapeMode : 'incremental') as typeof VALID_SCRAPE_MODES[number],
-    engine: (VALID_ENGINES.includes(body.engine) ? body.engine : 'cheerio') as typeof VALID_ENGINES[number],
-    storageMode: (VALID_STORAGE_MODES.includes(body.storageMode) ? body.storageMode : 'database') as typeof VALID_STORAGE_MODES[number],
-    dedupMode: (VALID_DEDUP_MODES.includes(body.dedupMode) ? body.dedupMode : 'url') as typeof VALID_DEDUP_MODES[number],
+    scrapeMode: sm as typeof VALID_SCRAPE_MODES[number],
+    engine: en as typeof VALID_ENGINES[number],
+    storageMode: st as typeof VALID_STORAGE_MODES[number],
+    dedupMode: dd as typeof VALID_DEDUP_MODES[number],
     threadCount: Math.min(Math.max(MIN_THREAD, Number(body.threadCount) || 3), MAX_THREAD),
     minDelay: Math.max(0, Number(body.minDelay) || 1000),
     maxDelay: Math.min(MAX_DELAY, Math.max(
