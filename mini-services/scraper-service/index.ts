@@ -25,7 +25,7 @@ import { handleScrapeContent } from "./src/scrapers";
 import { handleClean } from "./src/cleaning";
 import { handleDownloadCover } from "./src/scrapers";
 import { handleGenerateRule, handlePreviewPage } from "./src/ai-rule-generator";
-import { executeTask, recoverStaleTasks } from "./src/task-engine";
+import { executeTask, recoverStaleTasks, detectStuckTasks } from "./src/task-engine";
 import { getQueueStats, cleanupQueue, requeueFailed, clearTaskQueue } from "./src/queue";
 import { timingSafeEqual } from "node:crypto";
 import type {
@@ -428,6 +428,19 @@ if (recovered > 0) {
 }
 
 startServer(PORT);
+
+// Periodic stuck-task detection (every 2 minutes)
+const STUCK_DETECT_INTERVAL_MS = 2 * 60 * 1000;
+setInterval(async () => {
+  try {
+    const count = await detectStuckTasks();
+    if (count > 0) {
+      console.log(`[StuckDetection] Detected and failed ${count} stuck tasks`);
+    }
+  } catch (err) {
+    console.error("[StuckDetection] Periodic check error:", err);
+  }
+}, STUCK_DETECT_INTERVAL_MS);
 
 // ==================== Graceful Shutdown ====================
 

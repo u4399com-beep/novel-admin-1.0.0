@@ -1,11 +1,17 @@
 import { db } from "@/lib/db";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { parsePagination, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
-import { withAuth } from "@/lib/api-auth";
+import { withAuth, rateLimit, getClientIp } from "@/lib/api-auth";
 import { paginatedList } from "@/lib/crud-helpers";
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from "@/lib/constants";
 
 const VALID_STATUSES = ["pending", "running", "completed", "failed", "cancelled"];
+const VALID_TASK_MODES = ["incremental", "full"];
+
+// Dedicated rate limit for task creation: 5 tasks per minute
+// capacity=5, refillRate=5/60≈0.0833 tokens/sec
+const TASK_CREATE_CAPACITY = 5;
+const TASK_CREATE_REFILL = 5 / 60;
 
 // GET /api/scrape-tasks - List all scrape tasks
 export const GET = withAuth(async function GET(request: NextRequest) {
@@ -41,6 +47,25 @@ export const GET = withAuth(async function GET(request: NextRequest) {
 // POST /api/scrape-tasks - Create a new scrape task and auto-trigger execution
 export const POST = withAuth(async function POST(request: NextRequest) {
   try {
+    // ── Per-endpoint rate limit: 5 task creations per minute ──
+    const ip = getClientIp(request);
+    const rl = rateLimit(`task-create:${ip}`, {
+      capacity: TASK_CREATE_CAPACITY,
+      refillRate: TASK_CREATE_REFILL,
+    });
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: '创建任务过于频繁，每分钟最多创建5个任务' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rl.retryAfter),
+            'X-RateLimit-Remaining': '0',
+          },
+        },
+      );
+    }
+
     let body;
     try {
       body = await safeJson(request);
@@ -49,8 +74,17 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
     const { ruleId, mode, autoStart } = body;
 
-    if (!ruleId || typeof ruleId !== 'string') {
-      return apiError("规则ID格式错误", 400);
+    // ── Input validation ──
+    if (!ruleId || typeof ruleId !== 'string' || ruleId.trim().length === 0) {
+      return apiError("规则ID不能为空且必须为字符串", 400);
+    }
+
+    if (mode !== undefined && mode !== null && !VALID_TASK_MODES.includes(mode)) {
+      return apiError(`mode 必须为以下值之一: ${VALID_TASK_MODES.join(', ')}`, 400);
+    }
+
+    if (autoStart !== undefined && typeof autoStart !== 'boolean') {
+      return apiError("autoStart 必须为布尔值", 400);
     }
 
     // Verify the rule exists
@@ -59,8 +93,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError("采集规则不存在", 404);
     }
 
-    const validModes = ["incremental", "full"];
-    const taskMode = validModes.includes(mode) ? mode : (rule.scrapeMode || "incremental");
+    const taskMode = VALID_TASK_MODES.includes(mode) ? mode : (rule.scrapeMode || "incremental");
 
     const task = await db.scrapeTask.create({
       data: {

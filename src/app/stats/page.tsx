@@ -18,6 +18,7 @@ import { formatRelativeTime } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
 import { getGenreColor } from '@/lib/cover-gradient';
 import { CategoryDonut } from '@/components/stats/CategoryDonut';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -48,18 +49,20 @@ function StatCard({
   value,
   sub,
   accent,
+  className,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string | number;
   sub?: string;
   accent?: string;
+  className?: string;
 }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border bg-card p-4 card-glow card-border-glow focus-ring-soft"
+      className={`rounded-xl border bg-card p-4 card-glow card-border-glow focus-ring-soft hover:scale-[1.02] transition-transform duration-200 ${className ?? ''}`}
     >
       <div className="flex items-center gap-2 mb-2">
         <div
@@ -201,20 +204,26 @@ export default function StatsPage() {
           stats && (
             <>
               {/* Reading Overview (Admin Stats) */}
-              <ReadingOverview />
+              <ErrorBoundary name="stats-overview">
+                <ReadingOverview />
+              </ErrorBoundary>
 
               {/* Word Count Statistics */}
-              <WordCountStats />
+              <ErrorBoundary name="stats-word-count">
+                <WordCountStats />
+              </ErrorBoundary>
 
               {/* Reading Heatmap (GitHub-style, 6 months) */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.03 }}
-                className="fade-in-up"
-              >
-                <ReadingHeatmap />
-              </motion.div>
+              <ErrorBoundary name="stats-heatmap">
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.03 }}
+                  className="fade-in-up"
+                >
+                  <ReadingHeatmap />
+                </motion.div>
+              </ErrorBoundary>
 
               {/* Reading Streak + Goal + Stat Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 hover-scale stagger-children">
@@ -232,17 +241,20 @@ export default function StatsPage() {
                   label="在读书籍"
                   value={stats.ongoingBooks}
                   sub={`共 ${stats.totalBooks} 本`}
+                  className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 dark:from-emerald-500/20 dark:to-emerald-500/5"
                 />
                 <StatCard
                   icon={CheckCircle2}
                   label="读完书籍"
                   value={stats.completedBooks}
                   accent="var(--chart-emerald)"
+                  className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 dark:from-amber-500/20 dark:to-amber-500/5"
                 />
                 <StatCard
                   icon={BookMarked}
                   label="已读章节"
                   value={stats.totalChaptersRead.toLocaleString()}
+                  className="bg-gradient-to-br from-violet-500/10 to-violet-500/5 dark:from-violet-500/20 dark:to-violet-500/5"
                 />
               </div>
 
@@ -260,18 +272,20 @@ export default function StatsPage() {
 
               {/* Category Donut Chart */}
               {stats.genreDistribution.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.08 }}
-                  className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft fade-in-up"
-                >
-                  <div className="flex items-center gap-2 mb-4">
-                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                    <h2 className="text-sm font-semibold">分类分布</h2>
-                  </div>
-                  <CategoryDonut data={stats.genreDistribution} />
-                </motion.div>
+                <ErrorBoundary name="stats-category-donut">
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.08 }}
+                    className="rounded-xl border bg-card p-5 card-glow card-border-glow inset-shadow focus-ring-soft fade-in-up"
+                  >
+                    <div className="flex items-center gap-2 mb-4">
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                      <h2 className="text-sm font-semibold">分类分布</h2>
+                    </div>
+                    <CategoryDonut data={stats.genreDistribution} />
+                  </motion.div>
+                </ErrorBoundary>
               )}
 
               {/* Genre Distribution */}

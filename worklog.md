@@ -6570,3 +6570,258 @@ Stage Summary:
 6. P3: 对齐前端/后端maxPage(100 vs 10000)和threadCount(10 vs 20)限制
 
 ---
+Task ID: 13-a
+Agent: Schema + Heartbeat Migration
+Task: Add lastHeartbeatAt field, update task-engine heartbeat, add stuck-task detection
+
+Work Log:
+- 读取worklog.md了解项目状态，确认P1建议：Schema迁移添加lastHeartbeatAt字段
+- 读取prisma/schema.prisma，在ScrapeTask模型的startedAt后添加 `lastHeartbeatAt DateTime?` 字段
+- 读取PUT /api/scrape-tasks/[id] 路由，发现心跳更新发来的lastHeartbeatAt被API路由丢弃（updateData只提取特定字段），添加了lastHeartbeatAt的日期解析和传递逻辑
+- 更新mini-services/scraper-service/src/types.ts中ScrapeTask类型，添加lastHeartbeatAt字段
+- 移除task-engine.ts中心跳代码的 `as any` 类型断言（之前字段不存在于类型中）
+- 新增detectStuckTasks()导出函数：基于心跳的卡死任务检测（5分钟阈值），对无心跳任务回退到2小时startedAt阈值
+- 重构recoverStaleTasks()为detectStuckTasks()的委托，修复原版使用error而非errorMessage的bug
+- 在scraper-service/index.ts中导入detectStuckTasks，添加每2分钟的周期性卡死检测
+- 运行 `bunx prisma db push` 成功同步schema并重新生成Prisma Client
+- 运行 `bun run lint` 验证：0 errors, 6 warnings（均为预存的React Compiler兼容性警告）
+
+Stage Summary:
+- Schema迁移完成：ScrapeTask新增lastHeartbeatAt DateTime?字段
+- 心跳管道打通：scraper-service → API路由 → Prisma DB，完整数据流
+- 卡死任务检测：5分钟心跳超时检测 + 2小时回退阈值，每2分钟周期执行
+- 修复预存bug：recoverStaleTasks原使用`error`字段应为`errorMessage`
+- Lint通过，0 errors
+---
+Task ID: 13-b
+Agent: ErrorBoundary + Rate Limit + Limit Alignment
+Task: ErrorBoundary for reader, scrape task rate limit, frontend/backend limit alignment
+
+Work Log:
+- Read worklog.md, ErrorBoundary.tsx, ReaderDialog.tsx, ReaderContent.tsx, scrape-tasks/route.ts, scrape-rule-validation.ts, api-auth.ts, stats/page.tsx, categories/page.tsx
+- Task 1: Wrapped ReaderContent in ReaderDialog.tsx with `<ErrorBoundary name="reader-content" reloadOnReset={true}>`
+- Task 1: Wrapped ReadingOverview, WordCountStats, ReadingHeatmap, CategoryDonut chart components in stats/page.tsx with individual ErrorBoundary instances
+- Task 1: Wrapped the category grid in categories/page.tsx with `<ErrorBoundary name="categories-grid">`
+- Task 2: Added per-endpoint rate limiting to scrape-tasks POST using `rateLimit('task-create:${ip}', { capacity: 5, refillRate: 5/60 })` — limits to 5 task creations per minute with proper 429 response and Retry-After header
+- Task 3: Changed MAX_PAGINATION_MAX_PAGE from 10000 to 100 in scrape-rule-validation.ts to match frontend PaginationField.tsx
+- Task 3: Changed MAX_THREAD from 20 to 10 in scrape-rule-validation.ts to match frontend StrategyTab.tsx slider max
+- Task 4: Added input validation to scrape-tasks POST: ruleId must be non-empty string, mode must be one of ["incremental", "full"], autoStart must be boolean — all return 400 errors
+- Task 4: Reused VALID_TASK_MODES constant instead of inline array
+- Ran `bun run lint`: 0 errors, 6 pre-existing warnings (all react-hooks/incompatible-library, unrelated)
+
+Stage Summary:
+- Reader content area now protected by ErrorBoundary with reload-on-reset for crash recovery
+- Stats page chart components (overview, word count, heatmap, donut) each wrapped with named ErrorBoundary
+- Category page grid wrapped with ErrorBoundary
+- Scrape task creation rate limited to 5/min per IP on top of existing withAuth general rate limit
+- Frontend/backend limits aligned: MAX_PAGINATION_MAX_PAGE=100, MAX_THREAD=10
+- Scrape-tasks POST validates ruleId (non-empty string), mode (enum), autoStart (boolean)
+---
+
+---
+Task ID: 13-c
+Agent: Seed Rules + Admin Enhancement + Export
+Task: Seed scrape rules, admin dashboard enhancement, TXT export improvement
+
+Work Log:
+- Read worklog.md, scrape rule docs (5165.org.md, 23.225.66.244.md), Prisma schema, and existing code
+- Created `src/app/api/admin/seed-scrape-rules/route.ts` — POST endpoint protected with withAuth(), accepts array of rule objects, upserts by name, returns created/updated counts
+- Updated `scripts/create-scrape-rules.ts` — now uses Prisma Client directly (no dev server needed), upserts both rules by name, with proper JSON.stringify for all selector/config fields
+- Created `src/app/api/scrape-rules/import/route.ts` — POST endpoint with { rules: [...] } body, upserts each by name, returns per-rule results
+- Enhanced `src/components/novel/DashboardView.tsx` — added Scrape Rules management card with: rule count badge fetched from API, "导入预设规则" button that calls the import endpoint with both 5165.org and 23.225.66.244 rules, "管理规则" link to scrape view, import result feedback text
+- Enhanced `src/app/api/novels/[id]/export/txt/route.ts` — added UTF-8 BOM header for Windows Notepad compatibility, added numbered table of contents section between header and chapters, improved formatting with separate thick/thin separators
+- Ran `bun run lint`: 0 errors, 6 pre-existing warnings (all unrelated react-hooks/incompatible-library)
+
+Stage Summary:
+- New API: POST /api/admin/seed-scrape-rules — upsert rules by name (admin only)
+- New API: POST /api/scrape-rules/import — upsert rules by name with { rules: [...] }
+- Updated: scripts/create-scrape-rules.ts — Prisma-direct seed (no server needed)
+- Updated: DashboardView — Scrape Rules card with count badge + quick import button
+- Updated: TXT export — UTF-8 BOM + numbered TOC + improved formatting
+---
+---
+Task ID: 14-a
+Agent: Collection System Core Fixes
+Task: Fix HTML cleaning pipeline, enhance ad/watermark patterns, fix engine check
+
+Work Log:
+- Read worklog.md (last 200 lines) and understood project state: 1418+ fixes, 6 scraping engines, secure baselines
+- Read cleaning.ts, scrapers.ts, task-engine.ts, types.ts to understand the bug
+- Identified the critical bug: CSS selector-based ad removal (`.gsc-`, `.reader-fun`, `.footer`) in cleanConfig.removePatterns was never applied because handleScrapeContent extracted plain text via parseSelector() before cleanText() ran, leaving no HTML for CSS selectors to work on
+- **cleaning.ts changes:**
+  - Enhanced DEFAULT_AD_PATTERNS from 17 to 43+ patterns: added watermarks (永久网址, 最新网址, 笔趣阁, etc.), download prompts (TXT下载, 全本下载, etc.), bookmark prompts, navigation remnants, online reading prompts, site recommendations, donation/promotion text
+  - Added WATERMARK_PATTERNS regex array (7 patterns) for URL watermarks, site watermarks, floating ad text, 最新章节请访问, 手机用户请浏览, bare URLs, 本章完 boilerplate
+  - Added applyWatermarkPatterns() helper using safeRegexReplace
+  - Refactored cleanHtml() to extract shared HTML-level cleaning into applyHtmlLevelCleaning() (removes scripts/styles/iframes, ad CSS selectors, event handlers, javascript: URIs, removePatterns CSS pass)
+  - Added cleanHtmlRaw() export: same HTML-level cleaning but returns $.html() instead of $.text()
+  - Integrated watermark regex into both cleanHtml() and cleanText() after existing ad pattern filtering
+- **types.ts changes:**
+  - Added optional `cleanConfig?: CleanRequest["config"]` to ScrapeContentRequest interface
+- **scrapers.ts changes:**
+  - Added import of cleanHtmlRaw from cleaning
+  - Modified handleScrapeContent to destructure cleanConfig from body
+  - In onPage callback: when cleanConfig is provided, apply cleanHtmlRaw() to raw HTML BEFORE parseSelector() extraction, ensuring CSS selector-based ad removal works on HTML structure
+- **task-engine.ts changes:**
+  - Added `cleanConfig` parameter to handleScrapeContent() call (~line 694)
+  - Added "scrapling" to determineEngine() validation array (~line 213)
+- Ran `bun run lint`: 0 errors, 6 warnings (all pre-existing react-hooks/incompatible-library)
+
+Stage Summary:
+- Critical bug fixed: CSS selector-based ad removal now works on HTML before text extraction
+- New function: cleanHtmlRaw() returns cleaned HTML (not text) for pre-extraction cleaning
+- DEFAULT_AD_PATTERNS expanded: 17 → 43+ patterns covering watermarks, downloads, bookmarks, navigation, donations
+- WATERMARK_PATTERNS: 7 regex patterns for URL watermarks, site branding, chapter-end boilerplate
+- Engine check fixed: scrapling now recognized in determineEngine()
+- Pipeline: HTML → cleanHtmlRaw(CSS removal) → parseSelector(text extraction) → cleanText(regex/line filtering + watermark regex)
+- Lint: 0 errors
+- Files modified: cleaning.ts, types.ts, scrapers.ts, task-engine.ts (4 files)
+---
+Task ID: 14-b
+Agent: Scrape Rules Update + Clean Test
+Task: Fix 5165.org/23.225.66.244 rules based on live analysis, add clean test helper
+
+Work Log:
+- Read worklog.md (last 100 lines) to understand project state
+- Read existing scrape rule docs (5165.org.md, 23.225.66.244.md) and seed script (create-scrape-rules.ts)
+- Read cleaning.ts to understand cleanHtmlRaw/cleanText function signatures for clean-test.ts
+
+### Task 1: Fix 5165.org Scrape Rule
+- Updated docs/scrape-rules/5165.org.md with corrected JSON:
+  - engine: cheerio → playwright (Cloudflare protection blocks direct HTTP)
+  - listSelector: `article li` → `.entry-content li a[href]` (captures all 1833+ books, not just 6 featured)
+  - Added bookAuthorSelector: `.entry-content .text-muted, .author`
+  - Added bookDescriptionSelector: `meta[property='og:description']` with extract: content
+  - Added bookCategorySelector: `.entry-meta a, .cat-links a`
+  - Added contentTitleSelector: `h1.entry-title, h1`
+  - Expanded cleanConfig.removePatterns from 4 to 12 patterns (WordPress-specific ads, share buttons, navigation, comments)
+  - Expanded cleanConfig.adPatterns from 3 to 15 patterns (site watermarks, social prompts)
+  - Changed threadCount: 2 → 1, increased delays (3000-5000ms)
+  - Changed dedupMode: url → both
+- Updated selector explanation section to reflect new findings
+
+### Task 2: Fix 23.225.66.244 Scrape Rule
+- Updated docs/scrape-rules/23.225.66.244.md with improved JSON:
+  - bookTitleSelector: `dt a` → `dl > dt > a` (more precise)
+  - bookAuthorSelector: `dt span` → `dl > dt > span` (more precise)
+  - bookDescriptionSelector: `dd a` → `dl > dd > a` (more precise)
+  - contentSelector: `#container .layout-col1` → `.row-reader .layout-col1, #container .layout-col1` (fallback chain)
+  - Added contentTitleSelector: `h1`
+  - Added contentPagination: `{ type: "next", selector: "a.next, a:contains(\"下一页\")", maxPage: 10 }`
+  - Expanded cleanConfig.removePatterns from 10 to 21 patterns (reader UI, ads, breadcrumb, share, recommend, chapter-nav)
+  - Expanded cleanConfig.adPatterns from 5 to 22 patterns (watermarks, navigation, download prompts, chapter boilerplate)
+  - Increased antiCrawlConfig.delay from [2000,5000] to [3000,6000]
+  - Changed dedupMode: url → both
+
+### Task 3: Update Seed Script
+- Updated scripts/create-scrape-rules.ts with matching rule JSONs for both sites
+- All new fields (bookAuthorSelector, bookDescriptionSelector, bookCategorySelector, contentTitleSelector, contentPagination) properly JSON.stringify'd
+- CleanConfig arrays use proper quoting for complex patterns
+
+### Task 4: Content Pagination Documentation
+- Added "内容分页 (Content Pagination)" section to both rule docs
+- 5165.org: Marked as "不适用" (null), explained how to enable if needed
+- 23.225.66.244: Documented as "已启用", explained config, workflow (7 steps), key points
+- Both docs explain: contentPagination field purpose, multi-page chapter handling, per-page cleanHtmlRaw cleaning, text merging
+
+### Task 5: Clean Test Helper
+- Created mini-services/scraper-service/src/clean-test.ts
+- Exports testCleaning() function
+- Runs cleanHtmlRaw → text extraction → cleanText pipeline (matching task-engine behavior)
+- 4 test cases with realistic Chinese novel content:
+  1. Chapter with inline ad divs (.ad, .advert, ins.adsbygoogle)
+  2. Chapter with site watermark text (www.example.com, 最新章节请访问, 手机用户请浏览)
+  3. Chapter with "本章未完" boilerplate (笔趣阁, 天才一秒记住, 无弹窗小说, 下一页继续)
+  4. Chapter with navigation remnants (上一页/下一页, 返回目录, 推荐本书, 打赏, 扫码关注)
+- Each test case has expectContains and expectAbsent assertions
+- Runnable via: bun run mini-services/scraper-service/src/clean-test.ts
+
+Stage Summary:
+- 5165.org rule fixed: engine playwright, correct listSelector (.entry-content li a[href]), expanded cleanConfig
+- 23.225.66.244 rule fixed: precise selectors (dl > dt > a), contentPagination enabled, expanded cleanConfig
+- Seed script updated to match both rule docs
+- Content pagination documentation added to both rule docs
+- New clean-test.ts helper: 4 test cases validating cleanHtmlRaw + cleanText pipeline with realistic ad/watermark content
+- Files modified: docs/scrape-rules/5165.org.md, docs/scrape-rules/23.225.66.244.md, scripts/create-scrape-rules.ts (3 updated)
+- Files created: mini-services/scraper-service/src/clean-test.ts (1 new)
+
+---
+Task ID: 14-c
+Agent: Styling + Features Enhancement
+Task: CSS animations, glass search bar, stats gradients, NEW badge
+
+Work Log:
+- Added 5 CSS animation utilities (float, glow, slide-in-right, fade-in-up, shimmer)
+- Added glass-morphism utility class
+- Enhanced search bar with glass-morphism effect
+- Enhanced stats page cards with gradient backgrounds and hover effects
+- Added NEW badge to novel cards for < 7 day old novels
+
+Stage Summary:
+- 5 new CSS animation keyframes + utility classes
+- glass-morphism effect on search bar
+- Gradient stat cards with hover:scale-[1.02]
+- NEW badge on recent novel cards
+- Lint: 0 errors
+---
+Task ID: cycle14-120
+Agent: Main Orchestrator
+Task: 120轮循环第14轮 - 采集系统深度审计修复+清洗引擎重写+采集规则完善
+
+Work Log:
+## 深度审计发现 (7个关键问题)
+
+### CRITICAL (2项)
+1. **HTML级清洗从未应用于内容** → handleScrapeContent调用parseSelector提取纯文本后再cleanText，导致CSS选择器广告移除(removePatterns中的.gsc-/.reader-fun等)完全无效 → 新增cleanHtmlRaw函数，在文本提取前应用HTML级清洗
+2. **5165.org采集规则严重错误** → listSelector `article li`仅捕获6个推荐位(实际1833+本书在.entry-content li中)，且引擎应选playwright而非cheerio(Cloudflare保护) → 完全重写规则
+
+### HIGH (3项)
+3. **广告/水印清洗效果差** → DEFAULT_AD_PATTERNS仅17条，缺少大量中文小说站常见水印(笔趣阁/永久网址/无弹窗/下载提示等)；逐条过滤而非全量过滤导致部分广告残留 → 扩展至43+条+18条水印正则+重写过滤逻辑(全量匹配+20字符阈值)
+4. **determineEngine缺少scrapling** → 13轮修复VALID_ENGINES但未同步task-engine.ts的determineEngine检查 → 已添加
+5. **清洗测试4例失败** → 广告模式阈值(>=10)太宽松，逐条过滤导致残缺广告文本残留 → 重写为filterAdLines(全量模式匹配)+removeRemnantLines+normalizeWhitespace三步清洗管线
+
+### MEDIUM (2项)
+6. **内容分页清洗不完整** → 多页内容逐页HTML清洗后才合并文本 → 已通过cleanHtmlRaw在paginatedFetch的onPage回调中实现
+7. **23.225.66.244规则缺少内容分页配置** → 章节可能跨页 → 添加contentPagination配置
+
+## 修改文件清单
+- mini-services/scraper-service/src/cleaning.ts — 重写清洗引擎(cleanHtmlRaw/filterAdLines/removeRemnantLines/normalizeWhitespace/WATERMARK_PATTERNS扩展)
+- mini-services/scraper-service/src/scrapers.ts — handleScrapeContent添加cleanConfig参数+逐页HTML清洗
+- mini-services/scraper-service/src/types.ts — ScrapeContentRequest添加cleanConfig字段
+- mini-services/scraper-service/src/task-engine.ts — 传递cleanConfig+determineEngine添加scrapling
+- mini-services/scraper-service/src/clean-test.ts — 新建清洗测试(4个真实测试用例，全部通过)
+- docs/scrape-rules/5165.org.md — 完全重写(engine:playwright, listSelector:.entry-content li a[href], 增强cleanConfig)
+- docs/scrape-rules/23.225.66.244.md — 增强(contentPagination+选择器精确化+cleanConfig扩展)
+- scripts/create-scrape-rules.ts — 同步更新种子规则JSON
+
+## 清洗测试结果
+- Test 1 (内联广告div): ✅ PASSED (adsbygoogle/推广链接/下载APP全部移除)
+- Test 2 (站点水印): ✅ PASSED (www.example.com/首发域名/最新章节请访问全部移除)
+- Test 3 (笔趣阁模板): ✅ PASSED (笔趣阁/天才一秒记住/无弹窗小说/最快更新速度全部移除)
+- Test 4 (导航残留): ✅ PASSED (推荐本书/打赏/投推荐票/扫码关注/微信公众号全部移除)
+
+## 验证结果
+- ESLint: 0 errors, 6 warnings (pre-existing)
+- 清洗测试: 4/4 PASSED
+- Dev server: 正常运行
+
+Stage Summary:
+- 修复: 7项 (2 CRITICAL + 3 HIGH + 2 MEDIUM)
+- 新功能: cleanHtmlRaw函数 + 18条水印正则 + filterAdLines + removeRemnantLines + clean-test.ts
+- 采集规则: 2个完全重写/增强(5165.org + 23.225.66.244)
+- 清洗引擎: 从简单逐条过滤 → 水印正则+全量模式匹配+残余行移除 三步管线
+- 累计修复: 1418+7 = 1425+
+
+## 项目当前状态描述/判断
+- 采集系统核心管线修复完成: HTML级清洗 → 文本提取 → 全量广告过滤 → 残余清理 → 空白规范化
+- 清洗测试全部通过，43+广告模式+18水印正则覆盖主流中文小说站广告/水印
+- 5165.org规则修正Cloudflare+选择器问题，23.225.66.244添加内容分页
+- 已知限制: queue.pg.ts仍是死代码; epub导出未实现
+
+## 建议下一阶段优先事项
+1. P1: 管理后台移动端响应式改进
+2. P1: 阅读器主题/字体大小设置持久化
+3. P2: 移除queue.pg.ts死代码或接入
+4. P2: 小说标签云可视化
+5. P3: 实际EPUB导出生成
+6. P3: 采集任务结果URL实现
+---

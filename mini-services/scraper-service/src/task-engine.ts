@@ -210,7 +210,7 @@ function parseSelectorField(field: string | null): Selector | null {
 
 function determineEngine(rule: ScrapeRule, antiCrawlConfig: AntiCrawl): EngineType {
   // Priority: rule.engine > cloudBrowser > useJsRender > default cheerio
-  if (rule.engine && ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser"].includes(rule.engine)) {
+  if (rule.engine && ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling"].includes(rule.engine)) {
     return rule.engine as EngineType;
   }
   return selectEngine(undefined, antiCrawlConfig);
@@ -278,7 +278,7 @@ export async function executeTask(taskId: string) {
 
   // Heartbeat: update lastHeartbeatAt every 30 seconds to detect stale tasks
   const heartbeatInterval = setInterval(() => {
-    updateTaskProgress(taskId, { lastHeartbeatAt: new Date().toISOString() } as any).catch(() => {});
+    updateTaskProgress(taskId, { lastHeartbeatAt: new Date().toISOString() }).catch(() => {});
   }, 30000);
 
   await addTaskLog(taskId, "info", `开始执行采集任务: ${rule.name} [引擎: ${engineType}]`);
@@ -691,6 +691,7 @@ async function executeTaskBody(
             pagination: contentPagination,
             antiCrawl: antiCrawlConfig,
             engine: engineType,
+            cleanConfig,
           });
 
           // Clean content
@@ -808,36 +809,64 @@ async function executeTaskBody(
 }
 
 /**
- * On startup, mark any tasks that have been "running" for too long as "failed".
- * This handles the case where the scraper-service crashed mid-task.
+ * Detect tasks that are "running" but haven't sent a heartbeat recently.
+ * A task is considered stuck if its lastHeartbeatAt is older than HEARTBEAT_TIMEOUT_MS,
+ * or if it has no heartbeat but has been running longer than FALLBACK_STALE_THRESHOLD_MS.
+ * @returns number of tasks marked as failed
  */
-export async function recoverStaleTasks(): Promise<number> {
+export async function detectStuckTasks(): Promise<number> {
   try {
     const { data, status } = await apiCall("GET", "/api/scrape-tasks?status=running");
     if (status !== 200 || !Array.isArray(data)) return 0;
 
-    const tasks = data as Array<{ id: string; startedAt?: string }>;
+    const tasks = data as Array<{ id: string; startedAt?: string; lastHeartbeatAt?: string | null }>;
     const now = Date.now();
-    const STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
-    let recovered = 0;
+    const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const FALLBACK_STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours (for tasks without heartbeat)
+    let detected = 0;
 
     for (const task of tasks) {
-      if (task.startedAt) {
-        const started = new Date(task.startedAt).getTime();
-        if (now - started > STALE_THRESHOLD_MS) {
-          await apiCall("PUT", `/api/scrape-tasks/${task.id}`, {
-            status: "failed",
-            error: "Task recovered from crash (was running for over 2 hours)",
-          });
-          recovered++;
-          console.log(`[Recovery] Recovered stale task ${task.id}`);
+      let isStuck = false;
+      let reason = "";
+
+      if (task.lastHeartbeatAt) {
+        // Heartbeat-based detection: more precise
+        const lastHb = new Date(task.lastHeartbeatAt).getTime();
+        if (now - lastHb > HEARTBEAT_TIMEOUT_MS) {
+          isStuck = true;
+          reason = "\u4efb\u52a1\u8d85\u65f6: \u5fc3\u8df3\u8d85\u65f6";
         }
+      } else if (task.startedAt) {
+        // Fallback for tasks that don't have heartbeat (e.g., crashed before first heartbeat)
+        const started = new Date(task.startedAt).getTime();
+        if (now - started > FALLBACK_STALE_THRESHOLD_MS) {
+          isStuck = true;
+          reason = "\u4efb\u52a1\u6062\u590d: \u8fd0\u884c\u8d85\u8fc72\u5c0f\u65f6\u4e14\u65e0\u5fc3\u8df3";
+        }
+      }
+
+      if (isStuck) {
+        await apiCall("PUT", `/api/scrape-tasks/${task.id}`, {
+          status: "failed",
+          errorMessage: reason,
+        });
+        detected++;
+        console.log(`[StuckDetection] Marked task ${task.id} as failed: ${reason}`);
       }
     }
 
-    return recovered;
+    return detected;
   } catch (err) {
-    console.error("[Recovery] Failed to check stale tasks:", err);
+    console.error("[StuckDetection] Failed to check stuck tasks:", err);
     return 0;
   }
+}
+
+/**
+ * On startup, mark any tasks that have been "running" for too long as "failed".
+ * This handles the case where the scraper-service crashed mid-task.
+ * Delegates to detectStuckTasks() which uses heartbeat-based detection.
+ */
+export async function recoverStaleTasks(): Promise<number> {
+  return detectStuckTasks();
 }

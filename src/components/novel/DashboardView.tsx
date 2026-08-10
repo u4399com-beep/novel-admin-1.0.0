@@ -8,9 +8,11 @@ import {
   FolderTree,
   CheckCircle2,
   ArrowUpRight,
+  Download,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
@@ -36,6 +38,11 @@ export function DashboardView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState(false);
+
+  // Scrape rules quick actions state
+  const [scrapeRuleCount, setScrapeRuleCount] = useState<number | null>(null);
+  const [scrapeRuleLoading, setScrapeRuleLoading] = useState(false);
+  const [scrapeImportResult, setScrapeImportResult] = useState<string | null>(null);
 
   const refreshDashboard = useAppStore((s) => s.refreshVersions['dashboard'] ?? 0);
   const selectNovel = useAppStore((s) => s.selectNovel);
@@ -70,8 +77,85 @@ export function DashboardView() {
   useEffect(() => {
     const controller = new AbortController();
     fetchDashboard(controller.signal);
+    // Fetch scrape rule count in background
+    apiFetch<{ total: number }>('/api/scrape-rules?pageSize=0', { signal: controller.signal })
+      .then((data) => setScrapeRuleCount(data.total ?? 0))
+      .catch(() => { /* silent */ });
     return () => { controller.abort(); };
   }, [fetchDashboard, refreshDashboard]);
+
+  // ─── Import preset scrape rules ─────────────────────────────
+  const handleImportPresetRules = useCallback(async () => {
+    setScrapeRuleLoading(true);
+    setScrapeImportResult(null);
+    try {
+      const rules = [
+        {
+          name: '5165.org 大悟读书网',
+          description: '大悟读书网全站采集。WordPress架构，HTML干净，cheerio即可采集。',
+          enabled: true,
+          listUrl: 'https://5165.org/wangluo/',
+          listSelector: { type: 'css', value: 'article li' },
+          bookTitleSelector: { type: 'css', value: 'a[href*="5165.org/"]' },
+          bookCoverSelector: { type: 'css', value: 'a img' },
+          chapterListUrl: '{bookUrl}',
+          chapterListSelector: { type: 'css', value: 'article' },
+          chapterTitleSelector: { type: 'css', value: 'a[href$=".html"]' },
+          chapterLinkSelector: { type: 'css', value: 'a[href$=".html"]' },
+          contentSelector: { type: 'css', value: '.entry-content' },
+          antiCrawlConfig: { useJsRender: false, uaRotation: true, delay: [1500, 3000] },
+          cleanConfig: { removeAds: true, removePatterns: ['.gsc-', 'script', 'style', '.sharedaddy'], adPatterns: ['请记住本书首发域名', '手机用户请浏览', '本章未完'] },
+          scrapeMode: 'full',
+          engine: 'cheerio',
+          coverSavePath: '/app/public/covers/5165/',
+          threadCount: 2,
+          minDelay: 2000,
+          maxDelay: 4000,
+          enableShuffle: true,
+          dedupMode: 'url',
+        },
+        {
+          name: '二三阅读 (23.225.66.244)',
+          description: '二三阅读全站采集。章节内容JS动态渲染，必须使用playwright引擎。',
+          enabled: true,
+          listUrl: 'http://23.225.66.244/sort/1/1.html',
+          listSelector: { type: 'css', value: '.item' },
+          listPagination: { type: 'next', selector: 'a.next', maxPage: 100 },
+          bookTitleSelector: { type: 'css', value: 'dt a' },
+          bookAuthorSelector: { type: 'css', value: 'dt span' },
+          bookDescriptionSelector: { type: 'css', value: 'dd a' },
+          bookCoverSelector: { type: 'css', value: '.image img' },
+          chapterListUrl: '{bookUrl}',
+          chapterListSelector: { type: 'css', value: '.layout-col1' },
+          chapterTitleSelector: { type: 'css', value: 'a[href*=".html"]' },
+          chapterLinkSelector: { type: 'css', value: 'a[href*=".html"]' },
+          contentSelector: { type: 'css', value: '#container .layout-col1' },
+          antiCrawlConfig: { useJsRender: true, uaRotation: true, delay: [2000, 5000], headers: { Referer: 'http://23.225.66.244/' } },
+          cleanConfig: { removeAds: true, removePatterns: ['.reader-fun', '.select', '.footer', '.m-footer', '.m-setting', '.topbar', 'script', 'style', '.pc-novel', '.row-section', '.detail-box'], adPatterns: ['本章未完，点击下一页继续', '手机用户请浏览阅读', '请记住本书首发域名', '最快更新', '无弹窗小说'] },
+          scrapeMode: 'full',
+          engine: 'playwright',
+          coverSavePath: '/app/public/covers/23ip/',
+          threadCount: 1,
+          minDelay: 3000,
+          maxDelay: 6000,
+          enableShuffle: true,
+          dedupMode: 'url',
+        },
+      ];
+      const res = await apiFetch<{ created: number; updated: number }>('/api/scrape-rules/import', {
+        method: 'POST',
+        body: JSON.stringify({ rules }),
+      });
+      setScrapeImportResult(`成功：新建 ${res.created}，更新 ${res.updated}`);
+      setScrapeRuleCount((prev) => (prev ?? 0) + res.created);
+      const store = useAppStore.getState();
+      store.triggerRefresh('dashboard');
+    } catch {
+      setScrapeImportResult('导入失败，请重试');
+    } finally {
+      setScrapeRuleLoading(false);
+    }
+  }, []);
 
   // ─── Quick actions ─────────────────────────────────────────────────────
   const handleCreateNovel = useCallback(() => {
@@ -314,6 +398,47 @@ export function DashboardView() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ActivityFeed />
       </div>
+
+      {/* ── Scrape Rules Quick Actions ──────────────────────────────── */}
+      <Card className="card-glass">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Globe className="h-4 w-4 text-violet-500" />
+              采集规则
+            </CardTitle>
+            <Badge variant="secondary" className="font-normal tabular-nums">
+              {scrapeRuleCount ?? '...'} 条规则
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={handleImportPresetRules}
+              disabled={scrapeRuleLoading}
+            >
+              <Download className="h-3.5 w-3.5" />
+              {scrapeRuleLoading ? '导入中...' : '导入预设规则'}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5"
+              onClick={() => setCurrentView('scrape')}
+            >
+              管理规则
+              <ArrowUpRight className="h-3 w-3" />
+            </Button>
+            {scrapeImportResult && (
+              <span className="text-xs text-muted-foreground ml-1">{scrapeImportResult}</span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ── Recent Activity (Real Data) ─────────────────────────────────── */}
       <RecentActivity

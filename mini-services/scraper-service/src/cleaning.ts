@@ -10,14 +10,36 @@ import { safeRegexReplace } from "./regex-safety";
 // ==================== Default Ad Patterns ====================
 
 const DEFAULT_AD_PATTERNS = [
+  // General ads
   "推广", "广告", "下载APP", "下载app",
+  // Social / follow prompts
   "关注公众号", "关注我们", "扫码关注", "微信扫码", "微信公众号",
-  "加入书签", "添加书签", "收藏本站",
-  "本章未完", "请记住", "手机版阅读",
-  "最新章节", "百度搜索", "本站网址", "请牢记",
-  "天才一秒记住", "记住本站", "阅读请到", "如果您喜欢",
-  "本章最新章节", "请访问", "天才一秒", "记住网址",
-  "手机用户请浏览", "最新网址", "笔趣阁",
+  // Watermarks / site branding
+  "永久网址", "最新网址", "记住网址", "本站最新", "本站永久",
+  "首发域名", "记住本站域名", "请牢记", "请收藏",
+  "本站网址", "无弹窗小说", "无弹窗阅读",
+  "最快更新", "最新章节请", "最快更新速度",
+  "章节末尾", "本章未完", "请记住",
+  // Download prompts
+  "TXT下载", "下载地址", "下载本", "全本下载", "txt下载",
+  "手机下载", "APP下载", "下载app",
+  // Bookmark prompts
+  "加入书签", "添加书签", "收藏本页", "收藏本站",
+  // Navigation remnants
+  "返回目录", "上一页", "下一页", "章节列表",
+  // Online reading prompts
+  "在线听书", "手机版阅读", "手机用户请",
+  "如果您喜欢", "阅读请到",
+  // Common novel site watermarks
+  "笔趣阁", "biquge", "BIQUGE",
+  "天才一秒记住", "一秒记住",
+  // Site recommendations
+  "推荐本书", "本章说", "本章评论",
+  // Donation/promotion
+  "打赏", "投推荐票", "月票",
+  // Original patterns preserved
+  "最新章节", "百度搜索", "记住本站",
+  "本章最新章节", "请访问", "天才一秒",
 ];
 
 const AD_CSS_SELECTORS = [
@@ -61,9 +83,60 @@ function normalizePatterns(value: unknown): string[] {
 /**
  * Clean HTML content: remove ads, scripts, normalize whitespace.
  */
-export function cleanHtml(html: string, config: CleanRequest["config"]): string {
-  const $ = cheerio.load(html);
+const WATERMARK_PATTERNS = [
+  // URL watermarks like 【www.example.com】
+  /[\[\u3010【]www\.[\w.-]+\.[\w]{2,}[\]\u3011】]/gi,
+  // Site watermarks like --本章未完，点击下一页继续阅读--
+  /[-—]{2,}.*?(下一页|继续阅读|未完待续).*?[-—]{2,}/gi,
+  // Floating ad text like (www.xxx.com) or (www.xxx.anything)
+  /[\uff08(]\s*(?:https?:\/\/)?www\.[\w.-]+[\w/][\uff09)]/gi,
+  // "最新章节请访问xxx" type
+  /最新章节请访问[^\n]{3,80}/gi,
+  // "手机用户请浏览xxx阅读" type
+  /手机用户请浏览[^\n]{3,80}(?:阅读|体验)/gi,
+  // Bare URL lines (www.xxx.anything or https://xxx)
+  /^\s*(?:https?:\/\/)?www\.[\w.-]+\.\w{2,}\s*$/gm,
+  // Chapter-end boilerplate: 本章完 / 本章结束
+  /^\s*本章[完结束]\s*$/gm,
+  // "xxx.com 最新章节" pattern (site URL + ad text on same line)
+  /www\.[\w.-]+\.\w{2,}[^\n]{0,30}(?:最新|更新|章节|阅读|小说|无弹窗)/gi,
+  // "笔趣阁 xxx 最新更新" type
+  /笔趣阁[^\n]{0,50}(?:更新|最新|最快)/gi,
+  // "天才一秒记住xxx" full line
+  /天才一秒记住[^\n]{3,80}/gi,
+  // "无弹窗小说 xxx" type
+  /无弹窗小说[^\n]{0,50}/gi,
+  // "最快更新速度" full line
+  /最快更新速度[^\n]{0,50}/gi,
+  // "推荐本书给好友" full line
+  /^\s*推荐本书[^\n]*$/gm,
+  // "打赏作者" full line
+  /^\s*打赏[^\n]*$/gm,
+  // "投推荐票" full line
+  /^\s*投推荐票[^\n]*$/gm,
+  // "扫码关注" full line
+  /^\s*扫码关注[^\n]*$/gm,
+  // "微信" ad lines (short lines mentioning wechat)
+  /^\s*微信[^\n]{0,20}$/gm,
+  // Single-word or very short non-content lines (likely remnants)
+  /^\s*[，,。.！!？?、；;：:]+\s*$/gm,
+]
 
+/**
+ * Apply watermark regex patterns to text.
+ */
+function applyWatermarkPatterns(text: string): string {
+  for (const pattern of WATERMARK_PATTERNS) {
+    text = safeRegexReplace(text, pattern.source, "", pattern.flags);
+  }
+  return text;
+}
+
+/**
+ * Shared HTML-level cleaning logic (remove scripts, styles, ads, CSS-selector-based removal).
+ * Used by both cleanHtml (returns text) and cleanHtmlRaw (returns HTML).
+ */
+function applyHtmlLevelCleaning($: cheerio.CheerioAPI, config: CleanRequest["config"]): void {
   // Remove script, style, iframe, noscript tags
   $("script, style, iframe, noscript, object, embed, applet").remove();
 
@@ -116,45 +189,61 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
       }
     }
   }
+}
+
+/**
+ * Clean HTML content: remove ads, normalize whitespace, cleans HTML for novel content.
+ */
+export function cleanHtml(html: string, config: CleanRequest["config"]): string {
+  const $ = cheerio.load(html);
+
+  applyHtmlLevelCleaning($, config);
 
   // Get text content
   let text = $.text();
 
-  // Remove ad text patterns (line-by-line filtering)
+  // Build combined ad pattern list
+  const adPatterns = normalizePatterns(config.adPatterns);
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];
   if (adPatterns.length > 0) {
     allAdPatterns.push(...adPatterns);
   }
+  const removePatterns = normalizePatterns(config.removePatterns);
 
-  for (const pattern of allAdPatterns) {
-    const lines = text.split("\n");
-    text = lines
-      .filter((line) => {
-        if (!line.includes(pattern)) return true;
-        // Line contains ad pattern — check if it's a standalone ad line
-        const stripped = line.replace(new RegExp(escapeRegExp(pattern), "gi"), "").trim();
-        return stripped.length >= 10; // Keep lines with significant content
-      })
-      .join("\n");
-  }
+  // Step 1: Apply watermark regex patterns first (removes URLs, full-line ads)
+  text = applyWatermarkPatterns(text);
 
-  // Remove custom text/regex patterns (second pass — used as regex for text matching)
+  // Step 2: Remove custom text/regex patterns
   if (removePatterns.length > 0) {
     for (const pattern of removePatterns) {
       text = safeRegexReplace(text, pattern, "", "gi");
     }
   }
 
-  // Normalize whitespace
-  text = text
-    .replace(/\r\n/g, "\n")
-    .replace(/\t/g, "  ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  // Step 3: Aggressive line-by-line ad filtering
+  // For each line, remove ALL matched ad patterns at once, then decide
+  text = filterAdLines(text, allAdPatterns);
+
+  // Step 4: Remove short remnant lines (punctuation-only, single chars, etc.)
+  text = removeRemnantLines(text);
+
+  // Step 5: Normalize whitespace
+  text = normalizeWhitespace(text);
 
   return text;
+}
+
+/**
+ * Clean HTML and return the cleaned HTML string (not extracted text).
+ * Used when we need to clean HTML first, then extract text via selectors.
+ */
+export function cleanHtmlRaw(html: string, config: CleanRequest["config"]): string {
+  const $ = cheerio.load(html);
+
+  applyHtmlLevelCleaning($, config);
+
+  // Return cleaned HTML instead of extracted text
+  return $.html() || "";
 }
 
 /**
@@ -167,37 +256,110 @@ export function cleanText(text: string, config: CleanRequest["config"]): string 
   if (adPatterns.length > 0) {
     allAdPatterns.push(...adPatterns);
   }
-
-  // Remove ad text patterns (line-by-line filtering)
-  for (const pattern of allAdPatterns) {
-    const lines = text.split("\n");
-    text = lines
-      .filter((line) => {
-        if (!line.includes(pattern)) return true;
-        const stripped = line.replace(new RegExp(escapeRegExp(pattern), "gi"), "").trim();
-        return stripped.length >= 10;
-      })
-      .join("\n");
-  }
-
-  // Remove custom text/regex patterns
   const removePatterns = normalizePatterns(config.removePatterns);
+
+  // Step 1: Apply watermark regex patterns first
+  text = applyWatermarkPatterns(text);
+
+  // Step 2: Remove custom text/regex patterns
   if (removePatterns.length > 0) {
     for (const pattern of removePatterns) {
       text = safeRegexReplace(text, pattern, "", "gi");
     }
   }
 
-  // Normalize whitespace
-  text = text
+  // Step 3: Aggressive line-by-line ad filtering
+  text = filterAdLines(text, allAdPatterns);
+
+  // Step 4: Remove short remnant lines
+  text = removeRemnantLines(text);
+
+  // Step 5: Normalize whitespace
+  text = normalizeWhitespace(text);
+
+  return text;
+}
+
+// ==================== Helper Functions ====================
+
+/**
+ * Aggressively filter ad lines.
+ * For each line, ALL ad patterns are checked at once (not one-by-one).
+ * After removing all matches, if the remaining text is < 20 chars, drop the line.
+ * This prevents cases where removing one ad pattern leaves other ad text.
+ */
+function filterAdLines(text: string, patterns: string[]): string {
+  if (patterns.length === 0) return text;
+
+  const lines = text.split("\n");
+  return lines
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true; // Keep empty lines (will be collapsed later)
+
+      // Check if any pattern matches
+      let hasMatch = false;
+      let remaining = trimmed;
+
+      for (const pattern of patterns) {
+        if (remaining.toLowerCase().includes(pattern.toLowerCase())) {
+          hasMatch = true;
+          // Remove the matched portion
+          remaining = remaining.replace(new RegExp(escapeRegExp(pattern), "gi"), "").trim();
+        }
+      }
+
+      if (!hasMatch) return true; // No ad pattern found, keep the line
+
+      // After removing ALL ad patterns, check if significant content remains
+      // Lines with < 20 remaining chars are likely ad-only lines
+      if (remaining.length < 20) return false;
+
+      // Additional check: if the remaining text is mostly punctuation/spaces
+      const contentChars = remaining.replace(/[\s，,。.！!？?、；;：:\-—_\[\]【】()（）\d]/g, "");
+      if (contentChars.length < 10) return false;
+
+      return true;
+    })
+    .join("\n");
+}
+
+/**
+ * Remove short remnant lines that are likely ad/punctuation artifacts.
+ * Keeps lines that have meaningful Chinese content (≥ 4 Chinese characters).
+ */
+function removeRemnantLines(text: string): string {
+  const lines = text.split("\n");
+  return lines
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+
+      // Count Chinese characters
+      const chineseChars = (trimmed.match(/[\u4e00-\u9fff]/g) || []).length;
+
+      // Short lines (< 5 chars) with no Chinese content are remnant
+      if (trimmed.length < 5 && chineseChars === 0) return false;
+
+      // Lines that are only punctuation + whitespace
+      if (chineseChars === 0 && trimmed.length < 8) return false;
+
+      return true;
+    })
+    .join("\n");
+}
+
+/**
+ * Normalize whitespace: collapse spaces, trim lines, collapse newlines.
+ */
+function normalizeWhitespace(text: string): string {
+  return text
     .replace(/\r\n/g, "\n")
     .replace(/\t/g, "  ")
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-
-  return text;
 }
 
 /**

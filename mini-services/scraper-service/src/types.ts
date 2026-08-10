@@ -135,6 +135,7 @@ export interface ScrapeContentRequest {
   pagination?: Pagination;
   antiCrawl?: AntiCrawl;
   engine?: EngineType;
+  cleanConfig?: CleanRequest["config"];
 }
 
 export interface CleanRequest {
@@ -257,6 +258,7 @@ export interface ScrapeTask {
   progress: number;
   currentStep: string | null;
   errorMessage: string | null;
+  lastHeartbeatAt: string | null;
   rule: ScrapeRule;
 }
 

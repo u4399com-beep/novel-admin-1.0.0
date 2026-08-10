@@ -42,6 +42,7 @@ const MemoizedGridCard = React.memo(function MemoizedGridCard({
   onViewNovel,
 }: MemoizedGridCardProps) {
   const statusInfo = NOVEL_STATUS_MAP[novel.status as NovelStatus] ?? NOVEL_STATUS_MAP.ongoing;
+  const isNew = novel.createdAt && (Date.now() - new Date(novel.createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000;
   return (
     <Card
       role="article"
@@ -50,6 +51,11 @@ const MemoizedGridCard = React.memo(function MemoizedGridCard({
       onClick={() => onViewNovel(novel)}
       onKeyDown={(e) => { if (e.key === 'Enter') onViewNovel(novel); }}
     >
+      {isNew && (
+        <Badge variant="secondary" className="absolute -top-1 -right-1 bg-green-500 text-white text-[10px] px-1.5 py-0.5 rounded-sm z-20">
+          NEW
+        </Badge>
+      )}
       <div className="absolute left-2 top-2 z-10">
         <Checkbox
           checked={isSelected}

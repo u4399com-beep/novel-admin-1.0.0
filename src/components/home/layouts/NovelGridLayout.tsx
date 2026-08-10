@@ -3,12 +3,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Eye, BookOpen, User, BookMarked, FileText } from 'lucide-react';
+import { Eye, BookOpen, User, BookMarked, FileText, Sparkles } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { formatWordCount, getStatusInfo } from '@/components/home/shared-types';
 import { NovelCover } from '@/components/shared/NovelCover';
 import type { NovelCardData } from '@/components/home/shared-types';
 import { HighlightText } from '@/components/home/NovelGrid';
+
+// ─── Helpers ─────────────────────────────────────────────────────
+function isNewNovel(createdAt: string): boolean {
+  const now = Date.now();
+  const created = new Date(createdAt).getTime();
+  return (now - created) < 7 * 24 * 60 * 60 * 1000; // 7 days
+}
 
 const NovelCard = React.memo(function NovelCard({ novel, index, search }: { novel: NovelCardData; index: number; search: string }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -67,7 +74,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: index * 0.04 }}
-            className="group cursor-pointer shine-hover card-depth hover-lift hover-scale"
+            className="group cursor-pointer shine-hover card-depth hover-lift hover-scale novel-card-glow"
           >
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
               <NovelCover
@@ -82,7 +89,13 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
                   <span className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm" style={{ backgroundColor: `${novel.category.color}cc`, color: '#fff' }}>{novel.category.name}</span>
                 </div>
               )}
-              <div className="absolute top-2.5 right-2.5">
+              <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                {isNewNovel(novel.createdAt) && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-rose-500 text-white shadow-sm animate-fade-in-up">
+                    <Sparkles className="h-2.5 w-2.5" />
+                    NEW
+                  </span>
+                )}
                 <span className={`inline-block h-2 w-2 rounded-full ${statusInfo.dotClass} status-${novel.status} badge-glow`} title={statusInfo.label} />
               </div>
               <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 opacity-0 group-hover:opacity-100">
@@ -92,7 +105,10 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
               </div>
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-3 pt-10">
                 <p className="text-[11px] text-white/80 flex items-center gap-1">
-                  <BookOpen className="h-3 w-3" /> {novel._count.chapters} 章 · {formatWordCount(novel.wordCount)}
+                  <BookOpen className="h-3 w-3" /> {novel._count.chapters} 章
+                </p>
+                <p className="text-[10px] text-white/60 flex items-center gap-1 mt-0.5">
+                  <FileText className="h-2.5 w-2.5" /> {formatWordCount(novel.wordCount)}
                 </p>
               </div>
             </div>

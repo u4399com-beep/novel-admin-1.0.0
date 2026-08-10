@@ -46,6 +46,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ─── Types ─────────────────────────────────────────────────────────────
 interface Category {
@@ -298,7 +299,8 @@ export default function CategoriesPage() {
 
         {/* ── Category Grid ──────────────────────────────────────────── */}
         {!loading && !error && filteredCategories.length > 0 && (
-          <motion.div
+          <ErrorBoundary name="categories-grid">
+            <motion.div
             className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger-children"
             variants={containerVariants}
             initial="hidden"
@@ -387,6 +389,7 @@ export default function CategoriesPage() {
               );
             })}
           </motion.div>
+          </ErrorBoundary>
         )}
 
         {/* ── Footer hint ─────────────────────────────────────────────── */}

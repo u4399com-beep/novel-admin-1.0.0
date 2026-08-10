@@ -16,6 +16,7 @@ import { BookmarksPanel } from '../reader/BookmarksPanel';
 import { ReaderSearchBar } from '../reader/ReaderSearchBar';
 import { ReaderContent } from '../reader/ReaderContent';
 import { BottomNav } from '../reader/BottomNav';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export interface ReaderDialogProps {
   open: boolean;
@@ -215,21 +216,23 @@ export function ReaderDialog({
           />
 
           {/* Reader content */}
-          <ReaderContent
-            contentRef={readerContentRef}
-            loading={loadingChapter}
-            error={chapterError}
-            content={chapterContent}
-            chapterTitle={chapterTitle}
-            currentTheme={currentTheme}
-            currentFontCss={currentFontCss}
-            fontSize={settings.fontSize}
-            lineHeight={settings.lineHeight}
-            searchOpen={showSearch}
-            searchQuery={searchQuery}
-            currentMatch={searchCurrentMatch}
-            onRetry={onRetry}
-          />
+          <ErrorBoundary name="reader-content" reloadOnReset={true}>
+            <ReaderContent
+              contentRef={readerContentRef}
+              loading={loadingChapter}
+              error={chapterError}
+              content={chapterContent}
+              chapterTitle={chapterTitle}
+              currentTheme={currentTheme}
+              currentFontCss={currentFontCss}
+              fontSize={settings.fontSize}
+              lineHeight={settings.lineHeight}
+              searchOpen={showSearch}
+              searchQuery={searchQuery}
+              currentMatch={searchCurrentMatch}
+              onRetry={onRetry}
+            />
+          </ErrorBoundary>
 
           {/* Notes panel */}
           <NotesPanel

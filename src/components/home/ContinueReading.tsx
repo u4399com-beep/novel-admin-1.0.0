@@ -8,6 +8,59 @@ import { getSessionId } from '@/lib/reading-session';
 import { apiFetch } from '@/lib/api-fetch';
 import { getCoverGradient } from '@/lib/cover-gradient';
 
+// ─── Progress Ring Component ──────────────────────────────────────
+function ProgressRing({ percent, size = 44, strokeWidth = 3 }: { percent: number; size?: number; strokeWidth?: number }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (Math.min(percent, 100) / 100) * circumference;
+  const ringId = `progress-ring-${Math.random().toString(36).slice(2, 8)}`;
+
+  return (
+    <svg width={size} height={size} className="progress-ring-svg" aria-hidden="true">
+      <defs>
+        <linearGradient id={ringId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="var(--primary)" />
+          <stop offset="100%" stopColor="oklch(0.7 0.15 200)" />
+        </linearGradient>
+      </defs>
+      {/* Background circle */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        className="text-black/5 dark:text-white/10"
+      />
+      {/* Progress circle with gradient stroke */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke={`url(#${ringId})`}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        className="progress-ring-circle"
+        style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1)' }}
+      />
+      {/* Center text */}
+      <text
+        x={size / 2}
+        y={size / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        className="fill-foreground text-[10px] font-semibold tabular-nums"
+      >
+        {Math.min(percent, 100)}%
+      </text>
+    </svg>
+  );
+}
+
 // ─── Types ─────────────────────────────────────────────────────────
 
 interface ReadingProgressItem {
@@ -153,39 +206,35 @@ export function ContinueReading() {
                 <motion.div key={item.id} variants={itemVariants} className="shrink-0">
                   <Link
                     href={`/novels/${item.novelId}`}
-                    className="group/item block w-16"
+                    className="group/item flex flex-col items-center"
+                    style={{ width: '72px' }}
                   >
-                    {/* Cover Thumbnail */}
-                    <div className="relative h-24 w-16 rounded-lg overflow-hidden mb-2 shadow-sm ring-1 ring-black/5 dark:ring-white/5 transition-all duration-300 group-hover/item:shadow-md group-hover/item:ring-primary/20 group-hover/item:-translate-y-0.5">
-                      {item.novel.coverUrl ? (
-                        <img
-                          src={item.novel.coverUrl}
-                          alt={item.novel.title}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover/item:scale-105"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className={`h-full w-full bg-gradient-to-br ${getCoverGradient(item.novel.title)}`} />
-                      )}
-                      {/* Progress indicator bar at bottom */}
-                      <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/20">
-                        <div
-                          className="h-full bg-primary/80 rounded-full transition-all"
-                          style={{ width: `${Math.min(readPercent, 100)}%` }}
-                        />
+                    {/* Cover Thumbnail with Progress Ring Overlay */}
+                    <div className="relative" style={{ width: '56px', height: '76px' }}>
+                      <div className="h-full w-full rounded-lg overflow-hidden shadow-sm ring-1 ring-black/5 dark:ring-white/5 transition-all duration-300 group-hover/item:shadow-md group-hover/item:ring-primary/20 group-hover/item:-translate-y-0.5">
+                        {item.novel.coverUrl ? (
+                          <img
+                            src={item.novel.coverUrl}
+                            alt={item.novel.title}
+                            className="h-full w-full object-cover transition-transform duration-500 group-hover/item:scale-105"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className={`h-full w-full bg-gradient-to-br ${getCoverGradient(item.novel.title)}`} />
+                        )}
+                      </div>
+                      {/* Progress Ring */}
+                      <div className="absolute -bottom-2 -right-2 progress-ring-pulse">
+                        <ProgressRing percent={readPercent} size={28} strokeWidth={2.5} />
                       </div>
                     </div>
 
                     {/* Info */}
-                    <p className="text-xs font-medium leading-snug line-clamp-1 group-hover/item:text-primary transition-colors">
+                    <p className="text-xs font-medium leading-snug line-clamp-1 group-hover/item:text-primary transition-colors mt-3 text-center">
                       {item.novel.title}
                     </p>
-                    <p className="text-[11px] text-muted-foreground/70 leading-snug line-clamp-1 mt-0.5">
+                    <p className="text-[10px] text-muted-foreground/70 leading-snug line-clamp-1 mt-0.5 text-center">
                       {item.novel.author}
-                    </p>
-                    {/* Tiny progress text */}
-                    <p className="text-[10px] text-muted-foreground/40 mt-0.5">
-                      {readPercent}%
                     </p>
                   </Link>
                 </motion.div>

@@ -185,14 +185,14 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
   useEffect(() => { setShortcutLabel(getShortcutLabel()); }, []);
 
   return (
-    <section className="border-b bg-muted/30 fade-in-up">
+    <section className="border-b bg-muted/30 fade-in-up animate-fade-in-up">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         <div className="flex items-center gap-3">
           <h1 className="sm:block text-xl font-bold tracking-tight shrink-0 text-glow-subtle sr-only sm:not-sr-only text-shadow-sm">
             小说搜索
           </h1>
           <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>
-            <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg border-glow card-glass stagger-children">
+            <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg border-glow glass-morphism stagger-children">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
               <Input
                 ref={inputRef}

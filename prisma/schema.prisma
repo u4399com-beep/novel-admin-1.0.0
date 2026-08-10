@@ -214,6 +214,7 @@ model ScrapeTask {
   errorMessage  String?
 
   startedAt     DateTime?
+  lastHeartbeatAt DateTime?
   completedAt   DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

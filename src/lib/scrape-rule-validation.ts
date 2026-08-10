@@ -19,8 +19,8 @@ export const VALID_PAGINATION_TYPES = ['next', 'page'] as const;
 
 export const MAX_SELECTOR_VALUE_LENGTH = 500;
 export const MAX_PAGINATION_SELECTOR_LENGTH = 500;
-export const MAX_PAGINATION_MAX_PAGE = 10000;
-export const MAX_THREAD = 20;
+export const MAX_PAGINATION_MAX_PAGE = 100;
+export const MAX_THREAD = 10;
 export const MIN_THREAD = 1;
 export const MAX_DELAY = 60000;
 

@@ -4651,3 +4651,135 @@ mark {
 :is(.dark .hero-gradient-blob-2) {
   opacity: 0.04;
 }
+
+/* ─── Task 13-d: New Utility Animations & Classes ────────────────────────── */
+
+/* 1. .animate-float — subtle up/down floating animation (3s ease-in-out infinite) */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* 2. .animate-glow — pulsing glow effect (box-shadow pulse) */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 5px color-mix(in srgb, var(--primary) 20%, transparent), 0 0 10px color-mix(in srgb, var(--primary) 10%, transparent); }
+  50% { box-shadow: 0 0 12px color-mix(in srgb, var(--primary) 30%, transparent), 0 0 24px color-mix(in srgb, var(--primary) 15%, transparent); }
+}
+.animate-glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* 3. .animate-slide-in-right — slide in from right */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.4s ease-out forwards;
+}
+
+/* 4. .animate-fade-in-up — fade in while moving up */
+@keyframes fade-in-up-new {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fade-in-up-new 0.35s ease-out forwards;
+}
+
+/* 5. .glass-morphism — glass effect class */
+.glass-morphism {
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  background-color: color-mix(in srgb, var(--background) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+:is(.dark .glass-morphism) {
+  background-color: color-mix(in srgb, var(--background) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+/* 6. Hero gradient border animation */
+@keyframes hero-border-rotate {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.hero-gradient-border {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary), oklch(0.7 0.15 200), var(--primary), oklch(0.7 0.15 200));
+  background-size: 300% 100%;
+  animation: hero-border-rotate 6s ease-in-out infinite;
+  opacity: 0.5;
+}
+:is(.dark .hero-gradient-border) {
+  opacity: 0.3;
+}
+
+/* 7. Cursor blink for typing animation */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 8. Novel card glow hover effect */
+.novel-card-glow {
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+.novel-card-glow:hover {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--primary) 15%, transparent),
+              0 4px 24px color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* 9. Progress ring pulse animation */
+@keyframes progress-ring-pulse-anim {
+  0%, 100% { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--primary) 30%, transparent)); }
+  50% { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--primary) 50%, transparent)); }
+}
+.progress-ring-pulse {
+  animation: progress-ring-pulse-anim 2.5s ease-in-out infinite;
+}
+.progress-ring-svg {
+ filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.15));
+}
+
+/* ==================== Animation Utilities ==================== */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 5px var(--color-primary/20%); }
+  50% { box-shadow: 0 0 20px var(--color-primary/40%), 0 0 40px var(--color-primary/10%); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes shimmer-anim {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}

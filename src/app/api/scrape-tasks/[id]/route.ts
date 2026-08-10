@@ -78,6 +78,12 @@ export const PUT = withAuth(async function PUT(
       }
     }
     if (body.errorMessage !== undefined) updateData.errorMessage = sanitizeField(body.errorMessage, 2000);
+    if (body.lastHeartbeatAt !== undefined) {
+      const d = new Date(body.lastHeartbeatAt);
+      if (!isNaN(d.getTime())) {
+        updateData.lastHeartbeatAt = d;
+      }
+    }
     if (body.resultUrl !== undefined) {
       const val = sanitizeField(body.resultUrl, 500);
       if (val) {

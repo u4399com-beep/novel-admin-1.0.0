@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selectors";
+import { cleanHtmlRaw } from "./cleaning";
 import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects } from "./utils";
 import { isSafeUrl } from "./ssrf";
 
@@ -224,7 +225,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
 // ==================== Scrape Content ====================
 
 export async function handleScrapeContent(body: ScrapeContentRequest) {
-  const { url, selectors, pagination, antiCrawl, engine: requestedEngine } = body;
+  const { url, selectors, pagination, antiCrawl, engine: requestedEngine, cleanConfig } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
 
   const contentParts: string[] = [];
@@ -237,11 +238,16 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     engineType,
     logPrefix: "Content",
     onPage: (html, _pageUrl, page) => {
+      // Apply HTML-level cleaning first (removes ad elements via CSS selectors)
+      let processedHtml = html;
+      if (cleanConfig) {
+        processedHtml = cleanHtmlRaw(html, cleanConfig);
+      }
       // Extract title from first page only
       if (page === 0 && selectors.title) {
-        title = parseSelector(html, selectors.title);
+        title = parseSelector(processedHtml, selectors.title);
       }
-      const content = parseSelector(html, selectors.content);
+      const content = parseSelector(processedHtml, selectors.content);
       if (content) contentParts.push(content);
     },
   });

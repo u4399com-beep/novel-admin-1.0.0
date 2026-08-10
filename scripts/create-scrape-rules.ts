@@ -1,186 +1,180 @@
 /**
- * Script to create scrape rules via admin API.
+ * Seed scrape rules directly via Prisma Client.
  * Usage: bun run scripts/create-scrape-rules.ts
- * Requires: ADMIN_PASSWORD env var and a running dev server.
+ * No running dev server required.
  */
 
-const BASE = 'http://127.0.0.1:3000';
-const PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+import { PrismaClient } from '@prisma/client';
 
-async function login(): Promise<string> {
-  const res = await fetch(`${BASE}/api/auth/callback/credentials`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: PASSWORD, redirect: false }),
-    redirect: 'manual',
-  });
-  const setCookie = res.headers.get('set-cookie');
-  if (!setCookie) throw new Error('Login failed');
-  return setCookie.split(';')[0];
-}
+const prisma = new PrismaClient();
 
-async function createRule(cookie: string, rule: Record<string, unknown>) {
-  const res = await fetch(`${BASE}/api/scrape-rules`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', cookie },
-    body: JSON.stringify(rule),
+// ── Rule 1: 5165.org (大悟读书网) ──
+// Cloudflare protected — must use playwright engine.
+// All books listed on a single category page (.entry-content li a[href]).
+// No list pagination needed.
+const rule5165 = {
+  name: '5165.org 大悟读书网',
+  description: '大悟读书网全站采集。Cloudflare保护，必须使用playwright引擎。所有书籍在分类页单页列出。',
+  enabled: true,
+  listUrl: 'https://5165.org/wangluo/',
+  listSelector: JSON.stringify({ type: 'css', value: '.entry-content li a[href]' }),
+  listPagination: null,
+  bookTitleSelector: JSON.stringify({ type: 'css', value: 'h1.entry-title, h1' }),
+  bookAuthorSelector: JSON.stringify({ type: 'css', value: '.entry-content .text-muted, .author' }),
+  bookCategorySelector: JSON.stringify({ type: 'css', value: '.entry-meta a, .cat-links a' }),
+  bookKeywordsSelector: null,
+  bookDescriptionSelector: JSON.stringify({ type: 'css', value: "meta[property='og:description']", extract: 'content' }),
+  bookCoverSelector: JSON.stringify({ type: 'css', value: '.entry-content img, article img' }),
+  bookStatusSelector: null,
+  chapterListUrl: '{bookUrl}',
+  chapterListSelector: JSON.stringify({ type: 'css', value: '.entry-content' }),
+  chapterTitleSelector: JSON.stringify({ type: 'css', value: 'a[href$=".html"]' }),
+  chapterLinkSelector: JSON.stringify({ type: 'css', value: 'a[href$=".html"]' }),
+  chapterPagination: null,
+  contentTitleSelector: JSON.stringify({ type: 'css', value: 'h1.entry-title, h1' }),
+  contentSelector: JSON.stringify({ type: 'css', value: '.entry-content' }),
+  contentPagination: null,
+  antiCrawlConfig: JSON.stringify({
+    useJsRender: true,
+    uaRotation: true,
+    delay: [2000, 4000],
+    headers: { Referer: 'https://5165.org/' },
+  }),
+  cleanConfig: JSON.stringify({
+    removeAds: true,
+    removePatterns: [
+      '.gsc-', '.sharedaddy', '.share-end', '.sd-sharing-enabled',
+      '.wpcnt', '.wpadvert', 'ins.adsbygoogle', '[id^="div-gpt-ad"]',
+      '.entry-meta', '.post-navigation', '.nav-links',
+      '.comments-area', '#comments', '.related',
+    ],
+    adPatterns: [
+      '请记住本书首发域名', '手机用户请浏览', '本章未完',
+      '5165.org', '大悟读书网', '大悟读书',
+      '本章最新章节', '请访问', '阅读请到',
+      '如果您喜欢', '分享到', '扫码关注',
+      '微信公众号', '关注公众号', '关注我们',
+    ],
+  }),
+  scrapeMode: 'full',
+  engine: 'playwright',
+  storageMode: 'database',
+  filePath: null,
+  coverSavePath: '/app/public/covers/5165/',
+  threadCount: 1,
+  minDelay: 3000,
+  maxDelay: 5000,
+  enableShuffle: true,
+  dedupMode: 'both',
+};
+
+// ── Rule 2: 23.225.66.244 (二三阅读) ──
+// JS-rendered content, must use playwright.
+// Chapters may span multiple pages (contentPagination enabled).
+// Stricter selectors (dl > dt > a) to avoid false matches.
+const rule23ip = {
+  name: '二三阅读 (23.225.66.244)',
+  description: '二三阅读全站采集。章节内容JS动态渲染，必须使用playwright引擎。反爬较严格，建议单线程慢速采集。',
+  enabled: true,
+  listUrl: 'http://23.225.66.244/sort/1/1.html',
+  listSelector: JSON.stringify({ type: 'css', value: '.item' }),
+  listPagination: JSON.stringify({ type: 'next', selector: 'a.next', maxPage: 100 }),
+  bookTitleSelector: JSON.stringify({ type: 'css', value: 'dl > dt > a' }),
+  bookAuthorSelector: JSON.stringify({ type: 'css', value: 'dl > dt > span' }),
+  bookCategorySelector: null,
+  bookKeywordsSelector: null,
+  bookDescriptionSelector: JSON.stringify({ type: 'css', value: 'dl > dd > a' }),
+  bookCoverSelector: JSON.stringify({ type: 'css', value: '.image img' }),
+  bookStatusSelector: null,
+  chapterListUrl: '{bookUrl}',
+  chapterListSelector: JSON.stringify({ type: 'css', value: '.layout-col1' }),
+  chapterTitleSelector: JSON.stringify({ type: 'css', value: 'a[href*=".html"]' }),
+  chapterLinkSelector: JSON.stringify({ type: 'css', value: 'a[href*=".html"]' }),
+  chapterPagination: null,
+  contentTitleSelector: JSON.stringify({ type: 'css', value: 'h1' }),
+  contentSelector: JSON.stringify({ type: 'css', value: '.row-reader .layout-col1, #container .layout-col1' }),
+  contentPagination: JSON.stringify({ type: 'next', selector: 'a.next, a:contains("下一页")', maxPage: 10 }),
+  antiCrawlConfig: JSON.stringify({
+    useJsRender: true,
+    uaRotation: true,
+    delay: [3000, 6000],
+    headers: { Referer: 'http://23.225.66.244/' },
+  }),
+  cleanConfig: JSON.stringify({
+    removeAds: true,
+    removePatterns: [
+      '.reader-fun', '.select', '.footer', '.m-footer', '.m-setting',
+      '.topbar', '.pc-novel', '.row-section', '.detail-box',
+      '.reader-header', '.reader-footer', '.reader-tool',
+      '.breadcrumb', '.share-box', '.ad-', '.advert',
+      '#ad', '[class*="advert"]', '.bottom-bar',
+      '.recommend', '.related-books', '.chapter-nav',
+    ],
+    adPatterns: [
+      '本章未完，点击下一页继续', '手机用户请浏览阅读',
+      '请记住本书首发域名', '最快更新', '无弹窗小说',
+      '无弹窗阅读', '最快更新速度', '本章最新章节',
+      '最新章节请访问', '23.225.66.244', '二三阅读',
+      'TXT下载', '全本下载', '下载本',
+      '在线听书', '返回目录', '章节列表',
+      '推荐本书', '打赏', '投推荐票',
+      '本章完', '本章结束', '完结感言',
+      '如果您喜欢', '如果您喜欢本作',
+    ],
+  }),
+  scrapeMode: 'full',
+  engine: 'playwright',
+  storageMode: 'database',
+  filePath: null,
+  coverSavePath: '/app/public/covers/23ip/',
+  threadCount: 1,
+  minDelay: 3000,
+  maxDelay: 6000,
+  enableShuffle: true,
+  dedupMode: 'both',
+};
+
+const RULES = [rule5165, rule23ip];
+
+async function upsertRule(rule: typeof rule5165) {
+  const existing = await prisma.scrapeRule.findFirst({
+    where: { name: rule.name },
   });
-  const data = await res.json();
-  if (!res.ok) {
-    console.error(`Failed: ${JSON.stringify(data)}`);
-    return null;
+
+  if (existing) {
+    const updated = await prisma.scrapeRule.update({
+      where: { id: existing.id },
+      data: rule,
+    });
+    console.log(`  ✓ Updated: ${rule.name} (id: ${updated.id})`);
+    return 'updated';
+  } else {
+    const created = await prisma.scrapeRule.create({
+      data: rule,
+    });
+    console.log(`  ✓ Created: ${rule.name} (id: ${created.id})`);
+    return 'created';
   }
-  console.log(`Created: ${data.name} (id: ${data.id})`);
-  return data;
 }
 
 async function main() {
-  console.log('Logging in...');
-  const cookie = await login();
-  console.log('Logged in.\n');
+  console.log('Seeding scrape rules via Prisma...\n');
 
-  // ── Rule 1: 5165.org (大悟读书网) ──
-  const rule5165 = {
-    name: '5165.org 大悟读书网',
-    description: '大悟读书网全站采集规则。支持所有分类(wangluo/yuanzhu/wenxue/wuxia/kehuan等)。使用cheerio引擎。',
-    enabled: true,
-    listUrl: 'https://5165.org/{category}/',
-    listSelector: { type: 'css', value: 'article li' },
-    listPagination: null,
-    bookTitleSelector: { type: 'css', value: 'a[href*="5165.org/"]' },
-    bookAuthorSelector: null,
-    bookCategorySelector: null,
-    bookKeywordsSelector: null,
-    bookDescriptionSelector: null,
-    bookCoverSelector: { type: 'css', value: 'a[href*="5165.org/"] img' },
-    bookStatusSelector: null,
-    chapterListUrl: '{bookUrl}',
-    chapterListSelector: { type: 'css', value: 'article' },
-    chapterTitleSelector: { type: 'css', value: 'a[href$=".html"]' },
-    chapterLinkSelector: { type: 'css', value: 'a[href$=".html"]' },
-    chapterPagination: null,
-    contentTitleSelector: { type: 'css', value: 'h1.entry-title' },
-    contentSelector: { type: 'css', value: '.entry-content' },
-    contentPagination: null,
-    antiCrawlConfig: {
-      useJsRender: false,
-      uaRotation: true,
-      delay: [1500, 3000],
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      },
-    },
-    cleanConfig: {
-      removeAds: true,
-      removePatterns: [
-        '.indexpic',
-        '.gsc-',
-        'script',
-        'style',
-        '.sharedaddy',
-        '.sd-sharing-enabled',
-        '.jp-relatedposts',
-      ],
-      adPatterns: [
-        '请记住本书首发域名',
-        '手机用户请浏览',
-        '本章未完',
-        '天才一秒记住',
-      ],
-    },
-    scrapeMode: 'full',
-    engine: 'cheerio',
-    storageMode: 'database',
-    filePath: null,
-    coverSavePath: '/app/public/covers/5165/',
-    threadCount: 2,
-    minDelay: 2000,
-    maxDelay: 4000,
-    enableShuffle: true,
-    dedupMode: 'url',
-  };
+  let created = 0;
+  let updated = 0;
 
-  await createRule(cookie, rule5165);
+  for (const rule of RULES) {
+    const result = await upsertRule(rule);
+    if (result === 'created') created++;
+    else updated++;
+  }
 
-  // ── Rule 2: 23.225.66.244 (二三阅读) ──
-  const rule23ip = {
-    name: '二三阅读 (23.225.66.244)',
-    description: '二三阅读全站采集规则。支持7个分类(玄幻奇幻/武侠仙侠/都市言情/历史军事/网游竞技/科幻灵异/女生频道)。章节内容为JS动态渲染，必须使用playwright引擎。',
-    enabled: true,
-    listUrl: 'http://23.225.66.244/sort/{sortId}/1.html',
-    listSelector: { type: 'css', value: '.item' },
-    listPagination: {
-      type: 'next',
-      selector: 'a.next',
-      maxPage: 100,
-    },
-    bookTitleSelector: { type: 'css', value: 'dt a' },
-    bookAuthorSelector: { type: 'css', value: 'dt span' },
-    bookCategorySelector: null,
-    bookKeywordsSelector: null,
-    bookDescriptionSelector: { type: 'css', value: 'dd a' },
-    bookCoverSelector: { type: 'css', value: '.image img' },
-    bookStatusSelector: null,
-    chapterListUrl: '{bookUrl}',
-    chapterListSelector: { type: 'css', value: '.layout-col1' },
-    chapterTitleSelector: { type: 'css', value: 'a[href*=".html"]' },
-    chapterLinkSelector: { type: 'css', value: 'a[href*=".html"]' },
-    chapterPagination: null,
-    contentTitleSelector: { type: 'css', value: 'h1' },
-    contentSelector: { type: 'css', value: '#container .layout-col1' },
-    contentPagination: null,
-    antiCrawlConfig: {
-      useJsRender: true,
-      uaRotation: true,
-      delay: [2000, 5000],
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Referer': 'http://23.225.66.244/',
-      },
-    },
-    cleanConfig: {
-      removeAds: true,
-      removePatterns: [
-        '.reader-fun',
-        '.select',
-        '.footer',
-        '.m-footer',
-        '.m-setting',
-        '.topbar',
-        '.header',
-        'script',
-        'style',
-        '.pc-novel',
-        '.row-section',
-        '.detail-box',
-      ],
-      adPatterns: [
-        '本章未完，点击下一页继续',
-        '手机用户请浏览阅读',
-        '请记住本书首发域名',
-        '最快更新',
-        '无弹窗小说',
-      ],
-    },
-    scrapeMode: 'full',
-    engine: 'playwright',
-    storageMode: 'database',
-    filePath: null,
-    coverSavePath: '/app/public/covers/23ip/',
-    threadCount: 1,
-    minDelay: 3000,
-    maxDelay: 6000,
-    enableShuffle: true,
-    dedupMode: 'url',
-  };
-
-  await createRule(cookie, rule23ip);
-
-  console.log('\nDone!');
+  console.log(`\nDone! Created: ${created}, Updated: ${updated}, Total: ${RULES.length}`);
 }
 
-main().catch(console.error);
+main()
+  .catch((err) => {
+    console.error('Seed failed:', err);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());
