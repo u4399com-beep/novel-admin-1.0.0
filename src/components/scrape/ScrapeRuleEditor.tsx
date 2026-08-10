@@ -25,6 +25,26 @@ import { RuleFormTabs } from './rule-editor/RuleFormTabs';
 
 // ==================== Main Editor ====================
 
+/**
+ * Normalize cleanConfig from API: convert array patterns to newline-separated strings.
+ * The backend may store removePatterns/adPatterns as string[] (from seed rules)
+ * or as newline-separated strings (from the frontend editor).
+ */
+function normalizeCleanConfig(cfg: Record<string, unknown>): { removeAds: boolean; cleanHtml: boolean; removePatterns: string; adPatterns: string } {
+  const patternsToString = (v: unknown): string => {
+    if (!v) return '';
+    if (typeof v === 'string') return v;
+    if (Array.isArray(v)) return v.filter((p): p is string => typeof p === 'string').join('\n');
+    return '';
+  };
+  return {
+    removeAds: typeof cfg.removeAds === 'boolean' ? cfg.removeAds : true,
+    cleanHtml: typeof cfg.cleanHtml === 'boolean' ? cfg.cleanHtml : true,
+    removePatterns: patternsToString(cfg.removePatterns),
+    adPatterns: patternsToString(cfg.adPatterns),
+  };
+}
+
 const VALID_SELECTOR_TYPES = new Set(['css', 'xpath', 'regex']);
 const VALID_PAGINATION_TYPES = new Set(['next', 'page']);
 
@@ -218,7 +238,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
           maxDelay: num('maxDelay') ?? 3000,
           enableShuffle: bool('enableShuffle') ?? false,
           dedupMode: (str('dedupMode') as FormValues['dedupMode']) || 'url',
-          cleanConfig: parseJSON(rule.cleanConfig, { removeAds: true, cleanHtml: true, removePatterns: '', adPatterns: '' }),
+          cleanConfig: normalizeCleanConfig(parseJSON(rule.cleanConfig, { removeAds: true, cleanHtml: true, removePatterns: '', adPatterns: '' })),
         });
       } catch { /* handled by apiFetch */ }
     }

@@ -64,13 +64,23 @@ interface PaginatedFetchOptions {
   antiCrawl: AntiCrawl | undefined;
   engineType: EngineType;
   logPrefix: string;
+  /** Maximum pages for content pagination (lower than list/chapter pagination). */
+  isContentPagination?: boolean;
   /** Called for each fetched page. Return false to stop paginating. */
   onPage: (html: string, url: string, pageIndex: number) => void | boolean | Promise<void | boolean>;
 }
 
+/**
+ * Maximum pages for content-level pagination.
+ * Content pages (novel chapter text split across pages) rarely exceed 10 pages.
+ * This prevents runaway pagination if a site has a bug or selector mis-match.
+ */
+const MAX_CONTENT_PAGES = 20;
+
 async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNextPage: boolean }> {
-  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage } = options;
-  const maxPages = Math.min(pagination?.maxPage || 1, 100);
+  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage, isContentPagination } = options;
+  const hardMax = isContentPagination ? MAX_CONTENT_PAGES : 100;
+  const maxPages = Math.min(pagination?.maxPage || 1, hardMax);
   const engine = getEngine(engineType);
   const visitedPages = new Set<string>();
   let currentUrl = startUrl;
@@ -237,6 +247,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     antiCrawl,
     engineType,
     logPrefix: "Content",
+    isContentPagination: true,
     onPage: (html, _pageUrl, page) => {
       // Apply HTML-level cleaning first (removes ad elements via CSS selectors)
       let processedHtml = html;

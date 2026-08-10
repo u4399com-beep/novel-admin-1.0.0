@@ -6825,3 +6825,73 @@ Stage Summary:
 5. P3: 实际EPUB导出生成
 6. P3: 采集任务结果URL实现
 ---
+---
+Task ID: 14
+Agent: Main Orchestrator
+Task: 第14轮审计采集系统 — 内容分页/清洗增强、验证修复、API路由Bug修复
+
+Work Log:
+- 全面审计采集系统代码（task-engine.ts、scrapers.ts、cleaning.ts、types.ts、validation、API路由、前端编辑器）
+- 确认内容分页(contentPagination)和内容清洗(cleanConfig)已有基础实现
+- 发现并修复7个问题：
+
+## 修复清单
+
+### HIGH - 采集系统核心Bug
+1. **bookInfo选择器序列化Bug** (scrape-rules/route.ts POST + [id]/route.ts PUT)
+   - bookTitleSelector等7个书信息选择器使用`sanitizeField()`存储，会把`{type:"css",value:"h1"}`对象存为`"[object Object]"`
+   - 修复：改为`safeJsonStringify()`，与其他选择器一致
+   - 影响：所有通过前端编辑器创建/编辑的规则，书名/作者/分类等选择器都无法正确解析
+
+2. **task-engine章节错误缺少日志** (task-engine.ts processChapter)
+   - catch块只increment failedItemsCount，不记录任何日志
+   - 修复：添加`addTaskLog(taskId, "error", ...)`记录章节URL、标题、错误信息
+
+3. **内容分页maxPage无上限** (scrapers.ts paginatedFetch)
+   - contentPagination和listPagination共用同一个`maxPages = Math.min(maxPage, 100)`限制
+   - 内容分页一般不超过20页，100页可能导致失控
+   - 修复：添加`isContentPagination`选项，内容分页硬限20页（MAX_CONTENT_PAGES）
+
+### HIGH - 验证增强
+4. **cleanConfig完全无验证** (scrape-rule-validation.ts)
+   - removePatterns/adPatterns无长度限制、无条目数限制
+   - removeAds/cleanHtml类型不校验
+   - 修复：新增`validateCleanConfig()`函数，支持字符串/数组两种输入，归一化为换行分隔字符串
+   - 新增`validateContentPagination()`，maxPage上限20
+   - 集成到POST和PUT路由
+
+5. **bookInfo选择器未被验证** (scrape-rule-validation.ts)
+   - SELECTOR_FIELDS只包含list/chapter/content选择器，bookTitleSelector等7个书信息选择器完全无验证
+   - 修复：添加到SELECTOR_FIELDS数组
+
+### MEDIUM - 清洗增强
+6. **cleaning.ts增强** (cleaning.ts)
+   - 新增15+条DEFAULT_AD_PATTERNS（温馨提示、热点推荐、全文阅读、追书、完结感言等）
+   - 新增10+条WATERMARK_PATTERNS（IP地址水印、URL行、分页符、页码指示器、copyright等）
+   - 新增8条AD_CSS_SELECTORS（fixed-ad、float-ad、google-ad、taboola等）
+   - **正则缓存**：filterAdLines对每个pattern用new RegExp()编译，O(lines*patterns)次。
+     添加LRU缓存（200条），预编译所有pattern，性能提升数倍
+   - **段落去重**：新增`deduplicateParagraphs()`，解决多页内容合并时的重复段落问题
+     - 检测完全相同段落
+     - 检测跨页断点重叠（末尾20字符匹配开头20字符时自动拼接）
+   - removeRemnantLines增强：过滤纯数字行（页码/ID）
+   - 消除console.warn调用（CSS选择器不匹配时静默跳过）
+
+### MEDIUM - 前端修复
+7. **CleanTab patterns格式兼容** (ScrapeRuleEditor.tsx)
+   - 种子规则导入时removePatterns/adPatterns为string[]，前端编辑器期望string
+   - 修复：添加`normalizeCleanConfig()`函数，加载规则时自动将数组转为换行分隔字符串
+   - ChapterContentTab增强：添加内容分页说明文案和maxPage上限提示
+
+## 验证结果
+- ESLint: 0错误，6警告（均为预存warning）
+- TypeScript: 无新增错误
+- Dev server: 正常运行，首页正确渲染
+- Agent Browser: 首页加载正常，导航正常，Admin正确重定向到登录
+
+Stage Summary:
+- 修复了2个数据损坏Bug（bookInfo选择器序列化、章节日志缺失）
+- 内容分页安全加固（硬限20页）
+- 清洗系统大幅增强（30+新广告模式、正则缓存、段落去重）
+- 验证层完善（cleanConfig验证、contentPagination限制、bookInfo选择器验证）
+- 前端格式兼容修复

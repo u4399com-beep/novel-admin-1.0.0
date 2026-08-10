@@ -88,11 +88,33 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const name = sanitizeField(body.name, 200);
 
-    // Validate selectors and pagination
+    // Validate selectors, pagination, and content pagination
     const selErr = validateAllSelectors(body);
     if (selErr) return apiError(selErr, 400);
     const pagErr = validateAllPaginations(body);
     if (pagErr) return apiError(pagErr, 400);
+
+    // Validate contentPagination with stricter maxPage limit
+    try {
+      const contentPagErr = validateContentPagination(body.contentPagination);
+      if (contentPagErr) return apiError(contentPagErr, 400);
+    } catch (e) {
+      if (e instanceof ValidationError) {
+        return apiError(e.message, 400);
+      }
+      throw e;
+    }
+
+    // Validate cleanConfig
+    let validatedCleanConfig: string | null = null;
+    try {
+      validatedCleanConfig = validateCleanConfig(body.cleanConfig);
+    } catch (e) {
+      if (e instanceof ValidationError) {
+        return apiError(e.message, 400);
+      }
+      throw e;
+    }
 
     // Validate URL fields for SSRF
     try {
@@ -135,15 +157,27 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       jsonFields = {
         listSelector: safeJsonStringify(body.listSelector, 'listSelector'),
         listPagination: safeJsonStringify(body.listPagination, 'listPagination'),
+        // Book info selectors (JSON serialized, same as other selectors)
+        bookTitleSelector: safeJsonStringify(body.bookTitleSelector, 'bookTitleSelector'),
+        bookAuthorSelector: safeJsonStringify(body.bookAuthorSelector, 'bookAuthorSelector'),
+        bookCategorySelector: safeJsonStringify(body.bookCategorySelector, 'bookCategorySelector'),
+        bookKeywordsSelector: safeJsonStringify(body.bookKeywordsSelector, 'bookKeywordsSelector'),
+        bookDescriptionSelector: safeJsonStringify(body.bookDescriptionSelector, 'bookDescriptionSelector'),
+        bookCoverSelector: safeJsonStringify(body.bookCoverSelector, 'bookCoverSelector'),
+        bookStatusSelector: safeJsonStringify(body.bookStatusSelector, 'bookStatusSelector'),
+        // Chapter selectors
         chapterListSelector: safeJsonStringify(body.chapterListSelector, 'chapterListSelector'),
         chapterTitleSelector: safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector'),
         chapterLinkSelector: safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector'),
         chapterPagination: safeJsonStringify(body.chapterPagination, 'chapterPagination'),
+        // Content selectors
         contentTitleSelector: safeJsonStringify(body.contentTitleSelector, 'contentTitleSelector'),
         contentSelector: safeJsonStringify(body.contentSelector, 'contentSelector'),
         contentPagination: safeJsonStringify(body.contentPagination, 'contentPagination'),
+        // Configs
         antiCrawlConfig: safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig'),
-        cleanConfig: safeJsonStringify(body.cleanConfig, 'cleanConfig'),
+        // cleanConfig is already validated and normalized above
+        cleanConfig: validatedCleanConfig ?? safeJsonStringify(body.cleanConfig, 'cleanConfig'),
         agentqlConfig: safeJsonStringify(
           typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
             ? body.agentqlQueries
@@ -168,13 +202,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         listSelector: jsonFields.listSelector,
         listPagination: jsonFields.listPagination,
 
-        bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null,
-        bookAuthorSelector: sanitizeField(body.bookAuthorSelector, 500) || null,
-        bookCategorySelector: sanitizeField(body.bookCategorySelector, 500) || null,
-        bookKeywordsSelector: sanitizeField(body.bookKeywordsSelector, 500) || null,
-        bookDescriptionSelector: sanitizeField(body.bookDescriptionSelector, 500) || null,
-        bookCoverSelector: sanitizeField(body.bookCoverSelector, 500) || null,
-        bookStatusSelector: sanitizeField(body.bookStatusSelector, 500) || null,
+        bookTitleSelector: jsonFields.bookTitleSelector,
+        bookAuthorSelector: jsonFields.bookAuthorSelector,
+        bookCategorySelector: jsonFields.bookCategorySelector,
+        bookKeywordsSelector: jsonFields.bookKeywordsSelector,
+        bookDescriptionSelector: jsonFields.bookDescriptionSelector,
+        bookCoverSelector: jsonFields.bookCoverSelector,
+        bookStatusSelector: jsonFields.bookStatusSelector,
 
         chapterListUrl: sanitizeField(body.chapterListUrl, 2000) || null,
         chapterListSelector: jsonFields.chapterListSelector,

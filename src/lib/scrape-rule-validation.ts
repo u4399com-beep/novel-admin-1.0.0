@@ -28,9 +28,19 @@ export const MAX_DELAY = 60000;
 
 const SELECTOR_FIELDS = [
   { key: 'listSelector', name: '列表选择器' },
+  // Book info selectors
+  { key: 'bookTitleSelector', name: '书名选择器' },
+  { key: 'bookAuthorSelector', name: '作者选择器' },
+  { key: 'bookCategorySelector', name: '分类选择器' },
+  { key: 'bookKeywordsSelector', name: '关键词选择器' },
+  { key: 'bookDescriptionSelector', name: '简介选择器' },
+  { key: 'bookCoverSelector', name: '封面选择器' },
+  { key: 'bookStatusSelector', name: '状态选择器' },
+  // Chapter selectors
   { key: 'chapterListSelector', name: '章节列表选择器' },
   { key: 'chapterTitleSelector', name: '章节标题选择器' },
   { key: 'chapterLinkSelector', name: '章节链接选择器' },
+  // Content selectors
   { key: 'contentTitleSelector', name: '内容标题选择器' },
   { key: 'contentSelector', name: '内容选择器' },
 ] as const;
@@ -195,4 +205,110 @@ export function parseScrapeParams(body: Record<string, unknown>): ScrapeParams {
       Number(body.maxDelay) || 3000
     )),
   };
+}
+
+// ── Clean Config Validation ──
+
+const MAX_CLEAN_PATTERN_LENGTH = 200;
+const MAX_CLEAN_PATTERNS_COUNT = 100;
+const MAX_CONTENT_PAGINATION_MAX_PAGE = 20;
+
+/**
+ * Validate and sanitize the cleanConfig object.
+ * - removeAds/cleanHtml: must be boolean if provided
+ * - removePatterns/adPatterns: must be string (newline-separated) or string[]
+ * - Individual patterns are length-limited to prevent abuse
+ * - Total pattern count is capped
+ *
+ * Returns the sanitized cleanConfig JSON string, or throws ValidationError.
+ */
+export function validateCleanConfig(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError('cleanConfig必须是对象');
+  }
+
+  const obj = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+
+  // Boolean fields
+  if (obj.removeAds !== undefined) {
+    if (typeof obj.removeAds !== 'boolean') {
+      throw new ValidationError('cleanConfig.removeAds必须是布尔值');
+    }
+    result.removeAds = obj.removeAds;
+  }
+  if (obj.cleanHtml !== undefined) {
+    if (typeof obj.cleanHtml !== 'boolean') {
+      throw new ValidationError('cleanConfig.cleanHtml必须是布尔值');
+    }
+    result.cleanHtml = obj.cleanHtml;
+  }
+
+  // Pattern fields: normalize string (newline-sep) to string[]
+  if (obj.removePatterns !== undefined) {
+    result.removePatterns = validateAndNormalizePatterns(obj.removePatterns, 'removePatterns');
+  }
+  if (obj.adPatterns !== undefined) {
+    result.adPatterns = validateAndNormalizePatterns(obj.adPatterns, 'adPatterns');
+  }
+
+  return JSON.stringify(result);
+}
+
+/**
+ * Validate a contentPagination field with stricter maxPage limit.
+ * Content pagination should not exceed MAX_CONTENT_PAGINATION_MAX_PAGE (20).
+ */
+export function validateContentPagination(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return 'contentPagination格式错误，必须是包含type和selector的对象';
+  }
+  const obj = value as Record<string, unknown>;
+  if (!VALID_PAGINATION_TYPES.includes(obj.type as typeof VALID_PAGINATION_TYPES[number])) {
+    return `contentPagination的type必须是: ${VALID_PAGINATION_TYPES.join(', ')}`;
+  }
+  if (typeof obj.selector !== 'string') {
+    return 'contentPagination的selector必须是字符串';
+  }
+  if (obj.selector.length > MAX_PAGINATION_SELECTOR_LENGTH) {
+    return `contentPagination的selector不能超过${MAX_PAGINATION_SELECTOR_LENGTH}个字符`;
+  }
+  if (obj.maxPage !== undefined) {
+    const maxPage = Number(obj.maxPage);
+    if (!Number.isFinite(maxPage) || maxPage < 1 || maxPage > MAX_CONTENT_PAGINATION_MAX_PAGE) {
+      return `contentPagination的maxPage必须在1-${MAX_CONTENT_PAGINATION_MAX_PAGE}之间`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Normalize a patterns field (string or string[]) to a newline-separated string.
+ * Validates individual pattern length and total count.
+ */
+function validateAndNormalizePatterns(value: unknown, fieldName: string): string {
+  let patterns: string[];
+
+  if (typeof value === 'string') {
+    patterns = value.split('\n').map(s => s.trim()).filter(Boolean);
+  } else if (Array.isArray(value)) {
+    patterns = value.filter((p): p is string => typeof p === 'string').map(s => s.trim()).filter(Boolean);
+  } else {
+    throw new ValidationError(`cleanConfig.${fieldName}必须是字符串或字符串数组`);
+  }
+
+  if (patterns.length > MAX_CLEAN_PATTERNS_COUNT) {
+    throw new ValidationError(`cleanConfig.${fieldName}不能超过${MAX_CLEAN_PATTERNS_COUNT}条规则`);
+  }
+
+  const sanitized = patterns.map(p => {
+    if (p.length > MAX_CLEAN_PATTERN_LENGTH) {
+      return p.slice(0, MAX_CLEAN_PATTERN_LENGTH);
+    }
+    return p;
+  });
+
+  return sanitized.join('\n');
 }

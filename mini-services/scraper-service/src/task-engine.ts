@@ -734,7 +734,9 @@ async function executeTaskBody(
           }
         } catch (err) {
           failedItemsCount.increment();
-          console.error(`[Task ${taskId}] Error scraping chapter ${chapter.url}:`, err);
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error(`[Task ${taskId}] Error scraping chapter ${chapter.url}:`, errMsg);
+          await addTaskLog(taskId, "error", `章节采集失败: ${chapter.title || chapter.url}`, chapter.url, errMsg.slice(0, 500));
         }
       }
 

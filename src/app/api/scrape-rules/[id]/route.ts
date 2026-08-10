@@ -10,6 +10,8 @@ import {
   MIN_THREAD,
   validateAllSelectors,
   validateAllPaginations,
+  validateContentPagination,
+  validateCleanConfig,
   validateUrlField,
   validateSavePath,
   ValidationError,
@@ -84,6 +86,23 @@ export const PUT = withAuth(async function PUT(
     const pagErr = validateAllPaginations(body, true);
     if (pagErr) return apiError(pagErr, 400);
 
+    // Validate contentPagination with stricter maxPage limit
+    if (body.contentPagination !== undefined) {
+      const contentPagErr = validateContentPagination(body.contentPagination);
+      if (contentPagErr) return apiError(contentPagErr, 400);
+    }
+
+    // Pre-validate cleanConfig (will be stored in jsonFields below)
+    let validatedCleanConfig: string | null | undefined;
+    if (body.cleanConfig !== undefined) {
+      try {
+        validatedCleanConfig = validateCleanConfig(body.cleanConfig);
+      } catch (e) {
+        if (e instanceof ValidationError) return apiError(e.message, 400);
+        throw e;
+      }
+    }
+
     // Validate URL fields for SSRF — **reject** on failure instead of silently skipping
     try {
       if (body.listUrl !== undefined) {
@@ -140,6 +159,15 @@ export const PUT = withAuth(async function PUT(
     try {
       if (body.listSelector !== undefined) jsonFields.listSelector = safeJsonStringify(body.listSelector, 'listSelector');
       if (body.listPagination !== undefined) jsonFields.listPagination = safeJsonStringify(body.listPagination, 'listPagination');
+      // Book info selectors
+      if (body.bookTitleSelector !== undefined) jsonFields.bookTitleSelector = safeJsonStringify(body.bookTitleSelector, 'bookTitleSelector');
+      if (body.bookAuthorSelector !== undefined) jsonFields.bookAuthorSelector = safeJsonStringify(body.bookAuthorSelector, 'bookAuthorSelector');
+      if (body.bookCategorySelector !== undefined) jsonFields.bookCategorySelector = safeJsonStringify(body.bookCategorySelector, 'bookCategorySelector');
+      if (body.bookKeywordsSelector !== undefined) jsonFields.bookKeywordsSelector = safeJsonStringify(body.bookKeywordsSelector, 'bookKeywordsSelector');
+      if (body.bookDescriptionSelector !== undefined) jsonFields.bookDescriptionSelector = safeJsonStringify(body.bookDescriptionSelector, 'bookDescriptionSelector');
+      if (body.bookCoverSelector !== undefined) jsonFields.bookCoverSelector = safeJsonStringify(body.bookCoverSelector, 'bookCoverSelector');
+      if (body.bookStatusSelector !== undefined) jsonFields.bookStatusSelector = safeJsonStringify(body.bookStatusSelector, 'bookStatusSelector');
+      // Chapter selectors
       if (body.chapterListSelector !== undefined) jsonFields.chapterListSelector = safeJsonStringify(body.chapterListSelector, 'chapterListSelector');
       if (body.chapterTitleSelector !== undefined) jsonFields.chapterTitleSelector = safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector');
       if (body.chapterLinkSelector !== undefined) jsonFields.chapterLinkSelector = safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector');
@@ -148,7 +176,8 @@ export const PUT = withAuth(async function PUT(
       if (body.contentSelector !== undefined) jsonFields.contentSelector = safeJsonStringify(body.contentSelector, 'contentSelector');
       if (body.contentPagination !== undefined) jsonFields.contentPagination = safeJsonStringify(body.contentPagination, 'contentPagination');
       if (body.antiCrawlConfig !== undefined) jsonFields.antiCrawlConfig = safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig');
-      if (body.cleanConfig !== undefined) jsonFields.cleanConfig = safeJsonStringify(body.cleanConfig, 'cleanConfig');
+      // cleanConfig: use pre-validated value if available
+      if (body.cleanConfig !== undefined) jsonFields.cleanConfig = validatedCleanConfig ?? safeJsonStringify(body.cleanConfig, 'cleanConfig');
       if (body.agentqlQueries !== undefined) {
         jsonFields.agentqlConfig = safeJsonStringify(
           typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
@@ -180,13 +209,14 @@ export const PUT = withAuth(async function PUT(
         ...(body.listSelector !== undefined && { listSelector: jsonFields.listSelector }),
         ...(body.listPagination !== undefined && { listPagination: jsonFields.listPagination }),
 
-        ...(body.bookTitleSelector !== undefined && { bookTitleSelector: sanitizeField(body.bookTitleSelector, 500) || null }),
-        ...(body.bookAuthorSelector !== undefined && { bookAuthorSelector: sanitizeField(body.bookAuthorSelector, 500) || null }),
-        ...(body.bookCategorySelector !== undefined && { bookCategorySelector: sanitizeField(body.bookCategorySelector, 500) || null }),
-        ...(body.bookKeywordsSelector !== undefined && { bookKeywordsSelector: sanitizeField(body.bookKeywordsSelector, 500) || null }),
-        ...(body.bookDescriptionSelector !== undefined && { bookDescriptionSelector: sanitizeField(body.bookDescriptionSelector, 500) || null }),
-        ...(body.bookCoverSelector !== undefined && { bookCoverSelector: sanitizeField(body.bookCoverSelector, 500) || null }),
-        ...(body.bookStatusSelector !== undefined && { bookStatusSelector: sanitizeField(body.bookStatusSelector, 500) || null }),
+        // Book info selectors — already in jsonFields
+        ...(body.bookTitleSelector !== undefined && { bookTitleSelector: jsonFields.bookTitleSelector }),
+        ...(body.bookAuthorSelector !== undefined && { bookAuthorSelector: jsonFields.bookAuthorSelector }),
+        ...(body.bookCategorySelector !== undefined && { bookCategorySelector: jsonFields.bookCategorySelector }),
+        ...(body.bookKeywordsSelector !== undefined && { bookKeywordsSelector: jsonFields.bookKeywordsSelector }),
+        ...(body.bookDescriptionSelector !== undefined && { bookDescriptionSelector: jsonFields.bookDescriptionSelector }),
+        ...(body.bookCoverSelector !== undefined && { bookCoverSelector: jsonFields.bookCoverSelector }),
+        ...(body.bookStatusSelector !== undefined && { bookStatusSelector: jsonFields.bookStatusSelector }),
 
         ...(body.chapterListUrl !== undefined && {
           chapterListUrl: (() => {
