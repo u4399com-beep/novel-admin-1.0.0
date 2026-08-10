@@ -154,6 +154,18 @@ const WATERMARK_PATTERNS = [
   /(?:copyright|版权所有|所有权利保留|all rights reserved)/gi,
   // "更新时间" or "update time" lines (usually metadata)
   /^\s*(?:更新时间|最后更新|update\s*time)[:：]?\s*[^\n]{0,50}$/gim,
+  // "本章来源于xxx" type source attribution
+  /本章来源于[^\n]{3,60}/gi,
+  // "首发于xxx" / "首发网站xxx"
+  /首发(?:于|网站|域名)[^\n]{3,60}/gi,
+  // "请记住xxx" / "记住xxx" standalone reminder lines
+   /^\s*请记住[^\n]{0,50}$/gm,
+  // "XXX小说" branding lines (very short, likely ads)
+   /^\s*[\w.]+小说[^\n]{0,10}$/gm,
+  // "最新网址xxx" / "最新地址xxx" site URL announcements
+   /(?:最新网址|最新地址|记住网址|记住本站)[^\n]{0,60}/gi,
+  // Empty or near-empty paragraph markers (single char or very short)
+  /^\s*[。.！!？?~～…—-]{1,3}\s*$/gm,
 ];
 
 /**
@@ -192,6 +204,8 @@ function applyHtmlLevelCleaning($: cheerio.CheerioAPI, config: CleanRequest["con
   });
 
   const adPatterns = normalizePatterns(config.adPatterns);
+  const removeSelectors = normalizePatterns(config.removeSelectors);
+  const removePatterns = normalizePatterns(config.removePatterns);
 
   // Remove ad elements if removeAds is true (default)
   if (config.removeAds !== false) {
@@ -209,11 +223,22 @@ function applyHtmlLevelCleaning($: cheerio.CheerioAPI, config: CleanRequest["con
     $(allAdSelectors.join(", ")).remove();
   }
 
+  // Remove user-specified CSS selectors (explicit, guaranteed to be selectors)
+  if (removeSelectors.length > 0) {
+    for (const selector of removeSelectors) {
+      try {
+        $(selector).remove();
+      } catch {
+        // Invalid CSS selector — skip
+      }
+    }
+  }
+
   // Note: removePatterns serve dual purpose:
   // 1. As CSS selectors for element removal (first pass)
   // 2. As regex patterns for text matching (second pass)
   // Patterns that are valid regex but not valid CSS will silently skip the CSS pass.
-  const removePatterns = normalizePatterns(config.removePatterns);
+  // For clarity, use removeSelectors for pure CSS selectors.
   if (removePatterns.length > 0) {
     for (const pattern of removePatterns) {
       try {

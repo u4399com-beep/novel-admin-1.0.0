@@ -1,12 +1,15 @@
-#!/usr/bin/env ts
-
 import { db } from '@/lib/db';
-import { safeJson, sanitizeField, isPrismaError, apiError, apiDeleted, safeJsonStringify } from '@/lib/api-utils';
-import { NextResponse } from 'next/server';
-import { invalidateCache } from '@/lib/cache';
+import { safeJson, sanitizeField, isPrismaError, apiError, safeJsonStringify } from '@/lib/api-utils';
+import { NextResponse, NextRequest } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
+import { getOrFail, NotFoundError } from '@/lib/crud-helpers';
 import {
-  VALID_SCRAPE_MODES, VALID_ENGINES, VALID_STORAGE_MODES, VALID_DEDUP_MODES, MAX_THREAD, MIN_THREAD, validateAllSelectors, validateAllPaginations, validateContentPagination, validateCleanConfig, validateSavePath, ValidationError, buildCloudBrowserConfig } from '@/lib/scrape-rule-validation';
+  VALID_SCRAPE_MODES, VALID_ENGINES, VALID_STORAGE_MODES, VALID_DEDUP_MODES,
+  MAX_THREAD, MIN_THREAD, MAX_DELAY,
+  validateAllSelectors, validateAllPaginations, validateContentPagination,
+  validateCleanConfig, validateSavePath, validateUrlField,
+  ValidationError, buildCloudBrowserConfig,
+} from '@/lib/scrape-rule-validation';
 
 // GET /api/scrape-rules/[id] - Get a single scrape rule
 export const GET = withAuth(async function GET(
@@ -17,7 +20,7 @@ export const GET = withAuth(async function GET(
     const { id } = await params;
     const rule = await db.scrapeRule.findUniqueOrThrow({
       where: { id },
-      include: { _count: { select: { tasks: true } },
+      include: { _count: { select: { tasks: true } } },
     });
     return NextResponse.json(rule);
   } catch (error) {
@@ -40,54 +43,55 @@ export const PUT = withAuth(async function PUT(
 
     let body: Record<string, unknown>;
     try {
-      body = await safeJson(request) as Record<string, unknown>;
+      body = (await safeJson(request)) as Record<string, unknown>;
     } catch {
       return apiError('请求数据格式错误', 400);
     }
 
-    const { name, description, identifier, preview, config, enabled } = body;
-
-    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
-      return apiError('规则名称不能为空', 400);
+    // --- Basic field validation ---
+    if (body.name !== undefined) {
+      const val = sanitizeField(body.name, 200);
+      if (!val) return apiError('规则名称不能为空', 400);
     }
-    if (typeof identifier !== 'string' || !identifier.trim()) {
-      return apiError('标识符不能为空', 400);
+    if (body.description !== undefined) {
+      const val = sanitizeField(body.description, 2000);
+      if (val && val.length > 2000) return apiError('描述不能超过2000个字符', 400);
     }
-    if (typeof identifier === 'string' && identifier.trim().length > MAX_IDENTIFIER_LENGTH) {
-      return apiError(`标识符不能超过${MAX_IDENTIFIER_LENGTH}个字符`, 400);
-    }
-    if (description !== undefined && typeof description === 'string' && description.trim().length > MAX_DESCRIPTION_LENGTH) {
-      return apiError(`描述不能超过${MAX_DESCRIPTION_LENGTH}个字符`, 400);
-    }
-    if (enabled !== undefined && typeof enabled !== 'boolean') {
+    if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
       return apiError('enabled 必须是布尔值', 400);
     }
+    if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
+      return apiError('enableShuffle 必须是布尔值', 400);
+    }
 
-    // Validate enums
-    if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode)) {
+    // --- Enum validation ---
+    if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode as any)) {
       return apiError(`采集模式只能是: ${VALID_SCRAPE_MODES.join(', ')}`, 400);
     }
-    if (body.engine !== undefined && !VALID_ENGINES.includes(body.engine)) {
+    if (body.engine !== undefined && !VALID_ENGINES.includes(body.engine as any)) {
       return apiError(`采集引擎只能是: ${VALID_ENGINES.join(', ')}`, 400);
     }
-    if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode)) {
+    if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode as any)) {
       return apiError(`存储模式只能是: ${VALID_STORAGE_MODES.join(', ')}`, 400);
     }
-    if (body.dedupMode !== undefined && !VALID_DEDUP_MODES.includes(body.dedupMode)) {
+    if (body.dedupMode !== undefined && !VALID_DEDUP_MODES.includes(body.dedupMode as any)) {
       return apiError(`去重模式只能是: ${VALID_DEDUP_MODES.join(', ')}`, 400);
     }
+
+    // --- Numeric validation ---
     if (body.threadCount !== undefined) {
       const tc = Math.floor(Number(body.threadCount) || 3);
       if (tc < MIN_THREAD || tc > MAX_THREAD) {
         return apiError(`线程数必须在${MIN_THREAD}-${MAX_THREAD}之间`, 400);
       }
     }
-
-    if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
-      return apiError('enableShuffle 必须是布尔值', 400);
+    const minD = body.minDelay !== undefined ? Math.max(0, Math.floor(Number(body.minDelay) || 1000)) : undefined;
+    const maxD = body.maxDelay !== undefined ? Math.min(MAX_DELAY, Math.max(0, Math.floor(Number(body.maxDelay) || 3000))) : undefined;
+    if (minD !== undefined && maxD !== undefined && maxD < minD) {
+      return apiError('最大延迟不能小于最小延迟', 400);
     }
 
-    // Validate URL fields for SSRF — **reject** on failure instead of silently skipping
+    // --- URL validation (SSRF) ---
     try {
       if (body.listUrl !== undefined) {
         const val = sanitizeField(body.listUrl, 2000);
@@ -102,25 +106,25 @@ export const PUT = withAuth(async function PUT(
         if (val) validateUrlField(val, 'Cloud Browser URL');
       }
     } catch (e) {
-      if (e instanceof ValidationError) {
-        return apiError(e.message, 400);
-      }
+      if (e instanceof ValidationError) return apiError(e.message, 400);
       throw e;
     }
 
-    // Validate selectors, pagination, and cleanConfig
+    // --- Selector validation ---
     const selErr = validateAllSelectors(body, true);
     if (selErr) return apiError(selErr, 400);
+
+    // --- Pagination validation (list + chapter only; content has its own validator) ---
     const pagErr = validateAllPaginations(body, true);
     if (pagErr) return apiError(pagErr, 400);
 
-    // Validate contentPagination with stricter maxPage limit
+    // --- Content pagination validation (stricter maxPage limit: 20) ---
     if (body.contentPagination !== undefined) {
       const contentPagErr = validateContentPagination(body.contentPagination);
       if (contentPagErr) return apiError(contentPagErr, 400);
     }
 
-    // Pre-validate cleanConfig
+    // --- CleanConfig validation ---
     let validatedCleanConfig: string | null | undefined;
     if (body.cleanConfig !== undefined) {
       try {
@@ -131,36 +135,12 @@ export const PUT = withAuth(async function PUT(
       }
     }
 
-    // Validate delay constraints
-    const minD = body.minDelay !== undefined ? Math.max(0, Math.floor(Number(body.minDelay) || 1000)) : undefined;
-    const maxD = body.maxDelay !== undefined ? Math.max(0, Math.floor(Number(body.maxDelay) || 3000)) : undefined;
-    if (minD !== undefined && maxD !== undefined && maxD < minD) {
-      return apiError('最大延迟不能小于最小延迟', 400);
-    }
-    if (minD === undefined && maxD !== undefined) {
-      const existing = await db.scrapeRule.findUnique({ where: { id }, select: { maxDelay: true } });
-      if (existing && maxD < (existing.minDelay || 1000)) {
-        return apiError(`最大延迟(${maxD}ms)不能小于当前最小延迟(${existing.minDelay || 1000}ms)`, 400);
-      }
-    }
-    if (maxD === undefined && minD !== undefined) {
-      const existing = await db.scrapeRule.findUnique({ where: { id }, select: { minDelay: true } });
-      if (existing && minD > (existing.maxDelay || 3000)) {
-        return apiError(`最小延迟(${minD}ms)不能大于当前最大延迟(${existing.maxDelay || 3000}ms)`, 400);
-      }
-    }
+    // --- Save path validation ---
+    if (body.filePath !== undefined) validateSavePath(body.filePath);
+    if (body.coverSavePath !== undefined) validateSavePath(body.coverSavePath);
 
-    if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
-      return apiError('enabled 必须是布尔值', 400);
-    }
-    if (body.enableShuffle !== undefined && typeof body.enableShuffle !== 'boolean') {
-      return apiError('enableShuffle 必须是布尔值', 400);
-    }
-    // antiCrawlLevel removed: field does not exist in Prisma schema
-    // Accept and silently ignore to maintain backward compatibility with clients
-
-    // Build JSON fields — capture validation errors as 400
-    let jsonFields: Record<string, string | null> = {};
+    // --- Build JSON fields ---
+    const jsonFields: Record<string, string | null | undefined> = {};
     try {
       if (body.listSelector !== undefined) jsonFields.listSelector = safeJsonStringify(body.listSelector, 'listSelector');
       if (body.listPagination !== undefined) jsonFields.listPagination = safeJsonStringify(body.listPagination, 'listPagination');
@@ -171,7 +151,6 @@ export const PUT = withAuth(async function PUT(
       if (body.bookDescriptionSelector !== undefined) jsonFields.bookDescriptionSelector = safeJsonStringify(body.bookDescriptionSelector, 'bookDescriptionSelector');
       if (body.bookCoverSelector !== undefined) jsonFields.bookCoverSelector = safeJsonStringify(body.bookCoverSelector, 'bookCoverSelector');
       if (body.bookStatusSelector !== undefined) jsonFields.bookStatusSelector = safeJsonStringify(body.bookStatusSelector, 'bookStatusSelector');
-      // Chapter selectors
       if (body.chapterListSelector !== undefined) jsonFields.chapterListSelector = safeJsonStringify(body.chapterListSelector, 'chapterListSelector');
       if (body.chapterTitleSelector !== undefined) jsonFields.chapterTitleSelector = safeJsonStringify(body.chapterTitleSelector, 'chapterTitleSelector');
       if (body.chapterLinkSelector !== undefined) jsonFields.chapterLinkSelector = safeJsonStringify(body.chapterLinkSelector, 'chapterLinkSelector');
@@ -180,39 +159,50 @@ export const PUT = withAuth(async function PUT(
       if (body.contentSelector !== undefined) jsonFields.contentSelector = safeJsonStringify(body.contentSelector, 'contentSelector');
       if (body.contentPagination !== undefined) jsonFields.contentPagination = safeJsonStringify(body.contentPagination, 'contentPagination');
       if (body.antiCrawlConfig !== undefined) jsonFields.antiCrawlConfig = safeJsonStringify(body.antiCrawlConfig, 'antiCrawlConfig');
-      // cleanConfig: use pre-validated value if available
       if (body.cleanConfig !== undefined) jsonFields.cleanConfig = validatedCleanConfig ?? safeJsonStringify(body.cleanConfig, 'cleanConfig');
       if (body.agentqlQueries !== undefined) {
         jsonFields.agentqlConfig = safeJsonStringify(
           typeof body.agentqlQueries === 'object' && body.agentqlQueries !== null
             ? body.agentqlQueries
             : null,
-          'agentqlConfig'
+          'agentqlConfig',
         );
       }
     } catch (e) {
-      if (e instanceof Error) {
-        return apiError(e.message, 400);
-      }
+      if (e instanceof Error) return apiError(e.message, 400);
       throw e;
+    }
+
+    // --- Build update data with ALL validated fields ---
+    const data: Record<string, unknown> = {};
+    if (body.name !== undefined) data.name = sanitizeField(body.name, 200);
+    if (body.description !== undefined) data.description = sanitizeField(body.description, 2000) || null;
+    if (body.enabled !== undefined) data.enabled = body.enabled;
+    if (body.listUrl !== undefined) data.listUrl = sanitizeField(body.listUrl, 2000) || null;
+    if (body.chapterListUrl !== undefined) data.chapterListUrl = sanitizeField(body.chapterListUrl, 2000) || null;
+    if (body.scrapeMode !== undefined) data.scrapeMode = body.scrapeMode;
+    if (body.engine !== undefined) data.engine = body.engine;
+    if (body.storageMode !== undefined) data.storageMode = body.storageMode;
+    if (body.threadCount !== undefined) data.threadCount = Math.floor(Number(body.threadCount) || 3);
+    if (minD !== undefined) data.minDelay = minD;
+    if (maxD !== undefined) data.maxDelay = maxD;
+    if (body.enableShuffle !== undefined) data.enableShuffle = body.enableShuffle;
+    if (body.dedupMode !== undefined) data.dedupMode = body.dedupMode;
+    if (body.filePath !== undefined) data.filePath = validateSavePath(body.filePath);
+    if (body.coverSavePath !== undefined) data.coverSavePath = validateSavePath(body.coverSavePath);
+    // JSON fields
+    for (const [key, val] of Object.entries(jsonFields)) {
+      data[key] = val;
+    }
+    // Cloud browser config
+    if (body.cloudBrowserUrl !== undefined || body.cloudBrowserProvider !== undefined) {
+      data.cloudBrowserConfig = buildCloudBrowserConfig(body.cloudBrowserUrl, body.cloudBrowserProvider);
     }
 
     const rule = await db.scrapeRule.update({
       where: { id },
-      data: {
-        ...(body.name !== undefined && { name: sanitizeField(body.name, 200) },
-        ...(body.description !== undefined && { description: sanitizeField(body.description, 2000) || null },
-        ...(body.enabled !== undefined && { enabled: body.enabled }),
-
-        ...(body.listUrl !== undefined && {
-          listUrl: (() => {
-            const val = sanitizeField(body.listUrl, 2000);
-            return val || null;
-          })(),
-        }),
-        ...(body.listSelector !== undefined && { listSelector: jsonFields.listSelector }),
-        ...(body.listPagination !== undefined && { listPagination: jsonFields.listPagination }),
-      },
+      data,
+      include: { _count: { select: { tasks: true } } },
     });
 
     return NextResponse.json(rule);
@@ -221,4 +211,31 @@ export const PUT = withAuth(async function PUT(
       return apiError(error.message, 404);
     }
     console.error('Update scrape rule error:', error);
-    if (isPrismaError(error, 
+    if (isPrismaError(error, 'P2025')) {
+      return apiError('采集规则不存在', 404);
+    }
+    return apiError('更新采集规则失败', 500);
+  }
+});
+
+// DELETE /api/scrape-rules/[id] - Delete a scrape rule
+export const DELETE = withAuth(async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    await getOrFail(db.scrapeRule, { id }, '采集规则不存在');
+    await db.scrapeRule.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (error: unknown) {
+    if (error instanceof NotFoundError) {
+      return apiError(error.message, 404);
+    }
+    console.error('Delete scrape rule error:', error);
+    if (isPrismaError(error, 'P2025')) {
+      return apiError('采集规则不存在', 404);
+    }
+    return apiError('删除采集规则失败', 500);
+  }
+});

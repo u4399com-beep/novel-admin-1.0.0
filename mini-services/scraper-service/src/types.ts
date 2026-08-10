@@ -143,7 +143,11 @@ export interface CleanRequest {
   config: {
     removeAds?: boolean;
     cleanHtml?: boolean;
+    /** CSS selectors to remove from HTML (applied at HTML level before text extraction) */
+    removeSelectors?: string[];
+    /** Regex patterns that serve dual purpose: CSS selectors (HTML level) + regex (text level) */
     removePatterns?: string[];
+    /** Text patterns for ad line detection (applied at text level) */
     adPatterns?: string[];
   };
 }

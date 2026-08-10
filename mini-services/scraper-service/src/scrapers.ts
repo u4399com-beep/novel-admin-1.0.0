@@ -240,6 +240,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
 
   const contentParts: string[] = [];
   let title = "";
+  let pageCount = 0;
 
   await paginatedFetch({
     startUrl: url,
@@ -249,6 +250,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     logPrefix: "Content",
     isContentPagination: true,
     onPage: (html, _pageUrl, page) => {
+      pageCount++;
       // Apply HTML-level cleaning first (removes ad elements via CSS selectors)
       let processedHtml = html;
       if (cleanConfig) {
@@ -263,12 +265,18 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     },
   });
 
+  // Log pagination info for debugging
+  if (pageCount > 1) {
+    console.log(`  [Content] Merged ${pageCount} pages (${contentParts.reduce((sum, p) => sum + p.length, 0)} chars)`);
+  }
+
   const fullContent = contentParts.join("\n\n");
   return {
     title,
     content: fullContent,
     wordCount: fullContent.length,
     engine: engineType,
+    pagesFetched: pageCount,
   };
 }
 

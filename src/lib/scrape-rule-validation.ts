@@ -48,7 +48,8 @@ const SELECTOR_FIELDS = [
 const PAGINATION_FIELDS = [
   { key: 'listPagination', name: '列表分页' },
   { key: 'chapterPagination', name: '章节分页' },
-  { key: 'contentPagination', name: '内容分页' },
+  // NOTE: contentPagination is intentionally excluded here.
+  // It has its own validateContentPagination() with a stricter maxPage limit (20 vs 100).
 ] as const;
 
 // ── Cloud Browser Config ──
@@ -250,6 +251,9 @@ export function validateCleanConfig(value: unknown): string | null {
   }
 
   // Pattern fields: normalize string (newline-sep) to string[]
+  if (obj.removeSelectors !== undefined) {
+    result.removeSelectors = validateAndNormalizePatterns(obj.removeSelectors, 'removeSelectors');
+  }
   if (obj.removePatterns !== undefined) {
     result.removePatterns = validateAndNormalizePatterns(obj.removePatterns, 'removePatterns');
   }

@@ -6895,3 +6895,74 @@ Stage Summary:
 - 清洗系统大幅增强（30+新广告模式、正则缓存、段落去重）
 - 验证层完善（cleanConfig验证、contentPagination限制、bookInfo选择器验证）
 - 前端格式兼容修复
+
+---
+Task ID: 1
+Agent: Main Orchestrator (Round 14)
+Task: 采集系统审计与增强 - 修复严重bug + 内容分页/清洗完善
+
+Work Log:
+- 全面审计采集系统代码（task-engine, scrapers, cleaning, types, validation, API routes, frontend）
+- 发现并修复以下问题：
+
+## 修复清单
+
+### 严重Bug
+1. **PUT /api/scrape-rules/[id] 文件截断** — 路由文件在错误处理处被截断，整个catch块和DELETE方法丢失
+   - 修复：完全重写PUT路由，补充完整的错误处理和DELETE方法
+
+2. **PUT /api/scrape-rules/[id] 仅更新5个字段** — 验证了所有字段（选择器、分页、配置等）但db.update()的data对象只包含name/description/enabled/listUrl/listSelector/listPagination
+   - 修复：将所有已验证字段（共30+个）全部加入update data
+   - 同时修复了引用Theme模型字段（identifier, preview, config）的copy-paste错误
+   - 补充了缺失的import（validateUrlField, getOrFail, NotFoundError）
+
+3. **validateAllPaginations包含contentPagination** — contentPagination使用MAX_PAGINATION_MAX_PAGE(100)验证，但应有更严格的限制(20)
+   - 修复：从PAGINATION_FIELDS数组中移除contentPagination，由独立的validateContentPagination()处理
+
+### 增强
+4. **cleanConfig新增removeSelectors专用字段** — 之前removePatterns同时承担CSS选择器和正则两个职责，不够清晰
+   - 类型层：CleanRequest.config添加removeSelectors?: string[]
+   - 清洗层：applyHtmlLevelCleaning()优先处理removeSelectors（纯CSS选择器）
+   - 验证层：validateCleanConfig()支持removeSelectors
+   - 前端：CleanTab组件新增"CSS选择器移除"区域，带规则计数Badge和Tooltip说明
+   - 规则文档：5165.org和23.225.66.244规则将原removePatterns中的CSS选择器迁移到removeSelectors
+
+5. **内容分页日志增强** — handleScrapeContent()新增pagesFetched返回值
+   - task-engine中多页内容合并时自动记录日志："内容分页合并: 章节名 (N页, X字)"
+
+6. **水印模式扩充** — cleaning.ts WATERMARK_PATTERNS新增7条正则
+   - "本章来源于xxx" / "首发于xxx" / "首发网站xxx" (来源归因)
+   - "请记住xxx" / "最新网址xxx" / "记住网址xxx" (站点推广)
+   - "XXX小说" 短品牌行 (品牌水印)
+   - 单字符标点段落 (空段落标记)
+
+### 前端优化
+7. **CleanTab组件重新设计** — 三栏式布局
+   - 顶部状态栏：显示启用状态和规则总数
+   - CSS选择器移除：橙色图标+规则计数Badge+Tooltip说明
+   - 正则/混合规则：保持兼容旧配置
+   - 广告文本识别：红色图标+Tooltip
+   - 底部内置清洗说明：告知用户50+内置规则自动生效
+
+## 涉及文件
+- src/app/api/scrape-rules/[id]/route.ts (完全重写)
+- src/lib/scrape-rule-validation.ts (3处修改)
+- mini-services/scraper-service/src/types.ts (CleanRequest类型扩展)
+- mini-services/scraper-service/src/cleaning.ts (removeSelectors支持+7条水印)
+- mini-services/scraper-service/src/scrapers.ts (pagesFetched返回+分页日志)
+- mini-services/scraper-service/src/task-engine.ts (分页合并日志)
+- src/components/scrape/parts/CleanTab.tsx (完全重写UI)
+- docs/scrape-rules/5165.org.md (规则更新)
+- docs/scrape-rules/23.225.66.244.md (规则更新)
+
+## 验证结果
+- ESLint: 0错误, 6个警告（均为预存React Hook Form兼容性警告）
+- 首页渲染: 正常 ✅
+- 采集系统架构确认: 内容分页(20页上限)、双层清洗(HTML+Text)、段落去重均已就绪
+
+Stage Summary:
+- 修复了3个高优先级Bug（PUT路由截断+字段丢失、验证maxPage不一致）
+- 新增removeSelectors字段分离CSS选择器和正则职责
+- 前端CleanTab完全重写，视觉和交互大幅提升
+- 内置水印正则从20+条增至27条
+- 内容分页合并现可追踪和记录页数

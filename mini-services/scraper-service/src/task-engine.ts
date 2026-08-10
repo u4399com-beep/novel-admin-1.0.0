@@ -700,6 +700,15 @@ async function executeTaskBody(
           const chapterTitle = contentResult.title || chapter.title;
           const chapterContent = cleanResult;
 
+          // Log multi-page content merges for visibility
+          if ((contentResult as { pagesFetched?: number }).pagesFetched && (contentResult as { pagesFetched?: number }).pagesFetched! > 1) {
+            await addTaskLog(
+              taskId, "info",
+              `内容分页合并: ${chapterTitle} (${(contentResult as { pagesFetched?: number }).pagesFetched}页, ${chapterContent.length}字)`,
+              chapter.url
+            );
+          }
+
           if (!chapterContent.trim()) {
             console.log(`[Task ${taskId}] Empty content for chapter: ${chapterTitle}`);
             skippedChaptersCount.increment();
