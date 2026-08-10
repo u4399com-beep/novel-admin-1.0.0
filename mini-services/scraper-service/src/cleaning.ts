@@ -162,6 +162,16 @@ const WATERMARK_PATTERNS = [
    /^\s*请记住[^\n]{0,50}$/gm,
   // "XXX小说" branding lines (very short, likely ads)
    /^\s*[\w.]+小说[^\n]{0,10}$/gm,
+  // "XXX阅读" branding lines
+  /^\s*[\w.]+阅读[^\n]{0,10}$/gm,
+  // Image alt-text only lines (e.g. "[图片]" or empty img artifacts)
+  /^\s*\[?图片\]?\s*$/gm,
+  /^\s*\[?img\]?\s*$/gim,
+  // Single character repeated 3+ times (e.g. "......", "---", "===")
+  /^\s*(.)\1{2,}\s*$/gm,
+  // "正在手打中" / "手打全文" type lines
+  /^\s*正在手打[\s\S]{0,20}$/gm,
+  /^\s*手机端.*?阅读[\s\S]{0,20}$/gm,
   // "最新网址xxx" / "最新地址xxx" site URL announcements
    /(?:最新网址|最新地址|记住网址|记住本站)[^\n]{0,60}/gi,
   // Empty or near-empty paragraph markers (single char or very short)
@@ -170,11 +180,15 @@ const WATERMARK_PATTERNS = [
 
 /**
  * Apply watermark regex patterns to text.
- * Uses a pre-compiled approach where applicable.
+ * Uses pre-compiled regexes for better performance (avoids re-compilation per call).
  */
+const COMPILED_WATERMARK = WATERMARK_PATTERNS.map(
+  (p) => new RegExp(p.source, p.flags)
+);
+
 function applyWatermarkPatterns(text: string): string {
-  for (const pattern of WATERMARK_PATTERNS) {
-    text = safeRegexReplace(text, pattern.source, "", pattern.flags);
+  for (const regex of COMPILED_WATERMARK) {
+    text = text.replace(regex, "");
   }
   return text;
 }

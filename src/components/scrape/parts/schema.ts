@@ -76,6 +76,7 @@ export const scrapeRuleSchema = z.object({
   cleanConfig: z.object({
     removeAds: z.boolean(),
     cleanHtml: z.boolean(),
+    removeSelectors: z.string(),
     removePatterns: z.string(),
     adPatterns: z.string(),
   }),

@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { Sparkles, Code, Bug, Globe, Cloud, Zap, Bot } from 'lucide-react';
+import { Sparkles, Code, Bug, Globe, Cloud, Zap, Bot, Copy } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
 
 import { Button } from '@/components/ui/button';
@@ -87,12 +87,28 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
     };
   }, []);
 
+  const [cloningId, setCloningId] = useState<string | null>(null);
+
   const handleDelete = useCallback(() => confirmDelete(async () => {
     if (!deleteTarget) return;
     await apiFetch(`/api/scrape-rules/${deleteTarget.id}`, { method: 'DELETE' });
     toast.success('规则已删除');
     fetchRules();
   }), [confirmDelete, deleteTarget, fetchRules]);
+
+  const handleClone = useCallback(async (rule: ScrapeRuleItem) => {
+    setCloningId(rule.id);
+    try {
+      const cloned = await apiFetch<{ id: string; name: string }>('/api/scrape-rules/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruleId: rule.id }),
+      });
+      toast.success(`已克隆: ${cloned.name}`);
+      fetchRules();
+    } catch { /* handled by apiFetch */ }
+    finally { setCloningId(null); }
+  }, [fetchRules]);
 
   const handleExecute = async (rule: ScrapeRuleItem) => {
     try {
@@ -266,6 +282,20 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
                           title="执行"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-play"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                          onClick={() => handleClone(rule)}
+                          disabled={cloningId === rule.id}
+                          title="克隆"
+                        >
+                          {cloningId === rule.id ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-loader-2 animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
                         </Button>
                         <Button
                           variant="ghost"

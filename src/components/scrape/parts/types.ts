@@ -27,6 +27,7 @@ export interface AntiCrawlConfig {
 export interface CleanConfig {
   removeAds: boolean;
   cleanHtml: boolean;
+  removeSelectors: string;
   removePatterns: string;
   adPatterns: string;
 }

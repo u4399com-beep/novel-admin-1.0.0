@@ -30,7 +30,7 @@ import { RuleFormTabs } from './rule-editor/RuleFormTabs';
  * The backend may store removePatterns/adPatterns as string[] (from seed rules)
  * or as newline-separated strings (from the frontend editor).
  */
-function normalizeCleanConfig(cfg: Record<string, unknown>): { removeAds: boolean; cleanHtml: boolean; removePatterns: string; adPatterns: string } {
+function normalizeCleanConfig(cfg: Record<string, unknown>): { removeAds: boolean; cleanHtml: boolean; removeSelectors: string; removePatterns: string; adPatterns: string } {
   const patternsToString = (v: unknown): string => {
     if (!v) return '';
     if (typeof v === 'string') return v;
@@ -40,6 +40,7 @@ function normalizeCleanConfig(cfg: Record<string, unknown>): { removeAds: boolea
   return {
     removeAds: typeof cfg.removeAds === 'boolean' ? cfg.removeAds : true,
     cleanHtml: typeof cfg.cleanHtml === 'boolean' ? cfg.cleanHtml : true,
+    removeSelectors: patternsToString(cfg.removeSelectors),
     removePatterns: patternsToString(cfg.removePatterns),
     adPatterns: patternsToString(cfg.adPatterns),
   };
@@ -94,7 +95,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
       maxDelay: 3000,
       enableShuffle: false,
       dedupMode: 'url',
-      cleanConfig: { removeAds: true, cleanHtml: true, removePatterns: '', adPatterns: '' },
+      cleanConfig: { removeAds: true, cleanHtml: true, removeSelectors: '', removePatterns: '', adPatterns: '' },
     },
   });
 

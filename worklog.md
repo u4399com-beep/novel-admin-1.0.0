@@ -6966,3 +6966,26 @@ Stage Summary:
 - 前端CleanTab完全重写，视觉和交互大幅提升
 - 内置水印正则从20+条增至27条
 - 内容分页合并现可追踪和记录页数
+
+---
+Task ID: 14
+Agent: Main Orchestrator
+Task: 采集系统审计与增强 - 第14轮
+
+Work Log:
+- 全面审计采集系统代码，确认内容分页(contentPagination)和广告清洗(cleanConfig)已在第11-13轮完整实现
+- 修复import路由cleanConfig一致性：导入时通过validateCleanConfig规范化patterns格式
+- 修复CleanConfig类型缺失removeSelectors字段（schema.ts + types.ts + ScrapeRuleEditor.tsx）
+- 新增内容清洗预览API：/api/scrape-rules/clean-preview（服务端清洗，无需依赖scraper-service）
+- 增强CleanTab组件：添加实时清洗效果预览Dialog，显示清洗前后对比统计
+- 新增采集规则克隆功能：API /api/scrape-rules/clone + UI克隆按钮
+- 新增采集日志统计API：/api/scrape-logs/stats（级别分布、错误趋势、常见错误Top10）
+- 增强scraper-service清洗模块：新增6条水印正则模式（阅读品牌、图片标记、重复字符等），预编译水印正则优化性能
+- Agent Browser验证：首页、登录页正常渲染，无编译错误
+
+Stage Summary:
+- 关键发现：内容分页和清洗功能已在前几轮完整实现（paginatedFetch + isContentPagination + MAX_CONTENT_PAGES=20 + cleanHtmlRaw/cleanText管道）
+- 修复了CleanConfig类型系统中遗漏的removeSelectors字段（可能导致运行时类型错误）
+- 新增3个API端点、1个前端预览功能、1个克隆功能
+- 清洗模块水印正则从35+条增加到41+条，并预编译避免每次调用重新编译
+- 下一轮建议：增强前端日志统计可视化面板，添加更多采集监控功能

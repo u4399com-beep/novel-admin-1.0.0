@@ -1,27 +1,84 @@
 'use client';
 
+import { useState, useCallback } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Info, Shield, Eraser, Sparkles } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Info, Shield, Eraser, Sparkles, Eye, Loader2, CheckCircle2, XCircle, Copy } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
+import { toast } from 'sonner';
 import type { EditorFormAccess } from './types';
 
 export function CleanTab({ form }: EditorFormAccess) {
   const { setValue, watch } = form;
   const cleanCfg = watch('cleanConfig');
 
+  // Preview state
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewResult, setPreviewResult] = useState<{ cleaned: string; originalLength: number; cleanedLength: number; reductionPercent: number } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
   // Count active rules for display
   const selectorCount = (cleanCfg.removeSelectors || '').split('\n').filter(Boolean).length;
   const patternCount = (cleanCfg.removePatterns || '').split('\n').filter(Boolean).length;
   const adCount = (cleanCfg.adPatterns || '').split('\n').filter(Boolean).length;
   const totalRules = selectorCount + patternCount + adCount;
+
+  const handlePreview = useCallback(async () => {
+    if (!previewHtml.trim()) {
+      toast.error('请先输入要测试的HTML内容');
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewResult(null);
+    try {
+      const config: Record<string, unknown> = {
+        removeAds: cleanCfg.removeAds,
+        cleanHtml: cleanCfg.cleanHtml,
+      };
+      if (cleanCfg.removeSelectors) config.removeSelectors = cleanCfg.removeSelectors.split('\n').filter(Boolean);
+      if (cleanCfg.removePatterns) config.removePatterns = cleanCfg.removePatterns.split('\n').filter(Boolean);
+      if (cleanCfg.adPatterns) config.adPatterns = cleanCfg.adPatterns.split('\n').filter(Boolean);
+
+      const result = await apiFetch<{ cleaned: string; originalLength: number; cleanedLength: number; reductionPercent: number }>(
+        '/api/scrape-rules/clean-preview',
+        {
+          method: 'POST',
+          body: JSON.stringify({ html: previewHtml, config }),
+        }
+      );
+      setPreviewResult(result);
+    } catch (err) {
+      toast.error('清洗预览失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [previewHtml, cleanCfg]);
+
+  const copyResult = useCallback(() => {
+    if (previewResult?.cleaned) {
+      navigator.clipboard.writeText(previewResult.cleaned);
+      toast.success('已复制到剪贴板');
+    }
+  }, [previewResult]);
 
   return (
     <div className="space-y-5">
@@ -45,6 +102,102 @@ export function CleanTab({ form }: EditorFormAccess) {
           )}
         </div>
       </div>
+
+      {/* Preview Button */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 border-dashed"
+            onClick={() => setPreviewOpen(true)}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            清洗效果预览
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-emerald-600" />
+              内容清洗预览
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            {/* Input area */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">输入HTML（粘贴采集到的原始HTML）</Label>
+              <Textarea
+                placeholder={'<div class="content">\n  <p>正文内容...</p>\n  <div class="ad">广告内容</div>\n  <p>请记住本书首发域名 www.example.com</p>\n</div>'}
+                rows={6}
+                value={previewHtml}
+                onChange={(e) => setPreviewHtml(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </div>
+
+            <Button onClick={handlePreview} disabled={previewLoading || !previewHtml.trim()} className="w-full gap-2">
+              {previewLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  正在清洗...
+                </>
+              ) : (
+                <>
+                  <Eraser className="h-4 w-4" />
+                  执行清洗预览
+                </>
+              )}
+            </Button>
+
+            {/* Results */}
+            {previewResult && (
+              <div className="space-y-3">
+                {/* Stats bar */}
+                <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-2.5">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="text-muted-foreground">原始:</span>
+                    <span className="font-mono font-medium">{previewResult.originalLength}</span>
+                    <span className="text-muted-foreground">字</span>
+                  </div>
+                  <span className="text-muted-foreground">→</span>
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="text-muted-foreground">清洗后:</span>
+                    <span className="font-mono font-medium text-emerald-600">{previewResult.cleanedLength}</span>
+                    <span className="text-muted-foreground">字</span>
+                  </div>
+                  <Badge variant={previewResult.reductionPercent > 30 ? 'destructive' : 'secondary'} className="text-xs ml-auto">
+                    {previewResult.reductionPercent > 0 ? `减少 ${previewResult.reductionPercent}%` : '无变化'}
+                  </Badge>
+                </div>
+
+                {/* Cleaned text output */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">清洗结果</Label>
+                    <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={copyResult}>
+                      <Copy className="h-3 w-3" />
+                      复制
+                    </Button>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3 max-h-60 overflow-y-auto">
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-words leading-relaxed">
+                      {previewResult.cleaned || <span className="text-muted-foreground italic">（内容为空）</span>}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <DialogClose asChild>
+              <Button variant="outline" size="sm">关闭</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Toggle switches */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

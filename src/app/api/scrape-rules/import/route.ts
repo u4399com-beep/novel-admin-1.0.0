@@ -2,7 +2,7 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess } from '@/lib/api-utils';
-import { parseScrapeParams, validateSavePath, buildCloudBrowserConfig } from '@/lib/scrape-rule-validation';
+import { parseScrapeParams, validateSavePath, buildCloudBrowserConfig, validateCleanConfig } from '@/lib/scrape-rule-validation';
 
 /**
  * POST /api/scrape-rules/import
@@ -81,7 +81,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         enableShuffle: raw.enableShuffle ?? false,
         dedupMode: params.dedupMode,
 
-        cleanConfig: safeJsonStringify(raw.cleanConfig, 'cleanConfig'),
+        cleanConfig: (() => {
+          try { return validateCleanConfig(raw.cleanConfig); }
+          catch { return safeJsonStringify(raw.cleanConfig, 'cleanConfig'); }
+        })(),
         agentqlConfig: safeJsonStringify(raw.agentqlConfig, 'agentqlConfig'),
         cloudBrowserConfig: buildCloudBrowserConfig(raw.cloudBrowserUrl, raw.cloudBrowserProvider),
       };
