@@ -12,7 +12,7 @@ import type {
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selectors";
 import { cleanHtmlRaw } from "./cleaning";
-import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects } from "./utils";
+import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey } from "./utils";
 import { isSafeUrl } from "./ssrf";
 
 // ==================== Pagination Helpers ====================
@@ -193,6 +193,9 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
 
   const allChapters: ChapterLink[] = [];
   const seenUrls = new Set<string>();
+  // Title-based dedup with normalization to catch variations like "第01章" vs "第1章"
+  const seenTitleKeys = new Set<string>();
+  let titleDupCount = 0;
 
   const { hasNextPage } = await paginatedFetch({
     startUrl: url,
@@ -204,19 +207,36 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
       const links = extractLinksFromList(html, selectors.list, selectors.link, selectors.title, currentUrl);
       let newCount = 0;
       for (const link of links) {
-        if (link.url && !seenUrls.has(link.url)) {
-          seenUrls.add(link.url);
-          allChapters.push({
-            title: link.title || `第${allChapters.length + 1}章`,
-            url: link.url,
-            sortOrder: allChapters.length + 1,
-          });
-          newCount++;
+        if (!link.url) continue;
+
+        // URL-based dedup (primary)
+        if (seenUrls.has(link.url)) continue;
+
+        // Title-based dedup with normalization (catches same chapter with different URLs
+        // or numbered variations like 第01章 vs 第1章)
+        const titleKey = chapterDedupKey(link.title);
+        if (titleKey && seenTitleKeys.has(titleKey)) {
+          titleDupCount++;
+          continue;
         }
+
+        seenUrls.add(link.url);
+        if (titleKey) seenTitleKeys.add(titleKey);
+
+        allChapters.push({
+          title: link.title || `第${allChapters.length + 1}章`,
+          url: link.url,
+          sortOrder: allChapters.length + 1,
+        });
+        newCount++;
       }
       console.log(`  [Chapters] Found ${links.length} chapters, ${newCount} new`);
     },
   });
+
+  if (titleDupCount > 0) {
+    console.log(`  [Chapters] Title dedup: removed ${titleDupCount} duplicate chapter titles`);
+  }
 
   // Shuffle if enabled
   if (enableShuffle) {
@@ -229,7 +249,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
     });
   }
 
-  return { chapters: allChapters, hasNextPage, engine: engineType };
+  return { chapters: allChapters, hasNextPage, engine: engineType, titleDedupCount };
 }
 
 // ==================== Scrape Content ====================

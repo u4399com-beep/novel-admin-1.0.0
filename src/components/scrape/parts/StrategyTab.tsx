@@ -328,7 +328,7 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
       </div>
 
       <div className="space-y-2">
-        <Label className="text-sm font-medium">去重模式</Label>
+        <Label className="text-sm font-medium">章节去重策略</Label>
         <Select
           value={watch('dedupMode')}
           onValueChange={(v) => setValue('dedupMode', v as 'url' | 'title' | 'both', { shouldDirty: true })}
@@ -337,11 +337,37 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="url">URL去重</SelectItem>
-            <SelectItem value="title">章节名去重</SelectItem>
-            <SelectItem value="both">两者都用</SelectItem>
+            <SelectItem value="url">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">URL去重</span>
+                <span className="text-xs text-muted-foreground">按章节链接去重</span>
+              </div>
+            </SelectItem>
+            <SelectItem value="title">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">标题去重</span>
+                <span className="text-xs text-muted-foreground">智能归一化匹配</span>
+              </div>
+            </SelectItem>
+            <SelectItem value="both">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">双重去重</span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">推荐</Badge>
+              </div>
+            </SelectItem>
           </SelectContent>
         </Select>
+        <div className="rounded-md bg-muted/50 border px-3 py-2 space-y-1">
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground/80">URL去重</span> — 按章节链接去重，相同URL不重复采集
+          </p>
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground/80">标题去重</span> — 智能归一化章节名匹配，自动识别「第01章」与「第1章」为同一章节
+          </p>
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground/80">双重去重</span> — 同时使用URL和标题归一化，最严格的去重策略，推荐使用
+          </p>
+        </div>
       </div>
     </div>
   );

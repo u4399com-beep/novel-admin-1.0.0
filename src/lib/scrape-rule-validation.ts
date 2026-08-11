@@ -89,6 +89,16 @@ function validateSelector(value: unknown, fieldName: string): string | null {
   if (obj.value.length > MAX_SELECTOR_VALUE_LENGTH) {
     return `${fieldName}的value不能超过${MAX_SELECTOR_VALUE_LENGTH}个字符`;
   }
+  // Validate optional `extract` attribute name
+  if (obj.extract !== undefined) {
+    if (typeof obj.extract !== 'string') {
+      return `${fieldName}的extract必须是字符串`;
+    }
+    // Only allow safe attribute names (alphanumeric + hyphens, common HTML attrs)
+    if (!/^[a-zA-Z][a-zA-Z0-9-]*$/.test(obj.extract)) {
+      return `${fieldName}的extract属性名无效`;
+    }
+  }
   return null;
 }
 

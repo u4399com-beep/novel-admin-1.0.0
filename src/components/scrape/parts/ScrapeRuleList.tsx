@@ -260,9 +260,14 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
                       </Badge>
                     </td>
                     <td className="hidden px-4 py-3 lg:table-cell">
-                      <Badge variant="outline">
-                        {rule.storageMode === 'file' ? '文件' : '数据库'}
-                      </Badge>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge variant="outline">
+                          {rule.storageMode === 'file' ? '文件' : '数据库'}
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px]">
+                          {rule.dedupMode === 'both' ? '双重去重' : rule.dedupMode === 'title' ? '标题去重' : 'URL去重'}
+                        </Badge>
+                      </div>
                     </td>
                     <td className="hidden px-4 py-3 sm:table-cell">
                       <span className="text-muted-foreground">{rule._count?.tasks || 0}</span>

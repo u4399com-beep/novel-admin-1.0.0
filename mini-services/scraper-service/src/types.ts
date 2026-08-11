@@ -10,6 +10,8 @@ export type SelectorType = "css" | "xpath" | "regex";
 export interface Selector {
   type: SelectorType;
   value: string;
+  /** Attribute name to extract (e.g. "content" for meta tags, "href" for links). Default: text content */
+  extract?: string;
 }
 
 export interface Pagination {

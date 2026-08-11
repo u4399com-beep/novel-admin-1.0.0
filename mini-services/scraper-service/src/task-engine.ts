@@ -11,6 +11,7 @@ import type {
 import {
   parseJsonField,
   mapNovelStatus, randomDelay, isSafeSavePath,
+  chapterDedupKey,
 } from "./utils";
 import { selectEngine } from "./engines";
 import { handleClean, cleanText } from "./cleaning";
@@ -602,7 +603,7 @@ async function executeTaskBody(
       }
 
       // Scrape chapter list using selected engine
-      const { chapters } = await handleScrapeChapters({
+      const { chapters, titleDedupCount } = await handleScrapeChapters({
         url: chapterListUrl,
         selectors: {
           list: chapterListSelector,
@@ -615,11 +616,15 @@ async function executeTaskBody(
         engine: engineType,
       });
 
-      console.log(`[Task ${taskId}] Found ${chapters.length} chapters for ${book.title}`);
+      console.log(`[Task ${taskId}] Found ${chapters.length} chapters for ${book.title}${titleDedupCount ? ` (${titleDedupCount} title dups removed)` : ""}`);
 
       if (chapters.length === 0) {
         await addTaskLog(taskId, "warn", `未发现章节: ${book.title}`, chapterListUrl);
         continue;
+      }
+
+      if (titleDedupCount > 0) {
+        await addTaskLog(taskId, "info", `章节标题去重: ${book.title}，移除 ${titleDedupCount} 个重复标题`, chapterListUrl);
       }
 
       await addTaskLog(taskId, "info", `发现 ${chapters.length} 个章节: ${book.title}`, chapterListUrl);
@@ -643,6 +648,7 @@ async function executeTaskBody(
       }
 
       // Get existing chapters for incremental mode
+      // Keys: sourceUrl → chapterId, title:normalizedKey → chapterId
       const existingChapters = new Map<string, string>();
       if (isIncremental) {
         try {
@@ -656,7 +662,8 @@ async function executeTaskBody(
             const chapterList = (existingData as { chapters?: Array<{ id: string; sourceUrl?: string; title: string }> }).chapters || [];
             for (const ch of chapterList) {
               if (ch.sourceUrl) existingChapters.set(ch.sourceUrl, ch.id);
-              existingChapters.set(`title:${ch.title}`, ch.id);
+              // Use normalized title key for dedup to catch variations like 第01章 vs 第1章
+              existingChapters.set(`title:${chapterDedupKey(ch.title)}`, ch.id);
             }
           }
         } catch { /* ignore */ }
@@ -671,7 +678,11 @@ async function executeTaskBody(
 
         try {
           if (isIncremental) {
-            if (existingChapters.has(chapter.url) || existingChapters.has(`title:${chapter.title}`)) {
+            // Check URL-based dedup
+            const urlExists = existingChapters.has(chapter.url);
+            // Check title-based dedup with normalization
+            const titleExists = existingChapters.has(`title:${chapterDedupKey(chapter.title)}`);
+            if (urlExists || titleExists) {
               skippedChaptersCount.increment();
               return;
             }

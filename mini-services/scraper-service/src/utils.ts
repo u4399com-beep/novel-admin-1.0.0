@@ -214,6 +214,91 @@ export function generateId(): string {
   return randomUUID();
 }
 
+// ==================== Chapter Title Normalization ====================
+
+/**
+ * Normalize a chapter title for deduplication purposes.
+ * Handles common variations:
+ * - "第01章 标题" vs "第1章 标题" vs "第 1 章 标题"
+ * - "第一章 标题" vs "第1章 标题"
+ * - Extra whitespace, full-width/half-width punctuation
+ * - Leading/trailing whitespace and punctuation
+ *
+ * Returns a normalized string suitable for Set-based dedup.
+ */
+export function normalizeChapterTitle(title: string): string {
+  if (!title) return "";
+
+  let normalized = title.trim();
+
+  // Remove common non-content prefixes/suffixes
+  normalized = normalized.replace(/^[\[【(（].*?[\]】)）]\s*/g, "");
+
+  // Normalize full-width to half-width for common chars
+  normalized = normalized
+    .replace(/，/g, ",")
+    .replace(/。/g, ".")
+    .replace(/！/g, "!")
+    .replace(/？/g, "?")
+    .replace(/：/g, ":")
+    .replace(/；/g, ";");
+
+  // Normalize chapter numbering patterns:
+  // "第01章" → "第1章", "第 1 章" → "第1章", "第一章" → "第1章"
+  // Chinese numerals: 一二三...百千万
+  const chineseNums: Record<string, string> = {
+    '零': '0', '〇': '0',
+    '一': '1', '二': '2', '三': '3', '四': '4',
+    '五': '5', '六': '6', '七': '7', '八': '8',
+    '九': '9', '十': '10', '百': '100', '千': '1000', '万': '10000',
+  };
+
+  // Pattern: 第X章 or 第X节 etc, where X can be numbers, Chinese numerals, or spaced
+  normalized = normalized.replace(
+    /^第\s*([零〇一二三四五六七八九十百千万0-9]+)\s*([章节回卷集篇部话])/,
+    (_, numStr, unit) => {
+      // Convert Chinese numerals to Arabic
+      let num = "";
+      for (const ch of numStr) {
+        num += chineseNums[ch] || ch;
+      }
+      // Parse simple Chinese number combos (十X = 1X, 二十X = 2X, etc.)
+      if (num.includes("10")) {
+        // Handle "十一" = 11, "十二" = 12, etc.
+        const parts = num.split("10");
+        if (parts.length === 2) {
+          const base = parts[0] ? parseInt(parts[0]) * 10 : 10;
+          const extra = parts[1] ? parseInt(parts[1]) : 0;
+          num = String(base + extra);
+        }
+      } else {
+        // Remove leading zeros from pure digit strings
+        num = String(parseInt(num) || 0);
+      }
+      return `第${num}${unit}`;
+    }
+  );
+
+  // Collapse multiple spaces to single space
+  normalized = normalized.replace(/\s+/g, " ");
+
+  // Lowercase for case-insensitive comparison
+  normalized = normalized.toLowerCase();
+
+  return normalized;
+}
+
+/**
+ * Compute a similarity-aware dedup key for a chapter title.
+ * Strips all punctuation and whitespace to catch near-duplicates like
+ * "第1章 标题A" vs "第1章标题A" (missing space).
+ */
+export function chapterDedupKey(title: string): string {
+  const normalized = normalizeChapterTitle(title);
+  // Remove ALL whitespace and common punctuation for a more aggressive key
+  return normalized.replace(/[\s,\.!?;:：；，。！？、\-—_·~～…]+/g, "");
+}
+
 // ==================== Redirect Following ====================
 
 /** Options for the shared redirect-following utility. */

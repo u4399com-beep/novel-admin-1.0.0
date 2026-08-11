@@ -102,6 +102,7 @@ export interface ScrapeRuleItem {
   engine?: string;
   storageMode: string;
   scrapeMode: string;
+  dedupMode?: string;
   createdAt: string;
   updatedAt: string;
   lastRunAt?: string | null;

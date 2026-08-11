@@ -167,6 +167,18 @@ const WATERMARK_PATTERNS = [
   // Image alt-text only lines (e.g. "[图片]" or empty img artifacts)
   /^\s*\[?图片\]?\s*$/gm,
   /^\s*\[?img\]?\s*$/gim,
+  // "本章正在手打中" type status lines
+  /^\s*本章正在[\s\S]{0,30}$/gm,
+  // "手机端阅读" short branding lines
+  /^\s*手机端[\s\S]{0,20}$/gm,
+  // "XXX阅读网" generic site branding
+  /^[\w.]+阅读网[\s\S]{0,20}$/gm,
+  // "最新章节地址xxx" full line
+  /最新章节地址[\s\S]{0,60}/gi,
+  // "请牢记xxx" standalone reminder lines
+  /^\s*请牢记[\s\S]{0,50}$/gm,
+  // "首发于" standalone lines
+  /^\s*首发于[\s\S]{0,40}$/gm,
   // Single character repeated 3+ times (e.g. "......", "---", "===")
   /^\s*(.)\1{2,}\s*$/gm,
   // "正在手打中" / "手打全文" type lines

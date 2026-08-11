@@ -94,6 +94,10 @@ export function parseSelector(html: string, selector: Selector): string {
     const el = $(css);
     if (el.length === 0) return "";
 
+    // Explicit extract attribute takes priority
+    if (selector.extract) {
+      return el.attr(selector.extract) || "";
+    }
     if (attrName) {
       return el.attr(attrName) || "";
     }
@@ -106,12 +110,22 @@ export function parseSelector(html: string, selector: Selector): string {
   const el = $(selector.value);
   if (el.length === 0) return "";
 
+  // Explicit extract attribute takes priority (e.g. extract: "content" for meta tags)
+  if (selector.extract) {
+    return el.attr(selector.extract) || "";
+  }
+
   // Auto-detect attribute extraction
   if (selector.value.includes("[href]") || selector.value.endsWith("href")) {
     return el.attr("href") || "";
   }
   if (selector.value.includes("[src]") || selector.value.endsWith("src")) {
     return el.attr("src") || "";
+  }
+  // Auto-detect meta[property=...] or meta[name=...] selectors
+  if (selector.value.includes("meta")) {
+    const content = el.attr("content");
+    if (content) return content;
   }
 
   return el.text().trim();
