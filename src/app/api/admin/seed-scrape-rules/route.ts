@@ -7,9 +7,8 @@ import { parseScrapeParams, validateSavePath, buildCloudBrowserConfig } from '@/
 /**
  * POST /api/admin/seed-scrape-rules
  *
- * Accepts an array of scrape rule objects in the request body and
- * upserts them using name + listUrl as a composite unique key.
- * Protected with withAuth().
+ * Accepts an array of scrape rule objects and upserts them using name as key.
+ * Uses batched operations to avoid N+1 query pattern.
  */
 export const POST = withAuth(async function POST(request: NextRequest) {
   try {
@@ -28,21 +27,28 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError('单次最多导入50条规则', 400);
     }
 
+    // Batch: fetch all existing rules by name in a single query
+    const rawNames = body.rules.map(r => typeof r.name === 'string' ? r.name.trim() : '').filter(Boolean);
+    const existingRules = rawNames.length > 0
+      ? await db.scrapeRule.findMany({
+          where: { name: { in: rawNames } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const existingByName = new Map(existingRules.map(r => [r.name, r.id]));
+
     const results: { id: string; name: string; action: 'created' | 'updated' }[] = [];
     let created = 0;
     let updated = 0;
 
+    // Process each rule
     for (const raw of body.rules) {
       if (!raw.name || typeof raw.name !== 'string') continue;
       const name = sanitizeField(raw.name, 200);
       const listUrl = raw.listUrl ? sanitizeField(raw.listUrl, 2000) : null;
 
-      // Derive a unique where key from name + listUrl
-      const uniqueKey = `${name}||${listUrl || ''}`;
-
       const params = parseScrapeParams(raw as Record<string, unknown>);
 
-      // safeJsonStringify returns string | null; Prisma accepts null for nullable String fields
       const data = {
         name,
         description: sanitizeField(raw.description, 2000) || null,
@@ -89,12 +95,11 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         cloudBrowserConfig: buildCloudBrowserConfig(raw.cloudBrowserUrl, raw.cloudBrowserProvider),
       };
 
-      // Try to find an existing rule by name
-      const existing = await db.scrapeRule.findFirst({ where: { name } });
+      const existingId = existingByName.get(name);
 
-      if (existing) {
-        await db.scrapeRule.update({ where: { id: existing.id }, data });
-        results.push({ id: existing.id, name, action: 'updated' });
+      if (existingId) {
+        await db.scrapeRule.update({ where: { id: existingId }, data });
+        results.push({ id: existingId, name, action: 'updated' });
         updated++;
       } else {
         const rule = await db.scrapeRule.create({ data });

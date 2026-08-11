@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
-import { getClientIp, publicRateLimit } from '@/lib/public-rate-limit';
+import { withPublicRateLimit } from '@/lib/api-auth';
 import { apiError, safeJson, sanitizeField, parsePagination, apiDeleted } from '@/lib/api-utils';
 import { requireFields } from '@/lib/crud-helpers';
 
@@ -12,11 +12,7 @@ const MAX_ID_LENGTH = 100;
  * GET /api/public/reading-history?sessionId=xxx&page=1&pageSize=20
  * Returns reading history for a session, ordered by readAt desc.
  */
-export async function GET(request: NextRequest) {
-  if (publicRateLimit(getClientIp(request))) {
-    return apiError('请求过于频繁，请稍后再试', 429);
-  }
-
+export const GET = withPublicRateLimit({ capacity: 60, refillRate: 1 }, async (request: NextRequest) => {
   try {
     const { searchParams } = new URL(request.url);
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
@@ -52,18 +48,14 @@ export async function GET(request: NextRequest) {
     console.error('Get reading history error:', error);
     return apiError('获取阅读历史失败', 500);
   }
-}
+});
 
 /**
  * POST /api/public/reading-history
  * Body: { sessionId, novelId, chapterId?, novelTitle, chapterTitle? }
  * Upserts reading history for a session+novel pair.
  */
-export async function POST(request: NextRequest) {
-  if (publicRateLimit(getClientIp(request), 30)) {
-    return apiError('请求过于频繁，请稍后再试', 429);
-  }
-
+export const POST = withPublicRateLimit({ capacity: 30, refillRate: 0.5 }, async (request: NextRequest) => {
   try {
     let body;
     try {
@@ -117,17 +109,13 @@ export async function POST(request: NextRequest) {
     console.error('Save reading history error:', error);
     return apiError('保存阅读历史失败', 500);
   }
-}
+});
 
 /**
  * DELETE /api/public/reading-history?id=xxx&sessionId=xxx
  * Deletes a reading history entry (only if sessionId matches).
  */
-export async function DELETE(request: NextRequest) {
-  if (publicRateLimit(getClientIp(request), 30)) {
-    return apiError('请求过于频繁，请稍后再试', 429);
-  }
-
+export const DELETE = withPublicRateLimit({ capacity: 30, refillRate: 0.5 }, async (request: NextRequest) => {
   try {
     const { searchParams } = new URL(request.url);
     const id = sanitizeField(searchParams.get('id') || '', MAX_ID_LENGTH);
@@ -151,4 +139,4 @@ export async function DELETE(request: NextRequest) {
     console.error('Delete reading history error:', error);
     return apiError('删除阅读历史失败', 500);
   }
-}
+});

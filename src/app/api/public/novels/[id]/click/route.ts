@@ -22,7 +22,6 @@ function isClickDeduplicated(ip: string, novelId: string): boolean {
   const ts = clickDedup.get(key);
   if (ts && Date.now() - ts < CLICK_TTL) return true;
   clickDedup.set(key, Date.now());
-  // Emergency cap: if periodic cleanup missed, do inline cleanup
   if (clickDedup.size > CLICK_MAX_SIZE) {
     cleanupClickDedup();
   }
@@ -33,6 +32,7 @@ function isClickDeduplicated(ip: string, novelId: string): boolean {
  * Increment novel click count (no auth required).
  * Rate limited: 10 burst, 0.2/sec (5/min) per IP.
  * Dedup: same IP+novelId only counted once per 5 minutes.
+ * Uses transaction to prevent race condition between dedup check and increment.
  * POST /api/public/novels/[id]/click
  */
 export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async (
@@ -56,20 +56,27 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
   }
 
   try {
-    try {
-      const updated = await db.novel.update({
+    // Use transaction: atomically check existence + increment within single write lock
+    const result = await db.$transaction(async (tx) => {
+      const novel = await tx.novel.findUnique({
+        where: { id },
+        select: { id: true, clickCount: true },
+      });
+      if (!novel) throw new Error('NOT_FOUND');
+
+      const updated = await tx.novel.update({
         where: { id },
         data: { clickCount: { increment: 1 } },
         select: { clickCount: true },
       });
-      return NextResponse.json({ clickCount: updated.clickCount });
-    } catch (error) {
-      if (isPrismaError(error, 'P2025')) {
-        return apiError('小说不存在', 404);
-      }
-      throw error;
-    }
+      return updated.clickCount;
+    }, { timeout: 5000 });
+
+    return NextResponse.json({ clickCount: result });
   } catch (error) {
+    if (error instanceof Error && error.message === 'NOT_FOUND') {
+      return apiError('小说不存在', 404);
+    }
     console.error('Click tracking error:', error);
     return apiError('操作失败', 500);
   }

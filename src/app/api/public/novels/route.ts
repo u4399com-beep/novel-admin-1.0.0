@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeField, apiError, parsePagination } from "@/lib/api-utils";
-import { getClientIp, publicRateLimit } from "@/lib/public-rate-limit";
+import { withPublicRateLimit } from "@/lib/api-auth";
 
 // ─── 23qb.net 字数区间映射 ─────────────────────────────────────────
 const WORD_COUNT_RANGES: Record<string, { min: number; max: number }> = {
@@ -36,12 +36,7 @@ const SORT_MAP: Record<string, { field: string; direction: "asc" | "desc" }> = {
  *   - status: 状态筛选 (ongoing|completed|"")
  *   - sort: 排序方式 (last_update|new_entry|new_hot|weekly_click|...)
  */
-export async function GET(request: NextRequest) {
-  // Rate limit check
-  if (publicRateLimit(getClientIp(request))) {
-    return apiError('请求过于频繁，请稍后再试', 429);
-  }
-
+export const GET = withPublicRateLimit({ capacity: 60, refillRate: 1 }, async (request: NextRequest) => {
   try {
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = parsePagination(searchParams, {
@@ -108,8 +103,6 @@ export async function GET(request: NextRequest) {
       } else if (timeRange === "month") {
         startDate.setMonth(now.getMonth() - 1);
       }
-      // Filter novels that were updated within the time range
-      // (clickCount is a cumulative field; we filter by recent activity via updatedAt)
       where.updatedAt = { gte: startDate };
     }
 
@@ -160,4 +153,4 @@ export async function GET(request: NextRequest) {
     console.error("Public novels API error:", error);
     return apiError("获取小说列表失败", 500);
   }
-}
+});

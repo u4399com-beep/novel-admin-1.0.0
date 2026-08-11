@@ -71,8 +71,7 @@ export function CategoryFormDialog({
     watch,
     formState: { errors },
   } = useForm<CategoryFormData>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(categorySchema) as any,
+    resolver: zodResolver(categorySchema),
   });
 
   const selectedColor = watch('color');

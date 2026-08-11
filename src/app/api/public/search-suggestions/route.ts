@@ -1,19 +1,15 @@
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
-import { sanitizeField, apiError } from "@/lib/api-utils";
-import { getClientIp, publicRateLimit } from '@/lib/public-rate-limit';
+import { sanitizeField, apiError } from '@/lib/api-utils';
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 /**
  * Public search-suggestions API — no auth required.
  * Returns top 8 novel titles matching the query (case-insensitive).
  * GET ?q=keyword
  */
-export async function GET(request: NextRequest) {
-  if (publicRateLimit(getClientIp(request))) {
-    return apiError('请求过于频繁，请稍后再试', 429);
-  }
-
+export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async (request: NextRequest) => {
   try {
     const { searchParams } = new URL(request.url);
     const q = sanitizeField(searchParams.get('q'), 100);
@@ -52,6 +48,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Search suggestions API error:', error);
-        return apiError('获取搜索建议失败', 500);
+    return apiError('获取搜索建议失败', 500);
   }
-}
+});

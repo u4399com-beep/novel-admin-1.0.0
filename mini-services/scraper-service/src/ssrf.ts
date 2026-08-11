@@ -70,7 +70,17 @@ export function isSafeUrl(url: string): boolean {
     }
 
     // Block decimal IP representations (e.g., 2130706433)
-    if (/^\d{8,}$/.test(hostname)) {
+    if (/^\d{7,}$/.test(hostname)) {
+      return false;
+    }
+
+    // Block pure numeric hostnames (e.g., "0", "1" resolve to 0.0.0.0/0.0.0.1 on Linux)
+    if (/^\d+$/.test(hostname)) {
+      return false;
+    }
+
+    // Block short digit-dot patterns that may be parsed as IPs (e.g., "0.0", "127.1")
+    if (/^\d(\.\d+)*$/.test(hostname)) {
       return false;
     }
 

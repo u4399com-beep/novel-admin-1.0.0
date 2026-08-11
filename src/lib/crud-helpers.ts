@@ -1,27 +1,26 @@
 import { apiError } from './api-utils';
 import { NextResponse } from 'next/server';
-
-type PrismaArgs = any;
+import { Prisma } from '@prisma/client';
 
 /** Prisma model subset needed for list/get operations */
 type ListModel = {
-  findMany: (args: PrismaArgs) => Promise<any[]>;
-  count: (args: PrismaArgs) => Promise<number>;
+  findMany: (args: Prisma.FindManyArgs) => Promise<unknown[]>;
+  count: (args: Prisma.FindManyArgs) => Promise<number>;
 };
 
 /** Prisma model subset needed for single-item lookup */
 type GetModel = {
-  findUnique: (args: PrismaArgs) => Promise<any>;
-  findFirst: (args: PrismaArgs) => Promise<any>;
+  findUnique: (args: Prisma.FindUniqueArgs) => Promise<unknown>;
+  findFirst: (args: Prisma.FindFirstArgs) => Promise<unknown>;
 };
 
 export interface PaginatedListOptions {
   page: number;
   pageSize: number;
-  where?: Record<string, unknown>;
-  orderBy?: Record<string, unknown>;
-  include?: Record<string, unknown>;
-  select?: Record<string, unknown>;
+  where?: Prisma.FindManyArgs['where'];
+  orderBy?: Prisma.FindManyArgs['orderBy'];
+  include?: Prisma.FindManyArgs['include'];
+  select?: Prisma.FindManyArgs['select'];
   /** Key name for the items array in the response (default: 'items') */
   itemsKey?: string;
 }
@@ -60,8 +59,8 @@ export async function paginatedList(
       take: pageSize,
       include,
       select,
-    } as Parameters<typeof model.findMany>[0]),
-    model.count({ where } as Parameters<typeof model.count>[0]),
+    }),
+    model.count({ where }),
   ]);
 
   return NextResponse.json({
@@ -84,10 +83,10 @@ export async function paginatedList(
  */
 export async function getOrFail<T>(
   model: GetModel,
-  where: Record<string, unknown>,
+  where: Prisma.FindUniqueArgs['where'],
   errorMessage = '记录不存在',
 ): Promise<T> {
-  const item = await model.findUnique({ where } as Parameters<typeof model.findUnique>[0]);
+  const item = await model.findUnique({ where });
   if (!item) {
     throw new NotFoundError(errorMessage);
   }

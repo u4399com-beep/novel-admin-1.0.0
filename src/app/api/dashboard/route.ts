@@ -2,8 +2,7 @@ import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { getOrCompute } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
-import { Prisma } from "@prisma/client";
-import { apiError } from "@/lib/api-utils"
+import { apiError } from "@/lib/api-utils";
 
 const DASHBOARD_CACHE_KEY = "dashboard:stats";
 const DASHBOARD_CACHE_TTL = 30 * 1000; // 30 seconds
@@ -11,20 +10,20 @@ const DASHBOARD_CACHE_TTL = 30 * 1000; // 30 seconds
 export const GET = withAuth(async function GET() {
   try {
     const data = await getOrCompute(DASHBOARD_CACHE_KEY, DASHBOARD_CACHE_TTL, async () => {
-      // Single UNION ALL query to fetch all 4 counts in one round-trip
-      const counts = await db.$queryRaw<Array<{ kind: string; cnt: bigint }>>(Prisma.sql`
-        SELECT 'novels' as kind, COUNT(*)::bigint as cnt FROM "Novel"
+      // SQLite-compatible UNION ALL query (no PostgreSQL ::bigint cast)
+      const counts = await db.$queryRaw<Array<{ kind: string; cnt: number }>>(`
+        SELECT 'novels' as kind, COUNT(*) as cnt FROM Novel
         UNION ALL
-        SELECT 'chapters', COUNT(*)::bigint FROM "Chapter"
+        SELECT 'chapters', COUNT(*) FROM Chapter
         UNION ALL
-        SELECT 'categories', COUNT(*)::bigint FROM "Category"
+        SELECT 'categories', COUNT(*) FROM Category
         UNION ALL
-        SELECT 'tags', COUNT(*)::bigint FROM "Tag"
+        SELECT 'tags', COUNT(*) FROM Tag
         UNION ALL
-        SELECT 'favorites' as kind, COALESCE(SUM("favoriteCount"), 0)::bigint as cnt FROM "Novel"
+        SELECT 'favorites' as kind, COALESCE(SUM("favoriteCount"), 0) as cnt FROM Novel
       `);
 
-      const getCount = (kind: string) => Number(counts.find((r) => r.kind === kind)?.cnt ?? BigInt(0));
+      const getCount = (kind: string) => Number(counts.find((r) => r.kind === kind)?.cnt ?? 0);
       const totalNovels = getCount('novels');
       const totalChapters = getCount('chapters');
       const totalCategories = getCount('categories');

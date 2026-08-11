@@ -7065,3 +7065,30 @@ Stage Summary:
 4. P2: 阅读器主题/字体大小设置持久化
 5. P3: EPUB导出实现
 6. P3: 采集任务结果URL实现
+---
+Task ID: 14
+Agent: Main Orchestrator
+Task: 第14轮全项目代码审计与修复
+
+Work Log:
+- 执行全项目代码审计（150+文件），发现35个问题
+- 修复Dashboard SQL PostgreSQL语法错误（::bigint → 原生SQLite）
+- 修复Health端点：去掉内部服务信息暴露，仅返回status+timestamp
+- 修复SSRF检查不一致：scraper-service添加pure numeric/short digit-dot模式检查
+- 统一速率限制系统：将所有public端点迁移到withPublicRateLimit（4个文件）
+- 迁移by-source-url端点从自定义X-Service-Token到标准withAuth
+- 修复Click计数竞态条件：使用Prisma事务包裹findUnique+increment
+- 修复Seed规则N+1查询：单次批量查询existing rules替代逐条findFirst
+- 修复Export-All OOM风险：大数据集分批加载章节内容
+- 修复useSiteName缓存不失效：添加invalidateSiteNameCache+storage事件监听
+- 修复crud-helpers类型安全：消除any类型，使用Prisma.FindManyArgs
+- 移除page.tsx重复BackToTop（layout.tsx已有）
+- 删除垃圾文件：route.ts.bak, 3001端口文件, upload/用户数据
+- 修复ESLint unused disable directives（CategoryFormDialog）
+
+Stage Summary:
+- 修复了5个Critical级别问题（Dashboard SQL/Health/SSRF/RateLimit/Click竞态）
+- 修复了8个High/Medium级别问题（N+1/OOM/缓存/类型/垃圾文件/重复UI/ESLint）
+- 全部public端点统一使用withPublicRateLimit，可安全删除public-rate-limit.ts
+- 验证：ESLint 0错误4警告(仅React Compiler兼容性), 浏览器无console错误
+- Health端点返回healthy，Dashboard 401未授权，Public Novels API正常

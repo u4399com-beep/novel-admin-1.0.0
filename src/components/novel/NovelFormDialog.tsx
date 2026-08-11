@@ -77,7 +77,7 @@ export default function NovelFormDialog() {
 
   // ── Form ──
   const form = useForm<NovelFormValues>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     resolver: safeResolver(novelFormSchema) as any,
     defaultValues: {
       title: "",
