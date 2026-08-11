@@ -64,11 +64,11 @@ export function ReaderContent({
   onRetry,
 }: ReaderContentProps) {
   return (
-    <div ref={contentRef} className="flex-1 overflow-y-auto">
+    <div ref={contentRef} className="flex-1 overflow-y-auto reader-content-area">
       <div className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-colors duration-300`}>
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="flex items-center justify-center py-20 gap-3">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/70 reader-loading-spinner" />
             <span className="ml-3 text-sm text-muted-foreground">加载中...</span>
           </div>
         ) : error ? (
@@ -86,9 +86,10 @@ export function ReaderContent({
           </div>
         ) : content ? (
           <div className="mx-auto max-w-3xl">
-            <h3 className={`text-lg font-semibold mb-6 pb-4 border-b text-center ${currentTheme.text} transition-colors duration-300`}>
+            <h3 className={`text-lg font-semibold mb-6 pb-4 text-center tracking-tight ${currentTheme.text} transition-colors duration-300`}>
               {chapterTitle}
             </h3>
+            <hr className="reader-chapter-divider" />
             <article
               className={`whitespace-pre-wrap transition-all duration-300 ${currentTheme.text} ${currentFontCss}`}
               style={{

@@ -42,7 +42,8 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 0.5 }, async
   const format: string = body.format === 'html' ? 'html' : 'text';
 
   try {
-    const resp = await fetch('http://localhost:3032/translate', {
+    const translateServiceUrl = process.env.TRANSLATE_SERVICE_URL || 'http://localhost:3032';
+    const resp = await fetch(`${translateServiceUrl}/translate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -50,7 +50,7 @@ export function KeyboardShortcutsPanel({
                 {s.keys.map((k) => (
                   <kbd
                     key={k}
-                    className="inline-flex h-5 min-w-5 select-none items-center justify-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
+                    className="inline-flex h-5 min-w-5 select-none items-center justify-center rounded kbd-styled px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
                   >
                     {k}
                   </kbd>

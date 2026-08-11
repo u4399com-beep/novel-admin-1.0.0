@@ -140,16 +140,31 @@ function isPrivateIp(ip: string): boolean {
     return false;
   }
 
-  // IPv6 checks — normalizedIp has brackets stripped
-  const lower = normalizedIp.toLowerCase();
-  // Loopback
-  if (lower === '::1' || lower === '::') return true;
+  // IPv6 checks — expand then compare
+  const expanded = expandIPv6(normalizedIp.toLowerCase());
+  // Loopback (::1 and 0:0:0:0:0:0:0:1)
+  if (expanded === '0000:0000:0000:0000:0000:0000:0000:0001' ||
+      expanded === '0000:0000:0000:0000:0000:0000:0000:0000') return true;
   // Link-local fe80::/10
-  if (lower.startsWith('fe80:')) return true;
+  if (expanded.startsWith('fe80:')) return true;
   // Unique local fc00::/7 (fc00-fdff)
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
+  if (expanded.startsWith('fc') || expanded.startsWith('fd')) return true;
   // Multicast ff00::/8
-  if (lower.startsWith('ff')) return true;
+  if (expanded.startsWith('ff')) return true;
 
   return false;
+}
+
+/**
+ * Expand a compressed IPv6 address to full 8-group form for comparison.
+ * e.g. "::1" → "0000:0000:0000:0000:0000:0000:0000:0001"
+ */
+function expandIPv6(ip: string): string {
+  if (!ip.includes('::')) return ip.toLowerCase();
+  const halves = ip.split('::', 2);
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - left.length - right.length;
+  const full = [...left, ...Array(missing).fill('0000'), ...right];
+  return full.map(s => s.toLowerCase().padStart(4, '0')).join(':');
 }

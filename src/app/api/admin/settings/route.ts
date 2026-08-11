@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { safeJson, apiError } from "@/lib/api-utils";
+import { safeJson, sanitizeField, apiError } from "@/lib/api-utils";
 import { invalidateCache } from '@/lib/cache';
 
 // GET /api/admin/settings - Get all settings as key-value object
@@ -75,7 +75,7 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
         entries.push([key, String(rawValue)]);
       } else {
         const maxLen = STRING_MAX[key];
-        const val = String(rawValue ?? '').slice(0, maxLen);
+        const val = sanitizeField(String(rawValue ?? ''), maxLen);
         if (key === 'themeColor' && val && !/^#[0-9A-Fa-f]{3,8}$/.test(val)) {
           return apiError('themeColor 格式无效，请使用HEX颜色', 400);
         }

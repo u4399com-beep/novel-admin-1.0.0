@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
-import { withPublicRateLimit } from '@/lib/api-auth';
+import { NextRequest, NextResponse } from 'next/server';
+import { withPublicRateLimit, getClientIp } from '@/lib/api-auth';
 import { isPrismaError, apiError } from "@/lib/api-utils";
 
 /** In-memory dedup: IP+novelId → timestamp. TTL 24h. Prevents count manipulation. */
@@ -22,7 +22,6 @@ function isFavoriteDeduplicated(ip: string, novelId: string): boolean {
   const ts = favoriteDedup.get(key);
   if (ts && Date.now() - ts < FAVORITE_TTL) return true;
   favoriteDedup.set(key, Date.now());
-  // Emergency cap: if periodic cleanup missed, do inline cleanup
   if (favoriteDedup.size > FAVORITE_MAX_SIZE) {
     cleanupFavoriteDedup();
   }
@@ -36,22 +35,23 @@ function isFavoriteDeduplicated(ip: string, novelId: string): boolean {
  * POST /api/public/novels/[id]/favorite?action=toggle|add|remove
  */
 export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async (
-  request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) => {
   const { id } = await params;
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'toggle';
 
-  // Validate action whitelist (prevent arbitrary values from triggering increment)
   if (!['add', 'remove', 'toggle'].includes(action)) {
     return apiError('无效的 action，允许值: add, remove, toggle', 400);
   }
 
+  // Use shared getClientIp for consistent IP extraction
+  const ip = getClientIp(request);
+
   try {
     // For add/toggle: check dedup to prevent count manipulation
     if (action !== 'remove') {
-      const ip = request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for')?.split(',').pop()?.trim() || 'unknown';
       if (isFavoriteDeduplicated(ip, id)) {
         const current = await db.novel.findUnique({
           where: { id },
@@ -63,12 +63,10 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
 
     // For remove: atomic MAX(0, count-1) via raw SQL to prevent race condition
     if (action === 'remove') {
-      // Use parameterized raw SQL for atomic floor-clamped decrement
       const result = await db.$executeRaw`
         UPDATE "Novel" SET "favoriteCount" = MAX(0, "favoriteCount" - 1) WHERE id = ${id} AND "favoriteCount" > 0
       `;
       if (result === 0) {
-        // Either novel doesn't exist or count was already 0
         const current = await db.novel.findUnique({
           where: { id },
           select: { favoriteCount: true },
@@ -85,15 +83,27 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
       return NextResponse.json({ favoriteCount: updated?.favoriteCount ?? 0 });
     }
 
-    // For add/toggle: atomic increment
-    const updated = await db.novel.update({
-      where: { id },
-      data: { favoriteCount: { increment: 1 } },
-      select: { favoriteCount: true },
-    });
-    return NextResponse.json({ favoriteCount: updated.favoriteCount });
+    // For add/toggle: use transaction for atomic increment with existence check
+    const result = await db.$transaction(async (tx) => {
+      const novel = await tx.novel.findUnique({
+        where: { id },
+        select: { id: true, favoriteCount: true },
+      });
+      if (!novel) throw new Error('NOT_FOUND');
+
+      const updated = await tx.novel.update({
+        where: { id },
+        data: { favoriteCount: { increment: 1 } },
+        select: { favoriteCount: true },
+      });
+      return updated.favoriteCount;
+    }, { timeout: 5000 });
+
+    return NextResponse.json({ favoriteCount: result });
   } catch (error) {
-    // Only return 404 for record-not-found; re-throw everything else as 500
+    if (error instanceof Error && error.message === 'NOT_FOUND') {
+      return apiError('小说不存在', 404);
+    }
     if (isPrismaError(error, 'P2025')) {
       return apiError('小说不存在', 404);
     }

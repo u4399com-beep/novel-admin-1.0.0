@@ -135,6 +135,15 @@ export function isPrismaError(error: unknown, code: string): boolean {
 }
 
 /**
+ * Count Chinese words in content.
+ * Strips HTML tags and whitespace, then counts remaining characters.
+ * This matches the behavior used in novels/[id]/chapters POST.
+ */
+export function countWords(content: string): number {
+  return content.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length;
+}
+
+/**
  * Safely JSON.stringify a value with size limit.
  * Used for storing JSON config objects into String database fields.
  * @throws Error if the stringified value exceeds maxSize.

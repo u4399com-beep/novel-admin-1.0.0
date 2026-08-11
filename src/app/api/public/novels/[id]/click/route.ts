@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
-import { withPublicRateLimit } from '@/lib/api-auth';
+import { NextRequest, NextResponse } from 'next/server';
+import { withPublicRateLimit, getClientIp } from '@/lib/api-auth';
 import { isPrismaError, apiError } from "@/lib/api-utils";
 
 /** In-memory dedup: IP+novelId → timestamp. TTL 5min. Prevents click spam. */
@@ -36,13 +36,13 @@ function isClickDeduplicated(ip: string, novelId: string): boolean {
  * POST /api/public/novels/[id]/click
  */
 export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async (
-  request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) => {
   const { id } = await params;
 
-  // Dedup check
-  const ip = request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for')?.split(',').pop()?.trim() || 'unknown';
+  // Dedup check — use shared getClientIp for consistent IP extraction
+  const ip = getClientIp(request);
   if (isClickDeduplicated(ip, id)) {
     try {
       const current = await db.novel.findUnique({

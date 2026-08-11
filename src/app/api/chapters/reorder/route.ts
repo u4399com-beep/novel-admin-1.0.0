@@ -38,7 +38,7 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
       if (typeof item.id !== 'string' || !item.id.trim()) {
         return apiError(`items[${i}].id必须为非空字符串`, 400);
       }
-      if (typeof item.sortOrder !== 'number' || !Number.isInteger(item.sortOrder) || item.sortOrder < 0) {
+      if (typeof item.sortOrder !== 'number' || !Number.isInteger(item.sortOrder) || item.sortOrder < 0 || item.sortOrder > 100000) {
         return apiError(`items[${i}].sortOrder必须为非负整数`, 400);
       }
     }
@@ -65,17 +65,26 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
       return apiError(`以下章节不存在: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`, 400);
     }
 
-    // Use transaction to update all sortOrder values
-    let updated = 0;
-    await db.$transaction(
-      items.map((item: { id: string; sortOrder: number }) =>
-        db.chapter.update({
-          where: { id: item.id },
-          data: { sortOrder: item.sortOrder },
-        })
-      )
-    );
-    updated = items.length;
+    // Validate IDs are CUIDs (alphanumeric + hyphen only) — safe for SQL
+    const CUID_RE = /^[a-z0-9-]+$/;
+    for (const item of items) {
+      if (!CUID_RE.test(item.id)) {
+        return apiError(`无效的章节ID: ${item.id}`, 400);
+      }
+    }
+
+    // Use batch UPDATE via CASE for better performance (single SQL statement)
+    // IDs are validated as CUIDs above — no SQL injection risk
+    const caseParts = items.map((item: { id: string; sortOrder: number }) => `WHEN '${item.id}' THEN ${item.sortOrder}`).join(' ');
+    const idList = items.map((item: { id: string }) => `'${item.id}'`).join(',');
+
+    await db.$executeRawUnsafe(`
+      UPDATE "Chapter" SET "sortOrder" = CASE id
+        ${caseParts}
+        ELSE "sortOrder" END
+      WHERE id IN (${idList})
+    `);
+    const updated = items.length;
 
     return apiSuccess({ updated });
   } catch (error) {

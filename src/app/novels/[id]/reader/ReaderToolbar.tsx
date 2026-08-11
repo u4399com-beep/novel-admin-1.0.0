@@ -83,9 +83,9 @@ export function ReaderToolbar({
   return (
     <div className="shrink-0 border-b bg-muted/30">
       {/* Progress bar */}
-      <div className="h-0.5 bg-muted overflow-hidden">
+      <div className="h-0.5 reader-progress-track overflow-hidden">
         <motion.div
-          className="h-full bg-primary"
+          className="h-full bg-primary reader-progress-fill"
           initial={false}
           animate={{ width: `${scrollPercent}%` }}
           transition={{ duration: 0.15 }}

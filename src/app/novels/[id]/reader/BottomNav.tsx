@@ -34,13 +34,13 @@ export function BottomNav({
         size="sm"
         disabled={!hasPrev || loadingChapter}
         onClick={() => onGoToChapter('prev')}
-        className="h-8 tap-feedback press-effect"
+        className="h-8 tap-feedback press-effect chapter-nav-btn"
       >
         <ChevronLeft className="h-4 w-4 mr-1" />
         上一章
       </Button>
       <div className="flex items-center gap-3">
-        <span className="text-[11px] text-muted-foreground hidden sm:block">
+        <span className="text-[11px] text-muted-foreground hidden sm:block kbd-hint-bar rounded-md px-2.5 py-1">
           ← → J/K 翻页 · ↑↓ 滚动 · B 书签 · F 全屏 · ? 帮助
         </span>
         <DailyReadingGoal />
@@ -56,7 +56,7 @@ export function BottomNav({
         size="sm"
         disabled={!hasNext || loadingChapter}
         onClick={() => onGoToChapter('next')}
-        className="h-8 tap-feedback press-effect"
+        className="h-8 tap-feedback press-effect chapter-nav-btn"
       >
         下一章
         <ChevronRight className="h-4 w-4 ml-1" />

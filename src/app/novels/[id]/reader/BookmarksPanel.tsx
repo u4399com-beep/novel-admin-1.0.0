@@ -35,7 +35,7 @@ export function BookmarksPanel({
           transition={{ duration: 0.2 }}
           className="shrink-0 border-l overflow-hidden"
         >
-          <div className="w-[200px] h-full overflow-y-auto p-3 flex flex-col">
+          <div className="w-[200px] h-full overflow-y-auto p-3 flex flex-col scrollbar-thin">
             <div className="flex items-center justify-between mb-2 px-1">
               <div className="text-xs font-medium text-muted-foreground">
                 书签 ({bookmarks.length})
@@ -52,7 +52,7 @@ export function BookmarksPanel({
 
             {bookmarks.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 py-8">
-                <BookmarkCheck className="h-6 w-6 text-muted-foreground/30" />
+                <BookmarkCheck className="h-6 w-6 bookmark-empty-icon" />
                 <p className="text-[11px] text-muted-foreground/60 text-center">点击工具栏书签图标<br />添加当前章节</p>
               </div>
             ) : (

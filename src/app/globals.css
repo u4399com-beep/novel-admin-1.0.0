@@ -4783,3 +4783,180 @@ mark {
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
 }
+
+/* =====================================================================
+   TASK 15-i: DETAIL ENHANCEMENTS
+   ===================================================================== */
+
+/* ─── Reader content text selection ────────────────────────── */
+.reader-content-area ::selection {
+  background: oklch(0.65 0.18 145 / 0.25);
+  color: inherit;
+}
+.dark .reader-content-area ::selection {
+  background: oklch(0.65 0.18 145 / 0.3);
+}
+
+/* ─── Stat card interactive refinement ────────────────────── */
+.stat-card-hover {
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.stat-card-hover:hover {
+  background-color: oklch(0.94 0 0);
+  box-shadow: 0 1px 6px oklch(0 0 0 / 0.06);
+}
+.dark .stat-card-hover:hover {
+  background-color: oklch(0.24 0 0);
+  box-shadow: 0 1px 6px oklch(0 0 0 / 0.2);
+}
+
+/* ─── Description section left accent ─────────────────────── */
+.detail-description {
+  position: relative;
+  padding-left: 12px;
+}
+.detail-description::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: oklch(0.75 0.05 260 / 0.4);
+}
+.dark .detail-description::before {
+  background: oklch(0.55 0.08 260 / 0.3);
+}
+
+/* ─── Chapter list scroll fade ────────────────────────────── */
+.chapter-list-scroll {
+  mask-image: linear-gradient(to bottom, black 0%, black 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 92%, transparent 100%);
+}
+
+/* ─── Reader toolbar enhanced progress bar ────────────────── */
+.reader-progress-track {
+  background: oklch(0.94 0 0);
+}
+.dark .reader-progress-track {
+  background: oklch(0.22 0 0);
+}
+.reader-progress-fill {
+  box-shadow: 0 0 6px oklch(0.5 0.15 150 / 0.4);
+}
+.dark .reader-progress-fill {
+  box-shadow: 0 0 8px oklch(0.6 0.15 150 / 0.5);
+}
+
+/* ─── Chapter title elegant divider ───────────────────────── */
+.reader-chapter-divider {
+  border: none;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    oklch(0.75 0 0 / 0.5) 20%,
+    oklch(0.75 0 0 / 0.5) 80%,
+    transparent
+  );
+}
+.dark .reader-chapter-divider {
+  background: linear-gradient(
+    to right,
+    transparent,
+    oklch(0.4 0 0 / 0.5) 20%,
+    oklch(0.4 0 0 / 0.5) 80%,
+    transparent
+  );
+}
+
+/* ─── Keyboard shortcuts hint bar ──────────────────────────── */
+.kbd-hint-bar {
+  background: oklch(0.97 0 0 / 0.6);
+  border: 1px solid oklch(0.92 0 0);
+}
+.dark .kbd-hint-bar {
+  background: oklch(0.2 0 0 / 0.6);
+  border-color: oklch(1 0 0 / 0.06);
+}
+
+/* ─── Enhanced kbd styling ─────────────────────────────────── */
+.kbd-styled {
+ background: linear-gradient(to bottom, oklch(0.97 0 0), oklch(0.92 0 0));
+  border: 1px solid oklch(0.85 0 0);
+  border-bottom-width: 2px;
+  box-shadow: 0 1px 1px oklch(0 0 0 / 0.06);
+}
+.dark .kbd-styled {
+  background: linear-gradient(to bottom, oklch(0.28 0 0), oklch(0.24 0 0));
+  border-color: oklch(0.4 0 0);
+  border-bottom-color: oklch(0.35 0 0);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.3);
+}
+
+/* ─── Chapter sidebar active chapter dot ──────────────────── */
+.sidebar-chapter-active {
+  position: relative;
+}
+.sidebar-chapter-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 60%;
+  border-radius: 1px;
+  background: var(--primary);
+}
+
+/* ─── Bookmark panel empty state ──────────────────────────── */
+.bookmark-empty-icon {
+  color: oklch(0.7 0 0 / 0.25);
+}
+.dark .bookmark-empty-icon {
+  color: oklch(0.4 0 0 / 0.3);
+}
+
+/* ─── Reader search container focus ───────────────────────── */
+.reader-search-container {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.reader-search-container:focus-within {
+  border-color: oklch(0.65 0.18 145 / 0.4);
+  box-shadow: 0 0 0 3px oklch(0.65 0.18 145 / 0.08);
+}
+.dark .reader-search-container:focus-within {
+  border-color: oklch(0.6 0.15 145 / 0.5);
+  box-shadow: 0 0 0 3px oklch(0.6 0.15 145 / 0.1);
+}
+
+/* ─── Cover image subtle reflection ───────────────────────── */
+.cover-reflection {
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
+
+/* ─── Loading state enhanced spinner ──────────────────────── */
+.reader-loading-spinner {
+  animation: reader-load-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes reader-load-spin {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+/* ─── Bottom nav chapter nav button refinement ────────────── */
+.chapter-nav-btn {
+  transition: all 0.15s ease;
+}
+.chapter-nav-btn:not(:disabled):hover {
+  border-color: oklch(0.65 0.15 150 / 0.3);
+  background: oklch(0.97 0 0);
+}
+.dark .chapter-nav-btn:not(:disabled):hover {
+  border-color: oklch(0.6 0.15 150 / 0.3);
+  background: oklch(0.22 0 0);
+}

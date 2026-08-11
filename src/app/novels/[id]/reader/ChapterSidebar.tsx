@@ -39,7 +39,7 @@ export function ChapterSidebar({
             <div className="text-xs font-medium text-muted-foreground mb-2 px-1">
               目录 ({chapters.length}章)
             </div>
-            <div className="flex-1 space-y-px">
+            <div className="flex-1 space-y-px scrollbar-thin">
             {chapters.map((ch, idx) => {
               const globalIdx = (sidebarPage - 1) * 200 + idx;
               return (
@@ -49,7 +49,7 @@ export function ChapterSidebar({
                 className={
                   'block w-full text-left text-xs px-2 py-1.5 rounded-md truncate transition-colors focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none ' +
                   (globalIdx === currentIndex
-                    ? 'bg-primary/10 text-primary font-medium'
+                    ? 'bg-primary/10 text-primary font-medium sidebar-chapter-active'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/50') +
                   (lastChapterIndex === globalIdx ? ' border-l-2 border-primary/50' : '')
                 }

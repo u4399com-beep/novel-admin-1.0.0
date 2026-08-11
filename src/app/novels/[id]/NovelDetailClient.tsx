@@ -433,7 +433,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           variant="ghost"
           size="sm"
           onClick={() => router.push('/')}
-          className="mb-6 -ml-2 gap-1.5 text-muted-foreground hover:text-foreground"
+          className="mb-6 -ml-2 gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           返回首页
@@ -502,7 +502,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         />
 
         {/* ─── Bottom nav hint ─────────────────────────────────── */}
-        <div className="border-t py-6 text-center text-xs text-muted-foreground">
+        <div className="border-t py-6 text-center text-xs text-muted-foreground/70">
           点击章节开始阅读 · 支持键盘翻页
         </div>
       </div>

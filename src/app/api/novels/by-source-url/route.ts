@@ -13,6 +13,9 @@ export const GET = withAuth(async (request: NextRequest) => {
   if (!sourceUrl) {
     return apiError('缺少sourceUrl参数', 400);
   }
+  if (sourceUrl.length > 2048) {
+    return apiError('sourceUrl过长', 400);
+  }
 
   try {
     const novel = await db.novel.findFirst({

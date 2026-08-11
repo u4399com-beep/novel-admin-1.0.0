@@ -123,7 +123,7 @@ export function NovelInfoSection({
             </div>
           </motion.div>
           {/* Cover shadow that responds to tilt */}
-          <div className="mx-3 mt-2 h-4 rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent blur-sm transition-all duration-300" />
+          <div className="mx-3 mt-2 h-4 rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent blur-sm transition-all duration-300 cover-reflection" />
         </div>
 
         {/* Meta */}
@@ -133,7 +133,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.15 }}
-              className="text-2xl sm:text-3xl font-bold leading-tight"
+              className="text-2xl sm:text-3xl font-bold leading-tight tracking-tight"
             >
               {novel.title}
             </motion.h1>
@@ -228,7 +228,7 @@ export function NovelInfoSection({
 
           {/* Description */}
           {novel.description && (
-            <div className="pt-2">
+            <div className="pt-2 detail-description">
               <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
                 简介
               </h2>
@@ -244,7 +244,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.25 }}
-              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2"
+              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover"
             >
               <FileText className="h-4 w-4 text-primary" />
               <div>
@@ -256,7 +256,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2"
+              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover"
             >
               <BookOpen className="h-4 w-4 text-primary" />
               <div>
@@ -268,7 +268,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35 }}
-              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2"
+              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover"
             >
               <Eye className="h-4 w-4 text-primary" />
               <div>
@@ -280,7 +280,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2"
+              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover"
             >
               <BookmarkCheck className="h-4 w-4 text-primary" />
               <div>
@@ -294,7 +294,7 @@ export function NovelInfoSection({
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.45 }}
-                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 cursor-default"
+                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 cursor-default stat-card-hover"
                 >
                   <Clock className="h-4 w-4 text-primary" />
                   <div>
@@ -314,7 +314,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground/70"
             >
               <Clock className="h-3.5 w-3.5" />
               更新于 {formatDate(novel.updatedAt)}

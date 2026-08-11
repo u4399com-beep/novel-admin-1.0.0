@@ -75,7 +75,7 @@ export default function NovelDetailLoading() {
               </div>
 
               {/* Description section */}
-              <div className="pt-2 space-y-2">
+              <div className="pt-2 space-y-2 pl-3 relative">
                 <Skeleton
                   className="h-3 w-8 rounded-sm"
                   style={{ animationDuration: '2.6s' }}

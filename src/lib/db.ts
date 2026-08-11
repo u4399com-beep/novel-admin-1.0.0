@@ -1,5 +1,14 @@
 import { PrismaClient } from '@prisma/client'
 
+// ─── Production Safety Check ─────────────────────────────────────
+if (process.env.NODE_ENV === 'production') {
+  const secret = process.env.NEXTAUTH_SECRET || '';
+  if (secret.length < 32 || secret.toLowerCase().includes('change-this')) {
+    console.error('[FATAL] NEXTAUTH_SECRET is too weak or not set in production. Refusing to start.');
+    process.exit(1);
+  }
+}
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }

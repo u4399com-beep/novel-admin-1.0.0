@@ -50,7 +50,7 @@ export function ReaderSearchBar({
           transition={{ duration: 0.15 }}
           className="shrink-0 px-3 py-2"
         >
-          <div className="glass-card flex items-center gap-2 rounded-lg border px-3 py-1.5">
+          <div className="glass-card reader-search-container flex items-center gap-2 rounded-lg border px-3 py-1.5">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <input
               ref={searchInputRef}

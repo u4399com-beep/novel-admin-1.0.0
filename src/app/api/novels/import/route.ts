@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { sanitizeField, apiError } from "@/lib/api-utils";
+import { sanitizeField, apiError, countWords } from "@/lib/api-utils";
 import { invalidateCache } from '@/lib/cache';
 import { VALID_NOVEL_STATUSES } from '@/lib/constants';
 
@@ -117,7 +117,7 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
 
     // Create novel + chapters in transaction
     const novel = await db.$transaction(async (tx) => {
-      const totalWords = chapters.reduce((sum, ch) => sum + ch.content.length, 0);
+      const totalWords = chapters.reduce((sum, ch) => sum + countWords(ch.content), 0);
 
       const created = await tx.novel.create({
         data: {
@@ -131,7 +131,7 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
             create: chapters.map((ch, idx) => ({
               title: ch.title,
               content: ch.content,
-              wordCount: ch.content.length,
+              wordCount: countWords(ch.content),
               sortOrder: idx + 1,
             })),
           },

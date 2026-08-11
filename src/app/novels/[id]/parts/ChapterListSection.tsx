@@ -129,7 +129,7 @@ export function ChapterListSection({
   return (
     <section className="py-8">
       <div className="flex items-center justify-between border-b pb-3 mb-4">
-        <h2 className="text-lg font-semibold">章节目录</h2>
+        <h2 className="text-lg font-semibold tracking-tight">章节目录</h2>
         <div className="flex items-center gap-2">
           {chaptersWithContent > 0 && (
             <span className="text-xs text-muted-foreground">
@@ -209,7 +209,7 @@ export function ChapterListSection({
             initial="hidden"
             animate="show"
             key={chapterPage}
-            className="max-h-[600px] overflow-y-auto rounded-lg border scrollbar-thin"
+            className="max-h-[600px] overflow-y-auto rounded-lg border scrollbar-thin chapter-list-scroll"
           >
             {visibleChapters.map((chapter, localIndex) => {
               const globalIndex = (chapterPage - 1) * CHAPTERS_PER_PAGE + localIndex;

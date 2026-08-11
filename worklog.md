@@ -7092,3 +7092,52 @@ Stage Summary:
 - 全部public端点统一使用withPublicRateLimit，可安全删除public-rate-limit.ts
 - 验证：ESLint 0错误4警告(仅React Compiler兼容性), 浏览器无console错误
 - Health端点返回healthy，Dashboard 401未授权，Public Novels API正常
+
+---
+Task ID: 15-i
+Agent: frontend-styling-expert
+Task: Style detail enhancements — targeted CSS/Tailwind polish for novel detail page and reader components
+
+Work Log:
+- Added 12 new CSS utility classes to globals.css for detail page polish
+- Applied `stat-card-hover` to all 5 stat cards in NovelInfoSection for interactive hover feedback
+- Added `tracking-tight` to novel title and section headings for tighter visual balance
+- Added `detail-description` class with left accent border to novel description section
+- Added `cover-reflection` mask to cover shadow for subtle gradient fade
+- Reduced opacity of "updated at" timestamp to `text-muted-foreground/70`
+- Added `chapter-list-scroll` fade mask to chapter list container for scroll edge softening
+- Applied `reader-progress-track`/`reader-progress-fill` to reader toolbar progress bar with glow effect
+- Added `reader-content-area` class for custom text selection color (green-tinted, theme-aware)
+- Replaced border-b with `reader-chapter-divider` (elegant gradient fade-in/out hr) in reader content
+- Added `reader-loading-spinner` opacity pulse to loading spinner, reduced opacity
+- Applied `chapter-nav-btn` hover style to prev/next buttons in BottomNav
+- Added `kbd-hint-bar` background treatment to keyboard shortcut hint for better visibility
+- Added `sidebar-chapter-active` left dot indicator for current chapter in sidebar
+- Added `scrollbar-thin` to chapter sidebar and bookmarks panel scrollable areas
+- Applied `bookmark-empty-icon` class for softer empty bookmark state
+- Added `reader-search-container` focus-within glow ring to search bar
+- Replaced kbd styling with `kbd-styled` (gradient + embossed 3D keycap look) in shortcuts panel
+- Matched loading skeleton description section padding with actual description accent
+- Added `transition-colors` to back button for smoother hover
+- Subdued bottom page hint text opacity to `text-muted-foreground/70`
+
+Files Changed:
+- src/app/globals.css — Added 12 new CSS classes (detail-description, stat-card-hover, chapter-list-scroll, reader-progress-track/fill, reader-chapter-divider, kbd-hint-bar, kbd-styled, sidebar-chapter-active, bookmark-empty-icon, reader-search-container, cover-reflection, reader-loading-spinner, chapter-nav-btn, reader-content-area)
+- src/app/novels/[id]/parts/NovelInfoSection.tsx — tracking-tight title, detail-description accent, stat-card-hover, cover-reflection, muted timestamp
+- src/app/novels/[id]/parts/ChapterListSection.tsx — chapter-list-scroll, tracking-tight heading
+- src/app/novels/[id]/reader/ReaderToolbar.tsx — reader-progress-track/fill
+- src/app/novels/[id]/reader/ReaderContent.tsx — reader-content-area, reader-chapter-divider, reader-loading-spinner, tracking-tight
+- src/app/novels/[id]/reader/BottomNav.tsx — chapter-nav-btn, kbd-hint-bar
+- src/app/novels/[id]/reader/ChapterSidebar.tsx — sidebar-chapter-active, scrollbar-thin
+- src/app/novels/[id]/reader/BookmarksPanel.tsx — bookmark-empty-icon, scrollbar-thin
+- src/app/novels/[id]/reader/ReaderSearchBar.tsx — reader-search-container
+- src/app/novels/[id]/reader/KeyboardShortcutsPanel.tsx — kbd-styled
+- src/app/novels/[id]/NovelDetailClient.tsx — transition-colors back button, subdued bottom hint
+- src/app/novels/[id]/loading.tsx — description skeleton padding alignment
+
+Stage Summary:
+- All changes are CSS/class-only — zero logic or functionality changes
+- No blue/indigo colors used — all accents use green-ish oklch or theme-aware var(--primary)
+- Dark mode fully supported via .dark variants for all new classes
+- TypeScript check passes with zero errors in modified files
+- Pre-existing TS errors in unrelated API files remain unchanged
