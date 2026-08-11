@@ -7141,3 +7141,31 @@ Stage Summary:
 - Dark mode fully supported via .dark variants for all new classes
 - TypeScript check passes with zero errors in modified files
 - Pre-existing TS errors in unrelated API files remain unchanged
+---
+Task ID: 15
+Agent: Main Orchestrator
+Task: 第15轮深度审计+即时修复+样式增强+版本迭代
+
+Work Log:
+- 启动全量深度审计（150+文件），发现10个新问题
+- 修复H-1 SSRF: ssrf.ts补全expandIPv6函数防止展开IPv6绕过
+- 修复M-1: click+favorite端点统一使用getClientIp
+- 修复M-2: 恢复NEXTAUTH_SECRET生产环境强度检查
+- 修复M-3: admin/settings改用sanitizeField
+- 修复M-4: 提取共享countWords()统一字数计算
+- 修复M-5: favorite add使用事务防止TOCTOU竞态
+- 修复L-1: chapters/reorder从500次UPDATE改为单条CASE SQL
+- 修复L-2: sortOrder添加100000上限
+- 修复L-3: by-source-url添加2048长度限制
+- 修复L-4: 删除废弃public-rate-limit.ts
+- 修复遗留: 翻译端点硬编码localhost改为环境变量
+- 样式增强: 12个阅读器+详情页文件视觉优化
+- Git push: c9dd686 → main
+
+Stage Summary:
+- 累计修复25个问题（R14: 13个 + R15: 10个 + 遗留1个）
+- SSRF防护现在完整覆盖展开IPv6地址
+- 全项目速率限制统一到withPublicRateLimit，public-rate-limit.ts已删除
+- 字数计算从import到admin章节创建完全统一
+- 阅读器体验增强：选中色、进度条、分隔线、快捷键UI
+- Git版本: c9dd686 pushed to main
