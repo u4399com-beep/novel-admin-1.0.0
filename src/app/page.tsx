@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
@@ -81,8 +81,11 @@ export default function HomePage() {
   // Mobile menu state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // ─── Search debounce ───────────────────────────────────────────
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   // ─── Fetch categories ────────────────────────────────────────────
-  const [, setCategoriesError] = useState(false);
   useEffect(() => {
     const abortController = new AbortController();
     async function load() {
@@ -90,8 +93,9 @@ export default function HomePage() {
         const data = await apiFetch<Category[]>('/api/public/categories', { signal: abortController.signal });
         setCategories(data);
       } catch (err) {
+        // Categories are non-critical; the UI shows no category buttons on failure
         if (!(err instanceof FetchError && err.status === 0)) {
-          setCategoriesError(true);
+          console.warn('[HomePage] Failed to load categories');
         }
       } finally {
         if (!abortController.signal.aborted) setLoadingCategories(false);
@@ -114,7 +118,7 @@ export default function HomePage() {
         if (activeStatus) params.set('status', activeStatus);
         if (activeWordCount && activeWordCount !== 'all') params.set('wordCount', activeWordCount);
         if (activeSort) params.set('sort', activeSort);
-        if (search) params.set('search', search);
+        if (debouncedSearch) params.set('search', debouncedSearch);
         const data = await apiFetch<{ novels?: Novel[]; totalPages?: number; total?: number }>(`/api/public/novels?${params}`, { signal: abortController.signal });
         setNovels(data.novels || []);
         setTotalPages(data.totalPages || 0);
@@ -129,12 +133,16 @@ export default function HomePage() {
     }
     load();
     return () => abortController.abort();
-  }, [page, activeCategorySlug, activeStatus, activeWordCount, activeSort, search, refreshKey]);
+  }, [page, activeCategorySlug, activeStatus, activeWordCount, activeSort, debouncedSearch, refreshKey]);
 
   // ─── Handlers ────────────────────────────────────────────────────
   const handleNovelSearch = (term: string) => {
     setSearch(term);
-    setPage(1);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(term);
+      setPage(1);
+    }, 300);
   };
 
   const handleCategoryChange = (slug: string) => {
@@ -166,6 +174,7 @@ export default function HomePage() {
     setActiveStatus('');
     setActiveWordCount('all');
     setActiveSort('last_update');
+    setDebouncedSearch('');
     setSearch('');
     setPage(1);
   };
@@ -181,12 +190,12 @@ export default function HomePage() {
   };
 
   // ─── Check if any filter is active ──────────────────────────────
-  const hasActiveFilter = !!(activeCategorySlug || activeStatus || (activeWordCount !== 'all') || (activeSort !== 'last_update') || search);
+  const hasActiveFilter = !!(activeCategorySlug || activeStatus || (activeWordCount !== 'all') || (activeSort !== 'last_update') || debouncedSearch);
 
   // ─── Build filter summary ────────────────────────────────────────
   const getFilterSummary = () => {
     const parts: string[] = [];
-    if (search) parts.push(`搜索: ${search}`);
+    if (debouncedSearch) parts.push(`搜索: ${debouncedSearch}`);
     if (activeCategorySlug) {
       const cat = categories.find((c) => c.slug === activeCategorySlug);
       if (cat) parts.push(`分类: ${cat.name}`);
@@ -263,7 +272,7 @@ export default function HomePage() {
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               aria-label="切换主题"
               className="h-8 w-8 hidden sm:inline-flex"
-              {...(!mounted && { tabIndex: -1, 'aria-disabled': true })}
+              {...(!mounted && { tabIndex: -1, 'aria-disabled': true, style: { visibility: 'hidden' } })}
             >
               <Sun className="h-4 w-4 scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
               <Moon className="absolute h-4 w-4 scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />

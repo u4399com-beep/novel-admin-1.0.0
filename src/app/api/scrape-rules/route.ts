@@ -8,6 +8,8 @@ import {
   validateAllPaginations,
   validateUrlField,
   validateSavePath,
+  validateContentPagination,
+  validateCleanConfig,
   parseScrapeParams,
   ValidationError,
   VALID_SCRAPE_MODES,

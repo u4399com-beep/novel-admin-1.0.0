@@ -214,6 +214,67 @@ export function generateId(): string {
   return randomUUID();
 }
 
+// ==================== Chinese Numeral Parser ====================
+
+const DIGIT_MAP: Record<string, number> = {
+  '零': 0, '〇': 0, '一': 1, '二': 2, '三': 3, '四': 4,
+  '五': 5, '六': 6, '七': 7, '八': 8, '九': 9,
+  '兩': 2, '两': 2,
+};
+
+/**
+ * Parse a Chinese numeral string to an integer.
+ * Handles: 一(1), 十(10), 十一(11), 二十(20), 二十三(23),
+ *          一百(100), 一百零三(103), 一百二十三(123),
+ *          一千(1000), 一万(10000), etc.
+ * Falls back to 0 for unparseable strings.
+ */
+export function parseChineseNumeral(str: string): number {
+  if (!str || str.length === 0) return 0;
+
+  // Simple single digit
+  const single = DIGIT_MAP[str];
+  if (single !== undefined) return single;
+
+  // Pure Arabic number string (e.g. "123")
+  if (/^[0-9]+$/.test(str)) return parseInt(str) || 0;
+
+  // Parse Chinese numeral using a position-based approach
+  let result = 0;
+  let current = 0;  // Current accumulated value before a unit (十/百/千/万)
+  let prevUnit = 0; // Track the last unit multiplier for proper accumulation
+
+  for (const ch of str) {
+    const digit = DIGIT_MAP[ch];
+    if (digit !== undefined) {
+      current = digit;
+    } else if (ch === '十') {
+      // 十 = 10. If nothing before it, means 10. Otherwise X*10.
+      result += (current || 1) * 10;
+      current = 0;
+      prevUnit = 10;
+    } else if (ch === '百') {
+      result += (current || 1) * 100;
+      current = 0;
+      prevUnit = 100;
+    } else if (ch === '千') {
+      result += (current || 1) * 1000;
+      current = 0;
+      prevUnit = 1000;
+    } else if (ch === '万') {
+      // 万 is a major unit — multiply the accumulated result by 10000
+      result = (result + current) * 10000;
+      current = 0;
+      prevUnit = 10000;
+    } else {
+      // Unknown char — skip
+    }
+  }
+
+  result += current;
+  return result || 0;
+}
+
 // ==================== Chapter Title Normalization ====================
 
 /**
@@ -246,36 +307,16 @@ export function normalizeChapterTitle(title: string): string {
   // Normalize chapter numbering patterns:
   // "第01章" → "第1章", "第 1 章" → "第1章", "第一章" → "第1章"
   // Chinese numerals: 一二三...百千万
-  const chineseNums: Record<string, string> = {
-    '零': '0', '〇': '0',
-    '一': '1', '二': '2', '三': '3', '四': '4',
-    '五': '5', '六': '6', '七': '7', '八': '8',
-    '九': '9', '十': '10', '百': '100', '千': '1000', '万': '10000',
-  };
-
-  // Pattern: 第X章 or 第X节 etc, where X can be numbers, Chinese numerals, or spaced
   normalized = normalized.replace(
     /^第\s*([零〇一二三四五六七八九十百千万0-9]+)\s*([章节回卷集篇部话])/,
     (_, numStr, unit) => {
-      // Convert Chinese numerals to Arabic
-      let num = "";
-      for (const ch of numStr) {
-        num += chineseNums[ch] || ch;
+      // Try to parse as Arabic digits first
+      if (/^[0-9]+$/.test(numStr)) {
+        return `第${String(parseInt(numStr))}${unit}`;
       }
-      // Parse simple Chinese number combos (十X = 1X, 二十X = 2X, etc.)
-      if (num.includes("10")) {
-        // Handle "十一" = 11, "十二" = 12, etc.
-        const parts = num.split("10");
-        if (parts.length === 2) {
-          const base = parts[0] ? parseInt(parts[0]) * 10 : 10;
-          const extra = parts[1] ? parseInt(parts[1]) : 0;
-          num = String(base + extra);
-        }
-      } else {
-        // Remove leading zeros from pure digit strings
-        num = String(parseInt(num) || 0);
-      }
-      return `第${num}${unit}`;
+      // Parse Chinese numerals properly
+      const num = parseChineseNumeral(numStr);
+      return `第${String(num)}${unit}`;
     }
   );
 

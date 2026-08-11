@@ -784,6 +784,9 @@ class ScraplingEngine implements ScrapingEngine {
     return retryWithBackoff(
       async () => {
         try {
+          // Check circuit breaker before making request (prevents requests when service is down)
+          scraplingBreaker.acquire();
+
           const response = await fetch(`${SCRAPLING_SERVICE_URL}/fetch`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

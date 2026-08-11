@@ -24,12 +24,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError('缺少 html 参数', 400);
     }
 
-    // Limit input size to prevent abuse (max 500KB)
-    if (html.length > 500_000) {
-      return apiError('HTML 内容过大，最大 500KB', 400);
+    // Limit input size to prevent abuse (max 50KB for preview)
+    if (html.length > 50_000) {
+      return apiError('HTML 内容过大，预览最大 50KB', 400);
     }
-
-    const cleanConfig = config || {};
 
     // Server-side cleaning logic (mirrors scraper-service/cleaning.ts)
     const result = cleanHtmlServer(html, cleanConfig);
@@ -237,9 +235,11 @@ function deduplicateParagraphs(text: string): string {
 
     if (normalized && normalized === lastNormalized) continue;
 
-    if (lastNormalized.length > 10 && normalized.length > 10) {
-      const checkLen = Math.min(20, Math.min(lastNormalized.length, normalized.length));
-      if (checkLen >= 10 && lastNormalized.slice(-checkLen) === normalized.slice(0, checkLen)) {
+    if (lastNormalized.length > 20 && normalized.length > 20) {
+      const overlapLen = Math.min(lastNormalized.length, normalized.length);
+      const checkLen = Math.min(25, overlapLen);
+      const shorterLen = Math.min(lastNormalized.length, normalized.length);
+      if (checkLen >= 15 && checkLen / shorterLen > 0.3 && lastNormalized.slice(-checkLen) === normalized.slice(0, checkLen)) {
         const prev = result.pop() || '';
         result.push(prev + trimmed);
         lastNormalized = (prev + trimmed).replace(/[，,。.！!？?、；;：:]+$/, '').replace(/\s+/g, ' ').trim();
@@ -263,6 +263,20 @@ function normalizeWhitespace(text: string): string {
     .trim();
 }
 
+/**
+ * Validate a regex pattern for safety (detect ReDoS-vulnerable patterns).
+ * Rejects patterns with nested quantifiers or excessive backtracking potential.
+ */
+function isSafeRegexPattern(pattern: string): boolean {
+  // Reject patterns that are too long
+  if (pattern.length > 200) return false;
+  // Detect nested quantifiers: (a+)+, (a*)*, (a{2,})+ etc.
+  if (/(\([^)]*[+*][^)]*\)[+*{]|\[[^\]]*[+*][^\]]*\][+*{])/.test(pattern)) return false;
+  // Detect overlapping alternations with quantifiers: (a|b)+, (a|b)*
+  if (/\([^)]*\|.\)[+*]/.test(pattern)) return false;
+  return true;
+}
+
 function cleanHtmlServer(html: string, config: Record<string, unknown>): string {
   const adPatterns = normalizePatterns(config.adPatterns);
   const removeSelectors = normalizePatterns(config.removeSelectors);
@@ -276,9 +290,10 @@ function cleanHtmlServer(html: string, config: Record<string, unknown>): string 
   // Step 2: Apply watermark regex patterns
   text = applyWatermarkPatterns(text);
 
-  // Step 3: Remove custom text/regex patterns
+  // Step 3: Remove custom text/regex patterns (with ReDoS protection)
   if (removePatterns.length > 0) {
     for (const pattern of removePatterns) {
+      if (!isSafeRegexPattern(pattern)) continue; // Skip potentially dangerous patterns
       try {
         text = text.replace(new RegExp(pattern, 'gi'), '');
       } catch { /* invalid regex, skip */ }

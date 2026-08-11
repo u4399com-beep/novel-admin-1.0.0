@@ -2,15 +2,14 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess } from '@/lib/api-utils';
-import { parseScrapeParams, validateSavePath, buildCloudBrowserConfig, validateCleanConfig } from '@/lib/scrape-rule-validation';
+import { parseScrapeParams, validateSavePath, validateUrlField, buildCloudBrowserConfig, validateCleanConfig } from '@/lib/scrape-rule-validation';
 
 /**
  * POST /api/scrape-rules/import
  *
  * Accepts { rules: [...] } array of rule objects.
- * For each rule, upserts by name.
- * Returns results with created/updated counts.
- * Protected with withAuth().
+ * For each rule, upserts by name using Prisma upsert (atomic, avoids TOCTOU).
+ * Returns per-rule results including errors/warnings.
  */
 export const POST = withAuth(async function POST(request: NextRequest) {
   try {
@@ -29,15 +28,44 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError('单次最多导入50条规则', 400);
     }
 
-    const results: { id: string; name: string; action: 'created' | 'updated' }[] = [];
+    const results: Array<{
+      name: string;
+      action: 'created' | 'updated' | 'skipped';
+      id?: string;
+      errors?: string[];
+    }> = [];
     let created = 0;
     let updated = 0;
+    let skipped = 0;
 
     for (const raw of body.rules) {
-      if (!raw.name || typeof raw.name !== 'string') continue;
-      const name = sanitizeField(raw.name, 200);
-      const listUrl = raw.listUrl ? sanitizeField(raw.listUrl, 2000) : null;
+      // Validate name
+      if (!raw.name || typeof raw.name !== 'string' || !raw.name.trim()) {
+        results.push({ name: String(raw.name || '未命名'), action: 'skipped', errors: ['名称无效'] });
+        skipped++;
+        continue;
+      }
 
+      const name = sanitizeField(raw.name, 200);
+      const ruleErrors: string[] = [];
+
+      // Validate URL fields for SSRF
+      try {
+        if (raw.listUrl) validateUrlField(raw.listUrl, 'listUrl');
+      } catch (e) { ruleErrors.push(e instanceof Error ? e.message : String(e)); }
+
+      try {
+        if (raw.chapterListUrl) validateUrlField(raw.chapterListUrl, 'chapterListUrl');
+      } catch (e) { ruleErrors.push(e instanceof Error ? e.message : String(e)); }
+
+      // Skip rules with critical validation errors
+      if (ruleErrors.length > 0) {
+        results.push({ name, action: 'skipped', errors: ruleErrors });
+        skipped++;
+        continue;
+      }
+
+      const listUrl = raw.listUrl ? sanitizeField(raw.listUrl, 2000) : null;
       const params = parseScrapeParams(raw as Record<string, unknown>);
 
       const data = {
@@ -89,21 +117,33 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         cloudBrowserConfig: buildCloudBrowserConfig(raw.cloudBrowserUrl, raw.cloudBrowserProvider),
       };
 
-      // Find existing rule by name
-      const existing = await db.scrapeRule.findFirst({ where: { name } });
-
-      if (existing) {
-        await db.scrapeRule.update({ where: { id: existing.id }, data });
-        results.push({ id: existing.id, name, action: 'updated' });
-        updated++;
-      } else {
-        const rule = await db.scrapeRule.create({ data });
-        results.push({ id: rule.id, name, action: 'created' });
-        created++;
+      // Use upsert to avoid TOCTOU race condition
+      try {
+        const rule = await db.scrapeRule.upsert({
+          where: { name },
+          update: data,
+          create: data,
+        });
+        const isCreated = rule.createdAt.getTime() === rule.updatedAt.getTime();
+        if (isCreated) {
+          created++;
+          results.push({ id: rule.id, name, action: 'created' });
+        } else {
+          updated++;
+          results.push({ id: rule.id, name, action: 'updated' });
+        }
+      } catch (err) {
+        // Prisma unique constraint error
+        if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'P2002') {
+          skipped++;
+          results.push({ name, action: 'skipped', errors: ['规则名称已存在（并发冲突）'] });
+        } else {
+          throw err;
+        }
       }
     }
 
-    return apiSuccess({ results, created, updated, total: results.length });
+    return apiSuccess({ results, created, updated, skipped, total: results.length });
   } catch (error) {
     console.error('Import scrape rules error:', error);
     return apiError('导入采集规则失败');

@@ -167,23 +167,23 @@ const WATERMARK_PATTERNS = [
   // Image alt-text only lines (e.g. "[图片]" or empty img artifacts)
   /^\s*\[?图片\]?\s*$/gm,
   /^\s*\[?img\]?\s*$/gim,
-  // "本章正在手打中" type status lines
-  /^\s*本章正在[\s\S]{0,30}$/gm,
+  // "本章正在手打中" type status lines (use [^\n] to prevent cross-line matching)
+  /^\s*本章正在[^\n]{0,30}$/gm,
   // "手机端阅读" short branding lines
-  /^\s*手机端[\s\S]{0,20}$/gm,
+  /^\s*手机端[^\n]{0,20}$/gm,
   // "XXX阅读网" generic site branding
-  /^[\w.]+阅读网[\s\S]{0,20}$/gm,
+  /^[\w.]+阅读网[^\n]{0,20}$/gm,
   // "最新章节地址xxx" full line
-  /最新章节地址[\s\S]{0,60}/gi,
+  /最新章节地址[^\n]{0,60}/gi,
   // "请牢记xxx" standalone reminder lines
-  /^\s*请牢记[\s\S]{0,50}$/gm,
+  /^\s*请牢记[^\n]{0,50}$/gm,
   // "首发于" standalone lines
-  /^\s*首发于[\s\S]{0,40}$/gm,
+  /^\s*首发于[^\n]{0,40}$/gm,
   // Single character repeated 3+ times (e.g. "......", "---", "===")
   /^\s*(.)\1{2,}\s*$/gm,
   // "正在手打中" / "手打全文" type lines
-  /^\s*正在手打[\s\S]{0,20}$/gm,
-  /^\s*手机端.*?阅读[\s\S]{0,20}$/gm,
+  /^\s*正在手打[^\n]{0,20}$/gm,
+  /^\s*手机端.*?阅读[^\n]{0,20}$/gm,
   // "最新网址xxx" / "最新地址xxx" site URL announcements
    /(?:最新网址|最新地址|记住网址|记住本站)[^\n]{0,60}/gi,
   // Empty or near-empty paragraph markers (single char or very short)
@@ -480,12 +480,15 @@ function deduplicateParagraphs(text: string): string {
 
     // Check near-duplicate: if the current line starts with the end of the previous line
     // (common when pages split mid-paragraph)
-    if (lastNormalized.length > 10 && normalized.length > 10) {
+    // Use longer overlap threshold (25 chars) and require the overlap to be a significant
+    // portion of the shorter line (>30%) to avoid false merges on common phrases.
+    if (lastNormalized.length > 20 && normalized.length > 20) {
       const overlapLen = Math.min(lastNormalized.length, normalized.length);
-      // Check if last 20 chars of previous matches first 20 chars of current
-      const checkLen = Math.min(20, overlapLen);
+      const checkLen = Math.min(25, overlapLen);
+      const shorterLen = Math.min(lastNormalized.length, normalized.length);
       if (
-        checkLen >= 10 &&
+        checkLen >= 15 &&
+        checkLen / shorterLen > 0.3 &&
         lastNormalized.slice(-checkLen) === normalized.slice(0, checkLen)
       ) {
         // This is a continuation — merge with previous line instead of dedup
@@ -541,7 +544,7 @@ function removeRemnantLines(text: string): string {
 function normalizeWhitespace(text: string): string {
   return text
     .replace(/\r\n/g, "\n")
-    .replace(/\t/g, "  ")
+    .replace(/\t+/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")

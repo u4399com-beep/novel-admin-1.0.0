@@ -163,15 +163,15 @@ function ensureLogFlusher() {
   logFlushTimer = setInterval(async () => {
     for (const [taskId, logs] of logBuffer) {
       if (logs.length === 0) continue;
-      // Copy logs first; only remove on success
-      const batch = [...logs];
+      // Snapshot the current batch size to avoid race condition with concurrent addTaskLog
+      const batchSize = logs.length;
+      const batch = logs.slice(0, batchSize);
       try {
         await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs: batch });
-        // Remove flushed logs only after successful API call
+        // Remove only the exact entries we sent (by count from front)
         const taskLogs = logBuffer.get(taskId);
-        if (taskLogs) {
-          const removeCount = Math.min(batch.length, taskLogs.length);
-          taskLogs.splice(0, removeCount);
+        if (taskLogs && taskLogs.length >= batchSize) {
+          taskLogs.splice(0, batchSize);
         }
       } catch (err) {
         console.error(`[Task] Failed to flush ${batch.length} logs for ${taskId}:`, err);
@@ -190,11 +190,14 @@ function ensureLogFlusher() {
 async function flushTaskLogs(taskId: string) {
   const logs = logBuffer.get(taskId);
   if (!logs || logs.length === 0) return;
-  logBuffer.delete(taskId);
+  // Copy logs before attempting send; only delete on success
+  const batch = [...logs];
   try {
-    await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs });
+    await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs: batch });
+    logBuffer.delete(taskId);
   } catch (err) {
     console.error(`[Task] Failed to final-flush logs for ${taskId}:`, err);
+    // Logs remain in buffer — periodic flusher will retry
   }
 }
 
@@ -379,7 +382,7 @@ async function executeTaskBody(
   let newBooksCount = new AtomicCounter();
   let skippedBooksCount = new AtomicCounter();
   let failedItemsCount = new AtomicCounter();
-  let totalChaptersCount = new AtomicCounter();
+  let processedChaptersCount = new AtomicCounter();
   let newChaptersCount = new AtomicCounter();
   let skippedChaptersCount = new AtomicCounter();
   const booksProcessed: Array<{ id: string; title: string; url: string }> = [];
@@ -748,10 +751,15 @@ async function executeTaskBody(
 
           if (chStatus === 201) {
             newChaptersCount.increment();
-            totalChaptersCount.increment();
+            // Update existingChapters map to prevent duplicates within same task
+            if (isIncremental) {
+              existingChapters.set(chapter.url, "new");
+              existingChapters.set(`title:${chapterDedupKey(chapterTitle)}`, "new");
+            }
           } else {
             failedItemsCount.increment();
           }
+          processedChaptersCount.increment();
         } catch (err) {
           failedItemsCount.increment();
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -777,7 +785,7 @@ async function executeTaskBody(
       const chapterProgress = 50 + ((bookIdx + 1) / booksProcessed.length) * 45;
       await updateTaskProgress(taskId, {
         progress: Math.round(chapterProgress),
-        totalChapters: totalChaptersCount.value,
+        totalChapters: processedChaptersCount.value,
         newChapters: newChaptersCount.value,
         failedItems: failedItemsCount.value,
         skippedItems: skippedBooksCount.value + skippedChaptersCount.value,
@@ -794,20 +802,30 @@ async function executeTaskBody(
   }
 
   // 6. Finalize task
-  const queueStats = await getQueueStats(taskId);
+  // Wrap in try-catch so task always gets marked completed even if queue stats fail
+  let queueStats;
+  try {
+    queueStats = await getQueueStats(taskId);
+  } catch {
+    queueStats = undefined;
+  }
 
-  await updateTaskProgress(taskId, {
-    status: "completed",
-    completedAt: new Date().toISOString(),
-    progress: 100,
-    currentStep: "采集完成",
-    totalBooks: booksProcessed.length,
-    newBooks: newBooksCount.value,
-    totalChapters: totalChaptersCount.value,
-    newChapters: newChaptersCount.value,
-    failedItems: failedItemsCount.value,
-    skippedItems: skippedBooksCount.value + skippedChaptersCount.value,
-  });
+  try {
+    await updateTaskProgress(taskId, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      progress: 100,
+      currentStep: "采集完成",
+      totalBooks: booksProcessed.length,
+      newBooks: newBooksCount.value,
+      totalChapters: processedChaptersCount.value,
+      newChapters: newChaptersCount.value,
+      failedItems: failedItemsCount.value,
+      skippedItems: skippedBooksCount.value + skippedChaptersCount.value,
+    });
+  } catch (err) {
+    console.error(`[Task ${taskId}] Failed to mark task as completed (will be recovered by stuck detection):`, err);
+  }
 
   await addTaskLog(
     taskId,
@@ -821,7 +839,7 @@ async function executeTaskBody(
     success: true,
     totalBooks: booksProcessed.length,
     newBooks: newBooksCount.value,
-    totalChapters: totalChaptersCount.value,
+    totalChapters: processedChaptersCount.value,
     newChapters: newChaptersCount.value,
     failed: failedItemsCount.value,
     skipped: skippedBooksCount.value + skippedChaptersCount.value,

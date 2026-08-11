@@ -6989,3 +6989,79 @@ Stage Summary:
 - 新增3个API端点、1个前端预览功能、1个克隆功能
 - 清洗模块水印正则从35+条增加到41+条，并预编译避免每次调用重新编译
 - 下一轮建议：增强前端日志统计可视化面板，添加更多采集监控功能
+---
+Task ID: 15
+Agent: Main Orchestrator
+Task: 第15轮 - 全项目审计与修复（采集系统+API路由+前端）
+
+Work Log:
+- 并行派出两个审计agent：一个审计scraper-service全部8个核心文件，一个审计全部API路由和前端
+- 发现并修复20个问题（4 CRITICAL + 5 HIGH + 7 MEDIUM + 4 LOW）
+
+## 修复清单
+
+### CRITICAL (5项)
+1. **scrape-rules/route.ts POST端点缺少导入** — validateContentPagination和validateCleanConfig已调用但未导入，导致整个创建规则端点编译失败
+2. **engines.ts ScraplingEngine熔断器无效** — 只调用了recordSuccess/recordFailure但从未调用acquire()，服务宕机时熔断器永远不会拦截请求
+3. **task-engine.ts flushTaskLogs永久丢失日志** — 在API调用前就logBuffer.delete(taskId)，API失败时日志永久丢失
+4. **task-engine.ts增量模式existingChapters未更新** — 创建新章节后不更新Map，同任务内重复章节URL/标题会创建重复记录
+5. **clean-preview ReDoS漏洞 + 缺失路由** — 用户提供的正则直接编译执行（灾难性回溯），且scrape-logs/route.ts文件不存在
+
+### HIGH (5项)
+6. **cleaning.ts水印正则跨行匹配** — 7条水印模式使用[\s\S]{0,N}配合gm标志，可跨多行匹配并删除正常小说内容。修复为[^^\n]
+7. **utils.ts中文数字转换完全错误** — 逐字符替换"百"→"100"导致"一百二十三"变成"2113"。重写为位置解析算法parseChineseNumeral()
+8. **cleaning.ts deduplicateParagraphs错误合并** — 20字符重叠检测阈值太低+无比例检查，"他说道："等常见短语开头会导致无关段落合并。提高阈值到25字符+要求重叠占比>30%
+9. **import路由TOCTOU竞态+静默跳过** — 检查-然后-创建模式无事务保护；无效规则被静默跳过无任何反馈。重写为upsert+返回per-rule错误
+10. **scrape-logs/stats时间源不一致** — 原始SQL用SQLite UTC时间，Prisma ORM用JS本地时间，导致统计数字不一致。统一为原始SQL
+
+### MEDIUM (6项)
+11. **log buffer flusher竞态** — 批量拷贝和splice之间可能有新日志插入，导致未发送的日志被删除
+12. **totalChaptersCount只计新建章节** — 实际等于newChapters，无法区分处理总量和新建量。拆分为processedChaptersCount
+13. **task finalization异常导致任务卡running** — getQueueStats或updateTaskProgress抛出时任务永远running。添加try-catch保证完成
+14. **TXT export OOM + null字段** — 一次性加载所有章节到内存；null字段显示为"null"字符串。添加10MB限制+null-safe显示
+15. **page.tsx搜索无防抖** — 每次按键直接触发API请求。添加300ms防抖（debouncedSearch状态）
+16. **page.tsx categoriesError未使用** — 设置了错误状态但从未在UI中使用。移除无意义的状态
+
+### LOW (4项)
+17. **clean-preview输入限制过大** — 500KB预览太大，降为50KB
+18. **cleaning.ts normalizeWhitespace冗余** — tab→2空格立即被空格折叠覆盖。改为\t+→单空格
+19. **clean-preview同版dedup合并bug** — 同样的问题同步修复
+20. **page.tsx主题按钮闪烁** — mounted前按钮可见导致主题闪烁。添加visibility:hidden
+
+## 修改文件清单
+- src/app/api/scrape-rules/route.ts (添加缺失导入)
+- src/app/api/scrape-rules/import/route.ts (完全重写：upsert+TOCTOU修复+错误报告)
+- src/app/api/scrape-rules/clean-preview/route.ts (ReDoS防护+输入限制+dedup修复)
+- src/app/api/scrape-logs/route.ts (新建：缺失的路由文件)
+- src/app/api/scrape-logs/stats/route.ts (时间源统一)
+- src/app/api/novels/[id]/export/txt/route.ts (OOM保护+null安全+422状态码)
+- src/app/page.tsx (搜索防抖+categoriesError修复+主题按钮闪烁修复)
+- mini-services/scraper-service/src/engines.ts (ScraplingEngine熔断器acquire)
+- mini-services/scraper-service/src/task-engine.ts (flushTaskLogs+existingChapters更新+log buffer竞态+processedChaptersCount+task finalization)
+- mini-services/scraper-service/src/cleaning.ts (水印正则[^^\n]+dedup阈值提升+normalizeWhitespace)
+- mini-services/scraper-service/src/utils.ts (parseChineseNumeral完整重写)
+
+## 验证结果
+- ESLint: 0错误, 6警告（均为预存React Hook Form兼容性警告）
+- Agent Browser: 首页正确渲染，所有交互元素正常，无错误
+- Dev server: 正常运行
+
+Stage Summary:
+- 修复: 20项 (5 CRITICAL + 5 HIGH + 6 MEDIUM + 4 LOW)
+- 累计修复: 1425 + 20 = 1445+
+- 新增: parseChineseNumeral()中文数字解析器、isSafeRegexPattern() ReDoS检测、/api/scrape-logs路由
+- 关键修复: 创建规则端点恢复可用、熔断器恢复工作、增量采集去重生效、日志不再丢失
+
+## 项目当前状态描述/判断
+- 全项目审计完成，20个问题已修复
+- 采集系统核心管线（列表→书籍→章节→内容→清洗→存储）功能完整且经过多轮加固
+- 5 CRITICAL bug修复确保了系统的基本可用性
+- 已知限制: categories/batch/download-configs路由存在预存TS类型错误（非本轮引入）
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P1: 修复预存TS类型错误（categories/batch/download-configs/seed-scrape-rules）
+2. P1: 前端日志统计可视化面板增强
+3. P2: 管理后台移动端响应式改进
+4. P2: 阅读器主题/字体大小设置持久化
+5. P3: EPUB导出实现
+6. P3: 采集任务结果URL实现
