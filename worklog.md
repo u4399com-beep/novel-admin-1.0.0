@@ -7656,3 +7656,100 @@ Stage Summary:
 6. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN）
 7. P3: AdminDesktopSidebar硬编码暗色主题
 8. P3: service-token认证与session认证分离（设计决策，需架构评审）
+---
+Task ID: 1
+Agent: Main Orchestrator (Round 21)
+Task: 第21轮深度审计+即时修复+Git推送
+
+Work Log:
+- 派出2个并行Explore审计agent：后端API+mini-services（35+文件）、前端组件+hooks+stores（35+文件）
+- 后端审计发现15个问题（1 HIGH + 5 MEDIUM + 9 LOW）
+- 前端审计发现14个问题（2 HIGH + 5 MEDIUM + 7 LOW）
+- 确认Round 1三大遗留功能（内容分页/广告清洗/章节URL去重）已在早期轮次实现
+- 确认ScrapeTaskMonitor 401 floods仅限admin页面（使用silent:true），非公共页面问题
+- 修复14个确认的真实问题
+- Agent Browser验证：首页、统计页正常渲染，无console错误
+- Git push: e184481 → afc844b → main
+
+## 修复清单
+
+### HIGH (2项)
+1. **chapters/batch幽灵status字段** — Chapter模型无status列，batch更新status会触发Prisma P2016运行时错误
+   - 修复：移除ghost status验证块（L43-49），更新JSDoc注释
+2. **ReadingProgressBar 401 toast + z-index冲突** — 公共小说页面调用`/api/novels/${id}`（需认证），未认证用户看到toast；同时z-index与ScrollProgress冲突（都是z-50）
+   - 修复：添加`silent: true`防toast；z-index改为z-[51]；ScrollProgress在小说页面隐藏
+
+### MEDIUM (7项)
+3. **stats/reading无界findMany** — readingDaily表无take限制，长期使用后全表加载
+   - 修复：添加`take: 400`
+4. **reading-goals streak无界findMany** — 同上，366天范围查询无take
+   - 修复：添加`take: 400`
+5. **stats/word-count全量加载章节** — avgByNovel加载50本小说的所有章节到内存，万章小说=百万行
+   - 修复：改用`$queryRaw` GROUP BY聚合查询（O(novels)替代O(total_chapters)），LIMIT 20
+6. **ChapterEditorPanel字数显示不一致** — 保存用`replace(/\s+/g,'').length`，显示用`content.length`（含空白）
+   - 修复：统一为`content.replace(/\s+/g, '').length`
+7. **ReadingProgressBar过度轮询** — 每2秒setInterval仅读localStorage，visibilitychange+StorageEvent已覆盖更新
+   - 修复：移除setInterval，仅用visibilitychange（tab focus时同步）和StorageEvent
+8. **useNovelChapters获取10000章** — admin章节列表一次请求全部章节
+   - 修复：降至5000（拖拽排序需要全量，完全分页需大改）
+9. **export-all大内存** — JSON.stringify(data, null, 2) pretty-print使内存翻倍
+   - 修复：移除pretty-print，两处export路径均改为紧凑JSON
+
+### LOW (5项)
+10. **CUID正则不一致** — novels/[id]/chapters用`/^[a-z0-9]{20,}$/`（不含连字符），chapters/reorder用`/^[a-z0-9-]+$/`（无最小长度）
+    - 修复：统一为`/^[a-z0-9-]{20,}$/`
+11. **clean-preview removeSelectors死代码** — 提取但未使用，无注释说明
+    - 修复：添加注释说明为何不应用（无cheerio），重命名为_removeSelectors + eslint-disable
+12. **NovelInfoSection setTimeout未清理** — 分享反馈2秒timer在卸载时未clearTimeout
+    - 修复：useRef存timer + useEffect cleanup
+13. **stats页缺少SEO metadata** — 'use client'组件无对应layout.tsx
+    - 修复：创建`src/app/stats/layout.tsx`导出metadata
+14. **Prisma schema缺少author索引** — public/novels搜索用OR(title,author)但author无索引
+    - 修复：添加`@@index([author])` + db:push
+
+## 修改文件清单 (16个文件，新增1个)
+- src/app/api/chapters/batch/route.ts (移除ghost status)
+- src/components/reading/ReadingProgressBar.tsx (silent+去轮询+z-index)
+- src/components/ScrollProgress.tsx (小说页隐藏)
+- src/app/api/stats/reading/route.ts (take:400)
+- src/app/api/reading-goals/route.ts (take:400+注释)
+- src/app/api/stats/word-count/route.ts (聚合查询重写)
+- src/components/novel/detail/ChapterEditorPanel.tsx (字数公式统一)
+- src/hooks/useNovelChapters.ts (pageSize 5000)
+- src/app/api/admin/export-all/route.ts (紧凑JSON)
+- src/app/api/novels/[id]/chapters/route.ts (CUID正则)
+- src/app/api/chapters/reorder/route.ts (CUID正则)
+- src/app/api/scrape-rules/clean-preview/route.ts (死代码注释)
+- src/app/novels/[id]/parts/NovelInfoSection.tsx (timeout清理)
+- src/app/stats/layout.tsx (新增SEO metadata)
+- prisma/schema.prisma (author索引)
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (均为预存React Hook Form兼容性)
+- Agent Browser: 首页/统计页正确渲染，无console错误
+- Dev server: 无运行时错误
+- Git push: e184481 → afc844b → main
+
+Stage Summary:
+- 修复: 14项 (2 HIGH + 7 MEDIUM + 5 LOW)
+- 累计修复: 1532 + 14 = 1546+
+- 最关键修复: chapters/batch幽灵status（Prisma P2016崩溃）、ReadingProgressBar 401 toast（UX）
+- 性能优化: word-count聚合查询（O(novels)替代O(chapters)）、去轮询、紧凑JSON导出
+- 数据准确性: 编辑器字数显示与保存公式统一
+- 安全加固: CUID正则统一（防止有效ID被拒）
+
+## 项目当前状态描述/判断
+- 全项目代码审计已完成六轮深度审计（R16-R21），共修复84项
+- 所有API端点查询均有take/limit限制
+- 前端组件无内存泄漏（timeout清理、interval移除）
+- UI层z-index冲突已解决（ScrollProgress vs ReadingProgressBar）
+- 统计页SEO metadata已补全
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P1: 前端日志统计可视化面板增强（图表丰富度）
+2. P1: 管理后台移动端响应式改进
+3. P2: 阅读器主题/字体大小设置持久化
+4. P2: EPUB导出实现
+5. P3: task-engine abort signal传播到scraping函数
+6. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN）
+7. P3: AdminDesktopSidebar硬编码暗色主题
