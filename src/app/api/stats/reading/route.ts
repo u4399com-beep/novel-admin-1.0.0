@@ -50,6 +50,7 @@ export const GET = withAuth(async () => {
       where: { chapters: { gt: 0 } },
       orderBy: { date: 'desc' },
       select: { date: true },
+      take: 400,
     });
 
     // Build a Set of active date strings for O(1) lookup

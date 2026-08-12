@@ -5,11 +5,13 @@ import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 
 const ADMIN_PREFIX = '/admin';
+const NOVEL_PREFIX = '/novels/';
 
 export function ScrollProgress() {
   const [progress, setProgress] = useState(0);
   const pathname = usePathname();
   const isAdmin = pathname.startsWith(ADMIN_PREFIX);
+  const isNovelPage = pathname.startsWith(NOVEL_PREFIX);
 
   useEffect(() => {
     if (isAdmin) return;
@@ -26,9 +28,9 @@ export function ScrollProgress() {
     }
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [isAdmin]);
+  }, [isAdmin, isNovelPage]);
 
-  if (isAdmin) return null;
+  if (isAdmin || isNovelPage) return null;
 
   return (
     <div

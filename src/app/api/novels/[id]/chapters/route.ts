@@ -193,8 +193,8 @@ export const PATCH = withAuth(async function PATCH(
       return apiError("orders 必须是非空数组(最多5000条)", 400);
     }
 
-    // Validate structure
-    const CUID_RE = /^[a-z0-9]{20,}$/;
+    // Validate structure — CUID pattern: alphanumeric + hyphens, min 20 chars
+    const CUID_RE = /^[a-z0-9-]{20,}$/;
     for (const item of orders) {
       if (!item.id || typeof item.id !== 'string' || !CUID_RE.test(item.id)) {
         return apiError("无效的ID格式", 400);

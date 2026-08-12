@@ -83,7 +83,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     const chaptersRead = Math.min(MAX_CHAPTERS_PER_UPDATE, Math.max(0, Math.floor(Number(chaptersParam) || 0)));
     const words = Math.min(MAX_WORDS_PER_UPDATE, Math.max(0, Math.floor(Number(wordsParam) || 0)));
 
-    // Upsert: increment existing record or create new
+    // NOTE: Uses increment semantics — each POST represents new chapters/words read.
+    // This is intentional: reading 5 chapters, then 3 more → total 8.
+    // To prevent accidental double-counting from network retries, clients should
+    // use AbortController and deduplicate requests client-side.
     await db.readingDaily.upsert({
       where: { date },
       create: { date, chapters: chaptersRead, words },
@@ -132,6 +135,7 @@ async function calculateStreak(date: string): Promise<number> {
     where: { date: { gte: dateStr, lte: date } },
     select: { date: true, chapters: true },
     orderBy: { date: 'desc' },
+    take: 400,
   });
 
   // Build a Set of dates that have chapters > 0 for O(1) lookup

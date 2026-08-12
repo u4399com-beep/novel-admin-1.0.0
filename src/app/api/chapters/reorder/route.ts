@@ -72,8 +72,8 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
     }
     const targetNovelId = [...uniqueNovelIds][0];
 
-    // Validate IDs are CUIDs (alphanumeric + hyphen only) — safe for SQL
-    const CUID_RE = /^[a-z0-9-]+$/;
+    // Validate IDs are CUIDs (alphanumeric + hyphen, min 20 chars) — safe for SQL
+    const CUID_RE = /^[a-z0-9-]{20,}$/;
     for (const item of items) {
       if (!CUID_RE.test(item.id)) {
         return apiError(`无效的章节ID: ${item.id}`, 400);

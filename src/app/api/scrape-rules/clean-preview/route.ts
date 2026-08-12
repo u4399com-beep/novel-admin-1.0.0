@@ -279,7 +279,11 @@ function isSafeRegexPattern(pattern: string): boolean {
 
 function cleanHtmlServer(html: string, config: Record<string, unknown>): string {
   const adPatterns = normalizePatterns(config.adPatterns);
-  const removeSelectors = normalizePatterns(config.removeSelectors);
+  // NOTE: removeSelectors extracted for API compatibility but NOT applied here.
+  // This endpoint does text-only cleaning (no cheerio/DOM).
+  // CSS selector removal happens in scraper-service which has a full DOM parser.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _removeSelectors = normalizePatterns(config.removeSelectors);
   const removePatterns = normalizePatterns(config.removePatterns);
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];
   if (adPatterns.length > 0) allAdPatterns.push(...adPatterns);

@@ -86,7 +86,7 @@ async function exportSmallDataset(novelCount: number, totalChapters: number) {
     },
   };
 
-  return new NextResponse(JSON.stringify(exportData, null, 2), {
+  return new NextResponse(JSON.stringify(exportData), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
@@ -184,7 +184,8 @@ async function exportLargeDataset(novelCount: number, totalChapters: number) {
     },
   };
 
-  return new NextResponse(JSON.stringify(exportData, null, 2), {
+  // Don't pretty-print (null, 2) — reduces memory by ~50% for large datasets
+  return new NextResponse(JSON.stringify(exportData), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',

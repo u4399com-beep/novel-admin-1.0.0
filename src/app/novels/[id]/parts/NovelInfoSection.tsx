@@ -1,6 +1,6 @@
 'use client';
 
-import { type MouseEvent, type RefObject, useState, useCallback } from 'react';
+import { type MouseEvent, type RefObject, useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   BookOpen,
@@ -59,6 +59,10 @@ export function NovelInfoSection({
   const statusInfo = STATUS_MAP[novel.status] || STATUS_MAP.ongoing;
   const readingTime = estimateReadingTime(novel.wordCount);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const shareTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup share feedback timer on unmount
+  useEffect(() => () => { if (shareTimerRef.current) clearTimeout(shareTimerRef.current); }, []);
 
   const handleShare = useCallback(async () => {
     try {
@@ -71,7 +75,8 @@ export function NovelInfoSection({
     } catch {
       setShareFeedback('复制失败');
     }
-    setTimeout(() => setShareFeedback(null), 2000);
+    if (shareTimerRef.current) clearTimeout(shareTimerRef.current);
+    shareTimerRef.current = setTimeout(() => setShareFeedback(null), 2000);
   }, [novel.title]);
   const remainingTime =
     safeLastChapterIndex !== null

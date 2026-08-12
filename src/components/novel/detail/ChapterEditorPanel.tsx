@@ -134,8 +134,8 @@ export function ChapterEditorPanel({ chapter, onClose, onSaved }: ChapterEditorP
 
   if (!chapter) return null;
 
-  const wordCount = content.length;
-  const charCount = content.replace(/\s/g, '').length;
+  // Word count matches save formula: strip all whitespace (same as saveChapter)
+  const wordCount = content.replace(/\s+/g, '').length;
 
   return (
     <div className="flex flex-col h-full">

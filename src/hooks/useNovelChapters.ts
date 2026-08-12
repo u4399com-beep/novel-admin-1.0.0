@@ -155,7 +155,7 @@ export function useNovelChapters({
     setLoadingChapters(true);
     try {
       const data = await apiFetch<{ chapters?: Chapter[]; total?: number }>(
-        `/api/novels/${selectedNovelId}/chapters?pageSize=10000`,
+        `/api/novels/${selectedNovelId}/chapters?pageSize=5000`,
         { signal },
       );
       if (!signal?.aborted) setChapters(data.chapters || []);

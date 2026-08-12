@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { apiFetch } from '@/lib/api-fetch';
 import type { Novel } from '@/types';
@@ -48,12 +48,24 @@ export function ReadingProgressBar() {
     }
   }, [novelId]);
 
-  // Load progress when novelId changes
+  // Sync progress from localStorage — uses StorageEvent for cross-tab and
+  // visibilitychange for same-tab focus. No polling interval needed since
+  // progress only changes when the reader navigates chapters.
+  const syncProgress = useCallback(() => {
+    if (!novelId) return;
+    const current = loadProgressFromStorage(novelId);
+    if (totalChapters > 0) {
+      const pct = Math.min(100, Math.round(((current + 1) / totalChapters) * 100));
+      setProgress(pct);
+    }
+  }, [novelId, totalChapters]);
+
+  // Load total chapters when novelId changes (use silent to avoid 401 toast on public pages)
   useEffect(() => {
     if (!novelId) return;
     const ac = new AbortController();
     const chapterIndex = loadProgressFromStorage(novelId);
-    apiFetch<Novel>(`/api/novels/${novelId}`, { signal: ac.signal })
+    apiFetch<Novel>(`/api/novels/${novelId}`, { signal: ac.signal, silent: true })
       .then((novel) => {
         if (ac.signal.aborted) return;
         const total = novel._count?.chapters ?? 0;
@@ -71,7 +83,7 @@ export function ReadingProgressBar() {
     return () => ac.abort();
   }, [novelId]);
 
-  // Listen for storage changes (e.g., progress updated in another tab or by the reader)
+  // Listen for storage changes and visibility changes — no polling interval
   useEffect(() => {
     if (!novelId) return;
 
@@ -85,50 +97,29 @@ export function ReadingProgressBar() {
       }
     };
 
-    // Poll periodically only when tab is visible to save CPU on mobile
-    let interval: ReturnType<typeof setInterval> | null = null;
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         // Immediately sync on tab focus
-        const current = loadProgressFromStorage(novelId);
-        if (totalChapters > 0) {
-          const pct = Math.min(100, Math.round(((current + 1) / totalChapters) * 100));
-          setProgress(pct);
-        }
-        // Start polling
-        if (!interval) {
-          interval = setInterval(() => {
-            const cur = loadProgressFromStorage(novelId);
-            if (totalChapters > 0) {
-              const p = Math.min(100, Math.round(((cur + 1) / totalChapters) * 100));
-              setProgress((prev) => (prev !== p ? p : prev));
-            }
-          }, 2000);
-        }
-      } else if (interval) {
-        // Pause polling when tab is hidden
-        clearInterval(interval);
-        interval = null;
+        syncProgress();
       }
     };
 
-    // Initialize polling if tab is visible
-    handleVisibility();
+    // Initial sync (deferred to avoid calling setState in effect body)
+    queueMicrotask(syncProgress);
     window.addEventListener('storage', handleStorage);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       window.removeEventListener('storage', handleStorage);
       document.removeEventListener('visibilitychange', handleVisibility);
-      if (interval) clearInterval(interval);
     };
-  }, [novelId, totalChapters]);
+  }, [novelId, totalChapters, syncProgress]);
 
   // Don't render if no progress or not on a novel page
   if (progress <= 0 || !novelId) return null;
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-50 progress-mini pointer-events-none"
+      className="fixed top-0 left-0 right-0 z-[51] progress-mini pointer-events-none"
       role="progressbar"
       aria-valuenow={progress}
       aria-valuemin={0}

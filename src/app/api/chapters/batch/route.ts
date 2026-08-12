@@ -5,7 +5,7 @@ import { safeJson, sanitizeField, isPrismaError, apiError } from '@/lib/api-util
 import { requireFields } from '@/lib/crud-helpers';
 
 // PATCH /api/chapters/batch - Batch update chapters
-// Body: { ids: string[], updates: { title?: string, sortOrder?: number, status?: string } }
+// Body: { ids: string[], updates: { title?: string, sortOrder?: number } }
 export const PATCH = withAuth(async function PATCH(request: NextRequest) {
   try {
     let body;
@@ -40,13 +40,8 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
       if (isNaN(order) || order < 0 || order > 100000) return apiError('sortOrder必须在0-100000之间', 400);
       data.sortOrder = order;
     }
-    if (updates.status !== undefined) {
-      const status = sanitizeField(updates.status, 50);
-      if (!['published', 'draft', 'hidden'].includes(status)) {
-        return apiError('status必须是published/draft/hidden', 400);
-      }
-      data.status = status;
-    }
+    // NOTE: Chapter model has no 'status' field — removed ghost field validation
+    // If status is needed in the future, add it to the Prisma schema first
 
     if (Object.keys(data).length === 0) {
       return apiError('没有可更新的字段', 400);
