@@ -7364,3 +7364,94 @@ Stage Summary:
 3. P2: 阅读器主题/字体大小设置持久化
 4. P2: EPUB导出实现
 5. P3: task-engine abort signal传播到scraping函数
+
+---
+Task ID: 1
+Agent: Main Orchestrator (Round 18)
+Task: 第18轮深度审计+即时修复+Git推送
+
+Work Log:
+- 并行派出2个Explore审计agent：后端API+mini-services、前端组件/hooks/stores
+- 后端审计发现9个问题（2 HIGH + 4 MEDIUM + 3 LOW）
+- 前端审计发现13个问题（2 HIGH + 6 MEDIUM + 5 LOW）
+- 修复10个问题，跳过设计决策类问题（误导性统计命名、O(N)内存加载等需更大重构）
+- Agent Browser验证：首页正常渲染、搜索功能正常、无console错误
+- Git push: 87420f3 → 1cafa3b → main
+
+## 修复清单
+
+### HIGH (4项)
+1. **Chapter PUT wordCount使用raw .length** — PUT /api/chapters/[id]计算newWordCount用`newContent.length`含HTML标签，而创建API用countWords()去标签
+   - 修复：`import { countWords }` + `countWords(newContent)`
+
+2. **scraper-service wordCount含HTML标签** — handleScrapeContent返回`fullContent.length`，HTML标签被算入字数，与创建API的countWords行为不一致
+   - 修复：`fullContent.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length`
+
+3. **ScrapeTaskMonitor 401时toast洪水** — 自动轮询每5秒调用apiFetch，未认证时每次触发toast.error
+   - 修复：自动轮询改用内联`apiFetch(..., { silent: true })`，不再触发toast
+
+4. **KeyboardShortcuts导航快捷键显示错误** — 显示`1` `2` `3`但实际需要`⌘+1` `⌘+2`
+   - 修复：从`NAV_ITEMS`动态生成，显示`⌘`+数字，描述也与实际label一致
+
+### MEDIUM (5项)
+5. **LIKE通配符注入** — public/novels和search-suggestions的LIKE查询未转义用户输入中的`%`和`_`
+   - 修复：`search.replace(/%/g, '\\%').replace(/_/g, '\\_')` + `ESCAPE '\\'`
+
+6. **seed-scrape-rules TOCTOU** — findFirst+create间隙可并发创建同名规则
+   - 修复：create外层添加try-catch捕获P2002，fallback到update
+
+7. **BackToTop无滚动节流** — 每次scroll事件都setState，高频触发re-render
+   - 修复：添加requestAnimationFrame节流
+
+8. **ProgressRing不稳定SVG ID** — `Math.random()`每次re-render生成新gradient ID
+   - 修复：改用React `useId()` 生成稳定ID
+
+9. **ReadingProgressBar隐藏tab仍轮询** — 2秒interval在tab不可见时浪费移动端CPU
+   - 修复：添加`visibilitychange`监听，hidden时clearInterval，visible时恢复
+
+### LOW (1项)
+10. **Favorite toggle冗余查询** — 事务成功后额外findUnique获取favoriteCount
+    - 修复：解构事务结果`const [, updatedNovel] = await db.$transaction([...])`，消除冗余查询
+
+## 额外修复
+11. **search-suggestions LIKE通配符转义** — 与M1同类问题，一并修复
+
+## 修改文件清单 (11个文件)
+- src/app/api/chapters/[id]/route.ts (countWords import + usage)
+- mini-services/scraper-service/src/scrapers.ts (HTML标签剥离)
+- src/components/scrape/ScrapeTaskMonitor.tsx (silent轮询)
+- src/components/KeyboardShortcuts.tsx (NAV_ITEMS动态生成)
+- src/app/api/public/novels/route.ts (LIKE转义)
+- src/app/api/public/search-suggestions/route.ts (LIKE转义)
+- src/app/api/admin/seed-scrape-rules/route.ts (P2002保护)
+- src/components/BackToTop.tsx (rAF节流)
+- src/components/home/ContinueReading.tsx (useId)
+- src/components/reading/ReadingProgressBar.tsx (visibility暂停)
+- src/app/api/novels/[id]/favorite/route.ts (消除冗余查询)
+
+## 验证结果
+- ESLint: 0 errors, 4 warnings (均为预存React Hook Form兼容性)
+- Agent Browser: 首页正确渲染，搜索功能正常，无console错误
+- Git push: 87420f3 → 1cafa3b → main
+
+Stage Summary:
+- 修复: 11项 (4 HIGH + 5 MEDIUM + 1 LOW + 1额外)
+- 累计修复: 1488 + 11 = 1499+
+- 最关键修复: 字数统计一致性（PUT+scrapers统一使用去HTML后的长度）
+- 安全加固: LIKE通配符转义防止搜索语义操控
+- 性能优化: rAF节流、tab隐藏暂停轮询、消除冗余DB查询
+- 用户体验: 修复快捷键显示、防止401 toast洪水
+
+## 项目当前状态描述/判断
+- 全项目代码审计已完成三轮深度审计（R16+R17+R18），共修复37项
+- 字数统计API一致性已全面统一（创建/更新/采集三个路径）
+- SQL注入防护从参数化查询扩展到LIKE通配符转义
+- 前端性能优化覆盖滚动处理、轮询策略、SVG渲染
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P1: 前端日志统计可视化面板增强
+2. P1: 管理后台移动端响应式改进
+3. P2: 阅读器主题/字体大小设置持久化
+4. P2: EPUB导出实现
+5. P3: task-engine abort signal传播到scraping函数
+6. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN环境变量）
