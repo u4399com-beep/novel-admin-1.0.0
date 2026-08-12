@@ -249,7 +249,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
     });
   }
 
-  return { chapters: allChapters, hasNextPage, engine: engineType, titleDedupCount };
+  return { chapters: allChapters, hasNextPage, engine: engineType, titleDupCount };
 }
 
 // ==================== Scrape Content ====================

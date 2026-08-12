@@ -36,24 +36,26 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       ? sanitizeField(newName, 200)
       : sanitizeField(original.name + ' (副本)', 200);
 
-    // Check if a rule with this name already exists
-    const existing = await db.scrapeRule.findFirst({ where: { name: copyName } });
-    if (existing) {
-      return apiError('同名规则已存在，请修改名称', 409);
-    }
-
     // Deep copy all fields (exclude id, createdAt, updatedAt, tasks)
     const { id: _id, createdAt: _ct, updatedAt: _ut, ...ruleData } = original;
 
-    const cloned = await db.scrapeRule.create({
-      data: {
-        ...ruleData,
-        name: copyName,
-        enabled: false, // Cloned rules start disabled for safety
-      },
-    });
-
-    return apiSuccess(cloned, 201);
+    // Try to create — handle TOCTOU race condition by catching unique constraint error (P2002)
+    try {
+      const cloned = await db.scrapeRule.create({
+        data: {
+          ...ruleData,
+          name: copyName,
+          enabled: false, // Cloned rules start disabled for safety
+        },
+      });
+      return apiSuccess(cloned, 201);
+    } catch (error: unknown) {
+      // P2002 = unique constraint violation → name already exists
+      if (error && typeof error === 'object' && 'code' in error && (error as { code: string }).code === 'P2002') {
+        return apiError('同名规则已存在，请修改名称', 409);
+      }
+      throw error;
+    }
   } catch (error) {
     console.error('Clone scrape rule error:', error);
     return apiError('克隆采集规则失败');

@@ -5,7 +5,8 @@ import { withPublicRateLimit } from '@/lib/api-auth';
 // GET /api/translate/languages
 export const GET = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async function GET() {
   try {
-    const resp = await fetch('/languages?XTransformPort=3032', {
+    const serviceUrl = process.env.TRANSLATE_SERVICE_URL || 'http://localhost:3032';
+    const resp = await fetch(`${serviceUrl}/languages`, {
       method: 'GET',
       signal: AbortSignal.timeout(10_000),
     });

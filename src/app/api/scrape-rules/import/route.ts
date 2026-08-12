@@ -28,6 +28,16 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError('单次最多导入50条规则', 400);
     }
 
+    // Pre-fetch existing rule names to detect create vs update reliably
+    // (createdAt === updatedAt is unreliable in SQLite due to 1-second datetime resolution)
+    const allNames = body.rules
+      .map(r => (typeof r.name === 'string' && r.name.trim() ? sanitizeField(r.name, 200) : ''))
+      .filter(Boolean);
+    const existingRules = allNames.length > 0
+      ? await db.scrapeRule.findMany({ where: { name: { in: allNames } }, select: { name: true } })
+      : [];
+    const existingNames = new Set(existingRules.map(r => r.name));
+
     const results: Array<{
       name: string;
       action: 'created' | 'updated' | 'skipped';
@@ -124,7 +134,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
           update: data,
           create: data,
         });
-        const isCreated = rule.createdAt.getTime() === rule.updatedAt.getTime();
+        const isCreated = !existingNames.has(name);
         if (isCreated) {
           created++;
           results.push({ id: rule.id, name, action: 'created' });

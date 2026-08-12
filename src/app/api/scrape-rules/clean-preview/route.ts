@@ -30,7 +30,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
 
     // Server-side cleaning logic (mirrors scraper-service/cleaning.ts)
-    const result = cleanHtmlServer(html, cleanConfig);
+    const result = cleanHtmlServer(html, config);
 
     return apiSuccess({
       cleaned: result,

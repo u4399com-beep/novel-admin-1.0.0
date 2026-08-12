@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { db } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { apiError } from '@/lib/api-utils';
+
+function todayStringLocal(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 export const GET = withAuth(async () => {
   try {
@@ -36,26 +45,36 @@ export const GET = withAuth(async () => {
       : 0;
 
     // Reading streak (consecutive days with reading activity)
+    // Use local date string (not UTC) to match readingDaily.date storage format
     const allDailyDates = await db.readingDaily.findMany({
       where: { chapters: { gt: 0 } },
       orderBy: { date: 'desc' },
       select: { date: true },
     });
 
+    // Build a Set of active date strings for O(1) lookup
+    const activeDates = new Set(allDailyDates.map(d => d.date));
+
     let readingStreak = 0;
-    const today = new Date();
+    const todayStr = todayStringLocal();
+    let checkDate = todayStr;
+
     for (let i = 0; i < 365; i++) {
-      const checkDate = new Date(today);
-      checkDate.setDate(checkDate.getDate() - i);
-      const dateStr = checkDate.toISOString().slice(0, 10);
-      const found = allDailyDates.find((d) => d.date === dateStr);
-      if (found) {
+      if (activeDates.has(checkDate)) {
         readingStreak++;
-      } else if (i > 0) {
+      } else if (i === 0) {
+        // Today has no data yet — that's ok, don't count but keep checking yesterday
+      } else {
         break; // Gap found, streak ended
       }
-      // If i === 0 and not found, skip (today might not have reading yet)
-      if (i === 0 && !found) continue;
+      // Move to previous day in local time
+      const parts = checkDate.split('-');
+      const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      d.setDate(d.getDate() - 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      checkDate = `${y}-${m}-${day}`;
     }
 
     // Favorite genre (most read category based on novel reading progress)
@@ -86,17 +105,19 @@ export const GET = withAuth(async () => {
     const favoriteGenre = Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
     // Most active hour (from reading progress timestamps)
-    const progressRecords = await db.readingProgress.findMany({
-      select: { lastReadAt: true },
-    });
+    // Use aggregate with GROUP BY to avoid loading all records into memory
+    const hourStats = await db.$queryRaw<Array<{ hour: number; cnt: number }>>(Prisma.sql`
+      SELECT CAST(strftime('%H', "lastReadAt") AS INTEGER) as hour, COUNT(*) as cnt
+      FROM "ReadingProgress"
+      GROUP BY hour
+      ORDER BY cnt DESC
+      LIMIT 24
+    `);
 
-    const hourCounts: number[] = new Array(24).fill(0);
-    for (const record of progressRecords) {
-      const hour = new Date(record.lastReadAt).getHours();
-      hourCounts[hour]++;
+    let mostActiveHour = 0;
+    if (hourStats.length > 0) {
+      mostActiveHour = hourStats[0].hour;
     }
-
-    const mostActiveHour = hourCounts.indexOf(Math.max(...hourCounts));
 
     return NextResponse.json({
       totalReadingTime,

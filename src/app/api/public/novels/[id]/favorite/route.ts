@@ -29,10 +29,14 @@ function isFavoriteDeduplicated(ip: string, novelId: string): boolean {
 }
 
 /**
- * Toggle novel favorite (no auth required).
+ * Public favorite toggle (no auth required).
  * Rate limited: 10 burst, 0.2/sec (5/min) per IP.
  * Dedup: same IP+novelId can only add once per 24h.
- * POST /api/public/novels/[id]/favorite?action=toggle|add|remove
+ * POST /api/public/novels/[id]/favorite?action=toggle|add
+ *
+ * Note: 'remove' action is NOT supported in the public endpoint to prevent
+ * unauthenticated count manipulation (an attacker could drain any novel's count).
+ * Use the authenticated /api/novels/[id]/favorite endpoint for remove.
  */
 export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async (
   request: NextRequest,
@@ -42,48 +46,24 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'toggle';
 
-  if (!['add', 'remove', 'toggle'].includes(action)) {
-    return apiError('无效的 action，允许值: add, remove, toggle', 400);
+  if (!['add', 'toggle'].includes(action)) {
+    return apiError('公共接口仅支持 add/toggle 操作，remove 请使用认证接口', 400);
   }
 
   // Use shared getClientIp for consistent IP extraction
   const ip = getClientIp(request);
 
   try {
-    // For add/toggle: check dedup to prevent count manipulation
-    if (action !== 'remove') {
-      if (isFavoriteDeduplicated(ip, id)) {
-        const current = await db.novel.findUnique({
-          where: { id },
-          select: { favoriteCount: true },
-        });
-        return NextResponse.json({ favoriteCount: current?.favoriteCount ?? 0, deduplicated: true });
-      }
-    }
-
-    // For remove: atomic MAX(0, count-1) via raw SQL to prevent race condition
-    if (action === 'remove') {
-      const result = await db.$executeRaw`
-        UPDATE "Novel" SET "favoriteCount" = MAX(0, "favoriteCount" - 1) WHERE id = ${id} AND "favoriteCount" > 0
-      `;
-      if (result === 0) {
-        const current = await db.novel.findUnique({
-          where: { id },
-          select: { favoriteCount: true },
-        });
-        if (!current) {
-          return apiError('小说不存在', 404);
-        }
-        return NextResponse.json({ favoriteCount: current.favoriteCount });
-      }
-      const updated = await db.novel.findUnique({
+    // Check dedup to prevent count manipulation (same IP can only add once per 24h)
+    if (isFavoriteDeduplicated(ip, id)) {
+      const current = await db.novel.findUnique({
         where: { id },
         select: { favoriteCount: true },
       });
-      return NextResponse.json({ favoriteCount: updated?.favoriteCount ?? 0 });
+      return NextResponse.json({ favoriteCount: current?.favoriteCount ?? 0, deduplicated: true });
     }
 
-    // For add/toggle: use transaction for atomic increment with existence check
+    // Atomic increment with existence check in transaction
     const result = await db.$transaction(async (tx) => {
       const novel = await tx.novel.findUnique({
         where: { id },

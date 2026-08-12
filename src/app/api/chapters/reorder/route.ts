@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { withAuth } from '@/lib/api-auth';
 import { NextRequest } from 'next/server';
 import { safeJson, apiError, apiSuccess } from '@/lib/api-utils';
@@ -74,16 +75,16 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
     }
 
     // Use batch UPDATE via CASE for better performance (single SQL statement)
-    // IDs are validated as CUIDs above — no SQL injection risk
-    const caseParts = items.map((item: { id: string; sortOrder: number }) => `WHEN '${item.id}' THEN ${item.sortOrder}`).join(' ');
-    const idList = items.map((item: { id: string }) => `'${item.id}'`).join(',');
-
-    await db.$executeRawUnsafe(`
+    // Use Prisma.sql tagged template for parameterized query (safe from SQL injection)
+    const sql = Prisma.sql`
       UPDATE "Chapter" SET "sortOrder" = CASE id
-        ${caseParts}
+        ${Prisma.join(items.map((item: { id: string; sortOrder: number }) =>
+          Prisma.sql`WHEN ${item.id} THEN ${item.sortOrder}`
+        ), ' ')}
         ELSE "sortOrder" END
-      WHERE id IN (${idList})
-    `);
+      WHERE id IN (${Prisma.join(items.map((item: { id: string }) => item.id))})
+    `;
+    await db.$executeRaw(sql);
     const updated = items.length;
 
     return apiSuccess({ updated });

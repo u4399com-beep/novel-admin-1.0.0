@@ -28,7 +28,8 @@ export const POST = withPublicRateLimit({ capacity: 20, refillRate: 0.5 }, async
   }
 
   try {
-    const resp = await fetch('http://localhost:3032/detect', {
+    const serviceUrl = process.env.TRANSLATE_SERVICE_URL || 'http://localhost:3032';
+    const resp = await fetch(`${serviceUrl}/detect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: body.text }),

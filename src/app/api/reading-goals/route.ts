@@ -64,10 +64,18 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const { date: dateParam, chaptersRead: chaptersParam, words: wordsParam } = body;
 
-    // Validate date — default to today
+    // Validate date — default to today. Reject dates more than 1 year in the past or future.
     let date = dateParam ? sanitizeField(dateParam, 10) : todayString();
     if (!DATE_REGEX.test(date)) {
       date = todayString();
+    } else {
+      // Range check: reject dates outside [1 year ago, 1 year from now]
+      const parsed = new Date(date + 'T00:00:00');
+      const now = Date.now();
+      const oneYear = 365 * 24 * 60 * 60 * 1000;
+      if (isNaN(parsed.getTime()) || parsed.getTime() < now - oneYear || parsed.getTime() > now + oneYear) {
+        date = todayString();
+      }
     }
 
     const MAX_CHAPTERS_PER_UPDATE = 10000;

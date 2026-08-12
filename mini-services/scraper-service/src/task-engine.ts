@@ -606,7 +606,7 @@ async function executeTaskBody(
       }
 
       // Scrape chapter list using selected engine
-      const { chapters, titleDedupCount } = await handleScrapeChapters({
+      const { chapters, titleDupCount } = await handleScrapeChapters({
         url: chapterListUrl,
         selectors: {
           list: chapterListSelector,
@@ -619,15 +619,15 @@ async function executeTaskBody(
         engine: engineType,
       });
 
-      console.log(`[Task ${taskId}] Found ${chapters.length} chapters for ${book.title}${titleDedupCount ? ` (${titleDedupCount} title dups removed)` : ""}`);
+      console.log(`[Task ${taskId}] Found ${chapters.length} chapters for ${book.title}${titleDupCount ? ` (${titleDupCount} title dups removed)` : ""}`);
 
       if (chapters.length === 0) {
         await addTaskLog(taskId, "warn", `未发现章节: ${book.title}`, chapterListUrl);
         continue;
       }
 
-      if (titleDedupCount > 0) {
-        await addTaskLog(taskId, "info", `章节标题去重: ${book.title}，移除 ${titleDedupCount} 个重复标题`, chapterListUrl);
+      if (titleDupCount > 0) {
+        await addTaskLog(taskId, "info", `章节标题去重: ${book.title}，移除 ${titleDupCount} 个重复标题`, chapterListUrl);
       }
 
       await addTaskLog(taskId, "info", `发现 ${chapters.length} 个章节: ${book.title}`, chapterListUrl);

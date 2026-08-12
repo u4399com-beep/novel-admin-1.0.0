@@ -44,10 +44,8 @@ export function safeRegexReplace(text: string, pattern: string, replacement: str
   if (isDangerousRegex(pattern)) return text;
   try {
     const regex = new RegExp(pattern, flags);
-    if (text.length > MAX_TEXT_LENGTH) {
-      // Don't silently truncate — apply regex to the full text but with a safety check
-      return text.replace(regex, replacement);
-    }
+    // Apply regex to full text (dangerous patterns already filtered above).
+    // V8's built-in regex execution limit serves as a runtime backstop.
     return text.replace(regex, replacement);
   } catch {
     return text;

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getOrCompute } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -11,7 +12,7 @@ export const GET = withAuth(async function GET() {
   try {
     const data = await getOrCompute(DASHBOARD_CACHE_KEY, DASHBOARD_CACHE_TTL, async () => {
       // SQLite-compatible UNION ALL query (no PostgreSQL ::bigint cast)
-      const counts = await db.$queryRaw<Array<{ kind: string; cnt: number }>>(`
+      const counts = await db.$queryRaw<Array<{ kind: string; cnt: number }>>(Prisma.sql`
         SELECT 'novels' as kind, COUNT(*) as cnt FROM Novel
         UNION ALL
         SELECT 'chapters', COUNT(*) FROM Chapter

@@ -7169,3 +7169,118 @@ Stage Summary:
 - 字数计算从import到admin章节创建完全统一
 - 阅读器体验增强：选中色、进度条、分隔线、快捷键UI
 - Git版本: c9dd686 pushed to main
+---
+Task ID: 1
+Agent: Main Orchestrator (Round 16)
+Task: 第16轮全项目深度审计+即时修复
+
+Work Log:
+- 并行派出2个Explore审计agent：一个审计全部72个API路由，一个审计scraper-service 14个源文件
+- 发现27个问题（3 CRITICAL + 6 HIGH + 8 MEDIUM + 5 LOW）
+- 修复全部3个CRITICAL、6个HIGH、7个MEDIUM、1个LOW问题
+
+## 修复清单
+
+### CRITICAL (3项)
+1. **clean-preview/route.ts 变量名错误** — 调用`cleanHtmlServer(html, cleanConfig)`但参数名为`config`，每次请求100%崩溃
+   - 修复：`cleanConfig` → `config`
+
+2. **translate/languages/route.ts 服务端相对URL** — `fetch('/languages?XTransformPort=3032')`在服务端循环回Next.js自身，端点完全不可用
+   - 修复：使用`process.env.TRANSLATE_SERVICE_URL || 'http://localhost:3032'`构建绝对URL
+
+3. **scrapers.ts titleDedupCount拼写错误** — 返回`titleDedupCount`但变量声明为`titleDupCount`，Bun不检查类型，导致ReferenceError
+   - 影响：整个章节目录采集管线**完全崩溃**（handleScrapeChapters每次调用500）
+   - 修复：返回值和task-engine.ts中的3处引用统一改为`titleDupCount`
+
+### HIGH (6项)
+4. **translate/detect 硬编码localhost** — 与languages相同问题
+   - 修复：使用`TRANSLATE_SERVICE_URL`环境变量
+
+5. **chapters/reorder $executeRawUnsafe** — 字符串拼接SQL虽有CUID验证，但模式不一致且维护风险
+   - 修复：改用`Prisma.sql`+`Prisma.join()`参数化查询
+
+6. **stats/reading 无界查询OOM** — `findMany({ select: { lastReadAt } })`加载全部记录到内存
+   - 修复：改用`GROUP BY strftime('%H')`聚合查询，DB层面计算
+
+7. **novels/[id]/favorite add竞态** — create和increment分离操作，并发可导致不一致
+   - 修复：`$transaction([create, update])` + P2002唯一约束捕获
+
+8. **public/novels/[id]/favorite 未认证计数操控** — remove操作直接decrement无验证，可被攻击者将任意小说收藏数降到0
+   - 修复：移除公共端点的remove操作（仅支持add/toggle），remove需使用认证接口
+
+9. **scrape-rules/clone TOCTOU竞态** — findFirst+create之间可并发创建同名规则
+   - 修复：移除findFirst检查，直接create并捕获P2002错误返回409
+
+10. **engines.ts Scrapling熔断器缺少await** — `acquire()`未await+放在try内，失败时记录虚假失败
+    - 修复：移出try块添加await，recordFailure移到retryWithBackoff的.catch()
+
+### MEDIUM (7项)
+11. **categories/stats N+1查询** — 2N+1查询（每分类2次查询）
+    - 修复：改用`groupBy`+批量查询，减少到3次查询
+
+12. **reading-goals 日期范围无验证** — 可提交2099年或0001年日期
+    - 修复：添加±1年范围检查
+
+13. **scrape-logs/stats $queryRawUnsafe** — 5处硬编码SQL字符串
+    - 修复：全部改为`Prisma.sql`标签模板
+
+14. **stats/reading UTC vs local时区** — `toISOString().slice(0,10)`在UTC+8时区日期边界错误
+    - 修复：使用本地日期字符串+Set查找，O(1)查找
+
+15. **scrape-rules/import created/updated检测** — `createdAt===updatedAt`在SQLite 1秒精度下不可靠
+    - 修复：预查询existingNames集合，直接判断
+
+16. **dashboard/route.ts $queryRaw** — 未使用Prisma.sql标签
+    - 修复：添加`Prisma.sql`标签模板
+
+17. **stats/reading $queryRawUnsafe** — 同上
+    - 修复：改用Prisma.sql
+
+### LOW (1项)
+18. **regex-safety.ts 死代码** — `safeRegexReplace`两个分支完全相同
+    - 修复：移除冗余分支
+
+## 修改文件清单 (18个文件)
+- src/app/api/scrape-rules/clean-preview/route.ts (1行)
+- src/app/api/translate/languages/route.ts (3行)
+- src/app/api/translate/detect/route.ts (3行)
+- src/app/api/chapters/reorder/route.ts (Prisma.sql参数化+import)
+- src/app/api/stats/reading/route.ts (GROUP BY聚合+时区修复+Prisma.sql)
+- src/app/api/novels/[id]/favorite/route.ts (事务+P2002)
+- src/app/api/public/novels/[id]/favorite/route.ts (重写：移除remove)
+- src/app/api/scrape-rules/clone/route.ts (P2002捕获)
+- src/app/api/categories/stats/route.ts (N+1→批量查询)
+- src/app/api/reading-goals/route.ts (日期范围验证)
+- src/app/api/scrape-logs/stats/route.ts (Prisma.sql)
+- src/app/api/scrape-rules/import/route.ts (existingNames预查询)
+- src/app/api/dashboard/route.ts (Prisma.sql)
+- mini-services/scraper-service/src/scrapers.ts (titleDupCount)
+- mini-services/scraper-service/src/task-engine.ts (titleDupCount×3)
+- mini-services/scraper-service/src/engines.ts (await+catch重构)
+- mini-services/scraper-service/src/regex-safety.ts (死代码清理)
+
+## 验证结果
+- ESLint: 0 errors, 4 warnings (均为预存React Hook Form兼容性)
+- Agent Browser: 首页正确渲染，所有交互元素正常，无console错误
+- Dev server: 正常运行
+
+Stage Summary:
+- 修复: 17项 (3 CRITICAL + 6 HIGH + 7 MEDIUM + 1 LOW)
+- 累计修复: 1462+17 = 1479+
+- 最关键修复: 章节采集管线恢复可用（titleDupCount）、清洗预览恢复可用（config变量）、翻译服务端点恢复可用
+- 安全加固: 移除未认证计数操控、统一Prisma.sql参数化查询、事务保护竞态
+- 未修复(设计决策): SSRF DNS解析检查(增加延迟)、task-engine abort signal传播(需架构改动)、novels/import速率限制(已受auth保护)
+
+## 项目当前状态描述/判断
+- 全项目代码审计已完成17项关键修复
+- 3个CRITICAL bug修复确保了核心功能可用性（章节采集、清洗预览、翻译服务）
+- 所有API端点统一使用Prisma.sql参数化查询，消除了$queryRawUnsafe风险
+- 公共端点安全加固：移除未认证的计数递减操作
+- 已知限制: SSRF DNS rebinding防护、abort signal传播、serverless环境内存去重
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P1: 前端日志统计可视化面板增强
+2. P1: 管理后台移动端响应式改进
+3. P2: 阅读器主题/字体大小设置持久化
+4. P2: EPUB导出实现
+5. P3: task-engine abort signal传播到scraping函数

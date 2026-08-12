@@ -783,10 +783,9 @@ class ScraplingEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
+        // Check circuit breaker BEFORE making request (prevents requests when service is down)
+        await scraplingBreaker.acquire();
         try {
-          // Check circuit breaker before making request (prevents requests when service is down)
-          scraplingBreaker.acquire();
-
           const response = await fetch(`${SCRAPLING_SERVICE_URL}/fetch`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -827,7 +826,6 @@ class ScraplingEngine implements ScrapingEngine {
             statusCode: data.status_code || 200,
           };
         } catch (err) {
-          scraplingBreaker.recordFailure();
           throw err;
         }
       },
@@ -836,7 +834,11 @@ class ScraplingEngine implements ScrapingEngine {
         baseDelay: 3000,
         maxDelay: 30000,
       }
-    );
+    ).catch((err) => {
+      // Only record failure when all retries are exhausted
+      scraplingBreaker.recordFailure();
+      throw err;
+    });
   }
 }
 

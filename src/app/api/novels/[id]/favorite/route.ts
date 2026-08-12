@@ -90,19 +90,42 @@ export const POST = withAuth(async function POST(
         favoriteCount: Math.max(0, updated?.favoriteCount ?? 0),
       });
     } else {
-      // Add favorite
-      await db.favorite.create({
-        data: { userId, novelId: id },
-      });
-      const updated = await db.novel.update({
+      // Add favorite: use transaction for atomic create + increment
+      // with unique constraint catch for TOCTOU protection
+      try {
+        await db.$transaction([
+          db.favorite.create({
+            data: { userId, novelId: id },
+          }),
+          db.novel.update({
+            where: { id },
+            data: { favoriteCount: { increment: 1 } },
+            select: { favoriteCount: true },
+          }),
+        ]);
+      } catch (error: unknown) {
+        // P2002 = unique constraint violation → already favorited, fetch current count
+        if (isPrismaError(error, 'P2002')) {
+          const existing = await db.novel.findUnique({
+            where: { id },
+            select: { favoriteCount: true },
+          });
+          return apiSuccess({
+            isFavorited: true,
+            favoriteCount: existing?.favoriteCount ?? 0,
+          });
+        }
+        throw error;
+      }
+
+      const updated = await db.novel.findUnique({
         where: { id },
-        data: { favoriteCount: { increment: 1 } },
         select: { favoriteCount: true },
       });
 
       return apiSuccess({
         isFavorited: true,
-        favoriteCount: updated.favoriteCount,
+        favoriteCount: updated?.favoriteCount ?? 0,
       });
     }
   } catch (error: unknown) {
