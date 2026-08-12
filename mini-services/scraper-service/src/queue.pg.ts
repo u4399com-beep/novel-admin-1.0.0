@@ -250,14 +250,7 @@ export interface QueueStats {
 export async function getQueueStats(taskId?: string): Promise<QueueStats> {
   const db = await getSql();
 
-  let where = "";
-  const params: any[] = [];
-  if (taskId) {
-    where = " WHERE task_id = $1";
-    params.push(taskId);
-  }
-
-  // Use tagged template for simplicity
+  // Use tagged template for parameterized queries
   let row: any;
   if (taskId) {
     [row] = await db`
@@ -296,19 +289,11 @@ export async function getQueueStats(taskId?: string): Promise<QueueStats> {
 export async function requeueFailed(taskId?: string): Promise<number> {
   const db = await getSql();
 
-  if (taskId) {
-    await db`
-      UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = NOW()
-      WHERE status = 'failed' AND task_id = ${taskId}
-    `;
-  } else {
-    await db`
-      UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = NOW()
-      WHERE status = 'failed'
-    `;
-  }
+  const result = taskId
+    ? await db`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = NOW() WHERE status = 'failed' AND task_id = ${taskId}`
+    : await db`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = NOW() WHERE status = 'failed'`;
 
-  return 0; // postgres doesn't return changes count easily, return 0 as safe default
+  return result.count ?? 0;
 }
 
 /**
@@ -318,11 +303,9 @@ export async function cleanupQueue(olderThanHours: number = 24): Promise<number>
   const db = await getSql();
   const cutoff = new Date(Date.now() - olderThanHours * 3600000);
 
-  await db`
-    DELETE FROM request_queue WHERE status IN ('completed', 'failed') AND updated_at < ${cutoff.toISOString()}
-  `;
+  const result = await db`DELETE FROM request_queue WHERE status IN ('completed', 'failed') AND updated_at < ${cutoff.toISOString()}`;
 
-  return 0;
+  return result.count ?? 0;
 }
 
 /**

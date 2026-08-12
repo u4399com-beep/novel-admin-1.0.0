@@ -34,10 +34,14 @@ function clearRecentlyViewed() {
 // ─── HomeActivity Component ────────────────────────────────────────
 
 export function HomeActivity() {
-  const [recentNovels, setRecentNovels] = useState<RecentNovel[]>(() => {
-    if (typeof window === 'undefined') return [];
-    return getRecentlyViewed();
-  });
+  // Initialize empty on SSR, load from localStorage after mount to avoid hydration mismatch
+  const [recentNovels, setRecentNovels] = useState<RecentNovel[]>([]);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- client hydration pattern */
+  useEffect(() => {
+    setRecentNovels(getRecentlyViewed());
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Listen for storage changes from other tabs
   useEffect(() => {

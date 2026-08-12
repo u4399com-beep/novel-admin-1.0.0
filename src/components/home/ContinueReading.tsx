@@ -124,26 +124,36 @@ const itemVariants = {
 // ─── Main Component ────────────────────────────────────────────────
 
 export function ContinueReading() {
-  const shouldLoad = (() => {
-    try {
-      if (localStorage.getItem('continue-reading-dismissed') === 'true') return false;
-    } catch { /* ignore */ }
-    return !!getSessionId();
-  })();
+  // Initialize loading state, determine actual state after mount to avoid SSR hydration mismatch
   const [progress, setProgress] = useState<ReadingProgressItem[]>([]);
-  const [loading, setLoading] = useState(shouldLoad);
-  const [dismissed, setDismissed] = useState(!shouldLoad);
+  const [loading, setLoading] = useState(true);
+  const [dismissed, setDismissed] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- client hydration pattern */
   useEffect(() => {
-    if (!shouldLoad) return;
-    const ac = new AbortController();
+    // Check dismissed state and session after mount (client-side only)
+    try {
+      if (localStorage.getItem('continue-reading-dismissed') === 'true') {
+        setDismissed(true);
+        setLoading(false);
+        return;
+      }
+    } catch { /* ignore */ }
+
     const sessionId = getSessionId();
+    if (!sessionId) {
+      setLoading(false);
+      return;
+    }
+
+    const ac = new AbortController();
     apiFetch<{ progress: ReadingProgressItem[] }>(`/api/public/reading-progress?sessionId=${encodeURIComponent(sessionId)}`, { signal: ac.signal })
       .then((data) => { if (!ac.signal.aborted) setProgress(data.progress || []); })
       .catch(() => {})
       .finally(() => { if (!ac.signal.aborted) setLoading(false); });
     return () => ac.abort();
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);

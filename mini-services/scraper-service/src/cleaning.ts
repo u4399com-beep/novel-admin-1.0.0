@@ -74,14 +74,17 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Escape special characters for safe embedding in CSS attribute selectors */
+/** Escape special characters for safe embedding in CSS attribute selectors.
+ * Handles: backslash, double-quote, brackets, and attribute-selector-breaking chars. */
 function escapeCssString(str: string): string {
   return str
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
+    .replace(/'/g, "\\'")
     .replace(/\]/g, "\\]")
     .replace(/\[/g, "\\[")
-    .replace(/\(/g, "\\(");
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
 }
 
 /**

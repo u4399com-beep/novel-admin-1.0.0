@@ -14,21 +14,30 @@ const LAYOUT_META: Record<LayoutTheme, { label: string; icon: string; descriptio
 
 export { LAYOUT_META };
 
+function readStoredTheme(): LayoutTheme {
+  try {
+    const stored = localStorage.getItem(LAYOUT_THEME_KEY);
+    if (stored && stored in LAYOUT_META) return stored as LayoutTheme;
+  } catch { /* ignore */ }
+  return 'grid';
+}
+
+function writeStoredTheme(t: LayoutTheme): void {
+  try { localStorage.setItem(LAYOUT_THEME_KEY, t); } catch { /* ignore */ }
+}
+
 export function useLayoutTheme() {
-  const [theme, setThemeState] = useState<LayoutTheme>(() => {
-    if (typeof window === 'undefined') return 'grid';
-    try {
-      const stored = localStorage.getItem(LAYOUT_THEME_KEY);
-      if (stored && stored in LAYOUT_META) return stored as LayoutTheme;
-    } catch { /* ignore */ }
-    return 'grid';
-  });
+  const [theme, setThemeState] = useState<LayoutTheme>('grid');
+
+  /* eslint-disable react-hooks/set-state-in-effect -- well-known client hydration pattern */
+  useEffect(() => {
+    setThemeState(readStoredTheme());
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const setTheme = useCallback((t: LayoutTheme) => {
     setThemeState(t);
-    try {
-      localStorage.setItem(LAYOUT_THEME_KEY, t);
-    } catch { /* ignore */ }
+    writeStoredTheme(t);
   }, []);
 
   // Cross-tab sync

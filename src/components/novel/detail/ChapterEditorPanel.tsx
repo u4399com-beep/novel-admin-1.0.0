@@ -77,7 +77,7 @@ export function ChapterEditorPanel({ chapter, onClose, onSaved }: ChapterEditorP
       setSaveStatus('saving');
 
       try {
-        const wordCount = newContent.length;
+        const wordCount = newContent.replace(/\s+/g, '').length;
         await apiFetch(`/api/chapters/${chapter.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },

@@ -37,21 +37,23 @@ export function NotesPanel({ chapterId, visible, className = '' }: NotesPanelPro
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchNotes = useCallback(async () => {
+  const fetchNotes = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const data = await apiFetch<Note[]>(`/api/chapters/${chapterId}/notes`);
+      const data = await apiFetch<Note[]>(`/api/chapters/${chapterId}/notes`, { signal });
       setNotes(data);
     } catch {
       // Silent fail for notes
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [chapterId]);
 
   useEffect(() => {
     if (visible && chapterId) {
-      fetchNotes();
+      const ac = new AbortController();
+      fetchNotes(ac.signal);
+      return () => ac.abort();
     }
   }, [visible, chapterId, fetchNotes]);
 

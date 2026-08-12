@@ -65,9 +65,13 @@ export async function apiFetch<T = unknown>(
   const timeoutId: ReturnType<typeof setTimeout> | null = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
   // If caller already provided a signal, forward its abort to our controller
   const outerSignal = init?.signal;
+  let outerAbortListener: (() => void) | null = null;
   if (outerSignal) {
     if (outerSignal.aborted) { clearTimeout(timeoutId!); controller.abort(); }
-    else outerSignal.addEventListener('abort', () => { clearTimeout(timeoutId!); controller.abort(); }, { once: true });
+    else {
+      outerAbortListener = () => { clearTimeout(timeoutId!); controller.abort(); };
+      outerSignal.addEventListener('abort', outerAbortListener, { once: true });
+    }
   }
   // Exclude our custom 'timeout' and 'silent' options from native fetch
   const { timeout: _t, silent: _s, ...restInit } = (init ?? {}) as RequestInit & { timeout?: number; silent?: boolean };
@@ -77,6 +81,7 @@ export async function apiFetch<T = unknown>(
     res = await fetch(url, mergedInit);
   } catch (err) {
     if (timeoutId !== null) clearTimeout(timeoutId);
+    if (outerAbortListener && outerSignal) outerSignal.removeEventListener('abort', outerAbortListener);
     // Don't toast abort errors from outer signal — they're intentional cancellations
     // (e.g. tab switch, component unmount, navigation)
     if (controller.signal.aborted) {
@@ -88,6 +93,7 @@ export async function apiFetch<T = unknown>(
     throw new FetchError(msg, 0);
   }
   if (timeoutId !== null) clearTimeout(timeoutId);
+  if (outerAbortListener && outerSignal) outerSignal.removeEventListener('abort', outerAbortListener);
 
   if (res.ok) {
     // 204 No Content
