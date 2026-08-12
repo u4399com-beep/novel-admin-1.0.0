@@ -7567,3 +7567,92 @@ Stage Summary:
 5. P3: task-engine abort signal传播到scraping函数
 6. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN）
 7. P3: AdminDesktopSidebar硬编码暗色主题（需大面积CSS重构）
+---
+Task ID: 1
+Agent: Main Orchestrator (Round 20)
+Task: 第20轮深度审计+即时修复+Git推送
+
+Work Log:
+- 确认Round 1三大遗留功能已全部实现（内容分页/广告清洗/章节URL去重）
+- 并行派出2个Explore审计agent：后端API+mini-services、前端组件+hooks+stores
+- 后端审计发现31个问题（2 CRITICAL + 6 HIGH + 13 MEDIUM + 10 LOW），2个CRITICAL为误报（export路由语法正确、SSRF IPv6检测正确）
+- 前端审计发现23个问题（0 CRITICAL + 0 HIGH + 10 MEDIUM + 13 LOW）
+- 修复13个确认的真实问题
+- Agent Browser验证：ESLint 0错误4警告，dev server正常运行
+- Git push: ee759af → e184481 → main
+
+## Round 1遗留确认
+1. **内容分页** — task-engine.ts L646: `contentPagination`已解析并传入`handleScrapeContent`，使用`paginatedFetch({ isContentPagination: true })`
+2. **广告清洗** — task-engine.ts L255: `cleanConfig`已解析并传入`handleScrapeContent`，cleanHtmlRaw在HTML层清洗，cleanText在文本层清洗
+3. **章节URL去重** — scrapers.ts L195: `seenUrls` Set做URL去重，task-engine.ts L685: 增量模式按URL+标题双重去重
+
+## 修复清单
+
+### HIGH (5项)
+1. **favoriteCount无上限** — 添加MAX_FAVORITE_COUNT=100,000上限，事务内检查后停止递增
+2. **clickCount无上限** — 添加MAX_CLICK_COUNT=1,000,000上限，事务内检查后停止递增
+3. **seed-categories创建/更新检测不可靠** — 改为upsert前预查询existingSlugs集合，替代时间戳启发式
+4. **scraper-service activeTaskCount TOCTOU竞态** — 将`activeTasks.add`移到并发检查之前，确保原子性
+5. **scraper-service错误信息泄露** — 错误消息截断200字符+剥离URL和堆栈跟踪后再发送到API
+
+### MEDIUM (6项)
+6. **chapters/reorder无novelId验证** — 查询章节时同时获取novelId，验证所有章节属于同一小说
+7. **loadChapter报告字符长度而非字数** — `data.content?.length` → 去HTML标签+空白后计算真实字数
+8. **use-mobile使用window.innerWidth而非mql.matches** — 改为`setIsMobile(mql.matches)`确保一致性
+9. **favorites N+1查询** — 改为两步查询：先获取favoriteId列表，再批量findMany获取带tags的novels
+10. **stats/reading groupBy无界** — 添加`take: 100`限制聚合结果集大小
+11. **matchCount每次渲染IIFE** — 改为`useMemo([chapterContent, searchQuery])`，搜索时避免大文本正则扫描
+
+### LOW (2项)
+12. **NovelInfoSection _count无optional chaining** — `novel._count.chapters` → `novel._count?.chapters ?? 0`
+13. **HtmlPreview UTF-8截断可能破坏多字节字符** — `html.slice(0,5000)` → `Array.from(html).slice(0,5000).join('')`
+
+### 额外修复 (2项)
+14. **KeyboardShortcutsDialog key prop** — `key={i}` → `key={\`${shortcut.label}-${i}\`}`
+15. **dashboard/activity排序不稳定** — 添加type作为第二排序键，确保同时间戳事件排序确定
+
+## 修改文件清单 (13个文件)
+- src/app/api/public/novels/[id]/favorite/route.ts (count上限)
+- src/app/api/public/novels/[id]/click/route.ts (count上限)
+- src/app/api/public/seed-categories/route.ts (创建/更新检测)
+- src/app/api/chapters/reorder/route.ts (novelId验证)
+- src/app/api/favorites/route.ts (N+1→批量查询)
+- src/app/api/stats/reading/route.ts (groupBy限制)
+- src/app/api/dashboard/activity/route.ts (排序稳定性)
+- mini-services/scraper-service/index.ts (竞态+错误清洗)
+- src/app/novels/[id]/NovelDetailClient.tsx (useMemo+字数准确)
+- src/app/novels/[id]/parts/NovelInfoSection.tsx (optional chaining)
+- src/hooks/use-mobile.ts (mql.matches)
+- src/components/KeyboardShortcutsDialog.tsx (key prop)
+- src/components/scrape/visual-selector/HtmlPreview.tsx (UTF-8安全)
+
+## 验证结果
+- ESLint: 0 errors, 4 warnings (均为预存React Hook Form兼容性)
+- Dev server: 正常运行，无运行时错误
+- Git push: ee759af → e184481 → main
+
+Stage Summary:
+- 修复: 15项 (5 HIGH + 6 MEDIUM + 2 LOW + 2额外)
+- 累计修复: 1517 + 15 = 1532+
+- Round 1遗留功能全部确认已实现（非缺失）
+- 最关键修复: 计数器上限防刷（favorite/click）、N+1查询消除、TOCTOU竞态修复
+- 数据准确性: 阅读目标报告真实字数（去HTML后）
+- 性能优化: favorites批量查询、matchCount记忆化、groupBy限制
+- 代码质量: UTF-8安全截断、排序稳定性、optional chaining
+
+## 项目当前状态描述/判断
+- 全项目代码审计已完成五轮深度审计（R16-R20），共修复70项
+- Round 1遗留功能（内容分页/广告清洗/章节URL去重）全部确认已在早期轮次实现
+- 公共端点计数器添加上限，防止botnet刷量
+- 前端性能优化：useMemo避免大文本正则、批量查询消除N+1
+- 代码库持续保持ESLint 0错误
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P1: 前端日志统计可视化面板增强
+2. P1: 管理后台移动端响应式改进
+3. P2: 阅读器主题/字体大小设置持久化
+4. P2: EPUB导出实现
+5. P3: task-engine abort signal传播到scraping函数
+6. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN）
+7. P3: AdminDesktopSidebar硬编码暗色主题
+8. P3: service-token认证与session认证分离（设计决策，需架构评审）
