@@ -291,10 +291,12 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
   }
 
   const fullContent = contentParts.join("\n\n");
+  // Strip HTML tags before counting words for consistency with chapter creation API
+  const textOnly = fullContent.replace(/<[^>]*>/g, '').replace(/\s+/g, '');
   return {
     title,
     content: fullContent,
-    wordCount: fullContent.length,
+    wordCount: textOnly.length,
     engine: engineType,
     pagesFetched: pageCount,
   };

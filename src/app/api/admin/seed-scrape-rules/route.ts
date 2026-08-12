@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess } from '@/lib/api-utils';
+import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess, isPrismaError } from '@/lib/api-utils';
 import { parseScrapeParams, validateSavePath, buildCloudBrowserConfig } from '@/lib/scrape-rule-validation';
 
 /**
@@ -102,9 +102,24 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         results.push({ id: existingId, name, action: 'updated' });
         updated++;
       } else {
-        const rule = await db.scrapeRule.create({ data });
-        results.push({ id: rule.id, name, action: 'created' });
-        created++;
+        try {
+          const rule = await db.scrapeRule.create({ data });
+          results.push({ id: rule.id, name, action: 'created' });
+          created++;
+        } catch (err: unknown) {
+          // P2002 = unique constraint violation (e.g., name collision from concurrent request)
+          // Fall back to update
+          if (isPrismaError(err, 'P2002')) {
+            const fallback = await db.scrapeRule.findFirst({ where: { name }, select: { id: true } });
+            if (fallback) {
+              await db.scrapeRule.update({ where: { id: fallback.id }, data });
+              results.push({ id: fallback.id, name, action: 'updated' });
+              updated++;
+            }
+          } else {
+            throw err;
+          }
+        }
       }
     }
 

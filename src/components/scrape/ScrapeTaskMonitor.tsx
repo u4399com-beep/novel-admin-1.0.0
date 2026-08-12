@@ -62,9 +62,28 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     const ac = new AbortController();
     if (hasRunningTasks) {
       autoRefreshRef.current = setInterval(() => {
-        fetchTasks(ac.signal);
+        // Use silent mode for auto-polling to prevent toast spam on auth failure
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+          ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        });
+        apiFetch<{ tasks: ScrapeTask[]; totalPages: number; total: number }>(
+          `/api/scrape-tasks?${params}`, { signal: ac.signal, silent: true }
+        ).then((data) => {
+          if (ac.signal.aborted) return;
+          setTasks(data.tasks || []);
+          setTotalPages(data.totalPages || 1);
+          setTotal(data.total || 0);
+        }).catch(() => { /* silent */ });
+
         if (expandedTaskIdRef.current) {
-          fetchTaskLogs(expandedTaskIdRef.current, ac.signal);
+          apiFetch<ScrapeTask>(`/api/scrape-tasks/${expandedTaskIdRef.current}`, { signal: ac.signal, silent: true })
+            .then((task) => {
+              if (ac.signal.aborted) return;
+              setExpandedLogs(task.logs || []);
+              setTasks((prev) => prev.map((t) => (t.id === expandedTaskIdRef.current ? { ...t, ...task, logs: undefined } : t)));
+            }).catch(() => { /* silent */ });
         }
       }, 5000);
     } else if (autoRefreshRef.current) {
@@ -78,7 +97,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
         autoRefreshRef.current = null;
       }
     };
-  }, [hasRunningTasks, fetchTasks]);
+  }, [hasRunningTasks, page, statusFilter]);
 
   const fetchTaskLogs = useCallback(async (taskId: string, signal?: AbortSignal) => {
     setLogsLoading(true);

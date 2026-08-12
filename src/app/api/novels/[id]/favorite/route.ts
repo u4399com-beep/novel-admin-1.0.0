@@ -93,7 +93,7 @@ export const POST = withAuth(async function POST(
       // Add favorite: use transaction for atomic create + increment
       // with unique constraint catch for TOCTOU protection
       try {
-        await db.$transaction([
+        const [, updatedNovel] = await db.$transaction([
           db.favorite.create({
             data: { userId, novelId: id },
           }),
@@ -103,6 +103,11 @@ export const POST = withAuth(async function POST(
             select: { favoriteCount: true },
           }),
         ]);
+
+        return apiSuccess({
+          isFavorited: true,
+          favoriteCount: updatedNovel.favoriteCount,
+        });
       } catch (error: unknown) {
         // P2002 = unique constraint violation → already favorited, fetch current count
         if (isPrismaError(error, 'P2002')) {
@@ -117,16 +122,6 @@ export const POST = withAuth(async function POST(
         }
         throw error;
       }
-
-      const updated = await db.novel.findUnique({
-        where: { id },
-        select: { favoriteCount: true },
-      });
-
-      return apiSuccess({
-        isFavorited: true,
-        favoriteCount: updated?.favoriteCount ?? 0,
-      });
     }
   } catch (error: unknown) {
     console.error("Toggle favorite error:", error);

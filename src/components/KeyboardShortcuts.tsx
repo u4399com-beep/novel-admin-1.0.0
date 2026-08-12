@@ -6,6 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { NAV_ITEMS } from '@/lib/nav-config';
 
 interface KeyboardShortcutsProps {
   open: boolean;
@@ -20,6 +21,14 @@ interface ShortcutEntry {
 interface ShortcutGroup {
   title: string;
   shortcuts: ShortcutEntry[];
+}
+
+function getNavShortcuts(): ShortcutEntry[] {
+  // Admin navigation shortcuts require Ctrl/Cmd + number
+  return NAV_ITEMS.slice(0, 9).map((item, idx) => ({
+    keys: ['⌘', String(idx + 1)],
+    description: item.label,
+  }));
 }
 
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
@@ -46,13 +55,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   },
   {
     title: '导航',
-    shortcuts: [
-      { keys: ['1'], description: '切换到小说列表' },
-      { keys: ['2'], description: '切换到分类管理' },
-      { keys: ['3'], description: '切换到数据统计' },
-      { keys: ['4'], description: '切换到主题设置' },
-      { keys: ['5'], description: '切换到系统管理' },
-    ],
+    shortcuts: getNavShortcuts(),
   },
 ];
 

@@ -58,8 +58,10 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 1 }, async (r
 
     if (search) {
       // SQLite does not support mode: "insensitive" — use $queryRaw with COLLATE NOCASE
+      // Escape LIKE wildcards to prevent user input from affecting query semantics
+      const escaped = search.replace(/%/g, '\\%').replace(/_/g, '\\_');
       const novels = await db.$queryRaw<Array<{ id: string }>>(
-        Prisma.sql`SELECT id FROM Novel WHERE title LIKE ${'%' + search + '%'} COLLATE NOCASE OR author LIKE ${'%' + search + '%'} COLLATE NOCASE LIMIT 200`
+        Prisma.sql`SELECT id FROM Novel WHERE title LIKE ${'%' + escaped + '%'} COLLATE NOCASE ESCAPE '\\' OR author LIKE ${'%' + escaped + '%'} COLLATE NOCASE ESCAPE '\\' LIMIT 200`
       );
       if (novels.length > 0) {
         where.id = { in: novels.map((n) => n.id) };

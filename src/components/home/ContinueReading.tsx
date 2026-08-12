@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, X } from 'lucide-react';
@@ -10,15 +10,15 @@ import { getCoverGradient } from '@/lib/cover-gradient';
 
 // ─── Progress Ring Component ──────────────────────────────────────
 function ProgressRing({ percent, size = 44, strokeWidth = 3 }: { percent: number; size?: number; strokeWidth?: number }) {
+  const ringId = useId();
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (Math.min(percent, 100) / 100) * circumference;
-  const ringId = `progress-ring-${Math.random().toString(36).slice(2, 8)}`;
 
   return (
     <svg width={size} height={size} className="progress-ring-svg" aria-hidden="true">
       <defs>
-        <linearGradient id={ringId} x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id={`progress-ring-${ringId}`} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="var(--primary)" />
           <stop offset="100%" stopColor="oklch(0.7 0.15 200)" />
         </linearGradient>
@@ -39,7 +39,7 @@ function ProgressRing({ percent, size = 44, strokeWidth = 3 }: { percent: number
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke={`url(#${ringId})`}
+        stroke={`url(#progress-ring-${ringId})`}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
         strokeDasharray={circumference}

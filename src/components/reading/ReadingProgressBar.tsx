@@ -85,20 +85,41 @@ export function ReadingProgressBar() {
       }
     };
 
-    // Also poll periodically since the reader writes to localStorage
-    // and we want near-real-time updates
-    const interval = setInterval(() => {
-      const current = loadProgressFromStorage(novelId);
-      if (totalChapters > 0) {
-        const pct = Math.min(100, Math.round(((current + 1) / totalChapters) * 100));
-        setProgress((prev) => (prev !== pct ? pct : prev));
+    // Poll periodically only when tab is visible to save CPU on mobile
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        // Immediately sync on tab focus
+        const current = loadProgressFromStorage(novelId);
+        if (totalChapters > 0) {
+          const pct = Math.min(100, Math.round(((current + 1) / totalChapters) * 100));
+          setProgress(pct);
+        }
+        // Start polling
+        if (!interval) {
+          interval = setInterval(() => {
+            const cur = loadProgressFromStorage(novelId);
+            if (totalChapters > 0) {
+              const p = Math.min(100, Math.round(((cur + 1) / totalChapters) * 100));
+              setProgress((prev) => (prev !== p ? p : prev));
+            }
+          }, 2000);
+        }
+      } else if (interval) {
+        // Pause polling when tab is hidden
+        clearInterval(interval);
+        interval = null;
       }
-    }, 2000);
+    };
 
+    // Initialize polling if tab is visible
+    handleVisibility();
     window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       window.removeEventListener('storage', handleStorage);
-      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (interval) clearInterval(interval);
     };
   }, [novelId, totalChapters]);
 

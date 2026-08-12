@@ -19,6 +19,8 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async (r
     }
 
     // SQLite does not support mode: "insensitive" — use $queryRaw with COLLATE NOCASE
+    // Escape LIKE wildcards to prevent user input from affecting query semantics
+    const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_');
     const novels = await db.$queryRaw<Array<{
       id: string;
       title: string;
@@ -30,7 +32,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async (r
       Prisma.sql`SELECT n.id, n.title, n.author, n."categoryId",
         c.name AS "categoryName", c.color AS "categoryColor"
         FROM Novel n LEFT JOIN Category c ON n."categoryId" = c.id
-        WHERE n.title LIKE ${q + '%'} COLLATE NOCASE
+        WHERE n.title LIKE ${escaped + '%'} COLLATE NOCASE ESCAPE '\\'
         ORDER BY n."updatedAt" DESC LIMIT 8`
     );
 

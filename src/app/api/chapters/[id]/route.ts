@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
+import { sanitizeField, safeJson, isPrismaError, apiError, apiDeleted, countWords } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
@@ -68,7 +68,7 @@ export const PUT = withAuth(async function PUT(
         ? sanitizeField(content, MAX_CONTENT_LENGTH)
         : "";
       const newWordCount = shouldUpdateWordCount
-        ? newContent.length
+        ? countWords(newContent)
         : oldChapter.wordCount || 0;
       const wordDiff = shouldUpdateWordCount
         ? newWordCount - (oldChapter.wordCount || 0)
