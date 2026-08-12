@@ -24,27 +24,41 @@ export const GET = withAuth(async function GET(request: NextRequest) {
         orderBy: { createdAt: "desc" },
         skip,
         take: pageSize,
-        include: {
-          novel: {
-            include: {
-              category: { select: { id: true, name: true, color: true, slug: true } },
-              tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
-              _count: { select: { chapters: true } },
-            },
-          },
-        },
+        select: { novelId: true, createdAt: true },
       }),
       db.favorite.count({ where }),
     ]);
 
-    const novels = favorites.map((f) => ({
-      ...f.novel,
-      isFavorited: true,
-      favoritedAt: f.createdAt.toISOString(),
-    }));
+    // Batch-fetch novels with tags in a single query (avoids N+1)
+    const novelIds = favorites.map((f) => f.novelId);
+    const novels = novelIds.length > 0
+      ? await db.novel.findMany({
+          where: { id: { in: novelIds } },
+          include: {
+            category: { select: { id: true, name: true, color: true, slug: true } },
+            tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
+            _count: { select: { chapters: true } },
+          },
+        })
+      : [];
+
+    const novelMap = new Map(novels.map((n) => [n.id, n]));
+
+    // Preserve the favorite-ordering and attach the novel data
+    const result = favorites
+      .map((f) => {
+        const novel = novelMap.get(f.novelId);
+        if (!novel) return null;
+        return {
+          ...novel,
+          isFavorited: true,
+          favoritedAt: f.createdAt.toISOString(),
+        };
+      })
+      .filter(Boolean);
 
     return apiSuccess({
-      novels,
+      novels: result,
       total,
       page,
       pageSize,

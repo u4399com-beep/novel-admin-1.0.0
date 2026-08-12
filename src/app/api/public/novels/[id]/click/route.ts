@@ -7,6 +7,7 @@ import { isPrismaError, apiError } from "@/lib/api-utils";
 const clickDedup = new Map<string, number>();
 const CLICK_TTL = 5 * 60 * 1000;
 const CLICK_MAX_SIZE = 5000;
+const MAX_CLICK_COUNT = 1_000_000;
 
 /** Periodic cleanup every 60s to prevent unbounded growth. */
 function cleanupClickDedup() {
@@ -56,13 +57,16 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
   }
 
   try {
-    // Use transaction: atomically check existence + increment within single write lock
+    // Use transaction: atomically check existence + increment + upper-bound cap
     const result = await db.$transaction(async (tx) => {
       const novel = await tx.novel.findUnique({
         where: { id },
         select: { id: true, clickCount: true },
       });
       if (!novel) throw new Error('NOT_FOUND');
+      if (novel.clickCount >= MAX_CLICK_COUNT) {
+        return novel.clickCount;
+      }
 
       const updated = await tx.novel.update({
         where: { id },

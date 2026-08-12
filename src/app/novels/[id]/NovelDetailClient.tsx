@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, BookmarkCheck } from 'lucide-react';
@@ -138,12 +138,12 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   }, [favoriteLoading, isFavorited, novel.id]);
 
   // ─── Search match count ─────────────────────────────────────────
-  const matchCount = (() => {
+  const matchCount = useMemo(() => {
     if (!chapterContent || !searchQuery.trim()) return 0;
     const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const matches = chapterContent.match(new RegExp(escaped, 'gi'));
     return matches ? matches.length : 0;
-  })();
+  }, [chapterContent, searchQuery]);
 
   const getMatchCount = useCallback(() => matchCount, [matchCount]);
 
@@ -268,7 +268,8 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         });
         setChapterContent(data.content || '（本章暂无内容）');
         recordReadingActivity();
-        reportReadingGoal(data.content?.length || 0);
+        const wordLen = data.content?.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length || 0;
+        reportReadingGoal(wordLen);
         if (pendingScrollRestore.current !== null) {
           const sp = pendingScrollRestore.current;
           pendingScrollRestore.current = null;

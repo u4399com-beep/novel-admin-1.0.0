@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 export function HtmlPreview({ html }: { html: string }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const displayHtml = isExpanded ? html : html.slice(0, 5000);
+  const displayHtml = isExpanded ? html : Array.from(html).slice(0, 5000).join('');
 
   return (
     <div className="space-y-2">

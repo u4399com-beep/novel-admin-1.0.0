@@ -162,6 +162,9 @@ async function fetchRecentEvents(): Promise<RecentEventRow[]> {
     })),
   ];
 
-  events.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  events.sort((a, b) => {
+    const cmp = b.timestamp.localeCompare(a.timestamp);
+    return cmp !== 0 ? cmp : b.type.localeCompare(a.type);
+  });
   return events.slice(0, 10);
 }

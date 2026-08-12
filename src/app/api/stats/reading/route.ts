@@ -78,9 +78,11 @@ export const GET = withAuth(async () => {
     }
 
     // Favorite genre (most read category based on novel reading progress)
+    // Limit groupBy to prevent unbounded result set
     const genreStats = await db.readingProgress.groupBy({
       by: ['novelId'],
       _count: true,
+      take: 100,
     });
 
     // Get categories for those novels

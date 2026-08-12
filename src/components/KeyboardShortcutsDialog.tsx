@@ -55,7 +55,7 @@ export default function KeyboardShortcutsDialog({
                 <div className="flex items-center gap-1">
                   {displayKey.split('+').map((part, i) => (
                     <kbd
-                      key={i}
+                      key={`${shortcut.label}-${i}`}
                       className="inline-flex h-5 min-w-5 select-none items-center justify-center rounded border bg-muted px-1.5 font-mono text-[11px] font-medium text-muted-foreground"
                     >
                       {part}

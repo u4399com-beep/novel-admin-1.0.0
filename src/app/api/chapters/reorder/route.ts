@@ -53,10 +53,10 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
       idSet.add(item.id);
     }
 
-    // Verify all chapters exist
+    // Verify all chapters exist AND belong to the same novel (security)
     const existingChapters = await db.chapter.findMany({
       where: { id: { in: items.map((item: { id: string }) => item.id) } },
-      select: { id: true },
+      select: { id: true, novelId: true },
     });
     if (existingChapters.length !== items.length) {
       const existingIds = new Set(existingChapters.map((c) => c.id));
@@ -65,6 +65,12 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
         .filter((id: string) => !existingIds.has(id));
       return apiError(`以下章节不存在: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`, 400);
     }
+    // Reject if chapters belong to different novels (prevent cross-novel reorder attacks)
+    const uniqueNovelIds = new Set(existingChapters.map((c) => c.novelId));
+    if (uniqueNovelIds.size > 1) {
+      return apiError('不能跨小说重新排序章节', 400);
+    }
+    const targetNovelId = [...uniqueNovelIds][0];
 
     // Validate IDs are CUIDs (alphanumeric + hyphen only) — safe for SQL
     const CUID_RE = /^[a-z0-9-]+$/;

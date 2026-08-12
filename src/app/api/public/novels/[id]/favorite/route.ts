@@ -7,6 +7,7 @@ import { isPrismaError, apiError } from "@/lib/api-utils";
 const favoriteDedup = new Map<string, number>();
 const FAVORITE_TTL = 24 * 60 * 60 * 1000;
 const FAVORITE_MAX_SIZE = 5000;
+const MAX_FAVORITE_COUNT = 100_000;
 
 /** Periodic cleanup every 60s to prevent unbounded growth. */
 function cleanupFavoriteDedup() {
@@ -63,13 +64,16 @@ export const POST = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async
       return NextResponse.json({ favoriteCount: current?.favoriteCount ?? 0, deduplicated: true });
     }
 
-    // Atomic increment with existence check in transaction
+    // Atomic increment with existence check and upper-bound cap in transaction
     const result = await db.$transaction(async (tx) => {
       const novel = await tx.novel.findUnique({
         where: { id },
         select: { id: true, favoriteCount: true },
       });
       if (!novel) throw new Error('NOT_FOUND');
+      if (novel.favoriteCount >= MAX_FAVORITE_COUNT) {
+        return novel.favoriteCount;
+      }
 
       const updated = await tx.novel.update({
         where: { id },

@@ -324,13 +324,17 @@ export function startServer(port: number = 3099) {
             );
           }
 
-          activeTaskCount++;
-          // Run task asynchronously
+          // Atomically check and reserve a task slot (prevent TOCTOU race)
           activeTasks.add(taskId);
+          activeTaskCount++;
           executeTask(taskId).catch((err) => {
             console.error(`[Task ${taskId}] Fatal error:`, err);
             activeTasks.delete(taskId);
-            // Update task as failed via API
+            // Sanitize error message before sending to API (strip stack traces, URLs, long text)
+            const safeMessage = String(err instanceof Error ? err.message : err)
+              .slice(0, 200)
+              .replace(/https?:\/\/[^\n ]+/g, '[URL]')
+              .replace(/at .+/g, '[stack]');
             fetch(`${process.env.MAIN_APP_URL || "http://localhost:3000"}/api/scrape-tasks/${taskId}`, {
               method: "PUT",
               headers: {
@@ -339,7 +343,7 @@ export function startServer(port: number = 3099) {
               },
               body: JSON.stringify({
                 status: "failed",
-                errorMessage: String(err),
+                errorMessage: safeMessage,
                 completedAt: new Date().toISOString(),
               }),
             }).catch(() => {});

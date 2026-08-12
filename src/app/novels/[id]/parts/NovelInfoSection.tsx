@@ -260,7 +260,7 @@ export function NovelInfoSection({
             >
               <BookOpen className="h-4 w-4 text-primary" />
               <div>
-                <div className="text-lg font-semibold leading-none tabular-nums">{novel._count.chapters}</div>
+                <div className="text-lg font-semibold leading-none tabular-nums">{novel._count?.chapters ?? 0}</div>
                 <div className="text-xs text-muted-foreground mt-0.5">总章节</div>
               </div>
             </motion.div>

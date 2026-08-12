@@ -123,6 +123,11 @@ export const POST = withAuth(async function POST() {
     let createdCount = 0;
     let updatedCount = 0;
 
+    // Query existing slugs BEFORE upsert to distinguish create vs update
+    const existingSlugs = new Set(
+      (await db.category.findMany({ select: { slug: true } })).map((c) => c.slug),
+    );
+
     const results = await db.$transaction(
       CATEGORIES_23QB.map((cat) =>
         db.category.upsert({
@@ -140,10 +145,10 @@ export const POST = withAuth(async function POST() {
     );
 
     for (const result of results) {
-      if (!result.updatedAt || result.updatedAt.getTime() - result.createdAt.getTime() < 2000) {
-        createdCount++;
-      } else {
+      if (existingSlugs.has(result.slug)) {
         updatedCount++;
+      } else {
+        createdCount++;
       }
     }
 
