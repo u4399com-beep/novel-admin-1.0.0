@@ -1,5 +1,8 @@
 // Shared UI constants used across multiple components
 
+/** Chinese reading speed: characters per minute. Used by both admin stats and public display. */
+export const READING_SPEED_CHARS_PER_MIN = 300;
+
 export const NOVEL_STATUS_MAP: Record<string, { label: string; className: string; colorClass: string; dotClass: string }> = {
   ongoing: {
     label: '连载中',

@@ -1,6 +1,8 @@
 /**
  * Safely format a date string, returning a fallback for invalid dates.
  */
+import { READING_SPEED_CHARS_PER_MIN } from './constants';
+
 export function safeFormatDate(dateStr: string | null | undefined, formatFn?: (date: Date) => string): string {
   if (!dateStr) return '—';
   const date = new Date(dateStr);
@@ -41,12 +43,12 @@ export function formatRelativeTime(dateStr: string): string {
 
 /**
  * Format estimated reading time based on word count.
- * Chinese reading speed: ~500 chars/min.
+ * Uses the shared READING_SPEED_CHARS_PER_MIN constant for consistency.
  * Returns e.g. "约5分钟", "不到1分钟"
  */
 export function formatReadingTime(wordCount: number): string {
   if (wordCount <= 0) return '';
-  const minutes = Math.ceil(wordCount / 500);
+  const minutes = Math.ceil(wordCount / READING_SPEED_CHARS_PER_MIN);
   if (minutes <= 1) return '不到1分钟';
   return `约${minutes}分钟`;
 }

@@ -1,8 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { safeJson, apiError, apiSuccess } from '@/lib/api-utils';
-import { sanitizeField } from '@/lib/api-utils';
+import { safeJson, apiError, apiSuccess, sanitizeField, isPrismaError } from '@/lib/api-utils';
 
 /**
  * POST /api/scrape-rules/clone
@@ -51,7 +50,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiSuccess(cloned, 201);
     } catch (error: unknown) {
       // P2002 = unique constraint violation → name already exists
-      if (error && typeof error === 'object' && 'code' in error && (error as { code: string }).code === 'P2002') {
+      if (isPrismaError(error, 'P2002')) {
         return apiError('同名规则已存在，请修改名称', 409);
       }
       throw error;

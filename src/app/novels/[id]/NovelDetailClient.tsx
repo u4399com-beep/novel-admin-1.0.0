@@ -55,6 +55,11 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     } catch { /* ignore */ }
   }, [novel.id, novel.title, novel.author, novel.coverUrl, novel.category?.name, novel.category?.color]);
 
+  // Reset bookmark manager when novel changes
+  useEffect(() => {
+    setBookmarkManagerOpen(false);
+  }, [novel.id]);
+
   // ─── Track click count (fire-and-forget with timeout) ─────────
   useEffect(() => {
     const ac = new AbortController();
@@ -163,7 +168,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       if (data.chapters) setAllChapters(data.chapters);
     }).catch(() => {});
     return () => ac.abort();
-  }, []);
+  }, [novel.id, initialTotal, initialChapters.length]);
 
   const safeLastChapterIndex = lastChapterIndex !== null && lastChapterIndex < allChapters.length
     ? lastChapterIndex : null;

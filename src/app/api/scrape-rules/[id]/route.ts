@@ -79,11 +79,9 @@ export const PUT = withAuth(async function PUT(
     }
 
     // --- Numeric validation ---
-    if (body.threadCount !== undefined) {
-      const tc = Math.floor(Number(body.threadCount) || 3);
-      if (tc < MIN_THREAD || tc > MAX_THREAD) {
-        return apiError(`线程数必须在${MIN_THREAD}-${MAX_THREAD}之间`, 400);
-      }
+    const tc = body.threadCount !== undefined ? Math.floor(Number(body.threadCount) || 3) : undefined;
+    if (tc !== undefined && (tc < MIN_THREAD || tc > MAX_THREAD)) {
+      return apiError(`线程数必须在${MIN_THREAD}-${MAX_THREAD}之间`, 400);
     }
     const minD = body.minDelay !== undefined ? Math.max(0, Math.floor(Number(body.minDelay) || 1000)) : undefined;
     const maxD = body.maxDelay !== undefined ? Math.min(MAX_DELAY, Math.max(0, Math.floor(Number(body.maxDelay) || 3000))) : undefined;
@@ -135,10 +133,6 @@ export const PUT = withAuth(async function PUT(
       }
     }
 
-    // --- Save path validation ---
-    if (body.filePath !== undefined) validateSavePath(body.filePath);
-    if (body.coverSavePath !== undefined) validateSavePath(body.coverSavePath);
-
     // --- Build JSON fields ---
     const jsonFields: Record<string, string | null | undefined> = {};
     try {
@@ -183,7 +177,7 @@ export const PUT = withAuth(async function PUT(
     if (body.scrapeMode !== undefined) data.scrapeMode = body.scrapeMode;
     if (body.engine !== undefined) data.engine = body.engine;
     if (body.storageMode !== undefined) data.storageMode = body.storageMode;
-    if (body.threadCount !== undefined) data.threadCount = Math.floor(Number(body.threadCount) || 3);
+    if (body.threadCount !== undefined) data.threadCount = tc;
     if (minD !== undefined) data.minDelay = minD;
     if (maxD !== undefined) data.maxDelay = maxD;
     if (body.enableShuffle !== undefined) data.enableShuffle = body.enableShuffle;

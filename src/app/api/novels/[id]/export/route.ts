@@ -94,7 +94,7 @@ export const GET = withAuth(async function GET(
       return new NextResponse(JSON.stringify(data, null, 2), {
         headers: {
           "Content-Type": "application/json",
-          "Content-Disposition": `attachment; filename="${encodeURIComponent(novel.title)}.json"`,
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(novel.title)}.json`,
         },
       });
     }
@@ -128,7 +128,7 @@ export const GET = withAuth(async function GET(
     return new NextResponse(txt, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(safeName)}.txt"`,
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}.txt`,
       },
     });
   } catch (error) {

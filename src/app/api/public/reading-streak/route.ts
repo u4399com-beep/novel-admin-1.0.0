@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
 import { sanitizeField, apiError } from "@/lib/api-utils";
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 
 function toLocalDateStr(d: Date, tz?: string): string {
   return d.toLocaleString('sv-SE', { timeZone: tz || 'Asia/Shanghai' }).slice(0, 10);
@@ -29,23 +30,19 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
 
     const sessionId = parsed.data.sessionId;
 
-    const progress = await db.readingProgress.findMany({
-      where: { sessionId },
-      select: { lastReadAt: true },
-      orderBy: { lastReadAt: 'asc' },
-    });
+    const dates = await db.$queryRaw<Array<{ date: string }>>(
+      Prisma.sql`SELECT DISTINCT DATE("lastReadAt") as date FROM "ReadingProgress" WHERE "sessionId" = ${sessionId} ORDER BY date ASC`
+    );
+    const uniqueDates = dates.map(d => d.date);
 
-    if (progress.length === 0) {
+    if (uniqueDates.length === 0) {
       return NextResponse.json({ currentStreak: 0, maxStreak: 0, totalDays: 0 });
     }
 
     // Bucket by local date
-    const dateSet = new Set<string>();
-    for (const p of progress) {
-      dateSet.add(toLocalDateStr(p.lastReadAt, tz));
-    }
+    const dateSet = new Set<string>(uniqueDates);
 
-    const sortedDates = Array.from(dateSet).sort();
+    const sortedDates = uniqueDates;
     const totalDays = sortedDates.length;
 
     // Calculate current streak: from today backwards

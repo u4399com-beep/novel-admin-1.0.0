@@ -121,7 +121,7 @@ export const DELETE = withPublicRateLimit({ capacity: 30, refillRate: 0.5 }, asy
     const id = sanitizeField(searchParams.get('id') || '', MAX_ID_LENGTH);
     const sessionId = sanitizeField(searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
 
-    if (!id || !sessionId || sessionId.length < 10) {
+    if (!id || !sessionId || sessionId.length < 20) {
       return apiError('缺少 id 或 sessionId', 400);
     }
 

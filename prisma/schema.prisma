@@ -455,6 +455,9 @@ model AntiCrawlEvent {
   resolved    Boolean  @default(false)
   resolvedAt  DateTime?
   createdAt   DateTime @default(now())
+
+  @@index([createdAt, eventType])
+  @@index([createdAt, domain])
 }
 
 // ==================== 代理池统计 ====================
@@ -468,4 +471,6 @@ model ProxyPoolStats {
   totalRequests   Int      @default(0)
   successRate     Float    @default(0)
   capturedAt      DateTime @default(now())
+
+  @@index([capturedAt])
 }

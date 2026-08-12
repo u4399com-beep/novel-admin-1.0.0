@@ -86,7 +86,7 @@ export function useReaderKeyboard({
           e.preventDefault();
           onToggleBookmarks();
         }
-      } else if (e.key === 'f' && !e.metaKey && !e.ctrlKey) {
+      } else if (e.key === 'f' && !e.metaKey && !e.ctrlKey && !isInteractive) {
         const t = (e.target as HTMLElement).tagName;
         if (t !== 'INPUT' && t !== 'TEXTAREA') {
           e.preventDefault();

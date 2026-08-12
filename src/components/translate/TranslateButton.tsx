@@ -68,10 +68,14 @@ export function TranslateButton({ content, sourceLang, targetLang = 'zh', classN
 
   const handleCopy = async () => {
     if (!translatedText) return;
-    await navigator.clipboard.writeText(translatedText);
-    setCopied(true);
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(translatedText);
+      setCopied(true);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may be unavailable in insecure contexts
+    }
   };
 
   useEffect(() => () => clearTimeout(timerRef.current), []);

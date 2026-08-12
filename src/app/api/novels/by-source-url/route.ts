@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
-import { apiError } from '@/lib/api-utils';
+import { sanitizeField, apiError } from '@/lib/api-utils';
 
 /**
  * GET /api/novels/by-source-url?sourceUrl=xxx
@@ -9,12 +9,9 @@ import { apiError } from '@/lib/api-utils';
  * Uses standard withAuth (service token via Bearer header)
  */
 export const GET = withAuth(async (request: NextRequest) => {
-  const sourceUrl = request.nextUrl.searchParams.get('sourceUrl');
+  const sourceUrl = sanitizeField(request.nextUrl.searchParams.get('sourceUrl'), 2048);
   if (!sourceUrl) {
     return apiError('缺少sourceUrl参数', 400);
-  }
-  if (sourceUrl.length > 2048) {
-    return apiError('sourceUrl过长', 400);
   }
 
   try {

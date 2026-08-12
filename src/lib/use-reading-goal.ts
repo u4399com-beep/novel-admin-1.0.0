@@ -43,7 +43,8 @@ function saveGoal(goal: ReadingGoal) {
 
 /** Get today's date string in local timezone */
 function todayKey(): string {
-  return new Date().toLocaleString('sv-SE').slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 interface DayProgress {
@@ -72,7 +73,9 @@ function saveTodayProgress(progress: DayProgress) {
     const saved = localStorage.getItem(PROGRESS_KEY);
     let all: DayProgress[] = saved ? JSON.parse(saved) : [];
     // Keep only last 30 days
-    all = all.filter((d) => d.date > new Date(Date.now() - 30 * 86400000).toLocaleString('sv-SE').slice(0, 10));
+    const cutoff = new Date(Date.now() - 30 * 86400000);
+    const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
+    all = all.filter((d) => d.date > cutoffStr);
     const idx = all.findIndex((d) => d.date === progress.date);
     if (idx >= 0) all[idx] = progress;
     else all.push(progress);
