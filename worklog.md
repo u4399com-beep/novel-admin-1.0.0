@@ -7956,3 +7956,122 @@ Stage Summary:
 5. P3: task-engine abort signal传播到scraping函数
 6. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN）
 7. P3: AdminDesktopSidebar硬编码暗色主题
+---
+Task ID: 1
+Agent: Main Orchestrator (Round 24)
+Task: 第24轮深度审计+即时修复+Git推送
+
+Work Log:
+- 派出2个并行general-purpose审计agent：阅读器组件群(ReaderContent/ReaderSettings/BookmarksPanel等) + Admin/Stats/API(reading-goals/dashboard/favorites等)
+- 阅读器审计发现13个问题(2 HIGH + 7 MEDIUM + 4 LOW)，排除2个误报
+- Admin/Stats/API审计发现13个问题(1 HIGH + 4 MEDIUM + 8 LOW)，排除5个DESIGN
+- 修复18个确认的真实问题（含5个额外发现）
+- Agent Browser验证：首页/统计页/404页正确渲染，无console错误
+- Git push: 8b9fa9c → 82c25ba → main
+
+## 修复清单
+
+### HIGH (2项)
+1. **NovelDetailClient首次打开阅读器时错误保存进度** — useEffect在readerOpen首次变为true时执行，prevIndexRef.current=0导致将(章节0,scroll=0)写入进度
+   - 修复：添加isFirstReaderLoad ref，首次effect触发时跳过保存
+   - 文件：src/app/novels/[id]/NovelDetailClient.tsx
+2. **NovelDetailClient.openReader缺少边界检查** — chapters[index]在index越界时为undefined，调用.title崩溃
+   - 修复：添加if (!chapters[index]) return守卫
+   - 文件：src/app/novels/[id]/NovelDetailClient.tsx
+
+### MEDIUM (10项)
+3. **reading-activity.ts使用UTC日期** — new Date().toISOString().slice(0,10)在东八区0-8点返回前一天
+   - 修复：添加todayLocal()函数，使用getFullYear/getMonth/getDate手动格式化
+   - 文件：src/app/novels/[id]/parts/reading-activity.ts
+4. **ReadingProgressBar oklch不兼容旧浏览器** — Safari 15以下不支持oklch，整个background失效
+   - 修复：改用hsl(210 60% 60%) fallback
+   - 文件：src/components/reading/ReadingProgressBar.tsx
+5. **reading-goals streak变量名ninetyDaysAgo实际366天** — 命名误导且使用toISOString（UTC）
+   - 修复：重命名为lookupStart + 手动格式化本地日期
+   - 文件：src/app/api/reading-goals/route.ts
+6. **ReadingGoalCard缺少ErrorBoundary** — 其他4个stats组件都有ErrorBoundary包裹
+   - 修复：添加ErrorBoundary name="stats-reading-goal"
+   - 文件：src/app/stats/page.tsx
+7. **stats retry AbortController未存储** — 重试按钮创建的AC是局部变量，无法在unmount时取消
+   - 修复：添加retryAbortRef存入ref
+   - 文件：src/app/stats/page.tsx
+8. **stats maxCount假设genreDistribution[0].count是最大值** — 若API未排序则视觉比例不准
+   - 修复：改为Math.max(...stats.genreDistribution.map(g => g.count))
+   - 文件：src/app/stats/page.tsx
+9. **settings Number(value)||prevValue无法设0** — Number("0")=0为falsy，回退到prevValue
+   - 修复：改为const n=Number(value); isNaN(n)?prevValue:n
+   - 文件：src/app/admin/settings/page.tsx
+10. **settings update缺少key校验** — 任意key可注入state
+    - 修复：添加if(!(key in prev)) return prev守卫
+    - 文件：src/app/admin/settings/page.tsx
+11. **BookmarksPanel key用chapterIndex** — 同章节多书签时key重复
+    - 修复：改为${bm.chapterIndex}-${bm.timestamp}唯一key
+    - 文件：src/app/novels/[id]/reader/BookmarksPanel.tsx
+12. **admin AnimatePresence absolute inset-0移动端高度问题** — 绝对定位导致内容高度塌陷
+    - 修复：改为h-full + 父容器min-h-0
+    - 文件：src/app/admin/page.tsx
+
+### LOW (6项)
+13. **noopSubscribe每次渲染重建** — useSyncExternalStore的subscribe参数每次创建新函数
+    - 修复：提取到模块级常量
+    - 文件：src/app/admin/page.tsx
+14. **toggleTheme未用useCallback** — 每次渲染创建新函数
+    - 修复：添加useCallback
+    - 文件：src/app/admin/page.tsx
+15. **h-4.5 w-4.5无效Tailwind类** — 6个文件使用不存在的spacing值
+    - 修复：统一改为h-[1.125rem] w-[1.125rem]
+    - 文件：admin/loading.tsx, AdminDesktopSidebar.tsx, AppSidebar.tsx, BookmarkManager.tsx, page.tsx
+16. **scrape-tasks logs URL长度限制不一致** — 单条2000 vs 批量2048
+    - 修复：统一为2048
+    - 文件：src/app/api/scrape-tasks/[id]/logs/route.ts
+17. **空章节内容占位文字参与搜索匹配** — "本章暂无内容"被搜索到
+    - 修复：改为空字符串
+    - 文件：src/app/novels/[id]/NovelDetailClient.tsx
+18. **readStartTime不随阅读器重新打开重置** — useState只初始化一次
+    - 修复：改为useRef + 在openReader中重置
+    - 文件：src/app/novels/[id]/NovelDetailClient.tsx
+
+## 修改文件清单 (14个文件)
+- src/app/novels/[id]/NovelDetailClient.tsx (首次进度保存+边界检查+readStartTime重置+空内容)
+- src/app/novels/[id]/parts/reading-activity.ts (UTC→本地日期)
+- src/app/novels/[id]/reader/BookmarksPanel.tsx (唯一key)
+- src/components/reading/ReadingProgressBar.tsx (oklch→hsl)
+- src/app/admin/page.tsx (noopSubscribe+useCallback+AnimatePresence)
+- src/app/admin/loading.tsx (h-4.5→h-[1.125rem])
+- src/app/admin/settings/page.tsx (Number fix+key守卫)
+- src/app/stats/page.tsx (ErrorBoundary+AbortRef+maxCount)
+- src/app/api/reading-goals/route.ts (变量名+日期格式化)
+- src/app/api/scrape-tasks/[id]/logs/route.ts (URL长度统一)
+- src/components/admin/AdminDesktopSidebar.tsx (h-4.5)
+- src/components/novel/AppSidebar.tsx (h-4.5)
+- src/components/BookmarkManager.tsx (h-4.5)
+- src/app/page.tsx (h-4.5)
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (均为预存React Hook Form兼容性)
+- Agent Browser: 首页/统计页/404页正确渲染，无console错误
+- Dev server: 无编译错误
+- Git push: 8b9fa9c → 82c25ba → main
+
+Stage Summary:
+- 修复: 18项 (2 HIGH + 10 MEDIUM + 6 LOW)
+- 累计修复: 1570 + 18 = 1588+
+- 最关键修复: 首次打开阅读器进度保存(用户真实进度被覆盖)、openReader边界检查(运行时crash)
+- 数据准确性: reading-activity本地日期(热力图日期对齐)、streak查询本地日期格式化
+- 浏览器兼容: oklch→hsl fallback(旧浏览器进度条可见)
+- 代码质量: 全局h-4.5无效类修复(6文件)、noopSubscribe模块化、useCallback
+- 安全: settings key守卫(防止注入)、URL长度统一
+
+## 项目当前状态描述/判断
+- 全项目代码审计已完成九轮深度审计（R16-R24），共修复126项
+- 所有Tailwind CSS类均为合法值（h-4.5已全部替换）
+- 所有日期计算均使用本地时区（UTC→本地格式化）
+- Stats页所有组件均有ErrorBoundary包裹
+- Admin移动端布局修复（AnimatePresence不再使用绝对定位）
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P1: 前端日志统计可视化面板增强（图表丰富度）
+2. P2: EPUB导出实现
+3. P3: task-engine abort signal传播到scraping函数
+4. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN）
+5. P3: AdminDesktopSidebar硬编码暗色主题
