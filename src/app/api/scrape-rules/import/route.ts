@@ -121,7 +121,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
         cleanConfig: (() => {
           try { return validateCleanConfig(raw.cleanConfig); }
-          catch { return safeJsonStringify(raw.cleanConfig, 'cleanConfig'); }
+          catch { return null; }
         })(),
         agentqlConfig: safeJsonStringify(raw.agentqlConfig, 'agentqlConfig'),
         cloudBrowserConfig: buildCloudBrowserConfig(raw.cloudBrowserUrl, raw.cloudBrowserProvider),

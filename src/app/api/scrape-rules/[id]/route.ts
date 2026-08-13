@@ -53,10 +53,6 @@ export const PUT = withAuth(async function PUT(
       const val = sanitizeField(body.name, 200);
       if (!val) return apiError('规则名称不能为空', 400);
     }
-    if (body.description !== undefined) {
-      const val = sanitizeField(body.description, 2000);
-      if (val && val.length > 2000) return apiError('描述不能超过2000个字符', 400);
-    }
     if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
       return apiError('enabled 必须是布尔值', 400);
     }
@@ -182,8 +178,16 @@ export const PUT = withAuth(async function PUT(
     if (maxD !== undefined) data.maxDelay = maxD;
     if (body.enableShuffle !== undefined) data.enableShuffle = body.enableShuffle;
     if (body.dedupMode !== undefined) data.dedupMode = body.dedupMode;
-    if (body.filePath !== undefined) data.filePath = validateSavePath(body.filePath);
-    if (body.coverSavePath !== undefined) data.coverSavePath = validateSavePath(body.coverSavePath);
+    // Validate save paths (path traversal check) — must return 400, not 500
+    if (body.filePath !== undefined || body.coverSavePath !== undefined) {
+      try {
+        if (body.filePath !== undefined) data.filePath = validateSavePath(body.filePath);
+        if (body.coverSavePath !== undefined) data.coverSavePath = validateSavePath(body.coverSavePath);
+      } catch (e) {
+        if (e instanceof ValidationError) return apiError(e.message, 400);
+        throw e;
+      }
+    }
     // JSON fields
     for (const [key, val] of Object.entries(jsonFields)) {
       data[key] = val;

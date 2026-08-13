@@ -194,6 +194,17 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       throw e;
     }
 
+    // Validate save paths (path traversal check) — must return 400, not 500
+    let validatedFilePath: string | undefined;
+    let validatedCoverSavePath: string | undefined;
+    try {
+      validatedFilePath = body.filePath !== undefined ? validateSavePath(body.filePath) : undefined;
+      validatedCoverSavePath = body.coverSavePath !== undefined ? validateSavePath(body.coverSavePath) : undefined;
+    } catch (e) {
+      if (e instanceof ValidationError) return apiError(e.message, 400);
+      throw e;
+    }
+
     const rule = await db.scrapeRule.create({
       data: {
         name,
@@ -225,10 +236,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         antiCrawlConfig: jsonFields.antiCrawlConfig,
 
         storageMode: params.storageMode,
-        filePath: validateSavePath(body.filePath),
-        coverSavePath: validateSavePath(body.coverSavePath),
-
-        scrapeMode: params.scrapeMode,
+        filePath: validatedFilePath,
+        coverSavePath: validatedCoverSavePath,
         engine: params.engine,
         threadCount: params.threadCount,
         minDelay: params.minDelay,

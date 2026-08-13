@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ArrowLeft, BookmarkCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { BackToTop } from '@/components/BackToTop';
 import { BookmarkManager } from '@/components/BookmarkManager';
 import {
   useReadingSettings,
@@ -512,8 +511,6 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           点击章节开始阅读 · 支持键盘翻页
         </div>
       </div>
-
-      <BackToTop threshold={300} />
 
       {/* ─── Reader Dialog ────────────────────────────────────── */}
       <ReaderDialog

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
@@ -191,8 +191,8 @@ export default function HomePage() {
   // ─── Check if any filter is active ──────────────────────────────
   const hasActiveFilter = !!(activeCategorySlug || activeStatus || (activeWordCount !== 'all') || (activeSort !== 'last_update') || debouncedSearch);
 
-  // ─── Build filter summary ────────────────────────────────────────
-  const getFilterSummary = () => {
+  // ─── Build filter summary (memoized) ────────────────────────────────
+  const filterSummary = useMemo(() => {
     const parts: string[] = [];
     if (debouncedSearch) parts.push(`搜索: ${debouncedSearch}`);
     if (activeCategorySlug) {
@@ -208,9 +208,7 @@ export default function HomePage() {
       if (opt) parts.push(`字数: ${opt.label}`);
     }
     return parts.length > 0 ? parts.join(' | ') : '全部小说';
-  };
-
-  const filterSummary = getFilterSummary();
+  }, [debouncedSearch, activeCategorySlug, categories, activeStatus, activeWordCount]);
 
   return (
     <div className="min-h-screen flex flex-col">

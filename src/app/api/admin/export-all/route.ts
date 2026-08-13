@@ -22,78 +22,14 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     const novelCount = await db.novel.count();
     const totalChapters = await db.chapter.count();
 
-    // For small datasets (< 5000 chapters), use the fast single-query path
-    if (totalChapters <= 5000) {
-      return exportSmallDataset(novelCount, totalChapters);
-    }
-
-    // For large datasets: fetch novels without content, then stream per-novel
+    // Always use the batched path — the 'small' path loads all chapter content
+    // into memory at once (up to 5000 × ~10KB = ~50MB+), risking OOM
     return exportLargeDataset(novelCount, totalChapters);
   } catch (error) {
     console.error('Export all data error:', error);
     return apiError('导出数据失败', 500);
   }
 });
-
-async function exportSmallDataset(novelCount: number, totalChapters: number) {
-  const novels = await db.novel.findMany({
-    include: {
-      category: { select: { id: true, name: true, slug: true, color: true, icon: true } },
-      tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
-      chapters: {
-        orderBy: { sortOrder: 'asc' },
-        select: {
-          id: true, title: true, content: true, sortOrder: true,
-          wordCount: true, sourceUrl: true, createdAt: true, updatedAt: true,
-        },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  const [categories, tags, sites, scrapeRules, siteSettings] = await Promise.all([
-    db.category.findMany({ orderBy: { name: 'asc' } }),
-    db.tag.findMany({ orderBy: { name: 'asc' } }),
-    db.site.findMany({ orderBy: { name: 'asc' } }),
-    db.scrapeRule.findMany({ orderBy: { createdAt: 'desc' } }),
-    db.siteSetting.findMany(),
-  ]);
-
-  const novelsExport = novels.map(({ tags, ...rest }) => ({
-    ...rest,
-    tags: tags.map((t) => t.tag),
-  }));
-
-  const exportData = {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    counts: {
-      novels: novels.length,
-      chapters: totalChapters,
-      categories: categories.length,
-      tags: tags.length,
-      sites: sites.length,
-      scrapeRules: scrapeRules.length,
-      siteSettings: siteSettings.length,
-    },
-    data: {
-      novels: novelsExport,
-      categories,
-      tags,
-      sites,
-      scrapeRules,
-      siteSettings,
-    },
-  };
-
-  return new NextResponse(JSON.stringify(exportData), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Disposition': `attachment; filename="novel-export-${new Date().toISOString().slice(0, 10)}.json"`,
-    },
-  });
-}
 
 async function exportLargeDataset(novelCount: number, totalChapters: number) {
   // Hard limit: reject extremely large exports
@@ -114,13 +50,13 @@ async function exportLargeDataset(novelCount: number, totalChapters: number) {
     orderBy: { createdAt: 'desc' },
   });
 
-  // Fetch metadata tables in parallel
+  // Fetch metadata tables in parallel (bounded: these are admin-only metadata)
   const [categories, tags, sites, scrapeRules, siteSettings] = await Promise.all([
-    db.category.findMany({ orderBy: { name: 'asc' } }),
-    db.tag.findMany({ orderBy: { name: 'asc' } }),
-    db.site.findMany({ orderBy: { name: 'asc' } }),
-    db.scrapeRule.findMany({ orderBy: { createdAt: 'desc' } }),
-    db.siteSetting.findMany(),
+    db.category.findMany({ orderBy: { name: 'asc' }, take: 10000 }),
+    db.tag.findMany({ orderBy: { name: 'asc' }, take: 10000 }),
+    db.site.findMany({ orderBy: { name: 'asc' }, take: 10000 }),
+    db.scrapeRule.findMany({ orderBy: { createdAt: 'desc' }, take: 10000 }),
+    db.siteSetting.findMany({ take: 10000 }),
   ]);
 
   // Process novels in batches of 20 to limit memory usage

@@ -175,7 +175,7 @@ export default function StatsPage() {
             </div>
             <h2 className="text-lg font-semibold mb-2">加载失败</h2>
             <p className="text-sm text-muted-foreground mb-6 max-w-xs">{error}</p>
-            <Button variant="outline" onClick={() => { fetchStats(); const sid = getSessionId(); if (sid) { apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`).then(setStreakData).catch(() => {}); } }}>
+            <Button variant="outline" onClick={() => { const ac = new AbortController(); fetchStats(ac.signal); const sid = getSessionId(); if (sid) { apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`, { signal: ac.signal }).then(setStreakData).catch(() => {}); } }}>
               <RotateCcw className="mr-1.5 h-4 w-4" />
               重试
             </Button>

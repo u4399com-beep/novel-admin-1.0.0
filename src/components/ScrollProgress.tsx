@@ -28,7 +28,7 @@ export function ScrollProgress() {
     }
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [isAdmin, isNovelPage]);
+  }, [isAdmin]);
 
   if (isAdmin || isNovelPage) return null;
 

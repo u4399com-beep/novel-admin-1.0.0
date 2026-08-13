@@ -192,7 +192,7 @@ export default function NovelListView() {
         <Card className="border-destructive/50">
           <CardContent className="flex items-center gap-2 p-4 text-sm text-destructive">
             {error}
-            <Button variant="outline" size="sm" className="ml-auto" onClick={() => fetchNovels()}>重试</Button>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => fetchNovels(page)}>重试</Button>
           </CardContent>
         </Card>
       )}

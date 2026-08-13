@@ -76,10 +76,12 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
-  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
-    return getSearchHistory();
-  });
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+
+  // Load search history from localStorage on mount (avoid hydration mismatch)
+  useEffect(() => {
+    queueMicrotask(() => setSearchHistory(getSearchHistory()));
+  }, []);
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

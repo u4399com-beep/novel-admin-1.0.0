@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 export interface UseReaderKeyboardProps {
   readerOpen: boolean;
@@ -26,6 +26,8 @@ export interface UseReaderKeyboardProps {
  * Registers keyboard shortcuts for the reader dialog.
  * Arrow keys / J/K for chapter nav, ↑↓ for scroll, B for bookmarks,
  * F for fullscreen, ? for shortcuts help, Escape to close panels.
+ *
+ * Uses refs for all callbacks so the effect only re-registers when readerOpen changes.
  */
 export function useReaderKeyboard({
   readerOpen,
@@ -45,64 +47,82 @@ export function useReaderKeyboard({
   onToggleChapterSidebar,
   onEscape,
 }: UseReaderKeyboardProps) {
+  // Store all callbacks in refs to avoid re-registering on every chapter change
+  const cbRef = useRef({
+    goToChapter, getMatchCount, readerContentRef,
+    searchOpen, showBookmarks, showChapterSidebar, readerFullscreen,
+    onToggleShortcutsHelp, onCloseSearch, onOpenSearch, onCycleMatch,
+    onToggleBookmarks, onToggleFullscreen, onToggleChapterSidebar, onEscape,
+  });
+  // Update ref in effect to satisfy react-hooks/refs rule
+  useEffect(() => {
+    cbRef.current = {
+      goToChapter, getMatchCount, readerContentRef,
+      searchOpen, showBookmarks, showChapterSidebar, readerFullscreen,
+      onToggleShortcutsHelp, onCloseSearch, onOpenSearch, onCycleMatch,
+      onToggleBookmarks, onToggleFullscreen, onToggleChapterSidebar, onEscape,
+    };
+  });
+
   useEffect(() => {
     if (!readerOpen) return;
     function handleKeyDown(e: KeyboardEvent) {
+      const cb = cbRef.current;
       const tag = (e.target as HTMLElement).tagName;
       const isInteractive = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
         !!(e.target as HTMLElement).closest('[role="listbox"], [role="combobox"], [role="slider"]');
 
       if (e.key === 'ArrowLeft' && !isInteractive) {
         e.preventDefault();
-        goToChapter('prev');
+        cb.goToChapter('prev');
       } else if (e.key === 'ArrowRight' && !isInteractive) {
         e.preventDefault();
-        goToChapter('next');
+        cb.goToChapter('next');
       } else if ((e.key === 'j' || e.key === 'J') && !e.metaKey && !e.ctrlKey && !isInteractive) {
         e.preventDefault();
-        goToChapter('next');
+        cb.goToChapter('next');
       } else if ((e.key === 'k' || e.key === 'K') && !e.metaKey && !e.ctrlKey && !isInteractive) {
         e.preventDefault();
-        goToChapter('prev');
+        cb.goToChapter('prev');
       } else if (e.key === '?' && !e.metaKey && !e.ctrlKey && !isInteractive) {
         e.preventDefault();
-        onToggleShortcutsHelp();
+        cb.onToggleShortcutsHelp();
       } else if (e.key === 'ArrowUp' && !isInteractive) {
         e.preventDefault();
-        const target = readerContentRef.current || window;
+        const target = cb.readerContentRef.current || window;
         target.scrollBy({ top: -200, behavior: 'smooth' });
       } else if (e.key === 'ArrowDown' && !isInteractive) {
         e.preventDefault();
-        const target = readerContentRef.current || window;
+        const target = cb.readerContentRef.current || window;
         target.scrollBy({ top: 200, behavior: 'smooth' });
       } else if (e.key === 'Escape') {
-        onEscape();
+        cb.onEscape();
       } else if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !isInteractive) {
         e.preventDefault();
-        onToggleChapterSidebar();
+        cb.onToggleChapterSidebar();
       } else if (e.key === 'b' && !e.metaKey && !e.ctrlKey) {
         const t = (e.target as HTMLElement).tagName;
         if (t !== 'INPUT' && t !== 'TEXTAREA') {
           e.preventDefault();
-          onToggleBookmarks();
+          cb.onToggleBookmarks();
         }
       } else if (e.key === 'f' && !e.metaKey && !e.ctrlKey && !isInteractive) {
         const t = (e.target as HTMLElement).tagName;
         if (t !== 'INPUT' && t !== 'TEXTAREA') {
           e.preventDefault();
-          onToggleFullscreen();
+          cb.onToggleFullscreen();
         }
       } else if (e.key === 'f' && (e.metaKey || e.ctrlKey)) {
-        if (!searchOpen) {
+        if (!cb.searchOpen) {
           e.preventDefault();
-          onOpenSearch();
+          cb.onOpenSearch();
         }
-      } else if (e.key === 'Enter' && searchOpen && (e.metaKey || e.ctrlKey)) {
+      } else if (e.key === 'Enter' && cb.searchOpen && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        onCycleMatch();
+        cb.onCycleMatch();
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [readerOpen, searchOpen, showBookmarks, showChapterSidebar, readerFullscreen, goToChapter, getMatchCount, readerContentRef, onToggleShortcutsHelp, onCloseSearch, onOpenSearch, onCycleMatch, onToggleBookmarks, onToggleFullscreen, onToggleChapterSidebar, onEscape]);
+  }, [readerOpen]);
 }

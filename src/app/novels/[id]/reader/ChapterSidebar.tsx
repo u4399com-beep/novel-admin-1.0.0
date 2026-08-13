@@ -11,6 +11,7 @@ export interface ChapterSidebarProps {
   sidebarTotalPages: number;
   currentIndex: number;
   lastChapterIndex: number | null;
+  sidebarPageSize?: number;
   onLoadChapter: (index: number) => void;
   onSidebarPageChange: (page: number | ((prev: number) => number)) => void;
 }
@@ -22,6 +23,7 @@ export function ChapterSidebar({
   sidebarTotalPages,
   currentIndex,
   lastChapterIndex,
+  sidebarPageSize = 200,
   onLoadChapter,
   onSidebarPageChange,
 }: ChapterSidebarProps) {
@@ -41,7 +43,7 @@ export function ChapterSidebar({
             </div>
             <div className="flex-1 space-y-px scrollbar-thin">
             {chapters.map((ch, idx) => {
-              const globalIdx = (sidebarPage - 1) * 200 + idx;
+              const globalIdx = (sidebarPage - 1) * sidebarPageSize + idx;
               return (
               <button
                 key={ch.id}

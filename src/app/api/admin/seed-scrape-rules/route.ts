@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess, isPrismaError } from '@/lib/api-utils';
+import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess } from '@/lib/api-utils';
 import { parseScrapeParams, validateSavePath, buildCloudBrowserConfig } from '@/lib/scrape-rule-validation';
 
 /**
@@ -37,11 +37,15 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       : [];
     const existingByName = new Map(existingRules.map(r => [r.name, r.id]));
 
+    // Use transaction to batch all DB writes (avoids 50 sequential round-trips)
     const results: { id: string; name: string; action: 'created' | 'updated' }[] = [];
     let created = 0;
     let updated = 0;
 
-    // Process each rule
+    // Separate creates and updates for transaction batching
+    const creates: Record<string, unknown>[] = [];
+    const updates: Array<{ id: string; data: Record<string, unknown> }> = [];
+
     for (const raw of body.rules) {
       if (!raw.name || typeof raw.name !== 'string') continue;
       const name = sanitizeField(raw.name, 200);
@@ -98,28 +102,32 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       const existingId = existingByName.get(name);
 
       if (existingId) {
-        await db.scrapeRule.update({ where: { id: existingId }, data });
+        updates.push({ id: existingId, data });
+      } else {
+        creates.push(data);
+      }
+    }
+
+    // Execute all writes in a single transaction
+    const txResults = await db.$transaction([
+      ...creates.map((d) => db.scrapeRule.create({ data: d as Parameters<typeof db.scrapeRule.create>[0]['data'] })),
+      ...updates.map((u) => db.scrapeRule.update({ where: { id: u.id }, data: u.data })),
+    ], { timeout: 30000 });
+
+    // Map results back
+    let createIdx = 0;
+    for (const raw of body.rules) {
+      if (!raw.name || typeof raw.name !== 'string') continue;
+      const name = sanitizeField(raw.name, 200);
+      const existingId = existingByName.get(name);
+      if (existingId) {
         results.push({ id: existingId, name, action: 'updated' });
         updated++;
       } else {
-        try {
-          const rule = await db.scrapeRule.create({ data });
-          results.push({ id: rule.id, name, action: 'created' });
-          created++;
-        } catch (err: unknown) {
-          // P2002 = unique constraint violation (e.g., name collision from concurrent request)
-          // Fall back to update
-          if (isPrismaError(err, 'P2002')) {
-            const fallback = await db.scrapeRule.findFirst({ where: { name }, select: { id: true } });
-            if (fallback) {
-              await db.scrapeRule.update({ where: { id: fallback.id }, data });
-              results.push({ id: fallback.id, name, action: 'updated' });
-              updated++;
-            }
-          } else {
-            throw err;
-          }
-        }
+        const result = txResults[createIdx];
+        results.push({ id: (result as { id: string }).id, name, action: 'created' });
+        created++;
+        createIdx++;
       }
     }
 
