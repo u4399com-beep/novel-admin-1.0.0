@@ -2,10 +2,18 @@ import { apiFetch } from '@/lib/api-fetch';
 
 const HEATMAP_KEY = 'reading-heatmap';
 
+function todayLocal(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /** Record a reading activity entry for the daily heatmap (localStorage). */
 export function recordReadingActivity() {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocal();
     const raw = localStorage.getItem(HEATMAP_KEY);
     const data = raw ? (JSON.parse(raw) as Record<string, number>) : {};
     data[today] = (data[today] || 0) + 1;

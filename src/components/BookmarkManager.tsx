@@ -62,7 +62,7 @@ export function BookmarkManager({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <BookmarkCheck className="h-4.5 w-4.5 text-amber-500" />
+            <BookmarkCheck className="h-[1.125rem] w-[1.125rem] text-amber-500" />
             书签管理
             {bookmarks.length > 0 && (
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">

@@ -130,7 +130,7 @@ export function ReadingProgressBar() {
         className="fill"
         style={{
           width: `${progress}%`,
-          background: `linear-gradient(90deg, var(--primary), oklch(0.7 0.15 200))`,
+          background: `linear-gradient(90deg, var(--primary), hsl(210 60% 60%))`,
           borderRadius: '0 2px 2px 0',
           transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
         }}

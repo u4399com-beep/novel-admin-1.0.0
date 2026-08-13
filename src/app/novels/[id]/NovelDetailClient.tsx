@@ -109,8 +109,9 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const readerContentRef = useRef<HTMLDivElement>(null);
   const readerDialogRef = useRef<HTMLDivElement>(null);
   const pendingScrollRestore = useRef<number | null>(null);
-  const [readStartTime] = useState(() => Date.now());
+  const readStartTimeRef = useRef(Date.now());
   const [readDuration, setReadDuration] = useState(0);
+  const isFirstReaderLoad = useRef(true);
 
   // ─── Favorite state (optimistic UI) ───────────────────────────────
   const [isFavorited, setIsFavorited] = useState(false);
@@ -201,12 +202,14 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
 
   const openReader = useCallback(
     (index: number) => {
+      if (!chapters[index]) return;
       setCurrentIndex(index);
       setChapterContent(null);
       setChapterTitle(chapters[index].title);
       setReaderOpen(true);
       setShowSettings(false);
       setShowChapterSidebar(false);
+      readStartTimeRef.current = Date.now();
     },
     [chapters]
   );
@@ -265,7 +268,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         const data = await apiFetch<{ content?: string }>(`/api/public/chapters/${chapter.id}`, {
           signal: abortController.signal,
         });
-        setChapterContent(data.content || '（本章暂无内容）');
+        setChapterContent(data.content || '');
         recordReadingActivity();
         const wordLen = data.content?.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length || 0;
         reportReadingGoal(wordLen);
@@ -314,8 +317,13 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     [currentIndex, chapters.length, loadChapter]
   );
 
-  // Save progress when changing chapters
+  // Save progress when changing chapters (skip first load to avoid saving stale chapter 0)
   useEffect(() => {
+    if (isFirstReaderLoad.current) {
+      isFirstReaderLoad.current = false;
+      prevIndexRef.current = currentIndex;
+      return;
+    }
     if (readerOpen && !loadingChapter && chapterContent) {
       saveProgress(prevIndexRef.current, scrollPercent);
     }
@@ -405,10 +413,10 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   useEffect(() => {
     if (!readerOpen) return;
     const interval = setInterval(() => {
-      setReadDuration(Math.floor((Date.now() - readStartTime) / 1000));
+      setReadDuration(Math.floor((Date.now() - readStartTimeRef.current) / 1000));
     }, 30000);
     return () => clearInterval(interval);
-  }, [readerOpen, readStartTime]);
+  }, [readerOpen]);
 
   // ─── Scroll active match into view ───────────────────────────────
   useEffect(() => {

@@ -61,6 +61,7 @@ const VIEW_TITLES: Record<string, { title: string; description: string }> = {
 };
 
 const viewVariants = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 } };
+const noopSubscribe = () => () => {};
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
@@ -95,7 +96,6 @@ export default function AdminPage() {
     } catch { /* handled */ }
     setImportOpen(true);
   }, [setCategories, setImportOpen]);
-  const noopSubscribe = () => () => {};
   const isMac = useSyncExternalStore(
     noopSubscribe,
     () => navigator.platform?.includes('Mac') ?? false,
@@ -129,7 +129,7 @@ export default function AdminPage() {
   // ─── Dark mode toggle ─────────────────────────────────────────────────
   const { theme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+  const toggleTheme = useCallback(() => setTheme(theme === 'dark' ? 'light' : 'dark'), [theme, setTheme]);
 
   // ─── Auth guard ──────────────────────────────────────────────
   useEffect(() => {
@@ -237,9 +237,9 @@ export default function AdminPage() {
         </header>
 
         {/* ─── Content Area with transition ──────────────────────────────── */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-0">
           <AnimatePresence mode="wait">
-            <motion.div key={currentView} variants={viewVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] as const }} className="absolute inset-0 overflow-y-auto">
+            <motion.div key={currentView} variants={viewVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] as const }} className="h-full">
               {renderView()}
             </motion.div>
           </AnimatePresence>

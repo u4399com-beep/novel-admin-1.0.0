@@ -20,7 +20,7 @@ export default function AdminLoading() {
         <nav className="flex-1 px-3 py-2 space-y-1">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2.5">
-              <Skeleton className="h-4.5 w-4.5 rounded bg-slate-700" />
+              <Skeleton className="h-[1.125rem] w-[1.125rem] rounded bg-slate-700" />
               <Skeleton className="h-4 w-24 bg-slate-700" />
             </div>
           ))}

@@ -63,7 +63,7 @@ export function BookmarksPanel({
                   const isCurrent = bm.chapterIndex === currentIndex;
                   return (
                     <button
-                      key={bm.chapterIndex}
+                      key={`${bm.chapterIndex}-${bm.timestamp}`}
                       onClick={() => {
                         onLoadChapter(bm.chapterIndex);
                         onSaveProgress(bm.chapterIndex);

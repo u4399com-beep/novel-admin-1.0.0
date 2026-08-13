@@ -127,9 +127,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
  * then computes the streak in memory.
  */
 async function calculateStreak(date: string): Promise<number> {
-  const ninetyDaysAgo = new Date(date);
-  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 366);
-  const dateStr = ninetyDaysAgo.toISOString().slice(0, 10);
+  const lookupStart = new Date(date);
+  lookupStart.setDate(lookupStart.getDate() - 366);
+  const dateStr = `${lookupStart.getFullYear()}-${String(lookupStart.getMonth() + 1).padStart(2, '0')}-${String(lookupStart.getDate()).padStart(2, '0')}`;
 
   const records = await db.readingDaily.findMany({
     where: { date: { gte: dateStr, lte: date } },

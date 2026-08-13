@@ -112,7 +112,7 @@ function SidebarContent() {
               `}
             >
               <Icon
-                className={`h-4.5 w-4.5 shrink-0 transition-colors ${
+                className={`h-[1.125rem] w-[1.125rem] shrink-0 transition-colors ${
                   isActive ? 'text-violet-300' : 'text-slate-500 group-hover:text-slate-400'
                 }`}
               />

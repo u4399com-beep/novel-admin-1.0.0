@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -111,6 +111,7 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [streakData, setStreakData] = useState<{ currentStreak: number; maxStreak: number; totalDays: number } | null>(null);
+  const retryAbortRef = useRef<AbortController | null>(null);
 
   const fetchStats = useCallback(async (signal?: AbortSignal) => {
     const sessionId = getSessionId();
@@ -140,7 +141,7 @@ export default function StatsPage() {
         .then(setStreakData)
         .catch(() => {});
     }
-    return () => ac.abort();
+    return () => { ac.abort(); retryAbortRef.current?.abort(); };
   }, [fetchStats]);
 
   const hasData = stats && (stats.totalBooks > 0 || stats.totalChaptersRead > 0);
@@ -175,7 +176,7 @@ export default function StatsPage() {
             </div>
             <h2 className="text-lg font-semibold mb-2">加载失败</h2>
             <p className="text-sm text-muted-foreground mb-6 max-w-xs">{error}</p>
-            <Button variant="outline" onClick={() => { const ac = new AbortController(); fetchStats(ac.signal); const sid = getSessionId(); if (sid) { apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`, { signal: ac.signal }).then(setStreakData).catch(() => {}); } }}>
+            <Button variant="outline" onClick={() => { const ac = new AbortController(); retryAbortRef.current = ac; fetchStats(ac.signal); const sid = getSessionId(); if (sid) { apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`, { signal: ac.signal }).then(setStreakData).catch(() => {}); } }}>
               <RotateCcw className="mr-1.5 h-4 w-4" />
               重试
             </Button>
@@ -259,14 +260,16 @@ export default function StatsPage() {
               </div>
 
               {/* Daily Reading Goal */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 }}
-                className="fade-in-up"
-              >
-                <ReadingGoalCard />
-              </motion.div>
+              <ErrorBoundary name="stats-reading-goal">
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.05 }}
+                  className="fade-in-up"
+                >
+                  <ReadingGoalCard />
+                </motion.div>
+              </ErrorBoundary>
 
 
 
@@ -306,7 +309,7 @@ export default function StatsPage() {
                         <GenreBar
                           name={genre.name}
                           count={genre.count}
-                          maxCount={stats.genreDistribution[0].count}
+                          maxCount={Math.max(...stats.genreDistribution.map(g => g.count))}
                           color={getGenreColor(genre.name)}
                         />
                       </div>

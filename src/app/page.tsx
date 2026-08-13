@@ -218,7 +218,7 @@ export default function HomePage() {
           {/* Logo */}
           <div className="flex items-center gap-2.5">
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <BookOpen className="h-4.5 w-4.5 text-primary-foreground" />
+              <BookOpen className="h-[1.125rem] w-[1.125rem] text-primary-foreground" />
             </div>
             <span className="text-lg font-bold tracking-tight">{siteName}</span>
           </div>
@@ -261,7 +261,7 @@ export default function HomePage() {
               onClick={() => setMobileMenuOpen(true)}
               aria-label="打开菜单"
             >
-              <Menu className="h-4.5 w-4.5" />
+              <Menu className="h-[1.125rem] w-[1.125rem]" />
             </Button>
             <Button
               variant="ghost"

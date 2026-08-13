@@ -43,7 +43,7 @@ export const POST = withAuth(async function POST(
         taskId,
         level: level,
         message: sanitizedMessage,
-        url: sanitizeField(url, 2000) || null,
+        url: sanitizeField(url, 2048) || null,
         detail: sanitizeField(detail, 10000) || null,
       },
     });

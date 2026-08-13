@@ -67,7 +67,8 @@ export default function SettingsPage() {
                 if (typeof prevValue === 'boolean') {
                   (merged as Record<string, unknown>)[key] = value === 'true';
                 } else if (typeof prevValue === 'number') {
-                  (merged as Record<string, unknown>)[key] = Number(value) || prevValue;
+                  const n = Number(value);
+                  (merged as Record<string, unknown>)[key] = isNaN(n) ? prevValue : n;
                 } else {
                   (merged as Record<string, unknown>)[key] = value;
                 }
@@ -84,7 +85,10 @@ export default function SettingsPage() {
   }, []);
 
   const update = useCallback((key: string, value: unknown) => {
-    setSettings((prev) => ({ ...prev, [key as keyof SiteSettings]: value as SiteSettings[keyof SiteSettings] }));
+    setSettings((prev) => {
+      if (!(key in prev)) return prev;
+      return { ...prev, [key as keyof SiteSettings]: value as SiteSettings[keyof SiteSettings] };
+    });
   }, []);
 
   const saveSettings = useCallback(async () => {
