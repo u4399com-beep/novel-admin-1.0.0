@@ -11,6 +11,7 @@ import ReadingStreak from '@/components/ReadingStreak';
 import { ReadingGoalCard } from '@/components/ReadingGoalCard';
 import { ReadingOverview } from '@/components/stats/ReadingOverview';
 import { WordCountStats } from '@/components/stats/WordCountStats';
+import { ReadingTrendChart } from '@/components/stats/ReadingTrendChart';
 import ReadingHeatmap from '@/components/stats/ReadingHeatmap';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
@@ -212,6 +213,11 @@ export default function StatsPage() {
               {/* Word Count Statistics */}
               <ErrorBoundary name="stats-word-count">
                 <WordCountStats />
+              </ErrorBoundary>
+
+              {/* Reading Trend Chart (30-day area chart) */}
+              <ErrorBoundary name="stats-reading-trend">
+                <ReadingTrendChart />
               </ErrorBoundary>
 
               {/* Reading Heatmap (GitHub-style, 6 months) */}

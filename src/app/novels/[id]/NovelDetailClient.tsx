@@ -15,6 +15,7 @@ import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { getCoverGradient } from '@/lib/cover-gradient';
 import type { Novel, Chapter } from './reader/types';
 import { KeyboardShortcutsPanel } from './reader/KeyboardShortcutsPanel';
+import { ChapterContentGrid } from '@/components/novel/detail/ChapterContentGrid';
 import { NovelInfoSection } from './parts/NovelInfoSection';
 import { ChapterListSection } from './parts/ChapterListSection';
 import { ReaderDialog } from './parts/ReaderDialog';
@@ -495,6 +496,15 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             </Button>
           </motion.div>
         )}
+
+        {/* ─── Chapter content grid ──────────────────────────── */}
+        <div className="mt-4">
+          <ChapterContentGrid
+            chapters={chapters}
+            currentChapterIndex={readerOpen ? currentIndex : safeLastChapterIndex}
+            onOpenReader={openReader}
+          />
+        </div>
 
         {/* ─── Chapter list section ────────────────────────────── */}
         <ChapterListSection

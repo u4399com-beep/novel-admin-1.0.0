@@ -77,10 +77,23 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [trends, setTrends] = useState<{ keyword: string; count: number }[]>([]);
 
   // Load search history from localStorage on mount (avoid hydration mismatch)
   useEffect(() => {
     queueMicrotask(() => setSearchHistory(getSearchHistory()));
+  }, []);
+
+  // ─── Fetch trending searches ───────────────────────────────────
+  useEffect(() => {
+    const abortController = new AbortController();
+    apiFetch<{ trends: { keyword: string; count: number }[] }>('/api/public/trending-searches', {
+      silent: true,
+      signal: abortController.signal,
+    })
+      .then((data) => setTrends(data.trends || []))
+      .catch(() => {});
+    return () => abortController.abort();
   }, []);
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -228,7 +241,7 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
                 }}
                 onFocus={() => {
                   if (query.length >= 1 && suggestions.length > 0) setSuggestionsOpen(true);
-                  else if (query.length === 0 && searchHistory.length > 0) setSuggestionsOpen(true);
+                  else if (query.length === 0 && (searchHistory.length > 0 || trends.length > 0)) setSuggestionsOpen(true);
                 }}
                 className="h-10 pl-10 pr-10 sm:pr-20 text-sm rounded-lg w-full"
               />
@@ -260,7 +273,7 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
 
             {/* Suggestions Dropdown */}
             <AnimatePresence>
-              {suggestionsOpen && (suggestionsLoading || suggestions.length > 0 || (query.length === 0 && searchHistory.length > 0)) && (
+              {suggestionsOpen && (suggestionsLoading || suggestions.length > 0 || (query.length === 0 && (searchHistory.length > 0 || trends.length > 0))) && (
                 <motion.div
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -273,28 +286,55 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
                       <Loader2 className="h-4 w-4 animate-spin" />
                       搜索中...
                     </div>
-                  ) : query.length === 0 && searchHistory.length > 0 ? (
+                  ) : query.length === 0 ? (
                     <div className="py-1">
-                      <div className="flex items-center justify-between px-4 py-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">搜索历史</span>
-                        <button
-                          onClick={handleHistoryClear}
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors focus-ring-soft"
-                          aria-label="清除搜索历史"
-                        >
-                          清除
-                        </button>
-                      </div>
-                      {searchHistory.map((term) => (
-                        <button
-                          key={term}
-                          className="w-full flex items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent/70"
-                          onClick={() => handleHistorySelect(term)}
-                        >
-                          <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <span className="text-sm truncate">{term}</span>
-                        </button>
-                      ))}
+                      {searchHistory.length > 0 && (
+                        <>
+                          <div className="flex items-center justify-between px-4 py-1.5">
+                            <span className="text-xs font-medium text-muted-foreground">搜索历史</span>
+                            <button
+                              onClick={handleHistoryClear}
+                              className="text-xs text-muted-foreground hover:text-foreground transition-colors focus-ring-soft"
+                              aria-label="清除搜索历史"
+                            >
+                              清除
+                            </button>
+                          </div>
+                          {searchHistory.map((term) => (
+                            <button
+                              key={term}
+                              className="w-full flex items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent/70"
+                              onClick={() => handleHistorySelect(term)}
+                            >
+                              <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <span className="text-sm truncate">{term}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      {trends.length > 0 && (
+                        <div className="px-4 py-2">
+                          <p className="text-xs text-muted-foreground mb-2">热门搜索</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {trends.map((t) => (
+                              <button
+                                key={t.keyword}
+                                type="button"
+                                className="text-xs px-2 py-1 rounded-full border border-border hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors cursor-pointer"
+                                onClick={() => {
+                                  setSearchInput(t.keyword);
+                                  onSearch(t.keyword);
+                                  setSuggestionsOpen(false);
+                                  addSearchHistory(t.keyword);
+                                  setSearchHistory(getSearchHistory());
+                                }}
+                              >
+                                {t.keyword}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <ul role="listbox" className="max-h-80 overflow-y-auto py-1 scrollbar-thin">
