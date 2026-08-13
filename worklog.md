@@ -8075,3 +8075,102 @@ Stage Summary:
 3. P3: task-engine abort signal传播到scraping函数
 4. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN）
 5. P3: AdminDesktopSidebar硬编码暗色主题
+---
+Task ID: 1
+Agent: Main Orchestrator (Round 25)
+Task: R25功能增强阶段 — 阅读趋势图+热门搜索+章节内容网格
+
+Work Log:
+- 确认进入功能增强阶段（R16-R24为bug修复，R25开始增强）
+- 并行派出3个full-stack-developer agent实现新功能
+- Agent 1: 阅读趋势面积图（新API + 纯SVG图表组件）
+- Agent 2: 热门搜索标签（新API + SearchBar集成）
+- Agent 3: 章节内容完成度网格（新组件 + 详情页集成）
+- ESLint: 0 errors, 5 warnings (预存)
+- Agent Browser: 首页/统计页正确渲染
+- Git push: 82c25ba → b1ab864 → main
+
+## 新增功能 (3项)
+
+### 1. 阅读趋势面积图 (P1, 延续多轮)
+- **新API**: `GET /api/stats/reading-trend` — 返回最近30天每日阅读数据
+  - 查询readingDaily表，按date升序，take:30
+  - 使用todayStringLocal()本地日期格式化
+  - 返回: `{ trend: Array<{ date, chapters, words }> }`
+  - 文件: src/app/api/stats/reading-trend/route.ts
+- **新组件**: `ReadingTrendChart` — 纯SVG面积图
+  - 零第三方图表库依赖，纯SVG+framer-motion
+  - 面积渐变填充(primary色0.3→0透明度)
+  - 折线绘制动画(strokeDashoffset)
+  - Hover tooltip显示日期+章节/字数
+  - X轴每5天标签(MM/DD)，Y轴4刻度
+  - showWords toggle按钮切换章节/千字视图
+  - Loading skeleton、Error state、Empty state
+  - ErrorBoundary包裹
+  - 文件: src/components/stats/ReadingTrendChart.tsx (439行)
+- **集成**: stats/page.tsx中WordCountStats之后、ReadingHeatmap之前
+
+### 2. 热门搜索标签
+- **新API**: `GET /api/public/trending-searches` — 无需认证
+  - 从SearchKeyword表groupBy聚合，按count降序，take:8
+  - 返回: `{ trends: Array<{ keyword, count }> }`
+  - try/catch兜底返回空数组
+  - 文件: src/app/api/public/trending-searches/route.ts
+- **SearchBar增强**: 下拉面板显示热门搜索标签
+  - 组件挂载时fetch trending-searches API (silent:true)
+  - 在搜索历史下方显示热门标签区域
+  - 标签样式: text-xs rounded-full border, hover时primary色
+  - 点击标签直接搜索并关闭下拉
+  - 文件: src/components/home/hero/SearchBar.tsx
+
+### 3. 章节内容完成度网格
+- **新组件**: `ChapterContentGrid` — 可视化迷你网格
+  - 每个小方块代表一个章节(2.5x2.5 / sm:3x3)
+  - 有内容章节: bg-primary; 无内容: bg-muted-foreground/20
+  - 当前阅读章节: ring-2 ring-primary高亮
+  - hover显示tooltip(章节号+标题+字数)
+  - 可点击跳转到对应章节阅读
+  - 底部图例: 有内容/无内容/当前章节
+  - 100%完成时显示Badge
+  - 超过maxDisplay(200)时截断提示
+  - framer-motion淡入动画
+  - 文件: src/components/novel/detail/ChapterContentGrid.tsx (110行)
+- **集成**: NovelDetailClient中ChapterListSection之前
+
+## 修改文件清单 (7个文件，新建4个)
+- src/app/api/stats/reading-trend/route.ts (新建)
+- src/app/api/public/trending-searches/route.ts (新建)
+- src/components/stats/ReadingTrendChart.tsx (新建, 439行)
+- src/components/novel/detail/ChapterContentGrid.tsx (新建, 110行)
+- src/app/stats/page.tsx (import+ErrorBoundary+渲染)
+- src/app/novels/[id]/NovelDetailClient.tsx (import+渲染)
+- src/components/home/hero/SearchBar.tsx (trending搜索+state+fetch+UI)
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (预存React Hook Form)
+- Agent Browser: 首页/统计页正确渲染，无console错误
+- Dev server: 无编译错误
+- Git push: 82c25ba → b1ab864 → main
+
+Stage Summary:
+- 新增: 3个功能 (阅读趋势图 + 热门搜索标签 + 章节内容网格)
+- 新建: 4个文件 (2 API + 2 组件)
+- 新增代码: 697行
+- ReadingTrendChart纯SVG实现，零第三方图表库依赖
+- ChapterContentGrid提供直观的章节录入进度可视化
+- 热门搜索标签提升搜索发现体验
+
+## 项目当前状态描述/判断
+- R25进入功能增强阶段，累计修复1588+项+新增功能3项
+- 统计页可视化从4种图表增至5种（新增阅读趋势面积图）
+- 首页搜索体验增强（热门标签+搜索历史+建议下拉）
+- 小说详情页新增章节内容录入可视化网格
+- 代码库持续保持ESLint 0错误
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P2: EPUB导出实现
+2. P3: task-engine abort signal传播到scraping函数
+3. P3: scraper-service 401轮询（需配置SCRAPER_SERVICE_TOKEN）
+4. P3: AdminDesktopSidebar硬编码暗色主题
+5. 增强: 阅读热力图点击交互（查看某天阅读详情）
+6. 增强: 管理后台采集任务实时日志流(WEB)
