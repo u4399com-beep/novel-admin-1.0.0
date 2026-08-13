@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { apiFetch } from '@/lib/api-fetch';
-import type { Novel } from '@/types';
 
 /**
  * ReadingProgressBar — thin progress bar fixed at the very top of the viewport.
@@ -65,10 +64,10 @@ export function ReadingProgressBar() {
     if (!novelId) return;
     const ac = new AbortController();
     const chapterIndex = loadProgressFromStorage(novelId);
-    apiFetch<Novel>(`/api/novels/${novelId}`, { signal: ac.signal, silent: true })
-      .then((novel) => {
+    apiFetch<{ _count: { chapters: number } }>(`/api/public/novels/${novelId}`, { signal: ac.signal, silent: true })
+      .then((data) => {
         if (ac.signal.aborted) return;
-        const total = novel._count?.chapters ?? 0;
+        const total = data._count?.chapters ?? 0;
         setTotalChapters(total);
         if (total > 0) {
           setProgress(Math.min(100, Math.round(((chapterIndex + 1) / total) * 100)));

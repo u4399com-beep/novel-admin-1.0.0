@@ -128,8 +128,12 @@ export default function SettingsPage() {
   const handleExportAll = useCallback(async () => {
     setExporting(true);
     try {
+      // Use credentials: 'include' to send session cookies (same-origin).
+      // Do NOT use manual Authorization header — NextAuth uses httpOnly cookies,
+      // not localStorage tokens. The raw fetch is needed here because
+      // apiFetch only handles JSON responses, not blob downloads.
       const response = await fetch('/api/admin/export-all', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('next-auth.session-token') || ''}` },
+        credentials: 'include',
         signal: AbortSignal.timeout(60000),
       });
       if (!response.ok) throw new Error('Export failed');

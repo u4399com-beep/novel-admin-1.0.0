@@ -164,7 +164,7 @@ function buildHeatmapData(dates: Date[], days: number, tz?: string): Array<{ dat
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const key = toLocalDateStr(d);
+    const key = toLocalDateStr(d, tz);
     result.push({ date: key, count: dayCount.get(key) || 0 });
   }
   return result;

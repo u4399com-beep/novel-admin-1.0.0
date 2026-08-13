@@ -28,6 +28,7 @@ export function formatRelativeTime(dateStr: string): string {
   if (isNaN(date.getTime())) return '—';
   const now = Date.now();
   const diff = now - date.getTime();
+  if (diff < 0) return '刚刚';
   const seconds = Math.floor(diff / 1000);
   if (seconds < 60) return '刚刚';
   const minutes = Math.floor(seconds / 60);

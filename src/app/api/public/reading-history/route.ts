@@ -115,7 +115,7 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 0.5 }, async
  * DELETE /api/public/reading-history?id=xxx&sessionId=xxx
  * Deletes a reading history entry (only if sessionId matches).
  */
-export const DELETE = withPublicRateLimit({ capacity: 30, refillRate: 0.5 }, async (request: NextRequest) => {
+export const DELETE = withPublicRateLimit({ capacity: 10, refillRate: 0.2 }, async (request: NextRequest) => {
   try {
     const { searchParams } = new URL(request.url);
     const id = sanitizeField(searchParams.get('id') || '', MAX_ID_LENGTH);

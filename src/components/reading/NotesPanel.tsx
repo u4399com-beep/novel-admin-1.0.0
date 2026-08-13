@@ -18,6 +18,8 @@ interface NotesPanelProps {
   chapterId: string;
   visible: boolean;
   className?: string;
+  /** Current reading scroll position (character offset or percentage) for note context */
+  readingPosition?: number;
 }
 
 function formatTime(dateStr: string): string {
@@ -30,7 +32,7 @@ function formatTime(dateStr: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-export function NotesPanel({ chapterId, visible, className = '' }: NotesPanelProps) {
+export function NotesPanel({ chapterId, visible, className = '', readingPosition = 0 }: NotesPanelProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(false);
   const [newNoteContent, setNewNoteContent] = useState('');
@@ -64,7 +66,7 @@ export function NotesPanel({ chapterId, visible, className = '' }: NotesPanelPro
       await apiFetch(`/api/chapters/${chapterId}/notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newNoteContent.trim(), position: 0 }),
+        body: JSON.stringify({ content: newNoteContent.trim(), position: readingPosition }),
       });
       setNewNoteContent('');
       setShowForm(false);

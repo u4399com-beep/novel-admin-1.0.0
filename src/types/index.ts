@@ -34,6 +34,8 @@ export interface Novel {
   category: Category | null;
   tags: { tag: Tag }[];
   wordCount: number;
+  clickCount: number;
+  favoriteCount: number;
   sourceUrl: string | null;
   sourceId: string | null;
   extraKeywords: string | null;
@@ -49,9 +51,11 @@ export interface Chapter {
   id: string;
   title: string;
   content: string | null;
+  contentPath: string | null;
   wordCount: number;
   sortOrder: number;
   novelId: string;
+  sourceUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
