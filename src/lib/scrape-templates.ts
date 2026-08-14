@@ -438,6 +438,166 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
     scrapeMode: 'incremental',
     dedupMode: 'url',
   },
+
+  // ==================== 11. 123读书网 (123dua) ====================
+  {
+    id: '123dua',
+    name: '123读书网',
+    description: '123dua.com 笔趣阁系结构，首页按分类展示小说列表，详情页含章节目录和简介',
+    siteUrl: 'https://www.123dua.com',
+    engine: 'cheerio',
+    difficulty: 'easy',
+    tags: ['123读书网', '笔趣阁系', '小说', '免费'],
+
+    listUrl: 'https://www.123dua.com/dudu-32/',
+    listSelector: css('dl.B.B1'),
+
+    bookTitleSelector: css('#info h1'),
+    bookAuthorSelector: css('#info p:first-of-type'),
+    bookCategorySelector: css('#info p:nth-child(3) span:first-of-type'),
+    bookKeywordsSelector: css(''),
+    bookDescriptionSelector: css('#intro .e'),
+    bookCoverSelector: css('#sidebar img'),
+    bookStatusSelector: css('#info p:nth-child(3) span:nth-of-type(2)'),
+
+    chapterListUrl: '{bookUrl}',
+    chapterListSelector: css('.box_con dl dd a'),
+    chapterTitleSelector: css('.box_con dl dd a'),
+    chapterLinkSelector: css('.box_con dl dd a'),
+
+    contentSelector: css('#content'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
+
+  // ==================== 12. 不了全看 (blqukan) ====================
+  {
+    id: 'blqukan',
+    name: '不了全看',
+    description: 'blqukan.cc 笔趣阁系站点，有地域访问限制，结构为标准笔趣阁布局',
+    siteUrl: 'https://www.blqukan.cc',
+    engine: 'cheerio',
+    difficulty: 'easy',
+    tags: ['不了全看', '笔趣阁系', '小说', '地域限制'],
+
+    listUrl: 'https://www.blqukan.cc/sort/1/',
+    listSelector: css('.novelslist2 li'),
+
+    bookTitleSelector: css('#info h1'),
+    bookAuthorSelector: css('#info p:first-of-type'),
+    bookCategorySelector: css('.con_top a:nth-child(2)'),
+    bookKeywordsSelector: css(''),
+    bookDescriptionSelector: css('#intro'),
+    bookCoverSelector: css('#sidebar img'),
+    bookStatusSelector: css('#info p:nth-child(2)'),
+
+    chapterListUrl: '{bookUrl}',
+    chapterListSelector: css('#list dl dd a'),
+    chapterTitleSelector: css('#list dl dd a'),
+    chapterLinkSelector: css('#list dl dd a'),
+
+    contentSelector: css('#content'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
+
+  // ==================== 13. 精品小说网 (jpxs123) ====================
+  {
+    id: 'jpxs123',
+    name: '精品小说网',
+    description: 'jpxs123.top 精校小说全本站，列表页展示封面+简介卡片，详情页含完整章节目录',
+    siteUrl: 'https://jpxs123.top',
+    engine: 'cheerio',
+    difficulty: 'easy',
+    tags: ['精品小说网', '精校小说', '全本', '免费'],
+
+    listUrl: 'https://jpxs123.top/news_last/',
+    listSelector: css('.books .bk'),
+
+    bookTitleSelector: css('.book_info h1'),
+    bookAuthorSelector: css('.date span'),
+    bookCategorySelector: css('.readTop a:nth-child(2)'),
+    bookKeywordsSelector: css(''),
+    bookDescriptionSelector: css('.infos p'),
+    bookCoverSelector: css('.book_info .pic img'),
+    bookStatusSelector: css(''),
+
+    chapterListUrl: '{bookUrl}',
+    chapterListSelector: css('.book_list li a'),
+    chapterTitleSelector: css('.book_list li a'),
+    chapterLinkSelector: css('.book_list li a'),
+
+    contentSelector: css('.read_chapterDetail'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
+
+  // ==================== 14. 奇书网 (xqishuta) ====================
+  {
+    id: 'xqishuta',
+    name: '奇书网',
+    description: 'xqishuta.org TXT电子书下载站，支持在线阅读，列表页和详情页分离，章节目录在阅读页',
+    siteUrl: 'http://www.xqishuta.org',
+    engine: 'cheerio',
+    difficulty: 'medium',
+    tags: ['奇书网', 'TXT下载', '在线阅读', '电子书'],
+
+    listUrl: 'http://www.xqishuta.org/s/new/',
+    listSelector: css('.list ul li'),
+
+    bookTitleSelector: css('.detail h1'),
+    bookAuthorSelector: css('.detail_info li:nth-child(6)'),
+    bookCategorySelector: css('.position a:nth-child(2)'),
+    bookKeywordsSelector: css(''),
+    bookDescriptionSelector: css('.showInfo p'),
+    bookCoverSelector: css('.detail_pic img'),
+    bookStatusSelector: css('.detail_info li:nth-child(5)'),
+
+    chapterListUrl: '{chapterReadUrl}',
+    chapterListSelector: css('.pc_list ul li a'),
+    chapterTitleSelector: css('.pc_list ul li a'),
+    chapterLinkSelector: css('.pc_list ul li a'),
+
+    contentSelector: css('#content1'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
+
+  // ==================== 15. 101看书 (101kks) ====================
+  {
+    id: '101kks',
+    name: '101看书',
+    description: '101kks.com 繁体中文小说站，JIEQI CMS系统，卡片式列表布局，支持繁简切换',
+    siteUrl: 'https://101kks.com',
+    engine: 'cheerio',
+    difficulty: 'medium',
+    tags: ['101看书', '繁体中文', 'JIEQI CMS', '小说'],
+
+    listUrl: 'https://101kks.com/novels/newhot_0_0_1.html',
+    listSelector: css('#article_list_content li'),
+
+    bookTitleSelector: css('.booknav2 h1 a'),
+    bookAuthorSelector: css('.booknav2 p:first-of-type'),
+    bookCategorySelector: css('.bread a:nth-child(2)'),
+    bookKeywordsSelector: css('.tagul li a'),
+    bookDescriptionSelector: css('.navtxt p'),
+    bookCoverSelector: css('.bookimg2 img'),
+    bookStatusSelector: css('.booknav2 p:nth-child(3)'),
+
+    chapterListUrl: '{bookUrl}/index.html',
+    chapterListSelector: css('.qustime li a'),
+    chapterTitleSelector: css('.qustime li a'),
+    chapterLinkSelector: css('.qustime li a'),
+
+    contentSelector: css('#txtcontent'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
 ];
 
 /**
