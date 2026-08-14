@@ -2,9 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { History } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { History, BookOpen, Flame } from 'lucide-react';
 import { ContinueReading } from '@/components/home/ContinueReading';
 import { getCoverGradient } from '@/lib/cover-gradient';
+import { getSessionId } from '@/lib/reading-session';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Recently Viewed ──────────────────────────────────────────────
 
@@ -31,6 +34,96 @@ function clearRecentlyViewed() {
   localStorage.removeItem(RECENT_KEY);
 }
 
+// ─── Today Reading Insight ─────────────────────────────────────────
+
+interface StreakData {
+  currentStreak: number;
+  maxStreak: number;
+  totalDays: number;
+}
+
+function getMotivationalMessage(streak: number): string | null {
+  if (streak >= 30) return '月度连续阅读达人！';
+  if (streak >= 14) return '两周连续阅读，坚持就是胜利！';
+  if (streak >= 7) return '连续阅读一周，棒！';
+  if (streak >= 3) return '三日连续阅读，继续保持！';
+  if (streak >= 1) return '今日已开始阅读，好习惯！';
+  return null;
+}
+
+function TodayReadingInsight() {
+  const [streak, setStreak] = useState<number>(0);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const sessionId = getSessionId();
+
+    if (!sessionId) {
+      // No session — we still want to show "今日尚未阅读"
+      // Use a microtask to avoid synchronous setState in effect
+      queueMicrotask(() => setLoaded(true));
+      return;
+    }
+
+    const ac = new AbortController();
+
+    apiFetch<StreakData>(
+      `/api/public/reading-streak?sessionId=${encodeURIComponent(sessionId)}`,
+      { signal: ac.signal, silent: true },
+    )
+      .then((data) => {
+        if (!ac.signal.aborted) {
+          setStreak(data.currentStreak);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ac.signal.aborted) setLoaded(true);
+      });
+
+    return () => ac.abort();
+  }, []);
+
+  if (!loaded) return null;
+
+  const hasReadToday = streak > 0;
+  const motivationalMsg = getMotivationalMessage(streak);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      className="rounded-xl border bg-muted/30 px-4 py-3 mt-3"
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <BookOpen className="h-3.5 w-3.5 text-muted-foreground/60" />
+        <span className="text-xs font-medium text-muted-foreground">今日阅读洞察</span>
+        {streak > 0 && (
+          <div className="flex items-center gap-0.5 text-[10px] text-amber-500 dark:text-amber-400">
+            <Flame className="h-3 w-3" />
+            <span className="font-medium">{streak}天</span>
+          </div>
+        )}
+      </div>
+
+      <div>
+        {hasReadToday ? (
+          <p className="text-xs text-foreground/70">
+            今日已阅读
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground/60">今日尚未阅读</p>
+        )}
+
+        {motivationalMsg && (
+          <p className="text-[11px] text-primary/70 mt-0.5 font-medium">{motivationalMsg}</p>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── HomeActivity Component ────────────────────────────────────────
 
 export function HomeActivity() {
@@ -52,10 +145,11 @@ export function HomeActivity() {
 
   return (
     <>
-      {/* Continue Reading */}
+      {/* Continue Reading + Today's Insight */}
       <section className="border-b card-glass">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
           <ContinueReading />
+          <TodayReadingInsight />
         </div>
       </section>
 

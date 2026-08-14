@@ -15,6 +15,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { HomeActivity } from '@/components/home/HomeActivity';
+import { RecentlyUpdatedNovels } from '@/components/home/RecentlyUpdatedNovels';
 import { LayoutSwitcher } from '@/components/home/LayoutSwitcher';
 import { HeroSection } from '@/components/home/HeroSection';
 import { NovelGrid } from '@/components/home/NovelGrid';
@@ -384,7 +385,10 @@ export default function HomePage() {
         filterSummary={filterSummary}
       />
 
-      {/* Continue Reading & Recently Viewed */}
+      {/* Recently Updated Novels */}
+      <RecentlyUpdatedNovels />
+
+      {/* Continue Reading & Recently Viewed & Today Insight */}
       <HomeActivity />
 
       {/* ─── Novels Section ─────────────────────────────────────── */}

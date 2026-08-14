@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { apiFetch } from '@/lib/api-fetch';
+import Link from 'next/link';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { getSessionId } from '@/lib/reading-session';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Flame } from 'lucide-react';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { Flame, BookOpen, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -39,26 +42,46 @@ interface CellData {
   isFuture: boolean;
 }
 
+interface DailyDetailNovel {
+  novelId: string;
+  novelTitle: string;
+  chapterIndex: number;
+  chapterTitle: string;
+  words: number;
+  readAt: string;
+}
+
+interface DailyDetailResponse {
+  date: string;
+  chapters: number;
+  words: number;
+  novels: DailyDetailNovel[];
+}
+
 // ─── Constants ───────────────────────────────────────────────────────
 
-const TOTAL_DAYS = 183; // ~6 months
+const TOTAL_DAYS = 183;
 const CELL_SIZE = 11;
 const CELL_GAP = 3;
+const STEP = CELL_SIZE + CELL_GAP;
 const DAY_LABELS = ['Mon', 'Wed', 'Fri'];
-const DAY_LABEL_ROWS = [1, 3, 5]; // Mon=1, Wed=3, Fri=5 (0-indexed rows)
+const DAY_LABEL_ROWS = [1, 3, 5];
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
-
-// GitHub-style green color scale
+const WEEKDAY_NAMES = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 const GREEN_SCALE = [
-  '#ebedf0', // Level 0: no activity (gray)
-  '#9be9a8', // Level 1: light green
-  '#40c463', // Level 2: medium green
-  '#30a14e', // Level 3: dark green
-  '#216e39', // Level 4: darkest green
+  '#ebedf0',
+  '#9be9a8',
+  '#40c463',
+  '#30a14e',
+  '#216e39',
 ];
+
+// Day label column widths
+const DAY_LABEL_W_SM = 26; // sm: ml-[26px] + mr-1.5(~6px)
+const DAY_LABEL_W_XS = 22; // ml-[22px]
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -79,9 +102,22 @@ function getIntensityLevel(count: number, max: number): number {
 }
 
 function getDayOfWeekMondayBased(date: Date): number {
-  // Returns 0=Mon, 1=Tue, ..., 6=Sun
   const dow = date.getDay();
   return dow === 0 ? 6 : dow - 1;
+}
+
+function formatDetailDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const weekday = WEEKDAY_NAMES[d.getDay()];
+  return `${y}年${m}月${day}日 ${weekday}`;
+}
+
+function formatTime(isoStr: string): string {
+  const d = new Date(isoStr);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 // ─── Component ───────────────────────────────────────────────────────
@@ -91,13 +127,23 @@ export default function ReadingHeatmap() {
   const [loading, setLoading] = useState(true);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
   const [hasData, setHasData] = useState(false);
-  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch data
+  // Popover state
+  const [selectedCell, setSelectedCell] = useState<CellData | null>(null);
+  const [popoverData, setPopoverData] = useState<DailyDetailResponse | null>(null);
+  const [popoverLoading, setPopoverLoading] = useState(false);
+  const [popoverEmpty, setPopoverEmpty] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  // Anchor position (offset from grid container)
+  const [anchorPos, setAnchorPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const popoverAbortRef = useRef<AbortController | null>(null);
+
+  // Fetch heatmap data
   useEffect(() => {
     const sessionId = getSessionId();
     if (!sessionId) {
-      // No session — set loading to false via microtask to avoid sync setState in effect
       queueMicrotask(() => setLoading(false));
       return;
     }
@@ -114,7 +160,6 @@ export default function ReadingHeatmap() {
 
         const map = new Map<string, DailyStat>();
 
-        // Prefer dailyStats if available (full data)
         if (res.dailyStats && res.dailyStats.length > 0) {
           for (const stat of res.dailyStats) {
             map.set(stat.date, {
@@ -125,9 +170,7 @@ export default function ReadingHeatmap() {
             });
           }
           setHasData(true);
-        }
-        // Fallback: use heatmap data (count-only)
-        else if (res.heatmap && res.heatmap.length > 0) {
+        } else if (res.heatmap && res.heatmap.length > 0) {
           for (const entry of res.heatmap) {
             if (entry.count > 0) {
               map.set(entry.date, {
@@ -143,7 +186,7 @@ export default function ReadingHeatmap() {
 
         setData(map);
       } catch {
-        // silent — don't show error for non-critical component
+        // silent
       } finally {
         if (!ac.signal.aborted) setLoading(false);
       }
@@ -162,7 +205,6 @@ export default function ReadingHeatmap() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Start: TOTAL_DAYS ago, aligned to Monday
     const startDate = new Date(today);
     startDate.setDate(startDate.getDate() - (TOTAL_DAYS - 1));
     const dow = getDayOfWeekMondayBased(startDate);
@@ -172,9 +214,7 @@ export default function ReadingHeatmap() {
     const current = new Date(startDate);
     let col = 0;
 
-    // Loop until we've covered all weeks up to today
     while (current <= today || getDayOfWeekMondayBased(current) !== 0) {
-      // Stop condition: we've passed today and reached a new Monday
       if (current > today && getDayOfWeekMondayBased(current) === 0 && col > 0) {
         break;
       }
@@ -202,7 +242,6 @@ export default function ReadingHeatmap() {
     return { cells, totalCols: col + 1 };
   }, [data]);
 
-  // Build a lookup map for grid cells
   const cellMap = useMemo(() => {
     const map = new Map<string, CellData>();
     for (const cell of grid.cells) {
@@ -211,7 +250,6 @@ export default function ReadingHeatmap() {
     return map;
   }, [grid.cells]);
 
-  // Calculate max chapters for intensity scaling
   const maxChapters = useMemo(() => {
     let max = 0;
     for (const cell of grid.cells) {
@@ -220,7 +258,6 @@ export default function ReadingHeatmap() {
     return max;
   }, [grid.cells]);
 
-  // Calculate month label positions
   const monthLabels = useMemo(() => {
     const labels: Array<{ label: string; col: number }> = [];
     let lastMonth = -1;
@@ -236,7 +273,6 @@ export default function ReadingHeatmap() {
     return labels;
   }, [grid.cells]);
 
-  // Calculate summary stats
   const summary = useMemo(() => {
     let totalChapters = 0;
     let activeDays = 0;
@@ -269,6 +305,75 @@ export default function ReadingHeatmap() {
 
   const handleGridLeave = useCallback(() => {
     tooltipTimerRef.current = setTimeout(() => setTooltip(null), 100);
+  }, []);
+
+  // Click handler: opens popover, positions anchor at the clicked cell
+  const handleCellClick = useCallback(
+    (cell: CellData, e: React.MouseEvent<HTMLDivElement>) => {
+      if (cell.isFuture) return;
+      e.stopPropagation();
+
+      // Toggle off if same cell
+      if (selectedCell?.date === cell.date && popoverOpen) {
+        setPopoverOpen(false);
+        setSelectedCell(null);
+        setPopoverData(null);
+        return;
+      }
+
+      // Calculate anchor position relative to grid container
+      const gridRect = gridContainerRef.current?.getBoundingClientRect();
+      const cellRect = e.currentTarget.getBoundingClientRect();
+      if (gridRect && cellRect) {
+        setAnchorPos({
+          left: cellRect.left - gridRect.left + cellRect.width / 2,
+          top: cellRect.top - gridRect.top,
+        });
+      }
+
+      setSelectedCell(cell);
+      setPopoverData(null);
+      setPopoverEmpty(false);
+      setPopoverLoading(true);
+      setTooltip(null);
+      setPopoverOpen(true);
+
+      if (popoverAbortRef.current) popoverAbortRef.current.abort();
+      const ac = new AbortController();
+      popoverAbortRef.current = ac;
+
+      const sessionId = getSessionId();
+      const fetchDetail = async () => {
+        try {
+          const res = await apiFetch<DailyDetailResponse>(
+            `/api/stats/daily-detail?date=${encodeURIComponent(cell.date)}${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ''}`,
+            { signal: ac.signal, silent: true, timeout: 10000 },
+          );
+          if (ac.signal.aborted) return;
+          setPopoverData(res);
+          setPopoverLoading(false);
+        } catch (err) {
+          if (ac.signal.aborted) return;
+          if (err instanceof FetchError && err.status === 404) {
+            setPopoverEmpty(true);
+          }
+          setPopoverLoading(false);
+          setPopoverData(null);
+        }
+      };
+
+      fetchDetail();
+    },
+    [selectedCell, popoverOpen],
+  );
+
+  // Handle popover close
+  const handlePopoverOpenChange = useCallback((open: boolean) => {
+    setPopoverOpen(open);
+    if (!open) {
+      setSelectedCell(null);
+      setPopoverData(null);
+    }
   }, []);
 
   // ─── Loading Skeleton ──────────────────────────────────────────────
@@ -322,7 +427,6 @@ export default function ReadingHeatmap() {
 
   const colWidth = CELL_SIZE;
   const rowHeight = CELL_SIZE;
-  const step = CELL_SIZE + CELL_GAP;
 
   return (
     <div className="rounded-xl border bg-card p-4 sm:p-5 card-glow card-border-glow focus-ring-soft">
@@ -345,142 +449,236 @@ export default function ReadingHeatmap() {
         </span>
       </div>
 
-      {/* Heatmap Grid */}
-      <div className="relative overflow-x-auto">
-        <div className="inline-flex flex-col" onMouseLeave={handleGridLeave}>
-          {/* Month labels row */}
-          <div
-            className="flex ml-[22px] sm:ml-[26px] mb-1"
-            style={{ gap: `${CELL_GAP}px` }}
-          >
-            {monthLabels.map((m, i) => {
-              const colSpan = i === monthLabels.length - 1
-                ? grid.totalCols - m.col
-                : monthLabels[i + 1].col - m.col;
-
-              return (
-                <div
-                  key={`${m.label}-${m.col}`}
-                  className="text-[10px] text-muted-foreground/70 shrink-0"
-                  style={{
-                    width: colSpan * step - CELL_GAP,
-                  }}
-                >
-                  {m.label}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Grid: day labels + cells */}
-          <div className="flex">
-            {/* Day-of-week labels (hidden on mobile) */}
+      {/* Heatmap Grid with Popover */}
+      <Popover open={popoverOpen} onOpenChange={handlePopoverOpenChange}>
+        <div className="relative overflow-x-auto" ref={gridContainerRef}>
+          {/* Invisible anchor that follows the selected cell */}
+          <PopoverAnchor asChild>
             <div
-              className="hidden sm:flex flex-col mr-1.5 shrink-0"
+              className="absolute z-10 pointer-events-none"
+              style={{
+                left: anchorPos.left,
+                top: anchorPos.top,
+                width: colWidth,
+                height: rowHeight,
+              }}
+              />
+          </PopoverAnchor>
+
+          <div className="inline-flex flex-col" onMouseLeave={handleGridLeave}>
+            {/* Month labels row */}
+            <div
+              className="flex ml-[22px] sm:ml-[26px] mb-1"
               style={{ gap: `${CELL_GAP}px` }}
             >
-              {Array.from({ length: 7 }, (_, rowIdx) => (
-                <div
-                  key={rowIdx}
-                  className="flex items-center justify-end text-[10px] text-muted-foreground/60"
-                  style={{
-                    width: '18px',
-                    height: `${rowHeight}px`,
-                    visibility: DAY_LABEL_ROWS.includes(rowIdx) ? 'visible' : 'hidden',
-                  }}
-                >
-                  {DAY_LABELS[DAY_LABEL_ROWS.indexOf(rowIdx)]}
-                </div>
-              ))}
+              {monthLabels.map((m, i) => {
+                const colSpan = i === monthLabels.length - 1
+                  ? grid.totalCols - m.col
+                  : monthLabels[i + 1].col - m.col;
+
+                return (
+                  <div
+                    key={`${m.label}-${m.col}`}
+                    className="text-[10px] text-muted-foreground/70 shrink-0"
+                    style={{ width: colSpan * STEP - CELL_GAP }}
+                  >
+                    {m.label}
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Cell columns (weeks) */}
-            <div className="flex" style={{ gap: `${CELL_GAP}px` }}>
-              {Array.from({ length: grid.totalCols }, (_, colIdx) => (
-                <div
-                  key={colIdx}
-                  className="flex flex-col shrink-0"
-                  style={{ gap: `${CELL_GAP}px` }}
-                >
-                  {Array.from({ length: 7 }, (_, rowIdx) => {
-                    const cell = cellMap.get(`${rowIdx}-${colIdx}`);
-                    if (!cell) {
+            {/* Grid: day labels + cells */}
+            <div className="flex">
+              {/* Day-of-week labels (hidden on mobile) */}
+              <div
+                className="hidden sm:flex flex-col mr-1.5 shrink-0"
+                style={{ gap: `${CELL_GAP}px` }}
+              >
+                {Array.from({ length: 7 }, (_, rowIdx) => (
+                  <div
+                    key={rowIdx}
+                    className="flex items-center justify-end text-[10px] text-muted-foreground/60"
+                    style={{
+                      width: '18px',
+                      height: `${rowHeight}px`,
+                      visibility: DAY_LABEL_ROWS.includes(rowIdx) ? 'visible' : 'hidden',
+                    }}
+                  >
+                    {DAY_LABELS[DAY_LABEL_ROWS.indexOf(rowIdx)]}
+                  </div>
+                ))}
+              </div>
+
+              {/* Cell columns (weeks) */}
+              <div className="flex" style={{ gap: `${CELL_GAP}px` }}>
+                {Array.from({ length: grid.totalCols }, (_, colIdx) => (
+                  <div
+                    key={colIdx}
+                    className="flex flex-col shrink-0"
+                    style={{ gap: `${CELL_GAP}px` }}
+                  >
+                    {Array.from({ length: 7 }, (_, rowIdx) => {
+                      const cell = cellMap.get(`${rowIdx}-${colIdx}`);
+                      if (!cell) {
+                        return (
+                          <div
+                            key={rowIdx}
+                            style={{ width: `${colWidth}px`, height: `${rowHeight}px` }}
+                          />
+                        );
+                      }
+
+                      const level = cell.isFuture
+                        ? -1
+                        : getIntensityLevel(cell.chapters, maxChapters);
+                      const isSelected = selectedCell?.date === cell.date;
+
                       return (
                         <div
                           key={rowIdx}
+                          role="gridcell"
+                          tabIndex={cell.isFuture ? -1 : 0}
+                          aria-label={
+                            cell.isFuture
+                              ? undefined
+                              : `${cell.date}: ${cell.chapters} 章已读，点击查看详情`
+                          }
+                          className={[
+                            'rounded-sm transition-all cursor-pointer',
+                            isSelected
+                              ? 'ring-2 ring-primary ring-offset-1 ring-offset-background'
+                              : 'hover:scale-110',
+                          ].join(' ')}
                           style={{
                             width: `${colWidth}px`,
                             height: `${rowHeight}px`,
+                            backgroundColor: level === -1 ? 'transparent' : GREEN_SCALE[level],
+                          }}
+                          onMouseEnter={(e) => handleCellEnter(e, cell)}
+                          onClick={(e) => handleCellClick(cell, e)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleCellClick(cell, e as unknown as React.MouseEvent<HTMLDivElement>);
+                            }
                           }}
                         />
                       );
-                    }
-
-                    const level = cell.isFuture
-                      ? -1
-                      : getIntensityLevel(cell.chapters, maxChapters);
-
-                    return (
-                      <div
-                        key={rowIdx}
-                        role="gridcell"
-                        aria-label={
-                          cell.isFuture
-                            ? undefined
-                            : `${cell.date}: ${cell.chapters} chapters read`
-                        }
-                        className="rounded-sm transition-transform hover:scale-110"
-                        style={{
-                          width: `${colWidth}px`,
-                          height: `${rowHeight}px`,
-                          backgroundColor:
-                            level === -1
-                              ? 'transparent'
-                              : GREEN_SCALE[level],
-                        }}
-                        onMouseEnter={(e) => handleCellEnter(e, cell)}
-                      />
-                    );
-                  })}
-                </div>
-              ))}
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
+
+          {/* Tooltip (fixed positioning) - hidden when popover is open */}
+          {tooltip && !popoverOpen && (
+            <div
+              role="tooltip"
+              className="fixed z-50 pointer-events-none rounded-md bg-popover text-popover-foreground border shadow-lg px-2.5 py-2 text-xs"
+              style={{
+                left: tooltip.x,
+                top: tooltip.y - 6,
+                transform: 'translate(-50%, -100%)',
+              }}
+            >
+              <div className="font-medium mb-1">{tooltip.date}</div>
+              {tooltip.chapters > 0 && (
+                <div className="text-muted-foreground">{tooltip.chapters} 章已读</div>
+              )}
+              {tooltip.words > 0 && (
+                <div className="text-muted-foreground">{tooltip.words.toLocaleString()} 字</div>
+              )}
+              {tooltip.minutes > 0 && (
+                <div className="text-muted-foreground">{tooltip.minutes} 分钟</div>
+              )}
+              {tooltip.chapters === 0 && tooltip.words === 0 && tooltip.minutes === 0 && (
+                <div className="text-muted-foreground">无阅读记录</div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Tooltip (fixed positioning) */}
-        {tooltip && (
-          <div
-            role="tooltip"
-            className="fixed z-50 pointer-events-none rounded-md bg-popover text-popover-foreground border shadow-lg px-2.5 py-2 text-xs"
-            style={{
-              left: tooltip.x,
-              top: tooltip.y - 6,
-              transform: 'translate(-50%, -100%)',
-            }}
+        {/* Daily Detail Popover Content */}
+        {selectedCell && (
+          <PopoverContent
+            side="top"
+            align="center"
+            sideOffset={8}
+            className="w-72 sm:w-80 rounded-xl border bg-card p-0 shadow-lg overflow-hidden"
+            onOpenAutoFocus={(e) => e.preventDefault()}
           >
-            <div className="font-medium mb-1">{tooltip.date}</div>
-            {tooltip.chapters > 0 && (
-              <div className="text-muted-foreground">
-                {tooltip.chapters} 章已读
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
+            >
+              {/* Date header */}
+              <div className="px-4 pt-4 pb-3 border-b border-border/50">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {formatDetailDate(selectedCell.date)}
+                </h3>
+                {popoverLoading && (
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    加载中...
+                  </p>
+                )}
+                {!popoverLoading && popoverData && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    读了 <strong className="text-foreground">{popoverData.chapters}</strong> 章，约{' '}
+                    <strong className="text-foreground">{Math.round(popoverData.words / 1000)}</strong> 千字
+                  </p>
+                )}
+                {!popoverLoading && popoverEmpty && (
+                  <p className="text-xs text-muted-foreground mt-1">该日无阅读记录</p>
+                )}
               </div>
-            )}
-            {tooltip.words > 0 && (
-              <div className="text-muted-foreground">
-                {tooltip.words.toLocaleString()} 字
-              </div>
-            )}
-            {tooltip.minutes > 0 && (
-              <div className="text-muted-foreground">
-                {tooltip.minutes} 分钟
-              </div>
-            )}
-            {tooltip.chapters === 0 && tooltip.words === 0 && tooltip.minutes === 0 && (
-              <div className="text-muted-foreground">无阅读记录</div>
-            )}
-          </div>
+
+              {/* Novel list */}
+              {!popoverLoading && popoverData && popoverData.novels.length > 0 && (
+                <div className="max-h-64 overflow-y-auto">
+                  <div className="divide-y divide-border/30">
+                    {popoverData.novels.map((novel, idx) => (
+                      <motion.div
+                        key={`${novel.novelId}-${idx}`}
+                        initial={{ opacity: 0, x: -4 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.04, duration: 0.15 }}
+                      >
+                        <Link
+                          href={`/novels/${novel.novelId}`}
+                          className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-muted/50 transition-colors group"
+                          onClick={() => setPopoverOpen(false)}
+                        >
+                          <div className="shrink-0 mt-0.5 h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center">
+                            <BookOpen className="h-3 w-3 text-primary" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                              {novel.novelTitle}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                              第{novel.chapterIndex}章 {novel.chapterTitle}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground/70">
+                              {novel.words > 0 && (
+                                <span>{novel.words.toLocaleString()} 字</span>
+                              )}
+                              <span>{formatTime(novel.readAt)}</span>
+                            </div>
+                          </div>
+                        </Link>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </PopoverContent>
         )}
-      </div>
+      </Popover>
 
       {/* Legend */}
       <div className="flex items-center justify-end gap-1.5 mt-3 text-[10px] text-muted-foreground">
@@ -489,11 +687,7 @@ export default function ReadingHeatmap() {
           <div
             key={i}
             className="rounded-sm"
-            style={{
-              width: `${CELL_SIZE}px`,
-              height: `${CELL_SIZE}px`,
-              backgroundColor: color,
-            }}
+            style={{ width: `${CELL_SIZE}px`, height: `${CELL_SIZE}px`, backgroundColor: color }}
           />
         ))}
         <span>多</span>

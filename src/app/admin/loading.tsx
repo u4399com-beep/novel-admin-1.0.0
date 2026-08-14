@@ -4,14 +4,14 @@ export default function AdminLoading() {
   return (
     <div className="flex min-h-screen animate-in fade-in duration-300">
       {/* ─── Sidebar skeleton (w-64) ──────────────────────────────────── */}
-      <aside className="hidden lg:flex h-screen w-64 flex-col border-r bg-slate-900 shrink-0">
+      <aside className="hidden lg:flex h-screen w-64 flex-col border-r border-border bg-card shrink-0">
         {/* Brand area */}
         <div className="px-6 py-6 pb-5 space-y-3">
           <div className="flex items-center gap-3">
-            <Skeleton className="h-10 w-10 rounded-xl bg-slate-700" />
+            <Skeleton className="h-10 w-10 rounded-xl" />
             <div className="space-y-2 flex-1">
-              <Skeleton className="h-5 w-16 bg-slate-700" />
-              <Skeleton className="h-3 w-28 bg-slate-800" />
+              <Skeleton className="h-5 w-16" />
+              <Skeleton className="h-3 w-28" />
             </div>
           </div>
         </div>
@@ -20,15 +20,15 @@ export default function AdminLoading() {
         <nav className="flex-1 px-3 py-2 space-y-1">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2.5">
-              <Skeleton className="h-[1.125rem] w-[1.125rem] rounded bg-slate-700" />
-              <Skeleton className="h-4 w-24 bg-slate-700" />
+              <Skeleton className="h-[1.125rem] w-[1.125rem] rounded" />
+              <Skeleton className="h-4 w-24" />
             </div>
           ))}
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-slate-700/50 px-3 py-3">
-          <Skeleton className="h-8 w-full rounded bg-slate-700" />
+        <div className="border-t border-border px-3 py-3">
+          <Skeleton className="h-8 w-full rounded" />
         </div>
       </aside>
 

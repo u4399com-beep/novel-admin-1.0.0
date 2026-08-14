@@ -16,6 +16,8 @@ import { getCoverGradient } from '@/lib/cover-gradient';
 import type { Novel, Chapter } from './reader/types';
 import { KeyboardShortcutsPanel } from './reader/KeyboardShortcutsPanel';
 import { ChapterContentGrid } from '@/components/novel/detail/ChapterContentGrid';
+import { ReadingTimeline } from '@/components/novel/detail/ReadingTimeline';
+import { getSessionId } from '@/lib/reading-session';
 import { NovelInfoSection } from './parts/NovelInfoSection';
 import { ChapterListSection } from './parts/ChapterListSection';
 import { ReaderDialog } from './parts/ReaderDialog';
@@ -118,6 +120,11 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   const [isFavorited, setIsFavorited] = useState(false);
   const [localFavoriteCount, setLocalFavoriteCount] = useState(novel.favoriteCount);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [sessionId, setSessionId] = useState('');
+
+  useEffect(() => {
+    setSessionId(getSessionId());
+  }, []);
 
   const handleToggleFavorite = useCallback(async () => {
     if (favoriteLoading) return;
@@ -505,6 +512,19 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             onOpenReader={openReader}
           />
         </div>
+
+        {/* ─── Reading timeline ────────────────────────────────── */}
+        {sessionId && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45, duration: 0.35 }}
+            className="mt-4 rounded-xl border bg-card p-5 card-glow card-border-glow"
+          >
+            <h3 className="text-sm font-medium mb-3">阅读时间线</h3>
+            <ReadingTimeline novelId={novel.id} sessionId={sessionId} />
+          </motion.div>
+        )}
 
         {/* ─── Chapter list section ────────────────────────────── */}
         <ChapterListSection

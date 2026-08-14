@@ -75,14 +75,14 @@ function SidebarContent() {
         aria-label="返回仪表盘"
         className="relative overflow-hidden px-6 py-6 pb-5 text-left w-full cursor-pointer"
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-violet-600/20 via-purple-600/10 to-transparent transition-opacity hover:opacity-80" />
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-primary/10 to-transparent transition-opacity hover:opacity-80" />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/25 transition-shadow hover:shadow-violet-500/40">
-            <BookOpen className="h-5 w-5 text-white" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg shadow-primary/25 transition-shadow hover:shadow-primary/40">
+            <BookOpen className="h-5 w-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white tracking-tight">小说管理</h1>
-            <p className="text-[11px] text-slate-400 tracking-wide">NOVEL MANAGEMENT</p>
+            <h1 className="text-lg font-bold text-foreground tracking-tight">小说管理</h1>
+            <p className="text-[11px] text-muted-foreground tracking-wide">NOVEL MANAGEMENT</p>
           </div>
         </div>
       </button>
@@ -103,30 +103,30 @@ function SidebarContent() {
               aria-current={isActive ? 'page' : undefined}
               className={`
                 nav-indicator group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5
-                text-sm font-medium transition-all duration-200
+                text-sm font-medium transition-colors duration-150
                 ${
                   isActive
-                    ? 'bg-white/10 text-white'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                 }
               `}
             >
               <Icon
-                className={`h-[1.125rem] w-[1.125rem] shrink-0 transition-colors ${
-                  isActive ? 'text-violet-300' : 'text-slate-500 group-hover:text-slate-400'
+                className={`h-[1.125rem] w-[1.125rem] shrink-0 transition-colors duration-150 ${
+                  isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-foreground'
                 }`}
               />
 
               <span className="flex-1 text-left">{item.label}</span>
 
               {/* Keyboard shortcut hint — desktop only, visible on hover */}
-              <span className="hidden lg:inline-block text-[10px] font-mono text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
+              <span className="hidden lg:inline-block text-[10px] font-mono text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
                 {SHORTCUT_KEYS[index]}
               </span>
 
               {/* Active hover glow */}
               {isActive && (
-                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-violet-500/10 to-transparent pointer-events-none transition-opacity group-hover:from-violet-500/20 group-hover:via-violet-500/5" />
+                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary-foreground/5 to-transparent pointer-events-none transition-opacity group-hover:from-primary-foreground/10 group-hover:via-primary-foreground/[0.02]" />
               )}
             </button>
           );
@@ -134,7 +134,7 @@ function SidebarContent() {
           // Wrap with tooltip on desktop
           const tooltipContent = (
             <TooltipContent side="right" sideOffset={8}>
-              <p className="text-xs text-slate-200">{item.description}</p>
+              <p className="text-xs">{item.description}</p>
             </TooltipContent>
           );
 
@@ -142,7 +142,7 @@ function SidebarContent() {
             <div key={item.key}>
               {showDivider && (
                 <div className="py-2 px-3">
-                  <Separator className="bg-slate-700/50" />
+                  <Separator />
                 </div>
               )}
               <Tooltip>
@@ -157,12 +157,12 @@ function SidebarContent() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-slate-700/50 px-6 py-4 space-y-2">
-        <div className="flex items-center gap-2 text-xs text-slate-500">
+      <div className="border-t border-border px-6 py-4 space-y-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
           <span>{totalNovels !== null ? `${totalNovels} 部小说` : '加载中...'}</span>
         </div>
-        <div className="text-[10px] text-slate-600">
+        <div className="text-[10px] text-muted-foreground/60">
           上次刷新: {lastRefreshText}
         </div>
       </div>
@@ -174,7 +174,7 @@ function SidebarContent() {
 
 function DesktopSidebar() {
   return (
-    <aside className="hidden lg:flex h-screen w-64 flex-col border-r border-slate-800 bg-slate-900 shrink-0 sticky top-0">
+    <aside className="hidden lg:flex h-screen w-64 flex-col border-r border-border bg-card shrink-0 sticky top-0 shadow-sm">
       <SidebarContent />
     </aside>
   );
@@ -199,7 +199,7 @@ function MobileSidebar() {
             <span className="sr-only">菜单</span>
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="w-64 p-0 bg-slate-900 border-slate-800">
+        <SheetContent side="left" className="w-64 p-0 bg-card border-border">
           <SheetTitle className="sr-only">导航菜单</SheetTitle>
           <SidebarContent />
         </SheetContent>
