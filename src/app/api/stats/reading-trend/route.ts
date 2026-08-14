@@ -11,9 +11,15 @@ function todayStringLocal(): string {
   return `${y}-${m}-${d}`;
 }
 
-// GET /api/stats/reading-trend — last 30 days daily reading data
-export const GET = withAuth(async () => {
+const ALLOWED_DAYS = new Set(['7', '30', '90']);
+
+// GET /api/stats/reading-trend?days=30 — daily reading data
+export const GET = withAuth(async (req) => {
   try {
+    const url = new URL(req.url);
+    const daysParam = url.searchParams.get('days') || '30';
+    const days = ALLOWED_DAYS.has(daysParam) ? parseInt(daysParam, 10) : 30;
+
     const today = todayStringLocal();
 
     const records = await db.readingDaily.findMany({
@@ -23,7 +29,7 @@ export const GET = withAuth(async () => {
         },
       },
       orderBy: { date: 'asc' },
-      take: 30,
+      take: days,
       select: {
         date: true,
         chapters: true,

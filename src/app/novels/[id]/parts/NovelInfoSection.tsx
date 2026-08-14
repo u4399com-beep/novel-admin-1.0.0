@@ -11,6 +11,8 @@ import {
   Download,
   Heart,
   Share2,
+  BookCopy,
+  FileJson,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +21,12 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { formatWordCount } from '@/lib/format';
 import { estimateReadingTime } from '@/lib/reading-time';
 import type { Novel, Chapter } from '../reader/types';
@@ -160,15 +168,37 @@ export function NovelInfoSection({
             >
               <Heart className={`h-5 w-5 ${isFavorited ? 'fill-current' : ''}`} />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="shrink-0 mt-1 h-9 w-9 text-muted-foreground hover:text-foreground transition-colors export-btn"
-              onClick={() => window.open(`/api/novels/${novel.id}/export/txt`)}
-              aria-label="导出"
-            >
-              <Download className="h-5 w-5" />
-            </Button>
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="shrink-0 mt-1 h-9 w-9 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="导出"
+                    >
+                      <Download className="h-5 w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>导出</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export/txt`)}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  导出 TXT
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export?format=json`)}>
+                  <FileJson className="mr-2 h-4 w-4" />
+                  导出 JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export/epub`)}>
+                  <BookCopy className="mr-2 h-4 w-4" />
+                  导出 EPUB
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <div className="relative shrink-0 mt-1">
               <Button
                 size="icon"

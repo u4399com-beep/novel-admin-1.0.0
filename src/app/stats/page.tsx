@@ -12,6 +12,9 @@ import { ReadingGoalCard } from '@/components/ReadingGoalCard';
 import { ReadingOverview } from '@/components/stats/ReadingOverview';
 import { WordCountStats } from '@/components/stats/WordCountStats';
 import { ReadingTrendChart } from '@/components/stats/ReadingTrendChart';
+import { HourlyDistributionChart } from '@/components/stats/HourlyDistributionChart';
+import { WeekdayChart } from '@/components/stats/WeekdayChart';
+import { ReadingSpeedChart } from '@/components/stats/ReadingSpeedChart';
 import ReadingHeatmap from '@/components/stats/ReadingHeatmap';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
@@ -177,7 +180,7 @@ export default function StatsPage() {
             </div>
             <h2 className="text-lg font-semibold mb-2">加载失败</h2>
             <p className="text-sm text-muted-foreground mb-6 max-w-xs">{error}</p>
-            <Button variant="outline" onClick={() => { const ac = new AbortController(); retryAbortRef.current = ac; fetchStats(ac.signal); const sid = getSessionId(); if (sid) { apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`, { signal: ac.signal }).then(setStreakData).catch(() => {}); } }}>
+            <Button variant="outline" onClick={() => { setLoading(true); setError(null); const ac = new AbortController(); retryAbortRef.current = ac; fetchStats(ac.signal); const sid = getSessionId(); if (sid) { apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`, { signal: ac.signal }).then(setStreakData).catch(() => {}); } }}>
               <RotateCcw className="mr-1.5 h-4 w-4" />
               重试
             </Button>
@@ -215,9 +218,14 @@ export default function StatsPage() {
                 <WordCountStats />
               </ErrorBoundary>
 
-              {/* Reading Trend Chart (30-day area chart) */}
+              {/* Reading Trend Chart (with 7/30/90 day toggle) */}
               <ErrorBoundary name="stats-reading-trend">
                 <ReadingTrendChart />
+              </ErrorBoundary>
+
+              {/* Reading Speed Chart (volume trend + 7-day moving avg) */}
+              <ErrorBoundary name="stats-reading-speed">
+                <ReadingSpeedChart />
               </ErrorBoundary>
 
               {/* Reading Heatmap (GitHub-style, 6 months) */}
@@ -277,7 +285,15 @@ export default function StatsPage() {
                 </motion.div>
               </ErrorBoundary>
 
-
+              {/* Hourly Distribution + Weekday Chart side by side on desktop */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ErrorBoundary name="stats-hourly">
+                  <HourlyDistributionChart />
+                </ErrorBoundary>
+                <ErrorBoundary name="stats-weekday">
+                  <WeekdayChart />
+                </ErrorBoundary>
+              </div>
 
               {/* Category Donut Chart */}
               {stats.genreDistribution.length > 0 && (
