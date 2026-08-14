@@ -8304,3 +8304,94 @@ Stage Summary:
 6. 增强: 小说搜索支持全文搜索
 7. 增强: 批量操作 (批量删除/分类/导出)
 8. 增强: 阅读数据导出 (CSV/PDF报告)
+
+---
+Task ID: R27
+Agent: Main Orchestrator
+Task: R27采集功能增强 - 统计仪表板+模板库+任务操作+日志增强+反爬配置
+
+Work Log:
+- 派出5个并行full-stack-developer agent实现采集功能增强
+- Agent 3-a: 采集任务统计仪表板 (新API + 可折叠仪表板组件)
+- Agent 3-b: 采集规则模板库 (10个预置模板 + 模板浏览器 + 一键应用)
+- Agent 3-c: 任务操作增强 (重试/取消/批量删除 3个API + UI集成)
+- Agent 3-d: 日志面板增强 (级别过滤/搜索高亮/自动滚动/导出txt)
+- Agent 3-e: 反爬监控增强 (告警阈值配置 + 事件分析面板)
+
+## 新增API (7个)
+- GET /api/scrape-tasks/stats — 任务聚合统计+14天每日趋势
+- POST /api/scrape-tasks/[id]/retry — 重试失败/取消的任务
+- POST /api/scrape-tasks/[id]/cancel — 取消运行中/待执行的任务
+- POST /api/scrape-tasks/batch-delete — 批量删除(最多100条,跳过运行中)
+- GET /api/scrape-rules/templates — 模板列表(支持?search过滤)
+- POST /api/scrape-rules/templates/[id]/apply — 基于模板创建规则
+- GET/PUT /api/admin/anti-crawl/alert-config — 告警阈值配置(存SiteSetting)
+
+## 新增组件 (5个)
+- src/components/scrape/task-monitor/ScrapeStatsDashboard.tsx — 统计仪表板
+  - 4个汇总卡片(总任务+成功率, 采集量, 平均耗时, 失败数)
+  - recharts堆叠柱状图(14天完成/失败趋势)
+  - SVG环形成功率图(颜色自适应: >80%绿/>50%黄/<=50%红)
+  - 可折叠+framer-motion动画
+- src/components/scrape/TemplateLibrary.tsx — 规则模板库弹窗
+  - 10个预置站点模板(笔趣阁/顶点/小说旗/番茄/纵横/起点/69书吧/无弹窗/通用CSS/通用XPath)
+  - 搜索过滤+难度/引擎/标签徽章+两步确认应用
+- src/components/scrape/anti-crawl/AlertConfigPanel.tsx — 告警配置面板
+  - 4个阈值输入(验证码/封锁率/连续失败/代理失败率)
+  - 全局开关+保存/重置
+- src/components/scrape/anti-crawl/EventAnalysisPanel.tsx — 事件分析
+  - 24小时事件时间分布(纯CSS柱状图)
+  - 智能响应建议(基于阈值对比)
+  - 最近10条事件时间线
+- TaskLogPanel 大幅增强
+  - 级别过滤按钮(全部/信息/警告/错误/成功)
+  - 搜索框(300ms防抖)+匹配高亮
+  - 自动滚动(手动上滚暂停,按钮恢复)
+  - 导出为.txt文件
+  - 交替行背景+错误/警告左边框
+
+## 新增数据文件 (1个)
+- src/lib/scrape-templates.ts — 10个预置采集规则模板(16KB)
+
+## 修改文件 (4个)
+- src/components/scrape/ScrapeTaskMonitor.tsx — 集成仪表板+批量选择+全选
+- src/components/scrape/task-monitor/TaskCard.tsx — 重试/取消按钮+复选框
+- src/components/scrape/task-monitor/TaskActions.tsx — 批量操作栏+全选+运行数徽章
+- src/components/scrape/parts/ScrapeRuleList.tsx — 模板库按钮
+
+## 新增文件总计: 12个
+## 修改文件总计: 4个
+## 新增代码: ~3000+行
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (全部预存在React Hook Form)
+- Dev server: 无编译错误
+- Git commit: 成功
+- Git push: 失败 (GitHub token过期, 本地已commit)
+
+Stage Summary:
+- 采集任务监控从简单列表升级为完整管理平台
+- 新增统计仪表板(趋势图+成功率环+汇总卡片)
+- 10个预置采集规则模板降低使用门槛
+- 任务操作从仅删除扩展到重试/取消/批量操作
+- 日志面板从只读列表升级为可搜索/过滤/导出工具
+- 反爬监控从被动查看升级为主动配置(阈值+建议)
+
+## 项目当前状态描述/判断
+- R27采集功能增强阶段完成
+- 采集系统功能完整度大幅提升:
+  - 任务监控: 统计+列表+操作+日志 全链路
+  - 规则管理: 手动创建+AI生成+模板库 三种方式
+  - 反爬防护: 监控+分析+配置 完整闭环
+- 两个阶段(R26+R27)新增约5000+行功能代码
+- Git push持续失败(token过期)
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P1: Git token更新 (push连续失败)
+2. P2: WebSocket实时日志流 (替代5秒轮询)
+3. P2: 采集任务定时调度 (cron定时执行规则)
+4. P3: scraper-service 401轮询 (需配置SCRAPER_SERVICE_TOKEN)
+5. P3: task-engine abort signal传播
+6. 增强: 站群系统完善 (站点模板/主题管理)
+7. 增强: 阅读器更多自定义 (字体/行距/主题色)
+8. 增强: 全文搜索 (小说名+作者+内容)
