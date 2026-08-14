@@ -8174,3 +8174,50 @@ Stage Summary:
 4. P3: AdminDesktopSidebar硬编码暗色主题
 5. 增强: 阅读热力图点击交互（查看某天阅读详情）
 6. 增强: 管理后台采集任务实时日志流(WEB)
+
+---
+Task ID: R25
+Agent: Main Orchestrator
+Task: 功能增强 - 统计可视化面板丰富化 + EPUB导出 + 审计修复
+
+Work Log:
+- 创建3个新API端点 (hourly-distribution, weekday-distribution, reading-speed)
+- 增强 reading-trend API 支持 ?days=7|30|90 参数
+- 创建4个recharts图表组件 (HourlyDistributionChart, WeekdayChart, ReadingSpeedChart, enhanced ReadingTrendChart)
+- 实现 EPUB3.0 导出 API (jszip, XHTML, CSS, TOC, UUID标识)
+- 小说详情页导出按钮升级为下拉菜单 (TXT/JSON/EPUB)
+- 子代理审计发现5项问题，全部修复
+
+## 新增文件
+- src/app/api/stats/hourly-distribution/route.ts (24小时分布)
+- src/app/api/stats/weekday-distribution/route.ts (星期分布)
+- src/app/api/stats/reading-speed/route.ts (阅读量趋势+7日均线)
+- src/app/api/novels/[id]/export/epub/route.ts (EPUB3.0导出, ~260行)
+- src/components/stats/HourlyDistributionChart.tsx (recharts BarChart)
+- src/components/stats/WeekdayChart.tsx (recharts BarChart, 可切章节/字数)
+- src/components/stats/ReadingSpeedChart.tsx (recharts AreaChart + 移动均线)
+
+## 修改文件
+- src/app/api/stats/reading-trend/route.ts (添加 ?days 参数)
+- src/app/stats/page.tsx (集成3个新图表+重试修复)
+- src/components/stats/ReadingTrendChart.tsx (完全重写: recharts + 7/30/90天切换)
+- src/app/novels/[id]/parts/NovelInfoSection.tsx (导出按钮→下拉菜单)
+- package.json (添加 jszip@3.10.1)
+
+## Bug修复
+1. reading-speed API: orderBy desc+reverse 修复获取最旧数据的问题
+2. EPUB导出: 添加 MAX_EXPORT_CHARS 检查防OOM
+3. stats/page.tsx: 重试按钮添加 setLoading(true) + setError(null)
+4. HourlyDistributionChart: 移除未使用的 maxCount 参数
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (全部预存在)
+- Dev server: 无编译错误
+- Git push: 33b53dd
+
+Stage Summary:
+- 统计页新增3个recharts图表: 24小时时段分布、每周分布、阅读量趋势
+- 阅读趋势图支持 7/30/90天 时间范围切换
+- EPUB导出完整实现 (EPUB3.0, 中文CSS, TOC, 章节分页)
+- 导出按钮升级为三格式下拉菜单
+- 4项bug修复
