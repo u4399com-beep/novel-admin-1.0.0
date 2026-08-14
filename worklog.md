@@ -8221,3 +8221,86 @@ Stage Summary:
 - EPUB导出完整实现 (EPUB3.0, 中文CSS, TOC, 章节分页)
 - 导出按钮升级为三格式下拉菜单
 - 4项bug修复
+
+---
+Task ID: R26
+Agent: Main Orchestrator
+Task: R26功能增强 - 热力图交互+首页增强+主题修复+时间线+雷达图+笔记系统
+
+Work Log:
+- 派出6个并行full-stack-developer agent实现新功能
+- Agent 3-a: 阅读热力图点击交互 (新API + Popover详情弹窗)
+- Agent 3-b: 首页增强 (最近更新小说 + 每日阅读洞察)
+- Agent 3-c: 管理后台侧边栏主题修复 (硬编码暗色→主题感知)
+- Agent 3-d: 小说详情页阅读进度时间线 (新API + 垂直时间线组件)
+- Agent 3-e: 统计页雷达图 + 完成度排行榜 (recharts RadarChart + Top5排行)
+- Agent 3-f: 章节笔记系统 + 5星评分 (DB模型 + API + 面板增强 + 笔记总览)
+
+## 新增API (6个)
+- GET /api/stats/daily-detail?date=YYYY-MM-DD&sessionId=xxx — 某日阅读详情
+- GET /api/public/recently-updated?limit=6 — 最近更新的小说
+- GET /api/novels/[id]/reading-timeline?sessionId=xxx — 阅读进度时间线
+- GET /api/stats/reading-radar?sessionId=xxx — 5维阅读能力雷达
+- GET /api/stats/completion-leaderboard?sessionId=xxx — 完成度排行Top5
+- PUT/GET /api/chapters/[id]/note — 章节笔记+评分CRUD
+- GET /api/novels/[id]/notes?sessionId=xxx — 小说全部章节笔记
+
+## 新增组件 (7个)
+- src/components/home/RecentlyUpdatedNovels.tsx — 最近更新水平滚动卡片
+- src/components/novel/detail/ReadingTimeline.tsx — 阅读进度垂直时间线
+- src/components/novel/detail/NovelNotesOverview.tsx — 小说笔记总览
+- src/components/stats/ReadingRadarChart.tsx — recharts雷达图+阅读类型标签
+- src/components/stats/CompletionLeaderboard.tsx — 完成度排行榜
+
+## 修改组件 (5个)
+- src/components/stats/ReadingHeatmap.tsx — 点击交互+Popover详情弹窗
+- src/components/home/HomeActivity.tsx — 今日阅读洞察+激励文案
+- src/components/reading/NotesPanel.tsx — 章节笔记编辑器+5星评分+自动保存
+- src/components/admin/AdminDesktopSidebar.tsx — 硬编码暗色→主题感知
+- src/components/novel/AppSidebar.tsx — 同步主题修复
+- src/app/admin/loading.tsx — skeleton主题适配
+
+## 数据库变更
+- prisma/schema.prisma: 新增ChapterNote模型 (id, chapterId, sessionId, content, rating, 唯一约束)
+
+## 修改页面 (3个)
+- src/app/page.tsx — 集成最近更新小说
+- src/app/stats/page.tsx — 集成雷达图+排行榜
+- src/app/novels/[id]/NovelDetailClient.tsx — 集成时间线+笔记总览
+
+## 新增文件总计: 12个
+## 修改文件总计: 12个
+## 新增代码: ~2000+行
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (全部预存在React Hook Form)
+- Dev server: 无编译错误
+- Git commit: 2 commits (b96b0a6 + 前一个)
+- Git push: 失败 (GitHub token过期, 本地已commit)
+
+Stage Summary:
+- 新增6个API端点, 7个组件, 1个DB模型
+- 热力图可点击查看某天阅读详情(Popover)
+- 首页新增最近更新小说横向滚动
+- 统计页新增阅读能力雷达图+完成度排行榜
+- 章节笔记系统完整实现(笔记+评分+总览)
+- 管理后台侧边栏修复为主题感知
+- 小说详情页新增阅读时间线
+
+## 项目当前状态描述/判断
+- R26功能增强阶段，新增大量可视化+交互功能
+- 统计页从5种图表增至8种(新增雷达图、排行榜、热力图交互)
+- 首页从静态变为动态(最近更新+阅读洞察)
+- 小说详情页从信息展示变为交互平台(时间线+笔记+网格)
+- 章节笔记系统为全新功能(DB+API+UI完整链路)
+- Git push因token过期失败，需更新token
+
+## 未解决问题或风险，建议下一阶段优先事项
+1. P1: Git token更新 (push失败)
+2. P2: 阅读器主题/字体设置增强 (更多阅读自定义选项)
+3. P2: 管理后台采集任务实时日志流 (WebSocket)
+4. P3: scraper-service 401轮询 (需配置SCRAPER_SERVICE_TOKEN)
+5. P3: task-engine abort signal传播到scraping函数
+6. 增强: 小说搜索支持全文搜索
+7. 增强: 批量操作 (批量删除/分类/导出)
+8. 增强: 阅读数据导出 (CSV/PDF报告)
