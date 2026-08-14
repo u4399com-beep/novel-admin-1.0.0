@@ -5,13 +5,14 @@ import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { Sparkles, Code, Bug, Globe, Cloud, Zap, Bot, Copy } from 'lucide-react';
+import { Sparkles, Code, Bug, Globe, Cloud, Zap, Bot, Copy, Library } from 'lucide-react';
 import { safeFormatDate } from '@/lib/format';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
+import { TemplateLibrary } from '@/components/scrape/TemplateLibrary';
 import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 import type { ScrapeRuleItem } from './types';
 
@@ -53,6 +54,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
   const [totalPages, setTotalPages] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const { deleteTarget, setDeleteTarget, deleting, handleDelete: confirmDelete } = useDeleteConfirm<ScrapeRuleItem>();
+  const [templateOpen, setTemplateOpen] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchRules = useCallback(async (signal?: AbortSignal) => {
@@ -129,6 +131,10 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
           <p className="text-sm text-muted-foreground">配置和管理小说采集规则 · 支持5种采集引擎</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="gap-1.5">
+            <Library className="h-4 w-4" />
+            <span className="hidden sm:inline">模板库</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => onOpenAiAssistant?.()} className="gap-1.5">
             <Sparkles className="h-4 w-4 text-purple-600" />
             <span className="hidden sm:inline">AI生成</span>
@@ -354,6 +360,13 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
           </Button>
         </div>
       )}
+
+      {/* Template Library Dialog */}
+      <TemplateLibrary
+        open={templateOpen}
+        onOpenChange={setTemplateOpen}
+        onApplied={fetchRules}
+      />
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDeleteDialog

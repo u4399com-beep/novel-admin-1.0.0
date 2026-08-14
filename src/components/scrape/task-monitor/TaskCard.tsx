@@ -3,10 +3,12 @@
 import React from 'react';
 import {
   ChevronDown, ChevronRight, FileText, BookOpen, XCircle, Ban, Trash2,
+  RotateCcw, CheckSquare, Square,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import { TaskProgress } from './TaskProgress';
 import { TaskLogPanel } from './TaskLogPanel';
@@ -21,6 +23,10 @@ interface TaskCardProps {
   formatDate: (d: string | null | undefined) => string;
   onToggleExpand: (taskId: string) => void;
   onDelete: (task: ScrapeTask) => void;
+  onRetry?: (task: ScrapeTask) => void;
+  onCancel?: (task: ScrapeTask) => void;
+  selected?: boolean;
+  onSelectChange?: (taskId: string, selected: boolean) => void;
 }
 
 function StatItem({
@@ -44,10 +50,13 @@ function StatItem({
 
 export const TaskCard = React.memo(function TaskCard({
   task, isExpanded, logs, logsLoading, formatDate, onToggleExpand, onDelete,
+  onRetry, onCancel, selected, onSelectChange,
 }: TaskCardProps) {
   const isRunning = task.status === 'running';
   const isCompleted = task.status === 'completed';
   const canDelete = task.status !== 'running';
+  const canRetry = task.status === 'failed' || task.status === 'cancelled';
+  const canCancel = task.status === 'running' || task.status === 'pending';
   const progressPercent = task.progress ?? 0;
   const runningElapsed = isRunning ? formatDuration(task.startedAt, null) : null;
   const completedTotal = isCompleted ? formatDuration(task.startedAt, task.completedAt) : null;
@@ -63,6 +72,22 @@ export const TaskCard = React.memo(function TaskCard({
         <CardHeader className="p-4 pb-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 min-w-0 flex-1">
+              {/* Batch selection checkbox */}
+              {onSelectChange && (
+                <div
+                  className="mt-0.5 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Checkbox
+                    checked={selected ?? false}
+                    onCheckedChange={(checked) =>
+                    onSelectChange(task.id, checked === true)
+                  }
+                    aria-label="选择任务"
+                />
+              </div>
+              )}
+
               {/* Expand icon */}
               <div className="mt-0.5 shrink-0">
                 {isExpanded ? (
@@ -94,21 +119,42 @@ export const TaskCard = React.memo(function TaskCard({
               </div>
             </div>
 
-            {/* Delete button (non-running) */}
-            {canDelete && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(task);
-                }}
-                title="删除任务"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
+            {/* Action buttons */}
+            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+              {canRetry && onRetry && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:bg-emerald-500/10"
+                  onClick={() => onRetry(task)}
+                  title="重试任务"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              )}
+              {canCancel && onCancel && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-amber-600 dark:text-amber-400 hover:text-amber-700 hover:bg-amber-500/10"
+                  onClick={() => onCancel(task)}
+                  title="取消任务"
+                >
+                  <Ban className="h-4 w-4" />
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => onDelete(task)}
+                  title="删除任务"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
       </button>

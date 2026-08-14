@@ -10,7 +10,7 @@ import { zhCN } from 'date-fns/locale';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
 import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 
-import { TaskCard, TaskActionsHeader, TaskStatusFilter, TaskPagination, LoadingSkeleton, EmptyState } from './task-monitor';
+import { TaskCard, TaskActionsHeader, TaskStatusFilter, TaskPagination, LoadingSkeleton, EmptyState, ScrapeStatsDashboard } from './task-monitor';
 import type { ScrapeTask, ScrapeTaskLog, TaskStatus } from './task-monitor';
 import { PAGE_SIZE } from './task-monitor';
 
@@ -29,7 +29,13 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const expandedTaskIdRef = useRef<string | null>(null);
 
+  // Batch selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [showBatchDeleteDialog, setShowBatchDeleteDialog] = useState(false);
+
   const hasRunningTasks = tasks.some((t) => t.status === 'running');
+  const runningCount = tasks.filter((t) => t.status === 'running').length;
 
   const fetchTasks = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -62,7 +68,6 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     const ac = new AbortController();
     if (hasRunningTasks) {
       autoRefreshRef.current = setInterval(() => {
-        // Use silent mode for auto-polling to prevent toast spam on auth failure
         const params = new URLSearchParams({
           page: String(page),
           pageSize: String(PAGE_SIZE),
@@ -136,14 +141,99 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
       expandedTaskIdRef.current = null;
       setExpandedLogs([]);
     }
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(deleteTarget.id);
+      return next;
+    });
     fetchTasks();
   }), [confirmDelete, deleteTarget, expandedTaskId, fetchTasks]);
+
+  const handleRetry = useCallback(async (task: ScrapeTask) => {
+    try {
+      const data = await apiFetch<{ taskId: string }>(`/api/scrape-tasks/${task.id}/retry`, { method: 'POST' });
+      toast.success('已创建重试任务');
+      fetchTasks();
+    } catch {
+      /* handled by apiFetch */
+    }
+  }, [fetchTasks]);
+
+  const handleCancel = useCallback(async (task: ScrapeTask) => {
+    try {
+      await apiFetch(`/api/scrape-tasks/${task.id}/cancel`, { method: 'POST' });
+      toast.success('任务已取消');
+      fetchTasks();
+    } catch {
+      /* handled by apiFetch */
+    }
+  }, [fetchTasks]);
+
+  const handleSelectChange = useCallback((taskId: string, selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(taskId);
+      } else {
+        next.delete(taskId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    const allIds = new Set(tasks.map((t) => t.id));
+    setSelectedIds((prev) => {
+      // If all are already selected, deselect all
+      if (prev.size === allIds.size && tasks.every((t) => prev.has(t.id))) {
+        return new Set();
+      }
+      return allIds;
+    });
+  }, [tasks]);
+
+  const handleDeselectAll = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleBatchDelete = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    setShowBatchDeleteDialog(true);
+  }, [selectedIds]);
+
+  const confirmBatchDelete = useCallback(async () => {
+    setBatchDeleting(true);
+    try {
+      const result = await apiFetch<{ deleted: number; skipped: number }>(
+        '/api/scrape-tasks/batch-delete',
+        {
+          method: 'POST',
+          body: JSON.stringify({ taskIds: Array.from(selectedIds) }),
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      const msg = `已删除 ${result.deleted} 条任务`;
+      if (result.skipped > 0) {
+        toast.warning(`${msg}，${result.skipped} 条运行中的任务已跳过`);
+      } else {
+        toast.success(msg);
+      }
+      setSelectedIds(new Set());
+      setShowBatchDeleteDialog(false);
+      fetchTasks();
+    } catch {
+      /* handled by apiFetch */
+    } finally {
+      setBatchDeleting(false);
+    }
+  }, [selectedIds, fetchTasks]);
 
   const handleRefresh = () => setRefreshKey((k) => k + 1);
 
   const handleFilterChange = (status: TaskStatus | 'all') => {
     setStatusFilter(status);
     setPage(1);
+    setSelectedIds(new Set());
   };
 
   const formatDate = useCallback((dateStr: string | null | undefined) =>
@@ -156,14 +246,25 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
 
   return (
     <div className="space-y-4">
+      <ScrapeStatsDashboard />
+
       <TaskActionsHeader
         onBack={onBack}
         hasRunningTasks={hasRunningTasks}
+        runningCount={runningCount}
         total={total}
         onRefresh={handleRefresh}
+        selectedCount={selectedIds.size}
+        onSelectAll={handleSelectAll}
+        onDeselectAll={handleDeselectAll}
+        onBatchDelete={handleBatchDelete}
       />
 
-      <TaskStatusFilter statusFilter={statusFilter} onFilterChange={handleFilterChange} />
+      <TaskStatusFilter
+        statusFilter={statusFilter}
+        onFilterChange={handleFilterChange}
+        onSelectAll={handleSelectAll}
+      />
 
       {loading ? (
         <LoadingSkeleton />
@@ -181,6 +282,10 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
               formatDate={formatDate}
               onToggleExpand={handleToggleExpand}
               onDelete={handleTaskDelete}
+              onRetry={handleRetry}
+              onCancel={handleCancel}
+              selected={selectedIds.has(task.id)}
+              onSelectChange={handleSelectChange}
             />
           ))}
         </div>
@@ -195,6 +300,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
         />
       )}
 
+      {/* Single delete confirm */}
       <ConfirmDeleteDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
@@ -202,6 +308,16 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
         description="删除后无法恢复。运行中的任务不可删除。"
         loading={deleting}
         onConfirm={handleDelete}
+      />
+
+      {/* Batch delete confirm */}
+      <ConfirmDeleteDialog
+        open={showBatchDeleteDialog}
+        onOpenChange={(open) => !open && setShowBatchDeleteDialog(false)}
+        title={`确定要删除选中的 ${selectedIds.size} 条任务吗？`}
+        description="删除后无法恢复。运行中的任务将被自动跳过。"
+        loading={batchDeleting}
+        onConfirm={confirmBatchDelete}
       />
     </div>
   );

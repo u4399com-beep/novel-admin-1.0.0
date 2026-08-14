@@ -13,6 +13,8 @@ import { type AntiCrawlEvent } from './anti-crawl/EventList';
 import { MonitorStats } from './anti-crawl/MonitorStats';
 import { type DashboardStats } from './anti-crawl/MonitorStats';
 import { MonitorFilters } from './anti-crawl/MonitorFilters';
+import { AlertConfigPanel } from './anti-crawl/AlertConfigPanel';
+import { EventAnalysisPanel } from './anti-crawl/EventAnalysisPanel';
 
 // ─── Main Monitor ──────────────────────────────────────────────────────────────
 
@@ -101,6 +103,9 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
             {/* Stats */}
             <MonitorStats stats={stats} />
 
+            {/* Event Analysis */}
+            <EventAnalysisPanel stats={stats} events={events} />
+
             {/* Recent Events */}
             <Card className="glass-card">
               <CardHeader className="pb-2 pt-4 px-4">
@@ -118,6 +123,9 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
                 <EventList events={events} />
               </CardContent>
             </Card>
+
+            {/* Alert Config */}
+            <AlertConfigPanel />
           </motion.div>
         </AnimatePresence>
       ) : null}
