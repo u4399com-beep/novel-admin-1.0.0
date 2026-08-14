@@ -442,6 +442,21 @@ model ReadingNote {
   @@index([userId])
 }
 
+// ==================== 章节笔记（按用户） ====================
+
+model ChapterNote {
+  id        String   @id @default(cuid())
+  chapterId String
+  sessionId String
+  content   String   // 笔记内容，最长2000字符
+  rating    Int?     // 1-5星评分
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([chapterId, sessionId])
+  @@index([sessionId])
+}
+
 // ==================== 反爬事件 ====================
 
 model AntiCrawlEvent {

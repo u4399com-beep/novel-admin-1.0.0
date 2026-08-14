@@ -15,6 +15,8 @@ import { ReadingTrendChart } from '@/components/stats/ReadingTrendChart';
 import { HourlyDistributionChart } from '@/components/stats/HourlyDistributionChart';
 import { WeekdayChart } from '@/components/stats/WeekdayChart';
 import { ReadingSpeedChart } from '@/components/stats/ReadingSpeedChart';
+import { ReadingRadarChart } from '@/components/stats/ReadingRadarChart';
+import { CompletionLeaderboard } from '@/components/stats/CompletionLeaderboard';
 import ReadingHeatmap from '@/components/stats/ReadingHeatmap';
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
@@ -292,6 +294,16 @@ export default function StatsPage() {
                 </ErrorBoundary>
                 <ErrorBoundary name="stats-weekday">
                   <WeekdayChart />
+                </ErrorBoundary>
+              </div>
+
+              {/* Radar Chart + Completion Leaderboard */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ErrorBoundary name="stats-reading-radar">
+                  <ReadingRadarChart />
+                </ErrorBoundary>
+                <ErrorBoundary name="stats-completion-leaderboard">
+                  <CompletionLeaderboard />
                 </ErrorBoundary>
               </div>
 
