@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  Shield, Lock, Fingerprint, Type, Wifi,
+  Shield, ShieldAlert, Lock, Fingerprint, Type, Wifi,
   Activity, MousePointer, AlertTriangle,
   CheckCircle, XCircle,
 } from 'lucide-react';
@@ -26,8 +26,32 @@ export interface AntiCrawlEvent {
   createdAt: string;
 }
 
+/** Parse CAPTCHA type badge from event detail */
+function parseCaptchaBadge(detail: string | null): string | null {
+  if (!detail) return null;
+  const typeMap: Record<string, string> = {
+    'recaptcha_v2': 'reCAPTCHA',
+    'recaptcha_v3': 'reCAPTCHA',
+    'hcaptcha': 'hCaptcha',
+    'geetest': 'GeeTest',
+    'cloudflare': 'CF',
+    'custom': '验证码',
+  };
+  for (const [key, label] of Object.entries(typeMap)) {
+    if (detail.includes(key)) return label;
+  }
+  return null;
+}
+
+/** Parse confidence from event detail */
+function parseCaptchaConfidence(detail: string | null): number | null {
+  if (!detail) return null;
+  const match = detail.match(/confidence[:\s]*(\d+)%/i);
+  return match ? parseInt(match[1], 10) : null;
+}
+
 export const EVENT_META: Record<string, { label: string; icon: typeof Shield; color: string; bg: string }> = {
-  captcha_triggered: { label: '验证码触发', icon: Lock, color: 'text-destructive', bg: 'bg-destructive/10' },
+  captcha_triggered: { label: '验证码触发', icon: ShieldAlert, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   proxy_exhausted: { label: '代理耗尽', icon: Wifi, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   font_updated: { label: '字体更新', icon: Type, color: 'text-sky-500', bg: 'bg-sky-500/10' },
   tls_blocked: { label: 'TLS拦截', icon: Fingerprint, color: 'text-chart-amber', bg: 'bg-chart-amber/10' },
@@ -45,12 +69,15 @@ const EventRow = React.memo(function EventRow({ event }: { event: AntiCrawlEvent
     bg: 'bg-muted',
   };
   const Icon = meta.icon;
+  const isCaptcha = event.eventType === 'captcha_triggered';
+  const captchaBadge = isCaptcha ? parseCaptchaBadge(event.detail) : null;
+  const captchaConfidence = isCaptcha ? parseCaptchaConfidence(event.detail) : null;
 
   return (
     <motion.div
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
-      className="flex items-center gap-3 rounded-lg border bg-background/50 px-3 py-2.5 hover:bg-muted/30 transition-colors group/ev"
+      className={`flex items-center gap-3 rounded-lg border bg-background/50 px-3 py-2.5 hover:bg-muted/30 transition-colors group/ev ${isCaptcha ? 'border-l-2 border-l-orange-500' : ''}`}
     >
       <div className={`rounded-md p-1.5 shrink-0 ${meta.bg}`}>
         <Icon className={`h-3.5 w-3.5 ${meta.color}`} />
@@ -58,6 +85,14 @@ const EventRow = React.memo(function EventRow({ event }: { event: AntiCrawlEvent
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium">{meta.label}</span>
+          {captchaBadge && (
+            <Badge variant="outline" className="text-[9px] px-1 py-0 font-normal border-orange-500/30 text-orange-600 bg-orange-500/5">
+              {captchaBadge}
+            </Badge>
+          )}
+          {captchaConfidence !== null && (
+            <span className="text-[9px] text-orange-500/70">{captchaConfidence}%</span>
+          )}
           <Badge variant="outline" className="text-[9px] px-1 py-0 font-normal">
             Lv.{event.level}
           </Badge>

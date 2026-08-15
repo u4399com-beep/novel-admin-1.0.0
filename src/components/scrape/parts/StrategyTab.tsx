@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Crosshair, Cloud, Brain, Shield } from 'lucide-react';
+import { Sparkles, Crosshair, Cloud, Brain, Shield, EyeOff } from 'lucide-react';
 import type { FormValues } from './schema';
 import type { EditorFormAccess } from './types';
 
@@ -34,7 +34,7 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
           onValueChange={(v) => {
             setValue('engine', v as FormValues['engine'], { shouldDirty: true });
             // Auto-set useJsRender when playwright/cloud-browser selected
-            if (v === 'playwright' || v === 'cloud-browser' || v === 'scrapling') {
+            if (v === 'playwright' || v === 'cloud-browser' || v === 'scrapling' || v === 'obscura') {
               setValue('antiCrawlConfig.useJsRender', true, { shouldDirty: true });
             }
           }}
@@ -97,10 +97,19 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
                 </div>
               </div>
             </SelectItem>
+            <SelectItem value="obscura">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                <div>
+                  <span className="font-medium">Obscura</span>
+                  <span className="ml-1 text-xs text-muted-foreground">隐身反指纹引擎</span>
+                </div>
+              </div>
+            </SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Cheerio: 最快 | Playwright: JS渲染 | Firecrawl: AI增强 | AgentQL: 自然语言 | 云端浏览器: 反检测 | Scrapling: Python反爬
+          Cheerio: 最快 | Playwright: JS渲染 | Firecrawl: AI增强 | AgentQL: 自然语言 | 云端浏览器: 反检测 | Scrapling: Python反爬 | Obscura: 全隐身
         </p>
       </div>
 
@@ -201,6 +210,35 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
                 <Badge variant="outline" className="text-xs">TLS指纹模拟</Badge>
                 <Badge variant="outline" className="text-xs">Canvas/WebGL混淆</Badge>
                 <Badge variant="outline" className="text-xs">Cloudflare绕过</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* Obscura Config - shown when obscura engine selected */}
+      {currentEngine === 'obscura' && (
+        <>
+          <Separator />
+          <Card className="border-rose-200 bg-rose-50/50 dark:border-rose-800 dark:bg-rose-950/20">
+            <CardHeader className="pb-3 pt-4 px-4">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <EyeOff className="h-4 w-4 text-rose-600" />
+                Obscura 隐身引擎
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                全面反指纹隐身引擎，覆盖WebGL、Canvas、AudioContext、WebRTC等15+检测向量，每域名独立指纹画像
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="text-xs">Navigator伪装</Badge>
+                <Badge variant="outline" className="text-xs">WebGL指纹</Badge>
+                <Badge variant="outline" className="text-xs">Canvas噪声</Badge>
+                <Badge variant="outline" className="text-xs">AudioContext</Badge>
+                <Badge variant="outline" className="text-xs">WebRTC防漏</Badge>
+                <Badge variant="outline" className="text-xs">时区一致</Badge>
+                <Badge variant="outline" className="text-xs">Iframe传播</Badge>
               </div>
             </CardContent>
           </Card>

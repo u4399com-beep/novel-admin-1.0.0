@@ -14,6 +14,8 @@ import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selec
 import { cleanHtmlRaw } from "./cleaning";
 import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey } from "./utils";
 import { isSafeUrl } from "./ssrf";
+import { detectCaptcha, CAPTCHA_TYPE_LABELS } from "./captcha-detector";
+import type { CaptchaDetection } from "./captcha-detector";
 
 // ==================== Pagination Helpers ====================
 
@@ -68,6 +70,8 @@ interface PaginatedFetchOptions {
   isContentPagination?: boolean;
   /** Called for each fetched page. Return false to stop paginating. */
   onPage: (html: string, url: string, pageIndex: number) => void | boolean | Promise<void | boolean>;
+  /** Called when CAPTCHA is detected. Return true to skip this page. */
+  onCaptcha?: (detection: CaptchaDetection, url: string) => boolean | Promise<boolean>;
 }
 
 /**
@@ -78,7 +82,7 @@ interface PaginatedFetchOptions {
 const MAX_CONTENT_PAGES = 20;
 
 async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNextPage: boolean }> {
-  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage, isContentPagination } = options;
+  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage, isContentPagination, onCaptcha } = options;
   const hardMax = isContentPagination ? MAX_CONTENT_PAGES : 100;
   const maxPages = Math.min(pagination?.maxPage || 1, hardMax);
   const engine = getEngine(engineType);
@@ -95,7 +99,21 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
     }
     visitedPages.add(currentUrl);
 
-    const { html } = await engine.fetch(currentUrl, { antiCrawl });
+    const { html, statusCode } = await engine.fetch(currentUrl, { antiCrawl });
+
+    // CAPTCHA detection
+    if (onCaptcha) {
+      const detection = detectCaptcha(html, currentUrl, statusCode);
+      if (detection.detected && detection.confidence > 0.5) {
+        console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[detection.type]} detected on ${currentUrl} (confidence: ${Math.round(detection.confidence * 100)}%)`);
+        const shouldSkip = await onCaptcha(detection, currentUrl);
+        if (shouldSkip) {
+          console.log(`  [${logPrefix}] Skipping page due to CAPTCHA`);
+          break;
+        }
+      }
+    }
+
     const shouldContinue = await onPage(html, currentUrl, page);
     if (shouldContinue === false) break;
 
@@ -168,7 +186,14 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
   const engineType = selectEngine(requestedEngine, antiCrawl);
   const engine = getEngine(engineType);
 
-  const { html } = await engine.fetch(url, { antiCrawl });
+  const { html, statusCode } = await engine.fetch(url, { antiCrawl });
+
+  // CAPTCHA detection for book info page
+  const captchaDetection = detectCaptcha(html, url, statusCode);
+  if (captchaDetection.detected && captchaDetection.confidence > 0.5) {
+    console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[captchaDetection.type]} detected on book page ${url} (confidence: ${Math.round(captchaDetection.confidence * 100)}%)`);
+    throw new Error(`CAPTCHA detected (${CAPTCHA_TYPE_LABELS[captchaDetection.type]}), skipping book info fetch`);
+  }
 
   const title = parseSelector(html, selectors.title);
   const author = selectors.author ? parseSelector(html, selectors.author) : "佚名";
@@ -261,6 +286,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
   const contentParts: string[] = [];
   let title = "";
   let pageCount = 0;
+  let captchaDetected: CaptchaDetection | null = null;
 
   await paginatedFetch({
     startUrl: url,
@@ -269,6 +295,10 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     engineType,
     logPrefix: "Content",
     isContentPagination: true,
+    onCaptcha: (detection) => {
+      captchaDetected = detection;
+      return true; // skip this page
+    },
     onPage: (html, _pageUrl, page) => {
       pageCount++;
       // Apply HTML-level cleaning first (removes ad elements via CSS selectors)
@@ -299,6 +329,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     wordCount: textOnly.length,
     engine: engineType,
     pagesFetched: pageCount,
+    captchaDetected: captchaDetected || undefined,
   };
 }
 

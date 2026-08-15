@@ -1,11 +1,333 @@
 'use client';
 
+import { useEffect, useState, useCallback } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
+import { RefreshCw, Shield, Activity, Server, Clock } from 'lucide-react';
 import type { EditorFormAccess } from './types';
+
+// ==================== Types ====================
+
+interface ProxyPoolStats {
+  totalProxies: number;
+  activeProxies: number;
+  coolingProxies: number;
+  disabledProxies: number;
+  avgHealthScore: number;
+  avgResponseTime: number;
+  totalSuccesses: number;
+  totalFailures: number;
+  successRate: number;
+  topProxies: Array<{
+    url: string;
+    host: string;
+    healthScore: number;
+    successCount: number;
+    failCount: number;
+    avgResponseTime: number;
+  }>;
+  serviceReachable?: boolean;
+}
+
+interface DomainDelayStats {
+  domain: string;
+  currentDelay: number;
+  backoffLevel: number;
+  consecutiveErrors: number;
+  avgResponseTime: number;
+  lastRequestTime: number;
+  status: 'normal' | 'warning' | 'backoff' | 'critical';
+}
+
+interface DelayStatsResponse {
+  domains: DomainDelayStats[];
+  totalDomains: number;
+  serviceReachable?: boolean;
+}
+
+// ==================== Status Color Helpers ====================
+
+function healthColor(score: number): string {
+  if (score >= 70) return 'text-green-600 dark:text-green-400';
+  if (score >= 40) return 'text-yellow-600 dark:text-yellow-400';
+  return 'text-red-600 dark:text-red-400';
+}
+
+function healthBgColor(score: number): string {
+  if (score >= 70) return 'bg-green-500';
+  if (score >= 40) return 'bg-yellow-500';
+  return 'bg-red-500';
+}
+
+function statusColor(status: DomainDelayStats['status']): { text: string; bg: string; label: string } {
+  switch (status) {
+    case 'normal': return { text: 'text-green-700 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30', label: '正常' };
+    case 'warning': return { text: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: '注意' };
+    case 'backoff': return { text: 'text-orange-700 dark:text-orange-400', bg: 'bg-orange-100 dark:bg-orange-900/30', label: '退避' };
+    case 'critical': return { text: 'text-red-700 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30', label: '严重' };
+  }
+}
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60000).toFixed(1)}min`;
+}
+
+// ==================== Sub-Components ====================
+
+function ProxyPoolPanel() {
+  const [stats, setStats] = useState<ProxyPoolStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch<ProxyPoolStats>('/api/admin/scraper/proxy-stats', { silent: true, timeout: 6000 });
+      setStats(data);
+    } catch (err) {
+      if (err instanceof FetchError && err.status === 0) {
+        setStats({
+          totalProxies: 0, activeProxies: 0, coolingProxies: 0, disabledProxies: 0,
+          avgHealthScore: 0, avgResponseTime: 0, totalSuccesses: 0, totalFailures: 0,
+          successRate: 0, topProxies: [], serviceReachable: false,
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    const interval = setInterval(fetchStats, 15000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <Shield className="h-4 w-4" />
+            代理池状态
+          </CardTitle>
+          <button
+            onClick={fetchStats}
+            className="rounded-md p-1 hover:bg-muted transition-colors"
+            disabled={loading}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-muted-foreground ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading && !stats ? (
+          <div className="space-y-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        ) : stats && stats.totalProxies === 0 ? (
+          <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+            <Server className="h-8 w-8 mb-2 opacity-40" />
+            <p className="text-sm">暂无代理配置</p>
+            <p className="text-xs mt-1">设置 PROXY_LIST 环境变量以启用代理池</p>
+            {!stats.serviceReachable && (
+              <p className="text-xs mt-2 text-yellow-600">采集服务未连接</p>
+            )}
+          </div>
+        ) : stats ? (
+          <>
+            {/* Summary Row */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-lg border bg-muted/20 px-3 py-2">
+                <p className="text-xs text-muted-foreground">活跃代理</p>
+                <p className={`text-lg font-semibold ${healthColor(stats.avgHealthScore)}`}>
+                  {stats.activeProxies}<span className="text-xs font-normal text-muted-foreground">/{stats.totalProxies}</span>
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 px-3 py-2">
+                <p className="text-xs text-muted-foreground">平均健康度</p>
+                <p className={`text-lg font-semibold ${healthColor(stats.avgHealthScore)}`}>
+                  {stats.avgHealthScore}<span className="text-xs font-normal text-muted-foreground">/100</span>
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 px-3 py-2">
+                <p className="text-xs text-muted-foreground">平均响应</p>
+                <p className="text-lg font-semibold">{stats.avgResponseTime > 0 ? formatMs(stats.avgResponseTime) : '-'}<span className="text-xs font-normal text-muted-foreground"></span></p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 px-3 py-2">
+                <p className="text-xs text-muted-foreground">成功率</p>
+                <p className={`text-lg font-semibold ${stats.successRate >= 80 ? 'text-green-600 dark:text-green-400' : stats.successRate >= 50 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {stats.successRate}%<span className="text-xs font-normal text-muted-foreground"></span>
+                </p>
+              </div>
+            </div>
+
+            {/* Cooling/Disabled badges */}
+            {(stats.coolingProxies > 0 || stats.disabledProxies > 0) && (
+              <div className="flex gap-2 flex-wrap">
+                {stats.coolingProxies > 0 && (
+                  <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                    冷却中: {stats.coolingProxies}
+                  </Badge>
+                )}
+                {stats.disabledProxies > 0 && (
+                  <Badge variant="secondary" className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    已禁用: {stats.disabledProxies}
+                  </Badge>
+                )}
+              </div>
+            )}
+
+            {/* Top 5 Proxies Bar Chart */}
+            {stats.topProxies.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">代理健康度排行</p>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {stats.topProxies.map((proxy, i) => (
+                    <div key={proxy.host + i} className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-4 text-right shrink-0">{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-xs truncate max-w-[60%]" title={proxy.host}>{proxy.host}</span>
+                          <span className={`text-xs font-medium ${healthColor(proxy.healthScore)}`}>{proxy.healthScore}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${healthBgColor(proxy.healthScore)}`}
+                            style={{ width: `${proxy.healthScore}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AdaptiveDelayPanel() {
+  const [data, setData] = useState<DelayStatsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await apiFetch<DelayStatsResponse>('/api/admin/scraper/delay-stats', { silent: true, timeout: 6000 });
+      setData(result);
+    } catch (err) {
+      if (err instanceof FetchError && err.status === 0) {
+        setData({ domains: [], totalDomains: 0, serviceReachable: false });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    const interval = setInterval(fetchStats, 15000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <Clock className="h-4 w-4" />
+            自适应延迟
+          </CardTitle>
+          <button
+            onClick={fetchStats}
+            className="rounded-md p-1 hover:bg-muted transition-colors"
+            disabled={loading}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-muted-foreground ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading && !data ? (
+          <div className="space-y-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        ) : data && data.totalDomains === 0 ? (
+          <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+            <Activity className="h-8 w-8 mb-2 opacity-40" />
+            <p className="text-sm">暂无延迟追踪数据</p>
+            <p className="text-xs mt-1">运行采集任务后将自动追踪各域名延迟</p>
+            {!data.serviceReachable && (
+              <p className="text-xs mt-2 text-yellow-600">采集服务未连接</p>
+            )}
+          </div>
+        ) : data ? (
+          <div className="space-y-3 max-h-64 overflow-y-auto">
+            {data.domains.map((domain) => {
+              const sc = statusColor(domain.status);
+              return (
+                <div key={domain.domain} className="rounded-lg border px-3 py-2.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium truncate max-w-[60%]" title={domain.domain}>{domain.domain}</span>
+                    <Badge variant="secondary" className={`text-xs ${sc.bg} ${sc.text}`}>
+                      {sc.label}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <p className="text-muted-foreground">当前延迟</p>
+                      <p className="font-medium">{formatMs(domain.currentDelay)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">平均响应</p>
+                      <p className="font-medium">{domain.avgResponseTime > 0 ? formatMs(domain.avgResponseTime) : '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">连续错误</p>
+                      <p className={`font-medium ${domain.consecutiveErrors > 0 ? 'text-red-600 dark:text-red-400' : ''}`}>{domain.consecutiveErrors}</p>
+                    </div>
+                  </div>
+                  {/* Backoff level indicator */}
+                  {domain.backoffLevel > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>退避级别</span>
+                        <span>Lv.{domain.backoffLevel}</span>
+                      </div>
+                      <Progress
+                        value={Math.min(domain.backoffLevel * 10, 100)}
+                        className="h-1.5"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ==================== Main Component ====================
 
 export function AntiCrawlTab({ form }: EditorFormAccess) {
   const { setValue, watch } = form;
@@ -96,6 +418,14 @@ export function AntiCrawlTab({ form }: EditorFormAccess) {
           </div>
         </div>
       </div>
+
+      <Separator />
+
+      {/* Smart Proxy Manager Panel */}
+      <ProxyPoolPanel />
+
+      {/* Adaptive Delay Panel */}
+      <AdaptiveDelayPanel />
     </div>
   );
 }

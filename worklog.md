@@ -8395,3 +8395,99 @@ Stage Summary:
 6. 增强: 站群系统完善 (站点模板/主题管理)
 7. 增强: 阅读器更多自定义 (字体/行距/主题色)
 8. 增强: 全文搜索 (小说名+作者+内容)
+---
+
+---
+Task ID: 3-e
+Agent: Cookie/CAPTCHA Enhancement Agent
+Task: Cookie/Session Management and CAPTCHA Detection
+
+Work Log:
+
+## New Files (6个)
+
+### Scraper Service Backend (2个)
+- mini-services/scraper-service/src/cookie-jar.ts — Cookie管理模块 (~230行)
+  - CookieJar类: domain级cookie存储、过期清理、导出/导入
+  - 单例实例cookieJar + 5分钟自动过期清理
+  - 支持getCookieHeader/getPlaywrightCookies/store/clear/clearAll/getStats/export/import/cleanup
+  - Set-Cookie解析: domain/path/httponly/secure/expires/max-age
+  - Domain匹配: 后缀匹配 + path前缀匹配 + 过期检查
+
+- mini-services/scraper-service/src/captcha-detector.ts — CAPTCHA检测模块 (~150行)
+  - detectCaptcha(html, url, statusCode) → CaptchaDetection
+  - 支持: reCAPTCHA v2/v3, hCaptcha, GeeTest, Cloudflare, 自定义图片验证码
+  - 多模式检测: HTML内容正则匹配 + HTTP状态码 + Cloudflare头 + Meta重定向
+  - 置信度评分: baseConfidence + perMatchBoost (0-1)
+  - 中文标签: CAPTCHA_TYPE_LABELS / CAPTCHA_BADGE_LABELS
+
+### Frontend (1个)
+- src/components/scrape/anti-crawl/CookieManagerPanel.tsx — Cookie管理面板 (~190行)
+  - 可折叠面板，显示域名列表+cookie计数+最后活动时间
+  - "清除所有"按钮(二次确认) + 单域名清除
+  - 刷新按钮 + 自动加载
+  - 紧凑卡片设计
+
+### API Routes (2个)
+- src/app/api/admin/scraper/cookies/route.ts — GET cookie统计
+  - 代理到scraper-service的/cookie-stats端点
+  - 支持includeData参数获取完整cookie数据
+  - 服务不可达时返回空mock数据
+
+- src/app/api/admin/scraper/cookies/clear/route.ts — POST 清除cookie
+  - 支持domain参数清除指定域名或全部
+  - 代理到scraper-service的/cookie-clear端点
+
+## Modified Files (5个)
+
+### Scraper Service
+- mini-services/scraper-service/src/engines.ts — CookieJar集成
+  - CheerioEngine: 请求前注入jar cookie header, 响应后存储set-cookie
+  - PlaywrightEngine: 创建context时注入jar cookies, 导航后提取context.cookies()存回jar
+  - ObscuraEngine: 同PlaywrightEngine的cookie集成
+  - Obscura日志改为DEBUG条件输出
+
+- mini-services/scraper-service/src/scrapers.ts — CAPTCHA检测集成
+  - paginatedFetch增加onCaptcha回调参数
+  - 每次fetch后运行detectCaptcha(), 置信度>0.5时触发回调
+  - handleScrapeBook: 直接检测CAPTCHA, 检测到则抛错
+  - handleScrapeContent: 通过onCaptcha回调返回captchaDetected字段
+
+- mini-services/scraper-service/src/task-engine.ts — CAPTCHA连续检测+暂停
+  - 引入captcha-detector模块
+  - processChapter中检查contentResult.captchaDetected
+  - 连续CAPTCHA计数器(consecutiveCaptchaCounts), 按域名追踪
+  - >=3次连续CAPTCHA: 暂停60秒, 日志+进度更新
+  - 成功时重置计数器
+
+- mini-services/scraper-service/index.ts — Cookie管理端点
+  - GET /cookie-stats: 返回cookie统计(支持includeData)
+  - POST /cookie-clear: 清除指定域名或全部cookie
+
+### Frontend
+- src/components/scrape/anti-crawl/EventList.tsx — CAPTCHA事件样式增强
+  - captcha_triggered图标从Lock改为ShieldAlert
+  - 颜色从destructive改为orange-500
+  - CAPTCHA事件: 左侧红橙渐变边框(border-l-orange-500)
+  - CAPTCHA类型badge(reCAPTCHA/hCaptcha/GeeTest/CF)
+  - 置信度百分比显示
+  - parseCaptchaBadge/parseCaptchaConfidence辅助函数
+
+- src/components/scrape/AntiCrawlMonitor.tsx — 集成CookieManagerPanel
+  - 导入并添加CookieManagerPanel到AlertConfig下方
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (全部预存在的React Hook Form)
+- TypeScript: scraper-service新增/修改文件无类型错误
+- Dev server: 无编译错误
+
+Stage Summary:
+- 完整的Cookie Jar系统: 域名级存储, HTTP/Playwright双模式, 自动过期清理
+- 6种CAPTCHA类型检测: reCAPTCHA v2/v3, hCaptcha, GeeTest, Cloudflare, 自定义
+- 引擎集成: Cheerio/Playwright/Obscura三个引擎自动管理cookie
+- 连续CAPTCHA防护: >=3次触发60秒暂停
+- 前端管理面板: 可折叠cookie域名列表, 单域名/全部清除
+- API层: GET cookie统计 + POST cookie清除
+- 事件列表增强: CAPTCHA类型badge + 置信度 + 红橙边框
+
+## 新增代码: ~800行

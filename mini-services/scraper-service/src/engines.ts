@@ -7,11 +7,16 @@
  *   firecrawl      → External Firecrawl API (self-hosted or cloud)
  *   agentql        → AgentQL API - extract data using natural language queries
  *   cloud-browser  → Browserless / Steel cloud browser API
+ *   scrapling      → Python anti-bot browser service
+ *   obscura        → Stealth anti-fingerprint browser (enhanced Playwright)
  */
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
 import { isSafeUrl } from "./ssrf";
 import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects } from "./utils";
+import { getProfileForDomain, getStealthScript } from "./stealth";
+import { proxyManager } from "./proxy-manager";
+import { cookieJar } from "./cookie-jar";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -95,7 +100,7 @@ export function getEngine(type: EngineType): ScrapingEngine {
 }
 
 export function getEngineNames(): EngineType[] {
-  return ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling"].filter((t) => engines.has(t));
+  return ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura"].filter((t) => engines.has(t));
 }
 
 // ==================== 1. Cheerio Engine (Enhanced HTTP) ====================
@@ -111,6 +116,30 @@ class CheerioEngine implements ScrapingEngine {
     const headers = buildFetchHeaders(options?.antiCrawl, options?.userAgent);
     const timeout = Math.max(5000, Math.min(options?.timeout || 30000, 300000));
 
+    // Inject cookies from the cookie jar
+    let targetDomain: string;
+    try { targetDomain = new URL(url).hostname; } catch { targetDomain = ''; }
+    if (targetDomain) {
+      const jarCookieHeader = cookieJar.getCookieHeader(targetDomain, '/');
+      if (jarCookieHeader) {
+        // Merge with existing Cookie header or set new
+        if (headers['Cookie']) {
+          headers['Cookie'] = `${jarCookieHeader}; ${headers['Cookie']}`;
+        } else {
+          headers['Cookie'] = jarCookieHeader;
+        }
+      }
+    }
+
+    // Proxy support: select best proxy for this domain
+    // TODO: When http-proxy-agent / socks-proxy-agent are installed, create agent here:
+    //   const agent = proxy ? createProxyAgent(proxy) : undefined;
+    //   const startTime = Date.now();
+    //   try { ... } finally {
+    //     if (proxy) proxyManager.recordSuccess(proxy.url, Date.now() - startTime);
+    //   }
+    const proxy = options?.proxy ? proxyManager.getProxy(new URL(url).hostname) : null;
+
     return retryWithBackoff(
       async () => {
         const startTime = Date.now();
@@ -123,16 +152,38 @@ class CheerioEngine implements ScrapingEngine {
             const elapsed = Date.now() - startTime;
             remainingTimeout = Math.max(5000, timeout - elapsed); // min 5s per redirect
           },
-          makeRequest: (fetchUrl) =>
-            fetch(fetchUrl, {
-              headers,
+          makeRequest: (fetchUrl) => {
+            // Inject jar cookies for each redirect hop too
+            const reqHeaders = { ...headers };
+            try {
+              const hopDomain = new URL(fetchUrl).hostname;
+              const hopCookieHeader = cookieJar.getCookieHeader(hopDomain, '/');
+              if (hopCookieHeader) {
+                reqHeaders['Cookie'] = reqHeaders['Cookie']
+                  ? `${hopCookieHeader}; ${reqHeaders['Cookie']}`
+                  : hopCookieHeader;
+              }
+            } catch { /* invalid URL, skip */ }
+            return fetch(fetchUrl, {
+              headers: reqHeaders,
               redirect: "manual",
               signal: AbortSignal.timeout(remainingTimeout),
-            }),
+            });
+          },
         });
 
         if (!response.ok) {
+          // Track proxy failure on error status codes
+          if (proxy) proxyManager.recordFailure(proxy.url, `HTTP ${response.status}: ${response.statusText} for ${url}`);
           throw new Error(`HTTP ${response.status}: ${response.statusText} for ${url}`);
+        }
+
+        // Store cookies from response
+        if (targetDomain) {
+          const setCookieHeaders = response.headers.getSetCookie?.() || [];
+          if (setCookieHeaders.length > 0) {
+            cookieJar.store(targetDomain, setCookieHeaders);
+          }
         }
 
         // Verify Content-Type is text-based
@@ -158,6 +209,9 @@ class CheerioEngine implements ScrapingEngine {
         maxRetries: options?.antiCrawl?.retries ?? 3,
         baseDelay: 1000,
         maxDelay: 15000,
+        onRetry: proxy ? (_attempt, err) => {
+          proxyManager.recordFailure(proxy.url, err.message);
+        } : undefined,
       }
     );
   }
@@ -227,21 +281,28 @@ class PlaywrightEngine implements ScrapingEngine {
     const userAgent = options?.userAgent || (options?.antiCrawl?.uaRotation ? getRandomUA() : undefined);
     const cookies = options?.cookies || options?.antiCrawl?.cookies;
 
+    // Get domain for cookie jar integration
+    let pwDomain: string;
+    try { pwDomain = new URL(url).hostname; } catch { pwDomain = ''; }
+
     return retryWithBackoff(
       async () => {
         const browser = await getPlaywrightBrowser();
         const context = await browser.newContext({ userAgent });
-        if (cookies?.length) {
-          await context.addCookies(
-            cookies
-              .filter((c) => c.name && c.value)
-              .map((c) => ({
-                name: c.name.replace(/[\r\n\t\x00-\x1f]/g, ""),
-                value: c.value.replace(/[\r\n\t\x00-\x1f]/g, ""),
-                domain: new URL(url).hostname,
-                path: "/",
-              }))
-          );
+
+        // Add cookies from jar + user-provided cookies
+        const jarCookies = pwDomain ? cookieJar.getPlaywrightCookies(pwDomain) : [];
+        const allCookies = [
+          ...jarCookies,
+          ...(cookies?.length ? cookies.filter((c) => c.name && c.value).map((c) => ({
+            name: c.name.replace(/[\r\n\t\x00-\x1f]/g, ""),
+            value: c.value.replace(/[\r\n\t\x00-\x1f]/g, ""),
+            domain: pwDomain,
+            path: "/",
+          })) : []),
+        ];
+        if (allCookies.length > 0) {
+          await context.addCookies(allCookies);
         }
 
         try {
@@ -292,6 +353,26 @@ class PlaywrightEngine implements ScrapingEngine {
             throw new Error(`Playwright page content too large: ${html.length} bytes (max 10MB)`);
           }
           const finalUrl = page.url();
+
+          // Store cookies back to jar after navigation
+          if (pwDomain) {
+            try {
+              const browserCookies = await context.cookies();
+              if (browserCookies.length > 0) {
+                // Convert Playwright cookies to set-cookie-like format for jar
+                const setCookieHeaders = browserCookies.map(c => {
+                  let header = `${c.name}=${c.value}`;
+                  if (c.domain) header += `; Domain=${c.domain}`;
+                  if (c.path) header += `; Path=${c.path}`;
+                  if (c.httpOnly) header += '; HttpOnly';
+                  if (c.secure) header += '; Secure';
+                  if (c.expires > 0) header += `; Expires=${new Date(c.expires * 1000).toUTCString()}`;
+                  return header;
+                });
+                cookieJar.store(pwDomain, setCookieHeaders);
+              }
+            } catch { /* ignore cookie extraction errors */ }
+          }
 
           return {
             html,
@@ -842,6 +923,297 @@ class ScraplingEngine implements ScrapingEngine {
   }
 }
 
+// ==================== 7. Obscura Engine (Stealth Anti-Fingerprint Browser) ====================
+
+/**
+ * Obscura Engine — a stealth headless browser that applies comprehensive
+ * anti-fingerprinting injections via Playwright's `page.addInitScript()`.
+ *
+ * Key differences from PlaywrightEngine:
+ *   - Per-domain consistent fingerprint profiles (WebGL, screen, UA, etc.)
+ *   - Full stealth injection: navigator, chrome object, WebGL, canvas noise,
+ *     AudioContext noise, screen props, WebRTC leak prevention, timezone,
+ *     permission API, iframe propagation
+ *   - Resource blocking (images, fonts, media) for speed
+ *   - Enhanced browser launch args for reduced detectability
+ */
+
+class ObscuraEngine implements ScrapingEngine {
+  readonly name: EngineType = "obscura";
+
+  private browser: import("playwright").Browser | null = null;
+  private launchPromise: Promise<import("playwright").Browser> | null = null;
+
+  private async getBrowser(): Promise<import("playwright").Browser> {
+    if (this.browser?.isConnected()) return this.browser;
+
+    if (this.launchPromise) {
+      try {
+        this.browser = await this.launchPromise;
+        if (this.browser?.isConnected()) return this.browser;
+      } catch {
+        // Launch failed, retry below
+      }
+    }
+
+    this.launchPromise = (async () => {
+      const { chromium } = await import("playwright");
+      const browser = await chromium.launch({
+        headless: true,
+        timeout: 30000,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--disable-extensions",
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--no-first-run",
+          "--no-default-browser-check",
+          // Obscura-specific: reduce automation surface area
+          "--disable-blink-features=AutomationControlled",
+          "--disable-features=IsolateOrigins,site-per-process",
+          "--disable-site-isolation-trials",
+          "--disable-web-security",
+          "--disable-features=VizDisplayCompositor",
+          "--disable-hang-monitor",
+          "--disable-prompt-on-repost",
+          "--disable-client-side-phishing-detection",
+          "--disable-component-update",
+          "--disable-default-apps",
+          "--disable-domain-reliability",
+          "--disable-features=TranslateUI",
+          "--disable-ipc-flooding-protection",
+          "--disable-notifications",
+          "--disable-popup-blocking",
+          "--disable-print-preview",
+          "--disable-reading-mode",
+          "--disable-renderer-throttling",
+          "--disable-sync",
+          "--disable-translate",
+          "--metrics-recording-only",
+          "--no-pings",
+          "--password-store=basic",
+          "--use-mock-keychain",
+          "--disable-infobars",
+          "--window-size=1920,1080",
+          // Fingerprint-consistent locale
+          "--lang=zh-CN",
+        ],
+      });
+      console.log("[Obscura] Stealth browser launched successfully");
+
+      browser.on("disconnected", () => {
+        console.log("[Obscura] Browser disconnected");
+        this.browser = null;
+        this.launchPromise = null;
+      });
+
+      return browser;
+    })();
+
+    return await this.launchPromise;
+  }
+
+  async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
+    if (!isSafeUrl(url)) {
+      throw new Error(`Blocked: target URL is not allowed (${url})`);
+    }
+
+    const timeout = Math.max(10000, Math.min(options?.timeout || 60000, 300000));
+    const cookies = options?.cookies || options?.antiCrawl?.cookies;
+
+    // Extract domain for per-domain fingerprint caching
+    let domain: string;
+    try {
+      domain = new URL(url).hostname;
+    } catch {
+      domain = url;
+    }
+
+    // Get or create a consistent fingerprint profile for this domain
+    const profile = getProfileForDomain(domain);
+    const stealthScript = getStealthScript(profile);
+
+    return retryWithBackoff(
+      async () => {
+        const browser = await this.getBrowser();
+
+        // Create browser context with profile-matched UA and viewport
+        const context = await browser.newContext({
+          userAgent: profile.userAgent,
+          viewport: {
+            width: profile.screenWidth,
+            height: profile.screenHeight,
+            deviceScaleFactor: profile.pixelRatio,
+          },
+          locale: "zh-CN",
+          timezoneId: profile.timezone,
+          screen: {
+            width: profile.screenWidth,
+            height: profile.screenHeight,
+          },
+          // Reduce detection signals
+          bypassCSP: true,
+          javaScriptEnabled: true,
+          ignoreHTTPSErrors: true,
+          serviceWorkers: "block",
+          extraHTTPHeaders: {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+          },
+        });
+
+        // Add cookies from jar + user-provided cookies
+        const jarCookies = cookieJar.getPlaywrightCookies(domain);
+        const obscuraCookies = [
+          ...jarCookies,
+          ...(cookies?.length ? cookies.filter((c) => c.name && c.value).map((c) => ({
+            name: c.name.replace(/[\r\n\t\x00-\x1f]/g, ""),
+            value: c.value.replace(/[\r\n\t\x00-\x1f]/g, ""),
+            domain,
+            path: "/",
+          })) : []),
+        ];
+        if (obscuraCookies.length > 0) {
+          await context.addCookies(obscuraCookies);
+        }
+
+        try {
+          const page = await context.newPage();
+
+          // ---- CRITICAL: Inject stealth script BEFORE any navigation ----
+          await page.addInitScript(stealthScript);
+
+          // Block images, fonts, and media for speed (we only need HTML)
+          await page.route(
+            /\.(png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|otf|eot|mp4|mp3|webm|avi|mov)(\?.*)?$/,
+            (route) => route.abort()
+          );
+
+          // Also block by resource type
+          await page.route("**/*", (route) => {
+            const resourceType = route.request().resourceType();
+            if (
+              ["image", "font", "media", "stylesheet"].includes(resourceType)
+            ) {
+              route.abort();
+              return;
+            }
+
+            // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
+            const routeUrl = route.request().url();
+            if (!routeUrl.startsWith("http://") && !routeUrl.startsWith("https://")) {
+              if (["document", "xhr", "fetch"].includes(resourceType)) {
+                route.abort();
+                return;
+              }
+            }
+            if (
+              ["document", "xhr", "fetch"].includes(resourceType) &&
+              !isSafeUrl(routeUrl)
+            ) {
+              route.abort();
+              return;
+            }
+
+            route.continue();
+          });
+
+          // Navigate with stealth
+          const response = await page.goto(url, {
+            waitUntil: "domcontentloaded",
+            timeout,
+          });
+
+          if (!response) {
+            throw new Error(`No response from ${url}`);
+          }
+
+          // Wait for network idle (give JS time to render content)
+          await page
+            .waitForLoadState("networkidle", { timeout: 10000 })
+          .catch(() => {
+            // networkidle timeout is acceptable, DOM content is enough
+          });
+
+          // Scroll to bottom to trigger lazy-loaded content
+          await page.evaluate(() => {
+            window.scrollTo(0, document.body.scrollHeight);
+          }).catch(() => {});
+
+          // Brief wait for any lazy-load triggers
+          await new Promise((resolve) => setTimeout(resolve, 800));
+
+          const html = await page.content();
+          if (html.length > MAX_RESPONSE_SIZE) {
+            throw new Error(
+              `Obscura page content too large: ${html.length} bytes (max 10MB)`
+            );
+          }
+          const finalUrl = page.url();
+
+          // Store cookies back to jar after navigation
+          try {
+            const browserCookies = await context.cookies();
+            if (browserCookies.length > 0) {
+              const setCookieHeaders = browserCookies.map(c => {
+                let header = `${c.name}=${c.value}`;
+                if (c.domain) header += `; Domain=${c.domain}`;
+                if (c.path) header += `; Path=${c.path}`;
+                if (c.httpOnly) header += '; HttpOnly';
+                if (c.secure) header += '; Secure';
+                if (c.expires > 0) header += `; Expires=${new Date(c.expires * 1000).toUTCString()}`;
+                return header;
+              });
+              cookieJar.store(domain, setCookieHeaders);
+            }
+          } catch { /* ignore cookie extraction errors */ }
+
+          if (process.env.DEBUG === 'true') {
+            console.log(
+              `[Obscura] Fetched ${finalUrl} (${html.length} bytes, status ${response.status()}, profile: ${profile.seed.slice(0, 12)}...)`
+            );
+          }
+
+          return {
+            html,
+            finalUrl,
+            statusCode: response.status(),
+          };
+        } finally {
+          await Promise.race([
+            context.close(),
+            new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+          ]).catch(() => {});
+        }
+      },
+      {
+        maxRetries: options?.antiCrawl?.retries ?? 2,
+        baseDelay: 2000,
+        maxDelay: 20000,
+      }
+    );
+  }
+
+  async close(): Promise<void> {
+    if (this.browser?.isConnected()) {
+      await this.browser.close().catch(() => {});
+      this.browser = null;
+      this.launchPromise = null;
+      console.log("[Obscura] Stealth browser closed");
+    }
+  }
+}
+
 // ==================== Smart Engine Selector ====================
 
 /**
@@ -872,6 +1244,7 @@ export function initEngines(): void {
   registerEngine(new AgentQLEngine());
   registerEngine(new CloudBrowserEngine());
   registerEngine(new ScraplingEngine());
+  registerEngine(new ObscuraEngine());
 
   console.log(`[Engines] Available: ${getEngineNames().join(", ")}`);
 
@@ -886,6 +1259,11 @@ export async function closeAllEngines(): Promise<void> {
   if (engines.has("playwright")) {
     const pwEngine = engines.get("playwright");
     if (pwEngine?.close) await pwEngine.close();
+  }
+  // Close Obscura (has its own separate browser instance)
+  if (engines.has("obscura")) {
+    const obsEngine = engines.get("obscura");
+    if (obsEngine?.close) await obsEngine.close();
   }
   engines.clear();
   console.log("[Engines] All engines closed");

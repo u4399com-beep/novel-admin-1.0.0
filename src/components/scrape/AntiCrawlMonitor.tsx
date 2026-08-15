@@ -15,6 +15,7 @@ import { type DashboardStats } from './anti-crawl/MonitorStats';
 import { MonitorFilters } from './anti-crawl/MonitorFilters';
 import { AlertConfigPanel } from './anti-crawl/AlertConfigPanel';
 import { EventAnalysisPanel } from './anti-crawl/EventAnalysisPanel';
+import { CookieManagerPanel } from './anti-crawl/CookieManagerPanel';
 
 // ─── Main Monitor ──────────────────────────────────────────────────────────────
 
@@ -126,6 +127,9 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
 
             {/* Alert Config */}
             <AlertConfigPanel />
+
+            {/* Cookie Manager */}
+            <CookieManagerPanel />
           </motion.div>
         </AnimatePresence>
       ) : null}

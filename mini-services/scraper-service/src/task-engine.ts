@@ -17,6 +17,9 @@ import { selectEngine } from "./engines";
 import { handleClean, cleanText } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
 import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";
+import { adaptiveDelay } from "./adaptive-delay";
+import { detectCaptcha, CAPTCHA_TYPE_LABELS } from "./captcha-detector";
+import type { CaptchaDetection } from "./captcha-detector";
 
 // ==================== Atomic Counter ====================
 
@@ -41,6 +44,31 @@ class Semaphore {
 }
 
 const dbWriteSemaphore = new Semaphore(3);
+
+/** Extract domain from a URL string for adaptive delay tracking */
+function extractDomain(url: string): string {
+  try { return new URL(url).hostname; } catch { return 'unknown'; }
+}
+
+/** Get delay: adaptive if available, fallback to randomDelay */
+async function getAdaptiveOrRandomDelay(url: string, min?: number, max?: number): Promise<void> {
+  if (min !== undefined && max !== undefined && min > 0) {
+    // Use adaptive delay, but respect configured minimums
+    const domain = extractDomain(url);
+    const delay = await adaptiveDelay.getDelay(domain);
+    // Use the larger of adaptive delay or configured min
+    const finalDelay = Math.max(delay, min);
+    await new Promise<void>(resolve => setTimeout(resolve, finalDelay));
+  } else {
+    await randomDelay(min || 0, max || 0);
+  }
+}
+
+/** Record response outcome for adaptive delay tracking */
+function recordAdaptiveResponse(url: string, elapsed: number, success: boolean, statusCode?: number): void {
+  const domain = extractDomain(url);
+  adaptiveDelay.recordResponse(domain, elapsed, success, statusCode);
+}
 
 // ==================== API Client ====================
 
@@ -392,10 +420,11 @@ async function executeTaskBody(
       console.log(`[Task ${taskId}] Processing book ${index + 1}/${bookUrls.length}: ${bookUrl}`);
 
       if (antiCrawlConfig.delay) {
-        await randomDelay(antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
+        await getAdaptiveOrRandomDelay(bookUrl, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
       }
 
       // Scrape book info using selected engine
+      const bookStartTime = Date.now();
       const bookInfo = await handleScrapeBook({
         url: bookUrl,
         selectors: {
@@ -497,6 +526,9 @@ async function executeTaskBody(
 
       booksProcessed.push({ id: novelId, title: bookInfo.title, url: bookUrl });
 
+      // Record adaptive response for book scrape
+      recordAdaptiveResponse(bookUrl, Date.now() - bookStartTime, true);
+
       // Download cover
       if (bookInfo.coverUrl && rule.coverSavePath) {
         try {
@@ -516,6 +548,7 @@ async function executeTaskBody(
       }
     } catch (err) {
       failedItemsCount.increment();
+      recordAdaptiveResponse(bookUrl, 0, false);
       console.error(`[Task ${taskId}] Error processing book ${bookUrl}:`, err);
       await addTaskLog(taskId, "error", `采集书籍失败: ${bookUrl}`, bookUrl, String(err));
     }
@@ -602,10 +635,11 @@ async function executeTaskBody(
       }
 
       if (antiCrawlConfig.delay) {
-        await randomDelay(antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
+        await getAdaptiveOrRandomDelay(chapterListUrl, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
       }
 
       // Scrape chapter list using selected engine
+      const chapterListStartTime = Date.now();
       const { chapters, titleDupCount } = await handleScrapeChapters({
         url: chapterListUrl,
         selectors: {
@@ -618,6 +652,9 @@ async function executeTaskBody(
         enableShuffle: rule.enableShuffle,
         engine: engineType,
       });
+
+      // Record adaptive response for chapter list scrape
+      recordAdaptiveResponse(chapterListUrl, Date.now() - chapterListStartTime, true);
 
       console.log(`[Task ${taskId}] Found ${chapters.length} chapters for ${book.title}${titleDupCount ? ` (${titleDupCount} title dups removed)` : ""}`);
 
@@ -675,6 +712,11 @@ async function executeTaskBody(
       // Process chapters with concurrency
       const chapterQueue = [...chapters];
 
+      // CAPTCHA consecutive detection per domain
+      const consecutiveCaptchaCounts = new Map<string, number>();
+      const CONSECUTIVE_CAPTCHA_THRESHOLD = 3;
+      const CAPTCHA_PAUSE_MS = 60000;
+
       async function processChapter(): Promise<void> {
         if (chapterQueue.length === 0) return;
         const chapter = chapterQueue.shift()!;
@@ -692,10 +734,11 @@ async function executeTaskBody(
           }
 
           if (antiCrawlConfig.delay) {
-            await randomDelay(antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
+            await getAdaptiveOrRandomDelay(chapter.url, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
           }
 
           // Scrape chapter content using selected engine
+          const contentStartTime = Date.now();
           const contentResult = await handleScrapeContent({
             url: chapter.url,
             selectors: {
@@ -707,6 +750,42 @@ async function executeTaskBody(
             engine: engineType,
             cleanConfig,
           });
+
+          // CAPTCHA detection: skip chapter if detected
+          const captchaResult = (contentResult as { captchaDetected?: CaptchaDetection }).captchaDetected;
+          if (captchaResult) {
+            const chDomain = extractDomain(chapter.url);
+            const prevCount = consecutiveCaptchaCounts.get(chDomain) || 0;
+            const newCount = prevCount + 1;
+            consecutiveCaptchaCounts.set(chDomain, newCount);
+
+            await addTaskLog(
+              taskId, "warn",
+              `CAPTCHA detected: ${CAPTCHA_TYPE_LABELS[captchaResult.type]} on ${chapter.url} (confidence: ${Math.round(captchaResult.confidence * 100)}%)`,
+              chapter.url,
+              `type=${captchaResult.type}, evidence=${captchaResult.evidence.slice(0, 3).join('; ')}`
+            );
+            await updateTaskProgress(taskId, {
+              currentStep: `⚠️ 检测到验证码(${CAPTCHA_TYPE_LABELS[captchaResult.type]})，已跳过该页面`,
+            });
+
+            // Pause if consecutive CAPTCHAs exceed threshold
+            if (newCount >= CONSECUTIVE_CAPTCHA_THRESHOLD) {
+              await addTaskLog(taskId, "warn", `验证码频繁(${chDomain}), 暂停${CAPTCHA_PAUSE_MS / 1000}秒`);
+              await updateTaskProgress(taskId, {
+                currentStep: `⚠️ 验证码频繁，暂停${CAPTCHA_PAUSE_MS / 1000}秒...`,
+              });
+              await new Promise<void>((resolve) => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+              consecutiveCaptchaCounts.set(chDomain, 0);
+            }
+
+            skippedChaptersCount.increment();
+            return;
+          } else {
+            // Reset consecutive counter on success
+            const chDomain = extractDomain(chapter.url);
+            consecutiveCaptchaCounts.set(chDomain, 0);
+          }
 
           // Clean content
           const cleanResult = cleanText(contentResult.content, cleanConfig);
@@ -749,6 +828,9 @@ async function executeTaskBody(
             dbWriteSemaphore.release();
           }
 
+          // Record adaptive response for content scrape
+          recordAdaptiveResponse(chapter.url, Date.now() - contentStartTime, chStatus === 201, chStatus);
+
           if (chStatus === 201) {
             newChaptersCount.increment();
             // Update existingChapters map to prevent duplicates within same task
@@ -762,6 +844,7 @@ async function executeTaskBody(
           processedChaptersCount.increment();
         } catch (err) {
           failedItemsCount.increment();
+          recordAdaptiveResponse(chapter.url, 0, false);
           const errMsg = err instanceof Error ? err.message : String(err);
           console.error(`[Task ${taskId}] Error scraping chapter ${chapter.url}:`, errMsg);
           await addTaskLog(taskId, "error", `章节采集失败: ${chapter.title || chapter.url}`, chapter.url, errMsg.slice(0, 500));

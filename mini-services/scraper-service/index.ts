@@ -27,6 +27,9 @@ import { handleDownloadCover } from "./src/scrapers";
 import { handleGenerateRule, handlePreviewPage } from "./src/ai-rule-generator";
 import { executeTask, recoverStaleTasks, detectStuckTasks } from "./src/task-engine";
 import { getQueueStats, cleanupQueue, requeueFailed, clearTaskQueue } from "./src/queue";
+import { proxyManager } from "./src/proxy-manager";
+import { adaptiveDelay } from "./src/adaptive-delay";
+import { cookieJar } from "./src/cookie-jar";
 import { timingSafeEqual } from "node:crypto";
 import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest,
@@ -167,6 +170,54 @@ export function startServer(port: number = 3099) {
         const taskId = url.searchParams.get("taskId") || undefined;
         const stats = await getQueueStats(taskId);
         return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Proxy pool stats (auth required)
+      if (path === "/proxy-stats" && method === "GET") {
+        const stats = proxyManager.getPoolStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Adaptive delay stats (auth required)
+      if (path === "/delay-stats" && method === "GET") {
+        const domainStats = adaptiveDelay.getAllDomainStats();
+        return Response.json({ domains: domainStats, totalDomains: domainStats.length }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Cookie jar stats (auth required)
+      if (path === "/cookie-stats" && method === "GET") {
+        const includeData = url.searchParams.get("includeData") === "true";
+        const stats = cookieJar.getStats();
+        const totalCookies = stats.reduce((sum, s) => sum + s.count, 0);
+        const result: Record<string, unknown> = {
+          domains: stats,
+          totalDomains: stats.length,
+          totalCookies,
+          serviceReachable: true,
+        };
+        if (includeData) {
+          result.exportData = cookieJar.export();
+        }
+        return Response.json(result, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Cookie jar clear (auth required)
+      if (path === "/cookie-clear" && method === "POST") {
+        const domain = url.searchParams.get("domain");
+        if (domain) {
+          cookieJar.clear(domain);
+        } else {
+          cookieJar.clearAll();
+        }
+        return Response.json({ cleared: true, domain: domain || 'all' }, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
