@@ -598,6 +598,135 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
     scrapeMode: 'incremental',
     dedupMode: 'both',
   },
+
+  // ==================== 16. 精华书阁 (jhsssd) ====================
+  {
+    id: 'jhsssd',
+    name: '精华书阁',
+    description: 'jhsssd.com 精华书阁小说站，列表页展示分类/书名/作者/状态/最新章节，详情页为标准笔趣阁系布局，正文在#nr_content中',
+    siteUrl: 'https://www.jhsssd.com',
+    engine: 'cheerio',
+    difficulty: 'easy',
+    tags: ['精华书阁', '小说', '免费', '笔趣阁系'],
+
+    listUrl: 'https://www.jhsssd.com/Ranking_lastupdate/',
+    listSelector: css('.list_ul li'),
+
+    bookTitleSelector: css('#info h1'),
+    bookAuthorSelector: css('#info .small span:first-of-type'),
+    bookCategorySelector: css('#info .small span:nth-child(2)'),
+    bookKeywordsSelector: css(''),
+    bookDescriptionSelector: css('#intro p'),
+    bookCoverSelector: css('#sidebar img'),
+    bookStatusSelector: css('#info .small span:nth-child(3)'),
+
+    chapterListUrl: '{bookUrl}',
+    chapterListSelector: css('#list dl dd a'),
+    chapterTitleSelector: css('#list dl dd a'),
+    chapterLinkSelector: css('#list dl dd a'),
+
+    contentSelector: css('#nr_content'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
+
+  // ==================== 17. 完本神站 (wbsz) ====================
+  {
+    id: 'wbsz',
+    name: '完本神站',
+    description: 'wanbenshenzhan.com 完本神站，表格布局列表页含分类/书名/章节/状态/字数/作者，详情页含完整书籍信息和章节目录',
+    siteUrl: 'https://www.wanbenshenzhan.com',
+    engine: 'cheerio',
+    difficulty: 'easy',
+    tags: ['完本神站', '万本神站', '小说', '免费', '表格布局'],
+
+    listUrl: 'https://www.wanbenshenzhan.com/all/0_lastupdate_0_0_1.html',
+    listSelector: css('.data-table tbody tr'),
+
+    bookTitleSelector: css('.book-info-detail h1'),
+    bookAuthorSelector: css('.book-meta span:first-of-type'),
+    bookCategorySelector: css('.book-meta span:nth-child(2)'),
+    bookKeywordsSelector: css(''),
+    bookDescriptionSelector: css('.book-intro p'),
+    bookCoverSelector: css('.book-cover-large img'),
+    bookStatusSelector: css('.book-meta .status-badge'),
+
+    chapterListUrl: '{bookUrl}',
+    chapterListSelector: css('#chapter-list .chapter-col a'),
+    chapterTitleSelector: css('#chapter-list .chapter-col a'),
+    chapterLinkSelector: css('#chapter-list .chapter-col a'),
+
+    contentSelector: css('.chapter-content'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
+
+  // ==================== 18. 爱QQ小说 (aiqqx) ====================
+  {
+    id: 'aiqqx',
+    name: '爱QQ小说',
+    description: 'aiqqx.com 爱QQ小说，站点受Cloudflare保护需Playwright引擎渲染，基于通用笔趣阁系布局推测选择器',
+    siteUrl: 'https://www.aiqqx.com',
+    engine: 'playwright',
+    difficulty: 'hard',
+    tags: ['爱QQ小说', 'Cloudflare', 'JS渲染', '反爬'],
+
+    listUrl: 'https://www.aiqqx.com/',
+    // 使用多备选选择器兼容不同可能的布局
+    listSelector: css('.novelslist2 li, .novellist li, .list_main li'),
+
+    bookTitleSelector: css('#info h1, .book-info h1, h1.book-title'),
+    bookAuthorSelector: css('#info p:first-of-type, .book-info .author, p.author'),
+    bookCategorySelector: css('.con_top a:nth-child(2), .book-info .category, p.category'),
+    bookKeywordsSelector: css(''),
+    bookDescriptionSelector: css('#intro, .book-intro, .intro'),
+    bookCoverSelector: css('#sidebar img, .book-cover img, .cover img'),
+    bookStatusSelector: css('#info p:nth-child(2), .book-info .status'),
+
+    chapterListUrl: '{bookUrl}',
+    chapterListSelector: css('#list dl dd a, .chapter-list a, .listmain dd a'),
+    chapterTitleSelector: css('#list dl dd a, .chapter-list a, .listmain dd a'),
+    chapterLinkSelector: css('#list dl dd a, .chapter-list a, .listmain dd a'),
+
+    contentSelector: css('#content, .content, .read-content, .chapter-content'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
+
+  // ==================== 19. 速读谷 (sudugu) ====================
+  {
+    id: 'sudugu',
+    name: '速读谷',
+    description: 'sudugu.org 速读谷小说站，首页卡片式布局展示小说封面/标题/作者/最新章节，详情页含简介和目录列表，正文在.con中',
+    siteUrl: 'https://www.sudugu.org',
+    engine: 'cheerio',
+    difficulty: 'easy',
+    tags: ['速读谷', '小说', '免费', '卡片布局'],
+
+    listUrl: 'https://www.sudugu.org/',
+    listSelector: css('.container > .item'),
+
+    bookTitleSelector: css('.itemtxt h1 a, .itemtxt h3 a'),
+    bookAuthorSelector: css('.itemtxt p a'),
+    bookCategorySelector: css('.itemtxt p span:nth-child(2)'),
+    bookKeywordsSelector: css(''),
+    bookDescriptionSelector: css('.des.bb p'),
+    bookCoverSelector: css('.item > a > img'),
+    bookStatusSelector: css('.itemtxt p span:first-child'),
+
+    chapterListUrl: '{bookUrl}#dir',
+    chapterListSelector: css('#list.dir ul li a'),
+    chapterTitleSelector: css('#list.dir ul li a'),
+    chapterLinkSelector: css('#list.dir ul li a'),
+
+    contentSelector: css('.con'),
+
+    scrapeMode: 'incremental',
+    dedupMode: 'both',
+  },
 ];
 
 /**
