@@ -223,6 +223,7 @@ export const TaskCard = React.memo(function TaskCard({
           logs={logs}
           logsLoading={logsLoading}
           formatDate={formatDate}
+          taskId={task.id}
         />
       </CardContent>
     </Card>

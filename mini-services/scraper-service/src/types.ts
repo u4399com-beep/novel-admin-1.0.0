@@ -283,3 +283,50 @@ export interface FirecrawlConfig {
   apiKey?: string;  // For cloud API
   timeout?: number;
 }
+
+// ==================== Priority Types ====================
+
+export type TaskPriority = 'critical' | 'high' | 'medium' | 'low';
+
+export const PRIORITY_MAP: Record<TaskPriority, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+export const REVERSE_PRIORITY_MAP: Record<number, TaskPriority> = {
+  0: 'critical',
+  1: 'high',
+  2: 'medium',
+  3: 'low',
+};
+
+// ==================== Quality Scoring Types ====================
+
+export interface QualityCheck {
+  name: string;
+  passed: boolean;
+  score: number;
+  message: string;
+}
+
+export interface QualityReport {
+  taskId: string;
+  overallScore: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  checks: QualityCheck[];
+  summary: string;
+  timestamp: string;
+}
+
+export interface ScrapeResult {
+  totalBooks: number;
+  newBooks: number;
+  totalChapters: number;
+  newChapters: number;
+  failedItems: number;
+  skippedItems: number;
+  engine: string;
+  duration?: number;
+}

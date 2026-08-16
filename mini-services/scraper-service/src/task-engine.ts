@@ -20,6 +20,39 @@ import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";
 import { adaptiveDelay } from "./adaptive-delay";
 import { detectCaptcha, CAPTCHA_TYPE_LABELS } from "./captcha-detector";
 import type { CaptchaDetection } from "./captcha-detector";
+import { qualityScorer } from "./quality-scorer";
+
+// ==================== WebSocket Log Streaming ====================
+
+const LOG_STREAM_URL = process.env.LOG_STREAM_URL || "http://localhost:3004";
+
+/** Best-effort log streaming to WebSocket service (non-blocking, no await) */
+function streamLogToWS(taskId: string, level: string, message: string, url?: string, detail?: string) {
+  try {
+    fetch(`${LOG_STREAM_URL}/push-log`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId, level, message: message.slice(0, 500), url: url?.slice(0, 2048), detail: detail?.slice(0, 1000), timestamp: new Date().toISOString() }),
+      signal: AbortSignal.timeout(2000), // 2s timeout, don't block
+    }).catch(() => {}); // Silent - log streaming is best-effort
+  } catch {
+    // Silently ignore - log streaming is best-effort
+  }
+}
+
+/** Best-effort progress streaming to WebSocket service (non-blocking, no await) */
+function streamProgressToWS(taskId: string, updates: Record<string, unknown>) {
+  try {
+    fetch(`${LOG_STREAM_URL}/push-progress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId, updates }),
+      signal: AbortSignal.timeout(2000),
+    }).catch(() => {});
+  } catch {
+    // Silently ignore - log streaming is best-effort
+  }
+}
 
 // ==================== Atomic Counter ====================
 
@@ -137,6 +170,9 @@ async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) 
   } catch (err) {
     console.error(`[Task] Failed to update task progress:`, err);
   }
+
+  // Stream progress to WebSocket service (best-effort)
+  streamProgressToWS(taskId, updates as Record<string, unknown>);
 }
 
 async function addTaskLog(
@@ -179,6 +215,9 @@ async function addTaskLog(
       console.error(`[Task] Failed to flush ${logs.length} logs:`, err);
     }
   }
+
+  // Stream log to WebSocket service (best-effort)
+  streamLogToWS(taskId, level, truncatedMsg, url, truncatedDetail);
 }
 
 // Log buffer for batched API calls
@@ -324,12 +363,33 @@ export async function executeTask(taskId: string) {
   });
 
   const taskCtx: TaskContext = { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode };
+  const taskStartTime = Date.now();
 
   try {
-    await Promise.race([
+    const taskResult = await Promise.race([
       executeTaskBody(taskId, task, rule, abortController, taskCtx),
       taskTimeoutPromise,
     ]);
+
+    // Quality scoring after successful completion
+    try {
+      const duration = Date.now() - taskStartTime;
+      const qualityReport = qualityScorer.score(taskId, {
+        totalBooks: taskResult.totalBooks,
+        newBooks: taskResult.newBooks,
+        totalChapters: taskResult.totalChapters,
+        newChapters: taskResult.newChapters,
+        failedItems: taskResult.failed,
+        skippedItems: taskResult.skipped,
+        engine: taskResult.engine,
+        duration,
+      });
+      await addTaskLog(taskId, "info", `数据质量评分: ${qualityReport.overallScore}/100 (${qualityReport.grade}) - ${qualityReport.summary}`);
+    } catch {
+      // Quality scoring is best-effort, don't fail the task
+    }
+
+    return taskResult;
   } finally {
     clearInterval(heartbeatInterval);
     clearTimeout(taskTimeoutId);

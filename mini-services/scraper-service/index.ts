@@ -68,6 +68,11 @@ import { cookieStore } from "./src/cookie-store";
 import { rateLimiter } from "./src/rate-limiter";
 import { testProxyConnection, testMultipleProxies } from "./src/proxy-conn-test";
 import type { ProxyTestResult } from "./src/proxy-conn-test";
+import { priorityQueue } from "./src/priority-queue";
+import { qualityScorer } from "./src/quality-scorer";
+import { antiCrawlAdvisor } from "./src/anti-crawl-advisor";
+import { PRIORITY_MAP, REVERSE_PRIORITY_MAP } from "./src/types";
+import type { TaskPriority, ScrapeResult } from "./src/types";
 import { sessionManager } from "./src/session-manager";
 import { requestFingerprintMgr } from "./src/request-fingerprint";
 import { timingSafeEqual } from "node:crypto";
@@ -551,6 +556,48 @@ export function startServer(port: number = 3099) {
         });
       }
 
+        // ==================== Priority Queue Stats (GET, before POST-only gate) ====================
+
+        if (path === "/priority-queue/stats" && method === "GET") {
+          const stats = priorityQueue.getStats();
+          return Response.json(stats, {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // ==================== Quality Stats (GET, before POST-only gate) ====================
+
+        if (path === "/quality/recent" && method === "GET") {
+          const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "10", 10)));
+          const reports = qualityScorer.getRecentReports(limit);
+          return Response.json({ reports }, {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (path === "/quality/stats" && method === "GET") {
+          const stats = qualityScorer.getAggregateStats();
+          return Response.json(stats, {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // PUT /priority-queue/concurrency (before POST-only gate, needs body)
+        if (path === "/priority-queue/concurrency" && method === "PUT") {
+          let pqBody: unknown;
+          try { pqBody = await req.json(); } catch {
+            return Response.json({ error: "Invalid JSON body" }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          const { maxConcurrent } = pqBody as { maxConcurrent?: number };
+          if (typeof maxConcurrent !== 'number' || maxConcurrent < 1 || maxConcurrent > 20) {
+            return Response.json({ error: 'maxConcurrent must be 1-20' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          priorityQueue.setMaxConcurrent(maxConcurrent);
+          return Response.json({ maxConcurrent }, {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
       // Rate limiting (per client IP)
       // Only use x-real-ip (set by Caddy, not spoofable)
       const clientIp = req.headers.get('x-real-ip') || 'unknown';
@@ -654,18 +701,61 @@ export function startServer(port: number = 3099) {
           return Response.json(result, { headers: jsonHeaders });
         }
 
+        // ==================== Priority Queue Endpoints (POST, after body parsing) ====================
+
+        // POST /priority-queue/reorder — Reprioritize a task
+        if (path === "/priority-queue/reorder") {
+          const { taskId: qTaskId, priority: newPriority } = body as { taskId?: string; priority?: number };
+          if (!qTaskId || typeof qTaskId !== 'string') {
+            return Response.json({ error: 'taskId is required' }, { status: 400, headers: jsonHeaders });
+          }
+          if (typeof newPriority !== 'number' || newPriority < 0 || newPriority > 3) {
+            return Response.json({ error: 'priority must be 0-3' }, { status: 400, headers: jsonHeaders });
+          }
+          const ok = priorityQueue.reprioritize(qTaskId, newPriority);
+          return Response.json({ reordered: ok }, { headers: jsonHeaders });
+        }
+
+        // POST /priority-queue/cancel — Remove task from queue
+        if (path === "/priority-queue/cancel") {
+          const { taskId: qTaskId } = body as { taskId?: string };
+          if (!qTaskId || typeof qTaskId !== 'string') {
+            return Response.json({ error: 'taskId is required' }, { status: 400, headers: jsonHeaders });
+          }
+          const cancelled = priorityQueue.dequeue(qTaskId);
+          return Response.json({ cancelled }, { headers: jsonHeaders });
+        }
+
+        // ==================== Quality Manual Score (POST, after body parsing) ====================
+
+        // POST /quality/score — Manually trigger quality scoring for a task
+        if (path === "/quality/score") {
+          const { taskId: qTaskId, result: scrapeResult } = body as { taskId?: string; result?: ScrapeResult };
+          if (!qTaskId || typeof qTaskId !== 'string') {
+            return Response.json({ error: 'taskId is required' }, { status: 400, headers: jsonHeaders });
+          }
+          if (!scrapeResult || typeof scrapeResult !== 'object') {
+            return Response.json({ error: 'result is required' }, { status: 400, headers: jsonHeaders });
+          }
+          const report = qualityScorer.score(qTaskId, scrapeResult);
+          return Response.json(report, { headers: jsonHeaders });
+        }
+
+        // ==================== Task Execution (with Priority Queue) ====================
+
         if (path === "/execute-task") {
           if (!body || typeof body !== 'object' || typeof (body as any).taskId !== 'string') {
             return Response.json({ error: 'taskId is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
           const { taskId } = body as ExecuteTaskRequest;
 
-          // Enforce global concurrent task limit
-          if (activeTaskCount >= MAX_CONCURRENT_TASKS) {
-            return Response.json(
-              { error: "服务器繁忙，采集任务已达并发上限，请稍后再试" },
-              { status: 503, headers: jsonHeaders }
-            );
+          // Parse priority from request body (default: medium=2)
+          const rawPriority = (body as any).priority;
+          let numericPriority = 2; // default medium
+          if (typeof rawPriority === 'number') {
+            numericPriority = Math.max(0, Math.min(3, Math.floor(rawPriority)));
+          } else if (typeof rawPriority === 'string' && rawPriority in PRIORITY_MAP) {
+            numericPriority = PRIORITY_MAP[rawPriority as TaskPriority];
           }
 
           // Prevent duplicate task execution (same taskId)
@@ -676,12 +766,45 @@ export function startServer(port: number = 3099) {
             );
           }
 
+          // Check priority queue capacity
+          if (!priorityQueue.hasCapacity()) {
+            // Try to enqueue the task
+            const ruleId = (body as any).ruleId;
+            const enqueued = priorityQueue.enqueue(taskId, numericPriority, ruleId);
+            if (enqueued) {
+              const stats = priorityQueue.getStats();
+              return Response.json(
+                {
+                  error: "服务器繁忙，任务已加入优先级队列",
+                  queued: true,
+                  queuePosition: stats.queueSize,
+                  priority: numericPriority,
+                  priorityLabel: REVERSE_PRIORITY_MAP[numericPriority],
+                },
+                { status: 429, headers: jsonHeaders }
+              );
+            }
+            // Already in queue
+            const position = priorityQueue.getQueuePosition(taskId);
+            return Response.json(
+              {
+                error: "该任务已在队列中",
+                queued: true,
+                queuePosition: position >= 0 ? position : priorityQueue.getStats().queueSize,
+              },
+              { status: 409, headers: jsonHeaders }
+            );
+          }
+
           // Atomically check and reserve a task slot (prevent TOCTOU race)
+          priorityQueue.startProcessing(taskId);
           activeTasks.add(taskId);
           activeTaskCount++;
           executeTask(taskId).catch((err) => {
             console.error(`[Task ${taskId}] Fatal error:`, err);
             activeTasks.delete(taskId);
+            activeTaskCount--;
+            priorityQueue.completeProcessing(taskId);
             // Sanitize error message before sending to API (strip stack traces, URLs, long text)
             const safeMessage = String(err instanceof Error ? err.message : err)
               .slice(0, 200)
@@ -702,6 +825,7 @@ export function startServer(port: number = 3099) {
           }).finally(() => {
             activeTasks.delete(taskId);
             activeTaskCount--;
+            priorityQueue.completeProcessing(taskId);
           });
           return Response.json(
             { message: "Task execution started", taskId },
@@ -834,6 +958,27 @@ export function startServer(port: number = 3099) {
           return Response.json(result, { headers: jsonHeaders });
         }
 
+        // POST /anti-crawl/advise — Anti-crawl strategy advisor
+        if (path === "/anti-crawl/advise" && method === "POST") {
+          const { domain, currentConfig } = body as { domain?: string; currentConfig?: Record<string, unknown> };
+          if (!domain || typeof domain !== 'string') {
+            return Response.json({ error: 'domain is required' }, { status: 400, headers: jsonHeaders });
+          }
+          const report = antiCrawlAdvisor.analyze(domain, currentConfig);
+          return Response.json(report, { headers: jsonHeaders });
+        }
+
+        // GET /anti-crawl/domain-signals — Raw detection signals for a domain
+        if (path === "/anti-crawl/domain-signals" && method === "GET") {
+          const urlObj = new URL(req.url);
+          const domain = urlObj.searchParams.get("domain");
+          if (!domain) {
+            return Response.json({ error: 'domain query parameter is required' }, { status: 400, headers: jsonHeaders });
+          }
+          const signals = antiCrawlAdvisor.getDomainSignals(decodeURIComponent(domain));
+          return Response.json({ domain, signals }, { headers: jsonHeaders });
+        }
+
         // ==================== Session Management Endpoints ====================
 
         // POST /session/block — Block a session
@@ -934,6 +1079,15 @@ export function startServer(port: number = 3099) {
     console.log(`   POST /rate-limit/set            - Set domain rate limit`);
     console.log(`   POST /rate-limit/reset          - Reset domain rate limit`);
     console.log(`   POST /anti-crawl/simulate       - Simulate anti-crawl pipeline (self-test)`);
+    console.log(`   POST /anti-crawl/advise         - Anti-crawl strategy advisor`);
+    console.log(`   GET  /anti-crawl/domain-signals - Raw detection signals for domain`);
+    console.log(`   GET  /priority-queue/stats       - Priority queue statistics`);
+    console.log(`   POST /priority-queue/reorder     - Reprioritize a queued task`);
+    console.log(`   POST /priority-queue/cancel      - Cancel a queued task`);
+    console.log(`   PUT  /priority-queue/concurrency - Set max concurrent tasks`);
+    console.log(`   GET  /quality/recent             - Recent quality reports`);
+    console.log(`   GET  /quality/stats              - Aggregate quality statistics`);
+    console.log(`   POST /quality/score              - Manual quality score for a task`);
     console.log(`   GET  /cookie-persist/stats       - Cookie persistence stats (SQLite)`);
   }
 

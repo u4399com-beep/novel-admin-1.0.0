@@ -9523,3 +9523,414 @@ Work Log:
 3. 采集规则AI生成增强(基于反爬检测结果推荐配置)
 4. 多任务并发采集调度优化(优先级队列)
 5. 采集数据质量评分(内容完整性/格式正确性)
+
+---
+Task ID: r32-1
+Agent: fullstack-developer
+Task: R32 WebSocket实时日志推送服务 + scraper-service集成
+
+Work Log:
+- 创建mini-services/log-stream-service/(package.json + index.ts)
+- Socket.IO服务端口3004, path:'/'(Caddy网关兼容)
+- 解决Socket.IO path:'/'与HTTP端点冲突: 重排request监听器顺序, HTTP路由优先处理
+- HTTP端点: POST /push-log, POST /push-progress, POST /push-event, GET /stats, GET /health
+- Socket.IO房间: join-task/leave-task(按taskId), join-all/leave-all(全局广播)
+- 速率限制: 1000 events/sec(超出丢弃)
+- 事件缓冲: 每任务50条, 迟到客户端join时回放(task-history事件)
+- EPS统计: 60秒滑动窗口计算events/sec
+- scraper-service/src/task-engine.ts集成:
+  - 新增streamLogToWS()/streamProgressToWS()函数(LOG_STREAM_URL环境变量, 默认localhost:3004)
+  - 在addTaskLog()中推送到WebSocket(非阻塞, 2s超时)
+  - 在updateTaskProgress()中推送到WebSocket(非阻塞, 2s超时)
+- 创建src/hooks/useTaskLogStream.ts:
+  - 单例Socket.IO连接(io('/?XTransformPort=3004')), 跨taskId共享
+  - 指数退避重连(1s~30s, ±20%抖动)
+  - 最大500条日志(FIFO), 加入房间时获取历史缓冲
+  - 导出类型: LogEntry, ProgressUpdate, ScrapeEvent, TaskLogStreamResult
+- 创建src/app/api/admin/scraper/log-stream-stats/route.ts:
+  - GET代理到log-stream-service /stats, 5s超时, 不可达时返回mock数据
+- 安装socket.io-client@4.8.3到主项目
+
+Stage Summary:
+- ESLint: 0 errors (5 warnings均为预存)
+- log-stream-service HTTP端点测试通过: /health, /push-log, /stats均返回正确响应
+- WebSocket服务已就绪, scraper-service已集成实时日志推送
+- 前端hook useTaskLogStream已创建, 可直接在组件中使用
+
+---
+Task ID: r32-2,3
+Agent: fullstack-developer
+Task: R32 优先级队列调度 + 数据质量评分系统
+
+Work Log:
+- 新增优先级队列调度系统，替代原有简单的MAX_CONCURRENT_TASKS限制
+- 新增数据质量评分系统，7维度评估采集结果(0-100分+A-F评级)
+
+## Part A: 优先级队列
+
+### 新建文件
+1. **priority-queue.ts** (~160行, 新建): TaskPriorityQueue类
+   - 4级优先级: 0=critical, 1=high, 2=medium(默认), 3=low
+   - FIFO排序(同优先级内按入队时间)
+   - enqueue/dequeue/startProcessing/completeProcessing/reprioritize
+   - hasCapacity()/getStats()/getQueuePosition()
+   - setMaxConcurrent(1-20)
+
+### 修改文件
+2. **types.ts** (+50行): 新增TaskPriority/ScrapeResult/QualityReport/QualityCheck类型
+   - PRIORITY_MAP/REVERSE_PRIORITY_MAP常量
+
+3. **index.ts** (scraper-service, ~100行变更):
+   - 新增7个端点: GET /priority-queue/stats, POST /priority-queue/reorder,
+     POST /priority-queue/cancel, PUT /priority-queue/concurrency,
+     GET /quality/recent, GET /quality/stats, POST /quality/score
+   - GET/PUT端点置于POST-only gate之前(避免405)
+   - /execute-task改造: 支持priority参数(数字0-3或字符串critical/high/medium/low)
+   - 无容量时返回429+queued:true+queuePosition(替代原503拒绝)
+   - 任务启动/完成时通过priorityQueue追踪(与activeTasks同步)
+
+4. **task-engine.ts** (+15行): 任务完成后自动执行质量评分
+   - 记录taskStartTime, 完成后计算duration
+   - 调用qualityScorer.score()并写入任务日志
+
+## Part B: 数据质量评分
+
+### 新建文件
+5. **quality-scorer.ts** (~260行, 新建): QualityScorer类
+   - 7维评分(总分100): 成功率(15), 内容覆盖率(15), 失败率(15),
+     内容质量(20), 完整性(15), 效率(10), 引擎匹配(10)
+   - A-F评级: A>=85, B>=70, C>=50, D>=30, F<30
+   - 内存环形缓冲区(最多200条报告)
+   - getRecentReports()/getAggregateStats()/getReportByTask()
+
+### Next.js API代理路由
+6. **quality-stats/route.ts** (45行, 新建): GET代理到/quality/stats, 5s超时, mock降级
+7. **priority-queue/route.ts** (85行, 新建):
+   - GET: 代理到/priority-queue/stats, mock降级
+   - POST: action路由器(reorder/cancel)
+
+## 验证结果
+- ESLint: 0 errors (5 warnings均为预存)
+- TypeScript: 新增文件类型检查通过
+- Dev server: 编译成功
+
+Stage Summary:
+- 优先级队列: 4级优先级+容量追踪, 任务满载时排队(429)而非拒绝(503)
+- 质量评分: 7维自动评分(A-F), 任务完成后自动记录, 支持历史查询
+- 新增端点: 7个scraper端点 + 2个Next.js代理路由
+
+---
+Task ID: r32-4
+Agent: fullstack-developer
+Task: R32 前端面板 - 优先级队列管理 + 质量评分 + WebSocket实时日志集成
+
+Work Log:
+- 创建2个新前端面板组件，集成到AntiCrawlMonitor
+- 将WebSocket实时日志流集成到TaskLogPanel
+
+## Task A: PriorityQueuePanel (新建, ~280行)
+
+文件: `src/components/scrape/anti-crawl/PriorityQueuePanel.tsx`
+
+- 可折叠面板，遵循CookiePersistPanel模式
+- Header: ListOrdered图标 + "任务优先级队列" 标题 + 处理中数量Badge + 折叠动画
+- Stats行: 3列网格(队列大小/处理中/最大并发)，彩色数字
+- 并发控制: Number Input (1-20) + 设置Button，PUT /api/admin/scraper/priority-queue
+- 等待队列 (max-h-64, scrollable):
+  - 每项: taskId(截断8字符) + 优先级Badge(critical=red, high=amber, medium=sky, low=muted) + ruleId + 等待时间
+  - DropdownMenu: 4级优先级调整(critical/high/medium/low)
+  - 取消Button (X图标)
+- 处理中列表 (max-h-32, scrollable): taskId + 优先级Badge + 运行时间
+- 空状态: "队列为空"
+- 数据来源: GET /api/admin/scraper/priority-queue
+- 操作: POST /api/admin/scraper/priority-queue (reorder/cancel)
+
+### 后端变更
+- `src/app/api/admin/scraper/priority-queue/route.ts`: 新增PUT handler
+  - 代理到scraper-service /priority-queue/concurrency
+  - 参数: { maxConcurrent: number } (1-20)
+
+## Task B: QualityScorePanel (新建, ~300行)
+
+文件: `src/components/scrape/anti-crawl/QualityScorePanel.tsx`
+
+- 可折叠面板，遵循CookiePersistPanel模式
+- Header: Award图标 + "采集数据质量" 标题 + 平均分Badge(颜色随分数变化)
+- Summary cards (2x2网格):
+  - 平均评分(大号数字0-100, 颜色: >80=emerald, >60=amber, >40=orange, <=40=red)
+  - 报告总数
+  - 等级分布(迷你横条: A=green, B=sky, C=amber, D=orange, F=red + 数值标签)
+  - 最近等级Badge
+- 最近报告列表 (max-h-64, scrollable):
+  - 每项: SVG环形仪表盘(40x40px, 显示分数) + 等级Badge + taskId + summary + 时间
+  - 展开后显示7个QualityCheck: name + passed/failed图标 + 分数Badge(0-15) + message
+- 空状态: "暂无质量报告，完成采集任务后自动生成"
+- 数据来源: GET /api/admin/scraper/quality-stats
+
+## Task C: WebSocket实时日志集成
+
+### TaskLogPanel.tsx (修改)
+- 新增 `taskId?: string | null` prop
+- 导入并调用 `useTaskLogStream(taskId)` hook
+- 新增 `MergedLogEntry` 联合类型(API+WS日志统一格式)
+- 合并策略:
+  - API日志(ScrapeTaskLog) + WS日志(LogEntry) → 统一MergedLogEntry
+  - 按message+timestamp(1秒容差)去重
+  - 按timestamp降序排列
+- 连接状态指示器:
+  - WS已连接: 绿色脉冲圆点 + "实时" Badge
+  - WS未连接但有taskId: 红色圆点
+- 显示计数改为: allLogs.length
+- 导出增加[WS]标签标识WebSocket来源
+
+### TaskCard.tsx (修改)
+- TaskLogPanel调用处增加 `taskId={task.id}` prop
+
+## Task D: AntiCrawlMonitor集成
+
+### AntiCrawlMonitor.tsx (修改)
+- 导入PriorityQueuePanel和QualityScorePanel
+- PriorityQueuePanel插入位置: MonitorStats和AntiCrawlCapabilityPanel之间(靠前，因为是运维面板)
+- QualityScorePanel插入位置: AntiCrawlSimPanel和AlertConfigPanel之间(靠后，因为是分析面板)
+
+## 验证结果
+- ESLint: 0 errors (5 warnings均为预存的react-hooks/incompatible-library)
+- TypeScript: 所有新文件类型检查通过
+- Dev server: 编译成功，无运行时错误
+
+Stage Summary:
+- 新建2个面板组件: PriorityQueuePanel(优先级队列管理) + QualityScorePanel(质量评分)
+- 修改4个文件: TaskLogPanel(WebSocket集成) + TaskCard(taskId传递) + AntiCrawlMonitor(新面板集成) + priority-queue/route.ts(PUT handler)
+- 反爬监控大屏面板总数: 14 → 16
+
+---
+Task ID: r32-5
+Agent: fullstack-developer
+Task: R32 反爬策略自动推荐引擎 (Anti-Crawl Strategy Advisor)
+
+Work Log:
+- 创建反爬策略自动推荐引擎模块，分析检测信号并生成优化建议
+- 新增2个scraper-service端点 + 1个Next.js代理路由 + 1个前端面板
+
+## Part A: anti-crawl-advisor.ts (新建, ~350行)
+
+文件: `mini-services/scraper-service/src/anti-crawl-advisor.ts`
+
+- 单例类 `AntiCrawlAdvisor`，提供基于实际采集历史的智能反爬配置推荐
+- **类型定义**: DetectionSignal(8种检测信号类型), Recommendation(配置建议), AdvisorReport(分析报告)
+- **信号收集** `gatherSignals(domain)`: 从rate-limiter/adaptive-delay/proxy-manager/session-manager查询域状态
+  - CAPTCHA频率、403拦截次数、429速率限制、空内容率、JS挑战、指纹检测
+  - 速率惩罚状态、自适应延迟状态、连续错误
+- **配置评分** `scoreConfig(config)`: 评估当前反爬配置完整度(0-100分)
+  - 引擎选择(最高25分)、代理(20)、UA轮换(10)、人类行为(10)、CAPTCHA策略(15)、Cookie(10)、Session(10)、延迟(10)
+- **12条模式匹配规则**:
+  1. 高CAPTCHA率(>3/10min) → 升级Obscura + 自动CAPTCHA策略
+  2. 频繁429(>5) → 增加延迟 + 启用代理
+  3. 频繁403(>3) → 引擎升级 + UA轮换
+  4. 响应时间>5s → 自适应延迟
+  5. 空内容率>30% → 升级Playwright引擎
+  6. 连续错误>5 → 代理轮换 + 会话管理
+  7. Cloudflare检测 → CF专用策略 + Obscura引擎
+  8. 已知高防护站点(起点/纵横等) → 完整反爬配置
+  9. 成功率>95%且无信号 → 减少不必要开销
+  10. Cheerio但需JS渲染 → 升级Playwright
+  11. 域名有登录Cookie但未启用Cookie管理 → 启用
+  12. 大量请求但无会话管理 → 启用
+- **威胁等级**计算: minimal/low/medium/high/critical
+- `recordDetection()` / `recordSuccess()` 供引擎调用记录检测事件
+- 内置历史记录(30分钟窗口)和自动清理
+
+## Part B: scraper-service端点 (修改 index.ts)
+
+- 导入 `antiCrawlAdvisor` 单例
+- **POST /anti-crawl/advise**: 接收 `{domain, currentConfig}`, 返回 `AdvisorReport`
+- **GET /anti-crawl/domain-signals?domain=xxx**: 返回原始检测信号
+- 更新DEBUG模式端点日志
+
+## Part C: Next.js API代理路由 (新建)
+
+文件: `src/app/api/admin/scraper/anti-crawl-advise/route.ts` (59行)
+- POST handler with `withAuth`
+- 代理到scraper-service `/anti-crawl/advise?XTransformPort=3099`
+- 8000ms超时(分析可能耗时)
+- Mock降级: 服务不可达时返回基本建议
+
+## Part D: AntiCrawlAdvisorPanel (新建, ~300行)
+
+文件: `src/components/scrape/anti-crawl/AntiCrawlAdvisorPanel.tsx`
+
+- 可折叠面板，遵循CookiePersistPanel模式
+- Header: BrainCircuit图标 + "智能反爬顾问" 标题 + 威胁等级Badge
+- 域名输入: Input + "分析" Button, Enter触发
+- 威胁等级卡片:
+  - 5级颜色编码(minimal=emerald, low=sky, medium=amber, high=orange, critical=red)
+  - Shield图标 + 域名 + 威胁标签
+  - 当前分数 → 潜在分数 (大号数字 + 颜色)
+  - 双进度条对比(当前 vs 潜在)
+- 信号时间线 (max-h-48, scrollable):
+  - 8种信号类型各有专属图标(ShieldAlert/Ban/Timer/ExternalLink/FileX/Clock/ScanEye/Puzzle)
+  - 严重度Badge(4级颜色) + 次数 + 相对时间
+- 推荐列表 (max-h-64, scrollable):
+  - 优先级色条(>80=red, >50=amber, >20=sky, else=green)
+  - 分类Badge(引擎/代理/延迟/隐身/验证码/速率/Cookie/会话, 各有颜色)
+  - 标题 + 描述 + 当前值→推荐值(带箭头)
+  - "应用" Button → 复制配置到剪贴板 + toast提示
+  - 按优先级排序(最高优先)
+- 3种状态: 空状态(BrainCircuit图标) / 加载中(Skeleton) / 错误(重试按钮)
+
+## Part E: AntiCrawlMonitor集成 (修改)
+
+文件: `src/components/scrape/AntiCrawlMonitor.tsx`
+- 导入AntiCrawlAdvisorPanel
+- 插入位置: AntiCrawlSimPanel之后(仿真=评分, 顾问=建议, 两者互补)
+
+## 验证结果
+- ESLint: 0 errors (5 warnings均为预存的react-hooks/incompatible-library)
+- TypeScript: 新增文件类型检查通过
+- Dev server: 编译成功，无运行时错误
+
+Stage Summary:
+- 新建3个文件: anti-crawl-advisor.ts(后端引擎) + anti-crawl-advise/route.ts(API代理) + AntiCrawlAdvisorPanel.tsx(前端面板)
+- 修改2个文件: scraper-service/index.ts(2个新端点) + AntiCrawlMonitor.tsx(集成新面板)
+- 反爬监控大屏面板总数: 16 → 17
+- 推荐引擎12条规则覆盖: CAPTCHA/403/429/空内容/Cloudflare/JS渲染/指纹/已知站点/过度配置等场景
+
+---
+Task ID: R32
+Agent: Main Orchestrator
+Task: R32 采集功能增强 - WebSocket实时日志 + 优先级队列 + 质量评分 + 智能反爬顾问
+
+Work Log:
+- 派出4个并行full-stack-developer agent实现R32全部功能
+- Agent r32-1: WebSocket日志流服务(port 3004) + useTaskLogStream hook + scraper-service集成
+- Agent r32-2,3: 优先级队列 + 质量评分系统 (后端模块 + API端点 + Next.js代理路由)
+- Agent r32-4: 前端实时日志流集成 + 优先级/质量面板 + AntiCrawlMonitor集成
+- Agent r32-5: 反爬策略自动推荐引擎 (12条规则) + 顾问面板
+- 修复Bug: anti-crawl-advisor.ts中proxyDetails→proxies字段名错误
+- 验证: log-stream-service启动成功, scraper-service全部新端点200 OK, Next.js编译成功, 首页/管理页正常渲染
+
+## 新增文件清单 (12个文件, 3559行)
+
+### 后端 - mini-services (5个, 2146行)
+1. **mini-services/log-stream-service/index.ts** (382行, 新建)
+   - Socket.IO服务(port 3004), path='/'兼容Caddy网关
+   - HTTP端点: POST /push-log, /push-progress, /push-event, GET /stats, /health
+   - Socket.IO房间: join-task/leave-task(按taskId), join-all/leave-all(广播)
+   - 事件缓冲: 每任务保留50条, 加入房间时回放
+   - 限流: 1000事件/秒, 超出丢弃
+   - EPS追踪(60秒滑动窗口)
+2. **mini-services/scraper-service/src/priority-queue.ts** (199行, 新建)
+   - TaskPriorityQueue类: 4级优先级(0=critical→3=low), 同优先级FIFO
+   - enqueue/dequeue/dequeueNext/reprioritize/cancel/hasCapacity
+   - getStats/getQueue/getProcessing/setMaxConcurrent
+3. **mini-services/scraper-service/src/quality-scorer.ts** (392行, 新建)
+   - QualityScorer类: 7维度评分(100分制)
+   - 成功率(15) + 内容覆盖率(15) + 失败率(15) + 内容质量(20) + 完整性(15) + 效率(10) + 引擎匹配(10)
+   - A-F等级评定, 200条环形缓冲区
+   - 自动在task-engine.ts任务完成时评分并记录日志
+4. **mini-services/scraper-service/src/anti-crawl-advisor.ts** (776行, 新建)
+   - AntiCrawlAdvisor单例: 信号收集→配置评分→模式匹配→推荐生成
+   - 信号收集: 从rateLimiter/adaptiveDelay/proxyManager/sessionManager聚合
+   - 12条推荐规则: CAPTCHA→Obscura, 429→代理+延迟, 403→引擎升级, 慢响应, 空内容, Cloudflare, JS渲染, 过度配置优化等
+   - 威胁等级: minimal/low/medium/high/critical
+   - 当前分→潜在分 对比(展示优化空间)
+
+### 前端 - Hook (1个, 327行)
+5. **src/hooks/useTaskLogStream.ts** (327行, 新建)
+   - 单例Socket.IO连接: io('/?XTransformPort=3004')
+   - 指数退避重连(1s-30s, ±20%抖动)
+   - 最大500条日志(FIFO), 加入房间时回放缓冲事件
+   - 导出类型: LogEntry, ProgressUpdate, ScrapeEvent, TaskLogStreamResult
+
+### 前端 - 面板 (3个, 1195行)
+6. **src/components/scrape/anti-crawl/PriorityQueuePanel.tsx** (387行, 新建)
+   - 可折叠面板: 统计行(队列/处理/并发), 并发控制Input+Button
+   - 队列列表: taskId, 优先级徽章, 等待时间, 重排序Dropdown, 取消Button
+   - 处理列表: taskId, 优先级, 运行时长
+7. **src/components/scrape/anti-crawl/QualityScorePanel.tsx** (378行, 新建)
+   - 可折叠面板: 2×2统计卡片(均分/报告数/等级分布/最新等级)
+   - 最近报告: SVG环形评分(40×40), 等级Badge, 摘要, 时间戳
+   - 展开显示7个检查项(名称/分数/通过/消息)
+8. **src/components/scrape/anti-crawl/AntiCrawlAdvisorPanel.tsx** (430行, 新建)
+   - 可折叠面板: 域名Input+分析Button
+   - 威胁等级卡片(5色), 当前分/潜在分对比条
+   - 信号时间线(8类型图标, 严重度Badge, 计数, 相对时间)
+   - 推荐列表(优先级条, 类别Badge, 当前值→推荐值, 复制应用Button)
+
+### 前端 - API路由 (4个, 288行)
+9. **src/app/api/admin/scraper/log-stream-stats/route.ts** (43行, 新建)
+10. **src/app/api/admin/scraper/quality-stats/route.ts** (45行, 新建)
+11. **src/app/api/admin/scraper/priority-queue/route.ts** (126行, 新建)
+12. **src/app/api/admin/scraper/anti-crawl-advise/route.ts** (74行, 新建)
+
+## 修改文件清单 (7个)
+
+### 后端 - scraper-service (2个)
+1. **task-engine.ts** (+20行)
+   - import qualityScorer, 添加streamLogToWS/streamProgressToWS函数
+   - addTaskLog: 添加WS日志推送
+   - updateTaskProgress: 添加WS进度推送
+   - executeTaskBody finally: 自动质量评分并记录日志
+2. **index.ts** (+80行)
+   - import priorityQueue, qualityScorer, antiCrawlAdvisor
+   - GET /priority-queue/stats, POST /reorder, /cancel, PUT /concurrency
+   - GET /quality/recent, /quality/stats, POST /quality/score
+   - POST /anti-crawl/advise, GET /anti-crawl/domain-signals
+   - /execute-task: 接受priority参数, 队列化替代503
+   - 更新启动帮助文本
+
+### 前端 (3个)
+3. **TaskLogPanel.tsx** (+40行)
+   - 新增taskId prop, 导入useTaskLogStream
+   - 合并API日志与WS实时日志, 去重(1秒容差)
+   - 连接状态指示器(绿色脉冲点+"实时"Badge)
+4. **TaskCard.tsx** (+1行)
+   - 传递taskId={task.id}给TaskLogPanel
+5. **AntiCrawlMonitor.tsx** (+8行)
+   - 导入PriorityQueuePanel, QualityScorePanel, AntiCrawlAdvisorPanel
+   - 集成3个新面板(反爬监控大屏: 14→17个面板)
+
+### 新增依赖
+- socket.io-client@4.8.3 (主项目)
+- socket.io@^4.8.1 (log-stream-service)
+
+## 验证结果
+- ESLint: 0 errors (5 warnings均为预存react-hooks/incompatible-library)
+- log-stream-service: 启动成功, /health + /stats + /push-log 全部200
+- scraper-service: /priority-queue/stats + /quality/stats + /anti-crawl/advise 全部200
+- Next.js: 编译成功, 首页正常渲染, 管理登录页正常
+- Agent Browser: 无新增console错误(仅有预存的next-auth CLIENT_FETCH_ERROR)
+
+## 反爬系统累计能力(R28-R32)
+
+| 维度 | R28 | R29 | R30 | R31 | R32 |
+|---|---|---|---|---|---|
+| 隐身模块 | 15个 | 15个 | 15个 | 15个 | **15个** |
+| 代理协议 | HTTP/HTTPS | HTTP/HTTPS | HTTP/HTTPS | HTTP/HTTPS/SOCKS5 | **HTTP/HTTPS/SOCKS5** |
+| 代理测试 | ❌ | ❌ | ❌ | ✅ 连通性 | **连通性** |
+| Session管理 | ❌ | ❌ | ❌ | ✅ 跨任务 | **跨任务** |
+| 请求指纹 | ❌ | ❌ | ❌ | ✅ ID追踪 | **ID追踪** |
+| 速率限制 | ❌ | ❌ | Per-Domain | Per-Domain | **Per-Domain** |
+| Cookie持久化 | 内存 | 内存 | SQLite | SQLite | **SQLite** |
+| CAPTCHA策略 | 检测+策略 | 集成 | 配置UI | 配置UI+仿真 | **配置UI+仿真** |
+| 仿真测试 | ❌ | ❌ | ❌ | ✅ 8项评分 | **8项评分** |
+| **WebSocket实时日志** | **❌** | **❌** | **❌** | **❌** | **✅ Socket.IO** |
+| **优先级队列** | **❌** | **❌** | **❌** | **❌** | **✅ 4级调度** |
+| **质量评分** | **❌** | **❌** | **❌** | **❌** | **✅ 7维100分** |
+| **智能反爬顾问** | **❌** | **❌** | **❌** | **❌** | **✅ 12条规则** |
+| 监控面板 | 基础 | +3面板 | +3面板 | +4面板 | **+3面板(共17)** |
+| 模板预设 | ❌ | ❌ | 6模板 | 6模板 | **6模板** |
+
+## 新增代码总计
+- 新建文件: 12个 (3559行)
+- 修改文件: 7个 (+149行)
+- 总计: ~3700行
+
+## 建议下一阶段 (R33)
+1. Obscura引擎端到端验证(实际目标站点)
+2. WebSocket日志流前端完整验证(需运行采集任务)
+3. 多任务并发调度压力测试
+4. 采集规则AI生成增强(基于反爬检测结果推荐配置)
+5. 采集数据导出增强(CSV/JSON结构化导出)
+6. 反爬策略自动应用(顾问推荐一键应用到规则)
+

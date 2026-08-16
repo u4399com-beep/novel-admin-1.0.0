@@ -1,0 +1,430 @@
+'use client';
+
+import { useState, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  BrainCircuit, Loader2, ChevronDown, ChevronRight,
+  ShieldAlert, Ban, Timer, ExternalLink, FileX, Clock, ScanEye, Puzzle,
+  Shield, ArrowRight, Copy, Search,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { apiFetch } from '@/lib/api-fetch';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface DetectionSignal {
+  type: 'captcha' | 'block' | 'rate_limit' | 'redirect' | 'empty_content' | 'slow_response' | 'fingerprint_detect' | 'js_challenge';
+  domain: string;
+  count: number;
+  lastSeen: number;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  details?: string;
+}
+
+interface Recommendation {
+  id: string;
+  category: 'engine' | 'proxy' | 'delay' | 'stealth' | 'captcha' | 'rate_limit' | 'cookie' | 'session';
+  priority: number;
+  title: string;
+  description: string;
+  configKey: string;
+  currentValue: unknown;
+  recommendedValue: unknown;
+  reasoning: string;
+  estimatedImpact: 'high' | 'medium' | 'low';
+}
+
+interface AdvisorReport {
+  domain: string;
+  threatLevel: 'minimal' | 'low' | 'medium' | 'high' | 'critical';
+  signals: DetectionSignal[];
+  recommendations: Recommendation[];
+  currentConfig: Record<string, unknown>;
+  score: number;
+  potentialScore: number;
+  serviceReachable?: boolean;
+}
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const THREAT_STYLES: Record<string, { bg: string; border: string; icon: string; label: string }> = {
+  minimal: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', icon: 'text-emerald-600 dark:text-emerald-400', label: '极低' },
+  low: { bg: 'bg-sky-500/10', border: 'border-sky-500/30', icon: 'text-sky-600 dark:text-sky-400', label: '低' },
+  medium: { bg: 'bg-amber-500/10', border: 'border-amber-500/30', icon: 'text-amber-600 dark:text-amber-400', label: '中' },
+  high: { bg: 'bg-orange-500/10', border: 'border-orange-500/30', icon: 'text-orange-600 dark:text-orange-400', label: '高' },
+  critical: { bg: 'bg-red-500/10', border: 'border-red-500/30', icon: 'text-red-600 dark:text-red-400', label: '严重' },
+};
+
+const SEVERITY_STYLES: Record<string, { bg: string; text: string }> = {
+  low: { bg: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', text: 'text-emerald-600' },
+  medium: { bg: 'bg-sky-500/15 text-sky-700 dark:text-sky-300', text: 'text-sky-600' },
+  high: { bg: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', text: 'text-amber-600' },
+  critical: { bg: 'bg-red-500/15 text-red-700 dark:text-red-300', text: 'text-red-600' },
+};
+
+const SIGNAL_ICONS: Record<string, typeof ShieldAlert> = {
+  captcha: ShieldAlert,
+  block: Ban,
+  rate_limit: Timer,
+  redirect: ExternalLink,
+  empty_content: FileX,
+  slow_response: Clock,
+  fingerprint_detect: ScanEye,
+  js_challenge: Puzzle,
+};
+
+const SIGNAL_LABELS: Record<string, string> = {
+  captcha: 'CAPTCHA',
+  block: '403拦截',
+  rate_limit: '速率限制',
+  redirect: '重定向',
+  empty_content: '空内容',
+  slow_response: '响应缓慢',
+  fingerprint_detect: '指纹检测',
+  js_challenge: 'JS挑战',
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  engine: '引擎', proxy: '代理', delay: '延迟', stealth: '隐身',
+  captcha: '验证码', rate_limit: '速率', cookie: 'Cookie', session: '会话',
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  engine: 'bg-purple-500/15 text-purple-700 dark:text-purple-300',
+  proxy: 'bg-teal-500/15 text-teal-700 dark:text-teal-300',
+  delay: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
+  stealth: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  captcha: 'bg-red-500/15 text-red-700 dark:text-red-300',
+  rate_limit: 'bg-orange-500/15 text-orange-700 dark:text-orange-300',
+  cookie: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
+  session: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatTimeAgo(ts: number): string {
+  if (!ts) return '未知';
+  const diff = Date.now() - ts;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return '刚刚';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  return `${Math.floor(hours / 24)}天前`;
+}
+
+function priorityColor(p: number): string {
+  if (p > 80) return 'bg-red-500';
+  if (p > 50) return 'bg-amber-500';
+  if (p > 20) return 'bg-sky-500';
+  return 'bg-emerald-500';
+}
+
+function scoreColor(s: number): string {
+  if (s >= 80) return 'text-emerald-600 dark:text-emerald-400';
+  if (s >= 60) return 'text-sky-600 dark:text-sky-400';
+  if (s >= 40) return 'text-amber-600 dark:text-amber-400';
+  return 'text-red-600 dark:text-red-400';
+}
+
+function barColor(s: number): string {
+  if (s >= 80) return 'bg-emerald-500';
+  if (s >= 60) return 'bg-sky-500';
+  if (s >= 40) return 'bg-amber-500';
+  return 'bg-red-500';
+}
+
+function formatValue(v: unknown): string {
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  return String(v);
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+export function AntiCrawlAdvisorPanel() {
+  const [domain, setDomain] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const [report, setReport] = useState<AdvisorReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const acRef = useRef<AbortController | null>(null);
+
+  const handleAnalyze = useCallback(async () => {
+    const d = domain.trim();
+    if (!d) return;
+    acRef.current?.abort();
+    const ac = new AbortController();
+    acRef.current = ac;
+    setLoading(true);
+    setError(null);
+    setReport(null);
+    try {
+      const data = await apiFetch<AdvisorReport>('/api/admin/scraper/anti-crawl-advise', {
+        method: 'POST',
+        body: JSON.stringify({ domain: d }),
+        signal: ac.signal,
+        timeout: 10000,
+        silent: true,
+      });
+      if (!ac.signal.aborted) {
+        setReport(data);
+        if (!expanded) setExpanded(true);
+      }
+    } catch (err) {
+      if (!ac.signal.aborted) setError(err instanceof Error ? err.message : '分析失败');
+    } finally {
+      if (!ac.signal.aborted) setLoading(false);
+    }
+  }, [domain, expanded]);
+
+  const handleApply = useCallback((rec: Recommendation) => {
+    const text = `${rec.configKey}: ${JSON.stringify(rec.recommendedValue)}`;
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success('配置已复制到剪贴板');
+    }).catch(() => {
+      toast.error('复制失败，请手动复制');
+    });
+  }, []);
+
+  const threat = report ? THREAT_STYLES[report.threatLevel] : null;
+
+  return (
+    <div className="rounded-lg border bg-background/50 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2.5">
+          <BrainCircuit className="h-4 w-4 text-primary" />
+          <span className="text-xs font-medium">智能反爬顾问</span>
+          {report && (
+            <Badge variant="outline" className={`text-[9px] px-1.5 py-0 font-normal ${threat?.border} ${threat?.bg}`}>
+              {threat?.label}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+          {expanded
+            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="border-t px-4 py-3 space-y-4">
+              {/* Domain input */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Input
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  placeholder="输入域名，如 www.qidian.com"
+                  className="h-8 text-xs font-mono"
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAnalyze(); }}
+                  disabled={loading}
+                />
+                <Button
+                  onClick={handleAnalyze}
+                  disabled={loading || !domain.trim()}
+                  className="h-8 px-3 text-xs shrink-0"
+                >
+                  {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                  <span className="ml-1.5">分析</span>
+                </Button>
+              </div>
+
+              {/* Loading */}
+              {loading && (
+                <div className="space-y-3">
+                  <Skeleton className="h-16 w-full rounded-lg" />
+                  <Skeleton className="h-10 w-full rounded-lg" />
+                  <Skeleton className="h-20 w-full rounded-lg" />
+                </div>
+              )}
+
+              {/* Error */}
+              {error && !loading && (
+                <div className="flex items-center justify-between rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2.5">
+                  <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+                  <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={handleAnalyze}>重试</Button>
+                </div>
+              )}
+
+              {/* Report */}
+              <AnimatePresence>
+                {report && !loading && (
+                  <motion.div key="advisor-report" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+                    {/* Threat card */}
+                    <div className={`rounded-lg border ${threat?.border} ${threat?.bg} p-4`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Shield className={`h-8 w-8 ${threat?.icon}`} />
+                          <div>
+                            <p className="text-sm font-semibold">{report.domain}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className={`text-[10px] font-medium ${threat?.icon}`}>威胁等级: {threat?.label}</span>
+                              {report.signals.length > 0 && (
+                                <Badge variant="secondary" className="text-[9px] px-1 py-0 font-normal">
+                                  {report.signals.length} 个信号
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="flex items-baseline gap-1">
+                            <span className={`text-2xl font-bold ${scoreColor(report.score)}`}>{report.score}</span>
+                            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                            <span className={`text-2xl font-bold ${scoreColor(report.potentialScore)}`}>{report.potentialScore}</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">当前 / 潜在分数</p>
+                        </div>
+                      </div>
+                      {/* Score bars */}
+                      <div className="mt-3 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground w-10 shrink-0">当前</span>
+                          <div className="flex-1 h-2 rounded-full bg-muted/50 overflow-hidden">
+                            <span className={`block h-full rounded-full ${barColor(report.score)}`} style={{ width: `${report.score}%` }} />
+                          </div>
+                          <span className="text-[10px] font-mono w-8 text-right">{report.score}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground w-10 shrink-0">潜在</span>
+                          <div className="flex-1 h-2 rounded-full bg-muted/50 overflow-hidden">
+                            <span className={`block h-full rounded-full ${barColor(report.potentialScore)}`} style={{ width: `${report.potentialScore}%` }} />
+                          </div>
+                          <span className="text-[10px] font-mono w-8 text-right">{report.potentialScore}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Signals */}
+                    {report.signals.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                          <ShieldAlert className="h-3 w-3" />
+                          检测信号
+                        </p>
+                        <div className="max-h-48 overflow-y-auto scrollbar-thin space-y-1.5">
+                          {report.signals.map((signal, i) => {
+                            const Icon = SIGNAL_ICONS[signal.type] || ShieldAlert;
+                            const sevStyle = SEVERITY_STYLES[signal.severity];
+                            return (
+                              <motion.div
+                                key={`${signal.type}-${i}`}
+                                initial={{ opacity: 0, x: -6 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: 0.05 * i, duration: 0.2 }}
+                                className="flex items-center gap-2.5 rounded-md border bg-background/50 px-3 py-2"
+                              >
+                                <Icon className={`h-3.5 w-3.5 ${sevStyle.text} shrink-0`} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-medium">{SIGNAL_LABELS[signal.type] || signal.type}</span>
+                                    <Badge className={`text-[9px] px-1 py-0 font-normal ${sevStyle.bg}`}>{signal.severity}</Badge>
+                                  </div>
+                                  {signal.details && (
+                                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{signal.details}</p>
+                                  )}
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className="text-[10px] font-mono">x{signal.count}</p>
+                                  <p className="text-[9px] text-muted-foreground">{formatTimeAgo(signal.lastSeen)}</p>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Recommendations */}
+                    {report.recommendations.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                          <BrainCircuit className="h-3 w-3" />
+                          优化建议 ({report.recommendations.length})
+                        </p>
+                        <div className="max-h-64 overflow-y-auto scrollbar-thin space-y-2">
+                          {report.recommendations.map((rec, i) => (
+                            <motion.div
+                              key={rec.id}
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.06 * i, duration: 0.25 }}
+                              className="rounded-lg border bg-background/50 p-3 space-y-2"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-1 h-4 rounded-full ${priorityColor(rec.priority)}`} />
+                                  <Badge className={`text-[9px] px-1.5 py-0 font-normal ${CATEGORY_COLORS[rec.category] || ''}`}>
+                                    {CATEGORY_LABELS[rec.category] || rec.category}
+                                  </Badge>
+                                  <span className="text-[11px] font-semibold">{rec.title}</span>
+                                </div>
+                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-mono">P{rec.priority}</Badge>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground leading-relaxed">{rec.description}</p>
+                              <div className="flex items-center gap-2 text-[10px]">
+                                <span className="text-muted-foreground shrink-0">当前值:</span>
+                                <code className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] font-mono text-foreground/70 truncate max-w-[140px]">
+                                  {formatValue(rec.currentValue)}
+                                </code>
+                                <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                                <span className="text-muted-foreground shrink-0">推荐值:</span>
+                                <code className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-mono text-primary truncate max-w-[140px]">
+                                  {formatValue(rec.recommendedValue)}
+                                </code>
+                              </div>
+                              <div className="flex items-center justify-end">
+                                <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => handleApply(rec)}>
+                                  <Copy className="h-3 w-3 mr-1" />
+                                  应用
+                                </Button>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No signals, no recommendations */}
+                    {report.signals.length === 0 && report.recommendations.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+                        <Shield className="h-6 w-6 mb-1.5 opacity-40" />
+                        <p className="text-[11px]">该域名暂无检测信号，配置良好</p>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Empty state */}
+              {!report && !loading && !error && (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <BrainCircuit className="h-8 w-8 mb-2 opacity-30" />
+                  <p className="text-xs">输入域名开始智能反爬分析</p>
+                  <p className="text-[10px] mt-1 opacity-60">基于实际采集历史和检测信号生成建议</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

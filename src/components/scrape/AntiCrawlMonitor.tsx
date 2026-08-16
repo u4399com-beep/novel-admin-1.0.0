@@ -26,6 +26,9 @@ import { ProxyTestPanel } from './anti-crawl/ProxyTestPanel';
 import { SessionManagerPanel } from './anti-crawl/SessionManagerPanel';
 import { RequestFingerprintPanel } from './anti-crawl/RequestFingerprintPanel';
 import { AntiCrawlSimPanel } from './anti-crawl/AntiCrawlSimPanel';
+import { AntiCrawlAdvisorPanel } from './anti-crawl/AntiCrawlAdvisorPanel';
+import { PriorityQueuePanel } from './anti-crawl/PriorityQueuePanel';
+import { QualityScorePanel } from './anti-crawl/QualityScorePanel';
 
 // ─── Main Monitor ──────────────────────────────────────────────────────────────
 
@@ -135,6 +138,9 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
               </CardContent>
             </Card>
 
+            {/* Priority Queue Management */}
+            <PriorityQueuePanel />
+
             {/* Anti-Crawl Capability Overview */}
             <AntiCrawlCapabilityPanel />
 
@@ -161,6 +167,12 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
 
             {/* Anti-Crawl Simulation Test */}
             <AntiCrawlSimPanel />
+
+            {/* Anti-Crawl Strategy Advisor */}
+            <AntiCrawlAdvisorPanel />
+
+            {/* Quality Scoring */}
+            <QualityScorePanel />
 
             {/* Alert Config */}
             <AlertConfigPanel />

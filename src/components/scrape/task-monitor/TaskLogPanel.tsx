@@ -11,12 +11,14 @@ import {
   Download,
   Search,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ScrapeTaskLog } from './types';
+import { useTaskLogStream, type LogEntry } from '@/hooks/useTaskLogStream';
 
 const LOG_LEVEL_CONFIG: Record<
   string,
@@ -67,20 +69,76 @@ function formatTimeForExport(dateStr: string): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+// Union type for merged display (API log + WebSocket log)
+interface MergedLogEntry {
+  id: string;
+  level: string;
+  message: string;
+  url?: string | null;
+  createdAt: string;
+  timestamp: string; // for dedup
+  source: 'api' | 'ws';
+}
+
 interface TaskLogPanelProps {
   isExpanded: boolean;
   logs: ScrapeTaskLog[];
   logsLoading: boolean;
   formatDate: (d: string | null | undefined) => string;
+  taskId?: string | null;
 }
 
-export function TaskLogPanel({ isExpanded, logs, logsLoading, formatDate }: TaskLogPanelProps) {
+export function TaskLogPanel({ isExpanded, logs, logsLoading, formatDate, taskId }: TaskLogPanelProps) {
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // WebSocket real-time log stream
+  const { logs: wsLogs, connected } = useTaskLogStream(taskId ?? null);
+
+  // Merge API logs with WebSocket logs, deduplicate by message+timestamp (within 1s tolerance)
+  const allLogs = useMemo(() => {
+    const apiEntries: MergedLogEntry[] = logs.map((l) => ({
+      id: l.id,
+      level: l.level,
+      message: l.message,
+      url: l.url,
+      createdAt: l.createdAt,
+      timestamp: l.createdAt,
+      source: 'api' as const,
+    }));
+
+    const wsEntries: MergedLogEntry[] = wsLogs.map((l: LogEntry) => ({
+      id: l.id,
+      level: l.level,
+      message: l.message,
+      url: l.url,
+      createdAt: l.timestamp,
+      timestamp: l.timestamp,
+      source: 'ws' as const,
+    }));
+
+    // Combine and sort by timestamp desc
+    const combined = [...apiEntries, ...wsEntries];
+
+    // Deduplicate: same message within 1 second tolerance
+    const seen = new Map<string, boolean>();
+    const deduped = combined.filter((entry) => {
+      const ts = new Date(entry.timestamp).getTime();
+      const key = `${entry.message.slice(0, 200)}_${Math.floor(ts / 1000)}`;
+      if (seen.has(key)) return false;
+      seen.set(key, true);
+      return true;
+    });
+
+    // Sort by timestamp descending (newest first)
+    deduped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return deduped;
+  }, [logs, wsLogs]);
 
   // Debounce search input
   useEffect(() => {
@@ -95,13 +153,13 @@ export function TaskLogPanel({ isExpanded, logs, logsLoading, formatDate }: Task
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
+    return allLogs.filter((log) => {
       if (levelFilter !== 'all' && log.level !== levelFilter) return false;
       if (debouncedQuery && !log.message.toLowerCase().includes(debouncedQuery.toLowerCase()))
         return false;
       return true;
     });
-  }, [logs, levelFilter, debouncedQuery]);
+  }, [allLogs, levelFilter, debouncedQuery]);
 
   // Auto-scroll to bottom when new logs arrive
   const prevLogCountRef = useRef(filteredLogs.length);
@@ -142,7 +200,8 @@ export function TaskLogPanel({ isExpanded, logs, logsLoading, formatDate }: Task
       const time = formatTimeForExport(log.createdAt);
       const level = LEVEL_LABELS[log.level] || 'INFO';
       const url = log.url ? ` (${log.url})` : '';
-      return `[${time}] [${level}] ${log.message}${url}`;
+      const sourceTag = log.source === 'ws' ? ' [WS]' : '';
+      return `[${time}] [${level}]${sourceTag} ${log.message}${url}`;
     });
     const content = lines.join('\n');
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -165,19 +224,28 @@ export function TaskLogPanel({ isExpanded, logs, logsLoading, formatDate }: Task
         <div className="flex items-center gap-2">
           <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-medium">运行日志</span>
+          {connected && (
+            <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-normal gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              实时
+            </Badge>
+          )}
+          {!connected && taskId && (
+            <span className="h-2 w-2 rounded-full bg-red-500" title="WebSocket 未连接" />
+          )}
         </div>
         <span className="text-[10px] text-muted-foreground">
-          显示 {filteredLogs.length} / 共 {logs.length} 条
+          显示 {filteredLogs.length} / 共 {allLogs.length} 条
         </span>
       </div>
 
-      {logsLoading ? (
+      {logsLoading && allLogs.length === 0 ? (
         <div className="space-y-1.5">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-4 w-full" />
           ))}
         </div>
-      ) : logs.length === 0 ? (
+      ) : allLogs.length === 0 ? (
         <p className="text-xs text-muted-foreground py-2">暂无日志</p>
       ) : (
         <>
