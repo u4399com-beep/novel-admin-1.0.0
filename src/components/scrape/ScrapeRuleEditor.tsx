@@ -81,7 +81,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
       contentTitleSelector: { ...defaultSelector },
       contentSelector: { ...defaultSelector },
       contentPagination: { ...defaultPagination },
-      antiCrawlConfig: { useJsRender: false, uaRotation: false, cookies: '', minDelay: 500, maxDelay: 2000 },
+      antiCrawlConfig: { useJsRender: false, uaRotation: false, cookies: '', minDelay: 500, maxDelay: 2000, humanBehavior: false, dnt: false, acceptLanguage: '', referer: '' },
       storageMode: 'database',
       filePath: './data/novels',
       coverSavePath: './data/covers',
@@ -163,6 +163,10 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
         cookies: '',
         minDelay: rule.antiCrawlConfig.minDelay || 500,
         maxDelay: rule.antiCrawlConfig.maxDelay || 2000,
+        humanBehavior: rule.antiCrawlConfig.humanBehavior || false,
+        dnt: rule.antiCrawlConfig.dnt || false,
+        acceptLanguage: rule.antiCrawlConfig.acceptLanguage || '',
+        referer: rule.antiCrawlConfig.referer || '',
       }, { shouldDirty: true });
     }
     if (rule.agentqlQueries) {
@@ -225,7 +229,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
           contentTitleSelector: parseJSON(rule.contentTitleSelector, defaultSelector),
           contentSelector: parseJSON(rule.contentSelector, defaultSelector),
           contentPagination: parseJSON(rule.contentPagination, defaultPagination),
-          antiCrawlConfig: parseJSON(rule.antiCrawlConfig, { useJsRender: false, uaRotation: false, cookies: '', minDelay: 500, maxDelay: 2000 }),
+          antiCrawlConfig: parseJSON(rule.antiCrawlConfig, { useJsRender: false, uaRotation: false, cookies: '', minDelay: 500, maxDelay: 2000, humanBehavior: false, dnt: false, acceptLanguage: '', referer: '' }),
           storageMode: (str('storageMode') as FormValues['storageMode']) || 'database',
           filePath: str('filePath') || './data/novels',
           coverSavePath: str('coverSavePath') || './data/covers',

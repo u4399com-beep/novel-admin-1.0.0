@@ -60,10 +60,10 @@ interface DomainBinding {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const PROTOCOL_COLORS: Record<string, string> = {
-  HTTP: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
-  HTTPS: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20',
-  SOCKS4: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-  SOCKS5: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
+  HTTP: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30',
+  HTTPS: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+  SOCKS4: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
+  SOCKS5: 'bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30',
 };
 
 function getStatusColor(status: string): string {
@@ -84,10 +84,10 @@ function getStatusLabel(status: string): string {
   }
 }
 
-function getHealthColor(score: number): string {
-  if (score > 70) return 'bg-emerald-500';
-  if (score >= 40) return 'bg-amber-500';
-  return 'bg-red-500';
+function getHealthGradient(score: number): string {
+  if (score > 70) return 'from-emerald-400 to-emerald-500';
+  if (score >= 40) return 'from-amber-400 to-amber-500';
+  return 'from-red-400 to-red-500';
 }
 
 function getHealthTextColor(score: number): string {
@@ -329,7 +329,7 @@ export function ProxyPoolPanel() {
 
   return (
     <Card className="glass-card">
-      <CardHeader className="pb-2 pt-4 px-4">
+      <CardHeader className="pb-2 pt-4 px-4 bg-gradient-to-b from-primary/5 to-transparent rounded-t-lg">
         <div className="flex items-center justify-between">
           <CardTitle className="text-xs font-medium flex items-center gap-2">
             <Globe className="h-3.5 w-3.5 text-primary" />
@@ -361,17 +361,17 @@ export function ProxyPoolPanel() {
           <>
             {/* ── Stats Bar ── */}
             <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-lg border bg-background/50 p-2.5 text-center">
+              <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-sm">
                 <div className="text-lg font-bold">{stats?.total ?? 0}</div>
                 <div className="text-[9px] text-muted-foreground">总代理</div>
               </div>
-              <div className="rounded-lg border bg-background/50 p-2.5 text-center">
+              <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-sm">
                 <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
                   {stats?.active ?? 0}
                 </div>
                 <div className="text-[9px] text-muted-foreground">活跃</div>
               </div>
-              <div className="rounded-lg border bg-background/50 p-2.5 text-center">
+              <div className="rounded-lg border bg-background/50 p-2.5 text-center shadow-sm">
                 <div className="text-lg font-bold text-red-600 dark:text-red-400">
                   {stats?.disabled ?? 0}
                 </div>
@@ -387,9 +387,9 @@ export function ProxyPoolPanel() {
                   {avgHealth.toFixed(1)}%
                 </span>
               </div>
-              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${getHealthColor(avgHealth)}`}
+                  className={`h-full rounded-full bg-gradient-to-r ${getHealthGradient(avgHealth)} transition-all duration-300`}
                   style={{ width: `${avgHealth}%` }}
                 />
               </div>
@@ -510,10 +510,10 @@ export function ProxyPoolPanel() {
               </h4>
               <div className="max-h-72 overflow-y-auto scrollbar-thin space-y-1.5">
                 {stats?.proxies && stats.proxies.length > 0 ? (
-                  stats.proxies.map((proxy) => (
+                  stats.proxies.map((proxy, idx) => (
                     <div
                       key={proxy.url}
-                      className="rounded-lg border bg-background/50 p-2.5 space-y-1.5 group/proxy"
+                      className={`rounded-lg border border-l-2 border-l-transparent bg-background/50 p-2.5 space-y-1.5 group/proxy hover:border-l-primary hover:bg-muted/30 transition-all duration-200 ${idx % 2 === 0 ? '' : 'bg-muted/20'}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
@@ -546,9 +546,9 @@ export function ProxyPoolPanel() {
                           <span className={`text-[10px] font-bold ${getHealthTextColor(proxy.healthScore)}`}>
                             {proxy.healthScore}%
                           </span>
-                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
                             <div
-                              className={`h-full rounded-full transition-all ${getHealthColor(proxy.healthScore)}`}
+                              className={`h-full rounded-full bg-gradient-to-r ${getHealthGradient(proxy.healthScore)} transition-all duration-300`}
                               style={{ width: `${proxy.healthScore}%` }}
                             />
                           </div>
@@ -595,9 +595,14 @@ export function ProxyPoolPanel() {
                     </div>
                   ))
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-6 text-xs text-muted-foreground gap-2">
-                    <Globe className="h-6 w-6 text-muted-foreground/30" />
-                    <span>暂无代理</span>
+                  <div className="flex flex-col items-center justify-center py-10 text-xs text-muted-foreground gap-3">
+                    <div className="rounded-full bg-muted/50 p-3">
+                      <Globe className="h-7 w-7 text-muted-foreground/40" />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <span className="text-sm font-medium text-muted-foreground">暂无代理</span>
+                      <p className="text-[10px] text-muted-foreground/60">添加代理地址以开始使用代理池功能</p>
+                    </div>
                   </div>
                 )}
               </div>

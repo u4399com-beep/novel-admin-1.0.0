@@ -11,9 +11,21 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Crosshair, Cloud, Brain, Shield, EyeOff } from 'lucide-react';
+import { Sparkles, Crosshair, Cloud, Brain, Shield, EyeOff, Info } from 'lucide-react';
 import type { FormValues } from './schema';
 import type { EditorFormAccess } from './types';
+
+// ==================== Engine Hints ====================
+
+const ENGINE_HINTS: Record<string, string> = {
+  cheerio: '快速但无JS渲染，适合静态页面',
+  playwright: '支持JS渲染，适合动态页面',
+  firecrawl: 'AI增强提取，适合结构复杂页面',
+  agentql: '自然语言查询，无需编写选择器',
+  'cloud-browser': '云端浏览器，绕过Cloudflare等防护',
+  scrapling: 'Python反检测引擎，内置指纹伪装',
+  obscura: '隐身反指纹+JS渲染，适合反爬严格的站点',
+};
 
 interface StrategyTabProps extends EditorFormAccess {
   onOpenAiAssistant: () => void;
@@ -108,9 +120,11 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
             </SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          Cheerio: 最快 | Playwright: JS渲染 | Firecrawl: AI增强 | AgentQL: 自然语言 | 云端浏览器: 反检测 | Scrapling: Python反爬 | Obscura: 全隐身
-        </p>
+        {/* Engine capability hint */}
+        <div className="flex items-start gap-1.5 rounded-md border border-muted/60 bg-muted/20 px-3 py-2">
+          <Info className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+          <p className="text-xs text-muted-foreground">{ENGINE_HINTS[currentEngine] || ''}</p>
+        </div>
       </div>
 
       {/* AgentQL Config - shown when agentql engine selected */}

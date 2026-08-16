@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -10,8 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
-import { RefreshCw, Shield, Activity, Server, Clock } from 'lucide-react';
+import { RefreshCw, Shield, Activity, Server, Clock, Info, TriangleAlert, CheckCircle2, User } from 'lucide-react';
 import type { EditorFormAccess } from './types';
 
 // ==================== Types ====================
@@ -53,7 +54,18 @@ interface DelayStatsResponse {
   serviceReachable?: boolean;
 }
 
-// ==================== Status Color Helpers ====================
+// ==================== Helpers ====================
+
+const CLOUDFLARE_DOMAIN_PATTERNS = ['cloudflare', 'cf-', 'cloudns', 'cloudfront'];
+
+function detectCloudflare(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return CLOUDFLARE_DOMAIN_PATTERNS.some(p => hostname.includes(p));
+  } catch {
+    return false;
+  }
+}
 
 function healthColor(score: number): string {
   if (score >= 70) return 'text-green-600 dark:text-green-400';
@@ -332,9 +344,40 @@ function AdaptiveDelayPanel() {
 export function AntiCrawlTab({ form }: EditorFormAccess) {
   const { setValue, watch } = form;
   const antiCrawl = watch('antiCrawlConfig');
+  const listUrl = watch('listUrl');
+  const engine = watch('engine');
+
+  // Smart recommendation: detect Cloudflare domains
+  const isCloudflareDomain = useMemo(() => detectCloudflare(listUrl), [listUrl]);
+
+  // Show Obscura banner when engine is obscura but humanBehavior is off
+  const showObscuraBanner = engine === 'obscura' && !antiCrawl.humanBehavior;
+  const showCloudflareBanner = isCloudflareDomain && engine !== 'obscura';
 
   return (
     <div className="space-y-4 rounded-lg border p-4">
+      {/* ==================== Smart Recommendation Banners ==================== */}
+      {showCloudflareBanner && (
+        <Alert className="border-yellow-300 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-950/30">
+          <TriangleAlert className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+          <AlertDescription className="text-yellow-800 dark:text-yellow-200 text-xs">
+            <span className="font-medium">Cloudflare防护检测：</span>
+            检测到该站点可能使用Cloudflare防护，建议使用 <span className="font-semibold">Obscura引擎</span> + <span className="font-semibold">人类行为模拟</span> 以获得最佳反爬效果。
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {showObscuraBanner && (
+        <Alert className="border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950/30">
+          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+          <AlertDescription className="text-green-800 dark:text-green-200 text-xs">
+            <span className="font-medium">最强反爬引擎已启用：</span>
+            建议同时开启 <span className="font-semibold">人类行为模拟</span>，可模拟鼠标移动、滚动、链接悬停等真实用户行为，进一步提升反检测能力。
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* ==================== Basic Anti-Crawl Options ==================== */}
       <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
         <div>
           <Label className="text-sm font-medium">启用JS渲染</Label>
@@ -377,6 +420,7 @@ export function AntiCrawlTab({ form }: EditorFormAccess) {
 
       <Separator />
 
+      {/* ==================== Request Delay ==================== */}
       <div className="space-y-2">
         <Label className="text-sm font-medium">请求延迟范围</Label>
         <div className="flex items-center gap-3">
@@ -416,6 +460,85 @@ export function AntiCrawlTab({ form }: EditorFormAccess) {
               <span className="text-sm text-muted-foreground shrink-0">ms</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* ==================== Advanced Anti-Crawl Options ==================== */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Info className="h-4 w-4 text-muted-foreground" />
+          <Label className="text-sm font-semibold">高级反爬选项</Label>
+        </div>
+
+        {/* Human Behavior Simulation */}
+        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="flex-1 min-w-0 mr-3">
+            <div className="flex items-center gap-2">
+              <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <Label className="text-sm font-medium">人类行为模拟</Label>
+              {engine !== 'obscura' && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">仅Obscura</Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">鼠标移动、滚动、链接悬停等模拟真实用户行为 (仅Obscura引擎)</p>
+          </div>
+          <Switch
+            checked={antiCrawl.humanBehavior}
+            disabled={engine !== 'obscura'}
+            onCheckedChange={(v) =>
+              setValue('antiCrawlConfig', { ...antiCrawl, humanBehavior: v }, { shouldDirty: true })
+            }
+          />
+        </div>
+
+        {/* DNT Header */}
+        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="flex-1 min-w-0 mr-3">
+            <Label className="text-sm font-medium">DNT头</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">发送Do Not Track头</p>
+          </div>
+          <Switch
+            checked={antiCrawl.dnt}
+            onCheckedChange={(v) =>
+              setValue('antiCrawlConfig', { ...antiCrawl, dnt: v }, { shouldDirty: true })
+            }
+          />
+        </div>
+
+        {/* Accept-Language Override */}
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Label className="text-sm font-medium">Accept-Language覆盖</Label>
+          </div>
+          <Input
+            placeholder="留空自动随机化"
+            value={antiCrawl.acceptLanguage}
+            onChange={(e) =>
+              setValue('antiCrawlConfig', { ...antiCrawl, acceptLanguage: e.target.value }, { shouldDirty: true })
+            }
+            className="text-sm"
+          />
+          <p className="text-xs text-muted-foreground">自定义Accept-Language头</p>
+        </div>
+
+        {/* Referer Override */}
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Label className="text-sm font-medium">Referer覆盖</Label>
+          </div>
+          <Input
+            placeholder="留空自动伪装搜索引擎来源"
+            value={antiCrawl.referer}
+            onChange={(e) =>
+              setValue('antiCrawlConfig', { ...antiCrawl, referer: e.target.value }, { shouldDirty: true })
+            }
+            className="text-sm"
+          />
+          <p className="text-xs text-muted-foreground">自定义Referer头</p>
         </div>
       </div>
 

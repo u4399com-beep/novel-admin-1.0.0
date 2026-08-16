@@ -136,7 +136,7 @@ function getOverallStatus(
   activeModules: string[],
   totalModules: number,
   proxyPoolReady: boolean,
-): { level: 'green' | 'yellow' | 'red'; label: string; description: string; color: string; bgColor: string; borderColor: string } {
+): { level: 'green' | 'yellow' | 'red'; label: string; description: string; color: string; bgColor: string; borderColor: string; leftBorder: string } {
   const moduleRatio = totalModules > 0 ? activeModules.length / totalModules : 0;
 
   if (moduleRatio >= 0.9 && proxyPoolReady) {
@@ -147,6 +147,7 @@ function getOverallStatus(
       color: 'text-emerald-600 dark:text-emerald-400',
       bgColor: 'bg-emerald-500/10',
       borderColor: 'border-emerald-500/20',
+      leftBorder: 'border-l-emerald-500',
     };
   }
   if (moduleRatio >= 0.5 && !proxyPoolReady) {
@@ -157,6 +158,7 @@ function getOverallStatus(
       color: 'text-amber-600 dark:text-amber-400',
       bgColor: 'bg-amber-500/10',
       borderColor: 'border-amber-500/20',
+      leftBorder: 'border-l-amber-500',
     };
   }
   if (moduleRatio < 0.5 || !proxyPoolReady) {
@@ -167,6 +169,7 @@ function getOverallStatus(
       color: 'text-red-600 dark:text-red-400',
       bgColor: 'bg-red-500/10',
       borderColor: 'border-red-500/20',
+      leftBorder: 'border-l-red-500',
     };
   }
   return {
@@ -176,6 +179,7 @@ function getOverallStatus(
     color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-500/10',
     borderColor: 'border-amber-500/20',
+    leftBorder: 'border-l-amber-500',
   };
 }
 
@@ -234,7 +238,7 @@ export function FingerprintHealthPanel() {
 
   return (
     <Card className="glass-card">
-      <CardHeader className="pb-2 pt-4 px-4">
+      <CardHeader className="pb-2 pt-4 px-4 bg-gradient-to-b from-primary/5 to-transparent rounded-t-lg">
         <div className="flex items-center justify-between">
           <CardTitle className="text-xs font-medium flex items-center gap-2">
             <Fingerprint className="h-3.5 w-3.5 text-primary" />
@@ -261,7 +265,7 @@ export function FingerprintHealthPanel() {
         ) : (
           <>
             {/* ── Detection Summary ── */}
-            <div className={`rounded-lg border ${overallStatus.borderColor} p-4`}>
+            <div className={`rounded-lg border border-l-4 ${overallStatus.leftBorder} ${overallStatus.borderColor} ${overallStatus.bgColor} p-4`}>
               <div className="flex items-center gap-3">
                 <div className={`rounded-lg p-2.5 ${overallStatus.bgColor}`}>
                   <Shield className={`h-5 w-5 ${overallStatus.color}`} />
@@ -304,13 +308,13 @@ export function FingerprintHealthPanel() {
                       <TooltipTrigger asChild>
                         <Badge
                           variant={isActive ? 'secondary' : 'outline'}
-                          className={`text-[9px] px-1.5 py-0 font-normal cursor-default transition-colors gap-1 ${
+                          className={`text-[9px] px-1.5 py-0 font-normal cursor-default transition-all duration-200 hover:scale-105 gap-1 ${
                             isActive
-                              ? 'bg-primary/15 text-primary border-primary/20'
-                              : 'text-muted-foreground/50 border-muted-foreground/20'
+                              ? 'bg-primary/15 text-primary border-primary/20 hover:bg-primary/25'
+                              : 'text-muted-foreground/50 border-muted-foreground/20 hover:border-muted-foreground/40'
                           }`}
                         >
-                          <Icon className={`h-2.5 w-2.5 ${
+                          <Icon className={`h-2.5 w-2.5 transition-transform ${
                             isActive ? 'text-emerald-500' : 'text-amber-500'
                           }`} />
                           {mod.label}
@@ -339,7 +343,7 @@ export function FingerprintHealthPanel() {
                 {ENGINE_RECOMMENDATIONS.map((rec) => (
                   <div
                     key={rec.engine}
-                    className="rounded-lg border bg-background/50 p-2.5 flex items-center gap-2.5"
+                    className="rounded-lg border bg-background/50 p-2.5 flex items-center gap-2.5 hover:border-l-primary border-l-4 border-l-transparent transition-all duration-200 hover:bg-muted/30"
                   >
                     <Monitor className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -375,7 +379,7 @@ export function FingerprintHealthPanel() {
                   刷新
                 </Button>
               </div>
-              <div className="rounded-lg border bg-background/50 p-3 space-y-1.5 font-mono text-[10px]">
+              <div className="rounded-lg border bg-background/50 p-3 space-y-1.5 font-mono text-[10px] shadow-sm">
                 <HeaderLine label="User-Agent" value={headers.userAgent} />
                 <HeaderLine label="Accept-Language" value={headers.acceptLanguage} />
                 <HeaderLine label="Accept-Encoding" value={headers.acceptEncoding} />

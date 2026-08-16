@@ -15,7 +15,7 @@ import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlC
 import { isSafeUrl } from "./ssrf";
 import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects } from "./utils";
 import { getProfileForDomain, getStealthScript } from "./stealth";
-import { proxyManager } from "./proxy-manager";
+import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -113,7 +113,7 @@ class CheerioEngine implements ScrapingEngine {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
-    const headers = buildFetchHeaders(options?.antiCrawl, options?.userAgent);
+    const headers = buildFetchHeaders(options?.antiCrawl, options?.userAgent, url, 'novel');
     const timeout = Math.max(5000, Math.min(options?.timeout || 30000, 300000));
 
     // Inject cookies from the cookie jar
@@ -132,13 +132,9 @@ class CheerioEngine implements ScrapingEngine {
     }
 
     // Proxy support: select best proxy for this domain
-    // TODO: When http-proxy-agent / socks-proxy-agent are installed, create agent here:
-    //   const agent = proxy ? createProxyAgent(proxy) : undefined;
-    //   const startTime = Date.now();
-    //   try { ... } finally {
-    //     if (proxy) proxyManager.recordSuccess(proxy.url, Date.now() - startTime);
-    //   }
-    const proxy = options?.proxy ? proxyManager.getProxy(new URL(url).hostname) : null;
+    const domainProxy = targetDomain ? proxyManager.getDomainProxy(targetDomain) : null;
+    const proxy = domainProxy || (options?.proxy ? proxyManager.getProxy(targetDomain) : null);
+    const dispatcher = proxy ? getProxyDispatcher(proxy.url) : null;
 
     return retryWithBackoff(
       async () => {
@@ -168,6 +164,8 @@ class CheerioEngine implements ScrapingEngine {
               headers: reqHeaders,
               redirect: "manual",
               signal: AbortSignal.timeout(remainingTimeout),
+              // @ts-expect-error - Bun supports dispatcher option
+              dispatcher: dispatcher || undefined,
             });
           },
         });
@@ -201,6 +199,11 @@ class CheerioEngine implements ScrapingEngine {
         const html = (await response.text()).replace(/^\uFEFF/, "");
         if (html.length > MAX_RESPONSE_SIZE) {
           throw new Error(`Response body too large: ${html.length} bytes (max 10MB)`);
+        }
+
+        // Record proxy success
+        if (proxy) {
+          proxyManager.recordSuccess(proxy.url, Date.now() - startTime);
         }
 
         return { html, finalUrl, statusCode: response.status };
@@ -308,6 +311,14 @@ class PlaywrightEngine implements ScrapingEngine {
         try {
           const page = await context.newPage();
 
+          // Apply stealth injection if anti-crawl options suggest it
+          let pwDomainForStealth: string;
+          try { pwDomainForStealth = new URL(url).hostname; } catch { pwDomainForStealth = ''; }
+          if (pwDomainForStealth && (options?.antiCrawl?.uaRotation || options?.antiCrawl?.humanBehavior)) {
+            const profile = getProfileForDomain(pwDomainForStealth);
+            await page.addInitScript(getStealthScript(profile));
+          }
+
           // Intercept all requests to block unsafe redirect targets and non-HTTP protocols
           await context.route('**/*', (route) => {
             const routeUrl = route.request().url();
@@ -327,11 +338,9 @@ class PlaywrightEngine implements ScrapingEngine {
             route.continue();
           });
 
-          // Set extra headers
-          await page.setExtraHTTPHeaders({
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-          });
+          // Set extra headers with enhanced anti-crawl header generation
+          const enhancedHeaders = buildFetchHeaders(options?.antiCrawl, userAgent, url, 'novel');
+          await page.setExtraHTTPHeaders(enhancedHeaders);
 
           // Navigate with timeout
           const response = await page.goto(url, {
@@ -1324,11 +1333,24 @@ class ObscuraEngine implements ScrapingEngine {
  */
 export function selectEngine(
   requestedEngine?: EngineType,
-  antiCrawl?: { useJsRender?: boolean; cloudBrowser?: boolean }
+  antiCrawl?: {
+    useJsRender?: boolean;
+    cloudBrowser?: boolean;
+    humanBehavior?: boolean;
+    uaRotation?: boolean;
+    cookies?: Array<{ name: string; value: string }>;
+    proxy?: string;
+  }
 ): EngineType {
   if (requestedEngine) return requestedEngine;
   if (antiCrawl?.cloudBrowser) return "cloud-browser";
+  // If human behavior simulation is requested, must use obscura (has stealth + human sim)
+  if (antiCrawl?.humanBehavior) return "obscura";
+  // If proxy is set with UA rotation, obscura provides best anti-detection
+  if (antiCrawl?.proxy && antiCrawl?.uaRotation) return "obscura";
+  // JS rendering requested
   if (antiCrawl?.useJsRender) return "playwright";
+  // If only UA rotation without JS rendering, cheerio is fine
   return "cheerio";
 }
 

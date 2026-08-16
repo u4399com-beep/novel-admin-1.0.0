@@ -56,6 +56,10 @@ export const scrapeRuleSchema = z.object({
     cookies: z.string(),
     minDelay: z.number().int().min(0),
     maxDelay: z.number().int().min(0),
+    humanBehavior: z.boolean(),
+    dnt: z.boolean(),
+    acceptLanguage: z.string(),
+    referer: z.string(),
   }),
 
   storageMode: z.enum(['database', 'file']),

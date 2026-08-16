@@ -8916,3 +8916,153 @@ Stage Summary:
 - 前端: 3个新管理面板+2个API路由
 - 未解决问题: Git token过期(push失败), scraper-service 401轮询
 - 建议下一阶段: 1)配置SCRAPER_SERVICE_TOKEN修复401 2)实际代理测试 3)更多采集规则模板 4)导出格式增强
+
+---
+Task ID: 3-5
+Agent: full-stack-developer
+Task: R29 engine integration fixes - proxy dispatcher, stealth in Playwright, smart engine selection
+
+Work Log:
+- Read worklog (last 100 lines), engines.ts (1390 lines), proxy-manager.ts (full file) for context
+- Identified all 5 integration gaps and verified existing types/exports
+
+### Issue 1: CheerioEngine proxy dispatcher integration
+- Added `getProxyDispatcher` to the import from `./proxy-manager` (line 18)
+- Changed `buildFetchHeaders()` call to pass `url` and `'novel'` as targetUrl and siteType (line 116)
+- Replaced TODO proxy block (old lines 134-140) with actual proxy integration:
+  - Domain-specific proxy lookup via `proxyManager.getDomainProxy(targetDomain)`
+  - Fallback to `proxyManager.getProxy(targetDomain)` via `options?.proxy` flag
+  - Dispatcher creation via `getProxyDispatcher(proxy.url)`
+- Added `dispatcher` to fetch call with `@ts-expect-error` for Bun compatibility (line 167-168)
+
+### Issue 2: PlaywrightEngine stealth injection
+- After `const page = await context.newPage()` (line 312), added stealth injection block:
+  - Extracts domain from URL for profile lookup
+  - If `antiCrawl.uaRotation` or `antiCrawl.humanBehavior` is set, applies stealth
+  - Uses `getProfileForDomain()` + `getStealthScript()` + `page.addInitScript()`
+
+### Issue 3: PlaywrightEngine enhanced headers
+- Replaced hardcoded Accept/Accept-Language headers (old lines 331-334) with:
+  - `buildFetchHeaders(options?.antiCrawl, userAgent, url, 'novel')` to get full enhanced header set
+  - Consistent anti-crawl headers across all engines
+
+### Issue 4: Smart engine selection in selectEngine
+- Expanded antiCrawl type parameter to include `humanBehavior`, `uaRotation`, `cookies`, `proxy`
+- Added new selection logic:
+  - `humanBehavior` → obscura (requires stealth + human simulation)
+  - `proxy + uaRotation` → obscura (best anti-detection combination)
+  - `useJsRender` → playwright (JS rendering without stealth)
+  - Default → cheerio (fastest)
+
+### Issue 5: CheerioEngine proxy success recording
+- Added `proxyManager.recordSuccess()` call after successful HTML extraction (line 204-207)
+- Records response time via `Date.now() - startTime` for health tracking
+- Complements existing `recordFailure` calls on error paths
+
+Stage Summary:
+- All 5 critical engine integration gaps fixed in engines.ts
+- 0 TypeScript compilation errors in engines.ts (confirmed via `tsc --noEmit`)
+- No public API or class method signature changes
+- Proxy dispatcher integration enables actual proxy usage in CheerioEngine
+- PlaywrightEngine now benefits from stealth scripts and enhanced headers
+- Smart engine selection properly routes requests to obscura when anti-crawl features require it
+---
+Task ID: 6
+Agent: full-stack-developer
+Task: R29 ScrapeRuleEditor anti-crawl UI enhancements
+
+Work Log:
+- Read worklog (last 100 lines for R28 context), ScrapeRuleEditor.tsx, scrape-rules/route.ts, types.ts
+- Identified existing code structure: tabs in RuleFormTabs.tsx, AntiCrawlTab.tsx, StrategyTab.tsx, schema.ts, types.ts
+
+### Changes
+1. **schema.ts** - Added 4 new fields to antiCrawlConfig Zod schema:
+   - `humanBehavior: z.boolean()`, `dnt: z.boolean()`, `acceptLanguage: z.string()`, `referer: z.string()`
+2. **parts/types.ts** - Extended AntiCrawlConfig interface with same 4 new fields
+3. **ScrapeRuleEditor.tsx** - Updated 3 locations with new defaults:
+   - `useForm` defaultValues: added 4 fields with defaults (false/false/' '/')
+   - `loadRule` reset fallback: same 4 fields added to parseJSON fallback
+   - `handleApplyAiRule`: maps new fields from AI-generated rule (with || false/|| '' fallback)
+4. **AntiCrawlTab.tsx** - Major UI enhancement (rewritten):
+   - Added smart recommendation banners:
+     * Yellow Cloudflare banner: detects CF domains from listUrl, suggests Obscura + human behavior
+     * Green Obscura banner: when engine=obscura but humanBehavior off, recommends enabling it
+   - Added "高级反爬选项" sub-section with Info icon header:
+     * 人类行为模拟 (humanBehavior) - Switch with Obscura-only badge, disabled when engine ≠ obscura
+     * DNT头 (dnt) - Switch with description
+     * Accept-Language覆盖 (acceptLanguage) - Input with placeholder "留空自动随机化"
+     * Referer覆盖 (referer) - Input with placeholder "留空自动伪装搜索引擎来源"
+   - All new fields properly serialize/deserialize via existing `{ ...antiCrawl, field: value }` pattern
+5. **StrategyTab.tsx** - Engine capability hints:
+   - Added `ENGINE_HINTS` record mapping each engine to a description string
+   - Replaced static text line with dynamic hint box using Info icon
+   - Shows context-aware description based on selected engine (e.g. obscura → "隐身反指纹+JS渲染，适合反爬严格的站点")
+
+### Verification
+- ESLint: 0 errors (5 warnings, all pre-existing react-hooks/incompatible-library)
+- Dev server: no new runtime errors
+- All changes follow existing code patterns (Switch for toggles, Input for text, consistent spacing)
+
+Stage Summary:
+- 4 files modified: schema.ts, types.ts, ScrapeRuleEditor.tsx, AntiCrawlTab.tsx, StrategyTab.tsx
+- Schema extended with 4 new anti-crawl fields (humanBehavior, dnt, acceptLanguage, referer)
+- AntiCrawlTab: smart Cloudflare/Obscura banners + "高级反爬选项" sub-section with 4 new controls
+- StrategyTab: dynamic engine capability hint replacing static text
+- Obscura engine already existed in selector and schema; enhanced with descriptive hint text
+- All new fields properly serialize/deserialize through JSON.parse/JSON.stringify cycle
+---
+Task ID: R29
+Agent: Main Orchestrator
+Task: R29 反反爬能力增强 - 引擎集成修复 + 前端配置UI
+
+Work Log:
+- 审计R28代码发现5个关键集成漏洞
+- Task 3-5: engines.ts集成修复(+22行)
+  - CheerioEngine: 集成getProxyDispatcher实际代理连接
+  - CheerioEngine: buildFetchHeaders传递targetUrl+siteType启用Referer/AL随机化
+  - PlaywrightEngine: 条件性注入stealth脚本(antiCrawl.uaRotation|humanBehavior时)
+  - PlaywrightEngine: 使用buildFetchHeaders替代硬编码headers
+  - selectEngine: 智能引擎选择(humanBehavior→obscura, proxy+uaRotation→obscura)
+  - CheerioEngine: 添加proxy success记录
+- Task 6: ScrapeRuleEditor反爬选项UI增强
+  - AntiCrawlTab: 新增4个配置项(人类行为模拟/DNT/AL覆盖/Referer覆盖)
+  - AntiCrawlTab: 智能推荐Banner(Cloudflare检测/Obscura建议)
+  - StrategyTab: 引擎能力动态提示
+  - schema.ts/types.ts: 扩展AntiCrawlConfig类型
+- Task 7: 3个新面板样式优化
+  - AntiCrawlCapabilityPanel: 渐变header/表格hover/左border/pulse动画
+  - ProxyPoolPanel: 交替行/协议徽章饱和色/渐变健康条/空状态
+  - FingerprintHealthPanel: 状态border/模块hover缩放/推荐hover效果
+
+## 修改文件清单
+
+### 后端 - 1文件修改
+1. **engines.ts** (1367→1389行, +22行):
+   - import getProxyDispatcher from proxy-manager
+   - CheerioEngine: proxy dispatcher集成 + buildFetchHeaders(url, 'novel') + success记录
+   - PlaywrightEngine: stealth脚本条件注入 + buildFetchHeaders替代硬编码
+   - selectEngine: humanBehavior→obscura, proxy+uaRotation→obscura
+
+### 前端 - 5文件修改
+2. **parts/schema.ts** (+扩展antiCrawlConfig Zod schema 4字段)
+3. **parts/types.ts** (+扩展AntiCrawlConfig interface 4字段)
+4. **parts/AntiCrawlTab.tsx** (+200行: 4新开关/输入 + 智能Banner)
+5. **parts/StrategyTab.tsx** (+引擎能力动态提示)
+6. **AntiCrawlCapabilityPanel.tsx** (样式优化: 渐变/hover/pulse)
+7. **ProxyPoolPanel.tsx** (样式优化: 交替行/渐变条/空状态)
+8. **FingerprintHealthPanel.tsx** (样式优化: 状态border/hover缩放)
+
+## 验证结果
+- ESLint: 0 errors (5 warnings均为预存)
+- TypeScript: engines.ts 0 errors, 新前端文件 0 errors
+- Agent Browser: 首页正常加载, 0 console errors
+- Dev server: 无新增运行时错误
+
+Stage Summary:
+- R29完成引擎集成修复, R28新增能力现在真正可用
+- CheerioEngine可通过undici ProxyAgent使用实际代理
+- PlaywrightEngine在uaRotation/humanBehavior时自动注入stealth脚本
+- selectEngine根据antiCrawl配置智能选择最佳引擎
+- 采集规则编辑器UI完整支持所有新增反爬选项
+- 3个新管理面板样式优化完成
+- 建议下一阶段: 1)实际采集任务测试 2)代理连通性测试 3)更多站点规则

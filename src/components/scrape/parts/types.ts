@@ -22,6 +22,10 @@ export interface AntiCrawlConfig {
   cookies: string;
   minDelay: number;
   maxDelay: number;
+  humanBehavior: boolean;
+  dnt: boolean;
+  acceptLanguage: string;
+  referer: string;
 }
 
 export interface CleanConfig {

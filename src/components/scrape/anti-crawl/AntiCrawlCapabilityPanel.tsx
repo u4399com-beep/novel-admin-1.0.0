@@ -77,9 +77,9 @@ const STEALTH_MODULE_LABELS: Record<string, string> = {
 
 function CapabilityIcon({ supported }: { supported: boolean }) {
   if (supported) {
-    return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400" />;
+    return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400 transition-transform hover:scale-110" />;
   }
-  return <XCircle className="h-3.5 w-3.5 text-red-500 dark:text-red-400" />;
+  return <XCircle className="h-3.5 w-3.5 text-red-500 dark:text-red-400 transition-transform hover:scale-110" />;
 }
 
 function getEngineDisplayColor(engine: string): string {
@@ -157,7 +157,7 @@ export function AntiCrawlCapabilityPanel() {
 
   return (
     <Card className="glass-card">
-      <CardHeader className="pb-2 pt-4 px-4">
+      <CardHeader className="pb-2 pt-4 px-4 bg-gradient-to-b from-primary/5 to-transparent rounded-t-lg">
         <div className="flex items-center justify-between">
           <CardTitle className="text-xs font-medium flex items-center gap-2">
             <Shield className="h-3.5 w-3.5 text-primary" />
@@ -193,7 +193,7 @@ export function AntiCrawlCapabilityPanel() {
                 引擎能力矩阵
               </h4>
               {/* Desktop: table */}
-              <div className="hidden md:block rounded-lg border overflow-hidden">
+              <div className="hidden md:block rounded-lg border overflow-hidden border-l-4 border-l-primary/40">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/30">
@@ -209,7 +209,7 @@ export function AntiCrawlCapabilityPanel() {
                     {ENGINES.map((engine) => {
                       const cap = data?.engines?.[engine];
                       return (
-                        <TableRow key={engine} className="h-8">
+                        <TableRow key={engine} className="h-8 hover:bg-muted/50 transition-colors">
                           <TableCell className="py-1.5">
                             <Badge
                               variant="outline"
@@ -254,7 +254,7 @@ export function AntiCrawlCapabilityPanel() {
                   {activeCount}/{totalModules} 模块已启用
                 </span>
               </div>
-              <Progress value={activeProgress} className="h-2" />
+              <Progress value={activeProgress} className="h-2 [&>div]:animate-pulse" />
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {STEALTH_MODULES.map((mod) => {
                   const isActive = data?.activeModules?.includes(mod) ?? false;
