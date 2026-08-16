@@ -30,6 +30,14 @@ export interface AntiCrawl {
   proxy?: string;
   retries?: number;
   cloudBrowser?: boolean;
+  /** Override Accept-Language header. If omitted, a random one is generated. */
+  acceptLanguage?: string;
+  /** Override Referer header. If omitted, one may be spoofed from context. */
+  referer?: string;
+  /** Add DNT (Do Not Track) header. Randomly chosen if omitted. */
+  dnt?: boolean;
+  /** Enable human-like request behavior (randomized timing, jitter, etc.). */
+  humanBehavior?: boolean;
 }
 
 // ==================== Engine Types ====================

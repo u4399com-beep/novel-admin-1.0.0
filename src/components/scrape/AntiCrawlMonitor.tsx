@@ -16,6 +16,9 @@ import { MonitorFilters } from './anti-crawl/MonitorFilters';
 import { AlertConfigPanel } from './anti-crawl/AlertConfigPanel';
 import { EventAnalysisPanel } from './anti-crawl/EventAnalysisPanel';
 import { CookieManagerPanel } from './anti-crawl/CookieManagerPanel';
+import { AntiCrawlCapabilityPanel } from './anti-crawl/AntiCrawlCapabilityPanel';
+import { ProxyPoolPanel } from './anti-crawl/ProxyPoolPanel';
+import { FingerprintHealthPanel } from './anti-crawl/FingerprintHealthPanel';
 
 // ─── Main Monitor ──────────────────────────────────────────────────────────────
 
@@ -125,8 +128,17 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
               </CardContent>
             </Card>
 
+            {/* Anti-Crawl Capability Overview */}
+            <AntiCrawlCapabilityPanel />
+
+            {/* Fingerprint Health */}
+            <FingerprintHealthPanel />
+
             {/* Alert Config */}
             <AlertConfigPanel />
+
+            {/* Proxy Pool Management */}
+            <ProxyPoolPanel />
 
             {/* Cookie Manager */}
             <CookieManagerPanel />

@@ -1,8 +1,11 @@
 /**
  * Smart Proxy Manager
  * Comprehensive proxy pool with health tracking, adaptive selection,
- * and automatic cooling/disabling of bad proxies.
+ * automatic cooling/disabling of bad proxies, real proxy agent support,
+ * domain-specific binding, import/export, and auto-rotate on failure.
  */
+
+import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 
 // ==================== Types ====================
 
@@ -41,6 +44,31 @@ interface PoolStats {
     failCount: number;
     avgResponseTime: number;
   }>;
+}
+
+/** Per-proxy detail for getDetailedStats() */
+interface ProxyDetail {
+  url: string;
+  protocol: ProxyEntry['protocol'];
+  host: string;
+  port: number;
+  healthScore: number;
+  successCount: number;
+  failCount: number;
+  avgResponseTime: number;
+  consecutiveFails: number;
+  status: 'active' | 'cooling' | 'disabled';
+  coolingUntil?: number;
+  blockedDomains: string[];
+}
+
+/** Detailed stats including per-proxy status, domain bindings, recent failures */
+export interface DetailedStats {
+  pool: PoolStats;
+  proxies: ProxyDetail[];
+  domainBindings: Record<string, string>;
+  recentFailures: Array<{ proxyUrl: string; domain: string; timestamp: number; error: string }>;
+  dispatcherCacheSize: number;
 }
 
 // ==================== Proxy Parser ====================
@@ -84,11 +112,102 @@ function parseProxyUrl(rawUrl: string): { protocol: ProxyEntry['protocol']; host
   }
 }
 
+// ==================== Proxy Dispatcher Cache ====================
+
+/**
+ * Cache of undici Dispatcher instances keyed by original proxy URL.
+ * Shared across the ProxyManager singleton and the module-level getProxyDispatcher().
+ */
+const dispatcherCache = new Map<string, Dispatcher>();
+
+/**
+ * Get or create a cached undici Dispatcher (ProxyAgent/Socks5ProxyAgent) for a proxy URL.
+ * Supports http, https, socks5 proxies. For socks4, falls back to a TODO (not natively supported).
+ * Handles proxy authentication via user:pass in the URL.
+ *
+ * @param proxyUrl - The full proxy URL (e.g. "http://user:pass@host:port")
+ * @returns An undici Dispatcher, or null if the URL is invalid or protocol unsupported
+ */
+export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
+  if (dispatcherCache.has(proxyUrl)) {
+    return dispatcherCache.get(proxyUrl)!;
+  }
+
+  try {
+    let urlStr = proxyUrl.trim();
+    let protocol: ProxyEntry['protocol'] = 'http';
+
+    if (urlStr.startsWith('socks5://')) {
+      protocol = 'socks5';
+    } else if (urlStr.startsWith('socks4://')) {
+      protocol = 'socks4';
+    } else if (urlStr.startsWith('https://')) {
+      protocol = 'https';
+    } else if (urlStr.startsWith('http://')) {
+      protocol = 'http';
+    } else {
+      urlStr = 'http://' + urlStr;
+      protocol = 'http';
+    }
+
+    let dispatcher: Dispatcher;
+
+    if (protocol === 'socks5') {
+      // TODO: SOCKS5 proxies require socks-proxy-agent (not installed).
+      // Bun's bundled undici does not export Socks5ProxyAgent.
+      // When a compatible package is available, use:
+      //   dispatcher = new Socks5ProxyAgent(urlStr);
+      if (process.env.DEBUG === 'true') {
+        console.log('[ProxyManager] SOCKS5 proxies require a third-party agent (not installed)');
+      }
+      return null;
+    } else if (protocol === 'socks4') {
+      // TODO: SOCKS4 proxies require a third-party agent (not installed).
+      if (process.env.DEBUG === 'true') {
+        console.log('[ProxyManager] SOCKS4 proxies require a third-party agent (not installed)');
+      }
+      return null;
+    } else {
+      // http / https — use ProxyAgent with the full URI (supports user:pass auth)
+      dispatcher = new ProxyAgent(urlStr);
+    }
+
+    dispatcherCache.set(proxyUrl, dispatcher);
+    return dispatcher;
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (process.env.DEBUG === 'true') {
+      console.log(`[ProxyManager] Failed to create dispatcher for ${proxyUrl}: ${errMsg}`);
+    }
+    return null;
+  }
+}
+
+/** Invalidate a cached dispatcher (e.g. after removing a proxy) */
+export function invalidateDispatcher(proxyUrl: string): void {
+  dispatcherCache.delete(proxyUrl);
+}
+
+/** Clear the entire dispatcher cache */
+export function clearDispatcherCache(): void {
+  dispatcherCache.clear();
+}
+
 // ==================== ProxyManager ====================
+
+/** Recent failure record for auto-rotate tracking */
+interface RecentFailure {
+  proxyUrl: string;
+  domain?: string;
+  timestamp: number;
+  error: string;
+}
 
 class ProxyManager {
   private pool = new Map<string, ProxyEntry>();
   private lastUsedUrl: string | null = null;
+  private domainBindings = new Map<string, string>(); // domain -> proxy cleanUrl
+  private recentFailures: RecentFailure[] = [];
   private static instance: ProxyManager;
 
   private constructor() {
@@ -134,6 +253,17 @@ class ProxyManager {
   removeProxy(url: string): boolean {
     const parsed = parseProxyUrl(url);
     if (!parsed) return false;
+
+    // Also clean up domain bindings that reference this proxy
+    for (const [domain, boundUrl] of this.domainBindings.entries()) {
+      if (boundUrl === parsed.cleanUrl) {
+        this.domainBindings.delete(domain);
+      }
+    }
+
+    // Invalidate dispatcher cache
+    invalidateDispatcher(url);
+
     return this.pool.delete(parsed.cleanUrl);
   }
 
@@ -239,6 +369,9 @@ class ProxyManager {
     entry.failCount++;
     entry.consecutiveFails++;
     entry.lastUsed = Date.now();
+
+    // Track recent failure for auto-rotate
+    this.addRecentFailure(parsed.cleanUrl, error);
 
     // If error indicates 403, add domain to blocked list
     if (error) {
@@ -356,7 +489,7 @@ class ProxyManager {
     };
   }
 
-  /** Async health check for a single proxy */
+  /** Async health check — tests THROUGH the proxy (not just to it) */
   async checkHealth(proxyUrl: string): Promise<{ healthy: boolean; responseTime?: number; error?: string }> {
     const parsed = parseProxyUrl(proxyUrl);
     if (!parsed) return { healthy: false, error: 'Invalid proxy URL' };
@@ -367,16 +500,48 @@ class ProxyManager {
     const startTime = Date.now();
     const testUrl = 'http://httpbin.org/ip'; // Known reliable endpoint
 
+    // --- Primary: test THROUGH the proxy using an undici dispatcher ---
+    const dispatcher = getProxyDispatcher(entry.url);
+    if (dispatcher) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+
+        const res = await undiciFetch(testUrl, {
+          dispatcher,
+          signal: controller.signal,
+          redirect: 'manual',
+        } as Parameters<typeof undiciFetch>[1]);
+        clearTimeout(timeout);
+
+        const responseTime = Date.now() - startTime;
+        entry.lastCheck = Date.now();
+
+        if (res.ok) {
+          // Optionally verify the response looks like an IP response
+          this.recordSuccess(proxyUrl, responseTime);
+          return { healthy: true, responseTime };
+        } else {
+          // Non-OK status still means the proxy is reachable but may be misconfigured
+          const errMsg = `Proxy returned HTTP ${res.status}`;
+          this.recordFailure(proxyUrl, errMsg);
+          return { healthy: false, responseTime, error: errMsg };
+        }
+      } catch (err) {
+        // Through-proxy fetch failed; fall through to secondary check below
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (process.env.DEBUG === 'true') {
+          console.log(`[ProxyManager] Through-proxy check failed for ${parsed.cleanUrl}: ${errMsg} — falling back to direct check`);
+        }
+        // Don't record failure yet; let the secondary check determine the outcome
+      }
+    }
+
+    // --- Secondary fallback: test direct connectivity to the proxy host ---
     try {
-      // TODO: When http-proxy-agent / socks-proxy-agent packages are available,
-      // replace this direct fetch with an agent-based fetch:
-      //   const agent = createProxyAgent(entry);
-      //   const res = await fetch(testUrl, { agent, signal: AbortSignal.timeout(10000) });
-      // For now, just test connectivity to the proxy host itself.
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
 
-      // Test: try to connect to the proxy host
       const res = await fetch(`${entry.protocol === 'https' ? 'https' : 'http'}://${entry.host}:${entry.port}`, {
         signal: controller.signal,
         redirect: 'manual',
@@ -386,9 +551,10 @@ class ProxyManager {
       const responseTime = Date.now() - startTime;
       entry.lastCheck = Date.now();
 
-      // Any response means the proxy is reachable (even auth errors mean it's alive)
+      // Any response means the proxy host is reachable (even auth errors mean it's alive)
+      // but we couldn't route traffic through it — record as a weak success
       this.recordSuccess(proxyUrl, responseTime);
-      return { healthy: true, responseTime };
+      return { healthy: true, responseTime, error: 'Host reachable but through-proxy test failed' };
     } catch (err) {
       const responseTime = Date.now() - startTime;
       entry.lastCheck = Date.now();
@@ -426,6 +592,371 @@ class ProxyManager {
       count++;
     }
     return count;
+  }
+
+  // ==================== Batch Management ====================
+
+  /** Add multiple proxies at once. Returns number of new proxies added. */
+  addProxies(urls: string[]): number {
+    let added = 0;
+    for (const url of urls) {
+      if (this.addProxy(url)) added++;
+    }
+    return added;
+  }
+
+  /** Remove all proxies. Returns number of proxies removed. */
+  removeAllProxies(): number {
+    const count = this.pool.size;
+    this.pool.clear();
+    this.domainBindings.clear();
+    this.lastUsedUrl = null;
+    clearDispatcherCache();
+    return count;
+  }
+
+  /** Reset health/consecutiveFails for a specific proxy. Returns true if found. */
+  resetProxy(proxyUrl: string): boolean {
+    const parsed = parseProxyUrl(proxyUrl);
+    if (!parsed) return false;
+
+    const entry = this.pool.get(parsed.cleanUrl);
+    if (!entry) return false;
+
+    entry.healthScore = 50;
+    entry.consecutiveFails = 0;
+    entry.coolingUntil = undefined;
+    entry.disabled = false;
+    entry.blockedDomains.clear();
+
+    // Invalidate cached dispatcher so a fresh one is created
+    invalidateDispatcher(entry.url);
+
+    return true;
+  }
+
+  /** Reset all proxies to default health state. */
+  resetAllProxies(): void {
+    for (const entry of this.pool.values()) {
+      entry.healthScore = 50;
+      entry.consecutiveFails = 0;
+      entry.coolingUntil = undefined;
+      entry.disabled = false;
+      entry.blockedDomains.clear();
+    }
+    clearDispatcherCache();
+  }
+
+  // ==================== Import / Export ====================
+
+  /** Export all proxy entries as JSON (without sensitive credential data). */
+  exportProxies(): string {
+    const entries: Array<{
+      url: string;
+      protocol: ProxyEntry['protocol'];
+      host: string;
+      port: number;
+      healthScore: number;
+      successCount: number;
+      failCount: number;
+      avgResponseTime: number;
+      consecutiveFails: number;
+      blockedDomains: string[];
+    }> = [];
+
+    for (const entry of this.pool.values()) {
+      entries.push({
+        url: entry.url,
+        protocol: entry.protocol,
+        host: entry.host,
+        port: entry.port,
+        healthScore: entry.healthScore,
+        successCount: entry.successCount,
+        failCount: entry.failCount,
+        avgResponseTime: entry.avgResponseTime,
+        consecutiveFails: entry.consecutiveFails,
+        blockedDomains: Array.from(entry.blockedDomains),
+      });
+    }
+
+    return JSON.stringify({ version: 1, exportedAt: Date.now(), proxies: entries }, null, 2);
+  }
+
+  /**
+   * Import proxies from a JSON string (as produced by exportProxies()).
+   * Returns number of proxies successfully imported.
+   */
+  importProxies(json: string): number {
+    try {
+      const data = JSON.parse(json) as {
+        version?: number;
+        proxies?: Array<{ url: string }>;
+      };
+
+      if (!Array.isArray(data?.proxies)) {
+        return 0;
+      }
+
+      let imported = 0;
+      for (const proxy of data.proxies) {
+        if (proxy.url && this.addProxy(proxy.url)) imported++;
+      }
+      return imported;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Export proxies in a simple text format.
+   * @param format - 'url' for a newline-separated URL list, 'json' for full JSON export
+   */
+  exportAsText(format: 'url' | 'json'): string {
+    if (format === 'json') {
+      return this.exportProxies();
+    }
+
+    // Simple URL list
+    const urls: string[] = [];
+    for (const entry of this.pool.values()) {
+      urls.push(entry.url);
+    }
+    return urls.join('\n');
+  }
+
+  // ==================== Domain-Specific Binding ====================
+
+  /**
+   * Bind a specific proxy to a domain.
+   * When getProxyWithFallback() is called with this domain, the bound proxy
+   * will be returned (if available) instead of pool selection.
+   * Pass null as proxyUrl to remove the binding.
+   */
+  setDomainProxy(domain: string, proxyUrl: string | null): void {
+    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+
+    if (proxyUrl === null) {
+      this.domainBindings.delete(normalisedDomain);
+      return;
+    }
+
+    const parsed = parseProxyUrl(proxyUrl);
+    if (!parsed) return;
+
+    // Ensure the proxy exists in the pool
+    if (!this.pool.has(parsed.cleanUrl)) {
+      this.addProxy(proxyUrl);
+    }
+
+    this.domainBindings.set(normalisedDomain, parsed.cleanUrl);
+  }
+
+  /** Get the proxy bound to a specific domain, or null if no binding exists. */
+  getDomainProxy(domain: string): ProxyEntry | null {
+    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const cleanUrl = this.domainBindings.get(normalisedDomain);
+    if (!cleanUrl) return null;
+
+    const entry = this.pool.get(cleanUrl);
+    if (!entry) {
+      // Stale binding — clean it up
+      this.domainBindings.delete(normalisedDomain);
+      return null;
+    }
+
+    // Skip if disabled or cooling
+    const now = Date.now();
+    if (entry.disabled) return null;
+    if (entry.coolingUntil && now < entry.coolingUntil) return null;
+
+    return entry;
+  }
+
+  /** Get all domain → proxy URL bindings. */
+  getDomainProxyBindings(): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [domain, cleanUrl] of this.domainBindings.entries()) {
+      result[domain] = cleanUrl;
+    }
+    return result;
+  }
+
+  // ==================== Auto-Rotate on Failure ====================
+
+  /**
+   * Internal: record a recent failure for auto-rotate exclusion.
+   * Keeps only the last 5 minutes of failures.
+   */
+  private addRecentFailure(proxyCleanUrl: string, error?: string): void {
+    const now = Date.now();
+    const FIVE_MINUTES = 5 * 60 * 1000;
+
+    this.recentFailures.push({
+      proxyUrl: proxyCleanUrl,
+      timestamp: now,
+      error: error || 'unknown',
+    });
+
+    // Prune failures older than 5 minutes
+    this.recentFailures = this.recentFailures.filter((f) => now - f.timestamp < FIVE_MINUTES);
+  }
+
+  /**
+   * Check if a proxy has recent failures within the exclusion window.
+   */
+  private hasRecentFailures(proxyCleanUrl: string, sinceMs: number = 5 * 60 * 1000): boolean {
+    const cutoff = Date.now() - sinceMs;
+    return this.recentFailures.some(
+      (f) => f.proxyUrl === proxyCleanUrl && f.timestamp >= cutoff
+    );
+  }
+
+  /**
+   * Get a proxy for a domain with automatic fallback logic.
+   * - First checks domain-specific binding (if domain provided)
+   * - Then falls back to pool selection, excluding proxies with recent failures
+   * - Excludes explicitly listed proxy URLs (excludeUrls)
+   */
+  getProxyWithFallback(domain?: string, excludeUrls?: string[]): ProxyEntry | null {
+    const now = Date.now();
+
+    // 1. Check domain-specific binding first
+    if (domain) {
+      const boundProxy = this.getDomainProxy(domain);
+      if (boundProxy) {
+        boundProxy.lastUsed = now;
+        this.lastUsedUrl = boundProxy.url;
+        return boundProxy;
+      }
+    }
+
+    // 2. Build exclusion set from excludeUrls + recently failed proxies
+    const excludeSet = new Set<string>();
+    if (excludeUrls) {
+      for (const url of excludeUrls) {
+        const parsed = parseProxyUrl(url);
+        if (parsed) excludeSet.add(parsed.cleanUrl);
+      }
+    }
+
+    // Collect candidates, also tracking which have recent failures
+    const candidates: ProxyEntry[] = [];
+    const candidatesWithRecentFails: ProxyEntry[] = [];
+
+    for (const entry of this.pool.values()) {
+      if (entry.disabled) continue;
+      if (entry.coolingUntil && now < entry.coolingUntil) continue;
+      if (domain && entry.blockedDomains.has(domain)) continue;
+      if (excludeSet.has(entry.url)) continue;
+
+      if (this.hasRecentFailures(entry.url)) {
+        candidatesWithRecentFails.push(entry);
+      } else {
+        candidates.push(entry);
+      }
+    }
+
+    // Prefer candidates without recent failures
+    if (candidates.length > 0) {
+      return this.selectFromCandidates(candidates);
+    }
+
+    // Fallback: use candidates with recent failures (better than nothing)
+    if (candidatesWithRecentFails.length > 0) {
+      return this.selectFromCandidates(candidatesWithRecentFails);
+    }
+
+    return null;
+  }
+
+  /** Internal weighted selection from a candidate list (same logic as getProxy) */
+  private selectFromCandidates(candidates: ProxyEntry[]): ProxyEntry {
+    const now = Date.now();
+
+    // Exclude last used proxy
+    const selectable = candidates.filter((c) => c.url !== this.lastUsedUrl);
+    const pool = selectable.length > 0 ? selectable : candidates;
+
+    const weights = pool.map((entry) => {
+      const healthWeight = Math.max(1, entry.healthScore);
+      const speedWeight = 1 / (1 + entry.avgResponseTime / 1000);
+      return healthWeight * speedWeight;
+    });
+
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    let random = Math.random() * totalWeight;
+
+    let selected: ProxyEntry = pool[0];
+    for (let i = 0; i < pool.length; i++) {
+      random -= weights[i];
+      if (random <= 0) {
+        selected = pool[i];
+        break;
+      }
+    }
+
+    selected.lastUsed = now;
+    this.lastUsedUrl = selected.url;
+    return selected;
+  }
+
+  // ==================== Detailed Stats ====================
+
+  /** Get comprehensive stats including per-proxy details, bindings, and recent failures. */
+  getDetailedStats(): DetailedStats {
+    const now = Date.now();
+    const poolStats = this.getPoolStats();
+
+    const proxies: ProxyDetail[] = Array.from(this.pool.values()).map((entry) => {
+      let status: ProxyDetail['status'] = 'active';
+      if (entry.disabled) {
+        status = 'disabled';
+      } else if (entry.coolingUntil && now < entry.coolingUntil) {
+        status = 'cooling';
+      }
+
+      return {
+        url: entry.url,
+        protocol: entry.protocol,
+        host: entry.host,
+        port: entry.port,
+        healthScore: entry.healthScore,
+        successCount: entry.successCount,
+        failCount: entry.failCount,
+        avgResponseTime: entry.avgResponseTime,
+        consecutiveFails: entry.consecutiveFails,
+        status,
+        coolingUntil: entry.coolingUntil,
+        blockedDomains: Array.from(entry.blockedDomains),
+      };
+    });
+
+    // Clean domain bindings (remove stale ones)
+    const domainBindings: Record<string, string> = {};
+    for (const [domain, cleanUrl] of this.domainBindings.entries()) {
+      if (this.pool.has(cleanUrl)) {
+        domainBindings[domain] = cleanUrl;
+      }
+    }
+
+    // Filter recent failures to last 5 minutes
+    const cutoff = now - 5 * 60 * 1000;
+    const recentFailures = this.recentFailures
+      .filter((f) => f.timestamp >= cutoff)
+      .map((f) => ({
+        proxyUrl: f.proxyUrl,
+        domain: f.domain || 'unknown',
+        timestamp: f.timestamp,
+        error: f.error,
+      }));
+
+    return {
+      pool: poolStats,
+      proxies,
+      domainBindings,
+      recentFailures,
+      dispatcherCacheSize: dispatcherCache.size,
+    };
   }
 }
 

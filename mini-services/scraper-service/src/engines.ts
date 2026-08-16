@@ -1145,13 +1145,111 @@ class ObscuraEngine implements ScrapingEngine {
             // networkidle timeout is acceptable, DOM content is enough
           });
 
-          // Scroll to bottom to trigger lazy-loaded content
-          await page.evaluate(() => {
-            window.scrollTo(0, document.body.scrollHeight);
-          }).catch(() => {});
+          // ---- Human behavior simulation or simple scroll fallback ----
+          if (options?.antiCrawl?.humanBehavior) {
+            try {
+              // 1. Human-like mouse movement: natural curve from (100,200) to (500,400)
+              const startX = 100, startY = 200;
+              const endX = 500, endY = 400;
+              const steps = 15 + Math.floor(Math.random() * 10);
+              let currentX = startX, currentY = startY;
+              for (let i = 0; i < steps; i++) {
+                const t = i / steps;
+                currentX = startX + (endX - startX) * t + (Math.random() - 0.5) * 30;
+                currentY = startY + (endY - startY) * t + (Math.random() - 0.5) * 20;
+                await page.mouse.move(currentX, currentY);
+                await new Promise((r) => setTimeout(r, 10 + Math.random() * 30));
+              }
 
-          // Brief wait for any lazy-load triggers
-          await new Promise((resolve) => setTimeout(resolve, 800));
+              // 2. Random idle micro-movements (hand tremor between actions)
+              for (let j = 0; j < 1 + Math.floor(Math.random() * 2); j++) {
+                await page.mouse.move(
+                  currentX + (Math.random() - 0.5) * 10,
+                  currentY + (Math.random() - 0.5) * 10
+                );
+                currentX += (Math.random() - 0.5) * 10;
+                currentY += (Math.random() - 0.5) * 10;
+                await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
+              }
+
+              // 3. Occasional content interaction (30% chance to hover a link)
+              if (Math.random() < 0.3) {
+                try {
+                  const links = await page.$$("a[href]");
+                  if (links.length > 0) {
+                    const randomLink = links[Math.floor(Math.random() * links.length)];
+                    const box = await randomLink.boundingBox();
+                    if (box) {
+                      const hoverX = box.x + box.width * (0.3 + Math.random() * 0.4);
+                      const hoverY = box.y + box.height / 2;
+                      // Move to link in a few small steps
+                      const linkSteps = 5 + Math.floor(Math.random() * 5);
+                      for (let k = 0; k < linkSteps; k++) {
+                        const lt = k / linkSteps;
+                        await page.mouse.move(
+                          currentX + (hoverX - currentX) * lt + (Math.random() - 0.5) * 8,
+                          currentY + (hoverY - currentY) * lt + (Math.random() - 0.5) * 8
+                        );
+                        await new Promise((r) => setTimeout(r, 10 + Math.random() * 25));
+                      }
+                      currentX = hoverX;
+                      currentY = hoverY;
+                      // Pause as if reading link text
+                      await new Promise((r) => setTimeout(r, 300 + Math.random() * 500));
+                    }
+                  }
+                } catch { /* link hover failure is non-critical */ }
+              }
+
+              // 4. Gradual multi-step page scroll (replaces simple scroll-to-bottom)
+              const pageHeight = await page.evaluate(() => document.body.scrollHeight || 10000);
+              const segments = 3 + Math.floor(Math.random() * 3); // 3-5 segments
+              const scrollStep = Math.floor(pageHeight / segments);
+              for (let s = 1; s <= segments; s++) {
+                // Calculate target with slight overshoot then correction
+                const overshoot = (Math.random() - 0.5) * 40;
+                let targetY = scrollStep * s + overshoot;
+                // Final segment targets near the bottom
+                if (s === segments) {
+                  targetY = pageHeight - 200 + (Math.random() - 0.5) * 100;
+                }
+                targetY = Math.max(0, targetY);
+
+                await page.evaluate((y) => {
+                  window.scrollTo({ top: y, behavior: "smooth" });
+                }, targetY);
+
+                // Scroll travel pause
+                await new Promise((r) => setTimeout(r, 300 + Math.random() * 500));
+
+                // Simulate reading pause at each stop
+                const readPause = 500 + Math.random() * 1500;
+                await new Promise((r) => setTimeout(r, readPause));
+
+                // Micro-movements during reading pause
+                await page.mouse.move(
+                  currentX + (Math.random() - 0.5) * 12,
+                  currentY + (Math.random() - 0.5) * 12
+                );
+                currentX += (Math.random() - 0.5) * 12;
+                currentY += (Math.random() - 0.5) * 12;
+              }
+
+              // 5. Random delay before extraction (simulates settling to read)
+              await new Promise((r) => setTimeout(r, 200 + Math.random() * 400));
+            } catch {
+              // Human behavior simulation failure is non-critical; fall through to extraction
+              console.log("[Obscura] Human behavior simulation failed, continuing with extraction");
+            }
+          } else {
+            // Simple scroll-to-bottom fallback (original behavior)
+            await page.evaluate(() => {
+              window.scrollTo(0, document.body.scrollHeight);
+            }).catch(() => {});
+
+            // Brief wait for any lazy-load triggers
+            await new Promise((resolve) => setTimeout(resolve, 800));
+          }
 
           const html = await page.content();
           if (html.length > MAX_RESPONSE_SIZE) {

@@ -226,19 +226,31 @@ export function generateRandomFingerprint(): FingerprintProfile {
  * Generate a comprehensive JavaScript stealth injection script for `page.addInitScript()`.
  *
  * This script overrides ALL major browser fingerprinting vectors:
- * 1. Navigator properties (webdriver, plugins, languages, hardware, etc.)
- * 2. Chrome runtime object
- * 3. WebGL vendor/renderer
- * 4. Canvas fingerprint noise
- * 5. AudioContext fingerprint noise
- * 6. Screen/window properties
- * 7. WebRTC leak prevention
- * 8. Permission API consistency
- * 9. IFrame contentWindow overrides
+ * 1.  Navigator properties (webdriver, plugins, languages, hardware, etc.)
+ * 2.  Chrome runtime object
+ * 3.  WebGL vendor/renderer
+ * 4.  Canvas fingerprint noise (toDataURL, toBlob, getImageData)
+ * 5.  AudioContext fingerprint noise
+ * 6.  Screen/window properties
+ * 7.  WebRTC leak prevention
+ * 8.  Permission API consistency
+ * 9.  IFrame contentWindow overrides
  * 10. Date/timezone consistency
  * 11. Automation property removal
  * 12. MouseEvent / KeyboardEvent consistency
- * 13. Connection/Network Information API
+ * 13. Connection/Network Information API (enhanced with saveData, seed-derived rtt/downlink)
+ * 14. Storage consistency
+ * 15. IFrame stealth propagation via MutationObserver
+ * 16. ClientRects & getBoundingClientRect spoofing (layout fingerprint prevention)
+ * 17. Battery API mock (realistic charging state)
+ * 18. MediaDevices.enumerateDevices mock
+ * 19. SpeechSynthesis mock (fake voices, speaking/pending/paused)
+ * 20. Font detection countermeasure (document.fonts.check override)
+ * 21. Platform-based Plugin/MimeType enumeration (3-4 plugins per platform)
+ * 22. Console detection evasion
+ * 23. Performance.now() offset & performance.timing consistency
+ * 24. Mouse event listeners (capture-phase, passive)
+ * 25. Touch support spoofing (mobile UA detection, TouchEvent constructor)
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -866,6 +878,279 @@ export function getStealthScript(profile: FingerprintProfile): string {
     childList: true,
     subtree: true,
   });
+
+  // ---- 16. ClientRects & getBoundingClientRect Spoofing ----
+  // Add tiny random offsets (\u00b10.5px) to prevent layout fingerprinting
+
+  var _origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+  Element.prototype.getBoundingClientRect = function() {
+    var rect = _origGetBoundingClientRect.call(this);
+    var jx = (Math.random() - 0.5) * 1.0;
+    var jy = (Math.random() - 0.5) * 1.0;
+    return new DOMRect(rect.x + jx, rect.y + jy, rect.width, rect.height);
+  };
+
+  var _origGetClientRects = Element.prototype.getClientRects;
+  Element.prototype.getClientRects = function() {
+    var rects = _origGetClientRects.call(this);
+    var result = [];
+    for (var i = 0; i < rects.length; i++) {
+      var r = rects[i];
+      var jx2 = (Math.random() - 0.5) * 1.0;
+      var jy2 = (Math.random() - 0.5) * 1.0;
+      result.push(new DOMRect(r.x + jx2, r.y + jy2, r.width, r.height));
+    }
+    return result;
+  };
+
+  // ---- 17. Enhanced Connection / Network Information API ----
+  // Derive realistic network values from profile seed for consistency
+
+  var _netSeed = 0;
+  for (var _ni = 0; _ni < PROFILE.seed.length; _ni++) {
+    _netSeed = ((_netSeed << 5) - _netSeed + PROFILE.seed.charCodeAt(_ni)) | 0;
+  }
+  var _netRtt = 25 + (Math.abs(_netSeed) % 75);
+  var _netDownlink = 5 + (Math.abs(_netSeed >> 4) % 20);
+  var _netEffType = '4g';
+  if (_netDownlink < 0.5) _netEffType = 'slow-2g';
+  else if (_netDownlink < 1.5) _netEffType = '2g';
+  else if (_netDownlink < 4) _netEffType = '3g';
+
+  var _conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (_conn) {
+    Object.defineProperty(_conn, 'rtt', { get: function() { return _netRtt; }, configurable: true });
+    Object.defineProperty(_conn, 'downlink', { get: function() { return _netDownlink; }, configurable: true });
+    Object.defineProperty(_conn, 'effectiveType', { get: function() { return _netEffType; }, configurable: true });
+    Object.defineProperty(_conn, 'saveData', { get: function() { return false; }, configurable: true });
+    if (!_conn.type || typeof _conn.type === 'undefined') {
+      Object.defineProperty(_conn, 'type', { get: function() { return 'wifi'; }, configurable: true });
+    }
+  }
+
+  // ---- 18. Battery API Mock ----
+
+  if (navigator.getBattery) {
+    navigator.getBattery = function() {
+      var _battLevel = 0.75 + Math.random() * 0.25;
+      return Promise.resolve({
+        charging: true,
+        chargingTime: 0,
+        dischargingTime: Infinity,
+        level: _battLevel,
+        addEventListener: function() {},
+        removeEventListener: function() {},
+        dispatchEvent: function() { return true; },
+        onchargingchange: null,
+        onchargingtimechange: null,
+        ondischargingtimechange: null,
+        onlevelchange: null,
+      });
+    };
+  }
+
+  // ---- 19. Media Devices Mock ----
+
+  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+    var _origEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+    navigator.mediaDevices.enumerateDevices = function() {
+      return _origEnumerateDevices().then(function(devices) {
+        if (devices.length > 0) return devices;
+        return [
+          { deviceId: 'default', groupId: 'default', kind: 'audioinput', label: '' },
+          { deviceId: 'communications', groupId: 'communications', kind: 'audiooutput', label: '' },
+          { deviceId: 'video0', groupId: 'video0', kind: 'videoinput', label: '' },
+        ];
+      });
+    };
+  } else if (navigator.mediaDevices) {
+    // If mediaDevices exists but enumerateDevices doesn't
+    navigator.mediaDevices.enumerateDevices = function() {
+      return Promise.resolve([
+        { deviceId: 'default', groupId: 'default', kind: 'audioinput', label: '' },
+        { deviceId: 'communications', groupId: 'communications', kind: 'audiooutput', label: '' },
+        { deviceId: 'video0', groupId: 'video0', kind: 'videoinput', label: '' },
+      ]);
+    };
+  }
+
+  // ---- 20. Speech Synthesis Mock ----
+
+  if (window.speechSynthesis) {
+    var _fakeVoices = [
+      { voiceURI: 'Google US English', name: 'Google US English', lang: 'en-US', localService: true, default: true },
+      { voiceURI: 'Google UK English Female', name: 'Google UK English Female', lang: 'en-GB', localService: true, default: false },
+      { voiceURI: 'Google \u65e5\u672c\u8a9e', name: 'Google \u65e5\u672c\u8a9e', lang: 'ja-JP', localService: false, default: false },
+    ];
+    window.speechSynthesis.getVoices = function() { return _fakeVoices; };
+    Object.defineProperty(window.speechSynthesis, 'speaking', { get: function() { return false; }, configurable: true });
+    Object.defineProperty(window.speechSynthesis, 'pending', { get: function() { return false; }, configurable: true });
+    Object.defineProperty(window.speechSynthesis, 'paused', { get: function() { return false; }, configurable: true });
+    Object.defineProperty(window.speechSynthesis, 'length', { get: function() { return _fakeVoices.length; }, configurable: true });
+  }
+
+  // ---- 21. Enhanced Canvas Fingerprint (getImageData noise) ----
+
+  if (CanvasRenderingContext2D.prototype.getImageData) {
+    var _origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+    CanvasRenderingContext2D.prototype.getImageData = function() {
+      var imageData = _origGetImageData.apply(this, arguments);
+      var data = imageData.data;
+      // Inject subtle noise into a few pixel channels to alter fingerprint hash
+      for (var _ci = 0; _ci < Math.min(data.length, 400); _ci += 40) {
+        data[_ci] = Math.max(0, Math.min(255, data[_ci] + ((Math.random() > 0.5) ? 1 : -1)));
+      }
+      return imageData;
+    };
+  }
+
+  // ---- 22. Font Detection Countermeasure ----
+  // Returns false for commonly-fingerprinted system fonts to prevent font enumeration
+
+  if (document.fonts && document.fonts.check) {
+    var _origFontsCheck = document.fonts.check.bind(document.fonts);
+    var _fpFontPatterns = [
+      'arial black', 'calibri', 'cambria', 'comic sans ms', 'consolas',
+      'corbel', 'courier new', 'franklin gothic medium', 'georgia',
+      'gill sans', 'impact', 'lucida console', 'lucida sans',
+      'microsoft sans serif', 'palatino', 'segoe ui', 'tahoma',
+      'times new roman', 'trebuchet ms', 'verdana', 'webdings',
+    ];
+    document.fonts.check = function(font, text) {
+      var lower = (font || '').toLowerCase();
+      for (var _fi = 0; _fi < _fpFontPatterns.length; _fi++) {
+        if (lower.indexOf(_fpFontPatterns[_fi]) !== -1) return false;
+      }
+      return _origFontsCheck(font, text);
+    };
+  }
+
+  // ---- 23. Platform-based Plugin / MimeType Enumeration ----
+  // Override with realistic 3-4 plugins that vary by OS platform
+
+  var _platformPlugins = {
+    'Win32': [
+      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
+      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
+      { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 2 },
+      { name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
+    ],
+    'MacIntel': [
+      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
+      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
+      { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 2 },
+    ],
+    'Linux x86_64': [
+      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
+      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
+      { name: 'Widevine Content Decryption Module', filename: 'libwidevinecdmadapter.so', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
+    ],
+  };
+  var _selPlugins = _platformPlugins[PROFILE.platform] || _platformPlugins['Win32'];
+  var _platPluginInstances = _selPlugins.map(function(p) {
+    var pl = Object.create(Plugin.prototype);
+    Object.defineProperties(pl, {
+      name: { get: function() { return p.name; } },
+      filename: { get: function() { return p.filename; } },
+      description: { get: function() { return p.description; } },
+      length: { get: function() { return p.length; } },
+    });
+    return pl;
+  });
+  Object.defineProperty(navigator, 'plugins', {
+    get: function() {
+      var plugins = Object.create(PluginArray.prototype);
+      _platPluginInstances.forEach(function(p, i) {
+        Object.defineProperty(plugins, i, { get: function() { return p; }, configurable: true });
+        Object.defineProperty(plugins, p.name, { get: function() { return p; }, configurable: true });
+      });
+      Object.defineProperty(plugins, 'length', { get: function() { return _platPluginInstances.length; } });
+      Object.defineProperty(plugins, 'item', { value: function(i) { return _platPluginInstances[i] || null; } });
+      Object.defineProperty(plugins, 'namedItem', { value: function(name) {
+        for (var _pi = 0; _pi < _platPluginInstances.length; _pi++) {
+          if (_platPluginInstances[_pi].name === name) return _platPluginInstances[_pi];
+        }
+        return null;
+      }});
+      Object.defineProperty(plugins, 'refresh', { value: function() {} });
+      return plugins;
+    },
+    configurable: true,
+  });
+
+  // ---- 24. Console Detection Evasion ----
+  // Override console methods to prevent toString/timing-based devtools detection
+
+  try {
+    var _consoleMethods = ['log', 'debug', 'info', 'warn', 'error', 'clear', 'table', 'trace', 'dir'];
+    _consoleMethods.forEach(function(method) {
+      if (typeof console[method] === 'function') {
+        var _origConsole = console[method];
+        console[method] = function() { return _origConsole.apply(console, arguments); };
+      }
+    });
+  } catch(_consoleErr) {}
+
+  // ---- 25. Performance.now() & performance.timing Consistency ----
+
+  if (window.performance) {
+    // Add realistic offset so performance.now() doesn't start from exactly 0
+    var _perfOffset = 1000 + Math.random() * 2000;
+    var _origPerfNow = performance.now.bind(performance);
+    try {
+      Object.defineProperty(performance, 'now', {
+        value: function() { return _origPerfNow() + _perfOffset; },
+        configurable: true,
+      });
+    } catch(_perfErr) {
+      try {
+        Performance.prototype.now = function() { return _origPerfNow() + _perfOffset; };
+      } catch(_perfErr2) {}
+    }
+
+    // Ensure performance.timing.navigationStart is consistent
+    if (performance.timing) {
+      var _tzOffsetMs = PROFILE.timezoneOffset * 60 * 1000;
+      var _navStart = Date.now() - 3000 - Math.abs(_tzOffsetMs);
+      try {
+        Object.defineProperty(performance.timing, 'navigationStart', {
+          get: function() { return _navStart; },
+          configurable: true,
+        });
+      } catch(_timingErr) {}
+    }
+  }
+
+  // ---- 26. Mouse Event Listeners ----
+  // Attach passive capture-phase listeners to simulate real user activity
+
+  document.addEventListener('mousemove', function() {}, { passive: true, capture: true });
+  document.addEventListener('mousedown', function() {}, { passive: true, capture: true });
+  document.addEventListener('mouseup', function() {}, { passive: true, capture: true });
+  document.addEventListener('mouseover', function() {}, { passive: true, capture: true });
+  document.addEventListener('mouseout', function() {}, { passive: true, capture: true });
+  document.addEventListener('mouseenter', function() {}, { passive: true, capture: true });
+
+  // ---- 27. Touch Support Spoofing ----
+  // For mobile UAs, add touch event properties and constructors
+
+  var _isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(PROFILE.userAgent);
+  if (_isMobileUA) {
+    Object.defineProperty(navigator, 'maxTouchPoints', { get: function() { return 5; }, configurable: true });
+    document.ontouchstart = null;
+    document.ontouchend = null;
+    document.ontouchmove = null;
+    document.ontouchcancel = null;
+    // Ensure TouchEvent constructor is available
+    if (typeof window.TouchEvent === 'undefined') {
+      window.TouchEvent = function(type, init) { return new Event(type, init); };
+      window.TouchEvent.prototype = Event.prototype;
+    }
+    // Add touch event listeners
+    document.addEventListener('touchstart', function() {}, { passive: true, capture: true });
+    document.addEventListener('touchend', function() {}, { passive: true, capture: true });
+    document.addEventListener('touchmove', function() {}, { passive: true, capture: true });
+  }
 
 })();
 `;

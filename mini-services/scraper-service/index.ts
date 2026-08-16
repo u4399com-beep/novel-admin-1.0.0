@@ -28,6 +28,7 @@ import { handleGenerateRule, handlePreviewPage } from "./src/ai-rule-generator";
 import { executeTask, recoverStaleTasks, detectStuckTasks } from "./src/task-engine";
 import { getQueueStats, cleanupQueue, requeueFailed, clearTaskQueue } from "./src/queue";
 import { proxyManager } from "./src/proxy-manager";
+import { getCaptchaStrategies } from "./src/captcha-strategy";
 import { adaptiveDelay } from "./src/adaptive-delay";
 import { cookieJar } from "./src/cookie-jar";
 import { timingSafeEqual } from "node:crypto";
@@ -218,6 +219,50 @@ export function startServer(port: number = 3099) {
           cookieJar.clearAll();
         }
         return Response.json({ cleared: true, domain: domain || 'all' }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== New GET Endpoints (before rate limit) ====================
+
+      // Fingerprint / stealth health report
+      if (path === "/fingerprint-health" && method === "GET") {
+        const proxyStats = proxyManager.getPoolStats();
+        const cookieStats = cookieJar.getStats();
+        const totalCookies = cookieStats.reduce((sum, s) => sum + s.count, 0);
+        return Response.json({
+          stealthModules: [
+            "navigator", "webgl", "canvas", "audioContext", "webrtc", "screen",
+            "permissions", "iframe", "connection", "battery", "mediaDevices",
+            "speechSynthesis", "clientRects", "fontDetection", "console",
+            "performanceTiming", "mouseEvents", "touchSupport", "plugins",
+          ],
+          engineCapabilities: {
+            cheerio: { jsRender: false, stealth: false, proxy: true, cookies: true },
+            playwright: { jsRender: true, stealth: false, proxy: false, cookies: true },
+            obscura: { jsRender: true, stealth: true, proxy: false, cookies: true },
+            firecrawl: { jsRender: true, stealth: true, proxy: false, cookies: false },
+            agentql: { jsRender: true, stealth: true, proxy: false, cookies: false },
+          },
+          proxyPool: { total: proxyStats.totalProxies, active: proxyStats.activeProxies },
+          cookieJar: { domains: cookieStats.length, totalCookies },
+        }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Detailed proxy stats
+      if (path === "/proxy/detailed-stats" && method === "GET") {
+        const detailed = proxyManager.getDetailedStats();
+        return Response.json(detailed, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Domain-proxy bindings
+      if (path === "/proxy/domain-bindings" && method === "GET") {
+        const bindings = proxyManager.getDomainProxyBindings();
+        return Response.json(bindings, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -426,6 +471,86 @@ export function startServer(port: number = 3099) {
           return Response.json(result, { headers: jsonHeaders });
         }
 
+        // ==================== Proxy Management Endpoints ====================
+
+        // POST /proxy/add — Add a single proxy to the pool
+        if (path === "/proxy/add") {
+          const { url: proxyUrl } = body as { url?: string };
+          if (!proxyUrl || typeof proxyUrl !== 'string') {
+            return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
+          }
+          const added = proxyManager.addProxy(proxyUrl);
+          const poolStats = proxyManager.getPoolStats();
+          return Response.json({ added, url: proxyUrl, poolSize: poolStats.totalProxies }, { headers: jsonHeaders });
+        }
+
+        // POST /proxy/remove — Remove a proxy from the pool
+        if (path === "/proxy/remove") {
+          const { url: proxyUrl } = body as { url?: string };
+          if (!proxyUrl || typeof proxyUrl !== 'string') {
+            return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
+          }
+          const removed = proxyManager.removeProxy(proxyUrl);
+          const poolStats = proxyManager.getPoolStats();
+          return Response.json({ removed, poolSize: poolStats.totalProxies }, { headers: jsonHeaders });
+        }
+
+        // POST /proxy/reset — Reset a proxy's health/consecutive-fails
+        if (path === "/proxy/reset") {
+          const { url: proxyUrl } = body as { url?: string };
+          if (!proxyUrl || typeof proxyUrl !== 'string') {
+            return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
+          }
+          const reset = proxyManager.resetProxy(proxyUrl);
+          return Response.json({ reset }, { headers: jsonHeaders });
+        }
+
+        // POST /proxy/check — Health check a specific proxy
+        if (path === "/proxy/check") {
+          const { url: proxyUrl } = body as { url?: string };
+          if (!proxyUrl || typeof proxyUrl !== 'string') {
+            return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
+          }
+          const result = await proxyManager.checkHealth(proxyUrl);
+          return Response.json(result, { headers: jsonHeaders });
+        }
+
+        // POST /proxy/import — Import proxies (array of URLs or JSON blob)
+        if (path === "/proxy/import") {
+          const payload = body as { proxies?: string[]; json?: string };
+          let imported: number;
+          if (Array.isArray(payload.proxies)) {
+            imported = proxyManager.addProxies(payload.proxies);
+          } else if (typeof payload.json === 'string') {
+            imported = proxyManager.importProxies(payload.json);
+          } else {
+            return Response.json(
+              { error: "Provide 'proxies' (string[]) or 'json' (string)" },
+              { status: 400, headers: jsonHeaders }
+            );
+          }
+          return Response.json({ imported }, { headers: jsonHeaders });
+        }
+
+        // POST /proxy/export — Export proxies in specified format
+        if (path === "/proxy/export") {
+          const { format } = (body as { format?: 'url' | 'json' }) || {};
+          const fmt = format === 'url' ? 'url' : 'json';
+          const data = proxyManager.exportAsText(fmt);
+          const poolStats = proxyManager.getPoolStats();
+          return Response.json({ data, count: poolStats.totalProxies }, { headers: jsonHeaders });
+        }
+
+        // POST /proxy/bind-domain — Bind a proxy to a domain (or unbind with null)
+        if (path === "/proxy/bind-domain") {
+          const { domain, proxyUrl } = body as { domain?: string; proxyUrl?: string | null };
+          if (!domain || typeof domain !== 'string') {
+            return Response.json({ error: "domain is required" }, { status: 400, headers: jsonHeaders });
+          }
+          proxyManager.setDomainProxy(domain, proxyUrl ?? null);
+          return Response.json({ bound: true }, { headers: jsonHeaders });
+        }
+
         return Response.json(
           { error: `Unknown endpoint: ${path}` },
           { status: 404, headers: jsonHeaders }
@@ -444,6 +569,7 @@ export function startServer(port: number = 3099) {
   console.log(`🚀 Scraper Service v3.0 running on port ${server.port}`);
   if (process.env.DEBUG === "true") {
     console.log(`   Engines: ${getEngineNames().join(", ")}`);
+    console.log(`   Captcha Strategies: ${getCaptchaStrategies().map(s => s.name).join(", ")}`);
     console.log(`   Endpoints:`);
     console.log(`   POST /scrape/list       - Scrape a list page`);
     console.log(`   POST /scrape/book       - Scrape book info`);
@@ -459,6 +585,16 @@ export function startServer(port: number = 3099) {
     console.log(`   DELETE /queue/clear     - Clear task queue`);
     console.log(`   POST /ai/generate-rule - AI-generate scrape rules from URL`);
     console.log(`   POST /ai/preview-page   - Fetch page HTML for preview`);
+    console.log(`   GET  /fingerprint-health       - Stealth capabilities report`);
+    console.log(`   GET  /proxy/detailed-stats     - Detailed proxy pool stats`);
+    console.log(`   GET  /proxy/domain-bindings    - Domain-proxy bindings`);
+    console.log(`   POST /proxy/add                - Add proxy to pool`);
+    console.log(`   POST /proxy/remove             - Remove proxy`);
+    console.log(`   POST /proxy/reset              - Reset proxy health`);
+    console.log(`   POST /proxy/check              - Health-check a proxy`);
+    console.log(`   POST /proxy/import             - Import proxies`);
+    console.log(`   POST /proxy/export             - Export proxies`);
+    console.log(`   POST /proxy/bind-domain        - Bind proxy to domain`);
   }
 
   return server;
