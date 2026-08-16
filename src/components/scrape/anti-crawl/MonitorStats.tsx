@@ -52,7 +52,7 @@ function StatCard({ icon: Icon, label, value, sub, trend, color }: {
           {trend === 'flat' && <Minus className="h-3.5 w-3.5 text-muted-foreground" />}
         </div>
         <div className="mt-3">
-          <p className="text-2xl font-bold tracking-tight stat-value">{value}</p>
+          <p className={`text-2xl font-bold tracking-tight stat-value ${typeof value === 'number' && value > 0 ? 'animate-pulse-once' : ''}`}>{value}</p>
           <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
           {sub && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</p>}
         </div>
@@ -62,6 +62,17 @@ function StatCard({ icon: Icon, label, value, sub, trend, color }: {
 }
 
 // ─── Mini Bar Chart ────────────────────────────────────────────────────────
+
+// ─── Pulse Animation Keyframes (injected via style tag) ─────────────────────
+
+// We add a tiny style element for the pulse-once animation used by StatCard.
+// This avoids needing to modify globals.css.
+if (typeof document !== 'undefined' && !document.getElementById('stat-pulse-style')) {
+  const style = document.createElement('style');
+  style.id = 'stat-pulse-style';
+  style.textContent = `@keyframes pulse-once { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } } .animate-pulse-once { animation: pulse-once 1.5s ease-in-out; }`;
+  document.head.appendChild(style);
+}
 
 function MiniBarChart({ data, maxValue, color }: { data: Array<{ hour: string; count: number }>; maxValue: number; color: string }) {
   return (

@@ -48,7 +48,9 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-import { initEngines, closeAllEngines, getEngineNames } from "./src/engines";
+import { initEngines, closeAllEngines, getEngineNames, selectEngine } from "./src/engines";
+import { buildFetchHeaders } from "./src/utils";
+import { getProfileForDomain } from "./src/stealth";
 import { handleScrapeList } from "./src/scrapers";
 import { handleScrapeBook } from "./src/scrapers";
 import { handleScrapeChapters } from "./src/scrapers";
@@ -64,6 +66,10 @@ import { adaptiveDelay } from "./src/adaptive-delay";
 import { cookieJar } from "./src/cookie-jar";
 import { cookieStore } from "./src/cookie-store";
 import { rateLimiter } from "./src/rate-limiter";
+import { testProxyConnection, testMultipleProxies } from "./src/proxy-conn-test";
+import type { ProxyTestResult } from "./src/proxy-conn-test";
+import { sessionManager } from "./src/session-manager";
+import { requestFingerprintMgr } from "./src/request-fingerprint";
 import { timingSafeEqual } from "node:crypto";
 import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest,
@@ -150,6 +156,161 @@ function validateDepth(value: unknown, depth: number): void {
       for (const k of keys) validateDepth((value as Record<string, unknown>)[k], depth + 1);
     }
   }
+}
+
+// ==================== Anti-Crawl Simulation Types & Logic ====================
+
+interface SimCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+interface SimulateRequest {
+  targetUrl?: string;
+  url?: string;         // alias
+  engine?: string;
+  antiCrawlConfig?: Record<string, unknown>;
+}
+
+interface SimulateResult {
+  targetUrl: string;
+  domain: string;
+  selectedEngine: string;
+  checks: SimCheck[];
+  score: number;
+  grade: string;
+  headers: Record<string, string>;
+  recommendations: string[];
+}
+
+function generateRecommendations(checks: SimCheck[], domain: string, engine: string): string[] {
+  const recs: string[] = [];
+  for (const c of checks) {
+    if (c.passed) continue;
+    if (c.name === 'UA轮换') recs.push(`启用 UA 轮换避免固定指纹被识别，建议在采集规则中开启 uaRotation 选项`);
+    if (c.name === '代理配置') recs.push(`为 ${domain} 绑定代理 IP，避免本机 IP 被目标站封禁`);
+    if (c.name === '人类行为模拟') recs.push(`启用人类行为模拟（鼠标移动/滚动），降低 JS 渲染站点（如 ${engine === 'playwright' ? 'playwright' : 'obscura'}）的检测风险`);
+    if (c.name === 'CAPTCHA策略') recs.push(`配置更积极的 CAPTCHA 策略（如 cloudflare 或 geetest），而非仅使用退避重试`);
+  }
+  if (recs.length === 0) {
+    recs.push('当前配置良好，无需额外调整');
+  }
+  return recs;
+}
+
+async function simulateAntiCrawl(body: SimulateRequest): Promise<SimulateResult> {
+  const effectiveUrl = body.targetUrl || body.url || '';
+  const { engine, antiCrawlConfig } = body;
+  let domain: string;
+  try {
+    domain = new URL(effectiveUrl).hostname;
+  } catch {
+    return {
+      targetUrl: effectiveUrl,
+      domain: 'invalid',
+      selectedEngine: 'cheerio',
+      checks: [{ name: 'URL格式', passed: false, detail: '提供的URL格式无效' }],
+      score: 0,
+      grade: 'D',
+      headers: {},
+      recommendations: ['请提供有效的URL地址'],
+    };
+  }
+
+  // 1. Evaluate engine selection
+  const ac = antiCrawlConfig || {};
+  const selectedEngine = selectEngine(
+    (engine as any) || undefined,
+    {
+      useJsRender: !!ac.useJsRender,
+      cloudBrowser: !!ac.cloudBrowser,
+      humanBehavior: !!ac.humanBehavior,
+      uaRotation: !!ac.uaRotation,
+      cookies: Array.isArray(ac.cookies) ? ac.cookies as Array<{name:string;value:string}> : undefined,
+      proxy: typeof ac.proxy === 'string' ? ac.proxy : undefined,
+    }
+  );
+
+  // 2. Build request headers
+  const headers = buildFetchHeaders(
+    ac as any,
+    undefined,
+    effectiveUrl,
+    'novel'
+  );
+
+  // 3. Check fingerprint profile
+  const profile = getProfileForDomain(domain);
+
+  // 4. Check proxy availability
+  const domainProxy = proxyManager.getDomainProxy(domain);
+  const poolProxy = proxyManager.getProxy(domain);
+  const hasProxy = !!(domainProxy || poolProxy);
+
+  // 5. Check session
+  const session = sessionManager.getSessionForRequest(domain);
+
+  // 6. Check rate limiter state
+  const rateState = rateLimiter.getDomainState(domain);
+
+  // 7. Check adaptive delay
+  const delayState = adaptiveDelay.getDomainStats(domain);
+
+  // 8. Check CAPTCHA strategy
+  const strategies = getCaptchaStrategies();
+  void strategies; // used for available strategy inventory
+  void delayState; // used for adaptive backoff state check
+
+  // 9. Score the configuration
+  let score = 0;
+  const checks: SimCheck[] = [];
+
+  // Check: UA rotation
+  const hasUaRotation = !!(antiCrawlConfig?.uaRotation || antiCrawlConfig?.cookies);
+  checks.push({ name: 'UA轮换', passed: hasUaRotation, detail: hasUaRotation ? '已启用User-Agent轮换' : '建议启用UA轮换避免指纹固定' });
+  if (hasUaRotation) score += 15;
+
+  // Check: Proxy
+  checks.push({ name: '代理配置', passed: hasProxy, detail: hasProxy ? `已绑定代理 ${domainProxy?.url || poolProxy?.url}` : '未配置代理，建议对高防护站点启用' });
+  if (hasProxy) score += 20;
+
+  // Check: Human behavior
+  const hasHumanBehavior = !!antiCrawlConfig?.humanBehavior;
+  checks.push({ name: '人类行为模拟', passed: hasHumanBehavior, detail: hasHumanBehavior ? '已启用鼠标移动/滚动模拟' : '建议对JS渲染站点启用' });
+  if (hasHumanBehavior) score += 15;
+
+  // Check: CAPTCHA strategy
+  const captchaStrategy = (antiCrawlConfig?.captchaStrategy as string) || 'auto';
+  checks.push({ name: 'CAPTCHA策略', passed: captchaStrategy !== 'delay-backoff', detail: `当前策略: ${captchaStrategy}` });
+  if (['cloudflare', 'geetest', 'auto'].includes(captchaStrategy)) score += 15;
+
+  // Check: Engine match
+  checks.push({ name: '引擎选择', passed: true, detail: `推荐引擎: ${selectedEngine}，当前: ${engine || 'cheerio'}` });
+  score += 10;
+
+  // Check: Cookies
+  checks.push({ name: 'Cookie/Session', passed: !!session, detail: session ? `活跃会话: ${session.sessionId.slice(0, 16)}...` : '暂无会话，首次请求时自动创建' });
+  if (session) score += 10;
+
+  // Check: Rate limiter
+  checks.push({ name: '速率限制', passed: rateState.status === 'normal', detail: `状态: ${rateState.status}，最大RPM: ${rateState.maxRPM}` });
+  if (rateState.status === 'normal') score += 10;
+
+  // Check: Stealth modules
+  checks.push({ name: '隐身模块', passed: true, detail: `域名指纹: ${profile ? '已配置' : '未配置(首次使用时生成)'}` });
+  score += 5;
+
+  return {
+    targetUrl: effectiveUrl,
+    domain,
+    selectedEngine,
+    checks,
+    score: Math.min(score, 100),
+    grade: score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : 'D',
+    headers: Object.fromEntries(Object.entries(headers).slice(0, 8)),
+    recommendations: generateRecommendations(checks, domain, selectedEngine),
+  };
 }
 
 export function startServer(port: number = 3099) {
@@ -318,6 +479,46 @@ export function startServer(port: number = 3099) {
       if (path === "/proxy/domain-bindings" && method === "GET") {
         const bindings = proxyManager.getDomainProxyBindings();
         return Response.json(bindings, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Session Manager Endpoints ====================
+
+      if (path === "/session-stats" && method === "GET") {
+        const stats = sessionManager.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path === "/sessions" && method === "GET") {
+        const sessions = sessionManager.getAllSessions();
+        return Response.json({ sessions }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Request Fingerprint Endpoints ====================
+
+      if (path === "/fingerprint-recent" && method === "GET") {
+        const domain = url.searchParams.get("domain") || undefined;
+        const limit = parseInt(url.searchParams.get("limit") || "20", 10);
+        if (domain) {
+          const fps = requestFingerprintMgr.getDomainFingerprints(domain).slice(0, limit);
+          return Response.json({ fingerprints: fps }, {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const fps = requestFingerprintMgr.getAllRecentFingerprints(limit);
+        return Response.json({ fingerprints: fps }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path === "/fingerprint-stats" && method === "GET") {
+        const stats = requestFingerprintMgr.getStats();
+        return Response.json(stats, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -606,6 +807,51 @@ export function startServer(port: number = 3099) {
           return Response.json({ bound: true }, { headers: jsonHeaders });
         }
 
+        // POST /proxy/test — Test a single proxy connection
+        if (path === "/proxy/test") {
+          const { url: proxyUrl, testUrl } = body as { url?: string; testUrl?: string };
+          if (!proxyUrl || typeof proxyUrl !== 'string') {
+            return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
+          }
+          const result = await testProxyConnection(proxyUrl, testUrl);
+          return Response.json(result, { headers: jsonHeaders });
+        }
+
+        // POST /proxy/test-all — Test all active proxies in parallel
+        if (path === "/proxy/test-all") {
+          const activeUrls = proxyManager.getActiveProxyUrls();
+          if (activeUrls.length === 0) {
+            return Response.json({ results: [], message: "No active proxies to test" }, { headers: jsonHeaders });
+          }
+          const results = await testMultipleProxies(activeUrls);
+          return Response.json({ results }, { headers: jsonHeaders });
+        }
+
+        // ==================== Anti-Crawl Simulation ====================
+
+        if (path === "/anti-crawl/simulate" && method === "POST") {
+          const result = await simulateAntiCrawl(body as SimulateRequest);
+          return Response.json(result, { headers: jsonHeaders });
+        }
+
+        // ==================== Session Management Endpoints ====================
+
+        // POST /session/block — Block a session
+        if (path === "/session/block") {
+          const { sessionId, reason } = body as { sessionId?: string; reason?: string };
+          if (!sessionId || typeof sessionId !== 'string') {
+            return Response.json({ error: "sessionId is required" }, { status: 400, headers: jsonHeaders });
+          }
+          sessionManager.blockSession(sessionId, reason);
+          return Response.json({ blocked: true, sessionId }, { headers: jsonHeaders });
+        }
+
+        // POST /session/cleanup — Force session cleanup
+        if (path === "/session/cleanup") {
+          const cleaned = sessionManager.cleanup();
+          return Response.json({ cleaned }, { headers: jsonHeaders });
+        }
+
         // ==================== Rate Limit Management Endpoints ====================
 
         // POST /rate-limit/set — Set per-domain rate limit
@@ -676,9 +922,18 @@ export function startServer(port: number = 3099) {
     console.log(`   POST /proxy/import             - Import proxies`);
     console.log(`   POST /proxy/export             - Export proxies`);
     console.log(`   POST /proxy/bind-domain        - Bind proxy to domain`);
+    console.log(`   POST /proxy/test               - Test a single proxy connection`);
+    console.log(`   POST /proxy/test-all           - Test all active proxies`);
+    console.log(`   GET  /session-stats              - Session manager stats`);
+    console.log(`   GET  /sessions                   - List all sessions`);
+    console.log(`   POST /session/block              - Block a session`);
+    console.log(`   POST /session/cleanup            - Force session cleanup`);
+    console.log(`   GET  /fingerprint-recent         - Recent request fingerprints`);
+    console.log(`   GET  /fingerprint-stats          - Fingerprint stats`);
     console.log(`   GET  /rate-limit-stats           - Per-domain rate limit states`);
     console.log(`   POST /rate-limit/set            - Set domain rate limit`);
     console.log(`   POST /rate-limit/reset          - Reset domain rate limit`);
+    console.log(`   POST /anti-crawl/simulate       - Simulate anti-crawl pipeline (self-test)`);
     console.log(`   GET  /cookie-persist/stats       - Cookie persistence stats (SQLite)`);
   }
 

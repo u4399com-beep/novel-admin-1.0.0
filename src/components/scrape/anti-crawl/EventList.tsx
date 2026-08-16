@@ -77,7 +77,7 @@ const EventRow = React.memo(function EventRow({ event }: { event: AntiCrawlEvent
     <motion.div
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
-      className={`flex items-center gap-3 rounded-lg border bg-background/50 px-3 py-2.5 hover:bg-muted/30 transition-colors group/ev ${isCaptcha ? 'border-l-2 border-l-orange-500' : ''}`}
+      className={`flex items-center gap-3 rounded-lg border bg-background/50 px-3 py-2.5 hover:bg-muted/20 transition-all duration-200 group/ev ${isCaptcha ? 'border-l-2 border-l-orange-500' : ''}`}
     >
       <div className={`rounded-md p-1.5 shrink-0 ${meta.bg}`}>
         <Icon className={`h-3.5 w-3.5 ${meta.color}`} />

@@ -9302,3 +9302,224 @@ Work Log:
 3. 实际采集任务测试(选一个模板执行完整采集流程)
 4. SOCKS4/SOCKS5代理支持完善(当前为TODO)
 5. SessionData类型实现(跨任务Session复用)
+
+---
+Task ID: r31-2,3,4
+Agent: full-stack-developer
+Task: R31 SOCKS5代理 + SessionManager + RequestFingerprint
+
+Work Log:
+- 安装 socks-proxy-agent@10.1.0 到 scraper-service
+- 修复 proxy-manager.ts: SOCKS5使用SocksProxyAgent (替换原TODO), SOCKS4标记为不支持
+- 新增 getActiveProxyUrls() 方法到ProxyManager (为test-all端点)
+- 新建 proxy-conn-test.ts (~190行): ProxyTestResult接口 + testProxyConnection + testMultipleProxies (并发控制max 5)
+- 新建 session-manager.ts (~250行): SessionManager类 - acquireSession/releaseSession/blockSession/getSessionForRequest/cleanup
+  - 每域最多3个session, maxUsage=50, 24h过期, 自动30分钟清理
+- 新建 request-fingerprint.ts (~200行): RequestFingerprintManager - 8位hex ID, 域60rpm限制, 5min过期, 2分钟自动清理
+- 修改 engines.ts CheerioEngine: 注入sessionManager.getSessionForRequest + requestFingerprintMgr.create/complete + humanBehavior延迟(200-500ms)
+- 在 index.ts 新增10个API端点:
+  GET  /session-stats, /sessions, /fingerprint-recent, /fingerprint-stats
+  POST /proxy/test, /proxy/test-all, /session/block, /session/cleanup
+- 更新启动帮助文本输出所有新端点
+
+Stage Summary:
+- ESLint: 0 errors (5 warnings均为预存react-hooks)
+- TypeScript: scraper-service/src目录0 type errors
+- 新增3个模块 + 修改2个文件 + 新增10个API端点
+- SOCKS5代理现在可用 (通过socks-proxy-agent)
+- SessionManager实现跨请求指纹一致性 + cookie复用
+- RequestFingerprint实现请求追踪 + 域速率限制(60rpm)
+- CheerioEngine集成: session管理 + 指纹追踪 + 人类行为延迟
+
+---
+Task ID: r31-5
+Agent: full-stack-developer
+Task: R31 前端面板: 代理测试/会话管理/指纹追踪
+
+Work Log:
+- 读取worklog末尾40行获取上下文
+- 读取rate-limit-stats/route.ts作为API路由模式参考
+- 读取CookieManagerPanel.tsx作为前端面板样式参考
+- 读取AntiCrawlMonitor.tsx确定集成位置
+- 读取lib/constants.ts和lib/api-auth.ts确认工具函数
+
+## Part A: 4个API代理路由
+- 创建 src/app/api/admin/scraper/proxy-test/route.ts (POST)
+  - 代理到scraper-service /proxy/test, 验证url参数, mock fallback {reachable:false, error:'Service unavailable'}
+- 创建 src/app/api/admin/scraper/proxy-test-all/route.ts (POST)
+  - 代理到scraper-service /proxy/test-all, mock fallback []
+- 创建 src/app/api/admin/scraper/session-stats/route.ts (GET)
+  - 代理到scraper-service /session-stats, 返回 {totalSessions, activeSessions, blockedSessions, domainsTracked, serviceReachable}
+- 创建 src/app/api/admin/scraper/fingerprint-stats/route.ts (GET)
+  - 并行fetch /fingerprint-recent?limit=50 和 /fingerprint-stats
+  - 返回 {recent, stats, serviceReachable}
+
+## Part B: 3个前端面板
+- 创建 ProxyTestPanel.tsx (~210行): Zap图标, 测试全部/测试选中按钮, 协议badge颜色编码(http=green,https=blue,socks5=amber), 响应时间颜色编码(<500ms=green,500-2000ms=yellow,>2000ms=red), 摘要统计行
+- 创建 SessionManagerPanel.tsx (~200行): Fingerprint图标, 会话统计摘要(total/active/blocked/domains), 按域名分组的session列表, UA截断60字符, cookie计数, usage进度条(usage/50), 状态badge, 强制清理按钮
+- 创建 RequestFingerprintPanel.tsx (~190行): ScanSearch图标, 域名minibar chart, 紧凑fingerprint表格(6列grid), 10秒自动刷新, time ago格式化
+
+## Part C: 集成到AntiCrawlMonitor.tsx
+- 添加3个import
+- 在CookiePersistPanel之后、AlertConfigPanel之前插入 ProxyTestPanel, SessionManagerPanel, RequestFingerprintPanel
+- 移除重复的CookieManagerPanel实例(第159行)
+
+Stage Summary:
+- ESLint: 0 errors (5 warnings均为预存react-hooks)
+- Dev server编译成功
+- 新增4个API代理路由 + 3个前端面板 + 1个集成修改
+- 所有路由使用withAuth认证 + 5000ms超时 + mock fallback
+- 所有面板遵循CookieManagerPanel的collapsible pattern
+---
+Task ID: r31-6
+Agent: full-stack-developer
+Task: R31 反爬策略仿真测试面板
+
+Work Log:
+- 分析现有scraper-service架构（Bun.serve路由、反爬模块导入）
+- 在scraper-service/index.ts中添加simulateAntiCrawl函数（~150行）
+  - 定义SimCheck/SimulateRequest/SimulateResult接口
+  - 实现8项检测：UA轮换(15分)、代理配置(20分)、人类行为模拟(15分)、CAPTCHA策略(15分)、引擎选择(10分)、Cookie/Session(10分)、速率限制(10分)、隐身模块(5分)
+  - generateRecommendations辅助函数基于failed checks生成建议
+  - 新增POST /anti-crawl/simulate路由（位于rate limiter之前，避免rate limit拦截）
+- 创建API代理路由 src/app/api/admin/scraper/anti-crawl-simulate/route.ts
+  - POST, withAuth认证, 8000ms超时
+  - Mock fallback：8项基础checks, score=15, grade=D
+  - safeJson解析请求体
+- 创建AntiCrawlSimPanel.tsx (~200行)
+  - 渐变头部（emerald→teal），FlaskConical图标
+  - URL输入框 + 引擎选择下拉（cheerio/playwright/obscura/auto）
+  - 评分结果区：等级圆环（A=emerald/B=sky/C=amber/D=red）+ 分数 + 域名/引擎badge
+  - 检测项网格：passed=绿色左边框+背景，failed=红色左边框+背景，带✓/✗图标
+  - 请求头预览（可折叠，monospace字体，前8个header）
+  - 建议区域：amber色警告卡片 + Lightbulb图标
+  - framer-motion fade-in动画
+- 集成到AntiCrawlMonitor.tsx（RequestFingerprintPanel之后）
+- MonitorStats.tsx增强：数值>0时添加pulse-once动画（通过动态style注入）
+- EventList.tsx增强：hover效果改为transition-all duration-200 + bg-muted/20
+
+Stage Summary:
+- ESLint: 0 errors, 5 warnings（均为预存react-hooks/incompatible-library）
+- 新增1个后端endpoint + 1个API代理路由 + 1个前端面板
+- 修改3个现有文件（scraper-service, AntiCrawlMonitor, MonitorStats, EventList）
+
+---
+Task ID: r31-2,3,4
+Agent: full-stack-developer
+Task: R31 SOCKS5代理 + SessionManager + RequestFingerprint
+
+Work Log:
+- 安装socks-proxy-agent@10.1.0
+- proxy-manager.ts: SOCKS5使用SocksProxyAgent替代TODO null返回
+- 创建proxy-conn-test.ts(258行): 单/批量代理连通性测试
+- 创建session-manager.ts(298行): 跨任务Session复用,域名指纹一致性
+- 创建request-fingerprint.ts(239行): 8字符hex请求ID, 60RPM/域限流
+- engines.ts CheerioEngine: 接入session/指纹/人类行为延迟
+- index.ts: +10个新API端点
+
+Stage Summary:
+- SOCKS5代理现在实际可用(通过socks-proxy-agent)
+- SessionManager: 最多3会话/域,50次/会话,24h过期
+- RequestFingerprint: 请求级别追踪, 域名60RPM限制
+- 0 TypeScript/ESLint errors
+
+---
+Task ID: r31-5
+Agent: full-stack-developer
+Task: R31 前端面板: 代理测试/会话管理/指纹追踪
+
+Work Log:
+- 创建4个API代理路由(proxy-test, proxy-test-all, session-stats, fingerprint-stats)
+- 创建ProxyTestPanel.tsx(217行): 代理连通性测试, 协议徽章, 响应时间
+- 创建SessionManagerPanel.tsx(255行): 域名分组会话列表, 用量进度条, 阻断操作
+- 创建RequestFingerprintPanel.tsx(244行): 请求指纹追踪表, 10s自动刷新
+- AntiCrawlMonitor.tsx: 集成3个新面板
+
+Stage Summary:
+- ESLint: 0 errors
+- 代理测试面板支持一键测试全部代理
+- 会话管理面板显示域名分组+用量进度条
+
+---
+Task ID: r31-6
+Agent: full-stack-developer
+Task: R31 反爬策略仿真测试面板
+
+Work Log:
+- index.ts: POST /anti-crawl/simulate端点(8项检查, 评分A/B/C/D)
+- 修复: simulate端点放在body解析后(原位置导致undefined)
+- 修复: SimulateRequest接受url和targetUrl双字段
+- 创建anti-crawl-simulate/route.ts: API代理路由
+- 创建AntiCrawlSimPanel.tsx(272行): 仿真测试面板, 评分环, 检查列表
+- MonitorStats.tsx: 脉冲动画增强
+- EventList.tsx: hover效果增强
+
+Stage Summary:
+- 仿真测试: 输入URL返回8项检查+评分+建议
+- 验证: 起点(uaRotation+proxy+humanBehavior) → A级80分
+- ESLint: 0 errors
+
+---
+Task ID: R31
+Agent: Main Orchestrator
+Task: R31 反反爬能力增强 - SOCKS5/Session/指纹/仿真
+
+Work Log:
+- 修复P1问题: simulate端点body未解析(位置错误→移动到body解析后)
+- 后端新增3个核心模块: SOCKS5代理支持 + SessionManager + RequestFingerprint
+- 前端新增4个面板: 代理测试/会话管理/指纹追踪/仿真测试
+- 反爬策略仿真测试: 8项检查加权评分(A/B/C/D)+可操作建议
+- 2个样式增强: MonitorStats脉冲动画 + EventList hover效果
+
+## 修改文件清单
+
+### 后端 - 新建3文件 + 修改3文件
+1. **proxy-conn-test.ts** (258行, 新建): 代理连通性测试
+2. **session-manager.ts** (298行, 新建): 跨任务Session管理器
+3. **request-fingerprint.ts** (239行, 新建): 请求指纹追踪
+4. **proxy-manager.ts** (964→976行, +12行): SOCKS5 SocksProxyAgent集成
+5. **engines.ts** (1440→1471行, +31行): Session/指纹/人类行为延迟
+6. **index.ts** (773→1030行, +257行): .env加载器 + 10新端点 + 仿真逻辑
+
+### 前端 - 新建7文件 + 修改3文件
+7. **ProxyTestPanel.tsx** (217行, 新建): 代理连通性测试
+8. **SessionManagerPanel.tsx** (255行, 新建): 会话管理面板
+9. **RequestFingerprintPanel.tsx** (244行, 新建): 请求指纹追踪
+10. **AntiCrawlSimPanel.tsx** (272行, 新建): 反爬策略仿真测试
+11. **proxy-test/route.ts** (59行, 新建)
+12. **proxy-test-all/route.ts** (39行, 新建)
+13. **session-stats/route.ts** (49行, 新建)
+14. **fingerprint-stats/route.ts** (62行, 新建)
+15. **anti-crawl-simulate/route.ts** (75行, 新建)
+16. **AntiCrawlMonitor.tsx** (165→175行, +10行): 集成4个新面板
+17. **MonitorStats.tsx** (+脉冲动画)
+18. **EventList.tsx** (+hover效果)
+
+## 验证结果
+- ESLint: 0 errors (5 warnings均为预存)
+- 所有scraper端点: 200 OK
+- 仿真测试验证: 起点 → A级80分, 建议绑定代理
+- Dev server: 编译成功
+
+## 反爬系统累计能力(R28-R31)
+
+| 维度 | R28 | R29 | R30 | R31 |
+|---|---|---|---|
+| 隐身模块 | 15个 | 15个 | 15个 | 15个 |
+| 代理协议 | HTTP/HTTPS | HTTP/HTTPS | HTTP/HTTPS | **HTTP/HTTPS/SOCKS5** |
+| 代理测试 | ❌ | ❌ | ❌ | **✅ 连通性测试** |
+| Session管理 | ❌ | ❌ | ❌ | **✅ 跨任务复用** |
+| 请求指纹 | ❌ | ❌ | ❌ | **✅ ID追踪+限流** |
+| 速率限制 | ❌ | ❌ | **Per-Domain RPM** | **Per-Domain RPM** |
+| Cookie持久化 | 内存 | 内存 | **SQLite** | **SQLite** |
+| CAPTCHA策略 | 检测+策略 | 集成修复 | **配置UI** | **配置UI+仿真** |
+| 仿真测试 | ❌ | ❌ | ❌ | **✅ 8项检查+评分** |
+| 监控面板 | 基础 | +3面板 | +3面板 | **+4面板** |
+| 模板预设 | ❌ | ❌ | **6模板** | **6模板** |
+
+## 建议下一阶段 (R32)
+1. Obscura引擎端到端验证(需要实际目标站点)
+2. WebSocket实时日志推送(采集进度实时显示)
+3. 采集规则AI生成增强(基于反爬检测结果推荐配置)
+4. 多任务并发采集调度优化(优先级队列)
+5. 采集数据质量评分(内容完整性/格式正确性)

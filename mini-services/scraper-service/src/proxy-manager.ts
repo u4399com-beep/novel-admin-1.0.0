@@ -6,6 +6,7 @@
  */
 
 import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 
 // ==================== Types ====================
 
@@ -153,18 +154,22 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
     let dispatcher: Dispatcher;
 
     if (protocol === 'socks5') {
-      // TODO: SOCKS5 proxies require socks-proxy-agent (not installed).
-      // Bun's bundled undici does not export Socks5ProxyAgent.
-      // When a compatible package is available, use:
-      //   dispatcher = new Socks5ProxyAgent(urlStr);
-      if (process.env.DEBUG === 'true') {
-        console.log('[ProxyManager] SOCKS5 proxies require a third-party agent (not installed)');
+      // socks-proxy-agent provides a Dispatcher-compatible agent for undici/Bun
+      try {
+        const agent = new SocksProxyAgent(urlStr);
+        dispatcherCache.set(proxyUrl, agent as unknown as Dispatcher);
+        return agent as unknown as Dispatcher;
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (process.env.DEBUG === 'true') {
+          console.log(`[ProxyManager] Failed to create SOCKS5 agent for ${proxyUrl}: ${errMsg}`);
+        }
+        return null;
       }
-      return null;
     } else if (protocol === 'socks4') {
-      // TODO: SOCKS4 proxies require a third-party agent (not installed).
+      // socks-proxy-agent does not support SOCKS4 natively
       if (process.env.DEBUG === 'true') {
-        console.log('[ProxyManager] SOCKS4 proxies require a third-party agent (not installed)');
+        console.log('[ProxyManager] SOCKS4 proxies are not supported (no compatible agent available)');
       }
       return null;
     } else {
@@ -265,6 +270,13 @@ class ProxyManager {
     invalidateDispatcher(url);
 
     return this.pool.delete(parsed.cleanUrl);
+  }
+
+  /** Get all non-disabled proxy entries (for bulk operations like test-all) */
+  getActiveProxyUrls(): string[] {
+    return Array.from(this.pool.values())
+      .filter(entry => !entry.disabled)
+      .map(entry => entry.url);
   }
 
   /**

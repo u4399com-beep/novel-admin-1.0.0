@@ -1,0 +1,298 @@
+/**
+ * Session Manager - Cross-Task Session Reuse
+ *
+ * Manages browser-like sessions for scraping tasks, enabling:
+ *   - Session reuse across multiple requests to the same domain
+ *   - Fingerprint consistency (same UA + cookies per session)
+ *   - Automatic session recycling after max usage
+ *   - Session blocking after CAPTCHA or 403 errors
+ *   - Per-domain session pools (up to 3 concurrent sessions per domain)
+ */
+
+import type { SessionData } from './types';
+import { cookieJar } from './cookie-jar';
+import { getProfileForDomain } from './stealth';
+
+// ==================== Internal Session Record ====================
+
+interface InternalSession extends SessionData {
+  /** ISO timestamp of creation */
+  createdAt: string;
+  /** ISO timestamp of last use */
+  lastUsedAt: string;
+  /** Whether this session is blocked (e.g., after CAPTCHA) */
+  blocked: boolean;
+  /** Reason for blocking */
+  blockedReason?: string;
+  /** Task IDs that used this session */
+  taskIds: string[];
+}
+
+// ==================== SessionManager ====================
+
+class SessionManager {
+  private sessions: Map<string, InternalSession> = new Map();       // sessionId -> session
+  private domainSessions: Map<string, string[]> = new Map();       // domain -> sessionIds
+  private maxSessionsPerDomain: number = 3;
+  private maxSessionAge: number = 24 * 60 * 60 * 1000;            // 24 hours
+  private maxSessionUsage: number = 50;                              // recycle after 50 uses
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    // Auto-cleanup every 30 minutes
+    this.cleanupInterval = setInterval(() => {
+      try {
+        const cleaned = this.cleanup();
+        if (cleaned > 0) {
+          console.log(`[SessionManager] Cleaned up ${cleaned} expired/stale sessions`);
+        }
+      } catch (err) {
+        console.error('[SessionManager] Cleanup error:', err);
+      }
+    }, 30 * 60 * 1000);
+  }
+
+  /**
+   * Create or get an existing non-blocked session for a domain.
+   * If a usable session exists, returns the one with lowest usageCount.
+   * Otherwise creates a new session.
+   */
+  acquireSession(domain: string, taskId?: string): SessionData {
+    // Try to find an existing non-blocked session for this domain
+    const sessionIds = this.domainSessions.get(domain) || [];
+    let bestSession: InternalSession | null = null;
+    let bestUsage = Infinity;
+
+    for (const sid of sessionIds) {
+      const session = this.sessions.get(sid);
+      if (!session) continue;
+      if (session.blocked) continue;
+      if (session.usageCount >= this.maxSessionUsage) continue;
+
+      // Check session age
+      const age = Date.now() - new Date(session.createdAt).getTime();
+      if (age > this.maxSessionAge) continue;
+
+      if (session.usageCount < bestUsage) {
+        bestUsage = session.usageCount;
+        bestSession = session;
+      }
+    }
+
+    if (bestSession) {
+      // Reuse existing session
+      bestSession.usageCount++;
+      bestSession.lastUsedAt = new Date().toISOString();
+      if (taskId && !bestSession.taskIds.includes(taskId)) {
+        bestSession.taskIds.push(taskId);
+      }
+      return this.toPublicSession(bestSession);
+    }
+
+    // Create a new session
+    const sessionId = `sess_${domain}_${Date.now()}`;
+    const fingerprint = getProfileForDomain(domain);
+    const cookieHeader = cookieJar.getCookieHeader(domain, '/');
+
+    const session: InternalSession = {
+      id: sessionId,
+      userAgent: fingerprint.userAgent,
+      cookies: cookieHeader ? this.parseCookieString(cookieHeader) : [],
+      usageCount: 1,
+      maxUsage: this.maxSessionUsage,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: new Date().toISOString(),
+      blocked: false,
+      taskIds: taskId ? [taskId] : [],
+    };
+
+    this.sessions.set(sessionId, session);
+
+    // Register in domain index
+    const domainList = this.domainSessions.get(domain) || [];
+    domainList.push(sessionId);
+    this.domainSessions.set(domain, domainList);
+
+    if (process.env.DEBUG === 'true') {
+      console.log(`[SessionManager] Created new session ${sessionId} for ${domain}`);
+    }
+
+    return this.toPublicSession(session);
+  }
+
+  /**
+   * Release a session back to the pool (increment usageCount, update lastUsedAt).
+   * Called when a request completes using this session.
+   */
+  releaseSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    session.lastUsedAt = new Date().toISOString();
+  }
+
+  /** Get session by ID */
+  getSession(sessionId: string): SessionData | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session) return undefined;
+    return this.toPublicSession(session);
+  }
+
+  /** Get all sessions for a domain */
+  getDomainSessions(domain: string): SessionData[] {
+    const sessionIds = this.domainSessions.get(domain) || [];
+    return sessionIds
+      .map(sid => this.sessions.get(sid))
+      .filter((s): s is InternalSession => !!s)
+      .map(s => this.toPublicSession(s));
+  }
+
+  /**
+   * Block a session (e.g., after CAPTCHA or 403).
+   * Blocked sessions are skipped in acquireSession().
+   */
+  blockSession(sessionId: string, reason?: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    session.blocked = true;
+    session.blockedReason = reason || 'Blocked by session manager';
+
+    if (process.env.DEBUG === 'true') {
+      console.log(`[SessionManager] Blocked session ${sessionId}: ${session.blockedReason}`);
+    }
+  }
+
+  /**
+   * Get or create a session with fingerprint consistency.
+   * This is the main method engines call. Returns sessionId, userAgent,
+   * and a cookie header string ready to use in a request.
+   */
+  getSessionForRequest(domain: string): { sessionId: string; userAgent: string; cookies: string } | null {
+    const session = this.acquireSession(domain);
+    if (!session) return null;
+
+    // Build cookie header string from session cookies
+    const cookieStr = session.cookies
+      .map(c => `${c.name}=${c.value}`)
+      .join('; ');
+
+    // Also merge any fresh cookies from the cookie jar
+    const freshCookies = cookieJar.getCookieHeader(domain, '/');
+    let mergedCookies = cookieStr;
+    if (freshCookies && !cookieStr.includes(freshCookies)) {
+      mergedCookies = freshCookies ? `${freshCookies}; ${cookieStr}` : cookieStr;
+    }
+
+    return {
+      sessionId: session.id,
+      userAgent: session.userAgent,
+      cookies: mergedCookies,
+    };
+  }
+
+  /**
+   * Cleanup expired/blocked/overused sessions.
+   * Returns count of cleaned sessions.
+   */
+  cleanup(): number {
+    let cleaned = 0;
+    const now = Date.now();
+
+    for (const [sessionId, session] of this.sessions.entries()) {
+      const age = now - new Date(session.createdAt).getTime();
+      const isExpired = age > this.maxSessionAge;
+      const isOverused = session.usageCount >= this.maxSessionUsage;
+
+      if (isExpired || isOverused) {
+        this.sessions.delete(sessionId);
+
+        // Remove from domain index
+        for (const [domain, sids] of this.domainSessions.entries()) {
+          const idx = sids.indexOf(sessionId);
+          if (idx !== -1) {
+            sids.splice(idx, 1);
+            if (sids.length === 0) {
+              this.domainSessions.delete(domain);
+            }
+          }
+        }
+
+        cleaned++;
+      }
+    }
+
+    return cleaned;
+  }
+
+  /** Get session manager statistics */
+  getStats(): {
+    totalSessions: number;
+    activeSessions: number;
+    blockedSessions: number;
+    domainsTracked: number;
+  } {
+    let blocked = 0;
+    let active = 0;
+
+    for (const session of this.sessions.values()) {
+      if (session.blocked) {
+        blocked++;
+      } else {
+        active++;
+      }
+    }
+
+    return {
+      totalSessions: this.sessions.size,
+      activeSessions: active,
+      blockedSessions: blocked,
+      domainsTracked: this.domainSessions.size,
+    };
+  }
+
+  /** Get all sessions (for API) */
+  getAllSessions(): SessionData[] {
+    return Array.from(this.sessions.values()).map(s => this.toPublicSession(s));
+  }
+
+  // ==================== Private Helpers ====================
+
+  private toPublicSession(session: InternalSession): SessionData {
+    return {
+      id: session.id,
+      userAgent: session.userAgent,
+      cookies: session.cookies,
+      usageCount: session.usageCount,
+      maxUsage: session.maxUsage,
+      createdAt: session.createdAt,
+      lastUsedAt: session.lastUsedAt,
+      blocked: session.blocked,
+    };
+  }
+
+  /** Parse "name=value; name2=value2" into cookie objects */
+  private parseCookieString(cookieStr: string): Array<{ name: string; value: string; domain?: string }> {
+    if (!cookieStr) return [];
+    return cookieStr.split(';').map(part => {
+      const trimmed = part.trim();
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx <= 0) return { name: trimmed, value: '' };
+      return {
+        name: trimmed.substring(0, eqIdx).trim(),
+        value: trimmed.substring(eqIdx + 1).trim(),
+      };
+    }).filter(c => c.name);
+  }
+
+  /** Stop the cleanup interval (for graceful shutdown) */
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+  }
+}
+
+// Singleton export
+export const sessionManager = new SessionManager();

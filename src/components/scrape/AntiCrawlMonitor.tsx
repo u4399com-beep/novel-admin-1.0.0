@@ -22,6 +22,10 @@ import { FingerprintHealthPanel } from './anti-crawl/FingerprintHealthPanel';
 import { AdaptiveDelayPanel } from './anti-crawl/AdaptiveDelayPanel';
 import { RateLimiterPanel } from './anti-crawl/RateLimiterPanel';
 import { CookiePersistPanel } from './anti-crawl/CookiePersistPanel';
+import { ProxyTestPanel } from './anti-crawl/ProxyTestPanel';
+import { SessionManagerPanel } from './anti-crawl/SessionManagerPanel';
+import { RequestFingerprintPanel } from './anti-crawl/RequestFingerprintPanel';
+import { AntiCrawlSimPanel } from './anti-crawl/AntiCrawlSimPanel';
 
 // ─── Main Monitor ──────────────────────────────────────────────────────────────
 
@@ -146,17 +150,23 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
             {/* Cookie Persistence */}
             <CookiePersistPanel />
 
-            {/* Cookie Manager */}
-            <CookieManagerPanel />
+            {/* Proxy Test */}
+            <ProxyTestPanel />
+
+            {/* Session Manager */}
+            <SessionManagerPanel />
+
+            {/* Request Fingerprint */}
+            <RequestFingerprintPanel />
+
+            {/* Anti-Crawl Simulation Test */}
+            <AntiCrawlSimPanel />
 
             {/* Alert Config */}
             <AlertConfigPanel />
 
             {/* Proxy Pool Management */}
             <ProxyPoolPanel />
-
-            {/* Cookie Manager */}
-            <CookieManagerPanel />
           </motion.div>
         </AnimatePresence>
       ) : null}

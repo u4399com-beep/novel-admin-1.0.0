@@ -18,6 +18,8 @@ import { getProfileForDomain, getStealthScript } from "./stealth";
 import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
 import { rateLimiter } from "./rate-limiter";
+import { sessionManager } from "./session-manager";
+import { requestFingerprintMgr } from "./request-fingerprint";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -132,10 +134,34 @@ class CheerioEngine implements ScrapingEngine {
       }
     }
 
+    // Session-aware cookie injection
+    const sessionInfo = sessionManager.getSessionForRequest(targetDomain);
+    if (sessionInfo && sessionInfo.cookies && !headers['Cookie']) {
+      headers['Cookie'] = sessionInfo.cookies;
+    }
+    if (sessionInfo && sessionInfo.userAgent && !headers['User-Agent']) {
+      headers['User-Agent'] = sessionInfo.userAgent;
+    }
+
     // Proxy support: select best proxy for this domain
     const domainProxy = targetDomain ? proxyManager.getDomainProxy(targetDomain) : null;
     const proxy = domainProxy || (options?.proxy ? proxyManager.getProxy(targetDomain) : null);
     const dispatcher = proxy ? getProxyDispatcher(proxy.url) : null;
+
+    // Request fingerprint tracking
+    const fp = requestFingerprintMgr.create({
+      domain: targetDomain,
+      engine: 'cheerio',
+      sessionId: sessionInfo?.sessionId,
+      proxyUrl: proxy?.url,
+      userAgent: headers['User-Agent'] || '',
+    });
+
+    // Human behavior delay (randomized jitter before fetch)
+    if (options?.antiCrawl?.humanBehavior) {
+      const jitter = 200 + Math.random() * 300;
+      await new Promise(r => setTimeout(r, jitter));
+    }
 
     return retryWithBackoff(
       async () => {
@@ -223,12 +249,17 @@ class CheerioEngine implements ScrapingEngine {
           rateLimiter.recordResult(targetDomain, true, statusCode);
         }
 
+        // Complete request fingerprint tracking
+        requestFingerprintMgr.complete(fp.requestId, true, statusCode);
+
         return { html, finalUrl, statusCode: response.status };
         } catch (err) {
           // Record rate limit result on failure
           if (targetDomain && statusCode > 0) {
             rateLimiter.recordResult(targetDomain, false, statusCode);
           }
+          // Complete request fingerprint tracking (failure)
+          requestFingerprintMgr.complete(fp.requestId, false, statusCode);
           throw err;
         }
       },
