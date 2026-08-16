@@ -21,6 +21,7 @@ import type { FormValues } from './parts/schema';
 import { scrapeRuleSchema, defaultSelector, defaultPagination } from './parts/schema';
 import { ScrapeRuleList } from './parts/ScrapeRuleList';
 import { ScrapeTaskMonitor } from './ScrapeTaskMonitor';
+import { AntiCrawlMonitor } from './AntiCrawlMonitor';
 import { RuleFormTabs } from './rule-editor/RuleFormTabs';
 
 // ==================== Main Editor ====================
@@ -311,18 +312,21 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
   const [editingRule, setEditingRule] = useState<ScrapeRuleItem | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [showTaskMonitor, setShowTaskMonitor] = useState(false);
+  const [showAntiCrawlMonitor, setShowAntiCrawlMonitor] = useState(false);
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
 
   const handleEdit = (rule: ScrapeRuleItem) => {
     setEditingRule(rule);
     setIsCreating(false);
     setShowTaskMonitor(false);
+    setShowAntiCrawlMonitor(false);
   };
 
   const handleCreate = () => {
     setEditingRule(null);
     setIsCreating(true);
     setShowTaskMonitor(false);
+    setShowAntiCrawlMonitor(false);
   };
 
   const handleSuccess = () => {
@@ -345,6 +349,7 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
     setAiAssistantOpen(false);
     setIsCreating(true);
     setShowTaskMonitor(false);
+    setShowAntiCrawlMonitor(false);
     setPendingAiRule(rule);
   };
 
@@ -371,9 +376,15 @@ export default function ScrapeManagerView({ className }: ScrapeManagerViewProps)
         </div>
       ) : showTaskMonitor ? (
         <ScrapeTaskMonitor onBack={handleBackFromMonitor} />
+      ) : showAntiCrawlMonitor ? (
+        <AntiCrawlMonitor onBack={() => setShowAntiCrawlMonitor(false)} />
       ) : (
         <>
-          <div className="mb-3 flex justify-end">
+          <div className="mb-3 flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowAntiCrawlMonitor(true)} className="gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-shield-check"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+              反爬监控
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setShowTaskMonitor(true)} className="gap-1.5">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-clipboard-list"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
               任务记录

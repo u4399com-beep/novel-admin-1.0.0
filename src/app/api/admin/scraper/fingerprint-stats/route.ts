@@ -45,10 +45,15 @@ export const GET = withAuth(async function GET() {
       return NextResponse.json(mockFingerprintData());
     }
 
-    const [recent, stats] = await Promise.all([
-      recentRes.json(),
-      statsRes.json(),
-    ]);
+    const recentJson = await recentRes.json();
+    const stats = await statsRes.json();
+
+    // scraper-service returns { fingerprints: [...] }, extract the array
+    const recent = Array.isArray(recentJson?.fingerprints)
+      ? recentJson.fingerprints
+      : Array.isArray(recentJson)
+        ? recentJson
+        : [];
 
     return NextResponse.json({
       recent,

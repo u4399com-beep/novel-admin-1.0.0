@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Gauge, RefreshCw, Loader2, ChevronDown, ChevronRight, Clock,
+  Gauge, RefreshCw, Loader2, Clock,
   RotateCcw, Settings2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/lib/api-fetch';
+import { CollapsiblePanel } from './CollapsiblePanel';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -68,7 +68,46 @@ function rpmBarColor(ratio: number): string {
   return 'bg-red-500';
 }
 
+function rpmSparkColor(ratio: number): string {
+  if (ratio < 0.7) return 'bg-green-400';
+  if (ratio < 0.9) return 'bg-amber-400';
+  return 'bg-red-400';
+}
+
+// ─── Mini RPM Sparkline ─────────────────────────────────────────────────────
+
+function RpmSparkline({ readings, maxRPM }: { readings: number[]; maxRPM: number }) {
+  if (readings.length === 0) return null;
+  const maxVal = Math.max(...readings, 1);
+  return (
+    <div className="flex items-end gap-px h-[40px] mt-1.5 group/spark">
+      {readings.map((rpm, i) => {
+        const ratio = maxRPM > 0 ? rpm / maxRPM : 0;
+        const height = maxVal > 0 ? (rpm / maxVal) * 100 : 0;
+        return (
+          <div
+            key={i}
+            className="flex-1 relative rounded-t-sm transition-all duration-300"
+            style={{ height: `${Math.max(height, 4)}%` }}
+          >
+            {/* Bar */}
+            <div className={`absolute inset-0 rounded-t-sm ${rpmSparkColor(ratio)}`} />
+            {/* Tooltip */}
+            <div className="absolute -top-7 left-1/2 -translate-x-1/2 hidden group-hover/spark:block z-10">
+              <div className="bg-foreground text-background text-[9px] font-mono px-1.5 py-0.5 rounded whitespace-nowrap shadow-md">
+                {rpm} RPM
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
+
+const MAX_RPM_HISTORY = 10;
 
 export function RateLimiterPanel() {
   const [stats, setStats] = useState<RateLimitStatsResponse | null>(null);
@@ -79,6 +118,8 @@ export function RateLimiterPanel() {
   const [settingLimit, setSettingLimit] = useState(false);
   const [resettingDomain, setResettingDomain] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Accumulate RPM history per domain across fetches
+  const rpmHistoryRef = useRef<Record<string, number[]>>({});
 
   const fetchStats = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -87,7 +128,18 @@ export function RateLimiterPanel() {
         timeout: 8000,
         silent: true,
       });
-      if (!signal?.aborted) setStats(data);
+      if (!signal?.aborted) {
+        // Accumulate RPM history
+        if (data?.domains) {
+          for (const d of data.domains) {
+            const hist = rpmHistoryRef.current[d.domain] || [];
+            hist.push(d.currentRPM);
+            if (hist.length > MAX_RPM_HISTORY) hist.splice(0, hist.length - MAX_RPM_HISTORY);
+            rpmHistoryRef.current[d.domain] = hist;
+          }
+        }
+        setStats(data);
+      }
     } catch {
       // handled by apiFetch
     } finally {
@@ -157,193 +209,172 @@ export function RateLimiterPanel() {
     : 0;
 
   return (
-    <div className="rounded-lg border bg-background/50 overflow-hidden">
-      {/* Header */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors text-left"
-      >
-        <div className="flex items-center gap-2.5">
-          <Gauge className="h-4 w-4 text-primary" />
-          <span className="text-xs font-medium">域名速率限制</span>
-          {totalDomains > 0 && (
-            <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
-              {totalDomains} 域名
+    <CollapsiblePanel
+      icon={Gauge}
+      title="域名速率限制"
+      loading={loading}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      badges={totalDomains > 0 ? (
+        <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+          {totalDomains} 域名
+        </Badge>
+      ) : undefined}
+    >
+      {/* Summary Row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+            <Gauge className="h-2.5 w-2.5 mr-0.5" />
+            限制 {totalDomains} 域名
+          </Badge>
+          {penalizedCount > 0 && (
+            <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+              惩罚 {penalizedCount}
             </Badge>
           )}
+          {throttledCount > 0 && (
+            <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+              限速 {throttledCount}
+            </Badge>
+          )}
+          <span className="text-[10px] text-muted-foreground">
+            平均上限 {avgMaxRPM} RPM
+          </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-          {expanded
-            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-          }
-        </div>
-      </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-[11px] px-2"
+          onClick={handleRefresh}
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          <span className="ml-1">刷新</span>
+        </Button>
+      </div>
 
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t px-4 py-3 space-y-3">
-              {/* Summary Row */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
-                    <Gauge className="h-2.5 w-2.5 mr-0.5" />
-                    限制 {totalDomains} 域名
-                  </Badge>
-                  {penalizedCount > 0 && (
-                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                      惩罚 {penalizedCount}
-                    </Badge>
-                  )}
-                  {throttledCount > 0 && (
-                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
-                      限速 {throttledCount}
-                    </Badge>
-                  )}
-                  <span className="text-[10px] text-muted-foreground">
-                    平均上限 {avgMaxRPM} RPM
+      {/* Domain List */}
+      {domains.length > 0 ? (
+        <div className="space-y-1.5 max-h-64 overflow-y-auto scrollbar-thin">
+          {domains.map((d) => {
+            const sc = statusStyle(d.status);
+            const ratio = d.maxRPM > 0 ? d.currentRPM / d.maxRPM : 0;
+            const rpmHistory = rpmHistoryRef.current[d.domain] || [];
+            return (
+              <div
+                key={d.domain}
+                className="rounded-md border bg-background/50 px-3 py-2 group/rate"
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-medium truncate max-w-[40%]" title={d.domain}>
+                    {d.domain}
                   </span>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="secondary" className={`text-[9px] px-1 py-0 font-normal ${sc.bg} ${sc.text}`}>
+                      {sc.label}
+                    </Badge>
+                    {d.penaltyActive && (
+                      <Badge variant="secondary" className="text-[9px] px-1 py-0 font-normal bg-red-50 text-red-600 dark:bg-red-900/20">
+                        等待 {formatMs(d.estimatedWaitMs)}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-[11px] px-2"
-                  onClick={handleRefresh}
-                  disabled={loading}
-                >
-                  {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                  <span className="ml-1">刷新</span>
-                </Button>
+                {/* RPM progress bar */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[10px] text-muted-foreground shrink-0 w-16">
+                    {d.currentRPM}/{d.maxRPM} RPM
+                  </span>
+                  <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${rpmBarColor(ratio)}`}
+                      style={{ width: `${Math.max(ratio * 100, 2)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* RPM Sparkline */}
+                <RpmSparkline readings={rpmHistory} maxRPM={d.maxRPM} />
+
+                {/* Details + Actions */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 text-[9px] text-muted-foreground">
+                    <span>突发余量 {d.burstRemaining}</span>
+                    <span className="flex items-center gap-0.5">
+                      <Clock className="h-2.5 w-2.5" />
+                      {formatTimeAgo(d.lastRequestTime)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover/rate:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[9px] px-1.5 gap-0.5"
+                      onClick={() => { setEditingDomain(d.domain); setEditRPM(String(d.maxRPM)); }}
+                    >
+                      <Settings2 className="h-2.5 w-2.5" />
+                      设限
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[9px] px-1.5 gap-0.5"
+                      onClick={() => handleReset(d.domain)}
+                      disabled={resettingDomain === d.domain}
+                    >
+                      {resettingDomain === d.domain
+                        ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        : <RotateCcw className="h-2.5 w-2.5" />
+                      }
+                      重置
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Inline RPM editor */}
+                {editingDomain === d.domain && (
+                  <div className="flex items-center gap-1.5 mt-2 pt-2 border-t">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={editRPM}
+                      onChange={(e) => setEditRPM(e.target.value)}
+                      className="h-7 text-[11px] w-24"
+                      placeholder="RPM"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSetLimit(d.domain);
+                        if (e.key === 'Escape') { setEditingDomain(null); setEditRPM(''); }
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-7 text-[10px] px-2"
+                      onClick={() => handleSetLimit(d.domain)}
+                      disabled={settingLimit}
+                    >
+                      {settingLimit ? <Loader2 className="h-3 w-3 animate-spin" /> : '确定'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-[10px] px-2"
+                      onClick={() => { setEditingDomain(null); setEditRPM(''); }}
+                    >
+                      取消
+                    </Button>
+                  </div>
+                )}
               </div>
-
-              {/* Domain List */}
-              {domains.length > 0 ? (
-                <div className="space-y-1.5 max-h-64 overflow-y-auto scrollbar-thin">
-                  {domains.map((d) => {
-                    const sc = statusStyle(d.status);
-                    const ratio = d.maxRPM > 0 ? d.currentRPM / d.maxRPM : 0;
-                    return (
-                      <div
-                        key={d.domain}
-                        className="rounded-md border bg-background/50 px-3 py-2 group/rate"
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[11px] font-medium truncate max-w-[40%]" title={d.domain}>
-                            {d.domain}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <Badge variant="secondary" className={`text-[9px] px-1 py-0 font-normal ${sc.bg} ${sc.text}`}>
-                              {sc.label}
-                            </Badge>
-                            {d.penaltyActive && (
-                              <Badge variant="secondary" className="text-[9px] px-1 py-0 font-normal bg-red-50 text-red-600 dark:bg-red-900/20">
-                                等待 {formatMs(d.estimatedWaitMs)}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        {/* RPM progress bar */}
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-[10px] text-muted-foreground shrink-0 w-16">
-                            {d.currentRPM}/{d.maxRPM} RPM
-                          </span>
-                          <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-300 ${rpmBarColor(ratio)}`}
-                              style={{ width: `${Math.max(ratio * 100, 2)}%` }}
-                            />
-                          </div>
-                        </div>
-                        {/* Details + Actions */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 text-[9px] text-muted-foreground">
-                            <span>突发余量 {d.burstRemaining}</span>
-                            <span className="flex items-center gap-0.5">
-                              <Clock className="h-2.5 w-2.5" />
-                              {formatTimeAgo(d.lastRequestTime)}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover/rate:opacity-100 transition-opacity">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-[9px] px-1.5 gap-0.5"
-                              onClick={() => { setEditingDomain(d.domain); setEditRPM(String(d.maxRPM)); }}
-                            >
-                              <Settings2 className="h-2.5 w-2.5" />
-                              设限
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-[9px] px-1.5 gap-0.5"
-                              onClick={() => handleReset(d.domain)}
-                              disabled={resettingDomain === d.domain}
-                            >
-                              {resettingDomain === d.domain
-                                ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                : <RotateCcw className="h-2.5 w-2.5" />
-                              }
-                              重置
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Inline RPM editor */}
-                        {editingDomain === d.domain && (
-                          <div className="flex items-center gap-1.5 mt-2 pt-2 border-t">
-                            <Input
-                              type="number"
-                              min={1}
-                              value={editRPM}
-                              onChange={(e) => setEditRPM(e.target.value)}
-                              className="h-7 text-[11px] w-24"
-                              placeholder="RPM"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSetLimit(d.domain);
-                                if (e.key === 'Escape') { setEditingDomain(null); setEditRPM(''); }
-                              }}
-                            />
-                            <Button
-                              size="sm"
-                              className="h-7 text-[10px] px-2"
-                              onClick={() => handleSetLimit(d.domain)}
-                              disabled={settingLimit}
-                            >
-                              {settingLimit ? <Loader2 className="h-3 w-3 animate-spin" /> : '确定'}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-[10px] px-2"
-                              onClick={() => { setEditingDomain(null); setEditRPM(''); }}
-                            >
-                              取消
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
-                  <Gauge className="h-6 w-6 mb-1.5 opacity-40" />
-                  <p className="text-[11px]">暂无限速数据，开始采集后自动生效</p>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+          <Gauge className="h-6 w-6 mb-1.5 opacity-40" />
+          <p className="text-[11px]">暂无限速数据，开始采集后自动生效</p>
+        </div>
+      )}
+    </CollapsiblePanel>
   );
 }

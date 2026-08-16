@@ -20,6 +20,10 @@ export interface GeneratedRule {
     uaRotation: boolean;
     minDelay: number;
     maxDelay: number;
+    useProxy?: boolean;
+    useCookies?: boolean;
+    useSession?: boolean;
+    useStealth?: boolean;
   };
   agentqlQueries?: {
     title?: string;
@@ -30,6 +34,30 @@ export interface GeneratedRule {
   };
   confidence: number;
   notes: string[];
+}
+
+export interface AdvisorRecommendation {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  category: string;
+  applied: boolean;
+}
+
+export interface AdvisorReport {
+  domain: string;
+  threatLevel: 'low' | 'medium' | 'high';
+  recommendations: AdvisorRecommendation[];
+  suggestedEngine?: string;
+}
+
+export interface SmartGenerateResult {
+  success: boolean;
+  rule: GeneratedRule | null;
+  advisorReport?: AdvisorReport;
+  appliedRecommendations?: string[];
+  error?: string | null;
 }
 
 export interface AiRuleAssistantProps {

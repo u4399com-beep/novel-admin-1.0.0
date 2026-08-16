@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-import type { GeneratedRule, AiRuleAssistantProps, Step } from './ai-assistant/types';
+import type { GeneratedRule, AdvisorReport, AiRuleAssistantProps, Step } from './ai-assistant/types';
 export type { GeneratedRule } from './ai-assistant/types';
 
 import { StepIndicator } from './ai-assistant/AiStatusIndicator';
@@ -37,6 +37,9 @@ export function AiRuleAssistant({
   const [generatedRule, setGeneratedRule] = useState<GeneratedRule | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [smartMode, setSmartMode] = useState(true);
+  const [advisorReport, setAdvisorReport] = useState<AdvisorReport | undefined>();
+  const [appliedRecommendations, setAppliedRecommendations] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   // Reset state when dialog opens/closes
@@ -45,6 +48,8 @@ export function AiRuleAssistant({
       setStep('input');
       setError(null);
       setGeneratedRule(null);
+      setAdvisorReport(undefined);
+      setAppliedRecommendations([]);
     } else {
       abortRef.current?.abort();
     }
@@ -56,7 +61,7 @@ export function AiRuleAssistant({
   }, []);
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Generate rule via AI
+  // Generate rule via AI (smart or standard)
   // ═══════════════════════════════════════════════════════════════════════
   const handleGenerate = useCallback(async () => {
     if (!url.trim()) {
@@ -70,22 +75,60 @@ export function AiRuleAssistant({
 
     setGenerating(true);
     setError(null);
+    setAdvisorReport(undefined);
+    setAppliedRecommendations([]);
     setStep('analyzing');
 
     try {
-      const data = await apiFetch<GeneratedRule>('/api/scrape-rules/ai-generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: url.trim(),
-          siteType: siteType || undefined,
-        }),
-        signal: controller.signal,
-      });
+      const endpoint = smartMode
+        ? '/api/scrape-rules/ai-generate-smart'
+        : '/api/scrape-rules/ai-generate';
 
-      setGeneratedRule(data);
-      setStep('result');
-      toast.success('AI 规则生成成功');
+      if (smartMode) {
+        // Smart generate returns enhanced result
+        const data = await apiFetch<{
+          success: boolean;
+          rule: GeneratedRule;
+          advisorReport?: AdvisorReport;
+          appliedRecommendations?: string[];
+          error?: string;
+        }>(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: url.trim(),
+            siteType: siteType || undefined,
+          }),
+          signal: controller.signal,
+          timeout: 180_000, // 3 minutes for smart generate (advisor + AI)
+        });
+
+        setGeneratedRule(data.rule);
+        setAdvisorReport(data.advisorReport);
+        setAppliedRecommendations(data.appliedRecommendations ?? []);
+        setStep('result');
+
+        if (data.appliedRecommendations && data.appliedRecommendations.length > 0) {
+          toast.success(`AI 规则生成成功，已应用 ${data.appliedRecommendations.length} 项反爬建议`);
+        } else {
+          toast.success('AI 规则生成成功');
+        }
+      } else {
+        // Standard generate
+        const data = await apiFetch<GeneratedRule>(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: url.trim(),
+            siteType: siteType || undefined,
+          }),
+          signal: controller.signal,
+        });
+
+        setGeneratedRule(data);
+        setStep('result');
+        toast.success('AI 规则生成成功');
+      }
     } catch (err: unknown) {
       if (controller.signal.aborted) return;
       const message =
@@ -95,7 +138,7 @@ export function AiRuleAssistant({
     } finally {
       if (!controller.signal.aborted) setGenerating(false);
     }
-  }, [url, siteType]);
+  }, [url, siteType, smartMode]);
 
   // ═══════════════════════════════════════════════════════════════════════
   // Apply generated rule
@@ -112,6 +155,8 @@ export function AiRuleAssistant({
   // ═══════════════════════════════════════════════════════════════════════
   const handleRegenerate = useCallback(() => {
     setGeneratedRule(null);
+    setAdvisorReport(undefined);
+    setAppliedRecommendations([]);
     handleGenerate();
   }, [handleGenerate]);
 
@@ -150,16 +195,22 @@ export function AiRuleAssistant({
               onGenerate={handleGenerate}
               generating={generating}
               error={error}
+              smartMode={smartMode}
+              onSmartModeChange={setSmartMode}
             />
           )}
 
           {/* Step 2: Analyzing */}
-          {step === 'analyzing' && <AnalyzingView url={url} />}
+          {step === 'analyzing' && <AnalyzingView url={url} smartMode={smartMode} />}
 
           {/* Step 3: Result */}
           {step === 'result' && generatedRule && (
             <div className="h-full px-6 py-4">
-              <ResultView rule={generatedRule} />
+              <ResultView
+                rule={generatedRule}
+                advisorReport={advisorReport}
+                appliedRecommendations={appliedRecommendations}
+              />
             </div>
           )}
         </div>

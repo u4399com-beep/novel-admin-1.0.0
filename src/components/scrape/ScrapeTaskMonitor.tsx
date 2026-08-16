@@ -2,12 +2,21 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { Download, FileJson, FileSpreadsheet } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { safeFormatDate } from '@/lib/format';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
+import { Button } from '@/components/ui/button';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useDeleteConfirm } from '@/hooks/useDeleteConfirm';
 
 import { TaskCard, TaskActionsHeader, TaskStatusFilter, TaskPagination, LoadingSkeleton, EmptyState, ScrapeStatsDashboard } from './task-monitor';
@@ -244,6 +253,63 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     setDeleteTarget(task);
   }, [setDeleteTarget]);
 
+  // ── Export handlers ──
+  const completedTaskIds = tasks.filter((t) => t.status === 'completed').map((t) => t.id);
+
+  const handleExportCurrent = useCallback((fmt: 'json' | 'csv') => {
+    if (!expandedTaskId) {
+      toast.error('请先展开一个任务');
+      return;
+    }
+    const url = `/api/scrape-tasks/${expandedTaskId}/export?format=${fmt}`;
+    window.open(url, '_blank');
+    toast.success(`正在导出当前任务 (${fmt.toUpperCase()})`);
+  }, [expandedTaskId]);
+
+  const handleExportAllCompleted = useCallback(async (fmt: 'json' | 'csv') => {
+    if (completedTaskIds.length === 0) {
+      toast.error('没有已完成的任务可导出');
+      return;
+    }
+    if (completedTaskIds.length > 20) {
+      toast.error('已完成任务超过20条，请分批导出或缩小筛选范围');
+      return;
+    }
+    try {
+      // For batch export, we need to POST, so we use a temporary form approach
+      // or create an anchor with a data URL. Since the API requires POST, we'll
+      // fetch the data and trigger download manually.
+      const res = await fetch('/api/scrape-tasks/batch-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskIds: completedTaskIds, format: fmt }),
+      });
+      if (!res.ok) {
+        let errMsg = '导出失败';
+        try {
+          const errBody = await res.json() as { error?: string };
+          errMsg = errBody.error || errMsg;
+        } catch { /* ignore parse error */ }
+        toast.error(errMsg);
+        return;
+      }
+      const blob = await res.blob();
+      const ext = fmt === 'csv' ? 'csv' : 'json';
+      const mimeType = fmt === 'csv' ? 'text/csv;charset=utf-8' : 'application/json;charset=utf-8';
+      const file = new File([blob], `batch-export.${ext}`, { type: mimeType });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(file);
+      a.download = `batch-export.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      toast.success(`已导出 ${completedTaskIds.length} 条已完成任务 (${fmt.toUpperCase()})`);
+    } catch {
+      toast.error('导出失败，请稍后重试');
+    }
+  }, [completedTaskIds]);
+
   return (
     <div className="space-y-4">
       <ScrapeStatsDashboard />
@@ -260,11 +326,61 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
         onBatchDelete={handleBatchDelete}
       />
 
-      <TaskStatusFilter
-        statusFilter={statusFilter}
-        onFilterChange={handleFilterChange}
-        onSelectAll={handleSelectAll}
-      />
+      <div className="flex items-center justify-between gap-3">
+        <TaskStatusFilter
+          statusFilter={statusFilter}
+          onFilterChange={handleFilterChange}
+        />
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-foreground"
+            onClick={handleSelectAll}
+          >
+            全选
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs" disabled={tasks.length === 0}>
+                <Download className="h-3.5 w-3.5" />
+                导出
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={!expandedTaskId}
+                onClick={() => handleExportCurrent('json')}
+              >
+                <FileJson className="h-4 w-4 mr-2" />
+                导出当前任务 (JSON)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!expandedTaskId}
+                onClick={() => handleExportCurrent('csv')}
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                导出当前任务 (CSV)
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={completedTaskIds.length === 0}
+                onClick={() => handleExportAllCompleted('json')}
+              >
+                <FileJson className="h-4 w-4 mr-2" />
+                导出全部已完成 (JSON)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={completedTaskIds.length === 0}
+                onClick={() => handleExportAllCompleted('csv')}
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                导出全部已完成 (CSV)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
 
       {loading ? (
         <LoadingSkeleton />

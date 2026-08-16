@@ -598,6 +598,16 @@ export function startServer(port: number = 3099) {
           });
         }
 
+      // GET /anti-crawl/domain-signals (before POST-only gate, needs GET method)
+      if (path === "/anti-crawl/domain-signals" && method === "GET") {
+        const domain = url.searchParams.get("domain");
+        if (!domain) {
+          return Response.json({ error: 'domain query parameter is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const signals = antiCrawlAdvisor.getDomainSignals(decodeURIComponent(domain));
+        return Response.json({ domain, signals }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       // Rate limiting (per client IP)
       // Only use x-real-ip (set by Caddy, not spoofable)
       const clientIp = req.headers.get('x-real-ip') || 'unknown';
@@ -959,24 +969,13 @@ export function startServer(port: number = 3099) {
         }
 
         // POST /anti-crawl/advise — Anti-crawl strategy advisor
-        if (path === "/anti-crawl/advise" && method === "POST") {
+        if (path === "/anti-crawl/advise") {
           const { domain, currentConfig } = body as { domain?: string; currentConfig?: Record<string, unknown> };
           if (!domain || typeof domain !== 'string') {
             return Response.json({ error: 'domain is required' }, { status: 400, headers: jsonHeaders });
           }
           const report = antiCrawlAdvisor.analyze(domain, currentConfig);
           return Response.json(report, { headers: jsonHeaders });
-        }
-
-        // GET /anti-crawl/domain-signals — Raw detection signals for a domain
-        if (path === "/anti-crawl/domain-signals" && method === "GET") {
-          const urlObj = new URL(req.url);
-          const domain = urlObj.searchParams.get("domain");
-          if (!domain) {
-            return Response.json({ error: 'domain query parameter is required' }, { status: 400, headers: jsonHeaders });
-          }
-          const signals = antiCrawlAdvisor.getDomainSignals(decodeURIComponent(domain));
-          return Response.json({ domain, signals }, { headers: jsonHeaders });
         }
 
         // ==================== Session Management Endpoints ====================

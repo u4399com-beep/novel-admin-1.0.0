@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  ListOrdered, ChevronDown, ChevronRight, Loader2, RefreshCw,
+  ListOrdered, Loader2, RefreshCw,
   X, ArrowUpDown, Clock, Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { CollapsiblePanel } from './CollapsiblePanel';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -180,208 +180,180 @@ export function PriorityQueuePanel() {
   const maxConcurrent = stats?.maxConcurrent || 3;
 
   return (
-    <div className="rounded-lg border bg-background/50 overflow-hidden">
-      {/* Header */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors text-left"
-      >
-        <div className="flex items-center gap-2.5">
-          <ListOrdered className="h-4 w-4 text-primary" />
-          <span className="text-xs font-medium">任务优先级队列</span>
-          {processingCount > 0 && (
-            <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
-              {processingCount} 处理中
-            </Badge>
-          )}
+    <CollapsiblePanel
+      icon={ListOrdered}
+      title="任务优先级队列"
+      loading={loading}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      badges={processingCount > 0 ? (
+        <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+          {processingCount} 处理中
+        </Badge>
+      ) : undefined}
+    >
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-lg border bg-muted/20 px-3 py-2 text-center">
+          <p className="text-[10px] text-muted-foreground">队列</p>
+          <p className="text-sm font-semibold text-chart-sky">{queueSize}</p>
         </div>
-        <div className="flex items-center gap-1.5">
-          {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-          {expanded
-            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-          }
+        <div className="rounded-lg border bg-muted/20 px-3 py-2 text-center">
+          <p className="text-[10px] text-muted-foreground">处理中</p>
+          <p className="text-sm font-semibold text-chart-emerald">{processingCount}</p>
         </div>
-      </button>
+        <div className="rounded-lg border bg-muted/20 px-3 py-2 text-center">
+          <p className="text-[10px] text-muted-foreground">最大并发</p>
+          <p className="text-sm font-semibold text-chart-amber">{maxConcurrent}</p>
+        </div>
+      </div>
 
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t px-4 py-3 space-y-3">
-              {/* Stats row */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-lg border bg-muted/20 px-3 py-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">队列</p>
-                  <p className="text-sm font-semibold text-chart-sky">{queueSize}</p>
-                </div>
-                <div className="rounded-lg border bg-muted/20 px-3 py-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">处理中</p>
-                  <p className="text-sm font-semibold text-chart-emerald">{processingCount}</p>
-                </div>
-                <div className="rounded-lg border bg-muted/20 px-3 py-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">最大并发</p>
-                  <p className="text-sm font-semibold text-chart-amber">{maxConcurrent}</p>
-                </div>
-              </div>
+      {/* Concurrent control */}
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-muted-foreground whitespace-nowrap">最大并发数</span>
+        <Input
+          type="number"
+          min={1}
+          max={20}
+          value={maxInput}
+          onChange={(e) => setMaxInput(e.target.value)}
+          className="h-7 w-20 text-xs"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px] px-2"
+          onClick={handleSetConcurrency}
+          disabled={settingConcurrency}
+        >
+          {settingConcurrency ? <Loader2 className="h-3 w-3 animate-spin" /> : '设置'}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-[11px] px-2 ml-auto"
+          onClick={handleRefresh}
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+        </Button>
+      </div>
 
-              {/* Concurrent control */}
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground whitespace-nowrap">最大并发数</span>
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={maxInput}
-                  onChange={(e) => setMaxInput(e.target.value)}
-                  className="h-7 w-20 text-xs"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-[11px] px-2"
-                  onClick={handleSetConcurrency}
-                  disabled={settingConcurrency}
+      {/* Queue list */}
+      <div className="space-y-1">
+        <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+          <ListOrdered className="h-3 w-3" />
+          等待队列 ({queueSize})
+        </p>
+        {queueItems.length > 0 ? (
+          <div className="space-y-1 max-h-64 overflow-y-auto scrollbar-thin">
+            {queueItems.map((item) => {
+              const pCfg = PRIORITY_CONFIG[item.priority] || PRIORITY_CONFIG[2];
+              return (
+                <div
+                  key={item.taskId}
+                  className="flex items-center justify-between rounded-md border bg-background/50 px-3 py-2"
                 >
-                  {settingConcurrency ? <Loader2 className="h-3 w-3 animate-spin" /> : '设置'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-[11px] px-2 ml-auto"
-                  onClick={handleRefresh}
-                  disabled={loading}
-                >
-                  {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                </Button>
-              </div>
-
-              {/* Queue list */}
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
-                  <ListOrdered className="h-3 w-3" />
-                  等待队列 ({queueSize})
-                </p>
-                {queueItems.length > 0 ? (
-                  <div className="space-y-1 max-h-64 overflow-y-auto scrollbar-thin">
-                    {queueItems.map((item) => {
-                      const pCfg = PRIORITY_CONFIG[item.priority] || PRIORITY_CONFIG[2];
-                      return (
-                        <div
-                          key={item.taskId}
-                          className="flex items-center justify-between rounded-md border bg-background/50 px-3 py-2"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Badge
-                              variant={pCfg.variant}
-                              className={`text-[9px] px-1 py-0 font-normal shrink-0 ${pCfg.className}`}
-                            >
-                              {pCfg.label}
-                            </Badge>
-                            <span className="text-[11px] font-mono shrink-0" title={item.taskId}>
-                              {truncateId(item.taskId)}
-                            </span>
-                            {item.ruleId && (
-                              <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">
-                                {truncateId(item.ruleId)}
-                              </span>
-                            )}
-                            <div className="flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
-                              <Clock className="h-2.5 w-2.5" />
-                              {formatWaitTime(item.createdAt)}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                  <ArrowUpDown className="h-3 w-3" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-28">
-                                {PRIORITY_OPTIONS.map((opt) => (
-                                  <DropdownMenuItem
-                                    key={opt.value}
-                                    onClick={() => handleReorder(item.taskId, opt.value)}
-                                    className="text-xs"
-                                  >
-                                    {opt.icon} {opt.label}
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                              onClick={() => handleCancel(item.taskId)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge
+                      variant={pCfg.variant}
+                      className={`text-[9px] px-1 py-0 font-normal shrink-0 ${pCfg.className}`}
+                    >
+                      {pCfg.label}
+                    </Badge>
+                    <span className="text-[11px] font-mono shrink-0" title={item.taskId}>
+                      {truncateId(item.taskId)}
+                    </span>
+                    {item.ruleId && (
+                      <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">
+                        {truncateId(item.ruleId)}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
+                      <Clock className="h-2.5 w-2.5" />
+                      {formatWaitTime(item.createdAt)}
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-4 text-muted-foreground">
-                    <ListOrdered className="h-5 w-5 mb-1 opacity-40" />
-                    <p className="text-[11px]">队列为空</p>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          <ArrowUpDown className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-28">
+                        {PRIORITY_OPTIONS.map((opt) => (
+                          <DropdownMenuItem
+                            key={opt.value}
+                            onClick={() => handleReorder(item.taskId, opt.value)}
+                            className="text-xs"
+                          >
+                            {opt.icon} {opt.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleCancel(item.taskId)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
                   </div>
-                )}
-              </div>
-
-              {/* Processing list */}
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Play className="h-3 w-3" />
-                  处理中 ({processingCount})
-                </p>
-                {processingItems.length > 0 ? (
-                  <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin">
-                    {processingItems.map((item) => {
-                      const pCfg = PRIORITY_CONFIG[item.priority] || PRIORITY_CONFIG[2];
-                      return (
-                        <div
-                          key={item.taskId}
-                          className="flex items-center justify-between rounded-md border bg-emerald-500/5 px-3 py-2"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Badge
-                              variant={pCfg.variant}
-                              className={`text-[9px] px-1 py-0 font-normal shrink-0 ${pCfg.className}`}
-                            >
-                              {pCfg.label}
-                            </Badge>
-                            <span className="text-[11px] font-mono shrink-0" title={item.taskId}>
-                              {truncateId(item.taskId)}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
-                            <Clock className="h-2.5 w-2.5" />
-                            {formatRunningTime(item.createdAt)}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center py-2 text-[10px] text-muted-foreground/60">
-                    无处理中的任务
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-4 text-muted-foreground">
+            <ListOrdered className="h-5 w-5 mb-1 opacity-40" />
+            <p className="text-[11px]">队列为空</p>
+          </div>
         )}
-      </AnimatePresence>
-    </div>
+      </div>
+
+      {/* Processing list */}
+      <div className="space-y-1">
+        <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+          <Play className="h-3 w-3" />
+          处理中 ({processingCount})
+        </p>
+        {processingItems.length > 0 ? (
+          <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin">
+            {processingItems.map((item) => {
+              const pCfg = PRIORITY_CONFIG[item.priority] || PRIORITY_CONFIG[2];
+              return (
+                <div
+                  key={item.taskId}
+                  className="flex items-center justify-between rounded-md border bg-emerald-500/5 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge
+                      variant={pCfg.variant}
+                      className={`text-[9px] px-1 py-0 font-normal shrink-0 ${pCfg.className}`}
+                    >
+                      {pCfg.label}
+                    </Badge>
+                    <span className="text-[11px] font-mono shrink-0" title={item.taskId}>
+                      {truncateId(item.taskId)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 text-[10px] text-muted-foreground">
+                    <Clock className="h-2.5 w-2.5" />
+                    {formatRunningTime(item.createdAt)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-2 text-[10px] text-muted-foreground/60">
+            无处理中的任务
+          </div>
+        )}
+      </div>
+    </CollapsiblePanel>
   );
 }
-
-

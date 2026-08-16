@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldAlert, ArrowLeft, RefreshCw, Loader2, Clock } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, RefreshCw, Loader2, Clock, Globe, Server, ListOrdered } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -30,6 +30,17 @@ import { AntiCrawlAdvisorPanel } from './anti-crawl/AntiCrawlAdvisorPanel';
 import { PriorityQueuePanel } from './anti-crawl/PriorityQueuePanel';
 import { QualityScorePanel } from './anti-crawl/QualityScorePanel';
 
+// ─── Summary bar types ────────────────────────────────────────────────────────
+
+interface SummaryData {
+  activeDomains: number;
+  healthStatus: 'healthy' | 'warning' | 'critical';
+  activeProxies: number;
+  queueDepth: number;
+}
+
+type WsStatus = 'connected' | 'offline' | 'reconnecting';
+
 // ─── Main Monitor ──────────────────────────────────────────────────────────────
 
 interface AntiCrawlMonitorProps {
@@ -43,6 +54,10 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('all');
   const fetchAcRef = useRef<AbortController | null>(null);
 
+  // Summary bar state
+  const [summary, setSummary] = useState<SummaryData | null>(null);
+  const [wsStatus, setWsStatus] = useState<WsStatus>('offline');
+
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     try {
       const [dashData, eventsData] = await Promise.all([
@@ -55,20 +70,62 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
       if (signal?.aborted) return;
       setStats(dashData);
       setEvents(eventsData.events || []);
+
+      // Derive summary from dashboard data
+      const activeDomains = dashData.topDomains?.length || 0;
+      const unresolvedRatio = dashData.total24h > 0
+        ? dashData.unresolvedCount / dashData.total24h
+        : 0;
+      const healthStatus: SummaryData['healthStatus'] = unresolvedRatio > 0.5
+        ? 'critical'
+        : unresolvedRatio > 0.2
+          ? 'warning'
+          : 'healthy';
+
+      setSummary({
+        activeDomains,
+        healthStatus,
+        activeProxies: dashData.proxyStats?.activeProxies ?? 0,
+        queueDepth: 0, // fetched separately
+      });
+
+      // Update WS status based on successful fetch
+      setWsStatus('connected');
     } catch {
       // handled by apiFetch
+      if (!signal?.aborted) {
+        setWsStatus(prev => prev === 'connected' ? 'reconnecting' : 'offline');
+      }
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
   }, [eventTypeFilter]);
 
+  // Fetch queue depth separately (lightweight)
+  const fetchQueueDepth = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const data = await apiFetch<{ queueSize: number }>('/api/admin/scraper/priority-queue', {
+        signal,
+        timeout: 5000,
+        silent: true,
+      });
+      if (!signal?.aborted) {
+        setSummary(prev => prev ? { ...prev, queueDepth: data.queueSize || 0 } : null);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     fetchAcRef.current?.abort();
     const ac = new AbortController();
     fetchAcRef.current = ac;
+    setLoading(true);
     fetchData(ac.signal);
+    fetchQueueDepth(ac.signal);
     return () => { fetchAcRef.current?.abort(); fetchAcRef.current = null; };
-  }, [fetchData]);
+  }, [fetchData, fetchQueueDepth]);
 
   const handleRefresh = () => {
     fetchAcRef.current?.abort();
@@ -76,7 +133,25 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
     fetchAcRef.current = ac;
     setLoading(true);
     fetchData(ac.signal);
+    fetchQueueDepth(ac.signal);
   };
+
+  // Health indicator config
+  const healthConfig = {
+    healthy: { color: 'bg-emerald-500', label: '正常', textColor: 'text-emerald-600 dark:text-emerald-400' },
+    warning: { color: 'bg-amber-500', label: '注意', textColor: 'text-amber-600 dark:text-amber-400' },
+    critical: { color: 'bg-red-500', label: '告警', textColor: 'text-red-600 dark:text-red-400' },
+  };
+
+  // WS status config
+  const wsConfig = {
+    connected: { dotColor: 'bg-emerald-500', label: '实时连接', textColor: 'text-emerald-600 dark:text-emerald-400' },
+    offline: { dotColor: 'bg-gray-400', label: '离线', textColor: 'text-muted-foreground' },
+    reconnecting: { dotColor: 'bg-red-500 cp-dot-pulse', label: '重连中', textColor: 'text-red-600 dark:text-red-400' },
+  };
+
+  const hc = healthConfig[summary?.healthStatus || 'healthy'];
+  const wc = wsConfig[wsStatus];
 
   return (
     <div className="space-y-4">
@@ -100,6 +175,53 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
           </Button>
         </div>
       </div>
+
+      {/* Status Summary Header Bar */}
+      {summary && (
+        <div className="flex items-center gap-3 sm:gap-4 px-4 py-2.5 rounded-lg border bg-muted/30 text-[11px] overflow-x-auto">
+          {/* Active Domains */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">监控域名</span>
+            <span className="font-semibold">{summary.activeDomains}</span>
+          </div>
+
+          <Separator orientation="vertical" className="h-4 shrink-0" />
+
+          {/* System Health */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className={`h-2 w-2 rounded-full ${hc.color}`} />
+            <span className={hc.textColor}>{hc.label}</span>
+          </div>
+
+          <Separator orientation="vertical" className="h-4 shrink-0" />
+
+          {/* Active Proxies */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Server className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">代理</span>
+            <span className="font-semibold">{summary.activeProxies}</span>
+          </div>
+
+          <Separator orientation="vertical" className="h-4 shrink-0" />
+
+          {/* Queue Depth */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <ListOrdered className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">队列</span>
+            <span className="font-semibold">{summary.queueDepth}</span>
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* WebSocket Connection Status */}
+          <div className={`flex items-center gap-1.5 shrink-0 ${wc.textColor}`}>
+            <span className={`h-2 w-2 rounded-full ${wc.dotColor}`} />
+            <span className="hidden sm:inline">{wc.label}</span>
+          </div>
+        </div>
+      )}
 
       {loading && !stats ? (
         <div className="flex items-center justify-center py-20">

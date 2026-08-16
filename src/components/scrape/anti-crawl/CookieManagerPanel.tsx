@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Cookie, Trash2, RefreshCw, Loader2, ChevronDown, ChevronRight, Clock,
+  Cookie, Trash2, RefreshCw, Loader2, Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api-fetch';
+import { CollapsiblePanel } from './CollapsiblePanel';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -121,15 +121,14 @@ export function CookieManagerPanel() {
   const totalDomains = stats?.totalDomains || 0;
 
   return (
-    <div className="rounded-lg border bg-background/50 overflow-hidden">
-      {/* Header - always visible */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors text-left"
-      >
-        <div className="flex items-center gap-2.5">
-          <Cookie className="h-4 w-4 text-primary" />
-          <span className="text-xs font-medium">Cookie 管理</span>
+    <CollapsiblePanel
+      icon={Cookie}
+      title="Cookie 管理"
+      loading={loading}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      badges={
+        <>
           {totalCookies > 0 && (
             <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
               {totalCookies} 个
@@ -140,99 +139,80 @@ export function CookieManagerPanel() {
               {totalDomains} 域名
             </Badge>
           )}
+        </>
+      }
+    >
+      {/* Actions */}
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] text-muted-foreground">
+          {totalCookies === 0
+            ? '暂无存储的Cookie'
+            : `共 ${totalCookies} 个Cookie，覆盖 ${totalDomains} 个域名`
+          }
         </div>
         <div className="flex items-center gap-1.5">
-          {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-          {expanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-        </div>
-      </button>
-
-      {/* Expandable content */}
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[11px] px-2"
+            onClick={handleRefresh}
+            disabled={loading}
           >
-            <div className="border-t px-4 py-3 space-y-3">
-              {/* Actions */}
-              <div className="flex items-center justify-between">
-                <div className="text-[11px] text-muted-foreground">
-                  {totalCookies === 0
-                    ? '暂无存储的Cookie'
-                    : `共 ${totalCookies} 个Cookie，覆盖 ${totalDomains} 个域名`
-                  }
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-[11px] px-2"
-                    onClick={handleRefresh}
-                    disabled={loading}
-                  >
-                    {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                    <span className="ml-1">刷新</span>
-                  </Button>
-                  {totalCookies > 0 && (
-                    <Button
-                      variant={confirmClear ? 'destructive' : 'ghost'}
-                      size="sm"
-                      className="h-7 text-[11px] px-2"
-                      onClick={handleClearAll}
-                      disabled={clearing}
-                    >
-                      {clearing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                      <span className="ml-1">{confirmClear ? '确认清除?' : '清除所有'}</span>
-                    </Button>
-                  )}
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            <span className="ml-1">刷新</span>
+          </Button>
+          {totalCookies > 0 && (
+            <Button
+              variant={confirmClear ? 'destructive' : 'ghost'}
+              size="sm"
+              className="h-7 text-[11px] px-2"
+              onClick={handleClearAll}
+              disabled={clearing}
+            >
+              {clearing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              <span className="ml-1">{confirmClear ? '确认清除?' : '清除所有'}</span>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Domain list */}
+      {stats?.domains && stats.domains.length > 0 && (
+        <div className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-thin">
+          {stats.domains.map((d) => (
+            <div
+              key={d.domain}
+              className="flex items-center justify-between rounded-md border bg-background/50 px-3 py-2 group/cookie"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Cookie className="h-3 w-3 text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium truncate" title={d.domain}>
+                    {d.domain}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <Badge variant="secondary" className="text-[9px] px-1 py-0 font-normal">
+                      {d.count} 个
+                    </Badge>
+                    <span className="flex items-center gap-0.5 text-[9px] text-muted-foreground">
+                      <Clock className="h-2.5 w-2.5" />
+                      {formatTimeAgo(d.lastActivity)}
+                    </span>
+                  </div>
                 </div>
               </div>
-
-              {/* Domain list */}
-              {stats?.domains && stats.domains.length > 0 && (
-                <div className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-thin">
-                  {stats.domains.map((d) => (
-                    <div
-                      key={d.domain}
-                      className="flex items-center justify-between rounded-md border bg-background/50 px-3 py-2 group/cookie"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Cookie className="h-3 w-3 text-muted-foreground shrink-0" />
-                        <div className="min-w-0">
-                          <div className="text-[11px] font-medium truncate" title={d.domain}>
-                            {d.domain}
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <Badge variant="secondary" className="text-[9px] px-1 py-0 font-normal">
-                              {d.count} 个
-                            </Badge>
-                            <span className="flex items-center gap-0.5 text-[9px] text-muted-foreground">
-                              <Clock className="h-2.5 w-2.5" />
-                              {formatTimeAgo(d.lastActivity)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 opacity-0 group-hover/cookie:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                        onClick={() => handleClearDomain(d.domain)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 opacity-0 group-hover/cookie:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                onClick={() => handleClearDomain(d.domain)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+          ))}
+        </div>
+      )}
+    </CollapsiblePanel>
   );
 }

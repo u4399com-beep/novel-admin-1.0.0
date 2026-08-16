@@ -1,9 +1,10 @@
 'use client';
 
-import { Globe, Check, AlertTriangle } from 'lucide-react';
+import { Globe, Check, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Loader2, Sparkles } from 'lucide-react';
 import { SITE_TYPES } from './helpers';
 
@@ -15,6 +16,8 @@ interface AiAnalyzeFormProps {
   onGenerate: () => void;
   generating: boolean;
   error: string | null;
+  smartMode: boolean;
+  onSmartModeChange: (enabled: boolean) => void;
 }
 
 export function AiAnalyzeForm({
@@ -25,6 +28,8 @@ export function AiAnalyzeForm({
   onGenerate,
   generating,
   error,
+  smartMode,
+  onSmartModeChange,
 }: AiAnalyzeFormProps) {
   return (
     <div className="px-6 py-8 space-y-6">
@@ -100,6 +105,26 @@ export function AiAnalyzeForm({
         </div>
       )}
 
+      {/* Smart mode toggle */}
+      <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">智能反爬分析</p>
+            <p className="text-[10px] text-muted-foreground">
+              自动分析目标域名反爬策略并优化采集规则
+            </p>
+          </div>
+        </div>
+        <Switch
+          checked={smartMode}
+          onCheckedChange={onSmartModeChange}
+          aria-label="启用智能反爬分析"
+        />
+      </div>
+
       {/* Generate button */}
       <div className="flex justify-center">
         <Button
@@ -113,7 +138,7 @@ export function AiAnalyzeForm({
           ) : (
             <Sparkles className="h-5 w-5" />
           )}
-          开始 AI 分析
+          {smartMode ? '开始智能分析' : '开始 AI 分析'}
         </Button>
       </div>
     </div>
