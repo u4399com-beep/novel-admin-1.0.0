@@ -26,6 +26,9 @@ export interface AntiCrawlConfig {
   dnt: boolean;
   acceptLanguage: string;
   referer: string;
+  captchaStrategy: string;
+  enableCaptchaRetry: boolean;
+  maxCaptchaRetries: number;
 }
 
 export interface CleanConfig {

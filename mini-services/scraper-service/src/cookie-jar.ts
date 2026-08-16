@@ -7,7 +7,10 @@
  *   - Playwright-compatible cookie format
  *   - Export/import for backup
  *   - Automatic expired cookie cleanup
+ *   - SQLite-based persistence (survives restarts)
  */
+
+import { cookieStore } from './cookie-store';
 
 // ==================== Types ====================
 
@@ -152,6 +155,13 @@ class CookieJar {
     }
 
     this.lastActivity.set(domain, Date.now());
+
+    // Persist to SQLite
+    try {
+      cookieStore.upsert(list, domain);
+    } catch {
+      // Persistence failure should not break in-memory operation
+    }
   }
 
   /** Get cookies for a domain and path (for sending with request) */
@@ -188,12 +198,39 @@ class CookieJar {
   clear(domain: string): void {
     this.cookies.delete(domain);
     this.lastActivity.delete(domain);
+    try { cookieStore.deleteByDomain(domain); } catch { /* ignore */ }
   }
 
   /** Clear all cookies */
   clearAll(): void {
     this.cookies.clear();
     this.lastActivity.clear();
+    try { cookieStore.clear(); } catch { /* ignore */ }
+  }
+
+  /** Restore cookies from SQLite into the in-memory Map */
+  restore(): void {
+    try {
+      const stats = cookieStore.getAllStats();
+      if (stats.length === 0) return;
+
+      let restored = 0;
+      const now = Math.floor(Date.now() / 1000);
+      for (const { domain } of stats) {
+        const cookies = cookieStore.getByDomain(domain);
+        // Filter out expired cookies
+        const valid = cookies.filter(c => c.expires === 0 || c.expires > now);
+        if (valid.length > 0) {
+          this.cookies.set(domain, valid);
+          restored += valid.length;
+        }
+      }
+      if (restored > 0) {
+        console.log(`[CookieJar] Restored ${restored} cookies from SQLite (${stats.length} domains)`);
+      }
+    } catch (err) {
+      console.error('[CookieJar] Failed to restore from SQLite:', err);
+    }
   }
 
   /** Get all stored cookie counts per domain */
@@ -227,6 +264,7 @@ class CookieJar {
       if (!Array.isArray(parsed)) return 0;
 
       let imported = 0;
+      const domainsToPersist = new Set<string>();
       for (const item of parsed) {
         if (!item || typeof item !== 'object') continue;
         const cookie = item as StoredCookie;
@@ -236,8 +274,18 @@ class CookieJar {
           this.cookies.set(cookie.domain, []);
         }
         this.cookies.get(cookie.domain)!.push(cookie);
+        domainsToPersist.add(cookie.domain);
         imported++;
       }
+
+      // Persist imported cookies to SQLite
+      try {
+        for (const domain of domainsToPersist) {
+          const list = this.cookies.get(domain);
+          if (list) cookieStore.upsert(list, domain);
+        }
+      } catch { /* ignore */ }
+
       return imported;
     } catch {
       return 0;
@@ -278,9 +326,14 @@ class CookieJar {
 
 export const cookieJar = new CookieJar();
 
+// Restore persisted cookies from SQLite on startup
+cookieJar.restore();
+
 // Periodic cleanup every 5 minutes
 setInterval(() => {
   const removed = cookieJar.cleanup();
+  // Also clean expired cookies from SQLite
+  try { cookieStore.deleteExpired(); } catch { /* ignore */ }
   if (removed > 0) {
     if (process.env.DEBUG === 'true') {
       console.log(`[CookieJar] Cleaned up ${removed} expired cookies`);

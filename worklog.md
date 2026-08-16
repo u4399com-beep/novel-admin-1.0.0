@@ -9066,3 +9066,239 @@ Stage Summary:
 - 采集规则编辑器UI完整支持所有新增反爬选项
 - 3个新管理面板样式优化完成
 - 建议下一阶段: 1)实际采集任务测试 2)代理连通性测试 3)更多站点规则
+
+---
+Task ID: 2-3
+Agent: full-stack-developer
+Task: R30 Cookie持久化 + Per-Domain速率限制器
+
+Work Log:
+- 创建 cookie-store.ts (104行): bun:sqlite SQLite持久化
+  - CookieStore类, DB路径 /home/z/my-project/db/cookies.db
+  - WAL模式, CREATE TABLE + INDEX idx_cookies_domain
+  - upsert/getByDomain/deleteByDomain/deleteExpired/getAllStats/exportAll/clear
+  - 单例导出 export const cookieStore
+- 修改 cookie-jar.ts (289→342行, +53行):
+  - import cookieStore
+  - store(): 内存更新后调用 cookieStore.upsert()
+  - clear(): 同时调用 cookieStore.deleteByDomain()
+  - clearAll(): 同时调用 cookieStore.clear()
+  - import(): 导入后按domain持久化到SQLite
+  - 新增 restore() 方法: 从SQLite加载cookies到内存Map
+  - 启动时调用 cookieJar.restore()
+  - 周期清理: 同时调用 cookieStore.deleteExpired()
+- 创建 rate-limiter.ts (258行):
+  - DomainRateLimiter 单例类 (与adaptive-delay同模式)
+  - 滑动窗口计数器 (1分钟窗口, timestamp数组)
+  - acquire(domain, maxRPM?) → {allowed, waitMs}
+  - recordResult(domain, success, statusCode?) 自适应惩罚/恢复
+  - 429/403/503 → maxRPM减半, 5分钟惩罚
+  - 成功后逐步+1 RPM恢复, burst每10次成功+1
+  - getDomainState/getAllDomainStates/setDomainLimit/resetDomain/size
+  - 状态: normal|throttled|penalized|cooldown
+  - 单例导出 export const rateLimiter
+- 修改 engines.ts (1390→1431行, +41行):
+  - import rateLimiter
+  - CheerioEngine: acquire before fetch, recordResult after (with statusCode tracking)
+  - PlaywrightEngine: acquire before fetch, recordResult after
+  - ObscuraEngine: acquire before fetch, recordResult after
+- 修改 index.ts (+40行):
+  - import cookieStore, rateLimiter
+  - GET /rate-limit-stats: 所有域速率限制状态
+  - POST /rate-limit/set: 设置域限制 {domain, maxRPM}
+  - POST /rate-limit/reset: 重置域状态 {domain}
+  - POST /cookie-persist/stats: SQLite cookie统计
+  - Debug模式日志输出新端点
+
+Stage Summary:
+- Task 2完成: Cookie SQLite持久化 (cookie-store.ts + cookie-jar.ts集成)
+  - Cookie在重启后自动从 /db/cookies.db 恢复
+  - 过期cookie在5分钟周期清理中同步删除
+  - 持久化失败不影响内存操作 (try-catch静默)
+- Task 3完成: Per-Domain速率限制器 (rate-limiter.ts + engines.ts集成)
+  - 滑动窗口30 RPM/域名, 反爬检测自动减半至5分钟惩罚
+  - 成功请求后逐步恢复RPM
+  - 4个管理API端点 (GET stats + POST set/reset + POST cookie-persist/stats)
+- TypeScript: scraper-service文件0错误, ESLint: 0新增错误
+
+---
+Task ID: 4-6
+Agent: full-stack-developer
+Task: R30 前端面板: 自适应延迟/速率限制/Cookie持久化 + CAPTCHA策略UI
+
+Work Log:
+- 创建 AdaptiveDelayPanel.tsx (~190行): 可折叠面板
+  - Timer图标 + 自适应延迟控制标题 + 域名数badge + 展开/折叠
+  - 汇总行: 追踪域名数/退避数/严重数/平均延迟
+  - 域名列表 (max-h-64 scrollbar-thin): 域名名、状态badge(绿黄橙红)、
+  - 延迟进度条(绿色→红色渐变)、连续错误/平均响应/退避级别/最后请求时间
+  - 空状态: "暂无延迟数据，开始采集后自动追踪"
+  - apiFetch + abortRef + loading/refresh 模式
+- 创建 RateLimiterPanel.tsx (~350行): 可折叠面板
+  - Gauge图标 + 域名速率限制标题 + 域名数badge + 展开/折叠
+  - 汇总行: 限制域名数/惩罚数/限速数/平均上限RPM
+  - 域名列表 (max-h-64 scrollbar-thin): 域名名、状态badge、
+  - RPM进度条(绿<70%/黄70-90%/红>90%)、突发余量/惩罚等待/最后请求时间
+  - 悬停显示"设限"/"重置"按钮
+  - "设限"打开内联Input+Button编辑maxRPM (Enter确认/Escape取消)
+  - "重置"调用POST rate-limit-manage {action:reset, domain}
+  - 空状态: "暂无限速数据，开始采集后自动生效"
+- 创建 CookiePersistPanel.tsx (~200行): 可折叠面板
+  - HardDrive图标 + Cookie持久化标题 + 总数badge + 展开/折叠
+  - 信息banner: "Cookie已持久化到SQLite，服务重启后自动恢复"
+  - 2x2统计网格: 总Cookie/域名数/DB大小/上次清理
+  - 域名列表: 域名名 + Cookie计数
+  - 空状态: "持久化存储为空"
+- 修改 schema.ts: antiCrawlConfig新增3字段
+  - captchaStrategy: z.string().default("auto")
+  - enableCaptchaRetry: z.boolean().default(true)
+  - maxCaptchaRetries: z.number().min(1).max(10).default(3)
+- 修改 types.ts: AntiCrawlConfig接口新增3字段
+- 修改 ScrapeRuleEditor.tsx:
+  - defaultValues.antiCrawlConfig新增3字段默认值
+  - loadRule fallback新增3字段默认值
+- 修改 AntiCrawlTab.tsx: 新增CAPTCHA策略section
+  - Shield图标 + "CAPTCHA策略"标题
+  - Select下拉: auto/cloudflare/geetest/engine-upgrade/delay-backoff
+  - Switch: 验证码自动重试 (enableCaptchaRetry)
+  - Number Input: 最大重试次数 (maxCaptchaRetries, 1-10)
+  - import Select组件
+- 修改 AntiCrawlMonitor.tsx:
+  - import 3个新panel
+  - FingerprintHealthPanel之后插入: AdaptiveDelayPanel, RateLimiterPanel, CookiePersistPanel
+  - 保留原有CookieManagerPanel
+- 创建 API routes:
+  - rate-limit-stats/route.ts: GET代理到scraper-service /rate-limit-stats
+  - rate-limit-manage/route.ts: POST action路由器 (set/reset)
+  - cookie-persist/route.ts: GET代理到scraper-service /cookie-persist/stats
+
+Stage Summary:
+- Task 4完成: 3个新的anti-crawl监控面板 (AdaptiveDelayPanel/RateLimiterPanel/CookiePersistPanel)
+  - 均使用可折叠面板模式、apiFetch+abortRef、framer-motion动画
+  - RateLimiterPanel支持内联编辑maxRPM和重置操作
+- Task 5完成: CAPTCHA策略配置UI
+  - schema/types/editor三处同步新增captchaStrategy/enableCaptchaRetry/maxCaptchaRetries
+  - AntiCrawlTab新增Select+Switch+NumberInput控制
+- Task 6完成: AntiCrawlMonitor集成3个新面板
+  - 插入在FingerprintHealthPanel和AlertConfigPanel之间
+  - 保留原有CookieManagerPanel
+- 3个新API路由均遵循delay-stats/proxy-manage模式
+- ESLint: 0新增错误 (5个预存warning不变)
+
+
+---
+Task ID: 1
+Agent: Main Orchestrator
+Task: 修复scraper-service 401轮询 + .env加载
+
+Work Log:
+- 根因: root .env缺少SCRAPER_SERVICE_TOKEN, scraper-service不读root .env
+- 在index.ts顶部添加.env文件加载器(读service dir .env → fallback root .env)
+- SCRAPER_SERVICE_TOKEN="r30-dev-token-novel-scraper-2024" 配置到两个.env
+- Next.js重启后scrape-tasks轮询从401变为200
+
+Stage Summary:
+- scraper-service/index.ts: +30行 .env加载器
+- 根.env + scraper-service/.env: 添加SCRAPER_SERVICE_TOKEN
+- 401轮询问题彻底修复
+
+---
+Task ID: 2-3
+Agent: full-stack-developer
+Task: R30 Cookie持久化 + Per-Domain速率限制器
+
+Work Log:
+- 创建cookie-store.ts(147行): Bun SQLite WAL, upsert/getByDomain/deleteExpired等
+- 修改cookie-jar.ts(+53行): store/clear/clearAll/import持久化 + restore()启动恢复
+- 创建rate-limiter.ts(260行): 滑动窗口RPM限制, 反爬惩罚减半, 渐进恢复
+- 修改engines.ts(+41行): Cheerio/Playwright/Obscura三引擎集成rateLimiter
+- 修改index.ts: 4个新端点(rate-limit-stats/set/reset, cookie-persist/stats)
+
+Stage Summary:
+- cookie-store.ts: SQLite持久化, 服务重启Cookie不丢失
+- rate-limiter.ts: 默认30RPM/域, 429/403/503触发5分钟半速惩罚
+- 0 TypeScript errors in scraper-service
+
+---
+Task ID: 4-6
+Agent: full-stack-developer
+Task: R30 前端面板 + CAPTCHA策略UI
+
+Work Log:
+- 创建AdaptiveDelayPanel.tsx(248行): 域名延迟条/状态徽章/错误计数/响应时间
+- 创建RateLimiterPanel.tsx(349行): RPM进度条/内联限速编辑/重置按钮
+- 创建CookiePersistPanel.tsx(215行): 持久化统计/2x2信息网格/域名列表
+- 创建3个API路由: rate-limit-stats, rate-limit-manage, cookie-persist
+- AntiCrawlTab.tsx: +CAPTCHA策略区(Select/Switch/Number)
+- schema.ts/types.ts: +captchaStrategy/enableCaptchaRetry/maxCaptchaRetries
+- AntiCrawlMonitor.tsx: 集成3个新面板
+
+Stage Summary:
+- 3个新监控面板: 自适应延迟/速率限制/Cookie持久化
+- CAPTCHA策略配置UI完成
+- ESLint: 0 errors
+
+---
+Task ID: 6
+Agent: Main Orchestrator
+Task: R30 采集规则模板反爬预设增强
+
+Work Log:
+- scrape-templates.ts: ScrapeTemplate接口新增antiCrawlConfig字段
+- 6个模板预设反爬配置: 笔趣阁(基础UA轮换), 番茄(JS+行为模拟), 纵横(代理+行为), 起点(完整反爬), 爱QQ(Cloudflare策略), 通用CSS/XPath(基础)
+- templates/route.ts: 返回hasAntiCrawl + antiCrawlPreview
+- [id]/apply/route.ts: 应用模板时写入antiCrawlConfig
+- TemplateLibrary.tsx: 显示反爬能力徽章(UA轮换/代理/行为模拟/策略)
+
+Stage Summary:
+- 模板应用自动配置反爬策略
+- 前端模板卡片展示彩色反爬能力徽章
+
+---
+Task ID: R30
+Agent: Main Orchestrator
+Task: R30 反反爬能力增强 - 持久化/速率限制/监控UI/模板
+
+Work Log:
+- 修复P1问题: scraper-service 401轮询(配置SCRAPER_SERVICE_TOKEN + .env加载器)
+- 后端新增2个核心模块: Cookie SQLite持久化 + Per-Domain速率限制器
+- 前端新增3个监控面板: 自适应延迟/速率限制/Cookie持久化
+- 前端新增CAPTCHA策略配置区(5种策略选择/自动重试/最大重试次数)
+- 采集规则模板预设反爬配置(6个模板 + 前端反爬能力徽章)
+- 引擎集成: Cheerio/Playwright/Obscura三引擎接入速率限制器
+
+## 修改文件清单
+
+### 后端 - 新建2文件 + 修改3文件
+1. **cookie-store.ts** (147行, 新建): Bun SQLite Cookie持久化
+2. **rate-limiter.ts** (260行, 新建): 滑动窗口Per-Domain速率限制器
+3. **cookie-jar.ts** (289→342行, +53行): SQLite持久化集成
+4. **engines.ts** (1389→1440行, +51行): 三引擎接入rateLimiter
+5. **index.ts** (710→773行, +63行): .env加载器 + 4个新API端点
+
+### 前端 - 新建6文件 + 修改7文件
+6. **AdaptiveDelayPanel.tsx** (248行, 新建): 域名延迟可视化
+7. **RateLimiterPanel.tsx** (349行, 新建): 速率限制管理
+8. **CookiePersistPanel.tsx** (215行, 新建): Cookie持久化状态
+9. **rate-limit-stats/route.ts** (47行, 新建): 速率限制统计代理
+10. **rate-limit-manage/route.ts** (65行, 新建): 速率限制管理代理
+11. **cookie-persist/route.ts** (48行, 新建): Cookie持久化代理
+12. **AntiCrawlMonitor.tsx** (151→165行, +14行): 集成3个新面板
+13. **AntiCrawlTab.tsx** (+CAPTCHA策略区): 5种策略/自动重试/重试次数
+14. **schema.ts/types.ts**: +3个CAPTCHA字段
+15. **TemplateLibrary.tsx**: 反爬能力彩色徽章
+16. **scrape-templates.ts**: 6个模板反爬预设 + antiCrawlConfig字段
+17. **templates/route.ts + [id]/apply/route.ts**: 反爬预设传递
+
+## 验证结果
+- ESLint: 0 errors (5 warnings均为预存react-hooks)
+- scraper-service端点验证: health/cookie-persist/rate-limit-stats 全部200
+- 401轮询修复确认: scrape-tasks返回200
+- Dev server: 编译成功
+
+## 建议下一阶段 (R31)
+1. 代理连通性端到端测试(实际HTTP/SOCKS代理连接)
+2. Obscura引擎完整验证(反指纹+人类行为)
+3. 实际采集任务测试(选一个模板执行完整采集流程)
+4. SOCKS4/SOCKS5代理支持完善(当前为TODO)
+5. SessionData类型实现(跨任务Session复用)

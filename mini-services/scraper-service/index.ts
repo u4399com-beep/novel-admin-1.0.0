@@ -7,6 +7,37 @@
  *   + Request Queue (PostgreSQL persistence) + Auto-retry + Multi-engine support
  */
 
+// Load .env from service directory, falling back to project root
+import { readFileSync } from 'fs';
+import { resolve, join } from 'path';
+try {
+  const envPaths = [
+    resolve(import.meta.dir, '.env'),
+    resolve(import.meta.dir, '../../.env'),
+  ];
+  for (const p of envPaths) {
+    try {
+      const content = readFileSync(p, 'utf-8');
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx < 1) continue;
+        const key = trimmed.slice(0, eqIdx).trim();
+        let val = trimmed.slice(eqIdx + 1).trim();
+        // Strip surrounding quotes
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!(key in process.env)) {
+          process.env[key] = val;
+        }
+      }
+      console.log(`[Env] Loaded ${p}`);
+    } catch {}
+  }
+} catch {}
+
 // Global error handlers for process resilience
 process.on('unhandledRejection', (reason) => {
   console.error('[Fatal] Unhandled promise rejection:', reason);
@@ -31,6 +62,8 @@ import { proxyManager } from "./src/proxy-manager";
 import { getCaptchaStrategies } from "./src/captcha-strategy";
 import { adaptiveDelay } from "./src/adaptive-delay";
 import { cookieJar } from "./src/cookie-jar";
+import { cookieStore } from "./src/cookie-store";
+import { rateLimiter } from "./src/rate-limiter";
 import { timingSafeEqual } from "node:crypto";
 import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest,
@@ -246,6 +279,28 @@ export function startServer(port: number = 3099) {
           },
           proxyPool: { total: proxyStats.totalProxies, active: proxyStats.activeProxies },
           cookieJar: { domains: cookieStats.length, totalCookies },
+        }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Rate limit stats (auth required)
+      if (path === "/rate-limit-stats" && method === "GET") {
+        const states = rateLimiter.getAllDomainStates();
+        return Response.json({ domains: states, totalDomains: states.length }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Cookie persistence stats (auth required)
+      if (path === "/cookie-persist/stats" && method === "GET") {
+        const stats = cookieStore.getAllStats();
+        const totalCookies = stats.reduce((sum, s) => sum + s.count, 0);
+        return Response.json({
+          persisted: true,
+          totalCookies,
+          domains: stats,
+          totalDomains: stats.length,
         }, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -551,6 +606,32 @@ export function startServer(port: number = 3099) {
           return Response.json({ bound: true }, { headers: jsonHeaders });
         }
 
+        // ==================== Rate Limit Management Endpoints ====================
+
+        // POST /rate-limit/set — Set per-domain rate limit
+        if (path === "/rate-limit/set") {
+          const { domain, maxRPM } = body as { domain?: string; maxRPM?: number };
+          if (!domain || typeof domain !== 'string') {
+            return Response.json({ error: "domain is required" }, { status: 400, headers: jsonHeaders });
+          }
+          if (typeof maxRPM !== 'number' || maxRPM < 1) {
+            return Response.json({ error: "maxRPM must be a positive number" }, { status: 400, headers: jsonHeaders });
+          }
+          rateLimiter.setDomainLimit(domain, maxRPM);
+          const state = rateLimiter.getDomainState(domain);
+          return Response.json({ set: true, domain, state }, { headers: jsonHeaders });
+        }
+
+        // POST /rate-limit/reset — Reset domain rate limit state
+        if (path === "/rate-limit/reset") {
+          const { domain } = body as { domain?: string };
+          if (!domain || typeof domain !== 'string') {
+            return Response.json({ error: "domain is required" }, { status: 400, headers: jsonHeaders });
+          }
+          rateLimiter.resetDomain(domain);
+          return Response.json({ reset: true, domain }, { headers: jsonHeaders });
+        }
+
         return Response.json(
           { error: `Unknown endpoint: ${path}` },
           { status: 404, headers: jsonHeaders }
@@ -595,6 +676,10 @@ export function startServer(port: number = 3099) {
     console.log(`   POST /proxy/import             - Import proxies`);
     console.log(`   POST /proxy/export             - Export proxies`);
     console.log(`   POST /proxy/bind-domain        - Bind proxy to domain`);
+    console.log(`   GET  /rate-limit-stats           - Per-domain rate limit states`);
+    console.log(`   POST /rate-limit/set            - Set domain rate limit`);
+    console.log(`   POST /rate-limit/reset          - Reset domain rate limit`);
+    console.log(`   GET  /cookie-persist/stats       - Cookie persistence stats (SQLite)`);
   }
 
   return server;

@@ -60,6 +60,9 @@ export const scrapeRuleSchema = z.object({
     dnt: z.boolean(),
     acceptLanguage: z.string(),
     referer: z.string(),
+    captchaStrategy: z.string().default('auto'),
+    enableCaptchaRetry: z.boolean().default(true),
+    maxCaptchaRetries: z.number().min(1).max(10).default(3),
   }),
 
   storageMode: z.enum(['database', 'file']),

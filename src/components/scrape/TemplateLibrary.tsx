@@ -26,6 +26,9 @@ interface TemplateItem {
   engine: string;
   difficulty: 'easy' | 'medium' | 'hard';
   tags: string[];
+  // R30: 反爬预设
+  hasAntiCrawl?: boolean;
+  antiCrawlPreview?: { uaRotation: boolean; proxy: boolean; humanBehavior: boolean; captchaStrategy: string } | null;
 }
 
 interface TemplateLibraryProps {
@@ -230,11 +233,35 @@ export function TemplateLibrary({ open, onOpenChange, onApplied }: TemplateLibra
                       </p>
 
                       {/* 引擎 + 标签 */}
-                      <div className="flex items-center gap-2 flex-wrap mt-auto">
+                      <div className="flex items-center gap-1.5 flex-wrap mt-auto">
                         <Badge variant="outline" className="text-[10px] shrink-0">
                           {ENGINE_LABELS[template.engine] || template.engine}
                         </Badge>
-                        {template.tags.slice(0, 3).map((tag) => (
+                        {template.hasAntiCrawl && template.antiCrawlPreview && (
+                          <>
+                            {template.antiCrawlPreview.uaRotation && (
+                              <Badge className="text-[9px] px-1.5 py-0 font-normal bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400 border-0">
+                                UA轮换
+                              </Badge>
+                            )}
+                            {template.antiCrawlPreview.proxy && (
+                              <Badge className="text-[9px] px-1.5 py-0 font-normal bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 border-0">
+                                代理
+                              </Badge>
+                            )}
+                            {template.antiCrawlPreview.humanBehavior && (
+                              <Badge className="text-[9px] px-1.5 py-0 font-normal bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0">
+                                行为模拟
+                              </Badge>
+                            )}
+                            {template.antiCrawlPreview.captchaStrategy && template.antiCrawlPreview.captchaStrategy !== 'auto' && (
+                              <Badge className="text-[9px] px-1.5 py-0 font-normal bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border-0">
+                                {template.antiCrawlPreview.captchaStrategy}
+                              </Badge>
+                            )}
+                          </>
+                        )}
+                        {template.tags.slice(0, 2).map((tag) => (
                           <Badge
                             key={tag}
                             variant="secondary"

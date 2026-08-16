@@ -17,6 +17,7 @@ import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects } fro
 import { getProfileForDomain, getStealthScript } from "./stealth";
 import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
+import { rateLimiter } from "./rate-limiter";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -138,9 +139,18 @@ class CheerioEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
+        // Per-domain rate limiting
+        if (targetDomain) {
+          const rateCheck = rateLimiter.acquire(targetDomain);
+          if (!rateCheck.allowed) {
+            await new Promise(r => setTimeout(r, rateCheck.waitMs));
+          }
+        }
+
         const startTime = Date.now();
         let remainingTimeout = timeout;
-
+        let statusCode = 0;
+        try {
         const { response, finalUrl } = await followRedirects(url, {
           maxRedirects: 5,
           onRedirect: () => {
@@ -169,6 +179,8 @@ class CheerioEngine implements ScrapingEngine {
             });
           },
         });
+
+        statusCode = response.status;
 
         if (!response.ok) {
           // Track proxy failure on error status codes
@@ -206,7 +218,19 @@ class CheerioEngine implements ScrapingEngine {
           proxyManager.recordSuccess(proxy.url, Date.now() - startTime);
         }
 
+        // Record rate limit result
+        if (targetDomain) {
+          rateLimiter.recordResult(targetDomain, true, statusCode);
+        }
+
         return { html, finalUrl, statusCode: response.status };
+        } catch (err) {
+          // Record rate limit result on failure
+          if (targetDomain && statusCode > 0) {
+            rateLimiter.recordResult(targetDomain, false, statusCode);
+          }
+          throw err;
+        }
       },
       {
         maxRetries: options?.antiCrawl?.retries ?? 3,
@@ -290,6 +314,14 @@ class PlaywrightEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
+        // Per-domain rate limiting
+        if (pwDomain) {
+          const rateCheck = rateLimiter.acquire(pwDomain);
+          if (!rateCheck.allowed) {
+            await new Promise(r => setTimeout(r, rateCheck.waitMs));
+          }
+        }
+
         const browser = await getPlaywrightBrowser();
         const context = await browser.newContext({ userAgent });
 
@@ -352,6 +384,8 @@ class PlaywrightEngine implements ScrapingEngine {
             throw new Error(`No response from ${url}`);
           }
 
+          const responseStatus = response.status();
+
           // Wait for network idle (give JS time to render content)
           await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {
             // networkidle timeout is acceptable, DOM content is enough
@@ -383,11 +417,18 @@ class PlaywrightEngine implements ScrapingEngine {
             } catch { /* ignore cookie extraction errors */ }
           }
 
+          // Record rate limit result
+          if (pwDomain) {
+            rateLimiter.recordResult(pwDomain, responseStatus >= 200 && responseStatus < 400, responseStatus);
+          }
+
           return {
             html,
             finalUrl,
-            statusCode: response.status(),
+            statusCode: responseStatus,
           };
+        } catch (err) {
+          throw err;
         } finally {
           await Promise.race([
             context.close(),
@@ -1048,6 +1089,12 @@ class ObscuraEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
+        // Per-domain rate limiting
+        const rateCheck = rateLimiter.acquire(domain);
+        if (!rateCheck.allowed) {
+          await new Promise(r => setTimeout(r, rateCheck.waitMs));
+        }
+
         const browser = await this.getBrowser();
 
         // Create browser context with profile-matched UA and viewport
@@ -1291,10 +1338,14 @@ class ObscuraEngine implements ScrapingEngine {
             );
           }
 
+          // Record rate limit result
+          const obscuraStatus = response.status();
+          rateLimiter.recordResult(domain, obscuraStatus >= 200 && obscuraStatus < 400, obscuraStatus);
+
           return {
             html,
             finalUrl,
-            statusCode: response.status(),
+            statusCode: obscuraStatus,
           };
         } finally {
           await Promise.race([

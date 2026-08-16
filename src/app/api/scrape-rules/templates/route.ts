@@ -38,6 +38,11 @@ export async function GET(request: NextRequest) {
       contentSelector: t.contentSelector,
       scrapeMode: t.scrapeMode,
       dedupMode: t.dedupMode,
+      // 反爬预设标记
+      hasAntiCrawl: !!t.antiCrawlConfig,
+      antiCrawlPreview: t.antiCrawlConfig
+        ? (() => { try { const c = JSON.parse(t.antiCrawlConfig); return { uaRotation: !!c.uaRotation, proxy: !!c.proxy, humanBehavior: !!c.humanBehavior, captchaStrategy: c.captchaStrategy || 'auto' }; } catch { return null; } })()
+        : null,
     })),
   });
 }

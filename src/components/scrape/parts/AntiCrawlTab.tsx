@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { RefreshCw, Shield, Activity, Server, Clock, Info, TriangleAlert, CheckCircle2, User } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { EditorFormAccess } from './types';
 
 // ==================== Types ====================
@@ -539,6 +540,73 @@ export function AntiCrawlTab({ form }: EditorFormAccess) {
             className="text-sm"
           />
           <p className="text-xs text-muted-foreground">自定义Referer头</p>
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* ==================== CAPTCHA Strategy ==================== */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Shield className="h-4 w-4 text-muted-foreground" />
+          <Label className="text-sm font-semibold">CAPTCHA 策略</Label>
+        </div>
+
+        {/* CAPTCHA Strategy Select */}
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium">验证码策略</Label>
+          <Select
+            value={antiCrawl.captchaStrategy}
+            onValueChange={(v) =>
+              setValue('antiCrawlConfig', { ...antiCrawl, captchaStrategy: v }, { shouldDirty: true })
+            }
+          >
+            <SelectTrigger className="text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">默认自动 - 自动检测并处理</SelectItem>
+              <SelectItem value="cloudflare">Cloudflare 专用策略</SelectItem>
+              <SelectItem value="geetest">GeeTest 极验策略</SelectItem>
+              <SelectItem value="engine-upgrade">引擎自动升级</SelectItem>
+              <SelectItem value="delay-backoff">仅延迟退避</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Enable CAPTCHA Retry */}
+        <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="flex-1 min-w-0 mr-3">
+            <Label className="text-sm font-medium">验证码自动重试</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">检测到验证码时自动切换引擎重试</p>
+          </div>
+          <Switch
+            checked={antiCrawl.enableCaptchaRetry}
+            onCheckedChange={(v) =>
+              setValue('antiCrawlConfig', { ...antiCrawl, enableCaptchaRetry: v }, { shouldDirty: true })
+            }
+          />
+        </div>
+
+        {/* Max CAPTCHA Retries */}
+        <div className="space-y-1.5">
+          <Label className="text-sm font-medium">最大重试次数</Label>
+          <div className="flex items-center gap-1">
+            <Input
+              type="number"
+              min={1}
+              max={10}
+              value={antiCrawl.maxCaptchaRetries}
+              onChange={(e) =>
+                setValue(
+                  'antiCrawlConfig',
+                  { ...antiCrawl, maxCaptchaRetries: Math.max(1, Math.min(10, parseInt(e.target.value) || 1)) },
+                  { shouldDirty: true }
+                )
+              }
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">范围 1-10，默认 3</p>
         </div>
       </div>
 

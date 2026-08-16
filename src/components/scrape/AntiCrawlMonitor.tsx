@@ -19,6 +19,9 @@ import { CookieManagerPanel } from './anti-crawl/CookieManagerPanel';
 import { AntiCrawlCapabilityPanel } from './anti-crawl/AntiCrawlCapabilityPanel';
 import { ProxyPoolPanel } from './anti-crawl/ProxyPoolPanel';
 import { FingerprintHealthPanel } from './anti-crawl/FingerprintHealthPanel';
+import { AdaptiveDelayPanel } from './anti-crawl/AdaptiveDelayPanel';
+import { RateLimiterPanel } from './anti-crawl/RateLimiterPanel';
+import { CookiePersistPanel } from './anti-crawl/CookiePersistPanel';
 
 // ─── Main Monitor ──────────────────────────────────────────────────────────────
 
@@ -133,6 +136,18 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
 
             {/* Fingerprint Health */}
             <FingerprintHealthPanel />
+
+            {/* Adaptive Delay Control */}
+            <AdaptiveDelayPanel />
+
+            {/* Rate Limiter */}
+            <RateLimiterPanel />
+
+            {/* Cookie Persistence */}
+            <CookiePersistPanel />
+
+            {/* Cookie Manager */}
+            <CookieManagerPanel />
 
             {/* Alert Config */}
             <AlertConfigPanel />

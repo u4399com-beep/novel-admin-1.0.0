@@ -87,6 +87,12 @@ export const POST = withAuth(async function POST(
           removePatterns: '',
           adPatterns: '',
         }),
+
+        // 反爬配置（如果模板预设了）
+        antiCrawlConfig: template.antiCrawlConfig || JSON.stringify({
+          uaRotation: false, proxy: false, humanBehavior: false,
+          dnt: false, captchaStrategy: 'auto', enableCaptchaRetry: true, maxCaptchaRetries: 2,
+        }),
       },
       include: { _count: { select: { tasks: true } } },
     });

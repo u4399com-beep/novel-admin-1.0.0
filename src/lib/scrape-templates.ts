@@ -57,6 +57,10 @@ export interface ScrapeTemplate {
   // === 策略配置 ===
   scrapeMode: 'incremental' | 'full';
   dedupMode: 'url' | 'title' | 'both';
+
+  // === 反爬配置 (R30新增) ===
+  /** 预设的反爬配置，应用到创建的规则中 */
+  antiCrawlConfig?: string;
 }
 
 /**
@@ -120,6 +124,11 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
 
     scrapeMode: 'incremental',
     dedupMode: 'url',
+    // 反爬：基础站点，仅需UA轮换
+    antiCrawlConfig: JSON.stringify({
+      uaRotation: true, proxy: false, humanBehavior: false,
+      dnt: true, captchaStrategy: 'auto', enableCaptchaRetry: true, maxCaptchaRetries: 2,
+    }),
   },
 
   // ==================== 2. 顶点小说 (dingdian) ====================
@@ -230,6 +239,12 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
 
     scrapeMode: 'incremental',
     dedupMode: 'url',
+    // 反爬：JS渲染+签名验证，需要Playwright+人类行为模拟
+    antiCrawlConfig: JSON.stringify({
+      uaRotation: true, proxy: false, humanBehavior: true,
+      dnt: true, captchaStrategy: 'auto', enableCaptchaRetry: true, maxCaptchaRetries: 3,
+      acceptLanguage: '', referer: '',
+    }),
   },
 
   // ==================== 5. 纵横中文网 (zongheng) ====================
@@ -266,6 +281,12 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
 
     scrapeMode: 'incremental',
     dedupMode: 'both',
+    // 反爬：百度系反爬严格，需要完整反指纹+代理
+    antiCrawlConfig: JSON.stringify({
+      uaRotation: true, proxy: true, humanBehavior: true,
+      dnt: true, captchaStrategy: 'cloudflare', enableCaptchaRetry: true, maxCaptchaRetries: 5,
+      acceptLanguage: '', referer: '',
+    }),
   },
 
   // ==================== 6. 起点中文网 (qidian) ====================
@@ -302,6 +323,12 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
 
     scrapeMode: 'incremental',
     dedupMode: 'both',
+    // 反爬：阅文最高级别反爬，需Obscura+人类行为+代理+CAPTCHA策略
+    antiCrawlConfig: JSON.stringify({
+      uaRotation: true, proxy: true, humanBehavior: true,
+      dnt: true, captchaStrategy: 'cloudflare', enableCaptchaRetry: true, maxCaptchaRetries: 5,
+      acceptLanguage: '', referer: '',
+    }),
   },
 
   // ==================== 7. 通用CSS模板 ====================
@@ -336,6 +363,11 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
 
     scrapeMode: 'incremental',
     dedupMode: 'url',
+    // 反爬：通用模板，使用基础反爬配置
+    antiCrawlConfig: JSON.stringify({
+      uaRotation: true, proxy: false, humanBehavior: false,
+      dnt: false, captchaStrategy: 'auto', enableCaptchaRetry: true, maxCaptchaRetries: 2,
+    }),
   },
 
   // ==================== 8. 通用XPath模板 ====================
@@ -371,6 +403,11 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
 
     scrapeMode: 'incremental',
     dedupMode: 'url',
+    // 反爬：通用XPath模板，使用基础配置
+    antiCrawlConfig: JSON.stringify({
+      uaRotation: true, proxy: false, humanBehavior: false,
+      dnt: false, captchaStrategy: 'auto', enableCaptchaRetry: true, maxCaptchaRetries: 2,
+    }),
   },
 
   // ==================== 9. 69书吧 (69shu) ====================
@@ -694,6 +731,12 @@ export const SCRAPE_TEMPLATES: ScrapeTemplate[] = [
 
     scrapeMode: 'incremental',
     dedupMode: 'both',
+    // 反爬：Cloudflare保护站点，自动检测并升级引擎
+    antiCrawlConfig: JSON.stringify({
+      uaRotation: true, proxy: true, humanBehavior: true,
+      dnt: true, captchaStrategy: 'cloudflare', enableCaptchaRetry: true, maxCaptchaRetries: 4,
+      acceptLanguage: '', referer: '',
+    }),
   },
 
   // ==================== 19. 速读谷 (sudugu) ====================
