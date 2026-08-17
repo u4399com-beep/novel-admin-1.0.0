@@ -758,9 +758,12 @@ class AntiCrawlAdvisor {
     const now = Date.now();
     let cleaned = 0;
     for (const [domain, h] of this.domainHistory.entries()) {
-      if (now - h.lastActivity > THIRTY_MINUTES && h.totalRequests === 0) {
+      const inactive = now - h.lastActivity > THIRTY_MINUTES;
+      // Also clean up domains that haven't been used recently, even if they had requests
+      if ((inactive && h.totalRequests === 0) || now - h.lastActivity > 24 * 60 * 60 * 1000) {
         this.domainHistory.delete(domain);
         cleaned++;
+        continue;
       }
       // Trim old timestamps
       const cutoff = now - THIRTY_MINUTES;
@@ -774,3 +777,15 @@ class AntiCrawlAdvisor {
 
 // Singleton export
 export const antiCrawlAdvisor = AntiCrawlAdvisor.getInstance();
+
+// Periodic cleanup every 30 minutes (unbounded growth prevention)
+setInterval(() => {
+  try {
+    const cleaned = antiCrawlAdvisor.cleanup();
+    if (cleaned > 0 && process.env.DEBUG === 'true') {
+      console.log(`[AntiCrawlAdvisor] Cleaned up ${cleaned} inactive domains`);
+    }
+  } catch (err) {
+    console.error('[AntiCrawlAdvisor] Periodic cleanup error:', err);
+  }
+}, 30 * 60 * 1000);

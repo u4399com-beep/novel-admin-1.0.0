@@ -47,6 +47,7 @@ const DEFAULT_CONFIG: RateLimitConfig = {
 const WINDOW_MS = 60_000; // 1 minute sliding window
 const PENALTY_DURATION_MS = 5 * 60_000; // 5 minutes
 const MAX_TIMESTAMPS_PER_DOMAIN = 200;
+const MAX_DOMAINS = 500; // Prevent unbounded domain map growth
 
 // ==================== DomainRateLimiter ====================
 
@@ -98,14 +99,15 @@ class DomainRateLimiter {
       : state.maxRPM;
 
     if (currentCount >= effectiveMaxRPM) {
-      // Calculate wait time until the oldest timestamp exits the window
-      const oldestInWindow = state.requestTimestamps[0];
-      const waitMs = oldestInWindow + WINDOW_MS - now + 1;
-      return { allowed: false, waitMs: Math.max(1, waitMs) };
-    }
-
-    // Check burst allowance (only when penalty is not active)
-    if (!state.penaltyActive && state.burstRemaining <= 0 && currentCount >= effectiveMaxRPM) {
+      // Check burst allowance (only when penalty is not active)
+      if (!state.penaltyActive && state.burstRemaining > 0) {
+        // Allow burst: consume one burst token and record the request
+        state.burstRemaining--;
+        state.requestTimestamps.push(now);
+        state.lastRequestTime = now;
+        return { allowed: true, waitMs: 0 };
+      }
+      // No burst remaining — calculate wait time until the oldest timestamp exits the window
       const oldestInWindow = state.requestTimestamps[0];
       const waitMs = oldestInWindow + WINDOW_MS - now + 1;
       return { allowed: false, waitMs: Math.max(1, waitMs) };
@@ -114,10 +116,6 @@ class DomainRateLimiter {
     // Allowed - record the request timestamp
     state.requestTimestamps.push(now);
     state.lastRequestTime = now;
-    if (!state.penaltyActive && state.burstRemaining > 0) {
-      // Burst doesn't count against normal RPM until burst is exhausted
-      // Actually, burst is extra capacity on top of RPM limit
-    }
 
     // Trim to prevent unbounded growth
     if (state.requestTimestamps.length > MAX_TIMESTAMPS_PER_DOMAIN) {
@@ -240,6 +238,18 @@ class DomainRateLimiter {
   private getOrCreateDomain(domain: string): DomainState {
     let state = this.domains.get(domain);
     if (!state) {
+      // Evict oldest inactive domains if map grows too large
+      if (this.domains.size >= MAX_DOMAINS) {
+        let oldestDomain = '';
+        let oldestTime = Infinity;
+        for (const [d, s] of this.domains.entries()) {
+          if (s.lastRequestTime < oldestTime) {
+            oldestTime = s.lastRequestTime;
+            oldestDomain = d;
+          }
+        }
+        if (oldestDomain) this.domains.delete(oldestDomain);
+      }
       state = {
         maxRPM: this.config.defaultMaxRPM,
         windowStart: Date.now() - WINDOW_MS,

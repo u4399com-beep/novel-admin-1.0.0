@@ -14,12 +14,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError('请求数据格式错误', 400);
     }
 
-    const { taskIds, format } = body;
-
-    // Validate format
-    if (format !== 'csv' && format !== 'json') {
-      return apiError('format 参数只支持 csv 或 json', 400);
-    }
+    const { taskIds, format: rawFormat } = body;
+    const format = rawFormat === 'csv' ? 'csv' : 'json';
 
     // Validate taskIds
     if (!Array.isArray(taskIds) || taskIds.length === 0) {

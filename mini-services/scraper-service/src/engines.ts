@@ -987,8 +987,9 @@ class ScraplingEngine implements ScrapingEngine {
             finalUrl: data.final_url || url,
             statusCode: data.status_code || 200,
           };
-        } catch (err) {
-          throw err;
+        } catch (scraplingErr) {
+          scraplingBreaker.recordFailure();
+          throw scraplingErr;
         }
       },
       {
@@ -997,8 +998,7 @@ class ScraplingEngine implements ScrapingEngine {
         maxDelay: 30000,
       }
     ).catch((err) => {
-      // Only record failure when all retries are exhausted
-      scraplingBreaker.recordFailure();
+      // Failure already recorded per-attempt in inner catch above
       throw err;
     });
   }

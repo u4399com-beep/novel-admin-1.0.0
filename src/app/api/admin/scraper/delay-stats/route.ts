@@ -1,4 +1,3 @@
-'use server';
 
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';

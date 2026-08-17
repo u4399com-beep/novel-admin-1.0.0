@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { safeResolver } from '@/lib/safe-resolver';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
-import { Loader2 } from 'lucide-react';
+import { Loader2, FlaskConical } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -23,6 +23,7 @@ import { ScrapeRuleList } from './parts/ScrapeRuleList';
 import { ScrapeTaskMonitor } from './ScrapeTaskMonitor';
 import { AntiCrawlMonitor } from './AntiCrawlMonitor';
 import { RuleFormTabs } from './rule-editor/RuleFormTabs';
+import { TestRuleDialog } from './TestRuleDialog';
 
 // ==================== Main Editor ====================
 
@@ -104,6 +105,7 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
 
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
   const [visualSelectorOpen, setVisualSelectorOpen] = useState(false);
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [visualSelectorField, setVisualSelectorField] = useState<keyof FormValues | ''>('');
   const visualSelectorFieldRef = useRef(visualSelectorField);
   visualSelectorFieldRef.current = visualSelectorField;
@@ -277,6 +279,16 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
       />
 
       <div className="flex items-center justify-end gap-3 border-t pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setTestDialogOpen(true)}
+          className="gap-1.5"
+          aria-label="测试规则"
+        >
+          <FlaskConical className="h-4 w-4" />
+          测试
+        </Button>
         <Button type="button" variant="outline" onClick={onCancel}>取消</Button>
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -298,6 +310,16 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
           initialUrl={watch('listUrl')}
         />
       )}
+
+      <TestRuleDialog
+        open={testDialogOpen}
+        onOpenChange={setTestDialogOpen}
+        rule={{
+          listUrl: watch('listUrl'),
+          engine: watch('engine'),
+          listSelector: watch('listSelector'),
+        }}
+      />
     </form>
   );
 }

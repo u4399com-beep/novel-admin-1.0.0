@@ -1,4 +1,3 @@
-'use server';
 
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
@@ -76,7 +75,12 @@ export const PUT = withAuth(async function PUT(request: Request) {
     });
     clearTimeout(timer);
 
-    const data = await res.json();
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      return apiError('采集服务返回了无效响应', 502);
+    }
     return NextResponse.json(data, { status: res.status });
   } catch {
     return apiError('采集服务不可达', 503);
@@ -118,9 +122,15 @@ export const POST = withAuth(async function POST(request: Request) {
     });
     clearTimeout(timer);
 
-    const data = await res.json();
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      return apiError('采集服务返回了无效响应', 502);
+    }
     return NextResponse.json(data, { status: res.status });
   } catch {
     return apiError('采集服务不可达', 503);
   }
 });
+

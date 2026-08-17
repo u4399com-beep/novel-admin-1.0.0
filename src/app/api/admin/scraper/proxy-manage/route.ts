@@ -1,5 +1,3 @@
-'use server';
-
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
@@ -42,7 +40,15 @@ export const POST = withAuth(async function POST(request: Request) {
   }
 
   const route = ACTION_MAP[action as string];
-  const url = `${SCRAPER_SERVICE_URL}${route.path}?XTransformPort=3099`;
+  // For GET actions, append payload as query params
+  let url = `${SCRAPER_SERVICE_URL}${route.path}?XTransformPort=3099`;
+  if (route.method === 'GET' && Object.keys(payload).length > 0) {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(payload)) {
+      if (v !== undefined && v !== null) params.set(k, String(v));
+    }
+    url += `&${params.toString()}`;
+  }
 
   try {
     const controller = new AbortController();
@@ -69,7 +75,12 @@ export const POST = withAuth(async function POST(request: Request) {
 
     const contentType = res.headers.get('content-type');
     if (contentType?.includes('application/json')) {
-      const data = await res.json();
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        return apiError('采集服务返回了无效响应', 502);
+      }
       return NextResponse.json(data, { status: res.status });
     }
 

@@ -564,8 +564,8 @@ class ProxyManager {
       entry.lastCheck = Date.now();
 
       // Any response means the proxy host is reachable (even auth errors mean it's alive)
-      // but we couldn't route traffic through it — record as a weak success
-      this.recordSuccess(proxyUrl, responseTime);
+      // but we couldn't route traffic through it — record as degraded (not a full success)
+      entry.consecutiveFails = 0; // Reset fails since host is alive
       return { healthy: true, responseTime, error: 'Host reachable but through-proxy test failed' };
     } catch (err) {
       const responseTime = Date.now() - startTime;
@@ -859,7 +859,10 @@ class ProxyManager {
       if (entry.disabled) continue;
       if (entry.coolingUntil && now < entry.coolingUntil) continue;
       if (domain && entry.blockedDomains.has(domain)) continue;
-      if (excludeSet.has(entry.url)) continue;
+      // Check exclusion against both original URL and clean URL (for authenticated proxies)
+      const parsed = parseProxyUrl(entry.url);
+      const entryCleanUrl = parsed?.cleanUrl ?? entry.url;
+      if (excludeSet.has(entry.url) || excludeSet.has(entryCleanUrl)) continue;
 
       if (this.hasRecentFailures(entry.url)) {
         candidatesWithRecentFails.push(entry);

@@ -134,7 +134,7 @@ async function callAdvisor(
   domain: string,
 ): Promise<AdvisorReport | null> {
   try {
-    const targetUrl = new URL('/anti-crawl/advise', SCRAPER_SERVICE_URL);
+    const targetUrl = new URL('/anti-crawl/advise?XTransformPort=3099', SCRAPER_SERVICE_URL);
     const response = await fetchWithTimeout(
       targetUrl.toString(),
       {
@@ -173,7 +173,7 @@ async function callAiGenerate(
   url: string,
   siteType?: string,
 ): Promise<GeneratedRule> {
-  const targetUrl = new URL('/ai/generate-rule', SCRAPER_SERVICE_URL);
+  const targetUrl = new URL('/ai/generate-rule?XTransformPort=3099', SCRAPER_SERVICE_URL);
   const response = await fetchWithTimeout(
     targetUrl.toString(),
     {
@@ -250,7 +250,7 @@ function mergeAdvisorIntoRule(
 
     // Cookie recommendation
     if (
-      (lowerCategory.includes('cookie') || lowerTitle.includes('cookie') || lowerTitle.includes('cookie')) &&
+      (lowerCategory.includes('cookie') || lowerTitle.includes('cookie') || lowerCategory.includes('持久化')) &&
       !rule.antiCrawlConfig.useCookies
     ) {
       rule.antiCrawlConfig.useCookies = true;

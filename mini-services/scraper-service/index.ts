@@ -48,7 +48,7 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-import { initEngines, closeAllEngines, getEngineNames, selectEngine } from "./src/engines";
+import { initEngines, closeAllEngines, getEngineNames, getEngine, selectEngine } from "./src/engines";
 import { buildFetchHeaders } from "./src/utils";
 import { getProfileForDomain } from "./src/stealth";
 import { handleScrapeList } from "./src/scrapers";
@@ -861,6 +861,139 @@ export function startServer(port: number = 3099) {
           return Response.json(result, { headers: jsonHeaders });
         }
 
+        // ==================== Test Rule (End-to-End Single Fetch) ====================
+
+        if (path === "/test-rule") {
+          const { url, engine: reqEngine, antiCrawlConfig, listSelector } = body as {
+            url?: string;
+            engine?: string;
+            antiCrawlConfig?: Record<string, unknown>;
+            listSelector?: { type: string; value: string };
+          };
+
+          if (!url || typeof url !== 'string') {
+            return Response.json({ error: 'url is required' }, { status: 400, headers: jsonHeaders });
+          }
+
+          // Parse domain from URL
+          let domain: string;
+          let parsedUrl: URL;
+          try {
+            parsedUrl = new URL(url);
+            domain = parsedUrl.hostname;
+          } catch {
+            return Response.json({ error: 'Invalid URL' }, { status: 400, headers: jsonHeaders });
+          }
+
+          // Select engine based on config
+          const ac = antiCrawlConfig || {};
+          const engineType = selectEngine(
+            reqEngine as any,
+            {
+              useJsRender: !!ac.useJsRender,
+              cloudBrowser: !!ac.cloudBrowser,
+              humanBehavior: !!ac.humanBehavior,
+              uaRotation: !!ac.uaRotation,
+              cookies: Array.isArray(ac.cookies) ? ac.cookies as Array<{ name: string; value: string }> : undefined,
+              proxy: typeof ac.proxy === 'string' ? ac.proxy : undefined,
+            }
+          );
+
+          // Build headers for reporting
+          const fetchHeaders = buildFetchHeaders(ac as any, undefined, url, 'novel');
+
+          const engine = getEngine(engineType);
+          const startTime = Date.now();
+
+          let html = '';
+          let statusCode = 0;
+          let finalUrl = url;
+          let success = false;
+          let fetchError: string | undefined;
+
+          try {
+            const result = await engine.fetch(url, { antiCrawl: ac as any });
+            html = result.html || '';
+            statusCode = result.statusCode;
+            finalUrl = result.finalUrl || url;
+            success = statusCode >= 200 && statusCode < 400 && html.length > 0;
+          } catch (err: any) {
+            const errMsg = String(err?.message || err || 'Unknown error');
+            fetchError = errMsg.slice(0, 300);
+            const statusMatch = errMsg.match(/HTTP (\d+)/);
+            if (statusMatch) statusCode = parseInt(statusMatch[1], 10);
+            success = false;
+          }
+
+          const responseTime = Date.now() - startTime;
+
+          // Record response in adaptive delay (engine may not do this)
+          adaptiveDelay.recordResponse(domain, responseTime, success, statusCode);
+
+          // Get post-fetch states for reporting
+          const rateLimitState = rateLimiter.getDomainState(domain);
+          const delayState = adaptiveDelay.getDomainStats(domain);
+
+          // Get anti-crawl advisor signals
+          const advisorReport = antiCrawlAdvisor.analyze(domain, ac);
+
+          // Simple list extraction using regex (cheerio not imported per requirements)
+          let extractedCount: number | undefined;
+          let items: string[] | undefined;
+
+          if (listSelector && success && html) {
+            try {
+              const selectorValue = String(listSelector.value || '');
+              // Extract tag name from simple CSS selectors like 'div.class', '#id', 'a[href]'
+              const tagMatch = selectorValue.match(/^([a-zA-Z][a-zA-Z0-9]*)/);
+              if (tagMatch) {
+                const tag = tagMatch[1].toLowerCase();
+                // Count opening tags
+                const openTagRegex = new RegExp(`<${tag}[\\s>/]`, 'gi');
+                const tagMatches = html.match(openTagRegex);
+                extractedCount = tagMatches ? tagMatches.length : 0;
+
+                // For anchor tags, extract hrefs
+                if (tag === 'a') {
+                  const hrefRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>/gi;
+                  let hrefMatch: RegExpExecArray | null;
+                  items = [];
+                  while ((hrefMatch = hrefRegex.exec(html)) !== null) {
+                    if (hrefMatch[1] && !hrefMatch[1].startsWith('javascript:')) {
+                      items.push(hrefMatch[1]);
+                    }
+                  }
+                  extractedCount = items.length;
+                }
+
+                // Cap items for response size
+                if (items && items.length > 50) {
+                  items = items.slice(0, 50);
+                }
+              }
+            } catch {
+              // Extraction failed, skip it
+            }
+          }
+
+          return Response.json({
+            success,
+            url,
+            finalUrl,
+            statusCode,
+            engine: engineType,
+            responseTime,
+            htmlLength: html.length,
+            extractedCount,
+            items: items && items.length > 0 ? items : undefined,
+            headers: fetchHeaders,
+            rateLimitState,
+            delayState,
+            signals: advisorReport.signals,
+            ...(fetchError ? { error: fetchError } : {}),
+          }, { headers: jsonHeaders });
+        }
+
         // ==================== Proxy Management Endpoints ====================
 
         // POST /proxy/add — Add a single proxy to the pool
@@ -1056,6 +1189,7 @@ export function startServer(port: number = 3099) {
     console.log(`   DELETE /queue/clear     - Clear task queue`);
     console.log(`   POST /ai/generate-rule - AI-generate scrape rules from URL`);
     console.log(`   POST /ai/preview-page   - Fetch page HTML for preview`);
+    console.log(`   POST /test-rule          - End-to-end test a scraping rule`);
     console.log(`   GET  /fingerprint-health       - Stealth capabilities report`);
     console.log(`   GET  /proxy/detailed-stats     - Detailed proxy pool stats`);
     console.log(`   GET  /proxy/domain-bindings    - Domain-proxy bindings`);

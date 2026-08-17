@@ -1,5 +1,3 @@
-'use server';
-
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
@@ -35,10 +33,15 @@ function mockAdviseResult(domain: string) {
 }
 
 // POST /api/admin/scraper/anti-crawl-advise
-export const POST = withAuth(async function POST(request) {
+export const POST = withAuth(async function POST(request: Request) {
+  let body: { domain?: string; currentConfig?: Record<string, unknown> };
   try {
-    const body = await safeJson<{ domain?: string; currentConfig?: Record<string, unknown> }>(request);
+    body = await safeJson<{ domain?: string; currentConfig?: Record<string, unknown> }>(request);
+  } catch {
+    return apiError('请求数据格式错误', 400);
+  }
 
+  try {
     if (!body.domain || typeof body.domain !== 'string') {
       return NextResponse.json({ error: 'domain is required' }, { status: 400 });
     }

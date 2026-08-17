@@ -119,7 +119,17 @@ export async function handleGenerateRule(
 ): Promise<GeneratedRuleResult> {
   // 1. Fetch page HTML using cheerio engine
   const engine = getEngine("cheerio");
-  const { html, finalUrl, statusCode } = await engine.fetch(url);
+  let fetchResult: { html: string; finalUrl: string; statusCode: number };
+  try {
+    fetchResult = await engine.fetch(url);
+  } catch (err) {
+    return {
+      success: false,
+      rule: null as unknown as GeneratedRuleResult["rule"],
+      error: `Failed to fetch page: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  const { html, finalUrl, statusCode } = fetchResult;
 
   if (statusCode < 200 || statusCode >= 400) {
     return {

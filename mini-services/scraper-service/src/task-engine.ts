@@ -228,21 +228,26 @@ let logFlushTimer: ReturnType<typeof setInterval> | null = null;
 function ensureLogFlusher() {
   if (logFlushTimer) return;
   logFlushTimer = setInterval(async () => {
+    // Collect batches atomically before any async work
+    const batches: Array<{ taskId: string; batch: Array<{ level: string; message: string; url?: string; detail?: string }> }> = [];
     for (const [taskId, logs] of logBuffer) {
       if (logs.length === 0) continue;
-      // Snapshot the current batch size to avoid race condition with concurrent addTaskLog
-      const batchSize = logs.length;
-      const batch = logs.slice(0, batchSize);
+      const batch = logs.splice(0); // Remove all entries atomically
+      batches.push({ taskId, batch });
+    }
+    // Send batches (non-blocking, retry on failure by putting back)
+    for (const { taskId, batch } of batches) {
       try {
         await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs: batch });
-        // Remove only the exact entries we sent (by count from front)
-        const taskLogs = logBuffer.get(taskId);
-        if (taskLogs && taskLogs.length >= batchSize) {
-          taskLogs.splice(0, batchSize);
-        }
       } catch (err) {
         console.error(`[Task] Failed to flush ${batch.length} logs for ${taskId}:`, err);
-        // Logs remain in buffer for retry on next flush
+        // Put logs back at the front of the buffer for retry
+        const taskLogs = logBuffer.get(taskId);
+        if (taskLogs) {
+          taskLogs.unshift(...batch);
+        } else {
+          logBuffer.set(taskId, batch);
+        }
       }
     }
     // Auto-clear interval when no pending logs remain
