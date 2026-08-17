@@ -20,6 +20,9 @@ import { cookieJar } from "./cookie-jar";
 import { rateLimiter } from "./rate-limiter";
 import { sessionManager } from "./session-manager";
 import { requestFingerprintMgr } from "./request-fingerprint";
+import { detectCaptcha, type CaptchaDetection } from "./captcha-detector";
+import { autoHandleCaptcha } from "./captcha-strategy";
+import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -219,6 +222,20 @@ class CheerioEngine implements ScrapingEngine {
           const setCookieHeaders = response.headers.getSetCookie?.() || [];
           if (setCookieHeaders.length > 0) {
             cookieJar.store(targetDomain, setCookieHeaders);
+          }
+        }
+
+        // CAPTCHA detection on response content
+        if (targetDomain && (statusCode === 403 || statusCode === 503)) {
+          const captchaResult = detectCaptcha(html, finalUrl, statusCode);
+          if (captchaResult.detected && captchaResult.confidence > 0.5) {
+            console.warn(`[Cheerio] CAPTCHA detected on ${targetDomain}: type=${captchaResult.type}, confidence=${captchaResult.confidence}`);
+            try {
+              antiCrawlAdvisor.recordDetection(targetDomain, 'captcha', `CAPTCHA ${captchaResult.type}, confidence ${Math.round(captchaResult.confidence * 100)}%`);
+            } catch { /* non-critical */ }
+            // Record proxy failure on CAPTCHA
+            if (proxy) proxyManager.recordFailure(proxy.url, `CAPTCHA ${captchaResult.type} detected`);
+            throw new Error(`CAPTCHA detected (${captchaResult.type}, ${Math.round(captchaResult.confidence * 100)}%) on ${targetDomain}`);
           }
         }
 
@@ -459,6 +476,11 @@ class PlaywrightEngine implements ScrapingEngine {
             statusCode: responseStatus,
           };
         } catch (err) {
+          // Record rate limit result on failure
+          if (pwDomain) {
+            const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
+            rateLimiter.recordResult(pwDomain, false, errStatus || undefined);
+          }
           throw err;
         } finally {
           await Promise.race([
@@ -1126,10 +1148,23 @@ class ObscuraEngine implements ScrapingEngine {
           await new Promise(r => setTimeout(r, rateCheck.waitMs));
         }
 
+        // Select proxy for this domain
+        const domainProxy = domain ? proxyManager.getDomainProxy(domain) : null;
+        const proxy = domainProxy || (options?.proxy ? proxyManager.getProxy(domain) : null);
+
+        // Request fingerprint tracking (created before fetch)
+        const fp = requestFingerprintMgr.create({
+          domain,
+          engine: 'obscura',
+          sessionId: undefined,
+          proxyUrl: proxy?.url,
+          userAgent: profile.userAgent,
+        });
+
         const browser = await this.getBrowser();
 
-        // Create browser context with profile-matched UA and viewport
-        const context = await browser.newContext({
+        // Build context options with optional proxy
+        const contextOptions: Record<string, unknown> = {
           userAgent: profile.userAgent,
           viewport: {
             width: profile.screenWidth,
@@ -1142,7 +1177,6 @@ class ObscuraEngine implements ScrapingEngine {
             width: profile.screenWidth,
             height: profile.screenHeight,
           },
-          // Reduce detection signals
           bypassCSP: true,
           javaScriptEnabled: true,
           ignoreHTTPSErrors: true,
@@ -1157,7 +1191,17 @@ class ObscuraEngine implements ScrapingEngine {
             "Sec-Fetch-User": "?1",
             "Upgrade-Insecure-Requests": "1",
           },
-        });
+        };
+
+        // Add proxy configuration if available
+        if (proxy) {
+          contextOptions.proxy = { server: proxy.url };
+          if (process.env.DEBUG === 'true') {
+            console.log(`[Obscura] Using proxy ${proxy.url} for ${domain}`);
+          }
+        }
+
+        const context = await browser.newContext(contextOptions);
 
         // Add cookies from jar + user-provided cookies
         const jarCookies = cookieJar.getPlaywrightCookies(domain);
@@ -1180,34 +1224,25 @@ class ObscuraEngine implements ScrapingEngine {
           // ---- CRITICAL: Inject stealth script BEFORE any navigation ----
           await page.addInitScript(stealthScript);
 
-          // Block images, fonts, and media for speed (we only need HTML)
-          await page.route(
-            /\.(png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|otf|eot|mp4|mp3|webm|avi|mov)(\?.*)?$/,
-            (route) => route.abort()
-          );
-
-          // Also block by resource type
+          // Block resources by type + SSRF protection (single unified route handler)
           await page.route("**/*", (route) => {
             const resourceType = route.request().resourceType();
-            if (
-              ["image", "font", "media", "stylesheet"].includes(resourceType)
-            ) {
+            const routeUrl = route.request().url();
+
+            // Block images, fonts, media, stylesheets for speed
+            if (["image", "font", "media", "stylesheet"].includes(resourceType)) {
               route.abort();
               return;
             }
 
             // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
-            const routeUrl = route.request().url();
             if (!routeUrl.startsWith("http://") && !routeUrl.startsWith("https://")) {
               if (["document", "xhr", "fetch"].includes(resourceType)) {
                 route.abort();
                 return;
               }
             }
-            if (
-              ["document", "xhr", "fetch"].includes(resourceType) &&
-              !isSafeUrl(routeUrl)
-            ) {
+            if (["document", "xhr", "fetch"].includes(resourceType) && !isSafeUrl(routeUrl)) {
               route.abort();
               return;
             }
@@ -1369,15 +1404,44 @@ class ObscuraEngine implements ScrapingEngine {
             );
           }
 
-          // Record rate limit result
+          // CAPTCHA detection on fetched content
+          let captchaDetection: CaptchaDetection | null = null;
           const obscuraStatus = response.status();
+          if (obscuraStatus === 403 || obscuraStatus === 503 || html.includes('captcha') || html.includes('challenge')) {
+            captchaDetection = detectCaptcha(html, finalUrl, obscuraStatus);
+            if (captchaDetection.detected && captchaDetection.confidence > 0.5) {
+              console.warn(`[Obscura] CAPTCHA detected on ${domain}: type=${captchaDetection.type}, confidence=${captchaDetection.confidence}`);
+              // Notify anti-crawl advisor (fire-and-forget)
+              try {
+                antiCrawlAdvisor.recordDetection(domain, 'captcha', `CAPTCHA ${captchaDetection.type} detected, confidence ${Math.round(captchaDetection.confidence * 100)}%`);
+              } catch { /* non-critical */ }
+              // Record as failure for rate limiter (triggers penalty)
+              rateLimiter.recordResult(domain, false, obscuraStatus);
+              throw new Error(`CAPTCHA detected (${captchaDetection.type}, ${Math.round(captchaDetection.confidence * 100)}%) on ${domain}`);
+            }
+          }
+
+          // Record rate limit result
           rateLimiter.recordResult(domain, obscuraStatus >= 200 && obscuraStatus < 400, obscuraStatus);
+
+          // Track request fingerprint
+          requestFingerprintMgr.complete(fp.requestId, true, obscuraStatus);
 
           return {
             html,
             finalUrl,
             statusCode: obscuraStatus,
+            captcha: captchaDetection?.detected ? captchaDetection : undefined,
           };
+        } catch (err) {
+          // Record rate limit result on failure (only if not already recorded for CAPTCHA)
+          if (!(err instanceof Error && err.message.startsWith('CAPTCHA detected'))) {
+            const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\\d+)/)?.[1] || '0', 10) : 0;
+            rateLimiter.recordResult(domain, false, errStatus || undefined);
+          }
+          // Track request fingerprint (failure)
+          requestFingerprintMgr.complete(fp.requestId, false, 0);
+          throw err;
         } finally {
           await Promise.race([
             context.close(),

@@ -20,6 +20,7 @@ import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";
 import { adaptiveDelay } from "./adaptive-delay";
 import { detectCaptcha, CAPTCHA_TYPE_LABELS } from "./captcha-detector";
 import type { CaptchaDetection } from "./captcha-detector";
+import { autoHandleCaptcha } from "./captcha-strategy";
 import { qualityScorer } from "./quality-scorer";
 
 // ==================== WebSocket Log Streaming ====================
@@ -840,7 +841,37 @@ async function executeTaskBody(
               await updateTaskProgress(taskId, {
                 currentStep: `⚠️ 验证码频繁，暂停${CAPTCHA_PAUSE_MS / 1000}秒...`,
               });
-              await new Promise<void>((resolve) => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+
+              // Auto-engine upgrade: consult CAPTCHA strategy advisor
+              try {
+                const strategyResult = await autoHandleCaptcha(captchaResult, {
+                  url: chapter.url,
+                  domain: chDomain,
+                  currentEngine: engineType,
+                  retryCount: newCount,
+                  maxRetries: 5,
+                  antiCrawlConfig: antiCrawlConfig as Record<string, unknown>,
+                });
+
+                if (strategyResult.nextEngine && strategyResult.nextEngine !== engineType) {
+                  await addTaskLog(taskId, "info",
+                    `建议升级引擎: ${engineType} → ${strategyResult.nextEngine} (${strategyResult.message})`,
+                    chapter.url,
+                    `当前引擎连续遇到${newCount}次验证码，建议下次运行时使用${strategyResult.nextEngine}引擎`
+                  );
+                }
+
+                // Use strategy-recommended delay if provided
+                if (strategyResult.delayMs && strategyResult.delayMs < CAPTCHA_PAUSE_MS) {
+                  await new Promise<void>((resolve) => setTimeout(resolve, strategyResult.delayMs));
+                } else {
+                  await new Promise<void>((resolve) => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+                }
+              } catch {
+                // Fallback to standard pause
+                await new Promise<void>((resolve) => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+              }
+
               consecutiveCaptchaCounts.set(chDomain, 0);
             }
 

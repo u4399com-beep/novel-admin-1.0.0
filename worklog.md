@@ -10422,3 +10422,191 @@ Stage Summary:
 - 12个Route Handler移除错误'use server'指令
 - 6个核心scraper-service模块修复逻辑BUG
 - 历史累计修复: 116 + 26 = 142项
+---
+Task ID: R35
+Agent: Main Orchestrator
+Task: R35 反爬监控面板增强 - 统一Dashboard + CAPTCHA事件面板 + RateLimiter改进
+
+Work Log:
+- 读取worklog.md最后几个Section(R28-R34)理解项目累计能力(17+监控面板/7引擎/12反爬规则)
+- 读取所有20个anti-crawl组件理解现有模式和API调用方式
+- 检查shadcn/ui组件库(Tabs/Table/Card/Badge/Button/Input/ScrollArea等)
+
+## 新增文件 (3个)
+
+### 1. src/app/api/admin/anti-crawl/domain-signals/route.ts (48行)
+- 代理路由: GET /api/admin/anti-crawl/domain-signals?domain=xxx
+- 转发到scraper-service GET /anti-crawl/domain-signals (XTransformPort=3099)
+- withAuth认证 + 8s超时 + 服务不可达时返回空信号
+- SSRF防护: domain参数验证
+
+### 2. src/components/scrape/anti-crawl/CaptchaEventsPanel.tsx (268行)
+- CAPTCHA检测事件面板
+- 数据源: 从rate-limit-stats和delay-stats获取域名列表,然后逐域请求domain-signals
+- 4个汇总统计卡片(CAPTCHA总计/Cloudflare/高危事件/涉及域名)
+- 搜索栏: 按域名实时过滤
+- 类型过滤器: 全部/Cloudflare(GeeTest/reCAPTCHA/自定义, 各带颜色标识
+- 事件行: 彩色类型徽章(Cloudflare=orange/GeeTest=red/reCAPTCHA=sky/custom=gray)
+- 置信度指示条: 红色(>=80)/橙色(>=60)/黄色(>=40)/绿色(<40)
+- 相对时间戳(刚刚/X分钟前/X小时前)
+- max-h-96 + scrollbar-thin滚动 + 空状态提示
+
+### 3. src/components/scrape/anti-crawl/AntiCrawlDashboard.tsx (233行)
+- 统一反爬监控Dashboard, 5个Tab组织
+- Tab 1「实时监控」: 4个快速统计卡片 + RateLimiterPanel + AdaptiveDelayPanel + SessionManagerPanel
+- Tab 2「CAPTCHA检测」: CaptchaEventsPanel
+- Tab 3「代理池」: ProxyPoolPanel
+- Tab 4「请求指纹」: RequestFingerprintPanel
+- Tab 5「质量评分」: QualityScorePanel
+- DashboardHeader: 动态图标(随Tab切换) + 标题 + 实时状态徽章
+- QuickStatCard: 图标+标签+描述的统计卡片
+- SectionHeader: 图标+标题+可选计数Badge
+- 响应式Tab: sm以上显示完整标签, 以下显示缩写
+- 使用shadcn/ui Tabs/TabsList/TabsTrigger/TabsContent
+
+## 修改文件 (1个)
+
+### src/components/scrape/anti-crawl/RateLimiterPanel.tsx (完全重写, 335行→335行)
+- 移除CollapsiblePanel包装,改为独立面板(供Dashboard使用)
+- 新增: 域名搜索/过滤输入框(Search图标)
+- 新增: 5个汇总统计卡片(追踪域名/正常/限速/惩罚/平均上限RPM)
+- 改进StatusBadge: 带彩色圆点的状态徽章(normal=green/throttled=yellow/penalized=red/cooldown=blue), 非正常状态带pulse动画
+- 新增: 限速/惩罚域名显示预估等待时间Badge(Clock图标)
+- 新增: RPM百分比显示(MAX标签)
+- 改进DomainRow: 独立组件,hover时显示操作按钮, 红色高亮重置按钮
+- 保留: RPM Sparkline迷你图、内联RPM编辑器、burst余量
+- 改进空状态: 区分搜索无结果和暂无数据
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (均为预存的react-hooks/incompatible-library)
+- Dev server: 200 OK, 无运行时错误
+- 所有组件使用'use client'指令
+- 使用apiFetch helper, silent模式避免重复toast
+- XTransformPort=3099正确用于API路由
+
+## 反爬系统累计能力(R28-R35)
+
+| 维度 | R34 | R35 |
+|---|---|---|
+| 隐身模块 | 15个 | **15个** |
+| 代理协议 | HTTP/HTTPS/SOCKS5 | **HTTP/HTTPS/SOCKS5** |
+| 代理测试 | 连通性(修复虚假成功) | **连通性(修复虚假成功)** |
+| Session管理 | 跨任务 | **跨任务** |
+| 请求指纹 | ID追踪 | **ID追踪** |
+| 速率限制 | Per-Domain+Burst修复 | **Per-Domain+Burst修复+搜索过滤** |
+| Cookie持久化 | SQLite | **SQLite** |
+| CAPTCHA策略 | 配置UI+仿真 | **配置UI+仿真+事件面板** |
+| 仿真测试 | 8项评分 | **8项评分** |
+| WebSocket实时日志 | Socket.IO | **Socket.IO** |
+| 优先级队列 | 4级调度 | **4级调度** |
+| 质量评分 | 7维100分 | **7维100分** |
+| 智能反爬顾问 | 12条规则(修复内存泄漏) | **12条规则(修复内存泄漏)** |
+| AI智能生成 | +反爬分析(修复路由) | **+反爬分析(修复路由)** |
+| 数据导出 | CSV/JSON(修复默认值) | **CSV/JSON(修复默认值)** |
+| 反爬一键应用 | 应用到规则(修复计数) | **应用到规则(修复计数)** |
+| 监控面板 | 17+动画 | **17+动画+统一Dashboard(5Tab)** |
+| 前端动画 | CSS-only | **CSS-only** |
+| 端到端规则测试 | POST /test-rule | **POST /test-rule** |
+| 熔断器 | 5引擎(修复Scrapling) | **5引擎(修复Scrapling)** |
+| 日志系统 | 批量刷新(修复竞态) | **批量刷新(修复竞态)** |
+| CAPTCHA事件面板 | 无 | **CaptchaEventsPanel(搜索+过滤+置信度)** |
+| 域名信号代理 | 无 | **GET /api/admin/anti-crawl/domain-signals** |
+
+Stage Summary:
+- 新增3个文件(1 API路由 + 2前端组件)
+- 修改1个文件(RateLimiterPanel重写)
+- 新增3大功能: 统一AntiCrawlDashboard(5Tab) + CaptchaEventsPanel + 域名信号API
+- RateLimiterPanel增强: 搜索过滤/统计卡片/状态圆点动画/等待时间显示
+- 历史累计修复: 142项(本次无修复, 纯功能增强)
+
+---
+Task ID: anti-crawl-enhance-r33
+Agent: Main Orchestrator
+Task: 审计迭代+反反爬增强(CAPTCHA集成/引擎增强/前端面板)
+
+Work Log:
+- 审计scraper-service全部核心文件(engines.ts, rate-limiter.ts, cookie-store.ts, proxy-manager.ts, session-manager.ts, captcha-detector.ts, captcha-strategy.ts, task-engine.ts, index.ts)
+- 识别并修复以下问题:
+
+## Bug修复 (5项)
+
+1. **ObscuraEngine重复resource route注册** (engines.ts)
+   - 两个page.route()调用: 一个基于regex的扩展名过滤, 一个基于resourceType的类型过滤
+   - 修复: 合并为单个统一路由处理器, 消除冗余和潜在冲突
+
+2. **ObscuraEngine失败时未记录rate limiter** (engines.ts)
+   - try块中的错误不会触发rateLimiter.recordResult(false)
+   - 修复: 添加catch块, 在非CAPTCHA错误时记录失败状态码
+
+3. **PlaywrightEngine失败时未记录rate limiter** (engines.ts)
+   - 同上问题: 页面导航失败时rate limiter不知情
+   - 修复: 添加catch块解析错误消息中的HTTP状态码
+
+4. **fingerprint-health端点缺少引擎声明** (index.ts)
+   - 只列了5个引擎, 缺少cloud-browser和scrapling
+   - 修复: 补全所有7个引擎, 新增captchaDetect能力字段
+
+5. **Obscura引擎fingerprint追踪位置错误** (engines.ts)
+   - 在请求完成后才创建fingerprint, requestId不匹配
+   - 修复: 在fetch之前创建fingerprint, 成功/失败路径共用同一requestId
+
+## 功能增强 (6项)
+
+1. **CAPTCHA检测集成到引擎管线** (engines.ts)
+   - Cheerio引擎: 403/503响应时自动调用detectCaptcha(), 检测到则抛出异常触发retryWithBackoff
+   - Obscura引擎: 同上, 另外还检查HTML内容中的'captcha'/'challenge'关键词
+   - 检测到CAPTCHA时: 记录到antiCrawlAdvisor, 触发rate limiter惩罚, 记录proxy失败
+   - FetchResult类型新增captcha可选字段
+
+2. **Obscura引擎代理支持** (engines.ts)
+   - 之前Obscura引擎无法使用代理(fingerprint-health显示proxy: false)
+   - 修复: 从proxyManager获取domain proxy, 通过Playwright context的proxy选项传入
+   - 支持HTTP/HTTPS/SOCKS5代理(通过Playwright原生proxy配置)
+
+3. **请求指纹追踪扩展到Obscura** (engines.ts)
+   - 之前只有Cheerio引擎有requestFingerprintMgr追踪
+   - 修复: Obscura引擎在fetch前后完整追踪(create→complete), 失败时也记录
+
+4. **task-engine CAPTCHA策略集成** (task-engine.ts)
+   - 之前: 连续CAPTCHA达到阈值时仅固定暂停60秒
+   - 修复: 集成autoHandleCaptcha()策略, 自动推荐引擎升级(如cheerio→obscura)
+   - 使用策略推荐的自适应延迟替代固定暂停
+   - 引擎升级建议记录到任务日志, 供用户下次运行参考
+
+5. **前端统一反爬监控仪表板** (AntiCrawlDashboard.tsx)
+   - 5个Tab: 实时监控/CAPTCHA检测/代理池/请求指纹/质量评分
+   - 快速统计卡片, 动态Tab图标, 实时状态脉冲动画
+   - 响应式: 移动端显示缩写, 桌面端显示完整标签
+
+6. **CAPTCHA事件面板** (CaptchaEventsPanel.tsx)
+   - 彩色类型徽章(Cloudflare=orange, GeeTest=red, reCAPTCHA=sky, custom=gray)
+   - 置信度进度条(颜色编码), 域名搜索/类型过滤
+   - 相对时间显示, 滚动列表, 空状态处理
+
+7. **RateLimiterPanel增强**
+   - 域名搜索/过滤输入框
+   - 5个摘要统计卡片(tracked/normal/throttled/penalized/avgRPM)
+   - 彩色状态圆点指示器(pulse动画)
+   - 估计等待时间显示, RPM百分比条
+   - 每行hover显示重置按钮
+
+8. **新增API路由** (domain-signals/route.ts)
+   - 代理scraper-service /anti-crawl/domain-signals端点
+   - 8秒超时, 服务不可达时返回空信号
+
+## 修改文件清单
+- mini-services/scraper-service/src/engines.ts (CAPTCHA集成, 代理支持, fingerprint修复, route合并)
+- mini-services/scraper-service/src/types.ts (FetchResult新增captcha字段)
+- mini-services/scraper-service/src/task-engine.ts (CAPTCHA策略集成)
+- mini-services/scraper-service/index.ts (fingerprint-health端点修复)
+- src/components/scrape/anti-crawl/AntiCrawlDashboard.tsx (新建)
+- src/components/scrape/anti-crawl/CaptchaEventsPanel.tsx (新建)
+- src/components/scrape/anti-crawl/RateLimiterPanel.tsx (重写增强)
+- src/app/api/admin/anti-crawl/domain-signals/route.ts (新建)
+
+Stage Summary:
+- 修复5个Bug(引擎层rate limiter/route/fingerprint)
+- 新增8项功能增强(CAPTCHA集成/代理/面板/策略)
+- ESLint: 0 errors, 5 warnings(预存在的React Hook Form)
+- Scraper-service: 正常启动, 所有7个引擎可用
+- Dev server: 正常运行, 无401错误

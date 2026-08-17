@@ -1,15 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Gauge, RefreshCw, Loader2, Clock,
-  RotateCcw, Settings2,
+  RotateCcw, Settings2, Search,
+  Zap, AlertTriangle, CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/lib/api-fetch';
-import { CollapsiblePanel } from './CollapsiblePanel';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,12 +53,16 @@ function formatMs(ms: number): string {
   return `${(ms / 60000).toFixed(1)}min`;
 }
 
-function statusStyle(status: DomainRateState['status']): { text: string; bg: string; label: string } {
+function statusBadgeStyle(status: DomainRateState['status']): { text: string; bg: string; label: string; dot: string } {
   switch (status) {
-    case 'normal': return { text: 'text-green-700 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30', label: '正常' };
-    case 'throttled': return { text: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: '限速' };
-    case 'penalized': return { text: 'text-red-700 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30', label: '惩罚' };
-    case 'cooldown': return { text: 'text-gray-700 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-900/30', label: '冷却' };
+    case 'normal':
+      return { text: 'text-green-700 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30', label: '正常', dot: 'bg-green-500' };
+    case 'throttled':
+      return { text: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: '限速', dot: 'bg-yellow-500' };
+    case 'penalized':
+      return { text: 'text-red-700 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30', label: '惩罚', dot: 'bg-red-500' };
+    case 'cooldown':
+      return { text: 'text-sky-700 dark:text-sky-400', bg: 'bg-sky-100 dark:bg-sky-900/30', label: '冷却', dot: 'bg-sky-500' };
   }
 }
 
@@ -90,9 +94,7 @@ function RpmSparkline({ readings, maxRPM }: { readings: number[]; maxRPM: number
             className="flex-1 relative rounded-t-sm transition-all duration-300"
             style={{ height: `${Math.max(height, 4)}%` }}
           >
-            {/* Bar */}
             <div className={`absolute inset-0 rounded-t-sm ${rpmSparkColor(ratio)}`} />
-            {/* Tooltip */}
             <div className="absolute -top-7 left-1/2 -translate-x-1/2 hidden group-hover/spark:block z-10">
               <div className="bg-foreground text-background text-[9px] font-mono px-1.5 py-0.5 rounded whitespace-nowrap shadow-md">
                 {rpm} RPM
@@ -105,20 +107,177 @@ function RpmSparkline({ readings, maxRPM }: { readings: number[]; maxRPM: number
   );
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── Status Badge Component ──────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: DomainRateState['status'] }) {
+  const sc = statusBadgeStyle(status);
+  return (
+    <Badge variant="outline" className={`text-[9px] px-1.5 py-0 font-normal gap-1 ${sc.bg} ${sc.text}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${sc.dot} ${status !== 'normal' ? 'animate-pulse' : ''}`} />
+      {sc.label}
+    </Badge>
+  );
+}
+
+// ─── Domain Row Component ────────────────────────────────────────────────────
+
+function DomainRow({
+  d,
+  rpmHistory,
+  editingDomain,
+  editRPM,
+  settingLimit,
+  resettingDomain,
+  onSetEdit,
+  onSetRPM,
+  onReset,
+  onCancelEdit,
+  onConfirmEdit,
+}: {
+  d: DomainRateState;
+  rpmHistory: number[];
+  editingDomain: string | null;
+  editRPM: string;
+  settingLimit: boolean;
+  resettingDomain: string | null;
+  onSetEdit: (domain: string, rpm: string) => void;
+  onSetRPM: (val: string) => void;
+  onReset: (domain: string) => void;
+  onCancelEdit: () => void;
+  onConfirmEdit: (domain: string) => void;
+}) {
+  const ratio = d.maxRPM > 0 ? d.currentRPM / d.maxRPM : 0;
+  const isThrottledOrPenalized = d.status === 'throttled' || d.status === 'penalized';
+  const showWaitTime = isThrottledOrPenalized && d.estimatedWaitMs > 0;
+
+  return (
+    <div className="rounded-lg border bg-background/50 px-4 py-3 group/rate hover:border-muted-foreground/20 transition-all duration-200">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <span className="text-xs font-medium truncate" title={d.domain}>
+            {d.domain}
+          </span>
+          <StatusBadge status={d.status} />
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {showWaitTime && (
+            <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-normal gap-1 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 border-amber-500/20">
+              <Clock className="h-2.5 w-2.5" />
+              等待 {formatMs(d.estimatedWaitMs)}
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {/* RPM progress bar */}
+      <div className="flex items-center gap-2.5 mb-1.5">
+        <span className="text-[11px] text-muted-foreground shrink-0 w-20 font-mono">
+          {d.currentRPM}<span className="text-muted-foreground/50">/{d.maxRPM}</span>
+          <span className="text-muted-foreground/40 text-[9px] ml-0.5">RPM</span>
+        </span>
+        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${rpmBarColor(ratio)}`}
+            style={{ width: `${Math.max(ratio * 100, 2)}%` }}
+          />
+        </div>
+        <span className="text-[10px] font-mono text-muted-foreground/60 w-8 text-right">
+          {ratio >= 1 ? 'MAX' : `${Math.round(ratio * 100)}%`}
+        </span>
+      </div>
+
+      {/* Sparkline */}
+      <RpmSparkline readings={rpmHistory} maxRPM={d.maxRPM} />
+
+      {/* Details + Actions */}
+      <div className="flex items-center justify-between mt-2">
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Zap className="h-3 w-3" />
+            突发 {d.burstRemaining}
+          </span>
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatTimeAgo(d.lastRequestTime)}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 opacity-0 group-hover/rate:opacity-100 transition-opacity duration-200">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[10px] px-2 gap-1 hover:bg-muted"
+            onClick={() => onSetEdit(d.domain, String(d.maxRPM))}
+          >
+            <Settings2 className="h-3 w-3" />
+            设限
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-[10px] px-2 gap-1 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+            onClick={() => onReset(d.domain)}
+            disabled={resettingDomain === d.domain}
+          >
+            {resettingDomain === d.domain
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <RotateCcw className="h-3 w-3" />
+            }
+            重置
+          </Button>
+        </div>
+      </div>
+
+      {/* Inline RPM editor */}
+      {editingDomain === d.domain && (
+        <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t">
+          <Input
+            type="number"
+            min={1}
+            value={editRPM}
+            onChange={(e) => onSetRPM(e.target.value)}
+            className="h-8 text-xs w-28"
+            placeholder="RPM"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onConfirmEdit(d.domain);
+              if (e.key === 'Escape') onCancelEdit();
+            }}
+          />
+          <Button
+            size="sm"
+            className="h-8 text-xs px-3"
+            onClick={() => onConfirmEdit(d.domain)}
+            disabled={settingLimit}
+          >
+            {settingLimit ? <Loader2 className="h-3 w-3 animate-spin" /> : '确定'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs px-3"
+            onClick={onCancelEdit}
+          >
+            取消
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 const MAX_RPM_HISTORY = 10;
 
 export function RateLimiterPanel() {
   const [stats, setStats] = useState<RateLimitStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [editingDomain, setEditingDomain] = useState<string | null>(null);
   const [editRPM, setEditRPM] = useState('');
   const [settingLimit, setSettingLimit] = useState(false);
   const [resettingDomain, setResettingDomain] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Accumulate RPM history per domain across fetches
   const rpmHistoryRef = useRef<Record<string, number[]>>({});
 
   const fetchStats = useCallback(async (signal?: AbortSignal) => {
@@ -129,7 +288,6 @@ export function RateLimiterPanel() {
         silent: true,
       });
       if (!signal?.aborted) {
-        // Accumulate RPM history
         if (data?.domains) {
           for (const d of data.domains) {
             const hist = rpmHistoryRef.current[d.domain] || [];
@@ -177,11 +335,7 @@ export function RateLimiterPanel() {
       setEditingDomain(null);
       setEditRPM('');
       handleRefresh();
-    } catch {
-      // handled by apiFetch
-    } finally {
-      setSettingLimit(false);
-    }
+    } catch { /* handled by apiFetch */ } finally { setSettingLimit(false); }
   };
 
   const handleReset = async (domain: string) => {
@@ -193,188 +347,124 @@ export function RateLimiterPanel() {
         silent: true,
       });
       handleRefresh();
-    } catch {
-      // handled by apiFetch
-    } finally {
-      setResettingDomain(null);
-    }
+    } catch { /* handled by apiFetch */ } finally { setResettingDomain(null); }
   };
 
-  const domains = stats?.domains || [];
+  const allDomains = stats?.domains || [];
   const totalDomains = stats?.totalDomains || 0;
-  const penalizedCount = domains.filter(d => d.status === 'penalized').length;
-  const throttledCount = domains.filter(d => d.status === 'throttled').length;
-  const avgMaxRPM = domains.length > 0
-    ? Math.round(domains.reduce((sum, d) => sum + d.maxRPM, 0) / domains.length)
+
+  // Filter domains by search query
+  const filteredDomains = useMemo(() => {
+    if (!searchQuery.trim()) return allDomains;
+    const q = searchQuery.toLowerCase();
+    return allDomains.filter(d => d.domain.toLowerCase().includes(q));
+  }, [allDomains, searchQuery]);
+
+  // Aggregate stats
+  const penalizedCount = allDomains.filter(d => d.status === 'penalized').length;
+  const throttledCount = allDomains.filter(d => d.status === 'throttled').length;
+  const normalCount = allDomains.filter(d => d.status === 'normal').length;
+  const cooldownCount = allDomains.filter(d => d.status === 'cooldown').length;
+  const avgMaxRPM = allDomains.length > 0
+    ? Math.round(allDomains.reduce((sum, d) => sum + d.maxRPM, 0) / allDomains.length)
     : 0;
 
   return (
-    <CollapsiblePanel
-      icon={Gauge}
-      title="域名速率限制"
-      loading={loading}
-      expanded={expanded}
-      onExpandedChange={setExpanded}
-      badges={totalDomains > 0 ? (
-        <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
-          {totalDomains} 域名
-        </Badge>
-      ) : undefined}
-    >
-      {/* Summary Row */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
-            <Gauge className="h-2.5 w-2.5 mr-0.5" />
-            限制 {totalDomains} 域名
-          </Badge>
-          {penalizedCount > 0 && (
-            <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-              惩罚 {penalizedCount}
-            </Badge>
-          )}
-          {throttledCount > 0 && (
-            <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
-              限速 {throttledCount}
-            </Badge>
-          )}
-          <span className="text-[10px] text-muted-foreground">
-            平均上限 {avgMaxRPM} RPM
-          </span>
+    <div className="space-y-4">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+        <div className="rounded-lg border bg-background/50 p-3">
+          <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+            <Gauge className="h-3.5 w-3.5" />
+            <span className="text-[10px]">追踪域名</span>
+          </div>
+          <p className="text-lg font-bold">{totalDomains}</p>
+        </div>
+        <div className="rounded-lg border bg-background/50 p-3">
+          <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400 mb-1">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            <span className="text-[10px]">正常</span>
+          </div>
+          <p className="text-lg font-bold text-green-600 dark:text-green-400">{normalCount}</p>
+        </div>
+        <div className="rounded-lg border bg-background/50 p-3">
+          <div className="flex items-center gap-1.5 text-yellow-600 dark:text-yellow-400 mb-1">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            <span className="text-[10px]">限速</span>
+          </div>
+          <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">{throttledCount}</p>
+        </div>
+        <div className="rounded-lg border bg-background/50 p-3">
+          <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400 mb-1">
+            <Zap className="h-3.5 w-3.5" />
+            <span className="text-[10px]">惩罚</span>
+          </div>
+          <p className="text-lg font-bold text-red-600 dark:text-red-400">{penalizedCount}</p>
+        </div>
+        <div className="rounded-lg border bg-background/50 p-3">
+          <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+            <Gauge className="h-3.5 w-3.5" />
+            <span className="text-[10px]">平均上限</span>
+          </div>
+          <p className="text-lg font-bold">{avgMaxRPM}<span className="text-xs text-muted-foreground ml-1">RPM</span></p>
+        </div>
+      </div>
+
+      {/* Search bar + refresh */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="搜索域名..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-8 text-xs pl-8"
+          />
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 text-[11px] px-2"
+          className="h-8 w-8 p-0 shrink-0"
           onClick={handleRefresh}
           disabled={loading}
         >
-          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-          <span className="ml-1">刷新</span>
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
         </Button>
       </div>
 
-      {/* Domain List */}
-      {domains.length > 0 ? (
-        <div className="space-y-1.5 max-h-64 overflow-y-auto scrollbar-thin">
-          {domains.map((d) => {
-            const sc = statusStyle(d.status);
-            const ratio = d.maxRPM > 0 ? d.currentRPM / d.maxRPM : 0;
-            const rpmHistory = rpmHistoryRef.current[d.domain] || [];
-            return (
-              <div
-                key={d.domain}
-                className="rounded-md border bg-background/50 px-3 py-2 group/rate"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[11px] font-medium truncate max-w-[40%]" title={d.domain}>
-                    {d.domain}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <Badge variant="secondary" className={`text-[9px] px-1 py-0 font-normal ${sc.bg} ${sc.text}`}>
-                      {sc.label}
-                    </Badge>
-                    {d.penaltyActive && (
-                      <Badge variant="secondary" className="text-[9px] px-1 py-0 font-normal bg-red-50 text-red-600 dark:bg-red-900/20">
-                        等待 {formatMs(d.estimatedWaitMs)}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                {/* RPM progress bar */}
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-[10px] text-muted-foreground shrink-0 w-16">
-                    {d.currentRPM}/{d.maxRPM} RPM
-                  </span>
-                  <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${rpmBarColor(ratio)}`}
-                      style={{ width: `${Math.max(ratio * 100, 2)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* RPM Sparkline */}
-                <RpmSparkline readings={rpmHistory} maxRPM={d.maxRPM} />
-
-                {/* Details + Actions */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 text-[9px] text-muted-foreground">
-                    <span>突发余量 {d.burstRemaining}</span>
-                    <span className="flex items-center gap-0.5">
-                      <Clock className="h-2.5 w-2.5" />
-                      {formatTimeAgo(d.lastRequestTime)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover/rate:opacity-100 transition-opacity">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-[9px] px-1.5 gap-0.5"
-                      onClick={() => { setEditingDomain(d.domain); setEditRPM(String(d.maxRPM)); }}
-                    >
-                      <Settings2 className="h-2.5 w-2.5" />
-                      设限
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-[9px] px-1.5 gap-0.5"
-                      onClick={() => handleReset(d.domain)}
-                      disabled={resettingDomain === d.domain}
-                    >
-                      {resettingDomain === d.domain
-                        ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                        : <RotateCcw className="h-2.5 w-2.5" />
-                      }
-                      重置
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Inline RPM editor */}
-                {editingDomain === d.domain && (
-                  <div className="flex items-center gap-1.5 mt-2 pt-2 border-t">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={editRPM}
-                      onChange={(e) => setEditRPM(e.target.value)}
-                      className="h-7 text-[11px] w-24"
-                      placeholder="RPM"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSetLimit(d.domain);
-                        if (e.key === 'Escape') { setEditingDomain(null); setEditRPM(''); }
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      className="h-7 text-[10px] px-2"
-                      onClick={() => handleSetLimit(d.domain)}
-                      disabled={settingLimit}
-                    >
-                      {settingLimit ? <Loader2 className="h-3 w-3 animate-spin" /> : '确定'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-[10px] px-2"
-                      onClick={() => { setEditingDomain(null); setEditRPM(''); }}
-                    >
-                      取消
-                    </Button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      {/* Domain list */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span className="text-xs">加载速率限制数据...</span>
+        </div>
+      ) : filteredDomains.length > 0 ? (
+        <div className="space-y-2 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
+          {filteredDomains.map((d) => (
+            <DomainRow
+              key={d.domain}
+              d={d}
+              rpmHistory={rpmHistoryRef.current[d.domain] || []}
+              editingDomain={editingDomain}
+              editRPM={editRPM}
+              settingLimit={settingLimit}
+              resettingDomain={resettingDomain}
+              onSetEdit={(domain, rpm) => { setEditingDomain(domain); setEditRPM(rpm); }}
+              onSetRPM={setEditRPM}
+              onReset={handleReset}
+              onCancelEdit={() => { setEditingDomain(null); setEditRPM(''); }}
+              onConfirmEdit={handleSetLimit}
+            />
+          ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
-          <Gauge className="h-6 w-6 mb-1.5 opacity-40" />
-          <p className="text-[11px]">暂无限速数据，开始采集后自动生效</p>
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+          <Gauge className="h-8 w-8 opacity-30" />
+          <p className="text-xs">
+            {searchQuery ? '无匹配的域名' : '暂无限速数据，开始采集后自动生效'}
+          </p>
         </div>
       )}
-    </CollapsiblePanel>
+    </div>
   );
 }

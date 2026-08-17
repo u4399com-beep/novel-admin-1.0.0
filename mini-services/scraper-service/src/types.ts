@@ -48,6 +48,12 @@ export interface FetchResult {
   html: string;
   finalUrl: string;
   statusCode: number;
+  /** CAPTCHA detection result if detected during fetch */
+  captcha?: {
+    type: string;
+    confidence: number;
+    evidence: string[];
+  };
 }
 
 export interface EngineOptions {
