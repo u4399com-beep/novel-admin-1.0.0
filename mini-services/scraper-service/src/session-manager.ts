@@ -203,8 +203,9 @@ class SessionManager {
       const age = now - new Date(session.createdAt).getTime();
       const isExpired = age > this.maxSessionAge;
       const isOverused = session.usageCount >= this.maxSessionUsage;
+      const isStaleBlocked = session.blocked && (now - new Date(session.lastUsedAt).getTime() > 30 * 60 * 1000);
 
-      if (isExpired || isOverused) {
+      if (isExpired || isOverused || isStaleBlocked) {
         this.sessions.delete(sessionId);
 
         // Remove from domain index
@@ -230,14 +231,20 @@ class SessionManager {
     totalSessions: number;
     activeSessions: number;
     blockedSessions: number;
+    staleBlockedSessions: number;
     domainsTracked: number;
   } {
     let blocked = 0;
     let active = 0;
+    let staleBlocked = 0;
+    const now = Date.now();
 
     for (const session of this.sessions.values()) {
       if (session.blocked) {
         blocked++;
+        if (now - new Date(session.lastUsedAt).getTime() > 30 * 60 * 1000) {
+          staleBlocked++;
+        }
       } else {
         active++;
       }
@@ -247,6 +254,7 @@ class SessionManager {
       totalSessions: this.sessions.size,
       activeSessions: active,
       blockedSessions: blocked,
+      staleBlockedSessions: staleBlocked,
       domainsTracked: this.domainSessions.size,
     };
   }

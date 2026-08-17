@@ -133,15 +133,20 @@ class DomainRateLimiter {
   recordResult(domain: string, success: boolean, statusCode?: number): void {
     const state = this.getOrCreateDomain(domain);
 
-    if (!success || (statusCode && (statusCode === 429 || statusCode === 403 || statusCode === 503))) {
-      // Anti-crawl detected - activate penalty
+    if (!success) {
       if (statusCode === 429 || statusCode === 403 || statusCode === 503) {
+        // Anti-crawl detected - activate penalty
         state.penaltyActive = true;
         state.penaltyUntil = Date.now() + PENALTY_DURATION_MS;
         state.consecutiveSuccesses = 0;
         // Halve the maxRPM
         state.maxRPM = Math.max(1, Math.floor(state.maxRPM * this.config.penaltyMultiplier));
+      } else if (statusCode && statusCode >= 500 && statusCode < 600) {
+        // Server errors (500/502/504) - mild backoff: reduce RPM by 25%
+        state.maxRPM = Math.max(1, Math.floor(state.maxRPM * 0.75));
       }
+      // Network errors (no statusCode): just reset consecutive successes
+      state.consecutiveSuccesses = 0;
     } else if (success) {
       state.consecutiveSuccesses++;
 

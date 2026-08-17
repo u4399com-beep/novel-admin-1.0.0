@@ -29,7 +29,7 @@ export interface RequestFingerprint {
 // ==================== Constants ====================
 
 const MAX_AGE_MS = 5 * 60 * 1000;          // 5 minutes
-const MAX_DOMAIN_RPM = 60;                  // 60 requests per domain per minute
+const MAX_CONCURRENT_PER_DOMAIN = 60;         // max concurrent in-flight requests per domain
 const FINGERPRINT_EXPIRE_MS = 2 * 60 * 1000; // 2 minutes for cleanup
 const CLEANUP_INTERVAL_MS = 2 * 60 * 1000;   // cleanup every 2 minutes
 
@@ -37,7 +37,7 @@ const CLEANUP_INTERVAL_MS = 2 * 60 * 1000;   // cleanup every 2 minutes
 
 class RequestFingerprintManager {
   private recentFingerprints: Map<string, RequestFingerprint> = new Map();  // requestId -> fp
-  private domainFpCount: Map<string, number[]> = new Map();                  // domain -> timestamps
+  private domainFpIds: Map<string, Set<string>> = new Map();                   // domain -> active requestIds
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
@@ -77,10 +77,10 @@ class RequestFingerprintManager {
 
     this.recentFingerprints.set(id, fp);
 
-    // Increment domain counter
-    const timestamps = this.domainFpCount.get(options.domain) || [];
-    timestamps.push(fp.timestamp);
-    this.domainFpCount.set(options.domain, timestamps);
+    // Track in-flight request per domain
+    const ids = this.domainFpIds.get(options.domain) || new Set();
+    ids.add(id);
+    this.domainFpIds.set(options.domain, ids);
 
     return fp;
   }
@@ -102,14 +102,12 @@ class RequestFingerprintManager {
       return { valid: false, reason: 'Fingerprint expired (>5 min old)' };
     }
 
-    // Count domain requests in the last minute
-    const now = Date.now();
-    const minuteAgo = now - 60 * 1000;
-    const timestamps = this.domainFpCount.get(fp.domain) || [];
-    const recentCount = timestamps.filter(t => t >= minuteAgo).length;
+    // Count concurrent in-flight requests for this domain
+    const ids = this.domainFpIds.get(fp.domain);
+    const recentCount = ids ? ids.size : 0;
 
-    if (recentCount > MAX_DOMAIN_RPM) {
-      return { valid: false, reason: `Domain rate limit exceeded (${recentCount}/${MAX_DOMAIN_RPM} rpm)` };
+    if (recentCount > MAX_CONCURRENT_PER_DOMAIN) {
+      return { valid: false, reason: `Domain concurrent limit exceeded (${recentCount}/${MAX_CONCURRENT_PER_DOMAIN})` };
     }
 
     return { valid: true };
@@ -127,16 +125,13 @@ class RequestFingerprintManager {
     fp.success = success;
     fp.statusCode = statusCode;
 
-    // Decrement domain counter
-    const timestamps = this.domainFpCount.get(fp.domain) || [];
-    const idx = timestamps.lastIndexOf(fp.timestamp);
-    if (idx !== -1) {
-      timestamps.splice(idx, 1);
-    }
-    if (timestamps.length === 0) {
-      this.domainFpCount.delete(fp.domain);
-    } else {
-      this.domainFpCount.set(fp.domain, timestamps);
+    // Remove from domain tracking
+    const ids = this.domainFpIds.get(fp.domain);
+    if (ids) {
+      ids.delete(fp.requestId);
+      if (ids.size === 0) {
+        this.domainFpIds.delete(fp.domain);
+      }
     }
   }
 
@@ -170,12 +165,10 @@ class RequestFingerprintManager {
     domainCounts: Record<string, number>;
   } {
     const domainCounts: Record<string, number> = {};
-    const minuteAgo = Date.now() - 60 * 1000;
 
-    for (const [domain, timestamps] of this.domainFpCount.entries()) {
-      const recentCount = timestamps.filter(t => t >= minuteAgo).length;
-      if (recentCount > 0) {
-        domainCounts[domain] = recentCount;
+    for (const [domain, ids] of this.domainFpIds.entries()) {
+      if (ids.size > 0) {
+        domainCounts[domain] = ids.size;
       }
     }
 
@@ -200,15 +193,20 @@ class RequestFingerprintManager {
       }
     }
 
-    // Clean up old domain counter entries
-    const minuteAgo = now - 60 * 1000;
-    for (const [domain, timestamps] of this.domainFpCount.entries()) {
-      // Remove timestamps older than 2 minutes (they're irrelevant)
-      const filtered = timestamps.filter(t => t > (now - 2 * 60 * 1000));
-      if (filtered.length === 0) {
-        this.domainFpCount.delete(domain);
-      } else if (filtered.length < timestamps.length) {
-        this.domainFpCount.set(domain, filtered);
+    // Clean up domain tracking entries whose requestIds no longer exist
+    for (const [domain, ids] of this.domainFpIds.entries()) {
+      // Remove request IDs that no longer exist in recentFingerprints
+      const staleIds: string[] = [];
+      for (const id of ids) {
+        if (!this.recentFingerprints.has(id)) {
+          staleIds.push(id);
+        }
+      }
+      for (const staleId of staleIds) {
+        ids.delete(staleId);
+      }
+      if (ids.size === 0) {
+        this.domainFpIds.delete(domain);
       }
     }
 

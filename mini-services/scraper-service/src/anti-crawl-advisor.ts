@@ -79,6 +79,7 @@ interface DomainDetectionHistory {
 
 const TEN_MINUTES = 10 * 60 * 1000;
 const THIRTY_MINUTES = 30 * 60 * 1000;
+const MAX_DOMAINS = 200; // Maximum domains tracked to prevent unbounded memory growth
 
 // ==================== AntiCrawlAdvisor ====================
 
@@ -97,16 +98,32 @@ class AntiCrawlAdvisor {
 
   /**
    * Record a detection event for a domain (called by engines on response).
+   * Note: totalRequests is NOT incremented here — only in recordSuccess() and recordFailure()
+   * to avoid double-counting when a request triggers detection and also succeeds/fails.
    */
   recordDetection(
     domain: string,
     type: DetectionSignal['type'],
-    severity: DetectionSignal['severity'],
-    details?: string,
+    details: string,
+    severity?: DetectionSignal['severity'],
   ): void {
+    // Evict oldest domain if at capacity
+    if (this.domainHistory.size >= MAX_DOMAINS && !this.domainHistory.has(domain)) {
+      let oldestDomain = '';
+      let oldestTime = Infinity;
+      for (const [d, h] of this.domainHistory.entries()) {
+        if (h.lastActivity < oldestTime) {
+          oldestTime = h.lastActivity;
+          oldestDomain = d;
+        }
+      }
+      if (oldestDomain) {
+        this.domainHistory.delete(oldestDomain);
+      }
+    }
+
     const h = this.getOrCreateHistory(domain);
     h.lastActivity = Date.now();
-    h.totalRequests++;
 
     switch (type) {
       case 'captcha':

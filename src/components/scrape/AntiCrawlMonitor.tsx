@@ -29,6 +29,7 @@ import { AntiCrawlSimPanel } from './anti-crawl/AntiCrawlSimPanel';
 import { AntiCrawlAdvisorPanel } from './anti-crawl/AntiCrawlAdvisorPanel';
 import { PriorityQueuePanel } from './anti-crawl/PriorityQueuePanel';
 import { QualityScorePanel } from './anti-crawl/QualityScorePanel';
+import { QuickStatsPanel } from './anti-crawl/QuickStatsPanel';
 
 // ─── Summary bar types ────────────────────────────────────────────────────────
 
@@ -238,6 +239,9 @@ export function AntiCrawlMonitor({ onBack }: AntiCrawlMonitorProps) {
           >
             {/* Stats */}
             <MonitorStats stats={stats} />
+
+            {/* Quick Stats Overview */}
+            <QuickStatsPanel />
 
             {/* Event Analysis */}
             <EventAnalysisPanel stats={stats} events={events} />

@@ -117,16 +117,59 @@ const UA_TEMPLATES: Record<string, string[]> = {
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
   ],
+  Edge: [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+  ],
+  Firefox: [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
+  ],
 };
+
+// Browser weights for weighted UA rotation (Chrome 70%, Edge 15%, Firefox 15%)
+const UA_BROWSER_WEIGHTS: Record<string, number> = {
+  Chrome: 70,
+  Edge: 15,
+  Firefox: 15,
+};
+
+// Pre-computed Chrome UA pool (all platforms combined)
+const ALL_CHROME_UAS: string[] = [
+  ...UA_TEMPLATES["Win32"],
+  ...UA_TEMPLATES["MacIntel"],
+  ...UA_TEMPLATES["Linux x86_64"],
+];
+
+// Browser-keyed UA pools
+const BROWSER_UA_POOLS: Record<string, string[]> = {
+  Chrome: ALL_CHROME_UAS,
+  Edge: UA_TEMPLATES["Edge"]!,
+  Firefox: UA_TEMPLATES["Firefox"]!,
+};
+
+/**
+ * Pick a random UA from the weighted browser pool.
+ * @param browser - Optional specific browser ('Chrome' | 'Edge' | 'Firefox'). If omitted, uses weighted random selection.
+ */
+export function getRandomUA(browser?: string): string {
+  let selectedBrowser = browser;
+  if (!selectedBrowser) {
+    const r = Math.random() * 100;
+    if (r < 70) selectedBrowser = "Chrome";
+    else if (r < 85) selectedBrowser = "Edge";
+    else selectedBrowser = "Firefox";
+  }
+
+  const pool = BROWSER_UA_POOLS[selectedBrowser] || ALL_CHROME_UAS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 // ---- Helpers ----
 
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function pickArray<T>(arr: readonly T[]): T[] {
-  return [...arr];
 }
 
 // ==================== Profile Generation ====================
@@ -156,17 +199,24 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
 
   const resolution = dPick(SCREEN_RESOLUTIONS, 3);
   const platform = dPick(PLATFORMS, 4);
-  const uaList = UA_TEMPLATES[platform] || UA_TEMPLATES["Win32"]!;
-  const userAgent = dPick(uaList, 5);
+
+  // Weighted browser selection (deterministic via seed)
+  const weightedBrowsers: string[] = [];
+  for (const [b, w] of Object.entries(UA_BROWSER_WEIGHTS)) {
+    for (let i = 0; i < w; i++) weightedBrowsers.push(b);
+  }
+  const selectedBrowser = dPick(weightedBrowsers, 10);
+  const uaPool = BROWSER_UA_POOLS[selectedBrowser] || ALL_CHROME_UAS;
+  const userAgent = dPick(uaPool, 5);
 
   const deviceMemory = dPick(DEVICE_MEMORY_OPTIONS, 6);
   const hardwareConcurrency = dPick(HARDWARE_CONCURRENCY_OPTIONS, 7);
   const colorDepth = dPick(COLOR_DEPTHS, 8);
   const pixelRatio = dPick(PIXEL_RATIOS, 9);
 
-  // Asia/Shanghai is UTC+8 = -480 minutes, with ±30min random jitter
+  // Asia/Shanghai is UTC+8 = -480 minutes, with plausible ±5min geographic jitter
   const baseOffset = -480;
-  const jitter = ((Math.abs(hash * 13) % 61) - 30); // -30 to +30
+  const jitter = Math.round(((Math.abs(hash * 13) % 11) - 5) / 5) * 5; // -5 to +5 in steps of 5
   const timezoneOffset = baseOffset + jitter;
 
   return {
@@ -196,11 +246,11 @@ export function generateRandomFingerprint(): FingerprintProfile {
   const renderer = pick(renderers);
   const resolution = pick(SCREEN_RESOLUTIONS);
   const platform = pick(PLATFORMS);
-  const uaList = UA_TEMPLATES[platform] || UA_TEMPLATES["Win32"]!;
-  const userAgent = pick(uaList);
+  // Use weighted browser pool for UA selection
+  const userAgent = getRandomUA();
 
   const baseOffset = -480;
-  const jitter = Math.floor(Math.random() * 61) - 30;
+  const jitter = Math.round((Math.random() * 11 - 5) / 5) * 5; // -5 to +5 in steps of 5
 
   return {
     webglVendor: vendor,
@@ -218,6 +268,40 @@ export function generateRandomFingerprint(): FingerprintProfile {
     userAgent,
     seed: `random-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   };
+}
+
+// ==================== Per-Domain UA Consistency Cache ====================
+
+const domainUACache = new Map<string, string>();
+const MAX_DOMAIN_UA_CACHE = 500;
+
+/**
+ * Get a consistent UA for a domain. Same domain always returns the same UA
+ * (until the cache is cleared or evicted).
+ */
+export function getConsistentUAForDomain(domain: string): string {
+  let ua = domainUACache.get(domain);
+  if (!ua) {
+    ua = getRandomUA();
+    // Evict oldest if at capacity
+    if (domainUACache.size >= MAX_DOMAIN_UA_CACHE && !domainUACache.has(domain)) {
+      const firstKey = domainUACache.keys().next().value;
+      if (firstKey) domainUACache.delete(firstKey);
+    }
+    domainUACache.set(domain, ua);
+  }
+  return ua;
+}
+
+/**
+ * Clear the domain UA cache. If domain is specified, only clears that domain.
+ */
+export function clearDomainUACache(domain?: string): void {
+  if (domain) {
+    domainUACache.delete(domain);
+  } else {
+    domainUACache.clear();
+  }
 }
 
 // ==================== Stealth Injection Script ====================

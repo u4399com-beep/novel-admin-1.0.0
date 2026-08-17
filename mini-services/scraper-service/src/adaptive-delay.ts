@@ -64,8 +64,16 @@ class AdaptiveDelayManager {
   /**
    * Get the delay for the next request to a given domain.
    * Factors in: base delay, error backoff, slow response penalty, random jitter.
+   * @deprecated Use getDelaySync() instead; this async version is kept for backward compatibility.
    */
-  async getDelay(domain: string): Promise<number> {
+  getDelay(domain: string): number {
+    return this.getDelaySync(domain);
+  }
+
+  /**
+   * Synchronous version of getDelay.
+   */
+  getDelaySync(domain: string): number {
     const state = this.getOrCreateDomain(domain);
 
     // Base delay

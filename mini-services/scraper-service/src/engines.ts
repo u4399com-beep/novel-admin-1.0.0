@@ -170,9 +170,15 @@ class CheerioEngine implements ScrapingEngine {
       async () => {
         // Per-domain rate limiting
         if (targetDomain) {
-          const rateCheck = rateLimiter.acquire(targetDomain);
-          if (!rateCheck.allowed) {
-            await new Promise(r => setTimeout(r, rateCheck.waitMs));
+          const RATE_WAIT_TIMEOUT = 30_000;
+          const waitStart = Date.now();
+          while (true) {
+            const rateCheck = rateLimiter.acquire(targetDomain);
+            if (rateCheck.allowed) break;
+            if (Date.now() - waitStart > RATE_WAIT_TIMEOUT) {
+              throw new Error(`Rate limit wait timeout for ${targetDomain} (${rateCheck.waitMs}ms wait)`);
+            }
+            await new Promise(r => setTimeout(r, Math.min(rateCheck.waitMs, 2000)));
           }
         }
 
@@ -225,20 +231,6 @@ class CheerioEngine implements ScrapingEngine {
           }
         }
 
-        // CAPTCHA detection on response content
-        if (targetDomain && (statusCode === 403 || statusCode === 503)) {
-          const captchaResult = detectCaptcha(html, finalUrl, statusCode);
-          if (captchaResult.detected && captchaResult.confidence > 0.5) {
-            console.warn(`[Cheerio] CAPTCHA detected on ${targetDomain}: type=${captchaResult.type}, confidence=${captchaResult.confidence}`);
-            try {
-              antiCrawlAdvisor.recordDetection(targetDomain, 'captcha', `CAPTCHA ${captchaResult.type}, confidence ${Math.round(captchaResult.confidence * 100)}%`);
-            } catch { /* non-critical */ }
-            // Record proxy failure on CAPTCHA
-            if (proxy) proxyManager.recordFailure(proxy.url, `CAPTCHA ${captchaResult.type} detected`);
-            throw new Error(`CAPTCHA detected (${captchaResult.type}, ${Math.round(captchaResult.confidence * 100)}%) on ${targetDomain}`);
-          }
-        }
-
         // Verify Content-Type is text-based
         const contentType = response.headers.get("content-type") || "";
         if (contentType && !contentType.includes("text") && !contentType.includes("html") && !contentType.includes("json") && !contentType.includes("xml")) {
@@ -254,6 +246,20 @@ class CheerioEngine implements ScrapingEngine {
         const html = (await response.text()).replace(/^\uFEFF/, "");
         if (html.length > MAX_RESPONSE_SIZE) {
           throw new Error(`Response body too large: ${html.length} bytes (max 10MB)`);
+        }
+
+        // CAPTCHA detection on response content
+        if (targetDomain && html) {
+          const captchaResult = detectCaptcha(html, finalUrl, statusCode);
+          if (captchaResult.detected && captchaResult.confidence > 0.5) {
+            console.warn(`[Cheerio] CAPTCHA detected on ${targetDomain}: type=${captchaResult.type}, confidence=${captchaResult.confidence}`);
+            try {
+              antiCrawlAdvisor.recordDetection(targetDomain, 'captcha', `CAPTCHA ${captchaResult.type}, confidence ${Math.round(captchaResult.confidence * 100)}%`);
+            } catch { /* non-critical */ }
+            // Record proxy failure on CAPTCHA
+            if (proxy) proxyManager.recordFailure(proxy.url, `CAPTCHA ${captchaResult.type} detected`);
+            throw new Error(`CAPTCHA detected (${captchaResult.type}, ${Math.round(captchaResult.confidence * 100)}%) on ${targetDomain}`);
+          }
         }
 
         // Record proxy success
@@ -364,9 +370,15 @@ class PlaywrightEngine implements ScrapingEngine {
       async () => {
         // Per-domain rate limiting
         if (pwDomain) {
-          const rateCheck = rateLimiter.acquire(pwDomain);
-          if (!rateCheck.allowed) {
-            await new Promise(r => setTimeout(r, rateCheck.waitMs));
+          const RATE_WAIT_TIMEOUT = 30_000;
+          const waitStart = Date.now();
+          while (true) {
+            const rateCheck = rateLimiter.acquire(pwDomain);
+            if (rateCheck.allowed) break;
+            if (Date.now() - waitStart > RATE_WAIT_TIMEOUT) {
+              throw new Error(`Rate limit wait timeout for ${pwDomain} (${rateCheck.waitMs}ms wait)`);
+            }
+            await new Promise(r => setTimeout(r, Math.min(rateCheck.waitMs, 2000)));
           }
         }
 
@@ -1079,7 +1091,6 @@ class ObscuraEngine implements ScrapingEngine {
           "--disable-blink-features=AutomationControlled",
           "--disable-features=IsolateOrigins,site-per-process",
           "--disable-site-isolation-trials",
-          "--disable-web-security",
           "--disable-features=VizDisplayCompositor",
           "--disable-hang-monitor",
           "--disable-prompt-on-repost",
@@ -1130,11 +1141,7 @@ class ObscuraEngine implements ScrapingEngine {
 
     // Extract domain for per-domain fingerprint caching
     let domain: string;
-    try {
-      domain = new URL(url).hostname;
-    } catch {
-      domain = url;
-    }
+    try { domain = new URL(url).hostname; } catch { throw new Error(`Invalid URL: ${url}`); }
 
     // Get or create a consistent fingerprint profile for this domain
     const profile = getProfileForDomain(domain);
@@ -1143,9 +1150,15 @@ class ObscuraEngine implements ScrapingEngine {
     return retryWithBackoff(
       async () => {
         // Per-domain rate limiting
-        const rateCheck = rateLimiter.acquire(domain);
-        if (!rateCheck.allowed) {
-          await new Promise(r => setTimeout(r, rateCheck.waitMs));
+        const RATE_WAIT_TIMEOUT = 30_000;
+        const waitStart = Date.now();
+        while (true) {
+          const rateCheck = rateLimiter.acquire(domain);
+          if (rateCheck.allowed) break;
+          if (Date.now() - waitStart > RATE_WAIT_TIMEOUT) {
+            throw new Error(`Rate limit wait timeout for ${domain} (${rateCheck.waitMs}ms wait)`);
+          }
+          await new Promise(r => setTimeout(r, Math.min(rateCheck.waitMs, 2000)));
         }
 
         // Select proxy for this domain

@@ -490,6 +490,19 @@ export function buildFetchHeaders(
   const referer = antiCrawl?.referer ?? getSpoofedReferer(targetUrl || "", siteType);
   if (referer) {
     headers["Referer"] = referer;
+  } else if (targetUrl && !headers["Referer"]) {
+    // Spoof Referer: use parent path as referer
+    try {
+      const parsedUrl = new URL(targetUrl);
+      const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
+      if (pathParts.length > 1) {
+        pathParts.pop(); // remove last segment
+        const refererPath = '/' + pathParts.join('/');
+        headers['Referer'] = `${parsedUrl.origin}${refererPath}`;
+      } else {
+        headers['Referer'] = `${parsedUrl.origin}/`;
+      }
+    } catch { /* ignore */ }
   }
 
   // DNT (Do Not Track): use explicit override or random

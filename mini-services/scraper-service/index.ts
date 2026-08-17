@@ -9,7 +9,7 @@
 
 // Load .env from service directory, falling back to project root
 import { readFileSync } from 'fs';
-import { resolve, join } from 'path';
+import { resolve } from 'path';
 try {
   const envPaths = [
     resolve(import.meta.dir, '.env'),
@@ -41,6 +41,7 @@ try {
 // Global error handlers for process resilience
 process.on('unhandledRejection', (reason) => {
   console.error('[Fatal] Unhandled promise rejection:', reason);
+  process.exit(1);
 });
 
 process.on('uncaughtException', (err) => {
@@ -778,6 +779,29 @@ export function startServer(port: number = 3099) {
             );
           }
 
+          // Hard cap on concurrent tasks
+          if (activeTaskCount >= MAX_CONCURRENT_TASKS) {
+            const ruleId = (body as any).ruleId;
+            const enqueued = priorityQueue.enqueue(taskId, numericPriority, ruleId);
+            if (enqueued) {
+              const stats = priorityQueue.getStats();
+              return Response.json(
+                {
+                  error: "并发任务数已达上限，已加入优先级队列",
+                  queued: true,
+                  queuePosition: stats.queueSize,
+                  priority: numericPriority,
+                  priorityLabel: REVERSE_PRIORITY_MAP[numericPriority],
+                },
+                { status: 429, headers: jsonHeaders }
+              );
+            }
+            return Response.json(
+              { error: "并发任务数已达上限且队列已满，请稍后重试" },
+              { status: 503, headers: jsonHeaders }
+            );
+          }
+
           // Check priority queue capacity
           if (!priorityQueue.hasCapacity()) {
             // Try to enqueue the task
@@ -814,10 +838,7 @@ export function startServer(port: number = 3099) {
           activeTaskCount++;
           executeTask(taskId).catch((err) => {
             console.error(`[Task ${taskId}] Fatal error:`, err);
-            activeTasks.delete(taskId);
-            activeTaskCount--;
-            priorityQueue.completeProcessing(taskId);
-            // Sanitize error message before sending to API (strip stack traces, URLs, long text)
+            // Sanitize error message before sending to API
             const safeMessage = String(err instanceof Error ? err.message : err)
               .slice(0, 200)
               .replace(/https?:\/\/[^\n ]+/g, '[URL]')
@@ -1285,6 +1306,8 @@ const shutdown = async (signal: string) => {
   ]);
 
   await closeAllEngines().catch(() => {});
+  requestFingerprintMgr.destroy();
+  sessionManager.destroy();
   clearInterval(terminateTimer); // Clear force-terminate timer regardless
   console.log(`[${new Date().toISOString()}] Active tasks: ${activeTasks.size}, Engines closed. Exiting.`);
 

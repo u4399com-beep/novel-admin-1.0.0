@@ -23,6 +23,8 @@ export interface StoredCookie {
   secure: boolean;
   expires: number; // Unix timestamp, 0 = session
   createdAt: number;
+  /** Internal: whether the original Set-Cookie Domain attribute started with '.' */
+  _domainHadLeadingDot?: boolean;
 }
 
 // ==================== CookieJar ====================
@@ -54,11 +56,14 @@ class CookieJar {
     let httpOnly = false;
     let secure = false;
     let expires = 0; // 0 = session cookie
+    let domainHadLeadingDot = false;
 
     for (let i = 1; i < parts.length; i++) {
       const attr = parts[i].toLowerCase();
       if (attr.startsWith('domain=')) {
-        const raw = parts[i].substring(7).trim().replace(/^\./, '');
+        const rawAttr = parts[i].substring(7).trim();
+        domainHadLeadingDot = rawAttr.startsWith('.');
+        const raw = rawAttr.replace(/^\./, '');
         if (raw) cookieDomain = raw;
       } else if (attr.startsWith('path=')) {
         const raw = parts[i].substring(5).trim();
@@ -91,6 +96,7 @@ class CookieJar {
       secure,
       expires,
       createdAt: Math.floor(Date.now() / 1000),
+      _domainHadLeadingDot: domainHadLeadingDot,
     };
   }
 
@@ -166,21 +172,23 @@ class CookieJar {
 
   /** Get cookies for a domain and path (for sending with request) */
   get(domain: string, path: string = '/'): Array<{ name: string; value: string }> {
-    const allCookies = this.getAllCookies();
-    const matched = allCookies.filter(c => this.isCookieMatch(c, domain, path));
+    const cookies = this.cookies.get(domain);
+    if (!cookies) return [];
+    const matched = cookies.filter(c => this.isCookieMatch(c, domain, path));
     this.lastActivity.set(domain, Date.now());
     return matched.map(c => ({ name: c.name, value: c.value }));
   }
 
   /** Get cookies in Playwright format for a domain */
   getPlaywrightCookies(domain: string): Array<{ name: string; value: string; domain: string; path: string }> {
-    const allCookies = this.getAllCookies();
-    const matched = allCookies.filter(c => this.isCookieMatch(c, domain, '/'));
+    const cookies = this.cookies.get(domain);
+    if (!cookies) return [];
+    const matched = cookies.filter(c => this.isCookieMatch(c, domain, '/'));
     this.lastActivity.set(domain, Date.now());
     return matched.map(c => ({
       name: c.name,
       value: c.value,
-      domain: c.domain.startsWith('.') ? c.domain : '.' + c.domain,
+      domain: c._domainHadLeadingDot ? `.${c.domain}` : c.domain,
       path: c.path,
     }));
   }
