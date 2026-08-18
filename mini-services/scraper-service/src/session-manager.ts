@@ -177,11 +177,29 @@ class SessionManager {
       .map(c => `${c.name}=${c.value}`)
       .join('; ');
 
-    // Also merge any fresh cookies from the cookie jar
+    // Also merge any fresh cookies from the cookie jar (deduplicated by name)
     const freshCookies = cookieJar.getCookieHeader(domain, '/');
     let mergedCookies = cookieStr;
-    if (freshCookies && !cookieStr.includes(freshCookies)) {
-      mergedCookies = freshCookies ? `${freshCookies}; ${cookieStr}` : cookieStr;
+    if (freshCookies) {
+      const cookieMap = new Map<string, string>();
+      // Fresh cookies take precedence — add them first
+      for (const part of freshCookies.split(';')) {
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          cookieMap.set(trimmed.slice(0, eqIdx).trim(), trimmed.slice(eqIdx + 1));
+        }
+      }
+      // Then add session cookies (only if name not already present)
+      for (const c of session.cookies) {
+        if (!cookieMap.has(c.name)) {
+          cookieMap.set(c.name, c.value);
+        }
+      }
+      mergedCookies = Array.from(cookieMap.entries())
+        .map(([name, value]) => `${name}=${value}`)
+        .join('; ');
     }
 
     return {

@@ -488,14 +488,17 @@ class ProxyManager {
     const sorted = [...entries]
       .sort((a, b) => b.healthScore - a.healthScore)
       .slice(0, 5)
-      .map((e) => ({
-        url: e.url,
-        host: e.host,
-        healthScore: e.healthScore,
-        successCount: e.successCount,
-        failCount: e.failCount,
-        avgResponseTime: e.avgResponseTime,
-      }));
+      .map((e) => {
+        const parsed = parseProxyUrl(e.url);
+        return {
+          url: parsed?.cleanUrl ?? e.url,
+          host: e.host,
+          healthScore: e.healthScore,
+          successCount: e.successCount,
+          failCount: e.failCount,
+          avgResponseTime: e.avgResponseTime,
+        };
+      })
 
     return {
       totalProxies: entries.length,
@@ -740,10 +743,11 @@ class ProxyManager {
       return this.exportProxies();
     }
 
-    // Simple URL list
+    // Simple URL list (without credentials)
     const urls: string[] = [];
     for (const entry of this.pool.values()) {
-      urls.push(entry.url);
+      const parsed = parseProxyUrl(entry.url);
+      urls.push(parsed?.cleanUrl ?? entry.url);
     }
     return urls.join('\n');
   }

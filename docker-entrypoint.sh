@@ -102,6 +102,7 @@ log "[Prisma] Using local CLI: ${_PRISMA_VER:-unknown}"
 
 # ─── Validate required secrets ───
 # Machine secrets need ≥32 chars; admin password needs ≥8 chars
+# Also reject template placeholder values ("change-this-*")
 for _var in NEXTAUTH_SECRET SCRAPER_SERVICE_TOKEN; do
     _val="${!_var:-}"
     _val_len=${#_val}
@@ -111,6 +112,11 @@ for _var in NEXTAUTH_SECRET SCRAPER_SERVICE_TOKEN; do
         echo "[FATAL] Edit your .env file and set a strong random value."
         exit 1
     fi
+    if echo "$_val" | grep -qi 'change-this'; then
+        echo "[FATAL] $_var still contains the template placeholder value."
+        echo "[FATAL] Please run deploy.sh to auto-generate secure secrets."
+        exit 1
+    fi
 done
 _val="${ADMIN_PASSWORD:-}"
 _val_len=${#_val}
@@ -118,6 +124,11 @@ log "[Auth] ADMIN_PASSWORD length: $_val_len"
 if [ "$_val_len" -lt 8 ]; then
     echo "[FATAL] ADMIN_PASSWORD is too short (${_val_len} chars, need ≥8)."
     echo "[FATAL] Edit your .env file and set a strong password."
+    exit 1
+fi
+if echo "$_val" | grep -qi 'change-this'; then
+    echo "[FATAL] ADMIN_PASSWORD still contains the template placeholder value."
+    echo "[FATAL] Please run deploy.sh to auto-generate a password."
     exit 1
 fi
 log "[Auth] All secrets validated."

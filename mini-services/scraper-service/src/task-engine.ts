@@ -425,7 +425,7 @@ async function executeTaskBody(
   abortController: AbortController,
   ctx: TaskContext
 ): Promise<void> {
-  const { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode } = ctx;
+  let { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode } = ctx;
 
   // 2. Scrape list page
   if (!rule.listUrl || !listSelector) {
@@ -856,10 +856,12 @@ async function executeTaskBody(
 
                 if (strategyResult.nextEngine && strategyResult.nextEngine !== engineType) {
                   await addTaskLog(taskId, "info",
-                    `建议升级引擎: ${engineType} → ${strategyResult.nextEngine} (${strategyResult.message})`,
+                    `升级引擎: ${engineType} → ${strategyResult.nextEngine} (${strategyResult.message})`,
                     chapter.url,
-                    `当前引擎连续遇到${newCount}次验证码，建议下次运行时使用${strategyResult.nextEngine}引擎`
+                    `当前引擎连续遇到${newCount}次验证码，已自动切换到${strategyResult.nextEngine}引擎`
                   );
+                  engineType = strategyResult.nextEngine;
+                  ctx.engineType = engineType;
                 }
 
                 // Use the longer of strategy-recommended delay and standard pause

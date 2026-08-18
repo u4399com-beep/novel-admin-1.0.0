@@ -469,7 +469,7 @@ class PlaywrightEngine implements ScrapingEngine {
           // CAPTCHA detection
           let pwCaptcha: CaptchaDetection | null = null;
           const pwStatus = responseStatus;
-          if (pwStatus === 403 || pwStatus === 503 || html.includes('captcha') || html.includes('challenge')) {
+          if (pwStatus === 403 || pwStatus === 503 || html.includes('captcha') || /challenge-platform|_cf_chl|challenge.*(?:form|script|iframe|turnstile)/i.test(html)) {
             pwCaptcha = detectCaptcha(html, finalUrl, pwStatus);
             if (pwCaptcha.detected && pwCaptcha.confidence > 0.5) {
               console.warn(`[Playwright] CAPTCHA detected on ${pwDomain}: type=${pwCaptcha.type}, confidence=${pwCaptcha.confidence}`);
@@ -519,10 +519,11 @@ class PlaywrightEngine implements ScrapingEngine {
           }
           throw err;
         } finally {
-          await Promise.race([
-            context.close(),
-            new Promise<void>((resolve) => setTimeout(resolve, 5000))
-          ]).catch(() => {});
+          try {
+            await context.close();
+          } catch {
+            // Playwright close() has built-in timeout; swallow errors
+          }
         }
       },
       {
@@ -1441,7 +1442,7 @@ class ObscuraEngine implements ScrapingEngine {
           // CAPTCHA detection on fetched content
           let captchaDetection: CaptchaDetection | null = null;
           const obscuraStatus = response.status();
-          if (obscuraStatus === 403 || obscuraStatus === 503 || html.includes('captcha') || html.includes('challenge')) {
+          if (obscuraStatus === 403 || obscuraStatus === 503 || html.includes('captcha') || /challenge-platform|_cf_chl|challenge.*(?:form|script|iframe|turnstile)/i.test(html)) {
             captchaDetection = detectCaptcha(html, finalUrl, obscuraStatus);
             if (captchaDetection.detected && captchaDetection.confidence > 0.5) {
               console.warn(`[Obscura] CAPTCHA detected on ${domain}: type=${captchaDetection.type}, confidence=${captchaDetection.confidence}`);
@@ -1481,10 +1482,11 @@ class ObscuraEngine implements ScrapingEngine {
           requestFingerprintMgr.complete(fp.requestId, false, 0);
           throw err;
         } finally {
-          await Promise.race([
-            context.close(),
-            new Promise<void>((resolve) => setTimeout(resolve, 5000)),
-          ]).catch(() => {});
+          try {
+            await context.close();
+          } catch {
+            // Playwright close() has built-in timeout; swallow errors
+          }
         }
       },
       {

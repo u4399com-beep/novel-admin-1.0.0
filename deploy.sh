@@ -366,10 +366,17 @@ my_ip() {
 port_in_use() {
     local port="$1"
     # Method 1: /proc/net/tcp (always available on Linux)
+    # NOTE: /proc/net/tcp shows ports in LITTLE-ENDIAN hex (not big-endian)
+    # e.g., port 3000 = 0x0BB8 → stored as "B80B" in /proc/net/tcp
     if [ -f /proc/net/tcp ]; then
-        # Convert port to hex (no printf %X needed, use awk)
-        local hex_port=$(printf '%04X' "$port" 2>/dev/null)
-        if [ -n "$hex_port" ] && grep -qi ":${hex_port} " /proc/net/tcp 2>/dev/null; then
+        local hex_big=$(printf '%04X' "$port" 2>/dev/null)
+        # Reverse byte order for little-endian
+        local hex_le=$(printf '%04X' "$port" 2>/dev/null | sed 's/\(..\)\(..\)/\2\1/')
+        if [ -n "$hex_le" ] && grep -qi ":${hex_le} " /proc/net/tcp 2>/dev/null; then
+            return 0
+        fi
+        # Also try big-endian (some architectures may differ)
+        if [ -n "$hex_big" ] && grep -qi ":${hex_big} " /proc/net/tcp 2>/dev/null; then
             return 0
         fi
     fi
@@ -994,14 +1001,19 @@ print('merged')
 PYEOF
     fi
 
-    # Simple: just write new config (merge manually if no python3)
+    # Simple: just write new config (backup + merge manually if no python3/jq)
     mkdir -p /etc/docker
     if [ -f /etc/docker/daemon.json ] && command -v jq &>/dev/null; then
         # jq fallback: merge new keys into existing config
         _merged=$(jq -s '.[0] * .[1]' /etc/docker/daemon.json <(echo "$_new_daemon_json") 2>/dev/null) && \
             echo "$_merged" > /etc/docker/daemon.json || \
-            echo "$_new_daemon_json" > /etc/docker/daemon.json
+            { cp /etc/docker/daemon.json "/etc/docker/daemon.json.bak.$(date +%s)" 2>/dev/null; echo "$_new_daemon_json" > /etc/docker/daemon.json; }
     else
+        # No python3, no jq: backup before overwrite to prevent config loss
+        if [ -f /etc/docker/daemon.json ]; then
+            cp /etc/docker/daemon.json "/etc/docker/daemon.json.bak.$(date +%s)" 2>/dev/null || true
+            warn "无 python3/jq，已备份现有 daemon.json 后覆盖"
+        fi
         echo "$_new_daemon_json" > /etc/docker/daemon.json
     fi
 
@@ -1778,13 +1790,20 @@ fi
 
 # ── Exclusive lock to prevent concurrent deploy.sh instances ──
 _DEPLOY_LOCK_FILE="/tmp/novel-deploy.lock"
-exec 200>"$_DEPLOY_LOCK_FILE"
-if ! flock -n 200; then
-    _OTHER_PID=$(cat "$_DEPLOY_LOCK_FILE" 2>/dev/null || echo "unknown")
-    die "另一个 deploy.sh 正在运行 (PID: ${_OTHER_PID})。请等待其完成后再试。"
+if command -v flock &>/dev/null; then
+    exec 200>"$_DEPLOY_LOCK_FILE"
+    if ! flock -n 200; then
+        _OTHER_PID=$(cat "$_DEPLOY_LOCK_FILE" 2>/dev/null || echo "unknown")
+        die "另一个 deploy.sh 正在运行 (PID: ${_OTHER_PID})。请等待其完成后再试。"
+    fi
+    echo $$ > "$_DEPLOY_LOCK_FILE"
+    trap 'rm -f "$_DEPLOY_LOCK_FILE"' EXIT
+else
+    # Alpine/busybox fallback: mkdir is atomic
+    _DEPLOY_LOCK_DIR="/tmp/novel-deploy.lock"
+    mkdir "$_DEPLOY_LOCK_DIR" 2>/dev/null || die "另一个 deploy.sh 正在运行。请等待其完成后再试。"
+    trap 'rmdir "$_DEPLOY_LOCK_DIR" 2>/dev/null' EXIT
 fi
-echo $$ > "$_DEPLOY_LOCK_FILE"
-trap 'rm -f "$_DEPLOY_LOCK_FILE"' EXIT
 
 # ── 0. Root Check ──
 check_root "$@"
@@ -2376,34 +2395,36 @@ if $GENERATE_ENV; then
     _old_umask=$(umask)
     umask 077
     _env_tmp=".env.tmp.$$"
-    cat > "$_env_tmp" <<EOF
+    # Use single-quoted heredoc to prevent shell expansion of password/special chars
+    # Then sed-replace placeholders (handles $, ", `, \ in user input safely)
+    cat > "$_env_tmp" <<'ENV_EOF'
 # ══════════════════════════════════════════════════════
-# Novel Admin — 自动生成 $(date '+%Y-%m-%d %H:%M:%S')
+# Novel Admin — 自动生成
 # ⚠️ 包含密钥信息，请勿提交到版本控制
 # ══════════════════════════════════════════════════════
 
 # ─── Database ──────────────────────────────────────────
 POSTGRES_USER=novel
-POSTGRES_PASSWORD=${_gen_db_pw}
+POSTGRES_PASSWORD=__DB_PW_PLACEHOLDER__
 POSTGRES_DB=novel_admin
 DB_PORT=5432
 
 # ─── App ───────────────────────────────────────────────
-APP_PORT=${_port}
+APP_PORT=__PORT_PLACEHOLDER__
 APP_NAME=小说管理系统
-APP_URL=${_app_url}
-TZ=${_tz}
+APP_URL=__APP_URL_PLACEHOLDER__
+TZ=__TZ_PLACEHOLDER__
 
 # ─── Authentication ────────────────────────────────────
-NEXTAUTH_SECRET=${_gen_secret}
-NEXTAUTH_URL=${_app_url}
+NEXTAUTH_SECRET=__SECRET_PLACEHOLDER__
+NEXTAUTH_URL=__APP_URL_PLACEHOLDER__
 
 # ─── Admin ─────────────────────────────────────────────
-ADMIN_USERNAME=${_admin_user}
-ADMIN_PASSWORD="${_admin_pw}"
+ADMIN_USERNAME=__ADMIN_USER_PLACEHOLDER__
+ADMIN_PASSWORD=__ADMIN_PW_PLACEHOLDER__
 
 # ─── Service-to-Service ────────────────────────────────
-SCRAPER_SERVICE_TOKEN=${_gen_token}
+SCRAPER_SERVICE_TOKEN=__TOKEN_PLACEHOLDER__
 
 # ─── Optional External Services (uncomment to enable) ─
 #FIRECRAWL_API_KEY=
@@ -2417,29 +2438,58 @@ SCRAPER_SERVICE_TOKEN=${_gen_token}
 #STEEL_API_URL=
 
 # ─── Paths ────────────────────────────────────────────
-BACKUP_DIR=${INSTALL_DIR}/backups
+BACKUP_DIR=__INSTALL_DIR_PLACEHOLDER__/backups
 
 # ─── Hardware-Adaptive Resource Limits ────────────────
-# Auto-configured for ${_HW_TIER} tier (${_HW_CORES} cores, ${_HW_MEM_MB}MB RAM)
+# Auto-configured for __HW_TIER_PLACEHOLDER__ tier
 # DO NOT change unless you know what you're doing.
-_HW_TIER=${_HW_TIER}
-NODE_MAX_OLD_SPACE_SIZE=${_TIER_NODE_MAX_MEM}
-BUN_GC_THRESHOLD=${_TIER_BUN_GC}
-PG_MEMORY_LIMIT=${_TIER_PG_MEM_LIMIT}
-PG_MEMORY_RESERVATION=${_TIER_PG_MEM_RESERV}
-PG_SHARED_BUFFERS=${_TIER_PG_SHARED_BUFFERS}
-PG_WORK_MEM=${_TIER_PG_WORK_MEM}
-PG_MAINTENANCE_WORK_MEM=${_TIER_PG_MAINT_WORK_MEM}
-PG_EFFECTIVE_CACHE_SIZE=${_TIER_PG_EFF_CACHE}
-PG_MAX_CONNECTIONS=${_TIER_PG_MAX_CONN}
-PG_MAX_WAL_SIZE=${_TIER_PG_MAX_WAL}
-PG_MIN_WAL_SIZE=${_TIER_PG_MIN_WAL}
-PG_CPU_LIMIT=${_TIER_PG_CPU}
-APP_MEMORY_LIMIT=${_TIER_APP_MEM_LIMIT}
-APP_MEMORY_RESERVATION=${_TIER_APP_MEM_RESERV}
-APP_SHM_SIZE=${_TIER_APP_SHM}
-APP_CPU_LIMIT=${_TIER_APP_CPU}
-EOF
+_HW_TIER=__HW_TIER_PLACEHOLDER__
+NODE_MAX_OLD_SPACE_SIZE=__NODE_MAX_MEM_PLACEHOLDER__
+BUN_GC_THRESHOLD=__BUN_GC_PLACEHOLDER__
+PG_MEMORY_LIMIT=__PG_MEM_LIMIT_PLACEHOLDER__
+PG_MEMORY_RESERVATION=__PG_MEM_RESERV_PLACEHOLDER__
+PG_SHARED_BUFFERS=__PG_SHARED_BUF_PLACEHOLDER__
+PG_WORK_MEM=__PG_WORK_MEM_PLACEHOLDER__
+PG_MAINTENANCE_WORK_MEM=__PG_MAINT_WORK_PLACEHOLDER__
+PG_EFFECTIVE_CACHE_SIZE=__PG_EFF_CACHE_PLACEHOLDER__
+PG_MAX_CONNECTIONS=__PG_MAX_CONN_PLACEHOLDER__
+PG_MAX_WAL_SIZE=__PG_MAX_WAL_PLACEHOLDER__
+PG_MIN_WAL_SIZE=__PG_MIN_WAL_PLACEHOLDER__
+PG_CPU_LIMIT=__PG_CPU_PLACEHOLDER__
+APP_MEMORY_LIMIT=__APP_MEM_LIMIT_PLACEHOLDER__
+APP_MEMORY_RESERVATION=__APP_MEM_RESERV_PLACEHOLDER__
+APP_SHM_SIZE=__APP_SHM_PLACEHOLDER__
+APP_CPU_LIMIT=__APP_CPU_PLACEHOLDER__
+ENV_EOF
+    # Now replace placeholders with actual values (safe for passwords with special chars)
+    sed -i \
+        -e "s|__DB_PW_PLACEHOLDER__|${_gen_db_pw}|g" \
+        -e "s|__PORT_PLACEHOLDER__|${_port}|g" \
+        -e "s|__APP_URL_PLACEHOLDER__|${_app_url}|g" \
+        -e "s|__TZ_PLACEHOLDER__|${_tz}|g" \
+        -e "s|__SECRET_PLACEHOLDER__|${_gen_secret}|g" \
+        -e "s|__ADMIN_USER_PLACEHOLDER__|${_admin_user}|g" \
+        -e "s|__ADMIN_PW_PLACEHOLDER__|${_admin_pw}|g" \
+        -e "s|__TOKEN_PLACEHOLDER__|${_gen_token}|g" \
+        -e "s|__INSTALL_DIR_PLACEHOLDER__|${INSTALL_DIR}|g" \
+        -e "s|__HW_TIER_PLACEHOLDER__|${_HW_TIER}|g" \
+        -e "s|__NODE_MAX_MEM_PLACEHOLDER__|${_TIER_NODE_MAX_MEM}|g" \
+        -e "s|__BUN_GC_PLACEHOLDER__|${_TIER_BUN_GC}|g" \
+        -e "s|__PG_MEM_LIMIT_PLACEHOLDER__|${_TIER_PG_MEM_LIMIT}|g" \
+        -e "s|__PG_MEM_RESERV_PLACEHOLDER__|${_TIER_PG_MEM_RESERV}|g" \
+        -e "s|__PG_SHARED_BUF_PLACEHOLDER__|${_TIER_PG_SHARED_BUFFERS}|g" \
+        -e "s|__PG_WORK_MEM_PLACEHOLDER__|${_TIER_PG_WORK_MEM}|g" \
+        -e "s|__PG_MAINT_WORK_PLACEHOLDER__|${_TIER_PG_MAINT_WORK_MEM}|g" \
+        -e "s|__PG_EFF_CACHE_PLACEHOLDER__|${_TIER_PG_EFF_CACHE}|g" \
+        -e "s|__PG_MAX_CONN_PLACEHOLDER__|${_TIER_PG_MAX_CONN}|g" \
+        -e "s|__PG_MAX_WAL_PLACEHOLDER__|${_TIER_PG_MAX_WAL}|g" \
+        -e "s|__PG_MIN_WAL_PLACEHOLDER__|${_TIER_PG_MIN_WAL}|g" \
+        -e "s|__PG_CPU_PLACEHOLDER__|${_TIER_PG_CPU}|g" \
+        -e "s|__APP_MEM_LIMIT_PLACEHOLDER__|${_TIER_APP_MEM_LIMIT}|g" \
+        -e "s|__APP_MEM_RESERV_PLACEHOLDER__|${_TIER_APP_MEM_RESERV}|g" \
+        -e "s|__APP_SHM_PLACEHOLDER__|${_TIER_APP_SHM}|g" \
+        -e "s|__APP_CPU_PLACEHOLDER__|${_TIER_APP_CPU}|g" \
+        "$_env_tmp"
     mv -f "$_env_tmp" .env
     chmod 600 .env
     umask "$_old_umask"
@@ -2738,12 +2788,12 @@ elif [ "$_HW_TIER" = "small" ]; then
     info "串行构建 + V8堆${_TIER_NODE_MAX_MEM}MB + 4GB Swap = 稳定构建"
 fi
 
-# Always use --no-cache to ensure code changes (especially docker-entrypoint.sh)
-# are reflected in the image. On low-spec servers DOCKER_BUILDKIT=0 (legacy builder)
-# which caches based on mtime; without --no-cache, stale COPY layers may be reused.
-# First-time builds have no cache anyway, so this adds no overhead there.
+# Always build with cache for faster upgrades. Use --no-cache only on first build or
+# when troubleshooting (user can pass it manually: docker compose build --no-cache).
+# The docker-entrypoint.sh and Dockerfile are structured so that code changes
+# invalidate the relevant layers via COPY checksum changes.
 # shellcheck disable=SC2086
-$COMPOSE_CMD build --no-cache ${_BUILD_ARGS} \
+$COMPOSE_CMD build ${_BUILD_ARGS} \
     2>&1 | tee "$BUILD_LOG" | while IFS= read -r _line; do
     # Show only important lines to reduce noise
     if echo "$_line" | grep -qiE '(^Step |=> (RUN|COPY|FROM)|ERROR|fail|successfully tag|warn|#\d+ \[)'; then

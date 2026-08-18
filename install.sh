@@ -79,6 +79,8 @@ if [ -f "${SCRIPT_DIR}/deploy.sh" ]; then
             log_warn "代码同步失败，使用本地版本继续"
         fi
     fi
+    # Clean up temp files BEFORE exec (trap won't fire after exec)
+    rm -f /tmp/novel-admin.tar.gz; rm -rf /tmp/novel-tmp
     exec bash "${SCRIPT_DIR}/deploy.sh" "$@"
 fi
 
@@ -89,9 +91,11 @@ log_info "正在从 GitHub 获取部署脚本..."
 if [ -d "${INSTALL_DIR}/.git" ] && [ -f "${INSTALL_DIR}/deploy.sh" ]; then
     log_info "检测到已有安装目录，更新代码..."
     if git_force_sync "$INSTALL_DIR"; then
+        rm -f /tmp/novel-admin.tar.gz; rm -rf /tmp/novel-tmp
         exec bash "${INSTALL_DIR}/deploy.sh" "$@"
     fi
     # If sync failed, try running existing deploy.sh anyway
+    rm -f /tmp/novel-admin.tar.gz; rm -rf /tmp/novel-tmp
     exec bash "${INSTALL_DIR}/deploy.sh" "$@"
 fi
 
@@ -172,4 +176,6 @@ fi
 
 chmod +x "${TMP_CLONE}/deploy.sh"
 log_info "部署脚本已就绪，开始安装..."
+# Clean up temp files BEFORE exec (trap won't fire after exec)
+rm -f /tmp/novel-admin.tar.gz; rm -rf /tmp/novel-tmp
 exec bash "${TMP_CLONE}/deploy.sh" "$@"
