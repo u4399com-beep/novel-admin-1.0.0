@@ -125,21 +125,34 @@ class AntiCrawlAdvisor {
     const h = this.getOrCreateHistory(domain);
     h.lastActivity = Date.now();
 
+    const now = Date.now();
+    const ROLLING_WINDOW = THIRTY_MINUTES;
+    const pruneTimestamps = (arr: number[]) => {
+      let cutoff = 0;
+      for (let i = 0; i < arr.length; i++) {
+        if (now - arr[i] <= ROLLING_WINDOW) { cutoff = i; break; }
+      }
+      if (cutoff > 0) arr.splice(0, cutoff);
+    };
+
     switch (type) {
       case 'captcha':
         h.captchaCount++;
-        h.captchaTimestamps.push(Date.now());
+        pruneTimestamps(h.captchaTimestamps);
+        h.captchaTimestamps.push(now);
         if (details?.includes('cloudflare') || details?.includes('Cloudflare')) {
           h.cloudflareDetected = true;
         }
         break;
       case 'block':
         h.blockCount++;
-        h.blockTimestamps.push(Date.now());
+        pruneTimestamps(h.blockTimestamps);
+        h.blockTimestamps.push(now);
         break;
       case 'rate_limit':
         h.rateLimitCount++;
-        h.rateLimitTimestamps.push(Date.now());
+        pruneTimestamps(h.rateLimitTimestamps);
+        h.rateLimitTimestamps.push(now);
         break;
       case 'redirect':
         h.redirectCount++;

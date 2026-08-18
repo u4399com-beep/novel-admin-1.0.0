@@ -268,6 +268,7 @@ function DomainRow({
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 const MAX_RPM_HISTORY = 10;
+const REFRESH_INTERVAL = 10_000;
 
 export function RateLimiterPanel() {
   const [stats, setStats] = useState<RateLimitStatsResponse | null>(null);
@@ -278,6 +279,7 @@ export function RateLimiterPanel() {
   const [settingLimit, setSettingLimit] = useState(false);
   const [resettingDomain, setResettingDomain] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rpmHistoryRef = useRef<Record<string, number[]>>({});
 
   const fetchStats = useCallback(async (signal?: AbortSignal) => {
@@ -311,7 +313,19 @@ export function RateLimiterPanel() {
     abortRef.current = ac;
     setLoading(true);
     fetchStats(ac.signal);
-    return () => { abortRef.current?.abort(); abortRef.current = null; };
+
+    timerRef.current = setInterval(() => {
+      abortRef.current?.abort();
+      const newAc = new AbortController();
+      abortRef.current = newAc;
+      fetchStats(newAc.signal);
+    }, REFRESH_INTERVAL);
+
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    };
   }, [fetchStats]);
 
   const handleRefresh = () => {
@@ -421,6 +435,10 @@ export function RateLimiterPanel() {
             className="h-8 text-xs pl-8"
           />
         </div>
+        <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-normal gap-1 shrink-0">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          10s
+        </Badge>
         <Button
           variant="ghost"
           size="sm"

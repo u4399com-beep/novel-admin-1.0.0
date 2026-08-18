@@ -213,9 +213,19 @@ class ProxyManager {
   private lastUsedUrl: string | null = null;
   private domainBindings = new Map<string, string>(); // domain -> proxy cleanUrl
   private recentFailures: RecentFailure[] = [];
+  /** Per-domain rotation tracking: how many successful requests since last rotation */
+  private domainRotationCount = new Map<string, number>();
+  /** Per-domain current rotation index into the top-N proxy list */
+  private domainRotationIndex = new Map<string, number>();
+  /** Configurable: rotate proxy after this many successful requests (default 20) */
+  private rotationInterval: number;
+  /** Configurable: number of top proxies to rotate between (default 3) */
+  private rotationTopN: number;
   private static instance: ProxyManager;
 
-  private constructor() {
+  private constructor(rotationInterval?: number, rotationTopN?: number) {
+    this.rotationInterval = rotationInterval || 20;
+    this.rotationTopN = rotationTopN || 3;
     this.loadFromConfig();
   }
 
@@ -623,6 +633,8 @@ class ProxyManager {
     this.pool.clear();
     this.domainBindings.clear();
     this.lastUsedUrl = null;
+    this.domainRotationCount.clear();
+    this.domainRotationIndex.clear();
     clearDispatcherCache();
     return count;
   }
@@ -782,6 +794,111 @@ class ProxyManager {
     if (entry.coolingUntil && now < entry.coolingUntil) return null;
 
     return entry;
+  }
+
+  // ==================== Domain Proxy Rotation ====================
+
+  /**
+   * Get a proxy for a domain with automatic rotation among the top N proxies.
+   *
+   * Unlike `getDomainProxy()` which always returns the same proxy, this method
+   * rotates between the top N healthiest proxies every M successful requests.
+   * This makes the scraper appear to come from different IPs over time.
+   *
+   * Rotation logic:
+   * - Sorts all active (non-disabled, non-cooling) proxies by healthScore descending
+   * - Takes the top N proxies
+   * - Tracks `rotationCount` per domain
+   * - After every `rotationInterval` (default 20) successful requests, advances to
+   *   the next proxy in the top-N list (round-robin)
+   * - Falls back to pool selection if fewer than 2 proxies available
+   *
+   * @param domain       - Target domain for rotation tracking
+   * @returns A ProxyEntry, or null if no proxies available
+   */
+  getDomainProxyWithRotation(domain: string): ProxyEntry | null {
+    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const now = Date.now();
+
+    // Collect active candidates sorted by healthScore (descending)
+    const candidates = Array.from(this.pool.values())
+      .filter(entry => {
+        if (entry.disabled) return false;
+        if (entry.coolingUntil && now < entry.coolingUntil) return false;
+        if (entry.blockedDomains.has(normalisedDomain)) return false;
+        return true;
+      })
+      .sort((a, b) => b.healthScore - a.healthScore);
+
+    // Need at least 2 proxies for rotation to make sense
+    if (candidates.length < 2) {
+      // Fall back to regular domain proxy or pool selection
+      const boundProxy = this.getDomainProxy(normalisedDomain);
+      if (boundProxy) return boundProxy;
+      return this.getProxy(normalisedDomain);
+    }
+
+    // Take top N proxies
+    const topN = candidates.slice(0, this.rotationTopN);
+
+    // Get or initialize rotation index for this domain
+    const currentIndex = this.domainRotationIndex.get(normalisedDomain) || 0;
+
+    // Select current proxy in the rotation
+    const selectedProxy = topN[currentIndex % topN.length];
+    selectedProxy.lastUsed = now;
+    this.lastUsedUrl = selectedProxy.url;
+
+    return selectedProxy;
+  }
+
+  /**
+   * Record a successful request and advance domain proxy rotation if needed.
+   * Call this instead of (or in addition to) `recordSuccess()` when using rotation.
+   *
+   * @param proxyUrl - The proxy URL that was used
+   * @param domain   - The target domain
+   * @param responseTime - Response time in ms
+   */
+  recordSuccessWithRotation(proxyUrl: string, domain: string, responseTime: number): void {
+    // Record the success normally
+    this.recordSuccess(proxyUrl, responseTime);
+
+    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const currentCount = (this.domainRotationCount.get(normalisedDomain) || 0) + 1;
+    this.domainRotationCount.set(normalisedDomain, currentCount);
+
+    // Check if we should rotate
+    if (currentCount >= this.rotationInterval) {
+      // Reset count and advance index
+      this.domainRotationCount.set(normalisedDomain, 0);
+      const currentIndex = this.domainRotationIndex.get(normalisedDomain) || 0;
+      this.domainRotationIndex.set(normalisedDomain, currentIndex + 1);
+    }
+  }
+
+  /**
+   * Get the current rotation state for a domain (for monitoring/debugging).
+   */
+  getDomainRotationState(domain: string): { rotationCount: number; rotationIndex: number; interval: number; topN: number } {
+    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    return {
+      rotationCount: this.domainRotationCount.get(normalisedDomain) || 0,
+      rotationIndex: this.domainRotationIndex.get(normalisedDomain) || 0,
+      interval: this.rotationInterval,
+      topN: this.rotationTopN,
+    };
+  }
+
+  /**
+   * Configure proxy rotation parameters.
+   *
+   * @param interval - Number of successful requests before rotating to next proxy (default 20)
+   * @param topN     - Number of top proxies to rotate between (default 3)
+   */
+  setRotationConfig(interval: number, topN?: number): void {
+    if (interval > 0) this.rotationInterval = interval;
+    if (topN !== undefined && topN > 0) this.rotationTopN = topN;
   }
 
   /** Get all domain → proxy URL bindings. */

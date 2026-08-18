@@ -277,9 +277,9 @@ class CheerioEngine implements ScrapingEngine {
 
         return { html, finalUrl, statusCode: response.status };
         } catch (err) {
-          // Record rate limit result on failure
-          if (targetDomain && statusCode > 0) {
-            rateLimiter.recordResult(targetDomain, false, statusCode);
+          // Record rate limit result on failure (always record, even when statusCode is 0)
+          if (targetDomain) {
+            rateLimiter.recordResult(targetDomain, false, statusCode > 0 ? statusCode : undefined);
           }
           // Complete request fingerprint tracking (failure)
           requestFingerprintMgr.complete(fp.requestId, false, statusCode);
@@ -1089,16 +1089,13 @@ class ObscuraEngine implements ScrapingEngine {
           "--no-default-browser-check",
           // Obscura-specific: reduce automation surface area
           "--disable-blink-features=AutomationControlled",
-          "--disable-features=IsolateOrigins,site-per-process",
-          "--disable-site-isolation-trials",
-          "--disable-features=VizDisplayCompositor",
+          "--disable-features=IsolateOrigins,site-per-process,VizDisplayCompositor,TranslateUI",
           "--disable-hang-monitor",
           "--disable-prompt-on-repost",
           "--disable-client-side-phishing-detection",
           "--disable-component-update",
           "--disable-default-apps",
           "--disable-domain-reliability",
-          "--disable-features=TranslateUI",
           "--disable-ipc-flooding-protection",
           "--disable-notifications",
           "--disable-popup-blocking",
@@ -1429,12 +1426,13 @@ class ObscuraEngine implements ScrapingEngine {
                 antiCrawlAdvisor.recordDetection(domain, 'captcha', `CAPTCHA ${captchaDetection.type} detected, confidence ${Math.round(captchaDetection.confidence * 100)}%`);
               } catch { /* non-critical */ }
               // Record as failure for rate limiter (triggers penalty)
-              rateLimiter.recordResult(domain, false, obscuraStatus);
+              // IMPORTANT: Do NOT record result here - the catch block below handles it.
+              // Recording here AND in catch would cause double penalty.
               throw new Error(`CAPTCHA detected (${captchaDetection.type}, ${Math.round(captchaDetection.confidence * 100)}%) on ${domain}`);
             }
           }
 
-          // Record rate limit result
+          // Record rate limit result (only if not throwing CAPTCHA above)
           rateLimiter.recordResult(domain, obscuraStatus >= 200 && obscuraStatus < 400, obscuraStatus);
 
           // Track request fingerprint
@@ -1447,8 +1445,11 @@ class ObscuraEngine implements ScrapingEngine {
             captcha: captchaDetection?.detected ? captchaDetection : undefined,
           };
         } catch (err) {
-          // Record rate limit result on failure (only if not already recorded for CAPTCHA)
-          if (!(err instanceof Error && err.message.startsWith('CAPTCHA detected'))) {
+          // Record rate limit result on failure (covers both CAPTCHA and non-CAPTCHA errors)
+          // This is the ONLY place recordResult is called for failures, ensuring no double-recording
+          if (err instanceof Error && err.message.startsWith('CAPTCHA detected')) {
+            rateLimiter.recordResult(domain, false, obscuraStatus);
+          } else {
             const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\\d+)/)?.[1] || '0', 10) : 0;
             rateLimiter.recordResult(domain, false, errStatus || undefined);
           }
@@ -1501,7 +1502,11 @@ export function selectEngine(
     proxy?: string;
   }
 ): EngineType {
-  if (requestedEngine) return requestedEngine;
+  const VALID_ENGINES: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura'];
+  if (requestedEngine) {
+    if (VALID_ENGINES.includes(requestedEngine)) return requestedEngine;
+    console.warn(`[selectEngine] Unknown engine '${requestedEngine}', falling back to auto-selection`);
+  }
   if (antiCrawl?.cloudBrowser) return "cloud-browser";
   // If human behavior simulation is requested, must use obscura (has stealth + human sim)
   if (antiCrawl?.humanBehavior) return "obscura";

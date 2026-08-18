@@ -42,11 +42,13 @@ const DEFAULT_CONFIG: DelayConfig = {
 };
 
 const MAX_RESPONSE_HISTORY = 10;
+const MAX_DOMAINS = 500;
 
 // ==================== AdaptiveDelayManager ====================
 
 class AdaptiveDelayManager {
   private domains = new Map<string, DomainState>();
+  private domainAccessOrder: string[] = []; // For LRU eviction
   private config: DelayConfig;
   private static instance: AdaptiveDelayManager;
 
@@ -210,6 +212,8 @@ class AdaptiveDelayManager {
   /** Reset backoff to base level for a specific domain */
   resetDomain(domain: string): void {
     this.domains.delete(domain);
+    const idx = this.domainAccessOrder.indexOf(domain);
+    if (idx !== -1) this.domainAccessOrder.splice(idx, 1);
   }
 
   /** Get number of tracked domains */
@@ -220,6 +224,11 @@ class AdaptiveDelayManager {
   private getOrCreateDomain(domain: string): DomainState {
     let state = this.domains.get(domain);
     if (!state) {
+      // LRU eviction when at capacity
+      if (this.domains.size >= MAX_DOMAINS) {
+        const oldest = this.domainAccessOrder.shift();
+        if (oldest) this.domains.delete(oldest);
+      }
       state = {
         consecutiveErrors: 0,
         lastResponseTimes: [],
@@ -228,6 +237,10 @@ class AdaptiveDelayManager {
       };
       this.domains.set(domain, state);
     }
+    // Update access order for LRU
+    const idx = this.domainAccessOrder.indexOf(domain);
+    if (idx !== -1) this.domainAccessOrder.splice(idx, 1);
+    this.domainAccessOrder.push(domain);
     return state;
   }
 }

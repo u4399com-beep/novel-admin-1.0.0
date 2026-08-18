@@ -3,8 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ShieldAlert, RefreshCw, Loader2, Search, Filter,
-  AlertTriangle, Clock, Shield, XCircle, Eye,
-  WifiOff,
+  AlertTriangle, Clock, Shield, WifiOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -464,10 +463,12 @@ export function CaptchaEventsPanel() {
     return matchesSearch && matchesType;
   });
 
-  // Use mock data when unreachable and no real events
-  const displayEvents = unreachable && events.length === 0 ? generateMockEvents() : events;
-  const displayFiltered = unreachable && events.length === 0
-    ? generateMockEvents().filter(ev => {
+  // Use mock data when unreachable and no real events (single source via useMemo)
+  const mockEventCount = (unreachable && events.length === 0) ? 8 : 0;
+  const mockEvents = useMemo(() => generateMockEvents(), [mockEventCount]);
+  const displayEvents = mockEventCount > 0 ? mockEvents : events;
+  const displayFiltered = mockEventCount > 0
+    ? mockEvents.filter(ev => {
         const matchesSearch = !searchQuery || ev.domain.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesType = typeFilter === 'all' || ev.type === typeFilter;
         return matchesSearch && matchesType;

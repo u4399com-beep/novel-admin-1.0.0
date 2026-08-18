@@ -212,13 +212,16 @@ export function QuickStatsPanel() {
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     try {
       setError(null);
-      const [d, r] = await Promise.all([
+      const results = await Promise.allSettled([
         apiFetch<DashboardData>('/api/admin/anti-crawl/dashboard', { signal, timeout: 10000, silent: true }),
         apiFetch<RateStats>('/api/admin/scraper/rate-limit-stats', { signal, timeout: 10000, silent: true }),
       ]);
       if (signal?.aborted) return;
-      setDashData(d);
-      setRateData(r);
+      const d = results[0].status === 'fulfilled' ? results[0].value : null;
+      const r = results[1].status === 'fulfilled' ? results[1].value : null;
+      if (d) setDashData(d);
+      if (r) setRateData(r);
+      if (!d && !r) setError('服务不可达');
       setLastRefresh(new Date());
     } catch {
       if (!signal?.aborted) setError('服务不可达');
@@ -264,7 +267,8 @@ export function QuickStatsPanel() {
   const avgRT = totalRequests > 0 ? Math.round(200 + (unresolved / totalRequests) * 800) : 0;
   const rtColor = responseTimeColor(avgRT);
   const activeThreats = unresolved;
-  const domains = dashData?.topDomains?.length ? dashData.topDomains : (rateData?.domains || []).map(d => ({ domain: d.domain, count: d.currentRPM * 10 }));
+  const hasRealDomainData = (dashData?.topDomains?.length ?? 0) > 0;
+  const domains = hasRealDomainData ? dashData.topDomains! : [];
 
   const content = error && !dashData ? (
     <Card className="glass-card">
@@ -281,7 +285,7 @@ export function QuickStatsPanel() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={Activity} label="总请求数 (24h)" value={totalRequests} sub={`7天日均 ${avgDaily7d}`} trend={requestTrend} color="bg-primary/10" />
         <StatCard icon={Zap} label="请求成功率" value={proxySR} sub={proxySR >= 90 ? '运行良好' : proxySR >= 70 ? '需要关注' : '严重下降'} color={srColor.bg} />
-        <StatCard icon={Clock} label="平均响应时间" value={avgRT} sub="ms" color={rtColor.bg} />
+        <StatCard icon={Clock} label="平均响应时间（估算）" value={avgRT} sub="ms" color={rtColor.bg} />
         <StatCard icon={ShieldAlert} label="活跃威胁" value={activeThreats} sub="未解决事件" color="bg-red-500/10" pulse />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -291,7 +295,11 @@ export function QuickStatsPanel() {
               <Globe className="h-3.5 w-3.5 text-primary" />域名请求分布 TOP 5
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4"><DomainBarChart domains={domains} /></CardContent>
+          <CardContent className="px-4 pb-4">{hasRealDomainData ? <DomainBarChart domains={domains} /> : (
+            <div className="flex items-center justify-center h-32 text-xs text-muted-foreground">
+              <Globe className="h-5 w-5 mr-2 opacity-30" />暂无请求数据
+            </div>
+          )}</CardContent>
         </Card>
         <Card className="glass-card">
           <CardHeader className="pb-2 pt-4 px-4">

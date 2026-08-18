@@ -72,6 +72,7 @@ class Semaphore {
     return new Promise<void>(resolve => this.queue.push(resolve));
   }
   release(): void {
+    if (this.running <= 0) return; // Guard against double-release
     this.running--;
     if (this.queue.length > 0) { this.running++; this.queue.shift()!(); }
   }
@@ -861,8 +862,8 @@ async function executeTaskBody(
                   );
                 }
 
-                // Use strategy-recommended delay if provided
-                if (strategyResult.delayMs && strategyResult.delayMs < CAPTCHA_PAUSE_MS) {
+                // Use the longer of strategy-recommended delay and standard pause
+                if (strategyResult.delayMs && strategyResult.delayMs >= CAPTCHA_PAUSE_MS) {
                   await new Promise<void>((resolve) => setTimeout(resolve, strategyResult.delayMs));
                 } else {
                   await new Promise<void>((resolve) => setTimeout(resolve, CAPTCHA_PAUSE_MS));

@@ -1,11 +1,13 @@
 /**
  * Utilities - UA rotation, URL resolution, security, delay, retry, redirect following,
- * request fingerprint randomization, Referer spoofing, Accept-Language randomization
+ * request fingerprint randomization, Referer spoofing, Accept-Language randomization,
+ * header order randomization
  */
 
 import type { AntiCrawl } from "./types";
 import { isSafeUrl } from "./ssrf";
 import { randomUUID } from "node:crypto";
+import { getAcceptLanguageForDomain, shuffleHeaderOrder } from "./stealth";
 
 // ==================== User-Agent Rotation ====================
 
@@ -457,9 +459,15 @@ export function buildFetchHeaders(
   targetUrl?: string,
   siteType?: string
 ): Record<string, string> {
+  // Extract domain for per-domain consistent headers
+  let domain = '';
+  if (targetUrl) {
+    try { domain = new URL(targetUrl).hostname; } catch { /* ignore */ }
+  }
+
   const headers: Record<string, string> = {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": antiCrawl?.acceptLanguage || getRandomAcceptLanguage(),
+    "Accept-Language": antiCrawl?.acceptLanguage || (domain ? getAcceptLanguageForDomain(domain) : getRandomAcceptLanguage()),
     "Accept-Encoding": "gzip, deflate, br",
     Connection: "keep-alive",
     "Upgrade-Insecure-Requests": "1",
@@ -525,6 +533,11 @@ export function buildFetchHeaders(
     if (sanitizedCookies.length > 0) {
       headers["Cookie"] = sanitizedCookies.join("; ");
     }
+  }
+
+  // Apply browser-consistent header order if domain is known
+  if (domain) {
+    return shuffleHeaderOrder(headers, domain);
   }
 
   return headers;

@@ -1303,3 +1303,401 @@ export function getProfileCacheStats(): { size: number; maxSize: number; ttlMs: 
     ttlMs: CACHE_TTL_MS,
   };
 }
+
+// ==================== Enhancement 1: Header Order Randomization ====================
+
+/**
+ * Known distinct header orders observed from real browsers.
+ * Different browsers send common headers in different orders —
+ * this is a fingerprinting vector that advanced WAFs check.
+ */
+const BROWSER_HEADER_ORDERS: Record<string, string[]> = {
+  Chrome: [
+    'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform',
+    'upgrade-insecure-requests', 'user-agent',
+    'accept', 'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-user', 'sec-fetch-dest',
+    'accept-encoding', 'accept-language',
+  ],
+  Edge: [
+    'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform',
+    'upgrade-insecure-requests', 'user-agent',
+    'accept', 'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-user', 'sec-fetch-dest',
+    'accept-encoding', 'accept-language',
+  ],
+  Firefox: [
+    'host', 'user-agent', 'accept',
+    'accept-language', 'accept-encoding',
+    'connection', 'upgrade-insecure-requests',
+  ],
+  Safari: [
+    'accept', 'accept-encoding', 'accept-language',
+    'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site',
+    'user-agent', 'upgrade-insecure-requests',
+  ],
+};
+
+/**
+ * Simple deterministic hash for a string (same as the seed hash in generateFingerprintProfile).
+ * Returns a 32-bit integer.
+ */
+function domainHash(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
+/**
+ * Shuffled header order per domain (cache to maintain consistency).
+ */
+const domainHeaderOrderCache = new Map<string, string[]>();
+const MAX_HEADER_ORDER_CACHE = 500;
+
+/**
+ * Randomize the order of HTTP headers to mimic different browser fingerprints.
+ * Deterministic per-domain: same domain always gets the same header order
+ * (until cache eviction), simulating a consistent browser identity.
+ *
+ * Real browsers send headers in distinct orders:
+ * - Chrome/Edge: sec-ch-ua headers first, then upgrade-insecure-requests, user-agent, accept, sec-fetch-*, accept-encoding, accept-language
+ * - Firefox: host, user-agent, accept, accept-language, accept-encoding, connection, upgrade-insecure-requests
+ * - Safari: accept, accept-encoding, accept-language, sec-fetch-*, user-agent, upgrade-insecure-requests
+ *
+ * @param headers - Key-value header pairs to reorder
+ * @param domain  - Target domain for deterministic (per-domain consistent) shuffling
+ * @returns A new Record with the same key-value pairs in a browser-like shuffled order
+ */
+export function shuffleHeaderOrder(headers: Record<string, string>, domain: string): Record<string, string> {
+  const headerKeys = Object.keys(headers);
+  if (headerKeys.length <= 1) return { ...headers };
+
+  // Check cache first
+  let order = domainHeaderOrderCache.get(domain);
+  if (!order) {
+    // Pick a browser template based on domain hash
+    const h = Math.abs(domainHash(domain));
+    const browserNames = Object.keys(BROWSER_HEADER_ORDERS);
+    const browserTemplate = BROWSER_HEADER_ORDERS[browserNames[h % browserNames.length]]!;
+
+    // Build a deterministic order: start with the browser template headers that exist
+    // in our input, then append any remaining keys in alphabetical order
+    const templateSet = new Set(browserTemplate.map(k => k.toLowerCase()));
+    const ordered: string[] = [];
+    const remaining: string[] = [];
+
+    for (const key of headerKeys) {
+      if (templateSet.has(key.toLowerCase())) {
+        ordered.push(key);
+      } else {
+        remaining.push(key);
+      }
+    }
+
+    // Sort remaining alphabetically for consistency, then append
+    remaining.sort((a, b) => a.localeCompare(b));
+    ordered.push(...remaining);
+
+    order = ordered;
+
+    // Cache with LRU eviction
+    if (domainHeaderOrderCache.size >= MAX_HEADER_ORDER_CACHE && !domainHeaderOrderCache.has(domain)) {
+      const firstKey = domainHeaderOrderCache.keys().next().value;
+      if (firstKey) domainHeaderOrderCache.delete(firstKey);
+    }
+    domainHeaderOrderCache.set(domain, order);
+  }
+
+  // Rebuild the headers object in the cached order
+  const result: Record<string, string> = {};
+  for (const key of order) {
+    if (key in headers) {
+      result[key] = headers[key];
+    }
+  }
+  // Include any keys not in the cached order (edge case: new headers added after caching)
+  for (const key of headerKeys) {
+    if (!(key in result)) {
+      result[key] = headers[key];
+    }
+  }
+
+  return result;
+}
+
+/** Clear the header order cache. If domain specified, only clear that domain. */
+export function clearHeaderOrderCache(domain?: string): void {
+  if (domain) {
+    domainHeaderOrderCache.delete(domain);
+  } else {
+    domainHeaderOrderCache.clear();
+  }
+}
+
+// ==================== Enhancement 2: Accept-Language Variation Pool ====================
+
+/**
+ * Accept-Language strings that mimic specific browser/OS combinations.
+ * Each entry is tagged with a browser family for coherence with the chosen UA.
+ */
+const ACCEPT_LANGUAGE_POOL: Array<{ value: string; browser: string }> = [
+  // Chrome on Windows (zh-CN primary)
+  { value: 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', browser: 'Chrome' },
+  // Chrome on macOS
+  { value: 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7', browser: 'Chrome' },
+  // Edge on Windows (often en-primary in enterprise)
+  { value: 'en-US,en;q=0.9,zh-CN;q=0.8', browser: 'Edge' },
+  // Edge on Windows (zh-primary)
+  { value: 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', browser: 'Edge' },
+  // Firefox on Windows
+  { value: 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', browser: 'Firefox' },
+  // Firefox on macOS
+  { value: 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7', browser: 'Firefox' },
+  // Firefox on Linux
+  { value: 'en-US,en;q=0.9', browser: 'Firefox' },
+  // Safari on macOS
+  { value: 'zh-CN,zh-Hans;q=0.9,en-US;q=0.8,en;q=0.7', browser: 'Safari' },
+  // Chrome on Linux
+  { value: 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7', browser: 'Chrome' },
+  // Chrome on Windows (English locale)
+  { value: 'en-US,en;q=0.9', browser: 'Chrome' },
+];
+
+/** Cache for per-domain Accept-Language consistency */
+const domainAcceptLangCache = new Map<string, string>();
+const MAX_ACCEPT_LANG_CACHE = 500;
+
+/**
+ * Get an Accept-Language string for a domain, deterministically selected
+ * from the pool based on the domain hash. Same domain always returns the
+ * same Accept-Language string (until cache eviction).
+ *
+ * @param domain - Target domain for consistent per-domain selection
+ * @returns An Accept-Language header value string
+ */
+export function getAcceptLanguageForDomain(domain: string): string {
+  let cached = domainAcceptLangCache.get(domain);
+  if (cached) return cached;
+
+  const h = Math.abs(domainHash(domain));
+  const selected = ACCEPT_LANGUAGE_POOL[h % ACCEPT_LANGUAGE_POOL.length]!;
+  const value = selected.value;
+
+  // Cache with LRU eviction
+  if (domainAcceptLangCache.size >= MAX_ACCEPT_LANG_CACHE && !domainAcceptLangCache.has(domain)) {
+    const firstKey = domainAcceptLangCache.keys().next().value;
+    if (firstKey) domainAcceptLangCache.delete(firstKey);
+  }
+  domainAcceptLangCache.set(domain, value);
+
+  return value;
+}
+
+/**
+ * Get all Accept-Language pool entries (for inspection/debugging).
+ */
+export function getAcceptLanguagePool(): Array<{ value: string; browser: string }> {
+  return [...ACCEPT_LANGUAGE_POOL];
+}
+
+// ==================== Enhancement 4: Request Timing Humanization ====================
+
+/** Cache for per-domain base delay */
+const domainBaseDelayCache = new Map<string, number>();
+const MAX_DELAY_CACHE = 500;
+
+/**
+ * Returns a humanized fetch delay in milliseconds for a given domain.
+ *
+ * Timing patterns:
+ * - Peak hours (9AM–11PM): faster base (300-800ms), simulating active browsing
+ * - Off-peak (11PM–2AM, 6AM–9AM): medium base (500-1200ms)
+ * - Dead zone (2AM–6AM): slower base (800-2000ms), simulating sleepy users
+ *
+ * Per-domain consistency: base delay is deterministic from domain hash.
+ * Random jitter (50-200ms) is added each call to simulate human reading time.
+ *
+ * @param domain - Target domain for consistent base delay
+ * @returns Delay in milliseconds (always >= 50)
+ */
+export function humanizedFetchDelay(domain: string): number {
+  const hour = new Date().getHours(); // 0-23
+  const h = Math.abs(domainHash(domain));
+
+  // Get or compute domain-consistent base delay
+  let baseDelay = domainBaseDelayCache.get(domain);
+  if (baseDelay === undefined) {
+    // Deterministic base delay from hash: 0-1 range
+    const normalized = (h % 1000) / 1000;
+
+    if (hour >= 9 && hour < 23) {
+      // Peak hours: 300-800ms
+      baseDelay = 300 + Math.round(normalized * 500);
+    } else if (hour >= 6 && hour < 9 || hour >= 23) {
+      // Off-peak: 500-1200ms
+      baseDelay = 500 + Math.round(normalized * 700);
+    } else {
+      // Dead zone (2AM-6AM): 800-2000ms
+      baseDelay = 800 + Math.round(normalized * 1200);
+    }
+
+    // Cache with LRU eviction
+    if (domainBaseDelayCache.size >= MAX_DELAY_CACHE && !domainBaseDelayCache.has(domain)) {
+      const firstKey = domainBaseDelayCache.keys().next().value;
+      if (firstKey) domainBaseDelayCache.delete(firstKey);
+    }
+    domainBaseDelayCache.set(domain, baseDelay);
+  }
+
+  // Add random micro-delay (50-200ms) simulating human reading/clicking
+  const microDelay = 50 + Math.round(Math.random() * 150);
+
+  return baseDelay + microDelay;
+}
+
+/** Clear the domain delay cache. If domain specified, only clear that domain. */
+export function clearDelayCache(domain?: string): void {
+  if (domain) {
+    domainBaseDelayCache.delete(domain);
+  } else {
+    domainBaseDelayCache.clear();
+  }
+}
+
+// ==================== Enhancement 5: TLS Fingerprint Consistency ====================
+
+/**
+ * Known JA3/JA4 TLS fingerprint hints mapped to browser families.
+ * These are reference strings that engines supporting TLS fingerprint
+ * configuration can use to mimic specific browsers' TLS handshakes.
+ *
+ * JA3 format: MD5 hash of TLS Client Hello parameters (cipher suites,
+ * extensions, elliptic curves, elliptic curve point formats).
+ * JA4 format: More modern fingerprint including ALPN, cipher suite count, etc.
+ */
+export const TLS_FINGERPRINT_MAP: Record<string, Array<{ ja3: string; ja4: string; description: string }>> = {
+  Chrome: [
+    {
+      ja3: '771,4865-4866-4867-49195,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+      ja4: 't13d1516h2_783a5c8e9f40',
+      description: 'Chrome 131+ on Windows (TLS 1.3, GREASE)',
+    },
+    {
+      ja3: '771,4865-4866-4867-49195,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+      ja4: 't13d1516h2_a1b2c3d4e5f6',
+      description: 'Chrome 130 on macOS',
+    },
+  ],
+  Firefox: [
+    {
+      ja3: '771,4865-4867-4866-49195,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+      ja4: 't13d1312h2_f1e2d3c4b5a6',
+      description: 'Firefox 133 on Windows (TLS 1.3)',
+    },
+    {
+      ja3: '771,4865-4867-4866-49195,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+      ja4: 't13d1312h2_9a8b7c6d5e4f',
+      description: 'Firefox 132 on Linux',
+    },
+  ],
+  Edge: [
+    {
+      ja3: '771,4865-4866-4867-49195,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+      ja4: 't13d1516h2_1a2b3c4d5e6f',
+      description: 'Edge 131 on Windows (Chromium-based)',
+    },
+  ],
+  Safari: [
+    {
+      ja3: '771,4865-4866-4867-49195-49199-49196-52393,0-5-10-11-13-16-18-23-27-43-45-51-65281,29-23-24,0',
+      ja4: 't13d1617h2_safari1a2b',
+      description: 'Safari 18.2 on macOS (Apple TLS stack)',
+    },
+  ],
+};
+
+/** Cache for per-domain TLS hint */
+const domainTLSHintCache = new Map<string, { ja3: string; ja4: string; description: string }>();
+const MAX_TLS_CACHE = 500;
+
+/**
+ * Get a TLS fingerprint hint for a domain, deterministically selected
+ * based on the domain hash. Consistent per-domain to maintain identity coherence.
+ *
+ * The returned object contains JA3 and JA4 fingerprint strings that can be
+ * used by engines that support TLS fingerprint configuration (e.g., curl-impersonate,
+ * tls-client, or custom TLS stacks).
+ *
+ * @param domain - Target domain for consistent fingerprint selection
+ * @returns An object with ja3, ja4, and description fields
+ */
+export function getTLSHint(domain: string): { ja3: string; ja4: string; description: string } {
+  let cached = domainTLSHintCache.get(domain);
+  if (cached) return cached;
+
+  const h = Math.abs(domainHash(domain));
+  const browserNames = Object.keys(TLS_FINGERPRINT_MAP);
+  const browser = browserNames[h % browserNames.length]!;
+  const fingerprints = TLS_FINGERPRINT_MAP[browser]!;
+  const selected = fingerprints[(h >> 8) % fingerprints.length]!;
+
+  // Cache with LRU eviction
+  if (domainTLSHintCache.size >= MAX_TLS_CACHE && !domainTLSHintCache.has(domain)) {
+    const firstKey = domainTLSHintCache.keys().next().value;
+    if (firstKey) domainTLSHintCache.delete(firstKey);
+  }
+  domainTLSHintCache.set(domain, selected);
+
+  return selected;
+}
+
+/** Clear the TLS hint cache. If domain specified, only clear that domain. */
+export function clearTLSHintCache(domain?: string): void {
+  if (domain) {
+    domainTLSHintCache.delete(domain);
+  } else {
+    domainTLSHintCache.clear();
+  }
+}
+
+// ==================== Humanized Fetch Delay ====================
+
+/**
+ * Generate a humanized delay before fetching a URL.
+ * Simulates human browsing patterns:
+ *   - Faster during peak hours (9AM-11PM local time)
+ *   - Slower at night (2AM-6AM)
+ *   - Random micro-delays simulating reading/thinking time
+ *   - Deterministic base per-domain for consistent behavior
+ *
+ * @param domain - Target domain for per-domain consistency
+ * @param minMs - Minimum additional delay (default 50ms)
+ * @param maxMs - Maximum additional delay (default 800ms)
+ * @returns Delay in milliseconds
+ */
+export function humanizedFetchDelay(domain: string, minMs = 50, maxMs = 800): number {
+  const now = new Date();
+  const hour = now.getHours();
+
+  // Time-of-day multiplier: slower at night, faster during day
+   let todMultiplier: number;
+  if (hour >= 2 && hour < 6) {
+    todMultiplier = 2.0; // Night: humans are slower
+  } else if (hour >= 6 && hour < 9) {
+    todMultiplier = 1.5; // Early morning: moderate
+  } else if (hour >= 9 && hour < 23) {
+    todMultiplier = 1.0; // Peak hours: normal speed
+  } else {
+    todMultiplier = 1.3; // Late night (23-2): slightly slower
+  }
+
+  // Deterministic base delay from domain hash
+  const h = Math.abs(domainHash(domain));
+  const baseDelay = minMs + (h % 100) / 100 * (maxMs - minMs) * 0.3;
+
+  // Random jitter (30% of range)
+  const jitter = Math.random() * (maxMs - minMs) * 0.3;
+
+  return Math.round((baseDelay + jitter) * todMultiplier);
+}
+

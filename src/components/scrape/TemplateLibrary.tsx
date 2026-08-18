@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { apiFetch } from '@/lib/api-fetch';
@@ -83,15 +83,26 @@ export function TemplateLibrary({ open, onOpenChange, onApplied }: TemplateLibra
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current); };
+  }, [search]);
 
   // 加载模板列表
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
-    apiFetch<{ templates: TemplateItem[] }>(`/api/scrape-rules/templates${search ? `?search=${encodeURIComponent(search)}` : ''}`, { signal: undefined })
+    apiFetch<{ templates: TemplateItem[] }>(`/api/scrape-rules/templates${debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''}`, { signal: undefined })
       .then((data) => {
         if (!cancelled) setTemplates(data.templates || []);
       })
@@ -102,7 +113,7 @@ export function TemplateLibrary({ open, onOpenChange, onApplied }: TemplateLibra
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [open, search]);
+  }, [open, debouncedSearch]);
 
   // 过滤后的模板
   const filteredTemplates = useMemo(() => {
