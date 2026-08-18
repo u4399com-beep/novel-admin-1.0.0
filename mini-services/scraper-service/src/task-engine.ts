@@ -288,7 +288,7 @@ function parseSelectorField(field: string | null): Selector | null {
 
 function determineEngine(rule: ScrapeRule, antiCrawlConfig: AntiCrawl): EngineType {
   // Priority: rule.engine > cloudBrowser > useJsRender > default cheerio
-  if (rule.engine && ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling"].includes(rule.engine)) {
+  if (rule.engine && ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura"].includes(rule.engine)) {
     return rule.engine as EngineType;
   }
   return selectEngine(undefined, antiCrawlConfig);

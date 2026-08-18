@@ -1545,8 +1545,7 @@ fi
 _fix_fw_port="${_FIX_FW_PORT_OVERRIDE:-3000}"  # From --fix-firewall [PORT] arg, or default 3000
 if [ "$MODE" = "fix-firewall" ]; then
     if [ -f "${INSTALL_DIR}/.env" ]; then
-        _env_port=$(grep '^APP_PORT=' "${INSTALL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2 || true)
-        _env_port=${_env_port%%[\"\']*}  # Trim trailing quotes
+        _env_port=$(env_val APP_PORT "${INSTALL_DIR}/.env")
         [ -n "$_env_port" ] && _fix_fw_port="$_env_port"
     fi
     _fix_fw_port=${_fix_fw_port:-3000}
@@ -2401,7 +2400,7 @@ NEXTAUTH_URL=${_app_url}
 
 # ─── Admin ─────────────────────────────────────────────
 ADMIN_USERNAME=${_admin_user}
-ADMIN_PASSWORD=${_admin_pw}
+ADMIN_PASSWORD="${_admin_pw}"
 
 # ─── Service-to-Service ────────────────────────────────
 SCRAPER_SERVICE_TOKEN=${_gen_token}
@@ -2453,10 +2452,10 @@ EOF
     SAVE_PORT="$_port"
 else
     # Read from existing .env
-    SAVE_USER=$(grep '^ADMIN_USERNAME=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
-    SAVE_PASS=$(grep '^ADMIN_PASSWORD=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
-    SAVE_URL=$(grep '^APP_URL=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
-    SAVE_PORT=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2 || true)
+    SAVE_USER=$(env_val ADMIN_USERNAME)
+    SAVE_PASS=$(env_val ADMIN_PASSWORD)
+    SAVE_URL=$(env_val APP_URL)
+    SAVE_PORT=$(env_val APP_PORT)
     SAVE_USER=${SAVE_USER:-admin}
     SAVE_PORT=${SAVE_PORT:-3000}
     SAVE_URL=${SAVE_URL:-http://localhost:${SAVE_PORT}}

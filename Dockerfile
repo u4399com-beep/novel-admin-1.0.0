@@ -3,7 +3,8 @@
 # Hardware-adaptive: build args control memory usage per tier
 #
 # Key optimizations vs standard Dockerfile:
-#   1. Chromium NOT downloaded at build time (runtime-only, saves ~200MB build RAM)
+#   1. System Chromium installed via apt-get (not Playwright bundled — saves ~200MB download RAM)
+#      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 prevents Playwright from downloading its own copy
 #   2. V8 heap capped via BUILD_ARG (default 512MB, deploy.sh sets lower for 1H1G)
 #   3. NEXT_WORKER_THREADS=1 for single-threaded build
 #   4. BUN_GC_THRESHOLD for aggressive GC during bun install

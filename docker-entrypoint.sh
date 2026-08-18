@@ -213,7 +213,7 @@ fi
 log "[DB] Database ready."
 
 # ─── Ensure data directories ───
-mkdir -p /app/data/logs /app/data/covers /app/data/downloads /app/data/chapters /app/backups
+mkdir -p /app/data/logs /app/data/covers /app/data/downloads /app/data/chapters /backups
 
 # ─── Release Prisma/Bun memory before starting app processes ───
 if $_LOW_MEM; then

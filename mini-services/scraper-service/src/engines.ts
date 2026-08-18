@@ -383,7 +383,20 @@ class PlaywrightEngine implements ScrapingEngine {
         }
 
         const browser = await getPlaywrightBrowser();
-        const context = await browser.newContext({ userAgent });
+
+        // Select proxy for this domain (with rotation)
+        const domainProxy = pwDomain ? proxyManager.getDomainProxyWithRotation(pwDomain) : null;
+        const pwProxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(pwDomain) : null);
+
+        // Build context options with optional proxy and viewport
+        const contextOptions: Record<string, unknown> = { userAgent };
+        if (pwProxy) {
+          contextOptions.proxy = { server: pwProxy.url };
+          if (process.env.DEBUG === 'true') {
+            console.log(`[Playwright] Using proxy ${pwProxy.url} for ${pwDomain}`);
+          }
+        }
+        const context = await browser.newContext(contextOptions);
 
         // Add cookies from jar + user-provided cookies
         const jarCookies = pwDomain ? cookieJar.getPlaywrightCookies(pwDomain) : [];
@@ -403,13 +416,9 @@ class PlaywrightEngine implements ScrapingEngine {
         try {
           const page = await context.newPage();
 
-          // Apply stealth injection if anti-crawl options suggest it
-          let pwDomainForStealth: string;
-          try { pwDomainForStealth = new URL(url).hostname; } catch { pwDomainForStealth = ''; }
-          if (pwDomainForStealth && (options?.antiCrawl?.uaRotation || options?.antiCrawl?.humanBehavior)) {
-            const profile = getProfileForDomain(pwDomainForStealth);
-            await page.addInitScript(getStealthScript(profile));
-          }
+          // Always inject stealth script for anti-fingerprint protection
+          const pwProfile = pwDomain ? getProfileForDomain(pwDomain) : getProfileForDomain('default');
+          await page.addInitScript(getStealthScript(pwProfile));
 
           // Intercept all requests to block unsafe redirect targets and non-HTTP protocols
           await context.route('**/*', (route) => {
@@ -457,6 +466,20 @@ class PlaywrightEngine implements ScrapingEngine {
           }
           const finalUrl = page.url();
 
+          // CAPTCHA detection
+          let pwCaptcha: CaptchaDetection | null = null;
+          const pwStatus = responseStatus;
+          if (pwStatus === 403 || pwStatus === 503 || html.includes('captcha') || html.includes('challenge')) {
+            pwCaptcha = detectCaptcha(html, finalUrl, pwStatus);
+            if (pwCaptcha.detected && pwCaptcha.confidence > 0.5) {
+              console.warn(`[Playwright] CAPTCHA detected on ${pwDomain}: type=${pwCaptcha.type}, confidence=${pwCaptcha.confidence}`);
+              try {
+                antiCrawlAdvisor.recordDetection(pwDomain, 'captcha', `CAPTCHA ${pwCaptcha.type} detected, confidence ${Math.round(pwCaptcha.confidence * 100)}%`);
+              } catch { /* non-critical */ }
+              throw new Error(`CAPTCHA detected (${pwCaptcha.type}, ${Math.round(pwCaptcha.confidence * 100)}%) on ${pwDomain}`);
+            }
+          }
+
           // Store cookies back to jar after navigation
           if (pwDomain) {
             try {
@@ -486,6 +509,7 @@ class PlaywrightEngine implements ScrapingEngine {
             html,
             finalUrl,
             statusCode: responseStatus,
+            captcha: pwCaptcha?.detected ? pwCaptcha : undefined,
           };
         } catch (err) {
           // Record rate limit result on failure
@@ -1158,9 +1182,9 @@ class ObscuraEngine implements ScrapingEngine {
           await new Promise(r => setTimeout(r, Math.min(rateCheck.waitMs, 2000)));
         }
 
-        // Select proxy for this domain
-        const domainProxy = domain ? proxyManager.getDomainProxy(domain) : null;
-        const proxy = domainProxy || (options?.proxy ? proxyManager.getProxy(domain) : null);
+        // Select proxy for this domain (with rotation if configured)
+        const domainProxy = domain ? proxyManager.getDomainProxyWithRotation(domain) : null;
+        const proxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(domain) : null);
 
         // Request fingerprint tracking (created before fetch)
         const fp = requestFingerprintMgr.create({
@@ -1281,8 +1305,8 @@ class ObscuraEngine implements ScrapingEngine {
           if (options?.antiCrawl?.humanBehavior) {
             try {
               // 1. Human-like mouse movement: natural curve from (100,200) to (500,400)
-              const startX = 100, startY = 200;
-              const endX = 500, endY = 400;
+              const startX = 50 + Math.floor(Math.random() * 300), startY = 100 + Math.floor(Math.random() * 300);
+              const endX = 300 + Math.floor(Math.random() * 600), endY = 200 + Math.floor(Math.random() * 400);
               const steps = 15 + Math.floor(Math.random() * 10);
               let currentX = startX, currentY = startY;
               for (let i = 0; i < steps; i++) {
