@@ -12112,3 +12112,69 @@ Stage Summary:
 - Stealth sections: 31 → 33
 - Rate limiting: unlimited while-loop → max 3 retries with abort support and logging
 - ESLint: 0 errors ✅
+
+---
+Task ID: R21
+Agent: Main Orchestrator + 3 Sub-agents (docker, scraper, anti-crawl)
+Task: 持续开发审查 — Docker端到端审计 + Scraper边界条件审计 + 反反爬增强R3 + Git推送
+
+Work Log:
+- 读取worklog最新状态(228项累计修复)
+- 并行启动3个子代理(Docker已完成, Scraper/AntiCrawl重新启动)
+- Git推送: bc0365e → main 成功
+
+## Docker审计 (R21-docker, 30+ edge cases)
+- 2个新问题修复:
+  - BUG-1(MEDIUM): deploy.sh BACKUP_DIR mkdir硬编码路径, 自定义BACKUP_DIR时docker compose失败 → 读取.env实际值
+  - BUG-2(LOW): Dockerfile sed正则依赖精确空格 → [[:space:]]*容错
+- 28个区域确认正确(密码URL安全/硬件边界/Swap幂等/PG tmpfs/nohup+wait等)
+
+## Scraper审计 (R21-scraper, 25+ areas)
+- 5个新问题修复:
+  - BUG-1(MEDIUM): browser-behavior.ts domainVisits/domainRootsVisited无界增长 → 添加MAX_TRACKED_DOMAINS=500 + LRU淘汰
+  - BUG-2(MEDIUM): referrer-chain.ts 外层history Map无界 → 添加MAX_TRACKED_DOMAINS=500 + LRU淘汰
+  - BUG-3(LOW): cookie-store.ts 无PRAGMA busy_timeout → 添加5000ms
+  - BUG-4(LOW): cookie-jar.ts importCookies不验证value类型 → String()强制转换
+  - BUG-5(LOW): rate-limit-manage/route.ts maxRPM无数值验证 → 添加1≤x≤10000校验
+- 25+区域确认正确: 所有缓存有界/数值范围正确/CJK处理正确/API路由有认证+超时+降级
+
+## 反反爬增强 (R21-anti-crawl)
+- 新增: src/doh-simulation.ts (DNS-over-HTTPS模拟, 100条缓存, /24子网IP变化)
+- 增强: src/engines.ts waitForRateLimit() (最多3次等待重试, abort感知, 事件日志)
+- 增强: src/stealth.ts Section 32-33:
+  - Section 32: NavigationTiming模拟(h2协议, 真实时序链)
+  - Section 33: PerformanceObserver中性化(7种entry type静默吞没)
+- 集成: src/utils.ts X-Forwarded-For头注入
+
+## Git推送
+- Commit: bc0365e (12 files, +514 -35)
+- Remote: github.com/u4399com-beep/novel-admin-1.0.0.git main
+- Token: ghp_Ryjec... (已更新remote URL)
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings ✅
+- Dev Server: HTTP 200 ✅
+- Git push: 成功 ✅
+
+## 修改文件汇总(R21)
+- deploy.sh (1处: BACKUP_DIR mkdir)
+- Dockerfile (1处: sed正则容错)
+- mini-services/scraper-service/src/browser-behavior.ts (内存边界)
+- mini-services/scraper-service/src/referrer-chain.ts (内存边界)
+- mini-services/scraper-service/src/cookie-store.ts (busy_timeout)
+- mini-services/scraper-service/src/cookie-jar.ts (importCookies验证)
+- src/app/api/admin/scraper/rate-limit-manage/route.ts (输入验证)
+- mini-services/scraper-service/src/doh-simulation.ts (NEW: DoH模拟)
+- mini-services/scraper-service/src/engines.ts (waitForRateLimit + DoH集成)
+- mini-services/scraper-service/src/stealth.ts (+97行: NavigationTiming + PerformanceObserver)
+- mini-services/scraper-service/src/utils.ts (X-Forwarded-For集成)
+
+## 历史累计修复: 230 + 5(scraper) = 235项
+
+Stage Summary:
+- Docker: 30+边界检查, 2个修复(BACKUP_DIR/sed正则)
+- Scraper: 25+区域审计, 5个修复(内存边界/Cookie/输入验证)
+- 反反爬: 3项新能力(DoH模拟/自适应退避/NavigationTiming+PerformanceObserver)
+- Stealth注入: 33个section
+- Git推送: bc0365e成功
+- ESLint: 0 errors ✅
