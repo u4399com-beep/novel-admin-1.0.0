@@ -12,9 +12,11 @@ mini-services/scraper-service/node_modules
 /out
 /build
 
-# Data files
-db/*.db
-db/*.db-journal
+# Data files (*.db catches SQLite files in any subdirectory)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 data/
 download/
 

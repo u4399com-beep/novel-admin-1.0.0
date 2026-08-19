@@ -553,6 +553,7 @@ class ProxyManager {
           return { healthy: false, responseTime, error: errMsg };
         }
       } catch (err) {
+        clearTimeout(timeout);
         // Through-proxy fetch failed; fall through to secondary check below
         const errMsg = err instanceof Error ? err.message : String(err);
         if (process.env.DEBUG === 'true') {

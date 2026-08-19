@@ -793,7 +793,9 @@ async function executeTaskBody(
               existingChapters.set(`title:${chapterDedupKey(ch.title)}`, ch.id);
             }
           }
-        } catch { /* ignore */ }
+        } catch (err) {
+          console.warn(`[Task ${taskId}] Failed to fetch existing chapters for ${book.id}, incremental dedup disabled:`, err instanceof Error ? err.message : String(err));
+        }
       }
 
       // Process chapters with concurrency

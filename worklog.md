@@ -11607,3 +11607,326 @@ Stage Summary:
 - Scraper深度审计: 3个bug修复(MEDIUM), 12项已知验证通过
 - 反反爬: 4项新能力(Referrer Chain/时序抖动/Body Padding/设备伪装)
 - ESLint: 0 errors ✅
+
+---
+Task ID: R20-docker
+Agent: Sub-agent (deep Docker audit)
+Task: Docker deep audit — variable cross-validation, heredoc validation, Dockerfile correctness, entrypoint edge cases, install.sh robustness, .dockerignore completeness
+
+## Audit Results
+
+### 1. Variable Cross-Validation (docker-compose.yml ↔ .env.production)
+- Extracted 38 unique ${VAR} references from docker-compose.yml
+- 27 required vars: all present in .env.production ✅
+- 9 optional vars (FIRECRAWL/AGENTQL/BROWSERLESS/STEEL/CLOUD_BROWSER): all have :- defaults ✅
+- 2 commented-out vars (DEBIAN_MIRROR, NPM_REGISTRY): in compose comments only, not evaluated ✅
+- 1 commented port mapping (DB_PORT): not evaluated ✅
+- **Result: 38/38 variables validated, 0 mismatches**
+
+### 2. deploy.sh Heredoc Validation
+- Heredoc at line 2626-2735 (quoted 'COMPOSE_EOF', no bash expansion — correct)
+- R19 fixes verified present:
+  - Line 2709: TZ=${TZ:-Asia/Shanghai} ✅
+  - Lines 2700-2708: 9 optional vars with :- defaults ✅
+- Heredoc omits reference compose comments (DB port, DEBIAN_MIRROR, NPM_REGISTRY) — intentional, no impact
+- All 29 required variables present in heredoc ✅
+- deploy.sh .env template generates all 38 variables (29 + 9 commented optional) ✅
+
+### 3. Dockerfile Correctness
+- All COPY source paths verified to exist (package.json, bun.lock, prisma/schema.prisma, docker-entrypoint.sh, public/, mini-services/scraper-service/package.json, mini-services/scraper-service/bun.lock, mini-services/scraper-service/src/queue.pg.ts) ✅
+- queue.pg.ts swap logic correct: rm queue.ts, mv queue.pg.ts → queue.ts, with FATAL exit if missing ✅
+- Prisma transitive deps: 13 packages copied, all resolve correctly ✅
+- @prisma/engines COPY on line 127 is redundant (already covered by @prisma on line 113) but harmless
+- empathic is ESM-only and not require()-able via Node CJS, but Prisma CLI bundles it — no runtime issue
+- scraper-service COPY uses broad `mini-services/scraper-service/` but .dockerignore excludes node_modules ✅
+
+### 4. docker-entrypoint.sh Edge Cases
+- **BUG FOUND (MEDIUM): Line 152 — `#*@` (shortest match) fails for passwords containing `@`**
+  - Example: password `p@ssword` → `${DATABASE_URL#*@}` extracts `p@ssword@postgres:5432/...` instead of `postgres:5432/...`
+  - nc then tries DNS lookup on `p@ssword@postgres` → fails → 120s timeout → misleading error
+  - **Fix**: Changed `#*@` to `##*@` (greedy match, strips to LAST `@`)
+  - Verified with 3 test cases: normal password, `@` in password, `@` and `:` in password — all pass
+- pg_trgm extension: failure handled gracefully with `2>/dev/null` + warning message ✅
+- PID 1 signal handling: tini → entrypoint → trap SIGTERM → cleanup (SIGTERM → 15s wait → SIGKILL) → exit ✅
+- EXIT trap disabled after successful startup (`trap - EXIT` on line 311) — correct, prevents double-cleanup ✅
+- $ in passwords: not a bash issue (bash doesn't recursively expand $ inside variable values) ✅
+
+### 5. install.sh Robustness
+- tar --strip-components=1: correct for GitHub archives (always extract as `repo-branch/`) ✅
+- SCRIPT_DIR when run from inside project dir: correctly resolves via `$(cd "$(dirname "$0")" && pwd)` ✅
+- Cleanup trap: explicit `rm -f /tmp/novel-admin.tar.gz; rm -rf /tmp/novel-tmp` before each `exec` (EXIT trap won't fire after exec) ✅
+- git force sync preserves .env, handles dirty trees and merge conflicts ✅
+
+### 6. .dockerignore Completeness
+- mini-services/scraper-service/node_modules: excluded ✅
+- .git: excluded ✅
+- Log files (*.log, dev.log, server.log, nohup.out): excluded ✅
+- **ISSUE FOUND (LOW): `db/*.db` and `db/*.db-journal` too narrow**
+  - `prisma/db/custom.db` (212K) — NOT excluded by `db/*.db`
+  - `mini-services/scraper-service/queue.db` (4K) — NOT excluded
+  - `db/cookies.db-wal`, `mini-services/scraper-service/queue.db-shm` — NOT excluded
+  - **Fix**: Changed `db/*.db` → `*.db`, `db/*.db-journal` → `*.db-journal`, added `*.db-wal`, `*.db-shm`
+
+## Issues Found & Fixed
+
+### BUG-1 (MEDIUM): docker-entrypoint.sh:152 — DB URL parsing fails for @ in password
+- **File**: docker-entrypoint.sh:152
+- **Problem**: `${DATABASE_URL#*@}` uses shortest match; password containing `@` breaks host extraction
+- **Fix**: Changed `#*@` to `##*@` (greedy, strips to last `@`)
+- **Verified**: 3 bash simulation cases (normal, @ in pw, @ and : in pw) all pass
+
+### BUG-2 (LOW): .dockerignore:16-17 — SQLite files leak into build context
+- **File**: .dockerignore:15-17
+- **Problem**: `db/*.db` only matches db/ directory; prisma/db/custom.db and scraper queue.db leak in
+- **Fix**: Broadened to `*.db`, `*.db-journal`, `*.db-wal`, `*.db-shm` (catches all subdirectories)
+
+## Cross-Validation Results
+- Variable cross-validation (compose ↔ .env.production): 38/38 ✅
+- Heredoc ↔ reference compose: all vars match, R19 fixes verified ✅
+- Dockerfile COPY source paths: all exist ✅
+- Prisma transitive deps: all resolve ✅
+- docker-entrypoint.sh DB extraction: 3/3 simulation cases pass ✅
+- install.sh: all paths verified ✅
+- .dockerignore: all required patterns present ✅
+
+## Files Modified
+- docker-entrypoint.sh (1 fix: #*@ → ##*@)
+- .dockerignore (1 fix: broadened .db exclusions)
+
+## ESLint: 0 errors, 5 warnings (pre-existing React Hook Form) ✅
+
+## 历史累计修复: 221 + 2(本轮) = 223项
+
+Stage Summary:
+- Docker深度审计: 2个问题(1 MEDIUM + 1 LOW)全部修复
+- 变量交叉验证 38/38 通过
+- 密码含@的DB URL解析修复并验证
+- .dockerignore补全SQLite WAL/SHM文件排除
+
+---
+Task ID: R20-scraper-audit
+Agent: Sub-agent (deep scraper-service audit)
+Task: R20 scraper-service audit — new angles: data flow, error propagation, concurrency, resource cleanup, R19 integration, queue robustness
+
+## Audit Scope
+Focused on NEW angles not covered by R19:
+1. Data flow integrity (full trace: API → task → engine → parse → DB)
+2. Error propagation (useful messages, no swallowed errors)
+3. Concurrency safety (shared mutable state, races)
+4. Resource cleanup (browser pages, timeouts, connections)
+5. R19 new feature integration (referrer-chain, timing-jitter, stealth)
+6. Queue system robustness (queue.ts vs queue.pg.ts)
+
+## Issues Found & Fixed
+
+### BUG-1 (MEDIUM): proxy-manager.ts:555 — clearTimeout leaked on through-proxy fetch failure
+- **File**: proxy-manager.ts:555
+- **Problem**: In `checkHealth()`, when the through-proxy `undiciFetch` throws (network error, abort), the 15-second timeout is NOT cleared. It fires later as a no-op but wastes a timer handle.
+- **Fix**: Added `clearTimeout(timeout)` as the first line in the catch block before falling through to secondary check.
+
+### BUG-2 (MEDIUM): engines.ts — Playwright engine never calls referrerChain.recordVisit()
+- **File**: engines.ts (PlaywrightEngine.fetch)
+- **Problem**: PlaywrightEngine calls `buildFetchHeaders()` which reads from `referrerChain.getReferer()`, but never calls `referrerChain.recordVisit()` after a successful fetch. This means the referrer chain is always empty for Playwright requests, so the Referer header always falls back to spoofed/parent-path — the R19 referrer chain feature is effectively disabled for all non-cheerio engines.
+- **Fix**: Added `referrerChain.recordVisit(finalUrl)` after cookie extraction and before returning the result.
+
+### BUG-3 (LOW): engines.ts — Obscura engine never calls referrerChain.recordVisit()
+- **File**: engines.ts (ObscuraEngine.fetch)
+- **Problem**: Same as BUG-2 — Obscura never records visited URLs. The referrer chain remains empty.
+- **Fix**: Added `referrerChain.recordVisit(finalUrl)` after cookie extraction.
+
+### BUG-4 (MEDIUM): queue.pg.ts — addManyToQueue not atomic (no transaction)
+- **File**: queue.pg.ts:98-108 (original)
+- **Problem**: Unlike the SQLite version (`queue.ts`) which wraps batch inserts in `d.transaction()`, the PostgreSQL version inserts items one-by-one without a transaction. If the service crashes mid-batch (e.g., while adding 500 chapter URLs), some items are inserted and others are not, leading to incomplete task data on restart.
+- **Fix**: Wrapped the insert loop in `db.begin(async (sql) => { ... })` for transactional atomicity. Uses the transaction-scoped `sql` parameter for all queries.
+
+### BUG-5 (LOW): task-engine.ts:796 — Silent error swallowing for existing chapters fetch
+- **File**: task-engine.ts:796
+- **Problem**: In incremental mode, the API call to fetch existing chapters is wrapped in `catch { /* ignore */ }`. If this call fails (network error, 500), the `existingChapters` map remains empty, and ALL chapters will be re-created as duplicates. The error is silently swallowed, making it impossible to diagnose.
+- **Fix**: Changed to `catch (err) { console.warn(...) }` with a descriptive warning message including the book ID and error.
+
+## Items Verified (No Issues)
+
+### Data Flow Integrity
+- `resolveUrl()` uses `new URL(relative, base).href` — correctly handles ports, paths, protocols ✅
+- `parseSelector()` returning empty string — callers handle correctly (empty title → book skipped, empty content → chapter skipped) ✅
+- Chapter URLs with relative paths + base URL with port → `new URL()` handles correctly ✅
+
+### Error Propagation
+- `readTextWithLimit()` errors don't include URL, but the outer error handler in task-engine.ts logs the URL alongside the error message — sufficient debugging context ✅
+- `retryWithBackoff` wraps errors with attempt info — useful for debugging ✅
+- Circuit breaker half-open state properly guarded by `_halfOpenInFlight` counter (R19 fix verified) ✅
+
+### Concurrency Safety
+- `rateLimiter.acquire()` and `recordResult()` are synchronous — no race conditions in single-threaded Node.js ✅
+- `cookieJar` all operations are synchronous — no concurrent access issues ✅
+- `proxyManager` state modifications are synchronous — no races ✅
+- `bookQueue.shift()` / `chapterQueue.shift()` from multiple workers — safe in single-threaded JS ✅
+- `AtomicCounter` class (R19 fix) properly replaces raw `++` on shared counters ✅
+
+### Resource Cleanup
+- PlaywrightEngine: `context.close()` called in `finally` block (line 577-582) — pages within context auto-closed ✅
+- ObscuraEngine: `context.close()` called in `finally` block (line 1540-1545) — same ✅
+- Browser disconnect handlers clear `browser` and `launchPromise` references — prevents stale browser usage ✅
+- `closeAllEngines()` properly closes both Playwright and Obscura browsers ✅
+- `readTextWithLimit()` reader — auto-released after full consumption; `reader.cancel()` called in catch ✅
+
+### R19 Integration
+- `applyTimingJitter()` only called in cheerio engine — acceptable (external API engines don't need it) ✅
+- Stealth.ts MediaDevices/Battery: duplicate overrides (sections 18/28, 19/29) — second override wins, no functional break ✅
+- Firecrawl/AgentQL/CloudBrowser/Scrapling engines: don't use referrer chain or timing jitter — by design (external APIs) ✅
+
+### Queue System Robustness (queue.ts vs queue.pg.ts)
+- API surface comparison: both export `addToQueue`, `addManyToQueue`, `markCompleted`, `markFailed`, `getQueueStats`, `requeueFailed`, `cleanupQueue`, `clearTaskQueue` ✅
+- queue.pg.ts has extra: `dequeue`, `dequeueBatch`, `isUrlProcessed` (not used by task-engine, available for future) ✅
+- Sync vs async: queue.ts is sync, queue.pg.ts is async. All callers use `await` — compatible ✅
+- SQL injection: queue.pg.ts uses `postgres` tagged template literals — fully parameterized ✅
+- Connection errors: `getSql()` throws if DATABASE_URL missing. Callers in task-engine have try-catch around queue ops ✅
+
+## Files Modified
+- proxy-manager.ts (1 fix: clearTimeout leak)
+- engines.ts (2 fixes: referrerChain.recordVisit in Playwright + Obscura)
+- queue.pg.ts (1 fix: addManyToQueue wrapped in transaction)
+- task-engine.ts (1 fix: silent error → warning log for existing chapters)
+
+## ESLint: 0 errors, 5 warnings (pre-existing React Hook Form) ✅
+
+## 历史累计修复: 223 + 5(本轮) = 228项
+
+Stage Summary:
+- R20 scraper-service新角度审计: 5个问题(2 MEDIUM + 2 LOW + 1 MEDIUM)全部修复
+- Referrer Chain修复: Playwright和Obscura引擎现在正确记录访问历史
+- Proxy健康检查: 修复timeout泄漏
+- PG队列: addManyToQueue改为事务操作
+- 增量模式: 现有章节获取失败不再静默吞错
+
+---
+Task ID: R20-anti-crawl
+Agent: Sub-agent (anti-crawl enhancement)
+Task: R20 anti-crawl enhancement — IP fingerprint diversification, browser behavior simulation, canvas/audio fingerprint noise
+
+Work Log:
+- 新增3个反爬虫能力，修改2个现有文件，所有代码通过TypeScript检查
+
+## 新增功能
+
+### Feature 1: IP Fingerprint Diversification (src/ip-fingerprint.ts) NEW
+- **Connection头变化**: 每个域名随机选择keep-alive(85%)或close(15%)
+- **Keep-Alive超时变化**: 从5/10/15/30/60秒中随机选择
+- **Accept-Encoding变化**: 5种组合随机选择(gzip,deflate,br / gzip,deflate / gzip,br / deflate,br / gzip)
+- **Accept头变化**: 5种真实浏览器Accept模式随机选择(Chrome全格式/Safari精简/Firefox/极简等)
+- **每域名一致性**: LRU缓存(200条, 20分钟TTL)确保同域名在同一会话内保持一致的header组合
+- **导出API**: `getDiversifiedHeaders(url)` 返回header覆盖对象
+- **集成**: 在 `utils.ts` 的 `buildFetchHeaders()` 中，在 `shuffleHeaderOrder()` 之前合并覆盖
+
+### Feature 2: Browser Behavior Simulation (src/browser-behavior.ts) NEW
+- **访问频率限制**: 同一域名10秒窗口内最多3次访问，超出则等待直到最早的访问过期
+- **阅读延迟模拟**: 基于HTML内容长度计算模拟阅读时间(300字符/秒，±20%抖动，200ms-4000ms范围)
+- **人工休息暂停**: 每5-10个请求(随机阈值)后暂停8-15秒，模拟人类休息
+- **入口页面模拟**: 10%概率在首次访问某域名时先访问域名根路径(simulates从首页导航)
+- **导出API**: `browserBehavior.shouldThrottle(domain)`, `browserBehavior.getPreVisitDelay(url, htmlLength)`, `browserBehavior.maybeVisitEntryPage(domain, rootUrl)`, `browserBehavior.recordRequest(domain)`
+- **集成**: 在 `engines.ts` 的 CheerioEngine.fetch() 中:
+  - `shouldThrottle()` + `recordRequest()` 在timing jitter之后、retryWithBackoff之前调用
+  - `getPreVisitDelay()` 在成功获取HTML后、返回结果之前调用
+
+### Feature 3: Canvas/AudioContext Fingerprint Noise (src/stealth.ts ENHANCEMENT)
+- **Canvas toDataURL噪声**: 重写 `HTMLCanvasElement.prototype.toDataURL`，在返回前对每个像素的RGB通道添加±1的不可见噪声(基于profile seed的确定性PRNG)
+- **Canvas toBlob噪声**: 同样重写 `toBlob`，相同的噪声策略
+- **AudioContext频率噪声**: 重写 `AudioContext.prototype.createOscillator`，对oscillator的frequency.value添加±0.005Hz的微小偏移
+- **OfflineAudioContext支持**: 同样覆盖 `OfflineAudioContext.prototype.createOscillator`(某些指纹库使用离线上下文)
+- **确定性噪声**: 基于profile seed的LCG伪随机数生成器，同一页面加载内输出一致，但不同profile/会话间不同
+
+## 文件变更
+- **新增**: `mini-services/scraper-service/src/ip-fingerprint.ts` (120行)
+- **新增**: `mini-services/scraper-service/src/browser-behavior.ts` (173行)
+- **修改**: `mini-services/scraper-service/src/stealth.ts` (+108行，sections 30-31)
+- **修改**: `mini-services/scraper-service/src/utils.ts` (+4行，import + getDiversifiedHeaders集成)
+- **修改**: `mini-services/scraper-service/src/engines.ts` (+12行，import + shouldThrottle/recordRequest/getPreVisitDelay集成)
+
+## 验证结果
+- ESLint: 0错误, 5警告(全部为预存在的React Hook Form警告) ✅
+- Bun TypeScript编译: 所有修改文件通过 `bun build --no-bundle` 检查 ✅
+
+## 历史累计修复: 228 + 3(本轮新功能) = 231项
+
+Stage Summary:
+- R20 anti-crawl增强: 3个新功能全部实现并集成
+- IP指纹多样化: Accept/Accept-Encoding/Connection/Keep-Alive四维度per-domain随机化
+- 浏览器行为模拟: 频率限制+阅读延迟+人工休息+入口页面四层行为模拟
+- Canvas/Audio指纹噪声: toDataURL/toBlob像素噪声 + createOscillator频率偏移
+- 所有新代码TypeScript严格模式兼容，Bun编译通过
+
+---
+Task ID: R20
+Agent: Main Orchestrator + 3 Sub-agents (docker-audit, scraper-audit, anti-crawl)
+Task: 持续开发审查 — Docker深度审计 + Scraper数据流审计 + 反反爬增强R2
+
+Work Log:
+- 读取worklog最新状态(11609行, 221项累计修复)
+- 并行启动3个子代理:
+  1. R20-docker: Docker变量交叉验证+边界条件审计+修复
+  2. R20-scraper-audit: 数据流完整性+R19新特性集成审计+修复
+  3. R20-anti-crawl: IP指纹+浏览行为+Canvas/Audio噪声 3项新能力
+
+## Docker审计 (R20-docker)
+- 变量交叉验证: 38/38 compose变量全部有默认值或.env配置 ✅
+- deploy.sh heredoc: 29必需+9可选变量全部与参考compose匹配 ✅
+- Dockerfile COPY路径: 8个源路径全部存在 ✅
+- Dockerfile Prisma依赖: 13个传递依赖全部正确 ✅
+- 发现2个新问题:
+  - BUG-1(MEDIUM): docker-entrypoint.sh DATABASE_URL解析使用#*@(最短匹配), 密码含@时host提取错误 → 改为##*@(贪婪匹配)
+  - BUG-2(LOW): .dockerignore仅排除db/*.db, 子目录SQLite文件(prisma/db/, scraper-service/)泄漏到构建上下文 → 添加*.db/(*.db-wal/*.db-shm全局排除)
+
+## Scraper-Service审计 (R20-scraper-audit)
+- 数据流完整性: resolveUrl正确处理端口/协议, parseSelector空返回由调用方处理 ✅
+- 错误传播: readTextWithLimit错误消息缺少URL但外层handler记录了URL ✅
+- 并发安全: rateLimiter/cookieJar/proxyManager/AtomicCounter均为同步操作, 单线程无竞态 ✅
+- 资源清理: Playwright/Obscura context.close()在finally中, readTextWithLimit reader自动释放 ✅
+- SQL注入: queue.pg.ts使用postgres tagged template, 完全参数化 ✅
+- 发现5个新问题:
+  - BUG-1(MEDIUM): proxy-manager checkHealth() catch块泄漏clearTimeout → 添加clearTimeout
+  - BUG-2(MEDIUM): Playwright引擎未调用referrerChain.recordVisit() → R19新特性对Playwright无效 → 添加调用
+  - BUG-3(LOW): Obscura引擎未调用referrerChain.recordVisit() → 同上 → 添加调用
+  - BUG-4(MEDIUM): queue.pg.ts addManyToQueue()无事务, 批量插入中断导致部分数据 → 包裹db.begin()事务
+  - BUG-5(LOW): task-engine.ts增量模式catch忽略API失败 → 改为console.warn
+
+## 反反爬增强 (R20-anti-crawl)
+- 新增文件: src/ip-fingerprint.ts (120行)
+  - 每域随机Connection/Keep-Alive/Accept-Encoding/Accept头
+  - 5种Accept模式(Chrome/Firefox/Safari变体)
+  - LRU缓存(200条, 20min TTL)保证同域一致性
+- 新增文件: src/browser-behavior.ts (173行)
+  - 访问频率节流: 同域10秒内最多3次
+  - 阅读延迟: 基于内容长度(300字/秒, ±20%抖动)
+  - 人类休息: 每5-10次请求暂停8-15秒
+  - 入口页模拟: 10%概率先访问域名根目录
+- 增强: src/stealth.ts (+108行, Section 30-31)
+  - Canvas指纹噪声: toDataURL/toBlob添加±1像素噪声(LCG PRNG)
+  - AudioContext指纹噪声: createOscillator添加±0.005Hz频率偏移
+- 集成:
+  - src/utils.ts: buildFetchHeaders()集成getDiversifiedHeaders()
+  - src/engines.ts: cheerio引擎集成shouldThrottle/recordRequest/getPreVisitDelay
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings(全部预存React Hook Form) ✅
+- Dev Server: HTTP 200 ✅
+- 新文件编译检查: 通过 ✅
+
+## 修改文件汇总
+- docker-entrypoint.sh (1处: DATABASE_URL解析贪婪匹配)
+- .dockerignore (1处: SQLite文件全局排除)
+- mini-services/scraper-service/src/proxy-manager.ts (clearTimeout修复)
+- mini-services/scraper-service/src/engines.ts (Playwright/Obscura referrerChain + browserBehavior集成)
+- mini-services/scraper-service/src/queue.pg.ts (addManyToQueue事务化)
+- mini-services/scraper-service/src/task-engine.ts (增量模式catch改warn)
+- mini-services/scraper-service/src/ip-fingerprint.ts (NEW: 120行)
+- mini-services/scraper-service/src/browser-behavior.ts (NEW: 173行)
+- mini-services/scraper-service/src/stealth.ts (+108行: Canvas/Audio噪声)
+- mini-services/scraper-service/src/utils.ts (getDiversifiedHeaders集成)
+
+## 历史累计修复: 221 + 7(本轮) = 228项
+
+Stage Summary:
+- Docker: 2个新问题修复(密码含@的DB URL解析 + SQLite文件泄漏)
+- Scraper审计: 5个bug修复(Referrer Chain集成遗漏 + 队列事务 + proxy timeout)
+- 反反爬: 3项新能力(IP指纹/浏览行为/Canvas+Audio噪声) + stealth 31个section
+- ESLint: 0 errors ✅

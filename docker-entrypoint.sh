@@ -149,7 +149,8 @@ fi
 # ─── Wait for PostgreSQL to be ready ───
 # Extract host:port from DATABASE_URL (format: postgresql://user:pass@host:port/db)
 # Use bash parameter expansion — robust against @ or : in password.
-_DB_REST="${DATABASE_URL#*@}"
+# ##* (greedy) strips up to the LAST @, so passwords containing @ are handled.
+_DB_REST="${DATABASE_URL##*@}"
 _DB_HOSTPORT="${_DB_REST%%/*}"
 _DB_HOST="${_DB_HOSTPORT%:*}"
 _DB_PORT="${_DB_HOSTPORT#*:}"

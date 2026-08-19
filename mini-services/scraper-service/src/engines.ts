@@ -24,6 +24,7 @@ import { referrerChain } from "./referrer-chain";
 import { detectCaptcha, type CaptchaDetection } from "./captcha-detector";
 import { autoHandleCaptcha } from "./captcha-strategy";
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
+import { browserBehavior } from "./browser-behavior";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -217,6 +218,15 @@ class CheerioEngine implements ScrapingEngine {
     // Anti-fingerprint timing jitter (±50ms, always applied)
     await applyTimingJitter();
 
+    // Browser behavior: throttle if visiting same domain too frequently
+    if (targetDomain) {
+      const throttleCheck = browserBehavior.shouldThrottle(targetDomain);
+      if (throttleCheck.throttled) {
+        await new Promise(r => setTimeout(r, throttleCheck.waitMs));
+      }
+      browserBehavior.recordRequest(targetDomain);
+    }
+
     return retryWithBackoff(
       async () => {
         // Per-domain rate limiting
@@ -330,6 +340,11 @@ class CheerioEngine implements ScrapingEngine {
 
         // Record URL in referrer chain for future requests
         referrerChain.recordVisit(finalUrl);
+
+        // Browser behavior: simulate reading/scroll delay based on content length
+        if (targetDomain) {
+          await browserBehavior.getPreVisitDelay(url, html.length);
+        }
 
         return { html, finalUrl, statusCode: response.status };
         } catch (err) {
@@ -555,6 +570,9 @@ class PlaywrightEngine implements ScrapingEngine {
               }
             } catch { /* ignore cookie extraction errors */ }
           }
+
+          // Record URL in referrer chain for future requests
+          referrerChain.recordVisit(finalUrl);
 
           // Record rate limit result
           if (pwDomain) {
@@ -1512,6 +1530,9 @@ class ObscuraEngine implements ScrapingEngine {
               throw new Error(`CAPTCHA detected (${captchaDetection.type}, ${Math.round(captchaDetection.confidence * 100)}%) on ${domain}`);
             }
           }
+
+          // Record URL in referrer chain for future requests
+          referrerChain.recordVisit(finalUrl);
 
           // Record rate limit result (only if not throwing CAPTCHA above)
           rateLimiter.recordResult(domain, obscuraStatus >= 200 && obscuraStatus < 400, obscuraStatus);

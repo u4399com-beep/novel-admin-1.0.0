@@ -9,6 +9,7 @@ import { isSafeUrl } from "./ssrf";
 import { randomUUID } from "node:crypto";
 import { getAcceptLanguageForDomain, shuffleHeaderOrder } from "./stealth";
 import { referrerChain } from "./referrer-chain";
+import { getDiversifiedHeaders } from "./ip-fingerprint";
 
 // ==================== User-Agent Rotation ====================
 
@@ -643,6 +644,10 @@ export function buildFetchHeaders(
 
   // Apply browser-consistent header order if domain is known
   if (domain) {
+    // Merge IP fingerprint diversification overrides (Accept, Accept-Encoding, Connection, Keep-Alive)
+    // These are applied BEFORE shuffleHeaderOrder so the diversified values get properly ordered
+    const diversified = getDiversifiedHeaders(targetUrl || '');
+    Object.assign(headers, diversified);
     return shuffleHeaderOrder(headers, domain);
   }
 

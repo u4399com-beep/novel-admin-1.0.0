@@ -93,16 +93,34 @@ export async function addToQueue(options: AddToQueueOptions): Promise<string> {
 }
 
 /**
- * Add multiple URLs to the queue (batched).
+ * Add multiple URLs to the queue (batched in a single transaction for atomicity).
  */
 export async function addManyToQueue(items: AddToQueueOptions[]): Promise<string[]> {
   const db = await getSql();
   const ids: string[] = [];
 
-  for (const item of items) {
-    const id = await addToQueue(item);
-    ids.push(id);
-  }
+  await db.begin(async (sql) => {
+    for (const item of items) {
+      const id = generateId();
+      const taskId = item.taskId || "__default__";
+
+      const result = await sql`
+        INSERT INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
+        VALUES (${id}, ${item.url}, ${item.method || "GET"}, ${item.payload ? JSON.stringify(item.payload) : null}, 0, ${item.maxRetries || 3}, 'pending', NOW(), NOW(), ${taskId}, ${item.metadata ? JSON.stringify(item.metadata) : null})
+        ON CONFLICT (task_id, url, status) WHERE status != 'failed' DO NOTHING
+        RETURNING id
+      `;
+
+      if (result.length > 0) {
+        ids.push(id);
+      } else {
+        const existing = await sql`
+          SELECT id FROM request_queue WHERE url = ${item.url} AND task_id = ${taskId} AND status != 'failed' LIMIT 1
+        `;
+        if (existing[0]) ids.push(existing[0].id);
+      }
+    }
+  });
 
   return ids;
 }

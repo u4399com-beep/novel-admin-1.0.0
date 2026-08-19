@@ -339,6 +339,8 @@ export function clearDomainUACache(domain?: string): void {
  * 27. Touch support spoofing (mobile UA detection, TouchEvent constructor)
  * 28. MediaDevices enumerateDevices() fake (deterministic device IDs from seed)
  * 29. Battery API getBattery() override (realistic level + charging state)
+ * 30. Canvas toDataURL/toBlob noise injection (imperceptible per-pixel RGB noise)
+ * 31. AudioContext/OfflineAudioContext createOscillator frequency noise
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -1322,6 +1324,111 @@ export function getStealthScript(profile: FingerprintProfile): string {
       configurable: true,
     });
   }
+
+  // ---- 30. Canvas Fingerprint Noise ----
+  // Add imperceptible noise to canvas pixel data so fingerprinting is unreliable.
+  // The noise is deterministic per profile seed so the same page load produces
+  // consistent (but fake) canvas output, but differs across page loads / profiles.
+  try {
+    var _canvasNoiseSeed = _fakeDeviceSeed * 13.37;
+    var _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
+      try {
+        var ctx = this.getContext('2d');
+        if (ctx) {
+          var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
+          var d = imgData.data;
+          for (var i = 0; i < d.length; i += 4) {
+            // Flip 1-2 bits per pixel channel (imperceptible)
+            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
+            var noise = (_canvasNoiseSeed % 3) - 1; // -1, 0, or 1
+            d[i]   = Math.max(0, Math.min(255, d[i] + noise));     // R
+            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
+            noise = (_canvasNoiseSeed % 3) - 1;
+            d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));   // G
+            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
+            noise = (_canvasNoiseSeed % 3) - 1;
+            d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));   // B
+            // Alpha channel untouched
+          }
+          ctx.putImageData(imgData, 0, 0);
+        }
+      } catch(e) {}
+      return _origToDataURL.call(this, type, quality);
+    };
+
+    var _origToBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+      try {
+        var ctx = this.getContext('2d');
+        if (ctx) {
+          var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
+          var d = imgData.data;
+          for (var i = 0; i < d.length; i += 4) {
+            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
+            var noise = (_canvasNoiseSeed % 3) - 1;
+            d[i]   = Math.max(0, Math.min(255, d[i] + noise));
+            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
+            noise = (_canvasNoiseSeed % 3) - 1;
+            d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));
+            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
+            noise = (_canvasNoiseSeed % 3) - 1;
+            d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));
+          }
+          ctx.putImageData(imgData, 0, 0);
+        }
+      } catch(e) {}
+      return _origToBlob.call(this, callback, type, quality);
+    };
+  } catch(e) {}
+
+  // ---- 31. AudioContext Fingerprint Noise ----
+  // Override createOscillator to inject slight frequency variation,
+  // making audio fingerprinting inconsistent across page loads.
+  try {
+    var _audioNoiseSeed = _fakeDeviceSeed * 7.91;
+    var _origCreateOscillator = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function() {
+      var osc = _origCreateOscillator.call(this);
+      try {
+        var origConnect = osc.connect.bind(osc);
+        var origFrequency = osc.frequency;
+        if (origFrequency) {
+          _audioNoiseSeed = (_audioNoiseSeed * 16807 + 0.5) % 2147483647;
+          var freqOffset = ((_audioNoiseSeed % 100) - 50) * 0.0001; // ±0.005 Hz
+          var origFreqValue = origFrequency.value;
+          Object.defineProperty(origFrequency, 'value', {
+            get: function() { return origFreqValue + freqOffset; },
+            set: function(v) { origFreqValue = v; },
+            configurable: true
+          });
+        }
+      } catch(e) {}
+      return osc;
+    };
+
+    // Also override OfflineAudioContext (used by some fingerprinting libs)
+    if (typeof OfflineAudioContext !== 'undefined') {
+      var _origOfflineCreateOsc = OfflineAudioContext.prototype.createOscillator;
+      OfflineAudioContext.prototype.createOscillator = function() {
+        var osc = _origOfflineCreateOsc.call(this);
+        try {
+          var origFreq = osc.frequency;
+          if (origFreq) {
+            _audioNoiseSeed = (_audioNoiseSeed * 16807 + 0.5) % 2147483647;
+            var fOff = ((_audioNoiseSeed % 100) - 50) * 0.0001;
+            var _origVal = origFreq.value;
+            Object.defineProperty(origFreq, 'value', {
+              get: function() { return _origVal + fOff; },
+              set: function(v) { _origVal = v; },
+              configurable: true
+            });
+          }
+        } catch(e) {}
+        return osc;
+      };
+    }
+  } catch(e) {}
 
 })();
 `;
