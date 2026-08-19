@@ -1430,6 +1430,103 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
+  // ---- 32. Navigation Timing Simulation ----
+  // Override performance.getEntriesByType('navigation') to return realistic values,
+  // preventing detection via timing-based fingerprinting.
+  try {
+    var _origGetEntriesByType = Performance.prototype.getEntriesByType;
+    Performance.prototype.getEntriesByType = function(type) {
+      if (type === 'navigation') {
+        var navStart = _perfTimingOffset || 0;
+        var dcl = 200 + Math.floor(_seededRandom(42) * 600); // 200-800ms
+        var load = 500 + Math.floor(_seededRandom(99) * 1500);  // 500-2000ms
+        var transferSize = 50 * 1024 + Math.floor(_seededRandom(77) * 450 * 1024); // 50-500KB
+        return [{
+          name: location.href,
+          entryType: 'navigation',
+          startTime: 0,
+          duration: load,
+          initiatorType: 'navigation',
+          nextHopProtocol: 'h2',
+          domContentLoadedEventEnd: dcl,
+          domContentLoadedEventStart: dcl - 5 - Math.floor(_seededRandom(33) * 50),
+          loadEventEnd: load,
+          loadEventStart: load - 3 - Math.floor(_seededRandom(55) * 30),
+          transferSize: transferSize,
+          encodedBodySize: Math.floor(transferSize * 0.7),
+          decodedBodySize: Math.floor(transferSize * 0.85),
+          responseStart: 30 + Math.floor(_seededRandom(11) * 120),
+          domainLookupEnd: 5 + Math.floor(_seededRandom(22) * 30),
+          domainLookupStart: Math.floor(_seededRandom(22) * 5),
+          connectEnd: 40 + Math.floor(_seededRandom(44) * 80),
+          connectStart: 10 + Math.floor(_seededRandom(44) * 30),
+          secureConnectionStart: 15 + Math.floor(_seededRandom(44) * 25),
+          requestStart: 50 + Math.floor(_seededRandom(55) * 100),
+          responseEnd: 100 + Math.floor(_seededRandom(66) * 200),
+          type: 'navigate',
+          redirectCount: 0,
+          toJSON: function() { return Object.assign({}, this); }
+        }];
+      }
+      return _origGetEntriesByType.call(this, type);
+    };
+  } catch(e) {}
+
+  // ---- 33. PerformanceObserver Neutralization ----
+  // When code tries to observe 'navigation' or 'resource' types,
+  // provide a fake observer that silently swallows callbacks.
+  // This prevents detection via PerformanceObserver registration patterns.
+  try {
+    var _origPerformanceObserver = PerformanceObserver;
+    var _neutralizedTypes = ['navigation', 'resource', 'longtask', 'paint', 'largest-contentful-paint', 'layout-shift', 'element'];
+    window.PerformanceObserver = function(callback) {
+      // Store original callback but wrap it to no-op for neutralized types
+      this._callback = callback;
+      this._observedTypes = [];
+      this._active = false;
+    };
+    window.PerformanceObserver.prototype = {
+      observe: function(options) {
+        if (options && options.type) {
+          this._observedTypes.push(options.type);
+          // For neutralized types, do NOT call the real observe — the observer
+          // simply never fires, which is valid behavior (observer may be
+          // created before the events occur).
+          if (_neutralizedTypes.indexOf(options.type) !== -1) {
+            this._active = false;
+            return;
+          }
+        }
+        // For non-neutralized types, pass through to real implementation
+        try {
+          var realObs = new _origPerformanceObserver(this._callback);
+          realObs.observe(options);
+          this._realObs = realObs;
+          this._active = true;
+        } catch(e) {}
+      },
+      disconnect: function() {
+        this._active = false;
+        if (this._realObs) {
+          try { this._realObs.disconnect(); } catch(e) {}
+          this._realObs = null;
+        }
+      },
+      takeRecords: function() {
+        // For neutralized types, return empty array
+        if (this._realObs) {
+          try { return this._realObs.takeRecords(); } catch(e) { return []; }
+        }
+        return [];
+      },
+      supportedEntryTypes: _origPerformanceObserver.supportedEntryTypes || []
+    };
+    // Preserve static methods
+    if (_origPerformanceObserver.supportedEntryTypes) {
+      window.PerformanceObserver.supportedEntryTypes = _origPerformanceObserver.supportedEntryTypes;
+    }
+  } catch(e) {}
+
 })();
 `;
 }

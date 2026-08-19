@@ -2901,6 +2901,8 @@ rm -f "$BUILD_LOG" 2>/dev/null
 # ── Start ──
 echo ""
 # Pre-create BACKUP_DIR on host (docker-compose mounts it)
+# Use the actual value from .env (user may have customized it)
+mkdir -p "$(env_val BACKUP_DIR)"
 mkdir -p "${INSTALL_DIR}/backups"
 
 # Pre-flight port check (port may have been taken during the build)

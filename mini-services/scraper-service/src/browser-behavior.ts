@@ -32,6 +32,9 @@ const BREAK_DELAY_MIN_MS = 8_000;        // 8 seconds
 const BREAK_DELAY_MAX_MS = 15_000;       // 15 seconds
 const ENTRY_PAGE_CHANCE = 0.10;          // 10% chance
 
+// Bounds to prevent unbounded memory growth in long-running sessions
+const MAX_TRACKED_DOMAINS = 500;
+
 // Reading speed: average 200-300 words per minute for Chinese text.
 // Chinese characters ~1.5 bytes each. A chapter of 5000 chars ≈ 2000 words.
 // Reading time = chars / 300 chars-per-second * 1000ms + random jitter.
@@ -60,12 +63,25 @@ class BrowserBehavior {
    *
    * @param domain - The target domain hostname.
    */
+  /** Evict oldest domain from tracking maps if at capacity */
+  private evictIfNeeded(): void {
+    while (this.domainVisits.size >= MAX_TRACKED_DOMAINS) {
+      // Delete the first (oldest-inserted) domain
+      const firstKey = this.domainVisits.keys().next().value;
+      if (firstKey) {
+        this.domainVisits.delete(firstKey);
+        this.domainRootsVisited.delete(firstKey);
+      } else break;
+    }
+  }
+
   shouldThrottle(domain: string): ThrottleResult {
     if (!domain) return { throttled: false };
 
     const now = Date.now();
     let record = this.domainVisits.get(domain);
     if (!record) {
+      this.evictIfNeeded();
       record = { timestamps: [], totalVisits: 0 };
       this.domainVisits.set(domain, record);
     }

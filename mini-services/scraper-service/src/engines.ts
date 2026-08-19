@@ -75,6 +75,55 @@ async function readTextWithLimit(response: Response, maxSize: number): Promise<s
   return new TextDecoder().decode(combined);
 }
 
+// ==================== Adaptive Rate Limit Wait ====================
+
+const MAX_THROTTLE_RETRIES = 3;
+
+/**
+ * Wait for rate limiter with adaptive backoff.
+ * - Waits for `waitMs` then retries `rateLimiter.acquire()`
+ * - Supports early exit on abort signal
+ * - Max 3 wait+retry cycles before giving up
+ * - Logs throttle events with domain, wait time, and retry count
+ */
+async function waitForRateLimit(domain: string, signal?: AbortSignal): Promise<void> {
+  for (let retry = 1; retry <= MAX_THROTTLE_RETRIES; retry++) {
+    const rateCheck = rateLimiter.acquire(domain);
+    if (rateCheck.allowed) return;
+
+    const waitMs = Math.min(rateCheck.waitMs, 2000);
+    console.log(
+      `[rate-limiter] Throttled: domain=${domain}, waitMs=${waitMs}, retry=${retry}/${MAX_THROTTLE_RETRIES}`
+    );
+
+    // Wait with early exit on abort
+    await new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(signal.reason || new Error('Aborted during rate limit wait'));
+        return;
+      }
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(signal.reason || new Error('Aborted during rate limit wait'));
+      };
+      let timer: ReturnType<typeof setTimeout>;
+      timer = setTimeout(() => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, waitMs);
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+  }
+
+  // After max retries, try one final acquire
+  const finalCheck = rateLimiter.acquire(domain);
+  if (!finalCheck.allowed) {
+    throw new Error(`Rate limit max retries (${MAX_THROTTLE_RETRIES}) exceeded for ${domain} (waitMs=${finalCheck.waitMs})`);
+  }
+}
+
 // ==================== Circuit Breaker ====================
 
 type CircuitState = "closed" | "open" | "half-open";
@@ -229,18 +278,9 @@ class CheerioEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
-        // Per-domain rate limiting
+        // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
         if (targetDomain) {
-          const RATE_WAIT_TIMEOUT = 30_000;
-          const waitStart = Date.now();
-          while (true) {
-            const rateCheck = rateLimiter.acquire(targetDomain);
-            if (rateCheck.allowed) break;
-            if (Date.now() - waitStart > RATE_WAIT_TIMEOUT) {
-              throw new Error(`Rate limit wait timeout for ${targetDomain} (${rateCheck.waitMs}ms wait)`);
-            }
-            await new Promise(r => setTimeout(r, Math.min(rateCheck.waitMs, 2000)));
-          }
+          await waitForRateLimit(targetDomain, options?.signal);
         }
 
         const startTime = Date.now();
@@ -439,18 +479,9 @@ class PlaywrightEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
-        // Per-domain rate limiting
+        // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
         if (pwDomain) {
-          const RATE_WAIT_TIMEOUT = 30_000;
-          const waitStart = Date.now();
-          while (true) {
-            const rateCheck = rateLimiter.acquire(pwDomain);
-            if (rateCheck.allowed) break;
-            if (Date.now() - waitStart > RATE_WAIT_TIMEOUT) {
-              throw new Error(`Rate limit wait timeout for ${pwDomain} (${rateCheck.waitMs}ms wait)`);
-            }
-            await new Promise(r => setTimeout(r, Math.min(rateCheck.waitMs, 2000)));
-          }
+          await waitForRateLimit(pwDomain, options?.signal);
         }
 
         const browser = await getPlaywrightBrowser();
@@ -1245,17 +1276,8 @@ class ObscuraEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
-        // Per-domain rate limiting
-        const RATE_WAIT_TIMEOUT = 30_000;
-        const waitStart = Date.now();
-        while (true) {
-          const rateCheck = rateLimiter.acquire(domain);
-          if (rateCheck.allowed) break;
-          if (Date.now() - waitStart > RATE_WAIT_TIMEOUT) {
-            throw new Error(`Rate limit wait timeout for ${domain} (${rateCheck.waitMs}ms wait)`);
-          }
-          await new Promise(r => setTimeout(r, Math.min(rateCheck.waitMs, 2000)));
-        }
+        // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
+        await waitForRateLimit(domain, options?.signal);
 
         // Select proxy for this domain (with rotation if configured)
         const domainProxy = domain ? proxyManager.getDomainProxyWithRotation(domain) : null;

@@ -24,6 +24,7 @@ interface NavigationEntry {
 // ==================== Constants ====================
 
 const MAX_HISTORY_PER_DOMAIN = 100;
+const MAX_TRACKED_DOMAINS = 500;
 
 // ==================== ReferrerChain ====================
 
@@ -37,6 +38,16 @@ class ReferrerChain {
    * Record a successful navigation to `url`.
    * The entry is appended to the navigation history for the URL's domain.
    */
+  /** Evict oldest domain if at capacity */
+  private evictIfNeeded(): void {
+    while (this.history.size >= MAX_TRACKED_DOMAINS) {
+      const firstKey = this.history.keys().next().value;
+      if (firstKey) {
+        this.history.delete(firstKey);
+      } else break;
+    }
+  }
+
   recordVisit(url: string): void {
     if (!url) return;
     try {
@@ -44,6 +55,7 @@ class ReferrerChain {
       const domain = parsed.hostname;
       let entries = this.history.get(domain);
       if (!entries) {
+        this.evictIfNeeded();
         entries = [];
         this.history.set(domain, entries);
       }

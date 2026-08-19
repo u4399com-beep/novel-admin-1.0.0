@@ -18,6 +18,7 @@ class CookieStore {
     this.db = new Database(dbPath || COOKIE_DB_PATH, { create: true });
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA synchronous = NORMAL');
+    this.db.exec('PRAGMA busy_timeout = 5000');
     this.init();
   }
 

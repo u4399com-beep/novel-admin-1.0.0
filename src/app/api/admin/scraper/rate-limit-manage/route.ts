@@ -34,6 +34,15 @@ export const POST = withAuth(async function POST(request: Request) {
     return apiError('缺少 domain 参数', 400);
   }
 
+  // Validate maxRPM if provided (for 'set' action)
+  if (action === 'set' && payload.maxRPM !== undefined) {
+    const rpm = Number(payload.maxRPM);
+    if (!Number.isFinite(rpm) || rpm < 1 || rpm > 10000) {
+      return apiError('maxRPM 必须是 1-10000 之间的数字', 400);
+    }
+    payload.maxRPM = rpm;
+  }
+
   const scraperPath = ACTION_MAP[action as string];
   const url = `${SCRAPER_SERVICE_URL}${scraperPath}?XTransformPort=3099`;
 

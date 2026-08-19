@@ -35,8 +35,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Switch Prisma schema to PostgreSQL
-RUN if grep -q 'provider = "sqlite"' prisma/schema.prisma; then \
-      sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma; \
+RUN if grep -q 'provider *= *"sqlite"' prisma/schema.prisma; then \
+      sed -i 's/provider[[:space:]]*=[[:space:]]*"sqlite"/provider = "postgresql"/' prisma/schema.prisma; \
     else \
       echo "WARNING: Expected 'provider = sqlite' in schema.prisma, skipping provider swap"; \
     fi

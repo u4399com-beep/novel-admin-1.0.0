@@ -11930,3 +11930,185 @@ Stage Summary:
 - Scraper审计: 5个bug修复(Referrer Chain集成遗漏 + 队列事务 + proxy timeout)
 - 反反爬: 3项新能力(IP指纹/浏览行为/Canvas+Audio噪声) + stealth 31个section
 - ESLint: 0 errors ✅
+
+---
+Task ID: R21-docker
+Agent: Docker end-to-end audit (sub-agent)
+Task: R21 Docker end-to-end audit — runtime correctness and edge cases beyond R19/R20
+
+Work Log:
+- Read worklog last 80 lines for context (R19/R20 already fixed 228 issues)
+- Systematically audited 5 files across 30+ focus areas
+
+## Audit Results
+
+### 1. deploy.sh — Advanced Validation
+- **.env backfill empty values**: `grep -q "^${_key}="` correctly matches keys with empty values (e.g. `FIRECRAWL_API_KEY=`) — will NOT overwrite ✅
+- **Password URL-safety**: `rand_pass` primary path uses `tr -d '=/+'` on base64 output → only [A-Za-z0-9] ✅. `rand_hex` (used for DB passwords) produces only [a-f0-9] ✅. Admin password (`rand_pass`) is never embedded in URLs ✅
+- **Hardware boundary**: `-lt 1500` is strict less-than → exactly 1500MB correctly falls into SMALL tier ✅
+- **Swap idempotency**: Checks `[ -f /swapfile ]` first, only recreates if existing size < target ✅
+- **BUG FOUND (MEDIUM)**: `mkdir -p "${INSTALL_DIR}/backups"` at line 2904 doesn't read actual BACKUP_DIR from .env. If user customizes BACKUP_DIR, `docker compose up` fails because bind mount host dir doesn't exist. → Fixed: added `mkdir -p "$(env_val BACKUP_DIR)"` before the hardcoded path
+
+### 2. docker-compose.yml — Runtime Correctness
+- **tmpfs /var/run/postgresql**: PG Docker image entrypoint (runs as root) creates and `chown postgres` the dir in tmpfs before starting PG ✅
+- **Healthcheck special chars**: POSTGRES_USER is hardcoded to `novel` (no user prompt for it), so no injection risk ✅
+- **BACKUP_DIR mount**: deploy.sh pre-creates directory at line 2904-2906 (now reads actual value) ✅
+
+### 3. docker-entrypoint.sh — Startup Race Conditions
+- **PG init race**: Mitigated by 3 layers: (1) compose `depends_on: service_healthy` with `pg_isready -U ... -d ...` checks specific DB, (2) entrypoint 3-retry loop with 5s delays, (3) PG Docker image creates DB before healthcheck passes ✅
+- **Scraper 2s startup check**: `kill -0` only checks process existence, not readiness. Bun process is alive even during slow init. Non-fatal if scraper crashes later (logs captured) ✅
+- **nohup + wait**: `nohup ... &` still creates a child of the shell. `nohup` only ignores SIGHUP and redirects I/O — doesn't change parent-child relationship. `wait $PID` works correctly ✅
+- **set -e + wait**: If app crashes, `wait` returns non-zero, `set -e` exits script with app's exit code → Docker restart policy triggers correctly ✅
+
+### 4. Dockerfile — Build Robustness
+- **BUG FOUND (LOW)**: `sed -i 's/provider = "sqlite"/provider = "postgresql"/'` relies on exact whitespace → fragile if schema reformatted. → Fixed: `sed -i 's/provider[[:space:]]*=[[:space:]]*"sqlite"/provider = "postgresql"/'` with `[[:space:]]*` regex
+- **Prisma CLI path**: `/app/node_modules/prisma/build/index.js` verified to exist ✅
+- **bun.lock for scraper**: `mini-services/scraper-service/bun.lock` exists ✅. Install failure handled gracefully (WARN log, scraper unavailable) ✅
+
+### 5. install.sh — Network Edge Cases
+- **GitHub raw proxies**: `ghfast.top`, `mirror.ghproxy.com`, `gh-proxy.com` are active Chinese GitHub mirror services for 2024/2025 ✅. Git protocol mirrors (`gitclone.com`, `kkgithub.com`) are separate and correct ✅
+- **git clone 2>/dev/null**: Hides all errors including auth failures. BY DESIGN for the multi-fallback pattern (try direct → try China git mirrors → try archive download). Clear error shown if ALL methods fail. NOT changing — logging each failure would be noisy on blocked networks ✅
+
+## Verification
+- ESLint: 0 errors, 5 warnings (all pre-existing React Hook Form) ✅
+
+## 修改文件汇总
+- deploy.sh (1处: BACKUP_DIR mkdir读取.env实际值)
+- Dockerfile (1处: sed正则容错空格变化)
+
+## 历史累计修复: 228 + 2(本轮) = 230项
+
+Stage Summary:
+- 30+ edge cases checked across 5 Docker files
+- 2 issues found and fixed (BACKUP_DIR idempotency + sed regex robustness)
+- 28 areas confirmed correct (R19/R20 fixes solid, no regressions)
+- ESLint: 0 errors ✅
+---
+Task ID: R21-scraper
+Agent: Scraper edge-case audit (sub-agent)
+Task: R21 scraper-service edge-case audit — memory leaks, numeric bounds, CJK, API validation
+
+Work Log:
+- Read worklog last 60 lines for context (R19/R20/R21-docker already fixed 230 issues)
+- Systematically audited 15+ files across 5 focus areas
+- Fixed 5 issues, confirmed 25+ areas correct
+
+## Audit Results
+
+### 1. Memory Leak Vectors — Cache Bounds Audit
+- **stealth.ts profileCache**: Bounded at 500 with LRU eviction ✅
+- **ip-fingerprint.ts domainHeaderCache**: Bounded at 200 with TTL + eviction ✅
+- **adaptive-delay.ts domains**: Bounded at 500 with LRU eviction ✅
+- **adaptive-delay.ts browsingSessions**: Bounded at 200 with LRU eviction ✅
+- **request-fingerprint.ts**: Bounded via 2-min periodic cleanup ✅
+- **session-manager.ts**: Bounded via 30-min periodic cleanup (expired/overused/blocked) ✅
+- **cleaning.ts adRegexCache**: Bounded at 200 with LRU eviction ✅
+- **BUG FOUND (MEDIUM) browser-behavior.ts:46,50**: `domainVisits` Map and `domainRootsVisited` Set grow unbounded — no eviction. Long-running scraper visiting 1000s of domains leaks memory. → Fixed: added `MAX_TRACKED_DOMAINS = 500` and `evictIfNeeded()` method
+- **BUG FOUND (MEDIUM) referrer-chain.ts:32**: Per-domain history bounded at 100, but outer `history` Map (domain→entries) is unbounded. → Fixed: added `MAX_TRACKED_DOMAINS = 500` and `evictIfNeeded()` method
+
+### 2. Numeric Bounds
+- **proxy-manager.ts healthScore**: Clamped with `Math.min(100, ...)` and `Math.max(0, ...)` ✅
+- **task-engine.ts progress**: All formulas produce 0-100 range (5+15=20, 20+30=50, 50+45=95, final=100) ✅
+- **proxy-manager.ts consecutiveFails**: Unbounded counter but all consumers cap their values (scoreLoss max 15, healthScore clamped 0-100, cooling at >=5). No functional impact. ✅
+- **rate-limiter.ts maxRPM**: Floor at 1 via `Math.max(1, ...)`, penalty reduces but never below 1 ✅
+
+### 3. Cookie Store Edge Cases
+- **cookie-store.ts SQLite BUSY**: WAL mode + synchronous=NORMAL helps but no busy_timeout configured. Under concurrent write contention (cookie store + restore + cleanup), could throw BUSY. → Fixed: added `PRAGMA busy_timeout = 5000`
+- **cookie-store.ts value length**: No limit needed — SQLite TEXT handles GB, cookies are bounded by HTTP spec (~4KB) ✅
+- **cookie-store.ts corruption**: WAL mode is crash-resilient. No integrity_check needed (too heavy for runtime) ✅
+- **BUG FOUND (LOW) cookie-jar.ts:279**: `importCookies` doesn't validate `cookie.value` is a string. A malformed JSON import could set value to object/array, causing `[object Object]` in headers. → Fixed: added `String(cookie.value)` coercion
+
+### 4. CJK Character Handling
+- **selectors.ts XPath with CJK**: `xpathToCss` regex uses `[^'"']*` for attribute values — matches CJK. `text()` extraction uses cheerio `.text()` which handles CJK correctly ✅
+- **cleaning.ts text cleaning**: `$.text()` preserves CJK. `removeRemnantLines` has CJK-aware check via `\u4e00-\u9fff` range. Ad/watermark patterns all use CJK regex ✅
+- **utils.ts chapterDedupKey**: Handles Chinese numerals (一二三→Arabic), full-width→half-width punctuation, Chinese brackets 【】. `.toLowerCase()` is safe (CJK has no case) ✅
+
+### 5. Frontend API Routes — Input Validation & Error Handling
+- **scrape-rules/templates/route.ts (GET)**: Read-only, no input needed ✅
+- **scrape-rules/[id]/apply/route.ts (POST)**: `withAuth` + `safeJson` + `sanitizeField`. Template data pre-validated ✅
+- **rate-limit-stats/route.ts (GET)**: `withAuth`, 5s timeout, mock fallback when scraper down, timeout cleared in all paths ✅
+- **cookie-persist/route.ts (GET)**: `withAuth`, 5s timeout, mock fallback ✅
+- **BUG FOUND (LOW) rate-limit-manage/route.ts:27**: `maxRPM` from request body forwarded to scraper without validation. Could be NaN, negative, or non-numeric. → Fixed: added numeric validation (1-10000 range)
+
+## Verification
+- ESLint: 0 errors, 5 warnings (all pre-existing React Hook Form) ✅
+
+## 修改文件汇总
+- mini-services/scraper-service/src/browser-behavior.ts (1处: MAX_TRACKED_DOMAINS=500 + evictIfNeeded)
+- mini-services/scraper-service/src/referrer-chain.ts (1处: MAX_TRACKED_DOMAINS=500 + evictIfNeeded)
+- mini-services/scraper-service/src/cookie-store.ts (1处: PRAGMA busy_timeout=5000)
+- mini-services/scraper-service/src/cookie-jar.ts (1处: importCookies value类型验证)
+- src/app/api/admin/scraper/rate-limit-manage/route.ts (1处: maxRPM数值验证)
+
+## 历史累计修复: 230 + 5(本轮) = 235项
+
+Stage Summary:
+- 30+ areas audited across memory leaks, numeric bounds, cookie store, CJK, API validation
+- 5 issues found and fixed (2 MEDIUM memory leaks, 1 LOW SQLite BUSY, 1 LOW import validation, 1 LOW API input)
+- 25+ areas confirmed correct (R19/R20 fixes solid, no regressions)
+- ESLint: 0 errors ✅
+
+---
+Task ID: R21-anti-crawl
+Agent: general-purpose
+Task: Anti-crawl enhancement R3 — DoH simulation, adaptive rate limit backoff, HTTP/2 fingerprint
+
+Work Log:
+- Read worklog last 60 lines for context (R19/R20/R21-docker, 235 cumulative fixes)
+- Read existing src/utils.ts, src/engines.ts, src/stealth.ts to understand current anti-crawl implementation
+- Created new file: src/doh-simulation.ts
+- Enhanced src/engines.ts with adaptive rate limit wait+retry
+- Enhanced src/stealth.ts with Sections 32-33
+- Integrated DoH into src/utils.ts buildFetchHeaders()
+
+## Feature 1: DNS-over-HTTPS Simulation (NEW FILE)
+- Created `src/doh-simulation.ts`
+- DNS cache: 100 entries max, 5-min TTL, LRU eviction
+- Generates 2-4 random IPs per domain (simulating DNS round-robin)
+- `getForwardedFor(domain)` → random IP from same /24 subnet as cached DNS result
+- Each request appears to come from a different IP in the same subnet
+- Helper exports: `getDohCacheSize()`, `clearDohCache()`
+
+## Feature 2: Request Throttle with Adaptive Backoff (ENHANCEMENT)
+- Added `waitForRateLimit(domain, signal?)` helper in src/engines.ts
+- Max 3 wait+retry cycles before giving up (was unlimited while-loop with 30s timeout)
+- Abort signal support: early exit on `signal.abort` during wait
+- Logs throttle events: `[rate-limiter] Throttled: domain=X, waitMs=Y, retry=N/3`
+- Replaced inline while-loop rate limiting in 3 engines:
+  - CheerioEngine.fetch (line ~282)
+  - PlaywrightEngine.fetch (line ~484)
+  - ObscuraEngine.fetch (line ~1280)
+
+## Feature 3: HTTP/2 Fingerprint Simulation (ENHANCEMENT)
+- **Section 32**: Override `performance.getEntriesByType('navigation')`
+  - Returns realistic NavigationTiming: domContentLoaded 200-800ms, load 500-2000ms
+  - Realistic transferSize 50-500KB, encodedBodySize, decodedBodySize
+  - Full timing chain: dnsLookup, connect, secureConnection, request, response
+  - nextHopProtocol: 'h2' for HTTP/2 fingerprint
+- **Section 33**: PerformanceObserver neutralization
+  - Fake `PerformanceObserver` constructor that swallows callbacks for neutralized types
+  - Neutralized types: navigation, resource, longtask, paint, largest-contentful-paint, layout-shift, element
+  - Non-neutralized types pass through to real PerformanceObserver
+  - Preserves `supportedEntryTypes` static property
+
+## Integration
+- `src/utils.ts`: imported `getForwardedFor` from doh-simulation
+- Added `X-Forwarded-For` header in `buildFetchHeaders()` using DoH simulation (before DNT header)
+
+## Verification
+- ESLint: 0 errors, 5 warnings (all pre-existing React Hook Form) ✅
+
+## 修改文件汇总
+- mini-services/scraper-service/src/doh-simulation.ts (NEW: DoH cache + getForwardedFor)
+- mini-services/scraper-service/src/engines.ts (1处: waitForRateLimit helper + 3处: replace inline rate limit loops)
+- mini-services/scraper-service/src/stealth.ts (1处: Section 32 NavigationTiming + Section 33 PerformanceObserver)
+- mini-services/scraper-service/src/utils.ts (2处: import doh-simulation + X-Forwarded-For in buildFetchHeaders)
+
+## 历史累计修复: 235 + 0(本轮无bug修复) = 235项
+
+Stage Summary:
+- 1 new file created (doh-simulation.ts)
+- 3 existing files enhanced
+- Stealth sections: 31 → 33
+- Rate limiting: unlimited while-loop → max 3 retries with abort support and logging
+- ESLint: 0 errors ✅

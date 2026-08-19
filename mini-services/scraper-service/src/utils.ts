@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { getAcceptLanguageForDomain, shuffleHeaderOrder } from "./stealth";
 import { referrerChain } from "./referrer-chain";
 import { getDiversifiedHeaders } from "./ip-fingerprint";
+import { getForwardedFor } from "./doh-simulation";
 
 // ==================== User-Agent Rotation ====================
 
@@ -618,6 +619,14 @@ export function buildFetchHeaders(
         headers['Referer'] = `${parsedUrl.origin}/`;
       }
     } catch { /* ignore */ }
+  }
+
+  // DoH Simulation: add fake X-Forwarded-For from same /24 subnet
+  if (domain) {
+    const forwardedFor = getForwardedFor(domain);
+    if (forwardedFor) {
+      headers['X-Forwarded-For'] = forwardedFor;
+    }
   }
 
   // DNT (Do Not Track): use explicit override or random

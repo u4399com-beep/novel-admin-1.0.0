@@ -277,6 +277,12 @@ class CookieJar {
         if (!item || typeof item !== 'object') continue;
         const cookie = item as StoredCookie;
         if (!cookie.name || !cookie.domain) continue;
+        // Ensure value is a string (defend against malformed imports)
+        if (cookie.value !== undefined && cookie.value !== null) {
+          cookie.value = String(cookie.value);
+        } else {
+          cookie.value = '';
+        }
 
         if (!this.cookies.has(cookie.domain)) {
           this.cookies.set(cookie.domain, []);
