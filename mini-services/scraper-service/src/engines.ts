@@ -19,7 +19,8 @@ import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
 import { rateLimiter } from "./rate-limiter";
 import { sessionManager } from "./session-manager";
-import { requestFingerprintMgr } from "./request-fingerprint";
+import { requestFingerprintMgr, applyTimingJitter } from "./request-fingerprint";
+import { referrerChain } from "./referrer-chain";
 import { detectCaptcha, type CaptchaDetection } from "./captcha-detector";
 import { autoHandleCaptcha } from "./captcha-strategy";
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
@@ -213,6 +214,9 @@ class CheerioEngine implements ScrapingEngine {
       await new Promise(r => setTimeout(r, jitter));
     }
 
+    // Anti-fingerprint timing jitter (±50ms, always applied)
+    await applyTimingJitter();
+
     return retryWithBackoff(
       async () => {
         // Per-domain rate limiting
@@ -323,6 +327,9 @@ class CheerioEngine implements ScrapingEngine {
 
         // Complete request fingerprint tracking
         requestFingerprintMgr.complete(fp.requestId, true, statusCode);
+
+        // Record URL in referrer chain for future requests
+        referrerChain.recordVisit(finalUrl);
 
         return { html, finalUrl, statusCode: response.status };
         } catch (err) {
@@ -634,7 +641,7 @@ class FirecrawlEngine implements ScrapingEngine {
             formats: ["html", "markdown"],
             onlyMainContent: true,
           }),
-          signal: AbortSignal.timeout(timeout),
+          signal: options?.signal?.aborted ? options.signal : (options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout)),
         });
 
         if (!response.ok) {
@@ -800,7 +807,7 @@ class AgentQLEngine implements ScrapingEngine {
             url,
             query: agentqlQuery,
           }),
-          signal: AbortSignal.timeout(timeout),
+          signal: options?.signal?.aborted ? options.signal : (options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout)),
         });
 
         if (!response.ok) {
@@ -924,7 +931,7 @@ class CloudBrowserEngine implements ScrapingEngine {
               timeout: timeout,
               renderJs: true,
             }),
-            signal: AbortSignal.timeout(timeout + 5000),
+            signal: options?.signal?.aborted ? options.signal : (options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout + 5000)]) : AbortSignal.timeout(timeout + 5000)),
           });
 
           if (!response.ok) {
@@ -970,7 +977,7 @@ class CloudBrowserEngine implements ScrapingEngine {
               waitFor: 3000,
               elements: [{ selector: "body" }],
             }),
-            signal: AbortSignal.timeout(timeout + 5000),
+            signal: options?.signal?.aborted ? options.signal : (options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout + 5000)]) : AbortSignal.timeout(timeout + 5000)),
           });
 
           if (!response.ok) {
@@ -1064,7 +1071,7 @@ class ScraplingEngine implements ScrapingEngine {
               timeout,
               stealth: true,
             }),
-            signal: AbortSignal.timeout(timeout + 10000),
+            signal: options?.signal?.aborted ? options.signal : (options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout + 10000)]) : AbortSignal.timeout(timeout + 10000)),
           });
 
           if (!response.ok) {

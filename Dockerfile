@@ -90,7 +90,6 @@ RUN apt-get update \
        curl \
        ca-certificates \
        netcat-openbsd \
-       unzip \
        chromium \
        fonts-wqy-zenhei \
     # libssl3 renamed to libssl3t64 in Debian Trixie (oven/bun:1 has its own OpenSSL)

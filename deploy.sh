@@ -2598,7 +2598,8 @@ for _kv in \
     "BROWSERLESS_API_KEY=" \
     "BROWSERLESS_API_URL=" \
     "STEEL_API_KEY=" \
-    "STEEL_API_URL="; do
+    "STEEL_API_URL=" \
+    "TZ=Asia/Shanghai"; do
     _key="${_kv%%=*}"
     _value="${_kv#*=}"
     if ! grep -q "^${_key}=" .env 2>/dev/null; then
@@ -2696,16 +2697,16 @@ services:
       - SCRAPER_SERVICE_TOKEN=${SCRAPER_SERVICE_TOKEN}
       - SCRAPER_SERVICE_URL=http://localhost:3099
       - MAIN_APP_URL=http://localhost:3000
-      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
-      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL}
-      - AGENTQL_API_KEY=${AGENTQL_API_KEY}
-      - AGENTQL_API_URL=${AGENTQL_API_URL}
-      - CLOUD_BROWSER_PROVIDER=${CLOUD_BROWSER_PROVIDER}
-      - BROWSERLESS_API_KEY=${BROWSERLESS_API_KEY}
-      - BROWSERLESS_API_URL=${BROWSERLESS_API_URL}
-      - STEEL_API_KEY=${STEEL_API_KEY}
-      - STEEL_API_URL=${STEEL_API_URL}
-      - TZ=${TZ}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-}
+      - AGENTQL_API_KEY=${AGENTQL_API_KEY:-}
+      - AGENTQL_API_URL=${AGENTQL_API_URL:-}
+      - CLOUD_BROWSER_PROVIDER=${CLOUD_BROWSER_PROVIDER:-}
+      - BROWSERLESS_API_KEY=${BROWSERLESS_API_KEY:-}
+      - BROWSERLESS_API_URL=${BROWSERLESS_API_URL:-}
+      - STEEL_API_KEY=${STEEL_API_KEY:-}
+      - STEEL_API_URL=${STEEL_API_URL:-}
+      - TZ=${TZ:-Asia/Shanghai}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/csrf || exit 1"]
       start_period: 120s

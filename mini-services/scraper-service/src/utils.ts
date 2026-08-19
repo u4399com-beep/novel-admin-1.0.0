@@ -8,6 +8,7 @@ import type { AntiCrawl } from "./types";
 import { isSafeUrl } from "./ssrf";
 import { randomUUID } from "node:crypto";
 import { getAcceptLanguageForDomain, shuffleHeaderOrder } from "./stealth";
+import { referrerChain } from "./referrer-chain";
 
 // ==================== User-Agent Rotation ====================
 
@@ -596,17 +597,20 @@ export function buildFetchHeaders(
     headers["sec-ch-ua-platform"] = clientHints["sec-ch-ua-platform"];
   }
 
-  // Referer: use explicit override or spoof one
-  const referer = antiCrawl?.referer ?? getSpoofedReferer(targetUrl || "", siteType);
+  // Referer: use explicit override, then referrer chain, then spoofed, then parent path
+  const explicitReferer = antiCrawl?.referer;
+  const chainReferer = targetUrl ? referrerChain.getReferer(targetUrl) : undefined;
+  const spoofedReferer = getSpoofedReferer(targetUrl || "", siteType);
+  const referer = explicitReferer ?? chainReferer ?? spoofedReferer;
   if (referer) {
     headers["Referer"] = referer;
   } else if (targetUrl && !headers["Referer"]) {
-    // Spoof Referer: use parent path as referer
+    // Fallback: use parent path as referer
     try {
       const parsedUrl = new URL(targetUrl);
       const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
       if (pathParts.length > 1) {
-        pathParts.pop(); // remove last segment
+        pathParts.pop();
         const refererPath = '/' + pathParts.join('/');
         headers['Referer'] = `${parsedUrl.origin}${refererPath}`;
       } else {

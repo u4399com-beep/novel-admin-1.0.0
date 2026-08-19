@@ -9,6 +9,8 @@
  *   - Validate fingerprints before requests execute
  *   - Record completion status for monitoring
  *   - Auto-cleanup of stale entries
+ *   - Timing jitter (±50ms) to avoid timing-based detection
+ *   - POST body padding to avoid fixed-size request signatures
  */
 
 // ==================== Types ====================
@@ -235,3 +237,71 @@ class RequestFingerprintManager {
 
 // Singleton export
 export const requestFingerprintMgr = new RequestFingerprintManager();
+
+// ==================== Timing Jitter ====================
+
+/**
+ * Apply a random timing jitter of ±50ms to avoid timing-based fingerprinting.
+ * Some anti-bot systems measure the exact inter-request interval; adding
+ * small random delays makes the pattern look more human.
+ *
+ * @returns A promise that resolves after a random delay between -50ms and +50ms.
+ *         The delay is applied asynchronously (non-blocking wait).
+ */
+export async function applyTimingJitter(): Promise<void> {
+  const jitterMs = Math.round((Math.random() - 0.5) * 100); // -50 to +50
+  if (jitterMs > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, jitterMs));
+  }
+  // Negative jitter = no extra wait (can't go back in time)
+}
+
+// ==================== POST Body Padding ====================
+
+/**
+ * Pad a POST request body with invisible whitespace/comments to randomize
+ * the request size.  Some anti-bot systems fingerprint requests by their
+ * exact byte size; padding defeats this.
+ *
+ * Strategy:
+ *   - For URL-encoded bodies (application/x-www-form-urlencoded): append
+ *     a comment-like suffix (`&_=padding_...`) that most servers ignore.
+ *   - For JSON bodies: add a `_p` key with a random-length whitespace string.
+ *   - For other content types: append whitespace bytes (safe for text-based bodies).
+ *
+ * @param body       - The original request body string.
+ * @param contentType - The Content-Type header value.
+ * @returns The padded body string, or the original body if padding is not applicable.
+ */
+export function padPostBody(body: string, contentType?: string): string {
+  if (!body || body.length === 0) return body;
+
+  // Generate 1–32 bytes of random padding
+  const padLen = 1 + Math.floor(Math.random() * 32);
+  const padding = ' '.repeat(padLen);
+
+  const ct = (contentType || '').toLowerCase();
+
+  if (ct.includes('application/x-www-form-urlencoded')) {
+    // Append a dummy parameter that servers will ignore
+    // Using a key starting with underscore to avoid conflicts
+    const dummyParam = `&_=${encodeURIComponent(padding)}`;
+    return body + dummyParam;
+  }
+
+  if (ct.includes('application/json')) {
+    try {
+      const parsed = JSON.parse(body);
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        // Add a padding key — most APIs ignore unknown keys
+        parsed['_p'] = padding;
+        return JSON.stringify(parsed);
+      }
+    } catch {
+      // Not valid JSON, fall through to whitespace append
+    }
+  }
+
+  // Default: append whitespace (safe for text-based bodies)
+  return body + padding;
+}

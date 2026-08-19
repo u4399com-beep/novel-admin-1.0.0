@@ -377,7 +377,7 @@ export async function executeTask(taskId: string) {
   const taskStartTime = Date.now();
 
   try {
-    const taskResult = await Promise.race([
+    const taskResult: TaskResult = await Promise.race([
       executeTaskBody(taskId, task, rule, abortController, taskCtx),
       taskTimeoutPromise,
     ]);
@@ -423,13 +423,25 @@ interface TaskContext {
   abortSignal: AbortSignal;
 }
 
+interface TaskResult {
+  success: boolean;
+  totalBooks: number;
+  newBooks: number;
+  totalChapters: number;
+  newChapters: number;
+  failed: number;
+  skipped: number;
+  engine: string;
+  queueStats?: unknown;
+}
+
 async function executeTaskBody(
   taskId: string,
   task: ScrapeTask,
   rule: ScrapeRule,
   abortController: AbortController,
   ctx: TaskContext
-): Promise<void> {
+): Promise<TaskResult> {
   let { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal } = ctx;
 
   // 2. Scrape list page

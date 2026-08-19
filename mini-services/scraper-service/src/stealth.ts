@@ -326,15 +326,19 @@ export function clearDomainUACache(domain?: string): void {
  * 14. Storage consistency
  * 15. IFrame stealth propagation via MutationObserver
  * 16. ClientRects & getBoundingClientRect spoofing (layout fingerprint prevention)
- * 17. Battery API mock (realistic charging state)
- * 18. MediaDevices.enumerateDevices mock
- * 19. SpeechSynthesis mock (fake voices, speaking/pending/paused)
- * 20. Font detection countermeasure (document.fonts.check override)
- * 21. Platform-based Plugin/MimeType enumeration (3-4 plugins per platform)
- * 22. Console detection evasion
- * 23. Performance.now() offset & performance.timing consistency
- * 24. Mouse event listeners (capture-phase, passive)
- * 25. Touch support spoofing (mobile UA detection, TouchEvent constructor)
+ * 17. Enhanced Connection / Network Information API
+ * 18. Battery API mock (basic)
+ * 19. MediaDevices.enumerateDevices mock (basic)
+ * 20. SpeechSynthesis mock (fake voices, speaking/pending/paused)
+ * 21. Enhanced Canvas fingerprint (getImageData noise)
+ * 22. Font detection countermeasure (document.fonts.check override)
+ * 23. Platform-based Plugin/MimeType enumeration (3-4 plugins per platform)
+ * 24. Console detection evasion
+ * 25. Performance.now() offset & performance.timing consistency
+ * 26. Mouse event listeners (capture-phase, passive)
+ * 27. Touch support spoofing (mobile UA detection, TouchEvent constructor)
+ * 28. MediaDevices enumerateDevices() fake (deterministic device IDs from seed)
+ * 29. Battery API getBattery() override (realistic level + charging state)
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -1234,6 +1238,89 @@ export function getStealthScript(profile: FingerprintProfile): string {
     document.addEventListener('touchstart', function() {}, { passive: true, capture: true });
     document.addEventListener('touchend', function() {}, { passive: true, capture: true });
     document.addEventListener('touchmove', function() {}, { passive: true, capture: true });
+  }
+
+  // ---- 28. MediaDevices enumerateDevices() Fake ----
+  // navigator.mediaDevices.enumerateDevices() returns a consistent set of fake devices.
+  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+    var _origEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+    // Deterministic fake device IDs derived from profile seed
+    var _fakeDeviceSeed = 0;
+    for (var _si = 0; _si < PROFILE.seed.length; _si++) { _fakeDeviceSeed = ((_fakeDeviceSeed << 5) - _fakeDeviceSeed + PROFILE.seed.charCodeAt(_si)) | 0; }
+    _fakeDeviceSeed = Math.abs(_fakeDeviceSeed);
+
+    var _fakeDevices = [
+      { deviceId: 'audioinput_' + _fakeDeviceSeed, kind: 'audioinput', label: '', groupId: 'grp_' + _fakeDeviceSeed },
+      { deviceId: 'videoinput_' + (_fakeDeviceSeed + 1), kind: 'videoinput', label: '', groupId: 'grp_' + _fakeDeviceSeed },
+      { deviceId: 'audiooutput_' + (_fakeDeviceSeed + 2), kind: 'audiooutput', label: '', groupId: 'grp_' + (_fakeDeviceSeed + 1) },
+    ];
+
+    Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+      value: function() {
+        return Promise.resolve(_fakeDevices.map(function(d) {
+          var _dev = Object.create(MediaDeviceInfo.prototype);
+          Object.defineProperties(_dev, {
+            deviceId: { get: function() { return d.deviceId; } },
+            kind:     { get: function() { return d.kind; } },
+            label:    { get: function() { return d.label; } },
+            groupId:  { get: function() { return d.groupId; } },
+            toJSON:   { value: function() { return { deviceId: d.deviceId, kind: d.kind, label: d.label, groupId: d.groupId }; } },
+          });
+          return _dev;
+        }));
+      },
+      configurable: true,
+    });
+  }
+
+  // ---- 29. Battery API getBattery() Override ----
+  // navigator.getBattery() returns a realistic BatteryManager mock.
+  // Overrides both cases: API missing (create mock) and API present (intercept real).
+  if (!navigator.getBattery) {
+    var _batteryLevel = 0.65 + Math.abs(Math.sin(_fakeDeviceSeed)) * 0.35; // 0.65–1.0
+    var _batteryCharging = true;
+    var _batteryChargingTime = 3600;
+    var _batteryDischargingTime = Infinity;
+
+    Object.defineProperty(navigator, 'getBattery', {
+      value: function() {
+        var battery = {
+          charging: _batteryCharging,
+          chargingTime: _batteryChargingTime,
+          dischargingTime: _batteryDischargingTime,
+          level: _batteryLevel,
+          onchargingchange: null,
+          onchargingtimechange: null,
+          ondischargingtimechange: null,
+          onlevelchange: null,
+          addEventListener: function(type, listener) {
+            // Store listeners but never fire events (static battery state)
+          },
+          removeEventListener: function(type, listener) {},
+          dispatchEvent: function() { return false; },
+        };
+        return Promise.resolve(battery);
+      },
+      configurable: true,
+    });
+  } else if (navigator.getBattery) {
+    // Override existing getBattery to return fake data
+    var _origGetBattery = navigator.getBattery.bind(navigator);
+    var _fbLevel = 0.55 + Math.abs(Math.cos(_fakeDeviceSeed)) * 0.40;
+    Object.defineProperty(navigator, 'getBattery', {
+      value: function() {
+        return _origGetBattery().then(function(realBattery) {
+          try {
+            Object.defineProperty(realBattery, 'level', { get: function() { return _fbLevel; }, configurable: true });
+            Object.defineProperty(realBattery, 'charging', { get: function() { return true; }, configurable: true });
+            Object.defineProperty(realBattery, 'chargingTime', { get: function() { return 5400; }, configurable: true });
+            Object.defineProperty(realBattery, 'dischargingTime', { get: function() { return Infinity; }, configurable: true });
+          } catch(e) {}
+          return realBattery;
+        });
+      },
+      configurable: true,
+    });
   }
 
 })();

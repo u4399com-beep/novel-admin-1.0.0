@@ -985,7 +985,7 @@ class ProxyManager {
       const entryCleanUrl = parsed?.cleanUrl ?? entry.url;
       if (excludeSet.has(entry.url) || excludeSet.has(entryCleanUrl)) continue;
 
-      if (this.hasRecentFailures(entry.url)) {
+      if (this.hasRecentFailures(entryCleanUrl)) {
         candidatesWithRecentFails.push(entry);
       } else {
         candidates.push(entry);
