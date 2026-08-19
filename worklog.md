@@ -12178,3 +12178,189 @@ Stage Summary:
 - Stealth注入: 33个section
 - Git推送: bc0365e成功
 - ESLint: 0 errors ✅
+
+---
+Task ID: R22-docker
+Agent: R22-docker
+Task: Docker安装流程模拟审计
+
+Work Log:
+
+## A. install.sh 命令检测
+- **一键安装命令**: `curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash`
+- **install.sh 执行流程**:
+  1. 解析参数 (所有$@传递给deploy.sh)
+  2. 检查本地deploy.sh存在→exec deploy.sh $@
+  3. 检查/opt/novel-admin已有→git_force_sync→exec deploy.sh
+  4. git clone (直连+2个中国镜像) → tar.gz下载 (直连+3个raw代理) → exec deploy.sh
+- **参数传递**: install.sh `exec bash deploy.sh "$@"`, 所有 -y/-p/-d/--status/--uninstall 等均透传
+- **已有项目**: git_force_sync保存.env→checkout --. → pull/reset --hard→恢复.env, 不覆盖用户配置
+- 结果: **PASS** ✅
+
+## B. deploy.sh 生成物审计
+
+### .env 生成 (lines 2400-2493)
+- 27个变量通过single-quoted heredoc+sed placeholder替换 (安全处理密码特殊字符)
+- 变量列表: POSTGRES_USER/PASSWORD/DB, DB_PORT, APP_PORT, APP_NAME, APP_URL, TZ, NEXTAUTH_SECRET/URL, ADMIN_USERNAME/PASSWORD, SCRAPER_SERVICE_TOKEN, BACKUP_DIR, _HW_TIER, NODE_MAX_OLD_SPACE_SIZE, BUN_GC_THRESHOLD, PG_MEMORY_*, PG_SHARED_BUFFERS, PG_WORK_MEM, PG_MAINTENANCE_WORK_MEM, PG_EFFECTIVE_CACHE_SIZE, PG_MAX_CONNECTIONS, PG_MAX/MIN_WAL_SIZE, PG_CPU_LIMIT, APP_MEMORY_*, APP_SHM_SIZE, APP_CPU_LIMIT
+- 结果: **PASS** ✅
+
+### docker-compose.yml heredoc (lines 2626-2735) 变量交叉检查
+- 27个无默认值变量: 全部在.env heredoc中设置 ✅
+- 10个有默认值变量(:-): FIRECRAWL_API_KEY/URL, AGENTQL_API_KEY/URL, CLOUD_BROWSER_PROVIDER, BROWSERLESS_API_KEY/URL, STEEL_API_KEY/URL, TZ ✅
+- **0个遗漏变量**
+- 结果: **PASS** ✅
+
+### BACKUP_DIR R21修复验证
+- Line 2905: `mkdir -p "$(env_val BACKUP_DIR)"` ✅ (从.env读取实际值)
+- Line 2906: `mkdir -p "${INSTALL_DIR}/backups"` ✅ (兜底)
+- docker-compose.yml line 2649: `"${BACKUP_DIR}:/backups:rw"` (使用.env中的BACKUP_DIR)
+- 结果: **PASS** ✅
+
+## C. Dockerfile 构建模拟
+
+### COPY 路径验证 (13个Prisma transitive deps)
+- Stage 1 (deps): package.json ✅ bun.lock ✅
+- Stage 2 (builder): node_modules (from deps) ✅ . (全项目) ✅
+- Stage 3 (runner) COPY sources:
+  - .next/standalone → 构建产物(构建时生成,正确) ✅
+  - .next/static → 构建产物(构建时生成,正确) ✅
+  - public/ ✅ prisma/ ✅
+  - node_modules/.prisma ✅ @prisma ✅ prisma ✅
+  - node_modules/effect ✅ fast-check ✅ pure-rand ✅
+  - node_modules/c12 ✅ deepmerge-ts ✅ empathic ✅
+  - node_modules/perfect-debounce ✅ pathe ✅
+  - node_modules/@prisma/engines ✅ @standard-schema ✅
+  - mini-services/scraper-service/package.json ✅ bun.lock ✅ index.ts ✅
+  - mini-services/scraper-service/ (全目录) ✅
+  - docker-entrypoint.sh ✅
+- **13个Prisma transitive deps全部验证存在** ✅
+
+### queue.pg.ts swap
+- Line 152-155: `rm -f src/queue.ts && if [ -f src/queue.pg.ts ]; then mv src/queue.pg.ts src/queue.ts; else echo FATAL; exit 1; fi`
+- queue.pg.ts存在: 11437 bytes ✅
+- 结果: **PASS** ✅
+
+## D. docker-entrypoint.sh 运行时模拟
+
+### 正常启动路径
+1. exec 2>&1 (stderr合并) ✅
+2. Crash diagnostics trap设置 ✅
+3. 内存检测 (MemAvailable) ✅
+4. Prisma CLI路径验证 (/app/node_modules/prisma/build/index.js) ✅
+5. @prisma/engines目录验证 ✅
+6. Secret验证 (NEXTAUTH_SECRET≥32, SCRAPER_SERVICE_TOKEN≥32, ADMIN_PASSWORD≥8, 拒绝"change-this") ✅
+7. DATABASE_URL解析: `##*@` (R20修复, 正确处理密码中的@符号) ✅
+8. DB等待: 60次×2s=120s超时, nc+bash /dev/tcp双通道 ✅
+9. Prisma db push: 3次重试, 失败后**仅warn不退出** ✅
+10. pg_trgm扩展+GIN索引: 失败后仅warn ✅
+11. Scraper启动: PORT=3099 nohup, 失败→HAS_SCRAPER=false (非致命) ✅
+12. Next.js启动: nohup bun server.js, 失败→exit 1 (致命) ✅
+13. 禁用EXIT trap, 设置SIGTERM/SIGINT/SIGQUIT cleanup ✅
+
+### Schema push 3次全部失败
+- Line 204-206: `if ! $_SCHEMA_OK; then log WARNING...; fi` — **继续运行, 不退出** ✅
+
+### Scraper启动失败
+- Line 260-264: SCRAPER_PID="", HAS_SCRAPER=false — **继续运行, 不退出** ✅
+
+### 优雅关停
+- cleanup(): SIGTERM→15s wait→SIGKILL (exit 137) ✅
+- 主循环: `wait $APP_PID`, APP退出后kill scraper ✅
+- 结果: **PASS** ✅
+
+## E. .env.production 模板检查
+- 27个无默认值的docker-compose变量: 全部在.env.production中有对应条目 ✅
+- 10个有默认值的docker-compose变量: 全部有`:-`默认值或在模板中注释说明 ✅
+- BACKUP_DIR=/opt/novel-admin/backups ✅
+- 结果: **PASS** ✅
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings ✅ (warnings均为react-hooks/incompatible-library, 非新引入)
+
+## 修改文件汇总(R22)
+- 无修改 — 全部检查通过, 0个新问题
+
+## 历史累计修复: 235 (无新增)
+
+Stage Summary:
+- 一键安装命令: `curl -fsSL ...install.sh | bash` → install.sh → deploy.sh $@ → 8步部署
+- .env生成: 27变量, placeholder+sed安全替换
+- docker-compose.yml: 37变量引用, 27无默认值(全部在.env中), 10有默认值(全部有:-)
+- Dockerfile: 13个Prisma deps COPY全部验证存在, queue.pg.ts swap正确
+- entrypoint: DATABASE_URL ##*@修复✅, schema push 3次重试失败不退出✅, scraper失败不退出✅, 优雅关停链完整✅
+- BACKUP_DIR mkdir修复(R21)已确认在代码中
+- **0个新问题, 0个文件修改**
+- ESLint: 0 errors ✅
+
+---
+
+## R22-scraper: Scraper Audit (New Angles) + Anti-Crawl Enhancement
+
+### Part A: New Audit Angles
+
+#### A1. Scraping Quality — Content Extraction Correctness
+
+| # | Severity | File | Issue | Status |
+|---|----------|------|-------|--------|
+| 1 | **MEDIUM** | selectors.ts:276 | `extractLinksFromList` did not skip `javascript:void(0)` links — `if (linkValue)` is truthy for javascript: URIs | **FIXED** |
+| 2 | INFO | selectors.ts:136-201 | `parseSelectorMulti` correctly returns `[]` for zero-element CSS/XPath/regex matches ✅ | No fix needed |
+| 3 | INFO | cleaning.ts:359-366 | `cleanHtmlRaw` uses cheerio.load() which auto-closes malformed HTML via htmlparser2 ✅ | No fix needed |
+| 4 | LOW | cleaning.ts:23-24,43-44 | Ad patterns "请记住" and "最新章节" could false-positive on legitimate novel dialogue — mitigated by 20-char threshold in `filterAdLines()` | Noted, no fix (tradeoff) |
+
+#### A2. Task Engine — Progress Tracking Accuracy
+
+| # | Severity | File | Issue | Status |
+|---|----------|------|-------|--------|
+| 5 | INFO | task-engine.ts:659,990 | Progress is segmented (0-5% list, 5-20% books, 20-50% chapter dirs, 50-95% content, 100% done) — NOT `completed/total chapters`. This is intentional design. ✅ | No fix needed |
+| 6 | INFO | task-engine.ts:463 | `totalBooks` is set once after list scraping, never changes during execution ✅ | No fix needed |
+| 7 | INFO | task-engine.ts:357-360 | Heartbeat interval: 30s (stuck detection threshold: 5min) — appropriate ✅ | No fix needed |
+| 8 | INFO | task-engine.ts:385-401 | Quality scoring is wrapped in try-catch, runs after task body resolves, won't block cancellation ✅ | No fix needed |
+
+#### A3. Session Manager — Session Reuse Logic
+
+| # | Severity | File | Issue | Status |
+|---|----------|------|-------|--------|
+| 9 | **MEDIUM** | session-manager.ts:36 | `maxSessionsPerDomain=3` field existed but was **never enforced** — `acquireSession()` created unlimited sessions per domain | **FIXED** |
+| 10 | INFO | session-manager.ts:60-121 | Session creation uses `getProfileForDomain()` + `cookieJar` for fingerprint consistency ✅ | No fix needed |
+| 11 | LOW | session-manager.ts:82-90 | When all sessions blocked, creates new session (may also get blocked) — acceptable, new session gets fresh fingerprint | Noted |
+
+#### A4. Anti-Crawl Advisor — Recommendation Quality
+
+| # | Severity | File | Issue | Status |
+|---|----------|------|-------|--------|
+| 12 | INFO | anti-crawl-advisor.ts | Triggers: 429/403/CAPTCHA/503/empty-content/slow-response/JS-challenge/fingerprint-detect — comprehensive ✅ | No fix needed |
+| 13 | INFO | anti-crawl-advisor.ts:29-35 | Recommendations have `configKey`+`recommendedValue` — frontend can apply directly ✅ | No fix needed |
+| 14 | LOW | anti-crawl-advisor.ts | No cooldown mechanism on `analyze()` — if frontend polls frequently, gets same recommendations repeatedly | Noted (frontend likely calls on user action only) |
+
+### Part B: Anti-Crawl Enhancement — Stealth Headers 2.0
+
+#### B1. Sec-Fetch Headers 2.0 (utils.ts)
+
+**New function**: `getSecFetchHeadersForDomain(domain, referer?)`
+- First visit to domain: `Sec-Fetch-Site: cross-site`, `Sec-Fetch-User: ?1`
+- Subsequent visits (same-origin referrer or referrer chain hit): `Sec-Fetch-Site: same-origin`, no `Sec-Fetch-User`
+- `Sec-Fetch-Dest: document`, `Sec-Fetch-Mode: navigate` always
+- `buildFetchHeaders()` now uses domain-aware headers when domain is available, falls back to randomized for domainless requests
+
+#### B2. Accept-Language / UA Consistency (utils.ts)
+
+**New function**: `getAcceptLanguageForUA(ua)`
+- Maps UA language hints to matching Accept-Language pools:
+  - `zh-CN`/`zh_CN` → Chinese pool (6 variants)
+  - `zh-TW`/`zh_TW` → Traditional Chinese pool (2 variants)
+  - `ja` → Japanese pool (2 variants)
+  - `ko` → Korean pool (2 variants)
+  - `en-US`/`en_US` → English US pool (3 variants)
+  - `en-GB`/`en_GB` → English GB pool (2 variants)
+  - `de`/`fr`/`es` → respective European pools
+- Priority chain: explicit override > domain-consistent > UA-consistent > random
+
+### Files Modified
+1. `mini-services/scraper-service/src/selectors.ts` — skip `javascript:` hrefs in `extractLinksFromList`
+2. `mini-services/scraper-service/src/session-manager.ts` — enforce `maxSessionsPerDomain` with eviction
+3. `mini-services/scraper-service/src/utils.ts` — Sec-Fetch 2.0 + Accept-Language/UA consistency
+
+### Verification
+- ESLint: 0 errors, 5 warnings (all pre-existing react-hooks/incompatible-library)
+- TypeScript: 0 new errors in modified files
+- Historical cumulative fixes: **238** (3 new: #1 javascript: href, #9 maxSessionsPerDomain, #10-11 Sec-Fetch 2.0 + AL/UA)

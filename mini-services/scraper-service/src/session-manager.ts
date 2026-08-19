@@ -89,6 +89,30 @@ class SessionManager {
       return this.toPublicSession(bestSession);
     }
 
+    // Enforce max sessions per domain: clean up stale/blocked sessions first
+    const domainList = this.domainSessions.get(domain) || [];
+    if (domainList.length >= this.maxSessionsPerDomain) {
+      // Try to evict a blocked or overused session to make room
+      let evicted = false;
+      for (let i = domainList.length - 1; i >= 0; i--) {
+        const s = this.sessions.get(domainList[i]!);
+        if (!s || s.blocked || s.usageCount >= this.maxSessionUsage) {
+          if (s) this.sessions.delete(s.id);
+          domainList.splice(i, 1);
+          evicted = true;
+          break;
+        }
+      }
+      if (!evicted) {
+        // All sessions are active and under limit — recycle the oldest one
+        const oldestSid = domainList[0];
+        if (oldestSid) {
+          this.sessions.delete(oldestSid);
+          domainList.shift();
+        }
+      }
+    }
+
     // Create a new session
     const sessionId = `sess_${domain}_${Date.now()}`;
     const fingerprint = getProfileForDomain(domain);
@@ -109,9 +133,9 @@ class SessionManager {
     this.sessions.set(sessionId, session);
 
     // Register in domain index
-    const domainList = this.domainSessions.get(domain) || [];
-    domainList.push(sessionId);
-    this.domainSessions.set(domain, domainList);
+    const dl = this.domainSessions.get(domain) || [];
+    dl.push(sessionId);
+    this.domainSessions.set(domain, dl);
 
     if (process.env.DEBUG === 'true') {
       console.log(`[SessionManager] Created new session ${sessionId} for ${domain}`);

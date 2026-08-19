@@ -273,7 +273,7 @@ export function extractLinksFromList(
       }
     }
 
-    if (linkValue) {
+    if (linkValue && !linkValue.trim().toLowerCase().startsWith('javascript:')) {
       results.push({
         title: titleValue,
         url: resolveUrl(baseUrl, linkValue),

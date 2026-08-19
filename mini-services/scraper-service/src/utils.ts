@@ -218,6 +218,96 @@ const ACCEPT_LANGUAGES: string[] = [
 ];
 
 /**
+ * Maps UA language hints to Accept-Language pools.
+ * Each entry is an array of indices into ACCEPT_LANGUAGES.
+ * If no hint matches, all languages are available (random selection).
+ */
+const UA_LANG_MAP: Array<{ pattern: RegExp; pool: string[] }> = [
+  {
+    pattern: /zh-[CNcn]/,
+    pool: [
+      "zh-CN,zh;q=0.9,en;q=0.8",
+      "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+      "zh-CN,zh;q=0.9,zh-TW;q=0.8,en;q=0.7",
+      "zh-CN,zh;q=0.8,en;q=0.7,zh-TW;q=0.6",
+      "zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7",
+      "zh-CN,zh;q=0.9,en;q=0.8,zh-TW;q=0.7,ja;q=0.6",
+    ],
+  },
+  {
+    pattern: /zh-[TWtw]/,
+    pool: [
+      "zh-TW,zh;q=0.9,en;q=0.8",
+      "zh-TW,zh;q=0.9,zh-CN;q=0.8,en;q=0.7",
+    ],
+  },
+  {
+    pattern: /ja[-_]/,
+    pool: [
+      "ja-JP,ja;q=0.9,en;q=0.8",
+      "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+    ],
+  },
+  {
+    pattern: /ko[-_]/,
+    pool: [
+      "ko-KR,ko;q=0.9,en;q=0.8",
+      "ko-KR,ko;q=0.9,en-US;q=0.7,zh-CN;q=0.5",
+    ],
+  },
+  {
+    pattern: /en-[USus]/,
+    pool: [
+      "en-US,en;q=0.9",
+      "en-US,en;q=0.9,zh-CN;q=0.8",
+      "en-US,en;q=0.9,ja;q=0.8",
+    ],
+  },
+  {
+    pattern: /en-[GBgb]/,
+    pool: [
+      "en-GB,en;q=0.9",
+      "en-GB,en;q=0.9,zh-CN;q=0.7",
+    ],
+  },
+  {
+    pattern: /de[-_]/,
+    pool: [
+      "de-DE,de;q=0.9,en;q=0.8",
+    ],
+  },
+  {
+    pattern: /fr[-_]/,
+    pool: [
+      "fr-FR,fr;q=0.9,en;q=0.8",
+    ],
+  },
+  {
+    pattern: /es[-_]/,
+    pool: [
+      "es-ES,es;q=0.9,en;q=0.8",
+    ],
+  },
+];
+
+/**
+ * Returns an Accept-Language header string consistent with the given User-Agent.
+ * If the UA contains a language hint (e.g. 'zh-CN', 'en-US', 'ja'), selects from
+ * a matching language pool. Otherwise falls back to random selection.
+ *
+ * @param ua - User-Agent string to extract language hint from
+ */
+export function getAcceptLanguageForUA(ua: string): string {
+  for (const { pattern, pool } of UA_LANG_MAP) {
+    if (pattern.test(ua)) {
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+  }
+  // No UA language hint — random from full pool
+  return getRandomAcceptLanguage();
+}
+
+/**
  * Returns a realistic Accept-Language header string.
  * Pool includes zh-CN, zh-TW, en-US, en-GB, ja-JP, ko-KR, de-DE, fr-FR, es-ES
  * with appropriate quality values.
@@ -321,6 +411,62 @@ export function getSpoofedReferer(targetUrl: string, siteType?: string): string 
 // ==================== Sec-Fetch-* Header Randomization ====================
 
 type SecFetchNavType = "navigate" | "reload" | "link";
+
+/**
+ * Sec-Fetch 2.0: Domain-aware Sec-Fetch-* header generation.
+ *
+ * Modern browsers send consistent Sec-Fetch-* headers based on navigation context.
+ * Their absence or inconsistent values are strong bot indicators.
+ *
+ * Logic:
+ * - First visit to a domain (no prior request in referrer chain):
+ *   Sec-Fetch-Site: cross-site, Sec-Fetch-User: ?1
+ * - Subsequent visits (referrer chain has prior request to same domain):
+ *   Sec-Fetch-Site: same-origin, no Sec-Fetch-User
+ * - Sec-Fetch-Dest: always "document" (we're fetching pages, not sub-resources)
+ * - Sec-Fetch-Mode: always "navigate"
+ */
+export function getSecFetchHeadersForDomain(domain: string, referer?: string): Record<string, string> {
+  const base: Record<string, string> = {
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+  };
+
+  // Determine if this is a same-origin or cross-site request
+  // Check: does the referer point to the same domain?
+  let isSameOrigin = false;
+  if (referer) {
+    try {
+      const refDomain = new URL(referer).hostname;
+      isSameOrigin = refDomain === domain;
+    } catch { /* ignore invalid referer */ }
+  }
+
+  // Also check referrer chain for prior visits to this domain
+  if (!isSameOrigin && domain) {
+    try {
+      const chainEntry = referrerChain.getReferer(`https://${domain}/`);
+      if (chainEntry) {
+        try {
+          const chainDomain = new URL(chainEntry).hostname;
+          isSameOrigin = chainDomain === domain;
+        } catch { /* ignore */ }
+      }
+    } catch { /* referrer chain may throw */ }
+  }
+
+  if (isSameOrigin) {
+    // Subsequent navigation within the same site
+    base["Sec-Fetch-Site"] = "same-origin";
+    // No Sec-Fetch-User for same-origin navigations (browser omits it)
+  } else {
+    // First visit / cross-site navigation
+    base["Sec-Fetch-Site"] = "cross-site";
+    base["Sec-Fetch-User"] = "?1";
+  }
+
+  return base;
+}
 
 const SEC_FETCH_COMBOS: Record<SecFetchNavType, Array<Record<string, string>>> = {
   navigate: [
@@ -572,7 +718,6 @@ export function buildFetchHeaders(
 
   const headers: Record<string, string> = {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": antiCrawl?.acceptLanguage || (domain ? getAcceptLanguageForDomain(domain) : getRandomAcceptLanguage()),
     "Accept-Encoding": "gzip, deflate, br",
     Connection: "keep-alive",
     "Upgrade-Insecure-Requests": "1",
@@ -587,9 +732,30 @@ export function buildFetchHeaders(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
   }
 
-  // Sec-Fetch-* headers (randomized)
-  const secFetchHeaders = getRandomSecFetchHeaders("navigate");
-  Object.assign(headers, secFetchHeaders);
+  // Accept-Language: explicit override > domain-consistent > UA-consistent > random
+  if (antiCrawl?.acceptLanguage) {
+    headers["Accept-Language"] = antiCrawl.acceptLanguage;
+  } else if (domain) {
+    headers["Accept-Language"] = getAcceptLanguageForDomain(domain);
+  } else {
+    headers["Accept-Language"] = getAcceptLanguageForUA(headers["User-Agent"]);
+  }
+
+  // Pre-compute referer for Sec-Fetch-Site determination
+  const explicitReferer = antiCrawl?.referer;
+  const chainReferer = targetUrl ? referrerChain.getReferer(targetUrl) : undefined;
+  const spoofedReferer = getSpoofedReferer(targetUrl || "", siteType);
+  const refererHint = explicitReferer || chainReferer || spoofedReferer;
+
+  // Sec-Fetch 2.0: domain-aware headers (consistent same-origin vs cross-site)
+  // Fall back to randomized headers when no domain is available
+  if (domain) {
+    const secFetchHeaders = getSecFetchHeadersForDomain(domain, refererHint);
+    Object.assign(headers, secFetchHeaders);
+  } else {
+    const secFetchHeaders = getRandomSecFetchHeaders("navigate");
+    Object.assign(headers, secFetchHeaders);
+  }
 
   // Chrome Client Hints (only for Chrome UAs)
   const clientHints = getChromeClientHints(headers["User-Agent"]);
@@ -599,11 +765,8 @@ export function buildFetchHeaders(
     headers["sec-ch-ua-platform"] = clientHints["sec-ch-ua-platform"];
   }
 
-  // Referer: use explicit override, then referrer chain, then spoofed, then parent path
-  const explicitReferer = antiCrawl?.referer;
-  const chainReferer = targetUrl ? referrerChain.getReferer(targetUrl) : undefined;
-  const spoofedReferer = getSpoofedReferer(targetUrl || "", siteType);
-  const referer = explicitReferer ?? chainReferer ?? spoofedReferer;
+  // Referer: use the pre-computed referer chain, fallback to parent path
+  const referer = refererHint;
   if (referer) {
     headers["Referer"] = referer;
   } else if (targetUrl && !headers["Referer"]) {
