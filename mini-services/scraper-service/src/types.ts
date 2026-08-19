@@ -62,6 +62,8 @@ export interface EngineOptions {
   proxy?: string;
   cookies?: Array<{ name: string; value: string; domain?: string }>;
   userAgent?: string;
+  /** AbortSignal for task-level cancellation (timeout/shutdown) */
+  signal?: AbortSignal;
 }
 
 export interface ScrapingEngine {
@@ -112,6 +114,7 @@ export interface ScrapeListRequest {
   pagination?: Pagination;
   antiCrawl?: AntiCrawl;
   engine?: EngineType;
+  signal?: AbortSignal;
 }
 
 export interface ScrapeBookRequest {
@@ -127,6 +130,7 @@ export interface ScrapeBookRequest {
   };
   antiCrawl?: AntiCrawl;
   engine?: EngineType;
+  signal?: AbortSignal;
 }
 
 export interface ScrapeChaptersRequest {
@@ -140,6 +144,7 @@ export interface ScrapeChaptersRequest {
   antiCrawl?: AntiCrawl;
   enableShuffle?: boolean;
   engine?: EngineType;
+  signal?: AbortSignal;
 }
 
 export interface ScrapeContentRequest {
@@ -152,6 +157,7 @@ export interface ScrapeContentRequest {
   antiCrawl?: AntiCrawl;
   engine?: EngineType;
   cleanConfig?: CleanRequest["config"];
+  signal?: AbortSignal;
 }
 
 export interface CleanRequest {

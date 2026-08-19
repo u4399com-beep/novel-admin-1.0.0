@@ -2585,8 +2585,8 @@ echo ""
 
 # ── Ensure ALL docker-compose variables exist in .env ──
 # Older deploy.sh versions may have generated .env without some vars.
-# docker-compose.yml now uses plain ${VAR} (no defaults), so missing vars
-# cause interpolation errors. This block backfills any missing variables.
+# docker-compose.yml uses ${VAR:-default} for optional vars, but we still
+# backfill to maintain consistency and avoid confusion.
 _env_missing=false
 for _kv in \
     "BACKUP_DIR=${INSTALL_DIR}/backups" \

@@ -1434,6 +1434,98 @@ export function clearHeaderOrderCache(domain?: string): void {
   }
 }
 
+/**
+ * Headers that should always appear at the beginning of the header block.
+ * Most WAFs and anti-bot systems expect Host and User-Agent early.
+ */
+const REQUIRED_FIRST_HEADERS = new Set(['host', 'user-agent']);
+
+/**
+ * Shuffles HTTP headers while keeping required headers (Host, User-Agent) first.
+ * Introduces per-request jitter so that even for the same domain, consecutive
+ * requests have slightly different header ordering — making the traffic pattern
+ * less fingerprintable than a perfectly consistent order.
+ *
+ * Algorithm:
+ * 1. Extract Host and User-Agent → always first
+ * 2. Pick a browser template order for the remaining headers (per-domain cached)
+ * 3. Within the "middle" and "tail" groups of the template, apply Fisher-Yates
+ *    shuffle with ~30% swap probability (partial shuffle preserves some browser-like structure)
+ * 4. Any headers not in the template are appended in shuffled order
+ *
+ * @param headers - Key-value header pairs to reorder
+ * @param domain  - Target domain for deterministic browser template selection
+ * @returns A new Record with keys in a jittered but browser-like order
+ */
+export function shuffleHeaderOrderWithJitter(headers: Record<string, string>, domain: string): Record<string, string> {
+  const headerKeys = Object.keys(headers);
+  if (headerKeys.length <= 2) return { ...headers };
+
+  // Step 1: Separate required-first headers
+  const requiredKeys: string[] = [];
+  const otherKeys: string[] = [];
+  for (const key of headerKeys) {
+    if (REQUIRED_FIRST_HEADERS.has(key.toLowerCase())) {
+      requiredKeys.push(key);
+    } else {
+      otherKeys.push(key);
+    }
+  }
+
+  // Step 2: Get browser template for non-required headers
+  const h = Math.abs(domainHash(domain));
+  const browserNames = Object.keys(BROWSER_HEADER_ORDERS);
+  const browserTemplate = BROWSER_HEADER_ORDERS[browserNames[h % browserNames.length]]!;
+  const templateSet = new Set(browserTemplate.map(k => k.toLowerCase()));
+
+  // Step 3: Partition other keys into "template-matched" and "extra"
+  const templateMatched: string[] = [];
+  const extraKeys: string[] = [];
+  for (const key of otherKeys) {
+    if (templateSet.has(key.toLowerCase())) {
+      templateMatched.push(key);
+    } else {
+      extraKeys.push(key);
+    }
+  }
+
+  // Step 4: Partial Fisher-Yates shuffle on template-matched headers (~30% swap prob)
+  // This introduces per-request jitter while preserving some browser-like structure
+  for (let i = templateMatched.length - 1; i > 0; i--) {
+    if (Math.random() < 0.3) { // 30% chance of swap at each position
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = templateMatched[i];
+      templateMatched[i] = templateMatched[j]!;
+      templateMatched[j] = tmp;
+    }
+  }
+
+  // Step 5: Shuffle extra keys fully (they're non-standard headers)
+  for (let i = extraKeys.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = extraKeys[i];
+    extraKeys[i] = extraKeys[j]!;
+    extraKeys[j] = tmp;
+  }
+
+  // Step 6: Build result: required first, then jittered template, then shuffled extras
+  const orderedKeys = [...requiredKeys, ...templateMatched, ...extraKeys];
+  const result: Record<string, string> = {};
+  for (const key of orderedKeys) {
+    if (key in headers) {
+      result[key] = headers[key];
+    }
+  }
+  // Safety: include any keys not in the ordered list
+  for (const key of headerKeys) {
+    if (!(key in result)) {
+      result[key] = headers[key];
+    }
+  }
+
+  return result;
+}
+
 // ==================== Enhancement 2: Accept-Language Variation Pool ====================
 
 /**
@@ -1657,6 +1749,228 @@ export function clearTLSHintCache(domain?: string): void {
     domainTLSHintCache.delete(domain);
   } else {
     domainTLSHintCache.clear();
+  }
+}
+
+// ==================== Enhancement: TLS Cipher Suite Rotation ====================
+
+/**
+ * A TLS profile containing cipher suite configuration for the Bun HTTP client.
+ * These cipher suite orders mimic different browser TLS handshakes.
+ */
+export interface TlsProfile {
+  /** Human-readable name for this profile */
+  name: string;
+  /** Browser family this profile mimics */
+  browser: string;
+  /** Ordered list of TLS cipher suites (IANA names). Order matters for JA3 fingerprinting. */
+  ciphers: string[];
+  /** ALPN protocol names in preference order */
+  alpnProtocols: string[];
+  /** Minimum TLS version */
+  minVersion: 'TLSv1.2' | 'TLSv1.3';
+  /** Reference JA3 hash for verification */
+  ja3Ref?: string;
+}
+
+/**
+ * TLS cipher suite profiles that mimic real browsers.
+ * Each profile has a different cipher suite order to produce distinct JA3/JA4 hashes.
+ *
+ * Cipher suites are specified by their OpenSSL names, which Bun's tls module accepts.
+ * The ORDER of ciphers is the primary factor in JA3 fingerprinting.
+ */
+const TLS_PROFILES: TlsProfile[] = [
+  {
+    name: 'Chrome 130+ Windows',
+    browser: 'Chrome',
+    ciphers: [
+      'TLS_AES_128_GCM_SHA256',
+      'TLS_AES_256_GCM_SHA384',
+      'TLS_CHACHA20_POLY1305_SHA256',
+      'ECDHE-ECDSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES128-GCM-SHA256',
+      'ECDHE-ECDSA-AES256-GCM-SHA384',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+    ],
+    alpnProtocols: ['h2', 'http/1.1'],
+    minVersion: 'TLSv1.2',
+    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+  {
+    name: 'Chrome 130+ macOS',
+    browser: 'Chrome',
+    ciphers: [
+      'TLS_CHACHA20_POLY1305_SHA256',
+      'TLS_AES_128_GCM_SHA256',
+      'TLS_AES_256_GCM_SHA384',
+      'ECDHE-ECDSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES128-GCM-SHA256',
+      'ECDHE-ECDSA-AES256-GCM-SHA384',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+    ],
+    alpnProtocols: ['h2', 'http/1.1'],
+    minVersion: 'TLSv1.2',
+    ja3Ref: '771,4867-4865-4866-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+  {
+    name: 'Chrome 128-129 Linux',
+    browser: 'Chrome',
+    ciphers: [
+      'TLS_AES_128_GCM_SHA256',
+      'TLS_AES_256_GCM_SHA384',
+      'TLS_CHACHA20_POLY1305_SHA256',
+      'ECDHE-RSA-AES128-GCM-SHA256',
+      'ECDHE-ECDSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+      'ECDHE-ECDSA-AES256-GCM-SHA384',
+    ],
+    alpnProtocols: ['h2', 'http/1.1'],
+    minVersion: 'TLSv1.2',
+    ja3Ref: '771,4865-4866-4867-49199-49195-49200-52392,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+  {
+    name: 'Firefox 128-130',
+    browser: 'Firefox',
+    ciphers: [
+      'TLS_AES_128_GCM_SHA256',
+      'TLS_CHACHA20_POLY1305_SHA256',
+      'TLS_AES_256_GCM_SHA384',
+      'ECDHE-ECDSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES128-GCM-SHA256',
+      'ECDHE-ECDSA-AES256-GCM-SHA384',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+    ],
+    alpnProtocols: ['h2', 'http/1.1'],
+    minVersion: 'TLSv1.2',
+    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+  },
+  {
+    name: 'Firefox 120-124',
+    browser: 'Firefox',
+    ciphers: [
+      'TLS_AES_256_GCM_SHA384',
+      'TLS_CHACHA20_POLY1305_SHA256',
+      'TLS_AES_128_GCM_SHA256',
+      'ECDHE-ECDSA-AES256-GCM-SHA384',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+      'ECDHE-ECDSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES128-GCM-SHA256',
+    ],
+    alpnProtocols: ['h2', 'http/1.1'],
+    minVersion: 'TLSv1.2',
+    ja3Ref: '771,4866-4867-4865-49199-49200,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+  },
+  {
+    name: 'Safari 18.x macOS',
+    browser: 'Safari',
+    ciphers: [
+      'TLS_AES_128_GCM_SHA256',
+      'TLS_AES_256_GCM_SHA384',
+      'TLS_CHACHA20_POLY1305_SHA256',
+      'ECDHE-ECDSA-AES256-GCM-SHA384',
+      'ECDHE-ECDSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+      'ECDHE-RSA-AES128-GCM-SHA256',
+    ],
+    alpnProtocols: ['h2', 'http/1.1'],
+    minVersion: 'TLSv1.2',
+    ja3Ref: '771,4865-4866-4867-49199-49195,0-5-10-11-13-16-18-23-27-43-45-51-65281,29-23-24,0',
+  },
+  {
+    name: 'Safari 17.x macOS',
+    browser: 'Safari',
+    ciphers: [
+      'TLS_AES_256_GCM_SHA384',
+      'TLS_AES_128_GCM_SHA256',
+      'TLS_CHACHA20_POLY1305_SHA256',
+      'ECDHE-ECDSA-AES256-GCM-SHA384',
+      'ECDHE-ECDSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+      'ECDHE-RSA-AES128-GCM-SHA256',
+    ],
+    alpnProtocols: ['h2', 'http/1.1'],
+    minVersion: 'TLSv1.2',
+    ja3Ref: '771,4866-4865-4867-49199-49195,0-5-10-11-13-16-18-23-27-43-45-51-65281,29-23-24,0',
+  },
+  {
+    name: 'Edge 130+ Windows',
+    browser: 'Edge',
+    ciphers: [
+      'TLS_AES_128_GCM_SHA256',
+      'TLS_AES_256_GCM_SHA384',
+      'TLS_CHACHA20_POLY1305_SHA256',
+      'ECDHE-ECDSA-AES128-GCM-SHA256',
+      'ECDHE-RSA-AES128-GCM-SHA256',
+      'ECDHE-ECDSA-AES256-GCM-SHA384',
+      'ECDHE-RSA-AES256-GCM-SHA384',
+    ],
+    alpnProtocols: ['h2', 'http/1.1'],
+    minVersion: 'TLSv1.2',
+    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+];
+
+/** Cache for per-domain TLS profile */
+const domainTlsProfileCache = new Map<string, TlsProfile>();
+const MAX_TLS_PROFILE_CACHE = 500;
+
+/**
+ * Get a TLS profile with cipher suite configuration for a domain.
+ * Deterministically selected per domain to maintain identity coherence.
+ *
+ * The returned profile can be used to configure Bun's HTTP client TLS options:
+ * ```ts
+ * const profile = getTlsProfile(domain);
+ * Bun.fetch(url, {
+ *   tls: {
+ *     ciphers: profile.ciphers.join(':'),
+ *     minVersion: profile.minVersion,
+ *   }
+ * });
+ * ```
+ *
+ * @param domain  - Target domain for consistent profile selection
+ * @param browser - Optional browser family hint ('Chrome' | 'Firefox' | 'Safari' | 'Edge')
+ * @returns A TlsProfile with cipher suite order, ALPN protocols, and min TLS version
+ */
+export function getTlsProfile(domain: string, browser?: string): TlsProfile {
+  let cached = domainTlsProfileCache.get(domain);
+  if (cached) return cached;
+
+  let candidates = browser
+    ? TLS_PROFILES.filter(p => p.browser === browser)
+    : TLS_PROFILES;
+
+  // Fallback to all profiles if browser filter yields nothing
+  if (candidates.length === 0) candidates = TLS_PROFILES;
+
+  const h = Math.abs(domainHash(domain));
+  const selected = candidates[h % candidates.length]!;
+
+  // Cache with LRU eviction
+  if (domainTlsProfileCache.size >= MAX_TLS_PROFILE_CACHE && !domainTlsProfileCache.has(domain)) {
+    const firstKey = domainTlsProfileCache.keys().next().value;
+    if (firstKey) domainTlsProfileCache.delete(firstKey);
+  }
+  domainTlsProfileCache.set(domain, selected);
+
+  return selected;
+}
+
+/**
+ * Get all available TLS profiles (for inspection/debugging).
+ */
+export function getAvailableTlsProfiles(): ReadonlyArray<TlsProfile> {
+  return TLS_PROFILES;
+}
+
+/** Clear the TLS profile cache. If domain specified, only clear that domain. */
+export function clearTlsProfileCache(domain?: string): void {
+  if (domain) {
+    domainTlsProfileCache.delete(domain);
+  } else {
+    domainTlsProfileCache.clear();
   }
 }
 

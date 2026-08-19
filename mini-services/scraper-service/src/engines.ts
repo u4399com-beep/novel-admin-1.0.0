@@ -26,6 +26,53 @@ import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
+/**
+ * Read response body with streaming size limit to prevent OOM.
+ * Unlike response.text() which buffers the entire body before returning,
+ * this reads chunks and aborts early if the limit is exceeded.
+ */
+async function readTextWithLimit(response: Response, maxSize: number): Promise<string> {
+  // If Content-Length is known and exceeds limit, reject immediately
+  const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
+  if (contentLength > maxSize) {
+    throw new Error(`Response Content-Length ${contentLength} exceeds ${Math.round(maxSize / 1024 / 1024)}MB limit`);
+  }
+
+  // Stream-read with size tracking
+  const reader = response.body?.getReader();
+  if (!reader) {
+    // No body (e.g., 204 No Content) — fallback to .text()
+    return response.text();
+  }
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxSize) {
+        reader.cancel();
+        throw new Error(`Response body exceeded ${Math.round(maxSize / 1024 / 1024)}MB limit after ${totalBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    reader.cancel().catch(() => {});
+    throw err;
+  }
+
+  // Combine chunks
+  const combined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(combined);
+}
+
 // ==================== Circuit Breaker ====================
 
 type CircuitState = "closed" | "open" | "half-open";
@@ -205,10 +252,20 @@ class CheerioEngine implements ScrapingEngine {
                   : hopCookieHeader;
               }
             } catch { /* invalid URL, skip */ }
+            // Merge task-level abort with per-request timeout
+            let reqSignal: AbortSignal;
+            if (options?.signal?.aborted) {
+              reqSignal = options.signal;
+            } else if (options?.signal) {
+              const combined = AbortSignal.any([options.signal, AbortSignal.timeout(remainingTimeout)]);
+              reqSignal = combined;
+            } else {
+              reqSignal = AbortSignal.timeout(remainingTimeout);
+            }
             return fetch(fetchUrl, {
               headers: reqHeaders,
               redirect: "manual",
-              signal: AbortSignal.timeout(remainingTimeout),
+              signal: reqSignal,
               // @ts-expect-error - Bun supports dispatcher option
               dispatcher: dispatcher || undefined,
             });
@@ -237,16 +294,8 @@ class CheerioEngine implements ScrapingEngine {
           throw new Error(`Unexpected Content-Type "${contentType}" for ${url} - expected text/html`);
         }
 
-        // Check Content-Length header first to avoid OOM on large responses
-        const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
-        if (contentLength > MAX_RESPONSE_SIZE) {
-          throw new Error(`Response Content-Length ${contentLength} exceeds 10MB limit`);
-        }
-
-        const html = (await response.text()).replace(/^\uFEFF/, "");
-        if (html.length > MAX_RESPONSE_SIZE) {
-          throw new Error(`Response body too large: ${html.length} bytes (max 10MB)`);
-        }
+        // Stream-read with size limit (prevents OOM on chunked responses without Content-Length)
+        const html = (await readTextWithLimit(response, MAX_RESPONSE_SIZE)).replace(/^\uFEFF/, "");
 
         // CAPTCHA detection on response content
         if (targetDomain && html) {
@@ -1475,7 +1524,7 @@ class ObscuraEngine implements ScrapingEngine {
           if (err instanceof Error && err.message.startsWith('CAPTCHA detected')) {
             rateLimiter.recordResult(domain, false, obscuraStatus);
           } else {
-            const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\\d+)/)?.[1] || '0', 10) : 0;
+            const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
             rateLimiter.recordResult(domain, false, errStatus || undefined);
           }
           // Track request fingerprint (failure)

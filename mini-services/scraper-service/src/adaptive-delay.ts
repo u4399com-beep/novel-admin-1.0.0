@@ -247,3 +247,172 @@ class AdaptiveDelayManager {
 
 // Singleton export
 export const adaptiveDelay = AdaptiveDelayManager.getInstance();
+
+// ==================== Human-Like Browsing Simulation ====================
+
+/**
+ * Simulates human-like delays between page navigations.
+ * Provides reading time simulation, micro-delays (mouse-move/think),
+ * and occasional long pauses that real users exhibit.
+ */
+
+interface BrowsingSessionState {
+  /** Number of requests made in current session for this domain */
+  requestCount: number;
+  /** When the next "reading pause" should trigger */
+  nextPauseAt: number;
+}
+
+const browsingSessions = new Map<string, BrowsingSessionState>();
+const MAX_BROWSING_SESSIONS = 200;
+
+/**
+ * Detect if a URL likely points to a content/detail page (longer reading time)
+ * vs a list/catalog page (shorter reading time).
+ *
+ * Heuristics:
+ * - Content pages: contains chapter/article/post detail patterns, fewer path segments
+ * - List pages: contains list/catalog/index/page patterns, or has query params (pagination)
+ */
+export function isContentPage(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.toLowerCase();
+
+    // List/catalog indicators
+    if (/\b(list|catalog|index|category|tag|archive|page|sort)\b/.test(path)) return false;
+    if (/\d+\.html?$/.test(path) && /\/(\d{1,4})\/?$/.test(path)) return false;
+    if (parsed.searchParams.has('page') || parsed.searchParams.has('p')) return false;
+
+    // Content/detail indicators
+    if (/\b(chapter|article|post|read|detail|content|book|novel)\b/.test(path)) return true;
+    // Numeric path segments (e.g., /book/12345 or /chapter/6789)
+    if (/\/(\d{4,})\/?$/.test(path)) return true;
+    // Paths with Chinese chapter patterns
+    if (/第\d+/.test(path)) return true;
+
+    // Default: assume list page
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns a human-like "think/mouse-move" delay (200-800ms).
+ * Simulates the time a human takes to move the mouse, scroll, or decide
+ * to click the next link.
+ */
+export function getMouseMoveDelay(): number {
+  return 200 + Math.round(Math.random() * 600);
+}
+
+/**
+ * Returns a simulated reading time in milliseconds for a page type.
+ *
+ * Content pages (chapter/article): 2-8 seconds
+ * List pages (catalog/index):   0.5-2 seconds
+ *
+ * The reading time has a Gaussian-like distribution centered around
+ * the middle of the range, making it more realistic than uniform random.
+ */
+export function getReadingTime(url: string): number {
+  const isContent = isContentPage(url);
+
+  // Gaussian-like random via Box-Muller (simplified: sum of 2 uniform randoms)
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const gaussian = (u1 + u2) / 2; // Approximate bell curve, range [0, 1], peak at 0.5
+
+  if (isContent) {
+    // Content pages: 2000-8000ms, peaked around 4000-5000ms
+    return 2000 + Math.round(gaussian * 6000);
+  }
+  // List pages: 500-2000ms, peaked around 1000-1250ms
+  return 500 + Math.round(gaussian * 1500);
+}
+
+/**
+ * Returns the delay (in ms) before making the next request to a domain.
+ * Combines multiple human-like timing behaviors:
+ *
+ * 1. Base adaptive delay from the existing AdaptiveDelayManager
+ * 2. Reading time simulation (longer for content pages)
+ * 3. Mouse-move/think micro-delay (200-800ms)
+ * 4. Occasional "reading pause" (5-15s) every 5-10 requests
+ *
+ * @param domain  - Target domain
+ * @param url     - Target URL (used to detect content vs list page)
+ * @returns Total delay in milliseconds
+ */
+export function getHumanLikeDelay(domain: string, url?: string): number {
+  // Get base adaptive delay
+  const baseDelay = adaptiveDelay.getDelaySync(domain);
+
+  // Add mouse-move/think delay
+  const mouseDelay = getMouseMoveDelay();
+
+  // Get reading time if URL is provided
+  const readingDelay = url ? getReadingTime(url) : 0;
+
+  // Check for occasional pause (every 5-10 requests)
+  let pauseDelay = 0;
+  const session = getOrCreateBrowsingSession(domain);
+  if (session.requestCount >= session.nextPauseAt) {
+    // Simulate a longer pause: human stops to read, gets distracted, etc.
+    pauseDelay = 5000 + Math.round(Math.random() * 10000); // 5-15 seconds
+    // Set next pause 5-10 requests later
+    session.nextPauseAt = session.requestCount + 5 + Math.floor(Math.random() * 6);
+  }
+  session.requestCount++;
+
+  return baseDelay + mouseDelay + readingDelay + pauseDelay;
+}
+
+/**
+ * Async version of getHumanLikeDelay that actually waits.
+ * Useful for inserting delays between sequential requests.
+ *
+ * @param domain  - Target domain
+ * @param url     - Target URL (for content/list detection)
+ */
+export async function humanLikeDelay(domain: string, url?: string): Promise<void> {
+  const delayMs = getHumanLikeDelay(domain, url);
+  await new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+/**
+ * Reset browsing session state for a domain.
+ */
+export function resetBrowsingSession(domain?: string): void {
+  if (domain) {
+    browsingSessions.delete(domain);
+  } else {
+    browsingSessions.clear();
+  }
+}
+
+/**
+ * Get current browsing session state (for debugging/monitoring).
+ */
+export function getBrowsingSessionState(domain: string): { requestCount: number; nextPauseAt: number } | null {
+  return browsingSessions.get(domain) || null;
+}
+
+function getOrCreateBrowsingSession(domain: string): BrowsingSessionState {
+  let session = browsingSessions.get(domain);
+  if (!session) {
+    // LRU eviction
+    if (browsingSessions.size >= MAX_BROWSING_SESSIONS) {
+      const firstKey = browsingSessions.keys().next().value;
+      if (firstKey) browsingSessions.delete(firstKey);
+    }
+    session = {
+      requestCount: 0,
+      // First pause after 5-10 requests
+      nextPauseAt: 5 + Math.floor(Math.random() * 6),
+    };
+    browsingSessions.set(domain, session);
+  }
+  return session;
+}

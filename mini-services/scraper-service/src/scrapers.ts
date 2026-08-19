@@ -68,6 +68,8 @@ interface PaginatedFetchOptions {
   logPrefix: string;
   /** Maximum pages for content pagination (lower than list/chapter pagination). */
   isContentPagination?: boolean;
+  /** Task-level abort signal for cancellation. */
+  signal?: AbortSignal;
   /** Called for each fetched page. Return false to stop paginating. */
   onPage: (html: string, url: string, pageIndex: number) => void | boolean | Promise<void | boolean>;
   /** Called when CAPTCHA is detected. Return true to skip this page. */
@@ -82,7 +84,7 @@ interface PaginatedFetchOptions {
 const MAX_CONTENT_PAGES = 20;
 
 async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNextPage: boolean }> {
-  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage, isContentPagination, onCaptcha } = options;
+  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage, isContentPagination, onCaptcha, signal } = options;
   const hardMax = isContentPagination ? MAX_CONTENT_PAGES : 100;
   const maxPages = Math.min(pagination?.maxPage || 1, hardMax);
   const engine = getEngine(engineType);
@@ -91,6 +93,9 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
   let hasNextPage = false;
 
   for (let page = 0; page < maxPages; page++) {
+    // Check task-level abort before each page
+    if (signal?.aborted) break;
+
     console.log(`  [${logPrefix}] Page ${page + 1}/${maxPages}: ${currentUrl}`);
 
     if (visitedPages.has(currentUrl)) {
@@ -99,7 +104,7 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
     }
     visitedPages.add(currentUrl);
 
-    const { html, statusCode } = await engine.fetch(currentUrl, { antiCrawl });
+    const { html, statusCode } = await engine.fetch(currentUrl, { antiCrawl, signal });
 
     // CAPTCHA detection
     if (onCaptcha) {
@@ -145,7 +150,7 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
 // ==================== Scrape List ====================
 
 export async function handleScrapeList(body: ScrapeListRequest) {
-  const { url, selector, pagination, antiCrawl, engine: requestedEngine } = body;
+  const { url, selector, pagination, antiCrawl, engine: requestedEngine, signal } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
 
   const allUrls: string[] = [];
@@ -157,6 +162,7 @@ export async function handleScrapeList(body: ScrapeListRequest) {
     antiCrawl,
     engineType,
     logPrefix: "Pagination",
+    signal,
     onPage: (html, pageUrl, page) => {
       const items = parseSelectorMulti(html, selector);
       let newCount = 0;
@@ -182,11 +188,11 @@ export async function handleScrapeList(body: ScrapeListRequest) {
 // ==================== Scrape Book Info ====================
 
 export async function handleScrapeBook(body: ScrapeBookRequest) {
-  const { url, selectors, antiCrawl, engine: requestedEngine } = body;
+  const { url, selectors, antiCrawl, engine: requestedEngine, signal } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
   const engine = getEngine(engineType);
 
-  const { html, statusCode } = await engine.fetch(url, { antiCrawl });
+  const { html, statusCode } = await engine.fetch(url, { antiCrawl, signal });
 
   // CAPTCHA detection for book info page
   const captchaDetection = detectCaptcha(html, url, statusCode);
@@ -213,7 +219,7 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
 // ==================== Scrape Chapter Directory ====================
 
 export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
-  const { url, selectors, pagination, antiCrawl, enableShuffle, engine: requestedEngine } = body;
+  const { url, selectors, pagination, antiCrawl, enableShuffle, engine: requestedEngine, signal } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
 
   const allChapters: ChapterLink[] = [];
@@ -228,6 +234,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
     antiCrawl,
     engineType,
     logPrefix: "Chapters",
+    signal,
     onPage: (html, currentUrl) => {
       const links = extractLinksFromList(html, selectors.list, selectors.link, selectors.title, currentUrl);
       let newCount = 0;
@@ -280,7 +287,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
 // ==================== Scrape Content ====================
 
 export async function handleScrapeContent(body: ScrapeContentRequest) {
-  const { url, selectors, pagination, antiCrawl, engine: requestedEngine, cleanConfig } = body;
+  const { url, selectors, pagination, antiCrawl, engine: requestedEngine, cleanConfig, signal } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
 
   const contentParts: string[] = [];
@@ -295,6 +302,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     engineType,
     logPrefix: "Content",
     isContentPagination: true,
+    signal,
     onCaptcha: (detection) => {
       captchaDetected = detection;
       return true; // skip this page

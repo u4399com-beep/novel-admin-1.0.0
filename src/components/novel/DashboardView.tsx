@@ -9,11 +9,17 @@ import {
   CheckCircle2,
   ArrowUpRight,
   Download,
+  Activity,
+  Eye,
+  Clock,
+  Loader2,
+  XCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 import { apiFetch } from '@/lib/api-fetch';
 import { useAppStore } from '@/stores/app-store';
 import type { DashboardStats, Novel } from '@/types';
@@ -43,6 +49,16 @@ export function DashboardView() {
   const [scrapeRuleCount, setScrapeRuleCount] = useState<number | null>(null);
   const [scrapeRuleLoading, setScrapeRuleLoading] = useState(false);
   const [scrapeImportResult, setScrapeImportResult] = useState<string | null>(null);
+
+  // Scrape tasks state
+  const [scrapeTasks, setScrapeTasks] = useState<{
+    id: string;
+    rule: { name: string } | null;
+    status: string;
+    progress: number;
+    startedAt: string | null;
+  }[]>([]);
+  const [scrapeTasksLoading, setScrapeTasksLoading] = useState(false);
 
   const refreshDashboard = useAppStore((s) => s.refreshVersions['dashboard'] ?? 0);
   const selectNovel = useAppStore((s) => s.selectNovel);
@@ -77,10 +93,16 @@ export function DashboardView() {
   useEffect(() => {
     const controller = new AbortController();
     fetchDashboard(controller.signal);
-    // Fetch scrape rule count in background
+    // Fetch scrape tasks in background
     apiFetch<{ total: number }>('/api/scrape-rules?pageSize=0', { signal: controller.signal })
       .then((data) => setScrapeRuleCount(data.total ?? 0))
       .catch(() => { /* silent */ });
+    // Fetch latest 3 scrape tasks
+    setScrapeTasksLoading(true);
+    apiFetch<{ data: typeof scrapeTasks }>(`/api/scrape-tasks?pageSize=3`, { signal: controller.signal })
+      .then((res) => setScrapeTasks(res.data ?? []))
+      .catch(() => { /* silent */ })
+      .finally(() => { if (!controller.signal.aborted) setScrapeTasksLoading(false); });
     return () => { controller.abort(); };
   }, [fetchDashboard, refreshDashboard]);
 
@@ -368,6 +390,84 @@ export function DashboardView() {
         dailyActivity={activityData?.dailyActivity ?? []}
         loading={loading}
       />
+
+      {/* ── Scraping Activity ────────────────────────────────────────────── */}
+      <Card className="card-glass">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4 text-chart-emerald" />
+              采集活动
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => setCurrentView('scrape')}
+            >
+              查看全部
+              <ArrowUpRight className="h-3 w-3" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {scrapeTasksLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-4 flex-1" />
+                  <Skeleton className="h-4 w-24" />
+                </div>
+              ))}
+            </div>
+          ) : scrapeTasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">暂无采集任务</p>
+          ) : (
+            <div className="space-y-3">
+              {scrapeTasks.map((task) => {
+                const statusCfg: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
+                  running: { label: '运行中', cls: 'bg-chart-slate/10 text-chart-slate running-badge', icon: <Loader2 className="h-3 w-3 animate-spin" /> },
+                  completed: { label: '已完成', cls: 'bg-chart-emerald/10 text-chart-emerald', icon: <CheckCircle2 className="h-3 w-3" /> },
+                  failed: { label: '失败', cls: 'bg-destructive/10 text-destructive', icon: <XCircle className="h-3 w-3" /> },
+                  pending: { label: '等待中', cls: 'bg-muted text-muted-foreground', icon: <Clock className="h-3 w-3" /> },
+                  cancelled: { label: '已取消', cls: 'bg-chart-amber/10 text-chart-amber', icon: null },
+                };
+                const cfg = statusCfg[task.status] ?? statusCfg.pending;
+                return (
+                  <div key={task.id} className="flex items-center gap-3 rounded-lg border bg-background/50 p-3 transition-colors hover:bg-muted/30">
+                    <Badge variant="secondary" className={cfg.cls}>
+                      {cfg.icon}
+                      {cfg.label}
+                    </Badge>
+                    <span className="flex-1 truncate text-sm font-medium">
+                      {task.rule?.name ?? '未知规则'}
+                    </span>
+                    {task.status === 'running' && (
+                      <Progress value={task.progress} className="h-1.5 w-20" />
+                    )}
+                    {task.startedAt && (
+                      <span className="hidden sm:inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {new Date(task.startedAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 text-xs text-muted-foreground"
+                      onClick={() => setCurrentView('scrape')}
+                    >
+                      <Eye className="h-3 w-3" />
+                      查看
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ── Reading Heatmap + Stats ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">

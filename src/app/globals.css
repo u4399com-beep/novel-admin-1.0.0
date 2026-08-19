@@ -4960,3 +4960,41 @@ mark {
   border-color: oklch(0.6 0.15 150 / 0.3);
   background: oklch(0.22 0 0);
 }
+
+/* ===== R18-frontend Enhancements ===== */
+
+/* ─── Card fade-in-up entrance (300ms) ─────────────────────────── */
+@keyframes card-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.card-animate-in {
+  animation: card-fade-in-up 300ms ease forwards;
+}
+
+/* ─── Interactive card subtle hover scale (1.01) ───────────────── */
+.card-interactive-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-interactive-hover:hover {
+  transform: scale(1.01);
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.08);
+}
+.dark .card-interactive-hover:hover {
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.3);
+}
+
+/* ─── Running status badge subtle pulse ─────────────────────────── */
+@keyframes running-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.running-badge {
+  animation: running-pulse 2s ease-in-out infinite;
+}

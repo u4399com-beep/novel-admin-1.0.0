@@ -114,18 +114,20 @@ services:
       - MAIN_APP_URL=http://localhost:3000
 
       # ─── Optional: External Services ───
-      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
-      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL}
-      - AGENTQL_API_KEY=${AGENTQL_API_KEY}
-      - AGENTQL_API_URL=${AGENTQL_API_URL}
-      - CLOUD_BROWSER_PROVIDER=${CLOUD_BROWSER_PROVIDER}
-      - BROWSERLESS_API_KEY=${BROWSERLESS_API_KEY}
-      - BROWSERLESS_API_URL=${BROWSERLESS_API_URL}
-      - STEEL_API_KEY=${STEEL_API_KEY}
-      - STEEL_API_URL=${STEEL_API_URL}
+      # NOTE: All optional vars use :-default so docker compose up works
+      # even when the user's .env omits them (e.g. manual docker-compose usage).
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-}
+      - AGENTQL_API_KEY=${AGENTQL_API_KEY:-}
+      - AGENTQL_API_URL=${AGENTQL_API_URL:-}
+      - CLOUD_BROWSER_PROVIDER=${CLOUD_BROWSER_PROVIDER:-}
+      - BROWSERLESS_API_KEY=${BROWSERLESS_API_KEY:-}
+      - BROWSERLESS_API_URL=${BROWSERLESS_API_URL:-}
+      - STEEL_API_KEY=${STEEL_API_KEY:-}
+      - STEEL_API_URL=${STEEL_API_URL:-}
 
       # ─── Misc ───
-      - TZ=${TZ}
+      - TZ=${TZ:-Asia/Shanghai}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/csrf || exit 1"]
       start_period: 120s

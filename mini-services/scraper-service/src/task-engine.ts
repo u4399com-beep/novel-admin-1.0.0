@@ -366,10 +366,14 @@ export async function executeTask(taskId: string) {
   const TASK_TIMEOUT_MS = 60 * 60 * 1000;
   let taskTimeoutId: ReturnType<typeof setTimeout>;
   const taskTimeoutPromise = new Promise<never>((_, reject) => {
-    taskTimeoutId = setTimeout(() => reject(new Error(`任务执行超时（${TASK_TIMEOUT_MS / 1000 / 60}分钟）`)), TASK_TIMEOUT_MS);
+    taskTimeoutId = setTimeout(() => {
+      // Abort all in-progress engine fetch calls to prevent zombie workers
+      abortController.abort();
+      reject(new Error(`任务执行超时（${TASK_TIMEOUT_MS / 1000 / 60}分钟）`));
+    }, TASK_TIMEOUT_MS);
   });
 
-  const taskCtx: TaskContext = { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode };
+  const taskCtx: TaskContext = { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal: abortController.signal };
   const taskStartTime = Date.now();
 
   try {
@@ -416,6 +420,7 @@ interface TaskContext {
   threadCount: number;
   isIncremental: boolean;
   dedupMode: string;
+  abortSignal: AbortSignal;
 }
 
 async function executeTaskBody(
@@ -425,7 +430,7 @@ async function executeTaskBody(
   abortController: AbortController,
   ctx: TaskContext
 ): Promise<void> {
-  let { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode } = ctx;
+  let { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal } = ctx;
 
   // 2. Scrape list page
   if (!rule.listUrl || !listSelector) {
@@ -440,6 +445,7 @@ async function executeTaskBody(
     pagination: listPagination,
     antiCrawl: antiCrawlConfig,
     engine: engineType,
+    signal: abortSignal,
   });
 
   const bookUrls = listResult.urls;
@@ -505,6 +511,7 @@ async function executeTaskBody(
         },
         antiCrawl: antiCrawlConfig,
         engine: engineType,
+        signal: abortSignal,
       });
 
       if (!bookInfo.title) {
@@ -718,6 +725,7 @@ async function executeTaskBody(
         antiCrawl: antiCrawlConfig,
         enableShuffle: rule.enableShuffle,
         engine: engineType,
+        signal: abortSignal,
       });
 
       // Record adaptive response for chapter list scrape
@@ -816,6 +824,7 @@ async function executeTaskBody(
             antiCrawl: antiCrawlConfig,
             engine: engineType,
             cleanConfig,
+            signal: abortSignal,
           });
 
           // CAPTCHA detection: skip chapter if detected
