@@ -12364,3 +12364,64 @@ Stage Summary:
 - ESLint: 0 errors, 5 warnings (all pre-existing react-hooks/incompatible-library)
 - TypeScript: 0 new errors in modified files
 - Historical cumulative fixes: **238** (3 new: #1 javascript: href, #9 maxSessionsPerDomain, #10-11 Sec-Fetch 2.0 + AL/UA)
+
+---
+Task ID: R22
+Agent: Main Orchestrator + 2 Sub-agents (docker, scraper)
+Task: 持续开发审查 — Docker安装全链路模拟 + Scraper质量审计 + Sec-Fetch增强
+
+Work Log:
+- 并行2个子代理
+- Git推送: c134cf3 → main 成功
+
+## Docker安装全链路模拟 (R22-docker)
+- 一键安装命令: `curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash`
+- 11步安装链路模拟全部PASS:
+  - install.sh 3种获取策略(本地→/opt→git clone→tar.gz) ✅
+  - .env生成(27变量, 单引号heredoc安全) ✅
+  - docker-compose.yml heredoc(37变量引用, 27来自.env + 10有:-默认) ✅
+  - BACKUP_DIR R21修复确认 ✅
+  - Dockerfile 13个Prisma传递依赖COPY路径 ✅
+  - queue.pg.ts swap ✅
+  - DATABASE_URL ##*@ R20修复确认 ✅
+  - Schema push 3次重试失败后非致命继续 ✅
+  - Scraper启动失败非致命继续 ✅
+  - 优雅关停链 ✅
+  - .env.production模板完整 ✅
+- 结论: 0个新问题, Docker一键安装链路完全正确
+
+## Scraper质量审计 (R22-scraper)
+- 2个bug修复:
+  - BUG-1(MEDIUM): selectors.ts extractLinksFromList不过滤javascript:void(0)链接 → 添加startsWith('javascript:')守卫
+  - BUG-2(MEDIUM): session-manager.ts maxSessionsPerDomain=3声明但从未执行 → 添加淘汰逻辑(优先淘汰blocked/overused, 再回收oldest)
+- 2个已确认可接受的低优先级项:
+  - cleaning.ts广告模式可能误判小说对白 → 已有20字符阈值缓解
+  - anti-crawl-advisor无冷却 → 前端仅在用户操作时调用
+
+## 反反爬增强
+- Sec-Fetch-*头2.0 (utils.ts getSecFetchHeadersForDomain):
+  - 首次访问域: cross-site + Sec-Fetch-User: ?1
+  - 后续访问: same-origin, 无User头
+  - 域感知: 基于referrer chain判断
+- Accept-Language/UA一致性 (utils.ts getAcceptLanguageForUA):
+  - UA含zh-CN→中文Accept-Language, en-US→英文, ja→日文等
+  - 优先级: 显式覆盖 > 域一致 > UA一致 > 随机
+
+## 验证结果
+- ESLint: 0 errors ✅
+- Dev Server: HTTP 200 ✅
+- Git push: c134cf3 成功 ✅
+
+## 修改文件
+- mini-services/scraper-service/src/selectors.ts (javascript:链接过滤)
+- mini-services/scraper-service/src/session-manager.ts (maxSessions强制执行)
+- mini-services/scraper-service/src/utils.ts (Sec-Fetch + Accept-Language一致性)
+
+## 历史累计修复: 235 + 3(本轮) = 238项
+
+Stage Summary:
+- Docker: 11步全链路模拟0 issue, 一键安装命令确认
+- Scraper: 2个MEDIUM bug修复(javascript链接 + session限制)
+- 反反爬: Sec-Fetch域感知头 + Accept-Language/UA一致性
+- Git: c134cf3 → main 成功
+- ESLint: 0 errors ✅
