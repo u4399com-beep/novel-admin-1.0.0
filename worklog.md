@@ -13095,3 +13095,56 @@ Stage Summary:
 - 20个审计角度, 17个确认正确, 3个发现(3修复)
 - 关键发现: IPv6代理URL在cleanUrl和healthCheck中未加方括号导致无效URL; recordCrossDomainTransition的fromUrl参数被完全忽略导致跨域Referer功能失效
 - ESLint: 0 errors ✅
+
+---
+Task ID: R26
+Agent: Main Orchestrator + 2 Sub-agents (R26-a, R26-b) + R26-enhance
+Task: 持续开发审查 — Scraper深度审计(8文件) + 反反爬增强(Stealth 43-44 + HTTP/2 decoy)
+
+Work Log:
+- 并行2个审计子代理(R26-a: 4文件/25角度, R26-b: 4文件/20角度)
+- 直接实现反反爬增强(Stealth 43-44 + http2-decoy.ts)
+- Git推送: f2fd836 → main 成功
+
+## 审计结果
+
+### R26-a (task-engine/engines/anti-crawl-advisor/session-manager)
+- 21/25 确认正确
+- 2 MEDIUM修复:
+  - engines.ts: CheerioEngine 3xx重定向中间跳转的Set-Cookie丢失 → onHopResponse回调
+  - engines.ts: antiCrawlAdvisor.recordSuccess/recordFailure在Playwright/Obscura引擎中从未调用 → 所有3个引擎接入
+
+### R26-b (proxy-manager/doh-simulation/referrer-chain/browser-behavior)
+- 17/20 确认正确
+- 3 MEDIUM修复:
+  - proxy-manager.ts: IPv6代理URL cleanUrl缺少方括号 → 检测hostname中的冒号并添加[]
+  - proxy-manager.ts: IPv6健康检查URL无效 → 同样的方括号修复
+  - referrer-chain.ts: recordCrossDomainTransition的fromUrl参数被忽略 → 先记录fromUrl再记录toUrl
+
+## 反反爬增强
+- Stealth Section 43: chrome.runtime.connect()增强port mock (onMessage/onDisconnect事件)
+- Stealth Section 44: ResizeObserver/IntersectionObserver存在性mock
+- NEW: http2-decoy.ts — Accept-Encoding顺序多样化(5种池, 域一致)
+- 集成到utils.ts buildFetchHeaders()的Accept-Encoding
+
+## 验证结果
+- ESLint: 0 errors ✅
+- Git push: f2fd836 成功 ✅
+
+## 修改文件
+- mini-services/scraper-service/src/engines.ts (onHopResponse + advisor接入)
+- mini-services/scraper-service/src/proxy-manager.ts (IPv6方括号 x2)
+- mini-services/scraper-service/src/referrer-chain.ts (fromUrl记录)
+- mini-services/scraper-service/src/stealth.ts (+42行: Section 43-44)
+- mini-services/scraper-service/src/utils.ts (Accept-Encoding集成)
+- mini-services/scraper-service/src/http2-decoy.ts (NEW)
+
+## 历史累计修复: 265 + 5 = 270项
+
+Stage Summary:
+- 5个MEDIUM bug修复
+- 2个新Stealth Section(43-44), 共44个section
+- 1个新文件(http2-decoy.ts)
+- 累计: 270项
+- ESLint: 0 errors ✅
+- Git: f2fd836成功
