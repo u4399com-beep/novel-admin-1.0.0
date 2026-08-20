@@ -1527,6 +1527,29 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
+  // Section 34: iframe contentWindow detection bypass
+  // Some anti-bot systems check: window.self === window.top (should be true in main frame)
+  // and document.readyState consistency
+  try {
+    Object.defineProperty(window, 'self', { get: function() { return window; } });
+  } catch(e) {}
+
+  // Section 35: Notification.permission — real browsers return 'default' or 'denied'
+  // Never 'granted' in headless. Return 'default' for consistency.
+  try {
+    if (!window.Notification) {
+      window.Notification = function() {};
+      window.Notification.permission = 'default';
+      window.Notification.requestPermission = function(cb) {
+        const p = Promise.resolve('default');
+        if (cb) cb('default');
+        return p;
+      };
+    } else if (Notification.permission === undefined) {
+      Notification.permission = 'default';
+    }
+  } catch(e) {}
+
 })();
 `;
 }

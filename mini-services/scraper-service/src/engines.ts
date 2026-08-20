@@ -276,7 +276,8 @@ class CheerioEngine implements ScrapingEngine {
       browserBehavior.recordRequest(targetDomain);
     }
 
-    return retryWithBackoff(
+    let lastStatusCode = 0;
+    const fetchResult = await retryWithBackoff(
       async () => {
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
         if (targetDomain) {
@@ -327,6 +328,7 @@ class CheerioEngine implements ScrapingEngine {
         });
 
         statusCode = response.status;
+        lastStatusCode = statusCode;
 
         if (!response.ok) {
           // Track proxy failure on error status codes
@@ -365,18 +367,10 @@ class CheerioEngine implements ScrapingEngine {
           }
         }
 
-        // Record proxy success
+        // Record proxy success (only on the final successful attempt)
         if (proxy) {
           proxyManager.recordSuccess(proxy.url, Date.now() - startTime);
         }
-
-        // Record rate limit result
-        if (targetDomain) {
-          rateLimiter.recordResult(targetDomain, true, statusCode);
-        }
-
-        // Complete request fingerprint tracking
-        requestFingerprintMgr.complete(fp.requestId, true, statusCode);
 
         // Record URL in referrer chain for future requests
         referrerChain.recordVisit(finalUrl);
@@ -388,12 +382,9 @@ class CheerioEngine implements ScrapingEngine {
 
         return { html, finalUrl, statusCode: response.status };
         } catch (err) {
-          // Record rate limit result on failure (always record, even when statusCode is 0)
-          if (targetDomain) {
-            rateLimiter.recordResult(targetDomain, false, statusCode > 0 ? statusCode : undefined);
-          }
-          // Complete request fingerprint tracking (failure)
-          requestFingerprintMgr.complete(fp.requestId, false, statusCode);
+          // NOTE: rateLimiter.recordResult and requestFingerprintMgr.complete
+          // are called OUTSIDE retryWithBackoff (below) to avoid double-counting
+          // retry attempts as separate requests.
           throw err;
         }
       },
@@ -401,11 +392,30 @@ class CheerioEngine implements ScrapingEngine {
         maxRetries: options?.antiCrawl?.retries ?? 3,
         baseDelay: 1000,
         maxDelay: 15000,
+        signal: options?.signal,
         onRetry: proxy ? (_attempt, err) => {
           proxyManager.recordFailure(proxy.url, err.message);
         } : undefined,
       }
-    );
+    ).then(result => {
+      // Record final success (single record for the logical request)
+      if (targetDomain) {
+        rateLimiter.recordResult(targetDomain, true, lastStatusCode);
+        antiCrawlAdvisor.recordSuccess(targetDomain);
+      }
+      requestFingerprintMgr.complete(fp.requestId, true, lastStatusCode);
+      return result;
+    }).catch(err => {
+      // Record final failure (single record for the logical request)
+      if (targetDomain) {
+        const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
+        rateLimiter.recordResult(targetDomain, false, errStatus || lastStatusCode || undefined);
+      }
+      requestFingerprintMgr.complete(fp.requestId, false, lastStatusCode);
+      throw err;
+    });
+
+    return fetchResult;
   }
 }
 
@@ -1571,8 +1581,11 @@ class ObscuraEngine implements ScrapingEngine {
         } catch (err) {
           // Record rate limit result on failure (covers both CAPTCHA and non-CAPTCHA errors)
           // This is the ONLY place recordResult is called for failures, ensuring no double-recording
+          // NOTE: obscuraStatus is const-declared below; if page.goto() throws before reaching it,
+          // we extract status from the error message instead (same as Playwright engine).
           if (err instanceof Error && err.message.startsWith('CAPTCHA detected')) {
-            rateLimiter.recordResult(domain, false, obscuraStatus);
+            // For CAPTCHA, the status was 403/503 — extract from message context or default to 403
+            rateLimiter.recordResult(domain, false, 403);
           } else {
             const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
             rateLimiter.recordResult(domain, false, errStatus || undefined);

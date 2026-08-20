@@ -617,6 +617,8 @@ export interface RetryOptions {
   jitter?: boolean;
   retryableStatuses?: number[];
   onRetry?: (attempt: number, error: Error) => void;
+  /** AbortSignal to cancel retry backoff delays */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_RETRY_OPTIONS: RetryOptions = {
@@ -637,12 +639,22 @@ export async function retryWithBackoff<T>(
   let lastError: Error | undefined;
 
   for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+    // Check abort before each attempt (no wasted work on cancelled tasks)
+    if (opts.signal?.aborted) {
+      throw new DOMException('Retry aborted', 'AbortError');
+    }
+
     try {
       return await fn();
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
 
       if (attempt >= opts.maxRetries) break;
+
+      // Bail immediately if aborted during the attempt
+      if (opts.signal?.aborted) {
+        throw new DOMException('Retry aborted', 'AbortError');
+      }
 
       // Check if error is retryable (non-HTTP errors like ECONNREFUSED are retryable)
       const statusMatch = lastError.message.match(/HTTP (\d+)/);
@@ -657,9 +669,23 @@ export async function retryWithBackoff<T>(
         delay = delay * (0.5 + Math.random() * 0.5);
       }
 
-      console.log(`  [Retry] Attempt ${attempt + 1}/${opts.maxRetries} failed: ${lastError.message}. Retrying in ${Math.round(delay)}ms...`);
+      const errMsg = lastError.message || '(no message)';
+      console.log(`  [Retry] Attempt ${attempt + 1}/${opts.maxRetries} failed: ${errMsg}. Retrying in ${Math.round(delay)}ms...`);
       opts.onRetry?.(attempt + 1, lastError);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      // Abort-aware delay: if signal fires during backoff, stop waiting immediately
+      if (opts.signal) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delay);
+          const onAbort = () => {
+            clearTimeout(timer);
+            reject(new DOMException('Retry aborted', 'AbortError'));
+          };
+          opts.signal!.addEventListener('abort', onAbort, { once: true });
+        });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
   }
 
