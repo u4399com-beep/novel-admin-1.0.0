@@ -545,6 +545,13 @@ function removeRemnantLines(text: string): string {
  * Normalize whitespace: collapse spaces, trim lines, collapse newlines.
  */
 function normalizeWhitespace(text: string): string {
+  // Strip zero-width characters (common anti-scraping / steganography artifacts)
+  // U+200B ZWSP, U+200C ZWNJ, U+200D ZWJ, U+FEFF BOM/ZWNBSP,
+  // U+00AD soft hyphen, U+2060 word joiner, U+2061-2064 invisible math,
+  // U+180E Mongolian vowel separator, U+034F combining grapheme joiner
+  text = text.replace(/[\u200B\u200C\u200D\uFEFF\u00AD\u2060\u2061\u2062\u2063\u2064\u180E\u034F]/g, '');
+  // Normalize CJK ideographic space (U+3000) to regular space
+  text = text.replace(/\u3000/g, ' ');
   return text
     .replace(/\r\n/g, "\n")
     .replace(/\t+/g, " ")

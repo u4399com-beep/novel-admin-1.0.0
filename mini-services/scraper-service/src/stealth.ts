@@ -341,6 +341,15 @@ export function clearDomainUACache(domain?: string): void {
  * 29. Battery API getBattery() override (realistic level + charging state)
  * 30. Canvas toDataURL/toBlob noise injection (imperceptible per-pixel RGB noise)
  * 31. AudioContext/OfflineAudioContext createOscillator frequency noise
+ * 32. NavigationTiming override (h2 protocol, realistic timing chain)
+ * 33. PerformanceObserver neutralization (7 entry types)
+ * 34. iframe self/top bypass
+ * 35. Notification.permission mock
+ * 36. document.hasFocus() — always returns true
+ * 37. outerWidth/outerHeight browser chrome simulation
+ * 38. Permissions.query() — realistic permission states
+ * 39. document.visibilityState / hidden — always visible
+ * 40. ServiceWorker / SharedWorker existence consistency
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -1547,6 +1556,115 @@ export function getStealthScript(profile: FingerprintProfile): string {
       };
     } else if (Notification.permission === undefined) {
       Notification.permission = 'default';
+    }
+  } catch(e) {}
+
+  // Section 36: document.hasFocus() — headless browsers often report false
+  // Real browsers always report true when the page is in the active tab
+  try {
+    Object.defineProperty(document, 'hasFocus', {
+      value: function() { return true; },
+      writable: true,
+      configurable: true,
+    });
+  } catch(e) {}
+
+  // Section 37: outerWidth/outerHeight consistency with viewport
+  // Headless browsers often have outerWidth === innerWidth (no browser chrome)
+  // Real browsers add 85-130px for toolbar/tab bar chrome
+  (function() {
+    try {
+      var chromeWidth = 85 + Math.floor(Math.random() * 50); // 85-134px
+      var chromeHeight = 85 + Math.floor(Math.random() * 60); // 85-144px
+      var origOuterWidth = Object.getOwnPropertyDescriptor(Window.prototype, 'outerWidth');
+      var origOuterHeight = Object.getOwnPropertyDescriptor(Window.prototype, 'outerHeight');
+      if (origOuterWidth) {
+        Object.defineProperty(window, 'outerWidth', {
+          get: function() { return window.innerWidth + chromeWidth; },
+          configurable: true,
+        });
+      }
+      if (origOuterHeight) {
+        Object.defineProperty(window, 'outerHeight', {
+          get: function() { return window.innerHeight + chromeHeight; },
+          configurable: true,
+        });
+      }
+    } catch(e) {}
+  })();
+
+  // Section 38: Permissions.query() — headless returns unexpected permission states
+  // Real Chrome: notifications=default, geolocation=prompt, push=prompt, midi=prompt
+  (function() {
+    try {
+      var _origQuery = Permissions.prototype.query;
+      var permissionStates = {
+        'notifications': { state: 'default', onchange: null },
+        'geolocation': { state: 'prompt', onchange: null },
+        'push': { state: 'prompt', onchange: null },
+        'midi': { state: 'prompt', onchange: null },
+        'camera': { state: 'prompt', onchange: null },
+        'microphone': { state: 'prompt', onchange: null },
+        'clipboard-read': { state: 'prompt', onchange: null },
+        'clipboard-write': { state: 'granted', onchange: null },
+        'accelerometer': { state: 'prompt', onchange: null },
+        'gyroscope': { state: 'prompt', onchange: null },
+        'magnetometer': { state: 'prompt', onchange: null },
+        'fullscreen': { state: 'prompt', onchange: null },
+        'persistent-storage': { state: 'prompt', onchange: null },
+      };
+      Permissions.prototype.query = function(desc) {
+        var name = desc && desc.name ? desc.name : '';
+        var result = permissionStates[name] || { state: 'prompt', onchange: null };
+        return Promise.resolve(result);
+      };
+    } catch(e) {}
+  })();
+
+  // Section 39: document.visibilityState and document.hidden
+  // Headless browsers sometimes report 'hidden' or inconsistent visibility
+  try {
+    Object.defineProperty(document, 'visibilityState', {
+      get: function() { return 'visible'; },
+      configurable: true,
+    });
+    Object.defineProperty(document, 'hidden', {
+      get: function() { return false; },
+      configurable: true,
+    });
+  } catch(e) {}
+
+  // Section 40: SharedWorker and ServiceWorker detection consistency
+  // Anti-bot checks: does 'serviceWorker' in navigator return true?
+  // Does SharedWorker constructor exist?
+  try {
+    // Ensure ServiceWorkerContainer exists (headless Chrome has it, but check)
+    if (!navigator.serviceWorker) {
+      navigator.serviceWorker = {
+        controller: null,
+        ready: Promise.resolve({
+          active: null,
+          scriptURL: '',
+          state: 'redundant',
+        }),
+        register: function() { return Promise.resolve({ unregister: function() { return Promise.resolve(true); } }); },
+        getRegistrations: function() { return Promise.resolve([]); },
+        addEventListener: function() {},
+        removeEventListener: function() {},
+      };
+    }
+    // Ensure SharedWorker constructor exists
+    if (typeof window.SharedWorker === 'undefined') {
+      window.SharedWorker = function(port) {
+        this.port = {
+          start: function() {},
+          postMessage: function() {},
+          close: function() {},
+          addEventListener: function() {},
+          removeEventListener: function() {},
+          onmessage: null,
+        };
+      };
     }
   } catch(e) {}
 

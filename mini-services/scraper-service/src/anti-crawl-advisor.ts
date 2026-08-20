@@ -181,6 +181,13 @@ class AntiCrawlAdvisor {
     h.totalRequests++;
   }
 
+  /** Record a failed request (used for success rate calculation) */
+  recordFailure(domain: string): void {
+    const h = this.getOrCreateHistory(domain);
+    h.totalRequests++;
+    h.lastActivity = Date.now();
+  }
+
   /**
    * Analyze a domain and generate a full advisor report.
    */

@@ -335,6 +335,26 @@ export async function clearTaskQueue(taskId: string): Promise<void> {
 }
 
 /**
+ * Re-queue items that have been stuck in 'in_progress' status for too long.
+ * This handles the case where a worker crashes mid-processing, leaving items
+ * in 'in_progress' state. Resets them to 'pending' so they can be retried.
+ *
+ * @param staleMinutes - How long an item must be 'in_progress' before being considered stale (default: 30 minutes)
+ * @param taskId - Optional: only requeue items for a specific task
+ * @returns Number of items requeued
+ */
+export async function requeueStaleInProgress(staleMinutes: number = 30, taskId?: string): Promise<number> {
+  const db = await getSql();
+  const cutoff = new Date(Date.now() - staleMinutes * 60000);
+
+  const result = taskId
+    ? await db`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = NOW() WHERE status = 'in_progress' AND task_id = ${taskId} AND updated_at < ${cutoff.toISOString()}`
+    : await db`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = NOW() WHERE status = 'in_progress' AND updated_at < ${cutoff.toISOString()}`;
+
+  return result.count ?? 0;
+}
+
+/**
  * Check if a URL has already been queued/completed for a task.
  */
 export async function isUrlProcessed(url: string, taskId?: string): Promise<boolean> {

@@ -480,7 +480,7 @@ async function executeTaskBody(
       totalChapters: 0,
     });
     await addTaskLog(taskId, "warn", "未发现任何书籍URL");
-    return { success: true, totalBooks: 0, totalChapters: 0 };
+    return { success: true, totalBooks: 0, newBooks: 0, totalChapters: 0, newChapters: 0, failed: 0, skipped: 0, engine: engineType };
   }
 
   await updateTaskProgress(taskId, {
@@ -683,7 +683,7 @@ async function executeTaskBody(
       currentStep: "采集完成（无有效书籍）",
       progress: 100,
     });
-    return { success: true, totalBooks: 0, newBooks: 0, totalChapters: 0, newChapters: 0 };
+    return { success: true, totalBooks: 0, newBooks: 0, totalChapters: 0, newChapters: 0, failed: 0, skipped: 0, engine: engineType };
   }
 
   // 4. Scrape chapters for each book

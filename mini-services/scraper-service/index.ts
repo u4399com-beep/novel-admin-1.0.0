@@ -1252,7 +1252,7 @@ export function startServer(port: number = 3099) {
 
 // ==================== Start ====================
 
-const PORT = parseInt(process.env.PORT || "3099", 10);
+const PORT = parseInt(process.env.PORT || "3099", 10) || 3099;
 console.log(`[Config] PORT: ${PORT}, Auth: ${SERVICE_TOKEN ? "enabled" : "DISABLED"}`);
 // Only log sensitive service URLs in debug mode
 if (process.env.DEBUG === "true") {

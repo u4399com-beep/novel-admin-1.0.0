@@ -13,7 +13,7 @@
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
 import { isSafeUrl } from "./ssrf";
-import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects } from "./utils";
+import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects, getAcceptLanguageForUA, getSecFetchHeadersForDomain } from "./utils";
 import { getProfileForDomain, getStealthScript } from "./stealth";
 import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
@@ -25,6 +25,7 @@ import { detectCaptcha, type CaptchaDetection } from "./captcha-detector";
 import { autoHandleCaptcha } from "./captcha-strategy";
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 import { browserBehavior } from "./browser-behavior";
+import { detectAndDecode } from "./charset-detector";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -72,7 +73,10 @@ async function readTextWithLimit(response: Response, maxSize: number): Promise<s
     combined.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(combined);
+
+  // Use charset auto-detection to handle GBK/Big5 pages that misdeclare as UTF-8
+  const contentType = response.headers.get('content-type');
+  return detectAndDecode(combined, contentType);
 }
 
 // ==================== Adaptive Rate Limit Wait ====================
@@ -500,8 +504,23 @@ class PlaywrightEngine implements ScrapingEngine {
         const domainProxy = pwDomain ? proxyManager.getDomainProxyWithRotation(pwDomain) : null;
         const pwProxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(pwDomain) : null);
 
-        // Build context options with optional proxy and viewport
-        const contextOptions: Record<string, unknown> = { userAgent };
+        // Build context options with viewport, locale, timezone matching stealth profile
+        const pwProfile = pwDomain ? getProfileForDomain(pwDomain) : getProfileForDomain('default');
+        const contextOptions: Record<string, unknown> = {
+          userAgent: pwProfile.userAgent,
+          viewport: {
+            width: pwProfile.screenWidth,
+            height: pwProfile.screenHeight,
+            deviceScaleFactor: pwProfile.pixelRatio,
+          },
+          locale: pwProfile.languages[0] || 'zh-CN',
+          timezoneId: pwProfile.timezone,
+          screen: {
+            width: pwProfile.screenWidth,
+            height: pwProfile.screenHeight,
+            colorDepth: pwProfile.colorDepth,
+          },
+        };
         if (pwProxy) {
           contextOptions.proxy = { server: pwProxy.url };
           if (process.env.DEBUG === 'true') {
@@ -529,7 +548,6 @@ class PlaywrightEngine implements ScrapingEngine {
           const page = await context.newPage();
 
           // Always inject stealth script for anti-fingerprint protection
-          const pwProfile = pwDomain ? getProfileForDomain(pwDomain) : getProfileForDomain('default');
           await page.addInitScript(getStealthScript(pwProfile));
 
           // Intercept all requests to block unsafe redirect targets and non-HTTP protocols
@@ -1312,7 +1330,7 @@ class ObscuraEngine implements ScrapingEngine {
             height: profile.screenHeight,
             deviceScaleFactor: profile.pixelRatio,
           },
-          locale: "zh-CN",
+          locale: profile.languages[0] || 'zh-CN',
           timezoneId: profile.timezone,
           screen: {
             width: profile.screenWidth,
@@ -1324,12 +1342,9 @@ class ObscuraEngine implements ScrapingEngine {
           serviceWorkers: "block",
           extraHTTPHeaders: {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept-Language": getAcceptLanguageForUA(profile.userAgent),
             "Accept-Encoding": "gzip, deflate, br",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
+            ...getSecFetchHeadersForDomain(domain),
             "Upgrade-Insecure-Requests": "1",
           },
         };

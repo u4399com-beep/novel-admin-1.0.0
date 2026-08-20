@@ -98,9 +98,15 @@ function parseProxyUrl(rawUrl: string): { protocol: ProxyEntry['protocol']; host
 
     const parsed = new URL(urlStr);
     const host = parsed.hostname;
-    const port = parseInt(parsed.port, 10);
+    let port = parseInt(parsed.port, 10);
 
-    if (!host || isNaN(port) || port < 1 || port > 65535) {
+    // Apply protocol default port when none specified (e.g. "http://proxy.host" → port 80)
+    if (isNaN(port)) {
+      const defaultPorts: Record<string, number> = { http: 80, https: 443, socks4: 1080, socks5: 1080 };
+      port = defaultPorts[protocol] || 80;
+    }
+
+    if (!host || port < 1 || port > 65535) {
       return null;
     }
 
