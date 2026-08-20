@@ -12425,3 +12425,56 @@ Stage Summary:
 - 反反爬: Sec-Fetch域感知头 + Accept-Language/UA一致性
 - Git: c134cf3 → main 成功
 - ESLint: 0 errors ✅
+
+---
+Task ID: R23
+Agent: Main Orchestrator (direct, no sub-agents)
+Task: 持续开发审查 — Scraper深度审计(直接) + 反反爬增强
+
+Work Log:
+- 直接读取并审计6个关键文件(engines.ts, utils.ts, quality-scorer.ts, captcha-strategy.ts, anti-crawl-advisor.ts, cookie-jar.ts, cleaning.ts, stealth.ts)
+- 验证通过: retryWithBackoff信号/指数退避、resolveUrl(URL构造器)、Cookie过期/子域匹配、Session管理、广告过滤20字符阈值、质量评分0-100范围、心跳30s、任务超时1h
+
+## 发现并修复的Bug
+
+### BUG-1 (MEDIUM): Obscura引擎catch块变量作用域错误
+- **文件**: engines.ts:1584
+- **问题**: `obscuraStatus` 用 `const` 在try块内声明(L1550), 但catch块(L1581)引用它。当 `page.goto()` 在L1395抛出错误时(导航超时/网络错误), `obscuraStatus` 未初始化, 导致 `ReferenceError: obscuraStatus is not defined`。这会吞掉原始错误信息, 使调试极其困难。
+- **修复**: CAPTCHA分支使用硬编码403(因为CAPTCHA总是403/503), 非CAPTCHA分支与Playwright引擎一致, 从error.message提取HTTP状态码。
+
+## 反反爬增强
+
+### Stealth Section 34: iframe检测绕过
+- 添加 `Object.defineProperty(window, 'self', ...)` 确保 `window.self === window.top` 返回true
+- 防止基于iframe检测的bot识别
+
+### Stealth Section 35: Notification.permission伪装
+- 无头浏览器不通知权限, 检测 `Notification.permission` 可识别bot
+- 返回 'default' (真实浏览器在未授权时返回此值)
+- 如果 `window.Notification` 不存在, 创建完整的mock
+
+## 审计确认正确(无需修改)
+- retryWithBackoff: AbortSignal检查、指数退避(2^n * base)、jitter、retryableStatuses ✅
+- resolveUrl: new URL()处理协议相对URL、data:URI、fragment-only ✅
+- Cookie: 过期检查、子域匹配(.domain前缀)、path前缀 ✅
+- Quality scorer: 0-100范围、A-F等级映射、除零保护 ✅
+- CAPTCHA strategy: 4个策略有序执行、engine-upgrade路径、max retry 3+2 ✅
+- Anti-crawl advisor: recordDetection在recordResult之后调用(正确顺序) ✅
+- cleaning.ts: 广告模式20字符阈值缓解误报 ✅
+
+## 验证结果
+- ESLint: 0 errors ✅
+- Git push: 867b1cf 成功 ✅
+
+## 修改文件
+- mini-services/scraper-service/src/engines.ts (Obscura catch块修复)
+- mini-services/scraper-service/src/stealth.ts (+24行: Section 34-35)
+
+## 历史累计修复: 238 + 1(本轮) = 239项
+
+Stage Summary:
+- 发现1个MEDIUM bug(Obscura变量作用域)并修复
+- 反反爬: iframe检测绕过 + Notification权限伪装(Section 34-35)
+- 7个审计区域确认正确
+- Stealth注入: 35个section
+- ESLint: 0 errors ✅
