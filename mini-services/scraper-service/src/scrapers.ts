@@ -12,6 +12,7 @@ import type {
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selectors";
 import { cleanHtmlRaw } from "./cleaning";
+import { extractJsContent, hasJsContentPatterns } from "./js-content-extractor";
 import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey } from "./utils";
 import { isSafeUrl } from "./ssrf";
 import { detectCaptcha, CAPTCHA_TYPE_LABELS } from "./captcha-detector";
@@ -319,7 +320,21 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
         title = parseSelector(processedHtml, selectors.title);
       }
       const content = parseSelector(processedHtml, selectors.content);
-      if (content) contentParts.push(content);
+      if (content && content.length > 50) {
+        contentParts.push(content);
+      } else if (hasJsContentPatterns(html)) {
+        // Normal extraction failed or very short — try JS content patterns
+        // This handles novel sites that render chapter text via JavaScript
+        const jsResult = extractJsContent(html);
+        if (jsResult.found && jsResult.content.length > 50) {
+          console.log(`  [Content] JS content extracted via ${jsResult.pattern} (${jsResult.content.length} chars)`);
+          contentParts.push(jsResult.content);
+        } else {
+          if (content) contentParts.push(content);
+        }
+      } else {
+        if (content) contentParts.push(content);
+      }
     },
   });
 

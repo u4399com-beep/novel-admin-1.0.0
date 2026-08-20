@@ -209,12 +209,37 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
   const declaredCharset = declaredFromHeader || declaredFromHtml;
 
   // Step 4: Byte frequency analysis for CJK encodings
-  // Only analyze if there's significant non-ASCII content
-  const hasSignificantNonAscii = bytes.filter(b => b > 0x7F).length > 20;
+  // Only analyze if there's significant non-ASCII content (use counter instead of filter to avoid large temp array)
+  let nonAsciiCount = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] > 0x7F) {
+      nonAsciiCount++;
+      if (nonAsciiCount > 20) break;
+    }
+  }
+  const hasSignificantNonAscii = nonAsciiCount > 20;
 
   if (hasSignificantNonAscii) {
+    const gbkLikely = looksLikeGBK(bytes);
+    const big5Likely = looksLikeBig5(bytes);
+
+    // Discriminate GBK vs Big5: if all high lead bytes fall in Big5's range
+    // (0xA1-0xF9) with no GBK-only leads (0x81-0xA0, 0xFA-0xFE), prefer Big5
+    let gbkOnlyLeads = 0;
+    let totalHighLeads = 0;
+    for (let i = 0; i < bytes.length - 1; i++) {
+      const b = bytes[i];
+      if (b >= 0x81 && b <= 0xFE) {
+        totalHighLeads++;
+        if ((b >= 0x81 && b <= 0xA0) || (b >= 0xFA && b <= 0xFE)) {
+          gbkOnlyLeads++;
+        }
+      }
+    }
+    const isBig5Preferred = totalHighLeads > 0 && gbkOnlyLeads === 0;
+
     // Check GBK first (more common for Simplified Chinese novels)
-    if (looksLikeGBK(bytes)) {
+    if (gbkLikely && !isBig5Preferred) {
       if (declaredCharset && (declaredCharset === 'utf-8' || declaredCharset === 'iso-8859-1')) {
         // Declared as UTF-8 but bytes look like GBK — common misconfiguration
         return {
@@ -232,8 +257,8 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
       };
     }
 
-    // Check Big5 (Traditional Chinese)
-    if (looksLikeBig5(bytes)) {
+    // Check Big5 (Traditional Chinese) — also reached when GBK matched but Big5 is preferred
+    if (big5Likely || (gbkLikely && isBig5Preferred)) {
       if (declaredCharset && (declaredCharset === 'utf-8' || declaredCharset === 'iso-8859-1')) {
         return {
           charset: 'big5',

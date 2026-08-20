@@ -193,12 +193,22 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
     return arr[idx];
   }
 
-  const vendor = dPick(WEBGL_VENDORS, 1);
+  const platform = dPick(PLATFORMS, 4);
+
+  // Constrain vendor to match platform (Apple GPU only exists on macOS)
+  let vendor: string;
+  if (platform === 'MacIntel') {
+    // MacIntel: can use any vendor including Apple
+    vendor = dPick(WEBGL_VENDORS, 1);
+  } else {
+    // Win32/Linux x86_64: must NOT use Apple GPU (impossible combo)
+    const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
+    vendor = dPick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS, 1);
+  }
   const renderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
   const renderer = dPick(renderers, 2);
 
   const resolution = dPick(SCREEN_RESOLUTIONS, 3);
-  const platform = dPick(PLATFORMS, 4);
 
   // Weighted browser selection (deterministic via seed)
   const weightedBrowsers: string[] = [];
@@ -241,11 +251,15 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
  * Generate a random fingerprint profile (non-deterministic).
  */
 export function generateRandomFingerprint(): FingerprintProfile {
-  const vendor = pick(WEBGL_VENDORS);
+  const platform = pick(PLATFORMS);
+  // Constrain vendor to match platform (Apple GPU only on macOS)
+  const compatibleVendors = platform === 'MacIntel'
+    ? WEBGL_VENDORS
+    : WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
+  const vendor = pick(compatibleVendors.length > 0 ? compatibleVendors : WEBGL_VENDORS);
   const renderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
   const renderer = pick(renderers);
   const resolution = pick(SCREEN_RESOLUTIONS);
-  const platform = pick(PLATFORMS);
   // Use weighted browser pool for UA selection
   const userAgent = getRandomUA();
 
@@ -350,6 +364,8 @@ export function clearDomainUACache(domain?: string): void {
  * 38. Permissions.query() — realistic permission states
  * 39. document.visibilityState / hidden — always visible
  * 40. ServiceWorker / SharedWorker existence consistency
+ * 41. CSS.supports() consistency override
+ * 42. speechSynthesis.getVoices() mock
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -715,10 +731,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
     const OrigRTCPC = window.RTCPeerConnection;
     window.RTCPeerConnection = function(...args) {
       // Return a dummy that doesn't gather candidates
-      const noop = () => {};
+      var noop = () => {};
+      var _fakeSdp = 'v=0\r\no=- ' + Math.floor(Date.now()/1000) + ' 1 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic: WMS\r\nm=application 9 DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=setup:actpass\r\n';
       const fakePC = {
-        createOffer: () => Promise.resolve({}),
-        createAnswer: () => Promise.resolve({}),
+        createOffer: () => Promise.resolve({type: 'offer', sdp: _fakeSdp}),
+        createAnswer: () => Promise.resolve({type: 'answer', sdp: _fakeSdp}),
         setLocalDescription: () => Promise.resolve(),
         setRemoteDescription: () => Promise.resolve(),
         addIceCandidate: () => Promise.resolve(),
@@ -979,18 +996,25 @@ export function getStealthScript(profile: FingerprintProfile): string {
   });
 
   // ---- 16. ClientRects & getBoundingClientRect Spoofing ----
-  // Add tiny random offsets (\u00b10.5px) to prevent layout fingerprinting
+  // Add tiny random offsets (±0.5px) to prevent layout fingerprinting.
+  // Use WeakMap to ensure same element returns same offsets (consistency).
 
+  var _rectCache = new WeakMap();
   var _origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
   Element.prototype.getBoundingClientRect = function() {
+    if (_rectCache.has(this)) return _rectCache.get(this);
     var rect = _origGetBoundingClientRect.call(this);
     var jx = (Math.random() - 0.5) * 1.0;
     var jy = (Math.random() - 0.5) * 1.0;
-    return new DOMRect(rect.x + jx, rect.y + jy, rect.width, rect.height);
+    var spoofed = new DOMRect(rect.x + jx, rect.y + jy, rect.width, rect.height);
+    _rectCache.set(this, spoofed);
+    return spoofed;
   };
 
+  var _rectsCache = new WeakMap();
   var _origGetClientRects = Element.prototype.getClientRects;
   Element.prototype.getClientRects = function() {
+    if (_rectsCache.has(this)) return _rectsCache.get(this);
     var rects = _origGetClientRects.call(this);
     var result = [];
     for (var i = 0; i < rects.length; i++) {
@@ -999,6 +1023,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       var jy2 = (Math.random() - 0.5) * 1.0;
       result.push(new DOMRect(r.x + jx2, r.y + jy2, r.width, r.height));
     }
+    _rectsCache.set(this, result);
     return result;
   };
 
@@ -1442,6 +1467,14 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // ---- 32. Navigation Timing Simulation ----
   // Override performance.getEntriesByType('navigation') to return realistic values,
   // preventing detection via timing-based fingerprinting.
+
+  // Seeded PRNG for deterministic timing values (avoids ReferenceError in strict mode)
+  var _navSeed = 0;
+  for (var _ns = 0; _ns < PROFILE.seed.length; _ns++) { _navSeed = ((_navSeed << 5) - _navSeed + PROFILE.seed.charCodeAt(_ns)) | 0; }
+  _navSeed = Math.abs(_navSeed);
+  function _seededRandom(offset) { return ((Math.sin(_navSeed + offset) * 10000) % 1 + 1) % 1; }
+  var _perfTimingOffset = 3000 + Math.abs(_tzOffsetMs);
+
   try {
     var _origGetEntriesByType = Performance.prototype.getEntriesByType;
     Performance.prototype.getEntriesByType = function(type) {
@@ -1665,6 +1698,41 @@ export function getStealthScript(profile: FingerprintProfile): string {
           onmessage: null,
         };
       };
+    }
+  } catch(e) {}
+
+  // Section 41: CSS.supports() consistency — headless Chromium may report different
+  // CSS feature support than real Chrome. Override to return consistent results.
+  // Some anti-bot systems check: CSS.supports('display: grid') or obscure properties.
+  try {
+    if (window.CSS && CSS.supports) {
+      var _origSupports = CSS.supports.bind(CSS);
+      var _blockedSupports = [
+        'display: contents',  // May differ in headless
+      ];
+      CSS.supports = function(prop, val) {
+        var query = val !== undefined ? prop + ': ' + val : prop;
+        for (var i = 0; i < _blockedSupports.length; i++) {
+          if (query === _blockedSupports[i]) return true;
+        }
+        try { return _origSupports(prop, val); } catch(e) { return false; }
+      };
+    }
+  } catch(e) {}
+
+  // Section 42: window.speechSynthesis consistency
+  // Headless browsers may not initialize speechSynthesis voices properly.
+  // Some anti-bot systems check if getVoices() returns a non-empty array.
+  try {
+    if (window.speechSynthesis) {
+      var _origGetVoices = speechSynthesis.getVoices;
+      var _fakeVoices = [
+        { name: 'Google US English', lang: 'en-US', localService: true, default: true, voiceURI: 'Google US English' },
+        { name: 'Google UK English Female', lang: 'en-GB', localService: true, default: false, voiceURI: 'Google UK English Female' },
+      ];
+      speechSynthesis.getVoices = function() { return _fakeVoices; };
+      // Trigger voiceschanged event to simulate async voice loading
+      try { speechSynthesis.dispatchEvent(new Event('voiceschanged')); } catch(e) {}
     }
   } catch(e) {}
 

@@ -8,6 +8,13 @@ import type { Selector } from "./types";
 import { safeRegexMatch } from "./regex-safety";
 import { resolveUrl } from "./utils";
 
+// Tags whose text content should never be extracted (noise / security)
+const EXCLUDED_TAGS = new Set(['script', 'style', 'noscript', 'template']);
+
+function isExcludedTag(el: cheerio.Element): boolean {
+  return el.type === 'tag' && EXCLUDED_TAGS.has((el as cheerio.Element & { name: string }).name);
+}
+
 // ==================== XPath to CSS Converter ====================
 
 interface XPathResult {
@@ -42,6 +49,9 @@ function xpathToCss(xpath: string): XPathResult {
 
   // /html/body/... → remove leading slashes
   css = css.replace(/^\/+/, "");
+
+  // Convert following-sibling::tag → ~ tag (general sibling combinator)
+  css = css.replace(/following-sibling::(\w+)/g, "~ $1");
 
   // //tag[@attr='value'] → tag[attr='value']
   css = css.replace(
@@ -102,6 +112,9 @@ export function parseSelector(html: string, selector: Selector): string {
       return el.attr(attrName) || "";
     }
 
+    // Skip extracting text from script/style/noscript/template tags
+    if (isExcludedTag(el[0]!)) return "";
+
     return el.attr("href") || el.attr("src") || el.text().trim();
   }
 
@@ -127,6 +140,9 @@ export function parseSelector(html: string, selector: Selector): string {
     const content = el.attr("content");
     if (content) return content;
   }
+
+  // Skip extracting text from script/style/noscript/template tags
+  if (isExcludedTag(el[0]!)) return "";
 
   return el.text().trim();
 }
@@ -170,8 +186,11 @@ export function parseSelectorMulti(html: string, selector: Selector): string[] {
         } else if (src) {
           results.push(src);
         } else {
-          const text = $el.text().trim();
-          if (text) results.push(text);
+          // Skip text extraction from excluded tags
+          if (!isExcludedTag(el)) {
+            const text = $el.text().trim();
+            if (text) results.push(text);
+          }
         }
       }
     });
@@ -193,8 +212,11 @@ export function parseSelectorMulti(html: string, selector: Selector): string[] {
     } else if (src) {
       results.push(src);
     } else {
-      const text = $el.text().trim();
-      if (text) results.push(text);
+      // Skip text extraction from excluded tags
+      if (!isExcludedTag(el)) {
+        const text = $el.text().trim();
+        if (text) results.push(text);
+      }
     }
   });
 
@@ -273,7 +295,12 @@ export function extractLinksFromList(
       }
     }
 
-    if (linkValue && !linkValue.trim().toLowerCase().startsWith('javascript:')) {
+    const trimmedLink = linkValue.trim().toLowerCase();
+    const isDangerous = trimmedLink.startsWith('javascript:') ||
+      trimmedLink.startsWith('data:') ||
+      trimmedLink.startsWith('blob:') ||
+      trimmedLink.startsWith('vbscript:');
+    if (linkValue && !isDangerous) {
       results.push({
         title: titleValue,
         url: resolveUrl(baseUrl, linkValue),

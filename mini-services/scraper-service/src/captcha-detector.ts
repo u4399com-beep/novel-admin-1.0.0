@@ -115,9 +115,34 @@ const HTML_RULES: DetectionRule[] = [
       /captchaImage/i,
       /yanzheng/i,
     ],
-    baseConfidence: 0.4,
+    baseConfidence: 0.5,
     perMatchBoost: 0.12,
     maxConfidence: 0.85,
+  },
+  // Arkose Labs (FunCaptcha)
+  {
+    type: 'unknown',
+    patterns: [
+      /arkoselabs\.com/i,
+      /funcaptcha/i,
+      /arkose/i,
+      /captcha-api\.arkoselabs/i,
+    ],
+    baseConfidence: 0.7,
+    perMatchBoost: 0.1,
+    maxConfidence: 0.9,
+  },
+  // FriendlyCaptcha
+  {
+    type: 'unknown',
+    patterns: [
+      /friendlycaptcha/i,
+      /frc-captcha/i,
+      /friendly-challenge/i,
+    ],
+    baseConfidence: 0.7,
+    perMatchBoost: 0.1,
+    maxConfidence: 0.9,
   },
 ];
 
@@ -192,7 +217,7 @@ export function detectCaptcha(
     return true;
   });
 
-  if (bestMatch && bestMatch.confidence > 0.3) {
+  if (bestMatch && bestMatch.confidence > 0.5) {
     return {
       detected: true,
       type: bestMatch.type,
