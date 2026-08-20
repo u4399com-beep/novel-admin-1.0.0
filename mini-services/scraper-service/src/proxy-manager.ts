@@ -111,7 +111,9 @@ function parseProxyUrl(rawUrl: string): { protocol: ProxyEntry['protocol']; host
     }
 
     // Rebuild clean URL without credentials for display
-    const cleanUrl = `${protocol}://${host}:${port}`;
+    // IPv6 hosts must be bracketed (e.g. http://[::1]:8080)
+    const displayHost = host.includes(':') ? `[${host}]` : host;
+    const cleanUrl = `${protocol}://${displayHost}:${port}`;
 
     return { protocol, host, port, cleanUrl };
   } catch {
@@ -574,7 +576,9 @@ class ProxyManager {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
 
-      const res = await fetch(`${entry.protocol === 'https' ? 'https' : 'http'}://${entry.host}:${entry.port}`, {
+      // IPv6 hosts must be bracketed in the URL
+      const healthHost = entry.host.includes(':') ? `[${entry.host}]` : entry.host;
+      const res = await fetch(`${entry.protocol === 'https' ? 'https' : 'http'}://${healthHost}:${entry.port}`, {
         signal: controller.signal,
         redirect: 'manual',
       });

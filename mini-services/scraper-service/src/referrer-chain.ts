@@ -117,8 +117,15 @@ class ReferrerChain {
       const fromDomain = new URL(fromUrl).hostname;
       const toDomain = new URL(toUrl).hostname;
       if (fromDomain === toDomain) return; // Not cross-domain
-      // Record the `fromUrl` in the target domain's history so future
-      // requests to that domain see this as their referrer.
+      // Record the fromUrl in the target domain's history first so that
+      // getReferer(toUrl) can return fromUrl as a cross-domain referrer
+      // (e.g. Google search result → novel site first page).
+      const toEntries = this.history.get(toDomain);
+      if (!toEntries || toEntries.length === 0) {
+        this.evictIfNeeded();
+        this.history.set(toDomain, [{ url: fromUrl, timestamp: Date.now() }]);
+      }
+      // Then record the actual navigation to toUrl
       this.recordVisit(toUrl);
     } catch {
       // Invalid URL, silently ignore

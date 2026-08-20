@@ -11,6 +11,7 @@ import { getAcceptLanguageForDomain, shuffleHeaderOrder } from "./stealth";
 import { referrerChain } from "./referrer-chain";
 import { getDiversifiedHeaders } from "./ip-fingerprint";
 import { getForwardedFor } from "./doh-simulation";
+import { getAcceptEncoding } from "./http2-decoy";
 
 // ==================== User-Agent Rotation ====================
 
@@ -749,7 +750,7 @@ export function buildFetchHeaders(
 
   const headers: Record<string, string> = {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Encoding": domain ? getAcceptEncoding(domain) : "gzip, deflate, br",
     Connection: "keep-alive",
     "Upgrade-Insecure-Requests": "1",
     "Cache-Control": "max-age=0",
@@ -1026,6 +1027,11 @@ export interface FollowRedirectsOptions {
   makeRequest: (url: string) => Promise<Response>;
   /** Optional callback fired after each redirect hop is resolved. */
   onRedirect?: (fromUrl: string, toUrl: string, hop: number) => void;
+  /**
+   * Optional callback fired for EVERY response (including intermediate 3xx).
+   * Use this to store Set-Cookie headers from redirect hops.
+   */
+  onHopResponse?: (response: Response, url: string, hop: number) => void;
 }
 
 /**
@@ -1037,13 +1043,16 @@ export async function followRedirects(
   startUrl: string,
   options: FollowRedirectsOptions
 ): Promise<{ response: Response; finalUrl: string }> {
-  const { maxRedirects = 5, onRedirect, makeRequest } = options;
+  const { maxRedirects = 5, onRedirect, onHopResponse, makeRequest } = options;
   let currentUrl = startUrl;
   const visitedUrls = new Set<string>([startUrl]);
   let response: Response | null = null;
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     response = await makeRequest(currentUrl);
+
+    // Fire onHopResponse for every response (including final non-redirect)
+    onHopResponse?.(response, currentUrl, hop);
 
     if (response.status >= 300 && response.status < 400 && hop < maxRedirects) {
       const location = response.headers.get("location");

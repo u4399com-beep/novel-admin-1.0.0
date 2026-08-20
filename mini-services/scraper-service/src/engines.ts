@@ -299,6 +299,19 @@ class CheerioEngine implements ScrapingEngine {
             const elapsed = Date.now() - startTime;
             remainingTimeout = Math.max(5000, timeout - elapsed); // min 5s per redirect
           },
+          onHopResponse: (resp, hopUrl) => {
+            // Store Set-Cookie from every hop (including intermediate 3xx)
+            // to handle SSO/consent redirects that set session cookies mid-chain
+            if (targetDomain) {
+              try {
+                const hopDomain = new URL(hopUrl).hostname;
+                const setCookieHeaders = resp.headers.getSetCookie?.() || [];
+                if (setCookieHeaders.length > 0) {
+                  cookieJar.store(hopDomain, setCookieHeaders);
+                }
+              } catch { /* invalid URL, skip */ }
+            }
+          },
           makeRequest: (fetchUrl) => {
             // Inject jar cookies for each redirect hop too
             const reqHeaders = { ...headers };
@@ -340,13 +353,7 @@ class CheerioEngine implements ScrapingEngine {
           throw new Error(`HTTP ${response.status}: ${response.statusText} for ${url}`);
         }
 
-        // Store cookies from response
-        if (targetDomain) {
-          const setCookieHeaders = response.headers.getSetCookie?.() || [];
-          if (setCookieHeaders.length > 0) {
-            cookieJar.store(targetDomain, setCookieHeaders);
-          }
-        }
+        // Note: cookies from ALL hops (including final) are already stored by onHopResponse
 
         // Verify Content-Type is text-based
         const contentType = response.headers.get("content-type") || "";
@@ -414,6 +421,7 @@ class CheerioEngine implements ScrapingEngine {
       if (targetDomain) {
         const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
         rateLimiter.recordResult(targetDomain, false, errStatus || lastStatusCode || undefined);
+        try { antiCrawlAdvisor.recordFailure(targetDomain); } catch { /* non-critical */ }
       }
       requestFingerprintMgr.complete(fp.requestId, false, lastStatusCode);
       throw err;
@@ -636,6 +644,7 @@ class PlaywrightEngine implements ScrapingEngine {
           // Record rate limit result
           if (pwDomain) {
             rateLimiter.recordResult(pwDomain, responseStatus >= 200 && responseStatus < 400, responseStatus);
+            try { antiCrawlAdvisor.recordSuccess(pwDomain); } catch { /* non-critical */ }
           }
 
           return {
@@ -649,6 +658,7 @@ class PlaywrightEngine implements ScrapingEngine {
           if (pwDomain) {
             const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
             rateLimiter.recordResult(pwDomain, false, errStatus || undefined);
+            try { antiCrawlAdvisor.recordFailure(pwDomain); } catch { /* non-critical */ }
           }
           throw err;
         } finally {
@@ -1583,6 +1593,7 @@ class ObscuraEngine implements ScrapingEngine {
 
           // Record rate limit result (only if not throwing CAPTCHA above)
           rateLimiter.recordResult(domain, obscuraStatus >= 200 && obscuraStatus < 400, obscuraStatus);
+          try { antiCrawlAdvisor.recordSuccess(domain); } catch { /* non-critical */ }
 
           // Track request fingerprint
           requestFingerprintMgr.complete(fp.requestId, true, obscuraStatus);
@@ -1605,6 +1616,7 @@ class ObscuraEngine implements ScrapingEngine {
             const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
             rateLimiter.recordResult(domain, false, errStatus || undefined);
           }
+          try { antiCrawlAdvisor.recordFailure(domain); } catch { /* non-critical */ }
           // Track request fingerprint (failure)
           requestFingerprintMgr.complete(fp.requestId, false, 0);
           throw err;

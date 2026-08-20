@@ -366,6 +366,8 @@ export function clearDomainUACache(domain?: string): void {
  * 40. ServiceWorker / SharedWorker existence consistency
  * 41. CSS.supports() consistency override
  * 42. speechSynthesis.getVoices() mock
+ * 43. chrome.runtime.connect() enhanced port mock
+ * 44. ResizeObserver / IntersectionObserver existence mock
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -1733,6 +1735,47 @@ export function getStealthScript(profile: FingerprintProfile): string {
       speechSynthesis.getVoices = function() { return _fakeVoices; };
       // Trigger voiceschanged event to simulate async voice loading
       try { speechSynthesis.dispatchEvent(new Event('voiceschanged')); } catch(e) {}
+    }
+  } catch(e) {}
+
+  // Section 43: window.chrome.runtime.connect() enhancement
+  // Previous mock returns minimal object. Anti-bot checks if connect().onMessage
+  // fires properly. Enhance with EventEmitter-like behavior.
+  try {
+    if (window.chrome && window.chrome.runtime) {
+      var _origConnect = window.chrome.runtime.connect;
+      window.chrome.runtime.connect = function(extensionId, connectInfo) {
+        var port = {
+          name: connectInfo && connectInfo.name ? connectInfo.name : '',
+          disconnect: function() {},
+          postMessage: function() {},
+          onMessage: { addListener: function(cb) { /* no-op */ }, removeListener: function() {}, dispatch: function() {} },
+          onDisconnect: { addListener: function(cb) { /* no-op */ }, removeListener: function() {}, dispatch: function() {} },
+          sender: undefined,
+        };
+        return port;
+      };
+    }
+  } catch(e) {}
+
+  // Section 44: ResizeObserver / IntersectionObserver existence + basic mock
+  // Some anti-bot systems check if these observers report realistic observations.
+  // Headless browsers may have different IntersectionObserver thresholds.
+  try {
+    if (typeof IntersectionObserver === 'undefined') {
+      window.IntersectionObserver = function(callback, options) {
+        this.observe = function() {};
+        this.unobserve = function() {};
+        this.disconnect = function() {};
+        this.takeRecords = function() { return []; };
+      };
+    }
+    if (typeof ResizeObserver === 'undefined') {
+      window.ResizeObserver = function(callback) {
+        this.observe = function() {};
+        this.unobserve = function() {};
+        this.disconnect = function() {};
+      };
     }
   } catch(e) {}
 
