@@ -13639,3 +13639,68 @@ Stage Summary:
 - 23个审计角度, 17个确认正确, 6个发现(2 MEDIUM + 4 LOW)
 - 关键发现: (1) CheerioEngine跨域重定向cookie泄漏和首次hop重复cookie; (2) Playwright/Obscura不记录代理健康数据
 - 所有发现均未修改文件，等待后续修复任务
+---
+Task ID: R28
+Agent: Main Orchestrator + 2 Sub-agents (R28-a, R28-b)
+Task: 持续开发审查 — 深度模块审计(stealth/cookie-jar/queue/rate-limiter/engines/proxy/referrer/task-engine) + 反反爬增强(Stealth 47-48)
+
+Work Log:
+- 并行2个审计子代理(R28-a: 4文件/26角度, R28-b: 4文件/29角度)
+- 直接实现Stealth Section 47-48
+- 修复6个MEDIUM bug
+- Git推送: d1b5e0e → main 成功
+
+## 审计结果
+
+### R28-a (stealth/cookie-jar/queue/rate-limiter)
+- 16/22 确认正确
+- 6发现(4 MEDIUM + 2 LOW):
+  - stealth: Section 4/30双重toDataURL覆盖(双噪声指纹) → 移除Section 4/5简单噪声
+  - stealth: Section 45将cursor:default强制改为auto(default是合法值) → 只修复cursor:none
+  - cookie-jar: get()按精确domain查Map,父域cookie不可见 → 域后缀遍历
+  - rate-limiter: maxRPM=1时需60次成功才恢复(惩罚螺旋) → 阈值cap到5-20
+  - stealth: ResizeObserver mock忽略callback(已知限制,标记)
+  - queue: markFailed非原子SELECT+UPDATE(单worker不触发,标记)
+
+### R28-b (engines/proxy/referrer/task-engine)
+- 17/23 确认正确
+- 6发现(2 MEDIUM + 4 LOW):
+  - engines: CheerioEngine跨域重定向cookie泄漏 → delete Cookie header + jar-only
+  - engines: Playwright/Obscura不调用proxyManager.recordSuccess/recordFailure → 添加
+  - engines: addCookies在try外(LOW)
+  - proxy: SOCKS4静默忽略(LOW)
+  - referrer: recordCrossDomain死代码(LOW)
+  - task-engine: 无显式cancel机制(LOW)
+
+## 反反爬增强
+- Stealth Section 47: WebGL Shader Precision(getShaderPrecisionFormat零值修复,WebGL2支持)
+- Stealth Section 48: Navigator Connection API(缺失时创建fake,零值时修复)
+
+## 修复清单
+1. **stealth.ts** [MEDIUM] 移除Section 4/5简单噪声注入(被Section 30/31双重覆盖产生不一致指纹)
+2. **stealth.ts** [MEDIUM] Section 45只修复cursor:none(不修改cursor:default,因为default是合法CSS值)
+3. **cookie-jar.ts** [MEDIUM] get()和getPlaywrightCookies()添加父域遍历(子域可获取父域cookie)
+4. **rate-limiter.ts** [MEDIUM] 恢复阈值cap到Math.min(20, Math.max(5, ...))(避免maxRPM=1时60次才能恢复)
+5. **engines.ts** [MEDIUM] CheerioEngine makeRequest删除Cookie header再从jar重建(防止跨域cookie泄漏)
+6. **engines.ts** [MEDIUM] Playwright/Obscura引擎添加proxyManager.recordSuccess/recordFailure调用
+
+## 验证结果
+- ESLint: 0 errors ✅
+- Git push: d1b5e0e 成功 ✅
+
+## 修改文件
+- mini-services/scraper-service/src/stealth.ts (Section 4/5移除 + Section 45修复 + Section 47-48新增)
+- mini-services/scraper-service/src/cookie-jar.ts (域后缀匹配)
+- mini-services/scraper-service/src/rate-limiter.ts (恢复阈值cap)
+- mini-services/scraper-service/src/engines.ts (cookie泄漏修复 + 代理健康记录)
+
+## 历史累计修复: 280 + 6 = 286项
+
+Stage Summary:
+- 6个MEDIUM bug修复
+- 2个新Stealth Section(47-48), 共48个section
+- 53个审计角度, 33个确认正确, 12个发现(6修复+6已知限制标记)
+- 关键发现: Section 4/30双重噪声(指纹不一致); cookie-jar父域cookie不可见; Playwright/Obscura代理健康不更新
+- 累计: 286项
+- ESLint: 0 errors ✅
+- Git: d1b5e0e成功
