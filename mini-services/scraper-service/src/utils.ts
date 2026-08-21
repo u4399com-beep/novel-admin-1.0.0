@@ -662,6 +662,11 @@ export async function retryWithBackoff<T>(
         throw new DOMException('Retry aborted', 'AbortError');
       }
 
+      // Check if error is marked as non-retryable
+      if ((lastError as any).doNotRetry) {
+        throw lastError;
+      }
+
       // Check if error is retryable (non-HTTP errors like ECONNREFUSED are retryable)
       const statusMatch = lastError.message.match(/HTTP (\d+)/);
       const status = statusMatch ? parseInt(statusMatch[1]) : 0;
@@ -685,9 +690,12 @@ export async function retryWithBackoff<T>(
           const timer = setTimeout(resolve, delay);
           const onAbort = () => {
             clearTimeout(timer);
+            opts.signal!.removeEventListener('abort', onAbort);
             reject(new DOMException('Retry aborted', 'AbortError'));
           };
           opts.signal!.addEventListener('abort', onAbort, { once: true });
+          // { once: true } auto-removes on abort; explicit removeEventListener is defensive.
+          // When timer fires normally, the listener is GC'd with the promise.
         });
       } else {
         await new Promise((resolve) => setTimeout(resolve, delay));

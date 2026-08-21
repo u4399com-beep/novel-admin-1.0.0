@@ -603,7 +603,9 @@ class PlaywrightEngine implements ScrapingEngine {
 
           const html = await page.content();
           if (html.length > MAX_RESPONSE_SIZE) {
-            throw new Error(`Playwright page content too large: ${html.length} bytes (max 10MB)`);
+            const pwSizeErr = new Error(`Playwright page content too large: ${html.length} bytes (max 10MB)`);
+            (pwSizeErr as any).doNotRetry = true;
+            throw pwSizeErr;
           }
           const finalUrl = page.url();
 
@@ -762,7 +764,9 @@ class FirecrawlEngine implements ScrapingEngine {
         };
 
         if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
-          throw new Error(`Firecrawl HTML too large: ${data.html.length} bytes`);
+          const fcSizeErr = new Error(`Firecrawl HTML too large: ${data.html.length} bytes`);
+          (fcSizeErr as any).doNotRetry = true;
+          throw fcSizeErr;
         }
 
         if (!data.success && data.error) {
@@ -1051,7 +1055,9 @@ class CloudBrowserEngine implements ScrapingEngine {
           };
 
           if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
-            throw new Error(`Steel API HTML too large: ${data.html.length} bytes`);
+            const steelSizeErr = new Error(`Steel API HTML too large: ${data.html.length} bytes`);
+            (steelSizeErr as any).doNotRetry = true;
+            throw steelSizeErr;
           }
 
           if (data.error) {
@@ -1097,7 +1103,9 @@ class CloudBrowserEngine implements ScrapingEngine {
           };
 
           if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
-            throw new Error(`Browserless response too large: ${data.html.length} bytes`);
+            const blSizeErr = new Error(`Browserless response too large: ${data.html.length} bytes`);
+            (blSizeErr as any).doNotRetry = true;
+            throw blSizeErr;
           }
 
           if (data.error) {
@@ -1191,7 +1199,9 @@ class ScraplingEngine implements ScrapingEngine {
 
           const html = data.html || "";
           if (html.length > MAX_RESPONSE_SIZE) {
-            throw new Error(`Scrapling HTML too large: ${html.length} bytes`);
+            const scSizeErr = new Error(`Scrapling HTML too large: ${html.length} bytes`);
+            (scSizeErr as any).doNotRetry = true;
+            throw scSizeErr;
           }
 
           scraplingBreaker.recordSuccess();
@@ -1405,28 +1415,33 @@ class ObscuraEngine implements ScrapingEngine {
 
           // Block resources by type + SSRF protection (single unified route handler)
           await page.route("**/*", (route) => {
-            const resourceType = route.request().resourceType();
-            const routeUrl = route.request().url();
+            try {
+              const resourceType = route.request().resourceType();
+              const routeUrl = route.request().url();
 
-            // Block images, fonts, media, stylesheets for speed
-            if (["image", "font", "media", "stylesheet"].includes(resourceType)) {
-              route.abort();
-              return;
-            }
-
-            // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
-            if (!routeUrl.startsWith("http://") && !routeUrl.startsWith("https://")) {
-              if (["document", "xhr", "fetch"].includes(resourceType)) {
+              // Block images, fonts, media, stylesheets for speed
+              if (["image", "font", "media", "stylesheet"].includes(resourceType)) {
                 route.abort();
                 return;
               }
-            }
-            if (["document", "xhr", "fetch"].includes(resourceType) && !isSafeUrl(routeUrl)) {
-              route.abort();
-              return;
-            }
 
-            route.continue();
+              // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
+              if (!routeUrl.startsWith("http://") && !routeUrl.startsWith("https://")) {
+                if (["document", "xhr", "fetch"].includes(resourceType)) {
+                  route.abort();
+                  return;
+                }
+              }
+              if (["document", "xhr", "fetch"].includes(resourceType) && !isSafeUrl(routeUrl)) {
+                route.abort();
+                return;
+              }
+
+              route.continue();
+            } catch (routeErr) {
+              // If route handling fails (e.g., request cancelled), abort to prevent hang
+              try { route.abort(); } catch { /* already handled */ }
+            }
           });
 
           // Navigate with stealth
@@ -1554,9 +1569,11 @@ class ObscuraEngine implements ScrapingEngine {
 
           const html = await page.content();
           if (html.length > MAX_RESPONSE_SIZE) {
-            throw new Error(
+            const sizeErr = new Error(
               `Obscura page content too large: ${html.length} bytes (max 10MB)`
             );
+            (sizeErr as any).doNotRetry = true; // Same page will always be too large, retrying wastes time
+            throw sizeErr;
           }
           const finalUrl = page.url();
 

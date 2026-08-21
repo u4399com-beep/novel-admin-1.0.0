@@ -37,6 +37,7 @@ class SessionManager {
   private maxSessionAge: number = 24 * 60 * 60 * 1000;            // 24 hours
   private maxSessionUsage: number = 50;                              // recycle after 50 uses
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private sessionCounter: number = 0; // Monotonic counter for unique session IDs
 
   constructor() {
     // Auto-cleanup every 30 minutes
@@ -113,10 +114,22 @@ class SessionManager {
       }
     }
 
-    // Create a new session
-    const sessionId = `sess_${domain}_${Date.now()}`;
-    const fingerprint = getProfileForDomain(domain);
-    const cookieHeader = cookieJar.getCookieHeader(domain, '/');
+    // Create a new session (use monotonic counter to prevent same-millisecond collision)
+    const sessionId = `sess_${domain}_${Date.now()}_${++this.sessionCounter}`;
+    let fingerprint;
+    let cookieHeader = '';
+    try {
+      fingerprint = getProfileForDomain(domain);
+    } catch {
+      // Fallback: use a default profile if stealth module fails
+      fingerprint = { userAgent: '', screenWidth: 1920, screenHeight: 1080, colorDepth: 24, pixelRatio: 1, timezone: 'Asia/Shanghai', languages: ['zh-CN', 'en-US'], platform: 'Win32', hardwareConcurrency: 8, deviceMemory: 8 } as any;
+    }
+    try {
+      cookieHeader = cookieJar.getCookieHeader(domain, '/');
+    } catch {
+      // Cookie jar failure is non-fatal; proceed with empty cookies
+      cookieHeader = '';
+    }
 
     const session: InternalSession = {
       id: sessionId,

@@ -59,7 +59,7 @@ import { handleScrapeContent } from "./src/scrapers";
 import { handleClean } from "./src/cleaning";
 import { handleDownloadCover } from "./src/scrapers";
 import { handleGenerateRule, handlePreviewPage } from "./src/ai-rule-generator";
-import { executeTask, recoverStaleTasks, detectStuckTasks } from "./src/task-engine";
+import { executeTask, recoverStaleTasks, detectStuckTasks, progressThrottleCleanupTimer } from "./src/task-engine";
 import { getQueueStats, cleanupQueue, requeueFailed, clearTaskQueue } from "./src/queue";
 import { proxyManager } from "./src/proxy-manager";
 import { getCaptchaStrategies } from "./src/captcha-strategy";
@@ -571,7 +571,7 @@ export function startServer(port: number = 3099) {
         // ==================== Quality Stats (GET, before POST-only gate) ====================
 
         if (path === "/quality/recent" && method === "GET") {
-          const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "10", 10)));
+          const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "10", 10) || 10));
           const reports = qualityScorer.getRecentReports(limit);
           return Response.json({ reports }, {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1263,7 +1263,12 @@ if (process.env.DEBUG === "true") {
 }
 
 // Recover any stale tasks from previous crashes before starting server
-const recovered = await recoverStaleTasks();
+let recovered = 0;
+try {
+  recovered = await recoverStaleTasks();
+} catch (err) {
+  console.error("[Startup] recoverStaleTasks failed (non-blocking):", err);
+}
 if (recovered > 0) {
   console.log(`[Startup] Recovered ${recovered} stale tasks`);
 }
@@ -1272,7 +1277,7 @@ startServer(PORT);
 
 // Periodic stuck-task detection (every 2 minutes)
 const STUCK_DETECT_INTERVAL_MS = 2 * 60 * 1000;
-setInterval(async () => {
+const stuckDetectInterval = setInterval(async () => {
   try {
     const count = await detectStuckTasks();
     if (count > 0) {
@@ -1309,6 +1314,8 @@ const shutdown = async (signal: string) => {
   requestFingerprintMgr.destroy();
   sessionManager.destroy();
   clearInterval(terminateTimer); // Clear force-terminate timer regardless
+  clearInterval(stuckDetectInterval); // Clear stuck-detection interval
+  clearInterval(progressThrottleCleanupTimer); // Clear progress throttle cleanup
   console.log(`[${new Date().toISOString()}] Active tasks: ${activeTasks.size}, Engines closed. Exiting.`);
 
   process.exit(0);

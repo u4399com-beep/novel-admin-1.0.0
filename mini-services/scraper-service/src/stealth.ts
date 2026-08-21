@@ -372,6 +372,8 @@ export function clearDomainUACache(domain?: string): void {
  * 46. matchMedia prefers-color-scheme / prefers-reduced-motion consistency
  * 47. WebGL Shader Precision (getShaderPrecisionFormat zero-range fix)
  * 48. Navigator Connection API (network info consistency)
+ * 49. Permissions API consistency (geolocation/notifications/camera/microphone)
+ * 50. Document.hasFocus() initial state (headless reports false)
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -1878,6 +1880,40 @@ export function getStealthScript(profile: FingerprintProfile): string {
           });
         } catch(e) {}
       }
+    }
+  } catch(e) {}
+
+  // Section 49: Permissions API consistency
+  // Headless browsers may return different permission states.
+  // Ensure geolocation, notifications, camera, microphone return consistent 'prompt'.
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      var _origPermissionsQuery = navigator.permissions.query.bind(navigator.permissions);
+      var _permOverrides = {
+        'geolocation': 'prompt',
+        'notifications': 'prompt',
+        'camera': 'prompt',
+        'microphone': 'prompt',
+      };
+      navigator.permissions.query = function(descriptor) {
+        var name = typeof descriptor === 'object' ? descriptor.name : String(descriptor);
+        if (_permOverrides.hasOwnProperty(name)) {
+          return Promise.resolve({ state: _permOverrides[name], onchange: null });
+        }
+        return _origPermissionsQuery(descriptor);
+      };
+    }
+  } catch(e) {}
+
+  // Section 50: Document.hasFocus() initial state
+  // Real browser tabs start with focus. Headless may report false.
+  try {
+    if (!document.hasFocus()) {
+      Object.defineProperty(document, 'hasFocus', {
+        value: function() { return true; },
+        writable: true,
+        configurable: true,
+      });
     }
   } catch(e) {}
 

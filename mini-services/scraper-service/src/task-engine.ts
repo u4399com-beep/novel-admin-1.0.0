@@ -342,7 +342,7 @@ export async function executeTask(taskId: string) {
   // Clear any previous queue data for this task
   await clearTaskQueue(taskId);
 
-  const threadCount = Math.min(rule.threadCount || 3, 10);
+  const threadCount = Math.max(1, Math.min(rule.threadCount || 3, 10));
   const isIncremental = (task.mode || rule.scrapeMode) === "incremental";
   const dedupMode = rule.dedupMode || "url";
 
@@ -1032,11 +1032,16 @@ async function executeTaskBody(
     console.error(`[Task ${taskId}] Failed to mark task as completed (will be recovered by stuck detection):`, err);
   }
 
-  await addTaskLog(
-    taskId,
-    "success",
-    `任务完成! [引擎:${engineType}] 新建小说: ${newBooksCount.value}, 新建章节: ${newChaptersCount.value}, 跳过: ${skippedBooksCount.value + skippedChaptersCount.value}, 失败: ${failedItemsCount.value}`
-  );
+  // Final task log (non-critical — must not affect task success status)
+  try {
+    await addTaskLog(
+      taskId,
+      "success",
+      `任务完成! [引擎:${engineType}] 新建小说: ${newBooksCount.value}, 新建章节: ${newChaptersCount.value}, 跳过: ${skippedBooksCount.value + skippedChaptersCount.value}, 失败: ${failedItemsCount.value}`
+    );
+  } catch (err) {
+    console.error(`[Task ${taskId}] Failed to write final task log (non-critical):`, err);
+  }
 
   console.log(`[Task ${taskId}] Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
 

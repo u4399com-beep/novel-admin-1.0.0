@@ -13704,3 +13704,243 @@ Stage Summary:
 - 累计: 286项
 - ESLint: 0 errors ✅
 - Git: d1b5e0e成功
+---
+Task ID: R29-a
+Agent: Code Auditor
+Task: 深度审计 utils/advisor/behavior/fingerprint (24个新角度)
+
+## 审计范围
+- utils.ts (HTTP头构建/UA旋转/重试/重定向) — 6角度
+- anti-crawl-advisor.ts (反爬策略建议) — 6角度
+- browser-behavior.ts (浏览器行为模拟) — 6角度
+- request-fingerprint.ts (请求指纹追踪) — 6角度
+
+## 审计结果
+
+### 1. utils.ts
+
+**(a) buildFetchHeaders: Accept-Language与UA一致性**
+- 审计结论: ✅ 确认正确
+- 分析: Accept-Language优先级链为 explicit > domain-consistent > UA-consistent > random。当domain已知时优先使用`getAcceptLanguageForDomain(domain)`保证同域一致性，这是合理的设计选择。实测86个UA均不含语言标识(如zh-CN)，`getAcceptLanguageForUA()`对内置UA池总是回退到`getRandomAcceptLanguage()`，`UA_LANG_MAP`仅对含语言标识的自定义UA生效。
+
+**(b) getRandomUA: UA池重复条目验证**
+- 审计结论: ✅ 确认正确
+- 分析: 运行时验证: 86个UA，86个唯一，0重复。Safari macOS 8个(5 Intel + 3 ARM)，所有跨family UA均因浏览器标识不同而唯一。
+
+**(c) retryWithBackoff: AbortSignal在重试间的处理**
+- 审计结论: [LOW] AbortSignal事件监听器泄漏
+- 描述: 第683-694行，每次重试的backoff delay都会通过`addEventListener('abort', onAbort, { once: true })`注册监听器。如果timer先于abort触发，`onAbort`监听器不会被自动移除(因为`once`仅在触发时移除)。经过maxRetries次重试后，可能残留多个无用监听器附加在AbortSignal上。
+- 影响: 每次重试泄漏1个监听器(默认3次=3个)。实际影响很小(信号对象通常随请求GC)。
+- 修复方案:
+```typescript
+// 第683-694行改为:
+await new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(() => {
+    opts.signal!.removeEventListener('abort', onAbort);
+    resolve();
+  }, delay);
+  const onAbort = () => {
+    clearTimeout(timer);
+    reject(new DOMException('Retry aborted', 'AbortError'));
+  };
+  opts.signal!.addEventListener('abort', onAbort, { once: true });
+});
+```
+
+**(d) followRedirects: maxRedirects=5上限绕过风险**
+- 审计结论: ✅ 确认正确
+- 分析: 双重保护: (1) `hop < maxRedirects`硬上限(第1057行); (2) `visitedUrls` Set检测循环重定向(第1072-1074行)。虽然query参数变化(如`?t=1`→`?t=2`)可绕过Set检测，但hop上限仍有效。
+
+**(e) getSecFetchHeadersForDomain: 非标准域名处理**
+- 审计结论: ✅ 确认正确
+- 分析: IP地址(`https://192.168.1.1/`)、`.local`、`.internal`域名均能被`new URL()`正确解析。空字符串domain被第451行`if (!isSameOrigin && domain)`守卫跳过。非法referer被第443/458行try-catch捕获。
+
+**(f) getAcceptLanguageForUA: UA含zh-CN但返回en-US**
+- 审计结论: ✅ 确认正确
+- 分析: 实测86个UA均不含`zh-CN`/`en-US`等语言标识。若自定义UA含`zh-CN`，`/zh-[CNcn]/`正则会匹配并从专用中文pool返回(第232-240行，6个变体全部以`zh-CN`开头)，不会返回en-US。
+
+### 2. anti-crawl-advisor.ts
+
+**(a) recordFailure: 短时间多次调用是否过度降级**
+- 审计结论: ✅ 确认正确
+- 分析: `recordFailure`(第185-189行)仅递增`totalRequests`和更新`lastActivity`，不修改任何检测计数器(captchaCount/blockCount等)。过度降级由`recordDetection`触发，与`recordFailure`独立。
+
+**(b) 所有策略已执行是否死循环**
+- 审计结论: ✅ 确认正确
+- 分析: 12条推荐规则均检查当前配置是否已包含该策略。例如Rule 3检查`if (currentEngine === 'cheerio')`(第492行)，Rule 6检查`if (!config.proxyRotation)`(第565行)。所有策略已启用时，`recommendations`为空数组，caller应识别为"无更多建议"停止升级。
+
+**(c) 域名状态TTL/过期清理: 长时间运行OOM风险**
+- 审计结论: [LOW] 部分累积计数器永不衰减
+- 描述: `cleanup()`(第794-811行)会清理超过30分钟的非活跃域(若totalRequests=0)或超过24小时的域，并修剪timestamp数组。但有5个累积计数器永不衰减: `fingerprintDetectCount`、`jsChallengeCount`、`redirectCount`、`slowResponseCount`、`emptyContentCount`。`gatherSignals()`对jsChallengeCount检查`if (history.jsChallengeCount > 0)`(第285行)产生severity='high'信号——即使该JS challenge发生在数小时前且此后一切正常。`emptyContentCount/totalRequests`比率会随成功请求逐渐自纠，但fingerprintDetectCount和jsChallengeCount的固定阈值不会。
+- 影响: 可能对已解决的临时问题产生过期推荐。MAX_DOMAINS=200上限防止OOM。
+- 修复方案: 在`cleanup()`中为无timestamp数组的计数器添加衰减逻辑:
+```typescript
+// 在cleanup()的trim timestamps之后添加:
+// Decay non-timestamped counters for long-inactive domains
+if (now - h.lastActivity > THIRTY_MINUTES) {
+  h.fingerprintDetectCount = Math.floor(h.fingerprintDetectCount * 0.5);
+  h.jsChallengeCount = Math.floor(h.jsChallengeCount * 0.5);
+  h.redirectCount = Math.floor(h.redirectCount * 0.5);
+  h.slowResponseCount = Math.floor(h.slowResponseCount * 0.5);
+}
+```
+
+**(d) recordDetection: 不同类型权重是否合理**
+- 审计结论: ✅ 确认正确
+- 分析: 隐式权重通过severity阈值实现: captcha阈值>3→high(第236行)，block阈值>3→high(第249行)，rate_limit阈值>5→high(第262行)。JS challenge始终high(第291行)。redirect类型虽被记录但不在gatherSignals中生成信号(合理——重定向不一定是反爬检测)。
+
+**(e) 线程安全: 并发recordSuccess/recordFailure**
+- 审计结论: ✅ 确认正确
+- 分析: Node.js单线程事件循环保证同步操作原子性。`recordSuccess`/`recordFailure`/`recordDetection`均为纯同步方法(无await)，不存在并发交错。
+
+**(f) 首次请求就失败时的行为**
+- 审计结论: ✅ 确认正确
+- 分析: `recordFailure`创建history(totalRequests=1, successRequests=0)。`analyze()`中`gatherSignals`检查`if (history)`(第228行)守卫所有history相关信号。单次失败不会触发任何推荐(Rule 3需blockCount>3，Rule 6需count>5)。threatLevel返回'minimal'。
+
+### 3. browser-behavior.ts
+
+**(a) shouldThrottle: 域名首次访问冷启动问题**
+- 审计结论: ✅ 确认正确
+- 分析: 首次访问时创建空record(`timestamps: []`)，过滤后仍为空，`0 >= MAX_VISITS_PER_10S(3)`为false，返回`{ throttled: false }`。
+
+**(b) recordRequest: 访问间隔分布是否过于均匀**
+- 审计结论: [LOW] Pre-visit delay使用uniform jitter而非长尾分布
+- 描述: `getPreVisitDelay`(第125-138行)使用`jitterFactor = 0.8 + Math.random() * 0.4`(±20% uniform jitter)。真实人类阅读间隔遵循log-normal长尾分布。`maybeHumanBreak`(第175-183行)每5-10请求添加8-15s暂停，增加了一定长尾特征，但基础间隔仍较均匀。高级行为分析系统(如Cloudflare Bot Management)可能通过间隔分布熵值检测。
+- 影响: 低——大多数反爬系统不分析间隔分布的统计特征。
+- 修复方案(可选优化): 将uniform jitter替换为log-normal:
+```typescript
+// Box-Muller变换生成高斯随机数
+const gaussRandom = () => {
+  const u1 = Math.random(), u2 = Math.random();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+};
+const jitterFactor = Math.exp(0 + 0.3 * gaussRandom()); // log-normal, median=1, CV≈30%
+```
+
+**(c) 页面停留时间模拟: scrollDepth/click模拟**
+- 审计结论: ✅ 确认正确 (by design)
+- 分析: 文件明确标注"navigation level"行为模拟。scrollDepth/click/mouseMove等in-page交互由stealth.ts中的Playwright/Obscura引擎注入处理，不属于HTTP层模拟范畴。
+
+**(d) shouldThrottle的waitMs是否可能返回负数或0**
+- 审计结论: ✅ 确认正确
+- 分析: 第90行`filter(ts => now - ts < VISIT_WINDOW_MS)`保证`oldest`满足`now - oldest < 10000`，因此`oldest + 10000 - now > 0`，加100ms buffer后仍>0。`Math.max(waitMs, 500)`额外保证最小500ms。
+
+**(e) 多域名并发: 行为是否独立**
+- 审计结论: ✅ 确认正确
+- 分析: Per-domain独立: `shouldThrottle`/`recordRequest`/`maybeVisitEntryPage`均操作domain-specific数据。Global共享: `globalRequestCount`和`maybeHumanBreak`跨域共享——这模拟了人类用户不区分站点的自然休息行为，设计合理。
+
+**(f) resetDomain: 是否正确清理所有相关状态**
+- 审计结论: ✅ 基本正确
+- 分析: 无`resetDomain`方法，仅有`reset()`清理全部状态。`evictIfNeeded()`(第67-76行)在Map满时删除最旧插入的域(但非特定域)。`MAX_TRACKED_DOMAINS=500`限制内存增长。每个entry仅含`timestamps[]`(被shouldThrottle实时修剪)和`totalVisits`(number)，500个entry内存可忽略。缺少per-domain重置是功能缺失而非bug。
+
+### 4. request-fingerprint.ts
+
+**(a) create: requestId唯一性碰撞风险**
+- 审计结论: ✅ 确认正确
+- 分析: `generateHexId`使用`crypto.getRandomValues()`(CSPRNG)。8字节=64位熵，空间16^8≈43亿。按birthday paradox，1000个并发请求碰撞概率≈0.012%。2分钟过期机制进一步降低同时存在的ID数量。
+
+**(b) complete: 未调用的请求是否内存泄漏**
+- 审计结论: ✅ 确认正确
+- 分析: 第47-53行设置`setInterval`每2分钟调用`cleanup()`。`cleanup()`(第185-218行)移除`timestamp < now - 2min`的指纹，并清理`domainFpIds`中已不存在的requestId。异常退出的请求在2分钟内被自动清理。
+
+**(c) getStats: 大量请求时统计数据性能**
+- 审计结论: ✅ 确认正确
+- 分析: `getStats()`迭代`domainFpIds`(第171行)， bounded by cleanup(2分钟过期)。`getDomainFingerprints`遍历全部指纹O(N)但N有界。`getAllRecentFingerprints`排序O(N log N)但N有界。正常负载下(<1000并发)性能无忧。
+
+**(d) 请求超时未complete: 定时清理机制**
+- 审计结论: ✅ 确认正确
+- 分析: 构造函数中`setInterval(cleanup, 2min)`(第47-53行)确保超时/崩溃/abort的请求在2分钟内被清理。`FINGERPRINT_EXPIRE_MS = 2min`与清理间隔一致，无间隙。
+
+**(e) fingerprint生成算法可预测/伪造风险**
+- 审计结论: ✅ 确认正确
+- 分析: `crypto.getRandomValues()`为CSPRNG，输出不可预测。`validate()`(第96-116行)三重验证: 存在性+未过期(5min)+并发限制。伪造ID无法通过存在性检查; 重放ID会被过期检查拦截。
+
+**(f) 并发create的Map操作安全性**
+- 审计结论: ✅ 确认正确
+- 分析: `create()`为纯同步方法(无await)，在Node.js单线程模型中不会与其它`create()`调用交错。`recentFingerprints.set()`和`domainFpIds.set()`在同一微任务中连续执行。
+
+## 汇总
+
+- 总计 22/24 确认正确
+- 2个LOW级别发现:
+
+### 修复清单(按优先级排序)
+1. **[LOW] retryWithBackoff AbortSignal监听器泄漏** (utils.ts:683-694) — timer触发时需removeEventListener
+2. **[LOW] anti-crawl-advisor累积计数器永不衰减** (anti-crawl-advisor.ts:794-811) — fingerprintDetectCount/jsChallengeCount等无timestamp的计数器需在cleanup中衰减
+3. **[LOW] browser-behavior pre-visit delay分布过于均匀** (browser-behavior.ts:131) — uniform ±20% jitter可优化为log-normal(可选，当前足够)
+
+### 修改的文件列表(如需修复)
+- mini-services/scraper-service/src/utils.ts
+- mini-services/scraper-service/src/anti-crawl-advisor.ts
+
+## 验证结果
+- UA池去重: 86 UAs, 86 unique, 0 duplicates ✅
+- UA语言标识: 0/86 UAs含语言hint (UA_LANG_MAP仅对自定义UA生效) ✅
+
+Stage Summary:
+- 24个审计角度, 22确认正确, 2 LOW发现
+- 关键结论: 4个文件整体质量高，无HIGH/MEDIUM bug
+- LOW问题: AbortSignal listener leak(3次/请求); 累积计数器不衰减; delay分布均匀
+- 累计: 286项(无新增修复)
+---
+Task ID: R29-b
+Title: session/task/api/obscura 代码审计
+Date: 2025-07-10
+
+## 审计范围
+
+| 文件 | 路径 | 审计行数 |
+|------|------|----------|
+| session-manager.ts | `mini-services/scraper-service/src/session-manager.ts` | 全文 349 行 |
+| task-engine.ts | `mini-services/scraper-service/src/task-engine.ts` | 全文 1117 行 |
+| index.ts | `mini-services/scraper-service/index.ts` | 全文 1341 行 |
+| engines.ts (ObscuraEngine) | `mini-services/scraper-service/src/engines.ts` | L1224–1669 |
+
+## 审计结果
+
+### session-manager.ts
+
+session-manager: 并发安全 → ✅正确
+session-manager: 资源泄漏 → ✅正确
+session-manager: 错误处理完整性 → [MEDIUM] acquireSession() 调用 getProfileForDomain / cookieJar.getCookieHeader 无 try-catch，若 stealth 或 cookie-jar 模块抛异常将直接中断调用方
+session-manager: 边界条件 → [MEDIUM] sessionId 使用 `sess_${domain}_${Date.now()}` 生成，同域名同毫秒并发调用产生相同 ID，后写入的 session 覆盖先写入的（Map.set 语义），导致第一个 session 丢失
+session-manager: 数据一致性 → ✅正确
+
+### task-engine.ts
+
+task-engine: 并发安全 → ✅正确
+task-engine: 资源泄漏 → [MEDIUM] progressThrottleCleanupTimer（模块级 setInterval，行145）永不清理；进程生命周期内持续运行且未在 graceful shutdown 中清除
+task-engine: 错误处理完整性 → [MEDIUM] executeTaskBody 最终 addTaskLog（行1035）未包裹 try-catch，若日志 API 不可用将抛出异常，导致已成功完成的任务被 index.ts 的 .catch() 标记为 failed
+task-engine: 边界条件 → [MEDIUM] threadCount = Math.min(rule.threadCount \|\| 3, 10) 未做下限保护；若 rule.threadCount 为负数（如 -1），Math.min(-1, 10) = -1，worker 循环不执行，静默跳过所有书籍/章节处理
+task-engine: 数据一致性 → ✅正确
+
+### index.ts
+
+index: 并发安全 → ✅正确
+index: 资源泄漏 → [MEDIUM] stuckDetectInterval（行1275 的 setInterval）在 graceful shutdown 中未清理；terminateTimer（行1318）虽在 shutdown() 中清理，但 stuckDetectInterval 无对应 clearInterval，可能延迟 process.exit
+index: 错误处理完整性 → [MEDIUM] 启动时 recoverStaleTasks()（行1266）无 try-catch，若主应用 API 服务尚未就绪将抛异常并阻止 scraper-service 启动
+index: 边界条件 → [MEDIUM] /quality/recent 端点的 limit 参数（行574）若为非数字字符串，parseInt 返回 NaN，Math.min(50, Math.max(1, NaN)) = NaN 传入 getRecentReports 可能异常
+index: 数据一致性 → ✅正确
+
+### engines.ts — ObscuraEngine (L1224–1669)
+
+obscura: 并发安全 → ✅正确
+obscura: 资源泄漏 → ✅正确
+obscura: 错误处理完整性 → [MEDIUM] page.route("**/*", callback) 回调内未包裹 try-catch，若 route.request() 抛异常（如请求被取消时），可能导致页面导航挂起直到 timeout
+obscura: 边界条件 → [MEDIUM] MAX_RESPONSE_SIZE 超限错误（行1556-1559）会被 retryWithBackoff 重试，但同一大页面每次重试必然再次超限，白白消耗所有重试次数（maxRetries=2）
+obscura: 数据一致性 → [MEDIUM] requestFingerprint 在成功路径上提前 complete（行1617 标记 true），若之后 CAPTCHA 检测（行1600）抛出异常，指纹记录为成功但实际结果为失败，导致统计数据偏差
+
+## 修复清单
+
+| # | 严重度 | 文件 | 修复内容 |
+|---|--------|------|----------|
+| 1 | MEDIUM | session-manager.ts L117 | sessionId 生成追加随机后缀或计数器（如 `sess_${domain}_${Date.now()}_${++counter}`）避免同毫秒 ID 碰撞 |
+| 2 | MEDIUM | session-manager.ts L118-119 | acquireSession() 内 getProfileForDomain / cookieJar.getCookieHeader 调用加 try-catch，失败时回退默认 UA / 空 cookies |
+| 3 | MEDIUM | task-engine.ts L1035 | 最终 addTaskLog 包裹 try-catch，日志失败不影响任务成功状态 |
+| 4 | MEDIUM | task-engine.ts L345 | threadCount 加下限：`Math.max(1, Math.min(rule.threadCount \|\| 3, 10))` |
+| 5 | MEDIUM | task-engine.ts L145 | 导出 progressThrottleCleanupTimer 句柄，在 graceful shutdown 或 closeAllEngines 时 clearInterval |
+| 6 | MEDIUM | index.ts L1275 | 将 stuckDetectInterval 赋值给变量，在 shutdown() 函数内 clearInterval；同时 L1266 recoverStaleTasks() 加 try-catch |
+| 7 | MEDIUM | index.ts L574 | limit 参数加 NaN 保护：`const limit = parseInt(...) \|\| 10`，确保 parseInt 失败时使用默认值 |
+| 8 | MEDIUM | engines.ts L1407 | page.route 回调内加 try-catch，异常时 route.abort() 兜底 |
+| 9 | MEDIUM | engines.ts L1556 | MAX_RESPONSE_SIZE 超限时抛出标记性错误（如自定义 Error 子类），retryWithBackoff 对该类错误不重试 |
+| 10 | MEDIUM | engines.ts L1617 | 将 requestFingerprint.complete 移到 return 之前、CAPTCHA 检查之后，或失败时在 catch 中修正记录 |
