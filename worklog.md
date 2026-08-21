@@ -13281,3 +13281,60 @@ Stage Summary:
 - 28个审计角度, 22个确认正确, 6个发现(7修复,含1个DEAD CODE标记)
 - 关键发现: Cloudflare/Geetest策略引擎振荡(可导致无限obscura↔cloud-browser切换); paginatedFetch单页失败丢失全部已采集数据
 - ESLint: 0 errors ✅
+---
+Task ID: R27
+Agent: Main Orchestrator + 2 Sub-agents (R27-a, R27-b) + R27-enhance
+Task: 持续开发审查 — 安全审计(10 SSRF向量) + 深度模块审计 + 反反爬增强(Stealth 45-46)
+
+Work Log:
+- 并行2个审计子代理(R27-a: 安全+新模块4文件/25角度, R27-b: 清理/评分/CAPTCHA/scrapers 4文件/28角度)
+- 直接实现Stealth Section 45-46
+- Git推送: 50ac58e → main 成功
+
+## 审计结果
+
+### R27-a (ssrf/js-content-extractor/http2-decoy/charset-detector)
+- 22/25 确认正确
+- 3修复(2 MEDIUM + 1 LOW):
+  - http2-decoy: Accept-Encoding池含不现实的deflate优先顺序 → Chrome 116+ zstd变体
+  - charset-detector: gb18030声明被GBK频率分析覆盖 → CJK family集尊重声明
+  - charset-detector: 缺少gb2312-80别名 → 添加
+- ssrf.ts 10个SSRF向量全部通过(AWS metadata/IPv6/十六进制/十进制/nip.io/ftp/file/javascript)
+- js-content-extractor 5个角度全部通过
+
+### R27-b (cleaning/quality-scorer/captcha-strategy/scrapers)
+- 22/28 确认正确
+- 7修复(2 MEDIUM + 5 LOW):
+  - captcha-strategy: Cloudflare/Geetest策略导致引擎振荡循环 → STEALTH_ENGINES集检查
+  - scrapers: paginatedFetch无try-catch,单页失败丢失所有数据 → try-catch+graceful break
+  - cleaning: CJK正则缺少ExtA(\u3400-\u4dbf)和Compatibility(\uf900-\ufaff) → 扩展
+  - cleaning: '无弹窗'广告模式缺失 → 添加
+  - captcha-strategy: maxRetries死代码 → @deprecated
+  - scrapers: 封面大小限制20MB→5MB
+  - captcha-strategy: 不可达死代码 → 删除
+
+## 反反爬增强
+- Stealth Section 45: getComputedStyle光标一致性(无头浏览器cursor检测绕过)
+- Stealth Section 46: matchMedia一致性(prefers-color-scheme/reduced-motion/standalone)
+
+## 验证结果
+- ESLint: 0 errors ✅
+- Git push: 50ac58e 成功 ✅
+
+## 修改文件
+- mini-services/scraper-service/src/http2-decoy.ts (zstd Accept-Encoding)
+- mini-services/scraper-service/src/charset-detector.ts (gb18030/gb2312-80)
+- mini-services/scraper-service/src/captcha-strategy.ts (引擎振荡+死代码)
+- mini-services/scraper-service/src/scrapers.ts (try-catch+封面5MB)
+- mini-services/scraper-service/src/cleaning.ts (CJK扩展+无弹窗)
+- mini-services/scraper-service/src/stealth.ts (+52行: Section 45-46)
+
+## 历史累计修复: 270 + 10 = 280项
+
+Stage Summary:
+- 10个bug修复(4 MEDIUM + 6 LOW)
+- 2个新Stealth Section(45-46), 共46个section
+- SSRF安全审计: 10个向量全部通过
+- 累计: 280项
+- ESLint: 0 errors ✅
+- Git: 50ac58e成功
