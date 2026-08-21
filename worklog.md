@@ -13338,3 +13338,304 @@ Stage Summary:
 - 累计: 280项
 - ESLint: 0 errors ✅
 - Git: 50ac58e成功
+---
+Task ID: R28-a
+Agent: Code Auditor (Sub-agent)
+Task: 深度审计 stealth/cookie-jar/queue.pg/rate-limiter — 一致性验证/跨域隔离/死锁可能性/并发安全
+
+Work Log:
+- 读取worklog.md最后100行了解上下文(累计280修复, 46 Stealth sections)
+- 读取4个目标文件全文(stealth.ts 2614行, cookie-jar.ts 357行, queue.pg.ts 375行, rate-limiter.ts 276行)
+- 读取cookie-store.ts(SQLite持久层)和engines.ts(rateLimiter调用点)
+- 22个审计角度逐一分析
+
+## 审计结果
+
+### stealth.ts（6角度）— 4/6 确认正确, 1 MEDIUM + 1 LOW 修复
+
+- (a) _seededRandom和_perfTimingOffset在IIFE顶部的var声明是否覆盖Section 32-46
+  审计结论: ✅ 确认正确 — `_seededRandom`(L1479)和`_perfTimingOffset`(L1480)使用`var`声明在IIFE function scope内。`var`在函数作用域内提升，所有Section(1-46)共享同一IIFE作用域，不存在跨section不可见问题。`_tzOffsetMs`(L1241, Section 25)被Section 32(L1480)引用也是安全的。
+
+- (b) Section 45(getComputedStyle cursor)和Section 46(matchMedia)返回值一致性
+  Section 45 (L1787-1804): **MEDIUM BUG** — 将cursor=='none'或cursor=='default'全部强制改为'auto'。问题：真实浏览器中`<div style="cursor:none">`的getComputedStyle确实返回'none'（这是合法CSS值，用于隐藏光标的自定义光标场景）。强制覆盖为'auto'会制造指纹不一致。高级反爬系统可以创建一个`cursor:none`元素然后检查getComputedStyle是否返回'none'来检测此覆盖。
+  修复方案(L1793-1794): 仅覆盖headless特征值，不覆盖'none'：
+  ```js
+  // 修复: 只覆盖'auto'到'auto'(无操作)，完全移除对'none'的覆盖
+  // headless Chromium不会错误返回'none'，'none'是合法CSS值
+  if (cursor === 'default') {
+    try {
+      Object.defineProperty(style, 'cursor', { get: function() { return 'auto'; }, configurable: true });
+    } catch(e) {}
+  }
+  ```
+  但进一步分析：headless Chromium也不会返回'default'作为异常值。Section 45的整个假设(头显浏览器返回'none'或'default')缺乏依据，最安全的修复是**删除整个Section 45的cursor覆盖逻辑**(L1787-1804)，仅保留getComputedStyle调用以预热缓存。
+
+  Section 46 (L1806-1833): ✅ 确认正确 — `prefers-color-scheme: dark`尊重系统真实设置；`prefers-reduced-motion: reduce: false`合理；`orientation: portrait`基于profile尺寸判断；`display-mode: standalone: false`正确（非PWA）。
+
+- (c) 所有Section中的setTimeout/setInterval是否在页面卸载时清理
+  审计结论: ✅ 确认正确 — IIFE内没有任何setTimeout/setInterval调用。Section 15的MutationObserver和Section 26的capture-phase事件监听器会随页面卸载自动GC。服务端的setInterval在cookie-jar.ts中，不在注入脚本内。
+
+- (d) Section 44(ResizeObserver)的cb参数是否与原生签名一致(entries, observer)
+  审计结论: **LOW BUG** — Section 44(L1775-1781)的ResizeObserver mock只在`typeof ResizeObserver === 'undefined'`时激活（现代Chromium都有，不会触发）。但若被激活：(1)构造函数签名`function(callback)`缺少`options`参数；(2)callback被完全忽略，disconnect也不调用callback。虽然几乎不会触发，但为防御性编程应修正。
+  修复: 不修改（触发概率极低，且mock的目的是"存在性检查"而非功能模拟）。标记为已知限制。
+
+- (e) Section之间的互相依赖/冲突
+  审计结论: **MEDIUM BUG** — Section 4(L621)和Section 30(L1373)都覆盖了`HTMLCanvasElement.prototype.toDataURL`。Section 4先执行，保存原始为`origToDataURL`(L620)并添加1px噪声；Section 30后执行，重新保存原始为`_origToDataURL`(L1372)——但此时`HTMLCanvasElement.prototype.toDataURL`已经是Section 4修改过的版本。因此Section 30的`_origToDataURL`指向Section 4的noise版本，导致Section 30的toDataURL调用`_origToDataURL.call()`时会产生双重噪声（Section 30的seed噪声 + Section 4的随机1px噪声）。同理，toBlob也被双重覆盖(Section 4 L635 vs Section 30 L1398)。
+  修复方案: **删除Section 4(L618-646)的toDataURL/toBlob覆盖**，因为Section 30提供了更优的seed确定性噪声（跨页面加载一致）和getImageData噪声（Section 21 L1122-1133）。Section 4是早期简单实现，被后续Section完全取代。
+
+- (f) IIFE内的异常处理：单个Section的异常是否会阻止后续Section执行
+  审计结论: ✅ 确认正确 — 每个Section(3-46)都用`try { ... } catch(e) {}`包裹。Section 1-2（Navigator/Chrome override）虽然未包裹try-catch，但它们是基础的Object.defineProperty操作，在Playwright注入环境中不会抛出。即使Section 1抛出，由于是同步执行，后续Section仍会被try-catch保护。
+
+### cookie-jar.ts（6角度）— 4/6 确认正确, 1 MEDIUM + 1 LOW 修复
+
+- (a) getCookie/setCookie是否正确按domain隔离(cookies不跨域泄漏)
+  审计结论: ✅ 确认正确 — `cookies` Map以domain为key(L33)。`store()`(L131)按domain存储到对应list。`get()`(L174)按domain获取对应list。Cookie解析时(L54-67)如果Set-Cookie包含`Domain=`属性，会使用该domain（可能是父域名如example.com），但存储时以解析后的cookie.domain为key，不会泄漏到其他domain的list中。
+
+- (b) domain匹配逻辑: .example.com是否能匹配sub.example.com
+  审计结论: **MEDIUM BUG** — `isCookieMatch`(L104)的domain匹配逻辑本身是正确的（子域名可以匹配父域cookie）。但`get()`(L174-175)有一个关键问题：cookies按**解析后的cookie.domain**存入Map，而不是按请求的domain。当`Set-Cookie: sid=abc; Domain=example.com`从`www.example.com`收到时，cookie.domain变为`example.com`，存储到`cookies.get('example.com')`。但后续从`www.example.com`发请求时调用`get('www.example.com')`(L175)，此时`cookies.get('www.example.com')`可能为空（如果从未直接对example.com发过请求），导致**父域cookie对子域请求不可见**。
+  修复方案(L174-179): get()应同时检查精确匹配和父域匹配：
+  ```ts
+  get(domain: string, path: string = '/'): Array<{ name: string; value: string }> {
+    const matched: Array<{ name: string; value: string }> = [];
+    // 检查精确domain和所有可能的父域
+    const parts = domain.toLowerCase().split('.');
+    for (let i = 0; i < parts.length; i++) {
+      const candidate = parts.slice(i).join('.');
+      const cookies = this.cookies.get(candidate);
+      if (cookies) {
+        matched.push(...cookies
+          .filter(c => this.isCookieMatch(c, domain, path))
+          .map(c => ({ name: c.name, value: c.value })));
+      }
+    }
+    if (matched.length > 0) this.lastActivity.set(domain, Date.now());
+    return matched;
+  }
+  ```
+
+- (c) path属性是否被正确处理(只对指定path及子路径返回cookie)
+  审计结论: ✅ 确认正确 — `isCookieMatch`(L116-120)正确实现了RFC 6265 path匹配：cookie path必须是请求path的前缀。特殊处理了`/`（匹配所有路径）。path末尾的`/`处理也正确。
+
+- (d) httpOnly/secure标志是否在发送时被尊重
+  审计结论: ✅ 确认正确 — `get()`(L174-179)返回`{name, value}`不包含httpOnly/secure标志。这些标志在`store()`时正确解析并存入StoredCookie，但在`get()`/`getCookieHeader()`中只发送name=value（符合HTTP Cookie header规范——httpOnly/secure是服务端指令，不影响客户端发送）。注：secure标志在发送时应在HTTP请求中不发送secure cookie，但此项目所有请求都通过HTTPS，实际不影响。
+
+- (e) expire时间清理：过期cookie是否被及时移除
+  审计结论: ✅ 确认正确 — 过期cookie在两个层面处理：(1) `isCookieMatch`(L123-125)在获取时过滤过期cookie（惰性清理）；(2) `cleanup()`(L310-327)每5分钟执行一次定期清理(L347-356)；(3) `getStats()`(L249-250)也过滤过期cookie。对于小说采集场景（每域几十个cookie），5分钟清理间隔完全足够。
+
+- (f) SQLite并发写入：WAL模式下多个worker同时setCookie是否有数据竞争
+  审计结论: ✅ 确认正确 — cookie-store.ts(L19)设置了`PRAGMA journal_mode = WAL`（Write-Ahead Logging），允许多个reader和一个writer并发。L21设置了`PRAGMA busy_timeout = 5000`，当多个Bun worker（单进程多协程）同时写SQLite时，会自动等待最多5秒获取锁。Bun:sqlite的upsert(L47-69)使用`this.db.transaction()`包装，确保批量写入的原子性。在Bun单进程模型下，多个async函数通过事件循环调度，SQLite的busy_timeout足以处理短暂的锁竞争。
+
+### queue.pg.ts（5角度）— 4/5 确认正确, 1 LOW 修复
+
+- (a) claimNextTask(dequeue)的SELECT FOR UPDATE SKIP LOCKED是否有超时/死锁风险
+  审计结论: ✅ 确认正确 — `FOR UPDATE SKIP LOCKED`(L155, L169)是PostgreSQL的标准并发模式。`SKIP LOCKED`意味着如果行被其他事务锁定，直接跳过而不是等待，因此**不会死锁**。如果所有行都被锁定，返回空结果。postgres.js库(L10)默认的`connect_timeout: 10`(L28)处理连接超时。没有设置`statement_timeout`，但`FOR UPDATE SKIP LOCKED`本身不阻塞，所以不需要。
+
+- (b) requeueStaleInProgress与正常claim之间是否有竞态
+  审计结论: ✅ 确认正确 — `requeueStaleInProgress`(L346-355)使用`UPDATE ... SET status = 'pending' WHERE status = 'in_progress' AND updated_at < cutoff`。这是一个原子操作。与`dequeue`的`UPDATE ... SET status = 'in_progress' WHERE id = (SELECT ... WHERE status = 'pending' ... FOR UPDATE SKIP LOCKED)`之间不会产生竞态：(1)requeue将in_progress→pending，(2)dequeue将pending→in_progress。两者操作不同的status值，PostgreSQL的行级锁保证不会同时修改同一行。
+
+- (c) 数据库连接池耗尽时的行为(连接泄漏?)
+  审计结论: ✅ 确认正确 — postgres.js(L25-29)配置了`max: 5`连接池。所有查询都使用`await`，查询完成后连接自动归还池。没有长事务持有连接（dequeue的FOR UPDATE SKIP LOCKED不阻塞）。唯一的事务是`addManyToQueue`(L102 `db.begin`)，但它在单个await内完成。没有连接泄漏风险。
+
+- (d) 长时间运行的任务：task claim后worker崩溃，requeue是否能可靠恢复
+  审计结论: ✅ 确认正确 — `requeueStaleInProgress`(L346, 默认30分钟)会将超过30分钟的in_progress任务重置为pending（同时重置retries=0）。这假设外部有定时调用此函数的机制。requeueStaleInProgress是export的，需要外部调用者（如task-engine）定期调用。
+
+- (e) 事务隔离级别是否合适(READ COMMITTED vs SERIALIZABLE)
+  审计结论: **LOW** — postgres.js默认使用PostgreSQL的`READ COMMITTED`隔离级别。对于`FOR UPDATE SKIP LOCKED`模式，READ COMMITTED是正确的选择。但`markFailed`(L241-256)先SELECT再UPDATE，两步之间状态可能变化（两个worker同时对同一id调用markFailed）。不过在实际使用中，每个task只被一个worker处理，所以不会发生。标记为已知限制。
+
+### rate-limiter.ts（5角度）— 4/5 确认正确, 1 MEDIUM 修复
+
+- (a) acquire()的等待重试机制在多个并发调用时是否有TOCTOU竞态
+  审计结论: ✅ 确认正确 — rate-limiter.ts本身是同步的（无async）。在Node.js/Bun单线程模型下，acquire()是同步函数，同一时刻只有一个acquire()在执行，不存在并发竞态。engines.ts的waitForRateLimit在await sleep期间其他请求可通过acquire()，但这是预期行为（滑动窗口自然释放配额）。
+
+- (b) 滑动窗口计数器在高并发下的精度(多worker是否共享状态?)
+  审计结论: ✅ 确认正确 — DomainRateLimiter是单例(L275)，在单进程内所有请求共享同一个Map。`acquire()`是同步函数，在Bun/Node.js单线程event loop中，同一时刻只有一个acquire()在执行，不存在并发精度问题。`MAX_TIMESTAMPS_PER_DOMAIN=200`(L49)和`MAX_DOMAINS=500`(L50)限制了内存增长。
+
+- (c) 429/403/503惩罚+渐进恢复：恢复后的首次请求是否可能立即再次触发惩罚
+  审计结论: **MEDIUM BUG** — `recordResult`(L133-168)在收到429/403/503时：maxRPM永久减半(0.5倍)。恢复逻辑(L156-160)：需要`consecutiveSuccesses % Math.floor(60/maxRPM) === 0`才+1RPM。问题：当maxRPM被惩罚到很低(如1-2)时，`60/1=60`，需要60次连续成功才能恢复1RPM。从1恢复到30需要`29*60=1740`次连续成功。而任何一次429/403/503都会再次减半，导致**惩罚螺旋**——恢复极其缓慢但回退瞬间完成。
+  修复方案(L158): 添加最小恢复间隔上限，避免低RPM时恢复过慢：
+  ```ts
+  // 修复: 限制恢复所需的最小连续成功次数为5，避免低RPM时恢复过慢
+  const recoveryThreshold = Math.max(5, Math.min(60, Math.floor(60 / Math.max(1, state.maxRPM))));
+  if (state.consecutiveSuccesses % recoveryThreshold === 0) {
+    state.maxRPM = Math.min(state.maxRPM + this.config.recoveryRate, this.config.defaultMaxRPM);
+  }
+  ```
+
+- (d) per-domain状态在内存中是否有OOM风险(大量域名场景)
+  审计结论: ✅ 确认正确 — `MAX_DOMAINS=500`(L50)限制了Map大小。`getOrCreateDomain`(L243-271)在达到500时驱逐最不活跃的domain。每个DomainState约200字节（timestamps数组最多200个number），500个domain约100KB，无OOM风险。
+
+- (e) acquire的3次等待重试是否有指数退避(还是固定间隔?)
+  审计结论: ✅ 确认正确 — engines.ts的`waitForRateLimit`(L93-129)使用`waitMs = Math.min(rateCheck.waitMs, 2000)`(L98)。rateLimiter已经计算了精确的waitMs（直到最老请求离开窗口的时间），所以固定间隔实际上是正确的——窗口滑动后配额会自然释放，不需要指数退避。
+
+## 修复清单（按优先级排序）
+
+1. **stealth.ts L618-646** [MEDIUM] 删除Section 4的toDataURL/toBlob覆盖(被Section 30完全取代，双重覆盖导致双重噪声)
+2. **stealth.ts L1787-1804** [MEDIUM] 删除Section 45的cursor覆盖逻辑(cursor='none'是合法CSS值，强制改为'auto'制造指纹不一致)
+3. **cookie-jar.ts L174** [MEDIUM] get()应支持父域cookie查找(当前只按精确domain查找Map，Domain=example.com的cookie对sub.example.com不可见)
+4. **rate-limiter.ts L158** [MEDIUM] 恢复阈值在低RPM时过大(60次连续成功)，应添加上限(最大60，最小5)
+5. **stealth.ts L1775-1781** [LOW] Section 44 ResizeObserver mock忽略callback(仅在不支持ResizeObserver时触发，标记已知限制)
+6. **queue.pg.ts L241-256** [LOW] markFailed非原子SELECT+UPDATE(单worker模型下不触发，标记已知限制)
+
+## 总计 16/22 确认正确
+
+## 验证结果
+- 仅做审计分析，未修改文件
+- ESLint: 未重新运行（未修改代码）
+
+## 修改文件
+- 无（本次为纯审计）
+
+## 累计修复: 280项（本次审计发现6项待修复，未执行）
+
+Stage Summary:
+- 22个审计角度, 16个确认正确, 6个发现(4 MEDIUM + 2 LOW)
+- 关键发现: (1) stealth Section 4/30双重toDataURL覆盖导致双重噪声; (2) Section 45 cursor='none'被错误覆盖; (3) cookie-jar父域cookie对子域不可见; (4) rate-limiter低RPM恢复阈值过大
+- 所有发现均未修改文件，等待后续修复任务
+---
+Task ID: R28-b
+Agent: Code Auditor
+Task: 深度审计 engines.ts / proxy-manager.ts / referrer-chain.ts / task-engine.ts（23角度）
+
+## engines.ts（6角度）— 4/6 确认正确, 1 MEDIUM, 1 LOW
+
+- (a) CircuitBreaker的_halfOpenInFlight在并发场景下是否安全
+  审计结论: ✅ 确认正确 — `acquire()`方法（engines.ts L151-169）是**纯同步代码**（检查`_halfOpenInFlight > 0`和`_halfOpenInFlight++`之间无await）。在Node.js/Bun单线程事件循环中，同步代码保证原子执行，不可能有两个并发调用同时通过半开检查。当探测请求in-flight时（`_halfOpenInFlight=1`），后续所有`acquire()`调用都会在L164抛出错误。`recordSuccess()`(L173)和`recordFailure()`(L178)正确重置/递减计数器。
+
+- (b) Playwright引擎context创建失败时是否正确释放已创建的browser实例
+  审计结论: **LOW** — browser是共享单例（L436-437模块级变量），context创建失败时**不应关闭browser**（其他请求可能正在使用）。browser只在`closeAllEngines()`时关闭，这是正确的。但存在一个context泄漏：L538创建context后，L552 `context.addCookies()`在try/finally块**外部**。若`addCookies()`抛出异常（虽然概率极低），context不会被L666的finally关闭。Obscura引擎（L1370-1384）存在相同问题。
+  修复方案: 将`context.addCookies()`移入try块内，或扩大try/finally范围覆盖cookie添加逻辑：
+  ```ts
+  // Playwright L538-554 改为:
+  const context = await browser.newContext(contextOptions);
+  try {
+    if (allCookies.length > 0) {
+      await context.addCookies(allCookies);
+    }
+    const page = await context.newPage();
+    // ... rest of logic
+  } catch (err) { ... } finally { await context.close(); }
+  ```
+
+- (c) CheerioEngine 3xx重定向的cookie传递链路
+  审计结论: **MEDIUM BUG** — `followRedirects`的`makeRequest`回调（engines.ts L315-326）存在两个cookie传递问题：
+  (1) **首次hop重复cookie**: 初始请求已在L231设置`headers['Cookie'] = jarCookieHeader`。`makeRequest`在L317复制`headers`，然后在L322再次从jar获取相同cookie并**前置拼接**，导致首次hop发送`cookie1=val; cookie1=val`（重复）。
+  (2) **跨域重定向cookie泄漏**: 当重定向跨域时（如a.com→b.com），`reqHeaders['Cookie']`保留了a.com的cookie，`hopCookieHeader`是b.com的cookie，拼接后为`b.com_cookie; a.com_cookie`。浏览器不会向b.com发送a.com的cookie。
+  修复方案(L315-326): 在makeRequest中先清除原始Cookie，只使用hop域名对应的cookie：
+  ```ts
+  makeRequest: (fetchUrl) => {
+    const reqHeaders = { ...headers };
+    delete reqHeaders['Cookie']; // 清除原始域的cookie，避免跨域泄漏和重复
+    try {
+      const hopDomain = new URL(fetchUrl).hostname;
+      const hopCookieHeader = cookieJar.getCookieHeader(hopDomain, '/');
+      if (hopCookieHeader) {
+        reqHeaders['Cookie'] = hopCookieHeader;
+      }
+    } catch { /* invalid URL, skip */ }
+    // ... rest unchanged
+  ```
+
+- (d) Obscura引擎失败后的fallback路径
+  审计结论: ✅ 确认正确 — Obscura引擎本身不内置fallback（设计如此）。失败通过`retryWithBackoff`（L1315-1636, maxRetries=2）重试同一引擎。引擎升级逻辑在task-engine.ts L870-888的`autoHandleCaptcha`中实现（连续3次CAPTCHA后升级引擎类型）。架构分离清晰：引擎层负责重试，任务层负责引擎切换。
+
+- (e) doWithRetry的retryCount递增逻辑
+  审计结论: ✅ 确认正确 — 实际函数名为`retryWithBackoff`（utils.ts L639-699）。循环`for (let attempt = 0; attempt <= opts.maxRetries; attempt++)`执行`maxRetries+1`次（1次初始+maxRetries次重试）。`onRetry`回调传递`attempt+1`（1-indexed重试次数）。退避计算`baseDelay * factor^attempt`（attempt=0→1x, attempt=1→2x, attempt=2→4x）符合指数退避语义。abort检查在每次attempt前后都执行（L649, L661），确保取消信号及时响应。
+
+- (f) antiCrawlAdvisor调用时机
+  审计结论: ✅ 确认正确 — 三个引擎的调用模式：
+  - CheerioEngine: `recordDetection`在retryWithBackoff**内部**调用（L373，CAPTCHA时），`recordSuccess/recordFailure`在**外部**.then/.catch调用（L415/L424，避免重试间重复计数）。文档注释(L396-398)明确说明了这个设计决策。
+  - PlaywrightEngine: `recordDetection/recordSuccess/recordFailure`在retryWithBackoff**内部**调用（L615/L647/L661）。每次attempt都记录，反映实际HTTP请求次数。
+  - ObscuraEngine: 同Playwright模式（L1582/L1596/L1619），内部调用。
+  两种模式都是合理的设计选择：Cheerio记录逻辑请求结果（忽略重试），Playwright/Obscura记录每次实际请求（用于更精确的反爬分析）。
+
+### proxy-manager.ts（6角度）— 5/6 确认正确, 1 LOW
+
+- (a) 失败代理冷却时间和恢复机制
+  审计结论: ✅ 确认正确 — 连续失败≥5次时进入冷却5分钟（L429-434）。健康分数每次失败减少`5 + consecutiveFails * 2`（L425-426，最少7分最多15分）。健康<10时永久禁用（L437-442）。冷却结束后代理自动可用（时间检查L314）。`recordSuccess()`重置`consecutiveFails=0`（L373），实现完整恢复链路：冷却→成功→consecutiveFails归零→健康分恢复。冷却期间consecutiveFails不重置是正确的——如果代理冷却后仍然失败，说明问题未解决，应快速重新进入冷却。
+
+- (b) 代理轮换策略（是否跳过连续失败的代理）
+  审计结论: ✅ 确认正确 — `getProxyWithFallback()`（L964-1017）将候选分为两组：无最近失败（candidates）和有最近失败（candidatesWithRecentFails，5分钟窗口）。优先选择无最近失败的代理，全部有失败时才回退。`getDomainProxyWithRotation()`（L834-868）按healthScore排序取top-N轮换，虽不显式检查recentFailures，但healthScore随失败递减，自然降低排序优先级。
+
+- (c) SOCKS4/SOCKS5支持
+  审计结论: **LOW** — SOCKS5通过`socks-proxy-agent`完整支持（L164-176）。SOCKS4在`getProxyDispatcher()`中返回null（L177-182），仅打印DEBUG日志。但`addProxy()`（L248）和`parseProxyUrl()`（L77-122）都接受`socks4://`URL并成功解析。用户添加SOCKS4代理后，`getProxyDispatcher()`静默返回null，导致请求**意外走直连**而非报错。用户可能不知道SOCKS4代理被忽略了。
+  修复方案: 在`addProxy()`中对SOCKS4返回false（拒绝添加），或在`getProxyDispatcher()`返回null时至少打印WARNING级别日志（而非仅DEBUG）。
+
+- (d) 代理认证URL编码
+  审计结论: ✅ 确认正确 — `parseProxyUrl()`使用`new URL()`解析，正确处理URL编码的用户名密码（如`user:p%40ss@host:port`）。`ProxyAgent(urlStr)`（L185）接收原始URL，undici内部正确解码认证信息。SOCKS5的`SocksProxyAgent(urlStr)`（L167）同样接收原始`socks5://`URL。导出/显示时使用`cleanUrl`（L114-116）去除认证信息，避免凭据泄露。
+
+- (e) 代理列表为空时的行为
+  审计结论: ✅ 确认正确 — `getProxy()`在candidates为空时返回null（L322）。`getProxyWithFallback()`两个候选列表都为空时返回null（L1016）。engines.ts中proxy为null时dispatcher为null，请求走直连（L342: `dispatcher: dispatcher || undefined`）。行为明确且安全。
+
+- (f) IPv6方括号处理一致性
+  审计结论: ✅ 确认正确 — `parseProxyUrl()`（L115）：`displayHost = host.includes(':') ? '[${host}]' : host`。`checkHealth()`（L580）：同样的`host.includes(':') ? '[${host}]' : host`模式。两处都使用`parsed.hostname`（返回无括号的IPv6地址），然后统一添加括号。`getProxyDispatcher()`直接使用原始URL字符串传给ProxyAgent/SocksProxyAgent，由底层库处理。用户输入的IPv6 URL如`http://[::1]:8080`在`new URL()`解析时正确处理。
+
+### referrer-chain.ts（5角度）— 4/5 确认正确, 1 LOW
+
+- (a) fromUrl在所有调用路径上的传递
+  审计结论: **LOW** — `recordCrossDomainTransition(fromUrl, toUrl)`（L114-133）是一个精心设计的公共方法，但**从未被任何文件调用**。实际只调用了`recordVisit()`（engines.ts L387/L642/L1592）和`getReferer()`（utils.ts L453/L778）。这意味着跨域转换（如搜索引擎→目标站）从未记录到referrer链中。功能不受影响——`buildFetchHeaders`（utils.ts L778-780）在chainReferer为undefined时回退到`getSpoofedReferer()`生成伪造搜索引擎referer。但`recordCrossDomainTransition`是死代码。
+  修复方案: 删除`recordCrossDomainTransition`方法，或在搜索引擎referer首次访问目标站时调用它以建立链路。
+
+- (b) referrer链最大长度/内存泄漏
+  审计结论: ✅ 确认正确 — `MAX_HISTORY_PER_DOMAIN=100`（L26）和`MAX_TRACKED_DOMAINS=500`（L27）双重限制。`evictIfNeeded()`（L42-49）在达到500域时驱逐最早的域。`entries.shift()`（L66）在每域超过100条时驱逐最早条目。最大内存：500域 × 100条 × ~50字节/条 ≈ 2.5MB，无泄漏风险。
+
+- (c) 首次请求Referer头处理
+  审计结论: ✅ 确认正确 — 首次访问某域时`getReferer()`返回undefined（L90：entries为空）。`buildFetchHeaders`（utils.ts L778-780）的三级回退：`explicitReferer || chainReferer || spoofedReferer`。首次访问时chainReferer为undefined，使用spoofedReferer生成逼真的搜索引擎referer。Sec-Fetch-Site也正确设置为cross-site（utils.ts L467-470）。
+
+- (d) document.referrer模拟一致性
+  审计结论: ✅ 确认正确（设计范围内） — ReferrerChain仅管理HTTP `Referer`请求头，不模拟浏览器JS API `document.referrer`。Playwright/Obscura的`page.goto()`是程序化导航，`document.referrer`自然为空。这属于stealth.ts的职责范围（通过`addInitScript`注入），不在referrer-chain.ts的职责内。
+
+- (e) 多标签页隔离
+  审计结论: ✅ 确认正确 — ReferrerChain是单例，无标签页/会话隔离。所有并发任务共享同一导航历史。对于爬虫场景这是**正确的设计**：目标网站看到的是同一个"用户"的连续浏览，跨任务共享历史使链路更丰富更逼真。如果需要隔离，应在task-engine层为每个任务创建独立的ReferrerChain实例（当前不需要）。
+
+### task-engine.ts（6角度）— 4/6 确认正确, 1 MEDIUM, 1 LOW
+
+- (a) 超时后资源清理
+  审计结论: ✅ 确认正确 — 任务超时（1小时，L366）触发`abortController.abort()`（L371）。信号传播链：abortController.signal → engines.ts的retryWithBackoff(signal) → waitForRateLimit(signal) → AbortSignal.timeout组合 → fetch/page.goto中断。Playwright context在finally块中关闭（engines.ts L664-669, L1623-1628）。executeTask的finally块（L404-411）清理heartbeat定时器、taskTimeoutId、logBuffer、progressThrottle。chapterQueue中未处理的条目保留在持久化queue中供resume。
+
+- (b) 任务取消机制
+  审计结论: **LOW** — 没有显式的`cancelTask(taskId)` API或外部取消机制。abortController是`executeTask()`的局部变量（L306），不对外暴露。唯一的"取消"方式是1小时超时和stuck detection（5分钟无heartbeat标记为failed）。对于爬虫服务，这已经足够——任务通常运行几十分钟，1小时超时+5分钟stuck检测覆盖了所有异常场景。若需支持用户手动取消，需要将abortController存储在Map中并暴露取消API。
+
+- (c) 重试时资源重建
+  审计结论: **MEDIUM** — retryWithBackoff在每次重试时重新执行整个内部函数，资源正确重建（新的fetch/context/page）。但PlaywrightEngine和ObscuraEngine**不记录代理成功/失败**到proxyManager。CheerioEngine有`proxyManager.recordSuccess/recordFailure`（engines.ts L352/L382/L376），但PlaywrightEngine（L502-677）和ObscuraEngine（L1315-1636）完全没有proxyManager的recordSuccess/recordFailure调用。当使用Playwright/Obscura引擎时，代理健康分数永远不会更新，代理轮换基于过时的健康数据。
+  修复方案: 在PlaywrightEngine和ObscuraEngine的成功/失败路径中添加proxyManager调用：
+  ```ts
+  // PlaywrightEngine 成功路径（L646后）添加:
+  if (pwProxy) proxyManager.recordSuccess(pwProxy.url, Date.now() - pageStartTime);
+  // PlaywrightEngine 失败路径（L660后）添加:
+  if (pwProxy) proxyManager.recordFailure(pwProxy.url, err.message);
+  // ObscuraEngine 同理
+  ```
+
+- (d) 并发任务数组隔离
+  审计结论: ✅ 确认正确 — 所有任务级状态都是`executeTaskBody()`的局部变量：`seenTitles/seenUrls`（Set，L493-494）、`booksProcessed`（Array，L501）、`chapterQueue`（每本书新建，L802）、`consecutiveCaptchaCounts`（Map，L805）。计数器使用AtomicCounter类（L60-64）避免竞态。全局的`logBuffer`和`progressThrottle`按taskId隔离（L192/157）。dbWriteSemaphore（L81）限制并发DB写为3，防止连接池耗尽。
+
+- (e) TaskResult.engine准确性
+  审计结论: ✅ 确认正确 — `engineType`初始值由`determineEngine()`设置（L339），CAPTCHA自动升级时更新为`strategyResult.nextEngine`（L886-887）。由于`engineType`是`executeTaskBody`的解构局部变量（L445），`processChapter`闭包引用同一变量，升级后所有后续章节自动使用新引擎。最终TaskResult.engine（L1051）反映实际使用的（可能已升级的）引擎类型。
+
+- (f) 最大执行时间限制
+  审计结论: ✅ 确认正确 — 三层时间保护：(1) 任务级1小时硬超时（L366-374，Promise.race + abortController）；(2) 引擎级请求超时（cheerio默认30s, playwright 45s, obscura 60s，各自`timeout`参数）；(3) stuck detection（5分钟无heartbeat标记failed，L1069；2小时无heartbeat兜底，L1070）。三层互补，无僵尸任务风险。
+
+## 修复清单（按优先级排序）
+
+1. **engines.ts L315-326** [MEDIUM] CheerioEngine followRedirects的makeRequest回调: (1)首次hop重复cookie (2)跨域重定向cookie泄漏
+2. **engines.ts L502-677, L1315-1636** [MEDIUM] PlaywrightEngine和ObscuraEngine不记录proxyManager.recordSuccess/recordFailure，导致代理健康分数不更新
+3. **engines.ts L538-554, L1370-1384** [LOW] context.addCookies()在try/finally外部，理论上可导致context泄漏
+4. **proxy-manager.ts L248** [LOW] addProxy()接受socks4://URL但getProxyDispatcher()静默返回null，导致意外直连
+5. **referrer-chain.ts L114-133** [LOW] recordCrossDomainTransition()是死代码（从未被调用）
+6. **task-engine.ts** [LOW] 无显式cancelTask()机制（timeout+stuck detection已足够，标记已知限制）
+
+## 总计 17/23 确认正确
+
+## 验证结果
+- 仅做审计分析，未修改文件
+- ESLint: 未重新运行（未修改代码）
+
+## 修改文件
+- 无（本次为纯审计）
+
+## 累计修复: 280项（本次审计发现6项待修复，未执行）
+
+Stage Summary:
+- 23个审计角度, 17个确认正确, 6个发现(2 MEDIUM + 4 LOW)
+- 关键发现: (1) CheerioEngine跨域重定向cookie泄漏和首次hop重复cookie; (2) Playwright/Obscura不记录代理健康数据
+- 所有发现均未修改文件，等待后续修复任务

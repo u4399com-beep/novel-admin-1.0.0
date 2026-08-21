@@ -370,6 +370,8 @@ export function clearDomainUACache(domain?: string): void {
  * 44. ResizeObserver / IntersectionObserver existence mock
  * 45. getComputedStyle cursor consistency
  * 46. matchMedia prefers-color-scheme / prefers-reduced-motion consistency
+ * 47. WebGL Shader Precision (getShaderPrecisionFormat zero-range fix)
+ * 48. Navigator Connection API (network info consistency)
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -616,59 +618,15 @@ export function getStealthScript(profile: FingerprintProfile): string {
   };
 
   // ---- 4. Canvas Fingerprint Noise ----
-
-  const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-  HTMLCanvasElement.prototype.toDataURL = function(...args) {
-    const ctx = this.getContext('2d');
-    if (ctx) {
-      // Inject an imperceptible noise pixel that changes the canvas hash
-      const style = ctx.fillStyle;
-      ctx.fillStyle = 'rgba(0,0,1,0.003)';
-      ctx.fillRect(0, 0, 1, 1);
-      ctx.fillStyle = style;
-    }
-    return origToDataURL.apply(this, args);
-  };
-
-  // Also override toBlob for canvas fingerprinting
-  if (HTMLCanvasElement.prototype.toBlob) {
-    const origToBlob = HTMLCanvasElement.prototype.toBlob;
-    HTMLCanvasElement.prototype.toBlob = function(...args) {
-      const ctx = this.getContext('2d');
-      if (ctx) {
-        const style = ctx.fillStyle;
-        ctx.fillStyle = 'rgba(1,0,0,0.003)';
-        ctx.fillRect(0, 0, 1, 1);
-        ctx.fillStyle = style;
-      }
-      return origToBlob.apply(this, args);
-    };
-  }
+  // NOTE: Simple single-pixel noise removed here to avoid double-injection fingerprint.
+  // Section 30 provides superior per-pixel deterministic noise that covers the entire canvas.
+  // Keeping both would create detectable inconsistency (Section 30 noise + Section 4's extra pixel).
 
   // ---- 5. AudioContext Fingerprint Noise ----
-
-  if (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined') {
-    const AC = typeof AudioContext !== 'undefined' ? AudioContext : webkitAudioContext;
-    const origCreateOscillator = AC.prototype.createOscillator;
-
-    AC.prototype.createOscillator = function() {
-      const osc = origCreateOscillator.call(this);
-      const freq = osc.frequency;
-      let _value = freq.value;
-      const _origValueDescriptor = Object.getOwnPropertyDescriptor(AudioParam.prototype, 'value') ||
-        Object.getOwnPropertyDescriptor(osc.frequency, 'value');
-
-      try {
-        Object.defineProperty(osc.frequency, 'value', {
-          get: () => _value + (Math.random() - 0.5) * 0.001,
-          set: (v) => { _value = v; },
-          configurable: true,
-        });
-      } catch(e) {}
-
-      return osc;
-    };
-  }
+  // NOTE: Simple random noise removed here to avoid double-injection fingerprint.
+  // Section 31 provides superior deterministic per-profile noise that is consistent across
+  // the same page load (uses seeded PRNG) and covers OfflineAudioContext too.
+  // Keeping both would produce detectable dual-frequency-offset artifacts.
 
   // ---- 6. Screen / Window Properties ----
 
@@ -1789,9 +1747,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
     window.getComputedStyle = function(el, pseudoElt) {
       var style = _origGetComputedStyle(el, pseudoElt);
       if (!style) return style;
-      // Ensure cursor is never 'none' or 'default' (headless may return these)
+      // Ensure cursor is never 'none' for headless detection (only 'none' is a headless signal;
+      // 'default' is a legitimate cursor value returned by real browsers on non-interactive elements)
       var cursor = style.cursor;
-      if (cursor === 'none' || cursor === 'default') {
+      if (cursor === 'none') {
         try {
           Object.defineProperty(style, 'cursor', {
             get: function() { return 'auto'; },
@@ -1829,6 +1788,96 @@ export function getStealthScript(profile: FingerprintProfile): string {
         }
         return result;
       };
+    }
+  } catch(e) {}
+
+  // Section 47: WebGL Shader Precision
+  // Headless browsers may return empty strings or inconsistent values for
+  // getShaderPrecisionFormat(). Real Chrome returns specific ranges.
+  try {
+    var _origGetShaderPrecisionFormat = WebGLRenderingContext.prototype.getShaderPrecisionFormat;
+    var _shaderPrecisionSeed = _fakeDeviceSeed * 5.17;
+    WebGLRenderingContext.prototype.getShaderPrecisionFormat = function(shaderType, precisionType) {
+      var result = _origGetShaderPrecisionFormat.call(this, shaderType, precisionType);
+      if (!result) return result;
+      // Ensure rangeMin/rangeMax are positive integers (headless sometimes returns 0)
+      if (result.rangeMin === 0 && result.rangeMax === 0) {
+        _shaderPrecisionSeed = (_shaderPrecisionSeed * 16807 + 0.5) % 2147483647;
+        var fakeRange = 23 + (_shaderPrecisionSeed % 10); // 23-32 like real Chrome
+        try {
+          Object.defineProperties(result, {
+            rangeMin: { get: function() { return fakeRange; }, configurable: true },
+            rangeMax: { get: function() { return 127; }, configurable: true },
+            precision: { get: function() { return 23; }, configurable: true },
+          });
+        } catch(e) {}
+      }
+      return result;
+    };
+    // Also patch WebGL2 if available
+    if (typeof WebGL2RenderingContext !== 'undefined') {
+      var _origGetSPF2 = WebGL2RenderingContext.prototype.getShaderPrecisionFormat;
+      if (_origGetSPF2 && _origGetSPF2 !== _origGetShaderPrecisionFormat) {
+        WebGL2RenderingContext.prototype.getShaderPrecisionFormat = function(shaderType, precisionType) {
+          var result = _origGetSPF2.call(this, shaderType, precisionType);
+          if (!result) return result;
+          if (result.rangeMin === 0 && result.rangeMax === 0) {
+            _shaderPrecisionSeed = (_shaderPrecisionSeed * 16807 + 0.5) % 2147483647;
+            var fakeRange = 23 + (_shaderPrecisionSeed % 10);
+            try {
+              Object.defineProperties(result, {
+                rangeMin: { get: function() { return fakeRange; }, configurable: true },
+                rangeMax: { get: function() { return 127; }, configurable: true },
+                precision: { get: function() { return 23; }, configurable: true },
+              });
+            } catch(e) {}
+          }
+          return result;
+        };
+      }
+      // If WebGL2 inherits from WebGL (same prototype method), the WebGL patch above covers it
+    }
+  } catch(e) {}
+
+  // Section 48: Navigator Connection API (Network Information)
+  // Headless browsers often have missing or inconsistent navigator.connection.
+  // Real browsers provide effectiveType, downlink, rtt, saveData.
+  try {
+    var _connSeed = _fakeDeviceSeed * 3.14;
+    if (!navigator.connection) {
+      // Create a fake connection object if missing entirely
+      _connSeed = (_connSeed * 16807 + 0.5) % 2147483647;
+      var _fakeDownlink = 5 + (_connSeed % 15); // 5-20 Mbps
+      var _fakeRTT = 20 + ((_connSeed >> 8) % 80); // 20-100ms
+      var _fakeEffectiveType = _fakeDownlink >= 10 ? '4g' : _fakeDownlink >= 4 ? '3g' : '2g';
+      Object.defineProperty(navigator, 'connection', {
+        get: function() {
+          return {
+            effectiveType: _fakeEffectiveType,
+            downlink: _fakeDownlink,
+            rtt: _fakeRTT,
+            saveData: false,
+            type: 'wifi',
+            onchange: null,
+            addEventListener: function() {},
+            removeEventListener: function() {},
+            dispatchEvent: function() { return false; },
+          };
+        },
+        configurable: true,
+      });
+    } else {
+      // Connection exists but may have zero values in headless — fix them
+      var _realConn = navigator.connection;
+      if (_realConn.downlink === 0 || _realConn.rtt === 0) {
+        _connSeed = (_connSeed * 16807 + 0.5) % 2147483647;
+        try {
+          Object.defineProperties(_realConn, {
+            downlink: { get: function() { return 5 + (_connSeed % 15); }, configurable: true },
+            rtt: { get: function() { return 20 + ((_connSeed >> 8) % 80); }, configurable: true },
+          });
+        } catch(e) {}
+      }
     }
   } catch(e) {}
 

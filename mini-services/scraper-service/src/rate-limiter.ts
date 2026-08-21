@@ -154,8 +154,11 @@ class DomainRateLimiter {
       if (!state.penaltyActive) {
         // Can we recover? Only if below the default max
         if (state.maxRPM < this.config.defaultMaxRPM) {
-          // +1 RPM per successful request after penalty, capped at defaultMaxRPM
-          if (state.consecutiveSuccesses % Math.max(1, Math.floor(60 / Math.max(1, state.maxRPM))) === 0) {
+          // +1 RPM per N successful requests, where N is capped between 5-20.
+          // At very low RPM (e.g. 1), we cap at 20 (not 60) to avoid penalty spiral.
+          // At higher RPM, recovery is faster (proportional to request rate).
+          const recoveryThreshold = Math.min(20, Math.max(5, Math.floor(60 / Math.max(1, state.maxRPM))));
+          if (state.consecutiveSuccesses % recoveryThreshold === 0) {
             state.maxRPM = Math.min(state.maxRPM + this.config.recoveryRate, this.config.defaultMaxRPM);
           }
         }

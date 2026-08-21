@@ -313,15 +313,17 @@ class CheerioEngine implements ScrapingEngine {
             }
           },
           makeRequest: (fetchUrl) => {
-            // Inject jar cookies for each redirect hop too
+            // Inject jar cookies for each redirect hop.
+            // IMPORTANT: Clear the original Cookie header to prevent cross-domain cookie leakage.
+            // The original headers contain cookies from the initial domain; on cross-domain
+            // redirects, those cookies must NOT be sent to the new domain.
             const reqHeaders = { ...headers };
+            delete reqHeaders['Cookie']; // Clear to prevent cross-domain leakage
             try {
               const hopDomain = new URL(fetchUrl).hostname;
               const hopCookieHeader = cookieJar.getCookieHeader(hopDomain, '/');
               if (hopCookieHeader) {
-                reqHeaders['Cookie'] = reqHeaders['Cookie']
-                  ? `${hopCookieHeader}; ${reqHeaders['Cookie']}`
-                  : hopCookieHeader;
+                reqHeaders['Cookie'] = hopCookieHeader;
               }
             } catch { /* invalid URL, skip */ }
             // Merge task-level abort with per-request timeout
@@ -511,6 +513,7 @@ class PlaywrightEngine implements ScrapingEngine {
         // Select proxy for this domain (with rotation)
         const domainProxy = pwDomain ? proxyManager.getDomainProxyWithRotation(pwDomain) : null;
         const pwProxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(pwDomain) : null);
+        const pwStartTime = Date.now();
 
         // Build context options with viewport, locale, timezone matching stealth profile
         const pwProfile = pwDomain ? getProfileForDomain(pwDomain) : getProfileForDomain('default');
@@ -647,6 +650,11 @@ class PlaywrightEngine implements ScrapingEngine {
             try { antiCrawlAdvisor.recordSuccess(pwDomain); } catch { /* non-critical */ }
           }
 
+          // Record proxy health for Playwright engine
+          if (pwProxy) {
+            proxyManager.recordSuccess(pwProxy.url, Date.now() - pwStartTime);
+          }
+
           return {
             html,
             finalUrl,
@@ -659,6 +667,10 @@ class PlaywrightEngine implements ScrapingEngine {
             const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
             rateLimiter.recordResult(pwDomain, false, errStatus || undefined);
             try { antiCrawlAdvisor.recordFailure(pwDomain); } catch { /* non-critical */ }
+          }
+          // Record proxy failure for Playwright engine
+          if (pwProxy) {
+            proxyManager.recordFailure(pwProxy.url, err instanceof Error ? err.message : String(err));
           }
           throw err;
         } finally {
@@ -1321,6 +1333,7 @@ class ObscuraEngine implements ScrapingEngine {
         const domainProxy = domain ? proxyManager.getDomainProxyWithRotation(domain) : null;
         const proxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(domain) : null);
 
+        const obscuraStartTime = Date.now();
         // Request fingerprint tracking (created before fetch)
         const fp = requestFingerprintMgr.create({
           domain,
@@ -1595,6 +1608,11 @@ class ObscuraEngine implements ScrapingEngine {
           rateLimiter.recordResult(domain, obscuraStatus >= 200 && obscuraStatus < 400, obscuraStatus);
           try { antiCrawlAdvisor.recordSuccess(domain); } catch { /* non-critical */ }
 
+          // Record proxy health for Obscura engine
+          if (proxy) {
+            proxyManager.recordSuccess(proxy.url, Date.now() - obscuraStartTime);
+          }
+
           // Track request fingerprint
           requestFingerprintMgr.complete(fp.requestId, true, obscuraStatus);
 
@@ -1617,6 +1635,10 @@ class ObscuraEngine implements ScrapingEngine {
             rateLimiter.recordResult(domain, false, errStatus || undefined);
           }
           try { antiCrawlAdvisor.recordFailure(domain); } catch { /* non-critical */ }
+          // Record proxy failure for Obscura engine
+          if (proxy) {
+            proxyManager.recordFailure(proxy.url, err instanceof Error ? err.message : String(err));
+          }
           // Track request fingerprint (failure)
           requestFingerprintMgr.complete(fp.requestId, false, 0);
           throw err;

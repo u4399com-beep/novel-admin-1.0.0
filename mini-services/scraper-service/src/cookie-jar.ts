@@ -172,18 +172,42 @@ class CookieJar {
 
   /** Get cookies for a domain and path (for sending with request) */
   get(domain: string, path: string = '/'): Array<{ name: string; value: string }> {
-    const cookies = this.cookies.get(domain);
-    if (!cookies) return [];
-    const matched = cookies.filter(c => this.isCookieMatch(c, domain, path));
+    // Collect cookies from exact domain AND all parent domains that may have set cookies for us
+    // e.g., for request to sub.example.com, also check example.com
+    const domainParts = domain.toLowerCase().split('.');
+    const domainsToCheck: string[] = [domain];
+    for (let i = 1; i < domainParts.length - 1; i++) {
+      // Build parent domains: sub.example.com → example.com; a.sub.example.com → sub.example.com, example.com
+      domainsToCheck.push(domainParts.slice(i).join('.'));
+    }
+
+    const matched: StoredCookie[] = [];
+    for (const checkDomain of domainsToCheck) {
+      const cookies = this.cookies.get(checkDomain);
+      if (cookies) {
+        matched.push(...cookies.filter(c => this.isCookieMatch(c, domain, path)));
+      }
+    }
     this.lastActivity.set(domain, Date.now());
     return matched.map(c => ({ name: c.name, value: c.value }));
   }
 
   /** Get cookies in Playwright format for a domain */
   getPlaywrightCookies(domain: string): Array<{ name: string; value: string; domain: string; path: string }> {
-    const cookies = this.cookies.get(domain);
-    if (!cookies) return [];
-    const matched = cookies.filter(c => this.isCookieMatch(c, domain, '/'));
+    // Same parent-domain traversal as get() for consistency
+    const domainParts = domain.toLowerCase().split('.');
+    const domainsToCheck: string[] = [domain];
+    for (let i = 1; i < domainParts.length - 1; i++) {
+      domainsToCheck.push(domainParts.slice(i).join('.'));
+    }
+
+    const matched: StoredCookie[] = [];
+    for (const checkDomain of domainsToCheck) {
+      const cookies = this.cookies.get(checkDomain);
+      if (cookies) {
+        matched.push(...cookies.filter(c => this.isCookieMatch(c, domain, '/')));
+      }
+    }
     this.lastActivity.set(domain, Date.now());
     return matched.map(c => ({
       name: c.name,
