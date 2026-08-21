@@ -105,7 +105,17 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
     }
     visitedPages.add(currentUrl);
 
-    const { html, statusCode } = await engine.fetch(currentUrl, { antiCrawl, signal });
+    let html = '';
+    let statusCode = 0;
+    try {
+      const result = await engine.fetch(currentUrl, { antiCrawl, signal });
+      html = result.html;
+      statusCode = result.statusCode;
+    } catch (err) {
+      console.warn(`  [${logPrefix}] Page ${page + 1} fetch failed: ${err instanceof Error ? err.message : err}`);
+      // Can't find next-page URL without HTML — stop pagination but return what was collected
+      break;
+    }
 
     // CAPTCHA detection
     if (onCaptcha) {
@@ -393,7 +403,7 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
 
   // Check response size before reading into memory
   const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
-  const MAX_COVER_SIZE = 20 * 1024 * 1024; // 20MB
+  const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB (novel covers are typically < 500KB)
   if (contentLength > MAX_COVER_SIZE) {
     throw new Error(`Cover image too large: Content-Length ${contentLength} bytes (max ${MAX_COVER_SIZE})`);
   }

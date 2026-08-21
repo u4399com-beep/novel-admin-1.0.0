@@ -368,6 +368,8 @@ export function clearDomainUACache(domain?: string): void {
  * 42. speechSynthesis.getVoices() mock
  * 43. chrome.runtime.connect() enhanced port mock
  * 44. ResizeObserver / IntersectionObserver existence mock
+ * 45. getComputedStyle cursor consistency
+ * 46. matchMedia prefers-color-scheme / prefers-reduced-motion consistency
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -1775,6 +1777,57 @@ export function getStealthScript(profile: FingerprintProfile): string {
         this.observe = function() {};
         this.unobserve = function() {};
         this.disconnect = function() {};
+      };
+    }
+  } catch(e) {}
+
+  // Section 45: window.getComputedStyle consistency
+  // Some anti-bot systems use getComputedStyle to detect headless by checking
+  // computed styles of known elements. Ensure consistent return values.
+  try {
+    var _origGetComputedStyle = window.getComputedStyle;
+    window.getComputedStyle = function(el, pseudoElt) {
+      var style = _origGetComputedStyle(el, pseudoElt);
+      if (!style) return style;
+      // Ensure cursor is never 'none' or 'default' (headless may return these)
+      var cursor = style.cursor;
+      if (cursor === 'none' || cursor === 'default') {
+        try {
+          Object.defineProperty(style, 'cursor', {
+            get: function() { return 'auto'; },
+            configurable: true,
+          });
+        } catch(e) {}
+      }
+      return style;
+    };
+  } catch(e) {}
+
+  // Section 46: matchMedia consistency
+  // Headless browsers may report different media query results.
+  // Override prefers-color-scheme and prefers-reduced-motion to return consistent values.
+  try {
+    if (window.matchMedia) {
+      var _origMatchMedia = window.matchMedia;
+      var _mediaOverrides = {
+        'prefers-color-scheme: dark': window.matchMedia('(prefers-color-scheme: dark)').matches,
+        'prefers-reduced-motion: reduce': false,
+        'prefers-reduced-motion: no-preference': true,
+        'display-mode: standalone': false,
+        'orientation: portrait': PROFILE.screenWidth < PROFILE.screenHeight,
+      };
+      window.matchMedia = function(query) {
+        var result = _origMatchMedia(query);
+        if (_mediaOverrides.hasOwnProperty(query)) {
+          // Create a consistent MediaQueryList override
+          try {
+            Object.defineProperty(result, 'matches', {
+              get: function() { return _mediaOverrides[query]; },
+              configurable: true,
+            });
+          } catch(e) {}
+        }
+        return result;
       };
     }
   } catch(e) {}

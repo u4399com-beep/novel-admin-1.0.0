@@ -37,6 +37,7 @@ const BOM_MAP: Record<string, { bytes: number[]; charset: string }> = {
 
 const CHARSET_ALIASES: Record<string, string> = {
   'gb2312': 'gbk',
+  'gb2312-80': 'gbk',
   'gbk2312': 'gbk',
   'x-gbk': 'gbk',
   'cn-gb': 'gbk',
@@ -238,8 +239,21 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
     }
     const isBig5Preferred = totalHighLeads > 0 && gbkOnlyLeads === 0;
 
+    // CJK charset family sets — if declared, prefer it over hardcoding
+    const GBK_FAMILY = new Set(['gbk', 'gb18030', 'gb2312']);
+    const BIG5_FAMILY = new Set(['big5', 'big5-hkscs']);
+
     // Check GBK first (more common for Simplified Chinese novels)
     if (gbkLikely && !isBig5Preferred) {
+      // If declared charset is already a CJK encoding, respect it (e.g. gb18030 superset of GBK)
+      if (declaredCharset && GBK_FAMILY.has(declaredCharset)) {
+        return {
+          charset: declaredCharset,
+          corrected: false,
+          confidence: 'medium',
+          declaredCharset,
+        };
+      }
       if (declaredCharset && (declaredCharset === 'utf-8' || declaredCharset === 'iso-8859-1')) {
         // Declared as UTF-8 but bytes look like GBK — common misconfiguration
         return {
@@ -259,6 +273,15 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
 
     // Check Big5 (Traditional Chinese) — also reached when GBK matched but Big5 is preferred
     if (big5Likely || (gbkLikely && isBig5Preferred)) {
+      // If declared charset is already a Big5 variant, respect it
+      if (declaredCharset && BIG5_FAMILY.has(declaredCharset)) {
+        return {
+          charset: declaredCharset,
+          corrected: false,
+          confidence: 'medium',
+          declaredCharset,
+        };
+      }
       if (declaredCharset && (declaredCharset === 'utf-8' || declaredCharset === 'iso-8859-1')) {
         return {
           charset: 'big5',

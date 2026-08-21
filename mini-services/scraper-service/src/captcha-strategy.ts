@@ -15,6 +15,7 @@ export interface StrategyContext {
   domain: string;
   currentEngine: string;
   retryCount: number;
+  /** @deprecated Use per-strategy retry limits; field kept for backward compat */
   maxRetries: number;
   antiCrawlConfig?: Record<string, unknown>;
 }
@@ -46,36 +47,46 @@ class CloudflareStrategy implements CaptchaStrategy {
     return detection.type === 'cloudflare';
   }
 
+  /** Engines that are already at max stealth tier — no engine switching from these */
+  private static readonly STEALTH_ENGINES = new Set(['obscura', 'cloud-browser', 'scrapling']);
+
   async execute(_detection: CaptchaDetection, context: StrategyContext): Promise<StrategyResult> {
-    // First attempt: switch to obscura (stealth browser)
-    if (context.currentEngine !== 'obscura') {
+    // Already on a stealth/external engine — just delay-retry
+    if (CloudflareStrategy.STEALTH_ENGINES.has(context.currentEngine)) {
+      if (context.retryCount < 3) {
+        const delay = 8000 + Math.floor(Math.random() * 12000); // 8-20s
+        return {
+          resolved: false,
+          action: 'delay-retry',
+          delayMs: delay,
+          message: `Cloudflare persists on ${context.currentEngine} (retry ${context.retryCount + 1}/3): waiting ${delay / 1000}s`,
+        };
+      }
+      // Already on cloud-browser and still failing — give up
+      if (context.currentEngine === 'cloud-browser') {
+        return {
+          resolved: false,
+          action: 'none',
+          message: `Cloudflare still blocking after 3+ retries on cloud-browser for ${context.domain}. Manual intervention required.`,
+        };
+      }
+      // Escalate to cloud-browser from other stealth engines
       return {
         resolved: false,
         action: 'switch-engine',
-        nextEngine: 'obscura',
-        delayMs: 3000,
-        message: 'Cloudflare detected: switching to obscura stealth engine',
+        nextEngine: 'cloud-browser',
+        delayMs: 5000,
+        message: `Cloudflare still blocking after 3+ retries on ${context.currentEngine}: escalating to cloud-browser`,
       };
     }
 
-    // Already on obscura: increase delay and suggest retry
-    if (context.retryCount < 3) {
-      const delay = 10000 + Math.floor(Math.random() * 10000); // 10-20s
-      return {
-        resolved: false,
-        action: 'delay-retry',
-        delayMs: delay,
-        message: `Cloudflare persists on obscura (retry ${context.retryCount + 1}/3): waiting ${delay / 1000}s`,
-      };
-    }
-
-    // Retry > 3: suggest external cloud-browser service
+    // First attempt: switch to obscura (stealth browser)
     return {
       resolved: false,
       action: 'switch-engine',
-      nextEngine: 'cloud-browser',
-      delayMs: 5000,
-      message: 'Cloudflare still blocking after 3+ retries on obscura: escalating to cloud-browser',
+      nextEngine: 'obscura',
+      delayMs: 3000,
+      message: 'Cloudflare detected: switching to obscura stealth engine',
     };
   }
 }
@@ -171,29 +182,31 @@ class GeetestStrategy implements CaptchaStrategy {
     return detection.type === 'geetest';
   }
 
+  /** Engines that are already at max stealth tier */
+  private static readonly STEALTH_ENGINES = new Set(['obscura', 'cloud-browser', 'scrapling']);
+
   async execute(detection: CaptchaDetection, context: StrategyContext): Promise<StrategyResult> {
-    // Suggest obscura engine (best anti-detection)
-    if (context.currentEngine !== 'obscura') {
+    // Already on a stealth/external engine — just delay-retry
+    if (GeetestStrategy.STEALTH_ENGINES.has(context.currentEngine)) {
+      const delay = 10000 + Math.floor(Math.random() * 20000); // 10-30s
+      console.warn(
+        `[CaptchaStrategy] GeeTest persists on ${context.currentEngine} for ${context.domain} (confidence: ${detection.confidence}). Manual intervention may be needed.`
+      );
       return {
         resolved: false,
-        action: 'switch-engine',
-        nextEngine: 'obscura',
-        delayMs: 5000,
-        message: 'GeeTest detected: switching to obscura stealth engine (best anti-detection)',
+        action: 'delay-retry',
+        delayMs: delay,
+        message: `GeeTest persists on ${context.currentEngine}: waiting ${delay / 1000}s. Manual intervention may be required for GeeTest slider/click challenges.`,
       };
     }
 
-    // Already on obscura: longer delay (10-30s)
-    const delay = 10000 + Math.floor(Math.random() * 20000); // 10-30s
-    console.warn(
-      `[CaptchaStrategy] GeeTest persists on obscura for ${context.domain} (confidence: ${detection.confidence}). Manual intervention may be needed.`
-    );
-
+    // Suggest obscura engine (best anti-detection)
     return {
       resolved: false,
-      action: 'delay-retry',
-      delayMs: delay,
-      message: `GeeTest persists on obscura: waiting ${delay / 1000}s. Manual intervention may be required for GeeTest slider/click challenges.`,
+      action: 'switch-engine',
+      nextEngine: 'obscura',
+      delayMs: 5000,
+      message: 'GeeTest detected: switching to obscura stealth engine (best anti-detection)',
     };
   }
 }

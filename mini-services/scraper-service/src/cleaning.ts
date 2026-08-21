@@ -42,6 +42,8 @@ const DEFAULT_AD_PATTERNS = [
   // Original patterns preserved
   "最新章节", "百度搜索", "记住本站",
   "本章最新章节", "请访问", "天才一秒",
+  // Standalone short ad fragments (catched individually)
+  "无弹窗",
   // Additional patterns for broader coverage
   "请到", "请看", "请浏览", "继续阅读",
   "温馨提示", "热点推荐", "热门推荐",
@@ -524,8 +526,8 @@ function removeRemnantLines(text: string): string {
       const trimmed = line.trim();
       if (!trimmed) return true;
 
-      // Count Chinese characters
-      const chineseChars = (trimmed.match(/[\u4e00-\u9fff]/g) || []).length;
+      // Count Chinese characters (incl. CJK Unified Ideographs, Extension A, Compatibility Ideographs)
+      const chineseChars = (trimmed.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g) || []).length;
 
       // Short lines (< 5 chars) with no Chinese content are remnant
       if (trimmed.length < 5 && chineseChars === 0) return false;

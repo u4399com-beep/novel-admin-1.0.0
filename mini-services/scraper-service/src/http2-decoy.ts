@@ -32,11 +32,11 @@ export interface ConnectionProfile {
 // ==================== Accept-Encoding Pools ====================
 
 const ENCODING_POOLS = [
-  'gzip, deflate, br',
-  'br, gzip, deflate',
-  'gzip, br, deflate',
-  'deflate, gzip, br',
-  'br, deflate, gzip',
+  'gzip, deflate, br',       // Classic Chrome (< v70)
+  'br, gzip, deflate',       // Modern Chrome (v70+)
+  'gzip, br, deflate',       // Chrome variant
+  'gzip, deflate, br, zstd', // Chrome 116+ with zstd
+  'br, gzip, deflate, zstd', // Chrome 116+ with zstd (alt order)
 ];
 
 // ==================== Domain Cache ====================
