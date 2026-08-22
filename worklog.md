@@ -14004,3 +14004,228 @@ Stage Summary:
 - 累计: 298项
 - ESLint: 0 errors ✅
 - Git: 8f76ffe成功
+---
+Task ID: R30-a
+Agent: Code Auditor (Round 30-a)
+Task: stealth 49-50 + rate-limiter + queue.pg + captcha-strategy + cleaning 深度审计
+
+## 审计范围
+
+| 文件 | 路径 | 审计行数 |
+|------|------|----------|
+| stealth.ts | `mini-services/scraper-service/src/stealth.ts` | S49 L1886-1906, S50 L1908-1918 |
+| rate-limiter.ts | `mini-services/scraper-service/src/rate-limiter.ts` | 全文 279 行 |
+| queue.pg.ts | `mini-services/scraper-service/src/queue.pg.ts` | 全文 375 行 |
+| captcha-strategy.ts | `mini-services/scraper-service/src/captcha-strategy.ts` | 全文 258 行 |
+| cleaning.ts | `mini-services/scraper-service/src/cleaning.ts` | 全文 576 行 |
+
+## 审计结果
+
+### stealth.ts (Section 49-50 only)
+
+- [a] Permissions API → ✅ Correct (S49 returns consistent 'prompt' for geo/notifications/camera/microphone; descriptor matching handles both object and string descriptors; fallback via _origPermissionsQuery correctly delegates non-overridden perms to Section 8's instance override)
+- [b] Document.hasFocus() → [INFO] Section 50 is dead code. Section 36 (L1559-1567) unconditionally replaces `document.hasFocus` with `() => true` BEFORE Section 50 runs. Section 50's guard `if (!document.hasFocus())` always evaluates false (because Section 36 already set it to true), so the override is never applied. Functionally harmless but the section adds no value.
+- [c] S49-50 interaction with earlier sections → [LOW] S49 is partially redundant with Section 8 (L736-751). Section 8 already overrides `navigator.permissions.query` for notifications (returning Notification.permission='default' which is an **invalid** PermissionState — should be 'prompt'), geo/camera/mic/accel/gyro/mag. S49 captures Section 8's patched version as `_origPermissionsQuery` and overrides the 4 same permissions. This means: (1) S49 correctly fixes the notifications 'default' → 'prompt' bug from Section 8, (2) S49's fallback delegates to Section 8 for other perms (acceptable), (3) Section 38 (L1593) overrides `Permissions.prototype.query` with `notifications: 'default'` (same invalid state bug) but this prototype override is completely masked by S49's instance override — Section 38 is effectively dead code for these 4 permissions.
+- [d] Variable scoping → ✅ Correct. `_origPermissionsQuery` and `_permOverrides` use `var` inside IIFE/try block. No global namespace pollution.
+- [e] Error handling → ✅ Correct. S49 has `if (navigator.permissions && navigator.permissions.query)` guard. S50 wrapped in try-catch.
+- [f] Determinism → ✅ Correct. Both sections use only static return values — no randomness, no time-dependent logic. Same seed produces same results.
+
+### rate-limiter.ts
+
+- [a] Sliding window accuracy → ✅ Correct. Window filter uses `t > windowStart` (strict >), wait calculation uses `oldest + WINDOW_MS - now + 1` (+1ms buffer). At exact boundary, the oldest timestamp is excluded, count decreases by 1, request is allowed. Edge case handled correctly.
+- [b] Recovery threshold cap → ✅ Correct. Verified all test values: maxRPM=1→20, 5→12, 10→6, 30→5, 60→5. All within [5,20] range. The formula `60/maxRPM` with clamping ensures low-RPM domains don't get excessively slow recovery.
+- [c] Adaptive backoff → ✅ Correct. `acquire()` is a pure check (no built-in retry). The 3-retry wait pattern is in `waitForRateLimit()` (engines.ts L93-129), which correctly implements wait-then-reacquire with abort signal support and 2s cap per wait.
+- [d] Penalty escalation → ✅ Correct. Each 429/403/503: (1) resets penalty timer to 5min, (2) halves maxRPM (30→15→7→3→1, floor at 1). RPM reduction IS the escalation mechanism. Penalty duration stays constant but keeps resetting on repeated offenses, effectively extending it.
+- [e] Per-domain isolation → ✅ Correct. Each domain has independent DomainState. No shared mutable state between domains.
+- [f] Memory management → ✅ Correct. MAX_DOMAINS=500 with oldest-first eviction on create. MAX_TIMESTAMPS_PER_DOMAIN=200 with slice trimming on acquire.
+
+### queue.pg.ts
+
+- [a] FOR UPDATE SKIP LOCKED → ✅ Correct. `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED)` pattern is atomic. Locked rows are skipped, not waited on. Status change to 'in_progress' happens atomically with lock acquisition. No rows lost on timeout.
+- [b] Stale task recovery → ✅ Correct. `updated_at < cutoff` where cutoff = now - staleMinutes. Items stuck >30min reset to 'pending' with retries=0. Design choice: resetting retries is intentional (stale items get fresh start since previous attempt was interrupted, not failed).
+- [c] Connection pool exhaustion → [LOW] Pool configured with `max: 5`. The `postgres` library queues pending queries when all connections are busy, but has no built-in queue-wait timeout. If 5 connections are all in long queries, the 6th query waits indefinitely (until Node.js event loop or the query itself errors). Adding `statement_timeout` or a query-level timeout would prevent indefinite hangs. Current `idle_timeout: 20` helps release idle connections but doesn't help when all connections are actively in use.
+- [d] Error handling in dequeue → ✅ Correct. The `postgres` library automatically releases connections back to pool on query completion or error. No connection leak risk.
+- [e] Priority ordering → N/A. No priority column exists in the table. ORDER BY created_at ASC (always non-NULL, defaults to NOW()).
+- [f] Batch operations → ✅ Correct. `addManyToQueue` uses `db.begin(async (sql) => { ... })` wrapping all inserts in a single transaction. Atomic — all succeed or none.
+
+### captcha-strategy.ts
+
+- [a] Strategy selection logic → [MEDIUM] EngineUpgradeStrategy.canHandle() returns `true` for ALL detections (line 111), which means it always wins over DelayBackoffStrategy in the ordered evaluation. For external/stealth engines (obscura, cloud-browser, scrapling), EngineUpgrade returns `{action: 'none'}` — a no-op that prevents the loop from continuing to DelayBackoffStrategy. Result: external engines never get exponential backoff delays; they always get the caller's fixed CAPTCHA_PAUSE_MS instead of escalating 5s→10s→20s→40s→... This blocks useful degradation for non-Cloudflare/non-GeeTest CAPTCHAs on stealth engines.
+  - **Fix**: EngineUpgradeStrategy.canHandle() should return `false` for engines in EXTERNAL_ENGINES set (line 107-109), so the loop falls through to DelayBackoffStrategy which can provide exponential backoff.
+- [b] Degradation path → [INFO] When all strategies return no useful action, the caller (task-engine.ts L880-898) still applies CAPTCHA_PAUSE_MS delay and retries. The fallback in autoHandleCaptcha (line 252) is unreachable since DelayBackoffStrategy.canHandle() always returns true.
+- [c] Timeout handling → ✅ Correct. Strategies are synchronous (return immediately with action suggestions). No internal timeouts needed. Caller handles timing.
+- [d] Engine integration → ✅ Correct. Upgrade path (cheerio→playwright→obscura) covers 3 self-hosted engines. External engines correctly excluded from auto-upgrade. Caller (task-engine.ts L880) properly handles nextEngine switch.
+- [e] Detection score threshold → [INFO] 0.5 threshold in captcha-detector.ts (L220) is reasonable. Strategies don't use confidence value for decision-making (only check type), which means low-confidence (0.51) and high-confidence (0.99) detections get identical treatment. Could be improved by using confidence to choose between delay-retry (cheap) vs engine-switch (expensive), but current behavior is acceptable.
+- [f] State management → ✅ Correct. All strategy instances are stateless. No mutable state carried between tasks. STRATEGIES array is module-level const.
+
+### cleaning.ts
+
+- [a] Zero-width character filtering → [MEDIUM] Missing U+200E (LRM) and U+200F (RLM) — Left-to-Right Mark and Right-to-Left Mark. These are Unicode Cf (Format) category characters commonly used in anti-scraping (RTL override attacks) and text steganography. Also missing: U+2028 Line Separator, U+2029 Paragraph Separator, U+2066-2069 Directional Isolates (LRI/RLI/FSI/PDI). Current filter (L554) covers 12 code points but misses at least 7 commonly-abused zero-width/format characters.
+  - **Fix**: Add `\u200E\u200F\u2028\u2029\u2066\u2067\u2068\u2069` to the zero-width character regex on L554.
+- [b] Safe regex → ✅ Correct. User-provided patterns go through `safeRegexReplace()` with static dangerous-pattern detection. WATERMARK_PATTERNS are pre-compiled with known-safe patterns. The `postgres` library uses V8's built-in regex execution limit as runtime backstop. Note: `safeRegexReplace` does not truncate text (unlike `safeRegexMatch`), but this is an intentional design choice documented in comments.
+- [c] HTML entity decoding → ✅ Correct. cheerio's `$.text()` automatically decodes all HTML entities (nbsp, amp, lt, gt, quot, numeric, hex). No manual decoding needed.
+- [d] Whitespace normalization → [LOW] Standalone `\r` (not part of CRLF) is not handled. The pipeline normalizes `\r\n → \n` (L558) but bare `\r` characters (old Mac-style line endings) pass through unchanged. Should add `.replace(/\r/g, '\n')` before the CRLF normalization, or use `.replace(/\r\n?/g, '\n')`.
+- [e] Control character filtering → [LOW] No general Cc (control, U+0000-U+001F) or Cf (format, beyond the specific zero-width chars) filtering. Characters like U+0000 (null), U+0001-U+0008, U+000B, U+000C, U+000E-U+001F could pass through and corrupt output data or cause rendering issues. The worklog notes sanitizeString in the main app filters these, but the scraper-service's cleaning.ts does not.
+- [f] Performance → ✅ Correct. WATERMARK_PATTERNS pre-compiled. Ad pattern regexes cached (LRU, 200 max). filterAdLines uses `.includes()` fast-path before regex. Pipeline is sequential with O(n) per step. 100K+ char text should process in <100ms. No performance concern.
+
+## 汇总
+
+- 总计 30 个审计角度
+- 22 确认正确
+- 8 个发现 (0 HIGH, 2 MEDIUM, 3 LOW, 3 INFO)
+
+### 修复清单 (按优先级排序)
+
+| # | 严重度 | 文件 | 行号 | 问题描述 |
+|---|--------|------|------|----------|
+| 1 | MEDIUM | captcha-strategy.ts | L111 | EngineUpgradeStrategy.canHandle() 对 EXTERNAL_ENGINES 返回 true，阻断 DelayBackoffStrategy 的指数退避。外部引擎上的非 CF/GeeTest 验证码永远无法获得递增延迟 |
+| 2 | MEDIUM | cleaning.ts | L554 | 零宽字符过滤缺少 U+200E/LRM, U+200F/RLM, U+2028, U+2029, U+2066-2069 (共 8 个常用反爬/隐写字符) |
+| 3 | LOW | cleaning.ts | L558 | 单独的 \r (非 CRLF) 未被规范化为 \n |
+| 4 | LOW | cleaning.ts | 全文 | 缺少通用 Cc/Cf 控制字符过滤 (U+0000-U+001F 等可能通过并污染输出) |
+| 5 | LOW | queue.pg.ts | L26 | postgres 连接池无队列等待超时，5 连接全部忙时第 6 个查询无限等待 |
+| 6 | INFO | stealth.ts | L1908-1918 | Section 50 是死代码 (Section 36 已在前面无条件覆盖 hasFocus 为 true) |
+| 7 | INFO | stealth.ts | L1886-1906 | Section 49 与 Section 8 部分冗余 (S49 修复了 S8 的 notifications 'default' 无效值 bug) |
+| 8 | INFO | captcha-strategy.ts | L252 | autoHandleCaptcha 的 fallback 不可达 (DelayBackoffStrategy.canHandle() 始终返回 true) |
+
+## 建议修复
+
+1. **captcha-strategy.ts L111**: `canHandle()` 改为检查 EXTERNAL_ENGINES:
+   ```typescript
+   canHandle(_detection: CaptchaDetection): boolean {
+     return !EngineUpgradeStrategy.EXTERNAL_ENGINES.has(_detection... // 需要 context
+   ```
+   由于 canHandle 不接收 context，更好的方案是将 EngineUpgradeStrategy 排在 DelayBackoffStrategy 之后，或让 canHandle 接收 context 参数。
+
+2. **cleaning.ts L554**: 扩展零宽字符正则:
+   ```typescript
+   text = text.replace(/[\u200B-\u200F\u2028\u2029\u2060-\u2069\uFEFF\u00AD\u180E\u034F]/g, '');
+   ```
+
+3. **cleaning.ts L558**: 修复 CRLF 处理:
+   ```typescript
+   .replace(/\r\n?/g, "\n")  // 同时处理 CRLF 和单独 \r
+   ```
+
+## 验证结果
+- 代码审查完成，无需运行时验证 (纯代码审计)
+- ESLint: 未运行 (仅读取分析)
+
+Stage Summary:
+- 30 个审计角度，22 确认正确，8 发现 (0 HIGH, 2 MEDIUM, 3 LOW, 3 INFO)
+- 关键发现: EngineUpgradeStrategy 阻断 DelayBackoff 指数退避; 零宽字符过滤缺少 LRM/RLM 等 8 个字符
+- stealth S49-50: S50 是死代码 (S36 已覆盖); S49 修复了 S38 的无效 PermissionState bug
+- rate-limiter 和 queue.pg: 整体质量高，无 HIGH/MEDIUM bug
+- 累计: 298 项 (无新增修复)
+- 建议修复: 2 MEDIUM + 3 LOW = 5 项
+
+---
+Task ID: R30-b
+Agent: Code Auditor (Round 30-b)
+Task: scrapers+quality-scorer+js-content-extractor+http2-decoy+charset-detector+referrer-chain 深度审计
+
+## 审计范围
+
+| 文件 | 路径 | 审计行数 |
+|------|------|----------|
+| scrapers.ts | `mini-services/scraper-service/src/scrapers.ts` | 全文 434 行 |
+| quality-scorer.ts | `mini-services/scraper-service/src/quality-scorer.ts` | 全文 393 行 |
+| js-content-extractor.ts | `mini-services/scraper-service/src/js-content-extractor.ts` | 全文 294 行 |
+| http2-decoy.ts | `mini-services/scraper-service/src/http2-decoy.ts` | 全文 125 行 |
+| charset-detector.ts | `mini-services/scraper-service/src/charset-detector.ts` | 全文 345 行 |
+| referrer-chain.ts | `mini-services/scraper-service/src/referrer-chain.ts` | 全文 175 行 |
+
+## 审计结果
+
+### scrapers.ts
+
+- [a] Content extraction pipeline → ✅ Correct. scrapers.ts 是高层编排文件，不包含 extractContent() 函数。内容提取委托给 parseSelector() (selectors.ts)，JS 内容提取委托给 extractJsContent() (js-content-extractor.ts)。4 个高层操作 (list/book/chapters/content) 各有清晰的提取流程。handleScrapeContent 的回退链：parseSelector → hasJsContentPatterns + extractJsContent → 使用原始短内容。
+- [b] JS content extraction fallback → ✅ Correct. L335-347: 当 parseSelector 返回 <50 字符时，对原始 HTML（非 cleanHtmlRaw 处理后的）检查 hasJsContentPatterns，然后调用 extractJsContent。注意：JS 提取使用原始 html 而非 processedHtml，这是正确的，因为 JS 模式在 <script> 标签中，cleanHtmlRaw 可能移除它们。
+- [c] Error handling → ✅ Correct. paginatedFetch 中 engine.fetch 用 try-catch 包裹 (L110-118)，失败时 break 停止分页但保留已收集数据。CAPTCHA 检测和跳过有独立逻辑。整个 handleScrapeContent 无顶层 try-catch，但由调用方 (task-engine) 的 try-catch 保护。
+- [d] Unicode/encoding → ✅ Correct. scrapers.ts 本身不做编码处理。编码检测和转换在 engines.ts 的 readResponseBody() 中完成（通过 charset-detector.ts 的 detectAndDecode），在 cheerio.load() 之前。正确顺序：raw bytes → charset detection → decoding → HTML string → scrapers.ts。
+- [e] HTML structure preservation → ✅ Correct. 嵌套元素遍历由 cheerio 的 parseSelector 处理。JS 提取只提取文本内容，不涉及 DOM 遍历。
+- [f] Performance → ✅ Correct. paginatedFetch 使用 Set 去重 (visitedPages, seen, seenUrls)。Fisher-Yates shuffle 在 handleScrapeChapters 中是 O(n)。无 O(n²) 复杂度。
+
+### quality-scorer.ts
+
+- [a] Scoring weight balance → ✅ Correct. 权重：15+15+15+20+15+10+10 = 100。各检查的最大分数正确：checkSuccessRate 15, checkContentCoverage 15 (L178 有 Math.min(15,...) 保护), checkFailureRate 15, checkContentQuality 20, checkCompleteness 15, checkEfficiency 10, checkEngineMatch 10。
+- [b] Edge cases → [INFO] 空内容 (newChapters=0): checkContentQuality 返回 6 分。极短内容：由 chapter wordCount < 50 判定为空章节。全数字内容：未被检测（scorer 不检查内容文本，只看聚合统计数据）。
+- [c] Score normalization → [MEDIUM] **内容质量维度 (20pts) 永远无法获得满分**。task-engine.ts L388 调用 qualityScorer.score() 时未传递第三个参数 `chapters`，导致 checkContentQuality 始终走 `!chapters || chapters.length === 0` 分支 (L226)，返回最多 12 分（非 20 分）。这意味着总分上限为 92 而非 100，评分 A 级 (≥85) 仍可达但完美分不可达。20 分的内容质量维度（平均字数 + 空章节率）是死代码。
+  - **Fix**: task-engine.ts 应在收集章节时记录各章节 wordCount，然后在调用 qualityScorer.score() 时传入 chapters 数组。
+- [d] Feature detection → ✅ Correct. 7 个维度的特征检测逻辑合理：成功率、覆盖率、失败率、内容质量（平均字数+空章节率）、完整性、效率、引擎匹配。各维度的阈值（90%成功率、85%覆盖率、5%失败率、500字/章等）对小说采集场景合理。
+- [e] Threshold logic → ✅ Correct. 等级阈值：A≥85, B≥70, C≥50, D≥30, F<30。摘要生成按分数区分 3 个级别。阈值合理。
+- [f] Integration → [MEDIUM] task-engine.ts L388 调用 qualityScorer.score() 时缺少 chapters 参数（见 [c]）。调用本身有 try-catch 保护 (L399)，不会导致任务失败。report 被记录到日志 (L398) 但未存储到数据库。
+
+### js-content-extractor.ts
+
+- [a] Pattern 1-8 detection → [LOW] 8 个模式均存在且逻辑正确。但 Pattern 5 (variableAssignment) 的变量名列表硬编码为 `chapterContent|content|txtContent|nr_title|nr1|chaptertxt|content_1` (L75)，仅覆盖 7 个常见变量名。许多小说站使用不同的变量名（如 `chapterContentStr`, `novelContent`, `booktxt` 等），这些会被漏掉。由于这些模式的目的是作为回退，漏掉一些是可接受的，但可以通过添加更多常见变量名提高覆盖率。
+- [b] Regex safety → ✅ Correct. 所有模式使用有界字符类 `[^'";]{N,}` 或 `[A-Za-z0-9+/=]{100,}`，无嵌套量词，无回溯风险。全局标志 `g` 的 `lastIndex` 在每次执行前正确重置 (L206)。debugJsPatterns 有零长度匹配保护 (L285)。
+- [c] Performance on large HTML → [INFO] 8 个全局正则对整个 HTML 扫描，总复杂度 O(8 × html_length)。对 1MB+ HTML，约 8MB 正则扫描。但此函数仅在正常提取失败时调用，是回退路径，性能可接受。isLikelyNovelContent 中的 text.match() 创建临时数组，对 500K 内容可能产生 GC 压力。
+- [d] Encoding handling → ✅ Correct. decodeExtractedContent 处理 URL 编码、HTML 实体和 Base64。JS 字符串本身是 Unicode，不太可能包含 GBK/Big5 字节。Base64 检测 (L159) 有合理性检查（仅当解码后 CJK 字符更多时才使用 Base64 解码）。
+- [e] Context window → ✅ Correct. 模式从 JS 关键词（如 getElementById）开始匹配，捕获到 `['";]` 为止。无显式窗口限制，但否定字符类自然限制了匹配范围。MIN_CONTENT_LENGTH=50 和 isLikelyNovelContent 过滤确保只有有意义的匹配被保留。
+- [f] Fallback behavior → ✅ Correct. 无模式匹配时返回 `{ found: false, content: '', pattern: '', chunks: [] }`。scrapers.ts 中的调用方正确处理此情况：回退到原始（可能很短的）内容。
+
+### http2-decoy.ts
+
+- [a] Accept-Encoding diversity → [LOW] 仅 5 个编码池 (ENCODING_POOLS)。zstd 仅出现在 2/5 池中。现代 Chrome 116+ 应始终包含 zstd，但 60% 的请求不含 zstd，可能被标记为过时客户端。此外，缺少 `identity` 选项（某些浏览器场景下会发送）。
+- [b] Cache consistency → ✅ Correct. 域名 → 一致 profile（确定性哈希 `domainHash`），TTL 20 分钟后重新生成但结果相同。缓存条目不会被并发修改（单线程 Node.js）。MAX_CACHE_SIZE=200，FIFO 淘汰。
+- [c] Header ordering → [INFO] 文件名和 JSDoc 提到 HTTP/2 优先级/依赖提示，但代码仅提供 Accept-Encoding 多样化。HTTP/2 伪头（:method, :path, :scheme, :authority）由 Bun HTTP 客户端处理，不在此模块。connectionHeader 和 priorityUrgency 字段是日志提示，未用于实际请求。
+- [d] Domain matching → [INFO] 无域名分类（CDN/static/api）。所有域名使用相同逻辑。这不是 bug，但意味着 CDN 域名不会获得不同的 Accept-Encoding 顺序（CDN 通常期望更简单的编码偏好）。
+- [e] Missing headers → [INFO] HTTP/2 伪头不在此模块范围内。connectionHeader 字段存在于 ConnectionProfile 中但从未添加到请求头（实际连接头由 ip-fingerprint.ts 独立管理）。RFC 7540 Section 8.1.2.2 禁止在 HTTP/2 中使用 Connection 头，如果 ip-fingerprint.ts 将其添加到 HTTP/2 请求中则违反协议。
+- [f] Performance → ✅ Correct. domainHash 是 O(n)（n=域名长度）。缓存淘汰是 O(200) 仅在缓存满时触发。getConnectionProfile 整体是 O(1) 有缓存时。
+
+### charset-detector.ts
+
+- [a] BOM detection → [LOW] **UTF-32LE BOM 检测顺序错误**。BOM_MAP 中 utf-16le (FF FE) 在 utf-32le (FF FE 00 00) 之前。Object.entries() 按插入顺序迭代，UTF-32LE 文件的前 2 字节 (FF FE) 会先匹配 utf-16le 的 BOM，导致 UTF-32LE 被误识别为 UTF-16LE。修复：按 BOM 长度降序排列检查顺序，或在检查短 BOM 后验证后续字节不是更长 BOM 的一部分。
+  注：UTF-32LE 在实际 Web 内容中极其罕见，此 bug 主要是理论性的。
+- [b] GBK detection accuracy → ✅ Correct. 30% 阈值 (gbkPairs/nonAscii > 0.3) 对实际 GBK 内容合理（通常 >80%）。声明的 GBK 家族编码 (gbk/gb18030/gb2312) 被优先尊重 (L249)，避免误纠正常确声明。UTF-8 中文文本可能产生假阳性（UTF-8 多字节序列与 GBK lead byte 范围有重叠），但 combined check (hasSignificantNonAscii + declared charset) 降低了风险。
+- [c] Big5 detection → ✅ Correct. 区分逻辑 (L229-240) 通过检查 GBK-only lead bytes (0x81-0xA0, 0xFA-0xFE) 来区分 GBK 和 Big5。如果不存在 GBK-only lead bytes，优先判定为 Big5。Big5 声明的家族编码 (big5/big5-hkscs) 也被优先尊重 (L277)。
+- [d] Performance → ✅ Correct. 非 ASCII 计数优化 (L214-221) 在 >20 个非 ASCII 字节后才进行昂贵的频率分析。HTML meta charset 仅检查前 4KB (L204)。CJK 检测涉及 4 次 O(n) 扫描，对 1MB 内容约 4ms。足够快，可内联用于每个响应。
+- [e] Fallback behavior → ✅ Correct. 无 BOM、无 CJK 模式、无声明编码时回退到 'utf-8' (L304)。这是合理的默认值。检测不确定时也回退到声明编码或 UTF-8。
+- [f] Integration with engines → ✅ Correct. detectAndDecode 在 engines.ts 的 readResponseBody() (L79) 中调用。顺序正确：读取 raw bytes → charset detection → decoding → 返回 HTML string → cheerio.load()。在内容读取之后、HTML 解析之前进行字符集检测。
+
+### referrer-chain.ts
+
+- [a] Chain recording → ✅ Correct. recordVisit 在 engines.ts 的 3 个位置被调用（L389, 647, 1622），每次成功获取后记录 finalUrl。URL 解析和域名提取用 try-catch 保护 (L53-70)。
+- [b] Cross-domain handling → [INFO] recordCrossDomainTransition 存在但**从未被调用**。跨域 referrer 由 utils.ts 中的 spoofedReferer（getSpoofedReferer）或显式 antiCrawl.referer 设置提供，不通过 chain 记录。
+- [c] Chain depth limit → ✅ Correct. 每域名最多 100 条历史 (MAX_HISTORY_PER_DOMAIN)，最多 500 个域名 (MAX_TRACKED_DOMAINS)。无深度限制但内存有界。数组追加操作不可能产生无限循环。
+- [d] Referrer header generation → [INFO] referrer-chain.ts 没有 generateReferrerHeader() 函数。实际 referrer 生成在 utils.ts L786-811 中，使用 referrerChain.getReferer() 作为三级回退之一：explicit > chain > spoofed。逻辑正确。
+- [e] Domain matching → ✅ Correct. getReferer 使用 new URL(targetUrl).hostname 提取域名，在同域名历史中查找。utils.ts L442-461 中使用 hostname === domain 判断同源。正确。
+- [f] Memory management → ✅ Correct. FIFO 淘汰：evictIfNeeded() 删除第一个插入的域名（Map 插入顺序）。每域名 entries 超过 100 时 shift() 移除最旧。最大内存：500 域 × 100 条 = 50,000 条 NavigationEntry。无基于时间的自动清理，但对爬虫场景可接受。
+
+## 汇总
+
+- 总计 36 个审计角度
+- 25 确认正确
+- 11 个发现 (0 HIGH, 2 MEDIUM, 2 LOW, 5 INFO)
+
+### 修复清单 (按优先级排序)
+
+| # | 严重度 | 文件 | 行号 | 问题描述 |
+|---|--------|------|------|----------|
+| 1 | MEDIUM | quality-scorer.ts + task-engine.ts | task-engine L388 | qualityScorer.score() 未传 chapters 参数，内容质量维度 (20pts) 永远只获得最高 12 分。总分上限 92 而非 100。20 分的详细内容分析（平均字数+空章节率）是死代码 |
+| 2 | MEDIUM | quality-scorer.ts | L226-234 | checkContentQuality 的详细分析路径（chapters 参数）在当前集成中永远不会执行，等价于废弃代码 |
+| 3 | LOW | charset-detector.ts | L28-34 | UTF-32LE BOM (FF FE 00 00) 会被误检为 UTF-16LE (FF FE)，因为 Object.entries 按插入顺序迭代且 utf-16le 在 utf-32le 之前 |
+| 4 | LOW | js-content-extractor.ts | L75 | Pattern 5 硬编码仅 7 个变量名，许多小说站使用不同的变量名会被漏掉 |
+| 5 | INFO | http2-decoy.ts | L34-40 | 仅 5 个编码池且 zstd 仅占 40%，60% 请求不含 zstd 可能被标记为过时客户端 |
+| 6 | INFO | http2-decoy.ts | L22-29, L96 | connectionHeader/priorityUrgency/maxConcurrentStreams/initialWindowSize 字段从未用于实际请求，仅是日志提示 |
+| 7 | INFO | referrer-chain.ts | L114-133 | recordCrossDomainTransition 存在但从未被调用，跨域 referrer 转换不通过 chain 记录 |
+| 8 | INFO | quality-scorer.ts | L226-234 | 空内容/极短内容/全数字内容未被直接检测（scorer 作用于聚合统计，不检查内容文本） |
+| 9 | INFO | http2-decoy.ts | 全文 | 无域名分类逻辑 (CDN/static/api)，所有域名使用相同 Accept-Encoding 策略 |
+
+## 建议修复
+
+1. **quality-scorer 集成修复**: task-engine.ts 在采集章节时记录各章节 wordCount，调用 qualityScorer.score() 时传入 chapters 数组启用 20 分的详细内容分析。
+
+2. **charset-detector BOM 顺序**: 将 BOM_MAP 条目按 BOM 字节长度降序排列（先检查 4 字节 UTF-32，再检查 2 字节 UTF-16）。
+
+## 验证结果
+- 代码审查完成，无需运行时验证 (纯代码审计)
+- ESLint: 未运行 (仅读取分析)
+
+Stage Summary:
+- 36 个审计角度，25 确认正确，11 发现 (0 HIGH, 2 MEDIUM, 2 LOW, 7 INFO)
+- 关键发现: qualityScorer 内容质量维度 (20pts) 因缺少 chapters 参数永远最高 12 分；charset-detector UTF-32LE BOM 顺序错误
+- http2-decoy: 大部分字段是死代码（仅 getAcceptEncoding 被使用）
+- referrer-chain: recordCrossDomainTransition 从未被调用
+- 累计: 298 项 (无新增修复)
+- 建议修复: 2 MEDIUM + 2 LOW = 4 项

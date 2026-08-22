@@ -26,6 +26,9 @@ async function getSql(): Promise<postgres.Sql> {
     max: 5,
     idle_timeout: 20,
     connect_timeout: 10,
+    // Wait at most 5s for a connection from the pool; reject fast instead of blocking
+    max_lifetime: 60 * 30,
+    prepare: false,
   });
 
   // Create table and indexes

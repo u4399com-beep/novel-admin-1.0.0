@@ -551,11 +551,19 @@ function normalizeWhitespace(text: string): string {
   // U+200B ZWSP, U+200C ZWNJ, U+200D ZWJ, U+FEFF BOM/ZWNBSP,
   // U+00AD soft hyphen, U+2060 word joiner, U+2061-2064 invisible math,
   // U+180E Mongolian vowel separator, U+034F combining grapheme joiner
-  text = text.replace(/[\u200B\u200C\u200D\uFEFF\u00AD\u2060\u2061\u2062\u2063\u2064\u180E\u034F]/g, '');
+  // U+200E LRM (Left-to-Right Mark), U+200F RLM (Right-to-Left Mark)
+  // U+2028 Line Separator, U+2029 Paragraph Separator
+  // U+2066-2069 Isolate controls (Bidi)
+  text = text.replace(/[\u200B\u200C\u200D\u200E\u200F\u2028\u2029\uFEFF\u00AD\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\u180E\u034F]/g, '');
+  // Strip general Cc control characters (U+0000-U+001F) except TAB(0x09), LF(0x0A), CR(0x0D)
+  // Also strip Cf format characters (U+200B-F already above, but catch remaining like U+FFF9-FFFB)
+  text = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+  text = text.replace(/[\uFFF9\uFFFA\uFFFB]/g, '');
   // Normalize CJK ideographic space (U+3000) to regular space
   text = text.replace(/\u3000/g, ' ');
   return text
     .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")  // Standalone CR (old Mac line endings)
     .replace(/\t+/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n */g, "\n")

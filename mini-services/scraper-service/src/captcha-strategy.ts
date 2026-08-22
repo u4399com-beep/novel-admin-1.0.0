@@ -31,8 +31,8 @@ export interface StrategyResult {
 export interface CaptchaStrategy {
   name: string;
   description: string;
-  /** Check if this strategy applies to the given detection */
-  canHandle(detection: CaptchaDetection): boolean;
+  /** Check if this strategy applies to the given detection and context */
+  canHandle(detection: CaptchaDetection, context?: StrategyContext): boolean;
   /** Execute the strategy, returns true if resolved */
   execute(detection: CaptchaDetection, context: StrategyContext): Promise<StrategyResult>;
 }
@@ -108,12 +108,18 @@ class EngineUpgradeStrategy implements CaptchaStrategy {
     'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura',
   ]);
 
-  canHandle(_detection: CaptchaDetection): boolean {
-    return true; // Applies to any CAPTCHA
+  canHandle(_detection: CaptchaDetection, context?: StrategyContext): boolean {
+    // Only handle if current engine has a valid upgrade path
+    // This allows DelayBackoffStrategy (which provides escalating delays)
+    // to handle external/stealth engines that can't be upgraded further.
+    if (context?.currentEngine && EngineUpgradeStrategy.EXTERNAL_ENGINES.has(context.currentEngine)) {
+      return false; // No upgrade path — let DelayBackoffStrategy handle with backoff
+    }
+    return true;
   }
 
   async execute(_detection: CaptchaDetection, context: StrategyContext): Promise<StrategyResult> {
-    // External engines: no auto-upgrade
+    // External engines: should not reach here (canHandle returns false), but guard anyway
     if (EngineUpgradeStrategy.EXTERNAL_ENGINES.has(context.currentEngine)) {
       return {
         resolved: false,
@@ -240,7 +246,7 @@ export async function autoHandleCaptcha(
   context: StrategyContext
 ): Promise<StrategyResult> {
   for (const strategy of STRATEGIES) {
-    if (strategy.canHandle(detection)) {
+    if (strategy.canHandle(detection, context)) {
       if (process.env.DEBUG === 'true') {
         console.log(`[CaptchaStrategy] Applying strategy '${strategy.name}' for ${detection.type} on ${context.domain}`);
       }

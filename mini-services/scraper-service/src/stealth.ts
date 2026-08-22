@@ -1907,11 +1907,96 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // Section 50: Document.hasFocus() initial state
   // Real browser tabs start with focus. Headless may report false.
+  // NOTE: Section 36 already unconditionally overrides hasFocus.
+  // This section handles the edge case where hasFocus was called before stealth loaded.
   try {
-    if (!document.hasFocus()) {
+    if (typeof document.hasFocus !== 'undefined' && !document.hasFocus()) {
       Object.defineProperty(document, 'hasFocus', {
         value: function() { return true; },
         writable: true,
+        configurable: true,
+      });
+    }
+  } catch(e) {}
+
+  // Section 51: speechSynthesis.getVoices() consistency
+  // Headless Chromium often returns an empty array for getVoices().
+  // Real browsers always have at least a default voice. We seed 3-6 fake voices.
+  try {
+    if (window.speechSynthesis && window.speechSynthesis.getVoices) {
+      var _origGetVoices = window.speechSynthesis.getVoices.bind(window.speechSynthesis);
+      var _voiceSeed = _fakeDeviceSeed * 7.77;
+      var _voiceNames = ['Google US English', 'Google UK English Female', 'Microsoft David Desktop', 'Microsoft Zira Desktop', 'Alex', 'Samantha', 'Victoria', 'Karen', 'Daniel', 'Moira'];
+      var _voiceLangs = ['en-US', 'en-GB', 'en-US', 'en-US', 'en-US', 'en-US', 'en-US', 'en-AU', 'en-GB', 'en-GB'];
+      var _numVoices = 3 + Math.floor((_voiceSeed * 100) % 4); // 3-6 voices
+      var _fakeVoices = [];
+      for (var _vi = 0; _vi < _numVoices; _vi++) {
+        var _idx = Math.floor((_voiceSeed * 10 + _vi * 3.14) % _voiceNames.length);
+        _fakeVoices.push({
+          voiceURI: _voiceNames[_idx],
+          name: _voiceNames[_idx],
+          lang: _voiceLangs[_idx],
+          localService: true,
+          default: _vi === 0,
+        });
+      }
+      var _voicesReturned = false;
+      window.speechSynthesis.getVoices = function() {
+        if (_voicesReturned) return _fakeVoices;
+        _voicesReturned = true;
+        // First call may return empty (Chrome async loading behavior)
+        var real = _origGetVoices();
+        if (real && real.length > 0) return real;
+        return _fakeVoices;
+      };
+    }
+  } catch(e) {}
+
+  // Section 52: Notification.permission consistency
+  // Headless may return 'denied' or throw. Real browsers return 'default'.
+  try {
+    if ('Notification' in window) {
+      var _realNotifPerm = Notification.permission;
+      if (_realNotifPerm === 'denied' || _realNotifPerm === 'granted') {
+        // Force to 'default' (not yet asked) to look like a fresh real browser
+        try {
+          Object.defineProperty(Notification, 'permission', {
+            get: function() { return 'default'; },
+            configurable: true,
+          });
+        } catch(e2) {}
+      }
+      // Also patch requestPermission to not actually show a prompt
+      if (Notification.requestPermission) {
+        var _origReqPerm = Notification.requestPermission.bind(Notification);
+        Notification.requestPermission = function() {
+          return Promise.resolve('default');
+        };
+      }
+    }
+  } catch(e) {}
+
+  // Section 53: window.devicePixelRatio consistency
+  // Some headless environments report DPR=1 on HiDPI profiles, or vice versa.
+  // Ensure DPR matches the screen resolution profile.
+  try {
+    var _declaredDPR = window.devicePixelRatio || 1;
+    // If screen width is >1920 and DPR is 1, likely wrong (HiDPI display should be 1.5-3)
+    // If screen width <1920 and DPR is 2+, also suspicious
+    var _screenW = window.screen.width || 1920;
+    var _expectedDPR = 1;
+    if (_screenW >= 3840) _expectedDPR = 2;
+    else if (_screenW >= 2560) _expectedDPR = Math.random() > 0.5 ? 1.5 : 2;
+    else if (_screenW >= 1920) _expectedDPR = 1;
+    // Round to common DPR values
+    var _commonDPR = [1, 1.25, 1.5, 2, 2.5, 3];
+    var _closestDPR = _commonDPR.reduce(function(prev, curr) {
+      return Math.abs(curr - _expectedDPR) < Math.abs(prev - _expectedDPR) ? curr : prev;
+    });
+    // Only fix if there's a clear mismatch
+    if (Math.abs(_declaredDPR - _closestDPR) > 0.25) {
+      Object.defineProperty(window, 'devicePixelRatio', {
+        get: function() { return _closestDPR; },
         configurable: true,
       });
     }

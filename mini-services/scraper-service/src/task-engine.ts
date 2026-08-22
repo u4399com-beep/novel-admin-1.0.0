@@ -385,6 +385,10 @@ export async function executeTask(taskId: string) {
     // Quality scoring after successful completion
     try {
       const duration = Date.now() - taskStartTime;
+      const chapters = taskResult.chapterWordCounts?.map((wc, i) => ({
+        title: `ch_${i + 1}`,
+        wordCount: wc,
+      }));
       const qualityReport = qualityScorer.score(taskId, {
         totalBooks: taskResult.totalBooks,
         newBooks: taskResult.newBooks,
@@ -394,7 +398,7 @@ export async function executeTask(taskId: string) {
         skippedItems: taskResult.skipped,
         engine: taskResult.engine,
         duration,
-      });
+      }, chapters);
       await addTaskLog(taskId, "info", `数据质量评分: ${qualityReport.overallScore}/100 (${qualityReport.grade}) - ${qualityReport.summary}`);
     } catch {
       // Quality scoring is best-effort, don't fail the task
@@ -433,6 +437,8 @@ interface TaskResult {
   skipped: number;
   engine: string;
   queueStats?: unknown;
+  /** Per-chapter word counts for quality scoring */
+  chapterWordCounts?: number[];
 }
 
 async function executeTaskBody(
@@ -498,6 +504,7 @@ async function executeTaskBody(
   let processedChaptersCount = new AtomicCounter();
   let newChaptersCount = new AtomicCounter();
   let skippedChaptersCount = new AtomicCounter();
+  const chapterWordCounts: number[] = []; // Track word counts for quality scoring
   const booksProcessed: Array<{ id: string; title: string; url: string }> = [];
 
   async function processBook(bookUrl: string, index: number): Promise<void> {
@@ -914,6 +921,8 @@ async function executeTaskBody(
 
           const chapterTitle = contentResult.title || chapter.title;
           const chapterContent = cleanResult;
+          const chapterWordCount = chapterContent.length;
+          chapterWordCounts.push(chapterWordCount);
 
           // Log multi-page content merges for visibility
           if ((contentResult as { pagesFetched?: number }).pagesFetched && (contentResult as { pagesFetched?: number }).pagesFetched! > 1) {
@@ -1055,6 +1064,7 @@ async function executeTaskBody(
     skipped: skippedBooksCount.value + skippedChaptersCount.value,
     engine: engineType,
     queueStats,
+    chapterWordCounts: chapterWordCounts.length > 0 ? chapterWordCounts : undefined,
   };
 }
 

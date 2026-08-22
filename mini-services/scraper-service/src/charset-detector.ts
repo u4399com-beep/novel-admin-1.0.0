@@ -25,13 +25,15 @@ export interface CharsetDetectResult {
 
 // ==================== BOM Detection ====================
 
-const BOM_MAP: Record<string, { bytes: number[]; charset: string }> = {
-  'utf-8':      { bytes: [0xEF, 0xBB, 0xBF], charset: 'utf-8' },
-  'utf-16le':   { bytes: [0xFF, 0xFE], charset: 'utf-16le' },
-  'utf-16be':   { bytes: [0xFE, 0xFF], charset: 'utf-16be' },
-  'utf-32le':   { bytes: [0xFF, 0xFE, 0x00, 0x00], charset: 'utf-32le' },
-  'utf-32be':   { bytes: [0x00, 0x00, 0xFE, 0xFF], charset: 'utf-32be' },
-};
+// Ordered BOM list — longer BOMs MUST be checked first to avoid
+// UTF-32LE (FF FE 00 00) being misdetected as UTF-16LE (FF FE).
+const BOM_LIST: Array<{ bytes: number[]; charset: string }> = [
+  { bytes: [0x00, 0x00, 0xFE, 0xFF], charset: 'utf-32be' },
+  { bytes: [0xFF, 0xFE, 0x00, 0x00], charset: 'utf-32le' },
+  { bytes: [0xEF, 0xBB, 0xBF], charset: 'utf-8' },
+  { bytes: [0xFE, 0xFF], charset: 'utf-16be' },
+  { bytes: [0xFF, 0xFE], charset: 'utf-16le' },
+];
 
 // ==================== Charset Aliases ====================
 
@@ -172,8 +174,8 @@ function normalizeCharset(raw: string): string {
 export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string | null): CharsetDetectResult {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 
-  // Step 1: BOM detection
-  for (const [, { bytes: bomBytes, charset }] of Object.entries(BOM_MAP)) {
+  // Step 1: BOM detection (ordered — longer BOMs first)
+  for (const { bytes: bomBytes, charset } of BOM_LIST) {
     if (bytes.length >= bomBytes.length) {
       let match = true;
       for (let i = 0; i < bomBytes.length; i++) {

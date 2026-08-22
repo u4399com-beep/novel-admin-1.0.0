@@ -72,7 +72,7 @@ const JS_PATTERNS: Array<{
   // Matches: var content = "..."; or let/const chapterContent = '...';
   {
     name: 'variableAssignment',
-    regex: /(?:var|let|const)\s+(?:chapterContent|content|txtContent|nr_title|nr1|chaptertxt|content_1)\s*=\s*['"]([^'";]{50,})/g,
+    regex: /(?:var|let|const)\s+(?:chapterContent|content|txtContent|nr_title|nr1|chaptertxt|content_1|novelContent|booktxt|bookContent|chapter_content|articleContent|novelcontent|txt|booktxt1|chapterContent2|contentHtml|strContent|readContent|bookContentHtml)\s*=\s*['"]([^'";]{50,})/g,
     contentGroup: 1,
   },
   // Pattern 6: decodeURIComponent pattern
