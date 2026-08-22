@@ -14485,3 +14485,56 @@ Stage Summary:
 - 累计: 309 项 (无新增修复)
 - 建议修复: 2 MEDIUM + 4 LOW = 6 项
 - ESLint: 未运行
+---
+Task ID: R31
+Agent: Main Orchestrator + 2 Sub-agents (R31-a, R31-b)
+Task: 深度引擎+反指纹审计 — engines/proxy/adaptive-delay/stealth-GPU/stealth-dedup 修复
+
+Work Log:
+- 并行2个审计子代理(R31-a: 5文件/30角度, R31-b: 6文件/36角度)
+- 修复12个问题(6 MEDIUM + 6 LOW)
+- Git推送: c30c537 → main 成功
+
+## 审计结果
+
+### R31-a (engines/scrapers/proxy-manager/adaptive-delay/cookie-jar)
+- 22/30 确认正确
+- 4 MEDIUM + 2 LOW:
+  - SOCKS4代理静默直连 → getProxy跳过socks4
+  - recordSuccess未用recordSuccessWithRotation → 三引擎改用
+  - adaptive-delay backoffLevel死代码 → 公式加入antiCrawlMultiplier
+  - AgentQL size overflow缺doNotRetry → 添加
+  - Obscura硬编码args → 用profile值
+  - Cheerio maxRetries=3 vs others=2 → 统一2
+
+### R31-b (stealth30-53/fingerprint/behavior/advisor/session)
+- 24/36 确认正确
+- 2 MEDIUM + 4 LOW:
+  - Linux获取Windows D3D11 GPU → 新增Mesa供应商+7渲染器
+  - 重复humanizedFetchDelay → 删除简化版保留3级时段版
+  - Section 37 Math.random → _seededRandom
+  - Section 42被51覆盖 → 改为fallback
+  - advisor慢响应误报 → 增加errors>0条件
+  - Session持久化 → 已知限制标记
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (React Compiler) ✅
+- Git push: c30c537 成功 ✅
+
+## 修改文件
+- stealth.ts (Mesa GPU + 删除重复 + Section 37/42修复)
+- engines.ts (代理轮转 + AgentQL + Obscura + maxRetries)
+- adaptive-delay.ts (backoffLevel生效)
+- proxy-manager.ts (SOCKS4跳过)
+- anti-crawl-advisor.ts (慢响应误报)
+
+## 历史累计修复: 309 + 12 = 321项
+## Stealth Sections: 53个
+
+Stage Summary:
+- 12个bug修复(6 MEDIUM + 6 LOW)
+- 关键发现: Linux D3D11指纹暴露(最高风险); humanizedFetchDelay死代码丢失3级时段; 代理轮转从不推进
+- stealth.ts净减少41行(删除重复定义)
+- 累计: 321项
+- ESLint: 0 errors ✅
+- Git: c30c537成功
