@@ -218,7 +218,7 @@ export class QualityScorer {
     };
   }
 
-  /** 4. Content Quality (20pts): avg wordCount > 500, < 50% empty chapters */
+  /** 4. Content Quality (20pts): avg wordCount > 500, < 50% empty chapters, detect anomalies */
   private checkContentQuality(
     result: ScrapeResult,
     chapters?: Array<{ title: string; wordCount: number }>,
@@ -240,6 +240,13 @@ export class QualityScorer {
     const emptyChapters = chapters.filter(c => c.wordCount < 50).length;
     const emptyRate = emptyChapters / chapters.length;
 
+    // Anomaly detection: chapters with suspiciously identical word counts
+    // (e.g., all chapters exactly 0 or all exactly the same placeholder length)
+    const wordCountSet = new Set(chapters.map(c => c.wordCount));
+    const uniformWordCount = wordCountSet.size === 1 && chapters.length > 3;
+    // Anomaly: all chapters are very short (< 100 chars)
+    const allVeryShort = chapters.length > 0 && chapters.every(c => c.wordCount < 100);
+
     // Avg word count check (10pts)
     if (avgWordCount >= 500) {
       score += 10;
@@ -260,12 +267,27 @@ export class QualityScorer {
     }
     // else 0
 
+    // Penalty for anomalies
+    if (uniformWordCount) {
+      score = Math.max(0, score - 4); // All chapters same length = likely placeholder
+    }
+    if (allVeryShort) {
+      score = Math.max(0, score - 3); // All chapters suspiciously short
+    }
+
+    // Build detailed message
+    const parts: string[] = [];
+    parts.push(`平均 ${Math.round(avgWordCount)} 字/章`);
+    parts.push(`空章节 ${emptyChapters}/${chapters.length}（${(emptyRate * 100).toFixed(1)}%）`);
+    if (uniformWordCount) parts.push('⚠ 字数完全一致');
+    if (allVeryShort) parts.push('⚠ 所有章节过短');
+
     const passed = score >= 12;
     return {
       name: '内容质量',
       passed,
       score,
-      message: `平均 ${Math.round(avgWordCount)} 字/章，空章节 ${emptyChapters}/${chapters.length}（${(emptyRate * 100).toFixed(1)}%）`,
+      message: parts.join('，'),
     };
   }
 

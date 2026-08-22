@@ -14538,3 +14538,193 @@ Stage Summary:
 - 累计: 321项
 - ESLint: 0 errors ✅
 - Git: c30c537成功
+---
+Task ID: R32-a
+Agent: Code Auditor (Round 32-a)
+Task: 提取管道+选择器+清洁器+JS提取+字符集+类型 审计 (6文件/36角度)
+
+Work Log:
+- 读取worklog.md最后200行, 确认R31已完成(累计321项修复)
+- 审计6个文件: scrapers.ts, selectors.ts, cleaning.ts, js-content-extractor.ts, charset-detector.ts, types.ts
+- 每个文件6个审计角度, 共36个角度
+
+## 审计结果
+
+### scrapers.ts (434行)
+- [a] 边界条件/空值处理 → ✅ Correct (pagination?.maxPage||1处理0值; seen Set去重; resolveUrl空值由调用方!seen.has过滤; content长度>50的分支逻辑保证短内容始终保留(L343/L346); content-length缺失时fallback到buffer大小检查L405-413)
+- [b] 安全性 → ✅ Correct (isSafeUrl SSRF检查L376; isSafeSavePath路径遍历L380; selectors.ts L299-302阻止javascript:/data:/blob: URL; cover下载30s超时L395+5MB大小限制L406-413)
+- [c] 正确性/逻辑Bug → [LOW] L358: `fullContent.replace(/<[^>]*>/g, '')` 用于统计wordCount时剥离HTML标签, 但对含`>`属性值的畸形标签(如`<a href="foo>bar">`)会错误截断. 由于fullContent主要来自parseSelector(提取文本)或extractJsContent(少量HTML), 实际影响极低.
+- [d] 性能 → ✅ Correct (visitedPages Set上限100页; cheerio.load每页仅调用1次用于nextPage查找; contentParts.reduce用于调试日志非热路径; handleScrapeBook的7次parseSelector各自独立load Cheerio, 对<500KB页面可接受)
+- [e] 鲁棒性 → ✅ Correct (signal?.aborted每页检查L98; visitedPages循环检测L102-105; fetch失败break并返回已收集数据L117; cover下载双重size检查header+buffer)
+- [f] 数据完整性/一致性 → ✅ Correct (URL Set去重L182-183; 章节URL+titleKey双重去重L256-264; Fisher-Yates洗牌后重排sortOrder L286-293; contentParts用"\n\n"分隔L356; wordCount剥离标签+空白后计字符数, 与章节创建API一致)
+
+### selectors.ts (313行)
+- [a] 边界条件/空值处理 → ✅ Correct (parseSelector对regex返回match?.[0]||""; cheerio.load空HTML返回空文档; el.length===0返回""; extractLinksFromList中$listEl.html()||""处理null; regex selector用safeRegexMatch保护)
+- [b] 安全性 → ✅ Correct (safeRegexMatch防ReDoS; isDangerous检查javascript:/data:/blob:/vbscript: L299-302并toLowerCase比较; XPath→CSS转换仅服务端Cheerio无XSS风险; escapeCssString保护用户模式嵌入CSS属性选择器)
+- [c] 正确性/逻辑Bug → [LOW] L132-137: 自动属性检测`selector.value.endsWith("href")`会对类名如`.myhref`或`.nav-href`误触发, 返回el.attr("href")而非文本. 用户可用`extract:"text"`覆盖, 且实际中此类名罕见, 多数匹配元素同时有href属性, 影响有限.
+- [d] 性能 → [LOW] L93/L122/L159/L202/L235: parseSelector每次调用都独立cheerio.load(html). handleScrapeBook调用7次parseSelector=7次HTML解析. 可优化为共享Cheerio实例, 但对<500KB页面性能可接受.
+- [e] 鲁棒性 → ✅ Correct (xpathToCss产生的CSS虽简化但覆盖常见XPath模式; cheerio对无效CSS选择器较宽容; el[0]!非空断言在el.length>0后安全; regex selector通过safeRegexMatch保护)
+- [f] 数据完整性/一致性 → [LOW] L258-263/L281-284/L269-273/L291-294: extractLinksFromList中, 当linkSelector/titleSelector在$listEl内未找到时, 回退到文档级搜索`$(css)`. 可能返回列表外的链接/标题(如导航栏). 这是有意设计(防止零结果), 但可能引入噪音.
+
+### cleaning.ts (584行)
+- [a] 边界条件/空值处理 → ✅ Correct (normalizePatterns处理array/string/unknown; 空HTML/text通过管道后返回空字符串; filterAdLines空patterns立即返回; removeRemnantLines保留空行待后续collapse)
+- [b] 安全性 → ✅ Correct (移除script/style/iframe/noscript/object/embed/applet L219; 剥离on*事件属性L224-226; 移除javascript: URI L229-232; 用户adPatterns用escapeCssString嵌入L249; removeSelectors无效CSS被try-catch捕获L260-263; removePatterns用safeRegexReplace L338; COMPILED_WATERMARK预编译避免global regex状态问题L202-204)
+- [c] 正确性/逻辑Bug → [LOW] L147-155: decodeExtractedContent中HTML实体多pass解码顺序问题: 先解码`&lt;`再解码`&amp;`, 导致`&amp;lt;`(应为字面`&lt;`)被解码为`&<`. 实际JS渲染小说内容极少出现嵌套实体, 且内容后续经Cheerio解析时会正确处理. 影响极低.
+- [d] 性能 → ✅ Correct (adRegexCache LRU缓存200条L291-311; filterAdLines O(N*P)但小说内容<5000行×60模式可接受; $("*").each安全遍历必要开销; deduplicateParagraphs O(n)常数空间; normalizeWhitespace单次遍历)
+- [e] 鲁棒性 → ✅ Correct (用户CSS选择器try-catch L260-263; removePatterns作CSS try-catch L274-279; safeRegexReplace处理无效regex; normalizeWhitespace全面剥离零宽字符U+200B/ZWNJ/ZWJ/BOM/软连字符/Bidi隔离控制等L557; 控制字符剥离保留TAB/LF/CR L560-561)
+- [f] 数据完整性/一致性 → [LOW] L582: handleClean返回`wordCount: content.length`计算字符数(含换行), 而scrapers.ts L358用`fullContent.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length`计算(剥离标签和空白). 两处wordCount计算方式不一致, 但用于不同上下文(handleClean是独立API, scrapers.ts是内容采集流程).
+
+### js-content-extractor.ts (293行)
+- [a] 边界条件/空值处理 → ✅ Correct (空HTML所有regex不匹配返回found:false; rawContent null检查L211; 所有模式要求最小20-100字符防止噪声; MIN_CONTENT_LENGTH=50/MAX_CONTENT_LENGTH=500_000边界保护L104-107)
+- [b] 安全性 → ✅ Correct (所有regex用`[^'";]`限制匹配不跨越引号边界; Base64解码仅在`/^[A-Za-z0-9+/=]+$/`验证后执行L159; atob包裹try-catch L161-170; decodeURIComponent包裹try-catch L140-143; hasJsContentPatterns使用硬编码模式无注入风险)
+- [c] 正确性/逻辑Bug → ✅ Correct (8种JS渲染模式覆盖常见小说站点; 变量名白名单避免误匹配随机赋值L75; 解码链decodeURIComponent→HTML实体→base64合理; isLikelyNovelContent检查CJK>10或Latin words>15防止噪声; chunks去重L229)
+- [d] 性能 → [LOW] L249-265: hasJsContentPatterns每次调用都`new RegExp(p)`创建7个正则对象. 这些模式是固定字符串, 可预编译为模块级常量. 对性能影响小(7个简单正则), 但属于不必要的重复分配.
+- [e] 鲁棒性 → ✅ Correct (decodeURIComponent/HTML实体/atob均有try-catch; debugJsPatterns有零长度匹配防护L284-285; extractJsContent的模式设计(最小20-100字符)使零长度匹配理论上不可能; 模式regex.lastIndex每次使用前重置L206)
+- [f] 数据完整性/一致性 → ✅ Correct (uniqueChunks用Set去重; 多chunk用"\n\n"分隔L232; matchedPattern记录首个匹配用于调试; JsExtractResult接口清晰定义found/content/pattern/chunks)
+
+### charset-detector.ts (347行)
+- [a] 边界条件/空值处理 → ✅ Correct (空buffer→BOM不匹配→nonAsciiCount=0→fallback UTF-8; contentType null/undefined处理L132; HTML meta charset用4KB ASCII预览提取L206; 非ASCII>20快速退出L216-222; Buffer和Uint8Array均支持L175)
+- [b] 安全性 → ✅ Correct (charset名称经normalizeCharset白名单/别名映射; 未知charset名在TextDecoder中抛错被catch L325-330; BOM检测正确排序(4字节UTF-32优先于2字节UTF-16)L28-36; TextDecoder使用fatal:false不抛编码错误)
+- [c] 正确性/逻辑Bug → [LOW] L268-273: 当检测到GBK但声明的charset是非CJK非UTF-8(如'euc-kr'), corrected标志设为false. 实际上charset已从euc-kr纠正为gbk, corrected应为true. 因corrected仅用于DEBUG日志(L342), 不影响解码行为, 实际影响极低.
+- [d] 性能 → ✅ Correct (nonAsciiCount循环有>20早退L216-222; looksLikeGBK/looksLikeBig5/gbkOnlyLeads三次全缓冲区扫描可合并为单次, 但仅在nonAsciiCount>20时触发且仅对有大量非ASCII的页面; 一般HTML<5MB扫描开销可接受)
+- [e] 鲁棒性 → ✅ Correct (TextDecoder双层try-catch(主解码+fallback UTF-8)L325-330; HTML预览用fatal:false L206; Buffer→Uint8Array转换安全L175; GBK vs Big5判别使用gbkOnlyLeads避免误判L231-242; GBK_FAMILY/BIG5_FAMILY集合优先尊重声明编码L251/L279)
+- [f] 数据完整性/一致性 → ✅ Correct (CHARSET_ALIASES覆盖gb2312/gbk2312/x-gbk/euc-cn/big5-hkscs/sjis等变体; BOM优先级高于字节分析高于声明; 同family声明(如gb18030)被尊重为更精确的编码; 频率分析阈值30%合理; 4KB HTML预览足够包含<head>中的meta charset)
+
+### types.ts (344行)
+- [a] 边界条件/空值处理 → ✅ Correct (delay?/title?/cleanConfig?等Optional字段在调用方均用?.或if检查; cookies数组元素domain?可选; ScrapeRule字段大部分string|null兼容DB)
+- [b] 安全性 → ✅ Correct (R1已修复agentqlConfig/cloudBrowserConfig的JSON存储验证; cookies值虽无校验但仅发送到目标站点; EngineType联合类型与引擎实现一致含obscura)
+- [c] 正确性/逻辑Bug → [INFO] L20: Pagination.selector类型为string而非Selector, 因分页选择器始终是CSS. 与其他位置的Selector类型不一致但语义正确.
+- [d] 性能 → ✅ N/A (纯类型定义, 无运行时代码)
+- [e] 鲁棒性 → ✅ N/A (纯类型定义)
+- [f] 数据完整性/一致性 → ✅ Correct (AntiCrawl.cookies与EngineOptions.cookies类型一致; PRIORITY_MAP与REVERSE_PRIORITY_MAP双向完整映射; ScrapeResult是ScrapeTask的子集(加engine/duration减管理字段); CleanRequest.config内联类型与ScrapeRule.cleanConfig(string|null)的JSON序列化对应; AgentQLQuery的index signature支持灵活查询字段)
+
+## 修复清单 (按优先级排序)
+
+| # | 严重度 | 文件 | 行号 | 问题描述 |
+|---|--------|------|------|----------|
+| 1 | LOW | selectors.ts | L132-137 | endsWith("href")/endsWith("src")自动属性检测对含href/src子串的类名误触发 |
+| 2 | LOW | selectors.ts | L258-263, L281-284 | extractLinksFromList作用域内未找到时回退文档级搜索, 可能返回列表外链接/标题 |
+| 3 | LOW | cleaning.ts | L147-155 | decodeExtractedContent多pass实体解码顺序导致嵌套实体(如&amp;lt;)解码不正确 |
+| 4 | LOW | cleaning.ts | L582 | handleClean的wordCount(content.length)与scrapers.ts L358的wordCount(剥离标签+空白)计算方式不一致 |
+| 5 | LOW | charset-detector.ts | L268-273 | 非CJK非UTF-8声明charset(如euc-kr)被GBK纠正时corrected标志为false |
+| 6 | LOW | js-content-extractor.ts | L249-265 | hasJsContentPatterns每次调用创建新RegExp对象, 应预编译为模块级常量 |
+| 7 | INFO | types.ts | L20 | Pagination.selector为string类型, 与Selector类型命名不一致(语义正确, 仅风格) |
+
+## 建议修复
+
+1. **selectors自动属性检测**: L132-137改为仅检查`[href]`/`[src]`属性选择器语法, 移除`endsWith("href")`/`endsWith("src")`的子串匹配. 或者添加排除: `!selector.value.includes('.')`.
+
+2. **文档级回退搜索**: 在extractLinksFromList中, 将文档级回退改为仅当listSelector类型为regex时启用(当前仅regex类型回退到body). 对CSS/XPath类型, 作用域内未找到应返回空.
+
+3. **实体解码顺序**: decodeExtractedContent中先解码`&amp;`再解码其他实体, 或使用单pass解码器(如cheerio的HTML解析).
+
+4. **wordCount统一**: handleClean中使用与scrapers.ts相同的计算方式: `content.replace(/<[^>]*>/g,'').replace(/\s+/g,'').length`.
+
+5. **charset corrected标志**: L268-273的default分支改为`corrected: !!declaredCharset`(有声明但与检测结果不同即标记纠正).
+
+6. **hasJsContentPatterns预编译**: 将quickPatterns改为`const QUICK_PATTERNS = [new RegExp(...), ...]`模块级常量.
+
+## 验证结果
+- 代码审查完成, 无需运行时验证 (纯代码审计)
+- ESLint: 未运行 (仅读取分析)
+
+Stage Summary:
+- 36 个审计角度, 28 确认正确, 8 发现 (0 HIGH, 0 MEDIUM, 6 LOW, 2 INFO)
+- 关键发现: 无HIGH/MEDIUM问题. 选择器自动属性检测和文档级回退是设计权衡; 实体解码顺序和wordCount不一致影响极低
+- 累计: 321 项 (无新增修复)
+- 建议修复: 6 LOW = 6 项
+- ESLint: 未运行
+---
+Task ID: R32-b
+Agent: Code Auditor (Round 32-b)
+Task: task-engine+quality-scorer+advisor+engines+utils+referrer-chain 审计 (6文件/36角度)
+
+Work Log:
+- 读取worklog.md最后200行, 确认R31已完成(累计321项修复)
+- 审计6个文件: task-engine.ts, quality-scorer.ts, anti-crawl-advisor.ts, engines.ts, utils.ts, referrer-chain.ts
+- 每个文件6个审计角度, 共36个角度
+- 特别关注: R31修复的recordSuccessWithRotation/SOCKS4跳过/Obscura profile/慢响应误报
+
+## 审计结果
+
+### task-engine.ts (1132行)
+- [a] 边界条件/空值处理 → ✅ Correct (L1067: chapterWordCounts空数组→undefined; L507声明后通过闭包在processChapter中push; L388-391正确映射为chapters数组传入qualityScorer)
+- [b] 安全性 → ✅ Correct (L122: apiCall使用SCRAPER_SERVICE_TOKEN认证; L468: bookUrls来自handleScrapeList受上游SSRF保护; L630: isSafeSavePath校验封面路径)
+- [c] 正确性/逻辑Bug → [LOW] L924: `const chapterWordCount = chapterContent.length` 计算的是字符数, 但变量名和quality-scorer参数均称wordCount. 对中文文本1字符≈1字, 功能正确但命名误导.
+- [d] 性能 → ✅ Correct (L507: chapterWordCounts线性增长但受任务规模约束; L198-209: 日志缓冲区总量检查O(n)可接受; L60-64: AtomicCounter避免竞态)
+- [e] 鲁棒性 → [LOW] L302-416: executeTask只有try-finally无catch. 若list页采集失败(L460), 错误传播到调用方, 任务状态保持"running"直到detectStuckTasks在5分钟后恢复. 恢复时使用通用错误消息("心跳超时"), 丢失原始错误上下文.
+- [f] 数据完整性/一致性 → ✅ Correct (L388-401: chapterWordCounts通过.map正确映射为{title,wordCount}数组传入qualityScorer; L1067: 空数组时传undefined; L507: 跨书籍章节字数合并为flat数组, quality-scorer只关心分布不关心归属, 正确)
+
+### quality-scorer.ts (393行)
+- [a] 边界条件/空值处理 → ✅ Correct (L226: chapters undefined/空数组返回中性分数12/6; L121-125: eligible<=0返回0分; L190-193: total==0返回满分"不适用"; L239: defensive chapters.length>0 check)
+- [b] 安全性 → ✅ Correct (无用户输入, 纯内部数据结构计算)
+- [c] 正确性/逻辑Bug → ✅ Correct (7维度满分=15+15+15+20+15+10+10=100, 与L49 reduce一致; L244-260: avgWordCount>=500得10分+emptyRate<=0.05得10分=20分满分; L174: rate<0.3时Math.round(rate*20)最大6分, 合理)
+- [d] 性能 → [LOW] L63-66: ring buffer用push+shift(), shift()是O(n). MAX_REPORTS=200, 每次shift移动200元素指针, 影响极低但可用环形缓冲区优化.
+- [e] 鲁棒性 → ✅ Correct (纯计算无外部依赖; 内存存储重启丢失但MAX_REPORTS=200有界; getReportByTask倒序查找最新)
+- [f] 数据完整性/一致性 → ✅ Correct (L93-98: gradeDistribution覆盖A-F; L101: avgScore四舍五入到小数点后1位; 环形缓冲区FIFO正确)
+
+### anti-crawl-advisor.ts (830行)
+- [a] 边界条件/空值处理 → ✅ Correct (L110-123: MAX_DOMAINS=200驱逐最不活跃域; L130-136: 滚动窗口裁剪30分钟前时间戳; L229/242/255: 10分钟窗口过滤recent信号)
+- [b] 安全性 → ✅ Correct (无用户输入; 所有数据来自内部服务rateLimiter/adaptiveDelay/proxyManager)
+- [c] 正确性/逻辑Bug → ✅ Correct (12条规则覆盖: captcha→obscura(L430), 429→delay+proxy(L458), 403→upgrade+UA(L489), slow→adaptive(L528), empty→JS engine(L545), consecutive→proxy+session(L564), CF→CF strategy(L597), hard sites→full config(L628), high success→reduce(L654), JS challenge→playwright(L681), cookie mgmt(L700), session mgmt(L718); R31修复L332: slow_response需consecutiveErrors>0确认)
+- [d] 性能 → [INFO] L357-358: `proxyManager.getDetailedStats().proxies.filter(...)` 在每次analyze()时调用. 若代理池大, getDetailedStats可能较重. 但analyze()按需调用(非热路径), 影响有限.
+- [e] 鲁棒性 → ✅ Correct (L820-829: 30分钟定时cleanup带try-catch; L60-77: getOrCreateHistory防御性创建; cleanup中24小时无活动或零请求域被清理)
+- [f] 数据完整性/一致性 → ✅ Correct (L177-181: recordSuccess同时递增successRequests和totalRequests; L185-188: recordFailure仅递增totalRequests; L101-102: recordDetection不递增totalRequests避免双计)
+
+### engines.ts (1763行)
+- [a] 边界条件/空值处理 → ✅ Correct (L220/494/723/880/1006/1168/1327: 所有引擎入口检查isSafeUrl; L30: MAX_RESPONSE_SIZE=10MB; L37-79: readTextWithLimit流式读取+Content-Length预检; L384-385: recordSuccessWithRotation正确传入targetDomain)
+- [b] 安全性 → [HIGH] L1308-1309: **ObscuraEngine.getBrowser()引用未定义变量`profile`**. `profile`仅在`fetch()`方法L1339定义(local variable), 但`getBrowser()`是独立方法(L1258), 无法访问`fetch()`的局部变量. 运行时将抛出`ReferenceError: profile is not defined`, 导致Obscura引擎首次启动崩溃. 这是R31修复"Obscura硬编码args→用profile值"时引入的作用域错误.
+- [c] 正确性/逻辑Bug → ✅ Correct (R31修复确认: L384-385 Cheerio使用recordSuccessWithRotation; L658-662 Playwright使用recordSuccessWithRotation; L1634-1635 Obscura使用recordSuccessWithRotation; L141-168 CircuitBreaker半开状态单探测; SOCKS4跳过在proxy-manager.ts L31实现)
+- [d] 性能 → ✅ Correct (L51-75: readTextWithLimit chunks数组+最终合并, 10MB时约20MB峰值, 可接受; L560-598: Playwright每次请求创建新context(必要隔离); L1428: Obscura阻断image/font/media/stylesheet节省带宽)
+- [e] 鲁棒性 → ✅ Correct (L598-604: Playwright networkidle 10s超时catch; L682-688: context.close()在finally中; L1463-1467: Obscura networkidle超时catch; L1667-1673: Obscura context.close()在finally中; L651: Obscura page.goto()异常被retryWithBackoff捕获; size overflow标记doNotRetry L609/772/939/1208/1577-1581)
+- [f] 数据完整性/一致性 → ✅ Correct (L321: redirect时删除Cookie头防止跨域泄漏; L304-311: onHopResponse存储每跳Set-Cookie; L629-646/1586-1600: 浏览器引擎导航后cookie回写jar; L391/649/1627: referrerChain.recordVisit记录导航历史)
+
+### utils.ts (1093行)
+- [a] 边界条件/空值处理 → ✅ Correct (L182-187: UA累积权重fallback到UA_FAMILIES[0]; L609-613: randomDelay clamp min>=0, max>=min; L871-877: parseJsonField null/invalid JSON→fallback; L914-915: parseChineseNumeral空字符串→0)
+- [b] 安全性 → ✅ Correct (L843-854: cookie值剥离控制字符防header注入; L711-728: isSafeSavePath检查前缀/无../.webp扩展/文件名模式/路径长度; L1076: followRedirects每跳isSafeUrl检查; L1056/1080: 重定向循环检测)
+- [c] 正确性/逻辑Bug → [MEDIUM] L442-447: getSecFetchHeadersForDomain中`refDomain === domain`使用精确hostname比较. 当referer为"https://example.com/chapter/1"而domain为"www.example.com"时, 会被错误分类为cross-site(实际是same-site). 虽然L450-461的referrer chain回退检查可部分缓解(若chain中有精确匹配), 但冷启动时(首个请求)chain为空, 必然使用referer参数比较, www/non-www不匹配导致首次请求总是cross-site. 影响Sec-Fetch-Site头正确性(反爬检测信号).
+- [d] 性能 → ✅ Correct (L130-135: UA_CUMULATIVE_WEIGHTS预计算, getRandomUA O(7)线性扫描; L306: getAcceptLanguageForUA O(10)模式匹配; L639-707: retryWithBackoff无额外内存分配)
+- [e] 鲁棒性 → ✅ Correct (L649-663: retryWithBackoff在每次尝试前和backoff期间检查abort; L666-668: doNotRetry标志; L693: abort listener防御性removeEventListener; L1056: followRedirects visitedUrls防循环)
+- [f] 数据完整性/一致性 → [LOW] L476-490: SEC_FETCH_COMBOS中navigate/same-origin条目(L480)和reload条目(L483)包含`Sec-Fetch-User: ?1`, 但Chrome在same-origin导航和reload时不发送此头. 这是getRandomSecFetchHeaders(仅当无domain时使用的fallback), 主路径getSecFetchHeadersForDomain正确(L463-466: same-origin时不设User). 实际影响低, 因几乎所有请求都有domain.
+
+### referrer-chain.ts (175行)
+- [a] 边界条件/空值处理 → ✅ Correct (L51-52: recordVisit检查!url; L84-85: getReferer检查!targetUrl; L114-115: recordCrossDomainTransition检查!fromUrl&&!toUrl; L149-150: getHistory返回副本)
+- [b] 安全性 → ✅ Correct (L53-54/68/86/102/130: 所有URL解析包裹try-catch; 无请求执行, 仅存储URL; 无SSRF风险)
+- [c] 正确性/逻辑Bug → [INFO] L114-133: recordCrossDomainTransition是死代码. 全项目grep确认仅referrer-chain.ts自身定义此方法, 无任何调用方. fromUrl从未通过此方法记录到目标域历史中. 实际的跨域referrer由utils.ts getSpoofedReferer生成搜索引擎伪造URL. recordCrossDomainTransition设计意图是记录搜索结果页→目标站的跨域导航, 但从未接入.
+- [d] 性能 → ✅ Correct (L42-48: evictIfNeeded O(1) Map插入序第一个key; L64-66: per-domain shift() O(n)但n<=100; 总内存上限500×100×~100B≈5MB有界)
+- [e] 鲁棒性 → ✅ Correct (L68/102/130: 所有异常静默忽略; 无定时清理但MAX_TRACKED_DOMAINS=500和MAX_HISTORY_PER_DOMAIN=100保证有界)
+- [f] 数据完整性/一致性 → ✅ Correct (L59-60: 新域空数组; L62-63: append(最新在末尾); L92-101: getReferer返回末尾条目, 自引用时回退到倒数第二; Map迭代序=插入序保证LRU)
+
+## 修复清单 (按优先级排序)
+
+| # | 严重度 | 文件 | 行号 | 问题描述 |
+|---|--------|------|------|----------|
+| 1 | HIGH | engines.ts | L1308-1309 | ObscuraEngine.getBrowser()引用`profile`变量(仅在fetch()L1339定义), 作用域错误导致ReferenceError崩溃 |
+| 2 | MEDIUM | utils.ts | L442-447 | getSecFetchHeadersForDomain精确hostname比较不处理www/non-www子域变体, 首次请求Sec-Fetch-Site错误分类 |
+| 3 | LOW | task-engine.ts | L302-416 | executeTask无catch块, list采集失败依赖detectStuckTasks 5分钟后恢复, 丢失原始错误 |
+| 4 | LOW | task-engine.ts | L924 | chapterWordCount=chapterContent.length是字符数非字数, 变量名与quality-scorer参数名wordCount不一致 |
+| 5 | LOW | utils.ts | L476-490 | SEC_FETCH_COMBOS的same-origin/reload条目包含Sec-Fetch-User:?1(Chrome不发送), 仅影响fallback路径 |
+| 6 | LOW | quality-scorer.ts | L63-66 | Ring buffer使用shift() O(n), MAX_REPORTS=200影响极低 |
+| 7 | INFO | anti-crawl-advisor.ts | L357-358 | getDetailedStats()在每次analyze()调用, 非热路径影响有限 |
+| 8 | INFO | referrer-chain.ts | L114-133 | recordCrossDomainTransition是死代码, 无调用方, fromUrl从未通过此方法记录 |
+
+## 建议修复
+
+1. **[HIGH] ObscuraEngine.getBrowser() profile作用域**: 将L1308-1309的`--window-size`和`--lang`移回硬编码值(如`1920,1080`和`zh-CN`), 或将`getBrowser()`改为接受profile参数. 注意: context创建(L1364-1388)已正确使用profile设置viewport/locale/timezone, 浏览器launch args中的window-size/lang仅影响初始窗口, 可用合理默认值替代. 推荐: 恢复为`--window-size=1920,1080`和`--lang=zh-CN`(或从环境变量读取).
+
+2. **[MEDIUM] Sec-Fetch子域匹配**: 在getSecFetchHeadersForDomain L446的比较中, 添加子域归一化逻辑, 例如提取根域(`example.com`)进行比较: `const getRootDomain = (h: string) => h.split('.').slice(-2).join('.')`. 当refDomain和domain的根域相同时视为same-origin.
+
+3. **[LOW] executeTask catch块**: 在L408的finally之前添加catch块, 捕获executeTaskBody错误并标记任务为failed: `catch(err) { await updateTaskProgress(taskId, { status: 'failed', errorMessage: err.message }).catch(() => {}); throw err; }`
+
+4. **[LOW] SEC_FETCH_COMBOS修正**: 从L480和L483中移除`"Sec-Fetch-User": "?1"`. same-origin和reload导航中Chrome不发送此头.
+
+## 验证结果
+- 代码审查完成, 无需运行时验证 (纯代码审计)
+- ESLint: 未运行 (仅读取分析)
+
+Stage Summary:
+- 36 个审计角度, 28 确认正确, 8 发现 (1 HIGH, 1 MEDIUM, 4 LOW, 2 INFO)
+- 关键发现: R31引入ObscuraEngine.getBrowser() profile作用域ReferenceError(HIGH), 将导致Obscura引擎首次启动崩溃
+- 累计: 321 项 (无新增修复)
+- 建议修复: 1 HIGH + 1 MEDIUM + 4 LOW = 6 项
+- ESLint: 未运行

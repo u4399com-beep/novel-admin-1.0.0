@@ -438,23 +438,27 @@ export function getSecFetchHeadersForDomain(domain: string, referer?: string): R
   };
 
   // Determine if this is a same-origin or cross-site request
-  // Check: does the referer point to the same domain?
+  // Check: does the referer point to the same domain or a subdomain?
   let isSameOrigin = false;
   if (referer) {
     try {
       const refDomain = new URL(referer).hostname;
-      isSameOrigin = refDomain === domain;
+      isSameOrigin = refDomain === domain ||
+        refDomain.endsWith('.' + domain) ||
+        domain.endsWith('.' + refDomain);
     } catch { /* ignore invalid referer */ }
   }
 
-  // Also check referrer chain for prior visits to this domain
+  // Also check referrer chain for prior visits to this domain (also subdomain-aware)
   if (!isSameOrigin && domain) {
     try {
       const chainEntry = referrerChain.getReferer(`https://${domain}/`);
       if (chainEntry) {
         try {
           const chainDomain = new URL(chainEntry).hostname;
-          isSameOrigin = chainDomain === domain;
+          isSameOrigin = chainDomain === domain ||
+            chainDomain.endsWith('.' + domain) ||
+            domain.endsWith('.' + chainDomain);
         } catch { /* ignore */ }
       }
     } catch { /* referrer chain may throw */ }

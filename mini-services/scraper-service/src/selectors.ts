@@ -128,11 +128,11 @@ export function parseSelector(html: string, selector: Selector): string {
     return el.attr(selector.extract) || "";
   }
 
-  // Auto-detect attribute extraction
-  if (selector.value.includes("[href]") || selector.value.endsWith("href")) {
+  // Auto-detect attribute extraction (use precise match to avoid false positives like '.myhref')
+  if (selector.value.includes("[href]") || /(?:^|[\s>+~,])href$/.test(selector.value)) {
     return el.attr("href") || "";
   }
-  if (selector.value.includes("[src]") || selector.value.endsWith("src")) {
+  if (selector.value.includes("[src]") || /(?:^|[\s>+~,])src$/.test(selector.value)) {
     return el.attr("src") || "";
   }
   // Auto-detect meta[property=...] or meta[name=...] selectors

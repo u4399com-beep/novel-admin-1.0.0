@@ -267,7 +267,7 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
       }
       return {
         charset: 'gbk',
-        corrected: false,
+        corrected: !!(declaredCharset && !GBK_FAMILY.has(declaredCharset)),
         confidence: 'medium',
         declaredCharset: declaredCharset || undefined,
       };
@@ -294,7 +294,7 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
       }
       return {
         charset: 'big5',
-        corrected: false,
+        corrected: !!(declaredCharset && !BIG5_FAMILY.has(declaredCharset)),
         confidence: 'medium',
         declaredCharset: declaredCharset || undefined,
       };

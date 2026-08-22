@@ -1305,8 +1305,6 @@ class ObscuraEngine implements ScrapingEngine {
           "--password-store=basic",
           "--use-mock-keychain",
           "--disable-infobars",
-          `--window-size=${profile.screenWidth},${profile.screenHeight}`,
-          `--lang=${profile.languages[0] || 'zh-CN'}`,
         ],
       });
       console.log("[Obscura] Stealth browser launched successfully");

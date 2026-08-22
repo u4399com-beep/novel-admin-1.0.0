@@ -2024,6 +2024,165 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
+  // ==================== Section 54: window.chrome object consistency ====================
+  // Many anti-bot services check for the existence and structure of window.chrome.
+  // Headless Chromium sometimes has an incomplete chrome object.
+  try {
+    if (!window.chrome) {
+      window.chrome = {};
+    }
+    // chrome.runtime should have an empty connect/sendMessage for non-extension pages
+    if (!window.chrome.runtime) {
+      window.chrome.runtime = {
+        connect: function() { return { onMessage: { addListener: function() {} }, postMessage: function() {}, disconnect: function() {} }; },
+        sendMessage: function() {},
+        onMessage: { addListener: function() {} },
+        id: undefined,
+      };
+    }
+    // chrome.csi() and chrome.loadTimes() — legacy Chrome-specific functions
+    // Real Chrome always has these, headless may not
+    if (typeof window.chrome.csi !== 'function') {
+      window.chrome.csi = function() {
+        return { startE: Date.now() - Math.floor(_fakeDeviceSeed * 100) % 5000, onloadT: Date.now() - Math.floor(_fakeDeviceSeed * 100) % 3000, pageT: Math.floor(_fakeDeviceSeed * 100) % 2000 + 500, tran: 15 };
+      };
+    }
+    if (typeof window.chrome.loadTimes !== 'function') {
+      window.chrome.loadTimes = function() {
+        var _base = Date.now() / 1000 - Math.floor(_fakeDeviceSeed * 10) % 30;
+        return {
+          requestTime: _base.toString(),
+          startLoadTime: _base.toString(),
+          commitLoadTime: (_base + 0.05).toString(),
+          finishDocumentLoadTime: (_base + 0.2).toString(),
+          finishLoadTime: (_base + 0.35).toString(),
+          firstPaintTime: (_base + 0.15).toString(),
+          firstPaintAfterLoadTime: 0,
+          navigationType: 'Other',
+          wasFetchedViaSpdy: false,
+          wasNpnNegotiated: false,
+          npnNegotiatedProtocol: '',
+          wasAlternateProtocolAvailable: false,
+          connectionInfo: 'h2',
+        };
+      };
+    }
+  } catch(e) {}
+
+  // ==================== Section 55: performance.memory (Chrome-specific) ====================
+  // Chrome exposes performance.memory (non-standard). Headless environments may report
+  // unrealistic values (e.g., jsHeapSizeLimit of 0 or exactly 4294705152).
+  // We provide realistic values that vary per profile.
+  try {
+    if (window.performance && !window.performance.memory) {
+      var _memSeed = Math.abs(_fakeDeviceSeed * 2.71) % 1000;
+      var _jsHeapLimit = 2172649472 + Math.floor(_memSeed * 100000); // ~2GB + variation
+      var _totalJSHeap = Math.floor(_jsHeapLimit * (0.15 + (_memSeed % 30) / 100)); // 15-45% used
+      var _usedJSHeap = Math.floor(_totalJSHeap * (0.5 + (_memSeed % 20) / 100)); // 50-70% of total
+      Object.defineProperty(window.performance, 'memory', {
+        get: function() {
+          return {
+            jsHeapSizeLimit: _jsHeapLimit,
+            totalJSHeapSize: _totalJSHeap,
+            usedJSHeapSize: _usedJSHeap,
+          };
+        },
+        configurable: true,
+      });
+    }
+  } catch(e) {}
+
+  // ==================== Section 56: navigator.plugins consistency ====================
+  // Headless Chrome typically reports 0-3 plugins. Real Chrome has 5+ standard plugins.
+  // We add common Chrome plugins if the count is suspiciously low.
+  try {
+    var _pluginCount = navigator.plugins.length;
+    if (_pluginCount < 4) {
+      // Standard Chrome plugins (names must match real Chrome exactly)
+      var _stdPlugins = [
+        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', exts: ['pdf'] },
+        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', exts: ['pdf'] },
+        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', exts: [] },
+      ];
+      for (var _pi = 0; _pi < _stdPlugins.length; _pi++) {
+        var _sp = _stdPlugins[_pi];
+        // Check if this plugin already exists (by name)
+        var _exists = false;
+        for (var _pj = 0; _pj < navigator.plugins.length; _pj++) {
+          if (navigator.plugins[_pj].name === _sp.name) { _exists = true; break; }
+        }
+        if (!_exists) {
+          // Create a fake Plugin object
+          var _mimeTypes = [];
+          for (var _ei = 0; _ei < _sp.exts.length; _ei++) {
+            var _mt = { type: 'application/' + _sp.exts[_ei], suffixes: _sp.exts[_ei], description: _sp.description };
+            _mimeTypes.push(_mt);
+          }
+          // Inject via Object.defineProperty on navigator.plugins
+          var _fakePlugin = {
+            name: _sp.name,
+            filename: _sp.filename,
+            description: _sp.description,
+            length: _mimeTypes.length,
+            item: function(i) { return _mimeTypes[i] || null; },
+            namedItem: function(name) { return _mimeTypes.find(function(m) { return m.type === name; }) || null; },
+          };
+          Object.defineProperty(_fakePlugin, Symbol.iterator, {
+            value: function*() { for (var i = 0; i < _mimeTypes.length; i++) yield _mimeTypes[i]; }
+          });
+          // Append to plugins array
+          Object.defineProperty(navigator.plugins, _pluginCount, {
+            value: _fakePlugin,
+            writable: false,
+            configurable: true,
+          });
+          // Also add to the named access
+          if (!navigator.plugins[_sp.name]) {
+            Object.defineProperty(navigator.plugins, _sp.name, {
+              value: _fakePlugin,
+              configurable: true,
+            });
+          }
+          _pluginCount++;
+        }
+      }
+      // Update plugins length
+      Object.defineProperty(navigator.plugins, 'length', { get: function() { return _pluginCount; }, configurable: true });
+    }
+  } catch(e) {}
+
+  // ==================== Section 57: Window frame dimensions (chrome frame) fix ====================
+  // R31-b found Section 37 used Math.random() for chromeWidth/chromeHeight.
+  // This section provides a seeded, consistent fix using _fakeDeviceSeed.
+  // outerWidth/outerHeight should be larger than innerWidth/innerHeight by the
+  // browser chrome (title bar, tab bar, scrollbar, etc.).
+  try {
+    var _innerW = window.innerWidth || PROFILE.screenWidth || 1920;
+    var _innerH = window.innerHeight || PROFILE.screenHeight || 1080;
+    // Chrome frame: ~85px top (tabs+title+address bar) + ~15px bottom (status) on Windows
+    // On macOS: ~75px top + ~0px bottom. On Linux: ~80px top + ~15px bottom.
+    var _platform = (navigator.platform || '').toLowerCase();
+    var _chromeTop, _chromeBottom;
+    if (_platform.indexOf('mac') >= 0) {
+      _chromeTop = 70 + Math.floor(_fakeDeviceSeed % 10);
+      _chromeBottom = 0;
+    } else if (_platform.indexOf('linux') >= 0) {
+      _chromeTop = 76 + Math.floor(_fakeDeviceSeed % 8);
+      _chromeBottom = 12 + Math.floor(_fakeDeviceSeed % 6);
+    } else {
+      // Windows (default)
+      _chromeTop = 80 + Math.floor(_fakeDeviceSeed % 12);
+      _chromeBottom = 14 + Math.floor(_fakeDeviceSeed % 6);
+    }
+    var _targetOuterW = _innerW + 16; // scrollbar width
+    var _targetOuterH = _innerH + _chromeTop + _chromeBottom;
+    // Only override if the current values look wrong (e.g., outerWidth == innerWidth = headless)
+    if (window.outerWidth === window.innerWidth || window.outerHeight === window.innerHeight) {
+      Object.defineProperty(window, 'outerWidth', { get: function() { return _targetOuterW; }, configurable: true });
+      Object.defineProperty(window, 'outerHeight', { get: function() { return _targetOuterH; }, configurable: true });
+    }
+  } catch(e) {}
+
 })();
 `;
 }

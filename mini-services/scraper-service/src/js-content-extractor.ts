@@ -246,19 +246,24 @@ export function extractJsContent(html: string): JsExtractResult {
  * @param html - Raw HTML source
  * @returns true if JS content injection patterns are likely present
  */
-export function hasJsContentPatterns(html: string): boolean {
-  const quickPatterns = [
-    'getElementById',
-    'innerHTML\s*=',
-    'textContent\s*=',
-    'document.write',
-    'decodeURIComponent',
-    "$('#",
-    'atob(',
-  ];
 
-  for (const p of quickPatterns) {
-    if (new RegExp(p).test(html)) {
+/**
+ * Pre-compiled quick-check regex patterns.
+ * Avoids creating new RegExp objects on every call.
+ */
+const QUICK_CHECK_PATTERNS = [
+  /getElementById/,
+  /innerHTML\s*=/,
+  /textContent\s*=/,
+  /document\.write/,
+  /decodeURIComponent/,
+  /\$\('#/,
+  /atob\(/,
+];
+
+export function hasJsContentPatterns(html: string): boolean {
+  for (const re of QUICK_CHECK_PATTERNS) {
+    if (re.test(html)) {
       return true;
     }
   }
