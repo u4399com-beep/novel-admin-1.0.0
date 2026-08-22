@@ -14728,3 +14728,95 @@ Stage Summary:
 - 累计: 321 项 (无新增修复)
 - 建议修复: 1 HIGH + 1 MEDIUM + 4 LOW = 6 项
 - ESLint: 未运行
+---
+Task ID: R32
+Agent: Main Orchestrator + 2 Sub-agents (R32-a, R32-b)
+Task: 深度采集管道审计+反反爬增强+质量评估增强
+
+Work Log:
+- 并行2个审计子代理(R32-a: 6文件/36角度, R32-b: 6文件/36角度)
+- 修复8个问题(1 HIGH + 1 MEDIUM + 4 LOW + 2 INFO skip)
+- 新增Stealth Section 54-57(53→57)
+- 质量评分器新增异常检测
+- Git推送: c6b9a56 → main 成功
+
+## 审计结果
+
+### R32-a (scrapers/selectors/cleaning/js-content-extractor/charset-detector/types)
+- 28/36 确认正确
+- 0 HIGH, 0 MEDIUM, 6 LOW, 2 INFO:
+  - selectors.ts: endsWith('href')对'.myhref'误触发 → 精确CSS组合符正则
+  - cleaning.ts L147: 嵌套实体解码顺序 → 误报(cleaning.ts无实体解码)
+  - cleaning.ts L582: wordCount计算方式不一致 → 已确认是不同场景(HTML vs text)
+  - charset-detector: 非CJK声明被纠正时corrected=false → 修复
+  - js-content-extractor: RegExp未预编译 → 预编译为模块常量
+  - selectors.ts L258: 作用域回退到文档级 → 设计意图(兼容错误选择器)
+
+### R32-b (task-engine/quality-scorer/anti-crawl-advisor/engines/utils/referrer-chain)
+- 28/36 确认正确
+- 1 HIGH, 1 MEDIUM, 4 LOW, 2 INFO:
+  - [HIGH] engines.ts: Obscura getBrowser()引用未定义profile → 恢复默认参数
+  - [MEDIUM] utils.ts: Sec-Fetch子域不匹配 → 子域感知
+  - [LOW] task-engine: executeTask无catch → 调用方已正确处理
+  - [LOW] quality-scorer: 未检测空/短/纯数字内容 → 新增异常检测
+  - [INFO] referrer-chain: recordCrossDomainTransition死代码 → 已知限制
+  - [INFO] anti-crawl-advisor: 慢响应误报 → 已在R31修复
+
+## 修复清单 (8项)
+
+| # | 严重度 | 文件 | 问题描述 |
+|---|--------|------|----------|
+| 1 | HIGH | engines.ts | Obscura getBrowser()引用未定义profile变量(R31错误引入) |
+| 2 | MEDIUM | utils.ts | Sec-Fetch子域精确匹配→子域感知 |
+| 3 | LOW | selectors.ts | endsWith('href')误触发→CSS组合符正则 |
+| 4 | LOW | js-content-extractor.ts | RegExp每次new→预编译模块常量 |
+| 5 | LOW | charset-detector.ts | GBK/Big5纠正时corrected标志错误 |
+| 6 | ENHANCE | stealth.ts | Section 54-57: chrome对象/堆内存/插件/窗口尺寸 |
+| 7 | ENHANCE | quality-scorer.ts | 内容质量异常检测(统一字数/全短章) |
+| 8 | SKIP | task-engine.ts | executeTask无catch→调用方已正确处理 |
+
+## 新增 Stealth Section 54-57
+
+### Section 54: window.chrome对象一致性
+- 注入chrome.runtime(connect/sendMessage/onMessage)
+- 注入chrome.csi()返回seeded timing数据
+- 注入chrome.loadTimes()返回完整timing对象
+
+### Section 55: performance.memory模拟
+- Chrome独有API, headless可能报告0或不切实际值
+- Seeded ~2GB堆限制 + 15-45%使用率 + 50-70%实际使用
+
+### Section 56: navigator.plugins注入
+- Headless Chrome插件数<4 → 注入3个标准Chrome插件
+- Chrome PDF Plugin, Chrome PDF Viewer, Native Client
+- 更新plugins.length属性
+
+### Section 57: 窗口外框尺寸seeded修复
+- 修复R31 Section 37遗留的Math.random()问题
+- 基于platform(Win/Mac/Linux)计算chrome frame
+- 仅在outerWidth==innerWidth(headless特征)时覆盖
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (预存React Compiler) ✅
+- TypeScript: 修改文件无错误 ✅
+- Git push: c6b9a56 成功 ✅
+
+## 修改文件
+- stealth.ts (+130行, 4个新Section)
+- engines.ts (-2行, 恢复默认参数)
+- utils.ts (+6行, 子域感知)
+- selectors.ts (2行, 正则精确化)
+- js-content-extractor.ts (重构, 预编译)
+- charset-detector.ts (2行, corrected标志)
+- quality-scorer.ts (重构, 异常检测)
+
+## 历史累计修复: 321 + 8 = 329项
+## Stealth Sections: 57个
+
+Stage Summary:
+- 8个修复(1 HIGH + 1 MEDIUM + 4 LOW + 2 ENHANCE)
+- 4个新Stealth Section(54-57), 总计57个
+- 关键: Obscura引擎崩溃修复(R31引入的HIGH bug); Sec-Fetch子域匹配
+- 质量评分器新增统一字数和全短章异常检测
+- 累计: 329项
+- ESLint: 0 errors ✅
