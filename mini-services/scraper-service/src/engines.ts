@@ -381,7 +381,9 @@ class CheerioEngine implements ScrapingEngine {
         }
 
         // Record proxy success (only on the final successful attempt)
-        if (proxy) {
+        if (proxy && targetDomain) {
+          proxyManager.recordSuccessWithRotation(proxy.url, targetDomain, Date.now() - startTime);
+        } else if (proxy) {
           proxyManager.recordSuccess(proxy.url, Date.now() - startTime);
         }
 
@@ -402,7 +404,7 @@ class CheerioEngine implements ScrapingEngine {
         }
       },
       {
-        maxRetries: options?.antiCrawl?.retries ?? 3,
+        maxRetries: options?.antiCrawl?.retries ?? 2,
         baseDelay: 1000,
         maxDelay: 15000,
         signal: options?.signal,
@@ -653,7 +655,9 @@ class PlaywrightEngine implements ScrapingEngine {
           }
 
           // Record proxy health for Playwright engine
-          if (pwProxy) {
+          if (pwProxy && pwDomain) {
+            proxyManager.recordSuccessWithRotation(pwProxy.url, pwDomain, Date.now() - pwStartTime);
+          } else if (pwProxy) {
             proxyManager.recordSuccess(pwProxy.url, Date.now() - pwStartTime);
           }
 
@@ -932,7 +936,9 @@ class AgentQLEngine implements ScrapingEngine {
         // Check response data size
         const dataJsonSize = JSON.stringify(data.data || {});
         if (dataJsonSize.length > MAX_RESPONSE_SIZE) {
-          throw new Error(`AgentQL response too large`);
+          const sizeError = new Error(`AgentQL response too large`);
+          (sizeError as any).doNotRetry = true;
+          throw sizeError;
         }
 
         if (data.error) {
@@ -1299,9 +1305,8 @@ class ObscuraEngine implements ScrapingEngine {
           "--password-store=basic",
           "--use-mock-keychain",
           "--disable-infobars",
-          "--window-size=1920,1080",
-          // Fingerprint-consistent locale
-          "--lang=zh-CN",
+          `--window-size=${profile.screenWidth},${profile.screenHeight}`,
+          `--lang=${profile.languages[0] || 'zh-CN'}`,
         ],
       });
       console.log("[Obscura] Stealth browser launched successfully");
@@ -1627,7 +1632,7 @@ class ObscuraEngine implements ScrapingEngine {
 
           // Record proxy health for Obscura engine
           if (proxy) {
-            proxyManager.recordSuccess(proxy.url, Date.now() - obscuraStartTime);
+            proxyManager.recordSuccessWithRotation(proxy.url, domain, Date.now() - obscuraStartTime);
           }
 
           // Track request fingerprint

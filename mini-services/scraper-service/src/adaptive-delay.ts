@@ -88,7 +88,11 @@ class AdaptiveDelayManager {
       backoffMultiplier = Math.pow(this.config.backoffFactor, excessErrors);
     }
 
-    // Slow response penalty
+    // Anti-crawl backoff level (set by 429/403/503 responses)
+    // This provides additional aggressive backoff on top of error-based backoff
+    const antiCrawlMultiplier = Math.pow(this.config.backoffFactor, state.currentBackoffLevel);
+
+    // Slow response penalty (require >= 3 samples to avoid false positives)
     let slowPenalty = 1;
     if (state.lastResponseTimes.length >= 3) {
       const avgResponseTime = state.lastResponseTimes.reduce((a, b) => a + b, 0) / state.lastResponseTimes.length;
@@ -98,7 +102,7 @@ class AdaptiveDelayManager {
     }
 
     // Calculate raw delay
-    let delay = baseDelay * backoffMultiplier * slowPenalty;
+    let delay = baseDelay * backoffMultiplier * antiCrawlMultiplier * slowPenalty;
 
     // Apply jitter ±20%
     const jitter = 0.8 + Math.random() * 0.4;

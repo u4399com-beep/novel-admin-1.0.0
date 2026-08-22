@@ -328,7 +328,8 @@ class AntiCrawlAdvisor {
     }
 
     // 8. Slow response signals from adaptive delay
-    if (delayState.avgResponseTime > 5000) {
+    // Only flag if there are also errors (avoid false positives from legitimately large pages)
+    if (delayState.avgResponseTime > 5000 && delayState.consecutiveErrors > 0) {
       signals.push({
         type: 'slow_response',
         domain,

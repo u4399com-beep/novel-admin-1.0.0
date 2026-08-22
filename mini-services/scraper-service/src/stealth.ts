@@ -53,6 +53,7 @@ const WEBGL_VENDORS = [
 ] as const;
 
 const WEBGL_RENDERERS: Record<string, string[]> = {
+  // Win32 renderers (Direct3D11 via ANGLE)
   "Google Inc. (NVIDIA)": [
     "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)",
     "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
@@ -72,11 +73,22 @@ const WEBGL_RENDERERS: Record<string, string[]> = {
     "ANGLE (AMD, AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)",
     "ANGLE (AMD, AMD Radeon RX 7600 Direct3D11 vs_5_0 ps_5_0, D3D11)",
   ],
+  // macOS renderers (Apple Silicon / Metal)
   "Google Inc. (Apple)": [
     "Apple GPU",
     "Apple M1",
     "Apple M2",
     "Apple M3",
+  ],
+  // Linux renderers (OpenGL / Mesa — NO Direct3D11)
+  "Mesa": [
+    "Mesa Intel(R) UHD Graphics 630 (CFL GT2)",
+    "Mesa Intel(R) UHD Graphics 770 (ADL-S GT1)",
+    "Mesa Intel(R) Iris(R) Xe Graphics (TGL GT2)",
+    "Mesa AMD RADV NAVI10 (ACO)",
+    "Mesa AMD RADV NAVI21 (ACO)",
+    "Mesa NVIDIA GeForce GTX 1660 Ti (NVIDIA LLVM 15.0.7)",
+    "Mesa NVIDIA GeForce RTX 3060 (NVIDIA LLVM 15.0.7)",
   ],
 };
 
@@ -195,13 +207,14 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
 
   const platform = dPick(PLATFORMS, 4);
 
-  // Constrain vendor to match platform (Apple GPU only exists on macOS)
+  // Constrain vendor to match platform (Apple GPU only on macOS, Mesa on Linux)
   let vendor: string;
   if (platform === 'MacIntel') {
-    // MacIntel: can use any vendor including Apple
     vendor = dPick(WEBGL_VENDORS, 1);
+  } else if (platform === 'Linux x86_64') {
+    vendor = 'Mesa'; // Linux uses Mesa OpenGL, not ANGLE/Direct3D
   } else {
-    // Win32/Linux x86_64: must NOT use Apple GPU (impossible combo)
+    // Win32: must NOT use Apple GPU (impossible combo)
     const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
     vendor = dPick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS, 1);
   }
@@ -252,11 +265,17 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
  */
 export function generateRandomFingerprint(): FingerprintProfile {
   const platform = pick(PLATFORMS);
-  // Constrain vendor to match platform (Apple GPU only on macOS)
-  const compatibleVendors = platform === 'MacIntel'
-    ? WEBGL_VENDORS
-    : WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
-  const vendor = pick(compatibleVendors.length > 0 ? compatibleVendors : WEBGL_VENDORS);
+  // Constrain vendor to match platform (Apple GPU on macOS, Mesa on Linux)
+  let vendor: string;
+  if (platform === 'MacIntel') {
+    const compatibleVendors = WEBGL_VENDORS;
+    vendor = pick(compatibleVendors);
+  } else if (platform === 'Linux x86_64') {
+    vendor = 'Mesa';
+  } else {
+    const compatibleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
+    vendor = pick(compatibleVendors.length > 0 ? compatibleVendors : WEBGL_VENDORS);
+  }
   const renderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
   const renderer = pick(renderers);
   const resolution = pick(SCREEN_RESOLUTIONS);
@@ -1571,8 +1590,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Real browsers add 85-130px for toolbar/tab bar chrome
   (function() {
     try {
-      var chromeWidth = 85 + Math.floor(Math.random() * 50); // 85-134px
-      var chromeHeight = 85 + Math.floor(Math.random() * 60); // 85-144px
+      var chromeWidth = 85 + Math.floor(_seededRandom(3.7) * 50); // 85-134px
+      var chromeHeight = 85 + Math.floor(_seededRandom(5.3) * 60); // 85-144px
       var origOuterWidth = Object.getOwnPropertyDescriptor(Window.prototype, 'outerWidth');
       var origOuterHeight = Object.getOwnPropertyDescriptor(Window.prototype, 'outerHeight');
       if (origOuterWidth) {
@@ -1685,18 +1704,21 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(e) {}
 
   // Section 42: window.speechSynthesis consistency
-  // Headless browsers may not initialize speechSynthesis voices properly.
-  // Some anti-bot systems check if getVoices() returns a non-empty array.
+  // NOTE: Section 51 provides a superior implementation with per-seed voice count,
+  // Chrome async loading simulation, and fallback to real voices.
+  // This section is kept as a minimal fallback in case Section 51 fails.
   try {
-    if (window.speechSynthesis) {
-      var _origGetVoices = speechSynthesis.getVoices;
-      var _fakeVoices = [
+    if (window.speechSynthesis && !window.speechSynthesis.getVoices._patched) {
+      var _s42Voices = [
         { name: 'Google US English', lang: 'en-US', localService: true, default: true, voiceURI: 'Google US English' },
-        { name: 'Google UK English Female', lang: 'en-GB', localService: true, default: false, voiceURI: 'Google UK English Female' },
       ];
-      speechSynthesis.getVoices = function() { return _fakeVoices; };
-      // Trigger voiceschanged event to simulate async voice loading
-      try { speechSynthesis.dispatchEvent(new Event('voiceschanged')); } catch(e) {}
+      var _s42orig = speechSynthesis.getVoices.bind(speechSynthesis);
+      speechSynthesis.getVoices = function() {
+        var real = _s42orig();
+        if (real && real.length > 0) return real;
+        return _s42Voices;
+      };
+      speechSynthesis.getVoices._patched = true;
     }
   } catch(e) {}
 
@@ -2738,46 +2760,5 @@ export function clearTlsProfileCache(domain?: string): void {
   } else {
     domainTlsProfileCache.clear();
   }
-}
-
-// ==================== Humanized Fetch Delay ====================
-
-/**
- * Generate a humanized delay before fetching a URL.
- * Simulates human browsing patterns:
- *   - Faster during peak hours (9AM-11PM local time)
- *   - Slower at night (2AM-6AM)
- *   - Random micro-delays simulating reading/thinking time
- *   - Deterministic base per-domain for consistent behavior
- *
- * @param domain - Target domain for per-domain consistency
- * @param minMs - Minimum additional delay (default 50ms)
- * @param maxMs - Maximum additional delay (default 800ms)
- * @returns Delay in milliseconds
- */
-export function humanizedFetchDelay(domain: string, minMs = 50, maxMs = 800): number {
-  const now = new Date();
-  const hour = now.getHours();
-
-  // Time-of-day multiplier: slower at night, faster during day
-   let todMultiplier: number;
-  if (hour >= 2 && hour < 6) {
-    todMultiplier = 2.0; // Night: humans are slower
-  } else if (hour >= 6 && hour < 9) {
-    todMultiplier = 1.5; // Early morning: moderate
-  } else if (hour >= 9 && hour < 23) {
-    todMultiplier = 1.0; // Peak hours: normal speed
-  } else {
-    todMultiplier = 1.3; // Late night (23-2): slightly slower
-  }
-
-  // Deterministic base delay from domain hash
-  const h = Math.abs(domainHash(domain));
-  const baseDelay = minMs + (h % 100) / 100 * (maxMs - minMs) * 0.3;
-
-  // Random jitter (30% of range)
-  const jitter = Math.random() * (maxMs - minMs) * 0.3;
-
-  return Math.round((baseDelay + jitter) * todMultiplier);
 }
 

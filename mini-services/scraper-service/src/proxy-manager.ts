@@ -316,6 +316,9 @@ class ProxyManager {
       // Skip proxies blocked for this domain
       if (domain && entry.blockedDomains.has(domain)) continue;
 
+      // Skip SOCKS4 proxies (no compatible dispatcher available for CheerioEngine)
+      if (entry.protocol === 'socks4') continue;
+
       candidates.push(entry);
     }
 

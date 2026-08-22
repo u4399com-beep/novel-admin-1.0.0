@@ -14299,6 +14299,189 @@ Stage Summary:
 - 3个新Stealth Section(51-53), 共53个section
 - 66个审计角度, 47确认正确, 11发现(11修复), 8 INFO已知限制
 - 关键发现: EngineUpgrade阻塞退避策略(外部引擎得不到指数延迟); 质量评分永远到不了100分(死代码); UTF-32LE BOM误检测
-- 累计: 309项
-- ESLint: 0 errors ✅
-- Git: 118dcfb成功
+---
+Task ID: R31-a
+Agent: Code Auditor (Round 31-a)
+Task: engines+scrapers深度审计 (5文件/30角度)
+
+Work Log:
+- 审计5个核心文件: engines.ts, scrapers.ts, proxy-manager.ts, adaptive-delay.ts, cookie-jar.ts
+- 每个文件6个审计角度, 共30个角度
+
+## 审计结果
+
+### engines.ts (1758行)
+- [a] CheerioEngine proxy selection → ✅ Correct (proxy失败时recordFailure正确调用onRetry+catch)
+- [a] SOCKS4 proxy silent direct fallback → [MEDIUM] L254,proxy-manager.ts L177-181: SOCKS4代理被解析并加入池中, `getProxyDispatcher()`返回null, CheerioEngine L344使用`dispatcher: dispatcher || undefined`静默退化为直连. 代理健康记录基于直连请求而非代理请求, 产生误导性数据.
+- [b] CheerioEngine redirect handling → ✅ Correct (onHopResponse捕获所有3xx Set-Cookie, makeRequest中clear Cookie header防跨域泄漏)
+- [c] PlaywrightEngine context creation → ✅ Correct (stealth script在page.addInitScript中注入, viewport/timezone/locale匹配profile, args与profile一致)
+- [c] Obscura hardcoded args → [LOW] L1302-1304: Obscura launch args中`--window-size=1920,1080`和`--lang=zh-CN`硬编码, 不匹配per-domain fingerprint profile (如profile使用1280x720/en-US). PlaywrightEngine无此问题(不传这些args).
+- [d] Retry logic (retryWithBackoff) → ✅ Correct (doNotRetry在utils.ts L666正确检查, abort signal在每个retry前检查)
+- [d] maxRetries不一致 → [LOW] CheerioEngine默认maxRetries=3 (L405), 所有其他引擎默认=2. 可能是有意设计(Cheerio最快最可靠), 但值得注意.
+- [e] CAPTCHA detection → ✅ Correct (Cheerio/Playwright/Obscura在engine层检测并throw; 外部API引擎不检测, 但scrapers.ts paginatedFetch L121-131为所有引擎提供第二层CAPTCHA检测)
+- [f] Response size limits → ✅ Correct (Cheerio: streaming readTextWithLimit; Playwright/Obscura: html.length check; Firecrawl/CloudBrowser/Scrapling: data.html.length check; 全部设doNotRetry=true)
+- [f] AgentQL size limit missing doNotRetry → [MEDIUM] L934-935: AgentQL "response too large" 错误未设`doNotRetry=true`, 会无意义重试(同一查询结果大小不会改变). 其他5个引擎都正确设置了.
+- [INFO] L25: `autoHandleCaptcha`已导入但从未使用 (dead import)
+
+### scrapers.ts (434行)
+- [a] handleScrapeContent pagination → ✅ Correct (paginatedFetch处理loop检测/最大页数/abort, pagesFetched通过pageCount跟踪)
+- [b] handleScrapeList → ✅ Correct (parseSelectorMulti提取URL, resolveUrl处理相对URL, seen Set去重)
+- [c] handleScrapeChapters → ✅ Correct (extractLinksFromList提取章节, URL+title双重去重, paginatedFetch处理分页)
+- [d] handleScrapeBook → ✅ Correct (提取title/author/category/keywords/description/coverUrl/status, coverUrl经resolveUrl处理)
+- [e] JS content extraction fallback → ✅ Correct (content<50字符时调用hasJsContentPatterns+extractJsContent, 仅当JS结果>50字符时使用)
+- [f] Content cleaning → ✅ Correct (cleanHtmlRaw在HTML层应用于handleScrapeContent, cleanText在task-engine.ts L920下游应用; 架构分层合理)
+
+### proxy-manager.ts (1112行)
+- [a] Proxy rotation → [MEDIUM] getDomainProxyWithRotation (L834-868) 实现了top-N轮转, 但engines.ts中从未调用`recordSuccessWithRotation` (仅调用`recordSuccess`). domainRotationCount永远为0, rotationIndex永远不推进. Playwright L514和Obscura L1343使用了WithRotation选择, 但轮转永远停留在index 0.
+- [b] Health tracking → ✅ Correct (EMA α=0.3更新avgResponseTime, score gain随responseTime递减, score loss随consecutiveFails递增)
+- [c] IPv6 handling → ✅ Correct (URL.hostname正确解析, display URL使用[${host}], 健康检查URL使用bracketed IPv6)
+- [d] SOCKS proxy support → [MEDIUM] (与engines.ts [a]相同root cause) SOCKS4: 解析入池但getProxyDispatcher返回null导致静默直连. SOCKS5: 通过SocksProxyAgent正确支持.
+- [e] Proxy cooldown → ✅ Correct (5 consecutive fails → 5min cooling, health<10 → disabled, getProxy/getDomainProxy跳过cooling/disabled)
+- [f] Default proxy → ✅ Correct (PROXY_LIST未设置时pool为空, getProxy返回null, 所有引擎null-check后使用直连)
+
+### adaptive-delay.ts (418行)
+- [a] Delay calculation → [MEDIUM] `currentBackoffLevel`字段(L21)在anti-crawl错误(429/403/503)时设置为+2(L149-151), 成功时-1(L138), 但`getDelaySync()`(L78-113)的计算公式中**从未使用**`currentBackoffLevel`. 延迟仅基于`consecutiveErrors`, 使得429/403/503的激进退避意图完全无效.
+- [b] Domain isolation → ✅ Correct (每个域独立DomainState in Map, 无跨域干扰)
+- [c] Integration with engines → [LOW] adaptiveDelay未在engines.ts中导入/使用. 仅在task-engine.ts的getAdaptiveOrRandomDelay中使用. 直接调用engine的路径(测试/手动API)绕过adaptive delay. 这是合理的(task-level关注点).
+- [d] Jitter → ✅ Correct (±20% jitter L104, 基础delay已有随机性 L82)
+- [e] Rate limit interaction → ✅ Correct (与rate-limiter.ts独立运行, 互补不冲突: rate-limiter是令牌桶in engines, adaptive-delay是响应时间/错误based in task-engine)
+- [f] Min/max bounds → ✅ Correct (min 100ms L111, max 60000ms L108, LRU 500域上限 L45)
+
+### cookie-jar.ts (380行)
+- [a] Domain suffix matching → ✅ Correct (get/getPlaywrightCookies都遍历父域: sub.example.com → example.com)
+- [b] Cookie expiry → ✅ Correct (isCookieMatch检查expires, cleanup每5分钟, restore过滤过期, getStats过滤过期)
+- [c] Path matching → ✅ Correct (isCookieMatch检查path前缀, 正确处理trailing slash, 根路径/匹配所有)
+- [d] Playwright cookie conversion → ✅ Correct (name/value/domain/path, 保留leading dot via _domainHadLeadingDot)
+- [e] Thread safety → ✅ Correct (Bun单线程event loop, async操作无竞态; 如使用worker threads则各自有独立实例)
+- [f] Persistence → ✅ Correct (WAL mode, busy_timeout=5000, upsert用transaction, deleteExpired定期清理)
+
+## 修复清单 (按优先级排序)
+
+| # | 严重度 | 文件 | 行号 | 问题描述 |
+|---|--------|------|------|----------|
+| 1 | MEDIUM | proxy-manager.ts + engines.ts | proxy-manager L177-181, engines L254 | SOCKS4代理被选中但getProxyDispatcher返回null, 请求静默退化为直连, 代理健康记录基于直连数据 |
+| 2 | MEDIUM | engines.ts + proxy-manager.ts | engines L384-386, L656-658, L1629-1631 | Playwright/Obscura调用recordSuccess而非recordSuccessWithRotation, 代理轮转计数永远为0, 轮转永远不推进 |
+| 3 | MEDIUM | adaptive-delay.ts | L86-88 vs L137-153 | currentBackoffLevel在anti-crawl错误时设置但getDelaySync()从未使用, 429/403/503激进退避完全无效 |
+| 4 | MEDIUM | engines.ts | L934-935 | AgentQL "response too large" 错误未设doNotRetry=true, 会无意义重试 (其他5个引擎都正确设置) |
+| 5 | LOW | engines.ts | L1302-1304 | Obscura launch args中--window-size=1920,1080和--lang=zh-CN硬编码, 不匹配per-domain profile |
+| 6 | LOW | engines.ts | L405 vs L687/L1671 | CheerioEngine默认maxRetries=3, 其他引擎默认=2 (可能是有意设计) |
+| 7 | INFO | engines.ts | L25 | autoHandleCaptcha已导入但从未使用 (dead import) |
+
+## 建议修复
+
+1. **SOCKS4静默直连**: 在getProxy/getDomainProxy/getDomainProxyWithRotation中过滤掉protocol='socks4'的候选, 或在engines.ts中当dispatcher为null时fallback到其他代理.
+
+2. **代理轮转不推进**: 将engines.ts中Playwright L384和Obscura L1629的`proxyManager.recordSuccess`改为`proxyManager.recordSuccessWithRotation`, 传入domain参数.
+
+3. **currentBackoffLevel死代码**: 在getDelaySync()的计算中加入`currentBackoffLevel`作为额外乘数, 或移除该字段和相关逻辑.
+
+4. **AgentQL doNotRetry**: L934-935的throw前添加`(err as any).doNotRetry = true`.
+
+## 验证结果
+- 代码审查完成, 无需运行时验证 (纯代码审计)
+- ESLint: 未运行 (仅读取分析)
+
+Stage Summary:
+- 30 个审计角度, 22 确认正确, 8 发现 (0 HIGH, 4 MEDIUM, 2 LOW, 2 INFO)
+- 关键发现: SOCKS4代理静默直连; 代理轮转永不推进(死代码); currentBackoffLevel死代码(退避无效); AgentQL size limit缺doNotRetry
+- 累计: 309 项 (无新增修复)
+- 建议修复: 4 MEDIUM + 2 LOW = 6 项
+- ESLint: 未运行---
+Task ID: R31-b
+Agent: Code Auditor (Round 31-b)
+Task: stealth30-53+fingerprint+behavior+request-fingerprint审计 (6文件/36角度)
+
+Work Log:
+- 审计6个文件: stealth.ts (Section 30-53), fingerprint生成(stealth.ts), browser-behavior.ts, request-fingerprint.ts, anti-crawl-advisor.ts, session-manager.ts
+- 每个文件6个审计角度, 共36个角度
+
+## 审计结果
+
+### stealth.ts (Section 30-53, L1326-2005)
+- [a] Section 30/31 Canvas/WebGL noise → ✅ Correct (两者都使用_fakeDeviceSeed*multiplier作为种子, Park-Miller PRNG (16807,2147483647), 同profile同noise, 确定性)
+- [b] Section 36 vs 50 (hasFocus) → [INFO] L1908-1920: Section 50的`!document.hasFocus()`条件永远不会为true(Section 36 L1562已无条件覆盖返回true). Section 50是死代码, 但无害.
+- [c] Section 47 WebGL Shader Precision → ✅ Correct (同时修补WebGLRenderingContext L1800和WebGL2RenderingContext L1820-1841; L1822检查原型不相同时才修补, 避免双重修补; 使用shared _shaderPrecisionSeed)
+- [d] Section 48 Navigator Connection → ✅ Correct (L1849-1870处理connection不存在; L1871-1883处理downlink/rtt为零; 有效type/effectiveType/saveData均设置)
+- [e] Section 51 speechSynthesis.getVoices → [LOW] L1926-1952: 首次调用时如果真实getVoices返回非空数组(headless Chromium有时会), 直接返回真实数组(与后续调用的3-6个假声音不一致). 且Section 42 (L1687-1701)已覆写getVoices为固定2个声音, Section 51再次覆写使Section 42完全死代码.
+- [f] Section 52/53 vs Section 49 → ✅ Correct (Section 49覆写Permissions.query, Section 52覆写Notification.permission对象, Section 53覆写devicePixelRatio — 三者操作不同API, 无冲突)
+- [额外] Section 37 Math.random → [LOW] L1574-1575: outerWidth/outerHeight的chromeWidth/chromeHeight使用`Math.random()`而非seeded PRNG, 每次页面加载产生不同值. 同session内不同页面加载的chrome尺寸不一致, 可能被检测.
+- [额外] duplicate humanizedFetchDelay → [MEDIUM] L2381和L2758定义同名export function, 第二个覆盖第一个. 第一个有peak/off-peak/dead-zone时段逻辑(9AM-11PM/11PM-2AM+6AM-9AM/2AM-6AM), 第二个仅用简单multiplier. 时段感知延迟逻辑完全丢失.
+
+### fingerprint生成 (stealth.ts L15-248, 2009-2071)
+- [a] Seed consistency → ✅ Correct (generateFingerprintProfile使用djb2-like hash + dPick确定性选择; 同seed→同profile)
+- [b] Profile completeness → ✅ Correct (FingerprintProfile包含webglVendor/Renderer, screen, navigator(hardwareConcurrency/deviceMemory/platform/languages), colorDepth, pixelRatio, userAgent, timezone — 覆盖所有stealth section需要)
+- [b] toPlaywrightContext → [INFO] 代码库中不存在toPlaywrightContext()方法. Profile通过getStealthScript()注入JS, 通过直接字段访问(engines.ts)传入Playwright context.
+- [c] Cache TTL → ✅ Correct (30分钟TTL, 500上限, O(n)扫描最老条目驱逐 — 对500条目可接受)
+- [d] GPU generation → [MEDIUM] L55-81: 所有NVIDIA/Intel/AMD renderer字符串含"Direct3D11"和"D3D11"(Windows专属). 当platform="Linux x86_64"时, 仍分配Windows GPU renderer. Linux Chrome应使用"OpenGL"或"Vulkan"后端. 这是一个指纹检测向量: Linux UA + D3D11 renderer = 瞬间暴露.
+- [e] AudioContext fingerprint → ✅ Correct (Section 31覆写createOscillator注入±0.005Hz频率偏移, 同时处理AudioContext和OfflineAudioContext, seeded PRNG确定性)
+- [f] Profile export → [INFO] 无toPlaywrightContext方法, engines.ts直接使用profile字段
+
+### browser-behavior.ts (222行)
+- [a] Mouse movement → [INFO] 文件不实现鼠标移动模拟. 仅处理: 访问频率节流、阅读延迟、入口页模拟、人类休息暂停. 无Bezier曲线.
+- [b] Scroll behavior → [INFO] 文件不实现滚动行为模拟.
+- [c] Click timing → [INFO] 文件不实现点击时间模拟.
+- [d] Keystroke simulation → [INFO] 文件不实现按键模拟.
+- [e] Idle behavior → ✅ Correct (maybeHumanBreak L175-183: 每5-10请求暂停8-15秒, 阈值在每次break后重新随机化, 提供合理的空闲时间变化)
+- [f] Integration with engines → ✅ Correct (browserBehavior在task-engine.ts中使用(非engine层), 由getPreVisitDelay和shouldThrottle调用; R31-a已确认这是合理的task级关注点)
+
+### request-fingerprint.ts (308行)
+- [a-f] 全部 → [INFO] 文件名误导: 实际是请求跟踪/速率限制管理器(RequestFingerprintManager), 不涉及HTTP头排序/Sec-Fetch/Accept-Language/DoH/HTTP2设置等请求级指纹功能. 这些功能分布在stealth.ts(shuffleHeaderOrder/getAcceptLanguageForDomain), utils.ts(getSecFetchHeadersForDomain), http2-decoy.ts(getAcceptEncoding), doh-simulation.ts(getForwardedFor). 文件应改名为request-tracker.ts.
+
+**实际审计 (基于文件实际功能):**
+- [a] Request tracking → ✅ Correct (8-char hex ID, crypto.getRandomValues安全生成, per-domain并发计数)
+- [b] Validation → ✅ Correct (5分钟过期, 60并发/域限制)
+- [c] Completion tracking → ✅ Correct (complete()从domainFpIds移除, 避免泄漏)
+- [d] Cleanup → ✅ Correct (2分钟interval清理, 过期2分钟条目删除, domainFpIds同步清理)
+- [e] Graceful shutdown → ✅ Correct (destroy()清除interval)
+- [f] POST body padding → [INFO] L276-307: padPostBody在JSON body中添加_p键, 某些严格API可能拒绝未知字段.
+
+### anti-crawl-advisor.ts (829行)
+- [a] Strategy selection → ✅ Correct (12条规则覆盖: captcha→obscura, 429→delay+proxy, 403→upgrade+UA, slow→adaptive, empty→JS engine, consecutive→proxy+session, CF→CF strategy, known hard sites→full config, high success→reduce, JS challenge→playwright, cookie mgmt, session mgmt)
+- [b] Evidence collection → ✅ Correct (从rateLimiter/adaptiveDelay/proxyManager/sessionManager收集; 内部history记录captcha/block/rate_limit/empty/js_challenge/fingerprint; 外部引擎(Firecrawl/CloudBrowser/Scrapling)不报告信号但也不需要)
+- [c] Recommendation quality → ✅ Correct (每条推荐含id/category/priority/title/description/configKey/currentValue/recommendedValue/reasoning/estimatedImpact, 可操作且具体)
+- [d] Memory management → ✅ Correct (MAX_DOMAINS=200, 按lastActivity驱逐; 30分钟定时cleanup; captcha/block/rateLimit timestamps使用30分钟滚动窗口裁剪)
+- [e] Threshold tuning → ✅ Correct (captcha >5 critical/>3 high/>1 medium; block >5 critical/>3 high; 429 >10 critical/>5 high; empty >50% critical/>30% high; slow >10s high/>5s medium; consecutive >=10 critical/>=5 high — 合理)
+- [f] False positive rate → [LOW] L331-340: avgResponseTime >5000ms触发slow_response信号. 当域仅有1-2个请求时, "平均值"就是那一个请求, 单次大页面(如含大量图片的小说章节)可能触发误报. adaptive-delay使用EMA应该能平滑, 但冷启动时EMA等同于单值.
+
+### session-manager.ts (362行)
+- [a] Session lifecycle → ✅ Correct (acquireSession查找最低usage非blocked/创建新; releaseSession更新lastUsedAt; blockSession设blocked+reason; cleanup清理expired/overused/stale-blocked)
+- [b] Profile per domain → ✅ Correct (L122: getProfileForDomain(domain)确保同域同profile; profileCache 30分钟TTL内一致)
+- [c] Cookie isolation → [INFO] 多session共享同一cookieJar, 非隔离. 这是设计意图(同域共享cookie状态), 但意味着不同session的请求携带相同cookie.
+- [d] Session timeout → ✅ Correct (24小时过期, 50次使用回收, blocked>30分钟清理; 30分钟定时cleanup)
+- [e] Concurrency → ✅ Correct (Bun单线程event loop, 无真正并行竞态; 两个快速调用可能创建2个session但都有效, 可接受)
+- [f] Graceful shutdown → [LOW] L352-357: destroy()仅清除cleanup interval. Session元数据(usageCount/blocked/taskIds)不持久化, 重启后全部丢失. 新session = 新指纹, 可能触发反爬系统的"新浏览器"检测. Cookie由cookieJar(SQLite WAL)持久化, 不受影响.
+
+## 修复清单 (按优先级排序)
+
+| # | 严重度 | 文件 | 行号 | 问题描述 |
+|---|--------|------|------|----------|
+| 1 | MEDIUM | stealth.ts | L2381+L2758 | duplicate humanizedFetchDelay: 第二个定义覆盖第一个, peak/off-peak/dead-zone时段感知延迟逻辑完全丢失 |
+| 2 | MEDIUM | stealth.ts | L55-81 | GPU renderer字符串全部含"Direct3D11"(Windows专属), Linux x86_64平台也分配Win32 renderer. Linux UA + D3D11 = 指纹暴露 |
+| 3 | LOW | stealth.ts | L1574-1575 | Section 37 outerWidth/outerHeight使用Math.random()非seeded PRNG, 同session不同页面加载产生不同chrome尺寸 |
+| 4 | LOW | stealth.ts | L1926-1952 | Section 51首次调用可能返回真实getVoices结果(与后续假声音不一致); Section 42(L1687-1701)完全死代码 |
+| 5 | LOW | anti-crawl-advisor.ts | L331-340 | slow_response信号在域仅有1-2请求时可能误报(单次大页面响应>5s触发) |
+| 6 | LOW | session-manager.ts | L352-357 | Session元数据不持久化, 重启后所有session丢失, 新session新指纹可能触发反爬检测 |
+| 7 | INFO | stealth.ts | L1908-1920 | Section 50 (hasFocus)是死代码 — Section 36已无条件覆盖 |
+| 8 | INFO | browser-behavior.ts | 全文 | 文件不实现鼠标移动/滚动/点击/按键模拟(仅做访问节流+阅读延迟+人类休息). 审计角度[a-d]不适用 |
+| 9 | INFO | request-fingerprint.ts | 全文 | 文件名误导: 实际是请求跟踪器, 不涉及HTTP头/Sec-Fetch/DoH等请求级指纹. 功能分散在stealth.ts/utils.ts/http2-decoy.ts/doh-simulation.ts |
+
+## 建议修复
+
+1. **duplicate humanizedFetchDelay**: 删除L2381-2414的第一个定义(保留L2758-2782带minMs/maxMs参数的版本). 或者将第一个的时段逻辑合并到第二个中.
+
+2. **Linux GPU renderer**: 为Linux x86_64平台添加独立的renderer池, 使用"OpenGL"后端: `"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 OpenGL, OpenGL)"` 等. 在generateFingerprintProfile中根据platform选择对应renderer池.
+
+3. **Section 37 seeded**: 将L1574-1575的`Math.random()`替换为基于`_fakeDeviceSeed`的seeded随机, 确保同profile同chrome尺寸.
+
+4. **Section 51 consistency**: 修改Section 51始终返回fakeVoices(不回退到real). 删除Section 42的死代码.
+
+## 验证结果
+- 代码审查完成, 无需运行时验证 (纯代码审计)
+- ESLint: 未运行 (仅读取分析)
+
+Stage Summary:
+- 36 个审计角度, 24 确认正确, 6 发现 (0 HIGH, 2 MEDIUM, 4 LOW), 6 INFO
+- 关键发现: duplicate humanizedFetchDelay导致时段感知延迟丢失; Linux平台分配Windows GPU renderer指纹暴露
+- 累计: 309 项 (无新增修复)
+- 建议修复: 2 MEDIUM + 4 LOW = 6 项
+- ESLint: 未运行
