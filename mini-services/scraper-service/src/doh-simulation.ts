@@ -22,14 +22,26 @@ interface DnsCacheEntry {
 const dnsCache = new Map<string, DnsCacheEntry>();
 
 /**
- * Generate a random private/reserved IP address for DNS simulation.
- * Uses 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16 ranges.
+ * Generate a random public IP address for DNS simulation.
+ * Uses common public IP ranges (cloud/datacenter) that are plausible
+ * for DoH resolver exit nodes. Private IPs (RFC1918) would be
+ * immediately flagged by anti-bot systems as fake.
  */
 function generateRandomIp(): string {
+  // Public IP ranges commonly used by DoH providers and CDNs
+  // These are realistic exit node IP ranges, not RFC1918 private IPs
   const ranges = [
-    () => `10.${randByte()}.${randByte()}.${randByte()}`,
-    () => `172.${16 + Math.floor(Math.random() * 16)}.${randByte()}.${randByte()}`,
-    () => `192.168.${randByte()}.${randByte()}`,
+    // Cloudflare DoH ranges (sample prefixes)
+    () => `104.${16 + randByte() % 8}.${randByte()}.${randByte()}`,
+    () => `172.${64 + randByte() % 8}.${randByte()}.${randByte()}`,
+    () => `104.${randByte() % 4}.${randByte()}.${randByte()}`,
+    // Google DoH ranges
+    () => `8.${randByte() % 16}.${randByte()}.${randByte()}`,
+    () => `8.${128 + randByte() % 64}.${randByte()}.${randByte()}`,
+    // Common CDN/datacenter ranges
+    () => `${140 + randByte() % 20}.${randByte()}.${randByte()}.${randByte()}`,
+    () => `185.${randByte() % 64}.${randByte()}.${randByte()}`,
+    () => `45.${randByte() % 16}.${randByte()}.${randByte()}`,
   ];
   return ranges[Math.floor(Math.random() * ranges.length)]();
 }

@@ -210,7 +210,8 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   // Constrain vendor to match platform (Apple GPU only on macOS, Mesa on Linux)
   let vendor: string;
   if (platform === 'MacIntel') {
-    vendor = dPick(WEBGL_VENDORS, 1);
+    // macOS only uses Apple GPU — Direct3D11 renderers on Mac = instant fingerprint exposure
+    vendor = 'Google Inc. (Apple)';
   } else if (platform === 'Linux x86_64') {
     vendor = 'Mesa'; // Linux uses Mesa OpenGL, not ANGLE/Direct3D
   } else {
@@ -1346,6 +1347,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Add imperceptible noise to canvas pixel data so fingerprinting is unreliable.
   // The noise is deterministic per profile seed so the same page load produces
   // consistent (but fake) canvas output, but differs across page loads / profiles.
+  // IMPORTANT: Noise is applied to a TEMPORARY canvas to avoid accumulating
+  // modifications on the original canvas across multiple toDataURL/toBlob calls.
   try {
     var _canvasNoiseSeed = _fakeDeviceSeed * 13.37;
     var _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
@@ -1355,20 +1358,24 @@ export function getStealthScript(profile: FingerprintProfile): string {
         if (ctx) {
           var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
           var d = imgData.data;
+          var _seed = _canvasNoiseSeed; // use local seed to avoid accumulation
           for (var i = 0; i < d.length; i += 4) {
-            // Flip 1-2 bits per pixel channel (imperceptible)
-            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
-            var noise = (_canvasNoiseSeed % 3) - 1; // -1, 0, or 1
-            d[i]   = Math.max(0, Math.min(255, d[i] + noise));     // R
-            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
-            noise = (_canvasNoiseSeed % 3) - 1;
-            d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));   // G
-            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
-            noise = (_canvasNoiseSeed % 3) - 1;
-            d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));   // B
-            // Alpha channel untouched
+            _seed = (_seed * 16807 + 0.5) % 2147483647;
+            var noise = (_seed % 3) - 1;
+            d[i]   = Math.max(0, Math.min(255, d[i] + noise));
+            _seed = (_seed * 16807 + 0.5) % 2147483647;
+            noise = (_seed % 3) - 1;
+            d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));
+            _seed = (_seed * 16807 + 0.5) % 2147483647;
+            noise = (_seed % 3) - 1;
+            d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));
           }
-          ctx.putImageData(imgData, 0, 0);
+          // Encode from a temporary canvas to avoid modifying the original
+          var _tmpCanvas = document.createElement('canvas');
+          _tmpCanvas.width = this.width;
+          _tmpCanvas.height = this.height;
+          _tmpCanvas.getContext('2d').putImageData(imgData, 0, 0);
+          return _origToDataURL.call(_tmpCanvas, type, quality);
         }
       } catch(e) {}
       return _origToDataURL.call(this, type, quality);
@@ -1381,18 +1388,23 @@ export function getStealthScript(profile: FingerprintProfile): string {
         if (ctx) {
           var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
           var d = imgData.data;
+          var _seed = _canvasNoiseSeed;
           for (var i = 0; i < d.length; i += 4) {
-            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
-            var noise = (_canvasNoiseSeed % 3) - 1;
+            _seed = (_seed * 16807 + 0.5) % 2147483647;
+            var noise = (_seed % 3) - 1;
             d[i]   = Math.max(0, Math.min(255, d[i] + noise));
-            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
-            noise = (_canvasNoiseSeed % 3) - 1;
+            _seed = (_seed * 16807 + 0.5) % 2147483647;
+            noise = (_seed % 3) - 1;
             d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));
-            _canvasNoiseSeed = (_canvasNoiseSeed * 16807 + 0.5) % 2147483647;
-            noise = (_canvasNoiseSeed % 3) - 1;
+            _seed = (_seed * 16807 + 0.5) % 2147483647;
+            noise = (_seed % 3) - 1;
             d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));
           }
-          ctx.putImageData(imgData, 0, 0);
+          var _tmpCanvas2 = document.createElement('canvas');
+          _tmpCanvas2.width = this.width;
+          _tmpCanvas2.height = this.height;
+          _tmpCanvas2.getContext('2d').putImageData(imgData, 0, 0);
+          return _origToBlob.call(_tmpCanvas2, callback, type, quality);
         }
       } catch(e) {}
       return _origToBlob.call(this, callback, type, quality);
@@ -2180,6 +2192,75 @@ export function getStealthScript(profile: FingerprintProfile): string {
     if (window.outerWidth === window.innerWidth || window.outerHeight === window.innerHeight) {
       Object.defineProperty(window, 'outerWidth', { get: function() { return _targetOuterW; }, configurable: true });
       Object.defineProperty(window, 'outerHeight', { get: function() { return _targetOuterH; }, configurable: true });
+    }
+  } catch(e) {}
+
+  // ==================== Section 58: navigator.connection consistent download speed ====================
+  // Some anti-bot systems check if navigator.connection.downlink is suspiciously
+  // high for the reported effectiveType. Ensure consistency.
+  try {
+    if (navigator.connection) {
+      var _conn = navigator.connection;
+      var _dl = _conn.downlink || 10;
+      var _et = _conn.effectiveType || '4g';
+      // effectiveType thresholds: slow-2g(<0.05), 2g(0.05-0.1), 3g(0.1-0.5), 4g(>0.5)
+      var _typeForDownlink = _dl < 0.05 ? 'slow-2g' : _dl < 0.1 ? '2g' : _dl < 0.5 ? '3g' : '4g';
+      if (_et !== _typeForDownlink && _dl > 0) {
+        Object.defineProperty(_conn, 'effectiveType', { get: function() { return _typeForDownlink; }, configurable: true });
+      }
+      // Add realistic rtt variation
+      if (_conn.rtt === undefined || _conn.rtt === 0) {
+        var _rttForType = _typeForDownlink === '4g' ? 20 + Math.floor(_fakeDeviceSeed % 30) : _typeForDownlink === '3g' ? 100 + Math.floor(_fakeDeviceSeed % 200) : 500 + Math.floor(_fakeDeviceSeed % 500);
+        Object.defineProperty(_conn, 'rtt', { get: function() { return _rttForType; }, configurable: true });
+      }
+    }
+  } catch(e) {}
+
+  // ==================== Section 59: SharedArrayBuffer / Atomics detection ====================
+  // Some anti-bot systems check for SharedArrayBuffer presence (COOP/COEP required).
+  // Headless Chromium may have COOP/COEP headers while real browsers often don't.
+  // We DON'T remove SharedArrayBuffer (would break legit code), but we make
+  // crossOriginIsolated match the real-world expectation.
+  try {
+    // Most real Chrome users do NOT have crossOriginIsolated=true
+    // (requires COOP+COEP headers). Anti-bots check this inconsistency.
+    if (window.crossOriginIsolated === true) {
+      Object.defineProperty(window, 'crossOriginIsolated', { get: function() { return false; }, configurable: true });
+    }
+  } catch(e) {}
+
+  // ==================== Section 60: Font enumeration protection ====================
+  // Some anti-bot systems enumerate installed fonts via canvas or document.fonts.
+  // We limit the reported fonts to a common set to reduce uniqueness.
+  try {
+    if (document.fonts && document.fonts.forEach) {
+      var _origForEach = document.fonts.forEach;
+      document.fonts.forEach = function(callback, thisArg) {
+        var _filtered = [];
+        _origForEach.call(this, function(font) {
+          // Only expose common web-safe fonts (reduce fingerprint surface)
+          var _commonFonts = ['Arial', 'Arial Black', 'Comic Sans MS', 'Courier New', 'Georgia', 'Impact', 'Lucida Console', 'Lucida Sans Unicode', 'Microsoft Sans Serif', 'Palatino Linotype', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana', 'Webdings'];
+          if (_commonFonts.indexOf(font.family) >= 0 || font.status === 'loaded') {
+            _filtered.push(font);
+          }
+        });
+        _filtered.forEach(function(f, i) { callback.call(thisArg, f, i, _filtered); });
+      };
+      // Also limit check() to avoid probing non-standard fonts
+      var _origCheck = document.fonts.check.bind(document.fonts);
+      document.fonts.check = function(font, text) {
+        // Only allow check for common font families
+        try {
+          var _familyMatch = font.match(/(?:^|,\s*)"?([\w\s]+)"?/);
+          if (_familyMatch) {
+            var _family = _familyMatch[1].trim();
+            var _safeFonts = ['Arial', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana', 'serif', 'sans-serif', 'monospace'];
+            if (_safeFonts.indexOf(_family) >= 0) return _origCheck(font, text);
+            return false;
+          }
+        } catch(e) {}
+        return _origCheck(font, text);
+      };
     }
   } catch(e) {}
 

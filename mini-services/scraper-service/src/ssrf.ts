@@ -142,6 +142,26 @@ function isPrivateIp(ip: string): boolean {
 
   // IPv6 checks — expand then compare
   const expanded = expandIPv6(normalizedIp.toLowerCase());
+
+  // Check for IPv4-mapped IPv6 (::ffff:x.x.x.x in expanded hex form)
+  // e.g., 0000:0000:0000:0000:0000:ffff:7f00:0001 → 127.0.0.1
+  const v4Mapped = expanded.match(/^0000:0000:0000:0000:0000:ffff:([0-9a-f]{4}):([0-9a-f]{4})$/);
+  if (v4Mapped) {
+    const a = parseInt(v4Mapped[1], 16);
+    const b = parseInt(v4Mapped[2], 16);
+    const octets = [(a >> 8) & 0xff, a & 0xff, (b >> 8) & 0xff, b & 0xff];
+    // Re-check as IPv4
+    const [oa, ob] = octets;
+    if (oa === 0) return true;
+    if (oa === 10) return true;
+    if (oa === 127) return true;
+    if (oa === 169 && ob === 254) return true;
+    if (oa === 172 && ob >= 16 && ob <= 31) return true;
+    if (oa === 192 && ob === 168) return true;
+    if (oa >= 224) return true;
+    return false;
+  }
+
   // Loopback (::1 and 0:0:0:0:0:0:0:1)
   if (expanded === '0000:0000:0000:0000:0000:0000:0000:0001' ||
       expanded === '0000:0000:0000:0000:0000:0000:0000:0000') return true;
@@ -157,14 +177,56 @@ function isPrivateIp(ip: string): boolean {
 
 /**
  * Expand a compressed IPv6 address to full 8-group form for comparison.
+ * Handles: ::1, ::ffff:127.0.0.1, 7f00:1, fe80::1, full 8-group addresses
  * e.g. "::1" → "0000:0000:0000:0000:0000:0000:0000:0001"
  */
 function expandIPv6(ip: string): string {
-  if (!ip.includes('::')) return ip.toLowerCase();
-  const halves = ip.split('::', 2);
-  const left = halves[0] ? halves[0].split(':') : [];
-  const right = halves[1] ? halves[1].split(':') : [];
-  const missing = 8 - left.length - right.length;
-  const full = [...left, ...Array(missing).fill('0000'), ...right];
+  // IPv4-mapped IPv6 in hex form after ::ffff: stripping (e.g., "7f00:1")
+  // Convert to dotted decimal first, then re-check via IPv4 path
+  const colonCount = (ip.match(/:/g) || []).length;
+  const groups = ip.split(':');
+
+  if (ip.includes('::')) {
+    const halves = ip.split('::', 2);
+    const left = halves[0] ? halves[0].split(':') : [];
+    const right = halves[1] ? halves[1].split(':') : [];
+    const missing = 8 - left.length - right.length;
+    const full = [...left, ...Array(missing).fill('0000'), ...right];
+    return full.map(s => s.toLowerCase().padStart(4, '0')).join(':');
+  }
+
+  // Full 8-group IPv6 (e.g., 2001:0db8:...)
+  if (groups.length === 8) {
+    return groups.map(s => s.toLowerCase().padStart(4, '0')).join(':');
+  }
+
+  // Partial IPv6 without :: (e.g., "7f00:1" after ::ffff: stripping)
+  // This can represent an IPv4-mapped address in hex
+  if (groups.length <= 4 && groups.length >= 1) {
+    // Try to interpret as hex-encoded IPv4
+    const hexParts = groups.map(g => parseInt(g, 16));
+    if (hexParts.every(n => !isNaN(n) && n >= 0 && n <= 0xffff)) {
+      // Convert to 4 octets: pack hex groups into 32-bit, then extract bytes
+      let num = 0;
+      for (const h of hexParts) {
+        num = (num << 16) | h;
+      }
+      // Normalize to 32-bit unsigned
+      num = num >>> 0;
+      const a = (num >>> 24) & 0xff;
+      const b = (num >>> 16) & 0xff;
+      const c = (num >>> 8) & 0xff;
+      const d = num & 0xff;
+      // Return as IPv4-mapped IPv6 in expanded form for consistent checking
+      // Or better: return in a format that the IPv4 check regex will match
+      // We return the dotted decimal form — but isPrivateIp expects IPv6 format
+      // So we embed it in IPv6-mapped format
+      return `0000:0000:0000:0000:0000:ffff:${String(a).padStart(2,'0')}${String(b).padStart(2,'0')}:${String(c).padStart(2,'0')}${String(d).padStart(2,'0')}`;
+    }
+  }
+
+  // Fallback: pad with trailing zeros
+  const missing = 8 - groups.length;
+  const full = [...groups, ...Array(Math.max(0, missing)).fill('0000')];
   return full.map(s => s.toLowerCase().padStart(4, '0')).join(':');
 }

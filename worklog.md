@@ -14820,3 +14820,191 @@ Stage Summary:
 - 质量评分器新增统一字数和全短章异常检测
 - 累计: 329项
 - ESLint: 0 errors ✅
+---
+Task ID: R33-a
+Agent: Code Auditor (Round 33-a)
+Task: 网络/代理/安全层审计 (6文件/36角度)
+
+Work Log:
+- 读取并分析6个文件: proxy-manager.ts(1115行), ip-fingerprint.ts(147行), doh-simulation.ts(123行), http2-decoy.ts(124行), cookie-store.ts(148行), ssrf.ts(169行)
+- 通过实际代码执行验证SSRF绕过漏洞(6个测试向量全部绕过)
+- 交叉检查engines.ts中的recordSuccessWithRotation调用(3处)和getDomainProxyWithRotation调用(2处)
+- 验证utils.ts中ip-fingerprint/http2-decoy的Accept-Encoding冲突(Object.assign覆盖)
+- 检查cookie-jar.ts中对cookie-store的7处调用
+- 代码审查完成, 无需运行时验证 (纯代码审计)
+- ESLint: 未运行 (仅读取分析)
+
+## 审计结果
+
+### proxy-manager.ts (1115行)
+- [a] 边界条件/空值处理 → OK parseProxyUrl有try-catch; getProxy返回null; recordSuccess/recordFailure静默处理未知代理
+- [b] 安全性 → MEDIUM L709 exportProxies()导出entry.url(含user:pass凭证), 注释声称"without sensitive credential data"但实际泄露
+- [c] 正确性/逻辑Bug → MEDIUM L843-848 getDomainProxyWithRotation()未跳过SOCKS4代理(getProxy L320有跳过), 导致SOCKS4可能被选为top-N候选, 但getProxyDispatcher对SOCKS4返回null, 引擎调用必然失败
+- [d] 性能 → OK 加权选择O(n)可接受; dispatcher缓存避免重复创建; LRU驱逐O(n)对200条目可接受
+- [e] 鲁棒性 → OK 健康检查有15s+10s双重超时和降级; loadFromConfig静默跳过无效URL; 冷却/禁用机制完善
+- [f] 数据完整性/一致性 → LOW domainRotationCount/domainRotationIndex Map无过期清理, 域名数可无限增长; LOW importProxies仅使用url字段, 导出的健康数据(healthScore/successCount等)在导入时丢弃
+
+### ip-fingerprint.ts (147行)
+- [a] 边界条件/空值处理 → OK 空URL返回{}; URL解析失败返回{}; Math.random()无异常可能
+- [b] 安全性 → OK 仅生成出站HTTP头, 无注入风险; LRU缓存有上限
+- [c] 正确性/逻辑Bug → MEDIUM (与http2-decoy.ts关联) getDiversifiedHeaders()在utils.ts L865-866通过Object.assign(headers, diversified)覆盖了http2-decoy.ts设置的Accept-Encoding(L765), 导致http2-decoy的Accept-Encoding多样化在实际请求流中完全失效(死代码)
+- [d] 性能 → OK 缓存200条目, O(n)驱逐可接受
+- [e] 鲁棒性 → OK 无外部依赖, 纯内存操作
+- [f] 数据完整性/一致性 → INFO L142-146 getDomainHeaderStats()返回domainsCached和cacheSize两个始终相同的冗余字段
+
+### doh-simulation.ts (123行)
+- [a] 边界条件/空值处理 → OK 空domain返回null; parts.length!==4防护; try-catch兜底
+- [b] 安全性 → MEDIUM L28-35 generateRandomIp()仅生成RFC1918私有IP(10.x/172.16-31.x/192.168.x), 作为X-Forwarded-For发送, 目标服务器可轻易识别为伪造(无合法客户端使用私有IP作为X-Forwarded-For); 实际上反而增加了被检测风险
+- [c] 正确性/逻辑Bug → OK 172.16-31范围计算正确; /24子网变异逻辑正确; 缓存TTL和驱逐逻辑正确
+- [d] 性能 → OK 100条目缓存, O(n)驱逐可接受
+- [e] 鲁棒性 → LOW 缓存不过期主动清理, 仅在新增条目时驱逐最旧条目; 若长时间不新增域名, 过期条目持续占用缓存槽
+- [f] 数据完整性/一致性 → OK 同一缓存周期内/24子网一致; TTL后重新生成(设计意图)
+
+### http2-decoy.ts (124行)
+- [a] 边界条件/空值处理 → OK 空domain正常hash; 缓存TTL和驱逐逻辑与ip-fingerprint一致
+- [b] 安全性 → OK 仅生成连接参数, 无安全风险
+- [c] 正确性/逻辑Bug → INFO 已知限制: 仅5种Accept-Encoding池(ENCODING_POOLS), 200个缓存域名中大量重复; 但由于与ip-fingerprint的覆盖冲突(见上), 此模块的Accept-Encoding实际上从未发送
+- [d] 性能 → OK domainHash O(n)对短域名可接受; 无性能问题
+- [e] 鲁棒性 → OK 纯计算, 无外部依赖
+- [f] 数据完整性/一致性 → OK 域名hash确定性, 同域名始终同一profile; 与ip-fingerprint使用不同缓存但互不冲突(除Accept-Encoding被覆盖)
+
+### cookie-store.ts (148行)
+- [a] 边界条件/空值处理 → OK 空cookies数组提前返回; dbPath有默认值; WAL模式处理并发
+- [b] 安全性 → INFO L139 exportAll()将所有cookie(含value)导出为JSON, 若通过API暴露则泄露会话数据; 但这取决于API层控制
+- [c] 正确性/逻辑Bug → MEDIUM L26-38 CREATE TABLE缺少UNIQUE(name, domain, path)约束, 导致INSERT OR REPLACE(L51)在无冲突键时退化为INSERT, 同一cookie可累积多行; getByDomain返回重复cookie, cookie-jar.ts将发送重复Cookie头
+- [d] 性能 → OK 事务批量upsert; domain索引存在; PRAGMA配置合理(WAL+busy_timeout)
+- [e] 鲁棒性 → LOW upsert/getByDomain/deleteByDomain无try-catch, SQLite错误(磁盘满/损坏)直接抛出到调用方; cookie-jar.ts部分调用有try-catch但upsert(L167)没有
+- [f] 数据完整性/一致性 → OK PRAGMA journal_mode=WAL + synchronous=NORMAL提供良好持久性; deleteExpired正确处理session cookie(expires=0)
+
+### ssrf.ts (169行)
+- [a] 边界条件/空值处理 → OK 全函数try-catch返回false; 空URL/malformed URL被拦截
+- [b] 安全性 → HIGH L162-169 expandIPv6()不处理无"::"的IPv6地址(如"7f00:1"), 导致IPv6-mapped IPv4十六进制表示绕过所有私有IP检查; 验证结果:
+  - [::ffff:7f00:1] → 127.0.0.1绕过 ✗
+  - [::ffff:a00:1] → 10.0.0.1绕过 ✗
+  - [::ffff:c0a8:1] → 192.168.0.1绕过 ✗
+  - [::ffff:ac10:1] → 172.16.0.1绕过 ✗
+  - [::ffff:a9fe:a9fe] → 169.254.169.254(AWS元数据)绕过 ✗
+  - [::ffff:0:0] → 0.0.0.0绕过 ✗
+  控制组(点分十进制)::ffff:127.0.0.1正确拦截 ✓
+  根因: isPrivateIp L120去掉::ffff:前缀后, 残余如"7f00:1"不含"::", expandIPv6原样返回, 不匹配任何私有IP模式
+  LOW L47 缺少localhost6/localhost6.localdomain6(部分系统上的IPv6回环主机名)
+- [c] 正确性/逻辑Bug → 同[b] HIGH; expandIPv6对非"::"压缩地址(如"7f00:1")不补零至8组, 是绕过的直接原因
+- [d] 性能 → OK 纯字符串/正则操作, 无性能问题
+- [e] 鲁棒性 → OK 全函数try-catch; URL解析失败安全降级为false
+- [f] 数据完整性/一致性 → INFO L4-8 自述为sanitize.ts的独立副本, 存在实现漂移风险; 若sanitize.ts修复了此问题但ssrf.ts未同步, 仍存在漏洞
+
+## 修复清单
+| # | 严重度 | 文件 | 行号 | 问题描述 |
+|---|--------|------|------|----------|
+| 1 | HIGH | ssrf.ts | L162-169 | expandIPv6不处理无"::"的IPv6地址, IPv6-mapped IPv4十六进制表示(::ffff:7f00:1等)绕过所有私有IP检查, 可访问127.0.0.1/10.0.0.0/192.168.0.0/169.254.169.254 |
+| 2 | MEDIUM | proxy-manager.ts | L843-848 | getDomainProxyWithRotation()未跳过SOCKS4代理(与getProxy L320不一致), 可选SOCKS4但getProxyDispatcher返回null导致请求必然失败 |
+| 3 | MEDIUM | proxy-manager.ts | L709 | exportProxies()导出entry.url含user:pass凭证, 注释声称"without sensitive credential data"但实际泄露 |
+| 4 | MEDIUM | cookie-store.ts | L26-38 | CREATE TABLE缺少UNIQUE(name, domain, path)约束, INSERT OR REPLACE退化为INSERT, 同一cookie累积多行导致重复Cookie头 |
+| 5 | MEDIUM | ip-fingerprint.ts+http2-decoy.ts | utils.ts L765+L865 | getDiversifiedHeaders的Object.assign覆盖http2-decoy的Accept-Encoding, 后者实际为死代码 |
+| 6 | MEDIUM | doh-simulation.ts | L28-35 | generateRandomIp仅生成RFC1918私有IP作为X-Forwarded-For, 可被目标服务器轻易识别为伪造 |
+| 7 | LOW | proxy-manager.ts | L225-227 | domainRotationCount/domainRotationIndex Map无过期清理, 域名数可无限增长 |
+| 8 | LOW | ssrf.ts | L47 | 缺少localhost6/localhost6.localdomain6 IPv6回环主机名 |
+| 9 | LOW | doh-simulation.ts | L60-74 | 缓存不过期主动清理, 过期条目持续占用直到新条目驱逐 |
+| 10 | LOW | cookie-store.ts | L47-69 | upsert无try-catch, SQLite错误(磁盘满)直接抛出到调用方 |
+| 11 | INFO | ip-fingerprint.ts | L142-146 | getDomainHeaderStats()返回两个冗余的相同字段 |
+| 12 | INFO | ssrf.ts | L4-8 | 自述为sanitize.ts独立副本, 存在实现漂移风险 |
+
+Stage Summary:
+- 36 个审计角度, 24 确认正确, 12 发现 (1 HIGH, 5 MEDIUM, 4 LOW, 2 INFO)
+- 关键发现: SSRF IPv6-mapped十六进制绕过(HIGH)允许访问所有内网地址包括AWS元数据; proxy-manager SOCKS4泄漏; cookie-store重复cookie; Accept-Encoding模块冲突
+- 累计: 329 项 (无新增修复)
+- 建议修复: 1 HIGH + 5 MEDIUM + 4 LOW = 10 项
+- ESLint: 未运行
+---
+Task ID: R33-b
+Agent: Code Auditor (Round 33-b)
+Task: stealth.ts Section 1-29 + fingerprint + humanizedFetchDelay 审计
+
+Work Log:
+- 读取stealth.ts全部2923行（57个stealth section + fingerprint生成器 + 增强函数）
+- 逐section交叉分析依赖关系和覆盖关系
+- 验证Mesa GPU pool与WebGL section一致性
+- 检查seed确定性/PRNG使用情况
+- 分析JSON.stringify注入安全性
+- 检查humanizedFetchDelay和shuffleHeaderOrder的seed使用
+- 识别9处section被后续section完全覆盖的死代码模式
+- 代码审查完成, 无需运行时验证 (纯代码审计)
+- ESLint: 未运行 (仅读取分析)
+
+## 审计结果
+
+### 区域1: fingerprint生成 (L15-304)
+- [a] seed确定性 → OK generateFingerprintProfile使用dPick从seed hash派生, 同seed同profile
+- [b] profile完整性 → OK FingerprintProfile接口覆盖14个字段, 均有赋值
+- [c] GPU生成(Mesa) → OK Linux x86_64强制vendor='Mesa', 渲染器从Mesa pool选取, 无Direct3D
+- [d] UA一致性 → **MEDIUM** L212-213 generateFingerprintProfile中MacIntel平台可从全WEBGL_VENDORS选取vendor, 若选到非Apple vendor则得到Direct3D11渲染器字符串(如'ANGLE (NVIDIA, ..., Direct3D11 vs_5_0 ps_5_0, D3D11)'), macOS上不可能出现Direct3D; generateRandomFingerprint L271-272有同样问题
+- [e] 缓存/LRU → OK profileCache 500条/30min TTL, domainUACache 500条无TTL但有LRU驱逐, 驱逐逻辑正确
+- [f] export导出 → OK 所有公共函数和接口正确导出, FingerprintProfile类型完整
+
+### 区域2: getStealthScript (L400-2187)
+- [a] PROFILE序列化 → **INFO** L411 `JSON.stringify(profile)`不转义`</script>`序列; 当前数据池全部硬编码不含此序列, 理论安全但模式不安全
+- [b] 变量转义 → OK languagesJSON(L401)和platform(L518)均用JSON.stringify正确转义
+- [c] 脚本大小 → OK 整个注入脚本约1800行JS, 在addInitScript可接受范围内
+- [d] 错误处理 → OK 关键override均有try-catch(如WebRTC L713, Storage L891, attachShadow L776); 浏览器API缺失有typeof检查
+- [e] Section依赖顺序 → **MEDIUM** 9个section被后续section完全覆盖(见下方死代码清单), 浪费约200行注入代码并增加攻击面
+- [f] 重复Section检测 → **INFO** 代码中用注释标记了已知重复(如Section 4/30, Section 5/31, Section 50/36, Section 42/51), 但仍有5处未标记的重复覆盖
+
+### 区域3: Section 1-10 (基础属性覆盖)
+- [a] navigator.webdriver → OK L416-419 configurable:true, L422删除原型链属性; Section 11 L822-833补充删除CDP/Puppeteer标记
+- [b] navigator.plugins → **MEDIUM** L425-462 Section 1创建5个硬编码plugin并override, 但L1167-1186 Section 23用平台特定3-4个plugin完全覆盖; Section 1的plugin override是死代码(~40行)
+- [c] navigator.languages → OK L495-498使用JSON.stringify正确注入; L929 iframe也正确传播
+- [d] navigator.platform → OK L517-520使用JSON.stringify; 与fingerprint生成一致
+- [e] navigator.hardwareConcurrency → OK L506-509直接使用profile数值; iframe L936-938也传播
+- [f] screen属性 → **LOW** L654-693 Section 6设置screen属性和outerWidth/outerHeight, 但outerWidth/outerHeight被Section 37(L1598-1607)和Section 57(L2181-2182)覆盖; availHeight硬编码减40px不够灵活
+
+### 区域4: Section 11-20 (Canvas/WebGL/Audio)
+- [a] Canvas noise → **MEDIUM** L1101-1112 Section 21(getImageData)使用Math.random()注入噪声, 每次调用结果不同; 但L1345-1400 Section 30(toDataURL/toBlob)使用seeded PRNG设计为确定性; Section 30内部调用getImageData会经过Section 21的Math.random()覆盖, 导致canvas输出实际非确定性, 破坏Section 30的设计意图
+- [b] toDataURL一致性 → **MEDIUM** L1371 Section 30在toDataURL中调用putImageData将修改后的数据写回canvas, 永久修改canvas内容; 后续toDataURL调用会基于已损坏的canvas内容再次添加噪声, 导致同一canvas多次toDataURL产生不同结果(即使Section 30的seeded PRNG是确定性的)
+- [c] WebGL参数 → OK L614-631 WebGL1和WebGL2的getParameter正确覆盖UNMASKED_VENDOR/RENDERER; 使用PROFILE.webglVendor/Renderer与fingerprint一致; L634-639确保WEBGL_debug_renderer_info扩展可用
+- [d] AudioContext → OK L1402-1448 Section 31覆盖AudioContext和OfflineAudioContext的createOscillator, 使用seeded PRNG注入±0.005Hz频率偏移; 两个context使用同一个_audioNoiseSeed确保一致性
+- [e] 确定性(同seed同结果) → **LOW** L1108 Section 21 getImageData使用Math.random()破坏确定性; L1205 Section 25 performance.now offset使用Math.random()破坏确定性
+- [f] 性能(每次调用开销) → OK WeakMap缓存(L985/L997)防止getBoundingClientRect/getClientRects重复计算; canvas噪声遍历所有像素但有Math.max/min边界检查; audio噪声仅在createOscillator时计算一次
+
+### 区域5: Section 21-29 (中级属性)
+- [a] Permissions API → OK Section 8(L755-770)和Section 49(L1908-1928)形成调用链; Section 49的_origPermissionsQuery指向Section 8的函数, 未匹配的权限名会正确传递到Section 8处理; 最终行为一致
+- [b] MediaDevices → **LOW** L1061-1082 Section 19的enumerateDevices override被Section 28(L1277-1292)完全覆盖; Section 19是死代码(~20行)
+- [c] Battery API → **LOW** L1038-1057 Section 18的getBattery override被Section 29(L1298-1343)完全覆盖; Section 18是死代码(~20行)
+- [d] Navigation Timing → OK Section 32(L1450-1498)使用seeded PRNG生成确定性timing值; 覆盖h2协议、DOM事件时间、传输大小等; 性能offset与Section 25的navigationStart一致
+- [e] PerformanceObserver → OK Section 33(L1500-1553)对7种entry type进行neutralize; 非neutralize类型正确pass-through到real observer; supportedEntryTypes正确保留
+- [f] hasFocus → OK Section 36(L1581-1586)无条件override为true; Section 50(L1930-1942)的`if (!document.hasFocus())`条件因Section 36已设为true而永不触发, Section 50是死代码
+
+### 区域6: humanizedFetchDelay + shuffleHeaderOrder (L2254-2604)
+- [a] 时段感知逻辑 → OK L2572-2581三时段划分正确(peak 9-23, off-peak 6-9/23+, dead 2-6); 延迟范围合理
+- [b] 参数默认值 → OK 无外部参数; domain为必需参数; 返回值最小50ms(300+50=350, L2574+L2592)
+- [c] seed使用 → **INFO** L2564 base delay使用domainHash(domain)确定性计算; L2592 microDelay使用Math.random()非确定性 — 这是有意设计(base一致性 + micro人类化抖动)
+- [d] 边界值 → OK normalized = (h % 1000) / 1000 范围[0, 0.999]; baseDelay最小300ms最大2000ms; microDelay 50-200ms; 总延迟350-2200ms均合理
+- [e] 与R31删除重复的兼容 → OK 未发现与R31相关的重复; humanizedFetchDelay是唯一实现
+- [f] 主题头顺序多样性 → **INFO** L2262-2273 Chrome和Edge的BROWSER_HEADER_ORDERS完全相同(都是sec-ch-ua先头的顺序), 仅3种真正不同的模板(Chrome/Edge, Firefox, Safari), 多样性略低于声称的4种
+
+### 特别关注回答
+1. **Mesa GPU pool与WebGL renderer一致性**: OK. Linux x86_64强制vendor='Mesa'(L215), renderer从Mesa pool(L84-92)选取, stealth section 3(L617-619)使用PROFILE.webglVendor/Renderer, 三者一致
+2. **Section 1-10中被后续Section重复覆盖的死代码**: 确认9处(详见下方清单), 与R32发现的Section 50/42问题属同一模式
+3. **humanizedFetchDelay seed使用**: L2564 base delay用domainHash(确定性), L2592 micro delay用Math.random()(非确定性, 有意设计)
+4. **JSON.stringify `</script>`**: L411使用JSON.stringify(profile), 不转义</script>序列; 当前所有数据池为硬编码常量不含此序列, 理论安全
+
+## 修复清单
+| # | 严重度 | 文件 | 行号 | 问题描述 |
+|---|--------|------|------|----------|
+| 1 | MEDIUM | stealth.ts | L212-213, L271-272 | MacIntel平台可从全WEBGL_VENDORS选取vendor(含NVIDIA/Intel/AMD), 导致macOS profile得到Direct3D11渲染器字符串('ANGLE (NVIDIA, ..., Direct3D11 vs_5_0 ps_5_0, D3D11)'), macOS不可能出现Direct3D |
+| 2 | MEDIUM | stealth.ts | L552 | navigator.vendor硬编码'Google Inc.'不区分浏览器; Firefox应返回空字符串'', 当前Firefox UA profile的vendor指纹可被检测 |
+| 3 | MEDIUM | stealth.ts | L425-462, L686-693, L860-886, L1038-1057, L1061-1082, L1086-1097, L1706-1723, L1930-1942, L2027-2070 | 9个section被后续section完全覆盖形成死代码: Sec1 plugins→Sec23, Sec6 outerW/H→Sec37/57, Sec13 conn→Sec17, Sec18 battery→Sec29, Sec19 mediaDevices→Sec28, Sec20 speech→Sec42→Sec51, Sec42 speech→Sec51, Sec50 hasFocus→Sec36, Sec54 chrome→Sec2; 约200行无效注入代码增加攻击面和脚本大小 |
+| 4 | MEDIUM | stealth.ts | L1108, L1356 | Section 21 getImageData使用Math.random()注入噪声, Section 30 toDataURL内部调用getImageData时经过Section 21的覆盖, 导致canvas fingerprint实际非确定性(破坏Section 30的seeded PRNG设计意图) |
+| 5 | MEDIUM | stealth.ts | L1371, L1395 | Section 30 toDataURL/toBlob在注入噪声后调用putImageData将修改写回canvas, 永久损坏canvas原始内容; 同一canvas多次toDataURL产生不同结果(噪声叠加在已损坏内容上) |
+| 6 | LOW | stealth.ts | L1108 | Section 21 getImageData噪声使用Math.random()非seeded PRNG, 每次调用结果不同, 可被检测(同一canvas两次getImageData → 不同fingerprint) |
+| 7 | LOW | stealth.ts | L1205 | Section 25 performance.now offset使用Math.random()非seeded PRNG, 跨页面加载不一致 |
+| 8 | LOW | stealth.ts | L2011 | Section 53 devicePixelRatio期望值使用Math.random()非seeded PRNG, 且可能与Section 6设置的PROFILE.pixelRatio冲突导致DPR不一致 |
+| 9 | LOW | stealth.ts | L253 | languages硬编码为["zh-CN","zh","en-US","en"], 不随UA locale变化; 若profile生成Firefox en-US UA, languages仍以zh-CN为首, 不一致 |
+| 10 | INFO | stealth.ts | L411 | JSON.stringify(profile)不转义</script>序列, 当前硬编码数据池安全但模式脆弱 |
+| 11 | INFO | stealth.ts | L2262-2273 | Chrome和Edge的BROWSER_HEADER_ORDERS完全相同, 实际仅3种不同header顺序模板 |
+
+Stage Summary:
+- 36 个审计角度, 21 确认正确, 11 发现 (0 HIGH, 5 MEDIUM, 4 LOW, 2 INFO)
+- 关键发现: MacIntel可得到Direct3D渲染器(MEDIUM); 9个section死代码约200行(MEDIUM); canvas双噪声+永久损坏(MEDIUM); navigator.vendor不区分浏览器(MEDIUM)
+- 累计: 329 项 (无新增修复)
+- 建议修复: 5 MEDIUM + 4 LOW = 9 项
+- ESLint: 未运行

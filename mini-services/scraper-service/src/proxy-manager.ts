@@ -706,8 +706,10 @@ class ProxyManager {
     }> = [];
 
     for (const entry of this.pool.values()) {
+      // Redact credentials from URL for export (security)
+      const safeUrl = entry.url.replace(/\/\/[^:]+:[^@]+@/, '//***:***@');
       entries.push({
-        url: entry.url,
+        url: safeUrl,
         protocol: entry.protocol,
         host: entry.host,
         port: entry.port,
@@ -844,6 +846,8 @@ class ProxyManager {
         if (entry.disabled) return false;
         if (entry.coolingUntil && now < entry.coolingUntil) return false;
         if (entry.blockedDomains.has(normalisedDomain)) return false;
+        // Skip SOCKS4 proxies (no compatible dispatcher available)
+        if (entry.protocol === 'socks4') return false;
         return true;
       })
       .sort((a, b) => b.healthScore - a.healthScore);
