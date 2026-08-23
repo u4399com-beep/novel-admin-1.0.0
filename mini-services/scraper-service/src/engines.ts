@@ -503,6 +503,9 @@ class PlaywrightEngine implements ScrapingEngine {
     let pwDomain: string;
     try { pwDomain = new URL(url).hostname; } catch { pwDomain = ''; }
 
+    // Track last status code for outer recordResult (avoids double-counting in retries)
+    let lastPwStatusCode = 0;
+
     return retryWithBackoff(
       async () => {
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
@@ -648,11 +651,8 @@ class PlaywrightEngine implements ScrapingEngine {
           // Record URL in referrer chain for future requests
           referrerChain.recordVisit(finalUrl);
 
-          // Record rate limit result
-          if (pwDomain) {
-            rateLimiter.recordResult(pwDomain, responseStatus >= 200 && responseStatus < 400, responseStatus);
-            try { antiCrawlAdvisor.recordSuccess(pwDomain); } catch { /* non-critical */ }
-          }
+          // Track last status code for outer recordResult
+          lastPwStatusCode = responseStatus;
 
           // Record proxy health for Playwright engine
           if (pwProxy && pwDomain) {
@@ -668,16 +668,14 @@ class PlaywrightEngine implements ScrapingEngine {
             captcha: pwCaptcha?.detected ? pwCaptcha : undefined,
           };
         } catch (err) {
-          // Record rate limit result on failure
-          if (pwDomain) {
-            const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
-            rateLimiter.recordResult(pwDomain, false, errStatus || undefined);
-            try { antiCrawlAdvisor.recordFailure(pwDomain); } catch { /* non-critical */ }
-          }
-          // Record proxy failure for Playwright engine
+          // Track error status for outer recordResult
+          lastPwStatusCode = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
+          // Record proxy failure for Playwright engine (per-retry is correct for proxy)
           if (pwProxy) {
             proxyManager.recordFailure(pwProxy.url, err instanceof Error ? err.message : String(err));
           }
+          // NOTE: rateLimiter.recordResult is called OUTSIDE retryWithBackoff (below)
+          // to avoid double-counting retry attempts as separate requests.
           throw err;
         } finally {
           try {
@@ -691,8 +689,27 @@ class PlaywrightEngine implements ScrapingEngine {
         maxRetries: options?.antiCrawl?.retries ?? 2,
         baseDelay: 2000,
         maxDelay: 20000,
+        onRetry: pwProxy ? (_attempt, err) => {
+          proxyManager.recordFailure(pwProxy.url, err.message);
+        } : undefined,
       }
-    );
+    ).then(result => {
+      // Record final success (single record for the logical request)
+      if (pwDomain) {
+        rateLimiter.recordResult(pwDomain, true, lastPwStatusCode);
+        try { antiCrawlAdvisor.recordSuccess(pwDomain); } catch { /* non-critical */ }
+      }
+      requestFingerprintMgr.complete(fp.requestId, true, lastPwStatusCode);
+      return result;
+    }).catch(err => {
+      // Record final failure (single record for the logical request)
+      if (pwDomain) {
+        rateLimiter.recordResult(pwDomain, false, lastPwStatusCode || undefined);
+        try { antiCrawlAdvisor.recordFailure(pwDomain); } catch { /* non-critical */ }
+      }
+      requestFingerprintMgr.complete(fp.requestId, false, lastPwStatusCode);
+      throw err;
+    });
   }
 
   async close(): Promise<void> {
@@ -1337,6 +1354,9 @@ class ObscuraEngine implements ScrapingEngine {
     const profile = getProfileForDomain(domain);
     const stealthScript = getStealthScript(profile);
 
+    // Track last status code for outer recordResult (avoids double-counting in retries)
+    let lastObscuraStatus = 0;
+
     return retryWithBackoff(
       async () => {
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
@@ -1371,6 +1391,7 @@ class ObscuraEngine implements ScrapingEngine {
           screen: {
             width: profile.screenWidth,
             height: profile.screenHeight,
+            colorDepth: profile.colorDepth,
           },
           bypassCSP: true,
           javaScriptEnabled: true,
@@ -1624,17 +1645,13 @@ class ObscuraEngine implements ScrapingEngine {
           // Record URL in referrer chain for future requests
           referrerChain.recordVisit(finalUrl);
 
-          // Record rate limit result (only if not throwing CAPTCHA above)
-          rateLimiter.recordResult(domain, obscuraStatus >= 200 && obscuraStatus < 400, obscuraStatus);
-          try { antiCrawlAdvisor.recordSuccess(domain); } catch { /* non-critical */ }
+          // Track last status code for outer recordResult
+          lastObscuraStatus = obscuraStatus;
 
           // Record proxy health for Obscura engine
           if (proxy) {
             proxyManager.recordSuccessWithRotation(proxy.url, domain, Date.now() - obscuraStartTime);
           }
-
-          // Track request fingerprint
-          requestFingerprintMgr.complete(fp.requestId, true, obscuraStatus);
 
           return {
             html,
@@ -1643,24 +1660,18 @@ class ObscuraEngine implements ScrapingEngine {
             captcha: captchaDetection?.detected ? captchaDetection : undefined,
           };
         } catch (err) {
-          // Record rate limit result on failure (covers both CAPTCHA and non-CAPTCHA errors)
-          // This is the ONLY place recordResult is called for failures, ensuring no double-recording
-          // NOTE: obscuraStatus is const-declared below; if page.goto() throws before reaching it,
-          // we extract status from the error message instead (same as Playwright engine).
+          // Track error status for outer recordResult
           if (err instanceof Error && err.message.startsWith('CAPTCHA detected')) {
-            // For CAPTCHA, the status was 403/503 — extract from message context or default to 403
-            rateLimiter.recordResult(domain, false, 403);
+            lastObscuraStatus = 403;
           } else {
-            const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
-            rateLimiter.recordResult(domain, false, errStatus || undefined);
+            lastObscuraStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
           }
-          try { antiCrawlAdvisor.recordFailure(domain); } catch { /* non-critical */ }
-          // Record proxy failure for Obscura engine
+          // Record proxy failure for Obscura engine (per-retry is correct for proxy)
           if (proxy) {
             proxyManager.recordFailure(proxy.url, err instanceof Error ? err.message : String(err));
           }
-          // Track request fingerprint (failure)
-          requestFingerprintMgr.complete(fp.requestId, false, 0);
+          // NOTE: rateLimiter.recordResult is called OUTSIDE retryWithBackoff (below)
+          // to avoid double-counting retry attempts as separate requests.
           throw err;
         } finally {
           try {
@@ -1674,8 +1685,23 @@ class ObscuraEngine implements ScrapingEngine {
         maxRetries: options?.antiCrawl?.retries ?? 2,
         baseDelay: 2000,
         maxDelay: 20000,
+        onRetry: (proxy) ? (_attempt, err) => {
+          proxyManager.recordFailure(proxy.url, err.message);
+        } : undefined,
       }
-    );
+    ).then(result => {
+      // Record final success (single record for the logical request)
+      rateLimiter.recordResult(domain, true, lastObscuraStatus);
+      try { antiCrawlAdvisor.recordSuccess(domain); } catch { /* non-critical */ }
+      requestFingerprintMgr.complete(fp.requestId, true, lastObscuraStatus);
+      return result;
+    }).catch(err => {
+      // Record final failure (single record for the logical request)
+      rateLimiter.recordResult(domain, false, lastObscuraStatus || undefined);
+      try { antiCrawlAdvisor.recordFailure(domain); } catch { /* non-critical */ }
+      requestFingerprintMgr.complete(fp.requestId, false, lastObscuraStatus);
+      throw err;
+    });
   }
 
   async close(): Promise<void> {

@@ -266,13 +266,13 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
  */
 export function generateRandomFingerprint(): FingerprintProfile {
   const platform = pick(PLATFORMS);
-  // Constrain vendor to match platform (Apple GPU on macOS, Mesa on Linux)
+  // Constrain vendor to match platform (Apple GPU only on macOS, Mesa on Linux)
   let vendor: string;
   if (platform === 'MacIntel') {
-    const compatibleVendors = WEBGL_VENDORS;
-    vendor = pick(compatibleVendors);
+    // macOS only uses Apple GPU — Direct3D11 renderers on Mac = instant fingerprint exposure
+    vendor = 'Google Inc. (Apple)';
   } else if (platform === 'Linux x86_64') {
-    vendor = 'Mesa';
+    vendor = 'Mesa'; // Linux uses Mesa OpenGL, not ANGLE/Direct3D
   } else {
     const compatibleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
     vendor = pick(compatibleVendors.length > 0 ? compatibleVendors : WEBGL_VENDORS);
@@ -554,6 +554,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
   const _isFirefox = /Firefox\//.test(_uaString) || /Seamonkey\//i.test(_uaString);
   Object.defineProperty(navigator, 'vendor', {
     get: () => _isFirefox ? '' : 'Google Inc.',
+    configurable: true,
+  });
+  // Firefox returns empty string for languages, not zh-CN
+  const _isSafari = /Safari\//.test(_uaString) && !_isFirefox;
+  Object.defineProperty(navigator, 'languages', {
+    get: () => _isFirefox ? ['en-US', 'en'] : PROFILE.languages || ['en-US', 'en', 'zh-CN', 'zh'],
     configurable: true,
   });
 
@@ -1159,7 +1165,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
       { name: 'Widevine Content Decryption Module', filename: 'libwidevinecdmadapter.so', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
     ],
   };
-  var _selPlugins = _platformPlugins[PROFILE.platform] || _platformPlugins['Win32'];
+  // Firefox has zero plugins (different extension model)
+  // Injecting Chrome plugins on Firefox UA is a detection vector
+  var _selPlugins = _isFirefox ? [] : (_platformPlugins[PROFILE.platform] || _platformPlugins['Win32']);
   var _platPluginInstances = _selPlugins.map(function(p) {
     var pl = Object.create(Plugin.prototype);
     Object.defineProperties(pl, {
@@ -1302,10 +1310,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // navigator.getBattery() returns a realistic BatteryManager mock.
   // Overrides both cases: API missing (create mock) and API present (intercept real).
   if (!navigator.getBattery) {
-    var _batteryLevel = 0.65 + Math.abs(Math.sin(_fakeDeviceSeed)) * 0.35; // 0.65–1.0
-    var _batteryCharging = true;
-    var _batteryChargingTime = 3600;
-    var _batteryDischargingTime = Infinity;
+    // Use seeded values for deterministic battery state per profile.
+    // Real battery level doesn't change between consecutive API calls.
+    var _batteryLevel = 0.55 + Math.abs(Math.sin(_fakeDeviceSeed * 2.37)) * 0.40; // 0.55–0.95
+    var _batteryCharging = _fakeDeviceSeed > 0.5;
+    var _batteryChargingTime = _batteryCharging ? 3600 + Math.floor(_fakeDeviceSeed * 3000) : Infinity;
+    var _batteryDischargingTime = _batteryCharging ? Infinity : 7200 + Math.floor(_fakeDeviceSeed * 10000);
 
     Object.defineProperty(navigator, 'getBattery', {
       value: function() {
@@ -1331,15 +1341,17 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } else if (navigator.getBattery) {
     // Override existing getBattery to return fake data
     var _origGetBattery = navigator.getBattery.bind(navigator);
-    var _fbLevel = 0.55 + Math.abs(Math.cos(_fakeDeviceSeed)) * 0.40;
+    // Use seeded values for deterministic battery state (same as API-missing path)
+    var _fbLevel = 0.55 + Math.abs(Math.sin(_fakeDeviceSeed * 3.14)) * 0.40;
+    var _fbCharging = _fakeDeviceSeed > 0.4;
     Object.defineProperty(navigator, 'getBattery', {
       value: function() {
         return _origGetBattery().then(function(realBattery) {
           try {
             Object.defineProperty(realBattery, 'level', { get: function() { return _fbLevel; }, configurable: true });
-            Object.defineProperty(realBattery, 'charging', { get: function() { return true; }, configurable: true });
-            Object.defineProperty(realBattery, 'chargingTime', { get: function() { return 5400; }, configurable: true });
-            Object.defineProperty(realBattery, 'dischargingTime', { get: function() { return Infinity; }, configurable: true });
+            Object.defineProperty(realBattery, 'charging', { get: function() { return _fbCharging; }, configurable: true });
+            Object.defineProperty(realBattery, 'chargingTime', { get: function() { return _fbCharging ? 3600 + Math.floor(_fakeDeviceSeed * 3000) : Infinity; }, configurable: true });
+            Object.defineProperty(realBattery, 'dischargingTime', { get: function() { return _fbCharging ? Infinity : 7200 + Math.floor(_fakeDeviceSeed * 10000); }, configurable: true });
           } catch(e) {}
           return realBattery;
         });
@@ -1918,25 +1930,32 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // Section 49: Permissions API consistency
-  // Headless browsers may return different permission states.
-  // Ensure geolocation, notifications, camera, microphone return consistent 'prompt'.
+  // Section 49: Permissions API consistency (consolidated — Section 8 already handles notifications)
+  // Section 38 (Permissions.prototype.query) is dead code because instance overrides take priority.
+  // This section ensures any permissions NOT already covered by Section 8 return 'prompt'.
+  // It's safe to re-override since the behavior is identical: notifications from Section 8,
+  // others fall through to this section or the original.
   try {
     if (navigator.permissions && navigator.permissions.query) {
       var _origPermissionsQuery = navigator.permissions.query.bind(navigator.permissions);
-      var _permOverrides = {
-        'geolocation': 'prompt',
-        'notifications': 'prompt',
-        'camera': 'prompt',
-        'microphone': 'prompt',
-      };
-      navigator.permissions.query = function(descriptor) {
-        var name = typeof descriptor === 'object' ? descriptor.name : String(descriptor);
-        if (_permOverrides.hasOwnProperty(name)) {
-          return Promise.resolve({ state: _permOverrides[name], onchange: null });
-        }
-        return _origPermissionsQuery(descriptor);
-      };
+      // Already overridden by Section 8 — avoid redundant override
+      // Only override if Section 8's override is not in place (e.g. Section 8 was skipped)
+      if (navigator.permissions.query.toString().indexOf('_isFirefox') === -1 &&
+          navigator.permissions.query.toString().indexOf('notifications') === -1) {
+        var _permOverrides = {
+          'geolocation': 'prompt',
+          'notifications': 'prompt',
+          'camera': 'prompt',
+          'microphone': 'prompt',
+        };
+        navigator.permissions.query = function(descriptor) {
+          var name = typeof descriptor === 'object' ? descriptor.name : String(descriptor);
+          if (_permOverrides.hasOwnProperty(name)) {
+            return Promise.resolve({ state: _permOverrides[name], onchange: null });
+          }
+          return _origPermissionsQuery(descriptor);
+        };
+      }
     }
   } catch(e) {}
 
@@ -2040,6 +2059,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // ==================== Section 54: window.chrome object consistency ====================
   // Many anti-bot services check for the existence and structure of window.chrome.
   // Headless Chromium sometimes has an incomplete chrome object.
+  // CRITICAL: Firefox never has window.chrome — must guard with !_isFirefox
+  if (!_isFirefox) {
   try {
     if (!window.chrome) {
       window.chrome = {};
@@ -2081,6 +2102,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       };
     }
   } catch(e) {}
+  } // end !_isFirefox guard for Section 54
 
   // ==================== Section 55: performance.memory (Chrome-specific) ====================
   // Chrome exposes performance.memory (non-standard). Headless environments may report
@@ -2108,6 +2130,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // ==================== Section 56: navigator.plugins consistency ====================
   // Headless Chrome typically reports 0-3 plugins. Real Chrome has 5+ standard plugins.
   // We add common Chrome plugins if the count is suspiciously low.
+  // CRITICAL: Firefox has zero plugins — skip this section for Firefox
+  if (!_isFirefox) {
   try {
     var _pluginCount = navigator.plugins.length;
     if (_pluginCount < 4) {
@@ -2163,6 +2187,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       Object.defineProperty(navigator.plugins, 'length', { get: function() { return _pluginCount; }, configurable: true });
     }
   } catch(e) {}
+  } // end !_isFirefox guard for Section 56
 
   // ==================== Section 57: Window frame dimensions (chrome frame) fix ====================
   // R31-b found Section 37 used Math.random() for chromeWidth/chromeHeight.
@@ -2204,8 +2229,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
       var _conn = navigator.connection;
       var _dl = _conn.downlink || 10;
       var _et = _conn.effectiveType || '4g';
-      // effectiveType thresholds: slow-2g(<0.05), 2g(0.05-0.1), 3g(0.1-0.5), 4g(>0.5)
-      var _typeForDownlink = _dl < 0.05 ? 'slow-2g' : _dl < 0.1 ? '2g' : _dl < 0.5 ? '3g' : '4g';
+      // effectiveType thresholds per W3C Network Information API spec:
+      // slow-2g (<0.05 Mbps), 2g (0.05-0.5 Mbps), 3g (0.5-1.5 Mbps), 4g (>=1.5 Mbps)
+      var _typeForDownlink = _dl < 0.05 ? 'slow-2g' : _dl < 0.5 ? '2g' : _dl < 1.5 ? '3g' : '4g';
       if (_et !== _typeForDownlink && _dl > 0) {
         Object.defineProperty(_conn, 'effectiveType', { get: function() { return _typeForDownlink; }, configurable: true });
       }

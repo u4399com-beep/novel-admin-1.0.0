@@ -131,11 +131,11 @@ export function parseSelector(html: string, selector: Selector): string {
     return el.attr(selector.extract) || "";
   }
 
-  // Auto-detect attribute extraction (use precise match to avoid false positives like '.myhref')
-  if (selector.value.includes("[href]") || /(?:^|[\s>+~,])href$/.test(selector.value)) {
+  // Auto-detect attribute extraction (use precise match to avoid false positives like '[data-href]')
+  if (/\[href\](?![\w-])/.test(selector.value) || /(?:^|[\s>+~,])href$/.test(selector.value)) {
     return el.attr("href") || "";
   }
-  if (selector.value.includes("[src]") || /(?:^|[\s>+~,])src$/.test(selector.value)) {
+  if (/\[src\](?![\w-])/.test(selector.value) || /(?:^|[\s>+~,])src$/.test(selector.value)) {
     return el.attr("src") || "";
   }
   // Auto-detect meta[property=...] or meta[name=...] selectors

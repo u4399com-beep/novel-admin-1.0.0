@@ -1012,6 +1012,7 @@ class ProxyManager {
 
     for (const entry of this.pool.values()) {
       if (entry.disabled) continue;
+      if (entry.protocol === 'socks4') continue; // No dispatcher for SOCKS4
       if (entry.coolingUntil && now < entry.coolingUntil) continue;
       if (domain && entry.blockedDomains.has(domain)) continue;
       // Check exclusion against both original URL and clean URL (for authenticated proxies)

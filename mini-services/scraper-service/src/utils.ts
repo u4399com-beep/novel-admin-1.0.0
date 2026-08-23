@@ -367,6 +367,25 @@ const NOVEL_SEARCH_QUERIES = [
   "网络小说推荐",
 ];
 
+/** Generic (non-novel) search queries for Referer spoofing on non-novel sites */
+const GENERIC_SEARCH_QUERIES = [
+  "how to fix error",
+  "best practices guide",
+  "tutorial for beginners",
+  "top 10 list",
+  "how does it work",
+  "what is the meaning",
+  "latest news today",
+  "free online tools",
+  "best alternatives 2024",
+  "step by step guide",
+  "documentation reference",
+  "troubleshooting tips",
+  "quick start guide",
+  "API documentation",
+  "getting started tutorial",
+];
+
 /**
  * Generates a spoofed Referer header for a target URL.
  *
@@ -383,7 +402,9 @@ export function getSpoofedReferer(targetUrl: string, siteType?: string): string 
     // a Referer. Real browsers always send Referer on navigation clicks.
     if (siteType === "novel" || Math.random() < 0.7) {
       const engine = SEARCH_ENGINE_REFERERS[Math.floor(Math.random() * SEARCH_ENGINE_REFERERS.length)];
-      const query = NOVEL_SEARCH_QUERIES[Math.floor(Math.random() * NOVEL_SEARCH_QUERIES.length)];
+      // Use novel queries for novel sites, generic queries for others
+      const queryPool = siteType === "novel" ? NOVEL_SEARCH_QUERIES : GENERIC_SEARCH_QUERIES;
+      const query = queryPool[Math.floor(Math.random() * queryPool.length)];
       // Extract domain name from target to make the query more realistic
       const domain = target.hostname.replace(/^www\./, "");
       // Randomly include the domain in the search query for extra realism
@@ -789,7 +810,6 @@ export function buildFetchHeaders(
   const headers: Record<string, string> = {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Encoding": domain ? getAcceptEncoding(domain) : "gzip, deflate, br",
-    Connection: "keep-alive",
     "Upgrade-Insecure-Requests": "1",
     "Cache-Control": "max-age=0",
   };
@@ -980,6 +1000,11 @@ export function parseChineseNumeral(str: string): number {
       result = (result + current) * 10000;
       current = 0;
       prevUnit = 10000;
+    } else if (ch === '亿') {
+      // 亿 is a major unit — multiply the accumulated result by 100000000
+      result = (result + current) * 100000000;
+      current = 0;
+      prevUnit = 100000000;
     } else {
       // Unknown char — skip
     }

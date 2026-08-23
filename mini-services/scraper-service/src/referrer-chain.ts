@@ -38,12 +38,18 @@ class ReferrerChain {
    * Record a successful navigation to `url`.
    * The entry is appended to the navigation history for the URL's domain.
    */
-  /** Evict oldest domain if at capacity */
+  /** Evict least-recently-used domain if at capacity */
   private evictIfNeeded(): void {
     while (this.history.size >= MAX_TRACKED_DOMAINS) {
-      const firstKey = this.history.keys().next().value;
-      if (firstKey) {
-        this.history.delete(firstKey);
+      // Find the domain with the oldest lastRequestTime (true LRU, not FIFO)
+      let lruKey = '';
+      let lruTime = Infinity;
+      for (const [key, entries] of this.history.entries()) {
+        const lastTime = entries.length > 0 ? entries[entries.length - 1].timestamp : 0;
+        if (lastTime < lruTime) { lruTime = lastTime; lruKey = key; }
+      }
+      if (lruKey) {
+        this.history.delete(lruKey);
       } else break;
     }
   }

@@ -75,8 +75,9 @@ class DomainRateLimiter {
     const state = this.getOrCreateDomain(domain);
     const now = Date.now();
 
-    // Allow manual override
-    if (maxRPM !== undefined && maxRPM !== state.maxRPM) {
+    // Allow manual override, but only when not under penalty
+    // (penalty RPM was carefully reduced by adaptive system; overriding defeats it)
+    if (maxRPM !== undefined && maxRPM !== state.maxRPM && !state.penaltyActive) {
       state.maxRPM = maxRPM;
     }
 

@@ -165,13 +165,15 @@ class AdaptiveDelayManager {
       ? Math.round(state.lastResponseTimes.reduce((a, b) => a + b, 0) / state.lastResponseTimes.length)
       : 0;
 
-    // Estimate current delay
+    // Estimate current delay (includes antiCrawlMultiplier like getDelaySync)
     const baseDelay = (this.config.baseMin + this.config.baseMax) / 2;
     let backoffMultiplier = 1;
     if (state.consecutiveErrors >= this.config.errorThreshold) {
       const excessErrors = state.consecutiveErrors - this.config.errorThreshold + 1;
       backoffMultiplier = Math.pow(this.config.backoffFactor, excessErrors);
     }
+    // Include antiCrawlMultiplier (was missing before — stats showed incorrect delay)
+    const antiCrawlMultiplier = Math.pow(this.config.backoffFactor, state.currentBackoffLevel);
     let slowPenalty = 1;
     if (state.lastResponseTimes.length >= 3) {
       const avg = state.lastResponseTimes.reduce((a, b) => a + b, 0) / state.lastResponseTimes.length;
@@ -179,7 +181,7 @@ class AdaptiveDelayManager {
         slowPenalty = 1.5;
       }
     }
-    const currentDelay = Math.min(Math.round(baseDelay * backoffMultiplier * slowPenalty), this.config.maxBackoff);
+    const currentDelay = Math.min(Math.round(baseDelay * backoffMultiplier * antiCrawlMultiplier * slowPenalty), this.config.maxBackoff);
 
     // Determine status
     let status: DomainStats['status'] = 'normal';

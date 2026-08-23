@@ -217,6 +217,9 @@ export function extractJsContent(html: string): JsExtractResult {
       const rawContent = match[pattern.contentGroup];
       if (!rawContent) continue;
 
+      // Safety: prevent infinite loops on zero-length matches
+      if (match[0].length === 0) { pattern.regex.lastIndex++; continue; }
+
       // Decode if needed
       const decoded = decodeExtractedContent(rawContent, pattern.encoded);
 

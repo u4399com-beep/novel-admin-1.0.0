@@ -104,6 +104,7 @@ function resolveDomain(domain: string): string[] {
 // Per-domain XFF cache for session affinity (same IP within TTL window)
 const xffCache = new Map<string, { ip: string; createdAt: number }>();
 const XFF_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches DNS cache TTL
+const MAX_XFF_CACHE_SIZE = 200;
 
 export function getForwardedFor(domain: string): string | null {
   if (!domain) return null;
@@ -128,7 +129,16 @@ export function getForwardedFor(domain: string): string | null {
     parts[3] = String(randByte());
     const xff = parts.join('.');
 
-    // Cache for session affinity
+    // Cache for session affinity (with eviction to prevent unbounded growth)
+    if (xffCache.size >= MAX_XFF_CACHE_SIZE) {
+      // Evict oldest entry
+      let oldestKey = '';
+      let oldestTime = Infinity;
+      for (const [k, v] of xffCache) {
+        if (v.createdAt < oldestTime) { oldestTime = v.createdAt; oldestKey = k; }
+      }
+      if (oldestKey) xffCache.delete(oldestKey);
+    }
     xffCache.set(domain, { ip: xff, createdAt: now });
     return xff;
   } catch {
