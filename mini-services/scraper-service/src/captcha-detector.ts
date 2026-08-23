@@ -27,22 +27,22 @@ interface DetectionRule {
 }
 
 const HTML_RULES: DetectionRule[] = [
-  // reCAPTCHA v2
+  // reCAPTCHA v2 — patterns that are v2-specific (not matching v3 render= URLs)
   {
     type: 'recaptcha_v2',
     patterns: [
-      /google\.com\/recaptcha/i,
+      /google\.com\/recaptcha(?!\/api\.js\?render)/i,
       /g-recaptcha/i,
       /grecaptcha\.render/i,
       /g-recaptcha-response/i,
       /class=.*g-recaptcha/i,
-      /data-sitekey/i,
+      /data-sitekey(?!.*render)/i,
     ],
     baseConfidence: 0.7,
     perMatchBoost: 0.1,
     maxConfidence: 0.95,
   },
-  // reCAPTCHA v3
+  // reCAPTCHA v3 — higher base confidence since render= is a strong v3 signal
   {
     type: 'recaptcha_v3',
     patterns: [
@@ -50,10 +50,11 @@ const HTML_RULES: DetectionRule[] = [
       /grecaptcha\.enterprise/i,
       /recaptchaV3/i,
       /grecaptcha\.execute/i,
+      /\?render=/i,
     ],
-    baseConfidence: 0.5,
-    perMatchBoost: 0.15,
-    maxConfidence: 0.9,
+    baseConfidence: 0.65,
+    perMatchBoost: 0.1,
+    maxConfidence: 0.95,
   },
   // hCaptcha
   {

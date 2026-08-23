@@ -548,9 +548,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
 
-  // Vendor (Chrome always says "Google Inc.")
+  // Vendor — Chrome says "Google Inc.", Firefox returns ""
+  // Detect Firefox UA to avoid fingerprint mismatch
+  const _uaString = ${JSON.stringify(profile.userAgent)};
+  const _isFirefox = /Firefox\//.test(_uaString) || /Seamonkey\//i.test(_uaString);
   Object.defineProperty(navigator, 'vendor', {
-    get: () => 'Google Inc.',
+    get: () => _isFirefox ? '' : 'Google Inc.',
     configurable: true,
   });
 

@@ -890,6 +890,15 @@ class ProxyManager {
     const currentCount = (this.domainRotationCount.get(normalisedDomain) || 0) + 1;
     this.domainRotationCount.set(normalisedDomain, currentCount);
 
+    // Evict stale rotation entries (keep last 500 domains to prevent unbounded growth)
+    if (this.domainRotationCount.size > 500) {
+      const firstKey = this.domainRotationCount.keys().next().value;
+      if (firstKey !== undefined) {
+        this.domainRotationCount.delete(firstKey);
+        this.domainRotationIndex.delete(firstKey);
+      }
+    }
+
     // Check if we should rotate
     if (currentCount >= this.rotationInterval) {
       // Reset count and advance index

@@ -12,7 +12,10 @@ import { resolveUrl } from "./utils";
 const EXCLUDED_TAGS = new Set(['script', 'style', 'noscript', 'template']);
 
 function isExcludedTag(el: cheerio.Element): boolean {
-  return el.type === 'tag' && EXCLUDED_TAGS.has((el as cheerio.Element & { name: string }).name);
+  // cheerio uses specific type values: 'script' for <script>, 'style' for <style>,
+  // 'tag' for regular elements. Check tagName regardless of type.
+  const tagName = (el as cheerio.Element & { name: string }).name;
+  return !!tagName && EXCLUDED_TAGS.has(tagName);
 }
 
 // ==================== XPath to CSS Converter ====================

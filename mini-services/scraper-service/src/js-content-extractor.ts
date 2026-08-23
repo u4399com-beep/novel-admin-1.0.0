@@ -109,20 +109,23 @@ const MAX_CONTENT_LENGTH = 500_000;
 /**
  * Filter out extracted content that is likely not novel content.
  * Checks for: too short, all numbers, all punctuation, CSS/JS code.
+ * Note: CJK content is very compact (10 Chinese chars is meaningful),
+ * so we check CJK count BEFORE applying the length threshold.
  */
 function isLikelyNovelContent(text: string): boolean {
-  if (text.length < MIN_CONTENT_LENGTH) return false;
   if (text.length > MAX_CONTENT_LENGTH) return false;
 
-  // Must contain at least some CJK characters or significant Latin text
+  // Check CJK / Latin content FIRST (before length threshold)
+  // because URL-decoded Chinese text can be short but meaningful
   const cjkCount = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
   const latinWords = (text.match(/[a-zA-Z]{3,}/g) || []).length;
 
-  // For Chinese novel sites, expect significant CJK content
-  if (cjkCount > 10) return true;
-
-  // For English or mixed content, expect some word count
+  // For Chinese novel sites, even a small amount of CJK content is valid
+  if (cjkCount >= 5) return true;
   if (latinWords > 15) return true;
+
+  // For non-CJK content, require minimum length to avoid noise
+  if (text.length < MIN_CONTENT_LENGTH) return false;
 
   return false;
 }
@@ -156,10 +159,14 @@ function decodeExtractedContent(raw: string, encoded?: boolean): string {
   }
 
   // Also try Base64 (for atob patterns)
+  // Note: atob() returns Latin-1 bytes, so for UTF-8 content we must
+  // use TextDecoder to properly decode multi-byte CJK characters.
   if (encoded && /^[A-Za-z0-9+/=]+$/.test(raw) && raw.length > 100) {
     try {
-      const decoded = atob(raw);
-      // If base64 decode produces more readable text, use it
+      const binary = atob(raw);
+      const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+      const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      // If base64 decode produces more CJK content, use it
       const decodedCjk = (decoded.match(/[\u4e00-\u9fff]/g) || []).length;
       const rawCjk = (text.match(/[\u4e00-\u9fff]/g) || []).length;
       if (decodedCjk > rawCjk) {

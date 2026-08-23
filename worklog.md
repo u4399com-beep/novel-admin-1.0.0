@@ -15088,3 +15088,254 @@ Stage Summary:
 - DoH伪造私有IP会立即被识别为假
 - 累计: 336项
 - ESLint: 0 errors ✅
+---
+Task ID: R34-a
+Agent: Code Auditor (Round 34-a)
+Task: stealth+engines+behavior+session+advisor+fingerprint audit
+
+Work Log:
+- Read 6 files, analyzed 36 angles
+
+## Audit Results
+
+### 1. stealth.ts (Section 58-60 focus)
+
+| # | Angle | Status | Detail |
+|---|-------|--------|--------|
+| 1a | Dead code in Section 58-60 | OK | Section 58 validates connection consistency when Section 48 already sets values — not dead code, provides cross-section validation |
+| 1b | navigator.vendor hardcoded as "Google Inc." | MEDIUM | L552: still `get: () => 'Google Inc.'` without Firefox check; Firefox returns empty string — **known R33-b issue NOT fixed** |
+| 1c | Languages hardcoded as zh-CN | MEDIUM | L254/L297: `languages: ["zh-CN", "zh", "en-US", "en"]` hardcoded, not derived from UA locale — **known R33-b issue NOT fixed** |
+| 1d | Section 58 connection consistency | OK | effectiveType thresholds (slow-2g<0.05, 2g<0.1, 3g<0.5, 4g>0.5) match W3C spec; Section 48 fixes zero values, Section 58 validates consistency |
+| 1e | Section 59 crossOriginIsolated: credentialless | INFO | L2228: only overrides `crossOriginIsolated`, not `Window.credentialless` (Chrome 125+ API, very low detection risk) |
+| 1f | Section 60 font enumeration performance | OK | forEach override iterates all fonts then filters; Array.indexOf on 15-element safe list is O(n×15) — acceptable for typical <50 font pages |
+
+### 2. engines.ts (Obscura engine focus)
+
+| # | Angle | Status | Detail |
+|---|-------|--------|--------|
+| 2a | getBrowser() startup args | OK | 25+ `--disable-*` flags for reduced automation surface; no `--user-data-dir` is intentional (no profile data leakage) |
+| 2b | fetch() viewport/locale passthrough | LOW | L1371-1374: Obscura `screen` context option missing `colorDepth` (Playwright engine has it at L535); masked by stealth override but brief CDP-level inconsistency possible |
+| 2c | CircuitBreaker halfOpenInFlight race | OK | Node.js single-threaded: `_halfOpenInFlight++` at L167 is synchronous after await; no interleaving possible. External engines use try/catch with recordSuccess/recordFailure |
+| 2d | Proxy dispatcher for SOCKS4/5 | LOW | SOCKS5 uses SocksProxyAgent (OK); SOCKS4 returns null (silently dropped for HTTP engines but Playwright may handle it natively — inconsistent behavior) |
+| 2e | page.goto timeout error handling | OK | Timeout error caught at L1645, status extracted via regex (falls back to 0), rateLimiter records failure correctly |
+| 2f | Response header forwarding for CAPTCHA | INFO | CAPTCHA detection (L1609) uses status+HTML only; no response header check (`cf-mitigated`, `server: cloudflare`). HTML regex covers most CF patterns |
+
+### 3. browser-behavior.ts
+
+| # | Angle | Status | Detail |
+|---|-------|--------|--------|
+| 3a | Mouse movement pattern realism | INFO | Mouse movement is in engines.ts (L1470-1521): linear interpolation + noise, no Fitts's law acceleration curve. Acceptable approximation |
+| 3b | Scroll behavior smoothness | OK | Uses `window.scrollTo({ behavior: 'smooth' })` with multi-segment approach + reading pauses (engines.ts L1538). Browser-native, realistic |
+| 3c | Keystroke timing distribution | INFO | No keyboard event simulation exists. Not needed for current scraping use case (no form filling) |
+| 3d | Touch event simulation | OK | stealth.ts sets maxTouchPoints=0 (L524-527), consistent with desktop profiles. No mobile profiles yet |
+| 3e | Behavior cooldown/replay prevention | OK | 3 visits/10s window throttle, 8-15s breaks every 5-10 requests, 10% entry-page pre-visit. Eviction at 500 domains prevents unbounded growth |
+| 3f | Integration with rate-limiter | OK | Independent but complementary: browser-behavior handles navigation patterns, rate-limiter enforces RPM. Defense-in-depth, no coordination needed |
+
+### 4. session-manager.ts
+
+| # | Angle | Status | Detail |
+|---|-------|--------|--------|
+| 4a | Session cookie management | LOW | Cookie parse (L338-349) stores only name+value, loses attributes (domain, path, httpOnly, secure, expires). May cause scope issues on path-restricted cookies |
+| 4b | Session rotation strategy | OK | Max 3 sessions/domain; evicts blocked/overused first, then FIFO oldest. acquireSession() selects lowest usageCount — natural LRU-like behavior |
+| 4c | Fingerprint-session binding | OK | Fingerprint bound to domain (not session) via getProfileForDomain(domain). All sessions for same domain share fingerprint — correct for consistency |
+| 4d | Memory leak prevention | OK | cleanup() every 30min removes expired(>24h), overused(>=50), stale-blocked(>30min). taskIds bounded by session lifetime (50 uses/24h) |
+| 4e | Session expiry handling | OK | Expired sessions skipped in acquireSession(), cleaned by periodic cleanup. Max 30min accumulation between cleanups is acceptable |
+| 4f | Cross-domain session isolation | OK | domainSessions Map separates sessions by domain. acquireSession() only returns sessions for the requested domain |
+
+### 5. anti-crawl-advisor.ts
+
+| # | Angle | Status | Detail |
+|---|-------|--------|--------|
+| 5a | Known hard sites coverage | INFO | Only 7 Chinese novel domains (qidian, zongheng, 17k, jjwxc, sfacg). Adequate for project scope but no international coverage |
+| 5b | Recommendation priority calculation | OK | 12 rules with explicit priorities (15-92), sorted descending. Cloudflare(92) > high-CAPTCHA(90) > blocks(88) > cost-optimization(15). Well-calibrated |
+| 5c | Signal aggregation accuracy | LOW | Rate-limit signal can appear twice (from history timestamps + from rate-limiter state). getSignal() returns only first match, so rules see only history signal — wasted computation |
+| 5d | Threat level assessment logic | OK | Critical: any critical signal OR >=3 high-priority recs. High: >2 high signals OR >=2 high-priority recs. Reasonable escalation thresholds |
+| 5e | Config recommendation applicability | MEDIUM | Rule 8 (L628-652): known hard sites always recommend engine=obscura even if already using obscura but missing proxy/UA-rotation. configKey should vary by missing feature |
+| 5f | Score calculation correctness | LOW | scoreConfig() double-counts `sessionManagement`: cookie section gives 5 (L397) + session section gives 10 (L400) = 15 for one config key. Max theoretical 110 capped at 100 |
+
+### 6. request-fingerprint.ts
+
+| # | Angle | Status | Detail |
+|---|-------|--------|--------|
+| 6a | Header order consistency | OK | Not this module's responsibility — handled by stealth.ts shuffleHeaderOrder. Correct separation of concerns |
+| 6b | Accept-Language/UA alignment | OK | Stores UA in fingerprint record; alignment enforced by engines.ts using getAcceptLanguageForUA(profile.userAgent). Correct delegation |
+| 6c | HTTP/2 pseudo-fingerprint | INFO | Not controllable at application level. TLS profiles in stealth.ts include ALPN ['h2','http/1.1'] for H2 negotiation. Pseudo-header order is transport-layer |
+| 6d | Header case normalization | OK | Not this module's responsibility. Bun's HTTP client handles H2 lowercase conversion. buildFetchHeaders() in utils.ts constructs headers |
+| 6e | Cookie header ordering | INFO | Cookie ordering from cookie-jar follows Map insertion order (deterministic per session). Not validated against real browser cookie ordering |
+| 6f | Missing header detection | LOW | No validation that all expected headers (Accept, Accept-Language, sec-ch-ua) are present. Relies on deterministic profile generation being always valid |
+
+## Summary Table
+
+| # | File | Angle | Status |
+|---|------|-------|--------|
+| 1a | stealth.ts | Dead code in S58-60 | OK |
+| 1b | stealth.ts | navigator.vendor hardcoded | **MEDIUM** |
+| 1c | stealth.ts | Languages hardcoded zh-CN | **MEDIUM** |
+| 1d | stealth.ts | S58 connection consistency | OK |
+| 1e | stealth.ts | S59 credentialless | INFO |
+| 1f | stealth.ts | S60 font forEach perf | OK |
+| 2a | engines.ts | Obscura getBrowser() args | OK |
+| 2b | engines.ts | Obscura viewport/locale | LOW |
+| 2c | engines.ts | CircuitBreaker race | OK |
+| 2d | engines.ts | SOCKS4/5 dispatcher | LOW |
+| 2e | engines.ts | page.goto timeout | OK |
+| 2f | engines.ts | CAPTCHA header forwarding | INFO |
+| 3a | browser-behavior.ts | Mouse movement | INFO |
+| 3b | browser-behavior.ts | Scroll smoothness | OK |
+| 3c | browser-behavior.ts | Keystroke timing | INFO |
+| 3d | browser-behavior.ts | Touch simulation | OK |
+| 3e | browser-behavior.ts | Cooldown/replay | OK |
+| 3f | browser-behavior.ts | Rate-limiter integration | OK |
+| 4a | session-manager.ts | Cookie management | LOW |
+| 4b | session-manager.ts | Rotation strategy | OK |
+| 4c | session-manager.ts | Fingerprint binding | OK |
+| 4d | session-manager.ts | Memory leak prevention | OK |
+| 4e | session-manager.ts | Session expiry | OK |
+| 4f | session-manager.ts | Cross-domain isolation | OK |
+| 5a | anti-crawl-advisor.ts | Hard sites coverage | INFO |
+| 5b | anti-crawl-advisor.ts | Priority calculation | OK |
+| 5c | anti-crawl-advisor.ts | Signal aggregation | LOW |
+| 5d | anti-crawl-advisor.ts | Threat level logic | OK |
+| 5e | anti-crawl-advisor.ts | Config applicability | **MEDIUM** |
+| 5f | anti-crawl-advisor.ts | Score calculation | LOW |
+| 6a | request-fingerprint.ts | Header order | OK |
+| 6b | request-fingerprint.ts | Accept-Lang/UA align | OK |
+| 6c | request-fingerprint.ts | H2 pseudo-fingerprint | INFO |
+| 6d | request-fingerprint.ts | Header case norm | OK |
+| 6e | request-fingerprint.ts | Cookie ordering | INFO |
+| 6f | request-fingerprint.ts | Missing header detect | LOW |
+
+Stage Summary:
+- 36 angles audited: 20 OK, 0 HIGH, 3 MEDIUM, 6 LOW, 7 INFO
+- 2 MEDIUM are known R33-b regressions NOT fixed: navigator.vendor hardcoded for Firefox, languages hardcoded zh-CN
+- 1 MEDIUM new: anti-crawl-advisor Rule 8 always recommends obscura even if already using it
+- 6 LOW: Obscura screen.colorDepth missing, SOCKS4 silent drop, session cookie attr loss, signal double-count, score double-count, missing header detection
+- 7 INFO: credentialless API, mouse Fitts's law, keystroke sim, touch sim, hard sites scope, CAPTCHA headers, H2 pseudo, cookie ordering
+- Cumulative: 336 items (no new fixes in this audit)
+- Recommended fixes: 3 MEDIUM + 6 LOW = 9 items
+- ESLint: not run (read-only audit)---
+Task ID: R34-b
+Agent: Code Auditor (Round 34-b)
+Task: rate-limiter/adaptive-delay/captcha-strategy/referrer/doh/proxy audit
+
+Work Log:
+- Read 6 files, analyzed 36 angles
+
+## Audit Results
+
+### 1. rate-limiter.ts
+
+| Angle | Focus | Status | Notes |
+|-------|-------|--------|-------|
+| 1a | Sliding window counter accuracy under high concurrency | **OK** | Node.js single-threaded — no race conditions. Sliding window filter is O(n) but capped at 200 timestamps. |
+| 1b | Penalty recovery threshold cap (5-20) | **OK** | `Math.min(20, Math.max(5, Math.floor(60/maxRPM)))` correctly caps. At RPM=1 → 20 (slow recovery), RPM=30 → 5 (faster recovery). Recovery only when penalty is inactive. |
+| 1c | acquire() retry loop backoff | **INFO** | No built-in retry loop; returns `{allowed, waitMs}` for caller to handle. By design — adaptive-delay module handles actual delays. |
+| 1d | Domain state memory cleanup | **OK** | MAX_DOMAINS=500 with oldest-lastRequestTime eviction. MAX_TIMESTAMPS_PER_DOMAIN=200 trimmed each acquire(). Adequate. |
+| 1e | 429/403/503 detection accuracy | **OK** | Correctly triggers penalty for 429/403/503. 403 false-positives (non-anti-crawl 403s) are a caller concern. |
+| 1f | Rate state serialization/persistence | **LOW** | No persistence — all state in-memory, lost on restart. Process crash during penalty resumes at full speed. Acceptable for in-process use. |
+
+### 2. adaptive-delay.ts
+
+| Angle | Focus | Status | Notes |
+|-------|-------|--------|-------|
+| 2a | Delay calculation edge cases (zero history) | **OK** | Fresh domain: all multipliers=1, returns baseDelay × jitter. No division-by-zero or edge case issues. |
+| 2b | Exponential backoff ceiling | **LOW** | `backoffMultiplier = Math.pow(2, excessErrors)` is unbounded — Math.pow(2, 1024)=Infinity. Final `Math.min(delay, 60000)` caps correctly, but wasted computation on overflow. |
+| 2c | Jitter randomness distribution | **OK** | Uniform ±20% jitter (0.8–1.2). Simple but effective. |
+| 2d | Domain stats memory management | **OK** | MAX_DOMAINS=500 with LRU via `domainAccessOrder` array. MAX_RESPONSE_HISTORY=10 per domain. MAX_BROWSING_SESSIONS=200. All bounded. |
+| 2e | Integration with rate-limiter signals | **INFO** | Both modules independently react to 429/403/503: rate-limiter halves RPM + adaptive-delay doubles backoffLevel. Defense-in-depth but potentially overly conservative combined. |
+| 2f | Minimum delay floor | **OK** | 100ms floor (line 115). Reasonable for programmatic requests; rate-limiter controls RPM separately. |
+
+### 3. captcha-strategy.ts
+
+| Angle | Focus | Status | Notes |
+|-------|-------|--------|-------|
+| 3a | Cloudflare strategy cooldown | **OK** | 3 retries with 8-20s delays on stealth engines, then escalate to cloud-browser or give up. Retry count caller-managed. |
+| 3b | Geetest strategy accuracy | **INFO** | Detection via `type === 'geetest'` is accurate. However, GeeTest slider/click challenges typically require external solver services; browser switching alone won't solve them. |
+| 3c | EngineUpgrade vs DelayBackoff priority (R30 fix) | **OK** | EngineUpgradeStrategy.canHandle() returns false for external/stealth engines, yielding to DelayBackoffStrategy. Correctly fixed. |
+| 3d | Strategy chain ordering | **OK** | Cloudflare → Geetest → EngineUpgrade → DelayBackoff. Type-specific first, generic upgrade second, universal fallback last. Correct. |
+| 3e | CanHandle() specificity | **OK** | Cloudflare/Geetest match by exact type. EngineUpgrade matches non-external engines. DelayBackoff is catch-all. Proper specificity hierarchy. |
+| 3f | Default fallback behavior | **OK** | Unreachable fallback returns `{resolved:false, action:'none'}`. DelayBackoffStrategy handles all CAPTCHAs, so this is purely defensive. |
+
+### 4. referrer-chain.ts
+
+| Angle | Focus | Status | Notes |
+|-------|-------|--------|-------|
+| 4a | recordCrossDomainTransition accuracy | **MEDIUM** | fromUrl only seeded when target domain has EMPTY history (line 124). Subsequent cross-domain transitions to an already-visited domain silently drop the fromUrl. Second transition's referer will be the previous same-domain URL, not the new cross-domain source. |
+| 4b | Referrer header generation for same-domain | **OK** | Returns most recent non-self URL from domain history. Self-reference check with second-to-last fallback. Correct. |
+| 4c | Chain depth limits | **OK** | MAX_HISTORY_PER_DOMAIN=100 with FIFO eviction. MAX_TRACKED_DOMAINS=500. Well-bounded. |
+| 4d | Domain-to-domain transition logging | **INFO** | No logging in recordCrossDomainTransition. Silent operation makes debugging harder. |
+| 4e | Initial referrer seeding | **OK** | No automatic seeding — first request to a domain returns undefined referrer. Realistic behavior. `recordCrossDomainTransition` provides explicit seeding. |
+| 4f | recordCrossDomainTransition dead code (R30 known) | **LOW** | Function is functional but partially ineffective due to (4a) — fromUrl only works for first transition. May also be uncalled (R30 known). Worth verifying call sites. |
+
+### 5. doh-simulation.ts
+
+| Angle | Focus | Status | Notes |
+|-------|-------|--------|-------|
+| 5a | generateRandomIp now uses public IPs (R33 fix) | **OK** | All ranges are public: Cloudflare (104.16-23, 172.64-71), Google (8.0-15, 8.128-191), CDN (140-159, 185.0-63, 45.0-15). No RFC1918 overlap. |
+| 5b | Cache TTL/eviction | **OK** | 5-min TTL, 100-entry max. Oldest-by-createdAt eviction when full. No periodic cleanup of stale entries, but acceptable at 100 cap. |
+| 5c | DNS response format realism | **LOW** | Generates 2-4 IPs per domain from RANDOM ranges (mix of Cloudflare/Google/CDN). Real domains use a single provider's range. All-Cloudflare sites wouldn't have Google IPs. |
+| 5d | X-Forwarded-For uniqueness | **OK** | 2-4 base IPs × 256 last-octet variations = 512-1024 unique XFF values per domain. Adequate. Same /24 by design. |
+| 5e | Query ID generation | **INFO** | No DNS query IDs — simplified simulation, not a full DoH implementation. |
+| 5f | Integration with proxy rotation | **LOW** | XFF from DoH simulation is independent of actual proxy IP. When proxy rotation is active, the XFF header won't match the proxy's TCP source IP, creating an inconsistency some anti-bot systems detect. |
+
+### 6. proxy-manager.ts
+
+| Angle | Focus | Status | Notes |
+|-------|-------|--------|-------|
+| 6a | SOCKS4 skip in getDomainProxyWithRotation (R33 fix) | **OK** | `socks4` skipped in both getProxy (line 320) and getDomainProxyWithRotation (line 850). Consistently applied. |
+| 6b | exportProxies credential leak (R33 fix) | **OK** | Regex `//[^:]+:[^@]+@` → `//***:***@` correctly redacts credentials for standard URL formats. Very edge-case: unencoded `@` in password could leak fragment, but that's an invalid URL per RFC 3986. |
+| 6c | domainRotationCount memory cleanup | **MEDIUM** | `domainRotationCount` and `domainRotationIndex` Maps have NO eviction/cleanup. Grow unboundedly as new domains are scraped. Long-running process memory leak. |
+| 6d | Proxy health check timeout | **OK** | 15s primary (through-proxy), 10s secondary (direct connectivity). Reasonable. Caller controls parallelism. |
+| 6e | IPv6 bracket handling | **OK** | `host.includes(':') ? \`[${host}]\` : host` applied in both parseProxyUrl (line 115) and checkHealth (line 583). Correct. |
+| 6f | Dispatcher creation for different proxy types | **OK** | http/https→ProxyAgent, socks5→SocksProxyAgent (cast to Dispatcher), socks4→null. Dispatcher cache keyed by original URL. Correct. |
+
+## Summary Table
+
+| # | File | Angle | Status |
+|---|------|-------|--------|
+| 1a | rate-limiter.ts | Sliding window concurrency | OK |
+| 1b | rate-limiter.ts | Penalty recovery threshold cap | OK |
+| 1c | rate-limiter.ts | acquire() retry loop | INFO |
+| 1d | rate-limiter.ts | Domain state memory cleanup | OK |
+| 1e | rate-limiter.ts | 429/403/503 detection | OK |
+| 1f | rate-limiter.ts | Rate state persistence | **LOW** |
+| 2a | adaptive-delay.ts | Zero-history edge cases | OK |
+| 2b | adaptive-delay.ts | Exponential backoff ceiling | **LOW** |
+| 2c | adaptive-delay.ts | Jitter distribution | OK |
+| 2d | adaptive-delay.ts | Domain stats memory | OK |
+| 2e | adaptive-delay.ts | Rate-limiter signal integration | INFO |
+| 2f | adaptive-delay.ts | Minimum delay floor | OK |
+| 3a | captcha-strategy.ts | Cloudflare cooldown | OK |
+| 3b | captcha-strategy.ts | Geetest accuracy | INFO |
+| 3c | captcha-strategy.ts | EngineUpgrade vs DelayBackoff (R30) | OK |
+| 3d | captcha-strategy.ts | Strategy chain ordering | OK |
+| 3e | captcha-strategy.ts | CanHandle() specificity | OK |
+| 3f | captcha-strategy.ts | Default fallback | OK |
+| 4a | referrer-chain.ts | Cross-domain transition accuracy | **MEDIUM** |
+| 4b | referrer-chain.ts | Same-domain referrer generation | OK |
+| 4c | referrer-chain.ts | Chain depth limits | OK |
+| 4d | referrer-chain.ts | Transition logging | INFO |
+| 4e | referrer-chain.ts | Initial referrer seeding | OK |
+| 4f | referrer-chain.ts | recordCrossDomainTransition dead code (R30) | **LOW** |
+| 5a | doh-simulation.ts | Public IPs (R33 fix) | OK |
+| 5b | doh-simulation.ts | Cache TTL/eviction | OK |
+| 5c | doh-simulation.ts | DNS response realism | **LOW** |
+| 5d | doh-simulation.ts | XFF uniqueness | OK |
+| 5e | doh-simulation.ts | Query ID generation | INFO |
+| 5f | doh-simulation.ts | Proxy rotation integration | **LOW** |
+| 6a | proxy-manager.ts | SOCKS4 skip (R33 fix) | OK |
+| 6b | proxy-manager.ts | exportProxies credential leak (R33) | OK |
+| 6c | proxy-manager.ts | domainRotationCount memory | **MEDIUM** |
+| 6d | proxy-manager.ts | Health check timeout | OK |
+| 6e | proxy-manager.ts | IPv6 bracket handling | OK |
+| 6f | proxy-manager.ts | Dispatcher creation | OK |
+
+Stage Summary:
+- 36 angles audited: 22 OK, 0 HIGH, 2 MEDIUM, 5 LOW, 7 INFO
+- 2 MEDIUM: (4a) referrer-chain fromUrl only seeded on first cross-domain transition — subsequent transitions silently drop it; (6c) proxy-manager domainRotationCount/Index Maps grow unboundedly — memory leak in long-running processes
+- 5 LOW: (1f) rate-limiter no persistence; (2b) adaptive-delay backoffMultiplier unbounded (capped at final min); (4f) referrer recordCrossDomainTransition partially ineffective + potentially unused; (5c) DoH IPs mixed across provider ranges per domain; (5f) DoH XFF conflicts with actual proxy IP
+- 7 INFO: (1c) acquire() no retry loop by design; (2e) dual-module anti-crawl signal handling; (3b) GeeTest needs solver service; (4d) no transition logging; (5e) no DNS query IDs; + (3b,4d,5e) noted above
+- R33 fixes verified OK: SOCKS4 skip, credential redaction, public IPs
+- R30 fixes verified OK: EngineUpgrade/DelayBackoff priority, recordCrossDomainTransition known issue
+- Recommended fixes: 2 MEDIUM + 5 LOW = 7 items
+- Cumulative: 372 items (no new fixes in this audit)

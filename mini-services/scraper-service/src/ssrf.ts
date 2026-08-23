@@ -43,8 +43,8 @@ export function isSafeUrl(url: string): boolean {
       return false;
     }
 
-    // Block common internal hostnames
-    if (['localhost', 'localhost.localdomain'].includes(hostname)) {
+    // Block common internal hostnames (including IPv6 loopback variants)
+    if (['localhost', 'localhost.localdomain', 'localhost6', 'localhost6.localdomain6', 'ip6-localhost', 'ip6-loopback'].includes(hostname)) {
       return false;
     }
 
@@ -217,11 +217,8 @@ function expandIPv6(ip: string): string {
       const b = (num >>> 16) & 0xff;
       const c = (num >>> 8) & 0xff;
       const d = num & 0xff;
-      // Return as IPv4-mapped IPv6 in expanded form for consistent checking
-      // Or better: return in a format that the IPv4 check regex will match
-      // We return the dotted decimal form — but isPrivateIp expects IPv6 format
-      // So we embed it in IPv6-mapped format
-      return `0000:0000:0000:0000:0000:ffff:${String(a).padStart(2,'0')}${String(b).padStart(2,'0')}:${String(c).padStart(2,'0')}${String(d).padStart(2,'0')}`;
+      // Return as IPv4-mapped IPv6 in expanded form (use hex, not decimal!)
+      return `0000:0000:0000:0000:0000:ffff:${a.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}:${c.toString(16).padStart(2,'0')}${d.toString(16).padStart(2,'0')}`;
     }
   }
 
