@@ -10,7 +10,6 @@
  * Features:
  *   - Per-domain LRU navigation history (max 100 entries)
  *   - Automatic Referer resolution based on the last visited URL
- *   - Cross-domain referrer support (e.g. Google search → target site)
  *   - Thread-safe (single-threaded Node.js, but Map operations are atomic)
  */
 
@@ -111,34 +110,6 @@ class ReferrerChain {
   }
 
   /**
-   * Record a cross-domain referrer transition.
-   * For example, when coming from a search engine to a target site.
-   *
-   * @param fromUrl - The source URL (e.g. a search results page).
-   * @param toUrl   - The target URL we are navigating to.
-   */
-  recordCrossDomainTransition(fromUrl: string, toUrl: string): void {
-    if (!fromUrl || !toUrl) return;
-    try {
-      const fromDomain = new URL(fromUrl).hostname;
-      const toDomain = new URL(toUrl).hostname;
-      if (fromDomain === toDomain) return; // Not cross-domain
-      // Record the fromUrl in the target domain's history first so that
-      // getReferer(toUrl) can return fromUrl as a cross-domain referrer
-      // (e.g. Google search result → novel site first page).
-      const toEntries = this.history.get(toDomain);
-      if (!toEntries || toEntries.length === 0) {
-        this.evictIfNeeded();
-        this.history.set(toDomain, [{ url: fromUrl, timestamp: Date.now() }]);
-      }
-      // Then record the actual navigation to toUrl
-      this.recordVisit(toUrl);
-    } catch {
-      // Invalid URL, silently ignore
-    }
-  }
-
-  /**
    * Clear navigation history. If `domain` is provided, only clears that domain.
    */
   clearHistory(domain?: string): void {
@@ -147,32 +118,6 @@ class ReferrerChain {
     } else {
       this.history.clear();
     }
-  }
-
-  /**
-   * Get the navigation history for a domain (for debugging/monitoring).
-   */
-  getHistory(domain: string): NavigationEntry[] {
-    return this.history.get(domain) ? [...this.history.get(domain)!] : [];
-  }
-
-  /**
-   * Get stats about the referrer chain.
-   */
-  getStats(): { domainsTracked: number; totalEntries: number; domainCounts: Record<string, number> } {
-    const domainCounts: Record<string, number> = {};
-    let totalEntries = 0;
-    for (const [domain, entries] of this.history.entries()) {
-      if (entries.length > 0) {
-        domainCounts[domain] = entries.length;
-        totalEntries += entries.length;
-      }
-    }
-    return {
-      domainsTracked: this.history.size,
-      totalEntries,
-      domainCounts,
-    };
   }
 }
 

@@ -207,11 +207,22 @@ class GeetestStrategy implements CaptchaStrategy {
           message: `GeeTest persists on ${context.currentEngine} (retry ${context.retryCount + 1}/3): waiting ${delay / 1000}s`,
         };
       }
-      // Max retries exceeded on stealth engines — give up
+      // Max retries exceeded on stealth engines
+      // Escalate to cloud-browser (if not already on it) before giving up
+      if (context.currentEngine !== 'cloud-browser') {
+        return {
+          resolved: false,
+          action: 'switch-engine',
+          nextEngine: 'cloud-browser',
+          delayMs: 5000,
+          message: `GeeTest still blocking after 3+ retries on ${context.currentEngine} for ${context.domain}: escalating to cloud-browser`,
+        };
+      }
+      // Already on cloud-browser and still failing — give up
       return {
         resolved: false,
         action: 'none',
-        message: `GeeTest still blocking after 3+ retries on ${context.currentEngine} for ${context.domain}. Manual intervention required for GeeTest slider/click challenges.`,
+        message: `GeeTest still blocking after 3+ retries on cloud-browser for ${context.domain}. Manual intervention required for GeeTest slider/click challenges.`,
       };
     }
 

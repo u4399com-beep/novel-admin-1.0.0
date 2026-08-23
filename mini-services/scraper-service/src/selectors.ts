@@ -237,6 +237,7 @@ export function extractLinksFromList(
 ): Array<{ title: string; url: string }> {
   const $ = cheerio.load(html);
   const results: Array<{ title: string; url: string }> = [];
+  const seenUrls = new Set<string>();
 
   let listElements: cheerio.Cheerio<cheerio.Element>;
 
@@ -303,10 +304,12 @@ export function extractLinksFromList(
       trimmedLink.startsWith('data:') ||
       trimmedLink.startsWith('blob:') ||
       trimmedLink.startsWith('vbscript:');
-    if (linkValue && !isDangerous) {
+    const resolvedUrl = resolveUrl(baseUrl, linkValue);
+    if (linkValue && !isDangerous && !seenUrls.has(resolvedUrl)) {
+      seenUrls.add(resolvedUrl);
       results.push({
         title: titleValue,
-        url: resolveUrl(baseUrl, linkValue),
+        url: resolvedUrl,
       });
     }
   });

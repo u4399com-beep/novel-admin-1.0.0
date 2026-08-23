@@ -392,8 +392,19 @@ export function clearDomainUACache(domain?: string): void {
  * 46. matchMedia prefers-color-scheme / prefers-reduced-motion consistency
  * 47. WebGL Shader Precision (getShaderPrecisionFormat zero-range fix)
  * 48. Navigator Connection API (network info consistency)
- * 49. Permissions API consistency (geolocation/notifications/camera/microphone)
- * 50. Document.hasFocus() initial state (headless reports false)
+ * 49. [Removed: duplicate of Section 8]
+ * 50. [Removed: duplicate of Section 36]
+ * 51. speechSynthesis.getVoices() enhanced mock (per-seed voices, async loading)
+ * 52. Notification.permission consistency (force 'default')
+ * 53. window.devicePixelRatio consistency with screen resolution
+ * 54. [Removed: dead code, fully shadowed by Section 2]
+ * 55. performance.memory realistic values (Chrome-specific)
+ * 56. navigator.plugins consistency (inject missing plugins)
+ * 57. Window frame dimensions (chrome frame) fix (seeded consistency)
+ * 58. navigator.connection download speed consistency
+ * 59. SharedArrayBuffer / crossOriginIsolated consistency
+ * 60. Font enumeration protection (document.fonts.forEach + check)
+ * 61. Gamepad API override (getGamepads consistency)
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -718,6 +729,27 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }),
     configurable: true,
   });
+
+  // ---- 6b. DOMRect Consistency ----
+  // Ensure DOMRect constructor and prototype match real browser behavior.
+  // Fingerprinting scripts check: new DOMRect() === all zeros, prototype property enumeration.
+  try {
+    if (typeof DOMRect === 'undefined') {
+      window.DOMRect = function(x, y, w, h) {
+        return { x: x||0, y: y||0, width: w||0, height: h||0,
+                 top: (y||0), bottom: (y||0)+(w||0), left: (x||0), right: (x||0)+(w||0) };
+      } as any;
+    }
+    // Ensure new DOMRect() returns all zeros (standard behavior)
+    var _testRect = new DOMRect();
+    if (_testRect.x !== 0 || _testRect.y !== 0 || _testRect.width !== 0 || _testRect.height !== 0) {
+      var _OrigDOMRect = DOMRect;
+      window.DOMRect = function(x, y, w, h) {
+        return new _OrigDOMRect(x||0, y||0, w||0, h||0);
+      } as any;
+      window.DOMRect.prototype = _OrigDOMRect.prototype;
+    }
+  } catch(e) {}
 
   // ---- 7. WebRTC Leak Prevention ----
 
@@ -1930,48 +1962,13 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // Section 49: Permissions API consistency (consolidated — Section 8 already handles notifications)
-  // Section 38 (Permissions.prototype.query) is dead code because instance overrides take priority.
-  // This section ensures any permissions NOT already covered by Section 8 return 'prompt'.
-  // It's safe to re-override since the behavior is identical: notifications from Section 8,
-  // others fall through to this section or the original.
-  try {
-    if (navigator.permissions && navigator.permissions.query) {
-      var _origPermissionsQuery = navigator.permissions.query.bind(navigator.permissions);
-      // Already overridden by Section 8 — avoid redundant override
-      // Only override if Section 8's override is not in place (e.g. Section 8 was skipped)
-      if (navigator.permissions.query.toString().indexOf('_isFirefox') === -1 &&
-          navigator.permissions.query.toString().indexOf('notifications') === -1) {
-        var _permOverrides = {
-          'geolocation': 'prompt',
-          'notifications': 'prompt',
-          'camera': 'prompt',
-          'microphone': 'prompt',
-        };
-        navigator.permissions.query = function(descriptor) {
-          var name = typeof descriptor === 'object' ? descriptor.name : String(descriptor);
-          if (_permOverrides.hasOwnProperty(name)) {
-            return Promise.resolve({ state: _permOverrides[name], onchange: null });
-          }
-          return _origPermissionsQuery(descriptor);
-        };
-      }
-    }
-  } catch(e) {}
+  // [Section 49 removed: duplicate of Section 8 (permissions.query override).
+  //   Section 8 already handles notifications, geolocation, camera, microphone,
+  //   accelerometer, gyroscope, magnetometer. Section 38's prototype override
+  //   was also dead code since instance overrides take priority.]
 
-  // Section 50: Document.hasFocus() initial state
-  // Real browser tabs start with focus. Headless may report false.
-  // NOTE: Section 36 already unconditionally overrides hasFocus.
-  // This section handles the edge case where hasFocus was called before stealth loaded.
-  try {
-    if (typeof document.hasFocus !== 'undefined' && !document.hasFocus()) {
-      Object.defineProperty(document, 'hasFocus', {
-        value: function() { return true; },
-        writable: true,
-        configurable: true,
-      });
-    }
-  } catch(e) {}
+  // [Section 50 removed: duplicate of Section 36 (document.hasFocus override).
+  //   Section 36 already unconditionally sets hasFocus to return true.]
 
   // Section 51: speechSynthesis.getVoices() consistency
   // Headless Chromium often returns an empty array for getVoices().
@@ -2056,53 +2053,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // ==================== Section 54: window.chrome object consistency ====================
-  // Many anti-bot services check for the existence and structure of window.chrome.
-  // Headless Chromium sometimes has an incomplete chrome object.
-  // CRITICAL: Firefox never has window.chrome — must guard with !_isFirefox
-  if (!_isFirefox) {
-  try {
-    if (!window.chrome) {
-      window.chrome = {};
-    }
-    // chrome.runtime should have an empty connect/sendMessage for non-extension pages
-    if (!window.chrome.runtime) {
-      window.chrome.runtime = {
-        connect: function() { return { onMessage: { addListener: function() {} }, postMessage: function() {}, disconnect: function() {} }; },
-        sendMessage: function() {},
-        onMessage: { addListener: function() {} },
-        id: undefined,
-      };
-    }
-    // chrome.csi() and chrome.loadTimes() — legacy Chrome-specific functions
-    // Real Chrome always has these, headless may not
-    if (typeof window.chrome.csi !== 'function') {
-      window.chrome.csi = function() {
-        return { startE: Date.now() - Math.floor(_fakeDeviceSeed * 100) % 5000, onloadT: Date.now() - Math.floor(_fakeDeviceSeed * 100) % 3000, pageT: Math.floor(_fakeDeviceSeed * 100) % 2000 + 500, tran: 15 };
-      };
-    }
-    if (typeof window.chrome.loadTimes !== 'function') {
-      window.chrome.loadTimes = function() {
-        var _base = Date.now() / 1000 - Math.floor(_fakeDeviceSeed * 10) % 30;
-        return {
-          requestTime: _base.toString(),
-          startLoadTime: _base.toString(),
-          commitLoadTime: (_base + 0.05).toString(),
-          finishDocumentLoadTime: (_base + 0.2).toString(),
-          finishLoadTime: (_base + 0.35).toString(),
-          firstPaintTime: (_base + 0.15).toString(),
-          firstPaintAfterLoadTime: 0,
-          navigationType: 'Other',
-          wasFetchedViaSpdy: false,
-          wasNpnNegotiated: false,
-          npnNegotiatedProtocol: '',
-          wasAlternateProtocolAvailable: false,
-          connectionInfo: 'h2',
-        };
-      };
-    }
-  } catch(e) {}
-  } // end !_isFirefox guard for Section 54
+  // [Section 54 removed: fully dead code — Section 2 already sets window.chrome,
+  //   chrome.runtime, chrome.csi, chrome.loadTimes, and chrome.app with correct
+  //   values. Section 54 guards always evaluated to false since Section 2 ran first.]
 
   // ==================== Section 55: performance.memory (Chrome-specific) ====================
   // Chrome exposes performance.memory (non-standard). Headless environments may report
@@ -2288,6 +2241,37 @@ export function getStealthScript(profile: FingerprintProfile): string {
         } catch(e) {}
         return _origCheck(font, text);
       };
+    }
+  } catch(e) {}
+
+  // ==================== Section 61: Gamepad API override ====================
+  // Anti-bot systems check navigator.getGamepads() existence and return value.
+  // Real Chrome always has getGamepads as a function returning an array (null entries
+  // when no gamepads connected). Headless Chrome may return null or undefined.
+  try {
+    if (!navigator.getGamepads) {
+      navigator.getGamepads = function() { return []; };
+    }
+    // Ensure it returns an array-like with null entries (no gamepads connected)
+    var _origGetGamepads = navigator.getGamepads.bind(navigator);
+    Object.defineProperty(navigator, 'getGamepads', {
+      value: function() {
+        var result = _origGetGamepads();
+        if (!result || !Array.isArray(result)) {
+          return [];
+        }
+        return result;
+      },
+      configurable: true,
+    });
+    // Also mock the GamepadEvent constructor if missing
+    if (typeof window.GamepadEvent === 'undefined' && typeof window.Event !== 'undefined') {
+      window.GamepadEvent = function(type, init) {
+        var evt = new Event(type, init);
+        evt.gamepad = (init && init.gamepad) || null;
+        return evt;
+      };
+      window.GamepadEvent.prototype = Event.prototype;
     }
   } catch(e) {}
 

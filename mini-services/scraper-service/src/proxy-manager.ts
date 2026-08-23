@@ -291,8 +291,12 @@ class ProxyManager {
       }
     }
 
-    // Invalidate dispatcher cache
-    invalidateDispatcher(url);
+    // Look up the entry to get the original URL (with credentials)
+    // so we invalidate the correct dispatcher cache key
+    const entry = this.pool.get(parsed.cleanUrl);
+    if (entry) {
+      invalidateDispatcher(entry.url);
+    }
 
     return this.pool.delete(parsed.cleanUrl);
   }
@@ -410,10 +414,8 @@ class ProxyManager {
     entry.consecutiveFails++;
     entry.lastUsed = Date.now();
 
-    // Track recent failure for auto-rotate
-    this.addRecentFailure(parsed.cleanUrl, error);
-
     // If error indicates 403, add domain to blocked list
+    let extractedDomain: string | undefined;
     if (error) {
       const httpMatch = error.match(/HTTP (\d+)/);
       if (httpMatch) {
@@ -423,13 +425,16 @@ class ProxyManager {
           const urlMatch = error.match(/for (https?:\/\/[^/\s]+)/);
           if (urlMatch) {
             try {
-              const domain = new URL(urlMatch[1]).hostname;
-              entry.blockedDomains.add(domain);
+              extractedDomain = new URL(urlMatch[1]).hostname;
+              entry.blockedDomains.add(extractedDomain);
             } catch { /* ignore parse errors */ }
           }
         }
       }
     }
+
+    // Track recent failure for auto-rotate (include domain when available)
+    this.addRecentFailure(parsed.cleanUrl, error, extractedDomain);
 
     // Decrease health score
     const scoreLoss = Math.min(15, 5 + entry.consecutiveFails * 2);
@@ -874,7 +879,14 @@ class ProxyManager {
     const currentIndex = this.domainRotationIndex.get(normalisedDomain) || 0;
 
     // Select current proxy in the rotation
-    const selectedProxy = topN[currentIndex % topN.length];
+    let selectedProxy = topN[currentIndex % topN.length];
+
+    // Avoid reusing the global lastUsedUrl (cross-domain proxy reuse detection)
+    // If the rotation landed on it, try the next proxy in the topN list
+    if (selectedProxy.url === this.lastUsedUrl && topN.length > 1) {
+      selectedProxy = topN[(currentIndex + 1) % topN.length];
+    }
+
     selectedProxy.lastUsed = now;
     this.lastUsedUrl = selectedProxy.url;
 
@@ -954,12 +966,13 @@ class ProxyManager {
    * Internal: record a recent failure for auto-rotate exclusion.
    * Keeps only the last 5 minutes of failures.
    */
-  private addRecentFailure(proxyCleanUrl: string, error?: string): void {
+  private addRecentFailure(proxyCleanUrl: string, error?: string, domain?: string): void {
     const now = Date.now();
     const FIVE_MINUTES = 5 * 60 * 1000;
 
     this.recentFailures.push({
       proxyUrl: proxyCleanUrl,
+      domain,
       timestamp: now,
       error: error || 'unknown',
     });

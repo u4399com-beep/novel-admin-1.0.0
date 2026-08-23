@@ -86,6 +86,10 @@ class SessionManager {
       bestSession.lastUsedAt = new Date().toISOString();
       if (taskId && !bestSession.taskIds.includes(taskId)) {
         bestSession.taskIds.push(taskId);
+        // Cap taskIds to last 20 entries to prevent unbounded growth
+        if (bestSession.taskIds.length > 20) {
+          bestSession.taskIds = bestSession.taskIds.slice(-20);
+        }
       }
       return this.toPublicSession(bestSession);
     }

@@ -4,7 +4,7 @@
  * rate limiting per domain, and debugging.
  *
  * Key capabilities:
- *   - Generate 8-char hex request IDs
+ *   - Generate 16-char hex request IDs
  *   - Track request counts per domain (sliding window)
  *   - Validate fingerprints before requests execute
  *   - Record completion status for monitoring
@@ -16,7 +16,7 @@
 // ==================== Types ====================
 
 export interface RequestFingerprint {
-  requestId: string;        // 8-char hex ID
+  requestId: string;        // 16-char hex ID
   sessionId?: string;        // from SessionManager
   domain: string;
   timestamp: number;
@@ -33,7 +33,8 @@ export interface RequestFingerprint {
 const MAX_AGE_MS = 5 * 60 * 1000;          // 5 minutes
 const MAX_CONCURRENT_PER_DOMAIN = 60;         // max concurrent in-flight requests per domain
 const FINGERPRINT_EXPIRE_MS = 2 * 60 * 1000; // 2 minutes for cleanup
-const CLEANUP_INTERVAL_MS = 2 * 60 * 1000;   // cleanup every 2 minutes
+const CLEANUP_INTERVAL_MS = 30 * 1000;       // cleanup every 30 seconds (shorter than expiry to prevent bloat)
+const MAX_TOTAL_FINGERPRINTS = 10000;        // hard cap on stored fingerprints
 
 // ==================== RequestFingerprintManager ====================
 
@@ -78,6 +79,11 @@ class RequestFingerprintManager {
     };
 
     this.recentFingerprints.set(id, fp);
+
+    // Hard cap: if we exceed MAX_TOTAL_FINGERPRINTS, trigger immediate cleanup
+    if (this.recentFingerprints.size > MAX_TOTAL_FINGERPRINTS) {
+      this.cleanup();
+    }
 
     // Track in-flight request per domain
     const ids = this.domainFpIds.get(options.domain) || new Set();
@@ -227,9 +233,9 @@ class RequestFingerprintManager {
 
   // ==================== Private Helpers ====================
 
-  /** Generate a random hex string of the given length */
-  private generateHexId(length: number): string {
-    const bytes = new Uint8Array(length);
+  /** Generate a random hex string of the given byte-length (produces length*2 hex chars). */
+  private generateHexId(byteLength: number): string {
+    const bytes = new Uint8Array(byteLength);
     crypto.getRandomValues(bytes);
     return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
   }

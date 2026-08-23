@@ -507,6 +507,11 @@ async function executeTaskBody(
   const chapterWordCounts: number[] = []; // Track word counts for quality scoring
   const booksProcessed: Array<{ id: string; title: string; url: string }> = [];
 
+  // Book-level CAPTCHA detection: detect captcha from book scrape errors and trigger engine upgrade
+  const bookCaptchaCounts = new Map<string, number>();
+  const BOOK_CAPTCHA_THRESHOLD = 2;
+  const BOOK_CAPTCHA_PAUSE_MS = 60000;
+
   async function processBook(bookUrl: string, index: number): Promise<void> {
     try {
       console.log(`[Task ${taskId}] Processing book ${index + 1}/${bookUrls.length}: ${bookUrl}`);
@@ -640,10 +645,73 @@ async function executeTaskBody(
         }
       }
     } catch (err) {
-      failedItemsCount.increment();
+      // Detect CAPTCHA errors from handleScrapeBook and trigger engine upgrade
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const isCaptcha = errMsg.includes('CAPTCHA');
+
+      if (isCaptcha) {
+        skippedBooksCount.increment();
+        const bkDomain = extractDomain(bookUrl);
+        const prevCount = bookCaptchaCounts.get(bkDomain) || 0;
+        const newCount = prevCount + 1;
+        bookCaptchaCounts.set(bkDomain, newCount);
+
+        await addTaskLog(taskId, "warn", `CAPTCHA detected on book page: ${bookUrl}`, bookUrl, errMsg.slice(0, 500));
+
+        // Pause and attempt engine upgrade when consecutive CAPTCHAs exceed threshold
+        if (newCount >= BOOK_CAPTCHA_THRESHOLD) {
+          await addTaskLog(taskId, "warn", `验证码频繁(${bkDomain}), 暂停${BOOK_CAPTCHA_PAUSE_MS / 1000}秒`);
+          await updateTaskProgress(taskId, {
+            currentStep: `⚠️ 验证码频繁，暂停${BOOK_CAPTCHA_PAUSE_MS / 1000}秒...`,
+          });
+
+          // Auto-engine upgrade: consult CAPTCHA strategy advisor
+          try {
+            const detection: CaptchaDetection = {
+              detected: true,
+              type: 'generic',
+              confidence: 0.8,
+              evidence: ['book-page-captcha'],
+            };
+            const strategyResult = await autoHandleCaptcha(detection, {
+              url: bookUrl,
+              domain: bkDomain,
+              currentEngine: engineType,
+              retryCount: newCount,
+              maxRetries: 5,
+              antiCrawlConfig: antiCrawlConfig as Record<string, unknown>,
+            });
+
+            if (strategyResult.nextEngine && strategyResult.nextEngine !== engineType) {
+              await addTaskLog(taskId, "info",
+                `升级引擎: ${engineType} → ${strategyResult.nextEngine} (${strategyResult.message})`,
+                bookUrl,
+                `书籍页连续遇到${newCount}次验证码，已自动切换到${strategyResult.nextEngine}引擎`
+              );
+              engineType = strategyResult.nextEngine;
+              ctx.engineType = engineType;
+            }
+
+            if (strategyResult.delayMs && strategyResult.delayMs >= BOOK_CAPTCHA_PAUSE_MS) {
+              await new Promise<void>((resolve) => setTimeout(resolve, strategyResult.delayMs));
+            } else {
+              await new Promise<void>((resolve) => setTimeout(resolve, BOOK_CAPTCHA_PAUSE_MS));
+            }
+          } catch {
+            await new Promise<void>((resolve) => setTimeout(resolve, BOOK_CAPTCHA_PAUSE_MS));
+          }
+
+          bookCaptchaCounts.set(bkDomain, 0);
+        }
+      } else {
+        failedItemsCount.increment();
+      }
+
       recordAdaptiveResponse(bookUrl, 0, false);
-      console.error(`[Task ${taskId}] Error processing book ${bookUrl}:`, err);
-      await addTaskLog(taskId, "error", `采集书籍失败: ${bookUrl}`, bookUrl, String(err));
+      console.error(`[Task ${taskId}] Error processing book ${bookUrl}:`, errMsg);
+      if (!isCaptcha) {
+        await addTaskLog(taskId, "error", `采集书籍失败: ${bookUrl}`, bookUrl, errMsg.slice(0, 500));
+      }
     }
   }
 

@@ -31,7 +31,15 @@ export interface ConnectionProfile {
 
 // ==================== Accept-Encoding Pools ====================
 
-const ENCODING_POOLS = [
+/** Legacy / older server stacks (Chinese novel sites, .cn, .com.cn) */
+const LEGACY_ENCODING_POOL: readonly string[] = [
+  'gzip, deflate',
+  'gzip',
+  'deflate, gzip',
+];
+
+/** Modern sites (CDN-backed, major platforms) */
+const MODERN_ENCODING_POOL: readonly string[] = [
   'gzip, deflate, br',       // Classic Chrome (< v70)
   'br, gzip, deflate',       // Modern Chrome (v70+)
   'gzip, br, deflate',       // Chrome variant
@@ -48,6 +56,24 @@ const CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
 interface CacheEntry {
   profile: ConnectionProfile;
   createdAt: number;
+}
+
+// ==================== Domain Classification ====================
+
+/** Chinese / legacy TLDs that tend to have older server stacks */
+const LEGACY_TLDS = ['.cn', '.com.cn', '.net.cn', '.org.cn', '.gov.cn', '.ac.cn'];
+
+/**
+ * Classify a domain for encoding pool selection.
+ * - Chinese / legacy TLDs → LEGACY_ENCODING_POOL (older server stacks)
+ * - Otherwise → MODERN_ENCODING_POOL (CDN-backed modern sites)
+ */
+function classifyDomain(domain: string): 'legacy' | 'modern' {
+  const lower = domain.toLowerCase();
+  for (const tld of LEGACY_TLDS) {
+    if (lower.endsWith(tld)) return 'legacy';
+  }
+  return 'modern';
 }
 
 // ==================== Domain Hash ====================
@@ -91,8 +117,10 @@ export function getConnectionProfile(domain: string): ConnectionProfile {
   }
 
   const h = domainHash(domain);
+  const domainClass = classifyDomain(domain);
+  const pool = domainClass === 'legacy' ? LEGACY_ENCODING_POOL : MODERN_ENCODING_POOL;
   const profile: ConnectionProfile = {
-    acceptEncoding: ENCODING_POOLS[h % ENCODING_POOLS.length],
+    acceptEncoding: pool[h % pool.length],
     connectionHeader: h % 3 === 0 ? 'keep-alive' : '',
     maxConcurrentStreams: 100 + (h % 900), // 100-999
     initialWindowSize: 65535 + (h % 262144), // 64KB-327KB in 1KB steps
@@ -106,19 +134,8 @@ export function getConnectionProfile(domain: string): ConnectionProfile {
 /**
  * Get the Accept-Encoding header value for a domain.
  * Diversified per-domain to avoid fingerprinting via encoding preference.
+ * Uses domain classification to pick realistic encoding for the target site type.
  */
 export function getAcceptEncoding(domain: string): string {
   return getConnectionProfile(domain).acceptEncoding;
-}
-
-/**
- * Get cache statistics.
- */
-export function getConnectionProfileCacheSize(): number {
-  return domainConnProfileCache.size;
-}
-
-/** Clear the connection profile cache. */
-export function clearConnectionProfileCache(): void {
-  domainConnProfileCache.clear();
 }

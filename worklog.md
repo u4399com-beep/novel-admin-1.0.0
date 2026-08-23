@@ -15854,3 +15854,338 @@ Stage Summary:
 - Playwright+Obscura速率限制双重计数修复(两大浏览器引擎)
 - JS提取器无限循环防护、H2兼容性(Connection头移除)
 - effectiveType阈值修正为W3C规范
+---
+Task ID: R37-a
+Agent: engines-fixer
+Task: Fix PlaywrightEngine fp bug + humanBehavior + timing jitter + browserBehavior
+
+Work Log:
+- Read engines.ts (1787→1908 lines after edits) and worklog.md for context
+- Identified PlaywrightEngine.fetch() method (lines 490-713) with 4 bugs
+- Fix 1 [HIGH]: Added `fp = requestFingerprintMgr.create(...)` before `retryWithBackoff()` (line 520-526), matching CheerioEngine pattern. Moved `pwProfile` and `pwProxy` creation outside retry to outer scope so fp can reference them.
+- Fix 2 [MEDIUM]: Added human behavior simulation block (mouse movement, micro-movements, 30% link hover, multi-segment scroll with reading pauses) after `waitForLoadState(networkidle)` and before `page.content()`. Added simple scroll-to-bottom + 800ms fallback when humanBehavior is NOT enabled.
+- Fix 3 [MEDIUM]: Added `await applyTimingJitter()` before `retryWithBackoff()` call (line 529).
+- Fix 4 [LOW]: Added `browserBehavior.shouldThrottle()` check + `browserBehavior.recordRequest()` before `retryWithBackoff()` (lines 532-538).
+- Removed duplicate proxy/profile selection from inside retryWithBackoff (was selecting them inside but now using outer scope variables).
+- Verified: `npx tsc --noEmit` shows 0 errors in engines.ts (pre-existing errors in other files unchanged).
+- Verified: `bun build --no-bundle src/engines.ts` transpiles successfully in 4ms.
+
+Stage Summary:
+- Fixed 4 bugs in PlaywrightEngine: missing fp creation (runtime ReferenceError), missing humanBehavior simulation, missing timing jitter, missing browserBehavior integration
+- PlaywrightEngine now feature-parity with CheerioEngine for fp/timing/browserBehavior, and with ObscuraEngine for humanBehavior/scroll
+- No TypeScript errors introduced; all changes verified
+
+---
+Task ID: R37-b
+Agent: scrapers-fixer
+Task: Fix scrapers.ts anti-crawl gaps (cover download + onCaptcha)
+
+Work Log:
+- Read scrapers.ts (434 lines) and identified all 4 target areas
+- Read utils.ts buildFetchHeaders() signature — confirmed it already includes Accept-Encoding, XFF, IP fingerprint, Sec-Fetch, Accept-Language, DNT, Client Hints, and shuffled header order
+- Verified cookieJar.store() method signature (not setCookieFromHeader)
+- Verified all module exports: rateLimiter, referrerChain, cookieJar, requestFingerprintMgr, applyTimingJitter, antiCrawlAdvisor, browserBehavior, proxyManager, getProxyDispatcher
+
+## Fix 1 [HIGH]: handleDownloadCover full anti-crawl integration
+- Added 8 new imports: rateLimiter, referrerChain, cookieJar, requestFingerprintMgr, applyTimingJitter, antiCrawlAdvisor, browserBehavior, proxyManager+getProxyDispatcher
+- Added buildFetchHeaders to existing utils import
+- Domain extraction from URL via new URL().hostname
+- rateLimiter.acquire() before fetch (with blocked check + waitMs)
+- browserBehavior.shouldThrottle() + recordRequest() before fetch
+- applyTimingJitter() before fetch
+- buildFetchHeaders() replacing manual UA+Referer (overrides Accept for image context)
+- cookieJar.getCookieHeader() merged into request headers
+- requestFingerprintMgr.create() + .complete() tracking
+- proxyManager.getProxy() + getProxyDispatcher() for optional proxy support
+- onHopResponse to store Set-Cookie from redirect hops via cookieJar.store()
+- Success path: rateLimiter.recordResult(true), referrerChain.recordVisit(), antiCrawlAdvisor.recordSuccess(), proxyManager.recordSuccess(), fp.complete(true)
+- Error path: rateLimiter.recordResult(false), antiCrawlAdvisor.recordFailure(), proxyManager.recordFailure(), fp.complete(false)
+- Preserved SSRF check and 5MB size limits
+
+## Fix 2 [MEDIUM]: handleScrapeList onCaptcha callback
+- Added onCaptcha callback to paginatedFetch call
+- Logs CAPTCHA type with confidence and page URL
+- Returns true (skip page) — matches handleScrapeContent pattern
+
+## Fix 3 [MEDIUM]: handleScrapeChapters onCaptcha callback
+- Added onCaptcha callback to paginatedFetch call
+- Same pattern as Fix 2 — logs + skips page
+
+## Fix 4 [LOW]: handleScrapeContent JS fallback threshold
+- Changed content.length > 50 to content.length > 30 (both main and JS extraction checks)
+- Added clarifying comments in else branches to confirm short content preservation
+
+## Verification
+- `npx tsc --noEmit`: 0 new errors in scrapers.ts (pre-existing errors in other files unchanged)
+- `bun build --no-bundle --target bun src/scrapers.ts`: transpiled successfully (14.96 KB)
+
+Stage Summary:
+- 4 fixes applied (1 HIGH + 2 MEDIUM + 1 LOW)
+- handleDownloadCover now integrates full anti-crawl stack: rate limiting, browser behavior, timing jitter, buildFetchHeaders, cookie jar, request fingerprint, anti-crawl advisor, proxy support, cookie storage on redirect hops
+- handleScrapeList and handleScrapeChapters now properly detect/skip CAPTCHA pages
+- Content extraction threshold lowered from 50→30 chars for better short-content handling
+- No TypeScript errors introduced; all changes verified
+---
+Task ID: R37-c
+Agent: r30-audit-fixer
+Task: Fix R30 audit known limitations (stealth dedup + http2-decoy + referrer-chain)
+
+Work Log:
+- Read worklog.md last 100 lines and all 3 target files
+- Fix 1 [MEDIUM]: stealth.ts Section 50 vs Section 36 — both override document.hasFocus. Section 36 unconditionally sets it to return true; Section 50 conditionally checks first but Section 36 already ran. Removed Section 50 entirely (13 lines → 2-line comment).
+- Fix 2 [MEDIUM]: stealth.ts Section 49 vs Section 8 — both override navigator.permissions.query. Section 8 handles notifications/geolocation/camera/microphone/accelerometer/gyroscope/magnetometer. Section 49 was dead code guarded by a check that would never pass. Removed Section 49 entirely (27 lines → 3-line comment).
+- Fix 3 [MEDIUM]: http2-decoy.ts — Expanded encoding pool from 5 to 8 entries across two classified pools (LEGACY_ENCODING_POOL for .cn/.com.cn TLDs with 3 entries; MODERN_ENCODING_POOL with 5 entries). Added classifyDomain() with LEGACY_TLDS list. Removed 2 dead exports (getConnectionProfileCacheSize, clearConnectionProfileCache).
+- Fix 4 [LOW]: referrer-chain.ts — Removed 3 dead methods: recordCrossDomainTransition (never called), getHistory (never called), getStats (never called). Kept clearHistory (used in test file). Updated module docstring.
+- Fix 5 [LOW]: stealth.ts — Added Section 6b (DOMRect Consistency) after screen properties section. Ensures DOMRect constructor exists, new DOMRect() returns all zeros, and prototype is preserved. Prevents fingerprinting via DOMRect constructor behavior differences.
+- Verified all 3 files transpile successfully with bun build.
+
+Stage Summary:
+- 5 fixes applied (2 MEDIUM + 2 LOW + 1 LOW)
+- stealth.ts: removed 40 lines of duplicate code (Sections 49+50), added 20-line DOMRect consistency section
+- http2-decoy.ts: expanded from 5→8 encoding values, added domain classification for Chinese TLDs, removed 2 dead exports
+- referrer-chain.ts: removed 3 dead methods (50 lines), kept clearHistory for test compatibility
+- All files compile cleanly
+---
+Task ID: R37-d
+Agent: proxy-session-adaptive-auditor
+Task: Deep audit proxy/session/adaptive/fingerprint modules
+
+Work Log:
+- Read and audited proxy-manager.ts (1139 lines), session-manager.ts (362 lines), adaptive-delay.ts (425 lines), request-fingerprint.ts (308 lines)
+- Identified and fixed 6 issues across 4 files
+
+## Issues Found and Fixed
+
+### proxy-manager.ts
+
+1. [MEDIUM] proxy-manager.ts:295 — removeProxy used input URL for dispatcher cache invalidation instead of the stored original URL. If called with a URL in different format (e.g. without credentials), the cached dispatcher (keyed by the original URL with credentials) would not be evicted, leading to stale/broken dispatchers persisting in memory.
+   - Fix: Look up the pool entry first, then call invalidateDispatcher(entry.url) to match the cache key.
+
+2. [MEDIUM] proxy-manager.ts:877 — getDomainProxyWithRotation did not exclude lastUsedUrl. When rotating proxies for domain A, the selected proxy could be the same one just used for domain B, making cross-domain IP patterns detectable.
+   - Fix: After rotation selection, check if it matches lastUsedUrl; if so and topN > 1, advance to the next proxy in the rotation list.
+
+3. [LOW] proxy-manager.ts:961 — addRecentFailure never populated the domain field on RecentFailure records. getDetailedStats always showed domain as "unknown" in recent failure entries.
+   - Fix: Extract domain from error string in recordFailure (already parsed for 403 handling), pass to addRecentFailure, store in RecentFailure.domain.
+
+### session-manager.ts
+
+4. [LOW] session-manager.ts:88 — taskIds array in InternalSession grew unboundedly as sessions were reused by many tasks. Long-lived sessions approaching maxSessionUsage (50) could accumulate dozens of task IDs with no cap.
+   - Fix: Cap taskIds to last 20 entries when adding a new taskId.
+
+### adaptive-delay.ts
+
+5. [MEDIUM] adaptive-delay.ts:82 — getDelaySync computed base delay as baseMin + random() * (baseMax - baseMin) without guarding against baseMax < baseMin. A misconfigured config would produce negative range, yielding delays below baseMin (or even negative before clamping).
+   - Fix: Wrap range in Math.max(0, ...) to ensure non-negative spread.
+
+### request-fingerprint.ts
+
+6. [MEDIUM] request-fingerprint.ts:36 — Cleanup interval (2 min) was equal to fingerprint expiry (2 min), allowing entries to persist up to ~4 minutes before cleanup. No hard cap on total fingerprints. Docstring incorrectly said "8-char hex ID" when generateHexId(8) produces 16 hex chars.
+   - Fix: Reduced cleanup interval to 30 seconds (well under 2-min expiry). Added MAX_TOTAL_FINGERPRINTS=10000 hard cap with immediate cleanup trigger in create(). Fixed docstrings to say "16-char".
+
+## Audit Notes (No Fix Needed)
+
+- **SOCKS5 support**: Correctly handled — SocksProxyAgent created from original URL, cached as Dispatcher.
+- **IPv6 parsing**: Correctly handled — parsed.hostname returns unbracketed form, re-bracketed in display URLs.
+- **Health tracking**: recordSuccess/recordFailure logic is correct (EMA response time, exponential score gain/loss, auto-cooling at 5 fails, auto-disable below 10 health).
+- **Race conditions**: No true race conditions in Node.js single-threaded model for synchronous methods.
+- **Session-UA consistency**: UA is set once at creation and never mutated — correct.
+- **Session cleanup**: 30-min interval with expired/overused/stale-blocked removal — adequate.
+- **antiCrawlMultiplier in getDomainStats**: R36 fix is correctly applied (line 176), matches getDelaySync calculation.
+- **Delay bounds**: Capped at maxBackoff (60s) with 100ms minimum — adequate.
+- **Domain stats eviction**: LRU with 500-domain cap — correct.
+- **Timing jitter**: ±50ms is lightweight but appropriate for its purpose.
+
+## Verification
+- bun build --no-bundle succeeds for all 4 files (proxy-manager: 742 lines, session-manager: 249, adaptive-delay: 231, request-fingerprint: 169)
+- No compilation errors
+
+Stage Summary:
+- 6 fixes applied (4 MEDIUM + 2 LOW) across 4 files
+- Key fixes: dispatcher cache invalidation bug, rotation lastUsedUrl gap, fingerprint cleanup interval mismatch
+- All files compile cleanly
+---
+Task ID: R37-e
+Agent: r37-audit-fixer
+Task: Audit task-engine and stealth enhancements
+
+Work Log:
+- Read worklog.md last 100 lines (R37-c dedup, R37-d proxy/session audit)
+- Read and audited task-engine.ts (1132 lines) and stealth.ts (3018 lines)
+- Identified and fixed 4 issues across 2 files
+
+## Issues Found and Fixed
+
+### task-engine.ts
+
+1. [HIGH] Book-level CAPTCHA bypasses engine upgrade — handleScrapeBook throws on CAPTCHA but the task-engine catch block just incremented failedItemsCount with no engine upgrade logic (unlike the chapter-level handler which uses autoHandleCaptcha). This means if every book page triggers CAPTCHA, the engine is never upgraded and all books fail.
+   - Fix: Added bookCaptchaCounts map (per-domain counter), BOOK_CAPTCHA_THRESHOLD=2, BOOK_CAPTCHA_PAUSE_MS=60s. On CAPTCHA error (detected via error message containing 'CAPTCHA'), increment skippedBooksCount (not failedItemsCount) and trigger the same autoHandleCaptcha strategy consultation as the chapter-level handler, including engine upgrade and pause.
+
+2. [MEDIUM] CAPTCHA-skipped books inflated failure count — CAPTCHA-skipped books incremented failedItemsCount instead of skippedBooksCount, corrupting quality scoring.
+   - Fix: CAPTCHA errors now increment skippedBooksCount; only non-CAPTCHA errors increment failedItemsCount.
+
+### stealth.ts
+
+3. [MEDIUM] Missing Gamepad API override — navigator.getGamepads() is a known detection vector. Headless Chrome may return null/undefined while real Chrome always has the function. Added Section 61: ensures getGamepads exists and returns a proper array, mocks GamepadEvent constructor if missing.
+
+4. [MEDIUM] Dead Section 54 code with conflicting values — Section 2 already sets window.chrome, chrome.runtime, chrome.csi, chrome.loadTimes, chrome.app. Section 54 tried to set the same properties with guards (e.g., `if (!window.chrome.runtime)`) that always evaluated to false since Section 2 ran first, making all 45 lines no-ops. Additionally, Section 54 had conflicting values (wasNpnNegotiated: false vs Section 2's true). Removed Section 54 entirely, replaced with comment explaining the removal.
+
+5. [LOW] Docstring incomplete — only documented sections up to 50 but 51-60 existed in code. Added sections 51-61 to the docstring, marking 49, 50, 54 as removed.
+
+## Audit Notes (No Fix Needed)
+
+- **handleDownloadCover antiCrawl**: Already integrated internally (rate limiting, browser behavior, timing jitter, buildFetchHeaders, cookie jar, request fingerprint, anti-crawl advisor, proxy support). No parameters needed from task-engine.
+- **handleScrapeList/handleScrapeChapters CAPTCHA**: Both have onCaptcha callbacks that skip CAPTCHA pages internally. No captchaDetected returned to task-engine (by design).
+- **All 5 scraping functions used**: handleScrapeList (line 460), handleScrapeBook (line 525), handleScrapeChapters (line 736), handleScrapeContent (line 838), handleDownloadCover (line 634). All pass antiCrawl and engine correctly.
+- **Heartbeat/timeout**: Heartbeat interval every 30s, 5-min stuck detection timeout, 1-hour hard task timeout with AbortController abort. All correct.
+- **Memory**: chapterWordCounts bounded by task lifetime; logBuffer has 1000-entry cap; progressThrottle has 5-min cleanup. No unbounded growth.
+- **Section 6 vs 53 devicePixelRatio**: Section 6 sets profile value, Section 53 may override for screen-width consistency. Both produce realistic values; outcome is acceptable.
+- **Notification API**: Sections 35 and 52 are complementary (35 creates mock if missing, 52 fixes wrong permission state). Not conflicting.
+
+## Verification
+- bun build --no-bundle src/task-engine.ts: 874 lines, exit 0
+- bun build --no-bundle src/stealth.ts: 2593 lines, exit 0
+- No compilation errors
+
+Stage Summary:
+- 5 fixes applied (1 HIGH + 3 MEDIUM + 1 LOW) across 2 files
+- Key fix: Book-level CAPTCHA now triggers engine upgrade and pauses, matching chapter-level behavior
+- stealth.ts: added Gamepad API override, removed 45 lines of dead code, updated docstring
+- All files compile cleanly
+---
+Task ID: R37-f
+Agent: r37-audit-fixer
+Task: Audit captcha/quality/selectors/cleaning
+
+Work Log:
+- Read worklog.md last 100 lines (R37-e task-engine and stealth audit)
+- Read and audited captcha-strategy.ts (273 lines), quality-scorer.ts (415 lines), selectors.ts (317 lines), cleaning.ts (584 lines), regex-safety.ts (53 lines)
+- Cross-referenced task-engine.ts and types.ts to understand ScrapeResult.failedItems semantics and autoHandleCaptcha integration
+- Identified and fixed 3 issues across 3 files
+
+## Issues Found and Fixed
+
+### quality-scorer.ts
+
+1. [HIGH] checkSuccessRate used `totalBooks - failedItems` as denominator — failedItems counts BOTH book and chapter failures (confirmed by reading task-engine.ts lines 616, 707, 1041, 1045, 1082). When chapter failures existed, `eligible = totalBooks - failedItems` could go negative (e.g., 10 books - 15 failures = -5), causing the function to return score 0 with message '无有效书籍数据' even when book success rate was 100%. Even when not negative, the rate was artificially deflated (e.g., 10 books, 8 new, 5 chapter failures: eligible=5, rate=1.6 > 1.0, accidentally passing but with wrong semantics).
+   - Fix: Use `totalBooks` directly as denominator (totalBooks only contains successfully processed books per task-engine line 1127: `totalBooks: booksProcessed.length`). Rate = newBooks/totalBooks, which correctly measures 'what fraction of processed books are new?'. Added Math.min guard for defensive safety. Updated message to show correct denominator.
+
+### captcha-strategy.ts
+
+2. [MEDIUM] GeetestStrategy did not escalate to cloud-browser — After 3 retries on obscura/scrapling, GeetestStrategy immediately returned `action: 'none'` (give up), while CloudflareStrategy at the same point escalates from obscura/scrapling → cloud-browser. This inconsistency meant GeeTest-protected sites on obscura had no escalation path and gave up prematurely.
+   - Fix: After 3 retries on stealth engines, if not already on cloud-browser, return `action: 'switch-engine', nextEngine: 'cloud-browser'` (matching CloudflareStrategy behavior). Only give up if already on cloud-browser.
+
+### selectors.ts
+
+3. [MEDIUM] extractLinksFromList document-level fallback produced duplicate entries — When a link/title CSS or XPath selector didn't match within a list item, the code fell back to a document-level search (lines 261-265, 271-274). For N list items where none had an in-scope match, all N would get the SAME first document-level match, producing N identical {title, url} entries. This inflated downstream processing with phantom duplicate chapters.
+   - Fix: Added `seenUrls` Set that tracks resolved URLs. Before pushing a result, checks `!seenUrls.has(resolvedUrl)`. Document-level fallback still works for the first item but subsequent duplicates are skipped.
+
+## Audit Notes (No Fix Needed)
+
+- **captcha-strategy.ts strategy chain order** (Cloudflare → Geetest → EngineUpgrade → DelayBackoff): Correct. Type-specific strategies first, then generic engine upgrade, then catch-all backoff.
+- **captcha-strategy.ts infinite loop risk**: No risk in the strategy chain itself — each strategy either suggests an engine switch (caller must implement), a delay (caller must implement), or gives up. The loop risk is in the caller's retry logic, not here.
+- **captcha-strategy.ts EngineUpgrade + selectEngine integration**: Correct. EngineUpgrade returns `nextEngine` in StrategyResult; the task-engine caller (R37-e fix) applies the upgrade by setting `engineType = strategyResult.nextEngine`.
+- **quality-scorer.ts scoring weights**: Correct sum of 100 (15+15+15+20+15+10+10).
+- **quality-scorer.ts anomaly detection**: Correct — uniformWordCount (all chapters same length, >3 chapters, -4pts) and allVeryShort (all <100 words, -3pts).
+- **quality-scorer.ts grade mapping**: Correct A(≥85) B(≥70) C(≥50) D(≥30) F(<30).
+- **quality-scorer.ts checkContentCoverage score cap**: The `Math.round(rate * 20)` in the else branch (rate < 0.3) can produce at most 6, which is properly capped by `Math.min(15, score)`.
+- **selectors.ts CSS combinator regex** (R36 fix): Correct. `\[href\](?![\w-])` matches `[href]` but not `[data-href]` or `[href-data]`.
+- **selectors.ts XPath injection**: Not a security concern — xpathToCss converts to CSS, cheerio doesn't execute scripts, invalid selectors just return no matches.
+- **selectors.ts extractLinksFromList relative URLs**: Handled by `resolveUrl(baseUrl, linkValue)`. Dangerous protocols (javascript:, data:, blob:, vbscript:) are filtered.
+- **cleaning.ts safeRegex wrappers**: Properly used for user-provided patterns (safeRegexMatch in selectors.ts, safeRegexReplace in cleaning.ts). Hardcoded WATERMARK_PATTERNS don't need wrapping (no user input).
+- **cleaning.ts zero-width/control character removal**: Comprehensive — covers ZWSP, ZWNJ, ZWJ, BOM, soft hyphen, word joiner, invisible math chars, Mongolian vowel separator, combining grapheme joiner, LRM/RLM, line/paragraph separators, bidi isolates, Cc control chars (preserving TAB/LF/CR), and interlinear annotations.
+- **cleaning.ts BOM handling**: U+FEFF included in zero-width char regex on line 557, stripped before whitespace normalization.
+- **cleaning.ts HTML cleaning content loss**: Event handler attributes are stripped (not entire elements), javascript: URIs removed from href/src, ad CSS selectors are broad but user can customize. No systematic content loss risk.
+- **regex-safety.ts safeRegexReplace no truncation**: By design — dangerous patterns are pre-filtered, V8's built-in regex execution limit is the runtime backstop. Documented in comment.
+
+## Verification
+- bun build --no-bundle succeeds for all 4 files (captcha-strategy: 178 lines, quality-scorer: 296, selectors: 216, cleaning: 402)
+- No compilation errors
+
+Stage Summary:
+- 3 fixes applied (1 HIGH + 2 MEDIUM) across 3 files
+- Key fix: quality-scorer success rate now uses correct denominator (totalBooks not totalBooks - mixed failedItems)
+- Geetest CAPTCHA now escalates to cloud-browser matching Cloudflare behavior
+- extractLinksFromList now deduplicates URLs to prevent phantom entries from doc-level fallback
+- All files compile cleanly---
+Task ID: R37
+Agent: Main Orchestrator + 6 Sub-agents (R37-a through R37-f)
+Task: 全面审计所有采集规则反反爬协同效果 + 23项修复
+
+Work Log:
+- 读取并审计scrapers.ts中所有5个采集函数(handleScrapeList/handleScrapeBook/handleScrapeChapters/handleScrapeContent/handleDownloadCover)与反反爬机制的协同覆盖
+- 识别出3大引擎(Cheerio/Playwright/Obscura) + 5个采集函数中的协同缺失
+- 并行启动6个子代理修复所有发现的问题
+
+## 修复清单 (23项)
+
+### HIGH (4项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 1 | engines.ts | PlaywrightEngine添加requestFingerprintMgr.create() | fp未定义→运行时ReferenceError |
+| 2 | scrapers.ts | handleDownloadCover集成完整反反爬栈 | 裸fetch绕过rateLimiter/cookieJar/referrerChain等 |
+| 3 | task-engine.ts | 书籍级CAPTCHA触发引擎升级+60s暂停 | CAPTCHA时不升级引擎导致所有书失败 |
+| 4 | quality-scorer.ts | checkSuccessRate使用totalBooks作分母 | failedItems混计章节失败致分母为负 |
+
+### MEDIUM (13项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 5 | engines.ts | PlaywrightEngine添加humanBehavior模拟 | 仅Obscura有人类行为仿真 |
+| 6 | engines.ts | PlaywrightEngine添加applyTimingJitter | 与Cheerio不一致 |
+| 7 | engines.ts | PlaywrightEngine添加browserBehavior集成 | 与Cheerio不一致 |
+| 8 | scrapers.ts | handleScrapeList添加onCaptcha回调 | CAPTCHA页面未被检测跳过 |
+| 9 | scrapers.ts | handleScrapeChapters添加onCaptcha回调 | 同上 |
+| 10 | stealth.ts | 移除重复Section 50(document.hasFocus) | 与Section 36完全重复 |
+| 11 | stealth.ts | 移除重复Section 49(permissions.query) | 与Section 8完全重复 |
+| 12 | stealth.ts | 移除死代码Section 54(chrome对象) | 被Section 2完全遮蔽+冲突值 |
+| 13 | http2-decoy.ts | 编码池5→8+域分类逻辑 | 中国站用旧编码池更真实 |
+| 14 | proxy-manager.ts | removeProxy缓存失效用存储URL | URL格式差异致缓存未清除 |
+| 15 | proxy-manager.ts | getDomainProxyWithRotation排除lastUsed | 跨域IP模式可被检测 |
+| 16 | adaptive-delay.ts | getDelaySync负范围防护 | baseMax<baseMin产生负延迟 |
+| 17 | request-fingerprint.ts | 清理间隔2min→30s+10K硬上限 | 清理=过期致4分钟残留 |
+
+### LOW (6项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 18 | scrapers.ts | 内容阈值50→30字符 | 过高丢弃短章节 |
+| 19 | stealth.ts | 添加Section 6b(DOMRect一致性) | headless DOMRect行为差异检测 |
+| 20 | stealth.ts | 添加Section 61(Gamepad API) | 已知检测向量缺失 |
+| 21 | referrer-chain.ts | 移除3个死方法(55行) | 从未被调用 |
+| 22 | proxy-manager.ts | RecentFailure.domain字段填充 | 统计显示'unknown' |
+| 23 | session-manager.ts | taskIds数组cap=20 | 无限增长内存泄漏 |
+
+## 额外修复(MEDIUM) 
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 24 | captcha-strategy.ts | GeetestStrategy添加cloud-browser升级 | 与Cloudflare行为不一致 |
+| 25 | selectors.ts | extractLinksFromList URL去重 | 文档级fallback产生N条重复 |
+| 26 | task-engine.ts | CAPTCHA跳过计skippedBooksCount | failedItems混计致质量评分失真 |
+
+## 修改文件 (14个)
+- engines.ts (PlaywrightEngine: fp创建+humanBehavior+timingJitter+browserBehavior)
+- scrapers.ts (cover反反爬栈+onCaptcha+内容阈值)
+- stealth.ts (移除49/50/54重复+添加6b DOMRect+61 Gamepad+文档更新)
+- http2-decoy.ts (编码池扩展+域分类+死代码清理)
+- referrer-chain.ts (死方法清理)
+- proxy-manager.ts (缓存失效+旋转排除+domain字段)
+- session-manager.ts (taskIds cap)
+- adaptive-delay.ts (负范围防护)
+- request-fingerprint.ts (清理间隔+硬上限+文档)
+- task-engine.ts (CAPTCHA引擎升级+跳过计数)
+- captcha-strategy.ts (Geetest升级路径)
+- quality-scorer.ts (成功率分母修正)
+- selectors.ts (URL去重)
+
+## 验证结果
+- 所有14个文件bun build编译通过
+- scraper-service 0新增TypeScript错误
+- Git commit + push 待执行
+
+## 历史累计修复: 380 + 26 = 406项
+## Stealth Sections: 58个活跃(49/50/54已移除, 6b/61新增)
+
+Stage Summary:
+- 完成scrapers.ts中所有5个采集函数的反反爬协同审计
+- 26项修复(4 HIGH + 13 MEDIUM + 6 LOW + 3 额外MEDIUM)
+- 关键修复: PlaywrightEngine运行时崩溃bug、cover下载完整反反爬栈、书籍CAPTCHA引擎升级
+- R30审计已知限制全部修复(stealth重复/http2-decoy/referrer-chain死代码)
+- stealth新增DOMRect+Gamepad API覆盖,移除3个重复section

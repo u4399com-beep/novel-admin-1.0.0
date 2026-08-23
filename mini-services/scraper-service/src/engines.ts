@@ -506,6 +506,37 @@ class PlaywrightEngine implements ScrapingEngine {
     // Track last status code for outer recordResult (avoids double-counting in retries)
     let lastPwStatusCode = 0;
 
+    // Session-aware integration (for fingerprint tracking)
+    const sessionInfo = pwDomain ? sessionManager.getSessionForRequest(pwDomain) : null;
+
+    // Build stealth profile for this domain (needed for fingerprint + context)
+    const pwProfile = pwDomain ? getProfileForDomain(pwDomain) : getProfileForDomain('default');
+
+    // Select proxy for this domain (for fingerprint tracking + connection)
+    const fpDomainProxy = pwDomain ? proxyManager.getDomainProxyWithRotation(pwDomain) : null;
+    const pwProxy = fpDomainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(pwDomain) : null);
+
+    // Request fingerprint tracking
+    const fp = requestFingerprintMgr.create({
+      domain: pwDomain,
+      engine: 'playwright',
+      sessionId: sessionInfo?.sessionId,
+      proxyUrl: pwProxy?.url,
+      userAgent: userAgent || pwProfile.userAgent,
+    });
+
+    // Anti-fingerprint timing jitter (±50ms, always applied)
+    await applyTimingJitter();
+
+    // Browser behavior: throttle if visiting same domain too frequently
+    if (pwDomain) {
+      const throttleCheck = browserBehavior.shouldThrottle(pwDomain);
+      if (throttleCheck.throttled) {
+        await new Promise(r => setTimeout(r, throttleCheck.waitMs));
+      }
+      browserBehavior.recordRequest(pwDomain);
+    }
+
     return retryWithBackoff(
       async () => {
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
@@ -515,13 +546,9 @@ class PlaywrightEngine implements ScrapingEngine {
 
         const browser = await getPlaywrightBrowser();
 
-        // Select proxy for this domain (with rotation)
-        const domainProxy = pwDomain ? proxyManager.getDomainProxyWithRotation(pwDomain) : null;
-        const pwProxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(pwDomain) : null);
         const pwStartTime = Date.now();
 
-        // Build context options with viewport, locale, timezone matching stealth profile
-        const pwProfile = pwDomain ? getProfileForDomain(pwDomain) : getProfileForDomain('default');
+        // Build context options with viewport, locale, timezone matching stealth profile (pwProfile from outer scope)
         const contextOptions: Record<string, unknown> = {
           userAgent: pwProfile.userAgent,
           viewport: {
@@ -605,6 +632,100 @@ class PlaywrightEngine implements ScrapingEngine {
           await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {
             // networkidle timeout is acceptable, DOM content is enough
           });
+
+          // ---- Human behavior simulation or simple scroll fallback ----
+          if (options?.antiCrawl?.humanBehavior) {
+            try {
+              // 1. Simple mouse movement: natural curve from start to end
+              const startX = 50 + Math.floor(Math.random() * 300), startY = 100 + Math.floor(Math.random() * 300);
+              const endX = 300 + Math.floor(Math.random() * 600), endY = 200 + Math.floor(Math.random() * 400);
+              const steps = 12 + Math.floor(Math.random() * 8);
+              let curX = startX, curY = startY;
+              for (let i = 0; i < steps; i++) {
+                const t = i / steps;
+                curX = startX + (endX - startX) * t + (Math.random() - 0.5) * 30;
+                curY = startY + (endY - startY) * t + (Math.random() - 0.5) * 20;
+                await page.mouse.move(curX, curY);
+                await new Promise((r) => setTimeout(r, 10 + Math.random() * 30));
+              }
+
+              // 2. Random idle micro-movements (hand tremor)
+              for (let j = 0; j < 1 + Math.floor(Math.random() * 2); j++) {
+                await page.mouse.move(
+                  curX + (Math.random() - 0.5) * 10,
+                  curY + (Math.random() - 0.5) * 10
+                );
+                curX += (Math.random() - 0.5) * 10;
+                curY += (Math.random() - 0.5) * 10;
+                await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
+              }
+
+              // 3. Occasional link hover (30% chance)
+              if (Math.random() < 0.3) {
+                try {
+                  const links = await page.$$("a[href]");
+                  if (links.length > 0) {
+                    const randomLink = links[Math.floor(Math.random() * links.length)];
+                    const box = await randomLink.boundingBox();
+                    if (box) {
+                      const hoverX = box.x + box.width * (0.3 + Math.random() * 0.4);
+                      const hoverY = box.y + box.height / 2;
+                      const linkSteps = 5 + Math.floor(Math.random() * 5);
+                      for (let k = 0; k < linkSteps; k++) {
+                        const lt = k / linkSteps;
+                        await page.mouse.move(
+                          curX + (hoverX - curX) * lt + (Math.random() - 0.5) * 8,
+                          curY + (hoverY - curY) * lt + (Math.random() - 0.5) * 8
+                        );
+                        await new Promise((r) => setTimeout(r, 10 + Math.random() * 25));
+                      }
+                      curX = hoverX;
+                      curY = hoverY;
+                      await new Promise((r) => setTimeout(r, 300 + Math.random() * 500));
+                    }
+                  }
+                } catch { /* link hover failure is non-critical */ }
+              }
+
+              // 4. Multi-segment scroll with reading pauses
+              const pageHeight = await page.evaluate(() => document.body.scrollHeight || 10000);
+              const segments = 3 + Math.floor(Math.random() * 3);
+              const scrollStep = Math.floor(pageHeight / segments);
+              for (let s = 1; s <= segments; s++) {
+                const overshoot = (Math.random() - 0.5) * 40;
+                let targetY = scrollStep * s + overshoot;
+                if (s === segments) {
+                  targetY = pageHeight - 200 + (Math.random() - 0.5) * 100;
+                }
+                targetY = Math.max(0, targetY);
+                await page.evaluate((y) => {
+                  window.scrollTo({ top: y, behavior: "smooth" });
+                }, targetY);
+                await new Promise((r) => setTimeout(r, 300 + Math.random() * 500));
+                const readPause = 500 + Math.random() * 1500;
+                await new Promise((r) => setTimeout(r, readPause));
+                await page.mouse.move(
+                  curX + (Math.random() - 0.5) * 12,
+                  curY + (Math.random() - 0.5) * 12
+                );
+                curX += (Math.random() - 0.5) * 12;
+                curY += (Math.random() - 0.5) * 12;
+              }
+
+              // 5. Random delay before extraction
+              await new Promise((r) => setTimeout(r, 200 + Math.random() * 400));
+            } catch {
+              // Human behavior simulation failure is non-critical
+              console.log("[Playwright] Human behavior simulation failed, continuing with extraction");
+            }
+          } else {
+            // Simple scroll-to-bottom fallback
+            await page.evaluate(() => {
+              window.scrollTo(0, document.body.scrollHeight);
+            }).catch(() => {});
+            // Brief wait for lazy-load triggers
+            await new Promise((resolve) => setTimeout(resolve, 800));
+          }
 
           const html = await page.content();
           if (html.length > MAX_RESPONSE_SIZE) {

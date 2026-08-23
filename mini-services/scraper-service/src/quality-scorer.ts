@@ -116,15 +116,18 @@ export class QualityScorer {
 
   // ==================== Individual Checks ====================
 
-  /** 1. Success Rate (15pts): newBooks / (totalBooks - failedItems) > 90% */
+  /** 1. Success Rate (15pts): newBooks / totalBooks > 90%
+   * Note: totalBooks only counts successfully processed books (failed books are excluded).
+   * So the rate measures "what fraction of processed books are new?" which is a meaningful
+   * quality metric. We do NOT subtract failedItems here because failedItems includes
+   * chapter-level failures that have nothing to do with book success rate. */
   private checkSuccessRate(result: ScrapeResult): QualityCheck {
-    const eligible = result.totalBooks - result.failedItems;
-    if (eligible <= 0) {
-      // No books processed at all - partial score
+    if (result.totalBooks <= 0) {
+      // No books processed at all
       return { name: '成功率', passed: false, score: 0, message: '无有效书籍数据' };
     }
 
-    const rate = result.newBooks / eligible;
+    const rate = Math.min(result.newBooks, result.totalBooks) / result.totalBooks;
     let score: number;
     let passed: boolean;
 
@@ -146,7 +149,7 @@ export class QualityScorer {
       name: '成功率',
       passed,
       score,
-      message: `新增率 ${(rate * 100).toFixed(1)}%（${result.newBooks}/${eligible}）`,
+      message: `新增率 ${(rate * 100).toFixed(1)}%（${result.newBooks}/${result.totalBooks}）`,
     };
   }
 

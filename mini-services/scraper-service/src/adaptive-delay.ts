@@ -78,8 +78,9 @@ class AdaptiveDelayManager {
   getDelaySync(domain: string): number {
     const state = this.getOrCreateDomain(domain);
 
-    // Base delay
-    const baseDelay = this.config.baseMin + Math.random() * (this.config.baseMax - this.config.baseMin);
+    // Base delay (guard against misconfigured baseMax < baseMin)
+    const range = Math.max(0, this.config.baseMax - this.config.baseMin);
+    const baseDelay = this.config.baseMin + Math.random() * range;
 
     // Error backoff multiplier
     let backoffMultiplier = 1;

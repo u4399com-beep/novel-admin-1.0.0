@@ -13,10 +13,17 @@ import { getEngine, selectEngine } from "./engines";
 import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selectors";
 import { cleanHtmlRaw } from "./cleaning";
 import { extractJsContent, hasJsContentPatterns } from "./js-content-extractor";
-import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey } from "./utils";
+import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey, buildFetchHeaders } from "./utils";
 import { isSafeUrl } from "./ssrf";
 import { detectCaptcha, CAPTCHA_TYPE_LABELS } from "./captcha-detector";
 import type { CaptchaDetection } from "./captcha-detector";
+import { rateLimiter } from "./rate-limiter";
+import { referrerChain } from "./referrer-chain";
+import { cookieJar } from "./cookie-jar";
+import { requestFingerprintMgr, applyTimingJitter } from "./request-fingerprint";
+import { antiCrawlAdvisor } from "./anti-crawl-advisor";
+import { browserBehavior } from "./browser-behavior";
+import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 
 // ==================== Pagination Helpers ====================
 
@@ -174,6 +181,10 @@ export async function handleScrapeList(body: ScrapeListRequest) {
     engineType,
     logPrefix: "Pagination",
     signal,
+    onCaptcha: (detection, pageUrl) => {
+      console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[detection.type]} detected on list page ${pageUrl} (confidence: ${Math.round(detection.confidence * 100)}%), skipping page`);
+      return true; // skip this page
+    },
     onPage: (html, pageUrl, page) => {
       const items = parseSelectorMulti(html, selector);
       let newCount = 0;
@@ -246,6 +257,10 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
     engineType,
     logPrefix: "Chapters",
     signal,
+    onCaptcha: (detection, pageUrl) => {
+      console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[detection.type]} detected on chapter page ${pageUrl} (confidence: ${Math.round(detection.confidence * 100)}%), skipping page`);
+      return true; // skip this page
+    },
     onPage: (html, currentUrl) => {
       const links = extractLinksFromList(html, selectors.list, selectors.link, selectors.title, currentUrl);
       let newCount = 0;
@@ -330,19 +345,21 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
         title = parseSelector(processedHtml, selectors.title);
       }
       const content = parseSelector(processedHtml, selectors.content);
-      if (content && content.length > 50) {
+      if (content && content.length > 30) {
         contentParts.push(content);
       } else if (hasJsContentPatterns(html)) {
         // Normal extraction failed or very short — try JS content patterns
         // This handles novel sites that render chapter text via JavaScript
         const jsResult = extractJsContent(html);
-        if (jsResult.found && jsResult.content.length > 50) {
+        if (jsResult.found && jsResult.content.length > 30) {
           console.log(`  [Content] JS content extracted via ${jsResult.pattern} (${jsResult.content.length} chars)`);
           contentParts.push(jsResult.content);
         } else {
+          // JS extraction also failed — preserve original short content if any
           if (content) contentParts.push(content);
         }
       } else {
+        // No JS patterns found — preserve original short content if any
         if (content) contentParts.push(content);
       }
     },
@@ -381,53 +398,149 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
     throw new Error("Invalid save path");
   }
 
+  // Extract domain for anti-crawl stack integration
+  let domain = '';
+  try { domain = new URL(url).hostname; } catch { /* ignore */ }
+
   console.log(`  [Cover] Downloading from ${url} to ${savePath}`);
 
-  // Use shared redirect-following utility with SSRF validation on each hop
-  const { response } = await followRedirects(url, {
-    maxRedirects: 5,
-    makeRequest: (fetchUrl) =>
-      fetch(fetchUrl, {
-        headers: {
-          "User-Agent": getRandomUA(),
-          Referer: new URL(fetchUrl).origin,
-        },
-        signal: AbortSignal.timeout(30000),
-        redirect: "manual",
-      }),
+  // 1. Rate limiting
+  if (domain) {
+    const rateCheck = rateLimiter.acquire(domain);
+    if (rateCheck.blocked) {
+      throw new Error(`Rate limited on ${domain}: ${rateCheck.reason}`);
+    }
+    if (rateCheck.waitMs > 0) {
+      await new Promise(r => setTimeout(r, rateCheck.waitMs));
+    }
+  }
+
+  // 2. Browser behavior throttle check
+  if (domain) {
+    const throttleCheck = browserBehavior.shouldThrottle(domain);
+    if (throttleCheck.throttled) {
+      await new Promise(r => setTimeout(r, throttleCheck.waitMs));
+    }
+    browserBehavior.recordRequest(domain);
+  }
+
+  // 3. Timing jitter
+  await applyTimingJitter();
+
+  // 4. Build headers using the shared anti-crawl header builder
+  const headers = buildFetchHeaders(undefined, undefined, url, undefined);
+  // Override Accept for image requests (buildFetchHeaders sets HTML Accept)
+  headers["Accept"] = "image/webp,image/apng,image/*,*/*;q=0.8";
+
+  // 5. Cookie jar integration (some sites require session cookies for images)
+  if (domain) {
+    const jarCookieHeader = cookieJar.getCookieHeader(domain, new URL(url).pathname);
+    if (jarCookieHeader) {
+      if (headers["Cookie"]) {
+        headers["Cookie"] = `${jarCookieHeader}; ${headers["Cookie"]}`;
+      } else {
+        headers["Cookie"] = jarCookieHeader;
+      }
+    }
+  }
+
+  // 6. Request fingerprint tracking
+  const fp = requestFingerprintMgr.create({
+    domain: domain || 'unknown',
+    engine: 'cover-fetch',
+    userAgent: headers["User-Agent"] || '',
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to download cover: HTTP ${response.status}`);
+  // 7. Optional proxy support
+  const proxy = domain ? proxyManager.getProxy(domain) : null;
+  const dispatcher = proxy ? getProxyDispatcher(proxy.url) : null;
+
+  let success = false;
+  let statusCode = 0;
+
+  try {
+    // Use shared redirect-following utility with SSRF validation on each hop
+    const { response, finalUrl } = await followRedirects(url, {
+      maxRedirects: 5,
+      onHopResponse: (resp, hopUrl) => {
+        // Store Set-Cookie from redirect hops
+        if (domain) {
+          try {
+            const hopDomain = new URL(hopUrl).hostname;
+            const setCookieHeaders = resp.headers.getSetCookie?.() || [];
+            if (setCookieHeaders.length > 0) {
+              cookieJar.store(hopDomain, setCookieHeaders);
+            }
+          } catch { /* ignore */ }
+        }
+      },
+      makeRequest: (fetchUrl) =>
+        fetch(fetchUrl, {
+          headers,
+          signal: AbortSignal.timeout(30000),
+          redirect: "manual",
+          // @ts-expect-error - Bun supports dispatcher option for proxy
+          dispatcher: dispatcher || undefined,
+        }),
+    });
+
+    statusCode = response.status;
+
+    if (!response.ok) {
+      throw new Error(`Failed to download cover: HTTP ${response.status}`);
+    }
+
+    // Check response size before reading into memory
+    const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
+    const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB (novel covers are typically < 500KB)
+    if (contentLength > MAX_COVER_SIZE) {
+      throw new Error(`Cover image too large: Content-Length ${contentLength} bytes (max ${MAX_COVER_SIZE})`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength > MAX_COVER_SIZE) {
+      throw new Error(`Cover image too large: ${arrayBuffer.byteLength} bytes (max ${MAX_COVER_SIZE})`);
+    }
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Use sharp to convert to WebP
+    const sharpModule = await import("sharp");
+    const webpBuffer = await sharpModule.default(buffer)
+      .webp({ quality: 80 })
+      .toBuffer();
+
+    // Bun.write automatically creates parent directories if they don't exist
+    await Bun.write(savePath, webpBuffer);
+
+    console.log(`  [Cover] Saved to ${savePath} (${webpBuffer.length} bytes)`);
+
+    // Record success across all anti-crawl systems
+    success = true;
+    if (domain) {
+      rateLimiter.recordResult(domain, true, statusCode);
+      referrerChain.recordVisit(finalUrl);
+      antiCrawlAdvisor.recordSuccess(domain);
+    }
+    if (proxy) {
+      proxyManager.recordSuccess(proxy.url, Date.now());
+    }
+    requestFingerprintMgr.complete(fp.requestId, true, statusCode);
+
+    return {
+      success: true,
+      path: savePath,
+      size: webpBuffer.length,
+    };
+  } catch (err) {
+    // Record failure across all anti-crawl systems
+    if (domain) {
+      rateLimiter.recordResult(domain, false, statusCode || undefined);
+      antiCrawlAdvisor.recordFailure(domain);
+    }
+    if (proxy) {
+      proxyManager.recordFailure(proxy.url, err instanceof Error ? err.message : String(err));
+    }
+    requestFingerprintMgr.complete(fp.requestId, false, statusCode || undefined);
+    throw err;
   }
-
-  // Check response size before reading into memory
-  const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
-  const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB (novel covers are typically < 500KB)
-  if (contentLength > MAX_COVER_SIZE) {
-    throw new Error(`Cover image too large: Content-Length ${contentLength} bytes (max ${MAX_COVER_SIZE})`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  if (arrayBuffer.byteLength > MAX_COVER_SIZE) {
-    throw new Error(`Cover image too large: ${arrayBuffer.byteLength} bytes (max ${MAX_COVER_SIZE})`);
-  }
-  const buffer = Buffer.from(arrayBuffer);
-
-  // Use sharp to convert to WebP
-  const sharpModule = await import("sharp");
-  const webpBuffer = await sharpModule.default(buffer)
-    .webp({ quality: 80 })
-    .toBuffer();
-
-  // Bun.write automatically creates parent directories if they don't exist
-  await Bun.write(savePath, webpBuffer);
-
-  console.log(`  [Cover] Saved to ${savePath} (${webpBuffer.length} bytes)`);
-
-  return {
-    success: true,
-    path: savePath,
-    size: webpBuffer.length,
-  };
 }
