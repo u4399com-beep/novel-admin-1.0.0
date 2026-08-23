@@ -8,6 +8,13 @@
 import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
+// ==================== Helpers ====================
+
+/** Redact user:password from proxy URL for safe display/logging. */
+function redactProxyCredentials(url: string): string {
+  return url.replace(/\/\/[^:]+:[^@]+@/, '//***:***@');
+}
+
 // ==================== Types ====================
 
 export interface ProxyEntry {
@@ -707,7 +714,7 @@ class ProxyManager {
 
     for (const entry of this.pool.values()) {
       // Redact credentials from URL for export (security)
-      const safeUrl = entry.url.replace(/\/\/[^:]+:[^@]+@/, '//***:***@');
+      const safeUrl = redactProxyCredentials(entry.url);
       entries.push({
         url: safeUrl,
         protocol: entry.protocol,
@@ -1078,8 +1085,11 @@ class ProxyManager {
         status = 'cooling';
       }
 
+      // Redact credentials from URL to prevent exposure via API
+      const safeUrl = redactProxyCredentials(entry.url);
+
       return {
-        url: entry.url,
+        url: safeUrl,
         protocol: entry.protocol,
         host: entry.host,
         port: entry.port,
@@ -1107,7 +1117,7 @@ class ProxyManager {
     const recentFailures = this.recentFailures
       .filter((f) => f.timestamp >= cutoff)
       .map((f) => ({
-        proxyUrl: f.proxyUrl,
+        proxyUrl: redactProxyCredentials(f.proxyUrl),
         domain: f.domain || 'unknown',
         timestamp: f.timestamp,
         error: f.error,

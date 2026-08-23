@@ -558,7 +558,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
   });
 
   // ---- 2. Chrome Object Override ----
-
+  // Firefox never has window.chrome — injecting it is a detection vector
+  if (!_isFirefox) {
   if (!window.chrome) {
     window.chrome = {};
   }
@@ -608,6 +609,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       getIsInstalled: function() { return false; },
     };
   }
+  } // end !_isFirefox
 
   // ---- 3. WebGL Fingerprint Override ----
 
@@ -1833,25 +1835,34 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Section 47: WebGL Shader Precision
   // Headless browsers may return empty strings or inconsistent values for
   // getShaderPrecisionFormat(). Real Chrome returns specific ranges.
+  // IMPORTANT: precisionType varies — 0x8DF0=LOW_FLOAT, 0x8DF1=MEDIUM_FLOAT,
+  // 0x8DF2=HIGH_FLOAT, 0x8DF5=LOW_INT, 0x8DF6=MEDIUM_INT, 0x8DF7=HIGH_INT.
+  // Real Chrome returns different ranges for float vs int types.
   try {
     var _origGetShaderPrecisionFormat = WebGLRenderingContext.prototype.getShaderPrecisionFormat;
     var _shaderPrecisionSeed = _fakeDeviceSeed * 5.17;
+    function _patchPrecisionResult(result, precisionType) {
+      if (!result) return result;
+      // Only patch if headless returns suspicious zeros
+      if (result.rangeMin !== 0 || result.rangeMax !== 0) return result;
+      _shaderPrecisionSeed = (_shaderPrecisionSeed * 16807 + 0.5) % 2147483647;
+      // Real Chrome: float types use rangeMin=127, rangeMax=127, precision=23
+      // int types use rangeMin=31, rangeMax=31, precision=0
+      var isInt = (precisionType === 0x8DF5 || precisionType === 0x8DF6 || precisionType === 0x8DF7);
+      var intRange = 31 + (_shaderPrecisionSeed % 5); // 31-35 for slight variation
+      var floatPrecision = 23 + (_shaderPrecisionSeed % 3); // 23-25
+      try {
+        Object.defineProperties(result, {
+          rangeMin: { get: function() { return isInt ? intRange : 127; }, configurable: true },
+          rangeMax: { get: function() { return isInt ? intRange : 127; }, configurable: true },
+          precision: { get: function() { return isInt ? 0 : floatPrecision; }, configurable: true },
+        });
+      } catch(e) {}
+      return result;
+    }
     WebGLRenderingContext.prototype.getShaderPrecisionFormat = function(shaderType, precisionType) {
       var result = _origGetShaderPrecisionFormat.call(this, shaderType, precisionType);
-      if (!result) return result;
-      // Ensure rangeMin/rangeMax are positive integers (headless sometimes returns 0)
-      if (result.rangeMin === 0 && result.rangeMax === 0) {
-        _shaderPrecisionSeed = (_shaderPrecisionSeed * 16807 + 0.5) % 2147483647;
-        var fakeRange = 23 + (_shaderPrecisionSeed % 10); // 23-32 like real Chrome
-        try {
-          Object.defineProperties(result, {
-            rangeMin: { get: function() { return fakeRange; }, configurable: true },
-            rangeMax: { get: function() { return 127; }, configurable: true },
-            precision: { get: function() { return 23; }, configurable: true },
-          });
-        } catch(e) {}
-      }
-      return result;
+      return _patchPrecisionResult(result, precisionType);
     };
     // Also patch WebGL2 if available
     if (typeof WebGL2RenderingContext !== 'undefined') {
@@ -1859,22 +1870,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
       if (_origGetSPF2 && _origGetSPF2 !== _origGetShaderPrecisionFormat) {
         WebGL2RenderingContext.prototype.getShaderPrecisionFormat = function(shaderType, precisionType) {
           var result = _origGetSPF2.call(this, shaderType, precisionType);
-          if (!result) return result;
-          if (result.rangeMin === 0 && result.rangeMax === 0) {
-            _shaderPrecisionSeed = (_shaderPrecisionSeed * 16807 + 0.5) % 2147483647;
-            var fakeRange = 23 + (_shaderPrecisionSeed % 10);
-            try {
-              Object.defineProperties(result, {
-                rangeMin: { get: function() { return fakeRange; }, configurable: true },
-                rangeMax: { get: function() { return 127; }, configurable: true },
-                precision: { get: function() { return 23; }, configurable: true },
-              });
-            } catch(e) {}
-          }
-          return result;
+          return _patchPrecisionResult(result, precisionType);
         };
       }
-      // If WebGL2 inherits from WebGL (same prototype method), the WebGL patch above covers it
     }
   } catch(e) {}
 
@@ -2087,9 +2085,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // ==================== Section 55: performance.memory (Chrome-specific) ====================
   // Chrome exposes performance.memory (non-standard). Headless environments may report
   // unrealistic values (e.g., jsHeapSizeLimit of 0 or exactly 4294705152).
-  // We provide realistic values that vary per profile.
+  // We ALWAYS override to provide realistic values that vary per profile.
   try {
-    if (window.performance && !window.performance.memory) {
+    if (window.performance && (!_isFirefox)) {
       var _memSeed = Math.abs(_fakeDeviceSeed * 2.71) % 1000;
       var _jsHeapLimit = 2172649472 + Math.floor(_memSeed * 100000); // ~2GB + variation
       var _totalJSHeap = Math.floor(_jsHeapLimit * (0.15 + (_memSeed % 30) / 100)); // 15-45% used

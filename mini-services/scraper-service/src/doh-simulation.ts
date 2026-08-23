@@ -92,18 +92,30 @@ function resolveDomain(domain: string): string[] {
 /**
  * Get a fake X-Forwarded-For IP for the given domain.
  *
- * Returns a random IP from the same /24 subnet as one of the
- * simulated DNS results for that domain. This simulates DoH
- * behavior where requests may appear to come from different IPs
- * in the same subnet.
+ * Returns a session-consistent IP from the same /24 subnet as one of the
+ * simulated DNS results for that domain. The same IP is returned for
+ * the same domain within the cache TTL (5 min), simulating DoH session
+ * affinity — real DoH resolvers maintain connection-level IP consistency.
  *
  * @param domain - The target domain
  * @returns A fake IP string, or null if domain is empty
  */
+
+// Per-domain XFF cache for session affinity (same IP within TTL window)
+const xffCache = new Map<string, { ip: string; createdAt: number }>();
+const XFF_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches DNS cache TTL
+
 export function getForwardedFor(domain: string): string | null {
   if (!domain) return null;
 
   try {
+    // Return cached XFF for session affinity
+    const now = Date.now();
+    const cachedXff = xffCache.get(domain);
+    if (cachedXff && (now - cachedXff.createdAt) < XFF_CACHE_TTL_MS) {
+      return cachedXff.ip;
+    }
+
     const ips = resolveDomain(domain);
     if (ips.length === 0) return null;
 
@@ -114,7 +126,11 @@ export function getForwardedFor(domain: string): string | null {
 
     // Generate a random IP in the same /24 subnet (keep first 3 octets)
     parts[3] = String(randByte());
-    return parts.join('.');
+    const xff = parts.join('.');
+
+    // Cache for session affinity
+    xffCache.set(domain, { ip: xff, createdAt: now });
+    return xff;
   } catch {
     return null;
   }
@@ -124,7 +140,7 @@ export function getForwardedFor(domain: string): string | null {
  * Get the current cache size (for inspection/debugging).
  */
 export function getDohCacheSize(): number {
-  return dnsCache.size;
+  return dnsCache.size + xffCache.size;
 }
 
 /**
@@ -132,4 +148,5 @@ export function getDohCacheSize(): number {
  */
 export function clearDohCache(): void {
   dnsCache.clear();
+  xffCache.clear();
 }

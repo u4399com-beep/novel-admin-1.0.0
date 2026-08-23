@@ -629,22 +629,39 @@ class AntiCrawlAdvisor {
       Array.from(KNOWN_HARD_SITES).some(h => domain.endsWith('.' + h));
     if (isHardSite) {
       const missingFeatures: string[] = [];
-      if (getEngine() !== 'obscura') missingFeatures.push('Obscura引擎');
-      if (!config.useProxy) missingFeatures.push('代理IP');
-      if (!config.uaRotation) missingFeatures.push('UA轮换');
-      if (!config.humanBehavior) missingFeatures.push('人类行为模拟');
-      if (!config.sessionManagement) missingFeatures.push('会话管理');
+      const featureRecs: Array<{ configKey: string; currentValue: unknown; recommendedValue: unknown; category: string }> = [];
+      if (getEngine() !== 'obscura') {
+        missingFeatures.push('Obscura引擎');
+        featureRecs.push({ configKey: 'engine', currentValue: getEngine(), recommendedValue: 'obscura', category: 'engine' });
+      }
+      if (!config.useProxy) {
+        missingFeatures.push('代理IP');
+        featureRecs.push({ configKey: 'proxy', currentValue: false, recommendedValue: true, category: 'proxy' });
+      }
+      if (!config.uaRotation) {
+        missingFeatures.push('UA轮换');
+        featureRecs.push({ configKey: 'uaRotation', currentValue: false, recommendedValue: true, category: 'stealth' });
+      }
+      if (!config.humanBehavior) {
+        missingFeatures.push('人类行为模拟');
+        featureRecs.push({ configKey: 'humanBehavior', currentValue: false, recommendedValue: true, category: 'stealth' });
+      }
+      if (!config.sessionManagement) {
+        missingFeatures.push('会话管理');
+        featureRecs.push({ configKey: 'sessionManagement', currentValue: false, recommendedValue: true, category: 'session' });
+      }
 
-      if (missingFeatures.length > 0) {
+      // Generate per-feature recommendations instead of a single "engine" rec
+      for (const fr of featureRecs) {
         recs.push({
           id: recId(idx++),
-          category: 'engine',
+          category: fr.category,
           priority: 65,
-          title: `${domain} 为已知高防护站点`,
-          description: `建议启用完整反爬配置，当前缺少: ${missingFeatures.join('、')}`,
-          configKey: 'engine',
-          currentValue: getEngine(),
-          recommendedValue: 'obscura',
+          title: `${domain} 为已知高防护站点 — 缺少${fr.configKey === 'engine' ? 'Obscura引擎' : fr.configKey}`,
+          description: `建议启用${fr.configKey}，当前缺少: ${missingFeatures.join('、')}`,
+          configKey: fr.configKey,
+          currentValue: fr.currentValue,
+          recommendedValue: fr.recommendedValue,
           reasoning: `Rule 8: ${domain} 在已知高防护站点列表中`,
           estimatedImpact: 'high',
         });

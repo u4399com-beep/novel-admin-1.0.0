@@ -15406,3 +15406,308 @@ Stage Summary:
 - proxy-manager内存泄漏修复(500条LRU驱逐)
 - ESLint: 0 errors ✅
 - Git push: 9cb89f6 成功 ✅
+---
+Task ID: R35-a
+Agent: Audit Sub-agent A
+Task: Audit stealth.ts + engines.ts + browser-behavior.ts + session-manager.ts + anti-crawl-advisor.ts + ip-fingerprint.ts
+
+Work Log:
+- Read last 200 lines of worklog.md (R34 context, 346 cumulative fixes, 60 stealth sections)
+- Read and analyzed all 6 files (36 angles total)
+- Discovered 2 HIGH-severity bugs (runtime errors), 5 MEDIUM, 6 LOW, 3 INFO
+
+## Audit Results
+
+### 1. stealth.ts (~2270 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 1a | FingerprintProfile consistency | `generateRandomFingerprint()` for MacIntel platform allows ANY vendor (line 272-273: `const compatibleVendors = WEBGL_VENDORS; vendor = pick(compatibleVendors)`) unlike `generateFingerprintProfile()` which correctly constrains to 'Google Inc. (Apple)' only. A MacIntel profile could get NVIDIA/AMD/Intel ANGLE renderers, which is impossible on macOS. | MEDIUM |
+| 1b | Section 50/36 overlap | Section 50 has guard `if (!document.hasFocus())` so only overrides when hasFocus is false. Section 36 unconditionally overrides. Section 50 is a valid fallback for the edge case where hasFocus was called before stealth loaded. No issue. | INFO |
+| 1c | navigator.vendor browser-awareness | R34 fix verified: line 554-556 correctly detects Firefox UA via `/Firefox\//` regex and returns '' for vendor, 'Google Inc.' otherwise. Edge (Chromium-based) correctly gets 'Google Inc.'. | OK |
+| 1d | window.chrome object realism | **Firefox UA still gets `window.chrome` object injected** (Sections 2, 43, 54). Firefox does NOT have `window.chrome`. Sections 2 and 54 use `if (!window.chrome)` which is true on Firefox, so they create a fake chrome object. This is a clear fingerprint inconsistency: Firefox UA + chrome object = bot detection. | MEDIUM |
+| 1e | performance.memory realistic values | Section 55 only creates `performance.memory` when `!window.performance.memory`. Headless Chrome typically HAS `performance.memory` with suspicious values (e.g., `jsHeapSizeLimit=4294705152` exactly, or `totalJSHeapSize=0`). The `!` check means these existing unrealistic values are left untouched. Should also detect and fix existing unrealistic values (e.g., exact power-of-2 limits, zero totals). | MEDIUM |
+| 1f | WebGL shader precision format | Section 47 patches ALL `shaderType`/`precisionType` combinations with the SAME `fakeRange` (23-32) for `rangeMin` and 127 for `rangeMax`. Real Chrome returns DIFFERENT ranges per precision type: HIGH_FLOAT has `rangeMin=127, rangeMax=127`; LOW_FLOAT has `rangeMin=127, rangeMax=127`; MEDIUM_INT has `rangeMin=31, rangeMax=31`. Returning the same range for all types is a fingerprint tell. | MEDIUM |
+
+### 2. engines.ts (~1760 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 2a | Cheerio engine anti-crawl header integration | Cheerio engine uses `buildFetchHeaders()` which integrates `getDiversifiedHeaders()`, `getChromeClientHints()`, `getSecFetchHeadersForDomain()`, and `shuffleHeaderOrder()`. Complete anti-crawl header stack. | OK |
+| 2b | Playwright stealth injection timing | Playwright: `addInitScript` at line 564 BEFORE `page.goto()` at line 590. Obscura: `addInitScript` at line 1417 BEFORE `page.goto()` at line 1451. Both correct — stealth runs before any page script. | OK |
+| 2c | Obscura engine profile caching | Uses `getProfileForDomain(domain)` → 500-entry cache with 30-min TTL. Consistent fingerprint per domain within TTL. | OK |
+| 2d | Rate limiter integration in ALL engines | Cheerio, Playwright, and Obscura all call `waitForRateLimit()`. **External engines (firecrawl, agentql, cloud-browser, scrapling) do NOT call rateLimiter.** These are API calls to external services, so domain-level rate limiting doesn't apply to them directly. However, if all traffic goes through one external engine, the target domain doesn't get rate-limited at the application level. | INFO |
+| 2e | CAPTCHA detection across all engines | Cheerio: `detectCaptcha()` called on response HTML. Playwright: `detectCaptcha()` on rendered HTML. Obscura: `detectCaptcha()` on rendered HTML. **External engines (firecrawl, agentql, cloud-browser, scrapling) have NO CAPTCHA detection.** They delegate anti-bot to the external service, but if the service returns a CAPTCHA page, it won't be detected or recorded in the advisor. | LOW |
+| 2f | Proxy dispatcher error handling | **CRITICAL BUG: Line 1497 `page.$$("aref]")` is an invalid CSS selector.** Should be `page.$$("a[href]")` or `page.$$("a")`. This means Obscura's human behavior simulation never finds any links to hover over. The `links.length` will always be 0. The entire link-hover simulation (30% chance) is dead code. | HIGH |
+
+### 3. browser-behavior.ts (~222 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 3a | Throttle algorithm fairness | MAX_VISITS_PER_10S=3 with 10s window. Wait time calculated from oldest timestamp expiry + 100ms buffer, floored at 500ms. Fair FIFO approach. | OK |
+| 3b | Pre-visit delay calculation | `getPreVisitDelay` computes `htmlLength / 300 * 1000` ms with ±20% jitter, clamped to [200ms, 4000ms]. Realistic reading simulation. | OK |
+| 3c | Scroll simulation randomness | browser-behavior.ts itself has NO scroll simulation. Scroll simulation exists only in engines.ts Obscura engine's human behavior section (multi-segment scroll with jitter). browser-behavior.ts is purely a throttle/delay manager. | INFO |
+| 3d | Domain state cleanup on long-running | MAX_TRACKED_DOMAINS=500 with FIFO eviction via `evictIfNeeded()`. `domainRootsVisited` is cleaned in same eviction. Well-bounded. | OK |
+| 3e | Request recording accuracy | `recordRequest()` pushes timestamp and increments counters. `shouldThrottle()` prunes timestamps before checking count. Accurate. | OK |
+| 3f | Memory management | DomainVisitRecord stores only timestamps[] and totalVisits (number). Timestamps pruned on each shouldThrottle() call. Max 500 domains. Minimal footprint. | OK |
+
+### 4. session-manager.ts (~362 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 4a | Session cookie injection accuracy | `parseCookieString()` only extracts `name` and `value`, losing domain/path/secure/httpOnly attributes. For HTTP Cookie header injection (cheerio), this is fine. But when sessions are used with Playwright's `context.addCookies()`, the cookies may lack proper domain/path scoping. | LOW |
+| 4b | Session UA consistency across requests | UA is set from `getProfileForDomain()` at session creation and stored immutably. `getSessionForRequest()` returns the same UA for the session's lifetime. Consistent. | OK |
+| 4c | Session rotation logic | Max 50 uses, 24h TTL, 3 sessions per domain. Recycling evicts blocked/overused sessions first, then oldest. New session created with fresh fingerprint. Good rotation. | OK |
+| 4d | Session blocking propagation | `blockSession()` marks session blocked → `acquireSession()` skips it. But **no propagation to proxy-manager** (proxy used by blocked session isn't flagged) and **no propagation to rate-limiter**. If a session is blocked due to fingerprint detection, the proxy IP may also be burned but continues being used. | LOW |
+| 4e | Session data persistence | All state in-memory (Map), lost on process restart. Same class of issue as R34-b's rate-limiter persistence finding. Acceptable for in-process use. | LOW |
+| 4f | Session ID uniqueness | `sess_\${domain}_\${Date.now()}_\${++this.sessionCounter}` — monotonic counter prevents same-millisecond collision. Domain prefix aids debugging. Unique. | OK |
+
+### 5. anti-crawl-advisor.ts (~829 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 5a | Detection record accuracy | **CRITICAL BUG: Lines 235, 248, 260 contain malformed property access.**
+  - Line 235: `history.captchaTimestampsistory.captchaTimestamps.length - 1]` — should be `history.captchaTimestamps[history.captchaTimestamps.length - 1]`
+  - Line 248: `history.blockTimestampsistory.blockTimestamps.length - 1]` — should be `history.blockTimestamps[history.blockTimestamps.length - 1]`
+  - Line 260: `history.rateLimitTimestampsistory.rateLimitTimestamps.length - 1]` — should be `history.rateLimitTimestamps[history.rateLimitTimestamps.length - 1]`
+  This is a `ReferenceError` at runtime: accessing `.captchaTimestampsistory` (undefined property) on the array. `gatherSignals()` will THROW whenever any captcha/block/rate-limit signals exist, completely breaking the advisor's analysis for any domain with anti-crawl detections. | HIGH |
+| 5b | Rule 8 obscura recommendation logic | Rule 8 checks `if (getEngine() !== 'obscura') missingFeatures.push('Obscura引擎')`. If engine IS obscura but proxy is missing, the recommendation is still pushed with `configKey: 'engine', recommendedValue: 'obscura'` — recommending obscura for the 'engine' key when it's already obscura. Should recommend the actual missing feature (e.g., proxy, UA rotation). | LOW |
+| 5c | Engine upgrade trigger thresholds | Rule 3: 403 > 3 → upgrade cheerio→playwright or playwright→obscura. Rule 1: CAPTCHA > 3 → obscura. Rule 6: consecutive errors > 5 → proxy. Thresholds are reasonable. | OK |
+| 5d | Detection history expiration | cleanup() runs every 30 min. Domains with 0 requests + 30min inactive → deleted. All domains > 24h inactive → deleted. Timestamp arrays trimmed to 30-min rolling window. Well-managed. | OK |
+| 5e | Domain scoring accuracy | scoreConfig() maxes at 100 via Math.min. estimateScoreBoost() adds 15/8/3 per rec, also capped at 100. Rules are mutually exclusive enough to avoid massive over-counting. | OK |
+| 5f | Recommendation priority | Rule 7 (CF): 92/91, Rule 1 (CAPTCHA): 90/85, Rule 3 (403): 88/70, Rule 2 (429): 80/75, Rule 5 (empty): 82, Rule 6 (consecutive err): 85/78, Rule 8 (hard site): 65. Cloudflare > CAPTCHA > 403 > rate-limit ordering is correct. | OK |
+
+### 6. ip-fingerprint.ts (~148 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 6a | Diversified headers uniqueness per domain | 200-entry LRU cache with 20-min TTL. Random profile per domain. 5 Accept patterns × 5 encoding patterns × 2 connection types × 5 keep-alive timeouts = 250 possible combinations. Good diversity. | OK |
+| 6b | Accept header variation realism | 'Minimalist' pattern `text/html,*/*;q=0.9` is unrealistic for modern browsers — no real browser sends this. The Safari-style pattern omits `application/xhtml+xml` which real Safari includes. These could be fingerprint tells for sophisticated WAFs. | LOW |
+| 6c | Connection/Keep-Alive consistency | 15% chance of `Connection: close` is realistic. But when combined with a Chrome UA via stealth profile, `Connection: close` is suspicious because Chrome always uses keep-alive. The diversified headers don't check the UA to adjust connection behavior. | LOW |
+| 6d | Cache-Control/Pragma variation | **Not implemented.** ip-fingerprint.ts only varies Connection, Keep-Alive, Accept-Encoding, and Accept. Real browsers send `Cache-Control: max-age=0` or `no-cache` for navigations. The absence of Cache-Control/Pragma variation means all requests have the same cache headers, reducing fingerprint diversity. | LOW |
+| 6e | Domain-level state management | Per-domain profile via Map with 200 max entries, 20-min TTL, oldest-first eviction. Clean and well-bounded. | OK |
+| 6f | Integration with buildFetchHeaders | `getDiversifiedHeaders()` is imported in utils.ts and called in `buildFetchHeaders()` at line 865, applied BEFORE `shuffleHeaderOrder()`. The diversified Accept/Accept-Encoding/Connection/Keep-Alive values override buildFetchHeaders defaults. However, diversified Connection header will be sent even for Firefox UAs (Firefox doesn't send Connection on HTTP/2), and for browser engines (Playwright/Obscura) which manage their own headers. | INFO |
+
+## Summary Table
+
+| # | File | Angle | Status |
+|---|------|-------|--------|
+| 1a | stealth.ts | FingerprintProfile consistency | **MEDIUM** |
+| 1b | stealth.ts | Section 50/36 overlap | OK |
+| 1c | stealth.ts | navigator.vendor regression | OK (R34 fix verified) |
+| 1d | stealth.ts | window.chrome for Firefox | **MEDIUM** |
+| 1e | stealth.ts | performance.memory | **MEDIUM** |
+| 1f | stealth.ts | WebGL shader precision | **MEDIUM** |
+| 2a | engines.ts | Cheerio anti-crawl headers | OK |
+| 2b | engines.ts | Playwright injection timing | OK |
+| 2c | engines.ts | Obscura profile caching | OK |
+| 2d | engines.ts | Rate limiter in all engines | INFO |
+| 2e | engines.ts | CAPTCHA in all engines | LOW |
+| 2f | engines.ts | Proxy dispatcher / human behavior | **HIGH** (aref] typo) |
+| 3a | browser-behavior.ts | Throttle fairness | OK |
+| 3b | browser-behavior.ts | Pre-visit delay | OK |
+| 3c | browser-behavior.ts | Scroll simulation | INFO |
+| 3d | browser-behavior.ts | Domain state cleanup | OK |
+| 3e | browser-behavior.ts | Request recording | OK |
+| 3f | browser-behavior.ts | Memory management | OK |
+| 4a | session-manager.ts | Cookie injection accuracy | LOW |
+| 4b | session-manager.ts | Session UA consistency | OK |
+| 4c | session-manager.ts | Session rotation logic | OK |
+| 4d | session-manager.ts | Session blocking propagation | LOW |
+| 4e | session-manager.ts | Session data persistence | LOW |
+| 4f | session-manager.ts | Session ID uniqueness | OK |
+| 5a | anti-crawl-advisor.ts | Detection record accuracy | **HIGH** (3 runtime errors) |
+| 5b | anti-crawl-advisor.ts | Rule 8 obscura logic | LOW |
+| 5c | anti-crawl-advisor.ts | Engine upgrade thresholds | OK |
+| 5d | anti-crawl-advisor.ts | Detection history expiration | OK |
+| 5e | anti-crawl-advisor.ts | Domain scoring accuracy | OK |
+| 5f | anti-crawl-advisor.ts | Recommendation priority | OK |
+| 6a | ip-fingerprint.ts | Header uniqueness per domain | OK |
+| 6b | ip-fingerprint.ts | Accept header realism | LOW |
+| 6c | ip-fingerprint.ts | Connection/Keep-Alive consistency | LOW |
+| 6d | ip-fingerprint.ts | Cache-Control/Pragma variation | LOW |
+| 6e | ip-fingerprint.ts | Domain state management | OK |
+| 6f | ip-fingerprint.ts | Integration with buildFetchHeaders | INFO |
+
+Stage Summary:
+- 36 angles audited: 18 OK, 0 INFO-only-new, **2 HIGH**, 5 MEDIUM, 6 LOW, 3 INFO
+- **2 HIGH (NEW):**
+  1. (5a) anti-crawl-advisor.ts lines 235/248/260: Malformed `lastSeen` property access (`Timestampsistory.Timestamps.length`) — ReferenceError crashes gatherSignals() whenever captcha/block/rate-limit signals exist, completely breaking the advisor for anti-crawl domains
+  2. (2f) engines.ts line 1497: `page.$$("aref]")` invalid CSS selector — Obscura human behavior link hover simulation is completely dead (never finds links)
+- **5 MEDIUM (NEW):**
+  1. (1d) Firefox UA gets window.chrome object injected — Firefox doesn't have chrome object, instant detection
+  2. (1e) performance.memory Section 55 only creates when missing — doesn't fix existing unrealistic headless values
+  3. (1f) WebGL shader precision format returns same rangeMin/rangeMax for all precision types — real Chrome returns different ranges per type
+  4. (1a) generateRandomFingerprint() MacIntel allows non-Apple GPU vendors — inconsistent with generateFingerprintProfile()
+  5. (5b→downgraded) Rule 8 recommends obscura for engine key even when already using obscura
+- **6 LOW:**
+  1. (4a) Session cookie attribute loss (domain/path) for Playwright injection
+  2. (4d) Session blocking doesn't propagate to proxy-manager
+  3. (4e) Session data not persisted (known R34-b class)
+  4. (6b) Minimalist Accept pattern unrealistic
+  5. (6c) Connection:close sent with Chrome UA
+  6. (6d) No Cache-Control/Pragma variation
+- **3 INFO:**
+  1. (1b) Section 50/36 overlap properly handled
+  2. (2d) External engines skip rateLimiter (by design)
+  3. (6f) Diversified headers sent even for Firefox UA (browser engines manage own headers)
+- R34 fixes verified: navigator.vendor browser-awareness OK, proxy-manager memory leak fixed
+- **Recommended fixes: 2 HIGH + 5 MEDIUM + 6 LOW = 13 items**
+- Cumulative: 346 items (no new fixes in this audit)
+- ESLint: not run (read-only audit)
+---
+Task ID: R35-b
+Agent: Audit Sub-agent B
+Task: Audit rate-limiter.ts + adaptive-delay.ts + captcha-strategy.ts + referrer-chain.ts + doh-simulation.ts + proxy-manager.ts
+
+Work Log:
+- Read last 200 lines of worklog.md (R34/R35-a context, 346 cumulative fixes)
+- Read and analyzed all 6 files (36 angles total)
+- Verified R34-b fixes: proxy-manager domainRotationCount 500-entry cap (eviction exists but is FIFO not LRU), referrer-chain cross-domain transition logic
+- Cross-referenced integration points in engines.ts and utils.ts (XFF sent through proxies, getDetailedStats exposed at /proxy/detailed-stats behind auth)
+- Discovered 0 HIGH, 4 MEDIUM, 5 LOW, 1 INFO findings (26 OK)
+
+## Audit Results
+
+### 1. rate-limiter.ts (279 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 1a | Sliding window counter accuracy | Sliding window uses `filter(t > windowStart)` on every acquire() call with max 200 timestamps per domain. Accurate O(n) sliding window. Trim at 200 is safety cap. | OK |
+| 1b | Penalty application on 429/403/503 | On 429/403/503: penaltyActive set (5-min 0.5x) AND maxRPM permanently halved (line 143). Double-reduction during penalty = effective 0.25x. Recovery from RPM=1 to default 30 requires ~580 consecutive successes (29 steps × 20 each). Aggressive but by design for anti-crawl safety. | INFO |
+| 1c | Recovery threshold cap logic | `Math.min(20, Math.max(5, floor(60/maxRPM)))` — at RPM=30: every 5 successes +1; at RPM=1: every 20 successes +1. Well-calibrated proportional recovery. | OK |
+| 1d | Per-domain state cleanup | Evicts domain with oldest `lastRequestTime` when ≥500 domains. O(n) scan acceptable at 500. No proactive idle cleanup but bounded at 500. | OK |
+| 1e | acquire() retry behavior | Returns `{allowed, waitMs}` synchronously — caller implements retry loop. Clean separation of concerns. | OK |
+| 1f | Integration with all engine types | Cheerio/Playwright/Obscura call waitForRateLimit(). External engines (firecrawl/agentql/cloud-browser/scrapling) skip rateLimiter (by design — API calls to external services). Confirmed R35-a finding. | OK |
+
+### 2. adaptive-delay.ts (423 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 2a | Backoff multiplier growth | Combined: error-based (2^excessErrors) × antiCrawl (2^backoffLevel) × slowPenalty (1.5). At 2 anti-crawl events: backoffLevel=4 → 16x multiplier. But capped at 60000ms total. Growth rate is appropriate. | OK |
+| 2b | Max delay capping | `getDelaySync` caps at 60000ms but `getHumanLikeDelay` adds readingDelay (≤8s) + pauseDelay (≤15s) on top. Actual max ~83.8s. Documentation says "maxBackoff: 60000ms (1min)" which is misleading for humanLikeDelay callers but functionally fine (longer delays = better anti-crawl). | LOW |
+| 2c | Domain-specific adaptation | Per-domain DomainState with LRU eviction via domainAccessOrder array (500 max). Well-bounded, independent per domain. | OK |
+| 2d | Integration with rate-limiter | No direct integration — two independent systems. Rate limiter controls RPM, adaptive delay controls inter-request timing. No coordination conflict because caller applies both sequentially (max of both). | OK |
+| 2e | Reset on success | Success reduces consecutiveErrors by 1, currentBackoffLevel by 1 (only when errors=0). Gradual recovery requires ~7 successes to fully recover from a single anti-crawl event (3 error reductions + 2×2 backoff reductions + 2 zero-error confirmations). Conservative and appropriate. | OK |
+| 2f | Jitter calculation | Uniform ±20% jitter (0.8-1.2). Combined with Gaussian-like reading time and random mouse/pause delays, overall timing distribution is sufficiently varied for anti-crawl purposes. | OK |
+
+**Additional finding during audit:**
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 2g | getDomainStats currentDelay inaccuracy | `getDomainStats()` (line 182) calculates `currentDelay = baseDelay × backoffMultiplier × slowPenalty` but omits `antiCrawlMultiplier`. The actual delay from `getDelaySync()` (line 105) includes all three multipliers. When anti-crawl backoff is active, reported currentDelay is significantly lower than actual delay. Affects monitoring/debugging accuracy. | LOW |
+
+### 3. captcha-strategy.ts (264 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 3a | Cloudflare detection accuracy | Delegates to captcha-detector via `detection.type === 'cloudflare'`. Strategy logic is correct: obscura for first attempt, delay-retry on stealth engines (3 retries max), escalate to cloud-browser. | OK |
+| 3b | Geetest handling | **GeetestStrategy on stealth engines has NO retry limit.** CloudflareStrategy limits to 3 retries then escalates (line 56). GeetestStrategy (line 196-206) keeps returning 10-30s delay-retry forever. For a GeeTest-protected site, the task will loop indefinitely with escalating delays up to 120s per retry (from DelayBackoff if ever reached), but GeetestStrategy always matches first and never escalates. The task will never give up or switch engines, potentially hanging for hours. | MEDIUM |
+| 3c | EngineUpgrade vs DelayBackoff priority | Chain: Cloudflare → Geetest → EngineUpgrade → DelayBackoff. Cloudflare skips playwright (jumps to obscura) for aggressive sites. EngineUpgrade handles cheerio→playwright→obscura. DelayBackoff is universal fallback. Correct priority ordering. | OK |
+| 3d | Strategy chain completeness | Missing specific strategies for reCAPTCHA v2/v3 and hCaptcha. These fall through to EngineUpgrade (if on cheerio/playwright) or DelayBackoff (if on stealth). Functional but suboptimal — reCAPTCHA Enterprise sites might benefit from cloud-browser escalation like Cloudflare gets. | LOW |
+| 3e | canHandle specificity | Cloudflare/Geetest: type-specific (most specific). EngineUpgrade: engine capability check. DelayBackoff: universal fallback (least specific). Correct specificity ordering. | OK |
+| 3f | Default fallback behavior | `autoHandleCaptcha()` fallback (line 258) should never be reached since DelayBackoffStrategy.canHandle returns true for all. If it did, returns `action: 'none'` with no delay — not ideal but unreachable. | OK |
+
+### 4. referrer-chain.ts (175 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 4a | Cross-domain transition accuracy | `recordCrossDomainTransition` seeds fromUrl only when target domain has empty history (line 124). For subsequent visits, falls back to same-domain history. This is CORRECT anti-crawl behavior — a real browser would refer from the last page on that domain, not from the original search engine. R34-b finding confirmed as correct-by-design. | OK |
+| 4b | Same-domain referrer generation | Returns most-recently-visited URL for the domain. Self-refer check (line 94) falls back to second-to-last. Correctly simulates sequential page navigation (list→detail, TOC→chapter). | OK |
+| 4c | Chain depth limits | MAX_HISTORY_PER_DOMAIN=100, MAX_TRACKED_DOMAINS=500. Memory: ~5.4MB max. Well-bounded. | OK |
+| 4d | Transition logging | No logging anywhere in the module. No debug output for cross-domain transitions, referrer generation, or eviction events. Makes it difficult to diagnose referrer-related anti-crawl issues. | LOW |
+| 4e | Initial referrer seeding | **For the first request to any domain, `getReferer()` returns `undefined`** (no history). The caller must handle this (likely sends no Referer header). Many WAFs flag requests with missing Referer header, especially when accompanied by other browser-like headers (User-Agent, Accept, etc.). A real browser navigation always has a Referer (from the previous page, search engine, or typed URL → no Referer). The module provides no mechanism to seed an initial referrer (e.g., a search engine URL) for cold-start domains. | MEDIUM |
+| 4f | recordCrossDomainTransition effectiveness | `evictIfNeeded()` uses `this.history.keys().next().value` which gives the FIRST-inserted key (FIFO), not the least-recently-used key. Active domains added early get evicted before inactive domains added later. Unlike adaptive-delay.ts which has proper LRU via `domainAccessOrder` array, referrer-chain uses Map insertion-order FIFO. An actively-scraped domain added at startup could lose its referrer history if 500+ other domains are scraped later. | LOW |
+
+### 5. doh-simulation.ts (136 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 5a | Public IP generation | All ranges are public (Cloudflare 104.16-23.x, Google 8.0-15.x/8.128-191.x, CDN 140-159.x, 185.0-63.x). No RFC1918 private IPs. Correct for DoH simulation. However, all ranges are datacenter/CDN IPs, not residential — sophisticated WAFs may deprioritize but this is expected for DoH. | LOW |
+| 5b | Cache TTL/eviction | 5-min TTL, 100-domain max, oldest-first eviction. On cache expiry, entirely new base IPs are generated. Within a cache window, base IPs are stable. TTL is reasonable for DNS simulation. | OK |
+| 5c | DNS response realism | Generates 2-4 IPs per domain (round-robin simulation). However, IPs come from DIFFERENT providers/ranges (Cloudflare + Google + CDN in same response). Real DNS returns IPs from the same ASN. Unrealistic but only used for XFF spoofing, not actual resolution. | LOW |
+| 5d | XFF uniqueness per request | **`getForwardedFor()` generates a new random last octet on EVERY call** (line 116: `parts[3] = String(randByte())`). This means every request to the same domain gets a different XFF IP within the same /24. Real DoH resolvers maintain session affinity — a client gets the same exit IP for the duration of a session. A WAF tracking XFF patterns would see: "XFF changes on every single request within the same /24 subnet" — an impossible pattern for real DoH behavior. This is a clear bot detection signal. Combined with the narrow range (only 2-4 /24 subnets per domain, see 5d-2), the XFF pattern is highly artificial. | MEDIUM |
+| 5e | Query ID generation | Not implemented. Module name/comments claim "DoH simulation" but it only generates synthetic XFF IPs. No DNS protocol simulation, no query IDs, no actual DNS traffic. The module is purely an XFF spoofing utility. | INFO |
+| 5f | Proxy rotation integration | **XFF is sent through proxies.** Verified: `buildFetchHeaders()` in utils.ts (line 831-836) always adds X-Forwarded-For via `getForwardedFor()`. The Cheerio engine (engines.ts line 339-344) passes these headers through the proxy dispatcher. Result: request goes through proxy IP 1.2.3.4, but X-Forwarded-For claims 104.16.5.123. The XFF IP doesn't match the proxy IP or any known proxy chain. WAFs that trust XFF from their own infrastructure would see the mismatch. When using a proxy, XFF should either be omitted or set to the proxy's own IP chain. | MEDIUM |
+
+**Additional finding (XFF narrow range):**
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 5d-2 | XFF subnet diversity | Only 2-4 /24 subnets per domain (derived from cached DNS IPs). A WAF correlating XFF IPs would see all traffic from the same narrow IP range — inconsistent with real users who come from diverse residential ISPs. | LOW |
+
+### 6. proxy-manager.ts (1128 lines)
+
+| # | Angle | Finding | Severity |
+|---|-------|---------|----------|
+| 6a | SOCKS4 skip logic | SOCKS4 proxies are added to pool (addProxy accepts them), counted in stats, and tested by checkHealth — but NEVER selected by getProxy/getDomainProxyWithRotation (line 320/849: `if (entry.protocol === 'socks4') continue`). checkHealth falls through to secondary direct-connect check and reports "Host reachable but through-proxy test failed" — a misleading health status for a proxy that can never be used. Users see "healthy" SOCKS4 proxies in pool stats that are never selected. | LOW |
+| 6b | exportProxies credential leak | `exportProxies()` correctly redacts credentials (line 710: regex `//[^:]+:[^@]+@` → `//***:***@`). **BUT `getDetailedStats()` at line 1082 uses `entry.url` (full URL with credentials)**. This is exposed at `/proxy/detailed-stats` API endpoint (index.ts line 479-483) behind auth. The basic `/proxy-stats` endpoint uses `parseProxyUrl(e.url)?.cleanUrl` (no credentials). Inconsistency: detailed stats leak credentials while basic stats don't. Authenticated API consumers can extract all proxy passwords. | MEDIUM |
+| 6c | domainRotationCount memory management | R34 fix added 500-entry eviction (line 894-900). However, eviction uses `this.domainRotationCount.keys().next().value` which is FIFO (first-inserted, first-evicted), NOT LRU as claimed in R34 worklog ("500条LRU驱逐"). Active domains set up early get evicted before inactive ones. Functionally adequate at 500 cap, but the comment/worklog inaccuracy could mislead future developers. | LOW |
+| 6d | Health check timeout | Primary (through-proxy): 15s AbortController timeout. Secondary (direct connect): 10s. Both properly clear timeout on success/error. No overall method timeout risk since AbortController is reliable. | OK |
+| 6e | IPv6 bracket handling | `parseProxyUrl` (line 115): `host.includes(':') ? \`[${host}]\`` for clean URLs. Health check (line 583): same bracket logic. `new URL()` parser correctly handles bracketed IPv6. Consistent and correct throughout. | OK |
+| 6f | Dispatcher creation | http/https: `ProxyAgent(urlStr)` with full URL (credentials included). socks5: `SocksProxyAgent(urlStr)` cast `as unknown as Dispatcher` (type mismatch but functional). socks4: returns null. Dispatcher cache keyed by original proxy URL, bounded by pool size, properly invalidated on removeProxy/removeAllProxies. | OK |
+
+## Summary Table
+
+| # | File | Angle | Status |
+|---|------|-------|--------|
+| 1a | rate-limiter.ts | Sliding window accuracy | OK |
+| 1b | rate-limiter.ts | Penalty on 429/403/503 | INFO (aggressive but by design) |
+| 1c | rate-limiter.ts | Recovery threshold cap | OK |
+| 1d | rate-limiter.ts | Per-domain state cleanup | OK |
+| 1e | rate-limiter.ts | acquire() retry behavior | OK |
+| 1f | rate-limiter.ts | Integration with engines | OK |
+| 2a | adaptive-delay.ts | Backoff multiplier growth | OK |
+| 2b | adaptive-delay.ts | Max delay capping | LOW |
+| 2c | adaptive-delay.ts | Domain-specific adaptation | OK |
+| 2d | adaptive-delay.ts | Integration with rate-limiter | OK |
+| 2e | adaptive-delay.ts | Reset on success | OK |
+| 2f | adaptive-delay.ts | Jitter calculation | OK |
+| 2g | adaptive-delay.ts | getDomainStats missing antiCrawlMultiplier | LOW |
+| 3a | captcha-strategy.ts | Cloudflare detection | OK |
+| 3b | captcha-strategy.ts | Geetest handling | **MEDIUM** (infinite retry loop) |
+| 3c | captcha-strategy.ts | EngineUpgrade vs DelayBackoff | OK |
+| 3d | captcha-strategy.ts | Strategy chain completeness | LOW |
+| 3e | captcha-strategy.ts | canHandle specificity | OK |
+| 3f | captcha-strategy.ts | Default fallback | OK |
+| 4a | referrer-chain.ts | Cross-domain transition | OK (R34-b confirmed correct) |
+| 4b | referrer-chain.ts | Same-domain referrer | OK |
+| 4c | referrer-chain.ts | Chain depth limits | OK |
+| 4d | referrer-chain.ts | Transition logging | LOW |
+| 4e | referrer-chain.ts | Initial referrer seeding | **MEDIUM** (no Referer on first request) |
+| 4f | referrer-chain.ts | recordCrossDomainTransition | LOW (FIFO not LRU eviction) |
+| 5a | doh-simulation.ts | Public IP generation | LOW (all datacenter ranges) |
+| 5b | doh-simulation.ts | Cache TTL/eviction | OK |
+| 5c | doh-simulation.ts | DNS response realism | LOW |
+| 5d | doh-simulation.ts | XFF per-request uniqueness | **MEDIUM** (changes every request) |
+| 5d-2 | doh-simulation.ts | XFF subnet diversity | LOW (narrow range) |
+| 5e | doh-simulation.ts | Query ID generation | INFO (not implemented) |
+| 5f | doh-simulation.ts | Proxy rotation integration | **MEDIUM** (XFF sent through proxy) |
+| 6a | proxy-manager.ts | SOCKS4 skip logic | LOW |
+| 6b | proxy-manager.ts | exportProxies credential leak | **MEDIUM** (getDetailedStats leaks) |
+| 6c | proxy-manager.ts | domainRotationCount memory | LOW (FIFO not LRU) |
+| 6d | proxy-manager.ts | Health check timeout | OK |
+| 6e | proxy-manager.ts | IPv6 bracket handling | OK |
+| 6f | proxy-manager.ts | Dispatcher creation | OK |
+
+Stage Summary:
+- 37 angles audited (6 files × 6 + 1 bonus): 26 OK, 1 INFO, **0 HIGH**, 4 MEDIUM, 6 LOW, 1 INFO
+- **4 MEDIUM (NEW):**
+  1. (3b) captcha-strategy.ts GeetestStrategy: No retry limit on stealth engines — infinite 10-30s delay loop, task never escalates or gives up
+  2. (4e) referrer-chain.ts: No initial referrer for first request to any domain — `getReferer()` returns undefined, WAFs flag missing Referer
+  3. (5d) doh-simulation.ts: XFF IP changes on every request within same /24 — real DoH maintains session affinity, this is a clear bot pattern
+  4. (5f) doh-simulation.ts + utils.ts: XFF header sent through proxy via buildFetchHeaders — proxy IP ≠ XFF IP is a WAF-detectable inconsistency
+- **6 LOW (NEW):**
+  1. (2b) adaptive-delay.ts: getHumanLikeDelay can exceed documented maxBackoff due to reading/pause delays
+  2. (2g) adaptive-delay.ts: getDomainStats currentDelay missing antiCrawlMultiplier
+  3. (4d) referrer-chain.ts: No logging for transitions or evictions
+  4. (4f) referrer-chain.ts: FIFO domain eviction instead of LRU
+  5. (5a/5c/5d-2) doh-simulation.ts: All datacenter IPs, cross-provider DNS, narrow XFF range
+  6. (6a/6c) proxy-manager.ts: SOCKS4 in pool but never selected; FIFO eviction claimed as LRU
+- **1 MEDIUM security (NEW):**
+  1. (6b) proxy-manager.ts: getDetailedStats() exposes full proxy credentials at /proxy/detailed-stats API endpoint
+- **1 INFO:** (5e) doh-simulation has no actual DNS protocol simulation
+- R34-b fixes verified: proxy-manager domainRotationCount 500-entry cap exists (eviction is FIFO not LRU), referrer-chain cross-domain logic is correct-by-design
+- **Recommended fixes: 0 HIGH + 5 MEDIUM + 6 LOW = 11 items**
+- Cumulative: 346 items (no new fixes in this audit)
+- ESLint: not run (read-only audit)

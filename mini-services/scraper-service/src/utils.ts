@@ -378,8 +378,10 @@ export function getSpoofedReferer(targetUrl: string, siteType?: string): string 
   try {
     const target = new URL(targetUrl);
 
-    // For novel sites: generate a fake search engine referer
-    if (siteType === "novel" || Math.random() < 0.3) {
+    // For novel sites: always generate a fake search engine referer
+    // This is critical for cold-start — the first request to any domain MUST have
+    // a Referer. Real browsers always send Referer on navigation clicks.
+    if (siteType === "novel" || Math.random() < 0.7) {
       const engine = SEARCH_ENGINE_REFERERS[Math.floor(Math.random() * SEARCH_ENGINE_REFERERS.length)];
       const query = NOVEL_SEARCH_QUERIES[Math.floor(Math.random() * NOVEL_SEARCH_QUERIES.length)];
       // Extract domain name from target to make the query more realistic
@@ -399,15 +401,11 @@ export function getSpoofedReferer(targetUrl: string, siteType?: string): string 
       return `${target.origin}${tocPath}`;
     }
 
-    // For other URLs: randomly return a search engine referer (20% chance)
-    if (Math.random() < 0.2) {
-      const engine = SEARCH_ENGINE_REFERERS[Math.floor(Math.random() * SEARCH_ENGINE_REFERERS.length)];
-      const query = NOVEL_SEARCH_QUERIES[Math.floor(Math.random() * NOVEL_SEARCH_QUERIES.length)];
-      return `${engine}${encodeURIComponent(query)}`;
-    }
-
-    // Default: no referer (direct navigation)
-    return undefined;
+    // For remaining URLs: always provide at least a search engine referer
+    // (previously 20% — increased to 100% to eliminate Referer-less requests)
+    const engine = SEARCH_ENGINE_REFERERS[Math.floor(Math.random() * SEARCH_ENGINE_REFERERS.length)];
+    const query = NOVEL_SEARCH_QUERIES[Math.floor(Math.random() * NOVEL_SEARCH_QUERIES.length)];
+    return `${engine}${encodeURIComponent(query)}`;
   } catch {
     return undefined;
   }
@@ -431,6 +429,23 @@ type SecFetchNavType = "navigate" | "reload" | "link";
  * - Sec-Fetch-Dest: always "document" (we're fetching pages, not sub-resources)
  * - Sec-Fetch-Mode: always "navigate"
  */
+/** Extract root domain (last 2 labels) for same-site detection across sibling subdomains.
+ *  e.g. 'www.example.com' → 'example.com', 'sub.api.example.co.uk' → 'co.uk'
+ *  Uses a public suffix approximation — accurate enough for Sec-Fetch header logic.
+ */
+function getRootDomain(hostname: string): string {
+  const parts = hostname.split('.');
+  if (parts.length <= 2) return hostname;
+  // Known multi-part TLDs (co.uk, com.cn, com.au, etc.)
+  const multiPartTlds = new Set(['co.uk', 'com.cn', 'com.au', 'com.br', 'com.mx', 'co.jp', 'co.kr', 'org.cn', 'net.cn', 'gov.cn']);
+  // Check last 2 parts for known multi-part TLD
+  const last2 = parts.slice(-2).join('.');
+  if (multiPartTlds.has(last2) && parts.length >= 3) {
+    return parts.slice(-3).join('.');
+  }
+  return parts.slice(-2).join('.');
+}
+
 export function getSecFetchHeadersForDomain(domain: string, referer?: string): Record<string, string> {
   const base: Record<string, string> = {
     "Sec-Fetch-Dest": "document",
@@ -439,13 +454,15 @@ export function getSecFetchHeadersForDomain(domain: string, referer?: string): R
 
   // Determine if this is a same-origin or cross-site request
   // Check: does the referer point to the same domain or a subdomain?
+  // Also handles sibling subdomains (www.example.com ↔ sub.example.com)
   let isSameOrigin = false;
   if (referer) {
     try {
       const refDomain = new URL(referer).hostname;
       isSameOrigin = refDomain === domain ||
         refDomain.endsWith('.' + domain) ||
-        domain.endsWith('.' + refDomain);
+        domain.endsWith('.' + refDomain) ||
+        getRootDomain(refDomain) === getRootDomain(domain);
     } catch { /* ignore invalid referer */ }
   }
 
@@ -458,7 +475,8 @@ export function getSecFetchHeadersForDomain(domain: string, referer?: string): R
           const chainDomain = new URL(chainEntry).hostname;
           isSameOrigin = chainDomain === domain ||
             chainDomain.endsWith('.' + domain) ||
-            domain.endsWith('.' + chainDomain);
+            domain.endsWith('.' + chainDomain) ||
+            getRootDomain(chainDomain) === getRootDomain(domain);
         } catch { /* ignore */ }
       }
     } catch { /* referrer chain may throw */ }
@@ -536,6 +554,13 @@ const CHROME_CLIENT_HINT_VERSIONS: string[] = [
   '"Not A(Brand";v="99", "Google Chrome";v="129", "Chromium";v="129"',
   '"Not A(Brand";v="99", "Google Chrome";v="128", "Chromium";v="128"',
   '"Not A(Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
+  '"Not A(Brand";v="99", "Google Chrome";v="126", "Chromium";v="126"',
+  '"Not A(Brand";v="99", "Google Chrome";v="125", "Chromium";v="125"',
+  '"Not A(Brand";v="99", "Google Chrome";v="124", "Chromium";v="124"',
+  '"Not A(Brand";v="99", "Google Chrome";v="123", "Chromium";v="123"',
+  '"Not A(Brand";v="99", "Google Chrome";v="122", "Chromium";v="122"',
+  '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+  '"Not A(Brand";v="99", "Google Chrome";v="120", "Chromium";v="120"',
 ];
 
 const PLATFORM_HINT_MAP: Record<string, string> = {
@@ -569,11 +594,12 @@ export function getChromeClientHints(ua?: string): { "sec-ch-ua": string; "sec-c
   if (!chromeMatch) return null;
   const chromeVersion = parseInt(chromeMatch[1]);
 
-  // Find a matching Client Hints version (clamp to nearest available)
+  // Find a matching Client Hints version (exact match on Chrome major version)
+  // NOTE: regex must target "Google Chrome";v="..." not "Not A(Brand";v="99"
   let hintVersion = CHROME_CLIENT_HINT_VERSIONS[0];
   for (const hint of CHROME_CLIENT_HINT_VERSIONS) {
-    const hintVerMatch = hint.match(/v="(\d+)"/);
-    if (hintVerMatch && parseInt(hintVerMatch[1]) === chromeVersion) {
+    const chromeVerMatch = hint.match(/"Google Chrome";v="(\d+)"/);
+    if (chromeVerMatch && parseInt(chromeVerMatch[1]) === chromeVersion) {
       hintVersion = hint;
       break;
     }
@@ -829,7 +855,9 @@ export function buildFetchHeaders(
   }
 
   // DoH Simulation: add fake X-Forwarded-For from same /24 subnet
-  if (domain) {
+  // IMPORTANT: Skip XFF when using a real proxy — the TCP source IP will be the proxy IP,
+  // so a different XFF claim would be an immediate bot indicator to WAFs.
+  if (domain && !antiCrawl?.proxy) {
     const forwardedFor = getForwardedFor(domain);
     if (forwardedFor) {
       headers['X-Forwarded-For'] = forwardedFor;

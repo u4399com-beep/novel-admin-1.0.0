@@ -191,18 +191,27 @@ class GeetestStrategy implements CaptchaStrategy {
   /** Engines that are already at max stealth tier */
   private static readonly STEALTH_ENGINES = new Set(['obscura', 'cloud-browser', 'scrapling']);
 
-  async execute(detection: CaptchaDetection, context: StrategyContext): Promise<StrategyResult> {
-    // Already on a stealth/external engine — just delay-retry
+  async execute(_detection: CaptchaDetection, context: StrategyContext): Promise<StrategyResult> {
+    // Already on a stealth/external engine
     if (GeetestStrategy.STEALTH_ENGINES.has(context.currentEngine)) {
-      const delay = 10000 + Math.floor(Math.random() * 20000); // 10-30s
-      console.warn(
-        `[CaptchaStrategy] GeeTest persists on ${context.currentEngine} for ${context.domain} (confidence: ${detection.confidence}). Manual intervention may be needed.`
-      );
+      // Cap retries to prevent infinite delay-retry loops
+      if (context.retryCount < 3) {
+        const delay = 10000 + Math.floor(Math.random() * 20000); // 10-30s
+        console.warn(
+          `[CaptchaStrategy] GeeTest persists on ${context.currentEngine} for ${context.domain} (retry ${context.retryCount + 1}/3, confidence: ${_detection.confidence}).`
+        );
+        return {
+          resolved: false,
+          action: 'delay-retry',
+          delayMs: delay,
+          message: `GeeTest persists on ${context.currentEngine} (retry ${context.retryCount + 1}/3): waiting ${delay / 1000}s`,
+        };
+      }
+      // Max retries exceeded on stealth engines — give up
       return {
         resolved: false,
-        action: 'delay-retry',
-        delayMs: delay,
-        message: `GeeTest persists on ${context.currentEngine}: waiting ${delay / 1000}s. Manual intervention may be required for GeeTest slider/click challenges.`,
+        action: 'none',
+        message: `GeeTest still blocking after 3+ retries on ${context.currentEngine} for ${context.domain}. Manual intervention required for GeeTest slider/click challenges.`,
       };
     }
 
