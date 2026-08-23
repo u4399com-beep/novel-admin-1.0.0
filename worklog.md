@@ -15008,3 +15008,83 @@ Stage Summary:
 - 累计: 329 项 (无新增修复)
 - 建议修复: 5 MEDIUM + 4 LOW = 9 项
 - ESLint: 未运行
+---
+Task ID: R33
+Agent: Main Orchestrator + 2 Sub-agents (R33-a, R33-b)
+Task: 安全层审计+Stealth指纹一致性+Canvas噪声修复
+
+Work Log:
+- 并行2个审计子代理(R33-a: 6文件/36角度, R33-b: stealth.ts 36角度)
+- 修复7个问题(1 HIGH + 4 MEDIUM + 1 LOW + 1 SKIP)
+- 新增Stealth Section 58-60(57→60)
+- Git推送: f3b7a45 → main 成功
+
+## 审计结果
+
+### R33-a (proxy-manager/ip-fingerprint/doh-simulation/http2-decoy/cookie-store/ssrf)
+- 24/36 确认正确
+- 1 HIGH, 5 MEDIUM, 4 LOW, 2 INFO
+
+### R33-b (stealth.ts Section 1-29+fingerprint+humanizedFetchDelay)
+- 21/36 确认正确
+- 5 MEDIUM, 4 LOW, 2 INFO
+
+## 修复清单 (7项)
+
+| # | 严重度 | 文件 | 问题描述 |
+|---|--------|------|----------|
+| 1 | HIGH | ssrf.ts | expandIPv6不处理无::的IPv6→::ffff:7f00:1绕过所有私有IP检查 |
+| 2 | MEDIUM | proxy-manager.ts | getDomainProxyWithRotation未跳过SOCKS4 |
+| 3 | MEDIUM | proxy-manager.ts | exportProxies导出含user:pass凭证的原始URL |
+| 4 | MEDIUM | doh-simulation.ts | generateRandomIp生成RFC1918私有IP→改为公网IP |
+| 5 | MEDIUM | stealth.ts | MacIntel平台可能分配Direct3D11渲染器→强制Apple GPU |
+| 6 | MEDIUM | stealth.ts | Canvas putImageData永久损坏→临时canvas编码 |
+| 7 | ENHANCE | stealth.ts | Section 58-60: 连接一致性+COOP/COEP+字体枚举 |
+
+## 修复详情
+
+### HIGH: SSRF IPv6-mapped十六进制绕过
+- expandIPv6()对无::的IPv6(如7f00:1)直接返回原字符串
+- ::ffff:7f00:1 → strip ::ffff: → 7f00:1 → 不匹配任何私有IP → 绕过
+- 修复: expandIPv6处理partial IPv6(hex→IPv4映射格式)+isPrivateIp新增v4Mapped检查
+- 验证: 127.0.0.1/10.0.0.1/192.168.0.1/172.16.0.1/169.254.169.254/0.0.0.0全部拦截
+
+### Canvas噪声累积修复
+- 旧: putImageData写回原canvas → 第二次toDataURL读取已加噪像素 → 噪声累积
+- 新: 使用临时canvas编码,原canvas不修改 + 局部seed避免状态泄露
+
+## 新增 Stealth Section 58-60
+
+### Section 58: navigator.connection一致性
+- effectiveType与downlink不匹配时自动修正
+- rtt为0时根据effectiveType设置合理值
+
+### Section 59: crossOriginIsolated=false
+- headless Chromium可能启COOP/COEP → crossOriginIsolated=true
+- 真实用户极少有此设置 → 强制为false
+
+### Section 60: 字体枚举保护
+- document.fonts.forEach过滤为15个通用字体
+- document.fonts.check限制为8个安全字体族
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (预存React Compiler) ✅
+- TypeScript: 修改文件无错误 ✅
+- Git push: f3b7a45 成功 ✅
+
+## 修改文件
+- ssrf.ts (重写expandIPv6+新增v4Mapped检查)
+- proxy-manager.ts (SOCKS4跳过+凭证脱敏)
+- doh-simulation.ts (RFC1918→公网IP)
+- stealth.ts (Mac GPU修复+Canvas修复+Section 58-60)
+
+## 历史累计修复: 329 + 7 = 336项
+## Stealth Sections: 60个
+
+Stage Summary:
+- 7个修复(1 HIGH + 5 MEDIUM + 1 ENHANCE)
+- 3个新Stealth Section(58-60), 总计60个
+- 关键: SSRF IPv6绕过是最高风险安全漏洞; Canvas噪声累积导致指纹不一致
+- DoH伪造私有IP会立即被识别为假
+- 累计: 336项
+- ESLint: 0 errors ✅
