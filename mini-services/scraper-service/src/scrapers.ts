@@ -10,8 +10,8 @@ import type {
   ChapterLink,
 } from "./types";
 import { getEngine, selectEngine } from "./engines";
-import { parseSelector, parseSelectorMulti, extractLinksFromList } from "./selectors";
-import { cleanHtmlRaw } from "./cleaning";
+import { parseSelector, parseSelectorMulti, parseSelectorHtml, extractLinksFromList } from "./selectors";
+import { cleanHtmlRaw, cleanHtmlPreserveParagraphs } from "./cleaning";
 import { extractJsContent, hasJsContentPatterns } from "./js-content-extractor";
 import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey, buildFetchHeaders } from "./utils";
 import { isSafeUrl } from "./ssrf";
@@ -335,16 +335,32 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     },
     onPage: (html, _pageUrl, page) => {
       pageCount++;
-      // Apply HTML-level cleaning first (removes ad elements via CSS selectors)
-      let processedHtml = html;
-      if (cleanConfig) {
-        processedHtml = cleanHtmlRaw(html, cleanConfig);
-      }
-      // Extract title from first page only
+      // Extract title from first page only (title doesn't need paragraph preservation)
       if (page === 0 && selectors.title) {
+        let processedHtml = html;
+        if (cleanConfig) {
+          processedHtml = cleanHtmlRaw(html, cleanConfig);
+        }
         title = parseSelector(processedHtml, selectors.title);
       }
-      const content = parseSelector(processedHtml, selectors.content);
+
+      // Extract content with paragraph preservation for CSS selectors
+      let content = '';
+      if (selectors.content.type === 'css' && cleanConfig) {
+        // Paragraph-preserving path: get inner HTML, then clean with paragraph awareness
+        const innerHtml = parseSelectorHtml(html, selectors.content);
+        if (innerHtml) {
+          content = cleanHtmlPreserveParagraphs(innerHtml, cleanConfig);
+        }
+      } else {
+        // Fallback for non-CSS selectors or no cleanConfig: original path
+        let processedHtml = html;
+        if (cleanConfig) {
+          processedHtml = cleanHtmlRaw(html, cleanConfig);
+        }
+        content = parseSelector(processedHtml, selectors.content);
+      }
+
       if (content && content.length > 30) {
         contentParts.push(content);
       } else if (hasJsContentPatterns(html)) {

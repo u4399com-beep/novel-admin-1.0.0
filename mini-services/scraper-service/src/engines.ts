@@ -594,23 +594,35 @@ class PlaywrightEngine implements ScrapingEngine {
           // Always inject stealth script for anti-fingerprint protection
           await page.addInitScript(getStealthScript(pwProfile));
 
-          // Intercept all requests to block unsafe redirect targets and non-HTTP protocols
-          await context.route('**/*', (route) => {
-            const routeUrl = route.request().url();
-            const resourceType = route.request().resourceType();
-            // Block ALL non-http/https navigations and fetches
-            if (!routeUrl.startsWith('http://') && !routeUrl.startsWith('https://')) {
-              if (['document', 'xhr', 'fetch'].includes(resourceType)) {
+          // Block resources by type + cross-origin 3rd-party + SSRF protection
+          // Uses shouldBlockResource helper for centralized anti-detection resource policy
+          await page.route('**/*', (route) => {
+            try {
+              const resourceType = route.request().resourceType();
+              const routeUrl = route.request().url();
+
+              if (shouldBlockResource(resourceType, routeUrl, pwDomain)) {
                 route.abort();
                 return;
               }
+
+              // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
+              if (!routeUrl.startsWith('http://') && !routeUrl.startsWith('https://')) {
+                if (['document', 'xhr', 'fetch'].includes(resourceType)) {
+                  route.abort();
+                  return;
+                }
+              }
+              if (['document', 'xhr', 'fetch'].includes(resourceType) && !isSafeUrl(routeUrl)) {
+                route.abort();
+                return;
+              }
+
+              route.continue();
+            } catch (routeErr) {
+              // If route handling fails (e.g., request cancelled), abort to prevent hang
+              try { route.abort(); } catch { /* already handled */ }
             }
-            // Block navigation, XHR, and fetch requests to unsafe targets
-            if (['document', 'xhr', 'fetch'].includes(resourceType) && !isSafeUrl(routeUrl)) {
-              route.abort();
-              return;
-            }
-            route.continue();
           });
 
           // Set extra headers — use profile UA (not a random/hardcoded one) to ensure

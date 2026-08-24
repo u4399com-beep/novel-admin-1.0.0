@@ -9,6 +9,9 @@ import * as cheerio from "cheerio";
 import type { CleanRequest } from "./types";
 import { safeRegexReplace } from "./regex-safety";
 
+// Tags to skip during paragraph-aware extraction
+const EXCLUDED_TAGS = new Set(['script', 'style', 'noscript', 'template']);
+
 // ==================== Default Ad Patterns ====================
 
 const DEFAULT_AD_PATTERNS = [
@@ -614,8 +617,11 @@ function removeRemnantLines(text: string): string {
 
 /**
  * Normalize whitespace: collapse spaces, trim lines, collapse newlines.
+ * @param preserveParagraphs - When true, keeps double-newline paragraph separators
+ *   (only collapses \n{3,} to \n\n, does NOT collapse \n\n to \n).
+ *   When false (default), collapses all multi-newlines to \n\n.
  */
-function normalizeWhitespace(text: string): string {
+function normalizeWhitespace(text: string, preserveParagraphs = false): string {
   // Strip zero-width characters (common anti-scraping / steganography artifacts)
   // U+200B ZWSP, U+200C ZWNJ, U+200D ZWJ, U+FEFF BOM/ZWNBSP,
   // U+00AD soft hyphen, U+2060 word joiner, U+2061-2064 invisible math,
@@ -630,14 +636,238 @@ function normalizeWhitespace(text: string): string {
   text = text.replace(/[\uFFF9\uFFFA\uFFFB]/g, '');
   // Normalize CJK ideographic space (U+3000) to regular space
   text = text.replace(/\u3000/g, ' ');
-  return text
+  text = text
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")  // Standalone CR (old Mac line endings)
     .replace(/\t+/g, " ")
     .replace(/[ \t]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/ *\n */g, "\n");
+
+  if (preserveParagraphs) {
+    // Only collapse 3+ newlines to 2, preserving paragraph breaks
+    text = text.replace(/\n{3,}/g, "\n\n");
+  } else {
+    // Original behavior: collapse all multi-newlines to at most 2
+    text = text.replace(/\n{3,}/g, "\n\n");
+  }
+
+  return text.trim();
+}
+
+/**
+ * Clean HTML while preserving paragraph structure for novel content.
+ * Unlike cleanHtml() which extracts plain text (losing paragraphs),
+ * this returns text with proper paragraph breaks (\n\n between <p>/<div> blocks,
+ * \n after <br>).
+ *
+ * This is the core fix for novel content where paragraph readability is critical.
+ */
+export function cleanHtmlPreserveParagraphs(html: string, config: CleanRequest["config"]): string {
+  const $ = cheerio.load(html);
+
+  // Step 1: Apply HTML-level cleaning (remove ads/scripts/styles at element level)
+  applyHtmlLevelCleaning($, config);
+
+  // Step 2: Iterate through child nodes of body and extract text with paragraph structure
+  const bodyEl = $.root().find('body');
+  const container = bodyEl.length > 0 ? bodyEl : $.root();
+  const parts: string[] = [];
+
+  // Block-level elements that create paragraph breaks
+  const BLOCK_TAGS = new Set([
+    'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'blockquote', 'section', 'article', 'header', 'footer',
+    'li', 'tr', 'td', 'th', 'dt', 'dd', 'pre', 'figure',
+  ]);
+
+  // Inline elements that don't create breaks
+  const INLINE_TAGS = new Set([
+    'span', 'a', 'strong', 'em', 'b', 'i', 'u', 's',
+    'sub', 'sup', 'small', 'big', 'code', 'mark', 'q',
+    'abbr', 'cite', 'dfn', 'kbd', 'samp', 'var', 'time',
+    'font', 'label', 'ruby', 'rt', 'rp', 'bdi', 'bdo', 'wbr',
+  ]);
+
+  function extractNodeText(node: cheerio.AnyNode): void {
+    const nodeType = node.type as string;
+    const tagName = (node as cheerio.Element).name?.toLowerCase();
+
+    if (nodeType === 'text') {
+      // Text node — append as-is
+      const text = (node as cheerio.TextNode).data || '';
+      parts.push(text);
+      return;
+    }
+
+    if (nodeType !== 'tag') return;
+    if (!tagName) return;
+
+    // Skip script/style/noscript (should already be removed, but defensive)
+    if (EXCLUDED_TAGS.has(tagName)) return;
+
+    // <br> — line break
+    if (tagName === 'br') {
+      parts.push('\n');
+      return;
+    }
+
+    // Block-level element
+    if (BLOCK_TAGS.has(tagName)) {
+      const $el = $(node);
+      const text = $el.text().trim();
+      if (text) {
+        parts.push('\n\n');
+        parts.push(text);
+        parts.push('\n\n');
+      }
+      return;
+    }
+
+    // Inline element — extract text content without breaks
+    if (INLINE_TAGS.has(tagName)) {
+      const $el = $(node);
+      const text = $el.text();
+      if (text) {
+        parts.push(text);
+      }
+      return;
+    }
+
+    // Unknown element — recurse into children
+    const children = (node as cheerio.Element).children || [];
+    for (const child of children) {
+      extractNodeText(child);
+    }
+  }
+
+  // Process all top-level children of the container
+  const children = (container[0] as cheerio.Element)?.children || [];
+  for (const child of children) {
+    extractNodeText(child);
+  }
+
+  let text = parts.join('');
+
+  // Step 3: Build combined ad pattern list
+  const adPatterns = normalizePatterns(config.adPatterns);
+  const allAdPatterns = [...DEFAULT_AD_PATTERNS];
+  if (adPatterns.length > 0) {
+    allAdPatterns.push(...adPatterns);
+  } else {
+    allAdPatterns.push(...NOVEL_AD_PATTERNS);
+  }
+  const removePatterns = normalizePatterns(config.removePatterns);
+
+  // Step 4: Apply watermark regex patterns
+  text = applyWatermarkPatterns(text);
+
+  // Step 5: Remove custom text/regex patterns
+  if (removePatterns.length > 0) {
+    for (const pattern of removePatterns) {
+      text = safeRegexReplace(text, pattern, "", "gi");
+    }
+  }
+
+  // Step 6: Aggressive line-by-line ad filtering
+  text = filterAdLines(text, allAdPatterns);
+
+  // Step 7: Remove short remnant lines
+  text = removeRemnantLines(text);
+
+  // Step 8: Remove consecutive duplicate paragraphs
+  text = deduplicateParagraphs(text);
+
+  // Step 9: Fix run-on text / over-fragmented text
+  text = mergeRunOnText(text);
+
+  // Step 10: Normalize whitespace PRESERVING paragraph breaks
+  text = normalizeWhitespace(text, true);
+
+  return text;
+}
+
+// ==================== Run-on Text Detection & Fixing ====================
+
+/**
+ * Detect run-on text (Chinese text > 300 chars with no line break) and
+ * split at sentence boundaries (。！？). Also detects excessive line breaks
+ * (every sentence on its own line) and merges into proper paragraphs.
+ *
+ * This handles two failure modes:
+ * 1. Run-on text: all paragraphs merged into one wall of text (no \n)
+ * 2. Over-fragmented text: every sentence on its own line
+ */
+function mergeRunOnText(text: string): string {
+  const paragraphs = text.split(/\n\n+/);
+  const result: string[] = [];
+
+  for (const para of paragraphs) {
+    const trimmed = para.trim();
+    if (!trimmed) {
+      result.push('');
+      continue;
+    }
+
+    // Check for run-on text: long paragraph with no internal newlines
+    if (trimmed.length > 300 && !trimmed.includes('\n')) {
+      // Split at Chinese sentence-ending punctuation
+      const sentences = trimmed.split(/(?<=[。！？；])/);
+      const merged: string[] = [];
+      let current = '';
+
+      for (const sentence of sentences) {
+        const s = sentence.trim();
+        if (!s) continue;
+
+        if (current.length + s.length < 200) {
+          // Merge short sentences into a paragraph
+          current += s;
+        } else {
+          if (current) merged.push(current);
+          current = s;
+        }
+      }
+      if (current) merged.push(current);
+
+      result.push(merged.join('\n'));
+      continue;
+    }
+
+    // Check for over-fragmented text: paragraph with many short lines
+    const lines = trimmed.split('\n').filter(l => l.trim());
+    if (lines.length > 5) {
+      const shortLines = lines.filter(l => l.trim().length < 30);
+      const shortRatio = shortLines.length / lines.length;
+
+      if (shortRatio > 0.8) {
+        // Over 80% of lines are short — likely over-fragmented
+        // Merge consecutive short lines into paragraphs of ~100-200 chars
+        const merged: string[] = [];
+        let current = '';
+
+        for (const line of lines) {
+          const l = line.trim();
+          if (!l) continue;
+
+          if (current.length + l.length < 150) {
+            current += (current ? '' : '') + l;
+          } else {
+            if (current) merged.push(current);
+            current = l;
+          }
+        }
+        if (current) merged.push(current);
+
+        result.push(merged.join('\n'));
+        continue;
+      }
+    }
+
+    // Normal paragraph — keep as-is
+    result.push(trimmed);
+  }
+
+  return result.join('\n\n');
 }
 
 /**

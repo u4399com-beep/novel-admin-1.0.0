@@ -163,6 +163,10 @@ export function parseSelectorWithFallbacks(
   const primaryResult = parseSelector(html, primarySelector);
   if (primaryResult) return primaryResult;
 
+  // If primary is regex, don't try CSS fallbacks — regex implies a specific extraction
+  // intent that generic CSS selectors can't fulfill.
+  if (primarySelector.type === 'regex') return '';
+
   // Fallback: try each CSS selector in order
   const $ = cheerio.load(html);
   const extractAttr = primarySelector.extract;
@@ -330,6 +334,84 @@ export function parseSelector(html: string, selector: Selector): string {
   if (isExcludedTag(el[0]!)) return "";
 
   return el.text().trim();
+}
+
+// ==================== Single Element Selector (HTML-preserving) ====================
+
+/**
+ * Extract content preserving HTML structure (paragraphs, line breaks).
+ * Unlike parseSelector() which returns plain text, this returns HTML
+ * that preserves <p>, <br>, <div> structure for paragraph formatting.
+ *
+ * For CSS selectors: returns el.html() (inner HTML) instead of el.text().
+ * For XPath: returns innerHTML of matched elements.
+ * For regex: same as parseSelector (regex returns plain text anyway).
+ */
+export function parseSelectorHtml(html: string, selector: Selector): string {
+  if (selector.type === "regex") {
+    // Regex can't return HTML structure — fall back to plain text
+    const match = safeRegexMatch(html, selector.value, "gi");
+    return match?.[0] || "";
+  }
+
+  if (selector.type === "xpath") {
+    const { css, hasTextSelector, attrName } = xpathToCss(selector.value);
+    const $ = cheerio.load(html);
+
+    // Text selectors can't preserve HTML
+    if (hasTextSelector) {
+      const parentXpath = selector.value.replace(/\/text\(\)/g, "");
+      const { css: parentCss } = xpathToCss(parentXpath);
+      if (parentCss) {
+        return $(parentCss).html() || "";
+      }
+      return "";
+    }
+
+    const el = $(css);
+    if (el.length === 0) return "";
+
+    // If extracting an attribute, that's not HTML
+    if (selector.extract) {
+      return el.attr(selector.extract) || "";
+    }
+    if (attrName) {
+      return el.attr(attrName) || "";
+    }
+
+    // Skip excluded tags
+    if (isExcludedTag(el[0]!)) return "";
+
+    // Return inner HTML preserving structure
+    return el.html() || "";
+  }
+
+  // CSS selector (default) — return inner HTML
+  const $ = cheerio.load(html);
+  const el = $(selector.value);
+  if (el.length === 0) return "";
+
+  // If extracting an attribute, that's not HTML
+  if (selector.extract) {
+    return el.attr(selector.extract) || "";
+  }
+
+  // Auto-detect attribute extraction (same logic as parseSelector)
+  if ( /\[href\](?![\w-])/.test(selector.value) || /(?:^|[\s>+~,])href$/.test(selector.value)) {
+    return el.attr("href") || "";
+  }
+  if (/\[src\](?![\w-])/.test(selector.value) || /(?:^|[\s>+~,])src$/.test(selector.value)) {
+    return el.attr("src") || "";
+  }
+  if (selector.value.includes("meta")) {
+    return el.attr("content") || "";
+  }
+
+  // Skip excluded tags
+  if (isExcludedTag(el[0]!)) return "";
+
+  // Return inner HTML preserving paragraph structure
+  return el.html() || "";
 }
 
 // ==================== Multi Element Selector ====================
