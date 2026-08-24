@@ -647,8 +647,8 @@ function normalizeWhitespace(text: string, preserveParagraphs = false): string {
     // Only collapse 3+ newlines to 2, preserving paragraph breaks
     text = text.replace(/\n{3,}/g, "\n\n");
   } else {
-    // Original behavior: collapse all multi-newlines to at most 2
-    text = text.replace(/\n{3,}/g, "\n\n");
+    // Non-preserve mode: collapse ALL multi-newlines to single newline
+    text = text.replace(/\n{2,}/g, "\n");
   }
 
   return text.trim();
@@ -783,7 +783,47 @@ export function cleanHtmlPreserveParagraphs(html: string, config: CleanRequest["
   // Step 10: Normalize whitespace PRESERVING paragraph breaks
   text = normalizeWhitespace(text, true);
 
+  // Step 11: Final paragraph format cleanup (trim each paragraph, ensure consistent separators)
+  text = normalizeParagraphFormat(text);
+
   return text;
+}
+
+// ==================== Paragraph Format Normalization ====================
+
+/**
+ * Final paragraph-level format cleanup for novel content.
+ * Ensures consistent paragraph structure: each paragraph on its own line,
+ * no leading/trailing whitespace within paragraphs, no empty paragraphs.
+ *
+ * Handles edge cases from various novel site HTML structures:
+ * - Mixed `<br>` and `<p>` producing inconsistent separators
+ * - Trailing/leading spaces within paragraphs from nested spans
+ * - Paragraphs that are just whitespace after ad removal
+ */
+function normalizeParagraphFormat(text: string): string {
+  const paragraphs = text.split('\n\n');
+  const result: string[] = [];
+
+  for (const para of paragraphs) {
+    // Trim each paragraph and skip if empty
+    const trimmed = para.trim();
+    if (!trimmed) continue;
+
+    // Collapse any remaining internal single-newlines to spaces
+    // (handles cases where <br> was used instead of <p>)
+    const cleaned = trimmed
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .join(' ');
+
+    if (cleaned) {
+      result.push(cleaned);
+    }
+  }
+
+  return result.join('\n\n');
 }
 
 // ==================== Run-on Text Detection & Fixing ====================
@@ -850,7 +890,7 @@ function mergeRunOnText(text: string): string {
           if (!l) continue;
 
           if (current.length + l.length < 150) {
-            current += (current ? '' : '') + l;
+            current += l;
           } else {
             if (current) merged.push(current);
             current = l;
@@ -872,10 +912,11 @@ function mergeRunOnText(text: string): string {
 
 /**
  * Handle a clean request.
+ * Uses paragraph-preserving cleaning for better novel content readability.
  */
 export function handleClean(body: CleanRequest) {
   const { html, config } = body;
-  const content = cleanHtml(html, config);
+  const content = cleanHtmlPreserveParagraphs(html, config);
   return {
     content,
     wordCount: content.length,

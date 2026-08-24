@@ -39,7 +39,6 @@ export const NOVEL_CONTENT_SELECTORS: string[] = [
   '#txtContent',
   '.txt-content',
   '.contentbox',
-  '#contentbox',
   '.booktxt',
   '#booktxt',
   '.read-content',
@@ -439,10 +438,15 @@ export function parseSelectorMulti(html: string, selector: Selector): string[] {
 
     const elements = $(css);
     const results: string[] = [];
+    const extractAttr = selector.extract;
 
     elements.each((_, el) => {
       const $el = $(el);
-      if (attrName) {
+      if (extractAttr) {
+        // User explicitly requested a specific attribute (e.g. "content" for meta)
+        const val = $el.attr(extractAttr);
+        if (val) results.push(val);
+      } else if (attrName) {
         const val = $el.attr(attrName);
         if (val) results.push(val);
       } else {
@@ -469,20 +473,27 @@ export function parseSelectorMulti(html: string, selector: Selector): string[] {
   const $ = cheerio.load(html);
   const elements = $(selector.value);
   const results: string[] = [];
+  const extractAttr = selector.extract;
 
   elements.each((_, el) => {
     const $el = $(el);
-    const href = $el.attr("href");
-    const src = $el.attr("src");
-    if (href) {
-      results.push(href);
-    } else if (src) {
-      results.push(src);
+    if (extractAttr) {
+      // User explicitly requested a specific attribute (e.g. "content" for meta)
+      const val = $el.attr(extractAttr);
+      if (val) results.push(val);
     } else {
-      // Skip text extraction from excluded tags
-      if (!isExcludedTag(el)) {
-        const text = $el.text().trim();
-        if (text) results.push(text);
+      const href = $el.attr("href");
+      const src = $el.attr("src");
+      if (href) {
+        results.push(href);
+      } else if (src) {
+        results.push(src);
+      } else {
+        // Skip text extraction from excluded tags
+        if (!isExcludedTag(el)) {
+          const text = $el.text().trim();
+          if (text) results.push(text);
+        }
       }
     }
   });

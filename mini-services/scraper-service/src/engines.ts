@@ -13,8 +13,8 @@
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
 import { isSafeUrl } from "./ssrf";
-import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints } from "./utils";
-import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage } from "./stealth";
+import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints } from "./utils";
+import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA } from "./stealth";
 import { getAcceptEncoding } from "./http2-decoy";
 import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
@@ -222,7 +222,23 @@ class CheerioEngine implements ScrapingEngine {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
-    const headers = buildFetchHeaders(options?.antiCrawl, options?.userAgent, url, 'novel');
+    // Pre-select UA: use per-domain profile UA for cross-engine identity consistency,
+    // or fall back to stealth pool random UA for rotation mode.
+    // This ensures CheerioEngine and Playwright/Obscura send the same UA to the same domain.
+    let resolvedUA = options?.userAgent;
+    if (!resolvedUA) {
+      try {
+        const domain = new URL(url).hostname;
+        const profile = getProfileForDomain(domain);
+        resolvedUA = profile.userAgent;
+      } catch {
+        resolvedUA = undefined;
+      }
+    }
+    if (!resolvedUA && options?.antiCrawl?.uaRotation) {
+      resolvedUA = getRandomUA();
+    }
+    const headers = buildFetchHeaders(options?.antiCrawl, resolvedUA, url, 'novel');
     const timeout = Math.max(5000, Math.min(options?.timeout || 30000, 300000));
 
     // Inject cookies from the cookie jar
@@ -242,8 +258,12 @@ class CheerioEngine implements ScrapingEngine {
 
     // Session-aware cookie injection
     const sessionInfo = sessionManager.getSessionForRequest(targetDomain);
-    if (sessionInfo && sessionInfo.cookies && !headers['Cookie']) {
-      headers['Cookie'] = sessionInfo.cookies;
+    if (sessionInfo && sessionInfo.cookies) {
+      if (headers['Cookie']) {
+        headers['Cookie'] = `${sessionInfo.cookies}; ${headers['Cookie']}`;
+      } else {
+        headers['Cookie'] = sessionInfo.cookies;
+      }
     }
     if (sessionInfo && sessionInfo.userAgent && !headers['User-Agent']) {
       headers['User-Agent'] = sessionInfo.userAgent;
@@ -885,6 +905,9 @@ class FirecrawlEngine implements ScrapingEngine {
     const config = getFirecrawlConfig();
     const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
 
+    let fcDomain = '';
+    try { fcDomain = new URL(url).hostname; } catch { /* ignore */ }
+
     return retryWithBackoff(
       async () => {
         await firecrawlBreaker.acquire(); // Check on each retry attempt
@@ -956,7 +979,13 @@ class FirecrawlEngine implements ScrapingEngine {
         baseDelay: 3000,
         maxDelay: 30000,
       }
-    );
+    ).then(result => {
+      if (fcDomain) rateLimiter.recordResult(fcDomain, true, result.statusCode);
+      return result;
+    }).catch(err => {
+      if (fcDomain) rateLimiter.recordResult(fcDomain, false, undefined);
+      throw err;
+    });
   }
 }
 
@@ -1042,6 +1071,9 @@ class AgentQLEngine implements ScrapingEngine {
     const config = getAgentQLConfig();
     const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
 
+    let aqlDomain = '';
+    try { aqlDomain = new URL(url).hostname; } catch { /* ignore */ }
+
     // Build the natural language query from the AgentQL query fields
     // AgentQL uses a structured query object where each field maps to a NL prompt
     const query = DEFAULT_AGENTQL_QUERY;
@@ -1124,7 +1156,13 @@ class AgentQLEngine implements ScrapingEngine {
         baseDelay: 3000,
         maxDelay: 30000,
       }
-    );
+    ).then(result => {
+      if (aqlDomain) rateLimiter.recordResult(aqlDomain, true, result.statusCode);
+      return result;
+    }).catch(err => {
+      if (aqlDomain) rateLimiter.recordResult(aqlDomain, false, undefined);
+      throw err;
+    });
   }
 }
 
@@ -1167,6 +1205,9 @@ class CloudBrowserEngine implements ScrapingEngine {
 
     const config = getCloudBrowserConfig();
     const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
+
+    let cbDomain = '';
+    try { cbDomain = new URL(url).hostname; } catch { /* ignore */ }
 
     return retryWithBackoff(
       async () => {
@@ -1311,7 +1352,13 @@ class CloudBrowserEngine implements ScrapingEngine {
         baseDelay: 3000,
         maxDelay: 30000,
       }
-    );
+    ).then(result => {
+      if (cbDomain) rateLimiter.recordResult(cbDomain, true, result.statusCode);
+      return result;
+    }).catch(err => {
+      if (cbDomain) rateLimiter.recordResult(cbDomain, false, undefined);
+      throw err;
+    });
   }
 }
 
@@ -1536,6 +1583,15 @@ class ObscuraEngine implements ScrapingEngine {
     // Track last status code for outer recordResult (avoids double-counting in retries)
     let lastObscuraStatus = 0;
 
+    // Request fingerprint tracking — created OUTSIDE retry loop for stable identity across retries
+    const fp = requestFingerprintMgr.create({
+      domain,
+      engine: 'obscura',
+      sessionId: undefined,
+      proxyUrl: undefined, // proxy selected per-retry inside loop
+      userAgent: profile.userAgent,
+    });
+
     return retryWithBackoff(
       async () => {
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
@@ -1546,14 +1602,6 @@ class ObscuraEngine implements ScrapingEngine {
         const proxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(domain) : null);
 
         const obscuraStartTime = Date.now();
-        // Request fingerprint tracking (created before fetch)
-        const fp = requestFingerprintMgr.create({
-          domain,
-          engine: 'obscura',
-          sessionId: undefined,
-          proxyUrl: proxy?.url,
-          userAgent: profile.userAgent,
-        });
 
         const browser = await this.getBrowser();
 
@@ -1866,9 +1914,8 @@ class ObscuraEngine implements ScrapingEngine {
         maxRetries: options?.antiCrawl?.retries ?? 2,
         baseDelay: 2000,
         maxDelay: 20000,
-        onRetry: (proxy) ? (_attempt, err) => {
-          proxyManager.recordFailure(proxy.url, err.message);
-        } : undefined,
+        // Note: proxy failure recording is handled inside the retry callback's catch block
+        // (proxy is selected per-retry, so onRetry cannot reference it from outer scope)
       }
     ).then(result => {
       // Record final success (single record for the logical request)

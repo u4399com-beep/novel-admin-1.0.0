@@ -118,33 +118,50 @@ const UA_TEMPLATES: Record<string, string[]> = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   ],
   MacIntel: [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; ARM Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; ARM Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
   ],
   "Linux x86_64": [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
   ],
   Edge: [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0",
   ],
   Firefox: [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:132.0) Gecko/20100101 Firefox/132.0",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0",
   ],
 };
 
-// Browser weights for weighted UA rotation (Chrome 70%, Edge 15%, Firefox 15%)
+// Browser weights for weighted UA rotation (approximate 2024-2025 desktop share)
+// Note: Safari is excluded here because stealth injection only supports Chromium/Firefox profiles.
+// Safari UAs are available via utils.ts for CheerioEngine (non-JS) requests.
 const UA_BROWSER_WEIGHTS: Record<string, number> = {
-  Chrome: 70,
-  Edge: 15,
-  Firefox: 15,
+  Chrome: 75,
+  Edge: 13,
+  Firefox: 12,
 };
 
 // Pre-computed Chrome UA pool (all platforms combined)
@@ -169,8 +186,8 @@ export function getRandomUA(browser?: string): string {
   let selectedBrowser = browser;
   if (!selectedBrowser) {
     const r = Math.random() * 100;
-    if (r < 70) selectedBrowser = "Chrome";
-    else if (r < 85) selectedBrowser = "Edge";
+    if (r < 75) selectedBrowser = "Chrome";
+    else if (r < 88) selectedBrowser = "Edge";
     else selectedBrowser = "Firefox";
   }
 
@@ -185,6 +202,20 @@ function pick<T>(arr: readonly T[]): T {
 }
 
 // ==================== Profile Generation ====================
+
+/** Derive navigator.platform from UA string to avoid fingerprint contradictions. */
+function derivePlatformFromUA(ua: string): string {
+  if (/Edg\//.test(ua)) return 'Win32'; // Edge is Windows-only
+  if (/Firefox\//.test(ua)) {
+    if (/Macintosh/.test(ua)) return 'MacIntel';
+    if (/Linux/.test(ua)) return 'Linux x86_64';
+    return 'Win32';
+  }
+  // Chrome/Chromium
+  if (/Macintosh/.test(ua)) return 'MacIntel';
+  if (/Linux/.test(ua)) return 'Linux x86_64';
+  return 'Win32';
+}
 
 /**
  * Generate a deterministic fingerprint profile from a seed string.
@@ -205,23 +236,6 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
     return arr[idx];
   }
 
-  const platform = dPick(PLATFORMS, 4);
-
-  // Constrain vendor to match platform (Apple GPU only on macOS, Mesa on Linux)
-  let vendor: string;
-  if (platform === 'MacIntel') {
-    // macOS only uses Apple GPU — Direct3D11 renderers on Mac = instant fingerprint exposure
-    vendor = 'Google Inc. (Apple)';
-  } else if (platform === 'Linux x86_64') {
-    vendor = 'Mesa'; // Linux uses Mesa OpenGL, not ANGLE/Direct3D
-  } else {
-    // Win32: must NOT use Apple GPU (impossible combo)
-    const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
-    vendor = dPick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS, 1);
-  }
-  const renderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
-  const renderer = dPick(renderers, 2);
-
   const resolution = dPick(SCREEN_RESOLUTIONS, 3);
 
   // Weighted browser selection (deterministic via seed)
@@ -232,6 +246,21 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   const selectedBrowser = dPick(weightedBrowsers, 10);
   const uaPool = BROWSER_UA_POOLS[selectedBrowser] || ALL_CHROME_UAS;
   const userAgent = dPick(uaPool, 5);
+
+  // Derive platform from UA to avoid contradictions (Edge UA + Mac platform = detectable)
+  const uaPlatform = derivePlatformFromUA(userAgent);
+  // Re-derive vendor for UA-consistent platform
+  let vendor: string;
+  if (uaPlatform === 'MacIntel') {
+    vendor = 'Google Inc. (Apple)';
+  } else if (uaPlatform === 'Linux x86_64') {
+    vendor = 'Mesa';
+  } else {
+    const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
+    vendor = dPick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS, 1);
+  }
+  const uaRenderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
+  const renderer = dPick(uaRenderers, 2);
 
   const deviceMemory = dPick(DEVICE_MEMORY_OPTIONS, 6);
   const hardwareConcurrency = dPick(HARDWARE_CONCURRENCY_OPTIONS, 7);
@@ -250,7 +279,7 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
     screenHeight: resolution.h,
     deviceMemory,
     hardwareConcurrency,
-    platform,
+    platform: uaPlatform,
     languages: ["zh-CN", "zh", "en-US", "en"],
     timezone: "Asia/Shanghai",
     timezoneOffset,
@@ -265,23 +294,24 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
  * Generate a random fingerprint profile (non-deterministic).
  */
 export function generateRandomFingerprint(): FingerprintProfile {
-  const platform = pick(PLATFORMS);
-  // Constrain vendor to match platform (Apple GPU only on macOS, Mesa on Linux)
-  let vendor: string;
-  if (platform === 'MacIntel') {
-    // macOS only uses Apple GPU — Direct3D11 renderers on Mac = instant fingerprint exposure
-    vendor = 'Google Inc. (Apple)';
-  } else if (platform === 'Linux x86_64') {
-    vendor = 'Mesa'; // Linux uses Mesa OpenGL, not ANGLE/Direct3D
-  } else {
-    const compatibleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
-    vendor = pick(compatibleVendors.length > 0 ? compatibleVendors : WEBGL_VENDORS);
-  }
-  const renderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
-  const renderer = pick(renderers);
   const resolution = pick(SCREEN_RESOLUTIONS);
   // Use weighted browser pool for UA selection
   const userAgent = getRandomUA();
+
+  // Derive platform from UA to avoid contradictions (Edge UA + Mac platform = detectable)
+  const uaPlatform = derivePlatformFromUA(userAgent);
+  // Re-derive vendor for UA-consistent platform
+  let vendor: string;
+  if (uaPlatform === 'MacIntel') {
+    vendor = 'Google Inc. (Apple)';
+  } else if (uaPlatform === 'Linux x86_64') {
+    vendor = 'Mesa';
+  } else {
+    const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
+    vendor = pick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS);
+  }
+  const uaRenderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
+  const renderer = pick(uaRenderers);
 
   const baseOffset = -480;
   const jitter = Math.round((Math.random() * 11 - 5) / 5) * 5; // -5 to +5 in steps of 5
@@ -293,7 +323,7 @@ export function generateRandomFingerprint(): FingerprintProfile {
     screenHeight: resolution.h,
     deviceMemory: pick(DEVICE_MEMORY_OPTIONS),
     hardwareConcurrency: pick(HARDWARE_CONCURRENCY_OPTIONS),
-    platform,
+    platform: uaPlatform,
     languages: ["zh-CN", "zh", "en-US", "en"],
     timezone: "Asia/Shanghai",
     timezoneOffset: baseOffset + jitter,
@@ -422,6 +452,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   const PROFILE = ${JSON.stringify(profile)};
 
+  // Browser type detection — used throughout the script for conditional behavior
+  const _uaString = ${JSON.stringify(profile.userAgent)};
+  const _isFirefox = /Firefox\//.test(_uaString) || /Seamonkey\//i.test(_uaString);
+
   // ---- 1. Navigator Override ----
 
   // Remove webdriver flag — the primary automation detection signal
@@ -433,12 +467,14 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Also delete from prototype chain
   try { delete navigator.__proto__.webdriver; } catch(e) {}
 
-  // Fake plugins array (mimics a standard Chrome install with 5 plugins)
-  const pluginData = [
+  // Plugins — Firefox has 0-2 generic plugins; Chrome/Edge have 5 standard plugins
+  const pluginData = _isFirefox ? [
+    { name: 'PDF Viewer', filename: 'pdf.js', description: 'Portable Document Format', length: 1 },
+  ] : [
     { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
     { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
     { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 2 },
-  { name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
+    { name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
     { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
   ];
 
@@ -473,8 +509,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
 
-  // MimeTypes
-  const mimeData = [
+  // MimeTypes — Firefox has different mimeTypes than Chrome/Edge
+  const mimeData = _isFirefox ? [
+    { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
+  ] : [
     { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
     { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format' },
     { type: 'application/x-nacl', suffixes: '', description: 'Native Client Executable' },
@@ -560,15 +598,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
   });
 
   // Vendor — Chrome says "Google Inc.", Firefox returns ""
-  // Detect Firefox UA to avoid fingerprint mismatch
-  const _uaString = ${JSON.stringify(profile.userAgent)};
-  const _isFirefox = /Firefox\//.test(_uaString) || /Seamonkey\//i.test(_uaString);
   Object.defineProperty(navigator, 'vendor', {
     get: () => _isFirefox ? '' : 'Google Inc.',
     configurable: true,
   });
-  // Firefox returns empty string for languages, not zh-CN
-  const _isSafari = /Safari\//.test(_uaString) && !_isFirefox;
+  // Safari detection — only true if Safari is the last browser token (no Chrome/Edge after it)
+  const _isSafari = /Safari\/[\d.]+\s*$/.test(_uaString) && !_isFirefox && !/Chrome\//.test(_uaString) && !/Edg\//.test(_uaString);
   Object.defineProperty(navigator, 'languages', {
     get: () => _isFirefox ? ['en-US', 'en'] : PROFILE.languages || ['en-US', 'en', 'zh-CN', 'zh'],
     configurable: true,

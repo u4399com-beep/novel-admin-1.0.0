@@ -217,10 +217,16 @@ function isLikelyNovelContent(text: string): boolean {
   if (cjkCount >= 5) return true;
   if (latinWords > 15) return true;
 
-  // For non-CJK content, require minimum length to avoid noise
+  // For content with some CJK or Latin (even below thresholds),
+  // accept if the text is substantial enough to be meaningful
+  if ((cjkCount > 0 || latinWords > 0) && text.length >= MIN_CONTENT_LENGTH) return true;
+
+  // For pure non-CJK/non-Latin content (e.g. numbers, symbols), require length
   if (text.length < MIN_CONTENT_LENGTH) return false;
 
-  return false;
+  // Substantial text with no recognizable words — accept cautiously
+  // (could be encoded content, mixed scripts, etc.)
+  return text.length >= MIN_CONTENT_LENGTH;
 }
 
 // ==================== Decoding ====================
