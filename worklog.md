@@ -16572,3 +16572,86 @@ Stage Summary:
 - 核心功能: 段落保留提取管线,解决小说内容变文字墙问题
 - 5个新函数: parseSelectorHtml, cleanHtmlPreserveParagraphs, mergeRunOnText, normalizeParagraphs参数, shouldBlockResource共享
 - Playwright反检测与Obscura完全对齐(跨域脚本阻断+websocket)
+
+---
+Task ID: 2
+Agent: stealth-fingerprint-fixer
+Task: Fix stealth fingerprint consistency issues
+
+Work Log:
+- Added derivePlatformFromUA() helper function (lines 189-201)
+- Fixed generateFingerprintProfile() to derive platform from UA instead of independent random pick
+- Fixed generateRandomFingerprint() with same UA-derived platform/vendor/renderer logic
+- Made plugin/mime injection conditional on browser type (Firefox gets 1 PDF plugin, Chrome/Edge get 5 standard plugins)
+- Moved _uaString/_isFirefox declarations to top of stealth script for early availability
+- Removed duplicate _uaString/_isFirefox declarations from vendor section
+- Fixed _isSafari detection regex to exclude Chrome/Edge UAs (checks Safari is last browser token)
+
+Stage Summary:
+- 3 HIGH fixes (platform-UA mismatch in both generators, Firefox plugins injection)
+- 1 MEDIUM fix (_isSafari false positive matching Chrome/Edge UAs)
+- Files modified: stealth.ts
+- Verified: balanced braces (851/851), even template literal ticks (22), no new TS errors
+---
+Task ID: 3
+Agent: engines-fixer
+Task: Fix engines.ts bugs - fp scoping, session cookies, rate limiter
+
+Work Log:
+- Fixed ObscuraEngine fp scoping: moved requestFingerprintMgr.create() outside retry loop
+- Fixed CheerioEngine session cookie merge: cookies are now merged instead of skipped
+- Added rateLimiter.recordResult() to FirecrawlEngine
+- Added rateLimiter.recordResult() to AgentQLEngine
+- Added rateLimiter.recordResult() to CloudBrowserEngine
+
+Stage Summary:
+- 1 HIGH fix (ObscuraEngine fp scope)
+- 2 MEDIUM fixes (session cookies, rate limiter)
+- Files modified: engines.ts
+- Verified: balanced braces (567/567), balanced parens (1095/1095), balanced brackets (100/100), 0 new TS errors
+
+---
+Task ID: R40
+Agent: Main Orchestrator + 2 Subagents (stealth-fingerprint-fixer, engines-fixer)
+Task: R40 全面审计修复+段落格式检查+反反爬增强
+
+Work Log:
+- 执行全量代码审计(28个文件), 发现28个问题(5 HIGH/12 MEDIUM/11 LOW)
+- 修复14项真实bug(1项误报: debugJsPatterns return位置实际正确)
+- 新增段落/换行格式处理: normalizeParagraphFormat(), handleClean改用paragraph-preserving
+
+## 修复清单 (14项)
+
+### HIGH (4项)
+1. **stealth.ts Platform-UA不一致** — derivePlatformFromUA()确保Edge UA→Win32, Firefox UA→正确平台
+2. **stealth.ts Firefox注入Chrome插件** — 条件插件注入(Firefox→1个PDF插件, Chrome→5个标准插件)
+3. **engines.ts ObscuraEngine fp作用域** — requestFingerprintMgr.create()从retry循环内移至外部
+4. **UA系统统一** — engines.ts改用stealth.ts getRandomUA, CheerioEngine使用per-domain profile UA
+
+### MEDIUM (7项)
+5. **engines.ts Session cookie合并** — 不再因!headers[Cookie]跳过session cookies
+6. **engines.ts 外部引擎rate limiter** — Firecrawl/AgentQL/CloudBrowser添加recordResult
+7. **engines.ts onRetry proxy作用域** — 移除引用内部变量的broken onRetry回调
+8. **selectors.ts parseSelectorMulti extract** — 支持selector.extract属性
+9. **cleaning.ts normalizeWhitespace** — preserveParagraphs=false时折叠所有多换行为单换行
+10. **cleaning.ts handleClean** — 改用cleanHtmlPreserveParagraphs(保留段落结构)
+11. **cleaning.ts mergeRunOnText** — 修复无操作三元表达式
+
+### LOW/增强 (3项)
+12. **regex-safety.ts** — safeRegexReplace添加500K长度截断
+13. **js-content-extractor.ts** — isLikelyNovelContent逻辑修复(非CJK中等长度文本不再被误拒)
+14. **selectors.ts** — 移除重复#contentbox选择器
+
+## 增强 (6项)
+1. stealth.ts UA池扩展: 18→36 UAs, 新增ARM Mac/Chrome 124-127/Firefox 130-131/Linux Firefox
+2. stealth.ts 权重更新: 70/15/15→75/13/12(更接近2024-2025实际桌面份额)
+3. stealth.ts _isSafari检测修复: 排除Chrome/Edge(Safari/537.36兼容token)
+4. CheerioEngine per-domain profile UA: 跨引擎身份一致性
+5. cleaning.ts normalizeParagraphFormat: 段落级格式规范化(内部换行合并、空白段落移除)
+6. stealth.ts Firefox mimeTypes条件化(1个vs 4个)
+
+Stage Summary:
+- 累计修复: 436项 (R40新增14项)
+- Stealth: 59活跃sections (不变)
+- Commit: ee78a5b
+- 编译: 0 TS errors in scraper-service
