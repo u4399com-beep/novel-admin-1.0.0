@@ -584,6 +584,16 @@ const CHROME_CLIENT_HINT_VERSIONS: string[] = [
   '"Not A(Brand";v="99", "Google Chrome";v="120", "Chromium";v="120"',
 ];
 
+/** Edge-branded sec-ch-ua versions (Edge includes "Microsoft Edge" brand). */
+const EDGE_CLIENT_HINT_VERSIONS: string[] = [
+  '"Chromium";v="133", "Not A(Brand";v="99", "Microsoft Edge";v="133"',
+  '"Chromium";v="132", "Not A(Brand";v="99", "Microsoft Edge";v="132"',
+  '"Chromium";v="131", "Not A(Brand";v="99", "Microsoft Edge";v="131"',
+  '"Chromium";v="130", "Not A(Brand";v="99", "Microsoft Edge";v="130"',
+  '"Chromium";v="129", "Not A(Brand";v="99", "Microsoft Edge";v="129"',
+  '"Chromium";v="128", "Not A(Brand";v="99", "Microsoft Edge";v="128"',
+];
+
 const PLATFORM_HINT_MAP: Record<string, string> = {
   "Windows NT 10.0": '"Windows"',
   "Macintosh; Intel Mac OS X": '"macOS"',
@@ -594,35 +604,46 @@ const PLATFORM_HINT_MAP: Record<string, string> = {
 };
 
 /**
- * Generates Chrome Client Hints headers (sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform)
+ * Generates Chrome/Edge Client Hints headers (sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform)
  * that match the provided User-Agent string.
  *
- * Returns null for non-Chrome UAs.
+ * Returns null for non-Chromium UAs (Firefox, Safari standalone).
+ * Edge UAs are supported with Edge-branded sec-ch-ua strings.
  *
  * @param ua - User-Agent string to parse. If omitted, a random Chrome UA is selected.
  */
 export function getChromeClientHints(ua?: string): { "sec-ch-ua": string; "sec-ch-ua-mobile": string; "sec-ch-ua-platform": string } | null {
   const userAgent = ua || getRandomUA();
 
-  // Detect Chrome UA: must contain "Chrome/" but NOT contain Edge/OPR/Firefox/Safari (standalone)
+  // Must contain "Chrome/" — Firefox, Safari standalone don't send sec-ch-ua
   if (!userAgent.includes("Chrome/")) return null;
-  if (userAgent.includes("Edg/") || userAgent.includes("OPR/") || userAgent.includes("Firefox/")) return null;
-  // Safari standalone (no Chrome)
-  if (userAgent.includes("Safari/") && !userAgent.includes("Chrome/")) return null;
+  // Firefox (even with Chrome in UA via spoofing)
+  if (userAgent.includes("Firefox/")) return null;
 
-  // Extract Chrome major version
+  // Detect Edge UA — Edge includes "Edg/" and sends Edge-branded sec-ch-ua
+  const isEdge = userAgent.includes("Edg/");
+  if (isEdge && userAgent.includes("OPR/")) return null; // Opera, not Edge
+
+  // Extract Chrome major version (works for both Chrome and Edge UAs)
   const chromeMatch = userAgent.match(/Chrome\/(\d+)/);
   if (!chromeMatch) return null;
   const chromeVersion = parseInt(chromeMatch[1]);
 
-  // Find a matching Client Hints version (exact match on Chrome major version)
-  // NOTE: regex must target "Google Chrome";v="..." not "Not A(Brand";v="99"
-  let hintVersion = CHROME_CLIENT_HINT_VERSIONS[0];
-  for (const hint of CHROME_CLIENT_HINT_VERSIONS) {
-    const chromeVerMatch = hint.match(/"Google Chrome";v="(\d+)"/);
-    if (chromeVerMatch && parseInt(chromeVerMatch[1]) === chromeVersion) {
-      hintVersion = hint;
-      break;
+  // Select the appropriate brand pool
+  const hintPool = isEdge ? EDGE_CLIENT_HINT_VERSIONS : CHROME_CLIENT_HINT_VERSIONS;
+
+  // Find a matching Client Hints version (exact match on major version)
+  let hintVersion = hintPool[0];
+  for (const hint of hintPool) {
+    // Match either "Google Chrome";v="N" or "Microsoft Edge";v="N" or "Chromium";v="N"
+    const verMatch = hint.match(/v="(\d+)"/g);
+    if (verMatch) {
+      const versions = verMatch.map(m => parseInt(m.match(/\d+/)?.[0] || '0'));
+      // All brands should share the same major version
+      if (versions.every(v => v === chromeVersion) && versions.length >= 2) {
+        hintVersion = hint;
+        break;
+      }
     }
   }
 
@@ -884,9 +905,10 @@ export function buildFetchHeaders(
     }
   }
 
-  // DNT (Do Not Track): use explicit override or random
-  const dnt = antiCrawl?.dnt ?? (Math.random() < 0.5);
-  if (dnt) {
+  // DNT (Do Not Track): only send if explicitly requested.
+  // Modern browsers default to DNT being unset (navigator.doNotTrack = null).
+  // Sending DNT: 1 when navigator.doNotTrack is null is a cross-channel detection vector.
+  if (antiCrawl?.dnt) {
     headers["DNT"] = "1";
   }
 

@@ -396,7 +396,7 @@ export function clearDomainUACache(domain?: string): void {
  * 50. [Removed: duplicate of Section 36]
  * 51. speechSynthesis.getVoices() enhanced mock (per-seed voices, async loading)
  * 52. Notification.permission consistency (force 'default')
- * 53. window.devicePixelRatio consistency with screen resolution
+ * 53. [Removed: Section 6 already sets DPR from profile; old heuristic used Math.random() causing conflicts]
  * 54. [Removed: dead code, fully shadowed by Section 2]
  * 55. performance.memory realistic values (Chrome-specific)
  * 56. navigator.plugins consistency (inject missing plugins)
@@ -862,15 +862,32 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // ---- 11. Automation Property Removal ----
 
-  // Remove CDP (Chrome DevTools Protocol) indicators
+  // Remove CDP (Chrome DevTools Protocol) indicators — multiple known hash patterns
   try { delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array; } catch(e) {}
   try { delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise; } catch(e) {}
   try { delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol; } catch(e) {}
+  // document-scoped CDP markers (variant hash used by some CDP versions)
+  try { delete document["$cdc_asdjflasutopfhvcZLmcfl_"]; } catch(e) {}
+  // Scan document for any remaining $cdc_ properties (catch-all)
+  for (var _key in document) {
+    if (typeof _key === 'string' && _key.indexOf('$cdc_') === 0) {
+      try { delete document[_key]; } catch(e) {}
+    }
+  }
+  for (var _wkey in window) {
+    if (typeof _wkey === 'string' && _wkey.indexOf('cdc_') === 0) {
+      try { delete window[_wkey]; } catch(e) {}
+    }
+  }
 
   // Remove Puppeteer/Playwright markers
   const propsToRemove = [
     '__playwright', '__puppeteer_evaluation_script__', '__selenium_unwrapped',
     'callPhantom', '_phantom', '__nightmare', 'domAutomation', 'domAutomationController',
+    '__webdriver_evaluate', '__driver_evaluate', '__webdriver_unwrapped',
+    '__driver_unwrapped', '__selenium_unwrapped', '__fxdriver_evaluate',
+    '__fxdriver_unwrapped', '_Selenium_IDE_Recorder', '_selenium', 'calledSelenium',
+    '__nightmare', '__phantomas', 'domAutomationController',
   ];
   propsToRemove.forEach(prop => {
     try { delete window[prop]; } catch(e) {}
@@ -954,6 +971,27 @@ export function getStealthScript(profile: FingerprintProfile): string {
       configurable: true,
     });
   }
+
+  // StorageManager.estimate() mock — real Chrome returns realistic quota values.
+  // Headless Chrome sometimes returns quota: 0 or unrealistic values, which is a
+  // fingerprinting signal. Advanced anti-bot systems check this API.
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      var _origEstimate = navigator.storage.estimate.bind(navigator.storage);
+      var _storageQuota = 279172874240 + Math.floor(_seededRandom(7.1) * 204010946560); // ~260-450 GB
+      var _storageUsage = Math.floor(_seededRandom(7.3) * 10485760); // 0-10 MB used
+      navigator.storage.estimate = function() {
+        return Promise.resolve({ quota: _storageQuota, usage: _storageUsage });
+      };
+    } else if (navigator.storage) {
+      // StorageManager exists but estimate() is missing — add it
+      var _quotaVal = 279172874240 + Math.floor(_seededRandom(7.7) * 204010946560);
+      var _usageVal = Math.floor(_seededRandom(7.9) * 10485760);
+      navigator.storage.estimate = function() {
+        return Promise.resolve({ quota: _quotaVal, usage: _usageVal });
+      };
+    }
+  } catch(e) {}
 
   // ---- 15. Iframe stealth propagation ----
 
@@ -2027,31 +2065,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // Section 53: window.devicePixelRatio consistency
-  // Some headless environments report DPR=1 on HiDPI profiles, or vice versa.
-  // Ensure DPR matches the screen resolution profile.
-  try {
-    var _declaredDPR = window.devicePixelRatio || 1;
-    // If screen width is >1920 and DPR is 1, likely wrong (HiDPI display should be 1.5-3)
-    // If screen width <1920 and DPR is 2+, also suspicious
-    var _screenW = window.screen.width || 1920;
-    var _expectedDPR = 1;
-    if (_screenW >= 3840) _expectedDPR = 2;
-    else if (_screenW >= 2560) _expectedDPR = Math.random() > 0.5 ? 1.5 : 2;
-    else if (_screenW >= 1920) _expectedDPR = 1;
-    // Round to common DPR values
-    var _commonDPR = [1, 1.25, 1.5, 2, 2.5, 3];
-    var _closestDPR = _commonDPR.reduce(function(prev, curr) {
-      return Math.abs(curr - _expectedDPR) < Math.abs(prev - _expectedDPR) ? curr : prev;
-    });
-    // Only fix if there's a clear mismatch
-    if (Math.abs(_declaredDPR - _closestDPR) > 0.25) {
-      Object.defineProperty(window, 'devicePixelRatio', {
-        get: function() { return _closestDPR; },
-        configurable: true,
-      });
-    }
-  } catch(e) {}
+  // [Section 53: removed — Section 6 already sets window.devicePixelRatio from PROFILE.pixelRatio.
+  //   The old Section 53 used Math.random() and screen-width heuristics that could override
+  //   the profile's deterministic pixelRatio with a conflicting value. This was detectable
+  //   because the Playwright context deviceScaleFactor (from profile) would disagree with
+  //   window.devicePixelRatio (from Section 53's random heuristic).]
 
   // [Section 54 removed: fully dead code — Section 2 already sets window.chrome,
   //   chrome.runtime, chrome.csi, chrome.loadTimes, and chrome.app with correct
@@ -2275,6 +2293,18 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
+  // ---- Section 62: navigator.doNotTrack consistency ----
+  // When the stealth-injected page sends DNT: 1 via HTTP headers (set by the caller),
+  // navigator.doNotTrack must return '1' to avoid cross-channel mismatch.
+  // Default: 'null' (not set) — matches most real browsers where DNT is disabled by default.
+  // The caller should NOT set DNT header to avoid this mismatch entirely.
+  try {
+    Object.defineProperty(navigator, 'doNotTrack', {
+      get: function() { return null; },
+      configurable: true,
+    });
+  } catch(e) {}
+
 })();
 `;
 }
@@ -2285,14 +2315,14 @@ export function getStealthScript(profile: FingerprintProfile): string {
  * Per-domain fingerprint profile cache.
  * Ensures consistent fingerprinting across multiple requests to the same domain.
  */
-const profileCache = new Map<string, FingerprintProfile>();
-const CACHE_MAX_SIZE = 500;
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-
 interface CacheEntry {
   profile: FingerprintProfile;
   createdAt: number;
 }
+
+const profileCache = new Map<string, CacheEntry>();
+const CACHE_MAX_SIZE = 500;
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 /**
  * Get or create a cached fingerprint profile for a domain.
@@ -2343,7 +2373,38 @@ export function getProfileCacheStats(): { size: number; maxSize: number; ttlMs: 
   };
 }
 
-// ==================== Enhancement 1: Header Order Randomization ====================
+/**
+ * Convert a profile's navigator.languages array to an Accept-Language header string.
+ * Produces a consistent header that matches what the stealth script injects into navigator.languages.
+ *
+ * Example: ["zh-CN", "zh", "en-US", "en"] → "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+ *
+ * @param languages - navigator.languages array from the profile
+ * @returns Accept-Language header value
+ */
+export function profileLanguagesToAcceptLanguage(languages: string[]): string {
+  if (!languages || languages.length === 0) return 'en-US,en;q=0.9';
+  const parts: string[] = [];
+  for (let i = 0; i < languages.length; i++) {
+    const q = i === 0 ? '' : `;q=${Math.max(0.1, 1.0 - i * 0.1).toFixed(1)}`;
+    parts.push(`${languages[i]}${q}`);
+  }
+  return parts.join(',');
+}
+
+/**
+ * Detect browser family from a User-Agent string.
+ * Returns 'Chrome' | 'Edge' | 'Firefox' | 'Unknown'.
+ * Used to ensure cross-module consistency (headers, sec-ch-ua, etc.).
+ */
+export function getBrowserTypeFromUA(ua: string): 'Chrome' | 'Edge' | 'Firefox' | 'Unknown' {
+  if (/Firefox\//.test(ua) && !/Seamonkey/i.test(ua)) return 'Firefox';
+  if (/Edg\//.test(ua)) return 'Edge';
+  if (/Chrome\//.test(ua)) return 'Chrome';
+  return 'Unknown';
+}
+
+// ==================== Enhancement 1: Header Order Randomization =====================
 
 /**
  * Known distinct header orders observed from real browsers.

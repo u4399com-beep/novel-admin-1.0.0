@@ -14,6 +14,11 @@
  *   6. `var/let/const content = "..."`  (global variable assignment)
  *   7. `document.write("...")`  (document.write)
  *   8. `element.innerHTML = decodeURIComponent("...")` (encoded content)
+ *   9. `innerHTML = JSON.parse('...')` (JSON-encoded content)
+ *  10. `String.fromCharCode(code1, code2, ...)` (charCode arrays)
+ *  11. `var arr = [code1, code2, ...]` (charCode loop arrays)
+ *  12. `window.chapterContent = [...]` (paragraph arrays)
+ *  13. `var x = atob('base64...')` (standalone base64)
  *
  * Usage: In CheerioEngine, after getting empty/no content from normal extraction,
  * call `extractJsContent(html)` to try JS pattern extraction.
@@ -43,6 +48,8 @@ const JS_PATTERNS: Array<{
   regex: RegExp; // Compiled once
   contentGroup: number;
   encoded?: boolean; // content is URL-encoded or HTML-entity encoded
+  /** Optional transform to apply to raw match before content filtering (e.g. charCode decode) */
+  transform?: (raw: string, fullMatch: string) => string | null;
 }> = [
   // Pattern 1: getElementById + innerHTML/innerText/textContent
   {
@@ -89,10 +96,96 @@ const JS_PATTERNS: Array<{
     contentGroup: 1,
     encoded: true,
   },
-  // Pattern 8: Base64 encoded content
+  // Pattern 8: Base64 encoded content via atob()
   {
     name: 'base64Content',
     regex: /(?:innerHTML|textContent)\s*=\s*atob\s*\(\s*['"]([A-Za-z0-9+/=]{100,})/g,
+    contentGroup: 1,
+    encoded: true,
+  },
+  // Pattern 9: JSON.parse() assignment — handles content encoded as JSON strings
+  // Matches: innerHTML = JSON.parse('...'), var x = JSON.parse('...')
+  {
+    name: 'JSON.parse',
+    regex: /(?:var\s+\w+\s*=|innerHTML\s*=|textContent\s*=)\s*JSON\.parse\s*\(\s*['"]([\s\S]{50,}?)['"]\s*\)/g,
+    contentGroup: 1,
+    transform: (raw: string) => {
+      try {
+        // Try to parse the JSON string. If it's a string (escaped), it will return a string.
+        // If it's an array, join elements.
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'string') return parsed;
+        if (Array.isArray(parsed)) return parsed.filter((s: unknown) => typeof s === 'string').join('\n');
+        return null;
+      } catch {
+        return null;
+      }
+    },
+  },
+  // Pattern 10: String.fromCharCode() array — direct call with char codes
+  // Matches: String.fromCharCode(12345,67890,...) or .fromCharCode(12345,...)
+  {
+    name: 'String.fromCharCode',
+    regex: /(?:String|\.?)fromCharCode\s*\(\s*((?:\d{1,7}\s*,\s*){5,}\d{1,7})\s*\)/g,
+    contentGroup: 1,
+    transform: (_raw: string, fullMatch: string) => {
+      try {
+        // Extract the number list from the full match
+        const numsMatch = fullMatch.match(/fromCharCode\s*\(\s*([\d,\s]+)\s*\)/);
+        if (!numsMatch) return null;
+        const codes = numsMatch[1].split(',').map(s => parseInt(s.trim(), 10));
+        if (codes.some(isNaN) || codes.length < 5) return null;
+        return String.fromCodePoint(...codes);
+      } catch {
+        return null;
+      }
+    },
+  },
+  // Pattern 11: String.fromCharCode loop — var txt="";for(...)txt+=String.fromCharCode(arr[i])
+  // Matches the combined pattern of: an array of charCodes + loop building string
+  {
+    name: 'charCodeLoop',
+    regex: /(?:var|let|const)\s+(?:\w+)\s*=\s*\[(\d{1,7}(?:\s*,\s*\d{1,7}){20,})\s*\]/g,
+    contentGroup: 1,
+    transform: (raw: string) => {
+      try {
+        const codes = raw.split(',').map(s => parseInt(s.trim(), 10));
+        if (codes.some(isNaN) || codes.length < 20) return null;
+        return String.fromCodePoint(...codes);
+      } catch {
+        return null;
+      }
+    },
+  },
+  // Pattern 12: window.chapterContent = [...] or window.content = [...] (array of paragraphs)
+  // Matches arrays assigned to window/global variables, common in newer novel sites
+  {
+    name: 'windowArrayContent',
+    regex: /(?:window\.)?(?:chapterContent|content|novelContent|bookContent|txtContent|articleContent)\s*=\s*\[([\s\S]{100,}?)\]\s*;/g,
+    contentGroup: 1,
+    transform: (raw: string) => {
+      try {
+        // Parse as JavaScript array literal (handle quoted strings)
+        // Match array elements: 'string' or "string" or `string`
+        const items: string[] = [];
+        const re = /['"]([^'"]{2,})['"]/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(raw)) !== null) {
+          items.push(m[1]);
+          if (items.length > 1000) break; // Safety: limit array size
+        }
+        if (items.length < 3) return null;
+        return items.join('\n');
+      } catch {
+        return null;
+      }
+    },
+  },
+  // Pattern 13: Standalone atob() variable assignment (not directly assigned to innerHTML)
+  // Matches: var content = atob('base64...'); or let x = atob('base64...');
+  {
+    name: 'standaloneAtob',
+    regex: /(?:var|let|const)\s+(?:\w+)\s*=\s*atob\s*\(\s*['"]([A-Za-z0-9+/=]{200,})['"]\s*\)/g,
     contentGroup: 1,
     encoded: true,
   },
@@ -220,8 +313,15 @@ export function extractJsContent(html: string): JsExtractResult {
       // Safety: prevent infinite loops on zero-length matches
       if (match[0].length === 0) { pattern.regex.lastIndex++; continue; }
 
-      // Decode if needed
-      const decoded = decodeExtractedContent(rawContent, pattern.encoded);
+      // Apply transform if present (e.g. charCode decode, JSON.parse)
+      let decoded: string;
+      if (pattern.transform) {
+        const transformed = pattern.transform(rawContent, match[0]);
+        if (!transformed) continue;
+        decoded = transformed;
+      } else {
+        decoded = decodeExtractedContent(rawContent, pattern.encoded);
+      }
 
       // Filter: must look like novel content
       if (isLikelyNovelContent(decoded)) {
@@ -269,6 +369,8 @@ const QUICK_CHECK_PATTERNS = [
   /decodeURIComponent/,
   /\$\('#/,
   /atob\(/,
+  /JSON\.parse/,
+  /fromCharCode/,
 ];
 
 export function hasJsContentPatterns(html: string): boolean {

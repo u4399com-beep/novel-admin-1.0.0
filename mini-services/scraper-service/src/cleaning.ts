@@ -54,6 +54,69 @@ const DEFAULT_AD_PATTERNS = [
   "全文阅读", "免费阅读", "在线阅读",
 ];
 
+/**
+ * Novel-site-specific ad/watermark regex patterns.
+ * These target more complex multi-word ad phrases common on Chinese novel sites
+ * that are difficult to match with simple substring patterns.
+ *
+ * Integrated automatically when adPatterns is empty (i.e., no custom patterns
+ * are configured) to provide better out-of-the-box cleaning for novel content.
+ */
+export const NOVEL_AD_PATTERNS: string[] = [
+  // Chapter-end pagination prompts
+  '本章未完，点击下一页继续',
+  '本章未完，点击下一页',
+  '点击下一页继续阅读',
+  '点击下一页继续',
+  '点击继续阅读',
+  // Mobile-specific prompts
+  '手机用户请浏览阅读，更优质的阅读体验',
+  '手机用户请浏览阅读',
+  '手机用户请浏览',
+  '手机用户请到',
+  '手机请浏览',
+  '请用手机浏览器访问',
+  '请用手机访问',
+  // Author notes mixed with content
+  '作者的话',
+  '作者有话说',
+  'PS：',
+  '作者的话：',
+  // Chapter-end site ads
+  '最新章节请访问www',
+  '最新章节请访问',
+  '最新章节地址',
+  '本章更新时间',
+  '如果你喜欢本站',
+  '如果你喜欢',
+  // Domain watermarks
+  '无弹窗小说最快更新',
+  '最快更新小说',
+  '本文字由',
+  '手打全文',
+  '手打全文字',
+  // Reading app prompts
+  '下载最新小说',
+  '下载最新版',
+  'APP阅读',
+  '下载安装',
+  '扫码下载',
+  '扫码安装',
+  // Anti-scraping watermarks
+  '请牢记本书域名',
+  '请牢记最新网址',
+  '本站地址',
+  '记住最新网址',
+  '记住本站地址',
+  // VIP/paywall prompts
+  'VIP章节',
+  '付费章节',
+  '订阅本章',
+  '本章需要订阅',
+  '开通VIP',
+  '充值阅读',
+];
+
 const AD_CSS_SELECTORS = [
   '[class*="ad"]', '[class*="Ad"]', '[class*="AD"]',
   '[class*="advert"]', '[class*="sponsor"]', '[class*="promo"]',
@@ -326,6 +389,9 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];
   if (adPatterns.length > 0) {
     allAdPatterns.push(...adPatterns);
+  } else {
+    // When no custom patterns are configured, include novel-specific ad patterns
+    allAdPatterns.push(...NOVEL_AD_PATTERNS);
   }
   const removePatterns = normalizePatterns(config.removePatterns);
 
@@ -376,6 +442,9 @@ export function cleanText(text: string, config: CleanRequest["config"]): string 
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];
   if (adPatterns.length > 0) {
     allAdPatterns.push(...adPatterns);
+  } else {
+    // When no custom patterns are configured, include novel-specific ad patterns
+    allAdPatterns.push(...NOVEL_AD_PATTERNS);
   }
   const removePatterns = normalizePatterns(config.removePatterns);
 

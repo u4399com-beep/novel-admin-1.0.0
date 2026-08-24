@@ -16189,3 +16189,239 @@ Stage Summary:
 - 关键修复: PlaywrightEngine运行时崩溃bug、cover下载完整反反爬栈、书籍CAPTCHA引擎升级
 - R30审计已知限制全部修复(stealth重复/http2-decoy/referrer-chain死代码)
 - stealth新增DOMRect+Gamepad API覆盖,移除3个重复section
+
+---
+Task ID: R38-a
+Agent: general-purpose
+Task: Stealth-engine cross-module consistency audit
+
+Work Log:
+- 审计stealth.ts/engines.ts/utils.ts三个核心模块的跨模块一致性
+- 识别出以下6项不一致问题并全部修复
+
+## 修复清单
+
+### HIGH (3项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 1 | stealth.ts | 移除Section 53(DPR覆盖) | Section 6已从profile设置DPR,Section 53用Math.random()和屏幕宽度启发式覆盖产生矛盾值;Playwright context deviceScaleFactor与window.devicePixelRatio不一致可被检测 |
+| 2 | stealth.ts+engines.ts | 新增profileLanguagesToAcceptLanguage();ObscuraEngine和PlaywrightEngine用profile.languages生成Accept-Language | HTTP Accept-Language(getAcceptLanguageForUA随机)与stealth注入的navigator.languages(["zh-CN","zh","en-US","en"])不匹配;WAF可同时检查HTTP头和JS navigator.languages |
+| 3 | engines.ts | PlaywrightEngine用pwProfile.userAgent传给buildFetchHeaders,删除多余User-Agent extra header | 当userAgent未设置时,buildFetchHeaders使用硬编码Chrome/131 UA,但stealth profile可能是Firefox/Edge;HTTP头和JS navigator.userAgent不一致 |
+
+### MEDIUM (1项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 4 | utils.ts | getChromeClientHints()支持Edge UA,新增EDGE_CLIENT_HINT_VERSIONS池 | Edge基于Chromium,发送Edge品牌sec-ch-ua头;旧代码对Edg/ UA返回null导致缺少sec-ch-ua头,高级WAF可检测 |
+
+### LOW (1项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 5 | stealth.ts+utils.ts | stealth新增Section 62(doNotTrack=null);buildFetchHeaders移除随机DNT头 | 50%概率发送DNT:1但navigator.doNotTrack未设置;跨通道检测向量 |
+
+### BONUS (1项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 6 | stealth.ts | profileCache类型Map<string,FingerprintProfile>→Map<string,CacheEntry> | 类型注解错误;CacheEntry接口定义在缓存之后需前移 |
+
+## 审计结论(无问题项)
+- ✅ UA与WebGL vendor/renderer一致性: MacIntel→Apple GPU, Linux→Mesa, Win32→NVIDIA/Intel/AMD
+- ✅ Chrome版本与window.chrome: chrome.runtime/connect不暴露版本号,无矛盾
+- ✅ colorDepth: profile.colorDepth传递到Section 6 screen.colorDepth和Playwright context screen.colorDepth
+- ✅ timezone: profile.timezone→Section 10 Intl.DateTimeFormat + getTimezoneOffset + Playwright timezoneId 三者一致
+- ✅ Firefox检测: chrome对象包裹在if(!_isFirefox), plugins返回空数组, vendor返回空字符串
+- ✅ 引擎切换指纹: Cheerio(HTTP-only)用独立UA池,浏览器引擎用profile缓存,跨引擎无UA冲突
+
+## 修改文件 (3个)
+- stealth.ts (Section 53移除+Section 62新增+CacheEntry前移+profileLanguagesToAcceptLanguage+getBrowserTypeFromUA)
+- engines.ts (ObscuraEngine/PlaywrightEngine Accept-Language修复+import清理)
+- utils.ts (Edge sec-ch-ua支持+DNT头修复)
+
+## 验证结果
+- 所有3个文件bun build编译通过
+- 0新增TypeScript错误
+
+## 历史累计修复: 406 + 6 = 412项
+## Stealth Sections: 57个活跃(53/54已移除, 6b/61保留, 62新增)
+
+Stage Summary:
+- 完成stealth-engine跨模块一致性审计(3文件)
+- 6项修复(3 HIGH + 1 MEDIUM + 1 LOW + 1 BONUS)
+- 关键修复: Accept-Language跨通道不一致(最易被WAF检测)、DPR覆盖冲突、Playwright UA不匹配
+- Edge sec-ch-ua头支持、DNT跨通道对齐
+
+---
+Task ID: R38-b
+Agent: general-purpose
+Task: Obscura end-to-end anti-detection completeness audit
+
+Work Log:
+- 审计Obscura引擎4个维度: 资源阻断、TLS/HTTP2指纹、CDP泄漏、Cookie/Storage一致性
+- 识别出5项问题并全部修复
+
+## 修复清单
+
+### HIGH (2项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 1 | engines.ts | 新增shouldBlockResource()资源阻断策略: 总是阻断websocket/manifest + 跨域阻断script/xhr/fetch | 原来只阻断image/font/media/stylesheet,缺少websocket(机器人检测信标如DataDome/reCAPTCHA WS遥测)和manifest;更关键的是未阻断3方脚本,允许跟踪像素和bot-detection JS执行 |
+| 2 | stealth.ts | Section 11 CDP泄漏: 新增document.$cdc_asdjflasutopfhvcZLmcfl_删除 + 扫描document/window所有$cdc_/cdc_属性 + 扩展自动化属性清理列表(+8个Selenium/PhantomJS/WebDriver标记) | 原来只删window.cdc_adoQpoasnfa76pfcZLmcfl_{Array,Promise,Symbol},缺少document作用域的$cdc_变体哈希;扫描catch-all覆盖未来CDP版本的未知哈希 |
+
+### MEDIUM (3项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 3 | engines.ts | ObscuraEngine extraHTTPHeaders新增getChromeClientHints(profile.userAgent)生成sec-ch-ua/sec-ch-ua-mobile/sec-ch-ua-platform | 真实Chrome/Edge总是发送Client Hints头;缺少=强bot信号;buildFetchHeaders有但ObscuraEngine的extraHTTPHeaders遗漏了 |
+| 4 | engines.ts | Accept-Encoding从硬编码"gzip, deflate, br"改为getAcceptEncoding(domain)(来自http2-decoy.ts) | 硬编码值与http2-decoy的per-domain多样化编码不一致;现代Chrome 116+应含zstd,Legacy .cn站点不应含br |
+| 5 | stealth.ts | Section 14新增StorageManager.estimate()mock(quota~260-450GB, usage~0-10MB,用_seededRandom确定性) | Headless Chrome的StorageManager.estimate()可能返回quota:0或不现实值;高级反bot系统检查此API进行指纹识别 |
+
+## 审计结论(无问题项)
+- ✅ --disable-blink-features=AutomationControlled: 已在ObscuraEngine launch args中
+- ✅ navigator.webdriver覆盖: Section 4已用Object.defineProperty设为false + delete __proto__
+- ✅ Notification.permission: Sections 35+52双重保障,返回'default'
+- ✅ localStorage/sessionStorage持久化: Playwright context内自动持久化,stealth只在storage throw时安装shim
+- ✅ serviceWorkers: "block"已在context选项中设置
+- ✅ extraHTTPHeaders中Accept-Language: 已用profileLanguagesToAcceptLanguage(profile.languages)从R38-a修复
+
+## 修改文件 (2个)
+- engines.ts (shouldBlockResource + import getChromeClientHints/getAcceptEncoding + extraHTTPHeaders)
+- stealth.ts (CDP泄漏加强 + StorageManager.estimate() mock)
+
+## 验证结果
+- 所有3个文件bun build编译通过 (engines.ts: 1455行, http2-decoy.ts: 65行, stealth.ts: 2642行)
+- 0新增TypeScript错误
+
+## 历史累计修复: 412 + 5 = 417项
+## Stealth Sections: 57个活跃(53/54已移除, 6b/61保留, 62新增)
+
+Stage Summary:
+- 完成Obscura引擎端到端反检测完整性审计(2文件)
+- 5项修复(2 HIGH + 3 MEDIUM)
+- 关键修复: 3方脚本阻断(防bot-detection JS执行)、CDP document.$cdc_泄漏、sec-ch-ua头缺失
+- Accept-Encoding per-domain一致性、StorageManager.estimate()指纹修复
+
+---
+Task ID: R38-c
+Agent: general-purpose
+Task: Anti-crawl collection enhancements - scraping capability improvements
+
+Work Log:
+- Enhanced selectors.ts with novel-site fallback selector system
+- Added 5 new JS content extraction patterns to js-content-extractor.ts
+- Added NOVEL_AD_PATTERNS to cleaning.ts with auto-integration
+
+## 修改清单
+
+### selectors.ts (3项新增)
+| # | 修改 | 说明 |
+|---|------|------|
+| 1 | NOVEL_CONTENT_SELECTORS (30个) | 常见小说章节内容CSS选择器(#content, #chaptercontent, #booktxt, #htmlContent, #TextContent, .readcontent, .chapter-content等) |
+| 2 | NOVEL_TITLE_SELECTORS (17个) + NOVEL_LIST_SELECTORS (19个) | 书名/章节标题+章节列表容器选择器 |
+| 3 | parseSelectorWithFallbacks() + extractWithFallbacks() | 主选择器失败时依次尝试fallback选择器数组 |
+
+### js-content-extractor.ts (5项新增pattern + 1项架构)
+| # | Pattern | 说明 |
+|---|---------|------|
+| 9 | JSON.parse | 处理innerHTML/变量赋值中的JSON.parse('...')编码内容 |
+| 10 | String.fromCharCode | 直接调用String.fromCharCode(code1,code2,...)解码 |
+| 11 | charCodeLoop | var arr=[code1,code2,...]数组+循环构建文本 |
+| 12 | windowArrayContent | window.chapterContent=[...]段落数组赋值 |
+| 13 | standaloneAtob | var x=atob('base64...')独立base64赋值 |
+| - | transform架构 | 新增可选transform函数字段,支持特殊解码(charCode→string, JSON.parse等) |
+
+### cleaning.ts (1项新增)
+| # | 修改 | 说明 |
+|---|------|------|
+| 1 | NOVEL_AD_PATTERNS (38个模式) | 小说站专用广告/水印/分页提示正则,当adPatterns为空时自动加入cleanHtml/cleanText的默认过滤列表 |
+
+## 修改文件 (3个)
+- selectors.ts (+180行: 常量数组 + extractWithFallbacks + parseSelectorWithFallbacks)
+- js-content-extractor.ts (+90行: 5个新pattern + transform架构)
+- cleaning.ts (+60行: NOVEL_AD_PATTERNS + 自动集成逻辑)
+
+## 验证结果
+- selectors.ts: bun build编译通过 (335行输出)
+- js-content-extractor.ts: bun build编译通过 (242行输出)
+- cleaning.ts: bun build编译通过 (452行输出)
+- 0新增TypeScript错误
+
+## 历史累计修复: 417 + 9 = 426项
+
+Stage Summary:
+- 完成3文件scraping能力增强
+- 新增66个fallback选择器覆盖主流中文小说站
+- 新增5种JS内容提取模式(JSON.parse, fromCharCode, charCodeLoop, windowArray, standaloneAtob)
+- 新增38个小说站专用广告/水印过滤模式
+- 关键架构改进: JS_PATTERNS新增transform字段支持自定义解码逻辑
+---
+Task ID: R38
+Agent: Main Orchestrator + 3 Sub-agents (R38-a, R38-b, R38-c)
+Task: 跨模块一致性审计 + Obscura端到端反检测 + 采集能力增强
+
+Work Log:
+- R38-a: 审计stealth profile与3个引擎之间的跨模块一致性
+- R38-b: Obscura引擎端到端反检测完整性审计
+- R38-c: 采集能力增强(selectors/JS提取/清洗)
+- 3个子代理并行执行，共发现并修复16项问题
+
+## 修复清单 (16项)
+
+### HIGH (5项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 1 | stealth.ts | 移除Section 53(devicePixelRatio冲突) | Section 6已从profile设置DPR,Section 53用Math.random()覆盖=不一致 |
+| 2 | stealth.ts+engines.ts | Accept-Language从profile.languages派生 | 随机Accept-Language与JS navigator.languages矛盾=可被检测 |
+| 3 | engines.ts | PlaywrightEngine传profile.userAgent给buildFetchHeaders | 传undefined→硬编码Chrome/131与Firefox profile矛盾 |
+| 4 | engines.ts | Obscura新增shouldBlockResource() | 跨域bot-detection脚本(PerimeterX/DataDome)可执行 |
+| 5 | stealth.ts | CDP泄漏修复+catch-all扫描 | 旧代码仅删3个已知变体,遗漏document作用域和未来版本 |
+
+### MEDIUM (8项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 6 | utils.ts | Edge UA Client Hints支持 | Edg/ UA缺sec-ch-ua头=强bot信号 |
+| 7 | stealth.ts | Section 62 doNotTrack=null | 50%随机DNT:1与JS navigator.doNotTrack=undefined矛盾 |
+| 8 | stealth.ts | profileCache类型修正 | Map<string,Profile>实际存CacheEntry |
+| 9 | engines.ts | Obscura添加sec-ch-ua Client Hints | 真实Chrome/Edge必发此头 |
+| 10 | engines.ts | Obscura Accept-Encoding从http2-decoy获取 | 硬编码与域级多样化不一致 |
+| 11 | stealth.ts | StorageManager.estimate()模拟 | headless返回quota:0=可被指纹识别 |
+| 12 | selectors.ts | 30个小说内容CSS选择器+fallback系统 | 单一选择器在非标站点失败 |
+| 13 | cleaning.ts | 38个小说站广告/水印正则模式 | 自动填充默认adPatterns |
+
+### LOW (3项)
+| # | 文件 | 修复 | 原因 |
+|---|------|------|------|
+| 14 | js-content-extractor.ts | 5个新JS内容提取模式 | JSON.parse/charCode/atob/数组/innerHTML |
+| 15 | selectors.ts | 17个标题+19个章节列表选择器 | 覆盖主流小说站结构 |
+| 16 | js-content-extractor.ts | transform字段架构增强 | 支持自定义解码逻辑 |
+
+## 采集能力新增
+- selectors.ts: parseSelectorWithFallbacks()函数,支持主选择器失败时自动尝试备用选择器
+- selectors.ts: NOVEL_CONTENT_SELECTORS(30个)/NOVEL_TITLE_SELECTORS(17个)/NOVEL_LIST_SELECTORS(19个)
+- js-content-extractor.ts: 新增5种JS内容提取模式(JSON.parse, String.fromCharCode, charCode循环, window数组, atob)
+- cleaning.ts: NOVEL_AD_PATTERNS(38个)自动注入,覆盖翻页提示/手机阅读提示/作者的话/域名水印/阅读APP提示/VIP提示
+
+## 反反爬新增
+- 跨域资源阻断: Obscura阻止3rd-party bot-detection脚本执行
+- CDP泄漏全面扫描: catch-all删除所有cdc_*属性
+- Client Hints: sec-ch-ua/sec-ch-ua-mobile/sec-ch-ua-platform三头
+- Accept-Language一致性: profile→stealth script→HTTP headers全链路一致
+- StorageManager指纹: estimate()返回真实配额
+
+## 修改文件 (7个)
+- engines.ts (shouldBlockResource+Client Hints+Accept-Encoding从profile)
+- stealth.ts (移除53+CDP扫描+StorageManager+DNT+doNotTrack+profileCache类型)
+- utils.ts (Edge Client Hints+profileLanguagesToAcceptLanguage)
+- selectors.ts (fallback系统+66个小说站选择器)
+- js-content-extractor.ts (5新模式+transform架构)
+- cleaning.ts (38个小说广告模式)
+
+## 验证结果
+- 所有文件bun build编译通过
+- 0新增TypeScript错误
+- Git commit: 待执行
+
+## 历史累计修复: 406 + 16 = 422项
+## Stealth Sections: 59个活跃(53移除, 62新增)
+
+Stage Summary:
+- 3 HIGH跨模块一致性修复(Accept-Language/DPR/UA)——消除了最容易被检测的矛盾
+- Obscura反检测: 跨域脚本阻断+CDP全面扫描+Client Hints+StorageManager
+- 采集能力: 66个小说站预设选择器+5个JS提取模式+38个广告清洗模式

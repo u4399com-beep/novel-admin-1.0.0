@@ -1,12 +1,194 @@
 /**
  * Selector Engine - CSS / XPath / Regex parsing
- * Enhanced with better XPath support and attribute detection.
+ * Enhanced with better XPath support, attribute detection,
+ * and novel-site fallback selector system.
  */
 
 import * as cheerio from "cheerio";
 import type { Selector } from "./types";
 import { safeRegexMatch } from "./regex-safety";
 import { resolveUrl } from "./utils";
+
+// ==================== Novel-Site Fallback Selectors ====================
+
+/**
+ * Common CSS selectors for chapter content extraction on Chinese novel sites.
+ * Ordered from most common to least common. Used as fallbacks when primary selector fails.
+ */
+export const NOVEL_CONTENT_SELECTORS: string[] = [
+  '#content',
+  '#chaptercontent',
+  '#booktxt',
+  '#contentbox',
+  '#htmlContent',
+  '#TextContent',
+  '.readcontent',
+  '.chapter-content',
+  '#chapter-content',
+  '#nr1',
+  '#nr_title',
+  '.novelcontent',
+  '#novelcontent',
+  '.bookcontent',
+  '#bookcontent',
+  '#chaptertxt',
+  '.chapter_content',
+  '#chapter_content',
+  '#articlecontent',
+  '.article-content',
+  '#txtContent',
+  '.txt-content',
+  '.contentbox',
+  '#contentbox',
+  '.booktxt',
+  '#booktxt',
+  '.read-content',
+  '#read-content',
+  'div.content',
+  'div#content',
+];
+
+/**
+ * Common CSS selectors for book/chapter title extraction on novel sites.
+ * Ordered from most specific (chapter title) to more general (book title).
+ */
+export const NOVEL_TITLE_SELECTORS: string[] = [
+  'h1.chapter-title',
+  '.chapter-title',
+  'h2.chapter-title',
+  '#chapter-title',
+  'h1.bookTitle',
+  '.bookTitle',
+  '#bookname',
+  '.book-name',
+  '#book_title',
+  'h1',
+  'h2',
+  '.title',
+  '#title',
+  '.chapter-name',
+  '#chapter-name',
+  'h1.title',
+  'h2.title',
+];
+
+/**
+ * Common CSS selectors for chapter list item extraction on novel sites.
+ * Each selector targets the container element of a single chapter entry.
+ */
+export const NOVEL_LIST_SELECTORS: string[] = [
+  '.chapter-list li',
+  '#chapter-list li',
+  '.chapter-list a',
+  '#chapterList li',
+  '#chapterList a',
+  '.chapterlist li',
+  '#chapterlist li',
+  '.listmain dd',
+  '#list dd',
+  '.booklist li',
+  '#booklist li',
+  '.mulu li',
+  '#mulu li',
+  '.directory li',
+  '#directory li',
+  '.catalog li',
+  '#catalog li',
+  '.volumes dd',
+  '.volume-list li',
+];
+
+/**
+ * Try extracting text content using a list of CSS selectors in order.
+ * Returns the first non-empty result.
+ *
+ * @param $ - Cheerio loaded document
+ * @param selectors - Array of CSS selector strings to try in order
+ * @param extractAttr - Optional attribute name to extract (e.g. 'href'). Default: text content.
+ * @returns First non-empty extracted string, or empty string if none matched.
+ */
+export function extractWithFallbacks(
+  $: cheerio.CheerioAPI,
+  selectors: string[],
+  extractAttr?: string
+): string {
+  for (const sel of selectors) {
+    try {
+      const el = $(sel);
+      if (el.length === 0) continue;
+
+      // Skip excluded tags
+      if (!extractAttr && el[0] && isExcludedTag(el[0])) continue;
+
+      if (extractAttr) {
+        const val = el.attr(extractAttr);
+        if (val && val.trim()) return val.trim();
+      } else {
+        const text = el.text().trim();
+        if (text) return text;
+      }
+    } catch {
+      // Invalid selector — skip
+    }
+  }
+  return '';
+}
+
+/**
+ * Parse a selector with fallback CSS selectors.
+ * Tries the primary selector first; if it returns empty, tries each
+ * fallback selector in order until a non-empty result is found.
+ *
+ * Only CSS fallback selectors are supported (not XPath/regex fallbacks).
+ *
+ * @param html - Raw HTML string
+ * @param primarySelector - The primary Selector to try first
+ * @param fallbackSelectors - Array of CSS selector strings to try as fallbacks
+ * @returns First non-empty extracted string
+ *
+ * @example
+ * ```ts
+ * const title = parseSelectorWithFallbacks(html,
+ *   { type: 'css', value: 'h1.my-title' },
+ *   NOVEL_TITLE_SELECTORS
+ * );
+ * ```
+ */
+export function parseSelectorWithFallbacks(
+  html: string,
+  primarySelector: Selector,
+  fallbackSelectors: string[]
+): string {
+  // Try primary selector first
+  const primaryResult = parseSelector(html, primarySelector);
+  if (primaryResult) return primaryResult;
+
+  // Fallback: try each CSS selector in order
+  const $ = cheerio.load(html);
+  const extractAttr = primarySelector.extract;
+
+  for (const sel of fallbackSelectors) {
+    try {
+      const el = $(sel);
+      if (el.length === 0) continue;
+
+      // Skip excluded tags unless we're extracting an attribute
+      if (!extractAttr && el[0] && isExcludedTag(el[0])) continue;
+
+      if (extractAttr) {
+        const val = el.attr(extractAttr);
+        if (val && val.trim()) return val.trim();
+      } else {
+        const text = el.text().trim();
+        if (text) return text;
+      }
+    } catch {
+      // Invalid CSS selector — skip
+    }
+  }
+
+  return '';
+}
 
 // Tags whose text content should never be extracted (noise / security)
 const EXCLUDED_TAGS = new Set(['script', 'style', 'noscript', 'template']);

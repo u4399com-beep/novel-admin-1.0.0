@@ -13,8 +13,9 @@
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
 import { isSafeUrl } from "./ssrf";
-import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects, getAcceptLanguageForUA, getSecFetchHeadersForDomain } from "./utils";
-import { getProfileForDomain, getStealthScript } from "./stealth";
+import { buildFetchHeaders, getRandomUA, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints } from "./utils";
+import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage } from "./stealth";
+import { getAcceptEncoding } from "./http2-decoy";
 import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
 import { rateLimiter } from "./rate-limiter";
@@ -612,8 +613,15 @@ class PlaywrightEngine implements ScrapingEngine {
             route.continue();
           });
 
-          // Set extra headers with enhanced anti-crawl header generation
-          const enhancedHeaders = buildFetchHeaders(options?.antiCrawl, userAgent, url, 'novel');
+          // Set extra headers — use profile UA (not a random/hardcoded one) to ensure
+          // HTTP User-Agent matches what the stealth script injects into navigator.userAgent
+          const pwHeadersUA = pwProfile.userAgent;
+          const enhancedHeaders = buildFetchHeaders(options?.antiCrawl, pwHeadersUA, url, 'novel');
+          // Override Accept-Language to match profile.languages (stealth script sets navigator.languages from profile)
+          enhancedHeaders['Accept-Language'] = profileLanguagesToAcceptLanguage(pwProfile.languages);
+          // Remove User-Agent from extra headers — context-level UA (pwProfile.userAgent) takes precedence;
+          // sending a duplicate via setExtraHTTPHeaders can conflict with Playwright's UA management.
+          delete enhancedHeaders['User-Agent'];
           await page.setExtraHTTPHeaders(enhancedHeaders);
 
           // Navigate with timeout
@@ -1383,9 +1391,47 @@ class ScraplingEngine implements ScrapingEngine {
  *   - Full stealth injection: navigator, chrome object, WebGL, canvas noise,
  *     AudioContext noise, screen props, WebRTC leak prevention, timezone,
  *     permission API, iframe propagation
- *   - Resource blocking (images, fonts, media) for speed
+ *   - Smart resource blocking (3rd-party tracking, bot-detection beacons)
  *   - Enhanced browser launch args for reduced detectability
  */
+
+/**
+ * Obscura resource blocking policy.
+ *
+ * Strategy:
+ *   - Always block: image, font, media, stylesheet, websocket, manifest
+ *     (websocket = bot-detection beacons; manifest = unnecessary metadata)
+ *   - Block cross-origin: script, xhr, fetch
+ *     (prevents 3rd-party tracking pixels and bot-detection scripts while
+ *      allowing the target site's own JS to render)
+ *   - Allow same-domain: script, xhr, fetch, document, eventsource, other
+ */
+function shouldBlockResource(resourceType: string, requestUrl: string, targetDomain: string): boolean {
+  // Always block these resource types (speed + anti-tracking)
+  const ALWAYS_BLOCK = new Set([
+    'image', 'font', 'media', 'stylesheet',
+    'websocket',   // bot-detection beacons (e.g., reCAPTCHA, DataDome WS telemetry)
+    'manifest',    // web app manifest — unnecessary for scraping
+  ]);
+  if (ALWAYS_BLOCK.has(resourceType)) return true;
+
+  // Cross-origin blocking for script/xhr/fetch: block 3rd-party tracking & bot-detection
+  if (resourceType === 'script' || resourceType === 'xhr' || resourceType === 'fetch') {
+    try {
+      const reqHost = new URL(requestUrl).hostname;
+      // Block if the request host doesn't match the target domain
+      // Use endsWith to handle subdomain matching (e.g., cdn.example.com for example.com)
+      if (reqHost !== targetDomain && !reqHost.endsWith('.' + targetDomain)) {
+        return true;
+      }
+    } catch {
+      // Invalid URL — block to be safe
+      return true;
+    }
+  }
+
+  return false;
+}
 
 class ObscuraEngine implements ScrapingEngine {
   readonly name: EngineType = "obscura";
@@ -1520,10 +1566,12 @@ class ObscuraEngine implements ScrapingEngine {
           serviceWorkers: "block",
           extraHTTPHeaders: {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": getAcceptLanguageForUA(profile.userAgent),
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": profileLanguagesToAcceptLanguage(profile.languages),
+            "Accept-Encoding": getAcceptEncoding(domain),
             ...getSecFetchHeadersForDomain(domain),
             "Upgrade-Insecure-Requests": "1",
+            // Chrome Client Hints — real Chrome always sends these; missing = bot signal
+            ...(getChromeClientHints(profile.userAgent) || {}),
           },
         };
 
@@ -1558,14 +1606,14 @@ class ObscuraEngine implements ScrapingEngine {
           // ---- CRITICAL: Inject stealth script BEFORE any navigation ----
           await page.addInitScript(stealthScript);
 
-          // Block resources by type + SSRF protection (single unified route handler)
+          // Block resources by type + cross-origin 3rd-party + SSRF protection
+          // Uses shouldBlockResource helper for centralized anti-detection resource policy
           await page.route("**/*", (route) => {
             try {
               const resourceType = route.request().resourceType();
               const routeUrl = route.request().url();
 
-              // Block images, fonts, media, stylesheets for speed
-              if (["image", "font", "media", "stylesheet"].includes(resourceType)) {
+              if (shouldBlockResource(resourceType, routeUrl, domain)) {
                 route.abort();
                 return;
               }
