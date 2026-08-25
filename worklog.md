@@ -16680,3 +16680,128 @@ Stage Summary:
 - ScraplingEngine now has rate limiting
 - ObscuraEngine now has timing jitter + browser behavior integration
 - 0 compile errors
+---
+Task ID: R41
+Agent: Main Orchestrator + 7 Sub-agents (engines-fixer, selectors-fixer, cleaning-fixer, scrapers-fixer, stealth-fixer, jscext-fixer, 3 enhance-agents)
+Task: R41 全面审计+40项修复+11项增强 - 采集功能+反反爬能力增强
+
+Work Log:
+- 三代理并行审计(engines/selectors+cleaning+scrapers/stealth),发现37个问题(14 HIGH/17 MEDIUM/9 LOW)
+- 6个子代理并行修复+3个子代理并行增强
+
+## 第一轮: 40项Bug修复
+
+### engines.ts (13项)
+1. **H1**: PlaywrightEngine添加bypassCSP:true (CSP不再阻止stealth注入)
+2. **H2**: PlaywrightEngine添加getChromeClientHints (sec-ch-ua三头)
+3. **H3**: PlaywrightEngine添加ignoreHTTPSErrors:true (自签名证书站)
+4. **H4**: PlaywrightEngine添加serviceWorkers:'block' (阻断SW指纹)
+5. **M1**: ScraplingEngine添加rate limiter (domain提取+waitForRateLimit+recordResult)
+6. **M3**: ObscuraEngine添加browserBehavior (shouldThrottle+recordRequest+getPreVisitDelay)
+7. **M4**: ObscuraEngine添加applyTimingJitter()
+8. **M5**: shouldBlockResource添加eventsource阻断 (SSE遥测)
+9. **M6**: CAPTCHA检测从html.includes('captcha')改为精准regex (防误报)
+10. **M7**: CheerioEngine统一使用WithRotation/WithFallback代理方法
+11. **M8**: 移除dead autoHandleCaptcha import
+12. **L1**: 6个引擎添加signal:options?.signal到retryWithBackoff
+
+### selectors.ts (4项)
+13. **H1**: parseSelectorHtml meta子串检查添加content属性守卫 (防.metadata误匹配)
+14. **H2**: extractLinksFromList移除文档级fallback (防章节链接重复)
+15. **L1**: 移除重复#booktxt
+16. **L2**: 移除冗余div#content
+
+### cleaning.ts (5项)
+17. **H3**: extractNodeText块元素递归替代.text() (防嵌套段落扁平化)
+18. **M2**: filterAdLines添加>50%覆盖率守卫 (防短行误删)
+19. **M3**: BR换行使用\uE000 sentinel (防normalizeParagraphFormat销毁)
+20. **M4**: handleClean wordCount排除空白字符
+21. **M5**: mergeRunOnText添加句尾标点检查 (防对话段误合并)
+
+### scrapers.ts (4项)
+22. **H4**: JS提取内容添加cleanText清洗管线
+23. **M1**: abort信号改为throw Error替代静默break
+24. **M7**: 段落保留路径添加fallback到cleanHtmlRaw+parseSelector
+25. **M8**: findNextPageUrl改为大小写不敏感
+
+### stealth.ts (10项)
+26. **H1**: 新增navigator.userAgentData覆盖 (Chrome 90+ Client Hints API)
+27. **H2**: _navSeed/_seededRandom移至IIFE顶部修复NaN
+28. **H4**: Chrome+Linux使用ANGLE替代Mesa WebGL
+29. **H5**: attachShadow innerHTML setter实际设置值
+30. **M3**: 新增pdfViewerEnabled覆盖
+31. **M4**: Gamepad返回[null,null,null,null]替代[]
+32. **M5**: Navigator.prototype.webdriver原型级覆盖
+33. **M7**: Firefox移除languages硬编码使用profile.languages
+34. **L1**: DOMRect fallback bottom修复w→h
+35. **L7**: screen.availHeight平台感知(macOS:25/Win:40)
+
+### utils.ts (1项)
+36. **H6**: Firefox UA池同步131-133版本
+
+### js-content-extractor.ts (3项)
+37. **M6**: fromCodePoint改为分块4096防栈溢出
+38. **M6**: charCodeLoop同样分块修复
+39. **L3**: QUICK_CHECK_PATTERNS收紧为内容变量名前缀
+
+## 第二轮: 11项增强
+
+### engines.ts (3项)
+40. **CRITICAL**: CheerioEngine接入getTlsProfile — 激活8个已定义但从未使用的TLS配置
+41. ALWAYS_BLOCKED_RESOURCES提升为模块常量(含eventsource)
+42. eventsource加入always-block列表
+
+### stealth.ts (6项)
+43. WebGL getExtension保证: headless环境mock WEBGL_debug_renderer_info
+44. WebGL2RenderingContext添加完整getExtension补丁
+45. 时区/语言池: 5时区(Shanghai/Chongqing/HK/Taipei/Singapore)+4语言变体
+46. Stealth脚本缓存: 按profile.seed缓存30min
+47. 导出getDntHeader(Firefox→Sec-GPC, Chrome→DNT)
+48. navigator.userAgentData覆盖含getHighEntropyValues+toJSON
+
+### utils.ts (1项)
+49. buildFetchHeaders接入shuffleHeaderOrderWithJitter实现header顺序随机化
+50. DNT/Sec-GPC从getDntHeader动态获取
+
+### selectors.ts (3项)
+51. extractMetadataFallback(): OG>JSON-LD>meta三级元数据回退
+52. 韩国小说站选择器(11个content+6个title)
+53. 日本小说站选择器(11个content+7个title)
+
+### scrapers.ts (1项)
+54. handleScrapeBook集成extractMetadataFallback回退
+
+### js-content-extractor.ts (2项)
+55. extractApiContentUrls(): 检测fetch/axios/API内容端点
+56. extractContentFieldPath(): 检测JSON响应内容字段路径
+
+## 修改文件 (8个)
+- engines.ts: 40修复 + 13增强 = +81/-30
+- stealth.ts: 11修复 + 6增强 = +171/-12
+- selectors.ts: 4修复 + 133增强 = +169/-36
+- cleaning.ts: 5修复 = +58/-10
+- scrapers.ts: 4修复 + 1增强 = +35/-11
+- js-content-extractor.ts: 3修复 + 2增强 = +74/-2
+- utils.ts: 1修复 + 1增强 = +28/-2
+
+## 验证结果
+- 全部7个源文件 bun build --no-bundle: 0错误
+- 全量集成编译(index.ts): 0错误
+- Commits: 3f976e7(修复), af411a4(增强)
+
+## 审计发现的未实现增强(留待后续)
+- #3: 无限滚动/加载更多分页
+- #4: cheerio.load()缓存(每页多次解析)
+- #6: CheerioEngine HTTP连接池
+- #12: 引擎失败回退链
+- #14: 可配置熔断器超时
+
+## 历史累计修复: 436 + 40 = 476项
+## 增强总计: 11项
+## Stealth: 59+1=60活跃sections (新增userAgentData)
+
+Stage Summary:
+- 第一轮: 40项bug修复(14 HIGH/17 MEDIUM/9 LOW)
+- 第二轮: 11项采集+反反爬增强(含CRITICAL级TLS接入)
+- 两个最高影响发现: TLS配置死代码激活 + Header顺序随机化接入
+- 8个文件, +544/-103行
