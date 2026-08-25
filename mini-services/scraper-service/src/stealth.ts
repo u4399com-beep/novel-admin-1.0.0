@@ -243,7 +243,7 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
 
   // Deterministic pick using hash
   function dPick<T>(arr: readonly T[], offset = 0): T {
-    const idx = Math.abs((hash * (offset + 1) * 2654435761) >>> 0) % arr.length;
+    const idx = (Math.imul((hash * (offset + 1)) >>> 0, 2654435761) >>> 0) % arr.length;
     return arr[idx];
   }
 
@@ -510,6 +510,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Override navigator.userAgentData (Chrome 90+ Client Hints API)
   try {
     var _isMac = /Macintosh/.test(_uaString);
+    var _isLinux = /Linux/.test(_uaString);
     if (!_isFirefox && navigator.userAgentData) {
       var _uaVer = _uaString.match(/Chrome\/(\d+)/);
       var _chromeMajor = _uaVer ? parseInt(_uaVer[1]) : 131;
@@ -524,21 +525,21 @@ export function getStealthScript(profile: FingerprintProfile): string {
           return {
             brands: _uaBrands,
             mobile: false,
-            platform: _isMac ? 'macOS' : 'Windows',
+            platform: _isLinux ? 'Linux' : (_isMac ? 'macOS' : 'Windows'),
             getHighEntropyValues: function(hints) {
               return Promise.resolve({
                 brands: _uaBrands,
                 mobile: false,
-                platform: _isMac ? 'macOS' : 'Windows',
+                platform: _isLinux ? 'Linux' : (_isMac ? 'macOS' : 'Windows'),
                 architecture: 'x86',
                 bitness: '64',
                 model: '',
-                platformVersion: _isMac ? '14.0.0' : '15.0.0',
+                platformVersion: _isLinux ? '6.5.0' : (_isMac ? '14.0.0' : '15.0.0'),
                 fullVersionList: _uaBrands.map(function(b) { return { brand: b.brand, version: b.version }; }),
                 uaFullVersion: String(_chromeMajor) + '.0.0.0'
               });
             },
-            toJSON: function() { return { brands: _uaBrands, mobile: false, platform: 'Windows' }; }
+            toJSON: function() { return { brands: _uaBrands, mobile: false, platform: _isLinux ? 'Linux' : (_isMac ? 'macOS' : 'Windows') }; }
           };
         },
         configurable: true
@@ -959,18 +960,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
   if (origAttachShadow) {
     Element.prototype.attachShadow = function(...args) {
       const shadow = origAttachShadow.apply(this, args);
-      // Ensure shadow roots don't leak automation info
-      try {
-        Object.defineProperty(shadow, 'innerHTML', {
-          get: function() {
-            return this.querySelector('*') ? '' : '';
-          },
-          set: function(v) {
-            // Use native innerHTML setter via Object.defineProperty
-            Object.defineProperty(this, 'innerHTML', { value: v, writable: true, configurable: true });
-          },
-        });
-      } catch(e) {}
       return shadow;
     };
   }
@@ -1168,7 +1157,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
               configurable: true,
             });
             // Chrome object
-            if (!iwin.chrome) {
+            if (!_isFirefox && !iwin.chrome) {
               iwin.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {} };
             }
             // WebRTC
@@ -1577,7 +1566,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // IMPORTANT: Noise is applied to a TEMPORARY canvas to avoid accumulating
   // modifications on the original canvas across multiple toDataURL/toBlob calls.
   try {
-    var _canvasNoiseSeed = _fakeDeviceSeed * 13.37;
+    var _canvasNoiseSeed = Math.floor(_fakeDeviceSeed * 13.37) | 0;
     var _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
     HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
       try {
@@ -3227,12 +3216,9 @@ export function clearTlsProfileCache(domain?: string): void {
  * @param profile - A FingerprintProfile (used to detect browser family from userAgent)
  * @returns An object like `{ 'DNT': '1' }` or `{ 'Sec-GPC': '1' }`, or null if no header should be set
  */
-export function getDntHeader(profile: FingerprintProfile): Record<string, string> | null {
-  const ua = profile.userAgent.toLowerCase();
-  if (ua.includes('firefox')) {
-    return { 'Sec-GPC': '1' };
-  }
-  // Chrome, Safari, Edge, and unknown browsers use DNT
-  return { 'DNT': '1' };
+export function getDntHeader(_profile?: FingerprintProfile): Record<string, string> | null {
+  // Stealth script forces navigator.doNotTrack = null (Section 62).
+  // Sending DNT/Sec-GPC HTTP header would create a cross-channel mismatch.
+  return null;
 }
 

@@ -608,12 +608,14 @@ function removeRemnantLines(text: string): string {
 
       // Count Chinese characters (incl. CJK Unified Ideographs, Extension A, Compatibility Ideographs)
       const chineseChars = (trimmed.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g) || []).length;
+      const koreanChars = (trimmed.match(/[\uAC00-\uD7AF\u1100-\u11FF]/g) || []).length;
+      const hasContentChars = chineseChars > 0 || koreanChars > 0 || /[a-zA-Z]{2,}/.test(trimmed);
 
-      // Short lines (< 5 chars) with no Chinese content are remnant
-      if (trimmed.length < 5 && chineseChars === 0) return false;
+      // Short lines (< 5 chars) with no content characters are remnant
+      if (trimmed.length < 5 && !hasContentChars) return false;
 
       // Lines that are only punctuation + whitespace
-      if (chineseChars === 0 && trimmed.length < 8) return false;
+      if (!hasContentChars && trimmed.length < 8) return false;
 
       // Lines that are only digits (page numbers, IDs, etc.)
       if (/^\d+$/.test(trimmed) && trimmed.length < 10) return false;
@@ -862,7 +864,7 @@ function mergeRunOnText(text: string): string {
     // Check for run-on text: long paragraph with no internal newlines
     if (trimmed.length > 300 && !trimmed.includes('\n')) {
       // Split at Chinese sentence-ending punctuation
-      const sentences = trimmed.split(/(?<=[。！？；])/);
+      const sentences = trimmed.split(/(?<=[。！？；.!?])/);
       const merged: string[] = [];
       let current = '';
 

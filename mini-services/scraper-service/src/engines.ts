@@ -1054,12 +1054,12 @@ function reconstructHtmlFromAgentQL(data: Record<string, unknown>): string {
     if (value === null || value === undefined) continue;
 
     if (typeof value === "string") {
-      bodyParts.push(`  <div data-agentql-field="${key}">${escapeHtml(value)}</div>`);
+      bodyParts.push(`  <div data-agentql-field="${escapeHtml(key)}">${escapeHtml(value)}</div>`);
     } else if (Array.isArray(value)) {
       // Array of objects (e.g., chapter list)
       for (const item of value) {
         if (typeof item === "string") {
-          bodyParts.push(`  <div data-agentql-field="${key}">${escapeHtml(item)}</div>`);
+          bodyParts.push(`  <div data-agentql-field="${escapeHtml(key)}">${escapeHtml(item)}</div>`);
         } else if (typeof item === "object" && item !== null) {
           const itemParts: string[] = [];
           for (const [subKey, subValue] of Object.entries(item as Record<string, unknown>)) {
@@ -1067,7 +1067,7 @@ function reconstructHtmlFromAgentQL(data: Record<string, unknown>): string {
               itemParts.push(`<span data-agentql-field="${subKey}">${escapeHtml(String(subValue))}</span>`);
             }
           }
-          bodyParts.push(`  <div data-agentql-field="${key}" data-agentql-item="true">${itemParts.join(" ")}</div>`);
+          bodyParts.push(`  <div data-agentql-field="${escapeHtml(key)}" data-agentql-item="true">${itemParts.join(" ")}</div>`);
         }
       }
     } else if (typeof value === "object" && value !== null) {
@@ -1078,7 +1078,7 @@ function reconstructHtmlFromAgentQL(data: Record<string, unknown>): string {
           itemParts.push(`<span data-agentql-field="${subKey}">${escapeHtml(String(subValue))}</span>`);
         }
       }
-      bodyParts.push(`  <div data-agentql-field="${key}">${itemParts.join(" ")}</div>`);
+      bodyParts.push(`  <div data-agentql-field="${escapeHtml(key)}">${itemParts.join(" ")}</div>`);
     }
   }
 
@@ -1459,8 +1459,6 @@ class ScraplingEngine implements ScrapingEngine {
 
           scraplingBreaker.recordSuccess();
 
-          if (scDomain) rateLimiter.recordResult(scDomain, true, data.status_code || 200);
-
           return {
             html,
             finalUrl: data.final_url || url,
@@ -1468,7 +1466,6 @@ class ScraplingEngine implements ScrapingEngine {
           };
         } catch (scraplingErr) {
           scraplingBreaker.recordFailure();
-          if (scDomain) rateLimiter.recordResult(scDomain, false);
           throw scraplingErr;
         }
       },
@@ -1478,8 +1475,11 @@ class ScraplingEngine implements ScrapingEngine {
         maxDelay: 30000,
         signal: options?.signal,
       }
-    ).catch((err) => {
-      // Failure already recorded per-attempt in inner catch above
+    ).then(result => {
+      if (scDomain) rateLimiter.recordResult(scDomain, true, result.statusCode);
+      return result;
+    }).catch(err => {
+      if (scDomain) rateLimiter.recordResult(scDomain, false);
       throw err;
     });
   }
@@ -1639,8 +1639,9 @@ class ObscuraEngine implements ScrapingEngine {
         await applyTimingJitter();
 
         // Browser behavior: throttle if visiting same domain too frequently
-        if (browserBehavior.shouldThrottle(domain)) {
-          await new Promise(r => setTimeout(r, browserBehavior.getPreVisitDelay(domain)));
+        const throttleCheck = browserBehavior.shouldThrottle(domain);
+        if (throttleCheck.throttled) {
+          await new Promise(r => setTimeout(r, throttleCheck.waitMs));
         }
         browserBehavior.recordRequest(domain);
 

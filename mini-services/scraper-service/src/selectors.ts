@@ -228,8 +228,6 @@ export function parseSelectorWithFallbacks(
   const i18nFallbacks = [
     ...KO_NOVEL_CONTENT_SELECTORS,
     ...JA_NOVEL_CONTENT_SELECTORS,
-    ...KO_NOVEL_TITLE_SELECTORS,
-    ...JA_NOVEL_TITLE_SELECTORS,
   ];
   for (const sel of i18nFallbacks) {
     try {
@@ -385,7 +383,7 @@ export function parseSelector(html: string, selector: Selector): string {
     return el.attr("src") || "";
   }
   // Auto-detect meta[property=...] or meta[name=...] selectors
-  if (selector.value.includes("meta")) {
+  if (/^meta\b/i.test(selector.value)) {
     const content = el.attr("content");
     if (content) return content;
   }
@@ -463,7 +461,7 @@ export function parseSelectorHtml(html: string, selector: Selector): string {
   if (/\[src\](?![\w-])/.test(selector.value) || /(?:^|[\s>+~,])src$/.test(selector.value)) {
     return el.attr("src") || "";
   }
-  if (selector.value.includes('meta') && el.attr('content')) {
+  if (/^meta\b/i.test(selector.value) && el.attr('content')) {
     return el.attr('content') || '';
   }
 

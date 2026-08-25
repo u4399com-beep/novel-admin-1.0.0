@@ -385,8 +385,10 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
         const jsResult = extractJsContent(html);
         if (jsResult.found && jsResult.content.length > 30) {
           console.log(`  [Content] JS content extracted via ${jsResult.pattern} (${jsResult.content.length} chars)`);
-          const cleaned = cleanText(jsResult.content, cleanConfig);
-          if (cleaned.trim()) contentParts.push(cleaned);
+          const cleaned = cleanConfig
+            ? cleanText(jsResult.content, cleanConfig)
+            : jsResult.content.trim();
+          if (cleaned) contentParts.push(cleaned);
         } else {
           // JS extraction also failed — preserve original short content if any
           if (content) contentParts.push(content);

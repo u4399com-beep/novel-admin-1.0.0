@@ -156,7 +156,9 @@ export class QualityScorer {
   /** 2. Content Coverage (15pts): newChapters / totalChapters > 85% */
   private checkContentCoverage(result: ScrapeResult): QualityCheck {
     if (result.totalChapters === 0) {
-      // May not have chapter data (list-only mode)
+      if (result.failedItems > 0 && result.totalBooks > 0) {
+        return { name: '内容覆盖率', passed: false, score: 2, message: '所有章节采集失败' };
+      }
       return { name: '内容覆盖率', passed: true, score: 12, message: '无章节数据（可能为列表模式）' };
     }
 
@@ -190,7 +192,7 @@ export class QualityScorer {
 
   /** 3. Failure Rate (15pts): failedItems < 5% of total */
   private checkFailureRate(result: ScrapeResult): QualityCheck {
-    const total = result.totalBooks + result.totalChapters;
+    const total = result.totalBooks + result.totalChapters + result.failedItems;
     if (total === 0) {
       return { name: '失败率', passed: true, score: 15, message: '无数据项，不适用' };
     }
@@ -246,7 +248,7 @@ export class QualityScorer {
     // Anomaly detection: chapters with suspiciously identical word counts
     // (e.g., all chapters exactly 0 or all exactly the same placeholder length)
     const wordCountSet = new Set(chapters.map(c => c.wordCount));
-    const uniformWordCount = wordCountSet.size === 1 && chapters.length > 3;
+    const uniformWordCount = wordCountSet.size === 1 && chapters.length > 10;
     // Anomaly: all chapters are very short (< 100 chars)
     const allVeryShort = chapters.length > 0 && chapters.every(c => c.wordCount < 100);
 

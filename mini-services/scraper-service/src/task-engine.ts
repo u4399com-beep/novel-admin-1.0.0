@@ -610,7 +610,10 @@ async function executeTaskBody(
       await dbWriteSemaphore.acquire();
       try {
         if (isExisting) {
-          await apiCall("PUT", `/api/novels/${novelId}`, novelData, abortController.signal);
+          const putResult = await apiCall("PUT", `/api/novels/${novelId}`, novelData, abortController.signal);
+          if (putResult.status && putResult.status >= 400) {
+            console.warn(`  [Book] Failed to update novel ${novelId}: ${putResult.status}`);
+          }
           await addTaskLog(taskId, "info", `更新小说: ${bookInfo.title}`, bookUrl);
         } else {
           const { data: createdNovel, status: createStatus } = await apiCall("POST", "/api/novels", novelData, abortController.signal);
@@ -951,10 +954,11 @@ async function executeTaskBody(
             if (newCount >= CONSECUTIVE_CAPTCHA_THRESHOLD) {
               // If another worker is already handling the pause for this domain, wait and return
               if (_captchaPausePromises.has(chDomain)) {
+                skippedChaptersCount.increment();
                 await _captchaPausePromises.get(chDomain);
                 return;
               }
-              const pausePromise = new Promise<void>(resolve => setTimeout(resolve, 60000));
+              const pausePromise = new Promise<void>(resolve => setTimeout(resolve, CAPTCHA_PAUSE_MS));
               _captchaPausePromises.set(chDomain, pausePromise);
               try {
               await addTaskLog(taskId, "warn", `验证码频繁(${chDomain}), 暂停${CAPTCHA_PAUSE_MS / 1000}秒`);
@@ -969,8 +973,6 @@ async function executeTaskBody(
                   domain: chDomain,
                   currentEngine: engineType,
                   retryCount: newCount,
-                  maxRetries: 5,
-                  antiCrawlConfig: antiCrawlConfig as Record<string, unknown>,
                 });
 
                 if (strategyResult.nextEngine && strategyResult.nextEngine !== engineType) {
@@ -986,16 +988,14 @@ async function executeTaskBody(
                     setTimeout(() => _engineUpgradeLock.delete(chDomain), 5000);
                   }
                 }
-
-                // Use the longer of strategy-recommended delay and standard pause
-                if (strategyResult.delayMs && strategyResult.delayMs >= CAPTCHA_PAUSE_MS) {
-                  await new Promise<void>((resolve) => setTimeout(resolve, strategyResult.delayMs));
-                } else {
-                  await new Promise<void>((resolve) => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+                // Wait the shared pause (may already be partially elapsed)
+                await pausePromise;
+                // If strategy recommends even longer, wait the difference
+                if (strategyResult.delayMs && strategyResult.delayMs > CAPTCHA_PAUSE_MS) {
+                  await new Promise<void>(resolve => setTimeout(resolve, strategyResult.delayMs - CAPTCHA_PAUSE_MS));
                 }
               } catch {
-                // Fallback to standard pause
-                await new Promise<void>((resolve) => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+                await pausePromise;
               }
               } finally {
                 _captchaPausePromises.delete(chDomain);
@@ -1064,6 +1064,10 @@ async function executeTaskBody(
             if (isIncremental) {
               existingChapters.set(chapter.url, "new");
               existingChapters.set(`title:${chapterDedupKey(chapterTitle)}`, "new");
+              const originalTitleKey = `title:${chapterDedupKey(chapter.title)}`;
+              if (originalTitleKey !== `title:${chapterDedupKey(chapterTitle)}`) {
+                existingChapters.set(originalTitleKey, "new");
+              }
             }
           } else {
             failedItemsCount.increment();
@@ -1206,6 +1210,7 @@ export async function detectStuckTasks(): Promise<number> {
         await apiCall("PUT", `/api/scrape-tasks/${task.id}`, {
           status: "failed",
           errorMessage: reason,
+          completedAt: new Date().toISOString(),
         });
         detected++;
         console.log(`[StuckDetection] Marked task ${task.id} as failed: ${reason}`);

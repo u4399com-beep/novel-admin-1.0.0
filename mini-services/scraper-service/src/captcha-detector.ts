@@ -191,10 +191,11 @@ export function detectCaptcha(
   // 3. Check HTML content against all detection rules
   for (const rule of HTML_RULES) {
     let matchCount = 0;
-    for (const pattern of rule.patterns) {
+    for (let patternIndex = 0; patternIndex < rule.patterns.length; patternIndex++) {
+      const pattern = rule.patterns[patternIndex];
       if (pattern.test(html)) {
         matchCount++;
-        evidence.push(`${rule.type}: 匹配 ${pattern.source}`);
+        evidence.push(`${rule.type}:${patternIndex}: 匹配 ${pattern.source}`);
       }
     }
 
@@ -209,12 +210,15 @@ export function detectCaptcha(
     }
   }
 
-  // 4. Deduplicate evidence (keep first occurrence of each type prefix)
+  // 4. Deduplicate evidence (keep first occurrence of each type:patternIndex prefix)
   const seen = new Set<string>();
   const dedupedEvidence = evidence.filter(e => {
-    const prefix = e.split(':')[0];
-    if (seen.has(prefix)) return false;
-    seen.add(prefix);
+    const colonIdx = e.indexOf(':');
+    if (colonIdx < 0) return true;
+    const secondColonIdx = e.indexOf(':', colonIdx + 1);
+    const dedupKey = secondColonIdx >= 0 ? e.substring(0, secondColonIdx) : e.substring(0, colonIdx);
+    if (seen.has(dedupKey)) return false;
+    seen.add(dedupKey);
     return true;
   });
 
