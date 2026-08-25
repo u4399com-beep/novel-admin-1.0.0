@@ -16938,3 +16938,51 @@ Stage Summary:
 - 关键发现: userAgentData Linux平台缺失、Obscura getPreVisitDelay完全失效(Promise当number用)、CAPTCHA双重等待120s、cleanText undefined崩溃、质量评分全失败满分
 - 回归验证: R41/R42所有修复无回归
 - 8文件, +68/-68行
+---
+Task ID: R44
+Agent: Main Orchestrator + 4 Sub-agents (2 deep-audit + 1 fix + 1 verify)
+Task: R44 支撑模块逐行深度审计第二轮 - 13项修复
+
+Work Log:
+- 两轮深度审计覆盖14个支撑模块(每个文件逐行)
+- 验证R41-R43所有修复无回归
+- 一轮修复代理修复13项
+
+## 修复清单 (13项)
+
+### MEDIUM (4项)
+| # | 文件 | 修复 | 类别 |
+|---|------|------|------|
+| 1 | rate-limiter.ts | acquire()移除双重penaltyMultiplier | 算法正确性 |
+| 2 | proxy-manager.ts | blockedDomains存储域名规范化 | 逻辑错误 |
+| 3 | browser-behavior.ts | human break用sinceLastBreak替代%取模 | 算法正确性 |
+| 4 | charset-detector.ts | GBK/Big5循环改用analysisBytes | 回归/性能 |
+
+### LOW (9项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 5 | rate-limiter.ts | else if(success)→else |
+| 6 | proxy-manager.ts | domainRotationCount驱逐改最低count |
+| 7 | proxy-manager.ts | 二级健康检查responseTime重置 |
+| 8 | cookie-jar.ts | import()域名规范化+默认path |
+| 9 | session-manager.ts | 移除dead null check |
+| 10 | request-fingerprint.ts | JSDoc 8-char→32-char |
+| 11 | referrer-chain.ts | 自引用回退反向遍历 |
+| 12 | ssrf.ts | 移除dead bracket stripping |
+| 13 | ssrf.ts | expandIPv6限制<=2组防溢出 |
+
+## 修改文件 (9个)
+## 验证结果
+- 19个源文件全量编译: 0错误
+- 全量集成编译: 0错误
+- Commit: efc2e75
+
+## 历史累计修复: 525 + 13 = 538项
+## 累计增强: 11项
+## Stealth: 60活跃sections
+
+Stage Summary:
+- 14个支撑模块逐行审计(第二轮)
+- 13项修复(4M/9L), 0 HIGH
+- 关键修复: rate limiter双重惩罚(有效限速仅25%)、blockedDomains域名不一致、human break间隔崩溃、charset分析限制回归
+- 9文件, +38/-27行
