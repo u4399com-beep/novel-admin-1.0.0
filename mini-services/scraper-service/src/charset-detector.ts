@@ -232,8 +232,8 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
     // (0xA1-0xF9) with no GBK-only leads (0x81-0xA0, 0xFA-0xFE), prefer Big5
     let gbkOnlyLeads = 0;
     let totalHighLeads = 0;
-    for (let i = 0; i < bytes.length - 1; i++) {
-      const b = bytes[i];
+    for (let i = 0; i < analysisBytes.length; i++) {
+      const b = analysisBytes[i];
       if (b >= 0x81 && b <= 0xFE) {
         totalHighLeads++;
         if ((b >= 0x81 && b <= 0xA0) || (b >= 0xFA && b <= 0xFE)) {

@@ -312,6 +312,9 @@ class CookieJar {
         if (!item || typeof item !== 'object') continue;
         const cookie = item as StoredCookie;
         if (!cookie.name || !cookie.domain) continue;
+        // Normalize domain and path before storing
+        cookie.domain = (cookie.domain || '').toLowerCase().replace(/^\./, '');
+        cookie.path = cookie.path || '/';
         // Ensure value is a string (defend against malformed imports)
         if (cookie.value !== undefined && cookie.value !== null) {
           cookie.value = String(cookie.value);

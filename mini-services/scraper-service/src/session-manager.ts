@@ -214,7 +214,6 @@ class SessionManager {
   getSessionForRequest(domain: string): { sessionId: string; userAgent: string; cookies: string } | null {
     const normalizedDomain = domain.toLowerCase().replace(/^www\./, '');
     const session = this.acquireSession(normalizedDomain);
-    if (!session) return null;
 
     // Build cookie header string from session cookies
     const cookieStr = session.cookies

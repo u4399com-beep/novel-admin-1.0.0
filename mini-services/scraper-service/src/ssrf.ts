@@ -91,14 +91,9 @@ export function isSafeUrl(url: string): boolean {
 }
 
 /**
- * Parse hostname to extract IP address (handles IPv6 brackets)
+ * Parse hostname to extract IP address.
  */
 function parseIpAddress(hostname: string): string | null {
-  // Handle IPv6 with brackets like [::1]
-  if (hostname.startsWith('[') && hostname.endsWith(']')) {
-    return hostname.slice(1, -1);
-  }
-
   // Handle IPv4
   if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
     return hostname;
@@ -205,7 +200,7 @@ function expandIPv6(ip: string): string {
 
   // Partial IPv6 without :: (e.g., "7f00:1" after ::ffff: stripping)
   // This can represent an IPv4-mapped address in hex
-  if (groups.length <= 4 && groups.length >= 1) {
+  if (groups.length >= 1 && groups.length <= 2) {
     // Try to interpret as hex-encoded IPv4
     const hexParts = groups.map(g => parseInt(g, 16));
     if (hexParts.every(n => !isNaN(n) && n >= 0 && n <= 0xffff)) {

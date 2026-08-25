@@ -433,6 +433,7 @@ class ProxyManager {
           if (urlMatch) {
             try {
               extractedDomain = new URL(urlMatch[1]).hostname;
+              extractedDomain = extractedDomain.toLowerCase().replace(/^www\./, '');
               entry.blockedDomains.add(extractedDomain);
             } catch { /* ignore parse errors */ }
           }
@@ -594,6 +595,7 @@ class ProxyManager {
     }
 
     // --- Secondary fallback: test direct connectivity to the proxy host ---
+    const secondaryStart = Date.now();
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -606,7 +608,7 @@ class ProxyManager {
       });
       clearTimeout(timeout);
 
-      const responseTime = Date.now() - startTime;
+      const responseTime = Date.now() - secondaryStart;
       entry.lastCheck = Date.now();
 
       // Any response means the proxy host is reachable (even auth errors mean it's alive)
@@ -614,7 +616,7 @@ class ProxyManager {
       entry.consecutiveFails = 0; // Reset fails since host is alive
       return { healthy: false, responseTime, error: 'Host reachable but through-proxy test failed' };
     } catch (err) {
-      const responseTime = Date.now() - startTime;
+      const responseTime = Date.now() - secondaryStart;
       entry.lastCheck = Date.now();
       const errMsg = err instanceof Error ? err.message : String(err);
 
@@ -918,10 +920,17 @@ class ProxyManager {
 
     // Evict stale rotation entries (keep last 500 domains to prevent unbounded growth)
     if (this.domainRotationCount.size > 500) {
-      const firstKey = this.domainRotationCount.keys().next().value;
-      if (firstKey !== undefined) {
-        this.domainRotationCount.delete(firstKey);
-        this.domainRotationIndex.delete(firstKey);
+      let oldestKey = '';
+      let oldestVal = Infinity;
+      for (const [k, v] of this.domainRotationCount) {
+        if (v < oldestVal) {
+          oldestVal = v;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) {
+        this.domainRotationCount.delete(oldestKey);
+        this.domainRotationIndex.delete(oldestKey);
       }
     }
 

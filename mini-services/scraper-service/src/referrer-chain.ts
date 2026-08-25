@@ -97,9 +97,10 @@ class ReferrerChain {
       const last = entries[entries.length - 1];
       // Don't refer to self (exact same URL)
       if (last.url === targetUrl) {
-        // Fall back to second-to-last if available
-        if (entries.length >= 2) {
-          return entries[entries.length - 2].url;
+        for (let i = entries.length - 2; i >= 0; i--) {
+          if (entries[i].url !== targetUrl) {
+            return entries[i].url;
+          }
         }
         return undefined;
       }

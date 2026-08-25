@@ -49,6 +49,8 @@ class BrowserBehavior {
   private domainVisits: Map<string, DomainVisitRecord> = new Map();
   /** global request counter for human-break simulation */
   private globalRequestCount = 0;
+  /** tracks request count at last break to prevent clustering */
+  private lastBreakAt = 0;
   /** domains already visited (for entry page check) */
   private domainRootsVisited: Set<string> = new Set();
 
@@ -178,12 +180,14 @@ class BrowserBehavior {
   private breakThreshold = BREAK_EVERY_MIN + Math.floor(Math.random() * (BREAK_EVERY_MAX - BREAK_EVERY_MIN + 1));
 
   private async maybeHumanBreak(url: string): Promise<void> {
-    if (this.globalRequestCount > 0 && this.globalRequestCount % this.breakThreshold === 0) {
+    const sinceLastBreak = this.globalRequestCount - this.lastBreakAt;
+    if (sinceLastBreak >= this.breakThreshold) {
       const delay = BREAK_DELAY_MIN_MS + Math.random() * (BREAK_DELAY_MAX_MS - BREAK_DELAY_MIN_MS);
       console.log(`[BrowserBehavior] Human break pause: ${Math.round(delay)}ms after ${this.globalRequestCount} requests (${url})`);
       await new Promise<void>((resolve) => setTimeout(resolve, Math.round(delay)));
       // Re-randomize threshold for next break
       this.breakThreshold = BREAK_EVERY_MIN + Math.floor(Math.random() * (BREAK_EVERY_MAX - BREAK_EVERY_MIN + 1));
+      this.lastBreakAt = this.globalRequestCount;
     }
   }
 
@@ -193,6 +197,7 @@ class BrowserBehavior {
   reset(): void {
     this.domainVisits.clear();
     this.globalRequestCount = 0;
+    this.lastBreakAt = 0;
     this.domainRootsVisited.clear();
     this.breakThreshold = BREAK_EVERY_MIN + Math.floor(Math.random() * (BREAK_EVERY_MAX - BREAK_EVERY_MIN + 1));
   }

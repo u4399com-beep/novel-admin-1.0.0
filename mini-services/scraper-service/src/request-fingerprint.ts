@@ -4,7 +4,7 @@
  * rate limiting per domain, and debugging.
  *
  * Key capabilities:
- *   - Generate 16-char hex request IDs
+ *   - Generate 32-char hex request IDs
  *   - Track request counts per domain (sliding window)
  *   - Validate fingerprints before requests execute
  *   - Record completion status for monitoring
@@ -16,7 +16,7 @@
 // ==================== Types ====================
 
 export interface RequestFingerprint {
-  requestId: string;        // 16-char hex ID
+  requestId: string;        // 32-char hex ID (16 bytes)
   sessionId?: string;        // from SessionManager
   domain: string;
   timestamp: number;
@@ -56,7 +56,7 @@ class RequestFingerprintManager {
 
   /**
    * Create a new fingerprint for a request.
-   * Generates an 8-char hex ID, stores with timestamp, increments domain counter.
+   * Generates a 32-char (16-byte) hex ID, stores with timestamp, increments domain counter.
    */
   create(options: {
     domain: string;

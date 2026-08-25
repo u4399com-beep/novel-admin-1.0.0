@@ -95,9 +95,8 @@ class DomainRateLimiter {
     state.windowStart = windowStart;
 
     const currentCount = state.requestTimestamps.length;
-    const effectiveMaxRPM = state.penaltyActive
-      ? Math.max(1, Math.floor(state.maxRPM * this.config.penaltyMultiplier))
-      : state.maxRPM;
+    // Already reduced by penaltyMultiplier in recordResult
+    const effectiveMaxRPM = state.maxRPM;
 
     if (currentCount >= effectiveMaxRPM) {
       // Check burst allowance (only when penalty is not active)
@@ -148,7 +147,7 @@ class DomainRateLimiter {
       }
       // Network errors (no statusCode): just reset consecutive successes
       state.consecutiveSuccesses = 0;
-    } else if (success) {
+    } else {
       state.consecutiveSuccesses++;
 
       // Gradual recovery after penalty expires
