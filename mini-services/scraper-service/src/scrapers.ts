@@ -9,7 +9,7 @@ import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest, ScrapeContentRequest,
   ChapterLink,
 } from "./types";
-import { getEngine, selectEngine } from "./engines";
+import { getEngine, selectEngine, fetchWithEngineFallback, fetchWithInfiniteScroll } from "./engines";
 import { parseSelector, parseSelectorMulti, parseSelectorHtml, extractLinksFromList, extractMetadataFallback } from "./selectors";
 import { cleanHtmlRaw, cleanHtmlPreserveParagraphs, cleanText } from "./cleaning";
 import { extractJsContent, hasJsContentPatterns } from "./js-content-extractor";
@@ -38,6 +38,7 @@ function findNextPageUrl(
   currentPageUrl: string
 ): string {
   let nextUrl = "";
+  if (!pagination.selector) return "";
   if (pagination.type === "next") {
     nextUrl = $(pagination.selector).attr("href") || "";
   } else if (pagination.type === "page") {
@@ -82,6 +83,8 @@ interface PaginatedFetchOptions {
   onPage: (html: string, url: string, pageIndex: number) => void | boolean | Promise<void | boolean>;
   /** Called when CAPTCHA is detected. Return true to skip this page. */
   onCaptcha?: (detection: CaptchaDetection, url: string) => boolean | Promise<boolean>;
+  /** Enable engine fallback on fetch failure (default: true). */
+  useEngineFallback?: boolean;
 }
 
 /**
@@ -91,14 +94,18 @@ interface PaginatedFetchOptions {
  */
 const MAX_CONTENT_PAGES = 20;
 
-async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNextPage: boolean }> {
-  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage, isContentPagination, onCaptcha, signal } = options;
+async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNextPage: boolean; effectiveEngine?: EngineType }> {
+  const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage, isContentPagination, onCaptcha, signal, useEngineFallback } = options;
   const hardMax = isContentPagination ? MAX_CONTENT_PAGES : 100;
   const maxPages = Math.min(pagination?.maxPage || 1, hardMax);
-  const engine = getEngine(engineType);
+  // Start with the primary engine; may switch to fallback engine after first success
+  let currentEngineType = engineType;
+  let engine = getEngine(engineType);
   const visitedPages = new Set<string>();
   let currentUrl = startUrl;
   let hasNextPage = false;
+  let effectiveEngine: EngineType | undefined;
+  const fallbackEnabled = useEngineFallback !== false && antiCrawl?.engineFallback !== false;
 
   for (let page = 0; page < maxPages; page++) {
     // Check task-level abort before each page
@@ -117,7 +124,20 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
     let html = '';
     let statusCode = 0;
     try {
-      const result = await engine.fetch(currentUrl, { antiCrawl, signal });
+      // First page: try engine fallback if enabled and primary fails
+      // Subsequent pages: use the engine that succeeded (currentEngineType)
+      let result;
+      if (fallbackEnabled && page === 0 && !effectiveEngine) {
+        result = await fetchWithEngineFallback(currentUrl, { antiCrawl, signal }, currentEngineType);
+        if (result.effectiveEngine && result.effectiveEngine !== currentEngineType) {
+          console.log(`  [${logPrefix}] Engine switched: ${currentEngineType} → ${result.effectiveEngine}`);
+          currentEngineType = result.effectiveEngine;
+          engine = getEngine(currentEngineType);
+        }
+        effectiveEngine = result.effectiveEngine || currentEngineType;
+      } else {
+        result = await engine.fetch(currentUrl, { antiCrawl, signal });
+      }
       html = result.html;
       statusCode = result.statusCode;
     } catch (err) {
@@ -164,7 +184,7 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
     }
   }
 
-  return { hasNextPage };
+  return { hasNextPage, effectiveEngine: effectiveEngine || engineType };
 }
 
 // ==================== Scrape List ====================
@@ -176,7 +196,35 @@ export async function handleScrapeList(body: ScrapeListRequest) {
   const allUrls: string[] = [];
   const seen = new Set<string>();
 
-  const { hasNextPage } = await paginatedFetch({
+  // Handle infinite-scroll pagination separately (requires browser engine)
+  if (pagination?.type === 'infinite-scroll') {
+    console.log(`  [List/InfiniteScroll] Starting infinite scroll fetch: ${url}`);
+    const scrollResult = await fetchWithInfiniteScroll(url, { antiCrawl, signal }, engineType, {
+      loadMoreSelector: pagination.loadMoreSelector,
+      contentContainerSelector: pagination.contentContainerSelector,
+      maxScrollCycles: pagination.maxScrollCycles,
+    });
+
+    // CAPTCHA detection on infinite-scroll results
+    const scrollCaptcha = detectCaptcha(scrollResult.html, url, scrollResult.statusCode);
+    if (scrollCaptcha.detected && scrollCaptcha.confidence > 0.5) {
+      console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[scrollCaptcha.type]} detected on infinite-scroll page ${url}`);
+      return { urls: [], hasNextPage: false, engine: scrollResult.effectiveEngine };
+    }
+
+    const items = parseSelectorMulti(scrollResult.html, selector);
+    for (const item of items) {
+      const resolvedUrl = resolveUrl(url, item);
+      if (resolvedUrl && !seen.has(resolvedUrl)) {
+        seen.add(resolvedUrl);
+        allUrls.push(resolvedUrl);
+      }
+    }
+    console.log(`  [List/InfiniteScroll] Completed ${scrollResult.cyclesCompleted} cycles, found ${allUrls.length} items`);
+    return { urls: allUrls, hasNextPage: false, engine: scrollResult.effectiveEngine };
+  }
+
+  const { hasNextPage, effectiveEngine: listEffectiveEngine } = await paginatedFetch({
     startUrl: url,
     pagination,
     antiCrawl,
@@ -206,7 +254,7 @@ export async function handleScrapeList(body: ScrapeListRequest) {
     },
   });
 
-  return { urls: allUrls, hasNextPage, engine: engineType };
+  return { urls: allUrls, hasNextPage, engine: listEffectiveEngine || engineType };
 }
 
 // ==================== Scrape Book Info ====================
@@ -214,9 +262,23 @@ export async function handleScrapeList(body: ScrapeListRequest) {
 export async function handleScrapeBook(body: ScrapeBookRequest) {
   const { url, selectors, antiCrawl, engine: requestedEngine, signal } = body;
   const engineType = selectEngine(requestedEngine, antiCrawl);
-  const engine = getEngine(engineType);
+  const fallbackEnabled = antiCrawl?.engineFallback !== false;
 
-  const { html, statusCode } = await engine.fetch(url, { antiCrawl, signal });
+  let html: string;
+  let statusCode: number;
+  let effectiveEngine = engineType;
+
+  if (fallbackEnabled) {
+    const result = await fetchWithEngineFallback(url, { antiCrawl, signal }, engineType);
+    html = result.html;
+    statusCode = result.statusCode;
+    effectiveEngine = result.effectiveEngine || engineType;
+  } else {
+    const engine = getEngine(engineType);
+    const result = await engine.fetch(url, { antiCrawl, signal });
+    html = result.html;
+    statusCode = result.statusCode;
+  }
 
   // CAPTCHA detection for book info page
   const captchaDetection = detectCaptcha(html, url, statusCode);
@@ -247,7 +309,7 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
     finalCoverUrl = resolveUrl(url, fallback.cover);
   }
 
-  return { title: finalTitle, author: finalAuthor, category: finalCategory, keywords: finalKeywords, description: finalDescription, coverUrl: finalCoverUrl, status: finalStatus, engine: engineType };
+  return { title: finalTitle, author: finalAuthor, category: finalCategory, keywords: finalKeywords, description: finalDescription, coverUrl: finalCoverUrl, status: finalStatus, engine: effectiveEngine };
 }
 
 // ==================== Scrape Chapter Directory ====================
@@ -262,7 +324,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
   const seenTitleKeys = new Set<string>();
   let titleDupCount = 0;
 
-  const { hasNextPage } = await paginatedFetch({
+  const { hasNextPage, effectiveEngine: chaptersEffectiveEngine } = await paginatedFetch({
     startUrl: url,
     pagination,
     antiCrawl,
@@ -319,7 +381,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
     });
   }
 
-  return { chapters: allChapters, hasNextPage, engine: engineType, titleDupCount };
+  return { chapters: allChapters, hasNextPage, engine: chaptersEffectiveEngine || engineType, titleDupCount };
 }
 
 // ==================== Scrape Content ====================
@@ -332,8 +394,9 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
   let title = "";
   let pageCount = 0;
   let captchaDetected: CaptchaDetection | null = null;
+  let contentEffectiveEngine: EngineType | undefined;
 
-  await paginatedFetch({
+  const { hasNextPage, effectiveEngine: contentPgEngine } = await paginatedFetch({
     startUrl: url,
     pagination,
     antiCrawl,
@@ -412,7 +475,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     title,
     content: fullContent,
     wordCount: textOnly.length,
-    engine: engineType,
+    engine: contentPgEngine || engineType,
     pagesFetched: pageCount,
     captchaDetected: captchaDetected || undefined,
   };

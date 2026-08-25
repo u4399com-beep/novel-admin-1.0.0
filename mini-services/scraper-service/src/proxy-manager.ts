@@ -137,12 +137,12 @@ function parseProxyUrl(rawUrl: string): { protocol: ProxyEntry['protocol']; host
 const dispatcherCache = new Map<string, Dispatcher>();
 
 /**
- * Get or create a cached undici Dispatcher (ProxyAgent/Socks5ProxyAgent) for a proxy URL.
- * Supports http, https, socks5 proxies. For socks4, falls back to a TODO (not natively supported).
+ * Get or create a cached undici Dispatcher (ProxyAgent/SocksProxyAgent) for a proxy URL.
+ * Supports http, https, socks4, socks5 proxies.
  * Handles proxy authentication via user:pass in the URL.
  *
- * @param proxyUrl - The full proxy URL (e.g. "http://user:pass@host:port")
- * @returns An undici Dispatcher, or null if the URL is invalid or protocol unsupported
+ * @param proxyUrl - The full proxy URL (e.g. "http://user:pass@host:port", "socks5://host:port", "socks4://host:port")
+ * @returns An undici Dispatcher, or null if the URL is invalid or creation failed
  */
 export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
   if (dispatcherCache.has(proxyUrl)) {
@@ -182,11 +182,26 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
         return null;
       }
     } else if (protocol === 'socks4') {
-      // socks-proxy-agent does not support SOCKS4 natively
-      if (process.env.DEBUG === 'true') {
-        console.log('[ProxyManager] SOCKS4 proxies are not supported (no compatible agent available)');
+      // socks-proxy-agent supports SOCKS4 via socks4:// URLs
+      // Note: SOCKS4 does NOT support username/password authentication.
+      // Warn if credentials are present (they will be silently ignored).
+      try {
+        const parsedUrl = new URL(urlStr.replace('socks4://', 'http://'));
+        if (parsedUrl.username || parsedUrl.password) {
+          console.warn('[ProxyManager] SOCKS4 does not support authentication; credentials in URL will be ignored');
+        }
+      } catch { /* parse error, proceed */ }
+      try {
+        const agent = new SocksProxyAgent(urlStr);
+        dispatcherCache.set(proxyUrl, agent as unknown as Dispatcher);
+        return agent as unknown as Dispatcher;
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (process.env.DEBUG === 'true') {
+          console.log(`[ProxyManager] Failed to create SOCKS4 agent for ${proxyUrl}: ${errMsg}`);
+        }
+        return null;
       }
-      return null;
     } else {
       // http / https — use ProxyAgent with the full URI (supports user:pass auth)
       dispatcher = new ProxyAgent(urlStr);

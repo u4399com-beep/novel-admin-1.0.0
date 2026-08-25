@@ -15,9 +15,16 @@ export interface Selector {
 }
 
 export interface Pagination {
-  type: "next" | "page";
-  selector: string;
+  type: "next" | "page" | "infinite-scroll";
+  /** CSS selector for next-page link (required for 'next'/'page' types, unused for 'infinite-scroll') */
+  selector?: string;
   maxPage?: number;
+  /** For infinite-scroll: CSS selector of the "load more" button to click. */
+  loadMoreSelector?: string;
+  /** For infinite-scroll: max number of scroll+load cycles (default 10). */
+  maxScrollCycles?: number;
+  /** For infinite-scroll: selector for the content container to watch for new items. */
+  contentContainerSelector?: string;
 }
 
 // ==================== Anti-Crawl Types ====================
@@ -38,6 +45,10 @@ export interface AntiCrawl {
   dnt?: boolean;
   /** Enable human-like request behavior (randomized timing, jitter, etc.). */
   humanBehavior?: boolean;
+  /** Enable automatic engine fallback on failure (default: true for new tasks). */
+  engineFallback?: boolean;
+  /** Custom engine fallback chain (overrides default). Ordered from primary to last-resort. */
+  engineFallbackChain?: EngineType[];
 }
 
 // ==================== Engine Types ====================
@@ -48,6 +59,8 @@ export interface FetchResult {
   html: string;
   finalUrl: string;
   statusCode: number;
+  /** The engine that actually produced this result (may differ from requested if fallback was used) */
+  effectiveEngine?: EngineType;
   /** CAPTCHA detection result if detected during fetch */
   captcha?: {
     type: string;

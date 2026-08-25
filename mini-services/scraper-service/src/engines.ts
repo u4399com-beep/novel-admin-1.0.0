@@ -11,7 +11,7 @@
  *   obscura        → Stealth anti-fingerprint browser (enhanced Playwright)
  */
 
-import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
+import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery, AntiCrawl } from "./types";
 import { isSafeUrl } from "./ssrf";
 import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints } from "./utils";
 import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA, getTlsProfile } from "./stealth";
@@ -201,6 +201,260 @@ const agentqlBreaker = new CircuitBreaker("AgentQL");
 const cloudBrowserBreaker = new CircuitBreaker("CloudBrowser");
 const scraplingBreaker = new CircuitBreaker("Scrapling");
 
+// ==================== HTTP Connection Pool (CheerioEngine) ====================
+
+/**
+ * Shared undici Agent for CheerioEngine HTTP requests.
+ * Provides connection pooling with keep-alive, reducing TCP handshake overhead
+ * for high-throughput scraping. Configured with conservative limits to avoid
+ * exhausting local ports or triggering server connection limits.
+ *
+ * - keepAliveTimeout: 30s (reuse connections within 30s of last use)
+ * - keepAliveMaxTimeout: 600s (absolute max lifetime per connection)
+ * - connections: 20 (max concurrent connections per origin)
+ * - pipelining: 1 (no HTTP pipelining, safer for diverse servers)
+ */
+let _cheerioAgent: import('undici').Agent | null = null;
+let _cheerioAgentPromise: Promise<import('undici').Agent> | null = null;
+
+function getCheerioAgent(): Promise<import('undici').Agent> {
+  if (_cheerioAgent) return Promise.resolve(_cheerioAgent);
+  if (_cheerioAgentPromise) return _cheerioAgentPromise;
+  _cheerioAgentPromise = (async () => {
+    const { Agent } = await import('undici');
+    const agent = new Agent({
+      keepAliveTimeout: 30_000,
+      keepAliveMaxTimeout: 600_000,
+      connections: 20,
+      pipelining: 1,
+    });
+    _cheerioAgent = agent;
+    console.log('[CheerioEngine] HTTP connection pool initialized (keepAlive=30s, maxConn=20)');
+    return agent;
+  })();
+  return _cheerioAgentPromise;
+}
+
+// ==================== Engine Fallback Chain ====================
+
+/**
+ * Default engine fallback chain. Ordered from fastest/cheapest to most capable.
+ * Used when a request fails and engineFallback is enabled in antiCrawl config.
+ *
+ * Logic:
+ *   cheerio → playwright → obscura → scrapling → firecrawl → agentql → cloud-browser
+ *
+ * External engines (firecrawl, agentql, cloud-browser, scrapling) are placed later
+ * because they require external services and have higher latency/cost.
+ * obscura is before scrapling because it's local (no network hop to external service).
+ */
+const DEFAULT_FALLBACK_CHAIN: EngineType[] = [
+  'cheerio',       // Fast HTTP, no JS
+  'playwright',    // Full JS rendering
+  'obscura',       // Stealth browser (local, anti-fingerprint)
+  'scrapling',     // Python anti-bot service
+  'firecrawl',     // External API
+  'agentql',       // External API (NL queries)
+  'cloud-browser', // Cloud browser API
+];
+
+/**
+ * Per-domain engine failure tracking for adaptive fallback ordering.
+ * If an engine consistently fails for a domain, it gets deprioritized.
+ * Bounded to MAX_TRACKED_DOMAINS entries with LRU eviction.
+ */
+const domainEngineFailures = new Map<string, Map<EngineType, number>>();
+const DOMAIN_FAILURE_THRESHOLD = 3; // Deprioritize after 3 consecutive failures
+const DOMAIN_FAILURE_WINDOW_MS = 10 * 60 * 1000; // 10-minute sliding window
+const domainFailureTimestamps = new Map<string, number>();
+const MAX_TRACKED_DOMAINS = 500; // LRU eviction limit
+
+/**
+ * Record a domain-level engine failure for adaptive chain reordering.
+ */
+function recordEngineFailure(domain: string, engine: EngineType): void {
+  // LRU eviction: remove oldest domain if over limit
+  if (domainEngineFailures.size >= MAX_TRACKED_DOMAINS && !domainEngineFailures.has(domain)) {
+    const oldestKey = domainEngineFailures.keys().next().value;
+    if (oldestKey !== undefined) {
+      domainEngineFailures.delete(oldestKey);
+      // Clean up associated timestamps
+      for (const e of DEFAULT_FALLBACK_CHAIN) {
+        domainFailureTimestamps.delete(`${oldestKey}:${e}`);
+      }
+    }
+  }
+  if (!domainEngineFailures.has(domain)) {
+    domainEngineFailures.set(domain, new Map());
+  }
+  const failures = domainEngineFailures.get(domain)!;
+  failures.set(engine, (failures.get(engine) || 0) + 1);
+  domainFailureTimestamps.set(`${domain}:${engine}`, Date.now());
+}
+
+/**
+ * Record a domain-level engine success (resets failure counter).
+ */
+function recordEngineSuccess(domain: string, engine: EngineType): void {
+  const failures = domainEngineFailures.get(domain);
+  if (failures) {
+    failures.set(engine, 0);
+  }
+}
+
+/**
+ * Build an adaptive fallback chain for a domain, deprioritizing engines
+ * that have recently failed repeatedly.
+ */
+function getAdaptiveFallbackChain(domain: string, baseChain?: EngineType[]): EngineType[] {
+  const chain = baseChain ? [...baseChain] : [...DEFAULT_FALLBACK_CHAIN];
+  const failures = domainEngineFailures.get(domain);
+  if (!failures) return chain;
+
+  const now = Date.now();
+  // Sort: engines with fewer recent failures come first
+  chain.sort((a, b) => {
+    const aFails = getRecentFailureCount(domain, a, failures, now);
+    const bFails = getRecentFailureCount(domain, b, failures, now);
+    return aFails - bFails;
+  });
+
+  return chain;
+}
+
+/** Count failures within the sliding window (read-only, no side effects) */
+function getRecentFailureCount(
+  domain: string, engine: EngineType,
+  allFailures: Map<EngineType, number>, now: number
+): number {
+  const ts = domainFailureTimestamps.get(`${domain}:${engine}`);
+  // If last failure is outside the window, return 0 without mutating
+  if (ts && now - ts > DOMAIN_FAILURE_WINDOW_MS) {
+    return 0;
+  }
+  return allFailures.get(engine) || 0;
+}
+
+/**
+ * Determine if an error is worth falling back to another engine.
+ * CAPTCHA errors are handled separately by the CAPTCHA strategy chain,
+ * so we only fallback on transport/timeout/empty-content errors.
+ */
+function isFallbackWorthyError(err: unknown): boolean {
+  if (err instanceof Error) {
+    const msg = err.message;
+    // Don't fallback on CAPTCHA — handled by captcha-strategy.ts
+    if (msg.includes('CAPTCHA')) return false;
+    // Don't fallback on rate limit — increasing delay is better
+    if (msg.includes('Rate limit')) return false;
+    // Don't fallback on abort — user intentionally cancelled
+    if (msg.includes('aborted') || msg.includes('Aborted')) return false;
+    // Don't fallback on circuit breaker — already means service is down
+    if (msg.includes('circuit breaker')) return false;
+    // Fallback on: HTTP errors (403, 503), timeouts, empty content, network errors
+    // Note: 429 is NOT fallback-worthy — rate limiter handles it via delay
+    if (/HTTP (403|503)/.test(msg)) return true;
+    if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('ETIMEDOUT')) return true;
+    if (msg.includes('ECONNREFUSED') || msg.includes('ECONNRESET') || msg.includes('ENOTFOUND')) return true;
+    if (msg.includes('Unexpected Content-Type')) return true;
+  }
+  // Non-Error throws (e.g. string) — fallback conservatively
+  return true;
+}
+
+/**
+ * Fetch with automatic engine fallback.
+ * Tries the primary engine first; on qualifying failure, tries the next engine
+ * in the fallback chain. Returns the first successful result.
+ *
+ * @param url - Target URL
+ * @param options - Engine options (antiCrawl, timeout, etc.)
+ * @param primaryEngine - The initially selected engine type
+ * @returns FetchResult with effectiveEngine set to the engine that succeeded
+ */
+export async function fetchWithEngineFallback(
+  url: string,
+  options: EngineOptions | undefined,
+  primaryEngine: EngineType,
+): Promise<FetchResult> {
+  const antiCrawl = options?.antiCrawl;
+  const enabled = antiCrawl?.engineFallback !== false; // default true
+
+  if (!enabled) {
+    // Fallback disabled — use primary engine only
+    const engine = getEngine(primaryEngine);
+    const result = await engine.fetch(url, options);
+    return { ...result, effectiveEngine: primaryEngine };
+  }
+
+  // Build fallback chain: custom > adaptive > default
+  let domain = '';
+  try { domain = new URL(url).hostname; } catch { /* invalid URL */ }
+
+  const customChain = antiCrawl?.engineFallbackChain;
+  const chain = customChain
+    ? getAdaptiveFallbackChain(domain, customChain)
+    : getAdaptiveFallbackChain(domain);
+
+  // Ensure primary engine is first (unless custom chain overrides it)
+  if (!customChain && chain[0] !== primaryEngine) {
+    const idx = chain.indexOf(primaryEngine);
+    if (idx > 0) {
+      chain.splice(idx, 1);
+      chain.unshift(primaryEngine);
+    }
+  }
+
+  // Limit chain length to prevent excessive fallback attempts
+  const maxChainLen = 3;
+  if (chain.length > maxChainLen) {
+    console.log(`[EngineFallback] Chain truncated from ${chain.length} to ${maxChainLen} engines`);
+  }
+  const truncatedChain = chain.slice(0, maxChainLen);
+
+  let lastError: unknown;
+
+  for (let i = 0; i < truncatedChain.length; i++) {
+    const engineType = truncatedChain[i];
+    const engine = getEngine(engineType);
+
+    try {
+      const result = await engine.fetch(url, {
+        ...options,
+        // Reduce retries for fallback attempts (don't waste time retrying a failing engine)
+        antiCrawl: {
+          ...options?.antiCrawl,
+          retries: i === 0 ? options?.antiCrawl?.retries : 0,
+        },
+      });
+
+      // Record success for adaptive chain
+      if (domain) recordEngineSuccess(domain, engineType);
+
+      // Log fallback if we didn't use the primary engine
+      if (i > 0) {
+        console.log(`[EngineFallback] Success with ${engineType} on attempt ${i + 1} for ${url} (primary was ${primaryEngine})`);
+      }
+
+      return { ...result, effectiveEngine: engineType };
+    } catch (err) {
+      lastError = err;
+      const errMsg = err instanceof Error ? err.message : String(err);
+
+      // Record failure for adaptive chain
+      if (domain) recordEngineFailure(domain, engineType);
+
+      // Don't fallback on non-qualifying errors
+      if (!isFallbackWorthyError(err)) throw err;
+
+      console.warn(`[EngineFallback] ${engineType} failed for ${url}: ${errMsg.slice(0, 120)}${i < truncatedChain.length - 1 ? ' → trying next engine' : ' → no more engines'}`);
+    }
+  }
+
+  // All engines failed — throw the last error
+  throw lastError;
+}
+
 // ==================== Engine Registry ====================
 
 const engines: Map<EngineType, ScrapingEngine> = new Map();
@@ -302,6 +556,9 @@ class CheerioEngine implements ScrapingEngine {
     // Anti-fingerprint timing jitter (±50ms, always applied)
     await applyTimingJitter();
 
+    // Pre-resolve the connection pool agent so it's available synchronously in makeRequest
+    const poolAgent = !dispatcher ? await getCheerioAgent() : undefined;
+
     // Browser behavior: throttle if visiting same domain too frequently
     if (targetDomain) {
       const throttleCheck = browserBehavior.shouldThrottle(targetDomain);
@@ -373,7 +630,7 @@ class CheerioEngine implements ScrapingEngine {
               redirect: "manual",
               signal: reqSignal,
               // @ts-expect-error - Bun supports dispatcher option
-              dispatcher: dispatcher || undefined,
+              dispatcher: dispatcher || poolAgent,
             };
 
             // Apply TLS fingerprint profile for anti-detection
@@ -1994,6 +2251,191 @@ class ObscuraEngine implements ScrapingEngine {
   }
 }
 
+// ==================== Infinite Scroll Fetch ====================
+
+/**
+ * Fetch a page that uses infinite scroll or "load more" button pagination.
+ * This requires a browser engine (Playwright or Obscura) because it needs to
+ * interact with the page (scroll, click, wait for mutations).
+ *
+ * Strategy:
+ * 1. Load initial page with Playwright (auto-upgrades non-browser engines)
+ * 2. Capture initial content length (to detect growth)
+ * 3. If loadMoreSelector is set, click the button; otherwise scroll to bottom
+ * 4. Wait for new content to appear (poll-based mutation detection)
+ * 5. Repeat until no new content or maxCycles reached
+ * 6. Return accumulated HTML
+ */
+export async function fetchWithInfiniteScroll(
+  url: string,
+  options: EngineOptions | undefined,
+  engineType: EngineType,
+  pagination: { loadMoreSelector?: string; contentContainerSelector?: string; maxScrollCycles?: number },
+): Promise<{ html: string; finalUrl: string; statusCode: number; cyclesCompleted: number; effectiveEngine: EngineType }> {
+  const maxCycles = pagination.maxScrollCycles || 10;
+  const { loadMoreSelector, contentContainerSelector } = pagination;
+  const signal = options?.signal;
+
+  // Determine which browser engine to use
+  let browserEngine: EngineType;
+  const nonBrowserEngines: EngineType[] = ['cheerio', 'firecrawl', 'agentql', 'scrapling', 'cloud-browser'];
+  if (nonBrowserEngines.includes(engineType)) {
+    // Prefer obscura for anti-fingerprint stealth, fallback to playwright
+    browserEngine = engines.has('obscura') ? 'obscura' : 'playwright';
+    console.log(`[InfiniteScroll] Auto-upgraded engine: ${engineType} → ${browserEngine} (browser required for infinite scroll)`);
+  } else {
+    browserEngine = engineType;
+  }
+
+  // For truly non-browser-capable situations (no playwright/obscura installed),
+  // fall back to single HTTP fetch
+  if (!engines.has(browserEngine)) {
+    console.warn(`[InfiniteScroll] Browser engine ${browserEngine} not available, falling back to single fetch`);
+    const fallbackEngine = getEngine('cheerio');
+    const result = await fallbackEngine.fetch(url, options);
+    return { ...result, cyclesCompleted: 0, effectiveEngine: 'cheerio' };
+  }
+
+  try {
+    const pw = await import('playwright');
+    const launchOptions: import('playwright').LaunchOptions = {
+      headless: true,
+    };
+
+    // Apply proxy configuration if provided
+    if (options?.proxy) {
+      try {
+        const proxyUrl = new URL(options.proxy.startsWith('socks') ? options.proxy.replace('socks', 'http') : options.proxy);
+        launchOptions.proxy = {
+          server: options.proxy,
+          username: proxyUrl.username || undefined,
+          password: proxyUrl.password || undefined,
+        };
+      } catch { /* invalid proxy URL */ }
+    }
+
+    const browser = await pw.chromium.launch(launchOptions);
+    const context = await browser.newContext({
+      userAgent: options?.userAgent || getRandomUA(),
+      ignoreHTTPSErrors: true,
+    });
+
+    // Apply cookies if provided
+    if (options?.cookies?.length) {
+      await context.addCookies(options.cookies.map(c => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain || new URL(url).hostname,
+        path: '/',
+      })));
+    }
+
+    const page = await context.newPage();
+
+    // Navigate with abort signal awareness
+    const gotoPromise = page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: options?.timeout || 30000,
+    });
+
+    // Race navigation against abort signal
+    if (signal?.aborted) {
+      await browser.close().catch(() => {});
+      throw new Error('Aborted before navigation');
+    }
+    const response = await (signal
+      ? Promise.race([gotoPromise, new Promise<never>((_, reject) => {
+          if (signal.aborted) reject(new Error('Aborted during navigation'));
+          signal.addEventListener('abort', () => reject(new Error('Aborted during navigation')), { once: true });
+        })])
+      : gotoPromise
+    );
+    const statusCode = response?.status() || 0;
+
+    // Capture initial content length BEFORE any scrolling
+    const containerSelector = contentContainerSelector || 'body';
+    const initialContentLength = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.innerHTML.length : 0;
+    }, containerSelector).catch(() => 0);
+
+    let lastContentLength = initialContentLength;
+    let cyclesCompleted = 0;
+
+    for (let cycle = 0; cycle < maxCycles; cycle++) {
+      // Check abort before each cycle
+      if (signal?.aborted) {
+        console.log(`[InfiniteScroll] Aborted at cycle ${cycle + 1}`);
+        break;
+      }
+
+      // Wait for lazy-loading scripts to settle
+      await abortableDelay(800 + Math.random() * 400, signal);
+      if (signal?.aborted) break;
+
+      if (loadMoreSelector) {
+        const btn = page.locator(loadMoreSelector).first();
+        const visible = await btn.isVisible().catch(() => false);
+        if (visible) {
+          await btn.click().catch(() => {});
+          await abortableDelay(1500 + Math.random() * 1000, signal);
+        } else {
+          console.log(`[InfiniteScroll] Load-more button not visible at cycle ${cycle + 1}, stopping`);
+          break;
+        }
+      } else {
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+        await abortableDelay(1200 + Math.random() * 800, signal);
+      }
+
+      if (signal?.aborted) break;
+
+      // Check content growth
+      const contentLength = await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        return el ? el.innerHTML.length : 0;
+      }, containerSelector).catch(() => 0);
+
+      if (contentLength <= lastContentLength) {
+        console.log(`[InfiniteScroll] No new content at cycle ${cycle + 1} (${contentLength} chars), stopping`);
+        break;
+      }
+
+      lastContentLength = contentLength;
+      cyclesCompleted++;
+      console.log(`[InfiniteScroll] Cycle ${cycle + 1}: content grew to ${contentLength} chars`);
+    }
+
+    const html = await page.content();
+    const finalUrl = page.url();
+
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+
+    return { html, finalUrl, statusCode, cyclesCompleted, effectiveEngine: browserEngine };
+  } catch (err) {
+    if (err instanceof Error && (err.message.includes('Aborted') || err.message.includes('aborted'))) {
+      throw err;
+    }
+    console.warn(`[InfiniteScroll] Browser-based scroll failed: ${err instanceof Error ? err.message : err}`);
+    // Fall back to a single HTTP fetch
+    const fallbackEngine = getEngine('cheerio');
+    const result = await fallbackEngine.fetch(url, options);
+    return { ...result, cyclesCompleted: 0, effectiveEngine: 'cheerio' };
+  }
+}
+
+/** Delay that respects abort signal */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise(r => setTimeout(r, ms));
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) { reject(new Error('Aborted')); return; }
+    const timer = setTimeout(resolve, ms);
+    const onAbort = () => { clearTimeout(timer); reject(new Error('Aborted')); };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 // ==================== Smart Engine Selector ====================
 
 /**
@@ -2061,6 +2503,12 @@ export async function closeAllEngines(): Promise<void> {
   if (engines.has("obscura")) {
     const obsEngine = engines.get("obscura");
     if (obsEngine?.close) await obsEngine.close();
+  }
+  // Close HTTP connection pool
+  if (_cheerioAgent) {
+    try { _cheerioAgent.close(); } catch { /* already closed */ }
+    _cheerioAgent = null;
+    console.log('[Engines] HTTP connection pool closed');
   }
   engines.clear();
   console.log("[Engines] All engines closed");
