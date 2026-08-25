@@ -65,8 +65,8 @@ class RequestFingerprintManager {
     proxyUrl?: string;
     userAgent?: string;
   }): RequestFingerprint {
-    // Generate 8-char hex ID
-    const id = this.generateHexId(8);
+    // Generate 16-char hex ID
+    const id = this.generateHexId(16);
 
     const fp: RequestFingerprint = {
       requestId: id,
@@ -119,6 +119,17 @@ class RequestFingerprintManager {
     }
 
     return { valid: true };
+  }
+
+  /**
+   * Discard a fingerprint — removes it from all tracking maps.
+   * Use this on exception paths to prevent leaked domainFpIds entries.
+   */
+  discard(requestId: string): void {
+    for (const [, ids] of this.domainFpIds) {
+      ids.delete(requestId);
+    }
+    this.recentFingerprints.delete(requestId);
   }
 
   /**

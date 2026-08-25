@@ -131,23 +131,30 @@ class CookieJar {
   store(domain: string, setCookieHeaders: string[]): void {
     if (!setCookieHeaders.length) return;
 
-    if (!this.cookies.has(domain)) {
-      this.cookies.set(domain, []);
-    }
-    const list = this.cookies.get(domain)!;
+    const domainsToPersist = new Set<string>();
 
     for (const header of setCookieHeaders) {
       const cookie = this.parseSetCookie(header, domain);
       if (!cookie) {
         // Could be a deletion cookie (Max-Age=0) - remove existing
+        // Search all domains for the cookie to delete
         const eqIdx = header.indexOf('=');
         if (eqIdx > 0) {
           const delName = header.substring(0, eqIdx).trim().replace(/[\r\n\t\x00-\x1f]/g, '');
-          const idx = list.findIndex(c => c.name === delName && c.domain === domain);
-          if (idx >= 0) list.splice(idx, 1);
+          for (const [d, list] of this.cookies) {
+            const idx = list.findIndex(c => c.name === delName && (c.domain === domain || d === domain));
+            if (idx >= 0) { list.splice(idx, 1); break; }
+          }
         }
         continue;
       }
+
+      // Store under cookie's own domain (not request domain)
+      const storageDomain = cookie.domain.toLowerCase();
+      if (!this.cookies.has(storageDomain)) {
+        this.cookies.set(storageDomain, []);
+      }
+      const list = this.cookies.get(storageDomain)!;
 
       // Update existing cookie with same name+domain+path, or add new
       const existingIdx = list.findIndex(
@@ -158,13 +165,17 @@ class CookieJar {
       } else {
         list.push(cookie);
       }
-    }
 
-    this.lastActivity.set(domain, Date.now());
+      this.lastActivity.set(storageDomain, Date.now());
+      domainsToPersist.add(storageDomain);
+    }
 
     // Persist to SQLite
     try {
-      cookieStore.upsert(list, domain);
+      for (const storageDomain of domainsToPersist) {
+        const list = this.cookies.get(storageDomain);
+        if (list) cookieStore.upsert(list, storageDomain);
+      }
     } catch {
       // Persistence failure should not break in-memory operation
     }
@@ -311,7 +322,9 @@ class CookieJar {
         if (!this.cookies.has(cookie.domain)) {
           this.cookies.set(cookie.domain, []);
         }
-        this.cookies.get(cookie.domain)!.push(cookie);
+        const list = this.cookies.get(cookie.domain)!;
+        const idx = list.findIndex(c => c.name === cookie.name && c.domain === cookie.domain && c.path === cookie.path);
+        if (idx >= 0) { list[idx] = cookie; } else { list.push(cookie); }
         domainsToPersist.add(cookie.domain);
         imported++;
       }
@@ -347,6 +360,19 @@ class CookieJar {
       }
     }
 
+    // Evict stale domains that only contain session cookies
+    const STALE_SESSION_THRESHOLD = 6 * 60 * 60 * 1000; // 6 hours
+    const nowMs = Date.now();
+    for (const [domain, lastAct] of this.lastActivity) {
+      if (nowMs - lastAct > STALE_SESSION_THRESHOLD) {
+        const cookies = this.cookies.get(domain);
+        if (cookies && cookies.every(c => c.expires === 0)) {
+          this.cookies.delete(domain);
+          this.lastActivity.delete(domain);
+        }
+      }
+    }
+
     return removed;
   }
 
@@ -368,7 +394,8 @@ export const cookieJar = new CookieJar();
 cookieJar.restore();
 
 // Periodic cleanup every 5 minutes
-setInterval(() => {
+let _cleanupInterval: ReturnType<typeof setInterval> | null = null;
+_cleanupInterval = setInterval(() => {
   const removed = cookieJar.cleanup();
   // Also clean expired cookies from SQLite
   try { cookieStore.deleteExpired(); } catch { /* ignore */ }
@@ -378,3 +405,8 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+
+/** Tear down the cookie jar and stop the cleanup interval */
+export function destroyCookieJar(): void {
+  if (_cleanupInterval) { clearInterval(_cleanupInterval); _cleanupInterval = null; }
+}

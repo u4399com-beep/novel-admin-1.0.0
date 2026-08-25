@@ -109,12 +109,9 @@ class EngineUpgradeStrategy implements CaptchaStrategy {
   ]);
 
   canHandle(_detection: CaptchaDetection, context?: StrategyContext): boolean {
-    // Only handle if current engine has a valid upgrade path
-    // This allows DelayBackoffStrategy (which provides escalating delays)
-    // to handle external/stealth engines that can't be upgraded further.
-    if (context?.currentEngine && EngineUpgradeStrategy.EXTERNAL_ENGINES.has(context.currentEngine)) {
-      return false; // No upgrade path — let DelayBackoffStrategy handle with backoff
-    }
+    if (!context?.currentEngine) return false;
+    if (EngineUpgradeStrategy.EXTERNAL_ENGINES.has(context.currentEngine)) return false;
+    if (!EngineUpgradeStrategy.UPGRADE_PATH[context.currentEngine]) return false;
     return true;
   }
 

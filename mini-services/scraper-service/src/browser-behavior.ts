@@ -153,6 +153,11 @@ class BrowserBehavior {
     // Already visited this domain's root — don't do it again
     if (this.domainRootsVisited.has(domain)) return null;
 
+    // Capacity guard: prevent unbounded growth
+    if (this.domainRootsVisited.size >= MAX_TRACKED_DOMAINS && !this.domainRootsVisited.has(domain)) {
+      return null;
+    }
+
     // 10% chance to simulate entry page visit
     if (Math.random() < ENTRY_PAGE_CHANCE) {
       this.domainRootsVisited.add(domain);

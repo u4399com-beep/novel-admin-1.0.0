@@ -48,7 +48,7 @@ const MAX_DOMAINS = 500;
 
 class AdaptiveDelayManager {
   private domains = new Map<string, DomainState>();
-  private domainAccessOrder: string[] = []; // For LRU eviction
+  private domainAccessOrder = new Map<string, true>(); // For LRU eviction (insertion-ordered Map)
   private config: DelayConfig;
   private static instance: AdaptiveDelayManager;
 
@@ -219,8 +219,7 @@ class AdaptiveDelayManager {
   /** Reset backoff to base level for a specific domain */
   resetDomain(domain: string): void {
     this.domains.delete(domain);
-    const idx = this.domainAccessOrder.indexOf(domain);
-    if (idx !== -1) this.domainAccessOrder.splice(idx, 1);
+    this.domainAccessOrder.delete(domain);
   }
 
   /** Get number of tracked domains */
@@ -233,7 +232,8 @@ class AdaptiveDelayManager {
     if (!state) {
       // LRU eviction when at capacity
       if (this.domains.size >= MAX_DOMAINS) {
-        const oldest = this.domainAccessOrder.shift();
+        const oldest = this.domainAccessOrder.keys().next().value;
+        if (oldest) this.domainAccessOrder.delete(oldest);
         if (oldest) this.domains.delete(oldest);
       }
       state = {
@@ -244,10 +244,9 @@ class AdaptiveDelayManager {
       };
       this.domains.set(domain, state);
     }
-    // Update access order for LRU
-    const idx = this.domainAccessOrder.indexOf(domain);
-    if (idx !== -1) this.domainAccessOrder.splice(idx, 1);
-    this.domainAccessOrder.push(domain);
+    // Update access order for LRU (delete and re-insert moves to end)
+    this.domainAccessOrder.delete(domain);
+    this.domainAccessOrder.set(domain, true);
     return state;
   }
 }
@@ -407,19 +406,23 @@ export function getBrowsingSessionState(domain: string): { requestCount: number;
 }
 
 function getOrCreateBrowsingSession(domain: string): BrowsingSessionState {
-  let session = browsingSessions.get(domain);
-  if (!session) {
-    // LRU eviction
-    if (browsingSessions.size >= MAX_BROWSING_SESSIONS) {
-      const firstKey = browsingSessions.keys().next().value;
-      if (firstKey) browsingSessions.delete(firstKey);
-    }
-    session = {
-      requestCount: 0,
-      // First pause after 5-10 requests
-      nextPauseAt: 5 + Math.floor(Math.random() * 6),
-    };
-    browsingSessions.set(domain, session);
+  const existing = browsingSessions.get(domain);
+  if (existing) {
+    browsingSessions.delete(domain);
+    browsingSessions.set(domain, existing);
+    return existing;
   }
+  // LRU eviction
+  if (browsingSessions.size >= MAX_BROWSING_SESSIONS) {
+    const firstKey = browsingSessions.keys().next().value;
+    if (firstKey) browsingSessions.delete(firstKey);
+  }
+  const session = {
+    requestCount: 0,
+    // First pause after 5-10 requests
+    nextPauseAt: 5 + Math.floor(Math.random() * 6),
+  };
+  browsingSessions.set(domain, session);
   return session;
 }
+

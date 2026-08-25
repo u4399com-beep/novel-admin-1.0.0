@@ -223,8 +223,10 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
   const hasSignificantNonAscii = nonAsciiCount > 20;
 
   if (hasSignificantNonAscii) {
-    const gbkLikely = looksLikeGBK(bytes);
-    const big5Likely = looksLikeBig5(bytes);
+    const ANALYSIS_LIMIT = 256 * 1024;
+    const analysisBytes = bytes.length > ANALYSIS_LIMIT ? bytes.slice(0, ANALYSIS_LIMIT) : bytes;
+    const gbkLikely = looksLikeGBK(analysisBytes);
+    const big5Likely = looksLikeBig5(analysisBytes);
 
     // Discriminate GBK vs Big5: if all high lead bytes fall in Big5's range
     // (0xA1-0xF9) with no GBK-only leads (0x81-0xA0, 0xFA-0xFE), prefer Big5

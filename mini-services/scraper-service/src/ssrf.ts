@@ -106,7 +106,10 @@ function parseIpAddress(hostname: string): string | null {
 
   // Handle IPv6 without brackets
   if (hostname.includes(':')) {
-    return hostname;
+    if (/^[0-9a-fA-F:]+$/.test(hostname) && (hostname.match(/:/g) || []).length >= 2) {
+      return hostname;
+    }
+    return null;
   }
 
   return null;

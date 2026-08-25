@@ -185,6 +185,11 @@ class DomainRateLimiter {
     // Check penalty
     const penaltyActive = state.penaltyActive && now < state.penaltyUntil;
 
+    // Calculate effective max RPM accounting for penalty multiplier
+    const effectiveMaxRPM = penaltyActive
+      ? Math.max(1, Math.floor(state.maxRPM * this.config.penaltyMultiplier))
+      : state.maxRPM;
+
     // Determine status
     let status: DomainRateState['status'] = 'normal';
     let estimatedWaitMs = 0;
@@ -192,7 +197,7 @@ class DomainRateLimiter {
     if (penaltyActive) {
       status = 'penalized';
       estimatedWaitMs = Math.max(0, state.penaltyUntil - now);
-    } else if (currentRPM >= state.maxRPM) {
+    } else if (currentRPM >= effectiveMaxRPM) {
       status = 'throttled';
       const oldestInWindow = currentTimestamps[0];
       if (oldestInWindow) {
@@ -206,7 +211,7 @@ class DomainRateLimiter {
 
     return {
       domain,
-      maxRPM: state.maxRPM,
+      maxRPM: effectiveMaxRPM,
       currentRPM,
       burstRemaining: state.burstRemaining,
       penaltyActive,

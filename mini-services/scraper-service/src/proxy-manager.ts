@@ -205,11 +205,18 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
 
 /** Invalidate a cached dispatcher (e.g. after removing a proxy) */
 export function invalidateDispatcher(proxyUrl: string): void {
+  const d = dispatcherCache.get(proxyUrl);
+  if (d) {
+    try { (d as any).close?.(); } catch { /* already closed */ }
+  }
   dispatcherCache.delete(proxyUrl);
 }
 
 /** Clear the entire dispatcher cache */
 export function clearDispatcherCache(): void {
+  for (const [url, d] of dispatcherCache) {
+    try { (d as any).close?.(); } catch { /* */ }
+  }
   dispatcherCache.clear();
 }
 
@@ -605,7 +612,7 @@ class ProxyManager {
       // Any response means the proxy host is reachable (even auth errors mean it's alive)
       // but we couldn't route traffic through it — record as degraded (not a full success)
       entry.consecutiveFails = 0; // Reset fails since host is alive
-      return { healthy: true, responseTime, error: 'Host reachable but through-proxy test failed' };
+      return { healthy: false, responseTime, error: 'Host reachable but through-proxy test failed' };
     } catch (err) {
       const responseTime = Date.now() - startTime;
       entry.lastCheck = Date.now();

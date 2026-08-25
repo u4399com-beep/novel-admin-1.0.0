@@ -80,6 +80,12 @@ class Semaphore {
 
 const dbWriteSemaphore = new Semaphore(3);
 
+/** Per-domain lock to prevent concurrent engine downgrade from multiple workers */
+const _engineUpgradeLock = new Set<string>();
+
+/** Per-domain pause promise to prevent double CAPTCHA pause from concurrent workers */
+const _captchaPausePromises = new Map<string, Promise<void>>();
+
 /** Extract domain from a URL string for adaptive delay tracking */
 function extractDomain(url: string): string {
   try { return new URL(url).hostname; } catch { return 'unknown'; }
@@ -164,9 +170,9 @@ async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) 
   // Clean up throttle entry for terminal states to prevent memory leak
   if (updates.status && ['completed', 'failed', 'cancelled'].includes(updates.status)) {
     progressThrottle.delete(taskId);
+  } else {
+    progressThrottle.set(taskId, now);
   }
-
-  progressThrottle.set(taskId, now);
   try {
     await apiCall("PUT", `/api/scrape-tasks/${taskId}`, updates);
   } catch (err) {
@@ -669,7 +675,7 @@ async function executeTaskBody(
           try {
             const detection: CaptchaDetection = {
               detected: true,
-              type: 'generic',
+              type: 'unknown',
               confidence: 0.8,
               evidence: ['book-page-captcha'],
             };
@@ -688,8 +694,12 @@ async function executeTaskBody(
                 bookUrl,
                 `书籍页连续遇到${newCount}次验证码，已自动切换到${strategyResult.nextEngine}引擎`
               );
-              engineType = strategyResult.nextEngine;
-              ctx.engineType = engineType;
+              if (!_engineUpgradeLock.has(bkDomain)) {
+                _engineUpgradeLock.add(bkDomain);
+                engineType = strategyResult.nextEngine;
+                ctx.engineType = engineType;
+                setTimeout(() => _engineUpgradeLock.delete(bkDomain), 5000);
+              }
             }
 
             if (strategyResult.delayMs && strategyResult.delayMs >= BOOK_CAPTCHA_PAUSE_MS) {
@@ -726,6 +736,7 @@ async function executeTaskBody(
       workers.push(
         (async () => {
           while (bookQueue.length > 0) {
+            if (abortController.signal.aborted) break;
             const url = bookQueue.shift()!;
             const index = bookUrls.length - bookQueue.length - 1;
             await processBook(url, index);
@@ -886,15 +897,17 @@ async function executeTaskBody(
         const chapter = chapterQueue.shift()!;
 
         try {
+          // Dedup check BEFORE eager mark (check → eager mark → delay → fetch)
+          if (isIncremental && (existingChapters.has(chapter.url) || existingChapters.has(`title:${chapterDedupKey(chapter.title)}`))) {
+            skippedChaptersCount.increment();
+            return;
+          }
+
+          // Eagerly mark before any await to prevent TOCTOU race
           if (isIncremental) {
-            // Check URL-based dedup
-            const urlExists = existingChapters.has(chapter.url);
-            // Check title-based dedup with normalization
-            const titleExists = existingChapters.has(`title:${chapterDedupKey(chapter.title)}`);
-            if (urlExists || titleExists) {
-              skippedChaptersCount.increment();
-              return;
-            }
+            existingChapters.set(chapter.url, 'pending');
+            const titleKey = `title:${chapterDedupKey(chapter.title)}`;
+            if (!existingChapters.has(titleKey)) existingChapters.set(titleKey, 'pending');
           }
 
           if (antiCrawlConfig.delay) {
@@ -936,6 +949,14 @@ async function executeTaskBody(
 
             // Pause if consecutive CAPTCHAs exceed threshold
             if (newCount >= CONSECUTIVE_CAPTCHA_THRESHOLD) {
+              // If another worker is already handling the pause for this domain, wait and return
+              if (_captchaPausePromises.has(chDomain)) {
+                await _captchaPausePromises.get(chDomain);
+                return;
+              }
+              const pausePromise = new Promise<void>(resolve => setTimeout(resolve, 60000));
+              _captchaPausePromises.set(chDomain, pausePromise);
+              try {
               await addTaskLog(taskId, "warn", `验证码频繁(${chDomain}), 暂停${CAPTCHA_PAUSE_MS / 1000}秒`);
               await updateTaskProgress(taskId, {
                 currentStep: `⚠️ 验证码频繁，暂停${CAPTCHA_PAUSE_MS / 1000}秒...`,
@@ -958,8 +979,12 @@ async function executeTaskBody(
                     chapter.url,
                     `当前引擎连续遇到${newCount}次验证码，已自动切换到${strategyResult.nextEngine}引擎`
                   );
-                  engineType = strategyResult.nextEngine;
-                  ctx.engineType = engineType;
+                  if (!_engineUpgradeLock.has(chDomain)) {
+                    _engineUpgradeLock.add(chDomain);
+                    engineType = strategyResult.nextEngine;
+                    ctx.engineType = engineType;
+                    setTimeout(() => _engineUpgradeLock.delete(chDomain), 5000);
+                  }
                 }
 
                 // Use the longer of strategy-recommended delay and standard pause
@@ -971,6 +996,9 @@ async function executeTaskBody(
               } catch {
                 // Fallback to standard pause
                 await new Promise<void>((resolve) => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+              }
+              } finally {
+                _captchaPausePromises.delete(chDomain);
               }
 
               consecutiveCaptchaCounts.set(chDomain, 0);
@@ -1055,6 +1083,7 @@ async function executeTaskBody(
         chapterWorkers.push(
           (async () => {
             while (chapterQueue.length > 0) {
+              if (abortController.signal.aborted) break;
               await processChapter();
             }
           })()

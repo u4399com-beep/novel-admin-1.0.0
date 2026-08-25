@@ -128,7 +128,7 @@ class AntiCrawlAdvisor {
     const now = Date.now();
     const ROLLING_WINDOW = THIRTY_MINUTES;
     const pruneTimestamps = (arr: number[]) => {
-      let cutoff = 0;
+      let cutoff = arr.length; // Default: clear all if everything is stale
       for (let i = 0; i < arr.length; i++) {
         if (now - arr[i] <= ROLLING_WINDOW) { cutoff = i; break; }
       }

@@ -59,8 +59,9 @@ class SessionManager {
    * Otherwise creates a new session.
    */
   acquireSession(domain: string, taskId?: string): SessionData {
+    const normalizedDomain = domain.toLowerCase().replace(/^www\./, '');
     // Try to find an existing non-blocked session for this domain
-    const sessionIds = this.domainSessions.get(domain) || [];
+    const sessionIds = this.domainSessions.get(normalizedDomain) || [];
     let bestSession: InternalSession | null = null;
     let bestUsage = Infinity;
 
@@ -95,7 +96,7 @@ class SessionManager {
     }
 
     // Enforce max sessions per domain: clean up stale/blocked sessions first
-    const domainList = this.domainSessions.get(domain) || [];
+    const domainList = this.domainSessions.get(normalizedDomain) || [];
     if (domainList.length >= this.maxSessionsPerDomain) {
       // Try to evict a blocked or overused session to make room
       let evicted = false;
@@ -119,17 +120,17 @@ class SessionManager {
     }
 
     // Create a new session (use monotonic counter to prevent same-millisecond collision)
-    const sessionId = `sess_${domain}_${Date.now()}_${++this.sessionCounter}`;
+    const sessionId = `sess_${normalizedDomain}_${Date.now()}_${++this.sessionCounter}`;
     let fingerprint;
     let cookieHeader = '';
     try {
-      fingerprint = getProfileForDomain(domain);
+      fingerprint = getProfileForDomain(normalizedDomain);
     } catch {
       // Fallback: use a default profile if stealth module fails
       fingerprint = { userAgent: '', screenWidth: 1920, screenHeight: 1080, colorDepth: 24, pixelRatio: 1, timezone: 'Asia/Shanghai', languages: ['zh-CN', 'en-US'], platform: 'Win32', hardwareConcurrency: 8, deviceMemory: 8 } as any;
     }
     try {
-      cookieHeader = cookieJar.getCookieHeader(domain, '/');
+      cookieHeader = cookieJar.getCookieHeader(normalizedDomain, '/');
     } catch {
       // Cookie jar failure is non-fatal; proceed with empty cookies
       cookieHeader = '';
@@ -150,12 +151,12 @@ class SessionManager {
     this.sessions.set(sessionId, session);
 
     // Register in domain index
-    const dl = this.domainSessions.get(domain) || [];
+    const dl = this.domainSessions.get(normalizedDomain) || [];
     dl.push(sessionId);
-    this.domainSessions.set(domain, dl);
+    this.domainSessions.set(normalizedDomain, dl);
 
     if (process.env.DEBUG === 'true') {
-      console.log(`[SessionManager] Created new session ${sessionId} for ${domain}`);
+      console.log(`[SessionManager] Created new session ${sessionId} for ${normalizedDomain}`);
     }
 
     return this.toPublicSession(session);
@@ -181,7 +182,8 @@ class SessionManager {
 
   /** Get all sessions for a domain */
   getDomainSessions(domain: string): SessionData[] {
-    const sessionIds = this.domainSessions.get(domain) || [];
+    const normalizedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const sessionIds = this.domainSessions.get(normalizedDomain) || [];
     return sessionIds
       .map(sid => this.sessions.get(sid))
       .filter((s): s is InternalSession => !!s)
@@ -210,7 +212,8 @@ class SessionManager {
    * and a cookie header string ready to use in a request.
    */
   getSessionForRequest(domain: string): { sessionId: string; userAgent: string; cookies: string } | null {
-    const session = this.acquireSession(domain);
+    const normalizedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const session = this.acquireSession(normalizedDomain);
     if (!session) return null;
 
     // Build cookie header string from session cookies
@@ -219,7 +222,7 @@ class SessionManager {
       .join('; ');
 
     // Also merge any fresh cookies from the cookie jar (deduplicated by name)
-    const freshCookies = cookieJar.getCookieHeader(domain, '/');
+    const freshCookies = cookieJar.getCookieHeader(normalizedDomain, '/');
     let mergedCookies = cookieStr;
     if (freshCookies) {
       const cookieMap = new Map<string, string>();
