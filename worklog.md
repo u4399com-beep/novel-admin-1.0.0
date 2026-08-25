@@ -16986,3 +16986,96 @@ Stage Summary:
 - 13项修复(4M/9L), 0 HIGH
 - 关键修复: rate limiter双重惩罚(有效限速仅25%)、blockedDomains域名不一致、human break间隔崩溃、charset分析限制回归
 - 9文件, +38/-27行
+
+---
+Task ID: R45
+Agent: Main Orchestrator + 1 Audit Sub-agent + 1 Fix Agent
+Task: R45 引擎回退链+HTTP连接池+无限滚动+SOCKS4+17项审计修复
+
+Work Log:
+- 规划R45迭代: 4项增强 + 审计修复
+- 实现引擎失败自动回退链(fetchWithEngineFallback)
+- 实现CheerioEngine HTTP连接池(undici Agent, keepAlive=30s)
+- 实现无限滚动/加载更多分页模式(fetchWithInfiniteScroll)
+- 实现SOCKS4代理支持(socks-proxy-agent)
+- 审计子代理逐行审查新代码,发现17个问题
+- 修复全部17个问题(1H/7M/9L)
+
+## 增强项 (4项)
+
+### 1. 引擎失败回退链 (engines.ts)
+- fetchWithEngineFallback(): 自动降级到备用引擎
+- DEFAULT_FALLBACK_CHAIN: cheerio→playwright→obscura→scrapling→firecrawl→agentql→cloud-browser
+- 自适应排序: per-domain失败计数器,10分钟滑动窗口,LRU 500域名上限
+- isFallbackWorthyError(): 智能判断(排除CAPTCHA/rate-limit/abort/circuit-breaker)
+- 集成到paginatedFetch+handleScrapeBook
+- effectiveEngine追踪: 返回实际使用的引擎
+
+### 2. HTTP连接池 (engines.ts)
+- undici Agent连接池: keepAlive=30s, maxConn=20/origin
+- Promise-based单例防并发竞态
+- closeAllEngines()清理连接池
+
+### 3. 无限滚动分页 (engines.ts + scrapers.ts + types.ts)
+- Pagination.type新增"infinite-scroll"
+- fetchWithInfiniteScroll(): 浏览器引擎自动升级
+- 支持"加载更多"按钮点击和滚动到底
+- 内容增长检测(初始长度比较)
+- abort signal全链路支持(abortableDelay)
+- proxy+cookies传递到浏览器上下文
+- CAPTCHA检测集成
+
+### 4. SOCKS4代理支持 (proxy-manager.ts)
+- socks-proxy-agent处理socks4:// URLs
+- SOCKS4无认证警告
+
+## 审计修复 (17项)
+
+### HIGH (1项)
+| # | 文件 | 修复 | 类别 |
+|---|------|------|------|
+| 1 | engines.ts | Playwright infinite scroll忽略abort signal | 资源/UX |
+
+### MEDIUM (7项)
+| # | 文件 | 修复 | 类别 |
+|---|------|------|------|
+| 2 | engines.ts | 连接池getCheerioAgent竞态条件 | 竞态 |
+| 3 | engines.ts | domainEngineFailures无限增长→LRU 500 | 内存泄漏 |
+| 4 | engines.ts | 冗余双重fetch移除 | 性能 |
+| 5 | engines.ts | 浏览器无proxy/cookies传递 | 正确性 |
+| 6 | engines.ts | scrapling/cloud-browser静默空操作 | 逻辑 |
+| 7 | scrapers.ts | infinite-scroll绕过引擎回退文档 | 逻辑 |
+
+### LOW (9项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 8 | engines.ts | 429 contradict rate-limit |
+| 9 | engines.ts | dead code null check |
+| 10 | engines.ts | getRecentFailureCount隐藏突变 |
+| 11 | engines.ts | 硬编码chainLen截断日志 |
+| 12 | engines.ts | cyclesCompleted虚增→初始长度比较 |
+| 13 | scrapers.ts | 无限滚动无CAPTCHA检测 |
+| 14 | scrapers.ts | 无限滚动返回错误engine |
+| 15 | proxy-manager.ts | SOCKS4无auth警告 |
+| 16 | types.ts | selector必填但infinite-scroll不用 |
+
+## 修改文件 (4个)
+- engines.ts: +250/-90
+- scrapers.ts: +40/-20
+- types.ts: +8/-3
+- proxy-manager.ts: +12/-4
+
+## 验证结果
+- 全量集成编译(index.ts): 0错误
+- TypeScript strict: 0错误
+- Commit: 20ce716
+
+## 历史累计修复: 538 + 17 = 555项
+## 累计增强: 11 + 4 = 15项
+## Stealth: 60活跃sections
+
+Stage Summary:
+- 4项采集+反反爬增强(引擎回退链/连接池/无限滚动/SOCKS4)
+- 17项审计修复(1H/7M/9L)
+- 关键修复: abort signal全链路、连接池竞态、无限滚动proxy+cookies
+- 4文件, +310/-117行
