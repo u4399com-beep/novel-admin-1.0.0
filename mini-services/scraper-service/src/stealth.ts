@@ -250,10 +250,14 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   // Derive platform from UA to avoid contradictions (Edge UA + Mac platform = detectable)
   const uaPlatform = derivePlatformFromUA(userAgent);
   // Re-derive vendor for UA-consistent platform
+  // NOTE: Only Firefox on Linux uses Mesa vendor/renderer.
+  // Chrome/Edge on Linux use ANGLE (same as Windows) — Mesa + Chrome is a detection vector.
+  const isLinux = uaPlatform === 'Linux x86_64';
+  const isFirefoxUA = /Firefox\//.test(userAgent);
   let vendor: string;
   if (uaPlatform === 'MacIntel') {
     vendor = 'Google Inc. (Apple)';
-  } else if (uaPlatform === 'Linux x86_64') {
+  } else if (isLinux && isFirefoxUA) {
     vendor = 'Mesa';
   } else {
     const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
@@ -301,10 +305,14 @@ export function generateRandomFingerprint(): FingerprintProfile {
   // Derive platform from UA to avoid contradictions (Edge UA + Mac platform = detectable)
   const uaPlatform = derivePlatformFromUA(userAgent);
   // Re-derive vendor for UA-consistent platform
+  // NOTE: Only Firefox on Linux uses Mesa vendor/renderer.
+  // Chrome/Edge on Linux use ANGLE (same as Windows) — Mesa + Chrome is a detection vector.
+  const isLinux = uaPlatform === 'Linux x86_64';
+  const isFirefoxUA = /Firefox\//.test(userAgent);
   let vendor: string;
   if (uaPlatform === 'MacIntel') {
     vendor = 'Google Inc. (Apple)';
-  } else if (uaPlatform === 'Linux x86_64') {
+  } else if (isLinux && isFirefoxUA) {
     vendor = 'Mesa';
   } else {
     const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
@@ -456,6 +464,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
   const _uaString = ${JSON.stringify(profile.userAgent)};
   const _isFirefox = /Firefox\//.test(_uaString) || /Seamonkey\//i.test(_uaString);
 
+  // Seeded PRNG for deterministic values across all sections (avoids ReferenceError / NaN)
+  var _navSeed = 0;
+  for (var _ns0 = 0; _ns0 < PROFILE.seed.length; _ns0++) { _navSeed = ((_navSeed << 5) - _navSeed + PROFILE.seed.charCodeAt(_ns0)) | 0; }
+  _navSeed = Math.abs(_navSeed);
+  function _seededRandom(offset) { return ((Math.sin(_navSeed + offset) * 10000) % 1 + 1) % 1; }
+
   // ---- 1. Navigator Override ----
 
   // Remove webdriver flag — the primary automation detection signal
@@ -466,6 +480,50 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // Also delete from prototype chain
   try { delete navigator.__proto__.webdriver; } catch(e) {}
+
+  // Also override at the prototype level (catches cross-frame checks)
+  try {
+    Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false, configurable: true });
+  } catch(_e) {}
+
+  // Override navigator.userAgentData (Chrome 90+ Client Hints API)
+  try {
+    var _isMac = /Macintosh/.test(_uaString);
+    if (!_isFirefox && navigator.userAgentData) {
+      var _uaVer = _uaString.match(/Chrome\/(\d+)/);
+      var _chromeMajor = _uaVer ? parseInt(_uaVer[1]) : 131;
+      var _uaBrands = [
+        { brand: "Google Chrome", version: String(_chromeMajor) },
+        { brand: "Not A(Brand", version: "99" },
+        { brand: "Chromium", version: String(_chromeMajor) }
+      ];
+      var _origUAD = navigator.userAgentData;
+      Object.defineProperty(navigator, 'userAgentData', {
+        get: function() {
+          return {
+            brands: _uaBrands,
+            mobile: false,
+            platform: _isMac ? 'macOS' : 'Windows',
+            getHighEntropyValues: function(hints) {
+              return Promise.resolve({
+                brands: _uaBrands,
+                mobile: false,
+                platform: _isMac ? 'macOS' : 'Windows',
+                architecture: 'x86',
+                bitness: '64',
+                model: '',
+                platformVersion: _isMac ? '14.0.0' : '15.0.0',
+                fullVersionList: _uaBrands.map(function(b) { return { brand: b.brand, version: b.version }; }),
+                uaFullVersion: String(_chromeMajor) + '.0.0.0'
+              });
+            },
+            toJSON: function() { return { brands: _uaBrands, mobile: false, platform: 'Windows' }; }
+          };
+        },
+        configurable: true
+      });
+    }
+  } catch(_e) {}
 
   // Plugins — Firefox has 0-2 generic plugins; Chrome/Edge have 5 standard plugins
   const pluginData = _isFirefox ? [
@@ -575,6 +633,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
 
+  // pdfViewerEnabled — Chrome/Edge return true, Firefox returns false
+  try {
+    Object.defineProperty(navigator, 'pdfViewerEnabled', { get: () => !_isFirefox, configurable: true });
+  } catch(_e) {}
+
   // Remove other automation indicators
   try { delete navigator.__proto__.driver; } catch(e) {}
   try { delete navigator.__proto__.automation; } catch(e) {}
@@ -605,7 +668,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Safari detection — only true if Safari is the last browser token (no Chrome/Edge after it)
   const _isSafari = /Safari\/[\d.]+\s*$/.test(_uaString) && !_isFirefox && !/Chrome\//.test(_uaString) && !/Edg\//.test(_uaString);
   Object.defineProperty(navigator, 'languages', {
-    get: () => _isFirefox ? ['en-US', 'en'] : PROFILE.languages || ['en-US', 'en', 'zh-CN', 'zh'],
+    get: () => PROFILE.languages || ['en-US', 'en', 'zh-CN', 'zh'],
     configurable: true,
   });
 
@@ -722,7 +785,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
   Object.defineProperty(screen, 'availHeight', {
-    get: () => PROFILE.screenHeight - 40,
+    get: () => PROFILE.screenHeight - (_isMac ? 25 : 40),
     configurable: true,
   });
   Object.defineProperty(screen, 'colorDepth', {
@@ -772,7 +835,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     if (typeof DOMRect === 'undefined') {
       window.DOMRect = function(x, y, w, h) {
         return { x: x||0, y: y||0, width: w||0, height: h||0,
-                 top: (y||0), bottom: (y||0)+(w||0), left: (x||0), right: (x||0)+(w||0) };
+                 top: (y||0), bottom: (y||0)+(h||0), left: (x||0), right: (x||0)+(w||0) };
       } as any;
     }
     // Ensure new DOMRect() returns all zeros (standard behavior)
@@ -862,7 +925,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
             return this.querySelector('*') ? '' : '';
           },
           set: function(v) {
-            // Allow normal operation
+            // Use native innerHTML setter via Object.defineProperty
+            Object.defineProperty(this, 'innerHTML', { value: v, writable: true, configurable: true });
           },
         });
       } catch(e) {}
@@ -1585,11 +1649,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Override performance.getEntriesByType('navigation') to return realistic values,
   // preventing detection via timing-based fingerprinting.
 
-  // Seeded PRNG for deterministic timing values (avoids ReferenceError in strict mode)
-  var _navSeed = 0;
-  for (var _ns = 0; _ns < PROFILE.seed.length; _ns++) { _navSeed = ((_navSeed << 5) - _navSeed + PROFILE.seed.charCodeAt(_ns)) | 0; }
-  _navSeed = Math.abs(_navSeed);
-  function _seededRandom(offset) { return ((Math.sin(_navSeed + offset) * 10000) % 1 + 1) % 1; }
+  // Seeded PRNG already defined at top of IIFE for early availability.
   var _perfTimingOffset = 3000 + Math.abs(_tzOffsetMs);
 
   try {
@@ -2303,7 +2363,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // when no gamepads connected). Headless Chrome may return null or undefined.
   try {
     if (!navigator.getGamepads) {
-      navigator.getGamepads = function() { return []; };
+      navigator.getGamepads = function() { return [null, null, null, null]; };
     }
     // Ensure it returns an array-like with null entries (no gamepads connected)
     var _origGetGamepads = navigator.getGamepads.bind(navigator);
@@ -2311,7 +2371,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       value: function() {
         var result = _origGetGamepads();
         if (!result || !Array.isArray(result)) {
-          return [];
+          return [null, null, null, null];
         }
         return result;
       },

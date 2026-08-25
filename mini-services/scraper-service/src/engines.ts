@@ -23,7 +23,6 @@ import { sessionManager } from "./session-manager";
 import { requestFingerprintMgr, applyTimingJitter } from "./request-fingerprint";
 import { referrerChain } from "./referrer-chain";
 import { detectCaptcha, type CaptchaDetection } from "./captcha-detector";
-import { autoHandleCaptcha } from "./captcha-strategy";
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 import { browserBehavior } from "./browser-behavior";
 import { detectAndDecode } from "./charset-detector";
@@ -270,8 +269,8 @@ class CheerioEngine implements ScrapingEngine {
     }
 
     // Proxy support: select best proxy for this domain
-    const domainProxy = targetDomain ? proxyManager.getDomainProxy(targetDomain) : null;
-    const proxy = domainProxy || (options?.proxy ? proxyManager.getProxy(targetDomain) : null);
+    const domainProxy = targetDomain ? proxyManager.getDomainProxyWithRotation(targetDomain) : null;
+    const proxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(targetDomain) : null);
     const dispatcher = proxy ? getProxyDispatcher(proxy.url) : null;
 
     // Request fingerprint tracking
@@ -584,6 +583,9 @@ class PlaywrightEngine implements ScrapingEngine {
             height: pwProfile.screenHeight,
             colorDepth: pwProfile.colorDepth,
           },
+          bypassCSP: true,
+          ignoreHTTPSErrors: true,
+          serviceWorkers: 'block' as const,
         };
         if (pwProxy) {
           contextOptions.proxy = { server: pwProxy.url };
@@ -654,6 +656,8 @@ class PlaywrightEngine implements ScrapingEngine {
           // Remove User-Agent from extra headers — context-level UA (pwProfile.userAgent) takes precedence;
           // sending a duplicate via setExtraHTTPHeaders can conflict with Playwright's UA management.
           delete enhancedHeaders['User-Agent'];
+          const clientHints = getChromeClientHints(pwProfile.userAgent);
+          if (clientHints) Object.assign(enhancedHeaders, clientHints);
           await page.setExtraHTTPHeaders(enhancedHeaders);
 
           // Navigate with timeout
@@ -778,7 +782,7 @@ class PlaywrightEngine implements ScrapingEngine {
           // CAPTCHA detection
           let pwCaptcha: CaptchaDetection | null = null;
           const pwStatus = responseStatus;
-          if (pwStatus === 403 || pwStatus === 503 || html.includes('captcha') || /challenge-platform|_cf_chl|challenge.*(?:form|script|iframe|turnstile)/i.test(html)) {
+          if (pwStatus === 403 || pwStatus === 503 || /(?:<iframe[^>]+src=["'][^"']*(?:captcha|challenge|recaptcha)|captcha|challenge-platform|_cf_chl|turnstile)/i.test(html.slice(0, 8000))) {
             pwCaptcha = detectCaptcha(html, finalUrl, pwStatus);
             if (pwCaptcha.detected && pwCaptcha.confidence > 0.5) {
               console.warn(`[Playwright] CAPTCHA detected on ${pwDomain}: type=${pwCaptcha.type}, confidence=${pwCaptcha.confidence}`);
@@ -850,6 +854,7 @@ class PlaywrightEngine implements ScrapingEngine {
         maxRetries: options?.antiCrawl?.retries ?? 2,
         baseDelay: 2000,
         maxDelay: 20000,
+        signal: options?.signal,
         onRetry: pwProxy ? (_attempt, err) => {
           proxyManager.recordFailure(pwProxy.url, err.message);
         } : undefined,
@@ -978,6 +983,7 @@ class FirecrawlEngine implements ScrapingEngine {
         maxRetries: 2,
         baseDelay: 3000,
         maxDelay: 30000,
+        signal: options?.signal,
       }
     ).then(result => {
       if (fcDomain) rateLimiter.recordResult(fcDomain, true, result.statusCode);
@@ -1155,6 +1161,7 @@ class AgentQLEngine implements ScrapingEngine {
         maxRetries: 2,
         baseDelay: 3000,
         maxDelay: 30000,
+        signal: options?.signal,
       }
     ).then(result => {
       if (aqlDomain) rateLimiter.recordResult(aqlDomain, true, result.statusCode);
@@ -1351,6 +1358,7 @@ class CloudBrowserEngine implements ScrapingEngine {
         maxRetries: 2,
         baseDelay: 3000,
         maxDelay: 30000,
+        signal: options?.signal,
       }
     ).then(result => {
       if (cbDomain) rateLimiter.recordResult(cbDomain, true, result.statusCode);
@@ -1376,10 +1384,17 @@ class ScraplingEngine implements ScrapingEngine {
 
     const timeout = Math.max(10000, Math.min(options?.timeout || 30000, 120000));
 
+    let scDomain = '';
+    try { scDomain = new URL(url).hostname; } catch { /* ignore */ }
+
     return retryWithBackoff(
       async () => {
         // Check circuit breaker BEFORE making request (prevents requests when service is down)
         await scraplingBreaker.acquire();
+
+        // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
+        await waitForRateLimit(scDomain, options?.signal);
+
         try {
           const response = await fetch(`${SCRAPLING_SERVICE_URL}/fetch`, {
             method: "POST",
@@ -1417,6 +1432,8 @@ class ScraplingEngine implements ScrapingEngine {
 
           scraplingBreaker.recordSuccess();
 
+          if (scDomain) rateLimiter.recordResult(scDomain, true, data.status_code || 200);
+
           return {
             html,
             finalUrl: data.final_url || url,
@@ -1424,6 +1441,7 @@ class ScraplingEngine implements ScrapingEngine {
           };
         } catch (scraplingErr) {
           scraplingBreaker.recordFailure();
+          if (scDomain) rateLimiter.recordResult(scDomain, false);
           throw scraplingErr;
         }
       },
@@ -1431,6 +1449,7 @@ class ScraplingEngine implements ScrapingEngine {
         maxRetries: 2,
         baseDelay: 3000,
         maxDelay: 30000,
+        signal: options?.signal,
       }
     ).catch((err) => {
       // Failure already recorded per-attempt in inner catch above
@@ -1475,7 +1494,7 @@ function shouldBlockResource(resourceType: string, requestUrl: string, targetDom
   if (ALWAYS_BLOCK.has(resourceType)) return true;
 
   // Cross-origin blocking for script/xhr/fetch: block 3rd-party tracking & bot-detection
-  if (resourceType === 'script' || resourceType === 'xhr' || resourceType === 'fetch') {
+  if (['script', 'xhr', 'fetch', 'eventsource'].includes(resourceType)) {
     try {
       const reqHost = new URL(requestUrl).hostname;
       // Block if the request host doesn't match the target domain
@@ -1594,6 +1613,15 @@ class ObscuraEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
+        // Anti-fingerprint timing jitter (±50ms, always applied)
+        await applyTimingJitter();
+
+        // Browser behavior: throttle if visiting same domain too frequently
+        if (browserBehavior.shouldThrottle(domain)) {
+          await new Promise(r => setTimeout(r, browserBehavior.getPreVisitDelay(domain)));
+        }
+        browserBehavior.recordRequest(domain);
+
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
         await waitForRateLimit(domain, options?.signal);
 
@@ -1856,7 +1884,7 @@ class ObscuraEngine implements ScrapingEngine {
           // CAPTCHA detection on fetched content
           let captchaDetection: CaptchaDetection | null = null;
           const obscuraStatus = response.status();
-          if (obscuraStatus === 403 || obscuraStatus === 503 || html.includes('captcha') || /challenge-platform|_cf_chl|challenge.*(?:form|script|iframe|turnstile)/i.test(html)) {
+          if (obscuraStatus === 403 || obscuraStatus === 503 || /(?:<iframe[^>]+src=["'][^"']*(?:captcha|challenge|recaptcha)|captcha|challenge-platform|_cf_chl|turnstile)/i.test(html.slice(0, 8000))) {
             captchaDetection = detectCaptcha(html, finalUrl, obscuraStatus);
             if (captchaDetection.detected && captchaDetection.confidence > 0.5) {
               console.warn(`[Obscura] CAPTCHA detected on ${domain}: type=${captchaDetection.type}, confidence=${captchaDetection.confidence}`);
@@ -1914,6 +1942,7 @@ class ObscuraEngine implements ScrapingEngine {
         maxRetries: options?.antiCrawl?.retries ?? 2,
         baseDelay: 2000,
         maxDelay: 20000,
+        signal: options?.signal,
         // Note: proxy failure recording is handled inside the retry callback's catch block
         // (proxy is selected per-retry, so onRetry cannot reference it from outer scope)
       }

@@ -502,10 +502,16 @@ function filterAdLines(text: string, patterns: string[]): string {
       let hasMatch = false;
       let remaining = trimmed;
       const lowerRemaining = trimmed.toLowerCase();
+      let totalMatchLen = 0;
+      const originalLen = trimmed.length;
 
       for (const { regex, lowerPattern } of compiled) {
         if (lowerRemaining.includes(lowerPattern)) {
           hasMatch = true;
+          const match = remaining.match(regex);
+          if (match) {
+            totalMatchLen += match[0].length;
+          }
           // Remove the matched portion
           remaining = remaining.replace(regex, "").trim();
         }
@@ -514,8 +520,10 @@ function filterAdLines(text: string, patterns: string[]): string {
       if (!hasMatch) return true; // No ad pattern found, keep the line
 
       // After removing ALL ad patterns, check if significant content remains
-      // Lines with < 20 remaining chars are likely ad-only lines
-      if (remaining.length < 20) return false;
+      // Only drop if the matched ad portion is significant (>50% of line)
+      if (remaining.length < 20 && totalMatchLen > originalLen * 0.5) {
+        return false;
+      }
 
       // Additional check: if the remaining text is mostly punctuation/spaces
       const contentChars = remaining.replace(/[\s，,。.！!？?、；;：:\-—_\[\]【】()（）\d]/g, "");
@@ -705,21 +713,20 @@ export function cleanHtmlPreserveParagraphs(html: string, config: CleanRequest["
     // Skip script/style/noscript (should already be removed, but defensive)
     if (EXCLUDED_TAGS.has(tagName)) return;
 
-    // <br> — line break
+    // <br> — line break (use Unicode private-use sentinel to survive paragraph normalization)
     if (tagName === 'br') {
-      parts.push('\n');
+      parts.push('\uE000');
       return;
     }
 
-    // Block-level element
+    // Block-level element — recurse into children to preserve internal structure (e.g. nested <p> in <div>)
     if (BLOCK_TAGS.has(tagName)) {
-      const $el = $(node);
-      const text = $el.text().trim();
-      if (text) {
-        parts.push('\n\n');
-        parts.push(text);
-        parts.push('\n\n');
+      parts.push('\n\n');
+      const children = (node as cheerio.Element).children || [];
+      for (const child of children) {
+        extractNodeText(child);
       }
+      parts.push('\n\n');
       return;
     }
 
@@ -812,14 +819,18 @@ function normalizeParagraphFormat(text: string): string {
 
     // Collapse any remaining internal single-newlines to spaces
     // (handles cases where <br> was used instead of <p>)
+    // BR sentinels (\uE000) are preserved and restored after joining.
     const cleaned = trimmed
       .split('\n')
       .map(line => line.trim())
       .filter(Boolean)
       .join(' ');
 
-    if (cleaned) {
-      result.push(cleaned);
+    // Restore BR line breaks from sentinel
+    const restored = cleaned.replace(/\uE000/g, '\n');
+
+    if (restored) {
+      result.push(restored);
     }
   }
 
@@ -880,7 +891,24 @@ function mergeRunOnText(text: string): string {
       const shortRatio = shortLines.length / lines.length;
 
       if (shortRatio > 0.8) {
-        // Over 80% of lines are short — likely over-fragmented
+        // Over 80% of lines are short — check if this is fragmented prose
+        // rather than intentional short dialogue paragraphs.
+        // Only merge if sentence-ending punctuation exists between consecutive short lines.
+        const shortLinePairs: [string, string][] = [];
+        for (let i = 0; i < lines.length - 1; i++) {
+          if (lines[i].trim().length < 30 && lines[i + 1].trim().length < 30) {
+            shortLinePairs.push([lines[i].trim(), lines[i + 1].trim()]);
+          }
+        }
+        const hasSentenceEndBetween = shortLinePairs.some(([a, b]) =>
+          /[。！？]$/.test(a) && /^[\u4e00-\u9fff]/.test(b)
+        );
+        if (!hasSentenceEndBetween) {
+          // No sentence boundaries detected — these are intentional short paragraphs (e.g. dialogue)
+          result.push(trimmed);
+          continue;
+        }
+
         // Merge consecutive short lines into paragraphs of ~100-200 chars
         const merged: string[] = [];
         let current = '';
@@ -919,6 +947,6 @@ export function handleClean(body: CleanRequest) {
   const content = cleanHtmlPreserveParagraphs(html, config);
   return {
     content,
-    wordCount: content.length,
+    wordCount: content.replace(/\s+/g, '').length,
   };
 }

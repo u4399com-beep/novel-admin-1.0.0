@@ -11,7 +11,7 @@ import type {
 } from "./types";
 import { getEngine, selectEngine } from "./engines";
 import { parseSelector, parseSelectorMulti, parseSelectorHtml, extractLinksFromList } from "./selectors";
-import { cleanHtmlRaw, cleanHtmlPreserveParagraphs } from "./cleaning";
+import { cleanHtmlRaw, cleanHtmlPreserveParagraphs, cleanText } from "./cleaning";
 import { extractJsContent, hasJsContentPatterns } from "./js-content-extractor";
 import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey, buildFetchHeaders } from "./utils";
 import { isSafeUrl } from "./ssrf";
@@ -49,7 +49,7 @@ function findNextPageUrl(
       const nextTextEl = $(pagination.selector).filter(
         (i, el) => {
           const text = $(el).text().trim();
-          return text.includes("下一页") || text.includes("next") || text === ">";
+          return text.includes("下一页") || text.toLowerCase().includes("next") || text === ">";
         }
       );
       nextUrl = nextTextEl.attr("href") || "";
@@ -102,7 +102,9 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
 
   for (let page = 0; page < maxPages; page++) {
     // Check task-level abort before each page
-    if (signal?.aborted) break;
+    if (signal?.aborted) {
+      throw new Error('Request aborted during pagination');
+    }
 
     console.log(`  [${logPrefix}] Page ${page + 1}/${maxPages}: ${currentUrl}`);
 
@@ -349,7 +351,11 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
       if (selectors.content.type === 'css' && cleanConfig) {
         // Paragraph-preserving path: get inner HTML, then clean with paragraph awareness
         const innerHtml = parseSelectorHtml(html, selectors.content);
-        if (innerHtml) {
+        if (!innerHtml || !innerHtml.trim()) {
+          // Fallback: clean HTML first, then extract with text-based selector
+          const processedHtml = cleanHtmlRaw(html, cleanConfig);
+          content = parseSelector(processedHtml, selectors.content);
+        } else {
           content = cleanHtmlPreserveParagraphs(innerHtml, cleanConfig);
         }
       } else {
@@ -369,7 +375,8 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
         const jsResult = extractJsContent(html);
         if (jsResult.found && jsResult.content.length > 30) {
           console.log(`  [Content] JS content extracted via ${jsResult.pattern} (${jsResult.content.length} chars)`);
-          contentParts.push(jsResult.content);
+          const cleaned = cleanText(jsResult.content, cleanConfig);
+          if (cleaned.trim()) contentParts.push(cleaned);
         } else {
           // JS extraction also failed — preserve original short content if any
           if (content) contentParts.push(content);

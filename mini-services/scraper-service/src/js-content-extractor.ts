@@ -135,7 +135,12 @@ const JS_PATTERNS: Array<{
         if (!numsMatch) return null;
         const codes = numsMatch[1].split(',').map(s => parseInt(s.trim(), 10));
         if (codes.some(isNaN) || codes.length < 5) return null;
-        return String.fromCodePoint(...codes);
+        // Chunked approach to avoid call stack overflow on large arrays
+        let result = '';
+        for (let i = 0; i < codes.length; i += 4096) {
+          result += String.fromCodePoint(...codes.slice(i, i + 4096));
+        }
+        return result;
       } catch {
         return null;
       }
@@ -151,7 +156,12 @@ const JS_PATTERNS: Array<{
       try {
         const codes = raw.split(',').map(s => parseInt(s.trim(), 10));
         if (codes.some(isNaN) || codes.length < 20) return null;
-        return String.fromCodePoint(...codes);
+        // Chunked approach to avoid call stack overflow on large arrays
+        let result = '';
+        for (let i = 0; i < codes.length; i += 4096) {
+          result += String.fromCodePoint(...codes.slice(i, i + 4096));
+        }
+        return result;
       } catch {
         return null;
       }
@@ -369,7 +379,7 @@ export function extractJsContent(html: string): JsExtractResult {
  */
 const QUICK_CHECK_PATTERNS = [
   /getElementById/,
-  /innerHTML\s*=/,
+  /(?:chapterContent|novelContent|content|bookContent|articleContent)\s*=\s*['"\x60<]/i,
   /textContent\s*=/,
   /document\.write/,
   /decodeURIComponent/,

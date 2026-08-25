@@ -40,11 +40,9 @@ export const NOVEL_CONTENT_SELECTORS: string[] = [
   '.txt-content',
   '.contentbox',
   '.booktxt',
-  '#booktxt',
   '.read-content',
   '#read-content',
   'div.content',
-  'div#content',
 ];
 
 /**
@@ -402,8 +400,8 @@ export function parseSelectorHtml(html: string, selector: Selector): string {
   if (/\[src\](?![\w-])/.test(selector.value) || /(?:^|[\s>+~,])src$/.test(selector.value)) {
     return el.attr("src") || "";
   }
-  if (selector.value.includes("meta")) {
-    return el.attr("content") || "";
+  if (selector.value.includes('meta') && el.attr('content')) {
+    return el.attr('content') || '';
   }
 
   // Skip excluded tags
@@ -534,44 +532,30 @@ export function extractLinksFromList(
     if (linkSelector.type === "xpath") {
       const { css, attrName } = xpathToCss(linkSelector.value);
       const linkEl = $listEl.find(css);
-      if (linkEl.length === 0) {
-        const docLinkEl = $(css);
-        linkValue = attrName ? (docLinkEl.attr(attrName) || "") : (docLinkEl.attr("href") || "");
-      } else {
-        linkValue = attrName ? (linkEl.attr(attrName) || "") : (linkEl.attr("href") || "");
-      }
+      if (linkEl.length === 0) return;
+      linkValue = attrName ? (linkEl.attr(attrName) || "") : (linkEl.attr("href") || "");
     } else if (linkSelector.type === "regex") {
       const match = safeRegexMatch($listEl.html() || "", linkSelector.value, "i");
       linkValue = match?.[1] || match?.[0] || "";
     } else {
       const linkEl = $listEl.find(linkSelector.value);
-      if (linkEl.length === 0) {
-        const docLinkEl = $(linkSelector.value);
-        linkValue = docLinkEl.attr("href") || "";
-      } else {
-        linkValue = linkEl.attr("href") || "";
-      }
+      if (linkEl.length === 0) return;
+      linkValue = linkEl.attr("href") || "";
     }
 
     // Extract title
     if (titleSelector.type === "xpath") {
       const { css } = xpathToCss(titleSelector.value);
       const titleEl = $listEl.find(css);
-      if (titleEl.length === 0) {
-        titleValue = $(css).text().trim();
-      } else {
-        titleValue = titleEl.text().trim();
-      }
+      if (titleEl.length === 0) return;
+      titleValue = titleEl.text().trim();
     } else if (titleSelector.type === "regex") {
       const match = safeRegexMatch($listEl.html() || "", titleSelector.value, "i");
       titleValue = match?.[1] || match?.[0] || "";
     } else {
       const titleEl = $listEl.find(titleSelector.value);
-      if (titleEl.length === 0) {
-        titleValue = $(titleSelector.value).text().trim();
-      } else {
-        titleValue = titleEl.text().trim();
-      }
+      if (titleEl.length === 0) return;
+      titleValue = titleEl.text().trim();
     }
 
     const trimmedLink = linkValue.trim().toLowerCase();
