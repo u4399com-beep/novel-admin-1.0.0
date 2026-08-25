@@ -111,6 +111,17 @@ const PLATFORMS = ["Win32", "MacIntel", "Linux x86_64"] as const;
 const COLOR_DEPTHS = [24, 32] as const;
 const PIXEL_RATIOS = [1, 1.25, 1.5] as const;
 
+/** Timezone pool — all UTC+8 to keep timezoneOffset consistent at -480 */
+const TIMEZONE_POOL = ['Asia/Shanghai', 'Asia/Chongqing', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Singapore'] as const;
+
+/** Language variant pool — zh-CN as primary but with slight order variation */
+const LANGUAGE_VARIANTS: readonly (readonly string[])[] = [
+  ['zh-CN', 'zh', 'en-US', 'en'],
+  ['zh-CN', 'zh', 'en'],
+  ['zh-CN', 'en-US', 'en', 'zh'],
+  ['zh-TW', 'zh', 'en-US', 'en'],
+];
+
 // Chrome user-agents indexed by platform for consistency
 const UA_TEMPLATES: Record<string, string[]> = {
   Win32: [
@@ -284,8 +295,8 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
     deviceMemory,
     hardwareConcurrency,
     platform: uaPlatform,
-    languages: ["zh-CN", "zh", "en-US", "en"],
-    timezone: "Asia/Shanghai",
+    languages: [...dPick(LANGUAGE_VARIANTS, 11)],
+    timezone: dPick(TIMEZONE_POOL, 12),
     timezoneOffset,
     colorDepth,
     pixelRatio,
@@ -332,8 +343,8 @@ export function generateRandomFingerprint(): FingerprintProfile {
     deviceMemory: pick(DEVICE_MEMORY_OPTIONS),
     hardwareConcurrency: pick(HARDWARE_CONCURRENCY_OPTIONS),
     platform: uaPlatform,
-    languages: ["zh-CN", "zh", "en-US", "en"],
-    timezone: "Asia/Shanghai",
+    languages: [...pick(LANGUAGE_VARIANTS)],
+    timezone: pick(TIMEZONE_POOL),
     timezoneOffset: baseOffset + jitter,
     colorDepth: pick(COLOR_DEPTHS),
     pixelRatio: pick(PIXEL_RATIOS),
@@ -447,10 +458,20 @@ export function clearDomainUACache(domain?: string): void {
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
  */
+
+const _stealthScriptCache = new Map<string, { script: string; ts: number }>();
+const STEALTH_SCRIPT_CACHE_TTL = 30 * 60 * 1000; // 30 min
+
 export function getStealthScript(profile: FingerprintProfile): string {
+  const key = profile.seed || 'default';
+  const cached = _stealthScriptCache.get(key);
+  if (cached && Date.now() - cached.ts < STEALTH_SCRIPT_CACHE_TTL) {
+    return cached.script;
+  }
+
   const languagesJSON = JSON.stringify(profile.languages);
 
-  return `
+  const result = `
 // ===================================================================
 // Obscura Stealth Injection v1.0
 // Injected via page.addInitScript() — runs before any page script
@@ -751,13 +772,33 @@ export function getStealthScript(profile: FingerprintProfile): string {
     };
   }
 
-  // Also patch getExtension to ensure WEBGL_debug_renderer_info is available
+  // Also patch getExtension to ensure WEBGL_debug_renderer_info is available.
+  // In headless environments (e.g., CI containers, serverless), the real extension may
+  // return null. We mock the constants so getParameter(UNMASKED_VENDOR/RENDERER)
+  // still works and returns the profile-controlled strings.
   const origGetExtension = WebGLRenderingContext.prototype.getExtension;
   WebGLRenderingContext.prototype.getExtension = function(name) {
-    const ext = origGetExtension.call(this, name);
-    if (name === 'WEBGL_debug_renderer_info') return ext;
-    return ext;
+    if (name === 'WEBGL_debug_renderer_info') {
+      const ext = origGetExtension.call(this, name);
+      if (ext) return ext;
+      // Mock the extension for headless environments where it's unavailable
+      return { UNMASKED_VENDOR_WEBGL: 0x9245, UNMASKED_RENDERER_WEBGL: 0x9246 };
+    }
+    return origGetExtension.call(this, name);
   };
+
+  // Same patch for WebGL2RenderingContext
+  if (typeof WebGL2RenderingContext !== 'undefined') {
+    const origGetExtension2 = WebGL2RenderingContext.prototype.getExtension;
+    WebGL2RenderingContext.prototype.getExtension = function(name) {
+      if (name === 'WEBGL_debug_renderer_info') {
+        const ext = origGetExtension2.call(this, name);
+        if (ext) return ext;
+        return { UNMASKED_VENDOR_WEBGL: 0x9245, UNMASKED_RENDERER_WEBGL: 0x9246 };
+      }
+      return origGetExtension2.call(this, name);
+    };
+  }
 
   // ---- 4. Canvas Fingerprint Noise ----
   // NOTE: Simple single-pixel noise removed here to avoid double-injection fingerprint.
@@ -2402,6 +2443,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
 })();
 `;
+
+  _stealthScriptCache.set(key, { script: result, ts: Date.now() });
+  return result;
 }
 
 // ==================== Profile Cache ====================
@@ -3167,5 +3211,28 @@ export function clearTlsProfileCache(domain?: string): void {
   } else {
     domainTlsProfileCache.clear();
   }
+}
+
+// ==================== DNT / Sec-GPC Header Helper ====================
+
+/**
+ * Returns the appropriate privacy header for a fingerprint profile.
+ *
+ * - Firefox profiles get `Sec-GPC: 1` (Firefox enables Global Privacy Control by default)
+ * - Chrome/Safari/Edge profiles get `DNT: 1` (legacy Do-Not-Track)
+ *
+ * The caller should only set ONE of these headers to avoid cross-channel mismatch
+ * with the `navigator.doNotTrack` property patched in the stealth script.
+ *
+ * @param profile - A FingerprintProfile (used to detect browser family from userAgent)
+ * @returns An object like `{ 'DNT': '1' }` or `{ 'Sec-GPC': '1' }`, or null if no header should be set
+ */
+export function getDntHeader(profile: FingerprintProfile): Record<string, string> | null {
+  const ua = profile.userAgent.toLowerCase();
+  if (ua.includes('firefox')) {
+    return { 'Sec-GPC': '1' };
+  }
+  // Chrome, Safari, Edge, and unknown browsers use DNT
+  return { 'DNT': '1' };
 }
 

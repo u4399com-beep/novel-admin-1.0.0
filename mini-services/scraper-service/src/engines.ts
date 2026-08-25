@@ -14,7 +14,7 @@
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery } from "./types";
 import { isSafeUrl } from "./ssrf";
 import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints } from "./utils";
-import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA } from "./stealth";
+import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA, getTlsProfile } from "./stealth";
 import { getAcceptEncoding } from "./http2-decoy";
 import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
@@ -28,6 +28,17 @@ import { browserBehavior } from "./browser-behavior";
 import { detectAndDecode } from "./charset-detector";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
+
+/**
+ * Resource types that are always blocked during browser-based scraping.
+ * Moved to module level to avoid creating a new Set on every shouldBlockResource call.
+ */
+const ALWAYS_BLOCKED_RESOURCES = new Set([
+  'image', 'font', 'media', 'stylesheet',
+  'websocket',   // bot-detection beacons (e.g., reCAPTCHA, DataDome WS telemetry)
+  'manifest',    // web app manifest — unnecessary for scraping
+  'eventsource', // Server-Sent Events — bot-detection telemetry
+]);
 
 /**
  * Read response body with streaming size limit to prevent OOM.
@@ -356,13 +367,29 @@ class CheerioEngine implements ScrapingEngine {
             } else {
               reqSignal = AbortSignal.timeout(remainingTimeout);
             }
-            return fetch(fetchUrl, {
+            // Build base fetch options
+            const fetchOptions: Record<string, unknown> = {
               headers: reqHeaders,
               redirect: "manual",
               signal: reqSignal,
               // @ts-expect-error - Bun supports dispatcher option
               dispatcher: dispatcher || undefined,
-            });
+            };
+
+            // Apply TLS fingerprint profile for anti-detection
+            if (targetDomain) {
+              try {
+                const tlsProfile = getTlsProfile(targetDomain);
+                if (tlsProfile?.ciphers?.length) {
+                  fetchOptions.tls = {
+                    ciphers: tlsProfile.ciphers.join(':'),
+                    minVersion: tlsProfile.minVersion || 'TLSv1.2',
+                  };
+                }
+              } catch { /* TLS profile lookup failure is non-critical */ }
+            }
+
+            return fetch(fetchUrl, fetchOptions as RequestInit);
           },
         });
 
@@ -1486,12 +1513,7 @@ class ScraplingEngine implements ScrapingEngine {
  */
 function shouldBlockResource(resourceType: string, requestUrl: string, targetDomain: string): boolean {
   // Always block these resource types (speed + anti-tracking)
-  const ALWAYS_BLOCK = new Set([
-    'image', 'font', 'media', 'stylesheet',
-    'websocket',   // bot-detection beacons (e.g., reCAPTCHA, DataDome WS telemetry)
-    'manifest',    // web app manifest — unnecessary for scraping
-  ]);
-  if (ALWAYS_BLOCK.has(resourceType)) return true;
+  if (ALWAYS_BLOCKED_RESOURCES.has(resourceType)) return true;
 
   // Cross-origin blocking for script/xhr/fetch: block 3rd-party tracking & bot-detection
   if (['script', 'xhr', 'fetch', 'eventsource'].includes(resourceType)) {

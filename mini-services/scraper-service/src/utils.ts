@@ -7,7 +7,7 @@
 import type { AntiCrawl } from "./types";
 import { isSafeUrl } from "./ssrf";
 import { randomUUID } from "node:crypto";
-import { getAcceptLanguageForDomain, shuffleHeaderOrder } from "./stealth";
+import { getAcceptLanguageForDomain, shuffleHeaderOrderWithJitter, getDntHeader } from "./stealth";
 import { referrerChain } from "./referrer-chain";
 import { getDiversifiedHeaders } from "./ip-fingerprint";
 import { getForwardedFor } from "./doh-simulation";
@@ -837,7 +837,7 @@ export function buildFetchHeaders(
     try { domain = new URL(targetUrl).hostname; } catch { /* ignore */ }
   }
 
-  const headers: Record<string, string> = {
+  let headers: Record<string, string> = {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Encoding": domain ? getAcceptEncoding(domain) : "gzip, deflate, br",
     "Upgrade-Insecure-Requests": "1",
@@ -914,11 +914,13 @@ export function buildFetchHeaders(
     }
   }
 
-  // DNT (Do Not Track): only send if explicitly requested.
+  // DNT/Sec-GPC: only send if explicitly requested.
   // Modern browsers default to DNT being unset (navigator.doNotTrack = null).
   // Sending DNT: 1 when navigator.doNotTrack is null is a cross-channel detection vector.
-  if (antiCrawl?.dnt) {
-    headers["DNT"] = "1";
+  // Firefox uses Sec-GPC; Chrome/Safari/Edge use DNT.
+  if (antiCrawl?.dnt && headers['User-Agent']) {
+    const dntHeader = getDntHeader({ userAgent: headers['User-Agent'] } as any);
+    if (dntHeader) Object.assign(headers, dntHeader);
   }
 
   // Cookies
@@ -943,7 +945,8 @@ export function buildFetchHeaders(
     // These are applied BEFORE shuffleHeaderOrder so the diversified values get properly ordered
     const diversified = getDiversifiedHeaders(targetUrl || '');
     Object.assign(headers, diversified);
-    return shuffleHeaderOrder(headers, domain);
+    // Apply header order randomization with per-request jitter for anti-fingerprinting
+    headers = shuffleHeaderOrderWithJitter(headers, domain);
   }
 
   return headers;

@@ -46,6 +46,42 @@ export const NOVEL_CONTENT_SELECTORS: string[] = [
 ];
 
 /**
+ * Korean novel site content selectors.
+ * Common CSS selectors used on Korean novel/web novel platforms.
+ */
+export const KO_NOVEL_CONTENT_SELECTORS = [
+  '.txt-content', '#novel_content', '.section-content', '#articleContent',
+  '.novel-content', '.view-content', '.content-wrap', '.entry-content',
+  '#content', '.content', 'article .content'
+];
+
+/**
+ * Japanese novel site content selectors.
+ * Common CSS selectors used on Japanese novel platforms (Syosetu, Kakuyomu, etc.).
+ */
+export const JA_NOVEL_CONTENT_SELECTORS = [
+  '.novel-body', '#main-text', '.p-novel__text', '#novel_honbun',
+  '.novel-content', '.entry-content', '.content-body', '.story',
+  '#content', '.content', 'article'
+];
+
+/**
+ * Korean novel site title selectors.
+ */
+export const KO_NOVEL_TITLE_SELECTORS = [
+  '.tit_area .tit', '.novel-title', '.section-title', '#novel_title',
+  '.view-title', 'h1.title', 'h1'
+];
+
+/**
+ * Japanese novel site title selectors.
+ */
+export const JA_NOVEL_TITLE_SELECTORS = [
+  '.p-novel__title', '.novel-title', '.widget__title', '#novel_title',
+  '.entry-title', 'h1.title', 'h1'
+];
+
+/**
  * Common CSS selectors for book/chapter title extraction on novel sites.
  * Ordered from most specific (chapter title) to more general (book title).
  */
@@ -169,6 +205,33 @@ export function parseSelectorWithFallbacks(
   const extractAttr = primarySelector.extract;
 
   for (const sel of fallbackSelectors) {
+    try {
+      const el = $(sel);
+      if (el.length === 0) continue;
+
+      // Skip excluded tags unless we're extracting an attribute
+      if (!extractAttr && el[0] && isExcludedTag(el[0])) continue;
+
+      if (extractAttr) {
+        const val = el.attr(extractAttr);
+        if (val && val.trim()) return val.trim();
+      } else {
+        const text = el.text().trim();
+        if (text) return text;
+      }
+    } catch {
+      // Invalid CSS selector — skip
+    }
+  }
+
+  // Final fallback: try Korean and Japanese novel site selectors
+  const i18nFallbacks = [
+    ...KO_NOVEL_CONTENT_SELECTORS,
+    ...JA_NOVEL_CONTENT_SELECTORS,
+    ...KO_NOVEL_TITLE_SELECTORS,
+    ...JA_NOVEL_TITLE_SELECTORS,
+  ];
+  for (const sel of i18nFallbacks) {
     try {
       const el = $(sel);
       if (el.length === 0) continue;
@@ -574,5 +637,75 @@ export function extractLinksFromList(
   });
 
   return results;
+}
+
+// ==================== OG/JSON-LD Metadata Fallback ====================
+
+/**
+ * Extract book metadata from Open Graph tags, JSON-LD structured data,
+ * and standard HTML meta tags as a fallback when primary selectors fail.
+ *
+ * Priority order: OG tags > JSON-LD > standard meta tags.
+ *
+ * @param html - Raw HTML string
+ * @returns Partial metadata object with any fields found
+ */
+export function extractMetadataFallback(html: string): Partial<{
+  title: string;
+  author: string;
+  description: string;
+  cover: string;
+  keywords: string;
+  category: string;
+  status: string;
+}> {
+  const $ = cheerio.load(html);
+  const result: Record<string, string> = {};
+
+  // Try Open Graph tags first
+  const ogTitle = $('meta[property="og:title"]').attr('content');
+  const ogDesc = $('meta[property="og:description"]').attr('content');
+  const ogImage = $('meta[property="og:image"]').attr('content');
+  const ogAuthor = $('meta[property="og:novel:author"]').attr('content') || $('meta[property="article:author"]').attr('content');
+  const ogCategory = $('meta[property="og:novel:category"]').attr('content') || $('meta[property="article:section"]').attr('content');
+  const ogStatus = $('meta[property="og:novel:status"]').attr('content');
+
+  // Standard meta tags
+  const metaAuthor = $('meta[name="author"]').attr('content');
+  const metaDesc = $('meta[name="description"]').attr('content');
+  const metaKeywords = $('meta[name="keywords"]').attr('content');
+
+  // JSON-LD
+  let jsonLdData: Record<string, unknown> | null = null;
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const data = JSON.parse($(el).text());
+      if (data['@type'] === 'Book' || data['@type'] === 'Article' || data['@type'] === 'CreativeWork') {
+        jsonLdData = data;
+      }
+    } catch { /* ignore */ }
+  });
+
+  // Build result with priority: OG > JSON-LD > standard meta
+  if (ogTitle) result.title = ogTitle;
+  else if (jsonLdData?.name) result.title = String(jsonLdData.name);
+  else if (metaDesc && metaDesc.length < 100) result.title = metaDesc;
+
+  if (ogAuthor) result.author = ogAuthor;
+  else if (jsonLdData?.author) result.author = typeof jsonLdData.author === 'string' ? jsonLdData.author : JSON.stringify(jsonLdData.author);
+  else if (metaAuthor) result.author = metaAuthor;
+
+  if (ogDesc) result.description = ogDesc;
+  else if (jsonLdData?.description) result.description = String(jsonLdData.description);
+  else if (metaDesc) result.description = metaDesc;
+
+  if (ogImage) result.cover = ogImage;
+  else if (jsonLdData?.image) result.cover = typeof jsonLdData.image === 'string' ? jsonLdData.image : '';
+
+  if (ogCategory) result.category = ogCategory;
+  if (metaKeywords) result.keywords = metaKeywords;
+  if (ogStatus) result.status = ogStatus;
+
+  return result;
 }
 

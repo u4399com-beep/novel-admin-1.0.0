@@ -424,3 +424,61 @@ export function debugJsPatterns(html: string): Array<{ pattern: string; matches:
 
   return results;
 }
+
+// ==================== API Endpoint Content Extraction ====================
+
+/**
+ * Scan HTML for API endpoint patterns used to load chapter/content data.
+ * Detects fetch(), axios, jQuery AJAX, and URL constructor calls that
+ * point to chapter/content/text/book/novel API paths.
+ *
+ * @param html - The raw HTML source
+ * @param pageUrl - The page URL for resolving relative paths
+ * @returns Array of detected API URLs with method info
+ */
+export function extractApiContentUrls(html: string, pageUrl: string): Array<{url: string, method: string, variable: string}> {
+  const results: Array<{url: string, method: string, variable: string}> = [];
+
+  // Pattern 1: fetch('/api/chapter/...') or fetch('/chapter/...')
+  const fetchPattern = /(?:fetch|axios\.get|axios\.post|\$\.get|\$\.ajax)\s*\(\s*['"]((?:\/api\/)?(?:chapter|content|text|book|novel)[\/\w-]*)['"/]/gi;
+  // Pattern 2: URL constructor with chapter/content path
+  const urlPattern = /new\s+URL\s*\(\s*['"]((?:\/api\/)?(?:chapter|content|text|book|novel)[\/\w-]*)['"]/gi;
+
+  let match;
+  while ((match = fetchPattern.exec(html)) !== null) {
+    const url = match[1].startsWith('/') ? match[1] : '/' + match[1];
+    try {
+      const fullUrl = new URL(url, pageUrl).href;
+      results.push({ url: fullUrl, method: 'fetch', variable: match[0].slice(0, 30) });
+    } catch { /* ignore */ }
+  }
+  while ((match = urlPattern.exec(html)) !== null) {
+    const url = match[1].startsWith('/') ? match[1] : '/' + match[1];
+    try {
+      const fullUrl = new URL(url, pageUrl).href;
+      results.push({ url: fullUrl, method: 'url', variable: '' });
+    } catch { /* ignore */ }
+  }
+  return results;
+}
+
+/**
+ * Extract the JSON field path that likely contains chapter content
+ * from the response handler in JavaScript code.
+ * Looks for patterns like: data.content, data.text, result.chapterContent
+ *
+ * @param html - The raw HTML source containing JS response handlers
+ * @returns The detected field path string (e.g. 'data.content'), or null
+ */
+export function extractContentFieldPath(html: string): string | null {
+  // Look for patterns like: data.content, data.text, result.chapterContent, res.data.text
+  const fieldPatterns = [
+    /(?:data|result|res|response)\.(?:chapter)?(?:content|text|html|body|article)\b/gi,
+    /(?:data|result)\.items\[\d+\]\.(?:content|text)/gi,
+  ];
+  for (const pattern of fieldPatterns) {
+    const match = pattern.exec(html);
+    if (match) return match[0];
+  }
+  return null;
+}

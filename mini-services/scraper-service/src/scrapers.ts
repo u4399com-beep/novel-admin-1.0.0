@@ -10,7 +10,7 @@ import type {
   ChapterLink,
 } from "./types";
 import { getEngine, selectEngine } from "./engines";
-import { parseSelector, parseSelectorMulti, parseSelectorHtml, extractLinksFromList } from "./selectors";
+import { parseSelector, parseSelectorMulti, parseSelectorHtml, extractLinksFromList, extractMetadataFallback } from "./selectors";
 import { cleanHtmlRaw, cleanHtmlPreserveParagraphs, cleanText } from "./cleaning";
 import { extractJsContent, hasJsContentPatterns } from "./js-content-extractor";
 import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey, buildFetchHeaders } from "./utils";
@@ -233,11 +233,21 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
   let coverUrl = selectors.cover ? parseSelector(html, selectors.cover) : "";
   const status = selectors.status ? parseSelector(html, selectors.status) : "";
 
-  if (coverUrl) {
-    coverUrl = resolveUrl(url, coverUrl);
+  // OG/JSON-LD metadata fallback for fields that returned empty
+  const fallback = extractMetadataFallback(html);
+  const finalTitle = title || fallback.title || '';
+  const finalAuthor = author || fallback.author || '';
+  const finalDescription = description || fallback.description || '';
+  const finalKeywords = keywords || fallback.keywords || '';
+  const finalCategory = category || fallback.category || '';
+  const finalStatus = status || fallback.status || '';
+
+  let finalCoverUrl = coverUrl;
+  if (!finalCoverUrl && fallback.cover) {
+    finalCoverUrl = resolveUrl(url, fallback.cover);
   }
 
-  return { title, author, category, keywords, description, coverUrl, status, engine: engineType };
+  return { title: finalTitle, author: finalAuthor, category: finalCategory, keywords: finalKeywords, description: finalDescription, coverUrl: finalCoverUrl, status: finalStatus, engine: engineType };
 }
 
 // ==================== Scrape Chapter Directory ====================
