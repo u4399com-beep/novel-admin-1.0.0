@@ -97,7 +97,7 @@ const MAX_CONTENT_PAGES = 20;
 async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNextPage: boolean; effectiveEngine?: EngineType }> {
   const { startUrl, pagination, antiCrawl, engineType, logPrefix, onPage, isContentPagination, onCaptcha, signal, useEngineFallback } = options;
   const hardMax = isContentPagination ? MAX_CONTENT_PAGES : 100;
-  const maxPages = Math.min(pagination?.maxPage || 1, hardMax);
+  const maxPages = Math.min(pagination?.maxPage ?? hardMax, hardMax);
   // Start with the primary engine; may switch to fallback engine after first success
   let currentEngineType = engineType;
   let engine = getEngine(engineType);

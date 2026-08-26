@@ -14,7 +14,7 @@ import {
   chapterDedupKey,
 } from "./utils";
 import { selectEngine } from "./engines";
-import { handleClean, cleanText } from "./cleaning";
+import { handleClean } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
 import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";
 import { adaptiveDelay } from "./adaptive-delay";
@@ -82,6 +82,19 @@ const dbWriteSemaphore = new Semaphore(3);
 
 /** Per-domain lock to prevent concurrent engine downgrade from multiple workers */
 const _engineUpgradeLock = new Set<string>();
+
+/** Per-domain engine type override — avoids shared variable race in concurrent workers */
+const _domainEngineTypes = new Map<string, EngineType>();
+
+/** Get effective engine type for a URL, respecting per-domain overrides */
+function getEffectiveEngine(url: string, baseEngine: EngineType): EngineType {
+  try {
+    const domain = new URL(url).hostname;
+    return _domainEngineTypes.get(domain) || baseEngine;
+  } catch {
+    return baseEngine;
+  }
+}
 
 /** Per-domain pause promise to prevent double CAPTCHA pause from concurrent workers */
 const _captchaPausePromises = new Map<string, Promise<void>>();
@@ -540,7 +553,7 @@ async function executeTaskBody(
           status: parseSelectorField(rule.bookStatusSelector) || undefined,
         },
         antiCrawl: antiCrawlConfig,
-        engine: engineType,
+        engine: getEffectiveEngine(bookUrl, engineType),
         signal: abortSignal,
       });
 
@@ -699,8 +712,8 @@ async function executeTaskBody(
               );
               if (!_engineUpgradeLock.has(bkDomain)) {
                 _engineUpgradeLock.add(bkDomain);
-                engineType = strategyResult.nextEngine;
-                ctx.engineType = engineType;
+                _domainEngineTypes.set(bkDomain, strategyResult.nextEngine);
+                ctx.engineType = strategyResult.nextEngine;
                 setTimeout(() => _engineUpgradeLock.delete(bkDomain), 5000);
               }
             }
@@ -825,7 +838,7 @@ async function executeTaskBody(
         pagination: chapterPagination,
         antiCrawl: antiCrawlConfig,
         enableShuffle: rule.enableShuffle,
-        engine: engineType,
+        engine: getEffectiveEngine(chapterListUrl, engineType),
         signal: abortSignal,
       });
 
@@ -927,7 +940,7 @@ async function executeTaskBody(
             },
             pagination: contentPagination,
             antiCrawl: antiCrawlConfig,
-            engine: engineType,
+            engine: getEffectiveEngine(chapter.url, engineType),
             cleanConfig,
             signal: abortSignal,
           });
@@ -983,8 +996,8 @@ async function executeTaskBody(
                   );
                   if (!_engineUpgradeLock.has(chDomain)) {
                     _engineUpgradeLock.add(chDomain);
-                    engineType = strategyResult.nextEngine;
-                    ctx.engineType = engineType;
+                    _domainEngineTypes.set(chDomain, strategyResult.nextEngine);
+                    ctx.engineType = strategyResult.nextEngine;
                     setTimeout(() => _engineUpgradeLock.delete(chDomain), 5000);
                   }
                 }
@@ -1012,12 +1025,14 @@ async function executeTaskBody(
             consecutiveCaptchaCounts.set(chDomain, 0);
           }
 
-          // Clean content
-          const cleanResult = cleanText(contentResult.content, cleanConfig);
-
+          // Content is already cleaned by handleScrapeContent. Only normalize whitespace.
+          const chapterContent = contentResult.content
+            .replace(/\t/g, ' ')
+            .replace(/ {3,}/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
           const chapterTitle = contentResult.title || chapter.title;
-          const chapterContent = cleanResult;
-          const chapterWordCount = chapterContent.length;
+          const chapterWordCount = chapterContent.replace(/\s+/g, '').length;
           chapterWordCounts.push(chapterWordCount);
 
           // Log multi-page content merges for visibility
@@ -1069,6 +1084,9 @@ async function executeTaskBody(
                 existingChapters.set(originalTitleKey, "new");
               }
             }
+          } else if (chStatus === 200 || chStatus === 409) {
+            // Already exists (409) or updated (200) — count as skipped, not failed
+            skippedChaptersCount.increment();
           } else {
             failedItemsCount.increment();
           }
@@ -1154,6 +1172,9 @@ async function executeTaskBody(
   }
 
   console.log(`[Task ${taskId}] Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
+
+  // Cleanup per-domain engine overrides
+  _domainEngineTypes.clear();
 
   return {
     success: true,

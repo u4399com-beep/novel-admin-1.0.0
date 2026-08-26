@@ -555,7 +555,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
     { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
     { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 2 },
     { name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
-    { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
   ];
 
   const pluginInstances = pluginData.map((p) => {
@@ -689,6 +688,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   });
   // Safari detection — only true if Safari is the last browser token (no Chrome/Edge after it)
   const _isSafari = /Safari\/[\d.]+\s*$/.test(_uaString) && !_isFirefox && !/Chrome\//.test(_uaString) && !/Edg\//.test(_uaString);
+  if (_isSafari) {
   Object.defineProperty(navigator, 'languages', {
     get: () => PROFILE.languages || ['en-US', 'en', 'zh-CN', 'zh'],
     configurable: true,
@@ -845,15 +845,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
 
-  // outerWidth / outerHeight (approximate for headless — match viewport)
-  Object.defineProperty(window, 'outerWidth', {
-    get: () => PROFILE.screenWidth,
-    configurable: true,
-  });
-  Object.defineProperty(window, 'outerHeight', {
-    get: () => PROFILE.screenHeight - 80,
-    configurable: true,
-  });
+  // outerWidth / outerHeight are set in Section 37 with proper browser chrome simulation
 
   // innerWidth / innerHeight are set by viewport; don't override to avoid layout issues
 
@@ -1198,8 +1190,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
   Element.prototype.getBoundingClientRect = function() {
     if (_rectCache.has(this)) return _rectCache.get(this);
     var rect = _origGetBoundingClientRect.call(this);
-    var jx = (Math.random() - 0.5) * 1.0;
-    var jy = (Math.random() - 0.5) * 1.0;
+    var jx = (_seededRandom(16.1) - 0.5) * 1.0;
+    var jy = (_seededRandom(16.2) - 0.5) * 1.0;
     var spoofed = new DOMRect(rect.x + jx, rect.y + jy, rect.width, rect.height);
     _rectCache.set(this, spoofed);
     return spoofed;
@@ -1213,8 +1205,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
     var result = [];
     for (var i = 0; i < rects.length; i++) {
       var r = rects[i];
-      var jx2 = (Math.random() - 0.5) * 1.0;
-      var jy2 = (Math.random() - 0.5) * 1.0;
+      var jx2 = (_seededRandom(16.3) - 0.5) * 1.0;
+      var jy2 = (_seededRandom(16.4) - 0.5) * 1.0;
       result.push(new DOMRect(r.x + jx2, r.y + jy2, r.width, r.height));
     }
     _rectsCache.set(this, result);
@@ -1315,8 +1307,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
       var imageData = _origGetImageData.apply(this, arguments);
       var data = imageData.data;
       // Inject subtle noise into a few pixel channels to alter fingerprint hash
+      // Use deterministic LCG seeded by _canvasNoiseSeed + canvas dimensions for consistency
+      var _gidSeed = (_canvasNoiseSeed ^ (imageData.width * 31 + imageData.height * 37)) | 0;
       for (var _ci = 0; _ci < Math.min(data.length, 400); _ci += 40) {
-        data[_ci] = Math.max(0, Math.min(255, data[_ci] + ((Math.random() > 0.5) ? 1 : -1)));
+        _gidSeed = (_gidSeed * 16807 + 0.5) % 2147483647;
+        data[_ci] = Math.max(0, Math.min(255, data[_ci] + ((_gidSeed & 1) ? 1 : -1)));
       }
       return imageData;
     };
@@ -1512,7 +1507,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     // Use seeded values for deterministic battery state per profile.
     // Real battery level doesn't change between consecutive API calls.
     var _batteryLevel = 0.55 + Math.abs(Math.sin(_fakeDeviceSeed * 2.37)) * 0.40; // 0.55–0.95
-    var _batteryCharging = _fakeDeviceSeed > 0.5;
+    var _batteryCharging = (_fakeDeviceSeed & 1) === 0;
     var _batteryChargingTime = _batteryCharging ? 3600 + Math.floor(_fakeDeviceSeed * 3000) : Infinity;
     var _batteryDischargingTime = _batteryCharging ? Infinity : 7200 + Math.floor(_fakeDeviceSeed * 10000);
 
@@ -1542,7 +1537,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     var _origGetBattery = navigator.getBattery.bind(navigator);
     // Use seeded values for deterministic battery state (same as API-missing path)
     var _fbLevel = 0.55 + Math.abs(Math.sin(_fakeDeviceSeed * 3.14)) * 0.40;
-    var _fbCharging = _fakeDeviceSeed > 0.4;
+    var _fbCharging = (_fakeDeviceSeed & 1) === 1;
     Object.defineProperty(navigator, 'getBattery', {
       value: function() {
         return _origGetBattery().then(function(realBattery) {
@@ -2374,7 +2369,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       document.fonts.check = function(font, text) {
         // Only allow check for common font families
         try {
-          var _familyMatch = font.match(/(?:^|,\s*)"?([\w\s]+)"?/);
+          var _familyMatch = font.match(/(?:^|,\s*)"?([\w\s\-]+)"?/);
           if (_familyMatch) {
             var _family = _familyMatch[1].trim();
             var _safeFonts = ['Arial', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana', 'serif', 'sans-serif', 'monospace'];

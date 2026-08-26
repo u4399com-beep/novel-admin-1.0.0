@@ -501,33 +501,31 @@ function filterAdLines(text: string, patterns: string[]): string {
       // Check if any pattern matches
       let hasMatch = false;
       let remaining = trimmed;
-      const lowerRemaining = trimmed.toLowerCase();
-      let totalMatchLen = 0;
+      let lowerRemaining = trimmed.toLowerCase();
       const originalLen = trimmed.length;
 
       for (const { regex, lowerPattern } of compiled) {
         if (lowerRemaining.includes(lowerPattern)) {
           hasMatch = true;
-          const match = remaining.match(regex);
-          if (match) {
-            totalMatchLen += match[0].length;
-          }
           // Remove the matched portion
           remaining = remaining.replace(regex, "").trim();
+          // Sync lowerRemaining after each replacement
+          lowerRemaining = remaining.toLowerCase();
         }
       }
 
       if (!hasMatch) return true; // No ad pattern found, keep the line
 
       // After removing ALL ad patterns, check if significant content remains
-      // Only drop if the matched ad portion is significant (>50% of line)
-      if (remaining.length < 20 && totalMatchLen > originalLen * 0.5) {
+      // Use actual removed amount instead of potentially double-counted match length
+      const removedLen = originalLen - remaining.length;
+      if (remaining.length < 20 && removedLen > originalLen * 0.5) {
         return false;
       }
 
-      // Additional check: if the remaining text is mostly punctuation/spaces
-      const contentChars = remaining.replace(/[\s，,。.！!？?、；;：:\-—_\[\]【】()（）\d]/g, "");
-      if (contentChars.length < 10) return false;
+      // Additional check: if the remaining text has insufficient CJK/content characters
+      const cjkChars = remaining.replace(/[^\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g, "");
+      if (cjkChars.length < 2 && remaining.replace(/[\s\d]/g, "").length < 10) return false;
 
       return true;
     })
@@ -579,7 +577,7 @@ function deduplicateParagraphs(text: string): string {
         // This is a continuation — merge with previous line instead of dedup
         // Remove the last result entry and append this line
         const prev = result.pop() || "";
-        result.push(prev + trimmed);
+        result.push(prev + '\n' + trimmed);
         lastNormalized = (prev + trimmed)
           .replace(/[，,。.！!？?、；;：:]+$/, "")
           .replace(/\s+/g, " ")
@@ -688,6 +686,13 @@ export function cleanHtmlPreserveParagraphs(html: string, config: CleanRequest["
     'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
     'blockquote', 'section', 'article', 'header', 'footer',
     'li', 'tr', 'td', 'th', 'dt', 'dd', 'pre', 'figure',
+    // Table structure
+    'table', 'thead', 'tbody', 'tfoot', 'caption',
+    // Form structure
+    'form', 'fieldset',
+    // Semantic layout
+    'nav', 'main', 'aside', 'details', 'summary',
+    'hgroup', 'address', 'search', 'dialog',
   ]);
 
   // Inline elements that don't create breaks

@@ -193,6 +193,25 @@ class CircuitBreaker {
       this.state = "open";
     }
   }
+
+  getState(): { state: CircuitState; failureCount: number; lastFailureTime: number; resetTimeout: number; timeUntilReset: number } {
+    return {
+      state: this.state,
+      failureCount: this.failureCount,
+      lastFailureTime: this.lastFailureTime,
+      resetTimeout: this.resetTimeout,
+      timeUntilReset: this.state === 'open'
+        ? Math.max(0, this.resetTimeout - (Date.now() - this.lastFailureTime))
+        : 0,
+    };
+  }
+
+  reset(): void {
+    this.state = "closed";
+    this.failureCount = 0;
+    this.lastFailureTime = 0;
+    this._halfOpenInFlight = 0;
+  }
 }
 
 // One circuit breaker per external engine type
@@ -231,7 +250,11 @@ function getCheerioAgent(): Promise<import('undici').Agent> {
     _cheerioAgent = agent;
     console.log('[CheerioEngine] HTTP connection pool initialized (keepAlive=30s, maxConn=20)');
     return agent;
-  })();
+  })().catch((err) => {
+    console.error('[CheerioEngine] Failed to initialize HTTP connection pool:', err);
+    _cheerioAgentPromise = null; // Allow retry on next call
+    throw err;
+  });
   return _cheerioAgentPromise;
 }
 
@@ -277,10 +300,14 @@ function recordEngineFailure(domain: string, engine: EngineType): void {
   if (domainEngineFailures.size >= MAX_TRACKED_DOMAINS && !domainEngineFailures.has(domain)) {
     const oldestKey = domainEngineFailures.keys().next().value;
     if (oldestKey !== undefined) {
+      // Capture evicted failures before deleting (needed for timestamp cleanup)
+      const evictedFailures = domainEngineFailures.get(oldestKey);
       domainEngineFailures.delete(oldestKey);
-      // Clean up associated timestamps
-      for (const e of DEFAULT_FALLBACK_CHAIN) {
-        domainFailureTimestamps.delete(`${oldestKey}:${e}`);
+      // Clean up associated timestamps using actually recorded engine keys
+      if (evictedFailures) {
+        for (const e of evictedFailures.keys()) {
+          domainFailureTimestamps.delete(`${oldestKey}:${e}`);
+        }
       }
     }
   }
@@ -322,7 +349,14 @@ function getAdaptiveFallbackChain(domain: string, baseChain?: EngineType[]): Eng
   return chain;
 }
 
-/** Count failures within the sliding window (read-only, no side effects) */
+/**
+ * Get failure count for an engine/domain pair.
+ * NOTE: This is NOT a true sliding window counter. It returns the cumulative failure count
+ * since the last success, but only if the last failure timestamp falls within the
+ * DOMAIN_FAILURE_WINDOW_MS window. Once the last failure ages out, the count resets to 0.
+ * This means a domain with 50 failures all within the window returns 50, not just the
+ * failures in a rolling window.
+ */
 function getRecentFailureCount(
   domain: string, engine: EngineType,
   allFailures: Map<EngineType, number>, now: number
@@ -441,11 +475,11 @@ export async function fetchWithEngineFallback(
       lastError = err;
       const errMsg = err instanceof Error ? err.message : String(err);
 
-      // Record failure for adaptive chain
-      if (domain) recordEngineFailure(domain, engineType);
-
       // Don't fallback on non-qualifying errors
       if (!isFallbackWorthyError(err)) throw err;
+
+      // Record failure for adaptive chain (only for fallback-worthy errors)
+      if (domain) recordEngineFailure(domain, engineType);
 
       console.warn(`[EngineFallback] ${engineType} failed for ${url}: ${errMsg.slice(0, 120)}${i < truncatedChain.length - 1 ? ' → trying next engine' : ' → no more engines'}`);
     }
@@ -1321,7 +1355,7 @@ function reconstructHtmlFromAgentQL(data: Record<string, unknown>): string {
           const itemParts: string[] = [];
           for (const [subKey, subValue] of Object.entries(item as Record<string, unknown>)) {
             if (subValue !== null && subValue !== undefined) {
-              itemParts.push(`<span data-agentql-field="${subKey}">${escapeHtml(String(subValue))}</span>`);
+              itemParts.push(`<span data-agentql-field="${escapeHtml(subKey)}">${escapeHtml(String(subValue))}</span>`);
             }
           }
           bodyParts.push(`  <div data-agentql-field="${escapeHtml(key)}" data-agentql-item="true">${itemParts.join(" ")}</div>`);
@@ -1332,7 +1366,7 @@ function reconstructHtmlFromAgentQL(data: Record<string, unknown>): string {
       const itemParts: string[] = [];
       for (const [subKey, subValue] of Object.entries(value as Record<string, unknown>)) {
         if (subValue !== null && subValue !== undefined) {
-          itemParts.push(`<span data-agentql-field="${subKey}">${escapeHtml(String(subValue))}</span>`);
+          itemParts.push(`<span data-agentql-field="${escapeHtml(subKey)}">${escapeHtml(String(subValue))}</span>`);
         }
       }
       bodyParts.push(`  <div data-agentql-field="${escapeHtml(key)}">${itemParts.join(" ")}</div>`);
@@ -2296,61 +2330,99 @@ export async function fetchWithInfiniteScroll(
     return { ...result, cyclesCompleted: 0, effectiveEngine: 'cheerio' };
   }
 
+  // Extract domain for anti-detection features
+  let domain = '';
+  try { domain = new URL(url).hostname; } catch { /* invalid URL */ }
+
+  // Use proxy rotation if available, falling back to options.proxy
+  const effectiveProxy = domain ? proxyManager.getDomainProxyWithRotation(domain) : null;
+  const proxyStr = effectiveProxy?.url || options?.proxy || null;
+  const startTime = Date.now();
+
+  let browser: import('playwright').Browser | null = null;
+  let context: import('playwright').BrowserContext | null = null;
+
   try {
     const pw = await import('playwright');
     const launchOptions: import('playwright').LaunchOptions = {
       headless: true,
     };
 
-    // Apply proxy configuration if provided
-    if (options?.proxy) {
+    // Apply proxy configuration (Playwright natively supports socks5, no protocol conversion needed)
+    if (proxyStr) {
       try {
-        const proxyUrl = new URL(options.proxy.startsWith('socks') ? options.proxy.replace('socks', 'http') : options.proxy);
+        const proxyUrl = new URL(proxyStr);
         launchOptions.proxy = {
-          server: options.proxy,
+          server: proxyStr,
           username: proxyUrl.username || undefined,
           password: proxyUrl.password || undefined,
         };
       } catch { /* invalid proxy URL */ }
     }
 
-    const browser = await pw.chromium.launch(launchOptions);
-    const context = await browser.newContext({
+    browser = await pw.chromium.launch(launchOptions);
+    const profile = domain ? getProfileForDomain(domain) : null;
+    context = await browser.newContext({
       userAgent: options?.userAgent || getRandomUA(),
       ignoreHTTPSErrors: true,
+      locale: profile ? profileLanguagesToAcceptLanguage(profile.languages) : undefined,
     });
 
-    // Apply cookies if provided
-    if (options?.cookies?.length) {
-      await context.addCookies(options.cookies.map(c => ({
+    // Inject stealth script
+    if (domain) {
+      await context.addInitScript(getStealthScript(profile));
+    }
+
+    // Apply cookies from cookie jar + options.cookies
+    const jarCookies = domain ? cookieJar.getPlaywrightCookies(domain) : [];
+    const allCookies = [
+      ...jarCookies,
+      ...(options?.cookies?.map(c => ({
         name: c.name,
         value: c.value,
-        domain: c.domain || new URL(url).hostname,
+        domain: c.domain || domain,
         path: '/',
-      })));
+      })) || []),
+    ];
+    if (allCookies.length) {
+      await context.addCookies(allCookies);
     }
 
     const page = await context.newPage();
 
-    // Navigate with abort signal awareness
-    const gotoPromise = page.goto(url, {
+    // Resource blocking for anti-detection
+    await page.route('**/*', (route) => {
+      const resourceType = route.request().resourceType();
+      const routeUrl = route.request().url();
+      if (shouldBlockResource(resourceType, routeUrl, domain)) {
+        route.abort();
+      } else {
+        route.continue();
+      }
+    });
+
+    // Check abort before navigation
+    if (signal?.aborted) {
+      throw new Error('Aborted before navigation');
+    }
+
+    const response = await page.goto(url, {
       waitUntil: 'domcontentloaded',
       timeout: options?.timeout || 30000,
     });
 
-    // Race navigation against abort signal
-    if (signal?.aborted) {
-      await browser.close().catch(() => {});
-      throw new Error('Aborted before navigation');
-    }
-    const response = await (signal
-      ? Promise.race([gotoPromise, new Promise<never>((_, reject) => {
-          if (signal.aborted) reject(new Error('Aborted during navigation'));
-          signal.addEventListener('abort', () => reject(new Error('Aborted during navigation')), { once: true });
-        })])
-      : gotoPromise
-    );
     const statusCode = response?.status() || 0;
+
+    // CAPTCHA detection
+    if (domain && statusCode) {
+      const pageHtml = await page.content().catch(() => '');
+      const captchaResult = detectCaptcha(pageHtml, url, statusCode);
+      if (captchaResult.detected && captchaResult.confidence > 0.5) {
+        console.warn(`[InfiniteScroll] CAPTCHA detected on ${domain}: type=${captchaResult.type}`);
+        if (effectiveProxy) proxyManager.recordFailure(effectiveProxy.url, `CAPTCHA ${captchaResult.type}`);
+        throw new Error(`CAPTCHA detected (${captchaResult.type}) on ${domain}`);
+      }
+    }
 
     // Capture initial content length BEFORE any scrolling
     const containerSelector = contentContainerSelector || 'body';
@@ -2409,8 +2481,10 @@ export async function fetchWithInfiniteScroll(
     const html = await page.content();
     const finalUrl = page.url();
 
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
+    // Record proxy success
+    if (effectiveProxy && domain) {
+      proxyManager.recordSuccessWithRotation(effectiveProxy.url, domain, Date.now() - startTime);
+    }
 
     return { html, finalUrl, statusCode, cyclesCompleted, effectiveEngine: browserEngine };
   } catch (err) {
@@ -2422,6 +2496,9 @@ export async function fetchWithInfiniteScroll(
     const fallbackEngine = getEngine('cheerio');
     const result = await fallbackEngine.fetch(url, options);
     return { ...result, cyclesCompleted: 0, effectiveEngine: 'cheerio' };
+  } finally {
+    if (context) await context.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
   }
 }
 
