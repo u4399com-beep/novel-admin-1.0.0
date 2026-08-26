@@ -446,6 +446,10 @@ export async function fetchWithEngineFallback(
   }
   const truncatedChain = chain.slice(0, maxChainLen);
 
+  if (truncatedChain.length === 0) {
+    throw new Error('No engines available in fallback chain');
+  }
+
   let lastError: unknown;
 
   for (let i = 0; i < truncatedChain.length; i++) {
@@ -688,8 +692,8 @@ class CheerioEngine implements ScrapingEngine {
         lastStatusCode = statusCode;
 
         if (!response.ok) {
-          // Track proxy failure on error status codes
-          if (proxy) proxyManager.recordFailure(proxy.url, `HTTP ${response.status}: ${response.statusText} for ${url}`);
+          // NOTE: proxy failure is recorded by onRetry callback below, NOT here,
+          // to avoid double-recording on retry attempts.
           throw new Error(`HTTP ${response.status}: ${response.statusText} for ${url}`);
         }
 
@@ -747,7 +751,7 @@ class CheerioEngine implements ScrapingEngine {
         maxDelay: 15000,
         signal: options?.signal,
         onRetry: proxy ? (_attempt, err) => {
-          proxyManager.recordFailure(proxy.url, err.message);
+          proxyManager.recordFailure(proxy.url, err instanceof Error ? err.message : String(err));
         } : undefined,
       }
     ).then(result => {
@@ -1710,10 +1714,10 @@ class ScraplingEngine implements ScrapingEngine {
         // Check circuit breaker BEFORE making request (prevents requests when service is down)
         await scraplingBreaker.acquire();
 
-        // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
-        await waitForRateLimit(scDomain, options?.signal);
-
         try {
+          // Per-domain rate limiting (inside try so circuit breaker releases on rate-limit throw)
+          await waitForRateLimit(scDomain, options?.signal);
+
           const response = await fetch(`${SCRAPLING_SERVICE_URL}/fetch`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2346,6 +2350,13 @@ export async function fetchWithInfiniteScroll(
     const pw = await import('playwright');
     const launchOptions: import('playwright').LaunchOptions = {
       headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-extensions',
+      ],
     };
 
     // Apply proxy configuration (Playwright natively supports socks5, no protocol conversion needed)
@@ -2366,6 +2377,8 @@ export async function fetchWithInfiniteScroll(
       userAgent: options?.userAgent || getRandomUA(),
       ignoreHTTPSErrors: true,
       locale: profile ? profileLanguagesToAcceptLanguage(profile.languages) : undefined,
+      viewport: profile ? { width: profile.screenWidth || 1920, height: profile.screenHeight || 1080 } : undefined,
+      screen: profile ? { width: profile.screenWidth || 1920, height: profile.screenHeight || 1080, colorDepth: profile.colorDepth || 24 } : undefined,
     });
 
     // Inject stealth script
@@ -2378,8 +2391,8 @@ export async function fetchWithInfiniteScroll(
     const allCookies = [
       ...jarCookies,
       ...(options?.cookies?.map(c => ({
-        name: c.name,
-        value: c.value,
+        name: c.name.replace(/[\r\n\t\x00-\x1f]/g, ''),
+        value: c.value.replace(/[\r\n\t\x00-\x1f]/g, ''),
         domain: c.domain || domain,
         path: '/',
       })) || []),
@@ -2390,14 +2403,28 @@ export async function fetchWithInfiniteScroll(
 
     const page = await context.newPage();
 
-    // Resource blocking for anti-detection
-    await page.route('**/*', (route) => {
-      const resourceType = route.request().resourceType();
-      const routeUrl = route.request().url();
-      if (shouldBlockResource(resourceType, routeUrl, domain)) {
-        route.abort();
-      } else {
-        route.continue();
+    // Resource blocking for anti-detection + SSRF protection
+    await page.route('**/*', async (route) => {
+      try {
+        const resourceType = route.request().resourceType();
+        const routeUrl = route.request().url();
+        if (shouldBlockResource(resourceType, routeUrl, domain)) {
+          await route.abort();
+          return;
+        }
+        // SSRF protection: block non-HTTP/HTTPS document/xhr/fetch to internal targets
+        if (['document', 'xhr', 'fetch'].includes(resourceType)) {
+          try {
+            const parsed = new URL(routeUrl);
+            if (!['http:', 'https:'].includes(parsed.protocol) || !isSafeUrl(routeUrl)) {
+              await route.abort();
+              return;
+            }
+          } catch { await route.abort(); return; }
+        }
+        await route.continue();
+      } catch {
+        try { await route.abort(); } catch { /* route already handled */ }
       }
     });
 
@@ -2405,6 +2432,9 @@ export async function fetchWithInfiniteScroll(
     if (signal?.aborted) {
       throw new Error('Aborted before navigation');
     }
+
+    // Per-domain rate limiting
+    if (domain) await waitForRateLimit(domain, signal);
 
     const response = await page.goto(url, {
       waitUntil: 'domcontentloaded',
@@ -2481,6 +2511,12 @@ export async function fetchWithInfiniteScroll(
     const html = await page.content();
     const finalUrl = page.url();
 
+    // Record referrer chain + rate limit result
+    if (domain) {
+      referrerChain.recordVisit(finalUrl);
+      rateLimiter.recordResult(domain, true, statusCode);
+    }
+
     // Record proxy success
     if (effectiveProxy && domain) {
       proxyManager.recordSuccessWithRotation(effectiveProxy.url, domain, Date.now() - startTime);
@@ -2492,6 +2528,7 @@ export async function fetchWithInfiniteScroll(
       throw err;
     }
     console.warn(`[InfiniteScroll] Browser-based scroll failed: ${err instanceof Error ? err.message : err}`);
+    if (domain) rateLimiter.recordResult(domain, false);
     // Fall back to a single HTTP fetch
     const fallbackEngine = getEngine('cheerio');
     const result = await fallbackEngine.fetch(url, options);
@@ -2507,7 +2544,10 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   if (!signal) return new Promise(r => setTimeout(r, ms));
   return new Promise<void>((resolve, reject) => {
     if (signal.aborted) { reject(new Error('Aborted')); return; }
-    const timer = setTimeout(resolve, ms);
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
     const onAbort = () => { clearTimeout(timer); reject(new Error('Aborted')); };
     signal.addEventListener('abort', onAbort, { once: true });
   });
@@ -2585,6 +2625,7 @@ export async function closeAllEngines(): Promise<void> {
   if (_cheerioAgent) {
     try { _cheerioAgent.close(); } catch { /* already closed */ }
     _cheerioAgent = null;
+    _cheerioAgentPromise = null; // Also clear the promise to prevent returning closed agent
     console.log('[Engines] HTTP connection pool closed');
   }
   engines.clear();

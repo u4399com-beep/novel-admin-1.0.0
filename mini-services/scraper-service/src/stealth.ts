@@ -491,6 +491,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
   _navSeed = Math.abs(_navSeed);
   function _seededRandom(offset) { return ((Math.sin(_navSeed + offset) * 10000) % 1 + 1) % 1; }
 
+  // Pre-compute derived seeds used by multiple sections (must be before any section that references them)
+  var _fakeDeviceSeed = 0;
+  for (var _fds0 = 0; _fds0 < PROFILE.seed.length; _fds0++) { _fakeDeviceSeed = ((_fakeDeviceSeed << 5) - _fakeDeviceSeed + PROFILE.seed.charCodeAt(_fds0)) | 0; }
+  _fakeDeviceSeed = Math.abs(_fakeDeviceSeed);
+  var _canvasNoiseSeed = Math.floor(_fakeDeviceSeed * 13.37) | 0;
+
   // ---- 1. Navigator Override ----
 
   // Remove webdriver flag — the primary automation detection signal
@@ -689,10 +695,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Safari detection — only true if Safari is the last browser token (no Chrome/Edge after it)
   const _isSafari = /Safari\/[\d.]+\s*$/.test(_uaString) && !_isFirefox && !/Chrome\//.test(_uaString) && !/Edg\//.test(_uaString);
   if (_isSafari) {
-  Object.defineProperty(navigator, 'languages', {
-    get: () => PROFILE.languages || ['en-US', 'en', 'zh-CN', 'zh'],
-    configurable: true,
-  });
+    Object.defineProperty(navigator, 'languages', {
+      get: () => PROFILE.languages || ['en-US', 'en', 'zh-CN', 'zh'],
+      configurable: true,
+    });
+  } // close if (_isSafari)
 
   // ---- 2. Chrome Object Override ----
   // Firefox never has window.chrome — injecting it is a detection vector
@@ -946,15 +953,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
   }
 
   // ---- 9. IFrame ContentWindow Consistency ----
-
-  // Override iframe contentWindow getter to apply same stealth to child frames
-  const origAttachShadow = Element.prototype.attachShadow;
-  if (origAttachShadow) {
-    Element.prototype.attachShadow = function(...args) {
-      const shadow = origAttachShadow.apply(this, args);
-      return shadow;
-    };
-  }
+  // attachShadow no-op override REMOVED (R47): the previous override called the original and
+  // returned the result — literally a no-op adding function call overhead to every attachShadow.
 
   // ---- 10. Date / Timezone Consistency ----
 
@@ -1006,9 +1006,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
     '__playwright', '__puppeteer_evaluation_script__', '__selenium_unwrapped',
     'callPhantom', '_phantom', '__nightmare', 'domAutomation', 'domAutomationController',
     '__webdriver_evaluate', '__driver_evaluate', '__webdriver_unwrapped',
-    '__driver_unwrapped', '__selenium_unwrapped', '__fxdriver_evaluate',
+    '__driver_unwrapped', '__fxdriver_evaluate',
     '__fxdriver_unwrapped', '_Selenium_IDE_Recorder', '_selenium', 'calledSelenium',
-    '__nightmare', '__phantomas', 'domAutomationController',
+    '__phantomas',
   ];
   propsToRemove.forEach(prop => {
     try { delete window[prop]; } catch(e) {}
@@ -1318,25 +1318,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
   }
 
   // ---- 22. Font Detection Countermeasure ----
-  // Returns false for commonly-fingerprinted system fonts to prevent font enumeration
-
-  if (document.fonts && document.fonts.check) {
-    var _origFontsCheck = document.fonts.check.bind(document.fonts);
-    var _fpFontPatterns = [
-      'arial black', 'calibri', 'cambria', 'comic sans ms', 'consolas',
-      'corbel', 'courier new', 'franklin gothic medium', 'georgia',
-      'gill sans', 'impact', 'lucida console', 'lucida sans',
-      'microsoft sans serif', 'palatino', 'segoe ui', 'tahoma',
-      'times new roman', 'trebuchet ms', 'verdana', 'webdings',
-    ];
-    document.fonts.check = function(font, text) {
-      var lower = (font || '').toLowerCase();
-      for (var _fi = 0; _fi < _fpFontPatterns.length; _fi++) {
-        if (lower.indexOf(_fpFontPatterns[_fi]) !== -1) return false;
-      }
-      return _origFontsCheck(font, text);
-    };
-  }
+  // REMOVED: This section was superseded by Section 60 which provides a more comprehensive
+  // font check override using regex-based matching. The old section was completely
+  // overridden by Section 60's later defineProperty, making this dead code.
+  // getImageData noise is now handled by Section 21 (above).
 
   // ---- 23. Platform-based Plugin / MimeType Enumeration ----
   // Override with realistic 3-4 plugins that vary by OS platform
@@ -1410,7 +1395,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   if (window.performance) {
     // Add realistic offset so performance.now() doesn't start from exactly 0
-    var _perfOffset = 1000 + Math.random() * 2000;
+    var _perfOffset = 1000 + Math.floor(_seededRandom(25.1) * 2000);
     var _origPerfNow = performance.now.bind(performance);
     try {
       Object.defineProperty(performance, 'now', {
@@ -1471,10 +1456,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // navigator.mediaDevices.enumerateDevices() returns a consistent set of fake devices.
   if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
     var _origEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
-    // Deterministic fake device IDs derived from profile seed
-    var _fakeDeviceSeed = 0;
-    for (var _si = 0; _si < PROFILE.seed.length; _si++) { _fakeDeviceSeed = ((_fakeDeviceSeed << 5) - _fakeDeviceSeed + PROFILE.seed.charCodeAt(_si)) | 0; }
-    _fakeDeviceSeed = Math.abs(_fakeDeviceSeed);
 
     var _fakeDevices = [
       { deviceId: 'audioinput_' + _fakeDeviceSeed, kind: 'audioinput', label: '', groupId: 'grp_' + _fakeDeviceSeed },
@@ -1561,13 +1542,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // IMPORTANT: Noise is applied to a TEMPORARY canvas to avoid accumulating
   // modifications on the original canvas across multiple toDataURL/toBlob calls.
   try {
-    var _canvasNoiseSeed = Math.floor(_fakeDeviceSeed * 13.37) | 0;
     var _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
     HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
       try {
         var ctx = this.getContext('2d');
         if (ctx) {
-          var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
+          var imgData = _origGetImageData.call(ctx, 0, 0, Math.max(1, this.width), Math.max(1, this.height));
           var d = imgData.data;
           var _seed = _canvasNoiseSeed; // use local seed to avoid accumulation
           for (var i = 0; i < d.length; i += 4) {
@@ -1597,7 +1577,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       try {
         var ctx = this.getContext('2d');
         if (ctx) {
-          var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
+          var imgData = _origGetImageData.call(ctx, 0, 0, Math.max(1, this.width), Math.max(1, this.height));
           var d = imgData.data;
           var _seed = _canvasNoiseSeed;
           for (var i = 0; i < d.length; i += 4) {
@@ -2135,8 +2115,14 @@ export function getStealthScript(profile: FingerprintProfile): string {
     if (window.speechSynthesis && window.speechSynthesis.getVoices) {
       var _origGetVoices = window.speechSynthesis.getVoices.bind(window.speechSynthesis);
       var _voiceSeed = _fakeDeviceSeed * 7.77;
-      var _voiceNames = ['Google US English', 'Google UK English Female', 'Microsoft David Desktop', 'Microsoft Zira Desktop', 'Alex', 'Samantha', 'Victoria', 'Karen', 'Daniel', 'Moira'];
-      var _voiceLangs = ['en-US', 'en-GB', 'en-US', 'en-US', 'en-US', 'en-US', 'en-US', 'en-AU', 'en-GB', 'en-GB'];
+      var _voiceNames, _voiceLangs;
+      if (PROFILE.languages && PROFILE.languages[0] && PROFILE.languages[0].indexOf('zh') === 0) {
+        _voiceNames = ['Google 普通话', 'Google 粤語', 'Microsoft Huihui Desktop', 'Google US English', 'Google UK English Female', 'Microsoft Zira Desktop'];
+        _voiceLangs = ['zh-CN', 'zh-HK', 'zh-CN', 'en-US', 'en-GB', 'en-US'];
+      } else {
+        _voiceNames = ['Google US English', 'Google UK English Female', 'Microsoft David Desktop', 'Microsoft Zira Desktop', 'Alex', 'Samantha', 'Victoria', 'Karen', 'Daniel', 'Moira'];
+        _voiceLangs = ['en-US', 'en-GB', 'en-US', 'en-US', 'en-US', 'en-US', 'en-US', 'en-AU', 'en-GB', 'en-GB'];
+      }
       var _numVoices = 3 + Math.floor((_voiceSeed * 100) % 4); // 3-6 voices
       var _fakeVoices = [];
       for (var _vi = 0; _vi < _numVoices; _vi++) {
@@ -2218,67 +2204,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // ==================== Section 56: navigator.plugins consistency ====================
-  // Headless Chrome typically reports 0-3 plugins. Real Chrome has 5+ standard plugins.
-  // We add common Chrome plugins if the count is suspiciously low.
-  // CRITICAL: Firefox has zero plugins — skip this section for Firefox
-  if (!_isFirefox) {
-  try {
-    var _pluginCount = navigator.plugins.length;
-    if (_pluginCount < 4) {
-      // Standard Chrome plugins (names must match real Chrome exactly)
-      var _stdPlugins = [
-        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', exts: ['pdf'] },
-        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', exts: ['pdf'] },
-        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', exts: [] },
-      ];
-      for (var _pi = 0; _pi < _stdPlugins.length; _pi++) {
-        var _sp = _stdPlugins[_pi];
-        // Check if this plugin already exists (by name)
-        var _exists = false;
-        for (var _pj = 0; _pj < navigator.plugins.length; _pj++) {
-          if (navigator.plugins[_pj].name === _sp.name) { _exists = true; break; }
-        }
-        if (!_exists) {
-          // Create a fake Plugin object
-          var _mimeTypes = [];
-          for (var _ei = 0; _ei < _sp.exts.length; _ei++) {
-            var _mt = { type: 'application/' + _sp.exts[_ei], suffixes: _sp.exts[_ei], description: _sp.description };
-            _mimeTypes.push(_mt);
-          }
-          // Inject via Object.defineProperty on navigator.plugins
-          var _fakePlugin = {
-            name: _sp.name,
-            filename: _sp.filename,
-            description: _sp.description,
-            length: _mimeTypes.length,
-            item: function(i) { return _mimeTypes[i] || null; },
-            namedItem: function(name) { return _mimeTypes.find(function(m) { return m.type === name; }) || null; },
-          };
-          Object.defineProperty(_fakePlugin, Symbol.iterator, {
-            value: function*() { for (var i = 0; i < _mimeTypes.length; i++) yield _mimeTypes[i]; }
-          });
-          // Append to plugins array
-          Object.defineProperty(navigator.plugins, _pluginCount, {
-            value: _fakePlugin,
-            writable: false,
-            configurable: true,
-          });
-          // Also add to the named access
-          if (!navigator.plugins[_sp.name]) {
-            Object.defineProperty(navigator.plugins, _sp.name, {
-              value: _fakePlugin,
-              configurable: true,
-            });
-          }
-          _pluginCount++;
-        }
-      }
-      // Update plugins length
-      Object.defineProperty(navigator.plugins, 'length', { get: function() { return _pluginCount; }, configurable: true });
-    }
-  } catch(e) {}
-  } // end !_isFirefox guard for Section 56
+  // ==================== Section 56: REMOVED ====================
+  // Section 23 already provides a complete navigator.plugins getter with realistic plugins.
+  // Old Section 56 tried to inject plugins via defineProperty on the PluginArray returned
+  // by Section 23's getter, but that PluginArray is a new temporary object on every access,
+  // so all injections were immediately garbage-collected. The section was dead code.
 
   // ==================== Section 57: Window frame dimensions (chrome frame) fix ====================
   // R31-b found Section 37 used Math.random() for chromeWidth/chromeHeight.

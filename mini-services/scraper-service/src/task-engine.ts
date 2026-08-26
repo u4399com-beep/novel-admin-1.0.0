@@ -140,7 +140,10 @@ async function apiCall(
       "Content-Type": "application/json",
       "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
     },
-    signal: signal || AbortSignal.timeout(30000),
+    // Combine task-level abort with per-request timeout (30s)
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+      : AbortSignal.timeout(30000),
   };
   if (body && method !== "GET" && method !== "HEAD") {
     options.body = JSON.stringify(body);
@@ -428,9 +431,12 @@ export async function executeTask(taskId: string) {
     clearInterval(heartbeatInterval);
     clearTimeout(taskTimeoutId);
     // Flush logs BEFORE cleaning up buffer (flushTaskLogs manages its own cleanup)
-    await flushTaskLogs(taskId).catch(() => {});
+    // Only delete buffer entry if flush succeeded (logs remain for periodic retry on failure)
+    const flushOk = await flushTaskLogs(taskId).then(() => true).catch(() => false);
     progressThrottle.delete(taskId);
-    logBuffer.delete(taskId);
+    if (flushOk) {
+      logBuffer.delete(taskId);
+    }
   }
 }
 
@@ -517,6 +523,9 @@ async function executeTaskBody(
   // 3. Process each book
   const seenTitles = new Set<string>();
   const seenUrls = new Set<string>();
+
+  // Track domains this task touches for selective cleanup (avoids wiping concurrent tasks' overrides)
+  const _touchedDomains = new Set<string>();
   let newBooksCount = new AtomicCounter();
   let skippedBooksCount = new AtomicCounter();
   let failedItemsCount = new AtomicCounter();
@@ -695,24 +704,26 @@ async function executeTaskBody(
               confidence: 0.8,
               evidence: ['book-page-captcha'],
             };
+            const _currentBookEngine = getEffectiveEngine(bookUrl, engineType);
             const strategyResult = await autoHandleCaptcha(detection, {
               url: bookUrl,
               domain: bkDomain,
-              currentEngine: engineType,
+              currentEngine: _currentBookEngine,
               retryCount: newCount,
               maxRetries: 5,
               antiCrawlConfig: antiCrawlConfig as Record<string, unknown>,
             });
 
-            if (strategyResult.nextEngine && strategyResult.nextEngine !== engineType) {
+            if (strategyResult.nextEngine && strategyResult.nextEngine !== _currentBookEngine) {
               await addTaskLog(taskId, "info",
-                `升级引擎: ${engineType} → ${strategyResult.nextEngine} (${strategyResult.message})`,
+                `升级引擎: ${_currentBookEngine} → ${strategyResult.nextEngine} (${strategyResult.message})`,
                 bookUrl,
                 `书籍页连续遇到${newCount}次验证码，已自动切换到${strategyResult.nextEngine}引擎`
               );
               if (!_engineUpgradeLock.has(bkDomain)) {
                 _engineUpgradeLock.add(bkDomain);
                 _domainEngineTypes.set(bkDomain, strategyResult.nextEngine);
+                _touchedDomains.add(bkDomain);
                 ctx.engineType = strategyResult.nextEngine;
                 setTimeout(() => _engineUpgradeLock.delete(bkDomain), 5000);
               }
@@ -785,7 +796,7 @@ async function executeTaskBody(
       currentStep: "采集完成（无有效书籍）",
       progress: 100,
     });
-    return { success: true, totalBooks: 0, newBooks: 0, totalChapters: 0, newChapters: 0, failed: 0, skipped: 0, engine: engineType };
+    return { success: true, totalBooks: 0, newBooks: 0, totalChapters: 0, newChapters: 0, failed: 0, skipped: skippedBooksCount.value, engine: engineType };
   }
 
   // 4. Scrape chapters for each book
@@ -981,22 +992,24 @@ async function executeTaskBody(
 
               // Auto-engine upgrade: consult CAPTCHA strategy advisor
               try {
+                const _currentChEngine = getEffectiveEngine(chapter.url, engineType);
                 const strategyResult = await autoHandleCaptcha(captchaResult, {
                   url: chapter.url,
                   domain: chDomain,
-                  currentEngine: engineType,
+                  currentEngine: _currentChEngine,
                   retryCount: newCount,
                 });
 
-                if (strategyResult.nextEngine && strategyResult.nextEngine !== engineType) {
+                if (strategyResult.nextEngine && strategyResult.nextEngine !== _currentChEngine) {
                   await addTaskLog(taskId, "info",
-                    `升级引擎: ${engineType} → ${strategyResult.nextEngine} (${strategyResult.message})`,
+                    `升级引擎: ${_currentChEngine} → ${strategyResult.nextEngine} (${strategyResult.message})`,
                     chapter.url,
                     `当前引擎连续遇到${newCount}次验证码，已自动切换到${strategyResult.nextEngine}引擎`
                   );
                   if (!_engineUpgradeLock.has(chDomain)) {
                     _engineUpgradeLock.add(chDomain);
                     _domainEngineTypes.set(chDomain, strategyResult.nextEngine);
+                    _touchedDomains.add(chDomain);
                     ctx.engineType = strategyResult.nextEngine;
                     setTimeout(() => _engineUpgradeLock.delete(chDomain), 5000);
                   }
@@ -1093,7 +1106,7 @@ async function executeTaskBody(
           processedChaptersCount.increment();
         } catch (err) {
           failedItemsCount.increment();
-          recordAdaptiveResponse(chapter.url, 0, false);
+          recordAdaptiveResponse(chapter.url, Date.now() - contentStartTime, false);
           const errMsg = err instanceof Error ? err.message : String(err);
           console.error(`[Task ${taskId}] Error scraping chapter ${chapter.url}:`, errMsg);
           await addTaskLog(taskId, "error", `章节采集失败: ${chapter.title || chapter.url}`, chapter.url, errMsg.slice(0, 500));
@@ -1173,8 +1186,10 @@ async function executeTaskBody(
 
   console.log(`[Task ${taskId}] Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
 
-  // Cleanup per-domain engine overrides
-  _domainEngineTypes.clear();
+  // Cleanup per-domain engine overrides (only domains this task touched, not concurrent tasks')
+  for (const d of _touchedDomains) {
+    _domainEngineTypes.delete(d);
+  }
 
   return {
     success: true,
