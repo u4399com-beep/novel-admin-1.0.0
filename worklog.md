@@ -17079,3 +17079,84 @@ Stage Summary:
 - 17项审计修复(1H/7M/9L)
 - 关键修复: abort signal全链路、连接池竞态、无限滚动proxy+cookies
 - 4文件, +310/-117行
+---
+Task ID: R46
+Agent: Main Orchestrator + 3 Sub-agents (2 deep-audit opus + 3 fix)
+Task: R46 深度审计+修复 - engines/stealth/cleaning/task-engine
+
+Work Log:
+- 两轮Opus深度审计覆盖7个核心文件(engines.ts/stealth.ts/scrapers.ts/selectors.ts/cleaning.ts/task-engine.ts/types.ts)
+- engines.ts审计发现10项(3H/6M/1L) - 聚焦R45新增的引擎回退链/连接池/无限滚动/SOCKS4代码
+- stealth+scrapers+selectors+cleaning+task-engine审计发现27项(7H/12M/8L)
+- 3个并行修复代理 + 手动修复子代理遗漏项(BLOCK_TAGS/filterAdLines/deduplicateParagraphs/per-domain engine/double cleanText/409 status)
+- 最终手动验证所有修复并修复6项子代理遗漏
+
+## 修复清单 (26项)
+
+### HIGH (7项)
+| # | 文件 | 修复 | 类别 |
+|---|------|------|------|
+| 1 | engines.ts | socks5://被replace为http5://无效协议 | 正确性 |
+| 2 | engines.ts | fetchWithInfiniteScroll错误路径泄漏browser/context | 资源泄漏 |
+| 3 | engines.ts | fetchWithInfiniteScroll独立浏览器无stealth/proxy/cookie/CAPTCHA | 反检测 |
+| 4 | stealth.ts | Chrome插件列表含Edge PDF Viewer(检测向量) | 指纹泄露 |
+| 5 | stealth.ts | navigator.languages无条件二次覆盖 | 指纹一致性 |
+| 6 | stealth.ts | DOMRect Math.random()非确定性可跨会话检测 | 指纹泄露 |
+| 7 | stealth.ts | Canvas getImageData Math.random()两次读取不一致 | 指纹泄露 |
+| 8 | cleaning.ts | BLOCK_TAGS缺13个块级元素(table/nav/main等) | 内容丢失 |
+| 9 | task-engine.ts | engineType共享变量多worker并发竞态 | 竞态条件 |
+| 10 | task-engine.ts | cleanText二次调用deduplicateParagraphs跨part误删 | 数据丢失 |
+
+### MEDIUM (12项)
+| # | 文件 | 修复 | 类别 |
+|---|------|------|------|
+| 11 | engines.ts | LRU驱逐timestamp清理与DEFAULT_FALLBACK_CHAIN耦合 | 内存泄漏 |
+| 12 | engines.ts | AgentQL reconstructHtml subKey未escapeHtml | 数据完整性 |
+| 13 | engines.ts | getCheerioAgent import失败后永久hang | 恢复能力 |
+| 14 | engines.ts | CircuitBreaker添加getState()/reset() | 可观测性 |
+| 15 | engines.ts | recordEngineFailure在isFallbackWorthyError之前执行 | 算法正确性 |
+| 16 | stealth.ts | Battery _batteryCharging恒为true | 指纹分布 |
+| 17 | stealth.ts | outerWidth/outerHeight三重覆盖死代码 | 代码清晰 |
+| 18 | stealth.ts | font family正则缺连字符 | 字体探测 |
+| 19 | cleaning.ts | filterAdLines match长度重复计算+lowerRemaining不同步 | 算法正确性 |
+| 20 | cleaning.ts | 短行contentChars<10误删对话 | 内容丢失 |
+| 21 | cleaning.ts | deduplicateParagraphs合并无分隔符 | 格式错误 |
+| 22 | scrapers.ts | maxPages默认1改为hardMax | 功能错误 |
+| 23 | task-engine.ts | API 409计为skipped | 统计正确性 |
+| 24 | task-engine.ts | wordCount含空白字符 | 统计正确性 |
+
+### LOW (1项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 25 | engines.ts | getRecentFailureCount注释修正 |
+
+## 修改文件 (5个)
+- engines.ts: +149/-80 (连接池恢复/CircuitBreaker可观测/无限滚动反检测/abort安全)
+- stealth.ts: +31/-19 (确定性随机/插件清理/语言守卫/电池分布/字体正则)
+- cleaning.ts: +29/-16 (BLOCK_TAGS/filterAdLines/deduplicateParagraphs)
+- scrapers.ts: +1/-1 (maxPages默认值)
+- task-engine.ts: +47/-17 (per-domain engine/移除双清洗/409状态/wordCount)
+
+## 验证结果
+- TypeScript strict (scraper-service src/): 0错误
+- Commit: 56cc72c
+
+## 历史累计修复: 555 + 26 = 581项
+## 累计增强: 15项
+## Stealth: 60活跃sections
+
+## 未解决/后续
+- SessionData类型完整实现
+- 代理连通性端到端验证
+- TLS指纹(JA3传输层模拟)
+- cheerio.load()缓存优化
+- stealth.ts Section 1/23/56/29 之间的交互清理
+- task-engine.ts logBuffer截断活跃任务日志
+- stealth.ts timezoneOffset ±5分钟抖动与UTC+8不一致
+
+Stage Summary:
+- 两轮Opus深度审计(engines.ts全2592行 + 5文件6359行)
+- 26项修复(10H/14M/2L)
+- 关键发现: Canvas两次getImageData不一致可简单检测、Chrome含Edge插件是经典检测向量、多worker engineType竞态导致错误引擎
+- 手动修复6项子代理遗漏(BLOCK_TAGS/filterAdLines/dedup/409/wordCount/cleanText)
+- 5文件, +258/-133行
