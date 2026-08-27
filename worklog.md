@@ -18554,3 +18554,114 @@ Files changed:
    the effective rate limit from being silently capped.
 
 TypeScript check: 0 new errors (only pre-existing NovelListView.ts errors).
+---
+Task ID: R50
+Agent: Main Orchestrator + 10 Sub-agents (5 fix + 3 audit + 2 enhancement)
+Task: R50 46项审计修复 + 5项增强 + 19项LOW bug修复
+
+Work Log:
+- 5路并行修复/增强agent (2-a~2-d, 3-a) 完成21项增强+LOW修复
+- 3路并行深度审计 (4-a~4-c) 覆盖全部12个核心文件 (~13000行)
+- 审计发现50项bug (10H/22M/18L), 去重后46项唯一bug
+- 3路并行修复agent (fix-a~fix-c) 修复全部27项HIGH/MEDIUM
+
+## 修复清单 (46项: 10H/17M/19L)
+
+### HIGH (10项)
+| # | 文件 | 修复 | 类别 |
+|---|------|------|------|
+| 1 | engines.ts | ObscuraEngine CAPTCHA doNotRetry标记 | 反反爬 |
+| 2 | scrapers.ts | 封面下载OOM防护(流式+5MB限制) | 资源安全 |
+| 3 | stealth.ts | timezoneOffset恒值匹配Intl时区 | 指纹一致性 |
+| 4 | stealth.ts | screen.orientation.type角度映射修正 | 指纹一致性 |
+| 5 | stealth.ts | console.toString()返回native code | 检测向量 |
+| 6 | stealth.ts | Canvas噪声getImageData/toDataURL统一 | 检测向量 |
+| 7 | stealth.ts | performance.now()移除抖动(保持时序不变量) | 检测向量 |
+| 8 | task-engine.ts | triedEngines每chapter重置 | 逻辑错误 |
+| 9 | task-engine.ts | _touchedDomains引用计数清理 | 并发安全 |
+| 10 | proxy-manager.ts | exportProxies凭据导出+新增Public方法 | 数据完整性 |
+
+### MEDIUM (17项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 11 | engines.ts | ObscuraEngine CAPTCHA不记录proxy失败 |
+| 12 | engines.ts | InfiniteScroll locale BCP 47 |
+| 13 | engines.ts | timeout:0被||覆盖→改为?? (7处) |
+| 14 | engines.ts | domainFailureTimestamps LRU 1000 |
+| 15 | stealth.ts | chrome.csi/loadTimes缓存返回值 |
+| 16 | stealth.ts | WebGL常量writable:false |
+| 17 | stealth.ts | iframe deviceMemory Firefox守卫 |
+| 18 | task-engine.ts | 自适应延迟clamp到max |
+| 19 | task-engine.ts | CAPTCHA计数器重置为0 |
+| 20 | task-engine.ts | 日志buffer O(n)→运行计数器 |
+| 21 | proxy-manager.ts | dispatcherCache LRU 200 |
+| 22 | proxy-manager.ts | 域名规范化一致性(4方法) |
+| 23 | cookie-jar.ts | Max-Age=0 name+path匹配 |
+| 24 | rate-limiter.ts | 时间戳cap动态化(maxRPM*2) |
+| 25 | scrapers.ts | HTTP错误body取消 |
+| 26 | cheerio-cache.ts | key前缀500→1000字符 |
+| 27 | cleaning.ts | Latin短行合并 |
+
+### LOW (19项 - 已在首轮修复)
+| # | 修复 |
+|---|------|
+| 28 | closeAllEngines后getEngine崩溃防护 |
+| 29 | Firecrawl URL HTTPS |
+| 30 | scrollHeight fallback 10000→3000 |
+| 31 | InfiniteScroll URL去重Set |
+| 32 | _navSeed冗余移除 |
+| 33 | chrome.csi()种子随机 |
+| 34 | _tzOffsetMs fallback |
+| 35 | Section 1 plugins死代码(-76行) |
+| 36 | intRange恒为31 |
+| 37 | 代理凭据日志脱敏 |
+| 38 | proxy health check body取消 |
+| 39 | blockedDomains规范化 |
+| 40 | getPlaywrightCookies path |
+| 41 | cleanup break内层循环 |
+| 42 | fallback指纹默认UA |
+| 43 | lastRequestTime初始化为Date.now() |
+| 44 | mergeRunOnText Latin短行 |
+| 45 | U+2028/2029→\\n |
+| 46 | progressThrottle timer已修(上轮) |
+
+## 增强功能 (5项)
+| # | 功能 | 文件 |
+|---|------|------|
+| 1 | 引擎失败自动回退链(cheerio→playwright→obscura) | engines.ts + task-engine.ts |
+| 2 | 可配置熔断器(SCRAPER_CB_*环境变量) | engines.ts |
+| 3 | 无限滚动增强(Load More/去重/位置追踪) | engines.ts |
+| 4 | cheerio.load() LRU缓存(50条目) | cheerio-cache.ts + selectors.ts + scrapers.ts |
+| 5 | SOCKS4/SOCKS5代理支持 | proxy-manager.ts |
+
+## 修改统计
+- engines.ts: +232行 (回退链/熔断器/Obscura/无限滚动/7项修复)
+- stealth.ts: -253行 (死代码清理/9项指纹修复)
+- task-engine.ts: +137行 (triedEngines/引用计数/3项修复)
+- proxy-manager.ts: +159行 (SOCKS/凭据/规范化/eviction)
+- 新增cheerio-cache.ts: +47行
+- 其余7文件: +105行
+- **总计: +1766/-591, 14文件**
+
+## 验证结果
+- TypeScript: scraper-service 0新错误 ✅
+- Commit: c44f833
+
+## 历史累计修复: 698 + 46 = 744项
+## 累计增强: 16 + 5 = 21项
+## Stealth: 53活跃sections (清理后)
+
+## 未解决/后续
+- TLS指纹(JA3传输层模拟,非HTTP头级)
+- 代理连通性端到端自动化验证
+- 引擎回退链策略可配置化(外部文件)
+- stealth.ts Section 19/13 仍存在部分死代码(低优先级)
+- canvas指纹噪声强度可配置化
+- stealth.ts chrome.runtime 更完整模拟
+
+Stage Summary:
+- R50完成: 46项修复(10H/17M/19L) + 5项增强
+- 10路并行agent(5修复+3审计+2增强)高效执行
+- 关键成果: 引擎自动回退链/Canvas噪声统一/timezone一致性/SOCKS代理/流式下载防护
+- 14文件, +1766/-591行
+- Commit: c44f833
