@@ -230,10 +230,29 @@ export interface ProxyConfig {
 
 // ==================== Session Types ====================
 
+/** Lightweight browser fingerprint stored with a session for consistency. */
+export interface SessionFingerprint {
+  screenWidth: number;
+  screenHeight: number;
+  colorDepth: number;
+  pixelRatio: number;
+  platform: string;
+  deviceMemory: number;
+  hardwareConcurrency: number;
+  timezone: string;
+  languages: string[];
+}
+
 export interface SessionData {
   id: string;
   userAgent: string;
   cookies: Array<{ name: string; value: string; domain?: string }>;
+  /** Browser fingerprint data for session consistency across requests */
+  fingerprint?: SessionFingerprint;
+  /** Proxy URL associated with this session, if any */
+  proxy?: string;
+  /** Number of times this session has been used (alias for usageCount) */
+  requestCount: number;
   usageCount: number;
   maxUsage: number;
   createdAt: string;

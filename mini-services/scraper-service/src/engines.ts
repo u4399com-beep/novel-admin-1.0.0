@@ -28,6 +28,7 @@ import { browserBehavior } from "./browser-behavior";
 import { detectAndDecode } from "./charset-detector";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_SCROLL_ITERATIONS = parseInt(process.env.SCRAPER_MAX_SCROLL_ITERATIONS || '30', 10);
 
 /**
  * Resource types that are always blocked during browser-based scraping.
@@ -143,18 +144,39 @@ async function waitForRateLimit(domain: string, signal?: AbortSignal): Promise<v
 
 type CircuitState = "closed" | "open" | "half-open";
 
+interface CircuitBreakerOptions {
+  failureThreshold?: number;
+  recoveryTimeout?: number;
+  halfOpenMaxAttempts?: number;
+}
+
 class CircuitBreaker {
   private state: CircuitState = "closed";
   private failureCount = 0;
   private lastFailureTime = 0;
   private readonly failureThreshold: number;
   private readonly resetTimeout: number;
+  private readonly halfOpenMaxAttempts: number;
   private _halfOpenInFlight = 0; // Track in-flight requests during half-open
 
-  constructor(name: string, failureThreshold = 3, resetTimeout = 30000) {
+  constructor(name: string, failureThreshold = 3, resetTimeout = 30000, halfOpenMaxAttempts = 1) {
     this.failureThreshold = failureThreshold;
     this.resetTimeout = resetTimeout;
+    this.halfOpenMaxAttempts = halfOpenMaxAttempts;
     this._name = name;
+  }
+
+  /**
+   * Factory that reads thresholds from environment variables.
+   *   SCRAPER_CB_FAILURE_THRESHOLD  (default: 5)
+   *   SCRAPER_CB_RECOVERY_TIMEOUT_MS (default: 30000)
+   *   SCRAPER_CB_HALF_OPEN_MAX       (default: 1)
+   */
+  static create(name: string, opts?: CircuitBreakerOptions): CircuitBreaker {
+    const failureThreshold = opts?.failureThreshold ?? Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) || 5;
+    const recoveryTimeout  = opts?.recoveryTimeout  ?? Number(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS) || 30000;
+    const halfOpenMaxAttempts = opts?.halfOpenMaxAttempts ?? Number(process.env.SCRAPER_CB_HALF_OPEN_MAX) || 1;
+    return new CircuitBreaker(name, failureThreshold, recoveryTimeout, halfOpenMaxAttempts);
   }
 
   private _name: string;
@@ -170,10 +192,10 @@ class CircuitBreaker {
       }
     }
 
-    // In half-open state, only allow ONE request at a time as a probe
+    // In half-open state, only allow a limited number of requests as probes
     if (this.state === "half-open") {
-      if (this._halfOpenInFlight > 0) {
-        throw new Error(`Service ${this._name} is in recovery (half-open, probe in flight)`);
+      if (this._halfOpenInFlight >= this.halfOpenMaxAttempts) {
+        throw new Error(`Service ${this._name} is in recovery (half-open, ${this._halfOpenInFlight}/${this.halfOpenMaxAttempts} probes in flight)`);
       }
       this._halfOpenInFlight++;
     }
@@ -214,11 +236,11 @@ class CircuitBreaker {
   }
 }
 
-// One circuit breaker per external engine type
-const firecrawlBreaker = new CircuitBreaker("Firecrawl");
-const agentqlBreaker = new CircuitBreaker("AgentQL");
-const cloudBrowserBreaker = new CircuitBreaker("CloudBrowser");
-const scraplingBreaker = new CircuitBreaker("Scrapling");
+// One circuit breaker per external engine type (configurable via env vars)
+const firecrawlBreaker = CircuitBreaker.create("Firecrawl");
+const agentqlBreaker = CircuitBreaker.create("AgentQL");
+const cloudBrowserBreaker = CircuitBreaker.create("CloudBrowser");
+const scraplingBreaker = CircuitBreaker.create("Scrapling");
 
 // ==================== HTTP Connection Pool (CheerioEngine) ====================
 
@@ -259,6 +281,45 @@ function getCheerioAgent(): Promise<import('undici').Agent> {
 }
 
 // ==================== Engine Fallback Chain ====================
+
+/**
+ * R50 engine failure fallback chain — internal-only engine strategies.
+ * Each sub-array is an ordered fallback chain for a "strategy".
+ * The first engine in each chain is the primary; subsequent engines are fallbacks.
+ *
+ * External engines (firecrawl, agentql, cloud-browser, scrapling) are NOT included —
+ * they remain as separate strategies chosen by the user/AI rule config.
+ *
+ * Used by task-engine.ts when a scrape operation fails and needs to retry
+ * with a different internal engine before giving up.
+ */
+export const ENGINE_FALLBACK_CHAIN: EngineType[][] = [
+  // Strategy A: start cheap, escalate to stealth
+  ["cheerio", "playwright", "obscura"],
+  // Strategy B: start with JS rendering, fall back to stealth
+  ["playwright", "obscura", "cheerio"],
+  // Strategy C: start with stealth, fall back to JS then cheap
+  ["obscura", "playwright", "cheerio"],
+];
+
+/**
+ * Select the best fallback chain strategy for a given primary engine.
+ * Returns the chain whose first element matches the primary engine.
+ * If no match, returns strategy A (cheerio-first) as the default.
+ */
+export function getFallbackChainForEngine(primaryEngine: EngineType): EngineType[] {
+  // Only internal engines participate in the chain
+  const internalEngines = new Set<EngineType>(['cheerio', 'playwright', 'obscura']);
+  if (!internalEngines.has(primaryEngine)) {
+    // External engine — use strategy A as the default internal chain
+    return ENGINE_FALLBACK_CHAIN[0];
+  }
+  for (const chain of ENGINE_FALLBACK_CHAIN) {
+    if (chain[0] === primaryEngine) return chain;
+  }
+  // No matching strategy found — build a chain with the primary engine first
+  return [primaryEngine, ...ENGINE_FALLBACK_CHAIN[0].filter(e => e !== primaryEngine)];
+}
 
 /**
  * Default engine fallback chain. Ordered from fastest/cheapest to most capable.
@@ -316,7 +377,13 @@ function recordEngineFailure(domain: string, engine: EngineType): void {
   }
   const failures = domainEngineFailures.get(domain)!;
   failures.set(engine, (failures.get(engine) || 0) + 1);
-  domainFailureTimestamps.set(`${domain}:${engine}`, Date.now());
+  const tsKey = `${domain}:${engine}`;
+  domainFailureTimestamps.set(tsKey, Date.now());
+  // LRU eviction for timestamps map (max 1000 entries)
+  if (domainFailureTimestamps.size > 1000) {
+    const oldestTsKey = domainFailureTimestamps.keys().next().value;
+    if (oldestTsKey !== undefined) domainFailureTimestamps.delete(oldestTsKey);
+  }
 }
 
 /**
@@ -503,11 +570,16 @@ export function registerEngine(engine: ScrapingEngine): void {
 
 export function getEngine(type: EngineType): ScrapingEngine {
   const engine = engines.get(type);
-  if (!engine) {
-    console.warn(`[Engine] Requested engine "${type}" not registered, falling back to cheerio`);
-    return engines.get("cheerio")!;
+  if (engine) return engine;
+  // Fallback to cheerio (may be null if engines were closed)
+  const fallback = engines.get("cheerio");
+  if (fallback) {
+    if (type !== "cheerio") {
+      console.warn(`[Engine] Requested engine "${type}" not registered, falling back to cheerio`);
+    }
+    return fallback;
   }
-  return engine;
+  throw new Error(`[Engine] No engines available — requested "${type}" but engine registry is empty (engines may have been closed)`);
 }
 
 export function getEngineNames(): EngineType[] {
@@ -541,7 +613,7 @@ class CheerioEngine implements ScrapingEngine {
       resolvedUA = getRandomUA();
     }
     const headers = buildFetchHeaders(options?.antiCrawl, resolvedUA, url, 'novel');
-    const timeout = Math.max(5000, Math.min(options?.timeout || 30000, 300000));
+    const timeout = Math.max(5000, Math.min(options?.timeout ?? 30000, 300000));
 
     // Inject cookies from the cookie jar
     let targetDomain: string;
@@ -844,7 +916,7 @@ class PlaywrightEngine implements ScrapingEngine {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
-    const timeout = Math.max(5000, Math.min(options?.timeout || 45000, 300000));
+    const timeout = Math.max(5000, Math.min(options?.timeout ?? 45000, 300000));
     const userAgent = options?.userAgent || (options?.antiCrawl?.uaRotation ? getRandomUA() : undefined);
     const cookies = options?.cookies || options?.antiCrawl?.cookies;
 
@@ -1063,7 +1135,7 @@ class PlaywrightEngine implements ScrapingEngine {
               }
 
               // 4. Multi-segment scroll with reading pauses
-              const pageHeight = await page.evaluate(() => document.body.scrollHeight || 10000);
+              const pageHeight = await page.evaluate(() => document.body.scrollHeight || document.body.clientHeight || 3000);
               const segments = 3 + Math.floor(Math.random() * 3);
               const scrollStep = Math.floor(pageHeight / segments);
               for (let s = 1; s <= segments; s++) {
@@ -1226,7 +1298,7 @@ class PlaywrightEngine implements ScrapingEngine {
 // ==================== 3. Firecrawl Engine (External API) ====================
 
 const DEFAULT_FIRECRAWL_CONFIG: FirecrawlConfig = {
-  apiUrl: process.env.FIRECRAWL_API_URL || "http://localhost:3002",
+  apiUrl: process.env.FIRECRAWL_API_URL || "https://localhost:3002",
   apiKey: process.env.FIRECRAWL_API_KEY || undefined,
   timeout: 60000,
 };
@@ -1244,7 +1316,7 @@ class FirecrawlEngine implements ScrapingEngine {
     }
 
     const config = getFirecrawlConfig();
-    const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
+    const timeout = Math.max(5000, Math.min(options?.timeout ?? config.timeout ?? 60000, 300000));
 
     let fcDomain = '';
     try { fcDomain = new URL(url).hostname; } catch { /* ignore */ }
@@ -1415,7 +1487,7 @@ class AgentQLEngine implements ScrapingEngine {
     }
 
     const config = getAgentQLConfig();
-    const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
+    const timeout = Math.max(5000, Math.min(options?.timeout ?? config.timeout ?? 60000, 300000));
 
     let aqlDomain = '';
     try { aqlDomain = new URL(url).hostname; } catch { /* ignore */ }
@@ -1553,7 +1625,7 @@ class CloudBrowserEngine implements ScrapingEngine {
     }
 
     const config = getCloudBrowserConfig();
-    const timeout = Math.max(5000, Math.min(options?.timeout || config.timeout || 60000, 300000));
+    const timeout = Math.max(5000, Math.min(options?.timeout ?? config.timeout ?? 60000, 300000));
 
     let cbDomain = '';
     try { cbDomain = new URL(url).hostname; } catch { /* ignore */ }
@@ -1733,7 +1805,7 @@ class ScraplingEngine implements ScrapingEngine {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
-    const timeout = Math.max(10000, Math.min(options?.timeout || 30000, 120000));
+    const timeout = Math.max(10000, Math.min(options?.timeout ?? 30000, 120000));
 
     let scDomain = '';
     try { scDomain = new URL(url).hostname; } catch { /* ignore */ }
@@ -1937,7 +2009,7 @@ class ObscuraEngine implements ScrapingEngine {
       throw new Error(`Blocked: target URL is not allowed (${url})`);
     }
 
-    const timeout = Math.max(10000, Math.min(options?.timeout || 60000, 300000));
+    const timeout = Math.max(10000, Math.min(options?.timeout ?? 60000, 300000));
     const cookies = options?.cookies || options?.antiCrawl?.cookies;
 
     // Extract domain for per-domain fingerprint caching
@@ -2149,7 +2221,7 @@ class ObscuraEngine implements ScrapingEngine {
               }
 
               // 4. Gradual multi-step page scroll (replaces simple scroll-to-bottom)
-              const pageHeight = await page.evaluate(() => document.body.scrollHeight || 10000);
+              const pageHeight = await page.evaluate(() => document.body.scrollHeight || document.body.clientHeight || 3000);
               const segments = 3 + Math.floor(Math.random() * 3); // 3-5 segments
               const scrollStep = Math.floor(pageHeight / segments);
               for (let s = 1; s <= segments; s++) {
@@ -2245,7 +2317,9 @@ class ObscuraEngine implements ScrapingEngine {
               // Record as failure for rate limiter (triggers penalty)
               // IMPORTANT: Do NOT record result here - the catch block below handles it.
               // Recording here AND in catch would cause double penalty.
-              throw new Error(`CAPTCHA detected (${captchaDetection.type}, ${Math.round(captchaDetection.confidence * 100)}%) on ${domain}`);
+              const obscuraCaptchaErr = new Error(`CAPTCHA detected (${captchaDetection.type}, ${Math.round(captchaDetection.confidence * 100)}%) on ${domain}`);
+              (obscuraCaptchaErr as any).doNotRetry = true;
+              throw obscuraCaptchaErr;
             }
           }
 
@@ -2274,7 +2348,9 @@ class ObscuraEngine implements ScrapingEngine {
             lastObscuraStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
           }
           // Record proxy failure for Obscura engine (per-retry is correct for proxy)
-          if (proxy) {
+          // Skip for CAPTCHA errors — CAPTCHA is a site-level detection, not a proxy issue
+          const isObscuraCaptchaErr = err instanceof Error && err.message.startsWith('CAPTCHA detected');
+          if (proxy && !isObscuraCaptchaErr) {
             proxyManager.recordFailure(proxy.url, err instanceof Error ? err.message : String(err));
           }
           // NOTE: rateLimiter.recordResult is called OUTSIDE retryWithBackoff (below)
@@ -2342,9 +2418,30 @@ export async function fetchWithInfiniteScroll(
   engineType: EngineType,
   pagination: { loadMoreSelector?: string; contentContainerSelector?: string; maxScrollCycles?: number },
 ): Promise<{ html: string; finalUrl: string; statusCode: number; cyclesCompleted: number; effectiveEngine: EngineType }> {
-  const maxCycles = pagination.maxScrollCycles || 10;
+  const maxCycles = pagination.maxScrollCycles || MAX_SCROLL_ITERATIONS;
   const { loadMoreSelector, contentContainerSelector } = pagination;
   const signal = options?.signal;
+  const fetchedUrls = new Set<string>(); // Dedup tracking for requests (R48#31)
+
+  // Common load-more button selectors for auto-detection (when no explicit loadMoreSelector)
+  const AUTO_LOAD_MORE_SELECTORS = [
+    // English
+    'button:has-text("load more")', 'a:has-text("load more")',
+    'button:has-text("show more")', 'a:has-text("show more")',
+    'button:has-text("next page")', 'a:has-text("next page")',
+    // Chinese
+    'button:has-text("加载更多")', 'a:has-text("加载更多")',
+    'button:has-text("查看更多")', 'a:has-text("查看更多")',
+    'button:has-text("下一页")', 'a:has-text("下一页")',
+    // Data attributes
+    '[data-load-more]', '[data-infinite-scroll]',
+    // Common class/id patterns
+    '.load-more-btn', '#load-more', '.pagination-next',
+    '.load-more', '#loadMore', '.btn-load-more',
+    // Novel-specific
+    '.chapter-more', '.read-more', '.next-chapter',
+  ];
+  const autoLoadMoreSelector = AUTO_LOAD_MORE_SELECTORS.join(', ');
 
   // Determine which browser engine to use
   let browserEngine: EngineType;
@@ -2408,7 +2505,7 @@ export async function fetchWithInfiniteScroll(
     context = await browser.newContext({
       userAgent: options?.userAgent || getRandomUA(),
       ignoreHTTPSErrors: true,
-      locale: profile ? profileLanguagesToAcceptLanguage(profile.languages) : undefined,
+      locale: profile ? (profile.languages[0] || undefined) : undefined,
       viewport: profile ? { width: profile.screenWidth || 1920, height: profile.screenHeight || 1080 } : undefined,
       screen: profile ? { width: profile.screenWidth || 1920, height: profile.screenHeight || 1080, colorDepth: profile.colorDepth || 24 } : undefined,
     });
@@ -2434,6 +2531,17 @@ export async function fetchWithInfiniteScroll(
     }
 
     const page = await context.newPage();
+
+    // Track XHR/fetch URLs to detect duplicate requests (R48#31)
+    page.on('request', (req) => {
+      const reqUrl = req.url();
+      if (req.resourceType() === 'xhr' || req.resourceType() === 'fetch') {
+        if (fetchedUrls.has(reqUrl)) {
+          console.log(`[InfiniteScroll] Duplicate request detected: ${reqUrl.slice(0, 100)}`);
+        }
+        fetchedUrls.add(reqUrl);
+      }
+    });
 
     // Resource blocking for anti-detection + SSRF protection
     await page.route('**/*', async (route) => {
@@ -2470,7 +2578,7 @@ export async function fetchWithInfiniteScroll(
 
     const response = await page.goto(url, {
       waitUntil: 'domcontentloaded',
-      timeout: options?.timeout || 30000,
+      timeout: options?.timeout ?? 30000,
     });
 
     const statusCode = response?.status() || 0;
@@ -2495,6 +2603,10 @@ export async function fetchWithInfiniteScroll(
 
     let lastContentLength = initialContentLength;
     let cyclesCompleted = 0;
+    let consecutiveNoGrowth = 0; // Track consecutive scrolls with no content growth
+    let lastScrollPercent = 0; // Track scroll position percentage
+    let stuckCount = 0; // Count consecutive scrolls stuck at same position
+    let lastLoggedPercent = 0; // For periodic progress logging (every 25%)
 
     for (let cycle = 0; cycle < maxCycles; cycle++) {
       // Check abort before each cycle
@@ -2507,32 +2619,84 @@ export async function fetchWithInfiniteScroll(
       await abortableDelay(800 + Math.random() * 400, signal);
       if (signal?.aborted) break;
 
+      // --- Click-based "Load More" button detection ---
+      let clickedButton = false;
       if (loadMoreSelector) {
+        // Explicit selector from user config
         const btn = page.locator(loadMoreSelector).first();
         const visible = await btn.isVisible().catch(() => false);
         if (visible) {
           await btn.click().catch(() => {});
+          clickedButton = true;
           await abortableDelay(1500 + Math.random() * 1000, signal);
         } else {
           console.log(`[InfiniteScroll] Load-more button not visible at cycle ${cycle + 1}, stopping`);
           break;
         }
       } else {
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
-        await abortableDelay(1200 + Math.random() * 800, signal);
+        // Auto-detect load-more button (only when no explicit selector)
+        try {
+          const autoBtn = page.locator(autoLoadMoreSelector).first();
+          const autoBtnVisible = await autoBtn.isVisible().catch(() => false);
+          if (autoBtnVisible) {
+            console.log(`[InfiniteScroll] Auto-detected load-more button at cycle ${cycle + 1}, clicking`);
+            await autoBtn.click().catch(() => {});
+            clickedButton = true;
+            await abortableDelay(1500 + Math.random() * 1000, signal);
+          } else {
+            // No button found, fall back to scrolling
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+          }
+        } catch {
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+        }
+        if (!clickedButton) {
+          await abortableDelay(1200 + Math.random() * 800, signal);
+        }
       }
 
       if (signal?.aborted) break;
 
-      // Check content growth
+      // --- Scroll position percentage tracking ---
+      const scrollPercent = await page.evaluate(() => {
+        const scrollHeight = document.body.scrollHeight || document.documentElement.scrollHeight;
+        if (scrollHeight <= 0) return 100;
+        return Math.round(((window.scrollY + window.innerHeight) / scrollHeight) * 100);
+      }).catch(() => 0);
+
+      // Check if stuck at same scroll position
+      if (scrollPercent === lastScrollPercent && scrollPercent < 100) {
+        stuckCount++;
+        if (stuckCount >= 3) {
+          console.log(`[InfiniteScroll] Stuck at ${scrollPercent}% for 3+ scrolls, stopping`);
+          break;
+        }
+      } else {
+        stuckCount = 0;
+      }
+      lastScrollPercent = scrollPercent;
+
+      // Log progress periodically (every 25%)
+      if (scrollPercent >= lastLoggedPercent + 25 || scrollPercent === 100) {
+        console.log(`[InfiniteScroll] Scroll progress: ${scrollPercent}%`);
+        lastLoggedPercent = Math.floor(scrollPercent / 25) * 25;
+      }
+
+      // --- Check content growth ---
       const contentLength = await page.evaluate((sel) => {
         const el = document.querySelector(sel);
         return el ? el.innerHTML.length : 0;
       }, containerSelector).catch(() => 0);
 
       if (contentLength <= lastContentLength) {
-        console.log(`[InfiniteScroll] No new content at cycle ${cycle + 1} (${contentLength} chars), stopping`);
-        break;
+        consecutiveNoGrowth++;
+        if (consecutiveNoGrowth >= 2) {
+          console.log(`[InfiniteScroll] No new content for ${consecutiveNoGrowth} consecutive cycles (${contentLength} chars), stopping`);
+          break;
+        }
+        console.log(`[InfiniteScroll] No new content at cycle ${cycle + 1} (${contentLength} chars), attempt ${consecutiveNoGrowth}/2`);
+      } else {
+        consecutiveNoGrowth = 0;
       }
 
       lastContentLength = contentLength;

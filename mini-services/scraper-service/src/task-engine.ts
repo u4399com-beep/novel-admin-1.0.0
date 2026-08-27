@@ -13,7 +13,7 @@ import {
   mapNovelStatus, randomDelay, isSafeSavePath,
   chapterDedupKey,
 } from "./utils";
-import { selectEngine } from "./engines";
+import { selectEngine, getFallbackChainForEngine } from "./engines";
 import { handleClean } from "./cleaning";
 import { handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent, handleDownloadCover } from "./scrapers";
 import { addManyToQueue, getQueueStats, clearTaskQueue } from "./queue";
@@ -85,6 +85,8 @@ const _engineUpgradeLock = new Set<string>();
 
 /** Per-domain engine type override — avoids shared variable race in concurrent workers */
 const _domainEngineTypes = new Map<string, EngineType>();
+/** Reference count per domain: only clean up override when no tasks reference it */
+const _domainEngineRefCount = new Map<string, number>();
 
 /** Get effective engine type for a URL, respecting per-domain overrides */
 function getEffectiveEngine(url: string, baseEngine: EngineType): EngineType {
@@ -99,6 +101,9 @@ function getEffectiveEngine(url: string, baseEngine: EngineType): EngineType {
 /** Per-domain pause promise to prevent double CAPTCHA pause from concurrent workers */
 const _captchaPausePromises = new Map<string, Promise<void>>();
 
+/** Maximum number of engine retry attempts across the fallback chain */
+const MAX_ENGINE_RETRIES = 3;
+
 /** Extract domain from a URL string for adaptive delay tracking */
 function extractDomain(url: string): string {
   try { return new URL(url).hostname; } catch { return 'unknown'; }
@@ -107,11 +112,11 @@ function extractDomain(url: string): string {
 /** Get delay: adaptive if available, fallback to randomDelay */
 async function getAdaptiveOrRandomDelay(url: string, min?: number, max?: number): Promise<void> {
   if (min !== undefined && max !== undefined && min > 0) {
-    // Use adaptive delay, but respect configured minimums
+    // Use adaptive delay, but respect configured min and max
     const domain = extractDomain(url);
     const delay = await adaptiveDelay.getDelay(domain);
-    // Use the larger of adaptive delay or configured min
-    const finalDelay = Math.max(delay, min);
+    // Clamp to [min, max] range
+    const finalDelay = Math.min(Math.max(delay, min), max);
     await new Promise<void>(resolve => setTimeout(resolve, finalDelay));
   } else {
     await randomDelay(min || 0, max || 0);
@@ -214,17 +219,16 @@ async function addTaskLog(
   if (!logBuffer.has(taskId)) logBuffer.set(taskId, []);
   const buffer = logBuffer.get(taskId)!;
   buffer.push({ level, message: truncatedMsg, url: url || undefined, detail: truncatedDetail });
+  _totalBufferEntries++;
 
   // Prevent unbounded log buffer growth across all tasks
-  let totalEntries = 0;
-  for (const entries of logBuffer.values()) {
-    totalEntries += entries.length;
-  }
-  if (totalEntries > 1000) {
+  if (_totalBufferEntries > 1000) {
     // Remove oldest entries from the oldest non-active task
     for (const [key, entries] of logBuffer.entries()) {
       if (entries.length > 10) {
-        entries.splice(0, entries.length - 10);
+        const removed = entries.length - 10;
+        entries.splice(0, removed);
+        _totalBufferEntries -= removed;
         break;
       }
     }
@@ -233,12 +237,14 @@ async function addTaskLog(
   // If buffer exceeds 50 items, flush immediately to prevent memory buildup
   if (buffer.length >= 50) {
     const logs = buffer.splice(0);
+    _totalBufferEntries -= logs.length;
     try {
       await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs });
     } catch (err) {
       console.error(`[Task] Failed to flush ${logs.length} logs:`, err);
       // Put logs back at the front of the buffer for retry (same as periodic flusher)
       buffer.unshift(...logs);
+      _totalBufferEntries += logs.length;
     }
   }
 
@@ -248,6 +254,7 @@ async function addTaskLog(
 
 // Log buffer for batched API calls
 const logBuffer = new Map<string, Array<{ level: string; message: string; url?: string; detail?: string }>>();
+let _totalBufferEntries = 0; // running counter to avoid O(n) scan on every log add
 const LOG_FLUSH_INTERVAL_MS = 5000;
 let logFlushTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -259,6 +266,7 @@ function ensureLogFlusher() {
     for (const [taskId, logs] of logBuffer) {
       if (logs.length === 0) continue;
       const batch = logs.splice(0); // Remove all entries atomically
+      _totalBufferEntries -= batch.length;
       batches.push({ taskId, batch });
     }
     // Send batches (non-blocking, retry on failure by putting back)
@@ -274,6 +282,7 @@ function ensureLogFlusher() {
         } else {
           logBuffer.set(taskId, batch);
         }
+        _totalBufferEntries += batch.length;
       }
     }
     // Auto-clear interval when no pending logs remain
@@ -292,6 +301,7 @@ async function flushTaskLogs(taskId: string) {
   if (!logs || logs.length === 0) return;
   // Atomically drain the buffer before the async call
   const batch = logs.splice(0);
+  _totalBufferEntries -= batch.length;
   // Clear entry immediately to prevent periodic flusher from picking up stale data
   logBuffer.delete(taskId);
   try {
@@ -305,6 +315,7 @@ async function flushTaskLogs(taskId: string) {
     } else {
       logBuffer.set(taskId, batch);
     }
+    _totalBufferEntries += batch.length;
   }
 }
 
@@ -406,7 +417,7 @@ export async function executeTask(taskId: string) {
     }, TASK_TIMEOUT_MS);
   });
 
-  const taskCtx: TaskContext = { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal: abortController.signal };
+  const taskCtx: TaskContext = { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal: abortController.signal, triedEngines: new Set() };
   const taskStartTime = Date.now();
 
   try {
@@ -467,6 +478,8 @@ interface TaskContext {
   isIncremental: boolean;
   dedupMode: string;
   abortSignal: AbortSignal;
+  /** Engines already tried in the current fallback chain (to avoid repeats) */
+  triedEngines: Set<EngineType>;
 }
 
 interface TaskResult {
@@ -543,6 +556,11 @@ async function executeTaskBody(
 
   // Track domains this task touches for selective cleanup (avoids wiping concurrent tasks' overrides)
   const _touchedDomains = new Set<string>();
+  // Helper: register a domain engine override with reference counting
+  function touchDomainEngine(domain: string) {
+    _touchedDomains.add(domain);
+    _domainEngineRefCount.set(domain, (_domainEngineRefCount.get(domain) || 0) + 1);
+  }
   let newBooksCount = new AtomicCounter();
   let skippedBooksCount = new AtomicCounter();
   let failedItemsCount = new AtomicCounter();
@@ -740,7 +758,7 @@ async function executeTaskBody(
               if (!_engineUpgradeLock.has(bkDomain)) {
                 _engineUpgradeLock.add(bkDomain);
                 _domainEngineTypes.set(bkDomain, strategyResult.nextEngine);
-                _touchedDomains.add(bkDomain);
+                touchDomainEngine(bkDomain);
                 ctx.engineType = strategyResult.nextEngine;
                 engineType = strategyResult.nextEngine; // keep local in sync
                 setTimeout(() => _engineUpgradeLock.delete(bkDomain), 5000);
@@ -941,6 +959,9 @@ async function executeTaskBody(
         if (chapterQueue.length === 0) return;
         const chapter = chapterQueue.shift()!;
 
+        // Reset per-chapter engine attempts (each chapter gets fresh engine tries)
+        ctx.triedEngines.clear();
+
         try {
           // Dedup check BEFORE eager mark (check → eager mark → delay → fetch)
           if (isIncremental && (existingChapters.has(chapter.url) || existingChapters.has(`title:${chapterDedupKey(chapter.title)}`))) {
@@ -959,23 +980,65 @@ async function executeTaskBody(
             await getAdaptiveOrRandomDelay(chapter.url, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
           }
 
-          // Scrape chapter content using selected engine
+          // Scrape chapter content with engine fallback chain retry
           const contentStartTime = Date.now();
-          const contentResult = await handleScrapeContent({
-            url: chapter.url,
-            selectors: {
-              title: contentTitleSelector || undefined,
-              content: contentSelector,
-            },
-            pagination: contentPagination,
-            antiCrawl: antiCrawlConfig,
-            engine: getEffectiveEngine(chapter.url, engineType),
-            cleanConfig,
-            signal: abortSignal,
-          });
+          const _chapterEngine = getEffectiveEngine(chapter.url, engineType);
+          const fallbackChain = getFallbackChainForEngine(_chapterEngine);
+          // Filter out already-tried engines to avoid repeats
+          const availableEngines = fallbackChain.filter(e => !ctx.triedEngines.has(e));
+          // Ensure the current engine is in the list even if already tried
+          if (availableEngines.length === 0 || availableEngines[0] !== _chapterEngine) {
+            availableEngines.unshift(_chapterEngine);
+          }
+          const enginesToTry = availableEngines.slice(0, MAX_ENGINE_RETRIES);
+
+          let contentResult: Awaited<ReturnType<typeof handleScrapeContent>>;
+          let contentEngineUsed: EngineType = _chapterEngine;
+          let chainSuccess = false;
+          const chainFailures: Array<{ engine: EngineType; reason: string }> = [];
+
+          for (const tryEngine of enginesToTry) {
+            ctx.triedEngines.add(tryEngine);
+            contentEngineUsed = tryEngine;
+            try {
+              contentResult = await handleScrapeContent({
+                url: chapter.url,
+                selectors: {
+                  title: contentTitleSelector || undefined,
+                  content: contentSelector,
+                },
+                pagination: contentPagination,
+                antiCrawl: antiCrawlConfig,
+                engine: tryEngine,
+                cleanConfig,
+                signal: abortSignal,
+              });
+              chainSuccess = true;
+              // Log fallback if we used a different engine
+              if (tryEngine !== _chapterEngine) {
+                console.log(`[EngineChain] Chapter fallback success: ${_chapterEngine} → ${tryEngine} for ${chapter.url}`);
+              }
+              break;
+            } catch (contentErr) {
+              const errReason = contentErr instanceof Error ? contentErr.message : String(contentErr);
+              chainFailures.push({ engine: tryEngine, reason: errReason.slice(0, 120) });
+              // Stop chain on doNotRetry errors
+              if (contentErr instanceof Error && (contentErr as Record<string, unknown>).doNotRetry) {
+                console.warn(`[EngineChain] Engine ${tryEngine} returned doNotRetry for ${chapter.url}: ${errReason.slice(0, 120)} — stopping chain`);
+                throw contentErr;
+              }
+              console.warn(`[EngineChain] Engine ${tryEngine} failed for ${chapter.url}: ${errReason.slice(0, 120)}`);
+              // Continue to next engine in chain
+            }
+          }
+
+          if (!chainSuccess) {
+            const summary = chainFailures.map(f => `${f.engine}(${f.reason.slice(0, 50)})`).join(', ');
+            throw new Error(`所有引擎均失败 [${summary}]`);
+          }
 
           // CAPTCHA detection: skip chapter if detected
-          const captchaResult = (contentResult as { captchaDetected?: CaptchaDetection }).captchaDetected;
+          const captchaResult = ('captchaDetected' in contentResult) ? (contentResult as { captchaDetected?: CaptchaDetection }).captchaDetected : undefined;
           if (captchaResult) {
             const chDomain = extractDomain(chapter.url);
             const prevCount = consecutiveCaptchaCounts.get(chDomain) || 0;
@@ -1027,7 +1090,7 @@ async function executeTaskBody(
                   if (!_engineUpgradeLock.has(chDomain)) {
                     _engineUpgradeLock.add(chDomain);
                     _domainEngineTypes.set(chDomain, strategyResult.nextEngine);
-                    _touchedDomains.add(chDomain);
+                    touchDomainEngine(chDomain);
                     ctx.engineType = strategyResult.nextEngine;
                     engineType = strategyResult.nextEngine; // keep local in sync
                     setTimeout(() => _engineUpgradeLock.delete(chDomain), 5000);
@@ -1052,9 +1115,10 @@ async function executeTaskBody(
             skippedChaptersCount.increment();
             return;
           } else {
-            // Reset consecutive counter on success
+            // Decay consecutive counter on success (don't reset to 0 immediately — prevents rapid re-trigger)
             const chDomain = extractDomain(chapter.url);
-            consecutiveCaptchaCounts.set(chDomain, 0);
+            const prevCount = consecutiveCaptchaCounts.get(chDomain) || 0;
+            consecutiveCaptchaCounts.set(chDomain, Math.max(0, prevCount - 1));
           }
 
           // Content is already cleaned by handleScrapeContent. Only normalize whitespace.
@@ -1068,10 +1132,11 @@ async function executeTaskBody(
           chapterWordCounts.push(chapterWordCount);
 
           // Log multi-page content merges for visibility
-          if ((contentResult as { pagesFetched?: number }).pagesFetched && (contentResult as { pagesFetched?: number }).pagesFetched! > 1) {
+          const pagesFetched = ('pagesFetched' in contentResult) ? (contentResult as { pagesFetched?: number }).pagesFetched : 0;
+          if (pagesFetched && pagesFetched > 1) {
             await addTaskLog(
               taskId, "info",
-              `内容分页合并: ${chapterTitle} (${(contentResult as { pagesFetched?: number }).pagesFetched}页, ${chapterContent.length}字)`,
+              `内容分页合并: ${chapterTitle} (${pagesFetched}页, ${chapterContent.length}字)`,
               chapter.url
             );
           }
@@ -1205,9 +1270,15 @@ async function executeTaskBody(
 
   console.log(`[Task ${taskId}] Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
 
-  // Cleanup per-domain engine overrides (only domains this task touched, not concurrent tasks')
+  // Cleanup per-domain engine overrides (only when no other tasks reference them)
   for (const d of _touchedDomains) {
-    _domainEngineTypes.delete(d);
+    const remaining = (_domainEngineRefCount.get(d) || 1) - 1;
+    if (remaining <= 0) {
+      _domainEngineTypes.delete(d);
+      _domainEngineRefCount.delete(d);
+    } else {
+      _domainEngineRefCount.set(d, remaining);
+    }
   }
 
   return {

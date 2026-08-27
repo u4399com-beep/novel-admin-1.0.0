@@ -123,9 +123,9 @@ const DEVICE_MEMORY_OPTIONS = [2, 4, 8] as const;
 const HARDWARE_CONCURRENCY_OPTIONS = [4, 8, 12, 16] as const;
 const PLATFORMS = ["Win32", "MacIntel", "Linux x86_64"] as const;
 const COLOR_DEPTHS = [24, 32] as const;
-const PIXEL_RATIOS = [1, 1.25, 1.5] as const;
+const PIXEL_RATIOS = [1, 1.25, 1.5, 2] as const;
 
-/** Timezone pool — all UTC+8 to keep timezoneOffset consistent at -480 */
+/** Timezone pool — all UTC+8 to keep timezoneOffset exactly -480 */
 const TIMEZONE_POOL = ['Asia/Shanghai', 'Asia/Chongqing', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Singapore'] as const;
 
 /** Language variant pool — zh-CN as primary but with slight order variation */
@@ -302,10 +302,9 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   const colorDepth = dPick(COLOR_DEPTHS, 8);
   const pixelRatio = dPick(PIXEL_RATIOS, 9);
 
-  // Asia/Shanghai is UTC+8 = -480 minutes, with plausible ±5min geographic jitter
-  const baseOffset = -480;
-  const jitter = Math.round(((Math.abs(hash * 13) % 11) - 5) / 5) * 5; // -5 to +5 in steps of 5
-  const timezoneOffset = baseOffset + jitter;
+  // All timezones in TIMEZONE_POOL are UTC+8 = -480 minutes exactly.
+  // Jitter must NOT be applied here — a mismatch between timezone name and offset is a detection vector.
+  const timezoneOffset = -480;
 
   return {
     webglVendor: vendor,
@@ -354,8 +353,7 @@ export function generateRandomFingerprint(): FingerprintProfile {
     : (WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!);
   const renderer = pick(uaRenderers);
 
-  const baseOffset = -480;
-  const jitter = Math.round((Math.random() * 11 - 5) / 5) * 5; // -5 to +5 in steps of 5
+  const timezoneOffset = -480;
 
   return {
     webglVendor: vendor,
@@ -419,8 +417,7 @@ export function clearDomainUACache(domain?: string): void {
  * 2.  Chrome runtime object
  * 3.  WebGL vendor/renderer
  * 4.  Canvas fingerprint noise (toDataURL, toBlob, getImageData)
- * 5.  AudioContext fingerprint noise
- * 6.  Screen/window properties
+ * 6.  Screen/window properties (with seed-varying orientation angle)
  * 7.  WebRTC leak prevention
  * 8.  Permission API consistency
  * 9.  IFrame contentWindow overrides
@@ -432,14 +429,12 @@ export function clearDomainUACache(domain?: string): void {
  * 15. IFrame stealth propagation via MutationObserver
  * 16. ClientRects & getBoundingClientRect spoofing (layout fingerprint prevention)
  * 17. Enhanced Connection / Network Information API
- * 18. Battery API mock (basic)
- * 19. MediaDevices.enumerateDevices mock (basic)
- * 20. SpeechSynthesis mock (fake voices, speaking/pending/paused)
+ * 20. AudioContext/OfflineAudioContext createOscillator frequency noise
  * 21. Enhanced Canvas fingerprint (getImageData noise)
  * 22. Font detection countermeasure (document.fonts.check override)
  * 23. Platform-based Plugin/MimeType enumeration (3-4 plugins per platform)
  * 24. Console detection evasion
- * 25. Performance.now() offset & performance.timing consistency
+ * 25. Performance.now() offset & micro-jitter (±0.5ms)
  * 26. Mouse event listeners (capture-phase, passive)
  * 27. Touch support spoofing (mobile UA detection, TouchEvent constructor)
  * 28. MediaDevices enumerateDevices() fake (deterministic device IDs from seed)
@@ -451,31 +446,25 @@ export function clearDomainUACache(domain?: string): void {
  * 34. iframe self/top bypass
  * 35. Notification.permission mock
  * 36. document.hasFocus() — always returns true
- * 37. outerWidth/outerHeight browser chrome simulation
  * 38. Permissions.query() — realistic permission states
  * 39. document.visibilityState / hidden — always visible
  * 40. ServiceWorker / SharedWorker existence consistency
  * 41. CSS.supports() consistency override
- * 42. speechSynthesis.getVoices() mock
  * 43. chrome.runtime.connect() enhanced port mock
  * 44. ResizeObserver / IntersectionObserver existence mock
  * 45. getComputedStyle cursor consistency
  * 46. matchMedia prefers-color-scheme / prefers-reduced-motion consistency
  * 47. WebGL Shader Precision (getShaderPrecisionFormat zero-range fix)
  * 48. Navigator Connection API (network info consistency)
- * 49. [Removed: duplicate of Section 8]
- * 50. [Removed: duplicate of Section 36]
  * 51. speechSynthesis.getVoices() enhanced mock (per-seed voices, async loading)
  * 52. Notification.permission consistency (force 'default')
- * 53. [Removed: Section 6 already sets DPR from profile; old heuristic used Math.random() causing conflicts]
- * 54. [Removed: dead code, fully shadowed by Section 2]
  * 55. performance.memory realistic values (Chrome-specific)
- * 56. navigator.plugins consistency (inject missing plugins)
  * 57. Window frame dimensions (chrome frame) fix (seeded consistency)
  * 58. navigator.connection download speed consistency
  * 59. SharedArrayBuffer / crossOriginIsolated consistency
  * 60. Font enumeration protection (document.fonts.forEach + check)
  * 61. Gamepad API override (getGamepads consistency)
+ * 62. navigator.doNotTrack consistency
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -507,16 +496,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
   const _uaString = ${JSON.stringify(profile.userAgent)};
   const _isFirefox = /Firefox\//.test(_uaString) || /Seamonkey\//i.test(_uaString);
 
-  // Seeded PRNG for deterministic values across all sections (avoids ReferenceError / NaN)
-  var _navSeed = 0;
-  for (var _ns0 = 0; _ns0 < PROFILE.seed.length; _ns0++) { _navSeed = ((_navSeed << 5) - _navSeed + PROFILE.seed.charCodeAt(_ns0)) | 0; }
-  _navSeed = Math.abs(_navSeed);
-  function _seededRandom(offset) { return ((Math.sin(_navSeed + offset) * 10000) % 1 + 1) % 1; }
-
   // Pre-compute derived seeds used by multiple sections (must be before any section that references them)
   var _fakeDeviceSeed = 0;
   for (var _fds0 = 0; _fds0 < PROFILE.seed.length; _fds0++) { _fakeDeviceSeed = ((_fakeDeviceSeed << 5) - _fakeDeviceSeed + PROFILE.seed.charCodeAt(_fds0)) | 0; }
   _fakeDeviceSeed = Math.abs(_fakeDeviceSeed);
+  // Seeded PRNG for deterministic values across all sections (uses _fakeDeviceSeed — no redundant _navSeed)
+  function _seededRandom(offset) { return ((Math.sin(_fakeDeviceSeed + offset) * 10000) % 1 + 1) % 1; }
   var _canvasNoiseSeed = Math.floor(_fakeDeviceSeed * 13.37) | 0;
 
   // ---- 1. Navigator Override ----
@@ -575,86 +560,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(_e) {}
 
-  // Plugins — Firefox has 0-2 generic plugins; Chrome/Edge have 5 standard plugins
-  const pluginData = _isFirefox ? [
-    { name: 'PDF Viewer', filename: 'pdf.js', description: 'Portable Document Format', length: 1 },
-  ] : [
-    { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
-    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
-    { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 2 },
-    { name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
-  ];
-
-  const pluginInstances = pluginData.map((p) => {
-    const plugin = Object.create(Plugin.prototype);
-    Object.defineProperties(plugin, {
-      name: { get: () => p.name },
-      filename: { get: () => p.filename },
-      description: { get: () => p.description },
-      length: { get: () => p.length },
-    });
-    return plugin;
-  });
-
-  Object.defineProperty(navigator, 'plugins', {
-    get: () => {
-      const plugins = Object.create(PluginArray.prototype);
-      pluginInstances.forEach((p, i) => {
-        Object.defineProperty(plugins, i, { get: () => p, configurable: true });
-        Object.defineProperty(plugins, p.name, { get: () => p, configurable: true });
-      });
-      Object.defineProperty(plugins, 'length', { get: () => pluginInstances.length });
-      Object.defineProperty(plugins, 'item', {
-        value: (i) => pluginInstances[i] || null,
-      });
-      Object.defineProperty(plugins, 'namedItem', {
-        value: (name) => pluginInstances.find(p => p.name === name) || null,
-      });
-      Object.defineProperty(plugins, 'refresh', { value: () => {} });
-      return plugins;
-    },
-    configurable: true,
-  });
-
-  // MimeTypes — Firefox has different mimeTypes than Chrome/Edge
-  const mimeData = _isFirefox ? [
-    { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
-  ] : [
-    { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' },
-    { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format' },
-    { type: 'application/x-nacl', suffixes: '', description: 'Native Client Executable' },
-    { type: 'application/x-pnacl', suffixes: '', description: 'Portable Native Client Executable' },
-  ];
-  const mimeInstances = mimeData.map((m) => {
-    const mime = Object.create(MimeType.prototype);
-    Object.defineProperties(mime, {
-      type: { get: () => m.type },
-      suffixes: { get: () => m.suffixes },
-      description: { get: () => m.description },
-    });
-    return mime;
-  });
-
-  Object.defineProperty(navigator, 'mimeTypes', {
-    get: () => {
-      const mimes = Object.create(MimeTypeArray.prototype);
-      mimeInstances.forEach((m, i) => {
-        Object.defineProperty(mimes, i, { get: () => m, configurable: true });
-        Object.defineProperty(mimes, m.type, { get: () => m, configurable: true });
-      });
-      Object.defineProperty(mimes, 'length', { get: () => mimeInstances.length });
-      Object.defineProperty(mimes, 'item', {
-        value: (i) => mimeInstances[i] || null,
-      });
-      Object.defineProperty(mimes, 'namedItem', {
-        value: (name) => mimeInstances.find(m => m.type === name) || null,
-      });
-      return mimes;
-    },
-    configurable: true,
-  });
-
-  // Languages
+  // Languages (plugins/mimeTypes are set in Section 23 with platform-aware enumeration)
   Object.defineProperty(navigator, 'languages', {
     get: () => ${languagesJSON},
     configurable: true,
@@ -723,14 +629,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
     get: () => _isFirefox ? '' : 'Google Inc.',
     configurable: true,
   });
-  // Safari detection — only true if Safari is the last browser token (no Chrome/Edge after it)
-  const _isSafari = /Safari\/[\d.]+\s*$/.test(_uaString) && !_isFirefox && !/Chrome\//.test(_uaString) && !/Edg\//.test(_uaString);
-  if (_isSafari) {
-    Object.defineProperty(navigator, 'languages', {
-      get: () => PROFILE.languages || ['en-US', 'en', 'zh-CN', 'zh'],
-      configurable: true,
-    });
-  } // close if (_isSafari)
 
   // ---- 2. Chrome Object Override ----
   // Firefox never has window.chrome — injecting it is a detection vector
@@ -747,8 +645,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
     };
   }
   if (!window.chrome.loadTimes) {
+    var _cachedLoadTimes = null;
     window.chrome.loadTimes = function() {
-      return {
+      if (_cachedLoadTimes) return _cachedLoadTimes;
+      _cachedLoadTimes = {
         requestTime: Date.now() / 1000,
         startLoadTime: Date.now() / 1000,
         commitLoadTime: Date.now() / 1000,
@@ -763,16 +663,20 @@ export function getStealthScript(profile: FingerprintProfile): string {
         wasAlternateProtocolAvailable: false,
         connectionInfo: 'h2',
       };
+      return _cachedLoadTimes;
     };
   }
   if (!window.chrome.csi) {
+    var _cachedCsi = null;
     window.chrome.csi = function() {
-      return {
+      if (_cachedCsi) return _cachedCsi;
+      _cachedCsi = {
         onloadT: Date.now(),
         startE: Date.now(),
-        pageT: Math.random() * 1000 + 500,
+        pageT: Math.floor(_seededRandom(88.3) * 1000) + 500,
         tran: 15,
       };
+      return _cachedCsi;
     };
   }
   if (!window.chrome.app) {
@@ -820,8 +724,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
     if (name === 'WEBGL_debug_renderer_info') {
       const ext = origGetExtension.call(this, name);
       if (ext) return ext;
-      // Mock the extension for headless environments where it's unavailable
-      return { UNMASKED_VENDOR_WEBGL: 0x9245, UNMASKED_RENDERER_WEBGL: 0x9246 };
+      // Mock the extension for headless environments where it's unavailable.
+      // Constants are frozen to prevent detection via mutation test.
+      var _mockExt = {};
+      Object.defineProperty(_mockExt, 'UNMASKED_VENDOR_WEBGL', { value: 0x9245, writable: false, configurable: false });
+      Object.defineProperty(_mockExt, 'UNMASKED_RENDERER_WEBGL', { value: 0x9246, writable: false, configurable: false });
+      return _mockExt;
     }
     return origGetExtension.call(this, name);
   };
@@ -833,7 +741,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
       if (name === 'WEBGL_debug_renderer_info') {
         const ext = origGetExtension2.call(this, name);
         if (ext) return ext;
-        return { UNMASKED_VENDOR_WEBGL: 0x9245, UNMASKED_RENDERER_WEBGL: 0x9246 };
+        var _mockExt2 = {};
+        Object.defineProperty(_mockExt2, 'UNMASKED_VENDOR_WEBGL', { value: 0x9245, writable: false, configurable: false });
+        Object.defineProperty(_mockExt2, 'UNMASKED_RENDERER_WEBGL', { value: 0x9246, writable: false, configurable: false });
+        return _mockExt2;
       }
       return origGetExtension2.call(this, name);
     };
@@ -883,15 +794,16 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
 
-  // outerWidth / outerHeight are set in Section 37 with proper browser chrome simulation
+  // outerWidth/outerHeight are set in Section 57 with proper browser chrome simulation
 
   // innerWidth / innerHeight are set by viewport; don't override to avoid layout issues
 
-  // screenOrientation
+  // screenOrientation — vary angle by seed (some users have rotated monitors: 90° or 270°)
+  var _orientAngle = (_fakeDeviceSeed % 5 === 0) ? 90 : (_fakeDeviceSeed % 5 === 1) ? 270 : 0;
   Object.defineProperty(screen, 'orientation', {
     get: () => ({
-      angle: 0,
-      type: 'landscape-primary',
+      angle: _orientAngle,
+      type: _orientAngle === 0 ? 'portrait-primary'             : _orientAngle === 90 ? 'landscape-primary'             : _orientAngle === 270 ? 'landscape-secondary'             : 'portrait-secondary',
       onchange: null,
       addEventListener: function() {},
       removeEventListener: function() {},
@@ -1172,10 +1084,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
               get: () => ${profile.hardwareConcurrency},
               configurable: true,
             });
-            Object.defineProperty(iwin.navigator, 'deviceMemory', {
-              get: () => ${profile.deviceMemory},
-              configurable: true,
-            });
+            if (!_isFirefox) {
+              Object.defineProperty(iwin.navigator, 'deviceMemory', {
+                get: () => ${profile.deviceMemory},
+                configurable: true,
+              });
+            }
             Object.defineProperty(iwin.navigator, 'userAgent', {
               get: () => PROFILE.userAgent,
               configurable: true,
@@ -1270,27 +1184,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   }
 
-  // ---- 18. Battery API Mock ----
-
-  if (navigator.getBattery) {
-    navigator.getBattery = function() {
-      var _battLevel = 0.75 + Math.random() * 0.25;
-      return Promise.resolve({
-        charging: true,
-        chargingTime: 0,
-        dischargingTime: Infinity,
-        level: _battLevel,
-        addEventListener: function() {},
-        removeEventListener: function() {},
-        dispatchEvent: function() { return true; },
-        onchargingchange: null,
-        onchargingtimechange: null,
-        ondischargingtimechange: null,
-        onlevelchange: null,
-      });
-    };
-  }
-
   // ---- 19. Media Devices Mock ----
 
   if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
@@ -1316,44 +1209,32 @@ export function getStealthScript(profile: FingerprintProfile): string {
     };
   }
 
-  // ---- 20. Speech Synthesis Mock ----
-
-  if (window.speechSynthesis) {
-    var _fakeVoices = [
-      { voiceURI: 'Google US English', name: 'Google US English', lang: 'en-US', localService: true, default: true },
-      { voiceURI: 'Google UK English Female', name: 'Google UK English Female', lang: 'en-GB', localService: true, default: false },
-      { voiceURI: 'Google \u65e5\u672c\u8a9e', name: 'Google \u65e5\u672c\u8a9e', lang: 'ja-JP', localService: false, default: false },
-    ];
-    window.speechSynthesis.getVoices = function() { return _fakeVoices; };
-    Object.defineProperty(window.speechSynthesis, 'speaking', { get: function() { return false; }, configurable: true });
-    Object.defineProperty(window.speechSynthesis, 'pending', { get: function() { return false; }, configurable: true });
-    Object.defineProperty(window.speechSynthesis, 'paused', { get: function() { return false; }, configurable: true });
-    Object.defineProperty(window.speechSynthesis, 'length', { get: function() { return _fakeVoices.length; }, configurable: true });
-  }
-
-  // ---- 21. Enhanced Canvas Fingerprint (getImageData noise) ----
+  // ---- 20. AudioContext Fingerprint Noise ----
 
   if (CanvasRenderingContext2D.prototype.getImageData) {
     var _origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
     CanvasRenderingContext2D.prototype.getImageData = function() {
       var imageData = _origGetImageData.apply(this, arguments);
-      var data = imageData.data;
-      // Inject subtle noise into a few pixel channels to alter fingerprint hash
-      // Use deterministic LCG seeded by _canvasNoiseSeed + canvas dimensions for consistency
-      var _gidSeed = (_canvasNoiseSeed ^ (imageData.width * 31 + imageData.height * 37)) | 0;
-      for (var _ci = 0; _ci < Math.min(data.length, 400); _ci += 40) {
-        _gidSeed = (_gidSeed * 16807 + 0.5) % 2147483647;
-        data[_ci] = Math.max(0, Math.min(255, data[_ci] + ((_gidSeed & 1) ? 1 : -1)));
+      var d = imageData.data;
+      // Apply the same deterministic per-pixel noise as toDataURL/toBlob (Section 30)
+      // so that getImageData and toDataURL return consistent results for the same canvas.
+      var _seed = _canvasNoiseSeed;
+      for (var i = 0; i < d.length; i += 4) {
+        _seed = (_seed * 16807 + 0.5) % 2147483647;
+        var noise = (_seed % 3) - 1;
+        d[i]   = Math.max(0, Math.min(255, d[i] + noise));
+        _seed = (_seed * 16807 + 0.5) % 2147483647;
+        noise = (_seed % 3) - 1;
+        d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));
+        _seed = (_seed * 16807 + 0.5) % 2147483647;
+        noise = (_seed % 3) - 1;
+        d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));
       }
       return imageData;
     };
   }
 
   // ---- 22. Font Detection Countermeasure ----
-  // REMOVED: This section was superseded by Section 60 which provides a more comprehensive
-  // font check override using regex-based matching. The old section was completely
-  // overridden by Section 60's later defineProperty, making this dead code.
-  // getImageData noise is now handled by Section 21 (above).
 
   // ---- 23. Platform-based Plugin / MimeType Enumeration ----
   // Override with realistic 3-4 plugins that vary by OS platform
@@ -1481,7 +1362,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
     _consoleMethods.forEach(function(method) {
       if (typeof console[method] === 'function') {
         var _origConsole = console[method];
-        console[method] = function() { return _origConsole.apply(console, arguments); };
+        var _wrapper = function() { return _origConsole.apply(console, arguments); };
+        _wrapper.toString = function() { return 'function ' + method + '() { [native code] }'; };
+        console[method] = _wrapper;
       }
     });
   } catch(_consoleErr) {}
@@ -1489,7 +1372,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // ---- 25. Performance.now() & performance.timing Consistency ----
 
   if (window.performance) {
-    // Add realistic offset so performance.now() doesn't start from exactly 0
+    // Add a realistic static offset so performance.now() doesn't start from exactly 0.
+    // No jitter is applied here — jitter would break the invariant:
+    //   performance.timing.navigationStart + performance.now() ≈ Date.now()
     var _perfOffset = 1000 + Math.floor(_seededRandom(25.1) * 2000);
     var _origPerfNow = performance.now.bind(performance);
     try {
@@ -1630,32 +1515,19 @@ export function getStealthScript(profile: FingerprintProfile): string {
   }
 
   // ---- 30. Canvas Fingerprint Noise ----
-  // Add imperceptible noise to canvas pixel data so fingerprinting is unreliable.
-  // The noise is deterministic per profile seed so the same page load produces
-  // consistent (but fake) canvas output, but differs across page loads / profiles.
-  // IMPORTANT: Noise is applied to a TEMPORARY canvas to avoid accumulating
-  // modifications on the original canvas across multiple toDataURL/toBlob calls.
+  // Noise is applied once in Section 20 (getImageData override) using a deterministic
+  // per-pixel LCG seeded by _canvasNoiseSeed. Both getImageData and toDataURL/toBlob
+  // now use the SAME noise, preventing detection via cross-method comparison.
+  // toDataURL/toBlob use the patched getImageData (which includes noise) and encode
+  // from a temporary canvas to avoid accumulating modifications on the original.
   try {
     var _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
     HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
       try {
         var ctx = this.getContext('2d');
         if (ctx) {
-          var imgData = _origGetImageData.call(ctx, 0, 0, Math.max(1, this.width), Math.max(1, this.height));
-          var d = imgData.data;
-          var _seed = _canvasNoiseSeed; // use local seed to avoid accumulation
-          for (var i = 0; i < d.length; i += 4) {
-            _seed = (_seed * 16807 + 0.5) % 2147483647;
-            var noise = (_seed % 3) - 1;
-            d[i]   = Math.max(0, Math.min(255, d[i] + noise));
-            _seed = (_seed * 16807 + 0.5) % 2147483647;
-            noise = (_seed % 3) - 1;
-            d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));
-            _seed = (_seed * 16807 + 0.5) % 2147483647;
-            noise = (_seed % 3) - 1;
-            d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));
-          }
-          // Encode from a temporary canvas to avoid modifying the original
+          // Use the PATCHED getImageData which already applies consistent noise
+          var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
           var _tmpCanvas = document.createElement('canvas');
           _tmpCanvas.width = this.width;
           _tmpCanvas.height = this.height;
@@ -1671,20 +1543,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       try {
         var ctx = this.getContext('2d');
         if (ctx) {
-          var imgData = _origGetImageData.call(ctx, 0, 0, Math.max(1, this.width), Math.max(1, this.height));
-          var d = imgData.data;
-          var _seed = _canvasNoiseSeed;
-          for (var i = 0; i < d.length; i += 4) {
-            _seed = (_seed * 16807 + 0.5) % 2147483647;
-            var noise = (_seed % 3) - 1;
-            d[i]   = Math.max(0, Math.min(255, d[i] + noise));
-            _seed = (_seed * 16807 + 0.5) % 2147483647;
-            noise = (_seed % 3) - 1;
-            d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));
-            _seed = (_seed * 16807 + 0.5) % 2147483647;
-            noise = (_seed % 3) - 1;
-            d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));
-          }
+          var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
           var _tmpCanvas2 = document.createElement('canvas');
           _tmpCanvas2.width = this.width;
           _tmpCanvas2.height = this.height;
@@ -1749,6 +1608,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // preventing detection via timing-based fingerprinting.
 
   // Seeded PRNG already defined at top of IIFE for early availability.
+  var _tzOffsetMs = (PROFILE.timezoneOffset || 0) * 60000;
   var _perfTimingOffset = 3000 + Math.abs(_tzOffsetMs);
 
   try {
@@ -1879,14 +1739,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     });
   } catch(e) {}
 
-  // Section 37: outerWidth/outerHeight consistency with viewport
-  // NOTE: outerWidth/outerHeight is handled by Section 57 with seeded consistency.
-  // This section is intentionally kept minimal to avoid conflicts.
-  (function() {
-    try {
-      // Only ensure innerWidth/innerHeight exist (no outer overrides here)
-    } catch(e) {}
-  })();
+  // outerWidth/outerHeight is handled by Section 57 with seeded consistency.
 
   // Section 38: Permissions.query() — headless returns unexpected permission states
   // Real Chrome: notifications=default, geolocation=prompt, push=prompt, midi=prompt
@@ -1982,31 +1835,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // Section 42: window.speechSynthesis consistency
-  // NOTE: Section 51 provides a superior implementation with per-seed voice count,
-  // Chrome async loading simulation, and fallback to real voices.
-  // This section is kept as a minimal fallback in case Section 51 fails.
-  try {
-    if (window.speechSynthesis && !window.speechSynthesis._obscuraPatched) {
-      var _s42Voices = [
-        { name: 'Google US English', lang: 'en-US', localService: true, default: true, voiceURI: 'Google US English' },
-      ];
-      var _s42orig = speechSynthesis.getVoices.bind(speechSynthesis);
-      speechSynthesis.getVoices = function() {
-        var real = _s42orig();
-        if (real && real.length > 0) return real;
-        return _s42Voices;
-      };
-      speechSynthesis._obscuraPatched = true;
-    }
-  } catch(e) {}
-
   // Section 43: window.chrome.runtime.connect() enhancement
   // Previous mock returns minimal object. Anti-bot checks if connect().onMessage
   // fires properly. Enhance with EventEmitter-like behavior.
   try {
     if (window.chrome && window.chrome.runtime) {
-      var _origConnect = window.chrome.runtime.connect;
       window.chrome.runtime.connect = function(extensionId, connectInfo) {
         var port = {
           name: connectInfo && connectInfo.name ? connectInfo.name : '',
@@ -2111,7 +1944,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       // Real Chrome: float types use rangeMin=127, rangeMax=127, precision=23
       // int types use rangeMin=31, rangeMax=31, precision=0
       var isInt = (precisionType === 0x8DF5 || precisionType === 0x8DF6 || precisionType === 0x8DF7);
-      var intRange = 31 + (_shaderPrecisionSeed % 5); // 31-35 for slight variation
+      var intRange = 31; // Real Chrome always returns 31 for int types (R48#36)
       var floatPrecision = 23 + (_shaderPrecisionSeed % 3); // 23-25
       try {
         Object.defineProperties(result, {
@@ -2181,14 +2014,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // [Section 49 removed: duplicate of Section 8 (permissions.query override).
-  //   Section 8 already handles notifications, geolocation, camera, microphone,
-  //   accelerometer, gyroscope, magnetometer. Section 38's prototype override
-  //   was also dead code since instance overrides take priority.]
-
-  // [Section 50 removed: duplicate of Section 36 (document.hasFocus override).
-  //   Section 36 already unconditionally sets hasFocus to return true.]
-
   // Section 51: speechSynthesis.getVoices() consistency
   // Headless Chromium often returns an empty array for getVoices().
   // Real browsers always have at least a default voice. We seed 3-6 fake voices.
@@ -2253,15 +2078,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // [Section 53: removed — Section 6 already sets window.devicePixelRatio from PROFILE.pixelRatio.
-  //   The old Section 53 used Math.random() and screen-width heuristics that could override
-  //   the profile's deterministic pixelRatio with a conflicting value. This was detectable
-  //   because the Playwright context deviceScaleFactor (from profile) would disagree with
-  //   window.devicePixelRatio (from Section 53's random heuristic).]
-
-  // [Section 54 removed: fully dead code — Section 2 already sets window.chrome,
-  //   chrome.runtime, chrome.csi, chrome.loadTimes, and chrome.app with correct
-  //   values. Section 54 guards always evaluated to false since Section 2 ran first.]
 
   // ==================== Section 55: performance.memory (Chrome-specific) ====================
   // Chrome exposes performance.memory (non-standard). Headless environments may report
@@ -2286,15 +2102,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // ==================== Section 56: REMOVED ====================
-  // Section 23 already provides a complete navigator.plugins getter with realistic plugins.
-  // Old Section 56 tried to inject plugins via defineProperty on the PluginArray returned
-  // by Section 23's getter, but that PluginArray is a new temporary object on every access,
-  // so all injections were immediately garbage-collected. The section was dead code.
-
   // ==================== Section 57: Window frame dimensions (chrome frame) fix ====================
-  // R31-b found Section 37 used Math.random() for chromeWidth/chromeHeight.
-  // This section provides a seeded, consistent fix using _fakeDeviceSeed.
+  // Provides a seeded, consistent outerWidth/outerHeight using _fakeDeviceSeed.
   // outerWidth/outerHeight should be larger than innerWidth/innerHeight by the
   // browser chrome (title bar, tab bar, scrollbar, etc.).
   try {
@@ -2527,19 +2336,7 @@ export function profileLanguagesToAcceptLanguage(languages: string[]): string {
   return parts.join(',');
 }
 
-/**
- * Detect browser family from a User-Agent string.
- * Returns 'Chrome' | 'Edge' | 'Firefox' | 'Unknown'.
- * Used to ensure cross-module consistency (headers, sec-ch-ua, etc.).
- */
-export function getBrowserTypeFromUA(ua: string): 'Chrome' | 'Edge' | 'Firefox' | 'Unknown' {
-  if (/Firefox\//.test(ua) && !/Seamonkey/i.test(ua)) return 'Firefox';
-  if (/Edg\//.test(ua)) return 'Edge';
-  if (/Chrome\//.test(ua)) return 'Chrome';
-  return 'Unknown';
-}
-
-// ==================== Enhancement 1: Header Order Randomization =====================
+// ==================== Enhancement 1b: Header Order Jitter ====================
 
 /**
  * Known distinct header orders observed from real browsers.
@@ -2572,6 +2369,12 @@ const BROWSER_HEADER_ORDERS: Record<string, string[]> = {
 };
 
 /**
+ * Headers that should always appear at the beginning of the header block.
+ * Most WAFs and anti-bot systems expect Host and User-Agent early.
+ */
+const REQUIRED_FIRST_HEADERS = new Set(['host', 'user-agent']);
+
+/**
  * Simple deterministic hash for a string (same as the seed hash in generateFingerprintProfile).
  * Returns a 32-bit integer.
  */
@@ -2582,98 +2385,6 @@ function domainHash(str: string): number {
   }
   return h;
 }
-
-/**
- * Shuffled header order per domain (cache to maintain consistency).
- */
-const domainHeaderOrderCache = new Map<string, string[]>();
-const MAX_HEADER_ORDER_CACHE = 500;
-
-/**
- * Randomize the order of HTTP headers to mimic different browser fingerprints.
- * Deterministic per-domain: same domain always gets the same header order
- * (until cache eviction), simulating a consistent browser identity.
- *
- * Real browsers send headers in distinct orders:
- * - Chrome/Edge: sec-ch-ua headers first, then upgrade-insecure-requests, user-agent, accept, sec-fetch-*, accept-encoding, accept-language
- * - Firefox: host, user-agent, accept, accept-language, accept-encoding, connection, upgrade-insecure-requests
- * - Safari: accept, accept-encoding, accept-language, sec-fetch-*, user-agent, upgrade-insecure-requests
- *
- * @param headers - Key-value header pairs to reorder
- * @param domain  - Target domain for deterministic (per-domain consistent) shuffling
- * @returns A new Record with the same key-value pairs in a browser-like shuffled order
- */
-export function shuffleHeaderOrder(headers: Record<string, string>, domain: string): Record<string, string> {
-  const headerKeys = Object.keys(headers);
-  if (headerKeys.length <= 1) return { ...headers };
-
-  // Check cache first
-  let order = domainHeaderOrderCache.get(domain);
-  if (!order) {
-    // Pick a browser template based on domain hash
-    const h = Math.abs(domainHash(domain));
-    const browserNames = Object.keys(BROWSER_HEADER_ORDERS);
-    const browserTemplate = BROWSER_HEADER_ORDERS[browserNames[h % browserNames.length]]!;
-
-    // Build a deterministic order: start with the browser template headers that exist
-    // in our input, then append any remaining keys in alphabetical order
-    const templateSet = new Set(browserTemplate.map(k => k.toLowerCase()));
-    const ordered: string[] = [];
-    const remaining: string[] = [];
-
-    for (const key of headerKeys) {
-      if (templateSet.has(key.toLowerCase())) {
-        ordered.push(key);
-      } else {
-        remaining.push(key);
-      }
-    }
-
-    // Sort remaining alphabetically for consistency, then append
-    remaining.sort((a, b) => a.localeCompare(b));
-    ordered.push(...remaining);
-
-    order = ordered;
-
-    // Cache with LRU eviction
-    if (domainHeaderOrderCache.size >= MAX_HEADER_ORDER_CACHE && !domainHeaderOrderCache.has(domain)) {
-      const firstKey = domainHeaderOrderCache.keys().next().value;
-      if (firstKey) domainHeaderOrderCache.delete(firstKey);
-    }
-    domainHeaderOrderCache.set(domain, order);
-  }
-
-  // Rebuild the headers object in the cached order
-  const result: Record<string, string> = {};
-  for (const key of order) {
-    if (key in headers) {
-      result[key] = headers[key];
-    }
-  }
-  // Include any keys not in the cached order (edge case: new headers added after caching)
-  for (const key of headerKeys) {
-    if (!(key in result)) {
-      result[key] = headers[key];
-    }
-  }
-
-  return result;
-}
-
-/** Clear the header order cache. If domain specified, only clear that domain. */
-export function clearHeaderOrderCache(domain?: string): void {
-  if (domain) {
-    domainHeaderOrderCache.delete(domain);
-  } else {
-    domainHeaderOrderCache.clear();
-  }
-}
-
-/**
- * Headers that should always appear at the beginning of the header block.
- * Most WAFs and anti-bot systems expect Host and User-Agent early.
- */
-const REQUIRED_FIRST_HEADERS = new Set(['host', 'user-agent']);
 
 /**
  * Shuffles HTTP headers while keeping required headers (Host, User-Agent) first.
@@ -2761,70 +2472,20 @@ export function shuffleHeaderOrderWithJitter(headers: Record<string, string>, do
   return result;
 }
 
-// ==================== Enhancement 2: Accept-Language Variation Pool ====================
+// ==================== Enhancement 2: Accept-Language from Profile ====================
 
 /**
- * Accept-Language strings that mimic specific browser/OS combinations.
- * Each entry is tagged with a browser family for coherence with the chosen UA.
- */
-const ACCEPT_LANGUAGE_POOL: Array<{ value: string; browser: string }> = [
-  // Chrome on Windows (zh-CN primary)
-  { value: 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', browser: 'Chrome' },
-  // Chrome on macOS
-  { value: 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7', browser: 'Chrome' },
-  // Edge on Windows (often en-primary in enterprise)
-  { value: 'en-US,en;q=0.9,zh-CN;q=0.8', browser: 'Edge' },
-  // Edge on Windows (zh-primary)
-  { value: 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', browser: 'Edge' },
-  // Firefox on Windows
-  { value: 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', browser: 'Firefox' },
-  // Firefox on macOS
-  { value: 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7', browser: 'Firefox' },
-  // Firefox on Linux
-  { value: 'en-US,en;q=0.9', browser: 'Firefox' },
-  // Safari on macOS
-  { value: 'zh-CN,zh-Hans;q=0.9,en-US;q=0.8,en;q=0.7', browser: 'Safari' },
-  // Chrome on Linux
-  { value: 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7', browser: 'Chrome' },
-  // Chrome on Windows (English locale)
-  { value: 'en-US,en;q=0.9', browser: 'Chrome' },
-];
-
-/** Cache for per-domain Accept-Language consistency */
-const domainAcceptLangCache = new Map<string, string>();
-const MAX_ACCEPT_LANG_CACHE = 500;
-
-/**
- * Get an Accept-Language string for a domain, deterministically selected
- * from the pool based on the domain hash. Same domain always returns the
- * same Accept-Language string (until cache eviction).
+ * Get an Accept-Language string for a domain, derived from the domain's fingerprint profile.
+ * This ensures the HTTP Accept-Language header is always consistent with the
+ * navigator.languages injected by the stealth script (both come from the same profile).
  *
  * @param domain - Target domain for consistent per-domain selection
- * @returns An Accept-Language header value string
+ * @returns An Accept-Language header value string matching profile.languages
  */
 export function getAcceptLanguageForDomain(domain: string): string {
-  let cached = domainAcceptLangCache.get(domain);
-  if (cached) return cached;
-
-  const h = Math.abs(domainHash(domain));
-  const selected = ACCEPT_LANGUAGE_POOL[h % ACCEPT_LANGUAGE_POOL.length]!;
-  const value = selected.value;
-
-  // Cache with LRU eviction
-  if (domainAcceptLangCache.size >= MAX_ACCEPT_LANG_CACHE && !domainAcceptLangCache.has(domain)) {
-    const firstKey = domainAcceptLangCache.keys().next().value;
-    if (firstKey) domainAcceptLangCache.delete(firstKey);
-  }
-  domainAcceptLangCache.set(domain, value);
-
-  return value;
-}
-
-/**
- * Get all Accept-Language pool entries (for inspection/debugging).
- */
-export function getAcceptLanguagePool(): Array<{ value: string; browser: string }> {
-  return [...ACCEPT_LANGUAGE_POOL];
+  // getProfileForDomain() caches per-domain, so this is efficient
+  const profile = getProfileForDomain(domain);
+  return profileLanguagesToAcceptLanguage(profile.languages);
 }
 
 // ==================== Enhancement 4: Request Timing Humanization ====================

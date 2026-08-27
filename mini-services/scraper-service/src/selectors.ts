@@ -5,6 +5,7 @@
  */
 
 import * as cheerio from "cheerio";
+import { getCachedCheerio } from "./cheerio-cache";
 import type { Selector } from "./types";
 import { safeRegexMatch } from "./regex-safety";
 import { resolveUrl } from "./utils";
@@ -201,7 +202,7 @@ export function parseSelectorWithFallbacks(
   if (primarySelector.type === 'regex') return '';
 
   // Fallback: try each CSS selector in order
-  const $ = cheerio.load(html);
+  const $ = getCachedCheerio(html);
   const extractAttr = primarySelector.extract;
 
   for (const sel of fallbackSelectors) {
@@ -336,7 +337,7 @@ export function parseSelector(html: string, selector: Selector): string {
 
   if (selector.type === "xpath") {
     const { css, hasTextSelector, attrName } = xpathToCss(selector.value);
-    const $ = cheerio.load(html);
+    const $ = getCachedCheerio(html);
 
     if (hasTextSelector) {
       const parentXpath = selector.value.replace(/\/text\(\)/g, "");
@@ -367,7 +368,7 @@ export function parseSelector(html: string, selector: Selector): string {
   }
 
   // CSS selector (default)
-  const $ = cheerio.load(html);
+  const $ = getCachedCheerio(html);
   const el = $(selector.value);
   if (el.length === 0) return "";
 
@@ -415,7 +416,7 @@ export function parseSelectorHtml(html: string, selector: Selector): string {
 
   if (selector.type === "xpath") {
     const { css, hasTextSelector, attrName } = xpathToCss(selector.value);
-    const $ = cheerio.load(html);
+    const $ = getCachedCheerio(html);
 
     // Text selectors can't preserve HTML
     if (hasTextSelector) {
@@ -446,7 +447,7 @@ export function parseSelectorHtml(html: string, selector: Selector): string {
   }
 
   // CSS selector (default) — return inner HTML
-  const $ = cheerio.load(html);
+  const $ = getCachedCheerio(html);
   const el = $(selector.value);
   if (el.length === 0) return "";
 
@@ -482,7 +483,7 @@ export function parseSelectorMulti(html: string, selector: Selector): string[] {
 
   if (selector.type === "xpath") {
     const { css, hasTextSelector, attrName } = xpathToCss(selector.value);
-    const $ = cheerio.load(html);
+    const $ = getCachedCheerio(html);
 
     if (hasTextSelector) {
       const parentXpath = selector.value.replace(/\/text\(\)/g, "");
@@ -530,7 +531,7 @@ export function parseSelectorMulti(html: string, selector: Selector): string[] {
   }
 
   // CSS selector
-  const $ = cheerio.load(html);
+  const $ = getCachedCheerio(html);
   const elements = $(selector.value);
   const results: string[] = [];
   const extractAttr = selector.extract;
@@ -570,7 +571,7 @@ export function extractLinksFromList(
   titleSelector: Selector,
   baseUrl: string
 ): Array<{ title: string; url: string }> {
-  const $ = cheerio.load(html);
+  const $ = getCachedCheerio(html);
   const results: Array<{ title: string; url: string }> = [];
   const seenUrls = new Set<string>();
 
@@ -658,7 +659,7 @@ export function extractMetadataFallback(html: string): Partial<{
   category: string;
   status: string;
 }> {
-  const $ = cheerio.load(html);
+  const $ = getCachedCheerio(html);
   const result: Record<string, string> = {};
 
   // Try Open Graph tags first

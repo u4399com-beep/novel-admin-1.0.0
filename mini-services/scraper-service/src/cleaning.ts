@@ -631,9 +631,11 @@ function normalizeWhitespace(text: string, preserveParagraphs = false): string {
   // U+00AD soft hyphen, U+2060 word joiner, U+2061-2064 invisible math,
   // U+180E Mongolian vowel separator, U+034F combining grapheme joiner
   // U+200E LRM (Left-to-Right Mark), U+200F RLM (Right-to-Left Mark)
-  // U+2028 Line Separator, U+2029 Paragraph Separator
   // U+2066-2069 Isolate controls (Bidi)
-  text = text.replace(/[\u200B\u200C\u200D\u200E\u200F\u2028\u2029\uFEFF\u00AD\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\u180E\u034F]/g, '');
+  // NOTE: U+2028/U+2029 are handled separately below (converted to \n, not deleted)
+  text = text.replace(/[\u200B\u200C\u200D\u200E\u200F\uFEFF\u00AD\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\u180E\u034F]/g, '');
+  // Convert U+2028 (Line Separator) and U+2029 (Paragraph Separator) to \n instead of deleting (R49#35)
+  text = text.replace(/[\u2028\u2029]/g, '\n');
   // Strip general Cc control characters (U+0000-U+001F) except TAB(0x09), LF(0x0A), CR(0x0D)
   // Also strip Cf format characters (U+200B-F already above, but catch remaining like U+FFF9-FFFB)
   text = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
@@ -905,7 +907,12 @@ function mergeRunOnText(text: string): string {
         const hasSentenceEndBetween = shortLinePairs.some(([a, b]) =>
           /[。！？]$/.test(a) && /^[\u4e00-\u9fff]/.test(b)
         );
-        if (!hasSentenceEndBetween) {
+        // Also detect Latin over-fragmentation (R49#34)
+        const hasLatinSentenceEnd = shortLinePairs.some(([a, b]) =>
+          /[.!?]$/.test(a) && /^[a-zA-Z"'\u00C0-\u024F]/.test(b)
+        );
+        const isCjkDominant = lines.some(l => /[\u4e00-\u9fff]/.test(l));
+        if (!hasSentenceEndBetween && !(hasLatinSentenceEnd && !isCjkDominant)) {
           // No sentence boundaries detected — these are intentional short paragraphs (e.g. dialogue)
           result.push(trimmed);
           continue;

@@ -17456,3 +17456,1101 @@ Stage Summary:
 - 关键修复: 封面URL相对路径、safeRegexReplace长内容截断、水印过度删除、cookie持久化、双倍RPM惩罚
 - 8文件, +106/-42行
 - Commit: c64735d
+---
+Task ID: 2-a
+Agent: LOW Bug Fix Agent
+Task: R50 LOW bug batch fix (merged R48#28-39 + R49#24-35)
+
+Work Log:
+- Read worklog (last 200 lines) and all 7 source files to understand current state
+- Identified that R48#37 (progressThrottle timer) was already fixed in index.ts shutdown
+- Applied 19 precise edits across 7 files
+
+## Fix Details (19/20 items fixed, 1 already fixed)
+
+### engines.ts (4 fixes)
+| # | Bug | Fix |
+|---|-----|-----|
+| #28 | getEngine() crash after closeAllEngines() | Added null check on cheerio fallback; throws descriptive error if registry empty |
+| #29 | Firecrawl default URL uses HTTP | Changed `http://localhost:3002` → `https://localhost:3002` |
+| #30 | scrollHeight fallback 10000 wastes time | Changed to `scrollHeight \|\| clientHeight \|\| 3000` (2 occurrences) |
+| #31 | InfiniteScroll no request fingerprint | Added `fetchedUrls` Set + `page.on('request')` listener to track/detect duplicate XHR/fetch |
+
+### stealth.ts (5 fixes)
+| # | Bug | Fix |
+|---|-----|-----|
+| #32 | _navSeed redundant with _fakeDeviceSeed | Removed _navSeed computation; _seededRandom now uses _fakeDeviceSeed directly |
+| #33 | chrome.csi() uses Math.random() | Replaced with `_seededRandom(88.3)` for deterministic output |
+| #34 | _tzOffsetMs undefined | Added `var _tzOffsetMs = (PROFILE.timezoneOffset \|\| 0) * 60000` before use |
+| #35 | Section 1 plugins dead code | Removed 78 lines of pluginData/pluginInstances/mimeData/mimeInstances/defineProperty (overwritten by Section 23) |
+| #36 | intRange varies (should be constant 31) | Changed `31 + (_shaderPrecisionSeed % 5)` → `31` |
+
+### task-engine.ts (2 fixes)
+| # | Bug | Fix |
+|---|-----|-----|
+| #37 | progressThrottle timer not cleared | **Already fixed** in index.ts line 1318 `clearInterval(progressThrottleCleanupTimer)` |
+| #38 | contentResult unsafe type assertion | Added `'captchaDetected' in contentResult` and `'pagesFetched' in contentResult` type guards; extracted pagesFetched to local var |
+| #39 | CAPTCHA counter resets too quickly | Post-pause reset: 0→1. Success reset: `set(chDomain, 0)` → `set(chDomain, max(0, prev-1))` (decay instead of instant reset) |
+
+### proxy-manager.ts (3 fixes)
+| # | Bug | Fix |
+|---|-----|-----|
+| R49#26 | Debug logs leak proxy credentials | Applied `redactProxyCredentials()` to 3 debug log sites (SOCKS5/SOCKS4/generic dispatcher) |
+| R49#27 | Health check response body not consumed | Added `res.body?.cancel()` after both through-proxy and direct health checks |
+| R49#28 | blockedDomains domain not normalized | Added `normalizeDomain()` helper (lowercase + strip trailing dot + strip www); applied to 3 blockedDomains.has() checks and recordFailure domain extraction |
+
+### cookie-jar.ts (1 fix)
+| # | Bug | Fix |
+|---|-----|-----|
+| R49#29 | getPlaywrightCookies hardcoded path='/' | Changed `isCookieMatch(c, domain, '/')` → `isCookieMatch(c, domain, c.path \|\| '/')` |
+
+### session-manager.ts (2 fixes)
+| # | Bug | Fix |
+|---|-----|-----|
+| R49#31 | cleanup doesn't break inner loop | Added `break` after splice in domain index cleanup loop |
+| R49#32 | Fallback fingerprint empty UA | Changed `userAgent: ''` → `userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'` |
+
+### rate-limiter.ts (1 fix)
+| # | Bug | Fix |
+|---|-----|-----|
+| R49#33 | New domain lastRequestTime=0 | Changed `lastRequestTime: 0` → `lastRequestTime: Date.now()` in getOrCreateDomain() |
+
+### cleaning.ts (2 fixes)
+| # | Bug | Fix |
+|---|-----|-----|
+| R49#34 | mergeRunOnText only detects CJK | Added Latin sentence-end detection (`.!?` + Latin start char) with `isCjkDominant` guard |
+| R49#35 | U+2028/2029 deleted instead of converted | Split regex: removed U+2028/U+2029 from deletion set; added separate `replace(/[\u2028\u2029]/g, '\n')` |
+
+## Verification
+- `npx tsc --noEmit`: 0 new errors in scraper-service (pre-existing NovelListView.ts errors in parent project unaffected)
+
+## Files Modified (7)
+- engines.ts: +18/-6
+- stealth.ts: +7/-83 (mostly dead code removal)
+- task-engine.ts: +6/-4
+- proxy-manager.ts: +12/-3
+- cookie-jar.ts: +1/-1
+- session-manager.ts: +2/-2
+- rate-limiter.ts: +1/-1
+- cleaning.ts: +9/-4
+
+Stage Summary:
+- Fixed 19 LOW-priority bugs (1 already fixed, skipped)
+- 7 files modified, +56/-104 lines
+- stealth.ts dead code removal accounts for most deletions (-76 lines)
+- All fixes are backward-compatible (no behavior changes except bug corrections)
+- TypeScript compilation: clean (0 new errors)
+
+---
+Task ID: 2-b
+Agent: Stealth Cleanup Agent
+Task: R50 stealth.ts deep cleanup - Accept-Language alignment, dead code, consistency
+
+Work Log:
+- Read full stealth.ts (3149 lines) in sections to understand all components
+- Traced Accept-Language flow: engines.ts uses profileLanguagesToAcceptLanguage(profile.languages) for Playwright, utils.ts uses getAcceptLanguageForDomain(domain) for Cheerio — these used DIFFERENT data sources
+- Identified dead code: Sections 18 (Battery), 19 (MediaDevices basic), 20 (SpeechSynthesis basic), 37 (empty try/catch), 42 (SpeechSynthesis fallback that BLOCKED Section 51), _isSafari block, _origConnect unused var, shuffleHeaderOrder (unimported), getBrowserTypeFromUA (unimported), ACCEPT_LANGUAGE_POOL, getAcceptLanguagePool
+- Verified consistency: _isFirefox guards on deviceMemory/chrome/performance.memory/userAgentData/plugins/vendor, platform/UA via derivePlatformFromUA, WebGL renderers match platform/browser
+- Enhanced fingerprint entropy: performance.now ±0.5ms jitter, screen.orientation.angle seed-variation (0/90/270), PIXEL_RATIOS added 2
+- Fixed critical bug: Section 42 set _obscuraPatched=true, blocking superior Section 51 from ever executing
+
+Stage Summary:
+- stealth.ts: 3149 → 2896 lines (253 lines removed)
+- Accept-Language alignment: getAcceptLanguageForDomain() now derives from profile, matching navigator.languages
+- Dead code removed: 6 injected JS sections, 4 unused TypeScript exports, 5 stale comment blocks
+- Critical bug fix: Section 42 was blocking Section 51 speechSynthesis mock
+- Entropy: performance.now jitter, orientation angle variation, pixelRatio=2 added
+- TypeScript: clean (0 stealth.ts errors)
+
+---
+Task ID: 2-c
+Agent: Engine Fallback Agent
+Task: R50 engine failure fallback chain + configurable circuit breaker
+
+Work Log:
+- Read worklog (last 100 lines) and studied engines.ts CircuitBreaker class, DEFAULT_FALLBACK_CHAIN, fetchWithEngineFallback, and task-engine.ts processChapter flow
+- Identified that existing fallback is at HTTP level (fetchWithEngineFallback), new chain is at task orchestration level (processChapter)
+- Enhanced CircuitBreaker class: added constructor options interface, halfOpenMaxAttempts parameter, static create() factory reading from env vars
+- Updated half-open probe logic to use configurable halfOpenMaxAttempts instead of hardcoded >0 check
+- Converted 4 external engine circuit breakers (Firecrawl, AgentQL, CloudBrowser, Scrapling) from `new CircuitBreaker()` to `CircuitBreaker.create()`
+- Added exported ENGINE_FALLBACK_CHAIN constant with 3 internal-only engine strategies (cheerio/playwright/obscura permutations)
+- Added exported getFallbackChainForEngine() helper that selects the right strategy chain based on primary engine
+- Added MAX_ENGINE_RETRIES constant (default 3) to task-engine.ts
+- Added triedEngines: Set<EngineType> to TaskContext interface and initialization
+- Wrapped processChapter's handleScrapeContent call in fallback chain retry loop with: engine tracking, doNotRetry early exit, per-engine failure logging, summary error on all-engines-exhausted
+
+Stage Summary:
+- engines.ts: +45/-12 lines (CircuitBreaker config + ENGINE_FALLBACK_CHAIN + getFallbackChainForEngine)
+- task-engine.ts: +40/-10 lines (MAX_ENGINE_RETRIES, triedEngines, processChapter chain retry)
+- Configurable circuit breaker: SCRAPER_CB_FAILURE_THRESHOLD, SCRAPER_CB_RECOVERY_TIMEOUT_MS, SCRAPER_CB_HALF_OPEN_MAX env vars
+- External engines excluded from chain (remain as separate strategies per spec)
+- Existing nextEngine CAPTCHA mechanism preserved and coexists with new chain
+- TypeScript: clean (0 new errors in scraper-service; pre-existing NovelListView.ts errors unaffected)
+
+---
+Task ID: 2-d
+Agent: Scroll & Cache Agent
+Task: R50 infinite scroll enhancement + cheerio.load() cache
+
+Work Log:
+- Read engines.ts InfiniteScroll (lines 2404-2655), scrapers.ts, selectors.ts, cleaning.ts to understand current implementation
+- Analyzed all 13 cheerio.load() call sites across 3 files: determined 10 are read-only (cacheable), 3 in cleaning.ts are write operations (kept direct)
+- Created src/cheerio-cache.ts with LRU cache (MAX_CACHE_SIZE=50, key=html.length:html.slice(0,500))
+- Enhanced fetchWithInfiniteScroll in engines.ts:
+  a) Added MAX_SCROLL_ITERATIONS=30 (configurable via SCRAPER_MAX_SCROLL_ITERATIONS env), replaced hardcoded 10
+  b) Added auto-detect load-more button: 18 selectors covering EN/CN text patterns, data attributes, class/id patterns, novel-specific selectors
+  c) When no explicit loadMoreSelector, checks auto-detected buttons before falling back to scroll
+  d) Content deduplication: tracks consecutiveNoGrowth, breaks after 2 cycles with no content growth
+  e) Scroll position percentage tracking: logs progress every 25%, breaks if stuck at same position for 3+ scrolls
+- Updated scrapers.ts: added getCachedCheerio import, replaced 1 cheerio.load call
+- Updated selectors.ts: added getCachedCheerio import, replaced 9 cheerio.load calls (extractWithFallbacks, parseSelector x2, parseSelectorHtml x2, parseSelectorMulti x2, extractLinksFromList, extractMetadataFallback)
+- cleaning.ts: 3 cheerio.load calls kept as direct (all call applyHtmlLevelCleaning which does .remove() and delete el.attribs)
+
+Stage Summary:
+- New file: cheerio-cache.ts (+48 lines, LRU cache for read-only cheerio parsing)
+- engines.ts: +70/-14 lines (load-more detection, dedup, scroll tracking, max iterations)
+- scrapers.ts: +1/-1 lines (cached cheerio import + 1 call site)
+- selectors.ts: +1/-9 lines (cached cheerio import + 9 call sites replaced)
+- cleaning.ts: unchanged (all 3 calls are write operations, correctly kept direct)
+- TypeScript: clean (0 new errors in scraper-service; pre-existing NovelListView.ts errors unaffected)
+---
+Task ID: 3-a
+Agent: SOCKS Proxy Agent
+Task: R50 SOCKS4/SOCKS5 proxy support + proxy-manager fixes
+
+Work Log:
+- Read worklog (last 100 lines) and studied proxy-manager.ts (1192 lines), session-manager.ts (368 lines), types.ts, proxy-conn-test.ts, and engines.ts
+- Identified that socks-proxy-agent v10.1.0 is already installed and supports all SOCKS variants (socks4://, socks4h://, socks5://, socks5h://)
+- Found that SOCKS4 proxies were unnecessarily excluded in getProxy(), getDomainProxyWithRotation(), and getProxyWithFallback() despite having a working dispatcher
+- Found that socks4h:// and socks5h:// (remote DNS variants) were not recognized in parseProxyUrl() or getProxyDispatcher()
+
+proxy-manager.ts changes:
+- parseProxyUrl(): Added detection for socks4h:// and socks5h:// protocols (mapped to 'socks4' and 'socks5' respectively)
+- getProxyDispatcher(): Added socks4h:// and socks5h:// detection; unified SOCKS4/SOCKS5 dispatcher creation into a single code path using the original proxy URL (so socks-proxy-agent handles h-variant remote DNS correctly)
+- Removed SOCKS4 skip from getProxy() (line 358), getDomainProxyWithRotation() (line 895), getProxyWithFallback() (line 1068)
+- Added protocolBreakdown: Record<string, number> to PoolStats interface and getPoolStats() implementation
+- Added SOCKS-specific health check timeout: 20s for SOCKS4/SOCKS5 vs 15s for HTTP/HTTPS
+
+proxy-conn-test.ts changes:
+- Added socks4h:// and socks5h:// protocol detection
+- Removed "SOCKS4 not supported" early return
+- Changed SOCKS test path to use socks-proxy-agent directly (handles all variants natively)
+
+types.ts changes:
+- Added SessionFingerprint interface with screenWidth, screenHeight, colorDepth, pixelRatio, platform, deviceMemory, hardwareConcurrency, timezone, languages
+- Added fingerprint?: SessionFingerprint to SessionData
+- Added proxy?: string to SessionData
+- Added requestCount: number to SessionData (kept usageCount for backward compat)
+
+session-manager.ts changes:
+- Import SessionFingerprint type from types
+- Populate fingerprint field from FingerprintProfile when creating sessions (with safe fallbacks via ??)
+- Increment both usageCount and requestCount on session reuse
+- Include fingerprint, proxy, and requestCount in toPublicSession() output
+
+Stage Summary:
+- 4 files modified: proxy-manager.ts, proxy-conn-test.ts, types.ts, session-manager.ts
+- SOCKS4 proxies fully re-enabled (dispatcher was already working, just skipped)
+- socks4h:// and socks5h:// (remote DNS) variants now supported everywhere
+- Unified SOCKS dispatcher creation: single code path for all 4 SOCKS variants
+- Protocol breakdown added to pool statistics
+- SessionData type enriched with fingerprint, proxy, and requestCount fields
+- TypeScript: clean (0 new errors in scraper-service; pre-existing NovelListView.ts errors unaffected)
+---
+Task ID: 4-a
+Agent: Code Audit Agent
+Task: Line-by-line deep audit of scraper-service (engines.ts, utils.ts, scrapers.ts, selectors.ts, cleaning.ts, cheerio-cache.ts)
+
+Work Log:
+- Read worklog (last 200 lines) for context on prior R48-R50 fixes
+- Read all 6 target files completely (~6400 lines total)
+- Analyzed for: resource leaks, concurrency bugs, error handling gaps, logic bugs, security issues, performance, and R50 new code
+- Identified 17 findings across severity levels
+
+## Audit Findings (17 items)
+
+### engines.ts (10 findings)
+
+```
+[HIGH] engines.ts:2314 - ObscuraEngine CAPTCHA error missing doNotRetry flag
+  Detail: CheerioEngine (line 1192) and PlaywrightEngine (line 1191) both set
+  `(err as any).doNotRetry = true` on CAPTCHA errors to prevent wasted retries.
+  ObscuraEngine at line 2314 throws a CAPTCHA error WITHOUT this flag, causing
+  retryWithBackoff to retry up to 2 times, wasting time and triggering more
+  anti-bot responses against the same proxy/fingerprint.
+  Fix: Add `const captchaErr = new Error(...); (captchaErr as any).doNotRetry = true;
+  throw captchaErr;` matching the pattern in CheerioEngine/PlaywrightEngine.
+```
+
+```
+[MEDIUM] engines.ts:2343-2345 - ObscuraEngine records proxy failure on CAPTCHA errors
+  Detail: In the catch block, `proxyManager.recordFailure(proxy.url, ...)` is called
+  for ALL errors including CAPTCHA. PlaywrightEngine (line 1240-1241) has a guard:
+  `const isCaptchaErr = err instanceof Error && err.message.startsWith('CAPTCHA detected');
+  if (pwProxy && !isCaptchaErr)`. ObscuraEngine lacks this guard, causing CAPTCHA
+  detections to incorrectly penalize the proxy health score.
+  Fix: Add the same `isCaptchaErr` guard before `proxyManager.recordFailure()`.
+```
+
+```
+[MEDIUM] engines.ts:386-391 - domainFailureTimestamps Map grows without bound
+  Detail: `recordEngineSuccess()` resets the failure count to 0 but never cleans
+  up the corresponding entry in `domainFailureTimestamps`. Over time, entries
+  accumulate for engines that had failures then succeeded. The
+  `domainEngineFailures` Map is bounded to 500 entries via LRU eviction, but
+  `domainFailureTimestamps` has no size limit — it can grow indefinitely.
+  Fix: Delete the timestamp entry on success:
+  `domainFailureTimestamps.delete(`${domain}:${engine}`)` in `recordEngineSuccess`.
+```
+
+```
+[MEDIUM] engines.ts:2498 - InfiniteScroll passes Accept-Language string as Playwright locale
+  Detail: `locale: profile ? profileLanguagesToAcceptLanguage(profile.languages)
+  : undefined` passes a full Accept-Language header value (e.g.,
+  "zh-CN,zh;q=0.9,en;q=0.8") to Playwright's `locale` option, which expects
+  a BCP 47 locale code (e.g., "zh-CN"). The incorrect value is likely ignored,
+  causing the browser to use the system default locale instead of the
+  profile's intended locale.
+  Fix: Use `profile?.languages[0] || undefined` instead of
+  `profileLanguagesToAcceptLanguage(...)`.
+```
+
+```
+[MEDIUM] engines.ts:2697-2727 - InfiniteScroll size overflow falls back to cheerio pointlessly
+  Detail: If content exceeds MAX_RESPONSE_SIZE (10MB) after scrolling, the error
+  at line 2701 falls through to the catch block (line 2718), which falls back
+  to a cheerio fetch of the same URL. The cheerio fetch would also likely
+  return >10MB (same page, less content but still potentially large), causing
+  a confusing double failure. The cheerio fallback is designed for browser
+  launch failures, not content-size issues.
+  Fix: Check if the error is a size error and re-throw it directly instead of
+  falling back to cheerio.
+```
+
+```
+[MEDIUM] engines.ts:610,913,2006 - Explicit timeout=0 silently overridden to 30s/45s/60s
+  Detail: `Math.max(5000, Math.min(options?.timeout || 30000, 300000))` uses
+  `||` which treats `0` as falsy. When a caller explicitly passes `timeout: 0`
+  (meaning "no timeout"), it is silently replaced with 30s (cheerio), 45s
+  (playwright), or 60s (obscura). This affects all three browser/HTTP engines.
+  Fix: Use `options?.timeout ?? 30000` instead of `options?.timeout || 30000`
+  to only fallback on `undefined`/`null`, preserving explicit `0`.
+```
+
+```
+[LOW] engines.ts:176-178 - CircuitBreaker.create() env var parsing treats 0 as unset
+  Detail: `Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) || 5` uses `||`
+  instead of `??`. If the env var is set to "0", `Number("0")` is `0` which is
+  falsy, so it falls back to `5`. Same for RECOVERY_TIMEOUT and HALF_OPEN_MAX.
+  Fix: Use `opts?.failureThreshold ?? Number(process.env.X) ?? 5` pattern.
+```
+
+```
+[LOW] engines.ts:987,2085 - Proxy URLs with credentials logged in DEBUG mode
+  Detail: `console.log(`[Playwright] Using proxy ${pwProxy.url} for ${pwDomain}`)`
+  and the Obscura equivalent log the full proxy URL including potential
+  credentials (e.g., `socks5://user:pass@host:port`). R49#26 fixed this in
+  proxy-manager.ts but the engine-level debug logs were not similarly fixed.
+  Fix: Apply the existing `redactProxyCredentials()` function to logged URLs.
+```
+
+```
+[LOW] engines.ts:2493 - InfiniteScroll browser launched without anti-automation args
+  Detail: The Chromium launch at line 2493 uses minimal args (only 5), while
+  ObscuraEngine uses 25+ anti-detection args including
+  `--disable-blink-features=AutomationControlled`. The infinite scroll browser
+  sends obvious automation signals, making it more likely to be detected.
+  Fix: Add the same anti-automation launch args used by ObscuraEngine.
+```
+
+```
+[LOW] engines.ts:2526 - InfiniteScroll request listener never explicitly removed
+  Detail: `page.on('request', (req) => { ... })` adds a listener that is never
+  explicitly removed via `page.off()`. While the page is closed in the finally
+  block, the listener closure keeps the `fetchedUrls` Set alive until GC.
+  Fix: Store listener reference and call `page.off('request', listener)` in
+  the finally block before `context.close()`.
+```
+
+### scrapers.ts (2 findings)
+
+```
+[HIGH] scrapers.ts:602 - Cover download reads entire response into memory before size check
+  Detail: When `Content-Length` is absent or 0 (chunked transfer encoding),
+  `response.arrayBuffer()` at line 602 reads the ENTIRE body into memory
+  unbounded. The actual size check at line 603 (`arrayBuffer.byteLength >
+  MAX_COVER_SIZE`) happens AFTER the memory is already allocated. A malicious
+  server could send a multi-GB response without Content-Length, causing OOM
+  and potential process crash. Compare with `readTextWithLimit()` in engines.ts
+  which streams with a size cap.
+  Fix: Use a streaming reader pattern (similar to `readTextWithLimit`) that
+  aborts reading when the size exceeds MAX_COVER_SIZE, or reject responses
+  without a valid Content-Length header.
+```
+
+```
+[MEDIUM] scrapers.ts:591-593 - Cover download response body not cancelled on HTTP error
+  Detail: When `!response.ok` at line 591, an error is thrown without calling
+  `response.body?.cancel()`. This can cause undici Agent connection pool leaks
+  (pinned connections), especially when using proxy dispatchers. Compare with
+  CheerioEngine line 763 which properly cancels the body before throwing.
+  Fix: Add `await response.body?.cancel().catch(() => {});` before the throw.
+```
+
+### cheerio-cache.ts (2 findings)
+
+```
+[MEDIUM] cheerio-cache.ts:25 - Cache key collision risk with length+prefix heuristic
+  Detail: The cache key `${html.length}:${html.slice(0, 500)}` can collide when
+  two different HTML documents have the same total byte length and identical
+  first 500 characters. For pages from the same site template (identical
+  `<head>` boilerplate and opening `<body>` tags), this is a realistic
+  collision scenario. The cache would return a cheerio object parsed from
+  the WRONG HTML, causing incorrect content extraction silently.
+  Fix: Add a hash of the last 200 characters to the key:
+  `${html.length}:${html.slice(0, 500)}:${html.slice(-200)}` to reduce
+  collision probability with minimal overhead.
+```
+
+```
+[LOW] cheerio-cache.ts:24-41 - Cached cheerio objects are mutable with no runtime enforcement
+  Detail: The cache returns the same cheerio.CheerioAPI object for identical
+  HTML. If any caller accidentally mutates the `$` object (e.g., `$().remove()`
+  or `$().html(newContent)`), the mutation persists for all subsequent
+  callers sharing that cache entry. The code comments say "read-only only"
+  but there is no runtime guard.
+  Fix: This is an accepted design tradeoff. Consider Object.freeze() on the
+  returned $ object or using a Proxy to intercept write operations in a
+  future hardening pass.
+```
+
+### cleaning.ts (2 findings)
+
+```
+[LOW] cleaning.ts:225 - Global watermark regex "copyright" can remove legitimate content lines
+  Detail: The pattern `/(?:copyright|版权所有|所有权利保留|all rights reserved)/gi`
+  at line 225 matches these strings ANYWHERE in a line (not just standalone),
+  and the watermark system removes the entire matching line. A novel
+  paragraph where a character discusses copyright would have the entire
+  line deleted.
+  Fix: Anchor to line start: `/^\s*(?:copyright|版权所有|所有权利保留|all rights reserved)/gim`
+```
+
+```
+[LOW] cleaning.ts:254 - Repeated-character regex removes legitimate CJK onomatopoeia
+  Detail: The pattern `/^\s*([^\u2026.。])\1{2,}\s*$/gm` at line 254 removes
+  lines that are a single character repeated 3+ times. This incorrectly
+  removes common Chinese onomatopoeia like "哈哈哈" (laughter), "呵呵呵"
+  (chuckle), or "啦啦啦" (cheering) since these characters are not in the
+  exclusion set `[\u2026.。]`.
+  Fix: Add common CJK repetition characters to the exclusion set:
+  `[\u2026.。哈呵嘻嘻啦哦嗯呀啊]`
+```
+
+### utils.ts (1 finding)
+
+```
+[LOW] utils.ts:692-697 - randomDelay ignores AbortSignal
+  Detail: `randomDelay(min, max)` creates a `setTimeout` with no abort support.
+  When called from `paginatedFetch` (scrapers.ts:176) during pagination, the
+  delay continues running even if the task's AbortSignal fires. The signal
+  is checked at the top of the next loop iteration, so the cancellation is
+  eventually detected, but up to `max` ms of unnecessary delay occurs.
+  Fix: Add an optional `signal?: AbortSignal` parameter and use the same
+  abort-aware delay pattern as `abortableDelay()` in engines.ts.
+```
+
+## Summary
+| Severity | Count | Files |
+|----------|-------|-------|
+| HIGH     | 2     | engines.ts, scrapers.ts |
+| MEDIUM   | 7     | engines.ts(5), scrapers.ts(1), cheerio-cache.ts(1) |
+| LOW      | 8     | engines.ts(4), cheerio-cache.ts(1), cleaning.ts(2), utils.ts(1) |
+| Total    | 17    | |
+
+## Top Priority Fixes
+1. **engines.ts:2314** — ObscuraEngine CAPTCHA doNotRetry (causes wasted retries + anti-bot escalation)
+2. **scrapers.ts:602** — Cover download OOM via unbounded arrayBuffer (DoS vector)
+3. **engines.ts:2343** — ObscuraEngine proxy penalty on CAPTCHA (corrupts proxy health scores)
+4. **scrapers.ts:591** — Cover download body leak (connection pool exhaustion under errors)
+5. **cheerio-cache.ts:25** — Cache key collision (silent wrong content extraction)
+
+Stage Summary:
+- 6 files audited, ~6400 lines reviewed line-by-line
+- 17 findings: 2 HIGH, 7 MEDIUM, 8 LOW
+- HIGH: ObscuraEngine missing doNotRetry on CAPTCHA, cover download OOM vector
+- MEDIUM: 5 in engines.ts (proxy recording, timestamp leak, locale bug, size fallback, timeout=0), 1 in scrapers.ts (body leak), 1 in cheerio-cache.ts (key collision)
+- LOW: 4 in engines.ts (env var parsing, debug log leaks, browser args, listener cleanup), 2 in cleaning.ts (over-aggressive watermark/regex), 1 in cheerio-cache.ts (mutable cache), 1 in utils.ts (signal-agnostic delay)
+- No concurrency bugs found (all shared state is in single-threaded Node.js event loop)
+- No SSRF bypasses found (isSafeUrl is properly called on all URL entry points)
+- No authentication credential leaks found beyond the DEBUG-mode proxy logging
+AUDIT_EOF
+
+## Audit: stealth.ts (Task 4-b)
+### Line-by-line deep audit — ~2897 lines
+
+```
+[HIGH] line 307-308 - timezoneOffset jitter creates cross-property mismatch with timezone name
+  Detail: The jitter formula produces offsets of -485, -480, or -475, but all timezones in
+  TIMEZONE_POOL (line 129) are UTC+8, which must return exactly -480. The stealth script
+  overrides both Date.prototype.getTimezoneOffset (line 896, returns PROFILE.timezoneOffset)
+  and Intl.DateTimeFormat.resolvedOptions().timeZone (line 908, returns PROFILE.timezone).
+  Anti-bot systems cross-check these: `new Date().getTimezoneOffset()` vs
+  `Intl.DateTimeFormat().resolvedOptions().timeZone`. When timezone is 'Asia/Shanghai'
+  but offset is -485 or -475, the mismatch is an immediate detection signal.
+  Fix: Remove jitter entirely. Set `timezoneOffset = -480` unconditionally, or
+  compute it from `Intl.DateTimeFormat` using the selected timezone.
+```
+
+```
+[HIGH] line 793-795 - screen.orientation.type is wrong for 90°/270° angles
+  Detail: When `_orientAngle` is 90°, the code sets type to 'landscape-secondary'.
+  Per the Screen Orientation API spec, angle 90° should be 'portrait-primary' and
+  angle 270° should be 'portrait-secondary'. 'landscape-secondary' corresponds to
+  angle 180° (upside-down landscape). Anti-bot systems validate that orientation
+  type matches angle. This is a clear spec violation.
+  Fix: Change the type logic:
+  `type: _orientAngle === 0 ? 'landscape-primary' : _orientAngle === 90 ? 'portrait-primary' : 'portrait-secondary'`
+```
+
+```
+[HIGH] line 1342-1347 - Console method wrappers expose non-native toString, breaking stealth
+  Detail: Section 24 wraps all console methods (log, debug, etc.) in plain functions:
+  `console[method] = function() { return _origConsole.apply(console, arguments); };`
+  The Function.prototype.toString override at line 952-958 only protects itself
+  (checks `this === Function.prototype.toString`). For the console wrappers, the
+  real `nativeToString.call(this)` is invoked, which returns the wrapper's source code
+  (e.g. `"function () { return _origConsole.apply(console, arguments); }"`) instead of
+  `"function log() { [native code] }"`. Any anti-bot script checking
+  `console.log.toString().includes('[native code]')` detects automation.
+  Fix: Either (a) don't wrap console methods at all (the current wrappers are no-ops
+  that just add overhead), or (b) define a custom toString on each wrapper using
+  Object.defineProperty.
+```
+
+```
+[HIGH] line 1201-1214 vs 1501-1529 - Canvas toDataURL and getImageData apply DIFFERENT noise
+  Detail: Section 20 (line 1201-1214) overrides `getImageData` to inject noise every 40 bytes
+  (sparse, LCG-seeded). Section 30 (line 1501-1529) overrides `toDataURL` to inject noise
+  on EVERY pixel (dense, different LCG seed). Section 30 calls `_origGetImageData` (the real
+  original, saved at line 1202), bypassing Section 20's override. So `ctx.getImageData()`
+  returns one noise pattern while `canvas.toDataURL()` encodes a DIFFERENT noise pattern
+  from the same canvas content. In a real browser, both produce identical pixel data.
+  Sophisticated anti-bot (e.g., FingerprintJS) renders to canvas, calls both APIs, and
+  compares — any discrepancy signals automation.
+  Fix: Either (a) remove Section 20's getImageData noise entirely and rely solely on
+  Section 30's toDataURL/toBlob noise (note: getImageData calls would then be clean),
+  or (b) make Section 30 call the Section 20-overridden getImageData so both paths
+  apply the same noise, or (c) apply Section 30's noise in getImageData as well.
+```
+
+```
+[HIGH] line 1355-1377 - performance.now() offset breaks relationship with navigationStart
+  Detail: `performance.now()` is overridden to add a constant offset of 1000-3000ms
+  (line 1355: `_perfOffset = 1000 + floor(random * 2000)`). `performance.timing.navigationStart`
+  is set to `Date.now() - 3000` (line 1371). In a real browser, the invariant is:
+  `performance.now() + performance.timing.navigationStart ≈ Date.now()`.
+  With the overrides, this sum equals `Date.now() + origPerfNow() - 2000 to -5000`,
+  which is 2-5 seconds in the past. Advanced anti-bot systems (Kasada, Cloudflare Bot
+  Management) check this exact relationship. The performance.now() comment (line 1354)
+  says "per-call jitter" but the jitter is a static constant, not per-call.
+  Fix: Either (a) don't add offset to performance.now() (headless already returns realistic
+  values), or (b) adjust navigationStart to be consistent: set it to
+  `Date.now() - _perfOffset - _perfJitterBase - origPerfNow()` at override time, or
+  (c) override `performance.timeOrigin` to be consistent with the shifted now().
+```
+
+```
+[MEDIUM] line 618-623 - appVersion hardcodes "Intel" for ARM Mac UAs
+  Detail: UA templates at lines 156-157 include "ARM Mac OS X" variants, but the
+  appVersion override at line 621 always returns `'5.0 (Macintosh; Intel Mac OS X 10_15_7)'`
+  for MacIntel platform. When the UA says "ARM Mac OS X" but appVersion says "Intel Mac
+  OS X", this cross-property mismatch is detectable. Real ARM Macs report
+  `(Macintosh; ARM Mac OS X 10_15_7)` in appVersion.
+  Fix: Check the UA string for "ARM" vs "Intel" and set appVersion accordingly:
+  `if (/ARM/.test(PROFILE.userAgent)) return '5.0 (Macintosh; ARM Mac OS X 10_15_7)';`
+```
+
+```
+[MEDIUM] line 670-676 - chrome.csi() startE returns Date.now() on every call (non-constant)
+  Detail: `chrome.csi()` returns `startE: Date.now()`. Real `chrome.csi().startE` is
+  the epoch timestamp when the page started loading — it's CONSTANT for a given page
+  load. Each call returning `Date.now()` produces a different (increasing) value,
+  which is trivially detectable by calling `chrome.csi().startE` twice and comparing.
+  Fix: Capture `Date.now()` once at script init time and use the captured value:
+  `var _csiStartE = Date.now();` then `startE: _csiStartE` in the returned object.
+  The same issue applies to `chrome.loadTimes()` at lines 651-658 where ALL timestamps
+  use `Date.now()` — `requestTime`, `startLoadTime`, `commitLoadTime`, `finishDocumentLoadTime`,
+  `finishLoadTime`, and `firstPaintTime` should all be fixed timestamps, not current time.
+```
+
+```
+[MEDIUM] line 724, 736 - Mocked WEBGL_debug_renderer_info extension constants are writable
+  Detail: When the real extension is unavailable (headless environments), lines 724 and 736
+  return `{ UNMASKED_VENDOR_WEBGL: 0x9245, UNMASKED_RENDERER_WEBGL: 0x9246 }`. These are
+  plain writable properties. Real WebGL extensions have these as read-only, non-configurable
+  constants. A detection script can do:
+  `var ext = gl.getExtension('WEBGL_debug_renderer_info');`
+  `ext.UNMASKED_VENDOR_WEBGL = 999;`
+  `if (ext.UNMASKED_VENDOR_WEBGL === 999) { /* fake extension! */ }`
+  Fix: Use Object.defineProperties with `writable: false, configurable: false`:
+  `return Object.defineProperties({}, {
+    UNMASKED_VENDOR_WEBGL: { value: 0x9245, writable: false },
+    UNMASKED_RENDERER_WEBGL: { value: 0x9246, writable: false }
+  });`
+```
+
+```
+[MEDIUM] line 1091-1102 - iframe RTCPeerConnection mock lacks prototype chain (instanceof fails)
+  Detail: The main frame's RTCPeerConnection mock (line 834) uses `Object.create(OrigRTCPC.prototype)`
+  and line 861 sets `window.RTCPeerConnection.prototype = OrigRTCPC.prototype`, so `instanceof`
+  works. The iframe mock (lines 1091-1102) returns a plain object literal `{...}` without
+  `Object.create()`, and there's no `iwin.RTCPeerConnection.prototype = OrigIFrameRTCPC.prototype`
+  (unlike the main frame's line 861). So `fakePC instanceof RTCPeerConnection` is FALSE in
+  iframes. Cross-frame detection scripts check this.
+  Fix: Create the fake with `Object.create(OrigIFrameRTCPC.prototype)` and set
+  `iwin.RTCPeerConnection.prototype = OrigIFrameRTCPC.prototype` after the override.
+```
+
+```
+[MEDIUM] line 1076-1078 - iframe deviceMemory override not guarded for Firefox
+  Detail: The main frame's deviceMemory override at line 583-588 is properly guarded:
+  `if (!_isFirefox) { Object.defineProperty(navigator, 'deviceMemory', ...) }`.
+  Firefox does NOT implement `navigator.deviceMemory` — it returns `undefined`. But the
+  iframe propagation at lines 1076-1078 unconditionally sets deviceMemory on the iframe's
+  navigator, even for Firefox profiles. Cross-frame detection checking
+  `window.navigator.deviceMemory` vs `iframe.contentWindow.navigator.deviceMemory` would
+  find `undefined` (main frame) vs `4` (iframe) for Firefox — an immediate detection signal.
+  Fix: Wrap lines 1076-1078 in `if (!_isFirefox) { ... }`.
+```
+
+```
+[MEDIUM] line 1086 - iframe chrome.runtime mock is too minimal vs main frame
+  Detail: The iframe chrome mock is `{ runtime: {}, loadTimes: () => {}, csi: () => {} }`.
+  The `runtime` object is an empty `{}`. The main frame's chrome.runtime (lines 642-647)
+  has `connect`, `sendMessage`, `onMessage`, and `id`. A cross-frame check like
+  `typeof window.chrome.runtime.connect !== typeof iframe.contentWindow.chrome.runtime.connect`
+  would detect `"function"` vs `"undefined"`. This is an inconsistency detectable by
+  anti-bot systems that check cross-frame property types.
+  Fix: Copy the same runtime mock structure from the main frame (lines 642-647) into the
+  iframe chrome mock.
+```
+
+```
+[MEDIUM] line 1354-1356 - performance.now() jitter is static, not per-call as documented
+  Detail: The comment at line 1354 says "±0.5ms micro-jitter per call" but `_perfJitterBase`
+  is computed once at line 1356 and never changes. Every call to `performance.now()` adds
+  the exact same offset, so delta computations between two calls are perfectly clean.
+  While this doesn't create a detection vector by itself (clean deltas are actually more
+  realistic than jittery ones), the misleading comment could lead future maintainers to
+  believe per-call jitter exists. More importantly, the STATIC jitter means the
+  performance.now() return value is perfectly deterministic and reproducible, which is
+  itself a minor fingerprint signal (real performance.now() has microsecond-level
+  non-determinism from system timer resolution).
+  Fix: Either (a) update the comment to say "static offset" instead of "per-call jitter",
+  or (b) implement actual per-call micro-jitter (e.g., `+ Math.random() * 0.001`) if
+  non-determinism is desired.
+```
+
+```
+[LOW] line 1176-1197 vs 1412-1439 - Section 28 completely shadows Section 19's enumerateDevices
+  Detail: Both sections save `var _origEnumerateDevices`. Due to `var` hoisting in the
+  IIFE, they share the same variable. Section 19 (line 1177) saves the REAL original,
+  then Section 28 (line 1415) overwrites the variable with Section 19's WRAPPER (since
+  `navigator.mediaDevices.enumerateDevices` has already been replaced). Section 28 then
+  replaces the method entirely with a static fake device list. Section 19's override
+  (which calls the real enumerateDevices and falls back to static devices only when
+  the real list is empty) can NEVER execute. This is ~20 lines of dead code.
+  Fix: Remove Section 19 (lines 1176-1197) since Section 28 provides a strictly better
+  override with seeded device IDs.
+```
+
+```
+[LOW] line 1199 - Section 20 mislabeled as "AudioContext Fingerprint Noise"
+  Detail: The section header says "AudioContext Fingerprint Noise" but the code overrides
+  `CanvasRenderingContext2D.prototype.getImageData` (line 1201-1214), which is a Canvas
+  API, not AudioContext. The actual AudioContext noise is in Section 31 (line 1562).
+  This misleading comment could confuse maintainers auditing the code.
+  Fix: Change the section header to "Canvas getImageData Noise" or similar.
+```
+
+```
+[LOW] line 2039 - Speech synthesis voices can have duplicate entries
+  Detail: `_idx = Math.floor((_voiceSeed * 10 + _vi * 3.14) % _voiceNames.length)` can
+  produce the same index for different `_vi` values, resulting in duplicate voice entries
+  in `_fakeVoices`. Real `speechSynthesis.getVoices()` never returns duplicates — each
+  voice has a unique `voiceURI`. Anti-bot systems that check voice uniqueness would
+  detect this.
+  Fix: Use a Set to track used indices and skip duplicates, or use a deterministic
+  selection that guarantees uniqueness (e.g., sequential selection with offset).
+```
+
+```
+[LOW] line 975-1001 vs 1163-1172 - Section 13 and Section 17 duplicate connection overrides
+  Detail: Both sections override `navigator.connection` properties (effectiveType, downlink,
+  rtt). Section 17 (line 1163-1172) runs AFTER Section 13 and always overrides these
+  properties with seeded values. Section 13's work is completely overwritten. Additionally,
+  both sections declare `var _conn` (lines 976 and 1163) which, due to var hoisting, are
+  the same variable — Section 17 overwrites Section 13's assignment.
+  Fix: Remove Section 13 (lines 973-1001) since Section 17 provides strictly better
+  seeded values and covers more properties (saveData, type).
+```
+
+## Summary
+| Severity | Count | Categories |
+|----------|-------|------------|
+| HIGH     | 5     | Fingerprint leaks (timezone, orientation, console toString, canvas noise, perf timing) |
+| MEDIUM   | 7     | Cross-property mismatches (3), prototype issues (2), static timestamps (1), documentation (1) |
+| LOW      | 4     | Dead code (2), mislabeled section (1), voice duplicates (1) |
+| Total    | 16    | |
+
+## Top Priority Fixes
+1. **line 307** — timezoneOffset jitter (cross-property mismatch with Intl timezone, immediately detectable)
+2. **line 793-795** — screen.orientation.type wrong for 90°/270° (spec violation, easy check)
+3. **line 1342-1347** — Console toString leak (wrapper functions exposed as non-native)
+4. **line 1201 vs 1501** — Canvas noise inconsistency (getImageData vs toDataURL differ)
+5. **line 1355-1377** — performance.now()/navigationStart invariant broken
+6. **line 618-623** — appVersion "Intel" for ARM Mac UAs
+
+Stage Summary:
+- 1 file audited, ~2897 lines reviewed line-by-line
+- 16 findings: 5 HIGH, 7 MEDIUM, 4 LOW
+- HIGH: timezoneOffset jitter, orientation type wrong, console toString leak, canvas noise split, perf.now/navigationStart mismatch
+- MEDIUM: appVersion Intel/ARM mismatch, chrome.csi/loadTimes non-constant, writable WebGL extension constants, iframe RTCPeerConnection prototype, iframe deviceMemory Firefox guard, iframe chrome.runtime minimal, static jitter documented as per-call
+- LOW: dead Section 19 (shadowed by 28), dead Section 13 (shadowed by 17), mislabeled Section 20, voice duplicates
+- No error handling issues found (all try-catch blocks appropriately swallow cross-origin/missing-API errors)
+- No prototype chain issues found beyond the iframe RTCPeerConnection mock
+- No Math.random vs seeded random inconsistency found (server-side `pick()` uses Math.random, injected JS uses _seededRandom — correctly separated)
+AUDIT_EOF
+================================================================================
+AUDIT 4-c: task-engine.ts, proxy-manager.ts, cookie-jar.ts, rate-limiter.ts, session-manager.ts
+================================================================================
+
+--- task-engine.ts (1338 lines) ---
+
+```
+[HIGH] task-engine.ts:972-977 - ctx.triedEngines permanently excludes engines across ALL chapters after first failure
+  Detail: The `triedEngines` Set lives in TaskContext and is shared across every chapter fetch in the
+  entire task. Line 972 filters the fallback chain: `fallbackChain.filter(e => !ctx.triedEngines.has(e))`.
+  If engine A fails temporarily for chapter 1 (e.g., transient 502), it is added to `triedEngines` at
+  line 985 and permanently excluded for ALL subsequent chapters. Over a 500-chapter book, a single
+  transient failure can exhaust the entire fallback chain, leaving no engines for later chapters.
+  Line 974 attempts to re-add the current engine, but only the first engine in the chain is
+  protected — the rest remain permanently excluded.
+  Fix: Reset `triedEngines` periodically (e.g., every 50 chapters) or make it per-chapter instead of
+  per-task. At minimum, add a decay: remove engines from `triedEngines` after N consecutive successes.
+```
+
+```
+[HIGH] task-engine.ts:1258-1260 - _touchedDomains cleanup deletes engine overrides still needed by concurrent tasks
+  Detail: `_domainEngineTypes` is a module-level global Map. When task A completes, line 1258-1260
+  deletes all domain overrides that task A touched (`_touchedDomains`). If task B is concurrently
+  scraping the same domain and relying on the engine override (set at line 747/1076 because task A
+  or B triggered a CAPTCHA engine upgrade), task A's cleanup removes the override mid-task for B.
+  Task B then falls back to the base engine via `getEffectiveEngine()`, breaking CAPTCHA mitigation.
+  Fix: Use reference counting instead of a per-task touched set. Each task increments a domain
+  reference count on upgrade and decrements on completion; only delete the override when the count
+  reaches zero. Alternatively, use a WeakMap keyed by the task's AbortController.
+```
+
+```
+[MEDIUM] task-engine.ts:111-118 - getAdaptiveOrRandomDelay ignores the `max` parameter when adaptive delay is active
+  Detail: When `min > 0`, the function calls `adaptiveDelay.getDelay(domain)` and takes
+  `Math.max(delay, min)` at line 117, but never caps it at `max`. If a scrape rule configures
+  `delay: [1000, 3000]` (1s–3s), and the adaptive system returns 8000ms (e.g., after a penalty),
+  the actual delay is 8000ms — 2.67× the configured maximum. The `max` parameter is completely
+  ignored in the adaptive branch.
+  Fix: Add `Math.min(finalDelay, max)` to cap the delay: `const finalDelay = Math.min(Math.max(delay, min), max);`
+```
+
+```
+[MEDIUM] task-engine.ts:1096 - consecutiveCaptchaCounts reset to 1 (not 0) after CAPTCHA pause creates premature re-trigger
+  Detail: After the CAPTCHA pause completes (60s), line 1096 resets the counter to 1 instead of 0.
+  Since `CONSECUTIVE_CAPTCHA_THRESHOLD` is 3, only 2 more CAPTCHA detections will trigger another
+  pause, instead of the intended 3. The comment at line 1102 about the success-decay path
+  (`prevCount - 1`) is consistent with this design intent, but it means the threshold is effectively
+  2 for any domain that has ever triggered a pause. This is inconsistent with the book-level CAPTCHA
+  handling at line 764 which also resets to 0 (`bookCaptchaCounts.set(bkDomain, 0)`).
+  Fix: Change line 1096 to `consecutiveCaptchaCounts.set(chDomain, 0)` to match the book-level
+  behavior and the named constant's implied semantics.
+```
+
+```
+[MEDIUM] task-engine.ts:222-234 - O(n) scan of all log buffers on every addTaskLog call
+  Detail: Every call to `addTaskLog` iterates over ALL entries in `logBuffer.values()` to compute
+  `totalEntries`. For a system with 20 concurrent tasks, each with buffered logs, this is O(tasks)
+  per log line added — potentially thousands of iterations per second. The truncation at line 230
+  (`entries.splice(0, entries.length - 10)`) also removes logs from a RANDOM task's buffer
+  (the first one with >10 entries found in Map iteration order), not the oldest or least important
+  one.
+  Fix: Maintain a running `totalBufferEntries` counter (increment on push, decrement on splice/flush)
+  to avoid the O(n) scan. For the eviction target, track per-task log counts and evict from the task
+  with the most entries.
+```
+
+```
+[LOW] task-engine.ts:170-178 - progressThrottleCleanupTimer is never cleared on shutdown
+  Detail: `progressThrottleCleanupTimer` is a module-level `setInterval` that runs every 60 seconds.
+  It is never cleared — not in any exported cleanup function nor on process exit. For a long-running
+  service this is acceptable, but it prevents clean shutdown without resource leak warnings.
+  Fix: Export a `shutdown()` function that clears this timer, and register it on `process.on('SIGTERM')`.
+```
+
+```
+[LOW] task-engine.ts:28 - LOG_STREAM_URL uses absolute localhost URL instead of relative/gateway path
+  Detail: `const LOG_STREAM_URL = process.env.LOG_STREAM_URL || "http://localhost:3004"` bypasses the
+  Caddy gateway. If the log-stream service runs on a different port (as mini-services do), this
+  direct localhost access works internally but violates the project's gateway convention and will
+  break if services are distributed across hosts.
+  Fix: Use a relative path with XTransformPort query parameter if the log-stream service is behind
+  the gateway, or document this as an intentional internal-only call.
+```
+
+--- proxy-manager.ts (1196 lines) ---
+
+```
+[HIGH] proxy-manager.ts:762 + 797 - exportProxies redacts credentials, making export→import roundtrip break authentication
+  Detail: `exportProxies()` at line 762 calls `redactProxyCredentials(entry.url)`, replacing
+  `user:pass` with `***:***`. `importProxies()` at line 797 calls `this.addProxy(proxy.url)` with
+  the redacted URL. `addProxy` stores this redacted URL as `entry.url` (line 291). Later,
+  `getProxyDispatcher(entry.url)` is called with the redacted URL `http://***:***@host:port`.
+  Since the dispatcher cache was originally populated with the REAL URL, there's a cache miss,
+  and a new ProxyAgent/SocksProxyAgent is created using `***:***` as actual credentials, which
+  will fail authentication with the proxy server.
+  Fix: Either (a) export the original URL (with credentials) since this is a server-side export
+  not exposed to end users, or (b) store the clean URL as the primary key and keep the original
+  URL in a separate non-exported field, or (c) detect redacted URLs in `importProxies` and skip
+  them with a warning.
+```
+
+```
+[MEDIUM] proxy-manager.ts:150 - dispatcherCache has no eviction policy, potential memory leak with rotating proxies
+  Detail: `dispatcherCache` is a module-level `Map<string, Dispatcher>` that grows indefinitely.
+  Dispatchers are only removed via `invalidateDispatcher()` (called on `removeProxy` and `resetProxy`).
+  If proxies are added with different credential rotations (e.g., `user1:pass@host:port`,
+  `user2:pass@host:port`) without explicit removal, old dispatchers remain in memory forever.
+  Each ProxyAgent/SocksProxyAgent holds a connection pool, so this also leaks TCP connections.
+  Fix: Add an LRU eviction policy (e.g., max 100 entries, evict least-recently-accessed), or
+  periodically prune entries whose proxy URL is no longer in the pool.
+```
+
+```
+[MEDIUM] proxy-manager.ts:831-832 vs 1074 - Domain normalization inconsistency between setDomainProxy and getProxyWithFallback
+  Detail: `setDomainProxy()` at line 832 normalizes domains with `domain.toLowerCase().replace(/^www\./, '')`
+  but does NOT strip trailing dots. `getProxyWithFallback()` at line 1074 uses `normalizeDomain(domain)`
+  which also strips trailing dots via `.replace(/\.$/, '')`. Similarly, `recordSuccessWithRotation()`
+  at line 946 uses the same incomplete normalization. A domain like `example.com.` (with trailing dot)
+  would be stored in `domainBindings` as `example.com.` but looked up as `example.com`, causing a
+  binding miss and falling through to pool selection.
+  Fix: Replace all `domain.toLowerCase().replace(/^www\./, '')` calls in ProxyManager methods with
+  `normalizeDomain(domain)` for consistency.
+```
+
+```
+[LOW] proxy-manager.ts:951-963 - domainRotationCount eviction targets lowest count, not least-recently-used
+  Detail: When `domainRotationCount.size > 500`, the eviction logic finds the domain with the
+  SMALLEST rotation count value and deletes it. A low count means the domain was recently added
+  or rarely used — evicting it is counterproductive since it will likely be needed again soon.
+  Stale domains that had many rotations (high count) are preserved.
+  Fix: Track a `lastAccessed` timestamp per domain in the rotation maps and evict the least-recently-
+  used domain instead. Alternatively, evict the entry with the smallest `lastRequestTime` from the
+  proxy pool for that domain.
+```
+
+--- cookie-jar.ts (422 lines) ---
+
+```
+[MEDIUM] cookie-jar.ts:141-147 - Max-Age=0 deletion only removes first matching cookie, ignores path
+  Detail: When `parseSetCookie` returns null for Max-Age=0 (line 85), the deletion fallback at
+  lines 141-147 searches all domains for a cookie with the same name. The match condition is
+  `c.name === delName && (c.domain === domain || d === domain)` — it ignores the cookie's `path`
+  attribute entirely. Per RFC 6265, a Set-Cookie with Max-Age=0 should delete the cookie with
+  matching name+domain+path. Additionally, the `break` at line 147 stops after the first match,
+  so if multiple cookies share the same name but have different paths under the same domain, only
+  the first one found is deleted.
+  Fix: Parse the path from the Set-Cookie header before returning null in `parseSetCookie`, and
+  use it in the deletion match. Remove the `break` to delete ALL cookies with the same name under
+  the matching domain.
+```
+
+```
+[LOW] cookie-jar.ts:357-367 - cleanup() replaces arrays in cookies Map during iteration
+  Detail: The first loop in `cleanup()` iterates over `this.cookies.entries()` and calls
+  `this.cookies.set(domain, filtered)` at line 360, replacing the array with a filtered copy.
+  Then at line 364, `this.cookies.delete(domain)` may also run. While JavaScript's Map spec
+  guarantees that `set()` on an existing key doesn't cause re-iteration and `delete()` on the
+  current entry is safe, this pattern is fragile and hard to reason about. A future change could
+  easily introduce a bug.
+  Fix: Collect the domains to delete/update in a separate array, then apply changes after the
+  iteration completes.
+```
+
+--- rate-limiter.ts (284 lines) ---
+
+```
+[MEDIUM] rate-limiter.ts:121-123 - Timestamp array trimming caps effective maxRPM at MAX_TIMESTAMPS_PER_DOMAIN
+  Detail: `state.requestTimestamps.slice(-MAX_TIMESTAMPS_PER_DOMAIN)` keeps only the last 200
+  entries. If `setDomainLimit(domain, 300)` is called to set maxRPM to 300, the rate limiter can
+  never track more than 200 requests per minute. After 200 requests, older timestamps are trimmed,
+  making `currentCount` always ≤ 200, so the limit is never enforced above 200 RPM. Even with the
+  default maxRPM of 30 this doesn't trigger, but the invariant is broken for any maxRPM > 200.
+  Fix: Either (a) set `MAX_TIMESTAMPS_PER_DOMAIN` dynamically based on the domain's maxRPM
+  (e.g., `Math.max(200, state.maxRPM * 2)`), or (b) document that maxRPM is capped at 200.
+```
+
+```
+[LOW] rate-limiter.ts:63-68 - getInstance() silently ignores config after first instantiation
+  Detail: The singleton pattern checks `if (!DomainRateLimiter.instance)` and ignores `config`
+  on subsequent calls. If a test or initialization code calls `getInstance({ defaultMaxRPM: 5 })`
+  after the default `getInstance()` was already called during import (line 283), the custom
+  config is silently discarded.
+  Fix: Either throw an error if config is provided after instantiation, or apply the config
+  merge to the existing instance.
+```
+
+--- session-manager.ts (387 lines) ---
+
+```
+[MEDIUM] session-manager.ts:140-150 - Fingerprint fields extracted via `as any` casts, no type safety
+  Detail: Lines 141-149 access fingerprint fields via `(fingerprint as any).screenWidth`,
+  `(fingerprint as any).screenHeight`, etc. The `getProfileForDomain()` return type is not
+  statically typed, so any field name typo (e.g., `screenHight`) would silently produce `undefined`
+  and fall through to the `?? default` value. This defeats TypeScript's type checking.
+  Fix: Define a `StealthProfile` interface matching the return shape of `getProfileForDomain()` and
+  use it instead of `as any` casts.
+```
+
+```
+[LOW] session-manager.ts:86-87 - usageCount and requestCount are always equal, making requestCount redundant
+  Detail: In `acquireSession()`, both `usageCount++` (line 86) and `requestCount++` (line 87) are
+  incremented together. `releaseSession()` (line 184-189) updates neither. The `toPublicSession`
+  method exposes both fields to callers. Since they are always incremented in lockstep, they will
+  always be identical. The SessionData type comment at line 254 says requestCount is an "alias for
+  usageCount", confirming the redundancy.
+  Fix: Remove one of the two counters. If the intent is for `requestCount` to track individual HTTP
+  requests (vs. session acquisitions), move the increment to the actual request completion point.
+```
+
+## Summary
+| Severity | Count | Categories |
+|----------|-------|------------|
+| HIGH     | 3     | Engine exhaustion (1), concurrent override cleanup (1), export credential loss (1) |
+| MEDIUM   | 6     | Delay max ignored (1), CAPTCHA reset inconsistency (1), O(n) log scan (1), dispatcher cache leak (1), domain norm inconsistency (1), cookie deletion incomplete (1), timestamp trimming cap (1), fingerprint type safety (1) |
+| LOW      | 5     | Timer leak (1), localhost URL (1), eviction strategy (1), Map iteration fragility (1), singleton config (1), redundant counter (1) |
+| Total    | 14    | |
+
+Note: MEDIUM count is 8 (not 6 as shown in quick table above — corrected below)
+
+| Severity | Count |
+|----------|-------|
+| HIGH     | 3     |
+| MEDIUM   | 8     |
+| LOW      | 6     |
+| Total    | 17    | (some LOW items consolidated from initial 14→17 after review)
+
+## Top Priority Fixes
+1. **task-engine.ts:972** — triedEngines permanently excludes engines (causes cascading failures on large books)
+2. **task-engine.ts:1258** — _touchedDomains cleanup races with concurrent tasks (breaks CAPTCHA mitigation)
+3. **proxy-manager.ts:762** — export/import roundtrip destroys proxy credentials (data loss on backup/restore)
+4. **task-engine.ts:117** — adaptive delay ignores configured max (violates scrape rule configuration)
+5. **rate-limiter.ts:121** — timestamp trimming caps effective maxRPM at 200 (broken for high-throughput rules)
+6. **cookie-jar.ts:141** — Max-Age=0 deletion ignores path and stops at first match (stale cookies persist)
+
+Stage Summary:
+- 5 files audited, ~3622 lines reviewed line-by-line
+- 17 findings: 3 HIGH, 8 MEDIUM, 6 LOW
+- HIGH: triedEngines global exhaustion, concurrent _domainEngineTypes cleanup race, export credential redaction breaks import
+- MEDIUM: adaptive delay ignores max, CAPTCHA counter reset to 1, O(n) log buffer scan, dispatcher cache unbounded, domain normalization inconsistency (proxy-manager), cookie Max-Age=0 deletion incomplete, timestamp trimming caps maxRPM, session fingerprint as any casts
+- LOW: timer leak, localhost URL bypass, rotation eviction strategy, Map mutation during iteration, singleton config ignored, redundant requestCount
+- No credential leaks found in logging (proxy credentials properly redacted via redactProxyCredentials)
+- No SQL injection vectors found (SQLite via cookie-store, no raw query construction observed)
+- SOCKS proxy support (R50) is correctly implemented: original URL passed to SocksProxyAgent, clean URL used as pool key
+- SessionData type properly includes optional fingerprint and proxy fields
+AUDIT_EOF
+================================================================================
+FIX fix-a: engines.ts, scrapers.ts, cheerio-cache.ts — 8 bugs from deep audit
+================================================================================
+
+Files changed:
+  - mini-services/scraper-service/src/engines.ts
+  - mini-services/scraper-service/src/scrapers.ts
+  - mini-services/scraper-service/src/cheerio-cache.ts
+
+### 1. [HIGH] ObscuraEngine CAPTCHA error missing doNotRetry
+   engines.ts ~line 2314: Changed `throw new Error(...)` to store in variable,
+   then `(obscuraCaptchaErr as any).doNotRetry = true` before throwing.
+   Matches CheerioEngine (line 792) and PlaywrightEngine (line 1191) pattern.
+
+### 2. [HIGH] Cover download OOM on chunked encoding
+   scrapers.ts ~line 602: Replaced `response.arrayBuffer()` + post-hoc size check
+   with streaming approach using `for await (const chunk of response.body!)`
+   with running totalSize counter. Cancels chunks array on overflow.
+   Prevents infinite memory consumption when Content-Length is absent.
+
+### 3. [MEDIUM] ObscuraEngine records proxy failure on CAPTCHA
+   engines.ts ~line 2342: Added `isObscuraCaptchaErr` guard (same pattern as
+   PlaywrightEngine line 1240). Proxy `recordFailure` now skipped when error
+   message starts with 'CAPTCHA detected'.
+
+### 4. [MEDIUM] Cover download body not cancelled on HTTP error
+   scrapers.ts ~line 591: Added `await response.body?.cancel().catch(() => {})`
+   before throwing on `!response.ok`. Also added cancel on Content-Length
+   overflow path.
+
+### 5. [MEDIUM] InfiniteScroll locale vs Accept-Language
+   engines.ts ~line 2498: Changed `locale: profile ? profileLanguagesToAcceptLanguage(...)`
+   to `locale: profile ? (profile.languages[0] || undefined) : undefined`.
+   Playwright `locale` expects BCP 47 tag (e.g. 'en-US'), not Accept-Language
+   header string (e.g. 'en-US,en;q=0.9'). Matches PlaywrightEngine (line 2060).
+
+### 6. [MEDIUM] timeout: 0 overridden by ||
+   engines.ts: Changed all 7 occurrences of `options?.timeout || DEFAULT` to
+   `options?.timeout ?? DEFAULT`. Also changed `config.timeout ||` to `??`
+   for consistency. Nullish coalescing correctly preserves explicit timeout:0.
+
+### 7. [MEDIUM] domainFailureTimestamps grows unbounded
+   engines.ts ~line 380: Added LRU eviction after `domainFailureTimestamps.set()` —
+   when size > 1000, deletes the oldest entry (first Map key).
+
+### 8. [LOW] cheerio-cache.ts key collision risk
+   cheerio-cache.ts line 25: Increased key prefix from 500 to 1000 characters.
+   Updated JSDoc accordingly.
+
+TypeScript check: 0 new errors (only pre-existing NovelListView.ts errors).
+================================================================================
+FIX fix-b: stealth.ts — 9 bugs from deep audit (fix #6 skipped per instructions)
+================================================================================
+
+Files changed:
+  - mini-services/scraper-service/src/stealth.ts
+
+### 1. [HIGH] timezoneOffset jitter vs timezone name mismatch
+   Lines 305-308 (generateFingerprintProfile): Removed ±5min jitter from timezoneOffset.
+   Lines 356-358 (generateRandomFingerprint): Same fix.
+   All timezones in TIMEZONE_POOL are UTC+8 (= -480 minutes exactly). A mismatch between
+   the Intl timezone name (e.g. 'Asia/Shanghai') and getTimezoneOffset() return value
+   (e.g. -485) is an immediate detection vector. Now always returns exactly -480.
+
+### 2. [HIGH] orientation.type wrong for 90/270 degrees
+   Line 795: Fixed screen.orientation.type mapping to match MDN spec:
+   - 0° → 'portrait-primary' (was 'landscape-primary')
+   - 90° → 'landscape-primary' (new)
+   - 270° → 'landscape-secondary' (unchanged, but now explicitly mapped)
+   - fallback → 'portrait-secondary' (for 180° if ever added)
+
+### 3. [HIGH] console.log.toString leak
+   Lines 1338-1348: Each console method wrapper now has a toString override
+   returning 'function log() { [native code] }' pattern. Previously, calling
+   console.log.toString() would reveal the wrapper source code.
+
+### 4. [HIGH] canvas getImageData vs toDataURL noise inconsistency
+   Lines 1199-1220 (Section 20): Rewrote getImageData noise to use the same
+   per-pixel LCG algorithm as toDataURL/toBlob (Section 30). Previously used a
+   different seed (mixed with canvas dimensions) and sparse pattern (every 40th byte).
+   Lines 1502-1541 (Section 30): Simplified toDataURL/toBlob to call the PATCHED
+   getImageData (which already applies consistent noise) instead of applying
+   separate duplicate noise loops. Prevents detection via cross-method comparison.
+
+### 5. [HIGH] performance.now()/navigationStart invariant broken
+   Lines 1359-1386 (Section 25): Removed _perfJitterBase from performance.now().
+   The invariant `performance.timing.navigationStart + performance.now() ≈ Date.now()`
+   was broken because jitter was added to performance.now() but not navigationStart.
+   Now performance.now() only adds a static offset (realistic page load time).
+
+### 7. [MEDIUM] chrome.csi/loadTimes non-constant timestamps
+   Lines 647-681: Cached return values on first call for both chrome.loadTimes() and
+   chrome.csi(). Previously, every call returned fresh Date.now() timestamps, allowing
+   detection by calling twice and comparing. Now returns identical object on subsequent calls.
+
+### 8. [MEDIUM] writable WebGL extension constants
+   Lines 727-732, 744-747: Mock WEBGL_debug_renderer_info extension objects now use
+   Object.defineProperty with writable:false, configurable:false for constants.
+   Previously, detection scripts could mutate the constants and check for changes.
+
+### 9. [MEDIUM] iframe deviceMemory unguarded for Firefox
+   Lines 1087-1092: Wrapped iframe deviceMemory definition in `if (!_isFirefox)` guard,
+   matching the main window behavior (line 583). Firefox doesn't implement
+   navigator.deviceMemory — exposing it in iframes is a detection vector.
+
+### 10. [MEDIUM] static jitter misdocumented (combined with fix #5)
+   Line 1360-1362: Replaced misleading comment 'per-call micro-jitter' with accurate
+   description explaining why no jitter is applied (invariant preservation).
+
+### Skipped
+   Fix #6 (appVersion 'Intel' for ARM Mac): Correctly skipped — Chrome on Apple Silicon
+   always reports 'MacIntel' and 'Intel Mac OS X' in UA, so this is intentional behavior.
+
+TypeScript check: 0 new errors (only pre-existing NovelListView.ts errors).
+================================================================================
+FIX fix-c: task-engine.ts, proxy-manager.ts, cookie-jar.ts, rate-limiter.ts — 10 bugs from deep audit
+================================================================================
+
+Files changed:
+  - mini-services/scraper-service/src/task-engine.ts
+  - mini-services/scraper-service/src/proxy-manager.ts
+  - mini-services/scraper-service/src/cookie-jar.ts
+  - mini-services/scraper-service/src/rate-limiter.ts
+
+### 1. [HIGH] triedEngines Set excludes engines across ALL chapters
+   task-engine.ts ~line 949: Added `ctx.triedEngines.clear()` at the start of
+   each `processChapter()` call. Previously the Set was initialized once per
+   task and never reset, so if engine X failed on chapter 1 it was excluded
+   for all subsequent chapters.
+
+### 2. [HIGH] _touchedDomains cleanup deletes engine overrides for concurrent tasks
+   task-engine.ts: Added `_domainEngineRefCount` Map<string, number> for
+   reference-counting domain engine overrides. Added `touchDomainEngine()`
+   helper that increments ref count when a domain override is set. Cleanup
+   at task end now decrements ref count and only deletes the override when
+   no tasks reference it (count reaches 0). This prevents task A's cleanup
+   from wiping an override that concurrent task B is still using.
+
+### 3. [HIGH] exportProxies credential redaction breaks import roundtrip
+   proxy-manager.ts ~line 745: `exportProxies()` now exports real credentials
+   (it's a server-side admin function for backup/restore). Added new
+   `exportProxiesPublic()` method that redacts credentials for user-facing
+   display. The import→export→import roundtrip now preserves credentials.
+
+### 4. [MEDIUM] Adaptive delay ignores max parameter
+   task-engine.ts ~line 119: Changed `Math.max(delay, min)` to
+   `Math.min(Math.max(delay, min), max)` to clamp the adaptive delay
+   to the configured [min, max] range.
+
+### 5. [MEDIUM] CAPTCHA counter resets to 1 not 0
+   task-engine.ts ~line 1106: Changed `consecutiveCaptchaCounts.set(chDomain, 1)`
+   to `set(chDomain, 0)`. After the CAPTCHA pause completes, the counter
+   should reset fully so the threshold (3) requires 3 new consecutive
+   CAPTCHAs, not 2.
+
+### 6. [MEDIUM] O(n) log buffer scan on every addTaskLog
+   task-engine.ts: Added running `_totalBufferEntries` counter. Incremented
+   on push, decremented on splice/flush, re-incremented on retry unshift.
+   Eliminates the O(n) scan across all task buffers that ran on every
+   single log add call.
+
+### 7. [MEDIUM] dispatcherCache has no eviction
+   proxy-manager.ts: Added LRU eviction (max 200 entries) to the
+   `dispatcherCache` Map. Cache hits use delete-and-reinsert to maintain
+   LRU order. On cache miss, if at capacity, the oldest entry is evicted
+   and its dispatcher is closed before inserting the new one.
+
+### 8. [MEDIUM] Domain normalization inconsistency
+   proxy-manager.ts: Replaced all 4 occurrences of
+   `domain.toLowerCase().replace(/^www\./, '')` with `normalizeDomain(domain)`
+   in setDomainProxy, getDomainProxy, recordSuccessWithRotation, and
+   getDomainRotationState. All now consistently strip trailing dots.
+
+### 9. [MEDIUM] Max-Age=0 deletion ignores path
+   cookie-jar.ts ~line 138-167: Rewrote deletion fallback to parse the
+   path attribute from the Set-Cookie header before attempting deletion.
+   Now matches name + domain + path (not just name + domain). Removed
+   the `break` so all matching cookies are deleted (handles multiple
+   cookies with same name on different paths).
+
+### 10. [MEDIUM] Timestamp trimming caps effective maxRPM
+   rate-limiter.ts ~line 120-124: Changed static `MAX_TIMESTAMPS_PER_DOMAIN`
+   (200) cap to dynamic `Math.max(200, state.maxRPM * 2)`. Domains with
+   maxRPM > 100 can now correctly track up to 2x their limit, preventing
+   the effective rate limit from being silently capped.
+
+TypeScript check: 0 new errors (only pre-existing NovelListView.ts errors).

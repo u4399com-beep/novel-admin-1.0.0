@@ -15,6 +15,11 @@ function redactProxyCredentials(url: string): string {
   return url.replace(/\/\/[^:]+:[^@]+@/, '//***:***@');
 }
 
+/** Normalize a domain: lowercase, strip trailing dot, strip www prefix. */
+function normalizeDomain(d: string): string {
+  return d.toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
+}
+
 // ==================== Types ====================
 
 export interface ProxyEntry {
@@ -44,6 +49,8 @@ interface PoolStats {
   totalSuccesses: number;
   totalFailures: number;
   successRate: number;
+  /** Breakdown of proxies by protocol */
+  protocolBreakdown: Record<string, number>;
   topProxies: Array<{
     url: string;
     host: string;
@@ -86,10 +93,16 @@ function parseProxyUrl(rawUrl: string): { protocol: ProxyEntry['protocol']; host
     let urlStr = rawUrl.trim();
     let protocol: ProxyEntry['protocol'] = 'http';
 
-    // Detect protocol
-    if (urlStr.startsWith('socks5://')) {
+    // Detect protocol (including h-variants for remote DNS resolution)
+    if (urlStr.startsWith('socks5h://')) {
+      protocol = 'socks5'; // socks5h is SOCKS5 with remote DNS
+      urlStr = urlStr.replace('socks5h://', 'http://');
+    } else if (urlStr.startsWith('socks5://')) {
       protocol = 'socks5';
       urlStr = urlStr.replace('socks5://', 'http://');
+    } else if (urlStr.startsWith('socks4h://')) {
+      protocol = 'socks4'; // socks4h is SOCKS4 with remote DNS
+      urlStr = urlStr.replace('socks4h://', 'http://');
     } else if (urlStr.startsWith('socks4://')) {
       protocol = 'socks4';
       urlStr = urlStr.replace('socks4://', 'http://');
@@ -133,8 +146,10 @@ function parseProxyUrl(rawUrl: string): { protocol: ProxyEntry['protocol']; host
 /**
  * Cache of undici Dispatcher instances keyed by original proxy URL.
  * Shared across the ProxyManager singleton and the module-level getProxyDispatcher().
+ * LRU eviction: max 200 entries (delete-and-reinsert for LRU order).
  */
 const dispatcherCache = new Map<string, Dispatcher>();
+const MAX_DISPATCHER_CACHE = 200;
 
 /**
  * Get or create a cached undici Dispatcher (ProxyAgent/SocksProxyAgent) for a proxy URL.
@@ -146,15 +161,24 @@ const dispatcherCache = new Map<string, Dispatcher>();
  */
 export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
   if (dispatcherCache.has(proxyUrl)) {
-    return dispatcherCache.get(proxyUrl)!;
+    // LRU: move to end (most recently used)
+    const cached = dispatcherCache.get(proxyUrl)!;
+    dispatcherCache.delete(proxyUrl);
+    dispatcherCache.set(proxyUrl, cached);
+    return cached;
   }
 
   try {
     let urlStr = proxyUrl.trim();
     let protocol: ProxyEntry['protocol'] = 'http';
 
-    if (urlStr.startsWith('socks5://')) {
+    // Detect protocol (including h-variants for remote DNS resolution)
+    if (urlStr.startsWith('socks5h://')) {
+      protocol = 'socks5'; // socks5h is SOCKS5 with remote DNS
+    } else if (urlStr.startsWith('socks5://')) {
       protocol = 'socks5';
+    } else if (urlStr.startsWith('socks4h://')) {
+      protocol = 'socks4'; // socks4h is SOCKS4 with remote DNS
     } else if (urlStr.startsWith('socks4://')) {
       protocol = 'socks4';
     } else if (urlStr.startsWith('https://')) {
@@ -168,37 +192,33 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
 
     let dispatcher: Dispatcher;
 
-    if (protocol === 'socks5') {
-      // socks-proxy-agent provides a Dispatcher-compatible agent for undici/Bun
-      try {
-        const agent = new SocksProxyAgent(urlStr);
-        dispatcherCache.set(proxyUrl, agent as unknown as Dispatcher);
-        return agent as unknown as Dispatcher;
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        if (process.env.DEBUG === 'true') {
-          console.log(`[ProxyManager] Failed to create SOCKS5 agent for ${proxyUrl}: ${errMsg}`);
-        }
-        return null;
-      }
-    } else if (protocol === 'socks4') {
-      // socks-proxy-agent supports SOCKS4 via socks4:// URLs
+    if (protocol === 'socks5' || protocol === 'socks4') {
+      // socks-proxy-agent supports all variants: socks4://, socks4h://, socks5://, socks5h://
+      // Pass the original URL as-is so the agent handles protocol-specific behavior (e.g. remote DNS for h-variants)
       // Note: SOCKS4 does NOT support username/password authentication.
-      // Warn if credentials are present (they will be silently ignored).
       try {
-        const parsedUrl = new URL(urlStr.replace('socks4://', 'http://'));
-        if (parsedUrl.username || parsedUrl.password) {
-          console.warn('[ProxyManager] SOCKS4 does not support authentication; credentials in URL will be ignored');
+        if (protocol === 'socks4') {
+          const parsedUrl = new URL(urlStr.replace(/^socks4h?:\/\//, 'http://'));
+          if (parsedUrl.username || parsedUrl.password) {
+            console.warn('[ProxyManager] SOCKS4 does not support authentication; credentials in URL will be ignored');
+          }
         }
-      } catch { /* parse error, proceed */ }
-      try {
-        const agent = new SocksProxyAgent(urlStr);
+        const agent = new SocksProxyAgent(proxyUrl.trim());
+        // LRU eviction if at capacity
+        if (dispatcherCache.size >= MAX_DISPATCHER_CACHE) {
+          const oldestKey = dispatcherCache.keys().next().value;
+          if (oldestKey !== undefined) {
+            const old = dispatcherCache.get(oldestKey);
+            try { (old as any)?.close?.(); } catch { /* */ }
+            dispatcherCache.delete(oldestKey);
+          }
+        }
         dispatcherCache.set(proxyUrl, agent as unknown as Dispatcher);
         return agent as unknown as Dispatcher;
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         if (process.env.DEBUG === 'true') {
-          console.log(`[ProxyManager] Failed to create SOCKS4 agent for ${proxyUrl}: ${errMsg}`);
+          console.log(`[ProxyManager] Failed to create SOCKS agent for ${redactProxyCredentials(proxyUrl)}: ${errMsg}`);
         }
         return null;
       }
@@ -207,12 +227,21 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
       dispatcher = new ProxyAgent(urlStr);
     }
 
+    // LRU eviction if at capacity
+    if (dispatcherCache.size >= MAX_DISPATCHER_CACHE) {
+      const oldestKey = dispatcherCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        const old = dispatcherCache.get(oldestKey);
+        try { (old as any)?.close?.(); } catch { /* */ }
+        dispatcherCache.delete(oldestKey);
+      }
+    }
     dispatcherCache.set(proxyUrl, dispatcher);
     return dispatcher;
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     if (process.env.DEBUG === 'true') {
-      console.log(`[ProxyManager] Failed to create dispatcher for ${proxyUrl}: ${errMsg}`);
+      console.log(`[ProxyManager] Failed to create dispatcher for ${redactProxyCredentials(proxyUrl)}: ${errMsg}`);
     }
     return null;
   }
@@ -347,10 +376,7 @@ class ProxyManager {
       if (entry.coolingUntil && now < entry.coolingUntil) continue;
 
       // Skip proxies blocked for this domain
-      if (domain && entry.blockedDomains.has(domain)) continue;
-
-      // Skip SOCKS4 proxies (no compatible dispatcher available for CheerioEngine)
-      if (entry.protocol === 'socks4') continue;
+      if (domain && entry.blockedDomains.has(normalizeDomain(domain))) continue;
 
       candidates.push(entry);
     }
@@ -448,7 +474,7 @@ class ProxyManager {
           if (urlMatch) {
             try {
               extractedDomain = new URL(urlMatch[1]).hostname;
-              extractedDomain = extractedDomain.toLowerCase().replace(/^www\./, '');
+              extractedDomain = normalizeDomain(extractedDomain);
               entry.blockedDomains.add(extractedDomain);
             } catch { /* ignore parse errors */ }
           }
@@ -496,6 +522,7 @@ class ProxyManager {
         totalSuccesses: 0,
         totalFailures: 0,
         successRate: 0,
+        protocolBreakdown: {},
         topProxies: [],
       };
     }
@@ -546,6 +573,12 @@ class ProxyManager {
         };
       })
 
+    // Protocol breakdown
+    const protocolBreakdown: Record<string, number> = {};
+    for (const entry of entries) {
+      protocolBreakdown[entry.protocol] = (protocolBreakdown[entry.protocol] || 0) + 1;
+    }
+
     return {
       totalProxies: entries.length,
       activeProxies: activeCount,
@@ -556,6 +589,7 @@ class ProxyManager {
       totalSuccesses,
       totalFailures,
       successRate: totalRequests > 0 ? Math.round((totalSuccesses / totalRequests) * 100) : 0,
+      protocolBreakdown,
       topProxies: sorted,
     };
   }
@@ -576,7 +610,9 @@ class ProxyManager {
     if (dispatcher) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
+        // SOCKS proxies need extra time for the handshake + potential remote DNS resolution
+        const healthTimeoutMs = (entry.protocol === 'socks4' || entry.protocol === 'socks5') ? 20000 : 15000;
+        const timeout = setTimeout(() => controller.abort(), healthTimeoutMs);
 
         const res = await undiciFetch(testUrl, {
           dispatcher,
@@ -588,6 +624,8 @@ class ProxyManager {
         const responseTime = Date.now() - startTime;
         entry.lastCheck = Date.now();
 
+        // Consume response body to prevent undici connection pool leak (R49#27)
+        await res.body?.cancel().catch(() => {});
         if (res.ok) {
           // Optionally verify the response looks like an IP response
           this.recordSuccess(proxyUrl, responseTime);
@@ -627,6 +665,8 @@ class ProxyManager {
       entry.lastCheck = Date.now();
 
       // Any response means the proxy host is reachable (even auth errors mean it's alive)
+      // Consume body to prevent undici connection pool leak (R49#27)
+      res.body?.cancel().catch(() => {});
       // but we couldn't route traffic through it — record as degraded (not a full success)
       entry.consecutiveFails = 0; // Reset fails since host is alive
       return { healthy: false, responseTime, error: 'Host reachable but through-proxy test failed' };
@@ -726,7 +766,7 @@ class ProxyManager {
 
   // ==================== Import / Export ====================
 
-  /** Export all proxy entries as JSON (without sensitive credential data). */
+  /** Export all proxy entries as JSON (with real credentials for backup/restore roundtrip). */
   exportProxies(): string {
     const entries: Array<{
       url: string;
@@ -742,7 +782,39 @@ class ProxyManager {
     }> = [];
 
     for (const entry of this.pool.values()) {
-      // Redact credentials from URL for export (security)
+      entries.push({
+        url: entry.url,
+        protocol: entry.protocol,
+        host: entry.host,
+        port: entry.port,
+        healthScore: entry.healthScore,
+        successCount: entry.successCount,
+        failCount: entry.failCount,
+        avgResponseTime: entry.avgResponseTime,
+        consecutiveFails: entry.consecutiveFails,
+        blockedDomains: Array.from(entry.blockedDomains),
+      });
+    }
+
+    return JSON.stringify({ version: 1, exportedAt: Date.now(), proxies: entries }, null, 2);
+  }
+
+  /** Export all proxy entries as JSON with redacted credentials (for user-facing display). */
+  exportProxiesPublic(): string {
+    const entries: Array<{
+      url: string;
+      protocol: ProxyEntry['protocol'];
+      host: string;
+      port: number;
+      healthScore: number;
+      successCount: number;
+      failCount: number;
+      avgResponseTime: number;
+      consecutiveFails: number;
+      blockedDomains: string[];
+    }> = [];
+
+    for (const entry of this.pool.values()) {
       const safeUrl = redactProxyCredentials(entry.url);
       entries.push({
         url: safeUrl,
@@ -813,7 +885,7 @@ class ProxyManager {
    * Pass null as proxyUrl to remove the binding.
    */
   setDomainProxy(domain: string, proxyUrl: string | null): void {
-    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const normalisedDomain = normalizeDomain(domain);
 
     if (proxyUrl === null) {
       this.domainBindings.delete(normalisedDomain);
@@ -833,7 +905,7 @@ class ProxyManager {
 
   /** Get the proxy bound to a specific domain, or null if no binding exists. */
   getDomainProxy(domain: string): ProxyEntry | null {
-    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const normalisedDomain = normalizeDomain(domain);
     const cleanUrl = this.domainBindings.get(normalisedDomain);
     if (!cleanUrl) return null;
 
@@ -873,7 +945,7 @@ class ProxyManager {
    * @returns A ProxyEntry, or null if no proxies available
    */
   getDomainProxyWithRotation(domain: string): ProxyEntry | null {
-    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const normalisedDomain = normalizeDomain(domain);
     const now = Date.now();
 
     // Collect active candidates sorted by healthScore (descending)
@@ -882,8 +954,6 @@ class ProxyManager {
         if (entry.disabled) return false;
         if (entry.coolingUntil && now < entry.coolingUntil) return false;
         if (entry.blockedDomains.has(normalisedDomain)) return false;
-        // Skip SOCKS4 proxies (no compatible dispatcher available)
-        if (entry.protocol === 'socks4') return false;
         return true;
       })
       .sort((a, b) => b.healthScore - a.healthScore);
@@ -929,7 +999,7 @@ class ProxyManager {
     // Record the success normally
     this.recordSuccess(proxyUrl, responseTime);
 
-    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const normalisedDomain = normalizeDomain(domain);
     const currentCount = (this.domainRotationCount.get(normalisedDomain) || 0) + 1;
     this.domainRotationCount.set(normalisedDomain, currentCount);
 
@@ -962,7 +1032,7 @@ class ProxyManager {
    * Get the current rotation state for a domain (for monitoring/debugging).
    */
   getDomainRotationState(domain: string): { rotationCount: number; rotationIndex: number; interval: number; topN: number } {
-    const normalisedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const normalisedDomain = normalizeDomain(domain);
     return {
       rotationCount: this.domainRotationCount.get(normalisedDomain) || 0,
       rotationIndex: this.domainRotationIndex.get(normalisedDomain) || 0,
@@ -1056,9 +1126,8 @@ class ProxyManager {
 
     for (const entry of this.pool.values()) {
       if (entry.disabled) continue;
-      if (entry.protocol === 'socks4') continue; // No dispatcher for SOCKS4
       if (entry.coolingUntil && now < entry.coolingUntil) continue;
-      if (domain && entry.blockedDomains.has(domain)) continue;
+      if (domain && entry.blockedDomains.has(normalizeDomain(domain))) continue;
       // Check exclusion against both original URL and clean URL (for authenticated proxies)
       const parsed = parseProxyUrl(entry.url);
       const entryCleanUrl = parsed?.cleanUrl ?? entry.url;

@@ -4,6 +4,7 @@
  */
 
 import * as cheerio from "cheerio";
+import { getCachedCheerio } from "./cheerio-cache";
 import type {
   Selector, Pagination, AntiCrawl, EngineType,
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest, ScrapeContentRequest,
@@ -164,7 +165,7 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
 
     // Find next page URL
     if (pagination) {
-      const $ = cheerio.load(html);
+      const $ = getCachedCheerio(html);
       const nextUrl = findNextPageUrl($, pagination, page, currentUrl);
 
       if (nextUrl) {
@@ -588,6 +589,7 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
     statusCode = response.status;
 
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       throw new Error(`Failed to download cover: HTTP ${response.status}`);
     }
 
@@ -595,14 +597,22 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
     const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
     const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB (novel covers are typically < 500KB)
     if (contentLength > MAX_COVER_SIZE) {
+      await response.body?.cancel().catch(() => {});
       throw new Error(`Cover image too large: Content-Length ${contentLength} bytes (max ${MAX_COVER_SIZE})`);
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    if (arrayBuffer.byteLength > MAX_COVER_SIZE) {
-      throw new Error(`Cover image too large: ${arrayBuffer.byteLength} bytes (max ${MAX_COVER_SIZE})`);
+    // Stream the body with a size limit to prevent OOM on chunked encoding
+    const chunks: Uint8Array[] = [];
+    let totalSize = 0;
+    for await (const chunk of response.body!) {
+      totalSize += chunk.length;
+      if (totalSize > MAX_COVER_SIZE) {
+        chunks.length = 0;
+        throw new Error(`Cover image too large (streamed): exceeded ${MAX_COVER_SIZE} bytes`);
+      }
+      chunks.push(chunk);
     }
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.concat(chunks);
 
     // Use sharp to convert to WebP
     const sharpModule = await import("sharp");

@@ -137,13 +137,31 @@ class CookieJar {
       const cookie = this.parseSetCookie(header, domain);
       if (!cookie) {
         // Could be a deletion cookie (Max-Age=0) - remove existing
-        // Search all domains for the cookie to delete
+        // Parse name and path from header for precise matching
         const eqIdx = header.indexOf('=');
         if (eqIdx > 0) {
           const delName = header.substring(0, eqIdx).trim().replace(/[\r\n\t\x00-\x1f]/g, '');
+          // Extract path from header for matching (defaults to '/' if not specified)
+          let delPath = '/';
+          const parts = header.split(';').map(s => s.trim());
+          for (let i = 1; i < parts.length; i++) {
+            const attr = parts[i].toLowerCase();
+            if (attr.startsWith('path=')) {
+              const raw = parts[i].substring(5).trim();
+              if (raw) delPath = raw;
+              break;
+            }
+          }
+          // Delete all cookies matching name + path under matching domains
           for (const [d, list] of this.cookies) {
-            const idx = list.findIndex(c => c.name === delName && (c.domain === domain || d === domain));
-            if (idx >= 0) { list.splice(idx, 1); break; }
+            if (d === domain || list.some(c => c.domain === domain)) {
+              for (let i = list.length - 1; i >= 0; i--) {
+                const c = list[i];
+                if (c.name === delName && (c.domain === domain || d === domain) && c.path === delPath) {
+                  list.splice(i, 1);
+                }
+              }
+            }
           }
         }
         continue;
@@ -216,7 +234,7 @@ class CookieJar {
     for (const checkDomain of domainsToCheck) {
       const cookies = this.cookies.get(checkDomain);
       if (cookies) {
-        matched.push(...cookies.filter(c => this.isCookieMatch(c, domain, '/')));
+        matched.push(...cookies.filter(c => this.isCookieMatch(c, domain, c.path || '/')));
       }
     }
     this.lastActivity.set(domain, Date.now());

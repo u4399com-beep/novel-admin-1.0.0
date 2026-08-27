@@ -117,9 +117,10 @@ class DomainRateLimiter {
     state.requestTimestamps.push(now);
     state.lastRequestTime = now;
 
-    // Trim to prevent unbounded growth
-    if (state.requestTimestamps.length > MAX_TIMESTAMPS_PER_DOMAIN) {
-      state.requestTimestamps = state.requestTimestamps.slice(-MAX_TIMESTAMPS_PER_DOMAIN);
+    // Trim to prevent unbounded growth (keep enough for configured maxRPM)
+    const maxKeep = Math.max(200, state.maxRPM * 2);
+    if (state.requestTimestamps.length > maxKeep) {
+      state.requestTimestamps = state.requestTimestamps.slice(-maxKeep);
     }
 
     return { allowed: true, waitMs: 0 };
@@ -270,7 +271,7 @@ class DomainRateLimiter {
         burstRemaining: this.config.defaultBurst,
         penaltyActive: false,
         penaltyUntil: 0,
-        lastRequestTime: 0,
+        lastRequestTime: Date.now(),
         consecutiveSuccesses: 0,
       };
       this.domains.set(domain, state);

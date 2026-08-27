@@ -3,8 +3,8 @@
  * Tests proxy connectivity by making a real HTTP request through the proxy
  * to a test endpoint (httpbin.org/ip by default).
  *
- * Supports HTTP, HTTPS, SOCKS5 proxies.
- * SOCKS4 is not supported (no compatible agent available).
+ * Supports HTTP, HTTPS, SOCKS4, SOCKS5 proxies
+ * (including socks4h:// and socks5h:// for remote DNS resolution).
  */
 
 import { getProxyDispatcher } from './proxy-manager';
@@ -51,8 +51,12 @@ export async function testProxyConnection(
   let urlStr = proxyUrl.trim();
   let protocol = 'http';
 
-  if (urlStr.startsWith('socks5://')) {
+  if (urlStr.startsWith('socks5h://')) {
+    protocol = 'socks5'; // socks5h = SOCKS5 with remote DNS
+  } else if (urlStr.startsWith('socks5://')) {
     protocol = 'socks5';
+  } else if (urlStr.startsWith('socks4h://')) {
+    protocol = 'socks4'; // socks4h = SOCKS4 with remote DNS
   } else if (urlStr.startsWith('socks4://')) {
     protocol = 'socks4';
   } else if (urlStr.startsWith('https://')) {
@@ -85,31 +89,17 @@ export async function testProxyConnection(
     };
   }
 
-  // SOCKS4 is not supported
-  if (protocol === 'socks4') {
-    return {
-      url: proxyUrl,
-      protocol,
-      host,
-      port,
-      reachable: false,
-      responseTime: 0,
-      error: 'SOCKS4 not supported',
-      testUrl: resolvedTestUrl,
-      testTimestamp: timestamp,
-    };
-  }
-
   // Get the appropriate dispatcher/agent for the proxy
+  // For SOCKS proxies (socks4/socks4h/socks5/socks5h), use socks-proxy-agent directly
+  // for a fresh test; for HTTP/HTTPS, use the proxy-manager's cached dispatcher
   let dispatcher: Dispatcher | null = null;
 
   try {
-    if (protocol === 'socks5') {
-      // Use socks-proxy-agent directly for SOCKS5
-      const agent = new SocksProxyAgent(urlStr);
+    if (protocol === 'socks5' || protocol === 'socks4') {
+      // socks-proxy-agent handles all SOCKS variants natively
+      const agent = new SocksProxyAgent(proxyUrl.trim());
       dispatcher = agent as unknown as Dispatcher;
     } else {
-      // HTTP/HTTPS: use the proxy-manager's cached dispatcher
       dispatcher = getProxyDispatcher(proxyUrl);
     }
   } catch (err) {

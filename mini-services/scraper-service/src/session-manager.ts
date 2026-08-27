@@ -9,7 +9,7 @@
  *   - Per-domain session pools (up to 3 concurrent sessions per domain)
  */
 
-import type { SessionData } from './types';
+import type { SessionData, SessionFingerprint } from './types';
 import { cookieJar } from './cookie-jar';
 import { getProfileForDomain } from './stealth';
 
@@ -84,6 +84,7 @@ class SessionManager {
     if (bestSession) {
       // Reuse existing session
       bestSession.usageCount++;
+      bestSession.requestCount++;
       bestSession.lastUsedAt = new Date().toISOString();
       if (taskId && !bestSession.taskIds.includes(taskId)) {
         bestSession.taskIds.push(taskId);
@@ -127,7 +128,7 @@ class SessionManager {
       fingerprint = getProfileForDomain(normalizedDomain);
     } catch {
       // Fallback: use a default profile if stealth module fails
-      fingerprint = { userAgent: '', screenWidth: 1920, screenHeight: 1080, colorDepth: 24, pixelRatio: 1, timezone: 'Asia/Shanghai', languages: ['zh-CN', 'en-US'], platform: 'Win32', hardwareConcurrency: 8, deviceMemory: 8 } as any;
+      fingerprint = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36', screenWidth: 1920, screenHeight: 1080, colorDepth: 24, pixelRatio: 1, timezone: 'Asia/Shanghai', languages: ['zh-CN', 'en-US'], platform: 'Win32', hardwareConcurrency: 8, deviceMemory: 8 } as any;
     }
     try {
       cookieHeader = cookieJar.getCookieHeader(normalizedDomain, '/');
@@ -136,11 +137,25 @@ class SessionManager {
       cookieHeader = '';
     }
 
+    const sessionFingerprint: SessionFingerprint = {
+      screenWidth: (fingerprint as any).screenWidth ?? 1920,
+      screenHeight: (fingerprint as any).screenHeight ?? 1080,
+      colorDepth: (fingerprint as any).colorDepth ?? 24,
+      pixelRatio: (fingerprint as any).pixelRatio ?? 1,
+      platform: (fingerprint as any).platform ?? 'Win32',
+      deviceMemory: (fingerprint as any).deviceMemory ?? 8,
+      hardwareConcurrency: (fingerprint as any).hardwareConcurrency ?? 8,
+      timezone: (fingerprint as any).timezone ?? 'Asia/Shanghai',
+      languages: (fingerprint as any).languages ?? ['zh-CN', 'en-US'],
+    };
+
     const session: InternalSession = {
       id: sessionId,
       userAgent: fingerprint.userAgent,
       cookies: cookieHeader ? this.parseCookieString(cookieHeader) : [],
+      fingerprint: sessionFingerprint,
       usageCount: 1,
+      requestCount: 1,
       maxUsage: this.maxSessionUsage,
       createdAt: new Date().toISOString(),
       lastUsedAt: new Date().toISOString(),
@@ -277,6 +292,7 @@ class SessionManager {
             if (sids.length === 0) {
               this.domainSessions.delete(domain);
             }
+            break; // Each sessionId belongs to at most one domain (R49#31)
           }
         }
 
@@ -332,7 +348,10 @@ class SessionManager {
       id: session.id,
       userAgent: session.userAgent,
       cookies: session.cookies,
+      fingerprint: session.fingerprint,
+      proxy: session.proxy,
       usageCount: session.usageCount,
+      requestCount: session.requestCount,
       maxUsage: session.maxUsage,
       createdAt: session.createdAt,
       lastUsedAt: session.lastUsedAt,
