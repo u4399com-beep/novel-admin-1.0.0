@@ -92,6 +92,20 @@ const WEBGL_RENDERERS: Record<string, string[]> = {
   ],
 };
 
+// Linux ANGLE renderers (Chrome/Edge on Linux use ANGLE with OpenGL backend)
+const WEBGL_RENDERERS_LINUX_ANGLE: Record<string, string[]> = {
+  "Google Inc. (NVIDIA)": [
+    "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti OpenGL ES 3.2 NVIDIA 525.147.05, OpenGL)",
+    "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 OpenGL ES 3.2 NVIDIA 535.129.03, OpenGL)",
+  ],
+  "Google Inc. (Intel)": [
+    "ANGLE (Intel, Intel(R) UHD Graphics 630 OpenGL ES 3.2 Mesa 23.2.1, OpenGL)",
+  ],
+  "Google Inc. (AMD)": [
+    "ANGLE (AMD, AMD Radeon RX 580 OpenGL ES 3.2 Mesa 23.2.1, OpenGL)",
+  ],
+};
+
 const SCREEN_RESOLUTIONS: Array<{ w: number; h: number }> = [
   { w: 1920, h: 1080 },
   { w: 1366, h: 768 },
@@ -216,7 +230,11 @@ function pick<T>(arr: readonly T[]): T {
 
 /** Derive navigator.platform from UA string to avoid fingerprint contradictions. */
 function derivePlatformFromUA(ua: string): string {
-  if (/Edg\//.test(ua)) return 'Win32'; // Edge is Windows-only
+  if (/Edg\//.test(ua)) {
+    if (/Macintosh/.test(ua)) return 'MacIntel';
+    if (/Linux/.test(ua)) return 'Linux x86_64';
+    return 'Win32';
+  }
   if (/Firefox\//.test(ua)) {
     if (/Macintosh/.test(ua)) return 'MacIntel';
     if (/Linux/.test(ua)) return 'Linux x86_64';
@@ -274,7 +292,9 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
     const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
     vendor = dPick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS, 1);
   }
-  const uaRenderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
+  const uaRenderers = (isLinux && !isFirefoxUA && WEBGL_RENDERERS_LINUX_ANGLE[vendor])
+    ? WEBGL_RENDERERS_LINUX_ANGLE[vendor]!
+    : (WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!);
   const renderer = dPick(uaRenderers, 2);
 
   const deviceMemory = dPick(DEVICE_MEMORY_OPTIONS, 6);
@@ -329,7 +349,9 @@ export function generateRandomFingerprint(): FingerprintProfile {
     const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
     vendor = pick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS);
   }
-  const uaRenderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
+  const uaRenderers = (isLinux && !isFirefoxUA && WEBGL_RENDERERS_LINUX_ANGLE[vendor])
+    ? WEBGL_RENDERERS_LINUX_ANGLE[vendor]!
+    : (WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!);
   const renderer = pick(uaRenderers);
 
   const baseOffset = -480;
@@ -621,6 +643,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
         Object.defineProperty(mimes, m.type, { get: () => m, configurable: true });
       });
       Object.defineProperty(mimes, 'length', { get: () => mimeInstances.length });
+      Object.defineProperty(mimes, 'item', {
+        value: (i) => mimeInstances[i] || null,
+      });
+      Object.defineProperty(mimes, 'namedItem', {
+        value: (name) => mimeInstances.find(m => m.type === name) || null,
+      });
       return mimes;
     },
     configurable: true,
@@ -643,10 +671,13 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
 
-  Object.defineProperty(navigator, 'deviceMemory', {
-    get: () => ${profile.deviceMemory},
-    configurable: true,
-  });
+  // deviceMemory — Firefox doesn't implement this API
+  if (!_isFirefox) {
+    Object.defineProperty(navigator, 'deviceMemory', {
+      get: () => ${profile.deviceMemory},
+      configurable: true,
+    });
+  }
 
   // Platform
   Object.defineProperty(navigator, 'platform', {
@@ -660,9 +691,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
 
-  // pdfViewerEnabled — Chrome/Edge return true, Firefox returns false
+  // pdfViewerEnabled — all modern browsers have built-in PDF viewers
   try {
-    Object.defineProperty(navigator, 'pdfViewerEnabled', { get: () => !_isFirefox, configurable: true });
+    Object.defineProperty(navigator, 'pdfViewerEnabled', { get: () => true, configurable: true });
   } catch(_e) {}
 
   // Remove other automation indicators
@@ -899,29 +930,30 @@ export function getStealthScript(profile: FingerprintProfile): string {
       // Return a dummy that doesn't gather candidates
       var noop = () => {};
       var _fakeSdp = 'v=0\r\no=- ' + Math.floor(Date.now()/1000) + ' 1 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic: WMS\r\nm=application 9 DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=setup:actpass\r\n';
-      const fakePC = {
-        createOffer: () => Promise.resolve({type: 'offer', sdp: _fakeSdp}),
-        createAnswer: () => Promise.resolve({type: 'answer', sdp: _fakeSdp}),
-        setLocalDescription: () => Promise.resolve(),
-        setRemoteDescription: () => Promise.resolve(),
-        addIceCandidate: () => Promise.resolve(),
-        close: noop,
-        getStats: () => Promise.resolve(new Map()),
-        getSenders: () => [],
-        getReceivers: () => [],
-        getStreams: () => [],
-        addTrack: () => {},
-        removeTrack: noop,
-        addTransceiver: noop,
-        onicecandidate: null,
-        oniceconnectionstatechange: null,
-        ontrack: null,
-        ondatachannel: null,
-        iceGatheringState: 'new',
-        iceConnectionState: 'new',
-        signalingState: 'stable',
-        connectionState: 'new',
-      };
+      const fakePC = Object.create(OrigRTCPC.prototype);
+      Object.defineProperties(fakePC, {
+        createOffer: { value: () => Promise.resolve({type: 'offer', sdp: _fakeSdp}) },
+        createAnswer: { value: () => Promise.resolve({type: 'answer', sdp: _fakeSdp}) },
+        setLocalDescription: { value: () => Promise.resolve() },
+        setRemoteDescription: { value: () => Promise.resolve() },
+        addIceCandidate: { value: () => Promise.resolve() },
+        close: { value: noop },
+        getStats: { value: () => Promise.resolve(new Map()) },
+        getSenders: { value: () => [] },
+        getReceivers: { value: () => [] },
+        getStreams: { value: () => [] },
+        addTrack: { value: () => {} },
+        removeTrack: { value: noop },
+        addTransceiver: { value: noop },
+        onicecandidate: { value: null, writable: true },
+        oniceconnectionstatechange: { value: null, writable: true },
+        ontrack: { value: null, writable: true },
+        ondatachannel: { value: null, writable: true },
+        iceGatheringState: { value: 'new', writable: true },
+        iceConnectionState: { value: 'new', writable: true },
+        signalingState: { value: 'stable', writable: true },
+        connectionState: { value: 'new', writable: true },
+      });
       return fakePC;
     };
     // Preserve static methods
@@ -1378,6 +1410,69 @@ export function getStealthScript(profile: FingerprintProfile): string {
     configurable: true,
   });
 
+  // Rebuild mimeTypes to match the selected plugins from Section 23
+  var _rebuiltMimes = [];
+  var _rebuiltMimeMap = {};
+  for (var _pmi = 0; _pmi < _selPlugins.length; _pmi++) {
+    var _p = _selPlugins[_pmi];
+    if (_p.name.indexOf('PDF') >= 0) {
+      var _mimePdf = Object.create(MimeType.prototype);
+      Object.defineProperties(_mimePdf, {
+        type: { get: function() { return 'application/pdf'; } },
+        suffixes: { get: function() { return 'pdf'; } },
+        description: { get: function() { return 'Portable Document Format'; } },
+        enabledPlugin: { get: function() { return _platPluginInstances[_pmi]; } },
+      });
+      _rebuiltMimes.push(_mimePdf);
+      _rebuiltMimeMap['application/pdf'] = _rebuiltMimes[_rebuiltMimes.length - 1];
+    }
+    if (_p.name.indexOf('Chrome PDF Viewer') >= 0) {
+      var _mimeGcp = Object.create(MimeType.prototype);
+      Object.defineProperties(_mimeGcp, {
+        type: { get: function() { return 'application/x-google-chrome-pdf'; } },
+        suffixes: { get: function() { return 'pdf'; } },
+        description: { get: function() { return 'Portable Document Format'; } },
+        enabledPlugin: { get: function() { return _platPluginInstances[_pmi]; } },
+      });
+      _rebuiltMimes.push(_mimeGcp);
+      _rebuiltMimeMap['application/x-google-chrome-pdf'] = _rebuiltMimes[_rebuiltMimes.length - 1];
+    }
+    if (_p.name.indexOf('Native Client') >= 0) {
+      var _mimeNacl = Object.create(MimeType.prototype);
+      Object.defineProperties(_mimeNacl, {
+        type: { get: function() { return 'application/x-nacl'; } },
+        suffixes: { get: function() { return ''; } },
+        description: { get: function() { return 'Native Client Executable'; } },
+        enabledPlugin: { get: function() { return _platPluginInstances[_pmi]; } },
+      });
+      _rebuiltMimes.push(_mimeNacl);
+      _rebuiltMimeMap['application/x-nacl'] = _rebuiltMimes[_rebuiltMimes.length - 1];
+      var _mimePnacl = Object.create(MimeType.prototype);
+      Object.defineProperties(_mimePnacl, {
+        type: { get: function() { return 'application/x-pnacl'; } },
+        suffixes: { get: function() { return ''; } },
+        description: { get: function() { return 'Portable Native Client Executable'; } },
+        enabledPlugin: { get: function() { return _platPluginInstances[_pmi]; } },
+      });
+      _rebuiltMimes.push(_mimePnacl);
+      _rebuiltMimeMap['application/x-pnacl'] = _rebuiltMimes[_rebuiltMimes.length - 1];
+    }
+  }
+  Object.defineProperty(navigator, 'mimeTypes', {
+    get: function() {
+      var mimes = Object.create(MimeTypeArray.prototype);
+      _rebuiltMimes.forEach(function(m, i) {
+        Object.defineProperty(mimes, i, { get: function() { return m; }, configurable: true });
+        Object.defineProperty(mimes, m.type, { get: function() { return m; }, configurable: true });
+      });
+      Object.defineProperty(mimes, 'length', { get: function() { return _rebuiltMimes.length; } });
+      Object.defineProperty(mimes, 'item', { value: function(i) { return _rebuiltMimes[i] || null; } });
+      Object.defineProperty(mimes, 'namedItem', { value: function(name) { return _rebuiltMimeMap[name] || null; } });
+      return mimes;
+    },
+    configurable: true,
+  });
+
   // ---- 24. Console Detection Evasion ----
   // Override console methods to prevent toString/timing-based devtools detection
 
@@ -1410,8 +1505,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
     // Ensure performance.timing.navigationStart is consistent
     if (performance.timing) {
-      var _tzOffsetMs = PROFILE.timezoneOffset * 60 * 1000;
-      var _navStart = Date.now() - 3000 - Math.abs(_tzOffsetMs);
+      var _navStart = Date.now() - 3000;
       try {
         Object.defineProperty(performance.timing, 'navigationStart', {
           get: function() { return _navStart; },
@@ -1709,7 +1803,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
       this._observedTypes = [];
       this._active = false;
     };
-    window.PerformanceObserver.prototype = {
+    window.PerformanceObserver.prototype = Object.create(_origPerformanceObserver.prototype);
+    Object.assign(window.PerformanceObserver.prototype, {
       observe: function(options) {
         if (options && options.type) {
           this._observedTypes.push(options.type);
@@ -1744,7 +1839,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
         return [];
       },
       supportedEntryTypes: _origPerformanceObserver.supportedEntryTypes || []
-    };
+    });
     // Preserve static methods
     if (_origPerformanceObserver.supportedEntryTypes) {
       window.PerformanceObserver.supportedEntryTypes = _origPerformanceObserver.supportedEntryTypes;
@@ -1785,26 +1880,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(e) {}
 
   // Section 37: outerWidth/outerHeight consistency with viewport
-  // Headless browsers often have outerWidth === innerWidth (no browser chrome)
-  // Real browsers add 85-130px for toolbar/tab bar chrome
+  // NOTE: outerWidth/outerHeight is handled by Section 57 with seeded consistency.
+  // This section is intentionally kept minimal to avoid conflicts.
   (function() {
     try {
-      var chromeWidth = 85 + Math.floor(_seededRandom(3.7) * 50); // 85-134px
-      var chromeHeight = 85 + Math.floor(_seededRandom(5.3) * 60); // 85-144px
-      var origOuterWidth = Object.getOwnPropertyDescriptor(Window.prototype, 'outerWidth');
-      var origOuterHeight = Object.getOwnPropertyDescriptor(Window.prototype, 'outerHeight');
-      if (origOuterWidth) {
-        Object.defineProperty(window, 'outerWidth', {
-          get: function() { return window.innerWidth + chromeWidth; },
-          configurable: true,
-        });
-      }
-      if (origOuterHeight) {
-        Object.defineProperty(window, 'outerHeight', {
-          get: function() { return window.innerHeight + chromeHeight; },
-          configurable: true,
-        });
-      }
+      // Only ensure innerWidth/innerHeight exist (no outer overrides here)
     } catch(e) {}
   })();
 
@@ -1907,7 +1987,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Chrome async loading simulation, and fallback to real voices.
   // This section is kept as a minimal fallback in case Section 51 fails.
   try {
-    if (window.speechSynthesis && !window.speechSynthesis.getVoices._patched) {
+    if (window.speechSynthesis && !window.speechSynthesis._obscuraPatched) {
       var _s42Voices = [
         { name: 'Google US English', lang: 'en-US', localService: true, default: true, voiceURI: 'Google US English' },
       ];
@@ -1917,7 +1997,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
         if (real && real.length > 0) return real;
         return _s42Voices;
       };
-      speechSynthesis.getVoices._patched = true;
+      speechSynthesis._obscuraPatched = true;
     }
   } catch(e) {}
 
@@ -1992,7 +2072,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     if (window.matchMedia) {
       var _origMatchMedia = window.matchMedia;
       var _mediaOverrides = {
-        'prefers-color-scheme: dark': window.matchMedia('(prefers-color-scheme: dark)').matches,
+        'prefers-color-scheme: dark': _seededRandom(46.1) > 0.7,
         'prefers-reduced-motion: reduce': false,
         'prefers-reduced-motion: no-preference': true,
         'display-mode: standalone': false,
@@ -2069,9 +2149,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       var _fakeDownlink = 5 + (_connSeed % 15); // 5-20 Mbps
       var _fakeRTT = 20 + ((_connSeed >> 8) % 80); // 20-100ms
       var _fakeEffectiveType = _fakeDownlink >= 10 ? '4g' : _fakeDownlink >= 4 ? '3g' : '2g';
-      Object.defineProperty(navigator, 'connection', {
-        get: function() {
-          return {
+      var _fakeConnObj = {
             effectiveType: _fakeEffectiveType,
             downlink: _fakeDownlink,
             rtt: _fakeRTT,
@@ -2082,6 +2160,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
             removeEventListener: function() {},
             dispatchEvent: function() { return false; },
           };
+      Object.defineProperty(navigator, 'connection', {
+        get: function() {
+          return _fakeConnObj;
         },
         configurable: true,
       });
@@ -2112,7 +2193,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Headless Chromium often returns an empty array for getVoices().
   // Real browsers always have at least a default voice. We seed 3-6 fake voices.
   try {
-    if (window.speechSynthesis && window.speechSynthesis.getVoices) {
+    if (window.speechSynthesis && window.speechSynthesis.getVoices && !window.speechSynthesis._obscuraPatched) {
       var _origGetVoices = window.speechSynthesis.getVoices.bind(window.speechSynthesis);
       var _voiceSeed = _fakeDeviceSeed * 7.77;
       var _voiceNames, _voiceLangs;
@@ -2144,6 +2225,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
         if (real && real.length > 0) return real;
         return _fakeVoices;
       };
+      window.speechSynthesis._obscuraPatched = true;
     }
   } catch(e) {}
 

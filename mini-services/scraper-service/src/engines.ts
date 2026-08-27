@@ -692,6 +692,9 @@ class CheerioEngine implements ScrapingEngine {
         lastStatusCode = statusCode;
 
         if (!response.ok) {
+          // CRITICAL: Consume/cancel response body before throwing to prevent
+          // undici Agent connection pool leak (unconsumed body pins connection)
+          await response.body?.cancel().catch(() => {});
           // NOTE: proxy failure is recorded by onRetry callback below, NOT here,
           // to avoid double-recording on retry attempts.
           throw new Error(`HTTP ${response.status}: ${response.statusText} for ${url}`);
@@ -716,9 +719,12 @@ class CheerioEngine implements ScrapingEngine {
             try {
               antiCrawlAdvisor.recordDetection(targetDomain, 'captcha', `CAPTCHA ${captchaResult.type}, confidence ${Math.round(captchaResult.confidence * 100)}%`);
             } catch { /* non-critical */ }
-            // Record proxy failure on CAPTCHA
+            // Record proxy failure on CAPTCHA (doNotRetry prevents retryWithBackoff
+            // from calling onRetry, so this is the ONLY recording — no double-count)
             if (proxy) proxyManager.recordFailure(proxy.url, `CAPTCHA ${captchaResult.type} detected`);
-            throw new Error(`CAPTCHA detected (${captchaResult.type}, ${Math.round(captchaResult.confidence * 100)}%) on ${targetDomain}`);
+            const captchaErr = new Error(`CAPTCHA detected (${captchaResult.type}, ${Math.round(captchaResult.confidence * 100)}%) on ${targetDomain}`);
+            (captchaErr as any).doNotRetry = true;
+            throw captchaErr;
           }
         }
 
@@ -951,13 +957,14 @@ class PlaywrightEngine implements ScrapingEngine {
               }
 
               // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
+              // Cover all navigational/sub-document types (iframe/other) in addition to document/xhr/fetch
               if (!routeUrl.startsWith('http://') && !routeUrl.startsWith('https://')) {
-                if (['document', 'xhr', 'fetch'].includes(resourceType)) {
+                if (['document', 'xhr', 'fetch', 'iframe', 'other'].includes(resourceType)) {
                   route.abort();
                   return;
                 }
               }
-              if (['document', 'xhr', 'fetch'].includes(resourceType) && !isSafeUrl(routeUrl)) {
+              if (['document', 'xhr', 'fetch', 'iframe', 'other'].includes(resourceType) && !isSafeUrl(routeUrl)) {
                 route.abort();
                 return;
               }
@@ -995,8 +1002,9 @@ class PlaywrightEngine implements ScrapingEngine {
           const responseStatus = response.status();
 
           // Wait for network idle (give JS time to render content)
-          await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {
-            // networkidle timeout is acceptable, DOM content is enough
+          await page.waitForLoadState("networkidle", { timeout: 10000 }).catch((err) => {
+            // Only swallow timeout errors; re-throw page crashes/navigation errors
+            if (!err.message?.includes('Timeout')) throw err;
           });
 
           // ---- Human behavior simulation or simple scroll fallback ----
@@ -1111,7 +1119,10 @@ class PlaywrightEngine implements ScrapingEngine {
               try {
                 antiCrawlAdvisor.recordDetection(pwDomain, 'captcha', `CAPTCHA ${pwCaptcha.type} detected, confidence ${Math.round(pwCaptcha.confidence * 100)}%`);
               } catch { /* non-critical */ }
-              throw new Error(`CAPTCHA detected (${pwCaptcha.type}, ${Math.round(pwCaptcha.confidence * 100)}%) on ${pwDomain}`);
+              // Mark as doNotRetry — CAPTCHAs are deterministic for same fingerprint/proxy
+              const pwCaptchaErr = new Error(`CAPTCHA detected (${pwCaptcha.type}, ${Math.round(pwCaptcha.confidence * 100)}%) on ${pwDomain}`);
+              (pwCaptchaErr as any).doNotRetry = true;
+              throw pwCaptchaErr;
             }
           }
 
@@ -1157,8 +1168,10 @@ class PlaywrightEngine implements ScrapingEngine {
         } catch (err) {
           // Track error status for outer recordResult
           lastPwStatusCode = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
-          // Record proxy failure for Playwright engine (per-retry is correct for proxy)
-          if (pwProxy) {
+          // Record proxy failure for Playwright engine (per-retry, but NOT for CAPTCHA
+          // since CAPTCHA is a site-level detection, not a proxy issue)
+          const isCaptchaErr = err instanceof Error && err.message.startsWith('CAPTCHA detected');
+          if (pwProxy && !isCaptchaErr) {
             proxyManager.recordFailure(pwProxy.url, err instanceof Error ? err.message : String(err));
           }
           // NOTE: rateLimiter.recordResult is called OUTSIDE retryWithBackoff (below)
@@ -1177,9 +1190,9 @@ class PlaywrightEngine implements ScrapingEngine {
         baseDelay: 2000,
         maxDelay: 20000,
         signal: options?.signal,
-        onRetry: pwProxy ? (_attempt, err) => {
-          proxyManager.recordFailure(pwProxy.url, err.message);
-        } : undefined,
+        // No onRetry callback — proxy failure is recorded per-attempt in the catch block above.
+        // Using onRetry would cause double-recording (catch + onRetry) for each failed retry.
+        onRetry: undefined,
       }
     ).then(result => {
       // Record final success (single record for the logical request)
@@ -1297,7 +1310,11 @@ class FirecrawlEngine implements ScrapingEngine {
           statusCode: response.status,
         };
         } catch (err) {
-          firecrawlBreaker.recordFailure();
+          // Don't record circuit breaker failure for doNotRetry errors (e.g., size limits)
+          // — the service worked, only the content was too large
+          if (!(err instanceof Error && (err as any).doNotRetry)) {
+            firecrawlBreaker.recordFailure();
+          }
           throw err;
         }
       },
@@ -1475,7 +1492,9 @@ class AgentQLEngine implements ScrapingEngine {
           statusCode: response.status,
         };
         } catch (err) {
-          agentqlBreaker.recordFailure();
+          if (!(err instanceof Error && (err as any).doNotRetry)) {
+            agentqlBreaker.recordFailure();
+          }
           throw err;
         }
       },
@@ -1656,6 +1675,13 @@ class CloudBrowserEngine implements ScrapingEngine {
             html = "";
           }
 
+          // Check size of ACTUAL html (the data.html check above only covers one code path)
+          if (html.length > MAX_RESPONSE_SIZE) {
+            const blSizeErr2 = new Error(`Browserless response too large: ${html.length} bytes (max 10MB)`);
+            (blSizeErr2 as any).doNotRetry = true;
+            throw blSizeErr2;
+          }
+
           statusCode = response.status;
         }
 
@@ -1672,7 +1698,9 @@ class CloudBrowserEngine implements ScrapingEngine {
           statusCode,
         };
         } catch (err) {
-          cloudBrowserBreaker.recordFailure();
+          if (!(err instanceof Error && (err as any).doNotRetry)) {
+            cloudBrowserBreaker.recordFailure();
+          }
           throw err;
         }
       },
@@ -1760,7 +1788,9 @@ class ScraplingEngine implements ScrapingEngine {
             statusCode: data.status_code || 200,
           };
         } catch (scraplingErr) {
-          scraplingBreaker.recordFailure();
+          if (!(scraplingErr instanceof Error && (scraplingErr as any).doNotRetry)) {
+            scraplingBreaker.recordFailure();
+          }
           throw scraplingErr;
         }
       },
@@ -2509,6 +2539,12 @@ export async function fetchWithInfiniteScroll(
     }
 
     const html = await page.content();
+
+    // Size check for infinite scroll (can grow well beyond 10MB after multiple scrolls)
+    if (html.length > MAX_RESPONSE_SIZE) {
+      throw new Error(`InfiniteScroll page content too large: ${html.length} bytes (max 10MB)`);
+    }
+
     const finalUrl = page.url();
 
     // Record referrer chain + rate limit result

@@ -434,7 +434,9 @@ export function getSpoofedReferer(targetUrl: string, siteType?: string): string 
     // For remaining URLs: always provide at least a search engine referer
     // (previously 20% — increased to 100% to eliminate Referer-less requests)
     const engine = SEARCH_ENGINE_REFERERS[Math.floor(Math.random() * SEARCH_ENGINE_REFERERS.length)];
-    const query = NOVEL_SEARCH_QUERIES[Math.floor(Math.random() * NOVEL_SEARCH_QUERIES.length)];
+    // Use novel queries for novel sites, generic queries for others (consistency)
+    const queryPool = siteType === "novel" ? NOVEL_SEARCH_QUERIES : GENERIC_SEARCH_QUERIES;
+    const query = queryPool[Math.floor(Math.random() * queryPool.length)];
     return `${engine}${encodeURIComponent(query)}`;
   } catch {
     return undefined;
@@ -768,15 +770,16 @@ export async function retryWithBackoff<T>(
       // Abort-aware delay: if signal fires during backoff, stop waiting immediately
       if (opts.signal) {
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, delay);
+          const timer = setTimeout(() => {
+            // Clean up abort listener when timer fires normally
+            opts.signal!.removeEventListener('abort', onAbort);
+            resolve();
+          }, delay);
           const onAbort = () => {
             clearTimeout(timer);
-            opts.signal!.removeEventListener('abort', onAbort);
             reject(new DOMException('Retry aborted', 'AbortError'));
           };
           opts.signal!.addEventListener('abort', onAbort, { once: true });
-          // { once: true } auto-removes on abort; explicit removeEventListener is defensive.
-          // When timer fires normally, the listener is GC'd with the promise.
         });
       } else {
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -1154,6 +1157,9 @@ export async function followRedirects(
     onHopResponse?.(response, currentUrl, hop);
 
     if (response.status >= 300 && response.status < 400 && hop < maxRedirects) {
+      // CRITICAL: Cancel redirect response body to prevent undici connection pool leak
+      // (each redirect hop would otherwise pin a connection until keepAliveMaxTimeout)
+      await response.body?.cancel().catch(() => {});
       const location = response.headers.get("location");
       if (!location) break;
 

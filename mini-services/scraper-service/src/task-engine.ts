@@ -237,6 +237,8 @@ async function addTaskLog(
       await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs });
     } catch (err) {
       console.error(`[Task] Failed to flush ${logs.length} logs:`, err);
+      // Put logs back at the front of the buffer for retry (same as periodic flusher)
+      buffer.unshift(...logs);
     }
   }
 
@@ -283,17 +285,26 @@ function ensureLogFlusher() {
 }
 
 // Flush remaining logs for a task (call before task completes)
+// Uses splice(0) to atomically drain (same as periodic flusher) to prevent
+// race conditions where periodic flusher sends same logs concurrently.
 async function flushTaskLogs(taskId: string) {
   const logs = logBuffer.get(taskId);
   if (!logs || logs.length === 0) return;
-  // Copy logs before attempting send; only delete on success
-  const batch = [...logs];
+  // Atomically drain the buffer before the async call
+  const batch = logs.splice(0);
+  // Clear entry immediately to prevent periodic flusher from picking up stale data
+  logBuffer.delete(taskId);
   try {
     await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs: batch });
-    logBuffer.delete(taskId);
   } catch (err) {
     console.error(`[Task] Failed to final-flush logs for ${taskId}:`, err);
-    // Logs remain in buffer — periodic flusher will retry
+    // Re-insert for periodic retry
+    const existing = logBuffer.get(taskId);
+    if (existing) {
+      existing.unshift(...batch);
+    } else {
+      logBuffer.set(taskId, batch);
+    }
   }
 }
 
@@ -427,16 +438,22 @@ export async function executeTask(taskId: string) {
     }
 
     return taskResult;
+  } catch (err) {
+    // Mark task as failed in DB so UI doesn't show it as stuck "running"
+    try {
+      await apiCall("PUT", `/api/scrape-tasks/${taskId}`, {
+        status: "failed",
+        errorMessage: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+        completedAt: new Date().toISOString(),
+      });
+    } catch { /* best-effort */ }
+    throw err;
   } finally {
     clearInterval(heartbeatInterval);
     clearTimeout(taskTimeoutId);
-    // Flush logs BEFORE cleaning up buffer (flushTaskLogs manages its own cleanup)
-    // Only delete buffer entry if flush succeeded (logs remain for periodic retry on failure)
-    const flushOk = await flushTaskLogs(taskId).then(() => true).catch(() => false);
+    // Flush logs (flushTaskLogs now atomically drains + deletes the entry)
+    await flushTaskLogs(taskId).catch(() => {});
     progressThrottle.delete(taskId);
-    if (flushOk) {
-      logBuffer.delete(taskId);
-    }
   }
 }
 
@@ -725,6 +742,7 @@ async function executeTaskBody(
                 _domainEngineTypes.set(bkDomain, strategyResult.nextEngine);
                 _touchedDomains.add(bkDomain);
                 ctx.engineType = strategyResult.nextEngine;
+                engineType = strategyResult.nextEngine; // keep local in sync
                 setTimeout(() => _engineUpgradeLock.delete(bkDomain), 5000);
               }
             }
@@ -1011,6 +1029,7 @@ async function executeTaskBody(
                     _domainEngineTypes.set(chDomain, strategyResult.nextEngine);
                     _touchedDomains.add(chDomain);
                     ctx.engineType = strategyResult.nextEngine;
+                    engineType = strategyResult.nextEngine; // keep local in sync
                     setTimeout(() => _engineUpgradeLock.delete(chDomain), 5000);
                   }
                 }
