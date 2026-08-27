@@ -284,12 +284,11 @@ function xpathToCss(xpath: string): XPathResult {
   if (attrMatch) {
     attrName = attrMatch[1];
     css = css.replace(/\/@(\w+)$/, "");
-  } else {
-    const bracketAttr = css.match(/\[@(\w+)(?:=['"]([^'"]*)['"])?\]$/);
-    if (bracketAttr && !bracketAttr[2]) {
-      attrName = bracketAttr[1];
-    }
   }
+  // NOTE: XPath existence predicates like [@attr] (no value) are NOT attribute
+  // extraction — they mean "element has this attribute". The correct attribute
+  // extraction syntax is /@attr (handled above). Do NOT treat [@attr] as extraction.
+
 
   // Remove text() selections
   css = css.replace(/\/text\(\)/g, "");
@@ -362,7 +361,9 @@ export function parseSelector(html: string, selector: Selector): string {
     // Skip extracting text from script/style/noscript/template tags
     if (isExcludedTag(el[0]!)) return "";
 
-    return el.attr("href") || el.attr("src") || el.text().trim();
+    const text = el.text().trim();
+    if (text) return text;
+    return el.attr("href") || el.attr("src") || "";
   }
 
   // CSS selector (default)
@@ -687,10 +688,22 @@ export function extractMetadataFallback(html: string): Partial<{
   // Build result with priority: OG > JSON-LD > standard meta
   if (ogTitle) result.title = ogTitle;
   else if (jsonLdData?.name) result.title = String(jsonLdData.name);
-  else if (metaDesc && metaDesc.length < 100) result.title = metaDesc;
+  else {
+    const titleTag = $('title').first().text().trim();
+    if (titleTag) result.title = titleTag;
+  }
 
   if (ogAuthor) result.author = ogAuthor;
-  else if (jsonLdData?.author) result.author = typeof jsonLdData.author === 'string' ? jsonLdData.author : JSON.stringify(jsonLdData.author);
+  else if (jsonLdData?.author) {
+    if (typeof jsonLdData.author === 'string') {
+      result.author = jsonLdData.author;
+    } else {
+      // Person object or array of Person objects
+      const authors = Array.isArray(jsonLdData.author) ? jsonLdData.author : [jsonLdData.author];
+      const names = authors.map((a: any) => a?.name || '').filter(Boolean);
+      result.author = names.join(', ');
+    }
+  }
   else if (metaAuthor) result.author = metaAuthor;
 
   if (ogDesc) result.description = ogDesc;
@@ -698,7 +711,10 @@ export function extractMetadataFallback(html: string): Partial<{
   else if (metaDesc) result.description = metaDesc;
 
   if (ogImage) result.cover = ogImage;
-  else if (jsonLdData?.image) result.cover = typeof jsonLdData.image === 'string' ? jsonLdData.image : '';
+  else if (jsonLdData?.image) {
+    const img = Array.isArray(jsonLdData.image) ? jsonLdData.image[0] : jsonLdData.image;
+    result.cover = typeof img === 'string' ? img : (img as any)?.url || '';
+  }
 
   if (ogCategory) result.category = ogCategory;
   if (metaKeywords) result.keywords = metaKeywords;

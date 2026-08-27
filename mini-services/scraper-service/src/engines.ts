@@ -797,7 +797,8 @@ async function getPlaywrightBrowser(): Promise<import("playwright").Browser> {
       playwrightBrowser = await playwrightLaunchPromise;
       if (playwrightBrowser?.isConnected()) return playwrightBrowser;
     } catch {
-      // Launch failed, will try again below
+      // Launch failed, clear stale promise before retry
+      playwrightLaunchPromise = null;
     }
   }
 
@@ -1872,7 +1873,8 @@ class ObscuraEngine implements ScrapingEngine {
         this.browser = await this.launchPromise;
         if (this.browser?.isConnected()) return this.browser;
       } catch {
-        // Launch failed, retry below
+        // Launch failed, clear stale promise before retry
+        this.launchPromise = null;
       }
     }
 

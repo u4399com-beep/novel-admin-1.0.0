@@ -184,10 +184,10 @@ class DomainRateLimiter {
     // Check penalty
     const penaltyActive = state.penaltyActive && now < state.penaltyUntil;
 
-    // Calculate effective max RPM accounting for penalty multiplier
-    const effectiveMaxRPM = penaltyActive
-      ? Math.max(1, Math.floor(state.maxRPM * this.config.penaltyMultiplier))
-      : state.maxRPM;
+    // effectiveMaxRPM — state.maxRPM already reflects any penalty applied in recordResult(),
+    // so we use it directly. Previously this double-applied penaltyMultiplier, reporting
+    // RPM at 25% of actual.
+    const effectiveMaxRPM = state.maxRPM;
 
     // Determine status
     let status: DomainRateState['status'] = 'normal';

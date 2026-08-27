@@ -203,7 +203,7 @@ const WATERMARK_PATTERNS = [
   // "扫码关注" full line
   /^\s*扫码关注[^\n]*$/gm,
   // "微信" ad lines (short lines mentioning wechat)
-  /^\s*微信[^\n]{0,20}$/gm,
+  /^\s*微信(?:公众号|扫码|关注|搜索|搜一搜)[^\n]{0,20}$/gm,
   // Single-word or very short non-content lines (likely remnants)
   /^\s*[，,。.！!？?、；;：:]+\s*$/gm,
   // ==================== NEW: Additional watermark patterns ====================
@@ -218,7 +218,7 @@ const WATERMARK_PATTERNS = [
   // "page X of Y" English page indicators
   /^\s*page\s+\d+\s+of\s+\d+\s*$/gim,
   // "本章未完，点击下一页" single line variant
-  /^\s*本章未完[^\n]*$/gm,
+  /^\s*本章未完[，,].*?(?:点击|翻页|下一页|继续)[^\n]*$/gm,
   // "XXX手机版" or "XXX手机端" branding lines
   /^\s*[^\n]{2,20}手机(?:版|端)\s*$/gm,
   // Copyright / legal boilerplate
@@ -230,7 +230,7 @@ const WATERMARK_PATTERNS = [
   // "首发于xxx" / "首发网站xxx"
   /首发(?:于|网站|域名)[^\n]{3,60}/gi,
   // "请记住xxx" / "记住xxx" standalone reminder lines
-   /^\s*请记住[^\n]{0,50}$/gm,
+  /^\s*请记住(?:本站|最新|网址|域名|地址)[^\n]{0,50}$/gm,
   // "XXX小说" branding lines (very short, likely ads)
    /^\s*[\w.]+小说[^\n]{0,10}$/gm,
   // "XXX阅读" branding lines
@@ -250,8 +250,8 @@ const WATERMARK_PATTERNS = [
   /^\s*请牢记[^\n]{0,50}$/gm,
   // "首发于" standalone lines
   /^\s*首发于[^\n]{0,40}$/gm,
-  // Single character repeated 3+ times (e.g. "......", "---", "===")
-  /^\s*(.)\1{2,}\s*$/gm,
+  // Single character repeated 3+ times (e.g. "......", "---", "==="), excluding ellipses
+  /^\s*([^\u2026.。])\1{2,}\s*$/gm,
   // "正在手打中" / "手打全文" type lines
   /^\s*正在手打[^\n]{0,20}$/gm,
   /^\s*手机端.*?阅读[^\n]{0,20}$/gm,
@@ -390,11 +390,9 @@ export function cleanHtml(html: string, config: CleanRequest["config"]): string 
   // Build combined ad pattern list
   const adPatterns = normalizePatterns(config.adPatterns);
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];
+  allAdPatterns.push(...NOVEL_AD_PATTERNS);
   if (adPatterns.length > 0) {
     allAdPatterns.push(...adPatterns);
-  } else {
-    // When no custom patterns are configured, include novel-specific ad patterns
-    allAdPatterns.push(...NOVEL_AD_PATTERNS);
   }
   const removePatterns = normalizePatterns(config.removePatterns);
 
@@ -443,11 +441,9 @@ export function cleanHtmlRaw(html: string, config: CleanRequest["config"]): stri
 export function cleanText(text: string, config: CleanRequest["config"]): string {
   const adPatterns = normalizePatterns(config.adPatterns);
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];
+  allAdPatterns.push(...NOVEL_AD_PATTERNS);
   if (adPatterns.length > 0) {
     allAdPatterns.push(...adPatterns);
-  } else {
-    // When no custom patterns are configured, include novel-specific ad patterns
-    allAdPatterns.push(...NOVEL_AD_PATTERNS);
   }
   const removePatterns = normalizePatterns(config.removePatterns);
 
@@ -765,10 +761,9 @@ export function cleanHtmlPreserveParagraphs(html: string, config: CleanRequest["
   // Step 3: Build combined ad pattern list
   const adPatterns = normalizePatterns(config.adPatterns);
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];
+  allAdPatterns.push(...NOVEL_AD_PATTERNS);
   if (adPatterns.length > 0) {
     allAdPatterns.push(...adPatterns);
-  } else {
-    allAdPatterns.push(...NOVEL_AD_PATTERNS);
   }
   const removePatterns = normalizePatterns(config.removePatterns);
 
@@ -954,6 +949,10 @@ export function handleClean(body: CleanRequest) {
   const content = cleanHtmlPreserveParagraphs(html, config);
   return {
     content,
-    wordCount: content.replace(/\s+/g, '').length,
+    wordCount: (() => {
+      const cjk = (content.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g) || []).length;
+      const english = (content.match(/[a-zA-Z]+/g) || []).length;
+      return cjk + english;
+    })(),
   };
 }

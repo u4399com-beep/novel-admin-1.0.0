@@ -315,9 +315,12 @@ class CookieJar {
         // Normalize domain and path before storing
         cookie.domain = (cookie.domain || '').toLowerCase().replace(/^\./, '');
         cookie.path = cookie.path || '/';
+        // Strip control characters to prevent HTTP header injection
+        cookie.name = (cookie.name || '').replace(/[\r\n\t\x00-\x1f]/g, '');
+        if (!cookie.name) continue; // Skip if name became empty after stripping
         // Ensure value is a string (defend against malformed imports)
         if (cookie.value !== undefined && cookie.value !== null) {
-          cookie.value = String(cookie.value);
+          cookie.value = String(cookie.value).replace(/[\r\n\t\x00-\x1f]/g, '');
         } else {
           cookie.value = '';
         }
@@ -375,6 +378,9 @@ class CookieJar {
         }
       }
     }
+
+    // Persist expired cookie deletions to SQLite (otherwise they reappear on restart)
+    try { cookieStore.deleteExpired(); } catch { /* ignore */ }
 
     return removed;
   }

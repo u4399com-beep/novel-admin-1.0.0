@@ -2,7 +2,7 @@
  * Shared Regex Safety Utilities
  * Prevents Regular Expression Denial of Service (ReDoS) attacks via:
  *   1. Static dangerous-pattern detection (nested/overlapping quantifiers)
- *   2. Text length truncation (500K char limit)
+ *   2. Text length truncation for match operations (500K char limit)
  *   3. V8 engine's built-in regex execution limit as runtime backstop
  */
 
@@ -46,13 +46,11 @@ export function safeRegexReplace(text: string, pattern: string, replacement: str
   if (isDangerousRegex(pattern)) return text;
   try {
     const regex = new RegExp(pattern, flags);
-    // Truncate excessively large text to prevent ReDoS on replace path
-    // (safeRegexMatch does this but safeRegexReplace did not)
-    const searchIn = text.length > MAX_TEXT_LENGTH ? text.substring(0, MAX_TEXT_LENGTH) : text;
-    // V8's built-in regex execution limit serves as a runtime backstop.
-    const result = searchIn.replace(regex, replacement);
-    // Preserve any text beyond the truncation point
-    return text.length > MAX_TEXT_LENGTH ? result + text.substring(MAX_TEXT_LENGTH) : result;
+    // CRITICAL FIX: Do NOT truncate text for replace — V8's built-in regex
+    // execution limit is the runtime backstop. Truncation was causing the tail
+    // of long content (beyond 500K chars) to bypass ALL user-specified ad-pattern
+    // cleaning, leaving ads/watermarks intact.
+    return text.replace(regex, replacement);
   } catch {
     return text;
   }

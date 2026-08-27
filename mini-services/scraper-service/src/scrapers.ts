@@ -293,6 +293,7 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
   const keywords = selectors.keywords ? parseSelector(html, selectors.keywords) : "";
   const description = selectors.description ? parseSelector(html, selectors.description) : "";
   let coverUrl = selectors.cover ? parseSelector(html, selectors.cover) : "";
+  if (coverUrl) coverUrl = resolveUrl(url, coverUrl);
   const status = selectors.status ? parseSelector(html, selectors.status) : "";
 
   // OG/JSON-LD metadata fallback for fields that returned empty
@@ -483,7 +484,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
 
 // ==================== Download Cover ====================
 
-export async function handleDownloadCover(url: string, savePath: string): Promise<{
+export async function handleDownloadCover(url: string, savePath: string, signal?: AbortSignal): Promise<{
   success: boolean;
   path: string;
   size: number;
@@ -575,7 +576,9 @@ export async function handleDownloadCover(url: string, savePath: string): Promis
       makeRequest: (fetchUrl) =>
         fetch(fetchUrl, {
           headers,
-          signal: AbortSignal.timeout(30000),
+          signal: signal
+            ? (signal.aborted ? signal : AbortSignal.any([signal, AbortSignal.timeout(30000)]))
+            : AbortSignal.timeout(30000),
           redirect: "manual",
           // @ts-expect-error - Bun supports dispatcher option for proxy
           dispatcher: dispatcher || undefined,
