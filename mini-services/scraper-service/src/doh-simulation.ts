@@ -1,15 +1,18 @@
 /**
- * DNS-over-HTTPS (DoH) Simulation
+ * DNS-over-HTTPS (DoH) — Real Resolution with Simulation Fallback
  *
- * Some anti-bot systems detect direct (non-DoH) DNS queries or attempt to
- * correlate DNS resolution with HTTP requests. This module simulates DoH
- * behavior by maintaining a small DNS cache and generating synthetic
- * X-Forwarded-For headers from the same /24 subnet as cached DNS results.
+ * Attempts real DoH resolution via AliDNS → Cloudflare → Google.
+ * Falls back to simulation when DoH is unavailable (network error, timeout).
  *
- * This makes each request appear to come from a different IP within the
- * same subnet, mimicking the behavior of a DoH resolver that may route
- * through different exit nodes.
+ * When real DoH succeeds, the resolved IPs are stored in the simulation cache
+ * so getForwardedFor() can derive XFF IPs from the same /24 subnets.
+ * When real DoH fails, the existing random-IP simulation is used.
+ *
+ * This module is the single import point for all DoH-related functionality.
+ * Existing code importing from here gets real DoH transparently.
  */
+
+import { resolveDoH, clearDoHCache as clearRealDoHCache } from './doh-resolver';
 
 const MAX_CACHE_SIZE = 100;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -17,6 +20,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 interface DnsCacheEntry {
   ips: string[];
   createdAt: number;
+  real: boolean; // true if IPs came from real DoH resolution
 }
 
 const dnsCache = new Map<string, DnsCacheEntry>();
@@ -51,16 +55,27 @@ function randByte(): number {
 }
 
 /**
- * Resolve (simulate) a domain to a set of IPs.
- * Returns cached IPs if available and not expired, otherwise generates new ones.
+ * Resolve a domain to a set of IPs.
+ * Tries real DoH first (fire-and-forget to populate cache),
+ * returns cached/simulated IPs synchronously for immediate use.
+ *
+ * When real DoH results arrive, they replace the simulated IPs in cache.
  */
 function resolveDomain(domain: string): string[] {
   const now = Date.now();
   const cached = dnsCache.get(domain);
 
   if (cached && (now - cached.createdAt) < CACHE_TTL_MS) {
+    // Cache hit — if these are simulated IPs and real DoH hasn't been tried yet,
+    // kick off a background DoH query to replace them for next call
+    if (!cached.real) {
+      tryRealDoH(domain).catch(() => {}); // fire-and-forget
+    }
     return cached.ips;
   }
+
+  // No cache or expired — try real DoH in background, return simulated IPs now
+  tryRealDoH(domain).catch(() => {});
 
   // Generate 2-4 IPs for this domain (simulating DNS round-robin)
   const count = 2 + Math.floor(Math.random() * 3);
@@ -71,7 +86,6 @@ function resolveDomain(domain: string): string[] {
 
   // Evict if cache is full
   if (dnsCache.size >= MAX_CACHE_SIZE && !dnsCache.has(domain)) {
-    // Evict oldest entry
     let oldestKey = '';
     let oldestTime = Infinity;
     for (const [key, entry] of dnsCache) {
@@ -85,8 +99,25 @@ function resolveDomain(domain: string): string[] {
     }
   }
 
-  dnsCache.set(domain, { ips, createdAt: now });
+  dnsCache.set(domain, { ips, createdAt: now, real: false });
   return ips;
+}
+
+/**
+ * Attempt real DoH resolution and update the simulation cache with real IPs.
+ * This runs asynchronously — callers get simulated IPs immediately via resolveDomain().
+ */
+async function tryRealDoH(domain: string): Promise<void> {
+  try {
+    const realIps = await resolveDoH(domain, 'A');
+    if (realIps.length > 0) {
+      // Replace simulated IPs with real resolved IPs in the cache
+      const now = Date.now();
+      dnsCache.set(domain, { ips: realIps, createdAt: now, real: true });
+    }
+  } catch {
+    // Real DoH failed — simulation cache remains in place
+  }
 }
 
 /**
@@ -154,9 +185,10 @@ export function getDohCacheSize(): number {
 }
 
 /**
- * Clear the DNS cache (for testing).
+ * Clear all DNS caches — both simulation and real DoH.
  */
 export function clearDohCache(): void {
   dnsCache.clear();
   xffCache.clear();
+  clearRealDoHCache();
 }

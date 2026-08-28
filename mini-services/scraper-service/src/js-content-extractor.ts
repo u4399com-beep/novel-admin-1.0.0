@@ -19,6 +19,10 @@
  *  11. `var arr = [code1, code2, ...]` (charCode loop arrays)
  *  12. `window.chapterContent = [...]` (paragraph arrays)
  *  13. `var x = atob('base64...')` (standalone base64)
+ *  14. `window.__NUXT__` / `__INITIAL_STATE__` / `__NEXT_DATA__` / `__APP_DATA__` (framework SSR state)
+ *  15. `<script type="application/json">` tags (structured data)
+ *  16. `window.chapterContent`, `window.novelData`, `window.bookData` (global data objects)
+ *  17. Lazy-loaded content via `data-src`, `data-lazy-src`, `data-original` attribute swapping
  *
  * Usage: In CheerioEngine, after getting empty/no content from normal extraction,
  * call `extractJsContent(html)` to try JS pattern extraction.
@@ -309,6 +313,276 @@ function extractScriptContents(html: string): string {
   return parts.join('\n');
 }
 
+// ==================== Framework State Extraction ====================
+
+/**
+ * Known window globals that SSR frameworks inject for hydration.
+ * Each entry maps the global variable name to an array of JSON paths
+ * (dot-separated) to try when searching for content fields.
+ */
+const FRAMEWORK_STATE_VARIABLES: Array<{
+  globalName: string;
+  contentPaths: string[];
+}> = [
+  {
+    globalName: "__NUXT__",
+    contentPaths: [
+      "data.0.content", "data.0.text", "data.0.body", "data.0.chapterContent",
+      "data.0.article", "data.0.html", "data.0.description",
+    ],
+  },
+  {
+    globalName: "__INITIAL_STATE__",
+    contentPaths: [
+      "content", "chapterContent", "text", "body", "article",
+      "novel.content", "chapter.content", "book.content",
+      "data.content", "data.text", "data.chapterContent",
+    ],
+  },
+  {
+    globalName: "__NEXT_DATA__",
+    contentPaths: [
+      "props.pageProps.content", "props.pageProps.chapterContent",
+      "props.pageProps.text", "props.pageProps.body", "props.pageProps.article",
+      "props.pageProps.novel.content", "props.pageProps.chapter.content",
+      "props.pageProps.book.content", "props.pageProps.html",
+    ],
+  },
+  {
+    globalName: "__APP_DATA__",
+    contentPaths: [
+      "content", "chapterContent", "text", "body", "article",
+      "data.content", "data.text", "novel.content", "chapter.content",
+    ],
+  },
+];
+
+/**
+ * Recursively resolve a dot-separated path on a JSON object.
+ * Returns the value if found, undefined otherwise.
+ */
+function resolveJsonPath(obj: unknown, path: string): unknown {
+  const parts = path.split(".");
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
+ * Try to extract a meaningful string from a resolved JSON value.
+ * Handles: string, array of strings, object with content/text fields.
+ */
+function extractStringFromValue(val: unknown): string | null {
+  if (typeof val === "string" && val.length >= MIN_CONTENT_LENGTH) return val;
+  if (Array.isArray(val)) {
+    // Join string array elements
+    const strings = val.filter((v): v is string => typeof v === "string" && v.length > 2);
+    if (strings.length >= 2) return strings.join("\n");
+  }
+  if (typeof val === "object" && val !== null) {
+    // Try nested content fields
+    const rec = val as Record<string, unknown>;
+    for (const key of ["content", "text", "body", "html", "chapterContent"]) {
+      const nested = extractStringFromValue(rec[key]);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract content from framework SSR state variables (__NUXT__, __INITIAL_STATE__, etc.).
+ * Searches for the global variable assignment in script tags, parses the JSON,
+ * and walks known content paths.
+ *
+ * @param scriptContents - Pre-extracted script tag contents
+ * @returns Extracted content string or null
+ */
+function extractFrameworkStateContent(scriptContents: string): string | null {
+  for (const { globalName, contentPaths } of FRAMEWORK_STATE_VARIABLES) {
+    // Match: window.__NUXT__ = {...} or __NUXT__ = {...} or var __NUXT__ = {...}
+    const escaped = globalName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(
+      `(?:window\\.|var\\s+|let\\s+|const\\s+)?${escaped}\\s*=\\s*([\\s\\S]{10,}?)\\s*(?:;|<\\/script|$)`,
+      "i"
+    );
+    const match = re.exec(scriptContents);
+    if (!match) continue;
+
+    let jsonStr = match[1].trim();
+    // Remove trailing semicolons or whitespace
+    jsonStr = jsonStr.replace(/;\s*$/, "");
+
+    try {
+      const parsed = JSON.parse(jsonStr);
+      for (const path of contentPaths) {
+        const val = resolveJsonPath(parsed, path);
+        const content = extractStringFromValue(val);
+        if (content && isLikelyNovelContent(content)) return content;
+      }
+    } catch {
+      // Not valid JSON, skip
+    }
+  }
+  return null;
+}
+
+// ==================== JSON API Response / Script Tag Extraction ====================
+
+/**
+ * Known global variable names that novel sites use to embed content data.
+ */
+const NOVEL_GLOBAL_VARIABLES = [
+  "chapterContent", "novelData", "bookData", "contentData",
+  "chapterData", "pageData", "articleData", "postData",
+];
+
+/**
+ * Extract content from <script type="application/json"> tags and known global
+ * variable assignments (window.chapterContent, window.novelData, etc.).
+ *
+ * @param html - The full HTML source
+ * @param scriptContents - Pre-extracted script tag contents
+ * @returns Extracted content string or null
+ */
+function extractJsonApiContent(html: string, scriptContents: string): string | null {
+  // Strategy 1: <script type="application/json"> tags
+  const jsonScriptRe = /<script[^>]*type\s*=\s*["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let jsonMatch: RegExpExecArray | null;
+  while ((jsonMatch = jsonScriptRe.exec(html)) !== null) {
+    const rawJson = jsonMatch[1].trim();
+    if (rawJson.length < 20) continue;
+    try {
+      const parsed = JSON.parse(rawJson);
+      const content = extractStringFromValue(parsed);
+      if (content && isLikelyNovelContent(content)) return content;
+      // Also try common nested paths
+      for (const key of ["content", "text", "body", "html", "chapterContent", "data"]) {
+        const val = resolveJsonPath(parsed, key);
+        const nested = extractStringFromValue(val);
+        if (nested && isLikelyNovelContent(nested)) return nested;
+      }
+    } catch {
+      // Not valid JSON
+    }
+  }
+
+  // Strategy 2: window.chapterContent = { ... }, window.novelData = "...", etc.
+  for (const varName of NOVEL_GLOBAL_VARIABLES) {
+    // Match string assignment: window.chapterContent = "..." or window.chapterContent = '...'
+    const stringRe = new RegExp(
+      `window\\.${varName}\\s*=\\s*["']([\\s\\S]{50,}?)['"]\\s*;`,
+      "i"
+    );
+    const strMatch = stringRe.exec(scriptContents);
+    if (strMatch) {
+      const content = strMatch[1];
+      if (isLikelyNovelContent(content)) return content;
+    }
+
+    // Match JSON object assignment: window.chapterContent = { ... }
+    const objRe = new RegExp(
+      `window\\.${varName}\\s*=\\s*(\\{[\\s\\S]{20,}?\\})\\s*;`,
+      "i"
+    );
+    const objMatch = objRe.exec(scriptContents);
+    if (objMatch) {
+      try {
+        const parsed = JSON.parse(objMatch[1]);
+        const content = extractStringFromValue(parsed);
+        if (content && isLikelyNovelContent(content)) return content;
+      } catch {
+        // Not valid JSON
+      }
+    }
+
+    // Match array assignment: window.chapterContent = [...] (not already covered by windowArrayContent pattern)
+    const arrRe = new RegExp(
+      `window\\.${varName}\\s*=\\s*\\[([\\s\\S]{100,}?)\\]\\s*;`,
+      "i"
+    );
+    const arrMatch = arrRe.exec(scriptContents);
+    if (arrMatch) {
+      try {
+        // Parse as array of strings
+        const items: string[] = [];
+        const itemRe = /["']([^"']{2,})["']/g;
+        let m: RegExpExecArray | null;
+        while ((m = itemRe.exec(arrMatch[1])) !== null) {
+          items.push(m[1]);
+          if (items.length > 1000) break;
+        }
+        if (items.length >= 3) {
+          const joined = items.join("\n");
+          if (isLikelyNovelContent(joined)) return joined;
+        }
+      } catch {
+        // Skip
+      }
+    }
+  }
+
+  return null;
+}
+
+// ==================== Lazy-Loaded Content Swapping ====================
+
+/**
+ * Attributes used by lazy-loading libraries to hold the real src URL.
+ */
+const LAZY_SRC_ATTRIBUTES = [
+  "data-src",
+  "data-lazy-src",
+  "data-original",
+  "data-lazy",
+  "data-ll-status",
+  "data-bg",
+  "data-image",
+];
+
+/**
+ * Swap lazy-loaded image/element attributes so that extraction sees the real URLs.
+ * Replaces `data-src`, `data-lazy-src`, `data-original` etc. with `src` in the HTML,
+ * but only on elements that have a lazy attribute and either no `src` or an empty/placeholder `src`.
+ *
+ * @param html - The raw HTML source
+ * @returns Modified HTML with lazy attributes swapped to src
+ */
+export function swapLazyLoadedContent(html: string): string {
+  for (const attr of LAZY_SRC_ATTRIBUTES) {
+    // Match elements with data-xxx="..." that have no src, empty src, or placeholder src
+    // Placeholder patterns: data:image/gif, data:image/png, about:blank, empty string
+    const re = new RegExp(
+      `(<(?:img|iframe|div|source|video|audio)[\\s\\S]*?)${attr}\\s*=\\s*["']([^"'\\s>]+)["']([\\s\\S]*?>)`,
+      "gi"
+    );
+    html = html.replace(re, (fullMatch, before, lazyUrl, after) => {
+      // Only swap if the element doesn't have a real src already
+      // Check if there's a src= that's not a data: URL or empty
+      const srcMatch = fullMatch.match(/src\s*=\s*["']([^"']*)["']/i);
+      const hasRealSrc = srcMatch &&
+        srcMatch[1].length > 0 &&
+        !srcMatch[1].startsWith("data:") &&
+        srcMatch[1] !== "about:blank";
+
+      if (hasRealSrc) return fullMatch; // Already has a real src, don't overwrite
+
+      // Replace or add src with the lazy URL
+      if (srcMatch) {
+        // Has src but it's empty/placeholder — replace the src value
+        return before + `src="${lazyUrl}"` + after;
+      } else {
+        // No src at all — inject src before the lazy attribute
+        return ` src="${lazyUrl}" ` + fullMatch;
+      }
+    });
+  }
+  return html;
+}
+
 // ==================== Main Extraction =====================
 
 /**
@@ -317,6 +591,9 @@ function extractScriptContents(html: string): string {
  * This function scans the raw HTML for common JS content injection patterns
  * and extracts the embedded content. Useful for novel sites that render
  * chapter text via JavaScript instead of server-side HTML.
+ *
+ * Enhanced with: framework SSR state extraction, JSON API response detection,
+ * and lazy-loaded content attribute swapping.
  *
  * @param html - The raw HTML source (may contain JS-rendered content)
  * @returns Extraction result with content if found
@@ -337,15 +614,35 @@ export function extractJsContent(html: string): JsExtractResult {
   const chunks: string[] = [];
   let matchedPattern = '';
 
-  // Pre-extract script contents once for scriptOnly patterns (ReDoS mitigation)
-  const scriptOnlyHtml = extractScriptContents(html);
+  // 0. Pre-process: swap lazy-loaded content attributes
+  const processedHtml = swapLazyLoadedContent(html);
 
+  // Pre-extract script contents once for scriptOnly patterns (ReDoS mitigation)
+  const scriptOnlyHtml = extractScriptContents(processedHtml);
+
+  // 0a. Try framework SSR state extraction (Nuxt, Vue, Next.js, custom)
+  const frameworkContent = extractFrameworkStateContent(scriptOnlyHtml);
+  if (frameworkContent) {
+    chunks.push(frameworkContent);
+    matchedPattern = 'frameworkState';
+  }
+
+  // 0b. Try JSON API response / <script type="application/json"> extraction
+  if (chunks.length === 0) {
+    const jsonApiContent = extractJsonApiContent(processedHtml, scriptOnlyHtml);
+    if (jsonApiContent) {
+      chunks.push(jsonApiContent);
+      matchedPattern = 'jsonApiResponse';
+    }
+  }
+
+  // Continue with existing pattern matching
   for (const pattern of JS_PATTERNS) {
     // Reset regex state for global patterns
     pattern.regex.lastIndex = 0;
 
     // For patterns with [\s\S] quantifiers, search only within <script> tags
-    const searchTarget = pattern.scriptOnly ? scriptOnlyHtml : html;
+    const searchTarget = pattern.scriptOnly ? scriptOnlyHtml : processedHtml;
 
     let match: RegExpExecArray | null;
     while ((match = pattern.regex.exec(searchTarget)) !== null) {
@@ -413,6 +710,16 @@ const QUICK_CHECK_PATTERNS = [
   /atob\(/,
   /JSON\.parse/,
   /fromCharCode/,
+  // Framework SSR state variables
+  /__NUXT__/,
+  /__INITIAL_STATE__/,
+  /__NEXT_DATA__/,
+  /__APP_DATA__/,
+  // JSON API patterns
+  /type\s*=\s*["']application\/json["']/i,
+  /window\.(?:chapterContent|novelData|bookData|contentData)\s*=/i,
+  // Lazy-load attributes
+  /data-(?:src|lazy-src|original)\s*=/,
 ];
 
 export function hasJsContentPatterns(html: string): boolean {

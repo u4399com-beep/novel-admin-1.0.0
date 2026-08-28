@@ -179,6 +179,11 @@ export const progressThrottleCleanupTimer = setInterval(() => {
   }
 }, 60 * 1000); // Every minute
 
+/** Clear the progress throttle cleanup timer (call on shutdown) */
+export function cleanupProgressThrottleTimer(): void {
+  clearInterval(progressThrottleCleanupTimer);
+}
+
 async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) {
   const now = Date.now();
   const lastUpdate = progressThrottle.get(taskId) || 0;
@@ -417,7 +422,7 @@ export async function executeTask(taskId: string) {
     }, TASK_TIMEOUT_MS);
   });
 
-  const taskCtx: TaskContext = { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal: abortController.signal, triedEngines: new Set() };
+  const taskCtx: TaskContext = { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal: abortController.signal };
   const taskStartTime = Date.now();
 
   try {
@@ -478,8 +483,6 @@ interface TaskContext {
   isIncremental: boolean;
   dedupMode: string;
   abortSignal: AbortSignal;
-  /** Engines already tried in the current fallback chain (to avoid repeats) */
-  triedEngines: Set<EngineType>;
 }
 
 interface TaskResult {
@@ -504,6 +507,8 @@ async function executeTaskBody(
   ctx: TaskContext
 ): Promise<TaskResult> {
   let { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal } = ctx;
+
+  try {
 
   // 2. Scrape list page
   if (!rule.listUrl || !listSelector) {
@@ -959,8 +964,8 @@ async function executeTaskBody(
         if (chapterQueue.length === 0) return;
         const chapter = chapterQueue.shift()!;
 
-        // Reset per-chapter engine attempts (each chapter gets fresh engine tries)
-        ctx.triedEngines.clear();
+        // Local triedEngines: not shared on ctx to avoid cross-worker interference
+        const triedEngines = new Set<EngineType>();
 
         try {
           // Dedup check BEFORE eager mark (check → eager mark → delay → fetch)
@@ -986,7 +991,7 @@ async function executeTaskBody(
           const _chapterDomain = (() => { try { return new URL(chapter.url).hostname; } catch { return undefined; } })();
           const fallbackChain = getFallbackChainForEngine(_chapterEngine, _chapterDomain);
           // Filter out already-tried engines to avoid repeats
-          const availableEngines = fallbackChain.filter(e => !ctx.triedEngines.has(e));
+          const availableEngines = fallbackChain.filter(e => !triedEngines.has(e));
           // Ensure the current engine is in the list even if already tried
           if (availableEngines.length === 0 || availableEngines[0] !== _chapterEngine) {
             availableEngines.unshift(_chapterEngine);
@@ -999,7 +1004,7 @@ async function executeTaskBody(
           const chainFailures: Array<{ engine: EngineType; reason: string }> = [];
 
           for (const tryEngine of enginesToTry) {
-            ctx.triedEngines.add(tryEngine);
+            triedEngines.add(tryEngine);
             contentEngineUsed = tryEngine;
             try {
               contentResult = await handleScrapeContent({
@@ -1271,17 +1276,6 @@ async function executeTaskBody(
 
   console.log(`[Task ${taskId}] Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
 
-  // Cleanup per-domain engine overrides (only when no other tasks reference them)
-  for (const d of _touchedDomains) {
-    const remaining = (_domainEngineRefCount.get(d) || 1) - 1;
-    if (remaining <= 0) {
-      _domainEngineTypes.delete(d);
-      _domainEngineRefCount.delete(d);
-    } else {
-      _domainEngineRefCount.set(d, remaining);
-    }
-  }
-
   return {
     success: true,
     totalBooks: booksProcessed.length,
@@ -1294,6 +1288,19 @@ async function executeTaskBody(
     queueStats,
     chapterWordCounts: chapterWordCounts.length > 0 ? chapterWordCounts : undefined,
   };
+  } finally {
+    // Cleanup per-domain engine overrides (only when no other tasks reference them)
+    // Always runs, even if the task throws early (e.g., list page fetch fails)
+    for (const d of _touchedDomains) {
+      const remaining = (_domainEngineRefCount.get(d) || 1) - 1;
+      if (remaining <= 0) {
+        _domainEngineTypes.delete(d);
+        _domainEngineRefCount.delete(d);
+      } else {
+        _domainEngineRefCount.set(d, remaining);
+      }
+    }
+  }
 }
 
 /**

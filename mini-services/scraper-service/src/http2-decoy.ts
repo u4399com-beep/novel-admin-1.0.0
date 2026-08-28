@@ -19,6 +19,8 @@
  * detection via connection-level fingerprinting.
  */
 
+import { domainHash } from './utils';
+
 // ==================== Types ====================
 
 /** HTTP/2 SETTINGS parameter IDs (RFC 7540 §6.5.2) */
@@ -349,7 +351,7 @@ interface CacheEntry {
 // ==================== Domain Classification ====================
 
 /** Chinese / legacy TLDs that tend to have older server stacks */
-const LEGACY_TLDS = ['.cn', '.com.cn', '.net.cn', '.org.cn', '.gov.cn', '.ac.cn'];
+const LEGACY_TLDS = ['.cn', '.com.cn', '.net.cn', '.org.cn', '.gov.cn', '.ac.cn'].sort((a, b) => b.length - a.length);
 
 /**
  * Classify a domain for encoding pool selection.
@@ -362,16 +364,6 @@ function classifyDomain(domain: string): 'legacy' | 'modern' {
     if (lower.endsWith(tld)) return 'legacy';
   }
   return 'modern';
-}
-
-// ==================== Domain Hash ====================
-
-function domainHash(domain: string): number {
-  let h = 0;
-  for (let i = 0; i < domain.length; i++) {
-    h = ((h << 5) - h + domain.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
 }
 
 // ==================== Browser Detection from UA ====================

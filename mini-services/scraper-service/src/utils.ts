@@ -1083,6 +1083,18 @@ export function mapNovelStatus(rawStatus: string): string {
 
 // ==================== Generate ID ====================
 
+/**
+ * Deterministic hash for a string (djb2 variant with Math.abs for non-negative output).
+ * Used across multiple modules for consistent per-domain selection.
+ */
+export function domainHash(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
 export function generateId(): string {
   return randomUUID();
 }
@@ -1288,5 +1300,6 @@ export async function followRedirects(
     }
   }
 
-  return { response: response!, finalUrl: currentUrl };
+  if (!response) throw new Error('No response received after redirects');
+  return { response, finalUrl: currentUrl };
 }

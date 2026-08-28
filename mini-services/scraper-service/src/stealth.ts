@@ -10,6 +10,8 @@
  *   - getStealthScript(): JS injection string that overrides all detectable APIs
  */
 
+import { domainHash } from './utils';
+
 // ==================== Fingerprint Profile ====================
 
 export interface FingerprintProfile {
@@ -365,7 +367,7 @@ export function generateRandomFingerprint(): FingerprintProfile {
     platform: uaPlatform,
     languages: [...pick(LANGUAGE_VARIANTS)],
     timezone: pick(TIMEZONE_POOL),
-    timezoneOffset: baseOffset + jitter,
+    timezoneOffset,
     colorDepth: pick(COLOR_DEPTHS),
     pixelRatio: pick(PIXEL_RATIOS),
     userAgent,
@@ -507,7 +509,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   for (var _fds0 = 0; _fds0 < PROFILE.seed.length; _fds0++) { _fakeDeviceSeed = ((_fakeDeviceSeed << 5) - _fakeDeviceSeed + PROFILE.seed.charCodeAt(_fds0)) | 0; }
   _fakeDeviceSeed = Math.abs(_fakeDeviceSeed);
   // Seeded PRNG for deterministic values across all sections (uses _fakeDeviceSeed — no redundant _navSeed)
-  function _seededRandom(offset) { return ((Math.sin(_fakeDeviceSeed + offset) * 10000) % 1 + 1) % 1; }
+  function _seededRandom(offset) { var s = (_fakeDeviceSeed + offset) | 0; s = (s * 1664525 + 1013904223) | 0; return (s >>> 0) / 4294967296; }
   var _canvasNoiseSeed = Math.floor(_fakeDeviceSeed * 13.37) | 0;
   var _canvasNoiseIntensity = ${CANVAS_NOISE_INTENSITY};
 
@@ -1131,18 +1133,66 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   }
 
-  // Remove Puppeteer/Playwright markers
+  // Remove Puppeteer/Playwright/Selenium/Phantom automation markers
+  // Task 3-c: expanded list with additional CDP and automation framework indicators
   const propsToRemove = [
-    '__playwright', '__puppeteer_evaluation_script__', '__selenium_unwrapped',
-    'callPhantom', '_phantom', '__nightmare', 'domAutomation', 'domAutomationController',
+    // Playwright / Puppeteer
+    '__playwright', '__puppeteer_evaluation_script__',
+    // Selenium
+    '__selenium_unwrapped', '__selenium_evaluate',
     '__webdriver_evaluate', '__driver_evaluate', '__webdriver_unwrapped',
-    '__driver_unwrapped', '__fxdriver_evaluate',
-    '__fxdriver_unwrapped', '_Selenium_IDE_Recorder', '_selenium', 'calledSelenium',
-    '__phantomas',
+    '__driver_unwrapped', '__webdriver_script_function', '__webdriver_script_func',
+    '__fxdriver_evaluate', '__fxdriver_unwrapped',
+    '_Selenium_IDE_Recorder', '_selenium', 'calledSelenium',
+    // PhantomJS
+    'callPhantom', '_phantom', '__phantomas',
+    // Nightmare
+    '__nightmare',
+    // Chrome automation (older CDP-based)
+    'domAutomation', 'domAutomationController',
   ];
   propsToRemove.forEach(prop => {
     try { delete window[prop]; } catch(e) {}
   });
+
+  // Document-scoped automation markers (some tools inject here instead of window)
+  const docPropsToRemove = [
+    '__webdriver_script_fn', '__webdriver_evaluate', '__driver_evaluate',
+    '__selenium_evaluate', '__fxdriver_evaluate',
+  ];
+  docPropsToRemove.forEach(prop => {
+    try { delete document[prop]; } catch(e) {}
+  });
+
+  // MutationObserver for late-injected automation properties (Task 3-c)
+  // Catches scripts that inject automation markers after page load
+  try {
+    var _allAutoProps = propsToRemove.concat(docPropsToRemove);
+    var _autoPropObserver = new MutationObserver(function(mutations) {
+      for (var mi = 0; mi < mutations.length; mi++) {
+        var added = mutations[mi].addedNodes;
+        for (var ni = 0; ni < added.length; ni++) {
+          var node = added[ni];
+          if (node.nodeType === 1) { // Element node
+            for (var pi = 0; pi < _allAutoProps.length; pi++) {
+              try { delete node[_allAutoProps[pi]]; } catch(e) {}
+              if (node.dataset) {
+                try { delete node.dataset[_allAutoProps[pi]]; } catch(e) {}
+              }
+            }
+          }
+        }
+      }
+      // Also re-check window/document for late injections
+      for (var wi = 0; wi < _allAutoProps.length; wi++) {
+        try { delete window[_allAutoProps[wi]]; } catch(e) {}
+        try { delete document[_allAutoProps[wi]]; } catch(e) {}
+      }
+    });
+    _autoPropObserver.observe(document.documentElement || document.body, {
+      childList: true, subtree: true, attributes: true,
+    });
+  } catch(e) { /* MutationObserver unavailable */ }
 
   // Override toString for functions to prevent "function () { [native code] }" detection
   // by checking if the function is truly native
@@ -1714,7 +1764,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
               return function() {
                 var result = target.measureText.apply(target, arguments);
                 try {
-                  var _mS = (_2dSeed * 16807 + 0.5) % 2147483647;
+                  var _text = arguments[0] || '';
+                  var _mS = (_2dSeed + _text.length * 31 + _text.charCodeAt(0) * 7) | 0;
                   var _mNoise = ((_mS % 21) - 10) * 0.001; // ±0.01px
                   var _origW = result.width;
                   Object.defineProperty(result, 'width', {
@@ -1725,31 +1776,33 @@ export function getStealthScript(profile: FingerprintProfile): string {
                 return result;
               };
             }
-            // isPointInPath — add ±0.1px offset to test point
+            // isPointInPath — add ±0.1px offset to test point (seeded by coordinates)
             if (prop === 'isPointInPath') {
               return function() {
                 var args = Array.prototype.slice.call(arguments);
-                var _pS = (_2dSeed * 16807 + 1.5) % 2147483647;
-                var _dx = ((_pS % 201) - 100) * 0.001; // ±0.1px
-                _pS = (_pS * 16807 + 0.5) % 2147483647;
-                var _dy = ((_pS % 201) - 100) * 0.001;
                 var xi = 0, yi = 1;
                 if (args.length >= 3 && args[0] && typeof args[0].addPath === 'function') { xi = 1; yi = 2; }
+                var _cx = (args[xi] || 0) | 0, _cy = (args[yi] || 0) | 0;
+                var _pS = (_2dSeed + _cx * 37 + _cy * 53) | 0;
+                var _dx = ((_pS % 201) - 100) * 0.001; // ±0.1px
+                _pS = (_pS + _cx * 17 + _cy * 31) | 0;
+                var _dy = ((_pS % 201) - 100) * 0.001;
                 args[xi] = (args[xi] || 0) + _dx;
                 args[yi] = (args[yi] || 0) + _dy;
                 return target.isPointInPath.apply(target, args);
               };
             }
-            // isPointInStroke — add ±0.1px offset to test point
+            // isPointInStroke — add ±0.1px offset to test point (seeded by coordinates)
             if (prop === 'isPointInStroke') {
               return function() {
                 var args = Array.prototype.slice.call(arguments);
-                var _sS = (_2dSeed * 16807 + 2.5) % 2147483647;
-                var _sdx = ((_sS % 201) - 100) * 0.001;
-                _sS = (_sS * 16807 + 0.5) % 2147483647;
-                var _sdy = ((_sS % 201) - 100) * 0.001;
                 var xi = 0, yi = 1;
                 if (args.length >= 3 && args[0] && typeof args[0].addPath === 'function') { xi = 1; yi = 2; }
+                var _cx = (args[xi] || 0) | 0, _cy = (args[yi] || 0) | 0;
+                var _sS = (_2dSeed + _cx * 41 + _cy * 59) | 0;
+                var _sdx = ((_sS % 201) - 100) * 0.001;
+                _sS = (_sS + _cx * 19 + _cy * 37) | 0;
+                var _sdy = ((_sS % 201) - 100) * 0.001;
                 args[xi] = (args[xi] || 0) + _sdx;
                 args[yi] = (args[yi] || 0) + _sdy;
                 return target.isPointInStroke.apply(target, args);
@@ -2481,11 +2534,15 @@ export function getStealthScript(profile: FingerprintProfile): string {
     var _fontSeed = Math.floor(_fakeDeviceSeed * 11.11) | 0;
     // Select 10-14 fonts from the pool (deterministic per seed)
     var _fontCount = 10 + (_fontSeed % 5);
-    for (var _fi = 0; _fi < _fontCount && _fi < _fontPool.length; _fi++) {
-      _fontSeed = (_fontSeed * 16807 + 0.5) % 2147483647;
-      var _fIdx = _fontSeed % _fontPool.length;
-      if (_availableFonts.indexOf(_fontPool[_fIdx]) < 0) {
-        _availableFonts.push(_fontPool[_fIdx]);
+    var shuffled = _fontPool.slice();
+    for (var _fi = shuffled.length - 1; _fi > 0 && _fi >= shuffled.length - _fontCount; _fi--) {
+      var _fj = (_seededRandom(_fi * 137) * (_fi + 1)) | 0;
+      var _ftmp = shuffled[_fi]; shuffled[_fi] = shuffled[_fj]; shuffled[_fj] = _ftmp;
+    }
+    var selectedFonts = shuffled.slice(shuffled.length - _fontCount);
+    for (var _si = 0; _si < selectedFonts.length; _si++) {
+      if (_availableFonts.indexOf(selectedFonts[_si]) < 0) {
+        _availableFonts.push(selectedFonts[_si]);
       }
     }
     // Sort for consistency
@@ -2526,15 +2583,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
     // document.fonts.ready should resolve immediately (not wait for real font loading)
     // to avoid timing-based detection of font availability
     try {
-      if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
-        var _origReady = document.fonts.ready;
+      if (document.fonts && document.fonts.ready) {
+        var _origFontsAPI = document.fonts;
         Object.defineProperty(document.fonts, 'ready', {
           get: function() {
-            // Return a pre-resolved promise
-            if (!_origReady._fakeResolved) {
-              _origReady._fakeResolved = Promise.resolve(_origReady);
-            }
-            return _origReady._fakeResolved;
+            return Promise.resolve(_origFontsAPI);
           },
           configurable: true
         });
@@ -2714,18 +2767,6 @@ const BROWSER_HEADER_ORDERS: Record<string, string[]> = {
 const REQUIRED_FIRST_HEADERS = new Set(['host', 'user-agent']);
 
 /**
- * Simple deterministic hash for a string (same as the seed hash in generateFingerprintProfile).
- * Returns a 32-bit integer.
- */
-function domainHash(str: string): number {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  }
-  return h;
-}
-
-/**
  * Shuffles HTTP headers while keeping required headers (Host, User-Agent) first.
  * Introduces per-request jitter so that even for the same domain, consecutive
  * requests have slightly different header ordering — making the traffic pattern
@@ -2758,7 +2799,7 @@ export function shuffleHeaderOrderWithJitter(headers: Record<string, string>, do
   }
 
   // Step 2: Get browser template for non-required headers
-  const h = Math.abs(domainHash(domain));
+  const h = domainHash(domain);
   const browserNames = Object.keys(BROWSER_HEADER_ORDERS);
   const browserTemplate = BROWSER_HEADER_ORDERS[browserNames[h % browserNames.length]]!;
   const templateSet = new Set(browserTemplate.map(k => k.toLowerCase()));
@@ -2829,9 +2870,10 @@ export function getAcceptLanguageForDomain(domain: string): string {
 
 // ==================== Enhancement 4: Request Timing Humanization ====================
 
-/** Cache for per-domain base delay */
-const domainBaseDelayCache = new Map<string, number>();
+/** Cache for per-domain base delay with TTL (10 minutes) */
+const domainBaseDelayCache = new Map<string, { value: number; createdAt: number }>();
 const MAX_DELAY_CACHE = 500;
+const DELAY_CACHE_TTL_MS = 600000;
 
 /**
  * Returns a humanized fetch delay in milliseconds for a given domain.
@@ -2849,10 +2891,14 @@ const MAX_DELAY_CACHE = 500;
  */
 export function humanizedFetchDelay(domain: string): number {
   const hour = new Date().getHours(); // 0-23
-  const h = Math.abs(domainHash(domain));
+  const h = domainHash(domain);
 
-  // Get or compute domain-consistent base delay
-  let baseDelay = domainBaseDelayCache.get(domain);
+  // Get or compute domain-consistent base delay (with TTL check)
+  const cached = domainBaseDelayCache.get(domain);
+  let baseDelay: number | undefined;
+  if (cached && (Date.now() - cached.createdAt) < DELAY_CACHE_TTL_MS) {
+    baseDelay = cached.value;
+  }
   if (baseDelay === undefined) {
     // Deterministic base delay from hash: 0-1 range
     const normalized = (h % 1000) / 1000;
@@ -2873,7 +2919,7 @@ export function humanizedFetchDelay(domain: string): number {
       const firstKey = domainBaseDelayCache.keys().next().value;
       if (firstKey) domainBaseDelayCache.delete(firstKey);
     }
-    domainBaseDelayCache.set(domain, baseDelay);
+    domainBaseDelayCache.set(domain, { value: baseDelay, createdAt: Date.now() });
   }
 
   // Add random micro-delay (50-200ms) simulating human reading/clicking
@@ -2888,324 +2934,6 @@ export function clearDelayCache(domain?: string): void {
     domainBaseDelayCache.delete(domain);
   } else {
     domainBaseDelayCache.clear();
-  }
-}
-
-// ==================== Enhancement 5: TLS Fingerprint Consistency ====================
-
-/**
- * Known JA3/JA4 TLS fingerprint hints mapped to browser families.
- * These are reference strings that engines supporting TLS fingerprint
- * configuration can use to mimic specific browsers' TLS handshakes.
- *
- * JA3 format: MD5 hash of TLS Client Hello parameters (cipher suites,
- * extensions, elliptic curves, elliptic curve point formats).
- * JA4 format: More modern fingerprint including ALPN, cipher suite count, etc.
- */
-export const TLS_FINGERPRINT_MAP: Record<string, Array<{ ja3: string; ja4: string; description: string }>> = {
-  Chrome: [
-    {
-      ja3: '771,4865-4866-4867-49195,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
-      ja4: 't13d1516h2_783a5c8e9f40',
-      description: 'Chrome 131+ on Windows (TLS 1.3, GREASE)',
-    },
-    {
-      ja3: '771,4865-4866-4867-49195,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
-      ja4: 't13d1516h2_a1b2c3d4e5f6',
-      description: 'Chrome 130 on macOS',
-    },
-  ],
-  Firefox: [
-    {
-      ja3: '771,4865-4867-4866-49195,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
-      ja4: 't13d1312h2_f1e2d3c4b5a6',
-      description: 'Firefox 133 on Windows (TLS 1.3)',
-    },
-    {
-      ja3: '771,4865-4867-4866-49195,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
-      ja4: 't13d1312h2_9a8b7c6d5e4f',
-      description: 'Firefox 132 on Linux',
-    },
-  ],
-  Edge: [
-    {
-      ja3: '771,4865-4866-4867-49195,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
-      ja4: 't13d1516h2_1a2b3c4d5e6f',
-      description: 'Edge 131 on Windows (Chromium-based)',
-    },
-  ],
-  Safari: [
-    {
-      ja3: '771,4865-4866-4867-49195-49199-49196-52393,0-5-10-11-13-16-18-23-27-43-45-51-65281,29-23-24,0',
-      ja4: 't13d1617h2_safari1a2b',
-      description: 'Safari 18.2 on macOS (Apple TLS stack)',
-    },
-  ],
-};
-
-/** Cache for per-domain TLS hint */
-const domainTLSHintCache = new Map<string, { ja3: string; ja4: string; description: string }>();
-const MAX_TLS_CACHE = 500;
-
-/**
- * Get a TLS fingerprint hint for a domain, deterministically selected
- * based on the domain hash. Consistent per-domain to maintain identity coherence.
- *
- * The returned object contains JA3 and JA4 fingerprint strings that can be
- * used by engines that support TLS fingerprint configuration (e.g., curl-impersonate,
- * tls-client, or custom TLS stacks).
- *
- * @param domain - Target domain for consistent fingerprint selection
- * @returns An object with ja3, ja4, and description fields
- */
-export function getTLSHint(domain: string): { ja3: string; ja4: string; description: string } {
-  let cached = domainTLSHintCache.get(domain);
-  if (cached) return cached;
-
-  const h = Math.abs(domainHash(domain));
-  const browserNames = Object.keys(TLS_FINGERPRINT_MAP);
-  const browser = browserNames[h % browserNames.length]!;
-  const fingerprints = TLS_FINGERPRINT_MAP[browser]!;
-  const selected = fingerprints[(h >> 8) % fingerprints.length]!;
-
-  // Cache with LRU eviction
-  if (domainTLSHintCache.size >= MAX_TLS_CACHE && !domainTLSHintCache.has(domain)) {
-    const firstKey = domainTLSHintCache.keys().next().value;
-    if (firstKey) domainTLSHintCache.delete(firstKey);
-  }
-  domainTLSHintCache.set(domain, selected);
-
-  return selected;
-}
-
-/** Clear the TLS hint cache. If domain specified, only clear that domain. */
-export function clearTLSHintCache(domain?: string): void {
-  if (domain) {
-    domainTLSHintCache.delete(domain);
-  } else {
-    domainTLSHintCache.clear();
-  }
-}
-
-// ==================== Enhancement: TLS Cipher Suite Rotation ====================
-
-/**
- * A TLS profile containing cipher suite configuration for the Bun HTTP client.
- * These cipher suite orders mimic different browser TLS handshakes.
- */
-export interface TlsProfile {
-  /** Human-readable name for this profile */
-  name: string;
-  /** Browser family this profile mimics */
-  browser: string;
-  /** Ordered list of TLS cipher suites (IANA names). Order matters for JA3 fingerprinting. */
-  ciphers: string[];
-  /** ALPN protocol names in preference order */
-  alpnProtocols: string[];
-  /** Minimum TLS version */
-  minVersion: 'TLSv1.2' | 'TLSv1.3';
-  /** Reference JA3 hash for verification */
-  ja3Ref?: string;
-}
-
-/**
- * TLS cipher suite profiles that mimic real browsers.
- * Each profile has a different cipher suite order to produce distinct JA3/JA4 hashes.
- *
- * Cipher suites are specified by their OpenSSL names, which Bun's tls module accepts.
- * The ORDER of ciphers is the primary factor in JA3 fingerprinting.
- */
-const TLS_PROFILES: TlsProfile[] = [
-  {
-    name: 'Chrome 130+ Windows',
-    browser: 'Chrome',
-    ciphers: [
-      'TLS_AES_128_GCM_SHA256',
-      'TLS_AES_256_GCM_SHA384',
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'ECDHE-ECDSA-AES128-GCM-SHA256',
-      'ECDHE-RSA-AES128-GCM-SHA256',
-      'ECDHE-ECDSA-AES256-GCM-SHA384',
-      'ECDHE-RSA-AES256-GCM-SHA384',
-    ],
-    alpnProtocols: ['h2', 'http/1.1'],
-    minVersion: 'TLSv1.2',
-    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
-  },
-  {
-    name: 'Chrome 130+ macOS',
-    browser: 'Chrome',
-    ciphers: [
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'TLS_AES_128_GCM_SHA256',
-      'TLS_AES_256_GCM_SHA384',
-      'ECDHE-ECDSA-AES128-GCM-SHA256',
-      'ECDHE-RSA-AES128-GCM-SHA256',
-      'ECDHE-ECDSA-AES256-GCM-SHA384',
-      'ECDHE-RSA-AES256-GCM-SHA384',
-    ],
-    alpnProtocols: ['h2', 'http/1.1'],
-    minVersion: 'TLSv1.2',
-    ja3Ref: '771,4867-4865-4866-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
-  },
-  {
-    name: 'Chrome 128-129 Linux',
-    browser: 'Chrome',
-    ciphers: [
-      'TLS_AES_128_GCM_SHA256',
-      'TLS_AES_256_GCM_SHA384',
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'ECDHE-RSA-AES128-GCM-SHA256',
-      'ECDHE-ECDSA-AES128-GCM-SHA256',
-      'ECDHE-RSA-AES256-GCM-SHA384',
-      'ECDHE-ECDSA-AES256-GCM-SHA384',
-    ],
-    alpnProtocols: ['h2', 'http/1.1'],
-    minVersion: 'TLSv1.2',
-    ja3Ref: '771,4865-4866-4867-49199-49195-49200-52392,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
-  },
-  {
-    name: 'Firefox 128-130',
-    browser: 'Firefox',
-    ciphers: [
-      'TLS_AES_128_GCM_SHA256',
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'TLS_AES_256_GCM_SHA384',
-      'ECDHE-ECDSA-AES128-GCM-SHA256',
-      'ECDHE-RSA-AES128-GCM-SHA256',
-      'ECDHE-ECDSA-AES256-GCM-SHA384',
-      'ECDHE-RSA-AES256-GCM-SHA384',
-    ],
-    alpnProtocols: ['h2', 'http/1.1'],
-    minVersion: 'TLSv1.2',
-    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
-  },
-  {
-    name: 'Firefox 120-124',
-    browser: 'Firefox',
-    ciphers: [
-      'TLS_AES_256_GCM_SHA384',
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'TLS_AES_128_GCM_SHA256',
-      'ECDHE-ECDSA-AES256-GCM-SHA384',
-      'ECDHE-RSA-AES256-GCM-SHA384',
-      'ECDHE-ECDSA-AES128-GCM-SHA256',
-      'ECDHE-RSA-AES128-GCM-SHA256',
-    ],
-    alpnProtocols: ['h2', 'http/1.1'],
-    minVersion: 'TLSv1.2',
-    ja3Ref: '771,4866-4867-4865-49199-49200,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
-  },
-  {
-    name: 'Safari 18.x macOS',
-    browser: 'Safari',
-    ciphers: [
-      'TLS_AES_128_GCM_SHA256',
-      'TLS_AES_256_GCM_SHA384',
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'ECDHE-ECDSA-AES256-GCM-SHA384',
-      'ECDHE-ECDSA-AES128-GCM-SHA256',
-      'ECDHE-RSA-AES256-GCM-SHA384',
-      'ECDHE-RSA-AES128-GCM-SHA256',
-    ],
-    alpnProtocols: ['h2', 'http/1.1'],
-    minVersion: 'TLSv1.2',
-    ja3Ref: '771,4865-4866-4867-49199-49195,0-5-10-11-13-16-18-23-27-43-45-51-65281,29-23-24,0',
-  },
-  {
-    name: 'Safari 17.x macOS',
-    browser: 'Safari',
-    ciphers: [
-      'TLS_AES_256_GCM_SHA384',
-      'TLS_AES_128_GCM_SHA256',
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'ECDHE-ECDSA-AES256-GCM-SHA384',
-      'ECDHE-ECDSA-AES128-GCM-SHA256',
-      'ECDHE-RSA-AES256-GCM-SHA384',
-      'ECDHE-RSA-AES128-GCM-SHA256',
-    ],
-    alpnProtocols: ['h2', 'http/1.1'],
-    minVersion: 'TLSv1.2',
-    ja3Ref: '771,4866-4865-4867-49199-49195,0-5-10-11-13-16-18-23-27-43-45-51-65281,29-23-24,0',
-  },
-  {
-    name: 'Edge 130+ Windows',
-    browser: 'Edge',
-    ciphers: [
-      'TLS_AES_128_GCM_SHA256',
-      'TLS_AES_256_GCM_SHA384',
-      'TLS_CHACHA20_POLY1305_SHA256',
-      'ECDHE-ECDSA-AES128-GCM-SHA256',
-      'ECDHE-RSA-AES128-GCM-SHA256',
-      'ECDHE-ECDSA-AES256-GCM-SHA384',
-      'ECDHE-RSA-AES256-GCM-SHA384',
-    ],
-    alpnProtocols: ['h2', 'http/1.1'],
-    minVersion: 'TLSv1.2',
-    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
-  },
-];
-
-/** Cache for per-domain TLS profile */
-const domainTlsProfileCache = new Map<string, TlsProfile>();
-const MAX_TLS_PROFILE_CACHE = 500;
-
-/**
- * Get a TLS profile with cipher suite configuration for a domain.
- * Deterministically selected per domain to maintain identity coherence.
- *
- * The returned profile can be used to configure Bun's HTTP client TLS options:
- * ```ts
- * const profile = getTlsProfile(domain);
- * Bun.fetch(url, {
- *   tls: {
- *     ciphers: profile.ciphers.join(':'),
- *     minVersion: profile.minVersion,
- *   }
- * });
- * ```
- *
- * @param domain  - Target domain for consistent profile selection
- * @param browser - Optional browser family hint ('Chrome' | 'Firefox' | 'Safari' | 'Edge')
- * @returns A TlsProfile with cipher suite order, ALPN protocols, and min TLS version
- */
-export function getTlsProfile(domain: string, browser?: string): TlsProfile {
-  let cached = domainTlsProfileCache.get(domain);
-  if (cached) return cached;
-
-  let candidates = browser
-    ? TLS_PROFILES.filter(p => p.browser === browser)
-    : TLS_PROFILES;
-
-  // Fallback to all profiles if browser filter yields nothing
-  if (candidates.length === 0) candidates = TLS_PROFILES;
-
-  const h = Math.abs(domainHash(domain));
-  const selected = candidates[h % candidates.length]!;
-
-  // Cache with LRU eviction
-  if (domainTlsProfileCache.size >= MAX_TLS_PROFILE_CACHE && !domainTlsProfileCache.has(domain)) {
-    const firstKey = domainTlsProfileCache.keys().next().value;
-    if (firstKey) domainTlsProfileCache.delete(firstKey);
-  }
-  domainTlsProfileCache.set(domain, selected);
-
-  return selected;
-}
-
-/**
- * Get all available TLS profiles (for inspection/debugging).
- */
-export function getAvailableTlsProfiles(): ReadonlyArray<TlsProfile> {
-  return TLS_PROFILES;
-}
-
-/** Clear the TLS profile cache. If domain specified, only clear that domain. */
-export function clearTlsProfileCache(domain?: string): void {
-  if (domain) {
-    domainTlsProfileCache.delete(domain);
-  } else {
-    domainTlsProfileCache.clear();
   }
 }
 

@@ -15,6 +15,8 @@
  *   3. Integration helper for undici Agent construction
  */
 
+import { domainHash } from './utils';
+
 // ==================== Types ====================
 
 /** TLS configuration options compatible with Bun's/BoringSSL's TLS client */
@@ -168,16 +170,6 @@ interface TLSOptionsCacheEntry {
   options: TLSFingerprintOptions;
   variantName: string;
   createdAt: number;
-}
-
-// ==================== Domain Hash ====================
-
-function domainHash(str: string): number {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
 }
 
 // ==================== Browser Detection ====================

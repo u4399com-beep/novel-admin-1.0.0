@@ -7,6 +7,7 @@
 
 import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { isSafeUrl } from './ssrf';
 
 // ==================== Helpers ====================
 
@@ -109,6 +110,33 @@ export interface ProxyVerifyReport {
     protocol: ProxyEntry['protocol'];
     result: ProxyVerifyResult;
   }>;
+}
+
+/** Options for testProxyBatch() */
+export interface ProxyBatchTestOptions {
+  /** URL to fetch through each proxy for testing (default: verifyUrl) */
+  testUrl?: string;
+  /** Per-proxy timeout in ms (default: 15000 for HTTP, 20000 for SOCKS) */
+  timeoutMs?: number;
+  /** Max concurrent test requests (default: 5) */
+  maxConcurrent?: number;
+  /** Whether to auto-add proxies not yet in the pool (default: true) */
+  autoAdd?: boolean;
+}
+
+/** Per-proxy result from testProxyBatch() */
+export interface ProxyBatchTestResult {
+  url: string;
+  protocol: ProxyEntry['protocol'];
+  host: string;
+  port: number;
+  reachable: boolean;
+  responseTime: number;       // ms, 0 if unreachable
+  statusCode?: number;
+  externalIp?: string;
+  ipMatch?: boolean;
+  error?: string;
+  testTimestamp: number;
 }
 
 // ==================== Proxy Parser ====================
@@ -454,7 +482,7 @@ class ProxyManager {
   }
 
   /** Record a successful request through a proxy */
-  recordSuccess(proxyUrl: string, responseTime: number): void {
+  recordSuccess(proxyUrl: string, responseTime: number, domain?: string): void {
     const parsed = parseProxyUrl(proxyUrl);
     if (!parsed) return;
 
@@ -464,6 +492,11 @@ class ProxyManager {
     entry.successCount++;
     entry.consecutiveFails = 0;
     entry.lastUsed = Date.now();
+
+    // Clear recent failures for this proxy (and optionally domain) on success
+    this.recentFailures = this.recentFailures.filter(
+      (f) => f.proxyUrl !== parsed.cleanUrl || (domain && f.domain && f.domain !== normalizeDomain(domain))
+    );
 
     // Update rolling average response time
     if (entry.avgResponseTime === 0) {
@@ -1027,7 +1060,7 @@ class ProxyManager {
    */
   recordSuccessWithRotation(proxyUrl: string, domain: string, responseTime: number): void {
     // Record the success normally
-    this.recordSuccess(proxyUrl, responseTime);
+    this.recordSuccess(proxyUrl, responseTime, domain);
 
     const normalisedDomain = normalizeDomain(domain);
     const currentCount = (this.domainRotationCount.get(normalisedDomain) || 0) + 1;
@@ -1295,6 +1328,10 @@ class ProxyManager {
       return { working: false, responseTime: 0, error: 'Invalid proxy URL' };
     }
 
+    if (!isSafeUrl(this.verifyUrl)) {
+      return { working: false, responseTime: 0, error: 'Verify URL failed SSRF validation' };
+    }
+
     const entry = this.pool.get(parsed.cleanUrl);
     if (!entry) {
       return { working: false, responseTime: 0, error: 'Proxy not in pool' };
@@ -1326,7 +1363,8 @@ class ProxyManager {
       try {
         bodyText = await res.text();
       } catch {
-        // body read failed, but we still got a response
+        // body read failed — cancel body to prevent connection pool leak
+        await res.body?.cancel().catch(() => {});
       }
 
       entry.lastCheck = Date.now();
@@ -1386,6 +1424,114 @@ class ProxyManager {
         error: errMsg,
       };
     }
+  }
+
+  /**
+   * Batch-test a list of proxy URLs with concurrency control.
+   * This is the unified entry point for proxy testing, replacing the
+   * standalone proxy-conn-test.ts module.
+   *
+   * Proxies not yet in the pool are auto-added (unless autoAdd is false).
+   * Each proxy is tested with a real HTTP request through it.
+   * Health scores are updated based on results.
+   *
+   * @param urls - Array of proxy URLs to test
+   * @param options - Optional test configuration
+   * @returns Array of detailed per-proxy results
+   */
+  async testProxyBatch(
+    urls: string[],
+    options?: ProxyBatchTestOptions,
+  ): Promise<ProxyBatchTestResult[]> {
+    const {
+      maxConcurrent = 5,
+      autoAdd = true,
+    } = options ?? {};
+
+    const results: ProxyBatchTestResult[] = [];
+
+    // Process in concurrency-limited batches
+    for (let i = 0; i < urls.length; i += maxConcurrent) {
+      const batch = urls.slice(i, i + maxConcurrent);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (url) => {
+          const timestamp = Date.now();
+          const parsed = parseProxyUrl(url);
+
+          if (!parsed) {
+            return {
+              url,
+              protocol: 'http' as const,
+              host: '',
+              port: 0,
+              reachable: false,
+              responseTime: 0,
+              error: `Invalid proxy URL: ${url}`,
+              testTimestamp: timestamp,
+            } satisfies ProxyBatchTestResult;
+          }
+
+          // Auto-add to pool if not present
+          if (autoAdd && !this.pool.has(parsed.cleanUrl)) {
+            this.addProxy(url);
+          }
+
+          // Use verifyProxy if the proxy is in the pool (it updates health scores)
+          const entry = this.pool.get(parsed.cleanUrl);
+          if (entry) {
+            const verifyResult = await this.verifyProxy(url);
+            return {
+              url,
+              protocol: entry.protocol,
+              host: entry.host,
+              port: entry.port,
+              reachable: verifyResult.working,
+              responseTime: verifyResult.responseTime,
+              statusCode: verifyResult.statusCode,
+              externalIp: verifyResult.externalIp,
+              ipMatch: verifyResult.ipMatch,
+              error: verifyResult.error,
+              testTimestamp: timestamp,
+            } satisfies ProxyBatchTestResult;
+          }
+
+          // Should not reach here if autoAdd is true, but handle gracefully
+          return {
+            url,
+            protocol: parsed.protocol,
+            host: parsed.host,
+            port: parsed.port,
+            reachable: false,
+            responseTime: 0,
+            error: 'Proxy not in pool and autoAdd is disabled',
+            testTimestamp: timestamp,
+          } satisfies ProxyBatchTestResult;
+        }),
+      );
+
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled') {
+          results.push(r.value);
+        } else {
+          // Unexpected rejection — wrap in a failure result
+          const proxyUrl = batch[j];
+          const parsed = parseProxyUrl(proxyUrl);
+          results.push({
+            url: proxyUrl,
+            protocol: parsed?.protocol ?? 'http',
+            host: parsed?.host ?? '',
+            port: parsed?.port ?? 0,
+            reachable: false,
+            responseTime: 0,
+            error: r.reason instanceof Error ? r.reason.message : 'Unknown error',
+            testTimestamp: Date.now(),
+          } satisfies ProxyBatchTestResult);
+        }
+      }
+    }
+
+    return results;
   }
 
   /**

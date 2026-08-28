@@ -1,5 +1,9 @@
 /**
  * Proxy Connection Tester
+ *
+ * @deprecated Use ProxyManager.testProxyBatch() and ProxyManager.verifyProxy()
+ * from proxy-manager.ts instead. This module is kept for backward compatibility only.
+ *
  * Tests proxy connectivity by making a real HTTP request through the proxy
  * to a test endpoint (httpbin.org/ip by default).
  *
@@ -33,6 +37,8 @@ const DEFAULT_TIMEOUT_MS = 10000;
 
 /**
  * Test a single proxy connection by making an HTTP request through it.
+ *
+ * @deprecated Use ProxyManager.verifyProxy() instead.
  *
  * @param proxyUrl - Full proxy URL (e.g. "http://user:pass@host:port" or "socks5://host:port")
  * @param testUrl - URL to fetch through the proxy (default: httpbin.org/ip)
@@ -211,6 +217,8 @@ export async function testProxyConnection(
 
 /**
  * Test multiple proxies in parallel with concurrency control.
+ *
+ * @deprecated Use ProxyManager.testProxyBatch() instead.
  *
  * @param proxyUrls - Array of proxy URLs to test
  * @param testUrl - URL to fetch through each proxy

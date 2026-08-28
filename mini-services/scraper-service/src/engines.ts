@@ -27,7 +27,7 @@ import { detectCaptcha, type CaptchaDetection } from "./captcha-detector";
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 import { browserBehavior } from "./browser-behavior";
 import { detectAndDecode } from "./charset-detector";
-import { getEngineFallbackChain, DEFAULT_ENGINE_FALLBACK_CHAIN } from "./engine-config";
+import { getEngineFallbackChain } from "./engine-config";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_SCROLL_ITERATIONS = parseInt(process.env.SCRAPER_MAX_SCROLL_ITERATIONS || '30', 10);
@@ -295,12 +295,6 @@ function getCheerioAgent(): Promise<import('undici').Agent> {
  * Used by task-engine.ts when a scrape operation fails and needs to retry
  * with a different internal engine before giving up.
  */
-/**
- * @deprecated Use getEngineFallbackChain() from engine-config.ts instead.
- * Kept for backward compatibility and reference.
- */
-export const ENGINE_FALLBACK_CHAIN: EngineType[][] = DEFAULT_ENGINE_FALLBACK_CHAIN;
-
 /**
  * Select the best fallback chain strategy for a given primary engine.
  * Returns the chain whose first element matches the primary engine.
@@ -894,6 +888,8 @@ async function getPlaywrightBrowser(): Promise<import("playwright").Browser> {
         "--disable-renderer-backgrounding",
         "--no-first-run",
         "--no-default-browser-check",
+        // Anti-detection: prevent navigator.webdriver leak via Chrome flag
+        "--disable-blink-features=AutomationControlled",
       ],
     });
     console.log("[Playwright] Browser launched successfully");
@@ -1022,7 +1018,7 @@ class PlaywrightEngine implements ScrapingEngine {
 
           // Block resources by type + cross-origin 3rd-party + SSRF protection
           // Uses shouldBlockResource helper for centralized anti-detection resource policy
-          await page.route('**/*', (route) => {
+          await page.route('**/*', async (route) => {
             try {
               const resourceType = route.request().resourceType();
               const routeUrl = route.request().url();
@@ -1043,6 +1039,26 @@ class PlaywrightEngine implements ScrapingEngine {
               if (['document', 'xhr', 'fetch', 'iframe', 'other'].includes(resourceType) && !isSafeUrl(routeUrl)) {
                 route.abort();
                 return;
+              }
+
+              // Behavioral analysis: scan same-domain scripts for bot-detection patterns
+              if (ENABLE_SCRIPT_CONTENT_ANALYSIS && resourceType === 'script') {
+                try {
+                  const resp = await route.fetch();
+                  const body = await resp.text();
+                  if (hasBotDetectionBehavioralPatterns(body)) {
+                    if (process.env.DEBUG === 'true') {
+                      console.log(`[Playwright] Blocked bot-detection script (behavioral): ${routeUrl.slice(0, 120)}`);
+                    }
+                    await route.abort();
+                    return;
+                  }
+                  await route.fulfill({ response: resp });
+                  return;
+                } catch {
+                  await route.continue();
+                  return;
+                }
               }
 
               route.continue();
@@ -1907,14 +1923,140 @@ class ScraplingEngine implements ScrapingEngine {
  * Strategy:
  *   - Always block: image, font, media, stylesheet, websocket, manifest
  *     (websocket = bot-detection beacons; manifest = unnecessary metadata)
+ *   - Block known bot-detection domains (configurable via SCRAPER_BLOCKED_SCRIPT_DOMAINS)
+ *   - Block Cloudflare challenge paths (same-origin /cdn-cgi/challenge*, /cdn-cgi/bm/*)
  *   - Block cross-origin: script, xhr, fetch
  *     (prevents 3rd-party tracking pixels and bot-detection scripts while
  *      allowing the target site's own JS to render)
  *   - Allow same-domain: script, xhr, fetch, document, eventsource, other
+ *   - Optional behavioral content analysis for same-domain scripts
+ *     (SCRAPER_ENABLE_SCRIPT_CONTENT_ANALYSIS=true)
  */
+
+// ---- Bot-Detection Domain Blocking (Task 3-c) ----
+
+/**
+ * Default list of known bot-detection service domains.
+ * Overridden entirely by SCRAPER_BLOCKED_SCRIPT_DOMAINS env var (comma-separated).
+ */
+const DEFAULT_BOT_DETECTION_DOMAINS = [
+  'fpjs.io',                    // FingerprintJS
+  'fingerprintjs.com',          // FingerprintJS
+  'recaptcha.net',              // reCAPTCHA
+  'google.com',                 // reCAPTCHA (selective — only /recaptcha paths)
+  'hcaptcha.com',               // hCaptcha
+  'datadome.co',                // DataDome
+  'perimeterx.com',             // PerimeterX
+  'akamai.com',                 // Akamai Bot Manager
+  'imperva.com',                // Imperva
+  'cloudflare.com',             // Cloudflare (selective — challenge paths only)
+  'arkoselabs.com',             // FunCaptcha (Arkose Labs)
+];
+
+/** Parse blocked bot-detection domains from env var or use defaults. */
+function getBlockedBotDomains(): string[] {
+  const envDomains = process.env.SCRAPER_BLOCKED_SCRIPT_DOMAINS;
+  if (envDomains) {
+    return envDomains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+  }
+  return DEFAULT_BOT_DETECTION_DOMAINS;
+}
+
+/**
+ * Cloudflare challenge paths to block on same-origin target domains.
+ * These paths are injected by Cloudflare's edge on proxied sites.
+ */
+const BLOCKED_CF_PATHS = ['/cdn-cgi/challenge-platform', '/cdn-cgi/bm'];
+
+/**
+ * Check if a request URL matches a known bot-detection domain.
+ * Special handling:
+ *   - google.com: only blocks /recaptcha paths (allows Google Analytics, Fonts, etc.)
+ *   - cloudflare.com: selective — blocks challenge paths, allows cdnjs.cloudflare.com
+ */
+function isBotDetectionDomainUrl(requestUrl: string): boolean {
+  try {
+    const parsed = new URL(requestUrl);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+    const blockedDomains = getBlockedBotDomains();
+
+    for (const domain of blockedDomains) {
+      if (host === domain || host.endsWith('.' + domain)) {
+        // google.com — only block /recaptcha paths
+        if (domain === 'google.com') {
+          return path.startsWith('/recaptcha') || path.includes('/recaptcha/');
+        }
+        // cloudflare.com — selective: block challenge paths, allow CDN
+        if (domain === 'cloudflare.com') {
+          if (host === 'cdnjs.cloudflare.com') return false;
+          if (host === 'ajax.cloudflare.com') return false;
+          return BLOCKED_CF_PATHS.some(p => path.startsWith(p));
+        }
+        return true;
+      }
+    }
+  } catch { /* invalid URL — don't block */ }
+  return false;
+}
+
+/**
+ * Check if a same-origin URL matches Cloudflare challenge paths.
+ * Cloudflare edge injects challenge scripts via /cdn-cgi/ on the target domain itself.
+ */
+function isCloudflareChallengePath(requestUrl: string): boolean {
+  try {
+    const path = new URL(requestUrl).pathname.toLowerCase();
+    return BLOCKED_CF_PATHS.some(p => path.startsWith(p));
+  } catch { return false; }
+}
+
+/**
+ * Behavioral pattern scoring for bot-detection script content.
+ * Scans script source for fingerprinting/bot-detection patterns.
+ * Returns true if score >= 3 out of 5 patterns detected.
+ *
+ * Patterns:
+ *   1. navigator.webdriver accessed multiple times
+ *   2. Multiple iframe createElement calls (fingerprint sandboxing)
+ *   3. RTCPeerConnection usage (IP leak detection)
+ *   4. Excessive WebGLRenderingContext parameter access
+ *   5. performance.timing delta measurement
+ */
+function hasBotDetectionBehavioralPatterns(scriptContent: string): boolean {
+  let score = 0;
+  // 1. navigator.webdriver accessed more than once
+  const wdMatches = scriptContent.match(/navigator\.webdriver/g);
+  if (wdMatches && wdMatches.length > 1) score++;
+  // 2. Multiple iframe createElement calls for fingerprinting
+  const iframeMatches = scriptContent.match(/createElement\s*\(\s*['"]iframe['"]\s*\)/g);
+  if (iframeMatches && iframeMatches.length > 1) score++;
+  // 3. RTCPeerConnection usage for IP leak detection
+  if (/RTCPeerConnection|webkitRTCPeerConnection/.test(scriptContent)) score++;
+  // 4. Excessive WebGL parameter access
+  const webglMatches = scriptContent.match(/WebGLRenderingContext|(?:getParameter|getSupportedExtensions|getExtension)\s*\(/g);
+  if (webglMatches && webglMatches.length > 2) score++;
+  // 5. performance.timing delta measurement
+  if (/performance\.timing/.test(scriptContent) && /navigationStart|loadEventEnd|domComplete/.test(scriptContent)) score++;
+  return score >= 3;
+}
+
+/** Whether behavioral script content analysis is enabled. */
+const ENABLE_SCRIPT_CONTENT_ANALYSIS = process.env.SCRAPER_ENABLE_SCRIPT_CONTENT_ANALYSIS === 'true';
+
 function shouldBlockResource(resourceType: string, requestUrl: string, targetDomain: string): boolean {
   // Always block these resource types (speed + anti-tracking)
   if (ALWAYS_BLOCKED_RESOURCES.has(resourceType)) return true;
+
+  // Bot-detection domain blocking (explicit list of known services)
+  if (['script', 'xhr', 'fetch', 'eventsource'].includes(resourceType)) {
+    if (isBotDetectionDomainUrl(requestUrl)) return true;
+  }
+
+  // Cloudflare challenge path blocking (same-origin /cdn-cgi/challenge* etc.)
+  if (['script', 'xhr', 'fetch'].includes(resourceType)) {
+    if (isCloudflareChallengePath(requestUrl)) return true;
+  }
 
   // Cross-origin blocking for script/xhr/fetch: block 3rd-party tracking & bot-detection
   if (['script', 'xhr', 'fetch', 'eventsource'].includes(resourceType)) {
@@ -2121,7 +2263,7 @@ class ObscuraEngine implements ScrapingEngine {
 
           // Block resources by type + cross-origin 3rd-party + SSRF protection
           // Uses shouldBlockResource helper for centralized anti-detection resource policy
-          await page.route("**/*", (route) => {
+          await page.route("**/*", async (route) => {
             try {
               const resourceType = route.request().resourceType();
               const routeUrl = route.request().url();
@@ -2141,6 +2283,26 @@ class ObscuraEngine implements ScrapingEngine {
               if (["document", "xhr", "fetch"].includes(resourceType) && !isSafeUrl(routeUrl)) {
                 route.abort();
                 return;
+              }
+
+              // Behavioral analysis: scan same-domain scripts for bot-detection patterns
+              if (ENABLE_SCRIPT_CONTENT_ANALYSIS && resourceType === 'script') {
+                try {
+                  const resp = await route.fetch();
+                  const body = await resp.text();
+                  if (hasBotDetectionBehavioralPatterns(body)) {
+                    if (process.env.DEBUG === 'true') {
+                      console.log(`[Obscura] Blocked bot-detection script (behavioral): ${routeUrl.slice(0, 120)}`);
+                    }
+                    await route.abort();
+                    return;
+                  }
+                  await route.fulfill({ response: resp });
+                  return;
+                } catch {
+                  await route.continue();
+                  return;
+                }
               }
 
               route.continue();
@@ -2488,6 +2650,8 @@ export async function fetchWithInfiniteScroll(
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-extensions',
+        // Anti-detection: prevent navigator.webdriver leak via Chrome flag
+        '--disable-blink-features=AutomationControlled',
       ],
     };
 
