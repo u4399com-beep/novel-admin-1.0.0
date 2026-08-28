@@ -528,38 +528,91 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(_e) {}
 
   // Override navigator.userAgentData (Chrome 90+ Client Hints API)
+  // Must be consistent with HTTP sec-ch-ua headers sent by the scraper.
+  // Brands, platform, mobile, arch, bitness, model, fullVersionList all must match.
   try {
     var _isMac = /Macintosh/.test(_uaString);
     var _isLinux = /Linux/.test(_uaString);
+    var _isMobile = /Mobile/.test(_uaString);
+    var _isEdge = /Edg\//.test(_uaString) && !/OPR\//.test(_uaString);
     if (!_isFirefox && navigator.userAgentData) {
       var _uaVer = _uaString.match(/Chrome\/(\d+)/);
       var _chromeMajor = _uaVer ? parseInt(_uaVer[1]) : 131;
-      var _uaBrands = [
-        { brand: "Google Chrome", version: String(_chromeMajor) },
-        { brand: "Not A(Brand", version: "99" },
-        { brand: "Chromium", version: String(_chromeMajor) }
-      ];
+      var _uaFullVer = _uaString.match(/Chrome\/([\d.]+)/);
+      var _chromeFullVersion = _uaFullVer ? _uaFullVer[1] : _chromeMajor + '.0.0.0';
+
+      // Detect architecture from UA
+      var _uadArch = 'x86';
+      var _uadBitness = '64';
+      if (_isMac) { _uadArch = 'arm'; _uadBitness = '64'; }
+      else if (_isLinux && (/aarch64/.test(_uaString) || /arm64/.test(_uaString))) { _uadArch = 'arm'; _uadBitness = '64'; }
+      else if (_isLinux && /x86/.test(_uaString)) { _uadArch = 'x86'; _uadBitness = '64'; }
+      else if (_isMobile) { _uadArch = 'arm'; _uadBitness = '64'; }
+
+      // Detect model (only for Android mobile)
+      var _uadModel = '';
+      var _androidModelMatch = _uaString.match(/Android[^;]*;\\s*([^;)\\s]+\\s+Build/);
+      if (_androidModelMatch) { _uadModel = _androidModelMatch[1]; }
+
+      // Platform
+      var _uadPlatform = 'Windows';
+      if (_isMac) _uadPlatform = 'macOS';
+      else if (_isLinux && !_isMobile) _uadPlatform = 'Linux';
+      else if (_isMobile && /Android/.test(_uaString)) _uadPlatform = 'Android';
+
+      // Brands must match sec-ch-ua header exactly
+      var _uaBrands;
+      if (_isEdge) {
+        _uaBrands = [
+          { brand: "Chromium", version: String(_chromeMajor) },
+          { brand: "Not A(Brand", version: "99" },
+          { brand: "Microsoft Edge", version: String(_chromeMajor) }
+        ];
+      } else {
+        _uaBrands = [
+          { brand: "Google Chrome", version: String(_chromeMajor) },
+          { brand: "Not A(Brand", version: "99" },
+          { brand: "Chromium", version: String(_chromeMajor) }
+        ];
+      }
+
+      // fullVersionList must match sec-ch-ua-full-version-list header
+      var _uaFullVersionList;
+      if (_isEdge) {
+        _uaFullVersionList = [
+          { brand: "Chromium", version: _chromeFullVersion },
+          { brand: "Not A(Brand", version: "99.0.0.0" },
+          { brand: "Microsoft Edge", version: _chromeFullVersion }
+        ];
+      } else {
+        _uaFullVersionList = [
+          { brand: "Not A(Brand", version: "99.0.0.0" },
+          { brand: "Google Chrome", version: _chromeFullVersion },
+          { brand: "Chromium", version: _chromeFullVersion }
+        ];
+      }
+
       var _origUAD = navigator.userAgentData;
       Object.defineProperty(navigator, 'userAgentData', {
         get: function() {
           return {
             brands: _uaBrands,
-            mobile: false,
-            platform: _isLinux ? 'Linux' : (_isMac ? 'macOS' : 'Windows'),
+            mobile: _isMobile,
+            platform: _uadPlatform,
             getHighEntropyValues: function(hints) {
               return Promise.resolve({
                 brands: _uaBrands,
-                mobile: false,
-                platform: _isLinux ? 'Linux' : (_isMac ? 'macOS' : 'Windows'),
-                architecture: 'x86',
-                bitness: '64',
-                model: '',
-                platformVersion: _isLinux ? '6.5.0' : (_isMac ? '14.0.0' : '15.0.0'),
-                fullVersionList: _uaBrands.map(function(b) { return { brand: b.brand, version: b.version }; }),
-                uaFullVersion: String(_chromeMajor) + '.0.0.0'
+                mobile: _isMobile,
+                platform: _uadPlatform,
+                architecture: _uadArch,
+                bitness: _uadBitness,
+                model: _uadModel,
+                platformVersion: _isMobile ? '14.0.0' : (_isLinux ? '6.5.0' : (_isMac ? '14.0.0' : '15.0.0')),
+                fullVersionList: _uaFullVersionList,
+                uaFullVersion: _chromeFullVersion
               });
             },
-            toJSON: function() { return { brands: _uaBrands, mobile: false, platform: _isLinux ? 'Linux' : (_isMac ? 'macOS' : 'Windows') }; }
+            toJSON: function() { return { brands: _uaBrands, mobile: _isMobile, platform: _uadPlatform }; }
           };
         },
         configurable: true
@@ -742,6 +795,31 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   const UNMASKED_VENDOR_WEBGL = 37445;
   const UNMASKED_RENDERER_WEBGL = 37446;
+  // Standard (masked) WebGL parameters
+  const GL_RENDERER = 0x1F01;
+  const GL_VENDOR = 0x1F00;
+  const GL_SHADING_LANGUAGE_VERSION = 0x8B8C;
+
+  // Derive consistent masked RENDERER/VENDOR/SHADING_LANGUAGE_VERSION from profile
+  var _glVendor = _isFirefox ? 'Mozilla' : 'Google Inc.';
+  var _glRenderer = _isFirefox ? 'Mozilla' : 'WebKit WebGL';
+  // GLSL version: match ANGLE (Chrome) vs native (Firefox) vs Mesa (Linux)
+  var _glslVersion = 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)';
+  if (_isFirefox) {
+    _glslVersion = 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 NVIDIA)';
+  } else if (/Mesa/.test(PROFILE.webglRenderer)) {
+    _glslVersion = 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Mesa 23.2.1)';
+  }
+  // Seeded minor variation for GLSL version (e.g. trailing whitespace or version suffix)
+  var _glslSeed = Math.floor(_fakeDeviceSeed * 2.71) | 0;
+  _glslSeed = (_glslSeed * 16807 + 0.5) % 2147483647;
+  var _glslVariants = [
+    'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)',
+    'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium) ',
+  ];
+  if (!_isFirefox && !/Mesa/.test(PROFILE.webglRenderer)) {
+    _glslVersion = _glslVariants[_glslSeed % _glslVariants.length];
+  }
 
   // Override WebGLRenderingContext
   const origGetParameter = WebGLRenderingContext.prototype.getParameter;
@@ -750,6 +828,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
     if (param === UNMASKED_VENDOR_WEBGL) return PROFILE.webglVendor;
     // UNMASKED_RENDERER_WEBGL
     if (param === UNMASKED_RENDERER_WEBGL) return PROFILE.webglRenderer;
+    // RENDERER (masked)
+    if (param === GL_RENDERER) return _glRenderer;
+    // VENDOR (masked)
+    if (param === GL_VENDOR) return _glVendor;
+    // SHADING_LANGUAGE_VERSION
+    if (param === GL_SHADING_LANGUAGE_VERSION) return _glslVersion;
     return origGetParameter.call(this, param);
   };
 
@@ -759,6 +843,14 @@ export function getStealthScript(profile: FingerprintProfile): string {
     WebGL2RenderingContext.prototype.getParameter = function(param) {
       if (param === UNMASKED_VENDOR_WEBGL) return PROFILE.webglVendor;
       if (param === UNMASKED_RENDERER_WEBGL) return PROFILE.webglRenderer;
+      if (param === GL_RENDERER) return _glRenderer;
+      if (param === GL_VENDOR) return _glVendor;
+      // WebGL2 uses GLSL ES 3.00
+      if (param === GL_SHADING_LANGUAGE_VERSION) {
+        if (_isFirefox) return 'WebGL GLSL ES 3.0 (OpenGL ES GLSL ES 3.0 NVIDIA)';
+        if (/Mesa/.test(PROFILE.webglRenderer)) return 'WebGL GLSL ES 3.0 (OpenGL ES GLSL ES 3.0 Mesa 23.2.1)';
+        return 'WebGL GLSL ES 3.00 (OpenGL ES GLSL ES 3.0 Chromium)';
+      }
       return origGetParameter2.call(this, param);
     };
   }
@@ -797,6 +889,52 @@ export function getStealthScript(profile: FingerprintProfile): string {
       return origGetExtension2.call(this, name);
     };
   }
+
+  // WebGL readPixels noise — same deterministic per-pixel approach as canvas getImageData
+  // Prevents pixel-exact readback fingerprinting of WebGL canvases
+  try {
+    var _glReadSeed = Math.floor(_fakeDeviceSeed * 5.77) | 0;
+    var _origReadPixels = WebGLRenderingContext.prototype.readPixels;
+    WebGLRenderingContext.prototype.readPixels = function(x, y, w, h, format, type, pixels) {
+      _origReadPixels.call(this, x, y, w, h, format, type, pixels);
+      if (format === 0x1908 && type === 0x1401 && pixels instanceof Uint8Array) { // RGBA, UNSIGNED_BYTE
+        var _rS = _glReadSeed;
+        for (var i = 0; i < pixels.length; i += 4) {
+          _rS = (_rS * 16807 + 0.5) % 2147483647;
+          var _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+          pixels[i]   = Math.max(0, Math.min(255, pixels[i] + _rn));
+          _rS = (_rS * 16807 + 0.5) % 2147483647;
+          _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+          pixels[i+1] = Math.max(0, Math.min(255, pixels[i+1] + _rn));
+          _rS = (_rS * 16807 + 0.5) % 2147483647;
+          _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+          pixels[i+2] = Math.max(0, Math.min(255, pixels[i+2] + _rn));
+        }
+      }
+    };
+    if (typeof WebGL2RenderingContext !== 'undefined') {
+      var _origReadPixels2 = WebGL2RenderingContext.prototype.readPixels;
+      if (_origReadPixels2 && _origReadPixels2 !== _origReadPixels) {
+        WebGL2RenderingContext.prototype.readPixels = function(x, y, w, h, format, type, pixels) {
+          _origReadPixels2.call(this, x, y, w, h, format, type, pixels);
+          if (format === 0x1908 && type === 0x1401 && pixels instanceof Uint8Array) {
+            var _r2S = _glReadSeed + 1;
+            for (var i = 0; i < pixels.length; i += 4) {
+              _r2S = (_r2S * 16807 + 0.5) % 2147483647;
+              var _rn2 = Math.round(((_r2S % 3) - 1) * _canvasNoiseIntensity);
+              pixels[i]   = Math.max(0, Math.min(255, pixels[i] + _rn2));
+              _r2S = (_r2S * 16807 + 0.5) % 2147483647;
+              _rn2 = Math.round(((_r2S % 3) - 1) * _canvasNoiseIntensity);
+              pixels[i+1] = Math.max(0, Math.min(255, pixels[i+1] + _rn2));
+              _r2S = (_r2S * 16807 + 0.5) % 2147483647;
+              _rn2 = Math.round(((_r2S % 3) - 1) * _canvasNoiseIntensity);
+              pixels[i+2] = Math.max(0, Math.min(255, pixels[i+2] + _rn2));
+            }
+          }
+        };
+      }
+    }
+  } catch(_e) {}
 
   // ---- 4. Canvas Fingerprint Noise ----
   // NOTE: Simple single-pixel noise removed here to avoid double-injection fingerprint.
@@ -1556,6 +1694,136 @@ export function getStealthScript(profile: FingerprintProfile): string {
     };
   } catch(e) {}
 
+  // ---- Canvas 2D Context Proxy (enhanced fingerprint resistance) ----
+  // Intercepts measureText, isPointInPath, isPointInStroke, getLineDash,
+  // quadraticCurveTo, bezierCurveTo, arc, ellipse with deterministic micro-variations.
+  // Existing getImageData/toDataURL/toBlob patches (Section 20/30) remain in place;
+  // the Proxy forwards those calls through to the prototype-patched versions.
+  try {
+    var _origGetContext = HTMLCanvasElement.prototype.getContext;
+    var _ctxProxySeed = Math.floor(_fakeDeviceSeed * 3.14159) | 0;
+    HTMLCanvasElement.prototype.getContext = function(type, attrs) {
+      var ctx = _origGetContext.call(this, type, attrs);
+      if (type === '2d' && ctx) {
+        // Capture seed snapshot so each canvas context gets consistent noise
+        var _2dSeed = _ctxProxySeed;
+        return new Proxy(ctx, {
+          get: function(target, prop) {
+            // measureText — add ±0.01px to width metrics
+            if (prop === 'measureText') {
+              return function() {
+                var result = target.measureText.apply(target, arguments);
+                try {
+                  var _mS = (_2dSeed * 16807 + 0.5) % 2147483647;
+                  var _mNoise = ((_mS % 21) - 10) * 0.001; // ±0.01px
+                  var _origW = result.width;
+                  Object.defineProperty(result, 'width', {
+                    get: function() { return _origW + _mNoise; },
+                    configurable: true
+                  });
+                } catch(_e) {}
+                return result;
+              };
+            }
+            // isPointInPath — add ±0.1px offset to test point
+            if (prop === 'isPointInPath') {
+              return function() {
+                var args = Array.prototype.slice.call(arguments);
+                var _pS = (_2dSeed * 16807 + 1.5) % 2147483647;
+                var _dx = ((_pS % 201) - 100) * 0.001; // ±0.1px
+                _pS = (_pS * 16807 + 0.5) % 2147483647;
+                var _dy = ((_pS % 201) - 100) * 0.001;
+                var xi = 0, yi = 1;
+                if (args.length >= 3 && args[0] && typeof args[0].addPath === 'function') { xi = 1; yi = 2; }
+                args[xi] = (args[xi] || 0) + _dx;
+                args[yi] = (args[yi] || 0) + _dy;
+                return target.isPointInPath.apply(target, args);
+              };
+            }
+            // isPointInStroke — add ±0.1px offset to test point
+            if (prop === 'isPointInStroke') {
+              return function() {
+                var args = Array.prototype.slice.call(arguments);
+                var _sS = (_2dSeed * 16807 + 2.5) % 2147483647;
+                var _sdx = ((_sS % 201) - 100) * 0.001;
+                _sS = (_sS * 16807 + 0.5) % 2147483647;
+                var _sdy = ((_sS % 201) - 100) * 0.001;
+                var xi = 0, yi = 1;
+                if (args.length >= 3 && args[0] && typeof args[0].addPath === 'function') { xi = 1; yi = 2; }
+                args[xi] = (args[xi] || 0) + _sdx;
+                args[yi] = (args[yi] || 0) + _sdy;
+                return target.isPointInStroke.apply(target, args);
+              };
+            }
+            // getLineDash — slight variations of dash pattern segments
+            if (prop === 'getLineDash') {
+              return function() {
+                var result = target.getLineDash.apply(target, arguments);
+                try {
+                  var _lS = (_2dSeed * 16807 + 3.5) % 2147483647;
+                  for (var i = 0; i < result.length; i++) {
+                    _lS = (_lS * 16807 + 0.5) % 2147483647;
+                    result[i] = Math.max(0.1, result[i] + ((_lS % 21) - 10) * 0.01);
+                  }
+                } catch(_e) {}
+                return result;
+              };
+            }
+            // quadraticCurveTo — tiny control-point offset (affects isPointInPath)
+            if (prop === 'quadraticCurveTo') {
+              return function(cpx, cpy, x, y) {
+                var _qS = (_2dSeed * 16807 + 4.5) % 2147483647;
+                var _qdx = ((_qS % 201) - 100) * 0.0001;
+                _qS = (_qS * 16807 + 0.5) % 2147483647;
+                var _qdy = ((_qS % 201) - 100) * 0.0001;
+                return target.quadraticCurveTo(cpx + _qdx, cpy + _qdy, x + _qdx * 0.5, y + _qdy * 0.5);
+              };
+            }
+            // bezierCurveTo — tiny control-point offsets (affects isPointInPath)
+            if (prop === 'bezierCurveTo') {
+              return function(cp1x, cp1y, cp2x, cp2y, x, y) {
+                var _bS = (_2dSeed * 16807 + 5.5) % 2147483647;
+                var _bdx = ((_bS % 201) - 100) * 0.0001;
+                _bS = (_bS * 16807 + 0.5) % 2147483647;
+                var _bdy = ((_bS % 201) - 100) * 0.0001;
+                return target.bezierCurveTo(
+                  cp1x + _bdx, cp1y + _bdy,
+                  cp2x + _bdx * 0.8, cp2y + _bdy * 0.8,
+                  x + _bdx * 0.3, y + _bdy * 0.3
+                );
+              };
+            }
+            // arc — tiny radius variation (±0.01)
+            if (prop === 'arc') {
+              return function(x, y, radius, startAngle, endAngle, anticlockwise) {
+                var _aS = (_2dSeed * 16807 + 6.5) % 2147483647;
+                var _aNoise = ((_aS % 21) - 10) * 0.001; // ±0.01
+                return target.arc(x, y, Math.max(0, radius + _aNoise), startAngle, endAngle, anticlockwise);
+              };
+            }
+            // ellipse — tiny radius variation on both radii (±0.01)
+            if (prop === 'ellipse') {
+              return function(x, y, rx, ry, rotation, startAngle, endAngle, anticlockwise) {
+                var _eS = (_2dSeed * 16807 + 7.5) % 2147483647;
+                var _eNoiseRx = ((_eS % 21) - 10) * 0.001;
+                _eS = (_eS * 16807 + 0.5) % 2147483647;
+                var _eNoiseRy = ((_eS % 21) - 10) * 0.001;
+                return target.ellipse(
+                  x, y,
+                  Math.max(0, rx + _eNoiseRx), Math.max(0, ry + _eNoiseRy),
+                  rotation, startAngle, endAngle, anticlockwise
+                );
+              };
+            }
+            // Forward all other property accesses to the real context
+            return target[prop];
+          }
+        });
+      }
+      return ctx;
+    };
+  } catch(_e) {}
+
   // ---- 31. AudioContext Fingerprint Noise ----
   // Override createOscillator to inject slight frequency variation,
   // making audio fingerprinting inconsistent across page loads.
@@ -1603,6 +1871,65 @@ export function getStealthScript(profile: FingerprintProfile): string {
       };
     }
   } catch(e) {}
+
+  // ---- AnalyserNode frequency data noise ----
+  // Adds deterministic ±0.001 noise to getFloatFrequencyData and
+  // ±1 to getByteFrequencyData outputs, using the same seed as canvas/audio.
+  try {
+    var _analyserSeed = Math.floor(_fakeDeviceSeed * 9.83) | 0;
+    // getFloatFrequencyData — ±0.001 per bin
+    var _origGetFloatFreq = AnalyserNode.prototype.getFloatFrequencyData;
+    AnalyserNode.prototype.getFloatFrequencyData = function(array) {
+      _origGetFloatFreq.call(this, array);
+      if (array && array.length) {
+        var _aS = _analyserSeed;
+        for (var i = 0; i < array.length; i++) {
+          _aS = (_aS * 16807 + 0.5) % 2147483647;
+          array[i] = array[i] + ((_aS % 2001) - 1000) * 0.000001; // ±0.001
+        }
+      }
+    };
+    // getByteFrequencyData — ±1 per bin
+    var _origGetByteFreq = AnalyserNode.prototype.getByteFrequencyData;
+    AnalyserNode.prototype.getByteFrequencyData = function(array) {
+      _origGetByteFreq.call(this, array);
+      if (array && array.length) {
+        var _bS = _analyserSeed + 7;
+        for (var i = 0; i < array.length; i++) {
+          _bS = (_bS * 16807 + 0.5) % 2147483647;
+          var _bNoise = (_bS % 3) - 1; // -1, 0, or +1
+          array[i] = Math.max(0, Math.min(255, array[i] + _bNoise));
+        }
+      }
+    };
+    // getByteTimeDomainData — ±1 per sample for waveform fingerprint noise
+    var _origGetByteTime = AnalyserNode.prototype.getByteTimeDomainData;
+    AnalyserNode.prototype.getByteTimeDomainData = function(array) {
+      _origGetByteTime.call(this, array);
+      if (array && array.length) {
+        var _tS = _analyserSeed + 13;
+        for (var i = 0; i < array.length; i++) {
+          _tS = (_tS * 16807 + 0.5) % 2147483647;
+          var _tNoise = (_tS % 3) - 1;
+          array[i] = Math.max(0, Math.min(255, array[i] + _tNoise));
+        }
+      }
+    };
+    // getFloatTimeDomainData — ±0.001 per sample
+    var _origGetFloatTime = AnalyserNode.prototype.getFloatTimeDomainData;
+    if (_origGetFloatTime) {
+      AnalyserNode.prototype.getFloatTimeDomainData = function(array) {
+        _origGetFloatTime.call(this, array);
+        if (array && array.length) {
+          var _ftS = _analyserSeed + 19;
+          for (var i = 0; i < array.length; i++) {
+            _ftS = (_ftS * 16807 + 0.5) % 2147483647;
+            array[i] = array[i] + ((_ftS % 2001) - 1000) * 0.000001;
+          }
+        }
+      };
+    }
+  } catch(_e) {}
 
   // ---- 32. Navigation Timing Simulation ----
   // Override performance.getEntriesByType('navigation') to return realistic values,
@@ -2138,38 +2465,81 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(e) {}
 
   // ==================== Section 60: Font enumeration protection ====================
-  // Some anti-bot systems enumerate installed fonts via canvas or document.fonts.
-  // We limit the reported fonts to a common set to reduce uniqueness.
+  // Anti-bot systems enumerate installed fonts via canvas or document.fonts.
+  // We report a seeded subset of common platform-matched fonts to reduce uniqueness.
   try {
+    // Build a seeded font availability list based on platform
+    var _platformFonts = {
+      'Win32': ['Arial', 'Arial Black', 'Calibri', 'Cambria', 'Comic Sans MS', 'Consolas', 'Courier New', 'Georgia', 'Impact', 'Lucida Console', 'Lucida Sans Unicode', 'Microsoft Sans Serif', 'Palatino Linotype', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana', 'Webdings'],
+      'MacIntel': ['Arial', 'Arial Black', 'Courier New', 'Georgia', 'Helvetica', 'Helvetica Neue', 'Impact', 'Lucida Console', 'Lucida Grande', 'Menlo', 'Monaco', 'Palatino', 'Times New Roman', 'Trebuchet MS', 'Verdana'],
+      'Linux x86_64': ['Arial', 'Courier New', 'DejaVu Sans', 'DejaVu Sans Mono', 'DejaVu Serif', 'Liberation Mono', 'Liberation Sans', 'Liberation Serif', 'Times New Roman', 'Ubuntu', 'Verdana'],
+    };
+    var _fontPool = _platformFonts[PROFILE.platform] || _platformFonts['Win32'];
+    // Always-included generic families + seeded selection from pool
+    var _genericFamilies = ['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy'];
+    var _availableFonts = _genericFamilies.slice();
+    var _fontSeed = Math.floor(_fakeDeviceSeed * 11.11) | 0;
+    // Select 10-14 fonts from the pool (deterministic per seed)
+    var _fontCount = 10 + (_fontSeed % 5);
+    for (var _fi = 0; _fi < _fontCount && _fi < _fontPool.length; _fi++) {
+      _fontSeed = (_fontSeed * 16807 + 0.5) % 2147483647;
+      var _fIdx = _fontSeed % _fontPool.length;
+      if (_availableFonts.indexOf(_fontPool[_fIdx]) < 0) {
+        _availableFonts.push(_fontPool[_fIdx]);
+      }
+    }
+    // Sort for consistency
+    _availableFonts.sort();
+
     if (document.fonts && document.fonts.forEach) {
       var _origForEach = document.fonts.forEach;
       document.fonts.forEach = function(callback, thisArg) {
         var _filtered = [];
         _origForEach.call(this, function(font) {
-          // Only expose common web-safe fonts (reduce fingerprint surface)
-          var _commonFonts = ['Arial', 'Arial Black', 'Comic Sans MS', 'Courier New', 'Georgia', 'Impact', 'Lucida Console', 'Lucida Sans Unicode', 'Microsoft Sans Serif', 'Palatino Linotype', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana', 'Webdings'];
-          if (_commonFonts.indexOf(font.family) >= 0 || font.status === 'loaded') {
+          if (_availableFonts.indexOf(font.family) >= 0 || font.status === 'loaded') {
             _filtered.push(font);
           }
         });
         _filtered.forEach(function(f, i) { callback.call(thisArg, f, i, _filtered); });
       };
-      // Also limit check() to avoid probing non-standard fonts
+      // Override check() to be consistent with the seeded font list
       var _origCheck = document.fonts.check.bind(document.fonts);
       document.fonts.check = function(font, text) {
-        // Only allow check for common font families
         try {
-          var _familyMatch = font.match(/(?:^|,\s*)"?([\w\s\-]+)"?/);
-          if (_familyMatch) {
-            var _family = _familyMatch[1].trim();
-            var _safeFonts = ['Arial', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana', 'serif', 'sans-serif', 'monospace'];
-            if (_safeFonts.indexOf(_family) >= 0) return _origCheck(font, text);
-            return false;
+          // Extract all font families from the CSS font string (comma-separated)
+          var _families = font.split(',');
+          for (var _ci = 0; _ci < _families.length; _ci++) {
+            var _fam = _families[_ci].replace(/["']/g, '').trim();
+            // Only report available if the non-generic family is in our seeded list
+            if (_fam && _genericFamilies.indexOf(_fam) < 0) {
+              if (_availableFonts.indexOf(_fam) >= 0) return true;
+              // Non-generic family not in our list — claim unavailable
+              return false;
+            }
           }
-        } catch(e) {}
+          // Only generic families specified — delegate to real check
+          return _origCheck(font, text);
+        } catch(_e) {}
         return _origCheck(font, text);
       };
     }
+    // document.fonts.ready should resolve immediately (not wait for real font loading)
+    // to avoid timing-based detection of font availability
+    try {
+      if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+        var _origReady = document.fonts.ready;
+        Object.defineProperty(document.fonts, 'ready', {
+          get: function() {
+            // Return a pre-resolved promise
+            if (!_origReady._fakeResolved) {
+              _origReady._fakeResolved = Promise.resolve(_origReady);
+            }
+            return _origReady._fakeResolved;
+          },
+          configurable: true
+        });
+      }
+    } catch(_e) {}
   } catch(e) {}
 
   // ==================== Section 61: Gamepad API override ====================

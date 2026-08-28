@@ -19587,7 +19587,6 @@ Work Log:
 
 ## 未解决/后续
 - TLS指纹(JA3传输层模拟)
-- stealth.ts canvas fingerprint 2D context强化
 - 反反爬: DNS-over-HTTPS真实集成(非模拟)
 - 引擎回退链策略Web UI配置
 - proxy-manager proxy-conn-test.ts与verifyProxy合并
@@ -19598,3 +19597,90 @@ Stage Summary:
 - 关键安全修复: IPv6 SSRF绕过/ReDoS/cookie重复/TOCTOU竞态
 - 24文件, +1651/-203行
 - Commit: a231fed
+
+---
+Task ID: 2-a
+Agent: Canvas Fingerprint Hardening Agent
+Task: Canvas 2D Context / WebGL / Font / AudioContext fingerprint hardening in stealth.ts
+
+Work Log:
+- Read existing canvas/WebGL/AudioContext/font sections in stealth.ts (2862 lines)
+- Identified 4 areas for enhancement: Canvas 2D Proxy, WebGL hardening, Font fingerprint, AudioContext AnalyserNode
+
+## Changes
+
+### 1. Canvas 2D Context Proxy (after Section 30, ~line 1559)
+- Override `HTMLCanvasElement.prototype.getContext` to return a Proxy for '2d' contexts
+- Proxy intercepts 8 methods with deterministic seed-based micro-variations:
+  - `measureText` — ±0.01px width noise on TextMetrics
+  - `isPointInPath` — ±0.1px point offset (handles both Path2D and direct signatures)
+  - `isPointInStroke` — ±0.1px point offset
+  - `getLineDash` — ±0.01 per dash segment
+  - `quadraticCurveTo` — ±0.0001px control-point offset (affects path geometry)
+  - `bezierCurveTo` — ±0.0001px control-point offsets (scaled for cp1/cp2/end)
+  - `arc` — ±0.01 radius noise
+  - `ellipse` — ±0.01 radius noise on both radii
+- Existing getImageData/toDataURL/toBlob patches (Section 20/30) remain and work through the Proxy
+- Each context gets a seed snapshot for deterministic consistency
+
+### 2. WebGL Fingerprint Hardening (Section 3, ~line 741)
+- Added `getParameter` overrides for 3 new params (both WebGL1 and WebGL2):
+  - `RENDERER` (0x1F01) — returns 'WebKit WebGL' (Chrome) or 'Mozilla' (Firefox)
+  - `VENDOR` (0x1F00) — returns 'Google Inc.' (Chrome) or 'Mozilla' (Firefox)
+  - `SHADING_LANGUAGE_VERSION` (0x8B8C) — platform-consistent GLSL version string
+    - Chrome ANGLE: 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)'
+    - Firefox: 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 NVIDIA)'
+    - Mesa/Linux: 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Mesa 23.2.1)'
+    - WebGL2 returns ES 3.0/3.00 variants
+    - Seeded trailing-space variant for Chrome ANGLE (anti-fingerprint diversity)
+- Added `readPixels` noise for both WebGL1 and WebGL2:
+  - Same deterministic per-pixel LCG approach as canvas getImageData
+  - Applies to RGBA/UNSIGNED_BYTE format only (0x1908/0x1401)
+  - Uses _canvasNoiseIntensity (respects SCRAPER_CANVAS_NOISE_INTENSITY env)
+  - WebGL2 uses offset seed to avoid identical noise pattern
+
+### 3. Canvas Font Fingerprint (Section 60, ~line 2355)
+- Replaced hardcoded font list with platform-matched seeded font pools:
+  - Win32: 19 fonts (Arial, Calibri, Consolas, Segoe UI, etc.)
+  - MacIntel: 15 fonts (Helvetica, Helvetica Neue, Menlo, Monaco, etc.)
+  - Linux x86_64: 11 fonts (DejaVu, Liberation, Ubuntu, etc.)
+- Seeded selection of 10-14 fonts per profile (deterministic, sorted)
+- 5 generic families always included (serif, sans-serif, monospace, cursive, fantasy)
+- Enhanced `document.fonts.check()` to parse full CSS font string (comma-separated families)
+  - Non-generic families checked against seeded list (consistent with forEach filter)
+  - Generic-only font strings delegate to real check()
+- Added `document.fonts.ready` override to resolve immediately (pre-resolved Promise)
+  - Prevents timing-based font availability detection
+
+### 4. AudioContext AnalyserNode Fingerprint (after Section 31, ~line 1822)
+- Added deterministic noise to 4 AnalyserNode methods:
+  - `getFloatFrequencyData` — ±0.001 per bin (seeded LCG)
+  - `getByteFrequencyData` — ±1 per bin (-1/0/+1, clamped 0-255)
+  - `getByteTimeDomainData` — ±1 per sample (waveform fingerprint noise)
+  - `getFloatTimeDomainData` — ±0.001 per sample (with existence check)
+- All use `_fakeDeviceSeed * 9.83` as base seed (offset variants: +0, +7, +13, +19)
+
+## Technical Notes
+- All noise is DETERMINISTIC: same seed = same noise within a single page load
+- Canvas 2D Proxy uses `new Proxy(ctx, { get: ... })` — only intercepts reads, writes pass through
+- WebGL method-level interception (not full proxy) for compatibility
+- Existing prototype patches (getImageData, toDataURL, toBlob, createOscillator) unchanged
+- _canvasNoiseIntensity used by both canvas and WebGL readPixels (configurable via env)
+
+## Verification
+- TypeScript: 0 new errors in stealth.ts ✅ (pre-existing NovelListView.ts errors unrelated)
+- stealth.ts: 2862 → 3178 lines (+316 net)
+
+## 修改统计
+- stealth.ts: +331/-14 (345 line diff, 316 net addition)
+- 所有变更集中在stealth.ts单文件
+
+## 历史累计修复: 784 + 0 = 784项
+## 累计增强: 25 + 4 = 29项
+## Stealth: 54活跃sections (4 new: Canvas 2D Proxy, WebGL readPixels, AnalyserNode noise, Seeded Font Pools)
+
+## 未解决/后续
+- TLS指纹(JA3传输层模拟)
+- 反反爬: DNS-over-HTTPS真实集成(非模拟)
+- 引擎回退链策略Web UI配置
+- proxy-manager proxy-conn-test.ts与verifyProxy合并

@@ -605,6 +605,46 @@ const EDGE_CLIENT_HINT_VERSIONS: string[] = [
   '"Chromium";v="128", "Not A(Brand";v="99", "Microsoft Edge";v="128"',
 ];
 
+/** Chrome "Not_A Brand" variants — Chrome rotates the greaselion brand string periodically. Used for future rotation logic. */
+const GREASE_BRANDS: Record<number, string> = {
+  99: 'Not A(Brand',
+  8: 'Not?A_Brand',
+  24: 'Not A Brand',
+};
+
+/** Detect architecture and bitness from UA string */
+function detectArchBitness(ua: string): { arch: string; bitness: string; model: string } {
+  // Android mobile — detect actual device model
+  const androidModelMatch = ua.match(/Android[^;]*;\s*([^;)\s]+\s+Build/);
+  if (androidModelMatch) {
+    // Android can be ARM or x86
+    const isX86 = ua.includes('x86');
+    return {
+      arch: isX86 ? '"x86"' : '"arm"',
+      bitness: isX86 ? '"64"' : '""',
+      model: `"${androidModelMatch[1]}"`,
+    };
+  }
+
+  // Apple Silicon Mac
+  if (ua.includes('Macintosh') && (ua.includes('ARM') || ua.includes('Mac OS X'))) {
+    return { arch: '"arm"', bitness: '"64"', model: '""' };
+  }
+
+  // Intel Mac or Windows — default x86_64
+  if (ua.includes('x86_64') || ua.includes('Win64') || ua.includes('x86') || ua.includes('Macintosh')) {
+    return { arch: '"x86"', bitness: '"64"', model: '""' };
+  }
+
+  // Linux aarch64
+  if (ua.includes('aarch64') || ua.includes('arm64')) {
+    return { arch: '"arm"', bitness: '"64"', model: '""' };
+  }
+
+  // Fallback
+  return { arch: '"x86"', bitness: '"64"', model: '""' };
+}
+
 const PLATFORM_HINT_MAP: Record<string, string> = {
   "Windows NT 10.0": '"Windows"',
   "Macintosh; Intel Mac OS X": '"macOS"',
@@ -615,15 +655,39 @@ const PLATFORM_HINT_MAP: Record<string, string> = {
 };
 
 /**
- * Generates Chrome/Edge Client Hints headers (sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform)
- * that match the provided User-Agent string.
+ * All Client Hints headers produced by this function.
+ * Chrome 120+ sends sec-ch-ua-arch, sec-ch-ua-bitness, sec-ch-ua-model, sec-ch-ua-full-version-list.
+ */
+export interface ClientHintsHeaders {
+  "sec-ch-ua": string;
+  "sec-ch-ua-mobile": string;
+  "sec-ch-ua-platform": string;
+  "sec-ch-ua-arch"?: string;
+  "sec-ch-ua-bitness"?: string;
+  "sec-ch-ua-model"?: string;
+  "sec-ch-ua-full-version-list"?: string;
+}
+
+/**
+ * Generates a complete set of Chrome/Edge Client Hints headers that match the provided User-Agent.
+ *
+ * Returns headers including:
+ *   - sec-ch-ua: brand list with version matching UA's Chrome major version
+ *   - sec-ch-ua-mobile: ?0 (desktop) or ?1 (mobile)
+ *   - sec-ch-ua-platform: "Windows", "macOS", "Linux", or "Android"
+ *   - sec-ch-ua-arch: "x86" or "arm" (Chrome 120+)
+ *   - sec-ch-ua-bitness: "64" or "32" (Chrome 120+)
+ *   - sec-ch-ua-model: "" (desktop) or device model (Android)
+ *   - sec-ch-ua-full-version-list: full brand+version list (Chrome 120+)
+ *
+ * Version consistency: all versions in sec-ch-ua and sec-ch-ua-full-version-list are
+ * parsed from the UA string, ensuring they always match.
  *
  * Returns null for non-Chromium UAs (Firefox, Safari standalone).
- * Edge UAs are supported with Edge-branded sec-ch-ua strings.
  *
  * @param ua - User-Agent string to parse. If omitted, a random Chrome UA is selected.
  */
-export function getChromeClientHints(ua?: string): { "sec-ch-ua": string; "sec-ch-ua-mobile": string; "sec-ch-ua-platform": string } | null {
+export function getChromeClientHints(ua?: string): ClientHintsHeaders | null {
   const userAgent = ua || getRandomUA();
 
   // Must contain "Chrome/" — Firefox, Safari standalone don't send sec-ch-ua
@@ -638,7 +702,11 @@ export function getChromeClientHints(ua?: string): { "sec-ch-ua": string; "sec-c
   // Extract Chrome major version (works for both Chrome and Edge UAs)
   const chromeMatch = userAgent.match(/Chrome\/(\d+)/);
   if (!chromeMatch) return null;
-  const chromeVersion = parseInt(chromeMatch[1]);
+  const chromeMajor = parseInt(chromeMatch[1]);
+
+  // Extract full version (e.g., "131.0.0.0") for full-version-list
+  const chromeFullMatch = userAgent.match(/Chrome\/([\d.]+)/);
+  const chromeFullVersion = chromeFullMatch ? chromeFullMatch[1] : `${chromeMajor}.0.0.0`;
 
   // Select the appropriate brand pool
   const hintPool = isEdge ? EDGE_CLIENT_HINT_VERSIONS : CHROME_CLIENT_HINT_VERSIONS;
@@ -646,15 +714,22 @@ export function getChromeClientHints(ua?: string): { "sec-ch-ua": string; "sec-c
   // Find a matching Client Hints version (exact match on major version)
   let hintVersion = hintPool[0];
   for (const hint of hintPool) {
-    // Match either "Google Chrome";v="N" or "Microsoft Edge";v="N" or "Chromium";v="N"
     const verMatch = hint.match(/v="(\d+)"/g);
     if (verMatch) {
       const versions = verMatch.map(m => parseInt(m.match(/\d+/)?.[0] || '0'));
-      // All brands should share the same major version
-      if (versions.every(v => v === chromeVersion) && versions.length >= 2) {
+      if (versions.every(v => v === chromeMajor) && versions.length >= 2) {
         hintVersion = hint;
         break;
       }
+    }
+  }
+
+  // If no exact version match found, dynamically build from the UA version
+  if (!hintVersion || !hintVersion.includes(`v="${chromeMajor}"`)) {
+    if (isEdge) {
+      hintVersion = `"Chromium";v="${chromeMajor}", "Not A(Brand";v="99", "Microsoft Edge";v="${chromeMajor}"`;
+    } else {
+      hintVersion = `"Not A(Brand";v="99", "Google Chrome";v="${chromeMajor}", "Chromium";v="${chromeMajor}"`;
     }
   }
 
@@ -666,15 +741,38 @@ export function getChromeClientHints(ua?: string): { "sec-ch-ua": string; "sec-c
       break;
     }
   }
+  // Android detection
+  if (userAgent.includes('Android') && platform === '"Unknown"') {
+    platform = '"Android"';
+  }
 
   // Determine mobile
   const isMobile = userAgent.includes("Mobile") ? "?1" : "?0";
 
-  return {
+  // Architecture and bitness (Chrome 120+ sends these as low-entropy hints)
+  const { arch, bitness, model } = detectArchBitness(userAgent);
+
+  // Build full version list (Chrome 120+)
+  // Format: "Brand";v="Major.Minor.Patch.Build", ...
+  const fullVersionList = isEdge
+    ? `"Chromium";v="${chromeFullVersion}", "Not A(Brand";v="99.0.0.0", "Microsoft Edge";v="${chromeFullVersion}"`
+    : `"Not A(Brand";v="99.0.0.0", "Google Chrome";v="${chromeFullVersion}", "Chromium";v="${chromeFullVersion}"`;
+
+  const hints: ClientHintsHeaders = {
     "sec-ch-ua": hintVersion,
     "sec-ch-ua-mobile": isMobile,
     "sec-ch-ua-platform": platform,
   };
+
+  // Chrome 120+ additional headers
+  if (chromeMajor >= 120) {
+    hints["sec-ch-ua-arch"] = arch;
+    hints["sec-ch-ua-bitness"] = bitness;
+    hints["sec-ch-ua-model"] = model;
+    hints["sec-ch-ua-full-version-list"] = fullVersionList;
+  }
+
+  return hints;
 }
 
 // ==================== URL Resolution ====================
@@ -880,12 +978,16 @@ export function buildFetchHeaders(
     Object.assign(headers, secFetchHeaders);
   }
 
-  // Chrome Client Hints (only for Chrome UAs)
+  // Chrome Client Hints (only for Chrome UAs) — includes arch, bitness, model, full-version-list for Chrome 120+
   const clientHints = getChromeClientHints(headers["User-Agent"]);
   if (clientHints) {
     headers["sec-ch-ua"] = clientHints["sec-ch-ua"];
     headers["sec-ch-ua-mobile"] = clientHints["sec-ch-ua-mobile"];
     headers["sec-ch-ua-platform"] = clientHints["sec-ch-ua-platform"];
+    if (clientHints["sec-ch-ua-arch"]) headers["sec-ch-ua-arch"] = clientHints["sec-ch-ua-arch"];
+    if (clientHints["sec-ch-ua-bitness"]) headers["sec-ch-ua-bitness"] = clientHints["sec-ch-ua-bitness"];
+    if (clientHints["sec-ch-ua-model"]) headers["sec-ch-ua-model"] = clientHints["sec-ch-ua-model"];
+    if (clientHints["sec-ch-ua-full-version-list"]) headers["sec-ch-ua-full-version-list"] = clientHints["sec-ch-ua-full-version-list"];
   }
 
   // Referer: use the pre-computed referer chain, fallback to parent path

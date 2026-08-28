@@ -14,8 +14,9 @@
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery, AntiCrawl } from "./types";
 import { isSafeUrl } from "./ssrf";
 import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints } from "./utils";
-import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA, getTlsProfile } from "./stealth";
+import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA } from "./stealth";
 import { getAcceptEncoding } from "./http2-decoy";
+import { getTLSFingerprintOptions } from "./tls-fingerprint";
 import { proxyManager, getProxyDispatcher } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
 import { rateLimiter } from "./rate-limiter";
@@ -746,14 +747,16 @@ class CheerioEngine implements ScrapingEngine {
             // Apply TLS fingerprint profile for anti-detection
             if (targetDomain) {
               try {
-                const tlsProfile = getTlsProfile(targetDomain);
-                if (tlsProfile?.ciphers?.length) {
-                  fetchOptions.tls = {
-                    ciphers: tlsProfile.ciphers.join(':'),
-                    minVersion: tlsProfile.minVersion || 'TLSv1.2',
-                  };
+                const tlsFingerprint = getTLSFingerprintOptions(targetDomain, reqHeaders['User-Agent']);
+                const tlsOpts: Record<string, unknown> = {
+                  ciphers: tlsFingerprint.ciphers,
+                  minVersion: tlsFingerprint.minVersion,
+                };
+                if (tlsFingerprint.sigalgs) {
+                  tlsOpts.sigalgs = tlsFingerprint.sigalgs;
                 }
-              } catch { /* TLS profile lookup failure is non-critical */ }
+                fetchOptions.tls = tlsOpts;
+              } catch { /* TLS fingerprint lookup failure is non-critical */ }
             }
 
             return fetch(fetchUrl, fetchOptions as RequestInit);
