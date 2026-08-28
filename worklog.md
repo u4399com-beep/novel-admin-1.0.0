@@ -19518,3 +19518,83 @@ Stage Summary:
 - Most impactful: H-1 prevents process hang on shutdown, M-1 fixes monitoring data accuracy
 - Performance: domainIndex eliminates O(n) scans, binary insertion replaces O(n log n) sort
 - Reliability: queue.ts no longer swallows non-constraint errors, SOCKS agents properly cleaned up
+---
+Task ID: R51
+Agent: Main Orchestrator + 10 Sub-agents (2 enhance + 3 audit + 3 fix)
+Task: R51 40项审计修复(1CRITICAL/5HIGH/19M/15L) + 4项增强
+
+Work Log:
+- 2路并行增强agent: stealth(chrome.runtime/canvas配置/死代码) + 引擎配置/代理验证
+- 3路并行深度审计覆盖12个辅助模块(~5500行未审计代码)
+- 审计发现40项bug (1C/5H/19M/15L)
+- 3路并行修复agent修复全部40项
+
+## CRITICAL (1项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 1 | ssrf.ts | IPv4-mapped IPv6(::ffff:x.x.x.x)绕过→提取IPv4部分检查 |
+
+## HIGH (5项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 2 | js-content-extractor.ts | ReDoS x2→限制<script>范围 |
+| 3 | cookie-store.ts | UNIQUE(name,domain,path)+ON CONFLICT DO UPDATE |
+| 4 | queue.pg.ts | markFailed TOCTOU→原子UPDATE |
+| 5 | request-fingerprint.ts | setInterval .unref() |
+| 6 | anti-crawl-advisor.ts | setInterval .unref() |
+
+## MEDIUM (19项)
+- ssrf.ts: *.localhost + CGNAT 100.64.0.0/10 + 冗余检查 + 未用变量 (4)
+- js-content-extractor: 转义引号 + field path typo (2)
+- captcha-detector: v3优先检测 + 贪婪.*→[^"'>\s]* (2)
+- captcha-strategy: execute() try-catch (1)
+- anti-crawl-advisor: gatherSignals容错 + 计数器衰减 + 移除未用变量 (3)
+- browser-behavior: nextBreakAt修正 (1)
+- charset-detector: 常量提升模块级 (1)
+- request-fingerprint: domainIndex O(1) (1)
+- priority-queue: 二分插入 + hasCapacity (2)
+- proxy-conn-test: SOCKS agent destroy (1)
+- queue.ts: catch仅吞约束错误 (1)
+
+## LOW (15项)
+- stealth死代码清理: Section 13/19/43/48/58 (-86行) (5)
+- 其余10项: 注释/类型/日志/小修正
+
+## 增强功能 (4项)
+| # | 功能 | 文件 |
+|---|------|------|
+| 1 | chrome.runtime完整模拟(throw方法/event对象/native code) | stealth.ts |
+| 2 | canvas噪声强度可配置(SCRAPER_CANVAS_NOISE_INTENSITY) | stealth.ts |
+| 3 | 引擎回退链可配置(engine-config.json+域名覆盖) | engine-config.ts + engines.ts + task-engine.ts |
+| 4 | 代理端到端验证(verifyProxy/verifyAll/定时) | proxy-manager.ts |
+
+## 修改统计
+- stealth.ts: -32行
+- engines.ts: +26行
+- proxy-manager.ts: +267行
+- ssrf.ts: +24行
+- 新增engine-config.ts: +82行
+- 其余18文件: +166行
+- **总计: +1651/-203, 24文件**
+
+## 验证结果
+- TypeScript: scraper-service 0新错误 ✅
+- Commit: a231fed
+
+## 历史累计修复: 744 + 40 = 784项
+## 累计增强: 21 + 4 = 25项
+## Stealth: 50活跃sections
+
+## 未解决/后续
+- TLS指纹(JA3传输层模拟)
+- stealth.ts canvas fingerprint 2D context强化
+- 反反爬: DNS-over-HTTPS真实集成(非模拟)
+- 引擎回退链策略Web UI配置
+- proxy-manager proxy-conn-test.ts与verifyProxy合并
+
+Stage Summary:
+- R51完成: 40项修复(1C/5H/19M/15L) + 4项增强
+- 首次覆盖全部辅助模块审计(~5500行)
+- 关键安全修复: IPv6 SSRF绕过/ReDoS/cookie重复/TOCTOU竞态
+- 24文件, +1651/-203行
+- Commit: a231fed
