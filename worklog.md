@@ -20284,3 +20284,94 @@ Stage Summary:
 - 1 LOW bug fixed (timer cleanup function export)
 - 3 bugs assessed as not applicable or already fixed (CAPTCHA pause TOCTOU, recordSuccess sync, verification interval overlap)
 - 3 files modified, 0 new errors
+---
+Task ID: R52
+Agent: Main Orchestrator + 10 Sub-agents (2 audit + 3 enhance + 2 fix + cron)
+Task: R52 29项审计修复(3C/7H/13M/6L) + 6项增强
+
+Work Log:
+- 提交cron未提交增强: Canvas/WebGL/Audio指纹 + TLS指纹 + HTTP/2增强 (commit 4feb60e)
+- 2路并行深度审计(新代码+引擎/代理/任务引擎) 发现29项bug
+- 3路并行增强(DoH/AI规则/反指纹/JS提取)
+- 2路并行修复(29项bug全部修复)
+
+## CRITICAL (3项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 1 | stealth.ts:368 | generateRandomFingerprint baseOffset+jitter未定义→使用timezoneOffset |
+| 2 | utils.ts:1291 | followRedirects null response→添加post-loop null guard |
+| 3 | proxy-manager.ts | verifyProxy body未cancel→连接池泄漏修复 |
+
+## HIGH (7项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 4 | stealth.ts | 死代码TLS系统删除(-318行) |
+| 5 | stealth.ts:510 | Math.sin() PRNG→LCG(1664525+1013904223) |
+| 6 | stealth.ts | domainBaseDelayCache添加10分钟TTL |
+| 7 | stealth.ts | 字体选择Fisher-Yates洗牌防碰撞 |
+| 8 | task-engine.ts | triedEngines改为processChapter局部变量 |
+| 9 | task-engine.ts | _domainEngineRefCount try-finally防泄漏 |
+| 10 | engines.ts | 移除重复ENGINE_FALLBACK_CHAIN(统一用engine-config) |
+
+## MEDIUM (13项)
+- stealth.ts: Canvas噪声加入text/coord种子(3)
+- stealth.ts: fonts.ready返回新Promise(1)
+- http2-decoy.ts: TLD数组按长度降序(1)
+- utils.ts: domainHash统一(1)
+- proxy-manager.ts: isSafeUrl验证+SSRF防护(1)
+- proxy-manager.ts: 成功时清理domain failure(1)
+- task-engine.ts: 导出cleanupProgressThrottleTimer(1)
+- tls-fingerprint.ts: domainHash import统一(1)
+- proxy-conn-test.ts: @deprecated标记(1)
+- doh-simulation.ts: 集成真实DoH(1)
+
+## LOW (6项)
+- 3个domainHash重复实现→统一到utils.ts(1)
+- AnalyserNode种子偏移增大(1)
+- proxy-conn-test @deprecated(1)
+- 其余小修正(3)
+
+## 增强功能 (6项)
+| # | 功能 | 文件 |
+|---|------|------|
+| 1 | DNS-over-HTTPS真实集成(AliDNS→Cloudflare→Google) | doh-resolver.ts + doh-simulation.ts |
+| 2 | proxy-conn-test合并到proxy-manager | proxy-manager.ts |
+| 3 | AI规则验证+缓存+版本化 | ai-rule-generator.ts |
+| 4 | JS内容提取(Vue/React SSR/Lazy-load) | js-content-extractor.ts |
+| 5 | Bot-detection脚本智能阻断(11域/行为分析) | engines.ts |
+| 6 | 自动化属性清理+MutationObserver | stealth.ts |
+
+## 新文件
+- doh-resolver.ts: 真实DoH解析(210行)
+
+## 修改统计
+- stealth.ts: -280行 (死代码删除/PRNG/字体/Canvas)
+- engines.ts: +182行 (bot-detection阻断)
+- js-content-extractor.ts: +311行 (Vue/React/lazy)
+- ai-rule-generator.ts: +279行 (验证/缓存/版本)
+- proxy-manager.ts: +152行 (batch test/SSRF/清理)
+- 其余7文件: +87行
+- **总计: +1907/-440, 13文件**
+
+## 验证结果
+- TypeScript: 0新错误 ✅
+- Commit: 107fe25
+
+## 历史累计修复: 784 + 29 = 813项
+## 累计增强: 29 + 6 = 35项
+## Stealth: 50活跃sections
+
+## 未解决/后续
+- 引擎回退链策略Web UI配置
+- stealth.ts canvas fingerprint 2D context进一步强化
+- 反反爬: 浏览器指纹一致性自动化测试
+- 代理池智能调度策略(延迟感知/地域感知)
+
+Stage Summary:
+- R52完成: 29项修复(3C/7H/13M/6L) + 6项增强
+- 10路并行agent高效执行
+- 关键安全修复: generateRandomFingerprint崩溃/verifyProxy泄漏/triedEngines并发
+- 关键反反爬: Bot-detection智能阻断/PRNG升级/字体选择修复/Canvas噪声per-call
+- 关键采集增强: DoH真实集成/Vue+React SSR提取/AI规则验证
+- 13文件, +1907/-440行
+- Commit: 107fe25
