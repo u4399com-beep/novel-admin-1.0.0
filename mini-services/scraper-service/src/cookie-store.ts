@@ -34,7 +34,8 @@ class CookieStore {
         secure INTEGER NOT NULL DEFAULT 0,
         expires INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        UNIQUE(name, domain, path)
       );
       CREATE INDEX IF NOT EXISTS idx_cookies_domain ON cookies(domain);
     `);
@@ -48,8 +49,14 @@ class CookieStore {
     if (!cookies.length) return;
     const now = Math.floor(Date.now() / 1000);
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO cookies (name, value, domain, path, httpOnly, secure, expires, created_at, updated_at)
+      INSERT INTO cookies (name, value, domain, path, httpOnly, secure, expires, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(name, domain, path) DO UPDATE SET
+        value = excluded.value,
+        httpOnly = excluded.httpOnly,
+        secure = excluded.secure,
+        expires = excluded.expires,
+        updated_at = excluded.updated_at
     `);
     const tx = this.db.transaction(() => {
       for (const c of cookies) {

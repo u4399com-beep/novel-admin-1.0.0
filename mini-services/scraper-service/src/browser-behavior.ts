@@ -215,8 +215,10 @@ class BrowserBehavior {
     if (this.globalRequestCount === 0) {
       nextBreakAt = this.breakThreshold;
     } else {
-      const remaining = this.breakThreshold - (this.globalRequestCount % this.breakThreshold);
-      nextBreakAt = this.globalRequestCount + remaining;
+      // Break triggers when globalRequestCount - lastBreakAt >= breakThreshold,
+      // so next break is expected at lastBreakAt + breakThreshold.
+      // If <= globalRequestCount, the break is overdue (will trigger on next call).
+      nextBreakAt = this.lastBreakAt + this.breakThreshold;
     }
     return {
       domainsTracked: this.domainVisits.size,

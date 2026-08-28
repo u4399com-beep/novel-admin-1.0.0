@@ -244,16 +244,20 @@ export async function markCompleted(id: string): Promise<void> {
 export async function markFailed(id: string, error: string): Promise<void> {
   const db = await getSql();
 
-  const [row] = await db`SELECT retries, max_retries FROM request_queue WHERE id = ${id}`;
-  if (!row) return;
+  // Atomic: try to requeue first (only if retries < max_retries AND still in_progress)
+  const retried = await db`
+    UPDATE request_queue
+    SET status = 'pending', retries = retries + 1, error = ${error}, updated_at = NOW()
+    WHERE id = ${id} AND status = 'in_progress' AND retries < max_retries
+    RETURNING id
+  `;
 
-  if (row.retries < row.max_retries) {
+  // If no row was updated by the requeue attempt, mark as permanently failed
+  if (retried.length === 0) {
     await db`
-      UPDATE request_queue SET status = 'pending', retries = retries + 1, error = ${error}, updated_at = NOW() WHERE id = ${id}
-    `;
-  } else {
-    await db`
-      UPDATE request_queue SET status = 'failed', error = ${error}, updated_at = NOW(), completed_at = NOW() WHERE id = ${id}
+      UPDATE request_queue
+      SET status = 'failed', error = ${error}, updated_at = NOW(), completed_at = NOW()
+      WHERE id = ${id} AND status = 'in_progress'
     `;
   }
 }
@@ -351,10 +355,21 @@ export async function requeueStaleInProgress(staleMinutes: number = 30, taskId?:
   const cutoff = new Date(Date.now() - staleMinutes * 60000);
 
   const result = taskId
-    ? await db`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = NOW() WHERE status = 'in_progress' AND task_id = ${taskId} AND updated_at < ${cutoff.toISOString()}`
-    : await db`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = NOW() WHERE status = 'in_progress' AND updated_at < ${cutoff.toISOString()}`;
+    ? await db`UPDATE request_queue SET status = 'pending', error = NULL, updated_at = NOW() WHERE status = 'in_progress' AND task_id = ${taskId} AND updated_at < ${cutoff.toISOString()}`
+    : await db`UPDATE request_queue SET status = 'pending', error = NULL, updated_at = NOW() WHERE status = 'in_progress' AND updated_at < ${cutoff.toISOString()}`;
 
   return result.count ?? 0;
+}
+
+/**
+ * Gracefully shut down the PostgreSQL connection pool.
+ * Call this on process exit to avoid RST packets to PostgreSQL.
+ */
+export async function shutdown(): Promise<void> {
+  if (sql) {
+    await sql.end({ timeout: 5 });
+    sql = null;
+  }
 }
 
 /**

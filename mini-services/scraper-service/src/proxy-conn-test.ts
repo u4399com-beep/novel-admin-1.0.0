@@ -133,7 +133,12 @@ export async function testProxyConnection(
 
   // Perform the test request
   const startTime = Date.now();
+  let socksAgent: SocksProxyAgent | null = null;
   try {
+    if ((protocol === 'socks5' || protocol === 'socks4') && dispatcher) {
+      socksAgent = dispatcher as unknown as SocksProxyAgent;
+    }
+
     const response = await fetch(resolvedTestUrl, {
       redirect: 'follow',
       signal: AbortSignal.timeout(timeout),
@@ -197,6 +202,10 @@ export async function testProxyConnection(
       testUrl: resolvedTestUrl,
       testTimestamp: timestamp,
     };
+  } finally {
+    if (socksAgent) {
+      socksAgent.destroy();
+    }
   }
 }
 
@@ -223,14 +232,16 @@ export async function testMultipleProxies(
       batch.map(url => testProxyConnection(url, testUrl, timeoutMs)),
     );
 
-    for (const result of batchResults) {
+    for (let j = 0; j < batchResults.length; j++) {
+      const result = batchResults[j];
+      const proxyUrl = batch[j];
       if (result.status === 'fulfilled') {
         results.push(result.value);
       } else {
         // Should not happen since testProxyConnection catches all errors,
         // but handle it just in case
         results.push({
-          url: 'unknown',
+          url: proxyUrl,
           protocol: 'unknown',
           host: '',
           port: 0,

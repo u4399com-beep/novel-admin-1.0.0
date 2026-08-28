@@ -57,6 +57,11 @@ const CHARSET_ALIASES: Record<string, string> = {
   'euc_jp': 'euc-jp',
 };
 
+// ==================== CJK Charset Family Constants ====================
+
+const GBK_FAMILY = new Set(['gbk', 'gb18030', 'gb2312']);
+const BIG5_FAMILY = new Set(['big5', 'big5-hkscs']);
+
 // ==================== GBK Frequency Analysis ====================
 
 /**
@@ -243,9 +248,8 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
     }
     const isBig5Preferred = totalHighLeads > 0 && gbkOnlyLeads === 0;
 
-    // CJK charset family sets — if declared, prefer it over hardcoding
-    const GBK_FAMILY = new Set(['gbk', 'gb18030', 'gb2312']);
-    const BIG5_FAMILY = new Set(['big5', 'big5-hkscs']);
+    // CJK charset family sets (module-level constants)
+    // Use GBK_FAMILY and BIG5_FAMILY declared at module level
 
     // Check GBK first (more common for Simplified Chinese novels)
     if (gbkLikely && !isBig5Preferred) {

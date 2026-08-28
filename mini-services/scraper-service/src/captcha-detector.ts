@@ -27,22 +27,7 @@ interface DetectionRule {
 }
 
 const HTML_RULES: DetectionRule[] = [
-  // reCAPTCHA v2 — patterns that are v2-specific (not matching v3 render= URLs)
-  {
-    type: 'recaptcha_v2',
-    patterns: [
-      /google\.com\/recaptcha(?!\/api\.js\?render)/i,
-      /g-recaptcha/i,
-      /grecaptcha\.render/i,
-      /g-recaptcha-response/i,
-      /class=.*g-recaptcha/i,
-      /data-sitekey(?!.*render)/i,
-    ],
-    baseConfidence: 0.7,
-    perMatchBoost: 0.1,
-    maxConfidence: 0.95,
-  },
-  // reCAPTCHA v3 — higher base confidence since render= is a strong v3 signal
+  // reCAPTCHA v3 — checked FIRST (more specific patterns)
   {
     type: 'recaptcha_v3',
     patterns: [
@@ -53,6 +38,21 @@ const HTML_RULES: DetectionRule[] = [
       /\?render=/i,
     ],
     baseConfidence: 0.65,
+    perMatchBoost: 0.1,
+    maxConfidence: 0.95,
+  },
+  // reCAPTCHA v2 — patterns that are v2-specific (not matching v3 render= URLs)
+  {
+    type: 'recaptcha_v2',
+    patterns: [
+      /google\.com\/recaptcha(?!\/api\.js\?render)/i,
+      /g-recaptcha/i,
+      /grecaptcha\.render/i,
+      /g-recaptcha-response/i,
+      /class=[^"'>\s]*g-recaptcha/i,
+      /data-sitekey(?!.*render)/i,
+    ],
+    baseConfidence: 0.7,
     perMatchBoost: 0.1,
     maxConfidence: 0.95,
   },
@@ -107,8 +107,8 @@ const HTML_RULES: DetectionRule[] = [
       /验证码/i,
       /captcha/i,
       /img\[src\*=captcha\]/i,
-      /class=.*captcha/i,
-      /id=.*captcha/i,
+      /class=[^"'>\s]*captcha/i,
+      /id=[^"'>\s]*captcha/i,
       /verifyCode/i,
       /checkCode/i,
       /seccode/i,

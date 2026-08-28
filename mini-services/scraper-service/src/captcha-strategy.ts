@@ -267,7 +267,12 @@ export async function autoHandleCaptcha(
       if (process.env.DEBUG === 'true') {
         console.log(`[CaptchaStrategy] Applying strategy '${strategy.name}' for ${detection.type} on ${context.domain}`);
       }
-      return strategy.execute(detection, context);
+      try {
+        return await strategy.execute(detection, context);
+      } catch (err) {
+        console.error(`[CaptchaStrategy] Strategy '${strategy.name}' threw an error, continuing to next strategy:`, err);
+        continue;
+      }
     }
   }
 

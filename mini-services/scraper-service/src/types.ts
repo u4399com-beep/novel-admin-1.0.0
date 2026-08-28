@@ -251,8 +251,9 @@ export interface SessionData {
   fingerprint?: SessionFingerprint;
   /** Proxy URL associated with this session, if any */
   proxy?: string;
-  /** Number of times this session has been used (alias for usageCount) */
+  /** Number of times this session has been used */
   requestCount: number;
+  /** @deprecated Use requestCount instead. Kept for backward compatibility. */
   usageCount: number;
   maxUsage: number;
   createdAt: string;

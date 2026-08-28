@@ -416,7 +416,7 @@ export function clearDomainUACache(domain?: string): void {
  * 1.  Navigator properties (webdriver, plugins, languages, hardware, etc.)
  * 2.  Chrome runtime object
  * 3.  WebGL vendor/renderer
- * 4.  Canvas fingerprint noise (toDataURL, toBlob, getImageData)
+ * 4.  Canvas fingerprint noise (toDataURL, toBlob, getImageData, configurable intensity)
  * 6.  Screen/window properties (with seed-varying orientation angle)
  * 7.  WebRTC leak prevention
  * 8.  Permission API consistency
@@ -424,13 +424,11 @@ export function clearDomainUACache(domain?: string): void {
  * 10. Date/timezone consistency
  * 11. Automation property removal
  * 12. MouseEvent / KeyboardEvent consistency
- * 13. Connection/Network Information API (enhanced with saveData, seed-derived rtt/downlink)
  * 14. Storage consistency
  * 15. IFrame stealth propagation via MutationObserver
  * 16. ClientRects & getBoundingClientRect spoofing (layout fingerprint prevention)
  * 17. Enhanced Connection / Network Information API
- * 20. AudioContext/OfflineAudioContext createOscillator frequency noise
- * 21. Enhanced Canvas fingerprint (getImageData noise)
+ * 20. Canvas getImageData per-pixel deterministic noise (intensity-scaled)
  * 22. Font detection countermeasure (document.fonts.check override)
  * 23. Platform-based Plugin/MimeType enumeration (3-4 plugins per platform)
  * 24. Console detection evasion
@@ -439,7 +437,7 @@ export function clearDomainUACache(domain?: string): void {
  * 27. Touch support spoofing (mobile UA detection, TouchEvent constructor)
  * 28. MediaDevices enumerateDevices() fake (deterministic device IDs from seed)
  * 29. Battery API getBattery() override (realistic level + charging state)
- * 30. Canvas toDataURL/toBlob noise injection (imperceptible per-pixel RGB noise)
+ * 30. Canvas toDataURL/toBlob noise injection (delegates to patched getImageData)
  * 31. AudioContext/OfflineAudioContext createOscillator frequency noise
  * 32. NavigationTiming override (h2 protocol, realistic timing chain)
  * 33. PerformanceObserver neutralization (7 entry types)
@@ -450,17 +448,16 @@ export function clearDomainUACache(domain?: string): void {
  * 39. document.visibilityState / hidden — always visible
  * 40. ServiceWorker / SharedWorker existence consistency
  * 41. CSS.supports() consistency override
- * 43. chrome.runtime.connect() enhanced port mock
  * 44. ResizeObserver / IntersectionObserver existence mock
  * 45. getComputedStyle cursor consistency
  * 46. matchMedia prefers-color-scheme / prefers-reduced-motion consistency
  * 47. WebGL Shader Precision (getShaderPrecisionFormat zero-range fix)
- * 48. Navigator Connection API (network info consistency)
+ * 48. Navigator Connection API (create fake if missing; Section 17 handles override)
  * 51. speechSynthesis.getVoices() enhanced mock (per-seed voices, async loading)
  * 52. Notification.permission consistency (force 'default')
  * 55. performance.memory realistic values (Chrome-specific)
  * 57. Window frame dimensions (chrome frame) fix (seeded consistency)
- * 58. navigator.connection download speed consistency
+ * 58. navigator.connection effectiveType consistency (W3C spec thresholds)
  * 59. SharedArrayBuffer / crossOriginIsolated consistency
  * 60. Font enumeration protection (document.fonts.forEach + check)
  * 61. Gamepad API override (getGamepads consistency)
@@ -472,6 +469,15 @@ export function clearDomainUACache(domain?: string): void {
 
 const _stealthScriptCache = new Map<string, { script: string; ts: number }>();
 const STEALTH_SCRIPT_CACHE_TTL = 30 * 60 * 1000; // 30 min
+
+// Canvas noise intensity: 0.0 = no noise, 1.0 = default (±1 RGB), up to 3.0 = aggressive
+const CANVAS_NOISE_INTENSITY = (() => {
+  const raw = process.env.SCRAPER_CANVAS_NOISE_INTENSITY;
+  if (raw === undefined) return 1.0;
+  const parsed = parseFloat(raw);
+  if (isNaN(parsed)) return 1.0;
+  return Math.max(0.0, Math.min(3.0, parsed));
+})();
 
 export function getStealthScript(profile: FingerprintProfile): string {
   const key = profile.seed || 'default';
@@ -503,6 +509,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // Seeded PRNG for deterministic values across all sections (uses _fakeDeviceSeed — no redundant _navSeed)
   function _seededRandom(offset) { return ((Math.sin(_fakeDeviceSeed + offset) * 10000) % 1 + 1) % 1; }
   var _canvasNoiseSeed = Math.floor(_fakeDeviceSeed * 13.37) | 0;
+  var _canvasNoiseIntensity = ${CANVAS_NOISE_INTENSITY};
 
   // ---- 1. Navigator Override ----
 
@@ -637,12 +644,53 @@ export function getStealthScript(profile: FingerprintProfile): string {
     window.chrome = {};
   }
   if (!window.chrome.runtime) {
-    window.chrome.runtime = {
-      connect: function() { return { onMessage: { addListener: function() {} }, postMessage: function() {}, disconnect: function() {} }; },
-      sendMessage: function() {},
-      onMessage: { addListener: function() {} },
+    // chrome.event factory — produces objects with addListener/removeListener/hasListeners
+    // matching the exact shape of real Chrome's event objects
+    function _makeChromeEvent() {
+      var _evt = {
+        addListener: function() {},
+        removeListener: function() {},
+        hasListeners: function() { return false; },
+      };
+      _evt.addListener.toString = function() { return 'function addListener() { [native code] }'; };
+      _evt.removeListener.toString = function() { return 'function removeListener() { [native code] }'; };
+      _evt.hasListeners.toString = function() { return 'function hasListeners() { [native code] }'; };
+      return _evt;
+    }
+
+    function _throwInvalidated() { throw new Error('Extension context invalidated.'); }
+    _throwInvalidated.toString = function() { return 'function () { [native code] }'; };
+
+    var _runtimeObj = {
       id: undefined,
+      onMessage: _makeChromeEvent(),
+      onConnect: _makeChromeEvent(),
+      onInstalled: _makeChromeEvent(),
+      getManifest: _throwInvalidated,
+      getURL: function(path) { return 'chrome-extension://invalid/' + (path || ''); },
+      connect: _throwInvalidated,
+      sendMessage: function() { return Promise.reject(new Error('Extension context invalidated.')); },
+      getPlatformInfo: function(cb) {
+        var info = { os: _isMac ? 'mac' : (_isLinux ? 'linux' : 'win'), arch: 'x86', nacl_arch: 'x86-64' };
+        if (cb) cb(info);
+        return Promise.resolve(info);
+      },
+      requestUpdateCheck: function(cb) {
+        var result = { status: 'no_update', version: '1.0.0' };
+        if (cb) cb('no_update', '1.0.0');
+        return Promise.resolve(result);
+      },
+      reload: function() {},
     };
+    // toString() for all functions to return [native code]
+    _runtimeObj.getURL.toString = function() { return 'function getURL() { [native code] }'; };
+    _runtimeObj.sendMessage.toString = function() { return 'function sendMessage() { [native code] }'; };
+    _runtimeObj.getPlatformInfo.toString = function() { return 'function getPlatformInfo() { [native code] }'; };
+    _runtimeObj.requestUpdateCheck.toString = function() { return 'function requestUpdateCheck() { [native code] }'; };
+    _runtimeObj.reload.toString = function() { return 'function reload() { [native code] }'; };
+
+    // Make chrome.runtime non-configurable, non-writable on window.chrome
+    try { Object.defineProperty(window.chrome, 'runtime', { value: _runtimeObj, configurable: false, writable: false }); } catch(_rte) {}
   }
   if (!window.chrome.loadTimes) {
     var _cachedLoadTimes = null;
@@ -981,35 +1029,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
     window.MouseEvent.prototype = origMouseEvent.prototype;
   }
 
-  // ---- 13. Connection / Network Information API ----
-
-  if (navigator.connection) {
-    const conn = navigator.connection;
-    if (!conn.effectiveType) {
-      Object.defineProperty(conn, 'effectiveType', {
-        get: () => '4g',
-        configurable: true,
-      });
-    }
-    if (!conn.downlink) {
-      Object.defineProperty(conn, 'downlink', {
-        get: () => 10,
-        configurable: true,
-      });
-    }
-    if (!conn.rtt) {
-      Object.defineProperty(conn, 'rtt', {
-        get: () => 50,
-        configurable: true,
-      });
-    }
-  } else if (navigator.mozConnection) {
-    const conn = navigator.mozConnection;
-    Object.defineProperty(conn, 'effectiveType', {
-      get: () => '4g',
-      configurable: true,
-    });
-  }
+  // [Section 13 removed — completely overridden by Section 17 which unconditionally
+  // sets seeded rtt/downlink/effectiveType/saveData/type on the connection object]
 
   // ---- 14. Storage Consistency ----
 
@@ -1184,30 +1205,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   }
 
-  // ---- 19. Media Devices Mock ----
-
-  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-    var _origEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
-    navigator.mediaDevices.enumerateDevices = function() {
-      return _origEnumerateDevices().then(function(devices) {
-        if (devices.length > 0) return devices;
-        return [
-          { deviceId: 'default', groupId: 'default', kind: 'audioinput', label: '' },
-          { deviceId: 'communications', groupId: 'communications', kind: 'audiooutput', label: '' },
-          { deviceId: 'video0', groupId: 'video0', kind: 'videoinput', label: '' },
-        ];
-      });
-    };
-  } else if (navigator.mediaDevices) {
-    // If mediaDevices exists but enumerateDevices doesn't
-    navigator.mediaDevices.enumerateDevices = function() {
-      return Promise.resolve([
-        { deviceId: 'default', groupId: 'default', kind: 'audioinput', label: '' },
-        { deviceId: 'communications', groupId: 'communications', kind: 'audiooutput', label: '' },
-        { deviceId: 'video0', groupId: 'video0', kind: 'videoinput', label: '' },
-      ]);
-    };
-  }
+  // [Section 19 removed — completely overridden by Section 28 which uses Object.defineProperty
+  // to replace enumerateDevices with seeded fake devices including proper MediaDeviceInfo prototype]
 
   // ---- 20. AudioContext Fingerprint Noise ----
 
@@ -1218,16 +1217,18 @@ export function getStealthScript(profile: FingerprintProfile): string {
       var d = imageData.data;
       // Apply the same deterministic per-pixel noise as toDataURL/toBlob (Section 30)
       // so that getImageData and toDataURL return consistent results for the same canvas.
+      // Noise is scaled by _canvasNoiseIntensity (env: SCRAPER_CANVAS_NOISE_INTENSITY, default 1.0)
       var _seed = _canvasNoiseSeed;
+      var _intensity = _canvasNoiseIntensity;
       for (var i = 0; i < d.length; i += 4) {
         _seed = (_seed * 16807 + 0.5) % 2147483647;
-        var noise = (_seed % 3) - 1;
+        var noise = Math.round(((_seed % 3) - 1) * _intensity);
         d[i]   = Math.max(0, Math.min(255, d[i] + noise));
         _seed = (_seed * 16807 + 0.5) % 2147483647;
-        noise = (_seed % 3) - 1;
+        noise = Math.round(((_seed % 3) - 1) * _intensity);
         d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));
         _seed = (_seed * 16807 + 0.5) % 2147483647;
-        noise = (_seed % 3) - 1;
+        noise = Math.round(((_seed % 3) - 1) * _intensity);
         d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));
       }
       return imageData;
@@ -1835,25 +1836,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(e) {}
 
-  // Section 43: window.chrome.runtime.connect() enhancement
-  // Previous mock returns minimal object. Anti-bot checks if connect().onMessage
-  // fires properly. Enhance with EventEmitter-like behavior.
-  try {
-    if (window.chrome && window.chrome.runtime) {
-      window.chrome.runtime.connect = function(extensionId, connectInfo) {
-        var port = {
-          name: connectInfo && connectInfo.name ? connectInfo.name : '',
-          disconnect: function() {},
-          postMessage: function() {},
-          onMessage: { addListener: function(cb) { /* no-op */ }, removeListener: function() {}, dispatch: function() {} },
-          onDisconnect: { addListener: function(cb) { /* no-op */ }, removeListener: function() {}, dispatch: function() {} },
-          sender: undefined,
-        };
-        return port;
-      };
-    }
-  } catch(e) {}
-
   // Section 44: ResizeObserver / IntersectionObserver existence + basic mock
   // Some anti-bot systems check if these observers report realistic observations.
   // Headless browsers may have different IntersectionObserver thresholds.
@@ -1972,12 +1954,15 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(e) {}
 
   // Section 48: Navigator Connection API (Network Information)
-  // Headless browsers often have missing or inconsistent navigator.connection.
+  // Headless browsers often have missing navigator.connection.
   // Real browsers provide effectiveType, downlink, rtt, saveData.
+  // Note: if connection exists, Section 17 already overrides rtt/downlink/effectiveType/saveData.
+  // The else-branch (zero-value fix) was removed as dead code — Section 17 covers it.
   try {
-    var _connSeed = _fakeDeviceSeed * 3.14;
     if (!navigator.connection) {
-      // Create a fake connection object if missing entirely
+      // Create a fake connection object if missing entirely.
+      // Section 17 won't create it — it only overrides existing props.
+      var _connSeed = _fakeDeviceSeed * 3.14;
       _connSeed = (_connSeed * 16807 + 0.5) % 2147483647;
       var _fakeDownlink = 5 + (_connSeed % 15); // 5-20 Mbps
       var _fakeRTT = 20 + ((_connSeed >> 8) % 80); // 20-100ms
@@ -1999,18 +1984,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
         },
         configurable: true,
       });
-    } else {
-      // Connection exists but may have zero values in headless — fix them
-      var _realConn = navigator.connection;
-      if (_realConn.downlink === 0 || _realConn.rtt === 0) {
-        _connSeed = (_connSeed * 16807 + 0.5) % 2147483647;
-        try {
-          Object.defineProperties(_realConn, {
-            downlink: { get: function() { return 5 + (_connSeed % 15); }, configurable: true },
-            rtt: { get: function() { return 20 + ((_connSeed >> 8) % 80); }, configurable: true },
-          });
-        } catch(e) {}
-      }
     }
   } catch(e) {}
 
@@ -2135,7 +2108,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // ==================== Section 58: navigator.connection consistent download speed ====================
   // Some anti-bot systems check if navigator.connection.downlink is suspiciously
-  // high for the reported effectiveType. Ensure consistency.
+  // high for the reported effectiveType. Ensure consistency with W3C spec thresholds.
+  // Note: RTT fix removed (dead) — Section 17 already sets non-zero seeded rtt.
   try {
     if (navigator.connection) {
       var _conn = navigator.connection;
@@ -2146,11 +2120,6 @@ export function getStealthScript(profile: FingerprintProfile): string {
       var _typeForDownlink = _dl < 0.05 ? 'slow-2g' : _dl < 0.5 ? '2g' : _dl < 1.5 ? '3g' : '4g';
       if (_et !== _typeForDownlink && _dl > 0) {
         Object.defineProperty(_conn, 'effectiveType', { get: function() { return _typeForDownlink; }, configurable: true });
-      }
-      // Add realistic rtt variation
-      if (_conn.rtt === undefined || _conn.rtt === 0) {
-        var _rttForType = _typeForDownlink === '4g' ? 20 + Math.floor(_fakeDeviceSeed % 30) : _typeForDownlink === '3g' ? 100 + Math.floor(_fakeDeviceSeed % 200) : 500 + Math.floor(_fakeDeviceSeed % 500);
-        Object.defineProperty(_conn, 'rtt', { get: function() { return _rttForType; }, configurable: true });
       }
     }
   } catch(e) {}

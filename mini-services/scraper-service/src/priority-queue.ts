@@ -51,8 +51,8 @@ export class TaskPriorityQueue {
       createdAt: Date.now(),
     });
 
-    // Re-sort: primary by priority (asc), secondary by createdAt (asc)
-    this.sortQueue();
+    // Binary search insertion: O(log n) search + O(n) splice
+    this.insertSorted(item);
     return true;
   }
 
@@ -72,6 +72,7 @@ export class TaskPriorityQueue {
    */
   dequeueNext(): PriorityQueueItem | null {
     if (this.queue.length === 0) return null;
+    if (!this.hasCapacity()) return null;
     const item = this.queue.shift()!;
     this.processing.set(item.taskId, item);
     return item;
@@ -170,7 +171,10 @@ export class TaskPriorityQueue {
     const item = this.queue.find(i => i.taskId === taskId);
     if (!item) return false;
     item.priority = Math.max(0, Math.min(3, Math.floor(newPriority)));
-    this.sortQueue();
+    // Remove and re-insert at the correct position
+    const idx = this.queue.indexOf(item);
+    if (idx !== -1) this.queue.splice(idx, 1);
+    this.insertSorted(item);
     return true;
   }
 
@@ -186,12 +190,21 @@ export class TaskPriorityQueue {
     return this.queue.some(i => i.taskId === taskId) || this.processing.has(taskId);
   }
 
-  /** Sort queue by priority (asc), then createdAt (asc) */
-  private sortQueue(): void {
-    this.queue.sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      return a.createdAt - b.createdAt;
-    });
+  /** Insert item at the correct position using binary search: O(log n) search + O(n) splice */
+  private insertSorted(item: PriorityQueueItem): void {
+    let lo = 0;
+    let hi = this.queue.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      const midItem = this.queue[mid];
+      if (midItem.priority < item.priority ||
+          (midItem.priority === item.priority && midItem.createdAt <= item.createdAt)) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    this.queue.splice(lo, 0, item);
   }
 }
 

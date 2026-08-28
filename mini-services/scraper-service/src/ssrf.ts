@@ -48,8 +48,8 @@ export function isSafeUrl(url: string): boolean {
       return false;
     }
 
-    // Block metadata endpoints
-    if (hostname.endsWith('.local') || hostname.endsWith('.internal')) {
+    // Block metadata endpoints and reserved TLDs (RFC 6761)
+    if (hostname.endsWith('.local') || hostname.endsWith('.internal') || hostname.endsWith('.localhost')) {
       return false;
     }
 
@@ -66,11 +66,6 @@ export function isSafeUrl(url: string): boolean {
 
     // Block hex IP representations (e.g., 0x7f.0.0.1, 0xc0a80001)
     if (/^0x[0-9a-f]+(\.|$)/i.test(hostname)) {
-      return false;
-    }
-
-    // Block decimal IP representations (e.g., 2130706433)
-    if (/^\d{7,}$/.test(hostname)) {
       return false;
     }
 
@@ -99,8 +94,14 @@ function parseIpAddress(hostname: string): string | null {
     return hostname;
   }
 
-  // Handle IPv6 without brackets
+  // Handle IPv6 (with and without IPv4-mapped suffix)
   if (hostname.includes(':')) {
+    // IPv4-mapped IPv6 in dotted-decimal: ::ffff:127.0.0.1 or ::127.0.0.1
+    // The IPv6 regex below only allows hex+colon, so detect dotted-decimal first
+    const v4MappedMatch = hostname.match(/^::(?:ffff:)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
+    if (v4MappedMatch) {
+      return v4MappedMatch[1]; // Return the IPv4 part for isPrivateIp() check
+    }
     if (/^[0-9a-fA-F:]+$/.test(hostname) && (hostname.match(/:/g) || []).length >= 2) {
       return hostname;
     }
@@ -120,7 +121,7 @@ function isPrivateIp(ip: string): boolean {
   // IPv4 checks
   const ipv4Match = normalizedIp.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4Match) {
-    const [, a, b] = ipv4Match.map(Number);
+    const [, a, b] = ipv4Match.map(Number) as [never, number, number, number, number];
     // 0.0.0.0/8
     if (a === 0) return true;
     // 10.0.0.0/8
@@ -133,6 +134,8 @@ function isPrivateIp(ip: string): boolean {
     if (a === 172 && b >= 16 && b <= 31) return true;
     // 192.168.0.0/16
     if (a === 192 && b === 168) return true;
+    // 100.64.0.0/10 (CGNAT, RFC 6598)
+    if (a === 100 && b >= 64 && b <= 127) return true;
     // 224.0.0.0/4 (multicast)
     if (a >= 224) return true;
     return false;
@@ -156,6 +159,8 @@ function isPrivateIp(ip: string): boolean {
     if (oa === 169 && ob === 254) return true;
     if (oa === 172 && ob >= 16 && ob <= 31) return true;
     if (oa === 192 && ob === 168) return true;
+    // CGNAT 100.64.0.0/10
+    if (oa === 100 && ob >= 64 && ob <= 127) return true;
     if (oa >= 224) return true;
     return false;
   }
@@ -181,7 +186,6 @@ function isPrivateIp(ip: string): boolean {
 function expandIPv6(ip: string): string {
   // IPv4-mapped IPv6 in hex form after ::ffff: stripping (e.g., "7f00:1")
   // Convert to dotted decimal first, then re-check via IPv4 path
-  const colonCount = (ip.match(/:/g) || []).length;
   const groups = ip.split(':');
 
   if (ip.includes('::')) {

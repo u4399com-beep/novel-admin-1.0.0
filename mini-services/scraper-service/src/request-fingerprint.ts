@@ -41,6 +41,8 @@ const MAX_TOTAL_FINGERPRINTS = 10000;        // hard cap on stored fingerprints
 class RequestFingerprintManager {
   private recentFingerprints: Map<string, RequestFingerprint> = new Map();  // requestId -> fp
   private domainFpIds: Map<string, Set<string>> = new Map();                   // domain -> active requestIds
+  private domainIndex: Map<string, string[]> = new Map();                      // domain -> all fingerprint IDs (including completed)
+  private fingerprintToDomain: Map<string, string> = new Map();                // requestId -> domain (reverse lookup)
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
@@ -51,7 +53,7 @@ class RequestFingerprintManager {
       } catch (err) {
         console.error('[RequestFingerprint] Cleanup error:', err);
       }
-    }, CLEANUP_INTERVAL_MS);
+    }, CLEANUP_INTERVAL_MS).unref();
   }
 
   /**
@@ -65,7 +67,7 @@ class RequestFingerprintManager {
     proxyUrl?: string;
     userAgent?: string;
   }): RequestFingerprint {
-    // Generate 16-char hex ID
+    // Generate 32-char (16-byte) hex ID
     const id = this.generateHexId(16);
 
     const fp: RequestFingerprint = {
@@ -79,6 +81,7 @@ class RequestFingerprintManager {
     };
 
     this.recentFingerprints.set(id, fp);
+    this.fingerprintToDomain.set(id, options.domain);
 
     // Hard cap: if we exceed MAX_TOTAL_FINGERPRINTS, trigger immediate cleanup
     if (this.recentFingerprints.size > MAX_TOTAL_FINGERPRINTS) {
@@ -89,6 +92,11 @@ class RequestFingerprintManager {
     const ids = this.domainFpIds.get(options.domain) || new Set();
     ids.add(id);
     this.domainFpIds.set(options.domain, ids);
+
+    // Update domain index for O(1) lookups
+    const domainIds = this.domainIndex.get(options.domain) || [];
+    domainIds.push(id);
+    this.domainIndex.set(options.domain, domainIds);
 
     return fp;
   }
@@ -126,8 +134,18 @@ class RequestFingerprintManager {
    * Use this on exception paths to prevent leaked domainFpIds entries.
    */
   discard(requestId: string): void {
-    for (const [, ids] of this.domainFpIds) {
-      ids.delete(requestId);
+    // Use reverse lookup to find domain directly
+    const domain = this.fingerprintToDomain.get(requestId);
+    if (domain) {
+      this.domainFpIds.get(domain)?.delete(requestId);
+      // Remove from domainIndex
+      const domainIds = this.domainIndex.get(domain);
+      if (domainIds) {
+        const idx = domainIds.indexOf(requestId);
+        if (idx !== -1) domainIds.splice(idx, 1);
+        if (domainIds.length === 0) this.domainIndex.delete(domain);
+      }
+      this.fingerprintToDomain.delete(requestId);
     }
     this.recentFingerprints.delete(requestId);
   }
@@ -152,15 +170,24 @@ class RequestFingerprintManager {
         this.domainFpIds.delete(fp.domain);
       }
     }
+    // Clean up reverse lookup and domain index
+    this.fingerprintToDomain.delete(requestId);
+    const domainIds = this.domainIndex.get(fp.domain);
+    if (domainIds) {
+      const idx = domainIds.indexOf(requestId);
+      if (idx !== -1) domainIds.splice(idx, 1);
+      if (domainIds.length === 0) this.domainIndex.delete(fp.domain);
+    }
   }
 
-  /** Get recent fingerprints for a domain (for debugging/monitoring) */
+  /** Get recent fingerprints for a domain (for debugging/monitoring) — O(k) via domain index */
   getDomainFingerprints(domain: string): RequestFingerprint[] {
+    const domainIds = this.domainIndex.get(domain);
+    if (!domainIds || domainIds.length === 0) return [];
     const results: RequestFingerprint[] = [];
-    for (const fp of this.recentFingerprints.values()) {
-      if (fp.domain === domain) {
-        results.push(fp);
-      }
+    for (const id of domainIds) {
+      const fp = this.recentFingerprints.get(id);
+      if (fp) results.push(fp);
     }
     // Sort by timestamp descending
     results.sort((a, b) => b.timestamp - a.timestamp);
@@ -205,10 +232,26 @@ class RequestFingerprintManager {
     let cleaned = 0;
 
     // Remove expired fingerprints
+    const expiredIds: string[] = [];
     for (const [id, fp] of this.recentFingerprints.entries()) {
       if (fp.timestamp < expireCutoff) {
+        expiredIds.push(id);
         this.recentFingerprints.delete(id);
         cleaned++;
+      }
+    }
+
+    // Clean up reverse lookup and domain index for expired fingerprints
+    for (const id of expiredIds) {
+      const domain = this.fingerprintToDomain.get(id);
+      if (domain) {
+        this.fingerprintToDomain.delete(id);
+        const domainIds = this.domainIndex.get(domain);
+        if (domainIds) {
+          const idx = domainIds.indexOf(id);
+          if (idx !== -1) domainIds.splice(idx, 1);
+          if (domainIds.length === 0) this.domainIndex.delete(domain);
+        }
       }
     }
 

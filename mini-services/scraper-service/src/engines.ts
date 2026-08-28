@@ -26,6 +26,7 @@ import { detectCaptcha, type CaptchaDetection } from "./captcha-detector";
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 import { browserBehavior } from "./browser-behavior";
 import { detectAndDecode } from "./charset-detector";
+import { getEngineFallbackChain, DEFAULT_ENGINE_FALLBACK_CHAIN } from "./engine-config";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_SCROLL_ITERATIONS = parseInt(process.env.SCRAPER_MAX_SCROLL_ITERATIONS || '30', 10);
@@ -293,32 +294,31 @@ function getCheerioAgent(): Promise<import('undici').Agent> {
  * Used by task-engine.ts when a scrape operation fails and needs to retry
  * with a different internal engine before giving up.
  */
-export const ENGINE_FALLBACK_CHAIN: EngineType[][] = [
-  // Strategy A: start cheap, escalate to stealth
-  ["cheerio", "playwright", "obscura"],
-  // Strategy B: start with JS rendering, fall back to stealth
-  ["playwright", "obscura", "cheerio"],
-  // Strategy C: start with stealth, fall back to JS then cheap
-  ["obscura", "playwright", "cheerio"],
-];
+/**
+ * @deprecated Use getEngineFallbackChain() from engine-config.ts instead.
+ * Kept for backward compatibility and reference.
+ */
+export const ENGINE_FALLBACK_CHAIN: EngineType[][] = DEFAULT_ENGINE_FALLBACK_CHAIN;
 
 /**
  * Select the best fallback chain strategy for a given primary engine.
  * Returns the chain whose first element matches the primary engine.
  * If no match, returns strategy A (cheerio-first) as the default.
  */
-export function getFallbackChainForEngine(primaryEngine: EngineType): EngineType[] {
+export function getFallbackChainForEngine(primaryEngine: EngineType, domain?: string): EngineType[] {
   // Only internal engines participate in the chain
   const internalEngines = new Set<EngineType>(['cheerio', 'playwright', 'obscura']);
+  const chains = getEngineFallbackChain(domain);
+
   if (!internalEngines.has(primaryEngine)) {
-    // External engine — use strategy A as the default internal chain
-    return ENGINE_FALLBACK_CHAIN[0];
+    // External engine — use the first available chain as the default internal chain
+    return chains[0];
   }
-  for (const chain of ENGINE_FALLBACK_CHAIN) {
+  for (const chain of chains) {
     if (chain[0] === primaryEngine) return chain;
   }
   // No matching strategy found — build a chain with the primary engine first
-  return [primaryEngine, ...ENGINE_FALLBACK_CHAIN[0].filter(e => e !== primaryEngine)];
+  return [primaryEngine, ...chains[0].filter(e => e !== primaryEngine)];
 }
 
 /**

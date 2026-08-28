@@ -983,7 +983,8 @@ async function executeTaskBody(
           // Scrape chapter content with engine fallback chain retry
           const contentStartTime = Date.now();
           const _chapterEngine = getEffectiveEngine(chapter.url, engineType);
-          const fallbackChain = getFallbackChainForEngine(_chapterEngine);
+          const _chapterDomain = (() => { try { return new URL(chapter.url).hostname; } catch { return undefined; } })();
+          const fallbackChain = getFallbackChainForEngine(_chapterEngine, _chapterDomain);
           // Filter out already-tried engines to avoid repeats
           const availableEngines = fallbackChain.filter(e => !ctx.triedEngines.has(e));
           // Ensure the current engine is in the list even if already tried

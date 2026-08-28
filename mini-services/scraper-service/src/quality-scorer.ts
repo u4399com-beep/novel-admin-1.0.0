@@ -74,7 +74,7 @@ export class QualityScorer {
   }
 
   /** Get aggregate quality stats */
-  getAggregateStats(): {
+  getAggregateStats(limit: number = 20): {
     avgScore: number;
     totalReports: number;
     gradeDistribution: Record<string, number>;
@@ -101,7 +101,7 @@ export class QualityScorer {
       avgScore: Math.round(scoreSum / total * 10) / 10,
       totalReports: total,
       gradeDistribution,
-      recentReports: this.reports.slice(-20).reverse(),
+      recentReports: this.reports.slice(-limit).reverse(),
     };
   }
 

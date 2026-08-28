@@ -221,8 +221,29 @@ class AntiCrawlAdvisor {
     const signals: DetectionSignal[] = [];
     const now = Date.now();
     const history = this.domainHistory.get(domain);
-    const rateState = rateLimiter.getDomainState(domain);
-    const delayState = adaptiveDelay.getDomainStats(domain);
+
+    // Decay cumulative counters to prevent stale signals from persisting forever
+    if (history) {
+      history.emptyContentCount = Math.round(history.emptyContentCount * 0.9);
+      history.fingerprintDetectCount = Math.round(history.fingerprintDetectCount * 0.9);
+      history.jsChallengeCount = Math.round(history.jsChallengeCount * 0.9);
+      history.slowResponseCount = Math.round(history.slowResponseCount * 0.9);
+    }
+
+    // Safely gather external module state with fallback defaults
+    let rateState: DomainRateState;
+    try {
+      rateState = rateLimiter.getDomainState(domain);
+    } catch {
+      rateState = { status: 'normal', currentRPM: 0, maxRPM: 60, penaltyActive: false, penaltyUntil: 0 };
+    }
+
+    let delayState: DelayDomainStats;
+    try {
+      delayState = adaptiveDelay.getDomainStats(domain);
+    } catch {
+      delayState = { avgResponseTime: 0, lastRequestTime: 0, consecutiveErrors: 0, totalRequests: 0 };
+    }
 
     // 1. Captcha signals from history
     if (history) {
@@ -352,11 +373,7 @@ class AntiCrawlAdvisor {
       });
     }
 
-    // 10. Proxy-related: check if domain has proxies
-    const domainProxy = proxyManager.getDomainProxy(domain);
-    const poolProxies = proxyManager.getDetailedStats().proxies.filter(
-      p => !p.disabled && p.healthScore > 30,
-    );
+    // 10. Proxy-related: could check if domain has proxies (reserved for future use)
 
     // Sort signals by severity
     const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -843,4 +860,4 @@ setInterval(() => {
   } catch (err) {
     console.error('[AntiCrawlAdvisor] Periodic cleanup error:', err);
   }
-}, 30 * 60 * 1000);
+}, 30 * 60 * 1000).unref();

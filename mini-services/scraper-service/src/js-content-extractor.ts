@@ -50,6 +50,8 @@ const JS_PATTERNS: Array<{
   encoded?: boolean; // content is URL-encoded or HTML-entity encoded
   /** Optional transform to apply to raw match before content filtering (e.g. charCode decode) */
   transform?: (raw: string, fullMatch: string) => string | null;
+  /** If true, only search within <script> tag contents (avoids ReDoS on full HTML) */
+  scriptOnly?: boolean;
 }> = [
   // Pattern 1: getElementById + innerHTML/innerText/textContent
   {
@@ -109,6 +111,7 @@ const JS_PATTERNS: Array<{
     name: 'JSON.parse',
     regex: /(?:var\s+\w+\s*=|innerHTML\s*=|textContent\s*=)\s*JSON\.parse\s*\(\s*['"]([\s\S]{50,}?)['"]\s*\)/g,
     contentGroup: 1,
+    scriptOnly: true,
     transform: (raw: string) => {
       try {
         // Try to parse the JSON string. If it's a string (escaped), it will return a string.
@@ -173,6 +176,7 @@ const JS_PATTERNS: Array<{
     name: 'windowArrayContent',
     regex: /(?:window\.)?(?:chapterContent|content|novelContent|bookContent|txtContent|articleContent)\s*=\s*\[([\s\S]{100,}?)\]\s*;/g,
     contentGroup: 1,
+    scriptOnly: true,
     transform: (raw: string) => {
       try {
         // Parse as JavaScript array literal (handle quoted strings)
@@ -289,7 +293,23 @@ function decodeExtractedContent(raw: string, encoded?: boolean): string {
   return text;
 }
 
-// ==================== Main Extraction ====================
+/**
+ * Pre-extract <script> tag contents from HTML.
+ * Used to limit regex search scope for patterns that use [\s\S] quantifiers,
+ * preventing O(n²) ReDoS on non-matching full HTML.
+ */
+const SCRIPT_TAG_RE = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+function extractScriptContents(html: string): string {
+  const parts: string[] = [];
+  SCRIPT_TAG_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = SCRIPT_TAG_RE.exec(html)) !== null) {
+    parts.push(m[1]);
+  }
+  return parts.join('\n');
+}
+
+// ==================== Main Extraction =====================
 
 /**
  * Extract content from JavaScript-rendered HTML source.
@@ -317,12 +337,18 @@ export function extractJsContent(html: string): JsExtractResult {
   const chunks: string[] = [];
   let matchedPattern = '';
 
+  // Pre-extract script contents once for scriptOnly patterns (ReDoS mitigation)
+  const scriptOnlyHtml = extractScriptContents(html);
+
   for (const pattern of JS_PATTERNS) {
     // Reset regex state for global patterns
     pattern.regex.lastIndex = 0;
 
+    // For patterns with [\s\S] quantifiers, search only within <script> tags
+    const searchTarget = pattern.scriptOnly ? scriptOnlyHtml : html;
+
     let match: RegExpExecArray | null;
-    while ((match = pattern.regex.exec(html)) !== null) {
+    while ((match = pattern.regex.exec(searchTarget)) !== null) {
       const rawContent = match[pattern.contentGroup];
       if (!rawContent) continue;
 

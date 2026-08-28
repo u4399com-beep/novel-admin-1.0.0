@@ -86,8 +86,13 @@ export function addToQueue(options: AddToQueueOptions): string {
     insert.run(id, options.url, options.method || "GET", options.payload ? JSON.stringify(options.payload) : null, options.maxRetries || 3, taskId, options.metadata ? JSON.stringify(options.metadata) : null);
 
     if (d.changes > 0) return id;
-  } catch {
-    // Ignore constraint violation
+  } catch (err) {
+    // Only ignore SQLITE_CONSTRAINT (unique violation / deduplication)
+    const msg = err instanceof Error ? err.message : '';
+    if (!msg.includes('SQLITE_CONSTRAINT') && !msg.includes('UNIQUE constraint')) {
+      console.error('[Queue] addToQueue unexpected error:', err);
+      throw err;
+    }
   }
 
   // Find existing ID if deduplicated

@@ -86,6 +86,31 @@ export interface DetailedStats {
   dispatcherCacheSize: number;
 }
 
+/** Result of a thorough end-to-end proxy verification (HTTP through-proxy test) */
+export interface ProxyVerifyResult {
+  working: boolean;
+  responseTime: number;       // ms, 0 if failed before getting a response
+  statusCode?: number;        // HTTP status from the verify URL
+  externalIp?: string;        // The IP reported by the verify endpoint
+  ipMatch?: boolean;          // true if externalIp matches the proxy's host IP
+  error?: string;
+}
+
+/** Summary report from verifyAllProxies() */
+export interface ProxyVerifyReport {
+  totalTested: number;
+  working: number;
+  failed: number;
+  skipped: number;
+  avgResponseTime: number;
+  results: Array<{
+    proxyUrl: string;          // redacted
+    host: string;
+    protocol: ProxyEntry['protocol'];
+    result: ProxyVerifyResult;
+  }>;
+}
+
 // ==================== Proxy Parser ====================
 
 function parseProxyUrl(rawUrl: string): { protocol: ProxyEntry['protocol']; host: string; port: number; cleanUrl: string } | null {
@@ -288,10 +313,15 @@ class ProxyManager {
   /** Configurable: number of top proxies to rotate between (default 3) */
   private rotationTopN: number;
   private static instance: ProxyManager;
+  /** Timer handle for periodic proxy verification */
+  private verificationTimer: ReturnType<typeof setInterval> | null = null;
+  /** Configurable verify URL (env SCRAPER_PROXY_VERIFY_URL) */
+  private readonly verifyUrl: string;
 
   private constructor(rotationInterval?: number, rotationTopN?: number) {
     this.rotationInterval = rotationInterval || 20;
     this.rotationTopN = rotationTopN || 3;
+    this.verifyUrl = process.env.SCRAPER_PROXY_VERIFY_URL || 'https://httpbin.org/ip';
     this.loadFromConfig();
   }
 
@@ -1244,6 +1274,243 @@ class ProxyManager {
       recentFailures,
       dispatcherCacheSize: dispatcherCache.size,
     };
+  }
+
+  // ==================== End-to-End Proxy Verification ====================
+
+  /**
+   * Thoroughly verify a single proxy by making a real HTTP request THROUGH it.
+   * Unlike checkHealth() which has a direct-connect fallback, this method:
+   *   - Parses the response body to extract the external IP
+   *   - Compares it against the proxy's host IP for IP-match detection
+   *   - Uses configurable timeouts (15s for HTTP/HTTPS, 20s for SOCKS)
+   *   - Updates the proxy's health score based on results
+   *
+   * @param proxyUrl - The proxy URL to verify
+   * @returns ProxyVerifyResult with working status, timing, and IP info
+   */
+  async verifyProxy(proxyUrl: string): Promise<ProxyVerifyResult> {
+    const parsed = parseProxyUrl(proxyUrl);
+    if (!parsed) {
+      return { working: false, responseTime: 0, error: 'Invalid proxy URL' };
+    }
+
+    const entry = this.pool.get(parsed.cleanUrl);
+    if (!entry) {
+      return { working: false, responseTime: 0, error: 'Proxy not in pool' };
+    }
+
+    const dispatcher = getProxyDispatcher(entry.url);
+    if (!dispatcher) {
+      return { working: false, responseTime: 0, error: 'Failed to create proxy dispatcher' };
+    }
+
+    const startTime = Date.now();
+    const isSocks = entry.protocol === 'socks4' || entry.protocol === 'socks5';
+    const timeoutMs = isSocks ? 20000 : 15000;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await undiciFetch(this.verifyUrl, {
+        dispatcher,
+        signal: controller.signal,
+        redirect: 'manual',
+      } as Parameters<typeof undiciFetch>[1]);
+
+      clearTimeout(timeout);
+      const responseTime = Date.now() - startTime;
+
+      // Read response body to extract IP
+      let bodyText = '';
+      try {
+        bodyText = await res.text();
+      } catch {
+        // body read failed, but we still got a response
+      }
+
+      entry.lastCheck = Date.now();
+
+      if (!res.ok) {
+        this.recordFailure(proxyUrl, `Verify returned HTTP ${res.status}`);
+        return {
+          working: false,
+          responseTime,
+          statusCode: res.status,
+          error: `HTTP ${res.status}`,
+        };
+      }
+
+      // Try to parse external IP from response (supports httpbin.org /json format)
+      let externalIp: string | undefined;
+      try {
+        const json = JSON.parse(bodyText);
+        // httpbin.org/ip returns { "origin": "1.2.3.4" }
+        if (json.origin && typeof json.origin === 'string') {
+          externalIp = json.origin.split(',')[0].trim(); // may contain multiple IPs
+        }
+      } catch {
+        // Not JSON or not the expected format — that's OK
+      }
+
+      // Check if the external IP matches the proxy's host IP
+      let ipMatch: boolean | undefined;
+      if (externalIp) {
+        const proxyIp = parsed.host;
+        // Compare: strip brackets from IPv6, handle both forms
+        const cleanProxyIp = proxyIp.replace(/^\[|\]$/g, '');
+        ipMatch = externalIp === cleanProxyIp;
+      }
+
+      // Success — update health
+      this.recordSuccess(proxyUrl, responseTime);
+
+      return {
+        working: true,
+        responseTime,
+        statusCode: res.status,
+        externalIp,
+        ipMatch,
+      };
+    } catch (err) {
+      clearTimeout(timeout);
+      const responseTime = Date.now() - startTime;
+      const errMsg = err instanceof Error ? err.message : String(err);
+
+      entry.lastCheck = Date.now();
+      this.recordFailure(proxyUrl, errMsg);
+
+      return {
+        working: false,
+        responseTime,
+        error: errMsg,
+      };
+    }
+  }
+
+  /**
+   * Verify all proxies in the pool end-to-end.
+   * Tests each proxy with a real HTTP request through it.
+   * Updates health scores based on results.
+   *
+   * @returns ProxyVerifyReport with per-proxy results and summary
+   */
+  async verifyAllProxies(): Promise<ProxyVerifyReport> {
+    const entries = Array.from(this.pool.values());
+    const report: ProxyVerifyReport = {
+      totalTested: 0,
+      working: 0,
+      failed: 0,
+      skipped: 0,
+      avgResponseTime: 0,
+      results: [],
+    };
+
+    let totalResponseTime = 0;
+
+    // Run verifications sequentially to avoid overwhelming the verify endpoint
+    for (const entry of entries) {
+      if (entry.disabled) {
+        report.skipped++;
+        continue;
+      }
+
+      const result = await this.verifyProxy(entry.url);
+      report.totalTested++;
+
+      if (result.working) {
+        report.working++;
+      } else {
+        report.failed++;
+      }
+
+      totalResponseTime += result.responseTime;
+
+      report.results.push({
+        proxyUrl: redactProxyCredentials(entry.url),
+        host: entry.host,
+        protocol: entry.protocol,
+        result,
+      });
+    }
+
+    report.avgResponseTime = report.totalTested > 0
+      ? Math.round(totalResponseTime / report.totalTested)
+      : 0;
+
+    return report;
+  }
+
+  // ==================== Periodic Auto-Verification ====================
+
+  /**
+   * Start periodic end-to-end proxy verification.
+   * Only verifies proxies that haven't been tested in the last interval period.
+   * Use stopProxyVerification() to stop.
+   *
+   * @param intervalMs - Interval in ms (default: SCRAPER_PROXY_VERIFY_INTERVAL_MS env or 300000 = 5min)
+   */
+  startProxyVerification(intervalMs?: number): void {
+    if (this.verificationTimer) {
+      // Already running — update interval if different
+      this.stopProxyVerification();
+    }
+
+    const interval = intervalMs || parseInt(process.env.SCRAPER_PROXY_VERIFY_INTERVAL_MS || '300000', 10);
+
+    const runVerification = async () => {
+      try {
+        const now = Date.now();
+        const candidates: ProxyEntry[] = [];
+
+        for (const entry of this.pool.values()) {
+          if (entry.disabled) continue;
+          // Only verify proxies not tested in the last interval
+          if (entry.lastCheck === 0 || (now - entry.lastCheck) >= interval) {
+            candidates.push(entry);
+          }
+        }
+
+        if (candidates.length === 0) {
+          if (process.env.DEBUG === 'true') {
+            console.log('[ProxyManager] Periodic verification: all proxies already tested recently, skipping');
+          }
+          return;
+        }
+
+        if (process.env.DEBUG === 'true') {
+          console.log(`[ProxyManager] Periodic verification: testing ${candidates.length} proxies`);
+        }
+
+        for (const entry of candidates) {
+          await this.verifyProxy(entry.url);
+        }
+
+        if (process.env.DEBUG === 'true') {
+          console.log('[ProxyManager] Periodic verification: complete');
+        }
+      } catch (err) {
+        console.warn('[ProxyManager] Periodic verification error:', err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    // Run immediately on start, then periodically
+    runVerification().catch(() => {});
+    this.verificationTimer = setInterval(runVerification, interval);
+
+    if (process.env.DEBUG === 'true' || process.env.DEBUG === '1') {
+      console.log(`[ProxyManager] Periodic verification started (interval: ${interval}ms)`);
+    }
+  }
+
+  /**
+   * Stop the periodic proxy verification timer.
+   */
+  stopProxyVerification(): void {
+    if (this.verificationTimer) {
+      clearInterval(this.verificationTimer);
+      this.verificationTimer = null;
+    }
   }
 }
 
