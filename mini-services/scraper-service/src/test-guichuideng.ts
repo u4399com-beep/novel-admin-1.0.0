@@ -29,20 +29,22 @@ const SELECTORS = {
   novelDescInList: { type: 'css' as const, value: '.item dl dd a' },
   novelCoverInList: { type: 'css' as const, value: '.item .image img', extract: 'src' as const },
 
-  // Detail page
-  bookTitle: { type: 'css' as const, value: 'h1' },
-  bookAuthor: { type: 'css' as const, value: 'p' },
-  bookCategory: { type: 'css' as const, value: 'p.xs-show' },
-  bookCover: { type: 'css' as const, value: '.image img, .book-img img, .cover img', extract: 'src' as const },
+  // Detail page — use OG meta tags for reliable extraction
+  bookTitle: { type: 'css' as const, value: "meta[property='og:novel:book_name']", extract: 'content' as const },
+  bookAuthor: { type: 'css' as const, value: "meta[property='og:novel:author']", extract: 'content' as const },
+  bookCategory: { type: 'css' as const, value: "meta[property='og:novel:category']", extract: 'content' as const },
+  bookStatus: { type: 'css' as const, value: "meta[property='og:novel:status']", extract: 'content' as const },
+  bookDescription: { type: 'css' as const, value: '.xdesc' },
+  bookCover: { type: 'css' as const, value: ".imgbox img, .image img", extract: 'src' as const },
   readBtn: { type: 'css' as const, value: 'a.btn-read, a.xs-show.btn-read', extract: 'href' as const },
 
-  // Chapter list
-  chapterListContainer: { type: 'css' as const, value: '.layout-col1, .listmain, .chapter-list, .mulu, #list' },
-  chapterLink: { type: 'css' as const, value: 'a[href*=".html"]' },
+  // Chapter list — target #section-list (full chapter TOC) specifically
+  chapterListContainer: { type: 'css' as const, value: 'ul#section-list, .section-list' },
+  chapterLink: { type: 'css' as const, value: 'ul#section-list a[href], .section-list a[href]' },
 
   // Chapter content
   chapterContent: { type: 'css' as const, value: '#content' },
-  chapterTitle: { type: 'css' as const, value: 'h1, title' },
+  chapterTitle: { type: 'css' as const, value: 'h1.title' },
   nextChapter: { type: 'css' as const, value: 'a:contains("下一章")', extract: 'href' as const },
 } as const;
 
@@ -166,25 +168,21 @@ async function main() {
     });
     console.log(`[Fetch] Status: ${detailResult.statusCode}, Size: ${detailResult.html.length} bytes`);
 
-    // Extract book info
+    // Extract book info (OG meta tags provide clean structured data)
     const detailTitle = parseSelector(detailResult.html, SELECTORS.bookTitle);
-    const detailAuthorRaw = parseSelector(detailResult.html, SELECTORS.bookAuthor);
+    const detailAuthor = parseSelector(detailResult.html, SELECTORS.bookAuthor);
     const detailCategory = parseSelector(detailResult.html, SELECTORS.bookCategory);
+    const detailStatus = parseSelector(detailResult.html, SELECTORS.bookStatus);
+    const detailDescription = parseSelector(detailResult.html, SELECTORS.bookDescription);
     const detailCover = parseSelector(detailResult.html, SELECTORS.bookCover);
     const readBtnHref = parseSelector(detailResult.html, SELECTORS.readBtn);
-
-    // Parse author from "作者：XXX" format
-    const authorMatch = detailAuthorRaw.match(/作者[：:]\s*(.+)/);
-    const detailAuthor = authorMatch ? authorMatch[1].trim() : detailAuthorRaw;
-
-    // Parse category from "类别：XXX" format
-    const categoryMatch = detailCategory.match(/类别[：:]\s*(.+)/);
-    const finalCategory = categoryMatch ? categoryMatch[1].trim() : detailCategory;
 
     console.log(`\n[Results] Book Info:`);
     console.log(`  Title: ${detailTitle || firstNovel.title}`);
     console.log(`  Author: ${detailAuthor || '(not found)'}`);
-    console.log(`  Category: ${finalCategory || '(not found)'}`);
+    console.log(`  Category: ${detailCategory || '(not found)'}`);
+    console.log(`  Status: ${detailStatus || '(not found)'}`);
+    console.log(`  Description: ${detailDescription ? truncate(detailDescription, 100) : '(not found)'}`);
     console.log(`  Cover: ${detailCover ? resolveUrl(firstNovel.url, detailCover) : '(not found)'}`);
     console.log(`  Read Button: ${readBtnHref || '(not found)'}`);
 
@@ -203,7 +201,18 @@ async function main() {
         firstChapterTitle = firstLink.text().trim();
         firstChapterUrl = resolveUrl(firstNovel.url, firstLink.attr('href') || '');
       }
-      console.log(`  Chapters found on detail page: ${chapterCount}`);
+        console.log(`  Chapters found on detail page: ${chapterCount}`);
+    } else {
+      // Fallback: try broader chapter link search on full page HTML
+      const $fb = (await import('cheerio')).load(detailResult.html);
+      const fbLinks = $fb('ul#section-list a[href], .section-list a[href]');
+      chapterCount = fbLinks.length;
+      if (fbLinks.length > 0) {
+        const firstLink = fbLinks.first();
+        firstChapterTitle = firstLink.text().trim();
+        firstChapterUrl = resolveUrl(firstNovel.url, firstLink.attr('href') || '');
+      }
+      console.log(`  Chapters found (fallback): ${chapterCount}`);
     }
 
     // If no chapters found on detail page, use the "read" button URL

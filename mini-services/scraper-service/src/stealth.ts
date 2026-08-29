@@ -1072,13 +1072,13 @@ export function getStealthScript(profile: FingerprintProfile): string {
     const origPermissionsQuery = navigator.permissions.query.bind(navigator.permissions);
     navigator.permissions.query = function(params) {
       if (params.name === 'notifications') {
-        return Promise.resolve({
-          state: typeof Notification !== 'undefined' ? Notification.permission : 'default',
-          onchange: null,
-        });
+        // Return 'default' directly rather than Notification.permission (which
+        // may still be 'denied' at this point — Section 52 fixes it later).
+        // Consistent with Section 38 which also returns 'default' for notifications.
+        return Promise.resolve({ state: 'default', onchange: null });
       }
       // For other permissions, return a permissive default
-      if (['geolocation', 'camera', 'microphone', 'accelerometer', 'gyroscope', 'magnetometer'].includes(params.name)) {
+      if (['geolocation', 'camera', 'microphone', 'accelerometer', 'gyroscope', 'magnetometer', 'push', 'midi', 'clipboard-read', 'clipboard-write', 'fullscreen', 'persistent-storage'].includes(params.name)) {
         return Promise.resolve({ state: 'prompt', onchange: null });
       }
       return origPermissionsQuery(params);

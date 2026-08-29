@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-export type LayoutTheme = 'grid' | 'magazine' | 'list';
+export type LayoutTheme = 'grid' | 'magazine' | 'list' | 'novel-site';
 
 const LAYOUT_THEME_KEY = 'novel-layout-theme';
 
@@ -10,6 +10,7 @@ const LAYOUT_META: Record<LayoutTheme, { label: string; icon: string; descriptio
   grid: { label: '卡片网格', icon: '⊞', description: '经典卡片布局，封面优先' },
   magazine: { label: '杂志风格', icon: '⊡', description: '精选大图 + 双栏排列' },
   list: { label: '列表模式', icon: '☰', description: '紧凑列表，信息密度高' },
+  'novel-site': { label: '101看書風', icon: '📖', description: '仿101kks.com小说网站风格，白卡灰底蓝点缀' },
 };
 
 export { LAYOUT_META };

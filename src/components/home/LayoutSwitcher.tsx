@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { LayoutGrid, Rows3, Newspaper } from 'lucide-react';
+import { LayoutGrid, Rows3, Newspaper, BookOpen } from 'lucide-react';
 import { useLayoutTheme, type LayoutTheme, LAYOUT_META } from '@/lib/use-layout-theme';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ const ICON_MAP: Record<LayoutTheme, React.ComponentType<{ className?: string }>>
   grid: LayoutGrid,
   magazine: Newspaper,
   list: Rows3,
+  'novel-site': BookOpen,
 };
 
 export function LayoutSwitcher() {

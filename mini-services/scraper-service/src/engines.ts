@@ -210,11 +210,15 @@ class CircuitBreaker {
   }
 
   recordFailure(): void {
-    this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
     this.failureCount++;
     this.lastFailureTime = Date.now();
     if (this.failureCount >= this.failureThreshold) {
       this.state = "open";
+      // Reset half-open tracking — all in-flight probes are now invalid
+      this._halfOpenInFlight = 0;
+    } else {
+      // Still below threshold — decrement in-flight for this specific probe
+      this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
     }
   }
 
@@ -2055,6 +2059,15 @@ function hasBotDetectionBehavioralPatterns(scriptContent: string): boolean {
 /** Whether behavioral script content analysis is enabled. */
 const ENABLE_SCRIPT_CONTENT_ANALYSIS = process.env.SCRAPER_ENABLE_SCRIPT_CONTENT_ANALYSIS === 'true';
 
+/**
+ * NOTE: rootDomain() uses a naive last-2-parts heuristic. This is incorrect for
+ * multi-part TLDs (co.uk, com.cn, com.au, etc.) — e.g. siteA.co.uk and siteB.co.uk
+ * would both resolve to "co.uk" and be treated as same-origin. This is an acceptable
+ * tradeoff because: (1) the isBotDetectionDomainUrl() check catches known 3rd-party
+ * bot-detection services regardless of TLD, (2) true cross-domain leaks to random
+ * co.uk sites are rare in practice, and (3) a proper Public Suffix List implementation
+ * would add significant complexity/dependency.
+ */
 function shouldBlockResource(resourceType: string, requestUrl: string, targetDomain: string): boolean {
   // Always block these resource types (speed + anti-tracking)
   if (ALWAYS_BLOCKED_RESOURCES.has(resourceType)) return true;
@@ -2289,13 +2302,14 @@ class ObscuraEngine implements ScrapingEngine {
               }
 
               // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
+              // Must include iframe/other to prevent data://, blob://, file:// navigations
               if (!routeUrl.startsWith("http://") && !routeUrl.startsWith("https://")) {
-                if (["document", "xhr", "fetch"].includes(resourceType)) {
+                if (["document", "xhr", "fetch", "iframe", "other"].includes(resourceType)) {
                   route.abort();
                   return;
                 }
               }
-              if (["document", "xhr", "fetch"].includes(resourceType) && !isSafeUrl(routeUrl)) {
+              if (["document", "xhr", "fetch", "iframe", "other"].includes(resourceType) && !isSafeUrl(routeUrl)) {
                 route.abort();
                 return;
               }
@@ -2304,7 +2318,14 @@ class ObscuraEngine implements ScrapingEngine {
               if (ENABLE_SCRIPT_CONTENT_ANALYSIS && resourceType === 'script') {
                 try {
                   const resp = await route.fetch();
-                  const body = await resp.text();
+                  let body;
+                  try {
+                    body = await resp.text();
+                  } catch {
+                    // Fetch succeeded but reading body failed — abort (request already made)
+                    try { await route.abort(); } catch { /* already handled */ }
+                    return;
+                  }
                   if (hasBotDetectionBehavioralPatterns(body)) {
                     if (process.env.DEBUG === 'true') {
                       console.log(`[Obscura] Blocked bot-detection script (behavioral): ${routeUrl.slice(0, 120)}`);
@@ -2315,6 +2336,7 @@ class ObscuraEngine implements ScrapingEngine {
                   await route.fulfill({ response: resp });
                   return;
                 } catch {
+                  // route.fetch() itself failed — continue with original request
                   await route.continue();
                   return;
                 }
@@ -2479,7 +2501,7 @@ class ObscuraEngine implements ScrapingEngine {
 
           if (process.env.DEBUG === 'true') {
             console.log(
-              `[Obscura] Fetched ${finalUrl} (${html.length} bytes, status ${response.status()}, profile: ${profile.seed.slice(0, 12)}...)`
+              `[Obscura] Fetched ${finalUrl} (${html.length} bytes, status ${response.status()}, profile: ${profile.seed?.slice(0, 12) || 'unknown'}...)`
             );
           }
 

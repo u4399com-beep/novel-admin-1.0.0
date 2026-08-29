@@ -1,27 +1,27 @@
 {
   "name": "鬼吹灯小说网 (guichuideng.info)",
-  "description": "鬼吹灯小说网全站采集。GBK编码，使用Obscura隐身引擎绕过基础反爬。单页书单，无列表分页。",
+  "description": "鬼吹灯小说网全站采集。GBK编码，使用Obscura隐身引擎绕过基础反爬。单页书单，无列表分页。OG标签提供高质量结构化数据作为主要提取源。",
   "enabled": true,
 
   "listUrl": "https://www.guichuideng.info/book/",
   "listSelector": { "type": "css", "value": ".item .image a[href]" },
   "listPagination": null,
 
-  "bookTitleSelector": { "type": "css", "value": "h1" },
-  "bookAuthorSelector": { "type": "css", "value": "p" },
-  "bookCategorySelector": { "type": "css", "value": "p.xs-show" },
-  "bookKeywordsSelector": null,
-  "bookDescriptionSelector": { "type": "css", "value": "dl > dd > a" },
-  "bookCoverSelector": { "type": "css", "value": ".image img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": "p.xs-show" },
+  "bookTitleSelector": { "type": "css", "value": "meta[property='og:novel:book_name']", "extract": "content" },
+  "bookAuthorSelector": { "type": "css", "value": "meta[property='og:novel:author']", "extract": "content" },
+  "bookCategorySelector": { "type": "css", "value": "meta[property='og:novel:category']", "extract": "content" },
+  "bookKeywordsSelector": { "type": "css", "value": "meta[name='Keywords']", "extract": "content" },
+  "bookDescriptionSelector": { "type": "css", "value": ".xdesc" },
+  "bookCoverSelector": { "type": "css", "value": "meta[property='og:image']", "extract": "content" },
+  "bookStatusSelector": { "type": "css", "value": "meta[property='og:novel:status']", "extract": "content" },
 
   "chapterListUrl": "{bookUrl}",
-  "chapterListSelector": { "type": "css", "value": ".layout-col1, .listmain, .chapter-list, .mulu, #list" },
-  "chapterTitleSelector": { "type": "css", "value": "a[href*=\".html\"]" },
-  "chapterLinkSelector": { "type": "css", "value": "a[href*=\".html\"]" },
+  "chapterListSelector": { "type": "css", "value": "ul#section-list, .section-list" },
+  "chapterTitleSelector": { "type": "css", "value": "ul#section-list a[href], .section-list a[href]" },
+  "chapterLinkSelector": { "type": "css", "value": "ul#section-list a[href], .section-list a[href]" },
   "chapterPagination": null,
 
-  "contentTitleSelector": { "type": "css", "value": "h1, title" },
+  "contentTitleSelector": { "type": "css", "value": "h1.title" },
   "contentSelector": { "type": "css", "value": "#content" },
   "contentPagination": { "type": "next", "selector": "a:contains(\"下一章\")", "maxPage": 1 },
 
@@ -39,10 +39,15 @@
     "cleanHtml": true,
     "removePatterns": [
       ".ad", ".ads", ".advertisement",
-      ".chapter-nav", ".footer", ".header",
+      ".chapter-nav", ".footer", ".header", ".topbar",
       ".recommend", ".related",
       "#ad", "[id^=\"div-gpt-ad\"]",
-      "ins.adsbygoogle"
+      "ins.adsbygoogle",
+      ".hotcmd-box", ".hotcmd-wp",
+      ".section-opt", ".btn-fb", ".btn-addbs",
+      ".m-setting", ".m-footer", ".pc-footer",
+      ".moGIgmZpgn", "#pmjangltwl", "#DqDGFdZttG",
+      ".reader-fun", ".row-section"
     ],
     "adPatterns": [
       "鬼吹灯小说网", "guichuideng.info",
@@ -56,7 +61,10 @@
       "返回目录", "章节列表",
       "推荐本书", "打赏",
       "本章完", "本章结束",
-      "完结感言", "在线听书"
+      "完结感言", "在线听书",
+      "热门推荐", "内容有问题",
+      "无弹窗小说", "无弹窗阅读",
+      "加入书签", "邮件反馈"
     ]
   },
 

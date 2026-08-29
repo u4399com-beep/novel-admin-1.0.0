@@ -156,4 +156,16 @@ export const PREBUILT_THEMES: (Omit<ThemeConfig, 'seo' | 'geo'> & {
     seo: { defaultTitle: '暮色书屋', titleTemplate: '{title} - 暮色书屋', defaultDescription: '温暖复古小说阅读平台，暮色棕主题，咖啡馆般惬意的阅读时光，面包屑导航优化', defaultKeywords: '小说,复古,棕色,咖啡馆,舒适阅读,文学' },
     geo: { region: 'CN', placename: '中国', position: '39.9042,116.4074' },
   },
+
+  // 101看書風 — 仿101kks.com小说网站，白卡灰底蓝点缀
+  {
+    name: '101看書風',
+    identifier: '101kks-style',
+    description: '仿101kks.com小说网站风格，浅灰底色配白色卡片，蓝色主调点缀，信息密集的阅读列表布局',
+    colors: { primary: '#1f6cb2', secondary: '#e28338', accent: '#e84118', background: '#f2f3f4', foreground: '#333333', card: '#ffffff', cardForeground: '#333333', muted: '#f2f3f4', mutedForeground: '#666666', border: '#e5e5e5', ring: '#1f6cb2' },
+    layout: { maxWidth: '1200px', sidebarPosition: 'right', cardStyle: 'elevated', headerStyle: 'fixed', gridColumns: 1 },
+    typography: { headingFont: 'sans', bodyFont: 'sans', headingWeight: 700, lineHeight: 1.6 },
+    seo: { defaultTitle: '101看書', titleTemplate: '{title} - 101看書', defaultDescription: '海量小说在线阅读，热门网络小说尽在101看書', defaultKeywords: '小说,在线阅读,网络小说,热门小说,免费小说' },
+    geo: { region: 'CN', placename: '中国', position: '39.9042,116.4074' },
+  },
 ];

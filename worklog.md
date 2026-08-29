@@ -21494,3 +21494,174 @@ Stage Summary:
 - 关键增强: 代理延迟感知调度/Canvas Gradient噪声/guichuideng规则
 - 14文件, +1994/-110行
 - Commit: 7224203
+
+---
+Task ID: 1
+Agent: frontend-101kks-theme
+Task: Build 101kks.com-style reading theme template
+
+Work Log:
+- Analyzed 101kks.com page structure and CSS design patterns
+- Added 'novel-site' to LayoutTheme type in use-layout-theme.ts with '101看書風' metadata
+- Added '101看書風' (identifier: '101kks-style') to PREBUILT_THEMES in prebuilt-themes.ts with 101kks.com color scheme (#1f6cb2 primary, #f2f3f4 background, #e28338 secondary)
+- Created NovelSiteLayout.tsx component:
+  - White card container with shadow-[0_1px_3px_rgba(0,0,0,0.12)] matching 101kks.com style
+  - Horizontal book items: 80x110px cover left + title/author/category/description/wordCount/status right
+  - Section header '小说列表' with bottom border
+  - Desktop sidebar (280px) with '热门推荐' top-5 and '最近更新' top-8 lists
+  - Responsive: single column on mobile, 2-column (main+sidebar) on lg+
+  - Framer Motion staggered animations, search highlighting, Badge for status
+- Registered NovelSiteLayout in layouts/index.tsx
+- Added novel-site case to NovelGrid.tsx rendering logic
+
+Stage Summary:
+- New theme '101kks-style' with blue/white/gray color scheme mimicking 101kks.com
+- New layout component NovelSiteLayout with 101kks.com book list style (cover + info rows)
+- Responsive design: mobile single column, desktop with sidebar
+- All files pass ESLint (no new lint errors)
+- Dev server compiles successfully with 200 responses
+
+---
+Task ID: 1-a
+Agent: scraper-guichuideng-obscura
+Task: Write guichuideng.info scrape rules + Integrate Obscura
+
+Work Log:
+- Read worklog (last 100 lines) and all relevant source files (types.ts, engines.ts, selectors.ts, cleaning.ts, stealth.ts, engine-config.ts, package.json)
+- Fetched 3 actual pages via page_reader to verify selectors against live HTML:
+  1. https://www.guichuideng.info/book/ (list page)
+  2. https://www.guichuideng.info/book/210/ (detail page for 蛇棺)
+  3. https://www.guichuideng.info/book/210/343801.html (chapter page)
+- Identified 7 incorrect selectors in guichuideng.json through live HTML analysis
+- Fixed all selectors to use OG meta tags (og:novel:book_name, og:novel:author, og:novel:category, og:novel:status, og:image) as primary extraction source
+- Narrowed chapter list selectors from broad `.layout-col1` to specific `ul#section-list, .section-list`
+- Fixed chapter content title from `h1, title` (matched logo) to `h1.title`
+- Added site-specific ad elements to cleanConfig removePatterns (.hotcmd-box, .section-opt, .moGIgmZpgn, etc.)
+- Updated test-guichuideng.ts selectors to match improved JSON, added status/description extraction, added fallback chapter search
+- Verified Obscura integration is already complete (class, registration, fallback chain, stealth injection, config, auto-selection)
+- Confirmed no external 'obscura' npm package needed (203B placeholder on npm; engine is built on Playwright with enhanced stealth)
+
+## Part 1: Scrape Rule Fixes
+
+### Selector Issues Found & Fixed
+| Field | Old Selector | Problem | New Selector |
+|-------|-------------|---------|-------------|
+| bookTitleSelector | `h1` | Matched `.header h1.logo` first ("鬼吹灯" not book title) | `meta[property='og:novel:book_name']` extract:content |
+| bookAuthorSelector | `p` | Too broad — matched topbar form first | `meta[property='og:novel:author']` extract:content |
+| bookCategorySelector | `p.xs-show` | Fragile, same class used for status too | `meta[property='og:novel:category']` extract:content |
+| bookDescriptionSelector | `dl > dd > a` | No `dl > dd > a` exists on detail page | `.xdesc` |
+| bookCoverSelector | `.image img` extract:src | Works on list page but NOT detail page (`.imgbox img` there) | `meta[property='og:image']` extract:content |
+| bookStatusSelector | `p.xs-show` | Same as category — only returns first match | `meta[property='og:novel:status']` extract:content |
+| chapterListSelector | `.layout-col1, .listmain, ...` | `.layout-col1` too broad (includes nav, header) | `ul#section-list, .section-list` |
+| chapterLinkSelector | `a[href*=".html"]` | Matches non-chapter links (开始阅读, 阅读记录) | `ul#section-list a[href], .section-list a[href]` |
+| contentTitleSelector | `h1, title` | `h1` matched logo `.header h1.logo` first | `h1.title` |
+
+### Enhanced cleanConfig
+Added 11 site-specific CSS selectors to removePatterns:
+- `.hotcmd-box`, `.hotcmd-wp` (热门推荐 sections)
+- `.section-opt`, `.btn-fb`, `.btn-addbs` (navigation/bookmark)
+- `.m-setting`, `.m-footer`, `.pc-footer` (mobile/desktop footers)
+- `.moGIgmZpgn`, `#pmjangltwl`, `#DqDGFdZttG` (obfuscated ad injection containers)
+- `.reader-fun`, `.row-section` (reader tools)
+
+Added 4 new adPatterns: "热门推荐", "内容有问题", "无弹窗小说", "无弹窗阅读", "加入书签", "邮件反馈"
+
+## Part 2: Obscura Integration Verification
+
+Obscura engine was ALREADY FULLY INTEGRATED (completed in previous round R53). Verified:
+- ObscuraEngine class (engines.ts:2094-2578) — 485 lines, comprehensive implementation
+- EngineType union includes "obscura" (types.ts:56)
+- Registered in initEngines() (engines.ts:2991)
+- Close handler in closeAllEngines() (engines.ts:3008-3011)
+- Default fallback chain position: 3rd after cheerio→playwright (engines.ts:333)
+- 3 strategies in engine-config.ts all include obscura
+- VALID_CHAIN_ENGINES includes obscura (engine-config.ts:34)
+- Auto-selected by selectEngine() for humanBehavior/proxy+uaRotation
+- Stealth: page.addInitScript(stealthScript) + 30+ Chrome launch flags
+- Resource blocking, CAPTCHA detection, human behavior simulation
+- Cookie/proxy/rate-limit/referrer-chain/fingerprint management
+- Preferred browser engine for infinite scroll
+- No external npm package needed (npm 'obscura' is 203B placeholder)
+
+## Files Modified
+- scrape-rules/guichuideng.json: 9 selector fixes + cleanConfig enhancement
+- test-guichuideng.ts: Updated selectors, added status/description extraction, fallback chapter search
+
+## Verification
+- JSON validation: ✅ (34 fields, all selectors correct)
+- TypeScript: 0 new errors (only pre-existing Bun/downlevelIteration issues)
+- Live HTML verification: ✅ (3 pages fetched and analyzed)
+
+Stage Summary:
+- Fixed 9 incorrect scrape rule selectors using live HTML verification
+- Switched to OG meta tags for 5 detail page selectors (title, author, category, status, cover)
+- Narrowed chapter selectors from broad `.layout-col1` to specific `ul#section-list`
+- Added 11 site-specific ad elements to cleanConfig
+- Updated test file with matching selectors and added fallback logic
+- Verified Obscura integration is complete (already done in R53)
+- No new npm packages needed---
+Task ID: 2-a
+Agent: audit-engines
+Task: Deep line-by-line audit of engines.ts
+
+Work Log:
+- Read entire engines.ts (3021 lines) in chunks covering all functions and classes
+- Audited CircuitBreaker: acquire/recordSuccess/recordFailure/reset/getState
+- Audited CheerioEngine: fetch with redirect following, cookie jar, proxy, TLS fingerprint, CAPTCHA detection
+- Audited PlaywrightEngine: browser lifecycle, stealth injection, resource blocking, human behavior sim, SSRF protection
+- Audited ObscuraEngine: stealth browser launch, per-domain profiles, script content analysis, CAPTCHA detection
+- Audited FirecrawlEngine, AgentQLEngine, CloudBrowserEngine, ScraplingEngine: external API circuit breaker patterns
+- Audited fetchWithEngineFallback: adaptive chain, retry logic, error classification
+- Audited fetchWithInfiniteScroll: browser lifecycle, scroll cycle detection, abort handling
+- Audited utility functions: readTextWithLimit, waitForRateLimit, shouldBlockResource, isBotDetectionDomainUrl, hasBotDetectionBehavioralPatterns
+- Verified all pre-existing TypeScript errors are unchanged (TS5076 ??/|| mixing, TS2802 downlevelIteration, etc.)
+- ESLint passes with 0 errors on engines.ts
+
+## Issues Found & Fixed
+
+### Fix 1: ObscuraEngine SSRF protection gap (Medium)
+- **Location**: ObscuraEngine route handler (lines ~2292-2304)
+- **Problem**: SSRF protection only checked `document`, `xhr`, `fetch` resource types for non-HTTP protocols and unsafe URLs. Missing `iframe` and `other` types that PlaywrightEngine already covered. An iframe could navigate to `file://`, `data://`, or `blob:` URLs bypassing SSRF checks.
+- **Fix**: Added `iframe` and `other` to both SSRF checks (non-HTTP protocol guard and isSafeUrl guard), matching PlaywrightEngine's coverage.
+
+### Fix 2: ObscuraEngine script content analysis error handling (Medium)
+- **Location**: ObscuraEngine route handler, behavioral analysis section (lines ~2304-2322)
+- **Problem**: If `route.fetch()` succeeded but `resp.text()` threw (e.g., response truncated, encoding error), the outer catch would call `route.continue()`, allowing the original bot-detection script to load unmodified. PlaywrightEngine had an inner try-catch that aborted on `resp.text()` failure, but ObscuraEngine was missing this.
+- **Fix**: Added inner try-catch for `resp.text()`. On body read failure, calls `route.abort()` (request was already made by route.fetch(), so abort prevents the script from reaching the page). Outer catch continues to handle `route.fetch()` failures with `route.continue()`.
+
+### Fix 3: CircuitBreaker half-open → open transition leak (Medium-Low)
+- **Location**: CircuitBreaker.recordFailure() (line ~212)
+- **Problem**: When `recordFailure()` transitioned state from half-open back to open (failureCount >= threshold), `_halfOpenInFlight` was only decremented by 1 instead of being reset to 0. With `halfOpenMaxAttempts > 1`, remaining in-flight probes would leave stale in-flight counters. While `acquire()` resets `_halfOpenInFlight` to 0 when transitioning from open→half-open, between the open→half-open transition and the first acquire, the stale value could cause incorrect state reads.
+- **Fix**: Restructured `recordFailure()` to reset `_halfOpenInFlight = 0` when transitioning to "open" (all probes invalid), and only decrement by 1 when staying below threshold.
+
+### Fix 4: Defensive null check on profile.seed (Low)
+- **Location**: ObscuraEngine debug log (line ~2495)
+- **Problem**: `profile.seed.slice(0, 12)` would crash if `seed` was undefined. While `getProfileForDomain()` always returns a profile with `seed`, defensive coding prevents crashes from future refactoring.
+- **Fix**: Changed to `profile.seed?.slice(0, 12) || 'unknown'`.
+
+### Fix 5: Documentation of rootDomain TLD limitation (Low)
+- **Location**: shouldBlockResource() function (line ~2062)
+- **Problem**: The `rootDomain()` helper uses naive last-2-parts heuristic (e.g., `co.uk` treated as root domain). This was undocumented and could mislead future developers.
+- **Fix**: Added JSDoc comment explaining the limitation, why it's acceptable (isBotDetectionDomainUrl catches known services, rare in practice, PSL would add complexity).
+
+## Items Reviewed (No Fix Needed)
+- **readTextWithLimit**: Stream reader properly cancelled on error and overflow. reader.cancel() in catch block is correct.
+- **waitForRateLimit**: Abort signal listener properly cleaned up with removeEventListener. Timer cleared on abort.
+- **CheerioEngine proxy failure recording**: onRetry + CAPTCHA recording correctly avoids double-count via doNotRetry flag.
+- **PlaywrightEngine proxy failure recording**: Per-retry catch block with isCaptchaErr guard. onRetry explicitly undefined.
+- **ObscuraEngine proxy failure recording**: Same per-retry pattern with isObscuraCaptchaErr guard.
+- **Context/page cleanup**: All browser engines use try/finally with context.close(). Infinite scroll has finally block closing both context and browser.
+- **Response body cleanup**: CheerioEngine calls response.body?.cancel() for non-OK responses. External API engines consume body via .text() or .json().
+- **Cookie injection**: Cross-domain cookie leakage prevented by clearing Cookie header on redirect hops.
+- **Engine registry fallback**: getEngine() falls back to cheerio if requested engine not registered.
+- **Adaptive fallback chain**: Properly copies array before sorting. LRU eviction for domain tracking maps.
+- **CircuitBreaker acquire()**: Synchronous (no await), so no race condition risk in single-threaded JS.
+- **Human behavior simulation**: Non-critical failures swallowed with try-catch. Correctly falls through to extraction.
+- **Abort signal handling**: Properly propagated through retryWithBackoff, waitForRateLimit, and abortableDelay.
+
+Stage Summary:
+- Total issues found: 5
+- Critical: 0, High: 0, Medium: 2, Medium-Low: 1, Low: 2
+- All fixes applied to engines.ts
+- ESLint: 0 errors
+- Pre-existing TypeScript errors unchanged

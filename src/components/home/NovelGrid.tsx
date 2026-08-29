@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { NovelGridLayout, NovelMagazineLayout, NovelListLayout } from '@/components/home/layouts';
+import { NovelGridLayout, NovelMagazineLayout, NovelListLayout, NovelSiteLayout } from '@/components/home/layouts';
 import { getPageNumbers } from '@/lib/pagination';
 import type { LayoutTheme } from '@/lib/use-layout-theme';
 import type { NovelCardData } from '@/components/home/shared-types';
@@ -208,6 +208,7 @@ export function NovelGrid({
               {layoutTheme === 'grid' && <NovelGridLayout novels={novels} search={search} />}
               {layoutTheme === 'magazine' && <NovelMagazineLayout novels={novels} search={search} />}
               {layoutTheme === 'list' && <NovelListLayout novels={novels} search={search} />}
+              {layoutTheme === 'novel-site' && <NovelSiteLayout novels={novels} search={search} />}
             </motion.div>
           )}
         </AnimatePresence>
