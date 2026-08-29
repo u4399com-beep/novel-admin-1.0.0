@@ -21416,3 +21416,81 @@ Work Log:
 - No behavioral regressions expected
 - 3 bugs marked N/A as false positives with documented rationale
 
+---
+Task ID: R53
+Agent: Main Orchestrator + 8 Sub-agents (1 rules + 2 audit + 1 enhance + 2 fix)
+Task: R53 30项审计修复(1C/6H/15M/8L) + 4项增强 + guichuideng采集规则
+
+Work Log:
+- 编写guichuideng.info采集规则(GBK编码/Obscura引擎/stealth模式)
+- 创建测试脚本test-guichuideng.ts
+- 2路并行深度审计(engines/stealth/scrapers/selectors + utils/proxy/task-engine/doh/js-extractor)
+- 审计发现30项bug (1C/6H/15M/8L)
+- 2路并行修复全部30项
+
+## CRITICAL (1项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 1 | js-content-extractor.ts | swapLazyLoadedContent src注入到标签外→修复正则 |
+
+## HIGH (6项)
+| # | 文件 | 修复 |
+|---|------|------|
+| 2 | stealth.ts:512 | LCG PRNG offset截断→乘1000保留小数 |
+| 3 | engines.ts:2067 | 跨子域名资源误阻断→eTLD+1比较 |
+| 4 | task-engine.ts | touchDomainEngine重复调用ref泄漏→Set去重 |
+| 5 | proxy-manager.ts | testProxyBatch忽略options→解构全部参数 |
+| 6 | task-engine.ts | CAPTCHA重试与回退链竞态→doNotRetry+立即throw |
+| 7 | task-engine.ts | _touchedDomains TDZ崩溃→声明前移 |
+
+## MEDIUM (15项)
+- stealth: Canvas per-canvas计数器/takeRecords返回空/fonts.check乐观/measureText空串/Gradient噪声/MutationObserver清理 (7)
+- engines: route.fetch/route.continue双调用/Firecrawl URL验证/CPU throttle移入重试 (3)
+- js-extractor: ReDoS max cap (1)
+- proxy: verifyProxy缓存防stampede/health check URL对齐 (2)
+- doh-resolver: 可配置提供商 (1)
+- utils: 3xx max redirect后throw (1)
+
+## LOW (8项)
+- selectors: XPath fallback移除/JSON-LD多块合并 (2)
+- scrapers: body null检查/abort-aware延迟 (2)
+- task-engine: abort-aware延迟 (1)
+- 其余小修正 (3)
+
+## 增强功能 (4项)
+| # | 功能 | 文件 |
+|---|------|------|
+| 1 | 代理智能调度(延迟感知/域名感知/5分钟排除) | proxy-manager.ts |
+| 2 | Canvas Gradient噪声(createLinear/Radial addColorStop) | stealth.ts |
+| 3 | guichuideng.info采集规则(Obscura+stealth+GBK) | scrape-rules/guichuideng.json |
+| 4 | 采集测试脚本 | test-guichuideng.ts |
+
+## 修改统计
+- proxy-manager.ts: +359行 (智能调度/防stampede/选项传递)
+- stealth.ts: +137行 (PRNG/Canvas/Gradient/Observer)
+- engines.ts: +45行 (跨域/Firecrawl/throttle)
+- task-engine.ts: +57行 (ref/abort/CAPTCHA)
+- 其余8文件: +69行
+- **总计: +1994/-110, 14文件**
+
+## 验证结果
+- TypeScript: 0新错误 ✅
+- Commit: 7224203
+
+## 历史累计修复: 813 + 30 = 843项
+## 累计增强: 35 + 4 = 39项
+## Stealth: 50活跃sections
+
+## 未解决/后续
+- 引擎回退链策略Web UI配置
+- 反反爬: 浏览器指纹一致性自动化测试
+- TLS指纹(JA3)与真实浏览器TLS握手对齐
+- stealth.ts进一步强化(SharedArrayBuffer/OffscreenCanvas)
+
+Stage Summary:
+- R53完成: 30项修复(1C/6H/15M/8L) + 4项增强
+- 8路并行agent高效执行
+- 关键修复: lazy-load HTML注入断裂/PRNG浮点截断/跨子域误阻断/CAPTCHA竞态
+- 关键增强: 代理延迟感知调度/Canvas Gradient噪声/guichuideng规则
+- 14文件, +1994/-110行
+- Commit: 7224203
