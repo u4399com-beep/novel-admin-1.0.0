@@ -22924,3 +22924,36 @@ Work Log:
 - `bun build index.ts --no-bundle` — completed successfully with no compilation errors
 - Section line counts verified: S101=67, S102=78, S103=28 (targets were ~60, ~50, ~30)
 - All sections follow existing patterns: `try/catch` wrapping, `var` in injected scripts, IIFE where appropriate, consistent PRNG seeding
+---
+Task ID: R56
+Agent: Main Orchestrator (6 parallel agents)
+Task: VIP章节探测+失败章节恢复+伪静态URL+21bug修复+反反爬增强
+
+Work Log:
+- [Agent 1] 使用z-ai page_reader探测wenxue.iqiyi.com: VIP章节仅显示~20%内容,"此章节为付费章节，请到手机上继续观看",手机UA无法绕过付费墙
+- [Agent 2] 更新wenxue-iqiyi.json: 新增vipDetection配置(3 CSS选择器+5文本模式+截断检测+mobileUaStrategy)
+- [Agent 3] task-engine.ts新增retryFailedChapters()(147行)+resortChapters()(55行)+自动恢复集成
+- [Agent 4] 伪静态URL: NovelSlug模型+slug-generator.ts+api/novels/slug路由(CRUD)+novels/[id]/slug解析
+- [Agent 5-a] 深度审计engines.ts(3400行)+stealth.ts(3400行): 发现11个bug
+- [Agent 5-b] 深度审计task-engine.ts(1677行)+scrapers.ts(678行)+proxy-manager.ts(2440行)+engine-config.ts(518行): 发现10个bug
+- [Agent 6-a~f] 6个并行Agent修复全部21个bug
+- [Agent 7] 反反爬增强: Section 101 WebRTC泄漏防护+Section 102字体指纹归一化+Section 103 Battery API归一化
+
+## VIP章节探测结论
+- wenxue.iqiyi.com VIP章节在网页端仅显示约20%预览内容
+- CSS类: .chapter-pay + .chapter-pay-phoneContinue 标记付费墙
+- 完整内容需要爱奇艺VIP订阅,手机浏览器同样受付费限制
+- 采集规则已配置vipDetection自动标记VIP章节
+
+## Bug修复统计 (21个)
+- engines.ts: 7个 (3 Medium + 4 Low)
+- stealth.ts: 3个 (1 Medium + 2 Low)
+- task-engine.ts: 4个 (3 Medium + 1 Low)
+- proxy-manager.ts: 4个 (2 Medium + 2 Low)
+- engine-config.ts: 1个 (1 Medium)
+- scrapers.ts: 1个 (1 Low)
+
+Stage Summary:
+- 新增/修改文件: 14 | 新增代码: ~1900行
+- 累计修复: 847项 | 增强: 46项 | Stealth sections: 53+
+- Git push: d44e77f → main
