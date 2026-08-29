@@ -516,6 +516,7 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
   if (domain) {
     const rateCheck = rateLimiter.acquire(domain);
     if (!rateCheck.allowed && rateCheck.waitMs > 0) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
           signal?.removeEventListener('abort', onAbort);
@@ -531,6 +532,7 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
   if (domain) {
     const throttleCheck = browserBehavior.shouldThrottle(domain);
     if (throttleCheck.throttled) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
           signal?.removeEventListener('abort', onAbort);

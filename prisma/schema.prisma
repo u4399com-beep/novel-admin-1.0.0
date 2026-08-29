@@ -63,6 +63,7 @@ model Novel {
   readingProgress ReadingProgress[]
   favorites       Favorite[]
   readingHistory  ReadingHistory[]
+  slugs           NovelSlug[]
 
   @@index([categoryId])
   @@index([status])
@@ -489,4 +490,20 @@ model ProxyPoolStats {
   capturedAt      DateTime @default(now())
 
   @@index([capturedAt])
+}
+
+// ==================== 伪静态URL映射 ====================
+
+model NovelSlug {
+  id        String   @id @default(cuid())
+  novelId   String
+  novel     Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  slug      String   // The slug string (e.g. "yang-jian-song-zang-ren", "aB3xK9", "12345")
+  type      String   // "id" | "pinyin" | "random"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([slug])
+  @@index([novelId])
+  @@index([type])
 }

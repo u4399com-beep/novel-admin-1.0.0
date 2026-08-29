@@ -246,13 +246,10 @@ function applyDomainEnhancements(chain: EngineType[], normalizedDomain: string):
     chain.unshift(captchaEngine);
   }
 
-  // 2. Low-content hint: if cheerio is still first and domain needs JS rendering, skip it
-  if (chain[0] === 'cheerio' && lowContentDomains.has(normalizedDomain)) {
+  // 2. Low-content hint — deprioritize cheerio for JS-required domains
+  if (lowContentDomains.has(normalizedDomain)) {
     const idx = chain.indexOf('cheerio');
-    if (idx >= 0) {
-      chain.splice(idx, 1);
-      chain.push('cheerio'); // Move to end as last resort
-    }
+    if (idx >= 0 && idx < chain.length - 1) { chain.splice(idx, 1); chain.push('cheerio'); }
   }
 
   // 3. Per-domain preference learning from engine-preferences.json

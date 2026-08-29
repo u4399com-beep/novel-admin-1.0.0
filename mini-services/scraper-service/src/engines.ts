@@ -175,9 +175,9 @@ class CircuitBreaker {
    *   SCRAPER_CB_HALF_OPEN_MAX       (default: 1)
    */
   static create(name: string, opts?: CircuitBreakerOptions): CircuitBreaker {
-    const failureThreshold = opts?.failureThreshold ?? Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) || 5;
-    const recoveryTimeout  = opts?.recoveryTimeout  ?? Number(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS) || 30000;
-    const halfOpenMaxAttempts = opts?.halfOpenMaxAttempts ?? Number(process.env.SCRAPER_CB_HALF_OPEN_MAX) || 1;
+    const failureThreshold = opts?.failureThreshold ?? Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) ?? 5;
+    const recoveryTimeout  = opts?.recoveryTimeout  ?? Number(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS) ?? 30000;
+    const halfOpenMaxAttempts = opts?.halfOpenMaxAttempts ?? Number(process.env.SCRAPER_CB_HALF_OPEN_MAX) ?? 1;
     return new CircuitBreaker(name, failureThreshold, recoveryTimeout, halfOpenMaxAttempts);
   }
 
@@ -417,11 +417,9 @@ function recordEngineFailure(domain: string, engine: EngineType): void {
       // Capture evicted failures before deleting (needed for timestamp cleanup)
       const evictedFailures = domainEngineFailures.get(oldestKey);
       domainEngineFailures.delete(oldestKey);
-      // Clean up associated timestamps using actually recorded engine keys
-      if (evictedFailures) {
-        for (const e of evictedFailures.keys()) {
-          domainFailureTimestamps.delete(`${oldestKey}:${e}`);
-        }
+      // Also clean up all timestamps for this domain
+      for (const e of ['cheerio', 'playwright', 'obscura', 'scrapling']) {
+        domainFailureTimestamps.delete(`${oldestKey}:${e}`);
       }
     }
   }
@@ -435,7 +433,18 @@ function recordEngineFailure(domain: string, engine: EngineType): void {
   // LRU eviction for timestamps map (max 1000 entries)
   if (domainFailureTimestamps.size > 1000) {
     const oldestTsKey = domainFailureTimestamps.keys().next().value;
-    if (oldestTsKey !== undefined) domainFailureTimestamps.delete(oldestTsKey);
+    if (oldestTsKey !== undefined) {
+      domainFailureTimestamps.delete(oldestTsKey);
+      // Also clean up corresponding failure count to prevent permanent stale counts
+      const [tsDomain, tsEngine] = oldestTsKey.split(':');
+      if (tsDomain && tsEngine) {
+        const engineMap = domainEngineFailures.get(tsDomain);
+        if (engineMap) {
+          engineMap.delete(tsEngine);
+          if (engineMap.size === 0) domainEngineFailures.delete(tsDomain);
+        }
+      }
+    }
   }
 }
 
@@ -925,6 +934,7 @@ class CheerioEngine implements ScrapingEngine {
 
 let playwrightBrowser: import("playwright").Browser | null = null;
 let playwrightLaunchPromise: Promise<import("playwright").Browser> | null = null;
+let _pwLaunchLock: Promise<void> | null = null;
 
 async function getPlaywrightBrowser(): Promise<import("playwright").Browser> {
   if (playwrightBrowser?.isConnected()) return playwrightBrowser;
@@ -937,43 +947,50 @@ async function getPlaywrightBrowser(): Promise<import("playwright").Browser> {
     } catch {
       // Launch failed, clear stale promise before retry
       playwrightLaunchPromise = null;
+      // fall through to re-launch
     }
   }
 
-  // Launch with timeout (30s max)
-  playwrightLaunchPromise = (async () => {
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({
-      headless: true,
-      timeout: 30000,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--disable-extensions",
-        "--disable-background-timer-throttling",
-        "--disable-backgrounding-occluded-windows",
-        "--disable-renderer-backgrounding",
-        "--no-first-run",
-        "--no-default-browser-check",
-        // Anti-detection: prevent navigator.webdriver leak via Chrome flag
-        "--disable-blink-features=AutomationControlled",
-      ],
-    });
-    console.log("[Playwright] Browser launched successfully");
+  // Serialize launch to prevent orphaned browsers
+  const lock = _pwLaunchLock || (_pwLaunchLock = Promise.resolve());
+  playwrightLaunchPromise = lock.then(async () => {
+    try {
+      const { chromium } = await import("playwright");
+      const browser = await chromium.launch({
+        headless: true,
+        timeout: 30000,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--disable-extensions",
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--no-first-run",
+          "--no-default-browser-check",
+          // Anti-detection: prevent navigator.webdriver leak via Chrome flag
+          "--disable-blink-features=AutomationControlled",
+        ],
+      });
+      console.log("[Playwright] Browser launched successfully");
 
-    // Handle browser close
-    browser.on("disconnected", () => {
-      console.log("[Playwright] Browser disconnected");
-      playwrightBrowser = null;
-      playwrightLaunchPromise = null;
-    });
+      // Handle browser close
+      browser.on("disconnected", () => {
+        console.log("[Playwright] Browser disconnected");
+        playwrightBrowser = null;
+        playwrightLaunchPromise = null;
+      });
 
-    return browser;
-  })();
+      return browser;
+    } finally {
+      _pwLaunchLock = null;
+    }
+  });
 
-  return await playwrightLaunchPromise;
+  playwrightBrowser = await playwrightLaunchPromise;
+  return playwrightBrowser!;
 }
 
 class PlaywrightEngine implements ScrapingEngine {
@@ -1001,24 +1018,20 @@ class PlaywrightEngine implements ScrapingEngine {
     // Build stealth profile for this domain (needed for fingerprint + context)
     const pwProfile = pwDomain ? getProfileForDomain(pwDomain) : getProfileForDomain('default');
 
-    // Select proxy for this domain (for fingerprint tracking + connection)
-    const fpDomainProxy = pwDomain ? proxyManager.getDomainProxyWithRotation(pwDomain) : null;
-    const pwProxy = fpDomainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(pwDomain) : null);
-
-    // Request fingerprint tracking
+    // Request fingerprint tracking (proxy selected per-retry inside loop)
     const fp = requestFingerprintMgr.create({
       domain: pwDomain,
       engine: 'playwright',
       sessionId: sessionInfo?.sessionId,
-      proxyUrl: pwProxy?.url,
+      proxyUrl: undefined, // proxy selected per-retry inside loop
       userAgent: userAgent || pwProfile.userAgent,
     });
 
-    // Anti-fingerprint timing jitter (±50ms, always applied)
-    await applyTimingJitter();
-
     return retryWithBackoff(
       async () => {
+        // Anti-fingerprint timing jitter (±50ms, always applied)
+        await applyTimingJitter();
+
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
         if (pwDomain) {
           await waitForRateLimit(pwDomain, options?.signal);
@@ -1032,6 +1045,10 @@ class PlaywrightEngine implements ScrapingEngine {
           }
           browserBehavior.recordRequest(pwDomain);
         }
+
+        // Select proxy for this domain (with rotation if configured) — inside retry for rotation between retries
+        const fpDomainProxy = pwDomain ? proxyManager.getDomainProxyWithRotation(pwDomain) : null;
+        const pwProxy = fpDomainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(pwDomain) : null);
 
         const browser = await getPlaywrightBrowser();
 
@@ -1962,7 +1979,8 @@ class ScraplingEngine implements ScrapingEngine {
             statusCode: data.status_code || 200,
           };
         } catch (scraplingErr) {
-          if (!(scraplingErr instanceof Error && (scraplingErr as any).doNotRetry)) {
+          const isRateLimit = scraplingErr instanceof Error && scraplingErr.message.includes('Rate limit');
+          if (!(scraplingErr instanceof Error && (scraplingErr as any).doNotRetry) && !isRateLimit) {
             scraplingBreaker.recordFailure();
           }
           throw scraplingErr;
@@ -1978,7 +1996,9 @@ class ScraplingEngine implements ScrapingEngine {
       if (scDomain) rateLimiter.recordResult(scDomain, true, result.statusCode);
       return result;
     }).catch(err => {
-      if (scDomain) rateLimiter.recordResult(scDomain, false);
+      const errStatus = (err instanceof Error && 'statusCode' in err)
+        ? Number((err as any).statusCode) : undefined;
+      if (scDomain) rateLimiter.recordResult(scDomain, false, errStatus);
       throw err;
     });
   }
@@ -2176,6 +2196,7 @@ class ObscuraEngine implements ScrapingEngine {
 
   private browser: import("playwright").Browser | null = null;
   private launchPromise: Promise<import("playwright").Browser> | null = null;
+  private static _obscuraLaunchLock: Promise<void> | null = null;
 
   private async getBrowser(): Promise<import("playwright").Browser> {
     if (this.browser?.isConnected()) return this.browser;
@@ -2187,61 +2208,69 @@ class ObscuraEngine implements ScrapingEngine {
       } catch {
         // Launch failed, clear stale promise before retry
         this.launchPromise = null;
+        // fall through to re-launch
       }
     }
 
-    this.launchPromise = (async () => {
-      const { chromium } = await import("playwright");
-      const browser = await chromium.launch({
-        headless: true,
-        timeout: 30000,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--disable-extensions",
-          "--disable-background-timer-throttling",
-          "--disable-backgrounding-occluded-windows",
-          "--disable-renderer-backgrounding",
-          "--no-first-run",
-          "--no-default-browser-check",
-          // Obscura-specific: reduce automation surface area
-          "--disable-blink-features=AutomationControlled",
-          "--disable-features=IsolateOrigins,site-per-process,VizDisplayCompositor,TranslateUI",
-          "--disable-hang-monitor",
-          "--disable-prompt-on-repost",
-          "--disable-client-side-phishing-detection",
-          "--disable-component-update",
-          "--disable-default-apps",
-          "--disable-domain-reliability",
-          "--disable-ipc-flooding-protection",
-          "--disable-notifications",
-          "--disable-popup-blocking",
-          "--disable-print-preview",
-          "--disable-reading-mode",
-          "--disable-renderer-throttling",
-          "--disable-sync",
-          "--disable-translate",
-          "--metrics-recording-only",
-          "--no-pings",
-          "--password-store=basic",
-          "--use-mock-keychain",
-          "--disable-infobars",
-        ],
-      });
-      console.log("[Obscura] Stealth browser launched successfully");
+    // Serialize launch to prevent orphaned browsers
+    const lock = ObscuraEngine._obscuraLaunchLock || (ObscuraEngine._obscuraLaunchLock = Promise.resolve());
+    this.launchPromise = lock.then(async () => {
+      try {
+        const { chromium } = await import("playwright");
+        const browser = await chromium.launch({
+          headless: true,
+          timeout: 30000,
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-extensions",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--no-first-run",
+            "--no-default-browser-check",
+            // Obscura-specific: reduce automation surface area
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=IsolateOrigins,site-per-process,VizDisplayCompositor,TranslateUI",
+            "--disable-hang-monitor",
+            "--disable-prompt-on-repost",
+            "--disable-client-side-phishing-detection",
+            "--disable-component-update",
+            "--disable-default-apps",
+            "--disable-domain-reliability",
+            "--disable-ipc-flooding-protection",
+            "--disable-notifications",
+            "--disable-popup-blocking",
+            "--disable-print-preview",
+            "--disable-reading-mode",
+            "--disable-renderer-throttling",
+            "--disable-sync",
+            "--disable-translate",
+            "--metrics-recording-only",
+            "--no-pings",
+            "--password-store=basic",
+            "--use-mock-keychain",
+            "--disable-infobars",
+          ],
+        });
+        console.log("[Obscura] Stealth browser launched successfully");
 
-      browser.on("disconnected", () => {
-        console.log("[Obscura] Browser disconnected");
-        this.browser = null;
-        this.launchPromise = null;
-      });
+        browser.on("disconnected", () => {
+          console.log("[Obscura] Browser disconnected");
+          this.browser = null;
+          this.launchPromise = null;
+        });
 
-      return browser;
-    })();
+        return browser;
+      } finally {
+        ObscuraEngine._obscuraLaunchLock = null;
+      }
+    });
 
-    return await this.launchPromise;
+    this.browser = await this.launchPromise;
+    return this.browser!;
   }
 
   async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
@@ -3009,7 +3038,9 @@ export async function fetchWithInfiniteScroll(
       throw err;
     }
     console.warn(`[InfiniteScroll] Browser-based scroll failed: ${err instanceof Error ? err.message : err}`);
-    if (domain) rateLimiter.recordResult(domain, false);
+    const errStatus = (err instanceof Error && 'statusCode' in err)
+      ? Number((err as any).statusCode) : undefined;
+    if (domain) rateLimiter.recordResult(domain, false, errStatus);
     // Fall back to a single HTTP fetch
     const fallbackEngine = getEngine('cheerio');
     const result = await fallbackEngine.fetch(url, options);

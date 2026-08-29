@@ -59,7 +59,7 @@ import { handleScrapeContent } from "./src/scrapers";
 import { handleClean } from "./src/cleaning";
 import { handleDownloadCover } from "./src/scrapers";
 import { handleGenerateRule, handlePreviewPage } from "./src/ai-rule-generator";
-import { executeTask, recoverStaleTasks, detectStuckTasks, progressThrottleCleanupTimer } from "./src/task-engine";
+import { executeTask, recoverStaleTasks, detectStuckTasks, progressThrottleCleanupTimer, retryFailedChapters, resortChapters } from "./src/task-engine";
 import { getQueueStats, cleanupQueue, requeueFailed, clearTaskQueue } from "./src/queue";
 import { proxyManager } from "./src/proxy-manager";
 import { getCaptchaStrategies } from "./src/captcha-strategy";

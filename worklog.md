@@ -22200,3 +22200,727 @@ Work Log:
 
 ## Build Verification
 - `bun build index.ts --no-bundle` — clean, no errors
+
+---
+Task ID: 2-a
+Agent: VIP Chapter Detection Specialist
+Task: Update wenxue-iqiyi.json with VIP chapter detection
+
+Work Log:
+- Read existing wenxue-iqiyi.json scrape rule (137 lines)
+- Verified `"阅读到"` and `"%"` already present in cleanConfig.adPatterns (line 86) — no change needed
+- Added `.chapter-pay` and `.chapter-pay-phoneContinue` to cleanConfig.removePatterns (line 66)
+- Updated description field to document VIP chapter behavior: ~20% content on web, paywall CSS classes, word count mismatch, no catalog VIP markers, mobile UA ineffective
+- Added `vipDetection` top-level field (lines 101-121) with:
+  - `enabled: true`
+  - `indicators.cssSelectors`: [".chapter-pay", ".chapter-pay-phoneContinue", ".j_forbidden_card"]
+  - `indicators.textPatterns`: ["此章节为付费章节", "请到手机上继续观看", "开通VIP", "VIP专享", "付费章节"]
+  - `indicators.contentTruncationCheck`: enabled, meta description selector, minTruncationRatio 0.3
+  - `action`: "mark_as_vip_and_truncate"
+  - `mobileUaStrategy`: enabled with 2 mobile UAs and explicit note that mobile UA does NOT bypass paywall
+- Validated JSON syntax with node JSON.parse — PASS
+- All existing fields preserved unchanged
+
+Stage Summary:
+- File: src/scrape-rules/wenxue-iqiyi.json (137 → 160 lines, +23 lines)
+- New field: vipDetection (20 lines) — VIP chapter detection via CSS selectors, text patterns, and content truncation ratio
+- Updated: description (added VIP behavior documentation)
+- Updated: cleanConfig.removePatterns (added .chapter-pay, .chapter-pay-phoneContinue)
+- Unchanged: cleanConfig.adPatterns (阅读到/% already present), all other existing fields
+- JSON validation: PASS
+---
+Task ID: 3-a
+Agent: Chapter Recovery Specialist
+Task: Implement failed chapter recovery and re-ordering in task-engine.ts
+
+Work Log:
+- Read worklog.md (last 100 lines) for project context
+- Read task-engine.ts fully (1393 lines) to understand orchestration flow: list → book → chapters → content
+- Read types.ts to understand ChapterLink (title, url, sortOrder), ScrapeTask, ScrapeContentRequest types
+- Read scrapers.ts handleScrapeContent signature (line 397: takes ScrapeContentRequest, returns content/title)
+- Read chapters API routes: POST creates chapter with {title, content, sortOrder, sourceUrl}, PATCH supports {action:'reorder', orders:[{id,sortOrder}]}
+- Confirmed scraper-service uses API calls (not direct DB access) via apiCall() helper
+
+## Implementation
+
+### A. retryFailedChapters() function (lines 1358-1504, ~147 lines)
+- Exported async function taking taskId, FailedChapterInfo[], and scraping options
+- Sorts failed chapters by sortOrder before processing
+- For each failed chapter:
+  - Uses same anti-crawl delay (getAdaptiveOrRandomDelay)
+  - Uses same engine fallback chain pattern (getFallbackChainForEngine, MAX_ENGINE_RETRIES)
+  - Normalizes content identically to main processChapter (tab→space, triple+ whitespace→double)
+  - Saves via POST /api/novels/{bookId}/chapters with correct sortOrder
+  - Respects abortSignal
+- Returns { retried, recovered, stillFailed } summary
+- Logs to WS and task log with progress updates every 5 chapters
+
+### B. resortChapters() function (lines 1515-1569, ~55 lines)
+- Exported async function taking novelId and optional abortSignal
+- Fetches all chapters via GET /api/novels/{novelId}/chapters?pageSize=5000
+- Checks for sortOrder gaps (expected: 1,2,3,...N)
+- If gaps found, builds batch reorder payload and calls PATCH endpoint
+- Returns true if reorder performed, false if no gaps or error
+
+### C. Integration into task execution flow
+- Added `FailedChapterInfo` interface (lines 1333-1339): { url, title, sortOrder, bookId }
+- Added `RetryFailedChaptersResult` interface (lines 1341-1346): { retried, recovered, stillFailed }
+- Line 982-983: Added `const failedChapters: FailedChapterInfo[] = []` before processChapter closure
+- Lines 1231-1234: In processChapter catch block, push failed chapter info (excluding doNotRetry/CAPTCHA errors)
+- Lines 1252-1290: After Promise.all(chapterWorkers), if failedChapters > 0:
+  - Calls retryFailedChapters() with same engine/config/selectors
+  - If recovered > 0: adjusts newChaptersCount and processedChaptersCount, calls resortChapters(), logs success
+  - Wrapped in try-catch so recovery failure never breaks the main task
+- Recovery phase skipped if abortController.signal.aborted
+
+### D. Exports
+- Both retryFailedChapters and resortChapters are exported from task-engine.ts
+- Added to import line in index.ts (line 62) for API availability
+
+## Verification
+- `bun build index.ts --no-bundle`: PASS (no errors)
+- No existing function signatures modified
+- No existing behavior changed (recovery is additive, triggered only when failures occur)
+
+Stage Summary:
+- Modified: src/task-engine.ts (1393 → 1677 lines, +284 lines)
+- Modified: index.ts (line 62: added retryFailedChapters, resortChapters to imports)
+- New interfaces: FailedChapterInfo, RetryFailedChaptersResult
+- New exported functions: retryFailedChapters(), resortChapters()
+- Recovery is automatic, best-effort, per-book after chapter workers complete
+- Build verification: PASS
+---
+Task ID: 4-a
+Agent: Pseudo-Static URL Specialist
+Task: Implement pseudo-static URL settings (ID/pinyin/random)
+
+Work Log:
+- Read worklog.md (last 100 lines) and existing project structure for context
+- Examined existing patterns: api-auth.ts (withAuth/withPublicRateLimit), api-utils.ts (safeJson, apiError), admin/settings/route.ts
+- Examined existing novel detail page at /novels/[id]/page.tsx — server component with SSR data fetching
+
+## 1. Prisma Schema Update
+- Added `NovelSlug` model to prisma/schema.prisma with fields: id, novelId, slug, type, isActive, createdAt
+- Added `@@unique([slug])`, `@@index([novelId])`, `@@index([type])`
+- Added `slugs NovelSlug[]` relation to the existing `Novel` model
+- Ran `bun run db:push` — schema applied successfully, Prisma Client regenerated
+
+## 2. Pinyin Package Installation
+- Installed `pinyin@4.0.0` npm package
+- Tested API: `pinyin('阳间送葬人')` returns `[['yáng'], ['jiān'], ['sòng'], ['zàng'], ['rén']]`
+- Confirmed tone removal via NFD normalization works: `yang-jian-song-zang-ren`
+
+## 3. Slug Generator Utility (`/src/lib/slug-generator.ts`)
+- `generatePinyinSlug(title)`: Converts Chinese characters to pinyin via `pinyin` package, strips tone marks with NFD normalization, joins with hyphens, max 80 chars
+- `generateRandomSlug(length)`: Uses `crypto.getRandomValues()` for entropy, configurable length (4-32, default 8)
+- `generateIdSlug(novelId)`: Hashes cuid to stable 5-digit numeric string (10000-99999)
+- `generateSlugForNovel(novel, type, length?)`: Dispatcher for the three types
+- `isCuid(s)`: Regex check for Prisma cuid format (`^c[a-z0-9]{24,}$`)
+- `isValidSlug(s)`: URL-safe slug format validation
+
+## 4. API Route (`/src/app/api/novels/slug/route.ts`)
+- **GET** (public, rate-limited): `?slug=xxx` → looks up NovelSlug table, returns `{ novelId, type, slug }` or 404
+- **POST** (admin, auth): Body `{ novelId, type, length?, customSlug? }` → generates slug, deactivates old slugs of same type, handles collisions (up to 5 retries for random type), returns slug record
+- **DELETE** (admin, auth): `?novelId=xxx&type=yyy` → soft-deletes (sets isActive=false)
+- **PUT** (admin, auth): Body `{ mode, randomLength? }` → saves setting to SiteSetting (key='pseudoStaticMode'), bulk-generates slugs for all novels missing one of this type (batch 200, fallback to sequential on collision)
+
+## 5. Novel Detail Page Update (`/src/app/novels/[id]/page.tsx`)
+- Added `resolveSlugToNovelId(param)` helper that checks if param is a cuid (direct path) or looks up NovelSlug table
+- Updated `generateMetadata()` to resolve slugs before fetching novel data
+- Updated page component to resolve slugs before rendering
+- No redirect — slug URL is preserved for SEO canonical purposes
+- Client components continue using novel.cuid for API calls (unchanged)
+
+## Verification
+- `bunx eslint` on all 3 new/modified files: 0 errors, 0 warnings
+- Pre-existing lint error in `NovelListView.ts` (parsing error) is unrelated
+- Dev server: running without errors
+
+Stage Summary:
+- New: prisma/schema.prisma (NovelSlug model + Novel.slugs relation)
+- New: src/lib/slug-generator.ts (pinyin/random/id slug generation)
+- New: src/app/api/novels/slug/route.ts (GET/POST/DELETE/PUT endpoints)
+- Modified: src/app/novels/[id]/page.tsx (slug resolution in SSR)
+- Installed: pinyin@4.0.0
+- Database: NovelSlug table created with unique slug index
+
+## Task 5-a: Deep Audit — engines.ts + stealth.ts
+
+### Audit Scope
+- `mini-services/scraper-service/src/engines.ts` (3125 lines)
+- `mini-services/scraper-service/src/stealth.ts` (3415 lines)
+- Every function, branch, and cleanup path reviewed line-by-line
+
+---
+
+### engines.ts — Bug Report
+
+**[Medium] engines.ts:178-180 — CircuitBreaker.create env-var `||` coercion prevents zero values**
+```js
+const failureThreshold = opts?.failureThreshold ?? Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) || 5;
+const recoveryTimeout  = opts?.recoveryTimeout  ?? Number(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS) || 30000;
+const halfOpenMaxAttempts = opts?.halfOpenMaxAttempts ?? Number(process.env.SCRAPER_CB_HALF_OPEN_MAX) || 1;
+```
+**Issue:** `Number("0") || 5` evaluates to `5` because `0` is falsy. Cannot configure `failureThreshold=0` (never-open) or `recoveryTimeout=0` (instant recovery) via environment variables. The `opts` path works correctly (nullish coalescing returns 0), but env-var path is broken.
+**Fix:** Change `|| 5` / `|| 30000` / `|| 1` to `?? 5` / `?? 30000` / `?? 1`.
+
+---
+
+**[Medium] engines.ts:930-977 — Playwright browser singleton race condition on launch failure leaks browser**
+```js
+if (playwrightLaunchPromise) {
+  try {
+    playwrightBrowser = await playwrightLaunchPromise;
+    if (playwrightBrowser?.isConnected()) return playwrightBrowser;
+  } catch {
+    playwrightLaunchPromise = null;  // Both concurrent callers do this
+  }
+}
+playwrightLaunchPromise = (async () => { /* launch browser */ })();
+return await playwrightLaunchPromise;
+```
+**Issue:** Two concurrent callers can both enter the `catch` block when the shared launch promise rejects. Both set `playwrightLaunchPromise = null` and fall through to create NEW launch promises. The second caller overwrites the first's promise reference. When both promises resolve, one browser is set as `playwrightBrowser` and the other is orphaned (leaked — its process stays running with no reference). Same pattern exists in ObscuraEngine.getBrowser() at line 2180-2244.
+**Fix:** Add a mutex lock (promise-chain pattern) around the launch section, e.g., store a `launching` flag and serialize access.
+
+---
+
+**[Medium] engines.ts:1919-1969 — ScraplingEngine records rate-limit errors as circuit breaker failures**
+```js
+await scraplingBreaker.acquire();
+try {
+  await waitForRateLimit(scDomain, options?.signal);  // Can throw "Rate limit max retries exceeded"
+  const response = await fetch(...);
+  ...
+} catch (scraplingErr) {
+  if (!(scraplingErr instanceof Error && (scraplingErr as any).doNotRetry)) {
+    scraplingBreaker.recordFailure();  // Rate-limit errors counted as service failures!
+  }
+  throw scraplingErr;
+}
+```
+**Issue:** Domain-level rate-limit throws from `waitForRateLimit()` are caught and recorded as Scrapling **service** circuit breaker failures. This can prematurely open the circuit breaker for ALL Scrapling requests (all domains) when one domain is rate-limited. The circuit breaker should only track actual service outages.
+**Fix:** Check if the error is rate-limit related before calling `recordFailure()`, e.g., `if (!err.message.includes('Rate limit')) scraplingBreaker.recordFailure();`
+
+---
+
+**[Medium] engines.ts:436-439 + domainFailureTimestamps — Separate eviction creates orphaned timestamps preventing failure decay**
+```js
+// domainEngineFailures evicts domain at line 419
+// domainFailureTimestamps has INDEPENDENT 1000-entry limit at line 436:
+if (domainFailureTimestamps.size > 1000) {
+  const oldestTsKey = domainFailureTimestamps.keys().next().value;
+  if (oldestTsKey !== undefined) domainFailureTimestamps.delete(oldestTsKey);
+}
+```
+**Issue:** The two maps have independent eviction limits (500 vs 1000). When `domainFailureTimestamps` evicts an entry (e.g., `domainA:playwright`), the corresponding failure count in `domainEngineFailures.get('domainA').get('playwright')` remains. In `getRecentFailureCount()`, a missing timestamp (`ts` is `undefined`) means `ts && now - ts > WINDOW` is `false`, so the full cumulative failure count is returned permanently — the failure **never ages out**.
+**Fix:** Either (a) use a single combined data structure, or (b) when a timestamp is evicted, also reset the corresponding failure count to 0, or (c) add periodic sweep of both maps together.
+
+---
+
+**[Low] engines.ts:1981 — ScraplingEngine catch handler missing statusCode in rateLimiter call**
+```js
+// Success path (line 1978):
+if (scDomain) rateLimiter.recordResult(scDomain, true, result.statusCode);
+// Failure path (line 1981):
+if (scDomain) rateLimiter.recordResult(scDomain, false);
+```
+**Issue:** The failure path omits the `statusCode` parameter. Every other engine passes it (e.g., CheerioEngine line 913, PlaywrightEngine line 1379, ObscuraEngine line 2656). If the rate limiter uses status codes for penalty calculation, this inconsistency could result in insufficient backoff for the Scrapling domain.
+**Fix:** Extract and pass the status code from the error, e.g., `rateLimiter.recordResult(scDomain, false, errStatus || undefined);`
+
+---
+
+**[Low] engines.ts:1005-1006 — PlaywrightEngine proxy not rotated between retries**
+```js
+// PlaywrightEngine: proxy selected OUTSIDE retry loop (line 1005-1006)
+const fpDomainProxy = pwDomain ? proxyManager.getDomainProxyWithRotation(pwDomain) : null;
+const pwProxy = fpDomainProxy || ...;
+
+// ObscuraEngine: proxy selected INSIDE retry loop (line 2291-2292)
+const domainProxy = domain ? proxyManager.getDomainProxyWithRotation(domain) : null;
+const proxy = domainProxy || ...;
+```
+**Issue:** PlaywrightEngine selects proxy once before the retry loop, so all retry attempts use the same proxy. ObscuraEngine correctly selects proxy per-retry, allowing rotation away from a failing proxy. If the Playwright proxy fails, all retries fail against the same proxy.
+**Fix:** Move proxy selection inside the `retryWithBackoff` callback, matching the ObscuraEngine pattern.
+
+---
+
+**[Low] engines.ts:3012 — InfiniteScroll catch handler missing statusCode in rateLimiter call**
+```js
+if (domain) rateLimiter.recordResult(domain, false);
+```
+**Issue:** Same as ScraplingEngine — missing `statusCode` parameter, inconsistent with other engines.
+**Fix:** Pass status code from error or `undefined`.
+
+---
+
+### stealth.ts — Bug Report
+
+**[Medium] stealth.ts:2697-2705 — speechSynthesis.getVoices returns real voices on first call, fakes on subsequent**
+```js
+var _voicesReturned = false;
+window.speechSynthesis.getVoices = function() {
+  if (_voicesReturned) return _fakeVoices;
+  _voicesReturned = true;
+  var real = _origGetVoices();
+  if (real && real.length > 0) return real;  // First call: returns REAL voices
+  return _fakeVoices;
+};
+```
+**Issue:** First call returns real browser voices (if available), sets `_voicesReturned = true`. Second call returns fake voices. An anti-bot system calling `getVoices()` twice will see different results — a clear automation signal. The `_voicesReturned` flag is set unconditionally, even when real voices are returned.
+**Fix:** Either (a) always return `_fakeVoices` (remove the real-voice passthrough), or (b) cache the first-call result and return it on subsequent calls (`_cachedVoices = real || _fakeVoices`).
+
+---
+
+**[Low] stealth.ts:567 — Android model regex double-escapes `\s` (matches literal backslash-s, not whitespace)**
+```js
+var _androidModelMatch = _uaString.match(/Android[^;]*;\\s*([^;)\\s]+\\s+Build/);
+```
+**Issue:** In a regex literal, `\\s` matches a literal backslash followed by `s`. The intent is `\\s` → whitespace. This regex will never match any real User-Agent string because UAs don't contain literal `\s`. The result is that `_uadModel` is always empty string.
+**Fix:** Change to `/Android[^;]*;\s*([^;)\s]+\s+Build/` (single backslash before `s`).
+**Impact:** Currently no practical impact since all UA templates are desktop-only (Win32/MacIntel/Linux x86_64). Would matter if mobile UAs were added.
+
+---
+
+**[Low] stealth.ts:482 — _stealthScriptCache has no TTL-based eviction for stale entries**
+```js
+const _stealthScriptCache = new Map<string, { script: string; ts: number }>();
+const STEALTH_SCRIPT_CACHE_TTL = 30 * 60 * 1000; // 30 min
+```
+**Issue:** TTL is checked on read (line 497: `if (cached && Date.now() - cached.ts < STEALTH_SCRIPT_CACHE_TTL)`), but expired entries are never proactively evicted. If a profile is generated, its script is cached, and that profile is never requested again, the entry stays in memory indefinitely. Bounded by profileCache (500 entries max) but still a slow memory leak across process lifetime.
+**Fix:** Add periodic sweep (e.g., on cache miss when size > 80% of max) or use a max-size cap matching profileCache.
+
+---
+
+**[Low] stealth.ts:3131-3141 — profileCache eviction is O(n) full scan**
+```js
+if (profileCache.size >= CACHE_MAX_SIZE) {
+  let oldestKey = '';
+  let oldestTime = Infinity;
+  for (const [key, entry] of profileCache) {  // Scans ALL 500 entries
+    if (entry.createdAt < oldestTime) { ... }
+  }
+}
+```
+**Issue:** Every cache miss when the cache is full triggers an O(n) scan of all 500 entries. The domainUACache (line 391-394) correctly uses Map insertion order for O(1) eviction. This inconsistency means profileCache eviction is disproportionately expensive.
+**Fix:** Use Map insertion order like domainUACache: `const firstKey = profileCache.keys().next().value; if (firstKey) profileCache.delete(firstKey);`
+
+---
+
+### Summary Table
+
+| # | Severity | File:Line | Category | Description |
+|---|----------|-----------|----------|-------------|
+| 1 | Medium | engines.ts:178 | Logic | CircuitBreaker.create `\|\|` prevents zero from env vars |
+| 2 | Medium | engines.ts:930 | Race Condition | Browser singleton race on launch failure leaks process |
+| 3 | Medium | engines.ts:1919 | Error Handling | Scrapling rate-limit errors recorded as service failures |
+| 4 | Medium | engines.ts:436 | Memory/Logic | Orphaned timestamps prevent failure count decay |
+| 5 | Medium | stealth.ts:2697 | Logic | getVoices() inconsistent between 1st and 2nd call |
+| 6 | Low | engines.ts:1981 | Inconsistency | Missing statusCode in ScraplingEngine rateLimiter call |
+| 7 | Low | engines.ts:1005 | Logic | PlaywrightEngine proxy not rotated between retries |
+| 8 | Low | engines.ts:3012 | Inconsistency | Missing statusCode in InfiniteScroll rateLimiter call |
+| 9 | Low | stealth.ts:567 | Incorrect API | Regex double-escapes \\s (no practical impact) |
+| 10 | Low | stealth.ts:482 | Memory Leak | Stealth script cache no proactive TTL eviction |
+| 11 | Low | stealth.ts:3131 | Performance | O(n) profileCache eviction scan |
+
+**Total: 5 Medium, 6 Low. Zero Critical/High.**
+
+### Notable Non-Bugs (Verified Correct)
+- CheerioEngine connection pool agent: No race condition — JS single-threaded + synchronous check-then-set
+- PlaywrightEngine page cleanup: `context.close()` closes all pages within it (no explicit page.close needed)
+- CircuitBreaker half-open in-flight tracking: Correctly prevents concurrent probes exceeding limit
+- Cross-domain cookie leakage prevention in CheerioEngine redirect chain: Correctly clears Cookie header per hop
+- Canvas noise consistency between getImageData and toDataURL: Uses same seeded PRNG via shared _canvasNoiseSeed
+- InfiniteScroll browser/context cleanup: `finally` block correctly handles both error and success paths
+- All `doNotRetry` flag patterns: Correctly duck-typed and checked by retryWithBackoff
+
+---
+
+## Deep Audit: task-engine.ts + scrapers.ts + proxy-manager.ts + engine-config.ts
+**Auditor:** Task 5-b (Deep Code Auditor)
+**Files:** 4 files, ~5314 lines total
+**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')
+
+---
+
+### Bug Reports
+
+**[Medium] task-engine.ts:1016-1019 — `triedEngines` filter is dead code (Set is always empty when filter runs)**
+```ts
+const availableEngines = fallbackChain.filter(e => !triedEngines.has(e));
+if (availableEngines.length === 0 || availableEngines[0] !== _chapterEngine) {
+  availableEngines.unshift(_chapterEngine);
+}
+```
+**Issue:** `triedEngines` (line 990) is declared as an empty `Set` and only populated INSIDE the for-loop at line 1029 (`triedEngines.add(tryEngine)`). But the fallback chain is constructed at lines 1014-1021, BEFORE the loop starts. So `triedEngines` is always empty when the filter at line 1016 executes, meaning the filter has zero effect and `availableEngines` always equals the full `fallbackChain`. The intent was clearly to avoid retrying engines that already failed for this chapter, but the implementation order makes it a no-op.
+**Fix:** Move the fallback chain construction and the for-loop into a single retry-aware structure, or construct the chain lazily inside the loop. Alternatively, if the single-pass retry within `processChapter` is intentional (the outer `retryFailedChapters` handles post-loop retries), remove the dead `triedEngines` set and filter to avoid confusion.
+
+---
+
+**[Medium] task-engine.ts:1227 — `contentStartTime` accessed in catch block but declared in try block (block scoping violation)**
+```ts
+try {
+  // ... line 1007: await getAdaptiveOrRandomDelay(...) -- can throw
+  const contentStartTime = Date.now();  // line 1011
+  // ...
+} catch (err) {
+  failedItemsCount.increment();
+  recordAdaptiveResponse(chapter.url, Date.now() - contentStartTime, false); // line 1227
+```
+**Issue:** `contentStartTime` is declared with `const` inside the `try` block (line 1011). JavaScript `const` is block-scoped — it is NOT accessible from the `catch` block. If an error occurs BEFORE line 1011 (e.g., `getAdaptiveOrRandomDelay` at line 1007 throws on abort), the catch block's access to `contentStartTime` throws a `ReferenceError`. This masks the original error, prevents `failedItemsCount.increment()` and `failedChapters.push()` from executing, silently losing the chapter.
+**Fix:** Declare `let contentStartTime = 0;` BEFORE the try block (at the processChapter function scope, same level as `triedEngines`). Initialize it at line 1011 with `contentStartTime = Date.now();`.
+
+---
+
+**[Medium] task-engine.ts:1461-1479 — `retryFailedChapters` ignores doNotRetry/CAPTCHA errors, blindly tries all engines**
+```ts
+for (const tryEngine of enginesToTry) {
+  try {
+    contentResult = await handleScrapeContent({...});
+    retrySuccess = true;
+    break;
+  } catch {
+    // Continue to next engine in chain
+  }
+}
+```
+**Issue:** The main `processChapter` function (lines 1053-1063) checks for `doNotRetry` flags and CAPTCHA errors to break out of the engine chain early — these indicate domain-level blocking that won't be resolved by trying a different engine. The retry function swallows ALL errors with an empty `catch {}` and continues to the next engine. If a chapter failed due to CAPTCHA, the retry will waste time trying all remaining engines against a blocked domain.
+**Fix:** Add the same doNotRetry/CAPTCHA check from the main function:
+```ts
+catch (contentErr) {
+  const errReason = contentErr instanceof Error ? contentErr.message : String(contentErr);
+  if (errReason.includes('CAPTCHA') || (contentErr instanceof Error && (contentErr as Record<string, unknown>).doNotRetry)) {
+    throw contentErr; // Stop chain immediately
+  }
+}
+```
+
+---
+
+**[Medium] proxy-manager.ts:1759 — Unidirectional jitter in `selectFromCandidates` penalizes all proxies equally**
+```ts
+// selectFromCandidates (line 1759):
+const jitter = 1 + (0.10 + Math.random() * 0.10); // Always 1.10–1.20
+
+// getProxy (line 743):
+const jitter = 1 + (Math.random() - 0.5) * 0.20; // Bidirectional 0.90–1.10
+```
+**Issue:** `selectFromCandidates` (used by `getProxyWithFallback`) applies only positive jitter (always adds 10-20% latency penalty). Unlike `getProxy` which uses bidirectional ±10% jitter, this method never gives low-latency proxies a bonus. This biases proxy selection in the fallback path toward higher-latency proxies, partially defeating the latency-aware scheduling.
+**Fix:** Change line 1759 to match the bidirectional pattern: `const jitter = 1 + (Math.random() - 0.5) * 0.20;`
+
+---
+
+**[Medium] engine-config.ts:250 — Low-content hint fails to activate after CAPTCHA upgrade moves cheerio from position 0**
+```ts
+// 2. Low-content hint
+if (chain[0] === 'cheerio' && lowContentDomains.has(normalizedDomain)) {
+  const idx = chain.indexOf('cheerio');
+  if (idx >= 0) { chain.splice(idx, 1); chain.push('cheerio'); }
+}
+```
+**Issue:** Enhancements are applied in order: (1) CAPTCHA upgrade moves e.g. playwright to front, (2) low-content hint checks `chain[0] === 'cheerio'`. After step 1, the chain is `['playwright', 'cheerio', 'obscura']`. Step 2's guard `chain[0] === 'cheerio'` is false, so cheerio stays at index 1 instead of being moved to last. For domains that have BOTH CAPTCHA issues AND need JS rendering, cheerio is tried second (wasting a request) instead of being deprioritized to last resort.
+**Fix:** Remove the `chain[0] === 'cheerio'` guard and simply check if cheerio is in the chain at all:
+```ts
+if (lowContentDomains.has(normalizedDomain)) {
+  const idx = chain.indexOf('cheerio');
+  if (idx >= 0 && idx < chain.length - 1) { chain.splice(idx, 1); chain.push('cheerio'); }
+}
+```
+
+---
+
+**[Medium] proxy-manager.ts:1580-1591 — Rotation count eviction removes lowest-count domain instead of least-recently-used**
+```ts
+let oldestKey = '';
+let oldestVal = Infinity;
+for (const [k, v] of this.domainRotationCount) {
+  if (v < oldestVal) { oldestVal = v; oldestKey = k; }
+}
+if (oldestKey) {
+  this.domainRotationCount.delete(oldestKey);
+  this.domainRotationIndex.delete(oldestKey);
+}
+```
+**Issue:** The comment says "evict stale entries" and the variable names suggest oldest, but the code evicts the domain with the SMALLEST rotation count. A domain with count=0 (just added, never used) gets evicted first, while a domain with count=19 (about to rotate) is kept. This is the opposite of desired behavior — active domains should be preserved, inactive domains evicted. Additionally, there are no timestamps, so true LRU is impossible.
+**Fix:** Track a `lastAccessedAt` timestamp per domain (update in `recordSuccessWithRotation` and `getDomainProxyWithRotation`), then evict by oldest timestamp. Alternatively, use Map insertion order (insert-on-access pattern) for O(1) eviction of the truly oldest entry.
+
+---
+
+**[Low] task-engine.ts:1095-1101 — CAPTCHA pause promise ignores abort signal**
+```ts
+const pausePromise = new Promise<void>(resolve => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+_captchaPausePromises.set(chDomain, pausePromise);
+```
+**Issue:** When a task is cancelled (abortController.signal.aborted), workers that are awaiting `_captchaPausePromises.get(chDomain)` (line 1097) will block for the full 60-second pause before checking the abort flag at the top of the next loop iteration. The pause promise has no abort signal integration.
+**Fix:** Create the pause promise with abort signal awareness:
+```ts
+const pausePromise = new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(resolve, CAPTCHA_PAUSE_MS);
+ if (abortSignal) {
+    const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+    abortSignal.addEventListener('abort', onAbort, { once: true });
+    pausePromise.finally(() => abortSignal.removeEventListener('abort', onAbort));
+  }
+});
+```
+
+---
+
+**[Low] scrapers.ts:519-526, 534-541 — Already-aborted signal doesn't trigger immediate rejection in cover download delays**
+```ts
+await new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(() => {
+    signal?.removeEventListener('abort', onAbort);
+    resolve();
+  }, rateCheck.waitMs);
+  const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+  signal?.addEventListener('abort', onAbort, { once: true });
+});
+```
+**Issue:** If `signal.aborted` is already `true` when this code runs, the `addEventListener` at the end registers for FUTURE events. Since the abort event has already fired, the listener never triggers, and the promise resolves after the full delay instead of immediately rejecting. Same pattern appears twice in `handleDownloadCover`.
+**Fix:** Add an early check before creating the promise:
+```ts
+if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+```
+
+---
+
+**[Low] proxy-manager.ts:851 — `recordSuccess` without domain clears all domain-specific recent failures**
+```ts
+this.recentFailures = this.recentFailures.filter(
+  (f) => f.proxyUrl !== parsed.cleanUrl || (domain && f.domain && f.domain !== normalizeDomain(domain))
+);
+```
+**Issue:** When `recordSuccess` is called WITHOUT a `domain` parameter (e.g., from `checkHealth` at line 1144), the filter condition simplifies to `f.proxyUrl !== parsed.cleanUrl` (since `domain` is falsy, the second branch is always false). This removes ALL recent failures for that proxy across ALL domains. A proxy that failed for domain A but succeeded for domain B (without domain tracking) will have its domain A failures cleared.
+**Fix:** When domain is not provided, only clear failures that also have no domain: `f.proxyUrl !== parsed.cleanUrl || f.domain !== undefined`
+
+---
+
+**[Low] proxy-manager.ts:2420-2422 — `requestTriedProxies.clear()` is a nuclear eviction**
+```ts
+if (this.requestTriedProxies.size > 1000) {
+  this.requestTriedProxies.clear();
+}
+```
+**Issue:** When the map exceeds 1000 entries (possible during request bursts), ALL proxy attempt tracking is wiped. Active requests lose their tried-proxy history, potentially causing the same proxy to be used twice within a single `getProxyChain` session. The softer cleanup in `cleanupStaleData` (line 2332, triggers at size > 100) usually prevents this, but under extreme load both cleanups could race.
+**Fix:** Replace with incremental eviction: delete oldest 500 entries using Map key iteration order (preserves insertion order), matching the pattern in `cleanupStaleData`.
+
+---
+
+### Summary Table
+
+| # | Severity | File:Line | Category | Description |
+|---|----------|-----------|----------|-------------|
+| 1 | Medium | task-engine.ts:1016 | Dead Code | triedEngines filter is no-op (Set always empty at filter time) |
+| 2 | Medium | task-engine.ts:1227 | Logic/Scope | contentStartTime block-scoped to try, accessed in catch → ReferenceError |
+| 3 | Medium | task-engine.ts:1461 | Error Handling | retryFailedChapters ignores doNotRetry/CAPTCHA, tries all engines |
+| 4 | Medium | proxy-manager.ts:1759 | Logic | Unidirectional jitter in selectFromCandidates vs bidirectional in getProxy |
+| 5 | Medium | engine-config.ts:250 | Logic | Low-content hint guard too restrictive after CAPTCHA upgrade |
+| 6 | Medium | proxy-manager.ts:1580 | Logic | Rotation eviction removes lowest-count domain, not least-recently-used |
+| 7 | Low | task-engine.ts:1095 | Resource | CAPTCHA pause promise ignores abort signal |
+| 8 | Low | scrapers.ts:519 | Error Handling | Already-aborted signal doesn't fast-reject in cover delays |
+| 9 | Low | proxy-manager.ts:851 | Logic | recordSuccess without domain clears all domain-specific failures |
+| 10 | Low | proxy-manager.ts:2420 | Memory | Nuclear clear() on requestTriedProxies overflow |
+
+**Total: 6 Medium, 4 Low. Zero Critical/High.**
+
+### Notable Non-Bugs (Verified Correct)
+- **task-engine.ts:246-255** log buffer eviction: Correctly prevents unbounded growth; splice(0) is atomic in single-threaded JS
+- **task-engine.ts:310-313** log flusher auto-stop: Correctly clears interval when no pending logs; `logFlushTimer` is module-level singleton so no race
+- **task-engine.ts:531-534** touchDomainEngine idempotency: Correctly prevents ref-count leak on repeated calls for same domain within a task
+- **task-engine.ts:1092-1146** CAPTCHA pause dedup: Multiple workers correctly share the pause promise; finally block ensures cleanup
+- **task-engine.ts:1360-1372** domain engine ref-count cleanup: Finally block correctly runs even on early errors; default `|| 1` prevents negative ref counts
+- **scrapers.ts:175-177** pagination delay skip on last page: Correct — no delay needed when loop will end
+- **proxy-manager.ts:270-278** LRU dispatcher cache: Delete-and-reinsert pattern correctly implements LRU via Map insertion order
+- **proxy-manager.ts:464-472** latencyTracker.removeProxy: Correctly iterates and deletes by prefix; no concurrent modification issue in single-threaded JS
+- **proxy-manager.ts:1880** verifyProxy dedup: Correctly uses .finally() to clean up pending promise map even on rejection
+- **engine-config.ts:402-407** captchaUpgradeMap LRU: Correctly uses Map insertion order for O(1) oldest-key eviction
+- **engine-config.ts:474-479** lowContentDomains LRU: Same correct Map-based LRU pattern
+
+---
+Task ID: 6-a
+Agent: Bug Fixer (engines.ts)
+Task: Fix 7 bugs in engines.ts
+
+Work Log:
+- Read full engines.ts (3125+ lines)
+- Applied all 7 bug fixes
+
+## Fixes Applied
+
+### Bug 1 [Medium] Line 178 — CircuitBreaker `||` coercion
+- Changed `|| 5` / `|| 30000` / `|| 1` to `?? 5` / `?? 30000` / `?? 1` in `CircuitBreaker.create()`
+- Prevents `Number(envVar) || default` from replacing valid zero values
+
+### Bug 2 [Medium] Lines 928-985, 2187-2262 — Browser singleton race condition
+- Added `_pwLaunchLock` module-level variable for Playwright
+- Added `_obscuraLaunchLock` static variable for ObscuraEngine
+- Wrapped both `getBrowser()` launch sections with serialized promise chain
+- Prevents concurrent launch attempts from creating orphaned browsers
+
+### Bug 3 [Medium] Lines 1972-1977 — Scrapling rate-limit errors
+- Added `isRateLimit` check before `scraplingBreaker.recordFailure()`
+- Rate limit errors no longer increment circuit breaker failure count
+
+### Bug 4 [Medium] Lines 414-448 — Orphaned failure timestamps
+- domainEngineFailures eviction now cleans ALL known engine timestamps (not just recorded ones)
+- domainFailureTimestamps eviction now also cleans up the corresponding domainEngineFailures entry
+- Prevents stale failure counts from accumulating after eviction
+
+### Bug 5 [Low] Line 1998-2000 — Missing statusCode in ScraplingEngine rateLimiter
+- Extracts `statusCode` from error object when available
+- Passes it to `rateLimiter.recordResult()` for accurate rate limit tracking
+
+### Bug 6 [Low] Lines 1021-1051 — Playwright proxy not rotated between retries
+- Moved proxy selection inside `retryWithBackoff` callback (matching ObscuraEngine pattern)
+- Proxy is now re-selected on each retry attempt, enabling proper rotation
+
+### Bug 7 [Low] Line 3041-3043 — Missing statusCode in InfiniteScroll rateLimiter
+- Same fix as Bug 5: extracts `statusCode` from error and passes to `rateLimiter.recordResult()`
+
+## Verification
+- `bun build index.ts --no-bundle` — passed (no errors)
+
+---
+Task ID: 6-b
+Agent: Bug Fixer (stealth.ts)
+Task: Fix 3 bugs + bonus TTL eviction in stealth.ts
+
+Work Log:
+- Read stealth.ts (3415 lines), identified all 3 bug locations plus bonus target
+- Verified Bug 2 (Android regex) is actually CORRECT in template literal context — `\\s` in template literal source produces `\s` in output (correct regex whitespace). Changing to `\s` would break it (produces literal `s`). Confirmed via `od -c` byte inspection and node template literal test.
+
+## Changes Applied
+
+### Bug 1 [Medium] Line ~2697 — speechSynthesis.getVoices inconsistency ✅ FIXED
+- Replaced `_voicesReturned` boolean flag with `_cachedVoices` null-initialized cache
+- First call gets real voices and clones via `Array.from(real)` to prevent reference detection
+- Subsequent calls return identical cached array (consistent return values)
+
+### Bug 2 [Low] Line ~567 — Android model regex double-escapes ❌ SKIPPED (not a bug)
+- The `\\s` in the template literal is correct double-escaping
+- Verified: template literal `\\s` → output `\s` (correct regex) vs `\s` → output `s` (broken)
+- Also noted: other regexes in the same template literal (e.g., `\/` on line 515) may have single-escape issues, but these are pre-existing and out of scope
+
+### Bug 3 [Low] Lines ~3131-3141 — O(n) profileCache eviction scan ✅ FIXED
+- Replaced full-scan `for...of` loop finding oldest by `createdAt` timestamp
+- Now uses `Map` insertion order: `profileCache.keys().next().value` — O(1) eviction
+- Correct because `getProfileForDomain()` always inserts new entries at the end (oldest = first)
+
+### Bonus: Stealth script cache TTL eviction ✅ FIXED
+- Added proactive eviction block after `_stealthScriptCache.set()` call (line ~3102)
+- Triggers when cache size exceeds 400 entries
+- Iterates and removes entries older than `STEALTH_SCRIPT_CACHE_TTL` (30 min)
+
+## Verification
+- `bun build index.ts --no-bundle` — passed (no errors)
+---
+Task ID: 6-c
+Agent: Bug Fixer (task-engine.ts)
+Task: Fix 4 bugs in task-engine.ts
+
+Work Log:
+- Read and analyzed task-engine.ts (1677 lines) to locate all 4 bug sites
+
+## Fixes Applied
+
+### Bug 1 [Medium] ~Line 989-1029 — triedEngines filter is dead code
+- **Problem**: `triedEngines` Set declared empty at line 990, filter using it at line 1016 runs BEFORE the for-loop that populates it (line 1029). The filter always passes everything through — pure dead code.
+- **Fix**: Removed `triedEngines` declaration, the filter, the unshift guard, and `triedEngines.add()` call. `enginesToTry` now simply uses `fallbackChain.slice(0, MAX_ENGINE_RETRIES)` directly.
+
+### Bug 2 [Medium] ~Line 1011/1227 — contentStartTime block scoping violation
+- **Problem**: `const contentStartTime = Date.now()` declared inside `try` block but referenced in `catch` block, causing a TDZ ReferenceError at runtime when the catch path executes.
+- **Fix**: Moved declaration to `let contentStartTime = 0;` before the `try` block. Inside try, changed to assignment `contentStartTime = Date.now();`. In catch, guarded with `contentStartTime ? Date.now() - contentStartTime : 0` to handle the case where error occurs before the assignment.
+
+### Bug 3 [Medium] ~Line 1477 — retryFailedChapters ignores doNotRetry/CAPTCHA
+- **Problem**: The inner catch block in `retryFailedChapters` had an empty `catch {}` that silently continued to the next engine, ignoring CAPTCHA and doNotRetry errors that should halt the entire engine chain for that chapter.
+- **Fix**: Added `catch (contentErr)` with detection for `doNotRetry` flag and `CAPTCHA` in error message. On match, logs a warning via `streamLogToWS` and `break`s out of the engine loop.
+
+### Bug 4 [Low] ~Line 1100 — CAPTCHA pause promise ignores abort signal
+- **Problem**: `new Promise<void>(resolve => setTimeout(resolve, CAPTCHA_PAUSE_MS))` creates a 60-second pause that cannot be aborted, blocking task cancellation.
+- **Fix**: Replaced with abort-aware promise that checks `abortSignal?.aborted` upfront, attaches an abort listener to clear the timer and reject immediately, and cleans up the listener via `.finally()`.
+
+## Verification
+- `bun build index.ts --no-bundle` — completed successfully with no compilation errors
+
+---
+Task ID: 6-d
+Agent: Bug Fixer (proxy-manager.ts)
+Task: Fix 4 bugs in proxy-manager.ts
+
+Work Log:
+- Read proxy-manager.ts (2479 lines) and identified all 4 bug locations
+- Applied all 4 fixes with exact code changes specified in task
+- Verified build succeeds with `bun build index.ts --no-bundle`
+
+### Bug 1 [Medium] ~Line 1759 — Unidirectional jitter in selectFromCandidates
+- **Problem**: `const jitter = 1 + (0.10 + Math.random() * 0.10)` always added 10-20% (positive only), while `getProxy` uses bidirectional ±10%. This biased selection away from low-latency proxies.
+- **Fix**: Changed to `const jitter = 1 + (Math.random() - 0.5) * 0.20` for symmetric ±10% jitter matching getProxy behavior.
+
+### Bug 2 [Medium] ~Lines 1580-1591 — Rotation eviction removes lowest-count domain instead of least-recently-used
+- **Problem**: Eviction loop scanned all 500+ entries to find the one with the smallest rotation count (O(n)), but the intent was LRU eviction. The lowest-count domain isn't necessarily the least recently used.
+- **Fix**: Replaced O(n) scan with O(1) Map insertion order eviction using `this.domainRotationCount.keys().next().value`. Entries are added in insertion order, so the first key is the oldest.
+
+### Bug 3 [Low] ~Line 851 — recordSuccess without domain clears all domain-specific failures
+- **Problem**: When `domain` was not provided, the filter `(f) => f.proxyUrl !== parsed.cleanUrl || (domain && f.domain && f.domain !== normalizeDomain(domain))` would clear ALL failures for the proxy, including domain-specific ones, because `domain` being falsy made the second condition always false.
+- **Fix**: Changed filter to: when domain is provided, only clear failures matching that domain; when domain is not provided, only clear failures that also have no domain (`f.domain !== undefined`).
+
+### Bug 4 [Low] ~Line 2420 — requestTriedProxies.clear() is nuclear eviction
+- **Problem**: `this.requestTriedProxies.clear()` wiped all 1000+ entries at once, causing active requests to lose their proxy-try tracking and potentially reuse a just-failed proxy.
+- **Fix**: Replaced with incremental eviction that removes the oldest 500 entries using Map insertion order, preserving tracking for recent/active requests.
+
+## Verification
+- `bun build index.ts --no-bundle` — completed successfully with no compilation errors
+
+---
+Task ID: 6-e+f
+Agent: Bug Fixer (engine-config.ts + scrapers.ts)
+Task: Fix engine-config.ts low-content hint guard + scrapers.ts already-aborted signal fast-reject
+
+Work Log:
+
+### Bug 1 [Medium] engine-config.ts ~Line 250 — Low-content hint guard too restrictive
+- **Problem**: The low-content hint check had `chain[0] === 'cheerio'` as a guard, so if a CAPTCHA upgrade had already moved another engine (e.g. playwright) to position 0, cheerio would NOT be deprioritized — defeating the purpose of the low-content hint.
+- **Fix**: Removed the `chain[0] === 'cheerio'` guard. Now any occurrence of cheerio in the chain gets moved to the end (if not already last) when the domain is flagged as a low-content domain. Also tightened the index check to `idx < chain.length - 1` to avoid a no-op splice-and-push when cheerio is already last.
+
+### Bug 2 [Low] scrapers.ts Lines ~519, ~535 — Already-aborted signal doesn't fast-reject
+- **Problem**: Two `await new Promise` blocks in `handleDownloadCover` (rate-limiting wait and browser-throttle wait) would register an `abort` event listener but never check if the signal was *already* aborted before creating the promise. If the signal was aborted before entering these sections, the code would wait the full delay instead of rejecting immediately.
+- **Fix**: Added `if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');` before each `await new Promise` block, providing an immediate fast-reject path.
+
+## Verification
+- `bun build index.ts --no-bundle` — completed successfully with no compilation errors
+
+---
+Task ID: 7-a
+Agent: Anti-Anti-Crawl Enhancement Specialist
+Task: Add three new anti-anti-crawl capabilities (Sections 101-103) to stealth.ts
+
+Work Log:
+- Read stealth.ts (3423 lines) and identified the IIFE structure, section patterns, and available variables (PROFILE, _fakeDeviceSeed, _seededRandom, _isFirefox)
+- Added three new sections before the IIFE closing `})();` at line 3099
+
+### Section 101: WebRTC Leak Prevention (~67 lines)
+- Overrides `RTCPeerConnection` and `webkitRTCPeerConnection` with a wrapper that:
+  - Strips all STUN/TURN ICE servers from the config (prevents IP discovery)
+  - Blocks `onicecandidate` setter/getter to prevent ICE candidate IP leaks
+  - Intercepts `addEventListener`/`removeEventListener` to swallow `icecandidate` and `icecandidateerror` events
+- Overrides `navigator.mediaDevices.enumerateDevices()` to return 3 consistent fake devices:
+  - 1 audioinput + 1 videoinput (same groupId) + 1 audiooutput (different groupId)
+  - Device IDs are generated deterministically from `_fakeDeviceSeed * 7.77` using the same LCG PRNG as canvas noise
+
+### Section 102: Font Fingerprint Normalization (~78 lines)
+- Complements Section 60 (which patches instance-level `document.fonts`) by patching `FontFaceSet.prototype` for iframe/new-instance coverage
+- Builds platform-specific font pools (Win32: 31 fonts, MacIntel: 36 fonts, Linux x86_64: 27 fonts)
+- Selects a deterministic ~67% subset from the platform pool using `_fakeDeviceSeed * 19.23` with the same LCG PRNG
+- Patches `FontFaceSet.prototype.forEach` to only iterate fonts matching the selected set, generic families, or `status === 'loaded'`
+- Patches `FontFaceSet.prototype.check` to return `true` for non-generic font families (optimistic, matching real browser behavior)
+
+### Section 103: Battery API Normalization (~28 lines)
+- Overrides `navigator.getBattery()` (if it exists) to return a consistent fake BatteryManager object
+- Desktop UAs: `charging=true, level=1.0, chargingTime=0, dischargingTime=Infinity`
+- Mobile UAs: `charging=false, level=0.6-1.0, dischargingTime=7200-18000s` (seeded via `_seededRandom(103.x)`)
+- Includes stub `addEventListener`/`removeEventListener`/`dispatchEvent` and event handler properties
+
+## Verification
+- `bun build index.ts --no-bundle` — completed successfully with no compilation errors
+- Section line counts verified: S101=67, S102=78, S103=28 (targets were ~60, ~50, ~30)
+- All sections follow existing patterns: `try/catch` wrapping, `var` in injected scripts, IIFE where appropriate, consistent PRNG seeding

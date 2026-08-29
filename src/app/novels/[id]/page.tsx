@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import NovelDetailClient from './NovelDetailClient';
+import { isCuid } from '@/lib/slug-generator';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -44,6 +45,25 @@ interface NovelDetail {
   updatedAt: Date;
 }
 
+// ─── Slug resolution ────────────────────────────────────────────────
+
+/**
+ * If the route param is not a cuid, look it up in the NovelSlug table.
+ * Returns the resolved novel cuid, or null if not found.
+ */
+async function resolveSlugToNovelId(param: string): Promise<string | null> {
+  if (isCuid(param)) {
+    return param; // Already a cuid — direct lookup
+  }
+
+  const mapping = await db.novelSlug.findUnique({
+    where: { slug: param },
+    select: { novelId: true, isActive: true },
+  });
+
+  return mapping && mapping.isActive ? mapping.novelId : null;
+}
+
 // ─── Data fetching (server-side) ─────────────────────────────────────
 
 async function getNovel(id: string): Promise<NovelDetail | null> {
@@ -83,8 +103,10 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
-  const { id } = await params;
-  const novel = await getNovel(id);
+  const { id: paramId } = await params;
+  const novelId = await resolveSlugToNovelId(paramId);
+  if (!novelId) return { title: '小说未找到' };
+  const novel = await getNovel(novelId);
   if (!novel) return { title: '小说未找到' };
 
   const title = `${novel.title} - ${novel.author} - 小说阁`;
@@ -113,13 +135,20 @@ export default async function NovelDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
+  const { id: paramId } = await params;
+
+  // Resolve slug to novel cuid
+  const novelId = await resolveSlugToNovelId(paramId);
+  if (!novelId) {
+    notFound();
+  }
+
   let novel: NovelDetail | null = null;
   let chapters: Chapter[] = [];
   try {
     [novel, chapters] = await Promise.all([
-      getNovel(id),
-      getChapters(id),
+      getNovel(novelId),
+      getChapters(novelId),
     ]);
   } catch (error) {
     console.error('Failed to load novel detail:', error);

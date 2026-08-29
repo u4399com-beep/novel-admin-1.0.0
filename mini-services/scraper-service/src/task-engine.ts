@@ -979,12 +979,14 @@ async function executeTaskBody(
       const CONSECUTIVE_CAPTCHA_THRESHOLD = 3;
       const CAPTCHA_PAUSE_MS = 60000;
 
+      // Collect failed chapters for post-loop retry recovery
+      const failedChapters: FailedChapterInfo[] = [];
+
       async function processChapter(): Promise<void> {
         if (chapterQueue.length === 0) return;
         const chapter = chapterQueue.shift()!;
 
-        // Local triedEngines: not shared on ctx to avoid cross-worker interference
-        const triedEngines = new Set<EngineType>();
+        let contentStartTime = 0;
 
         try {
           // Dedup check BEFORE eager mark (check → eager mark → delay → fetch)
@@ -1005,17 +1007,11 @@ async function executeTaskBody(
           }
 
           // Scrape chapter content with engine fallback chain retry
-          const contentStartTime = Date.now();
+          contentStartTime = Date.now();
           const _chapterEngine = getEffectiveEngine(chapter.url, engineType);
           const _chapterDomain = (() => { try { return new URL(chapter.url).hostname; } catch { return undefined; } })();
           const fallbackChain = getFallbackChainForEngine(_chapterEngine, _chapterDomain);
-          // Filter out already-tried engines to avoid repeats
-          const availableEngines = fallbackChain.filter(e => !triedEngines.has(e));
-          // Ensure the current engine is in the list even if already tried
-          if (availableEngines.length === 0 || availableEngines[0] !== _chapterEngine) {
-            availableEngines.unshift(_chapterEngine);
-          }
-          const enginesToTry = availableEngines.slice(0, MAX_ENGINE_RETRIES);
+          const enginesToTry = fallbackChain.slice(0, MAX_ENGINE_RETRIES);
 
           let contentResult: Awaited<ReturnType<typeof handleScrapeContent>>;
           let contentEngineUsed: EngineType = _chapterEngine;
@@ -1023,7 +1019,6 @@ async function executeTaskBody(
           const chainFailures: Array<{ engine: EngineType; reason: string }> = [];
 
           for (const tryEngine of enginesToTry) {
-            triedEngines.add(tryEngine);
             contentEngineUsed = tryEngine;
             try {
               contentResult = await handleScrapeContent({
@@ -1094,7 +1089,19 @@ async function executeTaskBody(
                 await _captchaPausePromises.get(chDomain);
                 return;
               }
-              const pausePromise = new Promise<void>(resolve => setTimeout(resolve, CAPTCHA_PAUSE_MS));
+              const pausePromise = new Promise<void>((resolve, reject) => {
+                const timer = setTimeout(resolve, CAPTCHA_PAUSE_MS);
+                if (abortSignal?.aborted) {
+                  clearTimeout(timer);
+                  reject(new DOMException('Aborted', 'AbortError'));
+                  return;
+                }
+                if (abortSignal) {
+                  const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+                  abortSignal.addEventListener('abort', onAbort, { once: true });
+                  pausePromise.finally(() => abortSignal.removeEventListener('abort', onAbort));
+                }
+              });
               _captchaPausePromises.set(chDomain, pausePromise);
               try {
               await addTaskLog(taskId, "warn", `验证码频繁(${chDomain}), 暂停${CAPTCHA_PAUSE_MS / 1000}秒`);
@@ -1221,10 +1228,14 @@ async function executeTaskBody(
           processedChaptersCount.increment();
         } catch (err) {
           failedItemsCount.increment();
-          recordAdaptiveResponse(chapter.url, Date.now() - contentStartTime, false);
+          recordAdaptiveResponse(chapter.url, contentStartTime ? Date.now() - contentStartTime : 0, false);
           const errMsg = err instanceof Error ? err.message : String(err);
           console.error(`[Task ${taskId}] Error scraping chapter ${chapter.url}:`, errMsg);
           await addTaskLog(taskId, "error", `章节采集失败: ${chapter.title || chapter.url}`, chapter.url, errMsg.slice(0, 500));
+          // Collect for post-loop retry (exclude CAPTCHA doNotRetry errors)
+          if (!(err instanceof Error && (err as Record<string, unknown>).doNotRetry)) {
+            failedChapters.push({ url: chapter.url, title: chapter.title, sortOrder: chapter.sortOrder, bookId: book.id });
+          }
         }
       }
 
@@ -1241,6 +1252,43 @@ async function executeTaskBody(
       }
 
       await Promise.all(chapterWorkers);
+
+      // --- Failed chapter recovery phase ---
+      if (failedChapters.length > 0 && !abortController.signal.aborted) {
+        console.log(`[Task ${taskId}] Retrying ${failedChapters.length} failed chapters for ${book.title}...`);
+        streamLogToWS(taskId, "info", `Retrying ${failedChapters.length} failed chapters...`);
+
+        try {
+          const retryResult = await retryFailedChapters(taskId, failedChapters, {
+            engineType,
+            antiCrawlConfig,
+            contentSelector,
+            contentTitleSelector,
+            contentPagination,
+            cleanConfig,
+            abortSignal: abortController.signal,
+          });
+
+          if (retryResult.recovered > 0) {
+            // Adjust counters: recovered chapters count as newly created
+            for (let r = 0; r < retryResult.recovered; r++) newChaptersCount.increment();
+            for (let r = 0; r < retryResult.retried; r++) processedChaptersCount.increment();
+
+            // Re-sort chapters to fix any sortOrder gaps from recovered chapters
+            const reordered = await resortChapters(book.id, abortController.signal);
+            if (reordered) {
+              await addTaskLog(taskId, "info", `章节顺序已修复: ${book.title}`);
+            }
+
+            streamLogToWS(taskId, "success",
+              `恢复 ${retryResult.recovered}/${retryResult.retried} 章节 (${book.title})`
+            );
+          }
+        } catch (retryErr) {
+          console.error(`[Task ${taskId}] Failed chapter recovery error for ${book.title}:`, retryErr);
+          // Recovery is best-effort, don't fail the main task
+        }
+      }
 
       // Update progress
       const chapterProgress = 50 + ((bookIdx + 1) / booksProcessed.length) * 45;
@@ -1325,6 +1373,253 @@ async function executeTaskBody(
         _domainEngineRefCount.set(d, remaining);
       }
     }
+  }
+}
+
+// ==================== Failed Chapter Recovery ====================
+
+/** Info needed to retry a failed chapter scrape */
+interface FailedChapterInfo {
+  url: string;
+  title: string;
+  sortOrder: number;
+  bookId: string;
+}
+
+/** Summary result of retrying failed chapters */
+interface RetryFailedChaptersResult {
+  retried: number;
+  recovered: number;
+  stillFailed: number;
+}
+
+/**
+ * Retry chapters that failed during the main scraping phase.
+ * Processes failed chapters in sortOrder, using the same engine and anti-crawl config
+ * as the original task. Each chapter gets one additional retry attempt.
+ *
+ * @param taskId - The scraping task ID (for logging and progress)
+ * @param failedChapters - List of failed chapters with URL, title, sortOrder, and bookId
+ * @param options - Scraping configuration (engine, anti-crawl, selectors, etc.)
+ * @returns Summary with retried/recovered/stillFailed counts
+ */
+export async function retryFailedChapters(
+  taskId: string,
+  failedChapters: FailedChapterInfo[],
+  options: {
+    engineType: EngineType;
+    antiCrawlConfig: AntiCrawl;
+    contentSelector: ReturnType<typeof parseSelectorField>;
+    contentTitleSelector: ReturnType<typeof parseSelectorField>;
+    contentPagination: Pagination | undefined;
+    cleanConfig: CleanRequest["config"];
+    abortSignal: AbortSignal;
+  }
+): Promise<RetryFailedChaptersResult> {
+  if (failedChapters.length === 0) {
+    return { retried: 0, recovered: 0, stillFailed: 0 };
+  }
+
+  // Sort by sortOrder to process in chapter order
+  const sorted = [...failedChapters].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  let recovered = 0;
+  let stillFailed = 0;
+  const retried = sorted.length;
+
+  await addTaskLog(taskId, "info", `开始重试 ${retried} 个失败章节...`);
+  await updateTaskProgress(taskId, {
+    currentStep: `正在重试失败章节 (0/${retried})...`,
+  });
+
+  for (let i = 0; i < sorted.length; i++) {
+    const ch = sorted[i];
+
+    // Check for abort before each retry
+    if (options.abortSignal.aborted) {
+      stillFailed += (sorted.length - i);
+      await addTaskLog(taskId, "warn", `任务已取消，终止剩余 ${sorted.length - i} 个章节重试`);
+      break;
+    }
+
+    try {
+      // Delay between retries (same anti-crawl config as original)
+      if (options.antiCrawlConfig.delay) {
+        await getAdaptiveOrRandomDelay(
+          ch.url,
+          options.antiCrawlConfig.delay[0],
+          options.antiCrawlConfig.delay[1],
+          options.abortSignal
+        );
+      }
+
+      // Use the same engine fallback chain pattern as the main scrape
+      const _retryEngine = getEffectiveEngine(ch.url, options.engineType);
+      const _retryDomain = (() => { try { return new URL(ch.url).hostname; } catch { return undefined; } })();
+      const fallbackChain = getFallbackChainForEngine(_retryEngine, _retryDomain);
+      const enginesToTry = fallbackChain.slice(0, MAX_ENGINE_RETRIES);
+
+      let contentResult: Awaited<ReturnType<typeof handleScrapeContent>>;
+      let retrySuccess = false;
+
+      for (const tryEngine of enginesToTry) {
+        try {
+          contentResult = await handleScrapeContent({
+            url: ch.url,
+            selectors: {
+              title: options.contentTitleSelector || undefined,
+              content: options.contentSelector!,
+            },
+            pagination: options.contentPagination,
+            antiCrawl: options.antiCrawlConfig,
+            engine: tryEngine,
+            cleanConfig: options.cleanConfig,
+            signal: options.abortSignal,
+          });
+          retrySuccess = true;
+          break;
+        } catch (contentErr) {
+          const errReason = contentErr instanceof Error ? contentErr.message : String(contentErr);
+          const isDoNotRetry = contentErr instanceof Error && (contentErr as Record<string, unknown>).doNotRetry;
+          const isCaptcha = errReason.includes('CAPTCHA');
+          if (isDoNotRetry || isCaptcha) {
+            streamLogToWS(taskId, 'warn', `Chapter retry skipped (doNotRetry/CAPTCHA): ${ch.title}`, ch.url);
+            break; // Stop trying other engines for this chapter
+          }
+          // Continue to next engine in chain
+        }
+      }
+
+      if (!retrySuccess) {
+        stillFailed++;
+        streamLogToWS(taskId, "error", `章节重试失败: ${ch.title || ch.url}`, ch.url);
+        continue;
+      }
+
+      // Normalize content (same as main processChapter)
+      const chapterContent = contentResult.content
+        .replace(/\t/g, ' ')
+        .replace(/ {3,}/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      const chapterTitle = contentResult.title || ch.title;
+
+      if (!chapterContent.trim()) {
+        stillFailed++;
+        streamLogToWS(taskId, "warn", `章节重试内容为空: ${chapterTitle}`, ch.url);
+        continue;
+      }
+
+      // Save recovered chapter via API
+      await dbWriteSemaphore.acquire();
+      try {
+        const result = await apiCall(
+          "POST",
+          `/api/novels/${ch.bookId}/chapters`,
+          {
+            title: chapterTitle,
+            content: chapterContent,
+            sortOrder: ch.sortOrder,
+            sourceUrl: ch.url,
+          },
+          options.abortSignal
+        );
+
+        if (result.status === 201) {
+          recovered++;
+          streamLogToWS(taskId, "success", `章节恢复成功: ${chapterTitle}`, ch.url);
+        } else {
+          stillFailed++;
+          streamLogToWS(taskId, "warn", `章节重试保存失败(HTTP ${result.status}): ${chapterTitle}`, ch.url);
+        }
+      } finally {
+        dbWriteSemaphore.release();
+      }
+    } catch (err) {
+      stillFailed++;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      streamLogToWS(taskId, "error", `章节重试异常: ${ch.title || ch.url}`, ch.url, errMsg.slice(0, 500));
+    }
+
+    // Progress update every 5 chapters or on last
+    if ((i + 1) % 5 === 0 || i === sorted.length - 1) {
+      await updateTaskProgress(taskId, {
+        currentStep: `正在重试失败章节 (${i + 1}/${retried})...`,
+      });
+    }
+  }
+
+  await addTaskLog(
+    taskId,
+    recovered > 0 ? "success" : "warn",
+    `失败章节重试完成: 重试 ${retried}, 恢复 ${recovered}, 仍失败 ${stillFailed}`
+  );
+
+  return { retried, recovered, stillFailed };
+}
+
+/**
+ * Re-number chapter sortOrder values sequentially starting from 1.
+ * Fixes gaps caused by chapters that were originally skipped but later recovered
+ * with their original sortOrder values.
+ *
+ * @param novelId - The novel whose chapters should be re-ordered
+ * @param abortSignal - Optional abort signal for task cancellation
+ * @returns true if chapters were re-ordered, false if no gaps were found
+ */
+export async function resortChapters(
+  novelId: string,
+  abortSignal?: AbortSignal
+): Promise<boolean> {
+  try {
+    // Fetch all chapters ordered by sortOrder (max 5000 per the API limit)
+    const { data, status } = await apiCall(
+      "GET",
+      `/api/novels/${novelId}/chapters?pageSize=5000`,
+      undefined,
+      abortSignal
+    );
+
+    if (status !== 200 || !data) return false;
+
+    const chapters = (data as { chapters?: Array<{ id: string; sortOrder: number }> }).chapters || [];
+    if (chapters.length === 0) return false;
+
+    // Check for gaps in sortOrder
+    let hasGaps = false;
+    for (let i = 0; i < chapters.length; i++) {
+      if (chapters[i].sortOrder !== i + 1) {
+        hasGaps = true;
+        break;
+      }
+    }
+
+    if (!hasGaps) return false;
+
+    // Build batch reorder payload
+    const orders = chapters.map((ch, idx) => ({
+      id: ch.id,
+      sortOrder: idx + 1,
+    }));
+
+    // Use the batch reorder endpoint (max 5000 per request)
+    const { status: patchStatus } = await apiCall(
+      "PATCH",
+      `/api/novels/${novelId}/chapters`,
+      { action: "reorder", orders },
+      abortSignal
+    );
+
+    if (patchStatus === 200 || patchStatus === 204) {
+      console.log(`[ResortChapters] Re-ordered ${chapters.length} chapters for novel ${novelId}`);
+      return true;
+    }
+
+    console.warn(`[ResortChapters] Failed to reorder chapters for novel ${novelId}: HTTP ${patchStatus}`);
+    return false;
+  } catch (err) {
+    console.error(`[ResortChapters] Error reordering chapters for novel ${novelId}:`, err);
+    return false;
   }
 }
 

@@ -848,7 +848,8 @@ class ProxyManager {
 
     // Clear recent failures for this proxy (and optionally domain) on success
     this.recentFailures = this.recentFailures.filter(
-      (f) => f.proxyUrl !== parsed.cleanUrl || (domain && f.domain && f.domain !== normalizeDomain(domain))
+      (f) => f.proxyUrl !== parsed.cleanUrl 
+        || (domain ? (f.domain && f.domain === normalizeDomain(domain)) : f.domain !== undefined)
     );
 
     // Update rolling average response time (legacy field)
@@ -1577,15 +1578,8 @@ class ProxyManager {
 
     // Evict stale rotation entries (keep last 500 domains to prevent unbounded growth)
     if (this.domainRotationCount.size > 500) {
-      let oldestKey = '';
-      let oldestVal = Infinity;
-      for (const [k, v] of this.domainRotationCount) {
-        if (v < oldestVal) {
-          oldestVal = v;
-          oldestKey = k;
-        }
-      }
-      if (oldestKey) {
+      const oldestKey = this.domainRotationCount.keys().next().value;
+      if (oldestKey !== undefined) {
         this.domainRotationCount.delete(oldestKey);
         this.domainRotationIndex.delete(oldestKey);
       }
@@ -1756,7 +1750,7 @@ class ProxyManager {
         ? (entry.latencyStats.domainLatency.get(normalisedDomain) ?? entry.latencyStats.avgResponseTime)
         : entry.latencyStats.avgResponseTime;
       const effectiveLat = baseLat > 0 ? baseLat : 5000;
-      const jitter = 1 + (0.10 + Math.random() * 0.10);
+      const jitter = 1 + (Math.random() - 0.5) * 0.20;
       const jitteredLat = effectiveLat * jitter;
       const healthPredMult = this.getHealthPredictionMultiplier(entry);
       const healthWeight = Math.max(1, entry.healthScore) * healthPredMult;
@@ -2418,7 +2412,13 @@ class ProxyManager {
 
     // Evict old request entries if map grows too large
     if (this.requestTriedProxies.size > 1000) {
-      this.requestTriedProxies.clear();
+      // Incremental eviction: remove oldest 500 entries using Map insertion order
+      let count = 0;
+      for (const key of this.requestTriedProxies.keys()) {
+        if (count >= 500) break;
+        this.requestTriedProxies.delete(key);
+        count++;
+      }
     }
   }
 

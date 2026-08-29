@@ -1,6 +1,6 @@
 {
   "name": "爱奇艺小说 (wenxue.iqiyi.com)",
-  "description": "爱奇艺小说全站采集。UTF-8编码，大厂反爬（iQiyi/爱奇艺），使用Playwright隐身引擎+JS渲染+人类行为模拟。书库URL格式: lib-{base}_{sub}_0-51-0-{page}.html，详情页含部分章节，完整目录在catalog-{bookId}-{page}.html。阅读页内容在.reader-article中，下一章链接a#nextChpater。详情页书名在.book-details-tit h1，作者在.writerName，简介在.book-details-briefing，封面在.bookBigCover img，状态在.stacksBook-tag，分类在面包屑.breadCrumbNav第二项。列表页书籍链接在li.stacksBook a[href*='detail-']，分页在.mod-page a。",
+  "description": "爱奇艺小说全站采集。UTF-8编码，大厂反爬（iQiyi/爱奇艺），使用Playwright隐身引擎+JS渲染+人类行为模拟。书库URL格式: lib-{base}_{sub}_0-51-0-{page}.html，详情页含部分章节，完整目录在catalog-{bookId}-{page}.html。阅读页内容在.reader-article中，下一章链接a#nextChpater。详情页书名在.book-details-tit h1，作者在.writerName，简介在.book-details-briefing，封面在.bookBigCover img，状态在.stacksBook-tag，分类在面包屑.breadCrumbNav第二项。列表页书籍链接在li.stacksBook a[href*='detail-']，分页在.mod-page a。【VIP章节行为】VIP/付费章节在网页端仅显示约20%内容，随后出现'.chapter-pay'付费墙提示'此章节为付费章节，请到手机上继续观看'。页面显示完整字数（如'字数：2,076'）但HTML中仅含约500字。目录页无VIP标记（JS渲染）。完整内容需付费/VIP订阅，切换移动端UA无法绕过。详情页pingback脚本含bookId。",
   "enabled": true,
 
   "listUrl": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_0_0-51-0-1.html",
@@ -63,6 +63,7 @@
       ".list-tit-wrapper", ".list-txt",
       ".book-details-btnBox", ".btn-readfree",
       ".catalog-time", ".j_forbidden_card",
+      ".chapter-pay", ".chapter-pay-phoneContinue",
       ".hotcmd-box", ".hotcmd-wp",
       ".sidebar", ".footer", ".header", ".topbar",
       "#userdata_el"
@@ -95,6 +96,28 @@
       "使用键盘快捷键",
       "我学会啦"
     ]
+  },
+
+  "vipDetection": {
+    "enabled": true,
+    "indicators": {
+      "cssSelectors": [".chapter-pay", ".chapter-pay-phoneContinue", ".j_forbidden_card"],
+      "textPatterns": ["此章节为付费章节", "请到手机上继续观看", "开通VIP", "VIP专享", "付费章节"],
+      "contentTruncationCheck": {
+        "enabled": true,
+        "wordCountSelector": "meta[name='description']",
+        "minTruncationRatio": 0.3
+      }
+    },
+    "action": "mark_as_vip_and_truncate",
+    "mobileUaStrategy": {
+      "enabled": true,
+      "description": "VIP chapters on wenxue.iqiyi.com only show ~20% on any browser. Full content requires payment/VIP subscription. Mobile UA does NOT bypass this paywall.",
+      "userAgents": [
+        "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1"
+      ]
+    }
   },
 
   "scrapeMode": "full",

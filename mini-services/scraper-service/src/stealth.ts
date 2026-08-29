@@ -2694,14 +2694,17 @@ export function getStealthScript(profile: FingerprintProfile): string {
           default: _vi === 0,
         });
       }
-      var _voicesReturned = false;
+      var _cachedVoices = null;
       window.speechSynthesis.getVoices = function() {
-        if (_voicesReturned) return _fakeVoices;
-        _voicesReturned = true;
-        // First call may return empty (Chrome async loading behavior)
+        if (_cachedVoices) return _cachedVoices;
         var real = _origGetVoices();
-        if (real && real.length > 0) return real;
-        return _fakeVoices;
+        if (real && real.length > 0) {
+          // Clone real voices to prevent reference-based detection
+          _cachedVoices = Array.from(real);
+        } else {
+          _cachedVoices = _fakeVoices;
+        }
+        return _cachedVoices;
       };
       window.speechSynthesis._obscuraPatched = true;
     }
@@ -3093,10 +3096,194 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(_ocErr) {}
 
+  // ==================== Section 101: WebRTC Leak Prevention ====================
+  // Anti-bot systems use WebRTC to discover real IP addresses even behind proxies.
+  // We override RTCPeerConnection/webkitRTCPeerConnection to block ICE candidate
+  // leaks, and enumerateDevices() to return consistent fake devices.
+  try {
+    (function() {
+      var _noop = function() {};
+      // Strip STUN/TURN servers from config to prevent IP discovery
+      function _sanitizeRTCConfig(config) {
+        if (!config || typeof config !== 'object') return config || undefined;
+        var clean = {};
+        for (var k in config) {
+          if (config.hasOwnProperty(k)) {
+            clean[k] = k === 'iceServers' ? [] : config[k];
+          }
+        }
+        return clean;
+      }
+      // Override RTCPeerConnection
+      var _OrigRTCPC = window.RTCPeerConnection || window.webkitRTCPeerConnection;
+      if (_OrigRTCPC) {
+        var _FakeRTCPC = function(config, constraints) {
+          var _instance = new _OrigRTCPC(_sanitizeRTCConfig(config), constraints);
+          // Block onicecandidate callbacks to prevent real IP leak
+          Object.defineProperty(_instance, 'onicecandidate', {
+            get: function() { return _noop; },
+            set: function() {},
+            configurable: true,
+          });
+          // Block addEventListener for icecandidate events
+          var _origAddEL = _instance.addEventListener.bind(_instance);
+          _instance.addEventListener = function(type, listener, options) {
+            if (type === 'icecandidate' || type === 'icecandidateerror') return;
+            return _origAddEL(type, listener, options);
+          };
+          var _origRemoveEL = _instance.removeEventListener.bind(_instance);
+          _instance.removeEventListener = function(type, listener, options) {
+            if (type === 'icecandidate' || type === 'icecandidateerror') return;
+            return _origRemoveEL(type, listener, options);
+          };
+          return _instance;
+        };
+        _FakeRTCPC.prototype = _OrigRTCPC.prototype;
+        window.RTCPeerConnection = _FakeRTCPC;
+        if (window.webkitRTCPeerConnection) window.webkitRTCPeerConnection = _FakeRTCPC;
+      }
+      // Override navigator.mediaDevices.enumerateDevices() — return consistent fake devices
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        // Generate consistent device IDs using the same PRNG seed as canvas
+        var _dSeed = Math.floor(_fakeDeviceSeed * 7.77);
+        function _fakeDeviceId(type) {
+          _dSeed = (_dSeed * 1664525 + 1013904223) | 0;
+          var hex = ((_dSeed >>> 0) % 0xFFFFFF).toString(16);
+          while (hex.length < 6) hex = '0' + hex;
+          return type.substring(0, 3) + hex + type.substring(3, 5);
+        }
+        var _fakeDevices = [
+          { deviceId: _fakeDeviceId('audioinput01'), groupId: _fakeDeviceId('grp0001'), kind: 'audioinput', label: '' },
+          { deviceId: _fakeDeviceId('videoinput01'), groupId: _fakeDeviceId('grp0001'), kind: 'videoinput', label: '' },
+          { deviceId: _fakeDeviceId('audiooutput1'), groupId: _fakeDeviceId('grp0002'), kind: 'audiooutput', label: '' },
+        ];
+        navigator.mediaDevices.enumerateDevices = function() {
+          return Promise.resolve(_fakeDevices.slice());
+        };
+      }
+    })();
+  } catch(_rtcErr) {}
+
+  // ==================== Section 102: Font Fingerprint Normalization ====================
+  // Section 60 patches instance-level document.fonts. This section patches
+  // FontFaceSet.prototype for iframe/new-instance coverage, and normalizes
+  // the available font set to be consistent with the spoofed platform.
+  try {
+    (function() {
+      var _plat = PROFILE.platform || 'Win32';
+      // Compact platform-specific font pools (representative subset)
+      var _pools = {
+        'Win32': ['Arial','Arial Black','Bahnschrift','Calibri','Cambria','Comic Sans MS',
+          'Consolas','Courier New','Franklin Gothic Medium','Gabriola','Georgia','Impact',
+          'Lucida Console','Lucida Sans Unicode','Malgun Gothic','Microsoft Sans Serif',
+          'Palatino Linotype','Segoe UI','Segoe UI Emoji','Segoe UI Symbol','SimHei',
+          'SimSun','Tahoma','Times New Roman','Trebuchet MS','Verdana','Webdings',
+          'Wingdings','Yu Gothic','MingLiU','MS Gothic'],
+        'MacIntel': ['Arial','Arial Black','Arial Narrow','Avenir','Avenir Next','Baskerville',
+          'Big Caslon','Cochin','Copperplate','Courier New','Didot','Futura','Georgia',
+          'Gill Sans','Helvetica','Helvetica Neue','Hiragino Sans','Hoefler Text',
+          'Impact','Lucida Grande','Menlo','Monaco','Optima','Palatino','Papyrus',
+          'PingFang SC','PingFang TC','SF Pro','Songti SC','Times New Roman',
+          'Trebuchet MS','Verdana','Zapfino'],
+        'Linux x86_64': ['Arial','Cantarell','Courier New','DejaVu Sans','DejaVu Sans Mono',
+          'DejaVu Serif','Droid Sans','Droid Sans Mono','Droid Serif','FreeMono',
+          'FreeSans','FreeSerif','Georgia','Liberation Mono','Liberation Sans',
+          'Liberation Serif','Noto Sans','Noto Sans CJK','Noto Serif','Open Sans',
+          'PT Sans','PT Serif','Times New Roman','Ubuntu','Ubuntu Mono','Verdana',
+          'WenQuanYi Micro Hei'],
+      };
+      var _pool = _pools[_plat] || _pools['Win32'];
+      // Select deterministic subset using canvas PRNG seed
+      var _fntSeed = Math.floor(_fakeDeviceSeed * 19.23);
+      var _selectedFonts = [];
+      for (var _fni = 0; _fni < _pool.length; _fni++) {
+        _fntSeed = (_fntSeed * 1664525 + 1013904223) | 0;
+        if ((_fntSeed >>> 0) % 3 !== 0) { // ~67% inclusion rate
+          _selectedFonts.push(_pool[_fni]);
+        }
+      }
+      _selectedFonts.sort();
+      var _genericFams = ['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy'];
+      // Patch FontFaceSet.prototype.forEach for iframe/new instance coverage
+      if (typeof FontFaceSet !== 'undefined') {
+        var _origFFSForEach = FontFaceSet.prototype.forEach;
+        FontFaceSet.prototype.forEach = function(callback, thisArg) {
+          var _filtered = [];
+          _origFFSForEach.call(this, function(font) {
+            if (_genericFams.indexOf(font.family) >= 0 ||
+                _selectedFonts.indexOf(font.family) >= 0 ||
+                font.status === 'loaded') {
+              _filtered.push(font);
+            }
+          });
+          for (var _fei = 0; _fei < _filtered.length; _fei++) {
+            callback.call(thisArg, _filtered[_fei], _fei, _filtered);
+          }
+        };
+        // Override FontFaceSet.prototype.check() for prototype-level coverage
+        if (FontFaceSet.prototype.check) {
+          var _origProtoCheck = FontFaceSet.prototype.check;
+          FontFaceSet.prototype.check = function(font, text) {
+            try {
+              var _families = font.split(',');
+              for (var _ci = 0; _ci < _families.length; _ci++) {
+                var _fam = _families[_ci].replace(/["']/g, '').trim();
+                if (_fam && _genericFams.indexOf(_fam) < 0) {
+                  // Non-generic: be optimistic — real browsers accept any @font-face
+                  return true;
+                }
+              }
+              return _origProtoCheck.call(this, font, text);
+            } catch(_fce) {}
+            return _origProtoCheck.call(this, font, text);
+          };
+        }
+      }
+    })();
+  } catch(_fontNormErr) {}
+
+  // ==================== Section 103: Battery API Normalization ====================
+  // The Battery API reveals device type (mobile vs desktop) and charging state.
+  // We override navigator.getBattery() to return consistent values matching the UA.
+  try {
+    if (navigator.getBattery) {
+      var _isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(PROFILE.userAgent || '');
+      var _fakeBattery = {
+        charging: !_isMobileUA,     // Desktop: always charging; Mobile: false
+        chargingTime: 0,             // 0 = fully charged
+        // Mobile: 2-5h discharge; Desktop: Infinity (plugged in)
+        dischargingTime: _isMobileUA ? 7200 + Math.floor(_seededRandom(103.1) * 10800) : Infinity,
+        // Mobile: 60-100%; Desktop: always 100%
+        level: _isMobileUA ? 0.6 + _seededRandom(103.2) * 0.4 : 1.0,
+        addEventListener: function() {},
+        removeEventListener: function() {},
+        dispatchEvent: function() { return false; },
+        onchargingchange: null,
+        onchargingtimechange: null,
+        ondischargingtimechange: null,
+        onlevelchange: null,
+      };
+      navigator.getBattery = function() {
+        return Promise.resolve(_fakeBattery);
+      };
+    }
+  } catch(_batErr) {}
+
 })();
 `;
 
   _stealthScriptCache.set(key, { script: result, ts: Date.now() });
+
+  // Proactive eviction when cache grows too large
+  if (_stealthScriptCache.size > 400) {
+    const now = Date.now();
+    for (const [k, entry] of _stealthScriptCache) {
+      if (now - entry.ts > STEALTH_SCRIPT_CACHE_TTL) {
+        _stealthScriptCache.delete(k);
+      }
+    }
+  }
+
   return result;
 }
 
@@ -3129,15 +3316,9 @@ export function getProfileForDomain(domain: string): FingerprintProfile {
 
   // Evict oldest entries if cache is full
   if (profileCache.size >= CACHE_MAX_SIZE) {
-    let oldestKey = '';
-    let oldestTime = Infinity;
-    for (const [key, entry] of profileCache) {
-      if (entry.createdAt < oldestTime) {
-        oldestTime = entry.createdAt;
-        oldestKey = key;
-      }
-    }
-    if (oldestKey) profileCache.delete(oldestKey);
+    // O(1) eviction using Map insertion order (oldest = first key)
+    const oldestKey = profileCache.keys().next().value;
+    if (oldestKey !== undefined) profileCache.delete(oldestKey);
   }
 
   const profile = generateFingerprintProfile(domain);
