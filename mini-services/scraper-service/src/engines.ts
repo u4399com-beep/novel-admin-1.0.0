@@ -948,20 +948,20 @@ class PlaywrightEngine implements ScrapingEngine {
     // Anti-fingerprint timing jitter (±50ms, always applied)
     await applyTimingJitter();
 
-    // Browser behavior: throttle if visiting same domain too frequently
-    if (pwDomain) {
-      const throttleCheck = browserBehavior.shouldThrottle(pwDomain);
-      if (throttleCheck.throttled) {
-        await new Promise(r => setTimeout(r, throttleCheck.waitMs));
-      }
-      browserBehavior.recordRequest(pwDomain);
-    }
-
     return retryWithBackoff(
       async () => {
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
         if (pwDomain) {
           await waitForRateLimit(pwDomain, options?.signal);
+        }
+
+        // Browser behavior: throttle if visiting same domain too frequently
+        if (pwDomain) {
+          const throttleCheck = browserBehavior.shouldThrottle(pwDomain);
+          if (throttleCheck.throttled) {
+            await new Promise(r => setTimeout(r, throttleCheck.waitMs));
+          }
+          browserBehavior.recordRequest(pwDomain);
         }
 
         const browser = await getPlaywrightBrowser();
@@ -1045,7 +1045,14 @@ class PlaywrightEngine implements ScrapingEngine {
               if (ENABLE_SCRIPT_CONTENT_ANALYSIS && resourceType === 'script') {
                 try {
                   const resp = await route.fetch();
-                  const body = await resp.text();
+                  let body;
+                  try {
+                    body = await resp.text();
+                  } catch {
+                    // Fetch succeeded but reading body failed — abort (request already made)
+                    try { await route.abort(); } catch { /* already handled */ }
+                    return;
+                  }
                   if (hasBotDetectionBehavioralPatterns(body)) {
                     if (process.env.DEBUG === 'true') {
                       console.log(`[Playwright] Blocked bot-detection script (behavioral): ${routeUrl.slice(0, 120)}`);
@@ -1056,6 +1063,7 @@ class PlaywrightEngine implements ScrapingEngine {
                   await route.fulfill({ response: resp });
                   return;
                 } catch {
+                  // route.fetch() itself failed — continue with original request
                   await route.continue();
                   return;
                 }
@@ -1335,6 +1343,9 @@ class FirecrawlEngine implements ScrapingEngine {
     }
 
     const config = getFirecrawlConfig();
+    if (!config.apiUrl.startsWith('http://') && !config.apiUrl.startsWith('https://')) {
+      throw new Error(`Invalid Firecrawl API URL (must start with http:// or https://): ${config.apiUrl}`);
+    }
     const timeout = Math.max(5000, Math.min(options?.timeout ?? config.timeout ?? 60000, 300000));
 
     let fcDomain = '';
@@ -2062,9 +2073,13 @@ function shouldBlockResource(resourceType: string, requestUrl: string, targetDom
   if (['script', 'xhr', 'fetch', 'eventsource'].includes(resourceType)) {
     try {
       const reqHost = new URL(requestUrl).hostname;
-      // Block if the request host doesn't match the target domain
-      // Use endsWith to handle subdomain matching (e.g., cdn.example.com for example.com)
-      if (reqHost !== targetDomain && !reqHost.endsWith('.' + targetDomain)) {
+      // Compare root domains (eTLD+1) to allow cross-subdomain requests
+      // e.g. api.example.com should be allowed when on www.example.com
+      const rootDomain = (host: string) => {
+        const parts = host.split('.');
+        return parts.length >= 2 ? parts.slice(-2).join('.') : host;
+      };
+      if (rootDomain(reqHost) !== rootDomain(targetDomain)) {
         return true;
       }
     } catch {
@@ -2667,6 +2682,10 @@ export async function fetchWithInfiniteScroll(
       } catch { /* invalid proxy URL */ }
     }
 
+    // KNOWN LIMITATION: This launches a separate browser instance with weaker stealth than
+    // the dedicated Obscura/Playwright engines. Resource blocking uses shouldBlockResource()
+    // but doesn't replicate the full engine-level route handling (e.g. script content analysis).
+    // TODO: refactor to reuse Obscura or Playwright engine's browser pool for infinite scroll.
     browser = await pw.chromium.launch(launchOptions);
     const profile = domain ? getProfileForDomain(domain) : null;
     context = await browser.newContext({

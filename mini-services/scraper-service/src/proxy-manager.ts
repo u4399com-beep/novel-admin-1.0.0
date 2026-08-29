@@ -23,6 +23,13 @@ function normalizeDomain(d: string): string {
 
 // ==================== Types ====================
 
+export interface ProxyLatencyStats {
+  avgResponseTime: number;  // rolling average
+  sampleCount: number;
+  lastUsedAt: number;
+  domainLatency: Map<string, number>; // per-domain avg
+}
+
 export interface ProxyEntry {
   url: string;
   protocol: 'http' | 'https' | 'socks4' | 'socks5';
@@ -38,6 +45,7 @@ export interface ProxyEntry {
   consecutiveFails: number;
   coolingUntil?: number;     // timestamp when cooling ends
   disabled?: boolean;
+  latencyStats: ProxyLatencyStats; // per-proxy + per-domain latency tracking
 }
 
 interface PoolStats {
@@ -345,6 +353,10 @@ class ProxyManager {
   private verificationTimer: ReturnType<typeof setInterval> | null = null;
   /** Configurable verify URL (env SCRAPER_PROXY_VERIFY_URL) */
   private readonly verifyUrl: string;
+  /** Per-domain failure tracking: domain -> Map<proxyCleanUrl, timestamp> for 5-min window */
+  private domainFailures = new Map<string, Map<string, number>>();
+  /** In-flight verification deduplication: proxyCleanUrl -> pending Promise */
+  private pendingVerifications = new Map<string, Promise<ProxyVerifyResult>>();
 
   private constructor(rotationInterval?: number, rotationTopN?: number) {
     this.rotationInterval = rotationInterval || 20;
@@ -382,6 +394,12 @@ class ProxyManager {
       lastCheck: 0,
       blockedDomains: new Set(),
       consecutiveFails: 0,
+      latencyStats: {
+        avgResponseTime: 0,
+        sampleCount: 0,
+        lastUsedAt: 0,
+        domainLatency: new Map(),
+      },
     };
 
     this.pool.set(parsed.cleanUrl, entry);
@@ -419,12 +437,20 @@ class ProxyManager {
 
   /**
    * Get the best available proxy for a given domain.
-   * Uses weighted random selection based on healthScore,
-   * prefers low avgResponseTime, rotates to avoid reuse.
+   * Uses latency-aware scheduling: sorts by domain-specific latency (or overall latency),
+   * applies 10-20% jitter to avoid thundering herd, prefers proxies with recent success
+   * for the same domain, and avoids proxies that failed for the domain in the last 5 minutes.
    */
   getProxy(domain?: string): ProxyEntry | null {
     const now = Date.now();
+    const normalisedDomain = domain ? normalizeDomain(domain) : undefined;
+    const FIVE_MINUTES = 5 * 60 * 1000;
+
+    // Get domain failure map for the 5-min exclusion window
+    const domainFailMap = normalisedDomain ? this.domainFailures.get(normalisedDomain) : undefined;
+
     const candidates: ProxyEntry[] = [];
+    const failedCandidates: ProxyEntry[] = [];
 
     for (const entry of this.pool.values()) {
       // Skip disabled proxies
@@ -434,51 +460,148 @@ class ProxyManager {
       if (entry.coolingUntil && now < entry.coolingUntil) continue;
 
       // Skip proxies blocked for this domain
-      if (domain && entry.blockedDomains.has(normalizeDomain(domain))) continue;
+      if (normalisedDomain && entry.blockedDomains.has(normalisedDomain)) continue;
+
+      // Skip proxies that failed for this domain in the last 5 minutes
+      const entryCleanUrl = parseProxyUrl(entry.url)?.cleanUrl ?? entry.url;
+      if (domainFailMap) {
+        const failTs = domainFailMap.get(entryCleanUrl);
+        if (failTs && (now - failTs) < FIVE_MINUTES) {
+          failedCandidates.push(entry);
+          continue;
+        }
+      }
 
       candidates.push(entry);
     }
 
-    if (candidates.length === 0) return null;
+    // If no candidates without domain failures, try the failed ones (better than nothing)
+    const pool = candidates.length > 0 ? candidates : failedCandidates;
+    if (pool.length === 0) return null;
 
-    // If only one candidate, use it (unless it was the last used)
-    if (candidates.length === 1) {
-      const candidate = candidates[0];
-      if (candidate.url === this.lastUsedUrl && candidates.length === 1) {
-        // Only proxy available was last used — use it anyway
-        candidate.lastUsed = now;
-        this.lastUsedUrl = candidate.url;
-        return candidate;
-      }
+    // If only one candidate, use it
+    if (pool.length === 1) {
+      const candidate = pool[0];
+      candidate.lastUsed = now;
+      candidate.latencyStats.lastUsedAt = now;
+      this.lastUsedUrl = candidate.url;
+      return candidate;
     }
 
-    // Weighted selection: exclude last used proxy
-    const selectable = candidates.filter((c) => c.url !== this.lastUsedUrl);
-    const pool = selectable.length > 0 ? selectable : candidates;
+    // Sort by latency for the target domain (lowest first)
+    // Use domain-specific latency if available, otherwise fall back to overall latency
+    pool.sort((a, b) => {
+      const aLat = normalisedDomain
+        ? (a.latencyStats.domainLatency.get(normalisedDomain) ?? a.latencyStats.avgResponseTime)
+        : a.latencyStats.avgResponseTime;
+      const bLat = normalisedDomain
+        ? (b.latencyStats.domainLatency.get(normalisedDomain) ?? b.latencyStats.avgResponseTime)
+        : b.latencyStats.avgResponseTime;
+      // Proxies with no latency data (0) are deprioritized slightly (treat as 5000ms)
+      const aEffective = aLat > 0 ? aLat : 5000;
+      const bEffective = bLat > 0 ? bLat : 5000;
+      return aEffective - bEffective;
+    });
 
-    // Calculate weights: healthScore * (1 / (1 + avgResponseTime/1000))
-    // Higher health score and lower response time = higher weight
-    const weights = pool.map((entry) => {
+    // Exclude the last used proxy if possible
+    let selectable = pool.filter((c) => c.url !== this.lastUsedUrl);
+    if (selectable.length === 0) selectable = pool;
+
+    // Apply 10-20% jitter to selection to avoid thundering herd
+    // Pick from the top candidates with jittered priority
+    const topCount = Math.max(1, Math.ceil(selectable.length * 0.3)); // top 30%
+    const topCandidates = selectable.slice(0, topCount);
+
+    // Weighted selection within top candidates, with 10-20% jitter on effective latency
+    const weights = topCandidates.map((entry) => {
+      const baseLat = normalisedDomain
+        ? (entry.latencyStats.domainLatency.get(normalisedDomain) ?? entry.latencyStats.avgResponseTime)
+        : entry.latencyStats.avgResponseTime;
+      const effectiveLat = baseLat > 0 ? baseLat : 5000;
+      // Apply 10-20% random jitter
+      const jitter = 1 + (0.10 + Math.random() * 0.10); // 1.10 to 1.20
+      const jitteredLat = effectiveLat * jitter;
       const healthWeight = Math.max(1, entry.healthScore);
-      const speedWeight = 1 / (1 + entry.avgResponseTime / 1000);
+      const speedWeight = 1 / (1 + jitteredLat / 1000);
       return healthWeight * speedWeight;
     });
 
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
     let random = Math.random() * totalWeight;
 
-    let selected: ProxyEntry = pool[0];
-    for (let i = 0; i < pool.length; i++) {
+    let selected: ProxyEntry = topCandidates[0];
+    for (let i = 0; i < topCandidates.length; i++) {
       random -= weights[i];
       if (random <= 0) {
-        selected = pool[i];
+        selected = topCandidates[i];
         break;
       }
     }
 
     selected.lastUsed = now;
+    selected.latencyStats.lastUsedAt = now;
     this.lastUsedUrl = selected.url;
     return selected;
+  }
+
+  /**
+   * Get the proxy with the lowest latency.
+   * If a domain is provided, uses domain-specific latency; otherwise uses overall latency.
+   * Skips disabled, cooling, and domain-blocked proxies.
+   *
+   * @param domain - Optional target domain for domain-specific latency lookup
+   * @returns The fastest ProxyEntry, or null if no proxies available
+   */
+  getFastestProxy(domain?: string): ProxyEntry | null {
+    const now = Date.now();
+    const normalisedDomain = domain ? normalizeDomain(domain) : undefined;
+    const FIVE_MINUTES = 5 * 60 * 1000;
+
+    const domainFailMap = normalisedDomain ? this.domainFailures.get(normalisedDomain) : undefined;
+
+    let best: ProxyEntry | null = null;
+    let bestLat = Infinity;
+
+    for (const entry of this.pool.values()) {
+      if (entry.disabled) continue;
+      if (entry.coolingUntil && now < entry.coolingUntil) continue;
+      if (normalisedDomain && entry.blockedDomains.has(normalisedDomain)) continue;
+
+      // Skip proxies that failed for this domain in the last 5 minutes
+      const entryCleanUrl = parseProxyUrl(entry.url)?.cleanUrl ?? entry.url;
+      if (domainFailMap) {
+        const failTs = domainFailMap.get(entryCleanUrl);
+        if (failTs && (now - failTs) < FIVE_MINUTES) continue;
+      }
+
+      const lat = normalisedDomain
+        ? (entry.latencyStats.domainLatency.get(normalisedDomain) ?? entry.latencyStats.avgResponseTime)
+        : entry.latencyStats.avgResponseTime;
+
+      if (lat > 0 && lat < bestLat) {
+        bestLat = lat;
+        best = entry;
+      }
+    }
+
+    // If no proxy has latency data, return the first active proxy
+    if (!best) {
+      for (const entry of this.pool.values()) {
+        if (entry.disabled) continue;
+        if (entry.coolingUntil && now < entry.coolingUntil) continue;
+        if (normalisedDomain && entry.blockedDomains.has(normalisedDomain)) continue;
+        best = entry;
+        break;
+      }
+    }
+
+    if (best) {
+      best.lastUsed = now;
+      best.latencyStats.lastUsedAt = now;
+      this.lastUsedUrl = best.url;
+    }
+
+    return best;
   }
 
   /** Record a successful request through a proxy */
@@ -498,7 +621,7 @@ class ProxyManager {
       (f) => f.proxyUrl !== parsed.cleanUrl || (domain && f.domain && f.domain !== normalizeDomain(domain))
     );
 
-    // Update rolling average response time
+    // Update rolling average response time (legacy field)
     if (entry.avgResponseTime === 0) {
       entry.avgResponseTime = responseTime;
     } else {
@@ -508,13 +631,47 @@ class ProxyManager {
       );
     }
 
+    // Update latencyStats: rolling average response time
+    const stats = entry.latencyStats;
+    if (stats.sampleCount === 0) {
+      stats.avgResponseTime = responseTime;
+    } else {
+      stats.avgResponseTime = Math.round(
+        stats.avgResponseTime * 0.7 + responseTime * 0.3
+      );
+    }
+    stats.sampleCount++;
+    stats.lastUsedAt = Date.now();
+
+    // Update domain-specific latency
+    if (domain) {
+      const normalisedDomain = normalizeDomain(domain);
+      const existingDomainLat = stats.domainLatency.get(normalisedDomain);
+      if (existingDomainLat === undefined) {
+        stats.domainLatency.set(normalisedDomain, responseTime);
+      } else {
+        stats.domainLatency.set(normalisedDomain,
+          Math.round(existingDomainLat * 0.7 + responseTime * 0.3)
+        );
+      }
+
+      // Clear domain failure for this proxy on success
+      const domainFailMap = this.domainFailures.get(normalisedDomain);
+      if (domainFailMap) {
+        domainFailMap.delete(parsed.cleanUrl);
+        if (domainFailMap.size === 0) {
+          this.domainFailures.delete(normalisedDomain);
+        }
+      }
+    }
+
     // Increase health score (cap at 100)
     const scoreGain = Math.min(5, Math.max(1, Math.floor(10 - responseTime / 1000)));
     entry.healthScore = Math.min(100, entry.healthScore + scoreGain);
   }
 
   /** Record a failed request through a proxy */
-  recordFailure(proxyUrl: string, error?: string): void {
+  recordFailure(proxyUrl: string, error?: string, domain?: string): void {
     const parsed = parseProxyUrl(proxyUrl);
     if (!parsed) return;
 
@@ -543,6 +700,17 @@ class ProxyManager {
           }
         }
       }
+    }
+
+    // Track domain-specific failure for latency-aware scheduling (5-min window)
+    const failDomain = domain ? normalizeDomain(domain) : extractedDomain;
+    if (failDomain) {
+      let domainFailMap = this.domainFailures.get(failDomain);
+      if (!domainFailMap) {
+        domainFailMap = new Map();
+        this.domainFailures.set(failDomain, domainFailMap);
+      }
+      domainFailMap.set(parsed.cleanUrl, Date.now());
     }
 
     // Track recent failure for auto-rotate (include domain when available)
@@ -666,7 +834,7 @@ class ProxyManager {
     if (!entry) return { healthy: false, error: 'Proxy not in pool' };
 
     const startTime = Date.now();
-    const testUrl = 'http://httpbin.org/ip'; // Known reliable endpoint
+    const testUrl = this.verifyUrl; // Use configurable verify URL (env SCRAPER_PROXY_VERIFY_URL)
 
     // --- Primary: test THROUGH the proxy using an undici dispatcher ---
     const dispatcher = getProxyDispatcher(entry.url);
@@ -791,6 +959,7 @@ class ProxyManager {
     this.lastUsedUrl = null;
     this.domainRotationCount.clear();
     this.domainRotationIndex.clear();
+    this.domainFailures.clear();
     clearDispatcherCache();
     return count;
   }
@@ -808,6 +977,12 @@ class ProxyManager {
     entry.coolingUntil = undefined;
     entry.disabled = false;
     entry.blockedDomains.clear();
+    entry.latencyStats = {
+      avgResponseTime: 0,
+      sampleCount: 0,
+      lastUsedAt: 0,
+      domainLatency: new Map(),
+    };
 
     // Invalidate cached dispatcher so a fresh one is created
     invalidateDispatcher(entry.url);
@@ -823,7 +998,14 @@ class ProxyManager {
       entry.coolingUntil = undefined;
       entry.disabled = false;
       entry.blockedDomains.clear();
+      entry.latencyStats = {
+        avgResponseTime: 0,
+        sampleCount: 0,
+        lastUsedAt: 0,
+        domainLatency: new Map(),
+      };
     }
+    this.domainFailures.clear();
     clearDispatcherCache();
   }
 
@@ -984,6 +1166,16 @@ class ProxyManager {
     if (entry.disabled) return null;
     if (entry.coolingUntil && now < entry.coolingUntil) return null;
 
+    // Skip if this proxy failed for this domain in the last 5 minutes
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    const domainFailMap = this.domainFailures.get(normalisedDomain);
+    if (domainFailMap) {
+      const failTs = domainFailMap.get(cleanUrl);
+      if (failTs && (now - failTs) < FIVE_MINUTES) {
+        return null; // Temporarily skip this binding
+      }
+    }
+
     return entry;
   }
 
@@ -993,11 +1185,12 @@ class ProxyManager {
    * Get a proxy for a domain with automatic rotation among the top N proxies.
    *
    * Unlike `getDomainProxy()` which always returns the same proxy, this method
-   * rotates between the top N healthiest proxies every M successful requests.
+   * rotates between the top N lowest-latency proxies every M successful requests.
    * This makes the scraper appear to come from different IPs over time.
    *
    * Rotation logic:
-   * - Sorts all active (non-disabled, non-cooling) proxies by healthScore descending
+   * - Sorts all active (non-disabled, non-cooling) proxies by domain-specific latency
+   *   (lowest first), using healthScore as tiebreaker
    * - Takes the top N proxies
    * - Tracks `rotationCount` per domain
    * - After every `rotationInterval` (default 20) successful requests, advances to
@@ -1010,16 +1203,34 @@ class ProxyManager {
   getDomainProxyWithRotation(domain: string): ProxyEntry | null {
     const normalisedDomain = normalizeDomain(domain);
     const now = Date.now();
+    const FIVE_MINUTES = 5 * 60 * 1000;
 
-    // Collect active candidates sorted by healthScore (descending)
+    // Collect active candidates, excluding domain-failed proxies
+    // Sort by domain-specific latency (lowest first), then by healthScore as tiebreaker
+    const domainFailMap = this.domainFailures.get(normalisedDomain);
     const candidates = Array.from(this.pool.values())
       .filter(entry => {
         if (entry.disabled) return false;
         if (entry.coolingUntil && now < entry.coolingUntil) return false;
         if (entry.blockedDomains.has(normalisedDomain)) return false;
+        // Skip proxies that failed for this domain in the last 5 minutes
+        const entryCleanUrl = parseProxyUrl(entry.url)?.cleanUrl ?? entry.url;
+        if (domainFailMap) {
+          const failTs = domainFailMap.get(entryCleanUrl);
+          if (failTs && (now - failTs) < FIVE_MINUTES) return false;
+        }
         return true;
       })
-      .sort((a, b) => b.healthScore - a.healthScore);
+      .sort((a, b) => {
+        // Primary sort: domain-specific latency (lowest first)
+        const aLat = a.latencyStats.domainLatency.get(normalisedDomain) ?? a.latencyStats.avgResponseTime;
+        const bLat = b.latencyStats.domainLatency.get(normalisedDomain) ?? b.latencyStats.avgResponseTime;
+        const aEffective = aLat > 0 ? aLat : 5000;
+        const bEffective = bLat > 0 ? bLat : 5000;
+        if (aEffective !== bEffective) return aEffective - bEffective;
+        // Tiebreaker: healthScore descending
+        return b.healthScore - a.healthScore;
+      });
 
     // Need at least 2 proxies for rotation to make sense
     if (candidates.length < 2) {
@@ -1029,7 +1240,7 @@ class ProxyManager {
       return this.getProxy(normalisedDomain);
     }
 
-    // Take top N proxies
+    // Take top N proxies (by latency now, not just health)
     const topN = candidates.slice(0, this.rotationTopN);
 
     // Get or initialize rotation index for this domain
@@ -1045,6 +1256,7 @@ class ProxyManager {
     }
 
     selectedProxy.lastUsed = now;
+    selectedProxy.latencyStats.lastUsedAt = now;
     this.lastUsedUrl = selectedProxy.url;
 
     return selectedProxy;
@@ -1205,44 +1417,69 @@ class ProxyManager {
 
     // Prefer candidates without recent failures
     if (candidates.length > 0) {
-      return this.selectFromCandidates(candidates);
+      return this.selectFromCandidates(candidates, domain);
     }
 
     // Fallback: use candidates with recent failures (better than nothing)
     if (candidatesWithRecentFails.length > 0) {
-      return this.selectFromCandidates(candidatesWithRecentFails);
+      return this.selectFromCandidates(candidatesWithRecentFails, domain);
     }
 
     return null;
   }
 
-  /** Internal weighted selection from a candidate list (same logic as getProxy) */
-  private selectFromCandidates(candidates: ProxyEntry[]): ProxyEntry {
+  /** Internal weighted selection from a candidate list using latency-aware scheduling. */
+  private selectFromCandidates(candidates: ProxyEntry[], domain?: string): ProxyEntry {
     const now = Date.now();
+    const normalisedDomain = domain ? normalizeDomain(domain) : undefined;
 
     // Exclude last used proxy
     const selectable = candidates.filter((c) => c.url !== this.lastUsedUrl);
     const pool = selectable.length > 0 ? selectable : candidates;
 
-    const weights = pool.map((entry) => {
+    // Sort by domain-specific latency (lowest first)
+    pool.sort((a, b) => {
+      const aLat = normalisedDomain
+        ? (a.latencyStats.domainLatency.get(normalisedDomain) ?? a.latencyStats.avgResponseTime)
+        : a.latencyStats.avgResponseTime;
+      const bLat = normalisedDomain
+        ? (b.latencyStats.domainLatency.get(normalisedDomain) ?? b.latencyStats.avgResponseTime)
+        : b.latencyStats.avgResponseTime;
+      const aEffective = aLat > 0 ? aLat : 5000;
+      const bEffective = bLat > 0 ? bLat : 5000;
+      return aEffective - bEffective;
+    });
+
+    // Weighted selection from top 30% with jitter
+    const topCount = Math.max(1, Math.ceil(pool.length * 0.3));
+    const topCandidates = pool.slice(0, topCount);
+
+    const weights = topCandidates.map((entry) => {
+      const baseLat = normalisedDomain
+        ? (entry.latencyStats.domainLatency.get(normalisedDomain) ?? entry.latencyStats.avgResponseTime)
+        : entry.latencyStats.avgResponseTime;
+      const effectiveLat = baseLat > 0 ? baseLat : 5000;
+      const jitter = 1 + (0.10 + Math.random() * 0.10);
+      const jitteredLat = effectiveLat * jitter;
       const healthWeight = Math.max(1, entry.healthScore);
-      const speedWeight = 1 / (1 + entry.avgResponseTime / 1000);
+      const speedWeight = 1 / (1 + jitteredLat / 1000);
       return healthWeight * speedWeight;
     });
 
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
     let random = Math.random() * totalWeight;
 
-    let selected: ProxyEntry = pool[0];
-    for (let i = 0; i < pool.length; i++) {
+    let selected: ProxyEntry = topCandidates[0];
+    for (let i = 0; i < topCandidates.length; i++) {
       random -= weights[i];
       if (random <= 0) {
-        selected = pool[i];
+        selected = topCandidates[i];
         break;
       }
     }
 
     selected.lastUsed = now;
+    selected.latencyStats.lastUsedAt = now;
     this.lastUsedUrl = selected.url;
     return selected;
   }
@@ -1322,16 +1559,38 @@ class ProxyManager {
    * @param proxyUrl - The proxy URL to verify
    * @returns ProxyVerifyResult with working status, timing, and IP info
    */
-  async verifyProxy(proxyUrl: string): Promise<ProxyVerifyResult> {
+  async verifyProxy(proxyUrl: string, overrides?: { testUrl?: string; timeoutMs?: number }): Promise<ProxyVerifyResult> {
     const parsed = parseProxyUrl(proxyUrl);
     if (!parsed) {
       return { working: false, responseTime: 0, error: 'Invalid proxy URL' };
     }
 
-    if (!isSafeUrl(this.verifyUrl)) {
+    const effectiveTestUrl = overrides?.testUrl || this.verifyUrl;
+    if (!isSafeUrl(effectiveTestUrl)) {
       return { working: false, responseTime: 0, error: 'Verify URL failed SSRF validation' };
     }
 
+    // Deduplicate concurrent verifications for the same proxy (default options only)
+    const dedupeKey = overrides ? undefined : parsed.cleanUrl;
+    if (dedupeKey) {
+      const pending = this.pendingVerifications.get(dedupeKey);
+      if (pending) return pending;
+    }
+
+    const verifyPromise = this._doVerifyProxy(parsed, effectiveTestUrl, overrides?.timeoutMs);
+    if (dedupeKey) {
+      this.pendingVerifications.set(dedupeKey, verifyPromise);
+      verifyPromise.finally(() => this.pendingVerifications.delete(dedupeKey));
+    }
+    return verifyPromise;
+  }
+
+  /** Internal verification logic — called by verifyProxy after dedup check */
+  private async _doVerifyProxy(
+    parsed: ReturnType<typeof parseProxyUrl> & NonNullable<ReturnType<typeof parseProxyUrl>>,
+    testUrl: string,
+    timeoutMsOverride?: number,
+  ): Promise<ProxyVerifyResult> {
     const entry = this.pool.get(parsed.cleanUrl);
     if (!entry) {
       return { working: false, responseTime: 0, error: 'Proxy not in pool' };
@@ -1344,12 +1603,12 @@ class ProxyManager {
 
     const startTime = Date.now();
     const isSocks = entry.protocol === 'socks4' || entry.protocol === 'socks5';
-    const timeoutMs = isSocks ? 20000 : 15000;
+    const timeoutMs = timeoutMsOverride || (isSocks ? 20000 : 15000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const res = await undiciFetch(this.verifyUrl, {
+      const res = await undiciFetch(testUrl, {
         dispatcher,
         signal: controller.signal,
         redirect: 'manual',
@@ -1370,7 +1629,7 @@ class ProxyManager {
       entry.lastCheck = Date.now();
 
       if (!res.ok) {
-        this.recordFailure(proxyUrl, `Verify returned HTTP ${res.status}`);
+        this.recordFailure(entry.url, `Verify returned HTTP ${res.status}`);
         return {
           working: false,
           responseTime,
@@ -1401,7 +1660,7 @@ class ProxyManager {
       }
 
       // Success — update health
-      this.recordSuccess(proxyUrl, responseTime);
+      this.recordSuccess(entry.url, responseTime);
 
       return {
         working: true,
@@ -1416,7 +1675,7 @@ class ProxyManager {
       const errMsg = err instanceof Error ? err.message : String(err);
 
       entry.lastCheck = Date.now();
-      this.recordFailure(proxyUrl, errMsg);
+      this.recordFailure(entry.url, errMsg);
 
       return {
         working: false,
@@ -1446,6 +1705,8 @@ class ProxyManager {
     const {
       maxConcurrent = 5,
       autoAdd = true,
+      testUrl,
+      timeoutMs,
     } = options ?? {};
 
     const results: ProxyBatchTestResult[] = [];
@@ -1479,7 +1740,7 @@ class ProxyManager {
           // Use verifyProxy if the proxy is in the pool (it updates health scores)
           const entry = this.pool.get(parsed.cleanUrl);
           if (entry) {
-            const verifyResult = await this.verifyProxy(url);
+            const verifyResult = await this.verifyProxy(url, { testUrl, timeoutMs });
             return {
               url,
               protocol: entry.protocol,

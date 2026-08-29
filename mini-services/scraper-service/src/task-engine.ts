@@ -110,17 +110,33 @@ function extractDomain(url: string): string {
 }
 
 /** Get delay: adaptive if available, fallback to randomDelay */
-async function getAdaptiveOrRandomDelay(url: string, min?: number, max?: number): Promise<void> {
+async function getAdaptiveOrRandomDelay(url: string, min?: number, max?: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+  let ms: number;
   if (min !== undefined && max !== undefined && min > 0) {
-    // Use adaptive delay, but respect configured min and max
     const domain = extractDomain(url);
     const delay = await adaptiveDelay.getDelay(domain);
-    // Clamp to [min, max] range
-    const finalDelay = Math.min(Math.max(delay, min), max);
-    await new Promise<void>(resolve => setTimeout(resolve, finalDelay));
+    ms = Math.min(Math.max(delay, min), max);
   } else {
-    await randomDelay(min || 0, max || 0);
+    const safeMin = Math.max(0, min || 0);
+    const safeMax = Math.max(safeMin, max || 0);
+    ms = safeMin + Math.random() * (safeMax - safeMin);
   }
+
+  if (ms <= 0) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /** Record response outcome for adaptive delay tracking */
@@ -508,6 +524,16 @@ async function executeTaskBody(
 ): Promise<TaskResult> {
   let { listSelector, listPagination, antiCrawlConfig, cleanConfig, engineType, threadCount, isIncremental, dedupMode, abortSignal } = ctx;
 
+  // Track domains this task touches for selective cleanup (avoids wiping concurrent tasks' overrides)
+  // Declared before try so the finally block can safely iterate even if an error occurs early
+  const _touchedDomains = new Set<string>();
+  // Helper: register a domain engine override with reference counting
+  function touchDomainEngine(domain: string) {
+    if (_touchedDomains.has(domain)) return; // Already tracked — avoid ref count leak
+    _touchedDomains.add(domain);
+    _domainEngineRefCount.set(domain, (_domainEngineRefCount.get(domain) || 0) + 1);
+  }
+
   try {
 
   // 2. Scrape list page
@@ -559,13 +585,6 @@ async function executeTaskBody(
   const seenTitles = new Set<string>();
   const seenUrls = new Set<string>();
 
-  // Track domains this task touches for selective cleanup (avoids wiping concurrent tasks' overrides)
-  const _touchedDomains = new Set<string>();
-  // Helper: register a domain engine override with reference counting
-  function touchDomainEngine(domain: string) {
-    _touchedDomains.add(domain);
-    _domainEngineRefCount.set(domain, (_domainEngineRefCount.get(domain) || 0) + 1);
-  }
   let newBooksCount = new AtomicCounter();
   let skippedBooksCount = new AtomicCounter();
   let failedItemsCount = new AtomicCounter();
@@ -585,7 +604,7 @@ async function executeTaskBody(
       console.log(`[Task ${taskId}] Processing book ${index + 1}/${bookUrls.length}: ${bookUrl}`);
 
       if (antiCrawlConfig.delay) {
-        await getAdaptiveOrRandomDelay(bookUrl, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
+        await getAdaptiveOrRandomDelay(bookUrl, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1], abortSignal);
       }
 
       // Scrape book info using selected engine
@@ -875,7 +894,7 @@ async function executeTaskBody(
       }
 
       if (antiCrawlConfig.delay) {
-        await getAdaptiveOrRandomDelay(chapterListUrl, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
+        await getAdaptiveOrRandomDelay(chapterListUrl, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1], abortSignal);
       }
 
       // Scrape chapter list using selected engine
@@ -982,7 +1001,7 @@ async function executeTaskBody(
           }
 
           if (antiCrawlConfig.delay) {
-            await getAdaptiveOrRandomDelay(chapter.url, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1]);
+            await getAdaptiveOrRandomDelay(chapter.url, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1], abortSignal);
           }
 
           // Scrape chapter content with engine fallback chain retry
@@ -1028,6 +1047,12 @@ async function executeTaskBody(
             } catch (contentErr) {
               const errReason = contentErr instanceof Error ? contentErr.message : String(contentErr);
               chainFailures.push({ engine: tryEngine, reason: errReason.slice(0, 120) });
+              // CAPTCHA errors should not trigger engine fallback — stop immediately
+              if (errReason.includes('CAPTCHA')) {
+                (contentErr as Error & { doNotRetry?: boolean }).doNotRetry = true;
+                console.warn(`[EngineChain] CAPTCHA detected from ${tryEngine} for ${chapter.url} — stopping chain`);
+                throw contentErr;
+              }
               // Stop chain on doNotRetry errors
               if (contentErr instanceof Error && (contentErr as Record<string, unknown>).doNotRetry) {
                 console.warn(`[EngineChain] Engine ${tryEngine} returned doNotRetry for ${chapter.url}: ${errReason.slice(0, 120)} — stopping chain`);

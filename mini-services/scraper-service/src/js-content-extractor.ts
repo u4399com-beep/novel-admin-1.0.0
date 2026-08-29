@@ -113,7 +113,7 @@ const JS_PATTERNS: Array<{
   // Matches: innerHTML = JSON.parse('...'), var x = JSON.parse('...')
   {
     name: 'JSON.parse',
-    regex: /(?:var\s+\w+\s*=|innerHTML\s*=|textContent\s*=)\s*JSON\.parse\s*\(\s*['"]([\s\S]{50,}?)['"]\s*\)/g,
+    regex: /(?:var\s+\w+\s*=|innerHTML\s*=|textContent\s*=)\s*JSON\.parse\s*\(\s*['"]([\s\S]{50,100000}?)['"]\s*\)/g,
     contentGroup: 1,
     scriptOnly: true,
     transform: (raw: string) => {
@@ -178,7 +178,7 @@ const JS_PATTERNS: Array<{
   // Matches arrays assigned to window/global variables, common in newer novel sites
   {
     name: 'windowArrayContent',
-    regex: /(?:window\.)?(?:chapterContent|content|novelContent|bookContent|txtContent|articleContent)\s*=\s*\[([\s\S]{100,}?)\]\s*;/g,
+    regex: /(?:window\.)?(?:chapterContent|content|novelContent|bookContent|txtContent|articleContent)\s*=\s*\[([\s\S]{100,200000}?)\]\s*;/g,
     contentGroup: 1,
     scriptOnly: true,
     transform: (raw: string) => {
@@ -570,14 +570,8 @@ export function swapLazyLoadedContent(html: string): string {
 
       if (hasRealSrc) return fullMatch; // Already has a real src, don't overwrite
 
-      // Replace or add src with the lazy URL
-      if (srcMatch) {
-        // Has src but it's empty/placeholder — replace the src value
-        return before + `src="${lazyUrl}"` + after;
-      } else {
-        // No src at all — inject src before the lazy attribute
-        return ` src="${lazyUrl}" ` + fullMatch;
-      }
+      // Replace the lazy attribute with src inside the tag (both 'has src placeholder' and 'no src' cases)
+      return before + `src="${lazyUrl}"` + after;
     });
   }
   return html;

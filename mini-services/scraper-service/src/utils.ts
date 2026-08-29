@@ -13,6 +13,15 @@ import { getDiversifiedHeaders } from "./ip-fingerprint";
 import { getForwardedFor } from "./doh-simulation";
 import { getAcceptEncoding } from "./http2-decoy";
 
+// ==================== Debug Helper ====================
+
+const _isDebugEnabled = process.env.DEBUG === 'true';
+
+/** Log only when DEBUG=true env var is set. Use instead of console.log for debug messages. */
+export function debugLog(...args: unknown[]): void {
+  if (_isDebugEnabled) console.debug('[DEBUG]', ...args);
+}
+
 // ==================== User-Agent Rotation ====================
 
 /**
@@ -862,7 +871,7 @@ export async function retryWithBackoff<T>(
       }
 
       const errMsg = lastError.message || '(no message)';
-      console.log(`  [Retry] Attempt ${attempt + 1}/${opts.maxRetries} failed: ${errMsg}. Retrying in ${Math.round(delay)}ms...`);
+      debugLog(`  [Retry] Attempt ${attempt + 1}/${opts.maxRetries} failed: ${errMsg}. Retrying in ${Math.round(delay)}ms...`);
       opts.onRetry?.(attempt + 1, lastError);
 
       // Abort-aware delay: if signal fires during backoff, stop waiting immediately
@@ -1301,5 +1310,12 @@ export async function followRedirects(
   }
 
   if (!response) throw new Error('No response received after redirects');
+
+  // If we exhausted the redirect budget and still got a 3xx, throw instead of returning it
+  if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error(`Maximum redirects exceeded (${maxRedirects}) — last status: ${response.status}`);
+  }
+
   return { response, finalUrl: currentUrl };
 }

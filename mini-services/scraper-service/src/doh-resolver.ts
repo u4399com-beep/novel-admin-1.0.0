@@ -41,7 +41,15 @@ interface DohCacheEntry {
 
 // ==================== Provider Config ====================
 
-const DOH_PROVIDERS = [
+/** Build a DoH query URL for a given domain and type. */
+type DohProviderBuilder = (domain: string, type: string) => string;
+
+interface DohProvider {
+  name: string;
+  buildUrl: DohProviderBuilder;
+}
+
+const DEFAULT_DOH_PROVIDERS: readonly DohProvider[] = [
   // AliDNS — China-friendly, first choice
   {
     name: 'AliDNS',
@@ -60,7 +68,30 @@ const DOH_PROVIDERS = [
     buildUrl: (domain: string, type: string) =>
       `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${type}`,
   },
-] as const;
+];
+
+/** Parse SCRAPER_DOH_PROVIDERS env var into provider list. Format: "name|url,name|url" */
+function parseDoHProvidersFromEnv(): DohProvider[] {
+  const envProviders = process.env.SCRAPER_DOH_PROVIDERS;
+  if (!envProviders) return [...DEFAULT_DOH_PROVIDERS];
+
+  const providers: DohProvider[] = [];
+  for (const entry of envProviders.split(',').map(s => s.trim()).filter(Boolean)) {
+    const sepIdx = entry.indexOf('|');
+    if (sepIdx === -1) continue;
+    const name = entry.slice(0, sepIdx).trim();
+    const baseUrl = entry.slice(sepIdx + 1).trim();
+    if (!name || !baseUrl) continue;
+    providers.push({
+      name,
+      buildUrl: (domain: string, type: string) =>
+        `${baseUrl}?name=${encodeURIComponent(domain)}&type=${type}`,
+    });
+  }
+  return providers.length > 0 ? providers : [...DEFAULT_DOH_PROVIDERS];
+}
+
+const DOH_PROVIDERS = parseDoHProvidersFromEnv();
 
 // ==================== Cache ====================
 
@@ -96,7 +127,7 @@ function evictOldest(): void {
 async function queryProvider(
   domain: string,
   type: string,
-  provider: typeof DOH_PROVIDERS[number],
+  provider: DohProvider,
   timeoutMs: number,
 ): Promise<{ ips: string[]; ttl: number } | null> {
   const url = provider.buildUrl(domain, type);

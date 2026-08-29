@@ -511,7 +511,10 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
       throw new Error(`Rate limited on ${domain}: ${rateCheck.reason}`);
     }
     if (rateCheck.waitMs > 0) {
-      await new Promise(r => setTimeout(r, rateCheck.waitMs));
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, rateCheck.waitMs);
+        signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); });
+      });
     }
   }
 
@@ -519,7 +522,10 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
   if (domain) {
     const throttleCheck = browserBehavior.shouldThrottle(domain);
     if (throttleCheck.throttled) {
-      await new Promise(r => setTimeout(r, throttleCheck.waitMs));
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, throttleCheck.waitMs);
+        signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); });
+      });
     }
     browserBehavior.recordRequest(domain);
   }
@@ -602,9 +608,10 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
     }
 
     // Stream the body with a size limit to prevent OOM on chunked encoding
+    if (!response.body) throw new Error('No response body');
     const chunks: Uint8Array[] = [];
     let totalSize = 0;
-    for await (const chunk of response.body!) {
+    for await (const chunk of response.body) {
       totalSize += chunk.length;
       if (totalSize > MAX_COVER_SIZE) {
         chunks.length = 0;

@@ -509,9 +509,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
   for (var _fds0 = 0; _fds0 < PROFILE.seed.length; _fds0++) { _fakeDeviceSeed = ((_fakeDeviceSeed << 5) - _fakeDeviceSeed + PROFILE.seed.charCodeAt(_fds0)) | 0; }
   _fakeDeviceSeed = Math.abs(_fakeDeviceSeed);
   // Seeded PRNG for deterministic values across all sections (uses _fakeDeviceSeed — no redundant _navSeed)
-  function _seededRandom(offset) { var s = (_fakeDeviceSeed + offset) | 0; s = (s * 1664525 + 1013904223) | 0; return (s >>> 0) / 4294967296; }
+  function _seededRandom(offset) { var s = (_fakeDeviceSeed + (offset * 1000 | 0)) | 0; s = (s * 1664525 + 1013904223) | 0; return (s >>> 0) / 4294967296; }
   var _canvasNoiseSeed = Math.floor(_fakeDeviceSeed * 13.37) | 0;
   var _canvasNoiseIntensity = ${CANVAS_NOISE_INTENSITY};
+  var _canvasInstanceCount = 0; // Per-canvas counter to differentiate noise seeds across multiple canvases
 
   // ---- 1. Navigator Override ----
 
@@ -1192,6 +1193,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
     _autoPropObserver.observe(document.documentElement || document.body, {
       childList: true, subtree: true, attributes: true,
     });
+    // Disconnect on page unload to prevent CPU accumulation
+    window.addEventListener('beforeunload', function() { try { _autoPropObserver.disconnect(); } catch(e) {} });
   } catch(e) { /* MutationObserver unavailable */ }
 
   // Override toString for functions to prevent "function () { [native code] }" detection
@@ -1335,6 +1338,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
     childList: true,
     subtree: true,
   });
+  // Disconnect on page unload to prevent CPU accumulation
+  window.addEventListener('beforeunload', function() { try { observer.disconnect(); } catch(e) {} });
 
   // ---- 16. ClientRects & getBoundingClientRect Spoofing ----
   // Add tiny random offsets (±0.5px) to prevent layout fingerprinting.
@@ -1403,10 +1408,33 @@ export function getStealthScript(profile: FingerprintProfile): string {
     CanvasRenderingContext2D.prototype.getImageData = function() {
       var imageData = _origGetImageData.apply(this, arguments);
       var d = imageData.data;
+      // Signature verification: ensure data is a Uint8ClampedArray (not regular Uint8Array)
+      // Real browsers always return Uint8ClampedArray from getImageData
+      if (d && !(d instanceof Uint8ClampedArray)) {
+        try {
+          var _fixed = new Uint8ClampedArray(d);
+          Object.defineProperty(imageData, 'data', { value: _fixed, writable: false, configurable: true });
+          d = _fixed;
+        } catch(_sigErr) {}
+      }
+      // Signature verification: ensure width/height match canvas dimensions
+      try {
+        var _canvas = this.canvas;
+        if (_canvas) {
+          var _expectedW = arguments[2]; // width parameter
+          var _expectedH = arguments[3]; // height parameter
+          if (typeof _expectedW === 'number' && imageData.width !== _expectedW) {
+            Object.defineProperty(imageData, 'width', { value: _expectedW, writable: false, configurable: true });
+          }
+          if (typeof _expectedH === 'number' && imageData.height !== _expectedH) {
+            Object.defineProperty(imageData, 'height', { value: _expectedH, writable: false, configurable: true });
+          }
+        }
+      } catch(_dimErr) {}
       // Apply the same deterministic per-pixel noise as toDataURL/toBlob (Section 30)
       // so that getImageData and toDataURL return consistent results for the same canvas.
       // Noise is scaled by _canvasNoiseIntensity (env: SCRAPER_CANVAS_NOISE_INTENSITY, default 1.0)
-      var _seed = _canvasNoiseSeed;
+      var _seed = _canvasNoiseSeed + (_canvasInstanceCount * 7919);
       var _intensity = _canvasNoiseIntensity;
       for (var i = 0; i < d.length; i += 4) {
         _seed = (_seed * 16807 + 0.5) % 2147483647;
@@ -1746,15 +1774,64 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // ---- Canvas 2D Context Proxy (enhanced fingerprint resistance) ----
   // Intercepts measureText, isPointInPath, isPointInStroke, getLineDash,
-  // quadraticCurveTo, bezierCurveTo, arc, ellipse with deterministic micro-variations.
+  // quadraticCurveTo, bezierCurveTo, arc, ellipse, createLinearGradient,
+  // createRadialGradient with deterministic micro-variations.
   // Existing getImageData/toDataURL/toBlob patches (Section 20/30) remain in place;
   // the Proxy forwards those calls through to the prototype-patched versions.
+
+  // Helper: parse a CSS color string and perturb r/g/b by ±1 (seeded)
+  function _parseAndPerturbColor(color, seed) {
+    // Try to parse via a temporary canvas context
+    var _tmpCtx3 = document.createElement('canvas').getContext('2d');
+    if (!_tmpCtx3) return color;
+    _tmpCtx3.fillStyle = color;
+    var resolved = _tmpCtx3.fillStyle;
+    // If the browser couldn't parse it, return as-is
+    if (!resolved || resolved.charAt(0) !== '#') return color;
+    // Parse hex color (#rrggbb or #rgb)
+    var r = 0, g = 0, b = 0, a = 1;
+    if (resolved.length === 7) {
+      r = parseInt(resolved.slice(1, 3), 16);
+      g = parseInt(resolved.slice(3, 5), 16);
+      b = parseInt(resolved.slice(5, 7), 16);
+    } else if (resolved.length === 4) {
+      r = parseInt(resolved[1] + resolved[1], 16);
+      g = parseInt(resolved[2] + resolved[2], 16);
+      b = parseInt(resolved[3] + resolved[3], 16);
+    } else {
+      return color;
+    }
+    // Also try to extract alpha from rgba() if present in original
+    var _rgbaMatch = color.match(/rgba?\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/);
+    if (_rgbaMatch) a = parseFloat(_rgbaMatch[1]);
+    // Apply ±1 perturbation using seed
+    seed = (seed * 16807 + 0.5) % 2147483647;
+    var _rNoise = ((seed % 3) - 1); // -1, 0, or 1
+    seed = (seed * 16807 + 0.5) % 2147483647;
+    var _gNoise = ((seed % 3) - 1);
+    seed = (seed * 16807 + 0.5) % 2147483647;
+    var _bNoise = ((seed % 3) - 1);
+    r = Math.max(0, Math.min(255, r + _rNoise));
+    g = Math.max(0, Math.min(255, g + _gNoise));
+    b = Math.max(0, Math.min(255, b + _bNoise));
+    // Return in same format as original
+    var _rh = r.toString(16).padStart(2, '0');
+    var _gh = g.toString(16).padStart(2, '0');
+    var _bh = b.toString(16).padStart(2, '0');
+    if (a < 1) {
+      return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+    }
+    return '#' + _rh + _gh + _bh;
+  }
+
   try {
     var _origGetContext = HTMLCanvasElement.prototype.getContext;
     var _ctxProxySeed = Math.floor(_fakeDeviceSeed * 3.14159) | 0;
     HTMLCanvasElement.prototype.getContext = function(type, attrs) {
       var ctx = _origGetContext.call(this, type, attrs);
       if (type === '2d' && ctx) {
+        // Increment per-canvas counter for unique noise seeds
+        _canvasInstanceCount++;
         // Capture seed snapshot so each canvas context gets consistent noise
         var _2dSeed = _ctxProxySeed;
         return new Proxy(ctx, {
@@ -1765,7 +1842,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
                 var result = target.measureText.apply(target, arguments);
                 try {
                   var _text = arguments[0] || '';
-                  var _mS = (_2dSeed + _text.length * 31 + _text.charCodeAt(0) * 7) | 0;
+                  var _mS = (_2dSeed + _text.length * 31 + (_text.length > 0 ? _text.charCodeAt(0) : 0) * 7) | 0;
                   var _mNoise = ((_mS % 21) - 10) * 0.001; // ±0.01px
                   var _origW = result.width;
                   Object.defineProperty(result, 'width', {
@@ -1866,6 +1943,46 @@ export function getStealthScript(profile: FingerprintProfile): string {
                   Math.max(0, rx + _eNoiseRx), Math.max(0, ry + _eNoiseRy),
                   rotation, startAngle, endAngle, anticlockwise
                 );
+              };
+            }
+            // createLinearGradient — return proxy that adds noise to addColorStop
+            if (prop === 'createLinearGradient') {
+              return function(x0, y0, x1, y1) {
+                var gradient = target.createLinearGradient(x0, y0, x1, y1);
+                // Seed based on gradient parameters for deterministic noise
+                var _gSeed = (((_2dSeed + (x0 * 37 + y0 * 53 + x1 * 41 + y1 * 59)) | 0) * 16807 + 8.5) % 2147483647;
+                var _origAddColorStop = gradient.addColorStop.bind(gradient);
+                gradient.addColorStop = function(offset, color) {
+                  try {
+                    // Parse CSS color and perturb by ±1
+                    var _parsed = _parseAndPerturbColor(color, _gSeed);
+                    if (_parsed !== color) {
+                      _gSeed = (_gSeed * 16807 + 0.5) % 2147483647; // advance seed for next stop
+                      return _origAddColorStop(offset, _parsed);
+                    }
+                  } catch(_gErr) {}
+                  return _origAddColorStop(offset, color);
+                };
+                return gradient;
+              };
+            }
+            // createRadialGradient — return proxy that adds noise to addColorStop
+            if (prop === 'createRadialGradient') {
+              return function(x0, y0, r0, x1, y1, r1) {
+                var gradient = target.createRadialGradient(x0, y0, r0, x1, y1, r1);
+                var _rgSeed = (((_2dSeed + (x0 * 43 + y0 * 61 + x1 * 47 + y1 * 67 + r0 * 29 + r1 * 31)) | 0) * 16807 + 9.5) % 2147483647;
+                var _origAddColorStop2 = gradient.addColorStop.bind(gradient);
+                gradient.addColorStop = function(offset, color) {
+                  try {
+                    var _parsed2 = _parseAndPerturbColor(color, _rgSeed);
+                    if (_parsed2 !== color) {
+                      _rgSeed = (_rgSeed * 16807 + 0.5) % 2147483647;
+                      return _origAddColorStop2(offset, _parsed2);
+                    }
+                  } catch(_rgErr) {}
+                  return _origAddColorStop2(offset, color);
+                };
+                return gradient;
               };
             }
             // Forward all other property accesses to the real context
@@ -2073,10 +2190,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
         }
       },
       takeRecords: function() {
-        // For neutralized types, return empty array
-        if (this._realObs) {
-          try { return this._realObs.takeRecords(); } catch(e) { return []; }
-        }
+        // Always return empty array — neutralized observers must never leak timing records,
+        // even for non-neutralized types mixed into the same observer instance
         return [];
       },
       supportedEntryTypes: _origPerformanceObserver.supportedEntryTypes || []
@@ -2567,11 +2682,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
           var _families = font.split(',');
           for (var _ci = 0; _ci < _families.length; _ci++) {
             var _fam = _families[_ci].replace(/["']/g, '').trim();
-            // Only report available if the non-generic family is in our seeded list
             if (_fam && _genericFamilies.indexOf(_fam) < 0) {
               if (_availableFonts.indexOf(_fam) >= 0) return true;
-              // Non-generic family not in our list — claim unavailable
-              return false;
+              // Non-generic family not in our seeded list — return true (optimistic)
+              // Real browsers accept any @font-face; returning false here is a detection vector
+              return true;
             }
           }
           // Only generic families specified — delegate to real check

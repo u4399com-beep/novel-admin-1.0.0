@@ -1,0 +1,81 @@
+{
+  "name": "鬼吹灯小说网 (guichuideng.info)",
+  "description": "鬼吹灯小说网全站采集。GBK编码，使用Obscura隐身引擎绕过基础反爬。单页书单，无列表分页。",
+  "enabled": true,
+
+  "listUrl": "https://www.guichuideng.info/book/",
+  "listSelector": { "type": "css", "value": ".item .image a[href]" },
+  "listPagination": null,
+
+  "bookTitleSelector": { "type": "css", "value": "h1" },
+  "bookAuthorSelector": { "type": "css", "value": "p" },
+  "bookCategorySelector": { "type": "css", "value": "p.xs-show" },
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": { "type": "css", "value": "dl > dd > a" },
+  "bookCoverSelector": { "type": "css", "value": ".image img", "extract": "src" },
+  "bookStatusSelector": { "type": "css", "value": "p.xs-show" },
+
+  "chapterListUrl": "{bookUrl}",
+  "chapterListSelector": { "type": "css", "value": ".layout-col1, .listmain, .chapter-list, .mulu, #list" },
+  "chapterTitleSelector": { "type": "css", "value": "a[href*=\".html\"]" },
+  "chapterLinkSelector": { "type": "css", "value": "a[href*=\".html\"]" },
+  "chapterPagination": null,
+
+  "contentTitleSelector": { "type": "css", "value": "h1, title" },
+  "contentSelector": { "type": "css", "value": "#content" },
+  "contentPagination": { "type": "next", "selector": "a:contains(\"下一章\")", "maxPage": 1 },
+
+  "antiCrawlConfig": {
+    "useJsRender": true,
+    "uaRotation": true,
+    "delay": [2000, 4000],
+    "humanBehavior": true,
+    "retries": 2,
+    "referer": "https://www.guichuideng.info/"
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".ad", ".ads", ".advertisement",
+      ".chapter-nav", ".footer", ".header",
+      ".recommend", ".related",
+      "#ad", "[id^=\"div-gpt-ad\"]",
+      "ins.adsbygoogle"
+    ],
+    "adPatterns": [
+      "鬼吹灯小说网", "guichuideng.info",
+      "请记住本书", "手机用户请浏览",
+      "本章未完", "最快更新",
+      "本章最新章节", "请访问",
+      "如果您喜欢", "分享到",
+      "扫码关注", "微信公众号",
+      "关注公众号", "关注我们",
+      "TXT下载", "全本下载",
+      "返回目录", "章节列表",
+      "推荐本书", "打赏",
+      "本章完", "本章结束",
+      "完结感言", "在线听书"
+    ]
+  },
+
+  "scrapeMode": "full",
+  "engine": "obscura",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/public/covers/guichuideng/",
+  "threadCount": 1,
+  "minDelay": 2000,
+  "maxDelay": 4000,
+  "enableShuffle": true,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "www.guichuideng.info",
+    "encoding": "gbk",
+    "engineType": "obscura",
+    "stealthEnabled": true
+  }
+}

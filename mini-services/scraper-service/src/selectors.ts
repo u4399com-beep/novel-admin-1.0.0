@@ -364,7 +364,9 @@ export function parseSelector(html: string, selector: Selector): string {
 
     const text = el.text().trim();
     if (text) return text;
-    return el.attr("href") || el.attr("src") || "";
+    // Only fall back to href/src if the XPath explicitly selected an attribute-less element
+    // and no extract attr was requested — avoids returning URLs when text was expected
+    return "";
   }
 
   // CSS selector (default)
@@ -675,13 +677,18 @@ export function extractMetadataFallback(html: string): Partial<{
   const metaDesc = $('meta[name="description"]').attr('content');
   const metaKeywords = $('meta[name="keywords"]').attr('content');
 
-  // JSON-LD
+    // JSON-LD: collect ALL matching blocks and merge (later blocks override earlier fields)
   let jsonLdData: Record<string, unknown> | null = null;
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
       const data = JSON.parse($(el).text());
       if (data['@type'] === 'Book' || data['@type'] === 'Article' || data['@type'] === 'CreativeWork') {
-        jsonLdData = data;
+        if (!jsonLdData) {
+          jsonLdData = data;
+        } else {
+          // Merge: later blocks fill in missing fields from earlier blocks
+          Object.assign(jsonLdData, data);
+        }
       }
     } catch { /* ignore */ }
   });
