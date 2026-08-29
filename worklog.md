@@ -22106,3 +22106,97 @@ Stage Summary:
 - New ProxyManager methods: 8 (detectDomainRegion, setPreferredRegion, getProxiesByRegion, setProxyRegion, getHealthPredictionMultiplier, getProxyChain, recordRequestProxyAttempt, clearRequestProxies, getBestProxyForDomain)
 - Enhanced existing methods: 6 (recordSuccess, recordFailure, getProxy, selectFromCandidates, removeProxy, removeAllProxies, resetProxy, resetAllProxies)
 - New data structures: 5 Maps (latencyTracker, consecutiveFailTracker, hourlyFailurePattern, requestTriedProxies, preferredRegion)
+
+---
+Task ID: R55
+Agent: Main Orchestrator (parallel agents)
+Task: 采集规则+反反爬增强+代理智能调度+深度审计Bug修复
+
+Work Log:
+- [Agent 1] 分析wenxue.iqiyi.com页面结构(首页/详情/目录/阅读页), 创建采集规则JSON
+- [Agent 3] Canvas 2D指纹强化: toDataURL/toBlob WebGL回退, TextMetrics全属性变化, fillText/strokeText亚像素偏移, createConicGradient, OffscreenCanvas对齐(stealth.ts +288行)
+- [Agent 4] 代理智能调度: ProxyLatencyTracker(EMA α=0.3, 20窗口), 18个TLD地域映射, 连续失败/小时模式健康预测, getProxyChain智能重试链(proxy-manager.ts +495行)
+- [Main] 深度代码审计engines.ts(3110行)/proxy-manager.ts(2440行)/scrapers.ts(678行), 发现5个Bug
+- [Main] 修复5个Bug: cover下载recordSuccess传绝对时间戳, jitter单向, 失败latency=0反向高分, 数据结构无清理, Obscura错误吞没
+- [Main] 删除旧iqiyi-wenxue.json, 保留增强版wenxue-iqiyi.json
+- [Main] index.ts从deprecated proxy-conn-test.ts迁移到proxyManager.verifyProxy/testProxyBatch
+
+Bugs Found & Fixed (5):
+1. [High] scrapers.ts:656 - recordSuccess(proxy.url, Date.now()) 传绝对时间戳(约1.7万亿ms)而非耗时
+2. [Medium] proxy-manager.ts:743 - jitter 1.10-1.20单向增大延迟, 导致权重选择偏向慢代理
+3. [Medium] proxy-manager.ts:971 - 失败时latency=0导致normalizedLat=0, latFactor=1/0.1=10, 得分反而最高
+4. [Low] proxy-manager.ts - hourlyFailurePattern和requestTriedProxies无清理机制
+5. [Low] engines.ts:2420 - Obscura waitForLoadState吞掉所有错误(含page crash), Playwright版本正确重抛
+
+Enhancements (R55):
+1. wenxue-iqiyi.json - 爱奇艺小说采集规则(Playwright引擎+stealth+JS渲染+人类行为模拟+16分类URL)
+2. Canvas fingerprint强化 (+288行)
+3. 代理智能调度 (+495行)
+
+Verification:
+- bun build index.ts --no-bundle: PASS (无新增错误)
+- Git push: 88c7d3c → main
+
+Stage Summary:
+- 新增文件: scrape-rules/wenxue-iqiyi.json
+- 修改文件: stealth.ts, proxy-manager.ts, engines.ts, scrapers.ts, index.ts
+- 删除文件: scrape-rules/iqiyi-wenxue.json (旧版cheerio配置)
+- 累计修复: 832项 | 增强: 43项 | Stealth sections: 50+
+- 最新commit: 88c7d3c
+---
+Task ID: 6 (R55)
+Agent: General-purpose sub-agent
+Task: Enhance engine fallback chain strategy in scraper-service
+
+Work Log:
+- Read and analyzed engine-config.ts, engines.ts (lines 289-617), and types.ts
+- Implemented three enhancements in engine-config.ts while maintaining backward compatibility
+
+## Changes
+
+### engine-config.ts (lines 1-518, net +312 lines)
+
+**a. Per-domain engine preference learning** (lines 315-370)
+- Added `readEnginePreferences()` — reads/caches `src/scrape-rules/engine-preferences.json` by mtime
+- Format: `{ "domain.com": { "preferred": "obscura", "avoid": ["cheerio"] } }`
+- Integrated into `getEngineFallbackChain()` via `applyPreferenceToChain()`
+- Preferred engine moved to front; avoid engines moved to end of chain
+
+**b. CAPTCHA-triggered permanent engine upgrade** (lines 372-446)
+- Added `captchaUpgradeMap` (in-memory Map, 200 entry LRU, 1-hour TTL)
+- Hierarchy: cheerio → playwright → obscura (obscura is terminal, no further upgrade)
+- Exported `recordCaptchaUpgrade(domain, failedEngine)` for engines.ts hooks
+- Exported `getCaptchaUpgrades()` for debugging/monitoring
+- Applied in `applyDomainEnhancements()` — upgraded engine moved to chain front
+
+**c. Content-length based engine hint** (lines 448-518)
+- Added `lowContentDomains` Map (100 entry LRU, 30-min TTL)
+- Exported `recordLowContentHint(domain, contentLength)` — flags domain if < 500 chars
+- Exported `isLowContentDomain(domain)` — checks if domain needs JS rendering
+- Exported `getLowContentDomains()` for debugging/monitoring
+- Applied in `applyDomainEnhancements()` — cheerio pushed to end of chain
+
+**Enhanced getEngineFallbackChain()** (lines 196-220)
+- Domain override chains now also get enhancements applied
+- New `hasDomainEnhancements()` check: returns single enhanced chain from default if any enhancement exists
+- Enhancement priority: CAPTCHA upgrade > low-content hint > preference learning
+
+### engines.ts (4 integration points)
+- Line 30: Added `recordCaptchaUpgrade, recordLowContentHint` to import from engine-config
+- Line 856: CAPTCHA upgrade hook for cheerio engine
+- Lines 863-867: Low-content hint hook after successful cheerio fetch (status 200, checks html.length)
+- Line 1293: CAPTCHA upgrade hook for playwright engine
+- Line 2592: CAPTCHA upgrade hook for obscura engine
+
+### New file: src/scrape-rules/engine-preferences.json
+- Created with _description and _example fields showing expected format
+
+## Backward Compatibility
+- `getEngineFallbackChain(domain?)` signature unchanged — returns `EngineType[][]` in all cases
+- `getAdaptiveFallbackChain()` in engines.ts not modified — works on whatever chain it receives
+- All existing exports preserved: `DEFAULT_ENGINE_FALLBACK_CHAIN`, `setDomainEngineOverride`, `removeDomainEngineOverride`, `getDomainEngineOverrides`
+- New exports are additive: `recordCaptchaUpgrade`, `getCaptchaUpgrades`, `recordLowContentHint`, `isLowContentDomain`, `getLowContentDomains`
+- If no preferences file/CAPTCHA/low-content flags exist, behavior is identical to before
+
+## Build Verification
+- `bun build index.ts --no-bundle` — clean, no errors

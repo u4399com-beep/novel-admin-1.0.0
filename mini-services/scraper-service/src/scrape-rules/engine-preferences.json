@@ -1,0 +1,6 @@
+{
+  "_description": "Per-domain engine preference learning. Format: { \"domain.com\": { \"preferred\": \"obscura\", \"avoid\": [\"cheerio\"] } }",
+  "_example": {
+    "example.com": { "preferred": "obscura", "avoid": ["cheerio"] }
+  }
+}

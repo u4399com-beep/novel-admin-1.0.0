@@ -27,7 +27,7 @@ import { detectCaptcha, type CaptchaDetection } from "./captcha-detector";
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 import { browserBehavior } from "./browser-behavior";
 import { detectAndDecode } from "./charset-detector";
-import { getEngineFallbackChain } from "./engine-config";
+import { getEngineFallbackChain, recordCaptchaUpgrade, recordLowContentHint } from "./engine-config";
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_SCROLL_ITERATIONS = parseInt(process.env.SCRAPER_MAX_SCROLL_ITERATIONS || '30', 10);
@@ -852,10 +852,18 @@ class CheerioEngine implements ScrapingEngine {
             // Record proxy failure on CAPTCHA (doNotRetry prevents retryWithBackoff
             // from calling onRetry, so this is the ONLY recording — no double-count)
             if (proxy) proxyManager.recordFailure(proxy.url, `CAPTCHA ${captchaResult.type} detected`);
+            // Record CAPTCHA-triggered engine upgrade for future requests to this domain
+            recordCaptchaUpgrade(targetDomain, 'cheerio');
             const captchaErr = new Error(`CAPTCHA detected (${captchaResult.type}, ${Math.round(captchaResult.confidence * 100)}%) on ${targetDomain}`);
             (captchaErr as any).doNotRetry = true;
             throw captchaErr;
           }
+        }
+
+        // Content-length hint: flag domain if cheerio returned very little content with 200
+        // This suggests the page likely needs JS rendering to load actual content
+        if (targetDomain && response.status === 200) {
+          recordLowContentHint(targetDomain, html.length);
         }
 
         // Record proxy success (only on the final successful attempt)
@@ -1281,6 +1289,8 @@ class PlaywrightEngine implements ScrapingEngine {
                 antiCrawlAdvisor.recordDetection(pwDomain, 'captcha', `CAPTCHA ${pwCaptcha.type} detected, confidence ${Math.round(pwCaptcha.confidence * 100)}%`);
               } catch { /* non-critical */ }
               // Mark as doNotRetry — CAPTCHAs are deterministic for same fingerprint/proxy
+              // Record CAPTCHA-triggered engine upgrade for future requests to this domain
+              recordCaptchaUpgrade(pwDomain, 'playwright');
               const pwCaptchaErr = new Error(`CAPTCHA detected (${pwCaptcha.type}, ${Math.round(pwCaptcha.confidence * 100)}%) on ${pwDomain}`);
               (pwCaptchaErr as any).doNotRetry = true;
               throw pwCaptchaErr;
@@ -2578,6 +2588,8 @@ class ObscuraEngine implements ScrapingEngine {
               // Record as failure for rate limiter (triggers penalty)
               // IMPORTANT: Do NOT record result here - the catch block below handles it.
               // Recording here AND in catch would cause double penalty.
+              // Record CAPTCHA-triggered engine upgrade (obscura is highest — no further upgrade, but still recorded)
+              recordCaptchaUpgrade(domain, 'obscura');
               const obscuraCaptchaErr = new Error(`CAPTCHA detected (${captchaDetection.type}, ${Math.round(captchaDetection.confidence * 100)}%) on ${domain}`);
               (obscuraCaptchaErr as any).doNotRetry = true;
               throw obscuraCaptchaErr;
