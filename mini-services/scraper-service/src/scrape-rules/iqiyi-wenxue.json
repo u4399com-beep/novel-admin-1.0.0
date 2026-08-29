@@ -1,0 +1,120 @@
+{
+  "name": "爱奇艺小说 (wenxue.iqiyi.com)",
+  "description": "爱奇艺小说全站采集。UTF-8编码，静态HTML。书库URL: lib-{base}_{sub}_0-{page}-51-0-1.html，详情页含部分章节(20条)，完整目录在catalog-{bookId}-{page}.html。阅读页内容在.reader-article中。推荐cheerio引擎，IP被限自动降级playwright/obscura。",
+  "enabled": true,
+
+  "listUrl": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_0_0-51-0-1.html",
+  "listSelector": { "type": "css", "value": "li.stacksBook a[href*='detail-']" },
+  "listPagination": {
+    "type": "next",
+    "selector": "a[href*='lib-'][href$='-51-0-2.html']",
+    "maxPage": 50,
+    "urlPattern": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_0_0-51-0-{page}.html"
+  },
+
+  "bookTitleSelector": { "type": "css", "value": ".book-details-tit h1" },
+  "bookAuthorSelector": { "type": "css", "value": ".book-details-about .writerName" },
+  "bookCategorySelector": { "type": "css", "value": ".breadCrumbNav a:nth-child(2)" },
+  "bookKeywordsSelector": { "type": "css", "value": "meta[name='keywords']", "extract": "content" },
+  "bookDescriptionSelector": { "type": "css", "value": ".book-details-briefing" },
+  "bookCoverSelector": { "type": "css", "value": ".bookBigCover img", "extract": "src" },
+  "bookStatusSelector": { "type": "css", "value": ".stacksBook-tag.tag-end, .book-details-tit .stacksBook-tag" },
+  "bookWordCountSelector": { "type": "css", "value": ".book-details-about em:nth-child(2)" },
+
+  "chapterListUrl": "https://wenxue.iqiyi.com/book/catalog-{bookId}-1.html",
+  "chapterListSelector": { "type": "css", "value": "dl.catalog-list, .catalog-list" },
+  "chapterTitleSelector": { "type": "css", "value": "dl.catalog-list a[href*='reader-'], .catalog-list a[href*='reader-']" },
+  "chapterLinkSelector": { "type": "css", "value": "dl.catalog-list a[href*='reader-'], .catalog-list a[href*='reader-']" },
+  "chapterPagination": {
+    "type": "next",
+    "selector": "a[href*='catalog-'][href$='.html']",
+    "maxPage": 50,
+    "urlPattern": "https://wenxue.iqiyi.com/book/catalog-{bookId}-{page}.html"
+  },
+
+  "contentTitleSelector": { "type": "css", "value": "strong.reader-chapter-tit" },
+  "contentSelector": { "type": "css", "value": "div.reader-article" },
+  "contentPagination": { "type": "next", "selector": "a#nextChpater[href*='reader-']", "maxPage": 1 },
+
+  "antiCrawlConfig": {
+    "useJsRender": false,
+    "uaRotation": true,
+    "delay": [1000, 3000],
+    "humanBehavior": false,
+    "retries": 3,
+    "referer": "https://wenxue.iqiyi.com/"
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".reader-header", ".readerScrollBar", ".reader-progress",
+      ".reader-nextChapter", ".reader-btn-add",
+      ".breadCrumbNav", ".mod-pop-wrapper",
+      ".reader-bookInfo", "#funcbar",
+      "script", "noscript", "style",
+      ".mod-wrapper > .mod-con > .top",
+      ".mod-wrapper > .mod-con > a",
+      ".qrcode", "[id^='qrcDialog']",
+      ".mod-pop", ".mod-popBg",
+      "#newbieGuide", "#goToPhone",
+      "#addToShlef", "#alreadAddedToShlef"
+    ],
+    "adPatterns": [
+      "爱奇艺小说", "wenxue.iqiyi.com",
+      "请到手机上继续观看",
+      "微信扫一扫打开爱奇艺小说APP",
+      "加入书架", "已加入书架",
+      "手机阅读", "继续阅读",
+      "版权所有", "侵权联系",
+      "反馈", "举报",
+      "百度统计", "Google Analytics",
+      "艾瑞", "iwt.js",
+      "pingback",
+      "hm.baidu.com",
+      "google-analytics.com",
+      "literaver.js",
+      "cooksdk.js",
+      "阅读到", "%",
+      "字数："
+    ]
+  },
+
+  "scrapeMode": "full",
+  "engine": "cheerio",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/public/covers/iqiyi/",
+  "threadCount": 1,
+  "minDelay": 1000,
+  "maxDelay": 3000,
+  "enableShuffle": true,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "wenxue.iqiyi.com",
+    "encoding": "utf-8",
+    "engineType": "cheerio",
+    "stealthEnabled": false,
+    "categories": {
+      "all": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_0_0-51-0-1.html",
+      "modern-romance": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49hin_0-51-0-1.html",
+      "ancient-romance": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49i0j_0-51-0-1.html",
+      "urban": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49he3_0-51-0-1.html",
+      "youth": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49hmn_0-51-0-1.html",
+      "fantasy": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49hsv_0-51-0-1.html",
+      "suspense": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49i2j_0-51-0-1.html",
+      "family": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49hj7_0-51-0-1.html",
+      "workplace": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49hwj_0-51-0-1.html",
+      "history": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49hxz_0-51-0-1.html",
+      "military": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49hnr_0-51-0-1.html",
+      "thriller": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49htz_0-51-0-1.html",
+      "children": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49gwf_0-51-0-1.html",
+      "classic": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49gqf_0-51-0-1.html",
+      "light-novel": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49ktn_0-51-0-1.html",
+      "short-stories": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49glv_0-51-0-1.html"
+    }
+  }
+}
