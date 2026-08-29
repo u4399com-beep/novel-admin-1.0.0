@@ -584,12 +584,18 @@ class ProxyManager {
       }
     }
 
-    // If no proxy has latency data, return the first active proxy
+    // If no proxy has latency data, return the first active proxy (also checking domain failures)
     if (!best) {
       for (const entry of this.pool.values()) {
         if (entry.disabled) continue;
         if (entry.coolingUntil && now < entry.coolingUntil) continue;
         if (normalisedDomain && entry.blockedDomains.has(normalisedDomain)) continue;
+        // Skip proxies that failed for this domain in the last 5 minutes
+        const entryCleanUrl = parseProxyUrl(entry.url)?.cleanUrl ?? entry.url;
+        if (domainFailMap) {
+          const failTs = domainFailMap.get(entryCleanUrl);
+          if (failTs && (now - failTs) < FIVE_MINUTES) continue;
+        }
         best = entry;
         break;
       }
@@ -711,6 +717,18 @@ class ProxyManager {
         this.domainFailures.set(failDomain, domainFailMap);
       }
       domainFailMap.set(parsed.cleanUrl, Date.now());
+
+      // Prune stale entries (older than 5 minutes) to prevent unbounded map growth.
+      // Only iterate when the inner map is large enough to justify the cost.
+      if (domainFailMap.size > 10) {
+        const cutoff = Date.now() - 5 * 60 * 1000;
+        for (const [key, ts] of domainFailMap) {
+          if (ts < cutoff) domainFailMap.delete(key);
+        }
+        if (domainFailMap.size === 0) {
+          this.domainFailures.delete(failDomain);
+        }
+      }
     }
 
     // Track recent failure for auto-rotate (include domain when available)
@@ -902,6 +920,7 @@ class ProxyManager {
       entry.consecutiveFails = 0; // Reset fails since host is alive
       return { healthy: false, responseTime, error: 'Host reachable but through-proxy test failed' };
     } catch (err) {
+      clearTimeout(timeout); // Prevent timer leak on fetch failure
       const responseTime = Date.now() - secondaryStart;
       entry.lastCheck = Date.now();
       const errMsg = err instanceof Error ? err.message : String(err);

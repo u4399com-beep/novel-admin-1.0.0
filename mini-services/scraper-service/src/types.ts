@@ -374,4 +374,13 @@ export interface ScrapeResult {
   skippedItems: number;
   engine: string;
   duration?: number;
+  /** Optional content sample for freshness scoring (e.g. first chapter text) */
+  contentSample?: string;
+  /** Optional book metadata for structural completeness scoring */
+  bookMeta?: {
+    title?: string;
+    author?: string;
+    description?: string;
+    coverUrl?: string;
+  };
 }

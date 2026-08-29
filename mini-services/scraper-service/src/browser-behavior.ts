@@ -229,5 +229,140 @@ class BrowserBehavior {
   }
 }
 
+// ==================== Timing Fingerprint Resistance ====================
+
+/** A point in a mouse movement path */
+export interface MouseMovementPoint {
+  x: number;
+  y: number;
+  /** Timestamp offset in ms from the start of the movement */
+  t: number;
+}
+
+/** Punctuation characters that trigger a typing pause */
+const PUNCTUATION_SET = new Set([',', ';', ':', '-', '–']);
+/** Sentence-ending characters that trigger a longer pause */
+const SENTENCE_END_SET = new Set(['.', '!', '?', '。', '！', '？']);
+
+/**
+ * Generate a realistic delay (ms) for typing a single character.
+ *
+ * Real human typing patterns:
+ *   - Base delay: 50-150ms per character (varies by character difficulty)
+ *   - Pause after punctuation (comma, semicolon): 200-500ms
+ *   - Pause after sentence end (period, exclamation): 400-800ms
+ *   - Occasional longer pause (backspace simulation): 300-600ms with 10% probability
+ *
+ * @param char - The character being typed (used to determine pause category)
+ * @returns Delay in milliseconds
+ */
+export function generateRealisticTypingDelay(char: string): number {
+  // 10% chance of a backspace-simulation pause (regardless of character)
+  if (Math.random() < 0.10) {
+    return 300 + Math.random() * 300; // 300-600ms
+  }
+
+  if (SENTENCE_END_SET.has(char)) {
+    return 400 + Math.random() * 400; // 400-800ms
+  }
+
+  if (PUNCTUATION_SET.has(char)) {
+    return 200 + Math.random() * 300; // 200-500ms
+  }
+
+  // Normal character: 50-150ms base delay
+  return 50 + Math.random() * 100;
+}
+
+/**
+ * Generate a realistic mouse movement path using cubic Bezier interpolation.
+ *
+ * Simulates human mouse movement with:
+ *   - Bezier curve interpolation (not a straight line)
+ *   - Variable speed (slower at start/end, faster in middle — ease-in-out)
+ *   - Subtle random jitter (±2px)
+ *
+ * The returned array of {x, y, t} points can be used to drive Playwright/Obscura
+ * mouse.move() calls with realistic timing.
+ *
+ * @param startX - Starting X coordinate
+ * @param startY - Starting Y coordinate
+ * @param endX   - Ending X coordinate
+ * @param endY   - Ending Y coordinate
+ * @returns Array of {x, y, t} points representing the mouse path
+ */
+export function generateMouseMovementPath(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+): MouseMovementPoint[] {
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  // Determine number of steps based on distance (min 5, max 40, ~15px per step)
+  const numSteps = Math.max(5, Math.min(40, Math.round(distance / 15)));
+
+  // Bezier control points: offset perpendicular to the line for a natural curve
+  // The offset direction and magnitude are randomized
+  const perpX = -dy / (distance || 1);
+  const perpY = dx / (distance || 1);
+  const curvature = (Math.random() - 0.5) * 0.3 * distance;
+
+  const cp1x = startX + dx * 0.3 + perpX * curvature;
+  const cp1y = startY + dy * 0.3 + perpY * curvature;
+  const cp2x = startX + dx * 0.7 - perpX * curvature * 0.5;
+  const cp2y = startY + dy * 0.7 - perpY * curvature * 0.5;
+
+  const points: MouseMovementPoint[] = [];
+  let cumulativeTime = 0;
+
+  // Base duration: ~3-6ms per pixel of distance, capped between 100-800ms
+  const baseDuration = Math.max(100, Math.min(800, distance * 4));
+
+  for (let i = 0; i <= numSteps; i++) {
+    const t = i / numSteps;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+    const mt3 = mt2 * mt;
+
+    // Cubic Bezier interpolation
+    let x = mt3 * startX + 3 * mt2 * t * cp1x + 3 * mt * t2 * cp2x + t3 * endX;
+    let y = mt3 * startY + 3 * mt2 * t * cp1y + 3 * mt * t2 * cp2y + t3 * endY;
+
+    // Add subtle jitter (±2px), less at endpoints
+    const jitterScale = t > 0.05 && t < 0.95 ? 1.0 : 0.3;
+    x += (Math.random() - 0.5) * 4 * jitterScale;
+    y += (Math.random() - 0.5) * 4 * jitterScale;
+
+    // Ease-in-out timing: slower at start/end, faster in middle
+    // Using smoothstep: 3t² - 2t³
+    const easedT = t2 * 3 - t3 * 2;
+    let timeDelta: number;
+    if (i === 0) {
+      timeDelta = 0;
+    } else {
+      const prevT = (i - 1) / numSteps;
+      const prevEased = 3 * prevT * prevT - 2 * prevT * prevT * prevT;
+      timeDelta = (easedT - prevEased) * baseDuration;
+    }
+    cumulativeTime += Math.max(0, timeDelta);
+
+    points.push({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, t: Math.round(cumulativeTime) });
+  }
+
+  // Ensure the last point exactly matches the target (correct for any Bezier drift)
+  const last = points[points.length - 1];
+  if (last) {
+    last.x = endX;
+    last.y = endY;
+  }
+
+  return points;
+}
+
 // Singleton export
 export const browserBehavior = new BrowserBehavior();

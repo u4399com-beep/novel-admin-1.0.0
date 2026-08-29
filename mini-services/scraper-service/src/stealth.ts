@@ -2753,6 +2753,58 @@ export function getStealthScript(profile: FingerprintProfile): string {
     });
   } catch(e) {}
 
+  // ==================== Section 99: Fingerprint Consistency Validator ====================
+  // Runs after all sections are injected. Detects cross-property inconsistencies
+   // that advanced WAFs (e.g., Cloudflare Bot Management) may check.
+  // Logs warnings via console.warn for debugging — does NOT fix values.
+  try {
+    (function() {
+      var _warnings = [];
+      // Check 1: navigator.hardwareConcurrency vs navigator.deviceMemory consistency
+      var _hc = navigator.hardwareConcurrency;
+      var _dm = navigator.deviceMemory;
+      if (typeof _hc === 'number' && typeof _dm === 'number') {
+        var _expectedMemMin = Math.max(2, Math.ceil(_hc / 2));
+        var _expectedMemMax = _hc * 2;
+        if (_dm < _expectedMemMin || _dm > _expectedMemMax) {
+          _warnings.push('hardwareConcurrency=' + _hc + ' vs deviceMemory=' + _dm + 'GB (expected ' + _expectedMemMin + '-' + _expectedMemMax + 'GB)');
+        }
+      }
+      // Check 2: navigator.language should match navigator.languages[0]
+      if (navigator.language && Array.isArray(navigator.languages) && navigator.languages.length > 0) {
+        if (navigator.language !== navigator.languages[0]) {
+          _warnings.push('navigator.language="' + navigator.language + '" vs languages[0]="' + navigator.languages[0] + '"');
+        }
+      }
+      // Check 3: screen.colorDepth should be 24 or 32
+      var _cd = screen.colorDepth;
+      if (_cd !== 24 && _cd !== 32) {
+        _warnings.push('screen.colorDepth=' + _cd + ' (expected 24 or 32)');
+      }
+      // Check 4: timezone offset should match Intl.DateTimeFormat resolved timezone
+      try {
+        var _tzOffset = new Date().getTimezoneOffset();
+        var _resolvedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        // Build a reference offset from the resolved timezone
+        var _refDate = new Date();
+        var _refOffset = -_refDate.getTimezoneOffset();
+        // Cross-check: the profile-injected timezoneOffset should be consistent with Intl
+        var _intlDate = new Date(new Date().toLocaleString('en-US', { timeZone: _resolvedTz }));
+        var _intlOffset = (_refDate - _intlDate) / 60000;
+        if (Math.abs(_tzOffset + _intlOffset) > 1) {
+          _warnings.push('getTimezoneOffset()=' + _tzOffset + ' vs Intl resolved timezone "' + _resolvedTz + '" offset=' + (-_intlOffset));
+        }
+      } catch(_tzErr) {}
+      // Log any warnings (non-blocking, debugging only)
+      if (_warnings.length > 0) {
+        console.warn('[Obscura] Fingerprint consistency warnings:');
+        for (var _w = 0; _w < _warnings.length; _w++) {
+          console.warn('[Obscura]   ' + _warnings[_w]);
+        }
+      }
+    })();
+  } catch(_consistErr) {}
+
 })();
 `;
 

@@ -44,12 +44,12 @@ export class TaskPriorityQueue {
     // Clamp priority to 0-3
     const clampedPriority = Math.max(0, Math.min(3, Math.floor(priority)));
 
-    this.queue.push({
+    const item: PriorityQueueItem = {
       taskId,
       priority: clampedPriority,
       ruleId,
       createdAt: Date.now(),
-    });
+    };
 
     // Binary search insertion: O(log n) search + O(n) splice
     this.insertSorted(item);

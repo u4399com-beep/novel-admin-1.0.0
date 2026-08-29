@@ -192,7 +192,9 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
 
 export async function handleScrapeList(body: ScrapeListRequest) {
   const { url, selector, pagination, antiCrawl, engine: requestedEngine, signal } = body;
-  const engineType = selectEngine(requestedEngine, antiCrawl);
+  let domain = '';
+  try { domain = new URL(url).hostname; } catch { /* ignore */ }
+  const engineType = selectEngine(requestedEngine, antiCrawl, domain);
 
   const allUrls: string[] = [];
   const seen = new Set<string>();
@@ -262,7 +264,9 @@ export async function handleScrapeList(body: ScrapeListRequest) {
 
 export async function handleScrapeBook(body: ScrapeBookRequest) {
   const { url, selectors, antiCrawl, engine: requestedEngine, signal } = body;
-  const engineType = selectEngine(requestedEngine, antiCrawl);
+  let domain = '';
+  try { domain = new URL(url).hostname; } catch { /* ignore */ }
+  const engineType = selectEngine(requestedEngine, antiCrawl, domain);
   const fallbackEnabled = antiCrawl?.engineFallback !== false;
 
   let html: string;
@@ -318,7 +322,9 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
 
 export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
   const { url, selectors, pagination, antiCrawl, enableShuffle, engine: requestedEngine, signal } = body;
-  const engineType = selectEngine(requestedEngine, antiCrawl);
+  let domain = '';
+  try { domain = new URL(url).hostname; } catch { /* ignore */ }
+  const engineType = selectEngine(requestedEngine, antiCrawl, domain);
 
   const allChapters: ChapterLink[] = [];
   const seenUrls = new Set<string>();
@@ -390,7 +396,9 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
 
 export async function handleScrapeContent(body: ScrapeContentRequest) {
   const { url, selectors, pagination, antiCrawl, engine: requestedEngine, cleanConfig, signal } = body;
-  const engineType = selectEngine(requestedEngine, antiCrawl);
+  let domain = '';
+  try { domain = new URL(url).hostname; } catch { /* ignore */ }
+  const engineType = selectEngine(requestedEngine, antiCrawl, domain);
 
   const contentParts: string[] = [];
   let title = "";
@@ -507,13 +515,14 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
   // 1. Rate limiting
   if (domain) {
     const rateCheck = rateLimiter.acquire(domain);
-    if (rateCheck.blocked) {
-      throw new Error(`Rate limited on ${domain}: ${rateCheck.reason}`);
-    }
-    if (rateCheck.waitMs > 0) {
+    if (!rateCheck.allowed && rateCheck.waitMs > 0) {
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, rateCheck.waitMs);
-        signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); });
+        const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }, rateCheck.waitMs);
+        const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+        signal?.addEventListener('abort', onAbort, { once: true });
       });
     }
   }
@@ -523,8 +532,12 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
     const throttleCheck = browserBehavior.shouldThrottle(domain);
     if (throttleCheck.throttled) {
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, throttleCheck.waitMs);
-        signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); });
+        const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }, throttleCheck.waitMs);
+        const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+        signal?.addEventListener('abort', onAbort, { once: true });
       });
     }
     browserBehavior.recordRequest(domain);

@@ -352,6 +352,60 @@ const DOMAIN_FAILURE_WINDOW_MS = 10 * 60 * 1000; // 10-minute sliding window
 const domainFailureTimestamps = new Map<string, number>();
 const MAX_TRACKED_DOMAINS = 500; // LRU eviction limit
 
+// ==================== Domain Engine Success History ====================
+
+/**
+ * Domain-level engine success history for smart engine pre-selection.
+ * Remembers which engine last succeeded for a domain within a time window,
+ * allowing `selectEngine()` to skip straight to the known-good engine
+ * instead of trying and failing through the fallback chain.
+ *
+ * Bounded LRU with 50 entries, 30-minute TTL per entry.
+ */
+const DOMAIN_SUCCESS_MAX_ENTRIES = 50;
+const DOMAIN_SUCCESS_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+const _domainLastSuccess: Map<string, { engine: EngineType; timestamp: number }> = new Map();
+
+/**
+ * Record that a given engine succeeded for a domain.
+ * Called from fetchWithEngineFallback on successful fetch.
+ */
+function recordDomainEngineSuccess(domain: string, engine: EngineType): void {
+  // LRU eviction: if at capacity and domain not already tracked, evict oldest
+  if (_domainLastSuccess.size >= DOMAIN_SUCCESS_MAX_ENTRIES && !_domainLastSuccess.has(domain)) {
+    const oldestKey = _domainLastSuccess.keys().next().value;
+    if (oldestKey !== undefined) {
+      _domainLastSuccess.delete(oldestKey);
+    }
+  }
+  _domainLastSuccess.set(domain, { engine, timestamp: Date.now() });
+}
+
+/**
+ * Look up the most recent successful engine for a domain.
+ * Returns the engine type if found within TTL, undefined otherwise.
+ * Performs amortized cleanup of expired entries on each access.
+ */
+function getDomainLastSuccessEngine(domain: string): EngineType | undefined {
+  const now = Date.now();
+  const entry = _domainLastSuccess.get(domain);
+  if (!entry) return undefined;
+  if (now - entry.timestamp > DOMAIN_SUCCESS_TTL_MS) {
+    _domainLastSuccess.delete(domain);
+    return undefined;
+  }
+  // Amortized cleanup: if map is getting large, sweep expired entries
+  if (_domainLastSuccess.size > DOMAIN_SUCCESS_MAX_ENTRIES * 0.8) {
+    for (const [key, val] of _domainLastSuccess) {
+      if (now - val.timestamp > DOMAIN_SUCCESS_TTL_MS) {
+        _domainLastSuccess.delete(key);
+      }
+    }
+  }
+  return entry.engine;
+}
+
 /**
  * Record a domain-level engine failure for adaptive chain reordering.
  */
@@ -534,6 +588,9 @@ export async function fetchWithEngineFallback(
 
       // Record success for adaptive chain
       if (domain) recordEngineSuccess(domain, engineType);
+
+      // Record domain-level success for smart engine pre-selection
+      if (domain) recordDomainEngineSuccess(domain, engineType);
 
       // Log fallback if we didn't use the primary engine
       if (i > 0) {
@@ -2970,7 +3027,10 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
  * Logic:
  *   - If engine explicitly specified, use it
  *   - If antiCrawl.cloudBrowser is true, use cloud-browser
+ *   - If antiCrawl.humanBehavior is true, use obscura
+ *   - If antiCrawl.proxy && uaRotation, use obscura
  *   - If antiCrawl.useJsRender is true, use playwright
+ *   - Domain learning: prefer the engine that last succeeded for this domain (within 30 min)
  *   - Default to cheerio (fastest)
  */
 export function selectEngine(
@@ -2982,7 +3042,8 @@ export function selectEngine(
     uaRotation?: boolean;
     cookies?: Array<{ name: string; value: string }>;
     proxy?: string;
-  }
+  },
+  domain?: string,
 ): EngineType {
   const VALID_ENGINES: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura'];
   if (requestedEngine) {
@@ -2996,6 +3057,13 @@ export function selectEngine(
   if (antiCrawl?.proxy && antiCrawl?.uaRotation) return "obscura";
   // JS rendering requested
   if (antiCrawl?.useJsRender) return "playwright";
+  // Domain learning: prefer the engine that recently succeeded for this domain
+  if (domain) {
+    const learnedEngine = getDomainLastSuccessEngine(domain);
+    if (learnedEngine && VALID_ENGINES.includes(learnedEngine)) {
+      return learnedEngine;
+    }
+  }
   // If only UA rotation without JS rendering, cheerio is fine
   return "cheerio";
 }

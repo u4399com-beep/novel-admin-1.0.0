@@ -21689,3 +21689,261 @@ Stage Summary:
 - guichuideng采集规则9个选择器修复
 - 累计修复: 819项 | 增强: 35项 | Stealth: 50活跃sections
 - 最新commit: dd66d4c
+---
+Task ID: R54-1
+Agent: audit-task-proxy
+Task: Deep audit task-engine.ts + proxy-manager.ts
+
+Work Log:
+- Read task-engine.ts (1393 lines) in full — 8 chunks
+- Read proxy-manager.ts (1926 lines) in full — 10 chunks
+- Audited every function in both files against 10-category checklist (resource leaks, race conditions, null/undefined crashes, logic bugs, memory leaks, error handling, security, type safety, performance, correctness)
+- Verified task-engine.ts: AtomicCounter, Semaphore, _domainEngineRefCount all correct; log buffer bounds-checked with overflow eviction; heartbeat/task-timeout properly cleaned in finally; per-chapter triedEngines isolation correct; CAPTCHA pause dedup via shared promise correct; engine upgrade lock is synchronous (no race in single-threaded JS)
+- Verified proxy-manager.ts: Dispatcher cache LRU eviction correct; verification dedup via pendingVerifications correct; SSRF protection on verify URLs; credential redaction in exports/stats; rotation eviction bounded at 500 domains
+- Identified 3 issues, all in proxy-manager.ts; 0 issues in task-engine.ts
+- Applied 3 fixes to proxy-manager.ts
+- TypeScript: 0 errors in proxy-manager.ts/task-engine.ts (pre-existing errors in unrelated files unchanged)
+- ESLint: 0 errors on both files
+
+## Issues Found & Fixed
+
+### Fix 1: Timer leak in checkHealth secondary fallback (Medium)
+- **Location**: proxy-manager.ts checkHealth() secondary catch block (line ~904)
+- **Problem**: When the secondary direct-connectivity health check fetch throws, the `setTimeout` (10s) was not cleared. The timer would fire after the catch block returned, calling `controller.abort()` on an already-settled controller. While not functionally harmful, it creates unnecessary timer churn and prevents clean shutdown.
+- **Fix**: Added `clearTimeout(timeout)` at the start of the catch block.
+
+### Fix 2: getFastestProxy fallback skips domain failure check (Medium-Low)
+- **Location**: proxy-manager.ts getFastestProxy() fallback path (lines ~587-601)
+- **Problem**: When no proxy has latency data (all avgResponseTime === 0), the fallback loop returns the first active proxy without checking `domainFailures`. This is inconsistent with the main selection loop (lines 565-584) which correctly skips proxies that failed for the domain in the last 5 minutes. A proxy that just failed for the target domain could be returned by the fallback.
+- **Fix**: Added domain failure exclusion check in the fallback loop, matching the main loop's behavior.
+
+### Fix 3: Unbounded domainFailures map growth (Medium-Low)
+- **Location**: proxy-manager.ts recordFailure() domain failure tracking (line ~719)
+- **Problem**: The `domainFailures` Map (domain → Map<proxyCleanUrl, timestamp>) grew without bound. Inner map entries were only cleaned on `recordSuccess()` (per proxy+domain pair) or full reset. If a domain consistently failed without any successes, stale timestamp entries accumulated indefinitely. Over time with many scraped domains, this was a slow memory leak.
+- **Fix**: Added amortized stale entry pruning in `recordFailure()`: when a domain's inner map exceeds 10 entries, prune all timestamps older than 5 minutes. If the inner map becomes empty, delete the outer domain key. Cost is O(n) only when the map is large, amortized to near-zero overhead.
+
+## Items Reviewed (No Fix Needed)
+- **task-engine.ts Semaphore**: Double-release guard (running <= 0) prevents over-release; queue-shift pattern is correct
+- **task-engine.ts _engineUpgradeLock**: Synchronous check-then-set (no await between has/add), safe in single-threaded JS
+- **task-engine.ts _domainEngineRefCount**: Per-task tracking via _touchedDomains prevents double-count; finally block correctly decrements
+- **task-engine.ts logBuffer**: _totalBufferEntries counter stays consistent through splice/re-insert cycles; overflow eviction at >1000 is O(1) amortized
+- **task-engine.ts flushTaskLogs**: Atomic drain (splice+delete) before async call prevents double-flush with periodic flusher
+- **task-engine.ts CAPTCHA pause dedup**: _captchaPausePromises has/get are synchronous (no interleaving); promise reference survives map deletion
+- **task-engine.ts task timeout**: clearTimeout in finally prevents post-completion abort; AbortController.signal propagated through all engine calls
+- **task-engine.ts heartbeat timer**: setInterval cleaned in finally block
+- **proxy-manager.ts dispatcher cache**: LRU eviction via delete-and-reinsert; old dispatchers closed with (d as any)?.close?.()
+- **proxy-manager.ts verification dedup**: pendingVerifications.finally() ensures cleanup even on rejection
+- **proxy-manager.ts recentFailures**: Pruned to 5-min window on every addRecentFailure call; bounded
+- **proxy-manager.ts domainRotationCount/Index**: Evicted at 500 entries
+- **proxy-manager.ts recordSuccess**: Correctly clears domain-specific failure on success; recentFailures filter preserves cross-domain failures
+- **proxy-manager.ts checkHealth through-proxy**: Both timeout and body cancel properly handled
+- **proxy-manager.ts selectFromCandidates/getProxy**: Domain latency fallback to overall latency; jitter 10-20%; lastUsedUrl exclusion
+- **proxy-manager.ts testProxyBatch**: Promise.allSettled with graceful rejection wrapping
+
+Stage Summary:
+- Total issues found: 3
+- Critical: 0, High: 0, Medium: 1, Medium-Low: 2, Low: 0
+- All fixes applied to proxy-manager.ts
+- task-engine.ts: 0 issues (well-written code)
+- TypeScript: 0 errors in audited files
+- ESLint: 0 errors
+---
+Task ID: R54-2
+Agent: audit-extractors
+Task: Deep audit js-content-extractor + cleaning + selectors + regex-safety
+
+Work Log:
+- Read js-content-extractor.ts (812 lines) in full — 4 chunks
+- Read cleaning.ts (965 lines) in full — 5 chunks
+- Read selectors.ts (734 lines) in full
+- Read regex-safety.ts (58 lines) in full
+- Audited every function in all 4 files against 10-category checklist (ReDoS, XSS/injection, null/undefined crashes, logic bugs, type safety, performance, error handling, memory, edge cases, correctness)
+- Verified js-content-extractor.ts: All 13 JS_PATTERNS use bounded quantifiers; scriptOnly flag correctly scopes [\s\S] patterns to script contents preventing ReDoS on full HTML; SCRIPT_TAG_RE properly resets lastIndex; charCode transforms use chunked approach (4096) to avoid call stack overflow; all JSON.parse calls in try-catch; safeRegex wrappers used for user-provided patterns; lazy-loaded content swap correctly identifies placeholder srcs; MAX_CONTENT_LENGTH=500K prevents unbounded extraction
+- Verified cleaning.ts: WATERMARK_PATTERNS all use bounded quantifiers ([^\n]{0,80}, {2,}, etc.); adRegexCache LRU eviction at 200 entries; event handler stripping (on*) and javascript: URI sanitization in applyHtmlLevelCleaning; CSS string escaping for attribute selectors; normalizeWhitespace strips comprehensive set of invisible Unicode chars; deduplicateParagraphs handles near-duplicates via overlap detection; filterAdLines uses O(patterns*lines) with regex caching; zero-width char removal covers ZWSP/ZWNJ/ZWJ/BOM/bidi controls
+- Verified selectors.ts: XPath-to-CSS converter handles common patterns; isExcludedTag prevents script/style content extraction; dangerous URL blocking (javascript:/data:/blob:/vbscript:); safeRegexMatch used for all user regex selectors; extractMetadataFallback has correct priority chain (OG > JSON-LD > meta); cheerio-cache reuse avoids re-parsing; getAdRegex escapes user patterns before compiling
+- Verified regex-safety.ts: DANGEROUS_REGEX_PATTERNS cover nested quantifiers (x+)+, overlapping quantifiers (x*)*, quantifier chains {n,m}{; safeRegexMatch truncates to 500K; safeRegexReplace intentionally does NOT truncate (documented reason); detection patterns use non-global regexes (no lastIndex issues)
+- Verified debugJsPatterns is exported but unused in production (only defined in extractor, no callers)
+
+## Issues Found & Fixed
+
+### Fix 1: JSON-LD author extraction loses string arrays (Low)
+- **Location**: selectors.ts extractMetadataFallback() line ~711
+- **Problem**: When JSON-LD `author` field is an array of strings (e.g. `["Author 1", "Author 2"]`), the `.map((a: any) => a?.name || '')` call returns all empty strings because strings don't have a `.name` property. The result is an empty author string, silently dropping valid author metadata.
+- **Fix**: Added `typeof a === 'string' ? a :` check before accessing `.name`, and guard with `if (names.length > 0)` to avoid setting empty author.
+
+## Items Reviewed (No Fix Needed)
+- **js-content-extractor.ts JS_PATTERNS**: All have bounded upper limits on [\s\S] quantifiers (100K, 200K); scriptOnly patterns correctly scoped to extractScriptContents output
+- **js-content-extractor.ts extractFrameworkStateContent**: globalName correctly escaped with replace(/[.*+?^${}()|[\]\\]/g); JSON.parse in try-catch
+- **js-content-extractor.ts swapLazyLoadedContent**: lazyUrl captured with [^"'\\s>]+ preventing attribute injection; srcMatch correctly identifies data:/about:blank placeholders; hardcoded LAZY_SRC_ATTRIBUTES (no user input)
+- **js-content-extractor.ts extractApiContentUrls**: URL regex only matches relative API paths (not absolute URLs), preventing false positives; dangerous URL check in extractLinksFromList blocks javascript:/data:/blob:/vbscript:
+- **cleaning.ts WATERMARK_PATTERNS**: All use bounded quantifiers; multiline patterns correctly use ^...$ with m flag; COMPILED_WATERMARK re-created from source/flags to avoid lastIndex issues
+- **cleaning.ts escapeCssString**: Escapes \\, \", ', [, ], (, ) for safe embedding in CSS attribute selectors
+- **cleaning.ts normalizeWhitespace**: Comprehensive invisible char stripping (U+200B-F, U+FEFF, U+00AD, bidi controls, Cc range); handles CRLF/LF/CR; preserves paragraph breaks when requested
+- **cleaning.ts adRegexCache**: FIFO eviction at 200 entries; correct Map insertion-order semantics
+- **cleaning.ts filterAdLines**: Double-checks remaining CJK content before dropping lines (prevents false positives on Chinese content)
+- **selectors.ts parseSelector/parseSelectorHtml/parseSelectorMulti**: All use safeRegexMatch for user regex; CSS selector errors caught in try-catch; isExcludedTag check before text extraction
+- **selectors.ts xpathToCss**: Handles common patterns (//tag, [@attr='val'], /text(), /@attr, following-sibling); lossy but documented as best-effort
+- **selectors.ts extractLinksFromList**: seenUrls Set prevents duplicates; isDangerous URL check before pushing results
+- **regex-safety.ts isDangerousRegex**: Detection patterns compiled without g flag (no lastIndex state issues); logs warning on block
+
+Stage Summary:
+- Total issues found: 1
+- Critical: 0, High: 0, Medium: 0, Low: 1
+- All fixes applied to selectors.ts
+- js-content-extractor.ts: 0 issues (well-structured with proper ReDoS scoping)
+- cleaning.ts: 0 issues (thorough watermark/ad removal with proper safety)
+- regex-safety.ts: 0 issues (correct defense-in-depth approach)
+- TypeScript: 0 errors in audited files
+- ESLint: 0 errors
+---
+Task ID: R54-3
+Agent: audit-utils-modules
+Task: Deep audit all remaining scraper-service modules
+
+Work Log:
+- Read utils.ts (1322 lines) in 3 chunks — UA rotation, retry, URL safety, domainHash, redirect following, Sec-Fetch headers, Client Hints, Chinese numeral parser
+- Read rate-limiter.ts (285 lines) in full — sliding window counter, penalty/recovery, domain eviction at 500
+- Read session-manager.ts (387 lines) in full — session pool, cleanup interval, domain index consistency
+- Read browser-behavior.ts (234 lines) in full — visit frequency throttle, human breaks, domain eviction at 500
+- Read adaptive-delay.ts (429 lines) in full — error backoff, response time tracking, browsing sessions LRU at 200
+- Read scrapers.ts (665→670 lines after edit) in full — paginated fetch, CAPTCHA detection, cover download with 5MB OOM guard
+- Read captcha-strategy.ts (286 lines) in full — strategy pattern with Cloudflare/GeeTest/EngineUpgrade/DelayBackoff
+- Read cookie-jar.ts (440 lines) in full — cookie parsing, domain matching, Max-Age=0 deletion, SQLite persistence
+- Read cookie-store.ts (156 lines) in full — SQLite upsert, WAL mode, parameterized queries
+- Read quality-scorer.ts (420 lines) in full — 7-dimension scoring with ring buffer at 200
+- Read anti-crawl-advisor.ts (864 lines) in 2 chunks — signal gathering, recommendation engine, threat scoring
+- Read request-fingerprint.ts (368 lines) in full — fingerprint tracking, cleanup with unref(), POST body padding
+- Read ip-fingerprint.ts (148 lines) in full — domain header profiles, LRU cache at 200
+- Read referrer-chain.ts (127 lines) in full — per-domain LRU history at 100 per domain, 500 domains max
+- Read charset-detector.ts (353 lines) in full — BOM detection, GBK/Big5 frequency analysis, 256KB analysis limit
+- Read priority-queue.ts (213 lines) in full — binary search insertion, FIFO within priority
+- Read queue.ts (230 lines) in full — SQLite audit log, parameterized queries
+- Read queue.pg.ts (393 lines) in full — PostgreSQL with FOR UPDATE SKIP LOCKED
+- Read types.ts (377 lines) in full — type definitions only
+- Read ai-rule-generator.ts (457 lines, first 150 lines) — LRU rule cache at 100, CSS selector validation
+- Read engine-config.ts (206 lines) in full — JSON config file with mtime cache, domain overrides
+- Read doh-resolver.ts (241 lines) in full — DoH with AliDNS/Cloudflare/Google fallback, cache at 500
+- Read tls-fingerprint.ts (261 lines) in full — JA3 approximation with per-browser variants, cache at 500
+- Read http2-decoy.ts (460 lines, relevant sections) — H2 SETTINGS profiles, per-domain connection profiles
+- Read doh-simulation.ts (195 lines) in full — fire-and-forget DoH with simulation fallback
+- Read cheerio-cache.ts (48 lines) in full — LRU cache at 50, length+prefix key
+- Read captcha-detector.ts (265 lines) in full — regex-based CAPTCHA detection with confidence scoring
+
+## Issues Found & Fixed
+
+### Fix 1: AbortSignal listener leak in scrapers.ts cover download (Low-Medium)
+- **Location**: scrapers.ts handleDownloadCover(), lines ~514-518 and ~525-529
+- **Problem**: Two `await new Promise()` blocks for rate-limit wait and throttle wait added `signal?.addEventListener('abort', ...)` without removing the listener when the timer fires normally. If handleDownloadCover is called multiple times with the same AbortSignal (e.g., same task), abort listeners accumulate on the signal. While not a persistent leak (signals are per-task), it's inconsistent with the abort-aware delay pattern used in `retryWithBackoff()` (utils.ts line 878-890) which properly cleans up listeners.
+- **Fix**: Extract the abort handler to a named function, use `{ once: true }` option, and call `removeEventListener` when the timer fires normally. Applied to both the rate-limit and throttle wait blocks.
+
+### Fix 2: Dead code referencing undefined `item` in priority-queue.ts enqueue() (Low, dead code)
+- **Location**: priority-queue.ts enqueue(), lines ~47-55
+- **Problem**: The method pushed an item to `this.queue` via `this.queue.push({...})` and then called `this.insertSorted(item)` where `item` is not a defined variable. This would cause a `ReferenceError` at runtime. Additionally, the push+insertSorted pattern would cause the item to appear twice in the queue (once from push, once from insertSorted's splice). Note: `enqueue()` is never called anywhere in the codebase (confirmed via grep), so this is dead code and not a production issue.
+- **Fix**: Removed the `this.queue.push(...)` call and stored the item in a named variable `const item: PriorityQueueItem = {...}` before passing it to `this.insertSorted(item)`.
+
+### Fix 3: Dead `rateCheck.blocked` code in scrapers.ts (Low, cosmetic)
+- **Location**: scrapers.ts handleDownloadCover(), line ~510
+- **Problem**: `rateLimiter.acquire()` returns `{ allowed: boolean; waitMs: number }` — there is no `blocked` or `reason` property. The check `if (rateCheck.blocked)` was dead code (always falsy). In practice, this didn't cause incorrect behavior because the `waitMs > 0` check on the next block correctly handled throttling.
+- **Fix**: Replaced the dead `rateCheck.blocked` check with `!rateCheck.allowed && rateCheck.waitMs > 0`, which is the correct API usage.
+
+## Items Reviewed (No Fix Needed)
+- **utils.ts**: Weighted UA selection with cumulative bounds (O(1)); retryWithBackoff with abort-aware delay and listener cleanup; domainHash djb2 variant with Math.abs; followRedirects with SSRF validation on each hop, loop detection via visitedUrls Set, response.body.cancel() on redirect hops; isSafeSavePath with path traversal protection; buildFetchHeaders with control character stripping in cookies; parseChineseNumeral handles 万/亿 major units; SEC_FETCH_COMBOS has technically incorrect same-origin entry but only used in legacy fallback path
+- **rate-limiter.ts**: Sliding window with filter; requestTimestamps trimmed to max(maxRPM*2, 200); domain eviction at 500; burst allowance only when not penalized; gradual recovery (1 RPM per N successes, N capped 5-20)
+- **session-manager.ts**: Max 3 sessions per domain with eviction; taskIds capped at 20 per session; 24h max session age; cleanup every 30min; domain index consistency (each session belongs to at most one domain)
+- **browser-behavior.ts**: Visit frequency throttle (3/10s); domain eviction at 500; human breaks every 5-10 requests; entry page 10% chance once per domain; chapter-like URL detection
+- **adaptive-delay.ts**: Error backoff capped at 10; response history rolling window of 10; LRU domain eviction at 500; browsing session LRU at 200; Gaussian-like reading time via (u1+u2)/2
+- **captcha-strategy.ts**: Strategy chain (Cloudflare→GeeTest→EngineUpgrade→DelayBackoff); per-strategy retry caps; engine upgrade path (cheerio→playwright→obscura); error handling with fallback to next strategy
+- **cookie-jar.ts**: Control character stripping in parseSetCookie; Max-Age=0 returns null → triggers deletion; parent domain traversal for cookie matching; stale session cleanup (6h threshold); periodic cleanup every 5min
+- **cookie-store.ts**: SQLite WAL mode, synchronous=NORMAL, busy_timeout=5000; INSERT OR REPLACE with transaction; parameterized queries; deleteExpired with proper WHERE clause
+- **quality-scorer.ts**: Ring buffer at 200; 7-dimension scoring with A-F grades; content quality anomaly detection (uniform word counts, all-very-short)
+- **anti-crawl-advisor.ts**: Domain eviction at 200; timestamp rolling window with splice pruning; signal gathering with external module try-catch fallbacks; known hard sites set
+- **request-fingerprint.ts**: Hard cap at 10000 fingerprints; cleanup interval with .unref(); proper discard() for exception paths; domain index cleanup in both complete() and discard()
+- **ip-fingerprint.ts**: Domain header cache at 200 with 20min TTL; Connection/Keep-Alive/Accept-Encoding/Accept variation
+- **referrer-chain.ts**: LRU history at 100 per domain, 500 domains max; self-refer exclusion in getReferer
+- **charset-detector.ts**: BOM detection ordered (longer BOMs first); analysis limited to 256KB; non-ASCII early exit at 20; GBK/Big5 discrimination via lead byte ranges
+- **queue.ts**: SQLite with parameterized queries; INSERT OR IGNORE for dedup; d.changes for SQLite result checking (Bun-specific)
+- **queue.pg.ts**: postgres tagged template (parameterized); FOR UPDATE SKIP LOCKED for concurrent dequeue; atomic retry logic in markFailed; shutdown() for pool cleanup
+- **engine-config.ts**: JSON config file with mtime cache; chain validation (no duplicates, valid engine types); domain override bounds checking
+- **doh-resolver.ts**: Provider fallback chain; per-provider 5s timeout with clearTimeout in finally; cache at 500 with TTL from DNS response; min 60s TTL
+- **tls-fingerprint.ts**: Per-browser cipher variants; domain hash for deterministic selection; cache at 500 with 20min TTL
+- **http2-decoy.ts**: Browser-type H2 SETTINGS profiles; domain hash for deterministic profile selection; per-domain cache
+- **doh-simulation.ts**: Fire-and-forget DoH with simulation fallback; dual cache (dnsCache at 100, xffCache at 200); session-consistent XFF from /24 subnet
+- **cheerio-cache.ts**: LRU at 50 entries; length+prefix cache key; read-only usage documented
+- **captcha-detector.ts**: Regex-based detection with confidence scoring; evidence deduplication; status code + Cloudflare header heuristic
+- **types.ts**: Type definitions only, no logic
+- **ai-rule-generator.ts**: LRU rule cache at 100 with 24h TTL; CSS selector validation via cheerio; XPath syntax validation
+
+Stage Summary:
+- Total issues found: 3
+- Critical: 0, High: 0, Medium: 0, Low-Medium: 1, Low: 2
+- All fixes applied to scrapers.ts and priority-queue.ts
+- TypeScript: 0 errors in audited files (scraper-service/src/)
+
+---
+Task ID: R54-4
+Agent: enhance-anti-crawl
+Task: Anti-crawl fingerprint consistency, timing, TLS, HTTP/2 enhancements
+
+Work Log:
+- Read stealth.ts (3075 lines) — found stealth script IIFE ending at line 2756, template literal closes at 2757
+- Read browser-behavior.ts (234 lines) — class-based BrowserBehavior with domain visit throttling, human breaks, reading delay
+- Read tls-fingerprint.ts (261 lines) — JA3 approximation with per-browser cipher variants, domain hash selection, cache at 500
+- Read http2-decoy.ts (460 lines) — H2 SETTINGS profiles per browser, preamble frame sequence, Accept-Encoding pools
+- Added Section 99: Fingerprint Consistency Validator to stealth.ts — 4 cross-property checks (hardwareConcurrency vs deviceMemory, language vs languages[0], colorDepth validity, timezoneOffset vs Intl resolved timezone), logs warnings via console.warn, ~45 lines injected JS
+- Added generateRealisticTypingDelay() to browser-behavior.ts — character-aware delays (base 50-150ms, punctuation 200-500ms, sentence-end 400-800ms, 10% backspace-simulation 300-600ms)
+- Added generateMouseMovementPath() to browser-behavior.ts — cubic Bezier interpolation with perpendicular control points, smoothstep ease-in-out timing, ±2px jitter (reduced at endpoints), distance-adaptive step count (5-40 points), MouseMovementPoint interface exported
+- Added 3 new TLS cipher variants to tls-fingerprint.ts: Samsung Internet 23 (ECDSA-first sigalgs, Samsung-specific cipher order), Brave 1.70 (ECDSA ciphers ranked higher than RSA, ECDSA-first sigalgs), Opera GX (CHACHA20-preferred cipher order matching ARM-optimized builds)
+- Extended TLSCipherVariant.browser union type and detectBrowserFromUA() to handle Samsung/Brave/Opera
+- Added generateWindowUpdateFrame() to http2-decoy.ts — connection-level WINDOW_UPDATE (stream 0) with Chrome base increment 15663105 ± 1000 deterministic per-domain jitter
+- Added getH2DefaultWindowSize() helper to http2-decoy.ts
+- Verified all 4 files parse cleanly via bun build --no-bundle (no new errors)
+
+Stage Summary:
+- Enhancements implemented: 4
+- New code added: ~190 lines (stealth.ts ~45, browser-behavior.ts ~130, tls-fingerprint.ts ~40, http2-decoy.ts ~50)
+- Pre-existing TS errors (Map iteration, unrelated Vue/TSX files) unchanged by these additions
+---
+Task ID: R54-5
+Agent: enhance-scraping
+Task: Engine fallback optimization + quality scoring enhancement
+
+Work Log:
+- Read engines.ts (3100+ lines) — understood selectEngine(), fetchWithEngineFallback(), circuit breakers, adaptive fallback chain, domain failure tracking
+- Read quality-scorer.ts (420 lines) — 7-dimension scoring (100pts total), ring buffer at 200, A-F grades
+- Read js-content-extractor.ts (812 lines) — 13 JS_PATTERNS, framework SSR state extraction, JSON API extraction, lazy content swap
+- Read types.ts ScrapeResult/QualityCheck/QualityReport types
+- Read scrapers.ts call sites for selectEngine() (lines 195, 265, 321, 393)
+
+## Enhancement 1: Smart Engine Selection with Domain Learning (engines.ts)
+- Added `_domainLastSuccess` Map<string, {engine, timestamp}> (LRU, 50 entries, 30-min TTL)
+- Added `recordDomainEngineSuccess(domain, engine)` — LRU eviction on insert, called from fetchWithEngineFallback success path
+- Added `getDomainLastSuccessEngine(domain)` — returns engine if within TTL, amortized cleanup at 80% capacity
+- Modified `selectEngine()` — added optional `domain` parameter, checks domain history before normal selection logic (after antiCrawl hard rules, before default cheerio)
+- Updated 4 call sites in scrapers.ts (handleScrapeList, handleScrapeBook, handleScrapeChapters, handleScrapeContent) to extract domain from URL and pass to selectEngine
+- Backward compatible: domain parameter is optional, test file and task-engine.ts unaffected
+
+## Enhancement 2: Quality Score Enhancement (quality-scorer.ts + types.ts)
+- Extended ScrapeResult type with optional `contentSample?: string` and `bookMeta?: {title?, author?, description?, coverUrl?}`
+- Rescaled existing 7 dimensions from 100pts to 80pts (12+12+12+16+12+8+8) to make room for 2 new dimensions
+- Added `checkContentFreshness(result)` — 10pts, detects dates in content via 4 regex patterns (Chinese YYYY年MM月, ISO YYYY-MM-DD, English Mon YYYY, YYYY-MM), scores 8-10 if within 30 days, 5-7 within 90 days, 3-4 within 1 year, 0-2 older, 5 neutral if no content sample
+- Added `checkStructuralCompleteness(result)` — 10pts (2pts each for title, author, description, chapters, cover), 5 neutral if no metadata provided
+- Updated module docstring to reflect 9 dimensions, 100pts total
+- Fixed TS18047 (match possibly null in closure) by extracting match[0].toLowerCase() to local variable
+
+## Enhancement 3: Extraction Confidence Indicator (js-content-extractor.ts)
+- Extended JsExtractResult interface with `confidence: number` (0.0-1.0) and `charCount: number`
+- Added new `ExtractionResult` interface with `content`, `source`, `confidence`, `charCount` fields (source: 'dom'|'js_state'|'json_ld'|'meta'|'lazy_attr')
+- Added `CONFIDENCE_BY_SOURCE` mapping: frameworkState→0.9, jsonApiResponse→0.95, lazy_attr→0.6, meta→0.8
+- Added `computeExtractionConfidence(primaryPattern, originalHtml, processedHtml)` — returns source-specific confidence, detects lazy swap modification to reduce DOM confidence from 0.7 to 0.65
+- Updated extractJsContent() to compute and return confidence/charCount on every result
+- Updated both return paths (found=false and found=true)
+
+## Verification
+- TypeScript: quality-scorer.ts 0 new errors, types.ts 0 errors, js-content-extractor.ts 0 new errors, engines.ts 1 new TS2802 (MapIterator) — same class as ~30 pre-existing in codebase
+- Backward compatible: all new fields/params are optional
+- No files modified outside scraper-service directory
+
+Stage Summary:
+- Enhancements implemented: 3
+- New code added: ~250 lines (engines.ts ~55, quality-scorer.ts ~130, js-content-extractor.ts ~40, types.ts ~10, scrapers.ts ~16)
+- Pre-existing TS errors (MapIterator, module resolution) unchanged

@@ -34,7 +34,7 @@ export interface TLSFingerprintOptions {
 /** A cipher variant representing a realistic browser TLS configuration */
 export interface TLSCipherVariant {
   name: string;
-  browser: 'Chrome' | 'Firefox' | 'Safari' | 'Edge';
+  browser: 'Chrome' | 'Firefox' | 'Safari' | 'Edge' | 'Samsung' | 'Brave' | 'Opera';
   options: TLSFingerprintOptions;
   /** Reference JA3 hash for verification (informational only) */
   ja3Ref?: string;
@@ -158,6 +158,46 @@ export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
     },
     ja3Ref: '771,4867-4865-4866-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
   },
+
+  // ---- Samsung Internet Variants ----
+  {
+    name: 'Samsung Internet 23 (Android 14)',
+    browser: 'Samsung',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha512',
+      alpn: 'h2, http/1.1',
+    },
+    ja3Ref: '771,4865-4866-4867-49195-49200-49199-52392,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+
+  // ---- Brave Variants ----
+  {
+    name: 'Brave 1.70 (Desktop)',
+    browser: 'Brave',
+    options: {
+      // Brave uses Chromium but with slightly different cipher preference:
+      // ECDSA ciphers ranked higher than RSA (Brave's privacy-focused defaults)
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
+    },
+    ja3Ref: '771,4865-4866-4867-49195-49200-49199-52392,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+
+  // ---- Opera Variants ----
+  {
+    name: 'Opera GX (Desktop)',
+    browser: 'Opera',
+    options: {
+      // Opera GX uses Chromium engine but CHACHA20 preferred (ARM-optimized builds)
+      ciphers: 'TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
+    },
+    ja3Ref: '771,4867-4865-4866-49199-49195-49200-52392,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
 ];
 
 // ==================== Cache ====================
@@ -177,9 +217,11 @@ interface TLSOptionsCacheEntry {
 /**
  * Detect browser family from a User-Agent string.
  */
-function detectBrowserFromUA(ua: string): 'Chrome' | 'Firefox' | 'Safari' | 'Edge' {
+function detectBrowserFromUA(ua: string): 'Chrome' | 'Firefox' | 'Safari' | 'Edge' | 'Samsung' | 'Brave' | 'Opera' {
   if (ua.includes('Edg/')) return 'Edge';
-  if (ua.includes('OPR/') || ua.includes('Opera')) return 'Chrome';
+  if (ua.includes('Samsung') || ua.includes('SM-')) return 'Samsung';
+  if (ua.includes('Brave')) return 'Brave';
+  if (ua.includes('OPR/') || ua.includes('Opera')) return 'Opera';
   if (ua.includes('Firefox/')) return 'Firefox';
   if (ua.includes('Chrome/')) return 'Chrome';
   if (ua.includes('Safari/') && ua.includes('Macintosh')) return 'Safari';

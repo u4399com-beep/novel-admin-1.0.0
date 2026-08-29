@@ -457,3 +457,52 @@ export function getConnectionProfile(domain: string, ua?: string): ConnectionPro
 export function getAcceptEncoding(domain: string): string {
   return getConnectionProfile(domain).acceptEncoding;
 }
+
+// ==================== WINDOW_UPDATE Frame Generator ====================
+
+/** HTTP/2 default initial window size (RFC 7540 §6.9.2) */
+const H2_DEFAULT_INITIAL_WINDOW_SIZE = 65535;
+
+/** Common Chrome WINDOW_UPDATE increment (connection-level, stream 0) */
+const CHROME_WINDOW_UPDATE_INCREMENT = 15663105;
+
+/** Maximum jitter applied to WINDOW_UPDATE increment per domain (±1000) */
+const WINDOW_UPDATE_JITTER = 1000;
+
+/**
+ * Generate a realistic WINDOW_UPDATE frame for the connection preamble sequence.
+ *
+ * Chrome sends a connection-level WINDOW_UPDATE (stream 0) after SETTINGS_ACK
+ * with an increment of ~15663105. This function adds per-domain jitter (±1000)
+ * to avoid all connections having the exact same increment value, which is a
+ * fingerprinting signal.
+ *
+ * The initial window size (65535) is the HTTP/2 default per RFC 7540 §6.9.2.
+ * The increment represents the additional window the client is granting to
+ * the server (Chrome's value is: 2^31 - 1 - 65535 = 15663105 — i.e., maximum
+ * connection-level flow control window minus the default).
+ *
+ * @param domain - Target domain for deterministic per-domain jitter
+ * @returns An H2PreambleFrame of type WINDOW_UPDATE to insert after SETTINGS_ACK
+ */
+export function generateWindowUpdateFrame(domain: string): H2PreambleFrame {
+  const h = domainHash(domain);
+
+  // Per-domain deterministic jitter: ±1000 from the Chrome base value
+  const jitter = (h % (2 * WINDOW_UPDATE_JITTER + 1)) - WINDOW_UPDATE_JITTER;
+  const increment = CHROME_WINDOW_UPDATE_INCREMENT + jitter;
+
+  return {
+    type: 'WINDOW_UPDATE',
+    delayMs: 0,
+    streamId: 0, // Connection-level
+    windowIncrement: increment,
+  };
+}
+
+/**
+ * Get the initial HTTP/2 window size for documentation/logging.
+ */
+export function getH2DefaultWindowSize(): number {
+  return H2_DEFAULT_INITIAL_WINDOW_SIZE;
+}

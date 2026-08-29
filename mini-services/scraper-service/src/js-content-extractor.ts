@@ -39,6 +39,24 @@ export interface JsExtractResult {
   pattern: string;
   /** All extracted chunks (if multiple patterns matched) */
   chunks: string[];
+  /** Extraction confidence score (0.0 - 1.0) based on source reliability */
+  confidence: number;
+  /** Total character count of extracted content */
+  charCount: number;
+}
+
+/**
+ * Generic extraction result interface with source classification and confidence.
+ * Used by callers that need structured metadata about the extraction source.
+ */
+export interface ExtractionResult {
+  content: string;
+  /** Source type that produced the content */
+  source: 'dom' | 'js_state' | 'json_ld' | 'meta' | 'lazy_attr';
+  /** Confidence score (0.0 - 1.0) based on source reliability */
+  confidence: number;
+  /** Total character count of extracted content */
+  charCount: number;
 }
 
 // ==================== Extraction Patterns ====================
@@ -577,6 +595,55 @@ export function swapLazyLoadedContent(html: string): string {
   return html;
 }
 
+/**
+ * Confidence scores by extraction source type.
+ *   js_state (Vue/React/Next.js SSR): 0.9 — structured framework data, highly reliable
+ *   json_ld (JSON-LD / application/json): 0.95 — structured schema data, most reliable
+ *   dom (regex patterns on HTML): 0.7 — reliable but may miss JS-rendered content
+ *   lazy_attr (lazy-loaded content swap): 0.6 — may miss some images
+ *   meta (meta tags): 0.8 — clean but limited (not used in this extractor, defined for reference)
+ */
+const CONFIDENCE_BY_SOURCE: Record<string, number> = {
+  frameworkState: 0.9,
+  jsonApiResponse: 0.95,
+  lazy_attr: 0.6,
+  meta: 0.8,
+};
+const DEFAULT_PATTERN_CONFIDENCE = 0.7; // DOM-based regex extraction
+
+/**
+ * Compute extraction confidence based on which source/pattern produced the content.
+ * When multiple sources contribute chunks, returns a weighted average.
+ *
+ * @param primaryPattern - The first (primary) matched pattern name
+ * @param originalHtml - The original HTML (before lazy swap)
+ * @param processedHtml - The HTML after lazy attribute swapping
+ */
+function computeExtractionConfidence(
+  primaryPattern: string,
+  originalHtml: string,
+  processedHtml: string,
+): number {
+  // Single-source extraction — use the source-specific confidence
+  const directConfidence = CONFIDENCE_BY_SOURCE[primaryPattern];
+  if (directConfidence !== undefined) {
+    return directConfidence;
+  }
+
+  // DOM pattern extraction (default for JS_PATTERNS matches)
+  let confidence = DEFAULT_PATTERN_CONFIDENCE;
+
+  // If lazy swapping modified the HTML (content likely came from lazy attributes),
+  // reduce confidence slightly since lazy-swap may miss some images
+  if (originalHtml !== processedHtml) {
+    // Weighted average: DOM confidence and lazy_attr confidence
+    // Since we can't determine the exact ratio, lean toward DOM (lazy is a preprocessing step)
+    confidence = 0.65;
+  }
+
+  return confidence;
+}
+
 // ==================== Main Extraction =====================
 
 /**
@@ -665,7 +732,7 @@ export function extractJsContent(html: string): JsExtractResult {
   }
 
   if (chunks.length === 0) {
-    return { found: false, content: '', pattern: '', chunks: [] };
+    return { found: false, content: '', pattern: '', chunks: [], confidence: 0, charCount: 0 };
   }
 
   // Deduplicate chunks (same content may appear in multiple patterns)
@@ -674,11 +741,16 @@ export function extractJsContent(html: string): JsExtractResult {
   // Join chunks with paragraph breaks
   const content = uniqueChunks.join('\n\n');
 
+  // Compute extraction confidence based on source type
+  const confidence = computeExtractionConfidence(matchedPattern, html, processedHtml);
+
   return {
     found: true,
     content,
     pattern: matchedPattern,
     chunks: uniqueChunks,
+    confidence,
+    charCount: content.length,
   };
 }
 

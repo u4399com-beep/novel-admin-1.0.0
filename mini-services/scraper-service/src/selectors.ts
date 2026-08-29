@@ -706,10 +706,10 @@ export function extractMetadataFallback(html: string): Partial<{
     if (typeof jsonLdData.author === 'string') {
       result.author = jsonLdData.author;
     } else {
-      // Person object or array of Person objects
+      // Person object, array of Person objects, or array of strings
       const authors = Array.isArray(jsonLdData.author) ? jsonLdData.author : [jsonLdData.author];
-      const names = authors.map((a: any) => a?.name || '').filter(Boolean);
-      result.author = names.join(', ');
+      const names = authors.map((a: any) => typeof a === 'string' ? a : (a?.name || '')).filter(Boolean);
+      if (names.length > 0) result.author = names.join(', ');
     }
   }
   else if (metaAuthor) result.author = metaAuthor;
