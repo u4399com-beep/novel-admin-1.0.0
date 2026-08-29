@@ -21947,3 +21947,162 @@ Stage Summary:
 - Enhancements implemented: 3
 - New code added: ~250 lines (engines.ts ~55, quality-scorer.ts ~130, js-content-extractor.ts ~40, types.ts ~10, scrapers.ts ~16)
 - Pre-existing TS errors (MapIterator, module resolution) unchanged
+
+---
+Task ID: 1
+Agent: Scrape Rule Creator
+Task: [R55] 编写 wenxue.iqiyi.com 采集规则
+
+Work Log:
+- Analyzed homepage structure via page_reader: found book card structure (.booklist-fine-con > .bookBigCover > a[href*=detail-]), category nav links
+- Analyzed library/list page (lib-18l2g48o37_0_0-51-0-1.html): book items in li.stacksBook, cover in .stacksBookCover, title in .stacksBook-tit, pagination in .mod-page
+- Analyzed book detail page (detail-11k4akm8i41.html): title in .book-details-tit h1, author in .writerName, status in .stacksBook-tag (tag-end=完结, tag-serial=连载中), description in .book-details-briefing, cover in .bookBigCover img, category in .breadCrumbNav a:nth-child(2)
+- Analyzed chapter catalog page (catalog-11k4akm8i41-1.html): chapters in dl.catalog-list > dd > .catalog-chapter > a[href*=reader-]
+- Analyzed chapter reader page (reader-11k4akm8i41-1oei99hrz87.html): title in strong.reader-chapter-tit, content in div.reader-article, next chapter in a#nextChpater
+- Found existing iqiyi-wenxue.json (cheerio engine, light anti-crawl); created new wenxue-iqiyi.json with hardened anti-crawl per task requirements
+
+Stage Summary:
+- Created /home/z/my-project/mini-services/scraper-service/src/scrape-rules/wenxue-iqiyi.json
+- Key design decisions:
+  - Engine: playwright (not cheerio) — iQiyi is a large commercial site with JS rendering and anti-bot SDKs (cooksdk.js, iwt.js pingback)
+  - useJsRender: true — page_reader showed significant JS-rendered content (tracking scripts, security SDK)
+  - Delay: 3000-6000ms — generous to avoid rate limiting from iQiyi infrastructure
+  - humanBehavior: true — simulate mouse/scroll to pass bot detection
+  - UA rotation + stealthEnabled — essential for iQiyi's anti-crawl measures
+  - Selector improvements over existing iqiyi-wenxue.json: more specific .catalog-chapter a selectors, added many iQiyi-specific cleanup patterns (cooksdk.js, QR code dialogs, sidebar, footer, popup guides)
+  - Preserved 16 category URLs from existing rule for completeness
+---
+Task ID: 3
+Agent: Stealth Enhancer
+Task: [R55] Canvas fingerprint 2D context 强化
+
+Work Log:
+- Read stealth.ts fully (3126 lines) and identified all canvas-related sections
+- Section 20 (lines 1404-1452): getImageData per-pixel noise — unchanged
+- Section 30 (lines 1734-1773): toDataURL/toBlob — enhanced with WebGL canvas fallback
+- Canvas 2D Context Proxy (lines 1775-1995): enhanced measureText, added fillText/strokeText, createConicGradient
+- Section 3 (lines 797-940): WebGL vendor/renderer — already uses curated GPU combos from real hardware
+
+Enhancement 1: toDataURL/toBlob WebGL canvas fallback (Section 30, ~90 lines)
+- Previously: toDataURL/toBlob only worked for 2D canvases (null ctx for WebGL → fell back to unnoised original)
+- Now: When getContext('2d') returns null, detects WebGL context and uses patched readPixels (Section 3) to extract noisy pixel data, flips vertically (WebGL is bottom-up), encodes from temp canvas
+- Shared temp canvas to avoid per-call DOM element creation (detectable side-effect)
+
+Enhancement 2: Full TextMetrics variation (Canvas proxy measureText, ~50 lines)
+- Previously: Only varied `width` property (±0.01px) seeded by first char
+- Now: Varies all 7 TextMetrics properties (width, actualBoundingBoxLeft/Right/Ascent/Descent, fontBoundingBoxAscent/Descent)
+- Noise is content+font aware (hashes full text + current font string)
+- Independent noise per property via LCG progression
+
+Enhancement 3: fillText/strokeText sub-pixel positioning noise (~35 lines)
+- New: Adds ±0.05px deterministic offset to x,y coordinates
+- Simulates different GPU/driver text rendering positions
+- Fingerprinting scripts that draw text + read back via getImageData can now detect consistent sub-pixel variation
+
+Enhancement 4: Gradient improvements (~35 lines)
+- Cached color parsing canvas (was creating new canvas per _parseAndPerturbColor call)
+- createConicGradient support (Chrome 99+ API with addColorStop noise)
+- Color perturbation now scaled by _canvasNoiseIntensity (R55: intensity-aware)
+
+Enhancement 5: Section 100 — OffscreenCanvas fingerprint alignment (~100 lines)
+- OffscreenCanvas.prototype.getContext override for 2D contexts
+- Patched getImageData on OffscreenCanvas with same LCG noise as HTMLCanvas
+- Patched measureText on OffscreenCanvas 2D contexts
+- Patched convertToBlob — re-encodes from noisy getImageData via temp OffscreenCanvas
+- Patched transferToImageBitmap — same noise path
+- Guarded by _obscuraPatched flag to prevent double-patching
+
+Stage Summary:
+- Lines modified: 1734-1844 (Section 30 rewrite), 1846-2171 (proxy enhancements), 2989-3092 (Section 100 new)
+- File grew: 3126 → 3414 lines (+288 lines)
+- New stealth features: 5 (WebGL toDataURL fallback, full TextMetrics, fillText/strokeText noise, createConicGradient, OffscreenCanvas alignment)
+- Verification: pass (only pre-existing TS2802 MapIterator error, no new errors)
+
+---
+Task ID: 4
+Agent: Proxy Pool Scheduler
+Task: [R55] Enhance proxy pool with latency-aware and region-aware intelligent scheduling
+
+Work Log:
+- Read worklog.md (last 100 lines) and proxy-manager.ts (1945 lines) for context
+- Read types.ts for type definitions
+- Extended ProxyEntry interface with optional `region?: string` field (line 48)
+
+## Enhancement 1: ProxyLatencyTracker class (lines 329-499, new)
+- Added `LatencyWindowEntry` interface for rolling window entries (latencyMs, success, timestamp)
+- Implemented `ProxyLatencyTracker` class with:
+  - Rolling window of last 20 requests per proxy-domain pair
+  - EMA (α=0.3) for smooth latency estimation (matches existing code pattern)
+  - `getCompositeScore()`: availability * (1/normalized_latency) * success_rate
+  - `getBestProxyForDomain()`: selects best proxy from candidate list using composite score
+  - `getSuccessRate()`, `getAvailability()`, `hasData()`, `getEmaLatency()` query methods
+  - Automatic stale entry eviction (30min) and safety cap (10000 entries)
+  - `removeProxy()` and `clear()` for lifecycle management
+
+## Enhancement 2: Domain Region Detection (lines 501-530, new)
+- Added `DOMAIN_REGION_PATTERNS` constant with 18 TLD→region mappings
+  - Chinese regions: cn-east, cn-south, cn-southwest
+  - Asia-Pacific: jp-east, kr-central, ap-southeast
+  - Western: us-west, eu-central, eu-west, eu-south, ru-central
+- Added `detectDomainRegion(domain)` method: matches domain against TLD patterns
+- Added `setPreferredRegion(region)` method: override auto-detection with manual preference
+- Added `getProxiesByRegion(region)` method: filter pool by region tag
+- Added `setProxyRegion(proxyUrl, region)` method: tag a proxy with a region
+- Extended `ProxyEntry` type with optional `region` field
+- Integrated region bonus (1.5x weight) into `getProxy()` and `selectFromCandidates()` weight calculations
+- `getProxyChain()` and `getBestProxyForDomain()` prefer region-matched proxies first, fall back to any
+
+## Enhancement 3: Proxy Health Prediction (lines 2272-2303, new)
+- Added `consecutiveFailTracker` Map: cleanUrl → { count, firstFailAt }
+- Added `hourlyFailurePattern` Map: cleanUrl → Map<hour, { count, lastSeen }>
+- Added `getHealthPredictionMultiplier(entry)` method:
+  - 3+ consecutive failures in last 10 min → 0.5x multiplier
+  - 5+ failures at current hour (within 24h) → 0.6x multiplier
+  - Combined: 0.3x for proxies failing both conditions
+- Hooked into `recordFailure()`: updates both trackers on each failure
+- Hooked into `recordSuccess()`: resets consecutiveFailTracker
+- Integrated into `getProxy()` and `selectFromCandidates()` weight calculations
+- Integrated into `getProxyChain()` composite scoring
+
+## Enhancement 4: Smart Retry with Proxy Rotation (lines 2305-2392, new)
+- Added `requestTriedProxies` Map: requestId → Set<proxyCleanUrl>
+- Added `getProxyChain(requestId, maxProxies, domain?)` method:
+  - Returns ordered array of ProxyEntry (best first)
+  - Scores by composite score × health prediction multiplier
+  - Region-matched proxies sorted first, then others
+  - Excludes already-tried proxies for this requestId
+  - Respects disabled, cooling, blocked, and 5-min domain-failure exclusions
+- Added `recordRequestProxyAttempt(requestId, proxyUrl)`: track failed proxy
+- Added `clearRequestProxies(requestId)`: cleanup after request completes
+- Auto-eviction when requestTriedProxies exceeds 1000 entries
+
+## Enhancement 5: Composite Score Selection (lines 2394-2435, new)
+- Added `getBestProxyForDomain(domain)` method:
+  - Filters eligible proxies (active, not cooling, not blocked)
+  - Prefers region-matched proxies when region detected or preferred
+  - Uses ProxyLatencyTracker.getBestProxyForDomain() for final selection
+
+## Integration into existing methods
+- `recordSuccess()`: feeds ProxyLatencyTracker, resets consecutiveFailTracker
+- `recordFailure()`: feeds ProxyLatencyTracker, updates consecutiveFailTracker + hourlyFailurePattern
+- `getProxy()`: added healthPredMult × regionBonus to weight calculation
+- `selectFromCandidates()`: added healthPredMult × regionBonus to weight calculation
+- `removeProxy()`: cleans up latency tracker + health prediction data
+- `removeAllProxies()`: clears all new data structures + preferredRegion
+- `resetProxy()`: clears per-proxy tracking data
+- `resetAllProxies()`: clears all new data structures
+
+## Verification
+- `npx tsc --noEmit src/proxy-manager.ts` — 0 new errors
+- Pre-existing errors only: TS2802 (MapIterator, ~20 instances), TS2307 (socks-proxy-agent), TS2304 (timeout scoping)
+- All new code follows existing patterns: same logging style, same error handling, same Map-based data structures
+- No existing methods changed in signature (all backward compatible)
+- New fields on ProxyEntry are optional (region?: string)
+
+Stage Summary:
+- File grew: 1945 → 2440 lines (+495 lines)
+- New classes: 1 (ProxyLatencyTracker, ~170 lines)
+- New constants: 1 (DOMAIN_REGION_PATTERNS, ~26 lines)
+- New ProxyManager methods: 8 (detectDomainRegion, setPreferredRegion, getProxiesByRegion, setProxyRegion, getHealthPredictionMultiplier, getProxyChain, recordRequestProxyAttempt, clearRequestProxies, getBestProxyForDomain)
+- Enhanced existing methods: 6 (recordSuccess, recordFailure, getProxy, selectFromCandidates, removeProxy, removeAllProxies, resetProxy, resetAllProxies)
+- New data structures: 5 Maps (latencyTracker, consecutiveFailTracker, hourlyFailurePattern, requestTriedProxies, preferredRegion)

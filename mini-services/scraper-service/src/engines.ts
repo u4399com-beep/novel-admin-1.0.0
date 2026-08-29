@@ -2419,8 +2419,10 @@ class ObscuraEngine implements ScrapingEngine {
           // Wait for network idle (give JS time to render content)
           await page
             .waitForLoadState("networkidle", { timeout: 10000 })
-          .catch(() => {
-            // networkidle timeout is acceptable, DOM content is enough
+          .catch((err) => {
+            // Only swallow timeout errors; re-throw page crashes/navigation errors
+            // (consistent with PlaywrightEngine behavior)
+            if (!err.message?.includes('Timeout')) throw err;
           });
 
           // ---- Human behavior simulation or simple scroll fallback ----

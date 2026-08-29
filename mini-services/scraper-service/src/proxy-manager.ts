@@ -45,6 +45,7 @@ export interface ProxyEntry {
   consecutiveFails: number;
   coolingUntil?: number;     // timestamp when cooling ends
   disabled?: boolean;
+  region?: string;           // e.g. 'cn-east', 'cn-south', 'us-west'
   latencyStats: ProxyLatencyStats; // per-proxy + per-domain latency tracking
 }
 
@@ -325,6 +326,209 @@ export function clearDispatcherCache(): void {
   dispatcherCache.clear();
 }
 
+// ==================== ProxyLatencyTracker ====================
+
+/** Entry in the rolling latency window */
+interface LatencyWindowEntry {
+  latencyMs: number;
+  success: boolean;
+  timestamp: number;
+}
+
+/**
+ * Tracks per-proxy, per-domain latency with:
+ * - Rolling window of last 20 requests for percentile stats
+ * - EMA (exponential moving average) for smooth latency estimation
+ * - Composite scoring: availability * (1/normalized_latency) * success_rate
+ */
+class ProxyLatencyTracker {
+  private static readonly WINDOW_SIZE = 20;
+  private static readonly EMA_ALPHA = 0.3;
+
+  /** Rolling window per proxy-domain pair. Key: "cleanUrl\x00domain" */
+  private windows = new Map<string, LatencyWindowEntry[]>();
+  /** EMA latency per proxy-domain pair */
+  private emaLatency = new Map<string, number>();
+
+  private makeKey(proxyCleanUrl: string, domain: string): string {
+    return `${proxyCleanUrl}\x00${domain}`;
+  }
+
+  /** Record a request result for latency tracking. */
+  recordLatency(proxyCleanUrl: string, domain: string, latencyMs: number, success: boolean): void {
+    const key = this.makeKey(proxyCleanUrl, domain);
+
+    // Update rolling window
+    let win = this.windows.get(key);
+    if (!win) {
+      win = [];
+      this.windows.set(key, win);
+    }
+    win.push({ latencyMs, success, timestamp: Date.now() });
+    if (win.length > ProxyLatencyTracker.WINDOW_SIZE) {
+      win.shift();
+    }
+
+    // Update EMA
+    const prev = this.emaLatency.get(key);
+    if (prev === undefined) {
+      this.emaLatency.set(key, latencyMs);
+    } else {
+      this.emaLatency.set(key,
+        prev * (1 - ProxyLatencyTracker.EMA_ALPHA) + latencyMs * ProxyLatencyTracker.EMA_ALPHA
+      );
+    }
+
+    // Periodic eviction of stale entries
+    this.evictStale();
+  }
+
+  /** Get EMA latency for a proxy-domain pair. Returns 0 if no data. */
+  getEmaLatency(proxyCleanUrl: string, domain: string): number {
+    return this.emaLatency.get(this.makeKey(proxyCleanUrl, domain)) ?? 0;
+  }
+
+  /** Get success rate (0-1) from the rolling window. Returns 0.5 if no data. */
+  getSuccessRate(proxyCleanUrl: string, domain: string): number {
+    const win = this.windows.get(this.makeKey(proxyCleanUrl, domain));
+    if (!win || win.length === 0) return 0.5;
+    let successes = 0;
+    for (const e of win) {
+      if (e.success) successes++;
+    }
+    return successes / win.length;
+  }
+
+  /** Get availability (0-1) based on recent success in the rolling window (last 10 min). */
+  getAvailability(proxyCleanUrl: string, domain: string): number {
+    const win = this.windows.get(this.makeKey(proxyCleanUrl, domain));
+    if (!win || win.length === 0) return 0.5;
+    const now = Date.now();
+    const cutoff = now - 10 * 60 * 1000;
+    let total = 0;
+    let successes = 0;
+    for (const e of win) {
+      if (e.timestamp >= cutoff) {
+        total++;
+        if (e.success) successes++;
+      }
+    }
+    return total > 0 ? successes / total : 0.3;
+  }
+
+  /** Check if there is latency data for a proxy-domain pair. */
+  hasData(proxyCleanUrl: string, domain: string): boolean {
+    return this.emaLatency.has(this.makeKey(proxyCleanUrl, domain));
+  }
+
+  /**
+   * Composite score = availability * (1/normalized_latency) * success_rate.
+   * Latency is normalized to [0,1] using a 10000ms reference max.
+   */
+  getCompositeScore(proxyCleanUrl: string, domain: string): number {
+    const avail = this.getAvailability(proxyCleanUrl, domain);
+    const successRate = this.getSuccessRate(proxyCleanUrl, domain);
+    const ema = this.getEmaLatency(proxyCleanUrl, domain);
+
+    // Normalize latency to [0,1] (10000ms reference)
+    const normalizedLat = ema > 0 ? Math.min(1, ema / 10000) : 0.5;
+    const latFactor = 1 / (0.1 + normalizedLat);
+
+    return avail * latFactor * successRate;
+  }
+
+  /**
+   * Get the best proxy for a domain from the candidate list using composite scoring.
+   */
+  getBestProxyForDomain(domain: string, candidates: ProxyEntry[]): ProxyEntry | null {
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    const normalisedDomain = normalizeDomain(domain);
+    let best: ProxyEntry = candidates[0];
+    let bestScore = -1;
+
+    for (const entry of candidates) {
+      const cleanUrl = parseProxyUrl(entry.url)?.cleanUrl ?? entry.url;
+      const score = this.getCompositeScore(cleanUrl, normalisedDomain);
+      if (score > bestScore) {
+        bestScore = score;
+        best = entry;
+      }
+    }
+
+    return best;
+  }
+
+  /** Remove all tracking data for a specific proxy. */
+  removeProxy(proxyCleanUrl: string): void {
+    const prefix = `${proxyCleanUrl}\x00`;
+    for (const key of this.windows.keys()) {
+      if (key.startsWith(prefix)) this.windows.delete(key);
+    }
+    for (const key of this.emaLatency.keys()) {
+      if (key.startsWith(prefix)) this.emaLatency.delete(key);
+    }
+  }
+
+  /** Clear all tracking data. */
+  clear(): void {
+    this.windows.clear();
+    this.emaLatency.clear();
+  }
+
+  /** Evict stale entries to prevent unbounded growth. */
+  private evictStale(): void {
+    const cutoff = Date.now() - 30 * 60 * 1000; // 30 minutes
+    for (const [key, win] of this.windows) {
+      if (win.length > 0 && win[win.length - 1].timestamp < cutoff) {
+        this.windows.delete(key);
+        this.emaLatency.delete(key);
+      }
+    }
+    // Safety cap: if too many entries, remove oldest half
+    if (this.windows.size > 10000) {
+      const keys = Array.from(this.windows.keys());
+      const half = Math.floor(keys.length / 2);
+      for (let i = 0; i < half; i++) {
+        this.windows.delete(keys[i]);
+        this.emaLatency.delete(keys[i]);
+      }
+    }
+  }
+}
+
+// ==================== Domain Region Detection ====================
+
+/** Simple TLD/pattern -> region mapping for region-aware proxy selection */
+const DOMAIN_REGION_PATTERNS: Array<{ pattern: RegExp; region: string }> = [
+  // Chinese regions
+  { pattern: /\.(com\.cn|cn)$/i, region: 'cn-east' },
+  { pattern: /\.(sh\.cn|bj\.cn|tj\.cn)$/i, region: 'cn-east' },
+  { pattern: /\.(gd\.cn|gz\.cn)$/i, region: 'cn-south' },
+  { pattern: /\.(sc\.cn|cd\.cn|cq\.cn)$/i, region: 'cn-southwest' },
+  { pattern: /\.(zj\.cn|hz\.cn|js\.cn)$/i, region: 'cn-east' },
+  // Japan
+  { pattern: /\.jp$/i, region: 'jp-east' },
+  // Korea
+  { pattern: /\.kr$/i, region: 'kr-central' },
+  // Southeast Asia
+  { pattern: /\.sg$/i, region: 'ap-southeast' },
+  { pattern: /\.th$/i, region: 'ap-southeast' },
+  { pattern: /\.vn$/i, region: 'ap-southeast' },
+  // US
+  { pattern: /\.us$/i, region: 'us-west' },
+  // Europe
+  { pattern: /\.de$/i, region: 'eu-central' },
+  { pattern: /\.fr$/i, region: 'eu-west' },
+  { pattern: /\.uk$/i, region: 'eu-west' },
+  { pattern: /\.nl$/i, region: 'eu-west' },
+  { pattern: /\.it$/i, region: 'eu-south' },
+  { pattern: /\.es$/i, region: 'eu-south' },
+  // Russia
+  { pattern: /\.ru$/i, region: 'ru-central' },
+];
+
 // ==================== ProxyManager ====================
 
 /** Recent failure record for auto-rotate tracking */
@@ -357,6 +561,16 @@ class ProxyManager {
   private domainFailures = new Map<string, Map<string, number>>();
   /** In-flight verification deduplication: proxyCleanUrl -> pending Promise */
   private pendingVerifications = new Map<string, Promise<ProxyVerifyResult>>();
+  /** Latency tracker for composite scoring (rolling window + EMA) */
+  private latencyTracker = new ProxyLatencyTracker();
+  /** Preferred region for proxy selection (null = auto-detect from domain) */
+  private preferredRegion: string | null = null;
+  /** Per-proxy consecutive failure tracking: cleanUrl -> { count, firstFailAt } */
+  private consecutiveFailTracker = new Map<string, { count: number; firstFailAt: number }>();
+  /** Per-proxy hourly failure pattern: cleanUrl -> Map<hour(0-23), { count, lastSeen }> */
+  private hourlyFailurePattern = new Map<string, Map<number, { count: number; lastSeen: number }>>();
+  /** Per-request tried proxies: requestId -> Set<proxyCleanUrl> */
+  private requestTriedProxies = new Map<string, Set<string>>();
 
   private constructor(rotationInterval?: number, rotationTopN?: number) {
     this.rotationInterval = rotationInterval || 20;
@@ -424,6 +638,11 @@ class ProxyManager {
     if (entry) {
       invalidateDispatcher(entry.url);
     }
+
+    // Clean up latency tracker and health prediction data for this proxy
+    this.latencyTracker.removeProxy(parsed.cleanUrl);
+    this.consecutiveFailTracker.delete(parsed.cleanUrl);
+    this.hourlyFailurePattern.delete(parsed.cleanUrl);
 
     return this.pool.delete(parsed.cleanUrl);
   }
@@ -513,17 +732,22 @@ class ProxyManager {
     const topCandidates = selectable.slice(0, topCount);
 
     // Weighted selection within top candidates, with 10-20% jitter on effective latency
+    const detectedRegion = normalisedDomain ? this.detectDomainRegion(normalisedDomain) : null;
+    const effectiveRegion = this.preferredRegion || detectedRegion;
     const weights = topCandidates.map((entry) => {
       const baseLat = normalisedDomain
         ? (entry.latencyStats.domainLatency.get(normalisedDomain) ?? entry.latencyStats.avgResponseTime)
         : entry.latencyStats.avgResponseTime;
       const effectiveLat = baseLat > 0 ? baseLat : 5000;
-      // Apply 10-20% random jitter
-      const jitter = 1 + (0.10 + Math.random() * 0.10); // 1.10 to 1.20
+      // Apply ±10% random jitter (bidirectional to avoid always penalizing)
+      const jitter = 1 + (Math.random() - 0.5) * 0.20; // 0.90 to 1.10
       const jitteredLat = effectiveLat * jitter;
-      const healthWeight = Math.max(1, entry.healthScore);
+      const healthPredMult = this.getHealthPredictionMultiplier(entry);
+      const healthWeight = Math.max(1, entry.healthScore) * healthPredMult;
       const speedWeight = 1 / (1 + jitteredLat / 1000);
-      return healthWeight * speedWeight;
+      // Region bonus: 1.5x for region-matched proxies
+      const regionBonus = (effectiveRegion && entry.region === effectiveRegion) ? 1.5 : 1.0;
+      return healthWeight * speedWeight * regionBonus;
     });
 
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
@@ -674,6 +898,13 @@ class ProxyManager {
     // Increase health score (cap at 100)
     const scoreGain = Math.min(5, Math.max(1, Math.floor(10 - responseTime / 1000)));
     entry.healthScore = Math.min(100, entry.healthScore + scoreGain);
+
+    // Feed latency tracker for composite scoring
+    const trackDomain = domain ? normalizeDomain(domain) : '__global__';
+    this.latencyTracker.recordLatency(parsed.cleanUrl, trackDomain, responseTime, true);
+
+    // Reset consecutive fail tracker on success
+    this.consecutiveFailTracker.delete(parsed.cleanUrl);
   }
 
   /** Record a failed request through a proxy */
@@ -733,6 +964,39 @@ class ProxyManager {
 
     // Track recent failure for auto-rotate (include domain when available)
     this.addRecentFailure(parsed.cleanUrl, error, extractedDomain);
+
+    // Feed latency tracker for composite scoring (record as failure with high penalty latency
+    // to ensure failed proxies get LOWER composite score than successful ones)
+    const PENALTY_LATENCY = 30000; // 30s penalty for failures
+    const trackFailDomain = domain ? normalizeDomain(domain) : extractedDomain;
+    if (trackFailDomain) {
+      this.latencyTracker.recordLatency(parsed.cleanUrl, trackFailDomain, PENALTY_LATENCY, false);
+    } else {
+      this.latencyTracker.recordLatency(parsed.cleanUrl, '__global__', PENALTY_LATENCY, false);
+    }
+
+    // Update consecutive fail tracker for health prediction
+    const conTracker = this.consecutiveFailTracker.get(parsed.cleanUrl);
+    if (!conTracker) {
+      this.consecutiveFailTracker.set(parsed.cleanUrl, { count: 1, firstFailAt: Date.now() });
+    } else {
+      conTracker.count++;
+    }
+
+    // Update hourly failure pattern for health prediction
+    const currentHour = new Date().getHours();
+    let hourlyMap = this.hourlyFailurePattern.get(parsed.cleanUrl);
+    if (!hourlyMap) {
+      hourlyMap = new Map();
+      this.hourlyFailurePattern.set(parsed.cleanUrl, hourlyMap);
+    }
+    const hourData = hourlyMap.get(currentHour);
+    if (!hourData) {
+      hourlyMap.set(currentHour, { count: 1, lastSeen: Date.now() });
+    } else {
+      hourData.count++;
+      hourData.lastSeen = Date.now();
+    }
 
     // Decrease health score
     const scoreLoss = Math.min(15, 5 + entry.consecutiveFails * 2);
@@ -979,6 +1243,11 @@ class ProxyManager {
     this.domainRotationCount.clear();
     this.domainRotationIndex.clear();
     this.domainFailures.clear();
+    this.latencyTracker.clear();
+    this.consecutiveFailTracker.clear();
+    this.hourlyFailurePattern.clear();
+    this.requestTriedProxies.clear();
+    this.preferredRegion = null;
     clearDispatcherCache();
     return count;
   }
@@ -1006,6 +1275,11 @@ class ProxyManager {
     // Invalidate cached dispatcher so a fresh one is created
     invalidateDispatcher(entry.url);
 
+    // Clear latency tracker and health prediction data for this proxy
+    this.latencyTracker.removeProxy(parsed.cleanUrl);
+    this.consecutiveFailTracker.delete(parsed.cleanUrl);
+    this.hourlyFailurePattern.delete(parsed.cleanUrl);
+
     return true;
   }
 
@@ -1025,6 +1299,10 @@ class ProxyManager {
       };
     }
     this.domainFailures.clear();
+    this.latencyTracker.clear();
+    this.consecutiveFailTracker.clear();
+    this.hourlyFailurePattern.clear();
+    this.requestTriedProxies.clear();
     clearDispatcherCache();
   }
 
@@ -1480,9 +1758,15 @@ class ProxyManager {
       const effectiveLat = baseLat > 0 ? baseLat : 5000;
       const jitter = 1 + (0.10 + Math.random() * 0.10);
       const jitteredLat = effectiveLat * jitter;
-      const healthWeight = Math.max(1, entry.healthScore);
+      const healthPredMult = this.getHealthPredictionMultiplier(entry);
+      const healthWeight = Math.max(1, entry.healthScore) * healthPredMult;
       const speedWeight = 1 / (1 + jitteredLat / 1000);
-      return healthWeight * speedWeight;
+      // Region bonus: 1.5x for region-matched proxies
+      const targetRegion = normalisedDomain
+        ? (this.preferredRegion || this.detectDomainRegion(normalisedDomain))
+        : this.preferredRegion;
+      const regionBonus = (targetRegion && entry.region === targetRegion) ? 1.5 : 1.0;
+      return healthWeight * speedWeight * regionBonus;
     });
 
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
@@ -1937,6 +2221,256 @@ class ProxyManager {
       clearInterval(this.verificationTimer);
       this.verificationTimer = null;
     }
+  }
+
+  // ==================== Region-Aware Selection ====================
+
+  /**
+   * Detect the likely region for a domain based on TLD patterns.
+   * Returns null if no pattern matches (region-agnostic).
+   */
+  detectDomainRegion(domain: string): string | null {
+    const normalisedDomain = normalizeDomain(domain);
+    for (const { pattern, region } of DOMAIN_REGION_PATTERNS) {
+      if (pattern.test(normalisedDomain)) return region;
+    }
+    return null;
+  }
+
+  /**
+   * Set a preferred region for proxy selection.
+   * Pass null to clear the preference (auto-detect from domain).
+   */
+  setPreferredRegion(region: string | null): void {
+    this.preferredRegion = region;
+    if (process.env.DEBUG === 'true') {
+      console.log(`[ProxyManager] Preferred region set to: ${region ?? 'auto-detect'}`);
+    }
+  }
+
+  /**
+   * Get all proxies tagged with a specific region.
+   */
+  getProxiesByRegion(region: string): ProxyEntry[] {
+    return Array.from(this.pool.values()).filter(e => e.region === region);
+  }
+
+  /**
+   * Tag a proxy with a region label.
+   * Returns true if the proxy was found and updated.
+   */
+  setProxyRegion(proxyUrl: string, region: string): boolean {
+    const parsed = parseProxyUrl(proxyUrl);
+    if (!parsed) return false;
+    const entry = this.pool.get(parsed.cleanUrl);
+    if (!entry) return false;
+    entry.region = region;
+    if (process.env.DEBUG === 'true') {
+      console.log(`[ProxyManager] ${parsed.cleanUrl} tagged with region: ${region}`);
+    }
+    return true;
+  }
+
+  // ==================== Health Prediction ====================
+
+  /**
+   * Get a health prediction multiplier (0.0-1.0) for a proxy.
+   * Returns a multiplier that should be applied to the proxy's selection score.
+   * - If 3+ consecutive failures in the last 10 minutes -> 0.5
+   * - If proxy consistently fails at the current hour (5+ failures seen today) -> 0.6
+   * - Otherwise -> 1.0
+   */
+  getHealthPredictionMultiplier(entry: ProxyEntry): number {
+    this.cleanupStaleData();
+    const cleanUrl = parseProxyUrl(entry.url)?.cleanUrl ?? entry.url;
+    const now = Date.now();
+    const currentHour = new Date().getHours();
+    let multiplier = 1.0;
+
+    // Check consecutive failures in the last 10 minutes
+    const tracker = this.consecutiveFailTracker.get(cleanUrl);
+    if (tracker && tracker.count >= 3 && (now - tracker.firstFailAt) < 10 * 60 * 1000) {
+      multiplier *= 0.5;
+    }
+
+    // Check hourly failure pattern (only if failures were seen today)
+    const hourlyMap = this.hourlyFailurePattern.get(cleanUrl);
+    if (hourlyMap) {
+      const hourData = hourlyMap.get(currentHour);
+      if (hourData && hourData.count >= 5 && (now - hourData.lastSeen) < 24 * 60 * 60 * 1000) {
+        multiplier *= 0.6;
+      }
+    }
+
+    return multiplier;
+  }
+
+  /**
+   * Periodic cleanup of stale data structures to prevent unbounded growth.
+   * Called internally from getHealthPredictionMultiplier and getProxyChain.
+   */
+  private _lastStaleCleanup = 0;
+  private cleanupStaleData(): void {
+    const now = Date.now();
+    // Throttle cleanup to at most once per 5 minutes
+    if (now - this._lastStaleCleanup < 5 * 60 * 1000) return;
+    this._lastStaleCleanup = now;
+
+    // Clean hourlyFailurePattern: remove entries where all hour data is >24h old
+    const DAY = 24 * 60 * 60 * 1000;
+    for (const [cleanUrl, hourlyMap] of this.hourlyFailurePattern) {
+      let allStale = true;
+      for (const [, data] of hourlyMap) {
+        if (now - data.lastSeen < DAY) { allStale = false; break; }
+      }
+      if (allStale) this.hourlyFailurePattern.delete(cleanUrl);
+    }
+
+    // Clean requestTriedProxies: remove entries older than 10 minutes (orphaned requests)
+    const TEN_MIN = 10 * 60 * 1000;
+    // requestTriedProxies doesn't have timestamps, so use size-based cleanup
+    if (this.requestTriedProxies.size > 100) {
+      // Delete oldest entries (Map preserves insertion order)
+      const toDelete = this.requestTriedProxies.size - 50;
+      let deleted = 0;
+      for (const key of this.requestTriedProxies.keys()) {
+        if (deleted >= toDelete) break;
+        this.requestTriedProxies.delete(key);
+        deleted++;
+      }
+    }
+  }
+
+  // ==================== Smart Retry with Proxy Chain ====================
+
+  /**
+   * Get an ordered chain of proxies to try for a request.
+   * Uses composite scoring, health prediction, and region-aware selection.
+   * Excludes proxies already tried for this requestId.
+   *
+   * @param requestId  - Unique request identifier to track which proxies have been tried
+   * @param maxProxies - Maximum number of proxies to return
+   * @param domain     - Optional target domain for region/latency-aware selection
+   * @returns Ordered array of ProxyEntry to try (best first)
+   */
+  getProxyChain(requestId: string, maxProxies: number, domain?: string): ProxyEntry[] {
+    const normalisedDomain = domain ? normalizeDomain(domain) : undefined;
+    const triedSet = this.requestTriedProxies.get(requestId);
+    const now = Date.now();
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    const domainFailMap = normalisedDomain ? this.domainFailures.get(normalisedDomain) : undefined;
+
+    // Detect target region
+    const targetRegion = normalisedDomain
+      ? (this.preferredRegion || this.detectDomainRegion(normalisedDomain))
+      : this.preferredRegion;
+
+    // Collect and score all eligible candidates
+    const candidates: Array<{ entry: ProxyEntry; score: number; regionMatch: boolean }> = [];
+
+    for (const entry of this.pool.values()) {
+      if (entry.disabled) continue;
+      if (entry.coolingUntil && now < entry.coolingUntil) continue;
+      if (normalisedDomain && entry.blockedDomains.has(normalisedDomain)) continue;
+
+      const entryCleanUrl = parseProxyUrl(entry.url)?.cleanUrl ?? entry.url;
+
+      // Skip already-tried proxies for this request
+      if (triedSet && triedSet.has(entryCleanUrl)) continue;
+
+      // Skip domain-failed proxies (5-min window)
+      if (domainFailMap) {
+        const failTs = domainFailMap.get(entryCleanUrl);
+        if (failTs && (now - failTs) < FIVE_MINUTES) continue;
+      }
+
+      const healthMult = this.getHealthPredictionMultiplier(entry);
+      const compositeScore = this.latencyTracker.getCompositeScore(
+        entryCleanUrl, normalisedDomain ?? '__global__'
+      );
+      const score = compositeScore * healthMult;
+      const regionMatch = !!(targetRegion && entry.region === targetRegion);
+
+      candidates.push({ entry, score, regionMatch });
+    }
+
+    // Sort: region-matched first (by score desc), then non-matched (by score desc)
+    candidates.sort((a, b) => {
+      if (a.regionMatch !== b.regionMatch) return a.regionMatch ? -1 : 1;
+      return b.score - a.score;
+    });
+
+    return candidates.slice(0, maxProxies).map(c => c.entry);
+  }
+
+  /**
+   * Record that a proxy was attempted for a request (failed or succeeded).
+   * Used by getProxyChain() to avoid returning the same proxy twice.
+   */
+  recordRequestProxyAttempt(requestId: string, proxyUrl: string): void {
+    let triedSet = this.requestTriedProxies.get(requestId);
+    if (!triedSet) {
+      triedSet = new Set();
+      this.requestTriedProxies.set(requestId, triedSet);
+    }
+    const cleanUrl = parseProxyUrl(proxyUrl)?.cleanUrl ?? proxyUrl;
+    triedSet.add(cleanUrl);
+
+    // Evict old request entries if map grows too large
+    if (this.requestTriedProxies.size > 1000) {
+      this.requestTriedProxies.clear();
+    }
+  }
+
+  /**
+   * Clear proxy attempt tracking for a request.
+   * Call this when a request succeeds or all retries are exhausted.
+   */
+  clearRequestProxies(requestId: string): void {
+    this.requestTriedProxies.delete(requestId);
+  }
+
+  // ==================== Composite Score Selection ====================
+
+  /**
+   * Get the best proxy for a specific domain using composite scoring.
+   * Uses the ProxyLatencyTracker's composite score with all eligible candidates,
+   * health prediction multipliers, and region preference.
+   *
+   * @param domain - Target domain
+   * @returns The best ProxyEntry, or null if no proxies available
+   */
+  getBestProxyForDomain(domain: string): ProxyEntry | null {
+    const normalisedDomain = normalizeDomain(domain);
+    const now = Date.now();
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    const domainFailMap = this.domainFailures.get(normalisedDomain);
+
+    const candidates: ProxyEntry[] = [];
+    for (const entry of this.pool.values()) {
+      if (entry.disabled) continue;
+      if (entry.coolingUntil && now < entry.coolingUntil) continue;
+      if (entry.blockedDomains.has(normalisedDomain)) continue;
+      const entryCleanUrl = parseProxyUrl(entry.url)?.cleanUrl ?? entry.url;
+      if (domainFailMap) {
+        const failTs = domainFailMap.get(entryCleanUrl);
+        if (failTs && (now - failTs) < FIVE_MINUTES) continue;
+      }
+      candidates.push(entry);
+    }
+
+    if (candidates.length === 0) return null;
+
+    // Region preference: try region-matched proxies first
+    const targetRegion = this.preferredRegion || this.detectDomainRegion(normalisedDomain);
+    if (targetRegion) {
+      const regionMatched = candidates.filter(e => e.region === targetRegion);
+      if (regionMatched.length > 0) {
+        return this.latencyTracker.getBestProxyForDomain(normalisedDomain, regionMatched);
+      }
+    }
+
+    return this.latencyTracker.getBestProxyForDomain(normalisedDomain, candidates);
   }
 }
 

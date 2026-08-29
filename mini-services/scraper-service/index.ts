@@ -67,8 +67,7 @@ import { adaptiveDelay } from "./src/adaptive-delay";
 import { cookieJar } from "./src/cookie-jar";
 import { cookieStore } from "./src/cookie-store";
 import { rateLimiter } from "./src/rate-limiter";
-import { testProxyConnection, testMultipleProxies } from "./src/proxy-conn-test";
-import type { ProxyTestResult } from "./src/proxy-conn-test";
+import type { ProxyBatchTestResult } from "./src/proxy-manager";
 import { priorityQueue } from "./src/priority-queue";
 import { qualityScorer } from "./src/quality-scorer";
 import { antiCrawlAdvisor } from "./src/anti-crawl-advisor";
@@ -1103,8 +1102,22 @@ export function startServer(port: number = 3099) {
           if (!proxyUrl || typeof proxyUrl !== 'string') {
             return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
           }
-          const result = await testProxyConnection(proxyUrl, testUrl);
-          return Response.json(result, { headers: jsonHeaders });
+          // Ensure proxy is in pool for verifyProxy
+          proxyManager.addProxy(proxyUrl);
+          const result = await proxyManager.verifyProxy(proxyUrl, { testUrl });
+          const parsed = proxyManager.getProxy(proxyUrl);
+          const adapted: Record<string, unknown> = {
+            url: proxyUrl,
+            protocol: parsed?.protocol || 'http',
+            host: parsed?.host || '',
+            port: parsed?.port || 0,
+            reachable: result.working,
+            responseTime: result.responseTime,
+            statusCode: result.statusCode,
+            error: result.error,
+            testTimestamp: Date.now(),
+          };
+          return Response.json(adapted, { headers: jsonHeaders });
         }
 
         // POST /proxy/test-all — Test all active proxies in parallel
@@ -1113,7 +1126,7 @@ export function startServer(port: number = 3099) {
           if (activeUrls.length === 0) {
             return Response.json({ results: [], message: "No active proxies to test" }, { headers: jsonHeaders });
           }
-          const results = await testMultipleProxies(activeUrls);
+          const results: ProxyBatchTestResult[] = await proxyManager.testProxyBatch(activeUrls);
           return Response.json({ results }, { headers: jsonHeaders });
         }
 

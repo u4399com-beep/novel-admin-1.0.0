@@ -1,13 +1,13 @@
 {
   "name": "爱奇艺小说 (wenxue.iqiyi.com)",
-  "description": "爱奇艺小说全站采集。UTF-8编码，静态HTML。书库URL: lib-{base}_{sub}_0-{page}-51-0-1.html，详情页含部分章节(20条)，完整目录在catalog-{bookId}-{page}.html。阅读页内容在.reader-article中。推荐cheerio引擎，IP被限自动降级playwright/obscura。",
+  "description": "爱奇艺小说全站采集。UTF-8编码，大厂反爬（iQiyi/爱奇艺），使用Playwright隐身引擎+JS渲染+人类行为模拟。书库URL格式: lib-{base}_{sub}_0-51-0-{page}.html，详情页含部分章节，完整目录在catalog-{bookId}-{page}.html。阅读页内容在.reader-article中，下一章链接a#nextChpater。详情页书名在.book-details-tit h1，作者在.writerName，简介在.book-details-briefing，封面在.bookBigCover img，状态在.stacksBook-tag，分类在面包屑.breadCrumbNav第二项。列表页书籍链接在li.stacksBook a[href*='detail-']，分页在.mod-page a。",
   "enabled": true,
 
   "listUrl": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_0_0-51-0-1.html",
   "listSelector": { "type": "css", "value": "li.stacksBook a[href*='detail-']" },
   "listPagination": {
     "type": "next",
-    "selector": "a[href*='lib-'][href$='-51-0-2.html']",
+    "selector": ".mod-page a[href*='lib-']",
     "maxPage": 50,
     "urlPattern": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_0_0-51-0-{page}.html"
   },
@@ -18,13 +18,12 @@
   "bookKeywordsSelector": { "type": "css", "value": "meta[name='keywords']", "extract": "content" },
   "bookDescriptionSelector": { "type": "css", "value": ".book-details-briefing" },
   "bookCoverSelector": { "type": "css", "value": ".bookBigCover img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": ".stacksBook-tag.tag-end, .book-details-tit .stacksBook-tag" },
-  "bookWordCountSelector": { "type": "css", "value": ".book-details-about em:nth-child(2)" },
+  "bookStatusSelector": { "type": "css", "value": ".stacksBook-tag" },
 
   "chapterListUrl": "https://wenxue.iqiyi.com/book/catalog-{bookId}-1.html",
-  "chapterListSelector": { "type": "css", "value": "dl.catalog-list, .catalog-list" },
-  "chapterTitleSelector": { "type": "css", "value": "dl.catalog-list a[href*='reader-'], .catalog-list a[href*='reader-']" },
-  "chapterLinkSelector": { "type": "css", "value": "dl.catalog-list a[href*='reader-'], .catalog-list a[href*='reader-']" },
+  "chapterListSelector": { "type": "css", "value": "dl.catalog-list" },
+  "chapterTitleSelector": { "type": "css", "value": "dl.catalog-list .catalog-chapter a[href*='reader-']" },
+  "chapterLinkSelector": { "type": "css", "value": "dl.catalog-list .catalog-chapter a[href*='reader-']" },
   "chapterPagination": {
     "type": "next",
     "selector": "a[href*='catalog-'][href$='.html']",
@@ -37,10 +36,10 @@
   "contentPagination": { "type": "next", "selector": "a#nextChpater[href*='reader-']", "maxPage": 1 },
 
   "antiCrawlConfig": {
-    "useJsRender": false,
+    "useJsRender": true,
     "uaRotation": true,
-    "delay": [1000, 3000],
-    "humanBehavior": false,
+    "delay": [3000, 6000],
+    "humanBehavior": true,
     "retries": 3,
     "referer": "https://wenxue.iqiyi.com/"
   },
@@ -50,16 +49,23 @@
     "cleanHtml": true,
     "removePatterns": [
       ".reader-header", ".readerScrollBar", ".reader-progress",
-      ".reader-nextChapter", ".reader-btn-add",
-      ".breadCrumbNav", ".mod-pop-wrapper",
-      ".reader-bookInfo", "#funcbar",
+      ".reader-nextChapter", ".reader-btn-add", ".reader-btn-alreadyAdd",
+      ".breadCrumbNav", ".mod-pop-wrapper", ".mod-popBg", ".mod-pop",
+      ".reader-bookInfo", "#funcbar", "#newbieGuide", "#qrcDialog",
+      ".phoneContinue", ".book-QRcode", ".getBtn-box",
       "script", "noscript", "style",
       ".mod-wrapper > .mod-con > .top",
       ".mod-wrapper > .mod-con > a",
-      ".qrcode", "[id^='qrcDialog']",
-      ".mod-pop", ".mod-popBg",
-      "#newbieGuide", "#goToPhone",
-      "#addToShlef", "#alreadAddedToShlef"
+      "[id^='qrcDialog']", "#goToPhone",
+      "#addToShlef", "#alreadAddedToShlef",
+      ".reader-main > .reader-bookInfo",
+      ".chapter-briefing", ".chapter-read",
+      ".list-tit-wrapper", ".list-txt",
+      ".book-details-btnBox", ".btn-readfree",
+      ".catalog-time", ".j_forbidden_card",
+      ".hotcmd-box", ".hotcmd-wp",
+      ".sidebar", ".footer", ".header", ".topbar",
+      "#userdata_el"
     ],
     "adPatterns": [
       "爱奇艺小说", "wenxue.iqiyi.com",
@@ -77,18 +83,28 @@
       "literaver.js",
       "cooksdk.js",
       "阅读到", "%",
-      "字数："
+      "字数：",
+      "立即阅读",
+      "本章最新章节",
+      "最快更新",
+      "如果您喜欢",
+      "扫码关注", "微信公众号",
+      "下载爱奇艺小说APP",
+      "更多精彩",
+      "热门推荐",
+      "使用键盘快捷键",
+      "我学会啦"
     ]
   },
 
   "scrapeMode": "full",
-  "engine": "cheerio",
+  "engine": "playwright",
   "storageMode": "database",
   "filePath": null,
-  "coverSavePath": "/app/public/covers/iqiyi/",
+  "coverSavePath": "/app/public/covers/wenxue-iqiyi/",
   "threadCount": 1,
-  "minDelay": 1000,
-  "maxDelay": 3000,
+  "minDelay": 3000,
+  "maxDelay": 6000,
   "enableShuffle": true,
   "dedupMode": "both",
 
@@ -96,8 +112,8 @@
     "siteType": "novel",
     "domain": "wenxue.iqiyi.com",
     "encoding": "utf-8",
-    "engineType": "cheerio",
-    "stealthEnabled": false,
+    "engineType": "playwright",
+    "stealthEnabled": true,
     "categories": {
       "all": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_0_0-51-0-1.html",
       "modern-romance": "https://wenxue.iqiyi.com/book/lib-18l2g48o37_18l2g49hin_0-51-0-1.html",

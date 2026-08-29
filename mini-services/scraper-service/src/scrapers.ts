@@ -576,6 +576,7 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
 
   let success = false;
   let statusCode = 0;
+  const coverStartTime = Date.now();
 
   try {
     // Use shared redirect-following utility with SSRF validation on each hop
@@ -653,7 +654,7 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
       antiCrawlAdvisor.recordSuccess(domain);
     }
     if (proxy) {
-      proxyManager.recordSuccess(proxy.url, Date.now());
+      proxyManager.recordSuccess(proxy.url, Date.now() - coverStartTime);
     }
     requestFingerprintMgr.complete(fp.requestId, true, statusCode);
 

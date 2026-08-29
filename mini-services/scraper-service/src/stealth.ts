@@ -464,6 +464,16 @@ export function clearDomainUACache(domain?: string): void {
  * 60. Font enumeration protection (document.fonts.forEach + check)
  * 61. Gamepad API override (getGamepads consistency)
  * 62. navigator.doNotTrack consistency
+ * 99. Fingerprint Consistency Validator (cross-property checks)
+ * 100. OffscreenCanvas fingerprint alignment (R55: getImageData/measureText/convertToBlob/transferToImageBitmap)
+ *
+ * Canvas 2D Context Proxy enhancements (R55):
+ *   - fillText/strokeText sub-pixel positioning noise (+/-0.05px)
+ *   - measureText full TextMetrics variation (7 properties, font-content-aware)
+ *   - createConicGradient addColorStop noise
+ *   - Gradient color perturbation scaled by noise intensity
+ *   - Cached color parsing canvas (avoids detectable side-effects)
+ *   - toDataURL/toBlob WebGL canvas fallback (readPixels noise path)
  *
  * @param profile - The fingerprint profile to inject
  * @returns JavaScript code string to pass to `page.addInitScript()`
@@ -1737,20 +1747,58 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // now use the SAME noise, preventing detection via cross-method comparison.
   // toDataURL/toBlob use the patched getImageData (which includes noise) and encode
   // from a temporary canvas to avoid accumulating modifications on the original.
+  // R55 Enhancement: Added WebGL canvas fallback — when getContext('2d') returns null
+  // (WebGL canvas), applies pixel-level noise via manual base64 manipulation of PNG data.
   try {
+    // Shared temp canvas for Section 30 encoding (avoids creating new canvas per call)
+    var _s30_tmpCanvas = document.createElement('canvas');
+    var _s30_tmpCtx = _s30_tmpCanvas.getContext('2d');
+
+    // Helper: apply deterministic noise to raw PNG pixel data
+    // PNG pixel data starts after IHDR chunk; scanlines begin at offset 8 (sig) + 4 (len) + 4 (IHDR) + 4 (crc) + 4 (len) + 4 (IDAT) + 4 (crc = 28 bytes typically, but varies)
+    // Simpler approach: decode via temp canvas, apply noise via getImageData, re-encode
+    function _applyNoiseToDataURL(canvas, origFn, type, quality) {
+      var ctx = canvas.getContext('2d');
+      if (ctx) {
+        var imgData = ctx.getImageData(0, 0, Math.max(1, canvas.width), Math.max(1, canvas.height));
+        _s30_tmpCanvas.width = canvas.width;
+        _s30_tmpCanvas.height = canvas.height;
+        _s30_tmpCtx.putImageData(imgData, 0, 0);
+        return origFn.call(_s30_tmpCanvas, type, quality);
+      }
+      // WebGL canvas fallback: use patched readPixels to get noisy data
+      try {
+        var w = canvas.width, h = canvas.height;
+        if (w === 0 || h === 0) return origFn.call(canvas, type, quality);
+        var glCtx = canvas.getContext('webgl') || canvas.getContext('webgl2') || canvas.getContext('experimental-webgl');
+        if (glCtx) {
+          // readPixels is already patched with deterministic noise (Section 3)
+          var px = new Uint8Array(w * h * 4);
+          glCtx.readPixels(0, 0, w, h, 0x1908, 0x1401, px);
+          // Flip vertically (WebGL reads bottom-up, canvas is top-down)
+          var _flipPx = new Uint8Array(px.length);
+          for (var row = 0; row < h; row++) {
+            var _srcOff = (h - 1 - row) * w * 4;
+            var _dstOff = row * w * 4;
+            for (var col = 0; col < w * 4; col++) {
+              _flipPx[_dstOff + col] = px[_srcOff + col];
+            }
+          }
+          _s30_tmpCanvas.width = w;
+          _s30_tmpCanvas.height = h;
+          var _imgData2 = _s30_tmpCtx.createImageData(w, h);
+          _imgData2.data.set(_flipPx);
+          _s30_tmpCtx.putImageData(_imgData2, 0, 0);
+          return origFn.call(_s30_tmpCanvas, type, quality);
+        }
+      } catch(_glErr) {}
+      return origFn.call(canvas, type, quality);
+    }
+
     var _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
     HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
       try {
-        var ctx = this.getContext('2d');
-        if (ctx) {
-          // Use the PATCHED getImageData which already applies consistent noise
-          var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
-          var _tmpCanvas = document.createElement('canvas');
-          _tmpCanvas.width = this.width;
-          _tmpCanvas.height = this.height;
-          _tmpCanvas.getContext('2d').putImageData(imgData, 0, 0);
-          return _origToDataURL.call(_tmpCanvas, type, quality);
-        }
+        return _applyNoiseToDataURL(this, _origToDataURL, type, quality);
       } catch(e) {}
       return _origToDataURL.call(this, type, quality);
     };
@@ -1758,14 +1806,37 @@ export function getStealthScript(profile: FingerprintProfile): string {
     var _origToBlob = HTMLCanvasElement.prototype.toBlob;
     HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
       try {
-        var ctx = this.getContext('2d');
+        var _self = this;
+        var ctx = _self.getContext('2d');
         if (ctx) {
-          var imgData = ctx.getImageData(0, 0, Math.max(1, this.width), Math.max(1, this.height));
-          var _tmpCanvas2 = document.createElement('canvas');
-          _tmpCanvas2.width = this.width;
-          _tmpCanvas2.height = this.height;
-          _tmpCanvas2.getContext('2d').putImageData(imgData, 0, 0);
-          return _origToBlob.call(_tmpCanvas2, callback, type, quality);
+          var imgData = ctx.getImageData(0, 0, Math.max(1, _self.width), Math.max(1, _self.height));
+          _s30_tmpCanvas.width = _self.width;
+          _s30_tmpCanvas.height = _self.height;
+          _s30_tmpCtx.putImageData(imgData, 0, 0);
+          return _origToBlob.call(_s30_tmpCanvas, callback, type, quality);
+        }
+        // WebGL canvas fallback for toBlob
+        var w = _self.width, h = _self.height;
+        if (w > 0 && h > 0) {
+          var glCtx = _self.getContext('webgl') || _self.getContext('webgl2') || _self.getContext('experimental-webgl');
+          if (glCtx) {
+            var px = new Uint8Array(w * h * 4);
+            glCtx.readPixels(0, 0, w, h, 0x1908, 0x1401, px);
+            var _flipPx = new Uint8Array(px.length);
+            for (var row = 0; row < h; row++) {
+              var _srcOff = (h - 1 - row) * w * 4;
+              var _dstOff = row * w * 4;
+              for (var col = 0; col < w * 4; col++) {
+                _flipPx[_dstOff + col] = px[_srcOff + col];
+              }
+            }
+            _s30_tmpCanvas.width = w;
+            _s30_tmpCanvas.height = h;
+            var _imgData3 = _s30_tmpCtx.createImageData(w, h);
+            _imgData3.data.set(_flipPx);
+            _s30_tmpCtx.putImageData(_imgData3, 0, 0);
+            return _origToBlob.call(_s30_tmpCanvas, callback, type, quality);
+          }
         }
       } catch(e) {}
       return _origToBlob.call(this, callback, type, quality);
@@ -1773,19 +1844,31 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(e) {}
 
   // ---- Canvas 2D Context Proxy (enhanced fingerprint resistance) ----
-  // Intercepts measureText, isPointInPath, isPointInStroke, getLineDash,
-  // quadraticCurveTo, bezierCurveTo, arc, ellipse, createLinearGradient,
-  // createRadialGradient with deterministic micro-variations.
+  // R55 enhanced: Intercepts fillText, strokeText, measureText (full TextMetrics),
+  // isPointInPath, isPointInStroke, getLineDash, quadraticCurveTo, bezierCurveTo,
+  // arc, ellipse, createLinearGradient, createRadialGradient, createConicGradient
+  // with deterministic micro-variations.
   // Existing getImageData/toDataURL/toBlob patches (Section 20/30) remain in place;
   // the Proxy forwards those calls through to the prototype-patched versions.
 
   // Helper: parse a CSS color string and perturb r/g/b by ±1 (seeded)
+  // R55: Cached temp canvas to avoid creating one per call (detectable side-effect)
+  var _colorParseCanvas = null;
+  var _colorParseCtx = null;
   function _parseAndPerturbColor(color, seed) {
-    // Try to parse via a temporary canvas context
-    var _tmpCtx3 = document.createElement('canvas').getContext('2d');
-    if (!_tmpCtx3) return color;
-    _tmpCtx3.fillStyle = color;
-    var resolved = _tmpCtx3.fillStyle;
+    // Lazy-init cached canvas for color parsing
+    if (!_colorParseCanvas) {
+      try {
+        _colorParseCanvas = document.createElement('canvas');
+        _colorParseCanvas.width = 1;
+        _colorParseCanvas.height = 1;
+        _colorParseCtx = _colorParseCanvas.getContext('2d');
+      } catch(_cpcErr) { return color; }
+    }
+    if (!_colorParseCtx) return color;
+    _colorParseCtx.clearRect(0, 0, 1, 1);
+    _colorParseCtx.fillStyle = color;
+    var resolved = _colorParseCtx.fillStyle;
     // If the browser couldn't parse it, return as-is
     if (!resolved || resolved.charAt(0) !== '#') return color;
     // Parse hex color (#rrggbb or #rgb)
@@ -1804,13 +1887,14 @@ export function getStealthScript(profile: FingerprintProfile): string {
     // Also try to extract alpha from rgba() if present in original
     var _rgbaMatch = color.match(/rgba?\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/);
     if (_rgbaMatch) a = parseFloat(_rgbaMatch[1]);
-    // Apply ±1 perturbation using seed
+    // Apply perturbation scaled by _canvasNoiseIntensity (R55: intensity-aware)
+    var _intScale = _canvasNoiseIntensity > 0 ? Math.min(_canvasNoiseIntensity, 2.0) : 1.0;
     seed = (seed * 16807 + 0.5) % 2147483647;
-    var _rNoise = ((seed % 3) - 1); // -1, 0, or 1
+    var _rNoise = Math.round(((seed % 3) - 1) * _intScale); // scaled by intensity
     seed = (seed * 16807 + 0.5) % 2147483647;
-    var _gNoise = ((seed % 3) - 1);
+    var _gNoise = Math.round(((seed % 3) - 1) * _intScale);
     seed = (seed * 16807 + 0.5) % 2147483647;
-    var _bNoise = ((seed % 3) - 1);
+    var _bNoise = Math.round(((seed % 3) - 1) * _intScale);
     r = Math.max(0, Math.min(255, r + _rNoise));
     g = Math.max(0, Math.min(255, g + _gNoise));
     b = Math.max(0, Math.min(255, b + _bNoise));
@@ -1836,19 +1920,61 @@ export function getStealthScript(profile: FingerprintProfile): string {
         var _2dSeed = _ctxProxySeed;
         return new Proxy(ctx, {
           get: function(target, prop) {
-            // measureText — add ±0.01px to width metrics
+            // R55 Enhanced measureText — vary ALL TextMetrics properties, not just width.
+            // Real browsers produce slightly different TextMetrics across platforms due to
+            // different font rasterizers (DirectWrite vs CoreText vs FreeType).
+            // Anti-bot systems check multiple TextMetrics properties for consistency.
             if (prop === 'measureText') {
               return function() {
                 var result = target.measureText.apply(target, arguments);
                 try {
                   var _text = arguments[0] || '';
-                  var _mS = (_2dSeed + _text.length * 31 + (_text.length > 0 ? _text.charCodeAt(0) : 0) * 7) | 0;
-                  var _mNoise = ((_mS % 21) - 10) * 0.001; // ±0.01px
-                  var _origW = result.width;
-                  Object.defineProperty(result, 'width', {
-                    get: function() { return _origW + _mNoise; },
-                    configurable: true
-                  });
+                  // Hash text content + font for deterministic per-text noise
+                  var _mHash = _2dSeed;
+                  for (var _mi = 0; _mi < _text.length; _mi++) {
+                    _mHash = ((_mHash << 5) - _mHash + _text.charCodeAt(_mi)) | 0;
+                  }
+                  // Also hash the current font for font-specific variation
+                  var _curFont = target.font || '10px sans-serif';
+                  for (var _fj = 0; _fj < _curFont.length; _fj++) {
+                    _mHash = ((_mHash << 3) - _mHash + _curFont.charCodeAt(_fj)) | 0;
+                  }
+                  _mHash = Math.abs(_mHash);
+                  // Generate 7 independent noise values for different TextMetrics properties
+                  var _tmS = _mHash;
+                  _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+                  var _nW = ((_tmS % 21) - 10) * 0.0015;    // width: ±0.015px
+                  _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+                  var _nABL = ((_tmS % 11) - 5) * 0.001;    // actualBoundingBoxLeft: ±0.005px
+                  _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+                  var _nABR = ((_tmS % 11) - 5) * 0.001;    // actualBoundingBoxRight: ±0.005px
+                  _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+                  var _nABA = ((_tmS % 11) - 5) * 0.001;    // actualBoundingBoxAscent: ±0.005px
+                  _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+                  var _nABD = ((_tmS % 11) - 5) * 0.001;    // actualBoundingBoxDescent: ±0.005px
+                  _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+                  var _nFBA = ((_tmS % 7) - 3) * 0.0005;     // fontBoundingBoxAscent: ±0.0015px
+                  _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+                  var _nFBD = ((_tmS % 7) - 3) * 0.0005;     // fontBoundingBoxDescent: ±0.0015px
+                  // Apply noise to all available TextMetrics properties
+                  var _tmProps = ['width', 'actualBoundingBoxLeft', 'actualBoundingBoxRight',
+                    'actualBoundingBoxAscent', 'actualBoundingBoxDescent',
+                    'fontBoundingBoxAscent', 'fontBoundingBoxDescent'];
+                  var _tmNoises = [_nW, _nABL, _nABR, _nABA, _nABD, _nFBA, _nFBD];
+                  for (var _ti = 0; _ti < _tmProps.length; _ti++) {
+                    var _pName = _tmProps[_ti];
+                    var _origVal = result[_pName];
+                    if (typeof _origVal === 'number' && isFinite(_origVal)) {
+                      (function(p, orig, noise) {
+                        try {
+                          Object.defineProperty(result, p, {
+                            get: function() { return orig + noise; },
+                            configurable: true
+                          });
+                        } catch(_tdErr) {}
+                      })(_pName, _origVal, _tmNoises[_ti]);
+                    }
+                  }
                 } catch(_e) {}
                 return result;
               };
@@ -1897,6 +2023,44 @@ export function getStealthScript(profile: FingerprintProfile): string {
                   }
                 } catch(_e) {}
                 return result;
+              };
+            }
+            // R55: fillText/strokeText — add ±0.05px sub-pixel positioning noise.
+            // Different GPU/driver combos render text at slightly different sub-pixel
+            // positions. Fingerprinting scripts that draw text and then read back via
+            // getImageData can detect the absence of this variation.
+            if (prop === 'fillText') {
+              return function() {
+                var args = Array.prototype.slice.call(arguments);
+                try {
+                  var _ftS = (_2dSeed * 16807 + 3.0) % 2147483647;
+                  var _ftX = args.length > 1 ? args[1] : 0;
+                  var _ftY = args.length > 2 ? args[2] : 0;
+                  _ftS = (_ftS * 16807 + _ftX * 13 + _ftY * 17) % 2147483647;
+                  var _ftDx = ((_ftS % 101) - 50) * 0.001; // ±0.05px
+                  _ftS = (_ftS * 16807 + 0.5) % 2147483647;
+                  var _ftDy = ((_ftS % 101) - 50) * 0.001;
+                  if (args.length > 1) args[1] = _ftX + _ftDx;
+                  if (args.length > 2) args[2] = _ftY + _ftDy;
+                } catch(_e) {}
+                return target.fillText.apply(target, args);
+              };
+            }
+            if (prop === 'strokeText') {
+              return function() {
+                var args = Array.prototype.slice.call(arguments);
+                try {
+                  var _stS = (_2dSeed * 16807 + 3.2) % 2147483647;
+                  var _stX = args.length > 1 ? args[1] : 0;
+                  var _stY = args.length > 2 ? args[2] : 0;
+                  _stS = (_stS * 16807 + _stX * 19 + _stY * 23) % 2147483647;
+                  var _stDx = ((_stS % 101) - 50) * 0.001;
+                  _stS = (_stS * 16807 + 0.5) % 2147483647;
+                  var _stDy = ((_stS % 101) - 50) * 0.001;
+                  if (args.length > 1) args[1] = _stX + _stDx;
+                  if (args.length > 2) args[2] = _stY + _stDy;
+                } catch(_e) {}
+                return target.strokeText.apply(target, args);
               };
             }
             // quadraticCurveTo — tiny control-point offset (affects isPointInPath)
@@ -1981,6 +2145,27 @@ export function getStealthScript(profile: FingerprintProfile): string {
                     }
                   } catch(_rgErr) {}
                   return _origAddColorStop2(offset, color);
+                };
+                return gradient;
+              };
+            }
+            // R55: createConicGradient — return proxy that adds noise to addColorStop
+            // Chrome 99+/Edge 99+/Firefox 113+ support this API.
+            // Anti-bot systems can detect headless by checking conic gradient rendering.
+            if (prop === 'createConicGradient') {
+              return function(startAngle, x, y) {
+                var gradient = target.createConicGradient(startAngle, x, y);
+                var _cgSeed = (((_2dSeed + (startAngle * 100 + x * 41 + y * 59)) | 0) * 16807 + 10.5) % 2147483647;
+                var _origAddColorStop3 = gradient.addColorStop.bind(gradient);
+                gradient.addColorStop = function(offset, color) {
+                  try {
+                    var _parsed3 = _parseAndPerturbColor(color, _cgSeed);
+                    if (_parsed3 !== color) {
+                      _cgSeed = (_cgSeed * 16807 + 0.5) % 2147483647;
+                      return _origAddColorStop3(offset, _parsed3);
+                    }
+                  } catch(_cgErr) {}
+                  return _origAddColorStop3(offset, color);
                 };
                 return gradient;
               };
@@ -2804,6 +2989,109 @@ export function getStealthScript(profile: FingerprintProfile): string {
       }
     })();
   } catch(_consistErr) {}
+
+  // ==================== Section 100: OffscreenCanvas Fingerprint Alignment ====================
+  // R55: OffscreenCanvas used by Web Workers for off-thread rendering. Its fingerprint
+  // (via convertToBlob, transferToImageBitmap, getImageData) must match the main canvas
+  // noise pattern. Otherwise, cross-context fingerprinting reveals automation.
+  try {
+    if (typeof OffscreenCanvas !== 'undefined') {
+      // Patch getImageData on OffscreenCanvas 2D contexts via getContext override
+      var _origOCGetContext = OffscreenCanvas.prototype.getContext;
+      OffscreenCanvas.prototype.getContext = function(type, attrs) {
+        var ctx = _origOCGetContext.call(this, type, attrs);
+        if (type === '2d' && ctx && !ctx._obscuraPatched) {
+          ctx._obscuraPatched = true;
+          var _origOCGetImageData = ctx.getImageData.bind(ctx);
+          ctx.getImageData = function() {
+            var imageData = _origOCGetImageData.apply(ctx, arguments);
+            var d = imageData.data;
+            // Apply the SAME deterministic noise as HTMLCanvas getImageData (Section 20)
+            var _seed = _canvasNoiseSeed + (_canvasInstanceCount * 7919);
+            var _intensity = _canvasNoiseIntensity;
+            for (var i = 0; i < d.length; i += 4) {
+              _seed = (_seed * 16807 + 0.5) % 2147483647;
+              var noise = Math.round(((_seed % 3) - 1) * _intensity);
+              d[i]   = Math.max(0, Math.min(255, d[i] + noise));
+              _seed = (_seed * 16807 + 0.5) % 2147483647;
+              noise = Math.round(((_seed % 3) - 1) * _intensity);
+              d[i+1] = Math.max(0, Math.min(255, d[i+1] + noise));
+              _seed = (_seed * 16807 + 0.5) % 2147483647;
+              noise = Math.round(((_seed % 3) - 1) * _intensity);
+              d[i+2] = Math.max(0, Math.min(255, d[i+2] + noise));
+            }
+            return imageData;
+          };
+          // Patch measureText on OffscreenCanvas 2D context (same logic as proxy)
+          var _origOCMeasureText = ctx.measureText.bind(ctx);
+          var _ocSeed = _fakeDeviceSeed * 2.71828;
+          ctx.measureText = function() {
+            var result = _origOCMeasureText.apply(ctx, arguments);
+            try {
+              var _text = arguments[0] || '';
+              var _mHash = _ocSeed;
+              for (var _mi = 0; _mi < _text.length; _mi++) {
+                _mHash = ((_mHash << 5) - _mHash + _text.charCodeAt(_mi)) | 0;
+              }
+              _mHash = Math.abs(_mHash);
+              var _tmS = _mHash;
+              _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+              var _nW = ((_tmS % 21) - 10) * 0.0015;
+              var _origW = result.width;
+              Object.defineProperty(result, 'width', {
+                get: function() { return _origW + _nW; },
+                configurable: true
+              });
+            } catch(_ocmErr) {}
+            return result;
+          };
+        }
+        return ctx;
+      };
+      // Patch convertToBlob (OffscreenCanvas equivalent of toBlob)
+      var _origOCConvertToBlob = OffscreenCanvas.prototype.convertToBlob;
+      if (_origOCConvertToBlob) {
+        OffscreenCanvas.prototype.convertToBlob = function(options) {
+          var _self = this;
+          try {
+            var ctx = _self.getContext('2d');
+            if (ctx && ctx._obscuraPatched) {
+              // The getImageData inside is already patched; re-encode from noisy data
+              // by creating a temp canvas, putting noisy image data, and converting that
+              var imgData = ctx.getImageData(0, 0, _self.width, _self.height);
+              var _tmpOC = new OffscreenCanvas(_self.width, _self.height);
+              var _tmpOCCtx = _tmpOC.getContext('2d');
+              if (_tmpOCCtx) {
+                _tmpOCCtx.putImageData(imgData, 0, 0);
+                return _origOCConvertToBlob.call(_tmpOC, options);
+              }
+            }
+          } catch(_ocbErr) {}
+          return _origOCConvertToBlob.call(_self, options);
+        };
+      }
+      // Patch transferToImageBitmap — adds noise to the bitmap pixels
+      var _origOCTransfer = OffscreenCanvas.prototype.transferToImageBitmap;
+      if (_origOCTransfer) {
+        OffscreenCanvas.prototype.transferToImageBitmap = function() {
+          var _self = this;
+          try {
+            var ctx = _self.getContext('2d');
+            if (ctx && ctx._obscuraPatched) {
+              var imgData = ctx.getImageData(0, 0, _self.width, _self.height);
+              var _tmpOC2 = new OffscreenCanvas(_self.width, _self.height);
+              var _tmpOCCtx2 = _tmpOC2.getContext('2d');
+              if (_tmpOCCtx2) {
+                _tmpOCCtx2.putImageData(imgData, 0, 0);
+                return _origOCTransfer.call(_tmpOC2);
+              }
+            }
+          } catch(_octErr) {}
+          return _origOCTransfer.call(_self);
+        };
+      }
+    }
+  } catch(_ocErr) {}
 
 })();
 `;
