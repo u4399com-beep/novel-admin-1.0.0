@@ -23575,3 +23575,20 @@ Work Log:
 - Build: `bun build index.ts --no-bundle` — **OK** (RC=0, zero type errors)
 - All three sections follow existing coding patterns (var declarations, try/catch, seeded PRNG, PROFILE references)
 
+---
+Task ID: R57
+Agent: Main Orchestrator (6 parallel agents)
+Task: 删除iqiyi规则+全覆盖审计33文件+16bug修复+反反爬增强
+
+Work Log:
+- 删除wenxue-iqiyi.json采集规则(已探明VIP付费墙无法绕过)
+- [Batch 1] 审计5文件~4,505行: js-content-extractor+cleaning+utils+selectors+quality-scorer → 15 bugs (2H+4M+9L)
+- [Batch 3] 审计12文件~5,800行: queue+session+cookie+cache+ai-rule+ssrf等 → 13 bugs (4H+5M+4L)
+- [Fix High] 6个High bug全部修复: utils Mac ARM/cleaning文本合并/queue去重/cheerio-cache碰撞/cookie跨域/ai-rule验证
+- [Fix Medium] 10个Medium bug全部修复: utils路径遍历/cleaning XSS/js-extractor正则/selectors类型/session类型/queue类型/cookie重复/ssrf TODO/regex安全/ai-rule类型
+- [Enhance] 3新stealth sections: S104 Permissions API + S105 Connection API + S106 Screen/Viewport
+
+Stage Summary:
+- 修改文件: 13 | 删除: 1 | 新增代码: ~900行
+- 本轮修复: 16项 | 累计修复: 863项 | 增强: 49项 | Stealth: 56+sections
+- Git push: 8d076d2 → main
