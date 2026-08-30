@@ -13,6 +13,7 @@ import type {
 import { getEngine, selectEngine, fetchWithEngineFallback, fetchWithInfiniteScroll } from "./engines";
 import { parseSelector, parseSelectorMulti, parseSelectorHtml, extractLinksFromList, extractMetadataFallback } from "./selectors";
 import { cleanHtmlRaw, cleanHtmlPreserveParagraphs, cleanText } from "./cleaning";
+import { convertIfTraditional } from "./t2s-converter";
 import { extractJsContent, hasJsContentPatterns } from "./js-content-extractor";
 import { resolveUrl, randomDelay, isSafeSavePath, getRandomUA, followRedirects, chapterDedupKey, buildFetchHeaders } from "./utils";
 import { isSafeUrl } from "./ssrf";
@@ -478,7 +479,17 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     console.log(`  [Content] Merged ${pageCount} pages (${contentParts.reduce((sum, p) => sum + p.length, 0)} chars)`);
   }
 
-  const fullContent = contentParts.join("\n\n");
+  let fullContent = contentParts.join("\n\n");
+
+  // Traditional → Simplified Chinese conversion (if configured)
+  if (cleanConfig?.t2sConversion && fullContent) {
+    const t2sResult = convertIfTraditional(fullContent);
+    if (t2sResult.converted) {
+      fullContent = t2sResult.text;
+      console.log(`  [T2S] Traditional Chinese detected and converted to Simplified`);
+    }
+  }
+
   // Strip HTML tags before counting words for consistency with chapter creation API
   const textOnly = fullContent.replace(/<[^>]*>/g, '').replace(/\s+/g, '');
   return {

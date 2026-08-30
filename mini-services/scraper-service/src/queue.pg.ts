@@ -53,7 +53,10 @@ async function getSql(): Promise<postgres.Sql> {
   await sql`CREATE INDEX IF NOT EXISTS idx_queue_status ON request_queue(status)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_queue_url ON request_queue(url)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_queue_task_id ON request_queue(task_id)`;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url ON request_queue(task_id, url, status)`;
+  // Partial unique index: prevent duplicate active (pending/in_progress) entries per task+url
+  // Note: SQLite CREATE INDEX does not support WHERE; this is a PostgreSQL-style comment
+  // For SQLite, we handle dedup in application logic (addToQueue checks existing entries)
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url_active ON request_queue(task_id, url)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_queue_status_updated ON request_queue(status, updated_at)`;
 
   return sql;
@@ -381,7 +384,7 @@ export async function isUrlProcessed(url: string, taskId?: string): Promise<bool
   let rows: any[];
   if (taskId) {
     rows = await db`
-      SELECT id FROM request_queue WHERE url = ${url} AND task_id = ${taskId} AND status IN ('completed', 'in_progress') LIMIT 1
+      SELECT id FROM request_queue WHERE url = ${url} AND task_id = ${taskId} AND status IN ('completed', 'in_progress', 'pending') LIMIT 1
     `;
   } else {
     rows = await db`

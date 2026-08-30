@@ -8,6 +8,7 @@
 import * as cheerio from "cheerio";
 import type { CleanRequest } from "./types";
 import { safeRegexReplace } from "./regex-safety";
+import { convertIfTraditional } from "./t2s-converter";
 
 // Tags to skip during paragraph-aware extraction
 const EXCLUDED_TAGS = new Set(['script', 'style', 'noscript', 'template']);
@@ -970,7 +971,18 @@ function mergeRunOnText(text: string): string {
  */
 export function handleClean(body: CleanRequest) {
   const { html, config } = body;
-  const content = cleanHtmlPreserveParagraphs(html, config);
+  let content = cleanHtmlPreserveParagraphs(html, config);
+
+  // Traditional → Simplified Chinese conversion
+  let t2sConverted = false;
+  if (config.t2sConversion && content) {
+    const result = convertIfTraditional(content);
+    if (result.converted) {
+      content = result.text;
+      t2sConverted = true;
+    }
+  }
+
   return {
     content,
     wordCount: (() => {
@@ -978,5 +990,6 @@ export function handleClean(body: CleanRequest) {
       const english = (content.match(/[a-zA-Z]+/g) || []).length;
       return cjk + english;
     })(),
+    t2sConverted,
   };
 }

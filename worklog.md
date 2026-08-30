@@ -23592,3 +23592,216 @@ Stage Summary:
 - 修改文件: 13 | 删除: 1 | 新增代码: ~900行
 - 本轮修复: 16项 | 累计修复: 863项 | 增强: 49项 | Stealth: 56+sections
 - Git push: 8d076d2 → main
+
+---
+Task ID: R58-audit
+Agent: Deep Code Auditor (Batch 2 - Rerun)
+Task: Audit batch2: network+security files (11 files, ~4,300 lines)
+
+Work Log:
+- Line-by-line audit of 11 files: adaptive-delay, captcha-detector, captcha-strategy, browser-behavior, anti-crawl-advisor, http2-decoy, tls-fingerprint, doh-resolver, doh-simulation, rate-limiter, referrer-chain
+- Verified domainHash() returns Math.abs(h) — negative hash concern ruled out for http2-decoy.ts and tls-fingerprint.ts
+- Verified all regex patterns in captcha-detector.ts lack /g flag — no lastIndex state bug
+- Verified all caches have bounded size + TTL/eviction
+- Verified no resource leaks (timers cleared, no persistent sockets)
+
+## Findings: 7 issues (0 Critical, 1 Medium, 6 Low)
+
+### [Medium] anti-crawl-advisor.ts:245 — DelayDomainStats fallback missing 4 required fields + 1 extra field
+  Code: `delayState = { avgResponseTime: 0, lastRequestTime: 0, consecutiveErrors: 0, totalRequests: 0 };`
+  Issue: DomainStats requires `domain`, `currentDelay`, `backoffLevel`, `status`. Fallback has extra `totalRequests`. Currently safe because gatherSignals() only accesses the 3 fields present, but any future access to missing fields (e.g. `delayState.status`) would return undefined.
+  Fix: Replace with `{ domain, currentDelay: 0, backoffLevel: 0, consecutiveErrors: 0, avgResponseTime: 0, lastRequestTime: 0, status: 'normal' as const }`
+
+### [Low] anti-crawl-advisor.ts:226-231 — Decay counters mutated inside read-only gatherSignals()
+  Code: `history.emptyContentCount = Math.round(history.emptyContentCount * 0.9);`
+  Issue: gatherSignals() is called from analyze() and getDomainSignals() (monitoring). Each call decays 4 counters as a side effect. A count of 1 becomes 0 after a single call (Math.round(0.9)=0). Repeated monitoring calls artificially erase detection history.
+  Fix: Move decay to a dedicated `decayHistory()` method called from a periodic timer (similar to the existing cleanup interval), not from the read path.
+
+### [Low] rate-limiter.ts:206 — New domains always show 'cooldown' status
+  Code: `else if (state.consecutiveSuccesses < 3 && state.lastRequestTime > 0) { status = 'cooldown'; }`
+  Issue: getDomainState() calls getOrCreateDomain() which sets lastRequestTime=Date.now() and consecutiveSuccesses=0. The cooldown check then matches (0<3 && timestamp>0), so every brand-new domain reports 'cooldown' status even though no penalty recovery is in progress.
+  Fix: Add a guard: `state.consecutiveSuccesses < 3 && state.lastRequestTime > 0 && state.maxRPM < this.config.defaultMaxRPM` to only show cooldown when RPM was actually reduced.
+
+### [Low] rate-limiter.ts:49 — Unused constant MAX_TIMESTAMPS_PER_DOMAIN
+  Code: `const MAX_TIMESTAMPS_PER_DOMAIN = 200;`
+  Issue: Dead code. Line 121 uses `Math.max(200, state.maxRPM * 2)` inline instead of referencing this constant.
+  Fix: Replace `Math.max(200, ...)` on line 121 with `Math.max(MAX_TIMESTAMPS_PER_DOMAIN, ...)`.
+
+### [Low] rate-limiter.ts:95,269 — DomainState.windowStart field is set but never read
+  Code: `state.windowStart = windowStart;` (line 95) and `windowStart: Date.now() - WINDOW_MS` (line 269)
+  Issue: The `windowStart` field in DomainState interface is written but never read anywhere. Dead field.
+  Fix: Remove `windowStart` from the DomainState interface and both assignment sites.
+
+### [Low] browser-behavior.ts:159 — Redundant null check
+  Code: `if (this.domainRootsVisited.size >= MAX_TRACKED_DOMAINS && !this.domainRootsVisited.has(domain))`
+  Issue: Line 156 already returns null if the domain is in the set. If execution reaches line 159, `!this.domainRootsVisited.has(domain)` is always true. The check is harmless but redundant.
+  Fix: Simplify to `if (this.domainRootsVisited.size >= MAX_TRACKED_DOMAINS)`.
+
+### [Low] captcha-strategy.ts:279-284 — Unreachable fallback code
+  Code: `// Fallback (should not reach here since DelayBackoffStrategy handles all) return { resolved: false, action: 'none', message: 'No applicable CAPTCHA handling strategy found' };`
+  Issue: DelayBackoffStrategy.canHandle() always returns true, so the for-loop in autoHandleCaptcha() always returns before reaching the fallback. Dead code.
+  Fix: Remove the fallback block or add a comment documenting it as defensive programming.
+
+## Files with no bugs found
+- adaptive-delay.ts (428 lines) — Clean. LRU eviction correct, backoff math correct.
+- captcha-detector.ts (265 lines) — Clean. No /g flag regexes, dedup logic correct.
+- http2-decoy.ts (508 lines) — Clean. Cache TTL+eviction correct, domainHash verified non-negative.
+- tls-fingerprint.ts (302 lines) — Clean. Same domainHash safety.
+- doh-resolver.ts (241 lines) — Clean. AbortController timer cleared in finally, provider fallback correct.
+- doh-simulation.ts (195 lines) — Clean. Fire-and-forget pattern safe, caches bounded.
+- referrer-chain.ts (127 lines) — Clean. LRU eviction correct, self-refer check correct.
+
+Stage Summary:
+- 审计文件: 11 | 总行数: ~4,300 | 发现问题: 7 (0C/1M/6L)
+- 无需修复（所有发现均为Low+Medium，不影响运行时正确性）
+- 累计审计: R57+R58 = 28文件
+
+---
+Task ID: R58-enhance
+Agent: Anti-Anti-Crawl Enhancement Specialist
+Task: Add 3 new stealth sections (107-109) to stealth.ts
+
+Work Log:
+- Read stealth.ts (3707 lines) to understand injection section patterns
+- Identified existing pattern: try/catch IIFE blocks inside template literal, using `var`, `_seededRandom()`, `PROFILE.userAgent`
+- Added Section 107: Storage API Quota Spoofing (~16 lines)
+  - Overrides navigator.storage.estimate() with desktop (100GB quota, 5GB usage) vs mobile (25GB, 2GB)
+  - Seeded ±20% variation via _seededRandom(107.1)
+  - Replaces the earlier Section 15 mock which used unrealistic 260-450GB range
+- Added Section 108: Media Capabilities API Spoofing (~28 lines)
+  - Overrides navigator.mediaCapabilities.decodingInfo() for video/webm, video/mp4, audio/webm, audio/mp4
+  - Returns {supported: true, smooth: true, powerEfficient: true} for known codecs
+  - Returns all-false for unknown codecs; immediate Promise resolution
+- Added Section 109: Gamepad API Stubbing (~19 lines)
+  - navigator.getGamepads() returns empty array (no gamepads connected)
+  - Swallows gamepadconnected/gamepaddisconnected event listeners on EventTarget.prototype
+  - Prevents undefined-check detection vectors
+- Build verification: `bun build index.ts --no-bundle` passes with zero TS errors
+
+Stage Summary:
+- 3 new sections added (107-109), ~63 lines injected before closing IIFE
+- stealth.ts: 3707 → 3755 lines
+- Build: OK (no TS errors)
+
+---
+Task ID: R58-audit2
+Agent: Deep Code Auditor (Test + Remaining)
+Task: LINE-BY-LINE deep audit of test files + ip-fingerprint + request-fingerprint + charset-detector + queue.pg.ts
+
+Audit Report (8 files, focus: BUGS only):
+
+## Findings
+
+```
+[Critical] clean-test.ts:216 - Syntax error: missing closing parenthesis prevents file from being parsed
+  Code: if (typeof require !== 'undefined' || (typeof Bun !== 'undefined' && Bun.main) {
+  Issue: The opening '(' after 'if' is never closed before '{'. Two '(' exist but only one ')' before
+        the '{'. Both Bun and Node.js parsers reject this: "Unexpected token '{'. Expected ')' to
+        end an 'if' condition." This means the file CANNOT be loaded by any runtime — even importing
+        testCleaning() from another module will fail because the entire file must parse first.
+  Fix:   if (typeof require !== 'undefined' || (typeof Bun !== 'undefined' && Bun.main)) {
+        Note: add the missing ')' before '{'. TypeScript's tsc did NOT report this (only reported
+        semantic 'Bun' not found errors), but both bun and node -e reject it at parse time.
+```
+
+```
+[High] queue.pg.ts:56 + queue.pg.ts:85 - Unique index on (task_id, url, status) allows duplicate pending entries
+  Code: CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url ON request_queue(task_id, url, status)
+        ...
+        ON CONFLICT (task_id, url, status) WHERE status != 'failed' DO NOTHING
+  Issue: The unique index includes 'status', so (task1, url1, 'pending') and (task1, url1, 'in_progress')
+        are treated as different rows. When a URL is being processed (in_progress) and is re-enqueued,
+        a second 'pending' row is created because the status values differ. Same for 'completed' entries.
+        This causes the same URL to be processed twice by different workers.
+  Fix:   Change the unique index to only (task_id, url), excluding status:
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url
+          ON request_queue(task_id, url)
+          WHERE status != 'failed';
+        This is a partial unique index that allows re-queuing failed items while preventing
+        duplicates across pending/in_progress/completed states.
+        Also update the ON CONFLICT clause to match:
+        ON CONFLICT (task_id, url) WHERE status != 'failed' DO NOTHING
+  Note:  queue.pg.ts is not currently imported by any production code (task-engine uses queue.ts),
+        but it will be a real bug when the PG queue is activated.
+```
+
+```
+[Medium] queue.pg.ts:384 - isUrlProcessed() does not check 'pending' status
+  Code: SELECT id FROM request_queue WHERE url = ${url} AND task_id = ${taskId}
+        AND status IN ('completed', 'in_progress') LIMIT 1
+  Issue: If a URL is already in 'pending' status, isUrlProcessed() returns false, which could lead
+        callers to believe the URL hasn't been seen yet. While addToQueue's ON CONFLICT handles the
+        pending→pending case, the function's contract is misleading — 'pending' IS a processed state.
+  Fix:   Change to: status IN ('completed', 'in_progress', 'pending')
+```
+
+```
+[Medium] charset-detector.ts:152 - Regex for http-equiv meta charset uses [^"]* which can match past tag boundary
+  Code: /<meta[^>]+http-equiv[=\s"]+Content-Type[^>]+content[=\s"]+[^"]*charset[=\s"]+([\w\-]+)/i
+  Issue: The `[^>]+` before 'content' constrains matching within one tag, but `[^"]*` after 'content='
+        could theoretically match across into the next tag's attributes if there's no double-quote
+        before the next '>'. In practice, meta charset declarations are in <head> so this is unlikely,
+        but the regex is fragile for edge cases like unquoted attributes with charset appearing later.
+        Tested and it works for single-quoted, double-quoted, and unquoted attributes in practice.
+  Fix:   Replace `[^"]*` with `[^>"]*` to prevent matching past the tag boundary:
+        /<meta[^>]+http-equiv[=\s"]+Content-Type[^>]+content[=\s"]+[^>"]*charset[=\s"]+([\w\-]+)/i
+```
+
+```
+[Low] test-anti-crawl-effectiveness.ts:388-389 - Redundant assertion (always true if prior passes)
+  Code: assert(fullScript.length > 50000, `Stealth script substantial (got ${fullScript.length} chars)`);
+        assert(fullScript.length > 10000, `Stealth script substantial size (got ${fullScript.length} chars)`);
+  Issue: The second assertion (10000) is strictly weaker than the first (50000). If line 388 passes,
+        line 389 will always pass. The second assert is dead code.
+  Fix:   Remove line 389, or change it to test a different property (e.g., section count).
+```
+
+```
+[Low] proxy-conn-test.ts:60-65 - socks5h/socks4h protocol distinction lost in result
+  Code: if (urlStr.startsWith('socks5h://')) {
+          protocol = 'socks5'; // socks5h = SOCKS5 with remote DNS
+        }
+  Issue: The 'h' suffix (remote DNS resolution) is a meaningful protocol difference — socks5h resolves
+        DNS through the proxy (hiding the client's DNS queries), while socks5 resolves locally.
+        The ProxyTestResult.protocol field always reports 'socks5' for both, losing this distinction.
+        The original proxyUrl is passed to SocksProxyAgent so functionality is correct, but the
+        result is misleading for logging/monitoring.
+  Fix:   protocol = 'socks5h'; // preserve the distinction in results
+        Similarly for socks4h → 'socks4h'.
+```
+
+```
+[Low] request-fingerprint.ts:33-35 - Inconsistent expiry constants between cleanup and validation
+  Code: const MAX_AGE_MS = 5 * 60 * 1000;          // 5 minutes (used in validate)
+        const FINGERPRINT_EXPIRE_MS = 2 * 60 * 1000; // 2 minutes (used in cleanup)
+  Issue: cleanup() removes entries after 2 minutes, but validate() considers entries valid for 5
+        minutes. In practice, cleanup runs every 30s, so entries 2-5 minutes old are always removed
+        before validate() would check them. The 5-minute MAX_AGE_MS in validate() is unreachable.
+  Fix:   Either set MAX_AGE_MS = FINGERPRINT_EXPIRE_MS (both 2 min), or set FINGERPRINT_EXPIRE_MS
+        slightly above MAX_AGE_MS (e.g., 6 min) to let validate() be the authoritative expiry check.
+```
+
+## Files with No Bugs Found
+- **ip-fingerprint.ts** — Despite the filename, this module does NOT handle IP addresses. It handles
+  HTTP header diversification (Connection, Accept-Encoding, Accept, Keep-Alive). No IPv6, CIDR, or
+  private range concerns apply. LRU eviction is correctly implemented. No bugs found.
+- **test-guichuideng.ts** — Manual smoke test (no programmatic assertions). All selectors, imports,
+  and error handling are correct. The `:contains()` pseudo-selector on line 48 is a jQuery/Sizzle
+  extension supported by cheerio — not a bug. No assertions to be wrong about.
+- **request-fingerprint.ts** — Well-structured singleton with proper cleanup. Map operations are
+  safe (no concurrent modification risk in single-threaded JS). The generateHexId uses
+  crypto.getRandomValues correctly. padPostBody handles JSON/URL-encoded/text bodies properly.
+
+## Summary
+| Severity | Count | Files |
+|----------|-------|-------|
+| Critical | 1     | clean-test.ts (syntax error: file unparsable) |
+| High     | 1     | queue.pg.ts (duplicate pending entries via status in unique index) |
+| Medium   | 2     | queue.pg.ts (isUrlProcessed missing pending), charset-detector.ts (regex fragility) |
+| Low      | 3     | test-anti-crawl-effectiveness.ts, proxy-conn-test.ts, request-fingerprint.ts |
+
+Stage Summary:
+- 1 Critical bug: clean-test.ts cannot be parsed by any runtime (missing `)` on line 216)
+- 1 High bug: queue.pg.ts dedup allows same URL as both pending and in_progress simultaneously
+- queue.pg.ts is currently unused in production (task-engine imports from queue.ts), but will break when activated
+- All other files (ip-fingerprint, request-fingerprint, test-guichuideng) are clean

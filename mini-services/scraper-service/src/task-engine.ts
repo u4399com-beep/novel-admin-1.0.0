@@ -396,6 +396,14 @@ export async function executeTask(taskId: string) {
     cleanHtml: true,
   });
 
+  // Enable T2S conversion if rule has t2sConversion config
+  if ((rule as Record<string, unknown>).t2sConversion) {
+    const t2sCfg = (rule as Record<string, unknown>).t2sConversion as Record<string, unknown> | null;
+    if (t2sCfg && t2sCfg.enabled !== false) {
+      cleanConfig.t2sConversion = true;
+    }
+  }
+
   if (!antiCrawlConfig.delay) {
     antiCrawlConfig.delay = [rule.minDelay, rule.maxDelay];
   }

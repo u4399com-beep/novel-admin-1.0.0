@@ -3381,6 +3381,81 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(_scrErr) {}
 
+  // ==================== Section 107: Storage API Quota Spoofing ====================
+  // Headless browsers often have different default storage quotas than real browsers.
+  // This replaces the simpler estimate() mock (in Section 15) with values that
+  // differentiate desktop (100GB) from mobile (25GB) with ±20% seeded variation.
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      var _storMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(PROFILE.userAgent || '');
+      var _storBaseQuota = _storMobile ? 26843545600 : 107374182400;  // 25GB mobile, 100GB desktop
+      var _storBaseUsage = _storMobile ? 2147483648 : 5368709120;     // 2GB mobile, 5GB desktop
+      var _storVar = 0.8 + _seededRandom(107.1) * 0.4;  // ±20% variation
+      var _storQuota = Math.floor(_storBaseQuota * _storVar);
+      var _storUsage = Math.floor(_storBaseUsage * _storVar);
+      navigator.storage.estimate = function() {
+        return Promise.resolve({ quota: _storQuota, usage: _storUsage });
+      };
+    }
+  } catch(_storQuotaErr) {}
+
+  // ==================== Section 108: Media Capabilities API Spoofing ====================
+  // navigator.mediaCapabilities.decodingInfo() reveals codec support which can fingerprint
+  // the browser. Headless browsers may report different codec capabilities than real ones.
+  // We override to return consistent 'smooth' support for common codecs.
+  try {
+    if (navigator.mediaCapabilities && navigator.mediaCapabilities.decodingInfo) {
+      var _supportedCodecs = ['video/webm', 'video/mp4', 'audio/webm', 'audio/mp4'];
+      var _smoothResult = { supported: true, smooth: true, powerEfficient: true };
+      var _origDecodingInfo = navigator.mediaCapabilities.decodingInfo.bind(navigator.mediaCapabilities);
+      navigator.mediaCapabilities.decodingInfo = function(config) {
+        try {
+          if (config && config.type === 'media-source' && config.video) {
+            var contentType = config.video.contentType || '';
+            var baseType = contentType.split(';')[0].trim().toLowerCase();
+            if (_supportedCodecs.indexOf(baseType) >= 0) {
+              return Promise.resolve(_smoothResult);
+            }
+          }
+          if (config && config.type === 'media-source' && config.audio) {
+            var aContentType = config.audio.contentType || '';
+            var aBaseType = aContentType.split(';')[0].trim().toLowerCase();
+            if (_supportedCodecs.indexOf(aBaseType) >= 0) {
+              return Promise.resolve(_smoothResult);
+            }
+          }
+        } catch(_mciInnerErr) {}
+        return Promise.resolve({ supported: false, smooth: false, powerEfficient: false });
+      };
+    }
+  } catch(_mciErr) {}
+
+  // ==================== Section 109: Gamepad API Stubbing ====================
+  // navigator.getGamepads() and gamepad events can reveal automation when the API
+  // is missing or returns unexpected values. Real browsers without gamepads connected
+  // return an empty array, not null or undefined.
+  try {
+    if (navigator.getGamepads) {
+      navigator.getGamepads = function() {
+        return [];
+      };
+    }
+    // Ensure event listeners for gamepadconnected/gamepaddisconnected are no-ops
+    // (prevents detection via undefined checks on the event handler)
+    if (window.EventTarget && window.EventTarget.prototype.addEventListener) {
+      var _origGpAddEL = window.EventTarget.prototype.addEventListener;
+      var _origGpRemoveEL = window.EventTarget.prototype.removeEventListener;
+      window.EventTarget.prototype.addEventListener = function(type, listener, options) {
+        if (type === 'gamepadconnected' || type === 'gamepaddisconnected') return;
+        return _origGpAddEL.call(this, type, listener, options);
+      };
+      window.EventTarget.prototype.removeEventListener = function(type, listener, options) {
+        if (type === 'gamepadconnected' || type === 'gamepaddisconnected') return;
+        return _origGpRemoveEL.call(this, type, listener, options);
+      };
+    }
+  } catch(_gpErr) {}
+
 })();
 `;
 

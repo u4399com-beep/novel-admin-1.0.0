@@ -184,6 +184,8 @@ export interface CleanRequest {
     removePatterns?: string[];
     /** Text patterns for ad line detection (applied at text level) */
     adPatterns?: string[];
+    /** Traditional → Simplified Chinese conversion */
+    t2sConversion?: boolean;
   };
 }
 
