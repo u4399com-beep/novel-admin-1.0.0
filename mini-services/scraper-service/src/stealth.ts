@@ -3269,6 +3269,118 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(_batErr) {}
 
+  // ==================== Section 104: Permissions API Spoofing ====================
+  // Detection scripts query navigator.permissions.query() for notifications, geolocation, etc.
+  // Bots often return 'granted' for all permissions, which is suspicious. Real browsers
+  // return 'prompt' for most sensitive permissions unless the user explicitly granted them.
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      var _origPermQuery = navigator.permissions.query.bind(navigator.permissions);
+      var _permMap = {
+        'notifications': 'prompt',
+        'geolocation': 'prompt',
+        'camera': 'prompt',
+        'microphone': 'prompt',
+        'clipboard-read': 'prompt',
+        'clipboard-write': 'granted',
+        'accelerometer': 'prompt',
+        'gyroscope': 'prompt',
+        'magnetometer': 'prompt',
+        'ambient-light-sensor': 'prompt',
+      };
+      function _makePermissionStatus(state) {
+        return {
+          state: state,
+          onchange: null,
+          addEventListener: function() {},
+          removeEventListener: function() {},
+          dispatchEvent: function() { return false; },
+        };
+      }
+      navigator.permissions.query = function(desc) {
+        var name = (desc && desc.name) || '';
+        var state = _permMap[name] || 'prompt';
+        return Promise.resolve(_makePermissionStatus(state));
+      };
+    }
+  } catch(_permErr) {}
+
+  // ==================== Section 105: Connection API Normalization ====================
+  // navigator.connection (NetworkInformation API) leaks connection details that may be
+  // inconsistent with the spoofed UA. We replace it with values matching the platform.
+  try {
+    var _connMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(PROFILE.userAgent || '');
+    var _connDownlink = _connMobile ? 1.5 + _seededRandom(105.1) * 3.5 : 10 + _seededRandom(105.2) * 10;
+    _connDownlink = Math.round(_connDownlink * 10) / 10;
+    var _connRtt = _connMobile ? 200 + Math.floor(_seededRandom(105.3) * 300) : 20 + Math.floor(_seededRandom(105.4) * 80);
+    var _connType = _connMobile ? '3g' : '4g';
+    if (_connDownlink >= 10) _connType = '4g';
+    else if (_connDownlink >= 0.25) _connType = '3g';
+    else if (_connDownlink >= 0.05) _connType = '2g';
+    else _connType = 'slow-2g';
+    var _fakeConn = {
+      effectiveType: _connType,
+      rtt: _connRtt,
+      downlink: _connDownlink,
+      saveData: false,
+      type: _connMobile ? 'cellular' : undefined,
+      ontypechange: null,
+      onchange: null,
+      addEventListener: function() {},
+      removeEventListener: function() {},
+      dispatchEvent: function() { return false; },
+    };
+    // navigator.connection
+    if (navigator.connection !== undefined) {
+      Object.defineProperty(navigator, 'connection', { get: function() { return _fakeConn; }, configurable: true });
+    }
+    // navigator.mozConnection (Firefox)
+    if (navigator.mozConnection !== undefined) {
+      Object.defineProperty(navigator, 'mozConnection', { get: function() { return _fakeConn; }, configurable: true });
+    }
+    // navigator.webkitConnection (older Chrome)
+    if (navigator.webkitConnection !== undefined) {
+      Object.defineProperty(navigator, 'webkitConnection', { get: function() { return _fakeConn; }, configurable: true });
+    }
+  } catch(_connErr) {}
+
+  // ==================== Section 106: Screen/Viewport Anomaly Prevention ====================
+  // Detection scripts check for inconsistencies between screen dimensions,
+  // devicePixelRatio, and window inner/outer sizes. We ensure consistency and
+  // disable resize/move methods that headless browsers may expose unexpectedly.
+  try {
+    // Make outerWidth/outerHeight consistent with inner dimensions + realistic chrome
+    var _chromeW = 8 + Math.floor(_seededRandom(106.1) * 16);  // scrollbar: 8-24px
+    var _chromeH = 80 + Math.floor(_seededRandom(106.2) * 20);   // title bar + tabs + url bar: 80-100px
+    Object.defineProperty(window, 'outerWidth', {
+      get: function() { return window.innerWidth + _chromeW; }, configurable: true
+    });
+    Object.defineProperty(window, 'outerHeight', {
+      get: function() { return window.innerHeight + _chromeH; }, configurable: true
+    });
+    // Disable resizeTo / resizeBy / moveTo / moveBy — real browsers restrict these
+    // on windows not opened by script, so making them no-ops is consistent.
+    window.resizeTo = function() {};
+    window.resizeBy = function() {};
+    window.moveTo = function() {};
+    window.moveBy = function() {};
+    // Ensure screen.width * devicePixelRatio is approximately equal to window.innerWidth
+    // (within rounding tolerance of 1px). Patch screen.width/height to stay consistent.
+    var _origScreenW = Object.getOwnPropertyDescriptor(Screen.prototype, 'width');
+    var _origScreenH = Object.getOwnPropertyDescriptor(Screen.prototype, 'height');
+    if (_origScreenW && _origScreenH) {
+      var _dpr = window.devicePixelRatio || 1;
+      var _consistentW = Math.round(window.innerWidth * _dpr);
+      var _consistentH = Math.round(window.innerHeight * _dpr);
+      Object.defineProperty(screen, 'width', { get: function() { return _consistentW; }, configurable: true });
+      Object.defineProperty(screen, 'height', { get: function() { return _consistentH; }, configurable: true });
+      // Keep availWidth/availHeight slightly smaller (taskbar deduction: 30-40px)
+      var _taskbar = 30 + Math.floor(_seededRandom(106.3) * 10);
+      Object.defineProperty(screen, 'availWidth', { get: function() { return _consistentW; }, configurable: true });
+      Object.defineProperty(screen, 'availHeight', { get: function() { return Math.max(100, _consistentH - _taskbar); }, configurable: true });
+    }
+  } catch(_scrErr) {}
+
 })();
 `;
 

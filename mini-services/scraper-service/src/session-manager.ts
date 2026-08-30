@@ -11,7 +11,7 @@
 
 import type { SessionData, SessionFingerprint } from './types';
 import { cookieJar } from './cookie-jar';
-import { getProfileForDomain } from './stealth';
+import { getProfileForDomain, type FingerprintProfile } from './stealth';
 
 // ==================== Internal Session Record ====================
 
@@ -122,13 +122,13 @@ class SessionManager {
 
     // Create a new session (use monotonic counter to prevent same-millisecond collision)
     const sessionId = `sess_${normalizedDomain}_${Date.now()}_${++this.sessionCounter}`;
-    let fingerprint;
+    let fingerprint: FingerprintProfile;
     let cookieHeader = '';
     try {
       fingerprint = getProfileForDomain(normalizedDomain);
     } catch {
       // Fallback: use a default profile if stealth module fails
-      fingerprint = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36', screenWidth: 1920, screenHeight: 1080, colorDepth: 24, pixelRatio: 1, timezone: 'Asia/Shanghai', languages: ['zh-CN', 'en-US'], platform: 'Win32', hardwareConcurrency: 8, deviceMemory: 8 } as any;
+      fingerprint = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36', screenWidth: 1920, screenHeight: 1080, colorDepth: 24, pixelRatio: 1, timezone: 'Asia/Shanghai', languages: ['zh-CN', 'en-US'], platform: 'Win32', hardwareConcurrency: 8, deviceMemory: 8, webglVendor: '', webglRenderer: '', timezoneOffset: -480, seed: 'fallback' };
     }
     try {
       cookieHeader = cookieJar.getCookieHeader(normalizedDomain, '/');
@@ -138,15 +138,15 @@ class SessionManager {
     }
 
     const sessionFingerprint: SessionFingerprint = {
-      screenWidth: (fingerprint as any).screenWidth ?? 1920,
-      screenHeight: (fingerprint as any).screenHeight ?? 1080,
-      colorDepth: (fingerprint as any).colorDepth ?? 24,
-      pixelRatio: (fingerprint as any).pixelRatio ?? 1,
-      platform: (fingerprint as any).platform ?? 'Win32',
-      deviceMemory: (fingerprint as any).deviceMemory ?? 8,
-      hardwareConcurrency: (fingerprint as any).hardwareConcurrency ?? 8,
-      timezone: (fingerprint as any).timezone ?? 'Asia/Shanghai',
-      languages: (fingerprint as any).languages ?? ['zh-CN', 'en-US'],
+      screenWidth: fingerprint.screenWidth ?? 1920,
+      screenHeight: fingerprint.screenHeight ?? 1080,
+      colorDepth: fingerprint.colorDepth ?? 24,
+      pixelRatio: fingerprint.pixelRatio ?? 1,
+      platform: fingerprint.platform ?? 'Win32',
+      deviceMemory: fingerprint.deviceMemory ?? 8,
+      hardwareConcurrency: fingerprint.hardwareConcurrency ?? 8,
+      timezone: fingerprint.timezone ?? 'Asia/Shanghai',
+      languages: fingerprint.languages ?? ['zh-CN', 'en-US'],
     };
 
     const session: InternalSession = {

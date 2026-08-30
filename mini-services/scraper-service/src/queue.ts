@@ -95,8 +95,8 @@ export function addToQueue(options: AddToQueueOptions): string {
     }
   }
 
-  // Find existing ID if deduplicated
-  const existing = d.prepare(`SELECT id FROM request_queue WHERE url = $1 AND task_id = $2 AND status != 'failed' LIMIT 1`);
+  // Find existing ID if deduplicated — only match active (non-terminal) statuses, prefer most recent
+  const existing = d.prepare(`SELECT id FROM request_queue WHERE url = $1 AND task_id = $2 AND status IN ('pending', 'in_progress') ORDER BY created_at DESC LIMIT 1`);
   const row = existing.get(options.url, taskId) as { id: string } | undefined;
   return row?.id || id;
 }
@@ -113,7 +113,7 @@ export function addManyToQueue(items: AddToQueueOptions[]): string[] {
       INSERT OR IGNORE INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
       VALUES ($1, $2, $3, $4, 0, $5, 'pending', datetime('now'), datetime('now'), $6, $7)
     `);
-    const findExisting = d.prepare(`SELECT id FROM request_queue WHERE url = $1 AND task_id = $2 AND status != 'failed' LIMIT 1`);
+    const findExisting = d.prepare(`SELECT id FROM request_queue WHERE url = $1 AND task_id = $2 AND status IN ('pending', 'in_progress') ORDER BY created_at DESC LIMIT 1`);
 
     for (const item of items) {
       const id = generateId();
@@ -143,7 +143,7 @@ export function markCompleted(id: string): void {
 export function markFailed(id: string, error: string): void {
   const d = getDb();
 
-  const row = d.prepare(`SELECT retries, max_retries FROM request_queue WHERE id = $1`).get(id) as any;
+  const row = d.prepare(`SELECT retries, max_retries FROM request_queue WHERE id = $1`).get(id) as { retries: number; max_retries: number } | undefined;
   if (!row) return;
 
   if (row.retries < row.max_retries) {
@@ -173,6 +173,14 @@ export function getQueueStats(taskId?: string): QueueStats {
     params.push(taskId);
   }
 
+  interface QueueStatsRow {
+    total: number;
+    pending: number;
+    inProgress: number;
+    completed: number;
+    failed: number;
+  }
+
   const row = d.prepare(`
     SELECT
       COUNT(*) as total,
@@ -181,7 +189,7 @@ export function getQueueStats(taskId?: string): QueueStats {
       COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
       COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed
     FROM request_queue${where}
-  `).get(...params) as any;
+  `).get(...params) as QueueStatsRow;
 
   return {
     total: row.total,

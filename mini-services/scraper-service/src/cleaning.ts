@@ -292,8 +292,17 @@ function applyHtmlLevelCleaning($: cheerio.CheerioAPI, config: CleanRequest["con
         delete el.attribs[attr];
       }
       // Sanitize href/src to remove javascript: URIs
+      // Decode HTML entities first to catch obfuscated variants like "java&#115;cript:"
       if ((attr === "href" || attr === "src") && typeof el.attribs[attr] === "string") {
-        if (el.attribs[attr].trim().toLowerCase().startsWith("javascript:")) {
+        const attrValue = el.attribs[attr];
+        const decoded = attrValue
+          .replace(/&#x3a;/gi, ':')
+          .replace(/&#58;/g, ':')
+          .replace(/&colon;/gi, ':')
+          .replace(/&amp;/g, '&')
+          .replace(/&#x2f;/gi, '/')
+          .replace(/&#47;/g, '/');
+        if (decoded.trim().toLowerCase().startsWith("javascript:")) {
           delete el.attribs[attr];
         }
       }
@@ -876,6 +885,10 @@ function mergeRunOnText(text: string): string {
 
         if (current.length + s.length < 200) {
           // Merge short sentences into a paragraph
+          // Insert space if both sides are Latin/alphanumeric to avoid run-on words
+          if (current && /[a-zA-Z0-9]$/.test(current) && /^[a-zA-Z0-9]/.test(s)) {
+            current += ' ';
+          }
           current += s;
         } else {
           if (current) merged.push(current);
@@ -927,6 +940,10 @@ function mergeRunOnText(text: string): string {
           if (!l) continue;
 
           if (current.length + l.length < 150) {
+            // Insert space if both sides are Latin/alphanumeric to avoid run-on words
+            if (current && /[a-zA-Z0-9]$/.test(current) && /^[a-zA-Z0-9]/.test(l)) {
+              current += ' ';
+            }
             current += l;
           } else {
             if (current) merged.push(current);

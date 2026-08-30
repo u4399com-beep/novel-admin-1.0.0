@@ -720,8 +720,16 @@ export function extractMetadataFallback(html: string): Partial<{
 
   if (ogImage) result.cover = ogImage;
   else if (jsonLdData?.image) {
-    const img = Array.isArray(jsonLdData.image) ? jsonLdData.image[0] : jsonLdData.image;
-    result.cover = typeof img === 'string' ? img : (img as any)?.url || '';
+    const img = jsonLdData.image;
+    // JSON-LD image can be a string, an array of strings, or an ImageObject with .url
+    if (typeof img === 'string') {
+      result.cover = img;
+    } else if (Array.isArray(img)) {
+      const first = img[0];
+      result.cover = typeof first === 'string' ? first : (first && typeof first === 'object' && 'url' in first) ? String(first.url) : '';
+    } else if (img && typeof img === 'object' && 'url' in img) {
+      result.cover = String(img.url);
+    }
   }
 
   if (ogCategory) result.category = ogCategory;

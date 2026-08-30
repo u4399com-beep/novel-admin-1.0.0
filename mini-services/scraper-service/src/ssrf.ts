@@ -85,6 +85,19 @@ export function isSafeUrl(url: string): boolean {
   }
 }
 
+// TODO: DNS Rebinding Protection
+// Current limitation: isSafeUrl() validates the hostname at call time, but DNS rebinding
+// attacks use a domain that resolves to a public IP on the first lookup (passing this check)
+// then resolves to an internal IP (e.g., 127.0.0.1) on the actual HTTP request.
+// A full fix requires resolving the domain to IP AFTER this check passes, then verifying
+// the resolved IP is still safe immediately before the HTTP request is made.
+// This is non-trivial in this service because: (1) the actual fetch happens in engines
+// that may use different DNS resolvers (e.g., system vs Playwright's), and (2) DNS TTL
+// caching means the second lookup may return the same result as the first within the TTL window.
+// For now, the risk is partially mitigated by: blocking DNS tunneling services, blocking
+// numeric hostnames, and the fact that most scraping targets are long-lived domains
+// unlikely to be used for DNS rebinding.
+
 /**
  * Parse hostname to extract IP address.
  */

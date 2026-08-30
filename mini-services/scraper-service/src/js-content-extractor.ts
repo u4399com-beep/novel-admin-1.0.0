@@ -204,7 +204,7 @@ const JS_PATTERNS: Array<{
         // Parse as JavaScript array literal (handle quoted strings)
         // Match array elements: 'string' or "string" or `string`
         const items: string[] = [];
-        const re = /['"]([^'"]{2,})['"]/g;
+        const re = /['"]((?:[^'"\\]|\\.)+)['"]/g;
         let m: RegExpExecArray | null;
         while ((m = re.exec(raw)) !== null) {
           items.push(m[1]);
@@ -527,7 +527,7 @@ function extractJsonApiContent(html: string, scriptContents: string): string | n
       try {
         // Parse as array of strings
         const items: string[] = [];
-        const itemRe = /["']([^"']{2,})["']/g;
+        const itemRe = /["']((?:[^"'\\]|\\.)+)["']/g;
         let m: RegExpExecArray | null;
         while ((m = itemRe.exec(arrMatch[1])) !== null) {
           items.push(m[1]);

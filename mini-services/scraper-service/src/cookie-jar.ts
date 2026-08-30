@@ -141,24 +141,35 @@ class CookieJar {
         const eqIdx = header.indexOf('=');
         if (eqIdx > 0) {
           const delName = header.substring(0, eqIdx).trim().replace(/[\r\n\t\x00-\x1f]/g, '');
+          // Extract domain from header for matching (defaults to request domain if not specified)
+          let delDomain = domain;
           // Extract path from header for matching (defaults to '/' if not specified)
           let delPath = '/';
           const parts = header.split(';').map(s => s.trim());
           for (let i = 1; i < parts.length; i++) {
             const attr = parts[i].toLowerCase();
-            if (attr.startsWith('path=')) {
+            if (attr.startsWith('domain=')) {
+              const raw = parts[i].substring(7).trim().replace(/^\./, '');
+              if (raw) delDomain = raw.toLowerCase();
+            } else if (attr.startsWith('path=')) {
               const raw = parts[i].substring(5).trim();
               if (raw) delPath = raw;
-              break;
             }
           }
-          // Delete all cookies matching name + path under matching domains
+          // Delete all cookies matching name + path under domain-suffix-matching domains
+          // e.g., delDomain=example.com should also match cookies stored under sub.example.com
+          // and a cookie set on .example.com (stored as example.com) should match sub.example.com requests
           for (const [d, list] of this.cookies) {
-            if (d === domain || list.some(c => c.domain === domain)) {
+            if (d === delDomain || d.endsWith('.' + delDomain) || delDomain.endsWith('.' + d)) {
               for (let i = list.length - 1; i >= 0; i--) {
                 const c = list[i];
-                if (c.name === delName && (c.domain === domain || d === domain) && c.path === delPath) {
-                  list.splice(i, 1);
+                // Check name and path match; domain must be suffix-compatible
+                if (c.name === delName && c.path === delPath) {
+                  const cd = c.domain.toLowerCase();
+                  const dd = delDomain;
+                  if (cd === dd || cd.endsWith('.' + dd) || dd.endsWith('.' + cd)) {
+                    list.splice(i, 1);
+                  }
                 }
               }
             }
@@ -424,8 +435,7 @@ cookieJar.restore();
 let _cleanupInterval: ReturnType<typeof setInterval> | null = null;
 _cleanupInterval = setInterval(() => {
   const removed = cookieJar.cleanup();
-  // Also clean expired cookies from SQLite
-  try { cookieStore.deleteExpired(); } catch { /* ignore */ }
+  // Note: cookieJar.cleanup() already calls cookieStore.deleteExpired() internally
   if (removed > 0) {
     if (process.env.DEBUG === 'true') {
       console.log(`[CookieJar] Cleaned up ${removed} expired cookies`);

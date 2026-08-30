@@ -635,8 +635,9 @@ function detectArchBitness(ua: string): { arch: string; bitness: string; model: 
     };
   }
 
-  // Apple Silicon Mac
-  if (ua.includes('Macintosh') && (ua.includes('ARM') || ua.includes('Mac OS X'))) {
+  // Apple Silicon Mac — check for ARM-specific markers ONLY
+  // Intel Macs also contain 'Mac OS X' but NOT 'arm64'/'ARM64'/'ARM Mac OS X'/'Apple Silicon'
+  if (ua.includes('Macintosh') && (ua.includes('ARM64') || ua.includes('ARM Mac OS X') || ua.includes('arm64') || ua.includes('Apple Silicon'))) {
     return { arch: '"arm"', bitness: '"64"', model: '""' };
   }
 
@@ -901,7 +902,14 @@ export async function retryWithBackoff<T>(
 
 export function isSafeSavePath(savePath: string): boolean {
   if (!savePath.startsWith("/")) return false;
-  if (savePath.includes("..")) return false;
+  // Decode URL-encoded characters before checking for path traversal
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(savePath);
+  } catch {
+    decoded = savePath;
+  }
+  if (decoded.includes('..')) return false;
   if (!savePath.endsWith(".webp")) return false;
   const normalized = savePath.replace(/\/+/g, "/");
   const allowedPrefix = "/app/public/covers/";

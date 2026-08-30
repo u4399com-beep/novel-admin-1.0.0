@@ -19,11 +19,10 @@ const cache = new Map<string, cheerio.CheerioAPI>();
 
 /**
  * Get a cached cheerio.CheerioAPI for the given HTML, or create one if not cached.
- * Uses first 1000 chars + total length as cache key (larger prefix reduces collision risk
- * for same-site pages that share common headers but differ in body content).
+ * Uses Bun.hash() of the full HTML for the cache key to eliminate collision risk.
  */
 export function getCachedCheerio(html: string): cheerio.CheerioAPI {
-  const key = `${html.length}:${html.slice(0, 1000)}`;
+  const key = String(Bun.hash(html));
   let cached = cache.get(key);
   if (cached) {
     // Move to end (most recently used)

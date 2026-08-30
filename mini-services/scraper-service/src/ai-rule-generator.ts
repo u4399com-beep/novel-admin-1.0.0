@@ -53,7 +53,7 @@ export interface GeneratedRuleResult {
     version?: number;
     /** ISO timestamp when this rule was generated */
     generatedAt?: string;
-  };
+  } | null;
   error?: string;
 }
 
@@ -201,7 +201,7 @@ function validateSelector(
  * Validate the entire generated rule set.
  * Returns an array of validation error strings (empty = valid).
  */
-function validateRules(rule: GeneratedRuleResult["rule"]): string[] {
+function validateRules(rule: NonNullable<GeneratedRuleResult["rule"]>): string[] {
   const errors: string[] = [];
 
   // Validate all selector fields
@@ -238,6 +238,58 @@ function validateRules(rule: GeneratedRuleResult["rule"]): string[] {
   }
 
   return errors;
+}
+
+// ==================== Structural Validation ====================
+
+/**
+ * Validate the structural integrity of an LLM-generated rule response.
+ * Checks that required top-level fields exist with correct types.
+ * Returns an error message string, or null if structurally valid.
+ */
+function validateRuleStructure(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return 'Response is not an object';
+  const obj = data as Record<string, unknown>;
+
+  if (typeof obj.success !== 'boolean') return 'Missing or invalid "success" boolean';
+  if (obj.success === false) return null; // Failure responses are structurally valid
+
+  const rule = obj.rule;
+  if (!rule || typeof rule !== 'object') return 'Missing or invalid "rule" object';
+  const r = rule as Record<string, unknown>;
+
+  // Check required string fields
+  const requiredStrings: string[] = ['name', 'engine', 'listUrl'];
+  for (const field of requiredStrings) {
+    if (typeof r[field] !== 'string' || !(r[field] as string).trim()) {
+      return `Missing or empty required field: rule.${field}`;
+    }
+  }
+
+  // Check required selector fields: each must be { type: string, value: string } with non-empty value
+  const requiredSelectors: string[] = [
+    'listSelector', 'bookTitleSelector', 'chapterListSelector',
+    'chapterLinkSelector', 'contentSelector',
+  ];
+  for (const field of requiredSelectors) {
+    const sel = r[field];
+    if (!sel || typeof sel !== 'object') return `Missing selector: rule.${field}`;
+    const s = sel as Record<string, unknown>;
+    if (typeof s.value !== 'string' || !(s.value as string).trim()) {
+      return `Empty selector value: rule.${field}.value`;
+    }
+  }
+
+  // Check antiCrawlConfig exists and has expected shape
+  const ac = r.antiCrawlConfig;
+  if (!ac || typeof ac !== 'object') return 'Missing rule.antiCrawlConfig';
+  const a = ac as Record<string, unknown>;
+  if (typeof a.useJsRender !== 'boolean') return 'Invalid antiCrawlConfig.useJsRender';
+
+  // Check confidence is a number
+  if (typeof r.confidence !== 'number') return 'Invalid rule.confidence (expected number)';
+
+  return null;
 }
 
 // ==================== Helpers ====================
@@ -323,7 +375,7 @@ export async function handleGenerateRule(
   if (!_bypassCache) {
     const cached = getCachedRules(domain);
     if (cached) {
-      console.log(`[AI Rule Gen] Cache hit for ${domain} (v${cached.rule.version})`);
+      console.log(`[AI Rule Gen] Cache hit for ${domain} (v${cached.rule?.version ?? '?'})`);
       return cached;
     }
   }
@@ -336,7 +388,7 @@ export async function handleGenerateRule(
   } catch (err) {
     return {
       success: false,
-      rule: null as unknown as GeneratedRuleResult["rule"],
+      rule: null,
       error: `Failed to fetch page: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
@@ -345,7 +397,7 @@ export async function handleGenerateRule(
   if (statusCode < 200 || statusCode >= 400) {
     return {
       success: false,
-      rule: null as unknown as GeneratedRuleResult["rule"],
+      rule: null,
       error: `Failed to fetch page: HTTP ${statusCode}`,
     };
   }
@@ -379,21 +431,35 @@ export async function handleGenerateRule(
     console.error(`[AI Rule Gen] Next.js API error: ${response.status} - ${errorText}`);
     return {
       success: false,
-      rule: null as unknown as GeneratedRuleResult["rule"],
+      rule: null,
       error: `AI analysis service returned HTTP ${response.status}`,
     };
   }
 
   let result: GeneratedRuleResult;
+  let parsed: unknown;
   try {
-    result = await response.json() as GeneratedRuleResult;
+    parsed = await response.json();
   } catch {
     return {
       success: false,
-      rule: null as unknown as GeneratedRuleResult["rule"],
+      rule: null,
       error: `AI analysis service returned invalid JSON (HTTP ${response.status})`,
     };
   }
+
+  // Validate structural integrity before casting
+  const structErr = validateRuleStructure(parsed);
+  if (structErr) {
+    console.error(`[AI Rule Gen] Structural validation failed: ${structErr}`);
+    return {
+      success: false,
+      rule: null,
+      error: `AI response failed structural validation: ${structErr}`,
+    };
+  }
+
+  result = parsed as GeneratedRuleResult;
 
   if (!result.success || !result.rule) {
     console.log(`[AI Rule Gen] Analysis returned unsuccessful. Success: ${result.success}`);

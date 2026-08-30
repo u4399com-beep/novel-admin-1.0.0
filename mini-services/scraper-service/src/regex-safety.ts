@@ -30,6 +30,9 @@ export function isDangerousRegex(pattern: string): boolean {
 
 const MAX_TEXT_LENGTH = 500000;
 
+/** Hard limit for safeRegexReplace — higher than match to avoid truncating content mid-cleaning */
+const MAX_REPLACE_TEXT_LENGTH = 5_000_000; // 5MB
+
 export function safeRegexMatch(text: string, pattern: string, flags?: string): RegExpMatchArray | null {
   if (isDangerousRegex(pattern)) return null;
 
@@ -42,15 +45,21 @@ export function safeRegexMatch(text: string, pattern: string, flags?: string): R
   }
 }
 
-export function safeRegexReplace(text: string, pattern: string, replacement: string, flags?: string): string {
+export function safeRegexReplace(
+  text: string,
+  pattern: string,
+  replacement: string,
+  flags?: string,
+  maxTextLength: number = MAX_REPLACE_TEXT_LENGTH,
+): string {
   if (isDangerousRegex(pattern)) return text;
   try {
     const regex = new RegExp(pattern, flags);
-    // CRITICAL FIX: Do NOT truncate text for replace — V8's built-in regex
-    // execution limit is the runtime backstop. Truncation was causing the tail
-    // of long content (beyond 500K chars) to bypass ALL user-specified ad-pattern
-    // cleaning, leaving ads/watermarks intact.
-    return text.replace(regex, replacement);
+    // Apply a hard length limit to prevent memory exhaustion from extremely large inputs.
+    // The default (5MB) is high enough to never truncate normal novel content,
+    // but prevents OOM on pathological inputs.
+    const searchIn = text.length > maxTextLength ? text.substring(0, maxTextLength) : text;
+    return searchIn.replace(regex, replacement);
   } catch {
     return text;
   }
