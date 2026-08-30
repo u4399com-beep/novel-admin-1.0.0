@@ -23823,3 +23823,214 @@ Stage Summary:
 - 本轮修复: 2项 | 累计修复: 865项 | 增强: 52项 | Stealth: 59+sections
 - Git push: 2685407 → main
 - 全量审计完成: R55-R58共审计40文件~25,500行
+
+---
+Task ID: 1
+Agent: Sub-agent (general-purpose)
+Task: Build Friendly Links / Link Wheel system
+
+Work Log:
+- Read worklog and studied existing codebase patterns (withAuth, safeJson, sanitizeField, isSafeUrl, apiError, apiSuccess, apiDeleted, withPublicRateLimit, parsePagination)
+- Added `FriendlyLink` model to prisma/schema.prisma with fields: id, title, url, logo, description, linkType, siteId, novelId, sortOrder, enabled, nofollow, timestamps + indexes on linkType, [enabled,sortOrder], siteId
+- Added `FriendlyLink` interface to src/types/index.ts
+- Created src/lib/validation/friendly-links.ts with constants (MAX_TITLE_LENGTH=100, MAX_URL_LENGTH=2048, MAX_DESCRIPTION_LENGTH=500), URL regex, VALID_LINK_TYPES union, isValidLinkType() guard
+- Created src/app/api/friendly-links/route.ts:
+  - GET (public, no auth): list enabled friendly links with optional ?linkType= filter, includes site and novel relations
+  - POST (withAuth): create friendly link with full validation (title, url, isSafeUrl, logo, linkType, siteId/novelId FK checks, sortOrder clamping, enabled/nofollow boolean checks)
+- Created src/app/api/friendly-links/[id]/route.ts:
+  - PUT (withAuth): update friendly link with same validation patterns, existence check
+  - DELETE (withAuth): delete friendly link with existence check, returns 204
+- Created src/app/api/public/link-wheel/route.ts (core innovation):
+  - GET (withPublicRateLimit, public): SEO link wheel endpoint
+  - Query params: count (1-50, default 10), type (all|manual|site_home|site_novel), novelId (optional filter)
+  - Fetches enabled FriendlyLinks by type, constructs URLs for site_home (https://{domain}) and site_novel (https://{domain}/novel/{slug})
+  - For site_novel type: also randomly picks novels not already in FriendlyLinks via $queryRaw (RANDOM() ORDER, LIMIT count) and pairs them with random enabled sites for link wheel diversity
+  - Fisher-Yates shuffle, returns `count` random { title, url, description, nofollow } objects
+  - Cache-Control: public, s-maxage=300
+- Ran `bun run db:push` — schema synced, Prisma Client regenerated
+- Ran lint — all 4 new files pass with 0 errors (1 pre-existing error in NovelListView.ts unrelated)
+
+Stage Summary:
+- 新增文件: 4 | 修改文件: 2 (schema.prisma, types/index.ts)
+- FriendlyLink CRUD API: GET/POST /api/friendly-links, PUT/DELETE /api/friendly-links/[id]
+- Public link wheel API: GET /api/public/link-wheel (randomized SEO links with site cluster cross-linking)
+- Prisma schema synced, lint clean on all new files
+- 前端组件(friendly-links页面)将在后续task中构建
+
+---
+Task ID: 2
+Agent: Sub-agent (frontend-styling-expert)
+Task: Build footer Friendly Links / Link Wheel UI components
+
+Work Log:
+- 读取worklog了解后端API已构建完成(task 1)
+- 分析现有组件模式(apiFetch, useDeleteConfirm, ConfirmDeleteDialog, Table/Badge/Dialog/Switch等shadcn/ui)
+- 分析FriendlyLink类型定义和API响应结构(link-wheel返回{title,url,description,nofollow})
+
+### 1. FriendlyLinksFooter 公共页脚组件
+- 新建 src/components/footer/FriendlyLinksFooter.tsx
+- 双区域布局: 友情链接(手动类型) + 站群链轮(site_home/site_novel类型)
+- 从 /api/public/link-wheel?type=manual 和 type=site_home,site_novel 分别获取
+- 加载态: 骨架屏(FooterLinksSkeleton)
+- 错误态: 静默隐藏(return null)
+- 空数据: 静默隐藏
+- 链轮动画: 每10秒重新获取站群链接，通过wheelKey触发重渲染+CSS staggered fade-in动画
+- 每个链接: title + 外链图标(hover显示) + rel={nofollow} + target=_blank
+- CSS动画(globals.css): link-wheel-fadein关键帧 + nth-child延迟
+- 最大高度max-h-16 + 底部渐变遮罩暗示更多链接
+- Tailwind dark: 变体支持
+- 响应式: 移动端text truncated, 桌面端完整显示
+
+### 2. FriendlyLinksManager 管理后台组件
+- 新建 src/components/admin/FriendlyLinksManager.tsx
+- 完整CRUD: Table视图(标题/URL/类型/站点小说/状态/操作)
+- 表单Dialog: title, url, description, logo, linkType, siteId, novelId, sortOrder, enabled, nofollow
+- linkType联动: site_home/site_novel显示站点选择器, site_novel额外显示小说选择器
+- URL校验(客户端http(s)前缀检查)
+- Logo图片onError隐藏
+- 删除确认(ConfirmDeleteDialog)
+- 汇总统计(总数/启用/禁用)
+- 参考数据预加载(sites + novels用于表单下拉)
+- 使用key={dialogKey}模式避免useEffect+setState
+- 响应式表格(URL列/站点小说列在小屏隐藏)
+
+### 3. 首页集成
+- 修改 src/app/page.tsx: import FriendlyLinksFooter + 在footer中nav链接与copyright之间插入
+- 保持现有footer结构不变
+
+### 4. CSS动画
+- globals.css新增: link-wheel-fadein关键帧(0.6s fade-in-up) + 10级nth-child延迟(30ms递增)
+- link-wheel-fade底部渐变遮罩
+
+### 5. Lint
+- 所有新增/修改文件(3个) ESLint 0错误 0警告
+- 预存问题(1个NovelListView parsing error, 4个React Hook Form incompatible-library warning)与本次无关
+
+Stage Summary:
+- 新增文件: 2 (FriendlyLinksFooter.tsx, FriendlyLinksManager.tsx)
+- 修改文件: 2 (page.tsx, globals.css)
+- ESLint: 0 errors on all new/modified files
+- 管理后台组件已创建但尚未注册到admin路由(需后续task集成到nav-config和admin/page.tsx)
+---
+Task ID: 4
+Agent: Sub-agent (deep scraper-service core auditor)
+Task: Deep audit scraper-service core (engines.ts, task-engine.ts, scrapers.ts, cleaning.ts, t2s-converter.ts)
+
+Work Log:
+- Read prior audit history from worklog (23913 lines, 30+ prior audit entries for scraper-service)
+- Identified and excluded previously found/fixed issues (CircuitBreaker half-open, AtomicCounter, progressThrottle leak, taskTimeoutId dead code, flushTaskLogs log loss, existingChapters update, titleDupCount typo, ReDoS防护, adPatterns CSS filter bug, CSS injection escapeCssString, watermark regex cross-line, dedup threshold, normalizeWhitespace redundancy, Browserless API key URL leak, proxy-manager clearTimeout leak, referrerChain.recordVisit missing, etc.)
+- Line-by-line audit of all 5 target files (total ~6600 lines)
+
+## Audit Findings
+
+### engines.ts (3156 lines) - No new bugs
+- Verified: CircuitBreaker state transitions correct (half-open single-probe, acquire/recordSuccess/recordFailure balanced)
+- Verified: Browser launch serialization (getPlaywrightBrowser/ObscuraEngine.getBrowser) uses promise-as-lock pattern
+- Verified: All external engines (Firecrawl/AgentQL/CloudBrowser/Scrapling) properly await circuit breaker acquire() before requests
+- Verified: Response size limits enforced (readTextWithLimit streaming, MAX_RESPONSE_SIZE=10MB, post-hoc checks for external engines)
+- Verified: Proxy rotation per-retry in Playwright/Obscura engines, proxy failure recording correct (skip for CAPTCHA)
+- Verified: Resource cleanup: Playwright context closed in finally block, CheerioAgent closed in closeAllEngines, infinite scroll browser+context closed in finally
+- Verified: Domain engine failure tracking bounded (LRU 500 entries for domainEngineFailures, 1000 for timestamps, 50 for domainLastSuccess with TTL sweep)
+- Verified: AbortSignal propagated through all engine fetch calls (AbortSignal.any for timeout+task-signal combination)
+- Verified: SSRF protection on all navigational resource types (document/xhr/fetch/iframe/other), non-HTTP protocols blocked
+- Verified: Script content analysis behind env flag SCRAPER_ENABLE_SCRIPT_CONTENT_ANALYSIS
+- Verified: getEngine() fallback to cheerio when requested engine not registered
+- Verified: fetchWithEngineFallback chain truncation (max 3 engines), isFallbackWorthyError correctly excludes CAPTCHA/rate-limit/abort/circuit-breaker
+- Verified: waitForRateLimit abort-aware with proper event listener cleanup
+- Verified: Cheerio HTTP connection pool lazy-init with retry on failure
+
+**[Medium] engines.ts:1132-1156,2414-2438 — Script content analysis route.fetch()+resp.text() has no size limit**
+  Code: `const resp = await route.fetch(); let body; try { body = await resp.text(); }`
+  Issue: When SCRAPER_ENABLE_SCRIPT_CONTENT_ANALYSIS=true, same-origin scripts are fetched via route.fetch() and read entirely via resp.text() without any size check. A compromised or misconfigured target site serving a large same-origin script (e.g., a 100MB JS bundle) could cause OOM. Cross-origin scripts are already blocked by shouldBlockResource, limiting exposure.
+  Fix: Add size-limited streaming read similar to readTextWithLimit(), or check Content-Length header before reading.
+  Severity: Medium (requires env flag + same-origin + large script; browser memory limits provide partial mitigation)
+
+### task-engine.ts (1696 lines) - No new bugs
+- Verified: AtomicCounter used for all shared counters (newBooksCount, skippedBooksCount, failedItemsCount, processedChaptersCount, newChaptersCount, skippedChaptersCount)
+- Verified: Semaphore(3) for DB writes with proper acquire/release in finally blocks
+- Verified: Chapter dedup eager-mark pattern correct (check → mark → await, no TOCTOU gap in single-threaded JS)
+- Verified: existingChapters map updated after successful chapter creation (line 1222-1228) to prevent same-task duplicates
+- Verified: CAPTCHA pause promise shared across workers (_captchaPausePromises), cleaned up in finally
+- Verified: Engine upgrade lock per-domain (_engineUpgradeLock) with 5s timeout, ref-counted cleanup in task finally
+- Verified: flushTaskLogs atomically drains buffer (splice(0)) then deletes entry before API call
+- Verified: Log buffer bounded (_totalBufferEntries > 1000 triggers oldest-entry eviction)
+- Verified: progressThrottle cleanup timer runs every 60s, clears on terminal states
+- Verified: retryFailedChapters uses same engine fallback chain pattern, respects doNotRetry/CAPTCHA
+- Verified: resortChapters batch reorder with 5000 chapter limit
+- Verified: Task timeout (1h) properly calls abortController.abort() to cancel in-progress scraping
+
+### scrapers.ts (692 lines) - No new bugs
+- Verified: paginatedFetch shared function handles visited-page loop detection, max page cap (100 list, 20 content), abort checks
+- Verified: Engine fallback only on first page (page===0), subsequent pages use successful engine
+- Verified: Content extraction pipeline: CSS path uses cleanHtmlPreserveParagraphs, non-CSS uses cleanHtmlRaw then parseSelector
+- Verified: JS content extraction fallback when normal extraction yields <30 chars
+- Verified: T2S conversion applied after cleaning in handleScrapeContent
+- Verified: handleDownloadCover: SSRF check, safe save path, rate limiting, cookie jar, proxy, stream size limit (5MB), sharp WebP conversion
+- Verified: Chapter title dedup with chapterDedupKey normalization
+
+### cleaning.ts (995 lines) - No new bugs
+- Verified: All watermark patterns use [^\n] (not [\s\S]) to prevent cross-line matching
+- Verified: removePatterns dual-purpose (CSS selector first pass, regex text second pass) documented
+- Verified: adPatterns CSS selector filter checks raw patterns before constructing [class*=...] selectors
+- Verified: escapeCssString handles backslash, quotes, brackets, parentheses
+- Verified: deduplicateParagraphs uses 25-char overlap + >30% ratio threshold
+- Verified: normalizeWhitespace strips zero-width chars, BOM, control chars, CJK ideographic space
+- Verified: safeRegexReplace used for all user-provided regex patterns (ReDoS protection)
+- Verified: adRegexCache bounded to 200 entries with LRU eviction
+
+### t2s-converter.ts (109 lines) - No new bugs (one Low finding)
+- Verified: sify() from chinese-conv is a no-op for simplified input (no data corruption risk)
+- Verified: Detection threshold (5% ratio) and minimum CJK count (10) are reasonable
+- Verified: batchConvertIfTraditional correctly auto-detects per string
+
+**[Low] t2s-converter.ts:13-35 — TRADITIONAL_INDICATORS contains ~30+ characters that exist in BOTH simplified and traditional Chinese**
+  Code: `"站","下","密","社","音","影","新","者","解","展","建","境","位","期","程","利","任","域","面","查","理","行","定","生","防","散","置","泛","用","取","史","月","迎","告"`
+  Issue: These characters exist in both simplified and traditional Chinese (they were not simplified in the 1950s reform). Including them in TRADITIONAL_INDICATORS causes isTraditionalChinese() to return true for simplified text that contains common words like 网站(website), 新闻(news), 建设(build), etc. The false positive rate is ~30+ ambiguous chars out of ~200 total, meaning simplified text with moderate CJK content (common in novels) can easily exceed the 5% threshold.
+  Impact: Performance only — unnecessary sify() calls on simplified text. No data corruption since sify() is identity for simplified input.
+  Fix: Remove ambiguous characters from TRADITIONAL_INDICATORS, keeping only characters whose simplified form differs.
+
+## Summary
+- Files audited: 5 (engines.ts, task-engine.ts, scrapers.ts, cleaning.ts, t2s-converter.ts)
+- Total lines audited: ~6,650
+- High/Critical findings: 0
+- Medium findings: 1 (script content analysis unbounded read — env-flagged, same-origin only)
+- Low findings: 1 (t2s false positive indicators — performance only)
+- Files with no bugs: task-engine.ts, scrapers.ts, cleaning.ts
+- No fixes applied (no High/Critical bugs found)
+- Prior audit coverage was thorough — 15+ prior audit rounds had already identified and fixed the major issues
+
+---
+Task ID: 5
+Agent: general-purpose
+Task: Enhance stealth + create 101kks rule
+
+Work Log:
+- Updated 101kks.json scrape rule: changed listUrl to `https://www.101kks.com/sort/{page}/`, updated meta.domain to `www.101kks.com`
+- Added 3 new stealth sections (110-112) to stealth.ts before the closing IIFE bracket
+
+### Changes
+
+**scrape-rules/101kks.json**
+- Updated listUrl from `101kks.com/novels/class/{catId}_{page}.html` to `www.101kks.com/sort/{page}/`
+- Updated meta.domain to `www.101kks.com`
+- Existing config retained: cheerio engine, UTF-8, OG meta selectors, anti-crawl with UA rotation + delays, comprehensive ad removal patterns
+
+**stealth.ts — 3 new sections added (lines 3459-3521)**
+
+1. **Section 110: WebAssembly Fingerprint Normalization** (17 lines)
+   - Overrides `WebAssembly.compile()` and `WebAssembly.instantiate()`
+   - Normalizes memory.buffer sizes via `_seededRandom(110.1)` to prevent WASM-based headless detection
+
+2. **Section 111: Clipboard API Stubbing** (9 lines)
+   - Stubs `navigator.clipboard.readText()`, `writeText()`, `read()`, `write()`
+   - Returns resolved promises (empty/granted) to prevent clipboard permission prompts and bot detection
+
+3. **Section 112: Source Map & DevTools Detection Evasion** (21 lines)
+   - Overrides `Error.prototype.stack` getter to sanitize stack traces
+   - Strips Playwright/Puppeteer/node_modules/scraper path markers from stack frames
+   - Prevents stack trace fingerprinting from identifying automation
+
+### Verification
+- `bun build index.ts --no-bundle`: ✅ passed (no errors)
+- All 3 sections follow existing IIFE try/catch pattern with var declarations and _seededRandom usage
+- No existing sections modified

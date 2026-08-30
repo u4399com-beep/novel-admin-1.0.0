@@ -3456,6 +3456,70 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(_gpErr) {}
 
+  // ==================== Section 110: WebAssembly Fingerprint Normalization ====================
+  // WebAssembly.compile() and instantiate() can be probed to detect headless browsers
+  // where the underlying WASM engine exposes different feature support or memory sizes.
+  try {
+    var _origWasmCompile = (typeof WebAssembly !== 'undefined' && WebAssembly.compile) ? WebAssembly.compile : null;
+    var _origWasmInstantiate = (typeof WebAssembly !== 'undefined' && WebAssembly.instantiate) ? WebAssembly.instantiate : null;
+    if (_origWasmCompile) {
+      WebAssembly.compile = function(bufferSource) {
+        return _origWasmCompile.call(WebAssembly, bufferSource).then(function(module) {
+          var exports = WebAssembly.Module.exports(module);
+          return module;
+        });
+      };
+    }
+    if (_origWasmInstantiate) {
+      WebAssembly.instantiate = function(bufferSource, importObject) {
+        return _origWasmInstantiate.call(WebAssembly, bufferSource, importObject).then(function(result) {
+          if (result.instance && result.instance.exports && result.instance.exports.memory) {
+            var _normSize = Math.max(1, Math.ceil(_seededRandom(110.1) * 16)) * 65536;
+            try { Object.defineProperty(result.instance.exports.memory, 'buffer', { get: function() { return new ArrayBuffer(_normSize); } }); } catch(_wasmBufErr) {}
+          }
+          return result;
+        });
+      };
+    }
+  } catch(_wasmErr) {}
+
+  // ==================== Section 111: Clipboard API Stubbing ====================
+  // Clipboard API permission prompts can reveal automation. Stub all clipboard methods
+  // to return resolved promises, preventing permission dialogs and clipboard-based bot detection.
+  try {
+    if (navigator.clipboard) {
+      navigator.clipboard.readText = function() { return Promise.resolve(''); };
+      navigator.clipboard.writeText = function(_text) { return Promise.resolve(undefined); };
+      if (navigator.clipboard.read) navigator.clipboard.read = function() { return Promise.resolve([]); };
+      if (navigator.clipboard.write) navigator.clipboard.write = function(_data) { return Promise.resolve(undefined); };
+    }
+  } catch(_clipErr) {}
+
+  // ==================== Section 112: Source Map & DevTools Detection Evasion ====================
+  // Stack trace fingerprinting analyzes Error.stack format to identify automation.
+  // Normalize stack traces to match a real Chrome browser, stripping headless/Playwright markers.
+  try {
+    var _origErrorStack = Object.getOwnPropertyDescriptor(Error.prototype, 'stack');
+    if (_origErrorStack && _origErrorStack.get) {
+      var _origStackGetter = _origErrorStack.get;
+      Object.defineProperty(Error.prototype, 'stack', {
+        get: function() {
+          var raw = _origStackGetter.call(this);
+          if (typeof raw !== 'string') return raw;
+          return raw
+            .replace(/\s*\(playwright[^)]*\)/gi, ' (anonymous)')
+            .replace(/\s*\(puppeteer[^)]*\)/gi, ' (anonymous)')
+            .replace(/\s*\(eval at[^)]*\)/gi, ' (eval)')
+            .replace(/\n\s+at new Promise \<anonymous\>/g, '\n    at new Promise (<anonymous>)')
+            .replace(/__playwright_evaluation_script__\d+/g, '<anonymous>')
+            .replace(/\n\s+at .*node_modules[\\/].*\n/g, '\n')
+            .replace(/\n\s+at .*scraper[\\/].*\n/g, '\n');
+        },
+        configurable: true
+      });
+    }
+  } catch(_stackErr) {}
+
 })();
 `;
 

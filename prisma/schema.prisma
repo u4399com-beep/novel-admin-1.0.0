@@ -507,3 +507,25 @@ model NovelSlug {
   @@index([novelId])
   @@index([type])
 }
+
+// ==================== 友情链接系统 ====================
+
+model FriendlyLink {
+  id          String   @id @default(cuid())
+  title       String                    // 链接显示名称
+  url         String                    // 链接URL
+  logo        String?                   // 网站logo URL
+  description String?                   // 网站描述
+  linkType    String   @default("manual")  // manual=手动友链, site_home=站群首页, site_novel=站群书籍页
+  siteId      String?                   // 关联站点ID(linkType为site_home或site_novel时)
+  novelId     String?                   // 关联书籍ID(linkType为site_novel时)
+  sortOrder   Int      @default(0)
+  enabled     Boolean  @default(true)
+  nofollow    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([linkType])
+  @@index([enabled, sortOrder])
+  @@index([siteId])
+}

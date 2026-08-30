@@ -22,6 +22,7 @@ import { NovelGrid } from '@/components/home/NovelGrid';
 import type { Category } from '@/components/home/HeroSection';
 import type { NovelCardData } from '@/components/home/shared-types';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
+import { FriendlyLinksFooter } from '@/components/footer/FriendlyLinksFooter';
 import { useSiteName } from '@/lib/use-site-name';
 import { useLayoutTheme } from '@/lib/use-layout-theme';
 
@@ -430,6 +431,8 @@ export default function HomePage() {
               <span className="text-muted-foreground/20">·</span>
               <Link href="/login" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">管理</Link>
             </div>
+            {/* Friendly Links & Link Wheel */}
+            <FriendlyLinksFooter />
             <p className="text-[11px] text-muted-foreground/40">
               © {new Date().getFullYear()} {siteName} · 基于 Next.js 16 + Prisma + Tailwind CSS 构建
             </p>

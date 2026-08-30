@@ -45,6 +45,7 @@ const ScrapeManagerView = dynamic(() => import('@/components/scrape/ScrapeRuleEd
 const DownloadManagerView = dynamic(() => import('@/components/download/DownloadManagerView'), { ssr: false, loading: () => <AdminViewSkeletons view="scrape" /> });
 const ThemeManagerView = dynamic(() => import('@/components/theme/ThemeManagerView'), { ssr: false, loading: () => <AdminViewSkeletons view="themes" /> });
 const SiteClusterView = dynamic(() => import('@/components/site/SiteClusterView'), { ssr: false, loading: () => <AdminViewSkeletons view="sites" /> });
+const FriendlyLinksView = dynamic(() => import('@/components/admin/FriendlyLinksManager'), { ssr: false, loading: () => <AdminViewSkeletons view="sites" /> });
 const SettingsPage = dynamic(() => import('@/app/admin/settings/page'), { ssr: false, loading: () => <AdminViewSkeletons view="settings" /> });
 
 const VIEW_TITLES: Record<string, { title: string; description: string }> = {
@@ -55,6 +56,7 @@ const VIEW_TITLES: Record<string, { title: string; description: string }> = {
   tags: { title: '标签管理', description: '管理小说标签' },
   themes: { title: '主题管理', description: '管理站点外观主题与配色' },
   sites: { title: '站点集群', description: '管理多站点集群配置' },
+  'friendly-links': { title: '友情链接', description: '管理友情链接和站群链轮' },
   scrape: { title: '采集规则', description: '管理采集规则配置' },
   download: { title: '采集任务', description: '管理采集任务和下载' },
   settings: { title: '系统设置', description: '配置系统参数和偏好' },
@@ -160,6 +162,7 @@ export default function AdminPage() {
       case 'download': return <DownloadManagerView />;
       case 'themes': return <ThemeManagerView />;
       case 'sites': return <SiteClusterView />;
+      case 'friendly-links': return <FriendlyLinksView />;
       case 'settings': return <SettingsPage />;
       default: return <DashboardView />;
     }

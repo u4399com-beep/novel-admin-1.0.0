@@ -153,7 +153,7 @@ export interface Site {
   updatedAt: string;
 }
 
-export type ViewType = "dashboard" | "novels" | "novel-detail" | "categories" | "tags" | "scrape" | "download" | "themes" | "sites" | "settings";
+export type ViewType = "dashboard" | "novels" | "novel-detail" | "categories" | "tags" | "scrape" | "download" | "themes" | "sites" | "friendly-links" | "settings";
 
 export interface DownloadConfig {
   id: string;
@@ -169,6 +169,22 @@ export interface DownloadConfig {
   insertSiteInfo: boolean;
   siteInfoContent: string | null;
   fileNamePattern: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FriendlyLink {
+  id: string;
+  title: string;
+  url: string;
+  logo: string | null;
+  description: string | null;
+  linkType: 'manual' | 'site_home' | 'site_novel';
+  siteId: string | null;
+  novelId: string | null;
+  sortOrder: number;
+  enabled: boolean;
+  nofollow: boolean;
   createdAt: string;
   updatedAt: string;
 }

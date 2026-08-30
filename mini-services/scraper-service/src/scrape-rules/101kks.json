@@ -1,0 +1,119 @@
+{
+  "name": "101看書 (101kks.com)",
+  "description": "101看書繁體中文小說站全站採集。UTF-8編碼，OG標籤提供結構化數據。分類頁面含分頁，書籍詳情頁OG標籤豐富，章節目錄獨立頁面，章節內容頁使用標準div結構。",
+  "enabled": true,
+
+  "listUrl": "https://www.101kks.com/sort/{page}/",
+  "listSelector": { "type": "css", "value": ".newnovels li a[href*='/book/']" },
+  "listPagination": { "type": "page", "selector": ".pagelistbox a[href*=\"_\"]", "maxPage": 50 },
+
+  "bookTitleSelector": { "type": "css", "value": "meta[property='og:novel:book_name']", "extract": "content" },
+  "bookAuthorSelector": { "type": "css", "value": "meta[property='og:novel:author']", "extract": "content" },
+  "bookCategorySelector": { "type": "css", "value": "meta[property='og:novel:category']", "extract": "content" },
+  "bookKeywordsSelector": { "type": "css", "value": "meta[name='Keywords']", "extract": "content" },
+  "bookDescriptionSelector": { "type": "css", "value": "meta[property='og:description']", "extract": "content" },
+  "bookCoverSelector": { "type": "css", "value": "meta[property='og:image']", "extract": "content" },
+  "bookStatusSelector": { "type": "css", "value": "meta[property='og:novel:status']", "extract": "content" },
+
+  "chapterListUrl": "{bookUrl}/index.html",
+  "chapterListSelector": { "type": "css", "value": ".listmain" },
+  "chapterTitleSelector": { "type": "css", "value": ".listmain a[href*='/txt/']" },
+  "chapterLinkSelector": { "type": "css", "value": ".listmain a[href*='/txt/']" },
+  "chapterPagination": null,
+
+  "contentTitleSelector": { "type": "css", "value": "h1.title, .bookname h1" },
+  "contentSelector": { "type": "css", "value": "#content, .content, .readcontent" },
+  "contentPagination": { "type": "next", "selector": "a:contains(下一頁), a:contains(下一章)", "maxPage": 1 },
+
+  "antiCrawlConfig": {
+    "useJsRender": false,
+    "uaRotation": true,
+    "delay": [2000, 5000],
+    "humanBehavior": false,
+    "retries": 3,
+    "referer": "https://101kks.com/"
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".ad", ".ads", ".advertisement",
+      ".chapter-nav", ".footer", ".header", ".topbar",
+      ".recommend", ".related",
+      "#ad", "[id^=\"div-gpt-ad\"]",
+      "ins.adsbygoogle",
+      ".listmain", ".bookname",
+      ".pageheadermenu", ".leftmenu", ".modbg",
+      ".main", ".container", ".mybox",
+      ".weekl_yrank", ".droplist",
+      ".bookimg", ".bookimg2",
+      ".ratediv", ".rateblock",
+      ".pc-footer", ".m-footer"
+    ],
+    "adPatterns": [
+      "101看書", "101kks.com",
+      "請記住本書", "手機用戶請瀏覽",
+      "本章未完", "最快更新",
+      "本章最新章節", "請訪問",
+      "如果您喜歡", "分享到",
+      "掃碼關注", "微信公眾號",
+      "關注公眾號", "關注我們",
+      "TXT下載", "全本下載",
+      "返回目錄", "章節列表",
+      "推薦本書", "打賞",
+      "本章完", "本章結束",
+      "完結感言", "在線聽書",
+      "熱門推薦", "內容有問題",
+      "無彈窗小說", "無彈窗閱讀",
+      "加入書籤", "郵件反饋",
+      "繁體", "簡體",
+      "最新章節",
+      "正在手打中",
+      "網友上傳",
+      "文學網"
+    ]
+  },
+
+  "scrapeMode": "full",
+  "engine": "cheerio",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/public/covers/101kks/",
+  "threadCount": 1,
+  "minDelay": 3000,
+  "maxDelay": 6000,
+  "enableShuffle": false,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "www.101kks.com",
+    "encoding": "utf-8",
+    "engineType": "cheerio",
+    "stealthEnabled": false,
+    "categories": {
+      "0": "全部分類",
+      "1": "玄幻奇幻",
+      "2": "武俠仙俠",
+      "3": "現代都市",
+      "4": "歷史軍事",
+      "5": "科幻小說",
+      "6": "遊戲競技",
+      "7": "恐怖靈異",
+      "8": "言情小說",
+      "9": "動漫同人",
+      "10": "其他類型"
+    },
+    "urlPatterns": {
+      "listPage": "/novels/class/{catId}_{page}.html",
+      "bookDetail": "/book/{id}.html",
+      "chapterIndex": "/book/{id}/index.html",
+      "chapterContent": "/txt/{bookId}/{chapterId}.html"
+    },
+    "statusMap": {
+      "連載": "ongoing",
+      "完結": "completed"
+    }
+  }
+}

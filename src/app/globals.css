@@ -4998,3 +4998,35 @@ mark {
 .running-badge {
   animation: running-pulse 2s ease-in-out infinite;
 }
+
+/* ─── Link wheel items: subtle fade-in on rotation ──────────────── */
+@keyframes link-wheel-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.link-wheel-item {
+  animation: link-wheel-fadein 0.6s ease-out both;
+}
+.link-wheel-item:nth-child(1) { animation-delay: 0ms; }
+.link-wheel-item:nth-child(2) { animation-delay: 30ms; }
+.link-wheel-item:nth-child(3) { animation-delay: 60ms; }
+.link-wheel-item:nth-child(4) { animation-delay: 90ms; }
+.link-wheel-item:nth-child(5) { animation-delay: 120ms; }
+.link-wheel-item:nth-child(6) { animation-delay: 150ms; }
+.link-wheel-item:nth-child(7) { animation-delay: 180ms; }
+.link-wheel-item:nth-child(8) { animation-delay: 210ms; }
+.link-wheel-item:nth-child(9) { animation-delay: 240ms; }
+.link-wheel-item:nth-child(10) { animation-delay: 270ms; }
+.link-wheel-item:nth-child(n+11) { animation-delay: 300ms; }
+
+/* ─── Link wheel refresh icon rotation ──────────────────────────── */
+.link-wheel-container .refresh-cw-icon {
+  transition: transform 0.6s ease;
+}
+
