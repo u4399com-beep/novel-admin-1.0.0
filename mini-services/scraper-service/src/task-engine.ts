@@ -1107,22 +1107,6 @@ async function executeTaskBody(
                 return;
               }
               const pausePromise = new Promise<void>((resolve, reject) => {
-<<<<<<< HEAD
-                const timer = setTimeout(resolve, CAPTCHA_PAUSE_MS);
-                if (abortSignal?.aborted) {
-                  clearTimeout(timer);
-                  reject(new DOMException('Aborted', 'AbortError'));
-                  return;
-                }
-                if (abortSignal) {
-                  const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
-                  abortSignal.addEventListener('abort', onAbort, { once: true });
-                  pausePromise.finally(() => abortSignal.removeEventListener('abort', onAbort));
-                }
-=======
-                const t = setTimeout(resolve, CAPTCHA_PAUSE_MS);
-                abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
->>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
               });
               _captchaPausePromises.set(chDomain, pausePromise);
               try {

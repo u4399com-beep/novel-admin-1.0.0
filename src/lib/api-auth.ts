@@ -3,6 +3,12 @@ import { getToken } from 'next-auth/jwt';
 import crypto from 'crypto';
 
 // ═══════════════════════════════════════════════════════════════════
+// TESTING ONLY: Set to true to bypass authentication (no login required)
+// TODO: Remove before production deployment
+const BYPASS_AUTH = true;
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // Timing-safe string comparison
 // ═══════════════════════════════════════════════════════════════════
 
@@ -179,12 +185,16 @@ export function withAuth(handlerOrOpts: ApiHandler | WithAuthOptions, maybeHandl
         }
       }
 
-      // Unauthenticated — return 401
-      const rl = rateLimit(getClientIp(request));
-      return NextResponse.json(
-        { error: '未授权，请先登录' },
-        { status: 401, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(rl.remaining) } }
-      );
+      // Unauthenticated — bypass in testing mode, otherwise return 401
+      if (BYPASS_AUTH) {
+        console.warn(`[${new Date().toISOString()}] [AUTH BYPASS] Unauthenticated request to ${request.method} ${url.pathname} — allowed (testing mode)`);
+      } else {
+        const rl = rateLimit(getClientIp(request));
+        return NextResponse.json(
+          { error: '未授权，请先登录' },
+          { status: 401, headers: { 'X-Request-ID': requestId, 'X-RateLimit-Remaining': String(rl.remaining) } }
+        );
+      }
     }
 
     // 4. Rate limiting (auth already verified above)

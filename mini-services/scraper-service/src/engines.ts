@@ -175,15 +175,6 @@ class CircuitBreaker {
    *   SCRAPER_CB_HALF_OPEN_MAX       (default: 1)
    */
   static create(name: string, opts?: CircuitBreakerOptions): CircuitBreaker {
-<<<<<<< HEAD
-    const failureThreshold = opts?.failureThreshold ?? Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) ?? 5;
-    const recoveryTimeout  = opts?.recoveryTimeout  ?? Number(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS) ?? 30000;
-    const halfOpenMaxAttempts = opts?.halfOpenMaxAttempts ?? Number(process.env.SCRAPER_CB_HALF_OPEN_MAX) ?? 1;
-=======
-    const failureThreshold = opts?.failureThreshold || Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) || 5;
-    const recoveryTimeout  = opts?.recoveryTimeout  || Number(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS) || 30000;
-    const halfOpenMaxAttempts = opts?.halfOpenMaxAttempts || Number(process.env.SCRAPER_CB_HALF_OPEN_MAX) || 1;
->>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
     return new CircuitBreaker(name, failureThreshold, recoveryTimeout, halfOpenMaxAttempts);
   }
 
@@ -1994,13 +1985,6 @@ class ScraplingEngine implements ScrapingEngine {
             statusCode: data.status_code || 200,
           };
         } catch (scraplingErr) {
-<<<<<<< HEAD
-          const isRateLimit = scraplingErr instanceof Error && scraplingErr.message.includes('Rate limit');
-          if (!(scraplingErr instanceof Error && (scraplingErr as any).doNotRetry) && !isRateLimit) {
-=======
-          if (scraplingErr instanceof DOMException && scraplingErr.name === 'AbortError') { throw scraplingErr; }
-          if (!(scraplingErr instanceof Error && (scraplingErr as any).doNotRetry)) {
->>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
             scraplingBreaker.recordFailure();
           }
           throw scraplingErr;
@@ -2425,11 +2409,6 @@ class ObscuraEngine implements ScrapingEngine {
               }
 
               // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
-<<<<<<< HEAD
-              // Must include iframe/other to prevent data://, blob://, file:// navigations
-=======
-              // Cover all navigational/sub-document types (iframe/other) in addition to document/xhr/fetch
->>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
               if (!routeUrl.startsWith("http://") && !routeUrl.startsWith("https://")) {
                 if (["document", "xhr", "fetch", "iframe", "other"].includes(resourceType)) {
                   route.abort();

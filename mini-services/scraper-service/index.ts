@@ -68,6 +68,7 @@ import { cookieJar } from "./src/cookie-jar";
 import { cookieStore } from "./src/cookie-store";
 import { rateLimiter } from "./src/rate-limiter";
 import type { ProxyBatchTestResult } from "./src/proxy-manager";
+import { isSafeUrl } from "./src/ssrf";
 import { priorityQueue } from "./src/priority-queue";
 import { qualityScorer } from "./src/quality-scorer";
 import { antiCrawlAdvisor } from "./src/anti-crawl-advisor";
@@ -870,6 +871,9 @@ export function startServer(port: number = 3099) {
           if (!url) {
             return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
           }
+          if (!isSafeUrl(url)) {
+            return Response.json({ error: "URL is not allowed (SSRF protection)" }, { status: 400, headers: jsonHeaders });
+          }
           const result = await handleGenerateRule(url, siteType);
           return Response.json(result, { headers: jsonHeaders });
         }
@@ -878,6 +882,9 @@ export function startServer(port: number = 3099) {
           const { url } = body as { url: string };
           if (!url) {
             return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
+          }
+          if (!isSafeUrl(url)) {
+            return Response.json({ error: "URL is not allowed (SSRF protection)" }, { status: 400, headers: jsonHeaders });
           }
           const result = await handlePreviewPage(url);
           return Response.json(result, { headers: jsonHeaders });
@@ -905,6 +912,9 @@ export function startServer(port: number = 3099) {
             domain = parsedUrl.hostname;
           } catch {
             return Response.json({ error: 'Invalid URL' }, { status: 400, headers: jsonHeaders });
+          }
+          if (!isSafeUrl(url)) {
+            return Response.json({ error: 'URL is not allowed (SSRF protection)' }, { status: 400, headers: jsonHeaders });
           }
 
           // Select engine based on config
@@ -1102,9 +1112,11 @@ export function startServer(port: number = 3099) {
           if (!proxyUrl || typeof proxyUrl !== 'string') {
             return Response.json({ error: "url is required" }, { status: 400, headers: jsonHeaders });
           }
-          // Ensure proxy is in pool for verifyProxy
+          const validatedTestUrl = testUrl && typeof testUrl === 'string'
+            ? (isSafeUrl(testUrl) ? testUrl : undefined)
+            : undefined;
           proxyManager.addProxy(proxyUrl);
-          const result = await proxyManager.verifyProxy(proxyUrl, { testUrl });
+          const result = await proxyManager.verifyProxy(proxyUrl, { testUrl: validatedTestUrl });
           const parsed = proxyManager.getProxy(proxyUrl);
           const adapted: Record<string, unknown> = {
             url: proxyUrl,
