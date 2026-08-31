@@ -243,16 +243,18 @@ async function addTaskLog(
   _totalBufferEntries++;
 
   // Prevent unbounded log buffer growth across all tasks
-  if (_totalBufferEntries > 1000) {
+  while (_totalBufferEntries > 1000) {
     // Remove oldest entries from the oldest non-active task
+    let trimmed = false;
     for (const [key, entries] of logBuffer.entries()) {
       if (entries.length > 10) {
         const removed = entries.length - 10;
         entries.splice(0, removed);
         _totalBufferEntries -= removed;
-        break;
+        trimmed = true;
       }
     }
+    if (!trimmed) break;
   }
 
   // If buffer exceeds 50 items, flush immediately to prevent memory buildup

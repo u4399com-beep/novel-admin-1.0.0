@@ -425,6 +425,9 @@ function recordEngineFailure(domain: string, engine: EngineType): void {
   }
   const failures = domainEngineFailures.get(domain)!;
   failures.set(engine, (failures.get(engine) || 0) + 1);
+  // True LRU: re-insert domain to update Map insertion order
+  domainEngineFailures.delete(domain);
+  domainEngineFailures.set(domain, failures);
   const tsKey = `${domain}:${engine}`;
   domainFailureTimestamps.set(tsKey, Date.now());
   // LRU eviction for timestamps map (max 1000 entries)
@@ -488,8 +491,9 @@ function getRecentFailureCount(
   allFailures: Map<EngineType, number>, now: number
 ): number {
   const ts = domainFailureTimestamps.get(`${domain}:${engine}`);
-  // If last failure is outside the window, return 0 without mutating
-  if (ts && now - ts > DOMAIN_FAILURE_WINDOW_MS) {
+  // If timestamp was independently evicted or last failure is outside the window, return 0
+  if (ts === undefined) return 0;
+  if (now - ts > DOMAIN_FAILURE_WINDOW_MS) {
     return 0;
   }
   return allFailures.get(engine) || 0;
@@ -731,21 +735,21 @@ class CheerioEngine implements ScrapingEngine {
     // Pre-resolve the connection pool agent so it's available synchronously in makeRequest
     const poolAgent = !dispatcher ? await getCheerioAgent() : undefined;
 
-    // Browser behavior: throttle if visiting same domain too frequently
-    if (targetDomain) {
-      const throttleCheck = browserBehavior.shouldThrottle(targetDomain);
-      if (throttleCheck.throttled) {
-        await new Promise(r => setTimeout(r, throttleCheck.waitMs));
-      }
-      browserBehavior.recordRequest(targetDomain);
-    }
-
     let lastStatusCode = 0;
     const fetchResult = await retryWithBackoff(
       async () => {
         // Per-domain rate limiting (adaptive backoff, max 3 retries, abort-aware)
         if (targetDomain) {
           await waitForRateLimit(targetDomain, options?.signal);
+        }
+
+        // Browser behavior: throttle if visiting same domain too frequently
+        if (targetDomain) {
+          const throttleCheck = browserBehavior.shouldThrottle(targetDomain);
+          if (throttleCheck.throttled) {
+            await new Promise(r => setTimeout(r, throttleCheck.waitMs));
+          }
+          browserBehavior.recordRequest(targetDomain);
         }
 
         const startTime = Date.now();
@@ -2186,8 +2190,13 @@ function shouldBlockResource(resourceType: string, requestUrl: string, targetDom
       const reqHost = new URL(requestUrl).hostname;
       // Compare root domains (eTLD+1) to allow cross-subdomain requests
       // e.g. api.example.com should be allowed when on www.example.com
+      const COMPLEX_TLDS = new Set(['co.uk','com.cn','com.au','org.cn','net.cn','ac.uk','gov.uk','co.jp','co.kr','co.nz','org.uk','me.uk','co.za','com.br','com.mx','org.au','net.au','co.in','com.tw','org.tw','com.hk','org.hk','co.th','go.th','ac.th','com.sg','com.my','com.ph','com.id','or.id','ac.id','co.il','org.il','co.ck','net.nz','org.nz','co.at','or.at','gen.tr','com.tr','org.tr','net.tr','com.ve','com.uy','com.ar','com.py','com.pe','com.ec','com.cu','com.do','com.gt','com.hn','com.ni','com.pa','com.sv','com.cr','co.ke','ac.ke','go.ke','or.ke','org.za','net.za','co.zw','co.ug','ac.ug','or.ug','co.tz','ac.tz','or.tz','co.rw','co.bw','co.na','co.mz','co.cm','co.cd','co.cg','co.ga','co.ma','co.tn','co.ht','co.vi','co.gg','co.je']);
       const rootDomain = (host: string) => {
         const parts = host.split('.');
+        if (parts.length >= 3) {
+          const last2 = parts.slice(-2).join('.');
+          if (COMPLEX_TLDS.has(last2)) return parts.slice(-3).join('.');
+        }
         return parts.length >= 2 ? parts.slice(-2).join('.') : host;
       };
       if (rootDomain(reqHost) !== rootDomain(targetDomain)) {
@@ -2442,8 +2451,8 @@ class ObscuraEngine implements ScrapingEngine {
                   await route.fulfill({ response: resp });
                   return;
                 } catch {
-                  // route.fetch() itself failed — continue with original request
-                  await route.continue();
+                  // route.fetch() itself failed — abort to prevent double request
+                  try { await route.abort(); } catch { /* already handled */ }
                   return;
                 }
               }

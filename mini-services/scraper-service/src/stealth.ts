@@ -2808,16 +2808,173 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(e) {}
 
   // ==================== Section 59: SharedArrayBuffer / Atomics detection ====================
-  // Some anti-bot systems check for SharedArrayBuffer presence (COOP/COEP required).
-  // Headless Chromium may have COOP/COEP headers while real browsers often don't.
-  // We DON'T remove SharedArrayBuffer (would break legit code), but we make
-  // crossOriginIsolated match the real-world expectation.
+  // SharedArrayBuffer 反检测增强：crossOriginIsolated 一致性、Atomics 完整性、
+  // Performance.now 精度一致性、SAB 指纹随机化。
+  //
+  // 核心原则：SharedArrayBuffer 只有在 crossOriginIsolated=true (COOP/COEP headers)
+  // 时才可用。Headless Chromium 通常带 COOP/COEP 运行，因此 SAB + crossOriginIsolated=true
+  // 是一致的；而普通用户页面通常两者都不可用。我们保持一致性。
   try {
-    // Most real Chrome users do NOT have crossOriginIsolated=true
-    // (requires COOP+COEP headers). Anti-bots check this inconsistency.
-    if (window.crossOriginIsolated === true) {
-      Object.defineProperty(window, 'crossOriginIsolated', { get: function() { return false; }, configurable: true });
-    }
+    (function() {
+      var _hasSAB = typeof SharedArrayBuffer !== 'undefined';
+      var _realCOI = window.crossOriginIsolated;
+
+      // a) crossOriginIsolated 一致性伪造：当 SAB 可用时必须返回 true
+      if (_hasSAB && _realCOI !== true) {
+        // SAB 存在但 crossOriginIsolated 不是 true → 不一致，修正
+        Object.defineProperty(window, 'crossOriginIsolated', {
+          get: function() { return true; },
+          configurable: true
+        });
+      } else if (!_hasSAB && _realCOI === true) {
+        // crossOriginIsolated=true 但没有 SAB → 也不一致，隐藏 COI
+        Object.defineProperty(window, 'crossOriginIsolated', {
+          get: function() { return false; },
+          configurable: true
+        });
+      }
+      // 如果两者一致（SAB存在+COI=true 或 SAB不存在+COI=false），保持原样
+
+      // a-2) 伪造 COOP/COEP header 检测：某些站点通过 fetch self 检测 headers
+      // 覆盖 PerformanceResourceTiming 的 responseHeader 检测
+      try {
+        if (_hasSAB && window.PerformanceResourceTiming) {
+          var _origGRT = PerformanceResourceTiming.prototype.getResponseHeader;
+          if (_origGRT) {
+            PerformanceResourceTiming.prototype.getResponseHeader = function(name) {
+              var _name = (name || '').toLowerCase();
+              // 返回伪造的 COOP/COEP header 以匹配 crossOriginIsolated=true
+              if (_name === 'cross-origin-opener-policy') return 'same-origin';
+              if (_name === 'cross-origin-embedder-policy') return 'require-corp';
+              return _origGRT.call(this, name);
+            };
+          }
+          // getAllResponseHeaders 也需要包含 COOP/COEP
+          var _origGARH = PerformanceResourceTiming.prototype.getAllResponseHeaders;
+          if (_origGARH) {
+            PerformanceResourceTiming.prototype.getAllResponseHeaders = function() {
+              var _orig = _origGARH.call(this);
+              if (_orig.indexOf('cross-origin-opener-policy') < 0) {
+                _orig += 'cross-origin-opener-policy: same-origin\r\n';
+              }
+              if (_orig.indexOf('cross-origin-embedder-policy') < 0) {
+                _orig += 'cross-origin-embedder-policy: require-corp\r\n';
+              }
+              return _orig;
+            };
+          }
+        }
+      } catch(_coopErr) {}
+
+      // a-3) 确保 Worker 构造器接受 SharedArrayBuffer transfer
+      // (在主线程中无法完全模拟，但确保 Worker 本身存在且可用)
+      try {
+        if (typeof Worker !== 'undefined' && !Worker._sabPatched) {
+          // Worker 在 headless 中通常可用，不需要额外 patch
+          // 但某些检测检查 Worker.prototype，确保它存在
+          if (!Worker.prototype) {
+            Worker.prototype = {};
+          }
+          Worker._sabPatched = true;
+        }
+      } catch(_workerErr) {}
+
+      // b) Atomics 一致性：确保 Atomics 对象完整且行为正确
+      try {
+        if (typeof Atomics !== 'undefined') {
+          // 确保 Atomics 的标准方法都存在
+          var _expectedAtomicsMethods = [
+            'add', 'and', 'compareExchange', 'exchange', 'isLockFree',
+            'load', 'or', 'store', 'sub', 'wait', 'waitAsync', 'notify', 'xor'
+          ];
+          for (var _ai = 0; _ai < _expectedAtomicsMethods.length; _ai++) {
+            var _am = _expectedAtomicsMethods[_ai];
+            if (typeof Atomics[_am] !== 'function') {
+              // 补全缺失的 Atomics 方法
+              Atomics[_am] = function() {
+                if (_am === 'wait' || _am === 'waitAsync' || _am === 'notify') {
+                  // wait/notify 需要 SharedArrayBuffer，非 SAB 应抛 TypeError
+                  if (arguments[0] && !(arguments[0].buffer instanceof SharedArrayBuffer)) {
+                    throw new TypeError('Atomics.' + _am + ' requires a SharedArrayBuffer');
+                  }
+                }
+                // 其他方法返回默认值（实际不会被调用到，因为真浏览器都有这些方法）
+                return _am === 'isLockFree' ? true : 0;
+              };
+            }
+          }
+          // 确保非 SharedArrayBuffer 上调用 wait/notify 抛 TypeError
+          var _origAtomicsWait = Atomics.wait;
+          var _origAtomicsNotify = Atomics.notify;
+          if (_origAtomicsWait) {
+            Atomics.wait = function(ta, idx, val, timeout) {
+              if (ta && !(ta.buffer instanceof SharedArrayBuffer)) {
+                throw new TypeError('Atomics.wait requires a SharedArrayBuffer');
+              }
+              return _origAtomicsWait.call(Atomics, ta, idx, val, timeout);
+            };
+          }
+          if (_origAtomicsNotify) {
+            Atomics.notify = function(ta, idx, count) {
+              if (ta && !(ta.buffer instanceof SharedArrayBuffer)) {
+                throw new TypeError('Atomics.notify requires a SharedArrayBuffer');
+              }
+              return _origAtomicsNotify.call(Atomics, ta, idx, count);
+            };
+          }
+          // waitAsync 也需要同样检查
+          if (typeof Atomics.waitAsync === 'function') {
+            var _origWaitAsync = Atomics.waitAsync;
+            Atomics.waitAsync = function(ta, idx, val, timeout) {
+              if (ta && !(ta.buffer instanceof SharedArrayBuffer)) {
+                throw new TypeError('Atomics.waitAsync requires a SharedArrayBuffer');
+              }
+              return _origWaitAsync.call(Atomics, ta, idx, val, timeout);
+            };
+          }
+        }
+      } catch(_atomicsErr) {}
+
+      // c) Performance.now 精度一致性：crossOriginIsolated=true 时精度更高
+      // 某些站点检测：COI=true 时 performance.now() 应该有微秒级精度，而不是被降到 1ms
+      try {
+        if (window.crossOriginIsolated === true && window.performance) {
+          // 检测当前 performance.now 是否被降低精度到 1ms
+          var _testNow = performance.now();
+          var _testNow2 = performance.now();
+          // 如果两次调用之间的差值总是 0 或 1，说明精度被降低了
+          // 我们不需要在这里 patch performance.now（Section 25 已经做了），
+          // 但需要确保精度不被额外降低。
+          // 在 COI=true 时，Chrome 不会降低精度，所以我们确保返回值包含小数部分
+          var _origPN = performance.now;
+          var _perfNowAlreadyPatched = _origPN.toString().indexOf('Obscura') >= 0 || 
+            _origPN.toString().length < 100; // 原生函数 toString 通常很长
+          // 不额外 patch，Section 25 的 patch 已经保留了精度（只加了 offset，没有截断小数）
+        }
+      } catch(_perfCOIErr) {}
+
+      // d) 防止 SharedArrayBuffer 指纹：随机化 buffer 分配
+      // 某些检测创建特定大小的 SAB 来探测内存布局和对齐特征
+      // 我们不阻止创建，但添加微小的地址随机化使其不可预测
+      try {
+        if (typeof SharedArrayBuffer !== 'undefined') {
+          var _origSAB = SharedArrayBuffer;
+          // 使用 IIFE 保护变量作用域
+          SharedArrayBuffer = function(length) {
+            var buf = new _origSAB(length);
+            // 通过创建一个随机大小的临时 SAB 来打乱内存布局
+            // 这样连续创建的 SAB 不会有固定的地址间隔
+            var _rndSize = 16 + Math.floor(_seededRandom(59.1 + (length | 0)) * 64);
+            try { var _dummy = new _origSAB(_rndSize); } catch(_e) {}
+            return buf;
+          };
+          SharedArrayBuffer.prototype = _origSAB.prototype;
+          SharedArrayBuffer.prototype.constructor = SharedArrayBuffer;
+          // 保留静态属性/方法
+          SharedArrayBuffer[Symbol.species] = _origSAB[Symbol.species] || SharedArrayBuffer;
+        }
+      } catch(_sabFpErr) {}
+    })();
   } catch(e) {}
 
   // ==================== Section 60: Font enumeration protection ====================
@@ -2994,22 +3151,34 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(_consistErr) {}
 
   // ==================== Section 100: OffscreenCanvas Fingerprint Alignment ====================
-  // R55: OffscreenCanvas used by Web Workers for off-thread rendering. Its fingerprint
-  // (via convertToBlob, transferToImageBitmap, getImageData) must match the main canvas
-  // noise pattern. Otherwise, cross-context fingerprinting reveals automation.
+  // OffscreenCanvas 反检测增强：
+  // - transferToImageBitmap 完整性（尺寸校验、close() 方法）
+  // - convertToBlob 完整性（type/size、arrayBuffer()/text()）
+  // - WebGL Context 指纹对齐（webgl/webgl2 + WEBGL_debug_renderer_info）
+  // - 2D Context 指纹对齐（完整 TextMetrics 7 属性、isPointInPath/Stroke）
   try {
     if (typeof OffscreenCanvas !== 'undefined') {
-      // Patch getImageData on OffscreenCanvas 2D contexts via getContext override
+      // Patch getContext on OffscreenCanvas to apply noise + full fingerprint alignment
       var _origOCGetContext = OffscreenCanvas.prototype.getContext;
       OffscreenCanvas.prototype.getContext = function(type, attrs) {
         var ctx = _origOCGetContext.call(this, type, attrs);
         if (type === '2d' && ctx && !ctx._obscuraPatched) {
           ctx._obscuraPatched = true;
+          _canvasInstanceCount++;
+
+          // e-1) getImageData 噪声：与主 canvas Section 20 完全一致的确定性噪声
           var _origOCGetImageData = ctx.getImageData.bind(ctx);
           ctx.getImageData = function() {
             var imageData = _origOCGetImageData.apply(ctx, arguments);
             var d = imageData.data;
-            // Apply the SAME deterministic noise as HTMLCanvas getImageData (Section 20)
+            // 确保返回的是 Uint8ClampedArray（与主 canvas 签名一致）
+            if (d && !(d instanceof Uint8ClampedArray)) {
+              try {
+                var _fixed = new Uint8ClampedArray(d);
+                Object.defineProperty(imageData, 'data', { value: _fixed, writable: false, configurable: true });
+                d = _fixed;
+              } catch(_sigErr) {}
+            }
             var _seed = _canvasNoiseSeed + (_canvasInstanceCount * 7919);
             var _intensity = _canvasNoiseIntensity;
             for (var i = 0; i < d.length; i += 4) {
@@ -3025,7 +3194,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
             }
             return imageData;
           };
-          // Patch measureText on OffscreenCanvas 2D context (same logic as proxy)
+
+          // e-2) measureText 完整 TextMetrics 对齐：与主 canvas proxy 相同的 7 属性噪声
           var _origOCMeasureText = ctx.measureText.bind(ctx);
           var _ocSeed = _fakeDeviceSeed * 2.71828;
           ctx.measureText = function() {
@@ -3036,22 +3206,209 @@ export function getStealthScript(profile: FingerprintProfile): string {
               for (var _mi = 0; _mi < _text.length; _mi++) {
                 _mHash = ((_mHash << 5) - _mHash + _text.charCodeAt(_mi)) | 0;
               }
+              // 也 hash 当前字体以保持与主 canvas 一致
+              var _curFont = ctx.font || '10px sans-serif';
+              for (var _fj = 0; _fj < _curFont.length; _fj++) {
+                _mHash = ((_mHash << 3) - _mHash + _curFont.charCodeAt(_fj)) | 0;
+              }
               _mHash = Math.abs(_mHash);
+              // 生成 7 个独立噪声值，与主 canvas proxy 逻辑完全一致
               var _tmS = _mHash;
               _tmS = (_tmS * 16807 + 0.5) % 2147483647;
               var _nW = ((_tmS % 21) - 10) * 0.0015;
-              var _origW = result.width;
-              Object.defineProperty(result, 'width', {
-                get: function() { return _origW + _nW; },
-                configurable: true
-              });
+              _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+              var _nABL = ((_tmS % 11) - 5) * 0.001;
+              _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+              var _nABR = ((_tmS % 11) - 5) * 0.001;
+              _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+              var _nABA = ((_tmS % 11) - 5) * 0.001;
+              _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+              var _nABD = ((_tmS % 11) - 5) * 0.001;
+              _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+              var _nFBA = ((_tmS % 7) - 3) * 0.0005;
+              _tmS = (_tmS * 16807 + 0.5) % 2147483647;
+              var _nFBD = ((_tmS % 7) - 3) * 0.0005;
+              var _tmProps = ['width', 'actualBoundingBoxLeft', 'actualBoundingBoxRight',
+                'actualBoundingBoxAscent', 'actualBoundingBoxDescent',
+                'fontBoundingBoxAscent', 'fontBoundingBoxDescent'];
+              var _tmNoises = [_nW, _nABL, _nABR, _nABA, _nABD, _nFBA, _nFBD];
+              for (var _ti = 0; _ti < _tmProps.length; _ti++) {
+                var _pName = _tmProps[_ti];
+                var _origVal = result[_pName];
+                if (typeof _origVal === 'number' && isFinite(_origVal)) {
+                  (function(p, orig, noise) {
+                    try {
+                      Object.defineProperty(result, p, {
+                        get: function() { return orig + noise; },
+                        configurable: true
+                      });
+                    } catch(_tdErr) {}
+                  })(_pName, _origVal, _tmNoises[_ti]);
+                }
+              }
             } catch(_ocmErr) {}
             return result;
           };
+
+          // e-3) isPointInPath / isPointInStroke 对齐：与主 canvas proxy 相同的 ±0.1px 偏移
+          try {
+            var _ocIPPSeed = _ocSeed;
+            var _origOCIPIP = ctx.isPointInPath.bind(ctx);
+            ctx.isPointInPath = function() {
+              var args = Array.prototype.slice.call(arguments);
+              var xi = 0, yi = 1;
+              if (args.length >= 3 && args[0] && typeof args[0].addPath === 'function') { xi = 1; yi = 2; }
+              var _cx = (args[xi] || 0) | 0, _cy = (args[yi] || 0) | 0;
+              var _pS = (_ocIPPSeed + _cx * 37 + _cy * 53) | 0;
+              var _dx = ((_pS % 201) - 100) * 0.001;
+              _pS = (_pS + _cx * 17 + _cy * 31) | 0;
+              var _dy = ((_pS % 201) - 100) * 0.001;
+              args[xi] = (args[xi] || 0) + _dx;
+              args[yi] = (args[yi] || 0) + _dy;
+              return _origOCIPIP.apply(ctx, args);
+            };
+            var _origOCIPS = ctx.isPointInStroke.bind(ctx);
+            ctx.isPointInStroke = function() {
+              var args = Array.prototype.slice.call(arguments);
+              var xi = 0, yi = 1;
+              if (args.length >= 3 && args[0] && typeof args[0].addPath === 'function') { xi = 1; yi = 2; }
+              var _cx = (args[xi] || 0) | 0, _cy = (args[yi] || 0) | 0;
+              var _sS = (_ocIPPSeed + _cx * 41 + _cy * 59) | 0;
+              var _sdx = ((_sS % 201) - 100) * 0.001;
+              _sS = (_sS + _cx * 19 + _cy * 37) | 0;
+              var _sdy = ((_sS % 201) - 100) * 0.001;
+              args[xi] = (args[xi] || 0) + _sdx;
+              args[yi] = (args[yi] || 0) + _sdy;
+              return _origOCIPS.apply(ctx, args);
+            };
+          } catch(_ocPathErr) {}
         }
+
+        // c) WebGL Context 指纹对齐：确保 OffscreenCanvas 上的 WebGL context 返回一致的指纹
+        if ((type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') && ctx && !ctx._obscuraGLPatched) {
+          ctx._obscuraGLPatched = true;
+          // 确保 getParameter 返回与主 canvas 相同的 vendor/renderer
+          var _glProto = (type === 'webgl2') ?
+            (typeof WebGL2RenderingContext !== 'undefined' ? WebGL2RenderingContext.prototype : null) :
+            (typeof WebGLRenderingContext !== 'undefined' ? WebGLRenderingContext.prototype : null);
+          // OffscreenCanvas WebGL context 的 getParameter 已在 Section 3 通过原型 patch 覆盖
+          // 但某些 headless 环境中 OffscreenCanvas 的 WebGL context 可能有独立的原型链
+          // 确保独立的 getParameter 也返回一致值
+          if (ctx.getParameter && _glProto && ctx.getParameter !== _glProto.getParameter) {
+            var _ocGLGetParam = ctx.getParameter.bind(ctx);
+            ctx.getParameter = function(param) {
+              if (param === 37445) return PROFILE.webglVendor;    // UNMASKED_VENDOR_WEBGL
+              if (param === 37446) return PROFILE.webglRenderer;  // UNMASKED_RENDERER_WEBGL
+              if (param === 0x1F01) return _glRenderer;           // GL_RENDERER
+              if (param === 0x1F00) return _glVendor;             // GL_VENDOR
+              if (param === 0x8B8C) {                             // GL_SHADING_LANGUAGE_VERSION
+                if (type === 'webgl2') {
+                  if (_isFirefox) return 'WebGL GLSL ES 3.0 (OpenGL ES GLSL ES 3.0 NVIDIA)';
+                  if (/Mesa/.test(PROFILE.webglRenderer)) return 'WebGL GLSL ES 3.0 (OpenGL ES GLSL ES 3.0 Mesa 23.2.1)';
+                  return 'WebGL GLSL ES 3.00 (OpenGL ES GLSL ES 3.0 Chromium)';
+                }
+                return _glslVersion;
+              }
+              return _ocGLGetParam(param);
+            };
+          }
+          // 确保 WEBGL_debug_renderer_info 扩展在 OffscreenCanvas WebGL 中可用
+          if (ctx.getExtension && !ctx._extPatched) {
+            ctx._extPatched = true;
+            var _ocGLGetExt = ctx.getExtension.bind(ctx);
+            ctx.getExtension = function(name) {
+              if (name === 'WEBGL_debug_renderer_info') {
+                var ext = _ocGLGetExt(name);
+                if (ext) return ext;
+                // headless 环境可能返回 null，mock 扩展常量
+                var _mockOCExt = {};
+                Object.defineProperty(_mockOCExt, 'UNMASKED_VENDOR_WEBGL', { value: 0x9245, writable: false, configurable: false });
+                Object.defineProperty(_mockOCExt, 'UNMASKED_RENDERER_WEBGL', { value: 0x9246, writable: false, configurable: false });
+                return _mockOCExt;
+              }
+              return _ocGLGetExt(name);
+            };
+          }
+          // 确保 readPixels 也应用噪声（如果 offscreen canvas 有独立的 readPixels）
+          if (ctx.readPixels && _glProto && ctx.readPixels !== _glProto.readPixels) {
+            var _ocGLReadPx = ctx.readPixels.bind(ctx);
+            ctx.readPixels = function(x, y, w, h, format, type, pixels) {
+              _ocGLReadPx(x, y, w, h, format, type, pixels);
+              if (format === 0x1908 && type === 0x1401 && pixels instanceof Uint8Array) {
+                var _rS = _glReadSeed + 2;
+                for (var _rpi = 0; _rpi < pixels.length; _rpi += 4) {
+                  _rS = (_rS * 16807 + 0.5) % 2147483647;
+                  var _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+                  pixels[_rpi]   = Math.max(0, Math.min(255, pixels[_rpi] + _rn));
+                  _rS = (_rS * 16807 + 0.5) % 2147483647;
+                  _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+                  pixels[_rpi+1] = Math.max(0, Math.min(255, pixels[_rpi+1] + _rn));
+                  _rS = (_rS * 16807 + 0.5) % 2147483647;
+                  _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+                  pixels[_rpi+2] = Math.max(0, Math.min(255, pixels[_rpi+2] + _rn));
+                }
+              }
+            };
+          }
+        }
+
         return ctx;
       };
-      // Patch convertToBlob (OffscreenCanvas equivalent of toBlob)
+
+      // a) transferToImageBitmap 增强：确保 ImageBitmap 尺寸一致 + close() 可用
+      var _origOCTransfer = OffscreenCanvas.prototype.transferToImageBitmap;
+      if (_origOCTransfer) {
+        OffscreenCanvas.prototype.transferToImageBitmap = function() {
+          var _self = this;
+          var _w = _self.width, _h = _self.height;
+          try {
+            var ctx = _self.getContext('2d');
+            if (ctx && ctx._obscuraPatched) {
+              var imgData = ctx.getImageData(0, 0, _w, _h);
+              var _tmpOC2 = new OffscreenCanvas(_w, _h);
+              var _tmpOCCtx2 = _tmpOC2.getContext('2d');
+              if (_tmpOCCtx2) {
+                _tmpOCCtx2.putImageData(imgData, 0, 0);
+                var bitmap = _origOCTransfer.call(_tmpOC2);
+                // a-1) 确保 ImageBitmap 尺寸与 canvas 一致
+                if (bitmap) {
+                  try {
+                    if (bitmap.width !== _w) {
+                      Object.defineProperty(bitmap, 'width', { value: _w, configurable: true });
+                    }
+                    if (bitmap.height !== _h) {
+                      Object.defineProperty(bitmap, 'height', { value: _h, configurable: true });
+                    }
+                  } catch(_ibDimErr) {}
+                  // a-2) 确保 close() 方法可用（某些 headless 可能缺失）
+                  if (typeof bitmap.close !== 'function') {
+                    bitmap.close = function() {};
+                  }
+                }
+                return bitmap;
+              }
+            }
+          } catch(_octErr) {}
+          var _origBitmap = _origOCTransfer.call(_self);
+          // 对非 2D context 的 bitmap 也确保尺寸和 close()
+          if (_origBitmap) {
+            try {
+              if (_origBitmap.width !== _w) {
+                Object.defineProperty(_origBitmap, 'width', { value: _w, configurable: true });
+              }
+              if (_origBitmap.height !== _h) {
+                Object.defineProperty(_origBitmap, 'height', { value: _h, configurable: true });
+              }
+            } catch(_ibDimErr2) {}
+            if (typeof _origBitmap.close !== 'function') {
+              _origBitmap.close = function() {};
+            }
+          }
+          return _origBitmap;
+        };
+      }
+
+      // b) convertToBlob 增强：确保 Blob 有正确的 type/size + arrayBuffer()/text() 可用
       var _origOCConvertToBlob = OffscreenCanvas.prototype.convertToBlob;
       if (_origOCConvertToBlob) {
         OffscreenCanvas.prototype.convertToBlob = function(options) {
@@ -3059,38 +3416,76 @@ export function getStealthScript(profile: FingerprintProfile): string {
           try {
             var ctx = _self.getContext('2d');
             if (ctx && ctx._obscuraPatched) {
-              // The getImageData inside is already patched; re-encode from noisy data
-              // by creating a temp canvas, putting noisy image data, and converting that
               var imgData = ctx.getImageData(0, 0, _self.width, _self.height);
               var _tmpOC = new OffscreenCanvas(_self.width, _self.height);
               var _tmpOCCtx = _tmpOC.getContext('2d');
               if (_tmpOCCtx) {
                 _tmpOCCtx.putImageData(imgData, 0, 0);
-                return _origOCConvertToBlob.call(_tmpOC, options);
+                var _blobPromise = _origOCConvertToBlob.call(_tmpOC, options);
+                // b-1) 确保 Blob 的 type 和 size 正确
+                return _blobPromise.then(function(blob) {
+                  if (blob) {
+                    // 确定 MIME type：默认 image/png，支持 image/webp, image/jpeg
+                    var _mimeType = 'image/png';
+                    if (options && typeof options.type === 'string') {
+                      _mimeType = options.type;
+                    }
+                    // 确保 Blob.type 与请求一致
+                    try {
+                      if (blob.type !== _mimeType && blob.type.indexOf(_mimeType.split('/')[1]) < 0) {
+                        Object.defineProperty(blob, 'type', { value: _mimeType, configurable: true });
+                      }
+                    } catch(_blobTypeErr) {}
+                    // b-2) 确保 Blob.arrayBuffer() 和 Blob.text() 方法可用
+                    if (typeof blob.arrayBuffer !== 'function') {
+                      blob.arrayBuffer = function() {
+                        return new Promise(function(resolve) {
+                          var reader = new FileReader();
+                          reader.onload = function() { resolve(reader.result); };
+                          reader.readAsArrayBuffer(blob);
+                        });
+                      };
+                    }
+                    if (typeof blob.text !== 'function') {
+                      blob.text = function() {
+                        return new Promise(function(resolve) {
+                          var reader = new FileReader();
+                          reader.onload = function() { resolve(reader.result); };
+                          reader.readAsText(blob);
+                        });
+                      };
+                    }
+                  }
+                  return blob;
+                });
               }
             }
           } catch(_ocbErr) {}
-          return _origOCConvertToBlob.call(_self, options);
-        };
-      }
-      // Patch transferToImageBitmap — adds noise to the bitmap pixels
-      var _origOCTransfer = OffscreenCanvas.prototype.transferToImageBitmap;
-      if (_origOCTransfer) {
-        OffscreenCanvas.prototype.transferToImageBitmap = function() {
-          var _self = this;
-          try {
-            var ctx = _self.getContext('2d');
-            if (ctx && ctx._obscuraPatched) {
-              var imgData = ctx.getImageData(0, 0, _self.width, _self.height);
-              var _tmpOC2 = new OffscreenCanvas(_self.width, _self.height);
-              var _tmpOCCtx2 = _tmpOC2.getContext('2d');
-              if (_tmpOCCtx2) {
-                _tmpOCCtx2.putImageData(imgData, 0, 0);
-                return _origOCTransfer.call(_tmpOC2);
+          // 非 2D context 的 fallback
+          var _fallbackPromise = _origOCConvertToBlob.call(_self, options);
+          return _fallbackPromise.then(function(blob) {
+            if (blob) {
+              if (typeof blob.arrayBuffer !== 'function') {
+                blob.arrayBuffer = function() {
+                  return new Promise(function(resolve) {
+                    var reader = new FileReader();
+                    reader.onload = function() { resolve(reader.result); };
+                    reader.readAsArrayBuffer(blob);
+                  });
+                };
+              }
+              if (typeof blob.text !== 'function') {
+                blob.text = function() {
+                  return new Promise(function(resolve) {
+                    var reader = new FileReader();
+                    reader.onload = function() { resolve(reader.result); };
+                    reader.readAsText(blob);
+                  });
+                };
               }
             }
-          } catch(_octErr) {}
-          return _origOCTransfer.call(_self);
+            return blob;
+          });
         };
       }
     }
