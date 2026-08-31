@@ -624,7 +624,7 @@ const GREASE_BRANDS: Record<number, string> = {
 /** Detect architecture and bitness from UA string */
 function detectArchBitness(ua: string): { arch: string; bitness: string; model: string } {
   // Android mobile — detect actual device model
-  const androidModelMatch = ua.match(/Android[^;]*;\s*([^;)\s]+\s+Build/);
+  const androidModelMatch = ua.match(/Android[^;]*;\s*([^;\s]+)\s+Build/);
   if (androidModelMatch) {
     // Android can be ARM or x86
     const isX86 = ua.includes('x86');

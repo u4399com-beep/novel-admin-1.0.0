@@ -8,7 +8,11 @@
 import * as cheerio from "cheerio";
 import type { CleanRequest } from "./types";
 import { safeRegexReplace } from "./regex-safety";
+<<<<<<< HEAD
 import { convertIfTraditional } from "./t2s-converter";
+=======
+import { traditionalToSimplified, isLikelyTraditional } from "./t2s-converter";
+>>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
 
 // Tags to skip during paragraph-aware extraction
 const EXCLUDED_TAGS = new Set(['script', 'style', 'noscript', 'template']);
@@ -973,6 +977,7 @@ export function handleClean(body: CleanRequest) {
   const { html, config } = body;
   let content = cleanHtmlPreserveParagraphs(html, config);
 
+<<<<<<< HEAD
   // Traditional → Simplified Chinese conversion
   let t2sConverted = false;
   if (config.t2sConversion && content) {
@@ -981,6 +986,11 @@ export function handleClean(body: CleanRequest) {
       content = result.text;
       t2sConverted = true;
     }
+=======
+  // R58: Auto-detect and convert Traditional Chinese → Simplified Chinese
+  if (isLikelyTraditional(content)) {
+    content = traditionalToSimplified(content);
+>>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
   }
 
   return {

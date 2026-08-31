@@ -133,9 +133,9 @@ export default function AdminPage() {
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const toggleTheme = useCallback(() => setTheme(theme === 'dark' ? 'light' : 'dark'), [theme, setTheme]);
 
-  // ─── Auth guard ──────────────────────────────────────────────
+  // ─── Auth guard (测试阶段跳过，设置NEXT_PUBLIC_SKIP_AUTH=true) ─────────────────
   useEffect(() => {
-    if (status !== 'loading' && !session) { router.push('/login'); }
+    if (status !== 'loading' && !session && process.env.NEXT_PUBLIC_SKIP_AUTH !== 'true') { router.push('/login'); }
   }, [session, status, router]);
 
   if (status === 'loading') {

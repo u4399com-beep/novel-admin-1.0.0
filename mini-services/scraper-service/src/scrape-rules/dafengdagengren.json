@@ -1,0 +1,108 @@
+{
+  "name": "大风大更人 (dafengdagengren.com)",
+  "description": "大风大更人全站采集。UTF-8编码，nginx服务器。使用cookie-based反爬机制（与daweixs同源系统：403→server_name_session cookie→JS重定向循环），需要playwright引擎+stealth模式绕过。高延迟+人类行为模拟。",
+  "enabled": true,
+
+  "listUrl": "https://www.dafengdagengren.com/{catId}/{page}.html",
+  "listSelector": { "type": "css", "value": ".novelslist2 li a, .list-group-item a, .bookbox a" },
+  "listPagination": { "type": "page", "selector": ".pagination a, .page a, .pages a", "maxPage": 200 },
+
+  "bookTitleSelector": { "type": "css", "value": "meta[name=og:novel:book_name]", "extract": "content" },
+  "bookAuthorSelector": { "type": "css", "value": "meta[name=og:novel:author]", "extract": "content" },
+  "bookCategorySelector": { "type": "css", "value": "meta[name=og:novel:category]", "extract": "content" },
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": { "type": "css", "value": "meta[property=og:description]", "extract": "content" },
+  "bookCoverSelector": { "type": "css", "value": "meta[property=og:image], .book-cover img, .thumbnail img", "extract": "src" },
+  "bookStatusSelector": { "type": "css", "value": "meta[name=og:novel:status]", "extract": "content" },
+
+  "chapterListUrl": "{bookUrl}/index.html",
+  "chapterListSelector": { "type": "css", "value": "#list dl dd a, .chapter-list a, .listmain dd a" },
+  "chapterTitleSelector": { "type": "css", "value": "#list dl dd a, .chapter-list a, .listmain dd a" },
+  "chapterLinkSelector": { "type": "css", "value": "#list dl dd a, .chapter-list a, .listmain dd a" },
+  "chapterPagination": null,
+
+  "contentTitleSelector": { "type": "css", "value": "h1, .chapter-title, title" },
+  "contentSelector": { "type": "css", "value": "#content, .content, .chapter-content" },
+  "contentPagination": { "type": "next", "selector": "a:contains(下一页), a.next", "maxPage": 1 },
+
+  "antiCrawlConfig": {
+    "useJsRender": true,
+    "uaRotation": true,
+    "delay": [3000, 5000],
+    "humanBehavior": true,
+    "retries": 5,
+    "referer": "https://www.dafengdagengren.com/",
+    "cookieHandling": {
+      "waitForCookie": true,
+      "cookieName": "server_name_session",
+      "maxRedirects": 3
+    },
+    "stealthOptions": {
+      "blockResources": true,
+      "emulateDevice": "desktop"
+    }
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".ad", ".ads", ".advertisement",
+      ".chapter-nav", ".footer", ".header",
+      ".recommend", ".related",
+      "#ad", "[id^=div-gpt-ad]",
+      "ins.adsbygoogle",
+      ".read-nav", ".page-chapter",
+      ".bottem, .bottom",
+      "script", ".share-box"
+    ],
+    "adPatterns": [
+      "dafengdagengren", "大风大更人", "dafengdagengren.com",
+      "请记住本书", "手机用户请浏览",
+      "本章未完", "最快更新",
+      "本章最新章节", "请访问",
+      "如果您喜欢", "分享到",
+      "扫码关注", "微信公众号",
+      "关注公众号", "关注我们",
+      "TXT下载", "全本下载",
+      "返回目录", "章节列表",
+      "推荐本书", "打赏",
+      "本章完", "本章结束",
+      "完结感言", "在线听书",
+      "最新章节", "请牢记",
+      "加入书架", "投推荐票",
+      "直达底部", "目录",
+      "番茄小说", "起点中文网",
+      "笔趣阁", "无弹窗"
+    ]
+  },
+
+  "scrapeMode": "incremental",
+  "engine": "playwright",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/public/covers/dafengdagengren/",
+  "threadCount": 1,
+  "minDelay": 3000,
+  "maxDelay": 5000,
+  "enableShuffle": true,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "dafengdagengren.com",
+    "encoding": "utf-8",
+    "engineType": "playwright",
+    "stealthEnabled": true,
+    "categoryMapping": {
+      "xuanhuan": "玄幻奇幻",
+      "wuxia": "武侠仙侠",
+      "dushi": "都市言情",
+      "lishi": "历史军事",
+      "kehuan": "科幻灵异",
+      "youxi": "网游竞技",
+      "kongbu": "恐怖灵异",
+      "qita": "其他类型"
+    }
+  }
+}

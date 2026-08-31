@@ -193,7 +193,7 @@ export const progressThrottleCleanupTimer = setInterval(() => {
       progressThrottle.delete(taskId);
     }
   }
-}, 60 * 1000); // Every minute
+}, 60 * 1000).unref(); // Every minute — .unref() allows clean process exit
 
 /** Clear the progress throttle cleanup timer (call on shutdown) */
 export function cleanupProgressThrottleTimer(): void {
@@ -798,12 +798,21 @@ async function executeTaskBody(
             }
 
             if (strategyResult.delayMs && strategyResult.delayMs >= BOOK_CAPTCHA_PAUSE_MS) {
-              await new Promise<void>((resolve) => setTimeout(resolve, strategyResult.delayMs));
+              await new Promise<void>((resolve, reject) => {
+                const t = setTimeout(resolve, strategyResult.delayMs!);
+                abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+              });
             } else {
-              await new Promise<void>((resolve) => setTimeout(resolve, BOOK_CAPTCHA_PAUSE_MS));
+              await new Promise<void>((resolve, reject) => {
+                const t = setTimeout(resolve, BOOK_CAPTCHA_PAUSE_MS);
+                abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+              });
             }
           } catch {
-            await new Promise<void>((resolve) => setTimeout(resolve, BOOK_CAPTCHA_PAUSE_MS));
+            await new Promise<void>((resolve, reject) => {
+              const t = setTimeout(resolve, BOOK_CAPTCHA_PAUSE_MS);
+              abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+            });
           }
 
           bookCaptchaCounts.set(bkDomain, 0);
@@ -1098,6 +1107,7 @@ async function executeTaskBody(
                 return;
               }
               const pausePromise = new Promise<void>((resolve, reject) => {
+<<<<<<< HEAD
                 const timer = setTimeout(resolve, CAPTCHA_PAUSE_MS);
                 if (abortSignal?.aborted) {
                   clearTimeout(timer);
@@ -1109,6 +1119,10 @@ async function executeTaskBody(
                   abortSignal.addEventListener('abort', onAbort, { once: true });
                   pausePromise.finally(() => abortSignal.removeEventListener('abort', onAbort));
                 }
+=======
+                const t = setTimeout(resolve, CAPTCHA_PAUSE_MS);
+                abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+>>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
               });
               _captchaPausePromises.set(chDomain, pausePromise);
               try {
@@ -1146,7 +1160,10 @@ async function executeTaskBody(
                 await pausePromise;
                 // If strategy recommends even longer, wait the difference
                 if (strategyResult.delayMs && strategyResult.delayMs > CAPTCHA_PAUSE_MS) {
-                  await new Promise<void>(resolve => setTimeout(resolve, strategyResult.delayMs - CAPTCHA_PAUSE_MS));
+                  await new Promise<void>((resolve, reject) => {
+                    const t = setTimeout(resolve, strategyResult.delayMs! - CAPTCHA_PAUSE_MS);
+                    abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+                  });
                 }
               } catch {
                 await pausePromise;

@@ -1,0 +1,97 @@
+{
+  "name": "AU文学 (book4.cc)",
+  "description": "AU文学小说聚合/导航站，仅作为发现源使用，不托管章节内容。HTML通过JS变量html_b进行base64编码，需解码后解析。分类页/AU文学/{category}/，提取书籍元信息(封面、标题、作者、分类、简介)及外部链接。",
+  "enabled": true,
+
+  "listUrl": "https://www.book4.cc/AU文学/{catId}/",
+  "listSelector": { "type": "css", "value": "section#main .section1 ul li .book-img a[href]" },
+  "listPagination": null,
+
+  "bookTitleSelector": { "type": "css", "value": ".book-info h3 a" },
+  "bookAuthorSelector": { "type": "css", "value": ".book-info p.author" },
+  "bookCategorySelector": { "type": "css", "value": ".book-info .type a" },
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": { "type": "css", "value": ".book-info p[style=\"float: left;\"]" },
+  "bookCoverSelector": { "type": "css", "value": ".book-img img", "extract": "src" },
+  "bookStatusSelector": null,
+
+  "chapterListUrl": null,
+  "chapterListSelector": null,
+  "chapterTitleSelector": null,
+  "chapterLinkSelector": null,
+  "chapterPagination": null,
+
+  "contentTitleSelector": null,
+  "contentSelector": null,
+  "contentPagination": null,
+
+  "antiCrawlConfig": {
+    "useJsRender": true,
+    "uaRotation": true,
+    "delay": [2000, 4000],
+    "humanBehavior": false,
+    "retries": 3,
+    "referer": "https://www.book4.cc/"
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".ad", ".ads", ".advertisement",
+      ".footer", ".header",
+      "ins.adsbygoogle", "[id^=div-gpt-ad]"
+    ],
+    "adPatterns": [
+      "book4", "book4.cc", "AU文学",
+      "简介：", "作者："
+    ]
+  },
+
+  "scrapeMode": "incremental",
+  "engine": "playwright",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/public/covers/book4-au/",
+  "threadCount": 1,
+  "minDelay": 2000,
+  "maxDelay": 4000,
+  "enableShuffle": false,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "discovery",
+    "domain": "book4.cc",
+    "encoding": "utf-8",
+    "engineType": "playwright",
+    "stealthEnabled": true,
+    "base64Decode": {
+      "enabled": true,
+      "jsVariable": "html_b"
+    },
+    "categoryMapping": {
+      "仙侠": "仙侠",
+      "玄幻": "玄幻",
+      "都市": "都市",
+      "历史": "历史",
+      "科幻": "科幻",
+      "悬疑": "悬疑",
+      "言情": "言情",
+      "武侠": "武侠",
+      "游戏": "游戏",
+      "奇幻": "奇幻"
+    },
+    "dbCategoryMapping": {
+      "仙侠": "cmsbmowiy0006q9wiv2vmlcpk",
+      "玄幻": "cmsbmowix0005q9wib1vpm9b8",
+      "都市": "cmsbmowiu0001q9wi1u5689c2",
+      "历史": "cmsbmowiz0007q9wij3sdkssc",
+      "科幻": "cmsbmowj00009q9wi3ocnqkl1",
+      "悬疑": "cmsbmowj1000aq9wi1tocjxkb",
+      "言情": "cmsbmowis0000q9wix8cxfzdk",
+      "武侠": "cmsbmowiy0006q9wiv2vmlcpk",
+      "游戏": "cmsbmowj00008q9wipys4q5or",
+      "奇幻": "cmsbmowix0005q9wib1vpm9b8"
+    }
+  }
+}

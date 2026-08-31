@@ -175,9 +175,15 @@ class CircuitBreaker {
    *   SCRAPER_CB_HALF_OPEN_MAX       (default: 1)
    */
   static create(name: string, opts?: CircuitBreakerOptions): CircuitBreaker {
+<<<<<<< HEAD
     const failureThreshold = opts?.failureThreshold ?? Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) ?? 5;
     const recoveryTimeout  = opts?.recoveryTimeout  ?? Number(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS) ?? 30000;
     const halfOpenMaxAttempts = opts?.halfOpenMaxAttempts ?? Number(process.env.SCRAPER_CB_HALF_OPEN_MAX) ?? 1;
+=======
+    const failureThreshold = opts?.failureThreshold || Number(process.env.SCRAPER_CB_FAILURE_THRESHOLD) || 5;
+    const recoveryTimeout  = opts?.recoveryTimeout  || Number(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS) || 30000;
+    const halfOpenMaxAttempts = opts?.halfOpenMaxAttempts || Number(process.env.SCRAPER_CB_HALF_OPEN_MAX) || 1;
+>>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
     return new CircuitBreaker(name, failureThreshold, recoveryTimeout, halfOpenMaxAttempts);
   }
 
@@ -1501,8 +1507,8 @@ class FirecrawlEngine implements ScrapingEngine {
           statusCode: response.status,
         };
         } catch (err) {
-          // Don't record circuit breaker failure for doNotRetry errors (e.g., size limits)
-          // — the service worked, only the content was too large
+          // Don't record circuit breaker failure for user aborts or doNotRetry errors
+          if (err instanceof DOMException && err.name === 'AbortError') { throw err; }
           if (!(err instanceof Error && (err as any).doNotRetry)) {
             firecrawlBreaker.recordFailure();
           }
@@ -1683,6 +1689,7 @@ class AgentQLEngine implements ScrapingEngine {
           statusCode: response.status,
         };
         } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') { throw err; }
           if (!(err instanceof Error && (err as any).doNotRetry)) {
             agentqlBreaker.recordFailure();
           }
@@ -1889,6 +1896,7 @@ class CloudBrowserEngine implements ScrapingEngine {
           statusCode,
         };
         } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') { throw err; }
           if (!(err instanceof Error && (err as any).doNotRetry)) {
             cloudBrowserBreaker.recordFailure();
           }
@@ -1934,9 +1942,16 @@ class ScraplingEngine implements ScrapingEngine {
         await scraplingBreaker.acquire();
 
         try {
-          // Per-domain rate limiting (inside try so circuit breaker releases on rate-limit throw)
+          // Per-domain rate limiting (OUTSIDE breaker try/catch so rate-limit
+          // throws don't get recorded as circuit breaker failures)
           await waitForRateLimit(scDomain, options?.signal);
 
+        } catch (rateLimitErr) {
+          // Re-throw rate-limit errors without tripping the breaker
+          throw rateLimitErr;
+        }
+
+        try {
           const response = await fetch(`${SCRAPLING_SERVICE_URL}/fetch`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1979,8 +1994,13 @@ class ScraplingEngine implements ScrapingEngine {
             statusCode: data.status_code || 200,
           };
         } catch (scraplingErr) {
+<<<<<<< HEAD
           const isRateLimit = scraplingErr instanceof Error && scraplingErr.message.includes('Rate limit');
           if (!(scraplingErr instanceof Error && (scraplingErr as any).doNotRetry) && !isRateLimit) {
+=======
+          if (scraplingErr instanceof DOMException && scraplingErr.name === 'AbortError') { throw scraplingErr; }
+          if (!(scraplingErr instanceof Error && (scraplingErr as any).doNotRetry)) {
+>>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
             scraplingBreaker.recordFailure();
           }
           throw scraplingErr;
@@ -2055,13 +2075,20 @@ const DEFAULT_BOT_DETECTION_DOMAINS = [
   'arkoselabs.com',             // FunCaptcha (Arkose Labs)
 ];
 
-/** Parse blocked bot-detection domains from env var or use defaults. */
+/** Parse blocked bot-detection domains from env var or use defaults. Cached to avoid re-parsing on every route interception. */
+let _cachedBlockedBotDomains: string[] | null = null;
+let _cachedBlockedBotDomainsEnv: string | undefined = undefined;
 function getBlockedBotDomains(): string[] {
   const envDomains = process.env.SCRAPER_BLOCKED_SCRIPT_DOMAINS;
-  if (envDomains) {
-    return envDomains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+  if (envDomains !== _cachedBlockedBotDomainsEnv || _cachedBlockedBotDomains === null) {
+    _cachedBlockedBotDomainsEnv = envDomains;
+    if (envDomains) {
+      _cachedBlockedBotDomains = envDomains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+    } else {
+      _cachedBlockedBotDomains = DEFAULT_BOT_DETECTION_DOMAINS;
+    }
   }
-  return DEFAULT_BOT_DETECTION_DOMAINS;
+  return _cachedBlockedBotDomains;
 }
 
 /**
@@ -2398,7 +2425,11 @@ class ObscuraEngine implements ScrapingEngine {
               }
 
               // SSRF protection: block non-HTTP/HTTPS navigations and unsafe targets
+<<<<<<< HEAD
               // Must include iframe/other to prevent data://, blob://, file:// navigations
+=======
+              // Cover all navigational/sub-document types (iframe/other) in addition to document/xhr/fetch
+>>>>>>> 866b4a2 (R60: 采集规则扩展+演示数据+繁简转换+安全修复)
               if (!routeUrl.startsWith("http://") && !routeUrl.startsWith("https://")) {
                 if (["document", "xhr", "fetch", "iframe", "other"].includes(resourceType)) {
                   route.abort();

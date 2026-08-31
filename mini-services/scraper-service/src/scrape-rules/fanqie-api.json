@@ -1,0 +1,175 @@
+{
+  "name": "番茄小说API (fanqie-novel-api)",
+  "description": "番茄小说API代理采集（fq.taijiwang.top）。基于Legado书源JSON的番茄小说API代理，engine设为cheerio（占位，待系统支持api引擎后切换）。所有数据通过API JSON响应获取，无需HTML解析。包含发现、搜索、书籍详情、章节列表、章节内容、评论等端点。",
+  "enabled": true,
+
+  "listUrl": "https://fq.taijiwang.top/api/discover/style?tab=小说&source_type=男频",
+  "listSelector": null,
+  "listPagination": null,
+
+  "bookTitleSelector": null,
+  "bookAuthorSelector": null,
+  "bookCategorySelector": null,
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": null,
+  "bookCoverSelector": null,
+  "bookStatusSelector": null,
+
+  "chapterListUrl": null,
+  "chapterListSelector": null,
+  "chapterTitleSelector": null,
+  "chapterLinkSelector": null,
+  "chapterPagination": null,
+
+  "contentTitleSelector": null,
+  "contentSelector": null,
+  "contentPagination": null,
+
+  "antiCrawlConfig": {
+    "useJsRender": false,
+    "uaRotation": false,
+    "delay": [500, 1000],
+    "humanBehavior": false,
+    "retries": 3,
+    "referer": null,
+    "customHeaders": {
+      "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36 SearchCraft/2.6.1 (Baidu; P1 10)"
+    }
+  },
+
+  "cleanConfig": {
+    "removeAds": false,
+    "cleanHtml": false,
+    "removePatterns": [],
+    "adPatterns": []
+  },
+
+  "scrapeMode": "incremental",
+  "engine": "cheerio",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/public/covers/fanqie/",
+  "threadCount": 2,
+  "minDelay": 500,
+  "maxDelay": 1000,
+  "enableShuffle": false,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "fq.taijiwang.top",
+    "encoding": "utf-8",
+    "engineType": "api",
+    "stealthEnabled": false,
+    "apiConfig": {
+      "baseUrl": "https://fq.taijiwang.top",
+      "userAgent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36 SearchCraft/2.6.1 (Baidu; P1 10)",
+      "endpoints": {
+        "discover": {
+          "url": "/api/discover/style",
+          "method": "GET",
+          "params": {
+            "tab": "{type}",
+            "source_type": "{channel}"
+          },
+          "defaults": {
+            "tab": "小说",
+            "source_type": "男频"
+          },
+          "channels": ["男频", "女频"],
+          "description": "发现/分类页，返回推荐书籍列表"
+        },
+        "search": {
+          "url": "/api/search",
+          "method": "GET",
+          "params": {
+            "key": "{keyword}",
+            "tab_type": "{type}",
+            "offset": "{offset}"
+          },
+          "defaults": {
+            "tab_type": "小说",
+            "offset": 0
+          },
+          "pageSize": 10,
+          "pagination": {
+            "type": "offset",
+            "offsetParam": "offset",
+            "step": 10
+          },
+          "description": "搜索书籍，offset分页，每页10条"
+        },
+        "bookDetail": {
+          "url": "/api/detail",
+          "method": "GET",
+          "params": {
+            "book_id": "{id}"
+          },
+          "description": "书籍详情，返回完整书籍信息"
+        },
+        "chapterList": {
+          "url": "/api/book",
+          "method": "GET",
+          "params": {
+            "bid": "{id}"
+          },
+          "description": "章节列表，返回卷+章节（含itemId）"
+        },
+        "chapterContent": {
+          "url": "/api/content",
+          "method": "GET",
+          "params": {
+            "tab": "{type}",
+            "item_id": "{id}",
+            "bid": "{bookId}"
+          },
+          "defaults": {
+            "tab": "小说"
+          },
+          "description": "章节正文内容"
+        },
+        "comments": {
+          "url": "/api/comment",
+          "method": "GET",
+          "params": {
+            "book_id": "{id}",
+            "count": 50,
+            "offset": "{offset}"
+          },
+          "defaults": {
+            "offset": 0
+          },
+          "description": "书籍评论，每页50条"
+        }
+      },
+      "fieldMapping": {
+        "title": "book_name",
+        "author": "author",
+        "cover": "thumb_url",
+        "category": "category",
+        "description": "abstract",
+        "status": {
+          "field": "creation_status",
+          "values": {
+            "0": "连载中",
+            "1": "已完结"
+          }
+        },
+        "wordCount": "word_number",
+        "rating": "score",
+        "keywords": "tags",
+        "sourceId": "book_id"
+      },
+      "responseFormat": {
+        "type": "json",
+        "dataPath": "data",
+        "listPath": "data.data",
+        "bookPath": "data.book_data",
+        "chapterListPath": "data.volume_list",
+        "chapterItemsPath": "chapter_list",
+        "contentPath": "data.content",
+        "totalField": "data.total_count"
+      }
+    }
+  }
+}

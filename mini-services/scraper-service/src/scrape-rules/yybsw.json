@@ -1,0 +1,111 @@
+{
+  "name": "夜伴书屋 (yybsw.com)",
+  "description": "夜伴书屋全站采集。UTF-8编码，Apache+Cloudflare。首页可正常访问，子页面受Cloudflare WAF保护需要playwright+stealth模式。已知DOM: .book-type ol.breadcrumb分类, .col-md-6.b10 .media书籍项, .media-left a[href^=\"/book/\"]链接, .book-img img封面, .media-title h4 a标题, .media-title span.dark作者, .media-info简介。高延迟配合Cloudflare挑战等待。",
+  "enabled": true,
+
+  "listUrl": "https://www.yybsw.com/list/{catId}.html",
+  "listSelector": { "type": "css", "value": ".col-md-6.b10 .media" },
+  "listPagination": { "type": "page", "selector": ".pagination a, .page a, .pages a", "maxPage": 300 },
+
+  "bookTitleSelector": { "type": "css", "value": ".media-title h4 a" },
+  "bookAuthorSelector": { "type": "css", "value": ".media-title span.dark" },
+  "bookCategorySelector": { "type": "css", "value": ".book-type ol.breadcrumb li a" },
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": { "type": "css", "value": ".media-info" },
+  "bookCoverSelector": { "type": "css", "value": ".book-img img", "extract": "src" },
+  "bookStatusSelector": null,
+
+  "chapterListUrl": "https://www.yybsw.com/book/{bookId}/",
+  "chapterListSelector": { "type": "css", "value": ".chapter-list a, .listmain dd a, #list dl dd a" },
+  "chapterTitleSelector": { "type": "css", "value": ".chapter-list a, .listmain dd a, #list dl dd a" },
+  "chapterLinkSelector": { "type": "css", "value": ".chapter-list a, .listmain dd a, #list dl dd a" },
+  "chapterPagination": null,
+
+  "contentTitleSelector": { "type": "css", "value": "h1, .chapter-title, title" },
+  "contentSelector": { "type": "css", "value": "#content, .content, .chapter-content" },
+  "contentPagination": { "type": "next", "selector": "a:contains(下一页), a.next", "maxPage": 1 },
+
+  "antiCrawlConfig": {
+    "useJsRender": true,
+    "uaRotation": true,
+    "delay": [4000, 7000],
+    "humanBehavior": true,
+    "retries": 5,
+    "referer": "https://www.yybsw.com/",
+    "cloudflareBypass": {
+      "enabled": true,
+      "waitForChallenge": true,
+      "challengeTimeout": 15000,
+      "verifyCleared": true
+    },
+    "stealthOptions": {
+      "blockResources": true,
+      "emulateDevice": "desktop"
+    }
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".ad", ".ads", ".advertisement",
+      ".chapter-nav", ".footer", ".header",
+      ".recommend", ".related",
+      "#ad", "[id^=div-gpt-ad]",
+      "ins.adsbygoogle",
+      ".read-nav", ".page-chapter",
+      ".bottem, .bottom",
+      "script", ".share-box",
+      ".breadcrumb", ".book-type"
+    ],
+    "adPatterns": [
+      "yybsw", "夜伴书屋", "yybsw.com",
+      "请记住本书", "手机用户请浏览",
+      "本章未完", "最快更新",
+      "本章最新章节", "请访问",
+      "如果您喜欢", "分享到",
+      "扫码关注", "微信公众号",
+      "关注公众号", "关注我们",
+      "TXT下载", "全本下载",
+      "返回目录", "章节列表",
+      "推荐本书", "打赏",
+      "本章完", "本章结束",
+      "完结感言", "在线听书",
+      "最新章节", "请牢记",
+      "加入书架", "投推荐票",
+      "直达底部", "目录",
+      "番茄小说", "起点中文网",
+      "笔趣阁", "无弹窗",
+      "Cloudflare", "cf-browser-verification"
+    ]
+  },
+
+  "scrapeMode": "incremental",
+  "engine": "playwright",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/public/covers/yybsw/",
+  "threadCount": 1,
+  "minDelay": 4000,
+  "maxDelay": 7000,
+  "enableShuffle": true,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "yybsw.com",
+    "encoding": "utf-8",
+    "engineType": "playwright",
+    "stealthEnabled": true,
+    "categoryMapping": {
+      "xuanhuan": "玄幻奇幻",
+      "wuxia": "武侠仙侠",
+      "dushi": "都市言情",
+      "lishi": "历史军事",
+      "kehuan": "科幻灵异",
+      "youxi": "网游竞技",
+      "kongbu": "恐怖灵异",
+      "qita": "其他类型"
+    }
+  }
+}
