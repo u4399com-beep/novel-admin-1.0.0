@@ -91,7 +91,7 @@ export default function HomePage() {
     const abortController = new AbortController();
     async function load() {
       try {
-        const data = await apiFetch<Category[]>('/api/public/categories', { signal: abortController.signal });
+        const data = await apiFetch<Category[]>('/api/public/categories', { signal: abortController.signal, silent: true });
         setCategories(data);
       } catch (err) {
         // Categories are non-critical; the UI shows no category buttons on failure
@@ -120,7 +120,7 @@ export default function HomePage() {
         if (activeWordCount && activeWordCount !== 'all') params.set('wordCount', activeWordCount);
         if (activeSort) params.set('sort', activeSort);
         if (debouncedSearch) params.set('search', debouncedSearch);
-        const data = await apiFetch<{ novels?: Novel[]; totalPages?: number; total?: number }>(`/api/public/novels?${params}`, { signal: abortController.signal });
+        const data = await apiFetch<{ novels?: Novel[]; totalPages?: number; total?: number }>(`/api/public/novels?${params}`, { signal: abortController.signal, silent: true });
         setNovels(data.novels || []);
         setTotalPages(data.totalPages || 0);
         setTotal(data.total || 0);
