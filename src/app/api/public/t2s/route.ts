@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { sanitizeField } from '@/lib/api-utils';
+import { sanitizeField, safeJson } from '@/lib/api-utils';
 import { convertTraditionalToSimplified, isProbablyTraditional } from '@/lib/t2s-converter';
 
 /**
@@ -12,7 +12,13 @@ import { convertTraditionalToSimplified, isProbablyTraditional } from '@/lib/t2s
  */
 export const POST = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async (request: NextRequest) => {
   try {
-    const body = (await request.json()) as { text?: unknown };
+    let body: { text?: unknown };
+    try {
+      body = await safeJson<{ text?: unknown }>(request);
+    } catch {
+      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+    }
+
     const raw = typeof body?.text === 'string' ? body.text : '';
 
     if (!raw) {

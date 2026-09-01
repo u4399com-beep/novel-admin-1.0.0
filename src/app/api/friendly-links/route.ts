@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { sanitizeField, safeJson, isPrismaError, apiError, apiSuccess, parsePagination } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
-import { withAuth } from "@/lib/api-auth";
+import { withAuth, withPublicRateLimit } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
 import {
   MAX_TITLE_LENGTH,
@@ -11,8 +11,8 @@ import {
   isValidLinkType,
 } from "@/lib/validation/friendly-links";
 
-// GET /api/friendly-links - List enabled friendly links (public, no auth)
-export async function GET(request: NextRequest) {
+// GET /api/friendly-links - List enabled friendly links (public, rate limited)
+export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const linkType = searchParams.get('linkType');
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     console.error("List friendly links error:", error);
     return apiError("获取友情链接列表失败");
   }
-}
+});
 
 // POST /api/friendly-links - Create friendly link (requires auth)
 export const POST = withAuth(async function POST(request: NextRequest) {

@@ -187,7 +187,7 @@ export function withAuth(handlerOrOpts: ApiHandler | WithAuthOptions, maybeHandl
 
       // Unauthenticated — bypass in testing mode, otherwise return 401
       if (BYPASS_AUTH) {
-        console.warn(`[${new Date().toISOString()}] [AUTH BYPASS] Unauthenticated request to ${request.method} ${url.pathname} — allowed (testing mode)`);
+        console.warn(`[${new Date().toISOString()}] [AUTH BYPASS] Unauthenticated request to ${request.method} ${request.nextUrl.pathname} — allowed (testing mode)`);
       } else {
         const rl = rateLimit(getClientIp(request));
         return NextResponse.json(

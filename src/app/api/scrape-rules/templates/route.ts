@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { SCRAPE_TEMPLATES, searchTemplates } from '@/lib/scrape-templates';
 import { apiSuccess } from '@/lib/api-utils';
+import { withAuth } from '@/lib/api-auth';
 
 /**
  * GET /api/scrape-rules/templates
  * 返回模板列表，支持 ?search=xxx 过滤
  */
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const search = (searchParams.get('search') || '').trim();
   const templates = searchTemplates(search);
@@ -45,4 +46,4 @@ export async function GET(request: NextRequest) {
         : null,
     })),
   });
-}
+});

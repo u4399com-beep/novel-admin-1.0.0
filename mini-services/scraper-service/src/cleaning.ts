@@ -975,7 +975,7 @@ export function handleClean(body: CleanRequest) {
   return {
     content,
     wordCount: (() => {
-      const cjk = (content.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g) || []).length;
+      const cjk = (content.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\uac00-\ud7af\u1100-\u11ff\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
       const english = (content.match(/[a-zA-Z]+/g) || []).length;
       return cjk + english;
     })(),

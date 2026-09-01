@@ -530,6 +530,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   Object.defineProperty(navigator, 'webdriver', {
     get: () => false,
     configurable: true,
+    enumerable: true,
   });
 
   // Also delete from prototype chain
@@ -537,7 +538,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // Also override at the prototype level (catches cross-frame checks)
   try {
-    Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false, configurable: true });
+    Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false, configurable: true, enumerable: true });
   } catch(_e) {}
 
   // Override navigator.userAgentData (Chrome 90+ Client Hints API)
@@ -637,17 +638,20 @@ export function getStealthScript(profile: FingerprintProfile): string {
   Object.defineProperty(navigator, 'languages', {
     get: () => ${languagesJSON},
     configurable: true,
+    enumerable: true,
   });
 
   Object.defineProperty(navigator, 'language', {
     get: () => ${JSON.stringify(profile.languages[0])},
     configurable: true,
+    enumerable: true,
   });
 
   // Hardware
   Object.defineProperty(navigator, 'hardwareConcurrency', {
     get: () => ${profile.hardwareConcurrency},
     configurable: true,
+    enumerable: true,
   });
 
   // deviceMemory — Firefox doesn't implement this API
@@ -655,6 +659,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     Object.defineProperty(navigator, 'deviceMemory', {
       get: () => ${profile.deviceMemory},
       configurable: true,
+      enumerable: true,
     });
   }
 
@@ -662,17 +667,19 @@ export function getStealthScript(profile: FingerprintProfile): string {
   Object.defineProperty(navigator, 'platform', {
     get: () => ${JSON.stringify(profile.platform)},
     configurable: true,
+    enumerable: true,
   });
 
   // Max touch points (desktop = 0)
   Object.defineProperty(navigator, 'maxTouchPoints', {
     get: () => 0,
     configurable: true,
+    enumerable: true,
   });
 
   // pdfViewerEnabled — all modern browsers have built-in PDF viewers
   try {
-    Object.defineProperty(navigator, 'pdfViewerEnabled', { get: () => true, configurable: true });
+    Object.defineProperty(navigator, 'pdfViewerEnabled', { get: () => true, configurable: true, enumerable: true });
   } catch(_e) {}
 
   // Remove other automation indicators
@@ -683,6 +690,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   Object.defineProperty(navigator, 'userAgent', {
     get: () => PROFILE.userAgent,
     configurable: true,
+    enumerable: true,
   });
 
   // AppVersion consistent with platform
@@ -695,12 +703,14 @@ export function getStealthScript(profile: FingerprintProfile): string {
   Object.defineProperty(navigator, 'appVersion', {
     get: () => appVersion,
     configurable: true,
+    enumerable: true,
   });
 
   // Vendor — Chrome says "Google Inc.", Firefox returns ""
   Object.defineProperty(navigator, 'vendor', {
     get: () => _isFirefox ? '' : 'Google Inc.',
     configurable: true,
+    enumerable: true,
   });
 
   // ---- 2. Chrome Object Override ----
@@ -1033,43 +1043,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
   } catch(e) {}
 
   // ---- 7. WebRTC Leak Prevention ----
-
-  // Override RTCPeerConnection to prevent local IP leaks
-  if (window.RTCPeerConnection) {
-    const OrigRTCPC = window.RTCPeerConnection;
-    window.RTCPeerConnection = function(...args) {
-      // Return a dummy that doesn't gather candidates
-      var noop = () => {};
-      var _fakeSdp = 'v=0\r\no=- ' + Math.floor(Date.now()/1000) + ' 1 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\na=msid-semantic: WMS\r\nm=application 9 DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=setup:actpass\r\n';
-      const fakePC = Object.create(OrigRTCPC.prototype);
-      Object.defineProperties(fakePC, {
-        createOffer: { value: () => Promise.resolve({type: 'offer', sdp: _fakeSdp}) },
-        createAnswer: { value: () => Promise.resolve({type: 'answer', sdp: _fakeSdp}) },
-        setLocalDescription: { value: () => Promise.resolve() },
-        setRemoteDescription: { value: () => Promise.resolve() },
-        addIceCandidate: { value: () => Promise.resolve() },
-        close: { value: noop },
-        getStats: { value: () => Promise.resolve(new Map()) },
-        getSenders: { value: () => [] },
-        getReceivers: { value: () => [] },
-        getStreams: { value: () => [] },
-        addTrack: { value: () => {} },
-        removeTrack: { value: noop },
-        addTransceiver: { value: noop },
-        onicecandidate: { value: null, writable: true },
-        oniceconnectionstatechange: { value: null, writable: true },
-        ontrack: { value: null, writable: true },
-        ondatachannel: { value: null, writable: true },
-        iceGatheringState: { value: 'new', writable: true },
-        iceConnectionState: { value: 'new', writable: true },
-        signalingState: { value: 'stable', writable: true },
-        connectionState: { value: 'new', writable: true },
-      });
-      return fakePC;
-    };
-    // Preserve static methods
-    window.RTCPeerConnection.prototype = OrigRTCPC.prototype;
-  }
+  // NOTE: The comprehensive WebRTC override is in Section 101 (sanitizes ICE config,
+  // blocks onicecandidate events, preserves real RTCPeerConnection prototype chain).
+  // A simpler fake override was previously here but conflicted with Section 101.
+  // Section 101 runs later and handles all WebRTC evasion.
 
   // Also prevent webkitRTCPeerConnection leaks
   if (window.webkitRTCPeerConnection) {
@@ -1617,7 +1594,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
     // Ensure performance.timing.navigationStart is consistent
     if (performance.timing) {
-      var _navStart = Date.now() - 3000;
+      // Invariant: navigationStart + performance.now() ≈ Date.now()
+      // _perfOffset is added to performance.now() above, so subtract it here.
+      // This prevents Cloudflare-style timing invariant detection.
+      var _navStart = (performance.timeOrigin || Date.now()) - _perfOffset;
       try {
         Object.defineProperty(performance.timing, 'navigationStart', {
           get: function() { return _navStart; },
@@ -2445,6 +2425,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
       Permissions.prototype.query = function(desc) {
         var name = desc && desc.name ? desc.name : '';
         var result = permissionStates[name] || { state: 'prompt', onchange: null };
+        // Ensure PermissionStatus has event methods (consistent with Section 104)
+        if (!result.addEventListener) result.addEventListener = function() {};
+        if (!result.removeEventListener) result.removeEventListener = function() {};
+        if (typeof result.dispatchEvent !== 'function') result.dispatchEvent = function() { return false; };
         return Promise.resolve(result);
       };
     } catch(e) {}
@@ -3095,6 +3079,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     Object.defineProperty(navigator, 'doNotTrack', {
       get: function() { return null; },
       configurable: true,
+      enumerable: true,
     });
   } catch(e) {}
 
@@ -3672,15 +3657,19 @@ export function getStealthScript(profile: FingerprintProfile): string {
     if (navigator.permissions && navigator.permissions.query) {
       var _origPermQuery = navigator.permissions.query.bind(navigator.permissions);
       var _permMap = {
-        'notifications': 'prompt',
+        'notifications': 'default',  // Fresh browser: not yet asked (matches Section 38)
         'geolocation': 'prompt',
         'camera': 'prompt',
         'microphone': 'prompt',
         'clipboard-read': 'prompt',
         'clipboard-write': 'granted',
+        'push': 'prompt',
+        'midi': 'prompt',
         'accelerometer': 'prompt',
         'gyroscope': 'prompt',
         'magnetometer': 'prompt',
+        'fullscreen': 'prompt',
+        'persistent-storage': 'prompt',
         'ambient-light-sensor': 'prompt',
       };
       function _makePermissionStatus(state) {
@@ -3759,21 +3748,11 @@ export function getStealthScript(profile: FingerprintProfile): string {
     window.resizeBy = function() {};
     window.moveTo = function() {};
     window.moveBy = function() {};
-    // Ensure screen.width * devicePixelRatio is approximately equal to window.innerWidth
-    // (within rounding tolerance of 1px). Patch screen.width/height to stay consistent.
-    var _origScreenW = Object.getOwnPropertyDescriptor(Screen.prototype, 'width');
-    var _origScreenH = Object.getOwnPropertyDescriptor(Screen.prototype, 'height');
-    if (_origScreenW && _origScreenH) {
-      var _dpr = window.devicePixelRatio || 1;
-      var _consistentW = Math.round(window.innerWidth * _dpr);
-      var _consistentH = Math.round(window.innerHeight * _dpr);
-      Object.defineProperty(screen, 'width', { get: function() { return _consistentW; }, configurable: true });
-      Object.defineProperty(screen, 'height', { get: function() { return _consistentH; }, configurable: true });
-      // Keep availWidth/availHeight slightly smaller (taskbar deduction: 30-40px)
-      var _taskbar = 30 + Math.floor(_seededRandom(106.3) * 10);
-      Object.defineProperty(screen, 'availWidth', { get: function() { return _consistentW; }, configurable: true });
-      Object.defineProperty(screen, 'availHeight', { get: function() { return Math.max(100, _consistentH - _taskbar); }, configurable: true });
-    }
+    // NOTE: Screen dimensions (width/height/availWidth/availHeight) are handled by
+    // Section 6 using PROFILE values. We do NOT recompute them from innerWidth*dpr here
+    // because: (a) it would conflict with Section 6's profile-consistent values,
+    // (b) in non-maximized windows, innerWidth*dpr ≠ screen.width, and
+    // (c) Playwright viewport should already match the profile (engines.ts sets it).
   } catch(_scrErr) {}
 
   // ==================== Section 107: Storage API Quota Spoofing ====================
@@ -3827,12 +3806,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // ==================== Section 109: Gamepad API Stubbing ====================
   // navigator.getGamepads() and gamepad events can reveal automation when the API
-  // is missing or returns unexpected values. Real browsers without gamepads connected
-  // return an empty array, not null or undefined.
+  // is missing or returns unexpected values. Real Chrome without gamepads connected
+  // returns [null, null, null, null] (4 null slots), NOT an empty array.
   try {
     if (navigator.getGamepads) {
       navigator.getGamepads = function() {
-        return [];
+        return [null, null, null, null];
       };
     }
     // Ensure event listeners for gamepadconnected/gamepaddisconnected are no-ops
@@ -3914,6 +3893,75 @@ export function getStealthScript(profile: FingerprintProfile): string {
       });
     }
   } catch(_stackErr) {}
+
+  // ==================== Section 113: Function.prototype.toString Comprehensive Masking ====================
+  // Anti-bot systems call Function.prototype.toString on overridden prototype methods.
+  // If the source doesn't contain '[native code]', the page is flagged as automated.
+  // We scan all standard prototypes for non-native functions and mask their toString output.
+  try {
+    var _tsNativeToString = Function.prototype.toString;
+    var _tsMaskedSet = new WeakSet();
+
+    function _tsScanProto(proto) {
+      try {
+        if (!proto) return;
+        var _tsProps = Object.getOwnPropertyNames(proto);
+        for (var _tsi = 0; _tsi < _tsProps.length; _tsi++) {
+          try {
+            var _tsDesc = Object.getOwnPropertyDescriptor(proto, _tsProps[_tsi]);
+            if (!_tsDesc) continue;
+            var _tsFns = [_tsDesc.get, _tsDesc.set, _tsDesc.value];
+            for (var _tsfi = 0; _tsfi < _tsFns.length; _tsfi++) {
+              var _tsFn = _tsFns[_tsfi];
+              if (typeof _tsFn === 'function' && !_tsMaskedSet.has(_tsFn)) {
+                try {
+                  var _tsStr = _tsNativeToString.call(_tsFn);
+                  if (typeof _tsStr === 'string' && _tsStr.indexOf('[native code]') < 0) {
+                    _tsMaskedSet.add(_tsFn);
+                  }
+                } catch(_tsScanErr) {}
+              }
+            }
+          } catch(_tsPropErr) {}
+        }
+      } catch(_tsProtoErr) {}
+    }
+
+    _tsScanProto(Navigator.prototype);
+    _tsScanProto(Screen.prototype);
+    _tsScanProto(Document.prototype);
+    _tsScanProto(HTMLCanvasElement.prototype);
+    _tsScanProto(CanvasRenderingContext2D.prototype);
+    _tsScanProto(WebGLRenderingContext.prototype);
+    if (typeof WebGL2RenderingContext !== 'undefined') _tsScanProto(WebGL2RenderingContext.prototype);
+    _tsScanProto(AudioContext.prototype);
+    if (typeof OfflineAudioContext !== 'undefined') _tsScanProto(OfflineAudioContext.prototype);
+    _tsScanProto(AnalyserNode.prototype);
+    _tsScanProto(Performance.prototype);
+    _tsScanProto(PerformanceObserver.prototype);
+    if (typeof Permissions !== 'undefined') _tsScanProto(Permissions.prototype);
+    if (typeof RTCPeerConnection !== 'undefined') _tsScanProto(RTCPeerConnection.prototype);
+    _tsScanProto(Element.prototype);
+    if (typeof OffscreenCanvas !== 'undefined') _tsScanProto(OffscreenCanvas.prototype);
+    if (typeof FontFaceSet !== 'undefined') _tsScanProto(FontFaceSet.prototype);
+    if (typeof PerformanceResourceTiming !== 'undefined') _tsScanProto(PerformanceResourceTiming.prototype);
+    if (typeof Error !== 'undefined') _tsScanProto(Error.prototype);
+    try { _tsScanProto(navigator); } catch(_tsNavErr) {}
+    try { _tsScanProto(window); } catch(_tsWinErr) {}
+    try { _tsScanProto(document); } catch(_tsDocErr) {}
+    try { _tsScanProto(screen); } catch(_tsScrErr) {}
+
+    Function.prototype.toString = function() {
+      if (this === Function.prototype.toString) {
+        return 'function toString() { [native code] }';
+      }
+      if (_tsMaskedSet.has(this)) {
+        var _tsName = this.name || '';
+        return 'function ' + _tsName + '() { [native code] }';
+      }
+      return _tsNativeToString.call(this);
+    };
+  } catch(_toStringMaskErr) {}
 
 })();
 `;

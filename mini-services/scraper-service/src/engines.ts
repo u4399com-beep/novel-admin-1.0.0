@@ -175,7 +175,10 @@ class CircuitBreaker {
    *   SCRAPER_CB_HALF_OPEN_MAX       (default: 1)
    */
   static create(name: string, opts?: CircuitBreakerOptions): CircuitBreaker {
-    return new CircuitBreaker(name, failureThreshold, recoveryTimeout, halfOpenMaxAttempts);
+    const threshold = opts?.failureThreshold ?? parseInt(process.env.SCRAPER_CB_FAILURE_THRESHOLD || '5', 10);
+    const reset = opts?.recoveryTimeout ?? parseInt(process.env.SCRAPER_CB_RECOVERY_TIMEOUT_MS || '30000', 10);
+    const halfOpen = opts?.halfOpenMaxAttempts ?? parseInt(process.env.SCRAPER_CB_HALF_OPEN_MAX || '1', 10);
+    return new CircuitBreaker(name, threshold, reset, halfOpen);
   }
 
   private _name: string;
@@ -198,6 +201,16 @@ class CircuitBreaker {
       }
       this._halfOpenInFlight++;
     }
+  }
+
+  /**
+   * Release a half-open in-flight slot WITHOUT recording success or failure.
+   * Used when a request is aborted or hits a non-service error (e.g. doNotRetry)
+   * that should not influence the circuit breaker's failure count.
+   * Safe to call in any state (no-op when not in half-open).
+   */
+  release(): void {
+    this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
   }
 
   recordSuccess(): void {
@@ -1502,10 +1515,16 @@ class FirecrawlEngine implements ScrapingEngine {
           statusCode: response.status,
         };
         } catch (err) {
-          // Don't record circuit breaker failure for user aborts or doNotRetry errors
-          if (err instanceof DOMException && err.name === 'AbortError') { throw err; }
+          // Don't record circuit breaker failure for user aborts or doNotRetry errors,
+          // but MUST release the half-open in-flight slot to prevent counter leak.
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            firecrawlBreaker.release();
+            throw err;
+          }
           if (!(err instanceof Error && (err as any).doNotRetry)) {
             firecrawlBreaker.recordFailure();
+          } else {
+            firecrawlBreaker.release(); // doNotRetry (e.g. size limit) is not a service failure
           }
           throw err;
         }
@@ -1684,9 +1703,14 @@ class AgentQLEngine implements ScrapingEngine {
           statusCode: response.status,
         };
         } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') { throw err; }
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            agentqlBreaker.release();
+            throw err;
+          }
           if (!(err instanceof Error && (err as any).doNotRetry)) {
             agentqlBreaker.recordFailure();
+          } else {
+            agentqlBreaker.release();
           }
           throw err;
         }
@@ -1891,9 +1915,14 @@ class CloudBrowserEngine implements ScrapingEngine {
           statusCode,
         };
         } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') { throw err; }
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            cloudBrowserBreaker.release();
+            throw err;
+          }
           if (!(err instanceof Error && (err as any).doNotRetry)) {
             cloudBrowserBreaker.recordFailure();
+          } else {
+            cloudBrowserBreaker.release();
           }
           throw err;
         }
@@ -1933,17 +1962,17 @@ class ScraplingEngine implements ScrapingEngine {
 
     return retryWithBackoff(
       async () => {
-        // Check circuit breaker BEFORE making request (prevents requests when service is down)
-        await scraplingBreaker.acquire();
+        // Per-domain rate limiting BEFORE circuit breaker acquire so that
+        // rate-limit throws don't leak the breaker's _halfOpenInFlight counter.
+        await waitForRateLimit(scDomain, options?.signal);
 
+        // Check circuit breaker AFTER rate-limit check (prevents requests when service is down)
         try {
-          // Per-domain rate limiting (OUTSIDE breaker try/catch so rate-limit
-          // throws don't get recorded as circuit breaker failures)
-          await waitForRateLimit(scDomain, options?.signal);
-
-        } catch (rateLimitErr) {
-          // Re-throw rate-limit errors without tripping the breaker
-          throw rateLimitErr;
+          await scraplingBreaker.acquire();
+        } catch (cbErr) {
+          // Circuit breaker is open or half-open — re-throw without recording failure
+          // (the breaker already manages its own state internally)
+          throw cbErr;
         }
 
         try {
@@ -1989,6 +2018,16 @@ class ScraplingEngine implements ScrapingEngine {
             statusCode: data.status_code || 200,
           };
         } catch (scraplingErr) {
+          // Don't record aborts or doNotRetry errors as circuit breaker failures.
+          // Abort = user cancelled (service is healthy), doNotRetry = content issue (not service fault).
+          if (scraplingErr instanceof DOMException && scraplingErr.name === 'AbortError') {
+            scraplingBreaker.release();
+            throw scraplingErr;
+          }
+          if (scraplingErr instanceof Error && (scraplingErr as any).doNotRetry) {
+            scraplingBreaker.release();
+            throw scraplingErr;
+          }
           scraplingBreaker.recordFailure();
           throw scraplingErr;
         }

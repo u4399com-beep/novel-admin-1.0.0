@@ -22929,3 +22929,242 @@ Task: 并行多agent全量开发 — 采集规则/t2s/友链/stealth/审计修�
 - scraper-service: engines.ts + task-engine.ts + cleaning.ts 编译通过
 - 友情链接: 25条入库
 
+---
+Task ID: 4-b
+Agent: stealth.ts auditor
+Task: Deep line-by-line code audit and enhancement of stealth.ts anti-detection module
+
+Work Log:
+- Read worklog.md (22931 lines) to identify previously-fixed issues and avoid duplication
+- Read full stealth.ts (4241 lines, 113 sections) for comprehensive audit
+- Identified and fixed 7 new issues (not previously addressed)
+
+## Fix 1 (HIGH): Performance timing invariant broken (Section 25, L1619)
+- **Problem**: `performance.timing.navigationStart` was set to `Date.now() - 3000` (fixed 3000ms), while `performance.now()` added a 1000-3000ms seeded offset. This broke the invariant `navigationStart + performance.now() ≈ Date.now()` by up to 1500ms. Cloudflare Bot Management checks this exact invariant.
+- **Fix**: Changed `navigationStart` to `(performance.timeOrigin || Date.now()) - _perfOffset`, ensuring the invariant holds exactly.
+- **File**: stealth.ts L1619-1630
+
+## Fix 2 (HIGH): Function.prototype.toString detection gap (new Section 113)
+- **Problem**: Section 11 only masked its own toString, leaving ALL other patched prototype methods exposed. Anti-bot calls `Function.prototype.toString.call(navigator.permissions.query)` and checks for `[native code]` — our patched functions revealed stealth source code.
+- **Fix**: Added Section 113 — a WeakSet-based prototype scanner that runs at the end of the IIFE, scans 19+ standard prototypes (Navigator, Screen, Document, HTMLCanvasElement, CanvasRenderingContext2D, WebGLRenderingContext, WebGL2, AudioContext, OfflineAudioContext, AnalyserNode, Performance, PerformanceObserver, Permissions, RTCPeerConnection, Element, OffscreenCanvas, FontFaceSet, PerformanceResourceTiming, Error) + 4 instance objects (navigator, window, document, screen), and masks all non-native function toString outputs.
+- **File**: stealth.ts L3921-3988 (+68 lines)
+
+## Fix 3 (MEDIUM): Section 106 screen dimension override conflicts with Section 6
+- **Problem**: Section 106 unconditionally recomputed `screen.width = Math.round(window.innerWidth * dpr)` from the viewport, overwriting Section 6's profile-consistent values. This made `PROFILE.screenWidth` dead code and created a fingerprint mismatch when Playwright viewport ≠ profile screen resolution (e.g., default 1280x720 viewport with 1920x1080 profile). Also, in non-maximized windows, `innerWidth * dpr ≠ screen.width`.
+- **Fix**: Removed screen.width/height/availWidth/availHeight overrides from Section 106, keeping only outerWidth/outerHeight and resizeTo/moveBy (which are Section 106's unique contributions). Section 6 retains full control of screen dimensions.
+- **File**: stealth.ts L3765-3770
+
+## Fix 4 (MEDIUM): Section 109 getGamepads returns wrong format
+- **Problem**: `navigator.getGamepads()` returned `[]` (empty array), but real Chrome returns `[null, null, null, null]` (4 null slots) when no gamepads are connected. Detection scripts check array length.
+- **Fix**: Changed return value to `[null, null, null, null]`.
+- **File**: stealth.ts L3827-3828
+
+## Fix 5 (MEDIUM): Permissions API triple-override inconsistency
+- **Problem**: Three sections override `permissions.query()` with DIFFERENT notification states: Section 8 (instance) returns 'default', Section 38 (prototype) returns 'default', Section 104 (instance, runs last) returns 'prompt'. Since Section 104 wins for normal calls, notifications='prompt'. But prototype-level calls (e.g., `Permissions.prototype.query.call(...)`) return 'default'. Also, Section 38's PermissionStatus objects lacked addEventListener/removeEventListener/dispatchEvent methods.
+- **Fix**: (a) Changed Section 104's notification state from 'prompt' to 'default' to match Section 38. (b) Added missing permissions to Section 104's map (push, midi, fullscreen, persistent-storage). (c) Added event methods to Section 38's PermissionStatus objects for prototype/instance consistency.
+- **File**: stealth.ts L2448-2456, L3677-3692
+
+## Fix 6 (MEDIUM): navigator property descriptors missing enumerable:true
+- **Problem**: All navigator property overrides used `Object.defineProperty` with default `enumerable: false`. Real Chrome defines these properties with `enumerable: true` on `Navigator.prototype`. Detection scripts check `Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver').enumerable` to detect overrides.
+- **Fix**: Added `enumerable: true` to 13 navigator property overrides: webdriver (instance + prototype), languages, language, hardwareConcurrency, deviceMemory, platform, maxTouchPoints, pdfViewerEnabled, userAgent, appVersion, vendor, doNotTrack.
+- **File**: stealth.ts L530-714, L3112-3116
+
+## Fix 7 (MEDIUM): Section 7 WebRTC fake conflicts with Section 101
+- **Problem**: Section 7 replaced `window.RTCPeerConnection` with a fake dummy object. Section 101 (comprehensive WebRTC override) tried to capture the "original" RTCPeerConnection, but got Section 7's fake instead. Result: Section 101 wrapped a fake (not the real RTCPeerConnection), so its ICE server sanitization never worked. The prototype chain was also broken (Object.create of the fake's prototype, not the real one).
+- **Fix**: Removed Section 7's fake RTCPeerConnection constructor (~35 lines). Section 101 now correctly captures the real RTCPeerConnection and wraps it with ICE blocking + config sanitization. Kept Section 7's webkitRTCPeerConnection alias.
+- **File**: stealth.ts L1045-1054
+
+## Additional Findings (INFO — not fixed, noted for future)
+- Section 109 patches `EventTarget.prototype.addEventListener` globally to swallow gamepad events. This is itself a detection vector (prototype modification visible via toString). Section 113's toString masking mitigates this.
+- Section 103 Battery API overrides Section 29 with different values (Section 29: 0.55-0.95 level; Section 103: desktop=1.0, mobile=0.6-1.0). Section 103 wins (runs last). Section 29 is now dead code for battery.
+- Section 107 Storage estimate() overrides Section 14 with different quota values (Section 14: 260-450GB; Section 107: ~80-150GB desktop). Section 107 wins. Section 14 is now dead code for storage.
+- Languages hardcoded to zh-CN variants (noted in prior audits as MEDIUM, still present — requires LANGUAGE_VARIANTS expansion)
+
+Stage Summary:
+- 7 issues fixed (2 HIGH, 5 MEDIUM)
+- 1 new Section added (113: Function.prototype.toString masking)
+- 1 Section simplified (7: WebRTC — removed conflicting fake)
+- stealth.ts: 4241 → 4289 lines (+48 net)
+- TypeScript compilation: no new errors (only pre-existing TS2802 Map iteration)
+- Stealth sections: 113 (was 112 before Section 113 addition; Section 7 simplified)
+
+---
+Task ID: 4-c
+Agent: Next.js API auditor
+Task: Deep line-by-line audit of API routes and library modules
+
+Work Log:
+- Read full worklog (22990 lines) to catalog all previously-fixed issues across 5+ prior audit rounds
+- Audited 32 files in src/lib/ and 90+ API route handlers in src/app/api/
+- Found 7 new bugs (1 HIGH, 2 MEDIUM, 4 LOW) not previously reported
+- All bugs fixed and verified with tsc --noEmit (0 new errors) and eslint (0 errors)
+
+## New Bugs Found & Fixed
+
+### HIGH
+1. **H-1: withAuth() crashes on undefined `url` variable** (`src/lib/api-auth.ts` line 190)
+   - When `BYPASS_AUTH=true` and no auth token is provided, `console.warn` references `url.pathname` but `url` is never declared
+   - This throws `ReferenceError: url is not defined` on every unauthenticated request, making the app completely broken in testing mode
+   - Fix: replaced `url.pathname` with `request.nextUrl.pathname`
+
+### MEDIUM
+2. **M-1: scrape-rules/templates GET endpoint missing authentication** (`src/app/api/scrape-rules/templates/route.ts`)
+   - Exposes internal scrape rule configurations (site URLs, selector patterns, anti-crawl strategies) without any auth check
+   - Fix: wrapped handler with `withAuth()`
+
+3. **M-2: friendly-links GET endpoint missing rate limiting** (`src/app/api/friendly-links/route.ts`)
+   - Exported as plain `async function GET()` without `withAuth` or `withPublicRateLimit`
+   - Allows unlimited unauthenticated requests, creating a DoS vector against the database
+   - Fix: wrapped with `withPublicRateLimit({ capacity: 60, refillRate: 2 })`
+
+4. **M-3: public-rate-limit.ts has unbounded Map growth** (`src/lib/public-rate-limit.ts`)
+   - The `store` Map has no maximum size cap; an attacker with many distinct IPs (or spoofed X-Forwarded-For) can exhaust server memory
+   - Cleanup only runs every 60s and only removes expired entries, so sustained attacks grow the map without bound
+   - Fix: added `MAX_ENTRIES = 10000` cap with lazy eviction at 80% capacity and hard rejection at 100%
+
+### LOW
+5. **L-1: chapters/[id]/note PUT returns wrong HTTP status code** (`src/app/api/chapters/[id]/note/route.ts` line 54)
+   - Missing `sessionId` returns 401 (Unauthorized) but sessionId is a client-generated anonymous identifier, not a credential
+   - Fix: changed status from 401 to 400 (Bad Request)
+
+6. **L-2: t2s endpoint uses raw `request.json()` instead of `safeJson()`** (`src/app/api/public/t2s/route.ts` line 15)
+   - Bypasses body size enforcement (1MB limit), JSON depth/keys validation, and 15s read timeout
+   - Fix: replaced `request.json()` with `safeJson()` wrapped in try-catch
+
+7. **L-3: trending-searches GET endpoint missing rate limiting** (`src/app/api/public/trending-searches/route.ts`)
+   - Exported as plain `async function GET()` without any rate limiting wrapper
+   - Fix: wrapped with `withPublicRateLimit({ capacity: 120, refillRate: 2 })`
+
+## Audit Coverage (no issues found)
+- SQL injection: All raw queries use Prisma.sql tagged template literals (parameterized)
+- Prisma query injection: All dynamic `where`/`orderBy` values are validated against enums or whitelists
+- Input validation: All POST/PUT routes use `safeJson()` + `sanitizeField()` + field-specific validation
+- Race conditions: Chapter sortOrder uses `$queryRaw` with `FOR UPDATE`; scrape-task state machine uses `$transaction`; word count updates use atomic increment/decrement
+- Memory leaks: `cache.ts` cleanup timer uses `.unref()`; task-engine `progressThrottle` Map entries cleaned on completion (fixed in prior audit)
+- Authentication bypass: All admin routes use `withAuth()`; service-to-service uses `timingSafeEqual` Bearer token comparison
+- CORS: Handled by reverse proxy (Caddy), not set in application code
+- HTTP status codes: Consistently 400 for validation, 401 for auth, 404 for not found, 429 for rate limit, 500 for server errors
+
+## Verification
+- TypeScript: 0 new errors (1 pre-existing casing issue unrelated to changes)
+- ESLint: 0 errors on all 7 modified files
+
+Stage Summary:
+- 7 new bugs found and fixed (1 HIGH, 2 MEDIUM, 4 LOW)
+- HIGH: withAuth() ReferenceError crash when BYPASS_AUTH=true (would make app completely non-functional)
+- MEDIUM: 2 endpoints missing auth/rate-limit wrappers (DoS + data exposure)
+- MEDIUM: Unbounded Map growth in public-rate-limit.ts (memory exhaustion)
+- LOW: Wrong HTTP status code, missing safeJson(), missing rate limit wrapper
+
+---
+Task ID: 4-a
+Agent: engines.ts auditor
+Task: Deep audit of engines.ts (3177 lines) for real bugs — race conditions, resource leaks, error propagation, circuit breaker/retry logic, memory leaks, type safety, edge cases
+
+Work Log:
+- Read full worklog.md (23058 lines) to identify previously-fixed bugs (Bug 4-8: route.abort, COMPLEX_TLDS, throttle position, undefined domain, LRU re-set)
+- Read engines.ts in 16 chunks covering all 3177 lines
+- Focused analysis on: CircuitBreaker half-open state, external engine error handling, resource cleanup, Map growth bounds, retry/fallback logic, URL/selector edge cases
+- Identified 2 bugs (both HIGH), fixed both, verified compilation (0 new errors)
+
+## New Bugs Found & Fixed
+
+### Bug 1 — HIGH: CircuitBreaker `_halfOpenInFlight` counter leak (Firecrawl, AgentQL, CloudBrowser)
+- **File**: engines.ts — FirecrawlEngine (L1517), AgentQLEngine (L1705), CloudBrowserEngine (L1917)
+- **Description**: When the circuit breaker is in half-open state, `acquire()` increments `_halfOpenInFlight` to allow a probe request. If that request is aborted (AbortError) or hits a doNotRetry error (e.g. response too large), the catch block throws WITHOUT calling `recordFailure()` (intentionally — these aren't service failures). However, `_halfOpenInFlight` is never decremented. This permanently leaks the half-open slot.
+- **Reproduction**: (1) Service fails 5x → breaker opens, (2) Wait 30s → breaker goes half-open, (3) Send request but abort it → `_halfOpenInFlight` stays at 1, (4) All future `acquire()` calls fail with "1/1 probes in flight", (5) After another 30s, breaker goes half-open again, (6) Same abort → stuck forever oscillating open↔blocked-half-open.
+- **Fix**: Added `release()` method to CircuitBreaker that decrements `_halfOpenInFlight` without recording success/failure. Called `release()` in all catch paths where `recordFailure()` is skipped (AbortError + doNotRetry) in FirecrawlEngine, AgentQLEngine, and CloudBrowserEngine.
+- **Lines changed**: +8 (method definition) + 12 (3 engines × ~4 lines each) = +20 net
+
+### Bug 2 — HIGH: ScraplingEngine records AbortError as circuit breaker failure
+- **File**: engines.ts L2020 (ScraplingEngine catch block)
+- **Description**: Unlike the other 3 external engines, ScraplingEngine unconditionally calls `scraplingBreaker.recordFailure()` on every error, including user-initiated AbortError. After 5 consecutive aborts (default `SCRAPER_CB_FAILURE_THRESHOLD`), the circuit breaker opens and blocks ALL scrapling requests for 30 seconds — even though the service is perfectly healthy. This can happen in normal operation when tasks are cancelled.
+- **Fix**: Added AbortError and doNotRetry checks consistent with Firecrawl/AgentQL/CloudBrowser patterns. AbortError and doNotRetry now call `release()` instead of `recordFailure()`.
+- **Lines changed**: +8 (expanded catch from 2 lines to 10 lines)
+
+## Audit Coverage (no issues found)
+- **Race conditions**: `_pwLaunchLock` and `_obscuraLaunchLock` serialization is safe (JS single-threaded + synchronous assignment before await); `_cheerioAgentPromise` double-check pattern is safe
+- **Resource leaks**: PlaywrightEngine/ObscuraEngine context.close() in finally block correctly closes all pages; InfiniteScroll closes both browser and context in finally; CheerioEngine calls response.body.cancel() on non-ok responses to prevent undici pool pinning
+- **Error propagation**: retryWithBackoff doNotRetry flag correctly prevents retries for size-limit and CAPTCHA errors; outer .then/.catch correctly records single rate-limiter result per logical request (not per retry)
+- **Memory leaks**: `domainEngineFailures` (cap 500), `domainFailureTimestamps` (cap 1000), `_domainLastSuccess` (cap 50) all have LRU eviction; `_cachedBlockedBotDomains` is static-cached with env-var change detection
+- **Type safety**: `escapeHtml` is used correctly for AgentQL HTML reconstruction; `doNotRetry` cast `(err as any).doNotRetry` is consistent pattern across all engines
+- **URL/selector edge cases**: `isSafeUrl` checked in all engines; `shouldBlockResource` catches invalid URL parse; COMPLEX_TLDS handles 82 multi-part TLDs (previously fixed as Bug 5)
+
+## Verification
+- TypeScript: 0 new errors in engines.ts (pre-existing errors in other files unchanged)
+- Bun build: compiles successfully
+- 8 total `.release()` calls verified: 1 definition + 2 (Firecrawl) + 2 (AgentQL) + 2 (CloudBrowser) + 2 (Scrapling) — wait, actually: 1 definition + 7 calls
+
+Stage Summary:
+- 2 bugs found and fixed (both HIGH)
+- Root cause same: CircuitBreaker `acquire()` increments `_halfOpenInFlight` but non-failure exits (AbortError, doNotRetry) never decremented it
+- Fix: New `release()` method + 7 call sites across 4 engines
+- Impact: Without fix, any external engine circuit breaker that enters half-open state with an aborted request would permanently block that engine until process restart
+
+---
+Task ID: 4-d
+Agent: task-engine+cleaning+selectors auditor
+Task: Audit 3 files for bugs — task-engine.ts, cleaning.ts, selectors.ts
+
+Work Log:
+- Read full worklog.md (23000+ lines) to catalog all previously-fixed issues across 6+ prior audit rounds
+- Read all 3 target files line-by-line (task-engine.ts 1701 lines, cleaning.ts 983 lines, selectors.ts 741 lines)
+- Excluded previously-fixed bugs: AtomicCounter (task-engine), break→continue log eviction, safeRegexMatch/Exec/Replace, t2sConverted undefined, watermark line-anchoring
+- Focused analysis on: race conditions, memory leaks, deadlocks, promise leaks, regex edge cases, content loss, injection, incorrect extraction
+
+## Audit Coverage (no new bugs found)
+
+### task-engine.ts (no new issues)
+- **Semaphore**: Double-release guard correct; no double-release in practice (all acquire/release in try/finally pairs)
+- **Worker pool pattern**: bookQueue/chapterQueue shift() is atomic in JS single-thread; index calculation correct
+- **seenTitles/seenUrls dedup**: has-check and add are synchronous (no await between them), safe from interleaving
+- **existingChapters TOCTOU**: Eager-mark pattern (lines 1018-1022) correctly prevents race; has-check and set are synchronous
+- **CAPTCHA pause flow**: _captchaPausePromises Set correctly serializes concurrent pause handling; finally block always cleans up
+- **_domainEngineRefCount**: touchDomainEngine correctly increments once per task-domain pair; finally block decrements
+- **Log buffer eviction**: _totalBufferEntries counter stays consistent (no await in while loop; splice(0) is atomic)
+- **AbortSignal listeners**: { once: true } prevents duplicate handlers; settled promises are no-ops on re-await
+- **taskTimeoutId**: Previously fixed dead code (BUG-8), now correctly used in finally block
+- **progressThrottleCleanupTimer**: .unref() allows clean exit; 5-min stale threshold is safety net
+- **Chapter retry recovery**: failedChapters array is safe (push is atomic in single-threaded JS)
+- **resortChapters**: PATCH body size bounded (5000 chapters × ~75 bytes ≈ 375KB, under 1MB limit)
+
+### cleaning.ts (no new issues)
+- **COMPILED_WATERMARK regex reuse**: String.replace() with global regex does NOT use lastIndex — safe to reuse
+- **filterAdLines**: adRegexCache LRU eviction correct; escaped pattern matches literal string (consistent with includes() pre-check)
+- **AD_CSS_SELECTORS breadth**: [class*="ad"] is theoretically broad but applied post-content-selector extraction; false positives extremely unlikely in novel chapter content
+- **removeRemnantLines**: Edge cases (5-7 char lines) are acceptable; subsequent normalizeWhitespace handles formatting
+- **deduplicateParagraphs**: Near-duplicate merge correctly normalizes prev+trimmed (without \n) for lastNormalized comparison
+- **mergeRunOnText**: hasSentenceEndBetween check prevents merging intentional dialogue; isCjkDominant guard prevents Latin false positives in CJK text
+- **cleanHtmlPreserveParagraphs**: extractNodeText correctly handles text/tag/block/inline/unknown nodes; no content loss paths
+- **WATERMARK_PATTERNS flags**: All patterns include global (g) flag — verified each pattern individually
+
+### selectors.ts (no new issues)
+- **XPath-to-CSS converter**: Correctly handles //tag[@attr='val'], //tag[@attr], following-sibling, text(), /@attr, absolute paths
+- **extractLinksFromList**: isDangerous check on trimmedLink is safe (linkValue always string); resolveUrl on empty string handled by guard
+- **parseSelectorWithFallbacks**: i18n fallbacks may re-try some selectors — performance only, not correctness
+- **CSS selector injection**: User selectors passed to cheerio (safe parser); escapeCssString prevents breakout from [class*=] context
+- **isExcludedTag**: Consistently applied in all 5 extraction functions
+- **extractMetadataFallback**: JSON-LD Object.assign merge is correct (later blocks fill missing fields); author type handling covers string/array/object
+- **parseSelectorMulti**: href/src fallback before text is intentional design for chapter list extraction
+
+## Bugs Found & Fixed
+
+### Bug 1 — MEDIUM: Heartbeat updates throttled by progress throttle (task-engine.ts:208)
+- **Problem**: The 30-second heartbeat calls `updateTaskProgress({ lastHeartbeatAt: ... })` which is subject to a 3-second throttle. During rapid chapter processing (1-2s/chapter), progress updates occur every few seconds, so the heartbeat is ALWAYS throttled. The DB field `lastHeartbeatAt` is never updated. This means `detectStuckTasks()` falls back to the 2-hour `startedAt` threshold instead of the 5-minute heartbeat threshold, delaying crash recovery by up to 1.5 hours.
+- **Fix**: Added `!updates.lastHeartbeatAt` to the throttle bypass condition — heartbeat updates now always pass through regardless of throttle timing.
+- **Impact**: Stuck task detection now correctly uses the 5-minute heartbeat window for all running tasks, improving crash recovery latency from ~2 hours to ~5 minutes.
+
+### Bug 2 — MEDIUM: handleClean word count misses Korean/Japanese characters (cleaning.ts:978)
+- **Problem**: `handleClean()` word count regex only includes CJK Unified Ideographs (\u4e00-\u9fff, \u3400-\u4dbf, \uf900-\ufaff) and English words. Korean Hangul syllables (\uAC00-\uD7AF, \u1100-\u11FF) and Japanese kana (\u3040-\u309F hiragana, \u30A0-\u30FF katakana) are not counted. For Korean or Japanese novels, this produces a severely underreported word count (0 for pure kana text).
+- **Fix**: Added Korean Hangul and Japanese kana ranges to the CJK character class in the word count regex.
+- **Impact**: Korean/Japanese novel word counts are now accurate. (Note: task-engine.ts line 1182 uses `content.replace(/\s+/g, '').length` which already counts all characters correctly — this was only a bug in the cleaning module's handleClean return value.)
+
+## Verification
+- ESLint: 0 errors on all 3 files ✅
+- TypeScript: 0 new errors (pre-existing cheerio/MapIterator/ScrapeRule cast errors unchanged) ✅
+
+Stage Summary:
+- 2 bugs found and fixed (both MEDIUM)
+- No new bugs found in selectors.ts
+- task-engine.ts heartbeat throttle bypass ensures reliable stuck-task detection
+- cleaning.ts word count now covers CJK + Korean + Japanese + English

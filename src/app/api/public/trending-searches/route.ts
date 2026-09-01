@@ -1,9 +1,10 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export const GET = withPublicRateLimit({ capacity: 120, refillRate: 2 }, async () => {
   try {
     const grouped = await db.searchKeyword.groupBy({
       by: ['keyword'],
@@ -21,4 +22,4 @@ export async function GET() {
   } catch {
     return NextResponse.json({ trends: [] });
   }
-}
+});

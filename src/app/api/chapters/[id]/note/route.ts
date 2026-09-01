@@ -51,7 +51,7 @@ export async function PUT(
     };
 
     if (!sessionId || typeof sessionId !== 'string') {
-      return apiError('缺少 sessionId', 401);
+      return apiError('缺少 sessionId', 400);
     }
 
     if (typeof content !== 'string' || content.length > 2000) {

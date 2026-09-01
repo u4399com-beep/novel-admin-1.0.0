@@ -204,8 +204,8 @@ async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) 
   const now = Date.now();
   const lastUpdate = progressThrottle.get(taskId) || 0;
 
-  // Always allow status changes immediately
-  if (!updates.status && now - lastUpdate < PROGRESS_THROTTLE_MS) {
+  // Always allow status changes and heartbeat updates immediately
+  if (!updates.status && !updates.lastHeartbeatAt && now - lastUpdate < PROGRESS_THROTTLE_MS) {
     return; // Skip throttled non-critical update
   }
 
@@ -1109,6 +1109,8 @@ async function executeTaskBody(
                 return;
               }
               const pausePromise = new Promise<void>((resolve, reject) => {
+                const timer = setTimeout(resolve, CAPTCHA_PAUSE_MS);
+                abortSignal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
               });
               _captchaPausePromises.set(chDomain, pausePromise);
               try {

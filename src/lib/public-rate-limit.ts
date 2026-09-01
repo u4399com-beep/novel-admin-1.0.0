@@ -5,6 +5,7 @@
 const store = new Map<string, { count: number; resetAt: number }>();
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS = 60;
+const MAX_ENTRIES = 10000;
 
 // Cleanup expired entries periodically
 if (typeof setInterval !== 'undefined') {
@@ -37,6 +38,19 @@ export function getClientIp(request: Request): string {
  */
 export function publicRateLimit(ip: string, maxRequests = MAX_REQUESTS): boolean {
   const now = Date.now();
+
+  // Evict expired entries when approaching capacity
+  if (store.size > MAX_ENTRIES * 0.8) {
+    for (const [key, val] of store) {
+      if (now > val.resetAt) store.delete(key);
+    }
+  }
+
+  // Hard cap: reject new entries when at max capacity
+  if (!store.has(ip) && store.size >= MAX_ENTRIES) {
+    return true; // over limit
+  }
+
   let entry = store.get(ip);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + WINDOW_MS };
