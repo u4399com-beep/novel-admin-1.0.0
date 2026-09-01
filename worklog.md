@@ -22735,3 +22735,197 @@ Agent: General-purpose sub-agent
 - `bun build engines.ts --no-bundle`: 存在**预存**语法错误（engines.ts:1996 scrapling 段，cleaning.ts:986），与本次修改无关（通过 git stash 验证）
 - `tsc --noEmit`: 所有报错均来自预存问题，本次修改的 6 处变更均无新增错误
 - `git diff` 确认仅修改 engines.ts 和 task-engine.ts，变更精确匹配 6 个 bug 修复
+
+---
+Task ID: 7
+Agent: General-Purpose Sub-Agent
+Task: 修复3个文件的解析错误（cleaning.ts:986、engines.ts:1996、NovelListView.ts:268）
+
+Work Log:
+
+## 修复清单
+
+1. **cleaning.ts:986 — `Declaration or statement expected`**
+   - 原因：`handleClean()` 函数体在第975行被多余的 `}` 提前关闭，导致 `return` 语句游离在函数外部
+   - 修复：删除第975-976行的多余闭合大括号和空行
+
+2. **engines.ts:1996 — `',' expected`**
+   - 原因：scrapling catch 块中，`scraplingBreaker.recordFailure()` 后紧跟一个多余的 `}`，将 `throw scraplingErr` 推出 catch 作用域
+   - 修复：删除多余的 `}`，将 `throw scraplingErr` 移入 catch 块内，保持之前的 MEDIUM bug fix（recordFailure + re-throw）逻辑不变
+
+3. **NovelListView.ts:268 — `'>' expected`**
+   - 原因①：文件包含 JSX 但扩展名为 `.ts` 而非 `.tsx`，导致解析器将 `<div>` 误解为泛型参数
+   - 修复①：重命名为 `NovelListView.tsx`（Next.js dynamic import 不带扩展名，无需更新引用）
+   - 原因②（重命名后暴露）：header `<div>` (line 270) 缺少对应的 `</div>`，导致外层容器闭合标签被错误匹配
+   - 修复②：在第317行后添加缺失的 `</div>` 闭合 header 容器
+
+## 验证结果
+- `bunx tsc --noEmit cleaning.ts`：无解析错误（仅有预存类型错误）
+- `bunx tsc --noEmit engines.ts`：无解析错误（仅有预存类型错误）
+- `bunx tsc --noEmit NovelListView.tsx`：无解析错误（仅有模块解析/esModuleInterop 类型错误）
+---
+Task ID: 8
+Agent: Deep Audit Sub-Agent (Round 2)
+Task: scraper-service/src/ 第二轮深度逐行审计（采集功能+反反爬能力增强）
+
+Work Log:
+逐行审计了以下7个文件（共 ~2500 行）：cleaning.ts、charset-detector.ts、cheerio-cache.ts、adaptive-delay.ts、browser-behavior.ts、captcha-detector.ts + captcha-strategy.ts、anti-crawl-advisor.ts
+
+## 发现的 Bug 列表（共 6 个）
+
+### Bug 1 — HIGH
+- **文件**: cleaning.ts:982
+- **描述**: `handleClean()` 返回对象引用 `t2sConverted` 变量，但该变量从未定义。推测是旧版繁简转换功能移除后遗留。
+- **影响**: 调用 `/clean` HTTP 端点时触发 `ReferenceError: t2sConverted is not defined`（index.ts:704 调用了此函数），导致 500 错误。已通过 Bun 运行时验证确认。
+- **建议修复**: 删除返回对象中的 `t2sConverted` 字段；如需保留字段，设为 `false` 并在 config.t2sConversion 为 true 时实现繁简转换逻辑。
+
+### Bug 2 — MEDIUM
+- **文件**: cleaning.ts:225
+- **描述**: 水印正则 `/(?:copyright|版权所有|所有权利保留|all rights reserved)/gi` 无行首/行尾锚定，在文本内联匹配时会误删正文内容。例如 "根据版权所有法规" → "根据法规"。
+- **影响**: 内容清洗时损坏合法正文。已通过 Bun 运行时验证确认：输入 "根据版权所有法规，该作品受到保护。" 输出 "根据法规，该作品受到保护。"。
+- **建议修复**: 改为行锚定模式 `^\s*(?:copyright|版权所有|所有权利保留|all rights reserved).*$/gim`，或仅在整行匹配时才删除。
+
+### Bug 3 — MEDIUM
+- **文件**: cleaning.ts:229, 231, 248, 259
+- **描述**: 多个水印正则（`本章来源于`、`首发(?:于|网站|域名)`、`最新章节地址`、`最新网址|最新地址|记住网址|记住本站`）均为非锚定内联匹配，可截断合法正文。例如 "编辑注：本章来源于用户投稿，已获授权。" → "编辑注："（仅剩冒号），"该作品首发于2020年，受到广泛好评。" → "该作品"（后半句全删）。
+- **影响**: 严重内容损坏。已通过 Bun 运行时验证确认。
+- **建议修复**: 对这些模式添加 `^` 行首锚定或改为 `^\s*...\s*$` 整行匹配；或将内联替换改为行级过滤（类似 filterAdLines 的策略）。
+
+### Bug 4 — MEDIUM
+- **文件**: charset-detector.ts:148, 152
+- **描述**: `extractCharsetFromHtml()` 的两个正则 `charset[=\s"]+` 和 `content[=\s"]+` 不支持单引号属性值（`<meta charset='utf-8'>`、`<meta content='...; charset=gbk' http-equiv='Content-Type'>`）。此外第152行的 http-equiv 正则要求属性顺序必须是 http-equiv 在 content 之前，不符合 HTML 规范（属性无序）。
+- **影响**: 使用单引号或非标准属性顺序的页面无法正确检测编码，可能导致 GBK/Big5 内容被当作 UTF-8 解码出现乱码。
+- **建议修复**: 将 `[=\s"]+` 改为 `[=\s"']+` 以支持单引号；将 http-equiv 正则拆分为两次独立匹配（分别找 charset 声明和 http-equiv 声明），消除属性顺序依赖。
+
+### Bug 5 — MEDIUM
+- **文件**: anti-crawl-advisor.ts:226-231
+- **描述**: `gatherSignals()` 中的计数器衰减 `history.emptyContentCount = Math.round(history.emptyContentCount * 0.9)` 在每次调用时执行，衰减速率取决于调用频率而非实际时间。如果监控仪表盘每秒轮询一次 analyze()，计数器会在 20 次调用内从 10 衰减到 5（已验证），无论实际时间是否过去。
+- **影响**: 频繁调用 analyze()（如监控轮询）会异常快速地衰减检测信号，导致已检测到的反爬信号被过早清除，影响推荐准确性。
+- **建议修复**: 改为基于时间的衰减：`const elapsed = (Date.now() - h.lastActivity) / THIRTY_MINUTES; h.emptyContentCount = Math.round(h.emptyContentCount * Math.pow(0.9, elapsed));`。
+
+### Bug 6 — LOW
+- **文件**: captcha-detector.ts:38
+- **描述**: reCAPTCHA v3 检测规则中的 `/?render=/i` 模式过于宽泛。任何包含 `?render=` 的 URL（如 `https://api.example.com/data?render=true`）都会被匹配，单次匹配即达到 0.65 置信度（> 0.5 阈值），触发误报。
+- **影响**: 非验证码页面可能被误判为 reCAPTCHA v3，导致不必要的引擎切换或延迟。
+- **建议修复**: 收紧为 `/recaptcha.*\?render=/i` 或 `/google\.com\/recaptcha.*render/i`。
+
+## 审计覆盖范围（无 Bug 的文件）
+- **cheerio-cache.ts**: LRU 正确实现，Map 顺序维护正确，无内存泄漏（MAX_CACHE_SIZE=50 上限），无竞态（同步代码）。
+- **adaptive-delay.ts**: 数学计算正确，NaN 风险仅存在于极端畸形配置（有 Math.max(100) 兜底），滚动窗口统计正确（length >= 3 前置检查），边界条件处理完善。
+- **browser-behavior.ts**: 随机分布合理（三角分布近似正态），除零保护到位（`distance || 1`），行为模式不可被简单统计检测。
+- **captcha-strategy.ts**: 策略切换逻辑正确，延迟计算有 120s 上限保护，无无限循环风险。
+- **regex-safety.ts**: 危险正则检测覆盖主要 ReDoS 模式，safeRegexReplace 有 5MB 长度限制，cleaning.ts 的用户模式已通过 safeRegexReplace 保护。
+
+## 验证方法
+- Bug 1: Bun 运行时执行 `function test() { return { a: 1, t2sConverted }; }; test();` 确认 ReferenceError
+- Bug 2-3: Bun 运行时执行实际水印正则替换，确认内容截断
+- Bug 4: Bun 运行时用单引号 HTML 测试 charset 正则返回 null
+- Bug 5: Bun 运行时模拟 20 次快速调用确认计数器从 10 降到 5
+- Bug 6: Bun 运行时测试 `?render=true` 匹配非 reCAPTCHA URL
+
+---
+Task ID: 9
+Agent: General-Purpose Sub-Agent
+Task: 修复第二轮审计发现的 6 个 bug（Round 2 — Bug 1~6）
+
+Work Log:
+- 读取 worklog.md 最后 200 行获取完整 bug 报告
+- 逐一定位并修复 6 个 bug
+
+## 修复清单
+
+### Bug 1 — HIGH: cleaning.ts:982 `t2sConverted` 未定义
+- **问题**: `handleClean()` 返回对象引用 `t2sConverted` 变量，该变量从未定义，导致 `/clean` 端点 500 错误
+- **修复**: 将 `t2sConverted` 改为 `t2sConverted: false`（t2s 转换在 scrapers.ts 中处理）
+
+### Bug 2 — MEDIUM: cleaning.ts:225 水印正则无行锚定
+- **问题**: `/(?:copyright|版权所有|所有权利保留|all rights reserved)/gi` 无锚定，会误删正文中的合法提及
+- **修复**: 改为 `/^·*(?:copyright|版权所有|所有权利保留|all rights reserved)[^\n]*$/gim`
+
+### Bug 3 — MEDIUM: cleaning.ts:229,231,248,259 多个水印正则无行锚定
+- **问题**: `本章来源于`、`首发(于|网站|域名)`、`最新章节地址`、`最新网址|最新地址|记住网址|记住本站` 均为内联匹配
+- **修复**: 全部添加 `^\s*` 行首锚定和 `$` 行尾锚定；通配范围从 `{3,60}` 缩短为 `{3,30}`
+
+### Bug 4 — MEDIUM: charset-detector.ts:148,152 不支持单引号和属性顺序
+- **问题**: 正则 `[=\s"]+` 不匹配单引号；http-equiv 正则要求属性顺序
+- **修复**: 字符类加 `'`（`[=\s"']+`）；http-equiv 改为两步匹配：先找 http-equiv meta 标签，再从中提取 charset
+
+### Bug 5 — MEDIUM: anti-crawl-advisor.ts:226-231 计数器衰减基于调用频率
+- **问题**: 每次 `gatherSignals()` 调用固定衰减 0.9，频繁轮询时信号异常快速清零
+- **修复**: 改为基于时间的衰减：`factor = Math.pow(0.9, elapsed / THIRTY_MINUTES)`，30 分钟衰减一次
+
+### Bug 6 — LOW: captcha-detector.ts:38 reCAPTCHA v3 正则过于宽泛
+- **问题**: `/\?render=/i` 匹配任何含 `?render=` 的 URL（如 `?render=true` API 参数），单次即达 0.65 置信度
+- **修复**: 收紧为 `/recaptcha.*\?render=/i`
+
+## 涉及文件（4 个文件，6 处修改）
+1. `mini-services/scraper-service/src/cleaning.ts` — Bug 1, 2, 3
+2. `mini-services/scraper-service/src/charset-detector.ts` — Bug 4
+3. `mini-services/scraper-service/src/anti-crawl-advisor.ts` — Bug 5
+4. `mini-services/scraper-service/src/captcha-detector.ts` — Bug 6
+
+## 验证结果
+- `bun build cleaning.ts --no-bundle`: 编译通过 ✅
+- `bun run lint`: 0 errors, 5 warnings（均为预存警告）✅
+
+---
+Task ID: R60-Main
+Agent: Main Orchestrator
+Task: 并行多agent全量开发 — 采集规则/t2s/友链/stealth/审计修复
+
+## 完成清单
+
+### 1. 修复演示页面告警 ✅
+- page.tsx categories/novels API调用添加 `silent: true`
+- 防止API失败时弹出toast告警
+
+### 2. 21站点采集规则 ✅ (29个JSON全部验证通过)
+- Batch 1: bqg713/piaotia/hetushu/wanbenshenzhan/123duw/dongliuxiaoshuo/uukanshu
+- Batch 2: xbiqubao/biqu5200/ibiquges/ibiquwx/shucong/biquge5200/ptwxz
+- Batch 3: biquwx/8kana/duokanbiqu/xiaoshuodaquan/laobiao/biqugse/zhongwenzw
+- 每个规则包含完整选择器/反爬/清洗/dbCategoryMapping
+
+### 3. t2s-converter.ts 重写 ✅
+- 500+ 繁简单字映射 (Object.entries→Map)
+- 170+ 繁简整词映射
+- 先逐字后整词的正确处理顺序
+- convertTraditionalToSimplified + isProbablyTraditional
+- POST /api/public/t2s API端点
+
+### 4. 友情链接数据填充 ✅
+- 10个手动友链 + 15个站群链轮 = 25条
+- seed-links API路由 (withAuth)
+- 幂等设计
+
+### 5. stealth.ts 强化 ✅
+- SharedArrayBuffer: crossOriginIsolated伪造/COOP- COEP/Atomics完整性/Performance.now精度/内存布局随机化 (+158行)
+- OffscreenCanvas: transferToImageBitmap/convertToBlob完整/WebGL对齐/measureText 7属性/isPointInPath (+192行)
+
+### 6. 深层审计Part2 MEDIUM修复 (6项) ✅
+- Bug 4: Obscura双请求 → route.abort()
+- Bug 5: eTLD解析 → COMPLEX_TLDS Set (82条)
+- Bug 6: Cheerio重试无节流 → 移入retry callback
+- Bug 7: 时间戳驱逐回退 → 返回0
+- Bug 8: FIFO→LRU → delete+re-set
+- Bug 12: 日志驱逐单任务 → while循环全量
+
+### 7. 解析错误修复 (3项) ✅
+- cleaning.ts:986 多余}  → 移除
+- engines.ts:1996 多余}  → 移除
+- NovelListView.ts: .ts→.tsx + 缺少</div>
+- GuichuidengNovelCard.tsx: 3处JSX注释缺少}
+
+### 8. 第二轮审计新发现 (6项) ✅
+- HIGH: cleaning.ts t2sConverted未定义 → false
+- MEDIUM: 4个水印正则无行锚定 → 添加^$  
+- MEDIUM: charset-detector引号/匹配顺序 → 修复
+- MEDIUM: anti-crawl-advisor衰减频率 → 时间基础
+- LOW: captcha-detector正则过宽 → 收紧
+
+## 验证结果
+- ESLint: 0 errors, 5 warnings (react-hook-form兼容性)
+- 29个采集规则JSON全部python3验证通过
+- t2s API: 繁→简转换正确
+- scraper-service: engines.ts + task-engine.ts + cleaning.ts 编译通过
+- 友情链接: 25条入库
+

@@ -35,7 +35,7 @@ const HTML_RULES: DetectionRule[] = [
       /grecaptcha\.enterprise/i,
       /recaptchaV3/i,
       /grecaptcha\.execute/i,
-      /\?render=/i,
+      /recaptcha.*\?render=/i,
     ],
     baseConfidence: 0.65,
     perMatchBoost: 0.1,

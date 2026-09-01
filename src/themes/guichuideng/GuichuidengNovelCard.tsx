@@ -42,7 +42,7 @@ const GuichuidengItem = React.memo(function GuichuidengItem({
 
         {/* Info panel */}
         <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-          {/* Title + Author row */
+          {/* Title + Author row */}
           <div className="flex items-baseline gap-2 flex-wrap">
             <Link
               href={`/novels/${novel.id}`}
@@ -63,7 +63,7 @@ const GuichuidengItem = React.memo(function GuichuidengItem({
             )}
           </div>
 
-          {/* Description */
+          {/* Description */}
           {novel.description && (
             <div className="mt-1">
               <Link

@@ -222,12 +222,15 @@ class AntiCrawlAdvisor {
     const now = Date.now();
     const history = this.domainHistory.get(domain);
 
-    // Decay cumulative counters to prevent stale signals from persisting forever
+    // Time-based decay: decay proportional to elapsed time (30min half-life)
+    // This prevents frequent polling from abnormally fast decay
     if (history) {
-      history.emptyContentCount = Math.round(history.emptyContentCount * 0.9);
-      history.fingerprintDetectCount = Math.round(history.fingerprintDetectCount * 0.9);
-      history.jsChallengeCount = Math.round(history.jsChallengeCount * 0.9);
-      history.slowResponseCount = Math.round(history.slowResponseCount * 0.9);
+      const elapsed = (now - history.lastActivity) / THIRTY_MINUTES;
+      const factor = Math.pow(0.9, elapsed);
+      history.emptyContentCount = Math.round(history.emptyContentCount * factor);
+      history.fingerprintDetectCount = Math.round(history.fingerprintDetectCount * factor);
+      history.jsChallengeCount = Math.round(history.jsChallengeCount * factor);
+      history.slowResponseCount = Math.round(history.slowResponseCount * factor);
     }
 
     // Safely gather external module state with fallback defaults

@@ -135,7 +135,7 @@ function looksLikeBig5(bytes: Uint8Array): boolean {
  */
 export function extractCharsetFromContentType(contentType: string | null | undefined): string | null {
   if (!contentType) return null;
-  const match = contentType.match(/charset[=\s"]+([\w\-]+)/i);
+  const match = contentType.match(/charset[=\s"']+([\w\-]+)/i);
   return match ? normalizeCharset(match[1]) : null;
 }
 
@@ -144,13 +144,18 @@ export function extractCharsetFromContentType(contentType: string | null | undef
  * Handles: <meta charset="utf-8">, <meta http-equiv="Content-Type" content="...charset=gbk">
  */
 export function extractCharsetFromHtml(html: string): string | null {
-  // <meta charset="...">
-  const charsetMatch = html.match(/<meta[^>]+charset[=\s"]+([\w\-]+)/i);
+  // <meta charset="..."> or <meta charset='...'>
+  const charsetMatch = html.match(/<meta[^>]+charset[=\s"']+([\w\-]+)/i);
   if (charsetMatch) return normalizeCharset(charsetMatch[1]);
 
   // <meta http-equiv="Content-Type" content="...charset=...">
-  const httpEquivMatch = html.match(/<meta[^>]+http-equiv[=\s"]+Content-Type[^>]+content[=\s"]+[^"]*charset[=\s"]+([\w\-]+)/i);
-  if (httpEquivMatch) return normalizeCharset(httpEquivMatch[1]);
+  // Two-pass approach to handle any attribute order and single quotes:
+  // Pass 1: find http-equiv=Content-Type meta tag, then extract charset from it
+  const httpEquivMeta = html.match(/<meta[^>]+http-equiv[=\s"']+Content-Type["']?[^>]*>/i);
+  if (httpEquivMeta) {
+    const contentMatch = httpEquivMeta[0].match(/charset[=\s"']+([\w\-]+)/i);
+    if (contentMatch) return normalizeCharset(contentMatch[1]);
+  }
 
   return null;
 }

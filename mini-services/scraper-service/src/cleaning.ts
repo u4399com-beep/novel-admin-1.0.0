@@ -221,14 +221,14 @@ const WATERMARK_PATTERNS = [
   /^\s*本章未完[，,].*?(?:点击|翻页|下一页|继续)[^\n]*$/gm,
   // "XXX手机版" or "XXX手机端" branding lines
   /^\s*[^\n]{2,20}手机(?:版|端)\s*$/gm,
-  // Copyright / legal boilerplate
-  /(?:copyright|版权所有|所有权利保留|all rights reserved)/gi,
+  // Copyright / legal boilerplate (line-anchored to avoid deleting in-line mentions)
+  /^·*(?:copyright|版权所有|所有权利保留|all rights reserved)[^\n]*$/gim,
   // "更新时间" or "update time" lines (usually metadata)
   /^\s*(?:更新时间|最后更新|update\s*time)[:：]?\s*[^\n]{0,50}$/gim,
-  // "本章来源于xxx" type source attribution
-  /本章来源于[^\n]{3,60}/gi,
-  // "首发于xxx" / "首发网站xxx"
-  /首发(?:于|网站|域名)[^\n]{3,60}/gi,
+  // "本章来源于xxx" type source attribution (line-anchored)
+  /^\s*本章来源于[^\n]{3,30}$/gm,
+  // "首发于xxx" / "首发网站xxx" (line-anchored)
+  /^\s*首发(?:于|网站|域名)[^\n]{3,30}$/gm,
   // "请记住xxx" / "记住xxx" standalone reminder lines
   /^\s*请记住(?:本站|最新|网址|域名|地址)[^\n]{0,50}$/gm,
   // "XXX小说" branding lines (very short, likely ads)
@@ -244,8 +244,8 @@ const WATERMARK_PATTERNS = [
   /^\s*手机端[^\n]{0,20}$/gm,
   // "XXX阅读网" generic site branding
   /^[\w.]+阅读网[^\n]{0,20}$/gm,
-  // "最新章节地址xxx" full line
-  /最新章节地址[^\n]{0,60}/gi,
+  // "最新章节地址xxx" full line (line-anchored)
+  /^\s*最新章节地址[^\n]{0,30}$/gm,
   // "请牢记xxx" standalone reminder lines
   /^\s*请牢记[^\n]{0,50}$/gm,
   // "首发于" standalone lines
@@ -255,8 +255,8 @@ const WATERMARK_PATTERNS = [
   // "正在手打中" / "手打全文" type lines
   /^\s*正在手打[^\n]{0,20}$/gm,
   /^\s*手机端.*?阅读[^\n]{0,20}$/gm,
-  // "最新网址xxx" / "最新地址xxx" site URL announcements
-   /(?:最新网址|最新地址|记住网址|记住本站)[^\n]{0,60}/gi,
+  // "最新网址xxx" / "最新地址xxx" site URL announcements (line-anchored)
+  /^\s*(?:最新网址|最新地址|记住网址|记住本站)[^\n]{0,30}$/gm,
   // Empty or near-empty paragraph markers (single char or very short)
   /^\s*[。.！!？?~～…—-]{1,3}\s*$/gm,
 ];
@@ -972,8 +972,6 @@ export function handleClean(body: CleanRequest) {
   const { html, config } = body;
   let content = cleanHtmlPreserveParagraphs(html, config);
 
-  }
-
   return {
     content,
     wordCount: (() => {
@@ -981,6 +979,6 @@ export function handleClean(body: CleanRequest) {
       const english = (content.match(/[a-zA-Z]+/g) || []).length;
       return cjk + english;
     })(),
-    t2sConverted,
+    t2sConverted: false,
   };
 }

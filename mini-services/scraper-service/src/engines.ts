@@ -1989,8 +1989,7 @@ class ScraplingEngine implements ScrapingEngine {
             statusCode: data.status_code || 200,
           };
         } catch (scraplingErr) {
-            scraplingBreaker.recordFailure();
-          }
+          scraplingBreaker.recordFailure();
           throw scraplingErr;
         }
       },
