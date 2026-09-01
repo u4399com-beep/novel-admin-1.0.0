@@ -23168,3 +23168,32 @@ Stage Summary:
 - No new bugs found in selectors.ts
 - task-engine.ts heartbeat throttle bypass ensures reliable stuck-task detection
 - cleaning.ts word count now covers CJK + Korean + Japanese + English
+
+---
+Task ID: session-continue-1
+Agent: Main Orchestrator
+Task: aijjxs.com scrape rule + deep bug hunting + anti-anti-crawl enhancement + git push
+
+Work Log:
+- Created aijjxs.com (久久小说下载网) scrape rule - TXT download site with 15 categories, metadata-only scrape mode
+- Verified t2s-converter.ts and t2s API route already existed from prior session
+- Launched 4 parallel bug-hunting agents:
+  - 4-a: engines.ts audit (circuit breaker, resource leaks, race conditions)
+  - 4-b: stealth.ts anti-detection enhancement
+  - 4-c: Next.js API routes and lib audit
+  - 4-d: task-engine.ts + cleaning.ts + selectors.ts audit
+- Fixed t2s-converter.ts bugs found via agent-browser API testing:
+  - Missing 轉→转 character mapping
+  - isProbablyTraditional threshold too high (10→4)
+  - Removed 100+ useless identical word mappings (e.g. ['下载','下载'])
+- Agent-browser verification: page loads correctly, no console errors, t2s API works
+- All changes pushed to git (2 commits)
+
+Stage Summary:
+- 11 bugs found and fixed across stealth.ts, engines.ts, api-auth.ts, task-engine.ts, cleaning.ts, public-rate-limit.ts, and 4 API routes
+- 2 HIGH bugs: CircuitBreaker halfOpenInFlight counter leak, api-auth.ts undefined variable crash
+- 3 MEDIUM bugs: heartbeat throttling, word count missing CJK ranges, rate limit memory exhaustion
+- 7 stealth.ts enhancements including Function.prototype.toString masking and navigation timing fix
+- aijjxs.com scrape rule added (31 total rules now)
+- t2s converter: 轉 char fix + threshold fix + word mapping cleanup
+- Git pushed: b1f7e37, 0a4ed8a
