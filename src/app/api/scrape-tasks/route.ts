@@ -72,7 +72,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     } catch {
       return apiError("请求数据格式错误", 400);
     }
-    const { ruleId, mode, autoStart } = body;
+    const { ruleId, mode, autoStart, listUrlOverride } = body;
 
     // ── Input validation ──
     if (!ruleId || typeof ruleId !== 'string' || ruleId.trim().length === 0) {
@@ -85,6 +85,12 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     if (autoStart !== undefined && typeof autoStart !== 'boolean') {
       return apiError("autoStart 必须为布尔值", 400);
+    }
+
+    if (listUrlOverride !== undefined && listUrlOverride !== null) {
+      if (typeof listUrlOverride !== 'string' || listUrlOverride.trim().length === 0) {
+        return apiError("listUrlOverride 必须为非空字符串", 400);
+      }
     }
 
     // Verify the rule exists
@@ -100,6 +106,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         ruleId,
         mode: taskMode,
         status: "pending",
+        ...(listUrlOverride ? { listUrlOverride: listUrlOverride.trim() } : {}),
       },
       include: {
         rule: { select: { id: true, name: true } },

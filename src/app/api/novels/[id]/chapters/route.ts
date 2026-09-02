@@ -22,9 +22,10 @@ export const GET = withAuth(async function GET(
       if (!chapterId) return apiError('chapterId is required', 400);
       const [novel, chapter] = await Promise.all([
         db.novel.findUnique({ where: { id: novelId }, select: { title: true } }),
-        db.chapter.findUnique({ where: { id: chapterId }, select: { title: true, content: true } }),
+        db.chapter.findUnique({ where: { id: chapterId, novelId }, select: { title: true, content: true, novelId: true } }),
       ]);
       if (!chapter || !chapter.content) return apiError('章节内容为空', 404);
+      if (!novel) return apiError('小说不存在', 404);
       const filename = `${novel?.title || 'novel'}_${chapter.title}.txt`;
       return new NextResponse(chapter.content, {
         headers: {

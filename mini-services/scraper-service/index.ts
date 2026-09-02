@@ -1298,6 +1298,22 @@ if (recovered > 0) {
   console.log(`[Startup] Recovered ${recovered} stale tasks`);
 }
 
+// Auto-load proxy pool from config file
+try {
+  const proxyConfigPath = resolve(import.meta.dir, 'proxy-config.json');
+  const proxyConfigRaw = readFileSync(proxyConfigPath, 'utf-8');
+  const proxyConfig = JSON.parse(proxyConfigRaw);
+  if (proxyConfig.enabled && proxyConfig.autoImportOnStart && Array.isArray(proxyConfig.proxies) && proxyConfig.proxies.length > 0) {
+    const added = proxyManager.addProxies(proxyConfig.proxies);
+    console.log(`[Startup] Imported ${added} proxies from proxy-config.json`);
+  }
+} catch (err) {
+  // Non-blocking: proxy config is optional
+  if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+    console.warn('[Startup] Failed to load proxy-config.json (non-blocking):', (err as Error).message);
+  }
+}
+
 startServer(PORT);
 
 // Periodic stuck-task detection (every 2 minutes)

@@ -211,6 +211,9 @@ model ScrapeTask {
   progress      Float    @default(0) // 0-100
   currentStep   String?  // 当前步骤描述
 
+  // URL覆盖
+  listUrlOverride String?  // Per-task URL override (for batch category runs)
+
   // 结果
   resultUrl     String?  // 结果文件/页面URL
   errorMessage  String?

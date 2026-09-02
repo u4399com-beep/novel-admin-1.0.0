@@ -387,6 +387,15 @@ export async function executeTask(taskId: string) {
     throw new Error(`Task ${taskId} has no associated scrape rule`);
   }
 
+  // Apply per-task listUrl override (for batch category runs)
+  if ((task as Record<string, unknown>).listUrlOverride) {
+    const override = String((task as Record<string, unknown>).listUrlOverride);
+    if (override) {
+      (rule as Record<string, unknown>).listUrl = override;
+      console.log(`[Task ${taskId}] Using listUrlOverride: ${override}`);
+    }
+  }
+
   // Parse rule configurations
   const listSelector = parseSelectorField(rule.listSelector);
   const listPagination = parseJsonField<Pagination>(rule.listPagination, undefined);
@@ -1583,12 +1592,16 @@ export async function retryFailedChapters(
  * @param abortSignal - Optional abort signal for task cancellation
  * @returns true if chapters were re-ordered, false if no gaps were found
  */
+// Match common Chinese volume patterns in chapter titles
+const VOLUME_RE = /^(第[一二三四五六七八九十百千万零〇]+[卷部篇集]|[卷部篇集][一二三四五六七八九十百千万零〇一二三四五六七八九]|上[部中下册篇卷]|中[部册篇卷]|下[部册篇卷])/;
+
 export async function resortChapters(
   novelId: string,
   abortSignal?: AbortSignal
 ): Promise<boolean> {
   try {
     // Fetch all chapters ordered by sortOrder (max 5000 per the API limit)
+    // Include title field for volume-aware sorting
     const { data, status } = await apiCall(
       "GET",
       `/api/novels/${novelId}/chapters?pageSize=5000`,
@@ -1598,7 +1611,7 @@ export async function resortChapters(
 
     if (status !== 200 || !data) return false;
 
-    const chapters = (data as { chapters?: Array<{ id: string; sortOrder: number }> }).chapters || [];
+    const chapters = (data as { chapters?: Array<{ id: string; sortOrder: number; title?: string }> }).chapters || [];
     if (chapters.length === 0) return false;
 
     // Check for gaps in sortOrder
@@ -1612,8 +1625,52 @@ export async function resortChapters(
 
     if (!hasGaps) return false;
 
+    // Check if any chapters have volume prefixes
+    const chaptersWithTitle = chapters.map((ch, originalIdx) => ({
+      ...ch,
+      originalIdx,
+      volumePrefix: (ch.title && VOLUME_RE.exec(ch.title))?.[0] || null,
+    }));
+
+    const chaptersWithVolume = chaptersWithTitle.filter(ch => ch.volumePrefix !== null);
+
+    let sortedChapters: typeof chaptersWithTitle;
+
+    if (chaptersWithVolume.length > 0) {
+      // Volume-aware sorting:
+      // 1. Chapters WITH volume prefix first, grouped by volume, maintaining original order within each group
+      // 2. Chapters WITHOUT volume prefix last, maintaining original order
+      const volumeGroups = new Map<string, typeof chaptersWithTitle>();
+      const noVolumeChapters: typeof chaptersWithTitle = [];
+
+      for (const ch of chaptersWithTitle) {
+        if (ch.volumePrefix) {
+          if (!volumeGroups.has(ch.volumePrefix)) {
+            volumeGroups.set(ch.volumePrefix, []);
+          }
+          volumeGroups.get(ch.volumePrefix)!.push(ch);
+        } else {
+          noVolumeChapters.push(ch);
+        }
+      }
+
+      // Collect: volume chapters first (preserving insertion order of volume groups),
+      // then non-volume chapters
+      sortedChapters = [];
+      for (const group of volumeGroups.values()) {
+        sortedChapters.push(...group);
+      }
+      sortedChapters.push(...noVolumeChapters);
+
+      const volumeCount = volumeGroups.size;
+      console.log(`[ResortChapters] Volume-aware: found ${volumeCount} volumes, re-ordered ${sortedChapters.length} chapters`);
+    } else {
+      // No volume prefixes detected — fall back to simple sequential renumbering
+      sortedChapters = chaptersWithTitle;
+    }
+
     // Build batch reorder payload
-    const orders = chapters.map((ch, idx) => ({
+    const orders = sortedChapters.map((ch, idx) => ({
       id: ch.id,
       sortOrder: idx + 1,
     }));

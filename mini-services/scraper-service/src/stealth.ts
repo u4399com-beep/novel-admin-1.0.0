@@ -12,6 +12,27 @@
 
 import { domainHash } from './utils';
 
+// ==================== Per-Domain Browser Family Pinning ====================
+
+// Per-domain browser family pinning (e.g. { 'example.com': 'Firefox' })
+// Allows forcing a specific browser family for a domain, overriding the
+// default weighted random selection. Useful for sites that are known to
+// behave differently with specific browsers.
+const DOMAIN_BROWSER_PIN: Record<string, string> = {};
+
+/**
+ * Pin a domain to a specific browser family.
+ * @param domain - The domain to pin (e.g. 'example.com')
+ * @param browser - The browser family ('Chrome' | 'Edge' | 'Firefox') or undefined to unpin
+ */
+export function setDomainBrowserPin(domain: string, browser?: string): void {
+  if (browser) {
+    DOMAIN_BROWSER_PIN[domain] = browser;
+  } else {
+    delete DOMAIN_BROWSER_PIN[domain];
+  }
+}
+
 // ==================== Fingerprint Profile ====================
 
 export interface FingerprintProfile {
@@ -232,12 +253,12 @@ function pick<T>(arr: readonly T[]): T {
 
 /** Derive navigator.platform from UA string to avoid fingerprint contradictions. */
 function derivePlatformFromUA(ua: string): string {
-  if (/Edg\\//.test(ua)) {
+  if (/Edg\//.test(ua)) {
     if (/Macintosh/.test(ua)) return 'MacIntel';
     if (/Linux/.test(ua)) return 'Linux x86_64';
     return 'Win32';
   }
-  if (/Firefox\\//.test(ua)) {
+  if (/Firefox\//.test(ua)) {
     if (/Macintosh/.test(ua)) return 'MacIntel';
     if (/Linux/.test(ua)) return 'Linux x86_64';
     return 'Win32';
@@ -269,12 +290,20 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
 
   const resolution = dPick(SCREEN_RESOLUTIONS, 3);
 
+  // Check if domain is pinned to a specific browser family
+  const pinnedBrowser = (seed && DOMAIN_BROWSER_PIN[seed]) || undefined;
+
   // Weighted browser selection (deterministic via seed)
-  const weightedBrowsers: string[] = [];
-  for (const [b, w] of Object.entries(UA_BROWSER_WEIGHTS)) {
-    for (let i = 0; i < w; i++) weightedBrowsers.push(b);
+  let selectedBrowser: string;
+  if (pinnedBrowser && BROWSER_UA_POOLS[pinnedBrowser]) {
+    selectedBrowser = pinnedBrowser;
+  } else {
+    const weightedBrowsers: string[] = [];
+    for (const [b, w] of Object.entries(UA_BROWSER_WEIGHTS)) {
+      for (let i = 0; i < w; i++) weightedBrowsers.push(b);
+    }
+    selectedBrowser = dPick(weightedBrowsers, 10);
   }
-  const selectedBrowser = dPick(weightedBrowsers, 10);
   const uaPool = BROWSER_UA_POOLS[selectedBrowser] || ALL_CHROME_UAS;
   const userAgent = dPick(uaPool, 5);
 
@@ -284,7 +313,7 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   // NOTE: Only Firefox on Linux uses Mesa vendor/renderer.
   // Chrome/Edge on Linux use ANGLE (same as Windows) — Mesa + Chrome is a detection vector.
   const isLinux = uaPlatform === 'Linux x86_64';
-  const isFirefoxUA = /Firefox\\//.test(userAgent);
+  const isFirefoxUA = /Firefox\//.test(userAgent);
   let vendor: string;
   if (uaPlatform === 'MacIntel') {
     vendor = 'Google Inc. (Apple)';
@@ -340,7 +369,7 @@ export function generateRandomFingerprint(): FingerprintProfile {
   // NOTE: Only Firefox on Linux uses Mesa vendor/renderer.
   // Chrome/Edge on Linux use ANGLE (same as Windows) — Mesa + Chrome is a detection vector.
   const isLinux = uaPlatform === 'Linux x86_64';
-  const isFirefoxUA = /Firefox\\//.test(userAgent);
+  const isFirefoxUA = /Firefox\//.test(userAgent);
   let vendor: string;
   if (uaPlatform === 'MacIntel') {
     vendor = 'Google Inc. (Apple)';
@@ -4522,17 +4551,21 @@ export function clearDelayCache(domain?: string): void {
  * Returns the appropriate privacy header for a fingerprint profile.
  *
  * - Firefox profiles get `Sec-GPC: 1` (Firefox enables Global Privacy Control by default)
- * - Chrome/Safari/Edge profiles get `DNT: 1` (legacy Do-Not-Track)
- *
- * The caller should only set ONE of these headers to avoid cross-channel mismatch
- * with the `navigator.doNotTrack` property patched in the stealth script.
+ * - Chrome/Safari/Edge profiles get `null` (DNT header is omitted to avoid cross-channel mismatch
+ *   with navigator.doNotTrack = null set by the stealth script)
  *
  * @param profile - A FingerprintProfile (used to detect browser family from userAgent)
- * @returns An object like `{ 'DNT': '1' }` or `{ 'Sec-GPC': '1' }`, or null if no header should be set
+ * @returns An object like `{ 'Sec-GPC': '1' }`, or null if no header should be set
  */
-export function getDntHeader(_profile?: FingerprintProfile): Record<string, string> | null {
+export function getDntHeader(profile?: FingerprintProfile): Record<string, string> | null {
   // Stealth script forces navigator.doNotTrack = null (Section 62).
-  // Sending DNT/Sec-GPC HTTP header would create a cross-channel mismatch.
+  // Sending DNT header would create a cross-channel mismatch.
+  // However, real Firefox sends Sec-GPC: 1 by default regardless of DNT setting.
+  // This is a separate header and does not conflict with navigator.doNotTrack.
+  const ua = profile?.userAgent || '';
+  if (ua.includes('Firefox')) {
+    return { 'Sec-GPC': '1' };
+  }
   return null;
 }
 

@@ -2517,7 +2517,7 @@ class ObscuraEngine implements ScrapingEngine {
             "Accept-Encoding": getAcceptEncoding(domain),
             ...getSecFetchHeadersForDomain(domain),
             "Upgrade-Insecure-Requests": "1",
-            // Chrome Client Hints — real Chrome always sends these; missing = bot signal
+            // Client Hints — real Chrome/Edge always sends these; correctly skipped for Firefox via getChromeClientHints() returning null
             ...(getChromeClientHints(profile.userAgent) || {}),
           },
         };
@@ -2978,7 +2978,7 @@ export async function fetchWithInfiniteScroll(
     browser = await pw.chromium.launch(launchOptions);
     const profile = domain ? getProfileForDomain(domain) : null;
     context = await browser.newContext({
-      userAgent: options?.userAgent || getRandomUA(),
+      userAgent: options?.userAgent || profile?.userAgent || getRandomUA(),
       ignoreHTTPSErrors: true,
       locale: profile ? (profile.languages[0] || undefined) : undefined,
       viewport: profile ? { width: profile.screenWidth || 1920, height: profile.screenHeight || 1080 } : undefined,

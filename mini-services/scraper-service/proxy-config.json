@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "proxies": [
+    "http://127.0.0.1:7890",
+    "http://127.0.0.1:7891",
+    "socks5://127.0.0.1:1080"
+  ],
+  "verifyOnStartup": false,
+  "autoImportOnStart": true
+}
