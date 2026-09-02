@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import {
-  BookOpen, Sun, Moon, Shield, Menu, Trophy, Compass,
+  BookOpen, Sun, Moon, Shield, Menu, Trophy, Compass, ArrowUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,6 +26,31 @@ import { FriendlyLinksFooter } from '@/components/footer/FriendlyLinksFooter';
 import { useSiteName } from '@/lib/use-site-name';
 import { useLayoutTheme } from '@/lib/use-layout-theme';
 
+
+// ─── Back to Top Button ────────────────────────────────────────
+
+function BackToTopButton() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setVisible(window.scrollY > 400);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  return (
+    <button
+      type="button"
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      className={`back-to-top-btn fixed bottom-6 right-6 z-40 h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg transition-all duration-300 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
+      aria-label="回到顶部"
+    >
+      <ArrowUp className="h-4 w-4" />
+    </button>
+  );
+}
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -412,8 +437,11 @@ export default function HomePage() {
       />
       </div>
 
+      {/* ─── Back to Top Button (fixed) ──────────────────────── */}
+      <BackToTopButton />
+
       {/* ─── Footer ──────────────────────────────────────────────── */}
-      <footer className="mt-auto border-t bg-background/80 backdrop-blur-sm">
+      <footer className="mt-auto bg-background/80 backdrop-blur-sm footer-gradient-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
           <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">

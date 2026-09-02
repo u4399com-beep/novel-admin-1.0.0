@@ -45,7 +45,12 @@ function findNextPageUrl(
     nextUrl = $(pagination.selector).attr("href") || "";
   } else if (pagination.type === "page") {
     const nextPage = pageNum + 2;
-    const nextEl = $(`${pagination.selector}:contains("${nextPage}")`);
+    const nextEl = $(pagination.selector).filter(
+      (i, el) => {
+        const text = $(el).text().trim();
+        return text === String(nextPage) || text.includes(String(nextPage));
+      }
+    );
     if (nextEl.length > 0) {
       nextUrl = nextEl.attr("href") || "";
     } else {

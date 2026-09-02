@@ -24094,3 +24094,278 @@ Stage Summary:
 - 18 API routes audited, 15 confirmed clean
 - Lint: 0 errors (7 pre-existing warnings)
 - Browser verified: homepage + novel detail page working
+
+---
+Task ID: 1-2
+Agent: Docker Production Setup Agent
+Task: Docker 生产部署一键安装 + 配置验证
+
+Work Log:
+- 读取并审查所有 Docker 相关文件（Dockerfile, docker-compose.yml, docker-entrypoint.sh, .env.example, .env.production, .dockerignore, DEPLOY.md）
+- 提取 docker-compose.yml 中引用的全部 37 个 ${VAR} 变量
+- 验证全部 COPY 路径存在（package.json, bun.lock, public/, prisma/, docker-entrypoint.sh, scraper-service/package.json, scraper-service/bun.lock）
+- 验证 next.config.ts 已配置 output: 'standalone'
+- 验证 mini-services/scraper-service/src/queue.pg.ts 存在（Dockerfile 会 mv 到 queue.ts）
+- 验证 scraper-service/index.ts 端口检测逻辑（parseInt(process.env.PORT || "3099") — 正确）
+- 验证 docker-entrypoint.sh 使用的环境变量全部由 docker-compose.yml 或 Dockerfile ENV 提供
+- 发现 DEPLOY.md 10.4 节数据库迁移使用 `bunx prisma` 会下载 Prisma 7.x 导致兼容性问题 → 已修复
+- 发现 DEPLOY.md 手动模式引用 `.env.production` 而非更完整的 `.env.docker` → 已修复
+
+## 创建的文件
+
+### 1. `.env.docker` — Docker 生产环境配置模板
+- 包含 docker-compose.yml 引用的全部 37 个变量
+- 中文注释说明每个变量的用途
+- 默认 normal 档（≥3GB 内存），附 tiny/small/normal 三档完整参数（注释形式）
+- 顶部一键部署命令说明
+- 所有密钥使用 change-this 占位符（entrypoint 会检测并拒绝启动）
+
+### 2. `quick-docker.sh` — 一键 Docker 部署脚本（~150 行）
+- 检查 Docker + Docker Compose 安装状态
+- 生成 4 个安全随机密钥（NEXTAUTH_SECRET, SCRAPER_SERVICE_TOKEN, ADMIN_PASSWORD, POSTGRES_PASSWORD）
+- 自动检测服务器内存并选择 tiny/small/normal 档位
+- 从 .env.docker 复制并替换占位符生成 .env
+- 低内存档位自动禁用 BuildKit
+- docker compose build → up -d → 等待健康检查 → 显示登录信息
+- 密码保存到 .deploy-info
+
+## 修改的文件
+
+### 3. `DEPLOY.md`
+- 顶部的「一键安装」改为两种方式：A. quick-docker.sh（快速）、B. install.sh（完整含 Docker 安装）
+- 目录增加「15. 硬件配置说明」
+- 6.2 节手动配置模板从 `.env.production` 改为 `.env.docker`
+- 10.4 节数据库迁移命令从 `bunx prisma` 改为使用本地 Prisma CLI 路径
+- 打包发布的解压命令改为 `./quick-docker.sh`
+- 新增第 15 节「硬件配置说明」含三档参数对比表
+
+## 验证结果
+- Dockerfile COPY 路径：全部存在 ✅
+- docker-compose.yml ↔ .env.docker 变量对齐：37/37 ✅
+  - DEBIAN_MIRROR, NPM_REGISTRY 在 docker-compose.yml 中为注释行（有 Dockerfile 默认值），无需在 .env 中定义
+- docker-entrypoint.sh 使用的环境变量：全部由 compose 或 Dockerfile ENV 提供 ✅
+- next.config.ts output: standalone ✅
+- queue.pg.ts 存在 ✅
+- scraper-service PORT 检测：正确（默认 3099，可被 PORT env 覆盖）✅
+- entrypoint 正确以 PORT=3099 启动 scraper，避免与 PORT=3000 冲突 ✅
+
+Stage Summary:
+- 创建 2 个新文件：.env.docker（配置模板）、quick-docker.sh（一键部署脚本）
+- 修改 1 个文件：DEPLOY.md（文档更新）
+- 修复 1 个文档 bug：bunx prisma → 本地 Prisma CLI 路径
+- 全部 Docker 配置验证通过，无配置一致性问题
+- Docker 构建就绪度：✅ 就绪（无法实际构建测试，但静态分析全部通过）
+
+---
+Task ID: 3
+Agent: Code Cleanup Agent
+Task: 代码清扫 + 生产就绪
+
+Work Log:
+- 扫描项目根目录，识别并删除所有临时文件、截图、构建产物
+- 检查 start.sh（仅 `bunx next dev`，已被 Docker 部署替代）→ 已删除
+- 检查 pack.sh（被 DEPLOY.md 引用，用于打包发布）→ 保留
+- 删除 scripts/ 下 7 个一次性修复脚本（fix-nlv*.py, patch-homepage.py, fix-hsl-var.py, fix-round-0108.sh, remove-detail.py, test-db.ts, test-db.mjs）
+- 删除 src/middleware.ts.bak
+- 删除 examples/ 目录（无关的 WebSocket 聊天室 demo，无任何代码引用）
+- 发现并删除 src/components/ReadingHeatMap.tsx 和 src/components/ReadingHeatmap.tsx（两个均无任何 import，且导致 TypeScript TS1149 大小写冲突错误）→ 实际使用的是 src/components/stats/ReadingHeatmap.tsx
+- 删除 src/lib/public-rate-limit.ts（死代码，无任何 import；功能已由 api-auth.ts 的 withPublicRateLimit 取代）
+- 删除 seed-scrape-rules.json（内容实为 Markdown 描述而非 JSON，无代码引用）
+- docs/scrape-rules/ 保留（包含两个站点采集规则文档，有参考价值）
+- 一致性检查：
+  - middleware.ts：简洁清晰，XTransformPort 白名单 + login rate limiting，无问题
+  - BYPASS_AUTH=true：已有醒目的 TESTING ONLY 注释 + TODO 标记，文档充分
+  - 仅发现 1 处 console.log（useTaskLogStream.ts:181 重连调试日志，合理保留）
+  - TODO/FIXME：仅 api-auth.ts 中 1 处（BYPASS_AUTH 的 TODO 注释），mini-services 中有若干但不在此任务范围
+- Caddyfile：正确，端口白名单与 middleware.ts 一致
+- stats/ 页面：完整功能，import 全部有效
+- 删除后 TypeScript 编译验证通过（无新增错误）
+
+## 删除文件清单（共 31 个）
+
+### 根目录（24 个）
+- search_*.json ×11（临时搜索结果）
+- qa-*.png, audit-verify.png, verify-home.png, demo-page.png ×7（截图/QA 文件）
+- postgresql-17_17.10-0+deb13u1_amd64.deb（Debian 包）
+- novel-admin-*.tar.gz ×3（旧构建产物）
+- test_load_v3.py（根目录测试文件）
+- scraper-integration-analysis.md（临时分析文档）
+- gcd-book.html, gcd-detail.html, gcd-detail2.html（临时 HTML）
+- start.sh（过时的 dev 启动脚本）
+- seed-scrape-rules.json（非 JSON 内容的死文件）
+
+### src/ 目录（4 个）
+- src/middleware.ts.bak
+- src/components/ReadingHeatMap.tsx（死代码，大小写冲突）
+- src/components/ReadingHeatmap.tsx（死代码，大小写冲突）
+- src/lib/public-rate-limit.ts（死代码，已被 withPublicRateLimit 取代）
+
+### scripts/ 目录（7 个）
+- scripts/fix-nlv.tsx.py, scripts/fix-nlvx2.py, scripts/fix-nlvx3.py
+- scripts/patch-homepage.py, scripts/fix-hsl-var.py, scripts/fix-round-0108.sh
+- scripts/remove-detail.py, scripts/test-db.ts, scripts/test-db.mjs
+
+### examples/ 目录（整个删除）
+- examples/websocket/server.ts, examples/websocket/frontend.tsx（无关的 WebSocket 聊天 demo）
+
+Stage Summary:
+- 删除 31 个文件/目录，项目根目录从杂乱变为干净
+- 修复 1 个 TypeScript 编译错误（ReadingHeatmap/ReadingHeatMap 大小写冲突）
+- 清理 4 个死代码文件（2 个重复 Heatmap 组件 + 1 个废弃 rate limiter + 1 个无效 JSON）
+- 保留的文件均有明确用途：pack.sh（DEPLOY.md 引用）、docs/scrape-rules/（参考文档）、scripts/seed-*.ts + switch-to-*.sh（实用工具脚本）
+- middleware.ts、Caddyfile、stats/ 页面、BYPASS_AUTH 注释均验证通过
+- 未修改任何功能代码逻辑
+
+---
+Task ID: 4
+Agent: Deep Bug Hunter (Scrapers + Task Engine)
+Task: 逐行深度审计 scrapers.ts / task-engine.ts / engine-config.ts + 6 more files
+
+Work Log:
+- 逐行阅读 9 个文件（共 ~6000 行），检查逻辑错误、竞态条件、内存泄漏、类型安全、资源清理、边界情况
+- 确认 task-engine.ts 行 391 的 `if (listUrlOverride)` 块有正确闭合括号（行 397）
+- 验证 TypeScript 编译 + ESLint 对所有修改文件通过
+
+## 发现并修复的 Bug
+
+### Bug 1 (MEDIUM): scrapers.ts 行 48 — CSS 选择器注入
+- **描述**: `findNextPageUrl` 使用字符串插值构建 Cheerio 选择器：\`$(`${pagination.selector}:contains("${nextPage}")`)\``。若 `pagination.selector` 含引号或特殊字符（如 `a[href="page"]`），会破坏选择器语法导致分页失败
+- **修复**: 改用 `.filter()` 回调模式（与同行 52-56 的 next-text 逻辑一致），避免字符串插值
+
+### Bug 2 (MEDIUM): task-engine.ts 5 处 — AbortSignal 事件监听器泄漏
+- **位置**: 行 813-816、818-822、825-830（书籍页 CAPTCHA 暂停）、行 1124-1127、1164-1169（章节 CAPTCHA 暂停）
+- **描述**: 5 处 `new Promise` 中通过 `addEventListener('abort', ...)` 注册监听器，但当 `setTimeout` 先触发时未调用 `removeEventListener` 清理。虽然 `{ once: true }` 防止重复触发，但监听器闭包一直挂在 AbortSignal 上直到信号触发或 GC。在长时间运行的任务中多次触发 CAPTCHA 暂停会累积泄漏
+- **修复**: 所有 5 处统一改为「命名回调 + timer 回调中 removeEventListener」模式，与 `getAdaptiveOrRandomDelay`（行 130-140）和 `handleDownloadCover`（行 537-543）中已有的正确模式保持一致
+
+## 审计结论（无 Bug 的文件）
+
+### engine-config.ts (~516 行) ✅
+- LRU 淘汰逻辑正确（Map 迭代顺序 = 插入顺序）
+- TTL 过期采用惰性清理（访问时检查），配合 max entries 上限防溢出
+- 配置文件缓存基于 mtime，同步读取无竞态
+- validateChain 严格校验引擎白名单 + 去重
+
+### quality-scorer.ts (605 行) ✅
+- 环形缓冲区 bounded (MAX_REPORTS=200)
+- 各维度评分逻辑自洽，权重总和 100
+- checkFailureRate 的分母计算合理（totalBooks + totalChapters + failedItems ≈ 总尝试项）
+- 全局 regex 的 lastIndex 在循环前正确重置
+
+### js-content-extractor.ts (884 行) ✅
+- scriptOnly 标记有效防止 ReDoS（限制搜索范围为 <script> 内容）
+- 所有 regex 量词有上限（100000、200000）
+- String.fromCharCode 使用 4096 分块避免调用栈溢出
+- isLikelyNovelContent 的 CJK 优先检查正确处理短中文内容
+
+### ai-rule-generator.ts (523 行) ✅
+- LRU 缓存 + TTL 过期 + 结构验证 + CSS 选择器验证，四层防护
+- validateRuleStructure 在类型转换前验证 JSON 结构
+- retry 逻辑正确：仅当 retry 结果通过验证时才替换原结果
+
+### cookie-store.ts (156 行) ✅
+- SQLite 事务批量 upsert 原子性
+- UNIQUE(name, domain, path) 约束防重复
+- PRAGMA 配置合理（WAL + NORMAL sync + busy_timeout）
+
+### cheerio-cache.ts (47 行) ✅
+- Bun.hash() 64 位碰撞概率极低（cache 仅 50 条）
+- LRU 通过 delete + re-set 实现，正确
+
+### priority-queue.ts (213 行) ✅
+- 二分搜索插入正确实现稳定 FIFO（同优先级按 createdAt 排序）
+- isKnown 检查同时覆盖 queue 和 processing 防重复入队
+- Semaphore 式并发控制（processing Map + hasCapacity）
+
+## 验证结果
+- TypeScript 编译：9 个审计文件 0 错误 ✅
+- ESLint：9 个审计文件 0 错误/警告 ✅
+
+Stage Summary:
+- 审计 9 个文件（~6000 行），发现 2 个 MEDIUM 级 Bug 并修复
+- Bug 1: scrapers.ts CSS 选择器字符串插值注入 → 改用 .filter() 回调
+- Bug 2: task-engine.ts 5 处 AbortSignal 监听器泄漏 → 统一添加 removeEventListener 清理
+- 其余 7 个文件审计通过，无 Bug
+
+---
+Task ID: 5
+Agent: Anti-Crawl Enhancement Agent
+Task: 反反爬能力增强 + 采集功能优化
+
+Work Log:
+- 读取 worklog.md 最后 100 行，了解项目状态
+- 审计 stealth.ts（4572 行，115+ 节），搜索 navigator.gpu / scheduler / wakeLock / serial / usb / bluetooth / keyboard / print 等 API 覆盖情况
+- 确认 navigator.connection、getBattery、document.fonts.check、CSS.supports、matchMedia、navigator.mediaDevices 已覆盖
+- 发现 3 个未覆盖的现代检测向量：navigator.gpu (WebGPU)、window.scheduler (Task Scheduler)、navigator.wakeLock (Screen Wake Lock)
+- 在 stealth.ts IIFE 末尾添加 3 个新 Section（116/117/118），遵循现有模式（编号注释、try-catch 包裹、IIFE 隔离）
+- 逐行审计 proxy-manager.ts（2479 行），检查竞态条件、内存泄漏、代理连接失败处理、死代理检测、连接池问题
+- 发现 1 个 Bug：checkHealth() 二级回退（直接连接成功但代理路由失败时）错误重置 consecutiveFails=0，导致无法触发冷却/禁用
+- 修复为调用 recordFailure() 以正确累积健康惩罚
+- 审计 scrapers.ts（703 行）的内容提取、分页逻辑、元数据提取：所有边界情况已正确处理（空内容、脚本标签、嵌套 div、缺失字段）
+- 验证 engines.ts 的 CircuitBreaker halfOpenInFlight 逻辑正确
+- 验证 CheerioEngine 代理集成正确（轮转、回退、dispatcher 传递、成功/失败记录）
+- 验证 DokobotEngine 遵循与 ScraplingEngine 相同模式（SSRF/速率限制/断路器/abort 处理）
+- 验证 selectEngine 回退链包含 dokobot（位置 5）
+- 运行 ESLint：0 错误/警告 ✅
+- 运行 TypeScript 编译：修改的 3 个文件 0 错误 ✅
+
+Stage Summary:
+- stealth.ts: 新增 3 个反检测 Section（116 WebGPU、117 Scheduler API、118 Wake Lock API），覆盖 Chrome 113+ / 94+ / 84+ 现代浏览器 API
+- proxy-manager.ts: 修复 1 个 Bug — checkHealth() 二级回退路径现在正确记录失败而非重置 consecutiveFails
+- scrapers.ts: 审计通过，所有边界情况已正确处理，无需修改
+- engines.ts: 验证通过，CircuitBreaker/CheerioEngine/DokobotEngine/selectEngine 逻辑均正确
+
+---
+Task ID: 6
+Agent: Frontend Enhancement Agent
+Task: 前端样式细节优化 + 功能完善
+
+Work Log:
+- 阅读 worklog.md 最后 50 行，了解项目状态
+- 阅读所有需修改的组件文件：ReadingStreak、HeroSection、SearchBar、NovelGrid、NovelGridLayout、FriendlyLinksFooter、DailyReadingGoal、page.tsx、globals.css
+- 在 globals.css 末尾添加 Task 6 专用 CSS 动画区段（~180 行）：
+  - flame-pulse：火焰脉冲动画（用于阅读连续天数图标）
+  - text-gradient-primary/fire/emerald/amber：渐变文字工具类
+  - novel-card-load-anim：CSS 卡片入场动画（替代 framer-motion 的轻量方案）
+  - footer-gradient-border：页脚渐变顶部边框
+  - back-to-top-btn：回到顶部按钮样式
+  - goal-celebrate / goal-ring-draw：目标达成庆祝动画
+  - heart-pop：收藏心跳动画
+  - streak-badge-shimmer：连续阅读里程碑徽章闪光
+  - hero-bg-animated / hero-bg-animated-2：Hero 区域增强渐变动画
+  - prefers-reduced-motion 适配
+- 修改 ReadingStreak.tsx：
+  - 添加火焰脉冲动画（flame-pulse class），激活时火焰图标带脉动效果
+  - 添加 6 级里程碑激励语（3天初窥门径、7天渐入佳境、14天勤学不辍、30天学富五车、60天博览群书、100天书海无涯）
+  - 使用 text-gradient-fire 渐变文字显示连续天数
+  - 使用 streak-badge-shimmer 渐变闪光显示里程碑标签
+- 修改 HeroSection.tsx：
+  - 为 Hero 背景渐变 blob 添加 hero-bg-animated / hero-bg-animated-2 增强 class
+- 修改 NovelGridLayout.tsx（主要卡片布局）：
+  - 添加 localStorage 收藏功能（novel-favorites key）
+  - 添加快速收藏心形按钮（Heart 图标），悬浮在封面右下角
+  - 收藏按钮带 Tooltip、heart-pop 动画、填充/空心状态切换
+  - 将底部字数文字替换为 Badge 组件（更醒目）
+  - 为卡片添加 novel-card-load-anim CSS 入场动画 class
+- 修改 page.tsx：
+  - 添加 BackToTopButton 组件（fixed 定位，滚动超过 400px 显示，平滑滚动回顶）
+  - 页脚 border-t 替换为 footer-gradient-border（渐变顶部边框）
+  - 导入 ArrowUp 图标
+- 修改 DailyReadingGoal.tsx：
+  - 将 ProgressRing 从 framer-motion circle 改为纯 CSS transition + SVG circle（更轻量）
+  - 添加 goal-celebrate 庆祝动画（目标达成时触发）
+  - 添加 4 条随机鼓励语（今日目标达成，太棒了！等）
+  - 目标达成时显示 PartyPopper 图标 + 鼓励文字
+  - 达成时百分比文字使用 text-gradient-emerald 渐变
+  - 为 progress ring 添加 progress-ring-pulse 脉冲光效
+- 运行 bun run lint：0 错误 / 7 警告（均为预存的 react-hooks/incompatible-library 警告）
+- 运行 npx tsc --noEmit 验证：修改的文件无新增 TS 错误
+
+Stage Summary:
+- 修改 6 个文件：globals.css、ReadingStreak.tsx、HeroSection.tsx、NovelGridLayout.tsx、page.tsx、DailyReadingGoal.tsx
+- 新增 ~180 行 CSS 动画定义（含 prefers-reduced-motion 适配）
+- ReadingStreak：火焰脉冲 + 6 级里程碑激励语 + 渐变文字
+- NovelGridLayout：收藏心形按钮 + 字数 Badge + CSS 入场动画
+- Footer：渐变顶部边框 + 回到顶部浮动按钮
+- DailyReadingGoal：CSS transition 进度环 + 目标达成庆祝动画 + 鼓励语
+- Hero Section：增强背景渐变动画
+- ESLint：0 错误 ✅

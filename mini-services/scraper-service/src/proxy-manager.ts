@@ -1181,8 +1181,9 @@ class ProxyManager {
       // Any response means the proxy host is reachable (even auth errors mean it's alive)
       // Consume body to prevent undici connection pool leak (R49#27)
       res.body?.cancel().catch(() => {});
-      // but we couldn't route traffic through it — record as degraded (not a full success)
-      entry.consecutiveFails = 0; // Reset fails since host is alive
+      // Host is alive but can't route traffic — record a mild failure so the proxy
+      // still accumulates health penalties and can eventually be cooled/disabled.
+      this.recordFailure(proxyUrl, 'Host reachable but through-proxy test failed');
       return { healthy: false, responseTime, error: 'Host reachable but through-proxy test failed' };
     } catch (err) {
       clearTimeout(timeout); // Prevent timer leak on fetch failure

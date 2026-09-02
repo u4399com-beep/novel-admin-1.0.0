@@ -811,19 +811,22 @@ async function executeTaskBody(
 
             if (strategyResult.delayMs && strategyResult.delayMs >= BOOK_CAPTCHA_PAUSE_MS) {
               await new Promise<void>((resolve, reject) => {
-                const t = setTimeout(resolve, strategyResult.delayMs!);
-                abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+                const t = setTimeout(() => { abortSignal.removeEventListener('abort', onAbort); resolve(); }, strategyResult.delayMs!);
+                const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); };
+                abortSignal.addEventListener('abort', onAbort, { once: true });
               });
             } else {
               await new Promise<void>((resolve, reject) => {
-                const t = setTimeout(resolve, BOOK_CAPTCHA_PAUSE_MS);
-                abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+                const t = setTimeout(() => { abortSignal.removeEventListener('abort', onAbort); resolve(); }, BOOK_CAPTCHA_PAUSE_MS);
+                const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); };
+                abortSignal.addEventListener('abort', onAbort, { once: true });
               });
             }
           } catch {
             await new Promise<void>((resolve, reject) => {
-              const t = setTimeout(resolve, BOOK_CAPTCHA_PAUSE_MS);
-              abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+              const t = setTimeout(() => { abortSignal.removeEventListener('abort', onAbort); resolve(); }, BOOK_CAPTCHA_PAUSE_MS);
+              const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); };
+              abortSignal.addEventListener('abort', onAbort, { once: true });
             });
           }
 
@@ -1119,8 +1122,9 @@ async function executeTaskBody(
                 return;
               }
               const pausePromise = new Promise<void>((resolve, reject) => {
-                const timer = setTimeout(resolve, CAPTCHA_PAUSE_MS);
-                abortSignal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+                const timer = setTimeout(() => { abortSignal.removeEventListener('abort', onPauseAbort); resolve(); }, CAPTCHA_PAUSE_MS);
+                const onPauseAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+                abortSignal.addEventListener('abort', onPauseAbort, { once: true });
               });
               _captchaPausePromises.set(chDomain, pausePromise);
               try {
@@ -1159,8 +1163,9 @@ async function executeTaskBody(
                 // If strategy recommends even longer, wait the difference
                 if (strategyResult.delayMs && strategyResult.delayMs > CAPTCHA_PAUSE_MS) {
                   await new Promise<void>((resolve, reject) => {
-                    const t = setTimeout(resolve, strategyResult.delayMs! - CAPTCHA_PAUSE_MS);
-                    abortSignal.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+                    const t = setTimeout(() => { abortSignal.removeEventListener('abort', onExtraAbort); resolve(); }, strategyResult.delayMs! - CAPTCHA_PAUSE_MS);
+                    const onExtraAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); };
+                    abortSignal.addEventListener('abort', onExtraAbort, { once: true });
                   });
                 }
               } catch {

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Target, Flame, Loader2 } from 'lucide-react';
+import { Target, Flame, Loader2, PartyPopper } from 'lucide-react';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -19,7 +19,20 @@ interface ReadingGoalData {
   streakDays: number;
 }
 
-// ─── Progress Ring ────────────────────────────────────────────────────
+// ─── Encouraging messages ────────────────────────────────────────────
+
+const GOAL_MESSAGES = [
+  '今日目标达成，太棒了！',
+  '阅读目标已完成，继续加油！',
+  '完美达成！你是阅读达人！',
+  '今日阅读目标已达成！',
+];
+
+function getGoalMessage(): string {
+  return GOAL_MESSAGES[Math.floor(Math.random() * GOAL_MESSAGES.length)];
+}
+
+// ─── CSS-only Progress Ring ─────────────────────────────────────────
 
 function ProgressRing({
   percentage,
@@ -34,10 +47,16 @@ function ProgressRing({
 }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (Math.min(percentage, 100) / 100) * circumference;
+  const clampedPct = Math.min(percentage, 100);
+  const offset = circumference - (clampedPct / 100) * circumference;
 
   return (
-    <svg width={size} height={size} className="-rotate-90" viewBox={`0 0 ${size} ${size}`}>
+    <svg
+      width={size}
+      height={size}
+      className="-rotate-90 progress-ring-pulse"
+      viewBox={`0 0 ${size} ${size}`}
+    >
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -47,7 +66,7 @@ function ProgressRing({
         strokeWidth={strokeWidth}
         className="text-muted/25"
       />
-      <motion.circle
+      <circle
         cx={size / 2}
         cy={size / 2}
         r={radius}
@@ -56,9 +75,12 @@ function ProgressRing({
         strokeWidth={strokeWidth}
         strokeLinecap="round"
         strokeDasharray={circumference}
-        initial={{ strokeDashoffset: circumference }}
-        animate={{ strokeDashoffset: offset }}
-        transition={{ duration: 0.8, ease: 'easeOut' as const }}
+        style={{
+          '--ring-circumference': `${circumference}`,
+          '--ring-target-offset': `${offset}`,
+          strokeDashoffset: offset,
+        } as React.CSSProperties}
+        className="transition-all duration-1000 ease-out"
       />
     </svg>
   );
@@ -70,7 +92,10 @@ export function DailyReadingGoal({ className }: DailyReadingGoalProps) {
   const [data, setData] = useState<ReadingGoalData | null>(null);
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState(false);
+  const [goalJustMet, setGoalJustMet] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  const goalMessage = useMemo(() => getGoalMessage(), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,6 +109,11 @@ export function DailyReadingGoal({ className }: DailyReadingGoalProps) {
         );
         setData(result);
         setVisible(true);
+        // Trigger celebration if goal is met
+        if (result.percentage >= 100) {
+          // Slight delay so the ring animation plays first
+          setTimeout(() => setGoalJustMet(true), 800);
+        }
       } catch (err) {
         // Silently hide if unauthenticated or network error
         if (err instanceof FetchError && (err.status === 401 || err.status === 403)) {
@@ -127,12 +157,12 @@ export function DailyReadingGoal({ className }: DailyReadingGoalProps) {
       className={`flex flex-col items-center gap-1.5 ${className ?? ''}`}
     >
       {/* Progress Ring */}
-      <div className="relative">
+      <div className={`relative ${goalJustMet ? 'goal-celebrate' : ''}`}>
         <ProgressRing percentage={data.percentage} color={ringColor} />
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span
-            className="text-sm font-bold tabular-nums leading-none"
-            style={{ color: ringColor }}
+            className={`text-sm font-bold tabular-nums leading-none ${isCompleted ? 'text-gradient-emerald' : ''}`}
+            style={!isCompleted ? { color: ringColor } : undefined}
           >
             {data.percentage}%
           </span>
@@ -141,11 +171,24 @@ export function DailyReadingGoal({ className }: DailyReadingGoalProps) {
 
       {/* Chapter count and goal */}
       <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-        <Flame className="h-3 w-3" />
+        <Flame className={`h-3 w-3 ${isCompleted ? 'text-emerald-500' : ''}`} />
         <span className="tabular-nums">
           {data.chaptersRead} / {data.dailyGoal} 章
         </span>
       </div>
+
+      {/* Goal met encouraging message */}
+      {isCompleted && goalJustMet && (
+        <motion.p
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+          className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+        >
+          <PartyPopper className="h-3 w-3" />
+          {goalMessage}
+        </motion.p>
+      )}
 
       {/* Streak indicator */}
       {data.streakDays > 0 && (

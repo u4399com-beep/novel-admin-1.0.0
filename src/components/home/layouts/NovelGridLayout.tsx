@@ -3,12 +3,32 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Eye, BookOpen, User, BookMarked, FileText, Sparkles } from 'lucide-react';
+import { Eye, BookOpen, User, BookMarked, FileText, Sparkles, Heart } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatWordCount, getStatusInfo } from '@/components/home/shared-types';
 import { NovelCover } from '@/components/shared/NovelCover';
 import type { NovelCardData } from '@/components/home/shared-types';
 import { HighlightText } from '@/components/home/NovelGrid';
+
+// ─── Favorites (localStorage) ──────────────────────────────────
+const FAVORITES_KEY = 'novel-favorites';
+
+function getFavorites(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    return new Set(JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'));
+  } catch { return new Set(); }
+}
+
+function toggleFavorite(id: string, current: Set<string>): Set<string> {
+  const next = new Set(current);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify([...next]));
+  return next;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────
 function isNewNovel(createdAt: string): boolean {
@@ -17,11 +37,18 @@ function isNewNovel(createdAt: string): boolean {
   return (now - created) < 7 * 24 * 60 * 60 * 1000; // 7 days
 }
 
+// ─── NovelCard ───────────────────────────────────────────────────
 const NovelCard = React.memo(function NovelCard({ novel, index, search }: { novel: NovelCardData; index: number; search: string }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [heartAnimating, setHeartAnimating] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const isTouchDevice = useRef(false);
+
+  useEffect(() => {
+    queueMicrotask(() => setFavorites(getFavorites()));
+  }, []);
 
   useEffect(() => {
     const onTouch = () => { isTouchDevice.current = true; };
@@ -57,6 +84,14 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
     setPopoverOpen((prev) => !prev);
   }, []);
 
+  const handleFavorite = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFavorites((prev) => toggleFavorite(novel.id, prev));
+    setHeartAnimating(true);
+    setTimeout(() => setHeartAnimating(false), 350);
+  }, [novel.id]);
+
   useEffect(() => {
     return () => {
       if (enterTimer.current) clearTimeout(enterTimer.current);
@@ -65,6 +100,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
   }, []);
 
   const statusInfo = getStatusInfo(novel.status);
+  const isFavorited = favorites.has(novel.id);
 
   return (
     <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
@@ -74,7 +110,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: index * 0.04 }}
-            className="group cursor-pointer shine-hover card-depth hover-lift hover-scale novel-card-glow"
+            className="group cursor-pointer shine-hover card-depth hover-lift hover-scale novel-card-glow novel-card-load-anim"
           >
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
               <NovelCover
@@ -98,6 +134,24 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
                 )}
                 <span className={`inline-block h-2 w-2 rounded-full ${statusInfo.dotClass} status-${novel.status} badge-glow`} title={statusInfo.label} />
               </div>
+              {/* Quick-favorite heart button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={handleFavorite}
+                    className="absolute bottom-10 right-2 z-10 h-7 w-7 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white/70 hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    aria-label={isFavorited ? '取消收藏' : '收藏'}
+                  >
+                    <Heart
+                      className={`h-3.5 w-3.5 ${isFavorited ? 'fill-rose-400 text-rose-400' : ''} ${heartAnimating ? 'heart-pop' : ''}`}
+                    />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="text-xs">
+                  {isFavorited ? '取消收藏' : '收藏'}
+                </TooltipContent>
+              </Tooltip>
               <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 opacity-0 group-hover:opacity-100">
                 <span className="flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-black/70 px-4 py-2 text-sm font-medium text-foreground backdrop-blur-sm shadow-lg translate-y-3 group-hover:translate-y-0 transition-transform duration-300">
                   <Eye className="h-4 w-4" /> 阅读
@@ -107,9 +161,15 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
                 <p className="text-[11px] text-white/80 flex items-center gap-1">
                   <BookOpen className="h-3 w-3" /> {novel._count.chapters} 章
                 </p>
-                <p className="text-[10px] text-white/60 flex items-center gap-1 mt-0.5">
-                  <FileText className="h-2.5 w-2.5" /> {formatWordCount(novel.wordCount)}
-                </p>
+                <div className="flex items-center justify-end mt-0.5">
+                  <Badge
+                    variant="secondary"
+                    className="text-[9px] h-4 px-1.5 bg-white/15 text-white/80 border-0 backdrop-blur-sm hover:bg-white/20"
+                  >
+                    <FileText className="h-2.5 w-2.5 mr-0.5" />
+                    {formatWordCount(novel.wordCount)}
+                  </Badge>
+                </div>
               </div>
             </div>
             <div className="mt-3 space-y-1 px-0.5 tab-content-enter">

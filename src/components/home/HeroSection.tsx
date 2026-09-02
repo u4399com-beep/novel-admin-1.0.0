@@ -110,8 +110,8 @@ export function HeroSection({
       <div className="hero-gradient-border" aria-hidden="true" />
       {/* Subtle animated mesh gradient background */}
       <div className="absolute inset-0 pointer-events-none -z-10" aria-hidden="true">
-        <div className="hero-gradient-blob hero-gradient-blob-1" />
-        <div className="hero-gradient-blob hero-gradient-blob-2" />
+        <div className="hero-gradient-blob hero-gradient-blob-1 hero-bg-animated" />
+        <div className="hero-gradient-blob hero-gradient-blob-2 hero-bg-animated-2" />
       </div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         <TypingTagline />

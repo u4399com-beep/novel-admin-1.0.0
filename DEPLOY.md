@@ -6,7 +6,26 @@
 
 ## ⚡ 一键安装（推荐）
 
-**只需要 2 条命令，3 分钟搞定：**
+### 方式 A：快速部署（已安装 Docker）
+
+**只需要 1 条命令：**
+
+```bash
+chmod +x quick-docker.sh && ./quick-docker.sh
+```
+
+适用场景：服务器已安装 Docker 和 Docker Compose。脚本会自动：
+- ✅ 检查 Docker 环境
+- ✅ 生成安全的随机密码和密钥
+- ✅ 检测服务器内存并选择最佳配置档位（tiny/small/normal）
+- ✅ 从 `.env.docker` 模板生成 `.env`
+- ✅ 构建并启动所有服务
+- ✅ 等待健康检查通过
+- ✅ 显示登录地址和密码
+
+### 方式 B：完整部署（含 Docker 安装）
+
+如果服务器还没有安装 Docker，使用完整部署脚本：
 
 ```bash
 # 1. 确保已安装 Docker（如果没有：curl -fsSL https://get.docker.com | sh）
@@ -14,15 +33,11 @@
 chmod +x install.sh && ./install.sh
 ```
 
-安装脚本会自动：
-- ✅ 检测 Docker 环境
-- ✅ 生成安全的随机密码和密钥
-- ✅ 创建配置文件
-- ✅ 构建并启动所有服务
-- ✅ 等待健康检查通过
-- ✅ 显示登录地址和密码
-
-**安装完成后，按脚本输出的地址和密码登录即可使用。**
+安装脚本额外提供：
+- ✅ 自动安装 Docker 和 Docker Compose
+- ✅ 配置防火墙开放端口
+- ✅ 创建 swap 分区（低内存服务器）
+- ✅ 国内 Docker 镜像加速
 
 ---
 
@@ -38,7 +53,7 @@ chmod +x pack.sh && ./pack.sh
 
 ```bash
 tar xzf novel-admin-x.x.x-YYYYMMDD.tar.gz && cd novel-admin-x.x.x-*
-chmod +x install.sh && ./install.sh
+chmod +x quick-docker.sh && ./quick-docker.sh
 ```
 
 ---
@@ -59,6 +74,7 @@ chmod +x install.sh && ./install.sh
 12. [更新升级](#12-更新升级)
 13. [完全卸载](#13-完全卸载)
 14. [开发模式切换（SQLite）](#14-开发模式切换sqlite)
+15. [硬件配置说明](#15-硬件配置说明)
 
 ---
 
@@ -244,8 +260,8 @@ f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2
 ```bash
 cd /opt/novel-admin
 
-# 从模板复制一份配置文件
-cp .env.production .env
+# 从 Docker 配置模板复制一份配置文件
+cp .env.docker .env
 ```
 
 ### 6.3 编辑配置文件
@@ -655,8 +671,9 @@ docker compose logs -f
 如果新版本修改了数据库结构（通常发布说明会提到）：
 
 ```bash
-# Prisma 会自动处理大部分变更
-docker compose exec novel-manager bunx prisma db push
+# 容器启动时已自动执行 db push，通常不需要手动操作
+# 如确实需要手动执行，不要用 bunx（会下载 Prisma 7.x，与项目不兼容）：
+docker compose exec novel-manager bun /app/node_modules/prisma/build/index.js db push --accept-data-loss --schema ./prisma/schema.prisma
 ```
 
 ---
@@ -720,6 +737,22 @@ Docker 构建过程会自动：
 3. 配置好数据库连接
 
 你不需要手动做任何事情。
+
+---
+
+## 15. 硬件配置说明
+
+系统根据服务器内存自动选择配置档位：
+
+| 档位 | 内存 | PG 内存 | App 内存 | 适用场景 |
+|------|------|---------|----------|----------|
+| tiny | <1.5GB | 128M | 512M | 1核1G 入门服务器 |
+| small | 1.5-3GB | 192M | 640M | 2核2G 主流配置 |
+| normal | ≥3GB | 256M | 1024M | 2核4G+ 推荐配置 |
+
+- **quick-docker.sh** 会自动检测内存并选择最佳档位
+- **手动配置**：编辑 `.env` 文件底部的资源限制参数，取消注释对应档位
+- 如果修改了资源限制，需要重新构建：`docker compose up -d --build`
 
 ---
 
