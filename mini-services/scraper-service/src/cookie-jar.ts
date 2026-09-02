@@ -401,7 +401,8 @@ class CookieJar {
     for (const [domain, lastAct] of this.lastActivity) {
       if (nowMs - lastAct > STALE_SESSION_THRESHOLD) {
         const cookies = this.cookies.get(domain);
-        if (cookies && cookies.every(c => c.expires === 0)) {
+        // Also clean up orphaned lastActivity entries (domains queried but no cookies stored)
+        if (!cookies || cookies.every(c => c.expires === 0)) {
           this.cookies.delete(domain);
           this.lastActivity.delete(domain);
         }
@@ -441,7 +442,7 @@ _cleanupInterval = setInterval(() => {
       console.log(`[CookieJar] Cleaned up ${removed} expired cookies`);
     }
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 /** Tear down the cookie jar and stop the cleanup interval */
 export function destroyCookieJar(): void {

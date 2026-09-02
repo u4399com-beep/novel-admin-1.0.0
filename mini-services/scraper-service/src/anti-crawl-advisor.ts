@@ -238,14 +238,14 @@ class AntiCrawlAdvisor {
     try {
       rateState = rateLimiter.getDomainState(domain);
     } catch {
-      rateState = { status: 'normal', currentRPM: 0, maxRPM: 60, penaltyActive: false, penaltyUntil: 0 };
+      rateState = { domain, status: 'normal', currentRPM: 0, maxRPM: 60, burstRemaining: 0, penaltyActive: false, penaltyUntil: 0, lastRequestTime: 0, estimatedWaitMs: 0 };
     }
 
     let delayState: DelayDomainStats;
     try {
       delayState = adaptiveDelay.getDomainStats(domain);
     } catch {
-      delayState = { avgResponseTime: 0, lastRequestTime: 0, consecutiveErrors: 0, totalRequests: 0 };
+      delayState = { domain, currentDelay: 0, backoffLevel: 0, consecutiveErrors: 0, avgResponseTime: 0, lastRequestTime: 0, status: 'normal' };
     }
 
     // 1. Captcha signals from history

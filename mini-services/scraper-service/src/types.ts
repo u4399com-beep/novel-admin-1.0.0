@@ -53,7 +53,7 @@ export interface AntiCrawl {
 
 // ==================== Engine Types ====================
 
-export type EngineType = "cheerio" | "playwright" | "firecrawl" | "agentql" | "cloud-browser" | "scrapling" | "obscura";
+export type EngineType = "cheerio" | "playwright" | "firecrawl" | "agentql" | "cloud-browser" | "scrapling" | "obscura" | "dokobot";
 
 export interface FetchResult {
   html: string;

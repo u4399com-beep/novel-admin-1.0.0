@@ -1,28 +1,19 @@
 {
   "name": "久久小说下载网 (aijjxs.com)",
-  "description": "久久小说下载网全站采集。TXT电子书下载站，UTF-8编码，cheerio引擎。分类页/txt/{cat}/用div.listbg列表，书名span.title a、作者/状态/大小在span.mainGreen中。书详情页/txt/{id}.html含class=kv元信息、.intro-panel .desc简介、.download-btn下载链接。15个分类映射，封面域名image.jjjjxsw.com。",
+  "description": "久久小说下载网全站采集。TXT电子书下载站，UTF-8编码，cheerio引擎。分类页/txt/{cat}/用div.listbg列表，书名span.title a链接、作者/状态/大小在span.mainGreen中。书详情页/txt/{id}.html标题从<title>标签正则提取（去掉txt下载后缀）、分类从div.kv正则提取（去掉标签前缀）、.intro-panel .desc简介、封面从首个article.panel取img。分页用a[href*=index_]数字翻页。15个分类映射，封面域名image.jjjjxsw.com。",
   "enabled": true,
 
   "listUrl": "https://www.aijjxs.com/txt/{catId}/",
-  "listSelector": { "type": "css", "value": ".catalog .listbg" },
-  "listPagination": { "type": "page", "selector": ".catalog ~ .page a[href*=\"index_\"], a[href*=\"index_\"]", "maxPage": 500 },
-  "listItemSelector": {
-    "title": "span.title a",
-    "link": "span.title a",
-    "cover": "a.img img",
-    "description": "div[style*=\"padding:0 19px\"]:first-of-type",
-    "author": "span.mainGreen a[href*=\"/zuozhe/\"]",
-    "status": "span.mainGreen",
-    "extra": "span.mainGreen"
-  },
+  "listSelector": { "type": "css", "value": ".catalog .listbg span.title a" },
+  "listPagination": { "type": "page", "selector": "a[href*=\"index_\"]", "maxPage": 500 },
 
-  "bookTitleSelector": { "type": "css", "value": "article.panel h2, article.panel .head h2, .detail h2" },
+  "bookTitleSelector": { "type": "regex", "value": "(?<=<title>)\\s*?([^\\s<][^<]*?)\\s*?(?=(?:txt下载|TXT下载))" },
   "bookAuthorSelector": { "type": "css", "value": ".kv p:first-child a" },
-  "bookCategorySelector": { "type": "css", "value": ".kv p:nth-child(2)" },
+  "bookCategorySelector": { "type": "regex", "value": "(?<=书籍分类[：:]\\s*)\\S+" },
   "bookKeywordsSelector": null,
   "bookDescriptionSelector": { "type": "css", "value": ".intro-panel .desc" },
-  "bookCoverSelector": { "type": "css", "value": ".detail .cover img, article.panel:first-child img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": ".kv .sfwj" },
+  "bookCoverSelector": { "type": "css", "value": "article.panel:first-of-type img[src]", "extract": "src" },
+  "bookStatusSelector": { "type": "css", "value": "span.sfwj" },
 
   "chapterListUrl": null,
   "chapterListSelector": null,

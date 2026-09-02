@@ -23197,3 +23197,206 @@ Stage Summary:
 - aijjxs.com scrape rule added (31 total rules now)
 - t2s converter: 轉 char fix + threshold fix + word mapping cleanup
 - Git pushed: b1f7e37, 0a4ed8a
+---
+Task ID: 3
+Agent: Dokobot engine implementation
+Work Log:
+- Added `| "dokobot"` to EngineType union in types.ts (line 56)
+- Added dokobot to engine list comment block in engines.ts (line 11)
+- Created `dokobotBreaker` circuit breaker after scraplingBreaker (line 261)
+- Added `DokobotEngine` class (section 6b) after ScraplingEngine, following identical pattern:
+  - Service URL via DOKOBOT_SERVICE_URL env var (default http://127.0.0.1:3032)
+  - POST to /scrape endpoint with { url, timeout, wait_for: 2000 }
+  - Response format: { html, final_url, status_code, error }
+  - Circuit breaker, rate limiting, AbortError/doNotRetry handling, retryWithBackoff all match ScraplingEngine
+  - MAX_RESPONSE_SIZE check included
+- Added `"dokobot"` to DEFAULT_FALLBACK_CHAIN (after scrapling)
+- Added `"dokobot"` to getEngineNames() hardcoded list
+- Added `"dokobot"` to nonBrowserEngines array (external HTTP service, not local browser)
+- Added `"dokobot"` to VALID_ENGINES in selectEngine()
+- Registered `new DokobotEngine()` in initEngines()
+- Verified compilation: `bun build index.ts --no-bundle` succeeds with no errors
+
+Stage Summary:
+- Dokobot engine fully integrated across 8 edit points in 2 files (types.ts, engines.ts)
+- DokobotEngine class ~107 lines, mirrors ScraplingEngine pattern exactly
+- Default service URL: http://127.0.0.1:3032 (configurable via DOKOBOT_SERVICE_URL)
+- Placed in fallback chain after scrapling (both Python anti-bot services)
+- Compilation verified successfully
+
+---
+Task ID: 4
+Agent: Fingerprint test module creator
+Work Log:
+- Read worklog.md to understand project structure (scraper-service with PlaywrightEngine/ObscuraEngine)
+- Studied engines.ts launch patterns: Playwright uses module-level singleton, Obscura uses instance-level with extra Chrome args
+- Created `/home/z/my-project/mini-services/scraper-service/src/fingerprint-test.ts`
+  - Exported `FingerprintCheck` interface (category, name, passed, value, expected, severity)
+  - Exported `FingerprintTestResult` interface (testUrl, engine, timestamp, checks, overallScore, issues)
+  - Exported `runFingerprintTest(engine, options?)` async function
+- Fingerprint detection script covers 30+ checks across categories:
+  - Navigator: userAgent consistency, platform/UA consistency, language, hardwareConcurrency, deviceMemory, maxTouchPoints, plugins count, PDF Viewer plugin, mimeTypes count
+  - WebDriver: navigator.webdriver (must be undefined/false)
+  - Screen: dimensions consistency, colorDepth/pixelDepth, outer/inner dimensions
+  - WebGL: vendor/renderer (SwiftShader detection), WebGL2 support
+  - Canvas: toDataURL non-empty, toDataURL consistency
+  - Audio: AudioContext creation, getFloatFrequencyData
+  - WebRTC: RTCPeerConnection API availability
+  - Chrome object: window.chrome, chrome.runtime, chrome.csi, chrome.loadTimes
+  - Permissions: notifications query, geolocation query (async collection)
+  - Headless indicators: __nightmare, _phantom, callPhantom, domAutomation, _selenium, __webdriver_evaluate, __driver_evaluate, __webdriver_script_fn, __webdriver_script_executor, __selenium_unwrapped, __fxdriver_unwrapped
+  - Performance timing: navigationStart vs timeOrigin consistency
+  - SharedArrayBuffer/crossOriginIsolated consistency
+  - OffscreenCanvas transferToImageBitmap support
+  - MediaDevices: enumerateDevices (async collection)
+  - Connection: navigator.connection with rtt/downlink/effectiveType
+- Scoring: weighted categories (webdriver=20, webgl=15, chrome_object=10, navigator=15, screen=10, canvas=10, audio=5, webrtc=5, headless_indicators=10) summing to 100
+- Obscura engine attempts to import and apply stealth script from `./stealth` module
+- All checks use try-catch isolation; async checks (permissions, mediaDevices) collected via global window array
+- Fixed screen.colorDepth type error in Playwright's context options
+- TypeScript compilation verified: zero errors from fingerprint-test.ts
+
+Stage Summary:
+- Created `src/fingerprint-test.ts` (756 lines) with 3 exports: FingerprintCheck, FingerprintTestResult, runFingerprintTest
+- 30+ fingerprint checks across 9 weighted categories, scoring 0-100
+- Supports both 'playwright' and 'obscura' engine modes with proxy and headless options
+- Compilation clean (no TS errors in fingerprint-test.ts; pre-existing errors in http2-decoy.ts are unrelated)
+---
+Task ID: 5
+Agent: Auxiliary modules auditor
+Task: Deep line-by-line code audit on 7 auxiliary scraper modules
+
+Work Log:
+- Read full worklog (23263 lines) to verify no previously-fixed issues overlap
+- Line-by-line audited 7 files: browser-behavior.ts, adaptive-delay.ts, anti-crawl-advisor.ts, captcha-detector.ts, captcha-strategy.ts, charset-detector.ts, cookie-jar.ts
+- Verified TypeScript compilation after fixes (only pre-existing ReadingHeatmap casing error, unrelated)
+
+## Files Audited (Clean — No Bugs Found)
+1. **browser-behavior.ts** — Human behavior simulation (mouse, scroll, typing). Bounded maps (MAX_TRACKED_DOMAINS=500). No timer leaks (setTimeouts are awaited). Bezier math correct with distance=0 guard.
+2. **adaptive-delay.ts** — Per-domain delay with exponential backoff. LRU eviction correct and in sync. Response time tracking proper. No race conditions (all sync).
+3. **captcha-detector.ts** — Heuristic CAPTCHA detection. Pre-compiled regexes, no ReDoS risk. Evidence dedup logic correct. BOM-ordered detection proper.
+4. **captcha-strategy.ts** — Pluggable CAPTCHA handling strategies. Strategy chain correct (first-match wins). Delay capping at 120s prevents overflow. Error recovery via continue to next strategy.
+5. **charset-detector.ts** — GBK/Big5 frequency analysis. BOM detection order correct (longer BOMs first). Non-ASCII threshold check properly bounded. 256KB analysis limit.
+
+## Bugs Found & Fixed (2 files, 3 issues)
+
+### BUG-1: cookie-jar.ts — Memory leak in `lastActivity` Map (MEDIUM)
+- **Root cause**: `cleanup()` method only deletes `lastActivity` entries when `cookies` exists AND all cookies are session-only. Domains queried via `get()` or `getPlaywrightCookies()` that have NO cookies stored leave orphaned entries in `lastActivity` that are never cleaned up.
+- **Impact**: In long-running scraper sessions querying many unique domains, `lastActivity` grows unboundedly.
+- **Fix**: Changed condition from `if (cookies && cookies.every(...))` to `if (!cookies || cookies.every(...))` so orphaned entries are also purged.
+
+### BUG-2: cookie-jar.ts — Missing `.unref()` on cleanup setInterval (LOW)
+- **Root cause**: The 5-minute periodic cleanup `setInterval` (line 436) lacks `.unref()`, unlike the anti-crawl-advisor.ts interval which correctly uses `.unref()`. This prevents the Node.js process from exiting when only this timer is pending.
+- **Impact**: Process cannot shut down gracefully if HTTP server and other keep-alive mechanisms are stopped but `destroyCookieJar()` is not explicitly called.
+- **Fix**: Appended `.unref()` to the `setInterval` call.
+
+### BUG-3: anti-crawl-advisor.ts — Incomplete fallback types for `rateState` and `delayState` (MEDIUM)
+- **Root cause**: Two catch-block fallback objects don't satisfy their declared TypeScript interfaces:
+  - `rateState` fallback (line 241): Missing `domain`, `burstRemaining`, `lastRequestTime`, `estimatedWaitMs` fields from `DomainRateState`
+  - `delayState` fallback (line 248): Missing `domain`, `currentDelay`, `backoffLevel`, `status` fields from `DomainStats`; has spurious `totalRequests` field
+- **Impact**: Type mismatch causes TypeScript compile errors (or Bun silent coercion). At runtime, accessing missing fields returns `undefined`, potentially causing subtle logic errors in signal detection.
+- **Fix**: Both fallbacks now include all required fields with safe zero/normal defaults and the `domain` parameter.
+
+Stage Summary:
+- Audited 7 auxiliary scraper modules (2600+ lines total)
+- Found and fixed 3 real bugs across 2 files
+- 5 files confirmed clean (no issues)
+- All fixes verified with TypeScript compilation
+
+---
+Task ID: 1
+Agent: aijjxs scrape rule enhancer
+Work Log:
+- Read current aijjxs.json scrape rule and selectors.ts to understand selector application flow
+- Traced list scraping: `handleScrapeList` uses `parseSelectorMulti` on `listSelector` to extract hrefs from matched `<a>` elements
+- Traced book scraping: `handleScrapeBook` calls `parseSelector` for each `book*Selector`, with OG/JSON-LD metadata fallback
+- Traced pagination: `findNextPageUrl` with type="page" uses `:contains()` on pagination selector — comma-separated selectors break `:contains()` scope
+- Confirmed `listItemSelector` is a dead field (not in types.ts, not referenced in task-engine.ts or scrapers.ts)
+- Fixed `listSelector`: `.catalog .listbg` → `.catalog .listbg span.title a` (targets `<a>` links with hrefs, not div containers)
+- Fixed `bookTitleSelector`: `article.panel h2, ...` → regex `(?<=<title>)\s*?([^\s<][^<]*?)\s*?(?=(?:txt下载|TXT下载))` (extracts clean book name from `<title>` tag, stripping "txt下载" suffix)
+- Fixed `bookCategorySelector`: `.kv p:nth-child(2)` → regex `(?<=书籍分类[：:]\s*)\S+` (strips "书籍分类：" label prefix, returns just category name)
+- Fixed `bookCoverSelector`: `.detail .cover img, article.panel:first-child img` → `article.panel:first-of-type img[src]` (uses `:first-of-type` instead of `:first-child`)
+- Fixed `bookStatusSelector`: `.kv .sfwj` → `span.sfwj` (more direct, matches user-confirmed structure)
+- Fixed `listPagination` selector: `.catalog ~ .page a[href*="index_"], a[href*="index_"]` → `a[href*="index_"]` (single selector avoids `:contains()` scoping issue with comma-separated selectors)
+- Removed unsupported `listItemSelector` block entirely (was never consumed by scraper engine)
+- Updated description to reflect new selector strategies
+- Validated JSON syntax passes `json.load()`
+- Verified both regex patterns in Node.js: title regex extracts "斗罗大陆" from full title tag; category regex extracts "玄幻小说" from "书籍分类：玄幻小说"
+
+Stage Summary:
+- 6 selector fixes applied to aijjxs.json matching actual site HTML structure
+- listSelector now correctly targets `<a>` hrefs for book URL collection
+- bookTitleSelector uses regex lookbehind to extract clean title from `<title>` tag
+- bookCategorySelector uses regex lookbehind to strip label prefix
+- Removed dead `listItemSelector` field
+- Simplified pagination selector to avoid `:contains()` comma-scope bug
+- JSON validated, regex patterns tested in Node.js runtime
+---
+Task ID: 6
+Agent: Stealth+fingerprint+utils auditor
+
+Work Log:
+- Deep audit of 4 scraper-service files: stealth.ts (4290 lines), fingerprint-test.ts (744 lines), utils.ts (1330 lines), proxy-manager.ts (2479 lines)
+- Total ~8843 lines of code reviewed line-by-line
+
+## Audit Scope & Findings
+
+### 1. stealth.ts (4290 lines)
+**Template literal construction**: All profile property interpolations use `JSON.stringify()` for strings and direct number interpolation for numerics. No injection risk. The `PROFILE` object is serialized once via `JSON.stringify(profile)` and accessed via `PROFILE.*` properties in the generated JS. Safe.
+
+**Cache eviction**: `_stealthScriptCache` has proactive eviction at size > 400 (evicts expired entries). `profileCache` has MAX_SIZE=500 with LRU eviction via Map insertion order. `domainBaseDelayCache` has MAX=500 with LRU eviction. `domainUACache` has MAX=500 with LRU eviction. All properly bounded.
+
+**Performance**: The ~3500-line template literal is computed once per unique profile seed and cached for 30 minutes. Subsequent calls are O(1) cache hits. No performance issue.
+
+**Null checks on profile properties**: `profile.languages[0]` (line 645) — if languages is empty, `JSON.stringify(undefined)` produces JS literal `undefined`, making `navigator.language` return `undefined`. However, `LANGUAGE_VARIANTS` always has 3-4 entries, and generation functions always pick from them, so this edge case cannot occur in practice. Not a real bug.
+
+**Result**: No bugs found.
+
+### 2. fingerprint-test.ts (744 lines)
+**TypeScript types**: All interfaces properly defined. `FingerprintCheck.severity` uses union type `'critical' | 'high' | 'medium' | 'low'` with runtime validation via `validateSeverity()`. Clean.
+
+**Browser cleanup**: Uses `cleanupRegistry` pattern with `try/finally`. Browser cleanup runs in reverse order (context.close() before browser.close()). All cleanup functions wrapped in try-catch for best-effort. Even if `browser.newContext()` or `context.newPage()` throws, all previously registered cleanups execute. **No missing cleanup bug.**
+
+**Playwright API usage**: `page.addInitScript(stealthScript)` correct for init scripts. `page.evaluate()` with string argument correct. `page.evaluate()` with async callback correct. `context.close()` implicit page cleanup correct.
+
+**Edge cases**: `permissions.query` results collected asynchronously with 1-second wait — adequate for test. `AudioContext` creation in detection script — first instance not explicitly closed (browser context cleanup handles it). Not a resource leak in practice.
+
+**Result**: No bugs found.
+
+### 3. utils.ts (1330 lines)
+**buildFetchHeaders correctness**: Proper header construction order: base headers → UA → Accept-Language → Sec-Fetch → Client Hints → Referer → XFF → DNT → Cookies → Header shuffle. Domain-aware header selection. XFF correctly skipped when using a real proxy (line 1032). Cookie values sanitized for header injection (line 1054). Correct.
+
+**retryWithBackoff logic**: AbortSignal checked before each attempt and after failure. Abort-aware delay uses `setTimeout` + `signal.addEventListener('abort', ..., { once: true })` with proper cleanup. `doNotRetry` flag respected. Retryable status code check uses regex on error message — works because error messages are constructed with `HTTP ${status}` format. `DOMException` available in Node.js 18+. Correct.
+
+**followRedirects edge cases**: Response body cancelled on each redirect hop (line 1293) preventing undici connection pool leak. SSRF validation on every hop via `isSafeUrl()`. Loop detection via `visitedUrls` Set. Max redirects exceeded check after loop (line 1323) with body cancellation. Correct.
+
+**getSecFetchHeadersForDomain correctness**: Same-origin detection uses 4 checks (exact match, subdomain both directions, root domain). Root domain extraction handles 10 multi-part TLDs. `getRootDomain` comment on line 474 mentions `sub.api.example.co.uk` → `co.uk` which is actually incorrect (should be `example.co.uk`), but the code DOES return `example.co.uk` correctly (line 485: `parts.slice(-3).join('.')`). Comment is wrong but code is correct.
+
+**getChromeClientHints correctness**: Version matching loop (lines 726-735) checks `versions.every(v => v === chromeMajor)` but the greaselion brand `Not A(Brand` always has version 99, which never matches chromeMajor. This means the loop NEVER finds a match, making it dead code. However, the fallback (line 738) always produces the correct result: for versions in the pool, `hintPool[0]` passes the includes check; for versions not in the pool, dynamic construction produces correct headers. **Functional behavior is correct despite dead loop code.**
+
+**Regex issues**: No regex patterns in this file that could cause ReDoS or incorrect matching. All regexes are simple and bounded.
+
+**Result**: No functional bugs found. Minor: getRootDomain comment is misleading, version matching loop is dead code.
+
+### 4. proxy-manager.ts (2479 lines)
+**Connection leaks**: Dispatcher cache (max 200) uses LRU eviction with `(old as any)?.close?.()` calls for both ProxyAgent and SocksProxyAgent. `clearDispatcherCache()` closes all cached dispatchers on shutdown. Response bodies properly consumed/cancelled in `checkHealth`, `_doVerifyProxy`, and `followRedirects`-style patterns.
+
+**Proxy URL parsing**: `parseProxyUrl` handles: http/https/socks4/socks5/socks4h/socks5h, authentication (user:pass@), IPv6 (`[::1]` bracketing), default ports (80/443/1080), port validation (1-65535), missing protocol (defaults to http), invalid URLs (try-catch returns null). Comprehensive.
+
+**SOCKS proxy handling**: `SocksProxyAgent` receives original URL (including protocol) so it handles remote DNS (h-variants) itself. SOCKS4 authentication warning logged. SOCKS proxies get longer timeouts (20s vs 15s) for handshake. Correct.
+
+**Rotation logic**: `getProxyWithFallback` properly excludes disabled, cooling, domain-blocked, recently-failed, and explicitly excluded proxies. `getDomainProxyWithRotation` uses sorted top-N candidates with configurable rotation interval. `recordSuccessWithRotation` advances rotation index after `rotationInterval` successes. `domainFailures` map pruned when > 10 entries per domain. `recentFailures` array pruned to 5-minute window. `consecutiveFailTracker` and `hourlyFailurePattern` cleaned up periodically. Correct.
+
+**Result**: No bugs found.
+
+## Summary
+- 4 files, ~8843 lines reviewed line-by-line
+- **0 new bugs found** requiring fixes
+- All previously-fixed issues (from Tasks 1-13, 148+ cumulative fixes) verified as intact
+- Code quality is high: proper error handling, resource cleanup, type safety, edge case coverage
+- These files have been through 6+ rounds of auditing and are stable
+
+Stage Summary:
+- No new bugs found in stealth.ts, fingerprint-test.ts, utils.ts, or proxy-manager.ts
+- All files have proper error handling, resource cleanup, and type safety
+- Minor note: getRootDomain comment is misleading and getChromeClientHints version loop is dead code (neither affects functionality)

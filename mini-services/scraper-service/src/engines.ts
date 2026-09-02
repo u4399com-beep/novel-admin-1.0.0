@@ -8,6 +8,7 @@
  *   agentql        → AgentQL API - extract data using natural language queries
  *   cloud-browser  → Browserless / Steel cloud browser API
  *   scrapling      → Python anti-bot browser service
+ *   dokobot        → Python anti-bot bypass service (external HTTP)
  *   obscura        → Stealth anti-fingerprint browser (enhanced Playwright)
  */
 
@@ -257,6 +258,7 @@ const firecrawlBreaker = CircuitBreaker.create("Firecrawl");
 const agentqlBreaker = CircuitBreaker.create("AgentQL");
 const cloudBrowserBreaker = CircuitBreaker.create("CloudBrowser");
 const scraplingBreaker = CircuitBreaker.create("Scrapling");
+const dokobotBreaker = CircuitBreaker.create("Dokobot");
 
 // ==================== HTTP Connection Pool (CheerioEngine) ====================
 
@@ -346,6 +348,7 @@ const DEFAULT_FALLBACK_CHAIN: EngineType[] = [
   'playwright',    // Full JS rendering
   'obscura',       // Stealth browser (local, anti-fingerprint)
   'scrapling',     // Python anti-bot service
+  'dokobot',       // Python anti-bot bypass service
   'firecrawl',     // External API
   'agentql',       // External API (NL queries)
   'cloud-browser', // Cloud browser API
@@ -662,7 +665,7 @@ export function getEngine(type: EngineType): ScrapingEngine {
 }
 
 export function getEngineNames(): EngineType[] {
-  return ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura"].filter((t) => engines.has(t));
+  return ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura", "dokobot"].filter((t) => engines.has(t));
 }
 
 // ==================== 1. Cheerio Engine (Enhanced HTTP) ====================
@@ -2050,6 +2053,113 @@ class ScraplingEngine implements ScrapingEngine {
   }
 }
 
+// ==================== 6b. Dokobot Engine (Python anti-bot bypass service) ====================
+
+const DOKOBOT_SERVICE_URL = process.env.DOKOBOT_SERVICE_URL || "http://127.0.0.1:3032";
+
+class DokobotEngine implements ScrapingEngine {
+  readonly name: EngineType = "dokobot";
+
+  async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
+    if (!isSafeUrl(url)) {
+      throw new Error(`Blocked: target URL is not allowed (${url})`);
+    }
+
+    const timeout = Math.max(10000, Math.min(options?.timeout ?? 30000, 120000));
+
+    let dkDomain = '';
+    try { dkDomain = new URL(url).hostname; } catch { /* ignore */ }
+
+    return retryWithBackoff(
+      async () => {
+        // Per-domain rate limiting BEFORE circuit breaker acquire so that
+        // rate-limit throws don't leak the breaker's _halfOpenInFlight counter.
+        await waitForRateLimit(dkDomain, options?.signal);
+
+        // Check circuit breaker AFTER rate-limit check (prevents requests when service is down)
+        try {
+          await dokobotBreaker.acquire();
+        } catch (cbErr) {
+          // Circuit breaker is open or half-open — re-throw without recording failure
+          // (the breaker already manages its own state internally)
+          throw cbErr;
+        }
+
+        try {
+          const response = await fetch(`${DOKOBOT_SERVICE_URL}/scrape`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url,
+              timeout,
+              wait_for: 2000,
+            }),
+            signal: options?.signal?.aborted ? options.signal : (options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout + 10000)]) : AbortSignal.timeout(timeout + 10000)),
+          });
+
+          if (!response.ok) {
+            const errorBody = await response.text().catch(() => "");
+            throw new Error(`Dokobot service error: HTTP ${response.status} - ${errorBody}`);
+          }
+
+          let data: { html?: string; final_url?: string; status_code?: number; error?: string };
+          try {
+            data = await response.json();
+          } catch {
+            throw new Error(`Dokobot service returned invalid JSON`);
+          }
+
+          if (data.error) {
+            throw new Error(`Dokobot error: ${data.error}`);
+          }
+
+          const html = data.html || "";
+          if (html.length > MAX_RESPONSE_SIZE) {
+            const dkSizeErr = new Error(`Dokobot HTML too large: ${html.length} bytes`);
+            (dkSizeErr as any).doNotRetry = true;
+            throw dkSizeErr;
+          }
+
+          dokobotBreaker.recordSuccess();
+
+          return {
+            html,
+            finalUrl: data.final_url || url,
+            statusCode: data.status_code || 200,
+          };
+        } catch (dokobotErr) {
+          // Don't record aborts or doNotRetry errors as circuit breaker failures.
+          // Abort = user cancelled (service is healthy), doNotRetry = content issue (not service fault).
+          if (dokobotErr instanceof DOMException && dokobotErr.name === 'AbortError') {
+            dokobotBreaker.release();
+            throw dokobotErr;
+          }
+          if (dokobotErr instanceof Error && (dokobotErr as any).doNotRetry) {
+            dokobotBreaker.release();
+            throw dokobotErr;
+          }
+          dokobotBreaker.recordFailure();
+          throw dokobotErr;
+        }
+      },
+      {
+        maxRetries: 2,
+        baseDelay: 3000,
+        maxDelay: 30000,
+        signal: options?.signal,
+      }
+    ).then(result => {
+      if (dkDomain) rateLimiter.recordResult(dkDomain, true, result.statusCode);
+      return result;
+    }).catch(err => {
+      const errStatus = (err instanceof Error && 'statusCode' in err)
+        ? Number((err as any).statusCode) : undefined;
+      if (dkDomain) rateLimiter.recordResult(dkDomain, false, errStatus);
+      throw err;
+    });
+  }
+}
+
 // ==================== 7. Obscura Engine (Stealth Anti-Fingerprint Browser) ====================
 
 /**
@@ -2804,7 +2914,7 @@ export async function fetchWithInfiniteScroll(
 
   // Determine which browser engine to use
   let browserEngine: EngineType;
-  const nonBrowserEngines: EngineType[] = ['cheerio', 'firecrawl', 'agentql', 'scrapling', 'cloud-browser'];
+  const nonBrowserEngines: EngineType[] = ['cheerio', 'firecrawl', 'agentql', 'scrapling', 'dokobot', 'cloud-browser'];
   if (nonBrowserEngines.includes(engineType)) {
     // Prefer obscura for anti-fingerprint stealth, fallback to playwright
     browserEngine = engines.has('obscura') ? 'obscura' : 'playwright';
@@ -3147,7 +3257,7 @@ export function selectEngine(
   },
   domain?: string,
 ): EngineType {
-  const VALID_ENGINES: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura'];
+  const VALID_ENGINES: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura', 'dokobot'];
   if (requestedEngine) {
     if (VALID_ENGINES.includes(requestedEngine)) return requestedEngine;
     console.warn(`[selectEngine] Unknown engine '${requestedEngine}', falling back to auto-selection`);
@@ -3180,6 +3290,7 @@ export function initEngines(): void {
   registerEngine(new AgentQLEngine());
   registerEngine(new CloudBrowserEngine());
   registerEngine(new ScraplingEngine());
+  registerEngine(new DokobotEngine());
   registerEngine(new ObscuraEngine());
 
   console.log(`[Engines] Available: ${getEngineNames().join(", ")}`);
