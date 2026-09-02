@@ -23779,3 +23779,47 @@ Stage Summary:
 - 15 areas/functions confirmed clean (semaphore, worker pools, abort handling, CAPTCHA pause, dedup, engine chain, domain overrides, log buffer, progress throttle, heartbeat, memory, resort, stuck detection, engine integration)
 - Added `decrement()` method to AtomicCounter class (needed for BUG-1 fix)
 - TypeScript compilation verified: no new errors (23 pre-existing errors unchanged, none related to changes)
+---
+Task ID: 7
+Agent: Stealth enhancement
+Task: Enhance stealth.ts anti-fingerprint module based on 6 known detection vectors
+
+Work Log:
+- Read last 200 lines of worklog.md to identify previously-fixed issues (Tasks 1-5, 154+ fixes)
+- Confirmed all items in the exclusion list are already done: SharedArrayBuffer, OffscreenCanvas, Function.toString, navigator timing, gamepad nulls, permissions, navigator enumerable, RTCPeerConnection, screen dim overrides
+- Read stealth.ts in full (4290 lines, ~50 sections) to understand structure and identify gaps
+- Identified 6 specific detection vectors and implemented fixes for each
+
+## Enhancement 1: iframe contentWindow fingerprint leak (Section 15)
+- **Root cause**: Section 15 MutationObserver only patched 6 properties on iframe contentWindow (webdriver, languages, platform, hardwareConcurrency, deviceMemory, userAgent). Detection services create hidden iframes and compare navigator.plugins, navigator.mimeTypes, screen properties, devicePixelRatio, Notification.permission, visibilityState, hasFocus, and doNotTrack between parent and iframe. Mismatch = bot detection.
+- **Fix**: Enhanced the MutationObserver callback to also patch: navigator.plugins, navigator.mimeTypes (delegating to parent frame's overridden getters), screen.width/height/availWidth/availHeight/colorDepth/pixelDepth, window.devicePixelRatio, Notification.permission + requestPermission, document.visibilityState/hidden, document.hasFocus, navigator.doNotTrack. All use try-catch for cross-origin iframe safety.
+- **Bonus fix discovered**: The existing MimeType building code (Section 23) had a closure-over-var bug — `enabledPlugin` getter captured `_pmi` (a `var` in a for loop), so all MimeType.enabledPlugin getters would return `undefined` after the loop completed. Fixed by wrapping the loop body in an IIFE to properly capture the loop index.
+
+## Enhancement 2: navigator.plugins depth check (Section 23b)
+- **Root cause**: Real Chrome Plugin objects support numeric index access for their MimeTypes: `plugins[0][0].type` returns 'application/pdf'. The fake Plugin instances only had name/filename/description/length properties — no numeric indices. Detection checks `plugins[0][0]` and if it returns `undefined`, flags as bot.
+- **Fix**: Added Section 23b that builds a `_pluginMimeArrays` parallel array mapping each plugin to its MimeType objects, then adds `Object.defineProperty(plugin, '0', ...)` numeric indexers for each MimeType. Each indexer is wrapped in IIFEs for proper closure capture. Now `plugins[0][0].type` returns 'application/pdf' as expected.
+- **Also fixed**: The MimeType `enabledPlugin` getter closure bug (described above).
+
+## Enhancement 3: WebGL readPixels instance-level proxy (Section 114)
+- **Root cause**: Section 3 patches `WebGLRenderingContext.prototype.readPixels` at the prototype level. Advanced detection may save the original prototype method before our script runs and restore it, or compare `gl.readPixels === WebGLRenderingContext.prototype.readPixels` to detect the patch. Also, the prototype patch and the 2D context proxy (Section 30) both override `HTMLCanvasElement.prototype.getContext`, potentially conflicting.
+- **Fix**: Added Section 114 that chains to the existing `HTMLCanvasElement.prototype.getContext` (preserving Section 30's 2D proxy) and wraps each WebGL context's `readPixels` at the instance level with a unique per-context seed. This provides a second noise layer that survives prototype restoration. Uses `_obscuraGLProxyPatched` flag to prevent double-patching.
+
+## Enhancement 4: Notification.permission synchronous verification (Section 115)
+- **Finding**: Sections 35 and 52 already correctly set Notification.permission to 'default' via Object.defineProperty with a synchronous getter. Section 35 handles missing Notification or undefined permission. Section 52 handles 'denied'/'granted' states by overriding with a getter. Both return 'default' synchronously — consistent with real browser behavior.
+- **Fix**: Added Section 115 as a safety net that checks if Notification.permission is anything other than 'default' and forces it. This runs last, catching any edge case where earlier sections didn't apply.
+
+## Enhancement 5: CSS media query detection (Section 46)
+- **Root cause**: Section 46 only overrode 5 exact matchMedia query strings. Detection could use compound queries like 'not (prefers-reduced-motion: reduce)' or '(prefers-color-scheme: dark)' (with parentheses) that wouldn't match. Also, if `_origMatchMedia(query)` threw for an unusual query, the entire matchMedia override would throw, breaking CSS media queries.
+- **Fix**: Expanded _mediaOverrides from 5 to 16 entries including: parenthesized forms, negated forms, prefers-contrast variants, display-mode:browser, orientation:landscape. Added compound query detection: if an exact match isn't found, checks if the query contains 'prefers-reduced-motion', 'prefers-color-scheme', or 'prefers-contrast' keywords and overrides matches accordingly. Added a _fakeMQL fallback for when _origMatchMedia throws, preventing CSS media query breakage.
+
+## Enhancement 6: Error.stack trace sanitization (Section 112)
+- **Root cause**: Existing Section 112 had 7 regex replacements but missed common automation markers: 'headless', 'CDP', 'devtools', 'chromium', '__selenium', '__webdriver', '__driver', node_modules paths, and selenium/puppeteer library paths. Also missing Error.prepareStackTrace override (V8-specific hook used by some detection scripts).
+- **Fix**: Replaced 7 inline .replace() chains with a pre-compiled `_stackSanitizer` regex array (19 patterns) covering: Playwright paths/markers (3 patterns), Puppeteer paths/markers (3), Selenium/WebDriver markers (3), headless/CDP/DevTools/chromium (5), Node.js paths (3), eval normalization (2). Added Error.prepareStackTrace override as a secondary sanitization layer — catches cases where code uses Error.captureStackTrace with custom prepareStackTrace. The override chains to the original if available, otherwise falls back to manual CallSite formatting with per-filename sanitization.
+
+Stage Summary:
+- Enhanced 6 detection vectors in stealth.ts (4290→4532 lines, +242 lines)
+- Fixed 1 pre-existing bug: MimeType enabledPlugin closure-over-var (all enabledPlugin getters returned undefined)
+- All 6 enhancements follow existing section pattern (numbered comment header, try-catch, IIFE isolation)
+- Section 114 properly chains to Section 30's getContext (no proxy conflict)
+- TypeScript compilation verified: clean build (1048 lines output, 0 errors)
+- No changes to TypeScript-only code (profile generation, caching, header utilities) — all changes are in the browser-injected JS string

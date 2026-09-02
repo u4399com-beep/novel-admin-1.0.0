@@ -232,12 +232,12 @@ function pick<T>(arr: readonly T[]): T {
 
 /** Derive navigator.platform from UA string to avoid fingerprint contradictions. */
 function derivePlatformFromUA(ua: string): string {
-  if (/Edg\//.test(ua)) {
+  if (/Edg\\//.test(ua)) {
     if (/Macintosh/.test(ua)) return 'MacIntel';
     if (/Linux/.test(ua)) return 'Linux x86_64';
     return 'Win32';
   }
-  if (/Firefox\//.test(ua)) {
+  if (/Firefox\\//.test(ua)) {
     if (/Macintosh/.test(ua)) return 'MacIntel';
     if (/Linux/.test(ua)) return 'Linux x86_64';
     return 'Win32';
@@ -284,7 +284,7 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   // NOTE: Only Firefox on Linux uses Mesa vendor/renderer.
   // Chrome/Edge on Linux use ANGLE (same as Windows) — Mesa + Chrome is a detection vector.
   const isLinux = uaPlatform === 'Linux x86_64';
-  const isFirefoxUA = /Firefox\//.test(userAgent);
+  const isFirefoxUA = /Firefox\\//.test(userAgent);
   let vendor: string;
   if (uaPlatform === 'MacIntel') {
     vendor = 'Google Inc. (Apple)';
@@ -340,7 +340,7 @@ export function generateRandomFingerprint(): FingerprintProfile {
   // NOTE: Only Firefox on Linux uses Mesa vendor/renderer.
   // Chrome/Edge on Linux use ANGLE (same as Windows) — Mesa + Chrome is a detection vector.
   const isLinux = uaPlatform === 'Linux x86_64';
-  const isFirefoxUA = /Firefox\//.test(userAgent);
+  const isFirefoxUA = /Firefox\\//.test(userAgent);
   let vendor: string;
   if (uaPlatform === 'MacIntel') {
     vendor = 'Google Inc. (Apple)';
@@ -466,6 +466,8 @@ export function clearDomainUACache(domain?: string): void {
  * 62. navigator.doNotTrack consistency
  * 99. Fingerprint Consistency Validator (cross-property checks)
  * 100. OffscreenCanvas fingerprint alignment (R55: getImageData/measureText/convertToBlob/transferToImageBitmap)
+ * 114. WebGL context instance-level readPixels proxy (chains to Section 30)
+ * 115. Notification.permission synchronous verification (safety net)
  *
  * Canvas 2D Context Proxy enhancements (R55):
  *   - fillText/strokeText sub-pixel positioning noise (+/-0.05px)
@@ -512,7 +514,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // Browser type detection — used throughout the script for conditional behavior
   const _uaString = ${JSON.stringify(profile.userAgent)};
-  const _isFirefox = /Firefox\//.test(_uaString) || /Seamonkey\//i.test(_uaString);
+  const _isFirefox = /Firefox\\//.test(_uaString) || /Seamonkey\\//i.test(_uaString);
 
   // Pre-compute derived seeds used by multiple sections (must be before any section that references them)
   var _fakeDeviceSeed = 0;
@@ -548,7 +550,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     var _isMac = /Macintosh/.test(_uaString);
     var _isLinux = /Linux/.test(_uaString);
     var _isMobile = /Mobile/.test(_uaString);
-    var _isEdge = /Edg\//.test(_uaString) && !/OPR\//.test(_uaString);
+    var _isEdge = /Edg\\//.test(_uaString) && !/OPR\\//.test(_uaString);
     if (!_isFirefox && navigator.userAgentData) {
       var _uaVer = _uaString.match(/Chrome\/(\d+)/);
       var _chromeMajor = _uaVer ? parseInt(_uaVer[1]) : 131;
@@ -1259,7 +1261,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // ---- 15. Iframe stealth propagation ----
 
-  // Apply overrides to all iframes as they load
+  // Apply overrides to all iframes as they load.
+  // Detection services create hidden iframes and compare navigator/WebGL/screen
+  // fingerprints between the parent and iframe. If they differ, the page is flagged.
+  // addInitScript runs in every frame, but the MutationObserver catches dynamically
+  // created iframes before their content loads and applies critical instance-level
+  // patches that would otherwise only exist on the main frame's navigator/screen.
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
@@ -1293,6 +1300,38 @@ export function getStealthScript(profile: FingerprintProfile): string {
               get: () => PROFILE.userAgent,
               configurable: true,
             });
+            // Plugins/MimeTypes — instance-level override, must match parent frame
+            Object.defineProperty(iwin.navigator, 'plugins', {
+              get: function() { return navigator.plugins; },
+              configurable: true,
+            });
+            Object.defineProperty(iwin.navigator, 'mimeTypes', {
+              get: function() { return navigator.mimeTypes; },
+              configurable: true,
+            });
+            // Screen properties — instance-level override
+            Object.defineProperty(iwin.screen, 'width', {
+              get: () => PROFILE.screenWidth, configurable: true,
+            });
+            Object.defineProperty(iwin.screen, 'height', {
+              get: () => PROFILE.screenHeight, configurable: true,
+            });
+            Object.defineProperty(iwin.screen, 'availWidth', {
+              get: () => PROFILE.screenWidth, configurable: true,
+            });
+            Object.defineProperty(iwin.screen, 'availHeight', {
+              get: () => PROFILE.screenHeight - (_isMac ? 25 : 40), configurable: true,
+            });
+            Object.defineProperty(iwin.screen, 'colorDepth', {
+              get: () => PROFILE.colorDepth, configurable: true,
+            });
+            Object.defineProperty(iwin.screen, 'pixelDepth', {
+              get: () => PROFILE.colorDepth, configurable: true,
+            });
+            // Device pixel ratio
+            Object.defineProperty(iwin, 'devicePixelRatio', {
+              get: () => PROFILE.pixelRatio, configurable: true,
+            });
             // Chrome object
             if (!_isFirefox && !iwin.chrome) {
               iwin.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {} };
@@ -1313,6 +1352,36 @@ export function getStealthScript(profile: FingerprintProfile): string {
                 };
               };
             }
+            // Notification.permission — must match parent frame
+            try {
+              if (iwin.Notification) {
+                Object.defineProperty(iwin.Notification, 'permission', {
+                  get: function() { return 'default'; },
+                  configurable: true,
+                });
+                if (iwin.Notification.requestPermission) {
+                  iwin.Notification.requestPermission = function() {
+                    return Promise.resolve('default');
+                  };
+                }
+              }
+            } catch(_iNotifErr) {}
+            // Document visibility/hasFocus — must match parent frame
+            try {
+              Object.defineProperty(iwin.document, 'visibilityState', {
+                get: function() { return 'visible'; }, configurable: true,
+              });
+              Object.defineProperty(iwin.document, 'hidden', {
+                get: function() { return false; }, configurable: true,
+              });
+              iwin.document.hasFocus = function() { return true; };
+            } catch(_iDocErr) {}
+            // doNotTrack
+            try {
+              Object.defineProperty(iwin.navigator, 'doNotTrack', {
+                get: function() { return null; }, configurable: true, enumerable: true,
+              });
+            } catch(_iDntErr) {}
           } catch(e) {
             // Cross-origin iframes will throw — ignore
           }
@@ -1496,53 +1565,83 @@ export function getStealthScript(profile: FingerprintProfile): string {
   });
 
   // Rebuild mimeTypes to match the selected plugins from Section 23
+  // Also build per-plugin mime arrays for Plugin[MimeType] indexers (Section 23b)
   var _rebuiltMimes = [];
   var _rebuiltMimeMap = {};
-  for (var _pmi = 0; _pmi < _selPlugins.length; _pmi++) {
-    var _p = _selPlugins[_pmi];
-    if (_p.name.indexOf('PDF') >= 0) {
-      var _mimePdf = Object.create(MimeType.prototype);
-      Object.defineProperties(_mimePdf, {
-        type: { get: function() { return 'application/pdf'; } },
-        suffixes: { get: function() { return 'pdf'; } },
-        description: { get: function() { return 'Portable Document Format'; } },
-        enabledPlugin: { get: function() { return _platPluginInstances[_pmi]; } },
-      });
-      _rebuiltMimes.push(_mimePdf);
-      _rebuiltMimeMap['application/pdf'] = _rebuiltMimes[_rebuiltMimes.length - 1];
-    }
-    if (_p.name.indexOf('Chrome PDF Viewer') >= 0) {
-      var _mimeGcp = Object.create(MimeType.prototype);
-      Object.defineProperties(_mimeGcp, {
-        type: { get: function() { return 'application/x-google-chrome-pdf'; } },
-        suffixes: { get: function() { return 'pdf'; } },
-        description: { get: function() { return 'Portable Document Format'; } },
-        enabledPlugin: { get: function() { return _platPluginInstances[_pmi]; } },
-      });
-      _rebuiltMimes.push(_mimeGcp);
-      _rebuiltMimeMap['application/x-google-chrome-pdf'] = _rebuiltMimes[_rebuiltMimes.length - 1];
-    }
-    if (_p.name.indexOf('Native Client') >= 0) {
-      var _mimeNacl = Object.create(MimeType.prototype);
-      Object.defineProperties(_mimeNacl, {
-        type: { get: function() { return 'application/x-nacl'; } },
-        suffixes: { get: function() { return ''; } },
-        description: { get: function() { return 'Native Client Executable'; } },
-        enabledPlugin: { get: function() { return _platPluginInstances[_pmi]; } },
-      });
-      _rebuiltMimes.push(_mimeNacl);
-      _rebuiltMimeMap['application/x-nacl'] = _rebuiltMimes[_rebuiltMimes.length - 1];
-      var _mimePnacl = Object.create(MimeType.prototype);
-      Object.defineProperties(_mimePnacl, {
-        type: { get: function() { return 'application/x-pnacl'; } },
-        suffixes: { get: function() { return ''; } },
-        description: { get: function() { return 'Portable Native Client Executable'; } },
-        enabledPlugin: { get: function() { return _platPluginInstances[_pmi]; } },
-      });
-      _rebuiltMimes.push(_mimePnacl);
-      _rebuiltMimeMap['application/x-pnacl'] = _rebuiltMimes[_rebuiltMimes.length - 1];
-    }
+  var _pluginMimeArrays = []; // Parallel to _selPlugins: each entry is array of MimeType objects
+  for (var _pmiInit = 0; _pmiInit < _selPlugins.length; _pmiInit++) {
+    _pluginMimeArrays.push([]);
   }
+  for (var _pmi = 0; _pmi < _selPlugins.length; _pmi++) {
+    (function(_pluginIdx) {
+      var _p = _selPlugins[_pluginIdx];
+      if (_p.name.indexOf('PDF') >= 0) {
+        var _mimePdf = Object.create(MimeType.prototype);
+        Object.defineProperties(_mimePdf, {
+          type: { get: function() { return 'application/pdf'; } },
+          suffixes: { get: function() { return 'pdf'; } },
+          description: { get: function() { return 'Portable Document Format'; } },
+          enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
+        });
+        _rebuiltMimes.push(_mimePdf);
+        _rebuiltMimeMap['application/pdf'] = _rebuiltMimes[_rebuiltMimes.length - 1];
+        _pluginMimeArrays[_pluginIdx].push(_mimePdf);
+      }
+      if (_p.name.indexOf('Chrome PDF Viewer') >= 0) {
+        var _mimeGcp = Object.create(MimeType.prototype);
+        Object.defineProperties(_mimeGcp, {
+          type: { get: function() { return 'application/x-google-chrome-pdf'; } },
+          suffixes: { get: function() { return 'pdf'; } },
+          description: { get: function() { return 'Portable Document Format'; } },
+          enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
+        });
+        _rebuiltMimes.push(_mimeGcp);
+        _rebuiltMimeMap['application/x-google-chrome-pdf'] = _rebuiltMimes[_rebuiltMimes.length - 1];
+        _pluginMimeArrays[_pluginIdx].push(_mimeGcp);
+      }
+      if (_p.name.indexOf('Native Client') >= 0) {
+        var _mimeNacl = Object.create(MimeType.prototype);
+        Object.defineProperties(_mimeNacl, {
+          type: { get: function() { return 'application/x-nacl'; } },
+          suffixes: { get: function() { return ''; } },
+          description: { get: function() { return 'Native Client Executable'; } },
+          enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
+        });
+        _rebuiltMimes.push(_mimeNacl);
+        _rebuiltMimeMap['application/x-nacl'] = _rebuiltMimes[_rebuiltMimes.length - 1];
+        _pluginMimeArrays[_pluginIdx].push(_mimeNacl);
+        var _mimePnacl = Object.create(MimeType.prototype);
+        Object.defineProperties(_mimePnacl, {
+          type: { get: function() { return 'application/x-pnacl'; } },
+          suffixes: { get: function() { return ''; } },
+          description: { get: function() { return 'Portable Native Client Executable'; } },
+          enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
+        });
+        _rebuiltMimes.push(_mimePnacl);
+        _rebuiltMimeMap['application/x-pnacl'] = _rebuiltMimes[_rebuiltMimes.length - 1];
+        _pluginMimeArrays[_pluginIdx].push(_mimePnacl);
+      }
+    })(_pmi);
+  }
+  // Section 23b: Add numeric MimeType indexers to each Plugin
+  // Real Chrome: plugins[0][0] returns the first MimeType of that plugin.
+  // Detection checks: plugins[0][0].type, plugins[0][0].suffixes, etc.
+  // Without this, plugins[0][0] returns undefined — an instant bot detection signal.
+  try {
+    for (var _idxPi = 0; _idxPi < _platPluginInstances.length; _idxPi++) {
+      (function(pIdx) {
+        var _pMimes = _pluginMimeArrays[pIdx];
+        for (var _idxMi = 0; _idxMi < _pMimes.length; _idxMi++) {
+          (function(mIdx, mime) {
+            Object.defineProperty(_platPluginInstances[pIdx], String(mIdx), {
+              get: function() { return mime; },
+              configurable: true
+            });
+          })(_idxMi, _pMimes[_idxMi]);
+        }
+      })(_idxPi);
+    }
+  } catch(_pluginIdxErr) {}
   Object.defineProperty(navigator, 'mimeTypes', {
     get: function() {
       var mimes = Object.create(MimeTypeArray.prototype);
@@ -2546,28 +2645,61 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // Section 46: matchMedia consistency
   // Headless browsers may report different media query results.
-  // Override prefers-color-scheme and prefers-reduced-motion to return consistent values.
+  // Override prefers-color-scheme, prefers-reduced-motion, and other queries.
+  // Also handle compound queries containing overridden features (e.g., not (...)).
   try {
     if (window.matchMedia) {
       var _origMatchMedia = window.matchMedia;
+      var _prefersDark = _seededRandom(46.1) > 0.7;
+      var _prefersReducedMotion = false;
+      var _prefersContrastMore = false;
       var _mediaOverrides = {
-        'prefers-color-scheme: dark': _seededRandom(46.1) > 0.7,
-        'prefers-reduced-motion: reduce': false,
-        'prefers-reduced-motion: no-preference': true,
+        'prefers-color-scheme: dark': _prefersDark,
+        'prefers-color-scheme: light': !_prefersDark,
+        'prefers-reduced-motion: reduce': _prefersReducedMotion,
+        'prefers-reduced-motion: no-preference': !_prefersReducedMotion,
+        'not (prefers-reduced-motion: reduce)': !_prefersReducedMotion,
+        '(prefers-reduced-motion: reduce)': _prefersReducedMotion,
+        '(prefers-reduced-motion: no-preference)': !_prefersReducedMotion,
+        'prefers-contrast: more': _prefersContrastMore,
+        'prefers-contrast: no-preference': !_prefersContrastMore,
+        'not (prefers-contrast: more)': !_prefersContrastMore,
         'display-mode: standalone': false,
+        'display-mode: browser': true,
         'orientation: portrait': PROFILE.screenWidth < PROFILE.screenHeight,
+        'orientation: landscape': PROFILE.screenWidth >= PROFILE.screenHeight,
+        '(prefers-color-scheme: dark)': _prefersDark,
+        '(prefers-color-scheme: light)': !_prefersDark,
       };
+      // Fallback MediaQueryList mock for when _origMatchMedia throws
+      function _fakeMQL(query) {
+        return {
+          matches: false, media: query, onchange: null,
+          addEventListener: function(){}, removeEventListener: function(){},
+          dispatchEvent: function() { return false; },
+        };
+      }
       window.matchMedia = function(query) {
-        var result = _origMatchMedia(query);
-        if (_mediaOverrides.hasOwnProperty(query)) {
-          // Create a consistent MediaQueryList override
-          try {
-            Object.defineProperty(result, 'matches', {
-              get: function() { return _mediaOverrides[query]; },
-              configurable: true,
-            });
-          } catch(e) {}
+        var result;
+        try { result = _origMatchMedia(query); } catch(_mme) { return _fakeMQL(query); }
+        if (!_mediaOverrides.hasOwnProperty(query)) {
+          // Check if query contains overridden features as compound query
+          var _qLower = (query || '').toLowerCase();
+          if (_qLower.indexOf('prefers-reduced-motion') >= 0) {
+            try { Object.defineProperty(result, 'matches', { get: function() { return _prefersReducedMotion; }, configurable: true }); } catch(e) {}
+          } else if (_qLower.indexOf('prefers-color-scheme') >= 0) {
+            try { Object.defineProperty(result, 'matches', { get: function() { return _prefersDark; }, configurable: true }); } catch(e) {}
+          } else if (_qLower.indexOf('prefers-contrast') >= 0) {
+            try { Object.defineProperty(result, 'matches', { get: function() { return _prefersContrastMore; }, configurable: true }); } catch(e) {}
+          }
+          return result;
         }
+        try {
+          Object.defineProperty(result, 'matches', {
+            get: function() { return _mediaOverrides[query]; },
+            configurable: true,
+          });
+        } catch(e) {}
         return result;
       };
     }
@@ -3872,26 +4004,90 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // ==================== Section 112: Source Map & DevTools Detection Evasion ====================
   // Stack trace fingerprinting analyzes Error.stack format to identify automation.
   // Normalize stack traces to match a real Chrome browser, stripping headless/Playwright markers.
+  // Uses pre-compiled regex array for efficiency (single-pass over stack string).
+  // Also overrides Error.prepareStackTrace (V8-specific) as secondary sanitization layer.
   try {
     var _origErrorStack = Object.getOwnPropertyDescriptor(Error.prototype, 'stack');
     if (_origErrorStack && _origErrorStack.get) {
       var _origStackGetter = _origErrorStack.get;
+      // Pre-compiled patterns for automation-related strings in stack traces
+      var _stackSanitizer = [
+        // Playwright paths and markers
+        [/\\s*\\(playwright[\\/\\\\][^)]*\\)/gi, ' (anonymous)'],
+        [/\\s*\\(playwright[^)]*\\)/gi, ' (anonymous)'],
+        [/__playwright_evaluation_script__\\d+/g, '<anonymous>'],
+        [/playwright[\\/\\\\]lib[\\/\\\\][^\\n]*/gi, ''],
+        // Puppeteer paths and markers
+        [/\\s*\\(puppeteer[\\/\\\\][^)]*\\)/gi, ' (anonymous)'],
+        [/\\s*\\(puppeteer[^)]*\\)/gi, ' (anonymous)'],
+        [/__puppeteer_evaluation_script__\\d+/g, '<anonymous>'],
+        [/puppeteer[\\/\\\\]lib[\\/\\\\][^\\n]*/gi, ''],
+        // Selenium / WebDriver markers
+        [/__selenium_unwrapped/g, ''],
+        [/__webdriver_evaluate/g, ''],
+        [/__driver_evaluate/g, ''],
+        // Headless / CDP / DevTools markers
+        [/\\bheadless\\b[^\\n]*/gi, ''],
+        [/\\bCDP[^\\n]*/gi, ''],
+        [/chrome-devtools[^\\n]*/gi, ''],
+        [/devtools[\\/\\\\][^\\n]*/gi, ''],
+        [/\\bchromium\\b[^\\n]*/gi, ''],
+        // Node.js paths should never appear in browser stack traces
+        [/-\\-experimental[\\-]vm[\\-]modules/g, ''],
+        [/node_modules[\\/\\\\][^\\n]*/gi, ''],
+        [/scraper-service[\\/\\\\][^\\n]*/gi, ''],
+        // Eval normalization
+        [/\\s*\\(eval at[^)]*\\)/gi, ' (eval)'],
+        [/\\n\\s+at new Promise\\s*<anonymous>/g, '\\n    at new Promise (<anonymous>)'],
+      ];
       Object.defineProperty(Error.prototype, 'stack', {
         get: function() {
           var raw = _origStackGetter.call(this);
           if (typeof raw !== 'string') return raw;
-          return raw
-            .replace(/\s*\(playwright[^)]*\)/gi, ' (anonymous)')
-            .replace(/\s*\(puppeteer[^)]*\)/gi, ' (anonymous)')
-            .replace(/\s*\(eval at[^)]*\)/gi, ' (eval)')
-            .replace(/\n\s+at new Promise \<anonymous\>/g, '\n    at new Promise (<anonymous>)')
-            .replace(/__playwright_evaluation_script__\d+/g, '<anonymous>')
-            .replace(/\n\s+at .*node_modules[\\/].*\n/g, '\n')
-            .replace(/\n\s+at .*scraper[\\/].*\n/g, '\n');
+          for (var _ssi = 0; _ssi < _stackSanitizer.length; _ssi++) {
+            raw = raw.replace(_stackSanitizer[_ssi][0], _stackSanitizer[_ssi][1]);
+          }
+          return raw;
         },
         configurable: true
       });
     }
+    // Secondary: Override Error.prepareStackTrace (V8-specific hook)
+    // This catches cases where code accesses the internal stack trace directly
+    // (e.g., via Error.captureStackTrace with custom prepareStackTrace).
+    try {
+      var _origPrepareST = Error.prepareStackTrace;
+      Error.prepareStackTrace = function(error, callSites) {
+        // Use V8 default formatting then sanitize
+        if (_origPrepareST) {
+          var formatted = _origPrepareST(error, callSites);
+          if (typeof formatted === 'string') {
+            for (var _psi = 0; _psi < _stackSanitizer.length; _psi++) {
+              formatted = formatted.replace(_stackSanitizer[_psi][0], _stackSanitizer[_psi][1]);
+            }
+            return formatted;
+          }
+          return formatted;
+        }
+        // Manual formatting fallback if no original prepareStackTrace
+        var _stResult = error.toString() + '\\n';
+        for (var _csi = 0; _csi < callSites.length; _csi++) {
+          var _cs = callSites[_csi];
+          var _fnName = (_cs.getFunctionName() || _cs.getMethodName() || '<anonymous>');
+          var _fileName = _cs.getFileName();
+          var _line = _cs.getLineNumber();
+          var _col = _cs.getColumnNumber();
+          // Sanitize filename to remove automation markers
+          if (typeof _fileName === 'string') {
+            for (var _fsi = 0; _fsi < _stackSanitizer.length; _fsi++) {
+              _fileName = _fileName.replace(_stackSanitizer[_fsi][0], '');
+            }
+          }
+          _stResult += '    at ' + _fnName + ' (' + (_fileName || '<anonymous>') + ':' + (_line || 0) + ':' + (_col || 0) + ')\\n';
+        }
+        return _stResult;
+      };
+    } catch(_prepareSTErr) {}
   } catch(_stackErr) {}
 
   // ==================== Section 113: Function.prototype.toString Comprehensive Masking ====================
@@ -3962,6 +4158,59 @@ export function getStealthScript(profile: FingerprintProfile): string {
       return _tsNativeToString.call(this);
     };
   } catch(_toStringMaskErr) {}
+
+  // ==================== Section 114: WebGL Context Instance-Level readPixels Proxy ====================
+  // Detection services may save the original WebGLRenderingContext.prototype.readPixels
+  // before our script runs and compare it to the patched version. A context-level Proxy
+  // intercepts readPixels at the instance level, providing a second layer of noise
+  // injection that survives prototype restoration attempts.
+  // Chains to the existing getContext (Section 30's 2D proxy) so both proxies coexist.
+  try {
+    var _prevGetCtx = HTMLCanvasElement.prototype.getContext;
+    var _glProxySeed = Math.floor(_fakeDeviceSeed * 17.17) | 0;
+    HTMLCanvasElement.prototype.getContext = function(type, attrs) {
+      // Delegate to previous handler (Section 30's 2D proxy) first
+      var ctx = _prevGetCtx.call(this, type, attrs);
+      if ((type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') && ctx && !ctx._obscuraGLProxyPatched) {
+        ctx._obscuraGLProxyPatched = true;
+        var _glRP = ctx.readPixels.bind(ctx);
+        var _glCtxSeed = (_glProxySeed++ + _canvasInstanceCount * 7919) | 0;
+        ctx.readPixels = function(x, y, w, h, format, type, pixels) {
+          _glRP(x, y, w, h, format, type, pixels);
+          if (format === 0x1908 && type === 0x1401 && pixels instanceof Uint8Array) {
+            var _rS = _glCtxSeed;
+            for (var i = 0; i < pixels.length; i += 4) {
+              _rS = (_rS * 16807 + 0.5) % 2147483647;
+              var _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+              pixels[i]   = Math.max(0, Math.min(255, pixels[i] + _rn));
+              _rS = (_rS * 16807 + 0.5) % 2147483647;
+              _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+              pixels[i+1] = Math.max(0, Math.min(255, pixels[i+1] + _rn));
+              _rS = (_rS * 16807 + 0.5) % 2147483647;
+              _rn = Math.round(((_rS % 3) - 1) * _canvasNoiseIntensity);
+              pixels[i+2] = Math.max(0, Math.min(255, pixels[i+2] + _rn));
+            }
+          }
+        };
+      }
+      return ctx;
+    };
+  } catch(_glCtxProxyErr) {}
+
+  // ==================== Section 115: Notification.permission Synchronous Verification ====================
+  // Verification: Notification.permission MUST return 'default' synchronously (not via Promise).
+  // Section 35 and 52 both set this via Object.defineProperty with a getter that returns 'default'.
+  // This is consistent with real browser behavior: the property is a synchronous string.
+  // requestPermission() is async (returns Promise), but .permission is sync.
+  // No additional fix needed — this section exists as documentation and safety net.
+  try {
+    if ('Notification' in window && Notification.permission !== undefined && Notification.permission !== 'default') {
+      Object.defineProperty(Notification, 'permission', {
+        get: function() { return 'default'; },
+        configurable: true,
+      });
+    }
+  } catch(_notifVerifyErr) {}
 
 })();
 `;
