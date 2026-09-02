@@ -23823,3 +23823,33 @@ Stage Summary:
 - Section 114 properly chains to Section 30's getContext (no proxy conflict)
 - TypeScript compilation verified: clean build (1048 lines output, 0 errors)
 - No changes to TypeScript-only code (profile generation, caching, header utilities) — all changes are in the browser-injected JS string
+
+---
+Task ID: session-continue-3
+Agent: Main Orchestrator
+Task: Deep audit round 3 (all remaining files) + stealth enhancement
+
+Work Log:
+- Launched 5 parallel audit agents covering ALL remaining scraper-service source files
+- Agent 1 (scrapers.ts, 698 lines): 2 bugs - non-HTTP URL leak, hasNextPage stale state
+- Agent 2 (engine-config.ts, 516 lines): 1 bug - lowContentDomains TTL bypass
+- Agent 3 (session+referrer+fingerprint+rate+ssrf, 1406 lines): 4 bugs - SSRF IPv6 bypass (HIGH), session-manager interval/session leaks, rate-limiter clamp
+- Agent 4 (TLS+HTTP2+DoH+IP, 1197 lines): 3 bugs - cache eviction patterns, DNS query type gaps
+- Agent 5 (task-engine.ts, 1701 lines): 3 bugs - recovery counter inflation, hardcoded failed:0, missing dokobot
+- Agent 7 (stealth enhancement): 6 detection vectors enhanced, 1 plugin bug fixed
+- All changes pushed across 3 commits (4acd49e, aea94f5, 8cf0e12)
+
+Stage Summary:
+- 13 bugs found and fixed across 11 files
+- 1 HIGH: SSRF bypass via expanded IPv4-mapped IPv6
+- 6 MEDIUM: URL leak, pagination state, counter inflation, session leaks, TTL bypass, type fallbacks
+- 6 LOW: cache eviction, DNS types, rate limiter clamp, interval unref
+- 6 new stealth sections added (iframe leak, plugin depth, readPixels, notification, media query, error stack)
+- 1 stealth bug fixed (enabledPlugin closure-over-var)
+- Total stealth sections: 115+
+- Files now fully audited: engines.ts, task-engine.ts, stealth.ts, scrapers.ts, selectors.ts,
+  cleaning.ts, engine-config.ts, session-manager.ts, referrer-chain.ts, request-fingerprint.ts,
+  rate-limiter.ts, ssrf.ts, tls-fingerprint.ts, http2-decoy.ts, doh-resolver.ts,
+  ip-fingerprint.ts, browser-behavior.ts, adaptive-delay.ts, captcha-detector.ts,
+  captcha-strategy.ts, charset-detector.ts, cookie-jar.ts, anti-crawl-advisor.ts,
+  proxy-manager.ts, utils.ts, types.ts, fingerprint-test.ts (25 files, ~23,000 lines)
