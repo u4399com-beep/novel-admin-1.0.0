@@ -162,7 +162,10 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
     }
 
     const shouldContinue = await onPage(html, currentUrl, page);
-    if (shouldContinue === false) break;
+    if (shouldContinue === false) {
+      hasNextPage = false;
+      break;
+    }
 
     // Find next page URL
     if (pagination) {
@@ -219,7 +222,9 @@ export async function handleScrapeList(body: ScrapeListRequest) {
     const items = parseSelectorMulti(scrollResult.html, selector);
     for (const item of items) {
       const resolvedUrl = resolveUrl(url, item);
-      if (resolvedUrl && !seen.has(resolvedUrl)) {
+      // Filter out non-HTTP URLs (javascript:, mailto:, tel:, data:, empty, etc.)
+      // extractLinksFromList does this filtering for chapters; list scraping must do the same.
+      if (resolvedUrl && (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) && !seen.has(resolvedUrl)) {
         seen.add(resolvedUrl);
         allUrls.push(resolvedUrl);
       }
@@ -244,7 +249,8 @@ export async function handleScrapeList(body: ScrapeListRequest) {
       let newCount = 0;
       for (const item of items) {
         const resolvedUrl = resolveUrl(pageUrl, item);
-        if (resolvedUrl && !seen.has(resolvedUrl)) {
+        // Filter out non-HTTP URLs (javascript:, mailto:, tel:, data:, empty, etc.)
+        if (resolvedUrl && (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) && !seen.has(resolvedUrl)) {
           seen.add(resolvedUrl);
           allUrls.push(resolvedUrl);
           newCount++;

@@ -151,8 +151,10 @@ async function queryProvider(
     const ips: string[] = [];
     let minTtl = Infinity;
 
-    // DNS record type numbers we care about
-    const targetTypeNums: Record<string, number> = { A: 1, AAAA: 28, CNAME: 5 };
+    // DNS record type numbers (RFC 1035, RFC 3596, RFC 2782, etc.)
+    const targetTypeNums: Record<string, number> = {
+      A: 1, AAAA: 28, CNAME: 5, NS: 2, MX: 15, TXT: 16, SRV: 33,
+    };
     const targetNum = targetTypeNums[type] ?? 1;
 
     for (const answer of json.Answer) {

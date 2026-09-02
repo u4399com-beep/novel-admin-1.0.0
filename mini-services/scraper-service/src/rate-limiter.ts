@@ -78,7 +78,7 @@ class DomainRateLimiter {
     // Allow manual override, but only when not under penalty
     // (penalty RPM was carefully reduced by adaptive system; overriding defeats it)
     if (maxRPM !== undefined && maxRPM !== state.maxRPM && !state.penaltyActive) {
-      state.maxRPM = maxRPM;
+      state.maxRPM = Math.max(1, maxRPM);
     }
 
     // Check if penalty has expired

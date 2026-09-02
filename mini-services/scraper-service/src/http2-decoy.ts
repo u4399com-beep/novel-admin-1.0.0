@@ -417,8 +417,8 @@ export function getConnectionProfile(domain: string, ua?: string): ConnectionPro
     return cached.profile;
   }
 
-  // Evict oldest if cache is full
-  if (domainConnProfileCache.size >= MAX_CACHE_SIZE) {
+  // Evict oldest if cache is full (skip if refreshing an existing entry — set() will overwrite it)
+  if (domainConnProfileCache.size >= MAX_CACHE_SIZE && !domainConnProfileCache.has(domain)) {
     let oldestKey = '';
     let oldestTime = Infinity;
     for (const [key, entry] of domainConnProfileCache) {

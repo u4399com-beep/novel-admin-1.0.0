@@ -60,6 +60,7 @@ function streamProgressToWS(taskId: string, updates: Record<string, unknown>) {
 class AtomicCounter {
   private _value = 0;
   increment(): number { return ++this._value; }
+  decrement(): number { return --this._value; }
   get value(): number { return this._value; }
 }
 
@@ -355,7 +356,7 @@ function parseSelectorField(field: string | null): Selector | null {
 
 function determineEngine(rule: ScrapeRule, antiCrawlConfig: AntiCrawl): EngineType {
   // Priority: rule.engine > cloudBrowser > useJsRender > default cheerio
-  if (rule.engine && ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura"].includes(rule.engine)) {
+  if (rule.engine && ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura", "dokobot"].includes(rule.engine)) {
     return rule.engine as EngineType;
   }
   return selectEngine(undefined, antiCrawlConfig);
@@ -875,7 +876,7 @@ async function executeTaskBody(
       currentStep: "采集完成（无有效书籍）",
       progress: 100,
     });
-    return { success: true, totalBooks: 0, newBooks: 0, totalChapters: 0, newChapters: 0, failed: 0, skipped: skippedBooksCount.value, engine: engineType };
+    return { success: true, totalBooks: 0, newBooks: 0, totalChapters: 0, newChapters: 0, failed: failedItemsCount.value, skipped: skippedBooksCount.value, engine: engineType };
   }
 
   // 4. Scrape chapters for each book
@@ -1283,9 +1284,11 @@ async function executeTaskBody(
           });
 
           if (retryResult.recovered > 0) {
-            // Adjust counters: recovered chapters count as newly created
-            for (let r = 0; r < retryResult.recovered; r++) newChaptersCount.increment();
-            for (let r = 0; r < retryResult.retried; r++) processedChaptersCount.increment();
+            // Adjust counters: recovered chapters count as newly created, no longer failed
+            for (let r = 0; r < retryResult.recovered; r++) {
+              newChaptersCount.increment();
+              failedItemsCount.decrement();
+            }
 
             // Re-sort chapters to fix any sortOrder gaps from recovered chapters
             const reordered = await resortChapters(book.id, abortController.signal);

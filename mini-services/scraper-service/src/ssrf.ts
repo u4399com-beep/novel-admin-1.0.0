@@ -115,6 +115,14 @@ function parseIpAddress(hostname: string): string | null {
     if (v4MappedMatch) {
       return v4MappedMatch[1]; // Return the IPv4 part for isPrivateIp() check
     }
+    // Also detect expanded forms like 0:0:0:0:0:ffff:127.0.0.1 where the ::
+    // prefix is fully written out. The expandIPv6 function splits on ':'
+    // which breaks the dotted-decimal IPv4 suffix, so we must extract the
+    // IPv4 part here before the general IPv6 path is reached.
+    const v4SuffixMatch = hostname.match(/:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+    if (v4SuffixMatch) {
+      return v4SuffixMatch[1];
+    }
     if (/^[0-9a-fA-F:]+$/.test(hostname) && (hostname.match(/:/g) || []).length >= 2) {
       return hostname;
     }

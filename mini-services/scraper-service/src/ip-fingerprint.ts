@@ -63,8 +63,8 @@ function getOrCreateProfile(domain: string): DomainHeaderProfile {
     return cached;
   }
 
-  // Evict oldest if cache is full
-  if (domainHeaderCache.size >= CACHE_MAX_SIZE) {
+  // Evict oldest if cache is full (skip if refreshing an existing entry — set() will overwrite it)
+  if (domainHeaderCache.size >= CACHE_MAX_SIZE && !domainHeaderCache.has(domain)) {
     let oldestKey = '';
     let oldestTime = Infinity;
     for (const [key, entry] of domainHeaderCache) {

@@ -50,7 +50,7 @@ class SessionManager {
       } catch (err) {
         console.error('[SessionManager] Cleanup error:', err);
       }
-    }, 30 * 60 * 1000);
+    }, 30 * 60 * 1000).unref();
   }
 
   /**
@@ -236,7 +236,12 @@ class SessionManager {
       .join('; ');
 
     // Also merge any fresh cookies from the cookie jar (deduplicated by name)
-    const freshCookies = cookieJar.getCookieHeader(normalizedDomain, '/');
+    let freshCookies = '';
+    try {
+      freshCookies = cookieJar.getCookieHeader(normalizedDomain, '/');
+    } catch {
+      // Cookie jar failure is non-fatal; proceed with session cookies only
+    }
     let mergedCookies = cookieStr;
     if (freshCookies) {
       const cookieMap = new Map<string, string>();

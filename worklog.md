@@ -23422,3 +23422,360 @@ Stage Summary:
 - 3 bugs fixed: cookie-jar memory leak, missing .unref(), incomplete type fallbacks
 - Stealth/utils/proxy modules confirmed clean after 6+ audit rounds
 - Git: 3 commits pushed this session (0a4ed8a, ce808a8)
+
+---
+Task ID: 1
+Agent: scrapers.ts auditor
+Task: Deep line-by-line bug audit of scrapers.ts (698 lines) — main scraping orchestrator
+
+Work Log:
+- Read worklog.md last 200 lines to identify previously-fixed issues and avoid duplication
+- Read full scrapers.ts (698 lines) across 3 reads
+- Read supporting files: engines.ts (fetchWithEngineFallback signature, fetchWithInfiniteScroll signature, FetchResult interface), types.ts (Pagination, AntiCrawl, ScrapeListRequest, ScrapeChaptersRequest, ScrapeContentRequest, Selector, FetchResult interfaces), selectors.ts (parseSelectorMulti, extractLinksFromList, parseSelector, parseSelectorHtml implementations), utils.ts (resolveUrl, randomDelay), cheerio-cache.ts (getCachedCheerio)
+- Verified all pre-existing TS compilation errors in scrapers.ts are unchanged (t2s-converter module, ReadableStream iteration, sharp.default, Bun global) — no regressions
+
+## Audit Coverage (all functions)
+1. **findNextPageUrl** (lines 36-62): Pagination URL resolution for 'next' and 'page' types. Verified `pageNum + 2` is correct for 0-indexed loop with 1-indexed page UI. Verified fallback to text-based '下一页'/'next'/'>' detection. No bugs.
+2. **paginatedFetch** (lines 99-193): Shared pagination loop with visited-page dedup, CAPTCHA detection, engine fallback on first page, abort signal check. Verified local Set/variables are properly scoped (no memory leaks). Verified sequential async loop (no race conditions). Found BUG-2 (see below).
+3. **handleScrapeList** (lines 197-268): List scraping with infinite-scroll and paginated paths. Found BUG-1 (see below) in both paths.
+4. **handleScrapeBook** (lines 271-325): Book info scraping with OG/JSON-LD metadata fallback. Correct: cover URL resolved, fallback fields properly merged, CAPTCHA throws on detection. No bugs.
+5. **handleScrapeChapters** (lines 328-398): Chapter directory scraping with URL + title dedup. Correct: Fisher-Yates shuffle reassigns sortOrder. Deliberately does NOT have early-stop on zero-new-items (safer for chapters than lists to avoid missing chapters). No bugs.
+6. **handleScrapeContent** (lines 401-508): Content scraping with paragraph-preserving CSS path, JS content extraction fallback, T2S conversion. Correct: short content (<30 chars) preserved in all else branches, no silent data loss. No bugs.
+7. **handleDownloadCover** (lines 511-697): Cover download with rate limiting, proxy support, SSRF validation, streaming with 5MB limit, sharp WebP conversion. Correct: response body cancelled on errors, chunks cleared on oversized stream, AbortSignal.any per redirect hop, anti-crawl failure recording. No bugs.
+
+## Bugs Found & Fixed (2)
+
+### BUG-1: handleScrapeList — Non-HTTP URLs leak into results (MEDIUM)
+- **Root cause**: `parseSelectorMulti` can return `javascript:`, `mailto:`, `tel:`, `data:`, empty strings, and other non-page URLs from href attributes or regex matches. These are resolved via `resolveUrl` and added to `allUrls` without any protocol filtering. The chapter scraper's `extractLinksFromList` (selectors.ts line 627) correctly filters `javascript:`, `data:`, `blob:`, `vbscript:`, but `handleScrapeList` has no equivalent guard.
+- **Impact**: Garbage URLs in the returned list. When the task engine later tries to scrape a `javascript:void(0)` URL, it wastes a request slot and fails. Regex selectors that match empty strings cause the current page URL to be added as a list item via `resolveUrl(base, '')` → `base`.
+- **Fix**: Added `resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')` check in both the infinite-scroll path (line 227) and the paginated `onPage` callback (line 253). This is a superset of `extractLinksFromList`'s blocklist approach — it filters ALL non-HTTP protocols in one check.
+
+### BUG-2: paginatedFetch — `hasNextPage` stays `true` after `onPage` early stop (LOW)
+- **Root cause**: When `onPage` returns `false` (consumer requests early stop), the `break` exits the for loop immediately. But `hasNextPage` retains the value `true` set during the PREVIOUS iteration when the next-page URL was found. The caller (`handleScrapeList`) returns this misleading `hasNextPage: true` to the API consumer.
+- **Impact**: API consumer sees `hasNextPage: true` but has no next-page URL to continue from (not returned). Could trigger unnecessary re-scrape attempts. Only manifests when `handleScrapeList`'s `onPage` returns `false` (i.e., when a non-first page yields zero new items).
+- **Fix**: Set `hasNextPage = false` before the `break` when `shouldContinue === false` (line 166).
+
+## Areas Confirmed Clean
+- **findNextPageUrl**: `pageNum + 2` is correct (0-indexed loop, 1-indexed page UI)
+- **paginatedFetch**: All local collections (visitedPages Set) are function-scoped, no memory leaks; sequential async loop prevents race conditions; engine fallback only on page 0 is correct
+- **handleScrapeBook**: Metadata fallback chain (primary selector → OG/JSON-LD) is complete; cover URL resolution correct
+- **handleScrapeChapters**: URL + title-based dedup is correct; shuffle preserves sortOrder; no early-stop is deliberate design choice
+- **handleScrapeContent**: Content <30 chars is always preserved (not silently dropped); JS extraction fallback covers all branches; T2S conversion applied to final merged content
+- **handleDownloadCover**: Response body properly cancelled on all error paths; streaming with 5MB hard limit; sharp import and WebP conversion correct; anti-crawl recording covers both success and failure branches
+
+Stage Summary:
+- Audited all 7 functions in scrapers.ts (698 lines) line-by-line
+- Found and fixed 2 real bugs: non-HTTP URL leak in handleScrapeList, hasNextPage inaccuracy in paginatedFetch
+- 5 functions confirmed clean with no issues
+- TypeScript compilation verified: no new errors (4 pre-existing errors unchanged)
+- Key integration point verified: extractLinksFromList (chapters) has URL filtering that was missing from handleScrapeList (lists) — now both are consistent
+
+---
+Task ID: 2
+Agent: engine-config.ts auditor
+Work Log:
+- Read last 200 lines of worklog.md to identify previously-fixed issues and avoid duplication
+- Read full engine-config.ts (516 lines) line by line
+- Read types.ts to verify EngineType definition (8-engine union) vs VALID_CHAIN_ENGINES (3 internal engines)
+- Traced all callers: setDomainEngineOverride/removeDomainEngineOverride have zero callers (dead code); getEngineFallbackChain called from engines.ts getFallbackChainForEngine; recordCaptchaUpgrade/recordLowContentHint called from engines.ts fetch path
+- Verified all domain normalization is consistent (toLowerCase + strip trailing dot + strip www. prefix)
+- Verified LRU eviction logic on captchaUpgradeMap (200 limit) and lowContentDomains (100 limit) is correct
+- Verified Map delete-during-iteration is safe per ES spec (getCaptchaUpgrades, getLowContentDomains)
+- Verified config file mtime caching is correct (cachedConfig/cachedPreferences)
+- Verified validateChain rejects duplicates, non-strings, unknown engines, empty arrays
+- Verified applyPreferenceToChain handles invalid preference types safely (non-string preferred, non-array avoid)
+- Verified CAPTCHA_UPGRADE_MAP correctly has no entry for obscura (highest engine, no upgrade path)
+- Noted: preference learning (engine-preferences.json) is dead code — no writer exists anywhere in the codebase
+- Noted: latent priority inversion where preference learning (step 3) can undo CAPTCHA upgrade (step 1) in applyDomainEnhancements — but preference learning is unused so this is not active
+- Noted: domainOverrides Map has no max size limit — but setDomainEngineOverride has zero callers so not an active leak
+- Noted: getFallbackChainForEngine in engines.ts can defeat CAPTCHA upgrades by forcing primaryEngine to front — but this is an integration issue outside engine-config.ts scope
+
+## Bugs Found & Fixed (1)
+
+### BUG-1: lowContentDomains TTL bypass in hasDomainEnhancements and applyDomainEnhancements (LOW)
+- **Root cause**: `hasDomainEnhancements` (line 228) and `applyDomainEnhancements` (line 250) use `lowContentDomains.has(normalizedDomain)` which checks Map presence but NOT TTL expiry. The `isLowContentDomain()` function (which checks TTL and cleans up expired entries) exists but was not used in these two locations.
+- **Impact**: After the 30-minute TTL expires, a stale low-content hint still causes two behaviors: (1) `hasDomainEnhancements` returns true, making `getEngineFallbackChain` return a single modified chain instead of the full global chains; (2) `applyDomainEnhancements` deprioritizes cheerio even though the hint is expired. The expired entry is eventually cleaned up when `isLowContentDomain` or `getLowContentDomains` is called for that specific domain, but until then the domain incorrectly gets a narrowed, cheerio-deprioritized chain.
+- **Fix**: Replaced `lowContentDomains.has(normalizedDomain)` with `isLowContentDomain(normalizedDomain)` in both `hasDomainEnhancements` and `applyDomainEnhancements`. `isLowContentDomain` re-normalizes the already-normalized domain (idempotent, harmless), checks the 30-minute TTL, deletes the entry if expired, and returns the correct boolean.
+
+## Areas Confirmed Clean
+- **Fallback chain selection logic**: Bounds-checked override indices, consistent normalization, proper early returns
+- **CAPTCHA upgrade**: Correct LRU eviction, proper TTL handling, safe Map delete-during-iteration, no further upgrade from obscura
+- **Config file caching**: mtime-based cache invalidation is correct, invalid configs fall back to defaults, cache not polluted by invalid data
+- **Chain validation**: Rejects duplicates, non-strings, unknown engines, empty chains; rejects entire config if any chain is invalid
+- **Memory bounds**: captchaUpgradeMap (200), lowContentDomains (100) both have LRU eviction
+- **Type safety**: Unsafe casts (`data as EngineConfigFile`) are immediately followed by runtime validation
+- **Domain normalization**: Consistent across all 6 functions that normalize domains
+
+Stage Summary:
+- Audited all 516 lines of engine-config.ts line-by-line
+- Found and fixed 1 real bug: low-content TTL bypass (2 call sites)
+- 6 areas confirmed clean (chain selection, CAPTCHA upgrade, config caching, validation, memory bounds, type safety)
+- 3 latent issues documented but not fixed (preference learning dead code, priority inversion in unused feature, domainOverrides unbounded but unused)
+- TypeScript compilation verified: no new errors (5 pre-existing errors unchanged)
+- All maps are properly bounded; no race conditions possible (single-threaded Node.js, all ops synchronous)
+
+---
+Task ID: 3
+Agent: session+referrer+fingerprint+rate+ssrf auditor
+Work Log:
+- Read last 200 lines of worklog.md to identify previously-fixed issues and avoid duplication
+- Read all 5 files line-by-line (1406 total lines): session-manager.ts (387), referrer-chain.ts (127), request-fingerprint.ts (368), rate-limiter.ts (285), ssrf.ts (249)
+- Verified no overlap with 148+ previously-fixed issues from Tasks 1-13 and prior audits
+
+## Audit Coverage
+
+### 1. session-manager.ts (387 lines)
+- Verified domain normalization consistent across acquireSession/getDomainSessions/getSessionForRequest (toLowerCase + strip www.)
+- Verified eviction loop (reverse for + break) is safe — splice after break prevents index shift issues
+- Verified taskIds capped at 20 entries (line 92-94) preventing unbounded growth
+- Verified cleanup correctly iterates sessions map and deletes from domainSessions map (safe: different maps)
+- Verified sessionId uniqueness via monotonic counter + Date.now() (no millisecond collision)
+- Verified domainSessions domain list order: push=newest, shift=oldest — correct for FIFO eviction
+- Verified cookie merging in getSessionForRequest: fresh cookies take precedence via Map (correct dedup)
+- Verified parseCookieString handles edge cases: empty string, no `=`, multiple `=` signs
+- Verified toPublicSession strips internal fields (blocked, blockedReason, taskIds, createdAt, lastUsedAt exposed but not taskIds)
+- **Found BUG-1**: Missing `.unref()` on cleanup setInterval (line 44) — request-fingerprint.ts correctly uses `.unref()` but session-manager does not. Prevents graceful process exit when no other work is pending.
+- **Found BUG-2**: Missing try-catch on `cookieJar.getCookieHeader()` in `getSessionForRequest` (line 239) — the same call IS try-caught in `acquireSession` (line 133-138) proving the function can throw. An unhandled exception here would propagate and fail the entire request.
+
+### 2. referrer-chain.ts (127 lines)
+- Verified LRU eviction: scans all entries for oldest timestamp, O(n) but only at capacity. `history.delete()` decrements size so `while` loop terminates.
+- Verified self-refer prevention: walks backwards from last entry skipping exact matches (line 99-105)
+- Verified domain extraction uses `parsed.hostname` (URL constructor handles all schemes)
+- Verified no timers, no external deps, no state mutation race conditions (single-threaded)
+- **Result**: No bugs found.
+
+### 3. request-fingerprint.ts (368 lines)
+- Verified create→complete→cleanup lifecycle: create adds to all 4 maps; complete removes from domainFpIds/fingerprintToDomain/domainIndex but keeps in recentFingerprints for monitoring; cleanup handles orphaned entries (crashed requests) via fingerprintToDomain reverse lookup + domainFpIds stale sweep
+- Verified discard() removes from all 4 maps including recentFingerprints (prevents domainFpIds leak on exception paths)
+- Verified hard cap at 10000 triggers immediate cleanup (line 87-89)
+- Verified domainIndex array indexOf is O(n) but bounded by cleanup cadence (30s) and completion cleanup
+- Verified generateHexId uses crypto.getRandomValues (CSPRNG, not Math.random)
+- Verified padPostBody: URL-encoded appends dummy param, JSON adds _p key, default appends whitespace — all safe for their content types
+- Verified `.unref()` on cleanup interval (line 56)
+- **Result**: No bugs found.
+
+### 4. rate-limiter.ts (285 lines)
+- Verified sliding window: filter + push is correct chronological order; oldest = array[0]
+- Verified burst logic: only consumed when rate limit exceeded and not penalized; replenished every 10 consecutive successes
+- Verified penalty recovery: only when penalty expired AND consecutiveSuccesses reaches threshold (5-20 depending on current RPM)
+- Verified penalty on 503 handled by first branch (429/403/503), not double-counted by second branch (5xx) due to if/else if
+- Verified consecutiveSuccesses reset on ALL failure paths (429/403/503 line 142, 5xx falls to line 150, network error line 150)
+- Verified domain eviction: scans for oldest lastRequestTime, deletes one, creates new entry — size stays ≤ MAX_DOMAINS
+- Verified timestamps trimmed to max(200, maxRPM*2) preventing unbounded growth
+- Verified getDomainState reports currentRPM correctly via local filter (read-only method, no state mutation)
+- Noted: MAX_TIMESTAMPS_PER_DOMAIN (200) defined but unused — effective limit is same value via Math.max(200, ...) on line 121
+- **Found BUG-4**: Missing `Math.max(1, ...)` clamp on `maxRPM` override in `acquire()` (line 81). The `setDomainLimit()` method correctly clamps to min 1, but `acquire()`'s optional `maxRPM` parameter does not. A `maxRPM` of 0 would cause `getDomainState()` to report `estimatedWaitMs: NaN` (oldestInWindow is undefined when window is empty but effectiveMaxRPM is 0, making the throttled branch reachable with no timestamps).
+
+### 5. ssrf.ts (249 lines)
+- Verified protocol check: only http: and https: allowed
+- Verified DNS tunneling blocklist: 10 services including nip.io, sslip.io, localtest.me
+- Verified internal hostname blocklist: localhost, localhost6, ip6-localhost, ip6-loopback + .local/.internal/.localhost suffixes
+- Verified octal IP regex `/^0[0-7]+(\.|$)/` blocks 0177.0.0.1, 010.0.0.1 etc.
+- Verified hex IP regex `/^0x[0-9a-f]+(\.|$)/i` blocks 0x7f.0.0.1, 0x7f000001 etc.
+- Verified pure numeric `/^\d+$/` blocks `0`, `1` (resolve to 0.0.0.0/0.0.0.1 on Linux)
+- Verified digit-dot pattern `/^\d(\.\d+)*$/` blocks `127.1`, `0.0`, `2130706433`
+- Verified isPrivateIp covers: 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 (CGNAT), 224.0.0.0/4 (multicast), IPv6 loopback, link-local fe80::/10, ULA fc00::/7, multicast ff00::/8, all-zeros
+- Verified IPv4-mapped IPv6 in hex form (`::ffff:7f00:1`) correctly expanded and checked via expandIPv6 + v4Mapped regex in isPrivateIp
+- **Found BUG-3 (HIGH)**: SSRF bypass via expanded IPv4-mapped IPv6 addresses. The `v4MappedMatch` regex on line 114 only matches the compressed form `::ffff:x.x.x.x`. Expanded forms like `0:0:0:0:0:ffff:127.0.0.1` or `0000:0000:0000:0000:0000:ffff:192.168.1.1` bypass this check. The `expandIPv6` function splits on `:` which destroys the dotted-decimal IPv4 suffix (e.g., `127.0.0` becomes a single group, producing wrong expansion `0000:0000:0000:0000:0000:ffff:1270:0001`). The v4Mapped regex in `isPrivateIp` then fails to match, and the address is not flagged as private. Fix: added `/:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/` check after the existing `::`-only regex to extract the IPv4 suffix from any IPv6 address containing dotted-decimal.
+
+## Bugs Found & Fixed (4)
+
+### BUG-1: session-manager.ts — Missing `.unref()` on cleanup interval (MEDIUM)
+- **Impact**: The 30-minute cleanup `setInterval` keeps the Node.js event loop alive, preventing graceful process exit when all other work is done. Compare: `request-fingerprint.ts` correctly calls `.unref()` on its interval.
+- **Fix**: Appended `.unref()` to the `setInterval` call (line 53).
+
+### BUG-2: session-manager.ts — Unhandled `cookieJar.getCookieHeader` throw in `getSessionForRequest` (MEDIUM)
+- **Impact**: The same `cookieJar.getCookieHeader()` call IS wrapped in try-catch in `acquireSession` (line 133-138), proving the function can throw. The unwrapped call in `getSessionForRequest` (the primary API method engines call) would propagate the exception, failing the entire request.
+- **Fix**: Wrapped in try-catch, defaulting `freshCookies` to `''` on failure.
+
+### BUG-3: ssrf.ts — SSRF bypass via expanded IPv4-mapped IPv6 (HIGH)
+- **Root cause**: `parseIpAddress()` only detects IPv4-mapped IPv6 in compressed `::ffff:x.x.x.x` form. Expanded forms like `0:0:0:0:0:ffff:127.0.0.1` bypass the check. The `expandIPv6()` function naively splits on `:`, turning `127.0.0.1` into groups `[..., "127.0.0", "1"]`, producing incorrect expansion `...ffff:1270:0001`. The `isPrivateIp()` v4Mapped regex then fails to match, allowing the SSRF.
+- **Impact**: An attacker can use `http://[0:0:0:0:0:ffff:127.0.0.1]/` to bypass SSRF protection and reach internal services (127.0.0.1, 10.x.x.x, 192.168.x.x, etc.). Also affects `0000:0000:0000:0000:0000:ffff:x.x.x.x` and any non-`::` prefix form.
+- **Fix**: Added `/:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/` regex check in `parseIpAddress()` after the existing `::`-only regex. This extracts the IPv4 dotted-decimal suffix from ANY IPv6 address containing one, regardless of prefix form. Verified with 10 test cases covering compressed, expanded, and non-mapped IPv6 addresses.
+
+### BUG-4: rate-limiter.ts — Missing lower bound clamp on `maxRPM` override (LOW)
+- **Root cause**: `setDomainLimit()` clamps to `Math.max(1, maxRPM)` but `acquire()`'s optional `maxRPM` parameter does not. A value of 0 causes `getDomainState()` to report `estimatedWaitMs: NaN`.
+- **Fix**: Added `Math.max(1, maxRPM)` to `acquire()`'s override path, consistent with `setDomainLimit()`.
+
+Stage Summary:
+- Audited 5 files (1406 lines total) line-by-line
+- Found and fixed 4 real bugs: SSRF bypass (HIGH), missing .unref() (MEDIUM), missing try-catch (MEDIUM), missing clamp (LOW)
+- 1 file (referrer-chain.ts) had zero bugs
+- 1 file (request-fingerprint.ts) had zero bugs
+- All fixes verified: SSRF fix tested with 10 inline test cases (all pass), TypeScript compilation clean (no new errors)
+---
+Task ID: 4
+Agent: TLS+HTTP2+DoH+IP auditor
+Task: Deep line-by-line bug audit of 4 network-level anti-detection files (1197 lines total)
+
+Work Log:
+- Read last 200 lines of worklog.md to identify previously-fixed issues (Tasks 1-3, 148+ fixes)
+- Ignored pre-known TS2802 Map iteration errors and http2-decoy.ts createdAt/profile property errors
+- Read all 4 files in full: tls-fingerprint.ts (302), http2-decoy.ts (508), doh-resolver.ts (240), ip-fingerprint.ts (147)
+- Cross-referenced domainHash() implementation (utils.ts:1107-1113) — returns non-negative int via Math.abs, safe for modulo
+- Verified resolveDoH callers: only doh-simulation.ts calls it, always with type 'A'
+- Verified HTTP/2 SETTINGS values against RFC 7540 and real browser captures (Chrome/Firefox/Safari/Edge all correct)
+- Verified TLS cipher suites, sigalgs, and JA3 reference hashes against known browser fingerprints
+- Verified all 4 caches are bounded (200-500 entries) with proper TTL and LRU eviction
+- Verified all 3 browser detection functions (detectBrowserFromUA, detectBrowserForH2, classifyDomain) have correct check ordering
+- Verified no timers, event listeners, or unclosed connections in any file (no memory leaks)
+- Verified no race conditions (all cache operations are synchronous; single DoH call is sequential fallback)
+
+## Audit Coverage (all functions)
+
+### 1. tls-fingerprint.ts (302 lines) — NO BUGS
+- TLS_CIPHER_VARIANTS: 12 variants across 7 browsers with correct cipher ordering and sigalgs
+- getTLSFingerprintOptions: Cache with TTL (20min), LRU eviction (500 max), deterministic variant selection via domainHash. Eviction correctly has `!domainTlsOptionsCache.has(domain)` guard (line 269).
+- detectBrowserFromUA: Edge before Chrome, Samsung/Brave/Opera before Chrome, Safari requires Macintosh. All correct.
+- All caches bounded, no memory leaks, no timers.
+
+### 2. http2-decoy.ts (508 lines) — 1 BUG
+- H2_SETTINGS_PROFILES: 5 profiles with verified SETTINGS values (Chrome 6291456 initial window, Safari 4096 header table, etc.)
+- getH2PreambleSequence: Correct frame ordering per browser type (Chrome sends PRIORITY+WINDOW_UPDATE, Firefox goes straight to HEADERS)
+- generateWindowUpdateFrame: Deterministic per-domain jitter ±1000 around Chrome base value
+- classifyDomain: LEGACY_TLDS sorted by length descending for correct longest-match suffix
+- getConnectionProfile: Cache eviction MISSING has-domain guard → BUG-1
+- All caches bounded, no memory leaks, no timers.
+
+### 3. doh-resolver.ts (240 lines) — 1 BUG
+- queryProvider: Correct timeout handling via AbortController+clearTimeout in finally, proper error catch, DNS Status=0 check
+- resolveDoH: Correct cache TTL handling, expired entry cleanup, provider fallback chain, min 60s TTL clamp
+- evictOldest: Correct O(n) scan for oldest cachedAt
+- parseDoHProvidersFromEnv: Correct env parsing with fallback to defaults
+- targetTypeNums MISSING MX/NS/TXT/SRV mappings → BUG-3
+- No race conditions (sequential async fallback, single-threaded)
+
+### 4. ip-fingerprint.ts (147 lines) — 1 BUG
+- getOrCreateProfile: Correct TTL check, deterministic random profile per domain
+- getDiversifiedHeaders: Correct URL parsing, consistent per-domain headers
+- Cache eviction MISSING has-domain guard → BUG-2
+- Cache bounded (200), no memory leaks, no timers.
+
+## Bugs Found & Fixed (3)
+
+### BUG-1: http2-decoy.ts — Unnecessary cache eviction on expired entry refresh (LOW)
+- **Root cause**: `getConnectionProfile` (line 421) checks `domainConnProfileCache.size >= MAX_CACHE_SIZE` without verifying whether the domain already has an entry. When an expired entry for the same domain exists, `set()` would overwrite it (net zero size change), but the eviction unnecessarily removes a different domain's valid entry first.
+- **Impact**: When cache is at capacity (200) and a domain's entry expires, the next request for that domain evicts a valid entry from another domain. Net effect: one domain loses its cached profile unnecessarily, causing an extra computation on its next request.
+- **Fix**: Added `&& !domainConnProfileCache.has(domain)` guard, matching the pattern already used correctly in tls-fingerprint.ts (line 269).
+
+### BUG-2: ip-fingerprint.ts — Unnecessary cache eviction on expired entry refresh (LOW)
+- **Root cause**: `getOrCreateProfile` (line 67) has the same missing `!domainHeaderCache.has(domain)` check as BUG-1. When refreshing an expired entry at capacity, a valid entry from another domain is unnecessarily evicted.
+- **Impact**: Same as BUG-1 — unnecessary cache churn causing extra random profile generation for the evicted domain.
+- **Fix**: Added `&& !domainHeaderCache.has(domain)` guard.
+
+### BUG-3: doh-resolver.ts — Missing DNS record type number mappings (LOW)
+- **Root cause**: `queryProvider` (line 155) only maps A(1), AAAA(28), CNAME(5) to their DNS type numbers. The `DnsRecordType` union includes MX, NS, TXT, SRV, but these are not in the map. The fallback `?? 1` defaults to A record type number, so querying for MX records would filter for type-1 (A) in an MX response, finding no matches and returning empty.
+- **Impact**: `resolveDoH(domain, 'MX')` and other non-A/AAAA/CNAME types silently return empty array. Currently latent (only caller uses type 'A'), but would be a silent failure if any future caller uses other types.
+- **Fix**: Added NS(2), MX(15), TXT(16), SRV(33) to the `targetTypeNums` map.
+
+## Areas Confirmed Clean
+- **TLS cipher/sigalg ordering**: All 12 variants match known browser JA3 references
+- **HTTP/2 SETTINGS values**: Verified against RFC 7540 §6.5.2 and real browser captures
+- **HTTP/2 frame sequencing**: Chrome PRIORITY+WINDOW_UPDATE+HEADERS, Firefox direct HEADERS, Safari delayed HEADERS — all correct
+- **DoH provider chain**: AliDNS → Cloudflare → Google with 5s per-provider timeout, correct abort/cleanup
+- **All 4 caches**: Bounded with LRU eviction, no unbounded growth
+- **Browser detection**: Correct priority ordering in all 3 detection functions
+- **domainHash**: Returns non-negative int (Math.abs after |0 coercion), safe for modulo
+- **No memory leaks**: No timers, no event listeners, no unclosed connections
+- **No race conditions**: All cache ops synchronous; DoH uses sequential async fallback
+- **No security issues**: DoH uses HTTPS, domain names are encodeURIComponent'd, cache TTL is honored
+
+Stage Summary:
+- Audited all 4 files (1197 lines total) line-by-line
+- Found and fixed 3 real bugs: 2 unnecessary cache evictions (LOW), 1 missing DNS type mappings (LOW)
+- tls-fingerprint.ts confirmed clean (0 bugs)
+- TypeScript compilation verified: no new errors (1 pre-existing ReadingHeatmap casing error unchanged)
+- All caches are properly bounded; no memory leaks; no race conditions
+---
+Task ID: 5
+Agent: task-engine.ts deep auditor
+Work Log:
+- Read last 200 lines of worklog.md to identify previously-fixed issues (Tasks 1-4, 151+ fixes)
+- Ignored pre-known issues: AtomicCounter (already fixed), break→continue in log eviction (already fixed), heartbeat throttle bypass (already fixed)
+- Read all 1701 lines of task-engine.ts in 4 chunks, line-by-line
+- Cross-referenced engines.ts: getFallbackChainForEngine (line 319) and selectEngine (line 3248) integration
+- Verified selectEngine VALID_ENGINES list includes 'dokobot' (line 3260) but determineEngine whitelist did not
+- Verified all dbWriteSemaphore acquire/release pairs: book create (701/722), chapter create (1203/1218), retry save (1527/1549) — all use finally blocks
+- Verified _domainEngineRefCount touch/cleanup lifecycle — touchDomainEngine guards against double-touch per task, finally block decrements correctly
+- Verified _captchaPausePromises cleanup in finally block (line 1160)
+- Verified _engineUpgradeLock cleanup via setTimeout (5s)
+- Verified logBuffer _totalBufferEntries consistency across all 8 modification paths
+- Verified progressThrottle cleanup: deleted for terminal states (line 214), deleted in executeTask finally (line 498), periodic timer with .unref() (line 196)
+- Verified Semaphore implementation: double-release guard, queue FIFO ordering, running count invariant
+- Verified incremental dedup: TOCTOU-safe (no await between check and eager mark), both URL and normalized title keys maintained
+- Verified abort signal propagation: all setTimeout-based delays include abort listener with { once: true }, all apiCalls include task-level signal
+- Verified CAPTCHA pause promise sharing: first worker creates pause, others await same promise, finally deletes entry
+- Verified worker pool pattern: shared queue + N async workers via Promise.all, abort check on each iteration
+- Verified engine fallback chain retry: CAPTCHA errors stop chain immediately (throw), doNotRetry errors stop chain, other errors continue to next engine
+- Verified resortChapters: gap detection sequential from 1, batch reorder via PATCH endpoint
+- Verified log flusher: auto-cancels when logBuffer empty, splice(0) atomic drain, put-back on failure
+
+## Audit Coverage (all functions)
+
+### Core Infrastructure
+- **streamLogToWS / streamProgressToWS** (lines 31-56): Best-effort, 2s timeout, silent catch. Correct.
+- **AtomicCounter** (lines 60-65): Thread-safe in single-threaded Node.js. Added decrement() method.
+- **Semaphore** (lines 67-79): Double-release guard, queue FIFO, correct running count. No leaks.
+- **getEffectiveEngine** (lines 92-99): Per-domain override with URL parse fallback. Correct.
+- **getAdaptiveOrRandomDelay** (lines 113-140): Abort-aware delay with listener cleanup. Correct.
+- **apiCall** (lines 152-181): AbortSignal.any for task+timeout, JSON parse fallback. Correct.
+
+### Progress & Logging
+- **updateTaskProgress** (lines 203-226): Throttle bypass for status/heartbeat, terminal state cleanup. Correct.
+- **addTaskLog** (lines 228-276): Truncation, buffer with immediate flush at 50, back-on-failure. Correct.
+- **ensureLogFlusher** (lines 284-317): Auto-cancel on empty, splice atomic drain, put-back on failure. Correct.
+- **flushTaskLogs** (lines 322-343): Atomic drain + delete, re-insert on failure. Correct.
+
+### Task Orchestration
+- **executeTask** (lines 369-500): Abort controller, 1h timeout, heartbeat interval, quality scoring, finally cleanup. Correct.
+- **executeTaskBody** (lines 528-1390): Full lifecycle — list → books → chapters → content → finalize. Correct structure.
+- **processBook** (lines 612-831): Dedup, incremental check, novel create/update, cover download, CAPTCHA handling. Found BUG-3 in determineEngine.
+- **processChapter** (lines 1004-1253): Incremental dedup with eager mark, engine fallback chain, CAPTCHA detection/pause. Correct.
+- **processAllBooks / chapterWorkers** (lines 839-864, 1255-1267): Worker pool with shared queue. Correct.
+
+### Recovery & Utilities
+- **retryFailedChapters** (lines 1419-1572): Sequential retry with engine fallback, abort check. Correct.
+- **resortChapters** (lines 1583-1637): Gap detection, batch reorder. Correct.
+- **detectStuckTasks / recoverStaleTasks** (lines 1645-1701): Heartbeat-based + fallback time-based detection. Correct.
+
+## Bugs Found & Fixed (3)
+
+### BUG-1: Recovery counters double-count processed and don't decrement failures (MEDIUM)
+- **Root cause**: Lines 1287-1289 adjusted counters after failed chapter recovery with two errors:
+  1. `processedChaptersCount` was incremented by `retryResult.retried` — but these chapters were already counted in the main loop (line 1241 runs for every chapter including failures). This double-counted retried chapters, inflating `totalChapters`.
+  2. `failedItemsCount` was NOT decremented for recovered chapters — but each recovered chapter was previously counted as failed (line 1243). The failure count remained inflated even though the chapter was successfully recovered.
+- **Impact**: If 100 chapters were processed, 10 failed, and 5 recovered on retry, the final report would show: totalChapters=110 (should be 100), failedItems=10 (should be 5), newChapters=original+5 (correct). Both `totalChapters` and `failedItems` in the DB and task result are wrong.
+- **Fix**: Removed the `processedChaptersCount` increment loop entirely (retried chapters were already counted). Added `failedItemsCount.decrement()` for each recovered chapter. Added `decrement()` method to `AtomicCounter` class.
+
+### BUG-2: Hardcoded `failed: 0` when no valid books processed (MEDIUM)
+- **Root cause**: Line 879 returned `failed: 0` when `booksProcessed.length === 0`, regardless of how many books actually failed during processing. Books fail via two paths: API creation failure (line 716, `failedItemsCount.increment()`) and scrape exception (line 823, `failedItemsCount.increment()`). Both paths increment `failedItemsCount` but the early return ignored it.
+- **Impact**: If 10 books are found, 3 fail during scrape, 5 have no title (skipped), and 2 are deduped (skipped), `booksProcessed.length === 0`. The task result returns `failed: 0` instead of `failed: 3`. The task summary, DB `failedItems`, and quality scoring all see zero failures when there were actually 3.
+- **Fix**: Changed `failed: 0` to `failed: failedItemsCount.value`.
+
+### BUG-3: `determineEngine` missing 'dokobot' from engine whitelist (MEDIUM)
+- **Root cause**: Line 358 validated `rule.engine` against a hardcoded list: `["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura"]`. This list was missing `"dokobot"`, which was added to the engine system later. The `selectEngine` function in engines.ts (line 3260) correctly includes `"dokobot"` in its `VALID_ENGINES` list, creating a mismatch.
+- **Impact**: Any scrape rule with `engine: "dokobot"` set would have the engine silently ignored. The `determineEngine` function would fall through to `selectEngine(undefined, antiCrawlConfig)`, which would return an engine based on anti-crawl heuristics (e.g., cheerio, playwright, obscura) instead of the user-specified `dokobot`. The task would run with the wrong engine, and the user would see a different engine in logs than what they configured.
+- **Fix**: Added `"dokobot"` to the validation array in `determineEngine`, matching the VALID_ENGINES list in engines.ts.
+
+## Areas Confirmed Clean
+- **Semaphore**: Double-release guard, correct queue FIFO, no leaks (all acquire/release in finally blocks)
+- **Worker pools**: Shared queue + N workers via Promise.all, abort check each iteration, no zombie workers
+- **Abort handling**: All setTimeout delays include abort listener with { once: true }, all apiCalls combine task signal + 30s timeout
+- **CAPTCHA pause sharing**: First worker creates pause promise, others await same promise, finally deletes entry
+- **Incremental dedup**: TOCTOU-safe (no await between check and eager mark), URL + normalized title keys, cross-title-key update on success
+- **Engine fallback chain**: CAPTCHA stops immediately, doNotRetry stops, other errors continue; chain length capped at MAX_ENGINE_RETRIES
+- **Domain engine overrides**: Reference-counted with touchDomainEngine guard, cleanup in finally block, upgrade lock with 5s timeout
+- **Log buffer**: _totalBufferEntries consistent across all 8 modification paths, atomic splice(0) drain, put-back on failure, auto-cancel flusher
+- **Progress throttle**: Terminal state cleanup, periodic stale entry cleanup with .unref(), deleted in executeTask finally
+- **Heartbeat**: 30s interval, bypasses throttle (lastHeartbeatAt check), cleared in finally
+- **Memory**: All per-task data (bookCaptchaCounts, consecutiveCaptchaCounts, chapterWordCounts, chapterQueue) is local and GC'd; module-level maps (_domainEngineTypes, _domainEngineRefCount) are ref-counted and cleaned up
+- **resortChapters**: Sequential gap detection, batch reorder via PATCH, 5000 chapter limit per API
+- **detectStuckTasks**: Heartbeat-based (5min) + fallback time-based (2h) detection, best-effort marking
+- **Engine integration with engines.ts**: getFallbackChainForEngine receives correct engine type and domain, selectEngine fallback path correct
+
+Stage Summary:
+- Audited all 1701 lines of task-engine.ts line-by-line
+- Found and fixed 3 real bugs: recovery counter inflation (MEDIUM), hardcoded failed count (MEDIUM), missing dokobot in engine whitelist (MEDIUM)
+- 15 areas/functions confirmed clean (semaphore, worker pools, abort handling, CAPTCHA pause, dedup, engine chain, domain overrides, log buffer, progress throttle, heartbeat, memory, resort, stuck detection, engine integration)
+- Added `decrement()` method to AtomicCounter class (needed for BUG-1 fix)
+- TypeScript compilation verified: no new errors (23 pre-existing errors unchanged, none related to changes)

@@ -225,7 +225,7 @@ export function getEngineFallbackChain(domain?: string): EngineType[][] {
  */
 function hasDomainEnhancements(normalizedDomain: string): boolean {
   if (getCaptchaUpgradedEngine(normalizedDomain)) return true;
-  if (lowContentDomains.has(normalizedDomain)) return true;
+  if (isLowContentDomain(normalizedDomain)) return true;
   const prefs = readEnginePreferences();
   if (prefs && prefs[normalizedDomain]) return true;
   return false;
@@ -247,7 +247,7 @@ function applyDomainEnhancements(chain: EngineType[], normalizedDomain: string):
   }
 
   // 2. Low-content hint — deprioritize cheerio for JS-required domains
-  if (lowContentDomains.has(normalizedDomain)) {
+  if (isLowContentDomain(normalizedDomain)) {
     const idx = chain.indexOf('cheerio');
     if (idx >= 0 && idx < chain.length - 1) { chain.splice(idx, 1); chain.push('cheerio'); }
   }
