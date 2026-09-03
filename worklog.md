@@ -24623,3 +24623,38 @@ Stage Summary:
 - aijjxs full-category batch run completed: 15 tasks, ~148 books, 3 failedItems; queue stable after fixes; concurrency cap respected
 - 6 new bugs fixed (A watchdog no-op, B terminal-status retry, C charset mojibake, D selectors 500s, E queue ledger leak, F sourceId drop)
 - Final re-verification batch: 2/2 tasks completed 100%, clean Chinese titles, provenance fields persisted
+
+---
+Task ID: 7
+Agent: Main Orchestrator (Session 7)
+Task: 基于yckceo.com书源JSON创建七猫API采集规则 + API引擎 + 深度bug修复 + Firefox指纹优化
+
+Work Log:
+- 读取yckceo.com/id/7698.json，解析Legado书源格式（七猫官方API）
+- 分析七猫API架构：MD5签名认证、AES-CBC内容加密、JSON响应
+- 新增 "api" 引擎类型到 EngineType 联合类型（types.ts）
+- 新增 API 相关类型定义（ApiSigningConfig, ApiDecryptionConfig, ApiEndpointConfig, ApiResponseFormat）
+- 在 engines.ts 中实现 ApiEngine 类：
+  - 支持 HTTP GET 请求（带自定义headers）
+  - 支持 MD5 参数签名（七猫风格：sorted keys + signKey）
+  - 支持 MD5 header 签名
+  - 支持 AES-CBC 内容解密（hex/base64输入，IV从密文提取）
+  - CircuitBreaker 集成、rate limiting、abort signal 支持
+  - 代理支持
+- 新增 jsonPath/jsonPathAll 工具函数（支持点记号、数组索引、[*]通配符）
+- 新增 md5Sign 函数（Bun.CryptoHash）
+- 新增 aesDecrypt 函数（Node.js crypto，支持 CBC/ECB）
+- 注册 ApiEngine 到所有必要位置（VALID_ENGINES, nonBrowserEngines, getEngineNames, initEngines）
+- 创建 qimao-api.json 采集规则（完整API端点配置、签名、解密、字段映射）
+- 修复 Bug 1: recordEngineFailure 硬编码只清理4个引擎的timestamp，实际有9个引擎 → 补全为完整引擎列表
+- 修复 Bug 2 (Firefox指纹): generateFingerprintProfile/generateRandomFingerprint 在选择Firefox UA时仍使用Chrome风格的WebGL vendor/renderer（"Google Inc. (NVIDIA)"/"ANGLE(...Direct3D11...)"），这是重大指纹泄漏：
+  - 新增 FIREFOX_WEBGL_VENDORS（"Mozilla"）
+  - 新增 FIREFOX_WEBGL_RENDERERS（14个真实Firefox GPU字符串，覆盖Windows/macOS/Linux）
+  - 修复两个profile生成函数的vendor/renderer选择逻辑：Firefox UA → Mozilla vendor + 真实GPU名
+- 深度审计engines.ts、task-engine.ts、scrapers.ts、stealth.ts等关键文件
+- 确认volume-aware chapter reordering已正确实现（分卷感知排序、parseChineseNumeral、sortChaptersVolumeAware）
+
+Stage Summary:
+- 新增 API 引擎（第9个引擎）+ 七猫API采集规则
+- 修复2个bug（timestamp清理遗漏、Firefox WebGL指纹不匹配）
+- lint: 0 errors, 4 warnings (均为预存在的React Compiler警告)

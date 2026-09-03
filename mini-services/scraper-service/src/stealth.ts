@@ -116,6 +116,35 @@ const WEBGL_RENDERERS: Record<string, string[]> = {
 };
 
 // Linux ANGLE renderers (Chrome/Edge on Linux use ANGLE with OpenGL backend)
+// Firefox uses completely different WebGL vendor/renderer strings than Chrome.
+// Real Firefox: vendor="Mozilla", renderer="NVIDIA Corporation / NVIDIA GeForce RTX 3060/..."
+// NOT the Chrome-style "Google Inc. (NVIDIA)" / "ANGLE (...Direct3D11...)".
+const FIREFOX_WEBGL_VENDORS = [
+  "Mozilla",
+] as const;
+
+const FIREFOX_WEBGL_RENDERERS: Record<string, string[]> = {
+  "Mozilla": [
+    // Windows
+    "NVIDIA Corporation / NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0",
+    "NVIDIA Corporation / NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0",
+    "NVIDIA Corporation / NVIDIA GeForce GTX 1660 Ti Direct3D11 vs_5_0 ps_5_0",
+    "NVIDIA Corporation / NVIDIA GeForce RTX 3070 Direct3D11 vs_5_0 ps_5_0",
+    "AMD / AMD Radeon RX 580 (radeon, DRM 3.57.0, 6.1.0, LLVM 17.0.6)",
+    "AMD / AMD Radeon RX 6700 XT (radeonsi, DRM 3.57.0, 6.1.0, LLVM 17.0.6)",
+    "Intel / Intel(R) UHD Graphics 630 (CFL GT2)",
+    "Intel / Intel(R) UHD Graphics 770 (ADL-S GT1)",
+    // macOS
+    "Apple / Apple GPU",
+    "Apple / Apple M1",
+    "Apple / Apple M2",
+    "Apple / Apple M3",
+    // Linux
+    "Mesa / NVIDIA Corporation (NVIDIA GeForce RTX 3060) / NVIDIA GeForce RTX 3060",
+    "Mesa / Intel(R) UHD Graphics 630 (CFL GT2) / Mesa Intel(R) UHD Graphics 630 (CFL GT2)",
+  ],
+};
+
 const WEBGL_RENDERERS_LINUX_ANGLE: Record<string, string[]> = {
   "Google Inc. (NVIDIA)": [
     "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti OpenGL ES 3.2 NVIDIA 525.147.05, OpenGL)",
@@ -310,23 +339,35 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   // Derive platform from UA to avoid contradictions (Edge UA + Mac platform = detectable)
   const uaPlatform = derivePlatformFromUA(userAgent);
   // Re-derive vendor for UA-consistent platform
-  // NOTE: Only Firefox on Linux uses Mesa vendor/renderer.
-  // Chrome/Edge on Linux use ANGLE (same as Windows) — Mesa + Chrome is a detection vector.
+  // Firefox uses "Mozilla" as vendor and real GPU names (no ANGLE wrapper).
+  // Chrome/Edge use "Google Inc. (...)" and ANGLE renderers.
+  // On Linux: Firefox uses Mesa, Chrome uses ANGLE.
   const isLinux = uaPlatform === 'Linux x86_64';
   const isFirefoxUA = /Firefox\//.test(userAgent);
   let vendor: string;
-  if (uaPlatform === 'MacIntel') {
+  let renderer: string;
+  if (isFirefoxUA) {
+    // Firefox always uses "Mozilla" vendor and real GPU names (no ANGLE wrapper)
+    vendor = 'Mozilla';
+    const firefoxRenderers = FIREFOX_WEBGL_RENDERERS["Mozilla"]!;
+    renderer = dPick(firefoxRenderers, 2);
+  } else if (uaPlatform === 'MacIntel') {
     vendor = 'Google Inc. (Apple)';
-  } else if (isLinux && isFirefoxUA) {
-    vendor = 'Mesa';
+    const uaRenderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
+    renderer = dPick(uaRenderers, 2);
+  } else if (isLinux) {
+    const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
+    vendor = dPick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS, 1);
+    const uaRenderers = (WEBGL_RENDERERS_LINUX_ANGLE[vendor])
+      ? WEBGL_RENDERERS_LINUX_ANGLE[vendor]!
+      : (WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!);
+    renderer = dPick(uaRenderers, 2);
   } else {
     const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
     vendor = dPick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS, 1);
+    const uaRenderers = WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!;
+    renderer = dPick(uaRenderers, 2);
   }
-  const uaRenderers = (isLinux && !isFirefoxUA && WEBGL_RENDERERS_LINUX_ANGLE[vendor])
-    ? WEBGL_RENDERERS_LINUX_ANGLE[vendor]!
-    : (WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!);
-  const renderer = dPick(uaRenderers, 2);
 
   const deviceMemory = dPick(DEVICE_MEMORY_OPTIONS, 6);
   const hardwareConcurrency = dPick(HARDWARE_CONCURRENCY_OPTIONS, 7);
@@ -366,23 +407,31 @@ export function generateRandomFingerprint(): FingerprintProfile {
   // Derive platform from UA to avoid contradictions (Edge UA + Mac platform = detectable)
   const uaPlatform = derivePlatformFromUA(userAgent);
   // Re-derive vendor for UA-consistent platform
-  // NOTE: Only Firefox on Linux uses Mesa vendor/renderer.
-  // Chrome/Edge on Linux use ANGLE (same as Windows) — Mesa + Chrome is a detection vector.
+  // Firefox uses "Mozilla" vendor and real GPU names (no ANGLE wrapper).
+  // Chrome/Edge use "Google Inc. (...)" and ANGLE renderers.
+  // On Linux: Firefox uses Mesa, Chrome uses ANGLE.
   const isLinux = uaPlatform === 'Linux x86_64';
   const isFirefoxUA = /Firefox\//.test(userAgent);
   let vendor: string;
-  if (uaPlatform === 'MacIntel') {
+  let renderer: string;
+  if (isFirefoxUA) {
+    // Firefox always uses "Mozilla" vendor and real GPU names
+    vendor = 'Mozilla';
+    renderer = pick(FIREFOX_WEBGL_RENDERERS['Mozilla']!);
+  } else if (uaPlatform === 'MacIntel') {
     vendor = 'Google Inc. (Apple)';
-  } else if (isLinux && isFirefoxUA) {
-    vendor = 'Mesa';
+    renderer = pick(WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!);
+  } else if (isLinux) {
+    const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
+    vendor = pick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS);
+    renderer = pick(
+      (WEBGL_RENDERERS_LINUX_ANGLE[vendor] || WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"])!,
+    );
   } else {
     const nonAppleVendors = WEBGL_VENDORS.filter(v => v !== 'Google Inc. (Apple)');
     vendor = pick(nonAppleVendors.length > 0 ? nonAppleVendors : WEBGL_VENDORS);
+    renderer = pick(WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!);
   }
-  const uaRenderers = (isLinux && !isFirefoxUA && WEBGL_RENDERERS_LINUX_ANGLE[vendor])
-    ? WEBGL_RENDERERS_LINUX_ANGLE[vendor]!
-    : (WEBGL_RENDERERS[vendor] || WEBGL_RENDERERS["Google Inc. (NVIDIA)"]!);
-  const renderer = pick(uaRenderers);
 
   const timezoneOffset = -480;
 

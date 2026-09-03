@@ -1,0 +1,243 @@
+{
+  "name": "七猫小说API (qimao)",
+  "description": "七猫小说官方API采集（api-bc.wtzw.com / api-ks.wtzw.com）。基于yckceo.com书源JSON(id/7698)的七猫官方API。使用MD5签名认证+AES-CBC内容解密。支持搜索、排行榜、分类浏览、书籍详情、章节列表、章节内容。engine设为api。所有数据通过API JSON响应获取，无需HTML解析。",
+  "enabled": true,
+
+  "listUrl": "https://api-bc.wtzw.com/api/v1/leader-board?rank_type=rec_list&category_id=0&tab_type=1&category_type=0&imei_ip=2937357107&book_privacy=1&read_preference=0",
+  "listSelector": null,
+  "listPagination": null,
+
+  "bookTitleSelector": null,
+  "bookAuthorSelector": null,
+  "bookCategorySelector": null,
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": null,
+  "bookCoverSelector": null,
+  "bookStatusSelector": null,
+
+  "chapterListUrl": null,
+  "chapterListSelector": null,
+  "chapterTitleSelector": null,
+  "chapterLinkSelector": null,
+  "chapterPagination": null,
+
+  "contentTitleSelector": null,
+  "contentSelector": null,
+  "contentPagination": null,
+
+  "antiCrawlConfig": {
+    "useJsRender": false,
+    "uaRotation": false,
+    "delay": [500, 1000],
+    "humanBehavior": false,
+    "retries": 3,
+    "referer": null,
+    "customHeaders": {
+      "app-version": "80400",
+      "platform": "android",
+      "reg": "0",
+      "AUTHORIZATION": "",
+      "application-id": "com.kmxs.reader",
+      "net-env": "1",
+      "channel": "unknown",
+      "qm-params": ""
+    }
+  },
+
+  "cleanConfig": {
+    "removeAds": false,
+    "cleanHtml": false,
+    "removePatterns": [],
+    "adPatterns": []
+  },
+
+  "scrapeMode": "incremental",
+  "engine": "api",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/public/covers/qimao/",
+  "threadCount": 2,
+  "minDelay": 500,
+  "maxDelay": 1000,
+  "enableShuffle": false,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "api-bc.wtzw.com",
+    "encoding": "utf-8",
+    "engineType": "api",
+    "stealthEnabled": false,
+    "apiConfig": {
+      "baseUrl": "https://api-bc.wtzw.com",
+      "secondaryBaseUrl": "https://api-ks.wtzw.com",
+      "signing": {
+        "key": "d3dGiJc651gSQ8w1",
+        "signParams": true,
+        "signHeaders": true,
+        "algorithm": "md5",
+        "headerKeys": ["app-version", "platform", "reg", "AUTHORIZATION", "application-id", "net-env", "channel", "qm-params"]
+      },
+      "decryption": {
+        "algorithm": "aes-256-cbc",
+        "key": "242ccb8230d709e1",
+        "inputEncoding": "hex",
+        "ivFromResponse": true,
+        "ivLength": 16,
+        "contentField": "content"
+      },
+      "endpoints": {
+        "search": {
+          "url": "/search/v1/words",
+          "method": "GET",
+          "params": {
+            "gender": "3",
+            "imei_ip": "2937357107",
+            "page": "{page}",
+            "wd": "{keyword}"
+          },
+          "defaults": {
+            "gender": "3",
+            "imei_ip": "2937357107",
+            "page": "1"
+          },
+          "description": "搜索书籍，支持分页"
+        },
+        "leaderBoard": {
+          "url": "/api/v1/leader-board",
+          "method": "GET",
+          "params": {
+            "rank_type": "{type}",
+            "category_id": "0",
+            "tab_type": "{tab}",
+            "category_type": "0",
+            "imei_ip": "2937357107",
+            "book_privacy": "1",
+            "read_preference": "0"
+          },
+          "defaults": {
+            "category_id": "0",
+            "tab_type": "1",
+            "category_type": "0",
+            "imei_ip": "2937357107",
+            "book_privacy": "1",
+            "read_preference": "0"
+          },
+          "description": "排行榜（推荐榜/必读榜/大热榜/完结榜/新书榜等）",
+          "rankTypes": {
+            "rec_list": "推荐榜",
+            "must_read_list": "必读榜",
+            "hot_list": "大热榜",
+            "craft_list": "匠心榜",
+            "end_list": "完结榜",
+            "new_list": "新书榜",
+            "up_list": "飙升榜",
+            "hot_search_list": "热搜榜",
+            "reward_value_list": "打赏榜",
+            "ticket_list": "投票榜",
+            "good_comment_list": "好评榜",
+            "reward_user_list": "粉丝榜"
+          }
+        },
+        "category": {
+          "url": "/api/v4/category/get-list",
+          "method": "GET",
+          "params": {
+            "gender": "{gender}",
+            "category_id": "{categoryId}",
+            "need_filters": "1",
+            "page": "{page}",
+            "need_category": "0",
+            "words": "-99",
+            "sort": "0",
+            "over": "-99"
+          },
+          "defaults": {
+            "gender": "1",
+            "need_filters": "1",
+            "page": "1",
+            "need_category": "0",
+            "words": "-99",
+            "sort": "0",
+            "over": "-99"
+          },
+          "description": "分类浏览（女频/男频/出版）",
+          "categories": {
+            "1": "现代言情",
+            "2": "古代言情",
+            "8": "总裁豪门",
+            "11": "职场情缘",
+            "12": "民国旧影",
+            "13": "娱乐明星",
+            "16": "种田经商",
+            "209": "宫闱宅斗",
+            "274": "现实生活",
+            "275": "青春校园",
+            "278": "年代重生",
+            "279": "都市奇幻"
+          }
+        },
+        "bookDetail": {
+          "url": "/api/v4/book/detail",
+          "method": "GET",
+          "baseUrl": "https://api-bc.wtzw.com",
+          "params": {
+            "id": "{id}",
+            "imei_ip": "2937357107",
+            "teeny_mode": "0"
+          },
+          "description": "书籍详情"
+        },
+        "chapterList": {
+          "url": "/api/v1/chapter/chapter-list",
+          "method": "GET",
+          "baseUrl": "https://api-ks.wtzw.com",
+          "params": {
+            "id": "{id}"
+          },
+          "description": "章节列表（含content_md5用于获取内容）"
+        },
+        "chapterContent": {
+          "url": "/api/v1/chapter/content",
+          "method": "GET",
+          "baseUrl": "https://api-ks.wtzw.com",
+          "params": {
+            "id": "{bookId}",
+            "chapterId": "{chapterId}"
+          },
+          "description": "章节内容（hex编码+AES-CBC加密，需解密）"
+        }
+      },
+      "fieldMapping": {
+        "title": "title",
+        "author": "author",
+        "cover": "image_link",
+        "category": "category_over_words",
+        "description": "intro",
+        "status": {
+          "field": "is_over",
+          "values": {
+            "1": "已完结",
+            "0": "连载中"
+          }
+        },
+        "wordCount": "words_num",
+        "rating": "attribute.score",
+        "keywords": "book_tag_list",
+        "sourceId": "id",
+        "lastChapter": "latest_chapter_title",
+        "updateTime": "update_time"
+      },
+      "responseFormat": {
+        "type": "json",
+        "dataPath": "data",
+        "listPath": "data.books",
+        "bookPath": "data.book",
+        "chapterListPath": "data.chapter_lists",
+        "chapterItemsPath": "chapter_list",
+        "contentPath": "data.content",
+        "totalField": "data.total_count"
+      }
+    }
+  }
+}

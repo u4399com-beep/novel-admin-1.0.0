@@ -10,6 +10,7 @@
  *   scrapling      → Python anti-bot browser service
  *   dokobot        → Python anti-bot bypass service (external HTTP)
  *   obscura        → Stealth anti-fingerprint browser (enhanced Playwright)
+ *   api            → JSON API engine with signing/decryption support
  */
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery, AntiCrawl } from "./types";
@@ -431,7 +432,8 @@ function recordEngineFailure(domain: string, engine: EngineType): void {
       const evictedFailures = domainEngineFailures.get(oldestKey);
       domainEngineFailures.delete(oldestKey);
       // Also clean up all timestamps for this domain
-      for (const e of ['cheerio', 'playwright', 'obscura', 'scrapling']) {
+      const allEngineTypes: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura', 'dokobot', 'api'];
+      for (const e of allEngineTypes) {
         domainFailureTimestamps.delete(`${oldestKey}:${e}`);
       }
     }
@@ -665,7 +667,7 @@ export function getEngine(type: EngineType): ScrapingEngine {
 }
 
 export function getEngineNames(): EngineType[] {
-  return ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura", "dokobot"].filter((t) => engines.has(t));
+  return ["cheerio", "playwright", "firecrawl", "agentql", "cloud-browser", "scrapling", "obscura", "dokobot", "api"].filter((t) => engines.has(t));
 }
 
 // ==================== 1. Cheerio Engine (Enhanced HTTP) ====================
@@ -938,6 +940,15 @@ class CheerioEngine implements ScrapingEngine {
       requestFingerprintMgr.complete(fp.requestId, true, lastStatusCode);
       return result;
     }).catch(err => {
+      // Record proxy failure for the final exhausted-retry attempt.
+      // onRetry handles intermediate retries, but the last attempt (which breaks
+      // out of the retry loop) falls through to here without onRetry being called.
+      // Skip for doNotRetry errors (CAPTCHA/size-limit) — they're already
+      // recorded by the inline proxy failure recording before the throw.
+      const isRetryExhausted = !(err instanceof Error && (err as Record<string, unknown>).doNotRetry);
+      if (proxy && isRetryExhausted) {
+        proxyManager.recordFailure(proxy.url, err instanceof Error ? err.message : String(err));
+      }
       // Record final failure (single record for the logical request)
       if (targetDomain) {
         const errStatus = err instanceof Error ? parseInt(err.message.match(/HTTP (\d+)/)?.[1] || '0', 10) : 0;
@@ -2181,6 +2192,26 @@ class DokobotEngine implements ScrapingEngine {
  */
 
 /**
+ * Pre-computed set of known complex/multi-part TLDs for eTLD+1 root-domain computation.
+ * Hoisted to module level to avoid re-creating on every resource request
+ * (shouldBlockResource is called for every request in Playwright/Obscura pages).
+ */
+const COMPLEX_TLDS = new Set(['co.uk','com.cn','com.au','org.cn','net.cn','ac.uk','gov.uk','co.jp','co.kr','co.nz','org.uk','me.uk','co.za','com.br','com.mx','org.au','net.au','co.in','com.tw','org.tw','com.hk','org.hk','co.th','go.th','ac.th','com.sg','com.my','com.ph','com.id','or.id','ac.id','co.il','org.il','co.ck','net.nz','org.nz','co.at','or.at','gen.tr','com.tr','org.tr','net.tr','com.ve','com.uy','com.ar','com.py','com.pe','com.ec','com.cu','com.do','com.gt','com.hn','com.ni','com.pa','com.sv','com.cr','co.ke','ac.ke','go.ke','or.ke','org.za','net.za','co.zw','co.ug','ac.ug','or.ug','co.tz','ac.tz','or.tz','co.rw','co.bw','co.na','co.mz','co.cm','co.cd','co.cg','co.ga','co.ma','co.tn','co.ht','co.vi','co.gg','co.je']);
+
+/**
+ * Extract the root domain (eTLD+1) from a hostname.
+ * e.g. 'www.example.com' → 'example.com', 'sub.api.example.co.uk' → 'example.co.uk'
+ */
+function _rootDomain(host: string): string {
+  const parts = host.split('.');
+  if (parts.length >= 3) {
+    const last2 = parts.slice(-2).join('.');
+    if (COMPLEX_TLDS.has(last2)) return parts.slice(-3).join('.');
+  }
+  return parts.length >= 2 ? parts.slice(-2).join('.') : host;
+}
+
+/**
  * Obscura resource blocking policy.
  *
  * Strategy:
@@ -2343,16 +2374,7 @@ function shouldBlockResource(resourceType: string, requestUrl: string, targetDom
       const reqHost = new URL(requestUrl).hostname;
       // Compare root domains (eTLD+1) to allow cross-subdomain requests
       // e.g. api.example.com should be allowed when on www.example.com
-      const COMPLEX_TLDS = new Set(['co.uk','com.cn','com.au','org.cn','net.cn','ac.uk','gov.uk','co.jp','co.kr','co.nz','org.uk','me.uk','co.za','com.br','com.mx','org.au','net.au','co.in','com.tw','org.tw','com.hk','org.hk','co.th','go.th','ac.th','com.sg','com.my','com.ph','com.id','or.id','ac.id','co.il','org.il','co.ck','net.nz','org.nz','co.at','or.at','gen.tr','com.tr','org.tr','net.tr','com.ve','com.uy','com.ar','com.py','com.pe','com.ec','com.cu','com.do','com.gt','com.hn','com.ni','com.pa','com.sv','com.cr','co.ke','ac.ke','go.ke','or.ke','org.za','net.za','co.zw','co.ug','ac.ug','or.ug','co.tz','ac.tz','or.tz','co.rw','co.bw','co.na','co.mz','co.cm','co.cd','co.cg','co.ga','co.ma','co.tn','co.ht','co.vi','co.gg','co.je']);
-      const rootDomain = (host: string) => {
-        const parts = host.split('.');
-        if (parts.length >= 3) {
-          const last2 = parts.slice(-2).join('.');
-          if (COMPLEX_TLDS.has(last2)) return parts.slice(-3).join('.');
-        }
-        return parts.length >= 2 ? parts.slice(-2).join('.') : host;
-      };
-      if (rootDomain(reqHost) !== rootDomain(targetDomain)) {
+      if (_rootDomain(reqHost) !== _rootDomain(targetDomain)) {
         return true;
       }
     } catch {
@@ -2919,7 +2941,7 @@ export async function fetchWithInfiniteScroll(
 
   // Determine which browser engine to use
   let browserEngine: EngineType;
-  const nonBrowserEngines: EngineType[] = ['cheerio', 'firecrawl', 'agentql', 'scrapling', 'dokobot', 'cloud-browser'];
+  const nonBrowserEngines: EngineType[] = ['cheerio', 'firecrawl', 'agentql', 'scrapling', 'dokobot', 'cloud-browser', 'api'];
   if (nonBrowserEngines.includes(engineType)) {
     // Prefer obscura for anti-fingerprint stealth, fallback to playwright
     browserEngine = engines.has('obscura') ? 'obscura' : 'playwright';
@@ -3237,6 +3259,332 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+// ==================== 7. API Engine (JSON API with signing/decryption) ====================
+
+/**
+ * Simple JSONPath resolver supporting dot notation, array indexing, and wildcards.
+ * Handles paths like: data.book, data.books[0].title, data.chapter_lists[*].title
+ */
+function jsonPath(obj: unknown, path: string): unknown {
+  if (!path || !path.trim()) return obj;
+  const segments = path.replace(/\[\*/g, '.[*]').split('.').filter(Boolean);
+  let current: unknown = obj;
+  for (const seg of segments) {
+    if (current == null) return undefined;
+    const arrMatch = seg.match(/^\[(\d+)\]$/);
+    if (arrMatch) {
+      const idx = parseInt(arrMatch[1], 10);
+      if (!Array.isArray(current)) return undefined;
+      current = current[idx];
+      continue;
+    }
+    const wildcardMatch = seg.match(/^\[\*\]$/);
+    if (wildcardMatch) {
+      if (!Array.isArray(current)) return undefined;
+      // Return all elements — caller decides how to handle
+      continue;
+    }
+    // Regular property access
+    if (typeof current === 'object' && current !== null) {
+      current = (current as Record<string, unknown>)[seg];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+/** Extract all values matching a path with [*] wildcard into a flat array */
+function jsonPathAll(obj: unknown, path: string): unknown[] {
+  if (!path.includes('[*]')) {
+    const val = jsonPath(obj, path);
+    return val != null ? [val] : [];
+  }
+  const parts = path.split('[*]');
+  const baseVal = jsonPath(obj, parts[0].replace(/\.$/, ''));
+  if (!Array.isArray(baseVal)) return [];
+  const restPath = parts.slice(1).join('[*]').replace(/^\./, '');
+  const results: unknown[] = [];
+  for (const item of baseVal) {
+    if (restPath) {
+      results.push(...jsonPathAll(item, restPath));
+    } else {
+      results.push(item);
+    }
+  }
+  return results;
+}
+
+/**
+ * Generate MD5 sign for params/headers (七猫-style signing).
+ * Format: sorted keys concatenated as "key1=value1key2=value2..." + signKey, then MD5.
+ */
+function md5Sign(data: Record<string, string>, signKey: string): string {
+  const sortedKeys = Object.keys(data).sort();
+  const raw = sortedKeys.reduce((acc, k) => acc + k + '=' + data[k], '') + signKey;
+  const md5 = new Bun.CryptoHash('md5');
+  md5.update(new TextEncoder().encode(raw));
+  return md5.digest('hex');
+}
+
+/**
+ * AES-CBC decrypt with hex-encoded input.
+ * If ivFromResponse is true, first ivLength bytes are the IV.
+ */
+async function aesDecrypt(
+  encryptedData: string,
+  key: string,
+  algorithm: string,
+  inputEncoding: 'hex' | 'base64',
+  ivFromResponse: boolean,
+  ivLength: number,
+  explicitIv?: string,
+): Promise<string> {
+  let rawBytes: Uint8Array;
+  if (inputEncoding === 'hex') {
+    const hex = encryptedData.replace(/\s/g, '');
+    rawBytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < rawBytes.length; i++) {
+      rawBytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+  } else {
+    rawBytes = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+  }
+
+  let iv: Uint8Array;
+  let ciphertext: Uint8Array;
+  if (ivFromResponse) {
+    iv = rawBytes.slice(0, ivLength);
+    ciphertext = rawBytes.slice(ivLength);
+  } else {
+    iv = explicitIv ? Uint8Array.from(atob(explicitIv), c => c.charCodeAt(0)) : new Uint8Array(16);
+    ciphertext = rawBytes;
+  }
+
+  // Map algorithm names to Node.js crypto format
+  const nodeAlgoMap: Record<string, string> = {
+    'aes-128-cbc': 'aes-128-cbc',
+    'aes-256-cbc': 'aes-256-cbc',
+    'aes-128-ecb': 'aes-128-ecb',
+  };
+  const nodeAlgo = nodeAlgoMap[algorithm] || algorithm;
+  const nodeCrypto = await import('crypto');
+  const keyBytes = Buffer.from(key, 'utf8');
+  const decipher = nodeAlgo.includes('ecb')
+    ? nodeCrypto.createDecipheriv(nodeAlgo, keyBytes, undefined)
+    : nodeCrypto.createDecipheriv(nodeAlgo, keyBytes, iv);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return decrypted.toString('utf8');
+}
+
+const apiBreaker = CircuitBreaker.create("ApiEngine");
+
+class ApiEngine implements ScrapingEngine {
+  readonly name: EngineType = "api";
+  private _ruleConfig: Record<string, unknown> | null = null;
+
+  /**
+   * Set the API rule config (called from task-engine when processing api-engine rules).
+   * Contains: baseUrl, signing, decryption, endpoints, headers, etc.
+   */
+  setConfig(config: Record<string, unknown>): void {
+    this._ruleConfig = config;
+  }
+
+  getConfig(): Record<string, unknown> | null {
+    return this._ruleConfig;
+  }
+
+  async fetch(url: string, options?: EngineOptions): Promise<FetchResult> {
+    if (!isSafeUrl(url)) {
+      throw new Error(`Blocked: target URL is not allowed (${url})`);
+    }
+
+    const timeout = Math.max(5000, Math.min(options?.timeout ?? 30000, 120000));
+    const config = this._ruleConfig || {};
+    const customHeaders = (config.customHeaders as Record<string, string>) || {};
+    const signing = config.signing as Record<string, unknown> | undefined;
+    const decryption = config.decryption as Record<string, unknown> | undefined;
+
+    let domain = '';
+    try { domain = new URL(url).hostname; } catch { /* ignore */ }
+
+    return retryWithBackoff(
+      async () => {
+        await waitForRateLimit(domain, options?.signal);
+
+        try {
+          await apiBreaker.acquire();
+        } catch (cbErr) {
+          throw cbErr;
+        }
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+        if (options?.signal) {
+          options.signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            controller.abort();
+          }, { once: true });
+        }
+
+        try {
+          // Build headers
+          const headers: Record<string, string> = { ...customHeaders };
+          if (!headers['Content-Type']) {
+            headers['Content-Type'] = 'application/json';
+          }
+          if (!headers['User-Agent']) {
+            headers['User-Agent'] = getRandomUA();
+          }
+
+          // Apply signing to headers if configured
+          if (signing && (signing.signHeaders as boolean)) {
+            const signKey = signing.key as string;
+            const headerKeys = (signing.headerKeys as string[]) || Object.keys(headers);
+            const headersToSign: Record<string, string> = {};
+            for (const k of headerKeys) {
+              if (headers[k] !== undefined) {
+                headersToSign[k] = headers[k];
+              }
+            }
+            headers['sign'] = md5Sign(headersToSign, signKey);
+          }
+
+          // Build URL with params and signing
+          let fetchUrl = url;
+          const params = new URLSearchParams();
+          // Parse existing query params from URL
+          try {
+            const urlObj = new URL(url);
+            for (const [k, v] of urlObj.searchParams) {
+              params.set(k, v);
+            }
+            // Strip query params from URL (we'll re-add them signed)
+            fetchUrl = urlObj.origin + urlObj.pathname;
+          } catch { /* keep url as-is */ }
+
+          // Apply signing to params if configured
+          if (signing && (signing.signParams as boolean)) {
+            const signKey = signing.key as string;
+            const excludeParams = new Set((signing.excludeParams as string[]) || []);
+            const paramsObj: Record<string, string> = {};
+            for (const [k, v] of params) {
+              paramsObj[k] = v;
+            }
+            const signParams: Record<string, string> = {};
+            for (const [k, v] of Object.entries(paramsObj)) {
+              if (!excludeParams.has(k)) {
+                signParams[k] = v;
+              }
+            }
+            params.set('sign', md5Sign(signParams, signKey));
+          }
+
+          const queryString = params.toString();
+          if (queryString) fetchUrl += '?' + queryString;
+
+          // Determine which headers to send (exclude 'sign' from URL if it was a header-only thing)
+          const fetchHeaders: Record<string, string> = {};
+          for (const [k, v] of Object.entries(headers)) {
+            if (k !== 'sign' || (signing && signing.signParams)) {
+              fetchHeaders[k] = v;
+            }
+          }
+          // If signing both headers and params, the header sign should only include header keys
+          if (signing && (signing.signHeaders as boolean) && !(signing.signParams as boolean)) {
+            fetchHeaders['sign'] = headers['sign'];
+          }
+
+          const fetchOptions: RequestInit = {
+            method: 'GET',
+            headers: fetchHeaders,
+            signal: controller.signal,
+          };
+
+          // Proxy support
+          const proxyUrl = options?.proxy || options?.antiCrawl?.proxy;
+          if (proxyUrl) {
+            const init = bunProxyFetchInit(proxyUrl);
+            Object.assign(fetchOptions, init);
+          }
+
+          console.log(`[ApiEngine] GET ${fetchUrl}`);
+          const response = await fetch(fetchUrl, fetchOptions);
+          const text = await readTextWithLimit(response, MAX_RESPONSE_SIZE);
+
+          if (!response.ok) {
+            throw new Error(`API returned ${response.status}: ${text.slice(0, 200)}`);
+          }
+
+          // Apply decryption if configured
+          let resultText = text;
+          if (decryption) {
+            try {
+              // Try to parse as JSON first, then decrypt the content field
+              const json = JSON.parse(text);
+              const contentField = (decryption.contentField as string) || 'content';
+              const encryptedContent = jsonPath(json, `data.${contentField}`) as string;
+              if (encryptedContent) {
+                const decrypted = await aesDecrypt(
+                  encryptedContent,
+                  decryption.key as string,
+                  (decryption.algorithm as string) || 'aes-256-cbc',
+                  (decryption.inputEncoding as 'hex' | 'base64') || 'hex',
+                  (decryption.ivFromResponse as boolean) ?? true,
+                  (decryption.ivLength as number) || 16,
+                  decryption.iv as string | undefined,
+                );
+                // Replace encrypted content with decrypted
+                if (json.data && typeof json.data === 'object') {
+                  (json.data as Record<string, unknown>)[contentField] = decrypted;
+                }
+                resultText = JSON.stringify(json);
+              }
+            } catch (decErr) {
+              console.warn(`[ApiEngine] Decryption failed (returning raw response): ${decErr instanceof Error ? decErr.message : decErr}`);
+              // Return raw response if decryption fails
+            }
+          }
+
+          apiBreaker.recordSuccess();
+          return {
+            html: resultText,
+            finalUrl: fetchUrl,
+            statusCode: response.status,
+            effectiveEngine: 'api',
+          };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const doNotRetry = options?.signal?.aborted || errMsg.includes('doNotRetry');
+          if (doNotRetry) {
+            apiBreaker.release();
+          } else {
+            apiBreaker.recordFailure();
+          }
+          throw err;
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      {
+        maxRetries: options?.antiCrawl?.retries ?? 3,
+        baseDelay: 1000,
+        maxDelay: 10000,
+        signal: options?.signal,
+      },
+    );
+  }
+
+  close?(): Promise<void> {
+    // No resources to clean up
+    return Promise.resolve();
+  }
+}
+
+// Export jsonPath/jsonPathAll for use by other modules (e.g., task-engine API mode)
+export { jsonPath, jsonPathAll, md5Sign, aesDecrypt };
+
 // ==================== Smart Engine Selector ====================
 
 /**
@@ -3262,7 +3610,7 @@ export function selectEngine(
   },
   domain?: string,
 ): EngineType {
-  const VALID_ENGINES: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura', 'dokobot'];
+  const VALID_ENGINES: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura', 'dokobot', 'api'];
   if (requestedEngine) {
     if (VALID_ENGINES.includes(requestedEngine)) return requestedEngine;
     console.warn(`[selectEngine] Unknown engine '${requestedEngine}', falling back to auto-selection`);
@@ -3297,6 +3645,7 @@ export function initEngines(): void {
   registerEngine(new ScraplingEngine());
   registerEngine(new DokobotEngine());
   registerEngine(new ObscuraEngine());
+  registerEngine(new ApiEngine());
 
   console.log(`[Engines] Available: ${getEngineNames().join(", ")}`);
 

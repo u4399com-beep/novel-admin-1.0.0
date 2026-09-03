@@ -53,7 +53,7 @@ export interface AntiCrawl {
 
 // ==================== Engine Types ====================
 
-export type EngineType = "cheerio" | "playwright" | "firecrawl" | "agentql" | "cloud-browser" | "scrapling" | "obscura" | "dokobot";
+export type EngineType = "cheerio" | "playwright" | "firecrawl" | "agentql" | "cloud-browser" | "scrapling" | "obscura" | "dokobot" | "api";
 
 export interface FetchResult {
   html: string;
@@ -366,6 +366,64 @@ export interface QualityReport {
   summary: string;
   timestamp: string;
 }
+
+// ==================== API Engine Types ====================
+
+export interface ApiSigningConfig {
+  /** HMAC/MD5 key used for request signing */
+  key: string;
+  /** Whether to sign request params */
+  signParams?: boolean;
+  /** Whether to sign request headers */
+  signHeaders?: boolean;
+  /** Signing algorithm: 'md5' (default) | 'hmac-sha256' */
+  algorithm?: 'md5' | 'hmac-sha256';
+  /** Headers to include in signing (key names) */
+  headerKeys?: string[];
+  /** Params to exclude from signing */
+  excludeParams?: string[];
+}
+
+export interface ApiDecryptionConfig {
+  /** Decryption algorithm */
+  algorithm: 'aes-128-cbc' | 'aes-256-cbc' | 'aes-128-ecb';
+  /** Secret key (hex or utf8) */
+  key: string;
+  /** Key encoding */
+  keyEncoding?: 'hex' | 'utf8';
+  /** How the encrypted content is encoded in the response */
+  inputEncoding?: 'hex' | 'base64';
+  /** If true, IV is extracted from the first N bytes of the ciphertext */
+  ivFromResponse?: boolean;
+  /** IV length in bytes (default 16 for AES) */
+  ivLength?: number;
+  /** Explicit IV (used when ivFromResponse is false) */
+  iv?: string;
+}
+
+export interface ApiEndpointConfig {
+  url: string;
+  method?: 'GET' | 'POST';
+  params?: Record<string, string>;
+  defaults?: Record<string, string>;
+  headers?: Record<string, string>;
+  /** JSONPath to extract the list/data from response */
+  dataPath?: string;
+  description?: string;
+}
+
+export interface ApiResponseFormat {
+  type: 'json';
+  dataPath?: string;
+  listPath?: string;
+  bookPath?: string;
+  chapterListPath?: string;
+  chapterItemsPath?: string;
+  contentPath?: string;
+  totalField?: string;
+}
+
+// ==================== Scrape Result ====================
 
 export interface ScrapeResult {
   totalBooks: number;
