@@ -216,13 +216,6 @@ function ensureTaskState(taskId: string): TaskStreamState {
   return state;
 }
 
-function cleanupTaskState(taskId: string): void {
-  const state = taskStreams.get(taskId);
-  if (!state) return;
-  state.listeners.delete(/* placeholder */ undefined as unknown as Listener);
-  // Actually we clean up via the ref-based approach below
-}
-
 // ==================== Hook ====================
 
 /**

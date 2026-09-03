@@ -12,7 +12,6 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldCheck,
-  AlertTriangle,
   MinusCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

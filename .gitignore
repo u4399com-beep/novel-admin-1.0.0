@@ -69,4 +69,6 @@ test
 prompt
 
 # Skills directory
-/skills/
+/skills/*.db-shm
+*.db-wal
+.tmp-task6/

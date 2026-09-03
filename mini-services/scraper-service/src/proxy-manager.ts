@@ -5,7 +5,7 @@
  * domain-specific binding, import/export, and auto-rotate on failure.
  */
 
-import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
+import { ProxyAgent, type Dispatcher } from 'undici';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { isSafeUrl } from './ssrf';
 
@@ -214,9 +214,29 @@ const dispatcherCache = new Map<string, Dispatcher>();
 const MAX_DISPATCHER_CACHE = 200;
 
 /**
+ * Build fetch init carrying Bun's NATIVE `proxy` option for the given proxy URL.
+ * Runtime verification (Task 6, Bun 1.3.14):
+ *  - Bun intercepts the bare `import 'undici'` specifier with an internal shim whose
+ *    ProxyAgent does not implement dispatch().
+ *  - Bun's global fetch silently IGNORES the undici `dispatcher` option entirely
+ *    (verified: fetch with a dispatcher pointing at a dead proxy still connects direct).
+ *  - Bun's fetch DOES honor the native `proxy` option (http absolute-form GET +
+ *    https CONNECT tunneling both verified through a local forward proxy).
+ *
+ * Therefore all proxied fetches must use `fetch(url, bunProxyFetchInit(proxyUrl))`;
+ * undici dispatchers returned by getProxyDispatcher() are inert under Bun.
+ */
+export function bunProxyFetchInit(proxyUrl: string | null | undefined): { proxy?: string } {
+  return proxyUrl ? { proxy: proxyUrl } : {};
+}
+
+/**
  * Get or create a cached undici Dispatcher (ProxyAgent/SocksProxyAgent) for a proxy URL.
  * Supports http, https, socks4, socks5 proxies.
  * Handles proxy authentication via user:pass in the URL.
+ *
+ * @deprecated Inert under Bun: bun's global fetch ignores the `dispatcher` option and
+ * the bare 'undici' specifier resolves to bun's shim. Use bunProxyFetchInit() instead.
  *
  * @param proxyUrl - The full proxy URL (e.g. "http://user:pass@host:port", "socks5://host:port", "socks4://host:port")
  * @returns An undici Dispatcher, or null if the URL is invalid or creation failed
@@ -1119,20 +1139,19 @@ class ProxyManager {
     const startTime = Date.now();
     const testUrl = this.verifyUrl; // Use configurable verify URL (env SCRAPER_PROXY_VERIFY_URL)
 
-    // --- Primary: test THROUGH the proxy using an undici dispatcher ---
-    const dispatcher = getProxyDispatcher(entry.url);
-    if (dispatcher) {
+    // --- Primary: test THROUGH the proxy (Bun native `proxy` fetch option) ---
+    {
       try {
         const controller = new AbortController();
         // SOCKS proxies need extra time for the handshake + potential remote DNS resolution
         const healthTimeoutMs = (entry.protocol === 'socks4' || entry.protocol === 'socks5') ? 20000 : 15000;
         const timeout = setTimeout(() => controller.abort(), healthTimeoutMs);
 
-        const res = await undiciFetch(testUrl, {
-          dispatcher,
+        const res = await fetch(testUrl, {
+          ...bunProxyFetchInit(entry.url),
           signal: controller.signal,
           redirect: 'manual',
-        } as Parameters<typeof undiciFetch>[1]);
+        } as RequestInit);
         clearTimeout(timeout);
 
         const responseTime = Date.now() - startTime;
@@ -1894,11 +1913,6 @@ class ProxyManager {
       return { working: false, responseTime: 0, error: 'Proxy not in pool' };
     }
 
-    const dispatcher = getProxyDispatcher(entry.url);
-    if (!dispatcher) {
-      return { working: false, responseTime: 0, error: 'Failed to create proxy dispatcher' };
-    }
-
     const startTime = Date.now();
     const isSocks = entry.protocol === 'socks4' || entry.protocol === 'socks5';
     const timeoutMs = timeoutMsOverride || (isSocks ? 20000 : 15000);
@@ -1906,11 +1920,11 @@ class ProxyManager {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const res = await undiciFetch(testUrl, {
-        dispatcher,
+      const res = await fetch(testUrl, {
+        ...bunProxyFetchInit(entry.url),
         signal: controller.signal,
         redirect: 'manual',
-      } as Parameters<typeof undiciFetch>[1]);
+      } as RequestInit);
 
       clearTimeout(timeout);
       const responseTime = Date.now() - startTime;

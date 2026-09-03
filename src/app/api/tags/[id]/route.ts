@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
+import { safeJson, sanitizeField, asStringOrNull, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -44,21 +44,23 @@ export const PUT = withAuth(async function PUT(
     }
     const { name, color } = body;
 
-    if (name !== undefined && !name?.trim()) {
+    const nameStr = name === undefined ? undefined : sanitizeField(name, MAX_NAME_LENGTH);
+    if (nameStr !== undefined && !nameStr) {
       return apiError("标签名称不能为空", 400);
     }
-    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
+    if (nameStr !== undefined && nameStr.length > MAX_NAME_LENGTH) {
       return apiError(`标签名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
-    if (color !== undefined && color && !VALID_COLOR_RE.test(color)) {
+    const colorStr = asStringOrNull(color);
+    if (colorStr && !VALID_COLOR_RE.test(colorStr)) {
       return apiError("颜色格式无效，请使用HEX格式（如#6b7280）", 400);
     }
 
     const tag = await db.tag.update({
       where: { id },
       data: {
-        ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
-        ...(color !== undefined && { color: color || "#6b7280" }),
+        ...(nameStr !== undefined && { name: nameStr }),
+        ...(colorStr !== undefined && { color: colorStr || "#6b7280" }),
       },
       include: { _count: { select: { novels: true } } },
     });

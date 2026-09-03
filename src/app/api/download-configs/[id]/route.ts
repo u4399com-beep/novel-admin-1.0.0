@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
+import { safeJson, sanitizeField, asString, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -56,13 +56,23 @@ export const PUT = withAuth(async function PUT(
     if (enabled !== undefined && typeof enabled !== 'boolean') {
       return apiError("enabled 必须是布尔值", 400);
     }
-    if (name !== undefined && !name?.trim()) {
+    if (insertConfusion !== undefined && typeof insertConfusion !== 'boolean') {
+      return apiError("insertConfusion 必须是布尔值", 400);
+    }
+    if (insertAd !== undefined && typeof insertAd !== 'boolean') {
+      return apiError("insertAd 必须是布尔值", 400);
+    }
+    if (insertSiteInfo !== undefined && typeof insertSiteInfo !== 'boolean') {
+      return apiError("insertSiteInfo 必须是布尔值", 400);
+    }
+    const nameStr = name === undefined ? undefined : sanitizeField(name, MAX_NAME_LENGTH);
+    if (nameStr !== undefined && !nameStr) {
       return apiError("配置名称不能为空", 400);
     }
-    if (name !== undefined && name.trim().length > MAX_NAME_LENGTH) {
+    if (nameStr !== undefined && nameStr.length > MAX_NAME_LENGTH) {
       return apiError(`配置名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
-    if (format !== undefined && !VALID_FORMATS.includes(format)) {
+    if (format !== undefined && !(VALID_FORMATS as readonly string[]).includes(asString(format))) {
       return apiError(`文件格式只能是: ${VALID_FORMATS.join(", ")}`, 400);
     }
     if (confusionText !== undefined && typeof confusionText === "string" && confusionText.trim().length > MAX_CONTENT_LENGTH) {
@@ -77,7 +87,7 @@ export const PUT = withAuth(async function PUT(
         return apiError(`广告间隔必须在${MIN_AD_INTERVAL}-${MAX_AD_INTERVAL}之间`, 400);
       }
     }
-    if (adPosition !== undefined && !VALID_AD_POSITIONS.includes(adPosition)) {
+    if (adPosition !== undefined && !(VALID_AD_POSITIONS as readonly string[]).includes(asString(adPosition))) {
       return apiError(`广告位置只能是: ${VALID_AD_POSITIONS.join(", ")}`, 400);
     }
     if (siteInfoContent !== undefined && typeof siteInfoContent === "string" && siteInfoContent.trim().length > MAX_CONTENT_LENGTH) {
@@ -131,9 +141,9 @@ export const PUT = withAuth(async function PUT(
     const config = await db.downloadConfig.update({
       where: { id },
       data: {
-        ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
+        ...(nameStr !== undefined && { name: nameStr }),
         ...(enabled !== undefined && { enabled }),
-        ...(format !== undefined && { format }),
+        ...(format !== undefined && { format: asString(format) }),
         ...(insertConfusion !== undefined && { insertConfusion }),
         ...(confusionText !== undefined && {
           confusionText: effectiveInsertConfusion ? sanitizeField(confusionText, MAX_CONTENT_LENGTH) || null : null,
@@ -143,7 +153,7 @@ export const PUT = withAuth(async function PUT(
           adContent: effectiveInsertAd ? sanitizeField(adContent, MAX_CONTENT_LENGTH) || null : null,
         }),
         ...(parsedInterval !== undefined && { adInterval: parsedInterval }),
-        ...(adPosition !== undefined && { adPosition }),
+        ...(adPosition !== undefined && { adPosition: asString(adPosition) }),
         ...(insertSiteInfo !== undefined && { insertSiteInfo }),
         ...(siteInfoContent !== undefined && {
           siteInfoContent: effectiveInsertSiteInfo

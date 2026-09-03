@@ -20,6 +20,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (!url) {
       return apiError('缺少 URL 参数', 400);
     }
+    if (typeof url !== 'string') {
+      return apiError('无效的 URL 格式', 400);
+    }
 
     // Basic URL validation
     let parsedUrl: URL;

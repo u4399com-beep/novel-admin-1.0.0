@@ -2,7 +2,6 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
 import { sanitizeField } from '@/lib/api-utils';
-import { isValidLinkType } from '@/lib/validation/friendly-links';
 
 interface LinkWheelItem {
   title: string;
@@ -67,16 +66,23 @@ export const GET = withPublicRateLimit({ capacity: 120, refillRate: 2 }, async (
 
     // ─── 2. Fetch site_home friendly links ────────────────────────
     if (wantSiteHome) {
+      // NOTE: FriendlyLink has no Prisma relation to Site (siteId is a plain
+      // column), so we resolve sites manually instead of using `include`.
       const siteHomeLinks = await db.friendlyLink.findMany({
         where: { enabled: true, linkType: 'site_home' },
-        include: { site: { select: { domain: true, name: true } } },
         orderBy: { sortOrder: 'asc' },
       });
+      const siteIds = [...new Set(siteHomeLinks.map(l => l.siteId).filter((id): id is string => Boolean(id)))];
+      const sites = siteIds.length
+        ? await db.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, domain: true, name: true } })
+        : [];
+      const siteMap = new Map(sites.map(s => [s.id, s]));
       for (const link of siteHomeLinks) {
-        const domain = link.site?.domain || '';
+        const site = link.siteId ? siteMap.get(link.siteId) : undefined;
+        const domain = site?.domain || '';
         if (!domain) continue;
         links.push({
-          title: link.title || link.site?.name || domain,
+          title: link.title || site?.name || domain,
           url: `https://${domain.replace(/^https?:\/\//, '')}`,
           description: link.description,
           nofollow: link.nofollow,
@@ -93,23 +99,28 @@ export const GET = withPublicRateLimit({ capacity: 120, refillRate: 2 }, async (
 
       const siteNovelLinks = await db.friendlyLink.findMany({
         where: novelWhere,
-        include: {
-          site: { select: { domain: true } },
-          novel: {
-            select: {
-              title: true,
-              slugs: { where: { isActive: true }, take: 1, select: { slug: true } },
-            },
-          },
-        },
         orderBy: { sortOrder: 'asc' },
       });
+      // FriendlyLink has no Prisma relations (siteId/novelId are plain
+      // columns), so site/novel data is resolved manually instead of `include`.
+      const siteIds = [...new Set(siteNovelLinks.map(l => l.siteId).filter((id): id is string => Boolean(id)))];
+      const novelIds = [...new Set(siteNovelLinks.map(l => l.novelId).filter((id): id is string => Boolean(id)))];
+      const sites = siteIds.length
+        ? await db.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, domain: true } })
+        : [];
+      const novels = novelIds.length
+        ? await db.novel.findMany({ where: { id: { in: novelIds } }, select: { id: true, title: true, slugs: { where: { isActive: true }, take: 1, select: { slug: true } } } })
+        : [];
+      const siteMap = new Map(sites.map(s => [s.id, s]));
+      const novelMap = new Map(novels.map(n => [n.id, n]));
       for (const link of siteNovelLinks) {
-        const domain = link.site?.domain || '';
-        const slug = link.novel?.slugs[0]?.slug;
+        const site = link.siteId ? siteMap.get(link.siteId) : undefined;
+        const novel = link.novelId ? novelMap.get(link.novelId) : undefined;
+        const domain = site?.domain || '';
+        const slug = novel?.slugs[0]?.slug;
         if (!domain || !slug) continue;
         links.push({
-          title: link.title || link.novel?.title || slug,
+          title: link.title || novel?.title || slug,
           url: `https://${domain.replace(/^https?:\/\//, '')}/novel/${slug}`,
           description: link.description,
           nofollow: link.nofollow,

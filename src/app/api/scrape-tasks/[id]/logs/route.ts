@@ -34,14 +34,14 @@ export const POST = withAuth(async function POST(
     }
 
     const validLevels = ["info", "warn", "error", "success"];
-    if (!validLevels.includes(level)) {
-      return apiError(`无效的日志级别: ${level}`, 400);
+    if (!validLevels.includes(level as string)) {
+      return apiError(`无效的日志级别: ${String(level)}`, 400);
     }
 
     const log = await db.scrapeLog.create({
       data: {
         taskId,
-        level: level,
+        level: level as string,
         message: sanitizedMessage,
         url: sanitizeField(url, 2048) || null,
         detail: sanitizeField(detail, 10000) || null,

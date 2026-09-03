@@ -12,6 +12,7 @@ import {
   parseJsonField,
   mapNovelStatus, randomDelay, isSafeSavePath,
   chapterDedupKey,
+  parseChineseNumeral,
 } from "./utils";
 import { selectEngine, getFallbackChainForEngine } from "./engines";
 import { handleClean } from "./cleaning";
@@ -217,7 +218,26 @@ async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) 
     progressThrottle.set(taskId, now);
   }
   try {
-    await apiCall("PUT", `/api/scrape-tasks/${taskId}`, updates);
+    const isTerminal = !!updates.status && ['completed', 'failed', 'cancelled'].includes(updates.status);
+    if (isTerminal) {
+      // Terminal states MUST persist — a transient Next.js hiccup (hot reload, SQLite
+      // contention) previously orphaned tasks in "running" forever (TimeoutError observed
+      // in real batch runs). Retry with backoff before giving up.
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        try {
+          await apiCall("PUT", `/api/scrape-tasks/${taskId}`, updates);
+          lastErr = undefined;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < 4) await new Promise(r => setTimeout(r, attempt * 2000));
+        }
+      }
+      if (lastErr) throw lastErr;
+    } else {
+      await apiCall("PUT", `/api/scrape-tasks/${taskId}`, updates);
+    }
   } catch (err) {
     console.error(`[Task] Failed to update task progress:`, err);
   }
@@ -387,6 +407,23 @@ export async function executeTask(taskId: string) {
     throw new Error(`Task ${taskId} has no associated scrape rule`);
   }
 
+  // The task-detail API (GET /api/scrape-tasks/[id]) returns only a subset of rule
+  // fields (id/name/enabled/listUrl/scrapeMode/engine/storageMode/threadCount) and
+  // omits every selector/antiCrawl/clean/delay field the engine needs. Fetch the
+  // full rule from GET /api/scrape-rules/[id] and merge so tasks don't fail with
+  // "列表页URL和选择器不能为空" before scraping even starts.
+  if (rule.id && !rule.listSelector) {
+    try {
+      const { data: fullRule, status: ruleStatus } = await apiCall("GET", `/api/scrape-rules/${rule.id}`);
+      if (ruleStatus === 200 && fullRule && typeof fullRule === 'object') {
+        Object.assign(rule, fullRule);
+        console.log(`[Task ${taskId}] Merged full rule config from /api/scrape-rules/${rule.id}`);
+      }
+    } catch (err) {
+      console.warn(`[Task ${taskId}] Could not fetch full rule ${rule.id} (continuing with task payload):`, err instanceof Error ? err.message : err);
+    }
+  }
+
   // Apply per-task listUrl override (for batch category runs)
   if ((task as Record<string, unknown>).listUrlOverride) {
     const override = String((task as Record<string, unknown>).listUrlOverride);
@@ -506,6 +543,10 @@ export async function executeTask(taskId: string) {
     // Flush logs (flushTaskLogs now atomically drains + deletes the entry)
     await flushTaskLogs(taskId).catch(() => {});
     progressThrottle.delete(taskId);
+    // Queue ledger cleanup: book URLs enqueued via addManyToQueue are a resume
+    // ledger that is never consumed (books are processed directly). Without this,
+    // stale 'pending' rows accumulate forever for finished tasks and skew /queue/stats.
+    try { clearTaskQueue(taskId); } catch { /* best-effort */ }
   }
 }
 
@@ -1593,12 +1634,226 @@ export async function retryFailedChapters(
  * Fixes gaps caused by chapters that were originally skipped but later recovered
  * with their original sortOrder values.
  *
+ * Volume-aware (分卷) re-sorting:
+ * - When the chapter list carries volume prefixes (第X卷/部/篇/集, 卷X, 上/中/下册...),
+ *   chapters are grouped under their volume and volumes are emitted in NATURAL
+ *   numeric order (第一卷 < 第二卷 < 第十卷 < 第十一卷), parsed via parseChineseNumeral
+ *   so both Chinese numerals and Arabic numbers work. Lexicographic comparison is
+ *   never used (it would break 第10卷 vs 第2卷).
+ * - Chapters within each volume are sorted by their chapter number (第X章/节/回/话,
+ *   Chinese numerals like 一百零三 or Arabic 103 both parse) — but only when the
+ *   original within-volume order is actually scrambled; a plain gap-fix never
+ *   reorders an already-ascending volume.
+ * - Volume titles are data: titles are never modified or stripped, only sortOrder
+ *   is re-numbered.
+ *
  * @param novelId - The novel whose chapters should be re-ordered
  * @param abortSignal - Optional abort signal for task cancellation
  * @returns true if chapters were re-ordered, false if no gaps were found
  */
-// Match common Chinese volume patterns in chapter titles
-const VOLUME_RE = /^(第[一二三四五六七八九十百千万零〇]+[卷部篇集]|[卷部篇集][一二三四五六七八九十百千万零〇一二三四五六七八九]|上[部中下册篇卷]|中[部册篇卷]|下[部册篇卷])/;
+
+// Match common Chinese volume patterns at the start of chapter titles.
+// Includes Arabic/full-width digits (第2卷, 第１０卷) — previously only Chinese
+// numerals matched, so "第10卷" chapters silently lost volume grouping.
+const VOLUME_RE = /^(第[0-9０-９一二三四五六七八九十百千万零〇两兩]+[卷部篇集]|[卷部篇集][0-9０-９一二三四五六七八九十百千万零〇两兩]+|上[部中下册篇卷]|中[部册篇卷]|下[部册篇卷])/;
+
+/** Normalize full-width ASCII digits (０-９) to half-width. */
+function normalizeFullWidthDigits(s: string): string {
+  return s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+}
+
+export interface VolumeSortKey {
+  /** Parsed volume number (0 when unnumbered). */
+  num: number;
+  /** True when the volume carries a parseable number (第X卷 / 卷X). */
+  isNumbered: boolean;
+  /** Rank for unnumbered volumes: 上=0, 中=1, 下=2, unknown=3. */
+  special: number;
+}
+
+/**
+ * Derive a natural-order sort key from a volume prefix (e.g. "第十卷", "卷三", "上册").
+ * Numbered volumes sort before unnumbered ones; ties fall back to first-seen order.
+ */
+export function parseVolumeSortKey(prefix: string): VolumeSortKey {
+  const p = normalizeFullWidthDigits(prefix);
+  let m = /^第\s*([0-9]+|[零〇一二三四五六七八九十百千万两兩]+|[0-9]+[零〇一二三四五六七八九十百千万两兩]+)/.exec(p);
+  if (!m) {
+    m = /^[卷部篇集]\s*([0-9]+|[零〇一二三四五六七八九十百千万两兩]+)/.exec(p);
+  }
+  if (m) {
+    return { num: parseChineseNumeral(m[1]), isNumbered: true, special: 0 };
+  }
+  if (p.startsWith("上")) return { num: 0, isNumbered: false, special: 0 };
+  if (p.startsWith("中")) return { num: 0, isNumbered: false, special: 1 };
+  if (p.startsWith("下")) return { num: 0, isNumbered: false, special: 2 };
+  return { num: 0, isNumbered: false, special: 3 };
+}
+
+/**
+ * Extract the chapter number from the text following a volume prefix
+ * (e.g. " 第103章" / " 第一百零三章" / " 12.标题" → 103 / 103 / 12).
+ * Returns null when no chapter number can be parsed (volume headers, 番外, etc.).
+ */
+export function parseChapterSortNumber(rest: string): number | null {
+  const norm = normalizeFullWidthDigits(rest);
+  let m = /第\s*([0-9]+|[零〇一二三四五六七八九十百千万两兩]+)\s*[章节回话则]/.exec(norm);
+  if (m) return parseChineseNumeral(m[1]);
+  // Bare Arabic numbering: "12. 标题", "12、标题", "12 标题"
+  m = /^\s*([0-9]{1,6})(?:\s*[.、:：\-—~·]\s*|\s+)/.exec(norm);
+  if (m) return parseInt(m[1], 10);
+  return null;
+}
+
+/**
+ * True when the parsed chapter numbers along the group (original order) never
+ * decrease — i.e. the volume is already correctly ordered and must be left alone.
+ */
+function isChapterOrderAscending(
+  group: Array<{ chapterNum: number | null }>
+): boolean {
+  let prev: number | null = null;
+  for (const ch of group) {
+    if (ch.chapterNum === null) continue;
+    if (prev !== null && ch.chapterNum < prev) return false;
+    prev = ch.chapterNum;
+  }
+  return true;
+}
+
+/** Minimal chapter shape required by the volume-aware sorter. */
+interface SortableChapter {
+  id: string;
+  sortOrder: number;
+  title?: string;
+}
+
+/**
+ * Pure volume-aware (分卷) chapter sorter — no I/O, directly unit-testable.
+ * Input must be in current display order (sortOrder asc); returns the same
+ * chapter objects re-ordered for the new sequential sortOrder. Titles and all
+ * other fields are passed through untouched.
+ *
+ * Pipeline:
+ *   1. Detect volume prefix on each title (VOLUME_RE).
+ *   2. Order volume groups naturally (第1卷 < 第2卷 < 第10卷 < 第11卷).
+ *   3. Within each volume, sort by chapter number when scrambled.
+ *   4. Append chapters without a volume prefix (original relative order).
+ */
+export function sortChaptersVolumeAware<T extends SortableChapter>(
+  chapters: T[]
+): T[] {
+  type Enriched = T & {
+    originalIdx: number;
+    volumePrefix: string | null;
+    chapterNum: number | null;
+  };
+
+  // Enrich with volume prefix + parsed keys (titles are never modified)
+  const enriched: Enriched[] = chapters.map((ch, originalIdx) => {
+    const title = ch.title || "";
+    const volumeMatch = VOLUME_RE.exec(title);
+    const volumePrefix = volumeMatch?.[0] ?? null;
+    const rest = volumePrefix ? title.slice(volumePrefix.length) : title;
+    return Object.assign({}, ch, {
+      originalIdx,
+      volumePrefix,
+      chapterNum: volumePrefix ? parseChapterSortNumber(rest) : null,
+    });
+  });
+
+  // Distinct volume groups mapped to their first-seen position (stable fallback)
+  const volumeFirstSeen = new Map<string, number>();
+  for (const ch of enriched) {
+    if (ch.volumePrefix && !volumeFirstSeen.has(ch.volumePrefix)) {
+      volumeFirstSeen.set(ch.volumePrefix, volumeFirstSeen.size);
+    }
+  }
+
+  // Engage volume mode only when it is unambiguous:
+  // - at least 2 distinct volumes, or
+  // - every chapter carries a volume prefix (even a single volume benefits
+  //   from within-volume chapter-number sorting).
+  // A lone prefixed title among un-prefixed chapters is NOT enough evidence —
+  // grouping would drag it (and everything else) out of place during a gap-fix.
+  const allPrefixed = enriched.every((ch) => ch.volumePrefix !== null);
+  const volumeMode = volumeFirstSeen.size >= 2 || (volumeFirstSeen.size >= 1 && allPrefixed);
+
+  if (!volumeMode) {
+    if (volumeFirstSeen.size > 0) {
+      console.log(
+        `[ResortChapters] Volume data ambiguous (${volumeFirstSeen.size} volume group(s) mixed with un-prefixed chapters) — keeping original order`
+      );
+    }
+    // No usable volume prefixes — fall back to simple sequential renumbering
+    return enriched;
+  }
+
+  // 1) Volume groups in natural numeric order: 第一卷(1) < 第二卷(2) <
+  //    第十卷(10) < 第十一卷(11). Numbered volumes first (by parsed number),
+  //    then unnumbered 上<中<下, then unknown; ties keep first-seen order.
+  const volumeEntries = [...volumeFirstSeen.entries()].map(([prefix, firstSeen]) => ({
+    prefix,
+    firstSeen,
+    key: parseVolumeSortKey(prefix),
+  }));
+  volumeEntries.sort((a, b) => {
+    if (a.key.isNumbered !== b.key.isNumbered) return a.key.isNumbered ? -1 : 1;
+    if (a.key.isNumbered && a.key.num !== b.key.num) return a.key.num - b.key.num;
+    if (a.key.special !== b.key.special) return a.key.special - b.key.special;
+    return a.firstSeen - b.firstSeen;
+  });
+
+  // 2) Group chapters by exact volume prefix
+  const groups = new Map<string, Enriched[]>();
+  const noVolumeChapters: Enriched[] = [];
+  for (const ch of enriched) {
+    if (ch.volumePrefix) {
+      let group = groups.get(ch.volumePrefix);
+      if (!group) {
+        group = [];
+        groups.set(ch.volumePrefix, group);
+      }
+      group.push(ch);
+    } else {
+      noVolumeChapters.push(ch);
+    }
+  }
+
+  const sortedChapters: Enriched[] = [];
+  for (const vol of volumeEntries) {
+    const group = groups.get(vol.prefix)!;
+    // 3) Within each volume: sort by chapter number ONLY when the current
+    //    order is actually scrambled. This keeps plain gap-fixes non-invasive
+    //    while repairing out-of-order TOC scrapes. Unnumbered entries
+    //    (volume headers like "第二卷 云涌", 序章) stay first, stable.
+    if (!isChapterOrderAscending(group)) {
+      group.sort((a, b) => {
+        if ((a.chapterNum === null) !== (b.chapterNum === null)) {
+          return a.chapterNum === null ? -1 : 1;
+        }
+        if (a.chapterNum !== null && b.chapterNum !== null && a.chapterNum !== b.chapterNum) {
+          return a.chapterNum - b.chapterNum;
+        }
+        return a.originalIdx - b.originalIdx; // stable tie-break
+      });
+    }
+    sortedChapters.push(...group);
+  }
+  // 4) Chapters without any volume prefix keep their original relative
+  //    order and come after all volume-prefixed content.
+  sortedChapters.push(...noVolumeChapters);
+
+  const volumeSummary = volumeEntries
+    .slice(0, 8)
+    .map((v) => v.prefix)
+    .join(", ");
+  console.log(
+    `[ResortChapters] Volume-aware: ${volumeEntries.length} volumes ordered as [${volumeSummary}${volumeEntries.length > 8 ? ", ..." : ""}], re-ordered ${sortedChapters.length} chapters`
+  );
+
+  return sortedChapters;
+}
 
 export async function resortChapters(
   novelId: string,
@@ -1630,49 +1885,8 @@ export async function resortChapters(
 
     if (!hasGaps) return false;
 
-    // Check if any chapters have volume prefixes
-    const chaptersWithTitle = chapters.map((ch, originalIdx) => ({
-      ...ch,
-      originalIdx,
-      volumePrefix: (ch.title && VOLUME_RE.exec(ch.title))?.[0] || null,
-    }));
-
-    const chaptersWithVolume = chaptersWithTitle.filter(ch => ch.volumePrefix !== null);
-
-    let sortedChapters: typeof chaptersWithTitle;
-
-    if (chaptersWithVolume.length > 0) {
-      // Volume-aware sorting:
-      // 1. Chapters WITH volume prefix first, grouped by volume, maintaining original order within each group
-      // 2. Chapters WITHOUT volume prefix last, maintaining original order
-      const volumeGroups = new Map<string, typeof chaptersWithTitle>();
-      const noVolumeChapters: typeof chaptersWithTitle = [];
-
-      for (const ch of chaptersWithTitle) {
-        if (ch.volumePrefix) {
-          if (!volumeGroups.has(ch.volumePrefix)) {
-            volumeGroups.set(ch.volumePrefix, []);
-          }
-          volumeGroups.get(ch.volumePrefix)!.push(ch);
-        } else {
-          noVolumeChapters.push(ch);
-        }
-      }
-
-      // Collect: volume chapters first (preserving insertion order of volume groups),
-      // then non-volume chapters
-      sortedChapters = [];
-      for (const group of volumeGroups.values()) {
-        sortedChapters.push(...group);
-      }
-      sortedChapters.push(...noVolumeChapters);
-
-      const volumeCount = volumeGroups.size;
-      console.log(`[ResortChapters] Volume-aware: found ${volumeCount} volumes, re-ordered ${sortedChapters.length} chapters`);
-    } else {
-      // No volume prefixes detected — fall back to simple sequential renumbering
-      sortedChapters = chaptersWithTitle;
-    }
+    // Volume-aware re-ordering (pure function, titles untouched)
+    const sortedChapters = sortChaptersVolumeAware(chapters);
 
     // Build batch reorder payload
     const orders = sortedChapters.map((ch, idx) => ({
@@ -1710,9 +1924,18 @@ export async function resortChapters(
 export async function detectStuckTasks(): Promise<number> {
   try {
     const { data, status } = await apiCall("GET", "/api/scrape-tasks?status=running");
-    if (status !== 200 || !Array.isArray(data)) return 0;
+    if (status !== 200 || !data) return 0;
+    // The list endpoint returns { tasks: [...] } (object), not a bare array — unwrap it.
+    // (Previously Array.isArray(data) here made this watchdog a silent no-op forever.)
+    const payload = data as { tasks?: unknown[] } | unknown[];
+    const list = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload.tasks)
+        ? payload.tasks
+        : null;
+    if (!list) return 0;
 
-    const tasks = data as Array<{ id: string; startedAt?: string; lastHeartbeatAt?: string | null }>;
+    const tasks = list as Array<{ id: string; startedAt?: string; lastHeartbeatAt?: string | null }>;
     const now = Date.now();
     const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
     const FALLBACK_STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours (for tasks without heartbeat)

@@ -58,7 +58,7 @@ export const PUT = withAuth(async function PUT(
     const updateData: Record<string, unknown> = {};
 
     if (body.progress !== undefined) {
-      const p = parseFloat(body.progress);
+      const p = parseFloat(String(body.progress));
       if (isNaN(p)) {
         return apiError("progress 必须是有效数字", 400);
       }
@@ -79,7 +79,7 @@ export const PUT = withAuth(async function PUT(
     }
     if (body.errorMessage !== undefined) updateData.errorMessage = sanitizeField(body.errorMessage, 2000);
     if (body.lastHeartbeatAt !== undefined) {
-      const d = new Date(body.lastHeartbeatAt);
+      const d = new Date(body.lastHeartbeatAt as string | number);
       if (!isNaN(d.getTime())) {
         updateData.lastHeartbeatAt = d;
       }
@@ -115,19 +115,19 @@ export const PUT = withAuth(async function PUT(
         const txUpdateData: Record<string, unknown> = { ...updateData };
 
         if (body.status !== undefined) {
-          if (!validStatuses.includes(body.status)) {
-            throw new Error(`INVALID_STATUS:${body.status}`);
+          if (!validStatuses.includes(body.status as string)) {
+            throw new Error(`INVALID_STATUS:${String(body.status)}`);
           }
           // Enforce state machine transitions
           const allowed = validTransitions[task.status] || [];
-          if (!allowed.includes(body.status)) {
+          if (!allowed.includes(body.status as string)) {
             throw new Error(`INVALID_TRANSITION:${task.status}:${body.status}`);
           }
           txUpdateData.status = body.status;
           if (body.status === "running" && !task.startedAt) {
             txUpdateData.startedAt = new Date();
           }
-          if (["completed", "failed", "cancelled"].includes(body.status)) {
+          if (["completed", "failed", "cancelled"].includes(body.status as string)) {
             txUpdateData.completedAt = new Date();
           }
         }

@@ -25,7 +25,7 @@ import { cookieJar } from "./cookie-jar";
 import { requestFingerprintMgr, applyTimingJitter } from "./request-fingerprint";
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 import { browserBehavior } from "./browser-behavior";
-import { proxyManager, getProxyDispatcher } from "./proxy-manager";
+import { proxyManager, bunProxyFetchInit } from "./proxy-manager";
 
 // ==================== Pagination Helpers ====================
 
@@ -275,7 +275,9 @@ export async function handleScrapeList(body: ScrapeListRequest) {
 // ==================== Scrape Book Info ====================
 
 export async function handleScrapeBook(body: ScrapeBookRequest) {
-  const { url, selectors, antiCrawl, engine: requestedEngine, signal } = body;
+  const { url, antiCrawl, engine: requestedEngine, signal } = body;
+  // Runtime guard: selectors is type-required but callers may omit it (API robustness)
+  const selectors = body.selectors ?? ({} as ScrapeBookRequest["selectors"]);
   let domain = '';
   try { domain = new URL(url).hostname; } catch { /* ignore */ }
   const engineType = selectEngine(requestedEngine, antiCrawl, domain);
@@ -304,7 +306,7 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
     throw new Error(`CAPTCHA detected (${CAPTCHA_TYPE_LABELS[captchaDetection.type]}), skipping book info fetch`);
   }
 
-  const title = parseSelector(html, selectors.title);
+  const title = selectors.title ? parseSelector(html, selectors.title) : "";
   const author = selectors.author ? parseSelector(html, selectors.author) : "佚名";
   const category = selectors.category ? parseSelector(html, selectors.category) : "";
   const keywords = selectors.keywords ? parseSelector(html, selectors.keywords) : "";
@@ -333,7 +335,14 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
 // ==================== Scrape Chapter Directory ====================
 
 export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
-  const { url, selectors, pagination, antiCrawl, enableShuffle, engine: requestedEngine, signal } = body;
+  const { url, pagination, antiCrawl, enableShuffle, engine: requestedEngine, signal } = body;
+  // Runtime guard: default to a generic full-directory extraction when selectors omitted
+  const _sel = body.selectors ?? ({} as ScrapeChaptersRequest["selectors"]);
+  const selectors = {
+    list: _sel.list ?? { type: "css" as const, value: "body" },
+    title: _sel.title ?? { type: "css" as const, value: "a" },
+    link: _sel.link ?? { type: "css" as const, value: "a[href]" },
+  };
   let domain = '';
   try { domain = new URL(url).hostname; } catch { /* ignore */ }
   const engineType = selectEngine(requestedEngine, antiCrawl, domain);
@@ -407,7 +416,10 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
 // ==================== Scrape Content ====================
 
 export async function handleScrapeContent(body: ScrapeContentRequest) {
-  const { url, selectors, pagination, antiCrawl, engine: requestedEngine, cleanConfig, signal } = body;
+  const { url, pagination, antiCrawl, engine: requestedEngine, cleanConfig, signal } = body;
+  // Runtime guard: default to full-body extraction when selectors omitted (avoids 500 crash)
+  const _sel = body.selectors ?? ({} as ScrapeContentRequest["selectors"]);
+  const selectors = { ..._sel, content: _sel.content ?? { type: "css" as const, value: "body" } };
   let domain = '';
   try { domain = new URL(url).hostname; } catch { /* ignore */ }
   const engineType = selectEngine(requestedEngine, antiCrawl, domain);
@@ -595,8 +607,9 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
   });
 
   // 7. Optional proxy support
+  // Bun 1.3.x ignores the undici `dispatcher` option (Task 6) — use the native `proxy` option.
   const proxy = domain ? proxyManager.getProxy(domain) : null;
-  const dispatcher = proxy ? getProxyDispatcher(proxy.url) : null;
+  const proxyFetchInit = proxy ? bunProxyFetchInit(proxy.url) : {};
 
   let success = false;
   let statusCode = 0;
@@ -625,8 +638,8 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
             ? (signal.aborted ? signal : AbortSignal.any([signal, AbortSignal.timeout(30000)]))
             : AbortSignal.timeout(30000),
           redirect: "manual",
-          // @ts-expect-error - Bun supports dispatcher option for proxy
-          dispatcher: dispatcher || undefined,
+          // Bun-native proxy option so cover downloads traverse the selected proxy (Task 6 fix)
+          ...proxyFetchInit,
         }),
     });
 

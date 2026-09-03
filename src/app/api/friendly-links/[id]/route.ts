@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
+import { sanitizeField, safeJson, asStringOrNull, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
@@ -61,15 +61,17 @@ export const PUT = withAuth(async function PUT(
         return apiError("linkType 必须是 manual、site_home 或 site_novel", 400);
       }
 
-      if ((resolvedLinkType === 'site_home' || resolvedLinkType === 'site_novel') && siteId) {
-        const siteExists = await db.site.findUnique({ where: { id: siteId }, select: { id: true } });
+      const siteIdStr = asStringOrNull(siteId);
+      if ((resolvedLinkType === 'site_home' || resolvedLinkType === 'site_novel') && siteIdStr) {
+        const siteExists = await db.site.findUnique({ where: { id: siteIdStr }, select: { id: true } });
         if (!siteExists) {
           return apiError("关联的站点不存在", 400);
         }
       }
 
-      if (resolvedLinkType === 'site_novel' && novelId) {
-        const novelExists = await db.novel.findUnique({ where: { id: novelId }, select: { id: true } });
+      const novelIdStr = asStringOrNull(novelId);
+      if (resolvedLinkType === 'site_novel' && novelIdStr) {
+        const novelExists = await db.novel.findUnique({ where: { id: novelIdStr }, select: { id: true } });
         if (!novelExists) {
           return apiError("关联的书籍不存在", 400);
         }

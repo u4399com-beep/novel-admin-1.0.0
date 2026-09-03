@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { parsePagination, sanitizeField, safeJson, isPrismaError, safeJsonStringify, apiError, apiSuccess } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, asStringOrNull, isPrismaError, safeJsonStringify, apiError, apiSuccess } from "@/lib/api-utils";
 import { NextRequest } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -64,8 +64,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (!sanitizedName) {
       return apiError("站点名称不能为空", 400);
     }
-    if (themeId) {
-      const themeExists = await db.theme.findUnique({ where: { id: themeId }, select: { id: true } });
+    const themeIdStr = asStringOrNull(themeId);
+    if (themeIdStr) {
+      const themeExists = await db.theme.findUnique({ where: { id: themeIdStr }, select: { id: true } });
       if (!themeExists) {
         return apiError("指定的主题不存在", 400);
       }
@@ -91,7 +92,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         domain: sanitizedDomain,
         name: sanitizedName,
         description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
-        themeId: themeId || null,
+        themeId: themeIdStr || null,
         enabled: enabled !== undefined ? enabled : true,
         siteTitle: sanitizeField(siteTitle, MAX_SITE_TITLE_LENGTH) || null,
         siteDescription: sanitizeField(siteDescription, MAX_SITE_DESC_LENGTH) || null,

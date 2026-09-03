@@ -204,10 +204,10 @@ export interface ScrapeParams {
 }
 
 export function parseScrapeParams(body: Record<string, unknown>): ScrapeParams {
-  const sm = typeof body.scrapeMode === 'string' && VALID_SCRAPE_MODES.includes(body.scrapeMode) ? body.scrapeMode : 'incremental';
-  const en = typeof body.engine === 'string' && VALID_ENGINES.includes(body.engine) ? body.engine : 'cheerio';
-  const st = typeof body.storageMode === 'string' && VALID_STORAGE_MODES.includes(body.storageMode) ? body.storageMode : 'database';
-  const dd = typeof body.dedupMode === 'string' && VALID_DEDUP_MODES.includes(body.dedupMode) ? body.dedupMode : 'url';
+  const sm = typeof body.scrapeMode === 'string' && (VALID_SCRAPE_MODES as readonly string[]).includes(body.scrapeMode) ? body.scrapeMode : 'incremental';
+  const en = typeof body.engine === 'string' && (VALID_ENGINES as readonly string[]).includes(body.engine) ? body.engine : 'cheerio';
+  const st = typeof body.storageMode === 'string' && (VALID_STORAGE_MODES as readonly string[]).includes(body.storageMode) ? body.storageMode : 'database';
+  const dd = typeof body.dedupMode === 'string' && (VALID_DEDUP_MODES as readonly string[]).includes(body.dedupMode) ? body.dedupMode : 'url';
   return {
     scrapeMode: sm as typeof VALID_SCRAPE_MODES[number],
     engine: en as typeof VALID_ENGINES[number],

@@ -4,14 +4,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Globe, Plus, Trash2, RefreshCw, Download, Upload,
   Link2, Unlink, Activity, Loader2, ChevronDown, ChevronRight,
-  AlertTriangle, CheckCircle2, XCircle,
+  CheckCircle2, XCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,

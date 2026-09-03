@@ -52,7 +52,7 @@ export const POST = withAuth(async function POST(
     const { id } = await params;
 
     // Fetch the rule to get its listUrl and current config
-    const rule = await getOrFail(db.scrapeRule, { id }, '采集规则不存在');
+    const rule = await getOrFail<{ listUrl: string | null; antiCrawlConfig: string | null }>(db.scrapeRule, { id }, '采集规则不存在');
 
     if (!rule.listUrl) {
       return apiError('该规则未设置列表页URL', 400);

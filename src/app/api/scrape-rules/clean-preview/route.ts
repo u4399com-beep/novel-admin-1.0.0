@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { safeJson, apiError, apiSuccess } from '@/lib/api-utils';
 
@@ -30,7 +30,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
 
     // Server-side cleaning logic (mirrors scraper-service/cleaning.ts)
-    const result = cleanHtmlServer(html, config);
+    const result = cleanHtmlServer(html, config ?? {});
 
     return apiSuccess({
       cleaned: result,
@@ -81,22 +81,6 @@ const DEFAULT_AD_PATTERNS = [
   '全文阅读', '免费阅读', '在线阅读',
 ];
 
-const AD_CSS_SELECTORS = [
-  '[class*="ad"]', '[class*="Ad"]', '[class*="AD"]',
-  '[class*="advert"]', '[class*="sponsor"]', '[class*="promo"]',
-  '[class*="banner"]', '[class*="popup"]', '[class*="modal"]',
-  '[class*="recommend"]', '[class*="tuijian"]', '[class*="guanggao"]',
-  '[id*="ad"]', '[id*="Ad"]', '[id*="AD"]',
-  '[id*="advert"]', '[id*="sponsor"]', '[id*="promo"]',
-  '[id*="banner"]', '[id*="popup"]', '[id*="guanggao"]',
-  '[class*="share"]', '[class*="social"]',
-  '[id*="share"]', '[id*="social"]',
-  '[class*="fixed-ad"]', '[class*="float-ad"]',
-  '[class*="google-ad"]', '[class*="taboola"]',
-  '[class*="outbrain"]', '[class*="cookie"]',
-  '[class*="newsletter"]', '[class*="subscribe"]',
-];
-
 const WATERMARK_PATTERNS = [
   /[\[\u3010【]www\.[\w.-]+\.[\w]{2,}[\]\u3011】]/gi,
   /[-—]{2,}.*?(下一页|继续阅读|未完待续).*?[-—]{2,}/gi,
@@ -132,15 +116,6 @@ const WATERMARK_PATTERNS = [
   /(?:最新网址|最新地址|记住网址|记住本站)[^\n]{0,60}/gi,
   /^\s*[。.！!？?~～…—-]{1,3}\s*$/gm,
 ];
-
-function escapeCssString(str: string): string {
-  return str
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\]/g, '\\]')
-    .replace(/\[/g, '\\[')
-    .replace(/\(/g, '\\(');
-}
 
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -282,7 +257,7 @@ function cleanHtmlServer(html: string, config: Record<string, unknown>): string 
   // NOTE: removeSelectors extracted for API compatibility but NOT applied here.
   // This endpoint does text-only cleaning (no cheerio/DOM).
   // CSS selector removal happens in scraper-service which has a full DOM parser.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const _removeSelectors = normalizePatterns(config.removeSelectors);
   const removePatterns = normalizePatterns(config.removePatterns);
   const allAdPatterns = [...DEFAULT_AD_PATTERNS];

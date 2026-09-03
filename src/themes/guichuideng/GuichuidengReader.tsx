@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, List, Settings2, Loader2, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, List, Loader2, RotateCcw } from 'lucide-react';
 import type { Chapter } from '@/app/novels/[id]/reader/types';
 
 // ─── Reader Settings ─────────────────────────────────────────────
@@ -34,21 +34,6 @@ const GC_DEFAULT_SETTINGS: GcReaderSettings = {
   fontSize: 18,
   bgKey: 'default',
 };
-
-function loadGcSettings(): GcReaderSettings {
-  try {
-    const saved = localStorage.getItem(GC_READER_SETTINGS_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved) as Partial<GcReaderSettings>;
-      return {
-        ...GC_DEFAULT_SETTINGS,
-        ...parsed,
-        fontSize: Math.max(16, Math.min(28, parsed.fontSize ?? 18)),
-      };
-    }
-  } catch { /* ignore */ }
-  return GC_DEFAULT_SETTINGS;
-}
 
 function saveGcSettings(s: GcReaderSettings): void {
   try { localStorage.setItem(GC_READER_SETTINGS_KEY, JSON.stringify(s)); } catch { /* ignore */ }
@@ -85,7 +70,6 @@ export function GuichuidengReader({
 }: GuichuidengReaderProps) {
   const [settings, setSettings] = useState<GcReaderSettings>(GC_DEFAULT_SETTINGS);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [chapterListOpen, setChapterListOpen] = useState(false);
 
   const currentChapterIndex = initialChapterIndex;

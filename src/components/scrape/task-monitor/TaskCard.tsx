@@ -3,7 +3,7 @@
 import React from 'react';
 import {
   ChevronDown, ChevronRight, FileText, BookOpen, XCircle, Ban, Trash2,
-  RotateCcw, CheckSquare, Square,
+  RotateCcw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  Shield, ShieldAlert, Lock, Fingerprint, Type, Wifi,
+  Shield, ShieldAlert, Fingerprint, Type, Wifi,
   Activity, MousePointer, AlertTriangle,
   CheckCircle, XCircle,
 } from 'lucide-react';

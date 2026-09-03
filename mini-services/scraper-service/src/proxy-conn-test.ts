@@ -11,9 +11,7 @@
  * (including socks4h:// and socks5h:// for remote DNS resolution).
  */
 
-import { getProxyDispatcher } from './proxy-manager';
-import { SocksProxyAgent } from 'socks-proxy-agent';
-import type { Dispatcher } from 'undici';
+import { bunProxyFetchInit } from './proxy-manager';
 
 // ==================== Types ====================
 
@@ -95,21 +93,10 @@ export async function testProxyConnection(
     };
   }
 
-  // Get the appropriate dispatcher/agent for the proxy
-  // For SOCKS proxies (socks4/socks4h/socks5/socks5h), use socks-proxy-agent directly
-  // for a fresh test; for HTTP/HTTPS, use the proxy-manager's cached dispatcher
-  let dispatcher: Dispatcher | null = null;
-
-  try {
-    if (protocol === 'socks5' || protocol === 'socks4') {
-      // socks-proxy-agent handles all SOCKS variants natively
-      const agent = new SocksProxyAgent(proxyUrl.trim());
-      dispatcher = agent as unknown as Dispatcher;
-    } else {
-      dispatcher = getProxyDispatcher(proxyUrl);
-    }
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
+  // Build Bun-native proxy fetch init (bun ignores undici dispatchers — Task 6).
+  // Works for http/https proxies and socks5:// URLs supported by Bun's proxy option.
+  const proxyInit = bunProxyFetchInit(proxyUrl.trim());
+  if (!proxyInit.proxy) {
     return {
       url: proxyUrl,
       protocol,
@@ -117,21 +104,7 @@ export async function testProxyConnection(
       port,
       reachable: false,
       responseTime: 0,
-      error: `Failed to create proxy agent: ${errMsg}`,
-      testUrl: resolvedTestUrl,
-      testTimestamp: timestamp,
-    };
-  }
-
-  if (!dispatcher) {
-    return {
-      url: proxyUrl,
-      protocol,
-      host,
-      port,
-      reachable: false,
-      responseTime: 0,
-      error: 'Could not create dispatcher for proxy',
+      error: 'Could not build proxy fetch init',
       testUrl: resolvedTestUrl,
       testTimestamp: timestamp,
     };
@@ -139,18 +112,12 @@ export async function testProxyConnection(
 
   // Perform the test request
   const startTime = Date.now();
-  let socksAgent: SocksProxyAgent | null = null;
   try {
-    if ((protocol === 'socks5' || protocol === 'socks4') && dispatcher) {
-      socksAgent = dispatcher as unknown as SocksProxyAgent;
-    }
-
     const response = await fetch(resolvedTestUrl, {
       redirect: 'follow',
       signal: AbortSignal.timeout(timeout),
-      // @ts-expect-error - Bun supports dispatcher option
-      dispatcher,
-    });
+      ...proxyInit,
+    } as RequestInit);
 
     const elapsed = Date.now() - startTime;
     const body = await response.text();
@@ -208,10 +175,6 @@ export async function testProxyConnection(
       testUrl: resolvedTestUrl,
       testTimestamp: timestamp,
     };
-  } finally {
-    if (socksAgent) {
-      socksAgent.destroy();
-    }
   }
 }
 
@@ -233,9 +196,12 @@ export async function testMultipleProxies(
 ): Promise<ProxyTestResult[]> {
   const results: ProxyTestResult[] = [];
 
+  // Guard against maxConcurrent <= 0 which would cause an infinite loop (slice never advances i)
+  const concurrency = Math.max(1, maxConcurrent);
+
   // Process in batches
-  for (let i = 0; i < proxyUrls.length; i += maxConcurrent) {
-    const batch = proxyUrls.slice(i, i + maxConcurrent);
+  for (let i = 0; i < proxyUrls.length; i += concurrency) {
+    const batch = proxyUrls.slice(i, i + concurrency);
     const batchResults = await Promise.allSettled(
       batch.map(url => testProxyConnection(url, testUrl, timeoutMs)),
     );

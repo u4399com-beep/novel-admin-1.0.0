@@ -584,9 +584,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
     var _isMobile = /Mobile/.test(_uaString);
     var _isEdge = /Edg\\//.test(_uaString) && !/OPR\\//.test(_uaString);
     if (!_isFirefox && navigator.userAgentData) {
-      var _uaVer = _uaString.match(/Chrome\/(\d+)/);
+      var _uaVer = _uaString.match(/Chrome\\/(\\d+)/);
       var _chromeMajor = _uaVer ? parseInt(_uaVer[1]) : 131;
-      var _uaFullVer = _uaString.match(/Chrome\/([\d.]+)/);
+      var _uaFullVer = _uaString.match(/Chrome\\/([\\d.]+)/);
       var _chromeFullVersion = _uaFullVer ? _uaFullVer[1] : _chromeMajor + '.0.0.0';
 
       // Detect architecture from UA
@@ -599,7 +599,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
       // Detect model (only for Android mobile)
       var _uadModel = '';
-      var _androidModelMatch = _uaString.match(/Android[^;]*;\\s*([^;)\\s]+\\s+Build/);
+      var _androidModelMatch = _uaString.match(/Android[^;]*;\\s*([^;)\\s]+)\\s+Build/);
       if (_androidModelMatch) { _uadModel = _androidModelMatch[1]; }
 
       // Platform
@@ -1063,7 +1063,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       window.DOMRect = function(x, y, w, h) {
         return { x: x||0, y: y||0, width: w||0, height: h||0,
                  top: (y||0), bottom: (y||0)+(h||0), left: (x||0), right: (x||0)+(w||0) };
-      } as any;
+      };
     }
     // Ensure new DOMRect() returns all zeros (standard behavior)
     var _testRect = new DOMRect();
@@ -1071,7 +1071,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       var _OrigDOMRect = DOMRect;
       window.DOMRect = function(x, y, w, h) {
         return new _OrigDOMRect(x||0, y||0, w||0, h||0);
-      } as any;
+      };
       window.DOMRect.prototype = _OrigDOMRect.prototype;
     }
   } catch(e) {}
@@ -1542,29 +1542,24 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // ---- 22. Font Detection Countermeasure ----
 
   // ---- 23. Platform-based Plugin / MimeType Enumeration ----
-  // Override with realistic 3-4 plugins that vary by OS platform
-
+  // Modern Chrome (109+, incl. Chrome 131 pinned in UA_TEMPLATES) reports exactly
+  // 5 plugins with identical names/filenames on all desktop platforms — each PDF
+  // plugin exposes 2 MimeTypes (application/pdf + text/pdf) → mimeTypes.length = 10.
+  var _modernPdfPlugins = [
+    { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 2 },
+    { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 2 },
+    { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 2 },
+    { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 2 },
+    { name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 2 },
+  ];
   var _platformPlugins = {
-    'Win32': [
-      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
-      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
-      { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 2 },
-      { name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
-    ],
-    'MacIntel': [
-      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
-      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
-      { name: 'Native Client', filename: 'internal-nacl-plugin', description: '', length: 2 },
-    ],
-    'Linux x86_64': [
-      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
-      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
-      { name: 'Widevine Content Decryption Module', filename: 'libwidevinecdmadapter.so', description: 'Enables Widevine licenses for playback of DRM content', length: 1 },
-    ],
+    'Win32': _modernPdfPlugins,
+    'MacIntel': _modernPdfPlugins,
+    'Linux x86_64': _modernPdfPlugins,
   };
   // Firefox has zero plugins (different extension model)
   // Injecting Chrome plugins on Firefox UA is a detection vector
-  var _selPlugins = _isFirefox ? [] : (_platformPlugins[PROFILE.platform] || _platformPlugins['Win32']);
+  var _selPlugins = _isFirefox ? [] : (_platformPlugins[PROFILE.platform] || _modernPdfPlugins);
   var _platPluginInstances = _selPlugins.map(function(p) {
     var pl = Object.create(Plugin.prototype);
     Object.defineProperties(pl, {
@@ -1598,6 +1593,8 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // Rebuild mimeTypes to match the selected plugins from Section 23
   // Also build per-plugin mime arrays for Plugin[MimeType] indexers (Section 23b)
+  // Each modern PDF plugin exposes exactly 2 MimeTypes: application/pdf and text/pdf.
+  // Real Chrome 131: plugins.length === 5, mimeTypes.length === 10.
   var _rebuiltMimes = [];
   var _rebuiltMimeMap = {};
   var _pluginMimeArrays = []; // Parallel to _selPlugins: each entry is array of MimeType objects
@@ -1606,52 +1603,20 @@ export function getStealthScript(profile: FingerprintProfile): string {
   }
   for (var _pmi = 0; _pmi < _selPlugins.length; _pmi++) {
     (function(_pluginIdx) {
-      var _p = _selPlugins[_pluginIdx];
-      if (_p.name.indexOf('PDF') >= 0) {
-        var _mimePdf = Object.create(MimeType.prototype);
-        Object.defineProperties(_mimePdf, {
-          type: { get: function() { return 'application/pdf'; } },
-          suffixes: { get: function() { return 'pdf'; } },
-          description: { get: function() { return 'Portable Document Format'; } },
-          enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
-        });
-        _rebuiltMimes.push(_mimePdf);
-        _rebuiltMimeMap['application/pdf'] = _rebuiltMimes[_rebuiltMimes.length - 1];
-        _pluginMimeArrays[_pluginIdx].push(_mimePdf);
-      }
-      if (_p.name.indexOf('Chrome PDF Viewer') >= 0) {
-        var _mimeGcp = Object.create(MimeType.prototype);
-        Object.defineProperties(_mimeGcp, {
-          type: { get: function() { return 'application/x-google-chrome-pdf'; } },
-          suffixes: { get: function() { return 'pdf'; } },
-          description: { get: function() { return 'Portable Document Format'; } },
-          enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
-        });
-        _rebuiltMimes.push(_mimeGcp);
-        _rebuiltMimeMap['application/x-google-chrome-pdf'] = _rebuiltMimes[_rebuiltMimes.length - 1];
-        _pluginMimeArrays[_pluginIdx].push(_mimeGcp);
-      }
-      if (_p.name.indexOf('Native Client') >= 0) {
-        var _mimeNacl = Object.create(MimeType.prototype);
-        Object.defineProperties(_mimeNacl, {
-          type: { get: function() { return 'application/x-nacl'; } },
-          suffixes: { get: function() { return ''; } },
-          description: { get: function() { return 'Native Client Executable'; } },
-          enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
-        });
-        _rebuiltMimes.push(_mimeNacl);
-        _rebuiltMimeMap['application/x-nacl'] = _rebuiltMimes[_rebuiltMimes.length - 1];
-        _pluginMimeArrays[_pluginIdx].push(_mimeNacl);
-        var _mimePnacl = Object.create(MimeType.prototype);
-        Object.defineProperties(_mimePnacl, {
-          type: { get: function() { return 'application/x-pnacl'; } },
-          suffixes: { get: function() { return ''; } },
-          description: { get: function() { return 'Portable Native Client Executable'; } },
-          enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
-        });
-        _rebuiltMimes.push(_mimePnacl);
-        _rebuiltMimeMap['application/x-pnacl'] = _rebuiltMimes[_rebuiltMimes.length - 1];
-        _pluginMimeArrays[_pluginIdx].push(_mimePnacl);
+      var _pdfMimeTypes = ['application/pdf', 'text/pdf'];
+      for (var _mti = 0; _mti < _pdfMimeTypes.length; _mti++) {
+        (function(_mime) {
+          var _mimeObj = Object.create(MimeType.prototype);
+          Object.defineProperties(_mimeObj, {
+            type: { get: function() { return _mime; } },
+            suffixes: { get: function() { return 'pdf'; } },
+            description: { get: function() { return 'Portable Document Format'; } },
+            enabledPlugin: { get: function() { return _platPluginInstances[_pluginIdx]; } },
+          });
+          _rebuiltMimes.push(_mimeObj);
+          if (!_rebuiltMimeMap[_mime]) _rebuiltMimeMap[_mime] = _mimeObj;
+          _pluginMimeArrays[_pluginIdx].push(_mimeObj);
+        })(_pdfMimeTypes[_mti]);
       }
     })(_pmi);
   }
@@ -1724,11 +1689,26 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
 
     // Ensure performance.timing.navigationStart is consistent
-    if (performance.timing) {
-      // Invariant: navigationStart + performance.now() ≈ Date.now()
-      // _perfOffset is added to performance.now() above, so subtract it here.
-      // This prevents Cloudflare-style timing invariant detection.
-      var _navStart = (performance.timeOrigin || Date.now()) - _perfOffset;
+    // Shift timeOrigin by the SAME _perfOffset so both invariants hold:
+    //   (a) navigationStart + performance.now() ≈ Date.now()  (Cloudflare-style check)
+    //   (b) navigationStart === timeOrigin  (real Chrome reports the same instant for both)
+    // Patching only navigationStart left a detectable 1-3s gap between the two timestamps.
+    var _origTimeOrigin = performance.timeOrigin;
+    if (performance.timing || (typeof _origTimeOrigin === 'number' && isFinite(_origTimeOrigin) && _origTimeOrigin > 0)) {
+      var _fakeTimeOrigin = (typeof _origTimeOrigin === 'number' && isFinite(_origTimeOrigin) && _origTimeOrigin > 0)
+        ? _origTimeOrigin - _perfOffset
+        : Date.now() - _perfOffset;
+      var _navStart = _fakeTimeOrigin;
+      if (typeof _origTimeOrigin === 'number' && isFinite(_origTimeOrigin) && _origTimeOrigin > 0) {
+        try {
+          Object.defineProperty(performance, 'timeOrigin', {
+            get: function() { return _fakeTimeOrigin; },
+            configurable: true,
+          });
+        } catch(_timeOriginErr) {
+          try { Performance.prototype.timeOrigin = _fakeTimeOrigin; } catch(_timeOriginErr2) {}
+        }
+      }
       try {
         Object.defineProperty(performance.timing, 'navigationStart', {
           get: function() { return _navStart; },
@@ -1771,8 +1751,28 @@ export function getStealthScript(profile: FingerprintProfile): string {
 
   // ---- 28. MediaDevices enumerateDevices() Fake ----
   // navigator.mediaDevices.enumerateDevices() returns a consistent set of fake devices.
-  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-    var _origEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+  // Headless Chromium builds / non-secure contexts may not expose navigator.mediaDevices
+  // at all (real headed browsers on https always do) — create a minimal EventTarget-shaped
+  // object first so the seeded enumerateDevices patch below applies in every environment.
+  try {
+    if (!navigator.mediaDevices) {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: {
+          ondevicechange: null,
+          addEventListener: function() {},
+          removeEventListener: function() {},
+          dispatchEvent: function() { return false; },
+          getSupportedConstraints: function() {
+            return { aspectRatio: true, autoGainControl: true, channelCount: true, deviceId: true, echoCancellation: true, facingMode: true, frameRate: true, groupId: true, height: true, latency: true, noiseSuppression: true, sampleRate: true, sampleSize: true, width: true };
+          },
+        },
+        configurable: true,
+      });
+    }
+  } catch(_mdCreateErr) {}
+  if (navigator.mediaDevices) {
+    var _origEnumerateDevices = (typeof navigator.mediaDevices.enumerateDevices === 'function')
+      ? navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices) : null;
 
     var _fakeDevices = [
       { deviceId: 'audioinput_' + _fakeDeviceSeed, kind: 'audioinput', label: '', groupId: 'grp_' + _fakeDeviceSeed },
@@ -1780,22 +1780,25 @@ export function getStealthScript(profile: FingerprintProfile): string {
       { deviceId: 'audiooutput_' + (_fakeDeviceSeed + 2), kind: 'audiooutput', label: '', groupId: 'grp_' + (_fakeDeviceSeed + 1) },
     ];
 
-    Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
-      value: function() {
-        return Promise.resolve(_fakeDevices.map(function(d) {
-          var _dev = Object.create(MediaDeviceInfo.prototype);
-          Object.defineProperties(_dev, {
-            deviceId: { get: function() { return d.deviceId; } },
-            kind:     { get: function() { return d.kind; } },
-            label:    { get: function() { return d.label; } },
-            groupId:  { get: function() { return d.groupId; } },
-            toJSON:   { value: function() { return { deviceId: d.deviceId, kind: d.kind, label: d.label, groupId: d.groupId }; } },
-          });
-          return _dev;
-        }));
-      },
-      configurable: true,
-    });
+    try {
+      var _deviceProto = (typeof MediaDeviceInfo !== 'undefined') ? MediaDeviceInfo.prototype : Object.prototype;
+      Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+        value: function() {
+          return Promise.resolve(_fakeDevices.map(function(d) {
+            var _dev = Object.create(_deviceProto);
+            Object.defineProperties(_dev, {
+              deviceId: { get: function() { return d.deviceId; } },
+              kind:     { get: function() { return d.kind; } },
+              label:    { get: function() { return d.label; } },
+              groupId:  { get: function() { return d.groupId; } },
+              toJSON:   { value: function() { return { deviceId: d.deviceId, kind: d.kind, label: d.label, groupId: d.groupId }; } },
+            });
+            return _dev;
+          }));
+        },
+        configurable: true,
+      });
+    } catch(_mdEnumErr) {}
   }
 
   // ---- 29. Battery API getBattery() Override ----
@@ -1996,7 +1999,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
       return color;
     }
     // Also try to extract alpha from rgba() if present in original
-    var _rgbaMatch = color.match(/rgba?\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/);
+    var _rgbaMatch = color.match(/rgba?\\s*\\(\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*([\\d.]+)\\s*\\)/);
     if (_rgbaMatch) a = parseFloat(_rgbaMatch[1]);
     // Apply perturbation scaled by _canvasNoiseIntensity (R55: intensity-aware)
     var _intScale = _canvasNoiseIntensity > 0 ? Math.min(_canvasNoiseIntensity, 2.0) : 1.0;
@@ -2022,14 +2025,24 @@ export function getStealthScript(profile: FingerprintProfile): string {
   try {
     var _origGetContext = HTMLCanvasElement.prototype.getContext;
     var _ctxProxySeed = Math.floor(_fakeDeviceSeed * 3.14159) | 0;
+    // Per-canvas proxy cache: repeated getContext('2d') calls on the SAME canvas must
+    // return the SAME proxy so the per-canvas noise seed (_canvasInstanceCount) stays
+    // stable — otherwise toDataURL()/toBlob() would produce different output for an
+    // unchanged canvas (a first-class consistency detection signal).
+    var _ctxProxyCache = (typeof WeakMap === 'function') ? new WeakMap() : null;
     HTMLCanvasElement.prototype.getContext = function(type, attrs) {
       var ctx = _origGetContext.call(this, type, attrs);
       if (type === '2d' && ctx) {
+        if (_ctxProxyCache) {
+          var _cachedProxy = _ctxProxyCache.get(this);
+          if (_cachedProxy) return _cachedProxy;
+        }
         // Increment per-canvas counter for unique noise seeds
         _canvasInstanceCount++;
         // Capture seed snapshot so each canvas context gets consistent noise
         var _2dSeed = _ctxProxySeed;
-        return new Proxy(ctx, {
+        var _boundFns = {};
+        var _ctxProxy = new Proxy(ctx, {
           get: function(target, prop) {
             // R55 Enhanced measureText — vary ALL TextMetrics properties, not just width.
             // Real browsers produce slightly different TextMetrics across platforms due to
@@ -2281,10 +2294,36 @@ export function getStealthScript(profile: FingerprintProfile): string {
                 return gradient;
               };
             }
-            // Forward all other property accesses to the real context
-            return target[prop];
+            // Forward all other property accesses to the real context.
+            // Methods MUST be re-bound to the target: returning a native function unbound
+            // makes calls on the proxy throw "Illegal invocation" (e.g. fillRect,
+            // drawImage, getImageData). Bound wrappers are cached per property so
+            // repeated access returns the same function identity.
+            var _val = target[prop];
+            if (typeof _val === 'function') {
+              if (!_boundFns[prop]) {
+                _boundFns[prop] = function() { return _val.apply(target, arguments); };
+              }
+              return _boundFns[prop];
+            }
+            return _val;
+          },
+          // Without a set trap, assignments like ctx.fillStyle = '#069' forward with
+          // the PROXY as receiver — native setter brand-checks fail with
+          // "Illegal invocation". Forward sets to the real context instead.
+          set: function(target, prop, value) {
+            try {
+              target[prop] = value;
+              return true;
+            } catch(_setErr) {
+              return false;
+            }
           }
         });
+        if (_ctxProxyCache) {
+          try { _ctxProxyCache.set(this, _ctxProxy); } catch(_cacheErr) {}
+        }
+        return _ctxProxy;
       }
       return ctx;
     };
@@ -3003,10 +3042,10 @@ export function getStealthScript(profile: FingerprintProfile): string {
             PerformanceResourceTiming.prototype.getAllResponseHeaders = function() {
               var _orig = _origGARH.call(this);
               if (_orig.indexOf('cross-origin-opener-policy') < 0) {
-                _orig += 'cross-origin-opener-policy: same-origin\r\n';
+                _orig += 'cross-origin-opener-policy: same-origin\\r\\n';
               }
               if (_orig.indexOf('cross-origin-embedder-policy') < 0) {
-                _orig += 'cross-origin-embedder-policy: require-corp\r\n';
+                _orig += 'cross-origin-embedder-policy: require-corp\\r\\n';
               }
               return _orig;
             };
@@ -3281,12 +3320,12 @@ export function getStealthScript(profile: FingerprintProfile): string {
         var _resolvedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         // Build a reference offset from the resolved timezone
         var _refDate = new Date();
-        var _refOffset = -_refDate.getTimezoneOffset();
-        // Cross-check: the profile-injected timezoneOffset should be consistent with Intl
+        // Cross-check: _intlOffset ends up in the same convention as getTimezoneOffset()
+        // (negative = east of UTC). Both values must match directly.
         var _intlDate = new Date(new Date().toLocaleString('en-US', { timeZone: _resolvedTz }));
         var _intlOffset = (_refDate - _intlDate) / 60000;
-        if (Math.abs(_tzOffset + _intlOffset) > 1) {
-          _warnings.push('getTimezoneOffset()=' + _tzOffset + ' vs Intl resolved timezone "' + _resolvedTz + '" offset=' + (-_intlOffset));
+        if (Math.abs(_tzOffset - _intlOffset) > 1) {
+          _warnings.push('getTimezoneOffset()=' + _tzOffset + ' vs Intl resolved timezone "' + _resolvedTz + '" offset=' + _intlOffset);
         }
       } catch(_tzErr) {}
       // Log any warnings (non-blocking, debugging only)
@@ -4292,7 +4331,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
     } else if (!_isFirefox && navigator.gpu === undefined) {
       // API is completely missing in this environment — add a stub for Chrome UAs.
       // This handles headless Chromium builds that strip WebGPU.
-      var _gpuUaVer = _uaString.match(/Chrome\/(\d+)/);
+      var _gpuUaVer = _uaString.match(/Chrome\\/(\\d+)/);
       var _gpuChromeMajor = _gpuUaVer ? parseInt(_gpuUaVer[1]) : 0;
       if (_gpuChromeMajor >= 113) {
         var _fakeGpuLimits = {};
@@ -4329,7 +4368,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // We ensure the API exists for Chrome-like UAs >= 94, delegating to native if available.
   try {
     if (!_isFirefox && typeof window.scheduler === 'undefined') {
-      var _schedUaVer = _uaString.match(/Chrome\/(\d+)/);
+      var _schedUaVer = _uaString.match(/Chrome\\/(\\d+)/);
       var _schedChromeMajor = _schedUaVer ? parseInt(_schedUaVer[1]) : 0;
       if (_schedChromeMajor >= 94) {
         window.scheduler = {
@@ -4364,7 +4403,7 @@ export function getStealthScript(profile: FingerprintProfile): string {
   // We ensure the API exists and request() returns a proper sentinel for Chrome-like UAs >= 84.
   try {
     if (!_isFirefox) {
-      var _wlUaVer = _uaString.match(/Chrome\/(\d+)/);
+      var _wlUaVer = _uaString.match(/Chrome\\/(\\d+)/);
       var _wlChromeMajor = _wlUaVer ? parseInt(_wlUaVer[1]) : 0;
       if (_wlChromeMajor >= 84 && !navigator.wakeLock) {
         Object.defineProperty(navigator, 'wakeLock', {

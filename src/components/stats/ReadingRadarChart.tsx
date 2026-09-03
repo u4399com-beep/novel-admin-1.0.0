@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Radar, Activity, AlertCircle } from 'lucide-react';
+import { Radar as RadarIcon, Activity, AlertCircle } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { getSessionId } from '@/lib/reading-session';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,6 +10,7 @@ import {
   RadarChart,
   PolarGrid,
   PolarAngleAxis,
+  Radar,
   ResponsiveContainer,
 } from 'recharts';
 
@@ -51,7 +52,7 @@ function LoadingSkeleton() {
     <div className="rounded-xl border bg-card p-5 card-glow card-border-glow">
       <div className="flex items-center gap-2 mb-4">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted">
-          <Radar className="h-3.5 w-3.5 text-muted-foreground" />
+        <RadarIcon className="h-3.5 w-3.5 text-muted-foreground" />
         </div>
         <Skeleton className="h-4 w-32 rounded" />
       </div>
@@ -131,7 +132,7 @@ export function ReadingRadarChart() {
       <div className="rounded-xl border bg-card p-5 card-glow card-border-glow hover-lift focus-ring-soft">
         <div className="flex items-center gap-2 mb-4">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10">
-            <Radar className="h-3.5 w-3.5 text-violet-500" />
+            <RadarIcon className="h-3.5 w-3.5 text-violet-500" />
           </div>
           <h2 className="text-sm font-semibold link-underline inline-block">阅读能力雷达图</h2>
         </div>

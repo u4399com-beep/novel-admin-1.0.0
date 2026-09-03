@@ -160,7 +160,7 @@ function FriendlyLinkFormDialog({
   const updateField = <K extends keyof FormData>(key: K, value: FormData[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     if (key === 'url') {
-      if (value && !/^https?:\/\//i.test(value)) {
+      if (value && !/^https?:\/\//i.test(String(value))) {
         setUrlError('URL 必须以 http:// 或 https:// 开头');
       } else {
         setUrlError('');

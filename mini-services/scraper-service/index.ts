@@ -319,6 +319,59 @@ async function simulateAntiCrawl(body: SimulateRequest): Promise<SimulateResult>
   };
 }
 
+// ==================== Task Launch + Priority Queue Drain ====================
+//
+// Bug fix (Task 6): priorityQueue.dequeueNext() was never called — tasks that
+// exceeded MAX_CONCURRENT_TASKS were enqueued via /execute-task (429 "queued")
+// but never picked up when slots freed, stranding them in the in-memory
+// priority queue until service restart. scheduleQueuedTasks() now drains the
+// queue whenever a running task finishes.
+
+function launchTask(taskId: string): void {
+  // Move queue→processing if the task was 429-queued (no-op otherwise)
+  priorityQueue.startProcessing(taskId);
+  activeTasks.add(taskId);
+  activeTaskCount++;
+  executeTask(taskId).catch((err) => {
+    console.error(`[Task ${taskId}] Fatal error:`, err);
+    // Sanitize error message before sending to API
+    const safeMessage = String(err instanceof Error ? err.message : err)
+      .slice(0, 200)
+      .replace(/https?:\/\/[^\n ]+/g, '[URL]')
+      .replace(/at .+/g, '[stack]');
+    fetch(`${process.env.MAIN_APP_URL || "http://localhost:3000"}/api/scrape-tasks/${taskId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
+      },
+      body: JSON.stringify({
+        status: "failed",
+        errorMessage: safeMessage,
+        completedAt: new Date().toISOString(),
+      }),
+    }).catch(() => {});
+  }).finally(() => {
+    activeTasks.delete(taskId);
+    activeTaskCount--;
+    priorityQueue.completeProcessing(taskId);
+    // Slot freed — start the next queued task(s) if any
+    scheduleQueuedTasks();
+  });
+}
+
+function scheduleQueuedTasks(): void {
+  // Guard against pathological loops; activeTaskCount is the authoritative
+  // concurrency gate (priorityQueue.processing only tracks 429-queued tasks)
+  let guard = 0;
+  while (activeTaskCount < MAX_CONCURRENT_TASKS && guard++ < 100) {
+    const next = priorityQueue.dequeueNext();
+    if (!next) break;
+    console.log(`[PriorityQueue] Launching queued task ${next.taskId} (priority=${next.priority})`);
+    launchTask(next.taskId);
+  }
+}
+
 export function startServer(port: number = 3099) {
   // Warn if no service token configured
   if (!SERVICE_TOKEN) {
@@ -678,6 +731,9 @@ export function startServer(port: number = 3099) {
           if (!body || typeof body !== 'object' || typeof (body as any).url !== 'string') {
             return Response.json({ error: 'url is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
+          if (!(body as any).selector || typeof (body as any).selector !== 'object') {
+            return Response.json({ error: 'selector is required and must be an object (e.g. {"type":"css","value":"a"})' }, { status: 400, headers: jsonHeaders });
+          }
           const result = await handleScrapeList(body as ScrapeListRequest);
           return Response.json(result, { headers: jsonHeaders });
         }
@@ -832,34 +888,8 @@ export function startServer(port: number = 3099) {
             );
           }
 
-          // Atomically check and reserve a task slot (prevent TOCTOU race)
-          priorityQueue.startProcessing(taskId);
-          activeTasks.add(taskId);
-          activeTaskCount++;
-          executeTask(taskId).catch((err) => {
-            console.error(`[Task ${taskId}] Fatal error:`, err);
-            // Sanitize error message before sending to API
-            const safeMessage = String(err instanceof Error ? err.message : err)
-              .slice(0, 200)
-              .replace(/https?:\/\/[^\n ]+/g, '[URL]')
-              .replace(/at .+/g, '[stack]');
-            fetch(`${process.env.MAIN_APP_URL || "http://localhost:3000"}/api/scrape-tasks/${taskId}`, {
-              method: "PUT",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${process.env.SCRAPER_SERVICE_TOKEN || ""}`,
-              },
-              body: JSON.stringify({
-                status: "failed",
-                errorMessage: safeMessage,
-                completedAt: new Date().toISOString(),
-              }),
-            }).catch(() => {});
-          }).finally(() => {
-            activeTasks.delete(taskId);
-            activeTaskCount--;
-            priorityQueue.completeProcessing(taskId);
-          });
+          // Launch the task (priority-queue aware; drained via scheduleQueuedTasks)
+          launchTask(taskId);
           return Response.json(
             { message: "Task execution started", taskId },
             { headers: jsonHeaders }

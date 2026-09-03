@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
+import { sanitizeField, safeJson, asString, asStringOrNull, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { isSafeUrl } from "@/lib/sanitize";
 import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
@@ -63,13 +63,14 @@ export const PUT = withAuth(async function PUT(
       }
     }
 
-    if (status !== undefined && !VALID_NOVEL_STATUSES.includes(status)) {
+    if (status !== undefined && !VALID_NOVEL_STATUSES.includes(status as string)) {
       return apiError("无效的小说状态", 400);
     }
 
     // Validate categoryId existence if provided
-    if (categoryId !== undefined && categoryId) {
-      const categoryExists = await db.category.findUnique({ where: { id: categoryId } });
+    const categoryIdStr = asStringOrNull(categoryId);
+    if (categoryId !== undefined && categoryIdStr) {
+      const categoryExists = await db.category.findUnique({ where: { id: categoryIdStr } });
       if (!categoryExists) {
         return apiError("指定的分类不存在", 400);
       }
@@ -86,12 +87,12 @@ export const PUT = withAuth(async function PUT(
     }
 
     // Validate coverUrl protocol
-    if (coverUrl !== undefined && coverUrl && !isSafeUrl(coverUrl)) {
+    if (coverUrl !== undefined && coverUrl && !isSafeUrl(asString(coverUrl))) {
       return apiError("封面URL格式不合法，仅允许http/https协议", 400);
     }
 
     // Validate sourceUrl protocol (SSRF protection)
-    if (sourceUrl !== undefined && sourceUrl && !isSafeUrl(sourceUrl)) {
+    if (sourceUrl !== undefined && sourceUrl && !isSafeUrl(asString(sourceUrl))) {
       return apiError("来源URL格式不合法，仅允许http/https协议", 400);
     }
 
@@ -118,8 +119,8 @@ export const PUT = withAuth(async function PUT(
           ...(author !== undefined && { author: sanitizeField(author, 100) || "佚名" }),
           ...(description !== undefined && { description: sanitizeField(description, 5000) || null }),
           ...(coverUrl !== undefined && { coverUrl: sanitizeField(coverUrl, 2048) || null }),
-          ...(status !== undefined && { status }),
-          ...(categoryId !== undefined && { categoryId: categoryId || null }),
+          ...(status !== undefined && { status: status as string }),
+          ...(categoryId !== undefined && { categoryId: categoryIdStr || null }),
           ...(sourceUrl !== undefined && { sourceUrl: sanitizeField(sourceUrl, 2048) || null }),
           ...(coverPath !== undefined && { coverPath: coverPath ? String(coverPath) : null }),
           ...(tags !== undefined && {

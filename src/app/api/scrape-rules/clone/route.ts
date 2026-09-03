@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { safeJson, apiError, apiSuccess, sanitizeField, isPrismaError } from '@/lib/api-utils';
 

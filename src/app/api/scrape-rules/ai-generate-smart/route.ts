@@ -372,7 +372,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (
       siteType !== undefined &&
       siteType !== null &&
-      !validSiteTypes.includes(siteType)
+      (typeof siteType !== 'string' || !validSiteTypes.includes(siteType))
     ) {
       return apiError(
         `无效的站点类型: ${siteType}，可选值: ${validSiteTypes.join(', ')}`,
@@ -389,7 +389,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     // 4. Call AI generate-rule
     let baseRule: GeneratedRule;
     try {
-      baseRule = await callAiGenerate(url, siteType);
+      baseRule = await callAiGenerate(url, typeof siteType === 'string' ? siteType : undefined);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'AI 规则生成失败';

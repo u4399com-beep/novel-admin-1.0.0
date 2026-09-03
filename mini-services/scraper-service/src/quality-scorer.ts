@@ -507,6 +507,10 @@ export class QualityScorer {
       passed = false;
     }
 
+    // Clamp to the 10-point dimension max — future-dated content (ageDays < 0, e.g.
+    // "2026年最新网址" ads or pre-dated posts) would otherwise inflate the score far above 10
+    score = Math.max(0, Math.min(10, score));
+
     const dateStr = mostRecentDate.toISOString().slice(0, 10);
     const ageStr = ageDays < 1 ? '今天' : ageDays < 30 ? `${Math.round(ageDays)}天前` : ageDays < 365 ? `${Math.round(ageDays / 30)}个月前` : `${(ageDays / 365).toFixed(1)}年前`;
     return {

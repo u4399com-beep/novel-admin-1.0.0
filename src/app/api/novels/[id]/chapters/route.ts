@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { parsePagination, sanitizeField, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, asStringOrNull, apiError, apiSuccess } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { paginatedList } from "@/lib/crud-helpers";
@@ -167,13 +167,15 @@ export const PATCH = withAuth(async function PATCH(
     if (action === 'swap') {
       // ─── Swap: exchange sortOrder of exactly 2 chapters (O(1) DB ops) ───
       const { id1, id2 } = body;
-      if (!id1 || !id2 || id1 === id2) {
+      const id1Str = asStringOrNull(id1);
+      const id2Str = asStringOrNull(id2);
+      if (!id1Str || !id2Str || id1Str === id2Str) {
         return apiError("swap需要两个不同的chapter id", 400);
       }
 
       const [ch1, ch2] = await Promise.all([
-        db.chapter.findUnique({ where: { id: id1, novelId }, select: { id: true, sortOrder: true } }),
-        db.chapter.findUnique({ where: { id: id2, novelId }, select: { id: true, sortOrder: true } }),
+        db.chapter.findUnique({ where: { id: id1Str, novelId }, select: { id: true, sortOrder: true } }),
+        db.chapter.findUnique({ where: { id: id2Str, novelId }, select: { id: true, sortOrder: true } }),
       ]);
       if (!ch1 || !ch2) {
         return apiError("章节不存在或不属于该小说", 404);
@@ -189,7 +191,7 @@ export const PATCH = withAuth(async function PATCH(
     }
 
     // ─── Batch reorder (drag-and-drop fallback, uses CASE WHEN for performance) ───
-    const orders: Array<{ id: string; sortOrder: number }> = body.orders;
+    const orders = body.orders as Array<{ id: string; sortOrder: number }>;
     if (!Array.isArray(orders) || orders.length === 0 || orders.length > 5000) {
       return apiError("orders 必须是非空数组(最多5000条)", 400);
     }
@@ -211,7 +213,7 @@ export const PATCH = withAuth(async function PATCH(
     const sqlParts = orders.map((item) =>
       Prisma.sql`(${item.id}, ${Math.floor(Number(item.sortOrder) || 0)})`,
     );
-    const valuesSql = Prisma.join(sqlParts, Prisma.sql`, `);
+    const valuesSql = Prisma.join(sqlParts, ', ');
     await db.$executeRaw`
       UPDATE "Chapter"
       SET "sortOrder" = v.sort_order

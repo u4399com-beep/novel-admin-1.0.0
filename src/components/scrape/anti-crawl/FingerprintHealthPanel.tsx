@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  Fingerprint, CheckCircle2, AlertTriangle, XCircle,
+  Fingerprint, CheckCircle2, AlertTriangle,
   RefreshCw, Shield, Monitor, Loader2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

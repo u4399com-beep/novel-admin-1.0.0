@@ -573,14 +573,17 @@ export function swapLazyLoadedContent(html: string): string {
   for (const attr of LAZY_SRC_ATTRIBUTES) {
     // Match elements with data-xxx="..." that have no src, empty src, or placeholder src
     // Placeholder patterns: data:image/gif, data:image/png, about:blank, empty string
+    // [^>]*? (not [\s\S]*?) keeps the match within a SINGLE tag — spanning tags caused
+    // quadratic scanning on HTML without the attribute and let src= from a previous
+    // element falsely suppress the swap.
     const re = new RegExp(
-      `(<(?:img|iframe|div|source|video|audio)[\\s\\S]*?)${attr}\\s*=\\s*["']([^"'\\s>]+)["']([\\s\\S]*?>)`,
+      `(<(?:img|iframe|div|source|video|audio)[^>]*?)${attr}\\s*=\\s*["']([^"'\\s>]+)["']([^>]*?>)`,
       "gi"
     );
     html = html.replace(re, (fullMatch, before, lazyUrl, after) => {
-      // Only swap if the element doesn't have a real src already
-      // Check if there's a src= that's not a data: URL or empty
-      const srcMatch = fullMatch.match(/src\s*=\s*["']([^"']*)["']/i);
+      // Only swap if the element doesn't have a real src already.
+      // (?:^|\s) prevents matching the "src=" inside "data-src=" itself.
+      const srcMatch = fullMatch.match(/(?:^|\s)src\s*=\s*["']([^"']*)["']/i);
       const hasRealSrc = srcMatch &&
         srcMatch[1].length > 0 &&
         !srcMatch[1].startsWith("data:") &&
@@ -588,7 +591,17 @@ export function swapLazyLoadedContent(html: string): string {
 
       if (hasRealSrc) return fullMatch; // Already has a real src, don't overwrite
 
-      // Replace the lazy attribute with src inside the tag (both 'has src placeholder' and 'no src' cases)
+      if (srcMatch) {
+        // Tag has an empty/placeholder src — overwrite its value in place.
+        // (htmlparser2 keeps the FIRST duplicate attribute, so appending a second
+        //  src after the placeholder would be ignored by cheerio extraction.)
+        return fullMatch.replace(
+          /(src\s*=\s*)(["'])([^"']*)(\2)/i,
+          (_m, p1: string, q: string) => `${p1}${q}${lazyUrl}${q}`
+        );
+      }
+
+      // No src at all — replace the lazy attribute with src inside the tag
       return before + `src="${lazyUrl}"` + after;
     });
   }

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess } from '@/lib/api-utils';
 import { parseScrapeParams, validateSavePath, buildCloudBrowserConfig } from '@/lib/scrape-rule-validation';
+import type { Prisma } from '@prisma/client';
 
 /**
  * POST /api/admin/seed-scrape-rules
@@ -43,8 +44,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     let updated = 0;
 
     // Separate creates and updates for transaction batching
-    const creates: Record<string, unknown>[] = [];
-    const updates: Array<{ id: string; data: Record<string, unknown> }> = [];
+    const creates: Prisma.ScrapeRuleUncheckedCreateInput[] = [];
+    const updates: Array<{ id: string; data: Prisma.ScrapeRuleUncheckedUpdateInput }> = [];
 
     for (const raw of body.rules) {
       if (!raw.name || typeof raw.name !== 'string') continue;
@@ -91,7 +92,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         threadCount: params.threadCount,
         minDelay: params.minDelay,
         maxDelay: params.maxDelay,
-        enableShuffle: raw.enableShuffle ?? false,
+        enableShuffle: raw.enableShuffle === true,
         dedupMode: params.dedupMode,
 
         cleanConfig: safeJsonStringify(raw.cleanConfig, 'cleanConfig') ?? null,
@@ -108,11 +109,20 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       }
     }
 
-    // Execute all writes in a single transaction
-    const txResults = await db.$transaction([
-      ...creates.map((d) => db.scrapeRule.create({ data: d as Parameters<typeof db.scrapeRule.create>[0]['data'] })),
-      ...updates.map((u) => db.scrapeRule.update({ where: { id: u.id }, data: u.data })),
-    ], { timeout: 30000 });
+    // Execute all writes in a single interactive transaction so the 30s
+    // timeout option is honored (batched $transaction arrays do not accept it).
+    // Creates are returned in `body.rules` order so result mapping stays aligned.
+    const txResults = await db.$transaction(async (tx) => {
+      const createdRows: { id: string }[] = [];
+      for (const d of creates) {
+        const row = await tx.scrapeRule.create({ data: d });
+        createdRows.push({ id: row.id });
+      }
+      for (const u of updates) {
+        await tx.scrapeRule.update({ where: { id: u.id }, data: u.data });
+      }
+      return createdRows;
+    }, { timeout: 30_000 });
 
     // Map results back
     let createIdx = 0;
@@ -125,7 +135,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         updated++;
       } else {
         const result = txResults[createIdx];
-        results.push({ id: (result as { id: string }).id, name, action: 'created' });
+        results.push({ id: result.id, name, action: 'created' });
         created++;
         createIdx++;
       }

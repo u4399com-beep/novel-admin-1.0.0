@@ -77,8 +77,7 @@ export default function NovelFormDialog() {
 
   // ── Form ──
   const form = useForm<NovelFormValues>({
-     
-    resolver: safeResolver(novelFormSchema) as any,
+    resolver: safeResolver(novelFormSchema),
     defaultValues: {
       title: "",
       author: "佚名",

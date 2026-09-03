@@ -6,7 +6,6 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Globe,
   FileCode,
   Layers,
   Gauge,

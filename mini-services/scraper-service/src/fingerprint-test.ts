@@ -68,7 +68,7 @@ const FINGERPRINT_DETECTION_SCRIPT = `
   // ===================== NAVIGATOR =====================
   try {
     const ua = navigator.userAgent;
-    const hasChromeInUA = /Chrome\//.test(ua) && !/HeadlessChrome/.test(ua);
+    const hasChromeInUA = /Chrome\\//.test(ua) && !/HeadlessChrome/.test(ua);
     add('navigator', 'userAgent consistency', hasChromeInUA, ua, 'Contains Chrome (not HeadlessChrome)', 'high');
   } catch (e) { add('navigator', 'userAgent consistency', false, 'Error: ' + e.message, 'Valid Chrome UA string', 'high'); }
 
@@ -275,7 +275,7 @@ const FINGERPRINT_DETECTION_SCRIPT = `
         if (e.candidate) {
           const parts = e.candidate.candidate.split(' ');
           const ip = parts[4];
-          if (ip && /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(ip)) {
+          if (ip && /^(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)/.test(ip)) {
             leakedIps.push(ip);
           }
         }
@@ -623,7 +623,7 @@ export async function runFingerprintTest(
 
     // 5. Evaluate fingerprint detection script (synchronous checks only)
     const rawChecks = await page.evaluate((script: string) => {
-      // eslint-disable-next-line no-eval
+       
       return eval(script) as Array<Record<string, unknown>>;
     }, FINGERPRINT_DETECTION_SCRIPT);
 
@@ -687,7 +687,7 @@ export async function runFingerprintTest(
 })()
 `;
       await page.evaluate(async (script: string) => {
-        // eslint-disable-next-line no-eval
+         
         eval(script);
         // Wait for async callbacks
         await new Promise(r => setTimeout(r, 1000));

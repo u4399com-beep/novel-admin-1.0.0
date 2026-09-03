@@ -79,10 +79,6 @@ const GREEN_SCALE = [
   '#216e39',
 ];
 
-// Day label column widths
-const DAY_LABEL_W_SM = 26; // sm: ml-[26px] + mr-1.5(~6px)
-const DAY_LABEL_W_XS = 22; // ml-[22px]
-
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 function toDateStr(d: Date): string {

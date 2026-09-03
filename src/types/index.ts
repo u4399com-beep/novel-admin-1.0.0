@@ -90,7 +90,8 @@ export interface ThemeLayout {
   sidebarPosition: "left" | "right";
   cardStyle: "rounded" | "flat" | "elevated" | "bordered";
   headerStyle: "fixed" | "static";
-  gridColumns: 3 | 4;
+  // 1 = single-column list layouts (e.g. prebuilt "101看書風"), 3/4 = admin-selectable grids
+  gridColumns: 1 | 2 | 3 | 4;
 }
 
 export interface ThemeTypography {

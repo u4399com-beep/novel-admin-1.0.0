@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { safeJson, sanitizeField, apiError, apiSuccess } from "@/lib/api-utils";
+import { safeJson, sanitizeField, asStringOrNull, apiError, apiSuccess } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { getOrCompute, invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -44,13 +44,15 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       fileNamePattern,
     } = body;
 
-    if (!name?.trim()) {
+    const nameStr = sanitizeField(name, MAX_NAME_LENGTH);
+    if (!nameStr) {
       return apiError("配置名称不能为空", 400);
     }
-    if (name.trim().length > MAX_NAME_LENGTH) {
+    if (nameStr.length > MAX_NAME_LENGTH) {
       return apiError(`配置名称不能超过${MAX_NAME_LENGTH}个字符`, 400);
     }
-    if (format && !VALID_FORMATS.includes(format)) {
+    const formatStr = asStringOrNull(format);
+    if (formatStr && !(VALID_FORMATS as readonly string[]).includes(formatStr)) {
       return apiError(`文件格式只能是: ${VALID_FORMATS.join(", ")}`, 400);
     }
     if (insertConfusion && confusionText && typeof confusionText === "string" && confusionText.trim().length > MAX_CONTENT_LENGTH) {
@@ -60,7 +62,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       if (adContent && typeof adContent === "string" && adContent.trim().length > MAX_CONTENT_LENGTH) {
         return apiError(`广告内容不能超过${MAX_CONTENT_LENGTH}个字符`, 400);
       }
-      if (adPosition && !VALID_AD_POSITIONS.includes(adPosition)) {
+      const adPositionStr = asStringOrNull(adPosition);
+      if (adPositionStr && !VALID_AD_POSITIONS.includes(adPositionStr as (typeof VALID_AD_POSITIONS)[number])) {
         return apiError(`广告位置只能是: ${VALID_AD_POSITIONS.join(", ")}`, 400);
       }
     }
@@ -68,10 +71,11 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (insertSiteInfo && siteInfoContent && typeof siteInfoContent === "string" && siteInfoContent.trim().length > MAX_CONTENT_LENGTH) {
       return apiError(`站点信息内容不能超过${MAX_CONTENT_LENGTH}个字符`, 400);
     }
-    if (fileNamePattern && (fileNamePattern.includes('..') || fileNamePattern.includes('/') || fileNamePattern.includes('\\'))) {
+    const fileNamePatternStr = asStringOrNull(fileNamePattern);
+    if (fileNamePatternStr && (fileNamePatternStr.includes('..') || fileNamePatternStr.includes('/') || fileNamePatternStr.includes('\\'))) {
       return apiError("文件名模式不能包含路径分隔符或..", 400);
     }
-    if (fileNamePattern && typeof fileNamePattern === "string" && fileNamePattern.trim().length > MAX_PATTERN_LENGTH) {
+    if (fileNamePatternStr && fileNamePatternStr.trim().length > MAX_PATTERN_LENGTH) {
       return apiError(`文件名模式不能超过${MAX_PATTERN_LENGTH}个字符`, 400);
     }
 
@@ -87,14 +91,14 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     const config = await db.downloadConfig.create({
       data: {
-        name: sanitizeField(name, MAX_NAME_LENGTH),
-        format: format || "txt",
+        name: nameStr,
+        format: formatStr || "txt",
         insertConfusion: insertConfusion || false,
         confusionText: insertConfusion ? sanitizeField(confusionText, MAX_CONTENT_LENGTH) || null : null,
         insertAd: insertAd || false,
         adContent: insertAd ? sanitizeField(adContent, MAX_CONTENT_LENGTH) || null : null,
         adInterval: parsedInterval,
-        adPosition: adPosition || "end",
+        adPosition: asStringOrNull(adPosition) || "end",
         insertSiteInfo: insertSiteInfo || false,
         siteInfoContent: insertSiteInfo ? sanitizeField(siteInfoContent, MAX_CONTENT_LENGTH) || null : null,
         fileNamePattern: sanitizeField(fileNamePattern, MAX_PATTERN_LENGTH) || "{title} - {author}",

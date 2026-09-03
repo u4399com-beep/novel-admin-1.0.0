@@ -24,6 +24,10 @@ export interface GeneratedRule {
     useCookies?: boolean;
     useSession?: boolean;
     useStealth?: boolean;
+    humanBehavior?: boolean;
+    dnt?: boolean;
+    acceptLanguage?: string;
+    referer?: string;
   };
   agentqlQueries?: {
     title?: string;

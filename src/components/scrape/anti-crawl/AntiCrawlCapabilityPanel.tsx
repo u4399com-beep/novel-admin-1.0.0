@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Shield, CheckCircle2, XCircle, Loader2, Globe, Cookie,
-  RefreshCw, Fingerprint,
+  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

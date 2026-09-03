@@ -93,7 +93,7 @@ const HTML_RULES: DetectionRule[] = [
       /jschl_vc/i,
       /_cf_chl/i,
       /cloudflare.*challenge/i,
-      /cf\-turnstile/i,
+      /cf-turnstile/i,
       /challenges\.cloudflare\.com/i,
     ],
     baseConfidence: 0.75,

@@ -46,8 +46,10 @@ export const POST = withAuth(async function POST(request: NextRequest) {
 
     // Validate siteType if provided
     const validSiteTypes = ['novel', 'manga', 'literature'];
-    if (siteType !== undefined && siteType !== null && !validSiteTypes.includes(siteType)) {
-      return apiError(`无效的站点类型: ${siteType}，可选值: ${validSiteTypes.join(', ')}`, 400);
+    if (siteType !== undefined && siteType !== null) {
+      if (typeof siteType !== 'string' || !validSiteTypes.includes(siteType)) {
+        return apiError(`无效的站点类型: ${siteType}，可选值: ${validSiteTypes.join(', ')}`, 400);
+      }
     }
 
     // Proxy to scraper-service

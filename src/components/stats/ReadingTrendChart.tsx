@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Activity, AlertCircle } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
@@ -166,8 +166,6 @@ export function ReadingTrendChart() {
   if (loading) return <LoadingSkeleton />;
   if (error) return <ErrorState message={error} />;
   if (!data || data.length === 0) return <EmptyState />;
-
-  const yUnit = showWords ? '千字' : '章';
 
   return (
     <motion.div

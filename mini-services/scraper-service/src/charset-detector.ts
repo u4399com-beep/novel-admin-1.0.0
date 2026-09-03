@@ -221,6 +221,23 @@ export function detectCharset(buffer: Uint8Array | Buffer, contentType?: string 
 
   const declaredCharset = declaredFromHeader || declaredFromHtml;
 
+  // Step 3.5: Strict UTF-8 validation — authoritative when it passes.
+  // UTF-8 CJK sequences (lead 0xE4-0xE9 + trail 0x80-0xBF) are a subset of the
+  // "valid GBK pairs" accepted by looksLikeGBK (trail ⊂ 0x80-0xFE), so the legacy
+  // frequency heuristic misclassified every Chinese UTF-8 page as GBK ("corrected:
+  // utf-8 → gbk") and produced mojibake. Real GBK/Big5 text almost never passes a
+  // strict UTF-8 validation because GBK trail bytes 0x40-0x7E break the sequences.
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (declaredCharset && GBK_FAMILY.has(declaredCharset)) {
+      // Bytes are valid UTF-8 but declared as GBK — trust the bytes (misdeclared site).
+      return { charset: 'utf-8', corrected: true, confidence: 'high', declaredCharset };
+    }
+    return { charset: 'utf-8', corrected: false, confidence: 'high', declaredCharset: declaredCharset || undefined };
+  } catch {
+    // Not valid UTF-8 — continue to GBK/Big5 byte-frequency analysis (Step 4).
+  }
+
   // Step 4: Byte frequency analysis for CJK encodings
   // Only analyze if there's significant non-ASCII content (use counter instead of filter to avoid large temp array)
   let nonAsciiCount = 0;

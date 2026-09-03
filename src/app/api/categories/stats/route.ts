@@ -30,7 +30,7 @@ export const GET = withAuth(async () => {
     });
     const latestByCategory = new Map<string, { updatedAt: Date; title: string }>();
     for (const n of latestNovels) {
-      if (!latestByCategory.has(n.categoryId)) {
+      if (n.categoryId && !latestByCategory.has(n.categoryId)) {
         latestByCategory.set(n.categoryId, { updatedAt: n.updatedAt, title: n.title });
       }
     }

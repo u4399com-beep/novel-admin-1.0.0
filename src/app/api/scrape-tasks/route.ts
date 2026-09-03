@@ -79,7 +79,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError("规则ID不能为空且必须为字符串", 400);
     }
 
-    if (mode !== undefined && mode !== null && !VALID_TASK_MODES.includes(mode)) {
+    if (mode !== undefined && mode !== null && !VALID_TASK_MODES.includes(mode as string)) {
       return apiError(`mode 必须为以下值之一: ${VALID_TASK_MODES.join(', ')}`, 400);
     }
 
@@ -99,7 +99,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError("采集规则不存在", 404);
     }
 
-    const taskMode = VALID_TASK_MODES.includes(mode) ? mode : (rule.scrapeMode || "incremental");
+    const taskMode = VALID_TASK_MODES.includes(mode as string) ? (mode as string) : (rule.scrapeMode || "incremental");
 
     const task = await db.scrapeTask.create({
       data: {

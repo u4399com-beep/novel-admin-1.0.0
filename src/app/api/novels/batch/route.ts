@@ -39,7 +39,7 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
     }
 
     // Validate action
-    if (!VALID_ACTIONS.includes(action)) {
+    if (!(VALID_ACTIONS as readonly string[]).includes(action as string)) {
       return apiError(`无效的action，允许值: ${VALID_ACTIONS.join(', ')}`, 400);
     }
 

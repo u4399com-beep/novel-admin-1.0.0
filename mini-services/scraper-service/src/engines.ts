@@ -18,7 +18,7 @@ import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeader
 import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA } from "./stealth";
 import { getAcceptEncoding } from "./http2-decoy";
 import { getTLSFingerprintOptions } from "./tls-fingerprint";
-import { proxyManager, getProxyDispatcher } from "./proxy-manager";
+import { proxyManager, bunProxyFetchInit } from "./proxy-manager";
 import { cookieJar } from "./cookie-jar";
 import { rateLimiter } from "./rate-limiter";
 import { sessionManager } from "./session-manager";
@@ -728,7 +728,9 @@ class CheerioEngine implements ScrapingEngine {
     // Proxy support: select best proxy for this domain
     const domainProxy = targetDomain ? proxyManager.getDomainProxyWithRotation(targetDomain) : null;
     const proxy = domainProxy || (options?.proxy ? proxyManager.getProxyWithFallback(targetDomain) : null);
-    const dispatcher = proxy ? getProxyDispatcher(proxy.url) : null;
+    // Bun 1.3.x ignores the undici `dispatcher` option (verified in Task 6: requests
+    // silently went direct) — use Bun's native `proxy` fetch option instead.
+    const proxyFetchInit = proxy ? bunProxyFetchInit(proxy.url) : {};
 
     // Request fingerprint tracking
     const fp = requestFingerprintMgr.create({
@@ -749,7 +751,7 @@ class CheerioEngine implements ScrapingEngine {
     await applyTimingJitter();
 
     // Pre-resolve the connection pool agent so it's available synchronously in makeRequest
-    const poolAgent = !dispatcher ? await getCheerioAgent() : undefined;
+    const poolAgent = proxy ? undefined : await getCheerioAgent();
 
     let lastStatusCode = 0;
     const fetchResult = await retryWithBackoff(
@@ -821,8 +823,11 @@ class CheerioEngine implements ScrapingEngine {
               headers: reqHeaders,
               redirect: "manual",
               signal: reqSignal,
-              // @ts-expect-error - Bun supports dispatcher option
-              dispatcher: dispatcher || poolAgent,
+              // Bun-native proxy option (see proxyFetchInit above) — carries the
+              // selected proxy so requests actually traverse it (Task 6 fix).
+              ...proxyFetchInit,
+              // @ts-expect-error - Bun supports dispatcher option (keep-alive pool when no proxy)
+              dispatcher: poolAgent,
             };
 
             // Apply TLS fingerprint profile for anti-detection

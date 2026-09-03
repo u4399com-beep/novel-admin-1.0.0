@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit, getClientIp } from '@/lib/api-auth';
-import { isPrismaError, apiError } from "@/lib/api-utils";
+import { apiError } from "@/lib/api-utils";
 
 /** In-memory dedup: IP+novelId → timestamp. TTL 5min. Prevents click spam. */
 const clickDedup = new Map<string, number>();

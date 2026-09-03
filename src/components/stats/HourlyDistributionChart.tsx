@@ -142,8 +142,6 @@ export function HourlyDistributionChart() {
     );
   }
 
-  const maxCount = Math.max(...data.map((d) => d.count));
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}

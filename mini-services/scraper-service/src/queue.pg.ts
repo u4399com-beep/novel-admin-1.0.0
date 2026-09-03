@@ -53,9 +53,10 @@ async function getSql(): Promise<postgres.Sql> {
   await sql`CREATE INDEX IF NOT EXISTS idx_queue_status ON request_queue(status)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_queue_url ON request_queue(url)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_queue_task_id ON request_queue(task_id)`;
-  // Partial unique index: prevent duplicate active (pending/in_progress) entries per task+url
-  // Note: SQLite CREATE INDEX does not support WHERE; this is a PostgreSQL-style comment
-  // For SQLite, we handle dedup in application logic (addToQueue checks existing entries)
+  // Unique index on (task_id, url): one queue row per task+URL.
+  // The ON CONFLICT (task_id, url) arbiter in addToQueue/addManyToQueue must match this index.
+  // Note: SQLite version (queue.ts) uses a 3-column unique index (task_id, url, status) instead;
+  // dedup fallback SELECTs below skip failed rows in both versions.
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_task_url_active ON request_queue(task_id, url)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_queue_status_updated ON request_queue(status, updated_at)`;
 
@@ -85,7 +86,7 @@ export async function addToQueue(options: AddToQueueOptions): Promise<string> {
   const result = await db`
     INSERT INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
     VALUES (${id}, ${options.url}, ${options.method || "GET"}, ${options.payload ? JSON.stringify(options.payload) : null}, 0, ${options.maxRetries || 3}, 'pending', NOW(), NOW(), ${taskId}, ${options.metadata ? JSON.stringify(options.metadata) : null})
-    ON CONFLICT (task_id, url, status) WHERE status != 'failed' DO NOTHING
+    ON CONFLICT (task_id, url) DO NOTHING
     RETURNING id
   `;
 
@@ -113,7 +114,7 @@ export async function addManyToQueue(items: AddToQueueOptions[]): Promise<string
       const result = await sql`
         INSERT INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
         VALUES (${id}, ${item.url}, ${item.method || "GET"}, ${item.payload ? JSON.stringify(item.payload) : null}, 0, ${item.maxRetries || 3}, 'pending', NOW(), NOW(), ${taskId}, ${item.metadata ? JSON.stringify(item.metadata) : null})
-        ON CONFLICT (task_id, url, status) WHERE status != 'failed' DO NOTHING
+        ON CONFLICT (task_id, url) DO NOTHING
         RETURNING id
       `;
 

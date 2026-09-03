@@ -29,14 +29,15 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
     }
 
     // Build Prisma update data with allowed fields only
+    const updatesObj = updates as Record<string, unknown>;
     const data: Record<string, unknown> = {};
-    if (updates.title !== undefined) {
-      const title = sanitizeField(updates.title, 500);
+    if (updatesObj.title !== undefined) {
+      const title = sanitizeField(updatesObj.title, 500);
       if (!title) return apiError('标题不能为空', 400);
       data.title = title;
     }
-    if (updates.sortOrder !== undefined) {
-      const order = Math.floor(Number(updates.sortOrder));
+    if (updatesObj.sortOrder !== undefined) {
+      const order = Math.floor(Number(updatesObj.sortOrder));
       if (isNaN(order) || order < 0 || order > 100000) return apiError('sortOrder必须在0-100000之间', 400);
       data.sortOrder = order;
     }

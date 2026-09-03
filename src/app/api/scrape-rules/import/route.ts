@@ -1,14 +1,15 @@
 import { db } from '@/lib/db';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { safeJson, sanitizeField, safeJsonStringify, apiError, apiSuccess } from '@/lib/api-utils';
 import { parseScrapeParams, validateSavePath, validateUrlField, buildCloudBrowserConfig, validateCleanConfig } from '@/lib/scrape-rule-validation';
+import type { Prisma } from '@prisma/client';
 
 /**
  * POST /api/scrape-rules/import
  *
  * Accepts { rules: [...] } array of rule objects.
- * For each rule, upserts by name using Prisma upsert (atomic, avoids TOCTOU).
+ * For each rule, matches by name (create or update).
  * Returns per-rule results including errors/warnings.
  */
 export const POST = withAuth(async function POST(request: NextRequest) {
@@ -27,16 +28,6 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (body.rules.length > 50) {
       return apiError('单次最多导入50条规则', 400);
     }
-
-    // Pre-fetch existing rule names to detect create vs update reliably
-    // (createdAt === updatedAt is unreliable in SQLite due to 1-second datetime resolution)
-    const allNames = body.rules
-      .map(r => (typeof r.name === 'string' && r.name.trim() ? sanitizeField(r.name, 200) : ''))
-      .filter(Boolean);
-    const existingRules = allNames.length > 0
-      ? await db.scrapeRule.findMany({ where: { name: { in: allNames } }, select: { name: true } })
-      : [];
-    const existingNames = new Set(existingRules.map(r => r.name));
 
     const results: Array<{
       name: string;
@@ -78,7 +69,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       const listUrl = raw.listUrl ? sanitizeField(raw.listUrl, 2000) : null;
       const params = parseScrapeParams(raw as Record<string, unknown>);
 
-      const data = {
+      const data: Prisma.ScrapeRuleUncheckedCreateInput = {
         name,
         description: sanitizeField(raw.description, 2000) || null,
         enabled: typeof raw.enabled === 'boolean' ? raw.enabled : true,
@@ -116,7 +107,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         threadCount: params.threadCount,
         minDelay: params.minDelay,
         maxDelay: params.maxDelay,
-        enableShuffle: raw.enableShuffle ?? false,
+        enableShuffle: raw.enableShuffle === true,
         dedupMode: params.dedupMode,
 
         cleanConfig: (() => {
@@ -127,15 +118,14 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         cloudBrowserConfig: buildCloudBrowserConfig(raw.cloudBrowserUrl, raw.cloudBrowserProvider),
       };
 
-      // Use upsert to avoid TOCTOU race condition
+      // Match by name first: `name` has no unique constraint in the schema,
+      // so Prisma's `upsert` cannot be used with it as the where key.
       try {
-        const rule = await db.scrapeRule.upsert({
-          where: { name },
-          update: data,
-          create: data,
-        });
-        const isCreated = !existingNames.has(name);
-        if (isCreated) {
+        const existing = await db.scrapeRule.findFirst({ where: { name }, select: { id: true } });
+        const rule = existing
+          ? await db.scrapeRule.update({ where: { id: existing.id }, data })
+          : await db.scrapeRule.create({ data });
+        if (!existing) {
           created++;
           results.push({ id: rule.id, name, action: 'created' });
         } else {

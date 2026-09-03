@@ -24369,3 +24369,257 @@ Stage Summary:
 - DailyReadingGoal：CSS transition 进度环 + 目标达成庆祝动画 + 鼓励语
 - Hero Section：增强背景渐变动画
 - ESLint：0 错误 ✅
+
+---
+Task ID: 2
+Agent: Network-Session Bug Hunt Agent
+Task: 逐行深度审计18个网络/会话模块 (rate-limiter, adaptive-delay, session-manager, cookie-store, referrer-chain, http2-decoy, tls-fingerprint, request-fingerprint, doh-resolver, doh-simulation, ip-fingerprint, browser-behavior, captcha-detector, captcha-strategy, queue, queue.pg, proxy-conn-test, engine-config) — 共~5500行
+
+Work Log:
+- 通读 worklog.md 历史，确认此前已修复项（session-manager maxSessions强制执行/cleanup清理blocked、request-fingerprint lastIndexOf、adaptive-delay/browser-behavior/referrer-chain 无界Map加LRU、rate-limiter burst+域淘汰、cookie-store busy_timeout、queue.pg 事务化/requeueStaleInProgress等），避免重复报告
+- 逐行审计全部18个文件，重点：计时数学、竞态、内存泄漏、定时器泄漏、promise反模式、错误吞没、DNS/cookie TTL、token-bucket数学、除零/NaN、parseInt radix、AbortSignal处理
+- 用 bun 1.3.14 实测验证 bun:sqlite 行为：$1 位置绑定可用；Database 对象 **没有** .changes 属性；db.transaction() 返回包装函数必须显式调用
+- 运行时回归测试队列全部函数（addToQueue去重/addManyToQueue/markFailed重试/requeueFailed/cleanupQueue/getQueueStats）+ 冒烟测试 captcha-detector/rate-limiter/adaptive-delay/referrer-chain/browser-behavior/doh-simulation/session-manager
+
+## 发现并修复的 Bug
+
+### Bug 1 (CRITICAL): queue.ts addManyToQueue 事务从未执行
+- **位置**: queue.ts:112
+- **描述**: `d.transaction(() => {...})` 只创建事务包装函数但从未调用（bun:sqlite 与 better-sqlite3 语义一致，均需调用返回值）。批量插入整个函数体从不运行，静默返回空数组。task-engine.ts:582/965 每本书/每批章节的队列写入全部是 no-op，队列审计记录从未落库
+- **修复**: `const runBatch = d.transaction(...); runBatch();` — 实测修复前 0 条插入，修复后 3/3 条插入且去重正确
+
+### Bug 2 (CRITICAL): queue.pg.ts ON CONFLICT 仲裁器与唯一索引不匹配
+- **位置**: queue.pg.ts:88, 116（原）
+- **描述**: `ON CONFLICT (task_id, url, status) WHERE status != 'failed'` 要求存在 (task_id,url,status)+该谓词的偏唯一索引，但实际创建的是全量唯一索引 `idx_queue_task_url_active ON (task_id, url)`。PostgreSQL 推断失败 → 每次插入抛 42P10 "no unique or exclusion constraint matching the ON CONFLICT specification" → Docker/PG 生产模式下所有采集任务的队列写入全部报错
+- **修复**: 两处改为 `ON CONFLICT (task_id, url) DO NOTHING`（与现有索引精确匹配，兼容已部署库），并修正误导性注释
+
+### Bug 3 (HIGH): queue.ts 4处读取不存在的 db.changes 属性
+- **位置**: queue.ts:88(addToQueue), 124(addManyToQueue), 215(requeueFailed), 227(cleanupQueue)（原行号）
+- **描述**: bun:sqlite 的 Database 对象无 `.changes`（实测 undefined）。`d.changes > 0` 恒 false → addToQueue/addManyToQueue 每次插入后多跑一次冗余 SELECT；**requeueFailed/cleanupQueue 返回 undefined**（签名声称 number），/queue/requeue 与 /queue/cleanup 端点返回 `{"requeued":undefined}`/`{"cleaned":undefined}`（JSON 序列化后字段丢失）
+- **修复**: 全部改用 `stmt.run(...)` 返回值的 `.changes`
+
+### Bug 4 (LOW): proxy-conn-test.ts maxConcurrent<=0 死循环
+- **位置**: proxy-conn-test.ts:237（原）
+- **描述**: `for (i += maxConcurrent)` 当调用方传 0 或负数时 `slice(i, i+0)` 为空、i 永不前进 → 无限循环挂死
+- **修复**: `const concurrency = Math.max(1, maxConcurrent)`
+
+### Bug 5 (LOW): doh-resolver.ts 缓存 TTL 起点偏早
+- **位置**: doh-resolver.ts:221-226（原）
+- **描述**: `expiresAt: now + ttlMs` 的 `now` 是查询前采集的时间戳；3个 provider 串行最多 ~15s，实际缓存有效期被缩短，且 `cachedAt` 偏早影响 oldest 驱逐排序
+- **修复**: 改用解析完成时刻 `Date.now()` 作为 expiresAt/cachedAt 基准
+
+### Bug 6 (LOW): captcha-detector.ts 正则无用转义
+- **位置**: captcha-detector.ts:96
+- **描述**: `/cf\-turnstile/i` 中 `\-` 在字符类外是无用转义（语义等价于 `-`）
+- **修复**: 改为 `/cf-turnstile/i`（行为不变，ESLint no-useless-escape 干净）
+
+## 审计通过（无 Bug）的文件与要点
+- **rate-limiter.ts**: 滑窗/惩罚/恢复数学正确（测试：30RPM+burst5 恰好放行10个请求符合设计）；域淘汰正确；`MAX_TIMESTAMPS_PER_DOMAIN` 为死常量（无害）
+- **adaptive-delay.ts**: 指数退避+反爬backoffLevel+慢响应惩罚计算正确、cap 60s生效（实测2781→60000ms）；LRU正确；human-like 延迟/阅读时间数学正确
+- **session-manager.ts**: 会话选择(最少使用)/阻塞/逐出/清理(30min unref interval)逻辑正确；cookie 合并去重正确；cleanup 迭代中删除安全（实测会话复用/阻塞跳过/请求头构建通过）
+- **cookie-store.ts**: upsert 事务正确调用（tx()模式）；expires 单位秒与 cookie-jar 一致（Max-Age/Expires 解析在 cookie-jar.ts，优先级正确且非本批文件）；WAL+busy_timeout 已配置
+- **referrer-chain.ts**: LRU/自我引用排除/逐出正确（实测通过）
+- **http2-decoy.ts**: 域缓存有界(200)+TTL刷新路径正确；domainHash 非负保证 pool[h % len] 安全；H2 SETTINGS/PRIORITY/WINDOW_UPDATE 数值符合 RFC/Chrome 真实值；generateWindowUpdateFrame 抖动 ±1000 正确
+- **tls-fingerprint.ts**: 域→变体确定性选择正确；缓存有界(500)；JA3 参考数据与 cipher 列表一致
+- **request-fingerprint.ts**: create/complete/discard 三索引一致性正确；cleanup 迭代删除安全；定时器已 unref；applyTimingJitter 负抖动不等待正确；padPostBody 对 urlencoded/JSON/其他类型处理安全
+- **doh-resolver.ts**(除Bug5外): AbortController+clearTimeout 成对；Status!==0 回退链正确；TTL Math.max(ttl,60) 正确；缓存有界(500)
+- **doh-simulation.ts**: xffCache 5min 亲和（实测同域同IP）；resolveDomain 经 xffCache 吸收后调用频率受限，DoH 不可达时后台重试频率可接受（每域每5分钟3次 fetch），不构成问题；两个缓存均有界
+- **ip-fingerprint.ts**: 头像缓存有界(200)+TTL；随机选择一致性问题无
+- **browser-behavior.ts**: 节流窗口/人类暂停/鼠标轨迹贝塞尔数学正确（实测路径端点精确）；evict 正确
+- **captcha-detector.ts**(除Bug6外): 全部正则非全局无 lastIndex 陷阱；多模式+置信度阈值设计合理（实测 CF 403 检出 0.85、正常内容不误报）
+- **captcha-strategy.ts**: 策略链顺序正确；DelayBackoff 指数封顶 120s（Infinity 被 Math.min 正确截断）；异常时 continue 到下一策略正确
+- **engine-config.ts**: LRU/TTL/配置文件 mtime 缓存/链校验/偏好重排/CAPTCHA升级/低内容提示全部正确
+- **queue.pg.ts**(除Bug2外): begin() 回调式事务用法正确（与 SQLite 版不同，无需手动调用）；FOR UPDATE SKIP LOCKED 语法正确；requeueStaleInProgress/shutdown/isUrlProcessed 正确
+- **proxy-conn-test.ts**(除Bug4外): AbortSignal.timeout 正确；SOCKS agent finally destroy 正确；parseInt 带radix
+
+## 验证结果
+- bunx tsc --noEmit 过滤18文件: 0 错误 ✅（唯一 grep 命中的 ScrapeRuleEditor.tsx:163 captchaStrategy 缺字段为前端预存错误，不在本任务文件清单内，留给前端侧修复）
+- bun run lint: 0 错误（10 个预存警告均在前端文件）✅
+- 18文件单独 eslint: 0 错误 0 警告 ✅
+- 队列运行时回归测试: 全部通过（修复前 addManyToQueue 0 条插入 → 修复后 3/3；requeueFailed 返回 1 而非 undefined）✅
+
+Stage Summary:
+- 审计 18 个文件（~5500行），发现 6 个 Bug 并全部修复：2 CRITICAL（SQLite 事务未执行致批量入队 no-op；PG ON CONFLICT 仲裁器不匹配致插入必抛 42P10）、1 HIGH（bun:sqlite 无 db.changes 致 requeue/cleanup 端点返回 undefined）、3 LOW（maxConcurrent<=0 死循环、DoH TTL 起点偏早、正则无用转义）
+- 修改文件: queue.ts, queue.pg.ts, doh-resolver.ts, proxy-conn-test.ts, captcha-detector.ts
+- 其余 13 个文件审计通过，未做修改（保留现有代码风格与公共 API）
+- 遗留备注（非本批文件，不修改）: ① queue.ts markFailed 重试分支在"同一 (task_id,url) 同时存在 pending+in_progress 行"的理论场景下可能触发 UNIQUE 约束异常——当前无任何调用方，风险极低；② 前端 ScrapeRuleEditor.tsx:163 存在预存 TS2345 错误（缺 captchaStrategy/enableCaptchaRetry/maxCaptchaRetries 字段），属前端任务范围
+
+---
+Task ID: 3
+Agent: Volume-Sort Agent
+Task: 乱序重排注意分卷 — volume-aware natural-order chapter re-sorting fix
+
+Work Log:
+- Read worklog.md (last 150 lines) to understand prior "volume sort" implementation (Task 3a-4-5)
+- Located ALL chapter sorting/reordering paths:
+  - mini-services/scraper-service/src/task-engine.ts `resortChapters` (only intelligent sorting path; called after failed-chapter recovery at line ~1308)
+  - src/app/api/novels/[id]/chapters/route.ts PATCH reorder (applies client-provided orders only)
+  - src/app/api/chapters/reorder/route.ts PATCH (applies client-provided orders only, max 500)
+  - src/hooks/useNovelChapters.ts (frontend drag-and-drop via arrayMove — explicit orders only)
+  - scrapers.ts handleScrapeChapters (assigns TOC order / optional enableShuffle)
+  - Conclusion: Next.js APIs intentionally apply given order; sorting intelligence lives in task-engine.ts resortChapters
+- Audited prior VOLUME_RE implementation, found 4 gaps:
+  1. Regex only matched Chinese numerals — Arabic volume numbers ("第2卷", "第10卷") got NO volume grouping at all
+  2. Volume groups emitted in first-seen order — scrambled input kept volumes scrambled; no natural numeric ordering (第10卷 vs 第2卷 lexicographic trap never even reached)
+  3. Chapters within a volume kept original (possibly out-of-order) sequence — chapter numbers (Chinese 一百零三 or Arabic 103) never parsed/sorted
+  4. Volume mode engaged on a single stray prefixed title, which could drag unrelated chapters around during plain gap-fixes
+- Rewrote sorting core in task-engine.ts as pure exported function `sortChaptersVolumeAware` (unit-testable, no I/O); `resortChapters` now delegates to it
+- Added helpers: `parseVolumeSortKey` (volume number via reused utils.ts `parseChineseNumeral` — Chinese numerals AND Arabic AND full-width digits; 上/中/下 ranked 0/1/2), `parseChapterSortNumber` (第X章/节/回/话 numbers, bare Arabic "12." prefixes, full-width digits), `normalizeFullWidthDigits`, `isChapterOrderAscending`
+- Extended VOLUME_RE with 0-9/０-９/两/兩 and multi-char 卷X forms
+- Volume mode engagement now requires ≥2 distinct volumes OR all-prefixed list (single stray prefix → keep original order, logged)
+- Titles are never modified or stripped — only sortOrder is renumbered via existing PATCH reorder endpoint (volume names preserved as data)
+- BLOCKER FOUND + FIXED: scraper-service/src/t2s-converter.ts was missing (deleted in cleanup commit 4f9ab40) while scrapers.ts still imports `convertIfTraditional` → scraper-service crashed at startup. Restored the module (copy of maintained src/lib/t2s-converter.ts + legacy `convertIfTraditional` wrapper matching scrapers.ts API); verified 繁→简 conversion works
+- Wrote throwaway verification (20 assertions incl. user's sample [第2卷 第3章, 第10卷 第1章, 第2卷 第10章, 第一卷 第一卷章节]) importing the REAL production functions — ALL PASSED; script deleted afterwards
+- Verification: root `bunx tsc --noEmit` 210 errors = identical to baseline (0 in mini-services); ad-hoc tsc on task-engine.ts shows same 19 pre-existing errors as before change (line-shift only); `bun run lint` 0 errors; eslint on both changed files clean; `bun index.ts` now boots (engines initialized; only fails on port 3099 already in use by running instance)
+
+Stage Summary:
+- task-engine.ts: resortChapters now volume-aware with NATURAL numeric volume ordering (第一卷 < 第二卷 < 第十卷 < 第十一卷), within-volume chapter-number sorting (Chinese numerals + Arabic + full-width digits), non-invasive gap-fix (already-ascending volumes untouched), volume headers sort first, titles never corrupted
+- VOLUME_RE fixed to match Arabic/full-width volume numbers (第2卷/第１０卷) that previously lost grouping entirely
+- Restored missing t2s-converter.ts — scraper-service was unbootable since cleanup commit 4f9ab40 (pre-existing bug, out-of-scope but blocking)
+- Files changed: mini-services/scraper-service/src/task-engine.ts (modified), mini-services/scraper-service/src/t2s-converter.ts (restored)
+- NOTE: running scraper-service instance must be restarted to pick up the fixes
+
+---
+Task ID: 1
+Agent: Text-Processing Bug Hunt Agent
+Task: 逐行深度审计 scraper-service 8 个文本处理文件（cleaning/utils/selectors/js-content-extractor/charset-detector/regex-safety/quality-scorer/cheerio-cache，共 ~5000 行）并修复所有真实 Bug
+
+Work Log:
+- 通读 worklog.md，确认此前已修复：ReDoS 安全包装（regex-safety/cleaning/selectors）、task-engine AbortSignal 泄漏、scrapers.ts 选择器注入等，避免重复报告
+- 逐行审计全部 8 个文件（regex-safety 66 行、cheerio-cache 46 行、charset-detector 357 行、quality-scorer 604 行、selectors 741 行、js-content-extractor 883 行、cleaning 983 行、utils 1329 行）
+- 对每个候选问题做行为验证（bun 运行时测试）后再修复，避免误报
+- 修复 7 处 Bug（4 文件），其余 4 文件（regex-safety/cheerio-cache/charset-detector/selectors）审计通过无需修改
+- 验证：tsc --noEmit 对 8 个审计文件 0 错误（全项目另有 210 个错误均在 src/lib/t2s-converter.ts 等 mini-services 之外文件，系其他并行 Agent 的改动范围）；eslint 对 8 个文件 0 错误 0 警告
+- 补充行为测试全部通过：中文数字 15 组用例、followRedirects 304/302/循环用例、swapLazyLoadedContent 9 组用例（含 1MB HTML 性能从 O(n²) 降至 2ms）、内容时效评分 5 组用例
+
+## 发现并修复的 Bug
+
+### Bug 1 (HIGH): quality-scorer.ts:512 — 内容时效评分对未来日期无上限钳制
+- **描述**: checkContentFreshness 对 `ageDays <= 30` 分支计算 `8 + round((1 - ageDays/30)*2)`，当内容含未来日期（如广告文本"2030年5月新站"、预发布章节）时 ageDays 为大负数，单维得分可达 100+，overallScore 轻松超过 100 导致质量报告完全失真（必然 A 级）
+- **修复**: 评分链末尾增加 `score = Math.max(0, Math.min(10, score))` 钳制到维度满分内；实测"2030年5月"用例从 112 分钳制为 10 分，正常历史日期得分不受影响
+
+### Bug 2 (MEDIUM): js-content-extractor.ts:572-606 — swapLazyLoadedContent 三重缺陷
+- **描述**: (a) 正则用 `[\s\S]*?` 跨标签匹配，HTML 无 data-src 时对每个 `<div` 起点扫到文末，复杂度 O(n²)（1MB HTML 实测达分钟级）；(b) 跨标签还导致 src 探测误用上一个元素的 src 抑制本元素交换；(c) src 探测正则 `/src\s*=/` 会匹配 "data-src=" 自身，导致最常见场景（仅有 data-src 无 src 的元素）从不交换（实测 `<img data-src="x.jpg">` 原样返回）；(d) 占位 src 在前的元素交换后产生重复 src 属性，而 htmlparser2 取第一个属性，交换实际无效
+- **修复**: 正则改为 `[^>]*?` 限定单标签内匹配；src 探测加 `(?:^|\s)` 前置边界；对已有空/占位 src 改为原位覆写其值而非追加第二个 src。9 组用例全通过，1MB 无属性 HTML 从 O(n²) 降至 2ms
+
+### Bug 3 (MEDIUM): utils.ts:1134-1181 — parseChineseNumeral 万/亿混合累加错误
+- **描述**: `result = (result + current) * 10000` 在已含前一个主单位（亿或万）的 result 上再次整体乘 1e4："一亿二千万" 算出 1,000,020,000,000（正确 120,000,000）、"一万二千万" 算出 120,000,000（正确 20,010,000）
+- **修复**: 改为分组累加模型（result=已完成主单位组 / group=当前万组内十百千 / current=待挂接数字），万封存当前组、亿吞并全部累积。15 组用例（一百零三/十二万三千四百/一亿二千万/两千万/一万二千万等）全部通过，同时删除从未被读取的 prevUnit 死变量
+
+### Bug 4 (MEDIUM): utils.ts:1271-1331 — followRedirects 把 304/300 等非重定向 3xx 当重定向处理
+- **描述**: 判断条件为整个 `300-399` 区间。304 Not Modified（条件请求正常响应、无 Location）会落入"break 后按超限抛 Maximum redirects exceeded"分支，把正常 304 误报为重定向超限错误
+- **修复**: 新增 `REDIRECT_STATUSES = new Set([301,302,303,307,308])`（与 fetch 规范一致），循内跟随判断与末尾超限抛错均改用该集合；实测 304 正常返回、302 链正常跟随、循环检测仍生效
+
+### Bug 5 (LOW): utils.ts:1092-1097 — mapNovelStatus 把"未完结/未完待续"误判为 completed
+- **描述**: `lower.includes("完")` 未排除否定前缀，"未完结"（未完成）被分类为 completed
+- **修复**: 改为 `(includes("完") && !includes("未完"))`；已完结/完结/连载中/暂停用例行为验证通过
+
+### Bug 6 (LOW): utils.ts:726-737 — getChromeClientHints 版本池精确匹配永不命中
+- **描述**: `versions.every(v => v === chromeMajor)` 把 grease 品牌（恒为 v="99"）也纳入比较，导致 99 ≠ 任意真实主版本，hintPool 精确匹配分支为死代码，永远走动态拼接回退（行为侥幸正确但逻辑失效）
+- **修复**: 比较前 `filter(v => v !== 99)` 排除 grease 品牌，保留 length >= 2 约束
+
+### Bug 7 (LOW): cleaning.ts:546-604 — deduplicateParagraphs 续段合并可能弹出错误条目
+- **描述**: 续段合并分支 `result.pop()` 假定结果栈尾即 lastNormalized 对应行，但两行之间若插有空白行（空行会 push 进 result 而 lastNormalized 不变），pop 弹出的是空行，合并落到错误位置且丢失段落分隔
+- **修复**: 新增 `tailMatchesLast` 标志：push 非空行时置 true、push 空行时置 false，合并分支要求该标志为 true 才执行 pop 合并
+
+## 审计结论（无 Bug 的文件）
+- regex-safety.ts (66 行) ✅ 危险模式启发式对短模式串无回溯风险；safeRegexMatch/Replace 的 try-catch 与截断正确
+- cheerio-cache.ts (46 行) ✅ LRU delete+set 正确、Bun.hash 64 位键、容量有界
+- charset-detector.ts (357 行) ✅ BOM 顺序正确（UTF-32 先于 UTF-16 防 FF FE 00 00 误判）、GBK/Big5 判别启发式自洽、TextDecoder 异常回退 UTF-8 正确
+- selectors.ts (741 行) ✅ 回退链/排除标签/链接去重/JSON-LD 合并逻辑正确；无效选择器抛错为既有设计（由上游任务级 catch 兜底）
+
+Stage Summary:
+- 审计 8 文件 ~5000 行，修复 7 处真实 Bug（1 HIGH / 3 MEDIUM / 3 LOW），涉及 quality-scorer.ts、js-content-extractor.ts、utils.ts、cleaning.ts
+- 最重要修复：质量评分未来日期爆炸（HIGH）与 swapLazyLoadedContent 从"基本不工作+O(n²)"修复为"全部场景正确+线性"（MEDIUM）
+- 所有修复均为最小外科式改动，未改变任何公开 API；每处修复附带运行时行为验证
+- TypeScript 编译与 ESLint 对 8 个审计文件均 0 错误；全项目现存 210 个 TS 错误均在 mini-services 之外的文件（src/lib/t2s-converter.ts 等，属其他并行 Agent 范围）
+
+---
+Task ID: 4
+Agent: Fingerprint Runtime Test Agent
+Task: Execute runFingerprintTest against a real browser (obscura engine) for the first time and fix all stealth failures
+
+Work Log:
+- Read worklog.md tail + fingerprint-test.ts (743 lines) + searched wiring: runFingerprintTest has NO HTTP endpoint (index.ts only exposes /fingerprint-health|recent|stats for session fingerprints); scraper-service was not running (port 3099/3030 both closed; only log-stream on 3004)
+- Wrote throwaway bun runner (run-fp-test.ts, deleted after) calling runFingerprintTest('obscura') directly; test navigates to about:blank (no internet needed)
+- Playwright 1.61.1 required chromium-headless-shell-1228 which was missing from ~/.cache/ms-playwright → installed via `bunx playwright install chromium` (this also unblocks the real ObscuraEngine, which launches the same way)
+- First run FATALed: "SyntaxError: Unexpected token '.'" from the eval'd detection script. Root cause: fingerprint-test.ts template literal consumed regex escapes — source `/Chrome\//` emitted `/Chrome//`. Fixed to `/Chrome\\//`; also re-escaped the WebRTC private-IP regex `\.` → `\\.` (assertion strength restored)
+- Added init-script console/pageerror capture debug script: discovered the ENTIRE 182KB stealth.ts injected script was dead since its last edits — node --check on the dumped script exposed 10 syntax/escape bugs:
+  1. `/Chrome\/(\d+)/` ×4 (UA parse + WebGPU Sec116 / Scheduler Sec117 / WakeLock Sec118) — template escaping ate `\d` and `\/` → emitted `/Chrome/(d+)/` (SyntaxError). This means Tasks that added sections 116-118 unknowingly DISABLED ALL stealth
+  2. `/Chrome\/([\d.]+)/` same bug (silent wrong-regex)
+  3. rgba() color-parse regex `\s \d \(` escapes eaten → broken canvas color perturbation
+  4. Android model regex missing closing group paren
+  5. Two TypeScript `as any` assertions leaked inside injected JS (DOMRect section)
+  6. COOP/COEP fake-header strings: `\r\n` emitted as literal CR/LF inside single-quoted JS string → unterminated string
+- Fixed all 10 (double-escaped backslashes in template, closed group, removed `as any`, `\\r\\n`) → node --check SYNTAX OK → stealth now actually injects: UA no longer HeadlessChrome, window.chrome.runtime present, SwiftShader masked
+- Baseline score after stealth revival: 86/100 (5 failing checks). Traced and fixed each in stealth.ts:
+  - plugins 3≠5 + mimeTypes 5<10 → Section 23 modernized to real Chrome 131 set: 5 PDF plugins (PDF Viewer/Chrome PDF Viewer/Chromium PDF Viewer/Microsoft Edge PDF Viewer/WebKit built-in PDF, internal-pdf-viewer, length 2) × 2 mimes (application/pdf + text/pdf) = mimeTypes 10
+  - canvas toDataURL "Illegal invocation" → 2D context Proxy had no `set` trap (fillStyle/font sets threw with proxy receiver) and get-fallthrough returned native methods unbound (fillRect/getImageData threw) → added set trap forwarding to real ctx + cached bound-method wrappers in get fallthrough
+  - toDataURL consistency risk → per-canvas WeakMap proxy cache: repeated getContext('2d') now returns the same proxy so the per-canvas noise seed stays stable (same canvas → identical output; different canvases → different)
+  - performance.timing.navigationStart vs timeOrigin diff 2108ms → Section 25 now shifts performance.timeOrigin by the same _perfOffset so navigationStart === timeOrigin (real-browser invariant) while navigationStart + performance.now() ≈ Date.now() still holds
+  - navigator.mediaDevices "API not available" (headless-shell strips it) → Section 28 now creates a minimal EventTarget-shaped mediaDevices (getSupportedConstraints + stubs) and applies the seeded enumerateDevices fake (3 devices: audioinput/videoinput/audiooutput), guarded MediaDeviceInfo
+  - Bonus: fixed sign-convention bug in the stealth's own timezone consistency self-check that logged a false "[Obscura] Fingerprint consistency warnings" on every page load
+- Re-ran test 3× : obscura = 100/100 (42/42 checks) stable; playwright raw engine = 78/100 (expected — HeadlessChrome UA, 0 plugins, SwiftShader, no window.chrome) proving the test discriminates and assertions were not weakened
+- Validation: node --check on dumped stealth script OK; tsc on stealth.ts/fingerprint-test.ts shows only the pre-existing downlevelIteration TS2802 class (same errors on untouched files); ESLint 0 errors (2 pre-existing unused-directive warnings); service boot smoke test on port 3099: /health OK + graceful SIGTERM shutdown
+- Deleted all throwaway scripts (run-fp-test.ts, debug-fp.ts, dump-stealth.ts, bisect-fp.ts, debug-canvas.ts, fix-escapes.ts)
+
+Stage Summary:
+- Fingerprint test executed against a real Chromium for the first time (pending for 3 sessions)
+- obscura engine: 86/100 → 100/100 (42/42 checks, 3 consecutive stable runs); playwright raw baseline 78/100 for contrast
+- Root finding #1: the whole 182KB stealth init script had been dead (SyntaxError from template-literal escape bugs introduced with sections 116-118) — every obscura scrape since then ran with a fully exposed HeadlessChrome fingerprint; now revived
+- Root finding #2: the fingerprint test itself could never execute (its own detection-script template had the same class of escape bug) — repaired without touching assertions
+- stealth.ts fixes: 10 syntax/escape repairs, plugin/mimeType set modernized to Chrome 131 reality, canvas 2D proxy get/set traps + per-canvas proxy cache (Illegal invocation + toDataURL consistency), performance.timeOrigin alignment, navigator.mediaDevices creation, timezone self-check sign fix
+- Remaining accepted limitations: test runs on about:blank (no external fingerprint site); timezone self-check only valid when container TZ=UTC; plugins/mimeTypes spoof targeted at Chrome-family UAs (Firefox UAs correctly keep 0 plugins by design)
+
+---
+Task ID: 5
+Agent: Production Readiness Agent
+Task: Fix all remaining TS errors in Next.js app to reach 0 (`bunx tsc --noEmit`), then conservative dead-code sweep
+Work Log:
+- Baseline discrepancy: task brief said ~210 errors incl. ~71 in src/lib/t2s-converter.ts, but parallel agents had already fixed the bulk — session start showed exactly 12 errors and 0 in t2s-converter.ts; fixed the remaining 12 instead
+- batch-create/route.ts (3 errors, file off-limits per scope): root cause was safeJson's default generic `Record<string, unknown>` contradicting its own doc comment ("Default to Record<string, any> for convenience in API routes that perform their own runtime validation"); restored `T = Record<string, any>` in src/lib/api-utils.ts — type-only change, fixes `.includes(mode)` / `taskMode` / `mode: taskMode` errors without touching the protected route
+- scripts/create-scrape-rules.ts: upsertRule param typed `typeof rule5165` rejected rule23ip on 3 fields (listPagination/contentPagination/bookCategorySelector null-vs-string); added `null as string | null` widening for listPagination + widened param to `typeof rule5165 | typeof rule23ip`
+- ReadingRadarChart.tsx: REAL runtime bug found — recharts `Radar` (data series) was never imported, so JSX `<Radar dataKey="value" .../>` resolved to the lucide Radar icon and the radar polygon never rendered; imported Radar from recharts, aliased lucide one to RadarIcon (2 usages)
+- useNovelChapters.ts + ChapterTable.tsx: removed invalid `as SensorDescriptor<PointerSensor | KeyboardSensor>[]` cast; aligned interface/prop types to the natural `SensorDescriptor<SensorOptions>[]` (same type DndContext expects); dropped now-unused KeyboardSensor type imports
+- prebuilt-themes.ts(166): widened ThemeLayout.gridColumns type `3 | 4` → `1 | 2 | 3 | 4` in src/types/index.ts (101看書風 theme intentionally uses 1 column; no runtime data changed)
+- safe-resolver.ts: added missing `import type { FieldValues } from "react-hook-form"`
+- GuichuidengLayout.tsx: locally widened `window.external as External & { addFavorite?: ... }` (legacy IE API absent from lib.dom)
+- TemplateLibrary.tsx: annotated cardVariants with framer-motion `Variants` (ease string-literal widening fix)
+- QuickStatsPanel.tsx: `dashData.topDomains!` non-null assertion → `dashData?.topDomains?.length ? dashData.topDomains : []`
+- Dead-code sweep (evidence: eslint `@typescript-eslint/no-unused-vars` run over src+scripts, then targeted edits): removed 20 unused imports across 18 files; removed provably-dead locals — cleanupTaskState (useTaskLogStream, placeholder body), loadGcSettings + settingsOpen/setSettingsOpen state (GuichuidengReader; saveGcSettings/GC_* consts kept, still used), escapeCssString + AD_CSS_SELECTORS (clean-preview route), targetNovelId (chapters/reorder), chapterMap (recently-updated), cooldownCount (RateLimiterPanel), active (SessionManagerPanel), maxCount (HourlyDistributionChart), yUnit (ReadingTrendChart), DAY_LABEL_W_SM/XS (ReadingHeatmap), prefixes + unused `const novel =` binding on db.novel.create (scripts/seed-demo-data.ts), dead `const data =` binding on retry POST (ScrapeTaskMonitor)
+- Deliberately skipped (conservative): all `_`-prefixed intentionally-unused params, unused catch bindings, ringKey/setRingKey (setState re-render side effects), delayDomains dead store (would orphan a live fetch with side effects), onSelectAll prop plumbing, actionTypes (used as type)
+- Verify loop: bunx tsc --noEmit → 0 errors; bun run lint → 0 errors (same 8 pre-existing warnings as baseline, none new); dev server curls 200 on /, /stats, /rankings, /admin/settings, /categories (renders the edited ReadingRadarChart/ThemeManagerView trees); dev.log shows no new module errors
+Stage Summary:
+- TS errors: 12 → 0 (t2s-converter.ts already at 0 on arrival; brief's 210 figure predated parallel agents' fixes)
+- Files touched: 42 (9 type-fix files incl. 2 indirect fixes honoring the protected-file constraints, 33 dead-code/import files); no DB schema, API contract, export-rename, or runtime-behavior changes — one latent UI bug fixed as a bonus (recharts Radar series now actually renders on /stats)
+- Protected files untouched: src/app/api/scrape-tasks/batch-create/route.ts (its 3 errors fixed via api-utils typing), src/app/api/admin/scraper/proxy-seed/route.ts, mini-services/**
+- Left as-is: 8 pre-existing lint warnings (React-compiler "incompatible library" ×4, unused eslint-disable directives ×4 incl. mini-services), `_`-prefixed params, catch bindings — all cosmetic
+
+---
+Task ID: 6
+Agent: Runtime Verification Agent (main session, Task-tool infra timed out so executed directly)
+Task: Restart scraper-service; verify proxy rotation chain; run aijjxs full-category batch task and observe queue stability
+
+Work Log:
+- Restarted scraper-service (port 3099) twice during session to pick up Tasks 1-4 fixes; all 8 engines live, /health OK
+- Proxy rotation chain verified end-to-end with local rig (target :4040 + 3 forward proxies :4041-4043, served-by markers):
+  * 25 scrapes rotated across ALPHA/BRAVO/CHARLIE with lastUsedUrl-avoidance alternating pattern; rotation index advanced per rotationInterval
+  * Failmode (503) on CHARLIE: 6 consecutive fails → healthScore 100→9 → auto-disabled; pool degraded to 2 active proxies; all scrapes still returned 200 (fallback works)
+  * /proxy/reset restored CHARLIE to active (recovery works); test proxies removed afterward
+- Launched real aijjxs.com full-category batch (15 categories) via POST /api/scrape-tasks/batch-create exactly as the admin UI does; monitored every 10s (task statuses, progress, book counters, queue stats)
+- Observed: concurrency limit (3) respected; 13/15 tasks completed with ~148 books, only 3 failedItems; BUT 2 tasks orphaned in "running" with frozen heartbeats → root-caused:
+  * Bug A (HIGH): detectStuckTasks() checked Array.isArray(data) but GET /api/scrape-tasks?status=running returns {tasks:[...]} → watchdog was a silent no-op FOREVER. Fixed: unwrap data.tasks
+  * Bug B (HIGH): terminal status PUTs were fire-and-forget; TimeoutError DOMException (AbortSignal.timeout 30s) on the final status:completed PUT orphaned tasks as "running". Fixed: terminal-state updates now retry 4× with backoff
+  * Watchdog verified live: after fix it detected and marked both orphans failed (任务超时: 心跳超时)
+- Bug C (HIGH, mojibake): charset-detector's looksLikeGBK accepts UTF-8 CJK sequences as "GBK pairs" (trail 0x80-0xBF ⊂ 0x80-0xFE) → EVERY Chinese UTF-8 page force-corrected to GBK → 145 novels stored with mojibake titles. Fixed: added Step 3.5 strict UTF-8 validation (TextDecoder fatal:true) which is authoritative when it passes; real GBK never passes it. Verified: UTF-8+declared-utf8 → exact; real GBK bytes → exact; live /scrape/book now returns 我的职业太有个性/团又圆/已完结
+- Bug D (MEDIUM): /scrape/list /scrape/book /scrape/chapters /scrape/content crash (500) when selectors omitted/partial — added runtime defaults + 400 validation for missing selector
+- Bug E (MEDIUM): request_queue book-ledger rows are write-only (markCompleted has zero callers) → stale pending rows accumulate forever, skewing /queue/stats. Fixed: clearTaskQueue(taskId) in executeTask finally; purged 190 legacy rows
+- Bug F (MEDIUM): POST /api/novels dropped sourceUrl/sourceId (PUT had them) → all scraped novels had no provenance. Fixed: added validated sourceUrl/sourceId to POST; re-verified end-to-end (2-category batch): tasks completed 100%, titles clean Chinese, sourceUrl+sourceId persisted
+- Data cleanup: deleted 145 mojibake test novels created today by pre-fix runs (65 legit 101kks novels preserved); purged 190 stale queue rows
+- lint: 0 errors (4 pre-existing warnings); tsc: 0 errors project-wide
+
+Stage Summary:
+- Proxy rotation chain VERIFIED (rotation + health penalty + fallback + recovery)
+- aijjxs full-category batch run completed: 15 tasks, ~148 books, 3 failedItems; queue stable after fixes; concurrency cap respected
+- 6 new bugs fixed (A watchdog no-op, B terminal-status retry, C charset mojibake, D selectors 500s, E queue ledger leak, F sourceId drop)
+- Final re-verification batch: 2/2 tasks completed 100%, clean Chinese titles, provenance fields persisted

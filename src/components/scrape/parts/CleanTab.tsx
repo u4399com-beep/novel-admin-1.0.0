@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
-import { Info, Shield, Eraser, Sparkles, Eye, Loader2, CheckCircle2, XCircle, Copy } from 'lucide-react';
+import { Info, Shield, Eraser, Sparkles, Eye, Loader2, Copy } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { toast } from 'sonner';
 import type { EditorFormAccess } from './types';

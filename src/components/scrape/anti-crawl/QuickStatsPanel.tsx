@@ -268,7 +268,7 @@ export function QuickStatsPanel() {
   const rtColor = responseTimeColor(avgRT);
   const activeThreats = unresolved;
   const hasRealDomainData = (dashData?.topDomains?.length ?? 0) > 0;
-  const domains = hasRealDomainData ? dashData.topDomains! : [];
+  const domains = dashData?.topDomains?.length ? dashData.topDomains : [];
 
   const content = error && !dashData ? (
     <Card className="glass-card">

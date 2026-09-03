@@ -216,13 +216,16 @@ export async function resolveDoH(
   for (const provider of DOH_PROVIDERS) {
     const result = await queryProvider(domain, type, provider, perProviderTimeout);
     if (result && result.ips.length > 0) {
-      // Cache the result with TTL
+      // Cache the result with TTL.
+      // Use the completion time (not the pre-query `now`) so the TTL is not
+      // shortened by the duration of the provider queries (up to ~15s).
       evictOldest();
+      const completedAt = Date.now();
       const ttlMs = Math.max(result.ttl, 60) * 1000; // minimum 60s TTL
       dohCache.set(key, {
         ips: result.ips,
-        expiresAt: now + ttlMs,
-        cachedAt: now,
+        expiresAt: completedAt + ttlMs,
+        cachedAt: completedAt,
         ttl: result.ttl,
       });
 

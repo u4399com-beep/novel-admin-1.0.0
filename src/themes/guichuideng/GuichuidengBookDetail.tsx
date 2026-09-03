@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { FileText, BookOpen, Download, List } from 'lucide-react';
+import { BookOpen, Download, List } from 'lucide-react';
 import { NovelCover } from '@/components/shared/NovelCover';
 import { formatWordCount } from '@/components/home/shared-types';
 import type { Novel, Chapter } from '@/app/novels/[id]/reader/types';

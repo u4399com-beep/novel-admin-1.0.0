@@ -83,9 +83,10 @@ export function addToQueue(options: AddToQueueOptions): string {
       INSERT OR IGNORE INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
       VALUES ($1, $2, $3, $4, 0, $5, 'pending', datetime('now'), datetime('now'), $6, $7)
     `);
-    insert.run(id, options.url, options.method || "GET", options.payload ? JSON.stringify(options.payload) : null, options.maxRetries || 3, taskId, options.metadata ? JSON.stringify(options.metadata) : null);
+    const result = insert.run(id, options.url, options.method || "GET", options.payload ? JSON.stringify(options.payload) : null, options.maxRetries || 3, taskId, options.metadata ? JSON.stringify(options.metadata) : null);
 
-    if (d.changes > 0) return id;
+    // Note: read .changes from the run() result — bun:sqlite's Database object has no .changes property
+    if (result.changes > 0) return id;
   } catch (err) {
     // Only ignore SQLITE_CONSTRAINT (unique violation / deduplication)
     const msg = err instanceof Error ? err.message : '';
@@ -108,7 +109,9 @@ export function addManyToQueue(items: AddToQueueOptions[]): string[] {
   const d = getDb();
   const ids: string[] = [];
 
-  d.transaction(() => {
+  // bun:sqlite's db.transaction() returns a wrapped function that must be invoked
+  // (previously the transaction body was created but never executed — nothing was inserted)
+  const runBatch = d.transaction(() => {
     const insert = d.prepare(`
       INSERT OR IGNORE INTO request_queue (id, url, method, payload, retries, max_retries, status, created_at, updated_at, task_id, metadata)
       VALUES ($1, $2, $3, $4, 0, $5, 'pending', datetime('now'), datetime('now'), $6, $7)
@@ -119,9 +122,10 @@ export function addManyToQueue(items: AddToQueueOptions[]): string[] {
       const id = generateId();
       const taskId = item.taskId || "__default__";
 
-      insert.run(id, item.url, item.method || "GET", item.payload ? JSON.stringify(item.payload) : null, item.maxRetries || 3, taskId, item.metadata ? JSON.stringify(item.metadata) : null);
+      const result = insert.run(id, item.url, item.method || "GET", item.payload ? JSON.stringify(item.payload) : null, item.maxRetries || 3, taskId, item.metadata ? JSON.stringify(item.metadata) : null);
 
-      if (d.changes > 0) {
+      // Note: read .changes from the run() result — bun:sqlite's Database object has no .changes property
+      if (result.changes > 0) {
         ids.push(id);
       } else {
         const row = findExisting.get(item.url, taskId) as { id: string } | undefined;
@@ -129,6 +133,7 @@ export function addManyToQueue(items: AddToQueueOptions[]): string[] {
       }
     }
   });
+  runBatch();
 
   return ids;
 }
@@ -206,13 +211,11 @@ export function getQueueStats(taskId?: string): QueueStats {
 export function requeueFailed(taskId?: string): number {
   const d = getDb();
 
-  if (taskId) {
-    d.prepare(`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = datetime('now') WHERE status = 'failed' AND task_id = $1`).run(taskId);
-  } else {
-    d.prepare(`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = datetime('now') WHERE status = 'failed'`).run();
-  }
+  const result = taskId
+    ? d.prepare(`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = datetime('now') WHERE status = 'failed' AND task_id = $1`).run(taskId)
+    : d.prepare(`UPDATE request_queue SET status = 'pending', retries = 0, error = NULL, updated_at = datetime('now') WHERE status = 'failed'`).run();
 
-  return d.changes;
+  return result.changes;
 }
 
 /**
@@ -222,9 +225,9 @@ export function cleanupQueue(olderThanHours: number = 24): number {
   const d = getDb();
   const cutoff = new Date(Date.now() - olderThanHours * 3600000).toISOString().replace('T', ' ').slice(0, 19);
 
-  d.prepare(`DELETE FROM request_queue WHERE status IN ('completed', 'failed') AND updated_at < $1`).run(cutoff);
+  const result = d.prepare(`DELETE FROM request_queue WHERE status IN ('completed', 'failed') AND updated_at < $1`).run(cutoff);
 
-  return d.changes;
+  return result.changes;
 }
 
 /**

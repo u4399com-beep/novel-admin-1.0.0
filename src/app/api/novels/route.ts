@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { NextRequest } from "next/server";
-import { parsePagination, sanitizeField, safeJson, apiError, apiSuccess } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, asStringOrNull, apiError, apiSuccess } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
@@ -106,12 +106,13 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     } catch {
       return apiError("请求数据格式错误", 400);
     }
-    const { title, author, description, coverUrl, status, categoryId, tags } = body;
+    const { title, author, description, coverUrl, status, categoryId, tags, sourceUrl, sourceId } = body;
 
-    if (tags && (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === 'string'))) {
+    if (tags !== undefined && (!Array.isArray(tags) || !tags.every((t: unknown) => typeof t === 'string'))) {
       return apiError("标签格式错误，必须是字符串ID数组", 400);
     }
-    if (tags && tags.length > 20) {
+    const tagList = Array.isArray(tags) ? (tags as string[]) : undefined;
+    if (tagList && tagList.length > 20) {
       return apiError("标签数量不能超过20个", 400);
     }
 
@@ -120,32 +121,41 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError("小说标题不能为空", 400);
     }
 
-    const novelStatus = VALID_NOVEL_STATUSES.includes(status) ? status : "ongoing";
+    const novelStatus: string = VALID_NOVEL_STATUSES.includes(status as string) ? (status as string) : "ongoing";
 
     // Validate categoryId existence if provided
-    if (categoryId) {
-      const categoryExists = await db.category.findUnique({ where: { id: categoryId } });
+    const categoryIdStr = asStringOrNull(categoryId);
+    if (categoryIdStr) {
+      const categoryExists = await db.category.findUnique({ where: { id: categoryIdStr } });
       if (!categoryExists) {
         return apiError("指定的分类不存在", 400);
       }
     }
 
     // Validate tag IDs existence if provided
-    if (tags?.length) {
+    if (tagList?.length) {
       const tagCount = await db.tag.count({
-        where: { id: { in: tags } },
+        where: { id: { in: tagList } },
       });
-      if (tagCount !== tags.length) {
+      if (tagCount !== tagList.length) {
         return apiError("部分标签ID不存在", 400);
       }
     }
 
     // Validate coverUrl protocol
-    if (coverUrl) {
-      if (!isSafeUrl(coverUrl)) {
+    const coverUrlStr = asStringOrNull(coverUrl);
+    if (coverUrlStr) {
+      if (!isSafeUrl(coverUrlStr)) {
         return apiError("封面URL格式不合法，仅允许http/https协议", 400);
       }
     }
+
+    // Validate sourceUrl protocol (SSRF protection) — set by the scraper for provenance
+    const sourceUrlStr = asStringOrNull(sourceUrl);
+    if (sourceUrlStr && !isSafeUrl(sourceUrlStr)) {
+      return apiError("来源URL格式不合法，仅允许http/https协议", 400);
+    }
+    const sourceIdStr = asStringOrNull(sourceId);
 
     const novel = await db.novel.create({
       data: {
@@ -154,10 +164,12 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         description: sanitizeField(description, 5000) || null,
         coverUrl: sanitizeField(coverUrl, 2048) || null,
         status: novelStatus,
-        categoryId: categoryId || null,
-        tags: tags?.length
+        categoryId: categoryIdStr || null,
+        sourceUrl: sourceUrlStr ? sanitizeField(sourceUrlStr, 2048) : null,
+        sourceId: sourceIdStr,
+        tags: tagList?.length
           ? {
-              create: tags.map((tagId: string) => ({ tagId })),
+              create: tagList.map((tagId: string) => ({ tagId })),
             }
           : undefined,
       },

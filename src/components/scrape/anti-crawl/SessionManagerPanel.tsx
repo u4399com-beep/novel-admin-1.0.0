@@ -51,7 +51,6 @@ export function SessionManagerPanel() {
         // Build mock session list from stats when no session list endpoint
         const mockSessions: MockSession[] = [];
         const total = data.totalSessions || 0;
-        const active = data.activeSessions || 0;
         const blocked = data.blockedSessions || 0;
         const domains = data.domainsTracked || 0;
 

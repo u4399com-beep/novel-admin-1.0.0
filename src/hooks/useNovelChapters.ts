@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   PointerSensor,
-  KeyboardSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
   type SensorDescriptor,
+  type SensorOptions,
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 
@@ -46,7 +46,7 @@ export interface UseNovelChaptersReturn {
   filteredChapters: Chapter[];
   isAllChecked: boolean;
   isSomeChecked: boolean;
-  sensors: SensorDescriptor<PointerSensor | KeyboardSensor>[];
+  sensors: SensorDescriptor<SensorOptions>[];
 
   // Setters needed by the component
   setChapterSearch: (v: string) => void;
@@ -143,11 +143,13 @@ export function useNovelChapters({
   }, [chapters]);
 
   // ── DnD sensors ─────────────────────────────────────────────────────────
+  // Annotation (not cast): useSensors() already returns SensorDescriptor<SensorOptions>[]
+  // — the same type DndContext expects — so no cast is needed.
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     }),
-  ) as SensorDescriptor<PointerSensor | KeyboardSensor>[];
+  );
 
   // ── Fetch chapters ───────────────────────────────────────────────────────
   const fetchChapters = useCallback(async (signal?: AbortSignal) => {

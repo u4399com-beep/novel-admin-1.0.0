@@ -170,6 +170,9 @@ export function ScrapeRuleEditor({ ruleId, initialAiRule, onSuccess, onCancel }:
         dnt: rule.antiCrawlConfig.dnt || false,
         acceptLanguage: rule.antiCrawlConfig.acceptLanguage || '',
         referer: rule.antiCrawlConfig.referer || '',
+        captchaStrategy: 'auto',
+        enableCaptchaRetry: true,
+        maxCaptchaRetries: 3,
       }, { shouldDirty: true });
     }
     if (rule.agentqlQueries) {

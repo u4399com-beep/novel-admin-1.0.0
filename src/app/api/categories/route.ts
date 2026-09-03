@@ -51,7 +51,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     if (description && typeof description === "string" && description.trim().length > MAX_DESCRIPTION_LENGTH) {
       return apiError(`分类描述不能超过${MAX_DESCRIPTION_LENGTH}个字符`, 400);
     }
-    if (color && !VALID_COLOR_RE.test(color)) {
+    if (color && (typeof color !== 'string' || !VALID_COLOR_RE.test(color))) {
       return apiError("颜色格式无效，请使用HEX格式（如#6b7280）", 400);
     }
 
@@ -59,9 +59,9 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       data: {
         name: sanitizeField(name, MAX_NAME_LENGTH),
         slug: typeof slug === 'string' ? slug.trim() : '',
-        icon: icon?.trim() || null,
+        icon: typeof icon === 'string' && icon.trim() ? icon.trim() : null,
         description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
-        color: color || "#6b7280",
+        color: typeof color === 'string' && color ? color : "#6b7280",
         sortOrder: Math.max(0, Math.floor(Number(sortOrder) || 0)),
       },
       include: { _count: { select: { novels: true } } },

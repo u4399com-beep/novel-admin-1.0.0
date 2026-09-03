@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, isPrismaError, apiError, apiSuccess, parsePagination } from "@/lib/api-utils";
+import { sanitizeField, safeJson, asStringOrNull, isPrismaError, apiError, apiSuccess } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, withPublicRateLimit } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
@@ -25,17 +25,30 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     const links = await db.friendlyLink.findMany({
       where,
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-      include: {
-        ...(linkType === 'site_home' || linkType === 'site_novel' || !linkType
-          ? { site: { select: { id: true, domain: true, name: true, enabled: true } } }
-          : {}),
-        ...(linkType === 'site_novel' || !linkType
-          ? { novel: { select: { id: true, title: true, slugs: { where: { isActive: true }, take: 1, select: { slug: true } } } } }
-          : {}),
-      },
     });
 
-    return NextResponse.json(links);
+    // FriendlyLink has no Prisma relations (siteId/novelId are plain columns),
+    // so site/novel data is resolved manually instead of via `include`.
+    const includeSite = linkType === 'site_home' || linkType === 'site_novel' || !linkType;
+    const includeNovel = linkType === 'site_novel' || !linkType;
+    const siteIds = includeSite ? [...new Set(links.map(l => l.siteId).filter((id): id is string => Boolean(id)))] : [];
+    const novelIds = includeNovel ? [...new Set(links.map(l => l.novelId).filter((id): id is string => Boolean(id)))] : [];
+    const sites = siteIds.length
+      ? await db.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, domain: true, name: true, enabled: true } })
+      : [];
+    const novels = novelIds.length
+      ? await db.novel.findMany({ where: { id: { in: novelIds } }, select: { id: true, title: true, slugs: { where: { isActive: true }, take: 1, select: { slug: true } } } })
+      : [];
+    const siteMap = new Map(sites.map(s => [s.id, s]));
+    const novelMap = new Map(novels.map(n => [n.id, n]));
+
+    const result = links.map(link => ({
+      ...link,
+      site: includeSite && link.siteId ? siteMap.get(link.siteId) ?? null : null,
+      novel: includeNovel && link.novelId ? novelMap.get(link.novelId) ?? null : null,
+    }));
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("List friendly links error:", error);
     return apiError("获取友情链接列表失败");
@@ -83,16 +96,18 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
 
     // site_home and site_novel require siteId
-    if ((resolvedLinkType === 'site_home' || resolvedLinkType === 'site_novel') && siteId) {
-      const siteExists = await db.site.findUnique({ where: { id: siteId }, select: { id: true } });
+    const siteIdStr = asStringOrNull(siteId);
+    if ((resolvedLinkType === 'site_home' || resolvedLinkType === 'site_novel') && siteIdStr) {
+      const siteExists = await db.site.findUnique({ where: { id: siteIdStr }, select: { id: true } });
       if (!siteExists) {
         return apiError("关联的站点不存在", 400);
       }
     }
 
     // site_novel requires novelId
-    if (resolvedLinkType === 'site_novel' && novelId) {
-      const novelExists = await db.novel.findUnique({ where: { id: novelId }, select: { id: true } });
+    const novelIdStr = asStringOrNull(novelId);
+    if (resolvedLinkType === 'site_novel' && novelIdStr) {
+      const novelExists = await db.novel.findUnique({ where: { id: novelIdStr }, select: { id: true } });
       if (!novelExists) {
         return apiError("关联的书籍不存在", 400);
       }
@@ -114,8 +129,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         logo: logo ? sanitizeField(logo, MAX_URL_LENGTH) || null : null,
         description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null,
         linkType: resolvedLinkType,
-        siteId: siteId || null,
-        novelId: novelId || null,
+        siteId: siteIdStr || null,
+        novelId: novelIdStr || null,
         sortOrder: parsedSortOrder,
         enabled: enabled !== undefined ? enabled : true,
         nofollow: nofollow !== undefined ? nofollow : false,

@@ -547,11 +547,15 @@ function deduplicateParagraphs(text: string): string {
   const lines = text.split("\n");
   const result: string[] = [];
   let lastNormalized = "";
+  // Whether result's tail entry corresponds to lastNormalized — blank lines pushed
+  // in between would make result.pop() pop the wrong entry during continuation-merge
+  let tailMatchesLast = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) {
       result.push(line);
+      tailMatchesLast = false;
       continue;
     }
 
@@ -570,7 +574,7 @@ function deduplicateParagraphs(text: string): string {
     // (common when pages split mid-paragraph)
     // Use longer overlap threshold (25 chars) and require the overlap to be a significant
     // portion of the shorter line (>30%) to avoid false merges on common phrases.
-    if (lastNormalized.length > 20 && normalized.length > 20) {
+    if (tailMatchesLast && lastNormalized.length > 20 && normalized.length > 20) {
       const overlapLen = Math.min(lastNormalized.length, normalized.length);
       const checkLen = Math.min(25, overlapLen);
       const shorterLen = Math.min(lastNormalized.length, normalized.length);
@@ -593,6 +597,7 @@ function deduplicateParagraphs(text: string): string {
 
     result.push(line);
     lastNormalized = normalized;
+    tailMatchesLast = true;
   }
 
   return result.join("\n");

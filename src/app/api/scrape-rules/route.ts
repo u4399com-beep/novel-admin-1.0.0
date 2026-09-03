@@ -131,16 +131,16 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     }
 
     // Validate enum fields — reject invalid values instead of silently defaulting
-    if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode)) {
+    if (body.scrapeMode !== undefined && !(VALID_SCRAPE_MODES as readonly string[]).includes(body.scrapeMode as string)) {
       return apiError(`采集模式只能是: ${VALID_SCRAPE_MODES.join(', ')}`, 400);
     }
-    if (body.engine !== undefined && !VALID_ENGINES.includes(body.engine)) {
+    if (body.engine !== undefined && !(VALID_ENGINES as readonly string[]).includes(body.engine as string)) {
       return apiError(`采集引擎只能是: ${VALID_ENGINES.join(', ')}`, 400);
     }
-    if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode)) {
+    if (body.storageMode !== undefined && !(VALID_STORAGE_MODES as readonly string[]).includes(body.storageMode as string)) {
       return apiError(`存储模式只能是: ${VALID_STORAGE_MODES.join(', ')}`, 400);
     }
-    if (body.dedupMode !== undefined && !VALID_DEDUP_MODES.includes(body.dedupMode)) {
+    if (body.dedupMode !== undefined && !(VALID_DEDUP_MODES as readonly string[]).includes(body.dedupMode as string)) {
       return apiError(`去重模式只能是: ${VALID_DEDUP_MODES.join(', ')}`, 400);
     }
 
@@ -198,8 +198,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     let validatedFilePath: string | undefined;
     let validatedCoverSavePath: string | undefined;
     try {
-      validatedFilePath = body.filePath !== undefined ? validateSavePath(body.filePath) : undefined;
-      validatedCoverSavePath = body.coverSavePath !== undefined ? validateSavePath(body.coverSavePath) : undefined;
+      validatedFilePath = body.filePath !== undefined ? (validateSavePath(body.filePath) ?? undefined) : undefined;
+      validatedCoverSavePath = body.coverSavePath !== undefined ? (validateSavePath(body.coverSavePath) ?? undefined) : undefined;
     } catch (e) {
       if (e instanceof ValidationError) return apiError(e.message, 400);
       throw e;

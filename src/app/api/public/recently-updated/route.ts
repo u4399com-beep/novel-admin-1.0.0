@@ -52,7 +52,6 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async (r
 
     // Step 3: Fetch novel details for these IDs, preserving the order
     const novelIds = uniqueChapters.map((ch) => ch.novelId);
-    const chapterMap = new Map(uniqueChapters.map((ch) => [ch.novelId, ch]));
 
     const novels = await db.novel.findMany({
       where: { id: { in: novelIds } },

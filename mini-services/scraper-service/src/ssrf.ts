@@ -9,6 +9,14 @@
  */
 
 /**
+ * Escape hatch for local development / sandbox verification ONLY:
+ * when SCRAPER_SSRF_ALLOW_PRIVATE=true, private/loopback targets are permitted
+ * (e.g. driving scrapes against a local mock site through the proxy pool).
+ * Protocol allowlist is still enforced. NEVER enable this in production.
+ */
+const ALLOW_PRIVATE_TARGETS = process.env.SCRAPER_SSRF_ALLOW_PRIVATE === 'true';
+
+/**
  * Validate a URL is safe (SSRF protection).
  * Blocks:
  * - Non-http/https protocols (file://, ftp://, data:, javascript:)
@@ -23,6 +31,15 @@
  * - Numeric IP in hostname (pure digits+dots pattern)
  */
 export function isSafeUrl(url: string): boolean {
+  if (ALLOW_PRIVATE_TARGETS) {
+    // Opt-in override: allow private/loopback targets, keep protocol allowlist strict
+    try {
+      const p = new URL(url);
+      return p.protocol === 'http:' || p.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
   try {
     const parsed = new URL(url);
 

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { SCRAPE_TEMPLATES, searchTemplates } from '@/lib/scrape-templates';
+import { searchTemplates } from '@/lib/scrape-templates';
 import { apiSuccess } from '@/lib/api-utils';
 import { withAuth } from '@/lib/api-auth';
 

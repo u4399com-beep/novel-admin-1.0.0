@@ -18,7 +18,8 @@ const rule5165 = {
   enabled: true,
   listUrl: 'https://5165.org/wangluo/',
   listSelector: JSON.stringify({ type: 'css', value: '.entry-content li a[href]' }),
-  listPagination: null,
+  // Widen to `string | null` so rule23ip (string pagination) shares this object type.
+  listPagination: null as string | null,
   bookTitleSelector: JSON.stringify({ type: 'css', value: 'h1.entry-title, h1' }),
   bookAuthorSelector: JSON.stringify({ type: 'css', value: '.entry-content .text-muted, .author' }),
   bookCategorySelector: JSON.stringify({ type: 'css', value: '.entry-meta a, .cat-links a' }),
@@ -136,7 +137,7 @@ const rule23ip = {
 
 const RULES = [rule5165, rule23ip];
 
-async function upsertRule(rule: typeof rule5165) {
+async function upsertRule(rule: typeof rule5165 | typeof rule23ip) {
   const existing = await prisma.scrapeRule.findFirst({
     where: { name: rule.name },
   });

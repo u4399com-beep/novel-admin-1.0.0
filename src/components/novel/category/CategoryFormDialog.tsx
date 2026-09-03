@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod/v4';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { safeResolver } from '@/lib/safe-resolver';
 import { Loader2, SmilePlus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -71,7 +71,7 @@ export function CategoryFormDialog({
     watch,
     formState: { errors },
   } = useForm<CategoryFormData>({
-    resolver: zodResolver(categorySchema),
+    resolver: safeResolver(categorySchema),
   });
 
   const selectedColor = watch('color');

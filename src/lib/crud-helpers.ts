@@ -1,26 +1,31 @@
 import { apiError } from './api-utils';
 import { NextResponse } from 'next/server';
-import { Prisma } from '@prisma/client';
 
-/** Prisma model subset needed for list/get operations */
+ 
+/**
+ * Structural stand-ins for Prisma delegates. Prisma only exposes per-model arg
+ * types (e.g. `Prisma.NovelFindManyArgs`), so the shared helpers accept any
+ * delegate whose methods take a single args object and return arrays/entities.
+ * Method shorthand keeps parameter checks bivariant against generated delegates.
+ */
 type ListModel = {
-  findMany: (args: Prisma.FindManyArgs) => Promise<unknown[]>;
-  count: (args: Prisma.FindManyArgs) => Promise<number>;
+  findMany(args: any): Promise<unknown[]>;
+  count(args: any): Promise<number>;
 };
 
 /** Prisma model subset needed for single-item lookup */
 type GetModel = {
-  findUnique: (args: Prisma.FindUniqueArgs) => Promise<unknown>;
-  findFirst: (args: Prisma.FindFirstArgs) => Promise<unknown>;
+  findUnique(args: any): Promise<unknown>;
+  findFirst(args: any): Promise<unknown>;
 };
 
 export interface PaginatedListOptions {
   page: number;
   pageSize: number;
-  where?: Prisma.FindManyArgs['where'];
-  orderBy?: Prisma.FindManyArgs['orderBy'];
-  include?: Prisma.FindManyArgs['include'];
-  select?: Prisma.FindManyArgs['select'];
+  where?: unknown;
+  orderBy?: unknown;
+  include?: unknown;
+  select?: unknown;
   /** Key name for the items array in the response (default: 'items') */
   itemsKey?: string;
 }
@@ -83,7 +88,7 @@ export async function paginatedList(
  */
 export async function getOrFail<T>(
   model: GetModel,
-  where: Prisma.FindUniqueArgs['where'],
+  where: unknown,
   errorMessage = '记录不存在',
 ): Promise<T> {
   const item = await model.findUnique({ where });
@@ -92,6 +97,7 @@ export async function getOrFail<T>(
   }
   return item as T;
 }
+ 
 
 /** Custom error so callers can distinguish 404 from other errors */
 export class NotFoundError extends Error {

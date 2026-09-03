@@ -727,7 +727,9 @@ export function getChromeClientHints(ua?: string): ClientHintsHeaders | null {
     const verMatch = hint.match(/v="(\d+)"/g);
     if (verMatch) {
       const versions = verMatch.map(m => parseInt(m.match(/\d+/)?.[0] || '0'));
-      if (versions.every(v => v === chromeMajor) && versions.length >= 2) {
+      // The grease brand is a constant "99" in every UA — exclude it so real
+      // brands (Chrome/Chromium/Edge) are compared against the UA major version
+      if (versions.length >= 2 && versions.filter(v => v !== 99).every(v => v === chromeMajor)) {
         hintVersion = hint;
         break;
       }
@@ -1089,7 +1091,8 @@ export function parseJsonField<T>(field: string | null, fallback: T): T {
 
 export function mapNovelStatus(rawStatus: string): string {
   const lower = rawStatus.trim();
-  if (lower.includes("完") || lower.includes("结局") || lower.includes("end") || lower === "completed") {
+  // "未完/未完结" contain "完" but mean UNFINISHED — exclude before the 完 rule
+  if ((lower.includes("完") && !lower.includes("未完")) || lower.includes("结局") || lower.includes("end") || lower === "completed") {
     return "completed";
   }
   if (lower.includes("断") || lower.includes("暂停") || lower.includes("hiatus")) {
@@ -1142,9 +1145,10 @@ export function parseChineseNumeral(str: string): number {
   if (/^[0-9]+$/.test(str)) return parseInt(str) || 0;
 
   // Parse Chinese numeral using a position-based approach
+  // result: completed major-unit groups (万/亿); group: value within the current 万-group; current: pending digit
   let result = 0;
-  let current = 0;  // Current accumulated value before a unit (十/百/千/万)
-  let prevUnit = 0; // Track the last unit multiplier for proper accumulation
+  let group = 0;
+  let current = 0;
 
   for (const ch of str) {
     const digit = DIGIT_MAP[ch];
@@ -1152,33 +1156,30 @@ export function parseChineseNumeral(str: string): number {
       current = digit;
     } else if (ch === '十') {
       // 十 = 10. If nothing before it, means 10. Otherwise X*10.
-      result += (current || 1) * 10;
+      group += (current || 1) * 10;
       current = 0;
-      prevUnit = 10;
     } else if (ch === '百') {
-      result += (current || 1) * 100;
+      group += (current || 1) * 100;
       current = 0;
-      prevUnit = 100;
     } else if (ch === '千') {
-      result += (current || 1) * 1000;
+      group += (current || 1) * 1000;
       current = 0;
-      prevUnit = 1000;
     } else if (ch === '万') {
-      // 万 is a major unit — multiply the accumulated result by 10000
-      result = (result + current) * 10000;
+      // 万 is a major unit — seal the current 4-digit group into the result
+      result += (group + current) * 10000;
+      group = 0;
       current = 0;
-      prevUnit = 10000;
     } else if (ch === '亿') {
-      // 亿 is a major unit — multiply the accumulated result by 100000000
-      result = (result + current) * 100000000;
+      // 亿 is a major unit — swallow everything accumulated so far (incl. prior 万 groups)
+      result = (result + group + current) * 100000000;
+      group = 0;
       current = 0;
-      prevUnit = 100000000;
     } else {
       // Unknown char — skip
     }
   }
 
-  result += current;
+  result += group + current;
   return result || 0;
 }
 
@@ -1267,6 +1268,10 @@ export interface FollowRedirectsOptions {
   onHopResponse?: (response: Response, url: string, hop: number) => void;
 }
 
+/** Statuses that represent actual redirects (per fetch spec). 300/304/305/306 are NOT redirects
+ *  — e.g. 304 Not Modified must be returned to the caller, not reported as "maximum redirects exceeded". */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
 /**
  * Shared redirect-following utility with SSRF validation on each hop.
  * Used by CheerioEngine.fetch and handleDownloadCover to eliminate
@@ -1287,7 +1292,7 @@ export async function followRedirects(
     // Fire onHopResponse for every response (including final non-redirect)
     onHopResponse?.(response, currentUrl, hop);
 
-    if (response.status >= 300 && response.status < 400 && hop < maxRedirects) {
+    if (REDIRECT_STATUSES.has(response.status) && hop < maxRedirects) {
       // CRITICAL: Cancel redirect response body to prevent undici connection pool leak
       // (each redirect hop would otherwise pin a connection until keepAliveMaxTimeout)
       await response.body?.cancel().catch(() => {});
@@ -1319,8 +1324,8 @@ export async function followRedirects(
 
   if (!response) throw new Error('No response received after redirects');
 
-  // If we exhausted the redirect budget and still got a 3xx, throw instead of returning it
-  if (response.status >= 300 && response.status < 400) {
+  // If we exhausted the redirect budget and still got a redirect, throw instead of returning it
+  if (REDIRECT_STATUSES.has(response.status)) {
     await response.body?.cancel().catch(() => {});
     throw new Error(`Maximum redirects exceeded (${maxRedirects}) — last status: ${response.status}`);
   }

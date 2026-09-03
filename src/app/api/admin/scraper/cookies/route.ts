@@ -3,7 +3,6 @@
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
-import { apiError } from '@/lib/api-utils';
 
 const SCRAPER_TIMEOUT = 5000;
 

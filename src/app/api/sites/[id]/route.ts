@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, safeJsonStringify, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
+import { sanitizeField, safeJson, asStringOrNull, safeJsonStringify, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
@@ -81,8 +81,9 @@ export const PUT = withAuth(async function PUT(
     if (enabled !== undefined && typeof enabled !== 'boolean') {
       return apiError("enabled 必须是布尔值", 400);
     }
-    if (themeId !== undefined && themeId) {
-      const themeExists = await db.theme.findUnique({ where: { id: themeId }, select: { id: true } });
+    const themeIdStr = asStringOrNull(themeId);
+    if (themeIdStr) {
+      const themeExists = await db.theme.findUnique({ where: { id: themeIdStr }, select: { id: true } });
       if (!themeExists) {
         return apiError("指定的主题不存在", 400);
       }
@@ -109,7 +110,7 @@ export const PUT = withAuth(async function PUT(
         ...(domain !== undefined && { domain: sanitizeField(domain, MAX_DOMAIN_LENGTH) }),
         ...(name !== undefined && { name: sanitizeField(name, MAX_NAME_LENGTH) }),
         ...(description !== undefined && { description: sanitizeField(description, MAX_DESCRIPTION_LENGTH) || null }),
-        ...(themeId !== undefined && { themeId: themeId || null }),
+        ...(themeId !== undefined && { themeId: themeIdStr || null }),
         ...(enabled !== undefined && { enabled }),
         ...(siteTitle !== undefined && { siteTitle: sanitizeField(siteTitle, MAX_SITE_TITLE_LENGTH) || null }),
         ...(siteDescription !== undefined && { siteDescription: sanitizeField(siteDescription, MAX_SITE_DESC_LENGTH) || null }),

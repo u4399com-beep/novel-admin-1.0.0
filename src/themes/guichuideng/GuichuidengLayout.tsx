@@ -45,8 +45,13 @@ export function GuichuidengLayout({
           <button
             onClick={() => {
               try {
-                if (typeof window !== 'undefined' && window.external?.addFavorite) {
-                  window.external.addFavorite(window.location.href, siteName);
+                // window.external.addFavorite is a legacy IE-only API not present
+                // in the standard lib.dom External interface — widen locally.
+                const external = typeof window !== 'undefined'
+                  ? (window.external as External & { addFavorite?: (url: string, title: string) => void })
+                  : undefined;
+                if (external?.addFavorite) {
+                  external.addFavorite(window.location.href, siteName);
                 } else {
                   alert('请按 Ctrl+D 收藏本站');
                 }

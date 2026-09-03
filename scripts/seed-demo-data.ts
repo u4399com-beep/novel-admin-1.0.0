@@ -94,7 +94,6 @@ const NOVELS: NovelDef[] = [
 // Generate chapter titles for a novel
 function generateChapters(novelTitle: string, author: string, count: number): Array<{ title: string; content: string; wordCount: number }> {
   const chapters: Array<{ title: string; content: string; wordCount: number }> = [];
-  const prefixes = ['第', '章'];
   const chapterNames = [
     '初入江湖', '神秘来客', '暗流涌动', '危机四伏', '绝处逢生',
     '柳暗花明', '风云再起', '惊天秘闻', '生死一线', '破茧成蝶',
@@ -180,7 +179,7 @@ async function main() {
     const chapterCount = 20 + Math.floor(Math.random() * 31);
     const chapters = generateChapters(novelDef.title, novelDef.author, chapterCount);
 
-    const novel = await db.novel.create({
+    await db.novel.create({
       data: {
         title: novelDef.title,
         author: novelDef.author,

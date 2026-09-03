@@ -34,7 +34,7 @@ export const PUT = withAuth(async function PUT(
     }
 
     // Fetch the rule
-    const rule = await getOrFail(db.scrapeRule, { id }, '采集规则不存在');
+    const rule = await getOrFail<{ antiCrawlConfig: string | null }>(db.scrapeRule, { id }, '采集规则不存在');
 
     // Parse existing antiCrawlConfig
     let antiCrawlConfig: Record<string, unknown> = {};

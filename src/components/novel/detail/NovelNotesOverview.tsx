@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Star, StickyNote, AlertCircle, ExternalLink } from 'lucide-react';
-import { apiFetch, FetchError } from '@/lib/api-fetch';
+import { Star, AlertCircle, ExternalLink } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 interface NovelNoteEntry {

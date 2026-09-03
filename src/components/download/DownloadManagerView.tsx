@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Plus, Loader2, FileText, Pencil, Trash2 } from 'lucide-react';
+import { Loader2, FileText, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
 import { apiFetch, FetchError } from '@/lib/api-fetch';

@@ -160,7 +160,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
 
   const handleRetry = useCallback(async (task: ScrapeTask) => {
     try {
-      const data = await apiFetch<{ taskId: string }>(`/api/scrape-tasks/${task.id}/retry`, { method: 'POST' });
+      await apiFetch<{ taskId: string }>(`/api/scrape-tasks/${task.id}/retry`, { method: 'POST' });
       toast.success('已创建重试任务');
       fetchTasks();
     } catch {

@@ -70,7 +70,6 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
     if (uniqueNovelIds.size > 1) {
       return apiError('不能跨小说重新排序章节', 400);
     }
-    const targetNovelId = [...uniqueNovelIds][0];
 
     // Validate IDs are CUIDs (alphanumeric + hyphen, min 20 chars) — safe for SQL
     const CUID_RE = /^[a-z0-9-]{20,}$/;

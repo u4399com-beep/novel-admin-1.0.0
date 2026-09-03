@@ -242,9 +242,10 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
       });
 
       try {
+        // NOTE: skipDuplicates is not supported on SQLite (typed `never` by Prisma);
+        // collisions fall through to the sequential path below via the catch block.
         await db.novelSlug.createMany({
           data: createData,
-          skipDuplicates: true, // In case of slug collision, skip
         });
         generated += createData.length;
       } catch (error) {

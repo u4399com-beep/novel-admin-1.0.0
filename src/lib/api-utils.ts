@@ -74,7 +74,7 @@ function validateJsonStructure(value: unknown, depth: number, maxDepth: number, 
 // Default to Record<string, any> for convenience in API routes that perform
 // their own runtime validation. Explicit generic types should be preferred
 // when stricter typing is needed.
-export async function safeJson<T = Record<string, unknown>>(
+export async function safeJson<T = Record<string, any>>(
   request: Request,
   maxDepth = 20,
   maxKeys = 200
@@ -119,6 +119,22 @@ export async function safeJson<T = Record<string, unknown>>(
  */
 export function sanitizeField(input: unknown, maxLength: number): string {
   return sanitizeString(input, maxLength);
+}
+
+/**
+ * Narrow an unknown JSON field to `string` (empty string when not a string).
+ * Use after destructuring a safeJson body when the field must be a string.
+ */
+export function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Narrow an unknown JSON field to `string | null` (null when not a string).
+ * Use for optional string columns: `asStringOrNull(body.field) || null`.
+ */
+export function asStringOrNull(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
 }
 
 /**

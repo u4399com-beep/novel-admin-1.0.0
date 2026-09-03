@@ -79,11 +79,13 @@ export const GET = withAuth(async () => {
     }
 
     // Favorite genre (most read category based on novel reading progress)
-    // Limit groupBy to prevent unbounded result set
+    // Limit groupBy to top 100 novels by reading-progress count
+    // (Prisma requires orderBy whenever `take` is provided)
     const genreStats = await db.readingProgress.groupBy({
       by: ['novelId'],
       _count: true,
       take: 100,
+      orderBy: { _count: { novelId: 'desc' } },
     });
 
     // Get categories for those novels

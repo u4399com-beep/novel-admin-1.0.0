@@ -378,7 +378,6 @@ export function RateLimiterPanel() {
   const penalizedCount = allDomains.filter(d => d.status === 'penalized').length;
   const throttledCount = allDomains.filter(d => d.status === 'throttled').length;
   const normalCount = allDomains.filter(d => d.status === 'normal').length;
-  const cooldownCount = allDomains.filter(d => d.status === 'cooldown').length;
   const avgMaxRPM = allDomains.length > 0
     ? Math.round(allDomains.reduce((sum, d) => sum + d.maxRPM, 0) / allDomains.length)
     : 0;
