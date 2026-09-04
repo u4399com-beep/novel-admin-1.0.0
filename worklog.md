@@ -24658,3 +24658,32 @@ Stage Summary:
 - 新增 API 引擎（第9个引擎）+ 七猫API采集规则
 - 修复2个bug（timestamp清理遗漏、Firefox WebGL指纹不匹配）
 - lint: 0 errors, 4 warnings (均为预存在的React Compiler警告)
+
+---
+Task ID: 1
+Agent: Main Orchestrator
+Task: 更新 Docker 一键安装命令（国内环境适配）+ Git Push
+
+Work Log:
+- 分析了 quick-docker.sh 的国内网络问题：git clone 直连 GitHub 失败，仅2个镜像回退
+- 重写 quick-docker.sh v4：
+  - 自动检测国内网络环境（curl google.com 测试）
+  - 6个 git clone 镜像源（ghfast.top, kkgithub, gitclone.com, fastgit, cnpmjs.org）
+  - 国内环境自动把国内镜像排到前面
+  - 新增压缩包下载方式（5个代理源），比 git clone 更稳定
+  - 新增逐文件下载作为最后回退手段
+  - Docker 安装支持阿里云镜像 (--mirror Aliyun)
+  - Docker Hub 镜像加速源增加到3个（1ms.run, xuanyuanhaiwai, daocloud）
+  - 详细的失败引导信息（4种替代方案：手动下载/代理/gitee/离线部署）
+- 重写 install.sh v2：同样的多重镜像回退策略
+  - 独立 git_clone_mirrors() / download_archive() 函数
+  - 更完善的错误引导
+- 更新 .env.docker 安装命令文档（增加国内备选加速命令）
+- Git commit + push 成功 (de2fba6)
+
+Stage Summary:
+- quick-docker.sh v4: 从2个镜像回退升级到6个git镜像+5个压缩包代理+逐文件下载
+- install.sh v2: 同样的多重回退策略
+- 国内网络 git clone 问题：现在有多重回退保障，不再单点失败
+- Dev server 正常运行 (HTTP 200)
+- Git push 成功
