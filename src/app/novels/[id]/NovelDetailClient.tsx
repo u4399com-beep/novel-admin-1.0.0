@@ -25,6 +25,7 @@ import { ReaderDialog } from './parts/ReaderDialog';
 import { useReaderFullscreen } from './parts/useReaderFullscreen';
 import { useReaderKeyboard } from './parts/useReaderKeyboard';
 import { recordReadingActivity, reportReadingGoal } from './parts/reading-activity';
+import { GuichuidengReader } from '@/themes/guichuideng/GuichuidengReader';
 
 // ─── Constants ─────────────────────────────────────────────────────
 
@@ -91,6 +92,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
 
   // ─── Reader state ───────────────────────────────────────────────
   const [readerOpen, setReaderOpen] = useState(false);
+  const [guichuidengOpen, setGuichuidengOpen] = useState(false);
   const [readerFullscreen, setReaderFullscreen] = useState(false);
   const [showChapterSidebar, setShowChapterSidebar] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
@@ -216,12 +218,20 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       setCurrentIndex(index);
       setChapterContent(null);
       setChapterTitle(chapters[index].title);
-      setReaderOpen(true);
+      readStartTimeRef.current = Date.now();
+
+      if (settings.readerTemplate === 'guichuideng') {
+        setGuichuidengOpen(true);
+        setReaderOpen(false);
+      } else {
+        setReaderOpen(true);
+        setGuichuidengOpen(false);
+      }
+
       setShowSettings(false);
       setShowChapterSidebar(false);
-      readStartTimeRef.current = Date.now();
     },
-    [chapters]
+    [chapters, settings.readerTemplate]
   );
 
   const loadChapterAbortRef = useRef<AbortController | null>(null);
@@ -307,15 +317,15 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     []
   );
 
-  // Load chapter content when dialog opens
+  // Load chapter content when dialog opens or guichuideng reader opens
   useEffect(() => {
-    if (readerOpen) {
+    if (readerOpen || guichuidengOpen) {
       loadChapter(currentIndex);
     }
     return () => {
       loadChapterAbortRef.current?.abort();
     };
-  }, [readerOpen, loadChapter]);
+  }, [readerOpen, guichuidengOpen, loadChapter]);
 
   const goToChapter = useCallback(
     (direction: 'prev' | 'next') => {
@@ -334,11 +344,11 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       prevIndexRef.current = currentIndex;
       return;
     }
-    if (readerOpen && !loadingChapter && chapterContent) {
+    if ((readerOpen || guichuidengOpen) && !loadingChapter && chapterContent) {
       saveProgress(prevIndexRef.current, scrollPercent);
     }
     prevIndexRef.current = currentIndex;
-  }, [currentIndex, readerOpen, loadingChapter, chapterContent, saveProgress, scrollPercent]);
+  }, [currentIndex, readerOpen, guichuidengOpen, loadingChapter, chapterContent, saveProgress, scrollPercent]);
 
   // ─── Scroll progress tracking (throttled via rAF) ───────────────
   useEffect(() => {
@@ -363,6 +373,20 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     return () => container.removeEventListener('scroll', onScroll);
   }, [readerOpen]);
 
+  // ─── Handle readerTemplate changes while reading ────────────────
+  useEffect(() => {
+    if (!readerOpen && !guichuidengOpen) return;
+    if (settings.readerTemplate === 'guichuideng' && readerOpen && !guichuidengOpen) {
+      // Switch from default dialog → guichuideng full-page
+      setReaderOpen(false);
+      setGuichuidengOpen(true);
+    } else if (settings.readerTemplate !== 'guichuideng' && guichuidengOpen && !readerOpen) {
+      // Switch from guichuideng → default dialog
+      setGuichuidengOpen(false);
+      setReaderOpen(true);
+    }
+  }, [settings.readerTemplate, readerOpen, guichuidengOpen]);
+
   // ─── Fullscreen ──────────────────────────────────────────────
   useReaderFullscreen(readerOpen, readerFullscreen, setReaderFullscreen);
 
@@ -385,10 +409,12 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       setShowChapterSidebar(false);
     } else if (readerFullscreen) {
       setReaderFullscreen(false);
+    } else if (guichuidengOpen) {
+      setGuichuidengOpen(false);
     } else {
       setReaderOpen(false);
     }
-  }, [searchOpen, showSettings, showBookmarks, showChapterSidebar, readerFullscreen]);
+  }, [searchOpen, showSettings, showBookmarks, showChapterSidebar, readerFullscreen, guichuidengOpen]);
 
   const handleCycleMatch = useCallback(() => {
     setCurrentMatch((p) => {
@@ -421,12 +447,12 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
 
   // ─── Reading timer (updates every 30s) ──────────────────────────
   useEffect(() => {
-    if (!readerOpen) return;
+    if (!readerOpen && !guichuidengOpen) return;
     const interval = setInterval(() => {
       setReadDuration(Math.floor((Date.now() - readStartTimeRef.current) / 1000));
     }, 30000);
     return () => clearInterval(interval);
-  }, [readerOpen]);
+  }, [readerOpen, guichuidengOpen]);
 
   // ─── Scroll active match into view ───────────────────────────────
   useEffect(() => {
@@ -446,10 +472,48 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     setSearchQuery('');
     setCurrentMatch(0);
     setReaderOpen(false);
+    setGuichuidengOpen(false);
   }, []);
+
+  // ─── Guichuideng chapter change handler ───────────────────────
+  const handleGuichuidengChapterChange = useCallback((index: number) => {
+    loadChapter(index);
+  }, [loadChapter]);
+
+  // ─── Guichuideng close handler ─────────────────────────────────
+  const handleGuichuidengClose = useCallback(() => {
+    saveProgress(currentIndex, scrollPercent);
+    setGuichuidengOpen(false);
+  }, [saveProgress, currentIndex, scrollPercent]);
 
   return (
     <main className="min-h-screen bg-background">
+      {/* ─── Guichuideng full-page reader ──────────────────────── */}
+      {guichuidengOpen && (
+        <div className="relative">
+          <GuichuidengReader
+            novelId={novel.id}
+            novelTitle={novel.title}
+            chapters={chapters}
+            initialChapterIndex={currentIndex}
+            content={chapterContent}
+            loading={loadingChapter}
+            error={chapterError}
+            onChapterChange={handleGuichuidengChapterChange}
+            onRetry={() => loadChapter(currentIndex)}
+            siteName="小说阅读器"
+          />
+          <button
+            onClick={handleGuichuidengClose}
+            className="fixed top-3 right-3 z-50 h-8 w-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+            aria-label="返回书目"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {!guichuidengOpen && (
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
         {/* ─── Back button ────────────────────────────── */}
         <Button
@@ -572,6 +636,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
           点击章节开始阅读 · 支持键盘翻页
         </div>
       </div>
+      )}
 
       {/* ─── Reader Dialog ────────────────────────────────────── */}
       <ReaderDialog

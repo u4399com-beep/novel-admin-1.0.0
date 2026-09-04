@@ -65,11 +65,25 @@ export const READING_THEMES: ReadingTheme[] = [
   },
 ];
 
+// ─── Reader Templates ───────────────────────────────────────────────
+
+export interface ReaderTemplate {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export const READER_TEMPLATES: ReaderTemplate[] = [
+  { key: 'default', label: '经典', description: '弹窗式阅读器' },
+  { key: 'guichuideng', label: '鬼吹灯', description: '仿鬼吹灯风格全屏阅读器' },
+];
+
 export interface ReadingSettings {
   fontSize: number;
   lineHeight: number;
   themeKey: string;
   fontFamily: string;
+  readerTemplate: string;
 }
 
 const STORAGE_KEY = 'novel-reading-settings';
@@ -79,6 +93,7 @@ const DEFAULT_SETTINGS: ReadingSettings = {
   lineHeight: 1.9,
   themeKey: 'light',
   fontFamily: 'serif',
+  readerTemplate: 'default',
 };
 
 function loadSettings(): ReadingSettings {

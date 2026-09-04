@@ -35,6 +35,22 @@ const GC_DEFAULT_SETTINGS: GcReaderSettings = {
   bgKey: 'default',
 };
 
+function loadGcSettings(): GcReaderSettings {
+  if (typeof window === 'undefined') return GC_DEFAULT_SETTINGS;
+  try {
+    const saved = localStorage.getItem(GC_READER_SETTINGS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved) as Partial<GcReaderSettings>;
+      return {
+        ...GC_DEFAULT_SETTINGS,
+        ...parsed,
+        fontSize: Math.max(16, Math.min(28, parsed.fontSize ?? 18)),
+      };
+    }
+  } catch { /* ignore */ }
+  return GC_DEFAULT_SETTINGS;
+}
+
 function saveGcSettings(s: GcReaderSettings): void {
   try { localStorage.setItem(GC_READER_SETTINGS_KEY, JSON.stringify(s)); } catch { /* ignore */ }
 }
@@ -71,6 +87,14 @@ export function GuichuidengReader({
   const [settings, setSettings] = useState<GcReaderSettings>(GC_DEFAULT_SETTINGS);
   const contentRef = useRef<HTMLDivElement>(null);
   const [chapterListOpen, setChapterListOpen] = useState(false);
+
+  // Hydrate from localStorage after mount (SSR-safe)
+  useEffect(() => {
+    const stored = loadGcSettings();
+    if (JSON.stringify(stored) !== JSON.stringify(GC_DEFAULT_SETTINGS)) {
+      queueMicrotask(() => setSettings(stored));
+    }
+  }, []);
 
   const currentChapterIndex = initialChapterIndex;
   const chapter = chapters[currentChapterIndex];

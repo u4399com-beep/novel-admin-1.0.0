@@ -12,6 +12,7 @@ import {
 import {
   READING_THEMES,
   FONT_FAMILIES,
+  READER_TEMPLATES,
   type ReadingSettings,
 } from '@/lib/use-reading-settings';
 
@@ -152,6 +153,30 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
         ))}
       </div>
       </div>
+      {/* Reader template selector */}
+      <div className="flex items-center gap-1 mt-2">
+        <span className="text-[11px] text-muted-foreground mr-1 shrink-0">阅读模版</span>
+        {READER_TEMPLATES.map((template) => (
+          <Tooltip key={template.key}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onUpdate({ readerTemplate: template.key })}
+                aria-label={`阅读模版: ${template.label}`}
+                className={cn(
+                  'px-2 py-0.5 rounded text-[11px] transition-colors',
+                  settings.readerTemplate === template.key
+                    ? 'bg-primary text-primary-foreground font-medium'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+              >
+                {template.label}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{template.description}</TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+
       <div className="mt-4 pt-3 border-t border-border/50">
         <p className="text-[10px] text-muted-foreground/50 mb-1.5">快捷键</p>
         <div className="grid grid-cols-2 gap-1 text-[10px] text-muted-foreground/60">
