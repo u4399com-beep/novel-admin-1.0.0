@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ============================================================
-# Novel Admin — 一键安装入口脚本
-# 支持三种使用方式:
-#   1. curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh | bash
-#   2. git clone ... && cd novel-admin-1.0.0 && bash install.sh
-#   3. tar xzf novel-admin-*.tar.gz && cd novel-admin-* && bash install.sh
+# Novel Admin — 一键安装入口脚本 v2
+# 支持四种使用方式:
+#   1. bash <(curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh)
+#   2. 国内加速: bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install.sh)
+#   3. git clone ... && cd novel-admin-1.0.0 && bash install.sh
+#   4. tar xzf novel-admin-*.tar.gz && cd novel-admin-* && bash install.sh
 # ============================================================
 set -eo pipefail
 trap 'rm -f /tmp/novel-admin.tar.gz; rm -rf /tmp/novel-tmp' EXIT
@@ -12,9 +13,6 @@ trap 'rm -f /tmp/novel-admin.tar.gz; rm -rf /tmp/novel-tmp' EXIT
 REPO="u4399com-beep/novel-admin-1.0.0"
 GIT_URL="https://github.com/${REPO}.git"
 INSTALL_DIR="/opt/novel-admin"
-
-# China GitHub raw file proxies
-RAW_PROXIES=("https://ghfast.top" "https://mirror.ghproxy.com" "https://gh-proxy.com")
 
 # Colors (safe fallback if no terminal)
 if [ -t 2 ]; then
@@ -27,8 +25,14 @@ log_info()  { printf "${C_GRN}[INFO]${C_RST}  %s\n" "$*" >&2; }
 log_warn()  { printf "${C_YLW}[WARN]${C_RST}  %s\n" "$*" >&2; }
 log_error() { printf "${C_RED}[ERROR]${C_RST} %s\n" "$*" >&2; }
 
+# ── Detect China network ──
+_IS_CHINA=false
+if ! curl -s -m 5 https://www.google.com >/dev/null 2>&1; then
+    _IS_CHINA=true
+    log_info "检测到国内网络环境，将优先使用镜像加速"
+fi
+
 # ── Helper: force-sync git repo, preserving .env ──
-# Handles dirty working trees, merge conflicts, etc.
 git_force_sync() {
     local dir="$1"
     [ -d "$dir/.git" ] || return 1
@@ -66,6 +70,74 @@ git_force_sync() {
     return 1
 }
 
+# ── Helper: git clone with multiple mirrors ──
+git_clone_mirrors() {
+    local target_dir="$1"
+    local _mirrors=(
+        "https://github.com/${REPO}.git"
+        "https://ghfast.top/https://github.com/${REPO}.git"
+        "https://kkgithub.com/${REPO}.git"
+        "https://gitclone.com/github.com/${REPO}.git"
+        "https://hub.fastgit.xyz/${REPO}.git"
+        "https://github.com.cnpmjs.org/${REPO}.git"
+    )
+
+    # 国内环境：优先国内镜像
+    if [ "$_IS_CHINA" = "true" ]; then
+        _mirrors=(
+            "https://ghfast.top/https://github.com/${REPO}.git"
+            "https://kkgithub.com/${REPO}.git"
+            "https://gitclone.com/github.com/${REPO}.git"
+            "https://github.com.cnpmjs.org/${REPO}.git"
+            "https://hub.fastgit.xyz/${REPO}.git"
+            "https://github.com/${REPO}.git"
+        )
+    fi
+
+    for _mirror in "${_mirrors[@]}"; do
+        local _name="${_mirror%%/u4399*}"
+        _name="${_name%/}"
+        log_info "  尝试: ${_name} ..."
+        rm -rf "$target_dir" 2>/dev/null || true
+        if git clone --depth 1 "$_mirror" "$target_dir" 2>/dev/null; then
+            # 修正 remote url
+            git -C "$target_dir" remote set-url origin "$GIT_URL" 2>/dev/null || true
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ── Helper: download archive with proxies ──
+download_archive() {
+    local output="$1"
+    local _archive_url="https://github.com/${REPO}/archive/refs/heads/main.tar.gz"
+    local _proxies=(
+        ""
+        "https://ghfast.top/"
+        "https://gh-proxy.com/"
+        "https://mirror.ghproxy.com/"
+        "https://gh.idayer.com/"
+    )
+
+    for _proxy in "${_proxies[@]}"; do
+        local _url="${_proxy}${_archive_url}"
+        local _name="${_proxy:-direct}"
+        _name="${_name%/}"
+        log_info "  尝试: ${_name} ..."
+        if command -v curl &>/dev/null; then
+            if curl -fsSL --connect-timeout 15 --max-time 300 "$_url" -o "$output" 2>/dev/null; then
+                return 0
+            fi
+        elif command -v wget &>/dev/null; then
+            if wget -q --timeout=300 -O "$output" "$_url" 2>/dev/null; then
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
 # ── Try to find deploy.sh locally ──
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -85,7 +157,7 @@ if [ -f "${SCRIPT_DIR}/deploy.sh" ]; then
 fi
 
 # ── deploy.sh not found locally, need to fetch from GitHub ──
-log_info "正在从 GitHub 获取部署脚本..."
+log_info "正在获取部署脚本..."
 
 # Check if already cloned at install dir
 if [ -d "${INSTALL_DIR}/.git" ] && [ -f "${INSTALL_DIR}/deploy.sh" ]; then
@@ -99,78 +171,84 @@ if [ -d "${INSTALL_DIR}/.git" ] && [ -f "${INSTALL_DIR}/deploy.sh" ]; then
     exec bash "${INSTALL_DIR}/deploy.sh" "$@"
 fi
 
-# Not found anywhere — clone the repo
+# Not found anywhere — need to download
 TMP_CLONE=""
 
-# Method 1: git clone (if git is available)
+# Method 1: git clone with multiple mirrors
 if command -v git &>/dev/null; then
-    rm -rf "$INSTALL_DIR" 2>/dev/null || true
-    log_info "git clone ${GIT_URL} ..."
-    if git clone --depth 1 "$GIT_URL" "$INSTALL_DIR" 2>/dev/null; then
+    log_info "git clone 获取代码..."
+    if git_clone_mirrors "$INSTALL_DIR"; then
         TMP_CLONE="$INSTALL_DIR"
+        log_info "代码获取完成 (git clone)"
     else
-        # Try China git clone proxies (NOT raw file proxies — those don't support git protocol)
-        for proxy in "https://gitclone.com/github.com/${REPO}" "https://kkgithub.com/${REPO}"; do
-            log_info "  尝试镜像 ${proxy%%/*}..."
-            rm -rf "$INSTALL_DIR" 2>/dev/null || true
-            if git clone --depth 1 "$proxy" "$INSTALL_DIR" 2>/dev/null; then
-                cd "$INSTALL_DIR"
-                git remote set-url origin "$GIT_URL" 2>/dev/null || true
-                TMP_CLONE="$INSTALL_DIR"
-                break
-            fi
-        done
+        log_warn "所有 git clone 镜像均失败"
     fi
 fi
 
 # Method 2: download archive via curl/wget (if git failed)
 if [ -z "$TMP_CLONE" ]; then
     log_info "尝试下载项目压缩包..."
-    ARCHIVE_URL="https://github.com/${REPO}/archive/refs/heads/main.tar.gz"
-    _dl_ok=false
-
-    # Try direct
-    if command -v curl &>/dev/null; then
-        curl -fsSL --connect-timeout 15 --max-time 300 "$ARCHIVE_URL" -o /tmp/novel-admin.tar.gz 2>/dev/null && _dl_ok=true
-    elif command -v wget &>/dev/null; then
-        wget -q --timeout=300 -O /tmp/novel-admin.tar.gz "$ARCHIVE_URL" 2>/dev/null && _dl_ok=true
-    fi
-
-    # Try China proxies
-    if ! $_dl_ok; then
-        for proxy in "${RAW_PROXIES[@]}"; do
-            log_info "  尝试镜像 ${proxy%%/*}..."
-            _proxy_url="${proxy}/${ARCHIVE_URL}"
-            if command -v curl &>/dev/null; then
-                curl -fsSL --connect-timeout 15 --max-time 300 "$_proxy_url" -o /tmp/novel-admin.tar.gz 2>/dev/null && _dl_ok=true && break
-            elif command -v wget &>/dev/null; then
-                wget -q --timeout=300 -O /tmp/novel-admin.tar.gz "$_proxy_url" 2>/dev/null && _dl_ok=true && break
-            fi
-        done
-    fi
-
-    if $_dl_ok; then
+    if download_archive /tmp/novel-admin.tar.gz; then
         mkdir -p "$INSTALL_DIR"
-        # Extract, strip the top-level directory (novel-admin-1.0.0-main/)
-        # Guard with if: under set -eo pipefail, a tar failure would kill the script
         if tar xzf /tmp/novel-admin.tar.gz -C "$INSTALL_DIR" --strip-components=1 2>/dev/null; then
-            : # extraction succeeded
+            log_info "压缩包解压完成"
+            if [ -f "${INSTALL_DIR}/deploy.sh" ]; then
+                TMP_CLONE="$INSTALL_DIR"
+            fi
         else
             log_warn "压缩包解压失败，文件可能已损坏"
         fi
-        rm -f /tmp/novel-admin.tar.gz
-        if [ -f "${INSTALL_DIR}/deploy.sh" ]; then
-            TMP_CLONE="$INSTALL_DIR"
-        fi
+    else
+        log_warn "压缩包下载失败"
+    fi
+    rm -f /tmp/novel-admin.tar.gz
+fi
+
+# Method 3: download individual files (last resort)
+if [ -z "$TMP_CLONE" ]; then
+    log_info "尝试逐文件下载关键文件..."
+    GIT_RAW="https://raw.githubusercontent.com/${REPO}/main"
+    _FILE_PROXIES=("" "https://ghfast.top/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/")
+
+    _dl_count=0
+    for f in deploy.sh Dockerfile docker-compose.yml docker-entrypoint.sh .env.docker .dockerignore quick-docker.sh; do
+        for _proxy in "${_FILE_PROXIES[@]}"; do
+            _url="${_proxy}${GIT_RAW}/${f}"
+            if command -v curl &>/dev/null; then
+                curl -fsSL --connect-timeout 10 --max-time 60 "$_url" -o "${INSTALL_DIR}/${f}" 2>/dev/null && _dl_count=$((_dl_count + 1)) && break
+            elif command -v wget &>/dev/null; then
+                wget -q --timeout=60 -O "${INSTALL_DIR}/${f}" "$_url" 2>/dev/null && _dl_count=$((_dl_count + 1)) && break
+            fi
+        done
+    done
+    mkdir -p "${INSTALL_DIR}/mini-services/scraper-service/src/scrape-rules" "${INSTALL_DIR}/backups"
+
+    if [ "$_dl_count" -ge 3 ] && [ -f "${INSTALL_DIR}/deploy.sh" ]; then
+        TMP_CLONE="$INSTALL_DIR"
+        log_info "关键文件下载完成 (${_dl_count} 个)"
     fi
 fi
 
 if [ -z "$TMP_CLONE" ] || [ ! -f "${TMP_CLONE}/deploy.sh" ]; then
-    log_error "无法从 GitHub 获取 deploy.sh"
-    log_error "请手动操作:"
-    log_error "  git clone ${GIT_URL}"
-    log_error "  cd novel-admin-1.0.0"
-    log_error "  bash deploy.sh"
+    log_error "无法获取部署脚本！"
+    log_error ""
+    log_error "请尝试以下方法:"
+    log_error ""
+    log_error "  方法1: 国内用户推荐 - 使用 ghfast.top 加速"
+    log_error "    bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/${REPO}/main/install.sh)"
+    log_error ""
+    log_error "  方法2: 手动下载压缩包"
+    log_error "    浏览器打开: https://github.com/${REPO}/archive/refs/heads/main.zip"
+    log_error "    解压后运行: bash deploy.sh"
+    log_error ""
+    log_error "  方法3: 配置 git 代理"
+    log_error "    git config --global http.proxy socks5://127.0.0.1:1080"
+    log_error "    git clone ${GIT_URL}"
+    log_error "    cd novel-admin-1.0.0 && bash deploy.sh"
+    log_error ""
+    log_error "  方法4: 离线部署"
+    log_error "    在有网络的机器上运行: bash pack.sh"
+    log_error "    将 .tar.gz 传到服务器，解压后运行: bash deploy.sh"
     exit 1
 fi
 

@@ -1,12 +1,17 @@
 #!/bin/bash
 # ============================================================
-# 📚 小说管理系统 — Docker 一键部署脚本 v3
+# 📚 小说管理系统 — Docker 一键部署脚本 v4
 # ============================================================
 #
-# 一键安装命令:
+# 一键安装命令 (海外):
 #   bash <(curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/quick-docker.sh)
-#   # 国内加速:
+#
+# 国内一行安装 (推荐，自动加速):
 #   bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/quick-docker.sh)
+#
+# 国内备选加速:
+#   bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/quick-docker.sh)
+#   bash <(curl -fsSL https://mirror.ghproxy.com/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/quick-docker.sh)
 #
 # 本地: chmod +x quick-docker.sh && ./quick-docker.sh
 # ============================================================
@@ -32,8 +37,9 @@ done
 
 echo ""
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║${NC}  ${BOLD}📚 小说管理系统 — Docker 一键部署 v3${NC}           ${BOLD}${CYAN}║${NC}"
+echo -e "${BOLD}${CYAN}║${NC}  ${BOLD}📚 小说管理系统 — Docker 一键部署 v4${NC}           ${BOLD}${CYAN}║${NC}"
 echo -e "${BOLD}${CYAN}║${NC}  9 引擎采集 · 反反爬 · 硬件自适应               ${BOLD}${CYAN}║${NC}"
+echo -e "${BOLD}${CYAN}║${NC}  国内加速 · 多重回退 · 开箱即用                  ${BOLD}${CYAN}║${NC}"
 echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -41,7 +47,14 @@ echo ""
 step 1 "检查 Docker 环境"
 command -v docker >/dev/null 2>&1 || {
   info "Docker 未安装，正在自动安装..."
-  curl -fsSL https://get.docker.com | sh 2>/dev/null || fatal "Docker 安装失败！"
+  # 国内 Docker 安装加速
+  if ! curl -s -m 5 https://www.google.com >/dev/null 2>&1; then
+    info "检测到国内网络，使用阿里云 Docker 安装源..."
+    curl -fsSL https://get.docker.com | bash -s -- --mirror Aliyun 2>/dev/null || \
+    curl -fsSL https://get.docker.com | sh 2>/dev/null || fatal "Docker 安装失败！"
+  else
+    curl -fsSL https://get.docker.com | sh 2>/dev/null || fatal "Docker 安装失败！"
+  fi
   systemctl start docker 2>/dev/null || service start docker 2>/dev/null || true
   ok "Docker 安装完成"
 }
@@ -59,26 +72,167 @@ ok "Docker $DOCKER_VER + Compose $COMPOSE_VER"
 step 2 "获取项目代码"
 REPO="u4399com-beep/novel-admin-1.0.0"
 GIT_RAW="https://raw.githubusercontent.com/${REPO}/main"
+ARCHIVE_URL="https://github.com/${REPO}/archive/refs/heads/main.tar.gz"
+CODE_OBTAINED=false
+
 if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
   ok "项目文件已存在，跳过下载"
-else
+  CODE_OBTAINED=true
+fi
+
+if [ "$CODE_OBTAINED" = "false" ]; then
   INSTALL_DIR="${CUSTOM_DIR:-.}"; mkdir -p "$INSTALL_DIR"; cd "$INSTALL_DIR"
-  if command -v git >/dev/null 2>&1; then
-    info "git clone 获取代码..."
-    git clone --depth 1 "https://github.com/${REPO}.git" . 2>/dev/null || \
-    git clone --depth 1 "https://gitclone.com/github.com/${REPO}" . 2>/dev/null || \
-    git clone --depth 1 "https://kkgithub.com/${REPO}" . 2>/dev/null || \
-    fatal "git clone 失败！请检查网络"
-    ok "代码获取完成"
-  else
-    info "git 不可用，下载必要文件..."
-    for f in Dockerfile docker-compose.yml docker-entrypoint.sh .env.docker .dockerignore; do
-      curl -fsSL "${GIT_RAW}/${f}" -o "$f" 2>/dev/null || \
-      curl -fsSL "https://ghfast.top/${GIT_RAW}/${f}" -o "$f" 2>/dev/null || \
-      warn "$f 下载失败"
+
+  # 检测是否在国内网络环境
+  _IS_CHINA=false
+  if ! curl -s -m 5 https://www.google.com >/dev/null 2>&1; then
+    _IS_CHINA=true
+    info "检测到国内网络环境，优先使用镜像加速"
+  fi
+
+  # ── 方法 1: git clone (带多重国内镜像回退) ──
+  if [ "$CODE_OBTAINED" = "false" ] && command -v git >/dev/null 2>&1; then
+    # Git clone 镜像列表（按可靠性排序）
+    _GIT_MIRRORS=(
+      "https://github.com/${REPO}.git"
+      "https://ghfast.top/https://github.com/${REPO}.git"
+      "https://kkgithub.com/${REPO}.git"
+      "https://gitclone.com/github.com/${REPO}.git"
+      "https://hub.fastgit.xyz/${REPO}.git"
+      "https://github.com.cnpmjs.org/${REPO}.git"
+    )
+
+    # 国内环境：把国内镜像排到前面
+    if [ "$_IS_CHINA" = "true" ]; then
+      _GIT_MIRRORS=(
+        "https://ghfast.top/https://github.com/${REPO}.git"
+        "https://kkgithub.com/${REPO}.git"
+        "https://gitclone.com/github.com/${REPO}.git"
+        "https://github.com.cnpmjs.org/${REPO}.git"
+        "https://hub.fastgit.xyz/${REPO}.git"
+        "https://github.com/${REPO}.git"
+      )
+    fi
+
+    info "尝试 git clone 获取代码..."
+    for _mirror in "${_GIT_MIRRORS[@]}"; do
+      _mirror_name="${_mirror%%/u4399*}"
+      _mirror_name="${_mirror_name%/}"
+      printf "  尝试: %s ... " "$_mirror_name"
+      if git clone --depth 1 "$_mirror" . 2>/dev/null; then
+        echo "成功!"
+        CODE_OBTAINED=true
+        # 如果通过镜像 clone，修正 remote url 以便后续 git pull
+        git remote set-url origin "https://github.com/${REPO}.git" 2>/dev/null || true
+        break
+      else
+        echo "失败"
+        # 清理失败的 clone 残留
+        rm -rf .git 2>/dev/null || true
+      fi
     done
-    mkdir -p mini-services/scraper-service/src/scrape-rules
-    ok "关键文件下载完成"
+
+    if [ "$CODE_OBTAINED" = "true" ]; then
+      ok "代码获取完成 (git clone)"
+    else
+      warn "所有 git clone 镜像均失败，尝试下载压缩包..."
+    fi
+  fi
+
+  # ── 方法 2: 下载 tar.gz 压缩包 (比 git clone 更稳定) ──
+  if [ "$CODE_OBTAINED" = "false" ]; then
+    info "下载项目压缩包..."
+
+    # 压缩包代理列表
+    _ARCHIVE_MIRRORS=(
+      "$ARCHIVE_URL"
+      "https://ghfast.top/${ARCHIVE_URL}"
+      "https://gh-proxy.com/${ARCHIVE_URL}"
+      "https://mirror.ghproxy.com/${ARCHIVE_URL}"
+      "https://gh.idayer.com/${ARCHIVE_URL}"
+    )
+
+    _dl_ok=false
+    for _mirror in "${_ARCHIVE_MIRRORS[@]}"; do
+      _mirror_name="${_mirror%%/https://github*}"
+      _mirror_name="${_mirror_name%/}"
+      printf "  尝试: %s ... " "${_mirror_name:-direct}"
+      if command -v curl >/dev/null 2>&1; then
+        if curl -fsSL --connect-timeout 15 --max-time 300 "$_mirror" -o /tmp/novel-admin.tar.gz 2>/dev/null; then
+          _dl_ok=true; echo "成功!"; break
+        else
+          echo "失败"
+        fi
+      elif command -v wget >/dev/null 2>&1; then
+        if wget -q --timeout=300 -O /tmp/novel-admin.tar.gz "$_mirror" 2>/dev/null; then
+          _dl_ok=true; echo "成功!"; break
+        else
+          echo "失败"
+        fi
+      fi
+    done
+
+    if $_dl_ok && [ -s /tmp/novel-admin.tar.gz ]; then
+      if tar xzf /tmp/novel-admin.tar.gz --strip-components=1 2>/dev/null; then
+        CODE_OBTAINED=true
+        ok "代码获取完成 (压缩包)"
+      else
+        warn "压缩包解压失败，文件可能已损坏"
+        rm -f /tmp/novel-admin.tar.gz
+      fi
+    fi
+    rm -f /tmp/novel-admin.tar.gz 2>/dev/null || true
+  fi
+
+  # ── 方法 3: 逐文件下载 (最后手段) ──
+  if [ "$CODE_OBTAINED" = "false" ]; then
+    info "尝试逐文件下载关键部署文件..."
+    _FILE_MIRRORS=("" "https://ghfast.top/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/")
+
+    _dl_count=0; _dl_total=0
+    for f in Dockerfile docker-compose.yml docker-entrypoint.sh .env.docker .dockerignore pack.sh; do
+      _dl_total=$((_dl_total + 1))
+      for _proxy in "${_FILE_MIRRORS[@]}"; do
+        _url="${_proxy}${GIT_RAW}/${f}"
+        if command -v curl >/dev/null 2>&1; then
+          curl -fsSL --connect-timeout 10 --max-time 60 "$_url" -o "$f" 2>/dev/null && _dl_count=$((_dl_count + 1)) && break
+        elif command -v wget >/dev/null 2>&1; then
+          wget -q --timeout=60 -O "$f" "$_url" 2>/dev/null && _dl_count=$((_dl_count + 1)) && break
+        fi
+      done
+    done
+    # 创建必要目录
+    mkdir -p mini-services/scraper-service/src/scrape-rules backups
+
+    if [ "$_dl_count" -ge 4 ]; then
+      CODE_OBTAINED=true
+      ok "关键文件下载完成 (${_dl_count}/${_dl_total})"
+    else
+      warn "仅下载 ${_dl_count}/${_dl_total} 个文件"
+    fi
+  fi
+
+  # ── 所有方法失败 ──
+  if [ "$CODE_OBTAINED" = "false" ]; then
+    echo ""
+    fatal "无法获取项目代码！请尝试以下方法之一：
+
+  方法1: 手动下载压缩包 (推荐国内用户)
+    浏览器打开: https://github.com/${REPO}/archive/refs/heads/main.zip
+    或搜索 GitHub 镜像站下载
+    解压后运行: bash quick-docker.sh
+
+  方法2: 配置 git 代理
+    git config --global http.proxy socks5://127.0.0.1:1080
+    git clone https://github.com/${REPO}.git
+    cd novel-admin-1.0.0 && bash quick-docker.sh
+
+  方法3: 使用 gitee 镜像 (如有)
+    在 gitee.com 搜索 novel-admin 并 clone
+
+  方法4: 离线部署
+    在有网络的机器上运行: bash pack.sh
+    将生成的 .tar.gz 传到服务器，解压后运行: bash deploy.sh"
   fi
 fi
 
@@ -111,7 +265,7 @@ ok "档位: $TIER (${_avail_mb}MB / ${_cpu_cores}核)"
 # ─── Step 5: 生成 .env ───
 step 5 "生成 .env 配置文件"
 mkdir -p backups
-[ -f .env.docker ] || fatal ".env.docker 模板不存在！"
+[ -f .env.docker ] || fatal ".env.docker 模板不存在！请确认项目代码完整下载"
 cp .env.docker .env
 sed -i "s|change-this-to-a-strong-db-password-16chars|${POSTGRES_PASSWORD}|g" .env
 sed -i "s|change-this-to-a-random-secret-min-32-chars|${NEXTAUTH_SECRET}|g" .env
@@ -138,14 +292,35 @@ ok ".env 已生成（档位: $TIER）"
 
 # ─── Step 6: Docker 镜像加速 ───
 step 6 "配置 Docker 镜像加速"
-if ! curl -s -m 3 https://www.google.com >/dev/null 2>&1; then
+if ! curl -s -m 5 https://www.google.com >/dev/null 2>&1; then
   _DAEMON_JSON="/etc/docker/daemon.json"
+  _NEED_RESTART=false
   if [ ! -f "$_DAEMON_JSON" ] || [ ! -s "$_DAEMON_JSON" ]; then
-    echo '{"registry-mirrors":["https://docker.1ms.run"]}' | sudo tee "$_DAEMON_JSON" >/dev/null 2>&1 || true
-    sudo systemctl restart docker 2>/dev/null || true
-    ok "Docker 镜像加速已配置"
+    # 多个国内 Docker Hub 镜像源 (2025年可用)
+    cat > /tmp/daemon.json << 'DAEMONJSON'
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.xuanyuanhaiwai.com",
+    "https://docker.m.daocloud.io"
+  ]
+}
+DAEMONJSON
+    if sudo cp /tmp/daemon.json "$_DAEMON_JSON" 2>/dev/null; then
+      _NEED_RESTART=true
+      ok "Docker 镜像加速已配置 (3个镜像源)"
+    else
+      warn "无法写入 daemon.json (需要 sudo 权限)"
+    fi
+    rm -f /tmp/daemon.json
   else
     ok "Docker 镜像加速已存在"
+  fi
+  if $_NEED_RESTART; then
+    info "重启 Docker daemon..."
+    sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
+    sleep 3
+    docker info >/dev/null 2>&1 || warn "Docker 重启后异常，请检查: systemctl status docker"
   fi
 else
   ok "海外网络，跳过镜像加速"
@@ -154,8 +329,17 @@ fi
 # ─── Step 7: 构建启动 ───
 step 7 "构建并启动服务"
 [ "$TIER" = "tiny" ] || [ "$TIER" = "small" ] && export DOCKER_BUILDKIT=0 || export DOCKER_BUILDKIT=1
-info "构建镜像中...（首次约 5-10 分钟）"; echo ""
-docker compose build 2>&1 || { warn "构建失败，清除缓存重试..."; docker compose build --no-cache 2>&1 || fatal "构建失败！"; }
+
+# 国内环境: 确保 Dockerfile 使用国内镜像
+if ! curl -s -m 5 https://www.google.com >/dev/null 2>&1; then
+  info "国内环境: Dockerfile 已内置阿里云镜像源"
+fi
+
+info "构建镜像中...（首次约 5-10 分钟，国内可能稍长）"; echo ""
+docker compose build 2>&1 || {
+  warn "构建失败，清除缓存重试..."
+  docker compose build --no-cache 2>&1 || fatal "构建失败！请检查网络或运行: docker compose build --no-cache"
+}
 echo ""; info "启动服务..."
 docker compose up -d 2>&1 || fatal "启动失败！"
 
