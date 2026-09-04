@@ -25484,3 +25484,30 @@ Stage Summary:
 - ReadingStreakBanner gracefully hides when no streak data
 - Reading streak API backward-compatible (sessionId still works, global mode added)
 - Lint passes (0 errors, 4 pre-existing warnings)
+Task ID: 11
+Agent: Main Orchestrator (Continuation)
+Task: 持续开发 - bug修复 + 新功能 + 样式优化 + git推送
+
+Work Log:
+- 修复GuichuidengReader siteName硬编码bug → 使用useSiteName()动态获取
+- 增强GuichuidengReader关闭按钮: glass morphism + framer-motion淡入动画
+- 创建ScrollToTopButton组件(framer-motion AnimatePresence)
+- 添加阅读进度环(SVG圆形进度)到NovelInfoSection
+- 添加章节阅读时间估算(约X分钟，按500字/分)
+- 创建ReadingStreakBanner阅读连续天数横幅
+- 创建/api/public/reading-streak API端点(全局+per-session模式)
+- 增强小说卡片hover效果(shadow-lg + translate + 渐变overlay)
+- 改进SearchBar焦点样式(ring + 背景 + 图标脉冲)
+- 优化ReadingSettingsPanel(间距+键盘快捷键区分背景)
+- GuichuidengReader样式细节(chapter list glassmorphism + 推荐卡片渐变 + footer渐变)
+- 添加自定义滚动条CSS(reader-content-area + scrollbar-thin)
+- 改进底部提示文字(图标+结构化文本)
+- ESLint: 0 errors, 4 warnings(pre-existing)
+- Git推送: commit 3b6e209 → main
+
+Stage Summary:
+- 1 bug修复(siteName硬编码)
+- 4 新功能(ScrollToTop, 进度环, 阅读时间, 阅读连续天数)
+- 6+ 样式优化(卡片hover, SearchBar, SettingsPanel, Guichuideng细节, 滚动条, 底部提示)
+- 13 files changed, 322 insertions, 31 deletions
+- Lint: 0 errors ✅, Git push ✅
