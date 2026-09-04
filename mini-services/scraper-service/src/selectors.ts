@@ -771,3 +771,293 @@ export function extractMetadataFallback(html: string): Partial<{
   return result;
 }
 
+// ==================== Structured Data Primary Extraction ====================
+
+/**
+ * Extract structured data from a page as a PRIMARY source before CSS selectors.
+ *
+ * Many modern sites include rich structured data (JSON-LD, OpenGraph, microdata)
+ * that provides cleaner, more reliable content than CSS selectors which can break
+ * when site layouts change. This function extracts structured data first, then
+ * falls back to CSS selectors for any missing fields.
+ *
+ * @param html - Raw HTML string
+ * @returns Extracted content from structured data sources
+ */
+export function extractStructuredDataContent(html: string): {
+  title: string;
+  content: string;
+  author: string;
+  description: string;
+  datePublished: string;
+  dateModified: string;
+  wordCount: number;
+  source: 'jsonld' | 'microdata' | 'og' | 'none';
+} {
+  const $ = getCachedCheerio(html);
+  const result: {
+    title: string;
+    content: string;
+    author: string;
+    description: string;
+    datePublished: string;
+    dateModified: string;
+    wordCount: number;
+    source: 'jsonld' | 'microdata' | 'og' | 'none';
+  } = {
+    title: '',
+    content: '',
+    author: '',
+    description: '',
+    datePublished: '',
+    dateModified: '',
+    wordCount: 0,
+    source: 'none',
+  };
+
+  // 1. Try JSON-LD first (most structured, highest quality)
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const data = JSON.parse($(el).text());
+      const types = Array.isArray(data['@type']) ? data['@type'] : [data['@type']];
+
+      // Check for article/book types
+      if (types.some((t: string) => ['Article', 'BlogPosting', 'NewsArticle', 'Book', 'Chapter', 'CreativeWork', 'WebPage'].includes(t))) {
+        if (!result.title && data.name) {
+          result.title = String(data.name);
+          result.source = 'jsonld';
+        }
+        if (!result.content && data.articleBody) {
+          result.content = String(data.articleBody);
+          result.source = 'jsonld';
+        }
+        if (!result.content && data.text) {
+          result.content = String(data.text);
+          result.source = 'jsonld';
+        }
+        if (!result.author) {
+          if (typeof data.author === 'string') {
+            result.author = data.author;
+          } else if (data.author?.name) {
+            result.author = String(data.author.name);
+          } else if (Array.isArray(data.author)) {
+            result.author = data.author.map((a: any) => typeof a === 'string' ? a : (a?.name || '')).filter(Boolean).join(', ');
+          }
+        }
+        if (!result.description && data.description) {
+          result.description = String(data.description);
+        }
+        if (!result.datePublished && data.datePublished) {
+          result.datePublished = String(data.datePublished);
+        }
+        if (!result.dateModified && data.dateModified) {
+          result.dateModified = String(data.dateModified);
+        }
+        if (data.wordCount && typeof data.wordCount === 'number') {
+          result.wordCount = data.wordCount;
+        }
+      }
+    } catch { /* ignore invalid JSON-LD */ }
+  });
+
+  // 2. Try Microdata (itemscope/itemprop) if JSON-LD didn't provide content
+  if (!result.content) {
+    const articleEl = $('[itemtype*="Article"], [itemtype*="Book"], [itemtype*="CreativeWork"]').first();
+    if (articleEl.length > 0) {
+      if (!result.title) {
+        const microTitle = articleEl.find('[itemprop="name"]').first().text().trim();
+        if (microTitle) { result.title = microTitle; result.source = 'microdata'; }
+      }
+      if (!result.content) {
+        const microBody = articleEl.find('[itemprop="articleBody"]').first().text().trim();
+        if (microBody) { result.content = microBody; result.source = 'microdata'; }
+      }
+      if (!result.author) {
+        const microAuthor = articleEl.find('[itemprop="author"]').first().text().trim();
+        if (microAuthor) { result.author = microAuthor; }
+      }
+      if (!result.description) {
+        const microDesc = articleEl.find('[itemprop="description"]').first().text().trim();
+        if (microDesc) { result.description = microDesc; }
+      }
+    }
+  }
+
+  // 3. Try OpenGraph as fallback
+  if (!result.title) {
+    const ogTitle = $('meta[property="og:title"]').attr('content');
+    if (ogTitle) { result.title = ogTitle; result.source = 'og'; }
+  }
+  if (!result.description) {
+    const ogDesc = $('meta[property="og:description"]').attr('content');
+    if (ogDesc) { result.description = ogDesc; result.source = 'og'; }
+  }
+
+  // Calculate word count if not provided by structured data
+  if (result.wordCount === 0 && result.content) {
+    // CJK characters count as 1 word each; Latin words split by space
+    const cjkChars = (result.content.match(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+    const latinWords = result.content.replace(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]/g, ' ')
+      .split(/\s+/).filter(w => w.length > 0).length;
+    result.wordCount = cjkChars + latinWords;
+  }
+
+  return result;
+}
+
+// ==================== Content Zone Detection ====================
+
+/**
+ * Detect the main content zone of an HTML page using text density analysis.
+ *
+ * Algorithm:
+ *   1. Walk all block-level elements (div, section, article, main, etc.)
+ *   2. For each, compute text density = (direct text length) / (total descendant HTML length)
+ *   3. Score each element: text_density * text_length (favor both density AND volume)
+ *   4. Return the highest-scoring element's CSS selector
+ *
+ * This is useful as a fallback when no known content selector matches.
+ *
+ * @param html - Raw HTML string
+ * @returns The best content zone selector, or empty string if no good zone found
+ */
+export function detectContentZone(html: string): string {
+  const $ = getCachedCheerio(html);
+
+  // Block-level containers to analyze
+  const containers = 'div, section, article, main, aside, td, li';
+  let bestScore = 0;
+  let bestSelector = '';
+
+  // Track by element to avoid duplicates
+  const scored = new Map<cheerio.Element, { score: number; selector: string }>();
+
+  $(containers).each((index, el) => {
+    const $el = $(el);
+    const htmlStr = $el.html() || '';
+    const textStr = $el.text().trim();
+
+    // Skip tiny elements
+    if (textStr.length < 200) return;
+    // Skip nav/header/footer containers (likely not content)
+    const tag = (el as cheerio.Element & { name: string }).name;
+    const id = $el.attr('id') || '';
+    const cls = $el.attr('class') || '';
+    if (/nav|header|footer|sidebar|menu|comment|ad-/i.test(id + ' ' + cls)) return;
+    if (tag === 'aside') return; // aside is rarely main content
+
+    // Text density: ratio of text to HTML (higher = more text, less markup)
+    const textDensity = htmlStr.length > 0 ? textStr.length / htmlStr.length : 0;
+
+    // Link density: ratio of link text to total text (lower = less navigation)
+    let linkTextLen = 0;
+    $el.find('a').each((_, a) => { linkTextLen += $(a).text().trim().length; });
+    const linkDensity = textStr.length > 0 ? linkTextLen / textStr.length : 0;
+
+    // Paragraph density: number of <p> tags relative to text length
+    const pCount = $el.find('p').length;
+    const pDensity = textStr.length > 0 ? pCount / (textStr.length / 500) : 0;
+
+    // Combined score:
+    //   - Text density: 0-1, higher is better
+    //   - Link penalty: links reduce score (navigation-heavy = not content)
+    //   - Size bonus: longer text gets a logarithmic bonus
+    //   - Paragraph bonus: presence of <p> tags indicates content structure
+    const sizeBonus = Math.log2(Math.max(1, textStr.length)) / 10;
+    const linkPenalty = Math.max(0, 1 - linkDensity * 2);
+    const pBonus = Math.min(1, pDensity * 0.3);
+    const score = textDensity * textStr.length * linkPenalty * (1 + sizeBonus) * (1 + pBonus);
+
+    // Build a CSS selector for this element
+    let selector = tag;
+    if (id) {
+      selector = '#' + id;
+    } else if (cls) {
+      // Use the first class that doesn't look generic
+      const firstClass = cls.split(/\s+/).find(c =>
+        c.length > 2 && !/^(row|col|container|wrapper|flex|grid|item|box)$/i.test(c)
+      );
+      if (firstClass) selector = tag + '.' + firstClass;
+    }
+
+    scored.set(el, { score, selector });
+  });
+
+  // Find the best scoring element
+  for (const [, entry] of scored) {
+    if (entry.score > bestScore) {
+      bestScore = entry.score;
+      bestSelector = entry.selector;
+    }
+  }
+
+  // Only return if score is above a minimum threshold
+  // (below this, the detection is too unreliable)
+  if (bestScore > 100) {
+    return bestSelector;
+  }
+  return '';
+}
+
+/**
+ * Detect chapter boundaries in paginated content.
+ * Some novel sites split a single chapter across multiple pages with
+ * "下一页" (next page) links. This function detects such patterns.
+ *
+ * @param html - Raw HTML string
+ * @returns Info about the detected chapter boundary, or null if not paginated
+ */
+export function detectChapterBoundary(html: string): {
+  isPaginated: boolean;
+  nextPageUrl: string;
+  currentPage: number;
+  totalPages: number;
+} | null {
+  const $ = getCachedCheerio(html);
+
+  // Common pagination patterns for Chinese novel sites
+  const nextPatterns = [
+    'a:contains("下一页")',
+    'a:contains("下页")',
+    'a:contains("下一部分")',
+    'a:contains("Next")',
+    '.next a',
+    '#next a',
+    'a.next',
+    'a[rel="next"]',
+    '.pagination .next a',
+    '.pager .next a',
+  ];
+
+  for (const pattern of nextPatterns) {
+    try {
+      const nextLink = $(pattern).first();
+      const href = nextLink.attr('href');
+      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+        // Try to detect current page from pagination
+        let currentPage = 1;
+        let totalPages = 1;
+
+        // Check for page indicators like "1/3" or "第1页/共3页"
+        const pageText = $.text();
+        const pageMatch = pageText.match(/(?:第?(\d+)\s*[\/|]\s*共?(\d+)\s*页|(\d+)\s*[\/|]\s*(\d+))/);
+        if (pageMatch) {
+          currentPage = parseInt(pageMatch[1] || pageMatch[3] || '1', 10);
+          totalPages = parseInt(pageMatch[2] || pageMatch[4] || '1', 10);
+        }
+
+        return {
+          isPaginated: true,
+          nextPageUrl: href,
+          currentPage,
+          totalPages,
+        };
+      }
+    } catch {
+      // Invalid selector, skip
+    }
+  }
+
+  return null;
+}
+

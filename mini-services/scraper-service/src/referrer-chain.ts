@@ -229,3 +229,73 @@ class ReferrerChain {
 
 // Singleton export
 export const referrerChain = new ReferrerChain();
+
+// ==================== Referrer Policy Compliance ====================
+
+/**
+ * Determine the correct Referer header value based on referrer policy.
+ *
+ * The Referrer-Policy controls how much referrer information is included
+ * with requests. Browsers enforce these policies, and anti-bot systems
+ * check for compliance. Sending a full URL when the policy says "origin-only"
+ * is a detection signal.
+ *
+ * Common Referrer-Policy values:
+ *   - no-referrer:         Send no Referer header
+ *   - no-referrer-when-downgrade: Send full URL for HTTPS→HTTPS, nothing for HTTPS→HTTP
+ *   - origin:              Send only the origin (scheme + host + port)
+ *   - origin-when-cross-origin: Full URL for same-origin, origin only for cross-origin
+ *   - same-origin:         Full URL for same-origin, nothing for cross-origin
+ *   - strict-origin:       Origin only, and only for HTTPS→HTTPS or HTTP→HTTP
+ *   - strict-origin-when-cross-origin: (Chrome default) Full URL same-origin, origin for HTTPS→HTTPS cross-origin
+ *
+ * @param referrerUrl  - The page we're navigating from
+ * @param targetUrl    - The URL we're navigating to
+ * @param policy       - The Referrer-Policy to apply (default: strict-origin-when-cross-origin)
+ * @returns The Referer header value to send, or empty string to send no Referer
+ */
+export function applyReferrerPolicy(
+  referrerUrl: string,
+  targetUrl: string,
+  policy: string = 'strict-origin-when-cross-origin',
+): string {
+  if (!referrerUrl || !targetUrl) return '';
+
+  try {
+    const refParsed = new URL(referrerUrl);
+    const tgtParsed = new URL(targetUrl);
+    const sameOrigin = refParsed.origin === tgtParsed.origin;
+    const downgrade = refParsed.protocol === 'https:' && tgtParsed.protocol === 'http:';
+
+    switch (policy) {
+      case 'no-referrer':
+        return '';
+
+      case 'no-referrer-when-downgrade':
+        return downgrade ? '' : referrerUrl;
+
+      case 'origin':
+        return refParsed.origin;
+
+      case 'origin-when-cross-origin':
+        return sameOrigin ? referrerUrl : refParsed.origin;
+
+      case 'same-origin':
+        return sameOrigin ? referrerUrl : '';
+
+      case 'strict-origin':
+        return downgrade ? '' : refParsed.origin;
+
+      case 'strict-origin-when-cross-origin':
+        if (downgrade) return '';
+        return sameOrigin ? referrerUrl : refParsed.origin;
+
+      default:
+        // Unknown policy — default to strict-origin-when-cross-origin (Chrome default)
+        if (downgrade) return '';
+        return sameOrigin ? referrerUrl : refParsed.origin;
+    }
+  } catch {
+    return '';
+  }
+}

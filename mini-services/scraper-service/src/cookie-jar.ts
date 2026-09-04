@@ -472,3 +472,34 @@ _cleanupInterval = setInterval(() => {
 export function destroyCookieJar(): void {
   if (_cleanupInterval) { clearInterval(_cleanupInterval); _cleanupInterval = null; }
 }
+
+// ==================== Cookie Consent Detection ====================
+
+/**
+ * Detect cookie consent/GDPR banners from HTML content.
+ * Returns selectors that can be used to auto-accept consent.
+ *
+ * @param html - HTML content to analyze
+ * @returns Array of CSS selectors for consent accept buttons
+ */
+export function detectCookieConsentButtons(html: string): string[] {
+  const selectors: string[] = [];
+
+  // Common cookie consent banner patterns
+  const consentPatterns = [
+    { selector: 'button[id*="accept"]', test: /button[^>]+id\s*=\s*["'][^"']*accept[^"']*["']/i },
+    { selector: 'button[class*="accept"]', test: /button[^>]+class\s*=\s*["'][^"']*accept[^"']*["']/i },
+    { selector: 'button[class*="agree"]', test: /button[^>]+class\s*=\s*["'][^"']*agree[^"']*["']/i },
+    { selector: 'button[class*="consent"]', test: /button[^>]+class\s*=\s*["'][^"']*consent[^"']*["']/i },
+    { selector: '#onetrust-accept-btn-handler', test: /id\s*=\s*["']onetrust-accept-btn-handler["']/i },
+    { selector: '.cookie-accept', test: /class\s*=\s*["'][^"']*cookie-accept[^"']*["']/i },
+  ];
+
+  for (const { selector, test } of consentPatterns) {
+    if (test.test(html)) {
+      selectors.push(selector);
+    }
+  }
+
+  return selectors;
+}

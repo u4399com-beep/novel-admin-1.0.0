@@ -401,6 +401,117 @@ export function generateMouseMovementPath(
 // Singleton export
 export const browserBehavior = new BrowserBehavior();
 
+// ==================== Cookie Consent Auto-Acceptance ====================
+
+/**
+ * CSS selectors for common cookie consent/GDPR banner elements.
+ * Used by Playwright-based engines to auto-accept cookie consent,
+ * preventing banners from blocking content extraction.
+ */
+export const COOKIE_CONSENT_SELECTORS: string[] = [
+  // Common consent button patterns
+  'button[id*="accept"]',
+  'button[class*="accept"]',
+  'button[class*="agree"]',
+  'button[class*="consent"]',
+  'button[class*="allow"]',
+  'a[class*="accept"]',
+  'a[id*="accept"]',
+  '.cookie-accept',
+  '.cookie-consent-accept',
+  '#cookie-accept',
+  '#accept-cookies',
+  // GDPR/CCPA specific
+  '[class*="gdpr"] button',
+  '[class*="ccpa"] button',
+  '#onetrust-accept-btn-handler',
+  '.otCenterRounded .accept-btn',
+  // Chinese site consent patterns
+  'a:contains("同意")',
+  'button:contains("同意")',
+  'a:contains("接受")',
+  'button:contains("接受")',
+  'a:contains("确定")',
+  'button:contains("确定")',
+  'a:contains("我知道了")',
+  'button:contains("我知道了")',
+  // English patterns
+  'button:contains("Accept")',
+  'button:contains("Accept All")',
+  'button:contains("I Agree")',
+  'button:contains("OK")',
+  'button:contains("Got it")',
+  'a:contains("Accept")',
+];
+
+/**
+ * Generate a "human reading pattern" scroll sequence with natural pauses.
+ * Unlike the basic generateScrollSequence(), this produces a more realistic
+ * pattern that includes:
+ *   - Initial pause at the top (reading the title/hero area)
+ *   - Variable scroll speeds (fast for known-layout pages, slow for text-heavy pages)
+ *   - Micro-scroll-backs (re-reading a paragraph)
+ *   - Longer pauses at section boundaries
+ *   - Gradual slowdown near the bottom (losing interest)
+ *
+ * @param pageHeight - Total scrollable page height in pixels
+ * @param isTextHeavy - Whether the page is text-heavy (novel chapter) vs list/grid
+ * @returns Array of scroll steps with delays
+ */
+export function generateHumanReadingScroll(pageHeight: number, isTextHeavy: boolean = false): ScrollStep[] {
+  if (pageHeight <= 0) return [{ y: 0, delayMs: 0 }];
+
+  const steps: ScrollStep[] = [];
+
+  // 1. Initial pause at top — reading the title/header area
+  steps.push({
+    y: 0,
+    delayMs: isTextHeavy ? (800 + Math.round(Math.random() * 1200)) : (300 + Math.round(Math.random() * 500)),
+  });
+
+  // 2. First scroll — past the hero/header to the content
+  const firstScroll = isTextHeavy ? 200 : 400;
+  steps.push({
+    y: firstScroll,
+    delayMs: isTextHeavy ? (1000 + Math.round(Math.random() * 1500)) : (400 + Math.round(Math.random() * 600)),
+  });
+
+  let currentY = firstScroll;
+  const targetY = Math.round(pageHeight * (isTextHeavy ? (0.85 + Math.random() * 0.1) : (0.6 + Math.random() * 0.25)));
+
+  // 3. Main reading scroll — variable step size based on content type
+  while (currentY < targetY) {
+    // Text-heavy: small steps (reading line by line), List: large steps (scanning)
+    const baseStep = isTextHeavy ? (80 + Math.round(Math.random() * 120)) : (200 + Math.round(Math.random() * 300));
+
+    // Gradual slowdown near the bottom (losing interest)
+    const progressRatio = currentY / targetY;
+    const slowdownFactor = progressRatio > 0.7 ? (1.5 - progressRatio) : 1.0;
+
+    const stepSize = Math.round(baseStep * slowdownFactor);
+
+    // 15% chance of micro-scroll-back (re-reading)
+    if (Math.random() < 0.15 && currentY > 100) {
+      const backAmount = isTextHeavy ? (30 + Math.round(Math.random() * 50)) : (50 + Math.round(Math.random() * 100));
+      currentY = Math.max(0, currentY - backAmount);
+      steps.push({ y: currentY, delayMs: 200 + Math.round(Math.random() * 400) });
+      // Then scroll forward past the previous position
+      currentY = Math.min(targetY, currentY + stepSize + backAmount);
+    } else {
+      currentY = Math.min(targetY, currentY + stepSize);
+    }
+
+    // Reading delay at each position
+    const baseDelay = isTextHeavy ? (500 + Math.round(Math.random() * 1000)) : (200 + Math.round(Math.random() * 400));
+    // Longer pause at section boundaries (every ~1000px)
+    const sectionPause = currentY % 1000 < stepSize ? (300 + Math.round(Math.random() * 500)) : 0;
+
+    steps.push({ y: currentY, delayMs: baseDelay + sectionPause });
+  }
+
+  return steps;
+}
+
 // ==================== Scroll Simulation ====================
 
 /**

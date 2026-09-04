@@ -10,9 +10,9 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
 ) {
   try {
     const { id } = await params;
-    const sessionId = request.nextUrl.searchParams.get('sessionId');
+    const sessionId = sanitizeField(request.nextUrl.searchParams.get('sessionId') || '', 100);
 
-    if (!sessionId) {
+    if (!sessionId || sessionId.length < 10) {
       return apiError('缺少 sessionId 参数', 400);
     }
 
@@ -51,8 +51,9 @@ export const PUT = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async fu
       rating?: unknown;
     };
 
-    if (!sessionId || typeof sessionId !== 'string') {
-      return apiError('缺少 sessionId', 400);
+    const sanitizedSessionId = sanitizeField(sessionId, 100);
+    if (!sanitizedSessionId || sanitizedSessionId.length < 10) {
+      return apiError('sessionId 无效', 400);
     }
 
     if (typeof content !== 'string' || content.length > 2000) {
@@ -80,10 +81,10 @@ export const PUT = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async fu
     const ratingValue = rating !== undefined && rating !== null ? Number(rating) : null;
 
     const note = await db.chapterNote.upsert({
-      where: { chapterId_sessionId: { chapterId: id, sessionId } },
+      where: { chapterId_sessionId: { chapterId: id, sessionId: sanitizedSessionId } },
       create: {
         chapterId: id,
-        sessionId,
+        sessionId: sanitizedSessionId,
         content: sanitizedContent,
         rating: ratingValue,
       },

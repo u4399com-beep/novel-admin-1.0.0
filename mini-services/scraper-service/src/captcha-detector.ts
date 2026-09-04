@@ -313,3 +313,72 @@ export const CAPTCHA_BADGE_LABELS: Record<CaptchaDetection['type'], string> = {
   custom: '验证码',
   unknown: '验证码',
 };
+
+// ==================== Additional CAPTCHA Detection ====================
+
+/**
+ * Detect DataDome CAPTCHA from HTML content.
+ * DataDome serves its own CAPTCHA when it identifies a request as bot traffic.
+ */
+export function detectDataDomeCaptcha(html: string): CaptchaDetection {
+  const evidence: string[] = [];
+
+  if (/DataDomeCAPTCHA/i.test(html)) {
+    evidence.push('DataDomeCAPTCHA element');
+  }
+  if (/datadome.*captcha/i.test(html)) {
+    evidence.push('DataDome captcha string');
+  }
+  if (/captcha\.datadome\.co/i.test(html)) {
+    evidence.push('captcha.datadome.co domain');
+  }
+  if (/geo\.captcha\.datadome/i.test(html)) {
+    evidence.push('geo.captcha.datadome domain');
+  }
+
+  if (evidence.length > 0) {
+    return {
+      detected: true,
+      type: 'custom',
+      confidence: Math.min(0.7 + evidence.length * 0.1, 0.95),
+      evidence,
+    };
+  }
+
+  return { detected: false, type: 'unknown', confidence: 0, evidence: [] };
+}
+
+/**
+ * Detect Kasada anti-bot challenge from HTML content.
+ * Kasada uses obfuscated JavaScript challenges that are difficult to solve programmatically.
+ */
+export function detectKasadaChallenge(html: string): CaptchaDetection {
+  const evidence: string[] = [];
+
+  if (/kasada/i.test(html)) {
+    evidence.push('Kasada string');
+  }
+  if (/ksd\.io/i.test(html)) {
+    evidence.push('ksd.io domain');
+  }
+  if (/X-KPSDK-/i.test(html)) {
+    evidence.push('X-KPSDK header pattern');
+  }
+  if (/KPSDK/i.test(html)) {
+    evidence.push('KPSDK string');
+  }
+  if (/kpsdk/i.test(html)) {
+    evidence.push('kpsdk string');
+  }
+
+  if (evidence.length > 0) {
+    return {
+      detected: true,
+      type: 'unknown',
+      confidence: Math.min(0.6 + evidence.length * 0.15, 0.9),
+      evidence,
+    };
+  }
+
+  return { detected: false, type: 'unknown', confidence: 0, evidence: [] };
+}

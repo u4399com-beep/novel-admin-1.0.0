@@ -83,13 +83,14 @@ export const authOptions: NextAuthOptions = {
           throw new Error(`系统登录已临时锁定，请${rl.retryAfter}秒后再试`);
         }
 
-        const adminUser = process.env.ADMIN_USERNAME || "admin";
+        const adminUser = process.env.ADMIN_USERNAME;
         const adminPass = process.env.ADMIN_PASSWORD;
 
-        // Require password to be explicitly configured - no default fallback
-        if (!adminPass) {
-          console.error("[Auth] ADMIN_PASSWORD environment variable is not set! Login is disabled.");
-          throw new Error("系统未配置登录密码，请联系管理员设置ADMIN_PASSWORD环境变量");
+        // Require both username and password to be explicitly configured - no default fallbacks
+        // Using default usernames like "admin" is a security risk (predictable brute-force target)
+        if (!adminUser || !adminPass) {
+          console.error("[Auth] ADMIN_USERNAME and/or ADMIN_PASSWORD environment variables are not set! Login is disabled.");
+          throw new Error("系统未配置管理员账号，请联系管理员设置ADMIN_USERNAME和ADMIN_PASSWORD环境变量");
         }
 
         if (

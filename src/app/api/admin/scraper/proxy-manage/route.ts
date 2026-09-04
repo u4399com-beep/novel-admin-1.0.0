@@ -2,6 +2,7 @@ import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
 import { apiError, safeJson } from '@/lib/api-utils';
+import { isSafeUrl } from '@/lib/sanitize';
 
 const SCRAPER_TIMEOUT = 15000;
 
@@ -37,6 +38,22 @@ export const POST = withAuth(async function POST(request: Request) {
 
   if (!action || typeof action !== 'string' || !VALID_ACTIONS.includes(action)) {
     return apiError(`无效的操作类型，可选值: ${VALID_ACTIONS.join(', ')}`, 400);
+  }
+
+  // SSRF validation: validate any URL fields in payload for proxy-related actions
+  const URL_PAYLOAD_FIELDS = ['url', 'proxyUrl', 'testUrl'];
+  for (const field of URL_PAYLOAD_FIELDS) {
+    if (payload[field] && typeof payload[field] === 'string' && !isSafeUrl(payload[field] as string)) {
+      return apiError(`${field} 不允许访问内网或私有地址`, 400);
+    }
+  }
+  // For 'import' action, validate proxy URLs in array
+  if (action === 'import' && Array.isArray(payload.proxies)) {
+    for (const p of payload.proxies) {
+      if (typeof p === 'string' && p.trim() && !isSafeUrl(p)) {
+        return apiError(`代理URL不允许访问内网或私有地址: ${p.slice(0, 100)}`, 400);
+      }
+    }
   }
 
   const route = ACTION_MAP[action as string];

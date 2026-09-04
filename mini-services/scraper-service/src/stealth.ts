@@ -4635,6 +4635,235 @@ export function getStealthScript(profile: FingerprintProfile): string {
     }
   } catch(_wakeLockErr) {}
 
+  // ---- 64. Chrome DevTools Protocol (CDP) Detection Evasion ----
+  // Advanced bot detection systems check for CDP artifacts that indicate
+  // automated browsers. This section neutralizes common CDP detection vectors.
+
+  try {
+    // 64a. Hide __commandLineAPI (Chrome console injection artifact)
+    // When DevTools is open, Chrome injects __commandLineAPI into the console scope.
+    // Some detection scripts check for its existence via toString() or error messages.
+    Object.defineProperty(window, '__commandLineAPI', {
+      get: () => undefined,
+      configurable: true,
+      enumerable: false,
+    });
+
+    // 64b. Neutralize Runtime.enable / Debugger.enable detection
+    // Some scripts detect CDP by observing side effects of Runtime.enable:
+    //   - console.log receives additional call frames
+    //   - Error.stackTraceLimit changes
+    //   - window.__puppeteerEvaluationScriptCallback appears
+    // We clean up these artifacts.
+    try { delete window.__puppeteerEvaluationScriptCallback; } catch(_e) {}
+    try { delete window.__webdriver_evaluate; } catch(_e) {}
+    try { delete window.__selenium_evaluate; } catch(_e) {}
+    try { delete window.__fxdriver_evaluate; } catch(_e) {}
+    try { delete window.__driver_evaluate; } catch(_e) {}
+    try { delete window.__driver_unwrapped; } catch(_e) {}
+    try { delete window.__webdriver_unwrapped; } catch(_e) {}
+    try { delete window.__selenium_unwrapped; } catch(_e) {}
+    try { delete window.__fxdriver_unwrapped; } catch(_e) {}
+
+    // 64c. Hide CDP-specific window properties
+    // Playwright/Puppeteer expose these globally in some configurations
+    try { delete window._cdp; } catch(_e) {}
+    try { delete window.__playwright; } catch(_e) {}
+    try { delete window.__pw_manual; } catch(_e) {}
+
+    // 64d. Override Error.prepareStackTrace to hide CDP stack frames
+    // CDP-instrumented environments add internal frames that leak automation
+    var _origPrepareStackTrace = Error.prepareStackTrace;
+    Object.defineProperty(Error, 'prepareStackTrace', {
+      get: () => _origPrepareStackTrace,
+      set: function(v) { _origPrepareStackTrace = v; },
+      configurable: true,
+      enumerable: true,
+    });
+
+    // 64e. Neutralize console.debug detection
+    // Some sites check if console.debug has been modified by CDP instrumentation
+    if (typeof console.debug === 'function') {
+      var _origConsoleDebug = console.debug.bind(console);
+      Object.defineProperty(console, 'debug', {
+        get: () => _origConsoleDebug,
+        set: function(v) { /* block CDP override */ },
+        configurable: true,
+        enumerable: true,
+      });
+    }
+  } catch(_cdpErr) {}
+
+  // ---- 65. JavaScript Execution Context Camouflage ----
+  // Override additional navigator/screen/window properties that advanced
+  // bot detection systems fingerprint to identify headless browsers.
+
+  try {
+    // 65a. navigator.connection (Network Information API)
+    // Real browsers report connection type; headless often has undefined or inconsistent values
+    if (!navigator.connection && !_isFirefox) {
+      Object.defineProperty(navigator, 'connection', {
+        get: () => ({
+          effectiveType: '4g',
+          rtt: 50 + Math.floor(_seededRandom(651) * 100),
+          downlink: 5 + Math.round(_seededRandom(652) * 5 * 100) / 100,
+          saveData: false,
+          onchange: null,
+          addEventListener: function() {},
+          removeEventListener: function() {},
+          dispatchEvent: function() { return true; },
+        }),
+        configurable: true,
+        enumerable: true,
+      });
+    }
+
+    // 65b. navigator.permissions (Permissions API)
+    // Headless browsers may have inconsistent permissions behavior
+    if (navigator.permissions) {
+      var _origPermissionsQuery = navigator.permissions.query.bind(navigator.permissions);
+      Object.defineProperty(navigator, 'permissions', {
+        get: () => ({
+          query: function(desc) {
+            // Return realistic permission states based on type
+            if (desc && desc.name === 'notifications') {
+              return Promise.resolve({ state: 'default', onchange: null });
+            }
+            if (desc && desc.name === 'geolocation') {
+              return Promise.resolve({ state: 'prompt', onchange: null });
+            }
+            if (desc && (desc.name === 'camera' || desc.name === 'microphone')) {
+              return Promise.resolve({ state: 'prompt', onchange: null });
+            }
+            return _origPermissionsQuery(desc);
+          },
+        }),
+        configurable: true,
+        enumerable: true,
+      });
+    }
+
+    // 65c. navigator.storage (Storage API)
+    // Ensure StorageManager is present and returns realistic values
+    if (!navigator.storage && !_isFirefox) {
+      Object.defineProperty(navigator, 'storage', {
+        get: () => ({
+          estimate: () => Promise.resolve({
+            quota: 300 * 1024 * 1024 * 1024, // ~300GB typical for desktop
+            usage: Math.floor(_seededRandom(653) * 500 * 1024 * 1024), // 0-500MB
+          }),
+          persist: () => Promise.resolve(false),
+          persisted: () => Promise.resolve(false),
+        }),
+        configurable: true,
+        enumerable: true,
+      });
+    }
+
+    // 65d. navigator.presentation / navigator.bluetooth
+    // Real browsers have these as undefined (not null); headless may differ
+    try {
+      if (navigator.bluetooth === null) {
+        Object.defineProperty(navigator, 'bluetooth', {
+          get: () => undefined,
+          configurable: true,
+          enumerable: true,
+        });
+      }
+    } catch(_btErr) {}
+
+    // 65e. screen.orientation (Screen Orientation API)
+    // Ensure screen.orientation returns realistic values for desktop
+    if (screen.orientation) {
+      try {
+        Object.defineProperty(screen.orientation, 'type', {
+          get: () => 'landscape-primary',
+          configurable: true,
+        });
+        Object.defineProperty(screen.orientation, 'angle', {
+          get: () => 0,
+          configurable: true,
+        });
+      } catch(_oriErr) {}
+    }
+
+    // 65f. window.visualViewport (Visual Viewport API)
+    // Modern browsers expose this; some headless browsers have incomplete implementations
+    if (!window.visualViewport) {
+      Object.defineProperty(window, 'visualViewport', {
+        get: () => ({
+          width: window.innerWidth,
+          height: window.innerHeight,
+          offsetLeft: 0,
+          offsetTop: 0,
+          pageLeft: 0,
+          pageTop: 0,
+          scale: 1,
+          onresize: null,
+          onscroll: null,
+          addEventListener: function() {},
+          removeEventListener: function() {},
+          dispatchEvent: function() { return true; },
+        }),
+        configurable: true,
+        enumerable: true,
+      });
+    }
+
+    // 65g. window.speechSynthesis (Speech Synthesis API)
+    // Some bot detectors check for missing speechSynthesis in headless mode
+    if (!window.speechSynthesis) {
+      try {
+        Object.defineProperty(window, 'speechSynthesis', {
+          get: () => ({
+            speaking: false,
+            pending: false,
+            paused: false,
+            voices: [],
+            onvoiceschanged: null,
+            onstart: null,
+            onend: null,
+            onerror: null,
+            onpause: null,
+            onresume: null,
+            onmark: null,
+            onboundary: null,
+            speak: function() {},
+            cancel: function() {},
+            pause: function() {},
+            resume: function() {},
+            getVoices: function() { return []; },
+            addEventListener: function() {},
+            removeEventListener: function() {},
+            dispatchEvent: function() { return true; },
+          }),
+          configurable: true,
+          enumerable: true,
+        });
+      } catch(_speechErr) {}
+    }
+
+    // 65h. CSS.supports() override consistency check
+    // Some detection scripts verify that CSS.supports() returns consistent
+    // results with the claimed browser. Ensure it exists and works normally.
+    if (!window.CSS || !CSS.supports) {
+      Object.defineProperty(window, 'CSS', {
+        get: () => ({
+          supports: function(prop, val) {
+            // Basic truthy response for common properties
+            if (typeof prop === 'string' && !val) {
+              return true; // Simplified; real implementation is complex
+            }
+            return true;
+          },
+          escape: function(s) { return s; },
+        }),
+        configurable: true,
+        enumerable: true,
+      });
+    }
+  } catch(_camouflageErr) {}
+
 })();
 `;
 

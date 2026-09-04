@@ -1,8 +1,8 @@
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
-import { apiError } from '@/lib/api-utils';
-import { safeJson } from '@/lib/api-utils';
+import { apiError, safeJson } from '@/lib/api-utils';
+import { isSafeUrl } from '@/lib/sanitize';
 
 const SCRAPER_TIMEOUT = 8000;
 
@@ -46,6 +46,11 @@ export const POST = withAuth(async function POST(request: Request) {
   try {
     if (!body.targetUrl || typeof body.targetUrl !== 'string') {
       return NextResponse.json({ error: 'targetUrl is required' }, { status: 400 });
+    }
+
+    // SSRF validation on targetUrl
+    if (!isSafeUrl(body.targetUrl)) {
+      return apiError('目标URL不允许访问内网或私有地址', 400);
     }
 
     const controller = new AbortController();

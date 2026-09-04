@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo, useSyncExternalStore } from 'react';
+import { useState, useEffect, useRef, useMemo, useSyncExternalStore } from 'react';
 import { ExternalLink, RefreshCw, Link2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface LinkWheelItem {
+interface FriendlyLinkData {
   title: string;
   url: string;
   description: string | null;
@@ -53,7 +53,7 @@ function useClientOrigin() {
   );
 }
 
-function FriendlyLinkItem({ link }: { link: LinkWheelItem }) {
+function FriendlyLinkItem({ link }: { link: FriendlyLinkData }) {
   const origin = useClientOrigin();
   const isExternal = !origin || !link.url.startsWith(origin);
 
@@ -73,7 +73,7 @@ function FriendlyLinkItem({ link }: { link: LinkWheelItem }) {
 }
 
 // ─── Link Wheel Item (with animation key for re-render) ──────────────────────
-function LinkWheelItem({ link, animKey }: { link: LinkWheelItem; animKey: number }) {
+function LinkWheelItem({ link, animKey }: { link: FriendlyLinkData; animKey: number }) {
   const origin = useClientOrigin();
   const isExternal = !origin || !link.url.startsWith(origin);
 
@@ -96,8 +96,8 @@ function LinkWheelItem({ link, animKey }: { link: LinkWheelItem; animKey: number
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function FriendlyLinksFooter() {
-  const [manualLinks, setManualLinks] = useState<LinkWheelItem[]>([]);
-  const [wheelLinks, setWheelLinks] = useState<LinkWheelItem[]>([]);
+  const [manualLinks, setManualLinks] = useState<FriendlyLinkData[]>([]);
+  const [wheelLinks, setWheelLinks] = useState<FriendlyLinkData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [wheelKey, setWheelKey] = useState(0);
@@ -111,8 +111,8 @@ export function FriendlyLinksFooter() {
     (async () => {
       try {
         const [manualData, wheelData] = await Promise.all([
-          apiFetch<LinkWheelItem[]>('/api/public/link-wheel?count=20&type=manual', { signal, silent: true }),
-          apiFetch<LinkWheelItem[]>('/api/public/link-wheel?count=20&type=site_home,site_novel', { signal, silent: true }),
+          apiFetch<FriendlyLinkData[]>('/api/public/link-wheel?count=20&type=manual', { signal, silent: true }),
+          apiFetch<FriendlyLinkData[]>('/api/public/link-wheel?count=20&type=site_home,site_novel', { signal, silent: true }),
         ]);
         if (signal.aborted) return;
         setManualLinks(manualData);
@@ -135,7 +135,7 @@ export function FriendlyLinksFooter() {
 
     wheelTimerRef.current = setInterval(async () => {
       try {
-        const data = await apiFetch<LinkWheelItem[]>('/api/public/link-wheel?count=20&type=site_home,site_novel', { silent: true, timeout: 5000 });
+        const data = await apiFetch<FriendlyLinkData[]>('/api/public/link-wheel?count=20&type=site_home,site_novel', { silent: true, timeout: 5000 });
         setWheelLinks(data);
         setWheelKey((k) => k + 1);
       } catch {

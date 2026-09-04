@@ -162,6 +162,7 @@ export default function LoginPage() {
                     className="absolute right-0 top-0 h-10 w-10 text-muted-foreground hover:text-foreground"
                     onClick={() => setShowPassword(!showPassword)}
                     tabIndex={-1}
+                    aria-label={showPassword ? '隐藏密码' : '显示密码'}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>

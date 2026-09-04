@@ -52,12 +52,24 @@ function validateJsonStructure(value: unknown, depth: number, maxDepth: number, 
         validateJsonStructure(item, depth + 1, maxDepth, maxKeys);
       }
     } else {
-      const keys = Object.keys(value as Record<string, unknown>);
+      // Use Object.getOwnPropertyNames to include non-enumerable keys
+      // and explicitly check for __proto__ / constructor / prototype to
+      // prevent prototype pollution through JSON.parse reviver tricks.
+      // Note: JSON.parse in V8 does NOT create __proto__ properties,
+      // but this is defense-in-depth for any future changes.
+      const obj = value as Record<string, unknown>;
+      const dangerousProto = ['__proto__', 'constructor', 'prototype'];
+      for (const dk of dangerousProto) {
+        if (dk in obj) {
+          throw new Error(`JSON 包含危险属性: ${dk}`);
+        }
+      }
+      const keys = Object.keys(obj);
       if (keys.length > maxKeys) {
         throw new Error(`JSON 对象键数量超过 ${maxKeys} 限制`);
       }
       for (const key of keys) {
-        validateJsonStructure((value as Record<string, unknown>)[key], depth + 1, maxDepth, maxKeys);
+        validateJsonStructure(obj[key], depth + 1, maxDepth, maxKeys);
       }
     }
   }

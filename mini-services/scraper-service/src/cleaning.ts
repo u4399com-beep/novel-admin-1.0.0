@@ -1000,3 +1000,175 @@ export function handleClean(body: CleanRequest) {
     t2sConverted: false,
   };
 }
+
+// ==================== HTML Content Repair ====================
+
+/**
+ * Repair common HTML issues in scraped content from novel sites.
+ *
+ * Many Chinese novel sites produce broken HTML that causes content loss:
+ *   - Unclosed tags (<p>text without </p>)
+ *   - Missing paragraph breaks (text runs together)
+ *   - <br> tags that should be <p> boundaries
+ *   - Nested paragraphs (<p><p>text</p></p>)
+ *   - Missing closing tags for <div>, <span>
+ *
+ * This function applies a series of repair passes to produce valid HTML
+ * with proper paragraph structure.
+ *
+ * @param html - Raw (potentially broken) HTML string
+ * @returns Repaired HTML string
+ */
+export function repairHtml(html: string): string {
+  if (!html || html.length < 10) return html;
+
+  let result = html;
+
+  // 1. Fix unclosed <p> tags: if we see <p> without a matching </p>,
+  //    insert </p> before the next <p> or at the end
+  const pOpenCount = (result.match(/<p[\s>]/gi) || []).length;
+  const pCloseCount = (result.match(/<\/p>/gi) || []).length;
+  if (pOpenCount > pCloseCount) {
+    // Insert missing </p> before each unmatched <p>
+    let openTags = 0;
+    let i = 0;
+    const parts: string[] = [];
+    const pRegex = /<\/?p[\s>]/gi;
+    let match;
+    while ((match = pRegex.exec(result)) !== null) {
+      parts.push(result.slice(i, match.index));
+      if (match[0].startsWith('</')) {
+        openTags = Math.max(0, openTags - 1);
+      } else {
+        if (openTags > 0) {
+          // Unclosed <p> — insert </p> before this new <p>
+          parts.push('</p>');
+        }
+        openTags++;
+      }
+      parts.push(match[0]);
+      i = match.index + match[0].length;
+    }
+    parts.push(result.slice(i));
+    // Close any remaining open <p> tags
+    for (let j = 0; j < openTags; j++) {
+      parts.push('</p>');
+    }
+    result = parts.join('');
+  }
+
+  // 2. Convert double <br> or <br/><br/> to paragraph boundaries
+  //    Single <br> within a paragraph is preserved
+  result = result.replace(/<br\s*\/?>\s*<br\s*\/?>/gi, '</p><p>');
+
+  // 3. Fix nested paragraphs: <p><p>text</p></p> → <p>text</p>
+  result = result.replace(/<p[^>]*>\s*<p[^>]*>/gi, '<p>');
+  result = result.replace(/<\/p>\s*<\/p>/gi, '</p>');
+
+  // 4. Remove empty paragraphs
+  result = result.replace(/<p[^>]*>\s*<\/p>/gi, '');
+
+  // 5. Fix unclosed <div> and <span> tags at the end of content
+  //    Count opens and closes, add missing closes
+  for (const tag of ['div', 'span']) {
+    const openRegex = new RegExp(`<${tag}[\\s>]`, 'gi');
+    const closeRegex = new RegExp(`</${tag}>`, 'gi');
+    const opens = (result.match(openRegex) || []).length;
+    const closes = (result.match(closeRegex) || []).length;
+    if (opens > closes) {
+      for (let j = 0; j < opens - closes; j++) {
+        result += `</${tag}>`;
+      }
+    }
+  }
+
+  // 6. Remove style attributes that hide content (display:none, visibility:hidden)
+  result = result.replace(/<([a-z]+)\s+[^>]*style\s*=\s*["'][^"']*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^"']*["'][^>]*>/gi, '');
+
+  // 7. Ensure content is wrapped in at least one <p> if it contains bare text
+  //    (text not inside any block-level element)
+  if (result.length > 0 && !/<(?:p|div|h[1-6]|ul|ol|table|blockquote|pre|article|section)/i.test(result.slice(0, 200))) {
+    result = '<p>' + result + '</p>';
+  }
+
+  return result;
+}
+
+/**
+ * Detect and extract chapter boundaries from content.
+ * Useful for splitting long content into logical reading segments.
+ *
+ * @param content - Cleaned text content
+ * @returns Array of chapter segments with their boundary markers
+ */
+export function extractChapterSegments(content: string): Array<{
+  text: string;
+  index: number;
+  marker?: string;
+}> {
+  if (!content || content.length < 100) {
+    return [{ text: content, index: 0 }];
+  }
+
+  // Common chapter boundary patterns
+  const chapterPatterns = [
+    /^第[一二三四五六七八九十百千万零\d]+[章回节卷篇]/m,   // Chinese: 第X章/回/节
+    /^Chapter\s+\d+/im,                                     // English: Chapter N
+    /^CHAPTER\s+[IVXLCDM]+/m,                              // English: CHAPTER Roman
+    /^\d+\.\s+\S/m,                                         // Numbered: 1. Title
+    /^【第[一二三四五六七八九十百千万零\d]+[章回节]】/m,    // 【第X章】 format
+  ];
+
+  // Find all chapter boundary positions
+  const boundaries: Array<{ pos: number; marker: string }> = [];
+
+  for (const pattern of chapterPatterns) {
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      boundaries.push({
+        pos: match.index,
+        marker: match[0].trim(),
+      });
+      // Prevent infinite loop on zero-length matches
+      if (match[0].length === 0) pattern.lastIndex++;
+    }
+  }
+
+  // Sort by position
+  boundaries.sort((a, b) => a.pos - b.pos);
+
+  // Remove duplicates at same position
+  const deduped: Array<{ pos: number; marker: string }> = [];
+  for (const b of boundaries) {
+    if (deduped.length === 0 || deduped[deduped.length - 1].pos !== b.pos) {
+      deduped.push(b);
+    }
+  }
+
+  if (deduped.length === 0) {
+    return [{ text: content, index: 0 }];
+  }
+
+  // Split content at boundaries
+  const segments: Array<{ text: string; index: number; marker?: string }> = [];
+
+  // Content before first chapter boundary
+  if (deduped[0].pos > 0) {
+    segments.push({
+      text: content.slice(0, deduped[0].pos).trim(),
+      index: 0,
+    });
+  }
+
+  for (let i = 0; i < deduped.length; i++) {
+    const start = deduped[i].pos;
+    const end = i < deduped.length - 1 ? deduped[i + 1].pos : content.length;
+    segments.push({
+      text: content.slice(start, end).trim(),
+      index: segments.length,
+      marker: deduped[i].marker,
+    });
+  }
+
+  return segments.filter(s => s.text.length > 0);
+}

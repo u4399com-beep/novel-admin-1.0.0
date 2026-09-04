@@ -145,7 +145,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     } finally {
       setFavoriteLoading(false);
     }
-  }, [favoriteLoading, isFavorited, novel.id, localFavoriteCount]);
+  }, [favoriteLoading, isFavorited, novel.id]);
 
   // ─── Search match count ─────────────────────────────────────────
   const matchCount = useMemo(() => {

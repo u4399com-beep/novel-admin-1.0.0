@@ -46,8 +46,8 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 1 }, async (r
     });
 
     const search = sanitizeField(searchParams.get("search"), 100);
-    const categorySlug = searchParams.get("categorySlug") || "";
-    const categoryId = searchParams.get("categoryId") || "";
+    const categorySlug = sanitizeField(searchParams.get("categorySlug"), 100);
+    const categoryId = sanitizeField(searchParams.get("categoryId"), 50);
     const wordCountKey = searchParams.get("wordCount") || "all";
     const status = searchParams.get("status") || "";
     const sortKey = searchParams.get("sort") || "last_update";

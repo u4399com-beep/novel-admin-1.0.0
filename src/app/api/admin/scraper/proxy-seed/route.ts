@@ -2,6 +2,7 @@ import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
 import { apiError, safeJson } from '@/lib/api-utils';
+import { isSafeUrl } from '@/lib/sanitize';
 
 const SCRAPER_TIMEOUT = 60000; // 60s for batch test
 
@@ -25,8 +26,15 @@ export const POST = withAuth(async function POST(request: Request) {
       return apiError('proxies 必须为非空数组', 400);
     }
 
-    // Validate each proxy is a non-empty string
-    const validProxies = proxies.filter((p): p is string => typeof p === 'string' && p.trim().length > 0);
+    // Validate each proxy is a non-empty string with SSRF protection
+    const validProxies: string[] = [];
+    for (const p of proxies) {
+      if (typeof p !== 'string' || p.trim().length === 0) continue;
+      if (!isSafeUrl(p)) {
+        return apiError(`代理URL不允许访问内网或私有地址: ${p.slice(0, 100)}`, 400);
+      }
+      validProxies.push(p);
+    }
     if (validProxies.length === 0) {
       return apiError('无有效代理URL', 400);
     }

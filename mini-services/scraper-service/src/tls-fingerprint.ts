@@ -38,6 +38,11 @@ export interface TLSCipherVariant {
   options: TLSFingerprintOptions;
   /** Reference JA3 hash for verification (informational only) */
   ja3Ref?: string;
+  /** Reference JA4 fingerprint for verification (informational only)
+   *  JA4 = (protocol, cipher_count, extension_count)_(cipher_ids)_(extension_ids)_(alpn_ids)
+   *  e.g., "t13d1511h2_002f,0035,009c,009d_0005,000a,000b,000d,0012,0015,0016,0017,001b,0023,002b,002d,0033,fe0d_02,6868"
+   */
+  ja4Ref?: string;
 }
 
 // ==================== Cipher Variant Pool ====================
@@ -55,7 +60,18 @@ export interface TLSCipherVariant {
 export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
   // ---- Chrome Variants ----
   {
-    name: 'Chrome 131+ Windows',
+    name: 'Chrome 134+ Windows',
+    browser: 'Chrome',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
+    },
+    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+    ja4Ref: 't13d1511h2_002f,0035,009c,009d_0005,000a,000b,000d,0012,0015,0016,0017,001b,0023,002b,002d,0033,fe0d_02,6868',
+  },
+  {
+    name: 'Chrome 131-133 Windows',
     browser: 'Chrome',
     options: {
       ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
@@ -96,6 +112,17 @@ export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
   },
 
   // ---- Firefox Variants ----
+  {
+    name: 'Firefox 135-138',
+    browser: 'Firefox',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
+    },
+    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+    ja4Ref: 't13d1511h2_002f,0033,009c,009d_0005,000a,000b,000d,0017,002b,002d,0033,fe0d_02,6868',
+  },
   {
     name: 'Firefox 128-134',
     browser: 'Firefox',
@@ -288,6 +315,71 @@ export function getTLSFingerprintOptions(domain: string, ua?: string): TLSFinger
 export function getTLSVariantName(domain: string): string {
   const cached = domainTlsOptionsCache.get(domain);
   return cached?.variantName || 'unknown';
+}
+
+/**
+ * Get the JA4 fingerprint reference for the TLS variant selected for a domain.
+ * Returns undefined if no JA4 reference is available for the selected variant.
+ */
+export function getTLSJA4Ref(domain: string): string | undefined {
+  // Re-derive the variant to get JA4 ref
+  const cached = domainTlsOptionsCache.get(domain);
+  if (!cached) return undefined;
+
+  // Find the matching variant to get ja4Ref
+  const match = TLS_CIPHER_VARIANTS.find(v => v.name === cached.variantName);
+  return match?.ja4Ref;
+}
+
+/**
+ * Compute an approximate JA4 fingerprint string from TLS options.
+ *
+ * JA4 format: (protocol, cipher_count, extension_count)_(cipher_ids)_(extension_ids)_(alpn_ids)
+ *
+ * This is a simplified approximation since we can't access the actual TLS handshake
+ * from the application layer. It derives the JA4 components from the cipher list
+ * and other TLS options we control.
+ *
+ * @param options - TLS fingerprint options
+ * @returns Approximate JA4 fingerprint string
+ */
+export function computeApproximateJA4(options: TLSFingerprintOptions): string {
+  const ciphers = options.ciphers.split(':');
+  const cipherCount = ciphers.length;
+
+  // Protocol: t13 (TLS 1.3), t12 (TLS 1.2)
+  const protocol = options.minVersion === 'TLSv1.3' ? 't13' : 't12';
+
+  // Direction: 'd' for destination (client-initiated)
+  const direction = 'd';
+
+  // ALPN
+  const alpnList = (options.alpn || 'h2,http/1.1').split(',').map(s => s.trim());
+  const alpnHex = alpnList.map(a => {
+    const hex = Buffer.from(a).toString('hex');
+    return hex.length.toString(16).padStart(2, '0') + hex;
+  }).join(',');
+
+  // Extension count approximation (Chrome typically sends ~15 extensions)
+  const extCount = 15;
+
+  // Cipher suite hex IDs (simplified mapping for common ciphers)
+  const cipherHexMap: Record<string, string> = {
+    'TLS_AES_128_GCM_SHA256': '1301',
+    'TLS_AES_256_GCM_SHA384': '1302',
+    'TLS_CHACHA20_POLY1305_SHA256': '1303',
+    'ECDHE-ECDSA-AES128-GCM-SHA256': 'c02b',
+    'ECDHE-RSA-AES128-GCM-SHA256': 'c02f',
+    'ECDHE-ECDSA-AES256-GCM-SHA384': 'c02c',
+    'ECDHE-RSA-AES256-GCM-SHA384': 'c030',
+    'ECDHE-RSA-AES128-SHA256': 'c027',
+    'ECDHE-RSA-AES128-SHA': 'c013',
+  };
+  const cipherHex = ciphers.map(c => cipherHexMap[c] || '????').join(',');
+
+  // Build JA4: t12d1511h2_ciphers_extensions_alpn
+  const alpnCode = alpnList.includes('h2') ? 'h2' : 'h1';
+  return `${protocol}${direction}${cipherCount}${extCount}${alpnCode}_${cipherHex}_*_${alpnHex}`;
 }
 
 /**

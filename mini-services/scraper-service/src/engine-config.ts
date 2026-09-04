@@ -513,3 +513,92 @@ export function getLowContentDomains(): Record<string, number> {
   }
   return result;
 }
+
+// ==================== Scrape Job Checkpointing ====================
+
+/**
+ * Checkpoint system for scrape jobs, enabling resume from last successful chapter.
+ *
+ * When a scrape job is interrupted (crash, timeout, captcha), the checkpoint
+ * stores the last successfully scraped URL/index. On restart, the job can
+ * resume from that point instead of re-scraping everything.
+ */
+
+export interface ScrapeCheckpoint {
+  /** Unique job identifier */
+  jobId: string;
+  /** Domain being scraped */
+  domain: string;
+  /** Last successfully scraped URL */
+  lastSuccessUrl: string;
+  /** Index of the last successfully scraped item */
+  lastIndex: number;
+  /** Total items to scrape */
+  totalItems: number;
+  /** Timestamp of the last successful scrape */
+  lastSuccessAt: number;
+  /** Partial content already extracted (for recovery) */
+  partialContent: string[];
+  /** Engine that succeeded for the last URL */
+  successfulEngine?: EngineType;
+  /** Error that caused the last interruption */
+  lastError?: string;
+}
+
+/** In-memory checkpoint store */
+const checkpoints = new Map<string, ScrapeCheckpoint>();
+const MAX_CHECKPOINTS = 200;
+
+/**
+ * Save a checkpoint for a scrape job.
+ * @param checkpoint - The checkpoint data to save
+ */
+export function saveCheckpoint(checkpoint: ScrapeCheckpoint): void {
+  if (checkpoints.size >= MAX_CHECKPOINTS && !checkpoints.has(checkpoint.jobId)) {
+    const oldestKey = checkpoints.keys().next().value;
+    if (oldestKey !== undefined) checkpoints.delete(oldestKey);
+  }
+  checkpoints.set(checkpoint.jobId, checkpoint);
+}
+
+/**
+ * Load a checkpoint for a scrape job.
+ * @param jobId - The job identifier
+ * @returns The checkpoint data, or undefined if no checkpoint exists
+ */
+export function loadCheckpoint(jobId: string): ScrapeCheckpoint | undefined {
+  const cp = checkpoints.get(jobId);
+  if (!cp) return undefined;
+
+  // Check if checkpoint is too old (>1 hour = stale)
+  if (Date.now() - cp.lastSuccessAt > 60 * 60 * 1000) {
+    checkpoints.delete(jobId);
+    return undefined;
+  }
+
+  return cp;
+}
+
+/**
+ * Clear a checkpoint for a scrape job.
+ * @param jobId - The job identifier
+ */
+export function clearCheckpoint(jobId: string): void {
+  checkpoints.delete(jobId);
+}
+
+/**
+ * Get all active checkpoints (for monitoring/debugging).
+ */
+export function getActiveCheckpoints(): ScrapeCheckpoint[] {
+  const now = Date.now();
+  const active: ScrapeCheckpoint[] = [];
+  for (const [jobId, cp] of checkpoints) {
+    if (now - cp.lastSuccessAt <= 60 * 60 * 1000) {
+      active.push(cp);
+    } else {
+      checkpoints.delete(jobId);
+    }
+  }
+  return active;
+}

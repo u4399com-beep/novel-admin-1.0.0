@@ -646,3 +646,148 @@ export function isHoneypot(url: string): boolean {
 export function getHoneypotCount(): number {
   return honeypotUrlSet.size;
 }
+
+// ==================== DataDome Detection ====================
+
+/**
+ * Detect DataDome anti-bot protection from response headers and HTML.
+ * DataDome is a major bot detection service used by many e-commerce and media sites.
+ *
+ * Detection signals:
+ *   - X-DataDome header (bot decision)
+ *   - X-DataDomeBotName header (bot classification)
+ *   - DataDome cookie presence
+ *   - DataDome JavaScript challenge page
+ */
+export function detectDataDome(html: string, headers: Record<string, string>): ResponseSignal[] {
+  const signals: ResponseSignal[] = [];
+  const indicators: string[] = [];
+
+  // Header-based detection
+  const ddHeader = headers['x-datadome'] || headers['X-DataDome'];
+  if (ddHeader) {
+    indicators.push(`X-DataDome: ${ddHeader}`);
+    if (ddHeader === 'protected' || ddHeader === 'blocked') {
+      signals.push({
+        type: 'js_challenge_param',
+        confidence: 0.85,
+        detail: `DataDome blocked: ${ddHeader}`,
+      });
+    }
+  }
+
+  const ddBotName = headers['x-datadomebotname'] || headers['X-DataDomeBotName'];
+  if (ddBotName) {
+    indicators.push(`X-DataDomeBotName: ${ddBotName}`);
+  }
+
+  // HTML-based detection
+  if (/datadome/i.test(html)) indicators.push('DataDome string in HTML');
+  if (/DataDomeCAPTCHA/i.test(html)) indicators.push('DataDome CAPTCHA');
+  if (/datadome\.co/i.test(html)) indicators.push('datadome.co domain');
+  if (/js\.datadome\.co/i.test(html)) indicators.push('datadome.co JS');
+
+  // Cookie-based detection
+  const setCookie = headers['set-cookie'] || '';
+  if (/datadome/i.test(setCookie)) indicators.push('DataDome cookie');
+
+  if (indicators.length > 0 && signals.length === 0) {
+    signals.push({
+      type: 'js_challenge_param',
+      confidence: Math.min(0.4 + indicators.length * 0.15, 0.9),
+      detail: `DataDome detected: ${indicators.join(', ')}`,
+    });
+  }
+
+  return signals;
+}
+
+// ==================== Akamai Bot Manager Detection ====================
+
+/**
+ * Detect Akamai Bot Manager from response headers and HTML.
+ * Akamai is one of the largest CDN/anti-bot providers.
+ *
+ * Detection signals:
+ *   - X-Akamai-Bot header
+ *   - Akamai-specific cookies (_abck)
+ *   - Akamai challenge page (Sensai/v3)
+ *   - X-Abck-* headers
+ */
+export function detectAkamaiBotManager(html: string, headers: Record<string, string>): ResponseSignal[] {
+  const signals: ResponseSignal[] = [];
+  const indicators: string[] = [];
+
+  // Header-based detection
+  const akBot = headers['x-akamai-bot'] || headers['X-Akamai-Bot'];
+  if (akBot) {
+    indicators.push(`X-Akamai-Bot: ${akBot}`);
+    if (akBot === 'blocked' || akBot === 'challenge') {
+      signals.push({
+        type: 'js_challenge_param',
+        confidence: 0.8,
+        detail: `Akamai Bot Manager: ${akBot}`,
+      });
+    }
+  }
+
+  // Akamai Bot Manager pixel response header
+  const akPixel = headers['x-akamai-pixel'] || headers['X-Akamai-Pixel'];
+  if (akPixel) indicators.push(`X-Akamai-Pixel: ${akPixel}`);
+
+  // HTML-based detection
+  if (/sensai/i.test(html)) indicators.push('Sensai challenge');
+  if (/akamai.*bot/i.test(html)) indicators.push('Akamai bot string');
+  if (/bm\.akamai/i.test(html)) indicators.push('Akamai BM JS');
+
+  // Cookie-based detection (_abck is Akamai Bot Manager cookie)
+  const setCookie = headers['set-cookie'] || '';
+  if (/_abck/i.test(setCookie)) indicators.push('_abck cookie');
+  if (/ak_bmsc/i.test(setCookie)) indicators.push('ak_bmsc cookie');
+
+  if (indicators.length > 0 && signals.length === 0) {
+    signals.push({
+      type: 'js_challenge_param',
+      confidence: Math.min(0.4 + indicators.length * 0.15, 0.85),
+      detail: `Akamai Bot Manager detected: ${indicators.join(', ')}`,
+    });
+  }
+
+  return signals;
+}
+
+// ==================== Imperva / Incapsula Detection ====================
+
+/**
+ * Detect Imperva (formerly Incapsula) anti-bot protection.
+ */
+export function detectImperva(html: string, headers: Record<string, string>): ResponseSignal[] {
+  const signals: ResponseSignal[] = [];
+  const indicators: string[] = [];
+
+  // Header-based detection
+  const xIinfo = headers['x-iinfo'] || headers['X-Iinfo'];
+  if (xIinfo) indicators.push(`X-Iinfo: ${xIinfo.slice(0, 50)}`);
+
+  // HTML-based detection
+  if (/incapsula/i.test(html)) indicators.push('Incapsula string');
+  if (/imperva/i.test(html)) indicators.push('Imperva string');
+  if (/___incapsula_frame/i.test(html)) indicators.push('Incapsula frame');
+  if (/zjdnflkxwnxbskspf/i.test(html)) indicators.push('Incapsula obfuscated JS');
+
+  // Cookie
+  const setCookie = headers['set-cookie'] || '';
+  if (/incap_ses/i.test(setCookie) || /visid_incap/i.test(setCookie)) {
+    indicators.push('Incapsula session cookie');
+  }
+
+  if (indicators.length > 0) {
+    signals.push({
+      type: 'js_challenge_param',
+      confidence: Math.min(0.5 + indicators.length * 0.15, 0.9),
+      detail: `Imperva/Incapsula detected: ${indicators.join(', ')}`,
+    });
+  }
+
+  return signals;
+}

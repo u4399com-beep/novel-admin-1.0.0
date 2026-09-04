@@ -325,6 +325,93 @@ export async function applyTimingJitter(): Promise<void> {
   // Negative jitter = no extra wait (can't go back in time)
 }
 
+// ==================== Response Processing Time Evasion ====================
+
+/**
+ * Apply a variable post-response processing delay to defeat timing-based
+ * bot detection. Some advanced WAFs measure the time between receiving
+ * a response and sending the next request — a perfectly consistent or
+ * near-zero processing time is a strong bot signal.
+ *
+ * Simulates human cognitive processing:
+ *   - Base delay: 50-200ms (visual scanning/reading page title)
+ *   - Content-dependent: longer for pages with more content
+ *   - Randomness: ±30% variation to avoid patterns
+ *   - Occasional longer pause (10% chance): 300-800ms (distraction)
+ *
+ * @param contentLength - Length of the received content (chars)
+ * @returns A promise that resolves after the simulated processing delay
+ */
+export async function applyResponseProcessingDelay(contentLength: number): Promise<void> {
+  // Base delay: 50-200ms
+  const baseDelay = 50 + Math.random() * 150;
+
+  // Content-dependent scaling: longer content → more "reading" time
+  // Using logarithmic scaling to avoid excessive delays for very long pages
+  const contentFactor = contentLength > 0 ? Math.min(1, Math.log2(contentLength / 500) / 5) : 0;
+  const contentDelay = contentFactor * 100; // 0-100ms additional
+
+  // Total with ±30% jitter
+  const total = (baseDelay + contentDelay) * (0.7 + Math.random() * 0.6);
+
+  // 10% chance of a longer distraction pause
+  const distractionDelay = Math.random() < 0.10 ? (300 + Math.random() * 500) : 0;
+
+  const delayMs = Math.round(total + distractionDelay);
+  if (delayMs > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  }
+}
+
+// ==================== HTTP/2 Pseudo-Header Order ====================
+
+/**
+ * HTTP/2 pseudo-header ordering per browser type.
+ *
+ * HTTP/2 requires pseudo-headers (:method, :authority, :scheme, :path)
+ * to appear before regular headers, but their ORDER within the pseudo-headers
+ * is browser-specific and is used as a fingerprinting signal by advanced WAFs.
+ *
+ * Chrome order:  :method, :authority, :scheme, :path
+ * Firefox order: :method, :path, :authority, :scheme
+ * Safari order:  :method, :scheme, :authority, :path
+ *
+ * This function returns the correct pseudo-header order for a given UA.
+ *
+ * @param ua - User-Agent string
+ * @returns Array of pseudo-header names in the correct order for this browser
+ */
+export function getH2PseudoHeaderOrder(ua: string): string[] {
+  if (ua.includes('Firefox/')) {
+    return [':method', ':path', ':authority', ':scheme'];
+  }
+  if (ua.includes('Safari/') && ua.includes('Macintosh') && !ua.includes('Chrome/')) {
+    return [':method', ':scheme', ':authority', ':path'];
+  }
+  // Chrome, Edge, and all Chromium-based browsers
+  return [':method', ':authority', ':scheme', ':path'];
+}
+
+/**
+ * Get HTTP/2 header frame priority/weight for a resource type.
+ * Chrome assigns different weights to different resource types in HTTP/2 PRIORITY frames.
+ *
+ * @param resourceType - The type of resource being requested
+ * @returns Priority weight (1-256, higher = more urgent)
+ */
+export function getH2ResourcePriority(resourceType: 'document' | 'stylesheet' | 'script' | 'image' | 'xhr' | 'font' | 'other'): number {
+  const PRIORITY_MAP: Record<string, number> = {
+    document: 256,    // Main document: highest priority
+    stylesheet: 187,  // CSS: high priority (render-blocking)
+    script: 140,      // JS: medium-high (parser-blocking)
+    xhr: 256,         // XHR/fetch: high (user-initiated)
+    image: 110,       // Images: lower (progressive)
+    font: 110,        // Fonts: lower
+    other: 110,       // Default
+  };
+  return PRIORITY_MAP[resourceType] || 110;
+}
+
 // ==================== POST Body Padding ====================
 
 /**

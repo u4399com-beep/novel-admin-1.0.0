@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 /**
  * Public health-check endpoint — NO authentication required.
@@ -13,8 +14,9 @@ import { db } from '@/lib/db';
  * Called by:
  *   - curl http://host:port/api/public/health
  *   - deploy.sh --diagnose
+ * Rate limited to prevent DoS abuse.
  */
-export async function GET() {
+export const GET = withPublicRateLimit({ capacity: 120, refillRate: 4 }, async function GET() {
   // 1. Database connectivity
   const dbStart = Date.now();
   let dbOk = false;
@@ -38,4 +40,4 @@ export async function GET() {
     },
     { status: allOk ? 200 : 503 },
   );
-}
+});

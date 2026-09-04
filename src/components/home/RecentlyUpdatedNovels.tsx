@@ -80,17 +80,16 @@ function RecentlyUpdatedNovelsInner() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = useCallback(async (isRefresh = false) => {
+  const fetchData = useCallback(async (isRefresh = false, signal?: AbortSignal) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
 
     try {
-      const ac = new AbortController();
       const data = await apiFetch<{ novels: RecentlyUpdatedNovel[] }>(
         '/api/public/recently-updated?limit=6',
-        { signal: ac.signal, silent: true },
+        { signal, silent: true },
       );
-      if (!ac.signal.aborted) {
+      if (!signal?.aborted) {
         setNovels(data.novels || []);
       }
     } catch (err) {
@@ -98,14 +97,18 @@ function RecentlyUpdatedNovelsInner() {
         // Silently fail — this section is non-critical
       }
     } finally {
-      if (!ac.signal.aborted) {
+      if (!signal?.aborted) {
         setLoading(false);
         setRefreshing(false);
       }
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchData(false, ac.signal);
+    return () => ac.abort();
+  }, [fetchData]);
 
   if (!loading && novels.length === 0) return null;
 

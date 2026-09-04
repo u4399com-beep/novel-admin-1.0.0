@@ -1,11 +1,13 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { withPublicRateLimit } from "@/lib/api-auth";
 
 /**
  * Health endpoint for load balancer / Docker health checks.
  * NO AUTH required — returns minimal info only (no internal service details exposed).
+ * Rate limited to prevent DoS abuse.
  */
-export async function GET() {
+export const GET = withPublicRateLimit({ capacity: 120, refillRate: 4 }, async function GET() {
   try {
     const startTime = Date.now();
     await db.$queryRaw`SELECT 1`;
@@ -29,4 +31,4 @@ export async function GET() {
       { status: 503 }
     );
   }
-}
+});
