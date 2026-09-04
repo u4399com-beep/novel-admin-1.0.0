@@ -6,38 +6,43 @@
 
 ## ⚡ 一键安装（推荐）
 
-### 方式 A：快速部署（已安装 Docker）
+### 方式 A：远程一行安装（最简单 ⭐）
 
-**只需要 1 条命令：**
+**只需 1 条命令，从零开始部署：**
+
+```bash
+# 海外服务器
+bash <(curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/quick-docker.sh)
+
+# 国内服务器（GitHub 加速镜像）
+bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/quick-docker.sh)
+```
+
+自动完成：
+- ✅ 安装 Docker 和 Docker Compose（如果缺失）
+- ✅ 获取项目代码（git clone 或 curl 下载）
+- ✅ 生成安全的随机密码和密钥
+- ✅ 检测服务器内存并选择最佳配置档位（tiny/small/normal）
+- ✅ 自动配置国内 Docker 镜像加速
+- ✅ 构建并启动所有服务
+- ✅ 等待健康检查通过
+- ✅ 显示登录地址和密码
+
+### 方式 B：本地快速部署
+
+已下载项目代码或已安装 Docker 的服务器：
 
 ```bash
 chmod +x quick-docker.sh && ./quick-docker.sh
 ```
 
-适用场景：服务器已安装 Docker 和 Docker Compose。脚本会自动：
-- ✅ 检查 Docker 环境
-- ✅ 生成安全的随机密码和密钥
-- ✅ 检测服务器内存并选择最佳配置档位（tiny/small/normal）
-- ✅ 从 `.env.docker` 模板生成 `.env`
-- ✅ 构建并启动所有服务
-- ✅ 等待健康检查通过
-- ✅ 显示登录地址和密码
-
-### 方式 B：完整部署（含 Docker 安装）
-
-如果服务器还没有安装 Docker，使用完整部署脚本：
+### 方式 C：完整部署（含防火墙/swap）
 
 ```bash
-# 1. 确保已安装 Docker（如果没有：curl -fsSL https://get.docker.com | sh）
-# 2. 执行安装脚本
-chmod +x install.sh && ./install.sh
+chmod +x deploy.sh && ./deploy.sh
 ```
 
-安装脚本额外提供：
-- ✅ 自动安装 Docker 和 Docker Compose
-- ✅ 配置防火墙开放端口
-- ✅ 创建 swap 分区（低内存服务器）
-- ✅ 国内 Docker 镜像加速
+额外提供：防火墙配置 / swap 创建 / 升级 / 备份 / 回滚
 
 ---
 

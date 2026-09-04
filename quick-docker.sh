@@ -1,260 +1,197 @@
 #!/bin/bash
 # ============================================================
-# 小说管理系统 - Docker 一键部署脚本（快速版）
+# 📚 小说管理系统 — Docker 一键部署脚本 v3
 # ============================================================
 #
-# 适用场景：已安装 Docker 和 Docker Compose 的服务器
-# 与 deploy.sh 的区别：本脚本不安装 Docker，不配置防火墙，
-#   不创建 swap，专注于快速构建和启动。
+# 一键安装命令:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/quick-docker.sh)
+#   # 国内加速:
+#   bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/quick-docker.sh)
 #
-# 用法：chmod +x quick-docker.sh && ./quick-docker.sh
+# 本地: chmod +x quick-docker.sh && ./quick-docker.sh
 # ============================================================
 
 set -euo pipefail
 
-# ─── 颜色输出 ──────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'  # No Color
-
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 info()  { echo -e "${CYAN}[INFO]${NC} $*"; }
 ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 fatal() { echo -e "${RED}[FATAL]${NC} $*" >&2; exit 1; }
+step()  { echo -e "\n${BOLD}${CYAN}━━━ Step $1 ━━━${NC} ${BOLD}$2${NC}\n"; }
 
-# ─── Step 1: 检查 Docker 环境 ────────────────────────────────
-info "检查 Docker 环境..."
+AUTO_YES=false; CUSTOM_PORT=""; CUSTOM_DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -y|--yes) AUTO_YES=true; shift ;;
+    -p|--port) CUSTOM_PORT="${2:-}"; shift 2 ;;
+    -d|--dir) CUSTOM_DIR="${2:-}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
 
-command -v docker >/dev/null 2>&1 || fatal "Docker 未安装！请先运行: curl -fsSL https://get.docker.com | sh"
-command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 || \
-    fatal "Docker Compose 未安装！请安装: apt-get install docker-compose-plugin"
+echo ""
+echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${CYAN}║${NC}  ${BOLD}📚 小说管理系统 — Docker 一键部署 v3${NC}           ${BOLD}${CYAN}║${NC}"
+echo -e "${BOLD}${CYAN}║${NC}  9 引擎采集 · 反反爬 · 硬件自适应               ${BOLD}${CYAN}║${NC}"
+echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${NC}"
+echo ""
 
-# 检查 Docker daemon 是否运行
-docker info >/dev/null 2>&1 || fatal "Docker daemon 未运行！请执行: systemctl start docker"
-
-ok "Docker $(docker --version | grep -oP 'Docker version \K[^,]+')"
-ok "Docker Compose $(docker compose version --short 2>/dev/null || docker compose version 2>&1 | head -1)"
-
-# ─── Step 2: 检查必要文件 ────────────────────────────────────
-info "检查项目文件..."
-
-[ -f docker-compose.yml ] || fatal "docker-compose.yml 不存在"
-[ -f Dockerfile ]        || fatal "Dockerfile 不存在"
-[ -f .env.docker ]       || fatal ".env.docker 模板不存在"
-
-ok "项目文件完整"
-
-# ─── Step 3: 生成安全密钥 ────────────────────────────────────
-info "生成安全密钥和密码..."
-
-# 生成 64 字符十六进制随机字符串
-generate_hex64() {
-    if command -v openssl >/dev/null 2>&1; then
-        openssl rand -hex 32
-    else
-        head -c 64 /dev/urandom | xxd -p -c 64
-    fi
+# ─── Step 1: Docker 环境 ───
+step 1 "检查 Docker 环境"
+command -v docker >/dev/null 2>&1 || {
+  info "Docker 未安装，正在自动安装..."
+  curl -fsSL https://get.docker.com | sh 2>/dev/null || fatal "Docker 安装失败！"
+  systemctl start docker 2>/dev/null || service start docker 2>/dev/null || true
+  ok "Docker 安装完成"
 }
+if ! docker compose version >/dev/null 2>&1; then
+  info "安装 Docker Compose 插件..."
+  apt-get update -qq && apt-get install -y -qq docker-compose-plugin 2>/dev/null || \
+    fatal "Docker Compose 安装失败！"
+fi
+docker info >/dev/null 2>&1 || fatal "Docker daemon 未运行！"
+DOCKER_VER=$(docker --version 2>&1 | grep -oP 'Docker version \K[^,]+')
+COMPOSE_VER=$(docker compose version --short 2>/dev/null || echo "unknown")
+ok "Docker $DOCKER_VER + Compose $COMPOSE_VER"
 
-# 生成 12 字符随机密码（URL 安全）
-generate_password() {
-    if command -v openssl >/dev/null 2>&1; then
-        openssl rand -base64 12 | tr -d '=/+' | head -c 16
-    else
-        head -c 16 /dev/urandom | base64 | tr -d '=/+' | head -c 16
-    fi
-}
+# ─── Step 2: 获取代码 ───
+step 2 "获取项目代码"
+REPO="u4399com-beep/novel-admin-1.0.0"
+GIT_RAW="https://raw.githubusercontent.com/${REPO}/main"
+if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
+  ok "项目文件已存在，跳过下载"
+else
+  INSTALL_DIR="${CUSTOM_DIR:-.}"; mkdir -p "$INSTALL_DIR"; cd "$INSTALL_DIR"
+  if command -v git >/dev/null 2>&1; then
+    info "git clone 获取代码..."
+    git clone --depth 1 "https://github.com/${REPO}.git" . 2>/dev/null || \
+    git clone --depth 1 "https://gitclone.com/github.com/${REPO}" . 2>/dev/null || \
+    git clone --depth 1 "https://kkgithub.com/${REPO}" . 2>/dev/null || \
+    fatal "git clone 失败！请检查网络"
+    ok "代码获取完成"
+  else
+    info "git 不可用，下载必要文件..."
+    for f in Dockerfile docker-compose.yml docker-entrypoint.sh .env.docker .dockerignore; do
+      curl -fsSL "${GIT_RAW}/${f}" -o "$f" 2>/dev/null || \
+      curl -fsSL "https://ghfast.top/${GIT_RAW}/${f}" -o "$f" 2>/dev/null || \
+      warn "$f 下载失败"
+    done
+    mkdir -p mini-services/scraper-service/src/scrape-rules
+    ok "关键文件下载完成"
+  fi
+fi
 
+# ─── Step 3: 生成密钥 ───
+step 3 "生成安全密钥和密码"
+generate_hex64() { openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | xxd -p -c 64; }
+generate_password() { openssl rand -base64 16 2>/dev/null | tr -d '=/+' | head -c 16 || head -c 24 /dev/urandom | base64 | tr -d '=/+' | head -c 16; }
 NEXTAUTH_SECRET=$(generate_hex64)
 SCRAPER_SERVICE_TOKEN=$(generate_hex64)
 ADMIN_PASSWORD=$(generate_password)
 POSTGRES_PASSWORD=$(generate_hex64)
-
 ok "密钥生成完成"
+info "  ADMIN_PASSWORD: ${ADMIN_PASSWORD:0:4}****"
 
-# ─── Step 4: 检测内存并选择硬件档位 ─────────────────────────
-info "检测服务器硬件..."
-
-# 获取可用内存（KB）
-if [ -f /proc/meminfo ]; then
-    _avail_kb=$(awk '/MemAvailable/{print $2}' /proc/meminfo 2>/dev/null || \
-                 awk '/MemTotal/{print $2}' /proc/meminfo)
-else
-    # macOS 或其他系统
-    _avail_kb=$(sysctl -n hw.memsize 2>/dev/null | awk '{print int($1/1024)}' || echo 2097152)
-fi
+# ─── Step 4: 硬件档位 ───
+step 4 "检测硬件并选择配置档位"
+_avail_kb=$(awk '/MemAvailable/{print $2}' /proc/meminfo 2>/dev/null || echo 2097152)
 _avail_mb=$((_avail_kb / 1024))
+_cpu_cores=$(nproc 2>/dev/null || echo 1)
+if [ "$_avail_mb" -lt 1536 ]; then TIER="tiny"
+elif [ "$_avail_mb" -lt 3072 ]; then TIER="small"
+else TIER="normal"; fi
+case "$TIER" in
+  tiny)   N=384;B="50mb";PGL="128M";PGR="32M";PGS="32MB";PGW="2MB";PGM="16MB";PGE="64MB";PGC=10;PGWAL="16MB";PGWL="2MB";PGCPU="0.3";APPL="512M";APPR="128M";APPS="64m";APPCPU="0.7" ;;
+  small)  N=512;B="100mb";PGL="192M";PGR="64M";PGS="64MB";PGW="4MB";PGM="32MB";PGE="128MB";PGC=20;PGWAL="32MB";PGWL="4MB";PGCPU="0.5";APPL="640M";APPR="256M";APPS="128m";APPCPU="0.8" ;;
+  normal) N=1024;B="100mb";PGL="256M";PGR="64M";PGS="128MB";PGW="8MB";PGM="64MB";PGE="256MB";PGC=30;PGWAL="64MB";PGWL="8MB";PGCPU="1.0";APPL="1024M";APPR="256M";APPS="256m";APPCPU="1.0" ;;
+esac
+ok "档位: $TIER (${_avail_mb}MB / ${_cpu_cores}核)"
 
-if [ "$_avail_mb" -lt 1536 ]; then
-    TIER="tiny"
-    warn "内存 ${_avail_mb}MB — 使用 tiny 档（最低配置）"
-elif [ "$_avail_mb" -lt 3072 ]; then
-    TIER="small"
-    info "内存 ${_avail_mb}MB — 使用 small 档"
-else
-    TIER="normal"
-    ok "内存 ${_avail_mb}MB — 使用 normal 档"
-fi
-
-# 设置档位参数
-set_tier_vars() {
-    case "$TIER" in
-        tiny)
-            NODE_MAX_OLD_SPACE_SIZE=384; BUN_GC_THRESHOLD="50mb"
-            PG_MEMORY_LIMIT="128M"; PG_MEMORY_RESERVATION="32M"
-            PG_SHARED_BUFFERS="32MB"; PG_WORK_MEM="2MB"; PG_MAINTENANCE_WORK_MEM="16MB"
-            PG_EFFECTIVE_CACHE_SIZE="64MB"; PG_MAX_CONNECTIONS=10
-            PG_MAX_WAL_SIZE="16MB"; PG_MIN_WAL_SIZE="2MB"; PG_CPU_LIMIT="0.3"
-            APP_MEMORY_LIMIT="512M"; APP_MEMORY_RESERVATION="128M"
-            APP_SHM_SIZE="64m"; APP_CPU_LIMIT="0.7"
-            ;;
-        small)
-            NODE_MAX_OLD_SPACE_SIZE=512; BUN_GC_THRESHOLD="100mb"
-            PG_MEMORY_LIMIT="192M"; PG_MEMORY_RESERVATION="64M"
-            PG_SHARED_BUFFERS="64MB"; PG_WORK_MEM="4MB"; PG_MAINTENANCE_WORK_MEM="32MB"
-            PG_EFFECTIVE_CACHE_SIZE="128MB"; PG_MAX_CONNECTIONS=20
-            PG_MAX_WAL_SIZE="32MB"; PG_MIN_WAL_SIZE="4MB"; PG_CPU_LIMIT="0.5"
-            APP_MEMORY_LIMIT="640M"; APP_MEMORY_RESERVATION="256M"
-            APP_SHM_SIZE="128m"; APP_CPU_LIMIT="0.8"
-            ;;
-        normal)
-            NODE_MAX_OLD_SPACE_SIZE=1024; BUN_GC_THRESHOLD="100mb"
-            PG_MEMORY_LIMIT="256M"; PG_MEMORY_RESERVATION="64M"
-            PG_SHARED_BUFFERS="128MB"; PG_WORK_MEM="8MB"; PG_MAINTENANCE_WORK_MEM="64MB"
-            PG_EFFECTIVE_CACHE_SIZE="256MB"; PG_MAX_CONNECTIONS=30
-            PG_MAX_WAL_SIZE="64MB"; PG_MIN_WAL_SIZE="8MB"; PG_CPU_LIMIT="1.0"
-            APP_MEMORY_LIMIT="1024M"; APP_MEMORY_RESERVATION="256M"
-            APP_SHM_SIZE="256m"; APP_CPU_LIMIT="1.0"
-            ;;
-    esac
-}
-
-set_tier_vars
-ok "档位: $TIER"
-
-# ─── Step 5: 生成 .env 文件 ──────────────────────────────────
-info "生成 .env 配置文件..."
-
-# 创建备份目录
+# ─── Step 5: 生成 .env ───
+step 5 "生成 .env 配置文件"
 mkdir -p backups
-
-# 从模板生成 .env，替换占位符和资源限制参数
+[ -f .env.docker ] || fatal ".env.docker 模板不存在！"
 cp .env.docker .env
-
-# 替换安全密钥
 sed -i "s|change-this-to-a-strong-db-password-16chars|${POSTGRES_PASSWORD}|g" .env
 sed -i "s|change-this-to-a-random-secret-min-32-chars|${NEXTAUTH_SECRET}|g" .env
 sed -i "s|change-this-to-a-strong-password|${ADMIN_PASSWORD}|g" .env
 sed -i "s|change-this-to-another-random-string-min-32|${SCRAPER_SERVICE_TOKEN}|g" .env
-
-# 替换资源限制参数（替换默认的 normal 档值）
-sed -i "s|^NODE_MAX_OLD_SPACE_SIZE=.*|NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE}|" .env
-sed -i "s|^BUN_GC_THRESHOLD=.*|BUN_GC_THRESHOLD=${BUN_GC_THRESHOLD}|" .env
-sed -i "s|^PG_MEMORY_LIMIT=.*|PG_MEMORY_LIMIT=${PG_MEMORY_LIMIT}|" .env
-sed -i "s|^PG_MEMORY_RESERVATION=.*|PG_MEMORY_RESERVATION=${PG_MEMORY_RESERVATION}|" .env
-sed -i "s|^PG_SHARED_BUFFERS=.*|PG_SHARED_BUFFERS=${PG_SHARED_BUFFERS}|" .env
-sed -i "s|^PG_WORK_MEM=.*|PG_WORK_MEM=${PG_WORK_MEM}|" .env
-sed -i "s|^PG_MAINTENANCE_WORK_MEM=.*|PG_MAINTENANCE_WORK_MEM=${PG_MAINTENANCE_WORK_MEM}|" .env
-sed -i "s|^PG_EFFECTIVE_CACHE_SIZE=.*|PG_EFFECTIVE_CACHE_SIZE=${PG_EFFECTIVE_CACHE_SIZE}|" .env
-sed -i "s|^PG_MAX_CONNECTIONS=.*|PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS}|" .env
-sed -i "s|^PG_MAX_WAL_SIZE=.*|PG_MAX_WAL_SIZE=${PG_MAX_WAL_SIZE}|" .env
-sed -i "s|^PG_MIN_WAL_SIZE=.*|PG_MIN_WAL_SIZE=${PG_MIN_WAL_SIZE}|" .env
-sed -i "s|^PG_CPU_LIMIT=.*|PG_CPU_LIMIT=${PG_CPU_LIMIT}|" .env
-sed -i "s|^APP_MEMORY_LIMIT=.*|APP_MEMORY_LIMIT=${APP_MEMORY_LIMIT}|" .env
-sed -i "s|^APP_MEMORY_RESERVATION=.*|APP_MEMORY_RESERVATION=${APP_MEMORY_RESERVATION}|" .env
-sed -i "s|^APP_SHM_SIZE=.*|APP_SHM_SIZE=${APP_SHM_SIZE}|" .env
-sed -i "s|^APP_CPU_LIMIT=.*|APP_CPU_LIMIT=${APP_CPU_LIMIT}|" .env
-
-# 验证没有遗留的 change-this
-if rg -q 'change-this' .env 2>/dev/null; then
-    warn ".env 中仍有 change-this 占位符，请手动检查"
-fi
-
+[ -n "$CUSTOM_PORT" ] && sed -i "s|^APP_PORT=.*|APP_PORT=${CUSTOM_PORT}|" .env
+sed -i "s|^NODE_MAX_OLD_SPACE_SIZE=.*|NODE_MAX_OLD_SPACE_SIZE=${N}|" .env
+sed -i "s|^BUN_GC_THRESHOLD=.*|BUN_GC_THRESHOLD=${B}|" .env
+sed -i "s|^PG_MEMORY_LIMIT=.*|PG_MEMORY_LIMIT=${PGL}|" .env
+sed -i "s|^PG_MEMORY_RESERVATION=.*|PG_MEMORY_RESERVATION=${PGR}|" .env
+sed -i "s|^PG_SHARED_BUFFERS=.*|PG_SHARED_BUFFERS=${PGS}|" .env
+sed -i "s|^PG_WORK_MEM=.*|PG_WORK_MEM=${PGW}|" .env
+sed -i "s|^PG_MAINTENANCE_WORK_MEM=.*|PG_MAINTENANCE_WORK_MEM=${PGM}|" .env
+sed -i "s|^PG_EFFECTIVE_CACHE_SIZE=.*|PG_EFFECTIVE_CACHE_SIZE=${PGE}|" .env
+sed -i "s|^PG_MAX_CONNECTIONS=.*|PG_MAX_CONNECTIONS=${PGC}|" .env
+sed -i "s|^PG_MAX_WAL_SIZE=.*|PG_MAX_WAL_SIZE=${PGWAL}|" .env
+sed -i "s|^PG_MIN_WAL_SIZE=.*|PG_MIN_WAL_SIZE=${PGWL}|" .env
+sed -i "s|^PG_CPU_LIMIT=.*|PG_CPU_LIMIT=${PGCPU}|" .env
+sed -i "s|^APP_MEMORY_LIMIT=.*|APP_MEMORY_LIMIT=${APPL}|" .env
+sed -i "s|^APP_MEMORY_RESERVATION=.*|APP_MEMORY_RESERVATION=${APPR}|" .env
+sed -i "s|^APP_SHM_SIZE=.*|APP_SHM_SIZE=${APPS}|" .env
+sed -i "s|^APP_CPU_LIMIT=.*|APP_CPU_LIMIT=${APPCPU}|" .env
 ok ".env 已生成（档位: $TIER）"
 
-# ─── Step 6: 构建并启动 ──────────────────────────────────────
-info "构建 Docker 镜像（首次约 5-10 分钟）..."
-echo ""
-
-# tiny/small 档位禁用 BuildKit 减少内存占用
-export DOCKER_BUILDKIT=0
-if [ "$TIER" = "tiny" ] || [ "$TIER" = "small" ]; then
-    export DOCKER_BUILDKIT=0
-    info "已禁用 BuildKit（低内存优化）"
+# ─── Step 6: Docker 镜像加速 ───
+step 6 "配置 Docker 镜像加速"
+if ! curl -s -m 3 https://www.google.com >/dev/null 2>&1; then
+  _DAEMON_JSON="/etc/docker/daemon.json"
+  if [ ! -f "$_DAEMON_JSON" ] || [ ! -s "$_DAEMON_JSON" ]; then
+    echo '{"registry-mirrors":["https://docker.1ms.run"]}' | sudo tee "$_DAEMON_JSON" >/dev/null 2>&1 || true
+    sudo systemctl restart docker 2>/dev/null || true
+    ok "Docker 镜像加速已配置"
+  else
+    ok "Docker 镜像加速已存在"
+  fi
 else
-    export DOCKER_BUILDKIT=1
+  ok "海外网络，跳过镜像加速"
 fi
 
-docker compose build 2>&1 || fatal "构建失败！查看上方错误信息"
+# ─── Step 7: 构建启动 ───
+step 7 "构建并启动服务"
+[ "$TIER" = "tiny" ] || [ "$TIER" = "small" ] && export DOCKER_BUILDKIT=0 || export DOCKER_BUILDKIT=1
+info "构建镜像中...（首次约 5-10 分钟）"; echo ""
+docker compose build 2>&1 || { warn "构建失败，清除缓存重试..."; docker compose build --no-cache 2>&1 || fatal "构建失败！"; }
+echo ""; info "启动服务..."
+docker compose up -d 2>&1 || fatal "启动失败！"
 
-echo ""
-info "启动服务..."
-docker compose up -d 2>&1 || fatal "启动失败！查看上方错误信息"
-
-# ─── Step 7: 等待健康检查 ────────────────────────────────────
-info "等待服务启动（健康检查最多 180 秒）..."
-echo ""
-
-APP_PORT=$(grep '^APP_PORT=' .env | head -1 | cut -d= -f2)
-APP_PORT=${APP_PORT:-3000}
-
-MAX_WAIT=180
+# ─── Step 8: 等待就绪 ───
+step 8 "等待服务就绪"
+APP_PORT=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2); APP_PORT=${APP_PORT:-3000}
 WAITED=0
-while [ $WAITED -lt $MAX_WAIT ]; do
-    # 检查容器是否还在运行
-    if ! docker compose ps --format '{{.Name}} {{.Status}}' 2>/dev/null | grep -q 'novel-manager'; then
-        echo ""
-        fatal "novel-manager 容器已退出！查看日志: docker compose logs novel-manager"
-    fi
-    
-    # 检查健康状态
-    _status=$(docker inspect --format='{{.State.Health.Status}}' novel-manager 2>/dev/null || echo "starting")
-    if [ "$_status" = "healthy" ]; then
-        break
-    fi
-    
-    printf "\r  等待中... %ds/%ds (状态: %s)" "$WAITED" "$MAX_WAIT" "$_status"
-    sleep 5
-    WAITED=$((WAITED + 5))
-done
+while [ $WAITED -lt 180 ]; do
+  _status=$(docker inspect --format='{{.State.Health.Status}}' novel-manager 2>/dev/null || echo "starting")
+  [ "$_status" = "healthy" ] && break
+  printf "\r  等待中... %ds/180s (状态: %s)  " "$WAITED" "$_status"
+  sleep 5; WAITED=$((WAITED + 5))
+done; echo ""
+[ "$_status" = "healthy" ] && ok "服务已就绪！" || warn "健康检查超时，查看日志: docker compose logs -f novel-manager"
+
+# ─── Step 9: 结果 ───
+echo ""
+echo -e "${BOLD}${GREEN}╔══════════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${GREEN}║${NC}  ${BOLD}✅ 部署完成！${NC}                                  ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}╠══════════════════════════════════════════════════╣${NC}"
+echo -e "${BOLD}${GREEN}║${NC}  🌐 访问地址:  http://localhost:${APP_PORT}          ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}  👤 用户名:    admin                            ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}  🔑 密码:      ${ADMIN_PASSWORD}    ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${YELLOW}║${NC}  ⚠️  请立即保存以上密码！                       ${BOLD}${YELLOW}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}  📋 常用:                                      ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}    日志: docker compose logs -f                ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}    停止: docker compose stop                  ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}    重启: docker compose restart               ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 
-if [ "$_status" != "healthy" ]; then
-    warn "健康检查超时，但容器可能仍在启动中"
-    warn "查看日志: docker compose logs -f novel-manager"
-fi
-
-# ─── Step 8: 显示结果 ────────────────────────────────────────
-echo ""
-echo "=========================================="
-echo -e "  ${GREEN}✓ 部署完成！${NC}"
-echo "=========================================="
-echo ""
-echo "  访问地址:  http://localhost:${APP_PORT}"
-echo "              (远程访问请把 localhost 换成服务器 IP)"
-echo ""
-echo "  用户名:    admin"
-echo "  密码:      ${ADMIN_PASSWORD}"
-echo ""
-echo -e "  ${YELLOW}⚠️  请立即保存以上密码！${NC}"
-echo ""
-echo "  常用命令:"
-echo "    查看日志:  docker compose logs -f"
-echo "    停止服务:  docker compose stop"
-echo "    重启服务:  docker compose restart"
-echo "    查看状态:  docker compose ps"
-echo ""
-echo "  修改密码:  编辑 .env 中的 ADMIN_PASSWORD，然后 docker compose up -d"
-echo "=========================================="
-
-# 保存密码到文件
-echo "# 部署时间: $(date '+%Y-%m-%d %H:%M:%S')" > .deploy-info
-echo "# 档位: $TIER" >> .deploy-info
-echo "ADMIN_USERNAME=admin" >> .deploy-info
-echo "ADMIN_PASSWORD=${ADMIN_PASSWORD}" >> .deploy-info
-echo "APP_PORT=${APP_PORT}" >> .deploy-info
-echo "" >> .deploy-info
-echo "密码已保存到 .deploy-info" >> .deploy-info
-ok "密码已保存到 .deploy-info（请妥善保管，建议删除此文件）"
+cat > .deploy-info << EOF
+# 部署时间: $(date '+%Y-%m-%d %H:%M:%S')
+# 档位: $TIER | 内存: ${_avail_mb}MB | CPU: ${_cpu_cores}核
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=${ADMIN_PASSWORD}
+APP_PORT=${APP_PORT}
+EOF
+ok "部署信息已保存到 .deploy-info"
