@@ -127,9 +127,33 @@ class CookieJar {
     return true;
   }
 
+  /** Maximum total cookies across all domains to prevent unbounded memory growth */
+  private static readonly MAX_TOTAL_COOKIES = 5000;
+
   /** Store cookies from set-cookie headers for a domain */
   store(domain: string, setCookieHeaders: string[]): void {
     if (!setCookieHeaders.length) return;
+
+    // Enforce total cookie count limit to prevent memory abuse
+    let totalCookies = 0;
+    for (const list of this.cookies.values()) {
+      totalCookies += list.length;
+    }
+    if (totalCookies >= CookieJar.MAX_TOTAL_COOKIES) {
+      // Evict the least-recently-active domain
+      let lraDomain: string | null = null;
+      let lraTime = Infinity;
+      for (const [d, t] of this.lastActivity) {
+        if (t < lraTime && this.cookies.has(d)) {
+          lraTime = t;
+          lraDomain = d;
+        }
+      }
+      if (lraDomain) {
+        this.cookies.delete(lraDomain);
+        this.lastActivity.delete(lraDomain);
+      }
+    }
 
     const domainsToPersist = new Set<string>();
 

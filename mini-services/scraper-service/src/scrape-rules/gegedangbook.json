@@ -1,0 +1,117 @@
+{
+  "name": "格格党小说 (gegedangbook.com)",
+  "description": "格格党小说网全站采集。UTF-8编码，qula模板站。书页/txt/{id}.html、完整章节目录/fm/{id}/、章节内容/chapter/{bookId}/{chapterId}.html。静态HTML可用cheerio引擎。支持8个分类，搜索接口POST /search/ searchkey参数。Cloudflare防护需注意。",
+  "enabled": true,
+
+  "listUrl": "https://www.gegedangbook.com/sort/{catId}/{page}.html",
+  "listSelector": { "type": "css", "value": ".section-box ul.section-list li a, .item dl dt a" },
+  "listPagination": { "type": "page", "selector": ".pagelist a, .listpage a, .page a", "maxPage": 200 },
+
+  "bookTitleSelector": { "type": "css", "value": ".info .top h1" },
+  "bookAuthorSelector": { "type": "css", "value": ".info .top .fix p a[href*='/author/']" },
+  "bookCategorySelector": { "type": "css", "value": ".info .top .fix p.xs-show:first-of-type" },
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": { "type": "css", "value": ".desc, .m-desc" },
+  "bookCoverSelector": { "type": "css", "value": ".imgbox img", "extract": "src" },
+  "bookStatusSelector": { "type": "css", "value": ".info .top .fix p.xs-show:nth-of-type(2)" },
+
+  "chapterListUrl": "https://www.gegedangbook.com/fm/{bookId}/",
+  "chapterListSelector": { "type": "css", "value": ".section-box ul.section-list li a" },
+  "chapterTitleSelector": { "type": "css", "value": "a" },
+  "chapterLinkSelector": { "type": "css", "value": "a", "extract": "href" },
+  "chapterPagination": null,
+
+  "contentTitleSelector": { "type": "css", "value": ".reader h1, .booktitle h1" },
+  "contentSelector": { "type": "css", "value": "#content, .content" },
+  "contentPagination": { "type": "next", "selector": "a:contains(下一页), a:contains(下一章)", "maxPage": 1 },
+
+  "antiCrawlConfig": {
+    "useJsRender": false,
+    "uaRotation": true,
+    "delay": [1500, 3000],
+    "humanBehavior": false,
+    "retries": 3,
+    "referer": "https://www.gegedangbook.com/",
+    "engineFallback": true,
+    "engineFallbackChain": ["cheerio", "playwright"]
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".ad", ".ads", ".advertisement",
+      ".chapter-nav", ".footer", ".header", ".topbar",
+      ".recommend", ".related",
+      "#ad", "[id^=\"div-gpt-ad\"]",
+      "ins.adsbygoogle",
+      ".listmain", ".bookname",
+      ".pageheadermenu", ".leftmenu", ".modbg",
+      ".bookimg", ".bookimg2",
+      ".ratediv", ".rateblock",
+      ".posterror", ".reader-fun",
+      ".m-setting", ".font-box"
+    ],
+    "adPatterns": [
+      "gegedangbook", "gegedangbook.com", "格格党小说网",
+      "格格党", "请记住本书", "手机用户请浏览",
+      "本章未完", "最快更新",
+      "本章最新章节", "请访问",
+      "如果您喜欢", "分享到",
+      "扫码关注", "微信公众号",
+      "关注公众号", "关注我们",
+      "TXT下载", "全本下载",
+      "返回目录", "章节列表",
+      "推荐本书", "打赏",
+      "本章完", "本章结束",
+      "完结感言", "在线听书",
+      "热门推荐", "内容有问题",
+      "无弹窗小说", "无弹窗阅读",
+      "加入书架", "邮件反馈",
+      "最新章节", "正在手打中",
+      "网友上传", "章节错误",
+      "点此举报", "免注册"
+    ]
+  },
+
+  "scrapeMode": "full",
+  "engine": "cheerio",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/data/covers/gegedangbook",
+  "threadCount": 1,
+  "minDelay": 1500,
+  "maxDelay": 3000,
+  "enableShuffle": false,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "www.gegedangbook.com",
+    "encoding": "utf-8",
+    "engineType": "cheerio",
+    "stealthEnabled": false,
+    "categories": {
+      "1": "玄幻小说",
+      "2": "武侠小说",
+      "3": "都市小说",
+      "4": "历史小说",
+      "5": "科幻小说",
+      "6": "游戏小说",
+      "7": "女生小说",
+      "8": "其他小说"
+    },
+    "urlPatterns": {
+      "listPage": "/sort/{catId}/{page}.html",
+      "bookDetail": "/txt/{id}.html",
+      "chapterIndex": "/fm/{id}/",
+      "chapterContent": "/chapter/{bookId}/{chapterId}.html"
+    },
+    "statusMap": {
+      "连载": "ongoing",
+      "连载中": "ongoing",
+      "已完结": "completed",
+      "完结": "completed"
+    }
+  }
+}

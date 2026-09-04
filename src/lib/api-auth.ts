@@ -4,8 +4,8 @@ import crypto from 'crypto';
 
 // ═══════════════════════════════════════════════════════════════════
 // TESTING ONLY: Set to true to bypass authentication (no login required)
-// TODO: Remove before production deployment
-const BYPASS_AUTH = true;
+// MUST be false in production. Only true for local dev without auth.
+const BYPASS_AUTH = process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true';
 // ═══════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════

@@ -1,0 +1,110 @@
+{
+  "name": "得奇小说网 (www.deqixs.cc)",
+  "description": "得奇小说网全站采集。UTF-8编码，cheerio引擎。结构：h1.booktitle书名、.booktag a.red作者、.bookintro简介、img封面、dl dd a章节列表、#chapter-content章节内容。章节分页使用block-1/block-2 div。列表页/sort/{catId}/{page}.html。搜索为POST表单(searchkey字段)。支持10个分类。",
+  "enabled": true,
+
+  "listUrl": "https://www.deqixs.cc/sort/{catId}/1.html",
+  "listSelector": { "type": "css", "value": "h4 a, .book_list a" },
+  "listPagination": { "type": "page", "selector": ".page a, a[href*='/sort/']", "maxPage": 200 },
+
+  "bookTitleSelector": { "type": "css", "value": "h1.booktitle" },
+  "bookAuthorSelector": { "type": "css", "value": ".booktag a.red" },
+  "bookCategorySelector": { "type": "css", "value": "li a[href*='/sort/']" },
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": { "type": "css", "value": ".bookintro" },
+  "bookCoverSelector": { "type": "css", "value": "img[alt]", "extract": "src" },
+  "bookStatusSelector": { "type": "css", "value": ".booktag .blue" },
+
+  "chapterListUrl": "{bookUrl}",
+  "chapterListSelector": { "type": "css", "value": "dd a, dl dd a" },
+  "chapterTitleSelector": { "type": "css", "value": "a" },
+  "chapterLinkSelector": { "type": "css", "value": "a", "extract": "href" },
+  "chapterPagination": null,
+
+  "contentTitleSelector": { "type": "css", "value": "h1.pt10" },
+  "contentSelector": { "type": "css", "value": "#chapter-content, .readcontent" },
+  "contentPagination": { "type": "next", "selector": "a:contains(下一页)", "maxPage": 5 },
+
+  "antiCrawlConfig": {
+    "useJsRender": false,
+    "uaRotation": true,
+    "delay": [1500, 3000],
+    "humanBehavior": false,
+    "retries": 3,
+    "referer": "https://www.deqixs.cc/",
+    "engineFallback": true,
+    "engineFallbackChain": ["cheerio", "playwright"]
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".ad", "#ad", "ins.adsbygoogle",
+      ".fullbar", ".readSet",
+      ".chapter-block.placeholder",
+      "footer", ".pt10",
+      "#acontent", "#rtext"
+    ],
+    "adPatterns": [
+      "deqixs.cc", "得奇小说网",
+      "请记住本书", "本章未完",
+      "微信公众号", "最快更新",
+      "本章wap", "手机用户请浏览",
+      "加入书架", "推荐本书",
+      "留言反馈", "加入书签",
+      "上一章", "下一章", "上一页", "下一页",
+      "TXT下载", "背景色", "前景色",
+      "字体", "很小", "较小", "标准", "较大", "很大",
+      "淡蓝海洋", "明黄淡雅", "灰色世界",
+      "红粉世家", "白雪天地", "绿意春色",
+      "经典黑色", "红色激情", "春意盎然",
+      "蓝色海洋", "白色天使",
+      "所有内容均来自互联网", "只为原作者",
+      "进行宣传", "欢迎各位书友支持",
+      "最新章节"
+    ]
+  },
+
+  "scrapeMode": "full",
+  "engine": "cheerio",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/data/covers/deqixs-cc",
+  "threadCount": 1,
+  "minDelay": 1500,
+  "maxDelay": 3000,
+  "enableShuffle": false,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "www.deqixs.cc",
+    "encoding": "utf-8",
+    "engineType": "cheerio",
+    "stealthEnabled": false,
+    "categories": {
+      "1": "玄幻小说",
+      "2": "都市小说",
+      "3": "仙侠小说",
+      "4": "历史小说",
+      "5": "科幻小说",
+      "6": "诸天无限",
+      "7": "悬疑小说",
+      "8": "体育小说",
+      "9": "游戏小说",
+      "10": "综合其他"
+    },
+    "urlPatterns": {
+      "listPage": "/sort/{catId}/{page}.html",
+      "bookDetail": "/books/{bookId}/",
+      "chapterIndex": "/books/{bookId}/",
+      "chapterContent": "/books/{bookId}/{chapterId}.html",
+      "search": "POST / with searchkey={keyword}"
+    },
+    "statusMap": {
+      "连载": "ongoing",
+      "完结": "completed"
+    }
+  }
+}

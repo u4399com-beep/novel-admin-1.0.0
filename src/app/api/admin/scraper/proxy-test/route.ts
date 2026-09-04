@@ -2,7 +2,8 @@
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
-import { apiError } from '@/lib/api-utils';
+import { apiError, safeJson } from '@/lib/api-utils';
+import { isSafeUrl } from '@/lib/sanitize';
 
 const SCRAPER_TIMEOUT = 5000;
 
@@ -19,13 +20,23 @@ export const POST = withAuth(async function POST(request: Request) {
   try {
     let body: { url?: string; testUrl?: string };
     try {
-      body = await request.json();
+      body = await safeJson(request);
     } catch {
       return apiError('请求体格式错误', 400);
     }
 
     if (!body.url || typeof body.url !== 'string') {
       return apiError('缺少 url 参数', 400);
+    }
+
+    // SSRF validation on proxy URL
+    if (!isSafeUrl(body.url)) {
+      return apiError('代理URL不允许访问内网或私有地址', 400);
+    }
+
+    // SSRF validation on testUrl if provided
+    if (body.testUrl && typeof body.testUrl === 'string' && !isSafeUrl(body.testUrl)) {
+      return apiError('测试URL不允许访问内网或私有地址', 400);
     }
 
     const controller = new AbortController();

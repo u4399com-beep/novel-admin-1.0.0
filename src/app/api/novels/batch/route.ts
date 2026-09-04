@@ -76,9 +76,16 @@ export const PATCH = withAuth(async function PATCH(request: NextRequest) {
       }
 
       case 'delete': {
-        // Transaction: delete chapters first (cascaded by DB), then novels
-        // Also clean up favorites
+        // Transaction: clean up all related records before deleting novels
+        // Schema has onDelete: Cascade for chapters, novelTags, favorites,
+        // readingProgress, readingHistory, novelSlug — but SQLite may not enforce FK
+        // cascades reliably, so we delete explicitly for safety.
+        // SearchKeyword has no @relation, so must be cleaned manually.
         await db.$transaction([
+          db.searchKeyword.deleteMany({ where: { novelId: { in: ids } } }),
+          db.readingProgress.deleteMany({ where: { novelId: { in: ids } } }),
+          db.readingHistory.deleteMany({ where: { novelId: { in: ids } } }),
+          db.novelSlug.deleteMany({ where: { novelId: { in: ids } } }),
           db.favorite.deleteMany({ where: { novelId: { in: ids } } }),
           db.novel.deleteMany({ where: { id: { in: ids } } }),
         ]);

@@ -8,89 +8,33 @@ import { db } from '@/lib/db';
  *   1. Docker healthcheck uses /api/auth/csrf (also public), but
  *      that only proves Next.js is alive, not the database.
  *   2. This endpoint proves the FULL stack works: Next.js + Prisma + DB.
- *   3. Returns enough detail to diagnose "获取xxx失败" issues
- *      without exposing secrets.
+ *   3. Returns minimal info (no table names, env keys, or auth details).
  *
  * Called by:
  *   - curl http://host:port/api/public/health
  *   - deploy.sh --diagnose
  */
 export async function GET() {
-  const checks: Record<string, { ok: boolean; detail?: string; ms?: number }> = {};
-
-  // 1. Database connectivity + key table existence
+  // 1. Database connectivity
   const dbStart = Date.now();
+  let dbOk = false;
   try {
-    // Basic connectivity test
     await db.$queryRaw`SELECT 1 AS ok`;
-
-    // Check key tables via Prisma (works for both SQLite and PostgreSQL)
-    const modelToProperty: Record<string, string> = {
-      Category: 'category',
-      Novel: 'novel',
-      Chapter: 'chapter',
-      ScrapeRule: 'scrapeRule',
-      ScrapeTask: 'scrapeTask',
-    };
-    const dbModels: Record<string, { count: (args: { take: number }) => Promise<number> }> = {
-      category: db.category,
-      novel: db.novel,
-      chapter: db.chapter,
-      scrapeRule: db.scrapeRule,
-      scrapeTask: db.scrapeTask,
-    };
-    const missing: string[] = [];
-    for (const model of Object.keys(modelToProperty)) {
-      try {
-        await dbModels[modelToProperty[model]].count({ take: 1 });
-      } catch {
-        missing.push(model);
-      }
-    }
-
-    if (missing.length > 0) {
-      checks.database = {
-        ok: false,
-        // Don't expose table names to unauthenticated callers
-        detail: `数据库表不完整 (${missing.length}个表异常)`,
-        ms: Date.now() - dbStart,
-      };
-    } else {
-      checks.database = { ok: true, ms: Date.now() - dbStart };
-    }
-  } catch (err) {
-    console.error('Health check DB error:', err);
-    checks.database = {
-      ok: false,
-      detail: '服务异常',
-      ms: Date.now() - dbStart,
-    };
+    dbOk = true;
+  } catch {
+    // DB not reachable
   }
+  const dbMs = Date.now() - dbStart;
 
-  // 2. Environment sanity check (minimal — no secret details exposed)
-  const envChecks: string[] = [];
-  if (!process.env.DATABASE_URL) {
-    envChecks.push('DATABASE_URL 未配置');
-  }
-  checks.environment = {
-    ok: envChecks.length === 0,
-    detail: envChecks.length > 0 ? envChecks.join('; ') : 'ok',
-  };
-
-  // 3. Auth config check
-  const isHttps = (process.env.NEXTAUTH_URL || '').startsWith('https://');
-  checks.auth = {
-    ok: !!process.env.NEXTAUTH_URL,
-    detail: `cookie策略: ${isHttps ? 'Secure (HTTPS)' : '标准 (HTTP)'}`,
-  };
-
-  const allOk = Object.values(checks).every((c) => c.ok);
+  const allOk = dbOk;
 
   return NextResponse.json(
     {
       status: allOk ? 'healthy' : 'unhealthy',
       timestamp: new Date().toISOString(),
-      checks,
+      checks: {
+        database: { ok: dbOk, ms: dbMs },
+      },
     },
     { status: allOk ? 200 : 503 },
   );

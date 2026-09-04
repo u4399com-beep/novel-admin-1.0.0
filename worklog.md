@@ -24687,3 +24687,179 @@ Stage Summary:
 - 国内网络 git clone 问题：现在有多重回退保障，不再单点失败
 - Dev server 正常运行 (HTTP 200)
 - Git push 成功
+
+---
+Task ID: 2
+Agent: Deep Bug Hunter
+Task: Exhaustive bug hunt and fix across entire codebase
+
+Work Log:
+
+### Bug 1: CRITICAL - BYPASS_AUTH always enabled (Security)
+- **File**: `/home/z/my-project/src/lib/api-auth.ts:8`
+- **Category**: Security
+- **Severity**: HIGH
+- **Description**: `BYPASS_AUTH` was hardcoded to `true`, meaning ALL `withAuth()` protected API routes were accessible without authentication. This is a critical auth bypass vulnerability — every admin endpoint, every write endpoint was open to unauthenticated access.
+- **Fix**: Changed from `const BYPASS_AUTH = true;` to `const BYPASS_AUTH = process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true';`. Now auth is enforced by default. Only bypassed in non-production when explicitly opted-in via environment variable.
+
+### Bug 2: SSRF in proxy-test endpoint (Security)
+- **File**: `/home/z/my-project/src/app/api/admin/scraper/proxy-test/route.ts:22,27`
+- **Category**: Security
+- **Severity**: HIGH
+- **Description**: The proxy-test endpoint used `request.json()` instead of `safeJson()`, bypassing all depth/size validation on the request body. Additionally, the `url` and `testUrl` fields were passed directly to the scraper service without SSRF validation via `isSafeUrl()`. An attacker could use this to probe internal network services or send crafted URLs to the scraper.
+- **Fix**: Replaced `request.json()` with `safeJson(request)` for proper body validation. Added `isSafeUrl()` checks on both `body.url` and `body.testUrl` before forwarding to the scraper service. Added imports for `safeJson` and `isSafeUrl`.
+
+### Bug 3: Public health endpoint information disclosure (Security)
+- **File**: `/home/z/my-project/src/app/api/public/health/route.ts`
+- **Category**: Security
+- **Severity**: MEDIUM
+- **Description**: The public (unauthenticated) health endpoint was exposing internal details including: exact database table names, which tables exist/don't exist, environment variable names (DATABASE_URL, NEXTAUTH_URL), and auth cookie strategy details. This gives attackers reconnaissance information about the system's internal structure.
+- **Fix**: Simplified the endpoint to only return database connectivity status (ok/not ok + latency ms). Removed all table enumeration, environment variable checks, and auth config exposure. The endpoint still serves its purpose for Docker health checks and basic diagnostics.
+
+### Bug 4: Infinite loop potential in reading streak calculation (Runtime)
+- **File**: `/home/z/my-project/src/app/api/public/reading-streak/route.ts:53`
+- **Category**: Runtime
+- **Severity**: MEDIUM
+- **Description**: The current streak calculation used `for (let i = 1; ; i++)` — an unbounded infinite loop with no termination condition. While in practice the `dateSet.has()` would eventually return false, if the set contained a corrupted entry or the date calculation hit an edge case, this could hang the server indefinitely.
+- **Fix**: Added an upper bound: `const maxCheck = Math.min(uniqueDates.length, 365 * 10)` and changed loop condition to `i <= maxCheck`. This caps iterations at either the number of unique dates or 10 years, whichever is smaller.
+
+### Bug 5: Batch novel delete leaves orphaned records (Data Integrity)
+- **File**: `/home/z/my-project/src/app/api/novels/batch/route.ts:78-84`
+- **Category**: Data Integrity
+- **Severity**: MEDIUM
+- **Description**: The batch delete only cleaned up `favorites` before deleting novels. However: (1) The `SearchKeyword` model has no `@relation` to `Novel` in the Prisma schema, so Prisma cascade deletes don't apply to it — leaving orphaned search keywords after novel deletion. (2) While `ReadingProgress`, `ReadingHistory`, and `NovelSlug` have `onDelete: Cascade`, SQLite doesn't reliably enforce foreign key cascades unless `PRAGMA foreign_keys = ON` is explicitly set (which isn't guaranteed).
+- **Fix**: Added explicit `deleteMany` calls for `searchKeyword`, `readingProgress`, `readingHistory`, and `novelSlug` in the transaction, before deleting novels. This ensures data integrity regardless of SQLite FK pragma settings.
+
+### Bug 6: Cookie jar unbounded memory growth (Runtime)
+- **File**: `/home/z/my-project/mini-services/scraper-service/src/cookie-jar.ts:131`
+- **Category**: Runtime
+- **Severity**: MEDIUM
+- **Description**: The cookie jar had no upper bound on total cookies across all domains. A malicious scraping target could set thousands of cookies across many domains, consuming unbounded memory. The periodic cleanup only removes expired cookies but doesn't limit total count.
+- **Fix**: Added `MAX_TOTAL_COOKIES = 5000` static limit. In the `store()` method, before adding new cookies, count total cookies across all domains. If at limit, evict the least-recently-active domain. This prevents memory abuse while preserving functionality.
+
+### Bug 7: Translate endpoint missing same-language check (Logic)
+- **File**: `/home/z/my-project/src/app/api/translate/route.ts:34`
+- **Category**: Logic
+- **Severity**: LOW
+- **Description**: The translate endpoint didn't validate that source and target languages are different. Translating from a language to itself is a no-op that would still call the external translate service, wasting resources and potentially returning unexpected results.
+- **Fix**: Added validation check: `if (body.source === body.target) return apiError('源语言和目标语言不能相同', 400);`
+
+Stage Summary:
+- **Security**: 3 bugs fixed (1 HIGH, 2 MEDIUM)
+  - Auth bypass disabled by default
+  - SSRF validation added to proxy-test endpoint
+  - Public health endpoint info disclosure reduced
+- **Data Integrity**: 1 bug fixed (MEDIUM)
+  - Batch novel delete now cleans up all related records
+- **Runtime**: 2 bugs fixed (1 MEDIUM, 1 MEDIUM)
+  - Reading streak infinite loop bounded
+  - Cookie jar memory growth capped
+- **Logic**: 1 bug fixed (LOW)
+  - Same-language translate check added
+- **Total**: 7 bugs fixed across 6 files
+- **Lint result**: 0 errors, 4 warnings (all pre-existing React Compiler warnings, not related to changes)
+
+---
+Task ID: 1-b
+Agent: Scrape Rule Writer (Group B)
+Task: Create scrape rules for libahao2.com, xinjianpan.com, gegedangbook.com
+
+Work Log:
+- Read worklog.md and existing scrape rules for reference format
+- **libahao2.com (礼吧好小说)**:
+  - Attempted access via agent-browser, curl, z-ai page_reader, mobile URL, Google cache, Wayback Machine - ALL blocked by 1Panel WAF region restriction ("你的区域被禁止访问")
+  - Found URL patterns via web search: /book/{bookId}_{chapterId}.html, /xuanhuan/, /qita/ etc.
+  - Created rule with playwright+stealth engine, marked enabled=false due to region block
+  - Selectors are best-guess based on common biquge template patterns
+  - Added meta.regionBlocked=true and meta.wafType="1Panel" for reference
+- **xinjianpan.com (新键盘小说)**:
+  - Successfully accessed homepage, book detail, chapter list, and chapter content pages
+  - Identified biquge2023 template with hashed CSS classes (e.g., .h1-84c1078c)
+  - URL patterns: /sort/{catId}-{page}.html, /book/{id}/, /txt/{id}/list-{page}.html, /txt/{id}/{chapterId}.html
+  - Search: GET /search/?searchkey={keyword}
+  - Chapter content loaded via obfuscated JavaScript (document.write script injection) - REQUIRES playwright
+  - Selectors verified: .booktitle h1 (title), .bookdes p a (author), a.cover img (cover), .bookintro (description), .chapterlist .all ul li a (chapters), #chaptercontent (content)
+  - 9 categories: xuanhuan, xianxia, dushi, lishi, wangyou, kehuan, lingyi, yanqing, qita
+- **gegedangbook.com (格格党小说/格格党小说网)**:
+  - Successfully accessed via curl (Cloudflare 520 with z-ai, but curl works with proper UA)
+  - Identified qula template structure
+  - URL patterns: /sort/{catId}/{page}.html, /txt/{id}.html, /fm/{id}/, /chapter/{bookId}/{chapterId}.html
+  - Search: POST /search/ with searchkey parameter
+  - Content is static HTML in div.content#content with <p> tags - cheerio engine works
+  - Selectors verified: .info .top h1 (title), .info .top .fix p a (author), .imgbox img (cover), .desc (description), .section-box ul.section-list li a (chapters), #content (content)
+  - Full chapter list at /fm/{id}/ with all chapters in single page (no pagination needed)
+  - 8 categories: 1=玄幻, 2=武侠, 3=都市, 4=历史, 5=科幻, 6=游戏, 7=女生, 8=其他
+
+Stage Summary:
+- Created 3 scrape rule JSON files:
+  1. /src/scrape-rules/libahao2.json - playwright+stealth, enabled=false (region blocked by 1Panel WAF)
+  2. /src/scrape-rules/xinjianpan.json - playwright (JS content loading), enabled=true, 9 categories
+  3. /src/scrape-rules/gegedangbook.json - cheerio (static HTML), enabled=true, 8 categories
+- All JSON files validated successfully
+- Key findings: xinjianpan requires JS rendering for chapter content; gegedangbook uses static HTML; libahao2 inaccessible from current region
+
+---
+Task ID: 1-a
+Agent: Scrape Rule Writer (Group A)
+Task: Create scrape rules for m.jhssd.com, cn.ttkan.co, deqixs.cc
+
+Work Log:
+- Visited m.jhssd.com (redirects to m.jhsssd.com) — mobile novel site "精华书阁"
+  - Analyzed homepage: nav categories (玄幻/修真/都市/穿越/网游/科幻/灵异/女生/其它), search form (/search.html?word=)
+  - Book detail page (/172/): h1 title, p author/category/status, .intro_info description, img cover, .chapter li a chapter list
+  - Chapter content page (/172/35107445.html): .nr_title chapter title, #nr/.nr_nr content div, pagination via _2.html suffix
+  - List page (/list/1.html): .fk li book items, .page a pagination (/list/1_2.html)
+  - Categories: 1=玄幻, 2=修真, 3=都市, 4=穿越, 5=网游, 6=科幻, 7=灵异, 8=女生, 9=其它
+
+- Visited cn.ttkan.co — "天天看小说" AMP architecture site
+  - Analyzed homepage: category links (/novel/class/xuanhuan etc.), search (/novel/search?q=)
+  - Book detail page (/novel/chapters/wanxiangzhiwang-tiancantudou): .novel_info ul li (title/author/category/status), amp-img cover from static.ttkan.co
+  - Chapter links: a[href*="page_direct"] with pattern /novel/user/page_direct?novel_id={id}&page={n}
+  - Content page redirects to cn.wa01.com: h1 chapter title, .content p paragraphs, ads in .div-gpt-ad and .kwinread
+  - No traditional pagination on category pages (AMP site)
+  - Requires playwright engine due to AMP JS rendering and redirects
+
+- Visited www.deqixs.cc — "得奇小说网" standard PHP novel site
+  - Analyzed homepage: categories via /sort/{id}/{page}.html, search POST form (searchkey field)
+  - Book detail page (/books/126/): h1.booktitle, .booktag a.red author, .bookintro description, img cover
+  - Chapter list: dl dd a (927 chapters on test page), chapter URL pattern /books/{bookId}/{chapterId}.html
+  - Chapter content: h1.pt10 title, #chapter-content/.readcontent content, pagination via #block-1/#block-2 divs
+  - Categories: 1=玄幻, 2=都市, 3=仙侠, 4=历史, 5=科幻, 6=诸天无限, 7=悬疑, 8=体育, 9=游戏, 10=综合其他
+
+- Created 3 JSON scrape rule files:
+  1. /home/z/my-project/mini-services/scraper-service/src/scrape-rules/m-jhssd-com.json (cheerio engine)
+  2. /home/z/my-project/mini-services/scraper-service/src/scrape-rules/cn-ttkan-co.json (playwright engine - AMP site)
+  3. /home/z/my-project/mini-services/scraper-service/src/scrape-rules/deqixs-cc.json (cheerio engine)
+
+- All 3 JSON files validated as valid JSON
+
+Stage Summary:
+- Successfully created scrape rules for all 3 Group A websites
+- m.jhssd.com: Standard mobile novel site, cheerio engine, 9 categories, chapter pagination via _{page}.html
+- cn.ttkan.co: AMP architecture site requiring playwright, slug-based URLs, content redirects to wa01.com, 14 categories
+- www.deqixs.cc: Standard PHP novel site, cheerio engine, 10 categories, POST search form
+
+---
+Task ID: 3
+Agent: Anti-Crawl Enhancer
+Task: Enhance anti-anti-crawl capabilities
+
+Work Log:
+- Created new anti-crawl-signal-detector.ts module with comprehensive signal detection
+- Enhanced stealth.ts: added Chrome 120-123 UAs, Firefox 134-135, Edge macOS variants, timezone↔language consistency mapping (TIMEZONE_LANGUAGE_MAP), WebGL noise params (generateWebGLNoise), expanded device/hardware options (16GB RAM, 6-core, 30-bit color, 1.75x pixel ratio)
+- Enhanced browser-behavior.ts: variable reading speed (logarithmic interpolation 200-400 chars/sec based on content length), mouse overshoot+correction (20% probability), scroll simulation (generateScrollSequence), request order randomization (shuffleRequestOrder, generateNaturalReadingOrder), wider jitter (±25%)
+- Enhanced captcha-detector.ts: added Turnstile, ddos_guard, perimeterx captcha types with detection patterns; added CF $cv$params, _cf_chl_opt, cf-chl-bypass detection patterns; DDoS-Guard HTML patterns; PerimeterX patterns; updated CaptchaDetection type and label maps
+- Enhanced proxy-manager.ts: auto-rotate on 403/429/503 (clear domain binding, variable cooling periods), sticky sessions (getStickyProxy with TTL), Tor proxy support (SCRAPER_TOR_ENABLED, rotateTorExit via control port NEWNYM)
+- Enhanced referrer-chain.ts: warm-up navigation strategy (generateWarmUpSequence, shouldWarmUp) simulating homepage→category→content path, getLastVisit method
+- Enhanced anti-crawl-advisor.ts: added 6 new signal types (honeypot, css_trap, ddos_guard, perimeterx, rate_limit_header, retry_after), extended DomainDetectionHistory with new counters, added Rule 13 (DDoS-Guard→Obscura+delay) and Rule 14 (PerimeterX→Obscura+proxyRotation), bot confidence score tracking
+- Enhanced request-fingerprint.ts: Gaussian-like timing jitter (Box-Muller) instead of uniform distribution
+- Verified frontend API routes are properly secured (withAuth) with input validation
+
+Stage Summary:
+- Stealth Browser Profiles: Chrome 120-131 UAs, Firefox 130-135, Edge macOS, timezone↔language consistency (6 timezone mappings), WebGL param noise, expanded hardware options
+- Request Pattern Humanization: Variable reading speed (log-interpolated), scroll simulation, request order randomization, natural chapter reading order, mouse overshoot, Gaussian timing jitter
+- Cloudflare/Anti-Bot Bypass: Enhanced CF challenge detection ($cv$params, _cf_chl_opt), Turnstile detection, DDoS-Guard detection+rules, PerimeterX detection+rules, warm-up navigation strategy
+- Proxy Management: Auto-rotate on 403/429/503, sticky sessions with TTL, Tor proxy support with NEWNYM rotation, status-code-triggered cooling
+- Anti-Crawl Signal Detection: New dedicated module (anti-crawl-signal-detector.ts) with: rate limit header detection (X-RateLimit-*, Retry-After), honeypot link detection (display:none, visibility:hidden, off-screen, zero-font, aria-hidden), CSS trap detection, JS challenge detection (CF$cv$params, _cf_chl_opt, PX, DDoS-Guard), PerimeterX detection, DDoS-Guard detection, composite bot confidence scoring, Cloudflare cf-mitigated header detection
+- All changes pass ESLint (0 errors) and TypeScript type-check (tsc --noEmit clean)
+

@@ -305,11 +305,20 @@ export const requestFingerprintMgr = new RequestFingerprintManager();
  * Some anti-bot systems measure the exact inter-request interval; adding
  * small random delays makes the pattern look more human.
  *
+ * Enhanced: Uses a Gaussian-like distribution (Box-Muller approximation)
+ * instead of uniform distribution, as human timing naturally follows
+ * a bell curve rather than uniform randomness.
+ *
  * @returns A promise that resolves after a random delay between -50ms and +50ms.
  *         The delay is applied asynchronously (non-blocking wait).
  */
 export async function applyTimingJitter(): Promise<void> {
-  const jitterMs = Math.round((Math.random() - 0.5) * 100); // -50 to +50
+  // Box-Muller approximation for Gaussian-like jitter
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const gaussian = Math.sqrt(-2 * Math.log(u1 || 0.0001)) * Math.cos(2 * Math.PI * u2);
+  // Scale: mean=0, stddev=20ms, clamped to ±50ms
+  const jitterMs = Math.round(Math.max(-50, Math.min(50, gaussian * 20)));
   if (jitterMs > 0) {
     await new Promise<void>((resolve) => setTimeout(resolve, jitterMs));
   }

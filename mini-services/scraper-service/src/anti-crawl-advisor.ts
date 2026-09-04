@@ -13,7 +13,7 @@ import { sessionManager } from './session-manager';
 // ==================== Types ====================
 
 export interface DetectionSignal {
-  type: 'captcha' | 'block' | 'rate_limit' | 'redirect' | 'empty_content' | 'slow_response' | 'fingerprint_detect' | 'js_challenge';
+  type: 'captcha' | 'block' | 'rate_limit' | 'redirect' | 'empty_content' | 'slow_response' | 'fingerprint_detect' | 'js_challenge' | 'honeypot' | 'css_trap' | 'ddos_guard' | 'perimeterx' | 'rate_limit_header' | 'retry_after';
   domain: string;
   count: number;
   lastSeen: number;
@@ -68,13 +68,23 @@ interface DomainDetectionHistory {
   slowResponseCount: number;
   fingerprintDetectCount: number;
   jsChallengeCount: number;
+  honeypotCount: number;         // honeypot links detected
+  cssTrapCount: number;          // CSS traps detected
+  ddosGuardCount: number;        // DDoS-Guard detections
+  perimeterxCount: number;       // PerimeterX detections
+  rateLimitHeaderCount: number;  // X-RateLimit-* headers
+  retryAfterCount: number;       // Retry-After headers
   captchaTimestamps: number[];
   blockTimestamps: number[];
   rateLimitTimestamps: number[];
   cloudflareDetected: boolean;
+  ddosGuardDetected: boolean;
+  perimeterxDetected: boolean;
   totalRequests: number;
   successRequests: number;
   lastActivity: number;
+  /** Rolling bot confidence score (0-100) from signal detector */
+  botConfidenceScore: number;
 }
 
 const TEN_MINUTES = 10 * 60 * 1000;
@@ -169,6 +179,26 @@ class AntiCrawlAdvisor {
       case 'js_challenge':
         h.jsChallengeCount++;
         h.cloudflareDetected = true;
+        break;
+      case 'honeypot':
+        h.honeypotCount++;
+        break;
+      case 'css_trap':
+        h.cssTrapCount++;
+        break;
+      case 'ddos_guard':
+        h.ddosGuardCount++;
+        h.ddosGuardDetected = true;
+        break;
+      case 'perimeterx':
+        h.perimeterxCount++;
+        h.perimeterxDetected = true;
+        break;
+      case 'rate_limit_header':
+        h.rateLimitHeaderCount++;
+        break;
+      case 'retry_after':
+        h.retryAfterCount++;
         break;
     }
   }
@@ -326,6 +356,78 @@ class AntiCrawlAdvisor {
           lastSeen: now,
           severity: history.fingerprintDetectCount > 3 ? 'high' : 'medium',
           details: `浏览器指纹检测 ${history.fingerprintDetectCount} 次`,
+        });
+      }
+
+      // 6a. Honeypot link detection
+      if (history.honeypotCount > 0) {
+        signals.push({
+          type: 'honeypot',
+          domain,
+          count: history.honeypotCount,
+          lastSeen: now,
+          severity: history.honeypotCount > 5 ? 'high' : 'medium',
+          details: `Honeypot 链接检测 ${history.honeypotCount} 次`,
+        });
+      }
+
+      // 6b. CSS trap detection
+      if (history.cssTrapCount > 0) {
+        signals.push({
+          type: 'css_trap',
+          domain,
+          count: history.cssTrapCount,
+          lastSeen: now,
+          severity: 'medium',
+          details: `CSS 陷阱检测 ${history.cssTrapCount} 次`,
+        });
+      }
+
+      // 6c. DDoS-Guard detection
+      if (history.ddosGuardDetected) {
+        signals.push({
+          type: 'ddos_guard',
+          domain,
+          count: history.ddosGuardCount,
+          lastSeen: now,
+          severity: 'high',
+          details: `DDoS-Guard 检测 ${history.ddosGuardCount} 次`,
+        });
+      }
+
+      // 6d. PerimeterX detection
+      if (history.perimeterxDetected) {
+        signals.push({
+          type: 'perimeterx',
+          domain,
+          count: history.perimeterxCount,
+          lastSeen: now,
+          severity: 'high',
+          details: `PerimeterX 检测 ${history.perimeterxCount} 次`,
+        });
+      }
+
+      // 6e. Rate limit header detection
+      if (history.rateLimitHeaderCount > 0) {
+        signals.push({
+          type: 'rate_limit_header',
+          domain,
+          count: history.rateLimitHeaderCount,
+          lastSeen: now,
+          severity: history.rateLimitHeaderCount > 5 ? 'high' : 'low',
+          details: `X-RateLimit 头检测 ${history.rateLimitHeaderCount} 次`,
+        });
+      }
+
+      // 6f. Retry-After header detection
+      if (history.retryAfterCount > 0) {
+        signals.push({
+          type: 'retry_after',
+          domain,
+          count: history.retryAfterCount,
+          lastSeen: now,
+          severity: 'medium',
+          details: `Retry-After 头检测 ${history.retryAfterCount} 次`,
         });
       }
     }
@@ -770,6 +872,70 @@ class AntiCrawlAdvisor {
       }
     }
 
+    // ── Rule 13: DDoS-Guard detected → Obscura + delay ──
+    if (history?.ddosGuardDetected) {
+      if (getEngine() !== 'obscura') {
+        recs.push({
+          id: recId(idx++),
+          category: 'engine',
+          priority: 90,
+          title: 'DDoS-Guard 检测 — 需 Obscura 引擎',
+          description: 'DDoS-Guard 需要完整的浏览器环境来通过 JS 挑战',
+          configKey: 'engine',
+          currentValue: getEngine(),
+          recommendedValue: 'obscura',
+          reasoning: 'Rule 13: DDoS-Guard + 非 Obscura = 无法通过挑战',
+          estimatedImpact: 'high',
+        });
+      }
+      if (!config.adaptiveDelay) {
+        recs.push({
+          id: recId(idx++),
+          category: 'delay',
+          priority: 75,
+          title: '启用自适应延迟（DDoS-Guard）',
+          description: 'DDoS-Guard 对请求频率敏感，增加延迟降低触发概率',
+          configKey: 'adaptiveDelay',
+          currentValue: false,
+          recommendedValue: true,
+          reasoning: 'Rule 13: DDoS-Guard + 频繁请求会触发更严格的验证',
+          estimatedImpact: 'medium',
+        });
+      }
+    }
+
+    // ── Rule 14: PerimeterX detected → Obscura + proxy rotation ──
+    if (history?.perimeterxDetected) {
+      if (getEngine() !== 'obscura') {
+        recs.push({
+          id: recId(idx++),
+          category: 'engine',
+          priority: 91,
+          title: 'PerimeterX 检测 — 需 Obscura 引擎',
+          description: 'PerimeterX (HUMAN Security) 需要完整浏览器指纹',
+          configKey: 'engine',
+          currentValue: getEngine(),
+          recommendedValue: 'obscura',
+          reasoning: 'Rule 14: PerimeterX + 非 Obscura = 被识别为 bot',
+          estimatedImpact: 'high',
+        });
+      }
+      if (!config.proxyRotation) {
+        recs.push({
+          id: recId(idx++),
+          category: 'proxy',
+          priority: 80,
+          title: '启用代理轮换（PerimeterX）',
+          description: 'PerimeterX 追踪 IP 行为模式，代理轮换分散请求',
+          configKey: 'proxyRotation',
+          currentValue: false,
+          recommendedValue: true,
+          reasoning: 'Rule 14: PerimeterX 可跨请求关联 IP + 指纹，需代理轮换',
+          estimatedImpact: 'high',
+        });
+      }
+    }
+
     // Sort by priority (highest first)
     recs.sort((a, b) => b.priority - a.priority);
 
@@ -815,13 +981,22 @@ class AntiCrawlAdvisor {
         slowResponseCount: 0,
         fingerprintDetectCount: 0,
         jsChallengeCount: 0,
+        honeypotCount: 0,
+        cssTrapCount: 0,
+        ddosGuardCount: 0,
+        perimeterxCount: 0,
+        rateLimitHeaderCount: 0,
+        retryAfterCount: 0,
         captchaTimestamps: [],
         blockTimestamps: [],
         rateLimitTimestamps: [],
         cloudflareDetected: false,
+        ddosGuardDetected: false,
+        perimeterxDetected: false,
         totalRequests: 0,
         successRequests: 0,
         lastActivity: 0,
+        botConfidenceScore: 0,
       };
       this.domainHistory.set(domain, h);
     }

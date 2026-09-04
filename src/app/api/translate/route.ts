@@ -35,6 +35,11 @@ export const POST = withPublicRateLimit({ capacity: 30, refillRate: 0.5 }, async
     return apiError('文本过长，最大支持50000字符', 400);
   }
 
+  // Validate source/target are not the same
+  if (body.source === body.target) {
+    return apiError('源语言和目标语言不能相同', 400);
+  }
+
   if (!/^[a-z]{2,5}$/.test(body.source) || !/^[a-z]{2,5}$/.test(body.target)) {
     return apiError('语言代码格式不正确', 400);
   }

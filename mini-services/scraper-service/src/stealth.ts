@@ -171,22 +171,99 @@ const SCREEN_RESOLUTIONS: Array<{ w: number; h: number }> = [
   { w: 1280, h: 800 },
 ];
 
-const DEVICE_MEMORY_OPTIONS = [2, 4, 8] as const;
-const HARDWARE_CONCURRENCY_OPTIONS = [4, 8, 12, 16] as const;
+const DEVICE_MEMORY_OPTIONS = [2, 4, 8, 16] as const; // 16GB is now common
+const HARDWARE_CONCURRENCY_OPTIONS = [4, 6, 8, 12, 16] as const; // 6-core laptops common
 const PLATFORMS = ["Win32", "MacIntel", "Linux x86_64"] as const;
-const COLOR_DEPTHS = [24, 32] as const;
-const PIXEL_RATIOS = [1, 1.25, 1.5, 2] as const;
+const COLOR_DEPTHS = [24, 30, 32] as const; // 30-bit (10bpc) becoming common
+const PIXEL_RATIOS = [1, 1.25, 1.5, 1.75, 2] as const; // 1.75 for 125% scaling
+
+/**
+ * WebGL max parameter noise — adds small random variation to WebGL reported
+ * max texture sizes, max viewport dims, etc. to prevent identical fingerprinting
+ * across sessions. The noise is deterministic per-profile seed.
+ */
+export interface WebGLNoiseParams {
+  maxTextureSize: number;       // typical: 16384, range ±512
+  maxViewportDims: [number, number]; // typical: [32767, 32767], range ±1024
+  maxRenderbufferSize: number;  // typical: 16384, range ±512
+  maxCubeMapSize: number;       // typical: 16384, range ±256
+}
+
+/**
+ * Generate WebGL noise parameters from a seed.
+ * These values slightly perturb the WebGL reported limits to prevent
+ * fingerprinting based on exact max parameter values.
+ */
+export function generateWebGLNoise(seed: string): WebGLNoiseParams {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  // Deterministic noise from hash (-1 to 1)
+  const noise = (offset: number) => {
+    const h = Math.imul((hash + offset) >>> 0, 2654435761) >>> 0;
+    return (h % 2001 - 1000) / 1000; // -1 to +1
+  };
+  return {
+    maxTextureSize: 16384 + Math.round(noise(1) * 512),
+    maxViewportDims: [32767 + Math.round(noise(2) * 1024), 32767 + Math.round(noise(3) * 1024)],
+    maxRenderbufferSize: 16384 + Math.round(noise(4) * 512),
+    maxCubeMapSize: 16384 + Math.round(noise(5) * 256),
+  };
+}
 
 /** Timezone pool — all UTC+8 to keep timezoneOffset exactly -480 */
 const TIMEZONE_POOL = ['Asia/Shanghai', 'Asia/Chongqing', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Singapore'] as const;
 
-/** Language variant pool — zh-CN as primary but with slight order variation */
+/**
+ * Timezone ↔ Language consistency mapping.
+ * Anti-bot systems cross-check Accept-Language vs timezone — a zh-TW language with
+ * Asia/Shanghai timezone (or vice versa) is a detection vector. This map ensures
+ * the generated language list is always consistent with the selected timezone.
+ */
+const TIMEZONE_LANGUAGE_MAP: Record<string, readonly (readonly string[])[]> = {
+  'Asia/Shanghai': [
+    ['zh-CN', 'zh', 'en-US', 'en'],
+    ['zh-CN', 'zh', 'en'],
+    ['zh-CN', 'en-US', 'en', 'zh'],
+  ],
+  'Asia/Chongqing': [
+    ['zh-CN', 'zh', 'en-US', 'en'],
+    ['zh-CN', 'zh', 'en'],
+  ],
+  'Asia/Hong_Kong': [
+    ['zh-HK', 'zh-CN', 'zh', 'en-US', 'en'],
+    ['zh-HK', 'en-US', 'en', 'zh'],
+  ],
+  'Asia/Taipei': [
+    ['zh-TW', 'zh', 'en-US', 'en'],
+    ['zh-TW', 'zh', 'en'],
+  ],
+  'Asia/Singapore': [
+    ['zh-CN', 'zh', 'en-US', 'en', 'en-SG'],
+    ['en-US', 'en', 'zh-CN', 'zh'],
+  ],
+};
+
+/** Language variant pool — zh-CN as primary but with slight order variation (backward compat) */
 const LANGUAGE_VARIANTS: readonly (readonly string[])[] = [
   ['zh-CN', 'zh', 'en-US', 'en'],
   ['zh-CN', 'zh', 'en'],
   ['zh-CN', 'en-US', 'en', 'zh'],
   ['zh-TW', 'zh', 'en-US', 'en'],
 ];
+
+/**
+ * Get a language variant consistent with the given timezone.
+ * Falls back to LANGUAGE_VARIANTS if timezone has no specific mapping.
+ */
+function getLanguageForTimezone(tz: string): readonly string[] {
+  const variants = TIMEZONE_LANGUAGE_MAP[tz];
+  if (variants && variants.length > 0) {
+    return variants[Math.floor(Math.random() * variants.length)];
+  }
+  return LANGUAGE_VARIANTS[Math.floor(Math.random() * LANGUAGE_VARIANTS.length)];
+}
 
 // Chrome user-agents indexed by platform for consistency
 const UA_TEMPLATES: Record<string, string[]> = {
@@ -199,6 +276,11 @@ const UA_TEMPLATES: Record<string, string[]> = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    // Chrome 120-123: still common in the wild (enterprise, slow-updating users)
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   ],
   MacIntel: [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -207,26 +289,41 @@ const UA_TEMPLATES: Record<string, string[]> = {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; ARM Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; ARM Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; ARM Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
   ],
   "Linux x86_64": [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   ],
   Edge: [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0",
+    // Edge on macOS
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+    "Mozilla/5.0 (Macintosh; ARM Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
   ],
   Firefox: [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:134.0) Gecko/20100101 Firefox/134.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:132.0) Gecko/20100101 Firefox/132.0",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:134.0) Gecko/20100101 Firefox/134.0",
     "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0",
     "Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0",
   ],
@@ -377,6 +474,13 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   // All timezones in TIMEZONE_POOL are UTC+8 = -480 minutes exactly.
   // Jitter must NOT be applied here — a mismatch between timezone name and offset is a detection vector.
   const timezoneOffset = -480;
+  const timezone = dPick(TIMEZONE_POOL, 12);
+
+  // Use timezone-consistent language mapping to prevent Accept-Language ↔ timezone contradiction
+  const tzLanguageVariants = TIMEZONE_LANGUAGE_MAP[timezone];
+  const languages = tzLanguageVariants && tzLanguageVariants.length > 0
+    ? [...dPick(tzLanguageVariants, 11)]
+    : [...dPick(LANGUAGE_VARIANTS, 11)];
 
   return {
     webglVendor: vendor,
@@ -386,8 +490,8 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
     deviceMemory,
     hardwareConcurrency,
     platform: uaPlatform,
-    languages: [...dPick(LANGUAGE_VARIANTS, 11)],
-    timezone: dPick(TIMEZONE_POOL, 12),
+    languages,
+    timezone,
     timezoneOffset,
     colorDepth,
     pixelRatio,
@@ -434,6 +538,10 @@ export function generateRandomFingerprint(): FingerprintProfile {
   }
 
   const timezoneOffset = -480;
+  const timezone = pick(TIMEZONE_POOL);
+
+  // Use timezone-consistent language mapping
+  const languages = [...getLanguageForTimezone(timezone)];
 
   return {
     webglVendor: vendor,
@@ -443,8 +551,8 @@ export function generateRandomFingerprint(): FingerprintProfile {
     deviceMemory: pick(DEVICE_MEMORY_OPTIONS),
     hardwareConcurrency: pick(HARDWARE_CONCURRENCY_OPTIONS),
     platform: uaPlatform,
-    languages: [...pick(LANGUAGE_VARIANTS)],
-    timezone: pick(TIMEZONE_POOL),
+    languages,
+    timezone,
     timezoneOffset,
     colorDepth: pick(COLOR_DEPTHS),
     pixelRatio: pick(PIXEL_RATIOS),

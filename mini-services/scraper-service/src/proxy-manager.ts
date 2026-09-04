@@ -596,7 +596,14 @@ class ProxyManager {
     this.rotationInterval = rotationInterval || 20;
     this.rotationTopN = rotationTopN || 3;
     this.verifyUrl = process.env.SCRAPER_PROXY_VERIFY_URL || 'https://httpbin.org/ip';
+    this.torEnabled = process.env.SCRAPER_TOR_ENABLED === 'true';
+    this.torProxyUrl = process.env.SCRAPER_TOR_PROXY || 'socks5://127.0.0.1:9050';
     this.loadFromConfig();
+    // Auto-add Tor proxy if enabled and not already in pool
+    if (this.torEnabled) {
+      this.addProxy(this.torProxyUrl);
+      console.log(`[ProxyManager] Tor proxy enabled: ${this.torProxyUrl}`);
+    }
   }
 
   static getInstance(): ProxyManager {
@@ -942,10 +949,12 @@ class ProxyManager {
 
     // If error indicates 403, add domain to blocked list
     let extractedDomain: string | undefined;
+    let statusCode: number | undefined;
     if (error) {
       const httpMatch = error.match(/HTTP (\d+)/);
       if (httpMatch) {
         const status = parseInt(httpMatch[1], 10);
+        statusCode = status;
         if (status === 403) {
           // Extract domain from error context if available
           const urlMatch = error.match(/for (https?:\/\/[^/\s]+)/);
@@ -955,6 +964,30 @@ class ProxyManager {
               extractedDomain = normalizeDomain(extractedDomain);
               entry.blockedDomains.add(extractedDomain);
             } catch { /* ignore parse errors */ }
+          }
+        }
+        // Auto-rotate on anti-crawl status codes: 403, 429, 503
+        // These status codes strongly suggest the current proxy IP is being
+        // detected/blocked, so force rotation to a different proxy.
+        if (status === 403 || status === 429 || status === 503) {
+          // Immediately rotate: clear domain binding so next request uses a different proxy
+          const failDomain = domain ? normalizeDomain(domain) : extractedDomain;
+          if (failDomain) {
+            this.domainBindings.delete(failDomain);
+            if (process.env.DEBUG === 'true') {
+              console.log(`[ProxyManager] Auto-rotate: cleared domain binding for ${failDomain} due to HTTP ${status}`);
+            }
+          }
+          // Extra penalty for 429 (rate limit) - longer cooling period
+          if (status === 429) {
+            entry.coolingUntil = Date.now() + 10 * 60 * 1000; // 10 min cooling
+            if (process.env.DEBUG === 'true') {
+              console.log(`[ProxyManager] ${parsed.cleanUrl} entering 10min cooling due to HTTP 429`);
+            }
+          }
+          // 503 often indicates WAF challenge - 3 min cooling
+          if (status === 503) {
+            entry.coolingUntil = Math.max(entry.coolingUntil || 0, Date.now() + 3 * 60 * 1000);
           }
         }
       }
@@ -2486,6 +2519,115 @@ class ProxyManager {
     }
 
     return this.latencyTracker.getBestProxyForDomain(normalisedDomain, candidates);
+  }
+
+  // ==================== Sticky Sessions ====================
+
+  /**
+   * Get or create a sticky proxy binding for a domain.
+   * Within a session (defined by sessionTtlMs), the same proxy is always
+   * returned for the same domain, ensuring session-level IP consistency.
+   *
+   * @param domain     - Target domain
+   * @param sessionTtlMs - Session TTL in ms (default: 10 min)
+   * @returns The bound ProxyEntry, or null if no proxies available
+   */
+  getStickyProxy(domain: string, sessionTtlMs: number = 10 * 60 * 1000): ProxyEntry | null {
+    const normalisedDomain = normalizeDomain(domain);
+    const boundUrl = this.domainBindings.get(normalisedDomain);
+
+    if (boundUrl) {
+      const entry = this.pool.get(boundUrl);
+      // Check if the bound proxy is still usable
+      if (entry && !entry.disabled && !(entry.coolingUntil && Date.now() < entry.coolingUntil)) {
+        // Check if binding is still fresh (within session TTL)
+        // We use the entry's lastUsed as a proxy for "when this binding was last used"
+        if (Date.now() - entry.lastUsed < sessionTtlMs) {
+          entry.lastUsed = Date.now();
+          return entry;
+        }
+        // Binding expired - will create new one below
+        this.domainBindings.delete(normalisedDomain);
+      } else {
+        // Bound proxy is disabled/cooling - clear binding
+        this.domainBindings.delete(normalisedDomain);
+      }
+    }
+
+    // Get best available proxy and bind it
+    const best = this.getBestProxyForDomain(normalisedDomain) ?? this.getProxy(normalisedDomain);
+    if (best) {
+      const parsed = parseProxyUrl(best.url);
+      const cleanUrl = parsed?.cleanUrl ?? best.url;
+      this.domainBindings.set(normalisedDomain, cleanUrl);
+      if (process.env.DEBUG === 'true') {
+        console.log(`[ProxyManager] Sticky session: ${normalisedDomain} → ${redactProxyCredentials(best.url)}`);
+      }
+    }
+    return best;
+  }
+
+  // ==================== Tor Proxy Support ====================
+
+  /** Whether Tor proxy support is enabled (env SCRAPER_TOR_ENABLED) */
+  private readonly torEnabled: boolean;
+  /** Default Tor SOCKS5 proxy URL (env SCRAPER_TOR_PROXY, default: socks5://127.0.0.1:9050) */
+  private readonly torProxyUrl: string;
+
+  /**
+   * Check if Tor proxy support is enabled.
+   * Tor provides a rotating exit IP via the Tor network, which is very effective
+   * for anti-crawl but significantly slower than regular proxies.
+   */
+  isTorEnabled(): boolean {
+    return this.torEnabled;
+  }
+
+  /**
+   * Get the Tor proxy URL if enabled.
+   * @returns The Tor SOCKS5 proxy URL, or null if not enabled
+   */
+  getTorProxy(): ProxyEntry | null {
+    if (!this.torEnabled) return null;
+    const entry = this.pool.get(this.torProxyUrl);
+    return entry ?? null;
+  }
+
+  /**
+   * Request a new Tor exit node by sending SIGHUP to the Tor process.
+   * This rotates the exit IP for the Tor SOCKS5 proxy.
+   * Only works if the Tor control port is accessible.
+   *
+   * @param controlPort - Tor control port (default: 9051)
+   * @param controlPassword - Tor control password (if authenticated)
+   * @returns true if the signal was sent successfully
+   */
+  async rotateTorExit(controlPort: number = 9051, controlPassword?: string): Promise<boolean> {
+    if (!this.torEnabled) return false;
+    try {
+      // Connect to Tor control port and send NEWNYM signal
+      const conn = await Bun.connect({
+        hostname: '127.0.0.1',
+        port: controlPort,
+      });
+      if (controlPassword) {
+        await conn.write(`AUTHENTICATE "${controlPassword}"\r\n`);
+      } else {
+        await conn.write('AUTHENTICATE\r\n');
+      }
+      await conn.write('SIGNAL NEWNYM\r\n');
+      await conn.write('QUIT\r\n');
+      conn.end();
+      if (process.env.DEBUG === 'true') {
+        console.log('[ProxyManager] Tor exit node rotation requested (NEWNYM)');
+      }
+      return true;
+    } catch (err) {
+      if (process.env.DEBUG === 'true') {
+        console.log(`[ProxyManager] Tor control port connection failed: ${err}`);
+      }
+      return false;
+    }
   }
 }
 

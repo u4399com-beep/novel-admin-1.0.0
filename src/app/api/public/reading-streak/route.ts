@@ -50,7 +50,9 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     let currentStreak = 0;
     if (dateSet.has(today)) {
       currentStreak = 1;
-      for (let i = 1; ; i++) {
+      // Upper bound: cannot exceed number of unique dates
+      const maxCheck = Math.min(uniqueDates.length, 365 * 10); // hard limit: 10 years
+      for (let i = 1; i <= maxCheck; i++) {
         const checkDate = new Date();
         checkDate.setDate(checkDate.getDate() - i);
         if (dateSet.has(toLocalDateStr(checkDate, tz))) {

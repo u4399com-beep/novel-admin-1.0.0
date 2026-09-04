@@ -9,7 +9,7 @@
 
 export interface CaptchaDetection {
   detected: boolean;
-  type: 'recaptcha_v2' | 'recaptcha_v3' | 'hcaptcha' | 'geetest' | 'cloudflare' | 'custom' | 'unknown';
+  type: 'recaptcha_v2' | 'recaptcha_v3' | 'hcaptcha' | 'geetest' | 'cloudflare' | 'turnstile' | 'ddos_guard' | 'perimeterx' | 'custom' | 'unknown';
   confidence: number; // 0-1
   evidence: string[];
 }
@@ -95,6 +95,9 @@ const HTML_RULES: DetectionRule[] = [
       /cloudflare.*challenge/i,
       /cf-turnstile/i,
       /challenges\.cloudflare\.com/i,
+      /__CF\$cv\$params/i,
+      /window\._cf_chl_opt/i,
+      /cf-chl-bypass/i,
     ],
     baseConfidence: 0.75,
     perMatchBoost: 0.08,
@@ -145,6 +148,34 @@ const HTML_RULES: DetectionRule[] = [
     perMatchBoost: 0.1,
     maxConfidence: 0.9,
   },
+  // DDoS-Guard (common on Chinese/Russian sites)
+  {
+    type: 'cloudflare',  // DDoS-Guard behaves like CF challenges
+    patterns: [
+      /ddosguard/i,
+      /DDoS-Guard/i,
+      /ddg_iu_check/i,
+      /__ddg_/i,
+      /check\.ddos-guard/i,
+    ],
+    baseConfidence: 0.65,
+    perMatchBoost: 0.1,
+    maxConfidence: 0.9,
+  },
+  // PerimeterX / HUMAN Security
+  {
+    type: 'unknown',
+    patterns: [
+      /_pxAppId/i,
+      /PerimeterX/i,
+      /perimeterx/i,
+      /humansecurity/i,
+      /collector\.px-cdn\.net/i,
+    ],
+    baseConfidence: 0.7,
+    perMatchBoost: 0.1,
+    maxConfidence: 0.9,
+  },
 ];
 
 // ==================== Detection Function ====================
@@ -165,14 +196,28 @@ export function detectCaptcha(
   const evidence: string[] = [];
   let bestMatch: { type: CaptchaDetection['type']; confidence: number } | null = null;
 
-  // 1. Check HTTP status + Cloudflare headers heuristic
-  // 403 with Cloudflare signals is a strong indicator
+  // 1. Check HTTP status + Cloudflare/Anti-bot headers heuristic
+  // 403 with Cloudflare or DDoS-Guard signals is a strong indicator
   if (statusCode === 403) {
-    // Check for Cloudflare indicators in HTML (since we don't have raw headers here)
+    // Check for Cloudflare indicators in HTML
     if (/cf-ray/i.test(html) || /cf-mitigated/i.test(html) || /cloudflare/i.test(html)) {
       evidence.push('HTTP 403 + Cloudflare 响应头');
       if (!bestMatch || bestMatch.confidence < 0.85) {
         bestMatch = { type: 'cloudflare', confidence: 0.85 };
+      }
+    }
+    // Check for DDoS-Guard indicators
+    if (/ddosguard/i.test(html) || /DDoS-Guard/i.test(html) || /__ddg_/.test(html)) {
+      evidence.push('HTTP 403 + DDoS-Guard 响应');
+      if (!bestMatch || bestMatch.confidence < 0.8) {
+        bestMatch = { type: 'ddos_guard', confidence: 0.8 };
+      }
+    }
+    // Check for PerimeterX indicators
+    if (/_pxAppId/.test(html) || /PerimeterX/i.test(html)) {
+      evidence.push('HTTP 403 + PerimeterX 响应');
+      if (!bestMatch || bestMatch.confidence < 0.8) {
+        bestMatch = { type: 'perimeterx', confidence: 0.8 };
       }
     }
   }
@@ -248,6 +293,9 @@ export const CAPTCHA_TYPE_LABELS: Record<CaptchaDetection['type'], string> = {
   hcaptcha: 'hCaptcha',
   geetest: 'GeeTest',
   cloudflare: 'Cloudflare',
+  turnstile: 'Turnstile',
+  ddos_guard: 'DDoS-Guard',
+  perimeterx: 'PerimeterX',
   custom: '图片验证码',
   unknown: '未知验证码',
 };
@@ -259,6 +307,9 @@ export const CAPTCHA_BADGE_LABELS: Record<CaptchaDetection['type'], string> = {
   hcaptcha: 'hCaptcha',
   geetest: 'GeeTest',
   cloudflare: 'CF',
+  turnstile: 'Turnstile',
+  ddos_guard: 'DDG',
+  perimeterx: 'PX',
   custom: '验证码',
   unknown: '验证码',
 };

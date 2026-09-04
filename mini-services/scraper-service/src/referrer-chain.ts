@@ -11,6 +11,7 @@
  *   - Per-domain LRU navigation history (max 100 entries)
  *   - Automatic Referer resolution based on the last visited URL
  *   - Thread-safe (single-threaded Node.js, but Map operations are atomic)
+ *   - Warm-up strategy: simulate homepage → category → content navigation
  */
 
 // ==================== Types ====================
@@ -24,6 +25,100 @@ interface NavigationEntry {
 
 const MAX_HISTORY_PER_DOMAIN = 100;
 const MAX_TRACKED_DOMAINS = 500;
+
+// ==================== Warm-up Strategy ====================
+
+/**
+ * Warm-up navigation sequence for a URL.
+ * Simulates how a real user would navigate to a deep page:
+ *   1. Homepage (domain root)
+ *   2. Category/list page (one path segment)
+ *   3. Target page (full URL)
+ *
+ * This ensures the referrer chain looks natural:
+ *   homepage → category → target
+ * instead of:
+ *   (no referrer) → target  ← bot-like pattern
+ */
+export interface WarmUpSequence {
+  /** The warm-up URLs to visit before the target (in order) */
+  warmUpUrls: string[];
+  /** The final target URL */
+  targetUrl: string;
+}
+
+/**
+ * Generate a warm-up sequence for a target URL.
+ * Returns 0-2 warm-up URLs that simulate natural navigation.
+ *
+ * Examples:
+ *   https://example.com/book/12345/chapter/6
+ *     → warmUp: [https://example.com/, https://example.com/book/12345/]
+ *
+ *   https://example.com/list/page/3
+ *     → warmUp: [https://example.com/, https://example.com/list/]
+ *
+ *   https://example.com/
+ *     → warmUp: [] (already at root, no warm-up needed)
+ */
+export function generateWarmUpSequence(targetUrl: string): WarmUpSequence {
+  try {
+    const parsed = new URL(targetUrl);
+    const origin = parsed.origin;
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+
+    // Root URL — no warm-up needed
+    if (pathParts.length === 0) {
+      return { warmUpUrls: [], targetUrl };
+    }
+
+    const warmUpUrls: string[] = [];
+
+    // Step 1: Always visit homepage first (30% chance to actually do it)
+    // The homepage visit is recorded even if not executed, to build the referrer chain
+    warmUpUrls.push(origin + '/');
+
+    // Step 2: Visit parent category page if path has 2+ segments
+    // e.g., /book/12345/chapter/6 → visit /book/12345/
+    if (pathParts.length >= 2) {
+      // Build the parent path from the first 2 segments
+      const categoryPath = '/' + pathParts.slice(0, 2).join('/') + '/';
+      warmUpUrls.push(origin + categoryPath);
+    } else if (pathParts.length === 1) {
+      // Single segment: visit the root category
+      // e.g., /chapter/6 → visit /
+      // Already covered by homepage
+    }
+
+    return { warmUpUrls, targetUrl };
+  } catch {
+    return { warmUpUrls: [], targetUrl };
+  }
+}
+
+/**
+ * Check if a warm-up is recommended for a URL.
+ * Returns true if the URL is a "deep" page (2+ path segments)
+ * and the domain hasn't been visited recently.
+ */
+export function shouldWarmUp(targetUrl: string, domainLastVisit: number | undefined): boolean {
+  try {
+    const parsed = new URL(targetUrl);
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+
+    // Deep page with 2+ path segments
+    if (pathParts.length < 2) return false;
+
+    // Domain hasn't been visited in the last 5 minutes
+    if (domainLastVisit && Date.now() - domainLastVisit < 5 * 60 * 1000) {
+      return false; // Recently visited, no warm-up needed
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // ==================== ReferrerChain ====================
 
@@ -108,6 +203,16 @@ class ReferrerChain {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * Get the timestamp of the last visit to a domain.
+   * Used by shouldWarmUp() to determine if warm-up is needed.
+   */
+  getLastVisit(domain: string): number | undefined {
+    const entries = this.history.get(domain);
+    if (!entries || entries.length === 0) return undefined;
+    return entries[entries.length - 1].timestamp;
   }
 
   /**

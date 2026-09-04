@@ -37,10 +37,14 @@ const MAX_TRACKED_DOMAINS = 500;
 
 // Reading speed: average 200-300 words per minute for Chinese text.
 // Chinese characters ~1.5 bytes each. A chapter of 5000 chars ≈ 2000 words.
-// Reading time = chars / 300 chars-per-second * 1000ms + random jitter.
-const CHARS_PER_SECOND = 300;
+// Reading time = chars / chars-per-second * 1000ms + random jitter.
+// Variable reading speed: shorter pages read faster, longer pages slower (logarithmic scaling)
+// to avoid the "every page takes exactly the same time" detection pattern.
+const CHARS_PER_SECOND_FAST = 400;  // List pages, short content
+const CHARS_PER_SECOND_SLOW = 200;  // Long chapters, detailed articles
 const MIN_READ_DELAY_MS = 200;           // even short pages get some delay
-const MAX_READ_DELAY_MS = 4_000;         // cap at 4 seconds regardless of length
+const MAX_READ_DELAY_MS = 6_000;         // cap at 6 seconds regardless of length
+const CONTENT_LENGTH_THRESHOLD = 5000;   // chars: below = fast, above = slow (with interpolation)
 
 // ==================== BrowserBehavior ====================
 
@@ -120,17 +124,30 @@ class BrowserBehavior {
    * Simulates the time a human would spend "reading" or scrolling a page
    * before performing the next action.
    *
+   * Uses variable reading speed: shorter content is read faster (list pages),
+   * longer content is read slower (chapter pages). The speed interpolates
+   * logarithmically between CHARS_PER_SECOND_FAST and CHARS_PER_SECOND_SLOW
+   * based on content length, avoiding the "every page takes exactly the same time"
+   * detection pattern.
+   *
    * @param url       - The URL (used for domain tracking).
    * @param htmlLength - Length of the HTML content in bytes.
    * @returns A promise that resolves after the simulated delay.
    */
   async getPreVisitDelay(url: string, htmlLength: number): Promise<void> {
-    // Base delay: proportional to content length
-    // Assume 1 char ≈ 1 byte for HTML (rough but sufficient)
-    const readTimeMs = (htmlLength / CHARS_PER_SECOND) * 1000;
+    // Variable reading speed based on content length
+    // Short pages (lists): 400 chars/sec, Long pages (chapters): 200 chars/sec
+    // Interpolate logarithmically to avoid step-function detection
+    const lengthFactor = htmlLength <= CONTENT_LENGTH_THRESHOLD
+      ? 0  // Fast for short content
+      : Math.min(1, Math.log2(htmlLength / CONTENT_LENGTH_THRESHOLD) / 3); // 0-1, log scale
+    const charsPerSecond = CHARS_PER_SECOND_FAST + (CHARS_PER_SECOND_SLOW - CHARS_PER_SECOND_FAST) * lengthFactor;
 
-    // Add ±20% jitter to avoid exact timing fingerprints
-    const jitterFactor = 0.8 + Math.random() * 0.4;
+    // Base delay: proportional to content length
+    const readTimeMs = (htmlLength / charsPerSecond) * 1000;
+
+    // Add ±25% jitter to avoid exact timing fingerprints (slightly wider than before)
+    const jitterFactor = 0.75 + Math.random() * 0.5;
     const delayMs = Math.min(MAX_READ_DELAY_MS, Math.max(MIN_READ_DELAY_MS, readTimeMs * jitterFactor));
 
     await new Promise<void>((resolve) => setTimeout(resolve, Math.round(delayMs)));
@@ -281,6 +298,8 @@ export function generateRealisticTypingDelay(char: string): number {
  *   - Bezier curve interpolation (not a straight line)
  *   - Variable speed (slower at start/end, faster in middle — ease-in-out)
  *   - Subtle random jitter (±2px)
+ *   - Occasional overshoot + correction (20% probability)
+ *   - Micro-pause near the target (simulates homing behavior)
  *
  * The returned array of {x, y, t} points can be used to drive Playwright/Obscura
  * mouse.move() calls with realistic timing.
@@ -301,14 +320,18 @@ export function generateMouseMovementPath(
   const dy = endY - startY;
   const distance = Math.sqrt(dx * dx + dy * dy);
 
-  // Determine number of steps based on distance (min 5, max 40, ~15px per step)
-  const numSteps = Math.max(5, Math.min(40, Math.round(distance / 15)));
+  // Determine number of steps based on distance (min 5, max 50, ~12px per step)
+  const numSteps = Math.max(5, Math.min(50, Math.round(distance / 12)));
 
   // Bezier control points: offset perpendicular to the line for a natural curve
   // The offset direction and magnitude are randomized
   const perpX = -dy / (distance || 1);
   const perpY = dx / (distance || 1);
   const curvature = (Math.random() - 0.5) * 0.3 * distance;
+
+  // Occasional overshoot: 20% chance to overshoot the target by 5-15px then correct
+  const shouldOvershoot = Math.random() < 0.2;
+  const overshootDist = shouldOvershoot ? (5 + Math.random() * 10) : 0;
 
   const cp1x = startX + dx * 0.3 + perpX * curvature;
   const cp1y = startY + dy * 0.3 + perpY * curvature;
@@ -361,8 +384,176 @@ export function generateMouseMovementPath(
     last.y = endY;
   }
 
+  // Add overshoot + correction if applicable
+  if (shouldOvershoot && overshootDist > 0) {
+    // Overshoot point: go past the target
+    const overshootX = endX + (dx / (distance || 1)) * overshootDist;
+    const overshootY = endY + (dy / (distance || 1)) * overshootDist;
+    const lastTime = points[points.length - 1]?.t || 0;
+    points.push({ x: Math.round(overshootX * 10) / 10, y: Math.round(overshootY * 10) / 10, t: lastTime + 30 + Math.round(Math.random() * 20) });
+    // Correction: move back to target
+    points.push({ x: endX, y: endY, t: lastTime + 80 + Math.round(Math.random() * 40) });
+  }
+
   return points;
 }
 
 // Singleton export
 export const browserBehavior = new BrowserBehavior();
+
+// ==================== Scroll Simulation ====================
+
+/**
+ * Generate a sequence of scroll positions simulating a human reading a page.
+ * Used with Playwright page.evaluate() to simulate scroll-before-click behavior.
+ *
+ * The scroll pattern:
+ *   - Starts at top (0)
+ *   - Scrolls down in variable steps (100-400px per step)
+ *   - Pauses at each step (200-600ms) to simulate reading
+ *   - Occasionally scrolls back up slightly (10% chance, 50-150px)
+ *   - Total scroll distance is proportional to page height
+ *
+ * @param pageHeight - Total scrollable page height in pixels
+ * @param maxSteps   - Maximum scroll steps (default: 10)
+ * @returns Array of { y, delayMs } scroll positions with delays
+ */
+export interface ScrollStep {
+  y: number;
+  delayMs: number;
+}
+
+export function generateScrollSequence(pageHeight: number, maxSteps: number = 10): ScrollStep[] {
+  if (pageHeight <= 0) return [{ y: 0, delayMs: 0 }];
+
+  const steps: ScrollStep[] = [{ y: 0, delayMs: 100 + Math.round(Math.random() * 200) }];
+  let currentY = 0;
+
+  // Determine total scroll coverage (60-90% of page height - humans rarely scroll to very bottom)
+  const coverage = 0.6 + Math.random() * 0.3;
+  const targetY = Math.round(pageHeight * coverage);
+
+  const actualSteps = Math.min(maxSteps, Math.max(3, Math.round(targetY / 250)));
+
+  for (let i = 0; i < actualSteps && currentY < targetY; i++) {
+    // Variable scroll step: 100-400px
+    const stepSize = 100 + Math.round(Math.random() * 300);
+
+    // 10% chance to scroll back up slightly (re-reading)
+    if (Math.random() < 0.1 && currentY > 50) {
+      const backAmount = 50 + Math.round(Math.random() * 100);
+      currentY = Math.max(0, currentY - backAmount);
+      steps.push({ y: currentY, delayMs: 150 + Math.round(Math.random() * 200) });
+    }
+
+    currentY = Math.min(targetY, currentY + stepSize);
+    // Reading delay at each scroll position: 200-600ms
+    steps.push({ y: currentY, delayMs: 200 + Math.round(Math.random() * 400) });
+  }
+
+  return steps;
+}
+
+// ==================== Request Order Randomization ====================
+
+/**
+ * Shuffle an array of URLs or chapter indices using Fisher-Yates algorithm.
+ * Instead of always scraping chapter 1, 2, 3... in order, randomize the
+ * order to avoid sequential access patterns that are detectable.
+ *
+ * @param items - Array of items to shuffle
+ * @returns New array with items in randomized order
+ */
+export function shuffleRequestOrder<T>(items: T[]): T[] {
+  if (items.length <= 1) return [...items];
+
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+/**
+ * Generate a "natural" chapter reading order that isn't purely sequential.
+ * Simulates how a human might jump between chapters (e.g., read 1, then 3,
+ * then back to 2, then 5, etc.) while still covering all chapters.
+ *
+ * Strategy: Start with first chapter, then add small random jumps (±1-3),
+ * filling in gaps at the end. This creates a pattern that looks like
+ * "skip-reading" rather than systematic sequential scraping.
+ *
+ * @param totalChapters - Total number of chapters
+ * @param startFrom    - Chapter to start from (default: 1)
+ * @returns Array of chapter numbers in "natural" reading order
+ */
+export function generateNaturalReadingOrder(totalChapters: number, startFrom: number = 1): number[] {
+  if (totalChapters <= 2) return Array.from({ length: totalChapters }, (_, i) => startFrom + i);
+
+  const visited = new Set<number>();
+  const order: number[] = [];
+  let current = startFrom;
+
+  // Always start with the first chapter
+  visited.add(current);
+  order.push(current);
+
+  for (let i = 1; i < totalChapters; i++) {
+    // 70% chance: advance forward with small random skip (1-3 chapters)
+    // 20% chance: go back to a skipped chapter
+    // 10% chance: jump forward by a larger amount (4-6)
+    const r = Math.random();
+    let next: number;
+
+    if (r < 0.7) {
+      // Forward with small skip
+      const skip = 1 + Math.floor(Math.random() * 3);
+      next = current + skip;
+    } else if (r < 0.9) {
+      // Back to a skipped chapter (if any)
+      const skipped = Array.from({ length: totalChapters }, (_, i) => startFrom + i)
+        .filter(n => !visited.has(n));
+      if (skipped.length > 0) {
+        next = skipped[Math.floor(Math.random() * skipped.length)];
+      } else {
+        next = current + 1;
+      }
+    } else {
+      // Larger forward jump
+      next = current + 4 + Math.floor(Math.random() * 3);
+    }
+
+    // Clamp to valid range
+    next = Math.max(startFrom, Math.min(startFrom + totalChapters - 1, next));
+
+    // If already visited, find nearest unvisited
+    if (visited.has(next)) {
+      for (let offset = 1; offset <= totalChapters; offset++) {
+        const candidates = [next + offset, next - offset].filter(
+          n => n >= startFrom && n < startFrom + totalChapters && !visited.has(n)
+        );
+        if (candidates.length > 0) {
+          next = candidates[Math.floor(Math.random() * candidates.length)];
+          break;
+        }
+      }
+    }
+
+    if (!visited.has(next)) {
+      visited.add(next);
+      order.push(next);
+    }
+    current = next;
+  }
+
+  // Fill any remaining unvisited chapters
+  for (let i = startFrom; i < startFrom + totalChapters; i++) {
+    if (!visited.has(i)) {
+      order.push(i);
+    }
+  }
+
+  return order;
+}
+
