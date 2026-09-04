@@ -87,7 +87,11 @@ export default function NovelListView() {
 
   // Fetch categories for filter
   useEffect(() => {
-    apiFetch<Category[]>('/api/categories').then(setCategories).catch(() => {});
+    const ac = new AbortController();
+    apiFetch<Category[]>('/api/categories', { signal: ac.signal })
+      .then((data) => { if (!ac.signal.aborted) setCategories(data); })
+      .catch(() => {});
+    return () => ac.abort();
   }, []);
 
   // Fetch novels (with AbortController to prevent stale data)

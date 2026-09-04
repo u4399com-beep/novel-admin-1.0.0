@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { withAuth } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
-import { apiError } from '@/lib/api-utils';
+import { apiError, safeJson } from '@/lib/api-utils';
 
 const SETTING_KEY = 'anti_crawl_alert_config';
 
@@ -48,7 +48,7 @@ export const GET = withAuth(async function GET() {
 // PUT /api/admin/anti-crawl/alert-config
 export const PUT = withAuth(async function PUT(request: NextRequest) {
   try {
-    const body = (await request.json()) as Partial<AlertConfigResponse>;
+    const body = (await safeJson<Partial<AlertConfigResponse>>(request));
 
     // Read current config
     const row = await db.siteSetting.findUnique({ where: { key: SETTING_KEY } });

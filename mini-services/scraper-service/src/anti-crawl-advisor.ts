@@ -13,7 +13,7 @@ import { sessionManager } from './session-manager';
 // ==================== Types ====================
 
 export interface DetectionSignal {
-  type: 'captcha' | 'block' | 'rate_limit' | 'redirect' | 'empty_content' | 'slow_response' | 'fingerprint_detect' | 'js_challenge' | 'honeypot' | 'css_trap' | 'ddos_guard' | 'perimeterx' | 'rate_limit_header' | 'retry_after';
+  type: 'captcha' | 'block' | 'rate_limit' | 'redirect' | 'empty_content' | 'slow_response' | 'fingerprint_detect' | 'js_challenge' | 'honeypot' | 'css_trap' | 'ddos_guard' | 'perimeterx' | 'rate_limit_header' | 'retry_after' | 'cooldown' | 'session_rotated' | 'encoding_error';
   domain: string;
   count: number;
   lastSeen: number;
@@ -23,7 +23,7 @@ export interface DetectionSignal {
 
 export interface Recommendation {
   id: string;
-  category: 'engine' | 'proxy' | 'delay' | 'stealth' | 'captcha' | 'rate_limit' | 'cookie' | 'session';
+  category: 'engine' | 'proxy' | 'delay' | 'stealth' | 'captcha' | 'rate_limit' | 'cookie' | 'session' | 'encoding' | 'retry';
   priority: number;
   title: string;
   description: string;

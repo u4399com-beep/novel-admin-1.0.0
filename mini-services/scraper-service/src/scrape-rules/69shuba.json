@@ -1,0 +1,169 @@
+{
+  "name": "69书吧 (69shuba.com)",
+  "description": "69书吧全站采集。GBK编码，Cloudflare Turnstile保护。首页/分类/书籍详情/目录页可用cheerio直采，章节内容页(/txt/)受Cloudflare JS Challenge保护需playwright+stealth模式。URL结构：分类页/novels/class/{catId}.htm，书籍详情/book/{id}.htm，完整目录/book/{id}/，章节内容/txt/{bookId}/{chapterId}。AJAX分页：/ajax_novels/class/{catId}/{page}.htm。已知DOM：详情页div.booknav2 h1 a书名、div.booknav2 p作者/分类/状态、div.bookimg2 img封面、div.navtxt p简介；目录页div.catalog#catalog ul li章节列表；内容页div.txtnav章节正文。高延迟配合Cloudflare挑战等待。",
+  "enabled": true,
+
+  "listUrl": "https://www.69shuba.com/novels/class/{catId}.htm",
+  "listSelector": { "type": "css", "value": "#article_list_content li" },
+  "listPagination": { "type": "ajax", "selector": "#article_list_content", "urlTemplate": "https://www.69shuba.com/ajax_novels/class/{catId}/{page}.htm", "maxPage": 200 },
+
+  "bookTitleSelector": { "type": "css", "value": ".booknav2 h1 a" },
+  "bookAuthorSelector": { "type": "css", "value": ".booknav2 p:nth-child(2) a" },
+  "bookCategorySelector": { "type": "css", "value": ".booknav2 p:nth-child(3) a" },
+  "bookKeywordsSelector": null,
+  "bookDescriptionSelector": { "type": "css", "value": ".navtxt p:first-child" },
+  "bookCoverSelector": { "type": "css", "value": ".bookimg2 img", "extract": "src" },
+  "bookStatusSelector": { "type": "css", "value": ".booknav2 p:nth-child(4)" },
+
+  "chapterListUrl": null,
+  "chapterListSelector": { "type": "css", "value": ".catalog ul li" },
+  "chapterTitleSelector": { "type": "css", "value": "a" },
+  "chapterLinkSelector": { "type": "css", "value": "a", "extract": "href" },
+  "chapterPagination": null,
+
+  "contentTitleSelector": { "type": "css", "value": ".txtnav h1" },
+  "contentSelector": { "type": "css", "value": ".txtnav" },
+  "contentPagination": null,
+
+  "antiCrawlConfig": {
+    "useJsRender": true,
+    "uaRotation": true,
+    "delay": [3000, 6000],
+    "humanBehavior": true,
+    "retries": 5,
+    "referer": "https://www.69shuba.com/",
+    "cloudflareBypass": {
+      "enabled": true,
+      "waitForChallenge": true,
+      "challengeTimeout": 20000,
+      "verifyCleared": true
+    },
+    "stealthOptions": {
+      "blockResources": true,
+      "emulateDevice": "desktop"
+    },
+    "engineFallback": true,
+    "engineFallbackChain": ["cheerio", "playwright"]
+  },
+
+  "cleanConfig": {
+    "removeAds": true,
+    "cleanHtml": true,
+    "removePatterns": [
+      ".ad", ".ads", ".advertisement",
+      ".yueduad1", ".contentadv", ".bottom-ad", ".bottom-ad2",
+      "#txtright", ".txtinfo", ".page1",
+      ".tools", ".pageheadermenu", ".pagefootermenu",
+      ".leftmenu", ".modbg", ".modelbg",
+      ".tuijian", ".yuedutuijian",
+      ".baocuo", "#baocuo",
+      ".setbox", ".top_Scroll",
+      ".headbox", ".foot",
+      "#infoad", "#ad-3-2-container",
+      "ins.adsbygoogle", "ins.pubadx-slot",
+      "script", "noscript",
+      ".bread", ".hide720"
+    ],
+    "adPatterns": [
+      "69书吧", "69shuba", "69shuba.com",
+      "请记住本书", "手机用户请浏览",
+      "本章未完", "最快更新",
+      "本章最新章节", "请访问",
+      "如果您喜欢", "分享到",
+      "扫码关注", "微信公众号",
+      "关注公众号", "关注我们",
+      "TXT下载", "全本下载",
+      "返回目录", "章节列表",
+      "推荐本书", "打赏",
+      "本章完", "本章结束",
+      "完结感言", "在线听书",
+      "热门推荐", "内容有问题",
+      "无弹窗小说", "无弹窗阅读",
+      "无错小说", "加入书签",
+      "邮件反馈", "最新章节",
+      "正在手打中", "网友上传",
+      "小贴士", "按左右键",
+      "上一章", "下一章",
+      "书页", "目录", "书签", "收藏",
+      "设置", "白天", "报错",
+      "点击阅读", "加入书架",
+      "开始阅读", "完整目录",
+      "Cloudflare", "cf-browser-verification",
+      "loadAdv", "pubfuturetag"
+    ]
+  },
+
+  "scrapeMode": "incremental",
+  "engine": "playwright",
+  "storageMode": "database",
+  "filePath": null,
+  "coverSavePath": "/app/data/covers/69shuba",
+  "threadCount": 1,
+  "minDelay": 3000,
+  "maxDelay": 6000,
+  "enableShuffle": true,
+  "dedupMode": "both",
+
+  "meta": {
+    "siteType": "novel",
+    "domain": "www.69shuba.com",
+    "encoding": "gbk",
+    "engineType": "playwright",
+    "stealthEnabled": true,
+    "categories": {
+      "0": "全部分类",
+      "1": "玄幻魔法",
+      "2": "修真武侠",
+      "3": "言情小说",
+      "4": "历史军事",
+      "5": "游戏竞技",
+      "6": "科幻空间",
+      "7": "悬疑惊悚",
+      "8": "同人小说",
+      "9": "都市小说",
+      "10": "官场职场",
+      "11": "穿越时空",
+      "12": "青春校园"
+    },
+    "urlPatterns": {
+      "listPage": "/novels/class/{catId}.htm",
+      "listPageAjax": "/ajax_novels/class/{catId}/{page}.htm",
+      "bookDetail": "/book/{id}.htm",
+      "chapterIndex": "/book/{id}/",
+      "chapterContent": "/txt/{bookId}/{chapterId}",
+      "search": "/modules/article/search.php"
+    },
+    "statusMap": {
+      "连载": "ongoing",
+      "全本": "completed"
+    },
+    "categoryMapping": {
+      "1": "玄幻魔法",
+      "2": "修真武侠",
+      "3": "言情小说",
+      "4": "历史军事",
+      "5": "游戏竞技",
+      "6": "科幻空间",
+      "7": "悬疑惊悚",
+      "8": "同人小说",
+      "9": "都市小说",
+      "10": "官场职场",
+      "11": "穿越时空",
+      "12": "青春校园"
+    },
+    "dbCategoryMapping": {
+      "1": "cmsbmowix0004q9wiy0dwibu6",
+      "2": "cmsbmowiy0006q9wiv2vmlcpk",
+      "3": "cmsbmowis0000q9wix8cxfzdk",
+      "4": "cmsbmowiz0007q9wij3sdkssc",
+      "5": "cmsbmowj00008q9wipys4q5or",
+      "6": "cmsbmowj00009q9wi3ocnqkl1",
+      "7": "cmsbmowj1000aq9wi1tocjxkb",
+      "8": "cmsbmowj2000bq9wi3ztdtyub",
+      "9": "cmsbmowiu0001q9wi1u5689c2",
+      "10": "cmsbmowj2000cq9wi1qvgsq8l",
+      "11": "cmsbmowiw0003q9witecx0s3g",
+      "12": "cmsbmowix0005q9wib1vpm9b8"
+    }
+  }
+}

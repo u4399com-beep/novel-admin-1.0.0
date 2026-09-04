@@ -112,7 +112,7 @@ export function DailyReadingGoal({ className }: DailyReadingGoalProps) {
         // Trigger celebration if goal is met
         if (result.percentage >= 100) {
           // Slight delay so the ring animation plays first
-          setTimeout(() => setGoalJustMet(true), 800);
+          celebrationTimer = setTimeout(() => setGoalJustMet(true), 800);
         }
       } catch (err) {
         // Silently hide if unauthenticated or network error
@@ -127,9 +127,11 @@ export function DailyReadingGoal({ className }: DailyReadingGoalProps) {
       }
     }
 
+    let celebrationTimer: ReturnType<typeof setTimeout> | undefined;
     load();
     return () => {
       controller.abort();
+      clearTimeout(celebrationTimer);
     };
   }, []);
 

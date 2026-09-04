@@ -133,7 +133,7 @@ export default function StatsPage() {
       if (signal?.aborted) return;
       setError(err instanceof Error ? err.message : '获取统计失败');
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
@@ -144,7 +144,7 @@ export default function StatsPage() {
     const sid = getSessionId();
     if (sid) {
       apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`, { signal: ac.signal })
-        .then(setStreakData)
+        .then((data) => { if (!ac.signal.aborted) setStreakData(data); })
         .catch(() => {});
     }
     return () => { ac.abort(); retryAbortRef.current?.abort(); };
@@ -182,7 +182,20 @@ export default function StatsPage() {
             </div>
             <h2 className="text-lg font-semibold mb-2">加载失败</h2>
             <p className="text-sm text-muted-foreground mb-6 max-w-xs">{error}</p>
-            <Button variant="outline" onClick={() => { setLoading(true); setError(null); const ac = new AbortController(); retryAbortRef.current = ac; fetchStats(ac.signal); const sid = getSessionId(); if (sid) { apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(`/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`, { signal: ac.signal }).then(setStreakData).catch(() => {}); } }}>
+            <Button variant="outline" onClick={() => {
+              setLoading(true);
+              setError(null);
+              const ac = new AbortController();
+              retryAbortRef.current = ac;
+              fetchStats(ac.signal);
+              const sid = getSessionId();
+              if (sid) {
+                apiFetch<{ currentStreak: number; maxStreak: number; totalDays: number }>(
+                  `/api/public/reading-streak?sessionId=${encodeURIComponent(sid)}`,
+                  { signal: ac.signal },
+                ).then((data) => { if (!ac.signal.aborted) setStreakData(data); }).catch(() => {});
+              }
+            }}>
               <RotateCcw className="mr-1.5 h-4 w-4" />
               重试
             </Button>

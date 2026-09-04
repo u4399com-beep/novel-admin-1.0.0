@@ -3,7 +3,7 @@
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
-import { apiError } from '@/lib/api-utils';
+import { apiError, safeJson } from '@/lib/api-utils';
 
 const SCRAPER_TIMEOUT = 5000;
 
@@ -13,7 +13,7 @@ export const POST = withAuth(async function POST(request: Request) {
   try {
     let body: { domain?: string } | null = null;
     try {
-      body = await request.json();
+      body = await safeJson<{ domain?: string }>(request).catch(() => null);
     } catch {
       body = null;
     }

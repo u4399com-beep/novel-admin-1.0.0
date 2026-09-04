@@ -24863,3 +24863,252 @@ Stage Summary:
 - Anti-Crawl Signal Detection: New dedicated module (anti-crawl-signal-detector.ts) with: rate limit header detection (X-RateLimit-*, Retry-After), honeypot link detection (display:none, visibility:hidden, off-screen, zero-font, aria-hidden), CSS trap detection, JS challenge detection (CF$cv$params, _cf_chl_opt, PX, DDoS-Guard), PerimeterX detection, DDoS-Guard detection, composite bot confidence scoring, Cloudflare cf-mitigated header detection
 - All changes pass ESLint (0 errors) and TypeScript type-check (tsc --noEmit clean)
 
+
+---
+Task ID: 1
+Agent: Scrape Rule Writer
+Task: Create scrape rule for 69shuba.com
+
+Work Log:
+- Navigated to https://www.69shuba.com/ homepage via agent-browser - blocked by Cloudflare Turnstile JS challenge
+- Used curl with browser User-Agent to successfully access homepage (GBK encoding confirmed)
+- Analyzed homepage HTML structure: navigation, categories, book list, search form
+- Discovered 13 category IDs (0-12): 全部分类, 玄幻魔法, 修真武侠, 言情小说, 历史军事, 游戏竞技, 科幻空间, 悬疑惊悚, 同人小说, 都市小说, 官场职场, 穿越时空, 青春校园
+- Analyzed book detail page (/book/90442.htm): selectors for title, author, category, status, cover, description, tags
+- Analyzed chapter list page (/book/90442/): selectors for chapter list in div.catalog#catalog ul li
+- Attempted chapter content page (/txt/90442/41051913) via curl - blocked by Cloudflare JS challenge
+- Used z-ai web-reader (page_reader) to successfully read chapter content page, bypassing Cloudflare
+- Analyzed chapter content structure: div.txtnav contains chapter text with <br> tags, mixed with ads
+- Discovered AJAX pagination pattern: /ajax_novels/class/{catId}/{page}.htm for category list pages
+- Verified search requires Cloudflare Turnstile verification (POST /modules/article/search.php)
+- Confirmed GBK encoding throughout the site
+- Created scrape rule at /home/z/my-project/mini-services/scraper-service/src/scrape-rules/69shuba.json
+
+Stage Summary:
+- Created 69shuba.json scrape rule with all selectors verified against live site
+- Key findings: GBK encoding, Cloudflare Turnstile on content/search pages, AJAX pagination for lists
+- Engine: playwright (primary) with cheerio fallback for non-protected pages
+- Anti-crawl: Cloudflare bypass with 20s challenge timeout, stealth mode, 3-6s delay
+- Categories mapped: 13 categories (IDs 0-12) with DB category mapping
+- Status map: 连载→ongoing, 全本→completed
+- URL patterns: /novels/class/{catId}.htm (list), /book/{id}.htm (detail), /book/{id}/ (chapters), /txt/{bookId}/{chapterId} (content)
+
+---
+Task ID: 2
+Agent: Deep Bug Hunter (Round 2)
+Task: Exhaustive bug hunt across entire codebase
+
+Work Log:
+- Read all source files across src/, mini-services/scraper-service/src/, and prisma/
+- Identified and fixed 9 bugs across 3 categories
+
+## Bug 1: Auth Bypass — /api/novels/[id]/notes (CRITICAL)
+- File: src/app/api/novels/[id]/notes/route.ts
+- Category: Security
+- Severity: HIGH
+- Description: GET handler was a bare `export async function GET()` with NO auth wrapper (no `withAuth()` or `withPublicRateLimit()`). Any unauthenticated user could query all chapter notes for any novel by providing a sessionId.
+- Fix: Wrapped with `withPublicRateLimit({ capacity: 60, refillRate: 2 })`, added `sanitizeField()` on sessionId, added minimum length check (10 chars).
+
+## Bug 2: Auth Bypass — /api/chapters/[id]/note (CRITICAL)
+- File: src/app/api/chapters/[id]/note/route.ts
+- Category: Security
+- Severity: HIGH
+- Description: Both GET and PUT handlers were bare `export async function` without any auth/rate-limit wrapper. Unauthenticated users could read and write chapter notes freely.
+- Fix: Wrapped GET with `withPublicRateLimit({ capacity: 60, refillRate: 2 })`, wrapped PUT with `withPublicRateLimit({ capacity: 30, refillRate: 1 })`.
+
+## Bug 3: Insecure JSON Parsing — batch-export (MEDIUM)
+- File: src/app/api/scrape-tasks/batch-export/route.ts
+- Category: Security
+- Severity: MEDIUM
+- Description: Used `request.json()` instead of `safeJson()`, bypassing depth/size validation and 15s timeout protection. A malicious request body could cause stack overflow (deep nesting) or memory exhaustion (large payload).
+- Fix: Replaced `request.json()` with `safeJson(request)`.
+
+## Bug 4: Insecure JSON Parsing — alert-config (MEDIUM)
+- File: src/app/api/admin/anti-crawl/alert-config/route.ts
+- Category: Security
+- Severity: MEDIUM
+- Description: PUT handler used `request.json()` instead of `safeJson()`.
+- Fix: Replaced with `safeJson<Partial<AlertConfigResponse>>(request)`.
+
+## Bug 5: Insecure JSON Parsing — cookies/clear (MEDIUM)
+- File: src/app/api/admin/scraper/cookies/clear/route.ts
+- Category: Security
+- Severity: MEDIUM
+- Description: Used `request.json()` instead of `safeJson()`.
+- Fix: Replaced with `safeJson<{ domain?: string }>(request).catch(() => null)`.
+
+## Bug 6: Insecure JSON Parsing — priority-queue (MEDIUM)
+- File: src/app/api/admin/scraper/priority-queue/route.ts
+- Category: Security
+- Severity: MEDIUM
+- Description: Both PUT and POST handlers used `request.json()` instead of `safeJson()`.
+- Fix: Replaced both with `safeJson(request)`.
+
+## Bug 7: Insecure JSON Parsing — rate-limit-manage (MEDIUM)
+- File: src/app/api/admin/scraper/rate-limit-manage/route.ts
+- Category: Security
+- Severity: MEDIUM
+- Description: POST handler used `request.json()` instead of `safeJson()`.
+- Fix: Replaced with `safeJson(request)`.
+
+## Bug 8: Insecure JSON Parsing — proxy-manage (MEDIUM)
+- File: src/app/api/admin/scraper/proxy-manage/route.ts
+- Category: Security
+- Severity: MEDIUM
+- Description: POST handler used `request.json()` instead of `safeJson()`.
+- Fix: Replaced with `safeJson(request)`.
+
+## Bug 9: React setState-in-effect — FriendlyLinksFooter + useChapterBookmarks (LOW)
+- File: src/components/footer/FriendlyLinksFooter.tsx, src/lib/use-reading-settings.ts
+- Category: Runtime / React
+- Severity: LOW
+- Description: `setState` called synchronously inside `useEffect`, flagged by react-hooks/set-state-in-effect lint rule. Causes cascading renders. FriendlyLinksFooter used useEffect+useState pattern to detect external links; useChapterBookmarks used useEffect to hydrate bookmarks from localStorage.
+- Fix (FriendlyLinksFooter): Replaced useState+useEffect pattern with `useSyncExternalStore` hook that reads `window.location.origin` in an SSR-safe way.
+- Fix (useChapterBookmarks): Replaced useEffect hydration with lazy `useState` initializer that reads localStorage directly on mount (client-only check via `typeof window`).
+
+Stage Summary:
+- Security (Auth Bypass): 2 bugs (HIGH)
+- Security (Insecure JSON Parsing): 6 bugs (MEDIUM)
+- React/Runtime: 1 bug (LOW)
+- Total: 9 bugs fixed
+- Lint result: 0 errors, 4 warnings (all pre-existing react-hooks/incompatible-library warnings from react-hook-form watch() calls)
+
+---
+Task ID: 3
+Agent: Anti-Crawl + Feature Enhancer
+Task: Enhance anti-anti-crawl + scraping features
+
+Work Log:
+
+### Part A: Anti-Crawl Enhancement
+
+1. **Browser Fingerprint Hardening** (stealth.ts)
+   - Extended FingerprintProfile with 6 new fields: pixelDepth, audioNoiseSeed, availWidth, availHeight, maxTouchPoints, navigatorVendor
+   - Added pixelDepth (typically equals colorDepth but can differ on some setups)
+   - Added AudioContext fingerprint noise seed (deterministic per-profile from seed hash)
+   - Implemented Screen availWidth/availHeight calculation with taskbar height deduction (40px Windows, 48px macOS dock, 83px macOS with dock+menu bar)
+   - Added maxTouchPoints randomization (75% desktop=0, 25% touch laptop=5)
+   - Added navigatorVendor consistency ('Google Inc.' for Chrome/Edge, '' for Firefox)
+   - Added PIXEL_DEPTHS and MAX_TOUCH_POINTS constant pools
+   - Updated both generateFingerprintProfile() and generateRandomFingerprintProfile()
+   - Updated fallback fingerprint in session-manager.ts to include all new fields
+
+2. **Smart Retry with Exponential Backoff** (engines.ts)
+   - Added AntiCrawlResponseType classification system (forbidden/rate_limited/service_unavailable/captcha/challenge/block/timeout/unknown)
+   - Implemented classifyAntiCrawlResponse() error classifier
+   - Added CooldownState and DomainRetryState tracking interfaces
+   - Implemented exponential backoff with jitter: base * 2^level ± 25% jitter, capped at 120s
+   - Added cool-down mode: after 5 consecutive failures, enter cool-down (3x backoff, max 5min)
+   - Exported recordSmartRetryFailure(), recordSmartRetrySuccess(), isDomainInCooldown(), waitForCooldownIfActive()
+   - Added getSmartRetryStats() for monitoring
+   - LRU eviction for retry states (max 200 domains)
+
+3. **Content Extraction Robustness** (selectors.ts, cleaning.ts)
+   - Extended NOVEL_CONTENT_SELECTORS with 32 additional fallback selectors for less common Chinese novel site patterns (#text-content, .readbox, #BookText, .book-text, div.read, div.txt, div.text, article .text, .entry-content, .post-content, .story-content, .fiction-content, etc.)
+   - Enhanced DEFAULT_AD_PATTERNS in cleaning.ts with intelligent ad line detection patterns (本章字数, 本章收费, VIP章节, 分享本章, 评论, 同类推荐, 猜你喜欢, 换源, 下章预告, 本章完, 上一章/下一章, 目录, 返回书页, etc.)
+
+4. **Session Management** (session-manager.ts)
+   - Added SessionHealth tracking interface (successCount, failCount, captchaCount, blockCount, successRate)
+   - Implemented recordHealthEvent() for success/fail/captcha/block events
+   - Added shouldRotateSession() with automatic rotation when: success rate <50%, 3+ CAPTCHAs, 3+ blocks, usage exceeds rotation limit
+   - Implemented rotateSession() - force blocks all domain sessions and creates fresh one
+   - Added domain warm-up tracking: markDomainWarmedUp(), isDomainWarmedUp()
+   - Session rotation after 30 requests even if not blocked (sessionRotationAfter)
+   - Cleanup now also cleans sessionHealth entries and trims warmedUpDomains set
+   - Updated fallback fingerprint in session-manager.ts with new FingerprintProfile fields
+
+5. **Anti-Crawl Signal Detection Enhancement** (anti-crawl-signal-detector.ts, anti-crawl-advisor.ts)
+   - Added encoding_mismatch and fingerprint_inconsistency signal types
+   - Added encoding mismatch detection in analyzeResponse(): checks for UTF-8 declared but GBK mojibake patterns (锟斤拷)
+   - Added fingerprint inconsistency detection: cross-checks User-Agent platform with sec-ch-ua-platform header
+   - Extended DetectionSignal type with 'cooldown', 'session_rotated', 'encoding_error' signal types
+   - Extended Recommendation category with 'encoding' and 'retry' categories
+
+### Part B: Scraping Feature Enhancement
+
+6. **Batch Search Across Multiple Sources** (batch-search.ts - NEW FILE)
+   - Implemented SearchResult, BatchSearchRequest, BatchSearchResult interfaces
+   - Added Jaccard similarity function for character-level deduplication
+   - Added normalized Levenshtein distance function (1D DP, capped at 50 chars for performance)
+   - Implemented isLikelyDuplicate() using combined title similarity + author match
+   - Implemented scoreRelevance() with 4 factors: title match (0-0.5), author match (0-0.25), metadata (0-0.15), freshness (0-0.1)
+   - Implemented deduplicateResults() - keeps higher-scoring result when duplicates found
+   - Implemented executeBatchSearch() with concurrency limit, per-source timeout, relevance filtering, dedup, and ranking
+   - Added parseSearchQuery() utility for extracting title/author from common formats ("title / author", "title - author", "title (author)")
+
+7. **Content Quality Validation** (content-validator.ts - NEW FILE)
+   - Implemented validateContentQuality() with 5 checks totaling 100pts:
+     - Encoding quality (30pts): garbled text/mojibake detection with 15 patterns (replacement chars, control chars, UTF-8 mojibake, GBK misread patterns like 锟斤拷)
+     - Chinese character ratio (25pts): checks CJK Unified Ideographs + Extension A ratio
+     - Content length (20pts): minimum 100 chars threshold
+     - Line structure (15pts): line count, short line ratio, paragraph count, average line length
+     - Chapter completeness (10pts): compares length against typical 2000-8000 char chapter range
+   - Implemented isContentGarbled() quick check for use in scraping pipelines
+   - Returns health score (0-100), grade (A-F), acceptability flag, encoding issues, and recommended retry encoding
+
+8. **Smart Crawl Scheduling** (crawl-scheduler.ts - NEW FILE)
+   - Implemented CrawlPriority type: critical/high/normal/low/background
+   - Implemented CrawlJob interface with priority and type fields
+   - Added type-to-priority inference: search→critical, new_chapter→high, full_book→normal, category_list→low, update_check→background
+   - Implemented CrawlScheduler class with domain-aware rate limiting:
+     - Per-domain crawl budgets (max requests/hour, max bytes/hour)
+     - Minimum delay enforcement between requests to same domain
+     - Per-domain and total concurrent job limits
+     - Domain-specific budget overrides via setDomainBudget()
+   - Implemented canSchedule() check returning { allowed, reason, waitMs }
+   - Implemented markStarted/markCompleted for in-flight tracking
+   - Added sortJobs() and getNextAllowedJobs() for priority-ordered scheduling
+   - Added getBudgetStats() for monitoring, reset() for cleanup
+   - Singleton export: crawlScheduler
+
+Stage Summary:
+- All 10 target files enhanced + 3 new modules created
+- ESLint passes cleanly on all modified/created files (0 errors, 0 warnings)
+- Full project lint passes (0 errors, 4 pre-existing warnings unrelated to changes)
+- Backward compatibility maintained: all new FingerprintProfile fields have defaults, new exports are additive
+- Key improvements: fingerprint consistency (6 new fields), smart retry with cool-down (engines.ts), session health tracking with auto-rotation, 32 new content selectors, 25+ new ad patterns, 3 new feature modules (batch search, content validation, crawl scheduling)
+
+---
+Task ID: 4
+Agent: Frontend Bug Fixer
+Task: Fix frontend bugs and UX issues
+
+Work Log:
+
+## Priority 1: Security Bugs in API Routes
+
+- **SSRF vulnerability in scrape-rules/ai-analyze route**: The `url` field was validated as a string but never checked with `isSafeUrl()`. Fixed by adding `import { isSafeUrl } from "@/lib/sanitize"` and adding SSRF validation check before the URL is used in the LLM prompt.
+- Verified ALL other API routes are properly wrapped with `withAuth()` or `withPublicRateLimit()` — no unprotected routes found.
+- Confirmed NO routes use unsafe `request.json()` — all use `safeJson()`.
+- Verified SSRF protection (`isSafeUrl()`) is present on all URL fields across routes (novels, chapters, friendly-links, scrape-rules/ai-generate, scrape-rules/test-rule, scrape-rules/preview, admin/scraper/proxy-test, scrape-tasks).
+
+## Priority 2: React/Runtime Bugs
+
+- **DailyReadingGoal.tsx — setTimeout without cleanup**: `setTimeout(() => setGoalJustMet(true), 800)` in useEffect was not cleaned up on unmount, causing potential setState-after-unmount. Fixed by tracking the timer in a `celebrationTimer` variable and clearing it in the cleanup function.
+- **NovelGridLayout.tsx — heart animation setTimeout without cleanup**: `setTimeout(() => setHeartAnimating(false), 350)` in click handler was not tracked or cleaned up. Fixed by adding a `heartTimer` ref and cleaning it up in the existing useEffect cleanup.
+- **NovelListView.tsx — categories fetch without AbortController**: `apiFetch('/api/categories').then(setCategories)` had no AbortController, risking setState on unmounted component. Fixed by adding AbortController with proper abort check.
+- **SimilarNovels.tsx — setState after abort**: `setNovels()` and `setLoading(false)` in finally were called without checking `controller.signal.aborted`. Fixed both to check abort status before calling setState.
+- **ChapterReaderDialog.tsx — setState after abort**: `setContent()` and `setLoading(false)` in catch/finally were called without abort checks. Fixed both.
+- **stats/page.tsx — setLoading in finally without abort check**: Fixed `fetchStats` callback to check `signal?.aborted` before calling `setLoading(false)`.
+- **stats/page.tsx — setStreakData without abort check**: Fixed both instances of `.then(setStreakData)` to check `ac.signal.aborted` before calling setState.
+- **admin/settings/page.tsx — setLoading in finally without abort check**: Fixed to check `controller.signal.aborted` before calling `setLoading(false)`.
+- **RecentlyUpdatedNovels.tsx — setLoading/setRefreshing in finally without abort check**: Fixed to check `ac.signal.aborted` before calling setState.
+
+## Priority 3: UX Quick Wins
+
+- **Added stats/loading>loading.tsx**: Stats page had no Next.js streaming loading UI. Added a proper loading skeleton with header and spinner.
+- **Added stats>error.tsx**: Stats page had no error boundary. Added a proper error.tsx with retry button.
+- **Added rankings>error.tsx**: Rankings page had no error boundary. Added a proper error.tsx with retry button.
+
+## Verification
+
+- ESLint: 0 errors (4 pre-existing warnings from React Hook Form compatibility)
+- All changes are minimal and focused on safety/correctness
+
+Stage Summary:
+- Fixed 1 SSRF vulnerability (scrape-rules/ai-analyze missing isSafeUrl check)
+- Fixed 2 setTimeout-without-cleanup bugs (DailyReadingGoal, NovelGridLayout)
+- Fixed 7 setState-after-abort bugs across 6 components/pages
+- Fixed 1 fetch-without-AbortController bug (NovelListView categories)
+- Added 3 missing page-level UX files (stats/loading, stats/error, rankings/error)
+- All lint checks pass with 0 errors

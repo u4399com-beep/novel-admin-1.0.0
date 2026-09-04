@@ -1,19 +1,22 @@
 import { db } from '@/lib/db';
-import { apiError, apiSuccess } from '@/lib/api-utils';
+import { apiError, apiSuccess, sanitizeField } from '@/lib/api-utils';
 import { NextRequest } from 'next/server';
+import { withPublicRateLimit } from '@/lib/api-auth';
 import { Prisma } from '@prisma/client';
 
+const MAX_SESSION_ID_LENGTH = 100;
+
 // GET /api/novels/[id]/notes?sessionId=xxx - 获取小说所有章节笔记
-export async function GET(
+export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    const sessionId = request.nextUrl.searchParams.get('sessionId');
+    const sessionId = sanitizeField(request.nextUrl.searchParams.get('sessionId') || '', MAX_SESSION_ID_LENGTH);
 
-    if (!sessionId) {
-      return apiError('缺少 sessionId 参数', 400);
+    if (!sessionId || sessionId.length < 10) {
+      return apiSuccess({ notes: [] });
     }
 
     const notes = await db.$queryRaw<Array<{
@@ -44,4 +47,4 @@ export async function GET(
   } catch {
     return apiError('获取笔记失败', 500);
   }
-}
+});

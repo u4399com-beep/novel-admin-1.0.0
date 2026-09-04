@@ -80,7 +80,7 @@ export default function SettingsPage() {
         }
       })
       .catch(() => { /* use localStorage fallback */ })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, []);
 

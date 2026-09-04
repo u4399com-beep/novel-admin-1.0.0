@@ -70,6 +70,8 @@ export default function NovelFormDialog() {
       return () => ac.abort();
     }
   }, [novelFormOpen, fetchOptions, categories.length, tags.length]);
+  // Note: categories.length and tags.length are needed to avoid re-fetching
+  // when store already has data from a prior dialog open.
 
   // ── Merge store data with fetched data ──
   const allCategories = categories.length > 0 ? categories : apiCategories;

@@ -98,8 +98,10 @@ function RecentlyUpdatedNovelsInner() {
         // Silently fail — this section is non-critical
       }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!ac.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 

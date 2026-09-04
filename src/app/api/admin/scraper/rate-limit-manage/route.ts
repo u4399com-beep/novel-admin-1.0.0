@@ -2,7 +2,7 @@
 import { withAuth } from '@/lib/api-auth';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
-import { apiError } from '@/lib/api-utils';
+import { apiError, safeJson } from '@/lib/api-utils';
 
 const SCRAPER_TIMEOUT = 10000;
 
@@ -19,7 +19,7 @@ const VALID_ACTIONS = Object.keys(ACTION_MAP);
 export const POST = withAuth(async function POST(request: Request) {
   let body: Record<string, unknown>;
   try {
-    body = await request.json();
+    body = await safeJson(request);
   } catch {
     return apiError('请求体格式错误', 400);
   }

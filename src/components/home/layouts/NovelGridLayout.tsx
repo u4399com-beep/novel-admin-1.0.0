@@ -84,18 +84,22 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
     setPopoverOpen((prev) => !prev);
   }, []);
 
+  const heartTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   const handleFavorite = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setFavorites((prev) => toggleFavorite(novel.id, prev));
     setHeartAnimating(true);
-    setTimeout(() => setHeartAnimating(false), 350);
+    if (heartTimer.current) clearTimeout(heartTimer.current);
+    heartTimer.current = setTimeout(() => setHeartAnimating(false), 350);
   }, [novel.id]);
 
   useEffect(() => {
     return () => {
       if (enterTimer.current) clearTimeout(enterTimer.current);
       if (leaveTimer.current) clearTimeout(leaveTimer.current);
+      if (heartTimer.current) clearTimeout(heartTimer.current);
     };
   }, []);
 

@@ -58,12 +58,24 @@ export interface FingerprintProfile {
   timezoneOffset: number;
   /** screen.colorDepth */
   colorDepth: number;
+  /** screen.pixelDepth (typically equals colorDepth, but can differ on some setups) */
+  pixelDepth: number;
   /** window.devicePixelRatio */
   pixelRatio: number;
   /** User-Agent string (matched to platform/GPU) */
   userAgent: string;
   /** Deterministic seed for this profile (for caching) */
   seed: string;
+  /** AudioContext fingerprint noise seed (deterministic per-profile) */
+  audioNoiseSeed: number;
+  /** screen.availWidth (must be <= screenWidth, typically = screenWidth) */
+  availWidth: number;
+  /** screen.availHeight (must be <= screenHeight, typically = screenHeight - taskbar) */
+  availHeight: number;
+  /** navigator.maxTouchPoints (0 for desktop, 5 for touch-enabled laptop) */
+  maxTouchPoints: number;
+  /** navigator.vendor ('Google Inc.' for Chrome/Edge, '' for Firefox) */
+  navigatorVendor: string;
 }
 
 // ---- Data pools for randomization ----
@@ -175,7 +187,9 @@ const DEVICE_MEMORY_OPTIONS = [2, 4, 8, 16] as const; // 16GB is now common
 const HARDWARE_CONCURRENCY_OPTIONS = [4, 6, 8, 12, 16] as const; // 6-core laptops common
 const PLATFORMS = ["Win32", "MacIntel", "Linux x86_64"] as const;
 const COLOR_DEPTHS = [24, 30, 32] as const; // 30-bit (10bpc) becoming common
+const PIXEL_DEPTHS = [24, 30, 32] as const; // Typically equals colorDepth
 const PIXEL_RATIOS = [1, 1.25, 1.5, 1.75, 2] as const; // 1.75 for 125% scaling
+const MAX_TOUCH_POINTS = [0, 0, 0, 5] as const; // 75% desktop (0), 25% touch laptop (5)
 
 /**
  * WebGL max parameter noise — adds small random variation to WebGL reported
@@ -469,7 +483,23 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
   const deviceMemory = dPick(DEVICE_MEMORY_OPTIONS, 6);
   const hardwareConcurrency = dPick(HARDWARE_CONCURRENCY_OPTIONS, 7);
   const colorDepth = dPick(COLOR_DEPTHS, 8);
+  const pixelDepth = colorDepth; // pixelDepth typically equals colorDepth
   const pixelRatio = dPick(PIXEL_RATIOS, 9);
+
+  // AudioContext noise seed: deterministic from profile seed for consistent per-session noise
+  const audioNoiseSeed = Math.abs(hash * 13 + 7) | 0;
+
+  // Screen available dimensions: availWidth = screenWidth, availHeight = screenHeight - taskbar
+  // Windows taskbar is typically 40px (bottom), macOS dock ~48px
+  const taskbarHeight = uaPlatform === 'MacIntel' ? (dPick([0, 0, 48, 48, 83], 13)) : (dPick([0, 0, 40, 40, 80], 13));
+  const availWidth = resolution.w;
+  const availHeight = resolution.h - taskbarHeight;
+
+  // maxTouchPoints: 0 for most desktops, 5 for touch-enabled laptops
+  const maxTouchPoints = dPick(MAX_TOUCH_POINTS, 14);
+
+  // navigator.vendor: 'Google Inc.' for Chrome/Edge, '' (empty string) for Firefox
+  const navigatorVendor = isFirefoxUA ? '' : 'Google Inc.';
 
   // All timezones in TIMEZONE_POOL are UTC+8 = -480 minutes exactly.
   // Jitter must NOT be applied here — a mismatch between timezone name and offset is a detection vector.
@@ -494,9 +524,15 @@ export function generateFingerprintProfile(seed?: string): FingerprintProfile {
     timezone,
     timezoneOffset,
     colorDepth,
+    pixelDepth,
     pixelRatio,
     userAgent,
     seed: s,
+    audioNoiseSeed,
+    availWidth,
+    availHeight,
+    maxTouchPoints,
+    navigatorVendor,
   };
 }
 
@@ -543,6 +579,11 @@ export function generateRandomFingerprint(): FingerprintProfile {
   // Use timezone-consistent language mapping
   const languages = [...getLanguageForTimezone(timezone)];
 
+  const colorDepth = pick(COLOR_DEPTHS);
+  const maxTouchPoints = pick(MAX_TOUCH_POINTS);
+  const navigatorVendor = isFirefoxUA ? '' : 'Google Inc.';
+  const taskbarHeight = uaPlatform === 'MacIntel' ? pick([0, 0, 48, 48, 83]) : pick([0, 0, 40, 40, 80]);
+
   return {
     webglVendor: vendor,
     webglRenderer: renderer,
@@ -554,10 +595,16 @@ export function generateRandomFingerprint(): FingerprintProfile {
     languages,
     timezone,
     timezoneOffset,
-    colorDepth: pick(COLOR_DEPTHS),
+    colorDepth,
+    pixelDepth: colorDepth,
     pixelRatio: pick(PIXEL_RATIOS),
     userAgent,
     seed: `random-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    audioNoiseSeed: Math.abs(Math.floor(Math.random() * 2_000_000_000)),
+    availWidth: resolution.w,
+    availHeight: resolution.h - taskbarHeight,
+    maxTouchPoints,
+    navigatorVendor,
   };
 }
 

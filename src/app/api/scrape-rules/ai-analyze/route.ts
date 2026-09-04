@@ -9,6 +9,7 @@
 
 import { apiSuccess, apiError, safeJson } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
+import { isSafeUrl } from "@/lib/sanitize";
 import { NextRequest } from "next/server";
 
 // ==================== Types ====================
@@ -184,6 +185,11 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   }
   if (!url || typeof url !== "string") {
     return apiError("url is required and must be a string", 400);
+  }
+
+  // SSRF protection - validate URL protocol and block private IPs
+  if (!isSafeUrl(url)) {
+    return apiError("URL 不允许访问内网或私有地址", 400);
   }
 
   // Build user message

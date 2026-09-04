@@ -129,6 +129,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
 
   const handleToggleFavorite = useCallback(async () => {
     if (favoriteLoading) return;
+    setFavoriteLoading(true);
     const nextFav = !isFavorited;
     setIsFavorited(nextFav);
     setLocalFavoriteCount((c) => (nextFav ? c + 1 : Math.max(0, c - 1)));
@@ -144,7 +145,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
     } finally {
       setFavoriteLoading(false);
     }
-  }, [favoriteLoading, isFavorited, novel.id]);
+  }, [favoriteLoading, isFavorited, novel.id, localFavoriteCount]);
 
   // ─── Search match count ─────────────────────────────────────────
   const matchCount = useMemo(() => {

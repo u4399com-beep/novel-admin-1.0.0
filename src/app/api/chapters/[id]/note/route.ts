@@ -1,9 +1,10 @@
 import { db } from '@/lib/db';
 import { sanitizeField, apiError, apiSuccess, safeJson } from '@/lib/api-utils';
 import { NextRequest } from 'next/server';
+import { withPublicRateLimit } from '@/lib/api-auth';
 
 // GET /api/chapters/[id]/note?sessionId=xxx - 获取章节笔记
-export async function GET(
+export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -28,10 +29,10 @@ export async function GET(
   } catch {
     return apiError('获取笔记失败', 500);
   }
-}
+});
 
 // PUT /api/chapters/[id]/note - 创建或更新章节笔记
-export async function PUT(
+export const PUT = withPublicRateLimit({ capacity: 30, refillRate: 1 }, async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -97,4 +98,4 @@ export async function PUT(
   } catch {
     return apiError('保存笔记失败', 500);
   }
-}
+});

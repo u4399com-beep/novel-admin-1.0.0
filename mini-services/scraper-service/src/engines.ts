@@ -544,6 +544,237 @@ function isFallbackWorthyError(err: unknown): boolean {
   return true;
 }
 
+// ==================== Smart Retry with Exponential Backoff ====================
+
+/**
+ * Anti-crawl response types that should trigger smart retry.
+ * Each type maps to specific HTTP status codes or content patterns.
+ */
+type AntiCrawlResponseType = 'forbidden' | 'rate_limited' | 'service_unavailable' | 'captcha' | 'challenge' | 'block' | 'timeout' | 'unknown';
+
+/**
+ * Classify an error/failure into an anti-crawl response type.
+ * Used to determine appropriate retry strategy.
+ */
+function classifyAntiCrawlResponse(err: unknown): AntiCrawlResponseType {
+  if (!(err instanceof Error)) return 'unknown';
+  const msg = err.message;
+  if (msg.includes('CAPTCHA')) return 'captcha';
+  if (/HTTP 403/.test(msg)) return 'forbidden';
+  if (/HTTP 429/.test(msg)) return 'rate_limited';
+  if (/HTTP 503/.test(msg)) return 'service_unavailable';
+  if (msg.includes('circuit breaker')) return 'block';
+  if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) return 'timeout';
+  if (msg.includes('challenge') || msg.includes('CF challenge')) return 'challenge';
+  return 'unknown';
+}
+
+/** Per-domain cool-down state */
+interface CooldownState {
+  /** Domain in cool-down mode */
+  active: boolean;
+  /** Cool-down ends at this timestamp */
+  until: number;
+  /** Number of consecutive failures that triggered cool-down */
+  triggerCount: number;
+  /** The anti-crawl response type that triggered cool-down */
+  triggerType: AntiCrawlResponseType;
+}
+
+/** Per-domain retry tracking */
+interface DomainRetryState {
+  /** Consecutive failures for this domain */
+  consecutiveFails: number;
+  /** Timestamp of last failure */
+  lastFailAt: number;
+  /** Current exponential backoff level */
+  backoffLevel: number;
+  /** Cool-down state */
+  cooldown: CooldownState;
+  /** History of recent failure types (for pattern detection) */
+  recentFailureTypes: AntiCrawlResponseType[];
+}
+
+const domainRetryStates = new Map<string, DomainRetryState>();
+const MAX_RETRY_STATES = 200;
+
+/** Smart retry config */
+const SMART_RETRY_CONFIG = {
+  /** Base delay for exponential backoff (ms) */
+  baseDelayMs: 1000,
+  /** Maximum backoff delay (ms) */
+  maxDelayMs: 120_000,
+  /** Jitter range: ±percentage of calculated delay */
+  jitterPercent: 0.25,
+  /** Failures before entering cool-down mode */
+  cooldownThreshold: 5,
+  /** Cool-down duration multiplier (multiplied by current backoff) */
+  cooldownMultiplier: 3,
+  /** Maximum cool-down duration (ms) */
+  maxCooldownMs: 300_000, // 5 minutes
+  /** Number of consecutive successes to exit cool-down early */
+  cooldownRecoverySuccesses: 2,
+};
+
+/**
+ * Calculate exponential backoff delay with jitter.
+ * Formula: base * 2^level + random_jitter
+ * The jitter prevents "thundering herd" when multiple scrapers retry simultaneously.
+ */
+function calculateBackoffDelay(level: number): number {
+  const exponentialDelay = SMART_RETRY_CONFIG.baseDelayMs * Math.pow(2, level);
+  const cappedDelay = Math.min(exponentialDelay, SMART_RETRY_CONFIG.maxDelayMs);
+  // Add ±25% jitter
+  const jitterRange = cappedDelay * SMART_RETRY_CONFIG.jitterPercent;
+  const jitter = (Math.random() * 2 - 1) * jitterRange;
+  return Math.max(100, Math.round(cappedDelay + jitter));
+}
+
+/**
+ * Get or create retry state for a domain.
+ */
+function getDomainRetryState(domain: string): DomainRetryState {
+  let state = domainRetryStates.get(domain);
+  if (!state) {
+    // LRU eviction
+    if (domainRetryStates.size >= MAX_RETRY_STATES) {
+      const oldestKey = domainRetryStates.keys().next().value;
+      if (oldestKey !== undefined) domainRetryStates.delete(oldestKey);
+    }
+    state = {
+      consecutiveFails: 0,
+      lastFailAt: 0,
+      backoffLevel: 0,
+      cooldown: { active: false, until: 0, triggerCount: 0, triggerType: 'unknown' },
+      recentFailureTypes: [],
+    };
+    domainRetryStates.set(domain, state);
+  }
+  return state;
+}
+
+/**
+ * Record a retry failure for a domain and get the recommended wait time.
+ * Returns the delay in ms before the next retry, or -1 if cool-down should be entered.
+ */
+export function recordSmartRetryFailure(domain: string, err: unknown): { delayMs: number; inCooldown: boolean; cooldownUntil?: number } {
+  const state = getDomainRetryState(domain);
+  const failType = classifyAntiCrawlResponse(err);
+
+  state.consecutiveFails++;
+  state.lastFailAt = Date.now();
+  state.backoffLevel = Math.min(state.consecutiveFails - 1, 10); // Cap at 2^10 = 1024x
+  state.recentFailureTypes.push(failType);
+  if (state.recentFailureTypes.length > 20) state.recentFailureTypes.shift();
+
+  // Check if we should enter cool-down mode
+  if (state.consecutiveFails >= SMART_RETRY_CONFIG.cooldownThreshold && !state.cooldown.active) {
+    const backoffDelay = calculateBackoffDelay(state.backoffLevel);
+    const cooldownDuration = Math.min(
+      backoffDelay * SMART_RETRY_CONFIG.cooldownMultiplier,
+      SMART_RETRY_CONFIG.maxCooldownMs,
+    );
+    state.cooldown = {
+      active: true,
+      until: Date.now() + cooldownDuration,
+      triggerCount: state.consecutiveFails,
+      triggerType: failType,
+    };
+
+    console.warn(
+      `[SmartRetry] Domain ${domain} entering cool-down for ${Math.round(cooldownDuration / 1000)}s ` +
+      `after ${state.consecutiveFails} failures (last: ${failType})`,
+    );
+
+    return { delayMs: cooldownDuration, inCooldown: true, cooldownUntil: state.cooldown.until };
+  }
+
+  // If already in cool-down, extend it
+  if (state.cooldown.active) {
+    const remaining = state.cooldown.until - Date.now();
+    if (remaining > 0) {
+      return { delayMs: remaining, inCooldown: true, cooldownUntil: state.cooldown.until };
+    }
+    // Cool-down expired
+    state.cooldown.active = false;
+  }
+
+  const delayMs = calculateBackoffDelay(state.backoffLevel);
+  return { delayMs, inCooldown: false };
+}
+
+/**
+ * Record a successful request for a domain (resets backoff).
+ * Also exits cool-down early if enough consecutive successes.
+ */
+export function recordSmartRetrySuccess(domain: string): void {
+  const state = domainRetryStates.get(domain);
+  if (!state) return;
+
+  state.consecutiveFails = 0;
+  state.backoffLevel = 0;
+  state.recentFailureTypes = [];
+
+  // Exit cool-down on success
+  if (state.cooldown.active) {
+    state.cooldown.active = false;
+    state.cooldown.until = 0;
+  }
+}
+
+/**
+ * Check if a domain is currently in cool-down mode.
+ * Returns the remaining cool-down time in ms, or 0 if not in cool-down.
+ */
+export function isDomainInCooldown(domain: string): number {
+  const state = domainRetryStates.get(domain);
+  if (!state || !state.cooldown.active) return 0;
+
+  const remaining = state.cooldown.until - Date.now();
+  if (remaining <= 0) {
+    state.cooldown.active = false;
+    return 0;
+  }
+  return remaining;
+}
+
+/**
+ * Get smart retry stats for monitoring.
+ */
+export function getSmartRetryStats(): Record<string, { consecutiveFails: number; backoffLevel: number; inCooldown: boolean; cooldownUntil: number }> {
+  const result: Record<string, { consecutiveFails: number; backoffLevel: number; inCooldown: boolean; cooldownUntil: number }> = {};
+  for (const [domain, state] of domainRetryStates) {
+    if (state.consecutiveFails > 0 || state.cooldown.active) {
+      result[domain] = {
+        consecutiveFails: state.consecutiveFails,
+        backoffLevel: state.backoffLevel,
+        inCooldown: state.cooldown.active,
+        cooldownUntil: state.cooldown.until,
+      };
+    }
+  }
+  return result;
+}
+
+/**
+ * Wait for cool-down if a domain is currently in cool-down mode.
+ * Returns true if we waited, false if no cool-down was active.
+ */
+export async function waitForCooldownIfActive(domain: string, signal?: AbortSignal): Promise<boolean> {
+  const remaining = isDomainInCooldown(domain);
+  if (remaining <= 0) return false;
+
+  console.log(`[SmartRetry] Waiting for cool-down: ${domain} (${Math.round(remaining / 1000)}s remaining)`);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, remaining);
+    if (signal) {
+      if (signal.aborted) { clearTimeout(timer); reject(signal.reason || new Error('Aborted')); return; }
+      signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason || new Error('Aborted')); }, { once: true });
+    }
+  });
+  return true;
+}
+
 /**
  * Fetch with automatic engine fallback.
  * Tries the primary engine first; on qualifying failure, tries the next engine

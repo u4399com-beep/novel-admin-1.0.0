@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { ExternalLink, RefreshCw, Link2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
@@ -40,8 +40,22 @@ function FooterLinksSkeleton() {
 }
 
 // ─── Friendly Link Item ──────────────────────────────────────────────────────
+// Hook to get the current origin in an SSR-safe way (avoids set-state-in-effect lint)
+function useClientOrigin() {
+  const subscribe = useMemo(() => (onStoreChange: () => void) => {
+    // origin never changes at runtime; no-op subscribe
+    return () => {};
+  }, []);
+  return useSyncExternalStore(
+    subscribe,
+    () => window.location.origin,
+    () => '', // server snapshot
+  );
+}
+
 function FriendlyLinkItem({ link }: { link: LinkWheelItem }) {
-  const isExternal = !link.url.startsWith(window.location.origin);
+  const origin = useClientOrigin();
+  const isExternal = !origin || !link.url.startsWith(origin);
 
   return (
     <a
@@ -60,7 +74,8 @@ function FriendlyLinkItem({ link }: { link: LinkWheelItem }) {
 
 // ─── Link Wheel Item (with animation key for re-render) ──────────────────────
 function LinkWheelItem({ link, animKey }: { link: LinkWheelItem; animKey: number }) {
-  const isExternal = !link.url.startsWith(window.location.origin);
+  const origin = useClientOrigin();
+  const isExternal = !origin || !link.url.startsWith(origin);
 
   return (
     <a

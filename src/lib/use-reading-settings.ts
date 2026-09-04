@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Reading Themes ─────────────────────────────────────────────────
@@ -222,9 +222,13 @@ function saveBookmarks(novelId: string, bookmarks: BookmarkEntry[]) {
 }
 
 export function useChapterBookmarks(novelId: string) {
-  const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(
-    () => loadBookmarks(novelId)
-  );
+  // Initialize from localStorage directly on client (lazy initializer).
+  // On server, returns empty array. The lazy initializer only runs once
+  // during mount, so there's no risk of cascading renders.
+  const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return loadBookmarks(novelId);
+  });
 
   const addBookmark = useCallback(
     (chapterIndex: number, chapterTitle: string, scrollPercent: number) => {

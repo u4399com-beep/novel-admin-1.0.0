@@ -27,11 +27,12 @@ export function SimilarNovels({ categoryId, currentNovelId, novelTitle }: { cate
     const controller = new AbortController();
     apiFetch<{ novels?: SimilarNovel[]; items?: SimilarNovel[] }>(`/api/public/novels?categoryId=${categoryId}&pageSize=6`, { signal: controller.signal })
       .then((data) => {
+        if (controller.signal.aborted) return;
         const items = data.novels || data.items || [];
         setNovels(items.filter((n) => n.id !== currentNovelId).slice(0, 5));
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [categoryId, currentNovelId]);
 

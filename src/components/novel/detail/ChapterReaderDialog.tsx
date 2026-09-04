@@ -54,12 +54,12 @@ export function ChapterReaderDialog({
     const loadContent = async () => {
       try {
         const data = await apiFetch<{ title: string; content: string }>(`/api/chapters/${chapter.id}`, { signal: ac.signal });
-        setContent(data.content || '');
+        if (!ac.signal.aborted) setContent(data.content || '');
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
-        setContent('');
+        if (!ac.signal.aborted) setContent('');
       } finally {
-        setLoading(false);
+        if (!ac.signal.aborted) setLoading(false);
       }
     };
 

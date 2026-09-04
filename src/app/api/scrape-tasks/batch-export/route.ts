@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { apiError } from '@/lib/api-utils';
+import { apiError, safeJson } from '@/lib/api-utils';
 import { withAuth } from '@/lib/api-auth';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -9,7 +9,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   try {
     let body: { taskIds?: unknown; format?: unknown };
     try {
-      body = await request.json();
+      body = await safeJson(request);
     } catch {
       return apiError('请求数据格式错误', 400);
     }

@@ -49,7 +49,9 @@ export type ResponseSignalType =
   | 'honeypot_link'
   | 'css_trap'
   | 'suspicious_redirect'
-  | 'empty_with_200';
+  | 'empty_with_200'
+  | 'encoding_mismatch'
+  | 'fingerprint_inconsistency';
 
 export interface HtmlSignalResult {
   /** Signals found in HTML content */
@@ -515,6 +517,34 @@ export function analyzeResponse(
     // 200 with very short content and challenge indicators
     if (html.length < 500 && /challenge|captcha|verify|blocked/i.test(html)) {
       allSignals.push({ type: 'empty_with_200', confidence: 0.6, detail: 'HTTP 200 but content looks like challenge page' });
+    }
+  }
+
+  // 8. Encoding mismatch detection (Content-Type charset vs actual content)
+  const contentType = lcHeaders['content-type'] || '';
+  const declaredCharset = contentType.match(/charset[=\s"']+([\w\-]+)/i)?.[1]?.toLowerCase();
+  if (declaredCharset && html.length > 100) {
+    // Check for UTF-8 declared but GBK/Big5 mojibake patterns
+    if (declaredCharset === 'utf-8') {
+      if (/锟斤拷|鐢|鍦|棰/.test(html)) {
+        allSignals.push({ type: 'encoding_mismatch', confidence: 0.5, detail: 'Declared UTF-8 but content shows GBK mojibake (锟斤拷 pattern)' });
+      }
+    }
+  }
+
+  // 9. Fingerprint inconsistency detection
+  // Check for User-Agent / sec-ch-ua platform mismatch
+  const ua = lcHeaders['user-agent'] || '';
+  const secChUaPlatform = lcHeaders['sec-ch-ua-platform'] || '';
+  if (ua && secChUaPlatform) {
+    const uaHasMac = /Macintosh/.test(ua);
+    const uaHasWin = /Windows/.test(ua);
+    const uaHasLinux = /Linux/.test(ua);
+    const platformIsMac = secChUaPlatform.includes('macOS');
+    const platformIsWin = secChUaPlatform.includes('Windows');
+    const platformIsLinux = secChUaPlatform.includes('Linux');
+    if ((uaHasMac && !platformIsMac) || (uaHasWin && !platformIsWin) || (uaHasLinux && !platformIsLinux)) {
+      allSignals.push({ type: 'fingerprint_inconsistency', confidence: 0.9, detail: 'User-Agent platform does not match sec-ch-ua-platform' });
     }
   }
 

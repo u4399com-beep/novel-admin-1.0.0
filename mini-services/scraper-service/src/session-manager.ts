@@ -30,6 +30,21 @@ interface InternalSession extends SessionData {
 
 // ==================== SessionManager ====================
 
+interface SessionHealth {
+  /** Number of successful requests in this session */
+  successCount: number;
+  /** Number of failed/detected requests in this session */
+  failCount: number;
+  /** Number of CAPTCHA detections in this session */
+  captchaCount: number;
+  /** Number of 403/429 responses in this session */
+  blockCount: number;
+  /** Success rate (0-1), computed on demand */
+  successRate: number;
+  /** Last health check timestamp */
+  lastHealthCheck: number;
+}
+
 class SessionManager {
   private sessions: Map<string, InternalSession> = new Map();       // sessionId -> session
   private domainSessions: Map<string, string[]> = new Map();       // domain -> sessionIds
@@ -38,6 +53,13 @@ class SessionManager {
   private maxSessionUsage: number = 50;                              // recycle after 50 uses
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private sessionCounter: number = 0; // Monotonic counter for unique session IDs
+
+  // Session health tracking
+  private sessionHealth: Map<string, SessionHealth> = new Map();
+  // Session rotation: rotate after N requests even if not blocked
+  private sessionRotationAfter: number = 30;
+  // Warm-up tracking: domains that have been warmed up
+  private warmedUpDomains: Set<string> = new Set();
 
   constructor() {
     // Auto-cleanup every 30 minutes
@@ -128,7 +150,7 @@ class SessionManager {
       fingerprint = getProfileForDomain(normalizedDomain);
     } catch {
       // Fallback: use a default profile if stealth module fails
-      fingerprint = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36', screenWidth: 1920, screenHeight: 1080, colorDepth: 24, pixelRatio: 1, timezone: 'Asia/Shanghai', languages: ['zh-CN', 'en-US'], platform: 'Win32', hardwareConcurrency: 8, deviceMemory: 8, webglVendor: '', webglRenderer: '', timezoneOffset: -480, seed: 'fallback' };
+      fingerprint = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36', screenWidth: 1920, screenHeight: 1080, colorDepth: 24, pixelDepth: 24, pixelRatio: 1, timezone: 'Asia/Shanghai', languages: ['zh-CN', 'en-US'], platform: 'Win32', hardwareConcurrency: 8, deviceMemory: 8, webglVendor: '', webglRenderer: '', timezoneOffset: -480, seed: 'fallback', audioNoiseSeed: 0, availWidth: 1920, availHeight: 1040, maxTouchPoints: 0, navigatorVendor: 'Google Inc.' };
     }
     try {
       cookieHeader = cookieJar.getCookieHeader(normalizedDomain, '/');
@@ -193,6 +215,98 @@ class SessionManager {
     const session = this.sessions.get(sessionId);
     if (!session) return undefined;
     return this.toPublicSession(session);
+  }
+
+  /**
+   * Record a health event for a session (success, failure, captcha, block).
+   * This tracks session "health" to enable intelligent rotation decisions.
+   */
+  recordHealthEvent(sessionId: string, event: 'success' | 'fail' | 'captcha' | 'block'): void {
+    let health = this.sessionHealth.get(sessionId);
+    if (!health) {
+      health = { successCount: 0, failCount: 0, captchaCount: 0, blockCount: 0, successRate: 1, lastHealthCheck: Date.now() };
+      this.sessionHealth.set(sessionId, health);
+    }
+    switch (event) {
+      case 'success': health.successCount++; break;
+      case 'fail': health.failCount++; break;
+      case 'captcha': health.captchaCount++; break;
+      case 'block': health.blockCount++; break;
+    }
+    const total = health.successCount + health.failCount + health.captchaCount + health.blockCount;
+    health.successRate = total > 0 ? health.successCount / total : 1;
+    health.lastHealthCheck = Date.now();
+  }
+
+  /**
+   * Get health stats for a session.
+   */
+  getSessionHealth(sessionId: string): SessionHealth | undefined {
+    return this.sessionHealth.get(sessionId);
+  }
+
+  /**
+   * Check if a session should be rotated based on health and usage.
+   * Rotation triggers when:
+   *   - Session success rate drops below 50%
+   *   - Session has been blocked or captcha'd 3+ times
+   *   - Session has exceeded rotation usage limit
+   */
+  shouldRotateSession(sessionId: string): { rotate: boolean; reason?: string } {
+    const session = this.sessions.get(sessionId);
+    if (!session) return { rotate: false };
+
+    const health = this.sessionHealth.get(sessionId);
+    if (health) {
+      if (health.successRate < 0.5 && (health.failCount + health.blockCount) >= 3) {
+        return { rotate: true, reason: `Low success rate: ${(health.successRate * 100).toFixed(1)}%` };
+      }
+      if (health.captchaCount >= 3) {
+        return { rotate: true, reason: `Too many CAPTCHAs: ${health.captchaCount}` };
+      }
+      if (health.blockCount >= 3) {
+        return { rotate: true, reason: `Too many blocks: ${health.blockCount}` };
+      }
+    }
+
+    if (session.usageCount >= this.sessionRotationAfter) {
+      return { rotate: true, reason: `Usage limit: ${session.usageCount}/${this.sessionRotationAfter}` };
+    }
+
+    return { rotate: false };
+  }
+
+  /**
+   * Force-rotate a session for a domain: block the old session and create a new one.
+   * Returns the new session data.
+   */
+  rotateSession(domain: string, reason?: string): SessionData {
+    const normalizedDomain = domain.toLowerCase().replace(/^www\./, '');
+    const sessionIds = this.domainSessions.get(normalizedDomain) || [];
+    // Block all existing sessions for this domain
+    for (const sid of sessionIds) {
+      this.blockSession(sid, reason || 'Session rotation');
+    }
+    // Create a fresh session
+    return this.acquireSession(normalizedDomain);
+  }
+
+  /**
+   * Mark a domain as warmed up (homepage/category pages visited).
+   */
+  markDomainWarmedUp(domain: string): void {
+    const normalized = domain.toLowerCase().replace(/^www\./, '');
+    if (this.warmedUpDomains.size < 500) {
+      this.warmedUpDomains.add(normalized);
+    }
+  }
+
+  /**
+   * Check if a domain has already been warmed up.
+   */
+  isDomainWarmedUp(domain: string): boolean {
+    const normalized = domain.toLowerCase().replace(/^www\./, '');
+    return this.warmedUpDomains.has(normalized);
   }
 
   /** Get all sessions for a domain */
@@ -288,6 +402,7 @@ class SessionManager {
 
       if (isExpired || isOverused || isStaleBlocked) {
         this.sessions.delete(sessionId);
+        this.sessionHealth.delete(sessionId);
 
         // Remove from domain index
         for (const [domain, sids] of this.domainSessions.entries()) {
@@ -302,6 +417,19 @@ class SessionManager {
         }
 
         cleaned++;
+      }
+    }
+
+    // Clean up stale warm-up tracking (domains not accessed in 1 hour)
+    // This is lightweight since it's just a Set
+    if (this.warmedUpDomains.size > 200) {
+      // Periodically trim to avoid unbounded growth
+      // Keep only domains that still have active sessions
+      const activeDomains = new Set(this.domainSessions.keys());
+      for (const d of this.warmedUpDomains) {
+        if (!activeDomains.has(d)) {
+          this.warmedUpDomains.delete(d);
+        }
       }
     }
 

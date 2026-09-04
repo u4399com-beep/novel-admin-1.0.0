@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { getCoverGradient } from '@/lib/cover-gradient';
 
@@ -15,13 +16,16 @@ interface NovelCoverProps {
 }
 
 export function NovelCover({ coverUrl, title, className, gradientClassName, textClassName }: NovelCoverProps) {
-  if (coverUrl) {
+  const [imgError, setImgError] = useState(false);
+
+  if (coverUrl && !imgError) {
     return (
       <img
         src={coverUrl}
         alt={title}
         className={cn('h-full w-full object-cover', className)}
         loading="lazy"
+        onError={() => setImgError(true)}
       />
     );
   }
@@ -33,7 +37,8 @@ export function NovelCover({ coverUrl, title, className, gradientClassName, text
         className,
         gradientClassName,
       )}
-      aria-hidden="true"
+      role="img"
+      aria-label={title}
     >
       <span className={cn('font-bold text-white/90 select-none', textClassName)}>
         {title.charAt(0)}
