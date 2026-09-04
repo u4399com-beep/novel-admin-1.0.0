@@ -18,6 +18,7 @@ import { HomeActivity } from '@/components/home/HomeActivity';
 import { RecentlyUpdatedNovels } from '@/components/home/RecentlyUpdatedNovels';
 import { LayoutSwitcher } from '@/components/home/LayoutSwitcher';
 import { HeroSection } from '@/components/home/HeroSection';
+import { ReadingStreakBanner } from '@/components/home/ReadingStreakBanner';
 import { NovelGrid } from '@/components/home/NovelGrid';
 import type { Category } from '@/components/home/HeroSection';
 import type { NovelCardData } from '@/components/home/shared-types';
@@ -385,6 +386,9 @@ export default function HomePage() {
         total={total}
         filterSummary={filterSummary}
       />
+
+      {/* Reading Streak Banner */}
+      <ReadingStreakBanner />
 
       {/* Recently Updated Novels */}
       <RecentlyUpdatedNovels />

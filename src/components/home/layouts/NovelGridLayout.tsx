@@ -114,7 +114,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: index * 0.04 }}
-            className="group cursor-pointer shine-hover card-depth hover-lift hover-scale novel-card-glow novel-card-load-anim"
+            className="group cursor-pointer shine-hover card-depth hover-lift hover-scale novel-card-glow novel-card-load-anim hover:shadow-lg hover:-translate-y-1 transition-all duration-300 ease-out"
           >
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
               <NovelCover
@@ -156,6 +156,8 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
                   {isFavorited ? '取消收藏' : '收藏'}
                 </TooltipContent>
               </Tooltip>
+              {/* Subtle gradient overlay on hover */}
+              <div className="absolute inset-0 bg-gradient-to-t from-primary/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-out pointer-events-none" />
               <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 opacity-0 group-hover:opacity-100">
                 <span className="flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-black/70 px-4 py-2 text-sm font-medium text-foreground backdrop-blur-sm shadow-lg translate-y-3 group-hover:translate-y-0 transition-transform duration-300">
                   <Eye className="h-4 w-4" /> 阅读

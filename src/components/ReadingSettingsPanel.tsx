@@ -23,7 +23,7 @@ interface ReadingSettingsPanelProps {
 
 export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPanelProps) {
   return (
-    <div className="flex flex-col gap-2 max-h-80 overflow-y-auto scrollbar-thin">
+    <div className="flex flex-col gap-3 max-h-80 overflow-y-auto scrollbar-thin p-1">
       <div className="flex items-center gap-1">
       {/* Font size controls */}
       <Tooltip>
@@ -163,10 +163,10 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
                 onClick={() => onUpdate({ readerTemplate: template.key })}
                 aria-label={`阅读模版: ${template.label}`}
                 className={cn(
-                  'px-2 py-0.5 rounded text-[11px] transition-colors',
+                  'px-2 py-0.5 rounded-md text-[11px] transition-all duration-200',
                   settings.readerTemplate === template.key
-                    ? 'bg-primary text-primary-foreground font-medium'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    ? 'bg-primary text-primary-foreground font-medium shadow-sm shadow-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/80 active:scale-95'
                 )}
               >
                 {template.label}
@@ -177,7 +177,7 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
         ))}
       </div>
 
-      <div className="mt-4 pt-3 border-t border-border/50">
+      <div className="mt-3 pt-3 border-t border-border/30 bg-muted/20 -mx-1 px-3 py-2 rounded-md">
         <p className="text-[10px] text-muted-foreground/50 mb-1.5">快捷键</p>
         <div className="grid grid-cols-2 gap-1 text-[10px] text-muted-foreground/60">
           <span><kbd className="px-1 py-0.5 rounded bg-muted/80 text-[9px] font-mono border border-border/50">↑↓</kbd> 翻页</span>

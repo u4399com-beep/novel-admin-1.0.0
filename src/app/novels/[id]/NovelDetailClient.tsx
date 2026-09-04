@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ArrowLeft, BookmarkCheck, StickyNote } from 'lucide-react';
+import { ArrowLeft, BookmarkCheck, StickyNote, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BookmarkManager } from '@/components/BookmarkManager';
 import {
@@ -26,6 +26,8 @@ import { useReaderFullscreen } from './parts/useReaderFullscreen';
 import { useReaderKeyboard } from './parts/useReaderKeyboard';
 import { recordReadingActivity, reportReadingGoal } from './parts/reading-activity';
 import { GuichuidengReader } from '@/themes/guichuideng/GuichuidengReader';
+import { ScrollToTopButton } from '@/components/ScrollToTopButton';
+import { useSiteName } from '@/lib/use-site-name';
 
 // ─── Constants ─────────────────────────────────────────────────────
 
@@ -158,6 +160,9 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
   }, [chapterContent, searchQuery]);
 
   const getMatchCount = useCallback(() => matchCount, [matchCount]);
+
+  // ─── Site name ────────────────────────────────────────────────
+  const siteName = useSiteName();
 
   // ─── Reading settings ────────────────────────────────────────────
   const { settings, updateSettings, currentTheme, currentFont } = useReadingSettings();
@@ -501,15 +506,19 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
             error={chapterError}
             onChapterChange={handleGuichuidengChapterChange}
             onRetry={() => loadChapter(currentIndex)}
-            siteName="小说阅读器"
+            siteName={siteName}
           />
-          <button
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.3, duration: 0.2 }}
             onClick={handleGuichuidengClose}
-            className="fixed top-3 right-3 z-50 h-8 w-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
-            aria-label="返回书目"
+            className="fixed top-4 right-4 z-50 h-9 w-9 rounded-full bg-black/50 backdrop-blur-sm text-white/90 flex items-center justify-center hover:bg-black/70 hover:scale-110 active:scale-95 transition-all duration-200 ring-1 ring-white/20 shadow-lg"
+            aria-label="返回书目 (Esc)"
+            title="返回书目 (Esc)"
           >
             <ArrowLeft className="h-4 w-4" />
-          </button>
+          </motion.button>
         </div>
       )}
 
@@ -632,8 +641,13 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         />
 
         {/* ─── Bottom nav hint ─────────────────────────────────── */}
-        <div className="border-t py-6 text-center text-xs text-muted-foreground/70">
-          点击章节开始阅读 · 支持键盘翻页
+        <div className="border-t border-border/50 py-6 text-center">
+          <div className="inline-flex items-center gap-2 text-xs text-muted-foreground/60">
+            <BookOpen className="h-3.5 w-3.5" />
+            <span>点击章节开始阅读</span>
+            <span className="text-muted-foreground/30">·</span>
+            <span>支持键盘翻页</span>
+          </div>
         </div>
       </div>
       )}
@@ -717,6 +731,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         open={bookmarkManagerOpen}
         onOpenChange={setBookmarkManagerOpen}
       />
+      <ScrollToTopButton />
     </main>
   );
 }

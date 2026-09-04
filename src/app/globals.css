@@ -5200,6 +5200,42 @@ mark {
   animation: hero-bg-shift 15s ease-in-out infinite reverse;
 }
 
+/* ─── Custom scrollbar for reading areas ──────────────────────────── */
+.reader-content-area::-webkit-scrollbar {
+  width: 6px;
+}
+.reader-content-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+.reader-content-area::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.2);
+  border-radius: 3px;
+}
+.reader-content-area::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.35);
+}
+
+/* Smooth scroll behavior for reader */
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Custom thin scrollbar */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.15);
+  border-radius: 2px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.3);
+}
+
 /* ─── Reduced motion overrides for Task 6 additions ────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .flame-pulse { animation: none; }

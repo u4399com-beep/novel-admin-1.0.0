@@ -207,8 +207,8 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
             小说搜索
           </h1>
           <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>
-            <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg border-glow glass-morphism stagger-children">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+            <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg border-glow glass-morphism stagger-children focus-within:ring-2 focus-within:ring-primary/30 focus-within:bg-background focus-within:shadow-sm transition-all duration-300">
+              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10 transition-all duration-300 ${!searchInput ? 'animate-pulse opacity-60' : 'opacity-100'}`} />
               <Input
                 ref={inputRef}
                 type="text"

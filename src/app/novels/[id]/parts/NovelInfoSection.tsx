@@ -371,13 +371,63 @@ export function NovelInfoSection({
                   ({Math.round(((safeLastChapterIndex + 1) / chapters.length) * 100)}%)
                 </span>
               </div>
-              <div className="h-2 rounded-full bg-muted overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${((safeLastChapterIndex + 1) / chapters.length) * 100}%` }}
-                  transition={{ duration: 0.8, delay: 0.6, ease: 'easeOut' }}
-                  className="h-full rounded-full bg-gradient-to-r from-primary to-primary/70"
-                />
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${((safeLastChapterIndex + 1) / chapters.length) * 100}%` }}
+                    transition={{ duration: 0.8, delay: 0.6, ease: 'easeOut' }}
+                    className="h-full rounded-full bg-gradient-to-r from-primary to-primary/70"
+                  />
+                </div>
+                {/* Circular progress ring */}
+                {(() => {
+                  const pct = Math.round(((safeLastChapterIndex + 1) / chapters.length) * 100);
+                  const r = 11;
+                  const circ = 2 * Math.PI * r;
+                  const offset = circ - (pct / 100) * circ;
+                  return (
+                    <svg
+                      width="32"
+                      height="32"
+                      viewBox="0 0 32 32"
+                      className="shrink-0 text-primary"
+                    >
+                      <circle
+                        cx="16"
+                        cy="16"
+                        r={r}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        className="text-muted/50"
+                        opacity="0.3"
+                      />
+                      <circle
+                        cx="16"
+                        cy="16"
+                        r={r}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeDasharray={circ}
+                        strokeDashoffset={offset}
+                        strokeLinecap="round"
+                        transform="rotate(-90 16 16)"
+                        className="transition-[stroke-dashoffset] duration-700 ease-out"
+                      />
+                      <text
+                        x="16"
+                        y="16"
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="fill-foreground text-[7px] font-semibold tabular-nums"
+                      >
+                        {pct}
+                      </text>
+                    </svg>
+                  );
+                })()}
               </div>
             </motion.div>
           )}

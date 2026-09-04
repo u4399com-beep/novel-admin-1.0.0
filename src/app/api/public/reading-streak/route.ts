@@ -16,6 +16,9 @@ const querySchema = z.object({
 /**
  * GET /api/public/reading-streak?sessionId=xxx
  * Returns reading streak statistics for a given session.
+ *
+ * When called without sessionId, returns global streak from ReadingDaily:
+ * { streak, todayWords, currentStreak, maxStreak, totalDays }
  */
 export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async function GET(request: NextRequest) {
   try {
@@ -23,6 +26,44 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     const rawSessionId = sanitizeField(searchParams.get('sessionId') || '', 200);
     const tz = sanitizeField(searchParams.get('tz') || '', 50) || undefined;
 
+    // ── Global streak (ReadingDaily) when no sessionId ──
+    if (!rawSessionId) {
+      const today = toLocalDateStr(new Date(), tz);
+
+      const todayStats = await db.readingDaily.findUnique({
+        where: { date: today },
+      });
+
+      // Calculate streak by checking consecutive days with reading activity
+      let streak = 0;
+      const checkDate = new Date();
+
+      for (let i = 0; i < 365; i++) {
+        const dateStr = toLocalDateStr(checkDate, tz);
+        const dayStats = await db.readingDaily.findUnique({
+          where: { date: dateStr },
+          select: { chapters: true },
+        });
+
+        if (dayStats && dayStats.chapters > 0) {
+          streak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else if (i === 0) {
+          // Today hasn't been read yet - check yesterday
+          checkDate.setDate(checkDate.getDate() - 1);
+          continue;
+        } else {
+          break;
+        }
+      }
+
+      return NextResponse.json({
+        streak,
+        todayWords: todayStats?.words ?? 0,
+      });
+    }
+
+    // ── Per-session streak (ReadingProgress) ──
     const parsed = querySchema.safeParse({ sessionId: rawSessionId });
     if (!parsed.success) {
       return apiError(parsed.error.issues[0].message, 400);
@@ -36,7 +77,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     const uniqueDates = dates.map(d => d.date);
 
     if (uniqueDates.length === 0) {
-      return NextResponse.json({ currentStreak: 0, maxStreak: 0, totalDays: 0 });
+      return NextResponse.json({ currentStreak: 0, maxStreak: 0, totalDays: 0, streak: 0, todayWords: 0 });
     }
 
     // Bucket by local date
@@ -79,7 +120,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
       if (streak > maxStreak) maxStreak = streak;
     }
 
-    return NextResponse.json({ currentStreak, maxStreak, totalDays });
+    return NextResponse.json({ currentStreak, maxStreak, totalDays, streak: currentStreak, todayWords: 0 });
   } catch (error) {
     console.error('Get reading streak error:', error);
     return apiError('获取阅读连续天数失败', 500);

@@ -25435,3 +25435,52 @@ Stage Summary:
 - 1项新功能（阅读进度条）
 - 2项环境配置修复
 - ESLint: 0错误（4个预存在warnings）
+
+---
+Task ID: 2
+Agent: Bug Fix + Reader Enhancement
+Task: Fix GuichuidengReader siteName + enhance reader UX
+
+Work Log:
+- Fixed siteName hardcoded bug → use useSiteName() hook
+- Enhanced GuichuidengReader close button with glass morphism + animation
+- Added reading progress ring to NovelInfoSection
+- Improved bottom hint with icon
+
+Stage Summary:
+- 1 bug fixed, 3 UX enhancements
+
+---
+Task ID: 4
+Agent: Style Polisher
+Task: Visual style optimization and polish
+
+Work Log:
+- Enhanced novel card hover effects
+- Improved SearchBar focus styling
+- Polished ReadingSettingsPanel with glass effect
+- Added custom scrollbar CSS
+- Improved GuichuidengReader visual details
+
+Stage Summary:
+- 5 style improvements across 6 files
+- Better hover/focus states, glass morphism, scrollbar styling
+
+---
+Task ID: 3
+Agent: Feature Developer
+Task: New features - ScrollToTop, reading time, streak banner
+
+Work Log:
+- Created ScrollToTopButton component with motion animation
+- Added reading time estimation to chapter list
+- Created ReadingStreakBanner for homepage
+- Updated /api/public/reading-streak endpoint to support global streak (ReadingDaily) without sessionId
+- Integrated all features into pages
+
+Stage Summary:
+- 4 new features added
+- All features use proper error handling and cleanup
+- ReadingStreakBanner gracefully hides when no streak data
+- Reading streak API backward-compatible (sessionId still works, global mode added)
+- Lint passes (0 errors, 4 pre-existing warnings)

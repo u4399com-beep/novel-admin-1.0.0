@@ -303,7 +303,7 @@ export function GuichuidengReader({
 
         {/* Chapter list dropdown */}
         {chapterListOpen && (
-          <div className="mt-2 border border-gray-200 rounded bg-white shadow-lg max-h-[300px] overflow-y-auto custom-scrollbar animate-in fade-in-0 slide-in-from-top-2 duration-200">
+          <div className="mt-2 border border-gray-200 rounded-lg bg-white/95 backdrop-blur-sm shadow-xl max-h-[300px] overflow-y-auto custom-scrollbar animate-in fade-in-0 slide-in-from-top-2 duration-200">
             <ul className="p-2">
               {chapters.map((ch, i) => (
                 <li key={ch.id}>
@@ -409,7 +409,7 @@ export function GuichuidengReader({
                 }}
               >
                 <div
-                  className="w-16 h-22 mx-auto rounded bg-gray-200 mb-2"
+                  className="w-16 h-22 mx-auto rounded bg-gradient-to-br from-gray-100 to-gray-300 mb-2 shadow-sm"
                   style={{ backgroundColor: currentBg.text + '10' }}
                 />\n                <p className="text-xs line-clamp-1">推荐小说 {i + 1}</p>
               </div>
@@ -419,7 +419,7 @@ export function GuichuidengReader({
       </div>
 
       {/* ─── Footer ───────────────────────────────────────────── */}
-      <footer className="bg-[#333] text-white/50 text-xs">
+      <footer className="bg-gradient-to-b from-[#333] to-[#2a2a2a] text-white/50 text-xs">
         <div className="max-w-[960px] mx-auto px-3 py-4 text-center space-y-1">
           <p>Copyright © {new Date().getFullYear()} {siteName || '小说阅读网'} All Rights Reserved.</p>
         </div>

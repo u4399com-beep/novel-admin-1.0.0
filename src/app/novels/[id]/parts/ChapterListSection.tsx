@@ -70,9 +70,14 @@ const MemoizedChapterItem = React.memo(function MemoizedChapterItem({
           <BookmarkCheck className="h-3 w-3 shrink-0 text-amber-500" />
         )}
         {chapter.wordCount > 0 && (
-          <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
-            {chapter.wordCount}字{formatReadingTime(chapter.wordCount) && ` · ${formatReadingTime(chapter.wordCount)}`}
-          </span>
+          <>
+            <span className="text-xs text-muted-foreground/60 shrink-0 tabular-nums">
+              {chapter.wordCount}字{formatReadingTime(chapter.wordCount) && ` · ${formatReadingTime(chapter.wordCount)}`}
+            </span>
+            <span className="text-[10px] text-muted-foreground/50 shrink-0">
+              约{Math.max(1, Math.ceil(chapter.wordCount / 500))}分钟
+            </span>
+          </>
         )}
       </div>
       {isLastChapter && (
