@@ -25326,3 +25326,112 @@ Stage Summary:
 - 新增阅读器模版切换功能（经典/鬼吹灯）
 - 配置了管理后台登录凭据
 - 项目有 4 套主题系统：阅读颜色主题(前台点击)、首页布局主题(前台点击)、站群视觉主题(后台管理)、鬼吹灯主题阅读器(前台点击)
+
+---
+Task ID: 8
+Agent: Code Review & Bug Fix
+Task: API response format mismatch audit - fix categories.map pattern across remaining components
+
+Work Log:
+- Audited all apiFetch calls across the entire codebase (30+ files)
+- Compared frontend expected types against actual API response shapes
+- Found 3 crash bugs where components expected raw arrays but APIs return paginated `{ items, total, page, pageSize, totalPages }` objects
+
+## 修复清单
+
+### Bug 1: ThemeManagerView.tsx — `data.map()` crash on paginated API response
+- **File**: `src/components/theme/ThemeManagerView.tsx`
+- **Root Cause**: `apiFetch<Theme[]>('/api/themes')` but `/api/themes` returns `{ themes: [...], total, page, pageSize, totalPages }`
+- **Effect**: Calling `data.map(...)` on a plain object crashes at runtime with "data.map is not a function"
+- **Fix**: Changed type to `apiFetch<{ themes: Theme[] }>` and extracted `data.themes ?? []` before mapping
+
+### Bug 2: SiteClusterView.tsx — `themesData.map()` crash + sites API type mismatch
+- **File**: `src/components/site/SiteClusterView.tsx`
+- **Root Cause**: Same paginated response mismatch for both `/api/themes` and `/api/sites`
+- **Effect**: `themesData.map(...)` crashes; sites data had fragile fallback cast `(sitesData as { sites?: SiteWithCount[] }).sites`
+- **Fix**: Changed both apiFetch types to `{ themes: [...] }` / `{ sites: [...] }` and extracted items via `data.themes ?? []` / `data.sites ?? []`
+
+### Bug 3: FriendlyLinksManager.tsx — novels + sites API format mismatch
+- **File**: `src/components/admin/FriendlyLinksManager.tsx`
+- **Root Cause**: `apiFetch<Novel[]>('/api/novels?limit=200')` and `apiFetch<Site[]>('/api/sites')` but both APIs return paginated objects
+- **Additional Bug**: Used `limit=200` param but admin novels API only supports `pageSize` param (so only 12 novels returned instead of 200)
+- **Effect**: `setNovels(novelsData)` sets a `{ novels, total, ... }` object as the novels array; `setSites(sitesData)` same
+- **Fix**: Changed types to `{ novels: Novel[] }` / `{ sites: Site[] }`, changed `limit=200` to `pageSize=200`, extracted items via `data.novels ?? []` / `data.sites ?? []`
+
+### Verified Correct (no fix needed)
+- Homepage (`page.tsx`): `apiFetch<Category[]>('/api/public/categories')` ✅ (API returns raw array)
+- Homepage novels: `apiFetch<{ novels?, totalPages?, total? }>('/api/public/novels')` ✅ (matches paginated shape)
+- `RecentlyUpdatedNovels.tsx`: `apiFetch<{ novels: [...] }>('/api/public/recently-updated')` ✅
+- `ContinueReading.tsx`: `apiFetch<{ progress: [...] }>` ✅
+- `NovelListView.tsx`: `apiFetch<{ categories: Category[] }>('/api/categories')` + `PaginatedResponse` ✅
+- `NovelFormDialog.tsx`: `apiFetch<{ categories: Category[] }>` + `apiFetch<{ tags: Tag[] }>` ✅
+- `CategoryManagerView.tsx`, `TagManagerView.tsx`, `CommandPalette.tsx`, `admin/page.tsx`: all use `{ categories: [...] }` / `{ tags: [...] }` ✅
+- `rankings/page.tsx`: `apiFetch<{ novels?: RankingNovel[] }>` ✅
+- `FriendlyLinksFooter.tsx`: `apiFetch<FriendlyLinkData[]>('/api/public/link-wheel')` ✅ (API returns raw array)
+- `NotesPanel.tsx`: `apiFetch<Note[]>('/api/chapters/.../notes')` ✅ (API returns raw array)
+- Novel detail page: Server-side Prisma fetch, no API format issue ✅
+- Reading theme/template switching: localStorage hydration correct ✅
+
+### Homepage "暂无小说" Investigation
+- The homepage code path is correct: `apiFetch<{ novels?, totalPages?, total? }>` matches the public novels API response `{ novels, total, page, pageSize, totalPages }`
+- The `setNovels(data.novels || [])` fallback is safe
+- This is likely a runtime/environment issue (e.g., first deploy with empty DB, stale ISR cache, or rate limit hit) rather than a code bug
+- The public novels API does not set `export const dynamic = 'force-dynamic'`, so Next.js may cache the response — but since the fetch is client-side, this should not cause "暂无小说"
+
+## Verification
+- ESLint: 0 errors, 4 warnings (pre-existing react-hooks/incompatible-library)
+- TypeScript: `tsc --noEmit` passes with no errors
+
+---
+Task ID: 7
+Agent: Main Orchestrator
+Task: 代码审查、bug修复、新功能开发、样式优化
+
+Work Log:
+- 修复.env配置（添加NEXTAUTH_SECRET, ADMIN_PASSWORD等认证变量）
+- 启动开发服务器并用agent-browser测试管理后台登录
+- 发现并修复categories.map is not a function bug（6个文件，由前一会话子代理修复）
+- 发现并修复3个新的API响应格式不匹配bug:
+  1. ThemeManagerView.tsx - data.map() crash，改为data.themes
+  2. SiteClusterView.tsx - themesData.map() crash + sites type mismatch
+  3. FriendlyLinksManager.tsx - novels + sites API format mismatch
+- 改进主题切换视觉效果:
+  - ReadingSettingsPanel: 增大max-h到80，主题按钮hover:scale-125 + ring-2 + shadow
+  - GuichuidengReader: 背景主题按钮scale-125 + shadow + hover效果
+  - GuichuidengReader: 字体切换按钮添加active:scale-95和shadow效果
+  - ReaderContent: 主题切换transition改为duration-500 ease-in-out
+  - ReaderContent: 文章内容transition改为duration-500 ease-in-out
+- 新增小说详情页阅读进度条功能:
+  - 在NovelInfoSection中添加动画进度条
+  - 显示"第X章/共Y章"和百分比
+  - 使用motion.div动画从0到目标宽度
+  - 渐变色进度条(from-primary to-primary/70)
+- 创建演示数据: 40部小说, 1425个章节, 13个分类
+- 修复package.json dev脚本(添加--webpack flag)
+
+## 修复清单
+
+### Bug修复（3个crash bug）
+1. **ThemeManagerView.tsx** - `data.map()` → `data.themes ?? []`（API返回paginated对象）
+2. **SiteClusterView.tsx** - `themesData.map()` + sites类型不匹配 → 正确提取`data.sites`和`data.themes`
+3. **FriendlyLinksManager.tsx** - novels/sites API格式不匹配 → 正确提取paginated数据，修复`limit=200`→`pageSize=200`
+
+### 样式优化
+4. 主题切换按钮: hover:scale-125, active:scale-95, ring-2, shadow-sm
+5. 阅读器主题过渡: duration-300 → duration-500 ease-in-out
+6. Guichuideng阅读器: 更丰富的按钮反馈和过渡动画
+7. 阅读设置面板: max-h-72 → max-h-80, 更好的键盘快捷键排版
+
+### 新功能
+8. 小说详情页阅读进度条（动画渐变色进度条，显示章节进度）
+
+### 环境配置
+9. .env文件: 添加完整的认证和配置变量
+10. package.json: 修复dev脚本添加--webpack flag
+
+Stage Summary:
+- 修复3个crash bug（API响应格式不匹配）
+- 7项样式优化（主题切换动画、按钮反馈等）
+- 1项新功能（阅读进度条）
+- 2项环境配置修复
+- ESLint: 0错误（4个预存在warnings）

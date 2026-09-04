@@ -18,7 +18,7 @@ import type { ScrapeRuleItem } from './types';
 
 const LIST_ENGINE_COLORS: Record<string, string> = {
   cheerio: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20',
-  playwright: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20',
+  playwright: 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/20',
   firecrawl: 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20',
   agentql: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20',
   'cloud-browser': 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/20',
@@ -297,7 +297,7 @@ export function ScrapeRuleList({ onEdit, onCreate, onOpenAiAssistant }: ScrapeRu
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                          className="h-8 w-8 p-0 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50"
                           onClick={() => handleClone(rule)}
                           disabled={cloningId === rule.id}
                           title="克隆"

@@ -265,7 +265,7 @@ export function DashboardView() {
     <div className="space-y-6 p-4 md:p-6">
       {/* ── Welcome Card ──────────────────────────────────────────────────── */}
       <Card className="overflow-hidden border-0 bg-gradient-to-r from-slate-50 to-slate-100/50 dark:from-slate-900/50 dark:to-slate-800/50">
-        <CardContent className="relative flex items-center gap-4 p-5 md:p-6">
+        <CardContent className="relative flex items-center gap-4 p-4 md:p-6">
           {/* Decorative icon */}
           <div className="absolute -right-4 -top-4 h-28 w-28 rounded-full bg-emerald-100/40 dark:bg-emerald-900/20 animate-[pulse_4s_ease-in-out_infinite]" />
           <div className="absolute -right-8 -bottom-8 h-20 w-20 rounded-full bg-amber-100/30 dark:bg-amber-900/10 animate-[pulse_4s_ease-in-out_infinite_1s]" />
@@ -424,7 +424,7 @@ export function DashboardView() {
           ) : scrapeTasks.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">暂无采集任务</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-64 overflow-y-auto scrollbar-thin">
               {scrapeTasks.map((task) => {
                 const statusCfg: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
                   running: { label: '运行中', cls: 'bg-chart-slate/10 text-chart-slate running-badge', icon: <Loader2 className="h-3 w-3 animate-spin" /> },
@@ -496,7 +496,9 @@ export function DashboardView() {
 
       {/* ── Activity Feed ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="max-h-96 overflow-y-auto scrollbar-thin">
         <ActivityFeed />
+      </div>
       </div>
 
       {/* ── Scrape Rules Quick Actions ──────────────────────────────── */}

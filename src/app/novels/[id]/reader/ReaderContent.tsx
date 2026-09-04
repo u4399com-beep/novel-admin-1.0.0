@@ -70,9 +70,9 @@ export function ReaderContent({
   const themeTextStyle = isDark ? currentTheme.textStyleDark : currentTheme.textStyle;
 
   return (
-    <div ref={contentRef} className="flex-1 overflow-y-auto reader-content-area">
+    <div ref={contentRef} className="flex-1 overflow-y-auto reader-content-area scroll-smooth">
       <div
-        className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-colors duration-300`}
+        className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-all duration-500 ease-in-out`}
         style={themeBgStyle}
       >
         {loading ? (
@@ -96,14 +96,14 @@ export function ReaderContent({
         ) : content ? (
           <div className="mx-auto max-w-3xl">
             <h3
-              className={`text-lg font-semibold mb-6 pb-4 text-center tracking-tight ${currentTheme.text} transition-colors duration-300`}
+              className={`text-lg font-semibold mb-6 pb-4 text-center tracking-tight ${currentTheme.text} transition-all duration-500 ease-in-out`}
               style={themeTextStyle}
             >
               {chapterTitle}
             </h3>
             <hr className="reader-chapter-divider" />
             <article
-              className={`whitespace-pre-wrap transition-all duration-300 ${currentTheme.text} ${currentFontCss}`}
+              className={`whitespace-pre-wrap transition-all duration-500 ease-in-out ${currentTheme.text} ${currentFontCss}`}
               style={{
                 fontSize: `${fontSize}px`,
                 lineHeight,

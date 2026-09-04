@@ -29,9 +29,9 @@ export default function CategoryManagerView() {
   const fetchCategories = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
-      const data = await apiFetch<Category[]>('/api/categories', { signal });
+      const data = await apiFetch<{ categories: Category[] }>('/api/categories', { signal });
       if (signal?.aborted) return;
-      setCategories(data);
+      setCategories(data.categories);
     } catch {
       if (signal?.aborted) return;
       /* handled by apiFetch */

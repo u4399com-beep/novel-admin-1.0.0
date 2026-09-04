@@ -37,11 +37,11 @@ export function ChapterSidebar({
           transition={{ duration: 0.2 }}
           className="shrink-0 border-r overflow-hidden"
         >
-          <div className="w-[220px] h-full overflow-y-auto p-3 flex flex-col">
-            <div className="text-xs font-medium text-muted-foreground mb-2 px-1">
+          <div className="w-[220px] h-full flex flex-col p-3">
+            <div className="text-xs font-medium text-muted-foreground mb-2 px-1 shrink-0">
               目录 ({chapters.length}章)
             </div>
-            <div className="flex-1 space-y-px scrollbar-thin">
+            <div className="flex-1 space-y-px overflow-y-auto scrollbar-thin min-h-0">
             {chapters.map((ch, idx) => {
               const globalIdx = (sidebarPage - 1) * sidebarPageSize + idx;
               return (
@@ -62,7 +62,7 @@ export function ChapterSidebar({
             })}
             </div>
             {sidebarTotalPages > 1 && (
-              <div className="flex items-center justify-center gap-1 pt-2 border-t mt-2">
+              <div className="flex items-center justify-center gap-1 pt-2 border-t mt-2 shrink-0">
                 <button
                   className="h-6 w-6 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30"
                   disabled={sidebarPage <= 1}

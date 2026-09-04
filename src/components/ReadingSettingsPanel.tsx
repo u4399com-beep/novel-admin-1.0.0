@@ -23,7 +23,7 @@ interface ReadingSettingsPanelProps {
 
 export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPanelProps) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 max-h-80 overflow-y-auto scrollbar-thin">
       <div className="flex items-center gap-1">
       {/* Font size controls */}
       <Tooltip>
@@ -108,10 +108,10 @@ export function ReadingSettingsPanel({ settings, onUpdate }: ReadingSettingsPane
                 onClick={() => onUpdate({ themeKey: theme.key })}
                 aria-label={`阅读主题: ${theme.label}`}
                 className={cn(
-                  'relative h-5 w-5 rounded-full border-2 transition-all duration-150 hover:scale-110',
+                  'relative h-5 w-5 rounded-full border-2 transition-all duration-200 hover:scale-125 active:scale-95',
                   settings.themeKey === theme.key
-                    ? 'border-primary ring-1 ring-primary/30'
-                    : 'border-muted-foreground/30 hover:border-muted-foreground/60'
+                    ? 'border-primary ring-2 ring-primary/40 shadow-sm shadow-primary/20'
+                    : 'border-muted-foreground/30 hover:border-muted-foreground/60 hover:shadow-sm'
                 )}
                 style={{ backgroundColor: theme.preview }}
               >

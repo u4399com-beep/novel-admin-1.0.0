@@ -37,10 +37,11 @@ export default function ThemeManagerView() {
 
   const fetchThemes = useCallback(async (signal?: AbortSignal) => {
     try {
-      const data = await apiFetch<(Theme & { config: string; _count?: { sites: number } })[]>('/api/themes', { signal });
+      const data = await apiFetch<{ themes: (Theme & { config: string; _count?: { sites: number } })[] }>('/api/themes', { signal });
       if (signal?.aborted) return;
+      const themesList = data.themes ?? [];
       setThemes(
-        data.map((t) => ({
+        themesList.map((t) => ({
           ...t,
           config: (typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : t.config) as ThemeConfig,
         }))

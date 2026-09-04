@@ -211,10 +211,10 @@ export function GuichuidengReader({
               <button
                 key={f.key}
                 onClick={() => updateSetting({ fontFamily: f.key })}
-                className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                className={`px-2 py-0.5 text-xs rounded transition-all duration-200 ${
                   settings.fontFamily === f.key
-                    ? 'bg-orange-500 text-white'
-                    : 'hover:bg-gray-200'
+                    ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/20'
+                    : 'hover:bg-gray-200 hover:shadow-sm active:scale-95'
                 }`}
                 style={settings.fontFamily !== f.key ? { color: currentBg.text } : undefined}
               >
@@ -252,8 +252,8 @@ export function GuichuidengReader({
               <button
                 key={bg.key}
                 onClick={() => updateSetting({ bgKey: bg.key })}
-                className={`w-5 h-5 rounded-full border-2 transition-transform ${
-                  settings.bgKey === bg.key ? 'scale-110 border-orange-400' : 'border-gray-300'
+                className={`w-5 h-5 rounded-full border-2 transition-all duration-200 ${
+                  settings.bgKey === bg.key ? 'scale-125 border-orange-400 shadow-sm shadow-orange-400/30' : 'border-gray-300 hover:scale-110 hover:shadow-sm'
                 }`}
                 style={{ backgroundColor: bg.bg }}
                 title={bg.label}
@@ -303,7 +303,7 @@ export function GuichuidengReader({
 
         {/* Chapter list dropdown */}
         {chapterListOpen && (
-          <div className="mt-2 border border-gray-200 rounded bg-white shadow-lg max-h-[300px] overflow-y-auto custom-scrollbar">
+          <div className="mt-2 border border-gray-200 rounded bg-white shadow-lg max-h-[300px] overflow-y-auto custom-scrollbar animate-in fade-in-0 slide-in-from-top-2 duration-200">
             <ul className="p-2">
               {chapters.map((ch, i) => (
                 <li key={ch.id}>
@@ -336,7 +336,7 @@ export function GuichuidengReader({
         className="flex-1 overflow-y-auto"
       >
         <div
-          className="max-w-[700px] mx-auto px-4 sm:px-6 py-4 transition-colors duration-300"
+          className="max-w-[700px] mx-auto px-4 sm:px-6 py-4 transition-all duration-500 ease-in-out"
           style={{
             backgroundColor: currentBg.bg,
             color: currentBg.text,

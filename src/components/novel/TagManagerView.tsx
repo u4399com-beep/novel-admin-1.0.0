@@ -29,9 +29,9 @@ export default function TagManagerView() {
   const fetchTags = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
-      const data = await apiFetch<Tag[]>('/api/tags', { signal });
+      const data = await apiFetch<{ tags: Tag[] }>('/api/tags', { signal });
       if (signal?.aborted) return;
-      setTags(data);
+      setTags(data.tags);
     } catch { /* handled by apiFetch */ } finally {
       if (!signal?.aborted) setLoading(false);
     }

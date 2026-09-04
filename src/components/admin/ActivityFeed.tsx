@@ -26,7 +26,7 @@ interface ActivityResponse {
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 const TYPE_CONFIG: Record<ActivityItem['type'], { icon: typeof BookOpen; dotClass: string }> = {
-  novel_updated: { icon: BookOpen, dotClass: 'bg-blue-500' },
+  novel_updated: { icon: BookOpen, dotClass: 'bg-cyan-500' },
   chapter_created: { icon: FileText, dotClass: 'bg-chart-emerald' },
   task_created: { icon: Zap, dotClass: 'bg-chart-amber' },
   task_completed: { icon: Zap, dotClass: 'bg-chart-emerald' },

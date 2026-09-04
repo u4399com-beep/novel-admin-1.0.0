@@ -182,8 +182,8 @@ export function WordCountStats() {
       <Card className="card-glass card-border-glow hover-lift">
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10">
-              <FileText className="h-3.5 w-3.5 text-blue-500" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-500/10">
+              <FileText className="h-3.5 w-3.5 text-teal-500" />
             </div>
             <CardTitle className="text-sm link-underline inline-block">字数统计</CardTitle>
           </div>

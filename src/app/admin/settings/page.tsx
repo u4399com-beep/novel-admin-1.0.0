@@ -160,7 +160,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+      <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
         <p className="font-medium mb-1">关于这些设置</p>
         <ul className="list-disc list-inside space-y-0.5 text-xs opacity-90">
           <li><b>站点名称</b>已在前台页面实时生效（侧栏标题、浏览器标签等）</li>

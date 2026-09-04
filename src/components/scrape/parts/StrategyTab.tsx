@@ -66,7 +66,7 @@ export function StrategyTab({ form, onOpenAiAssistant, onOpenVisualSelector }: S
             </SelectItem>
             <SelectItem value="playwright">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-blue-500" />
+                <span className="h-2 w-2 rounded-full bg-cyan-500" />
                 <div>
                   <span className="font-medium">Playwright</span>
                   <span className="ml-1 text-xs text-muted-foreground">JS渲染引擎</span>

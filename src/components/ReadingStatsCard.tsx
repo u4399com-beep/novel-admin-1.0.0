@@ -98,16 +98,16 @@ export function ReadingStatsCard({ className }: ReadingStatsCardProps) {
   ];
 
   return (
-    <Card className={className}>
+    <Card className={`card-glass ${className ?? ''}`}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">阅读统计</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         <div className="grid grid-cols-2 gap-4">
           {items.map((item) => {
             const Icon = item.icon;
             return (
-              <div key={item.label} className="flex flex-col items-center gap-1.5 py-3 rounded-lg bg-muted/40">
+              <div key={item.label} className="flex flex-col items-center gap-1.5 py-3 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors">
                 <Icon className="h-5 w-5 text-muted-foreground" />
                 <span
                   className="text-2xl font-bold tabular-nums count-animate stat-number text-gradient"

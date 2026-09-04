@@ -93,8 +93,8 @@ export default function AdminPage() {
 
   const handleImportOpen = useCallback(async () => {
     try {
-      const data = await apiFetch<Array<{ id: string; name: string; color: string }>>('/api/categories');
-      setCategories(data);
+      const data = await apiFetch<{ categories: Array<{ id: string; name: string; color: string }> }>('/api/categories');
+      setCategories(data.categories);
     } catch { /* handled */ }
     setImportOpen(true);
   }, [setCategories, setImportOpen]);

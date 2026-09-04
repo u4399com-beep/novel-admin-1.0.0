@@ -88,8 +88,8 @@ export default function NovelListView() {
   // Fetch categories for filter
   useEffect(() => {
     const ac = new AbortController();
-    apiFetch<Category[]>('/api/categories', { signal: ac.signal })
-      .then((data) => { if (!ac.signal.aborted) setCategories(data); })
+    apiFetch<{ categories: Category[] }>('/api/categories', { signal: ac.signal })
+      .then((data) => { if (!ac.signal.aborted) setCategories(data.categories); })
       .catch(() => {});
     return () => ac.abort();
   }, []);

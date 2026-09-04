@@ -113,7 +113,7 @@ export function RecentActivity({
             暂无最近活动
           </div>
         ) : (
-          <div className="relative space-y-0">
+          <div className="relative space-y-0 max-h-80 overflow-y-auto scrollbar-thin">
             {activityData.recentEvents.map((event, i) => {
               const isLast = i === activityData.recentEvents.length - 1;
               const { icon: EventIcon, color: iconColor, hoverBg, label } = getEventMeta(event.type);

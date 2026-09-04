@@ -64,11 +64,11 @@ export default function SiteClusterView() {
   const fetchSites = useCallback(async (signal?: AbortSignal) => {
     try {
       const [sitesData, themesData] = await Promise.all([
-        apiFetch<Site[]>('/api/sites', { signal }),
-        apiFetch<(Theme & { config: string })[]>('/api/themes', { signal }),
+        apiFetch<{ sites: SiteWithCount[] }>('/api/sites', { signal }),
+        apiFetch<{ themes: (Theme & { config: string })[] }>('/api/themes', { signal }),
       ]);
       if (signal?.aborted) return;
-      const parsedSites = Array.isArray(sitesData) ? sitesData : (sitesData as { sites?: SiteWithCount[] }).sites ?? [];
+      const parsedSites = sitesData.sites ?? [];
       setSites(parsedSites);
       setSiteHealthMap((prev) => {
         const next: Record<string, SiteHealthStatus> = { ...prev };
@@ -79,8 +79,9 @@ export default function SiteClusterView() {
         }
         return next;
       });
+      const themesList = themesData.themes ?? [];
       setThemes(
-        themesData.map((t) => ({      
+        themesList.map((t) => ({      
           ...t,
           config: typeof t.config === 'string' ? (tryParseJSON(t.config) ?? defaultThemeConfig()) : (t.config as ThemeConfig),
         })) as Theme[]

@@ -86,7 +86,7 @@ interface ReadingProgressItem {
 
 function ContinueReadingSkeleton() {
   return (
-    <div className="rounded-xl border bg-card p-5 card-glow">
+    <div className="rounded-xl border bg-card p-4 card-glow">
       <div className="flex items-center gap-2 mb-4">
         <div className="h-4 w-4 animate-pulse bg-muted rounded" />
         <div className="h-4 w-20 animate-pulse bg-muted rounded" />
@@ -173,7 +173,7 @@ export function ContinueReading() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="rounded-xl border bg-card p-5 card-glow"
+        className="rounded-xl border bg-card p-4 card-glow"
       >
         {/* Section Header */}
         <div className="flex items-center justify-between mb-4">

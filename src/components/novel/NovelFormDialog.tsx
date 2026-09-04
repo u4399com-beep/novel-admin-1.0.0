@@ -45,17 +45,17 @@ export default function NovelFormDialog() {
   const fetchOptions = useCallback(async (signal?: AbortSignal) => {
     try {
       const [catRes, tagRes] = await Promise.allSettled([
-        apiFetch<Category[]>("/api/categories", { signal }),
-        apiFetch<Tag[]>("/api/tags", { signal }),
+        apiFetch<{ categories: Category[] }>("/api/categories", { signal }),
+        apiFetch<{ tags: Tag[] }>("/api/tags", { signal }),
       ]);
       if (signal?.aborted) return;
       if (catRes.status === 'fulfilled') {
-        setApiCategories(catRes.value);
-        setCategories(catRes.value);
+        setApiCategories(catRes.value.categories);
+        setCategories(catRes.value.categories);
       }
       if (tagRes.status === 'fulfilled') {
-        setApiTags(tagRes.value);
-        setTags(tagRes.value);
+        setApiTags(tagRes.value.tags);
+        setTags(tagRes.value.tags);
       }
     } catch (err) {
       if (process.env.NODE_ENV === 'development') console.error('Failed to fetch categories/tags for form:', err);

@@ -119,9 +119,9 @@ export default function CommandPalette() {
 
     // Fetch categories
     queueMicrotask(() => setLoadingCategories(true));
-    apiFetch<Category[]>('/api/categories', { signal: ac.signal, silent: true })
+    apiFetch<{ categories: Category[] }>('/api/categories', { signal: ac.signal, silent: true })
       .then((data) => {
-        if (!ac.signal.aborted) setCategories(Array.isArray(data) ? data : []);
+        if (!ac.signal.aborted) setCategories(data.categories);
       })
       .catch(() => {
         if (!ac.signal.aborted) setCategories([]);

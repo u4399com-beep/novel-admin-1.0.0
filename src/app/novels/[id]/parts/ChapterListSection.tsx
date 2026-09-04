@@ -52,9 +52,9 @@ const MemoizedChapterItem = React.memo(function MemoizedChapterItem({
       variants={itemVariants}
       onClick={() => onOpenReader(globalIndex)}
       className={
-        'chapter-row flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0 group ' +
-        (globalIndex % 2 === 0 ? '' : 'bg-muted/30') +
-        (isLastChapter ? ' bg-primary/5 border-l-2 border-l-primary' : '')
+        'chapter-row flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0 group hover:bg-muted/40 ' +
+        (globalIndex % 2 === 0 ? '' : 'bg-muted/30 ') +
+        (isLastChapter ? 'bg-primary/5 border-l-2 border-l-primary ' : '')
       }
     >
       <div className="flex items-center gap-2 min-w-0">

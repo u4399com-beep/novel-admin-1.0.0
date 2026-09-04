@@ -390,12 +390,12 @@ export default function FriendlyLinksManager() {
   const fetchReferenceData = useCallback(async (signal?: AbortSignal) => {
     try {
       const [sitesData, novelsData] = await Promise.all([
-        apiFetch<Site[]>('/api/sites', { signal, silent: true }),
-        apiFetch<Novel[]>('/api/novels?limit=200', { signal, silent: true }),
+        apiFetch<{ sites: Site[] }>('/api/sites', { signal, silent: true }),
+        apiFetch<{ novels: Novel[] }>('/api/novels?pageSize=200', { signal, silent: true }),
       ]);
       if (signal?.aborted) return;
-      setSites(sitesData);
-      setNovels(novelsData);
+      setSites(sitesData.sites ?? []);
+      setNovels(novelsData.novels ?? []);
     } catch {
       // Reference data fetch failure is non-critical
     }

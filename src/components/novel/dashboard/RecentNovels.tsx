@@ -28,7 +28,7 @@ export function RecentNovels({ recentNovels, loading, onViewNovel }: RecentNovel
           最近更新
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (

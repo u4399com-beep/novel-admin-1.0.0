@@ -279,7 +279,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.25 }}
-              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover"
+              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover hover:bg-muted/80 transition-colors cursor-default"
             >
               <FileText className="h-4 w-4 text-primary" />
               <div>
@@ -291,7 +291,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover"
+              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover hover:bg-muted/80 transition-colors cursor-default"
             >
               <BookOpen className="h-4 w-4 text-primary" />
               <div>
@@ -303,7 +303,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35 }}
-              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover"
+              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover hover:bg-muted/80 transition-colors cursor-default"
             >
               <Eye className="h-4 w-4 text-primary" />
               <div>
@@ -315,7 +315,7 @@ export function NovelInfoSection({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover"
+              className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 stat-card-hover hover:bg-muted/80 transition-colors cursor-default"
             >
               <BookmarkCheck className="h-4 w-4 text-primary" />
               <div>
@@ -329,7 +329,7 @@ export function NovelInfoSection({
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.45 }}
-                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 cursor-default stat-card-hover"
+                  className="flex items-center gap-2 rounded-lg bg-muted/60 px-4 py-2 cursor-default stat-card-hover hover:bg-muted/80 transition-colors"
                 >
                   <Clock className="h-4 w-4 text-primary" />
                   <div>
@@ -355,6 +355,32 @@ export function NovelInfoSection({
               更新于 {formatDate(novel.updatedAt)}
             </motion.span>
           </div>
+
+          {/* Reading Progress Bar */}
+          {safeLastChapterIndex !== null && chapters.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.55 }}
+              className="pt-2"
+            >
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                <span>阅读进度</span>
+                <span className="tabular-nums font-medium">
+                  第{safeLastChapterIndex + 1}章 / 共{chapters.length}章
+                  ({Math.round(((safeLastChapterIndex + 1) / chapters.length) * 100)}%)
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-muted overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${((safeLastChapterIndex + 1) / chapters.length) * 100}%` }}
+                  transition={{ duration: 0.8, delay: 0.6, ease: 'easeOut' }}
+                  className="h-full rounded-full bg-gradient-to-r from-primary to-primary/70"
+                />
+              </div>
+            </motion.div>
+          )}
         </div>
       </div>
     </motion.section>
