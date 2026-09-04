@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, List, Loader2, RotateCcw } from 'lucide-react';
 import type { Chapter } from '@/app/novels/[id]/reader/types';

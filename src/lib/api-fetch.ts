@@ -12,7 +12,7 @@ import { toast } from 'sonner';
  *   3. Returns typed JSON via generic parameter.
  */
 
-export interface ApiError {
+interface ApiError {
   error: string;
   detail?: string;
 }

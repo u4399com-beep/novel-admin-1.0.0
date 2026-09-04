@@ -19,20 +19,14 @@ import { RecentlyUpdatedNovels } from '@/components/home/RecentlyUpdatedNovels';
 import { LayoutSwitcher } from '@/components/home/LayoutSwitcher';
 import { HeroSection } from '@/components/home/HeroSection';
 import { ReadingStreakBanner } from '@/components/home/ReadingStreakBanner';
-import { NovelGrid } from '@/components/home/NovelGrid';
+import { NovelGridLoader } from '@/components/home/NovelGridLoader';
 import type { Category } from '@/components/home/HeroSection';
-import type { NovelCardData } from '@/components/home/shared-types';
-import { apiFetch, FetchError } from '@/lib/api-fetch';
 import { FriendlyLinksFooter } from '@/components/footer/FriendlyLinksFooter';
 import { useSiteName } from '@/lib/use-site-name';
 import { useLayoutTheme } from '@/lib/use-layout-theme';
 
 
-// ─── Types ───────────────────────────────────────────────────────────
-
-type Novel = NovelCardData;
-
-// ─── Filter Config ─────────────────────────────────────────────────────
+// ─── Main Page ───────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
   { value: '', label: '全部' },
@@ -61,12 +55,8 @@ export default function HomePage() {
   useEffect(() => { setMounted(true); }, []);
 
 
-
   // Data state
-  const [novels, setNovels] = useState<Novel[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [totalPages, setTotalPages] = useState(0);
-  const [total, setTotal] = useState(0);
   // Filter state
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -77,7 +67,6 @@ export default function HomePage() {
   const [activeSort, setActiveSort] = useState('last_update');
 
   // Loading state
-  const [loadingNovels, setLoadingNovels] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(true);
 
   // Mobile menu state
@@ -107,35 +96,7 @@ export default function HomePage() {
     return () => abortController.abort();
   }, []);
 
-  // ─── Fetch novels ────────────────────────────────────────────────
-  const [novelsError, setNovelsError] = useState(false);
-  useEffect(() => {
-    const abortController = new AbortController();
-    async function load() {
-      setLoadingNovels(true);
-      setNovelsError(false);
-      try {
-        const params = new URLSearchParams({ page: String(page), pageSize: '15' });
-        if (activeCategorySlug) params.set('categorySlug', activeCategorySlug);
-        if (activeStatus) params.set('status', activeStatus);
-        if (activeWordCount && activeWordCount !== 'all') params.set('wordCount', activeWordCount);
-        if (activeSort) params.set('sort', activeSort);
-        if (debouncedSearch) params.set('search', debouncedSearch);
-        const data = await apiFetch<{ novels?: Novel[]; totalPages?: number; total?: number }>(`/api/public/novels?${params}`, { signal: abortController.signal, silent: true });
-        setNovels(data.novels || []);
-        setTotalPages(data.totalPages || 0);
-        setTotal(data.total || 0);
-      } catch (err) {
-        if (!(err instanceof FetchError && err.status === 0)) {
-          setNovelsError(true);
-        }
-      } finally {
-        if (!abortController.signal.aborted) setLoadingNovels(false);
-      }
-    }
-    load();
-    return () => abortController.abort();
-  }, [page, activeCategorySlug, activeStatus, activeWordCount, activeSort, debouncedSearch, refreshKey]);
+  // Novel data is now fetched by NovelGridLoader (child component)
 
   // ─── Handlers ────────────────────────────────────────────────────
   const handleNovelSearch = (term: string) => {
@@ -187,7 +148,6 @@ export default function HomePage() {
   };
 
   const handleRetry = () => {
-    setNovelsError(false);
     setRefreshKey((k) => k + 1);
   };
 
@@ -372,7 +332,7 @@ export default function HomePage() {
         onSearch={handleNovelSearch}
         categories={categories}
         loadingCategories={loadingCategories}
-        loadingNovels={loadingNovels}
+        loadingNovels={false}
         activeCategorySlug={activeCategorySlug}
         activeStatus={activeStatus}
         activeWordCount={activeWordCount}
@@ -383,7 +343,7 @@ export default function HomePage() {
         onSortChange={handleSortChange}
         hasActiveFilter={hasActiveFilter}
         resetAllFilters={resetAllFilters}
-        total={total}
+        total={0}
         filterSummary={filterSummary}
       />
 
@@ -398,18 +358,18 @@ export default function HomePage() {
 
       {/* ─── Novels Section ─────────────────────────────────────── */}
       <div className="stagger-children">
-      <NovelGrid
-        novels={novels}
-        loading={loadingNovels}
-        novelsError={novelsError}
+      <NovelGridLoader
+        layoutTheme={layoutTheme}
+        activeCategorySlug={activeCategorySlug}
+        activeStatus={activeStatus}
+        activeWordCount={activeWordCount}
+        activeSort={activeSort}
+        debouncedSearch={debouncedSearch}
         page={page}
-        totalPages={totalPages}
-        total={total}
+        refreshKey={refreshKey}
+        search={search}
         hasActiveFilter={hasActiveFilter}
         filterSummary={filterSummary}
-        layoutTheme={layoutTheme}
-        animKey={`${activeCategorySlug}-${activeStatus}-${activeWordCount}-${activeSort}-${search}-${page}-${layoutTheme}`}
-        search={search}
         onPageChange={handlePageChange}
         onRetry={handleRetry}
         onLoginClick={() => router.push('/login')}

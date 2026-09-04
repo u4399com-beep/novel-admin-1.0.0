@@ -18,7 +18,10 @@ const querySchema = z.object({
  * Returns reading streak statistics for a given session.
  *
  * When called without sessionId, returns global streak from ReadingDaily:
- * { streak, todayWords, currentStreak, maxStreak, totalDays }
+ * { streak, todayWords }
+ *
+ * When called with sessionId, returns per-session streak:
+ * { currentStreak, maxStreak, totalDays, streak, todayWords }
  */
 export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async function GET(request: NextRequest) {
   try {
@@ -30,26 +33,34 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     if (!rawSessionId) {
       const today = toLocalDateStr(new Date(), tz);
 
-      const todayStats = await db.readingDaily.findUnique({
-        where: { date: today },
+      // Bulk query: fetch all ReadingDaily records for the last 365 days in one DB call
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 364);
+      const startDateStr = toLocalDateStr(startDate, tz);
+
+      const records = await db.readingDaily.findMany({
+        where: { date: { gte: startDateStr } },
+        select: { date: true, chapters: true, words: true },
       });
 
-      // Calculate streak by checking consecutive days with reading activity
+      // Build a Set of dates with reading activity (chapters > 0)
+      const activeDates = new Set<string>();
+      let todayWords = 0;
+      for (const r of records) {
+        if (r.chapters > 0) activeDates.add(r.date);
+        if (r.date === today) todayWords = r.words;
+      }
+
+      // Calculate streak by iterating backwards from today in-memory
       let streak = 0;
       const checkDate = new Date();
-
       for (let i = 0; i < 365; i++) {
         const dateStr = toLocalDateStr(checkDate, tz);
-        const dayStats = await db.readingDaily.findUnique({
-          where: { date: dateStr },
-          select: { chapters: true },
-        });
-
-        if (dayStats && dayStats.chapters > 0) {
+        if (activeDates.has(dateStr)) {
           streak++;
           checkDate.setDate(checkDate.getDate() - 1);
         } else if (i === 0) {
-          // Today hasn't been read yet - check yesterday
+          // Today hasn't been read yet — check yesterday
           checkDate.setDate(checkDate.getDate() - 1);
           continue;
         } else {
@@ -57,10 +68,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
         }
       }
 
-      return NextResponse.json({
-        streak,
-        todayWords: todayStats?.words ?? 0,
-      });
+      return NextResponse.json({ streak, todayWords });
     }
 
     // ── Per-session streak (ReadingProgress) ──
@@ -80,19 +88,15 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
       return NextResponse.json({ currentStreak: 0, maxStreak: 0, totalDays: 0, streak: 0, todayWords: 0 });
     }
 
-    // Bucket by local date
     const dateSet = new Set<string>(uniqueDates);
-
-    const sortedDates = uniqueDates;
-    const totalDays = sortedDates.length;
+    const totalDays = uniqueDates.length;
 
     // Calculate current streak: from today backwards
     const today = toLocalDateStr(new Date(), tz);
     let currentStreak = 0;
     if (dateSet.has(today)) {
       currentStreak = 1;
-      // Upper bound: cannot exceed number of unique dates
-      const maxCheck = Math.min(uniqueDates.length, 365 * 10); // hard limit: 10 years
+      const maxCheck = Math.min(uniqueDates.length, 3650);
       for (let i = 1; i <= maxCheck; i++) {
         const checkDate = new Date();
         checkDate.setDate(checkDate.getDate() - i);
@@ -107,11 +111,10 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     // Calculate max streak across all sorted dates
     let maxStreak = 1;
     let streak = 1;
-    for (let i = 1; i < sortedDates.length; i++) {
-      const prev = new Date(sortedDates[i - 1] + 'T00:00:00');
-      const curr = new Date(sortedDates[i] + 'T00:00:00');
-      const diffMs = curr.getTime() - prev.getTime();
-      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+    for (let i = 1; i < uniqueDates.length; i++) {
+      const prev = new Date(uniqueDates[i - 1] + 'T00:00:00');
+      const curr = new Date(uniqueDates[i] + 'T00:00:00');
+      const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
       if (diffDays === 1) {
         streak++;
       } else {
