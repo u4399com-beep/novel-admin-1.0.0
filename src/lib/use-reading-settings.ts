@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, type CSSProperties } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Reading Themes ─────────────────────────────────────────────────
@@ -11,36 +11,57 @@ export interface ReadingTheme {
   bg: string;
   text: string;
   preview: string;
+  // Inline styles for guaranteed rendering (Tailwind JIT cannot scan dynamic class strings in objects)
+  bgStyle: CSSProperties;
+  bgStyleDark: CSSProperties;
+  textStyle: CSSProperties;
+  textStyleDark: CSSProperties;
 }
 
 export const READING_THEMES: ReadingTheme[] = [
   {
     key: 'light',
     label: '默认',
-    bg: 'bg-white dark:bg-zinc-900',
-    text: 'text-zinc-800 dark:text-zinc-200',
+    bg: 'bg-white',
+    text: 'text-zinc-800',
     preview: '#fff',
+    bgStyle: { backgroundColor: '#ffffff' },
+    bgStyleDark: { backgroundColor: '#18181b' }, // zinc-900
+    textStyle: { color: '#3f3f46' }, // zinc-700
+    textStyleDark: { color: '#e4e4e7' }, // zinc-200
   },
   {
     key: 'sepia',
     label: '护眼',
-    bg: 'bg-[#f5f0e8] dark:bg-[#2a2520]',
-    text: 'text-[#5b4636] dark:text-[#d4c5b0]',
+    bg: '', // Using inline styles only
+    text: '',
     preview: '#f5f0e8',
+    bgStyle: { backgroundColor: '#f5f0e8' },
+    bgStyleDark: { backgroundColor: '#2a2520' },
+    textStyle: { color: '#5b4636' },
+    textStyleDark: { color: '#d4c5b0' },
   },
   {
     key: 'green',
     label: '绿意',
-    bg: 'bg-[#e8f5e9] dark:bg-[#1a2e1c]',
-    text: 'text-[#2e4a2f] dark:text-[#b0d4b2]',
+    bg: '',
+    text: '',
     preview: '#e8f5e9',
+    bgStyle: { backgroundColor: '#e8f5e9' },
+    bgStyleDark: { backgroundColor: '#1a2e1c' },
+    textStyle: { color: '#2e4a2f' },
+    textStyleDark: { color: '#b0d4b2' },
   },
   {
     key: 'dark',
     label: '夜间',
-    bg: 'bg-zinc-900 dark:bg-zinc-950',
-    text: 'text-zinc-300 dark:text-zinc-400',
+    bg: 'bg-zinc-900',
+    text: 'text-zinc-300',
     preview: '#18181b',
+    bgStyle: { backgroundColor: '#18181b' }, // zinc-900
+    bgStyleDark: { backgroundColor: '#09090b' }, // zinc-950
+    textStyle: { color: '#d4d4d8' }, // zinc-300
+    textStyleDark: { color: '#a1a1aa' }, // zinc-400
   },
 ];
 

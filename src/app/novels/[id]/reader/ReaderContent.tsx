@@ -4,6 +4,7 @@ import { type ReactNode, type RefObject } from 'react';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ReadingTheme } from '@/lib/use-reading-settings';
+import { useTheme } from 'next-themes';
 
 // ─── Highlight helper ──────────────────────────────────────────
 function highlightText(text: string, query: string, activeIndex: number): ReactNode {
@@ -63,9 +64,17 @@ export function ReaderContent({
   currentMatch,
   onRetry,
 }: ReaderContentProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+  const themeBgStyle = isDark ? currentTheme.bgStyleDark : currentTheme.bgStyle;
+  const themeTextStyle = isDark ? currentTheme.textStyleDark : currentTheme.textStyle;
+
   return (
     <div ref={contentRef} className="flex-1 overflow-y-auto reader-content-area">
-      <div className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-colors duration-300`}>
+      <div
+        className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-colors duration-300`}
+        style={themeBgStyle}
+      >
         {loading ? (
           <div className="flex items-center justify-center py-20 gap-3">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/70 reader-loading-spinner" />
@@ -86,7 +95,10 @@ export function ReaderContent({
           </div>
         ) : content ? (
           <div className="mx-auto max-w-3xl">
-            <h3 className={`text-lg font-semibold mb-6 pb-4 text-center tracking-tight ${currentTheme.text} transition-colors duration-300`}>
+            <h3
+              className={`text-lg font-semibold mb-6 pb-4 text-center tracking-tight ${currentTheme.text} transition-colors duration-300`}
+              style={themeTextStyle}
+            >
               {chapterTitle}
             </h3>
             <hr className="reader-chapter-divider" />
@@ -95,6 +107,7 @@ export function ReaderContent({
               style={{
                 fontSize: `${fontSize}px`,
                 lineHeight,
+                ...themeTextStyle,
               }}
             >
               {(() => {
