@@ -26370,3 +26370,106 @@ All 39 rule JSON files updated with:
 
 ## Report File
 `mini-services/scraper-service/src/scrape-rules/rate-calibration.json`
+
+---
+Task ID: 5+6
+Agent: Code Cleanup + Install Script + Git Push Agent
+Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+Task: 代码清理+生产优化+安装脚本v7+部署文档更新+Git推送
+
+Work Log:
+
+## Part A: 代码清理与生产优化
+
+### A1: console.log→结构化日志 (108处→0)
+- **task-engine.ts**: 添加logger.child("TaskEngine")，21处console.log→log.info/log.warn
+- **engines.ts**: 添加logger.child("Engines")，32处console.log→log.info/log.debug
+- **proxy-manager.ts**: 添加logger.child("ProxyManager")，18处console.log→log.info
+- **scrapers.ts**: 11处console.log→log.info（已有logger.child("Scrapers")）
+- **12个其他模块**: 各添加logger.child()并替换console.log
+  - captcha-detector.ts, session-manager.ts, rate-optimizer.ts
+  - concurrency-optimizer.ts, tls-fingerprint.ts, request-fingerprint.ts
+  - charset-detector.ts, ai-rule-generator.ts, cookie-jar.ts
+  - engine-config.ts, browser-behavior.ts, anti-crawl-advisor.ts
+
+### A2: 错误处理标准化
+- 验证所有Maps已有上限+LRU淘汰+清理interval:
+  - request-fingerprint: MAX_TOTAL_FINGERPRINTS=10000, 清理每30s
+  - session-manager: 清理每30分钟
+  - cookie-jar: MAX_TOTAL_COOKIES=5000, 清理每5分钟
+  - captcha-strategy: MAX_TRACKED_DOMAINS=500, 持久化每60s
+  - adaptive-engine: MAX_DOMAINS=500, 持久化每5分钟
+  - content-dedup: MAX_CACHE_SIZE=10000, 持久化每5分钟
+  - pipeline-metrics: MAX_EVENTS=50000, MAX_DOMAINS=500
+  - bypass-registry: MAX_ENTRIES=5000
+  - referrer-chain: MAX_TRACKED_DOMAINS=500, MAX_HISTORY_PER_DOMAIN=100
+  - browser-behavior: MAX_TRACKED_DOMAINS=500
+  - logger: domainBuffers最大200
+  - priority-queue: bounded by maxConcurrent
+
+### A3: 内存使用优化
+- 所有Map已有maxSize限制和LRU淘汰
+- 所有关键模块已有setInterval清理定时器
+- 验证无未绑定累积
+
+### A5: 版本号升级
+- root package.json: 1.0.0 → 1.7.0
+- scraper-service package.json: 1.0.0 → 1.7.0
+
+## Part B: 安装脚本v7
+
+### B1: install.sh v7
+- 新增 --calibrate 选项（运行速率标定）
+- 新增 --db [sqlite|postgres] 选项（选择数据库后端）
+- 新增 Step 10: Pipeline Features Health Check
+  - /pipeline-metrics 端点检查
+  - Content Dedup 验证
+  - Adaptive Engine 验证
+- 新增 Step 11: Rate Calibration (可选)
+- .env 添加 Pipeline Features 配置段
+- 版本号 v6.0 → v7.0
+
+### B2: install-docker.sh v7
+- 新增 --calibrate 选项
+- Step 9 增强: 管线特性验证
+  - pipeline-metrics/content-dedup/adaptive-engine 健康检查
+  - rate-calibration.json 存在检查
+- .env 生成添加 Pipeline Features 配置
+- 输出添加 Pipeline: /pipeline-metrics 行
+- 版本号 v6.0 → v7.0
+
+### B3: DEPLOY.md 新增5个章节
+- 13. Rate Calibration Guide — 标定方法、结果格式、当前汇总表
+- 14. Pipeline Monitoring — 端点使用、健康评估、指标格式
+- 15. Content Deduplication — 工作原理、配置、作用
+- 16. Adaptive Engine Selection — 工作原理、配置、查看偏好
+- 17. Anti-Crawl Bypass Registry — 工作原理、管理方法
+
+### B4: quick-docker.sh v7
+- 版本号 v6 → v7
+- 描述更新为"反反爬增强·内容去重·管线监控"
+- .env 生成添加 Pipeline Features 配置
+
+## Part C: 最终验证与推送
+
+### C1: Lint检查
+- ESLint: 0 errors, 4 warnings (pre-existing react-hooks/incompatible-library)
+
+### C2: 服务验证
+- http://localhost:3000/ → 200 ✓
+- http://localhost:3099/health → 200 ✓
+- http://localhost:3099/pipeline-metrics → 401 Unauthorized (正确，需Bearer token) ✓
+
+### C3: Git推送
+- Commit: c8bcb5b
+- 74 files changed, 3238 insertions(+), 1765 deletions(-)
+- Pushed to origin/main ✓
+
+Stage Summary:
+- 代码清理: 108处console.log→结构化logger
+- 安装脚本: 全部升级v7, 支持--calibrate/--db选项
+- 部署文档: 5个新章节(速率标定/管线监控/内容去重/自适应引擎/反反爬绕过)
+- 版本号: 1.0.0→1.7.0
+- 服务验证: App✓ Scraper✓ Pipeline-Metrics✓
+- Git推送: c8bcb5b→origin/main
