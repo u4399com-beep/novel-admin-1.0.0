@@ -12,6 +12,9 @@
  * Exports: getOptimalRate(), recordResponse(), getStats(), reset()
  */
 
+import { logger } from './logger';
+const log = logger.child('RateOptimizer');
+
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
@@ -138,7 +141,7 @@ class RateOptimizer {
       for (const [domain, rates] of Object.entries(persisted.domainRates)) {
         this.domains.set(domain, this.createState(rates.currentRPM, rates.lastGoodRPM, rates.peakRPM));
       }
-      console.log(`[RateOptimizer] Loaded ${Object.keys(persisted.domainRates).length} domain rates from ${PERSIST_FILE}`);
+      log.info(` Loaded ${Object.keys(persisted.domainRates).length} domain rates from ${PERSIST_FILE}`);
     }
 
     // Periodic persistence
@@ -203,7 +206,7 @@ class RateOptimizer {
       state.lastRateChangeAt = now;
 
       if (process.env.DEBUG === 'true') {
-        console.log(`[RateOptimizer] ${domain}: BLOCK (${statusCode}), backoff → ${state.currentRPM.toFixed(1)} RPM`);
+        log.info(` ${domain}: BLOCK (${statusCode}), backoff → ${state.currentRPM.toFixed(1)} RPM`);
       }
     } else {
       // ===== SUCCESS =====
@@ -226,7 +229,7 @@ class RateOptimizer {
         state.lastRateChangeAt = now;
 
         if (process.env.DEBUG === 'true') {
-          console.log(`[RateOptimizer] ${domain}: Probe success, increase → ${state.currentRPM.toFixed(1)} RPM`);
+          log.info(` ${domain}: Probe success, increase → ${state.currentRPM.toFixed(1)} RPM`);
         }
       }
 
@@ -236,7 +239,7 @@ class RateOptimizer {
         state.lastRateChangeAt = now;
 
         if (process.env.DEBUG === 'true') {
-          console.log(`[RateOptimizer] ${domain}: Resumed probing at ${state.currentRPM.toFixed(1)} RPM`);
+          log.info(` ${domain}: Resumed probing at ${state.currentRPM.toFixed(1)} RPM`);
         }
       }
 

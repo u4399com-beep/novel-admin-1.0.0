@@ -200,7 +200,7 @@ class BrowserBehavior {
     const sinceLastBreak = this.globalRequestCount - this.lastBreakAt;
     if (sinceLastBreak >= this.breakThreshold) {
       const delay = BREAK_DELAY_MIN_MS + Math.random() * (BREAK_DELAY_MAX_MS - BREAK_DELAY_MIN_MS);
-      console.log(`[BrowserBehavior] Human break pause: ${Math.round(delay)}ms after ${this.globalRequestCount} requests (${url})`);
+      log.info(` Human break pause: ${Math.round(delay)}ms after ${this.globalRequestCount} requests (${url})`);
       await new Promise<void>((resolve) => setTimeout(resolve, Math.round(delay)));
       // Re-randomize threshold for next break
       this.breakThreshold = BREAK_EVERY_MIN + Math.floor(Math.random() * (BREAK_EVERY_MAX - BREAK_EVERY_MIN + 1));

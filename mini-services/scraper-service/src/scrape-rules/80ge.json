@@ -63,20 +63,6 @@
   },
   "contentPagination": null,
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": true,
-    "delay": [
-      1500,
-      3000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "http://www.80ge.info/",
-    "engineFallback": true,
-    "engineFallbackChain": [
-      "cheerio",
-      "playwright"
-    ],
     "stealthMode": "basic",
     "rotateUA": true,
     "delayJitter": 0.3
@@ -180,8 +166,8 @@
   "filePath": null,
   "coverSavePath": "/app/data/covers/80ge",
   "threadCount": 4,
-  "minDelay": 1000,
-  "maxDelay": 2000,
+  "minDelay": 800,
+  "maxDelay": 1500,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -251,5 +237,12 @@
       "optimalRPM": 30,
       "calibratedAt": "2026-09-05T12:14:11.038Z"
     }
+  },
+  "calibration": {
+    "tier": 1,
+    "tierLabel": "EASY",
+    "optimalRPM": 40,
+    "notes": "No anti-crawl, fast response, survived 120 RPM",
+    "calibratedAt": "2026-09-05T14:06:10.348558"
   }
 }

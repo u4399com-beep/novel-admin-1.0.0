@@ -15,6 +15,9 @@
  *   3. Integration helper for undici Agent construction
  */
 
+import { logger } from './logger';
+const log = logger.child('TlsFingerprint');
+
 import { domainHash } from './utils';
 
 // ==================== Types ====================
@@ -546,7 +549,7 @@ export function getSessionTLSFingerprintOptions(
     state.currentVariant = newVariant;
 
     if (process.env.DEBUG === 'true') {
-      console.log(`[TLS] Session ${sessionId.slice(0, 8)}: rotated to ${newVariant.name} after ${state.requestCount} requests`);
+      log.info(` Session ${sessionId.slice(0, 8)}: rotated to ${newVariant.name} after ${state.requestCount} requests`);
     }
   }
 

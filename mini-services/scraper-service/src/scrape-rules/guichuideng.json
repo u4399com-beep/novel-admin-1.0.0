@@ -70,18 +70,12 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      2000,
-      4000
-    ],
-    "humanBehavior": true,
-    "retries": 2,
-    "referer": "https://www.guichuideng.info/",
-    "stealthMode": "basic",
+    "stealthMode": "full",
     "rotateUA": true,
-    "delayJitter": 0.3
+    "rotateProxy": true,
+    "delayJitter": 0.5,
+    "respect429": true,
+    "captchaAutoUpgrade": true
   },
   "cleanConfig": {
     "removeAds": true,
@@ -151,9 +145,9 @@
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/guichuideng/",
-  "threadCount": 4,
-  "minDelay": 1000,
-  "maxDelay": 2000,
+  "threadCount": 1,
+  "minDelay": 3000,
+  "maxDelay": 6000,
   "enableShuffle": true,
   "dedupMode": "both",
   "meta": {
@@ -168,5 +162,12 @@
       "optimalRPM": 30,
       "calibratedAt": "2026-09-05T12:14:11.041Z"
     }
+  },
+  "calibration": {
+    "tier": 3,
+    "tierLabel": "HARD",
+    "optimalRPM": 8,
+    "notes": "403 on both pages - already uses obscura engine",
+    "calibratedAt": "2026-09-05T14:06:10.354136"
   }
 }

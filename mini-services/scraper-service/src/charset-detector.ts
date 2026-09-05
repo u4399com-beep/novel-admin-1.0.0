@@ -368,7 +368,7 @@ export function decodeWithCharset(buffer: Uint8Array | Buffer, detection: Charse
 export function detectAndDecode(buffer: Uint8Array | Buffer, contentType?: string | null): string {
   const detection = detectCharset(buffer, contentType);
   if (detection.corrected && process.env.DEBUG === 'true') {
-    console.log(`[charset-detector] Auto-corrected encoding: ${detection.declaredCharset} → ${detection.charset} (confidence: ${detection.confidence})`);
+    log.info(` Auto-corrected encoding: ${detection.declaredCharset} → ${detection.charset} (confidence: ${detection.confidence})`);
   }
   return decodeWithCharset(buffer, detection);
 }

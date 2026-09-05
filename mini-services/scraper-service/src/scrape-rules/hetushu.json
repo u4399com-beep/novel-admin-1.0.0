@@ -66,18 +66,12 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": true,
-    "delay": [
-      1500,
-      5000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://www.hetushu.com/",
-    "stealthMode": "basic",
+    "stealthMode": "full",
     "rotateUA": true,
-    "delayJitter": 0.3
+    "rotateProxy": true,
+    "delayJitter": 0.5,
+    "respect429": true,
+    "captchaAutoUpgrade": true
   },
   "cleanConfig": {
     "removeAds": true,
@@ -155,9 +149,9 @@
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/hetushu/",
-  "threadCount": 4,
-  "minDelay": 1000,
-  "maxDelay": 2000,
+  "threadCount": 1,
+  "minDelay": 3000,
+  "maxDelay": 6000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -233,5 +227,12 @@
       "optimalRPM": 30,
       "calibratedAt": "2026-09-05T12:14:11.042Z"
     }
+  },
+  "calibration": {
+    "tier": 3,
+    "tierLabel": "HARD",
+    "optimalRPM": 8,
+    "notes": "CF + 403 on both pages - needs proxy rotation",
+    "calibratedAt": "2026-09-05T14:06:10.354456"
   }
 }

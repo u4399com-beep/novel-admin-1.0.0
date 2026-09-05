@@ -10,14 +10,17 @@ export function SystemHealthIndicator() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    const ac = new AbortController();
     async function check() {
       try {
         const data = await apiFetch<{ status: string }>(
           '/api/public/health',
-          { silent: true, timeout: 3000 }
+          { silent: true, timeout: 3000, signal: ac.signal }
         );
+        if (ac.signal.aborted) return;
         setOnline(data.status === 'healthy');
       } catch {
+        if (ac.signal.aborted) return;
         setOnline(false);
       }
     }
@@ -29,6 +32,7 @@ export function SystemHealthIndicator() {
     intervalRef.current = setInterval(check, 60_000);
 
     return () => {
+      ac.abort();
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);

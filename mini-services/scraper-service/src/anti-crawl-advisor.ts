@@ -5,6 +5,9 @@
  * and proxy-manager to generate actionable anti-crawl configuration recommendations.
  */
 
+import { logger } from './logger';
+const log = logger.child('AntiCrawlAdvisor');
+
 import { rateLimiter, type DomainRateState } from './rate-limiter';
 import { adaptiveDelay, type DomainStats as DelayDomainStats } from './adaptive-delay';
 import { proxyManager } from './proxy-manager';
@@ -1033,7 +1036,7 @@ setInterval(() => {
   try {
     const cleaned = antiCrawlAdvisor.cleanup();
     if (cleaned > 0 && process.env.DEBUG === 'true') {
-      console.log(`[AntiCrawlAdvisor] Cleaned up ${cleaned} inactive domains`);
+      log.info(` Cleaned up ${cleaned} inactive domains`);
     }
   } catch (err) {
     console.error('[AntiCrawlAdvisor] Periodic cleanup error:', err);

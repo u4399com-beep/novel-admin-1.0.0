@@ -40,15 +40,6 @@
   "contentSelector": null,
   "contentPagination": null,
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      2000,
-      4000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://www.book4.cc/",
     "stealthMode": "full",
     "rotateUA": true,
     "rotateProxy": true,
@@ -82,8 +73,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/book4-au/",
   "threadCount": 1,
-  "minDelay": 4000,
-  "maxDelay": 8000,
+  "minDelay": 3000,
+  "maxDelay": 6000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -126,5 +117,12 @@
       "optimalRPM": 8,
       "calibratedAt": "2026-09-05T12:14:11.040Z"
     }
+  },
+  "calibration": {
+    "tier": 3,
+    "tierLabel": "HARD",
+    "optimalRPM": 8,
+    "notes": "DNS resolves, sandbox-blocked; playwright engine + AU文学 suggests stronger protection",
+    "calibratedAt": "2026-09-05T14:06:10.351014"
   }
 }

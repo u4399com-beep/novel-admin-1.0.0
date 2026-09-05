@@ -21,18 +21,6 @@
   "contentSelector": null,
   "contentPagination": null,
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": false,
-    "delay": [
-      500,
-      1000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": null,
-    "customHeaders": {
-      "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36 SearchCraft/2.6.1 (Baidu; P1 10)"
-    },
     "stealthMode": "basic",
     "rotateUA": false,
     "delayJitter": 0.2
@@ -49,8 +37,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/fanqie/",
   "threadCount": 3,
-  "minDelay": 1000,
-  "maxDelay": 2000,
+  "minDelay": 800,
+  "maxDelay": 1500,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -178,5 +166,12 @@
       "optimalRPM": 15,
       "calibratedAt": "2026-09-05T12:14:11.041Z"
     }
+  },
+  "calibration": {
+    "tier": 5,
+    "tierLabel": "API",
+    "optimalRPM": 20,
+    "notes": "API-based source",
+    "calibratedAt": "2026-09-05T14:06:10.353507"
   }
 }

@@ -66,18 +66,10 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": true,
-    "delay": [
-      1500,
-      5000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://www.biquwx.com/",
-    "stealthMode": "basic",
+    "stealthMode": "moderate",
     "rotateUA": true,
-    "delayJitter": 0.3
+    "delayJitter": 0.4,
+    "respect429": true
   },
   "cleanConfig": {
     "removeAds": true,
@@ -156,9 +148,9 @@
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/biquwx/",
-  "threadCount": 4,
-  "minDelay": 1000,
-  "maxDelay": 2000,
+  "threadCount": 2,
+  "minDelay": 1500,
+  "maxDelay": 3000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -228,5 +220,12 @@
       "optimalRPM": 30,
       "calibratedAt": "2026-09-05T12:14:11.039Z"
     }
+  },
+  "calibration": {
+    "tier": 2,
+    "tierLabel": "MEDIUM",
+    "optimalRPM": 20,
+    "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection",
+    "calibratedAt": "2026-09-05T14:06:10.350689"
   }
 }

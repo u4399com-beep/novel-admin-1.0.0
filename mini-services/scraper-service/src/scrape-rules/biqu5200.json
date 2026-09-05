@@ -66,15 +66,6 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": true,
-    "delay": [
-      1500,
-      5000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://www.biqu5200.com/",
     "stealthMode": "moderate",
     "rotateUA": true,
     "delayJitter": 0.4,
@@ -157,8 +148,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/biqu5200/",
   "threadCount": 2,
-  "minDelay": 2000,
-  "maxDelay": 4000,
+  "minDelay": 1500,
+  "maxDelay": 3000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -234,5 +225,12 @@
       "optimalRPM": 20,
       "calibratedAt": "2026-09-05T12:14:11.039Z"
     }
+  },
+  "calibration": {
+    "tier": 2,
+    "tierLabel": "MEDIUM",
+    "optimalRPM": 20,
+    "notes": "CF detected, homepage 200, survived 120 RPM",
+    "calibratedAt": "2026-09-05T14:06:10.349630"
   }
 }

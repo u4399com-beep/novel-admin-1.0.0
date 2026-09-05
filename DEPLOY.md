@@ -837,3 +837,171 @@ bash scripts/switch-to-postgres.sh
 # 启动开发服务器
 bun dev
 ```
+
+---
+
+## 13. Rate Calibration Guide (v7)
+
+### 什么是速率标定？
+
+速率标定（Rate Calibration）通过实际HTTP探测所有采集源站，确定每个站点的最优请求速率和并发设置。
+
+### 如何运行标定
+
+```bash
+# 方式1: 使用 install.sh
+bash install.sh --calibrate
+
+# 方式2: 直接运行标定脚本
+cd mini-services/scraper-service
+bun run src/rate-calibration.ts
+```
+
+### 标定结果
+
+标定完成后，结果保存在 `mini-services/scraper-service/src/scrape-rules/rate-calibration.json`。
+
+每个站点的标定数据包含：
+- **tier**: 难度等级 (1=Easy, 2=Medium, 3=Hard, 4=VeryHard, 5=API)
+- **optimalRPM**: 最优每分钟请求数
+- **threadCount**: 推荐并发线程数
+- **minDelay/maxDelay**: 请求间延迟范围（毫秒）
+- **antiCrawlConfig**: 反反爬配置（stealthMode, rotateUA, delayJitter 等）
+
+### 当前标定汇总（39个源站）
+
+| Tier | Label | Count | threadCount | RPM | Stealth |
+|------|-------|-------|-------------|-----|---------|
+| 1 | EASY | 6 | 4 | 40 | basic |
+| 2 | MEDIUM | 18 | 2 | 20 | moderate |
+| 3 | HARD | 8 | 1 | 8 | full |
+| 4 | VERY HARD | 5 | 1 | 4 | maximum |
+| 5 | API | 2 | 3 | 20 | basic |
+
+**总RPM: 724 | 总并发: 79 | 预估: ~43,440页/小时**
+
+---
+
+## 14. Pipeline Monitoring (v7)
+
+### 管线指标端点
+
+```bash
+# 全局管线指标
+curl -H "Authorization: Bearer $SCRAPER_SERVICE_TOKEN" \
+  http://localhost:3099/pipeline-metrics
+
+# 特定域名的管线指标
+curl -H "Authorization: Bearer $SCRAPER_SERVICE_TOKEN" \
+  "http://localhost:3099/pipeline-metrics?domain=example.com"
+
+# 所有域名指标
+curl -H "Authorization: Bearer $SCRAPER_SERVICE_TOKEN" \
+  "http://localhost:3099/pipeline-metrics?all=true"
+```
+
+### 健康评估
+
+管线指标端点返回 `health` 字段：
+
+- **healthy**: 所有指标正常（成功率≥80%, CAPTCHA率≤10%, 平均响应<10s）
+- **degraded**: 部分指标异常（成功率<80% 或 CAPTCHA率>10% 或 平均响应>10s）
+- **critical**: 严重异常（成功率<50% 或 CAPTCHA率>30%）
+
+### 指标内容
+
+```json
+{
+  "health": { "status": "healthy", "issues": [] },
+  "global": {
+    "requestsPerMinute": 42.5,
+    "successRate": 0.92,
+    "avgResponseTime": 2340,
+    "captchaRate": 0.03,
+    "proxyRotationRate": 0.15
+  },
+  "contentDedup": { "cacheSize": 1234, "hitRate": 0.15 },
+  "adaptiveEngine": { "domainCount": 25 }
+}
+```
+
+---
+
+## 15. Content Deduplication (v7)
+
+### 工作原理
+
+内容去重系统使用两层指纹检测：
+
+1. **SHA-256 精确匹配**: 对内容计算SHA-256哈希，完全相同的内容会被识别为重复
+2. **SimHash 近似匹配**: 使用64位SimHash算法检测近似重复内容（如仅有少量标点/空格差异）
+
+当两个内容的汉明距离 ≤ 3 时，判定为近重复。
+
+### 配置
+
+- 最大缓存条目: 10,000（LRU淘汰）
+- SimHash 汉明距离阈值: 3
+- 持久化存储: `content-dedup-store.json`（7天TTL）
+- 崩溃恢复: 启动时自动加载持久化数据
+
+### 作用
+
+当检测到重复内容时，跳过保存，避免：
+- 相同章节被多次保存
+- 模板化内容（如"正在加载..."、"权限不足"等）被写入数据库
+- 站点改版后旧内容残留在新章节中
+
+---
+
+## 16. Adaptive Engine Selection (v7)
+
+### 工作原理
+
+自适应引擎选择系统追踪每个域名的引擎性能数据，智能选择最佳引擎：
+
+1. 如果域名最近CAPTCHA率 > 10% → 使用 obscura（最强隐身）
+2. 如果域名需要JS渲染 → 使用 playwright
+3. 如果当前引擎成功率 < 80% → 尝试回退链中的下一个引擎
+4. 否则，根据评分选择：`successRate×60 - captchaRate×40 - responseTime/1000×2`
+
+### 配置
+
+- 最大追踪域名数: 500（LRU淘汰）
+- 持久化存储: `engine-preferences.json`（每5分钟保存）
+- 引擎回退链: cheerio → playwright → obscura → cloud-browser
+
+### 查看引擎偏好
+
+```bash
+# 通过 pipeline-metrics 端点
+curl -H "Authorization: Bearer $SCRAPER_SERVICE_TOKEN" \
+  http://localhost:3099/pipeline-metrics | jq '.adaptiveEngine'
+```
+
+---
+
+## 17. Anti-Crawl Bypass Registry (v7)
+
+### 工作原理
+
+反反爬绕过注册表记录每个域名的成功绕过方法：
+
+- **CAPTCHA类型**: Cloudflare Turnstile, reCAPTCHA v2/v3, hCaptcha, GeeTest, 文字验证码
+- **绕过方法**: engine_upgrade（升级引擎）, proxy_rotate（切换代理）, cookie_refresh（刷新Cookie）, stealth_mode（隐身模式）
+- **持久化**: 成功的永久升级记录保存在 `bypass-registry.json`
+
+### 管理绕过方法
+
+绕过注册表由 `CaptchaRecoveryManager` 自动管理：
+
+1. 检测到CAPTCHA → 查询注册表是否有已知绕过方法
+2. 如果有 → 应用绕过方法
+3. 如果没有 → 尝试引擎升级，成功后记录到注册表
+4. 持久化每60秒自动保存，崩溃后自动恢复
+
+### 查看当前绕过记录
+
+```bash
+cat mini-services/scraper-service/src/scrape-rules/bypass-registry.json | jq .
+```

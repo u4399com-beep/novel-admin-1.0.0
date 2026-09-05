@@ -14,6 +14,8 @@
 
 import type { CaptchaDetection } from './captcha-detector';
 import { logger } from './logger';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { resolve } from 'path';
 
 const log = logger.child('CaptchaStrategy');
 
@@ -76,6 +78,15 @@ const MAX_TRACKED_DOMAINS = 500;
 
 export class CaptchaRecoveryManager {
   private domainStates: Map<string, DomainRecoveryState> = new Map();
+  private persistTimer: ReturnType<typeof setInterval> | null = null;
+  private persistPath: string;
+
+  constructor() {
+    this.persistPath = resolve(import.meta.dir, 'scrape-rules/bypass-registry.json');
+    this.loadPersistedState();
+    // Persist state every 60 seconds
+    this.persistTimer = setInterval(() => this.persistState(), 60_000);
+  }
 
   /**
    * Record a CAPTCHA detection for a domain and initiate recovery.
@@ -241,10 +252,127 @@ export class CaptchaRecoveryManager {
   }
 
   /**
+   * Unified CAPTCHA handling method that combines detection, recovery, and action.
+   * This is the main entry point for handling CAPTCHAs in the scraping pipeline.
+   *
+   * @param domain - The domain where CAPTCHA was detected
+   * @param captchaType - The type of CAPTCHA (cloudflare, geetest, recaptcha, hcaptcha, generic)
+   * @param url - The URL where CAPTCHA was detected
+   * @param currentEngine - The current scraping engine
+   * @returns Recovery action with pause, engine switch, and strategy recommendation
+   */
+  handleCaptcha(
+    domain: string,
+    captchaType: string,
+    url: string,
+    currentEngine: string,
+  ): {
+    pauseMs: number;
+    recommendedEngine: string;
+    action: 'pause' | 'pause_and_switch' | 'permanent_upgrade';
+    shouldAbort: boolean;
+    message: string;
+  } {
+    const recovery = this.handleCaptchaDetected(domain, currentEngine);
+    const pauseMs = this.isDomainPaused(domain) || recovery.pauseDurationMs;
+
+    // Check for permanent upgrade
+    if (recovery.permanentUpgrade) {
+      return {
+        pauseMs,
+        recommendedEngine: recovery.recoveryEngine,
+        action: 'permanent_upgrade',
+        shouldAbort: false,
+        message: `CAPTCHA frequency exceeded threshold for ${domain} (${captchaType}): permanently upgrading to ${recovery.recoveryEngine}, pausing ${Math.round(pauseMs / 1000)}s`,
+      };
+    }
+
+    // Determine if we should switch engine
+    const needsSwitch = recovery.recoveryEngine !== currentEngine;
+
+    return {
+      pauseMs,
+      recommendedEngine: recovery.recoveryEngine,
+      action: needsSwitch ? 'pause_and_switch' : 'pause',
+      shouldAbort: false,
+      message: `CAPTCHA (${captchaType}) on ${domain}: ${needsSwitch ? `switching ${currentEngine} → ${recovery.recoveryEngine}, ` : ''}pausing ${Math.round(pauseMs / 1000)}s`,
+    };
+  }
+
+  /**
    * Get all domain recovery states (for monitoring).
    */
   getAllRecoveryStates(): Map<string, DomainRecoveryState> {
     return this.domainStates;
+  }
+
+  /**
+   * Persist recovery state to bypass-registry.json for crash recovery.
+   * Only writes permanently-upgraded domains (non-recovery states are ephemeral).
+   */
+  private persistState(): void {
+    try {
+      const permanentEntries: Record<string, { engine: string; since: number; captchaCount: number }> = {};
+      for (const [domain, state] of this.domainStates) {
+        if (state.permanentlyUpgraded) {
+          permanentEntries[domain] = {
+            engine: state.recoveryEngine,
+            since: state.captchaTimestamps.length > 0
+              ? state.captchaTimestamps[state.captchaTimestamps.length - 1]
+              : Date.now(),
+            captchaCount: state.captchaTimestamps.length,
+          };
+        }
+      }
+
+      // Read existing file and merge
+      let existing: Record<string, unknown> = {};
+      try {
+        if (existsSync(this.persistPath)) {
+          existing = JSON.parse(readFileSync(this.persistPath, 'utf-8'));
+        }
+      } catch { /* ignore parse error */ }
+
+      const merged = { ...existing, permanentCaptchaUpgrades: permanentEntries };
+      writeFileSync(this.persistPath, JSON.stringify(merged, null, 2));
+    } catch (err) {
+      log.error(`Failed to persist CAPTCHA recovery state: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /**
+   * Load persisted permanent upgrade state from bypass-registry.json.
+   */
+  private loadPersistedState(): void {
+    try {
+      if (!existsSync(this.persistPath)) return;
+      const data = JSON.parse(readFileSync(this.persistPath, 'utf-8'));
+      const permanent = data?.permanentCaptchaUpgrades;
+      if (!permanent || typeof permanent !== 'object') return;
+
+      const now = Date.now();
+      for (const [domain, entry] of Object.entries(permanent) as [string, any][]) {
+        if (this.domainStates.size >= MAX_TRACKED_DOMAINS) break;
+        if (!entry?.engine) continue;
+        // Only restore if less than 24 hours old
+        if (entry.since && now - entry.since > 24 * 60 * 60 * 1000) continue;
+        this.domainStates.set(domain, {
+          pausedUntil: 0,
+          recoveryEngine: entry.engine,
+          originalEngine: 'cheerio',
+          recoverySuccessCount: 0,
+          recoveryTargetCount: RECOVERY_SUCCESS_TARGET,
+          permanentlyUpgraded: true,
+          captchaTimestamps: [entry.since || now],
+          inRecovery: false,
+        });
+      }
+      if (this.domainStates.size > 0) {
+        log.info(`Restored ${this.domainStates.size} permanent CAPTCHA upgrade entries from bypass-registry.json`);
+      }
+    } catch (err) {
+      log.error(`Failed to load persisted CAPTCHA state: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   // ---- Private helpers ----

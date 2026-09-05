@@ -83,6 +83,9 @@ import { antiDetectionCoordinator } from "./src/anti-detection-coordinator";
 import { batchCalibrate, calibrateSingleRule, getCalibrationStatus, getCalibrationReport, loadSavedReport } from "./src/rate-calibration";
 import { getCaptchaPreDetection, getCaptchaPreDetectionStats, resetCaptchaPreDetection } from "./src/captcha-detector";
 import { crawlScheduler } from "./src/crawl-scheduler";
+import { pipelineMetrics } from "./src/pipeline-metrics";
+import { adaptiveEngineSelector } from "./src/adaptive-engine";
+import { contentDeduplicator } from "./src/content-dedup";
 import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest,
   ScrapeContentRequest, CleanRequest, DownloadCoverRequest, ExecuteTaskRequest,
@@ -491,6 +494,31 @@ export function startServer(port: number = 3099) {
       }
 
       // ==================== New GET Endpoints (before rate limit) ====================
+
+      // Pipeline metrics endpoint
+      if (path === "/pipeline-metrics" && method === "GET") {
+        const domain = url.searchParams.get("domain") || undefined;
+        const allDomains = url.searchParams.get("all") === "true";
+        const health = pipelineMetrics.getHealth();
+        const result: Record<string, unknown> = {
+          health,
+          global: pipelineMetrics.getMetrics(),
+        };
+        if (domain) {
+          result.domain = pipelineMetrics.getMetrics(domain);
+        }
+        if (allDomains) {
+          result.domains = pipelineMetrics.getAllDomainMetrics();
+        }
+        // Include dedup and adaptive engine stats
+        result.contentDedup = contentDeduplicator.getStats();
+        result.adaptiveEngine = {
+          profiles: adaptiveEngineSelector.getAllProfiles().size,
+        };
+        return Response.json(result, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       // Fingerprint / stealth health report
       if (path === "/fingerprint-health" && method === "GET") {

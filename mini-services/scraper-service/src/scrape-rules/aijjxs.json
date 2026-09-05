@@ -57,15 +57,6 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": true,
-    "delay": [
-      2000,
-      6000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://www.aijjxs.com/",
     "stealthMode": "basic",
     "rotateUA": true,
     "delayJitter": 0.3
@@ -150,8 +141,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/aijjxs/",
   "threadCount": 4,
-  "minDelay": 1000,
-  "maxDelay": 2000,
+  "minDelay": 800,
+  "maxDelay": 1500,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -229,5 +220,12 @@
       "optimalRPM": 30,
       "calibratedAt": "2026-09-05T12:14:11.039Z"
     }
+  },
+  "calibration": {
+    "tier": 1,
+    "tierLabel": "EASY",
+    "optimalRPM": 40,
+    "notes": "No anti-crawl, homepage 200, survived 120 RPM",
+    "calibratedAt": "2026-09-05T14:06:10.349285"
   }
 }

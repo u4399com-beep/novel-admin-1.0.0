@@ -66,25 +66,6 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      3000,
-      6000
-    ],
-    "humanBehavior": true,
-    "retries": 5,
-    "referer": "https://www.dongliuxiaoshuo.com/",
-    "cloudflareBypass": {
-      "enabled": true,
-      "waitForChallenge": true,
-      "challengeTimeout": 15000,
-      "verifyCleared": true
-    },
-    "stealthOptions": {
-      "blockResources": true,
-      "emulateDevice": "desktop"
-    },
     "stealthMode": "full",
     "rotateUA": true,
     "rotateProxy": true,
@@ -169,8 +150,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/dongliuxiaoshuo/",
   "threadCount": 1,
-  "minDelay": 4000,
-  "maxDelay": 8000,
+  "minDelay": 3000,
+  "maxDelay": 6000,
   "enableShuffle": true,
   "dedupMode": "both",
   "meta": {
@@ -246,5 +227,12 @@
       "optimalRPM": 8,
       "calibratedAt": "2026-09-05T12:14:11.041Z"
     }
+  },
+  "calibration": {
+    "tier": 3,
+    "tierLabel": "HARD",
+    "optimalRPM": 8,
+    "notes": "CF + 403 on both pages - needs browser emulation",
+    "calibratedAt": "2026-09-05T14:06:10.352813"
   }
 }

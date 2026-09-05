@@ -267,11 +267,7 @@ class ConcurrencyOptimizer {
     state.probeCyclesCompleted++;
 
     if (process.env.DEBUG === 'true') {
-      console.log(
-        `[ConcurrencyOptimizer] ${domain}: Cycle ${state.probeCyclesCompleted} — ` +
-        `concurrency=${state.currentConcurrency}, throughput=${throughput.toFixed(2)} req/s, ` +
-        `errorRate=${(errorRate * 100).toFixed(1)}%`
-      );
+      log.debug(`${domain}: Cycle ${state.probeCyclesCompleted} — concurrency=${state.currentConcurrency}, throughput=${throughput.toFixed(2)} req/s, errorRate=${(errorRate * 100).toFixed(1)}%`);
     }
 
     // Decision: should we increase concurrency?
@@ -325,7 +321,7 @@ class ConcurrencyOptimizer {
     state.windowStart = Date.now();
 
     if (process.env.DEBUG === 'true') {
-      console.log(`[ConcurrencyOptimizer] ${domain}: ${reason} → concurrency=${state.currentConcurrency}, converged=${state.converged}`);
+      log.info(` ${domain}: ${reason} → concurrency=${state.currentConcurrency}, converged=${state.converged}`);
     }
   }
 }

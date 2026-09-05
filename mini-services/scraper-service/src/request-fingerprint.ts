@@ -502,7 +502,7 @@ class RequestFingerprintManager {
     }
 
     if (cleaned > 0 && process.env.DEBUG === 'true') {
-      console.log(`[RequestFingerprint] Cleaned ${cleaned} stale fingerprints`);
+      log.info(` Cleaned ${cleaned} stale fingerprints`);
     }
   }
 

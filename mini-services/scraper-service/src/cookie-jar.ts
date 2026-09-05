@@ -10,6 +10,9 @@
  *   - SQLite-based persistence (survives restarts)
  */
 
+import { logger } from './logger';
+const log = logger.child('CookieJar');
+
 import { cookieStore } from './cookie-store';
 
 // ==================== Types ====================
@@ -322,7 +325,7 @@ class CookieJar {
         }
       }
       if (restored > 0) {
-        console.log(`[CookieJar] Restored ${restored} cookies from SQLite (${stats.length} domains)`);
+        log.info(` Restored ${restored} cookies from SQLite (${stats.length} domains)`);
       }
     } catch (err) {
       console.error('[CookieJar] Failed to restore from SQLite:', err);
@@ -463,7 +466,7 @@ _cleanupInterval = setInterval(() => {
   // Note: cookieJar.cleanup() already calls cookieStore.deleteExpired() internally
   if (removed > 0) {
     if (process.env.DEBUG === 'true') {
-      console.log(`[CookieJar] Cleaned up ${removed} expired cookies`);
+      log.info(` Cleaned up ${removed} expired cookies`);
     }
   }
 }, 5 * 60 * 1000).unref();

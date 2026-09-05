@@ -67,24 +67,9 @@
     "maxPage": 5
   },
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": true,
-    "delay": [
-      1500,
-      3000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://www.deqixs.cc/",
-    "engineFallback": true,
-    "engineFallbackChain": [
-      "cheerio",
-      "playwright"
-    ],
-    "stealthMode": "moderate",
+    "stealthMode": "basic",
     "rotateUA": true,
-    "delayJitter": 0.4,
-    "respect429": true
+    "delayJitter": 0.3
   },
   "cleanConfig": {
     "removeAds": true,
@@ -150,9 +135,9 @@
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/data/covers/deqixs-cc",
-  "threadCount": 2,
-  "minDelay": 2000,
-  "maxDelay": 4000,
+  "threadCount": 4,
+  "minDelay": 800,
+  "maxDelay": 1500,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -190,5 +175,12 @@
       "optimalRPM": 20,
       "calibratedAt": "2026-09-05T12:14:11.040Z"
     }
+  },
+  "calibration": {
+    "tier": 1,
+    "tierLabel": "EASY",
+    "optimalRPM": 40,
+    "notes": "No anti-crawl, survived 120 RPM",
+    "calibratedAt": "2026-09-05T14:06:10.352493"
   }
 }

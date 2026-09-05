@@ -63,31 +63,10 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      4000,
-      7000
-    ],
-    "humanBehavior": true,
-    "retries": 5,
-    "referer": "https://www.yybsw.com/",
-    "cloudflareBypass": {
-      "enabled": true,
-      "waitForChallenge": true,
-      "challengeTimeout": 15000,
-      "verifyCleared": true
-    },
-    "stealthOptions": {
-      "blockResources": true,
-      "emulateDevice": "desktop"
-    },
-    "stealthMode": "full",
+    "stealthMode": "moderate",
     "rotateUA": true,
-    "rotateProxy": true,
-    "delayJitter": 0.5,
-    "respect429": true,
-    "captchaAutoUpgrade": true
+    "delayJitter": 0.4,
+    "respect429": true
   },
   "cleanConfig": {
     "removeAds": true,
@@ -157,9 +136,9 @@
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/yybsw/",
-  "threadCount": 1,
-  "minDelay": 4000,
-  "maxDelay": 8000,
+  "threadCount": 2,
+  "minDelay": 1500,
+  "maxDelay": 3000,
   "enableShuffle": true,
   "dedupMode": "both",
   "meta": {
@@ -184,5 +163,12 @@
       "optimalRPM": 8,
       "calibratedAt": "2026-09-05T12:14:11.044Z"
     }
+  },
+  "calibration": {
+    "tier": 2,
+    "tierLabel": "MEDIUM",
+    "optimalRPM": 20,
+    "notes": "CF detected, homepage 200, survived 120 RPM",
+    "calibratedAt": "2026-09-05T14:06:10.360106"
   }
 }

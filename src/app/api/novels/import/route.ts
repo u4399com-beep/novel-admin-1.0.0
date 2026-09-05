@@ -120,6 +120,14 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
       return apiError(`章节数量(${chapters.length})超过限制(最多10000章)`, 400);
     }
 
+    // Limit total content size to prevent OOM / transaction timeout
+    // 50MB raw file → after sanitization, cap total at 25M chars (~50MB UTF-16)
+    const MAX_TOTAL_CONTENT_CHARS = 25_000_000;
+    const totalContentChars = chapters.reduce((sum, ch) => sum + ch.content.length, 0);
+    if (totalContentChars > MAX_TOTAL_CONTENT_CHARS) {
+      return apiError(`总内容过大(${Math.round(totalContentChars / 1_000_000)}MB)，超过限制(最大25MB)`, 400);
+    }
+
     // Validate categoryId if provided
     if (categoryId) {
       const cat = await db.category.findUnique({ where: { id: categoryId }, select: { id: true } });

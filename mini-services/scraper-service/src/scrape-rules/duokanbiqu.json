@@ -66,19 +66,13 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": true,
-    "delay": [
-      1500,
-      5000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://www.duokanbiqu.com/",
-    "stealthMode": "moderate",
+    "stealthMode": "maximum",
     "rotateUA": true,
-    "delayJitter": 0.4,
-    "respect429": true
+    "rotateProxy": true,
+    "delayJitter": 0.6,
+    "respect429": true,
+    "captchaAutoUpgrade": true,
+    "engineUpgrade": "obscura"
   },
   "cleanConfig": {
     "removeAds": true,
@@ -157,9 +151,9 @@
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/duokanbiqu/",
-  "threadCount": 2,
-  "minDelay": 2000,
-  "maxDelay": 4000,
+  "threadCount": 1,
+  "minDelay": 5000,
+  "maxDelay": 10000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -229,5 +223,12 @@
       "optimalRPM": 20,
       "calibratedAt": "2026-09-05T12:14:11.041Z"
     }
+  },
+  "calibration": {
+    "tier": 4,
+    "tierLabel": "VERY HARD",
+    "optimalRPM": 4,
+    "notes": "DNS NXDOMAIN - domain no longer exists",
+    "calibratedAt": "2026-09-05T14:06:10.353187"
   }
 }

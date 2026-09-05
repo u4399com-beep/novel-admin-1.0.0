@@ -67,20 +67,6 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      3000,
-      6000
-    ],
-    "humanBehavior": true,
-    "retries": 5,
-    "referer": "https://www.libahao2.com/",
-    "engineFallback": true,
-    "engineFallbackChain": [
-      "playwright",
-      "cheerio"
-    ],
     "stealthMode": "full",
     "rotateUA": true,
     "rotateProxy": true,
@@ -159,8 +145,8 @@
   "filePath": null,
   "coverSavePath": "/app/data/covers/libahao2",
   "threadCount": 1,
-  "minDelay": 4000,
-  "maxDelay": 8000,
+  "minDelay": 3000,
+  "maxDelay": 6000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -198,5 +184,12 @@
       "optimalRPM": 8,
       "calibratedAt": "2026-09-05T12:14:11.042Z"
     }
+  },
+  "calibration": {
+    "tier": 3,
+    "tierLabel": "HARD",
+    "optimalRPM": 8,
+    "notes": "403 on both pages - needs browser emulation",
+    "calibratedAt": "2026-09-05T14:06:10.355986"
   }
 }

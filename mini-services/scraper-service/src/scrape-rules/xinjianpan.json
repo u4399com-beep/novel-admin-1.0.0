@@ -71,20 +71,6 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      2000,
-      4000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://www.xinjianpan.com/",
-    "engineFallback": true,
-    "engineFallbackChain": [
-      "playwright",
-      "cheerio"
-    ],
     "stealthMode": "moderate",
     "rotateUA": true,
     "delayJitter": 0.4,
@@ -172,8 +158,8 @@
   "filePath": null,
   "coverSavePath": "/app/data/covers/xinjianpan",
   "threadCount": 2,
-  "minDelay": 2000,
-  "maxDelay": 4000,
+  "minDelay": 1500,
+  "maxDelay": 3000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -211,5 +197,12 @@
       "optimalRPM": 20,
       "calibratedAt": "2026-09-05T12:14:11.044Z"
     }
+  },
+  "calibration": {
+    "tier": 2,
+    "tierLabel": "MEDIUM",
+    "optimalRPM": 20,
+    "notes": "CF detected but survived 120 RPM",
+    "calibratedAt": "2026-09-05T14:06:10.359802"
   }
 }

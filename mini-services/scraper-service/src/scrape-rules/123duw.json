@@ -75,19 +75,6 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      1500,
-      5000
-    ],
-    "humanBehavior": true,
-    "retries": 3,
-    "referer": "https://www.123duw.com/",
-    "stealthOptions": {
-      "blockResources": true,
-      "emulateDevice": "mobile"
-    },
     "stealthMode": "moderate",
     "rotateUA": true,
     "delayJitter": 0.4,
@@ -170,8 +157,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/123duw/",
   "threadCount": 2,
-  "minDelay": 2000,
-  "maxDelay": 4000,
+  "minDelay": 1500,
+  "maxDelay": 3000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -247,5 +234,12 @@
       "optimalRPM": 20,
       "calibratedAt": "2026-09-05T12:14:11.038Z"
     }
+  },
+  "calibration": {
+    "tier": 2,
+    "tierLabel": "MEDIUM",
+    "optimalRPM": 20,
+    "notes": "DNS resolves, sandbox-blocked; playwright engine suggests moderate protection",
+    "calibratedAt": "2026-09-05T14:06:10.347611"
   }
 }

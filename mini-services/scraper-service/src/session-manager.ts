@@ -9,6 +9,9 @@
  *   - Per-domain session pools (up to 3 concurrent sessions per domain)
  */
 
+import { logger } from './logger';
+const log = logger.child('SessionManager');
+
 import type { SessionData, SessionFingerprint } from './types';
 import { cookieJar } from './cookie-jar';
 import { getProfileForDomain, type FingerprintProfile } from './stealth';
@@ -67,7 +70,7 @@ class SessionManager {
       try {
         const cleaned = this.cleanup();
         if (cleaned > 0) {
-          console.log(`[SessionManager] Cleaned up ${cleaned} expired/stale sessions`);
+          log.info(` Cleaned up ${cleaned} expired/stale sessions`);
         }
       } catch (err) {
         console.error('[SessionManager] Cleanup error:', err);
@@ -193,7 +196,7 @@ class SessionManager {
     this.domainSessions.set(normalizedDomain, dl);
 
     if (process.env.DEBUG === 'true') {
-      console.log(`[SessionManager] Created new session ${sessionId} for ${normalizedDomain}`);
+      log.info(` Created new session ${sessionId} for ${normalizedDomain}`);
     }
 
     return this.toPublicSession(session);
@@ -331,7 +334,7 @@ class SessionManager {
     session.blockedReason = reason || 'Blocked by session manager';
 
     if (process.env.DEBUG === 'true') {
-      console.log(`[SessionManager] Blocked session ${sessionId}: ${session.blockedReason}`);
+      log.info(` Blocked session ${sessionId}: ${session.blockedReason}`);
     }
   }
 

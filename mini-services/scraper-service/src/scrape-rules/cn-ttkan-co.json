@@ -56,20 +56,6 @@
   },
   "contentPagination": null,
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      2000,
-      5000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": "https://cn.ttkan.co/",
-    "engineFallback": true,
-    "engineFallbackChain": [
-      "playwright",
-      "cheerio"
-    ],
     "stealthMode": "moderate",
     "rotateUA": true,
     "delayJitter": 0.4,
@@ -120,8 +106,8 @@
   "filePath": null,
   "coverSavePath": "/app/data/covers/cn-ttkan-co",
   "threadCount": 2,
-  "minDelay": 2000,
-  "maxDelay": 4000,
+  "minDelay": 1500,
+  "maxDelay": 3000,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -164,5 +150,12 @@
       "optimalRPM": 20,
       "calibratedAt": "2026-09-05T12:14:11.040Z"
     }
+  },
+  "calibration": {
+    "tier": 2,
+    "tierLabel": "MEDIUM",
+    "optimalRPM": 20,
+    "notes": "DNS resolves, sandbox-blocked; playwright engine suggests moderate protection",
+    "calibratedAt": "2026-09-05T14:06:10.351627"
   }
 }

@@ -66,15 +66,6 @@
     "maxPage": 10
   },
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": true,
-    "delay": [
-      1500,
-      3000
-    ],
-    "humanBehavior": false,
-    "retries": 2,
-    "referer": "https://www.shudugu.org/",
     "stealthMode": "basic",
     "rotateUA": true,
     "delayJitter": 0.3
@@ -139,8 +130,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/shudugu/",
   "threadCount": 4,
-  "minDelay": 1000,
-  "maxDelay": 2000,
+  "minDelay": 800,
+  "maxDelay": 1500,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -193,5 +184,12 @@
       "optimalRPM": 30,
       "calibratedAt": "2026-09-05T12:14:11.043Z"
     }
+  },
+  "calibration": {
+    "tier": 1,
+    "tierLabel": "EASY",
+    "optimalRPM": 40,
+    "notes": "No anti-crawl, survived 120 RPM",
+    "calibratedAt": "2026-09-05T14:06:10.358116"
   }
 }

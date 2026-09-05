@@ -98,15 +98,17 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return created;
     });
 
-    // Auto-trigger each task sequentially with small delay
+    // Auto-trigger each task in the background with staggered delays.
+    // Fire-and-forget: return HTTP response immediately, trigger tasks asynchronously.
     if (shouldAutoStart) {
-      for (let i = 0; i < tasks.length; i++) {
-        const triggerTaskId = tasks[i].id;
-        // Stagger task starts by 500ms to avoid hammering
-        if (i > 0) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        void (async () => {
+      const taskIds = tasks.map(t => t.id);
+      void (async () => {
+        for (let i = 0; i < taskIds.length; i++) {
+          const triggerTaskId = taskIds[i];
+          // Stagger task starts by 500ms to avoid hammering scraper-service
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
           try {
             const res = await fetch(`${SCRAPER_SERVICE_URL}/execute-task`, {
               method: "POST",
@@ -134,8 +136,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
               console.error(`[Batch Task] Failed to update task ${triggerTaskId} status after trigger failure:`, dbErr);
             }
           }
-        })();
-      }
+        }
+      })();
     }
 
     return apiSuccess({

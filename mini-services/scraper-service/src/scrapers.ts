@@ -29,6 +29,9 @@ import { proxyManager, bunProxyFetchInit } from "./proxy-manager";
 import { antiDetectionCoordinator } from "./anti-detection-coordinator";
 import { captchaRecoveryManager } from "./captcha-strategy";
 import { bypassRegistry, type ChallengeType } from "./bypass-registry";
+import { recordCaptchaUpgrade, setDomainEngineOverride } from "./engine-config";
+import { adaptiveDelay } from "./adaptive-delay";
+import { pipelineMetrics } from "./pipeline-metrics";
 import { ScrapeError, handleScrapeError, type ErrorContext } from "./error-handler";
 import { logger } from "./logger";
 
@@ -203,7 +206,15 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
       if (responseResult.recommendedAction === 'switch_engine') {
         const bypassMethod = bypassRegistry.getBestBypass(domain, responseResult.captcha.detected ? 'captcha' : 'fingerprint-detect');
         log.info(`[${logPrefix}] Anti-detection recommends engine switch for ${domain}, bypass: ${bypassMethod}`, undefined, domain);
-        // The engine switch will happen on next iteration via CAPTCHA handler
+        // Trigger engine upgrade via engine-config for persistent switch
+        if (responseResult.captcha.detected) {
+          const upgraded = recordCaptchaUpgrade(domain, currentEngineType);
+          if (upgraded) {
+            log.info(`[${logPrefix}] CAPTCHA engine upgrade for ${domain}: ${currentEngineType} → ${upgraded}`, undefined, domain);
+            currentEngineType = upgraded;
+            engine = getEngine(currentEngineType);
+          }
+        }
       } else if (responseResult.recommendedAction === 'backoff') {
         const backoffMs = 2000 + Math.floor(Math.random() * 4000);
         log.info(`[${logPrefix}] Rate limited, backing off ${backoffMs}ms`, { backoffMs }, domain);
@@ -213,14 +224,32 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
           const smartProxy = proxyManager.getSmartProxy(domain);
           if (smartProxy) {
             log.info(`[${logPrefix}] Switching proxy for ${domain} → ${smartProxy.host}`, undefined, domain);
+            proxyManager.markProxyBlocked(requestProfile?.proxyUrl || '', domain);
           }
         }
+      } else if (responseResult.recommendedAction === 'slow_down') {
+        // Increase adaptive delay for this domain
+        adaptiveDelay.recordResponse(domain, Date.now() - requestStartTime, false, 429);
+        const slowDelay = 1000 + Math.floor(Math.random() * 3000);
+        log.info(`[${logPrefix}] Anti-detection suggests slow down, adding ${slowDelay}ms delay`, { slowDelay }, domain);
+        await new Promise(r => setTimeout(r, slowDelay));
       }
 
       // Record success for CAPTCHA recovery manager
       if (responseResult.success && !responseResult.captcha.detected) {
         captchaRecoveryManager.recordSuccess(domain);
       }
+
+      // Record pipeline metrics
+      pipelineMetrics.recordEvent({
+        domain,
+        success: responseResult.success && !responseResult.captcha.detected,
+        responseTime: Date.now() - requestStartTime,
+        hadCaptcha: responseResult.captcha.detected,
+        proxyRotated: responseResult.recommendedAction === 'switch_proxy',
+        engine: currentEngineType,
+        statusCode,
+      });
     }
 
     // CAPTCHA detection
@@ -280,7 +309,7 @@ export async function handleScrapeList(body: ScrapeListRequest) {
 
   // Handle infinite-scroll pagination separately (requires browser engine)
   if (pagination?.type === 'infinite-scroll') {
-    console.log(`  [List/InfiniteScroll] Starting infinite scroll fetch: ${url}`);
+    log.info(` Starting infinite scroll fetch: ${url}`);
     const scrollResult = await fetchWithInfiniteScroll(url, { antiCrawl, signal }, engineType, {
       loadMoreSelector: pagination.loadMoreSelector,
       contentContainerSelector: pagination.contentContainerSelector,
@@ -304,7 +333,7 @@ export async function handleScrapeList(body: ScrapeListRequest) {
         allUrls.push(resolvedUrl);
       }
     }
-    console.log(`  [List/InfiniteScroll] Completed ${scrollResult.cyclesCompleted} cycles, found ${allUrls.length} items`);
+    log.info(` Completed ${scrollResult.cyclesCompleted} cycles, found ${allUrls.length} items`);
     return { urls: allUrls, hasNextPage: false, engine: scrollResult.effectiveEngine };
   }
 
@@ -331,9 +360,9 @@ export async function handleScrapeList(body: ScrapeListRequest) {
           newCount++;
         }
       }
-      console.log(`  [Pagination] Found ${items.length} items, ${newCount} new`);
+      log.info(` Found ${items.length} items, ${newCount} new`);
       if (newCount === 0 && page > 0) {
-        console.log(`  [Pagination] No new items found, stopping`);
+        log.info(` No new items found, stopping`);
         return false;
       }
     },
@@ -393,6 +422,22 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
       responseTime: Date.now() - requestStartTime,
       html,
     });
+    // Act on recommended action for book info page too
+    if (responseResult.recommendedAction === 'switch_engine' && responseResult.captcha.detected) {
+      const upgraded = recordCaptchaUpgrade(domain, effectiveEngine);
+      if (upgraded) {
+        log.info(`[Book] CAPTCHA engine upgrade for ${domain}: ${effectiveEngine} → ${upgraded}`, undefined, domain);
+      }
+    } else if (responseResult.recommendedAction === 'slow_down') {
+      adaptiveDelay.recordResponse(domain, Date.now() - requestStartTime, false, 429);
+      const slowDelay = 1000 + Math.floor(Math.random() * 3000);
+      log.info(`[Book] Anti-detection suggests slow down, adding ${slowDelay}ms delay`, { slowDelay }, domain);
+      await new Promise(r => setTimeout(r, slowDelay));
+    } else if (responseResult.recommendedAction === 'backoff') {
+      const backoffMs = 2000 + Math.floor(Math.random() * 4000);
+      log.info(`[Book] Rate limited, backing off ${backoffMs}ms`, { backoffMs }, domain);
+      await new Promise(r => setTimeout(r, backoffMs));
+    }
     if (responseResult.success && !responseResult.captcha.detected) {
       captchaRecoveryManager.recordSuccess(domain);
     }
@@ -493,12 +538,12 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
         });
         newCount++;
       }
-      console.log(`  [Chapters] Found ${links.length} chapters, ${newCount} new`);
+      log.info(` Found ${links.length} chapters, ${newCount} new`);
     },
   });
 
   if (titleDupCount > 0) {
-    console.log(`  [Chapters] Title dedup: removed ${titleDupCount} duplicate chapter titles`);
+    log.info(` Title dedup: removed ${titleDupCount} duplicate chapter titles`);
   }
 
   // Shuffle if enabled
@@ -583,7 +628,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
         // This handles novel sites that render chapter text via JavaScript
         const jsResult = extractJsContent(html);
         if (jsResult.found && jsResult.content.length > 30) {
-          console.log(`  [Content] JS content extracted via ${jsResult.pattern} (${jsResult.content.length} chars)`);
+          log.info(` JS content extracted via ${jsResult.pattern} (${jsResult.content.length} chars)`);
           const cleaned = cleanConfig
             ? cleanText(jsResult.content, cleanConfig)
             : jsResult.content.trim();
@@ -601,7 +646,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
 
   // Log pagination info for debugging
   if (pageCount > 1) {
-    console.log(`  [Content] Merged ${pageCount} pages (${contentParts.reduce((sum, p) => sum + p.length, 0)} chars)`);
+    log.info(` Merged ${pageCount} pages (${contentParts.reduce((sum, p) => sum + p.length, 0)} chars)`);
   }
 
   let fullContent = contentParts.join("\n\n");
@@ -611,7 +656,7 @@ export async function handleScrapeContent(body: ScrapeContentRequest) {
     const t2sResult = convertIfTraditional(fullContent);
     if (t2sResult.converted) {
       fullContent = t2sResult.text;
-      console.log(`  [T2S] Traditional Chinese detected and converted to Simplified`);
+      log.info(` Traditional Chinese detected and converted to Simplified`);
     }
   }
 
@@ -646,7 +691,7 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
   let domain = '';
   try { domain = new URL(url).hostname; } catch { /* ignore */ }
 
-  console.log(`  [Cover] Downloading from ${url} to ${savePath}`);
+  log.info(` Downloading from ${url} to ${savePath}`);
 
   // 1. Rate limiting
   if (domain) {
@@ -783,7 +828,7 @@ export async function handleDownloadCover(url: string, savePath: string, signal?
     // Bun.write automatically creates parent directories if they don't exist
     await Bun.write(savePath, webpBuffer);
 
-    console.log(`  [Cover] Saved to ${savePath} (${webpBuffer.length} bytes)`);
+    log.info(` Saved to ${savePath} (${webpBuffer.length} bytes)`);
 
     // Record success across all anti-crawl systems
     success = true;

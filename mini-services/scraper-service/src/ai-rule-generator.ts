@@ -10,6 +10,9 @@
  *   - handlePreviewPage(url)              → fetch page HTML for frontend preview
  */
 
+import { logger } from './logger';
+const log = logger.child('AiRuleGenerator');
+
 import { getEngine } from "./engines";
 import * as cheerio from "cheerio";
 
@@ -98,7 +101,7 @@ export function getCachedRules(domain: string): GeneratedRuleResult | null {
 export function clearRuleCache(): void {
   ruleCacheMap.clear();
   ruleCacheLru.length = 0;
-  console.log("[AI Rule Gen] Cache cleared");
+  log.info("Cache cleared");
 }
 
 function touchLru(domain: string): void {
@@ -375,7 +378,7 @@ export async function handleGenerateRule(
   if (!_bypassCache) {
     const cached = getCachedRules(domain);
     if (cached) {
-      console.log(`[AI Rule Gen] Cache hit for ${domain} (v${cached.rule?.version ?? '?'})`);
+      log.info(` Cache hit for ${domain} (v${cached.rule?.version ?? '?'})`);
       return cached;
     }
   }
@@ -409,8 +412,8 @@ export async function handleGenerateRule(
   const apiBase = API_BASE();
   const authToken = AUTH_TOKEN();
 
-  console.log(`[AI Rule Gen] Fetching HTML from ${finalUrl} (${html.length} chars, truncated to ${truncatedHtml.length})`);
-  console.log(`[AI Rule Gen] Calling ${apiBase}/api/scrape-rules/ai-analyze ...`);
+  log.info(` Fetching HTML from ${finalUrl} (${html.length} chars, truncated to ${truncatedHtml.length})`);
+  log.info(` Calling ${apiBase}/api/scrape-rules/ai-analyze ...`);
 
   const response = await fetch(`${apiBase}/api/scrape-rules/ai-analyze`, {
     method: "POST",
@@ -462,7 +465,7 @@ export async function handleGenerateRule(
   result = parsed as GeneratedRuleResult;
 
   if (!result.success || !result.rule) {
-    console.log(`[AI Rule Gen] Analysis returned unsuccessful. Success: ${result.success}`);
+    log.info(` Analysis returned unsuccessful. Success: ${result.success}`);
     return result;
   }
 
@@ -494,7 +497,7 @@ export async function handleGenerateRule(
         if (retryResult.success && retryResult.rule) {
           const retryErrors = validateRules(retryResult.rule);
           if (retryErrors.length === 0) {
-            console.log(`[AI Rule Gen] Retry succeeded with valid rules`);
+            log.info(` Retry succeeded with valid rules`);
             result = retryResult;
           } else {
             console.warn(`[AI Rule Gen] Retry also had validation errors: ${retryErrors.join("; ")}`);
@@ -514,7 +517,7 @@ export async function handleGenerateRule(
   result.rule.version = newVersion;
   result.rule.generatedAt = now;
 
-  console.log(`[AI Rule Gen] Analysis complete. Success: ${result.success}, Confidence: ${result.rule.confidence}, Version: ${newVersion}`);
+  log.info(` Analysis complete. Success: ${result.success}, Confidence: ${result.rule.confidence}, Version: ${newVersion}`);
 
   // 7. Cache the result
   setCachedRules(domain, result);

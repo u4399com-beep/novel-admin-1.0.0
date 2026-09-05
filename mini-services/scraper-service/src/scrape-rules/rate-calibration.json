@@ -1,1070 +1,715 @@
 {
-  "timestamp": "2026-09-05T12:18:29.044Z",
-  "totalRules": 40,
-  "tierBreakdown": {
-    "1": 21,
-    "2": 10,
-    "3": 7,
-    "4": 2
+  "calibratedAt": "2026-09-05T14:06:10.360812",
+  "totalRules": 39,
+  "tierDistribution": {
+    "tier1_easy": 6,
+    "tier2_medium": 18,
+    "tier3_hard": 8,
+    "tier4_veryHard": 5,
+    "tier5_api": 2
   },
   "results": [
     {
-      "ruleName": "101看書 (101kks.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/101kks.json",
+      "ruleFile": "101kks.json",
       "domain": "www.101kks.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:37.194Z",
-        "detectedAntiCrawl": [
-          "Cloudflare"
-        ]
-      }
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 1066,
+      "baselineStatusCode": 404,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "CF detected, homepage 200, survived 120 RPM"
     },
     {
-      "ruleName": "123读网 (123duw.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/123duw.json",
+      "ruleFile": "123duw.json",
       "domain": "www.123duw.com",
       "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 23,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 20,
       "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:37.474Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; playwright engine suggests moderate protection"
     },
     {
-      "ruleName": "69书吧 (69shuba.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/69shuba.json",
+      "ruleFile": "69shuba.json",
       "domain": "www.69shuba.com",
-      "tier": 3,
-      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
-      "previousThreadCount": 1,
-      "previousMinDelay": 4000,
-      "previousMaxDelay": 8000,
-      "optimalRPM": 8,
-      "optimalConcurrency": 1,
-      "optimalMinDelay": 4000,
-      "optimalMaxDelay": 8000,
-      "antiCrawlConfig": {
-        "stealthMode": "full",
-        "rotateUA": true,
-        "rotateProxy": true,
-        "delayJitter": 0.5,
-        "respect429": true,
-        "captchaAutoUpgrade": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:37.503Z",
-        "detectedAntiCrawl": [
-          "Cloudflare",
-          "CAPTCHA",
-          "HTTP-403"
-        ]
-      }
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 46,
+      "baselineStatusCode": 200,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "CF detected but survived 120 RPM, playwright engine"
     },
     {
-      "ruleName": "80阁电子书 (80ge.info)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/80ge.json",
+      "ruleFile": "80ge.json",
       "domain": "www.80ge.info",
       "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
+      "tierLabel": "EASY",
+      "baselineResponseTime": 2643,
+      "baselineStatusCode": 200,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 40,
       "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:38.008Z",
-        "detectedAntiCrawl": []
-      }
+      "optimalDelay": [
+        800,
+        1500
+      ],
+      "stealthMode": "basic",
+      "notes": "No anti-crawl, fast response, survived 120 RPM"
     },
     {
-      "ruleName": "8看啦 (8kana.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/8kana.json",
+      "ruleFile": "8kana.json",
       "domain": "www.8kana.com",
       "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
+      "tierLabel": "EASY",
+      "baselineResponseTime": 192,
+      "baselineStatusCode": 500,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 40,
       "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:38.198Z",
-        "detectedAntiCrawl": []
-      }
+      "optimalDelay": [
+        800,
+        1500
+      ],
+      "stealthMode": "basic",
+      "notes": "No anti-crawl, homepage 200, survived 120 RPM (list path needs correct catId)"
     },
     {
-      "ruleName": "久久小说下载网 (aijjxs.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/aijjxs.json",
+      "ruleFile": "aijjxs.json",
       "domain": "www.aijjxs.com",
       "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
+      "tierLabel": "EASY",
+      "baselineResponseTime": 490,
+      "baselineStatusCode": 404,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 40,
       "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:39.047Z",
-        "detectedAntiCrawl": []
-      }
+      "optimalDelay": [
+        800,
+        1500
+      ],
+      "stealthMode": "basic",
+      "notes": "No anti-crawl, homepage 200, survived 120 RPM"
     },
     {
-      "ruleName": "笔趣5200 (biqu5200.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/biqu5200.json",
+      "ruleFile": "biqu5200.json",
       "domain": "www.biqu5200.com",
       "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 531,
+      "baselineStatusCode": 404,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
       "optimalRPM": 20,
       "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:39.561Z",
-        "detectedAntiCrawl": [
-          "Cloudflare"
-        ]
-      }
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "CF detected, homepage 200, survived 120 RPM"
     },
     {
-      "ruleName": "笔趣阁5200 (biquge5200.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/biquge5200.json",
+      "ruleFile": "biquge5200.json",
       "domain": "www.biquge5200.com",
       "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 199,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 20,
       "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:39.909Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection"
     },
     {
-      "ruleName": "笔趣阁SE (biqugse.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/biqugse.json",
+      "ruleFile": "biqugse.json",
       "domain": "www.biqugse.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:49.909Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 10002,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection"
     },
     {
-      "ruleName": "笔趣无弹窗 (biquwx.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/biquwx.json",
+      "ruleFile": "biquwx.json",
       "domain": "www.biquwx.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:17:59.910Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 10001,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection"
     },
     {
-      "ruleName": "AU文学 (book4.cc)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/book4-au.json",
-      "domain": "book4.cc",
+      "ruleFile": "book4-au.json",
+      "domain": "www.book4.cc",
       "tier": 3,
-      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
-      "previousThreadCount": 1,
-      "previousMinDelay": 4000,
-      "previousMaxDelay": 8000,
+      "tierLabel": "HARD",
+      "baselineResponseTime": 126,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 8,
       "optimalConcurrency": 1,
-      "optimalMinDelay": 4000,
-      "optimalMaxDelay": 8000,
-      "antiCrawlConfig": {
-        "stealthMode": "full",
-        "rotateUA": true,
-        "rotateProxy": true,
-        "delayJitter": 0.5,
-        "respect429": true,
-        "captchaAutoUpgrade": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:00.266Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "optimalDelay": [
+        3000,
+        6000
+      ],
+      "stealthMode": "full",
+      "notes": "DNS resolves, sandbox-blocked; playwright engine + AU文学 suggests stronger protection"
     },
     {
-      "ruleName": "笔趣阁713 (bqg713.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/bqg713.json",
+      "ruleFile": "bqg713.json",
       "domain": "www.bqg713.com",
-      "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
-      "optimalRPM": 20,
-      "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:00.371Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "tier": 4,
+      "tierLabel": "VERY HARD",
+      "baselineResponseTime": 31,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 4,
+      "optimalConcurrency": 1,
+      "optimalDelay": [
+        5000,
+        10000
+      ],
+      "stealthMode": "maximum",
+      "notes": "DNS NXDOMAIN - domain no longer exists"
     },
     {
-      "ruleName": "",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/bypass-registry.json",
-      "domain": "",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:00.371Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
-    },
-    {
-      "ruleName": "天天看小说 (cn.ttkan.co)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/cn-ttkan-co.json",
+      "ruleFile": "cn-ttkan-co.json",
       "domain": "cn.ttkan.co",
       "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 10002,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 20,
       "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:10.372Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; playwright engine suggests moderate protection"
     },
     {
-      "ruleName": "大风大更人 (dafengdagengren.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/dafengdagengren.json",
-      "domain": "dafengdagengren.com",
+      "ruleFile": "dafengdagengren.json",
+      "domain": "www.dafengdagengren.com",
       "tier": 3,
-      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
-      "previousThreadCount": 1,
-      "previousMinDelay": 4000,
-      "previousMaxDelay": 8000,
+      "tierLabel": "HARD",
+      "baselineResponseTime": 652,
+      "baselineStatusCode": 403,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 8,
       "optimalConcurrency": 1,
-      "optimalMinDelay": 4000,
-      "optimalMaxDelay": 8000,
-      "antiCrawlConfig": {
-        "stealthMode": "full",
-        "rotateUA": true,
-        "rotateProxy": true,
-        "delayJitter": 0.5,
-        "respect429": true,
-        "captchaAutoUpgrade": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:10.876Z",
-        "detectedAntiCrawl": [
-          "HTTP-403"
-        ]
-      }
+      "optimalDelay": [
+        3000,
+        6000
+      ],
+      "stealthMode": "full",
+      "notes": "403 on both pages - needs browser/obscura engine"
     },
     {
-      "ruleName": "大味小说 (daweixs.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/daweixs.json",
-      "domain": "daweixs.com",
+      "ruleFile": "daweixs.json",
+      "domain": "www.daweixs.com",
       "tier": 3,
-      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
-      "previousThreadCount": 1,
-      "previousMinDelay": 4000,
-      "previousMaxDelay": 8000,
+      "tierLabel": "HARD",
+      "baselineResponseTime": 559,
+      "baselineStatusCode": 403,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 8,
       "optimalConcurrency": 1,
-      "optimalMinDelay": 4000,
-      "optimalMaxDelay": 8000,
-      "antiCrawlConfig": {
-        "stealthMode": "full",
-        "rotateUA": true,
-        "rotateProxy": true,
-        "delayJitter": 0.5,
-        "respect429": true,
-        "captchaAutoUpgrade": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:11.386Z",
-        "detectedAntiCrawl": [
-          "HTTP-403"
-        ]
-      }
+      "optimalDelay": [
+        3000,
+        6000
+      ],
+      "stealthMode": "full",
+      "notes": "403 on both pages - needs browser/obscura engine"
     },
     {
-      "ruleName": "得奇小说网 (www.deqixs.cc)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/deqixs-cc.json",
+      "ruleFile": "deqixs-cc.json",
       "domain": "www.deqixs.cc",
-      "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
-      "optimalRPM": 20,
-      "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:11.902Z",
-        "detectedAntiCrawl": []
-      }
+      "tier": 1,
+      "tierLabel": "EASY",
+      "baselineResponseTime": 743,
+      "baselineStatusCode": 200,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 40,
+      "optimalConcurrency": 4,
+      "optimalDelay": [
+        800,
+        1500
+      ],
+      "stealthMode": "basic",
+      "notes": "No anti-crawl, survived 120 RPM"
     },
     {
-      "ruleName": "东流小说 (dongliuxiaoshuo.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/dongliuxiaoshuo.json",
+      "ruleFile": "dongliuxiaoshuo.json",
       "domain": "www.dongliuxiaoshuo.com",
       "tier": 3,
-      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
-      "previousThreadCount": 1,
-      "previousMinDelay": 4000,
-      "previousMaxDelay": 8000,
+      "tierLabel": "HARD",
+      "baselineResponseTime": 70,
+      "baselineStatusCode": 403,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 8,
       "optimalConcurrency": 1,
-      "optimalMinDelay": 4000,
-      "optimalMaxDelay": 8000,
-      "antiCrawlConfig": {
-        "stealthMode": "full",
-        "rotateUA": true,
-        "rotateProxy": true,
-        "delayJitter": 0.5,
-        "respect429": true,
-        "captchaAutoUpgrade": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:11.970Z",
-        "detectedAntiCrawl": [
-          "Cloudflare",
-          "CAPTCHA",
-          "HTTP-403"
-        ]
-      }
+      "optimalDelay": [
+        3000,
+        6000
+      ],
+      "stealthMode": "full",
+      "notes": "CF + 403 on both pages - needs browser emulation"
     },
     {
-      "ruleName": "多看笔趣 (duokanbiqu.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/duokanbiqu.json",
+      "ruleFile": "duokanbiqu.json",
       "domain": "www.duokanbiqu.com",
-      "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
-      "optimalRPM": 20,
-      "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:12.052Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
-    },
-    {
-      "ruleName": "番茄小说API (fanqie-novel-api)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/fanqie-api.json",
-      "domain": "fq.taijiwang.top",
       "tier": 4,
-      "tierLabel": "API (special handling)",
-      "previousThreadCount": 3,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 15,
-      "optimalConcurrency": 3,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": false,
-        "delayJitter": 0.2
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:12.080Z",
-        "detectedAntiCrawl": []
-      }
+      "tierLabel": "VERY HARD",
+      "baselineResponseTime": 1,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 4,
+      "optimalConcurrency": 1,
+      "optimalDelay": [
+        5000,
+        10000
+      ],
+      "stealthMode": "maximum",
+      "notes": "DNS NXDOMAIN - domain no longer exists"
     },
     {
-      "ruleName": "格格党小说 (gegedangbook.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/gegedangbook.json",
+      "ruleFile": "fanqie-api.json",
+      "domain": "fq.taijiwang.top",
+      "tier": 5,
+      "tierLabel": "API",
+      "baselineResponseTime": 0,
+      "baselineStatusCode": "api",
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 20,
+      "optimalRPM": 20,
+      "optimalConcurrency": 3,
+      "optimalDelay": [
+        800,
+        1500
+      ],
+      "stealthMode": "basic",
+      "notes": "API-based source"
+    },
+    {
+      "ruleFile": "gegedangbook.json",
       "domain": "www.gegedangbook.com",
       "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 5265,
+      "baselineStatusCode": 200,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
       "optimalRPM": 20,
       "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:12.535Z",
-        "detectedAntiCrawl": [
-          "Cloudflare"
-        ]
-      }
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "CF detected but survived 120 RPM"
     },
     {
-      "ruleName": "鬼吹灯小说网 (guichuideng.info)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/guichuideng.json",
+      "ruleFile": "guichuideng.json",
       "domain": "www.guichuideng.info",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:13.133Z",
-        "detectedAntiCrawl": [
-          "HTTP-403"
-        ]
-      }
+      "tier": 3,
+      "tierLabel": "HARD",
+      "baselineResponseTime": 533,
+      "baselineStatusCode": 403,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalDelay": [
+        3000,
+        6000
+      ],
+      "stealthMode": "full",
+      "notes": "403 on both pages - already uses obscura engine"
     },
     {
-      "ruleName": "和书屋 (hetushu.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/hetushu.json",
+      "ruleFile": "hetushu.json",
       "domain": "www.hetushu.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:13.199Z",
-        "detectedAntiCrawl": [
-          "Cloudflare",
-          "CAPTCHA",
-          "HTTP-403"
-        ]
-      }
+      "tier": 3,
+      "tierLabel": "HARD",
+      "baselineResponseTime": 29,
+      "baselineStatusCode": 403,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalDelay": [
+        3000,
+        6000
+      ],
+      "stealthMode": "full",
+      "notes": "CF + 403 on both pages - needs proxy rotation"
     },
     {
-      "ruleName": "爱笔趣阁 (ibiquges.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/ibiquges.json",
+      "ruleFile": "ibiquges.json",
       "domain": "www.ibiquges.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:23.200Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 10011,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection"
     },
     {
-      "ruleName": "爱笔趣无弹窗 (ibiquwx.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/ibiquwx.json",
+      "ruleFile": "ibiquwx.json",
       "domain": "www.ibiquwx.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:23.247Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "tier": 4,
+      "tierLabel": "VERY HARD",
+      "baselineResponseTime": 16,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 4,
+      "optimalConcurrency": 1,
+      "optimalDelay": [
+        5000,
+        10000
+      ],
+      "stealthMode": "maximum",
+      "notes": "DNS NXDOMAIN - domain no longer exists"
     },
     {
-      "ruleName": "老标 (laobiao.cc)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/laobiao.json",
+      "ruleFile": "laobiao.json",
       "domain": "www.laobiao.cc",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:23.345Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 96,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection"
     },
     {
-      "ruleName": "礼吧好小说 (libahao2.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/libahao2.json",
+      "ruleFile": "libahao2.json",
       "domain": "www.libahao2.com",
       "tier": 3,
-      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
-      "previousThreadCount": 1,
-      "previousMinDelay": 4000,
-      "previousMaxDelay": 8000,
+      "tierLabel": "HARD",
+      "baselineResponseTime": 730,
+      "baselineStatusCode": 403,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 8,
       "optimalConcurrency": 1,
-      "optimalMinDelay": 4000,
-      "optimalMaxDelay": 8000,
-      "antiCrawlConfig": {
-        "stealthMode": "full",
-        "rotateUA": true,
-        "rotateProxy": true,
-        "delayJitter": 0.5,
-        "respect429": true,
-        "captchaAutoUpgrade": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:24.049Z",
-        "detectedAntiCrawl": [
-          "HTTP-403"
-        ]
-      }
+      "optimalDelay": [
+        3000,
+        6000
+      ],
+      "stealthMode": "full",
+      "notes": "403 on both pages - needs browser emulation"
     },
     {
-      "ruleName": "精华书阁手机版 (m.jhsssd.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/m-jhssd-com.json",
+      "ruleFile": "m-jhssd-com.json",
       "domain": "m.jhsssd.com",
       "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
-      "optimalRPM": 30,
+      "tierLabel": "EASY",
+      "baselineResponseTime": 2928,
+      "baselineStatusCode": 200,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 40,
       "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:24.705Z",
-        "detectedAntiCrawl": []
-      }
+      "optimalDelay": [
+        800,
+        1500
+      ],
+      "stealthMode": "basic",
+      "notes": "No anti-crawl, survived 120 RPM"
     },
     {
-      "ruleName": "飘天文学 (piaotia.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/piaotia.json",
+      "ruleFile": "piaotia.json",
       "domain": "www.piaotia.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:24.922Z",
-        "detectedAntiCrawl": [
-          "Cloudflare"
-        ]
-      }
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 198,
+      "baselineStatusCode": 404,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "CF detected, homepage 200, survived 120 RPM"
     },
     {
-      "ruleName": "评书屋 (ptwxz.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/ptwxz.json",
+      "ruleFile": "ptwxz.json",
       "domain": "www.ptwxz.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:25.164Z",
-        "detectedAntiCrawl": [
-          "Cloudflare"
-        ]
-      }
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 261,
+      "baselineStatusCode": 404,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "CF detected, homepage 200, survived 120 RPM"
     },
     {
-      "ruleName": "七猫小说API (qimao)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/qimao-api.json",
+      "ruleFile": "qimao-api.json",
       "domain": "api-bc.wtzw.com",
-      "tier": 4,
-      "tierLabel": "API (special handling)",
-      "previousThreadCount": 3,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 15,
+      "tier": 5,
+      "tierLabel": "API",
+      "baselineResponseTime": 0,
+      "baselineStatusCode": "api",
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 20,
+      "optimalRPM": 20,
       "optimalConcurrency": 3,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": false,
-        "delayJitter": 0.2
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:25.259Z",
-        "detectedAntiCrawl": []
-      }
+      "optimalDelay": [
+        800,
+        1500
+      ],
+      "stealthMode": "basic",
+      "notes": "API-based source"
     },
     {
-      "ruleName": "书丛 (shucong.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/shucong.json",
+      "ruleFile": "shucong.json",
       "domain": "www.shucong.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:25.497Z",
-        "detectedAntiCrawl": []
-      }
-    },
-    {
-      "ruleName": "速读谷 (shudugu.org)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/shudugu.json",
-      "domain": "shudugu.org",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:26.463Z",
-        "detectedAntiCrawl": []
-      }
-    },
-    {
-      "ruleName": "UU看书 (uukanshu.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/uukanshu.json",
-      "domain": "www.uukanshu.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:26.513Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
-    },
-    {
-      "ruleName": "万本神站 (wanbenshenzhan.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/wanbenshenzhan.json",
-      "domain": "www.wanbenshenzhan.com",
-      "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
-      "optimalRPM": 20,
-      "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:27.195Z",
-        "detectedAntiCrawl": [
-          "HTTP-403"
-        ]
-      }
-    },
-    {
-      "ruleName": "笔趣宝 (xbiqubao.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/xbiqubao.json",
-      "domain": "www.xbiqubao.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:27.286Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
-    },
-    {
-      "ruleName": "小说大全 (xiaoshuodaquan.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/xiaoshuodaquan.json",
-      "domain": "www.xiaoshuodaquan.com",
-      "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
-      "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:27.708Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
-    },
-    {
-      "ruleName": "新键盘小说 (xinjianpan.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/xinjianpan.json",
-      "domain": "www.xinjianpan.com",
-      "tier": 2,
-      "tierLabel": "MEDIUM (basic rate limiting)",
-      "previousThreadCount": 2,
-      "previousMinDelay": 2000,
-      "previousMaxDelay": 4000,
-      "optimalRPM": 20,
-      "optimalConcurrency": 2,
-      "optimalMinDelay": 2000,
-      "optimalMaxDelay": 4000,
-      "antiCrawlConfig": {
-        "stealthMode": "moderate",
-        "rotateUA": true,
-        "delayJitter": 0.4,
-        "respect429": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:28.187Z",
-        "detectedAntiCrawl": [
-          "Cloudflare"
-        ]
-      }
-    },
-    {
-      "ruleName": "夜伴书屋 (yybsw.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/yybsw.json",
-      "domain": "yybsw.com",
       "tier": 3,
-      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
-      "previousThreadCount": 1,
-      "previousMinDelay": 4000,
-      "previousMaxDelay": 8000,
+      "tierLabel": "HARD",
+      "baselineResponseTime": 230,
+      "baselineStatusCode": 404,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
       "optimalRPM": 8,
       "optimalConcurrency": 1,
-      "optimalMinDelay": 4000,
-      "optimalMaxDelay": 8000,
-      "antiCrawlConfig": {
-        "stealthMode": "full",
-        "rotateUA": true,
-        "rotateProxy": true,
-        "delayJitter": 0.5,
-        "respect429": true,
-        "captchaAutoUpgrade": true
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:28.388Z",
-        "detectedAntiCrawl": [
-          "Cloudflare",
-          "CAPTCHA",
-          "HTTP-403"
-        ]
-      }
+      "optimalDelay": [
+        3000,
+        6000
+      ],
+      "stealthMode": "full",
+      "notes": "Homepage 403, list page 404 - anti-crawl on homepage"
     },
     {
-      "ruleName": "中文ZW (zhongwenzw.com)",
-      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/zhongwenzw.json",
-      "domain": "www.zhongwenzw.com",
+      "ruleFile": "shudugu.json",
+      "domain": "www.shudugu.org",
       "tier": 1,
-      "tierLabel": "EASY (no anti-crawl)",
-      "previousThreadCount": 4,
-      "previousMinDelay": 1000,
-      "previousMaxDelay": 2000,
-      "optimalRPM": 30,
+      "tierLabel": "EASY",
+      "baselineResponseTime": 1074,
+      "baselineStatusCode": 200,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 40,
       "optimalConcurrency": 4,
-      "optimalMinDelay": 1000,
-      "optimalMaxDelay": 2000,
-      "antiCrawlConfig": {
-        "stealthMode": "basic",
-        "rotateUA": true,
-        "delayJitter": 0.3
-      },
-      "probeResults": {
-        "profiled": true,
-        "probeTimestamp": "2026-09-05T12:18:29.044Z",
-        "detectedAntiCrawl": [
-          "Unreachable"
-        ]
-      }
+      "optimalDelay": [
+        800,
+        1500
+      ],
+      "stealthMode": "basic",
+      "notes": "No anti-crawl, survived 120 RPM"
+    },
+    {
+      "ruleFile": "uukanshu.json",
+      "domain": "www.uukanshu.com",
+      "tier": 4,
+      "tierLabel": "VERY HARD",
+      "baselineResponseTime": 69,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 4,
+      "optimalConcurrency": 1,
+      "optimalDelay": [
+        5000,
+        10000
+      ],
+      "stealthMode": "maximum",
+      "notes": "DNS resolves to 127.0.0.1 - domain effectively dead/blocked"
+    },
+    {
+      "ruleFile": "wanbenshenzhan.json",
+      "domain": "www.wanbenshenzhan.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 708,
+      "baselineStatusCode": 200,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "WAF detected but survived 120 RPM"
+    },
+    {
+      "ruleFile": "xbiqubao.json",
+      "domain": "www.xbiqubao.com",
+      "tier": 4,
+      "tierLabel": "VERY HARD",
+      "baselineResponseTime": 31,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": true,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 4,
+      "optimalConcurrency": 1,
+      "optimalDelay": [
+        5000,
+        10000
+      ],
+      "stealthMode": "maximum",
+      "notes": "DNS NXDOMAIN - domain no longer exists"
+    },
+    {
+      "ruleFile": "xiaoshuodaquan.json",
+      "domain": "www.xiaoshuodaquan.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 467,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection"
+    },
+    {
+      "ruleFile": "xinjianpan.json",
+      "domain": "www.xinjianpan.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 945,
+      "baselineStatusCode": 200,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "CF detected but survived 120 RPM"
+    },
+    {
+      "ruleFile": "yybsw.json",
+      "domain": "www.yybsw.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 686,
+      "baselineStatusCode": 403,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 120,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "CF detected, homepage 200, survived 120 RPM"
+    },
+    {
+      "ruleFile": "zhongwenzw.json",
+      "domain": "www.zhongwenzw.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM",
+      "baselineResponseTime": 10002,
+      "baselineStatusCode": 0,
+      "antiCrawlDetected": false,
+      "maxSuccessfulRPM": 0,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalDelay": [
+        1500,
+        3000
+      ],
+      "stealthMode": "moderate",
+      "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection"
     }
   ]
 }

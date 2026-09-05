@@ -8,6 +8,9 @@
 import { ProxyAgent, type Dispatcher } from 'undici';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { isSafeUrl } from './ssrf';
+import { logger } from './logger';
+
+const log = logger.child("ProxyManager");
 
 // ==================== Helpers ====================
 
@@ -300,7 +303,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         if (process.env.DEBUG === 'true') {
-          console.log(`[ProxyManager] Failed to create SOCKS agent for ${redactProxyCredentials(proxyUrl)}: ${errMsg}`);
+          log.info(` Failed to create SOCKS agent for ${redactProxyCredentials(proxyUrl)}: ${errMsg}`);
         }
         return null;
       }
@@ -323,7 +326,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     if (process.env.DEBUG === 'true') {
-      console.log(`[ProxyManager] Failed to create dispatcher for ${redactProxyCredentials(proxyUrl)}: ${errMsg}`);
+      log.info(` Failed to create dispatcher for ${redactProxyCredentials(proxyUrl)}: ${errMsg}`);
     }
     return null;
   }
@@ -602,7 +605,7 @@ class ProxyManager {
     // Auto-add Tor proxy if enabled and not already in pool
     if (this.torEnabled) {
       this.addProxy(this.torProxyUrl);
-      console.log(`[ProxyManager] Tor proxy enabled: ${this.torProxyUrl}`);
+      log.info(` Tor proxy enabled: ${this.torProxyUrl}`);
     }
   }
 
@@ -975,14 +978,14 @@ class ProxyManager {
           if (failDomain) {
             this.domainBindings.delete(failDomain);
             if (process.env.DEBUG === 'true') {
-              console.log(`[ProxyManager] Auto-rotate: cleared domain binding for ${failDomain} due to HTTP ${status}`);
+              log.info(` Auto-rotate: cleared domain binding for ${failDomain} due to HTTP ${status}`);
             }
           }
           // Extra penalty for 429 (rate limit) - longer cooling period
           if (status === 429) {
             entry.coolingUntil = Date.now() + 10 * 60 * 1000; // 10 min cooling
             if (process.env.DEBUG === 'true') {
-              console.log(`[ProxyManager] ${parsed.cleanUrl} entering 10min cooling due to HTTP 429`);
+              log.info(` ${parsed.cleanUrl} entering 10min cooling due to HTTP 429`);
             }
           }
           // 503 often indicates WAF challenge - 3 min cooling
@@ -1060,7 +1063,7 @@ class ProxyManager {
     if (entry.consecutiveFails >= 5) {
       entry.coolingUntil = Date.now() + 5 * 60 * 1000;
       if (process.env.DEBUG === 'true') {
-        console.log(`[ProxyManager] ${parsed.cleanUrl} entering cooling (5min) after ${entry.consecutiveFails} consecutive fails`);
+        log.info(` ${parsed.cleanUrl} entering cooling (5min) after ${entry.consecutiveFails} consecutive fails`);
       }
     }
 
@@ -1068,7 +1071,7 @@ class ProxyManager {
     if (entry.healthScore < 10) {
       entry.disabled = true;
       if (process.env.DEBUG === 'true') {
-        console.log(`[ProxyManager] ${parsed.cleanUrl} disabled (health=${entry.healthScore})`);
+        log.info(` ${parsed.cleanUrl} disabled (health=${entry.healthScore})`);
       }
     }
   }
@@ -1207,7 +1210,7 @@ class ProxyManager {
         // Through-proxy fetch failed; fall through to secondary check below
         const errMsg = err instanceof Error ? err.message : String(err);
         if (process.env.DEBUG === 'true') {
-          console.log(`[ProxyManager] Through-proxy check failed for ${parsed.cleanUrl}: ${errMsg} — falling back to direct check`);
+          log.info(` Through-proxy check failed for ${parsed.cleanUrl}: ${errMsg} — falling back to direct check`);
         }
         // Don't record failure yet; let the secondary check determine the outcome
       }
@@ -1261,7 +1264,7 @@ class ProxyManager {
     }
 
     if (added > 0) {
-      console.log(`[ProxyManager] Loaded ${added} proxies from PROXY_LIST`);
+      log.info(` Loaded ${added} proxies from PROXY_LIST`);
     }
   }
 
@@ -2225,13 +2228,13 @@ class ProxyManager {
 
         if (candidates.length === 0) {
           if (process.env.DEBUG === 'true') {
-            console.log('[ProxyManager] Periodic verification: all proxies already tested recently, skipping');
+            log.info(' Periodic verification: all proxies already tested recently, skipping');
           }
           return;
         }
 
         if (process.env.DEBUG === 'true') {
-          console.log(`[ProxyManager] Periodic verification: testing ${candidates.length} proxies`);
+          log.info(` Periodic verification: testing ${candidates.length} proxies`);
         }
 
         for (const entry of candidates) {
@@ -2239,7 +2242,7 @@ class ProxyManager {
         }
 
         if (process.env.DEBUG === 'true') {
-          console.log('[ProxyManager] Periodic verification: complete');
+          log.info(' Periodic verification: complete');
         }
       } catch (err) {
         console.warn('[ProxyManager] Periodic verification error:', err instanceof Error ? err.message : String(err));
@@ -2251,7 +2254,7 @@ class ProxyManager {
     this.verificationTimer = setInterval(runVerification, interval);
 
     if (process.env.DEBUG === 'true' || process.env.DEBUG === '1') {
-      console.log(`[ProxyManager] Periodic verification started (interval: ${interval}ms)`);
+      log.info(` Periodic verification started (interval: ${interval}ms)`);
     }
   }
 
@@ -2286,7 +2289,7 @@ class ProxyManager {
   setPreferredRegion(region: string | null): void {
     this.preferredRegion = region;
     if (process.env.DEBUG === 'true') {
-      console.log(`[ProxyManager] Preferred region set to: ${region ?? 'auto-detect'}`);
+      log.info(` Preferred region set to: ${region ?? 'auto-detect'}`);
     }
   }
 
@@ -2308,7 +2311,7 @@ class ProxyManager {
     if (!entry) return false;
     entry.region = region;
     if (process.env.DEBUG === 'true') {
-      console.log(`[ProxyManager] ${parsed.cleanUrl} tagged with region: ${region}`);
+      log.info(` ${parsed.cleanUrl} tagged with region: ${region}`);
     }
     return true;
   }
@@ -2561,7 +2564,7 @@ class ProxyManager {
       const cleanUrl = parsed?.cleanUrl ?? best.url;
       this.domainBindings.set(normalisedDomain, cleanUrl);
       if (process.env.DEBUG === 'true') {
-        console.log(`[ProxyManager] Sticky session: ${normalisedDomain} → ${redactProxyCredentials(best.url)}`);
+        log.info(` Sticky session: ${normalisedDomain} → ${redactProxyCredentials(best.url)}`);
       }
     }
     return best;
@@ -2619,12 +2622,12 @@ class ProxyManager {
       await conn.write('QUIT\r\n');
       conn.end();
       if (process.env.DEBUG === 'true') {
-        console.log('[ProxyManager] Tor exit node rotation requested (NEWNYM)');
+        log.info(' Tor exit node rotation requested (NEWNYM)');
       }
       return true;
     } catch (err) {
       if (process.env.DEBUG === 'true') {
-        console.log(`[ProxyManager] Tor control port connection failed: ${err}`);
+        log.info(` Tor control port connection failed: ${err}`);
       }
       return false;
     }
@@ -2679,29 +2682,44 @@ class ProxyManager {
       // Avoid same proxy twice in a row for same domain
       if (cleanUrl === lastProxy) continue;
 
-      // Compute score
-      let score = entry.healthScore; // Base: health score (0-100)
+      // ==================== Weighted Scoring ====================
+      // Weights: domain success rate (0.4), health score (0.3), response time (0.2), freshness (0.1)
+      // All components normalized to 0-100 range
 
-      // Domain affinity bonus: proxies that worked for this domain before
+      // Component 1: Domain historical success rate (weight: 0.4)
       const successCount = this.domainProxySuccessCount.get(normDomain)?.get(cleanUrl) ?? 0;
       const failCount = this.domainProxyFailCount.get(normDomain)?.get(cleanUrl) ?? 0;
-      if (successCount > 0) {
-        const domainSuccessRate = successCount / (successCount + failCount);
-        score += domainSuccessRate * 30; // Up to +30 for domain affinity
-      }
+      const totalDomainReqs = successCount + failCount;
+      const domainSuccessRate = totalDomainReqs > 0 ? successCount / totalDomainReqs : 0.5; // Default 0.5 if no data
+      const domainSuccessScore = domainSuccessRate * 100; // 0-100
+
+      // Component 2: Health score (weight: 0.3)
+      const healthScore = entry.healthScore; // Already 0-100
+
+      // Component 3: Response time score (weight: 0.2)
+      const domainLat = entry.latencyStats.domainLatency.get(normDomain) ?? entry.latencyStats.avgResponseTime;
+      const effectiveLat = domainLat > 0 ? domainLat : 5000;
+      // Invert: lower latency → higher score. 200ms → 100, 10s → 0
+      const responseTimeScore = Math.max(0, 100 * (1 - effectiveLat / 10000));
+
+      // Component 4: Freshness score (weight: 0.1)
+      // Prefer proxies not recently used for this domain
+      const lastDomainUse = entry.latencyStats.lastUsedAt;
+      const timeSinceLastUse = now - lastDomainUse;
+      // 0ms → 0 (just used), 10min+ → 100 (fresh)
+      const freshnessScore = Math.min(100, (timeSinceLastUse / (10 * 60 * 1000)) * 100);
 
       // Geographic proximity bonus
       const targetRegion = options?.preferredRegion || this.detectDomainRegion(normDomain);
-      if (targetRegion && entry.region === targetRegion) {
-        score += 20; // +20 for region match
-      }
+      const geoBonus = (targetRegion && entry.region === targetRegion) ? 10 : 0;
 
-      // Speed bonus: lower latency = higher score
-      const domainLat = entry.latencyStats.domainLatency.get(normDomain) ?? entry.latencyStats.avgResponseTime;
-      const effectiveLat = domainLat > 0 ? domainLat : 5000;
-      if (effectiveLat < 1000) score += 15;
-      else if (effectiveLat < 3000) score += 10;
-      else if (effectiveLat < 5000) score += 5;
+      // Weighted combination
+      let score =
+        domainSuccessScore * 0.4 +
+        healthScore * 0.3 +
+        responseTimeScore * 0.2 +
+        freshnessScore * 0.1 +
+        geoBonus;
 
       // Randomness to avoid always picking same proxy
       score *= (0.85 + Math.random() * 0.30);
@@ -2761,7 +2779,7 @@ class ProxyManager {
     const entry = this.pool.get(cleanUrl);
     if (entry) {
       entry.blockedDomains.add(normDomain);
-      entry.coolingUntil = Date.now() + 60_000; // Cool for 60s
+      entry.coolingUntil = Date.now() + 30 * 60_000; // Cool for 30 minutes
       entry.consecutiveFails++;
     }
   }

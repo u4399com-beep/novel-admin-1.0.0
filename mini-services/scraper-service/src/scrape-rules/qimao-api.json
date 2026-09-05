@@ -21,25 +21,6 @@
   "contentSelector": null,
   "contentPagination": null,
   "antiCrawlConfig": {
-    "useJsRender": false,
-    "uaRotation": false,
-    "delay": [
-      500,
-      1000
-    ],
-    "humanBehavior": false,
-    "retries": 3,
-    "referer": null,
-    "customHeaders": {
-      "app-version": "80400",
-      "platform": "android",
-      "reg": "0",
-      "AUTHORIZATION": "",
-      "application-id": "com.kmxs.reader",
-      "net-env": "1",
-      "channel": "unknown",
-      "qm-params": ""
-    },
     "stealthMode": "basic",
     "rotateUA": false,
     "delayJitter": 0.2
@@ -56,8 +37,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/qimao/",
   "threadCount": 3,
-  "minDelay": 1000,
-  "maxDelay": 2000,
+  "minDelay": 800,
+  "maxDelay": 1500,
   "enableShuffle": false,
   "dedupMode": "both",
   "meta": {
@@ -252,5 +233,12 @@
       "optimalRPM": 15,
       "calibratedAt": "2026-09-05T12:14:11.043Z"
     }
+  },
+  "calibration": {
+    "tier": 5,
+    "tierLabel": "API",
+    "optimalRPM": 20,
+    "notes": "API-based source",
+    "calibratedAt": "2026-09-05T14:06:10.357323"
   }
 }

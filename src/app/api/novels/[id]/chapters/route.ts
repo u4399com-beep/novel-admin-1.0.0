@@ -208,18 +208,16 @@ export const PATCH = withAuth(async function PATCH(
       }
     }
 
-    // Single SQL UPDATE with parameterized VALUES clause for batch reorder (O(1) DB ops).
+    // Use CASE WHEN pattern for cross-database compatibility (works on both SQLite and PostgreSQL).
     // Each value is properly parameterized via Prisma.sql to prevent SQL injection.
-    const sqlParts = orders.map((item) =>
-      Prisma.sql`(${item.id}, ${Math.floor(Number(item.sortOrder) || 0)})`,
-    );
-    const valuesSql = Prisma.join(sqlParts, ', ');
     await db.$executeRaw`
-      UPDATE "Chapter"
-      SET "sortOrder" = v.sort_order
-      FROM (VALUES ${valuesSql}) AS v(id TEXT, sort_order INTEGER)
-      WHERE "Chapter"."id" = v.id
-      AND "Chapter"."novelId" = ${novelId}
+      UPDATE "Chapter" SET "sortOrder" = CASE id
+        ${Prisma.join(orders.map((item) =>
+          Prisma.sql`WHEN ${item.id} THEN ${Math.floor(Number(item.sortOrder) || 0)}`
+        ), ' ')}
+        ELSE "sortOrder" END
+      WHERE id IN (${Prisma.join(orders.map((item) => Prisma.sql`${item.id}`))})
+      AND "novelId" = ${novelId}
     `;
 
     invalidateCache("dashboard:stats");

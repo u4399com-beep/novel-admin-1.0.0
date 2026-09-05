@@ -30,6 +30,9 @@ import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 import { browserBehavior } from "./browser-behavior";
 import { detectAndDecode } from "./charset-detector";
 import { getEngineFallbackChain, recordCaptchaUpgrade, recordLowContentHint } from "./engine-config";
+import { logger } from "./logger";
+
+const log = logger.child("Engines");
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_SCROLL_ITERATIONS = parseInt(process.env.SCRAPER_MAX_SCROLL_ITERATIONS || '30', 10);
@@ -112,9 +115,7 @@ async function waitForRateLimit(domain: string, signal?: AbortSignal): Promise<v
     if (rateCheck.allowed) return;
 
     const waitMs = Math.min(rateCheck.waitMs, 2000);
-    console.log(
-      `[rate-limiter] Throttled: domain=${domain}, waitMs=${waitMs}, retry=${retry}/${MAX_THROTTLE_RETRIES}`
-    );
+    log.info(`Throttled: domain=${domain}, waitMs=${waitMs}, retry=${retry}/${MAX_THROTTLE_RETRIES}`);
 
     // Wait with early exit on abort
     await new Promise<void>((resolve, reject) => {
@@ -289,7 +290,7 @@ function getCheerioAgent(): Promise<import('undici').Agent> {
       pipelining: 1,
     });
     _cheerioAgent = agent;
-    console.log('[CheerioEngine] HTTP connection pool initialized (keepAlive=30s, maxConn=20)');
+    log.info(' HTTP connection pool initialized (keepAlive=30s, maxConn=20)');
     return agent;
   })().catch((err) => {
     console.error('[CheerioEngine] Failed to initialize HTTP connection pool:', err);
@@ -764,7 +765,7 @@ export async function waitForCooldownIfActive(domain: string, signal?: AbortSign
   const remaining = isDomainInCooldown(domain);
   if (remaining <= 0) return false;
 
-  console.log(`[SmartRetry] Waiting for cool-down: ${domain} (${Math.round(remaining / 1000)}s remaining)`);
+  log.info(` Waiting for cool-down: ${domain} (${Math.round(remaining / 1000)}s remaining)`);
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(resolve, remaining);
     if (signal) {
@@ -821,7 +822,7 @@ export async function fetchWithEngineFallback(
   // Limit chain length to prevent excessive fallback attempts
   const maxChainLen = 3;
   if (chain.length > maxChainLen) {
-    console.log(`[EngineFallback] Chain truncated from ${chain.length} to ${maxChainLen} engines`);
+    log.info(` Chain truncated from ${chain.length} to ${maxChainLen} engines`);
   }
   const truncatedChain = chain.slice(0, maxChainLen);
 
@@ -853,7 +854,7 @@ export async function fetchWithEngineFallback(
 
       // Log fallback if we didn't use the primary engine
       if (i > 0) {
-        console.log(`[EngineFallback] Success with ${engineType} on attempt ${i + 1} for ${url} (primary was ${primaryEngine})`);
+        log.info(` Success with ${engineType} on attempt ${i + 1} for ${url} (primary was ${primaryEngine})`);
       }
 
       return { ...result, effectiveEngine: engineType };
@@ -1238,11 +1239,11 @@ async function getPlaywrightBrowser(): Promise<import("playwright").Browser> {
           "--disable-blink-features=AutomationControlled",
         ],
       });
-      console.log("[Playwright] Browser launched successfully");
+      log.info(" Browser launched successfully");
 
       // Handle browser close
       browser.on("disconnected", () => {
-        console.log("[Playwright] Browser disconnected");
+        log.info(" Browser disconnected");
         playwrightBrowser = null;
         playwrightLaunchPromise = null;
       });
@@ -1340,7 +1341,7 @@ class PlaywrightEngine implements ScrapingEngine {
         if (pwProxy) {
           contextOptions.proxy = { server: pwProxy.url };
           if (process.env.DEBUG === 'true') {
-            console.log(`[Playwright] Using proxy ${pwProxy.url} for ${pwDomain}`);
+            log.info(` Using proxy ${pwProxy.url} for ${pwDomain}`);
           }
         }
         const context = await browser.newContext(contextOptions);
@@ -1405,7 +1406,7 @@ class PlaywrightEngine implements ScrapingEngine {
                   }
                   if (hasBotDetectionBehavioralPatterns(body)) {
                     if (process.env.DEBUG === 'true') {
-                      console.log(`[Playwright] Blocked bot-detection script (behavioral): ${routeUrl.slice(0, 120)}`);
+                      log.info(` Blocked bot-detection script (behavioral): ${routeUrl.slice(0, 120)}`);
                     }
                     await route.abort();
                     return;
@@ -1540,7 +1541,7 @@ class PlaywrightEngine implements ScrapingEngine {
               await new Promise((r) => setTimeout(r, 200 + Math.random() * 400));
             } catch {
               // Human behavior simulation failure is non-critical
-              console.log("[Playwright] Human behavior simulation failed, continuing with extraction");
+              log.info(" Human behavior simulation failed, continuing with extraction");
             }
           } else {
             // Simple scroll-to-bottom fallback
@@ -1669,7 +1670,7 @@ class PlaywrightEngine implements ScrapingEngine {
     if (playwrightBrowser?.isConnected()) {
       await playwrightBrowser.close().catch(() => {});
       playwrightBrowser = null;
-      console.log("[Playwright] Browser closed");
+      log.info(" Browser closed");
     }
   }
 }
@@ -2681,10 +2682,10 @@ class ObscuraEngine implements ScrapingEngine {
             "--disable-infobars",
           ],
         });
-        console.log("[Obscura] Stealth browser launched successfully");
+        log.info(" Stealth browser launched successfully");
 
         browser.on("disconnected", () => {
-          console.log("[Obscura] Browser disconnected");
+          log.info(" Browser disconnected");
           this.browser = null;
           this.launchPromise = null;
         });
@@ -2784,7 +2785,7 @@ class ObscuraEngine implements ScrapingEngine {
         if (proxy) {
           contextOptions.proxy = { server: proxy.url };
           if (process.env.DEBUG === 'true') {
-            console.log(`[Obscura] Using proxy ${proxy.url} for ${domain}`);
+            log.info(` Using proxy ${proxy.url} for ${domain}`);
           }
         }
 
@@ -2849,7 +2850,7 @@ class ObscuraEngine implements ScrapingEngine {
                   }
                   if (hasBotDetectionBehavioralPatterns(body)) {
                     if (process.env.DEBUG === 'true') {
-                      console.log(`[Obscura] Blocked bot-detection script (behavioral): ${routeUrl.slice(0, 120)}`);
+                      log.info(` Blocked bot-detection script (behavioral): ${routeUrl.slice(0, 120)}`);
                     }
                     await route.abort();
                     return;
@@ -2983,7 +2984,7 @@ class ObscuraEngine implements ScrapingEngine {
               await new Promise((r) => setTimeout(r, 200 + Math.random() * 400));
             } catch {
               // Human behavior simulation failure is non-critical; fall through to extraction
-              console.log("[Obscura] Human behavior simulation failed, continuing with extraction");
+              log.info(" Human behavior simulation failed, continuing with extraction");
             }
           } else {
             // Simple scroll-to-bottom fallback (original behavior)
@@ -3023,9 +3024,7 @@ class ObscuraEngine implements ScrapingEngine {
           } catch { /* ignore cookie extraction errors */ }
 
           if (process.env.DEBUG === 'true') {
-            console.log(
-              `[Obscura] Fetched ${finalUrl} (${html.length} bytes, status ${response.status()}, profile: ${profile.seed?.slice(0, 12) || 'unknown'}...)`
-            );
+            log.debug(`Fetched ${finalUrl} (${html.length} bytes, status ${response.status()}, profile: ${profile.seed?.slice(0, 12) || 'unknown'}...)`);
           }
 
           // CAPTCHA detection on fetched content
@@ -3119,7 +3118,7 @@ class ObscuraEngine implements ScrapingEngine {
       await this.browser.close().catch(() => {});
       this.browser = null;
       this.launchPromise = null;
-      console.log("[Obscura] Stealth browser closed");
+      log.info(" Stealth browser closed");
     }
   }
 }
@@ -3176,7 +3175,7 @@ export async function fetchWithInfiniteScroll(
   if (nonBrowserEngines.includes(engineType)) {
     // Prefer obscura for anti-fingerprint stealth, fallback to playwright
     browserEngine = engines.has('obscura') ? 'obscura' : 'playwright';
-    console.log(`[InfiniteScroll] Auto-upgraded engine: ${engineType} → ${browserEngine} (browser required for infinite scroll)`);
+    log.info(` Auto-upgraded engine: ${engineType} → ${browserEngine} (browser required for infinite scroll)`);
   } else {
     browserEngine = engineType;
   }
@@ -3270,7 +3269,7 @@ export async function fetchWithInfiniteScroll(
       const reqUrl = req.url();
       if (req.resourceType() === 'xhr' || req.resourceType() === 'fetch') {
         if (fetchedUrls.has(reqUrl)) {
-          console.log(`[InfiniteScroll] Duplicate request detected: ${reqUrl.slice(0, 100)}`);
+          log.info(` Duplicate request detected: ${reqUrl.slice(0, 100)}`);
         }
         fetchedUrls.add(reqUrl);
       }
@@ -3344,7 +3343,7 @@ export async function fetchWithInfiniteScroll(
     for (let cycle = 0; cycle < maxCycles; cycle++) {
       // Check abort before each cycle
       if (signal?.aborted) {
-        console.log(`[InfiniteScroll] Aborted at cycle ${cycle + 1}`);
+        log.info(` Aborted at cycle ${cycle + 1}`);
         break;
       }
 
@@ -3363,7 +3362,7 @@ export async function fetchWithInfiniteScroll(
           clickedButton = true;
           await abortableDelay(1500 + Math.random() * 1000, signal);
         } else {
-          console.log(`[InfiniteScroll] Load-more button not visible at cycle ${cycle + 1}, stopping`);
+          log.info(` Load-more button not visible at cycle ${cycle + 1}, stopping`);
           break;
         }
       } else {
@@ -3372,7 +3371,7 @@ export async function fetchWithInfiniteScroll(
           const autoBtn = page.locator(autoLoadMoreSelector).first();
           const autoBtnVisible = await autoBtn.isVisible().catch(() => false);
           if (autoBtnVisible) {
-            console.log(`[InfiniteScroll] Auto-detected load-more button at cycle ${cycle + 1}, clicking`);
+            log.info(` Auto-detected load-more button at cycle ${cycle + 1}, clicking`);
             await autoBtn.click().catch(() => {});
             clickedButton = true;
             await abortableDelay(1500 + Math.random() * 1000, signal);
@@ -3401,7 +3400,7 @@ export async function fetchWithInfiniteScroll(
       if (scrollPercent === lastScrollPercent && scrollPercent < 100) {
         stuckCount++;
         if (stuckCount >= 3) {
-          console.log(`[InfiniteScroll] Stuck at ${scrollPercent}% for 3+ scrolls, stopping`);
+          log.info(` Stuck at ${scrollPercent}% for 3+ scrolls, stopping`);
           break;
         }
       } else {
@@ -3411,7 +3410,7 @@ export async function fetchWithInfiniteScroll(
 
       // Log progress periodically (every 25%)
       if (scrollPercent >= lastLoggedPercent + 25 || scrollPercent === 100) {
-        console.log(`[InfiniteScroll] Scroll progress: ${scrollPercent}%`);
+        log.info(` Scroll progress: ${scrollPercent}%`);
         lastLoggedPercent = Math.floor(scrollPercent / 25) * 25;
       }
 
@@ -3424,17 +3423,17 @@ export async function fetchWithInfiniteScroll(
       if (contentLength <= lastContentLength) {
         consecutiveNoGrowth++;
         if (consecutiveNoGrowth >= 2) {
-          console.log(`[InfiniteScroll] No new content for ${consecutiveNoGrowth} consecutive cycles (${contentLength} chars), stopping`);
+          log.info(` No new content for ${consecutiveNoGrowth} consecutive cycles (${contentLength} chars), stopping`);
           break;
         }
-        console.log(`[InfiniteScroll] No new content at cycle ${cycle + 1} (${contentLength} chars), attempt ${consecutiveNoGrowth}/2`);
+        log.info(` No new content at cycle ${cycle + 1} (${contentLength} chars), attempt ${consecutiveNoGrowth}/2`);
       } else {
         consecutiveNoGrowth = 0;
       }
 
       lastContentLength = contentLength;
       cyclesCompleted++;
-      console.log(`[InfiniteScroll] Cycle ${cycle + 1}: content grew to ${contentLength} chars`);
+      log.info(` Cycle ${cycle + 1}: content grew to ${contentLength} chars`);
     }
 
     const html = await page.content();
@@ -3740,7 +3739,7 @@ class ApiEngine implements ScrapingEngine {
             Object.assign(fetchOptions, init);
           }
 
-          console.log(`[ApiEngine] GET ${fetchUrl}`);
+          log.info(` GET ${fetchUrl}`);
           const response = await fetch(fetchUrl, fetchOptions);
           const text = await readTextWithLimit(response, MAX_RESPONSE_SIZE);
 
@@ -3878,7 +3877,7 @@ export function initEngines(): void {
   registerEngine(new ObscuraEngine());
   registerEngine(new ApiEngine());
 
-  console.log(`[Engines] Available: ${getEngineNames().join(", ")}`);
+  log.info(` Available: ${getEngineNames().join(", ")}`);
 
   // Note: Playwright is lazy-loaded on first use (saves 200-500MB memory)
   // Previous pre-warm behavior removed to reduce idle memory consumption
@@ -3902,8 +3901,8 @@ export async function closeAllEngines(): Promise<void> {
     try { _cheerioAgent.close(); } catch { /* already closed */ }
     _cheerioAgent = null;
     _cheerioAgentPromise = null; // Also clear the promise to prevent returning closed agent
-    console.log('[Engines] HTTP connection pool closed');
+    log.info(' HTTP connection pool closed');
   }
   engines.clear();
-  console.log("[Engines] All engines closed");
+  log.info("All engines closed");
 }

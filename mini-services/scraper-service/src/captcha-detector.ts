@@ -463,7 +463,7 @@ export function recordCaptchaEncounter(domain: string, type: CaptchaDetection['t
   const recentCount = getRecentCaptchaCount(domain);
   if (recentCount >= CAPTCHA_THRESHOLD_PER_HOUR && !state.engineUpgradeRecommended) {
     state.engineUpgradeRecommended = true;
-    console.log(`[CaptchaDetector] ${domain}: ${recentCount} CAPTCHAs in last hour — engine upgrade recommended`);
+    log.info(` ${domain}: ${recentCount} CAPTCHAs in last hour — engine upgrade recommended`);
   }
 }
 

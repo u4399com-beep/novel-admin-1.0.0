@@ -23,6 +23,12 @@ import { detectCaptcha, CAPTCHA_TYPE_LABELS } from "./captcha-detector";
 import type { CaptchaDetection } from "./captcha-detector";
 import { autoHandleCaptcha } from "./captcha-strategy";
 import { qualityScorer } from "./quality-scorer";
+import { contentDeduplicator } from "./content-dedup";
+import { pipelineMetrics } from "./pipeline-metrics";
+import { adaptiveEngineSelector } from "./adaptive-engine";
+import { logger } from "./logger";
+
+const log = logger.child("TaskEngine");
 
 // ==================== WebSocket Log Streaming ====================
 
@@ -388,7 +394,7 @@ function determineEngine(rule: ScrapeRule, antiCrawlConfig: AntiCrawl): EngineTy
  * Execute a full scraping task - main orchestration function.
  */
 export async function executeTask(taskId: string) {
-  console.log(`[Task ${taskId}] Starting task execution`);
+  log.info(`Starting task execution`);
 
   // AbortController for task cancellation (timeout/cancel/shutdown)
   const abortController = new AbortController();
@@ -417,7 +423,7 @@ export async function executeTask(taskId: string) {
       const { data: fullRule, status: ruleStatus } = await apiCall("GET", `/api/scrape-rules/${rule.id}`);
       if (ruleStatus === 200 && fullRule && typeof fullRule === 'object') {
         Object.assign(rule, fullRule);
-        console.log(`[Task ${taskId}] Merged full rule config from /api/scrape-rules/${rule.id}`);
+        log.info(`Merged full rule config from /api/scrape-rules/${rule.id}`);
       }
     } catch (err) {
       console.warn(`[Task ${taskId}] Could not fetch full rule ${rule.id} (continuing with task payload):`, err instanceof Error ? err.message : err);
@@ -429,7 +435,7 @@ export async function executeTask(taskId: string) {
     const override = String((task as Record<string, unknown>).listUrlOverride);
     if (override) {
       (rule as Record<string, unknown>).listUrl = override;
-      console.log(`[Task ${taskId}] Using listUrlOverride: ${override}`);
+      log.info(`Using listUrlOverride: ${override}`);
     }
   }
 
@@ -459,7 +465,7 @@ export async function executeTask(taskId: string) {
 
   // Determine engine
   const engineType = determineEngine(rule, antiCrawlConfig);
-  console.log(`[Task ${taskId}] Engine: ${engineType}, Rule: ${rule.name}, Mode: ${task.mode || rule.scrapeMode}`);
+  log.info(`Engine: ${engineType}, Rule: ${rule.name}, Mode: ${task.mode || rule.scrapeMode}`);
 
   // Clear any previous queue data for this task
   await clearTaskQueue(taskId);
@@ -614,7 +620,7 @@ async function executeTaskBody(
   });
 
   const bookUrls = listResult.urls;
-  console.log(`[Task ${taskId}] Found ${bookUrls.length} book URLs`);
+  log.info(`Found ${bookUrls.length} book URLs`);
 
   await addTaskLog(taskId, "success", `列表页采集完成，共发现 ${bookUrls.length} 本书 [引擎: ${listResult.engine}]`);
 
@@ -662,7 +668,7 @@ async function executeTaskBody(
 
   async function processBook(bookUrl: string, index: number): Promise<void> {
     try {
-      console.log(`[Task ${taskId}] Processing book ${index + 1}/${bookUrls.length}: ${bookUrl}`);
+      log.info(`Processing book ${index + 1}/${bookUrls.length}: ${bookUrl}`);
 
       if (antiCrawlConfig.delay) {
         await getAdaptiveOrRandomDelay(bookUrl, antiCrawlConfig.delay[0], antiCrawlConfig.delay[1], abortSignal);
@@ -687,7 +693,7 @@ async function executeTaskBody(
       });
 
       if (!bookInfo.title) {
-        console.log(`[Task ${taskId}] Book at ${bookUrl} has no title, skipping`);
+        log.info(`Book at ${bookUrl} has no title, skipping`);
         skippedBooksCount.increment();
         await addTaskLog(taskId, "warn", `跳过无标题书籍: ${bookUrl}`, bookUrl);
         // No queue item to mark failed since we don't have a queue ID for the book URL
@@ -919,7 +925,7 @@ async function executeTaskBody(
 
   await processAllBooks();
 
-  console.log(`[Task ${taskId}] Books processed: ${booksProcessed.length} (new: ${newBooksCount.value}, skipped: ${skippedBooksCount.value}, failed: ${failedItemsCount.value})`);
+  log.info(`Books processed: ${booksProcessed.length} (new: ${newBooksCount.value}, skipped: ${skippedBooksCount.value}, failed: ${failedItemsCount.value})`);
   await addTaskLog(taskId, "success", `书籍信息采集完成: 新建 ${newBooksCount.value}, 跳过 ${skippedBooksCount.value}, 失败 ${failedItemsCount.value}`);
 
   if (booksProcessed.length === 0) {
@@ -949,7 +955,7 @@ async function executeTaskBody(
     const book = booksProcessed[bookIdx];
     const bookProgress = 20 + (bookIdx / booksProcessed.length) * 30;
 
-    console.log(`[Task ${taskId}] Scraping chapters for: ${book.title} (${bookIdx + 1}/${booksProcessed.length})`);
+    log.info(`Scraping chapters for: ${book.title} (${bookIdx + 1}/${booksProcessed.length})`);
 
     await updateTaskProgress(taskId, {
       currentStep: `正在采集章节目录: ${book.title} (${bookIdx + 1}/${booksProcessed.length})...`,
@@ -989,7 +995,7 @@ async function executeTaskBody(
       // Record adaptive response for chapter list scrape
       recordAdaptiveResponse(chapterListUrl, Date.now() - chapterListStartTime, true);
 
-      console.log(`[Task ${taskId}] Found ${chapters.length} chapters for ${book.title}${titleDupCount ? ` (${titleDupCount} title dups removed)` : ""}`);
+      log.info(`Found ${chapters.length} chapters for ${book.title}${titleDupCount ? ` (${titleDupCount} title dups removed)` : ""}`);
 
       if (chapters.length === 0) {
         await addTaskLog(taskId, "warn", `未发现章节: ${book.title}`, chapterListUrl);
@@ -1083,11 +1089,24 @@ async function executeTaskBody(
           contentStartTime = Date.now();
           const _chapterEngine = getEffectiveEngine(chapter.url, engineType);
           const _chapterDomain = (() => { try { return new URL(chapter.url).hostname; } catch { return undefined; } })();
-          const fallbackChain = getFallbackChainForEngine(_chapterEngine, _chapterDomain);
+
+          // Consult adaptive engine selector for optimal engine choice
+          const adaptiveEngine = adaptiveEngineSelector.selectEngine(
+            _chapterDomain || '',
+            chapter.url,
+            antiCrawlConfig as Record<string, unknown>,
+            _chapterEngine,
+          );
+          const finalChapterEngine = adaptiveEngine !== _chapterEngine ? adaptiveEngine : _chapterEngine;
+          if (adaptiveEngine !== _chapterEngine) {
+            log.info(` ${_chapterDomain}: ${_chapterEngine} → ${adaptiveEngine} (adaptive selection)`);
+          }
+
+          const fallbackChain = getFallbackChainForEngine(finalChapterEngine, _chapterDomain);
           const enginesToTry = fallbackChain.slice(0, MAX_ENGINE_RETRIES);
 
           let contentResult: Awaited<ReturnType<typeof handleScrapeContent>>;
-          let contentEngineUsed: EngineType = _chapterEngine;
+          let contentEngineUsed: EngineType = finalChapterEngine;
           let chainSuccess = false;
           const chainFailures: Array<{ engine: EngineType; reason: string }> = [];
 
@@ -1109,7 +1128,7 @@ async function executeTaskBody(
               chainSuccess = true;
               // Log fallback if we used a different engine
               if (tryEngine !== _chapterEngine) {
-                console.log(`[EngineChain] Chapter fallback success: ${_chapterEngine} → ${tryEngine} for ${chapter.url}`);
+                log.info(` Chapter fallback success: ${_chapterEngine} → ${tryEngine} for ${chapter.url}`);
               }
               break;
             } catch (contentErr) {
@@ -1219,6 +1238,24 @@ async function executeTaskBody(
               consecutiveCaptchaCounts.set(chDomain, 0);
             }
 
+            // Record CAPTCHA in pipeline metrics and adaptive engine selector
+            pipelineMetrics.recordEvent({
+              domain: chDomain,
+              success: false,
+              responseTime: Date.now() - contentStartTime,
+              hadCaptcha: true,
+              proxyRotated: false,
+              engine: effectiveEngine,
+              statusCode: 403,
+            });
+            adaptiveEngineSelector.recordEngineResult(
+              chDomain,
+              effectiveEngine,
+              false,
+              Date.now() - contentStartTime,
+              true,
+            );
+
             skippedChaptersCount.increment();
             return;
           } else {
@@ -1249,10 +1286,42 @@ async function executeTaskBody(
           }
 
           if (!chapterContent.trim()) {
-            console.log(`[Task ${taskId}] Empty content for chapter: ${chapterTitle}`);
+            log.info(`Empty content for chapter: ${chapterTitle}`);
             skippedChaptersCount.increment();
             return;
           }
+
+          // Content deduplication check — skip if we've already scraped this exact content
+          const isDup = contentDeduplicator.checkAndRecord(
+            chapter.url,
+            chapterContent,
+            { domain: chDomain, contentLength: chapterContent.length, wordCount: chapterWordCount },
+          );
+          if (isDup) {
+            log.info(`Duplicate content for chapter: ${chapterTitle}, skipping save`);
+            skippedChaptersCount.increment();
+            return;
+          }
+
+          // Record engine performance for adaptive selection
+          adaptiveEngineSelector.recordEngineResult(
+            chDomain,
+            effectiveEngine,
+            true,
+            Date.now() - contentStartTime,
+            false,
+          );
+
+          // Record pipeline metrics
+          pipelineMetrics.recordEvent({
+            domain: chDomain,
+            success: true,
+            responseTime: Date.now() - contentStartTime,
+            hadCaptcha: false,
+            proxyRotated: false,
+            engine: effectiveEngine,
+            statusCode: 200,
+          });
 
           // Create chapter via API
           let chStatus: number;
@@ -1324,7 +1393,7 @@ async function executeTaskBody(
 
       // --- Failed chapter recovery phase ---
       if (failedChapters.length > 0 && !abortController.signal.aborted) {
-        console.log(`[Task ${taskId}] Retrying ${failedChapters.length} failed chapters for ${book.title}...`);
+        log.info(`Retrying ${failedChapters.length} failed chapters for ${book.title}...`);
         streamLogToWS(taskId, "info", `Retrying ${failedChapters.length} failed chapters...`);
 
         try {
@@ -1372,7 +1441,7 @@ async function executeTaskBody(
         currentStep: `已完成 ${book.title} (${chapters.length} 章)`,
       });
 
-      console.log(`[Task ${taskId}] Completed ${book.title}: ${chapters.length} chapters`);
+      log.info(`Completed ${book.title}: ${chapters.length} chapters`);
       await addTaskLog(taskId, "success", `完成采集 ${book.title}: 共 ${chapters.length} 章`, book.url);
     } catch (err) {
       console.error(`[Task ${taskId}] Error processing chapters for ${book.title}:`, err);
@@ -1418,7 +1487,7 @@ async function executeTaskBody(
     console.error(`[Task ${taskId}] Failed to write final task log (non-critical):`, err);
   }
 
-  console.log(`[Task ${taskId}] Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
+  log.info(`Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
 
   return {
     success: true,
@@ -1781,9 +1850,7 @@ export function sortChaptersVolumeAware<T extends SortableChapter>(
 
   if (!volumeMode) {
     if (volumeFirstSeen.size > 0) {
-      console.log(
-        `[ResortChapters] Volume data ambiguous (${volumeFirstSeen.size} volume group(s) mixed with un-prefixed chapters) — keeping original order`
-      );
+      log.info(`Volume data ambiguous (${volumeFirstSeen.size} volume group(s) mixed with un-prefixed chapters) — keeping original order`);
     }
     // No usable volume prefixes — fall back to simple sequential renumbering
     return enriched;
@@ -1848,9 +1915,7 @@ export function sortChaptersVolumeAware<T extends SortableChapter>(
     .slice(0, 8)
     .map((v) => v.prefix)
     .join(", ");
-  console.log(
-    `[ResortChapters] Volume-aware: ${volumeEntries.length} volumes ordered as [${volumeSummary}${volumeEntries.length > 8 ? ", ..." : ""}], re-ordered ${sortedChapters.length} chapters`
-  );
+  log.info(`Volume-aware: ${volumeEntries.length} volumes ordered as [${volumeSummary}${volumeEntries.length > 8 ? ", ..." : ""}], re-ordered ${sortedChapters.length} chapters`);
 
   return sortedChapters;
 }
@@ -1903,7 +1968,7 @@ export async function resortChapters(
     );
 
     if (patchStatus === 200 || patchStatus === 204) {
-      console.log(`[ResortChapters] Re-ordered ${chapters.length} chapters for novel ${novelId}`);
+      log.info(`Re-ordered ${chapters.length} chapters for novel ${novelId}`);
       return true;
     }
 
@@ -1968,7 +2033,7 @@ export async function detectStuckTasks(): Promise<number> {
           completedAt: new Date().toISOString(),
         });
         detected++;
-        console.log(`[StuckDetection] Marked task ${task.id} as failed: ${reason}`);
+        log.warn(`StuckDetection: Marked task ${task.id} as failed: ${reason}`);
       }
     }
 

@@ -71,24 +71,6 @@
     "maxPage": 1
   },
   "antiCrawlConfig": {
-    "useJsRender": true,
-    "uaRotation": true,
-    "delay": [
-      3000,
-      5000
-    ],
-    "humanBehavior": true,
-    "retries": 5,
-    "referer": "https://www.daweixs.com/",
-    "cookieHandling": {
-      "waitForCookie": true,
-      "cookieName": "server_name_session",
-      "maxRedirects": 3
-    },
-    "stealthOptions": {
-      "blockResources": true,
-      "emulateDevice": "desktop"
-    },
     "stealthMode": "full",
     "rotateUA": true,
     "rotateProxy": true,
@@ -161,8 +143,8 @@
   "filePath": null,
   "coverSavePath": "/app/public/covers/daweixs/",
   "threadCount": 1,
-  "minDelay": 4000,
-  "maxDelay": 8000,
+  "minDelay": 3000,
+  "maxDelay": 6000,
   "enableShuffle": true,
   "dedupMode": "both",
   "meta": {
@@ -187,5 +169,12 @@
       "optimalRPM": 8,
       "calibratedAt": "2026-09-05T12:14:11.040Z"
     }
+  },
+  "calibration": {
+    "tier": 3,
+    "tierLabel": "HARD",
+    "optimalRPM": 8,
+    "notes": "403 on both pages - needs browser/obscura engine",
+    "calibratedAt": "2026-09-05T14:06:10.352192"
   }
 }

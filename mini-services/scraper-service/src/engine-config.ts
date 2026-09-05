@@ -10,6 +10,9 @@
  *   6. Content-length based engine hint (low-content → skip cheerio)
  */
 
+import { logger } from './logger';
+const log = logger.child('EngineConfig');
+
 import { existsSync, statSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import type { EngineType } from './types';
@@ -404,7 +407,7 @@ export function recordCaptchaUpgrade(domain: string, failedEngine: EngineType): 
   }
 
   captchaUpgradeMap.set(normalized, { engine: upgradedEngine, timestamp: Date.now() });
-  console.log(`[engine-config] CAPTCHA upgrade: ${normalized} → ${upgradedEngine} (from ${failedEngine})`);
+  log.info(`engine-config] CAPTCHA upgrade: ${normalized} → ${upgradedEngine} (from ${failedEngine})`);
   return upgradedEngine;
 }
 
@@ -476,7 +479,7 @@ export function recordLowContentHint(domain: string, contentLength: number): voi
   }
 
   lowContentDomains.set(normalized, Date.now());
-  console.log(`[engine-config] Low-content hint: ${normalized} (${contentLength} chars < ${LOW_CONTENT_THRESHOLD}), will skip cheerio`);
+  log.info(`engine-config] Low-content hint: ${normalized} (${contentLength} chars < ${LOW_CONTENT_THRESHOLD}), will skip cheerio`);
 }
 
 /**
