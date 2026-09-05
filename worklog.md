@@ -25539,3 +25539,26 @@ Stage Summary:
 - 新功能：5个（横幅动画、热门标识、滚动进度、回到顶部、部署v5）
 - 样式优化：7个CSS增强
 - OOM问题：服务器3.9GB内存，Turbopack编译偶尔触发OOM killer
+
+---
+Task ID: 3
+Agent: Main Orchestrator
+Task: 诊断预览问题 + 修复OOM + 确保服务器可用
+
+Work Log:
+- 诊断发现：dev server使用webpack编译时OOM（max-old-space-size=500不够）
+- 切换到Turbopack（next dev不带--webpack），内存占用显著降低
+- Turbopack dev server可稳定服务首页请求（86KB HTML，3s编译）
+- 但浏览器打开页面时触发多个并发编译导致OOM
+- 执行production build成功（7分钟编译）
+- standalone production server仅用226MB内存，非常稳定
+- 添加dev:prod脚本（package.json），用于低内存环境启动
+- 直接curl测试确认：页面渲染正确，新功能（ScrollProgress、回到顶部）均存在
+- 根本原因：4GB RAM服务器 + 121个API路由 + 浏览器并发请求 = 编译期内存峰值触发OOM killer
+
+Stage Summary:
+- package.json: 添加"dev:prod"脚本，使用standalone production server
+- dev脚本: 从--webpack切换到Turbopack（更低内存）
+- Production build: .next/standalone/ 已构建可用
+- 代码正确性: lint 0 errors，HTML渲染正确
+- 环境限制: OOM killer在并发编译时触发，建议使用生产模式或增加内存
