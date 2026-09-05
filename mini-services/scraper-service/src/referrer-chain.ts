@@ -230,6 +230,158 @@ class ReferrerChain {
 // Singleton export
 export const referrerChain = new ReferrerChain();
 
+// ==================== Search Engine Referrer Simulation ====================
+
+/**
+ * Search engine referrer simulation.
+ *
+ * Generates realistic Google/Bing/Baidu referrer URLs as if the user
+ * clicked a search result to reach the target page. This makes requests
+ * appear more natural since many real visitors arrive from search engines.
+ *
+ * Distribution: 30% search referrer, 40% internal referrer, 30% direct
+ */
+
+/** Search engines for referrer simulation */
+const SEARCH_ENGINES = ['google', 'bing', 'baidu'] as const;
+type SearchEngine = typeof SEARCH_ENGINES[number];
+
+/** Common search query terms for novel sites */
+const NOVEL_SEARCH_TERMS = [
+  '小说', '最新章节', '全文阅读', '免费阅读', '小说在线',
+  'novel', 'read online', 'latest chapter', 'free reading',
+  '书库', '排行榜', '完结小说', '热门小说',
+];
+
+/**
+ * Detect if a domain is likely Chinese (for Baidu preference).
+ */
+function isChineseDomain(domain: string): boolean {
+  return domain.endsWith('.cn') || domain.endsWith('.com.cn') ||
+    domain.endsWith('.net.cn') || domain.includes('biqu') ||
+    domain.includes('xs') || domain.includes('shu') ||
+    domain.includes('du') || domain.includes('kan');
+}
+
+/**
+ * Generate a search engine referrer URL with realistic query parameters.
+ *
+ * @param engine - Which search engine to simulate
+ * @param domain - Target domain (used to generate realistic query)
+ * @param url - Target URL (used for Google's cd parameter)
+ * @returns The search engine referrer URL
+ */
+function buildSearchReferrer(engine: SearchEngine, domain: string, url: string): string {
+  const query = NOVEL_SEARCH_TERMS[Math.floor(Math.random() * NOVEL_SEARCH_TERMS.length)];
+  const encodedQuery = encodeURIComponent(query + ' ' + domain.replace(/^www\./, ''));
+
+  switch (engine) {
+    case 'google': {
+      // Google referrer format with realistic parameters
+      const params = new URLSearchParams();
+      params.set('q', query + ' ' + domain.replace(/^www\./, ''));
+      params.set('oq', query + ' ' + domain.replace(/^www\./, ''));
+      params.set('aqs', `chrome.${Math.floor(Math.random() * 3)}.${Math.floor(Math.random() * 69) + 1}j0.${Math.floor(Math.random() * 7)}`);
+      params.set('sourceid', 'chrome');
+      params.set('ie', 'UTF-8');
+      // Google uses different TLDs; use .com for most, .com.hk for Chinese
+      const tld = isChineseDomain(domain) ? '.com.hk' : '.com';
+      return `https://www.google${tld}/search?${params.toString()}`;
+    }
+
+    case 'bing': {
+      // Bing referrer format
+      const params = new URLSearchParams();
+      params.set('q', query + ' ' + domain.replace(/^www\./, ''));
+      params.set('form', ['QBLH', 'QBRE', 'QBTM'][Math.floor(Math.random() * 3)]);
+      params.set('pq', query);
+      return `https://www.bing.com/search?${params.toString()}`;
+    }
+
+    case 'baidu': {
+      // Baidu referrer format (for Chinese sites)
+      const params = new URLSearchParams();
+      params.set('wd', query + ' ' + domain.replace(/^www\./, ''));
+      params.set('rsv_spt', String(Math.floor(Math.random() * 3) + 1));
+      params.set('rsv_iqid', Math.random().toString(36).substring(2, 18));
+      params.set('issp', '1');
+      params.set('f', ['8', '3', '1'][Math.floor(Math.random() * 3)]);
+      params.set('rsv_bp', '1');
+      params.set('rsv_idx', String(Math.floor(Math.random() * 3)));
+      params.set('ie', 'utf-8');
+      return `https://www.baidu.com/s?${params.toString()}`;
+    }
+  }
+}
+
+/**
+ * Referrer source type for the simulated referrer.
+ */
+export type ReferrerSource = 'search' | 'internal' | 'direct';
+
+/**
+ * Simulate a search engine referrer for a URL.
+ *
+ * Generates a realistic Google/Bing/Baidu referrer as if the user
+ * clicked a search result to reach the target page.
+ *
+ * @param domain - Target domain
+ * @param url - Target URL
+ * @returns Object with the referrer URL and source type, or direct (no referrer)
+ */
+export function simulateSearchReferrer(domain: string, url: string): {
+  referrer: string | undefined;
+  source: ReferrerSource;
+} {
+  // Random distribution: 30% search, 40% internal, 30% direct
+  const roll = Math.random();
+
+  if (roll < 0.30) {
+    // Search engine referrer
+    let engine: SearchEngine;
+    if (isChineseDomain(domain)) {
+      // For Chinese domains: 60% Baidu, 25% Google, 15% Bing
+      const eRoll = Math.random();
+      engine = eRoll < 0.60 ? 'baidu' : eRoll < 0.85 ? 'google' : 'bing';
+    } else {
+      // For non-Chinese domains: 70% Google, 25% Bing, 5% Baidu
+      const eRoll = Math.random();
+      engine = eRoll < 0.70 ? 'google' : eRoll < 0.95 ? 'bing' : 'baidu';
+    }
+    return {
+      referrer: buildSearchReferrer(engine, domain, url),
+      source: 'search',
+    };
+  } else if (roll < 0.70) {
+    // Internal referrer (from existing navigation history)
+    const internalRef = referrerChain.getReferer(url);
+    return {
+      referrer: internalRef,
+      source: 'internal',
+    };
+  } else {
+    // Direct (no referrer — like typing URL directly)
+    return {
+      referrer: undefined,
+      source: 'direct',
+    };
+  }
+}
+
+/**
+ * Get an enhanced referrer for a URL, combining search simulation
+ * with internal navigation history. This is the main entry point
+ * for the scraping pipeline.
+ *
+ * @param domain - Target domain
+ * @param url - Target URL
+ * @returns The best referrer to use, or undefined for direct
+ */
+export function getEnhancedReferrer(domain: string, url: string): string | undefined {
+  const { referrer } = simulateSearchReferrer(domain, url);
+  return referrer;
+}
+
 // ==================== Referrer Policy Compliance ====================
 
 /**

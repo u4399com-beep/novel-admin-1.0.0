@@ -2,88 +2,158 @@
   "name": "久久小说下载网 (aijjxs.com)",
   "description": "久久小说下载网全站采集。TXT电子书下载站，UTF-8编码，cheerio引擎。分类页/txt/{cat}/用div.listbg列表，书名span.title a链接、作者/状态/大小在span.mainGreen中。书详情页/txt/{id}.html标题从<title>标签正则提取（去掉txt下载后缀）、分类从div.kv正则提取（去掉标签前缀）、.intro-panel .desc简介、封面从首个article.panel取img。分页用a[href*=index_]数字翻页。15个分类映射，封面域名image.jjjjxsw.com。",
   "enabled": true,
-
   "listUrl": "https://www.aijjxs.com/txt/{catId}/",
-  "listSelector": { "type": "css", "value": ".catalog .listbg span.title a" },
-  "listPagination": { "type": "page", "selector": "a[href*=\"index_\"]", "maxPage": 500 },
-
-  "bookTitleSelector": { "type": "regex", "value": "(?<=<title>)\\s*?([^\\s<][^<]*?)\\s*?(?=(?:txt下载|TXT下载))" },
-  "bookAuthorSelector": { "type": "css", "value": ".kv p:first-child a" },
-  "bookCategorySelector": { "type": "regex", "value": "(?<=书籍分类[：:]\\s*)\\S+" },
+  "listSelector": {
+    "type": "css",
+    "value": ".catalog .listbg span.title a"
+  },
+  "listPagination": {
+    "type": "page",
+    "selector": "a[href*=\"index_\"]",
+    "maxPage": 500
+  },
+  "bookTitleSelector": {
+    "type": "regex",
+    "value": "(?<=<title>)\\s*?([^\\s<][^<]*?)\\s*?(?=(?:txt下载|TXT下载))"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": ".kv p:first-child a"
+  },
+  "bookCategorySelector": {
+    "type": "regex",
+    "value": "(?<=书籍分类[：:]\\s*)\\S+"
+  },
   "bookKeywordsSelector": null,
-  "bookDescriptionSelector": { "type": "css", "value": ".intro-panel .desc" },
-  "bookCoverSelector": { "type": "css", "value": "article.panel:first-of-type img[src]", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": "span.sfwj" },
-
+  "bookDescriptionSelector": {
+    "type": "css",
+    "value": ".intro-panel .desc"
+  },
+  "bookCoverSelector": {
+    "type": "css",
+    "value": "article.panel:first-of-type img[src]",
+    "extract": "src"
+  },
+  "bookStatusSelector": {
+    "type": "css",
+    "value": "span.sfwj"
+  },
   "chapterListUrl": null,
   "chapterListSelector": null,
   "chapterTitleSelector": null,
   "chapterLinkSelector": null,
   "chapterPagination": null,
-
-  "contentTitleSelector": { "type": "css", "value": "h1" },
-  "contentSelector": { "type": "css", "value": ".read-content, #content, .content" },
-  "contentPagination": { "type": "next", "selector": "a:contains(下一页), a:contains(下一章)", "maxPage": 1 },
-
+  "contentTitleSelector": {
+    "type": "css",
+    "value": "h1"
+  },
+  "contentSelector": {
+    "type": "css",
+    "value": ".read-content, #content, .content"
+  },
+  "contentPagination": {
+    "type": "next",
+    "selector": "a:contains(下一页), a:contains(下一章)",
+    "maxPage": 1
+  },
   "antiCrawlConfig": {
     "useJsRender": false,
     "uaRotation": true,
-    "delay": [2000, 6000],
+    "delay": [
+      2000,
+      6000
+    ],
     "humanBehavior": false,
     "retries": 3,
-    "referer": "https://www.aijjxs.com/"
+    "referer": "https://www.aijjxs.com/",
+    "stealthMode": "basic",
+    "rotateUA": true,
+    "delayJitter": 0.3
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", ".ads", ".advertisement",
-      ".chapter-nav", ".footer", ".header", ".top-float",
-      ".recommend", ".related", ".panel:last-child",
-      ".top-links", ".search-box", ".breadcrumb",
-      "#ad", "[id^=\"div-gpt-ad\"]",
+      ".ad",
+      ".ads",
+      ".advertisement",
+      ".chapter-nav",
+      ".footer",
+      ".header",
+      ".top-float",
+      ".recommend",
+      ".related",
+      ".panel:last-child",
+      ".top-links",
+      ".search-box",
+      ".breadcrumb",
+      "#ad",
+      "[id^=\"div-gpt-ad\"]",
       "ins.adsbygoogle",
-      ".tips", ".download-btn",
-      ".book.grid2", ".guess-like",
-      ".page", ".pagination"
+      ".tips",
+      ".download-btn",
+      ".book.grid2",
+      ".guess-like",
+      ".page",
+      ".pagination"
     ],
     "adPatterns": [
-      "aijjxs", "aijjxs.com", "久久小说",
-      "久久小说网", "久久小说下载",
-      "TXT下载", "txt下载", "电子书下载",
-      "请记住本书", "手机用户请浏览",
-      "本章未完", "最快更新",
-      "本章最新章节", "请访问",
-      "如果您喜欢", "分享到",
-      "扫码关注", "微信公众号",
-      "关注公众号", "关注我们",
-      "TXT下载", "全本下载",
-      "返回目录", "章节列表",
-      "推荐本书", "打赏",
-      "本章完", "本章结束",
-      "完结感言", "在线听书",
-      "热门推荐", "内容有问题",
-      "无弹窗小说", "无弹窗阅读",
-      "加入书签", "邮件反馈",
-      "最新章节", "正在手打中",
-      "网友上传", "文学网",
-      "下载地址", "在线阅读全文",
-      "只有会员", "不想注册"
+      "aijjxs",
+      "aijjxs.com",
+      "久久小说",
+      "久久小说网",
+      "久久小说下载",
+      "TXT下载",
+      "txt下载",
+      "电子书下载",
+      "请记住本书",
+      "手机用户请浏览",
+      "本章未完",
+      "最快更新",
+      "本章最新章节",
+      "请访问",
+      "如果您喜欢",
+      "分享到",
+      "扫码关注",
+      "微信公众号",
+      "关注公众号",
+      "关注我们",
+      "TXT下载",
+      "全本下载",
+      "返回目录",
+      "章节列表",
+      "推荐本书",
+      "打赏",
+      "本章完",
+      "本章结束",
+      "完结感言",
+      "在线听书",
+      "热门推荐",
+      "内容有问题",
+      "无弹窗小说",
+      "无弹窗阅读",
+      "加入书签",
+      "邮件反馈",
+      "最新章节",
+      "正在手打中",
+      "网友上传",
+      "文学网",
+      "下载地址",
+      "在线阅读全文",
+      "只有会员",
+      "不想注册"
     ]
   },
-
   "scrapeMode": "metadata",
   "engine": "cheerio",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/aijjxs/",
-  "threadCount": 1,
-  "minDelay": 2000,
-  "maxDelay": 6000,
+  "threadCount": 4,
+  "minDelay": 1000,
+  "maxDelay": 2000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "www.aijjxs.com",
@@ -152,6 +222,12 @@
       "qingchun": "cmsbmowix0005q9wib1vpm9b8",
       "tongren": "cmsbmowj2000bq9wi3ztdtyub",
       "guanchang": "cmsbmowj2000cq9wi1qvgsq8l"
+    },
+    "rateCalibration": {
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "optimalRPM": 30,
+      "calibratedAt": "2026-09-05T12:14:11.039Z"
     }
   }
 }

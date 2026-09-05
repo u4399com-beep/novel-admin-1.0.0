@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { safeJson, sanitizeField, isPrismaError, apiError, safeJsonStringify } from '@/lib/api-utils';
+import { safeJson, sanitizeField, isPrismaError, apiError, apiDeleted, safeJsonStringify } from '@/lib/api-utils';
 import { NextResponse, NextRequest } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { getOrFail, NotFoundError } from '@/lib/crud-helpers';
@@ -225,7 +225,7 @@ export const DELETE = withAuth(async function DELETE(
     const { id } = await params;
     await getOrFail(db.scrapeRule, { id }, '采集规则不存在');
     await db.scrapeRule.delete({ where: { id } });
-    return NextResponse.json({ success: true });
+    return apiDeleted();
   } catch (error: unknown) {
     if (error instanceof NotFoundError) {
       return apiError(error.message, 404);

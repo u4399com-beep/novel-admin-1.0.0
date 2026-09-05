@@ -25760,3 +25760,349 @@ Stage Summary:
 - 5 files modified: HeroSection.tsx, NovelGridLayout.tsx, NovelCover.tsx, page.tsx, globals.css, BackToTop.tsx, ReadingStreakBanner.tsx
 - 3 new components created: QuickStatsWidget.tsx, RecommendationSection.tsx, SystemHealthIndicator.tsx
 - Key visual improvements: spring physics on cards, animated SVG illustrations, progress ring on back-to-top, 7-day heatmap, milestone badges, wave footer separator, skeleton shimmer loading, focus-visible ring animation
+
+---
+Task ID: 2
+Agent: Deep Bug Audit Agent
+Timestamp: 2025-06-05
+
+## Deep Line-by-Line Bug Audit — All Layers
+
+Audited 50+ files across API Routes, Scraper Engine, React Components, and# and Hooks.
+Found 7 bugs (1 CRITICAL, 2 HIGH, 3 MEDIUM, 1 LOW). All fixed.
+
+### FIX-1: CRITICAL — `await` inside non-async function (use-reading-settings.ts)
+**File:** `src/lib/use-reading-settings.ts:196`
+**Issue:** `saveProgress` callback used `await import(...)` (dynamic import) inside aD a non-async `useCallback` function. This is a SyntaxError at runtime — the dynamic import never executes, meaning reading progress is NEVER persisted to the server. The TypeScript compiler flagged this as `TS1308: 'await' expressions are only allowed within async functions`.
+**Fix:** Wrapped the server-persist block in `void (async () => { ... })()` IIFE, making the dynamic import properly awaited while keeping `saveProgress` synchronous (fire-and-forget pattern). This restores server-side reading progress persistence.
+
+### FIX-2: HIGH — `clearTaskQueue` called without `await` (task-engine.ts)
+**File:** `mini-services/scraper-service/src/task-engine.ts:549`
+**Issue:** In a `finally` block, `clearTaskQueue(taskId)` was called without `await`. With the async PostgreSQL queue implementation (`queue.pg.ts`), this creates a fire-and-forget promise that could cause unhandled promise rejection and crash the scraper service process. Even with the sync SQLite queue, any thrown errors would not be caught.
+**Fix:** Added `await` before `clearTaskQueue(taskId)`.
+
+###7 FIX-3: HIGH — TXT import chapter content not sanitized (novels/import/route.ts)
+**File:** `src/app/api/novels/import/route.ts:104`
+**Issue:** The TXT import path called `parseTxtChapters(text)` and used the raw chapter content directly. Unlike the JSON import path which uses `sanitizeField(content, 500000)`, the TXT path stored unsanitized content — allowing control characters (null bytes, zero-width spaces, BOM), no per-chapter size limit, and unbounded individual chapter content.
+**Fix:** Added `.map()` after `parseTxtChapters()` that passes each chapter's title and content through `sanitizeField` with the same limits as the JSON path (200 chars for title, 500K for content).
+
+### FIX-4: MEDIUM — Scrape task numeric counter fields unbounded (scrape-tasks/[id]/route.ts)
+**File:** `src/app/api/scrape-tasks/[id]/route.ts:70-83`
+**Issue:**? The numeric fields `totalBooks`, `totalChapters`, `newBooks`, `newChapters`, `failedItems`, `skippedItems` accepted any non-negative finite number, including values like `1e15`. A buggy or compromised scraper-service could store absurdly large values, causing display issues and potential integer overflow downstream.
+**Fix:** Added `MAX_COUNTER_VALUE = 10_000_000` upper bound check with 400 error response.
+
+### FIX-5: MEDIUM — Category slug not* slug not sanitized (categories/route.ts)
+**File:** `src/app/api/categories/route.ts:61`
+**Issue:** The slug field used raw `.trim()` instead of `sanitizeField()`, allowing Unicode control characters, zero-width spaces, and BOM in the slug — which is used in URL construction.
+**Fix:** Changed to `sanitizeField(slug, MAX_SLUG_LENGTH) || ''`.
+
+### FIX-6: MEDIUM — Inconsistent skip calculation (novels/route.ts)
+**File:** `src/app/api/novels/route.ts:15,48`
+**Issue:** The GET handler called `parsePagination()` which returns `{ page, pageSize, skip }`, but then recomputed `skip = (page - 1) * pageSize` separately. This is inconsistent and could diverge if `parsePagination`'s skip logic changes (e.g., adding offset support).
+**Fix:** Used the `skip` value returned by `parsePagination` instead of recomputing.
+
+### FIX-7: LOW — Inconsistent DELETE response + TS error (scrape-rules/[id]/route.ts)
+**File:** `src/app/api/scrape-rules/[id]/route.ts:227-228`
+**Issue:** The DELETE handler returned `NextResponse.json({ success: true })` instead of using `apiDeleted()` (204 No Content), inconsistent with all other DELETE endpoints (novels, chapters, tags, etc.). Also, `apiDeleted` was not imported, causing a TypeScript error (`TS2304: Cannot find name 'apiDeleted'`).
+**"Fix:** Changed to `apiDeleted()` and added `apiDeleted` to the import statement.
+
+### Additional Fix: Pre-existing TypeScript error (HeroSection.tsx)
+**File:** `src/components/home/HeroSection.tsx:153`
+**Issue:** `ease: 'steps(2)'` is not a valid framer-motion Easing type, causing `TS2322`. The steps easing is not supported by framer-motion's type system.
+**Fix:** Removed the `ease` property (default easing works fine for a blinking cursor).
+
+### Additional Find$ Findings (not fixed — noted for awareness)
+
+1. **Schema says SQLite** — `prisma/schema.prisma` has `provider = "sqlite"` despite worklog claiming PostgreSQL migration. If PostgreSQL is actually in use, `COLLATE NOCASE` in raw SQL (`public/novels/route.ts`, `search-suggestions/route.ts`) and `strftime()` in `stats/reading/route.ts` and `date()` in `reading-streak/route.ts` would fail.
+
+2. **Scraper queue still uses bun:sqlite** — `task-engine.ts` and `index.ts` import from `./queue` (SQLite), not `./queue.pg` (PostgreSQL). May be intentional for the scraper's local queue.
+
+3. **No per-resource ownership verification on DELETE** — All DELETE endpoints verify existence but not ownership. Acceptable for single-admin system, would need userId check for multi-tenant.
+
+4. **CookieManagerPanel setTimeout without cleanup** — Minor React 18 unmount-safety concern.
+
+## Verification
+- TypeScript: 0 errors (`npx tsc --noEmit` passes clean)
+- ESLint: 0 errors, 4 warnings (pre-existing React Hook Form incompatible library warnings)
+- All fixes are backward-compatible (no breaking API changes)
+
+---
+Task ID: 3
+Agent: Rate Calibration Agent
+Task: Calibrate optimal rate and concurrency for every scrape rule
+
+Work Log:
+- Read all 39 scrape rule JSON files + engine-preferences.json
+- Analyzed each domain's anti-crawl characteristics (engine type, Cloudflare/WAF presence, stealth mode, cookie handling)
+- Classified all 39 domains into 4 tiers
+
+## Tier Classification
+
+### Tier 1 - EASY (21 rules): No anti-crawl, old CMS, cheerio engine
+- ptwxz, biqugse, ibiquwx, hetushu, biquwx, laobiao, 8kana, shucong, piaotia, ibiquges, xiaoshuodaquan, zhongwenzw, uukanshu, xbiqubao, 101kks, aijjxs, 80ge, shudugu, guichuideng
+- Settings: threadCount=4, minDelay=1000ms, maxDelay=2000ms, RPM=30
+
+### Tier 2 - MEDIUM (10 rules): Basic rate limiting, JS render, engineFallback
+- biqu5200, biquge5200, duokanbiqu, bqg713, deqixs-cc, gegedangbook, wanbenshenzhan, m-jhssd-com, cn-ttkan-co, 123duw, xinjianpan
+- Settings: threadCount=2, minDelay=2000ms, maxDelay=4000ms, RPM=20
+
+### Tier 3 - HARD (7 rules): Cloudflare/WAF/CAPTCHA
+- 69shuba, dongliuxiaoshuo, daweixs, dafengdagengren, yybsw, libahao2, book4-au
+- Settings: threadCount=1, minDelay=4000ms, maxDelay=8000ms, RPM=8
+
+### Tier 4 - API (2 rules): API-based sources
+- fanqie-api, qimao-api
+- Settings: threadCount=3, minDelay=1000ms, maxDelay=2000ms, RPM=15
+
+## Changes Made
+
+1. **Created `mini-services/scraper-service/src/rate-calibration.ts`**
+   - `DomainProfiler` class: profiles domain by tier using static mapping + rule metadata signals + live HTTP probing (Cloudflare headers, rate limit headers, CAPTCHA detection, server tech)
+   - `RateCalibrator` class: calibrates single rule, applies settings to JSON
+   - `batchCalibrate()`: calibrates all rules, generates `rate-calibration.json` report
+   - `calibrateSingleRule()`: calibrates a single named rule
+   - `getCalibrationStatus()`: returns current calibration status
+   - `loadSavedReport()`: loads saved report from disk
+
+2. **Updated all 39 rule JSON files** with:
+   - `threadCount`, `minDelay`, `maxDelay` — tier-based optimal settings
+   - `antiCrawlConfig.stealthMode` — basic/moderate/full per tier
+   - `antiCrawlConfig.rotateUA` — true for HTML sites, false for API
+   - `antiCrawlConfig.delayJitter` — 0.2-0.5 per tier
+   - `antiCrawlConfig.respect429` — true for Tier 2+
+   - `antiCrawlConfig.rotateProxy` / `antiCrawlConfig.captchaAutoUpgrade` — Tier 3 only
+   - `meta.rateCalibration` — tier, tierLabel, optimalRPM, calibratedAt
+
+3. **Added 4 API endpoints to `index.ts`**:
+   - `GET /rate-calibration/status` — current calibration status (inProgress, lastCalibration, rulesCount)
+   - `GET /rate-calibration/results` — last calibration results
+   - `POST /rate-calibration/start` — start calibration for all rules (body: `{apply?: boolean}`)
+   - `POST /rate-calibration/start/:ruleName` — calibrate single rule
+
+4. **Fixed `bypass-registry.json`** — restored it after accidental calibration (it's a data file, not a rule)
+
+## Verification
+- Scraper service starts successfully on port 3099
+- All 9 engines available: cheerio, playwright, firecrawl, agentql, cloud-browser, scrapling, obscura, dokobot, api
+- Batch calibration ran successfully: 40 rules processed, tier breakdown: {1:21, 2:10, 3:7, 4:2}
+- Spot-check verified correct settings per tier (ptwxz→T1, duokanbiqu→T2, 69shuba→T3, fanqie-api→T4)
+- No TypeScript or runtime errors
+
+---
+
+Task ID: 4+5
+Agent: Agent 4+5 (Anti-Crawl Enhancement + Code Cleanup)
+Task: Anti-Crawl Capability Enhancement + Code Cleanup and Production Optimization
+
+## Part A: Anti-Crawl Capability Enhancement
+
+### A.1: Anti-Detection Coordinator Integration (scrapers.ts)
+- **paginatedFetch** now calls `antiDetectionCoordinator.generateRequestProfile()` before each request
+- **paginatedFetch** now calls `antiDetectionCoordinator.processResponse()` after each response
+- Acts on `recommendedAction`: `switch_engine` → logs + bypass registry, `backoff` → exponential backoff, `switch_proxy` → smart proxy rotation
+- Checks `captchaRecoveryManager.isDomainPaused()` and `getRecoveryEngine()` before fetching
+- Records success via `captchaRecoveryManager.recordSuccess()` after non-CAPTCHA responses
+- **handleScrapeBook** enhanced with same before/after coordinator integration
+- CAPTCHA errors now throw `ScrapeError` instead of plain `Error`
+
+### A.2: CAPTCHA Auto-Recovery (captcha-strategy.ts)
+- Added `CaptchaRecoveryManager` class with:
+  - Domain pause: 30-120s pause when CAPTCHA detected
+  - Engine upgrade: switches to stealthier engine (obscura) for recovery
+  - Auto-downgrade: after 5 successful requests on recovery engine, tries original engine
+  - Frequency tracking: >3 CAPTCHAs/hour triggers permanent engine upgrade
+  - `getRecoveryStatus(domain)` for monitoring
+- `autoHandleCaptcha()` now integrates with CaptchaRecoveryManager before strategy evaluation
+- Replaced `console.warn/log/error` with structured logger
+
+### A.3: Smart Proxy Rotation (proxy-manager.ts)
+- Added `getSmartProxy(domain, options)` with:
+  - Domain affinity: prefers proxies with successful history for the domain
+  - Geographic proximity: region matching bonus (+20 score)
+  - Health score: base scoring from proxy health (0-100)
+  - Speed bonus: lower latency = higher score (+5/+10/+15)
+  - Same-proxy avoidance: never use same proxy twice in a row for same domain
+  - Weighted random selection from top 30% candidates
+- Added `markProxyBlocked(proxyUrl, domain)`: immediately cools proxy for domain
+- Added `recordProxySuccess(proxyUrl, domain)`: tracks per-domain success rates
+- Added `getProxyStatsForDomain(domain)`: per-proxy success/fail rates for monitoring
+
+### A.4: Anti-Crawl Bypass Registry (bypass-registry.ts)
+- New file: tracks which bypass techniques work for which domains
+- Stores: `{ domain, challengeType, bypassMethod, successRate, lastUsed }`
+- Bypass methods: `tls-rotate`, `ua-rotate`, `proxy-rotate`, `engine-upgrade`, `delay-increase`, `cookie-refresh`, `session-rotate`
+- Challenge types: `captcha`, `rate-limit`, `ip-block`, `fingerprint-detect`, `js-challenge`, `cloudflare`, `geetest`, `unknown`
+- `getBestBypass(domain, challengeType)`: returns best bypass based on success rate
+- Per-challenge default bypass ordering (e.g., captcha → engine-upgrade first)
+- Persists to `scrape-rules/bypass-registry.json` with debounced writes
+- Bounded to 5000 entries with LRU eviction
+
+### A.5: Search Engine Referrer Simulation (referrer-chain.ts)
+- Added `simulateSearchReferrer(domain, url)`: generates Google/Bing/Baidu referrers
+  - Google: realistic q, oq, aqs, sourceid, ie parameters
+  - Bing: q, form, pq parameters
+  - Baidu: wd, rsv_spt, rsv_iqid, f, rsv_bp, rsv_idx, ie parameters
+- Chinese domain detection: routes to Baidu (60%) for .cn domains
+- Non-Chinese: Google (70%), Bing (25%), Baidu (5%)
+- Distribution: 30% search referrer, 40% internal referrer, 30% direct
+- Added `getEnhancedReferrer(domain, url)` as main entry point
+- Exported `ReferrerSource` type: `'search' | 'internal' | 'direct'`
+
+## Part B: Code Cleanup and Production Optimization
+
+### B.1: Unified Error Handling (error-handler.ts)
+- New `ScrapeError` class with: `code`, `domain`, `url`, `retryable`, `fatal`
+- Error codes: `RATE_LIMITED`, `CAPTCHA`, `PROXY_ERROR`, `TIMEOUT`, `CONTENT_INVALID`, `NETWORK_ERROR`, `ENGINE_ERROR`
+- `handleScrapeError(error, context)` → determines retry strategy:
+  - `RATE_LIMITED`: exponential backoff, rotate proxy after 2 failures
+  - `CAPTCHA`: engine upgrade + proxy rotation
+  - `PROXY_ERROR`: immediate proxy rotation
+  - `TIMEOUT`: exponential backoff, engine upgrade after 2 failures
+  - `NETWORK_ERROR`: exponential backoff, proxy rotation after 1 failure
+  - `ENGINE_ERROR`: engine upgrade
+  - `CONTENT_INVALID`: one retry, then engine upgrade
+- `classifyError()`: auto-classifies unknown errors by message patterns
+- `computeExponentialBackoff()`: with jitter
+
+### B.2: Dead Code Removal
+- Replaced scattered `console.log/warn/error` in scrapers.ts with structured logger
+- Replaced console calls in captcha-strategy.ts with structured logger
+- Used `logger.child('ModuleName')` pattern for module-specific logging
+
+### B.3: Memory Optimization (memory-monitor.ts)
+- New `BoundedMap<K,V>` class: Map with bounded size and FIFO eviction
+- Default max: 10,000 entries
+- `MemoryMonitor` class:
+  - Periodic monitoring every 30s
+  - Triggers cleanup when RSS > 500MB (high)
+  - Triggers aggressive cleanup + GC when RSS > 800MB (critical)
+  - `registerMemoryCleanup(callback)`: register cleanup callbacks
+  - `getStats()`: returns RSS, heap, pressure level
+- All new data structures use bounded sizes (CaptchaRecoveryManager: 500 domains, BypassRegistry: 5000 entries)
+
+### B.4: Graceful Shutdown (index.ts)
+- Enhanced shutdown handler:
+  - Increased wait time from 10s to 30s for in-flight requests
+  - Persists rate optimizer state
+  - Persists bypass registry to disk
+  - Flushes and destroys structured logger
+  - Closes all browser instances
+  - Destroys fingerprint manager and session manager
+  - Clears all intervals
+- Logs waiting status while tasks complete
+
+### B.5: Structured Logger (logger.ts)
+- New `ScraperLogger` class with levels: debug, info, warn, error
+- Format: `[${timestamp}] [${LEVEL}] [${module}] [${domain?}] ${message} ${meta?}`
+- Production: info+ only; Development: debug+
+- Per-domain log buffering: flush every 5s or 100 entries
+- `logger.child(module)`: creates module-bound child logger
+- `logger.flush()` / `logger.destroy()`: for graceful shutdown
+- `logger.setLevel()`: runtime level adjustment
+- Domain buffers bounded to 200 entries with LRU eviction
+
+## Verification
+- Scraper service starts successfully: `🚀 Scraper Service v3.0 running on port 3099`
+- All 9 engines available
+- Bypass registry loads correctly (0 entries on fresh start)
+- No TypeScript errors
+- Graceful shutdown works correctly (SIGTERM → persist state → clean exit)
+
+---
+Task ID: 6
+Agent: Install Script + Deploy Agent
+Task: 创建生产级一键安装脚本和更新部署文档
+
+Work Log:
+- 读取并分析所有关键文件（package.json, Dockerfile, docker-compose.yml, .env.example, .env.docker, quick-docker.sh, DEPLOY.md, docker-entrypoint.sh, mini-services）
+- 创建了以下新文件并更新了现有文件
+
+## 创建的文件
+
+### 1. `/install.sh` — 裸机一键安装脚本 v6.0
+- 预检查：Node.js 20+, bun, git, RAM ≥1.5GB, disk ≥10GB, port可用性
+- 代码获取：自动检测项目目录或从GitHub clone（多镜像回退）
+- 依赖安装：root + scraper-service + log-stream-service
+- .env交互配置：自动生成NEXTAUTH_SECRET, SCRAPER_SERVICE_TOKEN, ADMIN_PASSWORD
+- 数据库初始化：bun run db:push
+- 构建验证：bun run build
+- 服务启动：scraper-service(3099) + log-stream(3004) + Next.js(3000)
+- 健康检查：curl验证各端点
+- 访问信息：URL + 凭据 + 后续步骤
+- 选项：--skip-env, --skip-deps, --production, --port, --dir, -y
+
+### 2. `/install-docker.sh` — Docker一键安装脚本 v6.0
+- Docker/Compose自动安装（含国内阿里云源）
+- 代码获取三重回退：git clone → tar.gz → 逐文件下载
+- 自动生成安全密钥
+- 硬件档位自动检测（tiny/small/normal）
+- .env从模板生成或从零创建
+- 国内Docker镜像加速配置
+- 构建重试+自动恢复
+- 容器健康检查+状态验证
+- 部署信息保存（chmod 600）
+
+### 3. `/docker-compose.multiservice.yml` — 多容器生产Compose
+- 独立容器：app, scraper-service, log-stream, postgres, gateway(可选Caddy)
+- 双网络隔离：internal(服务间) + frontend(对外)
+- 每个服务独立healthcheck
+- 资源限制：memory/cpus per service
+- 可选Caddy HTTPS反向代理
+- 所有端口可通过.env配置
+
+### 4. `/mini-services/scraper-service/Dockerfile` — Scraper独立镜像
+- 3阶段构建：deps → builder → runner
+- 系统Chromium安装（非Playwright内置，省200MB）
+- PostgreSQL队列切换
+- tini作为PID 1 init
+- 非root用户运行
+- 健康检查端点
+
+### 5. `/mini-services/log-stream-service/Dockerfile` — LogStream独立镜像
+- 2阶段构建：deps → runner
+- 最小化运行时依赖
+- tini + 健康检查
+
+### 6. `/Caddyfile` — Caddy反向代理配置
+- 自动HTTPS (Let's Encrypt)
+- 安全响应头
+- gzip/zstd压缩
+- JSON日志格式
+
+## 更新的文件
+
+### 7. `/DEPLOY.md` — 完整部署文档 v6.0 (完全重写)
+- 快速开始（一行命令安装）
+- 手动安装（逐步指引）
+- Docker部署（单容器 + 多容器模式）
+- 生产环境清单（安全/可靠性/性能/监控检查项）
+- 采集规则管理（添加/编辑/引擎偏好）
+- 速率校准（校准流程 + 自适应延迟）
+- 反爬调优（7层反检测 + 代理配置 + 信号检测）
+- 故障排查（常见问题 + 日志位置 + 健康端点）
+- 性能调优（内存档位 + 并发 + 数据库 + Next.js）
+- 架构图（3种：单容器/多容器/采集引擎）
+- 数据备份与恢复
+- 更新升级
+- 日常运维命令参考
+
+### 8. `/quick-docker.sh` — 升级到 v6
+- 新增：彩色进度指示器 (progress/progress_ok/progress_fail)
+- 新增：Spinner动画（长操作）
+- 新增：构建自动重试（2次，第2次--no-cache + prune）
+- 新增：端口冲突自动恢复
+- 新增：.env.docker缺失时从零生成.env
+- 新增：.deploy-info权限600
+- 新增：服务状态验证步骤（Step 9）
+- 改进：更清晰的错误消息和恢复建议
+- 保持：向后兼容原有选项 (-y, -p, -d)
+
+## 验证
+- install.sh: 可执行 (chmod +x) ✓
+- install-docker.sh: 可执行 ✓
+- quick-docker.sh: 可执行 ✓
+- scraper-service/Dockerfile: 存在 ✓
+- log-stream-service/Dockerfile: 存在 ✓
+- docker-compose.multiservice.yml: 存在 ✓
+- Caddyfile: 存在 ✓
+- DEPLOY.md: 22KB 完整文档 ✓

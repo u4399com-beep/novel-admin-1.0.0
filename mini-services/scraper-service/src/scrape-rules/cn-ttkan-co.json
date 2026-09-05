@@ -2,75 +2,128 @@
   "name": "天天看小说 (cn.ttkan.co)",
   "description": "天天看小说全站采集。AMP架构站点，UTF-8编码。内容页重定向至cn.wa01.com。结构：.novel_info ul li书名/作者/类别/状态、amp-img封面、a[href*='page_direct']章节列表、.content p章节内容。URL使用slug格式(书名拼音-作者拼音)。分类页无传统翻页。搜索URL: /novel/search?q={keyword}。需要playwright引擎处理AMP和JS重定向。",
   "enabled": true,
-
   "listUrl": "https://cn.ttkan.co/novel/class/{catId}",
-  "listSelector": { "type": "css", "value": "a[href*='/novel/chapters/']" },
+  "listSelector": {
+    "type": "css",
+    "value": "a[href*='/novel/chapters/']"
+  },
   "listPagination": null,
-
-  "bookTitleSelector": { "type": "css", "value": "h1" },
-  "bookAuthorSelector": { "type": "css", "value": ".novel_info li a[href*='search']" },
-  "bookCategorySelector": { "type": "css", "value": ".novel_info li" },
+  "bookTitleSelector": {
+    "type": "css",
+    "value": "h1"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": ".novel_info li a[href*='search']"
+  },
+  "bookCategorySelector": {
+    "type": "css",
+    "value": ".novel_info li"
+  },
   "bookKeywordsSelector": null,
   "bookDescriptionSelector": null,
-  "bookCoverSelector": { "type": "css", "value": ".novel_info amp-img img, .novel_info img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": ".novel_info li" },
-
+  "bookCoverSelector": {
+    "type": "css",
+    "value": ".novel_info amp-img img, .novel_info img",
+    "extract": "src"
+  },
+  "bookStatusSelector": {
+    "type": "css",
+    "value": ".novel_info li"
+  },
   "chapterListUrl": "{bookUrl}",
-  "chapterListSelector": { "type": "css", "value": "a[href*='page_direct']" },
-  "chapterTitleSelector": { "type": "css", "value": "a" },
-  "chapterLinkSelector": { "type": "css", "value": "a", "extract": "href" },
+  "chapterListSelector": {
+    "type": "css",
+    "value": "a[href*='page_direct']"
+  },
+  "chapterTitleSelector": {
+    "type": "css",
+    "value": "a"
+  },
+  "chapterLinkSelector": {
+    "type": "css",
+    "value": "a",
+    "extract": "href"
+  },
   "chapterPagination": null,
-
-  "contentTitleSelector": { "type": "css", "value": "h1" },
-  "contentSelector": { "type": "css", "value": ".content" },
+  "contentTitleSelector": {
+    "type": "css",
+    "value": "h1"
+  },
+  "contentSelector": {
+    "type": "css",
+    "value": ".content"
+  },
   "contentPagination": null,
-
   "antiCrawlConfig": {
     "useJsRender": true,
     "uaRotation": true,
-    "delay": [2000, 5000],
+    "delay": [
+      2000,
+      5000
+    ],
     "humanBehavior": false,
     "retries": 3,
     "referer": "https://cn.ttkan.co/",
     "engineFallback": true,
-    "engineFallbackChain": ["playwright", "cheerio"]
+    "engineFallbackChain": [
+      "playwright",
+      "cheerio"
+    ],
+    "stealthMode": "moderate",
+    "rotateUA": true,
+    "delayJitter": 0.4,
+    "respect429": true
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", "#ad", "ins.adsbygoogle",
-      ".div-gpt-ad", ".kwinread",
-      ".compass-fit-widget-content", ".compass-fit-ad-content",
-      ".full_chapters", ".breadcrumb_nav",
-      ".anchor_bookmark", "amp-img",
-      "footer", ".bread_crumbs"
+      ".ad",
+      "#ad",
+      "ins.adsbygoogle",
+      ".div-gpt-ad",
+      ".kwinread",
+      ".compass-fit-widget-content",
+      ".compass-fit-ad-content",
+      ".full_chapters",
+      ".breadcrumb_nav",
+      ".anchor_bookmark",
+      "amp-img",
+      "footer",
+      ".bread_crumbs"
     ],
     "adPatterns": [
-      "ttkan.co", "天天看小说",
-      "请记住本书", "本章未完",
-      "微信公众号", "最快更新",
-      "本章wap", "手机用户请浏览",
-      "推荐本书", "加入书架",
-      "收藏本书", "下一页", "上一页",
-      "下一章", "上一章",
-      "繁體", "我的书架",
+      "ttkan.co",
+      "天天看小说",
+      "请记住本书",
+      "本章未完",
+      "微信公众号",
+      "最快更新",
+      "本章wap",
+      "手机用户请浏览",
+      "推荐本书",
+      "加入书架",
+      "收藏本书",
+      "下一页",
+      "上一页",
+      "下一章",
+      "上一章",
+      "繁體",
+      "我的书架",
       "Recommended by MicroAd"
     ]
   },
-
   "scrapeMode": "full",
   "engine": "playwright",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/data/covers/cn-ttkan-co",
-  "threadCount": 1,
+  "threadCount": 2,
   "minDelay": 2000,
-  "maxDelay": 5000,
+  "maxDelay": 4000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "cn.ttkan.co",
@@ -104,6 +157,12 @@
     "statusMap": {
       "连载": "ongoing",
       "完结": "completed"
+    },
+    "rateCalibration": {
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "optimalRPM": 20,
+      "calibratedAt": "2026-09-05T12:14:11.040Z"
     }
   }
 }

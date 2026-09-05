@@ -101,7 +101,11 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
       // TXT: use filename as title, split by chapter markers
       novelTitle = sanitizeField(file.name.replace(/\.(txt|json)$/i, ''), 200);
       novelDescription = undefined;
-      chapters = parseTxtChapters(text);
+      // Sanitize TXT chapter content (same limits as JSON path)
+      chapters = parseTxtChapters(text).map((ch, i) => ({
+        title: sanitizeField(ch.title || `第${i + 1}章`, 200),
+        content: ch.content ? sanitizeField(ch.content, 500000) : '',
+      }));
     }
 
     if (!novelTitle) {

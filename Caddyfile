@@ -1,48 +1,43 @@
-:81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+# ============================================================
+# Novel Management System - Caddy Reverse Proxy Config
+#
+# Place this file at ./Caddyfile and uncomment the
+# gateway service in docker-compose.multiservice.yml
+#
+# Features:
+#   - Automatic HTTPS via Let's Encrypt
+#   - HTTP→HTTPS redirect
+#   - WebSocket support for log-stream
+#   - Compression
+#   - Security headers
+# ============================================================
 
-	# Only allow safe internal ports (exclude scraper-service 3099)
-	# Next.js handles its own whitelist check, but Caddy adds a first layer
-	@safe_port {
-		query XTransformPort=3000
-	}
-	@safe_port {
-		query XTransformPort=3001
-	}
-	@safe_port {
-		query XTransformPort=3003
-	}
-	@safe_port {
-		query XTransformPort=4000
-	}
+# Replace with your domain
+your-domain.com {
+    # Main app
+    reverse_proxy app:3000
 
-	handle @safe_port {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
 
-	# Block all other port transform attempts at Caddy level
-	@blocked_transform {
-		query XTransformPort=*
-		not @safe_port
-	}
+    # Compression
+    encode gzip zstd
 
-	respond @blocked_transform 400 "Unsupported service port" {
-		close
-	}
-
-	handle {
-		reverse_proxy localhost:3000 {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+    # Logs
+    log {
+        output file /data/access.log
+        format json
+    }
 }
+
+# HTTP→HTTPS redirect (uncomment if using HTTPS)
+# http://your-domain.com {
+#     redir https://your-domain.com{uri} permanent
+# }

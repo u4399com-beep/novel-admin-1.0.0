@@ -2,75 +2,149 @@
   "name": "精华书阁手机版 (m.jhsssd.com)",
   "description": "精华书阁(江湖神速度)手机版全站采集。UTF-8编码，cheerio引擎。移动端结构：h1书名、p(作者/分类/状态)、.intro_info简介、.chapter li a章节列表、#nr章节内容。章节分页使用_{page}.html格式。支持9个分类，搜索URL: /search.html?word={keyword}。",
   "enabled": true,
-
   "listUrl": "https://m.jhsssd.com/list/{catId}.html",
-  "listSelector": { "type": "css", "value": ".fk li a[href^='/'], .fk li.tjimg a" },
-  "listPagination": { "type": "page", "selector": ".page a", "maxPage": 200 },
-
-  "bookTitleSelector": { "type": "css", "value": "h1" },
-  "bookAuthorSelector": { "type": "css", "value": "p" },
-  "bookCategorySelector": { "type": "css", "value": "p a[href*='/list/']" },
+  "listSelector": {
+    "type": "css",
+    "value": ".fk li a[href^='/'], .fk li.tjimg a"
+  },
+  "listPagination": {
+    "type": "page",
+    "selector": ".page a",
+    "maxPage": 200
+  },
+  "bookTitleSelector": {
+    "type": "css",
+    "value": "h1"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": "p"
+  },
+  "bookCategorySelector": {
+    "type": "css",
+    "value": "p a[href*='/list/']"
+  },
   "bookKeywordsSelector": null,
-  "bookDescriptionSelector": { "type": "css", "value": ".intro_info" },
-  "bookCoverSelector": { "type": "css", "value": "img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": "p" },
-
+  "bookDescriptionSelector": {
+    "type": "css",
+    "value": ".intro_info"
+  },
+  "bookCoverSelector": {
+    "type": "css",
+    "value": "img",
+    "extract": "src"
+  },
+  "bookStatusSelector": {
+    "type": "css",
+    "value": "p"
+  },
   "chapterListUrl": "{bookUrl}",
-  "chapterListSelector": { "type": "css", "value": ".chapter li" },
-  "chapterTitleSelector": { "type": "css", "value": "a" },
-  "chapterLinkSelector": { "type": "css", "value": "a", "extract": "href" },
-  "chapterPagination": { "type": "select", "selector": "select option", "maxPage": 50 },
-
-  "contentTitleSelector": { "type": "css", "value": ".nr_title" },
-  "contentSelector": { "type": "css", "value": "#nr, .nr_nr" },
-  "contentPagination": { "type": "next", "selector": "a:contains(下一页)", "maxPage": 10 },
-
+  "chapterListSelector": {
+    "type": "css",
+    "value": ".chapter li"
+  },
+  "chapterTitleSelector": {
+    "type": "css",
+    "value": "a"
+  },
+  "chapterLinkSelector": {
+    "type": "css",
+    "value": "a",
+    "extract": "href"
+  },
+  "chapterPagination": {
+    "type": "select",
+    "selector": "select option",
+    "maxPage": 50
+  },
+  "contentTitleSelector": {
+    "type": "css",
+    "value": ".nr_title"
+  },
+  "contentSelector": {
+    "type": "css",
+    "value": "#nr, .nr_nr"
+  },
+  "contentPagination": {
+    "type": "next",
+    "selector": "a:contains(下一页)",
+    "maxPage": 10
+  },
   "antiCrawlConfig": {
     "useJsRender": false,
     "uaRotation": true,
-    "delay": [2000, 4000],
+    "delay": [
+      2000,
+      4000
+    ],
     "humanBehavior": false,
     "retries": 3,
     "referer": "https://m.jhsssd.com/",
     "engineFallback": true,
-    "engineFallbackChain": ["cheerio", "playwright"]
+    "engineFallbackChain": [
+      "cheerio",
+      "playwright"
+    ],
+    "stealthMode": "moderate",
+    "rotateUA": true,
+    "delayJitter": 0.4,
+    "respect429": true
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", "#ad", "ins.adsbygoogle",
-      ".header", ".back", ".nr_set", ".nr_page",
-      ".tfanye", ".bfanye", ".cc",
-      ".intro_info2", "footer"
+      ".ad",
+      "#ad",
+      "ins.adsbygoogle",
+      ".header",
+      ".back",
+      ".nr_set",
+      ".nr_page",
+      ".tfanye",
+      ".bfanye",
+      ".cc",
+      ".intro_info2",
+      "footer"
     ],
     "adPatterns": [
-      "jhsssd.com", "精华书阁",
-      "请记住本书", "本章未完",
-      "微信公众号", "最快更新",
-      "本章wap", "手机用户请浏览",
-      "最新章节首发更新地址", "同类小说推荐",
-      "阅读提示", "为防止内容获取不全",
+      "jhsssd.com",
+      "精华书阁",
+      "请记住本书",
+      "本章未完",
+      "微信公众号",
+      "最快更新",
+      "本章wap",
+      "手机用户请浏览",
+      "最新章节首发更新地址",
+      "同类小说推荐",
+      "阅读提示",
+      "为防止内容获取不全",
       "请勿使用浏览器阅读模式",
-      "存书签", "书架管理", "返回目录",
-      "关灯", "护眼", "字体",
-      "上一章", "下一页", "上一页",
-      "加入书架", "投推荐票", "开始阅读"
+      "存书签",
+      "书架管理",
+      "返回目录",
+      "关灯",
+      "护眼",
+      "字体",
+      "上一章",
+      "下一页",
+      "上一页",
+      "加入书架",
+      "投推荐票",
+      "开始阅读"
     ]
   },
-
   "scrapeMode": "full",
   "engine": "cheerio",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/data/covers/m-jhssd-com",
-  "threadCount": 1,
+  "threadCount": 2,
   "minDelay": 2000,
   "maxDelay": 4000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "m.jhsssd.com",
@@ -98,6 +172,12 @@
     "statusMap": {
       "连载中": "ongoing",
       "已完结": "completed"
+    },
+    "rateCalibration": {
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "optimalRPM": 20,
+      "calibratedAt": "2026-09-05T12:14:11.042Z"
     }
   }
 }

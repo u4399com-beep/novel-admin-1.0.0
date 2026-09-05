@@ -2,100 +2,188 @@
   "name": "80阁电子书 (80ge.info)",
   "description": "八零电子书全站采集。UTF-8编码，cheerio引擎。TXT电子书下载站，非章节阅读站。书详情页：#soft_info_para h1书名、.soft_info_r li a作者、.soft_info_r img.info_img封面、#mainSoftIntro简介、.soft_info_r strong.green状态。章节目录页(/txtml_{id}.html)：#yulan li a章节列表。章节内容托管于外域qiushu.info。分类列表：/sort{catId}/{page}.html，#list_art_2013条目。",
   "enabled": true,
-
   "listUrl": "http://www.80ge.info/sort{catId}/{page}.html",
-  "listSelector": { "type": "css", "value": "#list_art_2013 .book_bg a" },
-  "listPagination": { "type": "page", "selector": "#slist a[href*=\"sort\"], #indexpage input", "maxPage": 500 },
-
-  "bookTitleSelector": { "type": "css", "value": "#soft_info_para h1" },
-  "bookAuthorSelector": { "type": "css", "value": ".soft_info_r li:nth-child(1) a" },
-  "bookCategorySelector": { "type": "css", "value": ".path a:nth-child(2)" },
+  "listSelector": {
+    "type": "css",
+    "value": "#list_art_2013 .book_bg a"
+  },
+  "listPagination": {
+    "type": "page",
+    "selector": "#slist a[href*=\"sort\"], #indexpage input",
+    "maxPage": 500
+  },
+  "bookTitleSelector": {
+    "type": "css",
+    "value": "#soft_info_para h1"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": ".soft_info_r li:nth-child(1) a"
+  },
+  "bookCategorySelector": {
+    "type": "css",
+    "value": ".path a:nth-child(2)"
+  },
   "bookKeywordsSelector": null,
-  "bookDescriptionSelector": { "type": "css", "value": "#mainSoftIntro" },
-  "bookCoverSelector": { "type": "css", "value": ".soft_info_r img.info_img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": ".soft_info_r strong.green" },
-
+  "bookDescriptionSelector": {
+    "type": "css",
+    "value": "#mainSoftIntro"
+  },
+  "bookCoverSelector": {
+    "type": "css",
+    "value": ".soft_info_r img.info_img",
+    "extract": "src"
+  },
+  "bookStatusSelector": {
+    "type": "css",
+    "value": ".soft_info_r strong.green"
+  },
   "chapterListUrl": "http://www.80ge.info/txtml_{bookId}.html",
-  "chapterListSelector": { "type": "css", "value": "#yulan li a" },
-  "chapterTitleSelector": { "type": "css", "value": "#yulan li a" },
-  "chapterLinkSelector": { "type": "css", "value": "#yulan li a", "extract": "href" },
+  "chapterListSelector": {
+    "type": "css",
+    "value": "#yulan li a"
+  },
+  "chapterTitleSelector": {
+    "type": "css",
+    "value": "#yulan li a"
+  },
+  "chapterLinkSelector": {
+    "type": "css",
+    "value": "#yulan li a",
+    "extract": "href"
+  },
   "chapterPagination": null,
-
-  "contentTitleSelector": { "type": "css", "value": "h1" },
-  "contentSelector": { "type": "css", "value": "#content, #BookText" },
+  "contentTitleSelector": {
+    "type": "css",
+    "value": "h1"
+  },
+  "contentSelector": {
+    "type": "css",
+    "value": "#content, #BookText"
+  },
   "contentPagination": null,
-
   "antiCrawlConfig": {
     "useJsRender": false,
     "uaRotation": true,
-    "delay": [1500, 3000],
+    "delay": [
+      1500,
+      3000
+    ],
     "humanBehavior": false,
     "retries": 3,
     "referer": "http://www.80ge.info/",
     "engineFallback": true,
-    "engineFallbackChain": ["cheerio", "playwright"]
+    "engineFallbackChain": [
+      "cheerio",
+      "playwright"
+    ],
+    "stealthMode": "basic",
+    "rotateUA": true,
+    "delayJitter": 0.3
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", ".ads", ".advertisement",
-      ".adrx", ".ad5", ".ad6", ".ad7", ".ad8", ".ad9",
-      "#ad1", "#top1", "#subBox",
-      ".soft_info_l", ".down_link",
-      ".fenxiang", ".topnave",
-      ".book_cont", ".book_jj",
-      ".head_frame", "#banner",
-      "#head_search", "#menu",
-      "#right", ".rt_block",
-      "#footer", "#f_link",
-      ".copyright", ".usercom",
+      ".ad",
+      ".ads",
+      ".advertisement",
+      ".adrx",
+      ".ad5",
+      ".ad6",
+      ".ad7",
+      ".ad8",
+      ".ad9",
+      "#ad1",
+      "#top1",
+      "#subBox",
+      ".soft_info_l",
+      ".down_link",
+      ".fenxiang",
+      ".topnave",
+      ".book_cont",
+      ".book_jj",
+      ".head_frame",
+      "#banner",
+      "#head_search",
+      "#menu",
+      "#right",
+      ".rt_block",
+      "#footer",
+      "#f_link",
+      ".copyright",
+      ".usercom",
       "ins.adsbygoogle",
       "[id^=\"div-gpt-ad\"]"
     ],
     "adPatterns": [
-      "八零电子书", "80ge.info", "80TXT",
-      "请记住本书", "手机用户请浏览",
-      "本章未完", "最快更新",
-      "本章最新章节", "请访问",
-      "如果您喜欢", "分享到",
-      "扫码关注", "微信公众号",
-      "关注公众号", "关注我们",
-      "TXT下载", "全本下载",
-      "返回目录", "章节列表",
-      "推荐本书", "打赏",
-      "本章完", "本章结束",
-      "完结感言", "在线听书",
-      "热门推荐", "内容有问题",
-      "无弹窗小说", "无弹窗阅读",
-      "加入书架", "邮件反馈",
-      "正在手打中", "网友上传",
-      "查看下载帮助", "最新网址",
-      "点击推荐", "查看更多",
-      "免费为书友提供", "txt电子书免费下载",
-      "txt全集下载", "txt小说下载",
-      "全集TXT下载", "全文TXT格式电子书下载",
-      "更多TXT下载", "敬请关注",
-      "免费开放", "永久域名",
-      "已修复", "手机TXT全集下载",
-      "电脑TXT全集下载", "正式开通",
-      "查看txt下载帮助", "发表书评",
-      "请勿刷书评", "积分清零"
+      "八零电子书",
+      "80ge.info",
+      "80TXT",
+      "请记住本书",
+      "手机用户请浏览",
+      "本章未完",
+      "最快更新",
+      "本章最新章节",
+      "请访问",
+      "如果您喜欢",
+      "分享到",
+      "扫码关注",
+      "微信公众号",
+      "关注公众号",
+      "关注我们",
+      "TXT下载",
+      "全本下载",
+      "返回目录",
+      "章节列表",
+      "推荐本书",
+      "打赏",
+      "本章完",
+      "本章结束",
+      "完结感言",
+      "在线听书",
+      "热门推荐",
+      "内容有问题",
+      "无弹窗小说",
+      "无弹窗阅读",
+      "加入书架",
+      "邮件反馈",
+      "正在手打中",
+      "网友上传",
+      "查看下载帮助",
+      "最新网址",
+      "点击推荐",
+      "查看更多",
+      "免费为书友提供",
+      "txt电子书免费下载",
+      "txt全集下载",
+      "txt小说下载",
+      "全集TXT下载",
+      "全文TXT格式电子书下载",
+      "更多TXT下载",
+      "敬请关注",
+      "免费开放",
+      "永久域名",
+      "已修复",
+      "手机TXT全集下载",
+      "电脑TXT全集下载",
+      "正式开通",
+      "查看txt下载帮助",
+      "发表书评",
+      "请勿刷书评",
+      "积分清零"
     ]
   },
-
   "scrapeMode": "full",
   "engine": "cheerio",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/data/covers/80ge",
-  "threadCount": 1,
-  "minDelay": 1500,
-  "maxDelay": 3000,
+  "threadCount": 4,
+  "minDelay": 1000,
+  "maxDelay": 2000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "www.80ge.info",
@@ -103,28 +191,28 @@
     "engineType": "cheerio",
     "stealthEnabled": false,
     "categories": {
-      "3": "奇幻修真",
-      "13": "奇幻魔法",
       "1": "异术超能",
-      "12": "东方传奇",
-      "14": "王朝争霸",
-      "15": "江湖武侠",
-      "9": "未来幻想",
-      "10": "灵异鬼怪",
-      "22": "探险揭秘",
-      "6": "历史传记",
-      "7": "特种军旅",
-      "16": "虚拟网游",
-      "8": "竞技体育",
       "2": "魔幻女强",
+      "3": "奇幻修真",
       "4": "都市婚姻",
       "5": "百合之恋",
+      "6": "历史传记",
+      "7": "特种军旅",
+      "8": "竞技体育",
+      "9": "未来幻想",
+      "10": "灵异鬼怪",
       "11": "同人美文",
+      "12": "东方传奇",
+      "13": "奇幻魔法",
+      "14": "王朝争霸",
+      "15": "江湖武侠",
+      "16": "虚拟网游",
       "17": "穿越架空",
       "18": "王室贵族",
       "19": "魔法校园",
       "20": "乡土布衣",
       "21": "官职商战",
+      "22": "探险揭秘",
       "23": "间谍暗战",
       "24": "唯美言情",
       "25": "诗歌文集"
@@ -141,7 +229,9 @@
       "method": "POST",
       "url": "http://www.80ge.info/modules/article/search.php",
       "paramName": "searchkey",
-      "extraParams": { "s": "18140131260432570322" }
+      "extraParams": {
+        "s": "18140131260432570322"
+      }
     },
     "statusMap": {
       "连载中": "ongoing",
@@ -154,6 +244,12 @@
       "搜索功能使用POST请求，需携带s参数",
       "分类页面使用JS分页跳转，URL模式为/sort{catId}/{page}.html",
       "封面图片托管于img.80ge.info子域，路径模式: /{id前3位}/{id}/{id}s.jpg"
-    ]
+    ],
+    "rateCalibration": {
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "optimalRPM": 30,
+      "calibratedAt": "2026-09-05T12:14:11.038Z"
+    }
   }
 }

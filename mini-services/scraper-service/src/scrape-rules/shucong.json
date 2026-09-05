@@ -2,87 +2,164 @@
   "name": "书丛 (shucong.com)",
   "description": "书丛全站采集。UTF-8编码，cheerio引擎。.book-info h1书名、.book-info .author a作者、.chapter-list a章节列表、.content内容。",
   "enabled": true,
-
   "listUrl": "https://www.shucong.com/sort/{page}/",
-  "listSelector": { "type": "css", "value": ".novelslist li a[href*=\"/book/\"]" },
-  "listPagination": { "type": "page", "selector": ".pagelistbox a[href*=\"_\"]", "maxPage": 200 },
-
-  "bookTitleSelector": { "type": "css", "value": ".book-info h1" },
-  "bookAuthorSelector": { "type": "css", "value": ".book-info .author a" },
-  "bookCategorySelector": { "type": "css", "value": ".book-info .category a" },
+  "listSelector": {
+    "type": "css",
+    "value": ".novelslist li a[href*=\"/book/\"]"
+  },
+  "listPagination": {
+    "type": "page",
+    "selector": ".pagelistbox a[href*=\"_\"]",
+    "maxPage": 200
+  },
+  "bookTitleSelector": {
+    "type": "css",
+    "value": ".book-info h1"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": ".book-info .author a"
+  },
+  "bookCategorySelector": {
+    "type": "css",
+    "value": ".book-info .category a"
+  },
   "bookKeywordsSelector": null,
-  "bookDescriptionSelector": { "type": "css", "value": ".book-info .intro" },
-  "bookCoverSelector": { "type": "css", "value": ".book-info .cover img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": ".book-info .status" },
-
+  "bookDescriptionSelector": {
+    "type": "css",
+    "value": ".book-info .intro"
+  },
+  "bookCoverSelector": {
+    "type": "css",
+    "value": ".book-info .cover img",
+    "extract": "src"
+  },
+  "bookStatusSelector": {
+    "type": "css",
+    "value": ".book-info .status"
+  },
   "chapterListUrl": "{bookUrl}",
-  "chapterListSelector": { "type": "css", "value": ".chapter-list a" },
-  "chapterTitleSelector": { "type": "css", "value": ".chapter-list a" },
-  "chapterLinkSelector": { "type": "css", "value": ".chapter-list a" },
+  "chapterListSelector": {
+    "type": "css",
+    "value": ".chapter-list a"
+  },
+  "chapterTitleSelector": {
+    "type": "css",
+    "value": ".chapter-list a"
+  },
+  "chapterLinkSelector": {
+    "type": "css",
+    "value": ".chapter-list a"
+  },
   "chapterPagination": null,
-
-  "contentTitleSelector": { "type": "css", "value": "h1.title, .bookname h1" },
-  "contentSelector": { "type": "css", "value": ".content" },
-  "contentPagination": { "type": "next", "selector": "a:contains(下一页), a:contains(下一章)", "maxPage": 1 },
-
+  "contentTitleSelector": {
+    "type": "css",
+    "value": "h1.title, .bookname h1"
+  },
+  "contentSelector": {
+    "type": "css",
+    "value": ".content"
+  },
+  "contentPagination": {
+    "type": "next",
+    "selector": "a:contains(下一页), a:contains(下一章)",
+    "maxPage": 1
+  },
   "antiCrawlConfig": {
     "useJsRender": false,
     "uaRotation": true,
-    "delay": [1500, 5000],
+    "delay": [
+      1500,
+      5000
+    ],
     "humanBehavior": false,
     "retries": 3,
-    "referer": "https://www.shucong.com/"
+    "referer": "https://www.shucong.com/",
+    "stealthMode": "basic",
+    "rotateUA": true,
+    "delayJitter": 0.3
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", ".ads", ".advertisement",
-      ".chapter-nav", ".footer", ".header", ".topbar",
-      ".recommend", ".related",
-      "#ad", "[id^=\"div-gpt-ad\"]",
+      ".ad",
+      ".ads",
+      ".advertisement",
+      ".chapter-nav",
+      ".footer",
+      ".header",
+      ".topbar",
+      ".recommend",
+      ".related",
+      "#ad",
+      "[id^=\"div-gpt-ad\"]",
       "ins.adsbygoogle",
-      ".listmain", ".bookname",
-      ".pageheadermenu", ".leftmenu", ".modbg",
-      ".main", ".container", ".mybox",
-      ".weekl_yrank", ".droplist",
-      ".bookimg", ".bookimg2",
-      ".ratediv", ".rateblock",
-      ".pc-footer", ".m-footer"
+      ".listmain",
+      ".bookname",
+      ".pageheadermenu",
+      ".leftmenu",
+      ".modbg",
+      ".main",
+      ".container",
+      ".mybox",
+      ".weekl_yrank",
+      ".droplist",
+      ".bookimg",
+      ".bookimg2",
+      ".ratediv",
+      ".rateblock",
+      ".pc-footer",
+      ".m-footer"
     ],
     "adPatterns": [
-      "shucong", "shucong.com", "书丛",
-      "请记住本书", "手机用户请浏览",
-      "本章未完", "最快更新",
-      "本章最新章节", "请访问",
-      "如果您喜欢", "分享到",
-      "扫码关注", "微信公众号",
-      "关注公众号", "关注我们",
-      "TXT下载", "全本下载",
-      "返回目录", "章节列表",
-      "推荐本书", "打赏",
-      "本章完", "本章结束",
-      "完结感言", "在线听书",
-      "热门推荐", "内容有问题",
-      "无弹窗小说", "无弹窗阅读",
-      "加入书签", "邮件反馈",
-      "最新章节", "正在手打中",
-      "网友上传", "文学网"
+      "shucong",
+      "shucong.com",
+      "书丛",
+      "请记住本书",
+      "手机用户请浏览",
+      "本章未完",
+      "最快更新",
+      "本章最新章节",
+      "请访问",
+      "如果您喜欢",
+      "分享到",
+      "扫码关注",
+      "微信公众号",
+      "关注公众号",
+      "关注我们",
+      "TXT下载",
+      "全本下载",
+      "返回目录",
+      "章节列表",
+      "推荐本书",
+      "打赏",
+      "本章完",
+      "本章结束",
+      "完结感言",
+      "在线听书",
+      "热门推荐",
+      "内容有问题",
+      "无弹窗小说",
+      "无弹窗阅读",
+      "加入书签",
+      "邮件反馈",
+      "最新章节",
+      "正在手打中",
+      "网友上传",
+      "文学网"
     ]
   },
-
   "scrapeMode": "full",
   "engine": "cheerio",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/shucong/",
-  "threadCount": 1,
-  "minDelay": 3000,
-  "maxDelay": 6000,
+  "threadCount": 4,
+  "minDelay": 1000,
+  "maxDelay": 2000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "www.shucong.com",
@@ -149,6 +226,12 @@
       "qingchun": "cmsbmowix0005q9wib1vpm9b8",
       "tongren": "cmsbmowj2000bq9wi3ztdtyub",
       "guanchang": "cmsbmowj2000cq9wi1qvgsq8l"
+    },
+    "rateCalibration": {
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "optimalRPM": 30,
+      "calibratedAt": "2026-09-05T12:14:11.043Z"
     }
   }
 }

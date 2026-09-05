@@ -2,63 +2,90 @@
   "name": "AU文学 (book4.cc)",
   "description": "AU文学小说聚合/导航站，仅作为发现源使用，不托管章节内容。HTML通过JS变量html_b进行base64编码，需解码后解析。分类页/AU文学/{category}/，提取书籍元信息(封面、标题、作者、分类、简介)及外部链接。",
   "enabled": true,
-
   "listUrl": "https://www.book4.cc/AU文学/{catId}/",
-  "listSelector": { "type": "css", "value": "section#main .section1 ul li .book-img a[href]" },
+  "listSelector": {
+    "type": "css",
+    "value": "section#main .section1 ul li .book-img a[href]"
+  },
   "listPagination": null,
-
-  "bookTitleSelector": { "type": "css", "value": ".book-info h3 a" },
-  "bookAuthorSelector": { "type": "css", "value": ".book-info p.author" },
-  "bookCategorySelector": { "type": "css", "value": ".book-info .type a" },
+  "bookTitleSelector": {
+    "type": "css",
+    "value": ".book-info h3 a"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": ".book-info p.author"
+  },
+  "bookCategorySelector": {
+    "type": "css",
+    "value": ".book-info .type a"
+  },
   "bookKeywordsSelector": null,
-  "bookDescriptionSelector": { "type": "css", "value": ".book-info p[style=\"float: left;\"]" },
-  "bookCoverSelector": { "type": "css", "value": ".book-img img", "extract": "src" },
+  "bookDescriptionSelector": {
+    "type": "css",
+    "value": ".book-info p[style=\"float: left;\"]"
+  },
+  "bookCoverSelector": {
+    "type": "css",
+    "value": ".book-img img",
+    "extract": "src"
+  },
   "bookStatusSelector": null,
-
   "chapterListUrl": null,
   "chapterListSelector": null,
   "chapterTitleSelector": null,
   "chapterLinkSelector": null,
   "chapterPagination": null,
-
   "contentTitleSelector": null,
   "contentSelector": null,
   "contentPagination": null,
-
   "antiCrawlConfig": {
     "useJsRender": true,
     "uaRotation": true,
-    "delay": [2000, 4000],
+    "delay": [
+      2000,
+      4000
+    ],
     "humanBehavior": false,
     "retries": 3,
-    "referer": "https://www.book4.cc/"
+    "referer": "https://www.book4.cc/",
+    "stealthMode": "full",
+    "rotateUA": true,
+    "rotateProxy": true,
+    "delayJitter": 0.5,
+    "respect429": true,
+    "captchaAutoUpgrade": true
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", ".ads", ".advertisement",
-      ".footer", ".header",
-      "ins.adsbygoogle", "[id^=div-gpt-ad]"
+      ".ad",
+      ".ads",
+      ".advertisement",
+      ".footer",
+      ".header",
+      "ins.adsbygoogle",
+      "[id^=div-gpt-ad]"
     ],
     "adPatterns": [
-      "book4", "book4.cc", "AU文学",
-      "简介：", "作者："
+      "book4",
+      "book4.cc",
+      "AU文学",
+      "简介：",
+      "作者："
     ]
   },
-
   "scrapeMode": "incremental",
   "engine": "playwright",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/book4-au/",
   "threadCount": 1,
-  "minDelay": 2000,
-  "maxDelay": 4000,
+  "minDelay": 4000,
+  "maxDelay": 8000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "discovery",
     "domain": "book4.cc",
@@ -92,6 +119,12 @@
       "武侠": "cmsbmowiy0006q9wiv2vmlcpk",
       "游戏": "cmsbmowj00008q9wipys4q5or",
       "奇幻": "cmsbmowix0005q9wib1vpm9b8"
+    },
+    "rateCalibration": {
+      "tier": 3,
+      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
+      "optimalRPM": 8,
+      "calibratedAt": "2026-09-05T12:14:11.040Z"
     }
   }
 }

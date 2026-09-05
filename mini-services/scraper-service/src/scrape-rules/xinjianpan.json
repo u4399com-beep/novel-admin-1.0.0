@@ -2,91 +2,180 @@
   "name": "新键盘小说 (xinjianpan.com)",
   "description": "新键盘小说全站采集。UTF-8编码，标准biquge2023模板站。书页/book/{id}/、章节目录/txt/{id}/list-{page}.html、章节内容/txt/{id}/{chapterId}.html。章节内容通过JS动态加载，需playwright引擎渲染。支持9个分类，搜索接口/search/?searchkey={keyword}。",
   "enabled": true,
-
   "listUrl": "https://www.xinjianpan.com/sort/{catId}-{page}.html",
-  "listSelector": { "type": "css", "value": ".novelslist li a, dl dt a, .hot dd a" },
-  "listPagination": { "type": "page", "selector": ".pagelist a, .listpage a", "maxPage": 200 },
-
-  "bookTitleSelector": { "type": "css", "value": ".booktitle h1, h1.h1-84c1078c" },
-  "bookAuthorSelector": { "type": "css", "value": ".bookdes p a[href*='/author/']" },
-  "bookCategorySelector": { "type": "css", "value": ".breadcrumb a:nth-child(2)" },
+  "listSelector": {
+    "type": "css",
+    "value": ".novelslist li a, dl dt a, .hot dd a"
+  },
+  "listPagination": {
+    "type": "page",
+    "selector": ".pagelist a, .listpage a",
+    "maxPage": 200
+  },
+  "bookTitleSelector": {
+    "type": "css",
+    "value": ".booktitle h1, h1.h1-84c1078c"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": ".bookdes p a[href*='/author/']"
+  },
+  "bookCategorySelector": {
+    "type": "css",
+    "value": ".breadcrumb a:nth-child(2)"
+  },
   "bookKeywordsSelector": null,
-  "bookDescriptionSelector": { "type": "css", "value": ".bookintro p, .bookintro" },
-  "bookCoverSelector": { "type": "css", "value": "a.cover img, .book img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": ".bookdes p span" },
-
+  "bookDescriptionSelector": {
+    "type": "css",
+    "value": ".bookintro p, .bookintro"
+  },
+  "bookCoverSelector": {
+    "type": "css",
+    "value": "a.cover img, .book img",
+    "extract": "src"
+  },
+  "bookStatusSelector": {
+    "type": "css",
+    "value": ".bookdes p span"
+  },
   "chapterListUrl": "https://www.xinjianpan.com/txt/{bookId}/list-1.html",
-  "chapterListSelector": { "type": "css", "value": ".chapterlist .all ul li a, .allchapter-84c1078c ul li a" },
-  "chapterTitleSelector": { "type": "css", "value": "a" },
-  "chapterLinkSelector": { "type": "css", "value": "a", "extract": "href" },
-  "chapterPagination": { "type": "page", "selector": ".listpage select option, .listpage a.onclick", "maxPage": 50 },
-
-  "contentTitleSelector": { "type": "css", "value": ".booktitle h1, h1.h1-84c1078c" },
-  "contentSelector": { "type": "css", "value": "#chaptercontent, .content" },
-  "contentPagination": { "type": "next", "selector": "a:contains(下一页), a:contains(下一章)", "maxPage": 1 },
-
+  "chapterListSelector": {
+    "type": "css",
+    "value": ".chapterlist .all ul li a, .allchapter-84c1078c ul li a"
+  },
+  "chapterTitleSelector": {
+    "type": "css",
+    "value": "a"
+  },
+  "chapterLinkSelector": {
+    "type": "css",
+    "value": "a",
+    "extract": "href"
+  },
+  "chapterPagination": {
+    "type": "page",
+    "selector": ".listpage select option, .listpage a.onclick",
+    "maxPage": 50
+  },
+  "contentTitleSelector": {
+    "type": "css",
+    "value": ".booktitle h1, h1.h1-84c1078c"
+  },
+  "contentSelector": {
+    "type": "css",
+    "value": "#chaptercontent, .content"
+  },
+  "contentPagination": {
+    "type": "next",
+    "selector": "a:contains(下一页), a:contains(下一章)",
+    "maxPage": 1
+  },
   "antiCrawlConfig": {
     "useJsRender": true,
     "uaRotation": true,
-    "delay": [2000, 4000],
+    "delay": [
+      2000,
+      4000
+    ],
     "humanBehavior": false,
     "retries": 3,
     "referer": "https://www.xinjianpan.com/",
     "engineFallback": true,
-    "engineFallbackChain": ["playwright", "cheerio"]
+    "engineFallbackChain": [
+      "playwright",
+      "cheerio"
+    ],
+    "stealthMode": "moderate",
+    "rotateUA": true,
+    "delayJitter": 0.4,
+    "respect429": true
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", ".ads", ".advertisement",
-      ".chapter-nav", ".footer", ".header", ".topbar",
-      ".recommend", ".related",
-      "#ad", "[id^=\"div-gpt-ad\"]",
+      ".ad",
+      ".ads",
+      ".advertisement",
+      ".chapter-nav",
+      ".footer",
+      ".header",
+      ".topbar",
+      ".recommend",
+      ".related",
+      "#ad",
+      "[id^=\"div-gpt-ad\"]",
       "ins.adsbygoogle",
-      ".listmain", ".bookname",
-      ".pageheadermenu", ".leftmenu", ".modbg",
-      ".bookimg", ".bookimg2",
-      ".ratediv", ".rateblock",
-      ".pc-footer", ".m-footer",
-      ".bookvote", ".morebook-84c1078c",
-      ".readSet", ".settheme"
+      ".listmain",
+      ".bookname",
+      ".pageheadermenu",
+      ".leftmenu",
+      ".modbg",
+      ".bookimg",
+      ".bookimg2",
+      ".ratediv",
+      ".rateblock",
+      ".pc-footer",
+      ".m-footer",
+      ".bookvote",
+      ".morebook-84c1078c",
+      ".readSet",
+      ".settheme"
     ],
     "adPatterns": [
-      "xinjianpan", "xinjianpan.com", "新键盘小说网",
-      "键盘小说网", "请记住本书", "手机用户请浏览",
-      "本章未完", "最快更新",
-      "本章最新章节", "请访问",
-      "如果您喜欢", "分享到",
-      "扫码关注", "微信公众号",
-      "关注公众号", "关注我们",
-      "TXT下载", "全本下载",
-      "返回目录", "章节列表",
-      "推荐本书", "打赏",
-      "本章完", "本章结束",
-      "完结感言", "在线听书",
-      "热门推荐", "内容有问题",
-      "无弹窗小说", "无弹窗阅读",
-      "加入书架", "邮件反馈",
-      "最新章节", "正在手打中",
-      "网友上传", "章节内容加载失败",
-      "关闭浏览器", "畅读模式", "小说模式",
-      "广告屏蔽", "复制网址"
+      "xinjianpan",
+      "xinjianpan.com",
+      "新键盘小说网",
+      "键盘小说网",
+      "请记住本书",
+      "手机用户请浏览",
+      "本章未完",
+      "最快更新",
+      "本章最新章节",
+      "请访问",
+      "如果您喜欢",
+      "分享到",
+      "扫码关注",
+      "微信公众号",
+      "关注公众号",
+      "关注我们",
+      "TXT下载",
+      "全本下载",
+      "返回目录",
+      "章节列表",
+      "推荐本书",
+      "打赏",
+      "本章完",
+      "本章结束",
+      "完结感言",
+      "在线听书",
+      "热门推荐",
+      "内容有问题",
+      "无弹窗小说",
+      "无弹窗阅读",
+      "加入书架",
+      "邮件反馈",
+      "最新章节",
+      "正在手打中",
+      "网友上传",
+      "章节内容加载失败",
+      "关闭浏览器",
+      "畅读模式",
+      "小说模式",
+      "广告屏蔽",
+      "复制网址"
     ]
   },
-
   "scrapeMode": "full",
   "engine": "playwright",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/data/covers/xinjianpan",
-  "threadCount": 1,
+  "threadCount": 2,
   "minDelay": 2000,
   "maxDelay": 4000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "www.xinjianpan.com",
@@ -115,6 +204,12 @@
       "连载中": "ongoing",
       "已完结": "completed",
       "完结": "completed"
+    },
+    "rateCalibration": {
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "optimalRPM": 20,
+      "calibratedAt": "2026-09-05T12:14:11.044Z"
     }
   }
 }

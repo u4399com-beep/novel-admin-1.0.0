@@ -546,7 +546,7 @@ export async function executeTask(taskId: string) {
     // Queue ledger cleanup: book URLs enqueued via addManyToQueue are a resume
     // ledger that is never consumed (books are processed directly). Without this,
     // stale 'pending' rows accumulate forever for finished tasks and skew /queue/stats.
-    try { clearTaskQueue(taskId); } catch { /* best-effort */ }
+    try { await clearTaskQueue(taskId); } catch { /* best-effort */ }
   }
 }
 

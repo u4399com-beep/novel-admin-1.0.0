@@ -80,6 +80,7 @@ import { timingSafeEqual } from "node:crypto";
 import { rateOptimizer } from "./src/rate-optimizer";
 import { concurrencyOptimizer } from "./src/concurrency-optimizer";
 import { antiDetectionCoordinator } from "./src/anti-detection-coordinator";
+import { batchCalibrate, calibrateSingleRule, getCalibrationStatus, getCalibrationReport, loadSavedReport } from "./src/rate-calibration";
 import { getCaptchaPreDetection, getCaptchaPreDetectionStats, resetCaptchaPreDetection } from "./src/captcha-detector";
 import { crawlScheduler } from "./src/crawl-scheduler";
 import type {
@@ -745,6 +746,54 @@ export function startServer(port: number = 3099) {
         }
         const signals = antiCrawlAdvisor.getDomainSignals(decodeURIComponent(domain));
         return Response.json({ domain, signals }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // GET /rate-calibration/status — current calibration status
+      if (path === "/rate-calibration/status" && method === "GET") {
+        const status = getCalibrationStatus();
+        return Response.json(status, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // GET /rate-calibration/results — last calibration results
+      if (path === "/rate-calibration/results" && method === "GET") {
+        const report = getCalibrationReport() || loadSavedReport();
+        if (!report) {
+          return Response.json({ error: 'No calibration results available. Run calibration first.' }, { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json(report, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // POST /rate-calibration/start — start calibration for all rules
+      if (path === "/rate-calibration/start" && method === "POST") {
+        try {
+          const body = await req.json().catch(() => ({})) as { apply?: boolean };
+          const apply = body.apply !== false; // default true
+          const report = await batchCalibrate(apply);
+          return Response.json({ success: true, applied: apply, report }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return Response.json({ error: msg }, { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+
+      // POST /rate-calibration/start/:ruleName — calibrate single rule
+      if (path.startsWith("/rate-calibration/start/") && method === "POST") {
+        const ruleName = path.replace("/rate-calibration/start/", "");
+        if (!ruleName) {
+          return Response.json({ error: 'ruleName is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        try {
+          const body = await req.json().catch(() => ({})) as { apply?: boolean };
+          const apply = body.apply !== false;
+          const result = await calibrateSingleRule(ruleName, apply);
+          if (!result) {
+            return Response.json({ error: `Rule "${ruleName}" not found` }, { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          return Response.json({ success: true, applied: apply, result }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return Response.json({ error: msg }, { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
       }
 
       // Rate limiting (per client IP)
@@ -1451,26 +1500,46 @@ const shutdown = async (signal: string) => {
   isShuttingDown = true;
   console.log(`\n[${new Date().toISOString()}] Received ${signal}, shutting down gracefully...`);
 
-  // Wait for active tasks to complete (with a 10s hard deadline)
-  const deadline = Date.now() + 10000;
+  // Stop accepting new tasks (mark as shutting down)
+  // Wait for active tasks to complete (with a 30s hard deadline)
+  const deadline = Date.now() + 30000;
 
   await Promise.race([
-    new Promise<void>((resolve) => setTimeout(resolve, 10000)),
+    new Promise<void>((resolve) => setTimeout(resolve, 30000)),
     (async () => {
       // Wait for all active tasks to finish
       while (activeTasks.size > 0 && Date.now() < deadline) {
+        console.log(`[${new Date().toISOString()}] Waiting for ${activeTasks.size} active tasks to complete...`);
         await new Promise((r) => setTimeout(r, 1000));
       }
     }),
   ]);
 
+  // Save all checkpoints / persist state
+  try {
+    // Persist rate optimizer state
+    if (typeof rateOptimizer?.persist === 'function') rateOptimizer.persist();
+  } catch {}
+  try {
+    // Persist bypass registry
+    const { bypassRegistry } = await import("./src/bypass-registry");
+    bypassRegistry.persist();
+  } catch {}
+  try {
+    // Flush and destroy logger
+    const { logger } = await import("./src/logger");
+    logger.flush();
+    logger.destroy();
+  } catch {}
+
+  // Close all browser instances
   await closeAllEngines().catch(() => {});
   requestFingerprintMgr.destroy();
   sessionManager.destroy();
   clearInterval(terminateTimer); // Clear force-terminate timer regardless
   clearInterval(stuckDetectInterval); // Clear stuck-detection interval
   clearInterval(progressThrottleCleanupTimer); // Clear progress throttle cleanup
-  console.log(`[${new Date().toISOString()}] Active tasks: ${activeTasks.size}, Engines closed. Exiting.`);
+  console.log(`[${new Date().toISOString()}] Active tasks: ${activeTasks.size}, Engines closed. State persisted. Exiting.`);
 
   process.exit(0);
 };

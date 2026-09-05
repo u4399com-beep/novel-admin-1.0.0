@@ -1,0 +1,240 @@
+# ============================================================
+# Novel Management System - Multi-Service Production Compose
+# v6.0 — Separate containers for each service
+#
+# Services:
+#   app            — Next.js main application (port 3000)
+#   scraper-service — Bun scraper service (port 3099, internal)
+#   log-stream      — Socket.io log streaming (port 3004, internal)
+#   postgres        — PostgreSQL 17 database
+#   gateway         — Caddy reverse proxy (ports 80/443, optional)
+#
+# Usage:
+#   docker compose up -d              # Start all
+#   docker compose up -d app scraper  # Start without gateway
+#   docker compose logs -f            # Follow logs
+#
+# Memory tiers (auto-configured by install-docker.sh):
+#   tiny    <1.5GB   PG:128M  App:512M
+#   small   1.5-3GB  PG:192M  App:640M
+#   normal  3GB+     PG:256M  App:1024M
+# ============================================================
+
+services:
+  # ============ PostgreSQL Database ============
+  postgres:
+    image: postgres:17
+    container_name: novel-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-novel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-novel_admin}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_INITDB_ARGS: "--no-locale --encoding=UTF8"
+      POSTGRES_SHARED_BUFFERS: ${PG_SHARED_BUFFERS:-128MB}
+      POSTGRES_WORK_MEM: ${PG_WORK_MEM:-8MB}
+      POSTGRES_MAINTENANCE_WORK_MEM: ${PG_MAINTENANCE_WORK_MEM:-64MB}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${PG_EFFECTIVE_CACHE_SIZE:-256MB}
+      POSTGRES_MAX_CONNECTIONS: ${PG_MAX_CONNECTIONS:-30}
+      POSTGRES_WAL_LEVEL: minimal
+      POSTGRES_MAX_WAL_SIZE: ${PG_MAX_WAL_SIZE:-64MB}
+      POSTGRES_MIN_WAL_SIZE: ${PG_MIN_WAL_SIZE:-8MB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ${BACKUP_DIR:-./backups}:/backups:rw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-novel} -d ${POSTGRES_DB:-novel_admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: ${PG_MEMORY_LIMIT:-256M}
+          cpus: ${PG_CPU_LIMIT:-1.0}
+        reservations:
+          memory: ${PG_MEMORY_RESERVATION:-64M}
+    tmpfs:
+      - /var/run/postgresql
+    networks:
+      - internal
+
+  # ============ Main Application (Next.js) ============
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-1024}
+        BUN_GC_THRESHOLD: ${BUN_GC_THRESHOLD:-100mb}
+    container_name: novel-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      scraper-service:
+        condition: service_healthy
+    volumes:
+      - app-data:/app/data
+    environment:
+      # Database
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=5&pool_timeout=30
+      - QUEUE_DB_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=3
+      - DB_PROVIDER=postgresql
+      # App
+      - NODE_ENV=production
+      - NEXT_PUBLIC_APP_NAME=${APP_NAME:-小说管理系统}
+      - NEXT_PUBLIC_APP_URL=${APP_URL:-http://localhost:3000}
+      # Auth
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in .env}
+      - NEXTAUTH_URL=${APP_URL:-http://localhost:3000}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      # Service Auth
+      - SCRAPER_SERVICE_TOKEN=${SCRAPER_SERVICE_TOKEN:?Set SCRAPER_SERVICE_TOKEN in .env}
+      - SCRAPER_SERVICE_URL=http://scraper-service:3099
+      - MAIN_APP_URL=http://app:3000
+      # Log Stream
+      - LOG_STREAM_URL=http://log-stream:3004
+      # Optional External Services
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - FIRECRAWL_API_URL=${FIRECRAWL_API_URL:-}
+      - AGENTQL_API_KEY=${AGENTQL_API_KEY:-}
+      - AGENTQL_API_URL=${AGENTQL_API_URL:-}
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/auth/csrf || exit 1"]
+      start_period: 120s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: ${APP_MEMORY_LIMIT:-1024M}
+          cpus: ${APP_CPU_LIMIT:-1.0}
+        reservations:
+          memory: ${APP_MEMORY_RESERVATION:-256M}
+    shm_size: ${APP_SHM_SIZE:-256m}
+    networks:
+      - internal
+      - frontend
+
+  # ============ Scraper Service ============
+  scraper-service:
+    build:
+      context: ./mini-services/scraper-service
+      dockerfile: Dockerfile
+    container_name: novel-scraper
+    restart: unless-stopped
+    # Not exposed to host — internal only
+    # Uncomment for local debugging:
+    # ports:
+    #   - "3099:3099"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-novel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-novel_admin}?connection_limit=3
+      - DB_PROVIDER=postgresql
+      - PORT=3099
+      - SCRAPER_SERVICE_TOKEN=${SCRAPER_SERVICE_TOKEN:?Set SCRAPER_SERVICE_TOKEN in .env}
+      - MAIN_APP_URL=http://app:3000
+      - NODE_ENV=production
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3099/health || exit 1"]
+      start_period: 30s
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "15m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: ${SCRAPER_MEMORY_LIMIT:-512M}
+          cpus: ${SCRAPER_CPU_LIMIT:-0.8}
+    shm_size: "128m"
+    networks:
+      - internal
+
+  # ============ Log Stream Service ============
+  log-stream:
+    build:
+      context: ./mini-services/log-stream-service
+      dockerfile: Dockerfile
+    container_name: novel-log-stream
+    restart: unless-stopped
+    environment:
+      - PORT=3004
+      - NODE_ENV=production
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3004/health || exit 1"]
+      start_period: 10s
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: ${LOGSTREAM_MEMORY_LIMIT:-128M}
+    networks:
+      - internal
+
+  # ============ Gateway (Caddy — Optional) ============
+  # Uncomment to enable HTTPS and reverse proxy
+  # gateway:
+  #   image: caddy:2
+  #   container_name: novel-gateway
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy-data:/data
+  #     - caddy-config:/config
+  #   depends_on:
+  #     app:
+  #       condition: service_healthy
+  #   networks:
+  #     - frontend
+
+volumes:
+  postgres-data:
+    driver: local
+  app-data:
+    driver: local
+  # caddy-data:
+  #   driver: local
+  # caddy-config:
+  #   driver: local
+
+networks:
+  internal:
+    driver: bridge
+  frontend:
+    driver: bridge

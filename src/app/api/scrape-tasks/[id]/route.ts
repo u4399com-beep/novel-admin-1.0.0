@@ -67,12 +67,16 @@ export const PUT = withAuth(async function PUT(
     if (body.currentStep !== undefined) {
       updateData.currentStep = sanitizeField(String(body.currentStep), 200);
     }
+    const MAX_COUNTER_VALUE = 10_000_000;
     const numFields = ['totalBooks', 'totalChapters', 'newBooks', 'newChapters', 'failedItems', 'skippedItems'] as const;
     for (const field of numFields) {
       if (body[field] !== undefined) {
         const v = Number(body[field]);
         if (!Number.isFinite(v) || v < 0) {
           return apiError(`${field} 必须是非负数字`, 400);
+        }
+        if (v > MAX_COUNTER_VALUE) {
+          return apiError(`${field} 不能超过${MAX_COUNTER_VALUE}`, 400);
         }
         updateData[field] = v;
       }

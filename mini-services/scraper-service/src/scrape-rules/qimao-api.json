@@ -2,11 +2,9 @@
   "name": "七猫小说API (qimao)",
   "description": "七猫小说官方API采集（api-bc.wtzw.com / api-ks.wtzw.com）。基于yckceo.com书源JSON(id/7698)的七猫官方API。使用MD5签名认证+AES-CBC内容解密。支持搜索、排行榜、分类浏览、书籍详情、章节列表、章节内容。engine设为api。所有数据通过API JSON响应获取，无需HTML解析。",
   "enabled": true,
-
   "listUrl": "https://api-bc.wtzw.com/api/v1/leader-board?rank_type=rec_list&category_id=0&tab_type=1&category_type=0&imei_ip=2937357107&book_privacy=1&read_preference=0",
   "listSelector": null,
   "listPagination": null,
-
   "bookTitleSelector": null,
   "bookAuthorSelector": null,
   "bookCategorySelector": null,
@@ -14,21 +12,21 @@
   "bookDescriptionSelector": null,
   "bookCoverSelector": null,
   "bookStatusSelector": null,
-
   "chapterListUrl": null,
   "chapterListSelector": null,
   "chapterTitleSelector": null,
   "chapterLinkSelector": null,
   "chapterPagination": null,
-
   "contentTitleSelector": null,
   "contentSelector": null,
   "contentPagination": null,
-
   "antiCrawlConfig": {
     "useJsRender": false,
     "uaRotation": false,
-    "delay": [500, 1000],
+    "delay": [
+      500,
+      1000
+    ],
     "humanBehavior": false,
     "retries": 3,
     "referer": null,
@@ -41,27 +39,27 @@
       "net-env": "1",
       "channel": "unknown",
       "qm-params": ""
-    }
+    },
+    "stealthMode": "basic",
+    "rotateUA": false,
+    "delayJitter": 0.2
   },
-
   "cleanConfig": {
     "removeAds": false,
     "cleanHtml": false,
     "removePatterns": [],
     "adPatterns": []
   },
-
   "scrapeMode": "incremental",
   "engine": "api",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/qimao/",
-  "threadCount": 2,
-  "minDelay": 500,
-  "maxDelay": 1000,
+  "threadCount": 3,
+  "minDelay": 1000,
+  "maxDelay": 2000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "api-bc.wtzw.com",
@@ -76,7 +74,16 @@
         "signParams": true,
         "signHeaders": true,
         "algorithm": "md5",
-        "headerKeys": ["app-version", "platform", "reg", "AUTHORIZATION", "application-id", "net-env", "channel", "qm-params"]
+        "headerKeys": [
+          "app-version",
+          "platform",
+          "reg",
+          "AUTHORIZATION",
+          "application-id",
+          "net-env",
+          "channel",
+          "qm-params"
+        ]
       },
       "decryption": {
         "algorithm": "aes-256-cbc",
@@ -217,8 +224,8 @@
         "status": {
           "field": "is_over",
           "values": {
-            "1": "已完结",
-            "0": "连载中"
+            "0": "连载中",
+            "1": "已完结"
           }
         },
         "wordCount": "words_num",
@@ -238,6 +245,12 @@
         "contentPath": "data.content",
         "totalField": "data.total_count"
       }
+    },
+    "rateCalibration": {
+      "tier": 4,
+      "tierLabel": "API (special handling)",
+      "optimalRPM": 15,
+      "calibratedAt": "2026-09-05T12:14:11.043Z"
     }
   }
 }

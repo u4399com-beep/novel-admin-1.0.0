@@ -192,22 +192,24 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
       setLastChapterIndex(chapterIndex);
 
       // Persist to server (fire-and-forget, non-blocking)
-      try {
-        const { getSessionId } = await import('@/lib/reading-session');
-        const sid = getSessionId();
-        if (sid) {
-          const chapterId = chaptersRef.current[chapterIndex]?.id || null;
-          apiFetch('/api/public/reading-progress', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: sid, novelId, chapterId, chapterIndex, scrollPercent: sp }),
-            silent: true,
-            timeout: 5000,
-          }).catch(() => {});
+      void (async () => {
+        try {
+          const { getSessionId } = await import('@/lib/reading-session');
+          const sid = getSessionId();
+          if (sid) {
+            const chapterId = chaptersRef.current[chapterIndex]?.id || null;
+            apiFetch('/api/public/reading-progress', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId: sid, novelId, chapterId, chapterIndex, scrollPercent: sp }),
+              silent: true,
+              timeout: 5000,
+            }).catch(() => {});
+          }
+        } catch {
+          // Server sync is best-effort
         }
-      } catch {
-        // Server sync is best-effort
-      }
+      })();
     },
     [PROGRESS_KEY, novelId] // stable — reads chapters from ref
   );

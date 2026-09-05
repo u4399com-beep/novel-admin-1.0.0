@@ -20,7 +20,7 @@ import { rateOptimizer } from './rate-optimizer';
 import { concurrencyOptimizer } from './concurrency-optimizer';
 import { adaptiveDelay } from './adaptive-delay';
 import { detectCaptcha, type CaptchaDetection } from './captcha-detector';
-import { detectResponseSignals, type ResponseSignalResult } from './anti-crawl-signal-detector';
+import { analyzeResponse, type ResponseSignalResult } from './anti-crawl-signal-detector';
 import { sessionManager } from './session-manager';
 import { proxyManager } from './proxy-manager';
 import { buildFetchHeaders } from './utils';
@@ -212,7 +212,7 @@ class AntiDetectionCoordinator {
     const captcha = detectCaptcha(html, url, statusCode);
 
     // 2. Anti-crawl signal detection
-    const signals = detectResponseSignals(respHeaders, html, statusCode);
+    const signals = analyzeResponse(statusCode, respHeaders, html);
 
     // 3. Determine if this was a block
     const isBlock = statusCode === 429 || statusCode === 403 || statusCode === 503 || captcha.detected;

@@ -2,11 +2,9 @@
   "name": "番茄小说API (fanqie-novel-api)",
   "description": "番茄小说API代理采集（fq.taijiwang.top）。基于Legado书源JSON的番茄小说API代理，engine设为cheerio（占位，待系统支持api引擎后切换）。所有数据通过API JSON响应获取，无需HTML解析。包含发现、搜索、书籍详情、章节列表、章节内容、评论等端点。",
   "enabled": true,
-
   "listUrl": "https://fq.taijiwang.top/api/discover/style?tab=小说&source_type=男频",
   "listSelector": null,
   "listPagination": null,
-
   "bookTitleSelector": null,
   "bookAuthorSelector": null,
   "bookCategorySelector": null,
@@ -14,47 +12,47 @@
   "bookDescriptionSelector": null,
   "bookCoverSelector": null,
   "bookStatusSelector": null,
-
   "chapterListUrl": null,
   "chapterListSelector": null,
   "chapterTitleSelector": null,
   "chapterLinkSelector": null,
   "chapterPagination": null,
-
   "contentTitleSelector": null,
   "contentSelector": null,
   "contentPagination": null,
-
   "antiCrawlConfig": {
     "useJsRender": false,
     "uaRotation": false,
-    "delay": [500, 1000],
+    "delay": [
+      500,
+      1000
+    ],
     "humanBehavior": false,
     "retries": 3,
     "referer": null,
     "customHeaders": {
       "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36 SearchCraft/2.6.1 (Baidu; P1 10)"
-    }
+    },
+    "stealthMode": "basic",
+    "rotateUA": false,
+    "delayJitter": 0.2
   },
-
   "cleanConfig": {
     "removeAds": false,
     "cleanHtml": false,
     "removePatterns": [],
     "adPatterns": []
   },
-
   "scrapeMode": "incremental",
   "engine": "cheerio",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/fanqie/",
-  "threadCount": 2,
-  "minDelay": 500,
-  "maxDelay": 1000,
+  "threadCount": 3,
+  "minDelay": 1000,
+  "maxDelay": 2000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "fq.taijiwang.top",
@@ -76,7 +74,10 @@
             "tab": "小说",
             "source_type": "男频"
           },
-          "channels": ["男频", "女频"],
+          "channels": [
+            "男频",
+            "女频"
+          ],
           "description": "发现/分类页，返回推荐书籍列表"
         },
         "search": {
@@ -170,6 +171,12 @@
         "contentPath": "data.content",
         "totalField": "data.total_count"
       }
+    },
+    "rateCalibration": {
+      "tier": 4,
+      "tierLabel": "API (special handling)",
+      "optimalRPM": 15,
+      "calibratedAt": "2026-09-05T12:14:11.041Z"
     }
   }
 }

@@ -1,0 +1,1070 @@
+{
+  "timestamp": "2026-09-05T12:18:29.044Z",
+  "totalRules": 40,
+  "tierBreakdown": {
+    "1": 21,
+    "2": 10,
+    "3": 7,
+    "4": 2
+  },
+  "results": [
+    {
+      "ruleName": "101看書 (101kks.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/101kks.json",
+      "domain": "www.101kks.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:37.194Z",
+        "detectedAntiCrawl": [
+          "Cloudflare"
+        ]
+      }
+    },
+    {
+      "ruleName": "123读网 (123duw.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/123duw.json",
+      "domain": "www.123duw.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:37.474Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "69书吧 (69shuba.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/69shuba.json",
+      "domain": "www.69shuba.com",
+      "tier": 3,
+      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
+      "previousThreadCount": 1,
+      "previousMinDelay": 4000,
+      "previousMaxDelay": 8000,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalMinDelay": 4000,
+      "optimalMaxDelay": 8000,
+      "antiCrawlConfig": {
+        "stealthMode": "full",
+        "rotateUA": true,
+        "rotateProxy": true,
+        "delayJitter": 0.5,
+        "respect429": true,
+        "captchaAutoUpgrade": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:37.503Z",
+        "detectedAntiCrawl": [
+          "Cloudflare",
+          "CAPTCHA",
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "80阁电子书 (80ge.info)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/80ge.json",
+      "domain": "www.80ge.info",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:38.008Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "8看啦 (8kana.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/8kana.json",
+      "domain": "www.8kana.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:38.198Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "久久小说下载网 (aijjxs.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/aijjxs.json",
+      "domain": "www.aijjxs.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:39.047Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "笔趣5200 (biqu5200.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/biqu5200.json",
+      "domain": "www.biqu5200.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:39.561Z",
+        "detectedAntiCrawl": [
+          "Cloudflare"
+        ]
+      }
+    },
+    {
+      "ruleName": "笔趣阁5200 (biquge5200.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/biquge5200.json",
+      "domain": "www.biquge5200.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:39.909Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "笔趣阁SE (biqugse.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/biqugse.json",
+      "domain": "www.biqugse.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:49.909Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "笔趣无弹窗 (biquwx.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/biquwx.json",
+      "domain": "www.biquwx.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:17:59.910Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "AU文学 (book4.cc)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/book4-au.json",
+      "domain": "book4.cc",
+      "tier": 3,
+      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
+      "previousThreadCount": 1,
+      "previousMinDelay": 4000,
+      "previousMaxDelay": 8000,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalMinDelay": 4000,
+      "optimalMaxDelay": 8000,
+      "antiCrawlConfig": {
+        "stealthMode": "full",
+        "rotateUA": true,
+        "rotateProxy": true,
+        "delayJitter": 0.5,
+        "respect429": true,
+        "captchaAutoUpgrade": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:00.266Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "笔趣阁713 (bqg713.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/bqg713.json",
+      "domain": "www.bqg713.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:00.371Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/bypass-registry.json",
+      "domain": "",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:00.371Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "天天看小说 (cn.ttkan.co)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/cn-ttkan-co.json",
+      "domain": "cn.ttkan.co",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:10.372Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "大风大更人 (dafengdagengren.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/dafengdagengren.json",
+      "domain": "dafengdagengren.com",
+      "tier": 3,
+      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
+      "previousThreadCount": 1,
+      "previousMinDelay": 4000,
+      "previousMaxDelay": 8000,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalMinDelay": 4000,
+      "optimalMaxDelay": 8000,
+      "antiCrawlConfig": {
+        "stealthMode": "full",
+        "rotateUA": true,
+        "rotateProxy": true,
+        "delayJitter": 0.5,
+        "respect429": true,
+        "captchaAutoUpgrade": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:10.876Z",
+        "detectedAntiCrawl": [
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "大味小说 (daweixs.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/daweixs.json",
+      "domain": "daweixs.com",
+      "tier": 3,
+      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
+      "previousThreadCount": 1,
+      "previousMinDelay": 4000,
+      "previousMaxDelay": 8000,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalMinDelay": 4000,
+      "optimalMaxDelay": 8000,
+      "antiCrawlConfig": {
+        "stealthMode": "full",
+        "rotateUA": true,
+        "rotateProxy": true,
+        "delayJitter": 0.5,
+        "respect429": true,
+        "captchaAutoUpgrade": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:11.386Z",
+        "detectedAntiCrawl": [
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "得奇小说网 (www.deqixs.cc)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/deqixs-cc.json",
+      "domain": "www.deqixs.cc",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:11.902Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "东流小说 (dongliuxiaoshuo.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/dongliuxiaoshuo.json",
+      "domain": "www.dongliuxiaoshuo.com",
+      "tier": 3,
+      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
+      "previousThreadCount": 1,
+      "previousMinDelay": 4000,
+      "previousMaxDelay": 8000,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalMinDelay": 4000,
+      "optimalMaxDelay": 8000,
+      "antiCrawlConfig": {
+        "stealthMode": "full",
+        "rotateUA": true,
+        "rotateProxy": true,
+        "delayJitter": 0.5,
+        "respect429": true,
+        "captchaAutoUpgrade": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:11.970Z",
+        "detectedAntiCrawl": [
+          "Cloudflare",
+          "CAPTCHA",
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "多看笔趣 (duokanbiqu.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/duokanbiqu.json",
+      "domain": "www.duokanbiqu.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:12.052Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "番茄小说API (fanqie-novel-api)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/fanqie-api.json",
+      "domain": "fq.taijiwang.top",
+      "tier": 4,
+      "tierLabel": "API (special handling)",
+      "previousThreadCount": 3,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 15,
+      "optimalConcurrency": 3,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": false,
+        "delayJitter": 0.2
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:12.080Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "格格党小说 (gegedangbook.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/gegedangbook.json",
+      "domain": "www.gegedangbook.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:12.535Z",
+        "detectedAntiCrawl": [
+          "Cloudflare"
+        ]
+      }
+    },
+    {
+      "ruleName": "鬼吹灯小说网 (guichuideng.info)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/guichuideng.json",
+      "domain": "www.guichuideng.info",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:13.133Z",
+        "detectedAntiCrawl": [
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "和书屋 (hetushu.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/hetushu.json",
+      "domain": "www.hetushu.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:13.199Z",
+        "detectedAntiCrawl": [
+          "Cloudflare",
+          "CAPTCHA",
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "爱笔趣阁 (ibiquges.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/ibiquges.json",
+      "domain": "www.ibiquges.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:23.200Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "爱笔趣无弹窗 (ibiquwx.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/ibiquwx.json",
+      "domain": "www.ibiquwx.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:23.247Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "老标 (laobiao.cc)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/laobiao.json",
+      "domain": "www.laobiao.cc",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:23.345Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "礼吧好小说 (libahao2.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/libahao2.json",
+      "domain": "www.libahao2.com",
+      "tier": 3,
+      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
+      "previousThreadCount": 1,
+      "previousMinDelay": 4000,
+      "previousMaxDelay": 8000,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalMinDelay": 4000,
+      "optimalMaxDelay": 8000,
+      "antiCrawlConfig": {
+        "stealthMode": "full",
+        "rotateUA": true,
+        "rotateProxy": true,
+        "delayJitter": 0.5,
+        "respect429": true,
+        "captchaAutoUpgrade": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:24.049Z",
+        "detectedAntiCrawl": [
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "精华书阁手机版 (m.jhsssd.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/m-jhssd-com.json",
+      "domain": "m.jhsssd.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:24.705Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "飘天文学 (piaotia.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/piaotia.json",
+      "domain": "www.piaotia.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:24.922Z",
+        "detectedAntiCrawl": [
+          "Cloudflare"
+        ]
+      }
+    },
+    {
+      "ruleName": "评书屋 (ptwxz.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/ptwxz.json",
+      "domain": "www.ptwxz.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:25.164Z",
+        "detectedAntiCrawl": [
+          "Cloudflare"
+        ]
+      }
+    },
+    {
+      "ruleName": "七猫小说API (qimao)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/qimao-api.json",
+      "domain": "api-bc.wtzw.com",
+      "tier": 4,
+      "tierLabel": "API (special handling)",
+      "previousThreadCount": 3,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 15,
+      "optimalConcurrency": 3,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": false,
+        "delayJitter": 0.2
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:25.259Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "书丛 (shucong.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/shucong.json",
+      "domain": "www.shucong.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:25.497Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "速读谷 (shudugu.org)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/shudugu.json",
+      "domain": "shudugu.org",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:26.463Z",
+        "detectedAntiCrawl": []
+      }
+    },
+    {
+      "ruleName": "UU看书 (uukanshu.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/uukanshu.json",
+      "domain": "www.uukanshu.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:26.513Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "万本神站 (wanbenshenzhan.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/wanbenshenzhan.json",
+      "domain": "www.wanbenshenzhan.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:27.195Z",
+        "detectedAntiCrawl": [
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "笔趣宝 (xbiqubao.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/xbiqubao.json",
+      "domain": "www.xbiqubao.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:27.286Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "小说大全 (xiaoshuodaquan.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/xiaoshuodaquan.json",
+      "domain": "www.xiaoshuodaquan.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:27.708Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    },
+    {
+      "ruleName": "新键盘小说 (xinjianpan.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/xinjianpan.json",
+      "domain": "www.xinjianpan.com",
+      "tier": 2,
+      "tierLabel": "MEDIUM (basic rate limiting)",
+      "previousThreadCount": 2,
+      "previousMinDelay": 2000,
+      "previousMaxDelay": 4000,
+      "optimalRPM": 20,
+      "optimalConcurrency": 2,
+      "optimalMinDelay": 2000,
+      "optimalMaxDelay": 4000,
+      "antiCrawlConfig": {
+        "stealthMode": "moderate",
+        "rotateUA": true,
+        "delayJitter": 0.4,
+        "respect429": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:28.187Z",
+        "detectedAntiCrawl": [
+          "Cloudflare"
+        ]
+      }
+    },
+    {
+      "ruleName": "夜伴书屋 (yybsw.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/yybsw.json",
+      "domain": "yybsw.com",
+      "tier": 3,
+      "tierLabel": "HARD (Cloudflare/CAPTCHA)",
+      "previousThreadCount": 1,
+      "previousMinDelay": 4000,
+      "previousMaxDelay": 8000,
+      "optimalRPM": 8,
+      "optimalConcurrency": 1,
+      "optimalMinDelay": 4000,
+      "optimalMaxDelay": 8000,
+      "antiCrawlConfig": {
+        "stealthMode": "full",
+        "rotateUA": true,
+        "rotateProxy": true,
+        "delayJitter": 0.5,
+        "respect429": true,
+        "captchaAutoUpgrade": true
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:28.388Z",
+        "detectedAntiCrawl": [
+          "Cloudflare",
+          "CAPTCHA",
+          "HTTP-403"
+        ]
+      }
+    },
+    {
+      "ruleName": "中文ZW (zhongwenzw.com)",
+      "ruleFile": "/home/z/my-project/mini-services/scraper-service/src/scrape-rules/zhongwenzw.json",
+      "domain": "www.zhongwenzw.com",
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "previousThreadCount": 4,
+      "previousMinDelay": 1000,
+      "previousMaxDelay": 2000,
+      "optimalRPM": 30,
+      "optimalConcurrency": 4,
+      "optimalMinDelay": 1000,
+      "optimalMaxDelay": 2000,
+      "antiCrawlConfig": {
+        "stealthMode": "basic",
+        "rotateUA": true,
+        "delayJitter": 0.3
+      },
+      "probeResults": {
+        "profiled": true,
+        "probeTimestamp": "2026-09-05T12:18:29.044Z",
+        "detectedAntiCrawl": [
+          "Unreachable"
+        ]
+      }
+    }
+  ]
+}

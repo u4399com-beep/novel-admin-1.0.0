@@ -2629,6 +2629,207 @@ class ProxyManager {
       return false;
     }
   }
+
+  // ==================== Smart Proxy Rotation ====================
+
+  /** Per-domain proxy usage tracking for smart rotation */
+  private domainLastProxy = new Map<string, string>(); // domain → last proxy cleanUrl
+  private domainProxySuccessCount = new Map<string, Map<string, number>>(); // domain → (proxyUrl → successCount)
+  private domainProxyFailCount = new Map<string, Map<string, number>>(); // domain → (proxyUrl → failCount)
+
+  /**
+   * Select a proxy using smart rotation strategy.
+   * Considers: domain affinity, geographic proximity, health score, and
+   * avoids using the same proxy twice in a row for the same domain.
+   *
+   * @param domain - Target domain
+   * @param options - Optional selection preferences
+   */
+  getSmartProxy(
+    domain: string,
+    options?: {
+      /** Preferred region (e.g. 'cn-east', 'us-west') */
+      preferredRegion?: string;
+      /** Proxies to exclude from selection */
+      excludeProxies?: string[];
+      /** Minimum health score (0-100) */
+      minHealthScore?: number;
+    }
+  ): ProxyEntry | null {
+    const normDomain = normalizeDomain(domain);
+    const now = Date.now();
+    const minHealth = options?.minHealthScore ?? 20;
+    const excludeSet = new Set(options?.excludeProxies || []);
+    const lastProxy = this.domainLastProxy.get(normDomain);
+
+    // Gather eligible proxies
+    const candidates: Array<{ entry: ProxyEntry; score: number }> = [];
+
+    for (const entry of this.pool.values()) {
+      if (entry.disabled) continue;
+      if (entry.coolingUntil && now < entry.coolingUntil) continue;
+      if (entry.healthScore < minHealth) continue;
+      if (entry.blockedDomains.has(normDomain)) continue;
+
+      // Parse for clean URL
+      const parsed = parseProxyUrl(entry.url);
+      const cleanUrl = parsed?.cleanUrl ?? entry.url;
+      if (excludeSet.has(entry.url) || excludeSet.has(cleanUrl)) continue;
+
+      // Avoid same proxy twice in a row for same domain
+      if (cleanUrl === lastProxy) continue;
+
+      // Compute score
+      let score = entry.healthScore; // Base: health score (0-100)
+
+      // Domain affinity bonus: proxies that worked for this domain before
+      const successCount = this.domainProxySuccessCount.get(normDomain)?.get(cleanUrl) ?? 0;
+      const failCount = this.domainProxyFailCount.get(normDomain)?.get(cleanUrl) ?? 0;
+      if (successCount > 0) {
+        const domainSuccessRate = successCount / (successCount + failCount);
+        score += domainSuccessRate * 30; // Up to +30 for domain affinity
+      }
+
+      // Geographic proximity bonus
+      const targetRegion = options?.preferredRegion || this.detectDomainRegion(normDomain);
+      if (targetRegion && entry.region === targetRegion) {
+        score += 20; // +20 for region match
+      }
+
+      // Speed bonus: lower latency = higher score
+      const domainLat = entry.latencyStats.domainLatency.get(normDomain) ?? entry.latencyStats.avgResponseTime;
+      const effectiveLat = domainLat > 0 ? domainLat : 5000;
+      if (effectiveLat < 1000) score += 15;
+      else if (effectiveLat < 3000) score += 10;
+      else if (effectiveLat < 5000) score += 5;
+
+      // Randomness to avoid always picking same proxy
+      score *= (0.85 + Math.random() * 0.30);
+
+      candidates.push({ entry, score });
+    }
+
+    if (candidates.length === 0) {
+      // Fallback to regular getProxy
+      return this.getProxy(normDomain);
+    }
+
+    // Sort by score descending, pick from top candidates with weighted random
+    candidates.sort((a, b) => b.score - a.score);
+    const topN = Math.max(1, Math.ceil(candidates.length * 0.3));
+    const topCandidates = candidates.slice(0, topN);
+
+    const totalScore = topCandidates.reduce((sum, c) => sum + c.score, 0);
+    let rand = Math.random() * totalScore;
+    let selected = topCandidates[0];
+    for (const c of topCandidates) {
+      rand -= c.score;
+      if (rand <= 0) {
+        selected = c;
+        break;
+      }
+    }
+
+    // Update tracking
+    const selectedClean = parseProxyUrl(selected.entry.url)?.cleanUrl ?? selected.entry.url;
+    this.domainLastProxy.set(normDomain, selectedClean);
+    selected.entry.lastUsed = now;
+    selected.entry.latencyStats.lastUsedAt = now;
+    this.lastUsedUrl = selected.entry.url;
+
+    return selected.entry;
+  }
+
+  /**
+   * Mark a proxy as blocked for a specific domain.
+   * Immediately cools the proxy for that domain.
+   */
+  markProxyBlocked(proxyUrl: string, domain: string): void {
+    const normDomain = normalizeDomain(domain);
+    const parsed = parseProxyUrl(proxyUrl);
+    const cleanUrl = parsed?.cleanUrl ?? proxyUrl;
+
+    // Track the failure
+    let domainFails = this.domainProxyFailCount.get(normDomain);
+    if (!domainFails) {
+      domainFails = new Map();
+      this.domainProxyFailCount.set(normDomain, domainFails);
+    }
+    domainFails.set(cleanUrl, (domainFails.get(cleanUrl) || 0) + 1);
+
+    // Cool the proxy
+    const entry = this.pool.get(cleanUrl);
+    if (entry) {
+      entry.blockedDomains.add(normDomain);
+      entry.coolingUntil = Date.now() + 60_000; // Cool for 60s
+      entry.consecutiveFails++;
+    }
+  }
+
+  /**
+   * Record a successful proxy use for a domain (for affinity tracking).
+   */
+  recordProxySuccess(proxyUrl: string, domain: string): void {
+    const normDomain = normalizeDomain(domain);
+    const parsed = parseProxyUrl(proxyUrl);
+    const cleanUrl = parsed?.cleanUrl ?? proxyUrl;
+
+    let domainSuccesses = this.domainProxySuccessCount.get(normDomain);
+    if (!domainSuccesses) {
+      domainSuccesses = new Map();
+      this.domainProxySuccessCount.set(normDomain, domainSuccesses);
+    }
+    domainSuccesses.set(cleanUrl, (domainSuccesses.get(cleanUrl) || 0) + 1);
+  }
+
+  /**
+   * Get proxy statistics for a specific domain.
+   * Shows success/fail rates per proxy per domain.
+   */
+  getProxyStatsForDomain(domain: string): Array<{
+    proxyUrl: string;
+    successCount: number;
+    failCount: number;
+    successRate: number;
+    healthScore: number;
+    avgResponseTime: number;
+    region?: string;
+  }> {
+    const normDomain = normalizeDomain(domain);
+    const successes = this.domainProxySuccessCount.get(normDomain);
+    const fails = this.domainProxyFailCount.get(normDomain);
+    const results: Array<{
+      proxyUrl: string;
+      successCount: number;
+      failCount: number;
+      successRate: number;
+      healthScore: number;
+      avgResponseTime: number;
+      region?: string;
+    }> = [];
+
+    // Combine all proxies that have been used for this domain
+    const allProxyUrls = new Set<string>();
+    if (successes) for (const url of successes.keys()) allProxyUrls.add(url);
+    if (fails) for (const url of fails.keys()) allProxyUrls.add(url);
+
+    for (const proxyUrl of allProxyUrls) {
+      const sc = successes?.get(proxyUrl) ?? 0;
+      const fc = fails?.get(proxyUrl) ?? 0;
+      const entry = this.pool.get(proxyUrl);
+      results.push({
+        proxyUrl: redactProxyCredentials(proxyUrl),
+        successCount: sc,
+        failCount: fc,
+        successRate: sc + fc > 0 ? sc / (sc + fc) : 0,
+        healthScore: entry?.healthScore ?? 0,
+        avgResponseTime: entry?.latencyStats.domainLatency.get(normDomain) ?? entry?.avgResponseTime ?? 0,
+        region: entry?.region,
+      });
+    }
+
+    return results.sort((a, b) => b.successRate - a.successRate);
+  }
 }
 
 // Singleton export

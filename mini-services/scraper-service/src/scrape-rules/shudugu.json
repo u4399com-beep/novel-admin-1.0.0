@@ -2,79 +2,147 @@
   "name": "速读谷 (shudugu.org)",
   "description": "速读谷全站采集。UTF-8编码，使用cheerio引擎。分类页/{category}/，分页/{category}/{page}.html。书籍详情页含完整章节列表(#list.dir.clear ul li a)，内容页在.con，支持内容分页(.prenext a下一页)。",
   "enabled": true,
-
   "listUrl": "https://www.shudugu.org/{catId}/",
-  "listSelector": { "type": "css", "value": ".container .item > a[href^=\"/\"]" },
-  "listPagination": { "type": "page", "selector": ".page ul a[href$=.html]", "maxPage": 200 },
-
-  "bookTitleSelector": { "type": "css", "value": ".item .itemtxt h1 a" },
-  "bookAuthorSelector": { "type": "css", "value": ".item .itemtxt p a[href*=zuozhe]" },
-  "bookCategorySelector": { "type": "css", "value": ".item .itemtxt p span:nth-child(2)" },
+  "listSelector": {
+    "type": "css",
+    "value": ".container .item > a[href^=\"/\"]"
+  },
+  "listPagination": {
+    "type": "page",
+    "selector": ".page ul a[href$=.html]",
+    "maxPage": 200
+  },
+  "bookTitleSelector": {
+    "type": "css",
+    "value": ".item .itemtxt h1 a"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": ".item .itemtxt p a[href*=zuozhe]"
+  },
+  "bookCategorySelector": {
+    "type": "css",
+    "value": ".item .itemtxt p span:nth-child(2)"
+  },
   "bookKeywordsSelector": null,
-  "bookDescriptionSelector": { "type": "css", "value": ".des.bb" },
-  "bookCoverSelector": { "type": "css", "value": ".item > a > img", "extract": "src" },
-  "bookStatusSelector": { "type": "css", "value": ".item .itemtxt p span:first-child" },
-
+  "bookDescriptionSelector": {
+    "type": "css",
+    "value": ".des.bb"
+  },
+  "bookCoverSelector": {
+    "type": "css",
+    "value": ".item > a > img",
+    "extract": "src"
+  },
+  "bookStatusSelector": {
+    "type": "css",
+    "value": ".item .itemtxt p span:first-child"
+  },
   "chapterListUrl": "{bookUrl}",
-  "chapterListSelector": { "type": "css", "value": "#list.dir.clear ul li a" },
-  "chapterTitleSelector": { "type": "css", "value": "#list.dir.clear ul li a" },
-  "chapterLinkSelector": { "type": "css", "value": "#list.dir.clear ul li a" },
+  "chapterListSelector": {
+    "type": "css",
+    "value": "#list.dir.clear ul li a"
+  },
+  "chapterTitleSelector": {
+    "type": "css",
+    "value": "#list.dir.clear ul li a"
+  },
+  "chapterLinkSelector": {
+    "type": "css",
+    "value": "#list.dir.clear ul li a"
+  },
   "chapterPagination": null,
-
-  "contentTitleSelector": { "type": "css", "value": ".submenu h1" },
-  "contentSelector": { "type": "css", "value": ".con" },
-  "contentPagination": { "type": "next", "selector": ".prenext a", "maxPage": 10 },
-
+  "contentTitleSelector": {
+    "type": "css",
+    "value": ".submenu h1"
+  },
+  "contentSelector": {
+    "type": "css",
+    "value": ".con"
+  },
+  "contentPagination": {
+    "type": "next",
+    "selector": ".prenext a",
+    "maxPage": 10
+  },
   "antiCrawlConfig": {
     "useJsRender": false,
     "uaRotation": true,
-    "delay": [1500, 3000],
+    "delay": [
+      1500,
+      3000
+    ],
     "humanBehavior": false,
     "retries": 2,
-    "referer": "https://www.shudugu.org/"
+    "referer": "https://www.shudugu.org/",
+    "stealthMode": "basic",
+    "rotateUA": true,
+    "delayJitter": 0.3
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", ".ads", ".advertisement",
-      ".footer", ".header", ".chapter-nav",
-      ".recommend", ".related", ".prenext",
-      "ins.adsbygoogle", "[id^=div-gpt-ad]",
-      ".submenu", ".page"
+      ".ad",
+      ".ads",
+      ".advertisement",
+      ".footer",
+      ".header",
+      ".chapter-nav",
+      ".recommend",
+      ".related",
+      ".prenext",
+      "ins.adsbygoogle",
+      "[id^=div-gpt-ad]",
+      ".submenu",
+      ".page"
     ],
     "adPatterns": [
-      "shudugu", "shudugu.org", "速读谷",
-      "请记住本书", "手机用户请浏览",
-      "本章未完", "最快更新",
-      "本章最新章节", "请访问",
-      "如果您喜欢", "分享到",
-      "扫码关注", "微信公众号",
-      "关注公众号", "关注我们",
-      "TXT下载", "全本下载",
-      "返回目录", "章节列表",
-      "推荐本书", "打赏",
-      "本章完", "本章结束",
-      "完结感言", "在线听书",
-      "最新章节", "请牢记",
-      "加入书架", "加入收藏",
-      "百度搜索", "搜狗搜索",
-      "请记住最新网址", "温馨提示"
+      "shudugu",
+      "shudugu.org",
+      "速读谷",
+      "请记住本书",
+      "手机用户请浏览",
+      "本章未完",
+      "最快更新",
+      "本章最新章节",
+      "请访问",
+      "如果您喜欢",
+      "分享到",
+      "扫码关注",
+      "微信公众号",
+      "关注公众号",
+      "关注我们",
+      "TXT下载",
+      "全本下载",
+      "返回目录",
+      "章节列表",
+      "推荐本书",
+      "打赏",
+      "本章完",
+      "本章结束",
+      "完结感言",
+      "在线听书",
+      "最新章节",
+      "请牢记",
+      "加入书架",
+      "加入收藏",
+      "百度搜索",
+      "搜狗搜索",
+      "请记住最新网址",
+      "温馨提示"
     ]
   },
-
   "scrapeMode": "incremental",
   "engine": "cheerio",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/shudugu/",
-  "threadCount": 2,
-  "minDelay": 1500,
-  "maxDelay": 3000,
+  "threadCount": 4,
+  "minDelay": 1000,
+  "maxDelay": 2000,
   "enableShuffle": false,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "shudugu.org",
@@ -118,6 +186,12 @@
       "xiangcun": "cmsbmowiu0001q9wi1u5689c2",
       "xianshi": "cmsbmowiu0001q9wi1u5689c2",
       "yanqing": "cmsbmowis0000q9wix8cxfzdk"
+    },
+    "rateCalibration": {
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "optimalRPM": 30,
+      "calibratedAt": "2026-09-05T12:14:11.043Z"
     }
   }
 }

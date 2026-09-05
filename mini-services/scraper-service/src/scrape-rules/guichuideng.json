@@ -2,88 +2,171 @@
   "name": "鬼吹灯小说网 (guichuideng.info)",
   "description": "鬼吹灯小说网全站采集。GBK编码，使用Obscura隐身引擎绕过基础反爬。单页书单，无列表分页。OG标签提供高质量结构化数据作为主要提取源。",
   "enabled": true,
-
   "listUrl": "https://www.guichuideng.info/book/",
-  "listSelector": { "type": "css", "value": ".item .image a[href]" },
+  "listSelector": {
+    "type": "css",
+    "value": ".item .image a[href]"
+  },
   "listPagination": null,
-
-  "bookTitleSelector": { "type": "css", "value": "meta[property='og:novel:book_name']", "extract": "content" },
-  "bookAuthorSelector": { "type": "css", "value": "meta[property='og:novel:author']", "extract": "content" },
-  "bookCategorySelector": { "type": "css", "value": "meta[property='og:novel:category']", "extract": "content" },
-  "bookKeywordsSelector": { "type": "css", "value": "meta[name='Keywords']", "extract": "content" },
-  "bookDescriptionSelector": { "type": "css", "value": ".xdesc" },
-  "bookCoverSelector": { "type": "css", "value": "meta[property='og:image']", "extract": "content" },
-  "bookStatusSelector": { "type": "css", "value": "meta[property='og:novel:status']", "extract": "content" },
-
+  "bookTitleSelector": {
+    "type": "css",
+    "value": "meta[property='og:novel:book_name']",
+    "extract": "content"
+  },
+  "bookAuthorSelector": {
+    "type": "css",
+    "value": "meta[property='og:novel:author']",
+    "extract": "content"
+  },
+  "bookCategorySelector": {
+    "type": "css",
+    "value": "meta[property='og:novel:category']",
+    "extract": "content"
+  },
+  "bookKeywordsSelector": {
+    "type": "css",
+    "value": "meta[name='Keywords']",
+    "extract": "content"
+  },
+  "bookDescriptionSelector": {
+    "type": "css",
+    "value": ".xdesc"
+  },
+  "bookCoverSelector": {
+    "type": "css",
+    "value": "meta[property='og:image']",
+    "extract": "content"
+  },
+  "bookStatusSelector": {
+    "type": "css",
+    "value": "meta[property='og:novel:status']",
+    "extract": "content"
+  },
   "chapterListUrl": "{bookUrl}",
-  "chapterListSelector": { "type": "css", "value": "ul#section-list, .section-list" },
-  "chapterTitleSelector": { "type": "css", "value": "ul#section-list a[href], .section-list a[href]" },
-  "chapterLinkSelector": { "type": "css", "value": "ul#section-list a[href], .section-list a[href]" },
+  "chapterListSelector": {
+    "type": "css",
+    "value": "ul#section-list, .section-list"
+  },
+  "chapterTitleSelector": {
+    "type": "css",
+    "value": "ul#section-list a[href], .section-list a[href]"
+  },
+  "chapterLinkSelector": {
+    "type": "css",
+    "value": "ul#section-list a[href], .section-list a[href]"
+  },
   "chapterPagination": null,
-
-  "contentTitleSelector": { "type": "css", "value": "h1.title" },
-  "contentSelector": { "type": "css", "value": "#content" },
-  "contentPagination": { "type": "next", "selector": "a:contains(\"下一章\")", "maxPage": 1 },
-
+  "contentTitleSelector": {
+    "type": "css",
+    "value": "h1.title"
+  },
+  "contentSelector": {
+    "type": "css",
+    "value": "#content"
+  },
+  "contentPagination": {
+    "type": "next",
+    "selector": "a:contains(\"下一章\")",
+    "maxPage": 1
+  },
   "antiCrawlConfig": {
     "useJsRender": true,
     "uaRotation": true,
-    "delay": [2000, 4000],
+    "delay": [
+      2000,
+      4000
+    ],
     "humanBehavior": true,
     "retries": 2,
-    "referer": "https://www.guichuideng.info/"
+    "referer": "https://www.guichuideng.info/",
+    "stealthMode": "basic",
+    "rotateUA": true,
+    "delayJitter": 0.3
   },
-
   "cleanConfig": {
     "removeAds": true,
     "cleanHtml": true,
     "removePatterns": [
-      ".ad", ".ads", ".advertisement",
-      ".chapter-nav", ".footer", ".header", ".topbar",
-      ".recommend", ".related",
-      "#ad", "[id^=\"div-gpt-ad\"]",
+      ".ad",
+      ".ads",
+      ".advertisement",
+      ".chapter-nav",
+      ".footer",
+      ".header",
+      ".topbar",
+      ".recommend",
+      ".related",
+      "#ad",
+      "[id^=\"div-gpt-ad\"]",
       "ins.adsbygoogle",
-      ".hotcmd-box", ".hotcmd-wp",
-      ".section-opt", ".btn-fb", ".btn-addbs",
-      ".m-setting", ".m-footer", ".pc-footer",
-      ".moGIgmZpgn", "#pmjangltwl", "#DqDGFdZttG",
-      ".reader-fun", ".row-section"
+      ".hotcmd-box",
+      ".hotcmd-wp",
+      ".section-opt",
+      ".btn-fb",
+      ".btn-addbs",
+      ".m-setting",
+      ".m-footer",
+      ".pc-footer",
+      ".moGIgmZpgn",
+      "#pmjangltwl",
+      "#DqDGFdZttG",
+      ".reader-fun",
+      ".row-section"
     ],
     "adPatterns": [
-      "鬼吹灯小说网", "guichuideng.info",
-      "请记住本书", "手机用户请浏览",
-      "本章未完", "最快更新",
-      "本章最新章节", "请访问",
-      "如果您喜欢", "分享到",
-      "扫码关注", "微信公众号",
-      "关注公众号", "关注我们",
-      "TXT下载", "全本下载",
-      "返回目录", "章节列表",
-      "推荐本书", "打赏",
-      "本章完", "本章结束",
-      "完结感言", "在线听书",
-      "热门推荐", "内容有问题",
-      "无弹窗小说", "无弹窗阅读",
-      "加入书签", "邮件反馈"
+      "鬼吹灯小说网",
+      "guichuideng.info",
+      "请记住本书",
+      "手机用户请浏览",
+      "本章未完",
+      "最快更新",
+      "本章最新章节",
+      "请访问",
+      "如果您喜欢",
+      "分享到",
+      "扫码关注",
+      "微信公众号",
+      "关注公众号",
+      "关注我们",
+      "TXT下载",
+      "全本下载",
+      "返回目录",
+      "章节列表",
+      "推荐本书",
+      "打赏",
+      "本章完",
+      "本章结束",
+      "完结感言",
+      "在线听书",
+      "热门推荐",
+      "内容有问题",
+      "无弹窗小说",
+      "无弹窗阅读",
+      "加入书签",
+      "邮件反馈"
     ]
   },
-
   "scrapeMode": "full",
   "engine": "obscura",
   "storageMode": "database",
   "filePath": null,
   "coverSavePath": "/app/public/covers/guichuideng/",
-  "threadCount": 1,
-  "minDelay": 2000,
-  "maxDelay": 4000,
+  "threadCount": 4,
+  "minDelay": 1000,
+  "maxDelay": 2000,
   "enableShuffle": true,
   "dedupMode": "both",
-
   "meta": {
     "siteType": "novel",
     "domain": "www.guichuideng.info",
     "encoding": "gbk",
     "engineType": "obscura",
-    "stealthEnabled": true
+    "stealthEnabled": true,
+    "rateCalibration": {
+      "tier": 1,
+      "tierLabel": "EASY (no anti-crawl)",
+      "optimalRPM": 30,
+      "calibratedAt": "2026-09-05T12:14:11.041Z"
+    }
   }
 }

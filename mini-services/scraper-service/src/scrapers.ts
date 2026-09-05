@@ -26,6 +26,13 @@ import { requestFingerprintMgr, applyTimingJitter } from "./request-fingerprint"
 import { antiCrawlAdvisor } from "./anti-crawl-advisor";
 import { browserBehavior } from "./browser-behavior";
 import { proxyManager, bunProxyFetchInit } from "./proxy-manager";
+import { antiDetectionCoordinator } from "./anti-detection-coordinator";
+import { captchaRecoveryManager } from "./captcha-strategy";
+import { bypassRegistry, type ChallengeType } from "./bypass-registry";
+import { ScrapeError, handleScrapeError, type ErrorContext } from "./error-handler";
+import { logger } from "./logger";
+
+const log = logger.child('Scrapers');
 
 // ==================== Pagination Helpers ====================
 
@@ -114,22 +121,53 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
   let effectiveEngine: EngineType | undefined;
   const fallbackEnabled = useEngineFallback !== false && antiCrawl?.engineFallback !== false;
 
+  // Extract domain for anti-detection coordinator
+  let domain = '';
+  try { domain = new URL(startUrl).hostname; } catch { /* ignore */ }
+
+  // Check if domain is CAPTCHA-paused
+  if (domain) {
+    const pauseMs = captchaRecoveryManager.isDomainPaused(domain);
+    if (pauseMs > 0) {
+      log.info(`Domain ${domain} is CAPTCHA-paused, waiting ${pauseMs}ms`, { pauseMs }, domain);
+      await new Promise(r => setTimeout(r, Math.min(pauseMs, 30_000))); // Cap wait at 30s
+    }
+    // Check if recovery manager recommends a different engine
+    const recoveryEngine = captchaRecoveryManager.getRecoveryEngine(domain);
+    if (recoveryEngine && recoveryEngine !== currentEngineType) {
+      log.info(`CAPTCHA recovery: switching engine ${currentEngineType} → ${recoveryEngine} for ${domain}`, undefined, domain);
+      currentEngineType = recoveryEngine as EngineType;
+      engine = getEngine(currentEngineType);
+    }
+  }
+
   for (let page = 0; page < maxPages; page++) {
     // Check task-level abort before each page
     if (signal?.aborted) {
       throw new Error('Request aborted during pagination');
     }
 
-    console.log(`  [${logPrefix}] Page ${page + 1}/${maxPages}: ${currentUrl}`);
+    log.info(`[${logPrefix}] Page ${page + 1}/${maxPages}: ${currentUrl}`, undefined, domain);
 
     if (visitedPages.has(currentUrl)) {
-      console.log(`  [${logPrefix}] Detected page loop at ${currentUrl}, stopping.`);
+      log.info(`[${logPrefix}] Detected page loop at ${currentUrl}, stopping.`, undefined, domain);
       break;
     }
     visitedPages.add(currentUrl);
 
+    // Before request: generate anti-detection profile
+    const requestProfile = domain ? antiDetectionCoordinator.generateRequestProfile(domain, currentUrl, {
+      antiCrawlConfig: antiCrawl as Record<string, unknown>,
+    }) : null;
+
+    // Apply adaptive delay from coordinator
+    if (requestProfile && requestProfile.delayMs > 0) {
+      await new Promise(r => setTimeout(r, Math.min(requestProfile.delayMs, 10_000)));
+    }
+
     let html = '';
     let statusCode = 0;
+    const requestStartTime = Date.now();
     try {
       // First page: try engine fallback if enabled and primary fails
       // Subsequent pages: use the engine that succeeded (currentEngineType)
@@ -137,7 +175,7 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
       if (fallbackEnabled && page === 0 && !effectiveEngine) {
         result = await fetchWithEngineFallback(currentUrl, { antiCrawl, signal }, currentEngineType);
         if (result.effectiveEngine && result.effectiveEngine !== currentEngineType) {
-          console.log(`  [${logPrefix}] Engine switched: ${currentEngineType} → ${result.effectiveEngine}`);
+          log.info(`[${logPrefix}] Engine switched: ${currentEngineType} → ${result.effectiveEngine}`, undefined, domain);
           currentEngineType = result.effectiveEngine;
           engine = getEngine(currentEngineType);
         }
@@ -148,19 +186,51 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
       html = result.html;
       statusCode = result.statusCode;
     } catch (err) {
-      console.warn(`  [${logPrefix}] Page ${page + 1} fetch failed: ${err instanceof Error ? err.message : err}`);
+      log.warn(`[${logPrefix}] Page ${page + 1} fetch failed: ${err instanceof Error ? err.message : err}`, undefined, domain);
       // Can't find next-page URL without HTML — stop pagination but return what was collected
       break;
+    }
+
+    // After request: process response through anti-detection coordinator
+    if (domain) {
+      const responseResult = antiDetectionCoordinator.processResponse(domain, currentUrl, {
+        statusCode,
+        responseTime: Date.now() - requestStartTime,
+        html,
+      });
+
+      // Act on recommended action
+      if (responseResult.recommendedAction === 'switch_engine') {
+        const bypassMethod = bypassRegistry.getBestBypass(domain, responseResult.captcha.detected ? 'captcha' : 'fingerprint-detect');
+        log.info(`[${logPrefix}] Anti-detection recommends engine switch for ${domain}, bypass: ${bypassMethod}`, undefined, domain);
+        // The engine switch will happen on next iteration via CAPTCHA handler
+      } else if (responseResult.recommendedAction === 'backoff') {
+        const backoffMs = 2000 + Math.floor(Math.random() * 4000);
+        log.info(`[${logPrefix}] Rate limited, backing off ${backoffMs}ms`, { backoffMs }, domain);
+        await new Promise(r => setTimeout(r, backoffMs));
+      } else if (responseResult.recommendedAction === 'switch_proxy') {
+        if (proxyManager) {
+          const smartProxy = proxyManager.getSmartProxy(domain);
+          if (smartProxy) {
+            log.info(`[${logPrefix}] Switching proxy for ${domain} → ${smartProxy.host}`, undefined, domain);
+          }
+        }
+      }
+
+      // Record success for CAPTCHA recovery manager
+      if (responseResult.success && !responseResult.captcha.detected) {
+        captchaRecoveryManager.recordSuccess(domain);
+      }
     }
 
     // CAPTCHA detection
     if (onCaptcha) {
       const detection = detectCaptcha(html, currentUrl, statusCode);
       if (detection.detected && detection.confidence > 0.5) {
-        console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[detection.type]} detected on ${currentUrl} (confidence: ${Math.round(detection.confidence * 100)}%)`);
+        log.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[detection.type]} detected on ${currentUrl} (confidence: ${Math.round(detection.confidence * 100)}%)`, undefined, domain);
         const shouldSkip = await onCaptcha(detection, currentUrl);
         if (shouldSkip) {
-          console.log(`  [${logPrefix}] Skipping page due to CAPTCHA`);
+          log.info(`[${logPrefix}] Skipping page due to CAPTCHA`, undefined, domain);
           break;
         }
       }
@@ -186,7 +256,7 @@ async function paginatedFetch(options: PaginatedFetchOptions): Promise<{ hasNext
         }
       } else {
         hasNextPage = false;
-        console.log(`  [${logPrefix}] No next page found`);
+        log.info(`[${logPrefix}] No next page found`, undefined, domain);
         break;
       }
     } else {
@@ -287,23 +357,55 @@ export async function handleScrapeBook(body: ScrapeBookRequest) {
   let statusCode: number;
   let effectiveEngine = engineType;
 
+  // Before request: generate anti-detection profile
+  if (domain) {
+    const requestProfile = antiDetectionCoordinator.generateRequestProfile(domain, url, {
+      antiCrawlConfig: antiCrawl as Record<string, unknown>,
+    });
+    // Apply adaptive delay
+    if (requestProfile.delayMs > 0) {
+      await new Promise(r => setTimeout(r, Math.min(requestProfile.delayMs, 10_000)));
+    }
+    // Check CAPTCHA recovery engine
+    const recoveryEngine = captchaRecoveryManager.getRecoveryEngine(domain);
+    if (recoveryEngine) {
+      effectiveEngine = recoveryEngine as EngineType;
+    }
+  }
+
+  const requestStartTime = Date.now();
   if (fallbackEnabled) {
-    const result = await fetchWithEngineFallback(url, { antiCrawl, signal }, engineType);
+    const result = await fetchWithEngineFallback(url, { antiCrawl, signal }, effectiveEngine);
     html = result.html;
     statusCode = result.statusCode;
-    effectiveEngine = result.effectiveEngine || engineType;
+    effectiveEngine = result.effectiveEngine || effectiveEngine;
   } else {
-    const engine = getEngine(engineType);
+    const engine = getEngine(effectiveEngine);
     const result = await engine.fetch(url, { antiCrawl, signal });
     html = result.html;
     statusCode = result.statusCode;
   }
 
+  // After request: process response through anti-detection coordinator
+  if (domain) {
+    const responseResult = antiDetectionCoordinator.processResponse(domain, url, {
+      statusCode,
+      responseTime: Date.now() - requestStartTime,
+      html,
+    });
+    if (responseResult.success && !responseResult.captcha.detected) {
+      captchaRecoveryManager.recordSuccess(domain);
+    }
+  }
+
   // CAPTCHA detection for book info page
   const captchaDetection = detectCaptcha(html, url, statusCode);
   if (captchaDetection.detected && captchaDetection.confidence > 0.5) {
-    console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[captchaDetection.type]} detected on book page ${url} (confidence: ${Math.round(captchaDetection.confidence * 100)}%)`);
-    throw new Error(`CAPTCHA detected (${CAPTCHA_TYPE_LABELS[captchaDetection.type]}), skipping book info fetch`);
+    log.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[captchaDetection.type]} detected on book page ${url} (confidence: ${Math.round(captchaDetection.confidence * 100)}%)`, undefined, domain);
+    throw new ScrapeError('CAPTCHA', `CAPTCHA detected (${CAPTCHA_TYPE_LABELS[captchaDetection.type]}), skipping book info fetch`, {
+      domain,
+      url,
+    });
   }
 
   const title = selectors.title ? parseSelector(html, selectors.title) : "";

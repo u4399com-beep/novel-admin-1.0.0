@@ -12,7 +12,7 @@ const MAX_SEARCH_LENGTH = 200;
 export const GET = withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const { page, pageSize } = parsePagination(searchParams, { defaultPageSize: 12 });
+    const { page, pageSize, skip } = parsePagination(searchParams, { defaultPageSize: 12 });
     const search = sanitizeField(searchParams.get("search"), MAX_SEARCH_LENGTH);
     const status = searchParams.get("status") || "";
     const categoryId = searchParams.get("categoryId") || "";
@@ -44,8 +44,6 @@ export const GET = withAuth(async function GET(request: NextRequest) {
 
     // Fetch user ID for favorite status
     const userId = await getAuthUserId(request);
-
-    const skip = (page - 1) * pageSize;
 
     const [novels, total] = await Promise.all([
       db.novel.findMany({

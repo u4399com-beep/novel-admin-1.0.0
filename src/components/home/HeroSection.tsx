@@ -150,7 +150,7 @@ function TypingTagline() {
         <motion.span
           className="inline-block w-[2px] h-4 ml-0.5 bg-primary/70 align-middle"
           animate={{ opacity: [1, 0] }}
-          transition={{ duration: 0.8, repeat: Infinity, repeatType: 'reverse', ease: 'steps(2)' }}
+          transition={{ duration: 0.8, repeat: Infinity, repeatType: 'reverse' as const }}
         />
       </motion.p>
     </div>
