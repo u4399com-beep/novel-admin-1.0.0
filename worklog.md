@@ -25511,3 +25511,31 @@ Stage Summary:
 - 6+ 样式优化(卡片hover, SearchBar, SettingsPanel, Guichuideng细节, 滚动条, 底部提示)
 - 13 files changed, 322 insertions, 31 deletions
 - Lint: 0 errors ✅, Git push ✅
+
+---
+Task ID: 2
+Agent: Main Orchestrator
+Task: 代码审查 + bug修复 + 精简整合优化 + 新功能 + 样式优化 + 部署v5 + 推送git
+
+Work Log:
+- 全面代码审查：识别9个any类型、1个关键编译错误、5处重复hostname提取、4处CSS keyframe注入、1处console.log
+- 修复 page.tsx 缺失 apiFetch/FetchError import（编译错误）
+- console.log → console.debug (useTaskLogStream)
+- 提取13个CSS keyframe从4个组件移至globals.css集中管理
+- 提取safeHostname()共享工具到src/lib/utils.ts，重构5处重复代码
+- 增强ReadingStreakBanner：framer-motion滑入动画+火焰脉冲+逐个延迟出现
+- 增强SearchBar热门搜索：Top3显示火焰标识+hover缩放动画
+- 添加ScrollProgressBar：2px渐变进度条固定在页面顶部
+- 增强Footer：渐变分割线+回到顶部按钮
+- 添加7个新CSS工具类：streak-border-glow, flame-icon-pulse, novel-card-shine等
+- 更新quick-docker.sh v5 + DEPLOY.md v5
+- 推送git: 6cf4aa8 → main
+
+Stage Summary:
+- Lint: 0 errors, 4 warnings (pre-existing)
+- 18 files changed, 239 insertions, 155 deletions
+- 关键修复：page.tsx import缺失（编译阻断问题）
+- 代码精简：消除5处重复hostname逻辑，4处运行时CSS注入
+- 新功能：5个（横幅动画、热门标识、滚动进度、回到顶部、部署v5）
+- 样式优化：7个CSS增强
+- OOM问题：服务器3.9GB内存，Turbopack编译偶尔触发OOM killer
