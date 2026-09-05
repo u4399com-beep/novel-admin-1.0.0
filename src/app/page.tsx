@@ -24,7 +24,31 @@ import type { Category } from '@/components/home/HeroSection';
 import { FriendlyLinksFooter } from '@/components/footer/FriendlyLinksFooter';
 import { useSiteName } from '@/lib/use-site-name';
 import { useLayoutTheme } from '@/lib/use-layout-theme';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 
+
+// ─── Scroll Progress Bar ────────────────────────────────────────────────
+
+function ScrollProgressBar() {
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    function onScroll() {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      setProgress(docHeight > 0 ? Math.min((scrollTop / docHeight) * 100, 100) : 0);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[60] h-[2px] bg-transparent pointer-events-none" aria-hidden="true">
+      <div
+        className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary/50 transition-[width] duration-150 ease-out"
+        style={{ width: `${progress}%` }}
+      />
+    </div>
+  );
+}
 
 // ─── Main Page ───────────────────────────────────────────────────────
 
@@ -175,6 +199,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <ScrollProgressBar />
       {/* ─── Header ──────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-between h-14 px-4 sm:px-6">
@@ -377,7 +402,8 @@ export default function HomePage() {
       </div>
 
       {/* ─── Footer ──────────────────────────────────────────────── */}
-      <footer className="mt-auto bg-background/80 backdrop-blur-sm footer-gradient-border">
+      <footer className="mt-auto bg-background/80 backdrop-blur-sm">
+        <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
           <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
@@ -394,6 +420,8 @@ export default function HomePage() {
               <Link href="/stats" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">统计</Link>
               <span className="text-muted-foreground/20">·</span>
               <Link href="/login" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">管理</Link>
+              <span className="text-muted-foreground/20">·</span>
+              <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">回到顶部</button>
             </div>
             {/* Friendly Links & Link Wheel */}
             <FriendlyLinksFooter />

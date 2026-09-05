@@ -178,7 +178,7 @@ function scheduleReconnect(): void {
   if (reconnectTimer) return; // Already scheduled
   const delay = getExponentialBackoff();
   reconnectAttempt++;
-  console.log(`[useTaskLogStream] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt})`);
+  console.debug(`[useTaskLogStream] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempt})`);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     if (sharedSocket && !sharedSocket.connected) {

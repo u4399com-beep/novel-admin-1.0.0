@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
+import { safeHostname } from '@/lib/utils';
 import { RefreshCw, Shield, Activity, Server, Clock, Info, TriangleAlert, CheckCircle2, User } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { EditorFormAccess } from './types';
@@ -60,12 +61,8 @@ interface DelayStatsResponse {
 const CLOUDFLARE_DOMAIN_PATTERNS = ['cloudflare', 'cf-', 'cloudns', 'cloudfront'];
 
 function detectCloudflare(url: string): boolean {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    return CLOUDFLARE_DOMAIN_PATTERNS.some(p => hostname.includes(p));
-  } catch {
-    return false;
-  }
+  const hostname = safeHostname(url).toLowerCase();
+  return hostname !== '' && CLOUDFLARE_DOMAIN_PATTERNS.some(p => hostname.includes(p));
 }
 
 function healthColor(score: number): string {

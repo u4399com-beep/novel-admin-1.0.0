@@ -4,55 +4,6 @@ import React, { type ReactNode } from 'react';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-// ─── CSS Keyframes (injected once) ─────────────────────────────────────────
-
-const STYLE_ID = 'collapsible-panel-animations';
-
-if (typeof document !== 'undefined' && !document.getElementById(STYLE_ID)) {
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = `
-    @keyframes cp-fade-in {
-      from { opacity: 0; transform: translateY(-4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .cp-fade-in {
-      animation: cp-fade-in 0.25s ease-out;
-    }
-    @keyframes cp-grade-pulse-green {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
-      50%      { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
-    }
-    @keyframes cp-grade-pulse-red {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
-      50%      { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
-    }
-    .cp-grade-pulse-green { animation: cp-grade-pulse-green 2s ease-in-out infinite; }
-    .cp-grade-pulse-red   { animation: cp-grade-pulse-red 2s ease-in-out infinite; }
-    @keyframes cp-dot-pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50%      { opacity: 0.5; transform: scale(1.8); }
-    }
-    .cp-dot-pulse { animation: cp-dot-pulse 2s ease-in-out infinite; }
-    @keyframes cp-ring-draw {
-      from { stroke-dashoffset: var(--ring-circumference); }
-      to   { stroke-dashoffset: var(--ring-target-offset); }
-    }
-    .cp-ring-animate {
-      animation: cp-ring-draw 0.8s ease-out forwards;
-    }
-    @keyframes cp-signal-slide-in {
-      from { opacity: 0; transform: translateX(-10px); }
-      to   { opacity: 1; transform: translateX(0); }
-    }
-    @keyframes cp-rec-fade-in {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface CollapsiblePanelProps {

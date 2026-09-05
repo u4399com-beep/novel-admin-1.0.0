@@ -10,6 +10,7 @@
 import { apiSuccess, apiError, safeJson } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
+import { safeHostname } from "@/lib/utils";
 import { NextRequest } from "next/server";
 
 // ==================== Types ====================
@@ -126,9 +127,7 @@ const SYSTEM_PROMPT = `你是一个专业的网页采集规则生成助手。分
 // ==================== Default Rule ====================
 
 function getDefaultRule(url: string): GeneratedRuleResult["rule"] {
-  const hostname = (() => {
-    try { return new URL(url).hostname; } catch { return "unknown"; }
-  })();
+  const hostname = safeHostname(url);
 
   return {
     name: `${hostname} - 自动生成规则`,
@@ -294,9 +293,7 @@ ${html}`;
  * Ensures all required fields exist with sensible defaults.
  */
 function normalizeRule(raw: Record<string, unknown>, url: string): GeneratedRuleResult["rule"] {
-  const hostname = (() => {
-    try { return new URL(url).hostname; } catch { return "unknown"; }
-  })();
+  const hostname = safeHostname(url);
 
   const makeSelector = (field: unknown): { type: string; value: string } => {
     if (field && typeof field === "object" && !Array.isArray(field)) {

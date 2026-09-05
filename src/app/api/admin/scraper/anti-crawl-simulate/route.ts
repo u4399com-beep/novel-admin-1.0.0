@@ -3,12 +3,13 @@ import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 import { NextResponse } from 'next/server';
 import { apiError, safeJson } from '@/lib/api-utils';
 import { isSafeUrl } from '@/lib/sanitize';
+import { safeHostname } from '@/lib/utils';
 
 const SCRAPER_TIMEOUT = 8000;
 
 /** Mock fallback when scraper-service is not reachable */
 function mockSimulateResult(targetUrl?: string) {
-  const domain = (() => { try { return new URL(targetUrl || 'https://example.com').hostname; } catch { return 'unknown'; } })();
+  const domain = safeHostname(targetUrl || 'https://example.com');
   return {
     targetUrl: targetUrl || '',
     domain,

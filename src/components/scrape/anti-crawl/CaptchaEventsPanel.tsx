@@ -37,32 +37,6 @@ interface CaptchaEvent {
   details?: string;
 }
 
-// ─── CSS Keyframes (injected once) ─────────────────────────────────────────
-
-const TIMELINE_STYLE_ID = 'captcha-timeline-animations';
-
-if (typeof document !== 'undefined' && !document.getElementById(TIMELINE_STYLE_ID)) {
-  const style = document.createElement('style');
-  style.id = TIMELINE_STYLE_ID;
-  style.textContent = `
-    @keyframes ct-dot-appear {
-      from { opacity: 0; transform: scale(0); }
-      to   { opacity: 1; transform: scale(1); }
-    }
-    .ct-dot-appear {
-      animation: ct-dot-appear 0.3s ease-out forwards;
-    }
-    @keyframes ct-timeline-fade {
-      from { opacity: 0; transform: translateY(4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .ct-timeline-fade {
-      animation: ct-timeline-fade 0.4s ease-out;
-    }
-  `;
-  document.head.appendChild(style);
-}
-
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const CAPTCHA_TYPE_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string; bar: string }> = {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, Search, History, Loader2, X } from 'lucide-react';
+import { BookOpen, Search, History, Loader2, X, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -316,11 +316,11 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
                         <div className="px-4 py-2">
                           <p className="text-xs text-muted-foreground mb-2">热门搜索</p>
                           <div className="flex flex-wrap gap-1.5">
-                            {trends.map((t) => (
+                            {trends.map((t, idx) => (
                               <button
                                 key={t.keyword}
                                 type="button"
-                                className="text-xs px-2 py-1 rounded-full border border-border hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors cursor-pointer"
+                                className={`text-xs px-2 py-1 rounded-full border border-border hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all duration-200 cursor-pointer hover:scale-105 ${idx < 3 ? 'font-medium border-amber-300/50 dark:border-amber-700/40 bg-amber-50/40 dark:bg-amber-900/20' : ''}`}
                                 onClick={() => {
                                   setSearchInput(t.keyword);
                                   onSearch(t.keyword);
@@ -329,6 +329,7 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
                                   setSearchHistory(getSearchHistory());
                                 }}
                               >
+                                {idx < 3 && <Flame className="h-2.5 w-2.5 inline-block mr-0.5 text-amber-500 dark:text-amber-400 -mt-0.5" />}
                                 {t.keyword}
                               </button>
                             ))}

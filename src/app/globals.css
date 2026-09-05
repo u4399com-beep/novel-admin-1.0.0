@@ -5179,5 +5179,163 @@ mark {
   .streak-badge-shimmer { animation: none; }
   .hero-bg-animated,
   .hero-bg-animated-2 { animation: none; }
+  .animate-pulse-once,
+  .cp-fade-in,
+  .cp-grade-pulse-green,
+  .cp-grade-pulse-red,
+  .cp-dot-pulse,
+  .cp-ring-animate,
+  .qs-gradient-border,
+  .qs-pulse-dot,
+  .qs-count-animate,
+  .ct-dot-appear,
+  .ct-timeline-fade,
+  .flame-icon-pulse,
+  .page-transition-in { animation: none; }
+  .streak-border-glow::before { filter: none; opacity: 0; }
+}
+
+/* ═══ Anti-Crawl Animation Keyframes (extracted from components) ═══ */
+
+/* ── From MonitorStats.tsx ── */
+@keyframes pulse-once { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+.animate-pulse-once { animation: pulse-once 1.5s ease-in-out; }
+
+/* ── From CollapsiblePanel.tsx ── */
+@keyframes cp-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.cp-fade-in {
+  animation: cp-fade-in 0.25s ease-out;
+}
+@keyframes cp-grade-pulse-green {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
+  50%      { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+}
+@keyframes cp-grade-pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+  50%      { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+.cp-grade-pulse-green { animation: cp-grade-pulse-green 2s ease-in-out infinite; }
+.cp-grade-pulse-red   { animation: cp-grade-pulse-red 2s ease-in-out infinite; }
+@keyframes cp-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(1.8); }
+}
+.cp-dot-pulse { animation: cp-dot-pulse 2s ease-in-out infinite; }
+@keyframes cp-ring-draw {
+  from { stroke-dashoffset: var(--ring-circumference); }
+  to   { stroke-dashoffset: var(--ring-target-offset); }
+}
+.cp-ring-animate {
+  animation: cp-ring-draw 0.8s ease-out forwards;
+}
+@keyframes cp-signal-slide-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes cp-rec-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── From QuickStatsPanel.tsx ── */
+@keyframes qs-gradient-border {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.qs-gradient-border { background-size: 200% 200%; animation: qs-gradient-border 3s ease infinite; }
+@keyframes qs-pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(1.6); }
+}
+.qs-pulse-dot { animation: qs-pulse-dot 1.5s ease-in-out infinite; }
+@keyframes qs-count-up {
+  from { opacity: 0.6; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.qs-count-animate { animation: qs-count-up 0.4s ease-out; }
+
+/* ── From CaptchaEventsPanel.tsx ── */
+@keyframes ct-dot-appear {
+  from { opacity: 0; transform: scale(0); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.ct-dot-appear {
+  animation: ct-dot-appear 0.3s ease-out forwards;
+}
+@keyframes ct-timeline-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ct-timeline-fade {
+  animation: ct-timeline-fade 0.4s ease-out;
+}
+
+/* ═══ New Feature: Streak Banner Glow ═══ */
+.streak-border-glow {
+  position: relative;
+}
+.streak-border-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(249, 115, 22, 0.1), transparent);
+  z-index: -1;
+  filter: blur(4px);
+}
+
+.flame-icon-pulse {
+  animation: flame-glow 2s ease-in-out infinite;
+}
+@keyframes flame-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  50% { box-shadow: 0 0 8px 2px rgba(245, 158, 11, 0.25); }
+}
+
+/* ── Scroll progress bar subtle glow ── */
+.scroll-progress-glow {
+  box-shadow: 0 0 4px 1px oklch(from var(--primary) l c h / 0.15);
+}
+
+/* ── Novel card enhanced hover shine ── */
+.novel-card-shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    oklch(from var(--primary) l c h / 0.03) 45%,
+    oklch(from var(--primary) l c h / 0.08) 50%,
+    oklch(from var(--primary) l c h / 0.03) 55%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  background-position: 200% 0;
+  transition: background-position 0.5s ease;
+  pointer-events: none;
+}
+.novel-card-shine:hover::after {
+  background-position: -100% 0;
+}
+
+/* ── Better page transition ── */
+@keyframes page-slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-transition-in {
+  animation: page-slide-in 0.35s ease-out;
+}
+
+/* ── Footer gradient divider ── */
+.footer-divider-gradient {
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  height: 1px;
 }
 

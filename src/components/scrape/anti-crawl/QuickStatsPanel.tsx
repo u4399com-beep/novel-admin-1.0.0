@@ -9,32 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/lib/api-fetch';
 
-const STYLE_ID = 'quick-stats-panel-animations';
-
-if (typeof document !== 'undefined' && !document.getElementById(STYLE_ID)) {
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = `
-    @keyframes qs-gradient-border {
-      0%   { background-position: 0% 50%; }
-      50%  { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-    .qs-gradient-border { background-size: 200% 200%; animation: qs-gradient-border 3s ease infinite; }
-    @keyframes qs-pulse-dot {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50%      { opacity: 0.4; transform: scale(1.6); }
-    }
-    .qs-pulse-dot { animation: qs-pulse-dot 1.5s ease-in-out infinite; }
-    @keyframes qs-count-up {
-      from { opacity: 0.6; transform: translateY(2px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .qs-count-animate { animation: qs-count-up 0.4s ease-out; }
-  `;
-  document.head.appendChild(style);
-}
-
 interface DashboardData {
   total24h?: number;
   unresolvedCount?: number;

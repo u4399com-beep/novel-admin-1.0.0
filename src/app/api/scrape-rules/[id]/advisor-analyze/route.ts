@@ -2,19 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { db } from '@/lib/db';
 import { apiError, isPrismaError } from '@/lib/api-utils';
+import { safeHostname } from '@/lib/utils';
 import { getOrFail, NotFoundError } from '@/lib/crud-helpers';
 import { SCRAPER_SERVICE_URL, getScraperServiceHeaders } from '@/lib/constants';
 
 const SCRAPER_TIMEOUT = 15000;
-
-/** Extract domain from a URL string */
-function extractDomain(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return '';
-  }
-}
 
 /** Mock fallback when scraper-service is not reachable */
 function mockAdviseResult(domain: string, currentConfig: Record<string, unknown>) {
@@ -58,7 +50,7 @@ export const POST = withAuth(async function POST(
       return apiError('该规则未设置列表页URL', 400);
     }
 
-    const domain = extractDomain(rule.listUrl);
+    const domain = safeHostname(rule.listUrl, '');
     if (!domain) {
       return apiError('无法从列表页URL提取域名', 400);
     }
