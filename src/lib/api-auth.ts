@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import crypto from 'crypto';
+import { NotFoundError } from './crud-helpers';
 
 // ═══════════════════════════════════════════════════════════════════
 // TESTING ONLY: Set to true to bypass authentication (no login required)
-// MUST be false in production. Only true for local dev without auth.
-const BYPASS_AUTH = process.env.NODE_ENV !== 'production' && process.env.BYPASS_AUTH === 'true';
+// MUST be false in production. Only true in development mode (NODE_ENV=development).
+// Changed from !== 'production' to === 'development' to prevent bypass
+// in staging, test, preview, and other non-production environments.
+const BYPASS_AUTH = process.env.NODE_ENV === 'development' && process.env.BYPASS_AUTH === 'true';
+let _bypassAuthWarned = false;
+if (BYPASS_AUTH && !_bypassAuthWarned) {
+  _bypassAuthWarned = true;
+  console.warn('[AUTH] BYPASS_AUTH is enabled — authentication bypassed. Only use in local development!');
+}
 // ═══════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════
@@ -100,8 +108,10 @@ export function getClientIp(request: NextRequest): string {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Type for API route handlers. Uses `unknown[]` for forward compatibility;
- * the actual request/params are destructured inside each handler.
+ * Type for API route handlers. Uses `any[]` intentionally:
+ * handlers receive typed params (NextRequest, {params}) which must be
+ * assignable from the rest-spread `...args`. `unknown[]` would break
+ * that assignability since `unknown` is not assignable to `NextRequest`.
  */
 export type ApiHandler = (...args: any[]) => Promise<NextResponse<unknown>>;
 
@@ -170,13 +180,20 @@ export function withAuth(handlerOrOpts: ApiHandler | WithAuthOptions, maybeHandl
           );
         }
         try {
-          const response = await handler(...(args as Parameters<typeof handler>));
+          const response = await handler(...args);
           if (response instanceof NextResponse) {
             response.headers.set('X-Request-ID', requestId);
             response.headers.set('X-RateLimit-Remaining', String(serviceRl.remaining));
           }
           return response;
         } catch (error) {
+          // Check for NotFoundError from crud-helpers
+          if (error instanceof NotFoundError) {
+            return NextResponse.json(
+              { error: error.message },
+              { status: error.status, headers: { 'X-Request-ID': requestId } }
+            );
+          }
           console.error(`[service][${requestId}] API error:`, error);
           return NextResponse.json(
             { error: '服务器内部错误' },
@@ -216,13 +233,20 @@ export function withAuth(handlerOrOpts: ApiHandler | WithAuthOptions, maybeHandl
 
     // 5. Execute handler
     try {
-      const response = await handler(...(args as Parameters<typeof handler>));
+      const response = await handler(...args);
       if (response instanceof NextResponse) {
         response.headers.set('X-Request-ID', requestId);
         response.headers.set('X-RateLimit-Remaining', String(rl.remaining));
       }
       return response;
     } catch (error) {
+      // Check for NotFoundError from crud-helpers
+      if (error instanceof NotFoundError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: error.status, headers: { 'X-Request-ID': requestId } }
+        );
+      }
       console.error(`[${requestId}] API error:`, error);
       const detail = process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined;
       return NextResponse.json(
@@ -279,12 +303,16 @@ export function withPublicRateLimit(optsOrHandler: PublicRateLimitOptions | ApiH
     }
 
     try {
-      const response = await handler(...(args as Parameters<typeof handler>));
+      const response = await handler(...args);
       if (response instanceof NextResponse) {
         response.headers.set('X-RateLimit-Remaining', String(rl.remaining));
       }
       return response;
     } catch (error) {
+      // Check for NotFoundError from crud-helpers
+      if (error instanceof NotFoundError) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
       console.error('Public API error:', error);
       return NextResponse.json({ error: '服务器内部错误' }, { status: 500 });
     }

@@ -49,20 +49,36 @@ export const POST = withAuth(async function POST(
 
     // Auto-trigger scraper-service
     const scraperUrl = SCRAPER_SERVICE_URL;
-    fetch(`${scraperUrl}/execute-task`, {
-      method: "POST",
-      headers: getScraperServiceHeaders(),
-      body: JSON.stringify({ taskId: task.id }),
-      signal: AbortSignal.timeout(5000),
-    }).catch(async (err) => {
-      const safeMsg = err instanceof Error
-        ? err.message.replace(/https?:\/\/[^\s]+/g, "[URL]")
-        : "未知错误";
-      await db.scrapeTask.updateMany({
-        where: { id: task.id, status: "pending" },
-        data: { status: "failed", errorMessage: `触发采集服务失败: ${safeMsg}`, completedAt: new Date() },
-      });
-    });
+    const triggerTaskId = task.id;
+    void (async () => {
+      try {
+        const res = await fetch(`${scraperUrl}/execute-task`, {
+          method: "POST",
+          headers: getScraperServiceHeaders(),
+          body: JSON.stringify({ taskId: triggerTaskId }),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) {
+          await db.scrapeTask.updateMany({
+            where: { id: triggerTaskId, status: "pending" },
+            data: { status: "failed", errorMessage: `触发采集服务失败: Scraper service responded with ${res.status}`, completedAt: new Date() },
+          });
+        }
+      } catch (err) {
+        console.error(`[Retry Task] Failed to auto-trigger task ${triggerTaskId}:`, err);
+        try {
+          const safeMsg = err instanceof Error
+            ? err.message.replace(/https?:\/\/[^\s]+/g, "[URL]")
+            : "未知错误";
+          await db.scrapeTask.updateMany({
+            where: { id: triggerTaskId, status: "pending" },
+            data: { status: "failed", errorMessage: `触发采集服务失败: ${safeMsg}`, completedAt: new Date() },
+          });
+        } catch (dbErr) {
+          console.error(`[Retry Task] Failed to update task ${triggerTaskId} status after trigger failure:`, dbErr);
+        }
+      }
+    })();
 
     return apiSuccess({ taskId: task.id });
   } catch (error) {

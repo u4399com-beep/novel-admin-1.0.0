@@ -41,8 +41,8 @@ function startCleanupTimer(): void {
   if (cleanupTimer.unref) cleanupTimer.unref();
 }
 
-// Start the cleanup timer when this module is loaded
-startCleanupTimer();
+// Start the cleanup timer lazily (on first getOrCompute call)
+// startCleanupTimer();
 
 /**
  * Single-flight cache: deduplicates concurrent compute calls for the same key.
@@ -52,6 +52,9 @@ export async function getOrCompute<T>(
   ttl: number = DEFAULT_TTL,
   computeFn: () => Promise<T>
 ): Promise<T> {
+  // Ensure cleanup timer is running
+  startCleanupTimer();
+
   const cached = getCached<T>(key);
   if (cached) return cached;
 
@@ -124,6 +127,16 @@ function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
     if (oldestKey) cache.delete(oldestKey);
   }
   cache.set(key, { data, expiresAt: Date.now() + ttl });
+}
+
+/**
+ * Stop the cache cleanup timer. Call during graceful shutdown.
+ */
+export function stopCleanupTimer(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
 }
 
 export function invalidateCache(key?: string): void {

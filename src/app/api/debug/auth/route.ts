@@ -45,12 +45,8 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     info.tokenResult = token ? 'valid' : 'null (no valid session)';
     if (token) {
-      info.tokenPayload = {
-        id: token.id,
-        name: token.name,
-        iat: token.iat,
-        expRelative: token.exp ? `${Math.max(0, Number(token.exp) - Math.floor(Date.now() / 1000))}s remaining` : 'N/A',
-      };
+      info.isExpired = token.exp ? Number(token.exp) < Math.floor(Date.now() / 1000) : true;
+      info.isAdmin = !!token.isAdmin;
     }
   } catch (err) {
     info.tokenResult = 'error verifying token';

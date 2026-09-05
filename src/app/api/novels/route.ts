@@ -1,11 +1,10 @@
 import { db } from "@/lib/db";
 import { NextRequest } from "next/server";
-import { parsePagination, sanitizeField, safeJson, asStringOrNull, apiError, apiSuccess } from "@/lib/api-utils";
+import { parsePagination, sanitizeField, safeJson, asStringOrNull, apiError, apiSuccess, getAuthUserId } from "@/lib/api-utils";
 import { invalidateCache } from "@/lib/cache";
 import { withAuth } from "@/lib/api-auth";
 import { isSafeUrl } from "@/lib/sanitize";
 import { VALID_NOVEL_STATUSES } from "@/lib/constants";
-import { getToken } from "next-auth/jwt";
 
 const MAX_SEARCH_LENGTH = 200;
 
@@ -44,11 +43,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
     }
 
     // Fetch user ID for favorite status
-    let userId: string | null = null;
-    try {
-      const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-      userId = token?.id ? String(token.id) : null;
-    } catch { /* ignore — proceed without favorite status */ }
+    const userId = await getAuthUserId(request);
 
     const skip = (page - 1) * pageSize;
 

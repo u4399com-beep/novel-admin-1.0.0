@@ -1,14 +1,12 @@
 import { db } from "@/lib/db";
 import { NextRequest } from "next/server";
-import { parsePagination, apiError, apiSuccess } from "@/lib/api-utils";
+import { parsePagination, apiError, apiSuccess, getAuthUserId } from "@/lib/api-utils";
 import { withAuth } from "@/lib/api-auth";
-import { getToken } from "next-auth/jwt";
 
 // GET /api/favorites - List current user's favorite novels (paginated)
 export const GET = withAuth(async function GET(request: NextRequest) {
   try {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-    const userId = token?.id ? String(token.id) : null;
+    const userId = await getAuthUserId(request);
     if (!userId) {
       return apiError("无法获取用户信息", 401);
     }

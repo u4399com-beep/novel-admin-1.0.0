@@ -32,7 +32,7 @@ export function NovelCover({ coverUrl, title, className, gradientClassName, text
   return (
     <div
       className={cn(
-        'h-full w-full flex items-center justify-center bg-gradient-to-br',
+        'h-full w-full flex items-center justify-center bg-gradient-to-br relative',
         getCoverGradient(title),
         className,
         gradientClassName,
@@ -40,7 +40,9 @@ export function NovelCover({ coverUrl, title, className, gradientClassName, text
       role="img"
       aria-label={title}
     >
-      <span className={cn('font-bold text-white/90 select-none', textClassName)}>
+      {/* Subtle diagonal gradient overlay for depth */}
+      <div className="absolute inset-0 bg-gradient-to-tr from-black/20 via-transparent to-white/10 pointer-events-none" />
+      <span className={cn('font-bold text-white/90 select-none relative z-[1]', textClassName)}>
         {title.charAt(0)}
       </span>
     </div>

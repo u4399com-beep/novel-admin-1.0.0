@@ -1,6 +1,7 @@
 'use client';
 
 import { useReducer, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { SearchBar } from './hero/SearchBar';
 import { FilterChips } from './hero/FilterChips';
 import type { Category } from '@/types';
@@ -25,7 +26,6 @@ function typingReducer(state: TypingState, _action: TypingAction): TypingState {
     if (text.length < current.length) {
       return { ...state, text: current.slice(0, text.length + 1) };
     }
-    // Pause at full text — trigger delete on next tick
     return { ...state, isDeleting: true };
   } else {
     if (text.length > 0) {
@@ -54,14 +54,106 @@ function useTypingEffect(typingSpeed = 80, deleteSpeed = 50, pauseTime = 2000) {
   return state.text;
 }
 
+// ─── Decorative Book SVG ────────────────────────────────────────
+function BookIllustration() {
+  return (
+    <svg
+      viewBox="0 0 80 80"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-10 w-10 sm:h-12 sm:w-12 text-primary/40"
+      aria-hidden="true"
+    >
+      <motion.path
+        d="M16 12C16 12 20 8 40 8C60 8 64 12 64 12V64C64 64 60 60 40 60C20 60 16 64 16 64V12Z"
+        initial={{ pathLength: 0, opacity: 0 }}
+        animate={{ pathLength: 1, opacity: 1 }}
+        transition={{ duration: 1.2, ease: 'easeInOut' }}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <motion.path
+        d="M40 8V60"
+        initial={{ pathLength: 0 }}
+        animate={{ pathLength: 1 }}
+        transition={{ duration: 0.8, delay: 0.4, ease: 'easeInOut' }}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <motion.path
+        d="M22 20H36M22 28H36M22 36H32M44 20H58M44 28H58M44 36H52"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.6, delay: 0.8 }}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      {/* Small sparkle near the book */}
+      <motion.circle
+        cx="68"
+        cy="16"
+        r="2"
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 0.6 }}
+        transition={{ duration: 0.4, delay: 1.2 }}
+        fill="currentColor"
+      />
+      <motion.circle
+        cx="12"
+        cy="56"
+        r="1.5"
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 0.4 }}
+        transition={{ duration: 0.4, delay: 1.4 }}
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+// ─── Dot Pattern Background ─────────────────────────────────────
+function DotPattern() {
+  return (
+    <div
+      className="absolute inset-0 pointer-events-none -z-10 opacity-[0.03] dark:opacity-[0.05]"
+      aria-hidden="true"
+    >
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="hero-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+            <circle cx="1.5" cy="1.5" r="1" fill="currentColor" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#hero-dots)" />
+      </svg>
+    </div>
+  );
+}
+
 // ─── TypingTagline Component ────────────────────────────────────────
 function TypingTagline() {
   const displayText = useTypingEffect();
   return (
-    <p className="text-sm text-muted-foreground/80 font-medium">
-      {displayText}
-      <span className="inline-block w-[2px] h-4 ml-0.5 bg-primary/70 animate-[blink_0.8s_step-end_infinite] align-middle" />
-    </p>
+    <div className="flex items-center gap-3">
+      <BookIllustration />
+      <motion.p
+        className="text-sm sm:text-base text-muted-foreground/80 font-medium min-h-[1.5rem]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
+        {displayText}
+        <motion.span
+          className="inline-block w-[2px] h-4 ml-0.5 bg-primary/70 align-middle"
+          animate={{ opacity: [1, 0] }}
+          transition={{ duration: 0.8, repeat: Infinity, repeatType: 'reverse', ease: 'steps(2)' }}
+        />
+      </motion.p>
+    </div>
   );
 }
 
@@ -113,6 +205,13 @@ export function HeroSection({
         <div className="hero-gradient-blob hero-gradient-blob-1 hero-bg-animated" />
         <div className="hero-gradient-blob hero-gradient-blob-2 hero-bg-animated-2" />
       </div>
+      {/* Dot pattern overlay */}
+      <DotPattern />
+      {/* Animated gradient behind the search bar area */}
+      <div
+        className="absolute inset-0 pointer-events-none -z-5 hero-search-gradient"
+        aria-hidden="true"
+      />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         <TypingTagline />
       </div>

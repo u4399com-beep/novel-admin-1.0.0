@@ -13,6 +13,7 @@ export function BackToTop({
   threshold?: number;
 }) {
   const [visible, setVisible] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
 
   useEffect(() => {
     let ticking = false;
@@ -20,7 +21,10 @@ export function BackToTop({
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        setVisible(window.scrollY > threshold);
+        const scrollTop = window.scrollY;
+        const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+        setVisible(scrollTop > threshold);
+        setScrollProgress(docHeight > 0 ? Math.min(scrollTop / docHeight, 1) : 0);
         ticking = false;
       });
     }
@@ -31,6 +35,11 @@ export function BackToTop({
   const scrollToTop = useCallback(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
+
+  // SVG circle properties for progress ring
+  const radius = 16;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - scrollProgress * circumference;
 
   return (
     <AnimatePresence>
@@ -51,7 +60,37 @@ export function BackToTop({
             className
           )}
         >
-          <ArrowUp className="h-4 w-4" />
+          {/* Progress ring behind the arrow */}
+          <svg
+            className="absolute inset-0 h-full w-full -rotate-90"
+            viewBox="0 0 40 40"
+            aria-hidden="true"
+          >
+            {/* Background circle */}
+            <circle
+              cx="20"
+              cy="20"
+              r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="opacity-20"
+            />
+            {/* Progress circle */}
+            <circle
+              cx="20"
+              cy="20"
+              r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round"
+              className="opacity-60 transition-[stroke-dashoffset] duration-150 ease-out"
+            />
+          </svg>
+          <ArrowUp className="h-4 w-4 relative z-[1]" />
         </motion.button>
       )}
     </AnimatePresence>

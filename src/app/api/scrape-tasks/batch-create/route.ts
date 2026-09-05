@@ -47,7 +47,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError("规则ID不能为空且必须为字符串", 400);
     }
 
-    if (mode !== undefined && mode !== null && !VALID_TASK_MODES.includes(mode)) {
+    if (mode !== undefined && mode !== null && typeof mode === 'string' && !VALID_TASK_MODES.includes(mode)) {
       return apiError(`mode 必须为以下值之一: ${VALID_TASK_MODES.join(', ')}`, 400);
     }
 
@@ -72,7 +72,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       return apiError("采集规则不存在", 404);
     }
 
-    const taskMode = VALID_TASK_MODES.includes(mode) ? mode : (rule.scrapeMode || "incremental");
+    const modeStr = typeof mode === 'string' ? mode : undefined;
+    const taskMode = (modeStr && VALID_TASK_MODES.includes(modeStr)) ? modeStr : (rule.scrapeMode || "incremental");
     const shouldAutoStart = autoStart !== false;
 
     // If no listUrls provided, create a single task with default URL
@@ -100,28 +101,40 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     // Auto-trigger each task sequentially with small delay
     if (shouldAutoStart) {
       for (let i = 0; i < tasks.length; i++) {
-        const task = tasks[i];
+        const triggerTaskId = tasks[i].id;
         // Stagger task starts by 500ms to avoid hammering
         if (i > 0) {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
-        fetch(`${SCRAPER_SERVICE_URL}/execute-task`, {
-          method: "POST",
-          headers: getScraperServiceHeaders(),
-          body: JSON.stringify({ taskId: task.id }),
-          signal: AbortSignal.timeout(5000),
-        }).catch(async (err) => {
-          console.error(`[Batch Task] Failed to auto-trigger task ${task.id}:`, err);
+        void (async () => {
           try {
-            const safeMsg = err instanceof Error
-              ? err.message.replace(/https?:\/\/[^\s]+/g, '[URL]')
-              : '未知错误';
-            await db.scrapeTask.updateMany({
-              where: { id: task.id, status: "pending" },
-              data: { status: "failed", errorMessage: `触发采集服务失败: ${safeMsg}`, completedAt: new Date() },
+            const res = await fetch(`${SCRAPER_SERVICE_URL}/execute-task`, {
+              method: "POST",
+              headers: getScraperServiceHeaders(),
+              body: JSON.stringify({ taskId: triggerTaskId }),
+              signal: AbortSignal.timeout(5000),
             });
-          } catch { /* */ }
-        });
+            if (!res.ok) {
+              await db.scrapeTask.updateMany({
+                where: { id: triggerTaskId, status: "pending" },
+                data: { status: "failed", errorMessage: `触发采集服务失败: Scraper service responded with ${res.status}`, completedAt: new Date() },
+              });
+            }
+          } catch (err) {
+            console.error(`[Batch Task] Failed to auto-trigger task ${triggerTaskId}:`, err);
+            try {
+              const safeMsg = err instanceof Error
+                ? err.message.replace(/https?:\/\/[^\s]+/g, '[URL]')
+                : '未知错误';
+              await db.scrapeTask.updateMany({
+                where: { id: triggerTaskId, status: "pending" },
+                data: { status: "failed", errorMessage: `触发采集服务失败: ${safeMsg}`, completedAt: new Date() },
+              });
+            } catch (dbErr) {
+              console.error(`[Batch Task] Failed to update task ${triggerTaskId} status after trigger failure:`, dbErr);
+            }
+          }
+        })();
       }
     }
 

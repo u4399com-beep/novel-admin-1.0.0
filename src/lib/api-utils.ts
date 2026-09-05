@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 import { sanitizeString } from './sanitize';
 
 export function apiSuccess<T>(data: T, status?: number): NextResponse {
@@ -42,7 +43,7 @@ export function parsePagination(
  * Recursively validate JSON structure depth and key count.
  * @throws Error if maxDepth or maxKeys is exceeded.
  */
-function validateJsonStructure(value: unknown, depth: number, maxDepth: number, maxKeys: number): void {
+export function validateJsonStructure(value: unknown, depth: number, maxDepth: number, maxKeys: number): void {
   if (depth > maxDepth) {
     throw new Error(`JSON 嵌套层级超过 ${maxDepth} 限制`);
   }
@@ -83,10 +84,10 @@ function validateJsonStructure(value: unknown, depth: number, maxDepth: number, 
  * - Max nesting depth (default 20) to prevent stack overflow
  * - Max keys per object (default 200) to prevent memory abuse
  */
-// Default to Record<string, any> for convenience in API routes that perform
+// Default to Record<string, unknown> for convenience in API routes that perform
 // their own runtime validation. Explicit generic types should be preferred
 // when stricter typing is needed.
-export async function safeJson<T = Record<string, any>>(
+export async function safeJson<T = Record<string, unknown>>(
   request: Request,
   maxDepth = 20,
   maxKeys = 200
@@ -183,4 +184,36 @@ export function safeJsonStringify(value: unknown, fieldName: string, maxSize = 5
     throw new Error(`${fieldName}配置过大（最大${Math.floor(maxSize / 1024)}KB）`);
   }
   return str;
+}
+
+/**
+ * Extract the authenticated user's ID from a request's JWT token.
+ * Returns null if the token is missing or has no id claim.
+ */
+export async function getAuthUserId(request: Request): Promise<string | null> {
+  try {
+    const token = await getToken({ req: request as import('next/server').NextRequest, secret: process.env.NEXTAUTH_SECRET });
+    return token?.id ? String(token.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map Prisma error codes to user-friendly messages and HTTP status codes.
+ */
+export function handlePrismaError(error: unknown): { message: string; status: number } {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = (error as { code: string }).code;
+    switch (code) {
+      case 'P2025': return { message: '记录不存在', status: 404 };
+      case 'P2002': return { message: '数据冲突，记录已存在', status: 409 };
+      case 'P2021': return { message: '数据表不存在', status: 500 };
+      case 'P2003': return { message: '关联记录不存在', status: 400 };
+      case 'P2011': return { message: '必填字段为空', status: 400 };
+      case 'P2012': return { message: '字段值缺少', status: 400 };
+      default: return { message: `数据库错误: ${code}`, status: 500 };
+    }
+  }
+  return { message: '内部服务器错误', status: 500 };
 }

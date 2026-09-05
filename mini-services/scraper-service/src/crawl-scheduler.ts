@@ -43,6 +43,17 @@ export interface DomainCrawlBudget {
   minDelayMs: number;
 }
 
+export interface DomainRateOverride {
+  /** Per-domain max requests per hour override */
+  maxRequestsPerHour?: number;
+  /** Per-domain max bytes per hour override */
+  maxBytesPerHour?: number;
+  /** Per-domain min delay override (ms) */
+  minDelayMs?: number;
+  /** Per-domain max concurrent override */
+  maxConcurrent?: number;
+}
+
 export interface CrawlScheduleConfig {
   /** Default max requests per domain per hour */
   defaultMaxRequestsPerHour: number;
@@ -54,6 +65,10 @@ export interface CrawlScheduleConfig {
   maxConcurrentPerDomain: number;
   /** Maximum total concurrent jobs */
   maxTotalConcurrent: number;
+  /** Adaptive mode: let RateOptimizer control actual limits */
+  adaptiveMode: boolean;
+  /** Per-domain rate overrides (domain -> override) */
+  domainRateOverrides: Record<string, DomainRateOverride>;
 }
 
 // ==================== Priority Ordering ====================
@@ -100,6 +115,8 @@ const DEFAULT_CONFIG: CrawlScheduleConfig = {
   defaultMinDelayMs: 1000,
   maxConcurrentPerDomain: 3,
   maxTotalConcurrent: 20,
+  adaptiveMode: false,
+  domainRateOverrides: {},
 };
 
 /** Per-domain budget overrides (e.g., for aggressive or conservative sites) */
@@ -112,9 +129,37 @@ class CrawlScheduler {
   private config: CrawlScheduleConfig;
   private inFlightCount = new Map<string, number>(); // domain -> count
   private totalInFlight = 0;
+  /** External adaptive rate provider — set by the anti-detection coordinator */
+  private adaptiveRateProvider: ((domain: string) => number) | null = null;
 
   constructor(config?: Partial<CrawlScheduleConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  /**
+   * Set the adaptive rate provider (from RateOptimizer).
+   * When adaptiveMode is true, the provider's rate is used instead of the
+   * static defaultMaxRequestsPerHour.
+   */
+  setAdaptiveRateProvider(provider: (domain: string) => number): void {
+    this.adaptiveRateProvider = provider;
+  }
+
+  /**
+   * Enable or disable adaptive mode at runtime.
+   */
+  setAdaptiveMode(enabled: boolean): void {
+    this.config.adaptiveMode = enabled;
+  }
+
+  /**
+   * Set or update a per-domain rate override.
+   */
+  setDomainRateOverride(domain: string, override: DomainRateOverride): void {
+    const normalized = domain.toLowerCase().replace(/^www\./, '');
+    this.config.domainRateOverrides[normalized] = override;
+    // Clear cached budget so it gets recreated with new override
+    this.budgets.delete(normalized);
   }
 
   /**
@@ -131,6 +176,8 @@ class CrawlScheduler {
 
   /**
    * Get or create the crawl budget for a domain.
+   * In adaptive mode, the RateOptimizer's optimal rate is used as the
+   * per-domain max requests per hour, subject to the manual override as a safety cap.
    */
   private getBudget(domain: string): DomainCrawlBudget {
     let budget = this.budgets.get(domain);
@@ -143,18 +190,55 @@ class CrawlScheduler {
         budget.currentByteCount = 0;
         budget.windowStart = now;
       }
+      // In adaptive mode, dynamically update the rate each time budget is accessed
+      if (this.config.adaptiveMode && this.adaptiveRateProvider) {
+        const adaptiveRPM = this.adaptiveRateProvider(domain);
+        const adaptiveRPH = Math.round(adaptiveRPM * 60); // RPM -> RPH
+        // Manual override acts as a safety cap
+        const override = domainBudgetOverrides.get(domain);
+        const manualCap = override?.maxRequestsPerHour;
+        budget.maxRequestsPerHour = manualCap
+          ? Math.min(adaptiveRPH, manualCap)
+          : adaptiveRPH;
+      }
       return budget;
     }
 
     // Create new budget with defaults + overrides
     const override = domainBudgetOverrides.get(domain);
+    const domainRateOverride = this.config.domainRateOverrides[domain];
+
+    // Determine maxRequestsPerHour:
+    // 1. If adaptive mode, use RateOptimizer's rate (converted RPM->RPH)
+    // 2. If domain rate override, use that
+    // 3. Fall back to default
+    let maxRequestsPerHour: number;
+    if (this.config.adaptiveMode && this.adaptiveRateProvider) {
+      const adaptiveRPM = this.adaptiveRateProvider(domain);
+      const adaptiveRPH = Math.round(adaptiveRPM * 60);
+      maxRequestsPerHour = adaptiveRPH;
+    } else {
+      maxRequestsPerHour = domainRateOverride?.maxRequestsPerHour
+        ?? override?.maxRequestsPerHour
+        ?? this.config.defaultMaxRequestsPerHour;
+    }
+    // Apply manual override as safety cap
+    const manualCap = override?.maxRequestsPerHour ?? domainRateOverride?.maxRequestsPerHour;
+    if (manualCap && maxRequestsPerHour > manualCap) {
+      maxRequestsPerHour = manualCap;
+    }
+
     budget = {
-      maxRequestsPerHour: override?.maxRequestsPerHour ?? this.config.defaultMaxRequestsPerHour,
-      maxBytesPerHour: override?.maxBytesPerHour ?? this.config.defaultMaxBytesPerHour,
+      maxRequestsPerHour,
+      maxBytesPerHour: domainRateOverride?.maxBytesPerHour
+        ?? override?.maxBytesPerHour
+        ?? this.config.defaultMaxBytesPerHour,
       currentRequestCount: 0,
       currentByteCount: 0,
       windowStart: now,
-      minDelayMs: override?.minDelayMs ?? this.config.defaultMinDelayMs,
+      minDelayMs: domainRateOverride?.minDelayMs
+        ?? override?.minDelayMs
+        ?? this.config.defaultMinDelayMs,
     };
     this.budgets.set(domain, budget);
     return budget;

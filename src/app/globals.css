@@ -5339,3 +5339,97 @@ mark {
   height: 1px;
 }
 
+/* ===== Agent 7: Additional Micro-Interactions ===== */
+
+/* ── Focus-visible ring animation ── */
+@keyframes focus-ring-in {
+  from { outline-offset: 0px; outline-color: transparent; }
+  to { outline-offset: 2px; outline-color: oklch(0.488 0.243 264.376 / 0.5); }
+}
+*:focus-visible {
+  animation: focus-ring-in 0.15s ease-out forwards;
+}
+
+/* ── Page-level fade-in on route change ── */
+@keyframes route-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+main {
+  animation: route-fade-in 0.2s ease-out;
+}
+
+/* ── Enhanced scrollbar (Firefox) ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.7 0 0 / 0.3) transparent;
+}
+.dark * {
+  scrollbar-color: oklch(0.4 0 0 / 0.4) transparent;
+}
+
+/* ── Skeleton shimmer animation ── */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.97 0 0) 0%,
+    oklch(0.93 0 0) 40%,
+    oklch(0.97 0 0) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.dark .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.205 0 0) 0%,
+    oklch(0.269 0 0) 40%,
+    oklch(0.205 0 0) 80%
+  );
+  background-size: 200% 100%;
+}
+
+/* ── Hero search gradient ── */
+.hero-search-gradient {
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 0%,
+    oklch(0.488 0.243 264.376 / 0.04),
+    transparent
+  );
+}
+.dark .hero-search-gradient {
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 0%,
+    oklch(0.488 0.243 264.376 / 0.06),
+    transparent
+  );
+}
+
+/* ── Footer link hover animation ── */
+.footer-link {
+  position: relative;
+  text-decoration: none;
+}
+.footer-link::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+.footer-link:hover::after {
+  width: 100%;
+}
+
+/* ── Streak ongoing pulse for status dot ── */
+@keyframes status-pulse-ongoing {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.6 0.2 250 / 0.4); }
+  50% { box-shadow: 0 0 0 4px oklch(0.6 0.2 250 / 0); }
+}
+.status-ongoing.badge-glow {
+  animation: status-pulse-ongoing 2s ease-in-out infinite;
+}
+

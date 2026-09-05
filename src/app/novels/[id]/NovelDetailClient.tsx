@@ -702,7 +702,7 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         onClearAllBookmarks={clearAllBookmarks}
         onExportChapter={() => {
           const ch = chapters[currentIndex];
-          if (ch) window.open(`/api/novels/${novel.id}/chapters?chapterId=${ch.id}&export=txt`);
+          if (ch) window.open(`/api/novels/${novel.id}/chapters?chapterId=${ch.id}&export=txt`, '_blank', 'noopener,noreferrer');
         }}
         onUpdateSettings={updateSettings}
         onRetry={() => loadChapter(currentIndex)}

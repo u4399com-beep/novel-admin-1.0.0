@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sanitizeField, safeJson, asString, asStringOrNull, isPrismaError, apiError, apiDeleted } from "@/lib/api-utils";
+import { sanitizeField, safeJson, asString, asStringOrNull, handlePrismaError, apiError, apiDeleted } from "@/lib/api-utils";
 import { isSafeUrl } from "@/lib/sanitize";
 import { invalidateCache } from "@/lib/cache";
 import { NextRequest, NextResponse } from "next/server";
@@ -24,9 +24,8 @@ export const GET = withAuth(async function GET(
     });
     return NextResponse.json(novel);
   } catch (error) {
-    if (isPrismaError(error, 'P2025')) {
-      return apiError('小说不存在', 404);
-    }
+    const { message, status } = handlePrismaError(error);
+    if (status !== 500) return apiError(message, status);
     console.error("Get novel error:", error);
     return apiError("获取小说详情失败");
   }
@@ -146,10 +145,9 @@ export const PUT = withAuth(async function PUT(
     if (error instanceof NotFoundError) {
       return apiError(error.message, 404);
     }
+    const { message, status } = handlePrismaError(error);
+    if (status !== 500) return apiError(message, status);
     console.error("Update novel error:", error);
-    if (isPrismaError(error, "P2025")) {
-      return apiError("小说不存在", 404);
-    }
     return apiError("更新小说失败");
   }
 });
@@ -169,10 +167,9 @@ export const DELETE = withAuth(async function DELETE(
     if (error instanceof NotFoundError) {
       return apiError(error.message, 404);
     }
+    const { message, status } = handlePrismaError(error);
+    if (status !== 500) return apiError(message, status);
     console.error("Delete novel error:", error);
-    if (isPrismaError(error, "P2025")) {
-      return apiError("小说不存在", 404);
-    }
     return apiError("删除小说失败");
   }
 });

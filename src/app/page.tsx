@@ -20,6 +20,9 @@ import { LayoutSwitcher } from '@/components/home/LayoutSwitcher';
 import { HeroSection } from '@/components/home/HeroSection';
 import { ReadingStreakBanner } from '@/components/home/ReadingStreakBanner';
 import { NovelGridLoader } from '@/components/home/NovelGridLoader';
+import { QuickStatsWidget } from '@/components/home/QuickStatsWidget';
+import { RecommendationSection } from '@/components/home/RecommendationSection';
+import { SystemHealthIndicator } from '@/components/home/SystemHealthIndicator';
 import type { Category } from '@/components/home/HeroSection';
 import { FriendlyLinksFooter } from '@/components/footer/FriendlyLinksFooter';
 import { useSiteName } from '@/lib/use-site-name';
@@ -372,8 +375,14 @@ export default function HomePage() {
         filterSummary={filterSummary}
       />
 
+      {/* Quick Stats Widget */}
+      <QuickStatsWidget />
+
       {/* Reading Streak Banner */}
       <ReadingStreakBanner />
+
+      {/* Recommendation Section */}
+      <RecommendationSection />
 
       {/* Recently Updated Novels */}
       <RecentlyUpdatedNovels />
@@ -403,7 +412,27 @@ export default function HomePage() {
 
       {/* ─── Footer ──────────────────────────────────────────────── */}
       <footer className="mt-auto bg-background/80 backdrop-blur-sm">
-        <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+        {/* Wave SVG separator */}
+        <div className="relative -mb-px" aria-hidden="true">
+          <svg
+            viewBox="0 0 1440 40"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-full h-6 sm:h-8 text-border/50"
+            preserveAspectRatio="none"
+          >
+            <path
+              d="M0 20C240 35 480 5 720 20C960 35 1200 5 1440 20V40H0V20Z"
+              fill="currentColor"
+              className="text-background/80"
+            />
+            <path
+              d="M0 25C240 10 480 35 720 18C960 5 1200 30 1440 15V40H0V25Z"
+              fill="currentColor"
+              className="text-border/30"
+            />
+          </svg>
+        </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
           <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
@@ -413,21 +442,24 @@ export default function HomePage() {
               <span className="font-semibold text-foreground/80">{siteName}</span>
             </div>
             <div className="flex items-center gap-4 text-xs">
-              <Link href="/categories" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">分类</Link>
+              <Link href="/categories" className="footer-link text-muted-foreground/60 hover:text-primary transition-colors duration-200">分类</Link>
               <span className="text-muted-foreground/20">·</span>
-              <Link href="/rankings" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">排行榜</Link>
+              <Link href="/rankings" className="footer-link text-muted-foreground/60 hover:text-primary transition-colors duration-200">排行榜</Link>
               <span className="text-muted-foreground/20">·</span>
-              <Link href="/stats" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">统计</Link>
+              <Link href="/stats" className="footer-link text-muted-foreground/60 hover:text-primary transition-colors duration-200">统计</Link>
               <span className="text-muted-foreground/20">·</span>
-              <Link href="/login" className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">管理</Link>
+              <Link href="/login" className="footer-link text-muted-foreground/60 hover:text-primary transition-colors duration-200">管理</Link>
               <span className="text-muted-foreground/20">·</span>
-              <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="text-muted-foreground/60 hover:text-primary hover:underline underline-offset-2 transition-colors">回到顶部</button>
+              <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="footer-link text-muted-foreground/60 hover:text-primary transition-colors duration-200">回到顶部</button>
             </div>
             {/* Friendly Links & Link Wheel */}
             <FriendlyLinksFooter />
-            <p className="text-[11px] text-muted-foreground/40">
-              © {new Date().getFullYear()} {siteName} · 基于 Next.js 16 + Prisma + Tailwind CSS 构建
-            </p>
+            <div className="flex items-center gap-2">
+              <SystemHealthIndicator />
+              <p className="text-[11px] text-muted-foreground/40">
+                © {new Date().getFullYear()} {siteName} · 基于 Next.js 16 + Prisma + Tailwind CSS 构建
+              </p>
+            </div>
           </div>
         </div>
       </footer>

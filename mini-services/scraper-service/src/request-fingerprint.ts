@@ -1,3 +1,232 @@
+// ==================== Sec-CH-UA (Client Hints) Headers ====================
+
+/**
+ * Generate Sec-CH-UA client hints headers matching the browser from the UA string.
+ * These headers MUST be consistent with the User-Agent — a mismatch is a strong
+ * detection signal used by Cloudflare, PerimeterX, and Akamai.
+ *
+ * Format: Sec-CH-UA: "Chromium";v="134", "Not A(Brand";v="99", "Google Chrome";v="134"
+ * Format: Sec-CH-UA-Mobile: ?0
+ * Format: Sec-CH-UA-Platform: "Windows"
+ */
+export function generateSecChUAHeaders(ua: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+
+  // Extract Chrome version from UA
+  const chromeMatch = ua.match(/Chrome\/(\d+)/);
+  const chromeVersion = chromeMatch ? chromeMatch[1] : '134';
+
+  // Detect browser family
+  const isEdge = /Edg\//.test(ua);
+  const isFirefox = /Firefox\//.test(ua);
+  const edgeMatch = ua.match(/Edg\/(\d+)/);
+  const edgeVersion = edgeMatch ? edgeMatch[1] : chromeVersion;
+
+  // Firefox doesn't send Sec-CH-UA headers
+  if (isFirefox) {
+    return {};
+  }
+
+  // Sec-CH-UA
+  if (isEdge) {
+    headers['Sec-CH-UA'] = `"Chromium";v="${chromeVersion}", "Not_A Brand";v="99", "Microsoft Edge";v="${edgeVersion}"`;
+  } else {
+    headers['Sec-CH-UA'] = `"Chromium";v="${chromeVersion}", "Not_A Brand";v="99", "Google Chrome";v="${chromeVersion}"`;
+  }
+
+  // Sec-CH-UA-Mobile
+  headers['Sec-CH-UA-Mobile'] = '?0';
+
+  // Sec-CH-UA-Platform
+  if (/Macintosh/.test(ua)) {
+    headers['Sec-CH-UA-Platform'] = '"macOS"';
+  } else if (/Linux/.test(ua)) {
+    headers['Sec-CH-UA-Platform'] = '"Linux"';
+  } else {
+    headers['Sec-CH-UA-Platform'] = '"Windows"';
+  }
+
+  // Sec-CH-UA-Full-Version-List (optional, newer browsers)
+  if (isEdge) {
+    headers['Sec-CH-UA-Full-Version-List'] = `"Chromium";v="${chromeVersion}.0.0.0", "Not_A Brand";v="99.0.0.0", "Microsoft Edge";v="${edgeVersion}.0.0.0"`;
+  } else {
+    headers['Sec-CH-UA-Full-Version-List'] = `"Chromium";v="${chromeVersion}.0.0.0", "Not_A Brand";v="99.0.0.0", "Google Chrome";v="${chromeVersion}.0.0.0"`;
+  }
+
+  return headers;
+}
+
+// ==================== Sec-Fetch-* Headers ====================
+
+export type FetchDest = 'document' | 'iframe' | 'script' | 'style' | 'image' | 'font' | 'empty' | 'video' | 'audio';
+export type FetchMode = 'navigate' | 'no-cors' | 'cors' | 'same-origin' | 'websocket';
+export type FetchSite = 'none' | 'same-origin' | 'same-site' | 'cross-site';
+
+export interface SecFetchHeaders {
+  'Sec-Fetch-Dest': string;
+  'Sec-Fetch-Mode': string;
+  'Sec-Fetch-Site': string;
+  'Sec-Fetch-User'?: string;
+}
+
+/**
+ * Generate Sec-Fetch-* headers for a request.
+ * These headers indicate how the browser initiated the request and are
+ * checked by anti-bot systems for consistency.
+ *
+ * @param dest - The destination type of the request
+ * @param isNavigation - Whether this is a top-level navigation (user clicked a link)
+ * @param site - The relationship between the request origin and target origin
+ */
+export function generateSecFetchHeaders(
+  dest: FetchDest = 'document',
+  isNavigation: boolean = true,
+  site: FetchSite = 'cross-site'
+): SecFetchHeaders {
+  const mode: FetchMode = isNavigation ? 'navigate' : (dest === 'script' || dest === 'style' ? 'no-cors' : 'cors');
+
+  const headers: SecFetchHeaders = {
+    'Sec-Fetch-Dest': dest,
+    'Sec-Fetch-Mode': mode,
+    'Sec-Fetch-Site': site,
+  };
+
+  // Sec-Fetch-User is only sent with navigate requests
+  if (isNavigation) {
+    headers['Sec-Fetch-User'] = '?1';
+  }
+
+  return headers;
+}
+
+/**
+ * Infer Sec-Fetch-* headers from a URL and context.
+ * Uses the URL path to determine the likely destination type.
+ */
+export function inferSecFetchHeaders(url: string, isNavigation: boolean = true, site: FetchSite = 'cross-site'): SecFetchHeaders {
+  try {
+    const path = new URL(url).pathname.toLowerCase();
+    const ext = path.split('.').pop() || '';
+
+    let dest: FetchDest = 'document';
+    if (ext === 'js' || ext === 'mjs') dest = 'script';
+    else if (ext === 'css') dest = 'style';
+    else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'avif'].includes(ext)) dest = 'image';
+    else if (['woff', 'woff2', 'ttf', 'otf', 'eot'].includes(ext)) dest = 'font';
+    else if (['mp4', 'webm', 'ogg'].includes(ext)) dest = 'video';
+    else if (['mp3', 'wav', 'flac'].includes(ext)) dest = 'audio';
+    // HTML pages and paths without recognizable extensions are document
+
+    return generateSecFetchHeaders(dest, isNavigation, site);
+  } catch {
+    return generateSecFetchHeaders('document', isNavigation, site);
+  }
+}
+
+// ==================== Accept-Language Rotation ====================
+
+/**
+ * Accept-Language rotation: rotate every 50 requests, not just per-domain.
+ * This prevents Accept-Language fingerprinting across many requests.
+ */
+
+const ACCEPT_LANGUAGE_VARIANTS = [
+  'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+  'zh-CN,zh;q=0.9,en;q=0.8',
+  'zh-CN,zh;q=0.8,en-US;q=0.6,en;q=0.4',
+  'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+  'zh-CN,en-US;q=0.9,en;q=0.8',
+  'zh-CN,zh;q=0.9',
+  'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+  'en-US,en;q=0.8,zh-CN;q=0.6,zh;q=0.4',
+] as const;
+
+let acceptLanguageIndex = 0;
+let acceptLanguageRequestCount = 0;
+const ACCEPT_LANGUAGE_ROTATE_EVERY = 50;
+
+/**
+ * Get the current Accept-Language header value.
+ * Rotates every 50 requests to avoid fingerprint correlation.
+ */
+export function getAcceptLanguage(): string {
+  acceptLanguageRequestCount++;
+  if (acceptLanguageRequestCount % ACCEPT_LANGUAGE_ROTATE_EVERY === 0) {
+    acceptLanguageIndex = (acceptLanguageIndex + 1) % ACCEPT_LANGUAGE_VARIANTS.length;
+  }
+  return ACCEPT_LANGUAGE_VARIANTS[acceptLanguageIndex]!;
+}
+
+/**
+ * Reset Accept-Language rotation state.
+ */
+export function resetAcceptLanguageRotation(): void {
+  acceptLanguageIndex = 0;
+  acceptLanguageRequestCount = 0;
+}
+
+// ==================== Connection Header Variation ====================
+
+/**
+ * Connection header variation: use keep-alive ~95% of the time and close ~5%.
+ * This matches real browser behavior where keep-alive is the default but
+ * occasional connection closes happen (e.g., server-sent close, timeout).
+ */
+export function getConnectionHeader(): string {
+  // 95% keep-alive, 5% close (matches real browser behavior)
+  return Math.random() < 0.95 ? 'keep-alive' : 'close';
+}
+
+// ==================== Complete Request Headers Builder ====================
+
+/**
+ * Build a complete set of anti-detection request headers for a URL.
+ * Combines: Sec-CH-UA + Sec-Fetch-* + Accept-Language + Connection
+ *
+ * @param ua - User-Agent string
+ * @param url - Target URL
+ * @param isNavigation - Whether this is a navigation request
+ * @param site - Fetch site relationship
+ */
+export function buildAntiDetectionHeaders(
+  ua: string,
+  url: string,
+  isNavigation: boolean = true,
+  site: FetchSite = 'cross-site'
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+
+  // 1. Sec-CH-UA headers (matching the UA)
+  const chHeaders = generateSecChUAHeaders(ua);
+  Object.assign(headers, chHeaders);
+
+  // 2. Sec-Fetch-* headers
+  const fetchHeaders = inferSecFetchHeaders(url, isNavigation, site);
+  Object.assign(headers, fetchHeaders);
+
+  // 3. Accept-Language (rotated)
+  headers['Accept-Language'] = getAcceptLanguage();
+
+  // 4. Connection header
+  headers['Connection'] = getConnectionHeader();
+
+  // 5. Accept header based on request type
+  if (isNavigation) {
+    headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8';
+  } else {
+    headers['Accept'] = '*/*';
+  }
+
+  // 6. Upgrade-Insecure-Requests for navigations
+  if (isNavigation) {
+    headers['Upgrade-Insecure-Requests'] = '1';
+  }
+
+  return headers;
+}
+
+// ==================== Original Module (unchanged below) ====================
+
 /**
  * Request Fingerprint Manager
  * Assigns unique IDs to each outbound scraping request for tracking,

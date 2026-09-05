@@ -39,6 +39,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     let updated = 0;
     let skipped = 0;
 
+    // Pre-validate all rules and build data objects before the transaction
+    const validatedRules: Array<{ name: string; data: Prisma.ScrapeRuleUncheckedCreateInput; errors: string[] }> = [];
     for (const raw of body.rules) {
       // Validate name
       if (!raw.name || typeof raw.name !== 'string' || !raw.name.trim()) {
@@ -118,13 +120,18 @@ export const POST = withAuth(async function POST(request: NextRequest) {
         cloudBrowserConfig: buildCloudBrowserConfig(raw.cloudBrowserUrl, raw.cloudBrowserProvider),
       };
 
-      // Match by name first: `name` has no unique constraint in the schema,
-      // so Prisma's `upsert` cannot be used with it as the where key.
-      try {
-        const existing = await db.scrapeRule.findFirst({ where: { name }, select: { id: true } });
+      validatedRules.push({ name, data, errors: ruleErrors });
+    }
+
+    // Execute all DB writes inside a transaction for atomicity
+    await db.$transaction(async (tx) => {
+      for (const { name, data } of validatedRules) {
+        // Match by name first: `name` has no unique constraint in the schema,
+        // so Prisma's `upsert` cannot be used with it as the where key.
+        const existing = await tx.scrapeRule.findFirst({ where: { name }, select: { id: true } });
         const rule = existing
-          ? await db.scrapeRule.update({ where: { id: existing.id }, data })
-          : await db.scrapeRule.create({ data });
+          ? await tx.scrapeRule.update({ where: { id: existing.id }, data })
+          : await tx.scrapeRule.create({ data });
         if (!existing) {
           created++;
           results.push({ id: rule.id, name, action: 'created' });
@@ -132,16 +139,8 @@ export const POST = withAuth(async function POST(request: NextRequest) {
           updated++;
           results.push({ id: rule.id, name, action: 'updated' });
         }
-      } catch (err) {
-        // Prisma unique constraint error
-        if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'P2002') {
-          skipped++;
-          results.push({ name, action: 'skipped', errors: ['规则名称已存在（并发冲突）'] });
-        } else {
-          throw err;
-        }
       }
-    }
+    });
 
     return apiSuccess({ results, created, updated, skipped, total: results.length });
   } catch (error) {

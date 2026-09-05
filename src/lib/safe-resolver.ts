@@ -12,8 +12,10 @@ import type { $ZodType } from "zod/v4/core";
  * whose input type differs from their output type (z.coerce.*, .default()),
  * react-hook-form 7.6x's invariant `ResolverOptions<TFieldValues>` makes the
  * resolver structurally unassignable to `useForm<Output>` even though it is
- * correct at runtime. Callers keep full type safety on `useForm<Output>`;
- * only the resolver's own parameter checking is relaxed.
+ * correct at runtime. `any` is required here because `Resolver<unknown, unknown, unknown>`
+ * is not assignable to `Resolver<FormFields, any, FormFields>` due to
+ * contravariance of `ResolverOptions`. Callers keep full type safety on
+ * `useForm<Output>`; only the resolver's own parameter checking is relaxed.
  */
 export const safeResolver = <T extends $ZodType<unknown, FieldValues>>(
   schema: T,

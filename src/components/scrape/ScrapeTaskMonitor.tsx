@@ -262,7 +262,7 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
       return;
     }
     const url = `/api/scrape-tasks/${expandedTaskId}/export?format=${fmt}`;
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
     toast.success(`正在导出当前任务 (${fmt.toUpperCase()})`);
   }, [expandedTaskId]);
 

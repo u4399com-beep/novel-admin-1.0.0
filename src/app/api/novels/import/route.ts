@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
-import { sanitizeField, apiError, countWords } from "@/lib/api-utils";
+import { sanitizeField, apiError, countWords, validateJsonStructure } from "@/lib/api-utils";
 import { invalidateCache } from '@/lib/cache';
 import { VALID_NOVEL_STATUSES } from '@/lib/constants';
 
@@ -77,7 +77,19 @@ export const POST = withAuth({ maxBodySize: MAX_FILE_SIZE }, async function POST
     let chapters: ImportChapter[] = [];
 
     if (isJson) {
-      const json: ImportJson = JSON.parse(text);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return apiError('JSON格式错误，请检查文件内容', 400);
+      }
+      // Validate depth and key count to prevent stack overflow from deeply nested JSON
+      try {
+        validateJsonStructure(parsed, 0, 10, 1000);
+      } catch (e) {
+        return apiError(e instanceof Error ? e.message : 'JSON结构无效', 400);
+      }
+      const json = parsed as ImportJson;
       novelTitle = sanitizeField(json.title || file.name.replace(/\.(json|txt)$/i, ''), 200);
       novelAuthor = sanitizeField(json.author || '佚名', 100);
       novelDescription = json.description ? sanitizeField(json.description, 5000) : undefined;

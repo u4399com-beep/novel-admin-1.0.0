@@ -9,14 +9,14 @@ import { NextResponse } from 'next/server';
  * Method shorthand keeps parameter checks bivariant against generated delegates.
  */
 type ListModel = {
-  findMany(args: any): Promise<unknown[]>;
-  count(args: any): Promise<number>;
+  findMany(args: unknown): Promise<unknown[]>;
+  count(args: unknown): Promise<number>;
 };
 
 /** Prisma model subset needed for single-item lookup */
 type GetModel = {
-  findUnique(args: any): Promise<unknown>;
-  findFirst(args: any): Promise<unknown>;
+  findUnique(args: unknown): Promise<unknown>;
+  findFirst(args: unknown): Promise<unknown>;
 };
 
 export interface PaginatedListOptions {

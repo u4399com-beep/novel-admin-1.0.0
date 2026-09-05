@@ -118,29 +118,38 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     const shouldAutoStart = autoStart !== false;
     if (shouldAutoStart) {
       const scraperUrl = SCRAPER_SERVICE_URL;
-      fetch(`${scraperUrl}/execute-task`, {
-        method: "POST",
-        headers: getScraperServiceHeaders(),
-        body: JSON.stringify({ taskId: task.id }),
-        signal: AbortSignal.timeout(5000),
-      }).catch(async (err) => {
-        console.error(`[Scrape Task] Failed to auto-trigger task ${task.id}:`, err);
-        // Only update to failed if still pending (avoid overwriting running/completed)
+      const triggerTaskId = task.id;
+      void (async () => {
         try {
-          const safeMsg = err instanceof Error
-            ? err.message.replace(/https?:\/\/[^\s]+/g, '[URL]')
-            : '未知错误';
-          const { count } = await db.scrapeTask.updateMany({
-            where: { id: task.id, status: "pending" },
-            data: { status: "failed", errorMessage: `触发采集服务失败: ${safeMsg}`, completedAt: new Date() },
+          const res = await fetch(`${scraperUrl}/execute-task`, {
+            method: "POST",
+            headers: getScraperServiceHeaders(),
+            body: JSON.stringify({ taskId: triggerTaskId }),
+            signal: AbortSignal.timeout(5000),
           });
-          if (count === 0) {
-            console.debug(`[Scrape Task] Task already in progress`);
+          if (!res.ok) {
+            const errMsg = `Scraper service responded with ${res.status}`;
+            await db.scrapeTask.updateMany({
+              where: { id: triggerTaskId, status: "pending" },
+              data: { status: "failed", errorMessage: `触发采集服务失败: ${errMsg}`, completedAt: new Date() },
+            });
           }
-        } catch (dbErr) {
-          console.error(`[Scrape Task] Failed to update task ${task.id} status after trigger failure:`, dbErr);
+        } catch (err) {
+          console.error(`[Scrape Task] Failed to auto-trigger task ${triggerTaskId}:`, err);
+          // Only update to failed if still pending (avoid overwriting running/completed)
+          try {
+            const safeMsg = err instanceof Error
+              ? err.message.replace(/https?:\/\/[^\s]+/g, '[URL]')
+              : '未知错误';
+            await db.scrapeTask.updateMany({
+              where: { id: triggerTaskId, status: "pending" },
+              data: { status: "failed", errorMessage: `触发采集服务失败: ${safeMsg}`, completedAt: new Date() },
+            });
+          } catch (dbErr) {
+            console.error(`[Scrape Task] Failed to update task ${triggerTaskId} status after trigger failure:`, dbErr);
+          }
         }
-      }).catch((dbErr) => { console.error('[Scrape Task] Unhandled error in failure handler:', dbErr); });
+      })();
     }
 
     return apiSuccess(task, 201);

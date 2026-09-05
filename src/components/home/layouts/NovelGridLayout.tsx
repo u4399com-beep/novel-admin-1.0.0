@@ -113,8 +113,10 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: index * 0.04 }}
-            className="group cursor-pointer shine-hover card-depth hover-lift hover-scale novel-card-glow novel-card-load-anim hover:shadow-lg hover:-translate-y-1 transition-all duration-300 ease-out"
+            transition={{ duration: 0.3, delay: index * 0.04, type: 'spring', stiffness: 300, damping: 20 }}
+            whileHover={{ scale: 1.02, y: -4 }}
+            whileTap={{ scale: 0.98 }}
+            className="group cursor-pointer shine-hover card-depth novel-card-glow novel-card-load-anim hover:shadow-lg transition-shadow duration-300 ease-out"
           >
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
               <NovelCover
@@ -136,7 +138,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
                     NEW
                   </span>
                 )}
-                <span className={`inline-block h-2 w-2 rounded-full ${statusInfo.dotClass} status-${novel.status} badge-glow`} title={statusInfo.label} />
+                <span className={`inline-block h-2 w-2 rounded-full ${statusInfo.dotClass} status-${novel.status} badge-glow ${novel.status === 'ongoing' ? 'animate-pulse' : ''}`} title={statusInfo.label} />
               </div>
               {/* Quick-favorite heart button */}
               <Tooltip>

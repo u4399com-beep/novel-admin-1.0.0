@@ -10,6 +10,16 @@ interface LinkWheelItem {
   nofollow: boolean;
 }
 
+/** Validate domain format: only allow alphanumeric, dots, and hyphens */
+const DOMAIN_RE = /^[a-z0-9.-]+$/i;
+
+/** Clean a domain: strip protocol prefix and validate format */
+function cleanDomain(domain: string): string | null {
+  const cleaned = domain.replace(/^https?:\/\//, '');
+  if (!DOMAIN_RE.test(cleaned)) return null;
+  return cleaned;
+}
+
 /** Fisher-Yates shuffle (in-place) */
 function shuffleArray<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -81,9 +91,11 @@ export const GET = withPublicRateLimit({ capacity: 120, refillRate: 2 }, async (
         const site = link.siteId ? siteMap.get(link.siteId) : undefined;
         const domain = site?.domain || '';
         if (!domain) continue;
+        const cleanedDomain = cleanDomain(domain);
+        if (!cleanedDomain) continue;
         links.push({
-          title: link.title || site?.name || domain,
-          url: `https://${domain.replace(/^https?:\/\//, '')}`,
+          title: link.title || site?.name || cleanedDomain,
+          url: `https://${cleanedDomain}`,
           description: link.description,
           nofollow: link.nofollow,
         });
@@ -119,9 +131,11 @@ export const GET = withPublicRateLimit({ capacity: 120, refillRate: 2 }, async (
         const domain = site?.domain || '';
         const slug = novel?.slugs[0]?.slug;
         if (!domain || !slug) continue;
+        const cleanedDomain = cleanDomain(domain);
+        if (!cleanedDomain) continue;
         links.push({
           title: link.title || novel?.title || slug,
-          url: `https://${domain.replace(/^https?:\/\//, '')}/novel/${slug}`,
+          url: `https://${cleanedDomain}/novel/${slug}`,
           description: link.description,
           nofollow: link.nofollow,
         });
@@ -151,9 +165,11 @@ export const GET = withPublicRateLimit({ capacity: 120, refillRate: 2 }, async (
         for (const novel of randomNovels) {
           // Pick a random site for this novel
           const site = enabledSites[Math.floor(Math.random() * enabledSites.length)];
+          const cleanedDomain = cleanDomain(site.domain);
+          if (!cleanedDomain) continue;
           links.push({
             title: novel.title,
-            url: `https://${site.domain}/novel/${novel.slug}`,
+            url: `https://${cleanedDomain}/novel/${novel.slug}`,
             description: null,
             nofollow: true,
           });

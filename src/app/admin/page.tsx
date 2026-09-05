@@ -133,10 +133,10 @@ export default function AdminPage() {
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const toggleTheme = useCallback(() => setTheme(theme === 'dark' ? 'light' : 'dark'), [theme, setTheme]);
 
-  // ─── Auth guard (测试阶段跳过，设置NEXT_PUBLIC_SKIP_AUTH=true) ─────────────────
-  useEffect(() => {
-    if (status !== 'loading' && !session && process.env.NEXT_PUBLIC_SKIP_AUTH !== 'true') { router.push('/login'); }
-  }, [session, status, router]);
+  // ─── Auth guard ──────────────────────────────────────────────────────────
+  // Server-side auth check is now in admin/layout.tsx (server component).
+  // Client-side session is used only for UI (user name, avatar). No SKIP_AUTH
+  // on the client — the NEXT_PUBLIC_ prefix was removed to prevent auth bypass.
 
   if (status === 'loading') {
     return (

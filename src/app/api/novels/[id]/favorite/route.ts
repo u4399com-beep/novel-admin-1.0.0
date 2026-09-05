@@ -1,14 +1,7 @@
 import { db } from "@/lib/db";
 import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/api-auth";
-import { isPrismaError, apiError, apiSuccess } from "@/lib/api-utils";
-import { getToken } from "next-auth/jwt";
-
-// Helper to get the authenticated user's ID from the request
-async function getUserId(request: NextRequest): Promise<string | null> {
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-  return token?.id ? String(token.id) : null;
-}
+import { handlePrismaError, apiError, apiSuccess, getAuthUserId } from "@/lib/api-utils";
 
 // GET /api/novels/[id]/favorite - Check if current user has favorited this novel
 export const GET = withAuth(async function GET(
@@ -17,7 +10,7 @@ export const GET = withAuth(async function GET(
 ) {
   try {
     const { id } = await params;
-    const userId = await getUserId(request);
+    const userId = await getAuthUserId(request);
     if (!userId) {
       return apiError("无法获取用户信息", 401);
     }
@@ -41,10 +34,8 @@ export const GET = withAuth(async function GET(
     });
   } catch (error: unknown) {
     console.error("Check favorite error:", error);
-    if (isPrismaError(error, "P2025")) {
-      return apiError("小说不存在", 404);
-    }
-    return apiError("操作失败", 500);
+    const { message, status } = handlePrismaError(error);
+    return apiError(message, status);
   }
 });
 
@@ -55,7 +46,7 @@ export const POST = withAuth(async function POST(
 ) {
   try {
     const { id } = await params;
-    const userId = await getUserId(request);
+    const userId = await getAuthUserId(request);
     if (!userId) {
       return apiError("无法获取用户信息", 401);
     }
@@ -110,7 +101,7 @@ export const POST = withAuth(async function POST(
         });
       } catch (error: unknown) {
         // P2002 = unique constraint violation → already favorited, fetch current count
-        if (isPrismaError(error, 'P2002')) {
+        if (handlePrismaError(error).status === 409) {
           const existing = await db.novel.findUnique({
             where: { id },
             select: { favoriteCount: true },
@@ -125,9 +116,7 @@ export const POST = withAuth(async function POST(
     }
   } catch (error: unknown) {
     console.error("Toggle favorite error:", error);
-    if (isPrismaError(error, "P2025")) {
-      return apiError("小说不存在", 404);
-    }
-    return apiError("操作失败", 500);
+    const { message, status } = handlePrismaError(error);
+    return apiError(message, status);
   }
 });

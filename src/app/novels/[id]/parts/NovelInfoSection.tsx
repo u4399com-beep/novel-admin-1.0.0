@@ -185,15 +185,15 @@ export function NovelInfoSection({
                 <TooltipContent>导出</TooltipContent>
               </Tooltip>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export/txt`)}>
+                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export/txt`, '_blank', 'noopener,noreferrer')}>
                   <FileText className="mr-2 h-4 w-4" />
                   导出 TXT
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export?format=json`)}>
+                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export?format=json`, '_blank', 'noopener,noreferrer')}>
                   <FileJson className="mr-2 h-4 w-4" />
                   导出 JSON
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export/epub`)}>
+                <DropdownMenuItem onClick={() => window.open(`/api/novels/${novel.id}/export/epub`, '_blank', 'noopener,noreferrer')}>
                   <BookCopy className="mr-2 h-4 w-4" />
                   导出 EPUB
                 </DropdownMenuItem>

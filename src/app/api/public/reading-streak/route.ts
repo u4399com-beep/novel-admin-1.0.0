@@ -80,7 +80,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async fu
     const sessionId = parsed.data.sessionId;
 
     const dates = await db.$queryRaw<Array<{ date: string }>>(
-      Prisma.sql`SELECT DISTINCT date("lastReadAt") as date FROM "ReadingProgress" WHERE "sessionId" = ${sessionId} ORDER BY date ASC`
+      Prisma.sql`SELECT DISTINCT date("lastReadAt") as date FROM "ReadingProgress" WHERE "sessionId" = ${sessionId} AND "lastReadAt" >= date('now', '-365 days') ORDER BY date ASC`
     );
     const uniqueDates = dates.map(d => d.date);
 

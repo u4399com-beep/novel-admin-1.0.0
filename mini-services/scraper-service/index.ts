@@ -77,6 +77,11 @@ import type { TaskPriority, ScrapeResult } from "./src/types";
 import { sessionManager } from "./src/session-manager";
 import { requestFingerprintMgr } from "./src/request-fingerprint";
 import { timingSafeEqual } from "node:crypto";
+import { rateOptimizer } from "./src/rate-optimizer";
+import { concurrencyOptimizer } from "./src/concurrency-optimizer";
+import { antiDetectionCoordinator } from "./src/anti-detection-coordinator";
+import { getCaptchaPreDetection, getCaptchaPreDetectionStats, resetCaptchaPreDetection } from "./src/captcha-detector";
+import { crawlScheduler } from "./src/crawl-scheduler";
 import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest,
   ScrapeContentRequest, CleanRequest, DownloadCoverRequest, ExecuteTaskRequest,
@@ -382,6 +387,14 @@ export function startServer(port: number = 3099) {
   // Initialize all engines
   initEngines();
 
+  // Wire RateOptimizer into CrawlScheduler for adaptive mode
+  crawlScheduler.setAdaptiveRateProvider((domain: string) => rateOptimizer.getOptimalRate(domain));
+  // Enable adaptive mode by default in production
+  if (process.env.ADAPTIVE_RATE_MODE !== 'false') {
+    crawlScheduler.setAdaptiveMode(true);
+    console.log('[Config] Adaptive rate mode: enabled (RateOptimizer → CrawlScheduler)');
+  }
+
   const server = Bun.serve({
     port,
     async fetch(req) {
@@ -580,6 +593,76 @@ export function startServer(port: number = 3099) {
       if (path === "/fingerprint-stats" && method === "GET") {
         const stats = requestFingerprintMgr.getStats();
         return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Rate Optimizer Endpoints ====================
+
+      if (path === "/rate-optimizer/stats" && method === "GET") {
+        const stats = rateOptimizer.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path === "/rate-optimizer/reset" && method === "POST") {
+        rateOptimizer.reset();
+        return Response.json({ reset: true }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Concurrency Optimizer Endpoints ====================
+
+      if (path === "/concurrency-optimizer/stats" && method === "GET") {
+        const stats = concurrencyOptimizer.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Anti-Detection Coordinator Endpoints ====================
+
+      if (path === "/anti-detection/stats" && method === "GET") {
+        const stats = antiDetectionCoordinator.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== CAPTCHA Pre-Detection Endpoints ====================
+
+      if (path === "/captcha-pre-detection/stats" && method === "GET") {
+        const stats = getCaptchaPreDetectionStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path === "/captcha-pre-detection/check" && method === "GET") {
+        const domain = url.searchParams.get("domain");
+        if (!domain) {
+          return Response.json({ error: 'domain query parameter is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const preDetection = getCaptchaPreDetection(decodeURIComponent(domain));
+        return Response.json({ domain, ...preDetection }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path === "/captcha-pre-detection/reset" && method === "POST") {
+        resetCaptchaPreDetection();
+        return Response.json({ reset: true }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Crawl Scheduler Adaptive Mode ====================
+
+      if (path === "/crawl-scheduler/adaptive" && method === "GET") {
+        const budgetStats = crawlScheduler.getBudgetStats();
+        return Response.json({ budgets: budgetStats }, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

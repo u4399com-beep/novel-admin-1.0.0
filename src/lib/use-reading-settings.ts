@@ -193,15 +193,8 @@ export function useReadingProgress(novelId: string, chapters: { id: string }[]) 
 
       // Persist to server (fire-and-forget, non-blocking)
       try {
-        let sid = '';
-        if (typeof localStorage !== 'undefined') {
-          const SK = 'novel-session-id';
-          sid = localStorage.getItem(SK) || '';
-          if (!sid) {
-            sid = crypto.randomUUID();
-            localStorage.setItem(SK, sid);
-          }
-        }
+        const { getSessionId } = await import('@/lib/reading-session');
+        const sid = getSessionId();
         if (sid) {
           const chapterId = chaptersRef.current[chapterIndex]?.id || null;
           apiFetch('/api/public/reading-progress', {

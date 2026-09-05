@@ -58,9 +58,9 @@ export interface TLSCipherVariant {
  * Firefox variants have 7 ciphers (3 TLS 1.3 + 3 TLS 1.2 + fallback).
  */
 export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
-  // ---- Chrome Variants ----
+  // ---- Chrome Variants (131-135) ----
   {
-    name: 'Chrome 134+ Windows',
+    name: 'Chrome 135 Windows',
     browser: 'Chrome',
     options: {
       ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
@@ -71,7 +71,18 @@ export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
     ja4Ref: 't13d1511h2_002f,0035,009c,009d_0005,000a,000b,000d,0012,0015,0016,0017,001b,0023,002b,002d,0033,fe0d_02,6868',
   },
   {
-    name: 'Chrome 131-133 Windows',
+    name: 'Chrome 134 Windows',
+    browser: 'Chrome',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
+    },
+    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+    ja4Ref: 't13d1511h2_002f,0035,009c,009d_0005,000a,000b,000d,0012,0015,0016,0017,001b,0023,002b,002d,0033,fe0d_02,6868',
+  },
+  {
+    name: 'Chrome 133 Windows',
     browser: 'Chrome',
     options: {
       ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
@@ -81,7 +92,27 @@ export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
     ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
   },
   {
-    name: 'Chrome 131+ macOS (CHACHA20 preferred)',
+    name: 'Chrome 132 Windows',
+    browser: 'Chrome',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
+    },
+    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+  {
+    name: 'Chrome 131 Windows',
+    browser: 'Chrome',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
+    },
+    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+  {
+    name: 'Chrome 134+ macOS (CHACHA20 preferred)',
     browser: 'Chrome',
     options: {
       ciphers: 'TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
@@ -90,6 +121,81 @@ export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
     },
     ja3Ref: '771,4867-4865-4866-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
   },
+  {
+    name: 'Chrome 131-133 Linux',
+    browser: 'Chrome',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
+    },
+    ja3Ref: '771,4865-4866-4867-49199-49195-49200-52392,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+
+  // ---- Firefox Variants (137-140) ----
+  {
+    name: 'Firefox 140',
+    browser: 'Firefox',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
+    },
+    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+    ja4Ref: 't13d1511h2_002f,0033,009c,009d_0005,000a,000b,000d,0017,002b,002d,0033,fe0d_02,6868',
+  },
+  {
+    name: 'Firefox 139',
+    browser: 'Firefox',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
+    },
+    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+  },
+  {
+    name: 'Firefox 138',
+    browser: 'Firefox',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
+    },
+    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+  },
+  {
+    name: 'Firefox 137',
+    browser: 'Firefox',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
+    },
+    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+  },
+  {
+    name: 'Firefox 135-136',
+    browser: 'Firefox',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
+    },
+    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+  },
+  {
+    name: 'Firefox 128-134',
+    browser: 'Firefox',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
+    },
+    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
+  },
+
+  // ---- Chrome Older Variants ----
   {
     name: 'Chrome 128-130 Linux',
     browser: 'Chrome',
@@ -109,39 +215,6 @@ export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
       sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
     },
     ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393-49199-49195,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
-  },
-
-  // ---- Firefox Variants ----
-  {
-    name: 'Firefox 135-138',
-    browser: 'Firefox',
-    options: {
-      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
-      minVersion: 'TLSv1.2',
-      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
-    },
-    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
-    ja4Ref: 't13d1511h2_002f,0033,009c,009d_0005,000a,000b,000d,0017,002b,002d,0033,fe0d_02,6868',
-  },
-  {
-    name: 'Firefox 128-134',
-    browser: 'Firefox',
-    options: {
-      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
-      minVersion: 'TLSv1.2',
-      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
-    },
-    ja3Ref: '771,4865-4867-4866-49195-49199,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
-  },
-  {
-    name: 'Firefox 120-127',
-    browser: 'Firefox',
-    options: {
-      ciphers: 'TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256',
-      minVersion: 'TLSv1.2',
-      sigalgs: 'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha256:rsa_pss_pss_sha256:rsa_pkcs1_sha256:ecdsa_secp521r1_sha512:rsa_pss_rsae_sha512',
-    },
-    ja3Ref: '771,4866-4867-4865-49199-49200,0-5-10-11-13-23-43-45-51-65281,29-23-24,0',
   },
 
   // ---- Safari Variants ----
@@ -166,7 +239,7 @@ export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
 
   // ---- Edge Variants ----
   {
-    name: 'Edge 130+ Windows',
+    name: 'Edge 135 Windows',
     browser: 'Edge',
     options: {
       ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
@@ -176,7 +249,17 @@ export const TLS_CIPHER_VARIANTS: TLSCipherVariant[] = [
     ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
   },
   {
-    name: 'Edge 128-129 macOS',
+    name: 'Edge 134 Windows',
+    browser: 'Edge',
+    options: {
+      ciphers: 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
+      minVersion: 'TLSv1.2',
+      sigalgs: 'ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256:ecdsa_secp384r1_sha384:rsa_pss_rsae_sha384:rsa_pkcs1_sha384:rsa_pss_rsae_sha512:ecdsa_secp521r1_sha512',
+    },
+    ja3Ref: '771,4865-4866-4867-49195-49199-49200-52393,0-5-10-11-13-16-23-43-45-51-65281,29-23-24-25,0',
+  },
+  {
+    name: 'Edge 131-133 macOS (CHACHA20 preferred)',
     browser: 'Edge',
     options: {
       ciphers: 'TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384',
@@ -382,6 +465,167 @@ export function computeApproximateJA4(options: TLSFingerprintOptions): string {
   return `${protocol}${direction}${cipherCount}${extCount}${alpnCode}_${cipherHex}_*_${alpnHex}`;
 }
 
+// ==================== Per-Session TLS Rotation ====================
+
+/**
+ * Per-session TLS rotation: rotate the TLS fingerprint every N requests
+ * within a session, not just per-domain. This prevents TLS fingerprint
+ * correlation across many requests from the same apparent session.
+ */
+
+const sessionTlsState = new Map<string, {
+  requestCount: number;
+  rotateEvery: number; // rotate every N requests
+  currentVariant: TLSCipherVariant;
+  createdAt: number;
+}>();
+const MAX_SESSION_TLS = 500;
+const SESSION_TLS_TTL_MS = 20 * 60 * 1000; // 20 minutes
+
+/**
+ * Get TLS fingerprint options with per-session rotation.
+ * Rotates the TLS variant every `rotateEvery` requests within a session.
+ *
+ * @param sessionId - Session identifier for rotation tracking
+ * @param domain - Target domain
+ * @param ua - User-Agent string
+ * @param rotateEvery - Rotate every N requests (default: 10)
+ * @returns TLS options with rotation applied
+ */
+export function getSessionTLSFingerprintOptions(
+  sessionId: string,
+  domain: string,
+  ua?: string,
+  rotateEvery: number = 10
+): TLSFingerprintOptions {
+  const now = Date.now();
+  const cacheKey = `${sessionId}:${domain}`;
+  let state = sessionTlsState.get(cacheKey);
+
+  // Check TTL
+  if (state && (now - state.createdAt) > SESSION_TLS_TTL_MS) {
+    sessionTlsState.delete(cacheKey);
+    state = undefined;
+  }
+
+  if (!state) {
+    // LRU eviction
+    if (sessionTlsState.size >= MAX_SESSION_TLS) {
+      const oldest = sessionTlsState.keys().next().value;
+      if (oldest) sessionTlsState.delete(oldest);
+    }
+
+    // Pick initial variant for this session
+    const browser = ua ? detectBrowserFromUA(ua) : 'Chrome';
+    const h = domainHash(domain + sessionId);
+    const candidates = TLS_CIPHER_VARIANTS.filter(v => v.browser === browser);
+    const pool = candidates.length > 0 ? candidates : TLS_CIPHER_VARIANTS.filter(v => v.browser === 'Chrome');
+    const variant = pool[h % pool.length]!;
+
+    state = {
+      requestCount: 0,
+      rotateEvery,
+      currentVariant: variant,
+      createdAt: now,
+    };
+    sessionTlsState.set(cacheKey, state);
+  }
+
+  state.requestCount++;
+
+  // Rotate if needed
+  if (state.requestCount % state.rotateEvery === 0) {
+    const browser = ua ? detectBrowserFromUA(ua) : 'Chrome';
+    const candidates = TLS_CIPHER_VARIANTS.filter(v => v.browser === browser);
+    const pool = candidates.length > 0 ? candidates : TLS_CIPHER_VARIANTS.filter(v => v.browser === 'Chrome');
+    // Pick a different variant
+    let newVariant: TLSCipherVariant;
+    do {
+      newVariant = pool[Math.floor(Math.random() * pool.length)]!;
+    } while (pool.length > 1 && newVariant === state.currentVariant);
+    state.currentVariant = newVariant;
+
+    if (process.env.DEBUG === 'true') {
+      console.log(`[TLS] Session ${sessionId.slice(0, 8)}: rotated to ${newVariant.name} after ${state.requestCount} requests`);
+    }
+  }
+
+  return state.currentVariant.options;
+}
+
+// ==================== TLS Version Negotiation Order Randomization ====================
+
+/**
+ * TLS version negotiation order variants.
+ * Some WAFs fingerprint the order of supported_versions extension.
+ * Standard order: TLS 1.3, TLS 1.2
+ * Randomized: sometimes present TLS 1.2 first in the extension list
+ * (while still negotiating TLS 1.3 if server supports it).
+ *
+ * This affects the `minVersion` we pass to BoringSSL:
+ * - 'TLSv1.2' means we support TLS 1.2+ (normal)
+ * - 'TLSv1.3' means we only support TLS 1.3 (strict, rare)
+ *
+ * We can also randomize the cipher suite order slightly to create
+ * subtle variations in the JA3/JA4 fingerprint.
+ */
+
+/**
+ * Apply TLS version negotiation order randomization to TLS options.
+ * Returns a new TLSFingerprintOptions with randomized cipher order.
+ *
+ * @param options - Base TLS options
+ * @param randomizeLevel - 0 (none) to 3 (aggressive)
+ * @returns TLS options with randomized order
+ */
+export function randomizeTLSNegotiationOrder(
+  options: TLSFingerprintOptions,
+  randomizeLevel: number = 1
+): TLSFingerprintOptions {
+  if (randomizeLevel === 0) return options;
+
+  const ciphers = options.ciphers.split(':');
+
+  if (randomizeLevel >= 1) {
+    // Level 1: Swap the 2nd and 3rd TLS 1.3 ciphers with 50% probability
+    // This creates a subtle but valid variation in JA3/JA4
+    if (ciphers.length >= 3 && Math.random() < 0.5) {
+      const tmp = ciphers[1];
+      ciphers[1] = ciphers[2];
+      ciphers[2] = tmp;
+    }
+  }
+
+  if (randomizeLevel >= 2) {
+    // Level 2: Also swap TLS 1.2 cipher pairs
+    // TLS 1.2 ciphers start after the first 3 (TLS 1.3 ciphers)
+    for (let i = 3; i < ciphers.length - 1; i += 2) {
+      if (Math.random() < 0.3) {
+        const tmp = ciphers[i];
+        ciphers[i] = ciphers[i + 1];
+        ciphers[i + 1] = tmp;
+      }
+    }
+  }
+
+  if (randomizeLevel >= 3) {
+    // Level 3: Full Fisher-Yates shuffle of TLS 1.2 ciphers
+    // WARNING: This may break cipher preference and reduce security
+    // Only use for maximum fingerprint diversity when security is less critical
+    for (let i = ciphers.length - 1; i > 3; i--) {
+      const j = 3 + Math.floor(Math.random() * (i - 3 + 1));
+      const tmp = ciphers[i];
+      ciphers[i] = ciphers[j];
+      ciphers[j] = tmp;
+    }
+  }
+
+  return {
+    ...options,
+    ciphers: ciphers.join(':'),
+  };
+}
+
 /**
  * Clear the TLS options cache. If domain specified, only clear that domain.
  */
@@ -390,5 +634,21 @@ export function clearTLSOptionsCache(domain?: string): void {
     domainTlsOptionsCache.delete(domain);
   } else {
     domainTlsOptionsCache.clear();
+  }
+}
+
+/**
+ * Clear the per-session TLS rotation state.
+ * If sessionId specified, only clear that session.
+ */
+export function clearSessionTLSCache(sessionId?: string): void {
+  if (sessionId) {
+    for (const key of sessionTlsState.keys()) {
+      if (key.startsWith(sessionId + ':')) {
+        sessionTlsState.delete(key);
+      }
+    }
+  } else {
+    sessionTlsState.clear();
   }
 }
