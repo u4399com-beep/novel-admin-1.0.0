@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# 小说阁 - 一键安装脚本 v7.0
+# 小说阁 - 一键安装脚本 v7.1
 # Novel Admin Platform - One-Click Installation
 #
 # Usage:
@@ -93,7 +93,28 @@ prompt_val() {
 # ─── Step 1: Pre-flight Checks ────────────────────────────
 step 1 "Pre-flight System Checks"
 
-# 1a. Node.js 20+
+# 1a. Base system dependencies (minimal Debian needs these)
+progress "Base system deps (curl, ca-certificates)"
+_NEED_BASE=false
+command -v curl >/dev/null 2>&1 || _NEED_BASE=true
+if $_NEED_BASE; then
+  progress_fail
+  info "Installing base dependencies..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -qq 2>/dev/null
+    sudo apt-get install -y curl ca-certificates gnupg 2>/dev/null || warn "Some base deps install had issues"
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y curl ca-certificates 2>/dev/null || warn "Some base deps install had issues"
+  elif command -v apk >/dev/null 2>&1; then
+    sudo apk add --no-cache curl ca-certificates 2>/dev/null || warn "Some base deps install had issues"
+  fi
+  command -v curl >/dev/null 2>&1 || fatal "curl is required. Install manually."
+  ok "Base dependencies installed"
+else
+  progress_ok
+fi
+
+# 1b. Node.js 20+
 progress "Node.js >= 20"
 if command -v node >/dev/null 2>&1; then
   NODE_VER=$(node --version | sed 's/v//'  | cut -d. -f1)
@@ -105,31 +126,53 @@ if command -v node >/dev/null 2>&1; then
   fi
 else
   progress_fail
-  info "Installing Node.js 20 via package* manager..."
+  info "Installing Node.js 20 via package manager..."
   if command -v apt-get >/dev/null 2>&1; then
+    # Ensure gnupg for nodesource key verification
+    sudo apt-get install -y gnupg 2>/dev/null
     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - 2>/dev/null
     sudo apt-get install -y nodejs 2>/dev/null || fatal "Node.js install failed"
   elif command -v dnf >/dev/null 2>&1; then
     sudo dnf install -y nodejs 2>/dev/null || fatal "Node.js install failed"
+  elif command -v yum >/dev/null 2>&1; then
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash - 2>/dev/null
+    sudo yum install -y nodejs 2>/dev/null || fatal "Node.js install failed"
   else
     fatal "Node.js not found. Please install Node.js 20+ manually: https://nodejs.org/"
   fi
+  command -v node >/dev/null 2>&1 || fatal "Node.js installed but not found in PATH"
   ok "Node.js installed"
 fi
 
-# 1b. bun
+# 1c. Bun runtime
 progress "Bun runtime"
 if command -v bun >/dev/null 2>&1; then
   progress_ok
 else
   progress_fail
+  # Bun installer requires unzip; install system deps first
+  info "Installing system dependencies for Bun..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -qq 2>/dev/null
+    sudo apt-get install -y unzip curl ca-certificates 2>/dev/null || warn "Some deps install had issues"
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y unzip curl ca-certificates 2>/dev/null || warn "Some deps install had issues"
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y unzip curl ca-certificates 2>/dev/null || warn "Some deps install had issues"
+  elif command -v apk >/dev/null 2>&1; then
+    sudo apk add --no-cache unzip curl ca-certificates 2>/dev/null || warn "Some deps install had issues"
+  fi
+  # Verify unzip is available (required by bun installer)
+  command -v unzip >/dev/null 2>&1 || fatal "unzip is required by Bun installer. Install it manually: apt install unzip"
   info "Installing Bun..."
-  curl -fsSL https://bun.sh/install | bash 2>/dev/null || fatal "Bun install failed"
+  curl -fsSL https://bun.sh/install | bash 2>/dev/null || fatal "Bun install failed (ensure unzip & curl are installed)"
   export PATH="$HOME/.bun/bin:$PATH"
+  # Verify bun is now available
+  command -v bun >/dev/null 2>&1 || fatal "Bun installed but not found in PATH. Add ~/.bun/bin to your PATH manually."
   ok "Bun installed"
 fi
 
-# 1c. git
+# 1d. Git
 progress "Git"
 if command -v git >/dev/null 2>&1; then
   progress_ok
@@ -142,7 +185,7 @@ else
   command -v git >/dev/null 2>&1 || warn "Git not available; cannot clone repo"
 fi
 
-# 1d. RAM check (4GB recommended)
+# 1e. RAM check (4GB recommended)
 progress "RAM >= 4GB (recommended)"
 _AVAIL_KB=$(awk '/MemAvailable/{print $2}' /proc/meminfo 2>/dev/null || echo 4194304)
 _AVAIL_MB=$((_AVAIL_KB / 1024))
@@ -155,7 +198,7 @@ else
   fatal "Insufficient RAM (${_AVAIL_MB}MB). Minimum 1.5GB, recommended 4GB."
 fi
 
-# 1e. Disk check (10GB free)
+# 1f. Disk check (10GB free)
 progress "Disk >= 10GB free"
 _DF_AVAIL=$(df -k . 2>/dev/null | awk 'NR==2{print $4}')
 _DF_GB=$((_DF_AVAIL / 1024 / 1024))
@@ -165,7 +208,7 @@ else
   echo -e "${YELLOW}⚠${NC}  (${_DF_GB}GB free — may be insufficient)"
 fi
 
-# 1f. Port availability
+# 1g. Port availability
 _APP_PORT="${CUSTOM_PORT:-3000}"
 progress "Port ${_APP_PORT} available"
 if command -v ss >/dev/null 2>&1; then
