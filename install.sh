@@ -164,12 +164,66 @@ else
   fi
   # Verify unzip is available (required by bun installer)
   command -v unzip >/dev/null 2>&1 || fatal "unzip is required by Bun installer. Install it manually: apt install unzip"
+
+  # Try multiple methods to install Bun (GitHub releases can be slow/blocked in China)
   info "Installing Bun..."
-  curl -fsSL https://bun.sh/install | bash 2>/dev/null || fatal "Bun install failed (ensure unzip & curl are installed)"
-  export PATH="$HOME/.bun/bin:$PATH"
-  # Verify bun is now available
-  command -v bun >/dev/null 2>&1 || fatal "Bun installed but not found in PATH. Add ~/.bun/bin to your PATH manually."
-  ok "Bun installed"
+  _BUN_INSTALLED=false
+
+  # Method 1: Official installer via bun.sh (uses GitHub releases, may be slow in China)
+  info "  Trying official installer (bun.sh)..."
+  if curl -fsSL --connect-timeout 10 --max-time 120 https://bun.sh/install | bash 2>/dev/null; then
+    export PATH="$HOME/.bun/bin:$PATH"
+    if command -v bun >/dev/null 2>&1; then
+      _BUN_INSTALLED=true
+      ok "Bun installed via official installer"
+    fi
+  fi
+
+  # Method 2: Direct download via GitHub mirror (ghfast.top for China)
+  if ! $_BUN_INSTALLED; then
+    info "  Official installer timed out, trying GitHub mirror..."
+    _BUN_VER=$(curl -fsSL --connect-timeout 10 --max-time 15 https://ghfast.top/https://api.github.com/repos/oven-sh/bun/releases/latest 2>/dev/null | grep '"tag_name"' | head -1 | sed 's/.*"v\(.*\)".*/\1/')
+    if [ -z "$_BUN_VER" ]; then
+      _BUN_VER="1.2.5"  # Fallback to known stable version
+    fi
+    info "  Downloading Bun v${_BUN_VER} via mirror..."
+    _BUN_ZIP_URL="https://ghfast.top/https://github.com/oven-sh/bun/releases/download/v${_BUN_VER}/bun-linux-x64-musl.zip"
+    if curl -fSL --connect-timeout 15 --max-time 180 -o /tmp/bun.zip "$_BUN_ZIP_URL" 2>/dev/null; then
+      mkdir -p "$HOME/.bun/bin"
+      unzip -oq /tmp/bun.zip -d /tmp/bun-extract 2>/dev/null
+      # Find and move the bun binary
+      _BUN_BIN=$(find /tmp/bun-extract -name "bun" -type f 2>/dev/null | head -1)
+      if [ -n "$_BUN_BIN" ]; then
+        mv "$_BUN_BIN" "$HOME/.bun/bin/bun" && chmod +x "$HOME/.bun/bin/bun"
+        rm -rf /tmp/bun.zip /tmp/bun-extract
+        export PATH="$HOME/.bun/bin:$PATH"
+        if command -v bun >/dev/null 2>&1; then
+          _BUN_INSTALLED=true
+          ok "Bun v${_BUN_VER} installed via mirror"
+        fi
+      fi
+    fi
+    rm -f /tmp/bun.zip 2>/dev/null; rm -rf /tmp/bun-extract 2>/dev/null
+  fi
+
+  # Method 3: npm install -g bun (last resort, uses npm registry which has China mirrors)
+  if ! $_BUN_INSTALLED; then
+    info "  Trying npm install (last resort)..."
+    if npm install -g bun 2>/dev/null; then
+      if command -v bun >/dev/null 2>&1; then
+        _BUN_INSTALLED=true
+        ok "Bun installed via npm"
+      fi
+    fi
+  fi
+
+  if ! $_BUN_INSTALLED; then
+    fatal "Bun install failed after all methods. Try manually:
+  1. Direct: curl -fsSL https://bun.sh/install | bash
+  2. Mirror:  GITHUB=https://ghfast.top/https://github.com curl -fsSL https://bun.sh/install | bash
+  3. npm:     npm install -g bun
+  4. Manual:   Download from https://github.com/oven-sh/bun/releases"
+  fi
 fi
 
 # 1d. Git
