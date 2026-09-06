@@ -756,6 +756,7 @@ export function clearDomainUACache(domain?: string): void {
 
 const _stealthScriptCache = new Map<string, { script: string; ts: number }>();
 const STEALTH_SCRIPT_CACHE_TTL = 30 * 60 * 1000; // 30 min
+const MAX_STEALTH_SCRIPT_CACHE = 100; // Max cached scripts to prevent unbounded memory growth
 
 // Canvas noise intensity: 0.0 = no noise, 1.0 = default (±1 RGB), up to 3.0 = aggressive
 const CANVAS_NOISE_INTENSITY = (() => {
@@ -945,9 +946,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
     enumerable: true,
   });
 
-  // Max touch points (desktop = 0)
+  // Max touch points — use profile value (0 for desktop, 5 for touch-enabled laptop)
   Object.defineProperty(navigator, 'maxTouchPoints', {
-    get: () => 0,
+    get: () => PROFILE.maxTouchPoints,
     configurable: true,
     enumerable: true,
   });
@@ -4907,11 +4908,22 @@ export function getStealthScript(profile: FingerprintProfile): string {
   _stealthScriptCache.set(key, { script: result, ts: Date.now() });
 
   // Proactive eviction when cache grows too large
-  if (_stealthScriptCache.size > 400) {
+  if (_stealthScriptCache.size > MAX_STEALTH_SCRIPT_CACHE) {
     const now = Date.now();
+    // First: evict expired entries
     for (const [k, entry] of _stealthScriptCache) {
       if (now - entry.ts > STEALTH_SCRIPT_CACHE_TTL) {
         _stealthScriptCache.delete(k);
+      }
+    }
+    // Second: if still over limit, evict oldest entries (FIFO)
+    if (_stealthScriptCache.size > MAX_STEALTH_SCRIPT_CACHE) {
+      const toDelete = _stealthScriptCache.size - Math.floor(MAX_STEALTH_SCRIPT_CACHE * 0.7);
+      let deleted = 0;
+      for (const k of _stealthScriptCache.keys()) {
+        if (deleted >= toDelete) break;
+        _stealthScriptCache.delete(k);
+        deleted++;
       }
     }
   }
@@ -5073,8 +5085,11 @@ export function shuffleHeaderOrderWithJitter(headers: Record<string, string>, do
   const templateSet = new Set(browserTemplate.map(k => k.toLowerCase()));
 
   // Step 3: Partition other keys into "template-matched" and "extra"
+  // Sort template-matched keys according to the browser template order FIRST,
+  // then apply jitter — this preserves browser-like structure before shuffling.
   const templateMatched: string[] = [];
   const extraKeys: string[] = [];
+  const templateOrderMap = new Map(browserTemplate.map((k, i) => [k.toLowerCase(), i]));
   for (const key of otherKeys) {
     if (templateSet.has(key.toLowerCase())) {
       templateMatched.push(key);
@@ -5082,6 +5097,8 @@ export function shuffleHeaderOrderWithJitter(headers: Record<string, string>, do
       extraKeys.push(key);
     }
   }
+  // Sort matched keys by their position in the browser template order
+  templateMatched.sort((a, b) => (templateOrderMap.get(a.toLowerCase()) ?? 999) - (templateOrderMap.get(b.toLowerCase()) ?? 999));
 
   // Step 4: Partial Fisher-Yates shuffle on template-matched headers (~30% swap prob)
   // This introduces per-request jitter while preserving some browser-like structure
@@ -5174,7 +5191,7 @@ export function humanizedFetchDelay(domain: string): number {
     if (hour >= 9 && hour < 23) {
       // Peak hours: 300-800ms
       baseDelay = 300 + Math.round(normalized * 500);
-    } else if (hour >= 6 && hour < 9 || hour >= 23) {
+    } else if ((hour >= 6 && hour < 9) || (hour >= 23 || hour < 2)) {
       // Off-peak: 500-1200ms
       baseDelay = 500 + Math.round(normalized * 700);
     } else {
@@ -5227,5 +5244,485 @@ export function getDntHeader(profile?: FingerprintProfile | { userAgent?: string
     return { 'Sec-GPC': '1' };
   }
   return null;
+}
+
+// ==================== Round 2: Browser Profile Consistency Verification ====================
+
+/**
+ * Comprehensive profile consistency audit result.
+ * Anti-bot systems cross-check many browser properties — any inconsistency
+ * (e.g., Chrome UA with Firefox vendor, or 16 cores on a 2GB device) is a detection signal.
+ */
+export interface ProfileConsistencyReport {
+  /** Overall consistency score (0-100) */
+  score: number;
+  /** Whether the profile passes all critical checks */
+  passed: boolean;
+  /** Individual check results */
+  checks: Array<{
+    name: string;
+    passed: boolean;
+    severity: 'critical' | 'warning' | 'info';
+    detail: string;
+  }>;
+}
+
+/**
+ * Verify a FingerprintProfile for internal consistency across all cross-checkable properties.
+ * Anti-bot systems compare:
+ *   - UA ↔ platform (Chrome UA + MacIntel platform must match)
+ *   - UA ↔ navigatorVendor (Chrome UA + 'Google Inc.' vendor)
+ *   - UA ↔ WebGL vendor/renderer (Chrome uses ANGLE, Firefox uses real GPU names)
+ *   - hardwareConcurrency ↔ deviceMemory (16 cores + 2GB is suspicious)
+ *   - colorDepth ↔ pixelDepth (must be equal in 99% of real setups)
+ *   - screen dimensions ↔ availWidth/availHeight (availHeight ≤ screenHeight)
+ *   - timezone ↔ Accept-Language (Asia/Shanghai with en-US only is suspicious)
+ *   - pixelRatio ↔ screen resolution (2x ratio on non-retina resolution)
+ */
+export function verifyProfileConsistency(profile: FingerprintProfile): ProfileConsistencyReport {
+  const checks: ProfileConsistencyReport['checks'] = [];
+  const ua = profile.userAgent;
+  const isFirefoxUA = /Firefox\//.test(ua);
+  const isEdgeUA = /Edg\//.test(ua);
+  const isChromeUA = !isFirefoxUA && !isEdgeUA && /Chrome\//.test(ua);
+  const isMacPlatform = profile.platform === 'MacIntel';
+  const isLinuxPlatform = profile.platform === 'Linux x86_64';
+  const isWinPlatform = profile.platform === 'Win32';
+
+  // 1. UA ↔ Platform consistency
+  if (isMacPlatform) {
+    const hasMacInUA = /Macintosh/.test(ua);
+    checks.push({
+      name: 'ua-platform',
+      passed: hasMacInUA,
+      severity: 'critical',
+      detail: hasMacInUA ? 'Mac platform matches Mac UA' : 'MacIntel platform with non-Mac UA — detectable mismatch',
+    });
+  } else if (isLinuxPlatform) {
+    const hasLinuxInUA = /Linux/.test(ua) || /X11/.test(ua);
+    checks.push({
+      name: 'ua-platform',
+      passed: hasLinuxInUA,
+      severity: 'critical',
+      detail: hasLinuxInUA ? 'Linux platform matches Linux UA' : 'Linux platform with non-Linux UA — detectable mismatch',
+    });
+  } else {
+    const hasWinInUA = /Windows/.test(ua) || /Win32/.test(ua) || /Win64/.test(ua);
+    checks.push({
+      name: 'ua-platform',
+      passed: hasWinInUA,
+      severity: 'critical',
+      detail: hasWinInUA ? 'Win32 platform matches Windows UA' : 'Win32 platform with non-Windows UA — detectable mismatch',
+    });
+  }
+
+  // 2. UA ↔ navigatorVendor consistency
+  const expectedVendor = isFirefoxUA ? '' : 'Google Inc.';
+  const vendorMatch = profile.navigatorVendor === expectedVendor;
+  checks.push({
+    name: 'ua-vendor',
+    passed: vendorMatch,
+    severity: 'critical',
+    detail: vendorMatch
+      ? `Vendor "${profile.navigatorVendor}" matches ${isFirefoxUA ? 'Firefox' : 'Chrome/Edge'} UA`
+      : `Vendor "${profile.navigatorVendor}" inconsistent with UA (expected "${expectedVendor}")`,
+  });
+
+  // 3. UA ↔ WebGL vendor/renderer consistency
+  let webglConsistent = true;
+  let webglDetail = '';
+  if (isFirefoxUA) {
+    webglConsistent = profile.webglVendor === 'Mozilla';
+    webglDetail = webglConsistent
+      ? 'Firefox UA uses Mozilla WebGL vendor'
+      : `Firefox UA with non-Mozilla WebGL vendor "${profile.webglVendor}" — major leak`;
+  } else if (isMacPlatform) {
+    webglConsistent = profile.webglVendor === 'Google Inc. (Apple)' || profile.webglRenderer.startsWith('Apple');
+    webglDetail = webglConsistent
+      ? 'Mac platform uses Apple WebGL renderer'
+      : 'Mac platform with non-Apple WebGL — suspicious';
+  } else if (isLinuxPlatform && isChromeUA) {
+    // Linux Chrome uses ANGLE with OpenGL backend, or Mesa for some configurations
+    webglConsistent = profile.webglRenderer.includes('OpenGL') || profile.webglRenderer.includes('Mesa') || profile.webglRenderer.includes('ANGLE');
+    webglDetail = webglConsistent
+      ? 'Linux Chrome uses ANGLE/Mesa WebGL'
+      : 'Linux Chrome with unexpected WebGL renderer';
+  } else {
+    // Windows Chrome — must use ANGLE Direct3D11
+    webglConsistent = profile.webglRenderer.includes('ANGLE') || profile.webglRenderer.includes('Direct3D11');
+    webglDetail = webglConsistent
+      ? 'Windows Chrome uses ANGLE/Direct3D11 WebGL'
+      : 'Windows Chrome without ANGLE/D3D11 WebGL — suspicious';
+  }
+  checks.push({
+    name: 'ua-webgl',
+    passed: webglConsistent,
+    severity: 'critical',
+    detail: webglDetail,
+  });
+
+  // 4. hardwareConcurrency ↔ deviceMemory realism
+  const cores = profile.hardwareConcurrency;
+  const mem = profile.deviceMemory;
+  let hwConsistent = true;
+  let hwDetail = '';
+  if (cores >= 16 && mem <= 4) {
+    hwConsistent = false;
+    hwDetail = `${cores} cores with ${mem}GB RAM — unrealistic for consumer hardware`;
+  } else if (cores <= 2 && mem >= 16) {
+    hwConsistent = false;
+    hwDetail = `${cores} cores with ${mem}GB RAM — unusual for consumer hardware`;
+  } else {
+    hwDetail = `${cores} cores / ${mem}GB RAM — realistic combination`;
+  }
+  checks.push({
+    name: 'cores-memory',
+    passed: hwConsistent,
+    severity: 'warning',
+    detail: hwDetail,
+  });
+
+  // 5. colorDepth ↔ pixelDepth
+  const depthMatch = profile.colorDepth === profile.pixelDepth;
+  checks.push({
+    name: 'color-pixel-depth',
+    passed: depthMatch,
+    severity: 'warning',
+    detail: depthMatch
+      ? `colorDepth === pixelDepth (${profile.colorDepth})`
+      : `colorDepth (${profile.colorDepth}) !== pixelDepth (${profile.pixelDepth}) — rare in real browsers`,
+  });
+
+  // 6. Screen dimensions ↔ available dimensions
+  const availWOk = profile.availWidth <= profile.screenWidth;
+  const availHOk = profile.availHeight <= profile.screenHeight && profile.availHeight > 0;
+  checks.push({
+    name: 'screen-avail',
+    passed: availWOk && availHOk,
+    severity: 'critical',
+    detail: (availWOk && availHOk)
+      ? `availWidth/Height (${profile.availWidth}x${profile.availHeight}) ≤ screen (${profile.screenWidth}x${profile.screenHeight})`
+      : `Available dimensions exceed screen — impossible in real browsers`,
+  });
+
+  // 7. pixelRatio ↔ screen resolution (2x on non-retina is suspicious for Windows)
+  let ratioConsistent = true;
+  let ratioDetail = '';
+  if (profile.pixelRatio === 2 && isWinPlatform && profile.screenWidth < 2000) {
+    ratioConsistent = false;
+    ratioDetail = '2x pixel ratio on small Windows screen — rare, mostly macOS Retina';
+  } else if (profile.pixelRatio === 1 && isMacPlatform && profile.screenWidth >= 2560) {
+    ratioConsistent = false;
+    ratioDetail = '1x pixel ratio on high-res Mac — likely Retina with 2x ratio';
+  } else {
+    ratioDetail = `pixelRatio ${profile.pixelRatio} consistent with ${profile.platform} at ${profile.screenWidth}x${profile.screenHeight}`;
+  }
+  checks.push({
+    name: 'pixel-ratio-screen',
+    passed: ratioConsistent,
+    severity: 'warning',
+    detail: ratioDetail,
+  });
+
+  // 8. timezone ↔ language consistency
+  const hasChineseLang = profile.languages.some(l => l.startsWith('zh'));
+  const isChinaTz = profile.timezone === 'Asia/Shanghai' || profile.timezone === 'Asia/Chongqing';
+  const tzLangOk = isChinaTz ? hasChineseLang : true; // Non-China tz with Chinese is OK (overseas Chinese)
+  checks.push({
+    name: 'timezone-language',
+    passed: tzLangOk,
+    severity: 'warning',
+    detail: tzLangOk
+      ? `Timezone ${profile.timezone} consistent with languages ${profile.languages.join(',')}`
+      : `China timezone ${profile.timezone} without Chinese language — suspicious`,
+  });
+
+  // 9. maxTouchPoints ↔ platform consistency
+  const touchOk = !(isMacPlatform && profile.maxTouchPoints > 0) || profile.maxTouchPoints === 0;
+  // Mac desktops don't report touch points; only Mac touch devices would, and those are rare
+  checks.push({
+    name: 'touch-platform',
+    passed: touchOk,
+    severity: 'info',
+    detail: touchOk
+      ? `maxTouchPoints (${profile.maxTouchPoints}) consistent with platform`
+      : `maxTouchPoints > 0 on Mac — rare for desktop`,
+  });
+
+  // Calculate overall score
+  const criticalChecks = checks.filter(c => c.severity === 'critical');
+  const warningChecks = checks.filter(c => c.severity === 'warning');
+  const criticalPassed = criticalChecks.every(c => c.passed);
+  const warningScore = warningChecks.filter(c => c.passed).length / Math.max(warningChecks.length, 1);
+
+  const score = criticalPassed
+    ? Math.round(70 + warningScore * 30) // 70-100 if all critical pass
+    : Math.round((criticalChecks.filter(c => c.passed).length / Math.max(criticalChecks.length, 1)) * 60); // 0-60 if any critical fails
+
+  return {
+    score,
+    passed: criticalPassed,
+    checks,
+  };
+}
+
+// ==================== Round 2: Extended Navigator Properties ====================
+
+/**
+ * Extended navigator properties that anti-bot systems check.
+ * These go beyond the basic FingerprintProfile to cover additional
+ * fingerprinting surfaces like NetworkInformation, PluginArray, etc.
+ */
+export interface ExtendedNavigatorProperties {
+  /** navigator.connection.effectiveType ('4g' most common for desktop) */
+  connectionEffectiveType: 'slow-2g' | '2g' | '3g' | '4g';
+  /** navigator.connection.rtt (round-trip time in ms, typically 0 or 50-100) */
+  connectionRtt: number;
+  /** navigator.connection.downlink (Mbps, typically 10 for desktop) */
+  connectionDownlink: number;
+  /** navigator.connection.saveData (always false for desktop) */
+  connectionSaveData: boolean;
+  /** navigator.plugins.length (Chrome: 5 with default plugins, Firefox: 0) */
+  pluginsLength: number;
+  /** navigator.mimeTypes.length (equals plugins.length * ~2 in Chrome) */
+  mimeTypesLength: number;
+  /** navigator.webdriver (must be false/undefined for real browsers) */
+  webdriver: boolean;
+  /** navigator.pdfViewerEnabled (Chrome: true, Firefox: false) */
+  pdfViewerEnabled: boolean;
+  /** navigator.storageBudget (rough estimate, varies) */
+  storageEstimate: number;
+  /** Performance.memory.jsHeapSizeLimit (Chrome only, ~2GB-4GB) */
+  jsHeapSizeLimit?: number;
+}
+
+/**
+ * Generate extended navigator properties consistent with a FingerprintProfile.
+ * Ensures all values are consistent with the profile's browser type and platform.
+ */
+export function generateExtendedNavigatorProps(profile: FingerprintProfile): ExtendedNavigatorProperties {
+  const isFirefox = /Firefox\//.test(profile.userAgent);
+  const isChrome = !isFirefox && /Chrome\//.test(profile.userAgent);
+
+  return {
+    // Network connection — desktop users almost always report 4g
+    connectionEffectiveType: '4g',
+    connectionRtt: isChrome ? (Math.random() < 0.7 ? 0 : 50 + Math.floor(Math.random() * 50)) : 0,
+    connectionDownlink: isChrome ? (Math.random() < 0.5 ? 10 : 1.5 + Math.random() * 8.5) : 0,
+    connectionSaveData: false,
+
+    // Plugins — Chrome has 5 default plugins (PDF Viewer, Chrome PDF Viewer, etc.)
+    // Firefox has 0 plugins (removed in Firefox 52+)
+    pluginsLength: isFirefox ? 0 : 5,
+    mimeTypesLength: isFirefox ? 0 : 2, // Chrome: application/pdf + text/pdf
+
+    // webdriver — must always be false for real browsers (this is the #1 bot detection)
+    webdriver: false,
+
+    // PDF viewer — Chrome has built-in PDF viewer, Firefox doesn't always
+    pdfViewerEnabled: isChrome,
+
+    // Storage estimate — varies by browser and disk, 100GB-500GB typical
+    storageEstimate: isChrome ? 200_000_000_000 + Math.floor(Math.random() * 300_000_000_000) : 50_000_000_000 + Math.floor(Math.random() * 100_000_000_000),
+
+    // JS heap — Chrome only (Firefox doesn't expose Performance.memory)
+    jsHeapSizeLimit: isChrome
+      ? (profile.deviceMemory >= 8 ? 4_294_967_296 : 2_147_483_648) // 4GB for 8+GB RAM, 2GB otherwise
+      : undefined,
+  };
+}
+
+// ==================== Round 2: AudioContext Fingerprint Normalization ====================
+
+/**
+ * AudioContext fingerprint normalization constants.
+ * Real browsers produce specific AudioContext fingerprint values that vary
+ * slightly across hardware. Anti-bot systems detect synthetic/zeroed values.
+ *
+ * Our approach: inject deterministic noise based on the profile seed
+ * so the AudioContext fingerprint is consistent per-session but varies
+ * across sessions (preventing cross-session correlation).
+ */
+export interface AudioFingerprintConfig {
+  /** Base oscillator frequency offset (Hz) — varies slightly per hardware */
+  oscillatorFrequencyOffset: number;
+  /** Analyser node FFT size — always 2048 or 4096 in real browsers */
+  analyserFFTSize: 2048 | 4096;
+  /** Context sample rate — 44100 or 48000 Hz (most common) */
+  sampleRate: 44100 | 48000;
+  /** Number of noise bits to add to the fingerprint hash */
+  noiseBits: number;
+  /** Whether to simulate AudioWorklet (Chrome only) */
+  hasAudioWorklet: boolean;
+  /** Max channel count for AudioContext (typically 2 for stereo) */
+  maxChannelCount: number;
+}
+
+/**
+ * Generate AudioContext fingerprint config consistent with a browser profile.
+ */
+export function generateAudioFingerprintConfig(profile: FingerprintProfile): AudioFingerprintConfig {
+  const isFirefox = /Firefox\//.test(profile.userAgent);
+  const isMac = profile.platform === 'MacIntel';
+
+  // Derive deterministic values from profile seed
+  let seedHash = 0;
+  for (let i = 0; i < profile.seed.length; i++) {
+    seedHash = ((seedHash << 5) - seedHash + profile.seed.charCodeAt(i)) | 0;
+  }
+  const noise = (offset: number) => ((Math.imul((seedHash + offset) >>> 0, 2654435761) >>> 0) % 1000) / 1000;
+
+  return {
+    // Sub-Hz frequency offset — real hardware produces small frequency variations
+    oscillatorFrequencyOffset: noise(1) * 0.5 - 0.25,
+    // Firefox uses 2048, Chrome can use 2048 or 4096
+    analyserFFTSize: isFirefox ? 2048 : (noise(2) < 0.6 ? 2048 : 4096),
+    // macOS typically uses 48000, others use 44100
+    sampleRate: isMac ? (noise(3) < 0.7 ? 48000 : 44100) : (noise(3) < 0.8 ? 44100 : 48000),
+    // 3-5 noise bits prevents exact fingerprint matching
+    noiseBits: 3 + Math.floor(noise(4) * 3),
+    // Chrome supports AudioWorklet, Firefox doesn't (as of 2024)
+    hasAudioWorklet: !isFirefox,
+    // Most desktop setups are stereo
+    maxChannelCount: 2,
+  };
+}
+
+// ==================== Round 2: Screen Property Validation ====================
+
+/**
+ * Validate that screen properties form a consistent set.
+ * Anti-bot systems check:
+ *   - screen.width × screen.height matches common resolutions
+ *   - window.innerWidth ≤ screen.width
+ *   - window.innerHeight ≤ screen.height
+ *   - screen.colorDepth ∈ {24, 30, 32}
+ *   - screen.orientation consistent with width/height
+ *   - devicePixelRatio consistent with screen/window dimensions
+ */
+export function validateScreenProperties(profile: FingerprintProfile): {
+  valid: boolean;
+  issues: string[];
+} {
+  const issues: string[] = [];
+
+  // Check common resolution
+  const COMMON_RESOLUTIONS = new Set([
+    '1920x1080', '1366x768', '2560x1440', '1536x864', '1440x900',
+    '2560x1080', '1280x720', '1600x900', '1680x1050', '1280x800',
+    '3840x2160', '2560x1600', '1360x768', '1024x768',
+  ]);
+  const resKey = `${profile.screenWidth}x${profile.screenHeight}`;
+  if (!COMMON_RESOLUTIONS.has(resKey)) {
+    issues.push(`Uncommon resolution ${resKey} — may trigger fingerprinting`);
+  }
+
+  // availWidth must be ≤ screenWidth
+  if (profile.availWidth > profile.screenWidth) {
+    issues.push(`availWidth (${profile.availWidth}) > screenWidth (${profile.screenWidth}) — impossible`);
+  }
+
+  // availHeight must be ≤ screenHeight and > 0
+  if (profile.availHeight > profile.screenHeight || profile.availHeight <= 0) {
+    issues.push(`availHeight (${profile.availHeight}) invalid for screenHeight (${profile.screenHeight})`);
+  }
+
+  // colorDepth must be 24, 30, or 32
+  if (![24, 30, 32].includes(profile.colorDepth)) {
+    issues.push(`Unusual colorDepth ${profile.colorDepth} — expected 24, 30, or 32`);
+  }
+
+  // pixelDepth should equal colorDepth
+  if (profile.pixelDepth !== profile.colorDepth) {
+    issues.push(`pixelDepth (${profile.pixelDepth}) !== colorDepth (${profile.colorDepth}) — rare in real browsers`);
+  }
+
+  // pixelRatio must be positive and reasonable
+  if (profile.pixelRatio <= 0 || profile.pixelRatio > 3) {
+    issues.push(`Unusual pixelRatio ${profile.pixelRatio} — expected 1.0-2.0`);
+  }
+
+  return {
+    valid: issues.length === 0,
+    issues,
+  };
+}
+
+// ==================== Round 2: 2025 Browser Version Update ====================
+
+/**
+ * Latest browser version constants as of early 2025.
+ * These are used to validate that UA strings in profiles are current.
+ * Outdated UA strings (e.g., Chrome 120 in 2025) are detectable.
+ */
+export const LATEST_BROWSER_VERSIONS = {
+  Chrome: { min: 126, max: 134, latest: 134 },
+  Edge:   { min: 126, max: 134, latest: 134 },
+  Firefox: { min: 130, max: 137, latest: 137 },
+  Safari:  { min: 17, max: 18, latest: 18 },
+} as const;
+
+/**
+ * Check if a user-agent string has a browser version within the expected range.
+ * Returns the parsed version and whether it's within the current window.
+ */
+export function checkUAFreshness(ua: string): {
+  browser: string;
+  version: number;
+  isCurrent: boolean;
+  isSupported: boolean;
+  detail: string;
+} {
+  // Chrome version
+  let match = ua.match(/Chrome\/(\d+)/);
+  if (match) {
+    const ver = parseInt(match[1], 10);
+    const isEdge = /Edg\//.test(ua);
+    const browser = isEdge ? 'Edge' : 'Chrome';
+    const range = LATEST_BROWSER_VERSIONS[browser];
+    return {
+      browser,
+      version: ver,
+      isCurrent: ver >= range.latest - 4,
+      isSupported: ver >= range.min,
+      detail: `${browser} ${ver} — ${ver >= range.latest - 2 ? 'current' : ver >= range.min ? 'supported' : 'outdated'}`,
+    };
+  }
+
+  // Firefox version
+  match = ua.match(/Firefox\/(\d+)/);
+  if (match) {
+    const ver = parseInt(match[1], 10);
+    const range = LATEST_BROWSER_VERSIONS.Firefox;
+    return {
+      browser: 'Firefox',
+      version: ver,
+      isCurrent: ver >= range.latest - 4,
+      isSupported: ver >= range.min,
+      detail: `Firefox ${ver} — ${ver >= range.latest - 2 ? 'current' : ver >= range.min ? 'supported' : 'outdated'}`,
+    };
+  }
+
+  // Safari version
+  match = ua.match(/Version\/(\d+[\.\d]*)/);
+  if (match) {
+    const ver = parseInt(match[1], 10);
+    const range = LATEST_BROWSER_VERSIONS.Safari;
+    return {
+      browser: 'Safari',
+      version: ver,
+      isCurrent: ver >= range.latest - 1,
+      isSupported: ver >= range.min,
+      detail: `Safari ${ver} — ${ver >= range.latest - 1 ? 'current' : ver >= range.min ? 'supported' : 'outdated'}`,
+    };
+  }
+
+  return {
+    browser: 'Unknown',
+    version: 0,
+    isCurrent: false,
+    isSupported: false,
+    detail: 'Could not parse browser version from UA',
+  };
 }
 

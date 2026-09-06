@@ -23,12 +23,11 @@ if (BYPASS_AUTH && !_bypassAuthWarned) {
 export function timingSafeEqual(a: string, b: string): boolean {
   const aBuf = Buffer.from(a, 'utf-8');
   const bBuf = Buffer.from(b, 'utf-8');
-  const maxLen = Math.max(aBuf.length, bBuf.length);
-  const paddedA = Buffer.alloc(maxLen, 0);
-  const paddedB = Buffer.alloc(maxLen, 0);
-  aBuf.copy(paddedA);
-  bBuf.copy(paddedB);
-  return crypto.timingSafeEqual(paddedA, paddedB);
+  // Fast length check: different-length strings can never be equal.
+  // This also prevents null-byte padding attacks where an attacker appends
+  // \x00 to match a shorter string after zero-padding (e.g. "admin\x00" == "admin").
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
 // ═══════════════════════════════════════════════════════════════════

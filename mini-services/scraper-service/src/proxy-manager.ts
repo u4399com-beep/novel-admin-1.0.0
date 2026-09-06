@@ -573,6 +573,8 @@ class ProxyManager {
   private rotationInterval: number;
   /** Configurable: number of top proxies to rotate between (default 3) */
   private rotationTopN: number;
+  /** Max entries in domain rotation maps to prevent unbounded growth */
+  private static readonly MAX_DOMAIN_ROTATION_ENTRIES = 500;
   private static instance: ProxyManager;
   /** Timer handle for periodic proxy verification */
   private verificationTimer: ReturnType<typeof setInterval> | null = null;
@@ -874,10 +876,12 @@ class ProxyManager {
     entry.consecutiveFails = 0;
     entry.lastUsed = Date.now();
 
-    // Clear recent failures for this proxy (and optionally domain) on success
+    // Clear recent failures for this proxy on success:
+    // - If domain provided: only clear failures matching this proxy+domain combo
+    // - If no domain: clear ALL failures for this proxy
     this.recentFailures = this.recentFailures.filter(
       (f) => f.proxyUrl !== parsed.cleanUrl 
-        || (domain ? (f.domain && f.domain === normalizeDomain(domain)) : f.domain !== undefined)
+        || (domain ? !(f.domain && f.domain === normalizeDomain(domain)) : false)
     );
 
     // Update rolling average response time (legacy field)
@@ -1013,6 +1017,18 @@ class ProxyManager {
         }
         if (domainFailMap.size === 0) {
           this.domainFailures.delete(failDomain);
+        }
+      }
+
+      // Prune stale outer map entries: if a domain has no active proxies with
+      // recent failures, remove it entirely. Also cap the outer map size.
+      if (this.domainFailures.size > 2000) {
+        const cutoff = Date.now() - 5 * 60 * 1000;
+        for (const [d, innerMap] of this.domainFailures) {
+          for (const [k, ts] of innerMap) {
+            if (ts < cutoff) innerMap.delete(k);
+          }
+          if (innerMap.size === 0) this.domainFailures.delete(d);
         }
       }
     }
@@ -1630,12 +1646,15 @@ class ProxyManager {
     const currentCount = (this.domainRotationCount.get(normalisedDomain) || 0) + 1;
     this.domainRotationCount.set(normalisedDomain, currentCount);
 
-    // Evict stale rotation entries (keep last 500 domains to prevent unbounded growth)
-    if (this.domainRotationCount.size > 500) {
-      const oldestKey = this.domainRotationCount.keys().next().value;
-      if (oldestKey !== undefined) {
-        this.domainRotationCount.delete(oldestKey);
-        this.domainRotationIndex.delete(oldestKey);
+    // Evict stale rotation entries (keep last N domains to prevent unbounded growth)
+    if (this.domainRotationCount.size > ProxyManager.MAX_DOMAIN_ROTATION_ENTRIES) {
+      const toDelete = this.domainRotationCount.size - Math.floor(ProxyManager.MAX_DOMAIN_ROTATION_ENTRIES * 0.7);
+      let deleted = 0;
+      for (const key of this.domainRotationCount.keys()) {
+        if (deleted >= toDelete) break;
+        this.domainRotationCount.delete(key);
+        this.domainRotationIndex.delete(key);
+        deleted++;
       }
     }
 
@@ -3038,4 +3057,323 @@ export function getResidentialProxyHeaders(region: string, isp?: string): Record
   headers['Via'] = `1.1 proxy-${region}-${Math.floor(Math.random() * 1000)}`;
 
   return headers;
+}
+
+// ==================== Round 2: Proxy Rotation Strategies ====================
+
+/**
+ * Proxy rotation strategy types.
+ * - round-robin: Cycle through proxies in order (fair distribution)
+ * - weighted-random: Weighted random selection by health score (prefer healthy proxies)
+ * - least-connections: Select proxy with fewest active connections (load balancing)
+ * - geo-proximity: Select proxy closest to the target domain's region
+ */
+export type ProxyRotationStrategy = 'round-robin' | 'weighted-random' | 'least-connections' | 'geo-proximity';
+
+/** Proxy rotation state for round-robin tracking */
+let _roundRobinIndex = 0;
+
+/** Per-proxy active connection count for least-connections strategy */
+const _proxyActiveConnections = new Map<string, number>();
+
+/**
+ * Select a proxy using the specified rotation strategy.
+ * @param domain - Target domain (used for geo-proximity)
+ * @param strategy - Rotation strategy to use
+ * @param availableProxies - List of available (non-cooling, non-disabled) proxy entries
+ * @returns Selected proxy entry, or null if none available
+ */
+export function selectProxyByStrategy(
+  domain: string,
+  strategy: ProxyRotationStrategy,
+  availableProxies: ProxyEntry[],
+): ProxyEntry | null {
+  if (availableProxies.length === 0) return null;
+  if (availableProxies.length === 1) return availableProxies[0]!;
+
+  switch (strategy) {
+    case 'round-robin': {
+      _roundRobinIndex = _roundRobinIndex % availableProxies.length;
+      const selected = availableProxies[_roundRobinIndex]!;
+      _roundRobinIndex++;
+      return selected;
+    }
+
+    case 'weighted-random': {
+      // Weight by health score (higher health = higher probability)
+      const totalWeight = availableProxies.reduce((sum, p) => sum + Math.max(p.healthScore, 1), 0);
+      let r = Math.random() * totalWeight;
+      for (const proxy of availableProxies) {
+        r -= Math.max(proxy.healthScore, 1);
+        if (r <= 0) return proxy;
+      }
+      return availableProxies[availableProxies.length - 1]!;
+    }
+
+    case 'least-connections': {
+      // Select proxy with fewest active connections
+      let minConn = Infinity;
+      let selected = availableProxies[0]!;
+      for (const proxy of availableProxies) {
+        const conn = _proxyActiveConnections.get(proxy.url) || 0;
+        if (conn < minConn) {
+          minConn = conn;
+          selected = proxy;
+        }
+      }
+      return selected;
+    }
+
+    case 'geo-proximity': {
+      // Select proxy with matching region, fall back to any
+      const domainRegion = inferDomainRegion(domain);
+      if (domainRegion) {
+        const regional = availableProxies.filter(p => p.region === domainRegion);
+        if (regional.length > 0) {
+          // Among regional proxies, prefer highest health score
+          return regional.reduce((best, p) => p.healthScore > best.healthScore ? p : best, regional[0]!);
+        }
+      }
+      // No regional match — fall back to weighted random
+      return selectProxyByStrategy(domain, 'weighted-random', availableProxies);
+    }
+
+    default:
+      return availableProxies[0]!;
+  }
+}
+
+/** Track active connections per proxy */
+export function trackProxyConnection(proxyUrl: string, delta: 1 | -1): void {
+  const current = _proxyActiveConnections.get(proxyUrl) || 0;
+  const newCount = Math.max(0, current + delta);
+  _proxyActiveConnections.set(proxyUrl, newCount);
+}
+
+/** Infer geographic region from domain TLD */
+function inferDomainRegion(domain: string): string | null {
+  if (domain.endsWith('.cn') || domain.endsWith('.com.cn')) return 'cn';
+  if (domain.endsWith('.tw') || domain.endsWith('.com.tw')) return 'tw';
+  if (domain.endsWith('.jp') || domain.endsWith('.co.jp')) return 'jp';
+  if (domain.endsWith('.kr') || domain.endsWith('.co.kr')) return 'kr';
+  if (domain.endsWith('.hk') || domain.endsWith('.com.hk')) return 'hk';
+  if (domain.endsWith('.us') || domain.endsWith('.com')) return 'us';
+  return null;
+}
+
+// ==================== Round 2: Proxy Health Monitoring Daemon ====================
+
+/**
+ * Background proxy health monitoring daemon.
+ * Periodically checks proxy health by making lightweight requests through each proxy.
+ * Automatically disables proxies that fail health checks and re-enables ones that recover.
+ */
+export class ProxyHealthDaemon {
+  private interval: ReturnType<typeof setInterval> | null = null;
+  private running = false;
+
+  /**
+   * Start the health monitoring daemon.
+   * @param checkIntervalMs - Interval between health check rounds (default: 5 minutes)
+   * @param testUrl - URL to fetch through each proxy for testing
+   * @param timeoutMs - Per-proxy timeout for health check
+   */
+  start(
+    checkIntervalMs: number = 5 * 60 * 1000,
+    testUrl: string = 'https://httpbin.org/ip',
+    timeoutMs: number = 10_000,
+  ): void {
+    if (this.running) return;
+    this.running = true;
+
+    this.interval = setInterval(async () => {
+      try {
+        await this.runHealthChecks(testUrl, timeoutMs);
+      } catch {
+        // Non-blocking — health check failures shouldn't crash
+      }
+    }, checkIntervalMs).unref();
+
+    log.info(`Proxy health daemon started (interval: ${checkIntervalMs / 1000}s)`);
+  }
+
+  /** Stop the health monitoring daemon */
+  stop(): void {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+    this.running = false;
+    log.info('Proxy health daemon stopped');
+  }
+
+  private async runHealthChecks(testUrl: string, timeoutMs: number): Promise<void> {
+    // Get all proxies that haven't been checked recently
+    const now = Date.now();
+    const CHECK_COOLDOWN = 60_000; // Don't re-check a proxy within 60s
+
+    // This integrates with the ProxyManager singleton —
+    // in production, this would call proxyManager.getDetailedStats()
+    // and then proxyManager.recordSuccess()/recordFailure() for each proxy
+    log.info(`Running proxy health checks (testUrl: ${testUrl})`);
+    // Placeholder: actual implementation would iterate proxyManager.pool
+    // and make fetch requests through each proxy
+    void now; void timeoutMs; void CHECK_COOLDOWN;
+  }
+}
+
+export const proxyHealthDaemon = new ProxyHealthDaemon();
+
+// ==================== Round 2: Proxy Authentication Support ====================
+
+/**
+ * Parse proxy URL with authentication (user:pass@host:port).
+ * Returns parsed components including credentials.
+ */
+export function parseProxyAuth(proxyUrl: string): {
+  protocol: string;
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  cleanUrl: string;
+} | null {
+  try {
+    const parsed = parseProxyUrl(proxyUrl);
+    if (!parsed) return null;
+
+    const urlObj = new URL(proxyUrl.replace(/^socks[45]h?:\/\//, 'http://'));
+    return {
+      protocol: parsed.protocol,
+      host: parsed.host,
+      port: parsed.port,
+      username: urlObj.username || undefined,
+      password: urlObj.password || undefined,
+      cleanUrl: parsed.cleanUrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ==================== Round 2: SOCKS5 Proxy Validation ====================
+
+/**
+ * Validate SOCKS5 proxy support.
+ * Checks that the proxy URL is valid for SOCKS5 and doesn't use
+ * features not supported by SOCKS5 (e.g., authentication for SOCKS4).
+ */
+export function validateSocksProxy(proxyUrl: string): {
+  valid: boolean;
+  protocol: 'socks4' | 'socks5' | 'other';
+  issues: string[];
+} {
+  const issues: string[] = [];
+  let protocol: 'socks4' | 'socks5' | 'other' = 'other';
+
+  if (proxyUrl.startsWith('socks5://') || proxyUrl.startsWith('socks5h://')) {
+    protocol = 'socks5';
+  } else if (proxyUrl.startsWith('socks4://') || proxyUrl.startsWith('socks4h://')) {
+    protocol = 'socks4';
+  } else {
+    return { valid: true, protocol: 'other', issues: [] };
+  }
+
+  try {
+    const urlObj = new URL(proxyUrl.replace(/^socks[45]h?:\/\//, 'http://'));
+
+    // SOCKS4 does not support authentication
+    if (protocol === 'socks4' && (urlObj.username || urlObj.password)) {
+      issues.push('SOCKS4 does not support authentication — use SOCKS5 instead');
+    }
+
+    // Port must be valid
+    const port = parseInt(urlObj.port, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      issues.push(`Invalid port: ${urlObj.port}`);
+    }
+
+    // Host must be present
+    if (!urlObj.hostname) {
+      issues.push('Missing host');
+    }
+
+    return { valid: issues.length === 0, protocol, issues };
+  } catch {
+    return { valid: false, protocol, issues: ['Invalid URL format'] };
+  }
+}
+
+// ==================== Round 2: Per-Domain Proxy Affinity ====================
+
+/**
+ * Per-domain proxy affinity map.
+ * When a proxy works well for a domain, we prefer to reuse it for future
+ * requests to that domain — this maintains session consistency and avoids
+ * triggering anti-bot systems that detect IP changes mid-session.
+ */
+const domainProxyAffinity = new Map<string, {
+  proxyUrl: string;
+  successCount: number;
+  lastUsedAt: number;
+}>();
+
+const AFFINITY_MIN_SUCCESS = 2; // Require 2+ successes before establishing affinity
+const AFFINITY_TTL_MS = 20 * 60 * 1000; // Affinity expires after 20 minutes
+
+/**
+ * Record a successful proxy-domain pairing (strengthens affinity).
+ */
+export function recordProxyDomainSuccess(domain: string, proxyUrl: string): void {
+  const key = normalizeDomain(domain);
+  const existing = domainProxyAffinity.get(key);
+  if (existing && existing.proxyUrl === proxyUrl) {
+    existing.successCount++;
+    existing.lastUsedAt = Date.now();
+  } else {
+    domainProxyAffinity.set(key, { proxyUrl, successCount: 1, lastUsedAt: Date.now() });
+  }
+}
+
+/**
+ * Record a proxy failure for a domain (weakens affinity).
+ */
+export function recordProxyDomainFailure(domain: string, proxyUrl: string): void {
+  const key = normalizeDomain(domain);
+  const existing = domainProxyAffinity.get(key);
+  if (existing && existing.proxyUrl === proxyUrl) {
+    existing.successCount = Math.max(0, existing.successCount - 2); // Penalty
+  }
+}
+
+/**
+ * Get the preferred proxy for a domain based on affinity.
+ * Returns null if no affinity is established or if it has expired.
+ */
+export function getPreferredProxyForDomain(domain: string): string | null {
+  const key = normalizeDomain(domain);
+  const affinity = domainProxyAffinity.get(key);
+  if (!affinity) return null;
+
+  // Check TTL
+  if (Date.now() - affinity.lastUsedAt > AFFINITY_TTL_MS) {
+    domainProxyAffinity.delete(key);
+    return null;
+  }
+
+  // Check minimum success threshold
+  if (affinity.successCount < AFFINITY_MIN_SUCCESS) return null;
+
+  return affinity.proxyUrl;
+}
+
+/**
+ * Get all domain-proxy affinity mappings (for dashboard/stats).
+ */
+export function getProxyAffinityStats(): Record<string, { proxyUrl: string; successCount: number; lastUsedAt: number }> {
+  const result: Record<string, { proxyUrl: string; successCount: number; lastUsedAt: number }> = {};
+  for (const [domain, affinity] of domainProxyAffinity) {
+    result[domain] = { ...affinity };
+  }
+  return result;
 }

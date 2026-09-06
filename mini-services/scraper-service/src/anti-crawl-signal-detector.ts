@@ -282,7 +282,7 @@ export function detectRateLimitHeaders(headers: Record<string, string>): {
   }
 
   // Signal if remaining is 0 or very low
-  if (rateLimitInfo.remaining !== undefined && rateLimitInfo.limit !== undefined) {
+  if (rateLimitInfo.remaining !== undefined && rateLimitInfo.limit !== undefined && rateLimitInfo.limit > 0) {
     const ratio = rateLimitInfo.remaining / rateLimitInfo.limit;
     if (ratio <= 0) {
       signals.push({
@@ -1203,4 +1203,273 @@ export function detectJsChallengeEnhanced(html: string): ResponseSignal[] {
   }
 
   return signals;
+}
+
+// ==================== Round 2: JavaScript Challenge Detection (Cloudflare/Akamai/PerimeterX) ====================
+
+/**
+ * Detect specific JavaScript challenge platforms from HTML content.
+ * Returns detailed classification of the challenge type.
+ */
+export function detectJsChallengePlatform(html: string): {
+  platform: 'cloudflare' | 'akamai' | 'perimeterx' | 'ddos-guard' | 'imperva' | 'unknown';
+  challengeType: 'js_calculation' | 'cookie_set' | 'captcha' | 'managed' | 'unknown';
+  confidence: number;
+  evidence: string[];
+} {
+  const evidence: string[] = [];
+  let platform: 'cloudflare' | 'akamai' | 'perimeterx' | 'ddos-guard' | 'imperva' | 'unknown' = 'unknown';
+  let challengeType: 'js_calculation' | 'cookie_set' | 'captcha' | 'managed' | 'unknown' = 'unknown';
+  let confidence = 0;
+
+  // Cloudflare
+  if (/__CF\$cv\$params/.test(html) || /cf-challenge/i.test(html)) {
+    platform = 'cloudflare';
+    evidence.push('CF$cv$params or cf-challenge element');
+    confidence = 0.9;
+  }
+  if (/challenge-platform/i.test(html) || /_cf_chl_opt/.test(html)) {
+    platform = 'cloudflare';
+    evidence.push('challenge-platform or _cf_chl_opt');
+    confidence = Math.max(confidence, 0.85);
+  }
+  if (/Just a moment/i.test(html) || /Checking your browser/i.test(html)) {
+    if (platform !== 'cloudflare') platform = 'cloudflare';
+    evidence.push('"Just a moment" / "Checking your browser" text');
+    confidence = Math.max(confidence, 0.8);
+  }
+  if (/cf-turnstile/.test(html) || /challenges\.cloudflare\.com/.test(html)) {
+    challengeType = 'managed';
+    evidence.push('CF Turnstile/managed challenge');
+  } else if (/__CF\$cv\$params/.test(html)) {
+    challengeType = 'js_calculation';
+  }
+
+  // Akamai Web SDK / Bot Manager
+  if (/akamai[_-]bw/.test(html) || /Akamai_Bot_Manager/i.test(html)) {
+    platform = 'akamai';
+    evidence.push('Akamai Bot Manager script/cookie');
+    confidence = Math.max(confidence, 0.9);
+  }
+  if (/px[_-]cookie/i.test(html) || /_px3/.test(html)) {
+    platform = 'akamai';
+    evidence.push('Akamai PX cookie');
+    confidence = Math.max(confidence, 0.85);
+    challengeType = 'cookie_set';
+  }
+  if (/sensor_data/.test(html) && /akamai/i.test(html)) {
+    platform = 'akamai';
+    evidence.push('Akamai sensor_data collection');
+    confidence = Math.max(confidence, 0.8);
+  }
+
+  // PerimeterX (now HUMAN Security)
+  if (/_px\w*id/i.test(html) || /perimeterx/i.test(html)) {
+    platform = 'perimeterx';
+    evidence.push('PerimeterX cookie/script');
+    confidence = Math.max(confidence, 0.9);
+    challengeType = 'js_calculation';
+  }
+  if (/PX[\d]+/.test(html) && /collector/.test(html)) {
+    platform = 'perimeterx';
+    evidence.push('PerimeterX collector script');
+    confidence = Math.max(confidence, 0.85);
+  }
+
+  // DDoS-Guard
+  if (/ddos[_-]?guard/i.test(html) || /dg[_-]session/.test(html)) {
+    platform = 'ddos-guard';
+    evidence.push('DDoS-Guard script/cookie');
+    confidence = Math.max(confidence, 0.85);
+    challengeType = 'js_calculation';
+  }
+
+  // Imperva/Incapsula
+  if (/incap_ses/i.test(html) || /imperva/i.test(html) || /visid_incap/i.test(html)) {
+    platform = 'imperva';
+    evidence.push('Imperva/Incapsula cookie');
+    confidence = Math.max(confidence, 0.85);
+    challengeType = 'cookie_set';
+  }
+
+  return { platform, challengeType, confidence, evidence };
+}
+
+// ==================== Round 2: CAPTCHA Type Classification ====================
+
+/**
+ * Classify the type of CAPTCHA detected in HTML.
+ * Supports: reCAPTCHA v2, reCAPTCHA v3, hCaptcha, GeeTest, Slide captcha.
+ */
+export function classifyCaptchaType(html: string): {
+  type: 'recaptcha-v2' | 'recaptcha-v3' | 'hcaptcha' | 'geetest' | 'slide' | 'text' | 'unknown';
+  confidence: number;
+  sitekey?: string;
+  evidence: string[];
+} {
+  const evidence: string[] = [];
+
+  // reCAPTCHA v2
+  if (/recaptcha\/api\.js.*render=explicit/i.test(html) || /g-recaptcha/i.test(html)) {
+    const sitekeyMatch = html.match(/data-sitekey=["']([^"']+)["']/i);
+    if (/recaptcha\/enterprise/i.test(html) || /g-recaptcha-response/i.test(html)) {
+      evidence.push('g-recaptcha div or response textarea');
+      return { type: 'recaptcha-v2', confidence: 0.9, sitekey: sitekeyMatch?.[1], evidence };
+    }
+  }
+
+  // reCAPTCHA v3 (invisible, score-based)
+  if (/recaptcha\/api\.js.*render=/i.test(html) && !/g-recaptcha/i.test(html)) {
+    const sitekeyMatch = html.match(/render=([^render=([^&"']=)"']+)/i);
+    evidence.push('reCAPTCHA v3 render parameter');
+    return { type: 'recaptcha-v3', confidence: 0.85, sitekey: sitekeyMatch?.[1], evidence };
+  }
+
+  // hCaptcha
+  if (/hcaptcha\.com/i.test(html) || /h-captcha/i.test(html)) {
+    const sitekeyMatch = html.match(/data-sitekey=["']([^"']+)["']/i);
+    evidence.push('hCaptcha script or div');
+    return { type: 'hcaptcha', confidence: 0.9, sitekey: sitekeyMatch?.[1], evidence };
+  }
+
+  // GeeTest (common on Chinese websites)
+  if (/gee[_-]?test/i.test(html) || /gt\.geetest\.com/i.test(html)) {
+    evidence.push('GeeTest script');
+    return { type: 'geetest', confidence: 0.85, evidence };
+  }
+
+  // Slide captcha (common on Chinese novel sites)
+  if (/slide[_-]?verify/i.test(html) || /captcha[_-]?slider/i.test(html) || /drag[_-]?verify/i.test(html)) {
+    evidence.push('Slide/drag verification element');
+    return { type: 'slide', confidence: 0.8, evidence };
+  }
+
+  // Text-based captcha
+  if (/captcha[_-]?text/i.test(html) || /verify[_-]?code/i.test(html)) {
+    evidence.push('Text/verification code element');
+    return { type: 'text', confidence: 0.7, evidence };
+  }
+
+  return { type: 'unknown', confidence: 0, evidence };
+}
+
+// ==================== Round 2: Redirect Chain Analysis ====================
+
+export interface RedirectChainEntry {
+  url: string;
+  statusCode: number;
+  method?: 'GET' | 'POST' | 'JS' | 'META_REFRESH';
+}
+
+/**
+ * Analyze a redirect chain for anti-crawl signals.
+ */
+export function analyzeRedirectChain(chain: RedirectChainEntry[]): {
+  isSuspicious: boolean;
+  redirectCount: number;
+  jsRedirects: number;
+  metaRefreshRedirects: number;
+  httpRedirects: number;
+  crossDomain: boolean;
+  loopsDetected: number;
+  signals: ResponseSignal[];
+} {
+  const signals: ResponseSignal[] = [];
+  let jsRedirects = 0;
+  let metaRefreshRedirects = 0;
+  let httpRedirects = 0;
+  let crossDomain = false;
+  let loopsDetected = 0;
+
+  for (const entry of chain) {
+    if (entry.method === 'JS') jsRedirects++;
+    else if (entry.method === 'META_REFRESH') metaRefreshRedirects++;
+    else httpRedirects++;
+  }
+
+  if (jsRedirects > 0) {
+    signals.push({ type: 'suspicious_redirect', confidence: Math.min(0.3 + jsRedirects * 0.2, 0.9), detail: `${jsRedirects} JS-based redirect(s)` });
+  }
+  if (metaRefreshRedirects > 0) {
+    signals.push({ type: 'suspicious_redirect', confidence: 0.4, detail: `${metaRefreshRedirects} meta-refresh redirect(s)` });
+  }
+
+  const domains = chain.map(e => { try { return new URL(e.url).hostname; } catch { return ''; } });
+  const uniqueDomains = new Set(domains.filter(d => d));
+  if (uniqueDomains.size > 1 && chain.length >= 2) {
+    crossDomain = true;
+    signals.push({ type: 'suspicious_redirect', confidence: 0.5, detail: `Cross-domain: ${[...uniqueDomains].join(' → ')}` });
+  }
+
+  const seenUrls = new Set<string>();
+  for (const entry of chain) {
+    if (seenUrls.has(entry.url)) {
+      loopsDetected++;
+      signals.push({ type: 'redirect_chain', confidence: 0.8, detail: `Loop: ${entry.url.slice(0, 80)}` });
+    }
+    seenUrls.add(entry.url);
+  }
+
+  const challengeDomains = ['challenges.cloudflare.com', 'www.google.com/recaptcha', 'captcha'];
+  const lastUrl = chain[chain.length - 1]?.url || '';
+  for (const cd of challengeDomains) {
+    if (lastUrl.includes(cd)) {
+      signals.push({ type: 'redirect_chain', confidence: 0.8, detail: `Redirect to challenge: ${cd}` });
+      break;
+    }
+  }
+
+  return { isSuspicious: signals.some(s => s.confidence >= 0.5), redirectCount: chain.length, jsRedirects, metaRefreshRedirects, httpRedirects, crossDomain, loopsDetected, signals };
+}
+
+// ==================== Round 2: Response Body Anomaly Detection ====================
+
+export interface ResponseAnomalyCheck {
+  statusCode: number;
+  headers: Record<string, string>;
+  bodyLength: number;
+  contentType?: string;
+  claimedContentLength?: number;
+}
+
+export type ResponseAnomalyType = 'content_length_mismatch' | 'encoding_mismatch' | 'empty_200' | 'challenge_signature' | 'content_type_mismatch';
+
+/**
+ * Detect anomalies in HTTP response bodies that indicate anti-bot measures.
+ */
+export function detectResponseBodyAnomalies(response: ResponseAnomalyCheck): {
+  hasAnomalies: boolean;
+  anomalies: Array<{ type: ResponseAnomalyType; severity: 'high' | 'medium' | 'low'; detail: string }>;
+} {
+  const anomalies: Array<{ type: ResponseAnomalyType; severity: 'high' | 'medium' | 'low'; detail: string }> = [];
+
+  if (response.claimedContentLength !== undefined && response.claimedContentLength > 0) {
+    const ratio = response.bodyLength / response.claimedContentLength;
+    if (ratio < 0.5 || ratio > 2.0) {
+      anomalies.push({ type: 'content_length_mismatch', severity: 'medium', detail: `Body ${response.bodyLength} vs claimed ${response.claimedContentLength} (ratio: ${ratio.toFixed(2)})` });
+    }
+  }
+
+  const contentEncoding = response.headers['content-encoding'];
+  if (contentEncoding && (contentEncoding === 'gzip' || contentEncoding === 'br') && response.bodyLength > 0 && response.bodyLength < 100) {
+    anomalies.push({ type: 'encoding_mismatch', severity: 'low', detail: `Content-Encoding: ${contentEncoding} but body only ${response.bodyLength} bytes` });
+  }
+
+  if (response.statusCode === 200 && response.bodyLength === 0) {
+    anomalies.push({ type: 'empty_200', severity: 'high', detail: '200 OK with empty body — likely anti-bot block' });
+  }
+
+  if (response.statusCode === 200 && response.bodyLength > 0 && response.bodyLength < 500) {
+    const ct = response.contentType || response.headers['content-type'] || '';
+    if (ct.includes('text/html')) {
+      anomalies.push({ type: 'challenge_signature', severity: 'medium', detail: `Very small HTML (${response.bodyLength} bytes) — possible challenge page` });
+    }
+  }
+
+  const ct = response.contentType || response.headers['content-type'] || '';
+  if (response.statusCode === 200 && ct && (ct.includes('application/octet-stream') || ct.includes('image/'))) {
+    anomalies.push({ type: 'content_type_mismatch', severity: 'medium', detail: `Unexpected Content-Type: ${ct} for HTML request` });
+  }
+
+  return { hasAnomalies: anomalies.length > 0, anomalies };
 }

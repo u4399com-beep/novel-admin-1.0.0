@@ -1,9 +1,10 @@
 'use client';
 
-import { useReducer, useEffect, useRef, useState, useCallback } from 'react';
+import { useReducer, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { SearchBar } from './hero/SearchBar';
 import { FilterChips } from './hero/FilterChips';
+import { BookOpen, Library, Flame } from 'lucide-react';
 import type { Category } from '@/types';
 
 export type { Category } from '@/types';
@@ -142,6 +143,57 @@ function DotPattern() {
   );
 }
 
+// ─── Floating Particles Background ────────────────────────────
+function FloatingParticles() {
+  const particles = useMemo(() =>
+    Array.from({ length: 18 }).map((_, i) => ({
+      id: i,
+      className: i % 3 === 0 ? 'hero-particle' : i % 3 === 1 ? 'hero-particle-2' : 'hero-particle-3',
+      style: {
+        left: `${(i * 17 + 5) % 100}%`,
+        top: `${(i * 23 + 10) % 80 + 10}%`,
+        animationDelay: `${i * 0.7}s`,
+        animationDuration: `${6 + (i % 5)}s`,
+      },
+    })),
+  []);
+
+  return (
+    <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden" aria-hidden="true">
+      {particles.map((p) => (
+        <div key={p.id} className={p.className} style={p.style} />
+      ))}
+    </div>
+  );
+}
+
+// ─── Stats Bar with Icons ───────────────────────────────────────
+function HeroStatsBar({ total, loadingNovels }: { total: number; loadingNovels: boolean }) {
+  // Animate count when total changes (via key trick)
+  return (
+    <div className="flex items-center gap-4 sm:gap-6 justify-center py-2">
+      <div className="flex items-center gap-1.5">
+        <BookOpen className="h-3.5 w-3.5 text-primary/70 stat-icon-pop" />
+        <span className="text-xs text-muted-foreground">共</span>
+        <span key={total} className="text-xs font-semibold text-foreground tabular-nums stat-count-animate">
+          {loadingNovels ? '–' : total.toLocaleString()}
+        </span>
+        <span className="text-xs text-muted-foreground">本小说</span>
+      </div>
+      <div className="h-3 w-px bg-border/50" />
+      <div className="flex items-center gap-1.5">
+        <Library className="h-3.5 w-3.5 text-primary/60" />
+        <span className="text-xs text-muted-foreground">在线阅读</span>
+      </div>
+      <div className="h-3 w-px bg-border/50" />
+      <div className="flex items-center gap-1.5">
+        <Flame className="h-3.5 w-3.5 text-amber-500/70" />
+        <span className="text-xs text-muted-foreground">每日更新</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── TypingTagline Component ────────────────────────────────────────
 function TypingTagline() {
   const displayText = useTypingEffect();
@@ -247,10 +299,16 @@ export function HeroSection({
         <div className="hero-search-gradient" />
         <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background/30" />
       </div>
+      {/* Floating particles */}
+      <FloatingParticles />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         <TypingTagline />
       </div>
       <SearchBar search={search} onSearch={onSearch} />
+      {/* Stats bar with icons */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <HeroStatsBar total={total} loadingNovels={loadingNovels} />
+      </div>
       {/* Hot search tag cloud */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-3 pt-1">
         <div className="flex items-center gap-2 flex-wrap">

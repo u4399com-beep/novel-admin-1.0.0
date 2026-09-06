@@ -6,8 +6,68 @@ export function apiSuccess<T>(data: T, status?: number): NextResponse {
   return NextResponse.json(data, { status });
 }
 
-export function apiError(message: string, status: number = 500): NextResponse {
-  return NextResponse.json({ error: message }, { status });
+// ═══════════════════════════════════════════════════════════════════
+// Standard Error Codes
+// ═══════════════════════════════════════════════════════════════════
+
+export const ErrorCode = {
+  // 4xx Client Errors
+  VALIDATION_FAILED: 'VALIDATION_FAILED',
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  FORBIDDEN: 'FORBIDDEN',
+  NOT_FOUND: 'NOT_FOUND',
+  CONFLICT: 'CONFLICT',
+  RATE_LIMITED: 'RATE_LIMITED',
+  PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
+  INVALID_FORMAT: 'INVALID_FORMAT',
+
+  // 5xx Server Errors
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  DB_ERROR: 'DB_ERROR',
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+} as const;
+
+export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
+
+/**
+ * Return a standard error response with consistent format.
+ * All API routes should use this instead of raw NextResponse.json for errors.
+ *
+ * Response format: { error: string, code: string }
+ * - error: human-readable message (Chinese)
+ * - code: machine-readable error code for client-side handling
+ */
+export function apiError(
+  message: string,
+  status: number = 500,
+  code: ErrorCodeType = status >= 500 ? ErrorCode.INTERNAL_ERROR : ErrorCode.VALIDATION_FAILED
+): NextResponse {
+  return NextResponse.json({ error: message, code }, { status });
+}
+
+/** Convenience helpers for common HTTP error responses */
+export function apiBadRequest(message: string): NextResponse {
+  return apiError(message, 400, ErrorCode.VALIDATION_FAILED);
+}
+
+export function apiUnauthorized(message = '未授权，请先登录'): NextResponse {
+  return apiError(message, 401, ErrorCode.UNAUTHORIZED);
+}
+
+export function apiForbidden(message = '权限不足'): NextResponse {
+  return apiError(message, 403, ErrorCode.FORBIDDEN);
+}
+
+export function apiNotFound(message = '记录不存在'): NextResponse {
+  return apiError(message, 404, ErrorCode.NOT_FOUND);
+}
+
+export function apiConflict(message = '数据冲突'): NextResponse {
+  return apiError(message, 409, ErrorCode.CONFLICT);
+}
+
+export function apiRateLimited(message = '请求过于频繁，请稍后再试'): NextResponse {
+  return apiError(message, 429, ErrorCode.RATE_LIMITED);
 }
 
 /**

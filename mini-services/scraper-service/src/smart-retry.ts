@@ -530,3 +530,170 @@ class SmartRetryStrategy {
 
 // Singleton
 export const smartRetry = new SmartRetryStrategy();
+
+// ==================== Round 2: Retry Budget Per Domain ====================
+
+/**
+ * Retry budget: limits total retries per domain within a time window.
+ * Prevents a single failing domain from consuming all retry resources.
+ */
+const DOMAIN_RETRY_BUDGET_WINDOW_MS = 5 * 60 * 1000; // 5-minute window
+const DOMAIN_RETRY_BUDGET_MAX = 20; // Max 20 retries per domain per window
+const domainRetryBudget = new Map<string, Array<{ timestamp: number }>>();
+
+/**
+ * Check if a domain has remaining retry budget.
+ */
+export function hasRetryBudget(domain: string): boolean {
+  const now = Date.now();
+  const entries = domainRetryBudget.get(domain);
+  if (!entries) return true;
+
+  // Prune expired entries
+  const valid = entries.filter(e => now - e.timestamp < DOMAIN_RETRY_BUDGET_WINDOW_MS);
+  domainRetryBudget.set(domain, valid);
+
+  return valid.length < DOMAIN_RETRY_BUDGET_MAX;
+}
+
+/**
+ * Consume one retry from the domain budget.
+ */
+export function consumeRetryBudget(domain: string): void {
+  let entries = domainRetryBudget.get(domain);
+  if (!entries) {
+    entries = [];
+    domainRetryBudget.set(domain, entries);
+  }
+  entries.push({ timestamp: Date.now() });
+}
+
+// ==================== Round 2: Error Classification ====================
+
+/**
+ * Classify errors to determine the best retry strategy.
+ * Different error types require different recovery approaches.
+ */
+export type ErrorClass =
+  | 'network_timeout'     // Connection timeout
+  | 'network_reset'       // Connection reset/refused
+  | 'rate_limit_429'      // HTTP 429 Too Many Requests
+  | 'rate_limit_403'      // HTTP 403 Forbidden (rate limit variant)
+  | 'captcha'             // CAPTCHA challenge detected
+  | 'js_challenge'        // JavaScript challenge (Cloudflare, etc.)
+  | 'server_error_5xx'    // Server-side error (500-599)
+  | 'content_empty'       // Empty response body
+  | 'content_invalid'     // Invalid/corrupted content
+  | 'proxy_error'         // Proxy connection failure
+  | 'dns_error'           // DNS resolution failure
+  | 'ssl_error'           // TLS/SSL handshake failure
+  | 'redirect_loop'       // Redirect loop detected
+  | 'unknown';            // Unclassified error
+
+/**
+ * Classify an error string into an error class.
+ */
+export function classifyError(error: string, statusCode?: number): ErrorClass {
+  const lower = error.toLowerCase();
+
+  // HTTP status code based classification
+  if (statusCode === 429) return 'rate_limit_429';
+  if (statusCode === 403) return 'rate_limit_403';
+  if (statusCode !== undefined && statusCode >= 500 && statusCode < 600) return 'server_error_5xx';
+
+  // String-based classification
+  if (lower.includes('timeout') || lower.includes('etimedout')) return 'network_timeout';
+  if (lower.includes('econnreset') || lower.includes('econnrefused')) return 'network_reset';
+  if (lower.includes('captcha') || lower.includes('recaptcha') || lower.includes('hcaptcha')) return 'captcha';
+  if (lower.includes('challenge') || lower.includes('cloudflare') || lower.includes('turnstile')) return 'js_challenge';
+  if (lower.includes('empty') || lower.includes('no content') || lower.includes('zero length')) return 'content_empty';
+  if (lower.includes('invalid') || lower.includes('parse error') || lower.includes('malformed')) return 'content_invalid';
+  if (lower.includes('proxy') || lower.includes('socks') || lower.includes('tunnel')) return 'proxy_error';
+  if (lower.includes('enotfound') || lower.includes('dns') || lower.includes('getaddrinfo')) return 'dns_error';
+  if (lower.includes('ssl') || lower.includes('tls') || lower.includes('certificate')) return 'ssl_error';
+  if (lower.includes('redirect') && lower.includes('loop')) return 'redirect_loop';
+
+  return 'unknown';
+}
+
+/**
+ * Determine if an error class is retryable.
+ */
+export function isRetryableError(errorClass: ErrorClass): boolean {
+  switch (errorClass) {
+    case 'network_timeout':
+    case 'network_reset':
+    case 'server_error_5xx':
+    case 'proxy_error':
+    case 'dns_error':
+    case 'content_empty':
+      return true;
+    case 'rate_limit_429':
+    case 'rate_limit_403':
+      return true; // Retryable with backoff
+    case 'captcha':
+    case 'js_challenge':
+    case 'ssl_error':
+    case 'redirect_loop':
+    case 'content_invalid':
+    case 'unknown':
+      return false; // Generally not retryable without intervention
+  }
+}
+
+// ==================== Round 2: Jitter to Retry Delays ====================
+
+/**
+ * Add jitter to retry delays to avoid thundering herd problem.
+ * When multiple scrapers hit the same domain and get rate-limited,
+ * they would all retry at the same time without jitter.
+ *
+ * Uses full jitter strategy: random delay between 0 and the calculated delay.
+ */
+export function addRetryJitter(baseDelayMs: number, strategy: 'full' | 'equal' | 'decorrelated' = 'full'): number {
+  switch (strategy) {
+    case 'full':
+      // Full jitter: random between 0 and baseDelay
+      return Math.floor(Math.random() * baseDelayMs);
+    case 'equal':
+      // Equal jitter: random between baseDelay/2 and baseDelay
+      return Math.floor(baseDelayMs / 2 + Math.random() * baseDelayMs / 2);
+    case 'decorrelated':
+      // Decorrelated jitter: random between baseDelay and 3*baseDelay
+      // (caps at baseDelay * 3 to prevent excessive delays)
+      return Math.min(baseDelayMs * 3, Math.floor(baseDelayMs + Math.random() * baseDelayMs * 2));
+  }
+}
+
+// ==================== Round 2: Circuit-Breaker-Triggered Retry Suppression ====================
+
+/**
+ * Suppress retries when a circuit breaker is open for the domain.
+ * This prevents wasting resources on domains that are known to be down.
+ */
+const circuitBreakerStates = new Map<string, { open: boolean; openSince: number }>();
+
+/**
+ * Set circuit breaker state for a domain.
+ */
+export function setCircuitBreakerState(domain: string, isOpen: boolean): void {
+  const existing = circuitBreakerStates.get(domain);
+  if (isOpen) {
+    circuitBreakerStates.set(domain, { open: true, openSince: existing?.openSince || Date.now() });
+  } else {
+    circuitBreakerStates.delete(domain);
+  }
+}
+
+/**
+ * Check if retries should be suppressed due to circuit breaker.
+ */
+export function shouldSuppressRetry(domain: string): boolean {
+  const state = circuitBreakerStates.get(domain);
+  if (!state || !state.open) return false;
+
+  // Allow retry if circuit breaker has been open for > 5 minutes
+  // (give it one chance to recover)
+  const openDuration = Date.now() - state.openSince;
+  return openDuration < 5 * 60 * 1000;
+}

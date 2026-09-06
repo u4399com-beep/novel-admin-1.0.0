@@ -74,6 +74,9 @@ model Novel {
   @@index([favoriteCount])
   @@index([title])
   @@index([author])
+  // Composite indexes for common filter+sort query patterns
+  @@index([status, updatedAt])
+  @@index([categoryId, updatedAt])
 }
 
 // 小说-标签关联

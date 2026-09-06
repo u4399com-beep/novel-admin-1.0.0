@@ -1042,8 +1042,8 @@ export function detectChapterBoundary(html: string): {
         const pageText = $.text();
         const pageMatch = pageText.match(/(?:第?(\d+)\s*[\/|]\s*共?(\d+)\s*页|(\d+)\s*[\/|]\s*(\d+))/);
         if (pageMatch) {
-          currentPage = parseInt(pageMatch[1] || pageMatch[3] || '1', 10);
-          totalPages = parseInt(pageMatch[2] || pageMatch[4] || '1', 10);
+          currentPage = parseInt(pageMatch[1] || pageMatch[3] || '1', 10) || 1;
+          totalPages = parseInt(pageMatch[2] || pageMatch[4] || '1', 10) || 1;
         }
 
         return {

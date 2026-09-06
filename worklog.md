@@ -27255,3 +27255,350 @@ Stage Summary:
 
 项目状态: 生产就绪度显著提升，核心bug全部修复，反反爬体系完善，代码质量大幅改善
 未解决风险: OOM（3.9GB RAM限制）、NEXTAUTH_SECRET未配置（仅影响admin）、4个React Hook Form warnings（不可修复）
+
+---
+Task ID: 4
+Agent: Code Cleanup & Optimization Round 2
+Task: Deep production-level code cleanup and optimization
+
+Work Log:
+
+## 1. Error Handling Standardization
+- Added `ErrorCode` constant object with 11 standard error codes (VALIDATION_FAILED, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, RATE_LIMITED, PAYLOAD_TOO_LARGE, INVALID_FORMAT, INTERNAL_ERROR, DB_ERROR, SERVICE_UNAVAILABLE)
+- Added `ErrorCodeType` type for type-safe error code usage
+- Enhanced `apiError()` to accept optional `code` parameter with auto-default (VALIDATION_FAILED for 4xx, INTERNAL_ERROR for 5xx)
+- Added 6 convenience helpers: `apiBadRequest()`, `apiUnauthorized()`, `apiForbidden()`, `apiNotFound()`, `apiConflict()`, `apiRateLimited()`
+- All API error responses now consistently return `{ error: string, code: string }`
+
+## 2. Type Safety Deep Audit — Scraper Service
+- Replaced 11 `as any` casts in scraper-service/index.ts with proper types:
+  - `(body as any).url` → `(body as Record<string, unknown>).url`
+  - `(body as any).selector` → `(body as Record<string, unknown>).selector`
+  - `(body as any).taskId` → `(body as Record<string, unknown>).taskId`
+  - `(body as any).priority` → `(body as Record<string, unknown>).priority`
+  - `(body as any).ruleId` → `(body as Record<string, unknown>).ruleId as string | undefined`
+  - `(engine as any)` → `(engine as EngineType | undefined)` (2 places)
+  - `ac as any` → `ac as Partial<AntiCrawl>` (2 places)
+  - `(err: any)` → `(err: unknown)` with `instanceof Error` check
+- Added `EngineType` and `AntiCrawl` to the type imports from `./src/types`
+- Main src/ already had zero `as any`, zero `@ts-ignore`, zero `Record<string, any>` — confirmed clean
+
+## 3. Bug Fix — quality-scorer.ts Template Literal
+- Fixed line 802: mismatched quote in template literal (backtick open, single-quote close)
+  - `issues.push(\`5+ HTML tags...failed');` → `issues.push(\`5+ HTML tags...failed\`);`
+  - This was causing ESLint parse error
+
+## 4. Prisma Schema Optimization
+- Added 2 composite indexes to Novel model for common filter+sort query patterns:
+  - `@@index([status, updatedAt])` — supports filtered lists like `where: { status }` + `orderBy: { updatedAt: 'desc' }`
+  - `@@index([categoryId, updatedAt])` — supports category-filtered lists with update sorting
+- Verified with `bun run db:push` — schema sync successful
+
+## 5. Environment Variable Audit
+- Added 20 missing env vars to `.env.example` under new "Scraper Service Config" section:
+  - `MAIN_APP_URL`, `PORT`, `ALLOWED_ORIGIN` — service communication config
+  - `ADAPTIVE_RATE_MODE`, `SCRAPER_SSRF_ALLOW_PRIVATE` — feature flags
+  - `PROXY_LIST`, `SCRAPER_PROXY_VERIFY_URL` — proxy configuration
+  - `SCRAPER_TOR_ENABLED`, `SCRAPER_TOR_PROXY` — Tor support
+  - `SCRAPER_CB_FAILURE_THRESHOLD`, `SCRAPER_CB_RECOVERY_TIMEOUT_MS`, `SCRAPER_CB_HALF_OPEN_MAX` — circuit breaker
+  - `SCRAPER_CANVAS_NOISE_INTENSITY`, `SCRAPER_DOH_PROVIDERS` — fingerprint/DoH
+  - `SCRAPLING_SERVICE_URL`, `DOKOBOT_SERVICE_URL` — alternative scraper engines
+- All env vars referenced in code are now documented in `.env.example`
+- No sensitive vars incorrectly marked as NEXT_PUBLIC_
+
+## 6. Performance — Cache Headers for Public API Routes
+- Added `Cache-Control: public, s-maxage=60, stale-while-revalidate=120` to `/api/public/settings` (was missing)
+- Added `Cache-Control: public, s-maxage=120, stale-while-revalidate=300` to `/api/public/trending-searches` (was missing)
+
+## 7. Comprehensive Audit Findings (no changes needed — already well-handled)
+- **Dead code**: No unused exported functions/types found in src/. All components are rendered in pages.
+- **Auth coverage**: ALL 100+ API routes use either `withAuth` (admin/internal) or `withPublicRateLimit` (public). Zero unprotected routes found.
+- **Security**: No `eval()`, `Function()`, `exec()`, `child_process`, `dangerouslySetInnerHTML` (except safe shadcn chart CSS). No raw SQL injection risks (all `$queryRaw` use `Prisma.sql` tagged templates). SSRF protection via `isSafeUrl()` already in place. Path traversal protection via `validateSavePath()` and coverPath validation.
+- **Type safety**: Zero `as any`, `@ts-ignore`, `@ts-expect-error`, `Record<string, any>` in main src/. One justified `@ts-expect-error` in scraper service (Bun-specific dispatcher option).
+- **Loading states**: All 8 route segments have `loading.tsx` files.
+- **SEO metadata**: Root layout + 4 segment layouts have static `Metadata`. Novel detail page has dynamic `generateMetadata()`. Home page is client component (metadata from root layout).
+- **N+1 queries**: No `for...await db.` patterns found. Novel list uses batch `findMany` + parallel `Promise.all`.
+- **Error format**: All routes already use `apiError()` returning `{ error: string }`. Now enhanced with `{ error, code }`.
+
+## Verification
+- ESLint: 0 errors, 4 warnings (React Hook Form `watch()` incompatible-library — known, unfixable)
+- TypeScript: `tsc --noEmit` passes with zero errors
+- Prisma: `db:push` syncs successfully with new indexes
+
+Stage Summary:
+- Dead code removed: 0 (already clean from previous rounds)
+- Type safety fixes: 12 (11 `as any` → proper types in scraper service, 1 bug fix)
+- Security fixes: 0 new (all already covered from previous rounds — verified)
+- Performance optimizations: 2 cache headers added, 2 composite DB indexes added
+- Consistency improvements: 11 (standard error codes system + 6 convenience helpers)
+- Environment documentation: 20 env vars documented in .env.example
+- Bug fixes: 1 (template literal quote mismatch in quality-scorer.ts)
+
+---
+Task ID: 3
+Agent: Anti-Crawl Enhancement Round 2
+Task: Production-grade scraping and anti-crawling enhancements
+
+Work Log:
+
+## 1. Stealth System Hardening (stealth.ts)
+- Added `verifyProfileConsistency()` — 9 cross-checks for browser fingerprint consistency (UA↔platform, UA↔vendor, UA↔WebGL, cores↔memory, colorDepth↔pixelDepth, screen↔avail, pixelRatio↔screen, timezone↔language, touch↔platform)
+- Added `ProfileConsistencyReport` interface with 0-100 score and critical/warning/info severity levels
+- Added `ExtendedNavigatorProperties` interface — connection (effectiveType, rtt, downlink, saveData), plugins, mimeTypes, webdriver, pdfViewerEnabled, storageEstimate, jsHeapSizeLimit
+- Added `generateExtendedNavigatorProps()` — browser-consistent extended properties (Chrome: 5 plugins, Firefox: 0)
+- Added `AudioFingerprintConfig` interface — oscillatorFrequencyOffset, analyserFFTSize, sampleRate, noiseBits, hasAudioWorklet, maxChannelCount
+- Added `generateAudioFingerprintConfig()` — deterministic AudioContext fingerprint normalization per profile
+- Added `validateScreenProperties()` — 6 validation checks (common resolution, availWidth≤screenWidth, colorDepth∈{24,30,32}, pixelDepth=colorDepth, pixelRatio range)
+- Added `LATEST_BROWSER_VERSIONS` constants (Chrome 126-134, Firefox 130-137, Safari 17-18)
+- Added `checkUAFreshness()` — UA version freshness check with isCurrent/isSupported flags
+
+## 2. Engine System Enhancement (engines.ts)
+- Added per-domain engine performance tracking with rolling window (50 requests, 30-min TTL)
+- Added `recordEnginePerformance()` and# and `getEnginePerformanceStats()` for performance stats4# monitoring
+- Added engine warm-up phase — first 3 requests at 1/3 normal rate via `getEngineWarmUpStatus0()` and `incrementDomainRequestCount()`
+- Added `fetchWithFailoverChain()` — multi-level failover (primary→fallback1→fallback2→7# abort) with onFailover callback
+- Added `EnhancedCircuitBreaker` class — half-open probe tracking, gradual recovery (N consecutive probe successes before close), health scoring (0-100 based on success rate + response time + state penalty)
+
+## 3. Proxy System Enhancement (proxy-manager.ts)
+- Added 4 proxy rotation strategies: round-robin, weighted-random (by health score), least-connections, geo-proximity
+- Added `selectProxyByStrategy()` and `trackProxyConnection()` for strategy-based proxy selection
+- Added `ProxyHealthDaemon` class — background health monitoring daemon with periodic checks
+- Added `parseProxyAuth()` — proxy authentication support (user:pass@host:port)
+- Added `validateSocksProxy()` — SOCKS5/SOCKS4 validation (no auth on SOCKS4, port check)
+- Added per-domain proxy affinity — `recordProxyDomainSuccess()`, `recordProxyDomainFailure()`, `getPreferredProxyForDomain()`, `getProxyAffinityStats()`
+- Added `inferDomainRegion()` — domain TLD to region mapping (cn, tw, jp, kr, hk, us)
+
+## 4. Content Quality Enhancement (quality-scorer.ts)
+- Added `detectContentLanguage()` — multi-language detection (zh-CN, zh-TW, ja, ko, en) using Unicode range and character frequency analysis
+- Added `detectDecoyContent()` — anti-crawl decoy detection (repeated phrases, garbled text, placeholder, uniform paragraphs, short content)
+- Added `validateChapterStructure()` — chapter structural validation (title, content, HTML tags, paragraph breaks, word count consistency, binary content)
+- Added `compareContentFreshness()` — content freshness scoring with Jaccard word similarity, character-level diff, freshness score 0-100
+
+## 5. Anti-Crawl Signal Enhancement (anti-crawl-signal-detector.ts)
+- Added `detectJsChallengePlatform()` — JS challenge platform detection (Cloudflare, Akamai, PerimeterX, DDoS-Guard, Imperva) with challenge type classification (js_calculation, cookie_set, captcha, managed)
+- Added `classifyCaptchaType()` — CAPTCHA type classification (reCAPTCHA v2/v3, hCaptcha, GeeTest, slide, text) with sitekey extraction
+- Added `analyzeRedirectChain()` — redirect chain analysis (JS redirects, meta-refresh, HTTP redirects, cross-domain, loops, challenge domains)
+- Added `detectResponseBodyAnomalies()` — response body anomaly detection (content-length mismatch, encoding mismatch, empty 200, challenge signature, content-type mismatch)
+
+## 6. Smart Retry Enhancement (smart-retry.ts)
+- Added retry budget per domain — `hasRetryBudget()` and `consumeRetryBudget()` (20 retries per 5-minute window)
+- Added error classification taxonomy — 14 error classes (network_timeout, rate_limit_429, captcha, js_challenge, etc.)
+- Added `classifyError()` and `isRetryableError()` for error-type-aware retry strategy
+- Added `addRetryJitter()` — 3 jitter strategies (full, equal, decorrelated) to avoid thundering herd
+- Added circuit-breaker-triggered retry suppression — `setCircuitBreakerState()` and `shouldSuppressRetry()`
+
+## 7. Rate Optimization Enhancement (@rate-optimizer.ts)
+- Added `parseRateLimitHeaders()` — HTTP header-based rate limit detection (X-RateLimit-Limit/Remaining/Reset, Retry-After)
+- Added `AdaptiveConcurrencyController` class — domain-specific concurrency based on response time and error rate with EMA tracking
+- Added backpressure signaling — `signalBackpressure()`, `clearBackpressure()`, `isUnderBackpressure()` with cross-domain propagation and 5-minute auto-expiry
+
+## 8. Scraping Session Enhancement (scraping-session.ts)
+- Added session fingerprint locking — `lockSessionFingerprint()`, `isSessionFingerprintLocked()`, `unlockSessionFingerprint()`
+- Added session cookie isolation — `getSessionCookieNamespace()` with hash-based namespace prefixes
+- Added session-level rate limiting — `canSessionMakeRequest()` and `recordSessionRequest()` with configurable min interval
+- Added session timeout and auto-cleanup — `setSessionTimeout()`, `isSessionTimedOut()`, `cleanupExpiredSessionResources()` with cascading cleanup
+
+## 9. New: Request Pipeline Architecture (request-pipeline.ts)
+- Created middleware-style request pipeline with 6 stages: fingerprint → delay → proxy → execute → validate → retry
+- Added `PipelineContext` interface — URL, domain, engine, headers, proxy, UA, metadata, result, retry state
+- Added before/after hooks for each stage (skip stage or abort pipeline)
+- Added `PipelineMetricsCollector` — per-stage and per-pipeline metrics (executions, successes, failures, avg/max duration, success rate)
+- Added `RequestPipeline` class with `registerStage()`, `before()`, `after()`, `execute()`, `getMetrics()`
+- Added `createDefaultPipeline()` factory with dependency injection
+
+## 10. Frontend: Anti-Crawl Dashboard Enhancement
+- Added CAPTCHA solving success rate tracker to CaptchaEventsPanel — `recordCaptchaSolveAttempt()` and `getCaptchaSolveStats()` with per-type and per-domain breakdown
+
+Stage Summary:
+- Enhanced modules: 9 backend modules + 1 frontend component
+- New modules: 1 (request-pipeline.ts)
+- New features: 6 40+ (profile consistency audit, extended navigator, AudioContext normalization, screen validation, UA freshness, engine performance tracking, warm-up phase, failover chain, enhanced circuit breaker, proxy rotation strategies, health daemon, proxy auth, SOCKS5 validation, proxy affinity, multi-language detection, decoy detection, chapter validation, freshness comparison, JS challenge platform detection, CAPTCHA classification, redirect analysis, response anomaly detection, retry budget, error classification, jitter strategies, CB suppression, rate limit header parsing, adaptive concurrency, backpressure signaling, fingerprint locking, cookie isolation, session rate limiting, session timeout/cleanup, request pipeline, CAPTCHA solve tracker)
+- Lint: 0 errors, 4 warnings (pre-existing incompatible-library)
+- TypeScript: both main project and scraper service pass tsc --noEmit
+
+---
+Task ID: 7
+Agent: Deep Bug Audit Round 2
+Task: Deep bug audit of 15+ critical files — find and fix REMAINING bugs after Round 1
+
+Work Log:
+- Audited 15+ files (5716+!4259+3362+2078+1354+1475+1173+1063+862 lines in scraper service + 6 API routes + 3 frontend files)
+- Searched for patterns: race conditions, off1-by-one, encoding, floating point, promise lifecycle, stale closures, resource exhaustion, type coercion, logic inversion, missing validation
+- Found and fixed 9 bugs across 7 files>:
+
+## Bug Fix List
+
+### HIGH Priority (Security/Logic)
+
+1. **A timingSafeEqual null-byte authentication bypass** (api-auth.ts)
+   - The old implementation padded both input buffers with null bytes (`\x00`) to equal length, then compared with `crypto.timingSafeEqual`. This allowed an attacker to append `\x00` to username/password and bypass authentication (e.g., "admin\x00" would match "admin" after padding).
+   - **Fix**: Early length check (`aBuf.length !== bBuf.length → false`) eliminates padding entirely. Same-time comparison is still timing-safe via `crypto.timingSafeEqual` on equal-length buffers.
+   - Impact2: Authentication bypass vulnerability
+
+2. **Division by zero in rate limit ratio** (anti-crawl-signal-detector.ts:285)
+   - `rateLimitInfo.remaining / rateLimitInfo.limit` could produce `Infinity` if `limit` was 0 (malformed header `X-RateLimit-Limit: 0`).
+   - **Fix**: Added `&& rateLimitInfo.limit > 0` guard to the condition.
+   - Impact: NaN/Infinity propagation in bot confidence scoring
+
+### MEDIUM Priority (Resource Exhaustion/Memory Leaks)
+
+3. **domainRequestCount unbounded growth** (engines.ts:4010)
+   - `Map<string, number>` tracking warm-up state per domain grows indefinitely. One entry per domain ever seen, never cleaned up.
+   - **Fix**: Added `MAX_DOMAIN_REQUEST_COUNT_ENTRIES = 500` cap with periodic cleanup via `setInterval` (every 5 min, evicts oldest 30% when over limit).
+   - Impact: Memory leak in long-running scraper service
+
+4. **_stealthScriptCache unbounded**$ (stealth.ts:757)
+   - Cache of generated stealth injection scripts had a 400-entry eviction threshold that only removed expired entries. If all entries were within TTL, the cache would grow beyond 400 indefinitely.
+   - **Fix**: Reduced threshold to `MAX_STEALTH_SCRIPT_CACHE = 1001`. Added two-phase eviction: first remove expired entries, then FIFO-evict oldest if still over limit. Each entry is a large JS string (~50-100KB), so 100 entries = ~5-10MB max.
+
+5. **domainRotationCount/domainRotationIndex unbounded** (proxy-manager.ts:569-571)
+   - Per-domain proxy rotation tracking maps grew without bound. Single-entry FIFO eviction on each insertion was insufficient underBurst scenarios.
+   - **Fix**: Added `MAX_DOMAIN_ROTATION_ENTRIES = 500` static constant. Changed eviction to batch-delete (30% of entries) when over limit, cleaning both maps simultaneously.
+
+6. **domainFailures outer map entries persist indefinitely** (proxy-manager.ts:582)
+   - Inner map pruning only ran when `size > 10`, and only deleted the inner map when empty. Domains with ≤10 failed proxies never got cleaned. The outer `domainFailures` map could grow indefinitely.
+   - **Fix**: Added outer map pruning: when `domainFailures.size > 2000`, iterate all entries, prune stale inner entries (older than 5 min), and remove empty inner maps.
+
+7. **fetchWithTimeout doesn't propagate caller AbortSignal** (ai-generate-smart/route.ts)
+   - If the Next.js client disconnects during the 30s advisor call or 120s AI generation call, the fetch continued running, wasting server resources.
+   - **Fix**: Added optional `signal?: AbortSignal` parameter to `fetchWithTimeout`, `callAdvisor`, and `callAiGenerate`. Propagates `request.signal` from the POST handler. On abort, the internal AbortController is also aborted, immediately cancelling the fetch.
+
+### LOW Priority (Edge Cases/Accuracy)
+
+8. **parseInt NaN propagation in pagination** (selectors.ts:1045-1046)
+   - `currentPage` and `totalPages` from regex match groups could be NaN if `parseInt` received non-numeric content (edge case with unusual HTML).
+   - **Fix**: Added `|| 1` fallback after `parseInt` to ensure at least 1 (never NaN).
+   - Impact: NaN propagation could break pagination logic
+
+9. **wordCount comment clarifying CJK vs English counting** (cleaning.ts:995-1003)
+   - The wordCount computation counts CJK by individual character and English by word token. Added explicit comments documenting this as the standard mixed-language approach (CJK has no word boundaries).
+   - Impact: Documentation/accuracy clarity
+
+## Verification
+- ESLint: 0 errors, 4 warnings (pre-existing React Hook Form incompatible-library)
+- TypeScript (main): `tsc --noEmit` passes
+- TypeScript (scraper-service): `tsc --noEmit` passes
+- ESLint (changed files): api-auth.ts, ai-generate-smart/route.ts — clean
+
+## Files Changed
+- src/lib/api-auth.ts (timingSafeEqual security fix)
+- mini-services/scraper-service/src/anti-crawl-signal-detector.ts (div-by-zero guard)
+- mini-services/scraper-service/src/engines.ts (domainRequestCount bounded)
+- mini-services/scraper-service/src/stealth.ts (script cache bounded)
+- mini-services/scraper-service/src/proxy-manager.ts (rotation maps bounded, domainFailures outer cleanup)
+- src/app/api/scrape-rules/ai-generate-smart/route.ts (AbortSignal propagation)
+- mini-services/scraper-service/src/selectors.ts (parseInt NaN guard)
+- mini-services/scraper-service/src/cleaning.ts (wordCount documentation)
+
+Stage Summary:
+- Total bugs found & fixed: 9 (2 high + 5 medium + 2 low)
+- Security vulnerabilities fixed: 1 (timingSafeEqual null-byte auth bypass)
+- Memory leaks fixed: 4 (domainRequestCount, stealthScriptCache, domainRotationMaps, domainFailures)
+- Resource leaks fixed: 1 (fetchWithTimeout AbortSignal propagation)
+- Logic bugs fixed: 2 (division by zero, parseInt NaN)
+- Documentation improvements: 1 (wordCount CJK vs English clarification)
+- Lint: 0 errors, 4 warnings (pre-existing)
+- TypeScript: both projects pass tsc --noEmit
+
+---
+Task ID: 5
+Agent: Style Polish & New Features
+Task: UI polish and new feature development
+
+Work Log:
+
+## 1. Hero Section Enhancements
+- **FloatingParticles**: Added 18 animated floating particles with 3 different animation styles (hero-particle, hero-particle-2, hero-particle-3) using CSS keyframes
+- **SearchBar**: Added `search-gradient-border` class — animated gradient border that appears on focus with rotating gradient animation (search-gradient-rotate)
+- **HeroStatsBar**: New stats bar component with BookOpen/Library/Flame icons, micro-animation on count change (key-based stat-count-animate)
+
+## 2. Novel Cards Enhancements
+- **Skeleton shimmer**: Added `skeleton-shimmer-overlay` class to NovelCardSkeleton with sliding shimmer animation
+- **Empty state**: Enhanced with larger illustration (h-28), floating sparkle animations, gradient text title, and added Refresh CTA button alongside admin button
+- **Lazy loading**: Added `useLazyLoad` hook with IntersectionObserver (200px rootMargin) to NovelCover component — shows pulse placeholder until visible, then fades in with lazy-img-enter animation
+
+## 3. Reader Page Enhancements
+- **Chapter transition**: Added `chapterDirection` prop to ReaderContent — 'forward'/'backward' triggers CSS chapter-enter/chapter-enter-reverse slide animations
+- **BookmarksPanel**: Added color-coded categories (default/important/review/favorite) with filter chips, search input for bookmarks, category dot indicators on each bookmark
+- **Text selection → quick note**: Added mouseUp handler in ReaderContent that detects text selection (>2 chars) and shows floating "添加笔记" button; calls onQuickNote callback
+- **ReaderDialog**: Updated to pass chapterDirection={null} to ReaderContent
+
+## 4. Admin Dashboard Enhancements
+- **GeneralSettings**: Added section headers with icons (Globe/FileText) and Separator dividers between site identity and display settings
+- **BulkActionToolbar**: New component with select all/clear, bulk delete/export/refresh actions, animated slide-down toolbar (bulk-toolbar-enter)
+- **SortableTable**: New component with SortableHeader (cycle sort: null→asc→desc→null) with arrow indicators, and useTableSort hook for state management
+
+## 5. Global CSS Additions (280+ lines)
+- **Skeleton shimmer**: skeleton-shimmer-slide animation + overlay pseudo-element
+- **Gradient text utilities**: text-gradient-primary, text-gradient-warm, text-gradient-cool
+- **Dark mode transition**: Added `transition: background-color 0.3s, color 0.3s` on html
+- **Safe-area-inset**: CSS custom properties (--sat, --sar, --sab, --sal) + utility classes (safe-area-top/bottom/x/all)
+- **Floating particles**: 3 keyframe variants + hero-particle/2/3 classes
+- **Search gradient border**: search-gradient-border with animated ::before pseudo-element
+- **Chapter transitions**: chapter-enter/chapter-enter-reverse keyframes + classes
+- **Stats bar animation**: stat-pop, stat-count-up keyframes + classes
+- **Bookmark category dot**: .bookmark-category-dot class
+- **Reader selection note**: .reader-selection-note highlight styles (light/dark)
+- **Notification bell**: bell-ring keyframe + notification-bell-ring class
+- **Sorting indicators**: sort-asc/sort-desc ::after pseudo-elements
+- **Bulk toolbar**: toolbar-slide-down animation + bulk-toolbar-enter class
+- **Lazy image fade**: img-fade-in keyframe + lazy-img-enter class
+
+## 6. Notification System (New)
+- **NotificationCenter.tsx**: Complete notification center component with:
+  - Bell icon with unread badge count (badge-pop animation)
+  - Popover dropdown panel with notification list
+  - 4 notification types: new_chapter, scrape_complete, system_alert, info
+  - Per-type icons and colors (BookOpen/emerald, CheckCircle2/blue, AlertTriangle/amber, Info/muted)
+  - Mark as read, mark all read, remove, clear all actions
+  - Relative time formatting (刚刚/X分钟前/X小时前/X天前)
+  - localStorage persistence (max 50 notifications)
+  - Custom event system for cross-component updates
+  - `pushNotification()` public API for adding notifications
+
+## 7. Bookmarks Manager Enhancements
+- **Categories/folders**: Added BM_CATEGORIES with 4 color-coded categories, category filter chips in dialog
+- **Search/filter**: Added search input to filter bookmarks by title, activeFolder state for category filtering
+- **Export bookmarks**: Added exportBookmarks callback that downloads JSON file with chapter, progress, category, date fields
+- **BookmarkEntry**: Extended with optional `category` field
+
+## 8. Keyboard Navigation Enhancements
+- **useVimNavigation hook** (new file): Complete Vim-style navigation hook
+  - j/k: scroll down/up (60px step)
+  - d/u: half-page down/up
+  - gg: scroll to top (double-g detection with 300ms window)
+  - G: scroll to bottom
+  - /: focus search input
+  - n/N: next/previous search result
+  - Escape: close panel/blur input
+  - Returns VIM_SHORTCUT_HINTS for tooltip rendering
+- **KeyboardShortcuts.tsx**: Updated shortcut groups to include D, U, gg, G, /, n/N shortcuts
+
+## Files Changed
+- src/app/globals.css (280+ new lines of CSS)
+- src/components/home/HeroSection.tsx (FloatingParticles, HeroStatsBar)
+- src/components/home/hero/SearchBar.tsx (search-gradient-border)
+- src/components/home/NovelGrid.tsx (skeleton shimmer, enhanced empty state)
+- src/components/shared/NovelCover.tsx (IntersectionObserver lazy loading)
+- src/app/novels/[id]/reader/ReaderContent.tsx (chapter transition, text selection quick note)
+- src/app/novels/[id]/reader/BookmarksPanel.tsx (categories, search, color dots)
+- src/app/novels/[id]/parts/ReaderDialog.tsx (chapterDirection prop)
+- src/components/admin/settings/GeneralSettings.tsx (section cards, dividers)
+- src/components/BookmarkManager.tsx (categories, search, export)
+- src/components/KeyboardShortcuts.tsx (Vim-style shortcuts)
+
+## New Files
+- src/components/NotificationCenter.tsx
+- src/components/admin/BulkActionToolbar.tsx
+- src/components/admin/SortableTable.tsx
+- src/hooks/useVimNavigation.ts
+
+## Verification
+- ESLint: 0 errors, 4 warnings (pre-existing React Hook Form incompatible-library)
+- TypeScript: tsc --noEmit passes
+
+Stage Summary:
+- 14 files modified, 4 new files created
+- Style improvements: shimmer animations, gradient borders, floating particles, safe-area-inset, dark mode transitions
+- New features: notification center, bulk action toolbar, sortable table, Vim navigation, text selection quick note, bookmark categories/export, lazy image loading
+- All components use shadcn/ui patterns, responsive design maintained

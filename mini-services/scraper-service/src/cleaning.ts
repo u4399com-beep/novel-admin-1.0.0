@@ -993,8 +993,12 @@ export function handleClean(body: CleanRequest) {
   return {
     content,
     wordCount: (() => {
+      // Count CJK characters individually (each character is one "word" in Chinese)
       const cjk = (content.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\uac00-\ud7af\u1100-\u11ff\u3040-\u309f\u30a0-\u30ff]/g) || []).length;
+      // Count English words (each space-separated token is one word)
       const english = (content.match(/[a-zA-Z]+/g) || []).length;
+      // Note: This counts CJK by character and English by word, which is the standard
+      // approach for mixed-language word count (CJK has no word boundaries).
       return cjk + english;
     })(),
     t2sConverted: false,

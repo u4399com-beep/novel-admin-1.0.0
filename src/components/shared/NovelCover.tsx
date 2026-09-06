@@ -1,8 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { getCoverGradient } from '@/lib/cover-gradient';
+
+// ─── Lazy load hook with IntersectionObserver ────────────────
+function useLazyLoad() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, isVisible };
+}
 
 interface NovelCoverProps {
   coverUrl: string | null | undefined;
@@ -17,16 +41,25 @@ interface NovelCoverProps {
 
 export function NovelCover({ coverUrl, title, className, gradientClassName, textClassName }: NovelCoverProps) {
   const [imgError, setImgError] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const { ref: lazyRef, isVisible } = useLazyLoad();
 
   if (coverUrl && !imgError) {
     return (
-      <img
-        src={coverUrl}
-        alt={title}
-        className={cn('h-full w-full object-cover', className)}
-        loading="lazy"
-        onError={() => setImgError(true)}
-      />
+      <div ref={lazyRef} className={cn('h-full w-full', className)}>
+        {isVisible ? (
+          <img
+            src={coverUrl}
+            alt={title}
+            className={cn('h-full w-full object-cover transition-opacity duration-400', imgLoaded ? 'opacity-100 lazy-img-enter' : 'opacity-0', className)}
+            loading="lazy"
+            onLoad={() => setImgLoaded(true)}
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="h-full w-full bg-muted animate-pulse" />
+        )}
+      </div>
     );
   }
   return (

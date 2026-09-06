@@ -591,3 +591,162 @@ export function rotateSession(domain: string, reason?: string): ScrapingSession 
 export function getSessionStats(): SessionStats {
   return scrapingSessionMgr.getSessionStats();
 }
+
+// ==================== Round 2: Session Fingerprint Locking ====================
+
+/**
+ * Session fingerprint locking ensures that once a session is created,
+ * its fingerprint cannot change. This prevents detection from
+ * mid-session fingerprint switches (e.g., different UA mid-session).
+ */
+const fingerprintLockedSessions = new Set<string>();
+
+/**
+ * Lock a session's fingerprint (prevent further changes).
+ */
+export function lockSessionFingerprint(sessionId: string): void {
+  fingerprintLockedSessions.add(sessionId);
+}
+
+/**
+ * Check if a session's fingerprint is locked.
+ */
+export function isSessionFingerprintLocked(sessionId: string): boolean {
+  return fingerprintLockedSessions.has(sessionId);
+}
+
+/**
+ * Unlock a session's fingerprint (allow changes).
+ */
+export function unlockSessionFingerprint(sessionId: string): void {
+  fingerprintLockedSessions.delete(sessionId);
+}
+
+// ==================== Round 2: Session Cookie Isolation ====================
+
+/**
+ * Session cookie isolation: each session gets its own cookie namespace.
+ * Prevents cross-session cookie leakage that could link sessions.
+ */
+const sessionCookieNamespaces = new Map<string, string>();
+
+/**
+ * Get or create a cookie namespace for a session.
+ * Returns a unique prefix that isolates this session's cookies.
+ */
+export function getSessionCookieNamespace(sessionId: string): string {
+  let ns = sessionCookieNamespaces.get(sessionId);
+  if (!ns) {
+    // Create a short namespace from the session ID hash
+    let hash = 0;
+    for (let i = 0; i < sessionId.length; i++) {
+      hash = ((hash << 5) - hash + sessionId.charCodeAt(i)) | 0;
+    }
+    ns = `ns_${Math.abs(hash).toString(36).slice(0, 8)}`;
+    sessionCookieNamespaces.set(sessionId, ns);
+  }
+  return ns;
+}
+
+// ==================== Round 2: Session-Level Rate Limiting ====================
+
+/**
+ * Per-session rate limiting to ensure individual sessions don't
+ * exceed their own rate budget, even if global rate allows more.
+ */
+const sessionRateLimits = new Map<string, {
+  minIntervalMs: number;
+  lastRequestAt: number;
+  requestCount: number;
+}>();
+
+const DEFAULT_SESSION_MIN_INTERVAL_MS = 1000; // 1 second between requests per session
+
+/**
+ * Check if a session can make a request (rate limit).
+ */
+export function canSessionMakeRequest(sessionId: string): {
+  allowed: boolean;
+  waitMs: number;
+} {
+  const limit = sessionRateLimits.get(sessionId);
+  if (!limit) return { allowed: true, waitMs: 0 };
+
+  const elapsed = Date.now() - limit.lastRequestAt;
+  if (elapsed >= limit.minIntervalMs) {
+    return { allowed: true, waitMs: 0 };
+  }
+
+  return { allowed: false, waitMs: limit.minIntervalMs - elapsed };
+}
+
+/**
+ * Record a request in the session rate limiter.
+ */
+export function recordSessionRequest(sessionId: string, minIntervalMs?: number): void {
+  let limit = sessionRateLimits.get(sessionId);
+  if (!limit) {
+    limit = {
+      minIntervalMs: minIntervalMs ?? DEFAULT_SESSION_MIN_INTERVAL_MS,
+      lastRequestAt: Date.now(),
+      requestCount: 0,
+    };
+    sessionRateLimits.set(sessionId, limit);
+  }
+  limit.lastRequestAt = Date.now();
+  limit.requestCount++;
+}
+
+// ==================== Round 2: Session Timeout and Auto-Cleanup ====================
+
+/**
+ * Session timeout and auto-cleanup configuration.
+ * Sessions that exceed their timeout are automatically invalidated.
+ */
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes default
+const sessionTimeouts = new Map<string, number>(); // sessionId → timeout timestamp
+
+/**
+ * Set a session timeout.
+ */
+export function setSessionTimeout(sessionId: string, timeoutMs?: number): void {
+  sessionTimeouts.set(sessionId, Date.now() + (timeoutMs ?? SESSION_TIMEOUT_MS));
+}
+
+/**
+ * Check if a session has timed out.
+ */
+export function isSessionTimedOut(sessionId: string): boolean {
+  const timeout = sessionTimeouts.get(sessionId);
+  if (!timeout) return false;
+
+  if (Date.now() > timeout) {
+    // Clean up
+    sessionTimeouts.delete(sessionId);
+    fingerprintLockedSessions.delete(sessionId);
+    sessionCookieNamespaces.delete(sessionId);
+    sessionRateLimits.delete(sessionId);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Clean up all expired session resources.
+ */
+export function cleanupExpiredSessionResources(): number {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [sessionId, timeout] of sessionTimeouts) {
+    if (now > timeout) {
+      sessionTimeouts.delete(sessionId);
+      fingerprintLockedSessions.delete(sessionId);
+      sessionCookieNamespaces.delete(sessionId);
+      sessionRateLimits.delete(sessionId);
+      cleaned++;
+    }
+  }
+
+  return cleaned;
+}

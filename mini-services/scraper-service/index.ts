@@ -74,7 +74,7 @@ import { priorityQueue } from "./src/priority-queue";
 import { qualityScorer } from "./src/quality-scorer";
 import { antiCrawlAdvisor } from "./src/anti-crawl-advisor";
 import { PRIORITY_MAP, REVERSE_PRIORITY_MAP } from "./src/types";
-import type { TaskPriority, ScrapeResult } from "./src/types";
+import type { TaskPriority, ScrapeResult, EngineType, AntiCrawl } from "./src/types";
 import { sessionManager } from "./src/session-manager";
 import { requestFingerprintMgr } from "./src/request-fingerprint";
 import { timingSafeEqual } from "node:crypto";
@@ -248,7 +248,7 @@ async function simulateAntiCrawl(body: SimulateRequest): Promise<SimulateResult>
   // 1. Evaluate engine selection
   const ac = antiCrawlConfig || {};
   const selectedEngine = selectEngine(
-    (engine as any) || undefined,
+    (engine as import('./src/types').EngineType | undefined) || undefined,
     {
       useJsRender: !!ac.useJsRender,
       cloudBrowser: !!ac.cloudBrowser,
@@ -261,7 +261,7 @@ async function simulateAntiCrawl(body: SimulateRequest): Promise<SimulateResult>
 
   // 2. Build request headers
   const headers = buildFetchHeaders(
-    ac as any,
+    ac as Partial<import('./src/types').AntiCrawl>,
     undefined,
     effectiveUrl,
     'novel'
@@ -1099,10 +1099,10 @@ export function startServer(port: number = 3099) {
       try {
         // Route to handlers
         if (path === "/scrape/list") {
-          if (!body || typeof body !== 'object' || typeof (body as any).url !== 'string') {
+          if (!body || typeof body !== 'object' || typeof (body as Record<string, unknown>).url !== 'string') {
             return Response.json({ error: 'url is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
-          if (!(body as any).selector || typeof (body as any).selector !== 'object') {
+          if (!(body as Record<string, unknown>).selector || typeof (body as Record<string, unknown>).selector !== 'object') {
             return Response.json({ error: 'selector is required and must be an object (e.g. {"type":"css","value":"a"})' }, { status: 400, headers: jsonHeaders });
           }
           const result = await handleScrapeList(body as ScrapeListRequest);
@@ -1110,7 +1110,7 @@ export function startServer(port: number = 3099) {
         }
 
         if (path === "/scrape/book") {
-          if (!body || typeof body !== 'object' || typeof (body as any).url !== 'string') {
+          if (!body || typeof body !== 'object' || typeof (body as Record<string, unknown>).url !== 'string') {
             return Response.json({ error: 'url is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
           const result = await handleScrapeBook(body as ScrapeBookRequest);
@@ -1184,13 +1184,13 @@ export function startServer(port: number = 3099) {
         // ==================== Task Execution (with Priority Queue) ====================
 
         if (path === "/execute-task") {
-          if (!body || typeof body !== 'object' || typeof (body as any).taskId !== 'string') {
+          if (!body || typeof body !== 'object' || typeof (body as Record<string, unknown>).taskId !== 'string') {
             return Response.json({ error: 'taskId is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
           const { taskId } = body as ExecuteTaskRequest;
 
           // Parse priority from request body (default: medium=2)
-          const rawPriority = (body as any).priority;
+          const rawPriority = (body as Record<string, unknown>).priority;
           let numericPriority = 2; // default medium
           if (typeof rawPriority === 'number') {
             numericPriority = Math.max(0, Math.min(3, Math.floor(rawPriority)));
@@ -1208,7 +1208,7 @@ export function startServer(port: number = 3099) {
 
           // Hard cap on concurrent tasks
           if (activeTaskCount >= MAX_CONCURRENT_TASKS) {
-            const ruleId = (body as any).ruleId;
+            const ruleId = (body as Record<string, unknown>).ruleId as string | undefined;
             const enqueued = priorityQueue.enqueue(taskId, numericPriority, ruleId);
             if (enqueued) {
               const stats = priorityQueue.getStats();
@@ -1232,7 +1232,7 @@ export function startServer(port: number = 3099) {
           // Check priority queue capacity
           if (!priorityQueue.hasCapacity()) {
             // Try to enqueue the task
-            const ruleId = (body as any).ruleId;
+            const ruleId = (body as Record<string, unknown>).ruleId as string | undefined;
             const enqueued = priorityQueue.enqueue(taskId, numericPriority, ruleId);
             if (enqueued) {
               const stats = priorityQueue.getStats();
@@ -1321,7 +1321,7 @@ export function startServer(port: number = 3099) {
           // Select engine based on config
           const ac = antiCrawlConfig || {};
           const engineType = selectEngine(
-            reqEngine as any,
+            reqEngine as EngineType | undefined,
             {
               useJsRender: !!ac.useJsRender,
               cloudBrowser: !!ac.cloudBrowser,
@@ -1333,7 +1333,7 @@ export function startServer(port: number = 3099) {
           );
 
           // Build headers for reporting
-          const fetchHeaders = buildFetchHeaders(ac as any, undefined, url, 'novel');
+          const fetchHeaders = buildFetchHeaders(ac as Partial<AntiCrawl>, undefined, url, 'novel');
 
           const engine = getEngine(engineType);
           const startTime = Date.now();
@@ -1345,13 +1345,13 @@ export function startServer(port: number = 3099) {
           let fetchError: string | undefined;
 
           try {
-            const result = await engine.fetch(url, { antiCrawl: ac as any });
+            const result = await engine.fetch(url, { antiCrawl: ac as Partial<AntiCrawl> });
             html = result.html || '';
             statusCode = result.statusCode;
             finalUrl = result.finalUrl || url;
             success = statusCode >= 200 && statusCode < 400 && html.length > 0;
-          } catch (err: any) {
-            const errMsg = String(err?.message || err || 'Unknown error');
+          } catch (err: unknown) {
+            const errMsg = String((err instanceof Error ? err.message : err) || 'Unknown error');
             fetchError = errMsg.slice(0, 300);
             const statusMatch = errMsg.match(/HTTP (\d+)/);
             if (statusMatch) statusCode = parseInt(statusMatch[1], 10);

@@ -3570,9 +3570,12 @@ async function aesDecrypt(
   let rawBytes: Uint8Array;
   if (inputEncoding === 'hex') {
     const hex = encryptedData.replace(/\s/g, '');
+    if (hex.length % 2 !== 0) {
+      throw new Error(`Invalid hex string: odd length (${hex.length} chars)`);
+    }
     rawBytes = new Uint8Array(hex.length / 2);
     for (let i = 0; i < rawBytes.length; i++) {
-      rawBytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+      rawBytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
     }
   } else {
     rawBytes = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
@@ -3902,4 +3905,370 @@ export async function closeAllEngines(): Promise<void> {
   }
   engines.clear();
   log.info("All engines closed");
+}
+
+// ==================== Round 2: Per-Domain Engine Performance Tracking ====================
+
+/**
+ * Per-domain engine performance tracking with rolling window.
+ * Tracks success rate, average response time, and error types per engine per domain.
+ * Used to inform engine selection and health scoring.
+ */
+interface EnginePerformanceRecord {
+  timestamp: number;
+  success: boolean;
+  responseTime: number;
+  errorType?: string;
+}
+
+interface DomainEnginePerformance {
+  records: EnginePerformanceRecord[];
+  /** Rolling window size (last 50 requests) */
+  readonly windowSize: 50;
+}
+
+const domainEnginePerformance = new Map<string, Map<EngineType, DomainEnginePerformance>>();
+const PERFORMANCE_WINDOW = 50;
+const PERFORMANCE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Record a per-domain, per-engine performance result.
+ * Used by fetchWithEngineFallback after each attempt.
+ */
+export function recordEnginePerformance(
+  domain: string,
+  engine: EngineType,
+  success: boolean,
+  responseTime: number,
+  errorType?: string,
+): void {
+  let domainMap = domainEnginePerformance.get(domain);
+  if (!domainMap) {
+    domainMap = new Map();
+    domainEnginePerformance.set(domain, domainMap);
+  }
+  let perf = domainMap.get(engine);
+  if (!perf) {
+    perf = { records: [], windowSize: 50 };
+    domainMap.set(engine, perf);
+  }
+  perf.records.push({ timestamp: Date.now(), success, responseTime, errorType });
+  if (perf.records.length > PERFORMANCE_WINDOW) {
+    perf.records.shift();
+  }
+}
+
+/**
+ * Get per-domain engine performance stats for the rolling window.
+ */
+export function getEnginePerformanceStats(domain: string): Record<string, {
+  successRate: number;
+  avgResponseTime: number;
+  totalRequests: number;
+  errorTypes: Record<string, number>;
+}> {
+  const domainMap = domainEnginePerformance.get(domain);
+  if (!domainMap) return {};
+
+  const result: Record<string, { successRate: number; avgResponseTime: number; totalRequests: number; errorTypes: Record<string, number> }> = {};
+  const now = Date.now();
+
+  for (const [engine, perf] of domainMap) {
+    // Filter to TTL window
+    const recent = perf.records.filter(r => now - r.timestamp < PERFORMANCE_TTL_MS);
+    if (recent.length === 0) continue;
+
+    const successes = recent.filter(r => r.success).length;
+    const avgTime = recent.reduce((sum, r) => sum + r.responseTime, 0) / recent.length;
+    const errorTypes: Record<string, number> = {};
+    for (const r of recent) {
+      if (r.errorType) {
+        errorTypes[r.errorType] = (errorTypes[r.errorType] || 0) + 1;
+      }
+    }
+
+    result[engine] = {
+      successRate: successes / recent.length,
+      avgResponseTime: Math.round(avgTime),
+      totalRequests: recent.length,
+      errorTypes,
+    };
+  }
+
+  return result;
+}
+
+// ==================== Round 2: Engine Warm-Up Phase ====================
+
+/**
+ * Engine warm-up tracking. First 3 requests to a domain use reduced rate
+ * to avoid triggering rate-limiting on cold starts.
+ * Many WAFs flag the first few requests from a new IP/session more aggressively.
+ */
+const ENGINE_WARMUP_REQUESTS = 3;
+const WARMUP_RATE_DIVISOR = 3; // Warm-up rate = normal rate / 3
+const domainRequestCount = new Map<string, number>();
+const MAX_DOMAIN_REQUEST_COUNT_ENTRIES = 500;
+
+/** Periodic cleanup of domainRequestCount to prevent unbounded growth */
+setInterval(() => {
+  if (domainRequestCount.size > MAX_DOMAIN_REQUEST_COUNT_ENTRIES) {
+    const toDelete = domainRequestCount.size - Math.floor(MAX_DOMAIN_REQUEST_COUNT_ENTRIES * 0.7);
+    let deleted = 0;
+    for (const key of domainRequestCount.keys()) {
+      if (deleted >= toDelete) break;
+      domainRequestCount.delete(key);
+      deleted++;
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
+/**
+ * Check if a domain is still in the warm-up phase.
+ * Returns the warm-up request number (1-3) or 0 if warm-up is complete.
+ */
+export function getEngineWarmUpStatus(domain: string): {
+  inWarmUp: boolean;
+  requestNumber: number;
+  totalWarmUpRequests: number;
+  rateDivisor: number;
+} {
+  const count = domainRequestCount.get(domain) || 0;
+  const inWarmUp = count < ENGINE_WARMUP_REQUESTS;
+  return {
+    inWarmUp,
+    requestNumber: inWarmUp ? count + 1 : 0,
+    totalWarmUpRequests: ENGINE_WARMUP_REQUESTS,
+    rateDivisor: inWarmUp ? WARMUP_RATE_DIVISOR : 1,
+  };
+}
+
+/**
+ * Increment the request count for a domain (called after each request).
+ */
+export function incrementDomainRequestCount(domain: string): void {
+  const count = (domainRequestCount.get(domain) || 0) + 1;
+  domainRequestCount.set(domain, count);
+}
+
+// ==================== Round 2: Engine Failover Chain ====================
+
+/**
+ * Execute a request with a multi-level failover chain.
+ * Tries: primary → fallback1 → fallback2 → abort
+ *
+ * @param domain - Target domain for health tracking
+ * @param chain - Ordered array of engine types to try
+ * @param executeFn - Async function that takes an EngineType and returns a FetchResult
+ * @param onFailover - Optional callback when a failover occurs (for logging/metrics)
+ */
+export async function fetchWithFailoverChain(
+  domain: string,
+  chain: EngineType[],
+  executeFn: (engine: EngineType) => Promise<FetchResult>,
+  onFailover?: (fromEngine: EngineType, toEngine: EngineType, error: string) => void,
+): Promise<FetchResult> {
+  const errors: Array<{ engine: EngineType; error: string }> = [];
+
+  for (let i = 0; i < chain.length; i++) {
+    const engine = chain[i];
+    const startTime = Date.now();
+
+    try {
+      const result = await executeFn(engine);
+      const responseTime = Date.now() - startTime;
+
+      // Record success
+      recordEnginePerformance(domain, engine, true, responseTime);
+      incrementDomainRequestCount(domain);
+
+      return result;
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      const responseTime = Date.now() - startTime;
+
+      // Record failure
+      recordEnginePerformance(domain, engine, false, responseTime, error.slice(0, 100));
+      errors.push({ engine, error: error.slice(0, 200) });
+
+      // Notify failover
+      if (i < chain.length - 1 && onFailover) {
+        onFailover(engine, chain[i + 1]!, error.slice(0, 200));
+      }
+    }
+  }
+
+  // All engines failed
+  const errorSummary = errors.map(e => `${e.engine}: ${e.error}`).join('; ');
+  throw new Error(`All engines in failover chain failed for ${domain}: ${errorSummary}`);
+}
+
+// ==================== Round 2: Enhanced Circuit Breaker with Half-Open Probing ====================
+
+/**
+ * Enhanced circuit breaker with half-open probe tracking.
+ * Extends the basic CircuitBreaker with:
+ *   - Probe success/failure tracking during half-open
+ *   - Gradual recovery (requires N consecutive probe successes before fully closing)
+ *   - Health scoring based on success rate and response time
+ */
+export class EnhancedCircuitBreaker {
+  private state: CircuitState = 'closed';
+  private failureCount = 0;
+  private successCount = 0;
+  private lastFailureTime = 0;
+  private readonly failureThreshold: number;
+  private readonly resetTimeout: number;
+  private readonly halfOpenMaxAttempts: number;
+  private readonly probeSuccessThreshold: number;
+  private _halfOpenInFlight = 0;
+  private _halfOpenProbeSuccesses = 0;
+  private _halfOpenProbeFailures = 0;
+  private _name: string;
+
+  // Health scoring
+  private _totalSuccesses = 0;
+  private _totalFailures = 0;
+  private _recentResponseTimes: number[] = [];
+  private readonly _responseTimeWindow = 20;
+
+  constructor(
+    name: string,
+    failureThreshold = 5,
+    resetTimeout = 30000,
+    halfOpenMaxAttempts = 1,
+    probeSuccessThreshold = 3,
+  ) {
+    this._name = name;
+    this.failureThreshold = failureThreshold;
+    this.resetTimeout = resetTimeout;
+    this.halfOpenMaxAttempts = halfOpenMaxAttempts;
+    this.probeSuccessThreshold = probeSuccessThreshold;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.state === 'open') {
+      if (Date.now() - this.lastFailureTime >= this.resetTimeout) {
+        this.state = 'half-open';
+        this._halfOpenInFlight = 0;
+        this._halfOpenProbeSuccesses = 0;
+        this._halfOpenProbeFailures = 0;
+      } else {
+        throw new Error(`Service ${this._name} circuit breaker open`);
+      }
+    }
+    if (this.state === 'half-open') {
+      if (this._halfOpenInFlight >= this.halfOpenMaxAttempts) {
+        throw new Error(`Service ${this._name} in half-open recovery (${this._halfOpenInFlight}/${this.halfOpenMaxAttempts} probes)`);
+      }
+      this._halfOpenInFlight++;
+    }
+  }
+
+  release(): void {
+    this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
+  }
+
+  recordSuccess(responseTime?: number): void {
+    this._totalSuccesses++;
+    if (responseTime !== undefined) {
+      this._recentResponseTimes.push(responseTime);
+      if (this._recentResponseTimes.length > this._responseTimeWindow) {
+        this._recentResponseTimes.shift();
+      }
+    }
+
+    if (this.state === 'half-open') {
+      this._halfOpenProbeSuccesses++;
+      this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
+
+      // Gradual recovery: need N consecutive probe successes
+      if (this._halfOpenProbeSuccesses >= this.probeSuccessThreshold) {
+        this.state = 'closed';
+        this.failureCount = 0;
+        this.successCount = 0;
+        this._halfOpenInFlight = 0;
+        this._halfOpenProbeSuccesses = 0;
+        this._halfOpenProbeFailures = 0;
+      }
+    } else if (this.state === 'closed') {
+      this.failureCount = 0;
+      this.successCount++;
+    }
+  }
+
+  recordFailure(): void {
+    this._totalFailures++;
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+
+    if (this.state === 'half-open') {
+      this._halfOpenProbeFailures++;
+      this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
+
+      // Any failure in half-open re-opens the circuit
+      this.state = 'open';
+      this._halfOpenInFlight = 0;
+      this._halfOpenProbeSuccesses = 0;
+      this._halfOpenProbeFailures = 0;
+    } else if (this.failureCount >= this.failureThreshold) {
+      this.state = 'open';
+      this._halfOpenInFlight = 0;
+    }
+  }
+
+  /** Get health score (0-100) based on success rate, response time, and error types */
+  getHealthScore(): number {
+    const total = this._totalSuccesses + this._totalFailures;
+    if (total === 0) return 100; // No data = healthy
+
+    const successRate = this._totalSuccesses / total;
+    const avgResponseTime = this._recentResponseTimes.length > 0
+      ? this._recentResponseTimes.reduce((a, b) => a + b, 0) / this._recentResponseTimes.length
+      : 0;
+
+    // Penalize slow responses (over 5s is concerning, over 10s is bad)
+    const timePenalty = avgResponseTime > 10000 ? 20 : avgResponseTime > 5000 ? 10 : 0;
+
+    // State penalty
+    const statePenalty = this.state === 'open' ? 30 : this.state === 'half-open' ? 15 : 0;
+
+    return Math.max(0, Math.min(100, Math.round(successRate * 100 - timePenalty - statePenalty)));
+  }
+
+  getState(): {
+    state: CircuitState;
+    failureCount: number;
+    successCount: number;
+    lastFailureTime: number;
+    resetTimeout: number;
+    timeUntilReset: number;
+    healthScore: number;
+    halfOpenProbeSuccesses: number;
+    halfOpenProbeFailures: number;
+  } {
+    return {
+      state: this.state,
+      failureCount: this.failureCount,
+      successCount: this.successCount,
+      lastFailureTime: this.lastFailureTime,
+      resetTimeout: this.resetTimeout,
+      timeUntilReset: this.state === 'open'
+        ? Math.max(0, this.resetTimeout - (Date.now() - this.lastFailureTime))
+        : 0,
+      healthScore: this.getHealthScore(),
+      halfOpenProbeSuccesses: this._halfOpenProbeSuccesses,
+      halfOpenProbeFailures: this._halfOpenProbeFailures,
+    };
+  }
+
+  reset(): void {
+    this.state = 'closed';
+    this.failureCount = 0;
+    this.successCount = 0;
+    this.lastFailureTime = 0;
+    this._halfOpenInFlight = 0;
+    this._halfOpenProbeSuccesses = 0;
+    this._halfOpenProbeFailures = 0;
+  }
 }
