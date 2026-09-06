@@ -78,6 +78,7 @@ services:
       args:
         NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE}
         BUN_GC_THRESHOLD: ${BUN_GC_THRESHOLD}
+        USE_TURBOPACK: ${USE_TURBOPACK:-false}
         # DEBIAN_MIRROR and NPM_REGISTRY are set in Dockerfile defaults
         # Override via --build-arg if needed for non-Chinese servers
         # DEBIAN_MIRROR: ${DEBIAN_MIRROR:-mirrors.aliyun.com}

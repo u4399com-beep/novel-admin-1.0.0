@@ -41,6 +41,10 @@ RUN if grep -q 'provider *= *"sqlite"' prisma/schema.prisma; then \
       echo "WARNING: Expected 'provider = sqlite' in schema.prisma, skipping provider swap"; \
     fi
 
+# Create .env.production to prevent Next.js env loading errors
+# Next.js 16 calls .matchAll() on .env.production contents; empty file avoids TypeError
+RUN touch .env.production
+
 # Generate Prisma client
 # CRITICAL: Use the LOCAL prisma binary directly (./node_modules/prisma/build/index.js).
 # 'bun run db:generate' expands to 'npx prisma generate', and npx/bunx
@@ -50,13 +54,18 @@ RUN ./node_modules/prisma/build/index.js generate --schema ./prisma/schema.prism
 
 # Build Next.js — LOW MEMORY settings
 # NODE_MAX_OLD_SPACE_SIZE is passed as build-arg by deploy.sh based on hardware tier
-ARG NODE_MAX_OLD_SPACE_SIZE=512
+# IMPORTANT: Next.js 16 + Turbopack requires >= 768MB for build.
+# 512MB causes OOM kill (exit 137) or Turbopack panic on CSS.
+ARG NODE_MAX_OLD_SPACE_SIZE=768
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
 # Single-threaded build to reduce peak memory
 ENV NEXT_WORKER_THREADS=1
-RUN bun run build
+# Disable Turbopack for low-memory builds (Webpack uses less peak RAM)
+# Turbopack can use 1.5GB+ during CSS compilation; Webpack stays under 1GB
+ARG USE_TURBOPACK=false
+RUN if [ "$USE_TURBOPACK" = "true" ]; then bun run build; else npx next build --no-turbopack; fi
 
 # ============ Stage 3: Production Runner ============
 FROM oven/bun:1 AS runner
