@@ -26693,3 +26693,45 @@ Stage Summary:
 - All 60+ setInterval/setTimeout/addEventListener patterns verified for proper cleanup
 - All 35 admin API routes verified to use withAuth
 - ESLint: 0 errors, 4 warnings (pre-existing react-hooks/incompatible-library)
+
+---
+Task ID: 4+5
+Agent: Agent 4+5 (Code Cleanup + Style Enhancement)
+Task: 代码清理 + 样式增强
+
+Work Log:
+
+## Part A: Code Cleanup
+
+### A1: Unused Imports Scan
+- Scanned all 8 target files with ESLint — no unused imports found
+
+### A2: console.log → logger Replacement (Scraper Service)
+- Replaced ALL console.log/warn/error calls with structured logger calls across 15 files
+- Added logger import to 4 files that didn't have it (queue, rate-calibration, regex-safety, request-fingerprint)
+- Zero remaining console.* calls in scraper-service/src/
+
+### A3: Scraper Service Verification
+- bun run dev starts successfully, structured log output confirmed
+
+## Part B: Style Enhancement
+
+### B1: Novel List Page
+- Enhanced empty state with animated SVG illustration (book + sparkles)
+- Hero/filter cards already had animations — preserved
+
+### B2: Footer Enhancement
+- Added footer link underline slide-in animation via ::after pseudo-element
+- Added BackToTopButton with SVG progress ring indicator
+
+### B3: Global Micro-interactions (globals.css)
+- Focus-visible ring animation with smooth transition
+- Route transition fade-in for <main>
+- Footer link underline slide-in (CSS-only)
+
+## Part C: Verification & Git
+
+- Lint: 0 errors, 4 pre-existing warnings
+- Next.js: HTTP 200 confirmed
+- Scraper: starts with structured logger confirmed
+- Commit: 94c4111 pushed to origin/main (53 files, 3060 insertions, 158 deletions)
