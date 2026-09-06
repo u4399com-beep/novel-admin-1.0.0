@@ -239,6 +239,50 @@ button:active:not(:disabled) {
   outline-offset: 2px;
 }
 
+/* ─── Focus-visible ring animation ──────────────────────────── */
+*:focus-visible {
+  outline: 2px solid oklch(0.488 0.243 264.376 / 0.6);
+  outline-offset: 2px;
+  transition: outline-color 0.2s ease, outline-offset 0.2s ease;
+}
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+.dark *:focus-visible {
+  outline-color: oklch(0.708 0.1 264 / 0.8);
+}
+
+/* ─── Route transition: fade-in for <main> ────────────── */
+@keyframes route-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+main {
+  animation: route-fade-in 0.25s ease-out;
+}
+
+/* ─── Footer link underline slide-in ─────────────────── */
+.footer-link {
+  position: relative;
+  text-decoration: none;
+}
+.footer-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 0;
+  height: 1px;
+  background: oklch(0.488 0.243 264.376);
+  transition: width 0.25s ease;
+}
+.footer-link:hover::after {
+  width: 100%;
+}
+.dark .footer-link::after {
+  background: oklch(0.708 0.1 264);
+}
+
 /* Code/pre blocks styling */
 pre {
   background: oklch(0.96 0 0);

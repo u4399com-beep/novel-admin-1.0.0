@@ -9,6 +9,7 @@
 
 import Database from 'bun:sqlite';
 import { generateId } from "./utils";
+import { logger } from './logger';
 
 const DB_PATH = process.env.QUEUE_DB_PATH || "queue.db";
 
@@ -91,7 +92,7 @@ export function addToQueue(options: AddToQueueOptions): string {
     // Only ignore SQLITE_CONSTRAINT (unique violation / deduplication)
     const msg = err instanceof Error ? err.message : '';
     if (!msg.includes('SQLITE_CONSTRAINT') && !msg.includes('UNIQUE constraint')) {
-      console.error('[Queue] addToQueue unexpected error:', err);
+      logger.error('Queue', 'addToQueue unexpected error', { error: err instanceof Error ? err.message : String(err) });
       throw err;
     }
   }

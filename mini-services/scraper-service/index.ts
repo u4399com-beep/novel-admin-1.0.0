@@ -78,6 +78,10 @@ import { sessionManager } from "./src/session-manager";
 import { requestFingerprintMgr } from "./src/request-fingerprint";
 import { timingSafeEqual } from "node:crypto";
 import { rateOptimizer } from "./src/rate-optimizer";
+import { smartRetry } from "./src/smart-retry";
+import { requestQueue } from "./src/request-queue";
+import { progressTracker } from "./src/progress-tracker";
+import { domainHealth } from "./src/domain-health";
 import { concurrencyOptimizer } from "./src/concurrency-optimizer";
 import { antiDetectionCoordinator } from "./src/anti-detection-coordinator";
 import { batchCalibrate, calibrateSingleRule, getCalibrationStatus, getCalibrationReport, loadSavedReport } from "./src/rate-calibration";
@@ -640,6 +644,100 @@ export function startServer(port: number = 3099) {
         return Response.json({ reset: true }, {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+
+      // ==================== Smart Retry Endpoints ====================
+
+      if (path === "/retry-stats" && method === "GET") {
+        const stats = smartRetry.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/retry-stats/") && method === "GET") {
+        const domain = decodeURIComponent(path.slice("/retry-stats/".length));
+        const stats = smartRetry.getStats();
+        const domainData = stats.domains[domain];
+        if (!domainData) {
+          return Response.json({ error: "Domain not found" }, { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json({ domain, ...domainData, recentAttempts: smartRetry.getRecentAttempts(domain), successfulRecoveries: smartRetry.getSuccessfulRecoveries(domain) }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/retry-stats/") && method === "POST") {
+        const domain = decodeURIComponent(path.slice("/retry-stats/".length));
+        const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+        if (body.action === 'resume') {
+          smartRetry.resumeDomain(domain);
+          return Response.json({ resumed: true, domain }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } else if (body.action === 'pause') {
+          smartRetry.pauseDomain(domain, body.reason as string | undefined);
+          return Response.json({ paused: true, domain }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json({ error: "Invalid action. Use 'resume' or 'pause'." }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // ==================== Request Queue Endpoints ====================
+
+      if (path === "/request-queue/stats" && method === "GET") {
+        const metrics = requestQueue.getMetrics();
+        return Response.json(metrics, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Progress Tracker Endpoints ====================
+
+      if (path === "/progress" && method === "GET") {
+        const taskIds = progressTracker.getActiveTaskIds();
+        const snapshots = taskIds.map(id => progressTracker.getSnapshot(id)).filter(Boolean);
+        return Response.json({ tasks: snapshots }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/progress/") && method === "GET") {
+        const taskId = path.slice("/progress/".length);
+        const snapshot = progressTracker.getSnapshot(taskId);
+        if (!snapshot) {
+          return Response.json({ error: "Task not found" }, { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json(snapshot, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Domain Health Endpoints ====================
+
+      if (path === "/domain-health" && method === "GET") {
+        const summary = domainHealth.getSummary();
+        return Response.json(summary, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/domain-health/") && method === "GET") {
+        const domain = decodeURIComponent(path.slice("/domain-health/".length));
+        const health = domainHealth.computeHealth(domain);
+        return Response.json(health, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/domain-health/") && method === "POST") {
+        const domain = decodeURIComponent(path.slice("/domain-health/".length));
+        const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+        if (body.action === 'resume') {
+          domainHealth.resumeDomain(domain);
+          return Response.json({ resumed: true, domain }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } else if (body.action === 'pause') {
+          domainHealth.pauseDomain(domain, body.reason as string | undefined);
+          return Response.json({ paused: true, domain }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json({ error: "Invalid action. Use 'resume' or 'pause'." }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       // ==================== Concurrency Optimizer Endpoints ====================
@@ -1460,6 +1558,15 @@ export function startServer(port: number = 3099) {
     console.log(`   GET  /quality/stats              - Aggregate quality statistics`);
     console.log(`   POST /quality/score              - Manual quality score for a task`);
     console.log(`   GET  /cookie-persist/stats       - Cookie persistence stats (SQLite)`);
+    console.log(`   GET  /retry-stats                - Smart retry stats for all domains`);
+    console.log(`   GET  /retry-stats/:domain        - Smart retry stats for domain`);
+    console.log(`   POST /retry-stats/:domain        - Pause/resume domain retry (action=pause/resume)`);
+    console.log(`   GET  /request-queue/stats        - Request queue metrics`);
+    console.log(`   GET  /progress                   - All task progress snapshots`);
+    console.log(`   GET  /progress/:taskId           - Task progress snapshot`);
+    console.log(`   GET  /domain-health              - Domain health summary`);
+    console.log(`   GET  /domain-health/:domain      - Domain health detail`);
+    console.log(`   POST /domain-health/:domain      - Pause/resume domain (action=pause/resume)`);
   }
 
   return server;

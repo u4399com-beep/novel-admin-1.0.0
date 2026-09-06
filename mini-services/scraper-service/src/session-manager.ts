@@ -73,7 +73,7 @@ class SessionManager {
           log.info(` Cleaned up ${cleaned} expired/stale sessions`);
         }
       } catch (err) {
-        console.error('[SessionManager] Cleanup error:', err);
+        logger.error('SessionManager', 'Cleanup error', { error: err instanceof Error ? err.message : String(err) });
       }
     }, 30 * 60 * 1000).unref();
   }

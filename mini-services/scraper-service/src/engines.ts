@@ -293,7 +293,7 @@ function getCheerioAgent(): Promise<import('undici').Agent> {
     log.info(' HTTP connection pool initialized (keepAlive=30s, maxConn=20)');
     return agent;
   })().catch((err) => {
-    console.error('[CheerioEngine] Failed to initialize HTTP connection pool:', err);
+    logger.error('CheerioEngine', 'Failed to initialize HTTP connection pool', { error: err instanceof Error ? err.message : String(err) });
     _cheerioAgentPromise = null; // Allow retry on next call
     throw err;
   });
@@ -682,10 +682,7 @@ export function recordSmartRetryFailure(domain: string, err: unknown): { delayMs
       triggerType: failType,
     };
 
-    console.warn(
-      `[SmartRetry] Domain ${domain} entering cool-down for ${Math.round(cooldownDuration / 1000)}s ` +
-      `after ${state.consecutiveFails} failures (last: ${failType})`,
-    );
+    logger.warn('SmartRetry', `Domain ${domain} entering cool-down for ${Math.round(cooldownDuration / 1000)}s after ${state.consecutiveFails} failures`, { domain, cooldownMs: cooldownDuration, failures: state.consecutiveFails, failType });
 
     return { delayMs: cooldownDuration, inCooldown: true, cooldownUntil: state.cooldown.until };
   }
@@ -868,7 +865,7 @@ export async function fetchWithEngineFallback(
       // Record failure for adaptive chain (only for fallback-worthy errors)
       if (domain) recordEngineFailure(domain, engineType);
 
-      console.warn(`[EngineFallback] ${engineType} failed for ${url}: ${errMsg.slice(0, 120)}${i < truncatedChain.length - 1 ? ' → trying next engine' : ' → no more engines'}`);
+      logger.warn('EngineFallback', `${engineType} failed for ${url}`, { engine: engineType, url, error: errMsg.slice(0, 120), hasNext: i < truncatedChain.length - 1 });
     }
   }
 
@@ -891,7 +888,7 @@ export function getEngine(type: EngineType): ScrapingEngine {
   const fallback = engines.get("cheerio");
   if (fallback) {
     if (type !== "cheerio") {
-      console.warn(`[Engine] Requested engine "${type}" not registered, falling back to cheerio`);
+      logger.warn('Engine', `Requested engine "${type}" not registered, falling back to cheerio`, { requested: type });
     }
     return fallback;
   }
@@ -1110,7 +1107,7 @@ class CheerioEngine implements ScrapingEngine {
         if (targetDomain && html) {
           const captchaResult = detectCaptcha(html, finalUrl, statusCode);
           if (captchaResult.detected && captchaResult.confidence > 0.5) {
-            console.warn(`[Cheerio] CAPTCHA detected on ${targetDomain}: type=${captchaResult.type}, confidence=${captchaResult.confidence}`);
+            logger.warn('Cheerio', `CAPTCHA detected on ${targetDomain}`, { domain: targetDomain, type: captchaResult.type, confidence: captchaResult.confidence });
             try {
               antiCrawlAdvisor.recordDetection(targetDomain, 'captcha', `CAPTCHA ${captchaResult.type}, confidence ${Math.round(captchaResult.confidence * 100)}%`);
             } catch { /* non-critical */ }
@@ -1566,7 +1563,7 @@ class PlaywrightEngine implements ScrapingEngine {
           if (pwStatus === 403 || pwStatus === 503 || /(?:<iframe[^>]+src=["'][^"']*(?:captcha|challenge|recaptcha)|captcha|challenge-platform|_cf_chl|turnstile)/i.test(html.slice(0, 8000))) {
             pwCaptcha = detectCaptcha(html, finalUrl, pwStatus);
             if (pwCaptcha.detected && pwCaptcha.confidence > 0.5) {
-              console.warn(`[Playwright] CAPTCHA detected on ${pwDomain}: type=${pwCaptcha.type}, confidence=${pwCaptcha.confidence}`);
+              logger.warn('Playwright', `CAPTCHA detected on ${pwDomain}`, { domain: pwDomain, type: pwCaptcha.type, confidence: pwCaptcha.confidence });
               try {
                 antiCrawlAdvisor.recordDetection(pwDomain, 'captcha', `CAPTCHA ${pwCaptcha.type} detected, confidence ${Math.round(pwCaptcha.confidence * 100)}%`);
               } catch { /* non-critical */ }
@@ -3033,7 +3030,7 @@ class ObscuraEngine implements ScrapingEngine {
           if (obscuraStatus === 403 || obscuraStatus === 503 || /(?:<iframe[^>]+src=["'][^"']*(?:captcha|challenge|recaptcha)|captcha|challenge-platform|_cf_chl|turnstile)/i.test(html.slice(0, 8000))) {
             captchaDetection = detectCaptcha(html, finalUrl, obscuraStatus);
             if (captchaDetection.detected && captchaDetection.confidence > 0.5) {
-              console.warn(`[Obscura] CAPTCHA detected on ${domain}: type=${captchaDetection.type}, confidence=${captchaDetection.confidence}`);
+              logger.warn('Obscura', `CAPTCHA detected on ${domain}`, { domain, type: captchaDetection.type, confidence: captchaDetection.confidence });
               // Notify anti-crawl advisor (fire-and-forget)
               try {
                 antiCrawlAdvisor.recordDetection(domain, 'captcha', `CAPTCHA ${captchaDetection.type} detected, confidence ${Math.round(captchaDetection.confidence * 100)}%`);
@@ -3183,7 +3180,7 @@ export async function fetchWithInfiniteScroll(
   // For truly non-browser-capable situations (no playwright/obscura installed),
   // fall back to single HTTP fetch
   if (!engines.has(browserEngine)) {
-    console.warn(`[InfiniteScroll] Browser engine ${browserEngine} not available, falling back to single fetch`);
+    logger.warn('InfiniteScroll', `Browser engine ${browserEngine} not available, falling back to single fetch`, { engine: browserEngine });
     const fallbackEngine = getEngine('cheerio');
     const result = await fallbackEngine.fetch(url, options);
     return { ...result, cyclesCompleted: 0, effectiveEngine: 'cheerio' };
@@ -3320,7 +3317,7 @@ export async function fetchWithInfiniteScroll(
       const pageHtml = await page.content().catch(() => '');
       const captchaResult = detectCaptcha(pageHtml, url, statusCode);
       if (captchaResult.detected && captchaResult.confidence > 0.5) {
-        console.warn(`[InfiniteScroll] CAPTCHA detected on ${domain}: type=${captchaResult.type}`);
+        logger.warn('InfiniteScroll', `CAPTCHA detected on ${domain}`, { domain, type: captchaResult.type });
         if (effectiveProxy) proxyManager.recordFailure(effectiveProxy.url, `CAPTCHA ${captchaResult.type}`);
         throw new Error(`CAPTCHA detected (${captchaResult.type}) on ${domain}`);
       }
@@ -3461,7 +3458,7 @@ export async function fetchWithInfiniteScroll(
     if (err instanceof Error && (err.message.includes('Aborted') || err.message.includes('aborted'))) {
       throw err;
     }
-    console.warn(`[InfiniteScroll] Browser-based scroll failed: ${err instanceof Error ? err.message : err}`);
+    logger.warn('InfiniteScroll', `Browser-based scroll failed`, { error: err instanceof Error ? err.message : String(err) });
     const errStatus = (err instanceof Error && 'statusCode' in err)
       ? Number((err as any).statusCode) : undefined;
     if (domain) rateLimiter.recordResult(domain, false, errStatus);
@@ -3772,7 +3769,7 @@ class ApiEngine implements ScrapingEngine {
                 resultText = JSON.stringify(json);
               }
             } catch (decErr) {
-              console.warn(`[ApiEngine] Decryption failed (returning raw response): ${decErr instanceof Error ? decErr.message : decErr}`);
+              logger.warn('ApiEngine', 'Decryption failed (returning raw response)', { error: decErr instanceof Error ? decErr.message : String(decErr) });
               // Return raw response if decryption fails
             }
           }
@@ -3843,7 +3840,7 @@ export function selectEngine(
   const VALID_ENGINES: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura', 'dokobot', 'api'];
   if (requestedEngine) {
     if (VALID_ENGINES.includes(requestedEngine)) return requestedEngine;
-    console.warn(`[selectEngine] Unknown engine '${requestedEngine}', falling back to auto-selection`);
+    logger.warn('selectEngine', `Unknown engine '${requestedEngine}', falling back to auto-selection`, { engine: requestedEngine });
   }
   if (antiCrawl?.cloudBrowser) return "cloud-browser";
   // If human behavior simulation is requested, must use obscura (has stealth + human sim)

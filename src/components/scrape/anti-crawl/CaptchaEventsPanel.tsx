@@ -334,7 +334,6 @@ export function CaptchaEventsPanel() {
       const domains = rateData?.domains?.map(d => d.domain) || [];
 
       // Also fetch delay stats to get additional domains
-      let delayDomains: string[] = [];
       try {
         const delayData = await apiFetch<{ domains: Array<{ domain: string }> }>(
           '/api/admin/scraper/delay-stats',

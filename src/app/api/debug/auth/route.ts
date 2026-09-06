@@ -48,7 +48,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
       info.isExpired = token.exp ? Number(token.exp) < Math.floor(Date.now() / 1000) : true;
       info.isAdmin = !!token.isAdmin;
     }
-  } catch (err) {
+  } catch (_err) {
     info.tokenResult = 'error verifying token';
   }
 

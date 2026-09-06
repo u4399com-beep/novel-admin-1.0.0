@@ -85,7 +85,7 @@ export class CaptchaRecoveryManager {
     this.persistPath = resolve(import.meta.dir, 'scrape-rules/bypass-registry.json');
     this.loadPersistedState();
     // Persist state every 60 seconds
-    this.persistTimer = setInterval(() => this.persistState(), 60_000);
+    this.persistTimer = setInterval(() => this.persistState(), 60_000).unref();
   }
 
   /**

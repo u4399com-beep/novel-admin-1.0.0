@@ -268,26 +268,22 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
       const abortController = new AbortController();
       loadChapterAbortRef.current = abortController;
 
-      try {
-        const SK = 'novel-session-id';
-        const sid = localStorage.getItem(SK) || '';
-        if (sid) {
-          const resp = await fetch(`/api/public/reading-progress?sessionId=${encodeURIComponent(sid)}`, {
-            signal: abortController.signal,
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            const rawProgress = data.progress || [];
-            const items = Array.isArray(rawProgress)
-              ? rawProgress as Array<{ chapterIndex: number; scrollPercent: number | null }>
-              : [];
-            const saved = items.find((p: { chapterIndex: number }) => p.chapterIndex === index);
-            if (saved && typeof saved.scrollPercent === 'number' && saved.scrollPercent > 0) {
-              pendingScrollRestore.current = saved.scrollPercent;
-            }
+      const SK = 'novel-session-id';
+      const sid = localStorage.getItem(SK) || '';
+      if (sid) {
+        try {
+          const data = await apiFetch<{ progress?: Array<{ chapterIndex: number; scrollPercent: number | null }> }>(
+            `/api/public/reading-progress?sessionId=${encodeURIComponent(sid)}`,
+            { signal: abortController.signal, silent: true },
+          );
+          const rawProgress = data.progress || [];
+          const items = Array.isArray(rawProgress) ? rawProgress : [];
+          const saved = items.find((p) => p.chapterIndex === index);
+          if (saved && typeof saved.scrollPercent === 'number' && saved.scrollPercent > 0) {
+            pendingScrollRestore.current = saved.scrollPercent;
           }
-        }
-      } catch { /* best-effort, abort is ok */ }
+        } catch { /* best-effort, abort is ok */ }
+      }
 
       try {
         const data = await apiFetch<{ content?: string }>(`/api/public/chapters/${chapter.id}`, {

@@ -328,7 +328,7 @@ class CookieJar {
         log.info(` Restored ${restored} cookies from SQLite (${stats.length} domains)`);
       }
     } catch (err) {
-      console.error('[CookieJar] Failed to restore from SQLite:', err);
+      logger.error('CookieJar', 'Failed to restore from SQLite', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 

@@ -285,7 +285,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
         if (protocol === 'socks4') {
           const parsedUrl = new URL(urlStr.replace(/^socks4h?:\/\//, 'http://'));
           if (parsedUrl.username || parsedUrl.password) {
-            console.warn('[ProxyManager] SOCKS4 does not support authentication; credentials in URL will be ignored');
+            logger.warn('ProxyManager', 'SOCKS4 does not support authentication; credentials in URL will be ignored');
           }
         }
         const agent = new SocksProxyAgent(proxyUrl.trim());
@@ -2245,7 +2245,7 @@ class ProxyManager {
           log.info(' Periodic verification: complete');
         }
       } catch (err) {
-        console.warn('[ProxyManager] Periodic verification error:', err instanceof Error ? err.message : String(err));
+        logger.warn('ProxyManager', 'Periodic verification error', { error: err instanceof Error ? err.message : String(err) });
       }
     };
 
@@ -2888,7 +2888,7 @@ const MAX_PROXY_CHAINS = 50;
 export function setProxyChain(domain: string, config: ProxyChainConfig): void {
   const normalized = normalizeDomain(domain);
   if (config.hops.length < 2) {
-    console.warn(`[ProxyChain] Chain for ${normalized} has < 2 hops — use single proxy instead`);
+    logger.warn('ProxyChain', `Chain for ${normalized} has < 2 hops — use single proxy instead`, { domain: normalized });
   }
   if (domainProxyChains.size >= MAX_PROXY_CHAINS && !domainProxyChains.has(normalized)) {
     const firstKey = domainProxyChains.keys().next().value;

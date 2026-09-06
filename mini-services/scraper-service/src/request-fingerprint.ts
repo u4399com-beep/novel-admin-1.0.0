@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 // ==================== Sec-CH-UA (Client Hints) Headers ====================
 
 /**
@@ -280,7 +282,7 @@ class RequestFingerprintManager {
       try {
         this.cleanup();
       } catch (err) {
-        console.error('[RequestFingerprint] Cleanup error:', err);
+        logger.error('RequestFingerprint', 'Cleanup error', { error: err instanceof Error ? err.message : String(err) });
       }
     }, CLEANUP_INTERVAL_MS).unref();
   }

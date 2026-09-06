@@ -46,7 +46,7 @@ export const POST = withAuth(async function POST(request: Request) {
 
   try {
     if (!body.targetUrl || typeof body.targetUrl !== 'string') {
-      return NextResponse.json({ error: 'targetUrl is required' }, { status: 400 });
+      return apiError('targetUrl is required', 400);
     }
 
     // SSRF validation on targetUrl

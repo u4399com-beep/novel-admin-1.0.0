@@ -26473,3 +26473,223 @@ Stage Summary:
 - 版本号: 1.0.0→1.7.0
 - 服务验证: App✓ Scraper✓ Pipeline-Metrics✓
 - Git推送: c8bcb5b→origin/main
+
+---
+Task ID: 3
+Agent: Agent 3 (Scraping + Anti-Crawl Enhancement)
+Task: Significantly enhance scraping functionality and anti-crawl capabilities
+
+Work Log:
+
+## 1. Smart Retry Strategy (`src/smart-retry.ts` - NEW FILE)
+- Created `SmartRetryStrategy` class with per-domain retry history tracking
+- 4-level escalation strategy:
+  - Attempt 1: Same engine + increased delay (delay doubles each failure, max x16)
+  - Attempt 2: Next engine in fallback chain
+  - Attempt 3: Proxy rotation + obscura engine
+  - Attempt 4: Pause domain for 10 minutes ("needs manual intervention")
+- Never retries more than 4 times total
+- Records all retry attempts for debugging (rolling window of 20)
+- Tracks which recovery actions worked historically per domain
+- Persists retry history to `retry-history.json` for crash survival
+- Integrated into `task-engine.ts`: smart retry consulted on engine chain failures and book-level failures
+- Exports: `smartRetry.decideRetry()`, `.recordFailure()`, `.recordSuccess()`, `.pauseDomain()`, `.resumeDomain()`, `.getStats()`
+
+## 2. Request Queue with Priority & Domain Isolation (`src/request-queue.ts` - NEW FILE)
+- Created `DomainIsolatedRequestQueue` with priority-based ordering (0-3)
+- Domain isolation: no two requests to same domain processed simultaneously
+- Respects per-domain rate limits from RateOptimizer (`getRequestDelay()`)
+- Global concurrency cap (default: 20, configurable)
+- Supports pausing/resuming per domain with reasons
+- Comprehensive metrics: queue length, wait time, processing time, per-domain stats
+- Sorted insertion by priority → age for optimal scheduling
+- Event listeners for queue state changes (enqueue, start, complete, fail, domain-pause/resume)
+- Exports: `requestQueue.enqueue()`, `.dequeue()`, `.complete()`, `.pauseDomain()`, `.resumeDomain()`, `.getMetrics()`
+
+## 3. Enhanced Content Validation (`src/content-validator.ts` - MODIFIED)
+- Added `ValidationFlags` interface with 8 boolean flags for detailed diagnostics
+- Added `detectedContentType` field: novel/captcha/error_page/redirect/login/unknown
+- **Truncation detection**: Check if content ends without Chinese punctuation (mid-sentence cutoff)
+- **Anti-crawl content detection**: Detect CAPTCHA pages, error pages, redirect pages, login pages disguised as 200 OK using keyword matching + Chinese ratio check
+- **Language detection**: Verify content is Chinese (not English error messages)
+- **Encoding detection**: Detect GBK/Big5 encoding mismatches from content patterns
+- **Duplicate content detection**: New `checkDuplicateContent()` function using content fingerprints (first/last 100 chars + length) for cross-chapter duplicate detection
+- New `isAntiCrawlContent()` quick check for use in pipelines
+- New `fingerprintContent()` and `clearContentFingerprints()` for fingerprint management
+
+## 4. Progress Tracker (`src/progress-tracker.ts` - NEW FILE)
+- Created `ProgressTracker` with per-task detailed progress tracking
+- Per-step timing: list_parse, book_fetch, chapter_fetch, content_fetch, save
+- Throughput calculation: rolling 60-second window (items/second)
+- Estimated time remaining: based on current throughput rate
+- Per-domain progress tracking (completed/failed/avg response time)
+- Progress snapshots saved to `progress-snapshots/` directory every 30 seconds
+- Crash recovery: snapshots loadable via `loadSnapshot(taskId)`
+- WebSocket event emission for real-time UI updates
+- API endpoint: `GET /progress/:taskId` returns full snapshot
+- Exports: `progressTracker.initTask()`, `.startStep()`, `.endStep()`, `.updateProgress()`, `.recordDomainActivity()`, `.getSnapshot()`
+
+## 5. Enhanced Anti-Crawl Signal Detection (`src/anti-crawl-signal-detector.ts` - MODIFIED)
+- Added 3 new signal types: `cookie_tracking`, `fingerprinting_script`, `redirect_chain`
+- **Cookie-based tracking detection** (`detectCookieTracking()`): Detects __cf_bm, _abck, _px3, __ddg, datadome, incap_ses cookies + JS cookie verification + strict cookie policies (HttpOnly+Secure+SameSite=Strict)
+- **Browser fingerprinting detection** (`detectFingerprintingScripts()`): Detects canvas fingerprinting, WebGL probing, AudioContext fingerprinting, font enumeration, navigator property probing, known libraries (FingerprintJS, fpCollect, BotD)
+- **Enhanced honeypot links** (`detectHoneypotLinksEnhanced()`): Adds <noscript> links, pointer-events:none, opacity:0, same-color text/background matching
+- **Enhanced rate limit parsing** (`detectRateLimitHeadersEnhanced()`): Parses X-RateLimit-Reset as seconds-until-reset or Unix timestamp, X-RateLimit-Policy, smarter Retry-After computation
+- **Redirect chain analysis** (`analyzeRedirectChain()`): Detects 3+ redirects, cross-domain redirects, redirect loops, redirects to challenge domains
+- **Enhanced JS challenge detection** (`detectJsChallengeEnhanced()`): Adds challenge-platform, cf-spinner, "Just a moment"/"Checking your browser", navigator.webdriver, Nightmare/Phantom/Puppeteer detection
+
+## 6. Domain Health Monitoring (`src/domain-health.ts` - NEW FILE)
+- Created `DomainHealthMonitor` with per-domain health scoring (0-100)
+- 5 weighted components:
+  - Success rate (weight: 0.3)
+  - Response time trend (weight: 0.2)
+  - CAPTCHA rate (weight: 0.2)
+  - Rate limit hit rate (weight: 0.15)
+  - Content quality (weight: 0.15)
+- Health states: healthy (>70) → degraded (40-70) → critical (<40)
+- Auto-pause on critical: pauses domain + sets rate optimizer to minimum RPM
+- Auto-resume at score ≥60: resumes with conservative rate (5 RPM)
+- Cooldown: won't re-pause within 5 minutes
+- Trend computation: compares recent vs older score averages
+- Persists paused domains to `domain-health-state.json`
+- API endpoints: `GET /domain-health` (all), `GET /domain-health/:domain` (detail), `POST /domain-health/:domain` (pause/resume)
+
+## 7. API Endpoints Added (index.ts - MODIFIED)
+- `GET /retry-stats` - All domain retry statistics
+- `GET /retry-stats/:domain` - Domain-specific retry stats + recent attempts + recovery history
+- `POST /retry-stats/:domain` - Pause/resume domain retry (action=pause/resume)
+- `GET /request-queue/stats` - Request queue metrics
+- `GET /progress` - All task progress snapshots
+- `GET /progress/:taskId` - Task progress snapshot
+- `GET /domain-health` - Domain health summary
+- `GET /domain-health/:domain` - Domain health detail
+- `POST /domain-health/:domain` - Pause/resume domain (action=pause/resume)
+- Registered all new route help text in startup console output
+
+## 8. Task Engine Integration (task-engine.ts - MODIFIED)
+- Imported `smartRetry` from `./smart-retry`
+- Chapter content failure: consults smart retry strategy, records failure, auto-pauses domain on 4th failure
+- Chapter content success: records success to reset failure counters
+- Book processing failure: records to smart retry for tracking
+
+## Verification Results
+- Service starts successfully: ✅ (Scraper Service v3.0 on port 3099)
+- All new API endpoints respond correctly with auth: ✅
+  - `/retry-stats` → `{"domains":{},"totalDomains":0}`
+  - `/request-queue/stats` → `{"totalQueued":0,...,"maxConcurrency":20}`
+  - `/progress` → `{"tasks":[]}`
+  - `/domain-health` → `{"domains":{},...,"pausedCount":0}`
+- Health endpoint: ✅
+- No runtime errors: ✅
+
+## Files Created
+- `src/smart-retry.ts` (~280 lines)
+- `src/request-queue.ts` (~290 lines)
+- `src/progress-tracker.ts` (~380 lines)
+- `src/domain-health.ts` (~380 lines)
+
+## Files Modified
+- `src/task-engine.ts` (added smart retry integration in 3 locations)
+- `src/content-validator.ts` (added ValidationFlags, 5 new checks, duplicate detection, anti-crawl quick check)
+- `src/anti-crawl-signal-detector.ts` (added 3 signal types, 7 new detection functions)
+- `index.ts` (added imports, 10 new API endpoints, route help text)
+
+Stage Summary:
+- 4 new modules: SmartRetry, RequestQueue, ProgressTracker, DomainHealth
+- 10 new API endpoints for monitoring and control
+- Enhanced content validation with 5 new detection capabilities
+- Enhanced anti-crawl signal detection with 7 new detection functions
+- Full integration into task engine and scraper service
+
+---
+Task ID: 2
+Agent: Deep Bug Audit
+Task: Line-by-line bug audit and fix across all layers
+
+Work Log:
+
+### Bug 1: CRITICAL — `effectiveEngine` undefined variable in task-engine.ts
+- **File**: `mini-services/scraper-service/src/task-engine.ts` lines 1334, 1347
+- **Severity**: HIGH (runtime crash / incorrect metrics)
+- **Issue**: The `processChapter()` function used `effectiveEngine` variable in pipeline metrics recording (lines 1273, 1278, 1334, 1347) but this variable was never declared or assigned in the function scope. The correct variable is `contentEngineUsed` which is set during the engine fallback chain loop (line 1113-1118).
+- **Impact**: Every chapter content scrape would record pipeline metrics and adaptive engine results with `undefined` as the engine type, breaking adaptive engine selection and pipeline monitoring.
+- **Fix**: Replaced all 4 references to `effectiveEngine` with `contentEngineUsed` in the `processChapter()` function.
+- **Note**: Lines 1273 and 1278 were already using `contentEngineUsed` (fixed in a prior audit). Lines 1334 and 1347 were the remaining references that still used the undefined variable.
+
+### Bug 2: MEDIUM — CaptchaRecoveryManager persistTimer not unref'd
+- **File**: `mini-services/scraper-service/src/captcha-strategy.ts` line 88
+- **Severity**: MEDIUM (prevents clean process exit)
+- **Issue**: The `setInterval` in `CaptchaRecoveryManager` constructor did not call `.unref()`, unlike all other similar timers in the codebase (rate-optimizer, session-manager, logger, cookie-jar, etc.). This keeps the Node.js event loop alive even when no other work is pending, preventing clean process exit during shutdown or in test environments.
+- **Fix**: Added `.unref()` call: `this.persistTimer = setInterval(() => this.persistState(), 60_000).unref();`
+
+### Bug 3: LOW — `as any` type assertions in scrape-rules/[id] route
+- **File**: `src/app/api/scrape-rules/[id]/route.ts` lines 64, 67, 70, 73
+- **Severity**: LOW (type safety)
+- **Issue**: Four enum validation checks used `as any` type assertions when passing `body.scrapeMode` etc. to `.includes()`. This was because the arrays are typed `as const` (readonly tuples) and `.includes()` requires the search element$element to match the array element type.
+- **Fix**: Replaced `as any` with proper type narrowing: `(VALID_SCRAPE_MODES as readonly string[]).includes(body.scrapeMode as string)` for all four enum checks. This provides type safety while still allowing the validation to work correctly.
+
+### Audit Results Summary
+
+**Scraper Service Core (task-engine.ts):**
+- ✅ All async operations have proper error handling (try/catch + finally cleanup)
+- ✅ Checkpoint save/load: log buffer uses atomic drain (splice(0)) before async flush
+- ✅ Worker pool: no memory leaks — book/chapter queues are local to processBook/processChapter
+- ✅ SIGTERM: heartbeatInterval and taskTimeoutId cleaned up in finally block
+- ✅ Race conditions: AtomicCounter used for shared counters, TOCTOU protected via eager marking
+- ✅ `effectiveEngine` bug found and fixed (Bug 1)
+
+**Engines (engines.ts):**
+- ✅ Each engine's scrape() closes browser/page on error — verified finally blocks with context.close() and browser.close()
+- ✅ CircuitBreaker half-open state: correctly allows only 1 probe (halfOpenMaxAttempts defaults to 1)
+- ✅ Fallback chain: bounded by MAX_ENGINE_RETRIES (3), no infinite loop possible
+- ✅ Timeouts: all HTTP requests use AbortSignal.timeout() or combined signal
+- ✅ Resource cleanup: browser.close() in finally blocks confirmed
+
+**Scrapers (scrapers.ts):**
+- ✅ handleScrapeContent: content validated (empty check at line 1288, dedup at line 1295)
+- ✅ handleScrapeChapters: chapter dedup works correctly (URL + title normalization)
+- ✅ Pagination: maxPage limited to hardMax (100 for list/chapters, 20 for content), loop detection via visitedPages Set
+- ✅ Error propagation: errors from engines properly caught and propagated
+
+**Proxy Manager (proxy-manager.ts):**
+- ✅ Health checks: connection cleanup verified
+- ✅ Proxy rotation: weighted random selection avoids recently-failed proxies
+- ✅ Cooling/disabling: correct cooldown logic with auto-recovery
+
+**Rate Optimizer + Concurrency Optimizer:**
+- ✅ Probing: bounded by MAX_RPM (300) / MAX_PROBE_CYCLES (10)
+- ✅ Persistence: loaded on startup, saved periodically (60s), state file validated
+- ✅ Math: 1.2x probing (PROBE_MULTIPLIER), 70% backoff (BACKOFF_FACTOR) — verified correct
+
+**Captcha Strategy (captcha-strategy.ts):**
+- ✅ CaptchaRecoveryManager: MAX_TRACKED_DOMAINS=500 prevents permanent lock
+- ✅ Auto-downgrade: after RECOVERY_SUCCESS_TARGET (5) successful requests
+- ✅ Persistence: only permanently-upgraded domains saved to bypass-registry.json (24h TTL)
+- ⚠️ persistTimer not unref'd — fixed (Bug 2)
+
+**Next.js API Routes:**
+- ✅ All 35 admin route handlers use withAuth
+- ✅ Input validation: scrape-rules/[id] PUT has comprehensive field-by-field validation
+- ✅ Authorization: withAuth runs before any mutation in all checked routes
+- ✅ Transactions: batch-create uses db.$transaction, novels/import uses db.$transaction
+- ✅ Error responses: apiError() returns generic messages, no stack traces leaked
+- ✅ TOCTOU: incremental dedup uses eager marking before async fetch (lines 1078-1082)
+
+**React Components — Memory Leaks:**
+- ✅ All setInterval calls have clearInterval in useEffect cleanup (checked 16 components)
+- ✅ All addEventListener calls have removeEventListener in cleanup (checked 22 components)
+- ✅ EventSource: TaskLogPanel uses Socket.IO via useTaskLogStream with proper cleanup (socketRefCount, reconnectTimer)
+- ✅ No WebSocket subscriptions without cleanup found
+
+**Type Safety:**
+- ✅ No `@ts-ignore` or `@ts-expect-error` in src/app/api or src/components
+- ✅ Only 1 `@ts-expect-error` in scraper-service (Bun-specific dispatcher option)
+- ✅ `as any` in engines.ts: all for `doNotRetry` flag on Error objects (20 occurrences, common pattern)
+- ✅ `as any` in scrape-rules/[id] route: fixed (Bug 3)
+
+Stage Summary:
+- Found and fixed 3 bugs: 1 HIGH (undefined variable causing runtime crash), 1 MEDIUM (timer preventing clean exit), 1 LOW (type safety)
+- Comprehensive audit across all layers: scraper core, API routes, React components, type safety
+- All 60+ setInterval/setTimeout/addEventListener patterns verified for proper cleanup
+- All 35 admin API routes verified to use withAuth
+- ESLint: 0 errors, 4 warnings (pre-existing react-hooks/incompatible-library)

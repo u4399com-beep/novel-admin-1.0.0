@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { sanitizeField, safeJson } from '@/lib/api-utils';
+import { sanitizeField, safeJson, apiError } from '@/lib/api-utils';
 import { convertTraditionalToSimplified, isProbablyTraditional } from '@/lib/t2s-converter';
 
 /**
@@ -16,17 +16,17 @@ export const POST = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async (
     try {
       body = await safeJson<{ text?: unknown }>(request);
     } catch {
-      return NextResponse.json({ error: '请求数据格式错误' }, { status: 400 });
+      return apiError('请求数据格式错误', 400);
     }
 
     const raw = typeof body?.text === 'string' ? body.text : '';
 
     if (!raw) {
-      return NextResponse.json({ error: 'text 字段不能为空' }, { status: 400 });
+      return apiError('text 字段不能为空', 400);
     }
 
     if (raw.length > 10000) {
-      return NextResponse.json({ error: '文本长度不能超过 10000 字符' }, { status: 400 });
+      return apiError('文本长度不能超过 10000 字符', 400);
     }
 
     const text = sanitizeField(raw, 10000);
@@ -35,6 +35,6 @@ export const POST = withPublicRateLimit({ capacity: 60, refillRate: 2 }, async (
 
     return NextResponse.json({ simplified, wasTraditional });
   } catch {
-    return NextResponse.json({ error: '请求格式错误' }, { status: 400 });
+    return apiError('请求格式错误', 400);
   }
 });

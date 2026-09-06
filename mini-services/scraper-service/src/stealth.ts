@@ -3571,9 +3571,9 @@ export function getStealthScript(profile: FingerprintProfile): string {
       } catch(_tzErr) {}
       // Log any warnings (non-blocking, debugging only)
       if (_warnings.length > 0) {
-        console.warn('[Obscura] Fingerprint consistency warnings:');
+        process.stderr.write('[Obscura] Fingerprint consistency warnings:\n');
         for (var _w = 0; _w < _warnings.length; _w++) {
-          console.warn('[Obscura]   ' + _warnings[_w]);
+          process.stderr.write('[Obscura]   ' + _warnings[_w] + '\n');
         }
       }
     })();

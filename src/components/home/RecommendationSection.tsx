@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { Sparkles, TrendingUp } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { NovelCover } from '@/components/shared/NovelCover';
-import { formatWordCount, getStatusInfo } from '@/components/home/shared-types';
+import { getStatusInfo } from '@/components/home/shared-types';
 import type { NovelCardData } from '@/components/home/shared-types';
 
 // ─── Session ID helper ────────────────────────────────────────

@@ -154,9 +154,60 @@ export function NovelGrid({
                 </>
               ) : (
                 <>
-                  <div className="h-20 w-20 rounded-2xl bg-muted flex items-center justify-center mb-5">
-                    <Book className="h-10 w-10 text-muted-foreground/50" />
-                  </div>
+                  {/* Engaging empty state illustration */}
+                  <svg viewBox="0 0 120 120" fill="none" className="h-24 w-24 mb-4" aria-hidden="true">
+                    <motion.circle
+                      cx="60" cy="60" r="48"
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 0.08 }}
+                      transition={{ duration: 0.6, ease: 'easeOut' }}
+                      fill="currentColor"
+                      className="text-primary"
+                    />
+                    <motion.path
+                      d="M36 30C36 30 42 22 60 22C78 22 84 30 84 30V86C84 86 78 78 60 78C42 78 36 86 36 86V30Z"
+                      initial={{ pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 0.5 }}
+                      transition={{ duration: 1.2, ease: 'easeInOut' }}
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      className="text-primary"
+                    />
+                    <motion.path
+                      d="M60 22V78"
+                      initial={{ pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 0.4 }}
+                      transition={{ duration: 0.8, delay: 0.4, ease: 'easeInOut' }}
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      className="text-primary"
+                    />
+                    <motion.path
+                      d="M44 38H54M44 46H54M44 54H50M66 38H76M66 46H76M66 54H72"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 0.35 }}
+                      transition={{ duration: 0.6, delay: 0.8 }}
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      className="text-primary"
+                    />
+                    {/* Sparkles */}
+                    <motion.circle cx="90" cy="28" r="2.5" fill="currentColor" className="text-primary"
+                      initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 0.5 }}
+                      transition={{ duration: 0.4, delay: 1.0 }}
+                    />
+                    <motion.circle cx="30" cy="82" r="2" fill="currentColor" className="text-primary"
+                      initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 0.35 }}
+                      transition={{ duration: 0.4, delay: 1.2 }}
+                    />
+                    <motion.circle cx="96" cy="60" r="1.5" fill="currentColor" className="text-primary"
+                      initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 0.3 }}
+                      transition={{ duration: 0.4, delay: 1.4 }}
+                    />
+                  </svg>
                   <h3 className="text-xl font-semibold mb-2 text-shimmer">暂无小说</h3>
                   <p className="text-sm text-muted-foreground mb-6 max-w-xs text-gradient-muted">
                     开始添加您的第一本小说，或等待采集任务自动入库
@@ -164,7 +215,7 @@ export function NovelGrid({
                   <Button
                     variant="default"
                     onClick={onLoginClick}
-                    className="gap-2"
+                    className="gap-2 shadow-md hover:shadow-lg transition-shadow"
                   >
                     <Shield className="h-4 w-4" />
                     前往管理后台

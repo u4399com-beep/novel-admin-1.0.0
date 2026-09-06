@@ -13,6 +13,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
+import { logger } from './logger';
 
 // ==================== Types ====================
 
@@ -427,7 +428,7 @@ export async function batchCalibrate(apply: boolean = false): Promise<Calibratio
         }
         results.push(result);
       } catch (err) {
-        console.error(`[RateCalibration] Failed to calibrate ${file}:`, err);
+        logger.error('RateCalibration', `Failed to calibrate ${file}`, { file, error: err instanceof Error ? err.message : String(err) });
       }
     }
 

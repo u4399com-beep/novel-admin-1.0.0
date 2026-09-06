@@ -51,7 +51,10 @@ export type ResponseSignalType =
   | 'suspicious_redirect'
   | 'empty_with_200'
   | 'encoding_mismatch'
-  | 'fingerprint_inconsistency';
+  | 'fingerprint_inconsistency'
+  | 'cookie_tracking'
+  | 'fingerprinting_script'
+  | 'redirect_chain';
 
 export interface HtmlSignalResult {
   /** Signals found in HTML content */
@@ -786,6 +789,416 @@ export function detectImperva(html: string, headers: Record<string, string>): Re
       type: 'js_challenge_param',
       confidence: Math.min(0.5 + indicators.length * 0.15, 0.9),
       detail: `Imperva/Incapsula detected: ${indicators.join(', ')}`,
+    });
+  }
+
+  return signals;
+}
+
+// ==================== Cookie-based Tracking Detection ====================
+
+/**
+ * Detect cookie-based tracking that must be present in subsequent requests.
+ * Some sites set verification cookies via JS that must be echoed back,
+ * or use cookie-based bot tracking (e.g., __cf_bm, _abck).
+ */
+export function detectCookieTracking(html: string, headers: Record<string, string>): ResponseSignal[] {
+  const signals: ResponseSignal[] = [];
+  const indicators: string[] = [];
+
+  // Detect Set-Cookie headers with tracking/bot cookies
+  const setCookie = headers['set-cookie'] || '';
+  const trackingCookiePatterns = [
+    /__cf_bm/i,           // Cloudflare bot management
+    /__cfduid/i,          // Cloudflare
+    /_abck/i,             // Akamai Bot Manager
+    /ak_bmsc/i,           // Akamai
+    /_px3/i,              // PerimeterX
+    /_px2/i,              // PerimeterX
+    /__ddg/i,             // DDoS-Guard
+    /datadome/i,          // DataDome
+    /incap_ses/i,         // Imperva/Incapsula
+    /visid_incap/i,       // Imperva/Incapsula
+  ];
+
+  for (const pattern of trackingCookiePatterns) {
+    if (pattern.test(setCookie)) {
+      const match = setCookie.match(/([^=]+)=/)?.[1];
+      indicators.push(`tracking cookie: ${match || pattern.source}`);
+    }
+  }
+
+  // Detect JS that sets cookies for verification
+  if (/document\.cookie\s*=/.test(html)) {
+    // Check if cookie-setting is tied to challenge/verification
+    if (/__cf|_px|ddg|_abck|challenge|verify|bot/i.test(html)) {
+      indicators.push('JS cookie set for verification/bot-check');
+    }
+  }
+
+  // Detect cookies with HttpOnly + Secure + SameSite=Strict (anti-bot fingerprinting)
+  if (/HttpOnly/i.test(setCookie) && /Secure/i.test(setCookie) && /SameSite\s*=\s*Strict/i.test(setCookie)) {
+    indicators.push('strict cookie policy (HttpOnly+Secure+SameSite=Strict)');
+  }
+
+  if (indicators.length > 0) {
+    signals.push({
+      type: 'cookie_tracking',
+      confidence: Math.min(0.3 + indicators.length * 0.15, 0.85),
+      detail: `Cookie tracking: ${indicators.join(', ')}`,
+    });
+  }
+
+  return signals;
+}
+
+// ==================== Browser Fingerprinting Detection ====================
+
+/**
+ * Detect browser fingerprinting scripts that try to identify bots
+ * by probing canvas, WebGL, AudioContext, fonts, etc.
+ */
+export function detectFingerprintingScripts(html: string): ResponseSignal[] {
+  const signals: ResponseSignal[] = [];
+  const indicators: string[] = [];
+
+  // Canvas fingerprinting
+  if (/canvas/i.test(html) && /toDataURL|getImageData|fillText|fillRect/i.test(html)) {
+    if (/fingerprint|fp|fpCollect|Fingerprint2/i.test(html)) {
+      indicators.push('canvas fingerprinting');
+    }
+  }
+
+  // WebGL fingerprinting
+  if (/getParameter|getExtension|getShaderPrecisionFormat/i.test(html)) {
+    if (/webgl|WEBGL/i.test(html)) {
+      indicators.push('WebGL fingerprinting');
+    }
+  }
+
+  // AudioContext fingerprinting
+  if (/AudioContext|createOscillator|createDynamicsCompressor|createAnalyser/i.test(html)) {
+    indicators.push('AudioContext fingerprinting');
+  }
+
+  // Font detection
+  if (/measureText|offsetWidth|offsetHeight/i.test(html) && /font/i.test(html)) {
+    if (/Fingerprint2|fpCollect|fingerprintjs/i.test(html)) {
+      indicators.push('font enumeration fingerprinting');
+    }
+  }
+
+  // Navigator/screen fingerprinting
+  if (/navigator\.(platform|vendor|language|hardwareConcurrency|deviceMemory)/i.test(html)) {
+    if (/fingerprint|detect|bot/i.test(html)) {
+      indicators.push('navigator property probing');
+    }
+  }
+
+  // Known fingerprinting libraries
+  if (/fingerprintjs2|fpjs|Fingerprint2|fpCollect/i.test(html)) {
+    indicators.push('known fingerprinting library (FingerprintJS/fpCollect)');
+  }
+  if (/botd|BotDetect/i.test(html)) {
+    indicators.push('bot detection library (BotD)');
+  }
+
+  if (indicators.length > 0) {
+    signals.push({
+      type: 'fingerprinting_script',
+      confidence: Math.min(0.5 + indicators.length * 0.15, 0.9),
+      detail: `Fingerprinting: ${indicators.join(', ')}`,
+    });
+  }
+
+  return signals;
+}
+
+// ==================== Enhanced Honeypot Link Detection ====================
+
+/**
+ * Enhanced honeypot detection: detect links with display:none, visibility:hidden,
+ * or off-screen positioning (more patterns than the base detectHoneypotLinks).
+ */
+export function detectHoneypotLinksEnhanced(html: string): HtmlSignal[] {
+  const signals: HtmlSignal[] = [];
+
+  // Base detection (reuse existing)
+  signals.push(...detectHoneypotLinks(html));
+
+  // Additional: links inside <noscript> tags (bots follow, browsers don't when JS enabled)
+  const noscriptLinkPattern = /<noscript[^>]*>([\s\S]*?)<\/noscript>/gi;
+  let noscriptMatch;
+  while ((noscriptMatch = noscriptLinkPattern.exec(html)) !== null) {
+    const noscriptContent = noscriptMatch[1];
+    const linkPattern = /<a[^>]+href=["']([^"']+)["']/gi;
+    let linkMatch;
+    while ((linkMatch = linkPattern.exec(noscriptContent)) !== null) {
+      signals.push({
+        type: 'honeypot_link',
+        detail: `<noscript> link: ${linkMatch[1].slice(0, 80)}`,
+        confidence: 0.6,
+      });
+    }
+  }
+
+  // Links with pointer-events:none (clickable in DOM but invisible to mouse)
+  const pointerEventsPattern = /<a[^>]+style=["'][^"']*pointer-events\s*:\s*none[^"']*["'][^>]*href=["']([^"']+)["']/gi;
+  let peMatch;
+  while ((peMatch = pointerEventsPattern.exec(html)) !== null) {
+    signals.push({
+      type: 'honeypot_link',
+      detail: `pointer-events:none link: ${peMatch[1].slice(0, 80)}`,
+      confidence: 0.65,
+    });
+  }
+
+  // Links with opacity:0 (invisible but present)
+  const opacityPattern = /<a[^>]+style=["'][^"']*opacity\s*:\s*0[^"']*["'][^>]*href=["']([^"']+)["']/gi;
+  let opMatch;
+  while ((opMatch = opacityPattern.exec(html)) !== null) {
+    signals.push({
+      type: 'honeypot_link',
+      detail: `opacity:0 link: ${opMatch[1].slice(0, 80)}`,
+      confidence: 0.55,
+    });
+  }
+
+  // Links with color matching background (same text/bg color)
+  // Simplified: detect same color value in color and background-color
+  const colorMatchPattern = /<a[^>]+style=["'][^"']*color\s*:\s*(#[0-9a-fA-F]{3,6}|rgba?\([^)]+\))[^"']*background[^"']*:\s*\1[^"']*["'][^>]*href=["']([^"']+)["']/gi;
+  let cmMatch;
+  while ((cmMatch = colorMatchPattern.exec(html)) !== null) {
+    signals.push({
+      type: 'honeypot_link',
+      detail: `same-color link: ${cmMatch[2]?.slice(0, 80) || 'unknown'}`,
+      confidence: 0.7,
+    });
+  }
+
+  return signals;
+}
+
+// ==================== Enhanced Rate Limit Header Parsing ====================
+
+export interface EnhancedRateLimitInfo {
+  limit?: number;
+  remaining?: number;
+  reset?: number;
+  /** Seconds until rate limit window resets (parsed from X-RateLimit-Reset) */
+  resetIn?: number;
+  /** Policy name (e.g., "global", "per-ip") */
+  policy?: string;
+}
+
+/**
+ * Enhanced rate limit header parsing that extracts X-RateLimit-Reset,
+ * X-RateLimit-Remaining, and policy information for smarter backoff.
+ */
+export function detectRateLimitHeadersEnhanced(headers: Record<string, string>): {
+  signals: ResponseSignal[];
+  retryAfterMs?: number;
+  rateLimitInfo: EnhancedRateLimitInfo;
+} {
+  // Start with base detection
+  const baseResult = detectRateLimitHeaders(headers);
+  const enhancedInfo: EnhancedRateLimitInfo = { ...baseResult.rateLimitInfo };
+
+  // Parse X-RateLimit-Reset as seconds-until-reset (some APIs use this format)
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+
+    // X-RateLimit-Reset in seconds from now
+    if (lower === 'x-ratelimit-reset' || lower === 'x-rate-limit-reset') {
+      const numVal = parseInt(value, 10);
+      if (!isNaN(numVal)) {
+        // Could be Unix timestamp or seconds-until-reset
+        if (numVal > 1e10) {
+          // Likely Unix timestamp (ms)
+          enhancedInfo.resetIn = Math.round((numVal - Date.now()) / 1000);
+        } else if (numVal > 1e6) {
+          // Likely Unix timestamp (seconds)
+          enhancedInfo.resetIn = numVal - Math.floor(Date.now() / 1000);
+        } else {
+          // Likely seconds-until-reset
+          enhancedInfo.resetIn = numVal;
+        }
+      }
+    }
+
+    // X-RateLimit-Policy
+    if (lower === 'x-ratelimit-policy' || lower === 'x-rate-limit-policy') {
+      enhancedInfo.policy = value.slice(0, 100);
+    }
+  }
+
+  // If resetIn is available and no retryAfterMs, compute it
+  let retryAfterMs = baseResult.retryAfterMs;
+  if (!retryAfterMs && enhancedInfo.resetIn && enhancedInfo.resetIn > 0) {
+    retryAfterMs = enhancedInfo.resetIn * 1000;
+    // Add a signal for smarter backoff
+    if (!baseResult.signals.some(s => s.type === 'retry_after')) {
+      baseResult.signals.push({
+        type: 'retry_after',
+        confidence: 0.5,
+        detail: `Rate limit resets in ${enhancedInfo.resetIn}s`,
+      });
+    }
+  }
+
+  return {
+    signals: baseResult.signals,
+    retryAfterMs,
+    rateLimitInfo: enhancedInfo,
+  };
+}
+
+// ==================== Redirect Chain Analysis ====================
+
+export interface RedirectChainInfo {
+  /** Number of redirects */
+  redirectCount: number;
+  /** Whether any redirect went to a different domain */
+  crossDomainRedirect: boolean;
+  /** Domains in the redirect chain */
+  domains: string[];
+  /** Whether the chain is suspicious */
+  isSuspicious: boolean;
+  /** Reason if suspicious */
+  suspiciousReason?: string;
+}
+
+/**
+ * Analyze a redirect chain for suspicious patterns.
+ * Detects: 3+ redirects, redirects to different domain, redirect loops.
+ */
+export function analyzeRedirectChain(
+  urls: string[],
+): RedirectChainInfo & { signals: ResponseSignal[] } {
+  const signals: ResponseSignal[] = [];
+  const domains: string[] = [];
+
+  for (const url of urls) {
+    try {
+      const domain = new URL(url).hostname;
+      if (!domains.includes(domain)) {
+        domains.push(domain);
+      }
+    } catch {}
+  }
+
+  const redirectCount = urls.length - 1; // First URL is the original
+  const crossDomainRedirect = domains.length > 1;
+  let isSuspicious = false;
+  let suspiciousReason: string | undefined;
+
+  // 3+ redirects is suspicious
+  if (redirectCount >= 3) {
+    isSuspicious = true;
+    suspiciousReason = `${redirectCount} redirects in chain`;
+    signals.push({
+      type: 'redirect_chain',
+      confidence: Math.min(0.3 + redirectCount * 0.1, 0.8),
+      detail: `Long redirect chain: ${redirectCount} hops through ${domains.join(' → ')}`,
+    });
+  }
+
+  // Cross-domain redirect is suspicious
+  if (crossDomainRedirect && redirectCount >= 2) {
+    isSuspicious = true;
+    suspiciousReason = (suspiciousReason ? suspiciousReason + ', ' : '') + 'cross-domain redirect';
+    signals.push({
+      type: 'redirect_chain',
+      confidence: 0.5,
+      detail: `Cross-domain redirect chain: ${domains.join(' → ')}`,
+    });
+  }
+
+  // Check for redirect loops (same URL appearing twice)
+  const seenUrls = new Set<string>();
+  for (const url of urls) {
+    if (seenUrls.has(url)) {
+      isSuspicious = true;
+      suspiciousReason = (suspiciousReason ? suspiciousReason + ', ' : '') + 'redirect loop detected';
+      signals.push({
+        type: 'redirect_chain',
+        confidence: 0.7,
+        detail: `Redirect loop detected: ${url.slice(0, 80)}`,
+      });
+      break;
+    }
+    seenUrls.add(url);
+  }
+
+  // Redirect to known challenge/captcha domains
+  const challengeDomains = ['challenges.cloudflare.com', 'www.google.com/recaptcha', 'captcha'];
+  const lastUrl = urls[urls.length - 1];
+  for (const cd of challengeDomains) {
+    if (lastUrl.includes(cd)) {
+      isSuspicious = true;
+      suspiciousReason = (suspiciousReason ? suspiciousReason + ', ' : '') + 'redirect to challenge domain';
+      signals.push({
+        type: 'redirect_chain',
+        confidence: 0.8,
+        detail: `Redirect to challenge domain: ${cd}`,
+      });
+      break;
+    }
+  }
+
+  return {
+    redirectCount,
+    crossDomainRedirect,
+    domains,
+    isSuspicious,
+    suspiciousReason,
+    signals,
+  };
+}
+
+// ==================== Enhanced JS Challenge Detection ====================
+
+/**
+ * Enhanced JS challenge detection covering more patterns.
+ */
+export function detectJsChallengeEnhanced(html: string): ResponseSignal[] {
+  const signals: ResponseSignal[] = [];
+
+  // Base detection
+  signals.push(...detectJsChallenge(html));
+
+  // Additional Cloudflare patterns
+  const additionalCfPatterns: string[] = [];
+  if (/challenge-platform/i.test(html)) additionalCfPatterns.push('challenge-platform');
+  if (/_cf_chl_opt/.test(html)) additionalCfPatterns.push('_cf_chl_opt (CF challenge options)');
+  if (/cf-challenge/i.test(html) && !/__CF\$cv\$params/.test(html)) additionalCfPatterns.push('cf-challenge element');
+  if (/cf-spinner/i.test(html)) additionalCfPatterns.push('cf-spinner (CF challenge loading)');
+  if (/Just a moment/i.test(html) || /Checking your browser/i.test(html)) {
+    additionalCfPatterns.push('"Just a moment" / "Checking your browser" text');
+  }
+
+  // Generic challenge patterns
+  if (/window\.location\s*=\s*["'][^"']*challenge/i.test(html)) {
+    additionalCfPatterns.push('JS redirect to challenge URL');
+  }
+  if (/document\.getElementById.*challenge/i.test(html)) {
+    additionalCfPatterns.push('JS challenge element access');
+  }
+  if (/navigator\.webdriver/i.test(html)) {
+    additionalCfPatterns.push('navigator.webdriver detection (Selenium)');
+  }
+  if (/window\.__nightmare/i.test(html) || /window\._phantom/i.test(html) || /window\.__puppeteer/i.test(html)) {
+    additionalCfPatterns.push('headless browser detection (Nightmare/Phantom/Puppeteer)');
+  }
+  if (/chrome\.runtime/i.test(html) && /bot|detect/i.test(html)) {
+    additionalCfPatterns.push('Chrome extension bot detection');
+  }
+
+  if (additionalCfPatterns.length > 0) {
+    signals.push({
+      type: 'js_challenge_param',
+      confidence: Math.min(0.5 + additionalCfPatterns.length * 0.1, 0.95),
+      detail: `Enhanced JS challenge: ${additionalCfPatterns.join(', ')}`,
     });
   }
 

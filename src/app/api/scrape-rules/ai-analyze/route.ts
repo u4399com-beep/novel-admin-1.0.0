@@ -170,7 +170,7 @@ export const POST = withAuth(async function POST(request: NextRequest) {
   let body: AiAnalyzeRequest;
   try {
     body = await safeJson<AiAnalyzeRequest>(request);
-  } catch (err) {
+  } catch (_err) {
     return apiError("请求体解析失败", 400);
   }
 

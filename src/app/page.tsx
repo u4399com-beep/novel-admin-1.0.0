@@ -29,6 +29,41 @@ import { useSiteName } from '@/lib/use-site-name';
 import { useLayoutTheme } from '@/lib/use-layout-theme';
 import { apiFetch, FetchError } from '@/lib/api-fetch';
 
+// ─── Back To Top Button with Progress Ring ──────────────────────────
+function BackToTopButton() {
+  const [progress, setProgress] = useState(0);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    function onScroll() {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const p = docHeight > 0 ? Math.min((scrollTop / docHeight) * 100, 100) : 0;
+      setProgress(p);
+      setVisible(scrollTop > 200);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  // SVG circle params
+  const r = 10;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (progress / 100) * circ;
+  if (!visible) return <span className="text-muted-foreground/20">·</span>;
+  return (
+    <button
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      className="footer-link inline-flex items-center gap-1.5 text-muted-foreground/60 hover:text-primary transition-colors duration-200"
+      aria-label="回到顶部"
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" className="rotate-[-90deg]">
+        <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted-foreground/20" />
+        <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 150ms ease' }} />
+      </svg>
+      回到顶部
+    </button>
+  );
+}
+
 
 // ─── Scroll Progress Bar ────────────────────────────────────────────────
 
@@ -450,7 +485,7 @@ export default function HomePage() {
               <span className="text-muted-foreground/20">·</span>
               <Link href="/login" className="footer-link text-muted-foreground/60 hover:text-primary transition-colors duration-200">管理</Link>
               <span className="text-muted-foreground/20">·</span>
-              <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="footer-link text-muted-foreground/60 hover:text-primary transition-colors duration-200">回到顶部</button>
+              <BackToTopButton />
             </div>
             {/* Friendly Links & Link Wheel */}
             <FriendlyLinksFooter />

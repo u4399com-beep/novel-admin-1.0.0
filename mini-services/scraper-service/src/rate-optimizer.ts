@@ -122,7 +122,7 @@ function persistState(states: Map<string, DomainRateState>): void {
   } catch (err) {
     // Non-blocking: persistence failure shouldn't affect operation
     if (process.env.DEBUG === 'true') {
-      console.error('[RateOptimizer] Persist failed:', err);
+      logger.error('RateOptimizer', 'Persist failed', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 }

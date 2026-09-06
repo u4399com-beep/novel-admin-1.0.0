@@ -1039,6 +1039,6 @@ setInterval(() => {
       log.info(` Cleaned up ${cleaned} inactive domains`);
     }
   } catch (err) {
-    console.error('[AntiCrawlAdvisor] Periodic cleanup error:', err);
+    logger.error('AntiCrawlAdvisor', 'Periodic cleanup error', { error: err instanceof Error ? err.message : String(err) });
   }
 }, 30 * 60 * 1000).unref();

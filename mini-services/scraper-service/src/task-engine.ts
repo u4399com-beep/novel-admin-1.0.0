@@ -26,6 +26,7 @@ import { qualityScorer } from "./quality-scorer";
 import { contentDeduplicator } from "./content-dedup";
 import { pipelineMetrics } from "./pipeline-metrics";
 import { adaptiveEngineSelector } from "./adaptive-engine";
+import { smartRetry } from "./smart-retry";
 import { logger } from "./logger";
 
 const log = logger.child("TaskEngine");
@@ -245,7 +246,7 @@ async function updateTaskProgress(taskId: string, updates: Partial<ScrapeTask>) 
       await apiCall("PUT", `/api/scrape-tasks/${taskId}`, updates);
     }
   } catch (err) {
-    console.error(`[Task] Failed to update task progress:`, err);
+    logger.error('Task', 'Failed to update task progress', { error: err instanceof Error ? err.message : String(err) });
   }
 
   // Stream progress to WebSocket service (best-effort)
@@ -291,7 +292,7 @@ async function addTaskLog(
     try {
       await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs });
     } catch (err) {
-      console.error(`[Task] Failed to flush ${logs.length} logs:`, err);
+      logger.error('Task', `Failed to flush ${logs.length} logs`, { error: err instanceof Error ? err.message : String(err) });
       // Put logs back at the front of the buffer for retry (same as periodic flusher)
       buffer.unshift(...logs);
       _totalBufferEntries += logs.length;
@@ -324,7 +325,7 @@ function ensureLogFlusher() {
       try {
         await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs: batch });
       } catch (err) {
-        console.error(`[Task] Failed to flush ${batch.length} logs for ${taskId}:`, err);
+        logger.error('Task', `Failed to flush ${batch.length} logs for ${taskId}`, { error: err instanceof Error ? err.message : String(err) });
         // Put logs back at the front of the buffer for retry
         const taskLogs = logBuffer.get(taskId);
         if (taskLogs) {
@@ -357,7 +358,7 @@ async function flushTaskLogs(taskId: string) {
   try {
     await apiCall("POST", `/api/scrape-tasks/${taskId}/logs/batch`, { logs: batch });
   } catch (err) {
-    console.error(`[Task] Failed to final-flush logs for ${taskId}:`, err);
+    logger.error('Task', `Failed to final-flush logs for ${taskId}`, { error: err instanceof Error ? err.message : String(err) });
     // Re-insert for periodic retry
     const existing = logBuffer.get(taskId);
     if (existing) {
@@ -426,7 +427,7 @@ export async function executeTask(taskId: string) {
         log.info(`Merged full rule config from /api/scrape-rules/${rule.id}`);
       }
     } catch (err) {
-      console.warn(`[Task ${taskId}] Could not fetch full rule ${rule.id} (continuing with task payload):`, err instanceof Error ? err.message : err);
+      logger.warn('Task', `Could not fetch full rule ${rule.id} (continuing with task payload)`, { taskId, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -760,7 +761,7 @@ async function executeTaskBody(
         if (isExisting) {
           const putResult = await apiCall("PUT", `/api/novels/${novelId}`, novelData, abortController.signal);
           if (putResult.status && putResult.status >= 400) {
-            console.warn(`  [Book] Failed to update novel ${novelId}: ${putResult.status}`);
+            logger.warn('Book', `Failed to update novel ${novelId}`, { novelId, status: putResult.status });
           }
           await addTaskLog(taskId, "info", `更新小说: ${bookInfo.title}`, bookUrl);
         } else {
@@ -790,14 +791,14 @@ async function executeTaskBody(
           const coverFilename = `${novelId}.webp`;
           const savePath = `${rule.coverSavePath}/${coverFilename}`;
           if (!isSafeSavePath(savePath)) {
-            console.error(`[Task ${taskId}] Invalid cover save path: ${savePath}`);
+            logger.error('Task', `Invalid cover save path`, { taskId, savePath });
             await addTaskLog(taskId, "warn", `封面保存路径无效: ${savePath}`, bookInfo.coverUrl);
           } else {
             await handleDownloadCover(bookInfo.coverUrl, savePath);
             await apiCall("PUT", `/api/novels/${novelId}`, { coverPath: savePath }, abortController.signal);
           }
         } catch (coverErr) {
-          console.error(`[Task ${taskId}] Cover download failed for ${bookInfo.title}:`, coverErr);
+          logger.error('Task', `Cover download failed for ${bookInfo.title}`, { taskId, error: coverErr instanceof Error ? coverErr.message : String(coverErr) });
           await addTaskLog(taskId, "warn", `封面下载失败: ${bookInfo.title}`, bookInfo.coverUrl, String(coverErr));
         }
       }
@@ -881,10 +882,13 @@ async function executeTaskBody(
         }
       } else {
         failedItemsCount.increment();
+        // Record non-CAPTCHA failure for smart retry tracking
+        const bkDomain2 = extractDomain(bookUrl);
+        smartRetry.recordFailure(bkDomain2, bookUrl, errMsg, getEffectiveEngine(bookUrl, engineType));
       }
 
       recordAdaptiveResponse(bookUrl, 0, false);
-      console.error(`[Task ${taskId}] Error processing book ${bookUrl}:`, errMsg);
+      logger.error('Task', `Error processing book ${bookUrl}`, { taskId, error: errMsg });
       if (!isCaptcha) {
         await addTaskLog(taskId, "error", `采集书籍失败: ${bookUrl}`, bookUrl, errMsg.slice(0, 500));
       }
@@ -1046,7 +1050,7 @@ async function executeTaskBody(
             }
           }
         } catch (err) {
-          console.warn(`[Task ${taskId}] Failed to fetch existing chapters for ${book.id}, incremental dedup disabled:`, err instanceof Error ? err.message : String(err));
+          logger.warn('Task', `Failed to fetch existing chapters for ${book.id}, incremental dedup disabled`, { taskId, bookId: book.id, error: err instanceof Error ? err.message : String(err) });
         }
       }
 
@@ -1137,22 +1141,43 @@ async function executeTaskBody(
               // CAPTCHA errors should not trigger engine fallback — stop immediately
               if (errReason.includes('CAPTCHA')) {
                 (contentErr as Error & { doNotRetry?: boolean }).doNotRetry = true;
-                console.warn(`[EngineChain] CAPTCHA detected from ${tryEngine} for ${chapter.url} — stopping chain`);
+                logger.warn('EngineChain', `CAPTCHA detected from ${tryEngine} — stopping chain`, { engine: tryEngine, url: chapter.url });
                 throw contentErr;
               }
               // Stop chain on doNotRetry errors
               if (contentErr instanceof Error && (contentErr as Record<string, unknown>).doNotRetry) {
-                console.warn(`[EngineChain] Engine ${tryEngine} returned doNotRetry for ${chapter.url}: ${errReason.slice(0, 120)} — stopping chain`);
+                logger.warn('EngineChain', `Engine ${tryEngine} returned doNotRetry — stopping chain`, { engine: tryEngine, url: chapter.url, reason: errReason.slice(0, 120) });
                 throw contentErr;
               }
-              console.warn(`[EngineChain] Engine ${tryEngine} failed for ${chapter.url}: ${errReason.slice(0, 120)}`);
+              logger.warn('EngineChain', `Engine ${tryEngine} failed`, { engine: tryEngine, url: chapter.url, reason: errReason.slice(0, 120) });
               // Continue to next engine in chain
             }
           }
 
           if (!chainSuccess) {
             const summary = chainFailures.map(f => `${f.engine}(${f.reason.slice(0, 50)})`).join(', ');
-            throw new Error(`所有引擎均失败 [${summary}]`);
+            const chDomain = extractDomain(chapter.url);
+            // Consult smart retry strategy for escalation
+            const retryDecision = smartRetry.decideRetry(
+              chDomain,
+              chapter.url,
+              summary,
+              finalChapterEngine,
+            );
+            smartRetry.recordFailure(chDomain, chapter.url, summary, finalChapterEngine);
+
+            if (retryDecision.pauseDomain) {
+              smartRetry.pauseDomain(chDomain, retryDecision.pauseDurationMs);
+              await addTaskLog(taskId, "warn", `域名已暂停: ${chDomain} (${retryDecision.reason})`, chapter.url);
+            }
+
+            throw new Error(`所有引擎均失败 [${summary}] — ${retryDecision.reason}`);
+          }
+
+          // Record success for smart retry (resets failure counters)
+          {
+            const chDomain = extractDomain(chapter.url);
+            smartRetry.recordSuccess(chDomain);
           }
 
           // CAPTCHA detection: skip chapter if detected
@@ -1245,12 +1270,12 @@ async function executeTaskBody(
               responseTime: Date.now() - contentStartTime,
               hadCaptcha: true,
               proxyRotated: false,
-              engine: effectiveEngine,
+              engine: contentEngineUsed,
               statusCode: 403,
             });
             adaptiveEngineSelector.recordEngineResult(
               chDomain,
-              effectiveEngine,
+              contentEngineUsed,
               false,
               Date.now() - contentStartTime,
               true,
@@ -1306,7 +1331,7 @@ async function executeTaskBody(
           // Record engine performance for adaptive selection
           adaptiveEngineSelector.recordEngineResult(
             chDomain,
-            effectiveEngine,
+            contentEngineUsed,
             true,
             Date.now() - contentStartTime,
             false,
@@ -1319,7 +1344,7 @@ async function executeTaskBody(
             responseTime: Date.now() - contentStartTime,
             hadCaptcha: false,
             proxyRotated: false,
-            engine: effectiveEngine,
+            engine: contentEngineUsed,
             statusCode: 200,
           });
 
@@ -1368,7 +1393,7 @@ async function executeTaskBody(
           failedItemsCount.increment();
           recordAdaptiveResponse(chapter.url, contentStartTime ? Date.now() - contentStartTime : 0, false);
           const errMsg = err instanceof Error ? err.message : String(err);
-          console.error(`[Task ${taskId}] Error scraping chapter ${chapter.url}:`, errMsg);
+          logger.error('Task', `Error scraping chapter ${chapter.url}`, { taskId, url: chapter.url, error: errMsg });
           await addTaskLog(taskId, "error", `章节采集失败: ${chapter.title || chapter.url}`, chapter.url, errMsg.slice(0, 500));
           // Collect for post-loop retry (exclude CAPTCHA doNotRetry errors)
           if (!(err instanceof Error && (err as Record<string, unknown>).doNotRetry)) {
@@ -1425,7 +1450,7 @@ async function executeTaskBody(
             );
           }
         } catch (retryErr) {
-          console.error(`[Task ${taskId}] Failed chapter recovery error for ${book.title}:`, retryErr);
+          logger.error('Task', `Failed chapter recovery for ${book.title}`, { taskId, error: retryErr instanceof Error ? retryErr.message : String(retryErr) });
           // Recovery is best-effort, don't fail the main task
         }
       }
@@ -1444,7 +1469,7 @@ async function executeTaskBody(
       log.info(`Completed ${book.title}: ${chapters.length} chapters`);
       await addTaskLog(taskId, "success", `完成采集 ${book.title}: 共 ${chapters.length} 章`, book.url);
     } catch (err) {
-      console.error(`[Task ${taskId}] Error processing chapters for ${book.title}:`, err);
+      logger.error('Task', `Error processing chapters for ${book.title}`, { taskId, error: err instanceof Error ? err.message : String(err) });
       await addTaskLog(taskId, "error", `章节目录采集失败: ${book.title}`, book.url, String(err));
       failedItemsCount.increment();
     }
@@ -1473,7 +1498,7 @@ async function executeTaskBody(
       skippedItems: skippedBooksCount.value + skippedChaptersCount.value,
     });
   } catch (err) {
-    console.error(`[Task ${taskId}] Failed to mark task as completed (will be recovered by stuck detection):`, err);
+    logger.error('Task', `Failed to mark task as completed (will be recovered by stuck detection)`, { taskId, error: err instanceof Error ? err.message : String(err) });
   }
 
   // Final task log (non-critical — must not affect task success status)
@@ -1484,7 +1509,7 @@ async function executeTaskBody(
       `任务完成! [引擎:${engineType}] 新建小说: ${newBooksCount.value}, 新建章节: ${newChaptersCount.value}, 跳过: ${skippedBooksCount.value + skippedChaptersCount.value}, 失败: ${failedItemsCount.value}`
     );
   } catch (err) {
-    console.error(`[Task ${taskId}] Failed to write final task log (non-critical):`, err);
+    logger.error('Task', `Failed to write final task log (non-critical)`, { taskId, error: err instanceof Error ? err.message : String(err) });
   }
 
   log.info(`Task completed. Queue stats: ${JSON.stringify(queueStats)}`);
@@ -1972,10 +1997,10 @@ export async function resortChapters(
       return true;
     }
 
-    console.warn(`[ResortChapters] Failed to reorder chapters for novel ${novelId}: HTTP ${patchStatus}`);
+    logger.warn('ResortChapters', `Failed to reorder chapters for novel ${novelId}`, { novelId, status: patchStatus });
     return false;
   } catch (err) {
-    console.error(`[ResortChapters] Error reordering chapters for novel ${novelId}:`, err);
+    logger.error('ResortChapters', `Error reordering chapters for novel ${novelId}`, { novelId, error: err instanceof Error ? err.message : String(err) });
     return false;
   }
 }
@@ -2039,7 +2064,7 @@ export async function detectStuckTasks(): Promise<number> {
 
     return detected;
   } catch (err) {
-    console.error("[StuckDetection] Failed to check stuck tasks:", err);
+    logger.error('StuckDetection', 'Failed to check stuck tasks', { error: err instanceof Error ? err.message : String(err) });
     return 0;
   }
 }

@@ -5,6 +5,11 @@
  *   - Garbled text and encoding errors
  *   - Chapter completeness (expected vs actual length)
  *   - Content health score based on Chinese character ratio, line count, etc.
+ *   - Encoding detection (GBK/UTF-8)
+ *   - Truncation detection (mid-sentence cutoff)
+ *   - Anti-crawl content detection (CAPTCHA/error pages disguised as 200 OK)
+ *   - Language detection (Chinese vs English error messages)
+ *   - Duplicate content detection (same content served for different chapters)
  */
 
 // ==================== Types ====================
@@ -22,6 +27,31 @@ export interface ContentValidationResult {
   encodingIssues: string[];
   /** Recommended retry with different encoding */
   recommendRetryWithEncoding?: string;
+  /** Detailed validation flags */
+  flags: ValidationFlags;
+  /** Detected content type (what this content actually is) */
+  detectedContentType?: 'novel' | 'captcha' | 'error_page' | 'redirect' | 'login' | 'unknown';
+}
+
+export interface ValidationFlags {
+  /** Content appears to be truncated mid-sentence */
+  isTruncated: boolean;
+  /** Content is actually a CAPTCHA/challenge page */
+  isCaptchaPage: boolean;
+  /** Content is an error page (404, 500, etc.) disguised as 200 OK */
+  isErrorPage: boolean;
+  /** Content is a redirect/interstitial page */
+  isRedirectPage: boolean;
+  /** Content is a login page */
+  isLoginPage: boolean;
+  /** Content is not Chinese (e.g. English error messages) */
+  isNotChinese: boolean;
+  /** Content matches another chapter (duplicate/wrong content) */
+  isDuplicateContent: boolean;
+  /** Encoding mismatch detected */
+  encodingMismatch: boolean;
+  /** Detected actual encoding */
+  detectedEncoding?: 'utf-8' | 'gbk' | 'gb2312' | 'big5' | 'unknown';
 }
 
 export interface ContentCheck {
@@ -337,8 +367,116 @@ export function validateContentQuality(
   else if (healthScore >= 20) grade = 'D';
   else grade = 'F';
 
-  // Determine acceptability (score >= 40 and no critical encoding issues)
-  const isAcceptable = healthScore >= 40 && garbledRatio < 0.1;
+  // ==================== Enhanced Validation Checks ====================
+
+  const flags: ValidationFlags = {
+    isTruncated: false,
+    isCaptchaPage: false,
+    isErrorPage: false,
+    isRedirectPage: false,
+    isLoginPage: false,
+    isNotChinese: false,
+    isDuplicateContent: false,
+    encodingMismatch: false,
+    detectedEncoding: 'utf-8',
+  };
+
+  let detectedContentType: ContentValidationResult['detectedContentType'] = 'novel';
+
+  // 6. Truncation detection (content cut off mid-sentence)
+  const lastChars = content.trim().slice(-50);
+  const endsWithPunctuation = /[。！？」「”』）》】]/.test(lastChars);
+  const endsMidSentence = !endsWithPunctuation && content.length > 500 &&
+    /[^。！？」\n]$/.test(content.trim());
+  if (endsMidSentence) {
+    flags.isTruncated = true;
+    checks.push({
+      name: '截断检测',
+      passed: false,
+      score: 0,
+      message: '内容可能在句中被截断（末尾无中文标点）',
+    });
+  } else {
+    checks.push({
+      name: '截断检测',
+      passed: true,
+      score: 5,
+      message: '内容末尾有正常结束标点',
+    });
+  }
+
+  // 7. Anti-crawl content detection (CAPTCHA/error pages as 200 OK)
+  const lowerContent = content.toLowerCase();
+  const captchaKeywords = ['captcha', '验证码', '请输入验证码', 'cloudflare', 'cf-challenge',
+    'turnstile', '请完成验证', '人机验证', 'slider', '滑块验证'];
+  const errorKeywords = ['not found', '404', '页面不存在', '服务器错误', 'internal error',
+    'access denied', '拒绝访问', 'forbidden', '页面已删除', '页面找不到'];
+  const redirectKeywords = ['正在跳转', 'redirecting', '请稍候', 'loading...',
+    '如果页面没有自动跳转', '点击这里继续'];
+  const loginKeywords = ['请登录', '登录后继续', 'login', 'sign in', '请先登录',
+    '需要登录才能查看'];
+
+  const captchaScore = captchaKeywords.filter(kw => lowerContent.includes(kw)).length;
+  const errorScore = errorKeywords.filter(kw => lowerContent.includes(kw)).length;
+  const redirectScore = redirectKeywords.filter(kw => lowerContent.includes(kw)).length;
+  const loginScore = loginKeywords.filter(kw => lowerContent.includes(kw)).length;
+
+  if (captchaScore >= 2 && chineseRatio < 0.2) {
+    flags.isCaptchaPage = true;
+    detectedContentType = 'captcha';
+    checks.push({ name: '反爬检测', passed: false, score: 0, message: `检测到CAPTCHA/验证页面 (${captchaScore}个关键词)` });
+  } else if (errorScore >= 2 && chineseRatio < 0.2) {
+    flags.isErrorPage = true;
+    detectedContentType = 'error_page';
+    checks.push({ name: '反爬检测', passed: false, score: 0, message: `检测到错误页面 (${errorScore}个关键词)` });
+  } else if (redirectScore >= 2 && content.length < 1000) {
+    flags.isRedirectPage = true;
+    detectedContentType = 'redirect';
+    checks.push({ name: '反爬检测', passed: false, score: 0, message: `检测到跳转页面 (${redirectScore}个关键词)` });
+  } else if (loginScore >= 2 && chineseRatio < 0.2) {
+    flags.isLoginPage = true;
+    detectedContentType = 'login';
+    checks.push({ name: '反爬检测', passed: false, score: 0, message: `检测到登录页面 (${loginScore}个关键词)` });
+  } else {
+    checks.push({ name: '反爬检测', passed: true, score: 5, message: '未检测到反爬伪装页面' });
+  }
+
+  // 8. Language detection (is content actually Chinese?)
+  if (chineseRatio < 0.1 && content.length > 200) {
+    flags.isNotChinese = true;
+    // Check if it's English error message
+    const englishRatio = (content.match(/[a-zA-Z]/g) || []).length / content.length;
+    if (englishRatio > 0.3) {
+      checks.push({
+        name: '语言检测',
+        passed: false,
+        score: 0,
+        message: `内容为英文错误消息 (中文${(chineseRatio*100).toFixed(0)}%, 英文${(englishRatio*100).toFixed(0)}%)`,
+      });
+    } else {
+      checks.push({
+        name: '语言检测',
+        passed: false,
+        score: 2,
+        message: `中文字符占比过低: ${(chineseRatio*100).toFixed(1)}%`,
+      });
+    }
+  } else {
+    checks.push({ name: '语言检测', passed: true, score: 5, message: `中文占比 ${(chineseRatio*100).toFixed(1)}%` });
+  }
+
+  // 9. Encoding detection
+  if (/锟|斤拷|鐢|鍦|棰/.test(content)) {
+    flags.encodingMismatch = true;
+    flags.detectedEncoding = 'gbk';
+  } else if (/Ｆｕｌｌ/.test(content)) {
+    flags.encodingMismatch = true;
+    flags.detectedEncoding = 'big5';
+  }
+
+  // Determine acceptability (score >= 40 and no critical encoding issues and not anti-crawl page)
+  const hasAntiCrawlFlag = flags.isCaptchaPage || flags.isErrorPage || flags.isRedirectPage || flags.isLoginPage;
+  const isAcceptable = healthScore >= 40 && garbledRatio < 0.1 && !hasAntiCrawlFlag;
 
   // Recommend encoding retry if garbled text detected
   let recommendRetryWithEncoding: string | undefined;
@@ -358,6 +496,8 @@ export function validateContentQuality(
     checks,
     encodingIssues,
     recommendRetryWithEncoding,
+    flags,
+    detectedContentType,
   };
 }
 
@@ -374,6 +514,97 @@ export function isContentGarbled(content: string): boolean {
   const { chineseRatio } = analyzeChineseContent(content);
   // For Chinese novel content, if less than 10% Chinese chars, likely garbled
   if (chineseRatio < 0.1) return true;
+
+  return false;
+}
+
+// ==================== Duplicate Content Detection ====================
+
+/** Simple content fingerprint for duplicate detection using first/last N chars + length */
+export interface ContentFingerprint {
+  first100: string;
+  last100: string;
+  length: number;
+}
+
+/** In-memory store for content fingerprints per task (for duplicate detection) */
+const contentFingerprints = new Map<string, Map<string, ContentFingerprint>>();
+
+/**
+ * Generate a content fingerprint for duplicate detection.
+ */
+export function fingerprintContent(content: string): ContentFingerprint {
+  return {
+    first100: content.slice(0, 100),
+    last100: content.slice(-100),
+    length: content.length,
+  };
+}
+
+/**
+ * Check if content is a duplicate of another chapter in the same task.
+ * Returns the chapter URL that has the same content, or undefined if unique.
+ */
+export function checkDuplicateContent(
+  taskId: string,
+  chapterUrl: string,
+  content: string,
+): string | undefined {
+  if (!contentFingerprints.has(taskId)) {
+    contentFingerprints.set(taskId, new Map());
+  }
+  const taskFingerprints = contentFingerprints.get(taskId)!;
+
+  const fp = fingerprintContent(content);
+
+  // Check against existing fingerprints
+  for (const [existingUrl, existingFp] of taskFingerprints) {
+    // Same length ±5% and matching first/last 100 chars = very likely duplicate
+    const lengthRatio = fp.length / existingFp.length;
+    if (lengthRatio > 0.95 && lengthRatio < 1.05 &&
+        fp.first100 === existingFp.first100 &&
+        fp.last100 === existingFp.last100) {
+      return existingUrl;
+    }
+    // Same first 100 chars but different length could be partial duplicate
+    if (fp.first100 === existingFp.first100 && fp.length > 500 && existingFp.length > 500) {
+      // If first 100 chars match for long content, it's suspicious
+      if (fp.last100 === existingFp.last100) {
+        return existingUrl;
+      }
+    }
+  }
+
+  // Store this fingerprint
+  taskFingerprints.set(chapterUrl, fp);
+  return undefined;
+}
+
+/**
+ * Clear content fingerprints for a task (call when task completes).
+ */
+export function clearContentFingerprints(taskId: string): void {
+  contentFingerprints.delete(taskId);
+}
+
+/**
+ * Quick anti-crawl content detection.
+ * Fast check if a 200 OK response is actually a CAPTCHA, error, or redirect page.
+ */
+export function isAntiCrawlContent(content: string): boolean {
+  if (content.length < 50) return true; // Suspiciously short
+
+  const lower = content.toLowerCase();
+  const quickKeywords = ['captcha', '验证码', 'cloudflare', 'cf-challenge',
+    'turnstile', '请完成验证', '人机验证', 'access denied', 'forbidden'];
+
+  // If 2+ anti-crawl keywords found AND low Chinese ratio, it's likely a trap page
+  const matchCount = quickKeywords.filter(kw => lower.includes(kw)).length;
+  if (matchCount >= 2) {
+    const chineseCount = (content.match(/[\u4E00-\u9FFF]/g) || []).length;
+    const chineseRatio = chineseCount / content.length;
+    if (chineseRatio < 0.2) return true;
+  }
 
   return false;
 }

@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import type { ViewType } from '@/types';
 import { useState, useEffect, useSyncExternalStore, useCallback } from 'react';
@@ -67,7 +66,7 @@ const noopSubscribe = () => () => {};
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const setEditingNovel = useAppStore((s) => s.setEditingNovel);

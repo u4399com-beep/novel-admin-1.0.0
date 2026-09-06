@@ -248,7 +248,7 @@ export const PUT = withAuth(async function PUT(request: NextRequest) {
           data: createData,
         });
         generated += createData.length;
-      } catch (error) {
+      } catch (_error) {
         // If batch fails due to unique constraint, try one by one
         console.warn('Batch slug creation had collisions, falling back to sequential:');
         for (const novel of batch) {

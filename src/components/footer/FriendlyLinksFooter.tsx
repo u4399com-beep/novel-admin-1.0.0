@@ -42,7 +42,7 @@ function FooterLinksSkeleton() {
 // ─── Friendly Link Item ──────────────────────────────────────────────────────
 // Hook to get the current origin in an SSR-safe way (avoids set-state-in-effect lint)
 function useClientOrigin() {
-  const subscribe = useMemo(() => (onStoreChange: () => void) => {
+  const subscribe = useMemo(() => (_onStoreChange: () => void) => {
     // origin never changes at runtime; no-op subscribe
     return () => {};
   }, []);

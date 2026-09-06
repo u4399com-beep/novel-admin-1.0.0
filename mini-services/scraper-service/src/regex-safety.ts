@@ -6,6 +6,8 @@
  *   3. V8 engine's built-in regex execution limit as runtime backstop
  */
 
+import { logger } from './logger';
+
 export const DANGEROUS_REGEX_PATTERNS: RegExp[] = [
   /\([^)]*\+[^)]*\)\+/,           // (x+)+
   /\(\?:[^)]*\+[^)]*\)\+/,        // (?:x+)+
@@ -21,7 +23,7 @@ export const DANGEROUS_REGEX_PATTERNS: RegExp[] = [
 export function isDangerousRegex(pattern: string): boolean {
   for (const dp of DANGEROUS_REGEX_PATTERNS) {
     if (dp.test(pattern)) {
-      console.warn(`[Security] Blocked potentially dangerous regex: ${pattern.substring(0, 100)}`);
+      logger.warn('Security', `Blocked potentially dangerous regex: ${pattern.substring(0, 100)}`);
       return true;
     }
   }
