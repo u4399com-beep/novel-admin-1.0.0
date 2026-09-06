@@ -22,6 +22,8 @@ import { NAV_ITEMS } from '@/lib/nav-config';
 import { apiFetch } from '@/lib/api-fetch';
 import { AdminViewSkeletons } from '@/components/admin/AdminViewSkeletons';
 import { AdminDesktopSidebar } from '@/components/admin/AdminDesktopSidebar';
+import { AnimatedBreadcrumb } from '@/components/admin/AnimatedBreadcrumb';
+import { DataExportButton } from '@/components/admin/DataExportButton';
 import { NovelImportDialog } from '@/components/novel/NovelImportDialog';
 import { MobileSidebar } from '@/components/novel/AppSidebar';
 import { DashboardView } from '@/components/novel/DashboardView';
@@ -200,6 +202,12 @@ export default function AdminPage() {
             <div className="flex flex-col">
               <h2 className="text-sm font-semibold leading-none">{viewInfo.title}</h2>
               <p className="text-[11px] text-muted-foreground mt-0.5 hidden md:block">{viewInfo.description}</p>
+              <div className="mt-1 hidden md:block">
+                <AnimatedBreadcrumb items={[
+                  { label: '后台', onClick: () => setCurrentView('dashboard') },
+                  { label: viewInfo.title },
+                ]} />
+              </div>
             </div>
           </div>
 
@@ -232,6 +240,19 @@ export default function AdminPage() {
               <>
                 <Button onClick={handleCreateNovel} size="sm" className="gap-1.5"><Plus className="h-4 w-4" /><span className="hidden sm:inline">新建小说</span></Button>
                 <Button onClick={handleImportOpen} size="sm" variant="outline" className="gap-1.5"><Upload className="h-4 w-4" /><span className="hidden sm:inline">导入</span></Button>
+                <DataExportButton
+                  onExport={async (format) => {
+                    try {
+                      const res = await fetch(`/api/admin/export-all?format=${format}`, { credentials: 'include' });
+                      if (!res.ok) throw new Error('导出失败');
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url; a.download = `novels-export.${format}`; a.click();
+                      URL.revokeObjectURL(url);
+                    } catch { /* handled */ }
+                  }}
+                />
               </>
             )}
             {currentView === 'dashboard' && (

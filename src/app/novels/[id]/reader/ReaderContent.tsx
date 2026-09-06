@@ -1,10 +1,56 @@
 'use client';
 
 import { type ReactNode, type RefObject, useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, RotateCcw, StickyNote } from 'lucide-react';
+import { Loader2, RotateCcw, StickyNote, Volume2, VolumeX, Palette } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ReadingTheme } from '@/lib/use-reading-settings';
 import { useTheme } from 'next-themes';
+
+// ─── Text-to-Speech Hook (Web Speech API) ──────────────────────
+function useTextToSpeech() {
+  const [speaking, setSpeaking] = useState(false);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  const speak = useCallback((text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const cleaned = text.replace(/\s+/g, ' ').slice(0, 5000);
+    const utterance = new SpeechSynthesisUtterance(cleaned);
+    utterance.lang = 'zh-CN';
+    utterance.rate = 1;
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+    setSpeaking(true);
+  }, []);
+
+  const stop = useCallback(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    setSpeaking(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  return { speaking, speak, stop };
+}
+
+// ─── Highlight Color Picker ──────────────────────────────────
+const HIGHLIGHT_COLORS = [
+  { key: 'yellow', label: '黄色', className: 'highlight-yellow' },
+  { key: 'green', label: '绿色', className: 'highlight-green' },
+  { key: 'blue', label: '蓝色', className: 'highlight-blue' },
+  { key: 'pink', label: '粉色', className: 'highlight-pink' },
+  { key: 'orange', label: '橙色', className: 'highlight-orange' },
+] as const;
+type HighlightColorKey = typeof HIGHLIGHT_COLORS[number]['key'];
 
 // ─── Highlight helper ──────────────────────────────────────────
 function highlightText(text: string, query: string, activeIndex: number): ReactNode {
@@ -49,6 +95,7 @@ export interface ReaderContentProps {
   currentMatch: number;
   onRetry: () => void;
   onQuickNote?: (text: string) => void;
+  onSmoothScrollToTop?: () => void;
 }
 
 export function ReaderContent({
@@ -67,7 +114,13 @@ export function ReaderContent({
   currentMatch,
   onRetry,
   onQuickNote,
+  onSmoothScrollToTop,
 }: ReaderContentProps) {
+  // ─── TTS & Highlight state ─────────────────────────────────
+  const { speaking, speak, stop: stopTts } = useTextToSpeech();
+  const [highlightColor, setHighlightColor] = useState<HighlightColorKey>('yellow');
+  const [showHighlightPicker, setShowHighlightPicker] = useState(false);
+
   // ─── Text selection → quick note feature ────────────────────
   const [selectionTooltip, setSelectionTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const selectionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -105,9 +158,9 @@ export function ReaderContent({
   }, []);
 
   const chapterAnimClass = chapterDirection === 'forward'
-    ? 'chapter-transition-forward'
+    ? 'chapter-transition-forward tab-content-enter'
     : chapterDirection === 'backward'
-    ? 'chapter-transition-backward'
+    ? 'chapter-transition-backward tab-content-enter'
     : '';
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
@@ -142,6 +195,46 @@ export function ReaderContent({
           </div>
         ) : content ? (
           <div className="mx-auto max-w-3xl relative">
+            {/* TTS & Highlight toolbar */}
+            <div className="flex items-center gap-1 mb-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`h-7 px-2 text-[11px] gap-1 ${speaking ? 'tts-active-indicator text-primary' : ''}`}
+                onClick={() => {
+                  if (speaking) { stopTts(); } else if (content) { speak(content.replace(/\n/g, '。')); }
+                }}
+                aria-label={speaking ? '停止朗读' : '朗读本章'}
+              >
+                {speaking ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                {speaking ? '停止' : '朗读'}
+              </Button>
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[11px] gap-1"
+                  onClick={() => setShowHighlightPicker((p) => !p)}
+                  aria-label="选择高亮颜色"
+                >
+                  <Palette className="h-3.5 w-3.5" />
+                  高亮
+                </Button>
+                {showHighlightPicker && (
+                  <div className="absolute top-full left-0 mt-1 z-50 glass rounded-lg p-2 flex gap-1.5 shadow-lg share-panel-enter">
+                    {HIGHLIGHT_COLORS.map((c) => (
+                      <button
+                        key={c.key}
+                        className={`w-5 h-5 rounded-full border-2 transition-all ${c.className} ${highlightColor === c.key ? 'ring-2 ring-foreground scale-110' : 'hover:scale-105'}`}
+                        onClick={() => { setHighlightColor(c.key); setShowHighlightPicker(false); }}
+                        title={c.label}
+                        aria-label={`选择${c.label}高亮`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
             {/* Quick note tooltip on text selection */}
             {selectionTooltip && (
               <div

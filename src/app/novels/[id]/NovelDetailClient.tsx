@@ -18,6 +18,7 @@ import { KeyboardShortcutsPanel } from './reader/KeyboardShortcutsPanel';
 import { ChapterContentGrid } from '@/components/novel/detail/ChapterContentGrid';
 import { ReadingTimeline } from '@/components/novel/detail/ReadingTimeline';
 import { NovelNotesOverview } from '@/components/novel/detail/NovelNotesOverview';
+import { FloatingActions } from '@/components/novel/detail/FloatingActions';
 import { getSessionId } from '@/lib/reading-session';
 import { NovelInfoSection } from './parts/NovelInfoSection';
 import { ChapterListSection } from './parts/ChapterListSection';
@@ -728,6 +729,15 @@ export default function NovelDetailClient({ novel, chapters: initialChapters, to
         onOpenChange={setBookmarkManagerOpen}
       />
       <ScrollToTopButton />
+
+      {/* Floating Action Button for quick actions */}
+      <FloatingActions
+        onBookmark={handleToggleFavorite}
+        isBookmarked={isFavorited}
+        onFontSize={() => {
+          if (readerOpen) setShowSettings((p) => !p);
+        }}
+      />
     </main>
   );
 }

@@ -7,6 +7,32 @@ import { FilterChips } from './hero/FilterChips';
 import { BookOpen, Library, Flame } from 'lucide-react';
 import type { Category } from '@/types';
 
+// ─── Count-Up Animation Hook ─────────────────────────────────────
+function useCountUp(target: number, duration = 1200, enabled = true) {
+  const [display, setDisplay] = useState(0);
+  const prevTarget = useRef(0);
+  useEffect(() => {
+    if (!enabled || target === 0) { queueMicrotask(() => setDisplay(target)); return; }
+    const start = prevTarget.current;
+    const diff = target - start;
+    if (diff === 0) { queueMicrotask(() => setDisplay(target)); return; }
+    const startTime = performance.now();
+    let rafId: number;
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(start + diff * eased));
+      if (progress < 1) { rafId = requestAnimationFrame(step); }
+      else { prevTarget.current = target; }
+    };
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, [target, duration, enabled]);
+  return display;
+}
+
 export type { Category } from '@/types';
 
 // ─── Typing Animation Hook ─────────────────────────────────────────
@@ -169,14 +195,14 @@ function FloatingParticles() {
 
 // ─── Stats Bar with Icons ───────────────────────────────────────
 function HeroStatsBar({ total, loadingNovels }: { total: number; loadingNovels: boolean }) {
-  // Animate count when total changes (via key trick)
+  const animatedTotal = useCountUp(total, 1200, !loadingNovels);
   return (
     <div className="flex items-center gap-4 sm:gap-6 justify-center py-2">
       <div className="flex items-center gap-1.5">
         <BookOpen className="h-3.5 w-3.5 text-primary/70 stat-icon-pop" />
         <span className="text-xs text-muted-foreground">共</span>
-        <span key={total} className="text-xs font-semibold text-foreground tabular-nums stat-count-animate">
-          {loadingNovels ? '–' : total.toLocaleString()}
+        <span className="text-xs font-semibold text-foreground tabular-nums count-up-animate">
+          {loadingNovels ? '–' : animatedTotal.toLocaleString()}
         </span>
         <span className="text-xs text-muted-foreground">本小说</span>
       </div>
@@ -273,7 +299,7 @@ export function HeroSection({
   }, []);
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative overflow-hidden noise-overlay">
       {/* Animated gradient border effect */}
       <div className="hero-gradient-border" aria-hidden="true" />
       {/* Parallax gradient blobs - move at 0.3x scroll speed */}

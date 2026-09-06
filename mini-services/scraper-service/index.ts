@@ -1670,6 +1670,29 @@ try {
 
 startServer(PORT);
 
+// ─── Startup Validation ──────────────────────────────────────────
+// Verify critical dependencies-configuration before accepting requests
+{
+  const startupIssues: string[] = [];
+  if (!SERVICE_TOKEN || SERVICE_TOKEN.length < 16) {
+    startupIssues.push('SCRAPER_SERVICE_TOKEN is missing or too short (<16 chars)');
+  }
+  const mainAppUrl = process.env.MAIN_APP_URL || 'http://localhost:3000';
+  try {
+    const url = new URL(mainAppUrl);
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      startupIssues.push(`MAIN_APP_URL has invalid protocol: ${url.protocol}`);
+    }
+  } catch {
+    startupIssues.push(`MAIN_APP_URL is not a valid URL: ${mainAppUrl}`);
+  }
+  if (startupIssues.length > 0) {
+    log.warn(`Startup validation warnings: ${startupIssues.join('; ')}`);
+  } else {
+    log.info('Startup validation passed — all critical config OK');
+  }
+}
+
 // Periodic stuck-task detection (every 2 minutes)
 const STUCK_DETECT_INTERVAL_MS = 2 * 60 * 1000;
 const stuckDetectInterval = setInterval(async () => {
@@ -1728,6 +1751,18 @@ const shutdown = async (signal: string) => {
   await closeAllEngines().catch(() => {});
   requestFingerprintMgr.destroy();
   sessionManager.destroy();
+  
+  // Cleanup: destroy all singleton modules that have destroy/cleanup methods
+  try { if (typeof adaptiveDelay?.destroy === 'function') adaptiveDelay.destroy(); } catch {}
+  try { if (typeof cookieJar?.destroy === 'function') cookieJar.destroy(); } catch {}
+  try { if (typeof rateLimiter?.destroy === 'function') rateLimiter.destroy(); } catch {}
+  try { if (typeof smartRetry?.destroy === 'function') smartRetry.destroy(); } catch {}
+  try { if (typeof requestQueue?.destroy === 'function') requestQueue.destroy(); } catch {}
+  try { if (typeof domainHealth?.destroy === 'function') domainHealth.destroy(); } catch {}
+  try { if (typeof pipelineMetrics?.destroy === 'function') pipelineMetrics.destroy(); } catch {}
+  try { if (typeof crawlScheduler?.destroy === 'function') crawlScheduler.destroy(); } catch {}
+  try { if (typeof contentDeduplicator?.destroy === 'function') contentDeduplicator.destroy(); } catch {}
+  try { if (typeof resultCache?.destroy === 'function') resultCache.destroy(); } catch {}
   clearInterval(terminateTimer); // Clear force-terminate timer regardless
   clearInterval(stuckDetectInterval); // Clear stuck-detection interval
   clearInterval(progressThrottleCleanupTimer); // Clear progress throttle cleanup

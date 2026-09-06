@@ -6156,3 +6156,312 @@ html {
 .lazy-img-enter {
   animation: img-fade-in 0.4s ease-out;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Task 5 — Style Polish Round 3: New Utilities & Animations
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Noise Texture Overlay ──────────────────────────────────── */
+.noise-overlay {
+  position: relative;
+}
+.noise-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  z-index: 1;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  mix-blend-mode: overlay;
+  border-radius: inherit;
+}
+.dark .noise-overlay::before {
+  opacity: 0.05;
+}
+
+/* ─── Glass-morphism Utility Variants ────────────────────────── */
+.glass {
+  background: oklch(1 0 0 / 0.6);
+  backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid oklch(1 0 0 / 0.15);
+}
+.dark .glass {
+  background: oklch(0.15 0 0 / 0.65);
+  border-color: oklch(1 0 0 / 0.08);
+}
+.glass-heavy {
+  background: oklch(1 0 0 / 0.8);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid oklch(1 0 0 / 0.2);
+}
+.dark .glass-heavy {
+  background: oklch(0.15 0 0 / 0.8);
+  border-color: oklch(1 0 0 / 0.12);
+}
+.glass-subtle {
+  background: oklch(1 0 0 / 0.4);
+  backdrop-filter: blur(8px) saturate(1.1);
+  border: 1px solid oklch(1 0 0 / 0.08);
+}
+.dark .glass-subtle {
+  background: oklch(0.15 0 0 / 0.4);
+  border-color: oklch(1 0 0 / 0.05);
+}
+
+/* ─── Animated Gradient Text ─────────────────────────────────── */
+.gradient-text-animated {
+  background: linear-gradient(
+    135deg,
+    oklch(0.65 0.25 20),
+    oklch(0.65 0.2 300),
+    oklch(0.7 0.22 180),
+    oklch(0.65 0.25 20)
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-text-shift 4s ease-in-out infinite;
+}
+.dark .gradient-text-animated {
+  background: linear-gradient(
+    135deg,
+    oklch(0.75 0.18 20),
+    oklch(0.75 0.15 300),
+    oklch(0.8 0.17 180),
+    oklch(0.75 0.18 20)
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+@keyframes gradient-text-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ─── Count-Up Animation (number counter) ────────────────────── */
+@keyframes count-up-digits {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+.count-up-animate {
+  animation: count-up-digits 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Tab Transition Animations ──────────────────────────────── */
+@keyframes tab-enter {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes tab-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+.tab-content-enter {
+  animation: tab-enter 0.25s ease-out forwards;
+}
+.tab-content-exit {
+  animation: tab-exit 0.15s ease-in forwards;
+}
+
+/* ─── Floating Action Button (FAB) ─────────────────────────── */
+@keyframes fab-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.5) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.fab-enter {
+  animation: fab-enter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.fab-item-enter {
+  animation: fab-enter 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* ─── Breadcrumb Animated Transitions ───────────────────────── */
+@keyframes breadcrumb-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.breadcrumb-animated-item {
+  animation: breadcrumb-slide-in 0.2s ease-out forwards;
+}
+
+/* ─── Confirmation Dialog Animations ────────────────────────── */
+@keyframes confirm-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes confirm-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.confirm-dialog-enter {
+  animation: confirm-dialog-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.confirm-overlay-enter {
+  animation: confirm-overlay-in 0.2s ease-out forwards;
+}
+
+/* ─── Export Button Loading Spin ────────────────────────────── */
+@keyframes export-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.export-spinner {
+  animation: export-spin 1s linear infinite;
+}
+
+/* ─── Highlight Color Classes (for text selection) ─────────── */
+.highlight-yellow { background: oklch(0.95 0.12 90 / 0.5); border-radius: 2px; padding: 0 1px; }
+.highlight-green  { background: oklch(0.92 0.14 155 / 0.5); border-radius: 2px; padding: 0 1px; }
+.highlight-blue   { background: oklch(0.92 0.12 250 / 0.5); border-radius: 2px; padding: 0 1px; }
+.highlight-pink   { background: oklch(0.92 0.14 350 / 0.5); border-radius: 2px; padding: 0 1px; }
+.highlight-orange { background: oklch(0.95 0.15 60 / 0.5); border-radius: 2px; padding: 0 1px; }
+.dark .highlight-yellow { background: oklch(0.35 0.1 90 / 0.5); }
+.dark .highlight-green  { background: oklch(0.3 0.12 155 / 0.5); }
+.dark .highlight-blue   { background: oklch(0.3 0.1 250 / 0.5); }
+.dark .highlight-pink   { background: oklch(0.3 0.12 350 / 0.5); }
+.dark .highlight-orange { background: oklch(0.35 0.13 60 / 0.5); }
+
+/* ─── TTS (Text-to-Speech) indicator pulse ─────────────────── */
+@keyframes tts-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.tts-active-indicator {
+  animation: tts-pulse 1.2s ease-in-out infinite;
+}
+
+/* ─── Share panel slide-in ─────────────────────────────────── */
+@keyframes share-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.share-panel-enter {
+  animation: share-panel-in 0.2s ease-out forwards;
+}
+
+/* ─── Timeline day group expand/collapse ──────────────────── */
+@keyframes timeline-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+@keyframes timeline-collapse {
+  from {
+    opacity: 1;
+    max-height: 500px;
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+  }
+}
+.timeline-group-enter {
+  animation: timeline-expand 0.3s ease-out forwards;
+  overflow: hidden;
+}
+.timeline-group-exit {
+  animation: timeline-collapse 0.2s ease-in forwards;
+  overflow: hidden;
+}
+
+/* ─── Dark mode transition utilities ───────────────────────── */
+.theme-transition {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.theme-transition-fast {
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+/* ─── QR code container styling ────────────────────────────── */
+.qr-code-container {
+  background: white;
+  padding: 8px;
+  border-radius: 8px;
+  display: inline-flex;
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.1);
+}
+
+/* ─── Reading smooth scroll to top ─────────────────────────── */
+.reader-scroll-top {
+  scroll-behavior: smooth;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Reduced Motion — disable ALL new animations
+   ═══════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .noise-overlay::before { opacity: 0 !important; }
+  .gradient-text-animated {
+    animation: none;
+    -webkit-text-fill-color: initial;
+    background: none;
+  }
+  .count-up-animate { animation: none; opacity: 1; transform: none; filter: none; }
+  .tab-content-enter, .tab-content-exit { animation: none; opacity: 1; transform: none; }
+  .fab-enter, .fab-item-enter { animation: none; opacity: 1; transform: none; }
+  .breadcrumb-animated-item { animation: none; opacity: 1; transform: none; }
+  .confirm-dialog-enter { animation: none; opacity: 1; transform: none; }
+  .confirm-overlay-enter { animation: none; opacity: 1; }
+  .export-spinner { animation: none; }
+  .tts-active-indicator { animation: none; }
+  .share-panel-enter { animation: none; opacity: 1; transform: none; }
+  .timeline-group-enter { animation: none; opacity: 1; max-height: none; }
+  .timeline-group-exit { animation: none; opacity: 0; max-height: 0; }
+  .theme-transition, .theme-transition-fast { transition-duration: 0s; }
+}

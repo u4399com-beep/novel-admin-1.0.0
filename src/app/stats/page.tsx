@@ -11,19 +11,22 @@ import ReadingStreak from '@/components/ReadingStreak';
 import { ReadingGoalCard } from '@/components/ReadingGoalCard';
 import { ReadingOverview } from '@/components/stats/ReadingOverview';
 import { WordCountStats } from '@/components/stats/WordCountStats';
-import { ReadingTrendChart } from '@/components/stats/ReadingTrendChart';
-import { HourlyDistributionChart } from '@/components/stats/HourlyDistributionChart';
-import { WeekdayChart } from '@/components/stats/WeekdayChart';
-import { ReadingSpeedChart } from '@/components/stats/ReadingSpeedChart';
-import { ReadingRadarChart } from '@/components/stats/ReadingRadarChart';
-import { CompletionLeaderboard } from '@/components/stats/CompletionLeaderboard';
-import ReadingHeatmap from '@/components/stats/ReadingHeatmap';
+import dynamic from 'next/dynamic';
+
+// Dynamic imports for heavy chart components — reduces initial JS bundle size
+const ReadingTrendChart = dynamic(() => import('@/components/stats/ReadingTrendChart').then(m => ({ default: m.ReadingTrendChart })), { ssr: false });
+const HourlyDistributionChart = dynamic(() => import('@/components/stats/HourlyDistributionChart').then(m => ({ default: m.HourlyDistributionChart })), { ssr: false });
+const WeekdayChart = dynamic(() => import('@/components/stats/WeekdayChart').then(m => ({ default: m.WeekdayChart })), { ssr: false });
+const ReadingSpeedChart = dynamic(() => import('@/components/stats/ReadingSpeedChart').then(m => ({ default: m.ReadingSpeedChart })), { ssr: false });
+const ReadingRadarChart = dynamic(() => import('@/components/stats/ReadingRadarChart').then(m => ({ default: m.ReadingRadarChart })), { ssr: false });
+const CompletionLeaderboard = dynamic(() => import('@/components/stats/CompletionLeaderboard').then(m => ({ default: m.CompletionLeaderboard })), { ssr: false });
+const ReadingHeatmap = dynamic(() => import('@/components/stats/ReadingHeatmap'), { ssr: false });
 import { Button } from '@/components/ui/button';
 import { getSessionId } from '@/lib/reading-session';
 import { formatRelativeTime } from '@/lib/format';
 import { apiFetch } from '@/lib/api-fetch';
 import { getGenreColor } from '@/lib/cover-gradient';
-import { CategoryDonut } from '@/components/stats/CategoryDonut';
+const CategoryDonut = dynamic(() => import('@/components/stats/CategoryDonut').then(m => ({ default: m.CategoryDonut })), { ssr: false });
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // ─── Types ─────────────────────────────────────────────────────────

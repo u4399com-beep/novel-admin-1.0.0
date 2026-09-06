@@ -53,3 +53,33 @@ export function formatReadingTime(wordCount: number): string {
   if (minutes <= 1) return '不到1分钟';
   return `约${minutes}分钟`;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Date Utilities (consolidated from stats/reading & reading-goals)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Get today's date as YYYY-MM-DD in local timezone.
+ * Consolidated from duplicated implementations in stats and reading-goals routes.
+ */
+export function todayStringLocal(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Subtract N days from a YYYY-MM-DD date string, returning YYYY-MM-DD.
+ * Uses local timezone to match readingDaily.date storage format.
+ */
+export function subtractDays(dateStr: string, days: number): string {
+  const parts = dateStr.split('-');
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  d.setDate(d.getDate() - days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}

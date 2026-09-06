@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
-import { Download, FileJson, FileSpreadsheet } from 'lucide-react';
+import { Download, FileJson, FileSpreadsheet, Clock, AlertTriangle, RotateCcw, Flame, CheckCircle2, XCircle } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { safeFormatDate } from '@/lib/format';
 import { format } from 'date-fns';
@@ -168,6 +168,22 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     }
   }, [fetchTasks]);
 
+  // ── One-Click Retry with Strategy Selection ──
+  const handleRetryWithStrategy = useCallback(async (task: ScrapeTask, strategy: 'same' | 'upgrade' | 'proxy') => {
+    try {
+      await apiFetch<{ taskId: string }>(`/api/scrape-tasks/${task.id}/retry`, {
+        method: 'POST',
+        body: JSON.stringify({ strategy }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const strategyLabels = { same: '同引擎', upgrade: '升级引擎', proxy: '换代理' };
+      toast.success(`已创建重试任务 (${strategyLabels[strategy]})`);
+      fetchTasks();
+    } catch {
+      /* handled by apiFetch */
+    }
+  }, [fetchTasks]);
+
   const handleCancel = useCallback(async (task: ScrapeTask) => {
     try {
       await apiFetch(`/api/scrape-tasks/${task.id}/cancel`, { method: 'POST' });
@@ -310,9 +326,139 @@ export function ScrapeTaskMonitor({ onBack }: { onBack?: () => void }) {
     }
   }, [completedTaskIds]);
 
+  // ── Timeline, Heatmap & Error Analysis Data ──
+  const failedTasks = useMemo(() => tasks.filter((t) => t.status === 'failed'), [tasks]);
+  const errorPatterns = useMemo(() => {
+    const patterns: Record<string, number> = {};
+    for (const task of failedTasks) {
+      const logs = task.logs || [];
+      for (const logEntry of logs) {
+        if (logEntry.level === 'error' || logEntry.message?.includes('error')) {
+          const msg = logEntry.message || 'unknown';
+          // Classify error pattern
+          let pattern = 'other';
+          if (msg.includes('captcha') || msg.includes('验证码')) pattern = 'captcha';
+          else if (msg.includes('timeout') || msg.includes('超时')) pattern = 'timeout';
+          else if (msg.includes('429') || msg.includes('rate')) pattern = 'rate_limit';
+          else if (msg.includes('403') || msg.includes('forbidden')) pattern = 'blocked';
+          else if (msg.includes('proxy')) pattern = 'proxy_error';
+          else if (msg.includes('selector') || msg.includes('no content')) pattern = 'rule_error';
+          else if (msg.includes('network') || msg.includes('ECONN')) pattern = 'network';
+          patterns[pattern] = (patterns[pattern] || 0) + 1;
+        }
+      }
+    }
+    return patterns;
+  }, [failedTasks]);
+
+  const domainHealthMap = useMemo(() => {
+    const domains: Record<string, { success: number; fail: number; total: number }> = {};
+    for (const task of tasks) {
+      const d = task.ruleId || 'unknown';
+      if (!domains[d]) domains[d] = { success: 0, fail: 0, total: 0 };
+      domains[d].total++;
+      if (task.status === 'completed') domains[d].success++;
+      else if (task.status === 'failed') domains[d].fail++;
+    }
+    return domains;
+  }, [tasks]);
+
   return (
     <div className="space-y-4">
       <ScrapeStatsDashboard />
+
+      {/* Domain Health Heatmap */}
+      {Object.keys(domainHealthMap).length > 0 && (
+        <div className="rounded-lg border bg-card p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Flame className="h-4 w-4 text-orange-500" />
+            <span className="text-sm font-medium">域名健康度</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(domainHealthMap).map(([domain, health]) => {
+              const ratio = health.total > 0 ? health.success / health.total : 0;
+              const bgColor = ratio > 0.8 ? 'bg-green-500' : ratio > 0.5 ? 'bg-yellow-500' : ratio > 0.2 ? 'bg-orange-500' : 'bg-red-500';
+              return (
+                <div
+                  key={domain}
+                  className={`${bgColor} rounded px-2 py-0.5 text-xs text-white font-mono`}
+                  title={`${domain}: ${health.success}/${health.total} 成功`}
+                >
+                  {domain.slice(0, 15)} {Math.round(ratio * 100)}%
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Error Pattern Analysis */}
+      {Object.keys(errorPatterns).length > 0 && (
+        <div className="rounded-lg border bg-card p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <span className="text-sm font-medium">错误模式分析</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(errorPatterns)
+              .sort(([, a], [, b]) => b - a)
+              .map(([pattern, count]) => {
+                const colors: Record<string, string> = {
+                  captcha: 'bg-red-100 text-red-800',
+                  rate_limit: 'bg-orange-100 text-orange-800',
+                  blocked: 'bg-red-100 text-red-800',
+                  timeout: 'bg-yellow-100 text-yellow-800',
+                  proxy_error: 'bg-purple-100 text-purple-800',
+                  rule_error: 'bg-blue-100 text-blue-800',
+                  network: 'bg-gray-100 text-gray-800',
+                  other: 'bg-gray-100 text-gray-800',
+                };
+                const icons: Record<string, React.ReactNode> = {
+                  captcha: <AlertTriangle className="h-3 w-3" />,
+                  rate_limit: <Clock className="h-3 w-3" />,
+                  blocked: <XCircle className="h-3 w-3" />,
+                  timeout: <Clock className="h-3 w-3" />,
+                  proxy_error: <RotateCcw className="h-3 w-3" />,
+                  rule_error: <AlertTriangle className="h-3 w-3" />,
+                  network: <XCircle className="h-3 w-3" />,
+                  other: <AlertTriangle className="h-3 w-3" />,
+                };
+                return (
+                  <div key={pattern} className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${colors[pattern] || 'bg-gray-100 text-gray-800'}`}>
+                    {icons[pattern]}
+                    {pattern} ({count})
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* Task Timeline for Running Tasks */}
+      {hasRunningTasks && (
+        <div className="rounded-lg border bg-card p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Clock className="h-4 w-4 text-blue-500" />
+            <span className="text-sm font-medium">运行中任务时间线</span>
+          </div>
+          <div className="space-y-1">
+            {tasks.filter((t) => t.status === 'running').slice(0, 5).map((task) => (
+              <div key={task.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                <span className="font-mono truncate max-w-[200px]">{task.id.slice(0, 12)}</span>
+                <span className="truncate max-w-[300px]">{task.ruleId || '-'}</span>
+                <span>{formatDate(task.createdAt)}</span>
+                {task.totalChapters != null && task.newChapters != null && (
+                  <span className="ml-auto">
+                    <CheckCircle2 className="inline h-3 w-3 text-green-500 mr-1" />
+                    {task.newChapters}/{task.totalChapters}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <TaskActionsHeader
         onBack={onBack}
