@@ -124,7 +124,7 @@ export class ContentDeduplicator {
     this.persistPath = resolve(import.meta.dir, 'content-dedup-store.json');
     this.loadPersistedStore();
     // Persist every 5 minutes
-    this.persistTimer = setInterval(() => this.persistStore(), 5 * 60_000);
+    this.persistTimer = setInterval(() => this.persistStore(), 5 * 60_000).unref();
   }
 
   /**
@@ -322,6 +322,15 @@ export class ContentDeduplicator {
     }
     this.recordContent(url, content, metadata);
     return false;
+  }
+
+  /** Stop periodic persistence and save final state */
+  destroy(): void {
+    if (this.persistTimer) {
+      clearInterval(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.persistStore();
   }
 
   // ---- Persistence ----

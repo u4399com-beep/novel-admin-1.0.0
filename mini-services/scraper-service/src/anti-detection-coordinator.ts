@@ -144,6 +144,8 @@ class AntiDetectionCoordinator {
 
     // 5g. Build additional fetch headers from anti-crawl config
     if (options?.antiCrawlConfig) {
+      // antiCrawlConfig is Record<string, unknown> from options, but buildFetchHeaders expects AntiCrawl
+      // This is safe because buildFetchHeaders only reads known AntiCrawl properties
       const acHeaders = buildFetchHeaders(options.antiCrawlConfig as any, undefined, url, 'novel');
       // Merge, but don't overwrite our consistent headers
       for (const [key, value] of Object.entries(acHeaders)) {

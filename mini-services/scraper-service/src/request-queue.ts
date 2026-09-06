@@ -81,6 +81,8 @@ class DomainIsolatedRequestQueue {
   private pauseReasons = new Map<string, string>();
   /** Completed request timings for metrics */
   private completedTimings: Array<{ waitMs: number; processMs: number }> = [];
+  /** Map of requestId → { domain, enqueuedAt } for wait-time calculation */
+  private requestMeta = new Map<string, { domain: string; enqueuedAt: number }>();
   /** Failed request count per domain */
   private failedCounts = new Map<string, number>();
   /** Total completed per domain */
@@ -124,6 +126,9 @@ class DomainIsolatedRequestQueue {
     }
     this.queue.splice(insertIdx, 0, fullRequest);
 
+    // Store metadata for wait-time calculation in complete()
+    this.requestMeta.set(id, { domain: request.domain, enqueuedAt: fullRequest.enqueuedAt });
+
     this.emit('enqueued', { requestId: id, domain: request.domain, priority: request.priority });
     return id;
   }
@@ -154,19 +159,16 @@ class DomainIsolatedRequestQueue {
       // Domain isolation: check if domain already has a request processing
       const domainSlots = this.processing.get(domain);
       if (domainSlots && domainSlots.length > 0) {
-        // Allow concurrent processing for same domain if no other domain is waiting
-        // But limit to 1 concurrent per domain by default
-        continue;
-      }
-
-      // Per-domain rate limit check
-      const domainDelay = rateOptimizer.getRequestDelay(domain);
-      const lastSlot = domainSlots?.[domainSlots.length - 1];
-      if (lastSlot) {
+        // Per-domain rate limit check within domain isolation
+        const domainDelay = rateOptimizer.getRequestDelay(domain);
+        const lastSlot = domainSlots[domainSlots.length - 1];
         const elapsed = now - lastSlot.startedAt;
         if (elapsed < domainDelay) {
           continue; // Rate limit not yet satisfied
         }
+        // Allow concurrent processing for same domain after rate delay
+        // But limit to 1 concurrent per domain by default
+        continue;
       }
 
       // This request can be processed — remove from queue
@@ -201,14 +203,17 @@ class DomainIsolatedRequestQueue {
         const slot = slots[slotIdx];
         const processMs = now - slot.startedAt;
 
-        // Record timing for metrics
-        // Find the original request to compute wait time
+        // Compute wait time from enqueuedAt
+        const meta = this.requestMeta.get(requestId);
+        const waitMs = meta ? (slot.startedAt - meta.enqueuedAt) : 0;
+        this.requestMeta.delete(requestId);
+
         slots.splice(slotIdx, 1);
         if (slots.length === 0) {
           this.processing.delete(domain);
         }
 
-        this.completedTimings.push({ waitMs: 0, processMs });
+        this.completedTimings.push({ waitMs, processMs });
         if (this.completedTimings.length > METRICS_WINDOW) {
           this.completedTimings.shift();
         }
@@ -223,6 +228,11 @@ class DomainIsolatedRequestQueue {
       const count = this.failedCounts.get(domain) || 0;
       this.failedCounts.set(domain, count + 1);
       this.emit('failed', { requestId, domain });
+    }
+
+    // Prune domain tracking maps if over limit
+    if (this.completedCounts.size > MAX_DOMAINS_TRACKED || this.failedCounts.size > MAX_DOMAINS_TRACKED) {
+      this.pruneDomainCounts();
     }
   }
 
@@ -267,6 +277,22 @@ class DomainIsolatedRequestQueue {
     const before = this.queue.length;
     this.queue = this.queue.filter(r => r.taskId !== taskId);
     return before - this.queue.length;
+  }
+
+  /**
+   * Prune domain tracking maps for inactive domains.
+   */
+  private pruneDomainCounts(): void {
+    const activeDomains = new Set<string>();
+    for (const r of this.queue) activeDomains.add(r.domain);
+    for (const d of this.processing.keys()) activeDomains.add(d);
+
+    for (const domain of this.completedCounts.keys()) {
+      if (!activeDomains.has(domain)) this.completedCounts.delete(domain);
+    }
+    for (const domain of this.failedCounts.keys()) {
+      if (!activeDomains.has(domain)) this.failedCounts.delete(domain);
+    }
   }
 
   /**

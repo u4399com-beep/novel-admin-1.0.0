@@ -341,7 +341,7 @@ function ensureLogFlusher() {
       clearInterval(logFlushTimer);
       logFlushTimer = null;
     }
-  }, LOG_FLUSH_INTERVAL_MS);
+  }, LOG_FLUSH_INTERVAL_MS).unref();
 }
 
 // Flush remaining logs for a task (call before task completes)
@@ -486,7 +486,7 @@ export async function executeTask(taskId: string) {
   // Heartbeat: update lastHeartbeatAt every 30 seconds to detect stale tasks
   const heartbeatInterval = setInterval(() => {
     updateTaskProgress(taskId, { lastHeartbeatAt: new Date().toISOString() }).catch(() => {});
-  }, 30000);
+  }, 30000).unref();
 
   await addTaskLog(taskId, "info", `开始执行采集任务: ${rule.name} [引擎: ${engineType}]`);
   ensureLogFlusher();

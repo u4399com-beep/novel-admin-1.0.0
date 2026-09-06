@@ -80,7 +80,7 @@ export class AdaptiveEngineSelector {
   constructor() {
     this.persistPath = resolve(import.meta.dir, 'scrape-rules/engine-preferences.json');
     this.loadPersistedPreferences();
-    this.persistTimer = setInterval(() => this.persistPreferences(), PERSIST_INTERVAL_MS);
+    this.persistTimer = setInterval(() => this.persistPreferences(), PERSIST_INTERVAL_MS).unref();
   }
 
   /**
@@ -305,6 +305,15 @@ export class AdaptiveEngineSelector {
    */
   getAllProfiles(): Map<string, DomainEngineProfile> {
     return this.domainProfiles;
+  }
+
+  /** Stop periodic persistence and save final state */
+  destroy(): void {
+    if (this.persistTimer) {
+      clearInterval(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.persistPreferences();
   }
 
   // ---- Private helpers ----

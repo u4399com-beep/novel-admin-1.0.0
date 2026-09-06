@@ -467,14 +467,19 @@ export async function calibrateSingleRule(ruleName: string, apply: boolean = fal
     return null;
   }
 
-  const calibrator = new RateCalibrator(rulesDir);
-  const result = await calibrator.calibrateRule(rulePath);
+  try {
+    const calibrator = new RateCalibrator(rulesDir);
+    const result = await calibrator.calibrateRule(rulePath);
 
-  if (apply) {
-    calibrator.applyCalibration(rulePath, result);
+    if (apply) {
+      calibrator.applyCalibration(rulePath, result);
+    }
+
+    return result;
+  } catch (err) {
+    logger.error('RateCalibration', `Failed to calibrate rule ${ruleName}`, { ruleName, error: err instanceof Error ? err.message : String(err) });
+    return null;
   }
-
-  return result;
 }
 
 /**

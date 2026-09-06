@@ -33,13 +33,14 @@ try {
           process.env[key] = val;
         }
       }
-      console.log(`[Env] Loaded ${p}`);
+      console.log(`[Env] Loaded ${p}`); // Logger not yet imported at this point
     } catch {}
   }
 } catch {}
 
 // Global error handlers for process resilience
 process.on('unhandledRejection', (reason) => {
+  // Logger may not be initialized yet; use console.error for fatal errors
   console.error('[Fatal] Unhandled promise rejection:', reason);
   process.exit(1);
 });
@@ -77,6 +78,8 @@ import type { TaskPriority, ScrapeResult } from "./src/types";
 import { sessionManager } from "./src/session-manager";
 import { requestFingerprintMgr } from "./src/request-fingerprint";
 import { timingSafeEqual } from "node:crypto";
+import { logger } from "./src/logger";
+const log = logger.child('Server');
 import { rateOptimizer } from "./src/rate-optimizer";
 import { smartRetry } from "./src/smart-retry";
 import { requestQueue } from "./src/request-queue";
@@ -90,6 +93,11 @@ import { crawlScheduler } from "./src/crawl-scheduler";
 import { pipelineMetrics } from "./src/pipeline-metrics";
 import { adaptiveEngineSelector } from "./src/adaptive-engine";
 import { contentDeduplicator } from "./src/content-dedup";
+import { scrapingSessionMgr, getOrCreateSession, rotateSession, getSessionStats } from "./src/scraping-session";
+import { detectPageType, isCaptchaPage, isBlockedPage } from "./src/page-type-detector";
+import { evasionStrategies } from "./src/evasion-strategies";
+import { resultCache } from "./src/result-cache";
+import { crossDomainCoordinator } from "./src/cross-domain-coordinator";
 import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest,
   ScrapeContentRequest, CleanRequest, DownloadCoverRequest, ExecuteTaskRequest,
@@ -145,7 +153,7 @@ function authenticateRequest(req: Request): boolean {
 
   // Reject if no token configured (force security)
   if (!SERVICE_TOKEN) {
-    console.warn("[Auth] SCRAPER_SERVICE_TOKEN not set - all non-health requests rejected");
+    log.warn("SCRAPER_SERVICE_TOKEN not set - all non-health requests rejected");
     return false;
   }
 
@@ -346,7 +354,7 @@ function launchTask(taskId: string): void {
   activeTasks.add(taskId);
   activeTaskCount++;
   executeTask(taskId).catch((err) => {
-    console.error(`[Task ${taskId}] Fatal error:`, err);
+    log.error(`Task ${taskId} fatal error`, { error: err instanceof Error ? err.message : String(err) });
     // Sanitize error message before sending to API
     const safeMessage = String(err instanceof Error ? err.message : err)
       .slice(0, 200)
@@ -380,7 +388,7 @@ function scheduleQueuedTasks(): void {
   while (activeTaskCount < MAX_CONCURRENT_TASKS && guard++ < 100) {
     const next = priorityQueue.dequeueNext();
     if (!next) break;
-    console.log(`[PriorityQueue] Launching queued task ${next.taskId} (priority=${next.priority})`);
+    log.info(`Launching queued task ${next.taskId} (priority=${next.priority})`);
     launchTask(next.taskId);
   }
 }
@@ -388,8 +396,8 @@ function scheduleQueuedTasks(): void {
 export function startServer(port: number = 3099) {
   // Warn if no service token configured
   if (!SERVICE_TOKEN) {
-    console.warn("⚠️  SCRAPER_SERVICE_TOKEN not configured! Service will reject all authenticated requests.");
-    console.warn("   Set SCRAPER_SERVICE_TOKEN environment variable to enable API access.");
+    log.warn("SCRAPER_SERVICE_TOKEN not configured! Service will reject all authenticated requests.");
+    log.warn("Set SCRAPER_SERVICE_TOKEN environment variable to enable API access.");
   }
 
   // Initialize all engines
@@ -400,7 +408,7 @@ export function startServer(port: number = 3099) {
   // Enable adaptive mode by default in production
   if (process.env.ADAPTIVE_RATE_MODE !== 'false') {
     crawlScheduler.setAdaptiveMode(true);
-    console.log('[Config] Adaptive rate mode: enabled (RateOptimizer → CrawlScheduler)');
+    log.info('Adaptive rate mode: enabled (RateOptimizer → CrawlScheduler)');
   }
 
   const server = Bun.serve({
@@ -920,6 +928,111 @@ export function startServer(port: number = 3099) {
           const msg = err instanceof Error ? err.message : String(err);
           return Response.json({ error: msg }, { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+      }
+
+      // ==================== Scraping Session Endpoints ====================
+
+      // GET /scraping-sessions — list active sessions
+      if (path === "/scraping-sessions" && method === "GET") {
+        const domain = url.searchParams.get("domain") || undefined;
+        const sessions = scrapingSessionMgr.getActiveSessions(domain);
+        const stats = getSessionStats();
+        return Response.json({ sessions, stats }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /scraping-sessions/:domain/rotate — rotate session for domain
+      if (path.startsWith("/scraping-sessions/") && path.endsWith("/rotate") && method === "POST") {
+        const domainPart = path.slice("/scraping-sessions/".length, -"/rotate".length);
+        if (!domainPart) {
+          return Response.json({ error: 'Domain is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const domain = decodeURIComponent(domainPart);
+        let body: any;
+        try { body = await req.json().catch(() => ({})); } catch { body = {}; }
+        const newSession = rotateSession(domain, body.reason);
+        return Response.json({ rotated: true, domain, newSessionId: newSession.id }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // GET /page-type-detect — detect page type from URL
+      if (path === "/page-type-detect" && method === "GET") {
+        const targetUrl = url.searchParams.get("url");
+        if (!targetUrl) {
+          return Response.json({ error: 'url query parameter is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        // Fetch the URL first (using cheerio engine), then detect
+        try {
+          const engine = getEngine('cheerio');
+          const fetchResult = await engine.fetch(targetUrl, { antiCrawl: {} });
+          const result = detectPageType(fetchResult.html, targetUrl, fetchResult.statusCode);
+          return Response.json(result, {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } catch (err) {
+          return Response.json({ error: `Failed to fetch URL: ${err instanceof Error ? err.message : String(err)}` }, { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+
+      // GET /evasion-strategies — list available strategies
+      if (path === "/evasion-strategies" && method === "GET") {
+        const strategies = evasionStrategies.listStrategies();
+        const wafs = evasionStrategies.waf.getDetectedWAFs();
+        const cfStats = evasionStrategies.cloudflare.getStats();
+        const rlBuckets = evasionStrategies.rateLimit.getTokenBucketStats();
+        return Response.json({ strategies, detectedWAFs: wafs, cloudflareAttempts: cfStats, rateLimitBuckets: rlBuckets }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // GET /result-cache/stats — cache statistics
+      if (path === "/result-cache/stats" && method === "GET") {
+        const stats = resultCache.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /result-cache/clear — clear cache
+      if (path === "/result-cache/clear" && method === "POST") {
+        const domain = url.searchParams.get("domain");
+        let cleared: number;
+        if (domain) {
+          cleared = resultCache.clearByDomain(domain);
+        } else {
+          cleared = resultCache.clear();
+        }
+        return Response.json({ cleared, domain: domain || 'all' }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // GET /cross-domain/stats — cross-domain coordination statistics
+      if (path === "/cross-domain/stats" && method === "GET") {
+        const stats = crossDomainCoordinator.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /cross-domain/register — register a domain for coordination
+      if (path === "/cross-domain/register" && method === "POST") {
+        let regBody: any;
+        try { regBody = await req.json().catch(() => ({})); } catch { regBody = {}; }
+        const domain = regBody.domain;
+        if (!domain || typeof domain !== 'string') {
+          return Response.json({ error: 'domain is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        crossDomainCoordinator.registerDomain(domain, {
+          maxConcurrency: regBody.maxConcurrency,
+          targetRPM: regBody.targetRPM,
+          relatedDomains: regBody.relatedDomains,
+        });
+        return Response.json({ registered: true, domain }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       // Rate limiting (per client IP)
@@ -1496,7 +1609,7 @@ export function startServer(port: number = 3099) {
           { status: 404, headers: jsonHeaders }
         );
       } catch (err) {
-        console.error(`[Server] Error handling ${path}:`, err);
+        log.error(`Error handling ${path}`, { error: err instanceof Error ? err.message : String(err) });
         // Never leak internal error details to clients
         return Response.json(
           { error: "Internal server error" },
@@ -1506,67 +1619,11 @@ export function startServer(port: number = 3099) {
     },
   });
 
-  console.log(`🚀 Scraper Service v3.0 running on port ${server.port}`);
+  log.info(`Scraper Service v3.0 running on port ${server.port}`);
   if (process.env.DEBUG === "true") {
-    console.log(`   Engines: ${getEngineNames().join(", ")}`);
-    console.log(`   Captcha Strategies: ${getCaptchaStrategies().map(s => s.name).join(", ")}`);
-    console.log(`   Endpoints:`);
-    console.log(`   POST /scrape/list       - Scrape a list page`);
-    console.log(`   POST /scrape/book       - Scrape book info`);
-    console.log(`   POST /scrape/chapters   - Scrape chapter directory`);
-    console.log(`   POST /scrape/content    - Scrape chapter content`);
-    console.log(`   POST /clean             - Clean scraped content`);
-    console.log(`   POST /download-cover    - Download & convert cover`);
-    console.log(`   POST /execute-task      - Execute full scraping task`);
-    console.log(`   GET  /health            - Health check (shows active engines)`);
-    console.log(`   GET  /queue/stats       - Queue statistics`);
-    console.log(`   POST /queue/requeue     - Requeue failed items`);
-    console.log(`   POST /queue/cleanup     - Cleanup old completed items`);
-    console.log(`   DELETE /queue/clear     - Clear task queue`);
-    console.log(`   POST /ai/generate-rule - AI-generate scrape rules from URL`);
-    console.log(`   POST /ai/preview-page   - Fetch page HTML for preview`);
-    console.log(`   POST /test-rule          - End-to-end test a scraping rule`);
-    console.log(`   GET  /fingerprint-health       - Stealth capabilities report`);
-    console.log(`   GET  /proxy/detailed-stats     - Detailed proxy pool stats`);
-    console.log(`   GET  /proxy/domain-bindings    - Domain-proxy bindings`);
-    console.log(`   POST /proxy/add                - Add proxy to pool`);
-    console.log(`   POST /proxy/remove             - Remove proxy`);
-    console.log(`   POST /proxy/reset              - Reset proxy health`);
-    console.log(`   POST /proxy/check              - Health-check a proxy`);
-    console.log(`   POST /proxy/import             - Import proxies`);
-    console.log(`   POST /proxy/export             - Export proxies`);
-    console.log(`   POST /proxy/bind-domain        - Bind proxy to domain`);
-    console.log(`   POST /proxy/test               - Test a single proxy connection`);
-    console.log(`   POST /proxy/test-all           - Test all active proxies`);
-    console.log(`   GET  /session-stats              - Session manager stats`);
-    console.log(`   GET  /sessions                   - List all sessions`);
-    console.log(`   POST /session/block              - Block a session`);
-    console.log(`   POST /session/cleanup            - Force session cleanup`);
-    console.log(`   GET  /fingerprint-recent         - Recent request fingerprints`);
-    console.log(`   GET  /fingerprint-stats          - Fingerprint stats`);
-    console.log(`   GET  /rate-limit-stats           - Per-domain rate limit states`);
-    console.log(`   POST /rate-limit/set            - Set domain rate limit`);
-    console.log(`   POST /rate-limit/reset          - Reset domain rate limit`);
-    console.log(`   POST /anti-crawl/simulate       - Simulate anti-crawl pipeline (self-test)`);
-    console.log(`   POST /anti-crawl/advise         - Anti-crawl strategy advisor`);
-    console.log(`   GET  /anti-crawl/domain-signals - Raw detection signals for domain`);
-    console.log(`   GET  /priority-queue/stats       - Priority queue statistics`);
-    console.log(`   POST /priority-queue/reorder     - Reprioritize a queued task`);
-    console.log(`   POST /priority-queue/cancel      - Cancel a queued task`);
-    console.log(`   PUT  /priority-queue/concurrency - Set max concurrent tasks`);
-    console.log(`   GET  /quality/recent             - Recent quality reports`);
-    console.log(`   GET  /quality/stats              - Aggregate quality statistics`);
-    console.log(`   POST /quality/score              - Manual quality score for a task`);
-    console.log(`   GET  /cookie-persist/stats       - Cookie persistence stats (SQLite)`);
-    console.log(`   GET  /retry-stats                - Smart retry stats for all domains`);
-    console.log(`   GET  /retry-stats/:domain        - Smart retry stats for domain`);
-    console.log(`   POST /retry-stats/:domain        - Pause/resume domain retry (action=pause/resume)`);
-    console.log(`   GET  /request-queue/stats        - Request queue metrics`);
-    console.log(`   GET  /progress                   - All task progress snapshots`);
-    console.log(`   GET  /progress/:taskId           - Task progress snapshot`);
-    console.log(`   GET  /domain-health              - Domain health summary`);
-    console.log(`   GET  /domain-health/:domain      - Domain health detail`);
-    console.log(`   POST /domain-health/:domain      - Pause/resume domain (action=pause/resume)`);
+    log.debug(`Engines: ${getEngineNames().join(", ")}`);
+    log.debug(`Captcha Strategies: ${getCaptchaStrategies().map(s => s.name).join(", ")}`);
+    log.debug('Endpoints: /scrape/list, /scrape/book, /scrape/chapters, /scrape/content, /clean, /download-cover, /execute-task, /health, /queue/*, /ai/*, /test-rule, /fingerprint-health, /proxy/*, /session*, /fingerprint*, /rate-limit*, /anti-crawl/*, /priority-queue/*, /quality/*, /cookie-persist/*, /retry-stats*, /request-queue/*, /progress*, /domain-health*');
   }
 
   return server;
@@ -1575,13 +1632,13 @@ export function startServer(port: number = 3099) {
 // ==================== Start ====================
 
 const PORT = parseInt(process.env.PORT || "3099", 10) || 3099;
-console.log(`[Config] PORT: ${PORT}, Auth: ${SERVICE_TOKEN ? "enabled" : "DISABLED"}`);
+log.info(`PORT: ${PORT}, Auth: ${SERVICE_TOKEN ? "enabled" : "DISABLED"}`);
 // Only log sensitive service URLs in debug mode
 if (process.env.DEBUG === "true") {
-  console.log(`[Config] API_BASE: ${process.env.MAIN_APP_URL || "http://localhost:3000"}`);
-  console.log(`[Config] Firecrawl: ${process.env.FIRECRAWL_API_URL || "not configured"}`);
-  console.log(`[Config] AgentQL: ${process.env.AGENTQL_API_URL || "not configured"}`);
-  console.log(`[Config] CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"}`);
+  log.debug(`API_BASE: ${process.env.MAIN_APP_URL || "http://localhost:3000"}`);
+  log.debug(`Firecrawl: ${process.env.FIRECRAWL_API_URL || "not configured"}`);
+  log.debug(`AgentQL: ${process.env.AGENTQL_API_URL || "not configured"}`);
+  log.debug(`CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"}`);
 }
 
 // Recover any stale tasks from previous crashes before starting server
@@ -1589,10 +1646,10 @@ let recovered = 0;
 try {
   recovered = await recoverStaleTasks();
 } catch (err) {
-  console.error("[Startup] recoverStaleTasks failed (non-blocking):", err);
+  log.error('recoverStaleTasks failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) });
 }
 if (recovered > 0) {
-  console.log(`[Startup] Recovered ${recovered} stale tasks`);
+  log.info(`Recovered ${recovered} stale tasks`);
 }
 
 // Auto-load proxy pool from config file
@@ -1602,12 +1659,12 @@ try {
   const proxyConfig = JSON.parse(proxyConfigRaw);
   if (proxyConfig.enabled && proxyConfig.autoImportOnStart && Array.isArray(proxyConfig.proxies) && proxyConfig.proxies.length > 0) {
     const added = proxyManager.addProxies(proxyConfig.proxies);
-    console.log(`[Startup] Imported ${added} proxies from proxy-config.json`);
+    log.info(`Imported ${added} proxies from proxy-config.json`);
   }
 } catch (err) {
   // Non-blocking: proxy config is optional
   if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-    console.warn('[Startup] Failed to load proxy-config.json (non-blocking):', (err as Error).message);
+    log.warn('Failed to load proxy-config.json (non-blocking)', { error: (err as Error).message });
   }
 }
 
@@ -1619,12 +1676,12 @@ const stuckDetectInterval = setInterval(async () => {
   try {
     const count = await detectStuckTasks();
     if (count > 0) {
-      console.log(`[StuckDetection] Detected and failed ${count} stuck tasks`);
+      log.info(`Detected and failed ${count} stuck tasks`);
     }
   } catch (err) {
-    console.error("[StuckDetection] Periodic check error:", err);
+    log.error('Stuck detection periodic check error', { error: err instanceof Error ? err.message : String(err) });
   }
-}, STUCK_DETECT_INTERVAL_MS);
+}, STUCK_DETECT_INTERVAL_MS).unref();
 
 // ==================== Graceful Shutdown ====================
 
@@ -1633,7 +1690,7 @@ let isShuttingDown = false;
 const shutdown = async (signal: string) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log(`\n[${new Date().toISOString()}] Received ${signal}, shutting down gracefully...`);
+  log.info(`Received ${signal}, shutting down gracefully...`);
 
   // Stop accepting new tasks (mark as shutting down)
   // Wait for active tasks to complete (with a 30s hard deadline)
@@ -1644,7 +1701,7 @@ const shutdown = async (signal: string) => {
     (async () => {
       // Wait for all active tasks to finish
       while (activeTasks.size > 0 && Date.now() < deadline) {
-        console.log(`[${new Date().toISOString()}] Waiting for ${activeTasks.size} active tasks to complete...`);
+        log.info(`Waiting for ${activeTasks.size} active tasks to complete...`);
         await new Promise((r) => setTimeout(r, 1000));
       }
     }),
@@ -1674,7 +1731,7 @@ const shutdown = async (signal: string) => {
   clearInterval(terminateTimer); // Clear force-terminate timer regardless
   clearInterval(stuckDetectInterval); // Clear stuck-detection interval
   clearInterval(progressThrottleCleanupTimer); // Clear progress throttle cleanup
-  console.log(`[${new Date().toISOString()}] Active tasks: ${activeTasks.size}, Engines closed. State persisted. Exiting.`);
+  log.info(`Active tasks: ${activeTasks.size}, Engines closed. State persisted. Exiting.`);
 
   process.exit(0);
 };
@@ -1683,7 +1740,7 @@ const shutdown = async (signal: string) => {
 const terminateTimer = setInterval(() => {
   if (activeTasks.size > 0 && isShuttingDown) {
     // Tasks still running after deadline - force terminate
-    console.warn(`[${new Date().toISOString()}] Force terminating ${activeTasks.size} active tasks`);
+    log.warn(`Force terminating ${activeTasks.size} active tasks`);
     for (const taskId of activeTasks) {
       fetch(`${process.env.MAIN_APP_URL || "http://localhost:3000"}/api/scrape-tasks/${taskId}`, {
         method: "PUT",
@@ -1700,7 +1757,7 @@ const terminateTimer = setInterval(() => {
     }
     clearInterval(terminateTimer);
   }
-}, 3000);
+}, 3000).unref();
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));

@@ -12,14 +12,34 @@ import { referrerChain } from "./referrer-chain";
 import { getDiversifiedHeaders } from "./ip-fingerprint";
 import { getForwardedFor } from "./doh-simulation";
 import { getAcceptEncoding } from "./http2-decoy";
+import { logger } from "./logger";
+
+// ==================== Error Helpers (type-safe doNotRetry / statusCode) ====================
+
+/** Brand an Error as non-retryable (replaces `(err as any).doNotRetry = true`) */
+export function markDoNotRetry(err: Error): void {
+  (err as any).doNotRetry = true; // intentional ad-hoc property on Error
+}
+
+/** Check if an Error was branded as non-retryable */
+export function isDoNotRetry(err: unknown): boolean {
+  return err instanceof Error && !!(err as any).doNotRetry;
+}
+
+/** Extract statusCode from an error that may carry one as an ad-hoc property */
+export function getErrorStatusCode(err: unknown): number | undefined {
+  if (!(err instanceof Error)) return undefined;
+  const code = (err as any).statusCode;
+  return typeof code === 'number' ? code : undefined;
+}
 
 // ==================== Debug Helper ====================
 
 const _isDebugEnabled = process.env.DEBUG === 'true';
 
-/** Log only when DEBUG=true env var is set. Use instead of console.log for debug messages. */
+/** Log only when DEBUG=true env var is set. */
 export function debugLog(...args: unknown[]): void {
-  if (_isDebugEnabled) console.debug('[DEBUG]', ...args);
+  if (_isDebugEnabled) logger.debug('Utils', args.map(String).join(' '));
 }
 
 // ==================== User-Agent Rotation ====================
@@ -856,7 +876,7 @@ export async function retryWithBackoff<T>(
       }
 
       // Check if error is marked as non-retryable
-      if ((lastError as any).doNotRetry) {
+      if (isDoNotRetry(lastError)) {
         throw lastError;
       }
 
@@ -1043,7 +1063,7 @@ export function buildFetchHeaders(
   // Sending DNT: 1 when navigator.doNotTrack is null is a cross-channel detection vector.
   // Firefox uses Sec-GPC; Chrome/Safari/Edge use DNT.
   if (antiCrawl?.dnt && headers['User-Agent']) {
-    const dntHeader = getDntHeader({ userAgent: headers['User-Agent'] } as any);
+    const dntHeader = getDntHeader({ userAgent: headers['User-Agent'] });
     if (dntHeader) Object.assign(headers, dntHeader);
   }
 

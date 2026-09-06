@@ -97,6 +97,7 @@ export interface TaskProgressState {
 
 const THROUGHPUT_WINDOW_MS = 60_000; // 1 minute rolling window
 const MAX_COMPLETION_EVENTS = 1000;
+const MAX_STEP_TIMINGS = 100;
 const SNAPSHOT_INTERVAL_MS = 30_000; // Snapshot every 30 seconds
 const SNAPSHOT_DIR = resolve(import.meta.dir ?? '.', '..', 'progress-snapshots');
 const MAX_DOMAINS = 200;
@@ -165,6 +166,9 @@ class ProgressTracker {
     state.activeStep.completedAt = now;
     state.activeStep.durationMs = now - state.activeStep.startedAt;
     state.stepTimings.push(state.activeStep);
+    if (state.stepTimings.length > MAX_STEP_TIMINGS) {
+      state.stepTimings.shift();
+    }
     state.activeStep = undefined;
     state.currentStep = 'idle';
   }

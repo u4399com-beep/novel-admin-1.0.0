@@ -95,6 +95,7 @@ const DELAY_MULTIPLIER_STEP = 2; // Double delay on each failure
 const MAX_DELAY_MULTIPLIER = 16;
 const RECENT_ATTEMPTS_WINDOW = 20;
 const MAX_ERROR_HISTORY = 50;
+const MAX_SUCCESSFUL_RECOVERIES = 50;
 const MAX_DOMAINS = 500;
 const PERSIST_INTERVAL_MS = 60_000;
 const MAX_RECENT_ATTEMPTS = 10;
@@ -373,6 +374,9 @@ class SmartRetryStrategy {
           action: lastAttempt.recoveryAction,
           timestamp: Date.now(),
         });
+        if (state.successfulRecoveries.length > MAX_SUCCESSFUL_RECOVERIES) {
+          state.successfulRecoveries.shift();
+        }
         state.totalRecoveries++;
         log.info(`Domain ${domain}: recovered using ${lastAttempt.recoveryAction}`);
       }

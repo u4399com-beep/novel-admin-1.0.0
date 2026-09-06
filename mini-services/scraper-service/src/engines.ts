@@ -15,7 +15,7 @@
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery, AntiCrawl } from "./types";
 import { isSafeUrl } from "./ssrf";
-import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints } from "./utils";
+import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints, markDoNotRetry, isDoNotRetry, getErrorStatusCode } from "./utils";
 import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA } from "./stealth";
 import { getAcceptEncoding } from "./http2-decoy";
 import { getTLSFingerprintOptions } from "./tls-fingerprint";
@@ -1117,7 +1117,7 @@ class CheerioEngine implements ScrapingEngine {
             // Record CAPTCHA-triggered engine upgrade for future requests to this domain
             recordCaptchaUpgrade(targetDomain, 'cheerio');
             const captchaErr = new Error(`CAPTCHA detected (${captchaResult.type}, ${Math.round(captchaResult.confidence * 100)}%) on ${targetDomain}`);
-            (captchaErr as any).doNotRetry = true;
+            markDoNotRetry(captchaErr);
             throw captchaErr;
           }
         }
@@ -1552,7 +1552,7 @@ class PlaywrightEngine implements ScrapingEngine {
           const html = await page.content();
           if (html.length > MAX_RESPONSE_SIZE) {
             const pwSizeErr = new Error(`Playwright page content too large: ${html.length} bytes (max 10MB)`);
-            (pwSizeErr as any).doNotRetry = true;
+            markDoNotRetry(pwSizeErr);
             throw pwSizeErr;
           }
           const finalUrl = page.url();
@@ -1571,7 +1571,7 @@ class PlaywrightEngine implements ScrapingEngine {
               // Record CAPTCHA-triggered engine upgrade for future requests to this domain
               recordCaptchaUpgrade(pwDomain, 'playwright');
               const pwCaptchaErr = new Error(`CAPTCHA detected (${pwCaptcha.type}, ${Math.round(pwCaptcha.confidence * 100)}%) on ${pwDomain}`);
-              (pwCaptchaErr as any).doNotRetry = true;
+              markDoNotRetry(pwCaptchaErr);
               throw pwCaptchaErr;
             }
           }
@@ -1743,7 +1743,7 @@ class FirecrawlEngine implements ScrapingEngine {
 
         if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
           const fcSizeErr = new Error(`Firecrawl HTML too large: ${data.html.length} bytes`);
-          (fcSizeErr as any).doNotRetry = true;
+          markDoNotRetry(fcSizeErr);
           throw fcSizeErr;
         }
 
@@ -1769,7 +1769,7 @@ class FirecrawlEngine implements ScrapingEngine {
             firecrawlBreaker.release();
             throw err;
           }
-          if (!(err instanceof Error && (err as any).doNotRetry)) {
+          if (!isDoNotRetry(err)) {
             firecrawlBreaker.recordFailure();
           } else {
             firecrawlBreaker.release(); // doNotRetry (e.g. size limit) is not a service failure
@@ -1931,7 +1931,7 @@ class AgentQLEngine implements ScrapingEngine {
         const dataJsonSize = JSON.stringify(data.data || {});
         if (dataJsonSize.length > MAX_RESPONSE_SIZE) {
           const sizeError = new Error(`AgentQL response too large`);
-          (sizeError as any).doNotRetry = true;
+          markDoNotRetry(sizeError);
           throw sizeError;
         }
 
@@ -1955,7 +1955,7 @@ class AgentQLEngine implements ScrapingEngine {
             agentqlBreaker.release();
             throw err;
           }
-          if (!(err instanceof Error && (err as any).doNotRetry)) {
+          if (!isDoNotRetry(err)) {
             agentqlBreaker.recordFailure();
           } else {
             agentqlBreaker.release();
@@ -2074,7 +2074,7 @@ class CloudBrowserEngine implements ScrapingEngine {
 
           if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
             const steelSizeErr = new Error(`Steel API HTML too large: ${data.html.length} bytes`);
-            (steelSizeErr as any).doNotRetry = true;
+            markDoNotRetry(steelSizeErr);
             throw steelSizeErr;
           }
 
@@ -2122,7 +2122,7 @@ class CloudBrowserEngine implements ScrapingEngine {
 
           if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
             const blSizeErr = new Error(`Browserless response too large: ${data.html.length} bytes`);
-            (blSizeErr as any).doNotRetry = true;
+            markDoNotRetry(blSizeErr);
             throw blSizeErr;
           }
 
@@ -2143,7 +2143,7 @@ class CloudBrowserEngine implements ScrapingEngine {
           // Check size of ACTUAL html (the data.html check above only covers one code path)
           if (html.length > MAX_RESPONSE_SIZE) {
             const blSizeErr2 = new Error(`Browserless response too large: ${html.length} bytes (max 10MB)`);
-            (blSizeErr2 as any).doNotRetry = true;
+            markDoNotRetry(blSizeErr2);
             throw blSizeErr2;
           }
 
@@ -2167,7 +2167,7 @@ class CloudBrowserEngine implements ScrapingEngine {
             cloudBrowserBreaker.release();
             throw err;
           }
-          if (!(err instanceof Error && (err as any).doNotRetry)) {
+          if (!isDoNotRetry(err)) {
             cloudBrowserBreaker.recordFailure();
           } else {
             cloudBrowserBreaker.release();
@@ -2254,7 +2254,7 @@ class ScraplingEngine implements ScrapingEngine {
           const html = data.html || "";
           if (html.length > MAX_RESPONSE_SIZE) {
             const scSizeErr = new Error(`Scrapling HTML too large: ${html.length} bytes`);
-            (scSizeErr as any).doNotRetry = true;
+            markDoNotRetry(scSizeErr);
             throw scSizeErr;
           }
 
@@ -2272,7 +2272,7 @@ class ScraplingEngine implements ScrapingEngine {
             scraplingBreaker.release();
             throw scraplingErr;
           }
-          if (scraplingErr instanceof Error && (scraplingErr as any).doNotRetry) {
+          if (isDoNotRetry(scraplingErr)) {
             scraplingBreaker.release();
             throw scraplingErr;
           }
@@ -2291,7 +2291,7 @@ class ScraplingEngine implements ScrapingEngine {
       return result;
     }).catch(err => {
       const errStatus = (err instanceof Error && 'statusCode' in err)
-        ? Number((err as any).statusCode) : undefined;
+        ? getErrorStatusCode(err) : undefined;
       if (scDomain) rateLimiter.recordResult(scDomain, false, errStatus);
       throw err;
     });
@@ -2361,7 +2361,7 @@ class DokobotEngine implements ScrapingEngine {
           const html = data.html || "";
           if (html.length > MAX_RESPONSE_SIZE) {
             const dkSizeErr = new Error(`Dokobot HTML too large: ${html.length} bytes`);
-            (dkSizeErr as any).doNotRetry = true;
+            markDoNotRetry(dkSizeErr);
             throw dkSizeErr;
           }
 
@@ -2379,7 +2379,7 @@ class DokobotEngine implements ScrapingEngine {
             dokobotBreaker.release();
             throw dokobotErr;
           }
-          if (dokobotErr instanceof Error && (dokobotErr as any).doNotRetry) {
+          if (isDoNotRetry(dokobotErr)) {
             dokobotBreaker.release();
             throw dokobotErr;
           }
@@ -2398,7 +2398,7 @@ class DokobotEngine implements ScrapingEngine {
       return result;
     }).catch(err => {
       const errStatus = (err instanceof Error && 'statusCode' in err)
-        ? Number((err as any).statusCode) : undefined;
+        ? getErrorStatusCode(err) : undefined;
       if (dkDomain) rateLimiter.recordResult(dkDomain, false, errStatus);
       throw err;
     });
@@ -2998,7 +2998,7 @@ class ObscuraEngine implements ScrapingEngine {
             const sizeErr = new Error(
               `Obscura page content too large: ${html.length} bytes (max 10MB)`
             );
-            (sizeErr as any).doNotRetry = true; // Same page will always be too large, retrying wastes time
+            markDoNotRetry(sizeErr); // Same page will always be too large, retrying wastes time
             throw sizeErr;
           }
           const finalUrl = page.url();
@@ -3041,7 +3041,7 @@ class ObscuraEngine implements ScrapingEngine {
               // Record CAPTCHA-triggered engine upgrade (obscura is highest — no further upgrade, but still recorded)
               recordCaptchaUpgrade(domain, 'obscura');
               const obscuraCaptchaErr = new Error(`CAPTCHA detected (${captchaDetection.type}, ${Math.round(captchaDetection.confidence * 100)}%) on ${domain}`);
-              (obscuraCaptchaErr as any).doNotRetry = true;
+              markDoNotRetry(obscuraCaptchaErr);
               throw obscuraCaptchaErr;
             }
           }
@@ -3460,7 +3460,7 @@ export async function fetchWithInfiniteScroll(
     }
     logger.warn('InfiniteScroll', `Browser-based scroll failed`, { error: err instanceof Error ? err.message : String(err) });
     const errStatus = (err instanceof Error && 'statusCode' in err)
-      ? Number((err as any).statusCode) : undefined;
+      ? getErrorStatusCode(err) : undefined;
     if (domain) rateLimiter.recordResult(domain, false, errStatus);
     // Fall back to a single HTTP fetch
     const fallbackEngine = getEngine('cheerio');

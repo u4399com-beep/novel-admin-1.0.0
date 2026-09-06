@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import type { ViewType } from '@/types';
 import { useState, useEffect, useSyncExternalStore, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { Upload, BookOpen, Search, Sun, Moon, LogOut, Plus } from 'lucide-react';
+import { Upload, BookOpen, Search, Sun, Moon, LogOut, Plus, Activity, Zap, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -204,6 +204,30 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* ── Status Indicator + Quick Action Toolbar ── */}
+            <div className="hidden md:flex items-center gap-1.5 mr-1 border-r border-border/50 pr-3">
+              {/* Service health dot */}
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title="服务状态">
+                <span className="relative flex h-2 w-2">
+                  <span className="status-dot-pulse absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+                <span className="hidden lg:inline">正常</span>
+              </span>
+              {/* Quick actions */}
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2" onClick={handleCreateNovel}>
+                <Zap className="h-3 w-3" />
+                <span className="hidden xl:inline">新建</span>
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2" onClick={() => setCurrentView('scrape')}>
+                <Activity className="h-3 w-3" />
+                <span className="hidden xl:inline">采集</span>
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2" onClick={() => setCurrentView('settings')}>
+                <Settings className="h-3 w-3" />
+                <span className="hidden xl:inline">设置</span>
+              </Button>
+            </div>
             {currentView === 'novels' && (
               <>
                 <Button onClick={handleCreateNovel} size="sm" className="gap-1.5"><Plus className="h-4 w-4" /><span className="hidden sm:inline">新建小说</span></Button>

@@ -5217,7 +5217,7 @@ export function clearDelayCache(domain?: string): void {
  * @param profile - A FingerprintProfile (used to detect browser family from userAgent)
  * @returns An object like `{ 'Sec-GPC': '1' }`, or null if no header should be set
  */
-export function getDntHeader(profile?: FingerprintProfile): Record<string, string> | null {
+export function getDntHeader(profile?: FingerprintProfile | { userAgent?: string }): Record<string, string> | null {
   // Stealth script forces navigator.doNotTrack = null (Section 62).
   // Sending DNT header would create a cross-channel mismatch.
   // However, real Firefox sends Sec-GPC: 1 by default regardless of DNT setting.

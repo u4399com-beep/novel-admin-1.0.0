@@ -294,7 +294,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
           const oldestKey = dispatcherCache.keys().next().value;
           if (oldestKey !== undefined) {
             const old = dispatcherCache.get(oldestKey);
-            try { (old as any)?.close?.(); } catch { /* */ }
+            try { (old as any)?.close?.(); } catch { /* */ } // eslint-disable-line @typescript-eslint/no-explicit-any -- dynamic close on heterogeneous connection types
             dispatcherCache.delete(oldestKey);
           }
         }
@@ -317,7 +317,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
       const oldestKey = dispatcherCache.keys().next().value;
       if (oldestKey !== undefined) {
         const old = dispatcherCache.get(oldestKey);
-        try { (old as any)?.close?.(); } catch { /* */ }
+        try { (old as any)?.close?.(); } catch { /* */ } // eslint-disable-line @typescript-eslint/no-explicit-any -- dynamic close on heterogeneous connection types
         dispatcherCache.delete(oldestKey);
       }
     }
@@ -336,7 +336,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
 export function invalidateDispatcher(proxyUrl: string): void {
   const d = dispatcherCache.get(proxyUrl);
   if (d) {
-    try { (d as any).close?.(); } catch { /* already closed */ }
+    try { (d as any).close?.(); } catch { /* already closed */ } // eslint-disable-line @typescript-eslint/no-explicit-any
   }
   dispatcherCache.delete(proxyUrl);
 }
@@ -344,12 +344,10 @@ export function invalidateDispatcher(proxyUrl: string): void {
 /** Clear the entire dispatcher cache */
 export function clearDispatcherCache(): void {
   for (const [url, d] of dispatcherCache) {
-    try { (d as any).close?.(); } catch { /* */ }
+    try { (d as any).close?.(); } catch { /* */ } // eslint-disable-line @typescript-eslint/no-explicit-any
   }
   dispatcherCache.clear();
 }
-
-// ==================== ProxyLatencyTracker ====================
 
 /** Entry in the rolling latency window */
 interface LatencyWindowEntry {
@@ -2251,7 +2249,7 @@ class ProxyManager {
 
     // Run immediately on start, then periodically
     runVerification().catch(() => {});
-    this.verificationTimer = setInterval(runVerification, interval);
+    this.verificationTimer = setInterval(runVerification, interval).unref();
 
     if (process.env.DEBUG === 'true' || process.env.DEBUG === '1') {
       log.info(` Periodic verification started (interval: ${interval}ms)`);
