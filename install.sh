@@ -245,11 +245,20 @@ _AVAIL_KB=$(awk '/MemAvailable/{print $2}' /proc/meminfo 2>/dev/null || echo 419
 _AVAIL_MB=$((_AVAIL_KB / 1024))
 if [ "$_AVAIL_MB" -ge 4096 ]; then
   progress_ok
-elif [ "$_AVAIL_MB" -ge 1536 ]; then
-  echo -e "${YELLOW}⚠${NC}  (${_AVAIL_MB}MB — will use tiny/small tier)"
+  _RAM_TIER="normal"
+elif [ "$_AVAIL_MB" -ge 2048 ]; then
+  echo -e "${YELLOW}⚠${NC}  (${_AVAIL_MB}MB — small tier, may be slow during compilation)"
+  _RAM_TIER="small"
+elif [ "$_AVAIL_MB" -ge 1024 ]; then
+  echo -e "${YELLOW}⚠${NC}  (${_AVAIL_MB}MB — tiny tier, limited concurrency & no parallel build)"
+  _RAM_TIER="tiny"
+  # Auto-adjust for low memory
+  export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=512"
+  warn "Low memory mode: Node.js heap limited to 512MB"
+  warn "Recommendation: Use Docker install (install-docker.sh) for better memory control"
 else
-  echo -e "${RED}✗${NC}  (${_AVAIL_MB}MB — below minimum 1.5GB)"
-  fatal "Insufficient RAM (${_AVAIL_MB}MB). Minimum 1.5GB, recommended 4GB."
+  echo -e "${RED}✗${NC}  (${_AVAIL_MB}MB — below minimum 1GB)"
+  fatal "Insufficient RAM (${_AVAIL_MB}MB). Minimum 1GB with SQLite, recommended 4GB. Try Docker: bash install-docker.sh"
 fi
 
 # 1f. Disk check (10GB free)
@@ -481,7 +490,11 @@ fi
 # ─── Step 7: Build ────────────────────────────────────────
 step 7 "Build Application"
 
-if $PRODUCTION_MODE || ! $SKIP_DEPS; then
+if [ "${_RAM_TIER:-normal}" = "tiny" ]; then
+  warn "Skipping build for tiny tier (${_AVAIL_MB}MB RAM) — using dev mode instead"
+  warn "For production: upgrade to >=2GB RAM or use Docker, then run: bun run build"
+  PRODUCTION_MODE=false
+elif $PRODUCTION_MODE || ! $SKIP_DEPS; then
   info "Building Next.js application..."
   if bun run build 2>&1; then
     ok "Build completed successfully"
@@ -532,7 +545,11 @@ info "Starting Next.js app on port ${_APP_PORT}..."
 if $PRODUCTION_MODE; then
   nohup bun start > /tmp/app.log 2>&1 &
 else
-  nohup bun dev > /tmp/app.log 2>&1 &
+  if [ "${_RAM_TIER:-normal}" = "tiny" ]; then
+    nohup bun --hot dev -p ${_APP_PORT} > /tmp/app.log 2>&1 &
+  else
+    nohup bun dev > /tmp/app.log 2>&1 &
+  fi
 fi
 APP_PID=$!
 ok "App started (PID: $APP_PID)"
