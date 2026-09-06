@@ -633,7 +633,7 @@ export async function runFingerprintTest(
     try {
       // Set up a global collector for async results
       await page.evaluate(() => {
-        (window as any).__fpAsyncResults = [];
+        (window as { __fpAsyncResults?: unknown[] }).__fpAsyncResults = [];
       });
 
       // Re-run just the async checks with the collector
@@ -693,7 +693,7 @@ export async function runFingerprintTest(
         await new Promise(r => setTimeout(r, 1000));
       }, asyncScript);
 
-      asyncChecks = await page.evaluate(() => (window as any).__fpAsyncResults || []);
+      asyncChecks = await page.evaluate(() => (window as { __fpAsyncResults?: unknown[] }).__fpAsyncResults || []);
     } catch {
       // Async check collection failed — continue with sync results only
     }

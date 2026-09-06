@@ -359,6 +359,16 @@ class CrawlScheduler {
     this.inFlightCount.clear();
     this.totalInFlight = 0;
   }
+
+  /** Get the number of currently in-flight requests for a domain */
+  getInFlightCount(domain: string): number {
+    return this.inFlightCount.get(domain) || 0;
+  }
+
+  /** Get total in-flight request count across all domains */
+  getTotalInFlight(): number {
+    return this.totalInFlight;
+  }
 }
 
 // Singleton export

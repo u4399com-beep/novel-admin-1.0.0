@@ -85,12 +85,12 @@ export function AdminDesktopSidebar({ collapsed, currentView, isMac, onToggleCol
               />
 
               {!collapsed && (
-                <span className="flex-1 text-left">{item.label}</span>
+                <span className="flex-1 text-left truncate">{item.label}</span>
               )}
 
-              {!collapsed && (
-                <span className="hidden lg:inline-block text-[10px] font-mono text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
-                  {getShortcutKeys(NAV_ITEMS.length, isMac)[index]}
+              {!collapsed && item.description && (
+                <span className="hidden lg:inline-block text-[10px] font-mono text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0 truncate max-w-[80px]">
+                  {item.description.slice(0, 10)}
                 </span>
               )}
 

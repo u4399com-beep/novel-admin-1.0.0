@@ -195,12 +195,7 @@ class ProgressTracker {
     const state = this.tasks.get(taskId);
     if (!state) return;
 
-    if (updates.queued !== undefined) state.urls.queued = updates.queued;
-    if (updates.processing !== undefined) state.urls.processing = updates.processing;
-    if (updates.completed !== undefined) state.urls.completed = updates.completed;
-    if (updates.failed !== undefined) state.urls.failed = updates.failed;
-
-    // Record completion event for throughput calculation
+    // Record completion event for throughput calculation BEFORE updating the value
     if (updates.completed !== undefined && updates.completed > state.urls.completed) {
       const delta = updates.completed - state.urls.completed;
       state.completionEvents.push({ timestamp: Date.now(), count: delta });
@@ -208,6 +203,11 @@ class ProgressTracker {
         state.completionEvents.shift();
       }
     }
+
+    if (updates.queued !== undefined) state.urls.queued = updates.queued;
+    if (updates.processing !== undefined) state.urls.processing = updates.processing;
+    if (updates.completed !== undefined) state.urls.completed = updates.completed;
+    if (updates.failed !== undefined) state.urls.failed = updates.failed;
 
     this.emitProgress(taskId);
   }
@@ -344,6 +344,14 @@ class ProgressTracker {
    */
   onProgress(listener: (taskId: string, snapshot: TaskProgressSnapshot) => void): void {
     this.eventListeners.push(listener);
+  }
+
+  /**
+   * Remove a progress event listener.
+   */
+  offProgress(listener: (taskId: string, snapshot: TaskProgressSnapshot) => void): void {
+    const idx = this.eventListeners.indexOf(listener);
+    if (idx >= 0) this.eventListeners.splice(idx, 1);
   }
 
   /**

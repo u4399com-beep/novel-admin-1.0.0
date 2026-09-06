@@ -66,13 +66,14 @@ export function ReaderContent({
 }: ReaderContentProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
+  const isSepia = currentTheme.key === 'sepia';
   const themeBgStyle = isDark ? currentTheme.bgStyleDark : currentTheme.bgStyle;
   const themeTextStyle = isDark ? currentTheme.textStyleDark : currentTheme.textStyle;
 
   return (
-    <div ref={contentRef} className="flex-1 overflow-y-auto reader-content-area scroll-smooth">
+    <div ref={contentRef} className={`flex-1 overflow-y-auto reader-content-area scroll-smooth ${isSepia ? 'reader-sepia-warm' : ''}`}>
       <div
-        className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-all duration-500 ease-in-out`}
+        className={`px-6 py-6 sm:px-10 sm:py-8 ${currentTheme.bg} min-h-full transition-all duration-500 ease-in-out page-turn-enter`}
         style={themeBgStyle}
       >
         {loading ? (
@@ -103,10 +104,11 @@ export function ReaderContent({
             </h3>
             <hr className="reader-chapter-divider" />
             <article
-              className={`whitespace-pre-wrap transition-all duration-500 ease-in-out ${currentTheme.text} ${currentFontCss}`}
+              className={`whitespace-pre-wrap transition-all duration-500 ease-in-out reader-optimal-typography ${currentTheme.text} ${currentFontCss}`}
               style={{
                 fontSize: `${fontSize}px`,
-                lineHeight,
+                lineHeight: lineHeight || 1.8,
+                letterSpacing: '0.01em',
                 ...themeTextStyle,
               }}
             >

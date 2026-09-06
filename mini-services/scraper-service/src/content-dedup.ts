@@ -167,8 +167,11 @@ export class ContentDeduplicator {
     }
 
     // Check against all cached SimHashes for near-duplicates
+    // Note: Without the original content, we can only check against cached entries
+    // that already have SimHash values. If the URL is not cached, near-duplicate
+    // detection is not possible with this method - use isDuplicateContent() instead.
     const cachedEntry = this.cache.get(url);
-    if (cachedEntry) {
+    if (cachedEntry && cachedEntry.simHash !== 0n) {
       const simHash = cachedEntry.simHash;
       for (const entry of this.simHashes) {
         if (entry.url === url) continue;

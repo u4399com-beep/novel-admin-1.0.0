@@ -242,8 +242,8 @@ class PipelineMetrics {
     // Compute RPM from actual time span
     const timeSpan = events.length > 1
       ? events[events.length - 1].timestamp - events[0].timestamp
-      : ROLLING_WINDOW_MS;
-    const timeSpanMinutes = Math.max(timeSpan / 60_000, 0.1);
+      : 60_000; // Single event: assume 1-minute span for meaningful RPM
+    const timeSpanMinutes = Math.max(timeSpan / 60_000, 0.001); // Minimum 1ms to avoid division by zero
     const requestsPerMinute = total / timeSpanMinutes;
 
     const base = {

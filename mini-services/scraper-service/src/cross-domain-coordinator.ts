@@ -478,6 +478,105 @@ class CrossDomainCoordinator {
       this.cleanupInterval = null;
     }
   }
+
+  // ==================== Domain Relationship Graph ====================
+
+  /**
+   * Domain relationship graph for WAF/infrastructure correlation.
+   *
+   * Related domains often share:
+   *   - Same WAF provider (Cloudflare, PerimeterX)
+   *   - Same hosting provider
+   *   - Same CDN (static assets on cdn.example.com)
+   *   - Same parent company
+   *
+   * When one domain gets blocked, related domains should slow down
+   * because they likely share the same anti-bot backend.
+   */
+
+  /**
+   * Auto-detect domain relationships based on naming patterns.
+   * e.g., "cdn.example.com" is related to "www.example.com"
+   *       "static.shop.cn" is related to "shop.cn"
+   */
+  autoDetectRelationships(): void {
+    const domains = Array.from(this.domainStates.keys());
+
+    for (const domain of domains) {
+      const related: string[] = [];
+
+      // Extract base domain (e.g., "example.com" from "cdn.example.com")
+      const parts = domain.split('.');
+      if (parts.length >= 2) {
+        const baseDomain = parts.slice(-2).join('.');
+        // Find all domains sharing the same base
+        for (const other of domains) {
+          if (other !== domain && (other === baseDomain || other.endsWith('.' + baseDomain))) {
+            related.push(other);
+          }
+        }
+      }
+
+      if (related.length > 0) {
+        const state = this.domainStates.get(domain);
+        if (state) {
+          // Merge auto-detected with manually set
+          const combined = new Set([...state.relatedDomains, ...related]);
+          state.relatedDomains = Array.from(combined);
+        }
+      }
+    }
+  }
+
+  /**
+   * Get all domain relationships as a graph.
+   */
+  getRelationshipGraph(): Array<{ domain: string; related: string[] }> {
+    return Array.from(this.domainStates.values()).map(s => ({
+      domain: s.domain,
+      related: s.relatedDomains,
+    }));
+  }
+
+  // ==================== Shared Session Management ====================
+
+  /**
+   * Shared session management across related domains.
+   *
+   * When domains share infrastructure, maintaining consistent
+   * session identifiers (cookies, tokens) across them prevents
+   * session fragmentation that anti-bot systems can detect.
+   */
+
+  private sharedSessions = new Map<string, Set<string>>(); // sessionGroup -> domains
+
+  /**
+   * Define a shared session group for related domains.
+   * Domains in the same group share session coordination.
+   */
+  defineSharedSessionGroup(groupName: string, domains: string[]): void {
+    this.sharedSessions.set(groupName, new Set(domains.map(d => d.toLowerCase().replace(/^www\./, ''))));
+  }
+
+  /**
+   * Get the session group for a domain.
+   */
+  getSessionGroup(domain: string): string | undefined {
+    const normalized = domain.toLowerCase().replace(/^www\./, '');
+    for (const [group, domains] of this.sharedSessions) {
+      if (domains.has(normalized)) return group;
+    }
+    return undefined;
+  }
+
+  /**
+   * Check if two domains share a session group.
+   */
+  areDomainsRelated(domain1: string, domain2: string): boolean {
+    const group1 = this.getSessionGroup(domain1);
+    const group2 = this.getSessionGroup(domain2);
+    return !!group1 && group1 === group2;
+  }
 }
 
 // ==================== Singleton ====================

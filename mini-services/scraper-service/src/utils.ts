@@ -16,20 +16,20 @@ import { logger } from "./logger";
 
 // ==================== Error Helpers (type-safe doNotRetry / statusCode) ====================
 
-/** Brand an Error as non-retryable (replaces `(err as any).doNotRetry = true`) */
+/** Brand an Error as non-retryable */
 export function markDoNotRetry(err: Error): void {
-  (err as any).doNotRetry = true; // intentional ad-hoc property on Error
+  (err as Record<string, unknown>).doNotRetry = true;
 }
 
 /** Check if an Error was branded as non-retryable */
 export function isDoNotRetry(err: unknown): boolean {
-  return err instanceof Error && !!(err as any).doNotRetry;
+  return err instanceof Error && !!(err as Record<string, unknown>).doNotRetry;
 }
 
 /** Extract statusCode from an error that may carry one as an ad-hoc property */
 export function getErrorStatusCode(err: unknown): number | undefined {
   if (!(err instanceof Error)) return undefined;
-  const code = (err as any).statusCode;
+  const code = (err as Record<string, unknown>).statusCode;
   return typeof code === 'number' ? code : undefined;
 }
 

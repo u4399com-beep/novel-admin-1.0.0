@@ -301,7 +301,7 @@ class ResultCache {
       // Entries by page type
       const typeRows = this.db.prepare(
         'SELECT page_type, COUNT(*) as cnt FROM result_cache GROUP BY page_type'
-      ).all() as any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- better-sqlite3 row types are dynamic
+      ).all() as Array<{ page_type: string; cnt: number }>;  
       const entriesByType: Record<string, number> = {};
       let totalSize = 0;
       for (const row of typeRows) {
@@ -311,13 +311,13 @@ class ResultCache {
       // Total size estimate
       const sizeRow = this.db.prepare(
         'SELECT SUM(content_length) as total_size FROM result_cache'
-      ).get() as any; // eslint-disable-line @typescript-eslint/no-explicit-any -- better-sqlite3 dynamic row
+      ).get() as { total_size: number | null } | undefined;  
       totalSize = sizeRow?.total_size || 0;
 
       // Age range
       const ageRow = this.db.prepare(
         'SELECT MIN(created_at) as oldest, MAX(created_at) as newest FROM result_cache'
-      ).get() as any; // eslint-disable-line @typescript-eslint/no-explicit-any -- better-sqlite3 dynamic row
+      ).get() as { oldest: string | null; newest: string | null } | undefined;  
 
       const total = this.hits + this.misses;
 
@@ -349,7 +349,7 @@ class ResultCache {
 
   private getEntryCount(): number {
     try {
-      const row = this.db.prepare('SELECT COUNT(*) as cnt FROM result_cache').get() as any; // eslint-disable-line @typescript-eslint/no-explicit-any -- better-sqlite3 dynamic row
+      const row = this.db.prepare('SELECT COUNT(*) as cnt FROM result_cache').get() as { cnt: number } | undefined;  
       return row?.cnt || 0;
     } catch { return 0; }
   }

@@ -392,6 +392,14 @@ class DomainIsolatedRequestQueue {
     this.listeners.push(listener);
   }
 
+  /**
+   * Remove event listener.
+   */
+  off(listener: (event: string, data: unknown) => void): void {
+    const idx = this.listeners.indexOf(listener);
+    if (idx >= 0) this.listeners.splice(idx, 1);
+  }
+
   private emit(event: string, data: unknown): void {
     for (const listener of this.listeners) {
       try { listener(event, data); } catch {}

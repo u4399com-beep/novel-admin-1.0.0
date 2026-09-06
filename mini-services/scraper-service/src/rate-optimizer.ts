@@ -257,8 +257,9 @@ class RateOptimizer {
    */
   getRequestDelay(domain: string): number {
     const rpm = this.getOptimalRate(domain);
-    if (rpm <= 0) return 60000; // Safety: 1 min if rate is 0
+    if (rpm <= 0 || !Number.isFinite(rpm)) return 60000; // Safety: 1 min if rate is 0/NaN/Infinity
     const delayMs = (60_000 / rpm);
+    if (!Number.isFinite(delayMs)) return 60000; // Safety: guard against Infinity
     // Add ±15% jitter
     const jitter = 0.85 + Math.random() * 0.30;
     return Math.round(delayMs * jitter);

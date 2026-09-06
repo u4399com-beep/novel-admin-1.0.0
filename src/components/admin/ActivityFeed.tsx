@@ -149,7 +149,7 @@ export function ActivityFeed() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm leading-snug">{item.title}</p>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.description}</p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground/70">{formatRelativeTime(item.timestamp)}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground/70 tabular-nums">{formatRelativeTime(item.timestamp)} · {new Date(item.timestamp).toLocaleDateString()}</p>
                 </div>
               </div>
             );

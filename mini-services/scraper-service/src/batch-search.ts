@@ -293,14 +293,11 @@ export async function executeBatchSearch(
     const promises = batch.map(async (sourceId) => {
       const sourceStart = Date.now();
       try {
-        const results = await Promise.race([
-          searchFn(request.query, sourceId, sourceTimeoutMs),
-          new Promise<SearchResult[]>((_, reject) =>
-            setTimeout(() => reject(new Error('Source timeout')), sourceTimeoutMs),
-          ),
-        ]);
+        // searchFn already receives sourceTimeoutMs and handles timeout internally;
+        // no need for Promise.race with setTimeout (which would leak the timer)
+        const results = await searchFn(request.query, sourceId, sourceTimeoutMs);
 
-        // Score and limit results=results per source
+        // Score and limit results per source
         const scored = results
           .slice(0, maxResultsPerSource)
           .map(r => ({

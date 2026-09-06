@@ -177,7 +177,7 @@ class SessionPersistence {
     try {
       const rows = this.db.prepare(
         'SELECT id, request_count, created_at FROM scraping_sessions WHERE domain = ? AND blocked = 0 AND expires_at > ?'
-      ).all(domain, Date.now()) as any[]; // eslint-disable-line @typescript-eslint/no-explicit-any -- better-sqlite3 dynamic row
+      ).all(domain, Date.now()) as Array<{ id: string; user_agent: string; cookies: string; proxy: string | null; fingerprint: string | null; request_count: number; max_usage: number; created_at: string; last_used_at: string; blocked: number }>;  
       return rows.map(r => ({ id: r.id, requestCount: r.request_count, createdAt: r.created_at }));
     } catch { return []; }
   }
@@ -186,7 +186,7 @@ class SessionPersistence {
     try {
       const row = this.db.prepare(
         'SELECT COUNT(*) as total, SUM(request_count) as total_reqs FROM scraping_sessions WHERE expires_at > ?'
-      ).get(Date.now()) as any; // eslint-disable-line @typescript-eslint/no-explicit-any -- better-sqlite3 dynamic row
+      ).get(Date.now()) as { id: string; user_agent: string; cookies: string; proxy: string | null; fingerprint: string | null; request_count: number; max_usage: number; created_at: string; last_used_at: string; blocked: number } | undefined;  
       return { totalSessions: row?.total || 0, totalRequests: row?.total_reqs || 0 };
     } catch { return { totalSessions: 0, totalRequests: 0 }; }
   }

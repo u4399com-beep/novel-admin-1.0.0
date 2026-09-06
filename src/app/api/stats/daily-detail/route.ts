@@ -1,6 +1,7 @@
 import { withAuth } from '@/lib/api-auth';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
+import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-utils';
 
 // GET /api/stats/daily-detail?date=YYYY-MM-DD&sessionId=xxx

@@ -1,5 +1,5 @@
 /**
- * TLS Fingerprint (JA3) Approximation via Bun TLS Options
+ * TLS Fingerprint (JA3/JA4) Approximation via Bun TLS Options
  *
  * While we can't fully control the JA3 hash (BoringSSL handles the actual handshake),
  * we CAN approximate it by controlling the cipher suite order, signature algorithms,
@@ -13,6 +13,9 @@
  *   1. Per-browser TLS options (ciphers, sigalgs, minVersion)
  *   2. TLS_CIPHER_VARIANTS pool for randomization across profiles
  *   3. Integration helper for undici Agent construction
+ *   4. JA3/JA4 fingerprint rotation with realistic browser profiles
+ *   5. TLS session resumption simulation
+ *   6. Per-domain TLS profile persistence
  */
 
 import { logger } from './logger';
@@ -466,6 +469,297 @@ export function computeApproximateJA4(options: TLSFingerprintOptions): string {
   // Build JA4: t12d1511h2_ciphers_extensions_alpn
   const alpnCode = alpnList.includes('h2') ? 'h2' : 'h1';
   return `${protocol}${direction}${cipherCount}${extCount}${alpnCode}_${cipherHex}_*_${alpnHex}`;
+}
+
+// ==================== JA3/JA4 Fingerprint Rotation ====================
+
+/**
+ * JA3/JA4 fingerprint rotation with realistic browser profiles.
+ *
+ * Rotates the TLS fingerprint on a schedule that mimics how real users
+ * might switch browsers or have their TLS stack update. This defeats
+ * TLS fingerprint correlation across many requests.
+ *
+ * Rotation schedule:
+ *   - Every 10-30 requests within a session (configurable)
+ *   - When the current profile has been used for > 30 minutes
+ *   - On detection of TLS fingerprint blocking (optional)
+ *
+ * Browser profile selection is weighted by real-world market share:
+ *   - Chrome: 65%, Firefox: 15%, Safari: 10%, Edge: 5%, Other: 5%
+ */
+
+/** Browser market share weights for realistic rotation */
+const BROWSER_MARKET_SHARE: Record<string, number> = {
+  Chrome: 0.65,
+  Firefox: 0.15,
+  Safari: 0.10,
+  Edge: 0.05,
+  Brave: 0.03,
+  Opera: 0.01,
+  Samsung: 0.01,
+};
+
+/**
+ * Select a TLS variant weighted by browser market share.
+ * This produces a more realistic distribution than uniform random.
+ */
+export function selectVariantByMarketShare(): TLSCipherVariant {
+  // Weighted random selection
+  const roll = Math.random();
+  let cumulative = 0;
+  let selectedBrowser = 'Chrome';
+  for (const [browser, share] of Object.entries(BROWSER_MARKET_SHARE)) {
+    cumulative += share;
+    if (roll < cumulative) {
+      selectedBrowser = browser;
+      break;
+    }
+  }
+
+  const candidates = TLS_CIPHER_VARIANTS.filter(v => v.browser === selectedBrowser);
+  const pool = candidates.length > 0 ? candidates : TLS_CIPHER_VARIANTS.filter(v => v.browser === 'Chrome');
+  return pool[Math.floor(Math.random() * pool.length)]!;
+}
+
+/**
+ * Compute JA3 fingerprint hash from TLS options (approximate).
+ * Used for tracking which JA3 fingerprints have been used.
+ */
+export function computeApproximateJA3(options: TLSFingerprintOptions): string {
+  // Simplified JA3 approximation: hash the cipher order + sigalgs + version
+  const components = [
+    options.minVersion === 'TLSv1.3' ? '772' : '771',
+    options.ciphers,
+    options.sigalgs || '',
+  ].join('|');
+  // Simple hash (djb2)
+  let hash = 5381;
+  for (let i = 0; i < components.length; i++) {
+    hash = ((hash << 5) + hash + components.charCodeAt(i)) & 0xFFFFFFFF;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+// ==================== TLS Session Resumption Simulation ====================
+
+/**
+ * TLS session resumption simulation.
+ *
+ * Real browsers reuse TLS sessions (session IDs or session tickets) across
+ * requests to the same host. This module simulates that behavior by tracking
+ * "virtual session" state per domain, including:
+ *   - Session ID / ticket generation
+ *   - Session age (real sessions age out after ~2 hours)
+ *   - Session reuse count (real browsers reuse ~10-50 times)
+ *
+ * This makes the TLS connection pattern look more like a real browser
+ * that maintains persistent connections with session resumption.
+ */
+
+export interface TLSSessionState {
+  /** Domain this session is for */
+  domain: string;
+  /** Virtual session ID (hex) */
+  sessionId: string;
+  /** When the session was established */
+  establishedAt: number;
+  /** How many times this session has been "resumed" */
+  resumeCount: number;
+  /** Maximum resumes before rotation (10-50, mimics real browsers) */
+  maxResumes: number;
+  /** Whether the session is still valid */
+  isValid: boolean;
+}
+
+const MAX_SESSION_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours (typical session ticket lifetime)
+const tlsSessionCache = new Map<string, TLSSessionState>();
+const MAX_TLS_SESSIONS = 500;
+
+/**
+ * Get or create a TLS session state for a domain.
+ * Simulates TLS session resumption by tracking virtual session state.
+ *
+ * @param domain - Target domain
+ * @returns TLS session state (for header hinting / connection reuse tracking)
+ */
+export function getTLSSessionState(domain: string): TLSSessionState {
+  const now = Date.now();
+  let session = tlsSessionCache.get(domain);
+
+  // Check if session is expired or exceeded max resumes
+  if (session && (
+    (now - session.establishedAt) > MAX_SESSION_AGE_MS ||
+    session.resumeCount >= session.maxResumes ||
+    !session.isValid
+  )) {
+    tlsSessionCache.delete(domain);
+    session = undefined;
+  }
+
+  if (!session) {
+    // LRU eviction
+    if (tlsSessionCache.size >= MAX_TLS_SESSIONS) {
+      const oldest = tlsSessionCache.keys().next().value;
+    if (oldest) tlsSessionCache.delete(oldest);
+    }
+
+    // Generate virtual session ID (16 bytes hex)
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const sid = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+
+    session = {
+      domain,
+      sessionId: sid,
+      establishedAt: now,
+      resumeCount: 0,
+      maxResumes: 10 + Math.floor(Math.random() * 40), // 10-50
+      isValid: true,
+    };
+    tlsSessionCache.set(domain, session);
+  }
+
+  session.resumeCount++;
+  return session;
+}
+
+/**
+ * Invalidate a TLS session for a domain (e.g., after connection reset).
+ */
+export function invalidateTLSSession(domain: string): void {
+  const session = tlsSessionCache.get(domain);
+  if (session) session.isValid = false;
+}
+
+/**
+ * Get stats about TLS session cache.
+ */
+export function getTLSSessionStats(): { activeSessions: number; totalDomains: number } {
+  return {
+    activeSessions: Array.from(tlsSessionCache.values()).filter(s => s.isValid).length,
+    totalDomains: tlsSessionCache.size,
+  };
+}
+
+// ==================== Per-Domain TLS Profile Persistence ====================
+
+/**
+ * Per-domain TLS profile persistence.
+ *
+ * Ensures that once a TLS profile is selected for a domain, it remains
+ * consistent across the scraping session. This is important because:
+ *   1. Real browsers maintain TLS session state per host
+ *   2. Switching TLS fingerprints mid-session is a detection signal
+ *   3. Some WAFs track TLS fingerprint changes per source IP
+ *
+ * The profile is persisted for the duration of the scraping session
+ * (configurable TTL, default 30 minutes), then rotated naturally.
+ */
+
+export interface DomainTLSProfile {
+  domain: string;
+  variant: TLSCipherVariant;
+  ja3Hash: string;
+  ja4Fingerprint: string;
+  sessionState: TLSSessionState;
+  assignedAt: number;
+  requestCount: number;
+}
+
+const domainProfileCache = new Map<string, DomainTLSProfile>();
+const MAX_DOMAIN_PROFILES = 500;
+const DOMAIN_PROFILE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Get or assign a persistent TLS profile for a domain.
+ * The profile remains stable for the TTL duration, then rotates.
+ *
+ * @param domain - Target domain
+ * @param ua - User-Agent string for browser matching
+ * @returns Persistent TLS profile for the domain
+ */
+export function getDomainTLSProfile(domain: string, ua?: string): DomainTLSProfile {
+  const now = Date.now();
+  let profile = domainProfileCache.get(domain);
+
+  // Check TTL expiry
+  if (profile && (now - profile.assignedAt) > DOMAIN_PROFILE_TTL_MS) {
+    domainProfileCache.delete(domain);
+    profile = undefined;
+  }
+
+  if (!profile) {
+    // LRU eviction
+    if (domainProfileCache.size >= MAX_DOMAIN_PROFILES && !domainProfileCache.has(domain)) {
+      let oldestKey = '';
+      let oldestTime = Infinity;
+      for (const [key, p] of domainProfileCache) {
+        if (p.assignedAt < oldestTime) {
+          oldestTime = p.assignedAt;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey) domainProfileCache.delete(oldestKey);
+    }
+
+    // Select variant: prefer market-share weighted, fallback to UA-matched
+    const browser = ua ? detectBrowserFromUA(ua) : undefined;
+    let variant: TLSCipherVariant;
+
+    if (browser) {
+      // UA-matched selection (deterministic for consistency)
+      const h = domainHash(domain);
+      const candidates = TLS_CIPHER_VARIANTS.filter(v => v.browser === browser);
+      const pool = candidates.length > 0 ? candidates : TLS_CIPHER_VARIANTS.filter(v => v.browser === 'Chrome');
+      variant = pool[h % pool.length]!;
+    } else {
+      // Market-share weighted selection
+      variant = selectVariantByMarketShare();
+    }
+
+    const options = variant.options;
+    const ja3Hash = computeApproximateJA3(options);
+    const ja4Fingerprint = computeApproximateJA4(options);
+    const sessionState = getTLSSessionState(domain);
+
+    profile = {
+      domain,
+      variant,
+      ja3Hash,
+      ja4Fingerprint,
+      sessionState,
+      assignedAt: now,
+      requestCount: 0,
+    };
+    domainProfileCache.set(domain, profile);
+  }
+
+  profile.requestCount++;
+  return profile;
+}
+
+/**
+ * Force rotation of a domain's TLS profile (e.g., after fingerprint detection).
+ */
+export function rotateDomainTLSProfile(domain: string): void {
+  domainProfileCache.delete(domain);
+  invalidateTLSSession(domain);
+}
+
+/**
+ * Get stats about domain TLS profiles.
+ */
+export function getDomainTLSProfileStats(): { totalProfiles: number; profileDetails: Array<{ domain: string; variant: string; ja3: string; requests: number; age: number }> } {
+  const now = Date.now();
+  const profileDetails = Array.from(domainProfileCache.values()).map(p => ({
+    domain: p.domain,
+    variant: p.variant.name,
+    ja3: p.ja3Hash,
+    requests: p.requestCount,
+    age: Math.round((now - p.assignedAt) / 1000),
+  }));
+  return { totalProfiles: domainProfileCache.size, profileDetails };
 }
 
 // ==================== Per-Session TLS Rotation ====================

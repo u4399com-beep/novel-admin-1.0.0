@@ -332,7 +332,7 @@ class SmartRetryStrategy {
     const state = this.getOrCreate(domain);
     state.consecutiveFailures++;
 
-    // Escalate delay multiplier
+    // Escalate delay multiplier (capped at MAX_DELAY_MULTIPLIER to prevent overflow)
     state.delayMultiplier = Math.min(
       state.delayMultiplier * DELAY_MULTIPLIER_STEP,
       MAX_DELAY_MULTIPLIER,

@@ -1,4 +1,5 @@
 import { logger } from './logger';
+const log = logger.child('RequestFingerprint');
 
 // ==================== Sec-CH-UA (Client Hints) Headers ====================
 
@@ -130,7 +131,33 @@ export function inferSecFetchHeaders(url: string, isNavigation: boolean = true, 
 /**
  * Accept-Language rotation: rotate every 50 requests, not just per-domain.
  * This prevents Accept-Language fingerprinting across many requests.
+ *
+ * Enhanced: Geo-location based rotation. Different regions have different
+ * language preferences, which is tracked by sophisticated WAFs.
+ * When a proxy IP is from a specific country, the Accept-Language should
+ * match that country's primary languages.
  */
+
+/** Geo-location based Accept-Language profiles */
+export interface GeoLanguageProfile {
+  /** Country code (ISO 3166-1 alpha-2) */
+  country: string;
+  /** Primary Accept-Language values for this region */
+  languages: string[];
+  /** Probability weight for random selection from this region */
+  weight: number;
+}
+
+const GEO_LANGUAGE_PROFILES: GeoLanguageProfile[] = [
+  { country: 'CN', languages: ['zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', 'zh-CN,zh;q=0.9,en;q=0.8', 'zh-CN,zh;q=0.8,en-US;q=0.6,en;q=0.4'], weight: 0.40 },
+  { country: 'TW', languages: ['zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7', 'zh-TW,zh;q=0.9,en;q=0.8'], weight: 0.05 },
+  { country: 'HK', languages: ['zh-HK,zh;q=0.9,en-US;q=0.8,en;q=0.7', 'zh-HK,zh;q=0.9,en;q=0.8'], weight: 0.03 },
+  { country: 'US', languages: ['en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7', 'en-US,en;q=0.8,zh-CN;q=0.7,zh;q=0.5'], weight: 0.25 },
+  { country: 'JP', languages: ['ja;q=0.9,en-US;q=0.8,en;q=0.7', 'ja;q=0.9,en;q=0.8'], weight: 0.05 },
+  { country: 'KR', languages: ['ko;q=0.9,en-US;q=0.8,en;q=0.7', 'ko;q=0.9,en;q=0.8'], weight: 0.03 },
+  { country: 'DE', languages: ['de;q=0.9,en-US;q=0.8,en;q=0.7', 'de;q=0.9,en;q=0.8'], weight: 0.03 },
+  { country: 'OTHER', languages: ['en-US,en;q=0.9', 'en-US,en;q=0.8,zh-CN;q=0.6,zh;q=0.4'], weight: 0.16 },
+];
 
 const ACCEPT_LANGUAGE_VARIANTS = [
   'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
@@ -160,11 +187,130 @@ export function getAcceptLanguage(): string {
 }
 
 /**
+ * Get Accept-Language based on geo-location of the proxy IP.
+ * Ensures language header consistency with IP geolocation.
+ *
+ * @param countryCode - ISO 3166-1 alpha-2 country code of the proxy IP
+ * @returns Accept-Language string matching the country's primary languages
+ */
+export function getGeoAcceptLanguage(countryCode?: string): string {
+  if (!countryCode) return getAcceptLanguage();
+
+  // Find matching geo profile
+  const profile = GEO_LANGUAGE_PROFILES.find(p => p.country === countryCode)
+    || GEO_LANGUAGE_PROFILES.find(p => p.country === 'OTHER')!;
+
+  // Select a language variant from the profile
+  return profile.languages[Math.floor(Math.random() * profile.languages.length)]!;
+}
+
+/**
+ * Get the geo-language profiles (for dashboard/API).
+ */
+export function getGeoLanguageProfiles(): GeoLanguageProfile[] {
+  return GEO_LANGUAGE_PROFILES;
+}
+
+/**
  * Reset Accept-Language rotation state.
  */
 export function resetAcceptLanguageRotation(): void {
   acceptLanguageIndex = 0;
   acceptLanguageRequestCount = 0;
+}
+
+// ==================== Viewport/Device Fingerprint Consistency ====================
+
+/**
+ * Viewport and device fingerprint consistency checks.
+ *
+ * Anti-bot systems cross-check viewport dimensions against:
+ *   - User-Agent platform (mobile vs desktop)
+ *   - Sec-CH-UA-Platform
+ *   - Screen resolution availability
+ *   - Device memory hint
+ *
+ * A mismatch (e.g., mobile UA with 1920x1080 viewport) is a strong
+ * detection signal. This module provides consistent viewport profiles
+ * matched to the User-Agent.
+ */
+
+export interface ViewportProfile {
+  /** Viewport width */
+  width: number;
+  /** Viewport height */
+  height: number;
+  /** Device scale factor */
+  deviceScaleFactor: number;
+  /** Is mobile device */
+  isMobile: boolean;
+  /** Has touch support */
+  hasTouch: boolean;
+  /** Device memory in GB (Chrome hint) */
+  deviceMemory?: number;
+  /** Platform from UA */
+  platform: string;
+}
+
+const DESKTOP_VIEWPORTS: ViewportProfile[] = [
+  { width: 1920, height: 1080, deviceScaleFactor: 1, isMobile: false, hasTouch: false, deviceMemory: 8, platform: 'Win32' },
+  { width: 1536, height: 864, deviceScaleFactor: 1.25, isMobile: false, hasTouch: false, deviceMemory: 8, platform: 'Win32' },
+  { width: 1440, height: 900, deviceScaleFactor: 2, isMobile: false, hasTouch: false, deviceMemory: 16, platform: 'MacIntel' },
+  { width: 2560, height: 1440, deviceScaleFactor: 1, isMobile: false, hasTouch: false, deviceMemory: 16, platform: 'Win32' },
+  { width: 1366, height: 768, deviceScaleFactor: 1, isMobile: false, hasTouch: false, deviceMemory: 4, platform: 'Win32' },
+  { width: 1280, height: 720, deviceScaleFactor: 1, isMobile: false, hasTouch: false, deviceMemory: 4, platform: 'Linux x86_64' },
+];
+
+const MOBILE_VIEWPORTS: ViewportProfile[] = [
+  { width: 375, height: 812, deviceScaleFactor: 3, isMobile: true, hasTouch: true, deviceMemory: 4, platform: 'iPhone' },
+  { width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true, deviceMemory: 6, platform: 'iPhone' },
+  { width: 414, height: 896, deviceScaleFactor: 3, isMobile: true, hasTouch: true, deviceMemory: 4, platform: 'Linux armv81' },
+  { width: 360, height: 780, deviceScaleFactor: 3, isMobile: true, hasTouch: true, deviceMemory: 4, platform: 'Linux armv81' },
+];
+
+/**
+ * Get a consistent viewport profile matched to the User-Agent.
+ * The same UA always gets the same viewport (deterministic by hash).
+ *
+ * @param ua - User-Agent string
+ * @returns Viewport profile consistent with the UA
+ */
+export function getConsistentViewport(ua: string): ViewportProfile {
+  const isMobile = /Mobile|Android|iPhone/i.test(ua);
+  const pool = isMobile ? MOBILE_VIEWPORTS : DESKTOP_VIEWPORTS;
+
+  // Deterministic selection based on UA hash
+  let hash = 0;
+  for (let i = 0; i < ua.length; i++) {
+    hash = ((hash << 5) - hash + ua.charCodeAt(i)) | 0;
+  }
+  return pool[Math.abs(hash) % pool.length]!;
+}
+
+/**
+ * Validate viewport/UA consistency.
+ * Returns issues that would be flagged by anti-bot systems.
+ *
+ * @param ua - User-Agent string
+ * @param viewport - Actual viewport dimensions used
+ * @returns Array of consistency issues (empty if consistent)
+ */
+export function validateViewportConsistency(ua: string, viewport: { width: number; height: number }): string[] {
+  const issues: string[] = [];
+  const isMobileUA = /Mobile|Android|iPhone/i.test(ua);
+  const isSmallViewport = viewport.width < 768;
+
+  if (isMobileUA && !isSmallViewport) {
+    issues.push('Mobile UA with desktop viewport dimensions');
+  }
+  if (!isMobileUA && isSmallViewport) {
+    issues.push('Desktop UA with mobile viewport dimensions');
+  }
+  if (viewport.width === 0 || viewport.height === 0) {
+    issues.push('Zero-dimension viewport');
+  }
+
+  return issues;
 }
 
 // ==================== Connection Header Variation ====================

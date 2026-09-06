@@ -353,8 +353,150 @@ function classifyError(error: unknown, context: ErrorContext): ScrapeError {
 /**
  * Compute exponential backoff with jitter.
  * Formula: min(baseMs * 2^retry + random(0, baseMs), maxMs)
+ * Also guards against Infinity from large retry counts.
  */
 function computeExponentialBackoff(retryCount: number, baseMs: number, maxMs: number): number {
-  const raw = baseMs * Math.pow(2, retryCount) + Math.floor(Math.random() * baseMs);
+  // Cap exponent to prevent Infinity from Math.pow(2, large_number)
+  const cappedRetry = Math.min(retryCount, 30); // 2^30 ≈ 1 billion
+  const raw = baseMs * Math.pow(2, cappedRetry) + Math.floor(Math.random() * baseMs);
   return Math.min(raw, maxMs);
+}
+
+// ==================== Error Classification Taxonomy ====================
+
+/**
+ * Error classification taxonomy for fine-grained error handling.
+ */
+
+export type ErrorCategory =
+  | 'network_transient'     // Temporary network issues
+  | 'network_permanent'    // Permanent network issues
+  | 'proxy_failure'        // Proxy connection failures
+  | 'rate_limit_soft'      // Soft rate limit (429 with Retry-After)
+  | 'rate_limit_hard'      // Hard rate limit (IP ban)
+  | 'captcha_challenge'    // CAPTCHA/JS challenge required
+  | 'auth_failure'         // Authentication failure (401, 403)
+  | 'content_block'        // Content blocked by WAF
+  | 'content_invalid'      // Content format mismatch
+  | 'content_empty'        // Empty 200 response
+  | 'server_error'         // Server-side error (5xx)
+  | 'engine_crash'         // Browser/engine crashed
+  | 'resource_exhausted'   // Memory/CPU exhaustion
+  | 'unknown';
+
+export interface ErrorClassification {
+  category: ErrorCategory;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  retryable: boolean;
+  autoRecoverable: boolean;
+  recommendedAction: string;
+}
+
+/**
+ * Classify an error into the taxonomy.
+ */
+export function classifyErrorTaxonomy(error: unknown, statusCode?: number): ErrorClassification {
+  const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  if (statusCode === 429) {
+    return { category: 'rate_limit_soft', severity: 'medium', retryable: true, autoRecoverable: true, recommendedAction: 'Exponential backoff with Retry-After' };
+  }
+  if (statusCode === 403) {
+    return { category: 'content_block', severity: 'high', retryable: true, autoRecoverable: true, recommendedAction: 'Rotate proxy, upgrade engine' };
+  }
+  if (statusCode === 401) {
+    return { category: 'auth_failure', severity: 'high', retryable: false, autoRecoverable: false, recommendedAction: 'Update credentials or session cookies' };
+  }
+  if (statusCode && statusCode >= 500 && statusCode < 600) {
+    return { category: 'server_error', severity: 'medium', retryable: true, autoRecoverable: true, recommendedAction: 'Retry with exponential backoff' };
+  }
+  if (msg.includes('captcha') || msg.includes('challenge')) {
+    return { category: 'captcha_challenge', severity: 'high', retryable: true, autoRecoverable: true, recommendedAction: 'Upgrade engine with CAPTCHA solving' };
+  }
+  if (msg.includes('econnreset') || msg.includes('timeout')) {
+    return { category: 'network_transient', severity: 'low', retryable: true, autoRecoverable: true, recommendedAction: 'Retry with backoff' };
+  }
+  if (msg.includes('enotfound') || msg.includes('ehostunreach')) {
+    return { category: 'network_permanent', severity: 'high', retryable: false, autoRecoverable: false, recommendedAction: 'Check DNS/URL' };
+  }
+  if (msg.includes('proxy') || msg.includes('socks')) {
+    return { category: 'proxy_failure', severity: 'medium', retryable: true, autoRecoverable: true, recommendedAction: 'Rotate proxy' };
+  }
+
+  return { category: 'unknown', severity: 'medium', retryable: true, autoRecoverable: true, recommendedAction: 'Retry with default strategy' };
+}
+
+// ==================== Error Pattern Learning ====================
+
+export interface ErrorPattern {
+  domain: string;
+  category: ErrorCategory;
+  count: number;
+  lastSeen: number;
+  precedingConditions: string[];
+  bestRecovery?: string;
+}
+
+const errorPatterns = new Map<string, ErrorPattern>();
+const MAX_ERROR_PATTERNS = 1000;
+
+/**
+ * Record an error pattern for learning.
+ */
+export function recordErrorPattern(domain: string, category: ErrorCategory, conditions: string[] = []): void {
+  const key = `${domain}:${category}`;
+  let pattern = errorPatterns.get(key);
+
+  if (!pattern) {
+    if (errorPatterns.size >= MAX_ERROR_PATTERNS) {
+      let oldestKey = '';
+      let oldestTime = Infinity;
+      for (const [k, p] of errorPatterns) {
+        if (p.lastSeen < oldestTime) { oldestTime = p.lastSeen; oldestKey = k; }
+      }
+      if (oldestKey) errorPatterns.delete(oldestKey);
+    }
+    pattern = { domain, category, count: 0, lastSeen: 0, precedingConditions: [] };
+    errorPatterns.set(key, pattern);
+  }
+
+  pattern.count++;
+  pattern.lastSeen = Date.now();
+  for (const cond of conditions) {
+    if (!pattern.precedingConditions.includes(cond)) {
+      pattern.precedingConditions.push(cond);
+      if (pattern.precedingConditions.length > 10) pattern.precedingConditions.shift();
+    }
+  }
+}
+
+/**
+ * Record a successful recovery strategy.
+ */
+export function recordSuccessfulRecovery(domain: string, category: ErrorCategory, strategy: string): void {
+  const pattern = errorPatterns.get(`${domain}:${category}`);
+  if (pattern) pattern.bestRecovery = strategy;
+}
+
+/**
+ * Get learned error patterns for a domain.
+ */
+export function getErrorPatterns(domain: string): ErrorPattern[] {
+  return Array.from(errorPatterns.values())
+    .filter(p => p.domain === domain)
+    .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * Get the best known recovery strategy.
+ */
+export function getBestRecoveryStrategy(domain: string, category: ErrorCategory): string | undefined {
+  return errorPatterns.get(`${domain}:${category}`)?.bestRecovery;
+}
+
+/**
+ * Get all error patterns (for dashboard).
+ */
+export function getAllErrorPatterns(): ErrorPattern[] {
+  return Array.from(errorPatterns.values()).sort((a, b) => b.count - a.count);
 }

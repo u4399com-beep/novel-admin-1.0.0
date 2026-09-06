@@ -5589,10 +5589,295 @@ main {
   .stagger-list > *,
   .card-hover-lift,
   .skeleton-shimmer,
-  .badge-pulse-green {
+  .badge-pulse-green,
+  .text-shimmer,
+  .hero-bg-animated,
+  .hero-bg-animated-2,
+  .hero-bg-animated-3,
+  .hero-gradient-border,
+  .rank-shine {
     animation: none !important;
     transition: none !important;
     opacity: 1 !important;
     transform: none !important;
   }
+}
+
+/* ===== Task 5: UI/UX Polish Additions ===== */
+
+/* Glass-morphism card effect */
+.glass-card {
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.dark .glass-card {
+  background: color-mix(in srgb, var(--card) 75%, transparent);
+  border-color: color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+/* Cover shimmer loading effect */
+@keyframes cover-shimmer-sweep {
+  0% { transform: translateX(-100%) skewX(-12deg); }
+  100% { transform: translateX(200%) skewX(-12deg); }
+}
+.cover-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--background) 60%, transparent) 40%,
+    color-mix(in srgb, var(--background) 80%, transparent) 50%,
+    color-mix(in srgb, var(--background) 60%, transparent) 60%,
+    transparent 100%
+  );
+  animation: cover-shimmer-sweep 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Animated gradient border for category badges */
+@keyframes gradient-border-rotate {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animated-gradient-border {
+  position: relative;
+}
+.animated-gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, oklch(0.7 0.15 260), oklch(0.7 0.15 320), oklch(0.7 0.15 260));
+  background-size: 200% 200%;
+  animation: gradient-border-rotate 3s ease infinite;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.animated-gradient-border:hover::before {
+  opacity: 0.6;
+}
+
+/* Hero third blob */
+.hero-gradient-blob-3 {
+  width: 40%;
+  height: 60%;
+  background: radial-gradient(ellipse at 50% 50%, oklch(0.7 0.12 300 / 0.08), transparent 70%);
+  border-radius: 50%;
+  filter: blur(80px);
+  top: 30%;
+  left: 50%;
+  position: absolute;
+}
+.hero-bg-animated-3 {
+  animation: float-blob-3 14s ease-in-out infinite alternate;
+}
+@keyframes float-blob-3 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-30px, -20px) scale(1.15); }
+}
+
+/* Reading content - sepia warm mode enhancements */
+.reader-sepia-warm {
+  background-color: #f4ecd8 !important;
+  color: #5b4636 !important;
+  letter-spacing: 0.02em;
+}
+.reader-sepia-warm p {
+  text-indent: 2em;
+}
+
+/* Page turn animation */
+@keyframes page-flip-in {
+  0% {
+    opacity: 0;
+    transform: perspective(1200px) rotateY(-8deg) translateX(40px);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(1200px) rotateY(0deg) translateX(0);
+  }
+}
+@keyframes page-flip-out {
+  0% {
+    opacity: 1;
+    transform: perspective(1200px) rotateY(0deg) translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: perspective(1200px) rotateY(8deg) translateX(-40px);
+  }
+}
+.page-turn-enter {
+  animation: page-flip-in 0.4s ease-out forwards;
+}
+.page-turn-exit {
+  animation: page-flip-out 0.3s ease-in forwards;
+}
+
+/* Optimal reading typography */
+.reader-optimal-typography {
+  line-height: 1.8;
+  letter-spacing: 0.01em;
+  word-spacing: 0.05em;
+  orphans: 3;
+  widows: 3;
+}
+
+/* Floating TOC sidebar */
+.floating-toc {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 40;
+  max-height: 60vh;
+  overflow-y: auto;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+.floating-toc.hidden-right {
+  transform: translateY(-50%) translateX(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Severity indicators for anti-crawl dashboard */
+.severity-green { color: oklch(0.6 0.15 155); }
+.severity-yellow { color: oklch(0.75 0.15 85); }
+.severity-red { color: oklch(0.6 0.2 25); }
+.severity-bg-green { background-color: oklch(0.6 0.15 155 / 0.1); }
+.severity-bg-yellow { background-color: oklch(0.75 0.15 85 / 0.1); }
+.severity-bg-red { background-color: oklch(0.6 0.2 25 / 0.1); }
+
+/* Animated progress bars for metrics */
+@keyframes progress-fill {
+  from { width: 0; }
+}
+.animated-progress-bar {
+  animation: progress-fill 1s ease-out forwards;
+}
+
+/* Newsletter subscription section */
+.newsletter-input {
+  background: color-mix(in srgb, var(--muted) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.newsletter-input:focus-within {
+  border-color: oklch(0.488 0.243 264.376 / 0.5);
+  box-shadow: 0 0 0 3px oklch(0.488 0.243 264.376 / 0.1);
+}
+
+/* Link wheel animated hover */
+.link-wheel-item {
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.link-wheel-item:hover {
+  background: color-mix(in srgb, var(--muted) 60%, transparent);
+  transform: translateX(2px);
+}
+
+/* Back-to-top with progress ring is already in component */
+
+/* Reading streak heatmap - GitHub contribution style is in ReadingHeatmap.tsx */
+
+/* Advanced search filter panel */
+.search-filter-panel {
+  background: color-mix(in srgb, var(--popover) 95%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+/* Chapter group navigation */
+.chapter-group-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+}
+
+/* Print-friendly styles for novel reading */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  nav, aside, footer, header,
+  [data-no-print],
+  .no-print,
+  .reader-toolbar,
+  .fixed,
+  .sticky {
+    display: none !important;
+  }
+  article {
+    font-size: 12pt !important;
+    line-height: 1.8 !important;
+    color: black !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  article p {
+    text-indent: 2em;
+    page-break-inside: avoid;
+  }
+  h3 {
+    font-size: 16pt !important;
+    color: black !important;
+  }
+  .glass-card {
+    background: white !important;
+    border: 1px solid #ddd !important;
+    backdrop-filter: none !important;
+  }
+}
+
+/* Smooth scroll behavior globally (ensure consistency) */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Dark mode color contrast improvements */
+.dark {
+  --muted-foreground: oklch(0.65 0 0);
+  --border: oklch(1 0 0 / 14%);
+}
+
+/* Enhanced focus-visible ring for accessibility */
+*:focus-visible {
+  outline: 2px solid oklch(0.55 0.2 264 / 0.7);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.dark *:focus-visible {
+  outline-color: oklch(0.7 0.15 264 / 0.8);
+}
+
+/* Reading speed (WPM) display */
+.wpm-display {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Similar novels cover shimmer on hover */
+.similar-novel-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.similar-novel-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.08);
+}
+
+/* Reading progress bar persist */
+.reading-progress-persist {
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }

@@ -294,7 +294,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
           const oldestKey = dispatcherCache.keys().next().value;
           if (oldestKey !== undefined) {
             const old = dispatcherCache.get(oldestKey);
-            try { (old as any)?.close?.(); } catch { /* */ } // eslint-disable-line @typescript-eslint/no-explicit-any -- dynamic close on heterogeneous connection types
+            try { (old as { close?: () => void })?.close?.(); } catch { /* */ }
             dispatcherCache.delete(oldestKey);
           }
         }
@@ -317,7 +317,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
       const oldestKey = dispatcherCache.keys().next().value;
       if (oldestKey !== undefined) {
         const old = dispatcherCache.get(oldestKey);
-        try { (old as any)?.close?.(); } catch { /* */ } // eslint-disable-line @typescript-eslint/no-explicit-any -- dynamic close on heterogeneous connection types
+        try { (old as { close?: () => void })?.close?.(); } catch { /* */ }
         dispatcherCache.delete(oldestKey);
       }
     }
@@ -336,7 +336,7 @@ export function getProxyDispatcher(proxyUrl: string): Dispatcher | null {
 export function invalidateDispatcher(proxyUrl: string): void {
   const d = dispatcherCache.get(proxyUrl);
   if (d) {
-    try { (d as any).close?.(); } catch { /* already closed */ } // eslint-disable-line @typescript-eslint/no-explicit-any
+    try { (d as { close?: () => void }).close?.(); } catch { /* already closed */ }
   }
   dispatcherCache.delete(proxyUrl);
 }
@@ -344,7 +344,7 @@ export function invalidateDispatcher(proxyUrl: string): void {
 /** Clear the entire dispatcher cache */
 export function clearDispatcherCache(): void {
   for (const [url, d] of dispatcherCache) {
-    try { (d as any).close?.(); } catch { /* */ } // eslint-disable-line @typescript-eslint/no-explicit-any
+    try { (d as { close?: () => void }).close?.(); } catch { /* */ }
   }
   dispatcherCache.clear();
 }

@@ -300,6 +300,11 @@ class CookieJar {
     try { cookieStore.deleteByDomain(domain); } catch { /* ignore */ }
   }
 
+  /** Get all stored cookies for a domain (for session rotation checks etc.) */
+  getCookiesByDomain(domain: string): StoredCookie[] {
+    return this.cookies.get(domain) || [];
+  }
+
   /** Clear all cookies */
   clearAll(): void {
     this.cookies.clear();
@@ -474,6 +479,116 @@ _cleanupInterval = setInterval(() => {
 /** Tear down the cookie jar and stop the cleanup interval */
 export function destroyCookieJar(): void {
   if (_cleanupInterval) { clearInterval(_cleanupInterval); _cleanupInterval = null; }
+}
+
+// ==================== HttpOnly/Secure Flag Validation ====================
+
+/**
+ * Validate cookie flags for security and anti-detection consistency.
+ *
+ * Anti-bot systems may check that:
+ *   - Session cookies have proper HttpOnly flags (prevents XSS access)
+ *   - Secure cookies are only sent over HTTPS
+ *   - Cookie values don't look artificially generated
+ */
+
+export interface CookieFlagValidation {
+  name: string;
+  httpOnlyValid: boolean;
+  secureValid: boolean;
+  valueLooksNatural: boolean;
+  issues: string[];
+}
+
+/**
+ * Validate a cookie's flags for consistency with real browser behavior.
+ */
+export function validateCookieFlags(
+  cookie: StoredCookie,
+  isHTTPS: boolean = true,
+): CookieFlagValidation {
+  const issues: string[] = [];
+
+  // HttpOnly check: session cookies should typically be HttpOnly
+  const httpOnlyValid = cookie.httpOnly || !isSessionCookieName(cookie.name);
+  if (!httpOnlyValid) {
+    issues.push(`Session cookie '${cookie.name}' missing HttpOnly flag`);
+  }
+
+  // Secure check: cookies on HTTPS should have Secure flag
+  const secureValid = !isHTTPS || cookie.secure;
+  if (!secureValid) {
+    issues.push(`Cookie '${cookie.name}' on HTTPS missing Secure flag`);
+  }
+
+  // Value naturalness check
+  const valueLooksNatural = isCookieValueNatural(cookie.value);
+  if (!valueLooksNatural) {
+    issues.push(`Cookie '${cookie.name}' value looks artificially generated`);
+  }
+
+  return { name: cookie.name, httpOnlyValid, secureValid, valueLooksNatural, issues };
+}
+
+function isSessionCookieName(name: string): boolean {
+  const sessionPatterns = ['session', 'sess', 'sid', 'jsessionid', 'phpsessid', 'csrf', 'xsrf'];
+  const lower = name.toLowerCase();
+  return sessionPatterns.some(p => lower.includes(p));
+}
+
+function isCookieValueNatural(value: string): boolean {
+  if (!value || value.length === 0) return false;
+  if (new Set(value).size === 1) return false;
+  if (value.length < 4 && /^[a-zA-Z0-9]+$/.test(value)) return false;
+  if (/^0+$/.test(value)) return false;
+  return true;
+}
+
+// ==================== Session Cookie Rotation ====================
+
+/**
+ * Session cookie rotation for long-running tasks.
+ * Recommends rotation when session cookies become stale or are near expiry.
+ */
+
+export interface SessionRotationInfo {
+  domain: string;
+  sessionCookieCount: number;
+  oldestSessionAge: number;
+  rotationRecommended: boolean;
+  rotationReason?: string;
+}
+
+const SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * Check if session cookie rotation is recommended for a domain.
+ */
+export function checkSessionRotation(domain: string): SessionRotationInfo {
+  const now = Math.floor(Date.now() / 1000);
+  const normalizedDomain = domain.toLowerCase();
+  const domainCookies = cookieJar.getCookiesByDomain(normalizedDomain);
+  const sessionCookieDetails = domainCookies?.filter(c => c.expires === 0) || [];
+
+  const oldestAge = sessionCookieDetails.length > 0
+    ? Math.max(...sessionCookieDetails.map(c => now - c.createdAt)) * 1000
+    : 0;
+
+  let rotationRecommended = false;
+  let rotationReason: string | undefined;
+
+  if (oldestAge > SESSION_MAX_AGE_MS) {
+    rotationRecommended = true;
+    rotationReason = `Session cookies older than ${Math.round(SESSION_MAX_AGE_MS / 60000)} minutes`;
+  }
+
+  return {
+    domain,
+    sessionCookieCount: sessionCookieDetails.length,
+    oldestSessionAge: oldestAge,
+    rotationRecommended,
+    rotationReason,
+  };
 }
 
 // ==================== Cookie Consent Detection ====================

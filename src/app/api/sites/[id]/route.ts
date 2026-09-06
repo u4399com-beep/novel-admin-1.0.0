@@ -20,7 +20,7 @@ export const GET = withAuth(async function GET(
     const site = await db.site.findUnique({
       where: { id },
       include: {
-        theme: true,
+        theme: { select: { id: true, name: true, identifier: true, preview: true, enabled: true } },
       },
     });
 

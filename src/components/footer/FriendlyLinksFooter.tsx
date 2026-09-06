@@ -14,6 +14,14 @@ interface FriendlyLinkData {
   nofollow: boolean;
 }
 
+// Social media links
+const SOCIAL_LINKS = [
+  { name: 'GitHub', icon: 'GH', url: 'https://github.com' },
+  { name: 'Twitter', icon: 'X', url: 'https://twitter.com' },
+  { name: 'Discord', icon: 'DC', url: 'https://discord.com' },
+  { name: 'RSS', icon: 'RSS', url: '/api/public/recently-updated' },
+];
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 function FooterLinksSkeleton() {
   return (
@@ -154,7 +162,45 @@ export function FriendlyLinksFooter() {
   if (manualLinks.length === 0 && wheelLinks.length === 0) return null;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* Newsletter subscription */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">
+          <span>订阅更新</span>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); }} className="flex gap-2 newsletter-input rounded-lg p-1">
+          <input
+            type="email"
+            placeholder="输入邮箱订阅新书推送"
+            className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 outline-none px-2 py-1"
+            aria-label="邮箱订阅"
+          />
+          <button
+            type="submit"
+            className="shrink-0 text-[10px] font-medium px-2.5 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          >
+            订阅
+          </button>
+        </form>
+      </div>
+
+      {/* Social links */}
+      <div className="flex items-center gap-2">
+        {SOCIAL_LINKS.map((link) => (
+          <a
+            key={link.name}
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-6 w-6 flex items-center justify-center rounded-full text-[9px] font-bold text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 transition-all duration-200 hover:scale-110"
+            aria-label={link.name}
+          >
+            {link.icon}
+          </a>
+        ))}
+      </div>
+
+      <div className="space-y-3">
       {/* Friendly Links Section */}
       {manualLinks.length > 0 && (
         <div className="space-y-1.5">
@@ -188,6 +234,7 @@ export function FriendlyLinksFooter() {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

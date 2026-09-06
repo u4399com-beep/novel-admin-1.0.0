@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useRef } from 'react';
+import { useReducer, useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { SearchBar } from './hero/SearchBar';
 import { FilterChips } from './hero/FilterChips';
@@ -13,6 +13,8 @@ const TYPING_MESSAGES = [
   '发现你的下一本好书',
   '万千小说, 尽在指尖',
   '沉浸式阅读体验',
+  '与百万读者共享精彩',
+  '从第一页开始旅程',
 ];
 
 type TypingState = { text: string; msgIndex: number; isDeleting: boolean };
@@ -53,6 +55,12 @@ function useTypingEffect(typingSpeed = 80, deleteSpeed = 50, pauseTime = 2000) {
 
   return state.text;
 }
+
+// ─── Hot Search Tags ───────────────────────────────────────────────
+const HOT_SEARCH_TAGS = [
+  '斗破苍穹', '凡人修仙传', '诡秘之主', '遮天', '大奉打更人',
+  '完美世界', '道诡异仙', '一念永恒', '仙逆', '庆余年',
+];
 
 // ─── Decorative Book SVG ────────────────────────────────────────
 function BookIllustration() {
@@ -196,26 +204,71 @@ export function HeroSection({
   total,
   filterSummary,
 }: HeroSectionProps) {
+  // Parallax scroll offset for background
+  const [scrollY, setScrollY] = useState(0);
+  useEffect(() => {
+    let ticking = false;
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        setScrollY(window.scrollY);
+        ticking = false;
+      });
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   return (
     <div className="relative overflow-hidden">
       {/* Animated gradient border effect */}
       <div className="hero-gradient-border" aria-hidden="true" />
-      {/* Subtle animated mesh gradient background */}
-      <div className="absolute inset-0 pointer-events-none -z-10" aria-hidden="true">
+      {/* Parallax gradient blobs - move at 0.3x scroll speed */}
+      <div
+        className="absolute inset-0 pointer-events-none -z-10"
+        style={{ transform: `translateY(${scrollY * 0.15}px)` }}
+        aria-hidden="true"
+      >
         <div className="hero-gradient-blob hero-gradient-blob-1 hero-bg-animated" />
         <div className="hero-gradient-blob hero-gradient-blob-2 hero-bg-animated-2" />
+        {/* Third blob for richer gradient depth */}
+        <div className="hero-gradient-blob hero-gradient-blob-3 hero-bg-animated-3" />
       </div>
-      {/* Dot pattern overlay */}
-      <DotPattern />
-      {/* Animated gradient behind the search bar area */}
+      {/* Dot pattern overlay - parallax at 0.1x */}
+      <div style={{ transform: `translateY(${scrollY * 0.05}px)` }} aria-hidden="true">
+        <DotPattern />
+      </div>
+      {/* Multi-stop gradient overlay for sophisticated depth */}
       <div
-        className="absolute inset-0 pointer-events-none -z-5 hero-search-gradient"
+        className="absolute inset-0 pointer-events-none -z-5"
         aria-hidden="true"
-      />
+      >
+        <div className="hero-search-gradient" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background/30" />
+      </div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         <TypingTagline />
       </div>
       <SearchBar search={search} onSearch={onSearch} />
+      {/* Hot search tag cloud */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-3 pt-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-muted-foreground/50 shrink-0">热门:</span>
+          {HOT_SEARCH_TAGS.map((tag, i) => (
+            <motion.button
+              key={tag}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.03, duration: 0.2 }}
+              onClick={() => onSearch(tag)}
+              className="text-[11px] px-2.5 py-0.5 rounded-full border border-border/60 bg-muted/30 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all duration-200 cursor-pointer hover:scale-105 active:scale-95"
+            >
+              {tag}
+            </motion.button>
+          ))}
+        </div>
+      </div>
       <FilterChips
         categories={categories}
         loadingCategories={loadingCategories}

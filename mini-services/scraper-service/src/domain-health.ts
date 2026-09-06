@@ -288,7 +288,8 @@ class DomainHealthMonitor {
     if (avgResponseTime < 500) responseTimeScore = 100;
     else if (avgResponseTime < 2000) responseTimeScore = 80 + 20 * (2000 - avgResponseTime) / 1500;
     else if (avgResponseTime < 5000) responseTimeScore = 50 + 30 * (5000 - avgResponseTime) / 3000;
-    else responseTimeScore = Math.max(0, 50 * (10000 - avgResponseTime) / 5000);
+    else if (avgResponseTime < 10000) responseTimeScore = 50 * (10000 - avgResponseTime) / 5000;
+    else responseTimeScore = 0; // >=10s: worst score
 
     // 3. CAPTCHA rate (0-100, penalize CAPTCHAs)
     const captchaCount = responses.filter(r => r.wasCaptcha).length;
@@ -420,6 +421,14 @@ class DomainHealthMonitor {
    */
   onHealthChange(listener: (domain: string, health: DomainHealthScore) => void): void {
     this.eventListeners.push(listener);
+  }
+
+  /**
+   * Remove a health change event listener.
+   */
+  offHealthChange(listener: (domain: string, health: DomainHealthScore) => void): void {
+    const idx = this.eventListeners.indexOf(listener);
+    if (idx >= 0) this.eventListeners.splice(idx, 1);
   }
 
   /** Stop and persist */

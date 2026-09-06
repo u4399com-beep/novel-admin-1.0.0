@@ -397,7 +397,7 @@ export function detectKasadaChallenge(html: string): CaptchaDetection {
  *     approaching a CAPTCHA threshold
  */
 
-interface CaptGchaHistoryEntry {
+interface CaptchaHistoryEntry {
   timestamp: number;
   type: CaptchaDetection['type'];
   solvingTimeMs?: number;
@@ -405,7 +405,7 @@ interface CaptGchaHistoryEntry {
 
 interface DomainCaptchaState {
   /** History of CAPTCHA encounters */
-  history: CaptGchaHistoryEntry[];
+  history: CaptchaHistoryEntry[];
   /** Total CAPTCHAs encountered (all-time) */
   totalCaptchas: number;
   /** Average solving time (ms) per type */
@@ -443,7 +443,7 @@ export function recordCaptchaEncounter(domain: string, type: CaptchaDetection['t
     domainCaptchaStates.set(domain, state);
   }
 
-  const entry: CaptGchaHistoryEntry = {
+  const entry: CaptchaHistoryEntry = {
     timestamp: Date.now(),
     type,
     solvingTimeMs,

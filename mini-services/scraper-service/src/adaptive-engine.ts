@@ -427,6 +427,12 @@ export class AdaptiveEngineSelector {
         // Only load domains with preference data
         if (!entry.preferred && !entry.needsJs) continue;
 
+        // Validate preferred engine type
+        const validEngines = new Set(['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura', 'dokobot', 'api']);
+        if (entry.preferred && !validEngines.has(entry.preferred)) {
+          continue; // Skip entries with invalid engine types
+        }
+
         const profile: DomainEngineProfile = {
           engines: {},
           preferredEngine: entry.preferred as EngineType | undefined,
@@ -439,11 +445,16 @@ export class AdaptiveEngineSelector {
         if (entry.engines && typeof entry.engines === 'object') {
           for (const [engine, stats] of Object.entries(entry.engines) as [string, any][]) {
             if (!stats || typeof stats !== 'object') continue;
+            // Validate engine stats to prevent corrupted data
+            const totalReqs = Math.max(0, Math.floor(Number(stats.totalRequests) || 0));
+            const successRate = Math.max(0, Math.min(1, Number(stats.successRate) || 0));
+            const captchaRate = Math.max(0, Math.min(1, Number(stats.captchaRate) || 0));
+            const avgRespTime = Math.max(0, Number(stats.avgResponseTime) || 0);
             profile.engines[engine] = {
-              totalRequests: stats.totalRequests || 0,
-              successes: Math.round((stats.successRate || 0) * (stats.totalRequests || 0)),
-              captchaCount: Math.round((stats.captchaRate || 0) * (stats.totalRequests || 0)),
-              totalResponseTime: (stats.avgResponseTime || 0) * (stats.totalRequests || 0),
+              totalRequests: totalReqs,
+              successes: Math.round(successRate * totalReqs),
+              captchaCount: Math.round(captchaRate * totalReqs),
+              totalResponseTime: avgRespTime * totalReqs,
               lastUsedAt: now,
               captchaTimestamps: [],
             };

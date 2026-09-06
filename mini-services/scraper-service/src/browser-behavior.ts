@@ -398,6 +398,66 @@ export function generateMouseMovementPath(
   return points;
 }
 
+// ==================== Resource Loading Order Simulation ====================
+
+/**
+ * Resource loading order simulation.
+ *
+ * Real browsers load resources in a specific order:
+ *   1. HTML document (first)
+ *   2. CSS stylesheets (render-blocking)
+ *   3. JavaScript (parser-blocking or async)
+ *   4. Images (progressive)
+ *   5. Fonts (after CSS)
+ *
+ * Anti-bot systems can detect when all resources are requested
+ * simultaneously or in an unusual order. This module provides
+ * inter-resource delays that simulate natural loading order.
+ */
+
+export interface ResourceLoadDelay {
+  /** Resource type */
+  type: 'css' | 'js' | 'image' | 'font' | 'other';
+  /** Simulated delay before requesting this resource type (ms) */
+  delayMs: number;
+  /** Reason for the delay */
+  reason: string;
+}
+
+/**
+ * Get realistic inter-resource delays for a page load.
+ * These delays should be applied between sequential resource requests.
+ *
+ * @returns Array of resource load delays in natural order
+ */
+export function getResourceLoadOrder(): ResourceLoadDelay[] {
+  return [
+    { type: 'css', delayMs: 50 + Math.round(Math.random() * 100), reason: 'CSS is render-blocking, loaded right after HTML' },
+    { type: 'js', delayMs: 150 + Math.round(Math.random() * 300), reason: 'JS loaded after CSS (parser-blocking)' },
+    { type: 'font', delayMs: 200 + Math.round(Math.random() * 200), reason: 'Fonts triggered by CSS @font-face' },
+    { type: 'image', delayMs: 300 + Math.round(Math.random() * 500), reason: 'Images loaded progressively after above resources' },
+    { type: 'other', delayMs: 100 + Math.round(Math.random() * 200), reason: 'Other resources loaded last' },
+  ];
+}
+
+/**
+ * Get the delay before requesting a specific resource type.
+ *
+ * @param resourceType - Type of resource being requested
+ * @param isFirstResource - Whether this is the first resource of this type
+ * @returns Delay in milliseconds
+ */
+export function getResourceDelay(resourceType: 'css' | 'js' | 'image' | 'font' | 'other', isFirstResource: boolean = true): number {
+  const order = getResourceLoadOrder();
+  const entry = order.find(r => r.type === resourceType) || order.find(r => r.type === 'other')!;
+
+  if (!isFirstResource) {
+    // Subsequent resources of same type have shorter delays
+    return Math.round(entry.delayMs * (0.2 + Math.random() * 0.3));
+  }
+  return entry.delayMs;
+}
+
 // Singleton export
 export const browserBehavior = new BrowserBehavior();
 
