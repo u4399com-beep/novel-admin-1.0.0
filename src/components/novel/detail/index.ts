@@ -20,3 +20,6 @@ export { SimilarNovels } from './SimilarNovels';
 
 export { ChapterReaderDialog } from './ChapterReaderDialog';
 export type { ChapterReaderDialogProps } from './ChapterReaderDialog';
+
+export { FloatingActions } from './FloatingActions';
+export type { FloatingActionsProps } from './FloatingActions';

@@ -52,7 +52,7 @@ export const GET = withPublicRateLimit({ capacity: 60, refillRate: 1 }, async (r
     const totalRead = timeline.length;
 
     return NextResponse.json({ timeline, totalRead });
-  } catch (error) {
+  } catch (_error) {
     return apiError('获取阅读时间线失败', 500);
   }
 });

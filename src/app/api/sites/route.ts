@@ -20,7 +20,7 @@ export const GET = withAuth(async function GET(request: NextRequest) {
       page,
       pageSize,
       orderBy: { createdAt: "desc" },
-      include: { theme: true },
+      include: { theme: { select: { id: true, name: true, identifier: true, preview: true, enabled: true } } },
       itemsKey: 'sites',
     });
   } catch (error) {

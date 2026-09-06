@@ -88,6 +88,17 @@ export function middleware(request: NextRequest) {
   // NOTE: Rate limiting for /api/public/* is handled at the route level via
   // `withPublicRateLimit`. We do NOT rate-limit here to avoid double-counting.
 
+  // ─── Structured Request Logging ──────────────────────────────────
+  // Add request ID header for API routes in development for debugging
+  if (pathname.startsWith('/api/')) {
+    const response = NextResponse.next();
+    // Generate request ID for all API routes (production too, for tracing)
+    if (!request.headers.get('X-Request-ID')) {
+      response.headers.set('X-Request-ID', crypto.randomUUID());
+    }
+    return response;
+  }
+
   return NextResponse.next();
 }
 

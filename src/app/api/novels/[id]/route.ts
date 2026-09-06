@@ -17,8 +17,8 @@ export const GET = withAuth(async function GET(
     const novel = await db.novel.findUniqueOrThrow({
       where: { id },
       include: {
-        category: true,
-        tags: { include: { tag: true } },
+        category: { select: { id: true, name: true, slug: true, color: true, icon: true } },
+        tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
         _count: { select: { chapters: true } },
       },
     });
@@ -131,8 +131,8 @@ export const PUT = withAuth(async function PUT(
           }),
         },
         include: {
-          category: true,
-          tags: { include: { tag: true } },
+          category: { select: { id: true, name: true, slug: true, color: true, icon: true } },
+          tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
           _count: { select: { chapters: true } },
         },
       });

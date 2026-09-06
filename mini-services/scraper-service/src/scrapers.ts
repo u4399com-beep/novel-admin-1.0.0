@@ -319,7 +319,7 @@ export async function handleScrapeList(body: ScrapeListRequest) {
     // CAPTCHA detection on infinite-scroll results
     const scrollCaptcha = detectCaptcha(scrollResult.html, url, scrollResult.statusCode);
     if (scrollCaptcha.detected && scrollCaptcha.confidence > 0.5) {
-      console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[scrollCaptcha.type]} detected on infinite-scroll page ${url}`);
+      logger.warn('CAPTCHA', `${CAPTCHA_TYPE_LABELS[scrollCaptcha.type]} detected on infinite-scroll page`, { url, type: scrollCaptcha.type });
       return { urls: [], hasNextPage: false, engine: scrollResult.effectiveEngine };
     }
 
@@ -345,7 +345,7 @@ export async function handleScrapeList(body: ScrapeListRequest) {
     logPrefix: "Pagination",
     signal,
     onCaptcha: (detection, pageUrl) => {
-      console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[detection.type]} detected on list page ${pageUrl} (confidence: ${Math.round(detection.confidence * 100)}%), skipping page`);
+      logger.warn('CAPTCHA', `${CAPTCHA_TYPE_LABELS[detection.type]} detected on list page`, { url: pageUrl, type: detection.type, confidence: detection.confidence });
       return true; // skip this page
     },
     onPage: (html, pageUrl, page) => {
@@ -508,7 +508,7 @@ export async function handleScrapeChapters(body: ScrapeChaptersRequest) {
     logPrefix: "Chapters",
     signal,
     onCaptcha: (detection, pageUrl) => {
-      console.warn(`[CAPTCHA] ${CAPTCHA_TYPE_LABELS[detection.type]} detected on chapter page ${pageUrl} (confidence: ${Math.round(detection.confidence * 100)}%), skipping page`);
+      logger.warn('CAPTCHA', `${CAPTCHA_TYPE_LABELS[detection.type]} detected on chapter page`, { url: pageUrl, type: detection.type, confidence: detection.confidence });
       return true; // skip this page
     },
     onPage: (html, currentUrl) => {

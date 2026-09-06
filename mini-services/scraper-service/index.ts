@@ -33,13 +33,14 @@ try {
           process.env[key] = val;
         }
       }
-      console.log(`[Env] Loaded ${p}`);
+      console.log(`[Env] Loaded ${p}`); // Logger not yet imported at this point
     } catch {}
   }
 } catch {}
 
 // Global error handlers for process resilience
 process.on('unhandledRejection', (reason) => {
+  // Logger may not be initialized yet; use console.error for fatal errors
   console.error('[Fatal] Unhandled promise rejection:', reason);
   process.exit(1);
 });
@@ -73,11 +74,17 @@ import { priorityQueue } from "./src/priority-queue";
 import { qualityScorer } from "./src/quality-scorer";
 import { antiCrawlAdvisor } from "./src/anti-crawl-advisor";
 import { PRIORITY_MAP, REVERSE_PRIORITY_MAP } from "./src/types";
-import type { TaskPriority, ScrapeResult } from "./src/types";
+import type { TaskPriority, ScrapeResult, EngineType, AntiCrawl } from "./src/types";
 import { sessionManager } from "./src/session-manager";
 import { requestFingerprintMgr } from "./src/request-fingerprint";
 import { timingSafeEqual } from "node:crypto";
+import { logger } from "./src/logger";
+const log = logger.child('Server');
 import { rateOptimizer } from "./src/rate-optimizer";
+import { smartRetry } from "./src/smart-retry";
+import { requestQueue } from "./src/request-queue";
+import { progressTracker } from "./src/progress-tracker";
+import { domainHealth } from "./src/domain-health";
 import { concurrencyOptimizer } from "./src/concurrency-optimizer";
 import { antiDetectionCoordinator } from "./src/anti-detection-coordinator";
 import { batchCalibrate, calibrateSingleRule, getCalibrationStatus, getCalibrationReport, loadSavedReport } from "./src/rate-calibration";
@@ -86,6 +93,11 @@ import { crawlScheduler } from "./src/crawl-scheduler";
 import { pipelineMetrics } from "./src/pipeline-metrics";
 import { adaptiveEngineSelector } from "./src/adaptive-engine";
 import { contentDeduplicator } from "./src/content-dedup";
+import { scrapingSessionMgr, getOrCreateSession, rotateSession, getSessionStats } from "./src/scraping-session";
+import { detectPageType, isCaptchaPage, isBlockedPage } from "./src/page-type-detector";
+import { evasionStrategies } from "./src/evasion-strategies";
+import { resultCache } from "./src/result-cache";
+import { crossDomainCoordinator } from "./src/cross-domain-coordinator";
 import type {
   ScrapeListRequest, ScrapeBookRequest, ScrapeChaptersRequest,
   ScrapeContentRequest, CleanRequest, DownloadCoverRequest, ExecuteTaskRequest,
@@ -141,7 +153,7 @@ function authenticateRequest(req: Request): boolean {
 
   // Reject if no token configured (force security)
   if (!SERVICE_TOKEN) {
-    console.warn("[Auth] SCRAPER_SERVICE_TOKEN not set - all non-health requests rejected");
+    log.warn("SCRAPER_SERVICE_TOKEN not set - all non-health requests rejected");
     return false;
   }
 
@@ -236,7 +248,7 @@ async function simulateAntiCrawl(body: SimulateRequest): Promise<SimulateResult>
   // 1. Evaluate engine selection
   const ac = antiCrawlConfig || {};
   const selectedEngine = selectEngine(
-    (engine as any) || undefined,
+    (engine as import('./src/types').EngineType | undefined) || undefined,
     {
       useJsRender: !!ac.useJsRender,
       cloudBrowser: !!ac.cloudBrowser,
@@ -249,7 +261,7 @@ async function simulateAntiCrawl(body: SimulateRequest): Promise<SimulateResult>
 
   // 2. Build request headers
   const headers = buildFetchHeaders(
-    ac as any,
+    ac as Partial<import('./src/types').AntiCrawl>,
     undefined,
     effectiveUrl,
     'novel'
@@ -342,7 +354,7 @@ function launchTask(taskId: string): void {
   activeTasks.add(taskId);
   activeTaskCount++;
   executeTask(taskId).catch((err) => {
-    console.error(`[Task ${taskId}] Fatal error:`, err);
+    log.error(`Task ${taskId} fatal error`, { error: err instanceof Error ? err.message : String(err) });
     // Sanitize error message before sending to API
     const safeMessage = String(err instanceof Error ? err.message : err)
       .slice(0, 200)
@@ -376,7 +388,7 @@ function scheduleQueuedTasks(): void {
   while (activeTaskCount < MAX_CONCURRENT_TASKS && guard++ < 100) {
     const next = priorityQueue.dequeueNext();
     if (!next) break;
-    console.log(`[PriorityQueue] Launching queued task ${next.taskId} (priority=${next.priority})`);
+    log.info(`Launching queued task ${next.taskId} (priority=${next.priority})`);
     launchTask(next.taskId);
   }
 }
@@ -384,8 +396,8 @@ function scheduleQueuedTasks(): void {
 export function startServer(port: number = 3099) {
   // Warn if no service token configured
   if (!SERVICE_TOKEN) {
-    console.warn("⚠️  SCRAPER_SERVICE_TOKEN not configured! Service will reject all authenticated requests.");
-    console.warn("   Set SCRAPER_SERVICE_TOKEN environment variable to enable API access.");
+    log.warn("SCRAPER_SERVICE_TOKEN not configured! Service will reject all authenticated requests.");
+    log.warn("Set SCRAPER_SERVICE_TOKEN environment variable to enable API access.");
   }
 
   // Initialize all engines
@@ -396,7 +408,7 @@ export function startServer(port: number = 3099) {
   // Enable adaptive mode by default in production
   if (process.env.ADAPTIVE_RATE_MODE !== 'false') {
     crawlScheduler.setAdaptiveMode(true);
-    console.log('[Config] Adaptive rate mode: enabled (RateOptimizer → CrawlScheduler)');
+    log.info('Adaptive rate mode: enabled (RateOptimizer → CrawlScheduler)');
   }
 
   const server = Bun.serve({
@@ -642,6 +654,100 @@ export function startServer(port: number = 3099) {
         });
       }
 
+      // ==================== Smart Retry Endpoints ====================
+
+      if (path === "/retry-stats" && method === "GET") {
+        const stats = smartRetry.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/retry-stats/") && method === "GET") {
+        const domain = decodeURIComponent(path.slice("/retry-stats/".length));
+        const stats = smartRetry.getStats();
+        const domainData = stats.domains[domain];
+        if (!domainData) {
+          return Response.json({ error: "Domain not found" }, { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json({ domain, ...domainData, recentAttempts: smartRetry.getRecentAttempts(domain), successfulRecoveries: smartRetry.getSuccessfulRecoveries(domain) }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/retry-stats/") && method === "POST") {
+        const domain = decodeURIComponent(path.slice("/retry-stats/".length));
+        const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+        if (body.action === 'resume') {
+          smartRetry.resumeDomain(domain);
+          return Response.json({ resumed: true, domain }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } else if (body.action === 'pause') {
+          smartRetry.pauseDomain(domain, body.reason as string | undefined);
+          return Response.json({ paused: true, domain }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json({ error: "Invalid action. Use 'resume' or 'pause'." }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // ==================== Request Queue Endpoints ====================
+
+      if (path === "/request-queue/stats" && method === "GET") {
+        const metrics = requestQueue.getMetrics();
+        return Response.json(metrics, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Progress Tracker Endpoints ====================
+
+      if (path === "/progress" && method === "GET") {
+        const taskIds = progressTracker.getActiveTaskIds();
+        const snapshots = taskIds.map(id => progressTracker.getSnapshot(id)).filter(Boolean);
+        return Response.json({ tasks: snapshots }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/progress/") && method === "GET") {
+        const taskId = path.slice("/progress/".length);
+        const snapshot = progressTracker.getSnapshot(taskId);
+        if (!snapshot) {
+          return Response.json({ error: "Task not found" }, { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json(snapshot, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ==================== Domain Health Endpoints ====================
+
+      if (path === "/domain-health" && method === "GET") {
+        const summary = domainHealth.getSummary();
+        return Response.json(summary, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/domain-health/") && method === "GET") {
+        const domain = decodeURIComponent(path.slice("/domain-health/".length));
+        const health = domainHealth.computeHealth(domain);
+        return Response.json(health, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (path.startsWith("/domain-health/") && method === "POST") {
+        const domain = decodeURIComponent(path.slice("/domain-health/".length));
+        const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+        if (body.action === 'resume') {
+          domainHealth.resumeDomain(domain);
+          return Response.json({ resumed: true, domain }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } else if (body.action === 'pause') {
+          domainHealth.pauseDomain(domain, body.reason as string | undefined);
+          return Response.json({ paused: true, domain }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        return Response.json({ error: "Invalid action. Use 'resume' or 'pause'." }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       // ==================== Concurrency Optimizer Endpoints ====================
 
       if (path === "/concurrency-optimizer/stats" && method === "GET") {
@@ -824,6 +930,111 @@ export function startServer(port: number = 3099) {
         }
       }
 
+      // ==================== Scraping Session Endpoints ====================
+
+      // GET /scraping-sessions — list active sessions
+      if (path === "/scraping-sessions" && method === "GET") {
+        const domain = url.searchParams.get("domain") || undefined;
+        const sessions = scrapingSessionMgr.getActiveSessions(domain);
+        const stats = getSessionStats();
+        return Response.json({ sessions, stats }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /scraping-sessions/:domain/rotate — rotate session for domain
+      if (path.startsWith("/scraping-sessions/") && path.endsWith("/rotate") && method === "POST") {
+        const domainPart = path.slice("/scraping-sessions/".length, -"/rotate".length);
+        if (!domainPart) {
+          return Response.json({ error: 'Domain is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const domain = decodeURIComponent(domainPart);
+        let body: any;
+        try { body = await req.json().catch(() => ({})); } catch { body = {}; }
+        const newSession = rotateSession(domain, body.reason);
+        return Response.json({ rotated: true, domain, newSessionId: newSession.id }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // GET /page-type-detect — detect page type from URL
+      if (path === "/page-type-detect" && method === "GET") {
+        const targetUrl = url.searchParams.get("url");
+        if (!targetUrl) {
+          return Response.json({ error: 'url query parameter is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        // Fetch the URL first (using cheerio engine), then detect
+        try {
+          const engine = getEngine('cheerio');
+          const fetchResult = await engine.fetch(targetUrl, { antiCrawl: {} });
+          const result = detectPageType(fetchResult.html, targetUrl, fetchResult.statusCode);
+          return Response.json(result, {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } catch (err) {
+          return Response.json({ error: `Failed to fetch URL: ${err instanceof Error ? err.message : String(err)}` }, { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+
+      // GET /evasion-strategies — list available strategies
+      if (path === "/evasion-strategies" && method === "GET") {
+        const strategies = evasionStrategies.listStrategies();
+        const wafs = evasionStrategies.waf.getDetectedWAFs();
+        const cfStats = evasionStrategies.cloudflare.getStats();
+        const rlBuckets = evasionStrategies.rateLimit.getTokenBucketStats();
+        return Response.json({ strategies, detectedWAFs: wafs, cloudflareAttempts: cfStats, rateLimitBuckets: rlBuckets }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // GET /result-cache/stats — cache statistics
+      if (path === "/result-cache/stats" && method === "GET") {
+        const stats = resultCache.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /result-cache/clear — clear cache
+      if (path === "/result-cache/clear" && method === "POST") {
+        const domain = url.searchParams.get("domain");
+        let cleared: number;
+        if (domain) {
+          cleared = resultCache.clearByDomain(domain);
+        } else {
+          cleared = resultCache.clear();
+        }
+        return Response.json({ cleared, domain: domain || 'all' }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // GET /cross-domain/stats — cross-domain coordination statistics
+      if (path === "/cross-domain/stats" && method === "GET") {
+        const stats = crossDomainCoordinator.getStats();
+        return Response.json(stats, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // POST /cross-domain/register — register a domain for coordination
+      if (path === "/cross-domain/register" && method === "POST") {
+        let regBody: any;
+        try { regBody = await req.json().catch(() => ({})); } catch { regBody = {}; }
+        const domain = regBody.domain;
+        if (!domain || typeof domain !== 'string') {
+          return Response.json({ error: 'domain is required' }, { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        crossDomainCoordinator.registerDomain(domain, {
+          maxConcurrency: regBody.maxConcurrency,
+          targetRPM: regBody.targetRPM,
+          relatedDomains: regBody.relatedDomains,
+        });
+        return Response.json({ registered: true, domain }, {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Rate limiting (per client IP)
       // Only use x-real-ip (set by Caddy, not spoofable)
       const clientIp = req.headers.get('x-real-ip') || 'unknown';
@@ -888,10 +1099,10 @@ export function startServer(port: number = 3099) {
       try {
         // Route to handlers
         if (path === "/scrape/list") {
-          if (!body || typeof body !== 'object' || typeof (body as any).url !== 'string') {
+          if (!body || typeof body !== 'object' || typeof (body as Record<string, unknown>).url !== 'string') {
             return Response.json({ error: 'url is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
-          if (!(body as any).selector || typeof (body as any).selector !== 'object') {
+          if (!(body as Record<string, unknown>).selector || typeof (body as Record<string, unknown>).selector !== 'object') {
             return Response.json({ error: 'selector is required and must be an object (e.g. {"type":"css","value":"a"})' }, { status: 400, headers: jsonHeaders });
           }
           const result = await handleScrapeList(body as ScrapeListRequest);
@@ -899,7 +1110,7 @@ export function startServer(port: number = 3099) {
         }
 
         if (path === "/scrape/book") {
-          if (!body || typeof body !== 'object' || typeof (body as any).url !== 'string') {
+          if (!body || typeof body !== 'object' || typeof (body as Record<string, unknown>).url !== 'string') {
             return Response.json({ error: 'url is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
           const result = await handleScrapeBook(body as ScrapeBookRequest);
@@ -973,13 +1184,13 @@ export function startServer(port: number = 3099) {
         // ==================== Task Execution (with Priority Queue) ====================
 
         if (path === "/execute-task") {
-          if (!body || typeof body !== 'object' || typeof (body as any).taskId !== 'string') {
+          if (!body || typeof body !== 'object' || typeof (body as Record<string, unknown>).taskId !== 'string') {
             return Response.json({ error: 'taskId is required and must be a string' }, { status: 400, headers: jsonHeaders });
           }
           const { taskId } = body as ExecuteTaskRequest;
 
           // Parse priority from request body (default: medium=2)
-          const rawPriority = (body as any).priority;
+          const rawPriority = (body as Record<string, unknown>).priority;
           let numericPriority = 2; // default medium
           if (typeof rawPriority === 'number') {
             numericPriority = Math.max(0, Math.min(3, Math.floor(rawPriority)));
@@ -997,7 +1208,7 @@ export function startServer(port: number = 3099) {
 
           // Hard cap on concurrent tasks
           if (activeTaskCount >= MAX_CONCURRENT_TASKS) {
-            const ruleId = (body as any).ruleId;
+            const ruleId = (body as Record<string, unknown>).ruleId as string | undefined;
             const enqueued = priorityQueue.enqueue(taskId, numericPriority, ruleId);
             if (enqueued) {
               const stats = priorityQueue.getStats();
@@ -1021,7 +1232,7 @@ export function startServer(port: number = 3099) {
           // Check priority queue capacity
           if (!priorityQueue.hasCapacity()) {
             // Try to enqueue the task
-            const ruleId = (body as any).ruleId;
+            const ruleId = (body as Record<string, unknown>).ruleId as string | undefined;
             const enqueued = priorityQueue.enqueue(taskId, numericPriority, ruleId);
             if (enqueued) {
               const stats = priorityQueue.getStats();
@@ -1110,7 +1321,7 @@ export function startServer(port: number = 3099) {
           // Select engine based on config
           const ac = antiCrawlConfig || {};
           const engineType = selectEngine(
-            reqEngine as any,
+            reqEngine as EngineType | undefined,
             {
               useJsRender: !!ac.useJsRender,
               cloudBrowser: !!ac.cloudBrowser,
@@ -1122,7 +1333,7 @@ export function startServer(port: number = 3099) {
           );
 
           // Build headers for reporting
-          const fetchHeaders = buildFetchHeaders(ac as any, undefined, url, 'novel');
+          const fetchHeaders = buildFetchHeaders(ac as Partial<AntiCrawl>, undefined, url, 'novel');
 
           const engine = getEngine(engineType);
           const startTime = Date.now();
@@ -1134,13 +1345,13 @@ export function startServer(port: number = 3099) {
           let fetchError: string | undefined;
 
           try {
-            const result = await engine.fetch(url, { antiCrawl: ac as any });
+            const result = await engine.fetch(url, { antiCrawl: ac as Partial<AntiCrawl> });
             html = result.html || '';
             statusCode = result.statusCode;
             finalUrl = result.finalUrl || url;
             success = statusCode >= 200 && statusCode < 400 && html.length > 0;
-          } catch (err: any) {
-            const errMsg = String(err?.message || err || 'Unknown error');
+          } catch (err: unknown) {
+            const errMsg = String((err instanceof Error ? err.message : err) || 'Unknown error');
             fetchError = errMsg.slice(0, 300);
             const statusMatch = errMsg.match(/HTTP (\d+)/);
             if (statusMatch) statusCode = parseInt(statusMatch[1], 10);
@@ -1398,7 +1609,7 @@ export function startServer(port: number = 3099) {
           { status: 404, headers: jsonHeaders }
         );
       } catch (err) {
-        console.error(`[Server] Error handling ${path}:`, err);
+        log.error(`Error handling ${path}`, { error: err instanceof Error ? err.message : String(err) });
         // Never leak internal error details to clients
         return Response.json(
           { error: "Internal server error" },
@@ -1408,58 +1619,11 @@ export function startServer(port: number = 3099) {
     },
   });
 
-  console.log(`🚀 Scraper Service v3.0 running on port ${server.port}`);
+  log.info(`Scraper Service v3.0 running on port ${server.port}`);
   if (process.env.DEBUG === "true") {
-    console.log(`   Engines: ${getEngineNames().join(", ")}`);
-    console.log(`   Captcha Strategies: ${getCaptchaStrategies().map(s => s.name).join(", ")}`);
-    console.log(`   Endpoints:`);
-    console.log(`   POST /scrape/list       - Scrape a list page`);
-    console.log(`   POST /scrape/book       - Scrape book info`);
-    console.log(`   POST /scrape/chapters   - Scrape chapter directory`);
-    console.log(`   POST /scrape/content    - Scrape chapter content`);
-    console.log(`   POST /clean             - Clean scraped content`);
-    console.log(`   POST /download-cover    - Download & convert cover`);
-    console.log(`   POST /execute-task      - Execute full scraping task`);
-    console.log(`   GET  /health            - Health check (shows active engines)`);
-    console.log(`   GET  /queue/stats       - Queue statistics`);
-    console.log(`   POST /queue/requeue     - Requeue failed items`);
-    console.log(`   POST /queue/cleanup     - Cleanup old completed items`);
-    console.log(`   DELETE /queue/clear     - Clear task queue`);
-    console.log(`   POST /ai/generate-rule - AI-generate scrape rules from URL`);
-    console.log(`   POST /ai/preview-page   - Fetch page HTML for preview`);
-    console.log(`   POST /test-rule          - End-to-end test a scraping rule`);
-    console.log(`   GET  /fingerprint-health       - Stealth capabilities report`);
-    console.log(`   GET  /proxy/detailed-stats     - Detailed proxy pool stats`);
-    console.log(`   GET  /proxy/domain-bindings    - Domain-proxy bindings`);
-    console.log(`   POST /proxy/add                - Add proxy to pool`);
-    console.log(`   POST /proxy/remove             - Remove proxy`);
-    console.log(`   POST /proxy/reset              - Reset proxy health`);
-    console.log(`   POST /proxy/check              - Health-check a proxy`);
-    console.log(`   POST /proxy/import             - Import proxies`);
-    console.log(`   POST /proxy/export             - Export proxies`);
-    console.log(`   POST /proxy/bind-domain        - Bind proxy to domain`);
-    console.log(`   POST /proxy/test               - Test a single proxy connection`);
-    console.log(`   POST /proxy/test-all           - Test all active proxies`);
-    console.log(`   GET  /session-stats              - Session manager stats`);
-    console.log(`   GET  /sessions                   - List all sessions`);
-    console.log(`   POST /session/block              - Block a session`);
-    console.log(`   POST /session/cleanup            - Force session cleanup`);
-    console.log(`   GET  /fingerprint-recent         - Recent request fingerprints`);
-    console.log(`   GET  /fingerprint-stats          - Fingerprint stats`);
-    console.log(`   GET  /rate-limit-stats           - Per-domain rate limit states`);
-    console.log(`   POST /rate-limit/set            - Set domain rate limit`);
-    console.log(`   POST /rate-limit/reset          - Reset domain rate limit`);
-    console.log(`   POST /anti-crawl/simulate       - Simulate anti-crawl pipeline (self-test)`);
-    console.log(`   POST /anti-crawl/advise         - Anti-crawl strategy advisor`);
-    console.log(`   GET  /anti-crawl/domain-signals - Raw detection signals for domain`);
-    console.log(`   GET  /priority-queue/stats       - Priority queue statistics`);
-    console.log(`   POST /priority-queue/reorder     - Reprioritize a queued task`);
-    console.log(`   POST /priority-queue/cancel      - Cancel a queued task`);
-    console.log(`   PUT  /priority-queue/concurrency - Set max concurrent tasks`);
-    console.log(`   GET  /quality/recent             - Recent quality reports`);
-    console.log(`   GET  /quality/stats              - Aggregate quality statistics`);
-    console.log(`   POST /quality/score              - Manual quality score for a task`);
-    console.log(`   GET  /cookie-persist/stats       - Cookie persistence stats (SQLite)`);
+    log.debug(`Engines: ${getEngineNames().join(", ")}`);
+    log.debug(`Captcha Strategies: ${getCaptchaStrategies().map(s => s.name).join(", ")}`);
+    log.debug('Endpoints: /scrape/list, /scrape/book, /scrape/chapters, /scrape/content, /clean, /download-cover, /execute-task, /health, /queue/*, /ai/*, /test-rule, /fingerprint-health, /proxy/*, /session*, /fingerprint*, /rate-limit*, /anti-crawl/*, /priority-queue/*, /quality/*, /cookie-persist/*, /retry-stats*, /request-queue/*, /progress*, /domain-health*');
   }
 
   return server;
@@ -1468,13 +1632,13 @@ export function startServer(port: number = 3099) {
 // ==================== Start ====================
 
 const PORT = parseInt(process.env.PORT || "3099", 10) || 3099;
-console.log(`[Config] PORT: ${PORT}, Auth: ${SERVICE_TOKEN ? "enabled" : "DISABLED"}`);
+log.info(`PORT: ${PORT}, Auth: ${SERVICE_TOKEN ? "enabled" : "DISABLED"}`);
 // Only log sensitive service URLs in debug mode
 if (process.env.DEBUG === "true") {
-  console.log(`[Config] API_BASE: ${process.env.MAIN_APP_URL || "http://localhost:3000"}`);
-  console.log(`[Config] Firecrawl: ${process.env.FIRECRAWL_API_URL || "not configured"}`);
-  console.log(`[Config] AgentQL: ${process.env.AGENTQL_API_URL || "not configured"}`);
-  console.log(`[Config] CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"}`);
+  log.debug(`API_BASE: ${process.env.MAIN_APP_URL || "http://localhost:3000"}`);
+  log.debug(`Firecrawl: ${process.env.FIRECRAWL_API_URL || "not configured"}`);
+  log.debug(`AgentQL: ${process.env.AGENTQL_API_URL || "not configured"}`);
+  log.debug(`CloudBrowser: ${process.env.CLOUD_BROWSER_PROVIDER || "browserless"}`);
 }
 
 // Recover any stale tasks from previous crashes before starting server
@@ -1482,10 +1646,10 @@ let recovered = 0;
 try {
   recovered = await recoverStaleTasks();
 } catch (err) {
-  console.error("[Startup] recoverStaleTasks failed (non-blocking):", err);
+  log.error('recoverStaleTasks failed (non-blocking)', { error: err instanceof Error ? err.message : String(err) });
 }
 if (recovered > 0) {
-  console.log(`[Startup] Recovered ${recovered} stale tasks`);
+  log.info(`Recovered ${recovered} stale tasks`);
 }
 
 // Auto-load proxy pool from config file
@@ -1495,16 +1659,39 @@ try {
   const proxyConfig = JSON.parse(proxyConfigRaw);
   if (proxyConfig.enabled && proxyConfig.autoImportOnStart && Array.isArray(proxyConfig.proxies) && proxyConfig.proxies.length > 0) {
     const added = proxyManager.addProxies(proxyConfig.proxies);
-    console.log(`[Startup] Imported ${added} proxies from proxy-config.json`);
+    log.info(`Imported ${added} proxies from proxy-config.json`);
   }
 } catch (err) {
   // Non-blocking: proxy config is optional
   if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-    console.warn('[Startup] Failed to load proxy-config.json (non-blocking):', (err as Error).message);
+    log.warn('Failed to load proxy-config.json (non-blocking)', { error: (err as Error).message });
   }
 }
 
 startServer(PORT);
+
+// ─── Startup Validation ──────────────────────────────────────────
+// Verify critical dependencies-configuration before accepting requests
+{
+  const startupIssues: string[] = [];
+  if (!SERVICE_TOKEN || SERVICE_TOKEN.length < 16) {
+    startupIssues.push('SCRAPER_SERVICE_TOKEN is missing or too short (<16 chars)');
+  }
+  const mainAppUrl = process.env.MAIN_APP_URL || 'http://localhost:3000';
+  try {
+    const url = new URL(mainAppUrl);
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      startupIssues.push(`MAIN_APP_URL has invalid protocol: ${url.protocol}`);
+    }
+  } catch {
+    startupIssues.push(`MAIN_APP_URL is not a valid URL: ${mainAppUrl}`);
+  }
+  if (startupIssues.length > 0) {
+    log.warn(`Startup validation warnings: ${startupIssues.join('; ')}`);
+  } else {
+    log.info('Startup validation passed — all critical config OK');
+  }
+}
 
 // Periodic stuck-task detection (every 2 minutes)
 const STUCK_DETECT_INTERVAL_MS = 2 * 60 * 1000;
@@ -1512,12 +1699,12 @@ const stuckDetectInterval = setInterval(async () => {
   try {
     const count = await detectStuckTasks();
     if (count > 0) {
-      console.log(`[StuckDetection] Detected and failed ${count} stuck tasks`);
+      log.info(`Detected and failed ${count} stuck tasks`);
     }
   } catch (err) {
-    console.error("[StuckDetection] Periodic check error:", err);
+    log.error('Stuck detection periodic check error', { error: err instanceof Error ? err.message : String(err) });
   }
-}, STUCK_DETECT_INTERVAL_MS);
+}, STUCK_DETECT_INTERVAL_MS).unref();
 
 // ==================== Graceful Shutdown ====================
 
@@ -1526,7 +1713,7 @@ let isShuttingDown = false;
 const shutdown = async (signal: string) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log(`\n[${new Date().toISOString()}] Received ${signal}, shutting down gracefully...`);
+  log.info(`Received ${signal}, shutting down gracefully...`);
 
   // Stop accepting new tasks (mark as shutting down)
   // Wait for active tasks to complete (with a 30s hard deadline)
@@ -1537,7 +1724,7 @@ const shutdown = async (signal: string) => {
     (async () => {
       // Wait for all active tasks to finish
       while (activeTasks.size > 0 && Date.now() < deadline) {
-        console.log(`[${new Date().toISOString()}] Waiting for ${activeTasks.size} active tasks to complete...`);
+        log.info(`Waiting for ${activeTasks.size} active tasks to complete...`);
         await new Promise((r) => setTimeout(r, 1000));
       }
     }),
@@ -1564,10 +1751,22 @@ const shutdown = async (signal: string) => {
   await closeAllEngines().catch(() => {});
   requestFingerprintMgr.destroy();
   sessionManager.destroy();
+  
+  // Cleanup: destroy all singleton modules that have destroy/cleanup methods
+  try { if (typeof adaptiveDelay?.destroy === 'function') adaptiveDelay.destroy(); } catch {}
+  try { if (typeof cookieJar?.destroy === 'function') cookieJar.destroy(); } catch {}
+  try { if (typeof rateLimiter?.destroy === 'function') rateLimiter.destroy(); } catch {}
+  try { if (typeof smartRetry?.destroy === 'function') smartRetry.destroy(); } catch {}
+  try { if (typeof requestQueue?.destroy === 'function') requestQueue.destroy(); } catch {}
+  try { if (typeof domainHealth?.destroy === 'function') domainHealth.destroy(); } catch {}
+  try { if (typeof pipelineMetrics?.destroy === 'function') pipelineMetrics.destroy(); } catch {}
+  try { if (typeof crawlScheduler?.destroy === 'function') crawlScheduler.destroy(); } catch {}
+  try { if (typeof contentDeduplicator?.destroy === 'function') contentDeduplicator.destroy(); } catch {}
+  try { if (typeof resultCache?.destroy === 'function') resultCache.destroy(); } catch {}
   clearInterval(terminateTimer); // Clear force-terminate timer regardless
   clearInterval(stuckDetectInterval); // Clear stuck-detection interval
   clearInterval(progressThrottleCleanupTimer); // Clear progress throttle cleanup
-  console.log(`[${new Date().toISOString()}] Active tasks: ${activeTasks.size}, Engines closed. State persisted. Exiting.`);
+  log.info(`Active tasks: ${activeTasks.size}, Engines closed. State persisted. Exiting.`);
 
   process.exit(0);
 };
@@ -1576,7 +1775,7 @@ const shutdown = async (signal: string) => {
 const terminateTimer = setInterval(() => {
   if (activeTasks.size > 0 && isShuttingDown) {
     // Tasks still running after deadline - force terminate
-    console.warn(`[${new Date().toISOString()}] Force terminating ${activeTasks.size} active tasks`);
+    log.warn(`Force terminating ${activeTasks.size} active tasks`);
     for (const taskId of activeTasks) {
       fetch(`${process.env.MAIN_APP_URL || "http://localhost:3000"}/api/scrape-tasks/${taskId}`, {
         method: "PUT",
@@ -1593,7 +1792,7 @@ const terminateTimer = setInterval(() => {
     }
     clearInterval(terminateTimer);
   }
-}, 3000);
+}, 3000).unref();
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));

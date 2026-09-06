@@ -18,7 +18,7 @@ export const GET = withPublicRateLimit({ capacity: 120, refillRate: 2 }, async (
       count: g._count.keyword,
     }));
 
-    return NextResponse.json({ trends });
+    return NextResponse.json({ trends }, { headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300' } });
   } catch {
     return NextResponse.json({ trends: [] });
   }

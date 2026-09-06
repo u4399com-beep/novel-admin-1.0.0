@@ -61,16 +61,16 @@ export const PUT = withAuth(async function PUT(
     }
 
     // --- Enum validation ---
-    if (body.scrapeMode !== undefined && !VALID_SCRAPE_MODES.includes(body.scrapeMode as any)) {
+    if (body.scrapeMode !== undefined && !(VALID_SCRAPE_MODES as readonly string[]).includes(body.scrapeMode as string)) {
       return apiError(`采集模式只能是: ${VALID_SCRAPE_MODES.join(', ')}`, 400);
     }
-    if (body.engine !== undefined && !VALID_ENGINES.includes(body.engine as any)) {
+    if (body.engine !== undefined && !(VALID_ENGINES as readonly string[]).includes(body.engine as string)) {
       return apiError(`采集引擎只能是: ${VALID_ENGINES.join(', ')}`, 400);
     }
-    if (body.storageMode !== undefined && !VALID_STORAGE_MODES.includes(body.storageMode as any)) {
+    if (body.storageMode !== undefined && !(VALID_STORAGE_MODES as readonly string[]).includes(body.storageMode as string)) {
       return apiError(`存储模式只能是: ${VALID_STORAGE_MODES.join(', ')}`, 400);
     }
-    if (body.dedupMode !== undefined && !VALID_DEDUP_MODES.includes(body.dedupMode as any)) {
+    if (body.dedupMode !== undefined && !(VALID_DEDUP_MODES as readonly string[]).includes(body.dedupMode as string)) {
       return apiError(`去重模式只能是: ${VALID_DEDUP_MODES.join(', ')}`, 400);
     }
 

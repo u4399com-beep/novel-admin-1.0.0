@@ -13,6 +13,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
+import { logger } from './logger';
 
 // ==================== Types ====================
 
@@ -427,7 +428,7 @@ export async function batchCalibrate(apply: boolean = false): Promise<Calibratio
         }
         results.push(result);
       } catch (err) {
-        console.error(`[RateCalibration] Failed to calibrate ${file}:`, err);
+        logger.error('RateCalibration', `Failed to calibrate ${file}`, { file, error: err instanceof Error ? err.message : String(err) });
       }
     }
 
@@ -466,14 +467,19 @@ export async function calibrateSingleRule(ruleName: string, apply: boolean = fal
     return null;
   }
 
-  const calibrator = new RateCalibrator(rulesDir);
-  const result = await calibrator.calibrateRule(rulePath);
+  try {
+    const calibrator = new RateCalibrator(rulesDir);
+    const result = await calibrator.calibrateRule(rulePath);
 
-  if (apply) {
-    calibrator.applyCalibration(rulePath, result);
+    if (apply) {
+      calibrator.applyCalibration(rulePath, result);
+    }
+
+    return result;
+  } catch (err) {
+    logger.error('RateCalibration', `Failed to calibrate rule ${ruleName}`, { ruleName, error: err instanceof Error ? err.message : String(err) });
+    return null;
   }
-
-  return result;
 }
 
 /**

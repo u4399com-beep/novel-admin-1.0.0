@@ -606,3 +606,287 @@ export class QualityScorer {
 
 /** Singleton instance */
 export const qualityScorer = new QualityScorer();
+
+// ==================== Round 2: Multi-Language Content Detection ====================
+
+/**
+ * Detect the language of content text.
+ * Supports Chinese (CN/TW), Japanese, Korean, and English.
+ * Uses Unicode range detection and character frequency analysis.
+ */
+export function detectContentLanguage(text: string): {
+  primary: 'zh-CN' | 'zh-TW' | 'ja' | 'ko' | 'en' | 'unknown';
+  confidence: number;
+  distribution: Record<string, number>;
+} {
+  if (!text || text.length < 10) {
+    return { primary: 'unknown', confidence: 0, distribution: {} };
+  }
+
+  const sample = text.slice(0, 5000); // Sample first 5000 chars for performance
+  const distribution: Record<string, number> = { 'zh-CN': 0, 'zh-TW': 0, 'ja': 0, 'ko': 0, 'en': 0, 'other': 0 };
+
+  for (const ch of sample) {
+    const code = ch.codePointAt(0)!;
+
+    // Simplified Chinese (CJK Unified Ideographs — most common in CN)
+    // Traditional Chinese uses same range but different frequency
+    if (code >= 0x4E00 && code <= 0x9FFF) {
+      // Use heuristic: certain characters are more common in traditional Chinese
+      const tradChars = '國說學會對開於這裡個們來過時沒說請讓點書與氣還錢車長東';
+      if (tradChars.includes(ch)) {
+        distribution['zh-TW']++;
+      } else {
+        distribution['zh-CN']++;
+      }
+    }
+    // Japanese Hiragana & Katakana
+    else if ((code >= 0x3040 && code <= 0x309F) || (code >= 0x30A0 && code <= 0x30FF)) {
+      distribution['ja']++;
+    }
+    // Korean Hangul
+    else if (code >= 0xAC00 && code <= 0xD7AF) {
+      distribution['ko']++;
+    }
+    // English/Latin
+    else if ((code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A)) {
+      distribution['en']++;
+    }
+    else {
+      distribution['other']++;
+    }
+  }
+
+  // Find dominant language
+  const total = Object.values(distribution).reduce((a, b) => a + b, 0);
+  if (total === 0) return { primary: 'unknown', confidence: 0, distribution };
+
+  // Normalize distribution
+  const normalized: Record<string, number> = {};
+  for (const [lang, count] of Object.entries(distribution)) {
+    normalized[lang] = count / total;
+  }
+
+  // Find primary (excluding 'other')
+  let maxLang = 'en';
+  let maxCount = 0;
+  for (const [lang, count] of Object.entries(distribution)) {
+    if (lang === 'other') continue;
+    if (count > maxCount) {
+      maxCount = count;
+      maxLang = lang;
+    }
+  }
+
+  const confidence = maxCount / total;
+
+  return {
+    primary: maxLang as 'zh-CN' | 'zh-TW' | 'ja' | 'ko' | 'en' | 'unknown',
+    confidence,
+    distribution: normalized,
+  };
+}
+
+// ==================== Round 2: Anti-Crawl Decoy Content Detection ====================
+
+/**
+ * Detect anti-crawl decoy content — content served to bots that looks real
+ * but is actually fake/garbled. Signs include:
+ *   - Short repeated phrases (same sentence 5+ times)
+ *   - Garbled/encoded text (high ratio of non-standard characters)
+ *   - Lorem ipsum or placeholder text
+ *   - Unusually uniform content (all paragraphs same length)
+ *   - No meaningful sentence structure
+ */
+export function detectDecoyContent(text: string): {
+  isDecoy: boolean;
+  confidence: number;
+  reasons: string[];
+} {
+  if (!text || text.length < 100) {
+    return { isDecoy: false, confidence: 0, reasons: [] };
+  }
+
+  const reasons: string[] = [];
+  let score = 0;
+
+  // 1. Check for repeated phrases (same 20+ char sequence appearing 3+ times)
+  const phrases = text.match(/[\u4e00-\u9fff\w\s,，。.]{20,}/g) || [];
+  const phraseCounts = new Map<string, number>();
+  for (const phrase of phrases) {
+    const key = phrase.slice(0, 30);
+    phraseCounts.set(key, (phraseCounts.get(key) || 0) + 1);
+  }
+  const repeatedPhrases = [...phraseCounts.entries()].filter(([, count]) => count >= 3);
+  if (repeatedPhrases.length > 2) {
+    reasons.push(`${repeatedPhrases.length} phrases repeated 3+ times`);
+    score += 0.3;
+  }
+
+  // 2. Check for placeholder text
+  const placeholderPatterns = /lorem ipsum|测试内容|placeholder|sample text|这是一段测试|暂无内容|正在更新/i;
+  if (placeholderPatterns.test(text)) {
+    reasons.push('Placeholder text detected');
+    score += 0.4;
+  }
+
+  // 3. Check for garbled text (high ratio of non-standard characters)
+  let nonStandardCount = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    if (code > 0x9FFF && code < 0xF900) nonStandardCount++; // CJK Extension areas
+    if (code >= 0xFDD0 && code <= 0xFDEF) nonStandardCount++; // Non-characters
+  }
+  const garbledRatio = nonStandardCount / text.length;
+  if (garbledRatio > 0.1) {
+    reasons.push(`High garbled text ratio: ${(garbledRatio * 100).toFixed(1)}%`);
+    score += 0.3;
+  }
+
+  // 4. Check for uniform paragraph lengths (all same length = suspicious)
+  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 20);
+  if (paragraphs.length >= 5) {
+    const lengths = paragraphs.map(p => p.trim().length);
+    const avgLen = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+    const variance = lengths.reduce((sum, l) => sum + Math.pow(l - avgLen, 2), 0) / lengths.length;
+    const coeffOfVariation = Math.sqrt(variance) / avgLen;
+    if (coeffOfVariation < 0.05) {
+      reasons.push(`Suspiciously uniform paragraph lengths (CV: ${coeffOfVariation.toFixed(3)})`);
+      score += 0.2;
+    }
+  }
+
+  // 5. Check for very short content (decoy pages are often short)
+  if (text.length < 200) {
+    reasons.push('Content too short (< 200 chars)');
+    score += 0.3;
+  }
+
+  return {
+    isDecoy: score >= 0.4,
+    confidence: Math.min(score, 1),
+    reasons,
+  };
+}
+
+// ==================== Round 2: Chapter Structural Validation ====================
+
+/**
+ * Validate that chapter content has proper structure.
+ * Checks for: title present, has paragraphs, no HTML tags in text,
+ * reasonable word count range, no binary/garbled content.
+ */
+export function validateChapterStructure(chapter: {
+  title?: string;
+  content?: string;
+  wordCount?: number;
+}): {
+  valid: boolean;
+  issues: string[];
+  quality: 'good' | 'acceptable' | 'poor' | 'invalid';
+} {
+  const issues: string[] = [];
+
+  // 1. Title must be present and non-empty
+  if (!chapter.title || chapter.title.trim().length === 0) {
+    issues.push('Missing chapter title');
+  }
+
+  // 2. Content must be present
+  if (!chapter.content || chapter.content.trim().length === 0) {
+    issues.push('Empty chapter content');
+  } else {
+    // 3. No HTML tags in text content (should have been cleaned)
+    const htmlTagCount = (chapter.content.match(/<[^>]+>/g) || []).length;
+    if (htmlTagCount > 3) {
+      issues.push(`5+ HTML tags in content (${htmlTagCount} found) — cleaning may have failed`);
+    }
+
+    // 4. Must have paragraph breaks (single monolithic block is suspicious)
+    const paragraphs = chapter.content.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+    if (paragraphs.length <= 1 && chapter.content.length > 500) {
+      issues.push('No paragraph breaks in long content — possible extraction error');
+    }
+
+    // 5. Word count should match content length roughly
+    if (chapter.wordCount !== undefined) {
+      const actualLength = chapter.content.length;
+      const ratio = chapter.wordCount / actualLength;
+      if (ratio > 3 || ratio < 0.1) {
+        issues.push(`Word count (${chapter.wordCount}) inconsistent with content length (${actualLength})`);
+      }
+    }
+
+    // 6. Check for binary content (high ratio of non-printable characters)
+    let nonPrintable = 0;
+    for (const ch of chapter.content) {
+      const code = ch.codePointAt(0)!;
+      if (code < 0x20 && code !== 0x0A && code !== 0x0D && code !== 0x09) {
+        nonPrintable++;
+      }
+    }
+    if (nonPrintable / chapter.content.length > 0.01) {
+      issues.push('Binary/non-printable content detected');
+    }
+  }
+
+  const quality = issues.length === 0 ? 'good' : issues.length <= 1 ? 'acceptable' : issues.length <= 3 ? 'poor' : 'invalid';
+
+  return {
+    valid: issues.length <= 1,
+    issues,
+    quality,
+  };
+}
+
+// ==================== Round 2: Content Freshness Comparison ====================
+
+/**
+ * Compare current content with a previous version to score freshness.
+ * Uses text similarity (Jaccard on words) and structural comparison.
+ */
+export function compareContentFreshness(
+  current: string,
+  previous?: string,
+): {
+  isNew: boolean;
+  similarity: number;
+  addedChars: number;
+  removedChars: number;
+  freshnessScore: number;
+} {
+  if (!previous) {
+    // No previous version — assume fresh
+    return { isNew: true, similarity: 0, addedChars: current.length, removedChars: 0, freshnessScore: 100 };
+  }
+
+  if (current === previous) {
+    // Identical — not fresh at all
+    return { isNew: false, similarity: 1, addedChars: 0, removedChars: 0, freshnessScore: 0 };
+  }
+
+  // Jaccard similarity on word-level
+  const toWords = (text: string) => new Set(text.slice(0, 10000).split(/[\s,，。.!?！？\n]+/).filter(w => w.length > 1));
+  const currentWords = toWords(current);
+  const previousWords = toWords(previous);
+
+  const intersection = new Set([...currentWords].filter(w => previousWords.has(w)));
+  const union = new Set([...currentWords, ...previousWords]);
+
+  const similarity = union.size > 0 ? intersection.size / union.size : 0;
+
+  // Character-level diff (approximation)
+  const addedChars = Math.max(0, current.length - previous.length);
+  const removedChars = Math.max(0, previous.length - current.length);
+
+  // Freshness score: 100 = completely new, 0 = identical
+  const freshnessScore = Math.round((1 - similarity) * 100);
+
+  return {
+    isNew: similarity < 0.95, // Less than 95% similar = considered new
+    similarity,
+    addedChars,
+    removedChars,
+    freshnessScore,
+  };
+}

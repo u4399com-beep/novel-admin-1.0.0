@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
+import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-utils';
 
 // GET /api/stats/daily-detail?date=YYYY-MM-DD&sessionId=xxx
@@ -12,12 +12,12 @@ export const GET = withAuth(async (req) => {
     const sessionId = url.searchParams.get('sessionId');
 
     if (!date) {
-      return NextResponse.json({ error: '缺少日期参数' }, { status: 400 });
+      return apiError('缺少日期参数', 400);
     }
 
     // Validate date format: YYYY-MM-DD
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return NextResponse.json({ error: '日期格式无效，请使用 YYYY-MM-DD' }, { status: 400 });
+      return apiError('日期格式无效，请使用 YYYY-MM-DD', 400);
     }
 
     // Get summary from readingDaily
@@ -28,7 +28,7 @@ export const GET = withAuth(async (req) => {
 
     // If no daily record and no sessionId, return 404
     if (!daily && !sessionId) {
-      return NextResponse.json({ error: '该日无阅读记录' }, { status: 404 });
+      return apiError('该日无阅读记录', 404);
     }
 
     // Query detailed reading history for that date
@@ -68,7 +68,7 @@ export const GET = withAuth(async (req) => {
 
     // If no daily record and no history rows, return 404
     if (!daily && rows.length === 0) {
-      return NextResponse.json({ error: '该日无阅读记录' }, { status: 404 });
+      return apiError('该日无阅读记录', 404);
     }
 
     return NextResponse.json({
@@ -85,7 +85,6 @@ export const GET = withAuth(async (req) => {
       })),
     });
   } catch (error) {
-    console.error('Daily detail stats error:', error);
     return apiError('获取每日阅读详情失败');
   }
 });

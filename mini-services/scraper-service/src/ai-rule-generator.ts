@@ -431,7 +431,7 @@ export async function handleGenerateRule(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    console.error(`[AI Rule Gen] Next.js API error: ${response.status} - ${errorText}`);
+    logger.error('AIRuleGen', `Next.js API error: ${response.status}`, { status: response.status, error: errorText });
     return {
       success: false,
       rule: null,
@@ -454,7 +454,7 @@ export async function handleGenerateRule(
   // Validate structural integrity before casting
   const structErr = validateRuleStructure(parsed);
   if (structErr) {
-    console.error(`[AI Rule Gen] Structural validation failed: ${structErr}`);
+    logger.error('AIRuleGen', `Structural validation failed: ${structErr}`);
     return {
       success: false,
       rule: null,
@@ -472,8 +472,8 @@ export async function handleGenerateRule(
   // 5. Validate generated rules
   const validationErrors = validateRules(result.rule);
   if (validationErrors.length > 0) {
-    console.warn(`[AI Rule Gen] Validation failed (${validationErrors.length} errors), retrying with feedback...`);
-    console.warn(`[AI Rule Gen] Validation errors: ${validationErrors.join("; ")}`);
+    logger.warn('AIRuleGen', `Validation failed (${validationErrors.length} errors), retrying with feedback...`);
+    logger.warn('AIRuleGen', `Validation errors: ${validationErrors.join("; ")}`);
 
     // Retry once with validation error feedback
     const retryResponse = await fetch(`${apiBase}/api/scrape-rules/ai-analyze`, {
@@ -500,7 +500,7 @@ export async function handleGenerateRule(
             log.info(` Retry succeeded with valid rules`);
             result = retryResult;
           } else {
-            console.warn(`[AI Rule Gen] Retry also had validation errors: ${retryErrors.join("; ")}`);
+            logger.warn('AIRuleGen', `Retry also had validation errors: ${retryErrors.join("; ")}`);
           }
         }
       } catch {

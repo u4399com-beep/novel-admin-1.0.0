@@ -43,7 +43,7 @@ export const POST = withAuth(async function POST(request: Request) {
 
   try {
     if (!body.domain || typeof body.domain !== 'string') {
-      return NextResponse.json({ error: 'domain is required' }, { status: 400 });
+      return apiError('domain is required', 400);
     }
 
     const controller = new AbortController();

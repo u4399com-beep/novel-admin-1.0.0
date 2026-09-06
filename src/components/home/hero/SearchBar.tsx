@@ -69,6 +69,40 @@ export interface SearchBarProps {
   onSearch: (term: string) => void;
 }
 
+// Animated placeholder cycling hook
+const PLACEHOLDER_CYCLE = ['搜索小说名、作者...', '斗破苍穹', '诡秘之主', '凡人修仙传', '遮天', '庆余年'];
+
+function useAnimatedPlaceholder(speed = 2000) {
+  const [index, setIndex] = useState(0);
+  const [text, setText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    const current = PLACEHOLDER_CYCLE[index];
+    if (!isDeleting) {
+      if (text.length < current.length) {
+        const timer = setTimeout(() => setText(current.slice(0, text.length + 1)), 80);
+        return () => clearTimeout(timer);
+      }
+      const timer = setTimeout(() => setIsDeleting(true), speed);
+      return () => clearTimeout(timer);
+    } else {
+      if (text.length > 0) {
+        const timer = setTimeout(() => setText(text.slice(0, -1)), 40);
+        return () => clearTimeout(timer);
+      }
+      // When text is empty and deleting, move to next placeholder
+      const timer = setTimeout(() => {
+        setIsDeleting(false);
+        setIndex((prev) => (prev + 1) % PLACEHOLDER_CYCLE.length);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [text, isDeleting, index, speed]);
+
+  return text || '搜索小说名、作者...';
+}
+
 export function SearchBar({ search, onSearch }: SearchBarProps) {
   const router = useRouter();
   const [searchInput, setSearchInput] = useState('');
@@ -78,6 +112,7 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [trends, setTrends] = useState<{ keyword: string; count: number }[]>([]);
+  const animatedPlaceholder = useAnimatedPlaceholder();
 
   // Load search history from localStorage on mount (avoid hydration mismatch)
   useEffect(() => {
@@ -207,12 +242,12 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
             小说搜索
           </h1>
           <div className="flex-1 max-w-full sm:max-w-2xl" ref={searchRef}>
-            <form onSubmit={handleSearch} className="relative search-focus-ring rounded-lg border-glow glass-morphism stagger-children focus-within:ring-2 focus-within:ring-primary/30 focus-within:bg-background focus-within:shadow-sm transition-all duration-300">
+            <form onSubmit={handleSearch} className="relative search-gradient-border search-focus-ring rounded-lg border-glow glass-morphism stagger-children focus-within:ring-2 focus-within:ring-primary/30 focus-within:bg-background focus-within:shadow-sm transition-all duration-300">
               <Search className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10 transition-all duration-300 ${!searchInput ? 'animate-pulse opacity-60' : 'opacity-100'}`} />
               <Input
                 ref={inputRef}
                 type="text"
-                placeholder="搜索小说名、作者..."
+                placeholder={animatedPlaceholder}
                 aria-label="搜索小说名、作者"
                 value={searchInput}
                 onChange={(e) => {
@@ -397,6 +432,21 @@ export function SearchBar({ search, onSearch }: SearchBarProps) {
                 ×
               </button>
             </Badge>
+          )}
+          {/* Search history pills below search bar when idle */}
+          {searchHistory.length > 0 && !searchInput && (
+            <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+              <span className="text-[10px] text-muted-foreground/40">最近:</span>
+              {searchHistory.slice(0, 3).map((term) => (
+                <button
+                  key={term}
+                  onClick={() => handleHistorySelect(term)}
+                  className="text-[10px] px-1.5 py-0.5 rounded-full border border-border/40 text-muted-foreground/60 hover:text-foreground hover:border-border transition-colors"
+                >
+                  {term.length > 6 ? term.slice(0, 6) + '…' : term}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </div>

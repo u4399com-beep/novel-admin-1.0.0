@@ -122,7 +122,7 @@ function persistState(states: Map<string, DomainRateState>): void {
   } catch (err) {
     // Non-blocking: persistence failure shouldn't affect operation
     if (process.env.DEBUG === 'true') {
-      console.error('[RateOptimizer] Persist failed:', err);
+      logger.error('RateOptimizer', 'Persist failed', { error: err instanceof Error ? err.message : String(err) });
     }
   }
 }
@@ -257,8 +257,9 @@ class RateOptimizer {
    */
   getRequestDelay(domain: string): number {
     const rpm = this.getOptimalRate(domain);
-    if (rpm <= 0) return 60000; // Safety: 1 min if rate is 0
+    if (rpm <= 0 || !Number.isFinite(rpm)) return 60000; // Safety: 1 min if rate is 0/NaN/Infinity
     const delayMs = (60_000 / rpm);
+    if (!Number.isFinite(delayMs)) return 60000; // Safety: guard against Infinity
     // Add ±15% jitter
     const jitter = 0.85 + Math.random() * 0.30;
     return Math.round(delayMs * jitter);
@@ -375,3 +376,218 @@ class RateOptimizer {
 
 // Singleton
 export const rateOptimizer = new RateOptimizer();
+
+// ==================== Round 2: Rate Limit Detection from HTTP Headers ====================
+
+/**
+ * Parse rate limit information from HTTP response headers.
+ * Supports standard and common non-standard rate limit headers:
+ *   - X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
+ *   - Retry-After (seconds or HTTP date)
+ *   - X-RateLimit-Retry-After
+ */
+export function parseRateLimitHeaders(headers: Record<string, string>): {
+  limit?: number;
+  remaining?: number;
+  resetAt?: number; // Unix timestamp
+  retryAfterMs?: number;
+} {
+  const result: { limit?: number; remaining?: number; resetAt?: number; retryAfterMs?: number } = {};
+
+  // X-RateLimit-Limit
+  const limitStr = headers['x-ratelimit-limit'] || headers['X-RateLimit-Limit'];
+  if (limitStr) {
+    const val = parseInt(limitStr, 10);
+    if (!isNaN(val)) result.limit = val;
+  }
+
+  // X-RateLimit-Remaining
+  const remainingStr = headers['x-ratelimit-remaining'] || headers['X-RateLimit-Remaining'];
+  if (remainingStr) {
+    const val = parseInt(remainingStr, 10);
+    if (!isNaN(val)) result.remaining = val;
+  }
+
+  // X-RateLimit-Reset (Unix timestamp)
+  const resetStr = headers['x-ratelimit-reset'] || headers['X-RateLimit-Reset'];
+  if (resetStr) {
+    const val = parseInt(resetStr, 10);
+    if (!isNaN(val)) result.resetAt = val;
+  }
+
+  // Retry-After (seconds or HTTP date)
+  const retryAfterStr = headers['retry-after'] || headers['Retry-After'];
+  if (retryAfterStr) {
+    const asNumber = parseInt(retryAfterStr, 10);
+    if (!isNaN(asNumber)) {
+      result.retryAfterMs = asNumber * 1000;
+    } else {
+      // Try as HTTP date
+      try {
+        const date = new Date(retryAfterStr);
+        if (!isNaN(date.getTime())) {
+          result.retryAfterMs = Math.max(0, date.getTime() - Date.now());
+        }
+      } catch {
+        // Not a valid date
+      }
+    }
+  }
+
+  return result;
+}
+
+// ==================== Round 2: Adaptive Concurrency ====================
+
+/**
+ * Adaptive concurrency controller based on server response patterns.
+ * Increases concurrency when responses are fast and reliable,
+ * decreases when errors or slow responses are detected.
+ */
+export class AdaptiveConcurrencyController {
+  private domains = new Map<string, {
+    currentConcurrency: number;
+    maxConcurrency: number;
+    minConcurrency: number;
+    avgResponseTime: number;
+    errorRate: number;
+    samples: number;
+  }>();
+
+  /**
+   * Get the optimal concurrency for a domain.
+   */
+  getConcurrency(domain: string): number {
+    const state = this.domains.get(domain);
+    return state?.currentConcurrency ?? 1; // Default: 1 (conservative)
+  }
+
+  /**
+   * Record a response and adjust concurrency.
+   */
+  recordResponse(domain: string, responseTime: number, isError: boolean): void {
+    let state = this.domains.get(domain);
+    if (!state) {
+      state = {
+        currentConcurrency: 1,
+        maxConcurrency: parseInt(process.env.SCRAPER_MAX_CONCURRENCY || '5', 10),
+        minConcurrency: 1,
+        avgResponseTime: responseTime,
+        errorRate: isError ? 1 : 0,
+        samples: 1,
+      };
+      this.domains.set(domain, state);
+      return;
+    }
+
+    // Update EMA
+    const alpha = 0.2;
+    state.avgResponseTime = state.avgResponseTime * (1 - alpha) + responseTime * alpha;
+    state.errorRate = state.errorRate * (1 - alpha) + (isError ? 1 : 0) * alpha;
+    state.samples++;
+
+    // Adjust concurrency based on signals
+    if (isError || state.errorRate > 0.3) {
+      // High error rate — reduce concurrency
+      state.currentConcurrency = Math.max(state.minConcurrency, state.currentConcurrency - 1);
+    } else if (state.avgResponseTime > 10000) {
+      // Slow responses — reduce concurrency
+      state.currentConcurrency = Math.max(state.minConcurrency, state.currentConcurrency - 1);
+    } else if (state.avgResponseTime < 3000 && state.errorRate < 0.1 && state.samples >= 5) {
+      // Fast responses and low error rate — increase concurrency
+      state.currentConcurrency = Math.min(state.maxConcurrency, state.currentConcurrency + 1);
+    }
+  }
+
+  /**
+   * Get concurrency stats for all domains.
+   */
+  getStats(): Record<string, {
+    concurrency: number;
+    avgResponseTime: number;
+    errorRate: number;
+  }> {
+    const result: Record<string, { concurrency: number; avgResponseTime: number; errorRate: number }> = {};
+    for (const [domain, state] of this.domains) {
+      result[domain] = {
+        concurrency: state.currentConcurrency,
+        avgResponseTime: Math.round(state.avgResponseTime),
+        errorRate: Math.round(state.errorRate * 100) / 100,
+      };
+    }
+    return result;
+  }
+}
+
+export const adaptiveConcurrency = new AdaptiveConcurrencyController();
+
+// ==================== Round 2: Backpressure Signaling ====================
+
+/**
+ * Backpressure signaling between domains.
+ * When one domain is under pressure (high error rate / slow),
+ * other domains can be notified to slow down as well (shared resources).
+ */
+const domainBackpressure = new Map<string, {
+  isUnderPressure: boolean;
+  pressureSince: number;
+  reason: string;
+  affectedDomains: Set<string>;
+}>();
+
+/**
+ * Signal backpressure for a domain (e.g., shared proxy overloaded).
+ */
+export function signalBackpressure(domain: string, reason: string, relatedDomains?: string[]): void {
+  domainBackpressure.set(domain, {
+    isUnderPressure: true,
+    pressureSince: Date.now(),
+    reason,
+    affectedDomains: new Set(relatedDomains || []),
+  });
+}
+
+/**
+ * Clear backpressure for a domain.
+ */
+export function clearBackpressure(domain: string): void {
+  domainBackpressure.delete(domain);
+}
+
+/**
+ * Check if a domain is under backpressure.
+ */
+export function isUnderBackpressure(domain: string): {
+  underPressure: boolean;
+  reason?: string;
+  durationMs?: number;
+} {
+  // Direct check
+  const direct = domainBackpressure.get(domain);
+  if (direct && direct.isUnderPressure) {
+    // Auto-expire after 5 minutes
+    if (Date.now() - direct.pressureSince > 5 * 60 * 1000) {
+      domainBackpressure.delete(domain);
+      return { underPressure: false };
+    }
+    return {
+      underPressure: true,
+      reason: direct.reason,
+      durationMs: Date.now() - direct.pressureSince,
+    };
+  }
+
+  // Check if any other domain's backpressure affects this one
+  for (const [, bp] of domainBackpressure) {
+    if (bp.affectedDomains.has(domain) && bp.isUnderPressure) {
+      if (Date.now() - bp.pressureSince > 5 * 60 * 1000) continue;
+      return {
+        underPressure: true,
+        reason: `Related domain backpressure: ${bp.reason}`,
+        durationMs: Date.now() - bp.pressureSince,
+      };
+    }
+  }
+
+  return { underPressure: false };
+}

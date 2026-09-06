@@ -17,7 +17,12 @@ const nextConfig: NextConfig = {
   // Experimental: reduce build memory for low-end servers
   experimental: {
     // Optimize package imports to reduce bundle size
-    optimizePackageImports: [],
+    optimizePackageImports: [
+      'lucide-react',
+      '@radix-ui/react-icons',
+      'date-fns',
+      'zod',
+    ],
   },
   headers: async () => [
     {

@@ -2,17 +2,13 @@ import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-auth";
 import { safeJson, sanitizeField, apiError } from "@/lib/api-utils";
+import { todayStringLocal, subtractDays } from "@/lib/format";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_DAILY_GOAL = 10;
 
-function todayString(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+/** Use consolidated date utility */
+const todayString = todayStringLocal;
 
 /**
  * GET /api/reading-goals?date=2025-08-04
@@ -96,14 +92,15 @@ export const POST = withAuth(async function POST(request: NextRequest) {
       },
     });
 
-    // Fetch updated record for response
-    const goalSetting = await db.siteSetting.findUnique({ where: { key: "dailyReadingGoal" } });
+    // Fetch updated record for response — run in parallel with streak calc
+    const [goalSetting, record, streakDays] = await Promise.all([
+      db.siteSetting.findUnique({ where: { key: "dailyReadingGoal" } }),
+      db.readingDaily.findUnique({ where: { date } }),
+      calculateStreak(date),
+    ]);
     const dailyGoal = goalSetting ? parseInt(goalSetting.value, 10) || DEFAULT_DAILY_GOAL : DEFAULT_DAILY_GOAL;
-
-    const record = await db.readingDaily.findUnique({ where: { date } });
     const totalChapters = record?.chapters ?? chaptersRead;
     const percentage = dailyGoal > 0 ? Math.min(100, Math.round((totalChapters / dailyGoal) * 100)) : 0;
-    const streakDays = await calculateStreak(date);
 
     return NextResponse.json({
       date,
@@ -154,14 +151,7 @@ async function calculateStreak(date: string): Promise<number> {
     } else {
       break;
     }
-    // Move to previous day
-    const parts = checkDate.split("-");
-    const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    d.setDate(d.getDate() - 1);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    checkDate = `${y}-${m}-${day}`;
+    checkDate = subtractDays(checkDate, 1);
   }
 
   return streak;

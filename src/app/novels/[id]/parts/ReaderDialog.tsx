@@ -223,6 +223,7 @@ export function ReaderDialog({
               error={chapterError}
               content={chapterContent}
               chapterTitle={chapterTitle}
+              chapterDirection={null}
               currentTheme={currentTheme}
               currentFontCss={currentFontCss}
               fontSize={settings.fontSize}

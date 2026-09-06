@@ -9,6 +9,7 @@ import {
   BookmarkCheck,
   ChevronLeft,
   ChevronRight,
+  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -131,6 +132,11 @@ export function ChapterListSection({
     chapterPage * CHAPTERS_PER_PAGE,
   );
 
+  // Group chapters by volume (every 100 chapters = a volume)
+  const VOLUME_SIZE = 100;
+  const totalVolumes = Math.ceil(chapters.length / VOLUME_SIZE);
+  const currentVolume = Math.floor(((chapterPage - 1) * CHAPTERS_PER_PAGE) / VOLUME_SIZE) + 1;
+
   return (
     <section className="py-8">
       <div className="flex items-center justify-between border-b pb-3 mb-4">
@@ -147,16 +153,41 @@ export function ChapterListSection({
         </div>
       </div>
 
-      {/* Content progress bar */}
+      {/* Content progress bar with animated fill */}
       {chapters.length > 0 && (
         <div className="mb-4 flex items-center gap-3">
           <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden progress-bar-animated">
             <div
-              className="h-full rounded-full bg-primary/70 progress-smooth"
+              className="h-full rounded-full bg-primary/70 progress-smooth animated-progress-bar reading-progress-persist"
               style={{ width: `${contentProgress}%` }}
             />
           </div>
-          <span className="text-xs text-muted-foreground tabular-nums">{contentProgress}%</span>
+          <span className="text-xs text-muted-foreground tabular-nums wpm-display">{contentProgress}%</span>
+        </div>
+      )}
+
+      {/* Volume/arc group navigation */}
+      {totalVolumes > 1 && (
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+          {Array.from({ length: totalVolumes }, (_, i) => {
+            const volStart = i * VOLUME_SIZE + 1;
+            const volEnd = Math.min((i + 1) * VOLUME_SIZE, chapters.length);
+            const isActive = i + 1 === currentVolume;
+            return (
+              <button
+                key={i}
+                onClick={() => onChapterPageChange(Math.floor(i * VOLUME_SIZE / CHAPTERS_PER_PAGE) + 1)}
+                className={`text-[11px] px-2 py-0.5 rounded-md transition-all duration-150 ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground font-medium shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                }`}
+              >
+                卷{i + 1} ({volStart}-{volEnd})
+              </button>
+            );
+          })}
         </div>
       )}
 

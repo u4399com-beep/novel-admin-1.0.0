@@ -1,11 +1,10 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import type { ViewType } from '@/types';
 import { useState, useEffect, useSyncExternalStore, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { Upload, BookOpen, Search, Sun, Moon, LogOut, Plus } from 'lucide-react';
+import { Upload, BookOpen, Search, Sun, Moon, LogOut, Plus, Activity, Zap, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -23,6 +22,8 @@ import { NAV_ITEMS } from '@/lib/nav-config';
 import { apiFetch } from '@/lib/api-fetch';
 import { AdminViewSkeletons } from '@/components/admin/AdminViewSkeletons';
 import { AdminDesktopSidebar } from '@/components/admin/AdminDesktopSidebar';
+import { AnimatedBreadcrumb } from '@/components/admin/AnimatedBreadcrumb';
+import { DataExportButton } from '@/components/admin/DataExportButton';
 import { NovelImportDialog } from '@/components/novel/NovelImportDialog';
 import { MobileSidebar } from '@/components/novel/AppSidebar';
 import { DashboardView } from '@/components/novel/DashboardView';
@@ -67,7 +68,7 @@ const noopSubscribe = () => () => {};
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const setEditingNovel = useAppStore((s) => s.setEditingNovel);
@@ -201,14 +202,57 @@ export default function AdminPage() {
             <div className="flex flex-col">
               <h2 className="text-sm font-semibold leading-none">{viewInfo.title}</h2>
               <p className="text-[11px] text-muted-foreground mt-0.5 hidden md:block">{viewInfo.description}</p>
+              <div className="mt-1 hidden md:block">
+                <AnimatedBreadcrumb items={[
+                  { label: '后台', onClick: () => setCurrentView('dashboard') },
+                  { label: viewInfo.title },
+                ]} />
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* ── Status Indicator + Quick Action Toolbar ── */}
+            <div className="hidden md:flex items-center gap-1.5 mr-1 border-r border-border/50 pr-3">
+              {/* Service health dot */}
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title="服务状态">
+                <span className="relative flex h-2 w-2">
+                  <span className="status-dot-pulse absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+                <span className="hidden lg:inline">正常</span>
+              </span>
+              {/* Quick actions */}
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2" onClick={handleCreateNovel}>
+                <Zap className="h-3 w-3" />
+                <span className="hidden xl:inline">新建</span>
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2" onClick={() => setCurrentView('scrape')}>
+                <Activity className="h-3 w-3" />
+                <span className="hidden xl:inline">采集</span>
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2" onClick={() => setCurrentView('settings')}>
+                <Settings className="h-3 w-3" />
+                <span className="hidden xl:inline">设置</span>
+              </Button>
+            </div>
             {currentView === 'novels' && (
               <>
                 <Button onClick={handleCreateNovel} size="sm" className="gap-1.5"><Plus className="h-4 w-4" /><span className="hidden sm:inline">新建小说</span></Button>
                 <Button onClick={handleImportOpen} size="sm" variant="outline" className="gap-1.5"><Upload className="h-4 w-4" /><span className="hidden sm:inline">导入</span></Button>
+                <DataExportButton
+                  onExport={async (format) => {
+                    try {
+                      const res = await fetch(`/api/admin/export-all?format=${format}`, { credentials: 'include' });
+                      if (!res.ok) throw new Error('导出失败');
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url; a.download = `novels-export.${format}`; a.click();
+                      URL.revokeObjectURL(url);
+                    } catch { /* handled */ }
+                  }}
+                />
               </>
             )}
             {currentView === 'dashboard' && (

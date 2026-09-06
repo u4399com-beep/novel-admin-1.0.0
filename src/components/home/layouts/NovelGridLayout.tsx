@@ -42,9 +42,11 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [heartAnimating, setHeartAnimating] = useState(false);
+  const [tiltStyle, setTiltStyle] = useState<React.CSSProperties>({});
   const enterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const isTouchDevice = useRef(false);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     queueMicrotask(() => setFavorites(getFavorites()));
@@ -103,6 +105,20 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
     };
   }, []);
 
+  // Tilt effect handlers
+  const handleTiltMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (isTouchDevice.current) return;
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    setTiltStyle({ transform: `perspective(800px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg) scale(1.02)`, transition: 'transform 0.1s ease-out' });
+  }, []);
+
+  const handleTiltLeave = useCallback(() => {
+    setTiltStyle({ transform: 'perspective(800px) rotateY(0deg) rotateX(0deg) scale(1)', transition: 'transform 0.4s ease-out' });
+  }, []);
+
   const statusInfo = getStatusInfo(novel.status);
   const isFavorited = favorites.has(novel.id);
 
@@ -111,12 +127,16 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
       <PopoverTrigger asChild>
         <Link href={`/novels/${novel.id}`} className="block" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onClick={handleTouchToggle}>
           <motion.div
+            ref={cardRef}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: index * 0.04, type: 'spring', stiffness: 300, damping: 20 }}
-            whileHover={{ scale: 1.02, y: -4 }}
+            whileHover={{ y: -4 }}
             whileTap={{ scale: 0.98 }}
-            className="group cursor-pointer shine-hover card-depth novel-card-glow novel-card-load-anim hover:shadow-lg transition-shadow duration-300 ease-out"
+            onMouseMove={handleTiltMove}
+            onMouseLeave={(e) => { handleTiltLeave(); handleMouseLeave(); }}
+            style={tiltStyle}
+            className="group cursor-pointer shine-hover card-depth novel-card-glow novel-card-load-anim hover:shadow-lg transition-shadow duration-300 ease-out glass-card"
           >
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl shadow-md transition-all duration-300 ease-out group-hover:ring-1 group-hover:ring-primary/20 cover-zoom hover-lift cover-shine">
               <NovelCover
@@ -128,7 +148,7 @@ const NovelCard = React.memo(function NovelCard({ novel, index, search }: { nove
               />
               {novel.category && (
                 <div className="absolute top-2 left-2">
-                  <span className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm" style={{ backgroundColor: `${novel.category.color}cc`, color: '#fff' }}>{novel.category.name}</span>
+                  <span className="inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm animated-gradient-border" style={{ backgroundColor: `${novel.category.color}cc`, color: '#fff', boxShadow: `0 0 8px ${novel.category.color}40` }}>{novel.category.name}</span>
                 </div>
               )}
               <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">

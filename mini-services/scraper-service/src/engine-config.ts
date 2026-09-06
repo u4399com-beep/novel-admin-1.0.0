@@ -99,10 +99,7 @@ function validateConfigFile(data: unknown): EngineType[][] | null {
     const validated = validateChain(chain);
     if (!validated) {
       // If any chain is invalid, reject the entire config
-      console.warn(
-        `[engine-config] Invalid chain in config file, falling back to defaults:`,
-        JSON.stringify(chain)
-      );
+      logger.warn('engine-config', 'Invalid chain in config file, falling back to defaults', { chain: JSON.stringify(chain) });
       return null;
     }
     validatedChains.push(validated);
@@ -138,10 +135,7 @@ function readConfigFile(): { chains: EngineType[][]; mtime: number | null } | nu
     cachedConfig = { chains, mtime };
     return { chains, mtime };
   } catch (err) {
-    console.warn(
-      `[engine-config] Failed to read/parse ${CONFIG_FILE_PATH}:`,
-      err instanceof Error ? err.message : String(err)
-    );
+    logger.warn('engine-config', `Failed to read/parse ${CONFIG_FILE_PATH}`, { error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -354,17 +348,14 @@ function readEnginePreferences(): EnginePreferencesMap | null {
 
     // Basic validation: must be a non-null object
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
-      console.warn(`[engine-config] Invalid engine-preferences.json structure, ignoring`);
+      logger.warn('engine-config', 'Invalid engine-preferences.json structure, ignoring');
       return null;
     }
 
     cachedPreferences = { prefs: data, mtime };
     return data;
   } catch (err) {
-    console.warn(
-      `[engine-config] Failed to read/parse ${ENGINE_PREFS_PATH}:`,
-      err instanceof Error ? err.message : String(err)
-    );
+    logger.warn('engine-config', `Failed to read/parse ${ENGINE_PREFS_PATH}`, { error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }

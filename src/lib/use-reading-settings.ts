@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useMemo, type CSSProperties } from 'react';
+import { useState, useCallback, useRef, useEffect, type CSSProperties } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Reading Themes ─────────────────────────────────────────────────

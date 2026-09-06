@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# 小说阁 - 一键安装脚本 v7.0
+# 小说阁 - 一键安装脚本 v7.1
 # Novel Admin Platform - One-Click Installation
 #
 # Usage:
@@ -93,7 +93,28 @@ prompt_val() {
 # ─── Step 1: Pre-flight Checks ────────────────────────────
 step 1 "Pre-flight System Checks"
 
-# 1a. Node.js 20+
+# 1a. Base system dependencies (minimal Debian needs these)
+progress "Base system deps (curl, ca-certificates)"
+_NEED_BASE=false
+command -v curl >/dev/null 2>&1 || _NEED_BASE=true
+if $_NEED_BASE; then
+  progress_fail
+  info "Installing base dependencies..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -qq 2>/dev/null
+    sudo apt-get install -y curl ca-certificates gnupg 2>/dev/null || warn "Some base deps install had issues"
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y curl ca-certificates 2>/dev/null || warn "Some base deps install had issues"
+  elif command -v apk >/dev/null 2>&1; then
+    sudo apk add --no-cache curl ca-certificates 2>/dev/null || warn "Some base deps install had issues"
+  fi
+  command -v curl >/dev/null 2>&1 || fatal "curl is required. Install manually."
+  ok "Base dependencies installed"
+else
+  progress_ok
+fi
+
+# 1b. Node.js 20+
 progress "Node.js >= 20"
 if command -v node >/dev/null 2>&1; then
   NODE_VER=$(node --version | sed 's/v//'  | cut -d. -f1)
@@ -105,31 +126,107 @@ if command -v node >/dev/null 2>&1; then
   fi
 else
   progress_fail
-  info "Installing Node.js 20 via package* manager..."
+  info "Installing Node.js 20 via package manager..."
   if command -v apt-get >/dev/null 2>&1; then
+    # Ensure gnupg for nodesource key verification
+    sudo apt-get install -y gnupg 2>/dev/null
     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - 2>/dev/null
     sudo apt-get install -y nodejs 2>/dev/null || fatal "Node.js install failed"
   elif command -v dnf >/dev/null 2>&1; then
     sudo dnf install -y nodejs 2>/dev/null || fatal "Node.js install failed"
+  elif command -v yum >/dev/null 2>&1; then
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash - 2>/dev/null
+    sudo yum install -y nodejs 2>/dev/null || fatal "Node.js install failed"
   else
     fatal "Node.js not found. Please install Node.js 20+ manually: https://nodejs.org/"
   fi
+  command -v node >/dev/null 2>&1 || fatal "Node.js installed but not found in PATH"
   ok "Node.js installed"
 fi
 
-# 1b. bun
+# 1c. Bun runtime
 progress "Bun runtime"
 if command -v bun >/dev/null 2>&1; then
   progress_ok
 else
   progress_fail
+  # Bun installer requires unzip; install system deps first
+  info "Installing system dependencies for Bun..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -qq 2>/dev/null
+    sudo apt-get install -y unzip curl ca-certificates 2>/dev/null || warn "Some deps install had issues"
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y unzip curl ca-certificates 2>/dev/null || warn "Some deps install had issues"
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y unzip curl ca-certificates 2>/dev/null || warn "Some deps install had issues"
+  elif command -v apk >/dev/null 2>&1; then
+    sudo apk add --no-cache unzip curl ca-certificates 2>/dev/null || warn "Some deps install had issues"
+  fi
+  # Verify unzip is available (required by bun installer)
+  command -v unzip >/dev/null 2>&1 || fatal "unzip is required by Bun installer. Install it manually: apt install unzip"
+
+  # Try multiple methods to install Bun (GitHub releases can be slow/blocked in China)
   info "Installing Bun..."
-  curl -fsSL https://bun.sh/install | bash 2>/dev/null || fatal "Bun install failed"
-  export PATH="$HOME/.bun/bin:$PATH"
-  ok "Bun installed"
+  _BUN_INSTALLED=false
+
+  # Method 1: Official installer via bun.sh (uses GitHub releases, may be slow in China)
+  info "  Trying official installer (bun.sh)..."
+  if curl -fsSL --connect-timeout 10 --max-time 120 https://bun.sh/install | bash 2>/dev/null; then
+    export PATH="$HOME/.bun/bin:$PATH"
+    if command -v bun >/dev/null 2>&1; then
+      _BUN_INSTALLED=true
+      ok "Bun installed via official installer"
+    fi
+  fi
+
+  # Method 2: Direct download via GitHub mirror (ghfast.top for China)
+  if ! $_BUN_INSTALLED; then
+    info "  Official installer timed out, trying GitHub mirror..."
+    _BUN_VER=$(curl -fsSL --connect-timeout 10 --max-time 15 https://ghfast.top/https://api.github.com/repos/oven-sh/bun/releases/latest 2>/dev/null | grep '"tag_name"' | head -1 | sed 's/.*"v\(.*\)".*/\1/')
+    if [ -z "$_BUN_VER" ]; then
+      _BUN_VER="1.2.5"  # Fallback to known stable version
+    fi
+    info "  Downloading Bun v${_BUN_VER} via mirror..."
+    _BUN_ZIP_URL="https://ghfast.top/https://github.com/oven-sh/bun/releases/download/v${_BUN_VER}/bun-linux-x64-musl.zip"
+    if curl -fSL --connect-timeout 15 --max-time 180 -o /tmp/bun.zip "$_BUN_ZIP_URL" 2>/dev/null; then
+      mkdir -p "$HOME/.bun/bin"
+      unzip -oq /tmp/bun.zip -d /tmp/bun-extract 2>/dev/null
+      # Find and move the bun binary
+      _BUN_BIN=$(find /tmp/bun-extract -name "bun" -type f 2>/dev/null | head -1)
+      if [ -n "$_BUN_BIN" ]; then
+        mv "$_BUN_BIN" "$HOME/.bun/bin/bun" && chmod +x "$HOME/.bun/bin/bun"
+        rm -rf /tmp/bun.zip /tmp/bun-extract
+        export PATH="$HOME/.bun/bin:$PATH"
+        if command -v bun >/dev/null 2>&1; then
+          _BUN_INSTALLED=true
+          ok "Bun v${_BUN_VER} installed via mirror"
+        fi
+      fi
+    fi
+    rm -f /tmp/bun.zip 2>/dev/null; rm -rf /tmp/bun-extract 2>/dev/null
+  fi
+
+  # Method 3: npm install -g bun (last resort, uses npm registry which has China mirrors)
+  if ! $_BUN_INSTALLED; then
+    info "  Trying npm install (last resort)..."
+    if npm install -g bun 2>/dev/null; then
+      if command -v bun >/dev/null 2>&1; then
+        _BUN_INSTALLED=true
+        ok "Bun installed via npm"
+      fi
+    fi
+  fi
+
+  if ! $_BUN_INSTALLED; then
+    fatal "Bun install failed after all methods. Try manually:
+  1. Direct: curl -fsSL https://bun.sh/install | bash
+  2. Mirror:  GITHUB=https://ghfast.top/https://github.com curl -fsSL https://bun.sh/install | bash
+  3. npm:     npm install -g bun
+  4. Manual:   Download from https://github.com/oven-sh/bun/releases"
+  fi
 fi
 
-# 1c. git
+# 1d. Git
 progress "Git"
 if command -v git >/dev/null 2>&1; then
   progress_ok
@@ -142,20 +239,29 @@ else
   command -v git >/dev/null 2>&1 || warn "Git not available; cannot clone repo"
 fi
 
-# 1d. RAM check (4GB recommended)
+# 1e. RAM check (4GB recommended)
 progress "RAM >= 4GB (recommended)"
 _AVAIL_KB=$(awk '/MemAvailable/{print $2}' /proc/meminfo 2>/dev/null || echo 4194304)
 _AVAIL_MB=$((_AVAIL_KB / 1024))
 if [ "$_AVAIL_MB" -ge 4096 ]; then
   progress_ok
-elif [ "$_AVAIL_MB" -ge 1536 ]; then
-  echo -e "${YELLOW}⚠${NC}  (${_AVAIL_MB}MB — will use tiny/small tier)"
+  _RAM_TIER="normal"
+elif [ "$_AVAIL_MB" -ge 2048 ]; then
+  echo -e "${YELLOW}⚠${NC}  (${_AVAIL_MB}MB — small tier, may be slow during compilation)"
+  _RAM_TIER="small"
+elif [ "$_AVAIL_MB" -ge 1024 ]; then
+  echo -e "${YELLOW}⚠${NC}  (${_AVAIL_MB}MB — tiny tier, limited concurrency & no parallel build)"
+  _RAM_TIER="tiny"
+  # Auto-adjust for low memory
+  export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=512"
+  warn "Low memory mode: Node.js heap limited to 512MB"
+  warn "Recommendation: Use Docker install (install-docker.sh) for better memory control"
 else
-  echo -e "${RED}✗${NC}  (${_AVAIL_MB}MB — below minimum 1.5GB)"
-  fatal "Insufficient RAM (${_AVAIL_MB}MB). Minimum 1.5GB, recommended 4GB."
+  echo -e "${RED}✗${NC}  (${_AVAIL_MB}MB — below minimum 1GB)"
+  fatal "Insufficient RAM (${_AVAIL_MB}MB). Minimum 1GB with SQLite, recommended 4GB. Try Docker: bash install-docker.sh"
 fi
 
-# 1e. Disk check (10GB free)
+# 1f. Disk check (10GB free)
 progress "Disk >= 10GB free"
 _DF_AVAIL=$(df -k . 2>/dev/null | awk 'NR==2{print $4}')
 _DF_GB=$((_DF_AVAIL / 1024 / 1024))
@@ -165,7 +271,7 @@ else
   echo -e "${YELLOW}⚠${NC}  (${_DF_GB}GB free — may be insufficient)"
 fi
 
-# 1f. Port availability
+# 1g. Port availability
 _APP_PORT="${CUSTOM_PORT:-3000}"
 progress "Port ${_APP_PORT} available"
 if command -v ss >/dev/null 2>&1; then
@@ -384,7 +490,11 @@ fi
 # ─── Step 7: Build ────────────────────────────────────────
 step 7 "Build Application"
 
-if $PRODUCTION_MODE || ! $SKIP_DEPS; then
+if [ "${_RAM_TIER:-normal}" = "tiny" ]; then
+  warn "Skipping build for tiny tier (${_AVAIL_MB}MB RAM) — using dev mode instead"
+  warn "For production: upgrade to >=2GB RAM or use Docker, then run: bun run build"
+  PRODUCTION_MODE=false
+elif $PRODUCTION_MODE || ! $SKIP_DEPS; then
   info "Building Next.js application..."
   if bun run build 2>&1; then
     ok "Build completed successfully"
@@ -435,7 +545,11 @@ info "Starting Next.js app on port ${_APP_PORT}..."
 if $PRODUCTION_MODE; then
   nohup bun start > /tmp/app.log 2>&1 &
 else
-  nohup bun dev > /tmp/app.log 2>&1 &
+  if [ "${_RAM_TIER:-normal}" = "tiny" ]; then
+    nohup bun --hot dev -p ${_APP_PORT} > /tmp/app.log 2>&1 &
+  else
+    nohup bun dev > /tmp/app.log 2>&1 &
+  fi
 fi
 APP_PID=$!
 ok "App started (PID: $APP_PID)"

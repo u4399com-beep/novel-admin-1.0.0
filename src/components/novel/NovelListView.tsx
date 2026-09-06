@@ -20,7 +20,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { safeFormatDate } from '@/lib/format';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, FetchError } from '@/lib/api-fetch';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -220,25 +220,20 @@ export default function NovelListView() {
     try {
       const form = new FormData();
       form.append('file', file);
-      const res = await fetch('/api/novels/import', {
+      const data = await apiFetch<{ imported?: number; skipped?: number; errors?: string[] }>('/api/novels/import', {
         method: 'POST',
         body: form,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || '导入失败');
-        return;
-      }
-      if (data.imported > 0) {
+      if (data.imported && data.imported > 0) {
         toast.success(`成功导入 ${data.imported} 本小说${data.skipped ? `，跳过 ${data.skipped} 本` : ''}`);
         triggerRefresh('novels');
-      } else if (data.skipped > 0) {
+      } else if (data.skipped && data.skipped > 0) {
         toast.warning(`全部 ${data.skipped} 本已跳过: ${data.errors?.join('; ')}`);
       } else {
         toast.error(data.errors?.join('; ') || '未导入任何小说');
       }
-    } catch {
-      toast.error('导入请求失败');
+    } catch (err) {
+      if (!(err instanceof FetchError)) toast.error('导入请求失败');
     } finally {
       setImporting(false);
       // Reset file input so same file can be re-selected

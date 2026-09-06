@@ -1,4 +1,4 @@
-export { TaskStatusBadge } from './TaskStatusBadge';
+export { TaskStatusBadge, StatusDot } from './TaskStatusBadge';
 export { TaskProgress } from './TaskProgress';
 export { TaskLogPanel } from './TaskLogPanel';
 export { TaskActionsHeader, TaskStatusFilter, TaskPagination } from './TaskActions';

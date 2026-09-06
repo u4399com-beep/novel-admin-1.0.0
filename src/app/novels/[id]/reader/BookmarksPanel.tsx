@@ -1,8 +1,26 @@
 'use client';
 
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookmarkCheck, X } from 'lucide-react';
+import { BookmarkCheck, X, Search, Download, FolderOpen } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { BookmarkEntry, Chapter } from './types';
+
+// ─── Bookmark category colors ────────────────────────────────
+const BOOKMARK_CATEGORIES = [
+  { key: 'default', label: '默认', color: '#f59e0b' },
+  { key: 'important', label: '重要', color: '#ef4444' },
+  { key: 'review', label: '待回看', color: '#3b82f6' },
+  { key: 'favorite', label: '喜爱', color: '#10b981' },
+] as const;
+
+type BookmarkCategoryKey = typeof BOOKMARK_CATEGORIES[number]['key'];
+
+// Extend BookmarkEntry with optional category
+interface EnhancedBookmarkEntry extends BookmarkEntry {
+  category?: BookmarkCategoryKey;
+}
 
 export interface BookmarksPanelProps {
   visible: boolean;
@@ -25,6 +43,22 @@ export function BookmarksPanel({
   onRemoveBookmark,
   onClearAllBookmarks,
 }: BookmarksPanelProps) {
+  // ─── Search/filter state ──────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<BookmarkCategoryKey | 'all'>('all');
+
+  // Filter bookmarks
+  const filteredBookmarks = useMemo(() => {
+    let result = bookmarks;
+    if (activeCategory !== 'all') {
+      result = result.filter((bm) => (bm as EnhancedBookmarkEntry).category === activeCategory);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((bm) => bm.chapterTitle.toLowerCase().includes(q));
+    }
+    return result;
+  }, [bookmarks, activeCategory, searchQuery]);
   return (
     <AnimatePresence>
       {visible && (
@@ -36,28 +70,73 @@ export function BookmarksPanel({
           className="shrink-0 border-l overflow-hidden"
         >
           <div className="w-[200px] h-full overflow-y-auto p-3 flex flex-col scrollbar-thin">
+            {/* Header */}
             <div className="flex items-center justify-between mb-2 px-1">
               <div className="text-xs font-medium text-muted-foreground">
                 书签 ({bookmarks.length})
               </div>
-              {bookmarks.length > 0 && (
-                <button
-                  className="text-[10px] text-destructive/60 hover:text-destructive transition-colors"
-                  onClick={onClearAllBookmarks}
-                >
-                  清空
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                {bookmarks.length > 0 && (
+                  <button
+                    className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors"
+                    onClick={onClearAllBookmarks}
+                    title="清空所有书签"
+                  >
+                    清空
+                  </button>
+                )}
+              </div>
             </div>
 
-            {bookmarks.length === 0 ? (
+            {/* Search */}
+            {bookmarks.length > 3 && (
+              <div className="mb-2 px-1">
+                <div className="relative">
+                  <Search className="absolute left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/50" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜索书签..."
+                    className="w-full h-6 pl-6 pr-2 text-[11px] rounded-md border border-border/60 bg-muted/30 placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Category filter chips */}
+            {bookmarks.length > 0 && (
+              <div className="flex items-center gap-1 mb-2 px-1 flex-wrap">
+                <button
+                  onClick={() => setActiveCategory('all')}
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full border transition-colors ${activeCategory === 'all' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/40 text-muted-foreground/60 hover:text-foreground'}`}
+                >
+                  全部
+                </button>
+                {BOOKMARK_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.key}
+                    onClick={() => setActiveCategory(cat.key)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full border transition-colors flex items-center gap-0.5 ${activeCategory === cat.key ? 'border-current bg-current/10' : 'border-border/40 text-muted-foreground/60 hover:text-foreground'}`}
+                    style={{ color: activeCategory === cat.key ? cat.color : undefined }}
+                  >
+                    <span className="bookmark-category-dot" style={{ backgroundColor: cat.color }} />
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {filteredBookmarks.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 py-8">
                 <BookmarkCheck className="h-6 w-6 bookmark-empty-icon" />
-                <p className="text-[11px] text-muted-foreground/60 text-center">点击工具栏书签图标<br />添加当前章节</p>
+                <p className="text-[11px] text-muted-foreground/60 text-center">
+                  {bookmarks.length === 0 ? '点击工具栏书签图标\n添加当前章节' : '没有匹配的书签'}
+                </p>
               </div>
             ) : (
               <div className="flex-1 space-y-1">
-                {bookmarks.map((bm) => {
+                {filteredBookmarks.map((bm) => {
                   const ch = chapters[bm.chapterIndex];
                   if (!ch) return null;
                   const isCurrent = bm.chapterIndex === currentIndex;
@@ -82,6 +161,14 @@ export function BookmarksPanel({
                             {bm.chapterTitle}
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5">
+                            {/* Category dot */}
+                            {(bm as EnhancedBookmarkEntry).category && (
+                              <span
+                                className="bookmark-category-dot"
+                                style={{ backgroundColor: BOOKMARK_CATEGORIES.find(c => c.key === (bm as EnhancedBookmarkEntry).category)?.color ?? '#f59e0b' }}
+                                title={BOOKMARK_CATEGORIES.find(c => c.key === (bm as EnhancedBookmarkEntry).category)?.label}
+                              />
+                            )}
                             <span className="text-[9px] text-muted-foreground/60 tabular-nums">
                               {bm.scrollPercent}%
                             </span>

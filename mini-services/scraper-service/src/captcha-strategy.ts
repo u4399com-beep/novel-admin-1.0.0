@@ -85,7 +85,7 @@ export class CaptchaRecoveryManager {
     this.persistPath = resolve(import.meta.dir, 'scrape-rules/bypass-registry.json');
     this.loadPersistedState();
     // Persist state every 60 seconds
-    this.persistTimer = setInterval(() => this.persistState(), 60_000);
+    this.persistTimer = setInterval(() => this.persistState(), 60_000).unref();
   }
 
   /**
@@ -304,6 +304,15 @@ export class CaptchaRecoveryManager {
    */
   getAllRecoveryStates(): Map<string, DomainRecoveryState> {
     return this.domainStates;
+  }
+
+  /** Stop periodic persistence and save final state */
+  destroy(): void {
+    if (this.persistTimer) {
+      clearInterval(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.persistState();
   }
 
   /**
@@ -533,7 +542,7 @@ class DelayBackoffStrategy implements CaptchaStrategy {
 
   async execute(_detection: CaptchaDetection, context: StrategyContext): Promise<StrategyResult> {
     // Calculate delay: 5s * 2^retry, capped at 120s
-    const rawDelay = 5000 * Math.pow(2, context.retryCount);
+    const rawDelay = 5000 * Math.pow(2, Math.min(context.retryCount, 4)); // Cap exponent to prevent Infinity
     const delayMs = Math.min(120_000, rawDelay);
 
     const result: StrategyResult = {

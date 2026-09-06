@@ -71,9 +71,9 @@ export function SimilarNovels({ categoryId, currentNovelId, novelTitle }: { cate
           >
             <Link
               href={`/novels/${novel.id}`}
-              className='flex items-start gap-3 p-3 rounded-lg border bg-card hover-scale list-item-compact group'
+              className='flex items-start gap-3 p-3 rounded-lg border bg-card similar-novel-card group'
             >
-              <div className='w-10 h-14 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden'>
+              <div className='w-10 h-14 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden cover-shimmer relative'>
                 {novel.coverUrl ? (
                   <img src={novel.coverUrl} alt={novel.title} className='w-full h-full object-cover' loading='lazy' />
                 ) : (
@@ -83,9 +83,16 @@ export function SimilarNovels({ categoryId, currentNovelId, novelTitle }: { cate
               <div className='min-w-0 flex-1'>
                 <p className='text-sm font-medium truncate group-hover:text-primary transition-colors'>{novel.title}</p>
                 <p className='text-xs text-muted-foreground mt-0.5'>{novel.author}</p>
-                <p className='text-[10px] text-muted-foreground/60 mt-0.5 tabular-nums'>
-                  {novel._count?.chapters ?? 0}章 · {(novel.wordCount / 10000).toFixed(1)}万字
-                </p>
+                <div className='flex items-center gap-1.5 mt-0.5'>
+                  <p className='text-[10px] text-muted-foreground/60 tabular-nums'>
+                    {novel._count?.chapters ?? 0}章 · {(novel.wordCount / 10000).toFixed(1)}万字
+                  </p>
+                  {novel.category && (
+                    <span className='text-[9px] px-1 py-0 rounded-full' style={{ backgroundColor: `${novel.category.color}15`, color: novel.category.color }}>
+                      {novel.category.name}
+                    </span>
+                  )}
+                </div>
               </div>
             </Link>
           </motion.div>

@@ -22,7 +22,7 @@ model Category {
   updatedAt   DateTime @updatedAt
   novels      Novel[]
 
-  @@index([slug])
+  // slug index is covered by @unique above
 }
 
 // 标签
@@ -74,6 +74,9 @@ model Novel {
   @@index([favoriteCount])
   @@index([title])
   @@index([author])
+  // Composite indexes for common filter+sort query patterns
+  @@index([status, updatedAt])
+  @@index([categoryId, updatedAt])
 }
 
 // 小说-标签关联
@@ -170,6 +173,7 @@ model ScrapeRule {
   @@index([enabled])
   @@index([engine])
   @@index([updatedAt])
+  @@index([name])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -228,6 +232,7 @@ model ScrapeTask {
   @@index([status, createdAt])
   @@index([ruleId])
   @@index([createdAt])
+  @@index([status, ruleId])
 }
 
 // 采集日志
@@ -243,7 +248,6 @@ model ScrapeLog {
 
   @@index([taskId])
   @@index([level])
-  @@index([createdAt])
   @@index([taskId, createdAt])
 }
 
@@ -275,7 +279,7 @@ model Site {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([domain])
+  // domain index is covered by @unique above
 }
 
 // ==================== 主题系统 ====================
@@ -394,7 +398,7 @@ model ReadingDaily {
   words     Int      @default(0)
   createdAt DateTime @default(now())
 
-  @@index([date])
+  // date index is covered by @unique above
 }
 
 // 收藏（按用户追踪）
@@ -408,6 +412,7 @@ model Favorite {
   @@unique([userId, novelId])
   @@index([userId, createdAt])
   @@index([novelId])
+  @@index([createdAt])
 }
 
 // ==================== 阅读历史 ====================
@@ -444,6 +449,7 @@ model ReadingNote {
 
   @@index([chapterId])
   @@index([userId])
+  @@index([chapterId, position])
 }
 
 // ==================== 章节笔记（按用户） ====================

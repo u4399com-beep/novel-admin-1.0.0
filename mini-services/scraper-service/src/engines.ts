@@ -15,7 +15,7 @@
 
 import type { ScrapingEngine, EngineOptions, FetchResult, EngineType, FirecrawlConfig, AgentQLQuery, AntiCrawl } from "./types";
 import { isSafeUrl } from "./ssrf";
-import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints } from "./utils";
+import { buildFetchHeaders, retryWithBackoff, followRedirects, getSecFetchHeadersForDomain, getChromeClientHints, markDoNotRetry, isDoNotRetry, getErrorStatusCode } from "./utils";
 import { getProfileForDomain, getStealthScript, profileLanguagesToAcceptLanguage, getRandomUA } from "./stealth";
 import { getAcceptEncoding } from "./http2-decoy";
 import { getTLSFingerprintOptions } from "./tls-fingerprint";
@@ -293,7 +293,7 @@ function getCheerioAgent(): Promise<import('undici').Agent> {
     log.info(' HTTP connection pool initialized (keepAlive=30s, maxConn=20)');
     return agent;
   })().catch((err) => {
-    console.error('[CheerioEngine] Failed to initialize HTTP connection pool:', err);
+    logger.error('CheerioEngine', 'Failed to initialize HTTP connection pool', { error: err instanceof Error ? err.message : String(err) });
     _cheerioAgentPromise = null; // Allow retry on next call
     throw err;
   });
@@ -682,10 +682,7 @@ export function recordSmartRetryFailure(domain: string, err: unknown): { delayMs
       triggerType: failType,
     };
 
-    console.warn(
-      `[SmartRetry] Domain ${domain} entering cool-down for ${Math.round(cooldownDuration / 1000)}s ` +
-      `after ${state.consecutiveFails} failures (last: ${failType})`,
-    );
+    logger.warn('SmartRetry', `Domain ${domain} entering cool-down for ${Math.round(cooldownDuration / 1000)}s after ${state.consecutiveFails} failures`, { domain, cooldownMs: cooldownDuration, failures: state.consecutiveFails, failType });
 
     return { delayMs: cooldownDuration, inCooldown: true, cooldownUntil: state.cooldown.until };
   }
@@ -868,7 +865,7 @@ export async function fetchWithEngineFallback(
       // Record failure for adaptive chain (only for fallback-worthy errors)
       if (domain) recordEngineFailure(domain, engineType);
 
-      console.warn(`[EngineFallback] ${engineType} failed for ${url}: ${errMsg.slice(0, 120)}${i < truncatedChain.length - 1 ? ' → trying next engine' : ' → no more engines'}`);
+      logger.warn('EngineFallback', `${engineType} failed for ${url}`, { engine: engineType, url, error: errMsg.slice(0, 120), hasNext: i < truncatedChain.length - 1 });
     }
   }
 
@@ -891,7 +888,7 @@ export function getEngine(type: EngineType): ScrapingEngine {
   const fallback = engines.get("cheerio");
   if (fallback) {
     if (type !== "cheerio") {
-      console.warn(`[Engine] Requested engine "${type}" not registered, falling back to cheerio`);
+      logger.warn('Engine', `Requested engine "${type}" not registered, falling back to cheerio`, { requested: type });
     }
     return fallback;
   }
@@ -1110,7 +1107,7 @@ class CheerioEngine implements ScrapingEngine {
         if (targetDomain && html) {
           const captchaResult = detectCaptcha(html, finalUrl, statusCode);
           if (captchaResult.detected && captchaResult.confidence > 0.5) {
-            console.warn(`[Cheerio] CAPTCHA detected on ${targetDomain}: type=${captchaResult.type}, confidence=${captchaResult.confidence}`);
+            logger.warn('Cheerio', `CAPTCHA detected on ${targetDomain}`, { domain: targetDomain, type: captchaResult.type, confidence: captchaResult.confidence });
             try {
               antiCrawlAdvisor.recordDetection(targetDomain, 'captcha', `CAPTCHA ${captchaResult.type}, confidence ${Math.round(captchaResult.confidence * 100)}%`);
             } catch { /* non-critical */ }
@@ -1120,7 +1117,7 @@ class CheerioEngine implements ScrapingEngine {
             // Record CAPTCHA-triggered engine upgrade for future requests to this domain
             recordCaptchaUpgrade(targetDomain, 'cheerio');
             const captchaErr = new Error(`CAPTCHA detected (${captchaResult.type}, ${Math.round(captchaResult.confidence * 100)}%) on ${targetDomain}`);
-            (captchaErr as any).doNotRetry = true;
+            markDoNotRetry(captchaErr);
             throw captchaErr;
           }
         }
@@ -1555,7 +1552,7 @@ class PlaywrightEngine implements ScrapingEngine {
           const html = await page.content();
           if (html.length > MAX_RESPONSE_SIZE) {
             const pwSizeErr = new Error(`Playwright page content too large: ${html.length} bytes (max 10MB)`);
-            (pwSizeErr as any).doNotRetry = true;
+            markDoNotRetry(pwSizeErr);
             throw pwSizeErr;
           }
           const finalUrl = page.url();
@@ -1566,7 +1563,7 @@ class PlaywrightEngine implements ScrapingEngine {
           if (pwStatus === 403 || pwStatus === 503 || /(?:<iframe[^>]+src=["'][^"']*(?:captcha|challenge|recaptcha)|captcha|challenge-platform|_cf_chl|turnstile)/i.test(html.slice(0, 8000))) {
             pwCaptcha = detectCaptcha(html, finalUrl, pwStatus);
             if (pwCaptcha.detected && pwCaptcha.confidence > 0.5) {
-              console.warn(`[Playwright] CAPTCHA detected on ${pwDomain}: type=${pwCaptcha.type}, confidence=${pwCaptcha.confidence}`);
+              logger.warn('Playwright', `CAPTCHA detected on ${pwDomain}`, { domain: pwDomain, type: pwCaptcha.type, confidence: pwCaptcha.confidence });
               try {
                 antiCrawlAdvisor.recordDetection(pwDomain, 'captcha', `CAPTCHA ${pwCaptcha.type} detected, confidence ${Math.round(pwCaptcha.confidence * 100)}%`);
               } catch { /* non-critical */ }
@@ -1574,7 +1571,7 @@ class PlaywrightEngine implements ScrapingEngine {
               // Record CAPTCHA-triggered engine upgrade for future requests to this domain
               recordCaptchaUpgrade(pwDomain, 'playwright');
               const pwCaptchaErr = new Error(`CAPTCHA detected (${pwCaptcha.type}, ${Math.round(pwCaptcha.confidence * 100)}%) on ${pwDomain}`);
-              (pwCaptchaErr as any).doNotRetry = true;
+              markDoNotRetry(pwCaptchaErr);
               throw pwCaptchaErr;
             }
           }
@@ -1746,7 +1743,7 @@ class FirecrawlEngine implements ScrapingEngine {
 
         if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
           const fcSizeErr = new Error(`Firecrawl HTML too large: ${data.html.length} bytes`);
-          (fcSizeErr as any).doNotRetry = true;
+          markDoNotRetry(fcSizeErr);
           throw fcSizeErr;
         }
 
@@ -1772,7 +1769,7 @@ class FirecrawlEngine implements ScrapingEngine {
             firecrawlBreaker.release();
             throw err;
           }
-          if (!(err instanceof Error && (err as any).doNotRetry)) {
+          if (!isDoNotRetry(err)) {
             firecrawlBreaker.recordFailure();
           } else {
             firecrawlBreaker.release(); // doNotRetry (e.g. size limit) is not a service failure
@@ -1934,7 +1931,7 @@ class AgentQLEngine implements ScrapingEngine {
         const dataJsonSize = JSON.stringify(data.data || {});
         if (dataJsonSize.length > MAX_RESPONSE_SIZE) {
           const sizeError = new Error(`AgentQL response too large`);
-          (sizeError as any).doNotRetry = true;
+          markDoNotRetry(sizeError);
           throw sizeError;
         }
 
@@ -1958,7 +1955,7 @@ class AgentQLEngine implements ScrapingEngine {
             agentqlBreaker.release();
             throw err;
           }
-          if (!(err instanceof Error && (err as any).doNotRetry)) {
+          if (!isDoNotRetry(err)) {
             agentqlBreaker.recordFailure();
           } else {
             agentqlBreaker.release();
@@ -2077,7 +2074,7 @@ class CloudBrowserEngine implements ScrapingEngine {
 
           if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
             const steelSizeErr = new Error(`Steel API HTML too large: ${data.html.length} bytes`);
-            (steelSizeErr as any).doNotRetry = true;
+            markDoNotRetry(steelSizeErr);
             throw steelSizeErr;
           }
 
@@ -2125,7 +2122,7 @@ class CloudBrowserEngine implements ScrapingEngine {
 
           if (data.html && data.html.length > MAX_RESPONSE_SIZE) {
             const blSizeErr = new Error(`Browserless response too large: ${data.html.length} bytes`);
-            (blSizeErr as any).doNotRetry = true;
+            markDoNotRetry(blSizeErr);
             throw blSizeErr;
           }
 
@@ -2146,7 +2143,7 @@ class CloudBrowserEngine implements ScrapingEngine {
           // Check size of ACTUAL html (the data.html check above only covers one code path)
           if (html.length > MAX_RESPONSE_SIZE) {
             const blSizeErr2 = new Error(`Browserless response too large: ${html.length} bytes (max 10MB)`);
-            (blSizeErr2 as any).doNotRetry = true;
+            markDoNotRetry(blSizeErr2);
             throw blSizeErr2;
           }
 
@@ -2170,7 +2167,7 @@ class CloudBrowserEngine implements ScrapingEngine {
             cloudBrowserBreaker.release();
             throw err;
           }
-          if (!(err instanceof Error && (err as any).doNotRetry)) {
+          if (!isDoNotRetry(err)) {
             cloudBrowserBreaker.recordFailure();
           } else {
             cloudBrowserBreaker.release();
@@ -2257,7 +2254,7 @@ class ScraplingEngine implements ScrapingEngine {
           const html = data.html || "";
           if (html.length > MAX_RESPONSE_SIZE) {
             const scSizeErr = new Error(`Scrapling HTML too large: ${html.length} bytes`);
-            (scSizeErr as any).doNotRetry = true;
+            markDoNotRetry(scSizeErr);
             throw scSizeErr;
           }
 
@@ -2275,7 +2272,7 @@ class ScraplingEngine implements ScrapingEngine {
             scraplingBreaker.release();
             throw scraplingErr;
           }
-          if (scraplingErr instanceof Error && (scraplingErr as any).doNotRetry) {
+          if (isDoNotRetry(scraplingErr)) {
             scraplingBreaker.release();
             throw scraplingErr;
           }
@@ -2294,7 +2291,7 @@ class ScraplingEngine implements ScrapingEngine {
       return result;
     }).catch(err => {
       const errStatus = (err instanceof Error && 'statusCode' in err)
-        ? Number((err as any).statusCode) : undefined;
+        ? getErrorStatusCode(err) : undefined;
       if (scDomain) rateLimiter.recordResult(scDomain, false, errStatus);
       throw err;
     });
@@ -2364,7 +2361,7 @@ class DokobotEngine implements ScrapingEngine {
           const html = data.html || "";
           if (html.length > MAX_RESPONSE_SIZE) {
             const dkSizeErr = new Error(`Dokobot HTML too large: ${html.length} bytes`);
-            (dkSizeErr as any).doNotRetry = true;
+            markDoNotRetry(dkSizeErr);
             throw dkSizeErr;
           }
 
@@ -2382,7 +2379,7 @@ class DokobotEngine implements ScrapingEngine {
             dokobotBreaker.release();
             throw dokobotErr;
           }
-          if (dokobotErr instanceof Error && (dokobotErr as any).doNotRetry) {
+          if (isDoNotRetry(dokobotErr)) {
             dokobotBreaker.release();
             throw dokobotErr;
           }
@@ -2401,7 +2398,7 @@ class DokobotEngine implements ScrapingEngine {
       return result;
     }).catch(err => {
       const errStatus = (err instanceof Error && 'statusCode' in err)
-        ? Number((err as any).statusCode) : undefined;
+        ? getErrorStatusCode(err) : undefined;
       if (dkDomain) rateLimiter.recordResult(dkDomain, false, errStatus);
       throw err;
     });
@@ -3001,7 +2998,7 @@ class ObscuraEngine implements ScrapingEngine {
             const sizeErr = new Error(
               `Obscura page content too large: ${html.length} bytes (max 10MB)`
             );
-            (sizeErr as any).doNotRetry = true; // Same page will always be too large, retrying wastes time
+            markDoNotRetry(sizeErr); // Same page will always be too large, retrying wastes time
             throw sizeErr;
           }
           const finalUrl = page.url();
@@ -3033,7 +3030,7 @@ class ObscuraEngine implements ScrapingEngine {
           if (obscuraStatus === 403 || obscuraStatus === 503 || /(?:<iframe[^>]+src=["'][^"']*(?:captcha|challenge|recaptcha)|captcha|challenge-platform|_cf_chl|turnstile)/i.test(html.slice(0, 8000))) {
             captchaDetection = detectCaptcha(html, finalUrl, obscuraStatus);
             if (captchaDetection.detected && captchaDetection.confidence > 0.5) {
-              console.warn(`[Obscura] CAPTCHA detected on ${domain}: type=${captchaDetection.type}, confidence=${captchaDetection.confidence}`);
+              logger.warn('Obscura', `CAPTCHA detected on ${domain}`, { domain, type: captchaDetection.type, confidence: captchaDetection.confidence });
               // Notify anti-crawl advisor (fire-and-forget)
               try {
                 antiCrawlAdvisor.recordDetection(domain, 'captcha', `CAPTCHA ${captchaDetection.type} detected, confidence ${Math.round(captchaDetection.confidence * 100)}%`);
@@ -3044,7 +3041,7 @@ class ObscuraEngine implements ScrapingEngine {
               // Record CAPTCHA-triggered engine upgrade (obscura is highest — no further upgrade, but still recorded)
               recordCaptchaUpgrade(domain, 'obscura');
               const obscuraCaptchaErr = new Error(`CAPTCHA detected (${captchaDetection.type}, ${Math.round(captchaDetection.confidence * 100)}%) on ${domain}`);
-              (obscuraCaptchaErr as any).doNotRetry = true;
+              markDoNotRetry(obscuraCaptchaErr);
               throw obscuraCaptchaErr;
             }
           }
@@ -3183,7 +3180,7 @@ export async function fetchWithInfiniteScroll(
   // For truly non-browser-capable situations (no playwright/obscura installed),
   // fall back to single HTTP fetch
   if (!engines.has(browserEngine)) {
-    console.warn(`[InfiniteScroll] Browser engine ${browserEngine} not available, falling back to single fetch`);
+    logger.warn('InfiniteScroll', `Browser engine ${browserEngine} not available, falling back to single fetch`, { engine: browserEngine });
     const fallbackEngine = getEngine('cheerio');
     const result = await fallbackEngine.fetch(url, options);
     return { ...result, cyclesCompleted: 0, effectiveEngine: 'cheerio' };
@@ -3320,7 +3317,7 @@ export async function fetchWithInfiniteScroll(
       const pageHtml = await page.content().catch(() => '');
       const captchaResult = detectCaptcha(pageHtml, url, statusCode);
       if (captchaResult.detected && captchaResult.confidence > 0.5) {
-        console.warn(`[InfiniteScroll] CAPTCHA detected on ${domain}: type=${captchaResult.type}`);
+        logger.warn('InfiniteScroll', `CAPTCHA detected on ${domain}`, { domain, type: captchaResult.type });
         if (effectiveProxy) proxyManager.recordFailure(effectiveProxy.url, `CAPTCHA ${captchaResult.type}`);
         throw new Error(`CAPTCHA detected (${captchaResult.type}) on ${domain}`);
       }
@@ -3461,9 +3458,9 @@ export async function fetchWithInfiniteScroll(
     if (err instanceof Error && (err.message.includes('Aborted') || err.message.includes('aborted'))) {
       throw err;
     }
-    console.warn(`[InfiniteScroll] Browser-based scroll failed: ${err instanceof Error ? err.message : err}`);
+    logger.warn('InfiniteScroll', `Browser-based scroll failed`, { error: err instanceof Error ? err.message : String(err) });
     const errStatus = (err instanceof Error && 'statusCode' in err)
-      ? Number((err as any).statusCode) : undefined;
+      ? getErrorStatusCode(err) : undefined;
     if (domain) rateLimiter.recordResult(domain, false, errStatus);
     // Fall back to a single HTTP fetch
     const fallbackEngine = getEngine('cheerio');
@@ -3573,9 +3570,12 @@ async function aesDecrypt(
   let rawBytes: Uint8Array;
   if (inputEncoding === 'hex') {
     const hex = encryptedData.replace(/\s/g, '');
+    if (hex.length % 2 !== 0) {
+      throw new Error(`Invalid hex string: odd length (${hex.length} chars)`);
+    }
     rawBytes = new Uint8Array(hex.length / 2);
     for (let i = 0; i < rawBytes.length; i++) {
-      rawBytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+      rawBytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
     }
   } else {
     rawBytes = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
@@ -3772,7 +3772,7 @@ class ApiEngine implements ScrapingEngine {
                 resultText = JSON.stringify(json);
               }
             } catch (decErr) {
-              console.warn(`[ApiEngine] Decryption failed (returning raw response): ${decErr instanceof Error ? decErr.message : decErr}`);
+              logger.warn('ApiEngine', 'Decryption failed (returning raw response)', { error: decErr instanceof Error ? decErr.message : String(decErr) });
               // Return raw response if decryption fails
             }
           }
@@ -3843,7 +3843,7 @@ export function selectEngine(
   const VALID_ENGINES: EngineType[] = ['cheerio', 'playwright', 'firecrawl', 'agentql', 'cloud-browser', 'scrapling', 'obscura', 'dokobot', 'api'];
   if (requestedEngine) {
     if (VALID_ENGINES.includes(requestedEngine)) return requestedEngine;
-    console.warn(`[selectEngine] Unknown engine '${requestedEngine}', falling back to auto-selection`);
+    logger.warn('selectEngine', `Unknown engine '${requestedEngine}', falling back to auto-selection`, { engine: requestedEngine });
   }
   if (antiCrawl?.cloudBrowser) return "cloud-browser";
   // If human behavior simulation is requested, must use obscura (has stealth + human sim)
@@ -3905,4 +3905,370 @@ export async function closeAllEngines(): Promise<void> {
   }
   engines.clear();
   log.info("All engines closed");
+}
+
+// ==================== Round 2: Per-Domain Engine Performance Tracking ====================
+
+/**
+ * Per-domain engine performance tracking with rolling window.
+ * Tracks success rate, average response time, and error types per engine per domain.
+ * Used to inform engine selection and health scoring.
+ */
+interface EnginePerformanceRecord {
+  timestamp: number;
+  success: boolean;
+  responseTime: number;
+  errorType?: string;
+}
+
+interface DomainEnginePerformance {
+  records: EnginePerformanceRecord[];
+  /** Rolling window size (last 50 requests) */
+  readonly windowSize: 50;
+}
+
+const domainEnginePerformance = new Map<string, Map<EngineType, DomainEnginePerformance>>();
+const PERFORMANCE_WINDOW = 50;
+const PERFORMANCE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Record a per-domain, per-engine performance result.
+ * Used by fetchWithEngineFallback after each attempt.
+ */
+export function recordEnginePerformance(
+  domain: string,
+  engine: EngineType,
+  success: boolean,
+  responseTime: number,
+  errorType?: string,
+): void {
+  let domainMap = domainEnginePerformance.get(domain);
+  if (!domainMap) {
+    domainMap = new Map();
+    domainEnginePerformance.set(domain, domainMap);
+  }
+  let perf = domainMap.get(engine);
+  if (!perf) {
+    perf = { records: [], windowSize: 50 };
+    domainMap.set(engine, perf);
+  }
+  perf.records.push({ timestamp: Date.now(), success, responseTime, errorType });
+  if (perf.records.length > PERFORMANCE_WINDOW) {
+    perf.records.shift();
+  }
+}
+
+/**
+ * Get per-domain engine performance stats for the rolling window.
+ */
+export function getEnginePerformanceStats(domain: string): Record<string, {
+  successRate: number;
+  avgResponseTime: number;
+  totalRequests: number;
+  errorTypes: Record<string, number>;
+}> {
+  const domainMap = domainEnginePerformance.get(domain);
+  if (!domainMap) return {};
+
+  const result: Record<string, { successRate: number; avgResponseTime: number; totalRequests: number; errorTypes: Record<string, number> }> = {};
+  const now = Date.now();
+
+  for (const [engine, perf] of domainMap) {
+    // Filter to TTL window
+    const recent = perf.records.filter(r => now - r.timestamp < PERFORMANCE_TTL_MS);
+    if (recent.length === 0) continue;
+
+    const successes = recent.filter(r => r.success).length;
+    const avgTime = recent.reduce((sum, r) => sum + r.responseTime, 0) / recent.length;
+    const errorTypes: Record<string, number> = {};
+    for (const r of recent) {
+      if (r.errorType) {
+        errorTypes[r.errorType] = (errorTypes[r.errorType] || 0) + 1;
+      }
+    }
+
+    result[engine] = {
+      successRate: successes / recent.length,
+      avgResponseTime: Math.round(avgTime),
+      totalRequests: recent.length,
+      errorTypes,
+    };
+  }
+
+  return result;
+}
+
+// ==================== Round 2: Engine Warm-Up Phase ====================
+
+/**
+ * Engine warm-up tracking. First 3 requests to a domain use reduced rate
+ * to avoid triggering rate-limiting on cold starts.
+ * Many WAFs flag the first few requests from a new IP/session more aggressively.
+ */
+const ENGINE_WARMUP_REQUESTS = 3;
+const WARMUP_RATE_DIVISOR = 3; // Warm-up rate = normal rate / 3
+const domainRequestCount = new Map<string, number>();
+const MAX_DOMAIN_REQUEST_COUNT_ENTRIES = 500;
+
+/** Periodic cleanup of domainRequestCount to prevent unbounded growth */
+setInterval(() => {
+  if (domainRequestCount.size > MAX_DOMAIN_REQUEST_COUNT_ENTRIES) {
+    const toDelete = domainRequestCount.size - Math.floor(MAX_DOMAIN_REQUEST_COUNT_ENTRIES * 0.7);
+    let deleted = 0;
+    for (const key of domainRequestCount.keys()) {
+      if (deleted >= toDelete) break;
+      domainRequestCount.delete(key);
+      deleted++;
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
+/**
+ * Check if a domain is still in the warm-up phase.
+ * Returns the warm-up request number (1-3) or 0 if warm-up is complete.
+ */
+export function getEngineWarmUpStatus(domain: string): {
+  inWarmUp: boolean;
+  requestNumber: number;
+  totalWarmUpRequests: number;
+  rateDivisor: number;
+} {
+  const count = domainRequestCount.get(domain) || 0;
+  const inWarmUp = count < ENGINE_WARMUP_REQUESTS;
+  return {
+    inWarmUp,
+    requestNumber: inWarmUp ? count + 1 : 0,
+    totalWarmUpRequests: ENGINE_WARMUP_REQUESTS,
+    rateDivisor: inWarmUp ? WARMUP_RATE_DIVISOR : 1,
+  };
+}
+
+/**
+ * Increment the request count for a domain (called after each request).
+ */
+export function incrementDomainRequestCount(domain: string): void {
+  const count = (domainRequestCount.get(domain) || 0) + 1;
+  domainRequestCount.set(domain, count);
+}
+
+// ==================== Round 2: Engine Failover Chain ====================
+
+/**
+ * Execute a request with a multi-level failover chain.
+ * Tries: primary → fallback1 → fallback2 → abort
+ *
+ * @param domain - Target domain for health tracking
+ * @param chain - Ordered array of engine types to try
+ * @param executeFn - Async function that takes an EngineType and returns a FetchResult
+ * @param onFailover - Optional callback when a failover occurs (for logging/metrics)
+ */
+export async function fetchWithFailoverChain(
+  domain: string,
+  chain: EngineType[],
+  executeFn: (engine: EngineType) => Promise<FetchResult>,
+  onFailover?: (fromEngine: EngineType, toEngine: EngineType, error: string) => void,
+): Promise<FetchResult> {
+  const errors: Array<{ engine: EngineType; error: string }> = [];
+
+  for (let i = 0; i < chain.length; i++) {
+    const engine = chain[i];
+    const startTime = Date.now();
+
+    try {
+      const result = await executeFn(engine);
+      const responseTime = Date.now() - startTime;
+
+      // Record success
+      recordEnginePerformance(domain, engine, true, responseTime);
+      incrementDomainRequestCount(domain);
+
+      return result;
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      const responseTime = Date.now() - startTime;
+
+      // Record failure
+      recordEnginePerformance(domain, engine, false, responseTime, error.slice(0, 100));
+      errors.push({ engine, error: error.slice(0, 200) });
+
+      // Notify failover
+      if (i < chain.length - 1 && onFailover) {
+        onFailover(engine, chain[i + 1]!, error.slice(0, 200));
+      }
+    }
+  }
+
+  // All engines failed
+  const errorSummary = errors.map(e => `${e.engine}: ${e.error}`).join('; ');
+  throw new Error(`All engines in failover chain failed for ${domain}: ${errorSummary}`);
+}
+
+// ==================== Round 2: Enhanced Circuit Breaker with Half-Open Probing ====================
+
+/**
+ * Enhanced circuit breaker with half-open probe tracking.
+ * Extends the basic CircuitBreaker with:
+ *   - Probe success/failure tracking during half-open
+ *   - Gradual recovery (requires N consecutive probe successes before fully closing)
+ *   - Health scoring based on success rate and response time
+ */
+export class EnhancedCircuitBreaker {
+  private state: CircuitState = 'closed';
+  private failureCount = 0;
+  private successCount = 0;
+  private lastFailureTime = 0;
+  private readonly failureThreshold: number;
+  private readonly resetTimeout: number;
+  private readonly halfOpenMaxAttempts: number;
+  private readonly probeSuccessThreshold: number;
+  private _halfOpenInFlight = 0;
+  private _halfOpenProbeSuccesses = 0;
+  private _halfOpenProbeFailures = 0;
+  private _name: string;
+
+  // Health scoring
+  private _totalSuccesses = 0;
+  private _totalFailures = 0;
+  private _recentResponseTimes: number[] = [];
+  private readonly _responseTimeWindow = 20;
+
+  constructor(
+    name: string,
+    failureThreshold = 5,
+    resetTimeout = 30000,
+    halfOpenMaxAttempts = 1,
+    probeSuccessThreshold = 3,
+  ) {
+    this._name = name;
+    this.failureThreshold = failureThreshold;
+    this.resetTimeout = resetTimeout;
+    this.halfOpenMaxAttempts = halfOpenMaxAttempts;
+    this.probeSuccessThreshold = probeSuccessThreshold;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.state === 'open') {
+      if (Date.now() - this.lastFailureTime >= this.resetTimeout) {
+        this.state = 'half-open';
+        this._halfOpenInFlight = 0;
+        this._halfOpenProbeSuccesses = 0;
+        this._halfOpenProbeFailures = 0;
+      } else {
+        throw new Error(`Service ${this._name} circuit breaker open`);
+      }
+    }
+    if (this.state === 'half-open') {
+      if (this._halfOpenInFlight >= this.halfOpenMaxAttempts) {
+        throw new Error(`Service ${this._name} in half-open recovery (${this._halfOpenInFlight}/${this.halfOpenMaxAttempts} probes)`);
+      }
+      this._halfOpenInFlight++;
+    }
+  }
+
+  release(): void {
+    this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
+  }
+
+  recordSuccess(responseTime?: number): void {
+    this._totalSuccesses++;
+    if (responseTime !== undefined) {
+      this._recentResponseTimes.push(responseTime);
+      if (this._recentResponseTimes.length > this._responseTimeWindow) {
+        this._recentResponseTimes.shift();
+      }
+    }
+
+    if (this.state === 'half-open') {
+      this._halfOpenProbeSuccesses++;
+      this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
+
+      // Gradual recovery: need N consecutive probe successes
+      if (this._halfOpenProbeSuccesses >= this.probeSuccessThreshold) {
+        this.state = 'closed';
+        this.failureCount = 0;
+        this.successCount = 0;
+        this._halfOpenInFlight = 0;
+        this._halfOpenProbeSuccesses = 0;
+        this._halfOpenProbeFailures = 0;
+      }
+    } else if (this.state === 'closed') {
+      this.failureCount = 0;
+      this.successCount++;
+    }
+  }
+
+  recordFailure(): void {
+    this._totalFailures++;
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+
+    if (this.state === 'half-open') {
+      this._halfOpenProbeFailures++;
+      this._halfOpenInFlight = Math.max(0, this._halfOpenInFlight - 1);
+
+      // Any failure in half-open re-opens the circuit
+      this.state = 'open';
+      this._halfOpenInFlight = 0;
+      this._halfOpenProbeSuccesses = 0;
+      this._halfOpenProbeFailures = 0;
+    } else if (this.failureCount >= this.failureThreshold) {
+      this.state = 'open';
+      this._halfOpenInFlight = 0;
+    }
+  }
+
+  /** Get health score (0-100) based on success rate, response time, and error types */
+  getHealthScore(): number {
+    const total = this._totalSuccesses + this._totalFailures;
+    if (total === 0) return 100; // No data = healthy
+
+    const successRate = this._totalSuccesses / total;
+    const avgResponseTime = this._recentResponseTimes.length > 0
+      ? this._recentResponseTimes.reduce((a, b) => a + b, 0) / this._recentResponseTimes.length
+      : 0;
+
+    // Penalize slow responses (over 5s is concerning, over 10s is bad)
+    const timePenalty = avgResponseTime > 10000 ? 20 : avgResponseTime > 5000 ? 10 : 0;
+
+    // State penalty
+    const statePenalty = this.state === 'open' ? 30 : this.state === 'half-open' ? 15 : 0;
+
+    return Math.max(0, Math.min(100, Math.round(successRate * 100 - timePenalty - statePenalty)));
+  }
+
+  getState(): {
+    state: CircuitState;
+    failureCount: number;
+    successCount: number;
+    lastFailureTime: number;
+    resetTimeout: number;
+    timeUntilReset: number;
+    healthScore: number;
+    halfOpenProbeSuccesses: number;
+    halfOpenProbeFailures: number;
+  } {
+    return {
+      state: this.state,
+      failureCount: this.failureCount,
+      successCount: this.successCount,
+      lastFailureTime: this.lastFailureTime,
+      resetTimeout: this.resetTimeout,
+      timeUntilReset: this.state === 'open'
+        ? Math.max(0, this.resetTimeout - (Date.now() - this.lastFailureTime))
+        : 0,
+      healthScore: this.getHealthScore(),
+      halfOpenProbeSuccesses: this._halfOpenProbeSuccesses,
+      halfOpenProbeFailures: this._halfOpenProbeFailures,
+    };
+  }
+
+  reset(): void {
+    this.state = 'closed';
+    this.failureCount = 0;
+    this.successCount = 0;
+    this.lastFailureTime = 0;
+    this._halfOpenInFlight = 0;
+    this._halfOpenProbeSuccesses = 0;
+    this._halfOpenProbeFailures = 0;
+  }
 }

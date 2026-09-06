@@ -245,9 +245,11 @@ class ConcurrencyOptimizer {
   private getDomainInUse(domain: string): number {
     // Approximate: count active slots for this domain
     // In a real implementation, we'd track per-domain in-flight requests
-    // For now, we use the concurrency optimizer's knowledge
-    const state = this.domains.get(domain);
-    return state ? Math.min(state.currentConcurrency, this.totalInUse) : 0;
+    // For now, use a simple heuristic: if totalInUse > 0 and domain is known,
+    // assume at most 1 in-flight (conservative estimate to avoid over-allocation)
+    if (!this.domains.has(domain) || this.totalInUse === 0) return 0;
+    // Use Math.min to avoid overestimating
+    return Math.min(1, this.totalInUse);
   }
 
   /**

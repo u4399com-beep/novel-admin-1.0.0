@@ -334,7 +334,6 @@ export function CaptchaEventsPanel() {
       const domains = rateData?.domains?.map(d => d.domain) || [];
 
       // Also fetch delay stats to get additional domains
-      let delayDomains: string[] = [];
       try {
         const delayData = await apiFetch<{ domains: Array<{ domain: string }> }>(
           '/api/admin/scraper/delay-stats',
@@ -551,4 +550,77 @@ export function CaptchaEventsPanel() {
       )}
     </div>
   );
+}
+
+// ==================== Round 2: CAPTCHA Solving Success Rate Tracker ====================
+
+interface CaptchaSolveRecord {
+  type: 'recaptcha-v2' | 'recaptcha-v3' | 'hcaptcha' | 'geetest' | 'slide' | 'text' | 'unknown';
+  domain: string;
+  solved: boolean;
+  solveTimeMs?: number;
+  timestamp: number;
+}
+
+const captchaSolveHistory: CaptchaSolveRecord[] = [];
+const MAX_SOLVE_HISTORY = 200;
+
+/**
+ * Track CAPTCHA solving attempt (client-side tracking for dashboard).
+ */
+export function recordCaptchaSolveAttempt(record: CaptchaSolveRecord): void {
+  captchaSolveHistory.push(record);
+  if (captchaSolveHistory.length > MAX_SOLVE_HISTORY) {
+    captchaSolveHistory.shift();
+  }
+}
+
+/**
+ * Get CAPTCHA solving success rate stats.
+ */
+export function getCaptchaSolveStats(): {
+  overall: { total: number; solved: number; successRate: number };
+  byType: Record<string, { total: number; solved: number; successRate: number; avgSolveTime: number }>;
+  byDomain: Record<string, { total: number; solved: number; successRate: number }>;
+} {
+  const total = captchaSolveHistory.length;
+  const solved = captchaSolveHistory.filter(r => r.solved).length;
+
+  const byType: Record<string, { total: number; solved: number; successRate: number; avgSolveTime: number }> = {};
+  const byDomain: Record<string, { total: number; solved: number; successRate: number }> = {};
+
+  for (const record of captchaSolveHistory) {
+    // By type
+    if (!byType[record.type]) byType[record.type] = { total: 0, solved: 0, successRate: 0, avgSolveTime: 0 };
+    byType[record.type].total++;
+    if (record.solved) {
+      byType[record.type].solved++;
+      if (record.solveTimeMs) {
+        byType[record.type].avgSolveTime =
+          (byType[record.type].avgSolveTime * (byType[record.type].solved - 1) + record.solveTimeMs) / byType[record.type].solved;
+      }
+    }
+
+    // By domain
+    if (!byDomain[record.domain]) byDomain[record.domain] = { total: 0, solved: 0, successRate: 0 };
+    byDomain[record.domain].total++;
+    if (record.solved) byDomain[record.domain].solved++;
+  }
+
+  // Calculate rates
+  for (const type of Object.keys(byType)) {
+    const t = byType[type];
+    t.successRate = t.total > 0 ? t.solved / t.total : 0;
+    t.avgSolveTime = Math.round(t.avgSolveTime);
+  }
+  for (const domain of Object.keys(byDomain)) {
+    const d = byDomain[domain];
+    d.successRate = d.total > 0 ? d.solved / d.total : 0;
+  }
+
+  return {
+    overall: { total, solved, successRate: total > 0 ? solved / total : 0 },
+    byType,
+    byDomain,
+  };
 }

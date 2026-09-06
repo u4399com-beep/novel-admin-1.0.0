@@ -113,9 +113,21 @@ async function fetchWithTimeout(
   url: string,
   options: RequestInit,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  // Propagate caller abort signal to abort the fetch when the client disconnects
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timeoutId);
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    signal.addEventListener('abort', () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    }, { once: true });
+  }
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeoutId);
@@ -132,6 +144,7 @@ async function fetchWithTimeout(
 
 async function callAdvisor(
   domain: string,
+  signal?: AbortSignal,
 ): Promise<AdvisorReport | null> {
   try {
     const targetUrl = new URL('/anti-crawl/advise?XTransformPort=3099', SCRAPER_SERVICE_URL);
@@ -143,6 +156,7 @@ async function callAdvisor(
         body: JSON.stringify({ domain }),
       },
       30_000,
+      signal,
     );
 
     if (!response.ok) {
@@ -172,6 +186,7 @@ async function callAdvisor(
 async function callAiGenerate(
   url: string,
   siteType?: string,
+  signal?: AbortSignal,
 ): Promise<GeneratedRule> {
   const targetUrl = new URL('/ai/generate-rule?XTransformPort=3099', SCRAPER_SERVICE_URL);
   const response = await fetchWithTimeout(
@@ -182,6 +197,7 @@ async function callAiGenerate(
       body: JSON.stringify({ url, siteType: siteType || undefined }),
     },
     120_000,
+    signal,
   );
 
   if (!response.ok) {
@@ -384,12 +400,12 @@ export const POST = withAuth(async function POST(request: NextRequest) {
     const domain = parsedUrl.hostname;
 
     // 3. Call anti-crawl advisor (with mock fallback)
-    const advisorReport = (await callAdvisor(domain)) ?? getMockAdvisorReport(domain);
+    const advisorReport = (await callAdvisor(domain, request.signal)) ?? getMockAdvisorReport(domain);
 
     // 4. Call AI generate-rule
     let baseRule: GeneratedRule;
     try {
-      baseRule = await callAiGenerate(url, typeof siteType === 'string' ? siteType : undefined);
+      baseRule = await callAiGenerate(url, typeof siteType === 'string' ? siteType : undefined, request.signal);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'AI 规则生成失败';

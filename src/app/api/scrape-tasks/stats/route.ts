@@ -1,7 +1,8 @@
 import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/api-auth';
 import { Prisma } from '@prisma/client';
+import { NextResponse } from 'next/server';
+import { apiError } from '@/lib/api-utils';
 
 // GET /api/scrape-tasks/stats
 export const GET = withAuth(async function GET() {
@@ -108,7 +109,6 @@ export const GET = withAuth(async function GET() {
       dailyTrend,
     });
   } catch (error) {
-    console.error('Scrape task stats error:', error);
-    return NextResponse.json({ error: '获取采集任务统计失败' }, { status: 500 });
+    return apiError('获取采集任务统计失败', 500);
   }
 });

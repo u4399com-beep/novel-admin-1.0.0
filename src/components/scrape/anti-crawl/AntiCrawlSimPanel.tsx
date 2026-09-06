@@ -263,6 +263,32 @@ export function AntiCrawlSimPanel() {
                   ))}
                 </div>
               )}
+
+              {/* Anti-Crawl Simulation Details */}
+              <div className="rounded-lg border bg-background/50 p-3 space-y-2">
+                <h4 className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                  <FlaskConical className="h-3 w-3" />
+                  反爬检测详情
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'TLS指纹', desc: result.score >= 70 ? '已伪装' : '未伪装', ok: result.score >= 70 },
+                    { label: '请求头一致性', desc: result.score >= 60 ? '一致' : '不一致', ok: result.score >= 60 },
+                    { label: '行为模拟', desc: result.score >= 50 ? '启用' : '未启用', ok: result.score >= 50 },
+                    { label: '代理状态', desc: result.score >= 40 ? '正常' : '异常', ok: result.score >= 40 },
+                  ].map((detail) => (
+                    <div key={detail.label} className="flex items-center gap-1.5 text-[10px]">
+                      {detail.ok ? (
+                        <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" />
+                      ) : (
+                        <XCircle className="h-3 w-3 text-red-500 shrink-0" />
+                      )}
+                      <span className="text-muted-foreground">{detail.label}:</span>
+                      <span className={detail.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>{detail.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

@@ -72,6 +72,7 @@ function RealtimeTab() {
           description="域名级RPM控制"
           color="text-amber-500"
           bg="bg-amber-500/10"
+          severity="yellow"
         />
         <QuickStatCard
           icon={Activity}
@@ -79,6 +80,7 @@ function RealtimeTab() {
           description="智能退避策略"
           color="text-emerald-500"
           bg="bg-emerald-500/10"
+          severity="green"
         />
         <QuickStatCard
           icon={Cookie}
@@ -86,6 +88,7 @@ function RealtimeTab() {
           description="跨任务Cookie"
           color="text-violet-500"
           bg="bg-violet-500/10"
+          severity="green"
         />
         <QuickStatCard
           icon={AlertTriangle}
@@ -93,6 +96,7 @@ function RealtimeTab() {
           description="4级任务调度"
           color="text-orange-500"
           bg="bg-orange-500/10"
+          severity="red"
         />
       </div>
 
@@ -119,21 +123,28 @@ function RealtimeTab() {
 
 // ─── Helper Components ───────────────────────────────────────────────────────
 
-function QuickStatCard({ icon: Icon, label, description, color, bg }: {
+function QuickStatCard({ icon: Icon, label, description, color, bg, severity }: {
   icon: typeof Shield;
   label: string;
   description: string;
   color: string;
   bg: string;
+  severity?: 'green' | 'yellow' | 'red';
 }) {
+  const severityClass = severity === 'green' ? 'severity-bg-green' : severity === 'yellow' ? 'severity-bg-yellow' : severity === 'red' ? 'severity-bg-red' : '';
+  const severityDotClass = severity === 'green' ? 'severity-green' : severity === 'yellow' ? 'severity-yellow' : severity === 'red' ? 'severity-red' : '';
+
   return (
-    <div className="rounded-lg border bg-background/50 p-3 hover:border-muted-foreground/20 transition-all duration-200">
+    <div className={`rounded-lg border bg-background/50 p-3 hover:border-muted-foreground/20 transition-all duration-200 ${severityClass}`}>
       <div className="flex items-center gap-2.5">
         <div className={`rounded-lg p-2 ${bg}`}>
           <Icon className={`h-4 w-4 ${color}`} />
         </div>
-        <div>
-          <p className="text-xs font-medium">{label}</p>
+        <div className="flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className="text-xs font-medium">{label}</p>
+            {severity && <span className={`h-1.5 w-1.5 rounded-full ${severityDotClass} ${severity === 'green' ? 'animate-pulse' : ''}`} />}
+          </div>
           <p className="text-[10px] text-muted-foreground">{description}</p>
         </div>
       </div>

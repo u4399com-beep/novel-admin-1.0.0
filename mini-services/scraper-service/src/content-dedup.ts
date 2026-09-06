@@ -124,7 +124,7 @@ export class ContentDeduplicator {
     this.persistPath = resolve(import.meta.dir, 'content-dedup-store.json');
     this.loadPersistedStore();
     // Persist every 5 minutes
-    this.persistTimer = setInterval(() => this.persistStore(), 5 * 60_000);
+    this.persistTimer = setInterval(() => this.persistStore(), 5 * 60_000).unref();
   }
 
   /**
@@ -167,8 +167,11 @@ export class ContentDeduplicator {
     }
 
     // Check against all cached SimHashes for near-duplicates
+    // Note: Without the original content, we can only check against cached entries
+    // that already have SimHash values. If the URL is not cached, near-duplicate
+    // detection is not possible with this method - use isDuplicateContent() instead.
     const cachedEntry = this.cache.get(url);
-    if (cachedEntry) {
+    if (cachedEntry && cachedEntry.simHash !== 0n) {
       const simHash = cachedEntry.simHash;
       for (const entry of this.simHashes) {
         if (entry.url === url) continue;
@@ -322,6 +325,15 @@ export class ContentDeduplicator {
     }
     this.recordContent(url, content, metadata);
     return false;
+  }
+
+  /** Stop periodic persistence and save final state */
+  destroy(): void {
+    if (this.persistTimer) {
+      clearInterval(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.persistStore();
   }
 
   // ---- Persistence ----

@@ -1,11 +1,11 @@
 {
   "calibratedAt": "2026-09-05T14:06:10.360812",
-  "totalRules": 39,
+  "totalRules": 34,
   "tierDistribution": {
     "tier1_easy": 6,
     "tier2_medium": 18,
     "tier3_hard": 8,
-    "tier4_veryHard": 5,
+    "tier4_veryHard": 0,
     "tier5_api": 2
   },
   "results": [
@@ -208,24 +208,6 @@
       "notes": "DNS resolves, sandbox-blocked; playwright engine + AU文学 suggests stronger protection"
     },
     {
-      "ruleFile": "bqg713.json",
-      "domain": "www.bqg713.com",
-      "tier": 4,
-      "tierLabel": "VERY HARD",
-      "baselineResponseTime": 31,
-      "baselineStatusCode": 0,
-      "antiCrawlDetected": true,
-      "maxSuccessfulRPM": 0,
-      "optimalRPM": 4,
-      "optimalConcurrency": 1,
-      "optimalDelay": [
-        5000,
-        10000
-      ],
-      "stealthMode": "maximum",
-      "notes": "DNS NXDOMAIN - domain no longer exists"
-    },
-    {
       "ruleFile": "cn-ttkan-co.json",
       "domain": "cn.ttkan.co",
       "tier": 2,
@@ -316,24 +298,6 @@
       "notes": "CF + 403 on both pages - needs browser emulation"
     },
     {
-      "ruleFile": "duokanbiqu.json",
-      "domain": "www.duokanbiqu.com",
-      "tier": 4,
-      "tierLabel": "VERY HARD",
-      "baselineResponseTime": 1,
-      "baselineStatusCode": 0,
-      "antiCrawlDetected": true,
-      "maxSuccessfulRPM": 0,
-      "optimalRPM": 4,
-      "optimalConcurrency": 1,
-      "optimalDelay": [
-        5000,
-        10000
-      ],
-      "stealthMode": "maximum",
-      "notes": "DNS NXDOMAIN - domain no longer exists"
-    },
-    {
       "ruleFile": "fanqie-api.json",
       "domain": "fq.taijiwang.top",
       "tier": 5,
@@ -422,24 +386,6 @@
       ],
       "stealthMode": "moderate",
       "notes": "DNS resolves, sandbox-blocked; cheerio engine suggests light protection"
-    },
-    {
-      "ruleFile": "ibiquwx.json",
-      "domain": "www.ibiquwx.com",
-      "tier": 4,
-      "tierLabel": "VERY HARD",
-      "baselineResponseTime": 16,
-      "baselineStatusCode": 0,
-      "antiCrawlDetected": true,
-      "maxSuccessfulRPM": 0,
-      "optimalRPM": 4,
-      "optimalConcurrency": 1,
-      "optimalDelay": [
-        5000,
-        10000
-      ],
-      "stealthMode": "maximum",
-      "notes": "DNS NXDOMAIN - domain no longer exists"
     },
     {
       "ruleFile": "laobiao.json",
@@ -586,24 +532,6 @@
       "notes": "No anti-crawl, survived 120 RPM"
     },
     {
-      "ruleFile": "uukanshu.json",
-      "domain": "www.uukanshu.com",
-      "tier": 4,
-      "tierLabel": "VERY HARD",
-      "baselineResponseTime": 69,
-      "baselineStatusCode": 0,
-      "antiCrawlDetected": true,
-      "maxSuccessfulRPM": 0,
-      "optimalRPM": 4,
-      "optimalConcurrency": 1,
-      "optimalDelay": [
-        5000,
-        10000
-      ],
-      "stealthMode": "maximum",
-      "notes": "DNS resolves to 127.0.0.1 - domain effectively dead/blocked"
-    },
-    {
       "ruleFile": "wanbenshenzhan.json",
       "domain": "www.wanbenshenzhan.com",
       "tier": 2,
@@ -620,24 +548,6 @@
       ],
       "stealthMode": "moderate",
       "notes": "WAF detected but survived 120 RPM"
-    },
-    {
-      "ruleFile": "xbiqubao.json",
-      "domain": "www.xbiqubao.com",
-      "tier": 4,
-      "tierLabel": "VERY HARD",
-      "baselineResponseTime": 31,
-      "baselineStatusCode": 0,
-      "antiCrawlDetected": true,
-      "maxSuccessfulRPM": 0,
-      "optimalRPM": 4,
-      "optimalConcurrency": 1,
-      "optimalDelay": [
-        5000,
-        10000
-      ],
-      "stealthMode": "maximum",
-      "notes": "DNS NXDOMAIN - domain no longer exists"
     },
     {
       "ruleFile": "xiaoshuodaquan.json",

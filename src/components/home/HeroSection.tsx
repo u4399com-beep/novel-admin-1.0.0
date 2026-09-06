@@ -1,10 +1,37 @@
 'use client';
 
-import { useReducer, useEffect, useRef } from 'react';
+import { useReducer, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { SearchBar } from './hero/SearchBar';
 import { FilterChips } from './hero/FilterChips';
+import { BookOpen, Library, Flame } from 'lucide-react';
 import type { Category } from '@/types';
+
+// ─── Count-Up Animation Hook ─────────────────────────────────────
+function useCountUp(target: number, duration = 1200, enabled = true) {
+  const [display, setDisplay] = useState(0);
+  const prevTarget = useRef(0);
+  useEffect(() => {
+    if (!enabled || target === 0) { queueMicrotask(() => setDisplay(target)); return; }
+    const start = prevTarget.current;
+    const diff = target - start;
+    if (diff === 0) { queueMicrotask(() => setDisplay(target)); return; }
+    const startTime = performance.now();
+    let rafId: number;
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(start + diff * eased));
+      if (progress < 1) { rafId = requestAnimationFrame(step); }
+      else { prevTarget.current = target; }
+    };
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, [target, duration, enabled]);
+  return display;
+}
 
 export type { Category } from '@/types';
 
@@ -13,6 +40,8 @@ const TYPING_MESSAGES = [
   '发现你的下一本好书',
   '万千小说, 尽在指尖',
   '沉浸式阅读体验',
+  '与百万读者共享精彩',
+  '从第一页开始旅程',
 ];
 
 type TypingState = { text: string; msgIndex: number; isDeleting: boolean };
@@ -53,6 +82,12 @@ function useTypingEffect(typingSpeed = 80, deleteSpeed = 50, pauseTime = 2000) {
 
   return state.text;
 }
+
+// ─── Hot Search Tags ───────────────────────────────────────────────
+const HOT_SEARCH_TAGS = [
+  '斗破苍穹', '凡人修仙传', '诡秘之主', '遮天', '大奉打更人',
+  '完美世界', '道诡异仙', '一念永恒', '仙逆', '庆余年',
+];
 
 // ─── Decorative Book SVG ────────────────────────────────────────
 function BookIllustration() {
@@ -134,6 +169,57 @@ function DotPattern() {
   );
 }
 
+// ─── Floating Particles Background ────────────────────────────
+function FloatingParticles() {
+  const particles = useMemo(() =>
+    Array.from({ length: 18 }).map((_, i) => ({
+      id: i,
+      className: i % 3 === 0 ? 'hero-particle' : i % 3 === 1 ? 'hero-particle-2' : 'hero-particle-3',
+      style: {
+        left: `${(i * 17 + 5) % 100}%`,
+        top: `${(i * 23 + 10) % 80 + 10}%`,
+        animationDelay: `${i * 0.7}s`,
+        animationDuration: `${6 + (i % 5)}s`,
+      },
+    })),
+  []);
+
+  return (
+    <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden" aria-hidden="true">
+      {particles.map((p) => (
+        <div key={p.id} className={p.className} style={p.style} />
+      ))}
+    </div>
+  );
+}
+
+// ─── Stats Bar with Icons ───────────────────────────────────────
+function HeroStatsBar({ total, loadingNovels }: { total: number; loadingNovels: boolean }) {
+  const animatedTotal = useCountUp(total, 1200, !loadingNovels);
+  return (
+    <div className="flex items-center gap-4 sm:gap-6 justify-center py-2">
+      <div className="flex items-center gap-1.5">
+        <BookOpen className="h-3.5 w-3.5 text-primary/70 stat-icon-pop" />
+        <span className="text-xs text-muted-foreground">共</span>
+        <span className="text-xs font-semibold text-foreground tabular-nums count-up-animate">
+          {loadingNovels ? '–' : animatedTotal.toLocaleString()}
+        </span>
+        <span className="text-xs text-muted-foreground">本小说</span>
+      </div>
+      <div className="h-3 w-px bg-border/50" />
+      <div className="flex items-center gap-1.5">
+        <Library className="h-3.5 w-3.5 text-primary/60" />
+        <span className="text-xs text-muted-foreground">在线阅读</span>
+      </div>
+      <div className="h-3 w-px bg-border/50" />
+      <div className="flex items-center gap-1.5">
+        <Flame className="h-3.5 w-3.5 text-amber-500/70" />
+        <span className="text-xs text-muted-foreground">每日更新</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── TypingTagline Component ────────────────────────────────────────
 function TypingTagline() {
   const displayText = useTypingEffect();
@@ -196,26 +282,77 @@ export function HeroSection({
   total,
   filterSummary,
 }: HeroSectionProps) {
+  // Parallax scroll offset for background
+  const [scrollY, setScrollY] = useState(0);
+  useEffect(() => {
+    let ticking = false;
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        setScrollY(window.scrollY);
+        ticking = false;
+      });
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative overflow-hidden noise-overlay">
       {/* Animated gradient border effect */}
       <div className="hero-gradient-border" aria-hidden="true" />
-      {/* Subtle animated mesh gradient background */}
-      <div className="absolute inset-0 pointer-events-none -z-10" aria-hidden="true">
+      {/* Parallax gradient blobs - move at 0.3x scroll speed */}
+      <div
+        className="absolute inset-0 pointer-events-none -z-10"
+        style={{ transform: `translateY(${scrollY * 0.15}px)` }}
+        aria-hidden="true"
+      >
         <div className="hero-gradient-blob hero-gradient-blob-1 hero-bg-animated" />
         <div className="hero-gradient-blob hero-gradient-blob-2 hero-bg-animated-2" />
+        {/* Third blob for richer gradient depth */}
+        <div className="hero-gradient-blob hero-gradient-blob-3 hero-bg-animated-3" />
       </div>
-      {/* Dot pattern overlay */}
-      <DotPattern />
-      {/* Animated gradient behind the search bar area */}
+      {/* Dot pattern overlay - parallax at 0.1x */}
+      <div style={{ transform: `translateY(${scrollY * 0.05}px)` }} aria-hidden="true">
+        <DotPattern />
+      </div>
+      {/* Multi-stop gradient overlay for sophisticated depth */}
       <div
-        className="absolute inset-0 pointer-events-none -z-5 hero-search-gradient"
+        className="absolute inset-0 pointer-events-none -z-5"
         aria-hidden="true"
-      />
+      >
+        <div className="hero-search-gradient" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background/30" />
+      </div>
+      {/* Floating particles */}
+      <FloatingParticles />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
         <TypingTagline />
       </div>
       <SearchBar search={search} onSearch={onSearch} />
+      {/* Stats bar with icons */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <HeroStatsBar total={total} loadingNovels={loadingNovels} />
+      </div>
+      {/* Hot search tag cloud */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-3 pt-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-muted-foreground/50 shrink-0">热门:</span>
+          {HOT_SEARCH_TAGS.map((tag, i) => (
+            <motion.button
+              key={tag}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.03, duration: 0.2 }}
+              onClick={() => onSearch(tag)}
+              className="text-[11px] px-2.5 py-0.5 rounded-full border border-border/60 bg-muted/30 text-muted-foreground/70 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all duration-200 cursor-pointer hover:scale-105 active:scale-95"
+            >
+              {tag}
+            </motion.button>
+          ))}
+        </div>
+      </div>
       <FilterChips
         categories={categories}
         loadingCategories={loadingCategories}

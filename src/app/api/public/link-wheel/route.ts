@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublicRateLimit } from '@/lib/api-auth';
-import { sanitizeField } from '@/lib/api-utils';
+import { sanitizeField, apiError } from '@/lib/api-utils';
 
 interface LinkWheelItem {
   title: string;
@@ -186,8 +186,7 @@ export const GET = withPublicRateLimit({ capacity: 120, refillRate: 2 }, async (
         'Cache-Control': 'public, s-maxage=300',
       },
     });
-  } catch (error) {
-    console.error('Link wheel error:', error);
-    return NextResponse.json({ error: '获取链接轮盘失败' }, { status: 500 });
+  } catch (_error) {
+    return apiError('获取链接轮盘失败', 500);
   }
 });

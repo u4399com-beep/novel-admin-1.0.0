@@ -3,55 +3,34 @@ import { withAuth } from '@/lib/api-auth';
 import { db } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { apiError } from '@/lib/api-utils';
-
-function todayStringLocal(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
+import { todayStringLocal, subtractDays } from '@/lib/format';
 
 export const GET = withAuth(async () => {
   try {
-    // Total chapters read (count unique chapters in reading progress with chapterIndex > 0)
-    const chaptersReadResult = await db.readingProgress.aggregate({
-      _count: true,
-      _sum: { chapterIndex: true },
-    });
+    // Run independent queries in parallel for performance
+    const [chaptersReadResult, totalWordsReadResult, novelsCompleted, dailyRecords, allDailyDates] = await Promise.all([
+      db.readingProgress.aggregate({ _count: true, _sum: { chapterIndex: true } }),
+      db.chapter.aggregate({ _sum: { wordCount: true } }),
+      db.novel.count({ where: { status: 'completed' } }),
+      db.readingDaily.findMany({ orderBy: { date: 'desc' }, take: 30 }),
+      db.readingDaily.findMany({
+        where: { chapters: { gt: 0 } },
+        orderBy: { date: 'desc' },
+        select: { date: true },
+        take: 400,
+      }),
+    ]);
+
     const totalChaptersRead = chaptersReadResult._count || 0;
-
-    // Total words read (sum of wordCount for chapters)
-    const totalWordsReadResult = await db.chapter.aggregate({
-      _sum: { wordCount: true },
-    });
     const totalWordsRead = Number(totalWordsReadResult._sum?.wordCount || 0);
-
-    // Novels completed (reading progress has advanced past last chapter or status=completed)
-    const novelsCompleted = await db.novel.count({
-      where: { status: 'completed' },
-    });
-
-    // Total reading time (estimate: 300 chars/minute average reading speed for Chinese)
     const totalReadingTime = Math.round(totalWordsRead / 300); // minutes
 
-    // Average words per session (estimated from daily reading records)
-    const dailyRecords = await db.readingDaily.findMany({
-      orderBy: { date: 'desc' },
-      take: 30,
-    });
     const avgWordsPerSession = dailyRecords.length > 0
       ? Math.round(dailyRecords.reduce((sum, d) => sum + d.words, 0) / dailyRecords.length)
       : 0;
 
     // Reading streak (consecutive days with reading activity)
     // Use local date string (not UTC) to match readingDaily.date storage format
-    const allDailyDates = await db.readingDaily.findMany({
-      where: { chapters: { gt: 0 } },
-      orderBy: { date: 'desc' },
-      select: { date: true },
-      take: 400,
-    });
 
     // Build a Set of active date strings for O(1) lookup
     const activeDates = new Set(allDailyDates.map(d => d.date));
@@ -69,13 +48,7 @@ export const GET = withAuth(async () => {
         break; // Gap found, streak ended
       }
       // Move to previous day in local time
-      const parts = checkDate.split('-');
-      const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-      d.setDate(d.getDate() - 1);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      checkDate = `${y}-${m}-${day}`;
+      checkDate = subtractDays(checkDate, 1);
     }
 
     // Favorite genre (most read category based on novel reading progress)

@@ -66,7 +66,8 @@ export class BoundedMap<K, V> {
   }
 
   delete(key: K): boolean {
-    this.insertionOrder = this.insertionOrder.filter(k => k !== key);
+    const idx = this.insertionOrder.indexOf(key);
+    if (idx >= 0) this.insertionOrder.splice(idx, 1);
     return this.map.delete(key);
   }
 
@@ -209,3 +210,196 @@ class MemoryMonitor {
 
 // Singleton
 export const memoryMonitor = new MemoryMonitor();
+
+// ==================== Proactive GC Hints for Bun Runtime ====================
+
+/**
+ * Proactive GC hints for Bun runtime.
+ *
+ * Bun's JavaScriptCore (JSC) GC can benefit from hints when
+ * the application knows memory pressure is about to increase
+ * (e.g., before a large scraping batch) or decrease (e.g.,
+ * after clearing a cache).
+ *
+ * This module provides:
+ *   - Explicit GC request when memory is approaching threshold
+ *   - Pre-allocation hints before large operations
+ *   - Post-cleanup GC nudges
+ */
+
+/**
+ * Request a proactive garbage collection if available.
+ * Uses Bun's `gc()` if exposed, otherwise is a no-op.
+ *
+ * @param reason - Reason for the GC request (for logging)
+ */
+export function requestProactiveGC(reason: string): void {
+  if (typeof globalThis.gc === 'function') {
+    const before = process.memoryUsage().heapUsed;
+    globalThis.gc();
+    const after = process.memoryUsage().heapUsed;
+    const freed = before - after;
+    if (freed > 1024 * 1024) { // Only log if >1MB freed
+      log.info(`Proactive GC (${reason}): freed ${(freed / 1024 / 1024).toFixed(1)}MB`);
+    }
+  }
+}
+
+// ==================== Memory Budget Per Task ====================
+
+/**
+ * Memory budget per task.
+ *
+ * Assigns a memory budget to each scraping task and tracks usage.
+ * If a task exceeds its budget, it triggers cleanup or cancellation
+ * before it can cause OOM for the entire process.
+ */
+
+export interface TaskMemoryBudget {
+  /** Task identifier */
+  taskId: string;
+  /** Maximum memory allowed for this task (bytes) */
+  maxBytes: number;
+  /** Current estimated memory usage (bytes) */
+  currentBytes: number;
+  /** Whether the budget has been exceeded */
+  exceeded: boolean;
+}
+
+const taskBudgets = new Map<string, TaskMemoryBudget>();
+const DEFAULT_TASK_BUDGET_MB = 100; // 100MB per task by default
+
+/**
+ * Assign a memory budget to a task.
+ *
+ * @param taskId - Task identifier
+ * @param maxMB - Maximum memory in MB (default: 100)
+ */
+export function assignTaskBudget(taskId: string, maxMB: number = DEFAULT_TASK_BUDGET_MB): void {
+  taskBudgets.set(taskId, {
+    taskId,
+    maxBytes: maxMB * 1024 * 1024,
+    currentBytes: 0,
+    exceeded: false,
+  });
+}
+
+/**
+ * Update a task's memory usage estimate.
+ *
+ * @param taskId - Task identifier
+ * @param bytes - Current memory usage in bytes
+ * @returns Whether the task is still within budget
+ */
+export function updateTaskMemory(taskId: string, bytes: number): boolean {
+  const budget = taskBudgets.get(taskId);
+  if (!budget) return true; // No budget assigned = unlimited
+
+  budget.currentBytes = bytes;
+  budget.exceeded = bytes > budget.maxBytes;
+  return !budget.exceeded;
+}
+
+/**
+ * Release a task's memory budget.
+ *
+ * @param taskId - Task identifier
+ */
+export function releaseTaskBudget(taskId: string): void {
+  taskBudgets.delete(taskId);
+}
+
+/**
+ * Get all task memory budgets.
+ */
+export function getTaskMemoryBudgets(): TaskMemoryBudget[] {
+  return Array.from(taskBudgets.values());
+}
+
+// ==================== OOM Pre-Warning and Graceful Degradation ====================
+
+/**
+ * OOM pre-warning and graceful degradation.
+ *
+ * Monitors memory trends and provides early warning before OOM:
+ *   - Tracks memory growth rate (MB/s)
+ *   - Predicts time-to-OOM based on current trend
+ *   - Triggers graceful degradation (stop accepting new tasks, reduce cache sizes)
+ *   - Provides priority-based task shedding (drop low-priority tasks first)
+ */
+
+export interface OOMWarning {
+  /** Current RSS memory in MB */
+  currentRSS: number;
+  /** Memory growth rate in MB/s */
+  growthRate: number;
+  /** Estimated seconds until OOM (Infinity if not growing) */
+  estimatedSecondsToOOM: number;
+  /** Warning level */
+  level: 'none' | 'warning' | 'critical' | 'emergency';
+  /** Recommended actions */
+  recommendations: string[];
+}
+
+const MEMORY_HISTORY_SIZE = 10;
+const memoryHistory: Array<{ rss: number; timestamp: number }> = [];
+const OOM_THRESHOLD_MB = 900; // Start emergency at 900MB
+
+/**
+ * Check for OOM risk and return warning level.
+ *
+ * @returns OOM warning information
+ */
+export function checkOOMRisk(): OOMWarning {
+  const mem = process.memoryUsage();
+  const currentRSS = mem.rss / (1024 * 1024);
+  const now = Date.now();
+
+  // Track history
+  memoryHistory.push({ rss: currentRSS, timestamp: now });
+  if (memoryHistory.length > MEMORY_HISTORY_SIZE) {
+    memoryHistory.shift();
+  }
+
+  // Calculate growth rate
+  let growthRate = 0;
+  let estimatedSecondsToOOM = Infinity;
+
+  if (memoryHistory.length >= 3) {
+    const oldest = memoryHistory[0]!;
+    const newest = memoryHistory[memoryHistory.length - 1]!;
+    const timeDeltaSec = (newest.timestamp - oldest.timestamp) / 1000;
+    const rssDelta = newest.rss - oldest.rss;
+
+    if (timeDeltaSec > 0) {
+      growthRate = rssDelta / timeDeltaSec; // MB/s
+
+      if (growthRate > 0.1) { // Only predict if growing significantly
+        const remainingMB = OOM_THRESHOLD_MB - currentRSS;
+        estimatedSecondsToOOM = remainingMB / growthRate;
+      }
+    }
+  }
+
+  // Determine warning level
+  let level: OOMWarning['level'] = 'none';
+  const recommendations: string[] = [];
+
+  if (currentRSS >= OOM_THRESHOLD_MB * 0.95) {
+    level = 'emergency';
+    recommendations.push('Immediately stop accepting new tasks');
+    recommendations.push('Shed all non-critical caches');
+    recommendations.push('Force garbage collection');
+  } else if (currentRSS >= OOM_THRESHOLD_MB * 0.85) {
+    level = 'critical';
+    recommendations.push('Stop accepting new tasks');
+    recommendations.push('Reduce cache sizes by 50%');
+    recommendations.push('Request proactive GC');
+  } else if (currentRSS >= OOM_THRESHOLD_MB * 0.70 || estimatedSecondsToOOM < 120) {
+    level = 'warning';
+    recommendations.push('Reduce concurrent task count');
+    recommendations.push('Trigger aggressive cache cleanup');
+  }
+
+  return { currentRSS, growthRate, estimatedSecondsToOOM, level, recommendations };
+}

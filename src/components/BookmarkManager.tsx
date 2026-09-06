@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
-import { BookmarkCheck, X } from 'lucide-react';
+import { useMemo, useState, useCallback } from 'react';
+import { BookmarkCheck, X, Search, Download, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -19,7 +21,16 @@ interface BookmarkEntry {
   chapterTitle: string;
   timestamp: number;
   scrollPercent: number;
+  category?: string;
 }
+
+// ─── Bookmark Categories ───────────────────────────────────────
+const BM_CATEGORIES = [
+  { key: 'default', label: '默认', color: '#f59e0b' },
+  { key: 'important', label: '重要', color: '#ef4444' },
+  { key: 'review', label: '待回看', color: '#3b82f6' },
+  { key: 'favorite', label: '喜爱', color: '#10b981' },
+] as const;
 
 interface BookmarkManagerProps {
   bookmarks: BookmarkEntry[];
@@ -51,6 +62,41 @@ export function BookmarkManager({
   open,
   onOpenChange,
 }: BookmarkManagerProps) {
+  // ─── Search & filter state ──────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFolder, setActiveFolder] = useState<string>('all');
+
+  // Filtered bookmarks
+  const filtered = useMemo(() => {
+    let result = [...bookmarks];
+    if (activeFolder !== 'all') {
+      result = result.filter((bm) => (bm.category ?? 'default') === activeFolder);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((bm) => bm.chapterTitle.toLowerCase().includes(q));
+    }
+    return result.sort((a, b) => b.timestamp - a.timestamp);
+  }, [bookmarks, activeFolder, searchQuery]);
+
+  // ─── Export bookmarks ──────────────────────────────────────
+  const exportBookmarks = useCallback(() => {
+    const data = bookmarks.map((bm) => ({
+      chapter: bm.chapterTitle,
+      chapterIndex: bm.chapterIndex,
+      progress: `${bm.scrollPercent}%`,
+      category: bm.category ?? 'default',
+      date: new Date(bm.timestamp).toISOString(),
+    }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bookmarks-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [bookmarks]);
+
   // Sort bookmarks by timestamp descending (most recent first)
   const sorted = useMemo(
     () => [...bookmarks].sort((a, b) => b.timestamp - a.timestamp),
@@ -71,6 +117,48 @@ export function BookmarkManager({
             )}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Search & Filter */}
+        {bookmarks.length > 2 && (
+          <div className="space-y-2 pb-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索书签..."
+                className="h-8 pl-8 text-xs"
+              />
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              <button
+                onClick={() => setActiveFolder('all')}
+                className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${activeFolder === 'all' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/40 text-muted-foreground/60 hover:text-foreground'}`}
+              >全部</button>
+              {BM_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.key}
+                  onClick={() => setActiveFolder(cat.key)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors flex items-center gap-1 ${activeFolder === cat.key ? 'border-current' : 'border-border/40 text-muted-foreground/60 hover:text-foreground'}`}
+                  style={{ color: activeFolder === cat.key ? cat.color : undefined }}
+                >
+                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Export button */}
+        {bookmarks.length > 0 && (
+          <div className="flex justify-end pb-1">
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1" onClick={exportBookmarks}>
+              <Download className="h-3 w-3" />
+              导出书签
+            </Button>
+          </div>
+        )}
 
         {sorted.length === 0 ? (
           <div className="py-12 text-center">
