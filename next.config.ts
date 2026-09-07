@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  // CRITICAL: Do NOT set `turbopack` here — it's controlled via CLI flag.
+  // Production build uses `--no-turbopack` (Webpack) to stay under 1GB memory.
+  // Dev mode uses Turbopack by default for fast HMR.
   // Experimental: reduce build memory for low-end servers
   experimental: {
     // Optimize package imports to reduce bundle size

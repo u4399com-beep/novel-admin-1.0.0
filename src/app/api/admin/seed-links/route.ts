@@ -42,7 +42,7 @@ const SITE_HOME_LINKS = [
 // Seed function (can also be called internally)
 // ═══════════════════════════════════════════════════════════════════
 
-export async function seedFriendlyLinks() {
+async function seedFriendlyLinks() {
   const existingCount = await db.friendlyLink.count();
   if (existingCount > 0) {
     return { existing: existingCount, created: 0 };

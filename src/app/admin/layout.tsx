@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth-options';
 
 // Server-side only SKIP_AUTH: only effective in development mode.
 // Unlike NEXT_PUBLIC_* vars, this is NOT exposed to the client bundle.

@@ -1,5 +1,5 @@
 # ============================================================
-# Novel Management System - LOW MEMORY Docker Build
+# Novel Management System - LOW MEMORY Docker Build v8
 # Hardware-adaptive: build args control memory usage per tier
 #
 # Key optimizations vs standard Dockerfile:
@@ -10,10 +10,14 @@
 #   4. BUN_GC_THRESHOLD for aggressive GC during bun install
 #   5. Minimal runtime deps (no Chromium libs in image)
 #   6. 3 stages: deps → builder → runner
+#   7. Swap file during build (1GB) to prevent OOM kill on 1.3GB servers
+#   8. Turbopack DISABLED — uses Webpack which stays under 1GB peak
+#   9. Build retry with cache clear on first failure
 #
 # Build Args (set by deploy.sh based on detected hardware):
-#   NODE_MAX_OLD_SPACE_SIZE  — V8 heap cap during Next.js build
-#   BUN_GC_THRESHOLD        — Bun GC threshold during bun install
+#   NODE_MAX_OLD_SPACE_SIZE  — V8 heap cap during Next.js build (default: 768)
+#   BUN_GC_THRESHOLD        — Bun GC threshold during bun install (default: 100mb)
+#   BUILD_SWAP_MB           — Swap file size in MB for build stage (default: 1024)
 # ============================================================
 
 # ============ Stage 1: Dependencies ============
@@ -41,9 +45,11 @@ RUN if grep -q 'provider *= *"sqlite"' prisma/schema.prisma; then \
       echo "WARNING: Expected 'provider = sqlite' in schema.prisma, skipping provider swap"; \
     fi
 
-# Create .env.production to prevent Next.js env loading errors
-# Next.js 16 calls .matchAll() on .env.production contents; empty file avoids TypeError
-RUN touch .env.production
+# Create minimal .env.production to prevent Next.js env loading errors
+# Next.js 16 calls .matchAll() on .env.production contents.
+# An empty file (or comments-only) avoids TypeError.
+# IMPORTANT: Do NOT put Chinese characters or complex values here!
+RUN printf '# Next.js production overrides (all config via docker-compose env vars)\n' > .env.production
 
 # Generate Prisma client
 # CRITICAL: Use the LOCAL prisma binary directly (./node_modules/prisma/build/index.js).
@@ -52,20 +58,43 @@ RUN touch .env.production
 # Prisma 7 breaks schema.prisma 'url' property → build failure.
 RUN ./node_modules/prisma/build/index.js generate --schema ./prisma/schema.prisma
 
-# Build Next.js — LOW MEMORY settings
+# ─── Build Next.js with LOW MEMORY settings ───
+# Create swap file to prevent OOM kill on low-memory servers (1.3GB RAM).
+# Docker builds share the host's memory; swap provides overflow capacity.
+ARG BUILD_SWAP_MB=1024
+RUN if [ "$BUILD_SWAP_MB" -gt 0 ]; then \
+      echo "[Build] Creating ${BUILD_SWAP_MB}MB swap for OOM protection..."; \
+      fallocate -l "${BUILD_SWAP_MB}m" /swapfile 2>/dev/null || \
+        dd if=/dev/zero of=/swapfile bs=1M count=${BUILD_SWAP_MB} 2>/dev/null; \
+      chmod 600 /swapfile && \
+      mkswap /swapfile && \
+      swapon /swapfile && \
+      echo "[Build] Swap enabled ($(free -m | awk '/Swap/{print $2}')MB)"; \
+    else \
+      echo "[Build] Swap disabled (BUILD_SWAP_MB=0)"; \
+    fi
+
 # NODE_MAX_OLD_SPACE_SIZE is passed as build-arg by deploy.sh based on hardware tier
-# IMPORTANT: Next.js 16 + Turbopack requires >= 768MB for build.
-# 512MB causes OOM kill (exit 137) or Turbopack panic on CSS.
 ARG NODE_MAX_OLD_SPACE_SIZE=768
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
 # Single-threaded build to reduce peak memory
 ENV NEXT_WORKER_THREADS=1
-# Disable Turbopack for low-memory builds (Webpack uses less peak RAM)
-# Turbopack can use 1.5GB+ during CSS compilation; Webpack stays under 1GB
-ARG USE_TURBOPACK=false
-RUN if [ "$USE_TURBOPACK" = "true" ]; then bun run build; else npx next build --no-turbopack; fi
+
+# Build with Webpack (NOT Turbopack).
+# Turbopack uses 1.5GB+ during CSS compilation and panics on low-memory servers.
+# Webpack stays under 1GB peak and is more stable.
+# In Next.js 16, --webpack flag disables Turbopack for the build.
+# Retry logic: first attempt with cache, second with --no-cache if first fails.
+RUN echo "[Build] Starting Next.js build (Webpack mode, heap=${NODE_MAX_OLD_SPACE_SIZE}MB)..." && \
+    npx next build --webpack 2>&1 || \
+    (echo "[Build] First attempt failed, clearing .next cache and retrying..." && \
+     rm -rf .next && \
+     npx next build --webpack 2>&1)
+
+# Clean up swap (not needed in runtime stage)
+RUN swapoff /swapfile 2>/dev/null && rm -f /swapfile || true
 
 # ============ Stage 3: Production Runner ============
 FROM oven/bun:1 AS runner

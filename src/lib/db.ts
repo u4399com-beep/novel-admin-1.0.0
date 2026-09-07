@@ -1,7 +1,10 @@
 import { PrismaClient } from '@prisma/client'
 
 // ─── Production Safety Check ─────────────────────────────────────
-if (process.env.NODE_ENV === 'production') {
+// Skip during Next.js build phase (env vars are set at runtime in Docker)
+// NEXT_PHASE is set by Next.js: 'phase-production-build' during build,
+// undefined or 'phase-production-start' at runtime.
+if (process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE !== 'phase-production-build') {
   const secret = process.env.NEXTAUTH_SECRET || '';
   if (secret.length < 32 || secret.toLowerCase().includes('change-this')) {
     console.error('[FATAL] NEXTAUTH_SECRET is too weak or not set in production. Refusing to start.');

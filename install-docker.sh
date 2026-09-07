@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================
-# 小说阁 - Docker 一键安装脚本 v7.0
+# 小说阁 - Docker 一键安装脚本 v8.0
 # Novel Admin Platform - Docker One-Click Installation
+#
+# Key v8 changes:
+#   - Swap file during build (prevents OOM on 1.3GB servers)
+#   - Turbopack disabled (Webpack uses less memory)
+#   - middleware.ts → proxy.ts (Next.js 16 convention)
+#   - .env.production fix (matchAll TypeError)
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/install-docker.sh | bash
@@ -55,7 +61,7 @@ done
 # ─── Banner ────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║${NC}  ${BOLD}📚 小说阁 — Docker 一键安装 v7.0${NC}              ${BOLD}${CYAN}║${NC}"
+echo -e "${BOLD}${CYAN}║${NC}  ${BOLD}📚 小说阁 — Docker 一键安装 v8.0${NC}              ${BOLD}${CYAN}║${NC}"
 echo -e "${BOLD}${CYAN}║${NC}  容器化部署 · 反反爬增强 · 内容去重 · 管线监控 ${BOLD}${CYAN}║${NC}"
 echo -e "${BOLD}${CYAN}║${NC}  App + Scraper + LogStream + PostgreSQL         ${BOLD}${CYAN}║${NC}"
 echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${NC}"
@@ -211,9 +217,9 @@ elif [ "$_avail_mb" -lt 3072 ]; then TIER="small"
 else TIER="normal"; fi
 
 case "$TIER" in
-  tiny)   N=768;B="50mb";PGL="128M";PGR="32M";PGS="32MB";PGW="2MB";PGM="16MB";PGE="64MB";PGC=10;PGWAL="16MB";PGWL="2MB";PGCPU="0.3";APPL="768M";APPR="256M";APPS="64m";APPCPU="0.7" ;;
-  small)  N=768;B="100mb";PGL="192M";PGR="64M";PGS="64MB";PGW="4MB";PGM="32MB";PGE="128MB";PGC=20;PGWAL="32MB";PGWL="4MB";PGCPU="0.5";APPL="896M";APPR="256M";APPS="128m";APPCPU="0.8" ;;
-  normal) N=1024;B="100mb";PGL="256M";PGR="64M";PGS="128MB";PGW="8MB";PGM="64MB";PGE="256MB";PGC=30;PGWAL="64MB";PGWL="8MB";PGCPU="1.0";APPL="1024M";APPR="256M";APPS="256m";APPCPU="1.0" ;;
+  tiny)   N=768;B="50mb";SWAP=1024;PGL="128M";PGR="32M";PGS="32MB";PGW="2MB";PGM="16MB";PGE="64MB";PGC=10;PGWAL="16MB";PGWL="2MB";PGCPU="0.3";APPL="768M";APPR="256M";APPS="64m";APPCPU="0.7" ;;
+  small)  N=768;B="100mb";SWAP=512;PGL="192M";PGR="64M";PGS="64MB";PGW="4MB";PGM="32MB";PGE="128MB";PGC=20;PGWAL="32MB";PGWL="4MB";PGCPU="0.5";APPL="896M";APPR="256M";APPS="128m";APPCPU="0.8" ;;
+  normal) N=1024;B="100mb";SWAP=0;PGL="256M";PGR="64M";PGS="128MB";PGW="8MB";PGM="64MB";PGE="256MB";PGC=30;PGWAL="64MB";PGWL="8MB";PGCPU="1.0";APPL="1024M";APPR="256M";APPS="256m";APPCPU="1.0" ;;
 esac
 
 ok "档位: $TIER (${_avail_mb}MB / ${_cpu_cores}核)"
@@ -246,6 +252,7 @@ if [ -f ".env.docker" ]; then
   sed -i "s|^APP_MEMORY_RESERVATION=.*|APP_MEMORY_RESERVATION=${APPR}|" .env
   sed -i "s|^APP_SHM_SIZE=.*|APP_SHM_SIZE=${APPS}|" .env
   sed -i "s|^APP_CPU_LIMIT=.*|APP_CPU_LIMIT=${APPCPU}|" .env
+  sed -i "s|^BUILD_SWAP_MB=.*|BUILD_SWAP_MB=${SWAP}|" .env
   ok ".env 已生成（档位: $TIER）"
 else
   # Generate .env from scratch if no template
@@ -288,8 +295,9 @@ APP_MEMORY_LIMIT=${APPL}
 APP_MEMORY_RESERVATION=${APPR}
 APP_SHM_SIZE=${APPS}
 APP_CPU_LIMIT=${APPCPU}
+BUILD_SWAP_MB=${SWAP}
 
-# ─── Pipeline Features (v7) ──────────────────────────────
+# ─── Pipeline Features (v8) ──────────────────────────────
 CONTENT_DEDUP_ENABLED=true
 PIPELINE_METRICS_ENABLED=true
 ADAPTIVE_ENGINE_ENABLED=true
@@ -339,20 +347,29 @@ step 7 "构建并启动服务"
 [ "$TIER" = "tiny" ] || [ "$TIER" = "small" ] && export DOCKER_BUILDKIT=0 || export DOCKER_BUILDKIT=1
 
 info "构建镜像中...（首次约 5-10 分钟）"
+info "  构建模式: Webpack (Turbopack已禁用，节省内存)"
+info "  构建Swap: ${SWAP}MB (OOM保护)"
 echo ""
 
+# Build with build args for swap and memory settings
+_BUILD_ARGS="--build-arg BUILD_SWAP_MB=${SWAP} --build-arg NODE_MAX_OLD_SPACE_SIZE=${N}"
+
 # Build with progress
-if docker compose build 2>&1; then
+if docker compose build ${_BUILD_ARGS} 2>&1; then
   ok "镜像构建成功"
 else
-  warn "构建失败，清除缓存重试..."
-  docker compose build --no-cache 2>&1 || {
+  warn "首次构建失败（可能内存不足），清除缓存重试..."
+  # Prune builder cache to free memory before retry
+  docker builder prune -f 2>/dev/null || true
+  if docker compose build --no-cache ${_BUILD_ARGS} 2>&1; then
+    ok "镜像构建成功（第二次尝试）"
+  else
     echo ""
     fatal "构建失败！请检查:
-  1. 网络连接是否正常
-  2. 磁盘空间是否充足 (df -h)
-  3. 运行详细日志: docker compose build --progress=plain 2>&1 | tee build.log"
-  }
+  1. 服务器内存是否充足 (free -h, 建议至少1.5GB)
+  2. 磁盘空间是否充足 (df -h, 建议至少5GB)
+  3. 运行详细日志: docker compose build --progress=plain ${_BUILD_ARGS} 2>&1 | tee build.log"
+  fi
 fi
 
 echo ""
@@ -431,7 +448,7 @@ echo -e "${BOLD}${GREEN}║${NC}  👤 用户名:    admin                      
 echo -e "${BOLD}${GREEN}║${NC}  🔑 密码:      ${ADMIN_PASSWORD}    ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${YELLOW}║${NC}  ⚠️  请立即保存以上密码！                       ${BOLD}${YELLOW}║${NC}"
 echo -e "${BOLD}${GREEN}╠══════════════════════════════════════════════════╣${NC}"
-echo -e "${BOLD}${GREEN}║${NC}  📋 服务架构 (v7):                             ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}  📋 服务架构 (v8):                             ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}║${NC}    App:       http://localhost:${APP_PORT}         ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}║${NC}    Scraper:   http://localhost:3099 (内部)       ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}║${NC}    Pipeline:  /pipeline-metrics (管线监控)       ${BOLD}${GREEN}║${NC}"
@@ -452,7 +469,7 @@ echo ""
 # Save deploy info
 cat > .deploy-info << EOF
 # 部署时间: $(date '+%Y-%m-%d %H:%M:%S')
-# 安装脚本: install-docker.sh v7.0
+# 安装脚本: install-docker.sh v8.0
 # 档位: $TIER | 内存: ${_avail_mb}MB | CPU: ${_cpu_cores}核
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=${ADMIN_PASSWORD}

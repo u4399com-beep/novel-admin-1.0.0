@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // ─────────────────────────────────────────────────────────────
-// Minimal Middleware - Edge Runtime Compatible
+// Next.js 16 Proxy (replaces deprecated middleware convention)
 // Handles: XTransformPort blocking + Login per-IP rate limiting
 // Auth & rate limiting for API routes handled by withAuth() wrapper
 // ─────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ function checkLoginRateLimit(ip: string): { allowed: boolean; retryAfter: number
 // would cause container health checks to fail (curl without x-real-ip header).
 const RATE_LIMITED_AUTH_PATHS = ['/api/auth/signin/', '/api/auth/callback/'];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const xPort = request.nextUrl.searchParams.get('XTransformPort');
   if (xPort && !ALLOWED_TRANSFORM_PORTS.includes(xPort)) {
     return NextResponse.json({ error: '非法的端口参数' }, { status: 400 });

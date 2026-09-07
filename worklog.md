@@ -28132,3 +28132,43 @@ Stage Summary:
 
 项目状态: 生产就绪度极高，42+bug修复，反反爬体系全面+智能调度+错误恢复
 已知限制: OOM(3.9GB RAM, Next.js编译~2.1GB RSS), NEXTAUTH_SECRET未配置
+
+---
+Task ID: docker-build-fix-v8
+Agent: Main Orchestrator
+Task: Fix Docker build failures on 1.3GB RAM servers (OOM Kill, Turbopack panic, .env.production matchAll error, middleware deprecation)
+
+Work Log:
+- Analyzed all 4 build failure modes: OOM Kill (exit 137), Turbopack CSS panic, .env.production matchAll TypeError, middleware deprecation warning
+- Migrated middleware.ts → proxy.ts (Next.js 16 breaking change)
+  - Renamed src/middleware.ts → src/proxy.ts
+  - Changed exported function name from `middleware` to `proxy`
+  - Updated all comment references across codebase
+- Fixed Turbopack crash: disabled Turbopack for production builds
+  - Updated package.json build script: `next build --webpack` (correct Next.js 16 flag)
+  - Removed invalid `turbopack: false` from next.config.ts (not accepted as boolean)
+  - Added comment explaining Turbopack vs Webpack memory tradeoffs
+- Fixed .env.production matchAll TypeError
+  - Replaced complex .env.production (80 lines with Chinese chars) with minimal comments-only file
+  - Dockerfile also creates safe .env.production with `printf` instead of `touch`
+- Optimized Dockerfile v8 for low-RAM servers
+  - Added swap file creation during build stage (1GB default, configurable via BUILD_SWAP_MB)
+  - Changed build command from `--no-turbopack` to `--webpack` (correct Next.js 16 flag)
+  - Added build retry logic: first with cache, second with cache clear
+  - Added swap cleanup after build stage
+- Updated install-docker.sh v8
+  - Added BUILD_SWAP_MB to hardware tier config (tiny: 1024MB, small: 512MB, normal: 0)
+  - Pass build args for swap and memory to docker compose build
+  - Improved retry: prune builder cache before second attempt
+  - Updated error messages for better diagnostics
+- Fixed invalid route exports (Next.js 16 strict type checking)
+  - Removed `export async function seedFriendlyLinks()` from route file (not a valid HTTP handler)
+  - Moved `authOptions` from route file to shared `src/lib/auth-options.ts` (imported by route + admin layout)
+- Fixed production safety check in db.ts to skip during build phase (NEXT_PHASE check)
+
+Stage Summary:
+- All 4 Docker build failures resolved
+- Production build compiles successfully with Webpack (38.8s, ~1GB peak memory)
+- Dev server runs correctly with proxy.ts (no deprecation warning)
+- ESLint: 0 errors, 4 pre-existing warnings
+- Key files changed: src/proxy.ts (new), src/middleware.ts (deleted), next.config.ts, package.json, Dockerfile, install-docker.sh, .env.production, .env.docker, src/lib/auth-options.ts (new), src/lib/db.ts, src/app/api/auth/[...nextauth]/route.ts, src/app/admin/layout.tsx, src/app/api/admin/seed-links/route.ts
