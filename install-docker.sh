@@ -106,7 +106,13 @@ CODE_OBTAINED=false
 
 # Check if already in project dir
 if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
-  ok "项目文件已存在，跳过下载"
+  # Try to pull latest code (ignore errors — may be offline or no git)
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    info "项目已存在，拉取最新代码..."
+    git pull --ff-only 2>/dev/null || info "git pull 失败，使用现有代码"
+  else
+    ok "项目文件已存在，跳过下载"
+  fi
   CODE_OBTAINED=true
 fi
 
@@ -354,13 +360,23 @@ echo ""
 # Build with build args for swap and memory settings
 _BUILD_ARGS="--build-arg BUILD_SWAP_MB=${SWAP} --build-arg NODE_MAX_OLD_SPACE_SIZE=${N}"
 
-# Build with progress
-if docker compose build ${_BUILD_ARGS} 2>&1; then
+# IMPORTANT: Always use --no-cache for build to avoid stale layers
+# from old Dockerfile versions (e.g., old 64-step Dockerfile with
+# `bun run build` that uses Turbopack). Cached layers cause:
+#   - Old .env.production (matchAll TypeError)
+#   - Old middleware.ts (deprecation warning)
+#   - Old build command (Turbopack panic on low-mem)
+info "使用 --no-cache 构建（确保使用最新Dockerfile）..."
+
+# Build with --no-cache always to avoid stale layer issues
+if docker compose build --no-cache ${_BUILD_ARGS} 2>&1; then
   ok "镜像构建成功"
 else
-  warn "首次构建失败（可能内存不足），清除缓存重试..."
+  warn "构建失败，清理Docker缓存后重试..."
   # Prune builder cache to free memory before retry
   docker builder prune -f 2>/dev/null || true
+  docker system prune -f 2>/dev/null || true
+  sleep 3
   if docker compose build --no-cache ${_BUILD_ARGS} 2>&1; then
     ok "镜像构建成功（第二次尝试）"
   else
@@ -368,7 +384,7 @@ else
     fatal "构建失败！请检查:
   1. 服务器内存是否充足 (free -h, 建议至少1.5GB)
   2. 磁盘空间是否充足 (df -h, 建议至少5GB)
-  3. 运行详细日志: docker compose build --progress=plain ${_BUILD_ARGS} 2>&1 | tee build.log"
+  3. 运行详细日志: docker compose build --progress=plain --no-cache ${_BUILD_ARGS} 2>&1 | tee build.log"
   fi
 fi
 
