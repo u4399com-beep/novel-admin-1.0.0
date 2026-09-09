@@ -1,5 +1,5 @@
 # ============================================================
-# Novel Management System - Docker Compose (ADAPTIVE MEMORY)
+# Novel Management System - Docker Compose v9 (ADAPTIVE MEMORY)
 #
 # NOTE: deploy.sh OVERWRITES this file on every deploy.
 # Do not edit manually unless you understand the implications.
@@ -8,15 +8,18 @@
 # Memory limits are set via .env variables, which are auto-configured
 # by deploy.sh based on detected server hardware:
 #
-#   Tier    RAM        PG Limit   App Limit   App SHM
-#   ───────────────────────────────────────────────────
-#   tiny    <1.5GB     128M       512M        64m
-#   small   1.5-3GB    192M       640M        128m
-#   normal  3GB+       256M       1024M       256m
+#   Tier    RAM        PG Limit   App Limit   App SHM   Swap
+#   ──────────────────────────────────────────────────────────
+#   tiny    <1.5GB     128M       512M        64m       1024M
+#   small   1.5-3GB    192M       640M        128m      512M
+#   normal  3GB+       256M       1024M       256m      0
 #
 # IMPORTANT: All variables MUST be set in .env (no defaults here
 # because the colon-default syntax breaks older docker-compose versions).
 # deploy.sh auto-generates a complete .env on every deploy.
+#
+# v9: BUILD_SWAP_MB is passed as build-arg; swap+build are in
+# a single RUN step (swap state doesn't persist across RUN steps).
 # ============================================================
 
 services:
@@ -78,7 +81,7 @@ services:
       args:
         NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE}
         BUN_GC_THRESHOLD: ${BUN_GC_THRESHOLD}
-        USE_TURBOPACK: ${USE_TURBOPACK:-false}
+        BUILD_SWAP_MB: ${BUILD_SWAP_MB:-1024}
         # DEBIAN_MIRROR and NPM_REGISTRY are set in Dockerfile defaults
         # Override via --build-arg if needed for non-Chinese servers
         # DEBIAN_MIRROR: ${DEBIAN_MIRROR:-mirrors.aliyun.com}

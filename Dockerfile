@@ -1,5 +1,5 @@
 # ============================================================
-# Novel Management System - LOW MEMORY Docker Build v8
+# Novel Management System - LOW MEMORY Docker Build v9
 # Hardware-adaptive: build args control memory usage per tier
 #
 # Key optimizations vs standard Dockerfile:
@@ -10,9 +10,10 @@
 #   4. BUN_GC_THRESHOLD for aggressive GC during bun install
 #   5. Minimal runtime deps (no Chromium libs in image)
 #   6. 3 stages: deps → builder → runner
-#   7. Swap file during build (1GB) to prevent OOM kill on 1.3GB servers
+#   7. Swap+Build in SAME RUN step (v9 fix — swap was NOT persisting across steps!)
 #   8. Turbopack DISABLED — uses Webpack which stays under 1GB peak
 #   9. Build retry with cache clear on first failure
+#  10. Memory diagnostics (free -m) before and after build
 #
 # Build Args (set by deploy.sh based on detected hardware):
 #   NODE_MAX_OLD_SPACE_SIZE  — V8 heap cap during Next.js build (default: 768)
@@ -59,42 +60,59 @@ RUN printf '# Next.js production overrides (all config via docker-compose env va
 RUN ./node_modules/prisma/build/index.js generate --schema ./prisma/schema.prisma
 
 # ─── Build Next.js with LOW MEMORY settings ───
-# Create swap file to prevent OOM kill on low-memory servers (1.3GB RAM).
-# Docker builds share the host's memory; swap provides overflow capacity.
-ARG BUILD_SWAP_MB=1024
-RUN if [ "$BUILD_SWAP_MB" -gt 0 ]; then \
-      echo "[Build] Creating ${BUILD_SWAP_MB}MB swap for OOM protection..."; \
-      fallocate -l "${BUILD_SWAP_MB}m" /swapfile 2>/dev/null || \
-        dd if=/dev/zero of=/swapfile bs=1M count=${BUILD_SWAP_MB} 2>/dev/null; \
-      chmod 600 /swapfile && \
-      mkswap /swapfile && \
-      swapon /swapfile && \
-      echo "[Build] Swap enabled ($(free -m | awk '/Swap/{print $2}')MB)"; \
-    else \
-      echo "[Build] Swap disabled (BUILD_SWAP_MB=0)"; \
-    fi
-
-# NODE_MAX_OLD_SPACE_SIZE is passed as build-arg by deploy.sh based on hardware tier
+# CRITICAL FIX (v9): Swap creation + build + swap cleanup MUST be in a SINGLE
+# RUN command. Docker creates a NEW container for each RUN step, and kernel
+# swap state (swapon) does NOT persist across containers. Previous v8 had
+# swap in one RUN and build in another — swap was NEVER active during build!
+#
+# Additionally, we use ./node_modules/.bin/next directly instead of npx
+# to avoid spawning an extra child process (saves ~30MB RAM).
 ARG NODE_MAX_OLD_SPACE_SIZE=768
+ARG BUILD_SWAP_MB=1024
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
 # Single-threaded build to reduce peak memory
 ENV NEXT_WORKER_THREADS=1
 
-# Build with Webpack (NOT Turbopack).
-# Turbopack uses 1.5GB+ during CSS compilation and panics on low-memory servers.
-# Webpack stays under 1GB peak and is more stable.
-# In Next.js 16, --webpack flag disables Turbopack for the build.
-# Retry logic: first attempt with cache, second with --no-cache if first fails.
-RUN echo "[Build] Starting Next.js build (Webpack mode, heap=${NODE_MAX_OLD_SPACE_SIZE}MB)..." && \
-    npx next build --webpack 2>&1 || \
-    (echo "[Build] First attempt failed, clearing .next cache and retrying..." && \
-     rm -rf .next && \
-     npx next build --webpack 2>&1)
-
-# Clean up swap (not needed in runtime stage)
-RUN swapoff /swapfile 2>/dev/null && rm -f /swapfile || true
+RUN echo "=== Build Environment ===" && \
+    echo "Heap: ${NODE_MAX_OLD_SPACE_SIZE}MB | Workers: 1 | Swap: ${BUILD_SWAP_MB}MB" && \
+    echo "=== Memory Before Build ===" && \
+    free -m 2>/dev/null || cat /proc/meminfo 2>/dev/null | head -5 && \
+    echo "========================" && \
+    if [ "${BUILD_SWAP_MB}" -gt 0 ] 2>/dev/null; then \
+      echo "[Swap] Creating ${BUILD_SWAP_MB}MB swap for OOM protection..." && \
+      (fallocate -l "${BUILD_SWAP_MB}m" /swapfile 2>/dev/null || \
+       dd if=/dev/zero of=/swapfile bs=1M count=${BUILD_SWAP_MB} 2>/dev/null) && \
+      chmod 600 /swapfile && \
+      mkswap /swapfile && \
+      swapon /swapfile && \
+      echo "[Swap] Enabled ($(free -m 2>/dev/null | awk '/Swap/{print $2}')MB)" || \
+      echo "[Swap] WARNING: Swap creation failed (may OOM on low-mem server)"; \
+    else \
+      echo "[Swap] Disabled (BUILD_SWAP_MB=0)"; \
+    fi && \
+    echo "[Build] Starting Next.js build (Webpack mode, heap=${NODE_MAX_OLD_SPACE_SIZE}MB)..." && \
+    if ./node_modules/.bin/next build --webpack 2>&1; then \
+      echo "[Build] ✓ Success on first attempt"; \
+    else \
+      echo "[Build] ✗ First attempt failed, clearing .next cache and retrying..." && \
+      rm -rf .next && \
+      echo "=== Memory Before Retry ===" && \
+      free -m 2>/dev/null || true && \
+      if ./node_modules/.bin/next build --webpack 2>&1; then \
+        echo "[Build] ✓ Success on second attempt"; \
+      else \
+        echo "[Build] ✗ Second attempt also failed!" && \
+        echo "=== Memory At Failure ===" && \
+        free -m 2>/dev/null || true && \
+        exit 1; \
+      fi; \
+    fi && \
+    echo "=== Memory After Build ===" && \
+    free -m 2>/dev/null || true && \
+    swapoff /swapfile 2>/dev/null && rm -f /swapfile 2>/dev/null; \
+    echo "[Build] Complete, swap cleaned up"
 
 # ============ Stage 3: Production Runner ============
 FROM oven/bun:1 AS runner

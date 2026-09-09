@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================
-# 小说阁 - Docker 一键安装脚本 v8.0
+# 小说阁 - Docker 一键安装脚本 v9.0
 # Novel Admin Platform - Docker One-Click Installation
 #
-# Key v8 changes:
-#   - Swap file during build (prevents OOM on 1.3GB servers)
+# Key v9 changes:
+#   - HOST-LEVEL swap before build (more reliable than Docker-internal)
+#   - SSH OOM protection (oom_score_adj=-1000) to prevent connection drops
+#   - Swap+Build merged into single RUN in Dockerfile (v9)
 #   - Turbopack disabled (Webpack uses less memory)
-#   - middleware.ts → proxy.ts (Next.js 16 convention)
+#   - proxy.ts instead of middleware.ts (Next.js 16 convention)
 #   - .env.production fix (matchAll TypeError)
 #
 # Usage:
@@ -61,7 +63,7 @@ done
 # ─── Banner ────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║${NC}  ${BOLD}📚 小说阁 — Docker 一键安装 v8.0${NC}              ${BOLD}${CYAN}║${NC}"
+echo -e "${BOLD}${CYAN}║${NC}  ${BOLD}📚 小说阁 — Docker 一键安装 v9.0${NC}              ${BOLD}${CYAN}║${NC}"
 echo -e "${BOLD}${CYAN}║${NC}  容器化部署 · 反反爬增强 · 内容去重 · 管线监控 ${BOLD}${CYAN}║${NC}"
 echo -e "${BOLD}${CYAN}║${NC}  App + Scraper + LogStream + PostgreSQL         ${BOLD}${CYAN}║${NC}"
 echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${NC}"
@@ -109,7 +111,8 @@ if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
   # Try to pull latest code (ignore errors — may be offline or no git)
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     info "项目已存在，拉取最新代码..."
-    git pull --ff-only 2>/dev/null || info "git pull 失败，使用现有代码"
+    git fetch --all 2>/dev/null || true
+    git reset --hard origin/main 2>/dev/null || git pull --ff-only 2>/dev/null || info "git pull 失败，使用现有代码"
   else
     ok "项目文件已存在，跳过下载"
   fi
@@ -217,21 +220,100 @@ step 4 "检测硬件并选择配置档位"
 _avail_kb=$(awk '/MemAvailable/{print $2}' /proc/meminfo 2>/dev/null || echo 2097152)
 _avail_mb=$((_avail_kb / 1024))
 _cpu_cores=$(nproc 2>/dev/null || echo 1)
+_total_kb=$(awk '/MemTotal/{print $2}' /proc/meminfo 2>/dev/null || echo 2097152)
+_total_mb=$((_total_kb / 1024))
 
 if [ "$_avail_mb" -lt 1536 ]; then TIER="tiny"
 elif [ "$_avail_mb" -lt 3072 ]; then TIER="small"
 else TIER="normal"; fi
 
 case "$TIER" in
-  tiny)   N=768;B="50mb";SWAP=1024;PGL="128M";PGR="32M";PGS="32MB";PGW="2MB";PGM="16MB";PGE="64MB";PGC=10;PGWAL="16MB";PGWL="2MB";PGCPU="0.3";APPL="768M";APPR="256M";APPS="64m";APPCPU="0.7" ;;
-  small)  N=768;B="100mb";SWAP=512;PGL="192M";PGR="64M";PGS="64MB";PGW="4MB";PGM="32MB";PGE="128MB";PGC=20;PGWAL="32MB";PGWL="4MB";PGCPU="0.5";APPL="896M";APPR="256M";APPS="128m";APPCPU="0.8" ;;
-  normal) N=1024;B="100mb";SWAP=0;PGL="256M";PGR="64M";PGS="128MB";PGW="8MB";PGM="64MB";PGE="256MB";PGC=30;PGWAL="64MB";PGWL="8MB";PGCPU="1.0";APPL="1024M";APPR="256M";APPS="256m";APPCPU="1.0" ;;
+  tiny)   N=768;B="50mb";SWAP=1024;HOST_SWAP=2048;PGL="128M";PGR="32M";PGS="32MB";PGW="2MB";PGM="16MB";PGE="64MB";PGC=10;PGWAL="16MB";PGWL="2MB";PGCPU="0.3";APPL="768M";APPR="256M";APPS="64m";APPCPU="0.7" ;;
+  small)  N=768;B="100mb";SWAP=512;HOST_SWAP=1024;PGL="192M";PGR="64M";PGS="64MB";PGW="4MB";PGM="32MB";PGE="128MB";PGC=20;PGWAL="32MB";PGWL="4MB";PGCPU="0.5";APPL="896M";APPR="256M";APPS="128m";APPCPU="0.8" ;;
+  normal) N=1024;B="100mb";SWAP=0;HOST_SWAP=0;PGL="256M";PGR="64M";PGS="128MB";PGW="8MB";PGM="64MB";PGE="256MB";PGC=30;PGWAL="64MB";PGWL="8MB";PGCPU="1.0";APPL="1024M";APPR="256M";APPS="256m";APPCPU="1.0" ;;
 esac
 
-ok "档位: $TIER (${_avail_mb}MB / ${_cpu_cores}核)"
+ok "档位: $TIER (可用${_avail_mb}MB / 总${_total_mb}MB / ${_cpu_cores}核)"
 
-# ─── Step 5: Generate .env ────────────────────────────────
-step 5 "生成 .env 配置文件"
+# ─── Step 5: Host Swap + SSH OOM Protection ──────────────
+step 5 "内存保护（主机Swap + SSH防杀）"
+
+# ── Host-level swap ──
+# Docker build inherits host memory. Creating swap on the HOST ensures ALL
+# processes (Docker daemon, build containers, SSH) have overflow capacity.
+# This is MORE reliable than Docker-internal swap (which doesn't persist
+# across RUN steps and may fail on overlay2 filesystem).
+_HOST_SWAP_CREATED=false
+if [ "$HOST_SWAP" -gt 0 ] 2>/dev/null; then
+  # Check if swap already exists
+  _current_swap_mb=$(awk '/SwapTotal/{print $2}' /proc/meminfo 2>/dev/null || echo 0)
+  _current_swap_mb=$((_current_swap_mb / 1024))
+
+  if [ "$_current_swap_mb" -gt 100 ]; then
+    ok "主机已有 ${_current_swap_mb}MB swap，跳过创建"
+  else
+    info "创建 ${HOST_SWAP}MB 主机swap（防止构建OOM）..."
+    # Find available path for swap file
+    _SWAP_FILE=""
+    for _sf in /swapfile /swap.img /var/swap.img; do
+      if [ ! -f "$_sf" ]; then _SWAP_FILE="$_sf"; break; fi
+    done
+
+    if [ -n "$_SWAP_FILE" ]; then
+      if fallocate -l "${HOST_SWAP}m" "$_SWAP_FILE" 2>/dev/null || \
+         dd if=/dev/zero of="$_SWAP_FILE" bs=1M count=${HOST_SWAP} 2>/dev/null; then
+        chmod 600 "$_SWAP_FILE" 2>/dev/null
+        if mkswap "$_SWAP_FILE" 2>/dev/null && swapon "$_SWAP_FILE" 2>/dev/null; then
+          ok "主机swap已启用 (${HOST_SWAP}MB at $_SWAP_FILE)"
+          _HOST_SWAP_CREATED=true
+          # Add to fstab for persistence across reboots
+          if ! grep -q "$_SWAP_FILE" /etc/fstab 2>/dev/null; then
+            echo "$_SWAP_FILE none swap sw 0 0" >> /etc/fstab 2>/dev/null || true
+          fi
+        else
+          warn "swapon 失败（可能需要sudo或内核不支持）"
+        fi
+      else
+        warn "swap文件创建失败（磁盘空间不足？）"
+      fi
+    else
+      warn "未找到可用路径创建swap文件"
+    fi
+  fi
+else
+  ok "主机swap无需创建（档位: $TIER）"
+fi
+
+# ── SSH OOM protection ──
+# On low-memory servers, the kernel OOM killer may kill SSH to free memory
+# for the Docker build, causing "连接断开" (connection broken).
+# Setting oom_score_adj=-1000 makes SSH nearly unkillable by OOM killer.
+_SSH_PROTECTED=false
+for _ssh_pid in $(pgrep -x sshd 2>/dev/null || true); do
+  if [ -f "/proc/$_ssh_pid/oom_score_adj" ]; then
+    if echo -1000 > "/proc/$_ssh_pid/oom_score_adj" 2>/dev/null; then
+      _SSH_PROTECTED=true
+    fi
+  fi
+done
+# Also protect the SSH main listener process (parent of all sshd sessions)
+_SSHD_MAIN_PID=$(cat /var/run/sshd.pid 2>/dev/null || true)
+if [ -n "$_SSHD_MAIN_PID" ] && [ -f "/proc/$_SSHD_MAIN_PID/oom_score_adj" ]; then
+  echo -1000 > "/proc/$_SSHD_MAIN_PID/oom_score_adj" 2>/dev/null && _SSH_PROTECTED=true
+fi
+
+if $_SSH_PROTECTED; then
+  ok "SSH OOM保护已启用 (oom_score_adj=-1000，防止连接断开)"
+else
+  info "SSH OOM保护未启用（可能需要root权限，非root用户请使用sudo运行脚本）"
+fi
+
+# ── Memory diagnostics ──
+info "当前内存状态:"
+free -m 2>/dev/null || true
+
+# ─── Step 6: Generate .env ────────────────────────────────
+step 6 "生成 .env 配置文件"
 
 mkdir -p backups
 
@@ -266,7 +348,7 @@ else
   cat > .env << ENVEOF
 # ============================================================
 # 小说阁 - Docker 生产环境配置
-# Auto-generated by install-docker.sh v7.0 on $(date '+%Y-%m-%d %H:%M:%S')
+# Auto-generated by install-docker.sh v9.0 on $(date '+%Y-%m-%d %H:%M:%S')
 # Tier: $TIER | RAM: ${_avail_mb}MB | CPU: ${_cpu_cores}核
 # ============================================================
 
@@ -287,6 +369,7 @@ SCRAPER_SERVICE_TOKEN=${SCRAPER_SERVICE_TOKEN}
 
 NODE_MAX_OLD_SPACE_SIZE=${N}
 BUN_GC_THRESHOLD=${B}
+BUILD_SWAP_MB=${SWAP}
 PG_MEMORY_LIMIT=${PGL}
 PG_MEMORY_RESERVATION=${PGR}
 PG_SHARED_BUFFERS=${PGS}
@@ -301,7 +384,6 @@ APP_MEMORY_LIMIT=${APPL}
 APP_MEMORY_RESERVATION=${APPR}
 APP_SHM_SIZE=${APPS}
 APP_CPU_LIMIT=${APPCPU}
-BUILD_SWAP_MB=${SWAP}
 
 # ─── Pipeline Features (v8) ──────────────────────────────
 CONTENT_DEDUP_ENABLED=true
@@ -311,8 +393,8 @@ ENVEOF
   ok ".env 已生成（从零创建，档位: $TIER）"
 fi
 
-# ─── Step 6: Docker Mirror (China) ────────────────────────
-step 6 "配置 Docker 镜像加速"
+# ─── Step 7: Docker Mirror (China) ────────────────────────
+step 7 "配置 Docker 镜像加速"
 
 if ! curl -s -m 5 https://www.google.com >/dev/null 2>&1; then
   _DAEMON_JSON="/etc/docker/daemon.json"
@@ -347,14 +429,19 @@ else
   ok "海外网络，跳过镜像加速"
 fi
 
-# ─── Step 7: Build & Start ────────────────────────────────
-step 7 "构建并启动服务"
+# ─── Step 8: Build & Start ────────────────────────────────
+step 8 "构建并启动服务"
+
+# Free Docker build cache before building (reclaim memory on low-mem servers)
+info "清理Docker缓存（释放内存）..."
+docker builder prune -f 2>/dev/null || true
 
 [ "$TIER" = "tiny" ] || [ "$TIER" = "small" ] && export DOCKER_BUILDKIT=0 || export DOCKER_BUILDKIT=1
 
 info "构建镜像中...（首次约 5-10 分钟）"
 info "  构建模式: Webpack (Turbopack已禁用，节省内存)"
-info "  构建Swap: ${SWAP}MB (OOM保护)"
+info "  Docker内Swap: ${SWAP}MB (与build同RUN步骤)"
+info "  主机Swap: ${HOST_SWAP}MB (全局保护)"
 echo ""
 
 # Build with build args for swap and memory settings
@@ -366,7 +453,8 @@ _BUILD_ARGS="--build-arg BUILD_SWAP_MB=${SWAP} --build-arg NODE_MAX_OLD_SPACE_SI
 #   - Old .env.production (matchAll TypeError)
 #   - Old middleware.ts (deprecation warning)
 #   - Old build command (Turbopack panic on low-mem)
-info "使用 --no-cache 构建（确保使用最新Dockerfile）..."
+#   - Old swap logic (separate RUN steps — swap doesn't persist!)
+info "使用 --no-cache 构建（确保使用最新Dockerfile v9）..."
 
 # Build with --no-cache always to avoid stale layer issues
 if docker compose build --no-cache ${_BUILD_ARGS} 2>&1; then
@@ -377,14 +465,17 @@ else
   docker builder prune -f 2>/dev/null || true
   docker system prune -f 2>/dev/null || true
   sleep 3
+  info "内存状态:"
+  free -m 2>/dev/null || true
   if docker compose build --no-cache ${_BUILD_ARGS} 2>&1; then
     ok "镜像构建成功（第二次尝试）"
   else
     echo ""
     fatal "构建失败！请检查:
-  1. 服务器内存是否充足 (free -h, 建议至少1.5GB)
+  1. 服务器内存是否充足 (free -h, 建议至少1.5GB + swap)
   2. 磁盘空间是否充足 (df -h, 建议至少5GB)
-  3. 运行详细日志: docker compose build --progress=plain --no-cache ${_BUILD_ARGS} 2>&1 | tee build.log"
+  3. SSH连接是否稳定 (如果断开，确保以root运行脚本启用OOM保护)
+  4. 运行详细日志: docker compose build --progress=plain --no-cache ${_BUILD_ARGS} 2>&1 | tee build.log"
   fi
 fi
 
@@ -392,8 +483,8 @@ echo ""
 info "启动服务..."
 docker compose up -d 2>&1 || fatal "启动失败！"
 
-# ─── Step 8: Wait for Healthy ─────────────────────────────
-step 8 "等待服务就绪"
+# ─── Step 9: Wait for Healthy ─────────────────────────────
+step 9 "等待服务就绪"
 
 APP_PORT=$(grep '^APP_PORT=' .env 2>/dev/null | head -1 | cut -d= -f2)
 APP_PORT=${APP_PORT:-3000}
@@ -416,8 +507,8 @@ else
   info "手动检查: curl -s http://localhost:${APP_PORT}/api/auth/csrf"
 fi
 
-# ─── Step 9: Post-start Health Checks (v7) ─────────────────
-step 9 "健康检查 + 管线特性验证"
+# ─── Step 10: Post-start Health Checks (v9) ─────────────────
+step 10 "健康检查 + 管线特性验证"
 
 # Check each service
 _SERVICES=(novel-manager novel-postgres)
@@ -439,7 +530,7 @@ else
 fi
 
 # Pipeline Metrics health check
-info "Pipeline features (v7):"
+info "Pipeline features (v9):"
 _SCRAPER_HEALTH=$(curl -s -m 5 "http://localhost:3099/health" 2>/dev/null || echo "not reachable")
 if [ "$_SCRAPER_HEALTH" != "not reachable" ]; then
   ok "Scraper service healthy — pipeline-metrics, content-dedup, adaptive-engine available"
@@ -454,7 +545,7 @@ else
   info "No rate calibration data — run with --calibrate to generate"
 fi
 
-# ─── Step 10: Result ──────────────────────────────────────
+# ─── Step 11: Result ──────────────────────────────────────
 echo ""
 echo -e "${BOLD}${GREEN}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}${GREEN}║${NC}  ${BOLD}✅ Docker 部署完成！${NC}                            ${BOLD}${GREEN}║${NC}"
@@ -464,12 +555,12 @@ echo -e "${BOLD}${GREEN}║${NC}  👤 用户名:    admin                      
 echo -e "${BOLD}${GREEN}║${NC}  🔑 密码:      ${ADMIN_PASSWORD}    ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${YELLOW}║${NC}  ⚠️  请立即保存以上密码！                       ${BOLD}${YELLOW}║${NC}"
 echo -e "${BOLD}${GREEN}╠══════════════════════════════════════════════════╣${NC}"
-echo -e "${BOLD}${GREEN}║${NC}  📋 服务架构 (v8):                             ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}  📋 服务架构 (v9):                             ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}║${NC}    App:       http://localhost:${APP_PORT}         ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}║${NC}    Scraper:   http://localhost:3099 (内部)       ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}║${NC}    Pipeline:  /pipeline-metrics (管线监控)       ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}║${NC}    PostgreSQL: 5432 (内部)                      ${BOLD}${GREEN}║${NC}"
-echo -e "${BOLD}${GREEN}║${NC}    档位:      $TIER ($_avail_mb MB)             ${BOLD}${GREEN}║${NC}"
+echo -e "${BOLD}${GREEN}║${NC}    档位:      $TIER (${_avail_mb}MB可用 + ${HOST_SWAP}MB swap)${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}╠══════════════════════════════════════════════════╣${NC}"
 echo -e "${BOLD}${GREEN}║${NC}  🔧 常用命令:                                  ${BOLD}${GREEN}║${NC}"
 echo -e "${BOLD}${GREEN}║${NC}    日志:  docker compose logs -f               ${BOLD}${GREEN}║${NC}"
@@ -485,8 +576,9 @@ echo ""
 # Save deploy info
 cat > .deploy-info << EOF
 # 部署时间: $(date '+%Y-%m-%d %H:%M:%S')
-# 安装脚本: install-docker.sh v8.0
-# 档位: $TIER | 内存: ${_avail_mb}MB | CPU: ${_cpu_cores}核
+# 安装脚本: install-docker.sh v9.0
+# 档位: $TIER | 可用内存: ${_avail_mb}MB | 总内存: ${_total_mb}MB | CPU: ${_cpu_cores}核
+# 主机Swap: ${HOST_SWAP}MB | Docker内Swap: ${SWAP}MB
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 APP_PORT=${APP_PORT}
