@@ -28172,3 +28172,44 @@ Stage Summary:
 - Dev server runs correctly with proxy.ts (no deprecation warning)
 - ESLint: 0 errors, 4 pre-existing warnings
 - Key files changed: src/proxy.ts (new), src/middleware.ts (deleted), next.config.ts, package.json, Dockerfile, install-docker.sh, .env.production, .env.docker, src/lib/auth-options.ts (new), src/lib/db.ts, src/app/api/auth/[...nextauth]/route.ts, src/app/admin/layout.tsx, src/app/api/admin/seed-links/route.ts
+---
+Task ID: docker-v9-fix
+Agent: main
+Task: Fix Docker build OOM on 1.3GB RAM server - v9 comprehensive fix
+
+Work Log:
+- Analyzed Docker build failure: "连接断开" at Step 16/64
+- Discovered critical bug: Docker-internal swap was in a SEPARATE RUN step from Next.js build
+  - Each RUN step creates a new container; kernel swap state (swapon) does NOT persist
+  - v8 had swap creation in one RUN and build in another → swap was NEVER active during build
+- Discovered secondary bug: SSH gets OOM killed by kernel on low-mem servers → "连接断开"
+- Discovered server was running OLD code (NODE_MAX_OLD_SPACE_SIZE=512 vs our 768)
+
+Key fixes (Dockerfile v9):
+1. Merged swap creation + Next.js build + swap cleanup into SINGLE RUN command
+2. Use ./node_modules/.bin/next directly instead of npx (saves ~30MB RAM)
+3. Added memory diagnostics (free -m) before and after build
+4. Added graceful error handling with memory diagnostics on failure
+
+Key fixes (install-docker.sh v9.0):
+1. Host-level swap creation (2GB for tiny, 1GB for small) BEFORE docker build
+   - More reliable than Docker-internal swap
+   - Protects ALL processes: Docker daemon, build containers, SSH
+   - Persists to /etc/fstab for reboot survival
+2. SSH OOM protection: sets oom_score_adj=-1000 for sshd processes
+   - Prevents kernel from killing SSH during memory-intensive builds
+   - This was the root cause of "连接断开"
+3. Force git fetch+reset to ensure latest code is always used
+4. Docker builder cache prune before build (free memory)
+5. Memory diagnostics (free -m) at each stage
+
+Key fixes (docker-compose.yml v9):
+1. Added BUILD_SWAP_MB build-arg (was missing in v8)
+2. Removed USE_TURBOPACK build-arg (no longer needed)
+
+Stage Summary:
+- Code pushed to GitHub main branch (commit 6ee4500)
+- Local build verified: Webpack mode works correctly
+- Dev server running: HTTP 200, proxy.ts working
+- All v9 changes are backward compatible
+- Cron job created for continuous monitoring (every 15 minutes)
