@@ -54,4 +54,31 @@ model SiteSetting {
   siteName    String @default("青阅文学")
   activeTheme String @default("aijjxs")
   notice      String @default("本站所有小说仅供学习演示使用，请支持正版。")
+  seoConfig   String @default("{}") // JSON: SEO TDK 模板配置
+}
+
+// PSEO 关键词（来自搜索引擎下拉词）
+model PseoKeyword {
+  id        Int      @id @default(autoincrement())
+  keyword   String   @unique
+  source    String   @default("manual") // manual | baidu | bing | duckduckgo | sogou | 360
+  status    String   @default("pending") // pending | generated | failed
+  pageData  String?  // JSON: 生成的聚合页数据（命中书籍、生成的TDK等）
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
+}
+
+// 采集规则（针对目标站点的选择器配置）
+model ScrapeRule {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  siteUrl      String
+  enabled      Boolean  @default(true)
+  charset      String   @default("utf-8")
+  listRule     String   @default("{}") // JSON: 列表页选择器
+  bookRule     String   @default("{}") // JSON: 书籍页选择器
+  chapterRule  String   @default("{}") // JSON: 正文页选择器
+  notes        String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt @default(now())
 }

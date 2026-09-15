@@ -1,31 +1,26 @@
 'use client'
 
+import { useState } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ThemeRenderer } from '@/components/ThemeRenderer'
+import { AdminDrawer } from '@/components/AdminDrawer'
+import { Toaster } from '@/components/ui/sonner'
+
 export default function Home() {
+  const [qc] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: 1, refetchOnWindowFocus: false },
+        },
+      })
+  )
+
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      gap: '2rem',
-      padding: '1rem'
-    }}>
-      <div style={{
-        position: 'relative',
-        width: '6rem',
-        height: '6rem'
-      }}>
-        <img
-          src="/logo.svg"
-          alt="Z.ai Logo"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain'
-          }}
-        />
-      </div>
-    </div>
+    <QueryClientProvider client={qc}>
+      <ThemeRenderer />
+      <AdminDrawer />
+      <Toaster position="top-center" richColors />
+    </QueryClientProvider>
   )
 }
