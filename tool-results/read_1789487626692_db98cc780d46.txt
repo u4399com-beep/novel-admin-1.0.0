@@ -1,0 +1,300 @@
+     1→<!DOCTYPE html>
+     2→<html>
+     3→<head>
+     4→<title>顶点小说_顶点中文免费阅读网</title>
+     5→<meta http-equiv="Content-Type" content="text/html; charset=gbk" />
+     6→<meta name="keywords" content="顶点小说,顶点中文免费阅读网" />
+     7→<meta name="description" content="顶点小说致力于打造无广告无弹窗的在线小说阅读网站，顶点中文免费阅读网提供小说在线阅读，小说TXT下载，网站没有弹窗广告页面简洁。" />
+     8→<meta http-equiv="Cache-Control" content="no-transform" />
+     9→<meta http-equiv="Cache-Control" content="no-siteapp" />
+    10→<meta http-equiv="mobile-agent" content="format=html5; url=https://wap.ddyueshu.cc" />
+    11→<meta http-equiv="mobile-agent" content="format=xhtml; url=https://wap.ddyueshu.cc" />
+    12→<link rel="stylesheet" type="text/css" href="/images/biquge.css"/>
+    13→<script type="text/javascript" src="https://libs.baidu.com/jquery/1.4.2/jquery.min.js"></script>
+    14→<!--<script type="text/javascript" src="https://cbjs.baidu.com/js/m.js"></script>-->
+    15→<script type="text/javascript" src="/images/bqg.js"></script>
+    16→ <script>
+    17→if(/Android|Windows Phone|webOS|iPhone|iPod|BlackBerry/i.test(navigator.userAgent)){
+    18→        var htmltest=document.getElementsByTagName('head')[0].innerHTML;
+    19→        var murl=htmltest.match(/format=html5; url=(.+?)"/)[1];
+    20→        location.href=murl;
+    21→}
+    22→</script>
+    23→</head>
+    24→<body>
+    25→<div style="display:none;">
+    26→<a href="/87410_87410200/">《雪中悍刀行》电视剧</a>
+    27→<a href="/62077_62077572/">《庆余年》电视剧</a>
+    28→</div>
+    29→        <div id="wrapper">
+    30→                <script>login();</script>
+    31→                <div class="header">
+    32→                        <div class="header_logo">
+    33→                                <a href="https://www.ddyueshu.cc">顶点小说</a>
+    34→                        </div>
+    35→                        <script>bqg_panel();</script>
+    36→                </div>
+    37→                <div class="nav">
+    38→                        <ul>
+    39→                                <li><a href="/">首页</a></li>
+    40→                                <li><a href="/modules/article/bookcase.php">我的书架</a></li>
+    41→                                <li><a href="/xuanhuanxiaoshuo/">玄幻小说</a></li>
+    42→                                <li><a href="/xiuzhenxiaoshuo/">修真小说</a></li>
+    43→                                <li><a href="/dushixiaoshuo/">都市小说</a></li>
+    44→                                <li><a href="/chuanyuexiaoshuo/">穿越小说</a></li>
+    45→                                <li><a href="/wangyouxiaoshuo/">网游小说</a></li>
+    46→                                <li><a href="/kehuanxiaoshuo/">科幻小说</a></li>
+    47→                                <li><a href="/paihangbang/">排行榜单</a></li>
+    48→                                <li><a href="/xiaoshuodaquan/">全部小说</a></li>
+    49→                        </ul>
+    50→                </div>
+    51→                
+    52→        <div id="main">
+    53→        <div id="content">
+    54→<div id="main">
+    55→
+    56→<div id="hotcontent">
+    57→
+    58→
+    59→<div class="l">
+    60→
+    61→        <div class="item">
+    62→                 <div class="image"><a href="/2_2096/" target="_blank"><img src="/files/article/image/2/2096/2096s.jpg" alt="我是至尊"  width="120" height="150" /></a></div><dl><dt><span>风凌天下</span><a href="/2_2096/">我是至尊</a></dt><dd>　　药不成丹只是毒，人不成神终成灰。　　…………　　天道有缺，人间不平，红尘世外，魍魉横行；哀尔良善，怒尔不争；规则......</dd></dl><div class="clear"></div></div>
+    63→        <div class="item">
+    64→                 <div class="image"><a href="/2_2219/" target="_blank"><img src="/files/article/image/2/2219/2219s.jpg" alt="圣墟"  width="120" height="150" /></a></div><dl><dt><span>辰东</span><a href="/2_2219/">圣墟</a></dt><dd>　　在破败中崛起，在寂灭中复苏。　　沧海成尘，雷电枯竭，那一缕幽雾又一次临近大地，世间的枷锁被打开了，一个全新的世界......</dd></dl><div class="clear"></div></div>
+    65→        <div class="item">
+    66→                 <div class="image"><a href="/6_6453/" target="_blank"><img src="/files/article/image/6/6453/6453s.jpg" alt="元尊"  width="120" height="150" /></a></div><dl><dt><span>天蚕土豆</span><a href="/6_6453/">元尊</a></dt><dd>天地为炉，万物为铜，阴阳为炭，造化为工。气运之争，蟒雀吞龙。究竟是蟒雀为尊，还是圣龙崛起，凌驾众生？这是气掌乾......</dd></dl><div class="clear"></div></div>
+    67→        <div class="item">
+    68→                 <div class="image"><a href="/5_5626/" target="_blank"><img src="/files/article/image/5/5626/5626s.jpg" alt="伏天氏"  width="120" height="150" /></a></div><dl><dt><span>净无痕</span><a href="/5_5626/">伏天氏</a></dt><dd>　　      东方神州，有人皇立道统，有圣贤宗门传道，有诸侯雄踞一方王国，诸强林立，神州动乱千万载，值此之时，一代......</dd></dl><div class="clear"></div></div>
+    69→
+    70→</div>
+    71→  
+    72→
+    73→    <div class="r">
+    74→         <h2>上期强推</h2>
+    75→                <ul>
+    76→                        <li><span class="s1">[玄幻]</span><span class="s2"><a href="/5_5189/">牧神记</a></span><span class="s5">宅猪</span></li>
+    77→                        <li><span class="s1">[都市]</span><span class="s2"><a href="/14_14715/">最强上门女婿</a></span><span class="s5">小豌豆</span></li>
+    78→                        <li><span class="s1">[其他]</span><span class="s2"><a href="/3_3517/">顾景霆林亦可</a></span><span class="s5">落水缤纷</span></li>
+    79→                        <li><span class="s1">[武侠]</span><span class="s2"><a href="/8_8348/">三寸人间</a></span><span class="s5">耳根</span></li>
+    80→                        <li><span class="s1">[玄幻]</span><span class="s2"><a href="/5_5552/">诡秘之主</a></span><span class="s5">爱潜水的乌贼</span></li>
+    81→                        <li><span class="s1">[科幻]</span><span class="s2"><a href="/12_12163/">暗月纪元</a></span><span class="s5">仐三</span></li>
+    82→                        <li><span class="s1">[都市]</span><span class="s2"><a href="/12_12164/">第一序列</a></span><span class="s5">会说话的肘子</span></li>
+    83→                        <li><span class="s1">[其他]</span><span class="s2"><a href="/6_6076/">轮回乐园</a></span><span class="s5">那一只蚊子</span></li>
+    84→                </ul>
+    85→    </div>
+    86→    <div class="clear"></div>
+    87→  </div>
+    88→<div class="novelslist">
+    89→                <div class="content">
+    90→                        <h2>玄幻小说</h2>
+    91→                                                <div class="top"><div class="image"><a href="/16_16285/" target="_blank"><img src="/files/article/image/16/16285/16285s.jpg" alt="张若尘万古神帝"  width="67" height="82" /></a></div><dl><dt><a href="/16_16285/" target="_blank">张若尘万古神帝</a></dt><dd>　　八百年前，明帝之子张若尘，被他的未婚妻池瑶公主杀死，一代天骄，就此陨落。　　八百年后，张若尘重新活了过来，却发现......</dd></dl><div class="clear"></div></div>
+    92→                                                <ul>
+    93→                                                <li><a href="/77590_77590631/">永生</a>/梦入神机</li>
+    94→                                                <li><a href="/1_1669/">九星霸体诀</a>/平凡魔术师</li>
+    95→                                                <li><a href="/2_2221/">逆天邪神</a>/火星引力</li>
+    96→                                                <li><a href="/5_5199/">万道龙皇陆鸣</a>/牧童听竹</li>
+    97→                                                <li><a href="/2_2345/">凌峰小说</a>/剑轻阳</li>
+    98→                                                <li><a href="/12_12210/">万道龙皇</a>/牧童听竹</li>
+    99→                                                <li><a href="/10_10770/">池瑶张若尘小说名</a>/飞天鱼</li>
+   100→                                                <li><a href="/17263_17263744/">人道大圣</a>/莫默</li>
+   101→                                                <li><a href="/2_2246/">万古神帝张若尘</a>/飞天鱼</li>
+   102→                                                <li><a href="/14_14228/">医后倾天</a>/萧七爷</li>
+   103→                                                <li><a href="/7_7219/">凌天战尊段凌天可儿</a>/风轻扬</li>
+   104→                                                <li><a href="/6_6279/">妖龙古帝</a>/遥望南山</li>
+   105→                                                </ul></div>
+   106→                <div class="content">
+   107→                        <h2>武侠小说</h2>
+   108→                                                <div class="top"><div class="image"><a href="/4_4891/" target="_blank"><img src="/files/article/image/4/4891/4891s.jpg" alt="凡人修仙之仙界篇"  width="67" height="82" /></a></div><dl><dt><a href="/4_4891/" target="_blank">凡人修仙之仙界篇</a></dt><dd>　　凡人修仙，风云再起　　时空穿梭，轮回逆转　　金仙太乙，大罗道祖　　三千大道，法则至尊　　《凡人修仙传》仙界篇，一......</dd></dl><div class="clear"></div></div>
+   109→                                                <ul>
+   110→                                                <li><a href="/3_3708/">苏子墨沈梦琪</a>/雪满弓刀</li>
+   111→                                                <li><a href="/13_13268/">永恒圣王苏子墨沈梦琪蝶月</a>/雪满弓刀</li>
+   112→                                                <li><a href="/25971_25971590/">七界传说</a>/心梦无痕</li>
+   113→                                                <li><a href="/71437_71437497/">死人经</a>/冰临神下</li>
+   114→                                                <li><a href="/34_34250/">弃宇宙</a>/鹅是老五</li>
+   115→                                                <li><a href="/24_24124/">叩问仙道</a>/雨打青石</li>
+   116→                                                <li><a href="/12_12906/">我有一个剑仙娘子</a>/阳小戎</li>
+   117→                                                <li><a href="/71224_71224145/">男人影响我拔剑的速度</a>/醒冬</li>
+   118→                                                <li><a href="/10_10117/">永恒圣王</a>/雪满弓刀</li>
+   119→                                                <li><a href="/19520_19520698/">我在修仙界长生不死</a>/木工米青</li>
+   120→                                                <li><a href="/15216_15216151/">绝世皇子：开局签到十万大雪龙骑</a>/小小疾风</li>
+   121→                                                <li><a href="/9_9274/">仙草供应商</a>/寂寞我独走</li>
+   122→                                                </ul></div>
+   123→                <div class="content">
+   124→                        <h2>都市小说</h2>
+   125→                                                <div class="top"><div class="image"><a href="/88743_88743204/" target="_blank"><img src="/files/article/image/88743/88743204/88743204s.jpg" alt="整座大山都是我的猎场"  width="67" height="82" /></a></div><dl><dt><a href="/88743_88743204/" target="_blank">整座大山都是我的猎场</a></dt><dd>　　假如重生回到四十年前，你有什么打算呢？　　买房？炒股？屯古董？捣腾国债卷？　　……　　不！　　赵军觉得只要自己不......</dd></dl><div class="clear"></div></div>
+   126→                                                <ul>
+   127→                                                <li><a href="/14850_14850135/">我在精神病院学斩神林七夜</a>/三九音域</li>
+   128→                                                <li><a href="/27171_27171574/">夜的命名术</a>/会说话的肘子</li>
+   129→                                                <li><a href="/4_4155/">上门龙婿叶辰萧初然</a>/叶公子</li>
+   130→                                                <li><a href="/41127_41127110/">乡村神医王大春张桂香</a>/一朵青莲</li>
+   131→                                                <li><a href="/32963_32963736/">王谦李青瑶</a>/茗夜</li>
+   132→                                                <li><a href="/6_6918/">最强入赘女婿叶辰萧初然</a>/叶公子</li>
+   133→                                                <li><a href="/3_3015/">神级农场</a>/钢枪里的温柔</li>
+   134→                                                <li><a href="/84742_84742194/">穿越八年当明星王谦李青瑶</a>/茗夜</li>
+   135→                                                <li><a href="/31_31127/">都市风云乔梁叶心仪</a>/易克1</li>
+   136→                                                <li><a href="/72719_72719253/">我已不做大佬好多年</a>/萌俊</li>
+   137→                                                <li><a href="/21665_21665103/">美综大枭雄</a>/焰火璀璨</li>
+   138→                                                <li><a href="/93242_93242523/">镇国神医万云霆</a>/侯家三少</li>
+   139→                                                </ul></div>
+   140→        </div>
+   141→<div class="novelslist">
+   142→                <div class="content">
+   143→                        <h2>历史小说</h2>
+   144→                                                <div class="top"><div class="image"><a href="/40477_40477942/" target="_blank"><img src="/files/article/image/40477/40477942/40477942s.jpg" alt="家父汉高祖"  width="67" height="82" /></a></div><dl><dt><a href="/40477_40477942/" target="_blank">家父汉高祖</a></dt><dd>　　一个伟大的帝国刚刚诞生，新的时代即将到来。刘长也曾想过要不要争一争那大位，由自己来率领这个崭新的帝国，可是他看了......</dd></dl><div class="clear"></div></div>
+   145→                                                <ul>
+   146→                                                <li><a href="/1_1935/">花豹突击队</a>/竹香书屋</li>
+   147→                                                <li><a href="/14737_14737230/">科学家的我，竟是空军王牌榜首</a>/南城保障</li>
+   148→                                                <li><a href="/14_14144/">重生之征战岁月</a>/柳外花如锦</li>
+   149→                                                <li><a href="/90573_90573422/">抗战：独自发展，我带回个美械师</a>/老战归来</li>
+   150→                                                <li><a href="/59000_59000150/">亮剑：傻子管炊事班，全成特种兵</a>/新小栋</li>
+   151→                                                <li><a href="/0_776/">佣兵的战争</a>/如水意</li>
+   152→                                                <li><a href="/4_4702/">诡三国</a>/马月猴年</li>
+   153→                                                <li><a href="/31498_31498467/">亮剑签到三年，成为无敌战神</a>/破锋八刀</li>
+   154→                                                <li><a href="/8_8206/">红色莫斯科</a>/涂抹记忆</li>
+   155→                                                <li><a href="/16_16120/">迷踪谍影</a>/西方蜘蛛</li>
+   156→                                                <li><a href="/16791_16791715/">我的科学时代</a>/仲渊2</li>
+   157→                                                <li><a href="/70354_70354051/">穿成农门娇美小福包</a>/肤白如雪</li>
+   158→                                                </ul></div>
+   159→                <div class="content">
+   160→                        <h2>网游小说</h2>
+   161→                                                <div class="top"><div class="image"><a href="/60795_60795798/" target="_blank"><img src="/files/article/image/60795/60795798/60795798s.jpg" alt="从执教皇马开始"  width="67" height="82" /></a></div><dl><dt><a href="/60795_60795798/" target="_blank">从执教皇马开始</a></dt><dd>　　 高深穿越到了06年初，鬼使神差地成为了皇家马德里的主教练，手底下全都是当世声名赫赫的超级巨星，罗纳尔多、齐达内......</dd></dl><div class="clear"></div></div>
+   162→                                                <ul>
+   163→                                                <li><a href="/95094_95094577/">什么叫六边形打野啊</a>/这很科学啊</li>
+   164→                                                <li><a href="/76035_76035354/">英雄无敌之隐藏建筑大师</a>/凶猛公仓鼠</li>
+   165→                                                <li><a href="/30403_30403931/">率土控号手</a>/迷糊韩枫</li>
+   166→                                                <li><a href="/18317_18317808/">综网的巫：从艾泽拉斯吃到山海经</a>/易伤秋者</li>
+   167→                                                <li><a href="/66338_66338812/">乒乓人生</a>/三姜哥</li>
+   168→                                                <li><a href="/52258_52258553/">全民领主：我的兵种变异了</a>/潜水的锅巴</li>
+   169→                                                <li><a href="/18984_18984596/">加一个，我不太会打</a>/葛洛夫街兄弟</li>
+   170→                                                <li><a href="/40084_40084535/">磨刀不误砍菜弓[电竞]</a>/林风早</li>
+   171→                                                <li><a href="/31662_31662084/">治愈系篮球</a>/超级麦克风</li>
+   172→                                                <li><a href="/43661_43661843/">射手凶猛</a>/初四兮</li>
+   173→                                                <li><a href="/13205_13205714/">悍腰</a>/金印</li>
+   174→                                                <li><a href="/48191_48191899/">一个都别想跑出新手村</a>/长白山上长白客</li>
+   175→                                                </ul></div>
+   176→                <div class="content">
+   177→                        <h2>科幻小说</h2>
+   178→                                                <div class="top"><div class="image"><a href="/52331_52331854/" target="_blank"><img src="/files/article/image/52331/52331854/52331854s.jpg" alt="江医生他怀了死对头的崽"  width="67" height="82" /></a></div><dl><dt><a href="/52331_52331854/" target="_blank">江医生他怀了死对头的崽</a></dt><dd>    众所皆知，A医大附属济华医院妇产科有两位王不见王的副主任医师。江叙和沈方煜从大一入学到博士毕业再到规培评职称......</dd></dl><div class="clear"></div></div>
+   179→                                                <ul>
+   180→                                                <li><a href="/49930_49930530/">穿越后被迫登基</a>/我爱吃山竹</li>
+   181→                                                <li><a href="/98509_98509449/">与权臣前夫重生日常</a>/木妖娆</li>
+   182→                                                <li><a href="/91755_91755194/">惊！清贫校草是孩子他爸</a>/林绵绵</li>
+   183→                                                <li><a href="/22928_22928961/">放学等我</a>/酱子贝</li>
+   184→                                                <li><a href="/43183_43183274/">我靠崩人设在男主手中苟命</a>/云非邪</li>
+   185→                                                <li><a href="/35829_35829602/">灵境行者</a>/卖报小郎君</li>
+   186→                                                <li><a href="/96532_96532491/">原来全家就我是个普通人</a>/酸奶蛋糕</li>
+   187→                                                <li><a href="/90395_90395602/">六零大院小夫妻</a>/流烟萝</li>
+   188→                                                <li><a href="/68778_68778488/">我的美综世界</a>/最爱向左</li>
+   189→                                                <li><a href="/94777_94777923/">折月亮</a>/竹已</li>
+   190→                                                <li><a href="/77517_77517379/">嫁反派</a>/布丁琉璃</li>
+   191→                                                <li><a href="/22561_22561116/">七零年代漂亮亲妈</a>/火折子</li>
+   192→                                                </ul></div>
+   193→
+   194→                <div class="clear"></div>
+   195→        </div>
+   196→        <div id="newscontent">
+   197→                <div class="l">
+   198→                        <h2> 最近更新小说列表</h2>
+   199→                        <ul>
+   200→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/45375_45375927/">四合院之秦淮茹很旺夫</a></span><span class="s3"><a href="/45375_45375927/">第2724章 上了贼船就别想跑</a></span><span class="s4">南城小陌</span><span class="s5">09-15</span></li>
+   201→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/20366_20366932/">重生豪雄：开局拿下高冷校花</a></span><span class="s3"><a href="/20366_20366932/">第1987章我很深情</a></span><span class="s4">清隽流云</span><span class="s5">09-15</span></li>
+   202→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/86662_86662920/">官梯：从选调生开始问鼎权力巅峰</a></span><span class="s3"><a href="/86662_86662920/">第876章 实地勘察</a></span><span class="s4">一碗热汤面</span><span class="s5">09-15</span></li>
+   203→<li><span class="s1">[玄幻小说]</span><span class="s2"><a href="/29948_29948672/">长生从领悟道经心法开始</a></span><span class="s3"><a href="/29948_29948672/">第二百三十章 、收网，国师出手（双更）</a></span><span class="s4">执笔初心</span><span class="s5">09-15</span></li>
+   204→<li><span class="s1">[玄幻小说]</span><span class="s2"><a href="/86545_86545415/">第一天骄</a></span><span class="s3"><a href="/86545_86545415/">第1309章 我带你飞</a></span><span class="s4">苏月夕</span><span class="s5">09-15</span></li>
+   205→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/74653_74653149/">综影视：红尘闲游</a></span><span class="s3"><a href="/74653_74653149/">元始X孟瑶</a></span><span class="s4">颜朱</span><span class="s5">09-15</span></li>
+   206→<li><span class="s1">[历史小说]</span><span class="s2"><a href="/25496_25496747/">被赶出家门，我盖房囤粮肉满仓</a></span><span class="s3"><a href="/25496_25496747/">第1497章再想想</a></span><span class="s4">星云逐月</span><span class="s5">09-15</span></li>
+   207→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/94071_94071612/">重生急诊医生：从挽救市长千金开始</a></span><span class="s3"><a href="/94071_94071612/">第1875章  大也不能秀啊</a></span><span class="s4">纸扇不用扇</span><span class="s5">09-15</span></li>
+   208→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/72444_72444461/">说好同学聚会，群穿仙侠什么鬼</a></span><span class="s3"><a href="/72444_72444461/">第649章 业蝶部族（为死鬼~快到碗里来加更！）</a></span><span class="s4">浮夸十年</span><span class="s5">09-15</span></li>
+   209→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/30627_30627583/">我医武双绝，踏出女子监狱起无敌！</a></span><span class="s3"><a href="/30627_30627583/">第1788章宗主之女患病</a></span><span class="s4">清风万里</span><span class="s5">09-15</span></li>
+   210→<li><span class="s1">[历史小说]</span><span class="s2"><a href="/39763_39763871/">惨死重生后,替嫁医妃灭娘家满门</a></span><span class="s3"><a href="/39763_39763871/">第1437章 很疲惫吗？</a></span><span class="s4">一瓶清酒</span><span class="s5">09-15</span></li>
+   211→<li><span class="s1">[历史小说]</span><span class="s2"><a href="/29256_29256162/">穿成权臣男主抛夫弃子的恶毒前妻</a></span><span class="s3"><a href="/29256_29256162/">第884章 被人勒死的</a></span><span class="s4">云小将</span><span class="s5">09-15</span></li>
+   212→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/35121_35121113/">749局请我捉妖，你占我道观？</a></span><span class="s3"><a href="/35121_35121113/">第一千零二十九章 不可渡之人</a></span><span class="s4">大白米</span><span class="s5">09-15</span></li>
+   213→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/31579_31579529/">重生七零：开局打猎养家，我把妻女宠上天</a></span><span class="s3"><a href="/31579_31579529/">1278、造假</a></span><span class="s4">沃爱吃肉肉</span><span class="s5">09-15</span></li>
+   214→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/42610_42610307/">只想吃口肉，非要让我考科举</a></span><span class="s3"><a href="/42610_42610307/">第299章 还愿</a></span><span class="s4">洛洛羽毛</span><span class="s5">09-15</span></li>
+   215→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/84580_84580316/">春夜难缠</a></span><span class="s3"><a href="/84580_84580316/">第467章 鲜活的婚姻，有趣的伴侣</a></span><span class="s4">暖小喵</span><span class="s5">09-15</span></li>
+   216→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/59461_59461315/">咒回：魔虚萝不想成为弱者思维</a></span><span class="s3"><a href="/59461_59461315/">第254章 切磋</a></span><span class="s4">哈哈哈哈哈姬蜜</span><span class="s5">09-15</span></li>
+   217→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/19129_19129931/">傻子，尝鲜！</a></span><span class="s3"><a href="/19129_19129931/">第547章 接连突破境界</a></span><span class="s4">武小胜</span><span class="s5">09-15</span></li>
+   218→<li><span class="s1">[玄幻小说]</span><span class="s2"><a href="/79172_79172344/">镇世天仙</a></span><span class="s3"><a href="/79172_79172344/">周二了，求各位支持支持新书。</a></span><span class="s4">披着马甲的羊羊羊</span><span class="s5">09-15</span></li>
+   219→<li><span class="s1">[武侠小说]</span><span class="s2"><a href="/75695_75695845/">人间有剑</a></span><span class="s3"><a href="/75695_75695845/">第七百八十四章 吾名煮霞</a></span><span class="s4">平生未知寒</span><span class="s5">09-15</span></li>
+   220→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/91934_91934977/">重生八零踹渣男，大院子弟排队追</a></span><span class="s3"><a href="/91934_91934977/">第546章 怕什么</a></span><span class="s4">路小鱼</span><span class="s5">09-15</span></li>
+   221→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/97216_97216594/">退伍归来，我的身份被妹妹曝光了</a></span><span class="s3"><a href="/97216_97216594/">第709章 学员训练开始</a></span><span class="s4">我本沉默本飞扬</span><span class="s5">09-15</span></li>
+   222→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/71107_71107480/">扎基：坏了，这人把我当诺亚练</a></span><span class="s3"><a href="/71107_71107480/">第288章 雷布朗多：我太想进步了！</a></span><span class="s4">轻饮浊酒，愁上头</span><span class="s5">09-15</span></li>
+   223→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/65779_65779233/">相错亲结对婚,亿万老公太粘人</a></span><span class="s3"><a href="/65779_65779233/">第3066章：租无人机寻找</a></span><span class="s4">胡杨三世</span><span class="s5">09-15</span></li>
+   224→<li><span class="s1">[玄幻小说]</span><span class="s2"><a href="/48490_48490830/">神农壶</a></span><span class="s3"><a href="/48490_48490830/">第1456章 惊动天一宗</a></span><span class="s4">云开见月</span><span class="s5">09-15</span></li>
+   225→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/99839_99839243/">都市无敌霸主</a></span><span class="s3"><a href="/99839_99839243/">第一千七百九十七章 结伴与回</a></span><span class="s4">拜月楼主</span><span class="s5">09-15</span></li>
+   226→<li><span class="s1">[其他小说]</span><span class="s2"><a href="/31463_31463920/">病秧子假死替嫁后，全家悔疯了！</a></span><span class="s3"><a href="/31463_31463920/">第69章 出嫁日，长街相遇</a></span><span class="s4">厉霆琛</span><span class="s5">09-15</span></li>
+   227→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/98317_98317789/">离婚后，顾总宠妻如命！</a></span><span class="s3"><a href="/98317_98317789/">第4115章  秦珩715(搞定)</a></span><span class="s4">明婳</span><span class="s5">09-15</span></li>
+   228→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/3_3028/">重生日本高校生</a></span><span class="s3"><a href="/3_3028/">第2336章 妖怪？</a></span><span class="s4">李童</span><span class="s5">09-15</span></li>
+   229→<li><span class="s1">[都市小说]</span><span class="s2"><a href="/68319_68319253/">大佬十代单传,我为他一胎生四宝</a></span><span class="s3"><a href="/68319_68319253/">第2251章  这条命，我给你</a></span><span class="s4">白生米</span><span class="s5">09-15</span></li>
+   230→        
+   231→                        
+   232→                        
+   233→                        </ul>
+   234→                </div>
+   235→                <div class="r">                 <h2>最新入库小说</h2>
+   236→
+   237→                        <ul>
+   238→<li><span class="s1">[其他]</span><span class="s2"><a href="/45375_45375927/">四合院之秦淮茹很旺夫</a></span><span class="s5">09-15</span></li>
+   239→<li><span class="s1">[都市]</span><span class="s2"><a href="/20366_20366932/">重生豪雄：开局拿下高冷校花</a></span><span class="s5">09-15</span></li>
+   240→<li><span class="s1">[都市]</span><span class="s2"><a href="/86662_86662920/">官梯：从选调生开始问鼎权力巅峰</a></span><span class="s5">09-15</span></li>
+   241→<li><span class="s1">[玄幻]</span><span class="s2"><a href="/29948_29948672/">长生从领悟道经心法开始</a></span><span class="s5">09-15</span></li>
+   242→<li><span class="s1">[都市]</span><span class="s2"><a href="/74653_74653149/">综影视：红尘闲游</a></span><span class="s5">09-15</span></li>
+   243→<li><span class="s1">[玄幻]</span><span class="s2"><a href="/86545_86545415/">第一天骄</a></span><span class="s5">09-15</span></li>
+   244→<li><span class="s1">[历史]</span><span class="s2"><a href="/25496_25496747/">被赶出家门，我盖房囤粮肉满仓</a></span><span class="s5">09-15</span></li>
+   245→<li><span class="s1">[都市]</span><span class="s2"><a href="/94071_94071612/">重生急诊医生：从挽救市长千金开始</a></span><span class="s5">09-15</span></li>
+   246→<li><span class="s1">[其他]</span><span class="s2"><a href="/72444_72444461/">说好同学聚会，群穿仙侠什么鬼</a></span><span class="s5">09-15</span></li>
+   247→<li><span class="s1">[都市]</span><span class="s2"><a href="/30627_30627583/">我医武双绝，踏出女子监狱起无敌！</a></span><span class="s5">09-15</span></li>
+   248→<li><span class="s1">[历史]</span><span class="s2"><a href="/39763_39763871/">惨死重生后,替嫁医妃灭娘家满门</a></span><span class="s5">09-15</span></li>
+   249→<li><span class="s1">[历史]</span><span class="s2"><a href="/29256_29256162/">穿成权臣男主抛夫弃子的恶毒前妻</a></span><span class="s5">09-15</span></li>
+   250→<li><span class="s1">[其他]</span><span class="s2"><a href="/35121_35121113/">749局请我捉妖，你占我道观？</a></span><span class="s5">09-15</span></li>
+   251→<li><span class="s1">[都市]</span><span class="s2"><a href="/31579_31579529/">重生七零：开局打猎养家，我把妻女宠上天</a></span><span class="s5">09-15</span></li>
+   252→<li><span class="s1">[其他]</span><span class="s2"><a href="/42610_42610307/">只想吃口肉，非要让我考科举</a></span><span class="s5">09-15</span></li>
+   253→<li><span class="s1">[其他]</span><span class="s2"><a href="/84580_84580316/">春夜难缠</a></span><span class="s5">09-15</span></li>
+   254→<li><span class="s1">[其他]</span><span class="s2"><a href="/59461_59461315/">咒回：魔虚萝不想成为弱者思维</a></span><span class="s5">09-15</span></li>
+   255→<li><span class="s1">[其他]</span><span class="s2"><a href="/19129_19129931/">傻子，尝鲜！</a></span><span class="s5">09-15</span></li>
+   256→<li><span class="s1">[玄幻]</span><span class="s2"><a href="/79172_79172344/">镇世天仙</a></span><span class="s5">09-15</span></li>
+   257→<li><span class="s1">[武侠]</span><span class="s2"><a href="/75695_75695845/">人间有剑</a></span><span class="s5">09-15</span></li>
+   258→<li><span class="s1">[其他]</span><span class="s2"><a href="/91934_91934977/">重生八零踹渣男，大院子弟排队追</a></span><span class="s5">09-15</span></li>
+   259→<li><span class="s1">[其他]</span><span class="s2"><a href="/97216_97216594/">退伍归来，我的身份被妹妹曝光了</a></span><span class="s5">09-15</span></li>
+   260→<li><span class="s1">[其他]</span><span class="s2"><a href="/71107_71107480/">扎基：坏了，这人把我当诺亚练</a></span><span class="s5">09-15</span></li>
+   261→<li><span class="s1">[都市]</span><span class="s2"><a href="/65779_65779233/">相错亲结对婚,亿万老公太粘人</a></span><span class="s5">09-15</span></li>
+   262→<li><span class="s1">[玄幻]</span><span class="s2"><a href="/48490_48490830/">神农壶</a></span><span class="s5">09-15</span></li>
+   263→<li><span class="s1">[都市]</span><span class="s2"><a href="/99839_99839243/">都市无敌霸主</a></span><span class="s5">09-15</span></li>
+   264→<li><span class="s1">[其他]</span><span class="s2"><a href="/31463_31463920/">病秧子假死替嫁后，全家悔疯了！</a></span><span class="s5">09-15</span></li>
+   265→<li><span class="s1">[都市]</span><span class="s2"><a href="/3_3028/">重生日本高校生</a></span><span class="s5">09-15</span></li>
+   266→<li><span class="s1">[都市]</span><span class="s2"><a href="/98317_98317789/">离婚后，顾总宠妻如命！</a></span><span class="s5">09-15</span></li>
+   267→<li><span class="s1">[都市]</span><span class="s2"><a href="/68319_68319253/">大佬十代单传,我为他一胎生四宝</a></span><span class="s5">09-15</span></li>
+   268→                        
+   269→                        
+   270→                        </ul>   
+   271→                </div><div class="clear"></div>
+   272→        </div>
+   273→</div>
+   274→
+   275→                </div>
+   276→<div id="firendlink">
+   277→友情连接：<a href="https://wap.ddyueshu.cc/" target="_blank">顶点小说</a> 
+   278→<a href="https://app.ddyueshu.cc" target="_blank">顶点小说APP</a>  
+   279→<a href="https://www.ddyueshu.cc/" target="_blank">顶点小说app官网下载</a>
+   280→
+   281→
+   282→(邮箱见顶端)</div></div>
+   283→
+   284→
+   285→
+   286→                
+   287→        <div class="dahengfu"><script type="text/javascript">bottom();</script></div>
+   288→<div class="footer">
+   289→                        <div class="footer_link"></div>
+   290→                        <div class="footer_cont">
+   291→                                <script>footer();tj()</script>
+   292→
+   293→                        </div>
+   294→                </div>
+   295→
+   296→        
+   297→        </div>
+   298→</body>
+   299→</html>
+   300→

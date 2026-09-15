@@ -1,0 +1,1133 @@
+     1→*{margin: 0;padding: 0; box-sizing: border-box;}
+     2→body {
+     3→        color: #666;
+     4→        font-size: 14px;
+     5→        background:#f4f4f4;
+     6→}
+     7→
+     8→body,button,dd,div,dl,dt,form,h1,h2,h3,h4,h5,h6,iframe,input,ol,p,pre,select,table,td,textarea,th,ul,em,i {
+     9→        font-weight: 400;
+    10→        font-style: normal;
+    11→        font-family: "微软雅黑", "Microsoft Yahei", Arial, Tahoma, Verdana, sans-serif;
+    12→}
+    13→
+    14→h3,h4,h5,h6{
+    15→        font-size:14px; display:inline-block;
+    16→}
+    17→
+    18→ol,li,ul{list-style: none;}dd,div,dl,dt,form,img,li,ol,ul {border: 0;}button,input{outline: none;}
+    19→.red{color:#bf2c24}.blue{color:#4284ed}.dark{color: #33373d}.green{color:green}.orange{color: #f0643a}.yellow {color: #f0c53a}.purple{color: #a091ff}
+    20→.fullflag{color:#fff;background:#ed4259;border:1px solid #ed4259!important;}
+    21→img{vertical-align: top;}
+    22→.w100{width:100%;overflow:hidden;}
+    23→.dsno{display:none;}
+    24→
+    25→a{
+    26→        color:#1a1a1a;
+    27→        text-decoration: none;
+    28→}
+    29→
+    30→.hot,.fa-user-circle-o:hover,a[class="gray"]:hover,
+    31→.header_right a:hover, .act *,
+    32→a:hover {
+    33→        color: #ed4259;
+    34→}
+    35→
+    36→.gray, .fa-user-circle-o{
+    37→        color:#666;
+    38→}
+    39→.w_gray{
+    40→        color:#969ba3;
+    41→}
+    42→
+    43→
+    44→.intro{text-indent:2em;line-height:1.8em;min-height:50px;margin-top:1em;}
+    45→.intro p{margin:6px 0; overflow: hidden;}
+    46→.indent{text-indent:2em;}
+    47→
+    48→p.indent{
+    49→        line-height:1.8em;
+    50→        height:77px;
+    51→        overflow: hidden;
+    52→        margin:7px 0;
+    53→}
+    54→/*
+    55→.odd li:nth-child(2n) {
+    56→        background: #fcfcfc;
+    57→}
+    58→*/
+    59→.container {
+    60→        max-width: 960px;
+    61→        margin: 0 auto;
+    62→        display: flex;
+    63→        flex-flow: wrap;
+    64→}
+    65→
+    66→.section {
+    67→        width: 100%;
+    68→        margin: 10px 0 0;
+    69→        padding: 10px;
+    70→        background:#ffffff;
+    71→}
+    72→
+    73→.section_style {
+    74→        width: 100%;
+    75→        background: #FBF6EC;
+    76→        margin: 10px 0 0;
+    77→        padding: 0 10px 10px;
+    78→        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    79→}
+    80→
+    81→.msgdiv {
+    82→        min-height: 200px;
+    83→        display: flex;
+    84→        flex-flow: column;
+    85→        justify-content: space-around;
+    86→}
+    87→/* #ul_all_chapters{display:none;} */
+    88→.fl {float: left;}
+    89→.fr {float: right;}
+    90→.tc{text-align:center;}
+    91→
+    92→#gotop{position:fixed;transform:rotate(-90deg);font-size:50px; right:50%;margin-right:-525px; bottom:140px;color:#999;z-index:10;}
+    93→/* #gotop{position:fixed;transform:rotate(-90deg);font-size:50px; right:50%;margin-right:-525px; bottom:85px;color:#bf2c24;display:none;z-index:10;} */
+    94→#gofooter{position:fixed;transform:rotate(90deg);font-size:50px; right:50%;margin-right:-525px; bottom:85px;color:#999;z-index:10;}
+    95→/* header */
+    96→.head {
+    97→        justify-content: space-between;
+    98→        align-items: center;
+    99→        padding: 16px 5px;
+   100→}
+   101→
+   102→#logo {
+   103→        font-weight: 700;
+   104→        text-align:center;
+   105→}
+   106→
+   107→#logo span {
+   108→        font-size: 1.5em;
+   109→        letter-spacing: .15em;
+   110→        color:#3e3d43;
+   111→}
+   112→#logo p{
+   113→        font-weight:700;
+   114→        color:#bf2c24;
+   115→}
+   116→
+   117→header form {
+   118→        display: flex;
+   119→        align-items: center;
+   120→        height: 36px;
+   121→        width: 300px;
+   122→        margin: 5px 2px;
+   123→}
+   124→
+   125→.search_input {
+   126→        text-indent: 10px;
+   127→        height: 100%;
+   128→        border: 1px solid #e6e6e6;
+   129→        border-radius: 3px 0 0 3px;
+   130→        border-right: 0;
+   131→        flex-grow: 2;
+   132→}
+   133→
+   134→#search_btn {
+   135→        padding: 0 13px;
+   136→        height: 100%;
+   137→        border: none;
+   138→        border-radius: 0 3px 3px 0;
+   139→        background: #bf2c24;
+   140→        color: #fbfbfb;
+   141→        cursor: pointer;
+   142→}
+   143→
+   144→#search_btn:hover {
+   145→        background: #ed4259;
+   146→}
+   147→
+   148→.header_right {
+   149→        display: flex;
+   150→        align-items: flex-end;
+   151→        font-size: 1.1em;
+   152→        padding-top:8px;
+   153→}
+   154→
+   155→.header_right a {
+   156→        color: #1a1a1a;
+   157→        padding-left: 30px;
+   158→        text-align: center;
+   159→}
+   160→
+   161→.header_right #home{
+   162→        display:none;
+   163→}
+   164→
+   165→.header_right a:first-child {
+   166→        border-left: none;
+   167→        padding-left:0;
+   168→}
+   169→
+   170→
+   171→/* nav */
+   172→#footer,
+   173→.navigation {
+   174→        background: #3e3d43;
+   175→}
+   176→
+   177→nav {
+   178→        align-items: center;
+   179→        font-size: 1.15em;
+   180→}
+   181→
+   182→nav a {
+   183→        display: inline-block;
+   184→        color: #fbfbfb;
+   185→        padding:0 20px;
+   186→        height:41px;
+   187→        line-height:41px;
+   188→}
+   189→
+   190→nav  a:hover{
+   191→        color: #fbfbfb;
+   192→        line-height: 37px;
+   193→        transition: none;
+   194→        border-top: 2px solid #ed4259;
+   195→        background-color: #252428;
+   196→}
+   197→
+   198→#user_panel {
+   199→        margin-left: auto;
+   200→}
+   201→
+   202→#qrcode{
+   203→        position:relative;
+   204→        color:#fbfbfb;
+   205→        cursor:pointer;
+   206→        margin:0 10px;
+   207→}
+   208→
+   209→#qrcode img{
+   210→        position:absolute;
+   211→        top:42px;
+   212→        right:0px;
+   213→        display:none;
+   214→        border:1px solid #e6e6e6;
+   215→        z-index: 99;
+   216→}
+   217→
+   218→#qrcode:hover img{
+   219→        display:block;
+   220→}
+   221→
+   222→/*  header end  */
+   223→/* home page 首页*/
+   224→.side_commend,
+   225→aside {
+   226→        margin-top: 10px;
+   227→        padding: 10px 10px 5px;
+   228→        background:#ffffff;
+   229→}
+   230→
+   231→aside {
+   232→        width: 250px;
+   233→        margin-left: 10px;
+   234→}
+   235→
+   236→.side_commend_width {
+   237→        width: 700px;
+   238→}
+   239→
+   240→.flex {
+   241→        display: flex;
+   242→        flex-flow: wrap;
+   243→}
+   244→
+   245→.side_commend li {
+   246→        width: 49%;
+   247→        display: flex;
+   248→        margin: 10px 6px 18px 0;
+   249→        line-height:1.7em;
+   250→}
+   251→
+   252→.side_commend .li_bottom{
+   253→        display:flex;
+   254→        overflow:hidden;
+   255→        align-items: center;
+   256→        flex-flow:nowrap;
+   257→}
+   258→.side_commend .li_bottom > *{
+   259→        height:20px;
+   260→        line-height:20px;
+   261→}
+   262→
+   263→.side_commend .li_bottom > div{
+   264→        margin-left:auto;
+   265→}
+   266→.side_commend em{
+   267→        border:1px solid #ccc;
+   268→        border-radius: 1px;
+   269→        padding:0 2px;
+   270→        font-size:10px;
+   271→        margin-right:4px;
+   272→}
+   273→
+   274→.side_commend h2{ /*_commend block articlename*/
+   275→        font-size:1.15em;
+   276→        display:block;
+   277→        height:24px;
+   278→        line-height:24px;
+   279→        overflow: hidden;
+   280→}
+   281→
+   282→.section_mark img,
+   283→.side_commend img {
+   284→        width: 100px;
+   285→        height: 133px;
+   286→        transition: transform .4s ease-out;
+   287→}
+   288→
+   289→.section_mark img:hover,
+   290→.side_commend img:hover {
+   291→        transform:scale(1.1)
+   292→}
+   293→
+   294→
+   295→.searchresult{
+   296→  padding-top:4px;
+   297→  width:100%!important;
+   298→}
+   299→.searchresult h3,
+   300→.searchresult p{
+   301→        overflow: hidden;
+   302→        height:20px;
+   303→}
+   304→.searchresult .searchresult_p{
+   305→        height:46px;
+   306→        line-height:24px;
+   307→        overflow:hidden;
+   308→        margin:10px 0;
+   309→}
+   310→.searchresult h3{
+   311→        font-size:1.2em;
+   312→}
+   313→
+   314→.searchresult div{
+   315→        margin-top:10px;
+   316→}
+   317→
+   318→/* lastupdate  section */
+   319→.lastupdate {
+   320→        width: 700px;
+   321→        margin: 10px 0 0;
+   322→        padding: 10px;
+   323→        background:#ffffff;
+   324→}
+   325→
+   326→.lastupdate li {
+   327→        display: flex;
+   328→        flex-flow: wrap;
+   329→        align-items: center;
+   330→        width: 100%;
+   331→        height: 41px;
+   332→        line-height:41px;
+   333→        overflow:hidden;
+   334→        border-bottom: 1px dotted #e6e6e6;
+   335→}
+   336→.lastupdate li * {
+   337→        height:100%;
+   338→}
+   339→
+   340→.lastupdate li *:nth-child(1) {
+   341→        width: 9%;margin-left:-1%;
+   342→}
+   343→
+   344→.lastupdate li *:nth-child(2) {
+   345→        width: 25%;
+   346→        font-size:1.1em;
+   347→}
+   348→
+   349→.lastupdate li *:nth-child(3) {
+   350→        width: 41%;
+   351→        margin-left:1%;
+   352→}
+   353→
+   354→.lastupdate li *:nth-child(4) {
+   355→        width: 25%;
+   356→        text-align: right;
+   357→}
+   358→
+   359→.popular li {
+   360→        display: flex;
+   361→        justify-content: space-between;
+   362→        flex-flow: nowrap;
+   363→        height: 41px;
+   364→        border-bottom: 1px dotted #e6e6e6;
+   365→}
+   366→
+   367→.popular li *:first-child {
+   368→        line-height: 41px;
+   369→        overflow: hidden;
+   370→        font-size:1.1em;
+   371→}
+   372→
+   373→.popular li *:last-child {
+   374→        line-height: 41px;
+   375→        overflow: hidden;
+   376→        text-align: right;
+   377→}
+   378→
+   379→.img_span {
+   380→        position: relative;
+   381→        margin-right:15px;
+   382→}
+   383→
+   384→.img_span a{
+   385→        width:100px;
+   386→        height:133px;
+   387→        overflow:hidden;
+   388→        display:block;
+   389→        /* box-shadow: 0 1px 1px rgba(0,0,0,.35); */
+   390→}
+   391→.img_span a:hover{
+   392→        position: unset;
+   393→}
+   394→
+   395→.img_span span {
+   396→        width: 100px;
+   397→        height: 25px;
+   398→        background: rgba(0, 0, 0, .4);
+   399→        display: flex;
+   400→        position: absolute;
+   401→        top: 108px;
+   402→        color: #fff;
+   403→        justify-content: center;
+   404→        align-items: center;
+   405→}
+   406→/* 完本图标 */
+   407→span[class=full]{background:rgba(191,44,36, .75);}
+   408→
+   409→.link > a{
+   410→        display:inline-block;
+   411→        padding:15px 10px 5px 0;
+   412→}
+   413→
+   414→/*  index page */
+   415→.novel_info_main {
+   416→        /* margin-top: 10px; */
+   417→        /* border-top: 1px solid #ccc; */
+   418→        padding: 10px 5px 0;
+   419→        line-height: 1.5em;
+   420→}
+   421→
+   422→
+   423→.novel_info_main img {
+   424→        /* display: table; */
+   425→        width: 120px;
+   426→        height: 160px;
+   427→        margin: 8px 20px 10px 0;
+   428→        box-shadow: 3px 4px 10px #999;
+   429→        float: left;
+   430→}
+   431→
+   432→.novel_info_title{
+   433→        line-height:38px;
+   434→}
+   435→
+   436→/* .novel_info_title > *:nth-child(4),
+   437→.novel_info_title > *:nth-child(3){
+   438→*/
+   439→.novel_info_title p{
+   440→        display:flex;
+   441→        flex-flow:wrap;
+   442→} 
+   443→.novel_info_title h1 {
+   444→        font-weight: 700;
+   445→        color: #555;
+   446→        font-size: 24px;
+   447→        margin-right:20px;
+   448→        display:inline-block;
+   449→}
+   450→.novel_info_title p span{
+   451→        padding:0 10px;
+   452→        border:1px solid #ccc;
+   453→        border-radius:3px;
+   454→        margin:12px 15px 8px 0px;
+   455→        white-space: nowrap;
+   456→        line-height:22px;
+   457→}
+   458→.novel_info_title > i{
+   459→        white-space:nowrap;
+   460→}
+   461→.novel_info_title > div > a{
+   462→        margin-right:15px;
+   463→        font-size:1.1em;
+   464→}
+   465→
+   466→.novel_info_main .indent>p {
+   467→        text-indent: 2em;
+   468→        line-height:2em;
+   469→}
+   470→
+   471→.ulcard{
+   472→        margin-top:30px;
+   473→        border-bottom:1px solid #eee;
+   474→}
+   475→.ulcard li{
+   476→        padding:0 20px;
+   477→        height: 40px;
+   478→        font-size:18px;
+   479→}
+   480→.ulcard span{font-size:14px;}
+   481→
+   482→.act {
+   483→        border-bottom:2px solid #ed4259;
+   484→}
+   485→
+   486→#catalog{display:none;}
+   487→
+   488→/* .listpage{
+   489→        display:flex;
+   490→        flex-flow: wrap;
+   491→        width:100%;
+   492→        border-bottom:1px solid #ddd;
+   493→}
+   494→.listpage > a {
+   495→        width:
+   496→        flex-flow: wrap;
+   497→        width:100%;
+   498→        border-bottom:1px solid #ddd;
+   499→} */
+   500→
+   501→.l_btn {
+   502→        width:108px;
+   503→        padding-left: 15px;
+   504→        line-height: 35px;
+   505→        border-radius: 3px;
+   506→        margin:10px 15px 0 0;
+   507→        background:#bf2c24;
+   508→        border: 1px solid #bf2c24;
+   509→        color:#fbfbfb;
+   510→        text-decoration: none;
+   511→        cursor: pointer;
+   512→}
+   513→
+   514→.l_btn_0 {
+   515→        width:108px;
+   516→        border: 1px solid #bf2c24;
+   517→        padding-left: 14px;
+   518→        line-height: 35px;
+   519→        border-radius: 3px;
+   520→        margin:10px 15px 0 0;
+   521→        background:#ffffff;
+   522→        color:#bf2c24;
+   523→        text-decoration: none;
+   524→        cursor: pointer;
+   525→}
+   526→
+   527→.abtn {
+   528→        padding: 0 8px;
+   529→        line-height: 28px;
+   530→        border-radius: 3px;
+   531→        margin: 5px 10px 5px 0;
+   532→        background: gray;
+   533→        border: 1px solid gray;
+   534→        color: #fbfbfb;
+   535→        text-decoration: none;
+   536→        cursor: pointer;
+   537→}
+   538→
+   539→.read_nav a:hover,
+   540→/* #btn_show_all:hover, */
+   541→.l_btn:hover,.l_btn_0:hover,
+   542→button[class*="abtn"]:hover {
+   543→        background: #ed4259;
+   544→        border:1px solid #ed4259;
+   545→        color:#fbfbfb;
+   546→}
+   547→
+   548→/* #btn_show_all {
+   549→        padding: 5px 22px 7px 30px;
+   550→        border-radius: 3px;
+   551→        margin: 5px auto 0;
+   552→        color: #fbfbfb;
+   553→        background: #bf2c24;
+   554→        border: 1px solid #bf2c24;
+   555→        text-decoration: none;
+   556→        cursor: pointer;
+   557→        display: flex;
+   558→        align-items: center;
+   559→}
+   560→#btn_show_all i{
+   561→        transition: all .5s;
+   562→} */
+   563→
+   564→.chapter_list a {
+   565→        display:block;
+   566→        padding-left: 5px;
+   567→        font-size:1.1em;
+   568→}
+   569→.chapter_list ul {
+   570→        display: flex;
+   571→        flex-flow: wrap;
+   572→        align-items: center;
+   573→}
+   574→
+   575→.chapter_list ul li {
+   576→        width: 33%;
+   577→        line-height: 50px;
+   578→        height:50px;
+   579→        overflow:hidden;
+   580→        border-bottom: 1px dotted #e5e5e5;
+   581→}
+   582→
+   583→.title {
+   584→        display: flex;
+   585→        align-items: center;
+   586→        flex-flow: wrap;
+   587→        width: 100% !important;
+   588→        font-weight: 700;
+   589→        color: #555;
+   590→        font-size: 1.1em;
+   591→        padding-bottom: 8px;
+   592→        border-bottom: 1px solid #ddd;
+   593→}
+   594→
+   595→.jcc {
+   596→        justify-content: center;
+   597→        border: none;
+   598→        text-align: center;
+   599→        margin-bottom: 5px;
+   600→}
+   601→
+   602→/* reader page */
+   603→.read_bg{
+   604→        background:#e7e1d4;
+   605→}
+   606→
+   607→main[class='container']{
+   608→        max-width:900px;
+   609→}
+   610→
+   611→.text_title{
+   612→    padding:40px 64px 10px;
+   613→}
+   614→
+   615→.style_h1 {
+   616→        font-weight: 700;
+   617→        font-size: 24px;
+   618→        color: #555;
+   619→        text-align:justify;
+   620→        margin:0 60px 10px 0;
+   621→}
+   622→
+   623→.text_info span{
+   624→        color:gray;
+   625→        font-size:14px;
+   626→        display:inline-block;
+   627→    margin:0 15px 5px 0;
+   628→}
+   629→.text_info a{
+   630→        color:gray;
+   631→}
+   632→
+   633→.text{
+   634→    position: relative; 
+   635→}
+   636→
+   637→.text_set{
+   638→    position:absolute;
+   639→    background: #FBF6EC;
+   640→    right:0;
+   641→        top:10px;
+   642→        padding-right:3px;
+   643→}
+   644→
+   645→#text_control{
+   646→    margin:25px 60px 25px 10px;
+   647→    text-align: right;
+   648→    display:none;
+   649→}
+   650→#text_control a{
+   651→    color:gray;
+   652→    margin-left:21px;
+   653→    font-size:40px;
+   654→}
+   655→
+   656→.fontsize {
+   657→        display: flex;
+   658→        align-items: flex-end;
+   659→        margin-bottom: 20px;
+   660→}
+   661→
+   662→.fontsize button{
+   663→    padding: 0 8px;
+   664→    line-height: 28px;
+   665→    border-radius: 3px;
+   666→    margin: 5px 0px 5px 25px;
+   667→    background: gray;
+   668→    border:1px solid gray;
+   669→    color: #fbfbfb;
+   670→    text-decoration: none;
+   671→    cursor: pointer;
+   672→}
+   673→
+   674→.fontsize button:nth-child(1) {
+   675→        width: 30px;
+   676→        height: 30px;
+   677→}
+   678→
+   679→.fontsize button:nth-child(2) {
+   680→        width: 33px;
+   681→        height: 33px;
+   682→}
+   683→
+   684→.fontsize button:nth-child(3) {
+   685→        width: 36px;
+   686→        height: 36px;
+   687→}
+   688→
+   689→.fontsize button:hover{
+   690→    background:#ed4259;
+   691→    border:1px solid #ed4259;
+   692→}
+   693→#gotop:hover,
+   694→#gofooter:hover,
+   695→.text_info a:hover,
+   696→#text_control a:hover,
+   697→.text_set .cog:hover{
+   698→    color:#ed4259;
+   699→    cursor:pointer;
+   700→}
+   701→
+   702→.read_nav{
+   703→        height:60px;
+   704→        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+   705→        background:#FBF6EC;
+   706→        margin-top:10px;
+   707→        width:100%;
+   708→        display:flex;
+   709→        line-height:60px;
+   710→}
+   711→.read_nav a{
+   712→        text-align:center;
+   713→        width:33.33%;
+   714→        font-size:18px;
+   715→}
+   716→
+   717→.read_nav a:nth-child(2){
+   718→        width:34%;
+   719→        border-left:1px solid #ddd;
+   720→        border-right:1px solid #ddd;
+   721→}
+   722→
+   723→#article {
+   724→        padding: 0 64px 20px;
+   725→        font-size: 18px;
+   726→        color:#262626;
+   727→        min-height:200px;
+   728→}
+   729→
+   730→#article>p {
+   731→        text-indent: 2em;
+   732→        line-height:1.8em;
+   733→        margin:.8em 0;
+   734→        text-align: justify;
+   735→        overflow:hidden;
+   736→}
+   737→
+   738→/*
+   739→button[onclick*=isnight] i{
+   740→        padding:12px 12px 0 0 ;
+   741→}
+   742→*/
+   743→#article img { /*图片章节*/
+   744→        width: 100%;
+   745→        padding: 8px;
+   746→        border-radius: 5px;
+   747→        box-shadow: 2px 2px 5px #ccc, -2px -2px 5px #ccc;
+   748→        margin: 5px auto;
+   749→        display: block;
+   750→}
+   751→/* footer */
+   752→footer {
+   753→        color: #fbfbfb;
+   754→        padding: 15px 0;
+   755→        flex-flow: column wrap !important;
+   756→        align-items: center;
+   757→        font-size: 12px;
+   758→        line-height: 1.5;
+   759→        margin-top: 10px !important;
+   760→}
+   761→footer a {color:#fbfbfb;}
+   762→
+   763→/* 翻页按钮*/
+   764→
+   765→.pages {
+   766→        width: 100%;
+   767→        padding: 10px 0;
+   768→        text-align: center;
+   769→}
+   770→
+   771→#pagestats {
+   772→        display:none;
+   773→        font-style: normal;
+   774→        margin-left: 5px;
+   775→}
+   776→
+   777→.pages a,
+   778→.pages a:visited,
+   779→.pages strong,
+   780→kbd input {
+   781→        display: inline-block;
+   782→        margin: 2px 2px;
+   783→        padding: 0 2px;
+   784→        min-width: 35px;
+   785→        border: 1px solid #e6e6e6;
+   786→        border-radius: 3px;
+   787→        text-align: center;
+   788→        text-decoration: none;
+   789→        height:35px;
+   790→        line-height: 35px;
+   791→}
+   792→
+   793→.pages a:hover,
+   794→.pages strong {
+   795→        background: #bf2c24;
+   796→        color: #fff;
+   797→}
+   798→
+   799→/* 书库 */
+   800→.store {
+   801→        display: flex;
+   802→        /* flex-flow: wrap; */
+   803→        max-width: 960px;
+   804→        margin: 10px auto;
+   805→        position:relative;
+   806→}
+   807→
+   808→.store_left #store_menu{
+   809→        float:right;
+   810→        cursor:pointer;
+   811→        margin-right:5px;
+   812→        display:none;
+   813→}
+   814→
+   815→.store_left {
+   816→        width: 760px;
+   817→        margin-right: 10px;
+   818→        display:block;
+   819→}
+   820→
+   821→#store_right {
+   822→        width: 190px;
+   823→        z-index:1;
+   824→}
+   825→
+   826→.store_left>.side_commend {
+   827→        margin: 0;
+   828→}
+   829→
+   830→#store_right a {
+   831→        text-decoration: none;
+   832→        display: table;
+   833→}
+   834→
+   835→.onselect,
+   836→#store_right a:hover {
+   837→        background: #bf2c24;
+   838→        color: #fbfbfb;
+   839→}
+   840→
+   841→#store_right>* {
+   842→        border: 1px solid #e6e6e6;
+   843→}
+   844→
+   845→#store_right>ul,
+   846→#store_right>div {
+   847→        margin-bottom: 10px;
+   848→        /* background: #f7f6f2; */
+   849→        background: #ffffff;
+   850→}
+   851→
+   852→
+   853→.store_title {
+   854→        border-bottom: 1px solid #e6e6e6;
+   855→        line-height: 41px;
+   856→        font-size: 1.2em;
+   857→        text-align: center;
+   858→        letter-spacing: .1em;
+   859→}
+   860→
+   861→#store_right li {
+   862→        line-height: 50px;
+   863→        text-align: center;
+   864→        font-size: 1.2em;
+   865→        border-bottom: 1px solid #eee;
+   866→}
+   867→
+   868→#store_right li:last-child {
+   869→        border-bottom: none;
+   870→}
+   871→
+   872→#store_right li a {
+   873→        width: 100%;
+   874→}
+   875→
+   876→#store_right>div {
+   877→        display: flex;
+   878→        flex-flow: wrap;
+   879→        justify-content: space-around;
+   880→        text-align: center;
+   881→}
+   882→
+   883→#store_right>div>* {
+   884→        line-height: 41px;
+   885→        font-size: 1.1em;
+   886→        width: 50%;
+   887→}
+   888→
+   889→
+   890→/* 移动端小屏筛选菜单 */
+   891→#after_menu{display:none;}
+   892→#after_menu > div{
+   893→        display:flex;
+   894→        flex-flow: wrap;
+   895→        width:100%;
+   896→        border-bottom:1px solid #ddd;
+   897→}
+   898→#after_menu > div > a{
+   899→        text-align:center; 
+   900→        line-height:40px; 
+   901→        width:33%; 
+   902→        height:40px;
+   903→        font-size:1.1em;
+   904→}
+   905→
+   906→/* home 6 section */
+   907→.sortvisit{
+   908→        width:312px;
+   909→        margin-top:5px;
+   910→}
+   911→
+   912→.sortvisit > a{
+   913→        color:#555;
+   914→        display: block;
+   915→        font-weight: 700;
+   916→        font-size: 1.1em;
+   917→        padding:0 0 8px 8px;
+   918→        border-bottom: 1px solid #ddd;
+   919→}
+   920→
+   921→.sortvisit ul{
+   922→        display:flex;
+   923→        flex-flow:wrap;
+   924→        padding:10px;
+   925→        justify-content: space-between;
+   926→
+   927→}
+   928→.sortvisit > ul p >a{
+   929→        font-size:1.1em;
+   930→}
+   931→.sortvisit > ul > div{
+   932→        display:flex;
+   933→        width:100%;
+   934→        margin-bottom:10px;
+   935→        height:85px;
+   936→        overflow: hidden;
+   937→        line-height:1.6em;
+   938→}
+   939→
+   940→.sortvisit > ul > div img{
+   941→        width:60px;
+   942→        height:80px;
+   943→        margin:5px 15px 0 0;
+   944→        box-shadow: 0 1px 5px rgba(0,0,0,.35);
+   945→}
+   946→
+   947→.sortvisit > ul > div p{
+   948→        line-height: 2em;
+   949→}
+   950→.sortvisit > ul > div img:hover{
+   951→        box-shadow:1px 2px 5px rgba(0,0,0,.55);
+   952→}
+   953→.sortvisit ul li{
+   954→        width:50%;
+   955→        height:38px;
+   956→        line-height:38px;
+   957→        border-bottom:1px dashed #ccc;
+   958→        overflow:hidden;
+   959→}
+   960→/* .gray{color:gray;} */
+   961→.bookcase-items p span,
+   962→.s_gray,
+   963→.sortvisit ul i{
+   964→        font-size:11px;
+   965→        color:gray;
+   966→}
+   967→
+   968→/* bookcase */
+   969→.bookcase-items{
+   970→        width:100%;
+   971→        display:flex;
+   972→        flex-flow:column wrap;
+   973→        justify-content: space-between;
+   974→}
+   975→.bookcase-items > *{
+   976→        display:flex;
+   977→        align-items:center;
+   978→        flex-flow:wrap;
+   979→}
+   980→.bookcase-items p:first-child{
+   981→        font-weight:700;
+   982→        font-size:1.1em;
+   983→}
+   984→
+   985→.bookcase-items .bookcase_btn{
+   986→        display: inline-block;
+   987→        padding:5px 10px;
+   988→        border: 1px solid #3e3d43;
+   989→        border-radius: 3px;
+   990→        text-align: center;
+   991→        text-decoration: none;
+   992→        line-height: 20px;
+   993→        cursor:pointer;
+   994→        margin:1px 0;
+   995→}
+   996→
+   997→.bookcase-items .bookcase_btn:hover{
+   998→        background:#bf2c24;
+   999→        border:1px solid #bf2c24;
+  1000→        color:#fff;
+  1001→}
+  1002→.section_mark{
+  1003→        margin-top: 10px;
+  1004→        padding: 10px;
+  1005→        width:700px;
+  1006→        background:#ffffff;
+  1007→}
+  1008→
+  1009→.section_mark img:hover{
+  1010→        box-shadow:3px 3px 5px #888;
+  1011→}
+  1012→.section_mark li{
+  1013→        display: flex;
+  1014→        width:100%;
+  1015→        padding: 10px 0;
+  1016→        border-bottom:1px dashed #ccc;
+  1017→
+  1018→}
+  1019→.section_mark li:first-child{
+  1020→        border-top:1px dashed #666;
+  1021→}
+  1022→
+  1023→
+  1024→/* tempbookcase */
+  1025→#tempBookcase p.title{
+  1026→        border-bottom:1px dashed #666;
+  1027→}
+  1028→
+  1029→#tempBookcase ul{
+  1030→        display:flex;
+  1031→        flex-flow:wrap;
+  1032→}
+  1033→#tempBookcase ul li{
+  1034→        width:50%;
+  1035→        border-top:none;
+  1036→}
+  1037→
+  1038→
+  1039→@media screen and (max-width: 959px) {
+  1040→        #gotop,#gofooter{right:15px; margin-right:0;}
+  1041→        .section.flex,
+  1042→        .side_commend_width,
+  1043→        .lastupdate,
+  1044→        .section_mark,
+  1045→        aside {
+  1046→                width: 100%;
+  1047→                margin: 0;
+  1048→        }
+  1049→        .lastupdate li *:nth-child(1),
+  1050→        .lastupdate li *:nth-child(4) {
+  1051→                display: none;
+  1052→        }
+  1053→        .lastupdate li *:nth-child(2){
+  1054→                width:40%;
+  1055→        }
+  1056→        .lastupdate li *:nth-child(3){
+  1057→                width:59%;
+  1058→        }
+  1059→
+  1060→        .sortvisit,
+  1061→        .chapter_list ul li{  /*章节列表2列*/
+  1062→                width: 50% !important;
+  1063→        }
+  1064→}
+  1065→
+  1066→@media screen and (max-width:767px){
+  1067→        #store_right {
+  1068→                display:none;
+  1069→        }
+  1070→        .store_left{
+  1071→                width:100%;
+  1072→                margin:0;
+  1073→        }
+  1074→        .store_left #store_menu{
+  1075→                display:block;
+  1076→                color:#bf2c24;
+  1077→                position:absolute;
+  1078→                right:0;
+  1079→        }
+  1080→
+  1081→        .navigation{
+  1082→                display:none;
+  1083→        }
+  1084→        .text_title{
+  1085→                padding: 15px 2px 0;
+  1086→        }
+  1087→        #article {
+  1088→                padding: 0 2px;
+  1089→        }
+  1090→        header form,
+  1091→        .header_right{
+  1092→                margin:0 auto;
+  1093→        }
+  1094→        .header_right #home{
+  1095→                display:block;
+  1096→        }
+  1097→        .header_right{
+  1098→                width:100%;
+  1099→                justify-content:space-between;
+  1100→                padding:20px 5px 0;
+  1101→        }
+  1102→        .header_right a{
+  1103→                padding-left:0;
+  1104→        }
+  1105→        #tempBookcase ul li,
+  1106→        .side_commend li{
+  1107→                width:100%!important;
+  1108→        }
+  1109→
+  1110→} 
+  1111→
+  1112→@media screen and (max-width: 639px) {
+  1113→        header form,
+  1114→        .sortvisit,
+  1115→        .chapter_list ul li {
+  1116→                /*章节列表1列*/
+  1117→                width: 100% !important;
+  1118→        }
+  1119→        #logo{
+  1120→                display: none;
+  1121→        }
+  1122→}
+  1123→
+  1124→@media screen and (max-width:479px){
+  1125→        .to100{
+  1126→                width:100%;
+  1127→        }
+  1128→        .novel_info_main img {
+  1129→                width:90px;
+  1130→                height:120px;
+  1131→                margin-right:10px;
+  1132→        }
+  1133→} 

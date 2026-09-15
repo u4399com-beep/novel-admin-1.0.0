@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 小说站核心模型 ====================
+
+model Category {
+  id     Int    @id @default(autoincrement())
+  name   String @unique
+  sort   Int    @default(0)
+  novels Novel[]
+}
+
+model Novel {
+  id          Int      @id @default(autoincrement())
+  title       String
+  author      String
+  description String   @default("")
+  cover       String   @default("g1") // 渐变封面 token: g1-g12
+  categoryId  Int
+  category    Category @relation(fields: [categoryId], references: [id])
+  status      String   @default("serial") // serial=连载中 finished=已完本
+  isFeatured  Boolean  @default(false)
+  isHot       Boolean  @default(false)
+  wordCount   Int      @default(0)
+  clicks      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @default(now())
+  chapters    Chapter[]
+}
+
+model Chapter {
+  id        Int      @id @default(autoincrement())
+  novelId   Int
+  novel     Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  idx       Int
+  title     String
+  content   String
+  wordCount Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([novelId, idx])
+  @@index([novelId])
+}
+
+// 站点设置（单例行 id=1）
+model SiteSetting {
+  id          Int    @id @default(1)
+  siteName    String @default("青阅文学")
+  activeTheme String @default("aijjxs")
+  notice      String @default("本站所有小说仅供学习演示使用，请支持正版。")
+}

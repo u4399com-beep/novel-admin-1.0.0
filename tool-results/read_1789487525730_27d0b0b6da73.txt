@@ -1,0 +1,1255 @@
+     1→<!DOCTYPE html>
+     2→<html lang="zh-CN">
+     3→<head>
+     4→  <meta charset="utf-8" />
+     5→  <meta name="viewport" content="width=device-width, initial-scale=1" />
+     6→  <title>久久小说下载网-txt小说下载-全本txt电子书资源免费下载</title>
+     7→  <meta name="keywords" content="久久小说下载网,txt,小说下载,txt小说下载,免费电子书下载" />
+     8→  <meta name="description" content="久久小说下载网主要提供txt格式网络小说,文学名著,学习教程,社科书籍电子书免费下载.本站的宗旨在于为您提供海量的txt小说下载,欢迎您经常光临!" />
+     9→  <meta http-equiv="Cache-Control" content="no-siteapp" />
+    10→  <meta http-equiv="Cache-Control" content="no-transform" />
+    11→  <link rel="stylesheet" href="/skin/yellow/style.css?t=20260509" />
+    12→  <script type="text/javascript" src="/js/common.js"></script>
+    13→  <link href="/yecha/Common.css" rel="stylesheet" type="text/css" />
+    14→  <script type="text/javascript" src="//libs.baidu.com/jquery/2.1.4/jquery.min.js"></script>
+    15→  <script type="text/javascript" src="/js/hellocommon.js"></script>
+    16→  <style>
+    17→    .latest-upload-expand .latest-upload-more-wrap {
+    18→      display: flex;
+    19→      justify-content: center;
+    20→      margin: 12px 0 2px;
+    21→    }
+    22→    .latest-upload-expand .latest-upload-more {
+    23→      border: 1px solid #e5e7eb;
+    24→      background: #fff;
+    25→      color: #555;
+    26→      border-radius: 6px;
+    27→      padding: 8px 22px;
+    28→      font-size: 14px;
+    29→      cursor: pointer;
+    30→    }
+    31→    .latest-upload-expand .latest-upload-more:hover {
+    32→      border-color: #d6a63d;
+    33→      color: #b27400;
+    34→      background: #fffaf0;
+    35→    }
+    36→    .latest-upload-expand .latest-upload-hidden {
+    37→      display: none !important;
+    38→    }
+    39→  </style>
+    40→</head>
+    41→<body>
+    42→  <div class="top-float">
+    43→    <div class="top-float-inner">
+    44→      <nav class="top-float-nav">
+    45→        <a href="/">首页</a>
+    46→        <a href="/txt/chuanyue/">穿越</a>
+    47→        <a href="/txt/chongshengxiaoshuo/">重生</a>
+    48→        <a href="/txt/lsjs/">古代架空</a>
+    49→        <a href="/txt/young/">现代言情</a>
+    50→        <a href="/txt/qinggan/">总裁豪门</a>
+    51→        <a href="/txt/wuxia/">仙侠幻想</a>
+    52→        <a href="/txt/tongrenxiaoshuo/">同人衍生</a>
+    53→        <a href="/txt/wuxianliu/">无限流</a>
+    54→        <a href="/txt/dmtr/">耽于纯美</a>
+    55→        <a href="/txt/xuanhuan/">玄幻魔法</a>
+    56→        <a href="/txt/dushi/">都市异能</a>
+    57→        <a href="/txt/tiexue/">历史军事</a>
+    58→        <a href="/txt/juben/">网游小说</a>
+    59→        <a href="/txt/kongbu/">惊悚悬疑</a>
+    60→        <a href="/txt/gdmz/">文学名著</a>
+    61→      </nav>
+    62→      <div class="top-float-auth">
+    63→      </div>
+    64→    </div>
+    65→  </div>
+    66→  <div class="wrap">
+    67→    <header class="top">
+    68→      <div class="top-1">
+    69→        <h1 class="logo">站内搜索<small>快速找到你想要的TXT电子书</small></h1>
+    70→        <div class="top-links">
+    71→          <script src="/e/member/login/logintopjs.php"></script>
+    72→        </div>
+    73→      </div>
+    74→
+    75→      <form class="search" action="/e/search/index.php" method="post">
+    76→        <input type="hidden" name="show" value="title,writer" />
+    77→        <input type="text" name="keyboard" placeholder="请输入书名或作者关键字" />
+    78→        <button type="submit">搜索全站</button>
+    79→      </form>
+    80→
+    81→    </header>
+    82→
+    83→    <main class="layout">
+    84→      <section>
+    85→        <article class="panel latest-upload latest-upload-expand">
+    86→          <h3 class="latest">最新上传<small></small></h3>
+    87→          <div class="body gird2">
+    88→              <ul class="lines lines-books lines-books-2col">
+    89→                                
+    90→                <li>
+    91→                  <span class="line-main">
+    92→                    <span class="cat">穿越</span>
+    93→                    <a href="/txt/57361.html" target="_blank">八零领证圆房后，发现认错老公</a>
+    94→                    <span class="author">犹怜</span>
+    95→                  </span>
+    96→                  <span class="date new">
+    97→                    <span class="new">09-15</span>
+    98→                  </span>
+    99→                </li>
+   100→                                
+   101→                <li>
+   102→                  <span class="line-main">
+   103→                    <span class="cat">穿越</span>
+   104→                    <a href="/txt/57360.html" target="_blank">据说要做男主“朋友”[快穿]</a>
+   105→                    <span class="author">猜旺</span>
+   106→                  </span>
+   107→                  <span class="date new">
+   108→                    <span class="new">09-15</span>
+   109→                  </span>
+   110→                </li>
+   111→                                
+   112→                <li>
+   113→                  <span class="line-main">
+   114→                    <span class="cat">现言</span>
+   115→                    <a href="/txt/57359.html" target="_blank">青柚</a>
+   116→                    <span class="author">山花头</span>
+   117→                  </span>
+   118→                  <span class="date new">
+   119→                    <span class="new">09-15</span>
+   120→                  </span>
+   121→                </li>
+   122→                                
+   123→                <li>
+   124→                  <span class="line-main">
+   125→                    <span class="cat">架空</span>
+   126→                    <a href="/txt/57358.html" target="_blank">被我抛弃的前夫登基了</a>
+   127→                    <span class="author">娴白</span>
+   128→                  </span>
+   129→                  <span class="date new">
+   130→                    <span class="new">09-15</span>
+   131→                  </span>
+   132→                </li>
+   133→                                
+   134→                <li>
+   135→                  <span class="line-main">
+   136→                    <span class="cat">修仙</span>
+   137→                    <a href="/txt/57357.html" target="_blank">[综武侠]武学助手也能天下第一吗</a>
+   138→                    <span class="author">春笋夺笋</span>
+   139→                  </span>
+   140→                  <span class="date new">
+   141→                    <span class="new">09-15</span>
+   142→                  </span>
+   143→                </li>
+   144→                                
+   145→                <li>
+   146→                  <span class="line-main">
+   147→                    <span class="cat">穿越</span>
+   148→                    <a href="/txt/57356.html" target="_blank">继弟要灭了全村怎么办</a>
+   149→                    <span class="author">元棕</span>
+   150→                  </span>
+   151→                  <span class="date new">
+   152→                    <span class="new">09-15</span>
+   153→                  </span>
+   154→                </li>
+   155→                                
+   156→                <li>
+   157→                  <span class="line-main">
+   158→                    <span class="cat">现言</span>
+   159→                    <a href="/txt/57355.html" target="_blank">冥冥之中</a>
+   160→                    <span class="author">执与你</span>
+   161→                  </span>
+   162→                  <span class="date new">
+   163→                    <span class="new">09-15</span>
+   164→                  </span>
+   165→                </li>
+   166→                                
+   167→                <li>
+   168→                  <span class="line-main">
+   169→                    <span class="cat">穿越</span>
+   170→                    <a href="/txt/57354.html" target="_blank">快穿之系统带飞</a>
+   171→                    <span class="author">我来就山的</span>
+   172→                  </span>
+   173→                  <span class="date new">
+   174→                    <span class="new">09-15</span>
+   175→                  </span>
+   176→                </li>
+   177→                                
+   178→                <li>
+   179→                  <span class="line-main">
+   180→                    <span class="cat">纯美</span>
+   181→                    <a href="/txt/57353.html" target="_blank">一粒红雨</a>
+   182→                    <span class="author">薄岛焉蓝</span>
+   183→                  </span>
+   184→                  <span class="date new">
+   185→                    <span class="new">09-15</span>
+   186→                  </span>
+   187→                </li>
+   188→                                
+   189→                <li>
+   190→                  <span class="line-main">
+   191→                    <span class="cat">纯美</span>
+   192→                    <a href="/txt/57352.html" target="_blank">流放后，我成了神域之主</a>
+   193→                    <span class="author">鱼之水</span>
+   194→                  </span>
+   195→                  <span class="date new">
+   196→                    <span class="new">09-15</span>
+   197→                  </span>
+   198→                </li>
+   199→                                
+   200→                <li>
+   201→                  <span class="line-main">
+   202→                    <span class="cat">玄幻</span>
+   203→                    <a href="/txt/57351.html" target="_blank">九天</a>
+   204→                    <span class="author">黑山老鬼</span>
+   205→                  </span>
+   206→                  <span class="date new">
+   207→                    <span class="new">09-15</span>
+   208→                  </span>
+   209→                </li>
+   210→                                
+   211→                <li>
+   212→                  <span class="line-main">
+   213→                    <span class="cat">玄幻</span>
+   214→                    <a href="/txt/57350.html" target="_blank">进化之眼</a>
+   215→                    <span class="author">亚舍罗</span>
+   216→                  </span>
+   217→                  <span class="date new">
+   218→                    <span class="new">09-15</span>
+   219→                  </span>
+   220→                </li>
+   221→                                
+   222→                <li>
+   223→                  <span class="line-main">
+   224→                    <span class="cat">纯美</span>
+   225→                    <a href="/txt/57349.html" target="_blank">穿越考科举（作者：知南山桂）</a>
+   226→                    <span class="author">知南山桂</span>
+   227→                  </span>
+   228→                  <span class="date new">
+   229→                    <span class="new">09-15</span>
+   230→                  </span>
+   231→                </li>
+   232→                                
+   233→                <li>
+   234→                  <span class="line-main">
+   235→                    <span class="cat">穿越</span>
+   236→                    <a href="/txt/57348.html" target="_blank">公府小婢</a>
+   237→                    <span class="author">春未绿</span>
+   238→                  </span>
+   239→                  <span class="date new">
+   240→                    <span class="">09-14</span>
+   241→                  </span>
+   242→                </li>
+   243→                                
+   244→                <li>
+   245→                  <span class="line-main">
+   246→                    <span class="cat">现言</span>
+   247→                    <a href="/txt/57347.html" target="_blank">差一点也没关系</a>
+   248→                    <span class="author">宣恬</span>
+   249→                  </span>
+   250→                  <span class="date new">
+   251→                    <span class="">09-14</span>
+   252→                  </span>
+   253→                </li>
+   254→                                
+   255→                <li>
+   256→                  <span class="line-main">
+   257→                    <span class="cat">架空</span>
+   258→                    <a href="/txt/57346.html" target="_blank">与清冷表兄共梦春闺/清冷表兄入梦来</a>
+   259→                    <span class="author">珠盈</span>
+   260→                  </span>
+   261→                  <span class="date new">
+   262→                    <span class="">09-14</span>
+   263→                  </span>
+   264→                </li>
+   265→                                
+   266→                <li>
+   267→                  <span class="line-main">
+   268→                    <span class="cat">穿越</span>
+   269→                    <a href="/txt/57345.html" target="_blank">大宋市井日常</a>
+   270→                    <span class="author">掌上金刀</span>
+   271→                  </span>
+   272→                  <span class="date new">
+   273→                    <span class="">09-14</span>
+   274→                  </span>
+   275→                </li>
+   276→                                
+   277→                <li>
+   278→                  <span class="line-main">
+   279→                    <span class="cat">现言</span>
+   280→                    <a href="/txt/57344.html" target="_blank">支配[港风]</a>
+   281→                    <span class="author">泡泡藻</span>
+   282→                  </span>
+   283→                  <span class="date new">
+   284→                    <span class="">09-14</span>
+   285→                  </span>
+   286→                </li>
+   287→                                
+   288→                <li>
+   289→                  <span class="line-main">
+   290→                    <span class="cat">历史</span>
+   291→                    <a href="/txt/57343.html" target="_blank">长宁帝军</a>
+   292→                    <span class="author">知白</span>
+   293→                  </span>
+   294→                  <span class="date new">
+   295→                    <span class="">09-14</span>
+   296→                  </span>
+   297→                </li>
+   298→                                
+   299→                <li>
+   300→                  <span class="line-main">
+   301→                    <span class="cat">玄幻</span>
+   302→                    <a href="/txt/57342.html" target="_blank">学霸的黑科技系统</a>
+   303→                    <span class="author">晨星LL</span>
+   304→                  </span>
+   305→                  <span class="date new">
+   306→                    <span class="">09-14</span>
+   307→                  </span>
+   308→                </li>
+   309→                                
+   310→                <li>
+   311→                  <span class="line-main">
+   312→                    <span class="cat">玄幻</span>
+   313→                    <a href="/txt/57341.html" target="_blank">我家后门通洪荒</a>
+   314→                    <span class="author">天地有缺</span>
+   315→                  </span>
+   316→                  <span class="date new">
+   317→                    <span class="">09-14</span>
+   318→                  </span>
+   319→                </li>
+   320→                                
+   321→                <li>
+   322→                  <span class="line-main">
+   323→                    <span class="cat">纯美</span>
+   324→                    <a href="/txt/57340.html" target="_blank">窃玉（作者：长山客）</a>
+   325→                    <span class="author">长山客</span>
+   326→                  </span>
+   327→                  <span class="date new">
+   328→                    <span class="">09-14</span>
+   329→                  </span>
+   330→                </li>
+   331→                                
+   332→                <li>
+   333→                  <span class="line-main">
+   334→                    <span class="cat">穿越</span>
+   335→                    <a href="/txt/57339.html" target="_blank">警察，但犯罪大师系统[刑侦]</a>
+   336→                    <span class="author">学做饭的兔子</span>
+   337→                  </span>
+   338→                  <span class="date new">
+   339→                    <span class="">09-13</span>
+   340→                  </span>
+   341→                </li>
+   342→                                
+   343→                <li>
+   344→                  <span class="line-main">
+   345→                    <span class="cat">同人</span>
+   346→                    <a href="/txt/57338.html" target="_blank">（综英美同人）一发十连，五蝠临门</a>
+   347→                    <span class="author">路人小透明</span>
+   348→                  </span>
+   349→                  <span class="date new">
+   350→                    <span class="">09-13</span>
+   351→                  </span>
+   352→                </li>
+   353→                                
+   354→                <li>
+   355→                  <span class="line-main">
+   356→                    <span class="cat">现言</span>
+   357→                    <a href="/txt/57337.html" target="_blank">新婚有孕/渡禾</a>
+   358→                    <span class="author">排骨辣酱</span>
+   359→                  </span>
+   360→                  <span class="date new">
+   361→                    <span class="">09-13</span>
+   362→                  </span>
+   363→                </li>
+   364→                                
+   365→                <li>
+   366→                  <span class="line-main">
+   367→                    <span class="cat">重生</span>
+   368→                    <a href="/txt/57336.html" target="_blank">八零：换嫁小渔村，我成全家团宠</a>
+   369→                    <span class="author">沁雅汐</span>
+   370→                  </span>
+   371→                  <span class="date new">
+   372→                    <span class="">09-13</span>
+   373→                  </span>
+   374→                </li>
+   375→                                
+   376→                <li>
+   377→                  <span class="line-main">
+   378→                    <span class="cat">穿越</span>
+   379→                    <a href="/txt/57335.html" target="_blank">穿为限制文男主的寡嫂</a>
+   380→                    <span class="author">阖时听雨</span>
+   381→                  </span>
+   382→                  <span class="date new">
+   383→                    <span class="">09-13</span>
+   384→                  </span>
+   385→                </li>
+   386→                                
+   387→                <li>
+   388→                  <span class="line-main">
+   389→                    <span class="cat">修仙</span>
+   390→                    <a href="/txt/57334.html" target="_blank">末日求生，SSS级暴击</a>
+   391→                    <span class="author">云朵莓骑士</span>
+   392→                  </span>
+   393→                  <span class="date new">
+   394→                    <span class="">09-13</span>
+   395→                  </span>
+   396→                </li>
+   397→                                
+   398→                <li>
+   399→                  <span class="line-main">
+   400→                    <span class="cat">架空</span>
+   401→                    <a href="/txt/57333.html" target="_blank">夺嫂</a>
+   402→                    <span class="author">一方青月</span>
+   403→                  </span>
+   404→                  <span class="date new">
+   405→                    <span class="">09-13</span>
+   406→                  </span>
+   407→                </li>
+   408→                                
+   409→                <li>
+   410→                  <span class="line-main">
+   411→                    <span class="cat">现言</span>
+   412→                    <a href="/txt/57332.html" target="_blank">青的春</a>
+   413→                    <span class="author">周晚欲</span>
+   414→                  </span>
+   415→                  <span class="date new">
+   416→                    <span class="">09-13</span>
+   417→                  </span>
+   418→                </li>
+   419→                                
+   420→                <li>
+   421→                  <span class="line-main">
+   422→                    <span class="cat">穿越</span>
+   423→                    <a href="/txt/57331.html" target="_blank">恶毒女配决定去死后</a>
+   424→                    <span class="author">逾三冬</span>
+   425→                  </span>
+   426→                  <span class="date new">
+   427→                    <span class="">09-13</span>
+   428→                  </span>
+   429→                </li>
+   430→                                
+   431→                <li>
+   432→                  <span class="line-main">
+   433→                    <span class="cat">纯美</span>
+   434→                    <a href="/txt/57330.html" target="_blank">我推的神明为我来地球男团出道</a>
+   435→                    <span class="author">上苍</span>
+   436→                  </span>
+   437→                  <span class="date new">
+   438→                    <span class="">09-13</span>
+   439→                  </span>
+   440→                </li>
+   441→                                
+   442→                <li>
+   443→                  <span class="line-main">
+   444→                    <span class="cat">都市</span>
+   445→                    <a href="/txt/57329.html" target="_blank">1991南元警事</a>
+   446→                    <span class="author">狼胥破虏</span>
+   447→                  </span>
+   448→                  <span class="date new">
+   449→                    <span class="">09-13</span>
+   450→                  </span>
+   451→                </li>
+   452→                                
+   453→                <li>
+   454→                  <span class="line-main">
+   455→                    <span class="cat">穿越</span>
+   456→                    <a href="/txt/57328.html" target="_blank">大院来了个绝色大美人[年代]</a>
+   457→                    <span class="author">宋家小四</span>
+   458→                  </span>
+   459→                  <span class="date new">
+   460→                    <span class="">09-12</span>
+   461→                  </span>
+   462→                </li>
+   463→                                
+   464→                <li>
+   465→                  <span class="line-main">
+   466→                    <span class="cat">现言</span>
+   467→                    <a href="/txt/57327.html" target="_blank">今天他决定活下去</a>
+   468→                    <span class="author">杨明夜</span>
+   469→                  </span>
+   470→                  <span class="date new">
+   471→                    <span class="">09-12</span>
+   472→                  </span>
+   473→                </li>
+   474→                                
+   475→                <li>
+   476→                  <span class="line-main">
+   477→                    <span class="cat">修仙</span>
+   478→                    <a href="/txt/57326.html" target="_blank">修仙满级之后[快穿]</a>
+   479→                    <span class="author">正月初八</span>
+   480→                  </span>
+   481→                  <span class="date new">
+   482→                    <span class="">09-12</span>
+   483→                  </span>
+   484→                </li>
+   485→                                
+   486→                <li>
+   487→                  <span class="line-main">
+   488→                    <span class="cat">穿越</span>
+   489→                    <a href="/txt/57325.html" target="_blank">反派庶女不好惹</a>
+   490→                    <span class="author">暗香</span>
+   491→                  </span>
+   492→                  <span class="date new">
+   493→                    <span class="">09-12</span>
+   494→                  </span>
+   495→                </li>
+   496→                                
+   497→                <li>
+   498→                  <span class="line-main">
+   499→                    <span class="cat">架空</span>
+   500→                    <a href="/txt/57324.html" target="_blank">夫人，万万不可</a>
+   501→                    <span class="author">秦方方方方</span>
+   502→                  </span>
+   503→                  <span class="date new">
+   504→                    <span class="">09-12</span>
+   505→                  </span>
+   506→                </li>
+   507→                                
+   508→                <li>
+   509→                  <span class="line-main">
+   510→                    <span class="cat">现言</span>
+   511→                    <a href="/txt/57323.html" target="_blank">错让crush帮我遛狗后</a>
+   512→                    <span class="author">樱桃小新子</span>
+   513→                  </span>
+   514→                  <span class="date new">
+   515→                    <span class="">09-12</span>
+   516→                  </span>
+   517→                </li>
+   518→                                
+   519→                <li>
+   520→                  <span class="line-main">
+   521→                    <span class="cat">纯美</span>
+   522→                    <a href="/txt/57322.html" target="_blank">不入虎穴，焉得虎</a>
+   523→                    <span class="author">猫界第一噜</span>
+   524→                  </span>
+   525→                  <span class="date new">
+   526→                    <span class="">09-12</span>
+   527→                  </span>
+   528→                </li>
+   529→                                
+   530→                <li>
+   531→                  <span class="line-main">
+   532→                    <span class="cat">玄幻</span>
+   533→                    <a href="/txt/57321.html" target="_blank">元始金章</a>
+   534→                    <span class="author">雾外江山</span>
+   535→                  </span>
+   536→                  <span class="date new">
+   537→                    <span class="">09-12</span>
+   538→                  </span>
+   539→                </li>
+   540→                                
+   541→                <li>
+   542→                  <span class="line-main">
+   543→                    <span class="cat">都市</span>
+   544→                    <a href="/txt/57320.html" target="_blank">重生08，我被确诊为医学泰斗</a>
+   545→                    <span class="author">忧伤的饭饭</span>
+   546→                  </span>
+   547→                  <span class="date new">
+   548→                    <span class="">09-12</span>
+   549→                  </span>
+   550→                </li>
+   551→                                
+   552→                <li>
+   553→                  <span class="line-main">
+   554→                    <span class="cat">穿越</span>
+   555→                    <a href="/txt/57319.html" target="_blank">谁知权臣是女郎</a>
+   556→                    <span class="author">春风送酒</span>
+   557→                  </span>
+   558→                  <span class="date new">
+   559→                    <span class="">09-11</span>
+   560→                  </span>
+   561→                </li>
+   562→                                
+   563→                <li>
+   564→                  <span class="line-main">
+   565→                    <span class="cat">现言</span>
+   566→                    <a href="/txt/57318.html" target="_blank">饥肠辘辘</a>
+   567→                    <span class="author">苏他</span>
+   568→                  </span>
+   569→                  <span class="date new">
+   570→                    <span class="">09-11</span>
+   571→                  </span>
+   572→                </li>
+   573→                                
+   574→                <li>
+   575→                  <span class="line-main">
+   576→                    <span class="cat">无限</span>
+   577→                    <a href="/txt/57317.html" target="_blank">诡异入侵，我反杀不过分吧？</a>
+   578→                    <span class="author">花花了</span>
+   579→                  </span>
+   580→                  <span class="date new">
+   581→                    <span class="">09-11</span>
+   582→                  </span>
+   583→                </li>
+   584→                                
+   585→                <li>
+   586→                  <span class="line-main">
+   587→                    <span class="cat">现言</span>
+   588→                    <a href="/txt/57316.html" target="_blank">不受欢迎的老二</a>
+   589→                    <span class="author">油油泼泥</span>
+   590→                  </span>
+   591→                  <span class="date new">
+   592→                    <span class="">09-11</span>
+   593→                  </span>
+   594→                </li>
+   595→                
+   596→              </ul>
+   597→              <div class="latest-upload-more-wrap">
+   598→                <button type="button" class="latest-upload-more">展示更多最近上传的电子书</button>
+   599→              </div>
+   600→            </div>
+   601→        </article>
+   602→        <article class="panel" style="margin-top:14px;">
+   603→          <h3>封面推荐</h3>
+   604→          <div class="body grid2">
+   605→            <!-- 灵动标签：推荐书籍封面 -->
+   606→                        
+   607→            <div class="book">
+   608→              <img src="//image.jjjjxsw.com/UploadPic/202609/dz3aq41k3yj.jpg" alt="据说要做男主“朋友”[快穿]封面" />
+   609→              <h4><span class="badge">新</span><a href="/txt/57360.html" target="_blank">据说要做男主“朋友”[快穿]</a></h4>
+   610→              <div class="meta">猜旺 · 穿越 · 560 KB · 09-15</div>
+   611→              <div class="desc">姜皎失忆了。好消息，有个自称智能客服的家伙为她解释当下情况，坏消息——【恭喜2号玩家登入，开启您选择的女配人</div>
+   612→            </div>
+   613→            
+   614→                        
+   615→            <div class="book">
+   616→              <img src="//image.jjjjxsw.com/UploadPic/202609/ldiusi1idgv.jpg" alt="流放后，我成了神域之主封面" />
+   617→              <h4><span class="badge">新</span><a href="/txt/57352.html" target="_blank">流放后，我成了神域之主</a></h4>
+   618→              <div class="meta">鱼之水 · 纯美 · 692 KB · 09-15</div>
+   619→              <div class="desc">污染降临全球。大量生物变异，普通人类受到污染后死亡率极高，只有极少数人能存活，获得特殊能力，被称作天赋者。17岁</div>
+   620→            </div>
+   621→            
+   622→          </div>
+   623→        </article>
+   624→
+   625→        <article class="panel latest-upload" style="margin-top:14px;">
+   626→          <h3>小说分类</h3>
+   627→          <div class="body grid2">
+   628→            <div>
+   629→              <h4>女生小说 <a href="/txt/" target="_blank">更多&gt;&gt;</a></h4>
+   630→              <ul class="lines lines-books">
+   631→                                
+   632→                <li>
+   633→                  <span class="line-main">
+   634→                    <span class="cat">穿越</span>
+   635→                    <a href="/txt/57361.html" target="_blank">八零领证圆房后，发现认错老公</a>
+   636→                    <span class="author">犹怜</span>
+   637→                  </span>
+   638→                  <span class="date new">
+   639→                    <span class="new">09-15</span>
+   640→                  </span>
+   641→                </li>
+   642→                                
+   643→                <li>
+   644→                  <span class="line-main">
+   645→                    <span class="cat">穿越</span>
+   646→                    <a href="/txt/57360.html" target="_blank">据说要做男主“朋友”[快穿]</a>
+   647→                    <span class="author">猜旺</span>
+   648→                  </span>
+   649→                  <span class="date new">
+   650→                    <span class="new">09-15</span>
+   651→                  </span>
+   652→                </li>
+   653→                                
+   654→                <li>
+   655→                  <span class="line-main">
+   656→                    <span class="cat">现言</span>
+   657→                    <a href="/txt/57359.html" target="_blank">青柚</a>
+   658→                    <span class="author">山花头</span>
+   659→                  </span>
+   660→                  <span class="date new">
+   661→                    <span class="new">09-15</span>
+   662→                  </span>
+   663→                </li>
+   664→                                
+   665→                <li>
+   666→                  <span class="line-main">
+   667→                    <span class="cat">架空</span>
+   668→                    <a href="/txt/57358.html" target="_blank">被我抛弃的前夫登基了</a>
+   669→                    <span class="author">娴白</span>
+   670→                  </span>
+   671→                  <span class="date new">
+   672→                    <span class="new">09-15</span>
+   673→                  </span>
+   674→                </li>
+   675→                                
+   676→                <li>
+   677→                  <span class="line-main">
+   678→                    <span class="cat">修仙</span>
+   679→                    <a href="/txt/57357.html" target="_blank">[综武侠]武学助手也能天下第一吗</a>
+   680→                    <span class="author">春笋夺笋</span>
+   681→                  </span>
+   682→                  <span class="date new">
+   683→                    <span class="new">09-15</span>
+   684→                  </span>
+   685→                </li>
+   686→                                
+   687→                <li>
+   688→                  <span class="line-main">
+   689→                    <span class="cat">穿越</span>
+   690→                    <a href="/txt/57356.html" target="_blank">继弟要灭了全村怎么办</a>
+   691→                    <span class="author">元棕</span>
+   692→                  </span>
+   693→                  <span class="date new">
+   694→                    <span class="new">09-15</span>
+   695→                  </span>
+   696→                </li>
+   697→                                
+   698→                <li>
+   699→                  <span class="line-main">
+   700→                    <span class="cat">现言</span>
+   701→                    <a href="/txt/57355.html" target="_blank">冥冥之中</a>
+   702→                    <span class="author">执与你</span>
+   703→                  </span>
+   704→                  <span class="date new">
+   705→                    <span class="new">09-15</span>
+   706→                  </span>
+   707→                </li>
+   708→                                
+   709→                <li>
+   710→                  <span class="line-main">
+   711→                    <span class="cat">穿越</span>
+   712→                    <a href="/txt/57354.html" target="_blank">快穿之系统带飞</a>
+   713→                    <span class="author">我来就山的</span>
+   714→                  </span>
+   715→                  <span class="date new">
+   716→                    <span class="new">09-15</span>
+   717→                  </span>
+   718→                </li>
+   719→                                
+   720→                <li>
+   721→                  <span class="line-main">
+   722→                    <span class="cat">穿越</span>
+   723→                    <a href="/txt/57348.html" target="_blank">公府小婢</a>
+   724→                    <span class="author">春未绿</span>
+   725→                  </span>
+   726→                  <span class="date new">
+   727→                    <span class="">09-14</span>
+   728→                  </span>
+   729→                </li>
+   730→                                
+   731→                <li>
+   732→                  <span class="line-main">
+   733→                    <span class="cat">现言</span>
+   734→                    <a href="/txt/57347.html" target="_blank">差一点也没关系</a>
+   735→                    <span class="author">宣恬</span>
+   736→                  </span>
+   737→                  <span class="date new">
+   738→                    <span class="">09-14</span>
+   739→                  </span>
+   740→                </li>
+   741→                
+   742→              </ul>
+   743→            </div>
+   744→            <div>
+   745→              <h4>纯美小说 <a href="/danmeixiaoshuo/" target="_blank">更多&gt;&gt;</a></h4>
+   746→              <ul class="lines lines-books">
+   747→                                
+   748→                <li>
+   749→                  <span class="line-main">
+   750→                    <span class="cat">纯美</span>
+   751→                    <a href="/txt/57353.html" target="_blank">一粒红雨</a>
+   752→                    <span class="author">薄岛焉蓝</span>
+   753→                  </span>
+   754→                  <span class="date new">
+   755→                    <span class="new">09-15</span>
+   756→                  </span>
+   757→                </li>
+   758→                                
+   759→                <li>
+   760→                  <span class="line-main">
+   761→                    <span class="cat">纯美</span>
+   762→                    <a href="/txt/57352.html" target="_blank">流放后，我成了神域之主</a>
+   763→                    <span class="author">鱼之水</span>
+   764→                  </span>
+   765→                  <span class="date new">
+   766→                    <span class="new">09-15</span>
+   767→                  </span>
+   768→                </li>
+   769→                                
+   770→                <li>
+   771→                  <span class="line-main">
+   772→                    <span class="cat">纯美</span>
+   773→                    <a href="/txt/57349.html" target="_blank">穿越考科举（作者：知南山桂）</a>
+   774→                    <span class="author">知南山桂</span>
+   775→                  </span>
+   776→                  <span class="date new">
+   777→                    <span class="new">09-15</span>
+   778→                  </span>
+   779→                </li>
+   780→                                
+   781→                <li>
+   782→                  <span class="line-main">
+   783→                    <span class="cat">纯美</span>
+   784→                    <a href="/txt/57340.html" target="_blank">窃玉（作者：长山客）</a>
+   785→                    <span class="author">长山客</span>
+   786→                  </span>
+   787→                  <span class="date new">
+   788→                    <span class="">09-14</span>
+   789→                  </span>
+   790→                </li>
+   791→                                
+   792→                <li>
+   793→                  <span class="line-main">
+   794→                    <span class="cat">纯美</span>
+   795→                    <a href="/txt/57330.html" target="_blank">我推的神明为我来地球男团出道</a>
+   796→                    <span class="author">上苍</span>
+   797→                  </span>
+   798→                  <span class="date new">
+   799→                    <span class="">09-13</span>
+   800→                  </span>
+   801→                </li>
+   802→                                
+   803→                <li>
+   804→                  <span class="line-main">
+   805→                    <span class="cat">纯美</span>
+   806→                    <a href="/txt/57322.html" target="_blank">不入虎穴，焉得虎</a>
+   807→                    <span class="author">猫界第一噜</span>
+   808→                  </span>
+   809→                  <span class="date new">
+   810→                    <span class="">09-12</span>
+   811→                  </span>
+   812→                </li>
+   813→                                
+   814→                <li>
+   815→                  <span class="line-main">
+   816→                    <span class="cat">纯美</span>
+   817→                    <a href="/txt/57312.html" target="_blank">人，不许逗蛇蛇</a>
+   818→                    <span class="author">红尾only</span>
+   819→                  </span>
+   820→                  <span class="date new">
+   821→                    <span class="">09-11</span>
+   822→                  </span>
+   823→                </li>
+   824→                                
+   825→                <li>
+   826→                  <span class="line-main">
+   827→                    <span class="cat">纯美</span>
+   828→                    <a href="/txt/57311.html" target="_blank">第八道门</a>
+   829→                    <span class="author">薛寒山</span>
+   830→                  </span>
+   831→                  <span class="date new">
+   832→                    <span class="">09-11</span>
+   833→                  </span>
+   834→                </li>
+   835→                                
+   836→                <li>
+   837→                  <span class="line-main">
+   838→                    <span class="cat">纯美</span>
+   839→                    <a href="/txt/57310.html" target="_blank">普通人，但1了顶A</a>
+   840→                    <span class="author">拒绝败北</span>
+   841→                  </span>
+   842→                  <span class="date new">
+   843→                    <span class="">09-11</span>
+   844→                  </span>
+   845→                </li>
+   846→                                
+   847→                <li>
+   848→                  <span class="line-main">
+   849→                    <span class="cat">纯美</span>
+   850→                    <a href="/txt/57301.html" target="_blank">朝辞暮归</a>
+   851→                    <span class="author">一木孑影</span>
+   852→                  </span>
+   853→                  <span class="date new">
+   854→                    <span class="">09-10</span>
+   855→                  </span>
+   856→                </li>
+   857→                
+   858→              </ul>
+   859→            </div>
+   860→            <div>
+   861→              <h4>男生小说 <a href="/nanshengxiaoshuo/" target="_blank">更多&gt;&gt;</a></h4>
+   862→              <ul class="lines lines-books">               
+   863→                                
+   864→                <li>
+   865→                  <span class="line-main">
+   866→                    <span class="cat">玄幻</span>
+   867→                    <a href="/txt/57351.html" target="_blank">九天</a>
+   868→                    <span class="author">黑山老鬼</span>
+   869→                  </span>
+   870→                  <span class="date new">
+   871→                    <span class="new">09-15</span>
+   872→                  </span>
+   873→                </li>
+   874→                                
+   875→                <li>
+   876→                  <span class="line-main">
+   877→                    <span class="cat">玄幻</span>
+   878→                    <a href="/txt/57350.html" target="_blank">进化之眼</a>
+   879→                    <span class="author">亚舍罗</span>
+   880→                  </span>
+   881→                  <span class="date new">
+   882→                    <span class="new">09-15</span>
+   883→                  </span>
+   884→                </li>
+   885→                                
+   886→                <li>
+   887→                  <span class="line-main">
+   888→                    <span class="cat">历史</span>
+   889→                    <a href="/txt/57343.html" target="_blank">长宁帝军</a>
+   890→                    <span class="author">知白</span>
+   891→                  </span>
+   892→                  <span class="date new">
+   893→                    <span class="">09-14</span>
+   894→                  </span>
+   895→                </li>
+   896→                                
+   897→                <li>
+   898→                  <span class="line-main">
+   899→                    <span class="cat">玄幻</span>
+   900→                    <a href="/txt/57342.html" target="_blank">学霸的黑科技系统</a>
+   901→                    <span class="author">晨星LL</span>
+   902→                  </span>
+   903→                  <span class="date new">
+   904→                    <span class="">09-14</span>
+   905→                  </span>
+   906→                </li>
+   907→                                
+   908→                <li>
+   909→                  <span class="line-main">
+   910→                    <span class="cat">玄幻</span>
+   911→                    <a href="/txt/57341.html" target="_blank">我家后门通洪荒</a>
+   912→                    <span class="author">天地有缺</span>
+   913→                  </span>
+   914→                  <span class="date new">
+   915→                    <span class="">09-14</span>
+   916→                  </span>
+   917→                </li>
+   918→                                
+   919→                <li>
+   920→                  <span class="line-main">
+   921→                    <span class="cat">都市</span>
+   922→                    <a href="/txt/57329.html" target="_blank">1991南元警事</a>
+   923→                    <span class="author">狼胥破虏</span>
+   924→                  </span>
+   925→                  <span class="date new">
+   926→                    <span class="">09-13</span>
+   927→                  </span>
+   928→                </li>
+   929→                                
+   930→                <li>
+   931→                  <span class="line-main">
+   932→                    <span class="cat">玄幻</span>
+   933→                    <a href="/txt/57321.html" target="_blank">元始金章</a>
+   934→                    <span class="author">雾外江山</span>
+   935→                  </span>
+   936→                  <span class="date new">
+   937→                    <span class="">09-12</span>
+   938→                  </span>
+   939→                </li>
+   940→                                
+   941→                <li>
+   942→                  <span class="line-main">
+   943→                    <span class="cat">都市</span>
+   944→                    <a href="/txt/57320.html" target="_blank">重生08，我被确诊为医学泰斗</a>
+   945→                    <span class="author">忧伤的饭饭</span>
+   946→                  </span>
+   947→                  <span class="date new">
+   948→                    <span class="">09-12</span>
+   949→                  </span>
+   950→                </li>
+   951→                                
+   952→                <li>
+   953→                  <span class="line-main">
+   954→                    <span class="cat">都市</span>
+   955→                    <a href="/txt/57299.html" target="_blank">未来天王</a>
+   956→                    <span class="author">陈词懒调</span>
+   957→                  </span>
+   958→                  <span class="date new">
+   959→                    <span class="">09-10</span>
+   960→                  </span>
+   961→                </li>
+   962→                                
+   963→                <li>
+   964→                  <span class="line-main">
+   965→                    <span class="cat">玄幻</span>
+   966→                    <a href="/txt/57298.html" target="_blank">山野闲云</a>
+   967→                    <span class="author">来不及忧伤</span>
+   968→                  </span>
+   969→                  <span class="date new">
+   970→                    <span class="">09-10</span>
+   971→                  </span>
+   972→                </li>
+   973→                
+   974→              </ul>
+   975→            </div>
+   976→            <div>
+   977→              <h4>悬疑小说 <a href="/txt/kongbu/" target="_blank">更多&gt;&gt;</a></h4>
+   978→              <ul class="lines lines-books">
+   979→                                
+   980→                <li>
+   981→                  <span class="line-main">
+   982→                    <span class="cat">惊悚</span>
+   983→                    <a href="/txt/57278.html" target="_blank">阴脉先生</a>
+   984→                    <span class="author">想看许多风景的兔子</span>
+   985→                  </span>
+   986→                  <span class="date new">
+   987→                    <span class="">09-08</span>
+   988→                  </span>
+   989→                </li>
+   990→                                
+   991→                <li>
+   992→                  <span class="line-main">
+   993→                    <span class="cat">惊悚</span>
+   994→                    <a href="/txt/57195.html" target="_blank">捞尸人</a>
+   995→                    <span class="author">纯洁滴小龙</span>
+   996→                  </span>
+   997→                  <span class="date new">
+   998→                    <span class="">09-01</span>
+   999→                  </span>
+  1000→                </li>
+  1001→                                
+  1002→                <li>
+  1003→                  <span class="line-main">
+  1004→                    <span class="cat">惊悚</span>
+  1005→                    <a href="/txt/57018.html" target="_blank">怪谈游戏设计师</a>
+  1006→                    <span class="author">我会修空调</span>
+  1007→                  </span>
+  1008→                  <span class="date new">
+  1009→                    <span class="">08-15</span>
+  1010→                  </span>
+  1011→                </li>
+  1012→                                
+  1013→                <li>
+  1014→                  <span class="line-main">
+  1015→                    <span class="cat">惊悚</span>
+  1016→                    <a href="/txt/56989.html" target="_blank">惊悚片生存守则</a>
+  1017→                    <span class="author">东吴一点红</span>
+  1018→                  </span>
+  1019→                  <span class="date new">
+  1020→                    <span class="">08-12</span>
+  1021→                  </span>
+  1022→                </li>
+  1023→                                
+  1024→                <li>
+  1025→                  <span class="line-main">
+  1026→                    <span class="cat">惊悚</span>
+  1027→                    <a href="/txt/56958.html" target="_blank">我有一座冒险屋/我有一座恐怖屋</a>
+  1028→                    <span class="author">我会修空调</span>
+  1029→                  </span>
+  1030→                  <span class="date new">
+  1031→                    <span class="">08-10</span>
+  1032→                  </span>
+  1033→                </li>
+  1034→                                
+  1035→                <li>
+  1036→                  <span class="line-main">
+  1037→                    <span class="cat">惊悚</span>
+  1038→                    <a href="/txt/56876.html" target="_blank">诡律禁区</a>
+  1039→                    <span class="author">黑色火种</span>
+  1040→                  </span>
+  1041→                  <span class="date new">
+  1042→                    <span class="">08-02</span>
+  1043→                  </span>
+  1044→                </li>
+  1045→                                
+  1046→                <li>
+  1047→                  <span class="line-main">
+  1048→                    <span class="cat">惊悚</span>
+  1049→                    <a href="/txt/56833.html" target="_blank">我不是真的想惹事啊</a>
+  1050→                    <span class="author">左断手</span>
+  1051→                  </span>
+  1052→                  <span class="date new">
+  1053→                    <span class="">07-29</span>
+  1054→                  </span>
+  1055→                </li>
+  1056→                                
+  1057→                <li>
+  1058→                  <span class="line-main">
+  1059→                    <span class="cat">惊悚</span>
+  1060→                    <a href="/txt/56660.html" target="_blank">古神的诡异游戏</a>
+  1061→                    <span class="author">宝月流光</span>
+  1062→                  </span>
+  1063→                  <span class="date new">
+  1064→                    <span class="">07-14</span>
+  1065→                  </span>
+  1066→                </li>
+  1067→                                
+  1068→                <li>
+  1069→                  <span class="line-main">
+  1070→                    <span class="cat">惊悚</span>
+  1071→                    <a href="/txt/56633.html" target="_blank">盗墓笔记之吴邪的私家笔记</a>
+  1072→                    <span class="author">南派三叔</span>
+  1073→                  </span>
+  1074→                  <span class="date new">
+  1075→                    <span class="">07-12</span>
+  1076→                  </span>
+  1077→                </li>
+  1078→                                
+  1079→                <li>
+  1080→                  <span class="line-main">
+  1081→                    <span class="cat">惊悚</span>
+  1082→                    <a href="/txt/56386.html" target="_blank">河神：鬼水怪谈（出书版）</a>
+  1083→                    <span class="author">天下霸唱</span>
+  1084→                  </span>
+  1085→                  <span class="date new">
+  1086→                    <span class="">06-20</span>
+  1087→                  </span>
+  1088→                </li>
+  1089→                
+  1090→              </ul>
+  1091→            </div>
+  1092→          </div>
+  1093→        </article>
+  1094→
+  1095→        <article class="panel" style="margin-top:14px;">
+  1096→          <h3>专题书单</h3>
+  1097→          <div class="body grid3">
+  1098→            <div class="desc"><strong>高分重生文</strong><br />节奏快、反转多、女性成长线清晰。</div>
+  1099→            <div class="desc"><strong>穿越种田合集</strong><br />日常经营、家长里短、慢热耐看。</div>
+  1100→            <div class="desc"><strong>都市爽文精选</strong><br />升级流、事业线、金手指开局。</div>
+  1101→          </div>
+  1102→        </article>
+  1103→      </section>
+  1104→
+  1105→      <aside>
+  1106→
+  1107→  <div class="today-qd-users">
+  1108→    <h3>今日已签到</h3>
+  1109→    <ul class="qd-user-list">
+  1110→        <li>
+  1111→        <a href="/e/space/?userid=240131" target="_blank" title="szs">
+  1112→          <img src="/e/data/images/nouserpic.gif" alt="szs">
+  1113→          <span>szs</span>
+  1114→        </a>
+  1115→      </li>
+  1116→        <li>
+  1117→        <a href="/e/space/?userid=240125" target="_blank" title="zhx12345678">
+  1118→          <img src="/e/data/images/nouserpic.gif" alt="zhx12345678">
+  1119→          <span>zhx12345678</span>
+  1120→        </a>
+  1121→      </li>
+  1122→        <li>
+  1123→        <a href="/e/space/?userid=240106" target="_blank" title="小七6732">
+  1124→          <img src="/e/data/images/nouserpic.gif" alt="小七6732">
+  1125→          <span>小七6732</span>
+  1126→        </a>
+  1127→      </li>
+  1128→        <li>
+  1129→        <a href="/e/space/?userid=239735" target="_blank" title="wxac">
+  1130→          <img src="/e/data/images/nouserpic.gif" alt="wxac">
+  1131→          <span>wxac</span>
+  1132→        </a>
+  1133→      </li>
+  1134→        <li>
+  1135→        <a href="/e/space/?userid=239594" target="_blank" title="mantou">
+  1136→          <img src="/e/data/images/nouserpic.gif" alt="mantou">
+  1137→          <span>mantou</span>
+  1138→        </a>
+  1139→      </li>
+  1140→      </ul>
+  1141→  </div>
+  1142→
+  1143→        <article class="panel rank" style="margin-top:14px;">
+  1144→          <h3>24小时热榜</h3>
+  1145→          <div class="body">
+  1146→            
+  1147→            <div class="book_r">
+  1148→              <a href="/txt/57358.html" target="_blank"><img src="//image.jjjjxsw.com/UploadPic/202609/4x5icq0zbdi.jpg" alt="被我抛弃的前夫登基了封面" /></a>
+  1149→              <h4><a href="/txt/57358.html" target="_blank">被我抛弃的前夫登基了</a></h4>
+  1150→              <div class="meta">娴白 · 架空 · 364 KB</div>
+  1151→              <div class="desc">沈明玉从小过得不好。十六岁那年，为了逃脱被卖掉的命运，她..</div>
+  1152→            </div>
+  1153→            
+  1154→            <ul class="lines">
+  1155→              <li><span class="no">1</span><a href="/txt/57238.html" title="年代文丈夫是末世大佬" target="_blank">年代文丈夫是末世大佬</a><span class="date">刺棠</span></li>
+  1156→              <li><span class="no">2</span><a href="/txt/57230.html" title="大美人千里随军[七零]" target="_blank">大美人千里随军[七零]</a><span class="date">清清一色</span></li>
+  1157→              <li><span class="no">3</span><a href="/txt/57263.html" title="食明" target="_blank">食明</a><span class="date">春溪笛晓</span></li>
+  1158→              <li><span class="no">4</span><a href="/txt/57284.html" title="你老婆不要你了喔" target="_blank">你老婆不要你了喔</a><span class="date">青绒</span></li>
+  1159→              <li><span class="no">5</span><a href="/txt/57218.html" title="年代快穿坏女人的绚烂人生" target="_blank">年代快穿坏女人的绚烂人生</a><span class="date">海盐味薯片</span></li>
+  1160→              <li><span class="no">6</span><a href="/txt/57339.html" title="警察，但犯罪大师系统[刑侦]" target="_blank">警察，但犯罪大师系统[刑侦]</a><span class="date">学做饭的兔子</span></li>
+  1161→              <li><span class="no">7</span><a href="/txt/57296.html" title="普通人？明明是天才" target="_blank">普通人？明明是天才</a><span class="date">禾礼</span></li>
+  1162→              <li><span class="no">8</span><a href="/txt/57250.html" title="每天都在阻止哥哥殉职[九零]" target="_blank">每天都在阻止哥哥殉职[九零]</a><span class="date">巫其格</span></li>
+  1163→              <li><span class="no">9</span><a href="/txt/57348.html" title="公府小婢" target="_blank">公府小婢</a><span class="date">春未绿</span></li>
+  1164→              <li><span class="no">10</span><a href="/txt/57328.html" title="大院来了个绝色大美人[年代]" target="_blank">大院来了个绝色大美人[年代]</a><span class="date">宋家小四</span></li>
+  1165→            </ul>
+  1166→          </div>
+  1167→        </article>
+  1168→
+  1169→        <article class="panel rank" style="margin-top:14px;">
+  1170→          <h3>一周热榜</h3>
+  1171→          <div class="body">
+  1172→            
+  1173→            <div class="book_r">
+  1174→              <a href="/txt/56956.html" target="_blank"><img src="//image.jjjjxsw.com/UploadPic/202608/20260807220428300420.jpg" alt="幼儿园来了个林大厨[七零]封面" /></a>
+  1175→              <h4><a href="/txt/56956.html" target="_blank">幼儿园来了个林大厨[七零]</a></h4>
+  1176→              <div class="meta">二汀 · 穿越 · 707 KB</div>
+  1177→              <div class="desc">穿越到后妈进门那天是种什么体验……一不小心还搞砸了婚..</div>
+  1178→            </div>
+  1179→            
+  1180→            <ul class="lines">
+  1181→              <li><span class="no">1</span><a href="/txt/56747.html" title="穿成年代文女配的表妹/五零职工家庭独生女[年代]" target="_blank">穿成年代文女配的表妹/五零</a><span class="date">枝问雁</span></li>
+  1182→              <li><span class="no">2</span><a href="/txt/56502.html" title="继夫人只想鸡娃" target="_blank">继夫人只想鸡娃</a><span class="date">嘟嘟醋头</span></li>
+  1183→              <li><span class="no">3</span><a href="/txt/56693.html" title="女主她缺大德[八零]" target="_blank">女主她缺大德[八零]</a><span class="date">四单铺</span></li>
+  1184→              <li><span class="no">4</span><a href="/txt/56501.html" title="七零年代之省城媳妇" target="_blank">七零年代之省城媳妇</a><span class="date">末笙</span></li>
+  1185→              <li><span class="no">5</span><a href="/txt/56433.html" title="东宫佛系美妾" target="_blank">东宫佛系美妾</a><span class="date">鱼自来</span></li>
+  1186→              <li><span class="no">6</span><a href="/txt/56573.html" title="反派姐弟，但在香江破案" target="_blank">反派姐弟，但在香江破案</a><span class="date">溯时</span></li>
+  1187→              <li><span class="no">7</span><a href="/txt/57084.html" title="年代文的作精女配随军后" target="_blank">年代文的作精女配随军后</a><span class="date">瑰夏</span></li>
+  1188→              <li><span class="no">8</span><a href="/txt/56984.html" title="带着小男配改嫁了[六零]" target="_blank">带着小男配改嫁了[六零]</a><span class="date">林果冻</span></li>
+  1189→              <li><span class="no">9</span><a href="/txt/56523.html" title="小平安种田记" target="_blank">小平安种田记</a><span class="date">麻辣香橙</span></li>
+  1190→              <li><span class="no">10</span><a href="/txt/56956.html" title="幼儿园来了个林大厨[七零]" target="_blank">幼儿园来了个林大厨[七零]</a><span class="date">二汀</span></li>
+  1191→            </ul>
+  1192→          </div>
+  1193→        </article>
+  1194→
+  1195→        <article class="panel" style="margin-top:14px;">
+  1196→          <h3>热门作者</h3>
+  1197→          <div class="body tags">
+  1198→              <a href="/zuozhe/22886.html" title="犹怜" target="_blank">犹怜</a><a href="/zuozhe/22885.html" title="猜旺" target="_blank">猜旺</a><a href="/zuozhe/22884.html" title="山花头" target="_blank">山花头</a><a href="/zuozhe/22883.html" title="春笋夺笋" target="_blank">春笋夺笋</a><a href="/zuozhe/22882.html" title="执与你" target="_blank">执与你</a><a href="/zuozhe/22881.html" title="薄岛焉蓝" target="_blank">薄岛焉蓝</a><a href="/zuozhe/22880.html" title="亚舍罗" target="_blank">亚舍罗</a><a href="/zuozhe/22879.html" title="知南山桂" target="_blank">知南山桂</a><a href="/zuozhe/22878.html" title="宣恬" target="_blank">宣恬</a><a href="/zuozhe/22877.html" title="珠盈" target="_blank">珠盈</a>          </div>
+  1199→        </article>
+  1200→      </aside>
+  1201→    </main>
+  1202→
+  1203→    <section class="hero">
+  1204→      <h2>数据统计</h2><small>数据每30分钟更新</small>
+  1205→      <p>每天更新热门小说，覆盖穿越、重生、都市、玄幻等主流分类；支持在线阅读与TXT免费下载。</p>
+  1206→      <div class="kpi">
+  1207→        <div class="item"><div class="num">13部</div><div class="txt">今日上传电子书</div></div>
+  1208→        <div class="item"><div class="num">167部</div><div class="txt">本月上传电子书</div></div>
+  1209→        <div class="item"><div class="num">57人</div><div class="txt">24h会员注册</div></div>
+  1210→        <div class="item"><div class="num">  846591570</div><div class="txt">最新注册会员</div></div>
+  1211→      </div>
+  1212→    </section>
+  1213→
+  1214→  <script>
+  1215→    (function () {
+  1216→      var panel = document.querySelector('.latest-upload-expand');
+  1217→      if (!panel) return;
+  1218→
+  1219→      var list = panel.querySelector('.lines-books-2col');
+  1220→      var button = panel.querySelector('.latest-upload-more');
+  1221→      if (!list || !button) return;
+  1222→
+  1223→      var items = Array.prototype.slice.call(list.querySelectorAll('li'));
+  1224→      var visibleCount = 16;
+  1225→      var step = 10;
+  1226→
+  1227→      function renderLatestUpload() {
+  1228→        items.forEach(function (item, index) {
+  1229→          item.classList.toggle('latest-upload-hidden', index >= visibleCount);
+  1230→        });
+  1231→        if (visibleCount >= items.length) {
+  1232→          button.parentNode.style.display = 'none';
+  1233→        } else {
+  1234→          button.parentNode.style.display = 'flex';
+  1235→        }
+  1236→      }
+  1237→
+  1238→      button.addEventListener('click', function () {
+  1239→        visibleCount += step;
+  1240→        renderLatestUpload();
+  1241→      });
+  1242→
+  1243→      renderLatestUpload();
+  1244→    })();
+  1245→  </script>
+  1246→    <footer class="foot">
+  1247→      <a href="/support/about.html">网站简介</a> · <a href="/support/help.html">网站帮助</a> · <a href="/support/declare.html">版权声明</a> · <a href="/support/sitemap.html">网站地图</a> · <a href="/link/">友情链接</a> · <a href="/e/tool/gbook/index.php?bid=2">留言建议</a><br />
+  1248→      Copyright &copy; 久久小说下载网 All Rights Reserved<br />
+  1249→      本站所有小说电子书均系网友上传，仅供书友之间免费下载预览！
+  1250→    </footer>
+  1251→  </div>
+  1252→  <script src="/skin/yellow/theme.js?t=20260509"></script>
+  1253→  <script type="text/javascript" src="/e/extend/qd/js/qd.js"></script>
+  1254→</body>
+  1255→</html>
