@@ -6,10 +6,12 @@
  * 路由:
  *   GET  /api/strategies  可用抓取策略及状态
  *   GET  /api/health      健康检查
- *   POST /api/test        { url, rule: { listRule?, bookRule?, chapterRule? }, strategy?, charset? }
- *   POST /api/chapter     { url, rule?: ChapterRule, charset? }
+ *   POST /api/test        { url, rule: { listRule?, bookRule?, chapterRule? }, strategy?, charset?, timeoutMs? }
+ *   POST /api/chapter     { url, rule?: ChapterRule, charset?, strategy?, timeoutMs? }
  *
- * 错误一律 JSON { error, detail }；策略全败返回结构化 502 而非 throw。
+ * 错误一律 JSON { error, detail }；策略全败返回结构化 502 而非 throw；
+ * 成功与失败响应都携带 attempts 明细（每次网络尝试的状态/耗时/画像/挑战页标记）便于调试；
+ * 内部异常只返回消息不返回堆栈（堆栈仅打印到服务端日志）。
  *
  * 合规红线（不可移除）：
  * - 仅用于公开可访问内容，禁止采集需登录/付费内容；
@@ -50,7 +52,7 @@ function parseTarget(raw: unknown): TargetResult {
   try {
     u = new URL(raw.trim())
   } catch {
-    return { ok: false, message: `URL 无法解析: ${raw}` }
+    return { ok: false, message: `URL 无法解析: ${String(raw).slice(0, 200)}` }
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     return { ok: false, message: `仅支持 http/https 协议（收到 ${u.protocol}）` }
@@ -75,14 +77,15 @@ function sanitizeRule<T extends object>(keys: readonly string[], raw: unknown): 
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     for (const k of keys) {
       const v = (raw as Record<string, unknown>)[k]
-      if (typeof v === 'string' && v.trim()) out[k] = v.trim()
+      if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 300)
     }
   }
   return out as T
 }
 
-function strField(v: unknown): string | null {
-  return typeof v === 'string' && v.trim() ? v.trim() : null
+function strField(v: unknown, maxLen = 64): string | null {
+  if (typeof v !== 'string' || !v.trim()) return null
+  return v.trim().slice(0, maxLen)
 }
 
 function parseBody(req: Request): Promise<Record<string, unknown> | null> {
@@ -103,7 +106,9 @@ async function handleStrategies(): Promise<Response> {
     compliance: {
       rateLimit: '默认每域名 1200ms±300ms（< 1 req/s），环境变量 SCRAPER_MIN_INTERVAL_MS 可调但不允许低于 1000ms',
       robotsCheck: 'warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断',
+      ssrfGuard: '文本层（IPv4 全形态/IPv6 内网段）+ DNS 尽力校验 + fetch redirect:manual 逐跳校验',
       maxResponseBytes: 8 * 1024 * 1024,
+      challengeDetection: '响应 <3KB 且含 verify/challenge/captcha/javascript 关键词 → attempts 标记 blocked',
       captchaSolving: '禁止提供',
       loginContent: '禁止采集',
       accountSpoofing: '禁止提供',
@@ -112,7 +117,7 @@ async function handleStrategies(): Promise<Response> {
 }
 
 interface PageFetchOutcome {
-  response: Response
+  response?: Response
   page?: Awaited<ReturnType<typeof fetchPage>>
   target?: URL
 }
@@ -131,31 +136,36 @@ async function fetchAndPrepare(body: Record<string, unknown>): Promise<PageFetch
     forcedCharset: charset,
     timeoutMs,
   })
-  return { response: json({}), page, target: t.url }
+  return { page, target: t.url }
+}
+
+/** 策略链全败时的结构化 502 响应（含 attempts 明细与挑战页标记） */
+function pageFailureResponse(page: NonNullable<Awaited<ReturnType<typeof fetchPage>>>, baseUrl: string): Response {
+  const challengeSuspected = page.attempts.some((a) => a.blocked) || (page.detail ?? '').includes('挑战页')
+  return json(
+    {
+      ok: false,
+      url: baseUrl,
+      error: page.error,
+      detail: page.detail,
+      challengeSuspected,
+      attempts: page.attempts,
+      robots: page.robots,
+      warnings: page.warnings,
+      elapsedMs: page.elapsedMs,
+    },
+    502,
+  )
 }
 
 async function handleTest(body: Record<string, unknown>): Promise<Response> {
   const t0 = Date.now()
   const outcome = await fetchAndPrepare(body)
-  if (!outcome.page || !outcome.target) return outcome.response
+  if (!outcome.page || !outcome.target) return outcome.response ?? fail('服务器内部错误', '抓取流程未返回结果', 500)
   const page = outcome.page
   const baseUrl = outcome.target.toString()
 
-  if (!page.ok) {
-    return json(
-      {
-        ok: false,
-        url: baseUrl,
-        error: page.error,
-        detail: page.detail,
-        attempts: page.attempts,
-        robots: page.robots,
-        warnings: page.warnings,
-        elapsedMs: page.elapsedMs,
-      },
-      502,
-    )
-  }
+  if (!page.ok) return pageFailureResponse(page, baseUrl)
 
   const rawRule = (body.rule ?? {}) as Record<string, unknown>
   const listRule = sanitizeRule<ListRule>(LIST_KEYS, rawRule.listRule)
@@ -189,6 +199,7 @@ async function handleTest(body: Record<string, unknown>): Promise<Response> {
     encoding: page.encoding,
     htmlLength: page.html.length,
     robots: page.robots,
+    attempts: page.attempts,
     data,
     warnings,
   })
@@ -197,26 +208,12 @@ async function handleTest(body: Record<string, unknown>): Promise<Response> {
 async function handleChapter(body: Record<string, unknown>): Promise<Response> {
   const t0 = Date.now()
   const rule = sanitizeRule<ChapterRule>(CHAPTER_KEYS, body.rule)
-  const outcome = await fetchAndPrepare({ ...body, rule: {} })
-  if (!outcome.page || !outcome.target) return outcome.response
+  const outcome = await fetchAndPrepare(body)
+  if (!outcome.page || !outcome.target) return outcome.response ?? fail('服务器内部错误', '抓取流程未返回结果', 500)
   const page = outcome.page
   const baseUrl = outcome.target.toString()
 
-  if (!page.ok) {
-    return json(
-      {
-        ok: false,
-        url: baseUrl,
-        error: page.error,
-        detail: page.detail,
-        attempts: page.attempts,
-        robots: page.robots,
-        warnings: page.warnings,
-        elapsedMs: page.elapsedMs,
-      },
-      502,
-    )
-  }
+  if (!page.ok) return pageFailureResponse(page, baseUrl)
 
   const warnings = [...page.warnings]
   const $ = cheerio.load(page.html)
@@ -231,6 +228,7 @@ async function handleChapter(body: Record<string, unknown>): Promise<Response> {
     fetchElapsedMs: page.elapsedMs,
     encoding: page.encoding,
     robots: page.robots,
+    attempts: page.attempts,
     data,
     warnings,
   })
@@ -259,7 +257,7 @@ async function route(req: Request): Promise<Response> {
     return json({
       ok: true,
       service: 'scraper-service',
-      version: '1.0.0',
+      version: '1.1.0',
       endpoints: ['GET /api/strategies', 'GET /api/health', 'POST /api/test', 'POST /api/chapter'],
     })
   }
@@ -274,13 +272,13 @@ async function route(req: Request): Promise<Response> {
 
   if (method === 'POST' && path === '/api/test') {
     const body = await parseBody(req)
-    if (!body) return fail('请求体错误', '请求体必须是 JSON 对象，形如 { url, rule: { listRule?, bookRule?, chapterRule? }, strategy?, charset? }')
+    if (!body) return fail('请求体错误', '请求体必须是 JSON 对象，形如 { url, rule: { listRule?, bookRule?, chapterRule? }, strategy?, charset?, timeoutMs? }')
     return handleTest(body)
   }
 
   if (method === 'POST' && path === '/api/chapter') {
     const body = await parseBody(req)
-    if (!body) return fail('请求体错误', '请求体必须是 JSON 对象，形如 { url, rule?: { titleSelector?, contentSelector?, nextSelector? }, charset? }')
+    if (!body) return fail('请求体错误', '请求体必须是 JSON 对象，形如 { url, rule?: { titleSelector?, contentSelector?, nextSelector? }, charset?, strategy?, timeoutMs? }')
     return handleChapter(body)
   }
 
@@ -293,13 +291,16 @@ const server = Bun.serve({
     try {
       return await route(req)
     } catch (e) {
-      return fail('服务器内部错误', e instanceof Error ? e.stack ?? e.message : String(e), 500)
+      // 不向客户端泄漏内部堆栈；完整堆栈只进服务端日志
+      console.error('[scraper-service] unhandled error:', e instanceof Error ? e.stack ?? e.message : String(e))
+      return fail('服务器内部错误', e instanceof Error ? e.message : String(e), 500)
     }
   },
   error(e) {
-    return fail('服务器内部错误', e instanceof Error ? e.message : String(e), 500)
+    console.error('[scraper-service] server error:', e instanceof Error ? e.stack ?? e.message : String(e))
+    return fail('服务器内部错误', '请求处理失败，请查看服务端日志', 500)
   },
 })
 
 console.log(`[scraper-service] listening on http://127.0.0.1:${server.port}`)
-console.log(`[scraper-service] 合规约束: 域名限速≥1.2s | robots.txt warn-only | 禁验证码破解/账号伪装/付费内容`)
+console.log(`[scraper-service] 合规约束: 域名限速≥1.2s | robots.txt warn-only | SSRF 逐跳校验 | 禁验证码破解/账号伪装/付费内容`)

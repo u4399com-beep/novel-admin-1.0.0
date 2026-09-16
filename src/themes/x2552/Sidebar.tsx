@@ -24,7 +24,7 @@ export default function Sidebar({ navigate }: { navigate: ViewProps['navigate'] 
   const { data, isLoading } = useNovels({ sort: 'clicks', page: 1, pageSize: 15 })
 
   return (
-    <div className="w-[190px] shrink-0 space-y-2">
+    <div className="hidden w-[190px] shrink-0 space-y-2 lg:block">
       <Block title="会员推荐" titleH={26}>
         {isLoading ? (
           <RowsSkeleton rows={8} />

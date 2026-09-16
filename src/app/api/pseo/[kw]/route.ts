@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { sanitizeKeyword } from '@/lib/suggest'
 import type { PseoPageData, NovelListItem } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +33,14 @@ const fullSelect = {
 
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { kw: rawKw } = await params
-  const keyword = decodeURIComponent(rawKw).trim()
+  // decodeURIComponent 对畸形转义序列（如 %zz）会抛 URIError，必须兜底
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(rawKw)
+  } catch {
+    decoded = rawKw
+  }
+  const keyword = sanitizeKeyword(decoded)
   if (!keyword) return NextResponse.json({ error: '关键词不能为空' }, { status: 400 })
 
   const row = await db.pseoKeyword.findUnique({ where: { keyword } })

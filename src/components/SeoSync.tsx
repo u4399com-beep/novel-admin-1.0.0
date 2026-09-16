@@ -113,11 +113,21 @@ export function SeoSync() {
         break
       }
       case 'search': {
-        const vars = { siteName, query: view.query }
-        meta = {
-          title: renderTpl(seo.searchTitle, vars),
-          description: renderTpl(seo.searchDescription, vars),
-          keywords: `${view.query},${siteName}`,
+        const query = view.query?.trim() ?? ''
+        if (!query) {
+          // 空关键词的搜索落地页：退回首页 TDK，避免生成 “”的搜索结果 这类畸形标题
+          meta = {
+            title: renderTpl(seo.homeTitle, { siteName }),
+            description: renderTpl(seo.homeDescription, { siteName }),
+            keywords: renderTpl(seo.homeKeywords, { siteName }),
+          }
+        } else {
+          const vars = { siteName, query }
+          meta = {
+            title: renderTpl(seo.searchTitle, vars),
+            description: renderTpl(seo.searchDescription, vars),
+            keywords: `${query},${siteName}`,
+          }
         }
         break
       }

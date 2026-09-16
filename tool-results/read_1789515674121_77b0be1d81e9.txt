@@ -1,0 +1,830 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState } from 'react'
+     4→import {
+     5→  useCategories,
+     6→  useChapter,
+     7→  useChapters,
+     8→  useHomeData,
+     9→  useNovel,
+    10→  useNovels,
+    11→} from '@/hooks/use-novel-data'
+    12→import type { NovelListItem } from '@/lib/types'
+    13→import type { ThemeView, ViewProps } from '../types'
+    14→import {
+    15→  BlueTag,
+    16→  GH2,
+    17→  GCover,
+    18→  GEmptyBox,
+    19→  GErrorBox,
+    20→  GPager,
+    21→  GBoxSkeleton,
+    22→  GCoverSkeleton,
+    23→  GRowSkeleton,
+    24→  GBreadcrumb,
+    25→  GSkel,
+    26→  RedTag,
+    27→  dedupMerge,
+    28→  fmtDate,
+    29→  fmtWords,
+    30→  fmtWan,
+    31→  linkCls,
+    32→  statusLabel,
+    33→} from './ui'
+    34→
+    35→type Nav = (v: ThemeView) => void
+    36→
+    37→/** 容器：90% 宽、最大 1200px */
+    38→function Container({ children, className }: { children: React.ReactNode; className?: string }) {
+    39→  return <div className={`mx-auto w-[90%] max-w-[1200px] ${className ?? ''}`}>{children}</div>
+    40→}
+    41→
+    42→/** 侧栏搜索框（2px 薄荷绿边、圆角 5px、输入 80% + 绿按钮 20%） */
+    43→function SearchBox({ navigate, initialValue = '' }: { navigate: Nav; initialValue?: string }) {
+    44→  const [kw, setKw] = useState(initialValue)
+    45→  return (
+    46→    <form
+    47→      onSubmit={(e) => {
+    48→        e.preventDefault()
+    49→        const q = kw.trim()
+    50→        if (q) navigate({ name: 'search', query: q })
+    51→      }}
+    52→      className="flex h-[38px] overflow-hidden rounded-[5px] border-2 border-[#56ccb5] bg-white"
+    53→    >
+    54→      <input
+    55→        value={kw}
+    56→        onChange={(e) => setKw(e.target.value)}
+    57→        placeholder="输入关键词"
+    58→        className="min-w-0 flex-[4] px-3 text-[14px] text-[#333] outline-none placeholder:text-[#bbb]"
+    59→      />
+    60→      <button
+    61→        type="submit"
+    62→        className="flex-[1] cursor-pointer bg-[#56ccb5] text-[13px] text-white transition-colors duration-200 hover:bg-[#48b9a2]"
+    63→      >
+    64→        搜索
+    65→      </button>
+    66→    </form>
+    67→  )
+    68→}
+    69→
+    70→/** 榜单行：[分类] 书名 …… 右浮作者（28px 行高、虚线分隔） */
+    71→function RankRow({ novel, navigate }: { novel: NovelListItem; navigate: Nav }) {
+    72→  return (
+    73→    <div className="flex h-[28px] items-center gap-1 border-b border-dashed border-[#ccc] text-[13px]">
+    74→      <button
+    75→        onClick={() => navigate({ name: 'category', categoryId: novel.categoryId, page: 1 })}
+    76→        className="shrink-0 cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
+    77→      >
+    78→        [{novel.categoryName}]
+    79→      </button>
+    80→      <button
+    81→        onClick={() => navigate({ name: 'book', novelId: novel.id })}
+    82→        className="min-w-0 flex-1 cursor-pointer truncate text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
+    83→      >
+    84→        {novel.title}
+    85→      </button>
+    86→      <span className="shrink-0 text-[12px] text-[#999]">{novel.author}</span>
+    87→    </div>
+    88→  )
+    89→}
+    90→
+    91→/** 最近更新五列字段行：分类 75px / 书名 165px / 最新章节 / 时间 90px / 作者 90px */
+    92→function UpdateRow({ novel, navigate }: { novel: NovelListItem; navigate: Nav }) {
+    93→  return (
+    94→    <div className="grid h-[28px] items-center border-b border-dashed border-[#ccc] text-[13px] grid-cols-[72px_1fr_80px] md:grid-cols-[75px_165px_1fr_85px] lg:grid-cols-[75px_165px_1fr_85px_85px]">
+    95→      <button
+    96→        onClick={() => navigate({ name: 'category', categoryId: novel.categoryId, page: 1 })}
+    97→        className="cursor-pointer truncate pr-1 text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
+    98→      >
+    99→        {novel.categoryName}
+   100→      </button>
+   101→      <button
+   102→        onClick={() => navigate({ name: 'book', novelId: novel.id })}
+   103→        className="cursor-pointer truncate pr-1 text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
+   104→      >
+   105→        {novel.title}
+   106→      </button>
+   107→      <button
+   108→        onClick={() => navigate({ name: 'book', novelId: novel.id })}
+   109→        className="hidden cursor-pointer truncate pr-1 text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50] md:block"
+   110→      >
+   111→        {novel.lastChapterTitle ?? '暂无章节'}
+   112→      </button>
+   113→      <span className="truncate text-right text-[#999]">{fmtDate(novel.updatedAt)}</span>
+   114→      <span className="hidden truncate text-right text-[#999] lg:block">{novel.author}</span>
+   115→    </div>
+   116→  )
+   117→}
+   118→
+   119→/** 首页推荐项：左 120×150 封面 + 右 dl（书名/作者 点线分隔 + 缩进简介） */
+   120→function HotItem({ novel, navigate }: { novel: NovelListItem; navigate: Nav }) {
+   121→  return (
+   122→    <article className="flex gap-3">
+   123→      <button
+   124→        onClick={() => navigate({ name: 'book', novelId: novel.id })}
+   125→        className="h-[150px] w-[120px] shrink-0 cursor-pointer border border-[#ccc] bg-white p-[1px] transition-opacity duration-200 hover:opacity-90"
+   126→      >
+   127→        <GCover
+   128→          token={novel.cover}
+   129→          title={novel.title}
+   130→          className="h-full w-full"
+   131→          charClassName="text-[30px]"
+   132→        />
+   133→      </button>
+   134→      <dl className="min-w-0 flex-1">
+   135→        <dt className="flex h-[25px] items-center justify-between gap-2 border-b border-dotted border-[#ccc]">
+   136→          <button
+   137→            onClick={() => navigate({ name: 'book', novelId: novel.id })}
+   138→            className="min-w-0 flex-1 cursor-pointer truncate text-left text-[15px] font-bold text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
+   139→          >
+   140→            {novel.title}
+   141→          </button>
+   142→          <span className="shrink-0 text-[12px] font-normal text-[#888]">{novel.author}</span>
+   143→        </dt>
+   144→        <dd
+   145→          onClick={() => navigate({ name: 'book', novelId: novel.id })}
+   146→          className="mt-2 h-[110px] cursor-pointer overflow-hidden text-[13px] leading-[22px] text-[#888] indent-[2em]"
+   147→        >
+   148→          {novel.description || '暂无简介'}
+   149→        </dd>
+   150→      </dl>
+   151→    </article>
+   152→  )
+   153→}
+   154→
+   155→/** 分类/搜索列表格：虚线边框盒 + 左上角序号徽章 + 右侧“阅读”描边按钮 */
+   156→function BookBoxItem({
+   157→  novel,
+   158→  index,
+   159→  navigate,
+   160→}: {
+   161→  novel: NovelListItem
+   162→  index: number
+   163→  navigate: Nav
+   164→}) {
+   165→  return (
+   166→    <div
+   167→      onClick={() => navigate({ name: 'book', novelId: novel.id })}
+   168→      className="group relative flex cursor-pointer items-center gap-3 rounded-[4px] border border-dashed border-[#ccc] p-[10px] transition-colors duration-200 hover:border-[#f50]"
+   169→    >
+   170→      <span className="absolute -top-[8px] -left-[8px] grid h-[22px] w-[22px] place-items-center rounded-[4px] bg-[#56ccb5] text-[12px] text-white transition-colors duration-200 group-hover:bg-[#f50]">
+   171→        {index}
+   172→      </span>
+   173→      <div className="min-w-0 flex-1">
+   174→        <h4 className="truncate text-[15px] font-bold text-[#00886d] transition-colors duration-200 group-hover:text-[#f50]">
+   175→          {novel.title}
+   176→        </h4>
+   177→        <p className="mt-1 truncate text-[12px] text-[#999]">
+   178→          作者：{novel.author} · {fmtWords(novel.wordCount)} · 点击 {fmtWan(novel.clicks)}
+   179→        </p>
+   180→        <p className="mt-0.5 truncate text-[12px] text-[#999]">
+   181→          更新到：
+   182→          <span className="text-[#00886d]">{novel.lastChapterTitle ?? '暂无章节'}</span>
+   183→        </p>
+   184→        <p className="mt-1 line-clamp-2 text-[13px] text-[#888]">{novel.description || '暂无简介'}</p>
+   185→      </div>
+   186→      <button
+   187→        onClick={(e) => {
+   188→          e.stopPropagation()
+   189→          navigate({ name: 'book', novelId: novel.id })
+   190→        }}
+   191→        className="shrink-0 cursor-pointer rounded-[4px] border border-[#56ccb5] px-3 py-2 text-[13px] text-[#00886d] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50]"
+   192→      >
+   193→        阅读
+   194→      </button>
+   195→    </div>
+   196→  )
+   197→}
+   198→
+   199→/* ==================== 首页（宽主栏 + 窄侧栏 双行双栏） ==================== */
+   200→
+   201→export function Home({ navigate }: ViewProps) {
+   202→  const home = useHomeData()
+   203→  const updates = useNovels({ sort: 'latest', page: 1, pageSize: 30 })
+   204→
+   205→  if (home.isPending || updates.isPending) {
+   206→    return (
+   207→      <Container className="mt-2">
+   208→        <div className="grid gap-4 md:grid-cols-[73%_1fr]">
+   209→          <div>
+   210→            <GSkel className="mb-2 h-6 w-40" />
+   211→            <GCoverSkeleton count={4} />
+   212→          </div>
+   213→          <div>
+   214→            <GSkel className="mb-2 h-10 w-full" />
+   215→            <GSkel className="mb-2 h-6 w-32" />
+   216→            <GRowSkeleton count={10} />
+   217→          </div>
+   218→        </div>
+   219→      </Container>
+   220→    )
+   221→  }
+   222→
+   223→  if (home.isError || !home.data) {
+   224→    return (
+   225→      <Container className="mt-4">
+   226→        <GErrorBox onRetry={() => home.refetch()} />
+   227→      </Container>
+   228→    )
+   229→  }
+   230→  if (updates.isError) {
+   231→    return (
+   232→      <Container className="mt-4">
+   233→        <GErrorBox onRetry={() => updates.refetch()} />
+   234→      </Container>
+   235→    )
+   236→  }
+   237→
+   238→  const d = home.data
+   239→  const hotItems = d.hot.slice(0, 6)
+   240→  const clickRank = d.rankings.clicks.slice(0, 12)
+   241→  const updateRows = (updates.data?.list ?? []).slice(0, 30)
+   242→  const sideNews = dedupMerge(
+   243→    [d.featured, d.hot, d.rankings.clicks, d.rankings.updates, d.rankings.finished],
+   244→    30,
+   245→  )
+   246→
+   247→  return (
+   248→    <Container className="mt-1">
+   249→      <div className="grid gap-5 md:grid-cols-[73%_1fr] md:gap-[2%]">
+   250→        {/* 第一行左：热门小说推荐（2 列封面简介卡） */}
+   251→        <section>
+   252→          <GH2>热门小说推荐</GH2>
+   253→          <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+   254→            {hotItems.map((n) => (
+   255→              <HotItem key={n.id} novel={n} navigate={navigate} />
+   256→            ))}
+   257→          </div>
+   258→        </section>
+   259→
+   260→        {/* 第一行右：搜索框 + 阅读排行榜 */}
+   261→        <aside>
+   262→          <SearchBox navigate={navigate} />
+   263→          <GH2 className="mt-4">阅读排行榜</GH2>
+   264→          <div>
+   265→            {clickRank.map((n) => (
+   266→              <RankRow key={n.id} novel={n} navigate={navigate} />
+   267→            ))}
+   268→          </div>
+   269→        </aside>
+   270→
+   271→        {/* 第二行左：最近更新（五列字段表） */}
+   272→        <section>
+   273→          <GH2>最近更新</GH2>
+   274→          <div>
+   275→            {updateRows.map((n) => (
+   276→              <UpdateRow key={n.id} novel={n} navigate={navigate} />
+   277→            ))}
+   278→          </div>
+   279→        </section>
+   280→
+   281→        {/* 第二行右：最新小说（两字段行榜单） */}
+   282→        <aside>
+   283→          <GH2>最新小说</GH2>
+   284→          <div>
+   285→            {sideNews.map((n) => (
+   286→              <RankRow key={n.id} novel={n} navigate={navigate} />
+   287→            ))}
+   288→          </div>
+   289→        </aside>
+   290→      </div>
+   291→    </Container>
+   292→  )
+   293→}
+   294→
+   295→/* ==================== 分类页（分类导航条 + 3 列虚线盒 + 数字分页） ==================== */
+   296→
+   297→export function Category({
+   298→  navigate,
+   299→  categoryId,
+   300→  page = 1,
+   301→}: ViewProps & { categoryId?: number; page?: number }) {
+   302→  const cats = useCategories()
+   303→  const list = useNovels({ categoryId, page, pageSize: 20 })
+   304→  const catName = cats.data?.find((c) => c.id === categoryId)?.name
+   305→
+   306→  const navCls = (active: boolean) =>
+   307→    active
+   308→      ? 'grid place-items-center h-[38px] rounded-[3px] bg-[#56ccb5] text-[15px] text-white transition-colors duration-200 cursor-pointer'
+   309→      : 'grid place-items-center h-[38px] cursor-pointer rounded-[3px] text-[15px] text-[#00886d] transition-colors duration-200 hover:bg-[#cdf3eb] hover:text-[#f50]'
+   310→
+   311→  return (
+   312→    <Container className="mt-1">
+   313→      {/* 分类导航条 */}
+   314→      <nav className="mb-3 grid grid-cols-3 gap-1 rounded-[4px] border border-[#ccc] bg-white p-1 sm:grid-cols-4 md:grid-cols-8">
+   315→        <button
+   316→          onClick={() => navigate({ name: 'category', page: 1 })}
+   317→          className={navCls(categoryId == null)}
+   318→        >
+   319→          全部
+   320→        </button>
+   321→        {(cats.data ?? []).map((c) => (
+   322→          <button
+   323→            key={c.id}
+   324→            onClick={() => navigate({ name: 'category', categoryId: c.id, page: 1 })}
+   325→            className={navCls(categoryId === c.id)}
+   326→          >
+   327→            {c.name}
+   328→          </button>
+   329→        ))}
+   330→      </nav>
+   331→
+   332→      {/* 书籍列表 */}
+   333→      <section className="rounded-[4px] border border-[#ccc] bg-white p-3">
+   334→        <GH2 className="text-center">
+   335→          {catName ?? '全部小说'}
+   336→          {list.data ? <span className="ml-2 text-[13px] font-normal text-[#999]">共 {list.data.total} 本</span> : null}
+   337→        </GH2>
+   338→
+   339→        {list.isPending ? (
+   340→          <GBoxSkeleton count={6} />
+   341→        ) : list.isError ? (
+   342→          <GErrorBox onRetry={() => list.refetch()} />
+   343→        ) : (list.data?.list.length ?? 0) === 0 ? (
+   344→          <GEmptyBox text="该分类下暂无收录小说" />
+   345→        ) : (
+   346→          <>
+   347→            <div className="grid gap-4 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+   348→              {list.data!.list.map((n, i) => (
+   349→                <BookBoxItem
+   350→                  key={n.id}
+   351→                  novel={n}
+   352→                  index={(list.data!.page - 1) * (list.data!.pageSize ?? 20) + i + 1}
+   353→                  navigate={navigate}
+   354→                />
+   355→              ))}
+   356→            </div>
+   357→            <GPager
+   358→              page={list.data!.page}
+   359→              totalPages={list.data!.totalPages}
+   360→              onGo={(p) => navigate({ name: 'category', categoryId, page: p })}
+   361→            />
+   362→          </>
+   363→        )}
+   364→      </section>
+   365→    </Container>
+   366→  )
+   367→}
+   368→
+   369→/* ==================== 书籍详情页（目录内嵌：最新 12 条 + 全部 4 列） ==================== */
+   370→
+   371→function ChapterDD({
+   372→  chapters,
+   373→  navigate,
+   374→  cols,
+   375→}: {
+   376→  chapters: { id: number; idx: number; title: string }[]
+   377→  navigate: Nav
+   378→  cols: string
+   379→}) {
+   380→  return (
+   381→    <div className={`grid gap-x-3 ${cols}`}>
+   382→      {chapters.map((c) => (
+   383→        <button
+   384→          key={c.id}
+   385→          onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+   386→          className="h-[28px] cursor-pointer truncate border-b border-dashed border-[#ccc] px-1 text-left text-[13px] text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
+   387→        >
+   388→          {c.title}
+   389→        </button>
+   390→      ))}
+   391→    </div>
+   392→  )
+   393→}
+   394→
+   395→export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
+   396→  const { data: novel, isPending, isError, refetch } = useNovel(novelId)
+   397→  const chapters = useChapters(novelId)
+   398→  const [showAll, setShowAll] = useState(false)
+   399→
+   400→  if (isPending) {
+   401→    return (
+   402→      <Container className="mt-1">
+   403→        <GSkel className="mb-3 h-10 w-full" />
+   404→        <div className="rounded-[4px] border border-[#ccc] bg-white p-4">
+   405→          <div className="flex gap-4">
+   406→            <GSkel className="hidden h-[190px] w-[160px] sm:block" />
+   407→            <div className="flex-1 space-y-3">
+   408→              <GSkel className="h-6 w-1/2" />
+   409→              <GSkel className="h-4 w-3/4" />
+   410→              <GSkel className="h-3 w-full" />
+   411→              <GSkel className="h-3 w-5/6" />
+   412→              <GSkel className="h-9 w-48" />
+   413→            </div>
+   414→          </div>
+   415→        </div>
+   416→      </Container>
+   417→    )
+   418→  }
+   419→
+   420→  if (isError || !novel) {
+   421→    return (
+   422→      <Container className="mt-4">
+   423→        <GErrorBox onRetry={() => refetch()} />
+   424→      </Container>
+   425→    )
+   426→  }
+   427→
+   428→  const full = chapters.data ?? []
+   429→  const latest12 = full.slice(-12).reverse()
+   430→
+   431→  return (
+   432→    <Container className="mt-1">
+   433→      <GBreadcrumb
+   434→        items={[
+   435→          { label: '首页', view: { name: 'home' } },
+   436→          { label: novel.categoryName, view: { name: 'category', categoryId: novel.categoryId, page: 1 } },
+   437→          { label: novel.title },
+   438→        ]}
+   439→        navigate={navigate}
+   440→      />
+   441→
+   442→      {/* 头部信息卡 */}
+   443→      <section className="rounded-[4px] border border-[#ccc] bg-white p-4 shadow-sm">
+   444→        <div className="flex gap-4">
+   445→          <div className="hidden w-[160px] shrink-0 sm:block">
+   446→            <div className="rounded-[4px] border border-[#ddd] bg-white p-[4px]">
+   447→              <GCover
+   448→                token={novel.cover}
+   449→                title={novel.title}
+   450→                className="h-[180px] w-full"
+   451→                charClassName="text-[40px]"
+   452→              />
+   453→            </div>
+   454→          </div>
+   455→          <div className="min-w-0 flex-1">
+   456→            <h1 className="text-[22px] font-bold text-[#56ccb5]">{novel.title}</h1>
+   457→            <div className="mt-2 flex flex-wrap gap-2">
+   458→              <RedTag onClick={() => navigate({ name: 'search', query: novel.author })}>
+   459→                作者：{novel.author}
+   460→              </RedTag>
+   461→              <BlueTag>字数：{fmtWords(novel.wordCount)}</BlueTag>
+   462→              <BlueTag>阅读：{fmtWan(novel.clicks)}人次</BlueTag>
+   463→              <RedTag>{statusLabel(novel.status)}</RedTag>
+   464→            </div>
+   465→            <p className="mt-3 h-[110px] overflow-hidden text-[14px] leading-[1.7] text-[#888]">
+   466→              {novel.description || '暂无简介'}
+   467→            </p>
+   468→            <p className="mt-2 text-[13px] text-[#888]">
+   469→              最新章节：
+   470→              {novel.lastChapterId ? (
+   471→                <button
+   472→                  onClick={() => navigate({ name: 'chapter', chapterId: novel.lastChapterId! })}
+   473→                  className={linkCls}
+   474→                >
+   475→                  {novel.lastChapterTitle ?? '查看'}
+   476→                </button>
+   477→              ) : (
+   478→                <span className="text-[#999]">暂无章节</span>
+   479→              )}
+   480→            </p>
+   481→            <p className="mt-1 text-[13px] text-[#999]">更新时间：{fmtDate(novel.updatedAt)}</p>
+   482→            <div className="mt-3 flex flex-wrap gap-2">
+   483→              <button
+   484→                disabled={!novel.firstChapterId}
+   485→                onClick={() =>
+   486→                  novel.firstChapterId && navigate({ name: 'chapter', chapterId: novel.firstChapterId })
+   487→                }
+   488→                className="cursor-pointer rounded-[4px] bg-[#56ccb5] px-5 py-2 text-[14px] text-white transition-colors duration-200 hover:bg-[#48b9a2] disabled:pointer-events-none disabled:opacity-40"
+   489→              >
+   490→                开始阅读
+   491→              </button>
+   492→              <button
+   493→                onClick={() => navigate({ name: 'toc', novelId: novel.id })}
+   494→                className="cursor-pointer rounded-[4px] bg-[#56ccb5] px-5 py-2 text-[14px] text-white transition-colors duration-200 hover:bg-[#48b9a2]"
+   495→              >
+   496→                章节目录
+   497→              </button>
+   498→            </div>
+   499→          </div>
+   500→        </div>
+   501→      </section>
+   502→
+   503→      {/* 最新章节（4 列虚线行） */}
+   504→      <section className="mt-3 rounded-[4px] border border-[#ccc] bg-white p-3">
+   505→        <GH2>最新章节</GH2>
+   506→        {chapters.isPending ? (
+   507→          <GRowSkeleton count={6} />
+   508→        ) : chapters.isError ? (
+   509→          <GErrorBox msg="章节加载失败" onRetry={() => chapters.refetch()} />
+   510→        ) : latest12.length === 0 ? (
+   511→          <GEmptyBox text="暂无章节" />
+   512→        ) : (
+   513→          <ChapterDD
+   514→            chapters={latest12}
+   515→            navigate={navigate}
+   516→            cols="grid-cols-1 min-[468px]:grid-cols-2 md:grid-cols-4"
+   517→          />
+   518→        )}
+   519→        <button
+   520→          onClick={() => setShowAll((v) => !v)}
+   521→          className="mt-2 w-full cursor-pointer rounded-[4px] border border-[#56ccb5] py-2 text-[13px] text-[#00886d] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50] md:hidden"
+   522→        >
+   523→          查看全部章节 {showAll ? '↑' : '↓'}
+   524→        </button>
+   525→      </section>
+   526→
+   527→      {/* 全部章节目录（移动端默认折叠） */}
+   528→      <section
+   529→        className={`mt-3 rounded-[4px] border border-[#ccc] bg-white p-3 ${showAll ? '' : 'hidden md:block'}`}
+   530→      >
+   531→        <GH2>全部章节目录（共 {full.length || novel.totalChapters} 章）</GH2>
+   532→        {chapters.isPending ? (
+   533→          <GRowSkeleton count={12} />
+   534→        ) : chapters.isError ? (
+   535→          <GErrorBox msg="目录加载失败" onRetry={() => chapters.refetch()} />
+   536→        ) : full.length === 0 ? (
+   537→          <GEmptyBox text="暂无章节" />
+   538→        ) : (
+   539→          <ChapterDD
+   540→            chapters={full}
+   541→            navigate={navigate}
+   542→            cols="grid-cols-1 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+   543→          />
+   544→        )}
+   545→      </section>
+   546→    </Container>
+   547→  )
+   548→}
+   549→
+   550→/* ==================== 目录页（同风格完整列表页） ==================== */
+   551→
+   552→export function Toc({ navigate, novelId }: ViewProps & { novelId: number }) {
+   553→  const { data: novel } = useNovel(novelId)
+   554→  const { data: chapters, isPending, isError, refetch } = useChapters(novelId)
+   555→
+   556→  return (
+   557→    <Container className="mt-1">
+   558→      <GBreadcrumb
+   559→        items={[
+   560→          { label: '首页', view: { name: 'home' } },
+   561→          { label: novel?.title ?? '…', view: { name: 'book', novelId } },
+   562→          { label: '全部章节目录' },
+   563→        ]}
+   564→        navigate={navigate}
+   565→      />
+   566→      <section className="rounded-[4px] border border-[#ccc] bg-white p-3">
+   567→        <div className="flex flex-wrap items-center justify-between gap-2">
+   568→          <GH2 className="mb-0 flex-1">
+   569→            {novel ? `${novel.title} · 全部章节目录` : '全部章节目录'}
+   570→            {chapters ? (
+   571→              <span className="ml-2 text-[13px] font-normal text-[#999]">共 {chapters.length} 章</span>
+   572→            ) : null}
+   573→          </GH2>
+   574→          <button
+   575→            onClick={() => navigate({ name: 'book', novelId })}
+   576→            className="cursor-pointer rounded-[4px] border border-[#ccc] bg-white px-4 py-1.5 text-[13px] text-[#333] transition-colors duration-200 hover:border-[#56ccb5] hover:text-[#56ccb5]"
+   577→          >
+   578→            返回书页
+   579→          </button>
+   580→        </div>
+   581→        <div className="mt-2">
+   582→          {isPending ? (
+   583→            <GRowSkeleton count={16} />
+   584→          ) : isError ? (
+   585→            <GErrorBox onRetry={() => refetch()} />
+   586→          ) : (chapters?.length ?? 0) === 0 ? (
+   587→            <GEmptyBox text="暂无章节" />
+   588→          ) : (
+   589→            <ChapterDD
+   590→              chapters={chapters!}
+   591→              navigate={navigate}
+   592→              cols="grid-cols-1 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+   593→            />
+   594→          )}
+   595→        </div>
+   596→      </section>
+   597→    </Container>
+   598→  )
+   599→}
+   600→
+   601→/* ==================== 章节正文页（米黄纸感 + 大字排版 + 三按钮翻页） ==================== */
+   602→
+   603→function RelatedBooks({ categoryId, excludeId, navigate }: { categoryId: number; excludeId: number; navigate: Nav }) {
+   604→  const q = useNovels({ categoryId, page: 1, pageSize: 12 })
+   605→  const rows = (q.data?.list ?? []).filter((n) => n.id !== excludeId).slice(0, 10)
+   606→  if (rows.length === 0) return null
+   607→  return (
+   608→    <section className="mt-3 rounded-[4px] border border-[#ccc] bg-white p-3 text-[13px]">
+   609→      <strong className="text-[#333]">相关阅读：</strong>
+   610→      <span className="ml-1 inline-flex flex-wrap gap-x-[10px] gap-y-1 align-baseline">
+   611→        {rows.map((n) => (
+   612→          <button
+   613→            key={n.id}
+   614→            onClick={() => navigate({ name: 'book', novelId: n.id })}
+   615→            className={linkCls}
+   616→          >
+   617→            {n.title}
+   618→          </button>
+   619→        ))}
+   620→      </span>
+   621→    </section>
+   622→  )
+   623→}
+   624→
+   625→export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number }) {
+   626→  const { data: ch, isPending, isError, refetch } = useChapter(chapterId)
+   627→  const novel = useNovel(ch?.novelId)
+   628→  /* 书签按章记忆：换章后自动失效（无 effect setState） */
+   629→  const [mark, setMark] = useState<{ id: number; on: boolean }>({ id: 0, on: false })
+   630→
+   631→  useEffect(() => {
+   632→    window.scrollTo(0, 0)
+   633→  }, [chapterId])
+   634→
+   635→  /* 键盘翻页：Enter 返回书目 / ← 上一章 / → 下一章 */
+   636→  useEffect(() => {
+   637→    if (!ch) return
+   638→    const onKey = (e: KeyboardEvent) => {
+   639→      if (e.key === 'Enter') {
+   640→        navigate({ name: 'toc', novelId: ch.novelId })
+   641→      } else if (e.key === 'ArrowLeft' && ch.prevId) {
+   642→        navigate({ name: 'chapter', chapterId: ch.prevId })
+   643→      } else if (e.key === 'ArrowRight' && ch.nextId) {
+   644→        navigate({ name: 'chapter', chapterId: ch.nextId })
+   645→      }
+   646→    }
+   647→    window.addEventListener('keydown', onKey)
+   648→    return () => window.removeEventListener('keydown', onKey)
+   649→  }, [ch, navigate])
+   650→
+   651→  if (isPending) {
+   652→    return (
+   653→      <Container className="mt-1">
+   654→        <GSkel className="mb-3 h-10 w-full" />
+   655→        <div className="rounded-[4px] border border-[#ccc] bg-[#FBF4EC] p-4">
+   656→          <GSkel className="mx-auto h-7 w-1/2" />
+   657→          <div className="mt-6 space-y-4">
+   658→            {Array.from({ length: 9 }, (_, i) => (
+   659→              <GSkel key={i} className="h-5 w-full" />
+   660→            ))}
+   661→          </div>
+   662→        </div>
+   663→      </Container>
+   664→    )
+   665→  }
+   666→
+   667→  if (isError || !ch) {
+   668→    return (
+   669→      <Container className="mt-4">
+   670→        <GErrorBox onRetry={() => refetch()} />
+   671→      </Container>
+   672→    )
+   673→  }
+   674→
+   675→  const paragraphs = ch.content.split('\n').map((s) => s.trim()).filter(Boolean)
+   676→
+   677→  const navBtnCls =
+   678→    'cursor-pointer rounded-[4px] border border-[#ccc] bg-white py-2 text-[15px] text-[#333] transition-colors duration-200 hover:border-[#56ccb5] hover:text-[#00886d] disabled:pointer-events-none disabled:opacity-40'
+   679→
+   680→  return (
+   681→    <Container className="mt-1">
+   682→      <GBreadcrumb
+   683→        items={[
+   684→          { label: '首页', view: { name: 'home' } },
+   685→          ...(novel.data
+   686→            ? [
+   687→                {
+   688→                  label: novel.data.categoryName,
+   689→                  view: {
+   690→                    name: 'category' as const,
+   691→                    categoryId: novel.data.categoryId,
+   692→                    page: 1,
+   693→                  },
+   694→                },
+   695→              ]
+   696→            : []),
+   697→          { label: ch.novelTitle, view: { name: 'book', novelId: ch.novelId } },
+   698→          { label: ch.title },
+   699→        ]}
+   700→        navigate={navigate}
+   701→      />
+   702→
+   703→      {/* 阅读卡（米黄底） */}
+   704→      <article className="rounded-[4px] border border-[#ccc] bg-[#FBF4EC] p-3">
+   705→        <h1 className="px-2 py-3 text-center text-[20px] font-bold text-[#00886d] md:text-[26px]">
+   706→          {ch.title}
+   707→        </h1>
+   708→        <div className="pb-2 text-center">
+   709→          <button
+   710→            onClick={() => setMark({ id: ch.id, on: !(mark.id === ch.id && mark.on) })}
+   711→            className="cursor-pointer rounded-full border border-[#ffb0b4] bg-white/70 px-4 py-[3px] text-[12px] text-[#bf2c24] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50]"
+   712→          >
+   713→            {mark.id === ch.id && mark.on ? '已加入书签 ✓' : '加入书签'}
+   714→          </button>
+   715→        </div>
+   716→        <div className="border-t border-[#ccc] px-3 py-2 text-[18px] leading-[180%] tracking-[0.1em] text-[#333] min-[468px]:text-[24px]">
+   717→          {paragraphs.length === 0 ? (
+   718→            <p className="my-[10px] text-[#999]">本章内容为空</p>
+   719→          ) : (
+   720→            paragraphs.map((p, i) => <p key={i} className="my-[10px]">{p}</p>)
+   721→          )}
+   722→        </div>
+   723→
+   724→        {/* 翻页导航：上一章 / 书页目录 / 下一章（移动端换行堆叠） */}
+   725→        <div className="flex flex-wrap justify-center gap-2 px-2 pt-3 pb-1">
+   726→          <button
+   727→            disabled={!ch.prevId}
+   728→            onClick={() => ch.prevId && navigate({ name: 'chapter', chapterId: ch.prevId })}
+   729→            className={`${navBtnCls} w-[46%] md:w-[30%]`}
+   730→          >
+   731→            上一章
+   732→          </button>
+   733→          <button
+   734→            onClick={() => navigate({ name: 'toc', novelId: ch.novelId })}
+   735→            className={`${navBtnCls} w-[46%] md:w-[30%]`}
+   736→          >
+   737→            书页目录
+   738→          </button>
+   739→          <button
+   740→            disabled={!ch.nextId}
+   741→            onClick={() => ch.nextId && navigate({ name: 'chapter', chapterId: ch.nextId })}
+   742→            className={`${navBtnCls} w-[94%] md:w-[30%]`}
+   743→          >
+   744→            下一章
+   745→          </button>
+   746→        </div>
+   747→        <p className="hidden pb-1 text-center text-[12px] text-[#999] md:block">
+   748→          键盘操作：Enter 返回书目 · ← 上一章 · → 下一章
+   749→        </p>
+   750→      </article>
+   751→
+   752→      {/* 相关阅读 */}
+   753→      {novel.data ? (
+   754→        <RelatedBooks
+   755→          categoryId={novel.data.categoryId}
+   756→          excludeId={ch.novelId}
+   757→          navigate={navigate}
+   758→        />
+   759→      ) : null}
+   760→    </Container>
+   761→  )
+   762→}
+   763→
+   764→/* ==================== 搜索页 ==================== */
+   765→
+   766→export function Search({ navigate, query }: ViewProps & { query: string }) {
+   767→  return (
+   768→    <Container className="mt-1">
+   769→      <GBreadcrumb
+   770→        items={[{ label: '首页', view: { name: 'home' } }, { label: '搜索' }]}
+   771→        navigate={navigate}
+   772→      />
+   773→      <section className="rounded-[4px] border border-[#ccc] bg-white p-3">
+   774→        {/* key=query：关键词变化时重挂载，重置输入框与分页 */}
+   775→        <SearchPanel key={query} query={query} navigate={navigate} />
+   776→      </section>
+   777→    </Container>
+   778→  )
+   779→}
+   780→
+   781→function SearchPanel({ query, navigate }: { query: string; navigate: Nav }) {
+   782→  const [input, setInput] = useState(query)
+   783→  const [page, setPage] = useState(1)
+   784→  const list = useNovels({ q: query || undefined, page, pageSize: 20 })
+   785→
+   786→  return (
+   787→    <>
+   788→      <SearchBox navigate={navigate} initialValue={query} />
+   789→      <GH2 className="mt-3">
+   790→        {query ? (
+   791→          <>
+   792→            搜索“{query}”
+   793→            {list.data ? (
+   794→              <span className="ml-2 text-[13px] font-normal text-[#999]">共 {list.data.total} 条</span>
+   795→            ) : null}
+   796→          </>
+   797→        ) : (
+   798→          '输入关键词开始搜索'
+   799→        )}
+   800→      </GH2>
+   801→
+   802→      {list.isPending ? (
+   803→        <GBoxSkeleton count={6} />
+   804→      ) : list.isError ? (
+   805→        <GErrorBox onRetry={() => list.refetch()} />
+   806→      ) : (list.data?.list.length ?? 0) === 0 ? (
+   807→        <GEmptyBox text={`没有找到与“${query}”相关的小说，换个关键词试试`} />
+   808→      ) : (
+   809→        <>
+   810→          <div className="grid gap-4 pt-1 sm:grid-cols-2 lg:grid-cols-3">
+   811→            {list.data!.list.map((n, i) => (
+   812→              <BookBoxItem
+   813→                key={n.id}
+   814→                novel={n}
+   815→                index={(list.data!.page - 1) * (list.data!.pageSize ?? 20) + i + 1}
+   816→                navigate={navigate}
+   817→              />
+   818→            ))}
+   819→          </div>
+   820→          <GPager
+   821→            page={list.data!.page}
+   822→            totalPages={list.data!.totalPages}
+   823→            onGo={(p) => setPage(p)}
+   824→          />
+   825→        </>
+   826→      )}
+   827→    </>
+   828→  )
+   829→}
+   830→

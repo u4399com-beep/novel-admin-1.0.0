@@ -3,17 +3,6 @@ import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-function parseId(url: string): number | null {
-  try {
-    const u = new URL(url, 'http://x')
-    const v = u.searchParams.get('novelId')
-    const n = v ? Number(v) : NaN
-    return Number.isFinite(n) && n > 0 ? n : null
-  } catch {
-    return null
-  }
-}
-
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const categoryId = sp.get('categoryId')
@@ -84,7 +73,7 @@ export async function GET(req: NextRequest) {
 
 // —— 管理端：新增小说（可附带初始章节）——
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as {
+  let body: {
     title?: string
     author?: string
     description?: string
@@ -93,6 +82,11 @@ export async function POST(req: NextRequest) {
     status?: string
     isFeatured?: boolean
     isHot?: boolean
+  }
+  try {
+    body = (await req.json()) as typeof body
+  } catch {
+    return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
   }
   if (!body.title?.trim()) return NextResponse.json({ error: '书名不能为空' }, { status: 400 })
   if (!body.categoryId || !Number.isFinite(body.categoryId)) return NextResponse.json({ error: '请选择分类' }, { status: 400 })
@@ -114,5 +108,3 @@ export async function POST(req: NextRequest) {
   })
   return NextResponse.json({ id: novel.id }, { status: 201 })
 }
-
-export { parseId }

@@ -249,7 +249,7 @@ export function CategoryView({
 
 export function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
   const { data: novel, isLoading, isError, refetch } = useNovel(novelId)
-  const related = useNovels({ categoryId: novel?.categoryId, pageSize: 12, sort: 'clicks' })
+  const related = useNovels({ categoryId: novel?.categoryId, pageSize: 12, sort: 'clicks', enabled: novel != null })
   const [onShelf, setOnShelf] = useState(() => loadShelf().includes(novelId))
   const [rec, setRec] = useState(false)
   const [shelfNovelId, setShelfNovelId] = useState(novelId)
@@ -331,7 +331,7 @@ export function BookView({ navigate, novelId }: ViewProps & { novelId: number })
           <span className="text-xs text-black/40">更新于 {fmtDate(novel.updatedAt)}</span>
         </div>
         <div className="mt-4 flex flex-col">
-          {novel.chapters.map((c) => (
+          {[...novel.chapters].reverse().map((c) => (
             <ChapterRow key={c.id} chapter={c} onClick={() => navigate({ name: 'chapter', chapterId: c.id })} />
           ))}
         </div>

@@ -86,7 +86,7 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
               )}
               title={c.title}
             >
-              {c.idx + 1}. {c.title}
+              {c.idx}. {c.title}
             </button>
           ))}
         </div>

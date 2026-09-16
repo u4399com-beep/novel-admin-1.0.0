@@ -22,7 +22,7 @@ export default function Category({
     <div className="mt-2 flex items-start justify-between">
       <Sidebar navigate={navigate} />
 
-      <div className="w-[760px] shrink-0">
+      <div className="min-w-0 flex-1 lg:w-[760px] lg:max-w-[760px] lg:flex-none">
         <h2 className="flex h-[30px] items-center gap-1.5 border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-2 text-[14px] font-bold text-[#333]">
           <SqIcon />
           {categoryName ?? '全部分类'} - 文章列表

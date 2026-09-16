@@ -20,7 +20,7 @@ function FullHeader({ navigate, siteName }: { navigate: Nav; siteName: string })
   }
 
   return (
-    <header className="mx-auto flex h-[60px] w-[960px] items-center">
+    <header className="mx-auto flex h-[60px] w-full max-w-[960px] items-center">
       <button
         onClick={() => navigate({ name: 'home' })}
         className="w-[180px] shrink-0 cursor-pointer text-left leading-tight"
@@ -29,7 +29,7 @@ function FullHeader({ navigate, siteName }: { navigate: Nav; siteName: string })
         <span className="block text-[11px] text-[#FF6600]">x2552.com · 杰奇经典模板</span>
       </button>
       <div className="flex min-w-0 flex-1 flex-col items-end gap-[6px]">
-        <div className="flex items-center gap-2 text-[12px] text-[#999]">
+        <div className="flex flex-wrap items-center justify-end gap-2 text-[12px] text-[#999]">
           <span className="cursor-pointer hover:text-[#FF6600]" title="演示模板：语言切换未实现">
             简体中文
           </span>
@@ -42,14 +42,14 @@ function FullHeader({ navigate, siteName }: { navigate: Nav; siteName: string })
           <span className="text-[#DDD]">|</span>
           <span className="cursor-pointer hover:text-[#FF6600]" title="演示模板">联系我们</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="hidden items-center gap-1 min-[720px]:flex">
           <SearchIcon size={13} className="text-[#999]" />
           <input
             value={kw}
             onChange={(e) => setKw(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
             placeholder="输入书名或作者"
-            className="h-[28px] w-[260px] border border-[#CCCCCC] px-1 text-[12px] text-[#333] outline-none placeholder:text-[#BBB] focus:border-[#FF6600]"
+            className="h-[28px] w-[260px] max-w-full border border-[#CCCCCC] px-1 text-[12px] text-[#333] outline-none placeholder:text-[#BBB] focus:border-[#FF6600]"
           />
           <button
             onClick={submit}
@@ -82,7 +82,7 @@ function FullHeader({ navigate, siteName }: { navigate: Nav; siteName: string })
 
 function NavBar({ navigate, categories }: { navigate: Nav; categories: CategoryDto[] }) {
   return (
-    <nav className="relative mx-auto flex h-[40px] w-[960px] items-center border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pr-[110px]">
+    <nav className="relative mx-auto flex h-[40px] w-full max-w-[960px] items-center overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pr-[110px] [scrollbar-width:none]">
       <XLink onClick={() => navigate({ name: 'home' })} className="px-3 text-[14px] font-bold">
         首页
       </XLink>
@@ -114,7 +114,7 @@ function CompactHeader({ navigate, categories }: { navigate: Nav; categories: Ca
   }
 
   return (
-    <div className="mx-auto flex h-[30px] w-[960px] items-center gap-1 border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-1 text-[12px]">
+    <div className="mx-auto flex h-[30px] w-full max-w-[960px] items-center gap-1 overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-1 text-[12px] [scrollbar-width:none]">
       <XLink onClick={() => navigate({ name: 'home' })} className="px-1.5 text-[#666666]">
         首页
       </XLink>
@@ -153,7 +153,7 @@ function CompactHeader({ navigate, categories }: { navigate: Nav; categories: Ca
 
 function SiteFooter({ siteName }: { siteName: string }) {
   return (
-    <footer className="mx-auto mt-2 w-[960px]">
+    <footer className="mx-auto mt-2 w-full max-w-[960px]">
       <div className="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]" />
       <div className="bg-gradient-to-b from-white to-[#EDEDED] py-3 text-center text-[12px] leading-[20px] text-[#666666]">
         <p>{siteName}（x2552.com）—— 杰奇 CMS 经典结构主题演示</p>
@@ -165,7 +165,7 @@ function SiteFooter({ siteName }: { siteName: string }) {
 
 function AFooter({ navigate, siteName }: { navigate: Nav; siteName: string }) {
   return (
-    <footer className="mx-auto mt-3 w-[960px] border-t border-[#E4E4E4] py-3 text-center text-[12px] text-[#666666]">
+    <footer className="mx-auto mt-3 w-full max-w-[960px] border-t border-[#E4E4E4] py-3 text-center text-[12px] text-[#666666]">
       <p>
         网站地图：
         {Array.from({ length: 10 }).map((_, i) => (
@@ -191,7 +191,11 @@ export default function Layout({ view, children, navigate, siteName, notice }: T
 
   return (
     <div
-      className={view.name === 'chapter' ? 'min-w-[760px] bg-[#E6F3FF]' : 'min-w-[760px] bg-white'}
+      className={
+        view.name === 'chapter'
+          ? 'flex min-h-screen min-w-0 flex-col bg-[#E6F3FF]'
+          : 'flex min-h-screen min-w-0 flex-col bg-white'
+      }
       style={{ fontFamily: FONT, fontSize: 12, lineHeight: 1.5, color: '#666666' }}
     >
       {compact ? (
@@ -203,7 +207,7 @@ export default function Layout({ view, children, navigate, siteName, notice }: T
           <FullHeader navigate={navigate} siteName={siteName} />
           <NavBar navigate={navigate} categories={categories ?? []} />
           {notice && (
-            <div className="mx-auto w-[960px]">
+            <div className="mx-auto w-full max-w-[960px]">
               <div className="mt-2 border border-[#E4E4E4] bg-white px-2 text-[12px] leading-[25px] text-[#FF3300]">
                 公告：{notice}
               </div>
@@ -212,7 +216,7 @@ export default function Layout({ view, children, navigate, siteName, notice }: T
         </>
       )}
 
-      <div className="mx-auto w-[960px]">{children}</div>
+      <div className="mx-auto w-full max-w-[960px] min-w-0 flex-1">{children}</div>
 
       {compact ? (
         <AFooter navigate={navigate} siteName={siteName} />

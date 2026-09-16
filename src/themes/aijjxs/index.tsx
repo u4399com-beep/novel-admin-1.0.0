@@ -234,9 +234,9 @@ function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; site
 function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const isChapter = view.name === 'chapter'
   return (
-    <div className="aj-root">
+    <div className="aj-root flex min-h-screen flex-col">
       <TopBar view={view} navigate={navigate} siteName={siteName} />
-      <div className="pt-[58px]">
+      <div className="flex min-w-0 flex-1 flex-col pt-[58px]">
         {/* 正文页收起头部卡片与公告，仅保留顶条 */}
         {!isChapter && (
           <div className="mx-auto w-full max-w-[1220px] px-3 sm:px-4">
@@ -246,7 +246,9 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
         <main className={!isChapter ? 'mx-auto w-full max-w-[1220px] px-3 pb-12 pt-4 sm:px-4' : undefined}>
           {children}
         </main>
-        <Footer navigate={navigate} siteName={siteName} />
+        <div className="mt-auto">
+          <Footer navigate={navigate} siteName={siteName} />
+        </div>
       </div>
     </div>
   )

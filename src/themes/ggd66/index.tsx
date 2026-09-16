@@ -30,7 +30,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
 
   return (
     <div
-      className="min-h-screen bg-[#f9f9f9] text-[15px] text-[#888]"
+      className="flex min-h-screen flex-col bg-[#f9f9f9] text-[15px] text-[#888]"
       style={{ fontFamily: '"Microsoft YaHei", "微软雅黑", simsun, arial, sans-serif' }}
     >
       {/* 青绿顶栏 50px */}
@@ -84,7 +84,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
         </div>
       ) : null}
 
-      <main>{children}</main>
+      <main className="min-w-0 flex-1">{children}</main>
 
       {/* 绿底页脚 */}
       <footer className="mt-5 bg-[#56ccb5] py-[10px] text-center text-[14px] leading-[22px] text-white shadow-[0_-1px_1px_rgba(0,0,0,0.06)]">

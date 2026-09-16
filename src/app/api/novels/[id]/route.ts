@@ -75,6 +75,12 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
 
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const { id } = await params
-  await db.novel.delete({ where: { id: Number(id) } })
-  return NextResponse.json({ ok: true })
+  const nid = Number(id)
+  if (!Number.isFinite(nid) || nid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
+  try {
+    await db.novel.delete({ where: { id: nid } })
+    return NextResponse.json({ ok: true })
+  } catch {
+    return NextResponse.json({ error: '小说不存在或删除失败' }, { status: 404 })
+  }
 }

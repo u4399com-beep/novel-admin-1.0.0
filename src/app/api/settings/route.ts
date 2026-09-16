@@ -27,7 +27,12 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const body = (await req.json()) as Partial<{ siteName: string; activeTheme: string; notice: string; seo: Partial<SeoConfig> }>
+  let body: Partial<{ siteName: string; activeTheme: string; notice: string; seo: Partial<SeoConfig> }>
+  try {
+    body = (await req.json()) as Partial<{ siteName: string; activeTheme: string; notice: string; seo: Partial<SeoConfig> }>
+  } catch {
+    return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
+  }
   const row = await db.siteSetting.findUnique({ where: { id: 1 } })
   if (!row) await db.siteSetting.create({ data: { id: 1 } })
 
@@ -36,7 +41,13 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.activeTheme === 'string' && body.activeTheme.trim()) data.activeTheme = body.activeTheme.trim().slice(0, 50)
   if (typeof body.notice === 'string') data.notice = body.notice.slice(0, 500)
   if (body.seo && typeof body.seo === 'object') {
-    const current = row?.seoConfig ? JSON.parse(row.seoConfig) : {}
+    let current: Partial<SeoConfig> = {}
+    try {
+      current = row?.seoConfig ? (JSON.parse(row.seoConfig) as Partial<SeoConfig>) : {}
+    } catch {
+      // 已存配置损坏时从默认值重建，避免 PATCH 永久 500
+      current = {}
+    }
     data.seoConfig = JSON.stringify({ ...DEFAULT_SEO, ...current, ...body.seo })
   }
   const updated = await db.siteSetting.update({ where: { id: 1 }, data })

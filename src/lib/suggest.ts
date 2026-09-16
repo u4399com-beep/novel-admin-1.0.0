@@ -1,6 +1,7 @@
 /**
  * 多搜索引擎下拉词获取（服务端专用）
- * 每个引擎 4 秒超时、失败静默，返回结构化结果。
+ * 每个引擎独立超时 + 失败隔离（单引擎挂掉不影响其他引擎），
+ * 聚合层 Promise.allSettled + 并发限制 3 + 跨引擎去重。
  * 说明：仅抓取搜索引擎公开的 suggest 接口，用于关键词研究，遵守低频调用原则。
  */
 
@@ -11,11 +12,42 @@ export interface SuggestResult {
   error?: string
 }
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+export interface SuggestionsAggregate {
+  /** 每个引擎的独立结果（含失败信息） */
+  results: SuggestResult[]
+  /** 跨引擎去重后的关键词（按引擎优先序，已 trim/去空白/限长） */
+  words: { word: string; engine: string }[]
+}
 
-export async function fetchSuggestions(engine: string, keyword: string): Promise<SuggestResult> {
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+const MAX_WORD_LEN = 60
+export const SUPPORTED_ENGINES = ['baidu', 'bing', 'duckduckgo', 'sogou', 'so360'] as const
+
+/** 关键词清洗：去控制字符/尖括号/引号等危险字符，折叠空白，限长（供 pseo 相关接口共用） */
+export function sanitizeKeyword(raw: unknown, maxLen = MAX_WORD_LEN): string {
+  if (typeof raw !== 'string') return ''
+  return raw
+    .replace(/[\u0000-\u001f\u007f<>{}[\]$%|\\/"'`^*#&~;=]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen)
+}
+
+function normalizeWords(words: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const w of words) {
+    const t = sanitizeKeyword(w)
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    out.push(t)
+  }
+  return out.slice(0, 20)
+}
+
+export async function fetchSuggestions(engine: string, keyword: string, timeoutMs = 4000): Promise<SuggestResult> {
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 4000)
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     let words: string[] = []
 
@@ -29,7 +61,10 @@ export async function fetchSuggestions(engine: string, keyword: string): Promise
         words = (j.g ?? []).map((x) => x.k ?? '').filter(Boolean)
       }
     } else if (engine === 'bing') {
-      const res = await fetch(`https://api.bing.com/osjson.aspx?query=${encodeURIComponent(keyword)}`, { signal: ctrl.signal })
+      const res = await fetch(`https://api.bing.com/osjson.aspx?query=${encodeURIComponent(keyword)}`, {
+        signal: ctrl.signal,
+        headers: { 'User-Agent': UA },
+      })
       if (res.ok) {
         const j = (await res.json()) as [string, string[]]
         words = (j[1] ?? []).filter(Boolean)
@@ -81,12 +116,58 @@ export async function fetchSuggestions(engine: string, keyword: string): Promise
           }
         }
       }
+    } else {
+      return { engine, ok: false, words: [], error: `不支持的引擎: ${engine}` }
     }
 
-    return { engine, ok: words.length > 0, words: words.slice(0, 20) }
+    const clean = normalizeWords(words)
+    return { engine, ok: clean.length > 0, words: clean }
   } catch (e) {
     return { engine, ok: false, words: [], error: e instanceof Error ? e.message : 'unknown' }
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * 限制并发数的执行器：把任务按 concurrency 个一批依次跑（批内并行）。
+ */
+async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length)
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+    for (;;) {
+      const idx = cursor++
+      if (idx >= tasks.length) return
+      results[idx] = await tasks[idx]()
+    }
+  })
+  await Promise.allSettled(workers)
+  return results
+}
+
+/**
+ * 多引擎聚合入口：Promise.allSettled + 限并发 3 + 跨引擎去重。
+ * 单引擎超时/解析失败只影响自身 result，绝不抛出。
+ */
+export async function fetchSuggestionsMulti(
+  keyword: string,
+  engines: readonly string[] = SUPPORTED_ENGINES,
+  opts: { timeoutMs?: number; concurrency?: number } = {},
+): Promise<SuggestionsAggregate> {
+  const validEngines = engines.filter((e) => (SUPPORTED_ENGINES as readonly string[]).includes(e))
+  const tasks = validEngines.map((e) => () => fetchSuggestions(e, keyword, opts.timeoutMs ?? 4000))
+  const settled = await runWithConcurrency(tasks, opts.concurrency ?? 3)
+
+  const results = settled.map((r, i) => r ?? { engine: validEngines[i], ok: false, words: [], error: '未返回结果' })
+  const seen = new Set<string>()
+  const words: { word: string; engine: string }[] = []
+  for (const r of results) {
+    for (const w of r.words) {
+      if (seen.has(w)) continue
+      seen.add(w)
+      words.push({ word: w, engine: r.engine })
+    }
+  }
+  return { results, words }
 }

@@ -14,7 +14,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { name } = (await req.json()) as { name?: string }
+  let name: string | undefined
+  try {
+    ;({ name } = (await req.json()) as { name?: string })
+  } catch {
+    return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
+  }
   if (!name?.trim()) return NextResponse.json({ error: '分类名不能为空' }, { status: 400 })
   const exists = await db.category.findUnique({ where: { name: name.trim() } })
   if (exists) return NextResponse.json({ error: '分类已存在' }, { status: 409 })

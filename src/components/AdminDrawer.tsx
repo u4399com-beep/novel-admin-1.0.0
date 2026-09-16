@@ -181,6 +181,7 @@ function NovelsTab() {
       }
       setForm(null)
       await qc.invalidateQueries({ queryKey: ['novels'] })
+      await qc.invalidateQueries({ queryKey: ['novel'] })
       await qc.invalidateQueries({ queryKey: qk.home })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存失败')
@@ -193,6 +194,7 @@ function NovelsTab() {
       await api(`/api/novels/${n.id}`, { method: 'DELETE' })
       toast.success('已删除')
       await qc.invalidateQueries({ queryKey: ['novels'] })
+      await qc.invalidateQueries({ queryKey: ['novel'] })
       await qc.invalidateQueries({ queryKey: qk.home })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '删除失败')
@@ -321,17 +323,23 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [editing, setEditing] = useState<{ id: number; title: string; content: string } | null>(null)
+  const [adding, setAdding] = useState(false)
 
   const add = async () => {
     if (!title.trim()) return toast.error('标题不能为空')
+    setAdding(true)
     try {
       await api('/api/chapters', { method: 'POST', body: JSON.stringify({ novelId: novel.id, title, content }) })
       toast.success('章节已添加')
       setTitle(''); setContent('')
       await qc.invalidateQueries({ queryKey: qk.chapters(novel.id) })
       await qc.invalidateQueries({ queryKey: ['novels'] })
+      await qc.invalidateQueries({ queryKey: ['novel'] })
+      await qc.invalidateQueries({ queryKey: qk.home })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '添加失败')
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -342,6 +350,8 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
       toast.success('已保存')
       setEditing(null)
       await qc.invalidateQueries({ queryKey: qk.chapters(novel.id) })
+      await qc.invalidateQueries({ queryKey: ['chapter'] })
+      await qc.invalidateQueries({ queryKey: ['novel'] })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存失败')
     }
@@ -354,6 +364,8 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
       toast.success('已删除')
       await qc.invalidateQueries({ queryKey: qk.chapters(novel.id) })
       await qc.invalidateQueries({ queryKey: ['novels'] })
+      await qc.invalidateQueries({ queryKey: ['novel'] })
+      await qc.invalidateQueries({ queryKey: ['chapter'] })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '删除失败')
     }
@@ -371,7 +383,7 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
             <p className="text-xs font-medium text-neutral-600">新增章节</p>
             <Input placeholder="章节标题" value={title} onChange={(e) => setTitle(e.target.value)} className="h-8" />
             <Textarea placeholder="正文（可留空，稍后编辑）" rows={3} value={content} onChange={(e) => setContent(e.target.value)} />
-            <Button size="sm" onClick={add}><Plus className="mr-1 h-3.5 w-3.5" />添加</Button>
+            <Button size="sm" onClick={add} disabled={adding}>{adding ? '添加中…' : <><Plus className="mr-1 h-3.5 w-3.5" />添加</>}</Button>
           </div>
           {isLoading && <p className="py-6 text-center text-sm text-neutral-400">加载中…</p>}
           <div className="max-h-72 space-y-1 overflow-y-auto">
@@ -381,8 +393,12 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
                 <span className="min-w-0 flex-1 truncate">{c.title}</span>
                 <span className="shrink-0 text-xs text-neutral-400">{formatWordCount(c.wordCount)}字</span>
                 <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={async () => {
-                  const detail = await api<{ title: string; content: string }>(`/api/chapters/${c.id}`)
-                  setEditing({ id: c.id, title: detail.title, content: detail.content })
+                  try {
+                    const detail = await api<{ title: string; content: string }>(`/api/chapters/${c.id}`)
+                    setEditing({ id: c.id, title: detail.title, content: detail.content })
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : '加载章节失败')
+                  }
                 }}>
                   <Pencil className="h-3 w-3" />
                 </Button>
@@ -628,8 +644,13 @@ function ScraperTab() {
               <span className="text-neutral-400">{r.siteUrl}</span>
               <Badge variant="outline">{r.charset}</Badge>
               <Button size="sm" variant="ghost" className="h-5 px-1 text-red-500" onClick={async () => {
-                await api(`/api/scrape-rules?id=${r.id}`, { method: 'DELETE' })
-                qc.invalidateQueries({ queryKey: ['scrape-rules'] })
+                try {
+                  await api(`/api/scrape-rules?id=${r.id}`, { method: 'DELETE' })
+                  await qc.invalidateQueries({ queryKey: ['scrape-rules'] })
+                  toast.success('规则已删除')
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : '删除失败')
+                }
               }}><Trash2 className="h-3 w-3" /></Button>
             </div>
           ))}
@@ -720,8 +741,13 @@ function PseoTab() {
                 预览
               </Button>
               <Button size="sm" variant="ghost" className="h-5 shrink-0 px-1 text-red-500" onClick={async () => {
-                await api(`/api/pseo?id=${r.id}`, { method: 'DELETE' })
-                qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
+                try {
+                  await api(`/api/pseo?id=${r.id}`, { method: 'DELETE' })
+                  await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
+                  toast.success('关键词已删除')
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : '删除失败')
+                }
               }}><Trash2 className="h-3 w-3" /></Button>
             </div>
           ))}

@@ -36,7 +36,7 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
     return (
       <div className="mt-2 flex items-start justify-between">
         <Sidebar navigate={navigate} />
-        <div className="w-[760px] shrink-0 border border-[#E4E4E4] bg-white p-4">
+        <div className="min-w-0 flex-1 border border-[#E4E4E4] bg-white p-4 lg:w-[760px] lg:max-w-[760px] lg:flex-none">
           <div className="h-[24px] w-1/2 animate-pulse bg-[#EFEFEF]" />
           <div className="mt-4 flex gap-3">
             <div className="h-[166px] w-[136px] shrink-0 animate-pulse bg-[#EFEFEF]" />
@@ -70,7 +70,7 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
     <div className="mt-2 flex items-start justify-between">
       <Sidebar navigate={navigate} />
 
-      <div className="w-[760px] shrink-0 border border-[#E4E4E4] bg-white">
+      <div className="min-w-0 flex-1 border border-[#E4E4E4] bg-white lg:w-[760px] lg:max-w-[760px] lg:flex-none">
         <div className="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]" />
 
         {/* h1：书名 + 全文阅读 */}

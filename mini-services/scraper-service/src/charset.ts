@@ -1,6 +1,9 @@
 /**
  * 字符集检测与解码。
- * 优先级：请求强制指定 > BOM 嗅探 > HTTP Content-Type > HTML meta charset > UTF-8 字节嗅探 > GBK 兜底。
+ * 优先级（对齐 WHATWG 编码嗅探，经审查确认）：
+ *   请求强制指定 > BOM 嗅探 > HTTP Content-Type > HTML meta charset > UTF-8 字节嗅探 > GBK 兜底 > latin1 透传。
+ * 注：BOM 位于 HTTP 头之前是 WHATWG 标准行为 —— BOM 是文件自身的强证据；
+ * 若按"头 → meta → BOM"顺序，服务器误报 charset=gbk 的 UTF-8/UTF-16 页面会先被错误解码成乱码。
  * 中文小说站大量使用 GBK/GB2312/GB18030/BIG5，统一用 iconv-lite 解码。
  */
 import iconv from 'iconv-lite'
@@ -25,16 +28,26 @@ const ALIAS: Record<string, string> = {
   'unicode-1-1-utf-8': 'utf-8',
   unicode: 'utf-8',
   'unicode-1-1': 'utf-8',
+  utf16: 'utf-16le',
+  'utf-16': 'utf-16le',
+  unicodefffe: 'utf-16be',
   gb2312: 'gbk',
   gb_2312: 'gbk',
+  'gb_2312-80': 'gbk',
   gb231280: 'gbk',
   csgb2312: 'gbk',
+  cngb: 'gbk',
+  chinese: 'gbk',
   gbk2312: 'gbk',
+  'x-gbk': 'gbk',
   cp936: 'gbk',
   ms936: 'gbk',
   cp950: 'big5',
   big5hkscs: 'big5-hkscs',
+  'big5-hkscs': 'big5-hkscs',
+  'x-big5': 'big5',
   iso88591: 'iso-8859-1',
+  'iso8859-1': 'iso-8859-1',
   latin1: 'iso-8859-1',
   l1: 'iso-8859-1',
   cp1252: 'windows-1252',
@@ -90,6 +103,19 @@ function toBuffer(bytes: Uint8Array): Buffer {
 }
 
 /**
+ * 替换符守卫：iconv-lite 的非 UTF-8 解码是宽松模式（坏字节 → U+FFFD），永不抛错，
+ * 因此"用错误的编码解码"也会得到非空文本（典型：服务器误报 charset 的 GBK 页被按 utf-8 解出满屏 �）。
+ * 这里用 U+FFFD 占比判断候选解码是否可信：占比超阈值视为解码失败，继续尝试下一候选。
+ */
+function replacementRatio(text: string): number {
+  if (!text.length) return 0
+  let bad = 0
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 0xfffd) bad++
+  return bad / text.length
+}
+const MAX_REPLACEMENT_RATIO = 0.01
+
+/**
  * 主入口：把原始响应字节安全解码为文本。
  * 全程不 throw，失败逐级降级并在 warnings 中说明。
  */
@@ -104,31 +130,45 @@ export function decodeHtml(bytes: Uint8Array, opts: DecodeOptions = {}): DecodeR
   const bom = sniffBom(bytes)
   const header = normalizeCharset(opts.headerCharset)
   const meta = normalizeCharset(metaCharset(bytes))
+  if (header && meta && header !== meta) {
+    warnings.push(`HTTP 头声明 ${header} 与 HTML meta 声明 ${meta} 不一致，优先采用 HTTP 头`)
+  }
 
-  const tryDecode = (enc: string | null, source: string): string | null => {
+  const tryDecode = (enc: string | null, source: string, guard: boolean): string | null => {
     if (!enc) return null
     if (!iconv.encodingExists(enc)) {
       warnings.push(`编码 ${enc}（来源: ${source}）不受支持，跳过`)
       return null
     }
+    let text: string
     try {
-      return iconv.decode(toBuffer(bytes), enc)
+      text = iconv.decode(toBuffer(bytes), enc)
     } catch {
       warnings.push(`编码 ${enc}（来源: ${source}）解码失败，跳过`)
       return null
     }
+    if (text.length === 0) return null
+    if (guard) {
+      const ratio = replacementRatio(text)
+      if (ratio > MAX_REPLACEMENT_RATIO) {
+        warnings.push(`编码 ${enc}（来源: ${source}）解码后乱码占比 ${(ratio * 100).toFixed(1)}%（疑似编码声明错误），跳过`)
+        return null
+      }
+    }
+    return text
   }
 
   // 1) 强制指定 2) BOM 3) HTTP 头 4) meta 声明
-  const candidates: Array<[string | null, string]> = [
-    [forced, '请求强制指定'],
-    [bom, 'BOM 嗅探'],
-    [header, 'HTTP Content-Type'],
-    [meta, 'HTML meta 声明'],
+  // guard 仅对"声明可能出错"的头/meta 生效；强制指定与 BOM 是明确意图/强证据，不做占比拦截
+  const candidates: Array<[string | null, string, boolean]> = [
+    [forced, '请求强制指定', false],
+    [bom, 'BOM 嗅探', false],
+    [header, 'HTTP Content-Type', true],
+    [meta, 'HTML meta 声明', true],
   ]
-  for (const [enc, source] of candidates) {
-    const text = tryDecode(enc, source)
-    if (text !== null && text.length > 0) {
+  for (const [enc, source, guard] of candidates) {
+    const text = tryDecode(enc, source, guard)
+    if (text !== null) {
       return { encoding: enc!.toUpperCase(), text, warnings: dedupe(warnings) }
     }
   }
@@ -138,13 +178,13 @@ export function decodeHtml(bytes: Uint8Array, opts: DecodeOptions = {}): DecodeR
     return {
       encoding: 'UTF-8',
       text: toBuffer(bytes).toString('utf8'),
-      warnings: dedupe([...warnings, '响应未声明编码，按 UTF-8 字节嗅探解码']),
+      warnings: dedupe([...warnings, '响应未声明（有效）编码，按 UTF-8 字节嗅探解码']),
     }
   }
 
-  // 6) 兜底：GBK（中文小说站最常见的历史编码）
-  const gbkText = tryDecode('gbk', 'GBK 兜底')
-  if (gbkText !== null && gbkText.length > 0) {
+  // 6) 兜底：GBK（中文小说站最常见的历史编码）；同样接受乱码守卫的约束
+  const gbkText = tryDecode('gbk', 'GBK 兜底', true)
+  if (gbkText !== null) {
     return {
       encoding: 'GBK',
       text: gbkText,

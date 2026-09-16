@@ -75,6 +75,23 @@ export interface AttemptSummary {
   status: number
   ms: number
   note?: string
+  /** 策略内部子尝试使用的头部画像（UA 轮换/移动端/spider 降级时区分具体画像） */
+  profile?: string
+  /** 命中挑战页判定（响应 <3KB 且含 verify/challenge/captcha/javascript 关键词） */
+  blocked?: boolean
+  /** 响应字节数（调试挑战页/空响应时有用） */
+  bytes?: number
+}
+
+/** 策略内部一次子尝试（如 UA 轮换中的单个画像、got-scraping 的 h2→h1 降级） */
+export interface SubAttempt {
+  profile: string
+  ok: boolean
+  status: number
+  ms: number
+  blocked: boolean
+  bytes: number
+  note?: string
 }
 
 export interface RobotsSummary {

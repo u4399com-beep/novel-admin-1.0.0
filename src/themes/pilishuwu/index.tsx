@@ -661,7 +661,7 @@ function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
         </p>
       </Block>
 
-      {/* 最新章节（前 12 章，双栏） */}
+      {/* 最新章节（API 返回按 idx 升序的前 12 章，倒序后即最新 12 章，双栏） */}
       <Block
         className="mt-3"
         title="最新章节"
@@ -677,7 +677,7 @@ function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
         bodyClass="px-3 py-1"
       >
         <div className="grid gap-x-8 md:grid-cols-2">
-          {n.chapters.map((c) => (
+          {[...n.chapters].reverse().map((c) => (
             <button
               key={c.id}
               type="button"

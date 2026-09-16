@@ -361,7 +361,7 @@ export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
             </button>
           }
         />
-        <ChapterPills chapters={novel.chapters.slice(0, 12)} navigate={navigate} />
+        <ChapterPills chapters={[...novel.chapters].reverse().slice(0, 12)} navigate={navigate} />
       </section>
 
       {/* 章节目录（多列胶囊栅格内嵌） */}

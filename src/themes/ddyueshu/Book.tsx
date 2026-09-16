@@ -133,7 +133,7 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
             <dt className="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">
               《{n.title}》最新章节
             </dt>
-            {n.chapters.slice(0, 6).map((c) => (
+            {[...n.chapters].reverse().slice(0, 6).map((c) => (
               <dd key={c.id} className="dd-dd-item">
                 <button onClick={() => navigate({ name: 'chapter', chapterId: c.id })}>{c.title}</button>
               </dd>

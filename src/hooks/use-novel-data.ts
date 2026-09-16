@@ -60,6 +60,8 @@ export interface NovelListParams {
   pageSize?: number
   sort?: 'latest' | 'clicks' | 'words' | 'featured'
   status?: 'serial' | 'finished'
+  /** false 时不发请求（例如依赖异步加载的 categoryId） */
+  enabled?: boolean
 }
 
 export function useNovels(params: NovelListParams) {
@@ -77,6 +79,7 @@ export function useNovels(params: NovelListParams) {
         `/api/novels?${sp.toString()}`
       ),
     staleTime: 30_000,
+    enabled: params.enabled ?? true,
   })
 }
 

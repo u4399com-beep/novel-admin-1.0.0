@@ -5,7 +5,12 @@ export const dynamic = 'force-dynamic'
 
 // 管理端：新增章节
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as { novelId?: number; title?: string; content?: string }
+  let body: { novelId?: number; title?: string; content?: string }
+  try {
+    body = (await req.json()) as typeof body
+  } catch {
+    return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
+  }
   if (!body.novelId || !Number.isFinite(body.novelId)) return NextResponse.json({ error: 'novelId 必填' }, { status: 400 })
   if (!body.title?.trim()) return NextResponse.json({ error: '章节标题不能为空' }, { status: 400 })
 

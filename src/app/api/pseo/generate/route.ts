@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { DEFAULT_SEO, renderTpl } from '@/lib/seo'
 import type { SeoConfig } from '@/lib/types'
-import { fetchSuggestions, type SuggestResult } from '@/lib/suggest'
+import { fetchSuggestionsMulti, sanitizeKeyword, SUPPORTED_ENGINES } from '@/lib/suggest'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,40 +33,62 @@ async function matchNovels(keyword: string) {
 // body: { keyword?: string, useSuggest?: boolean, sources?: string[], limit?: number }
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
-    keyword?: string
+    keyword?: unknown
     useSuggest?: boolean
-    sources?: string[]
+    sources?: unknown
     limit?: number
   }
 
-  const sources = body.sources?.length ? body.sources : ['baidu', 'bing', 'duckduckgo', 'sogou', 'so360']
-
-  // 1) 获取搜索引擎下拉词
-  const collected: SuggestResult[] = []
-  if (body.useSuggest !== false) {
-    const base = body.keyword?.trim()
-    if (!base) return NextResponse.json({ error: 'keyword 必填' }, { status: 400 })
-    const results = await Promise.all(sources.map((s) => fetchSuggestions(s, base)))
-    collected.push(...results)
+  // ---- 输入校验：keyword 字符白名单 + 长度限制 ----
+  const keyword = sanitizeKeyword(body.keyword)
+  const useSuggest = body.useSuggest !== false
+  if (useSuggest && !keyword) {
+    return NextResponse.json(
+      { error: 'keyword 必填', detail: '关键词须为 1-60 个可见字符，不允许控制字符与 <>{}[]$%|\\/"\'`^*#&~;= 等' },
+      { status: 400 },
+    )
   }
 
-  // 2) 关键词入库（去重）
-  const allWords = new Set<string>()
-  if (body.keyword?.trim()) allWords.add(body.keyword.trim().slice(0, 60))
-  for (const r of collected) for (const w of r.words) allWords.add(w.trim().slice(0, 60))
-  allWords.delete('')
+  // ---- sources 白名单校验 ----
+  const rawSources = Array.isArray(body.sources) ? body.sources.filter((s): s is string => typeof s === 'string') : []
+  const invalidSources = rawSources.filter((s) => !(SUPPORTED_ENGINES as readonly string[]).includes(s))
+  if (invalidSources.length > 0) {
+    return NextResponse.json(
+      { error: 'sources 含不支持的引擎', detail: `不支持的引擎: ${invalidSources.join(', ')}；可用: ${SUPPORTED_ENGINES.join(', ')}` },
+      { status: 400 },
+    )
+  }
+  const sources = rawSources.length ? rawSources : [...SUPPORTED_ENGINES]
+
+  // 1) 获取搜索引擎下拉词（allSettled + 限并发 3 + 跨引擎去重，单引擎失败不影响其他）
+  const aggregate = useSuggest
+    ? await fetchSuggestionsMulti(keyword, sources)
+    : { results: [], words: [] }
+
+  // 2) 关键词入库（有序去重：基础词最优先，来源标记为首个命中引擎）
+  const keywordEntries: { word: string; engine: string }[] = []
+  if (keyword) keywordEntries.push({ word: keyword, engine: 'manual' })
+  keywordEntries.push(...aggregate.words)
+
+  const allWords = keywordEntries.slice(0, 200).map((e) => e.word).filter(Boolean)
+  const engineOf = new Map(keywordEntries.map((e) => [e.word, e.engine]))
 
   let added = 0
-  for (const kw of allWords) {
-    const exists = await db.pseoKeyword.findUnique({ where: { keyword: kw } })
-    if (exists) continue
-    const src = collected.find((r) => r.words.includes(kw))?.engine ?? 'manual'
-    await db.pseoKeyword.create({ data: { keyword: kw, source: src } })
-    added++
+  if (allWords.length > 0) {
+    const existing = await db.pseoKeyword.findMany({
+      where: { keyword: { in: allWords } },
+      select: { keyword: true },
+    })
+    const existingSet = new Set(existing.map((r) => r.keyword))
+    for (const kw of allWords) {
+      if (existingSet.has(kw)) continue
+      await db.pseoKeyword.create({ data: { keyword: kw, source: engineOf.get(kw) ?? 'manual' } })
+      added++
+    }
   }
 
   // 3) 为 pending 关键词生成聚合页数据（自动 TDK）
-  const limit = Math.min(50, Math.max(1, body.limit ?? 20))
+  const limit = Math.min(50, Math.max(1, Number(body.limit) || 20))
   const pending = await db.pseoKeyword.findMany({ where: { status: 'pending' }, take: limit })
 
   const setting = await db.siteSetting.findUnique({ where: { id: 1 } })
@@ -106,6 +128,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     added,
     generated,
-    suggestions: collected.map((r) => ({ engine: r.engine, ok: r.ok, count: r.words.length, error: r.error })),
+    suggestions: aggregate.results.map((r) => ({ engine: r.engine, ok: r.ok, count: r.words.length, error: r.error })),
   })
 }

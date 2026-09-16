@@ -183,7 +183,7 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
           className="mx-auto mt-3 flex max-w-[560px] flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-dashed pt-2.5 text-xs opacity-75"
           style={{ borderColor: 'var(--r-accent)' }}
         >
-          <span>第 {c.idx + 1} 章</span>
+          <span>第 {c.idx} 章</span>
           {total > 0 && <span>全书共 {total} 章</span>}
           <span>{fmtWords(c.wordCount)}</span>
           <span>约 {Math.max(1, Math.ceil(c.wordCount / 500))} 分钟读完</span>
@@ -253,7 +253,7 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
             >
               {chapters.map((x) => (
                 <option key={x.id} value={x.id}>
-                  {x.idx + 1}. {x.title}
+                  {x.idx}. {x.title}
                 </option>
               ))}
             </select>

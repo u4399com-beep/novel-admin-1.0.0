@@ -3,6 +3,47 @@ import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
+/** 安全解析 DB 中的规则 JSON（历史数据可能损坏） */
+function safeParseRule(json: string | null | undefined): Record<string, string> {
+  if (!json) return {}
+  try {
+    const v = JSON.parse(json) as unknown
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const out: Record<string, string> = {}
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        if (typeof val === 'string' && val.trim()) out[k] = val.trim().slice(0, 300)
+      }
+      return out
+    }
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+/** 运行时清洗选择器规则：仅保留字符串值并限长 */
+function sanitizeRuleInput(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 300)
+    }
+  }
+  return out
+}
+
+/** 校验站点 URL：必须是合法 http/https 地址 */
+function parseSiteUrl(raw: unknown): { ok: true; url: string } | { ok: false; message: string } {
+  if (typeof raw !== 'string' || !raw.trim()) return { ok: false, message: 'siteUrl 必填' }
+  try {
+    const u = new URL(raw.trim())
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, message: 'siteUrl 仅支持 http/https' }
+    return { ok: true, url: u.toString().slice(0, 200) }
+  } catch {
+    return { ok: false, message: `siteUrl 无法解析: ${raw.slice(0, 100)}` }
+  }
+}
+
 // GET 采集规则列表
 export async function GET() {
   const rows = await db.scrapeRule.findMany({ orderBy: { id: 'asc' } })
@@ -13,9 +54,9 @@ export async function GET() {
       siteUrl: r.siteUrl,
       enabled: r.enabled,
       charset: r.charset,
-      listRule: JSON.parse(r.listRule || '{}'),
-      bookRule: JSON.parse(r.bookRule || '{}'),
-      chapterRule: JSON.parse(r.chapterRule || '{}'),
+      listRule: safeParseRule(r.listRule),
+      bookRule: safeParseRule(r.bookRule),
+      chapterRule: safeParseRule(r.chapterRule),
       notes: r.notes,
     }))
   )
@@ -23,7 +64,7 @@ export async function GET() {
 
 // 新建/更新采集规则
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as {
+  const body = (await req.json().catch(() => null)) as {
     id?: number
     name?: string
     siteUrl?: string
@@ -33,31 +74,49 @@ export async function POST(req: NextRequest) {
     bookRule?: Record<string, string>
     chapterRule?: Record<string, string>
     notes?: string
+  } | null
+  if (!body) return NextResponse.json({ error: '请求体必须是 JSON 对象' }, { status: 400 })
+
+  if (!body.name?.trim()) {
+    return NextResponse.json({ error: 'name 必填' }, { status: 400 })
   }
-  if (!body.name?.trim() || !body.siteUrl?.trim()) {
-    return NextResponse.json({ error: 'name 与 siteUrl 必填' }, { status: 400 })
+  const site = parseSiteUrl(body.siteUrl)
+  if (!site.ok) return NextResponse.json({ error: site.message }, { status: 400 })
+
+  if (body.id !== undefined && (!Number.isInteger(body.id) || body.id <= 0)) {
+    return NextResponse.json({ error: '无效 id' }, { status: 400 })
   }
+
   const data = {
     name: body.name.trim().slice(0, 80),
-    siteUrl: body.siteUrl.trim().slice(0, 200),
+    siteUrl: site.url,
     enabled: body.enabled ?? true,
-    charset: (body.charset || 'utf-8').toLowerCase(),
-    listRule: JSON.stringify(body.listRule ?? {}),
-    bookRule: JSON.stringify(body.bookRule ?? {}),
-    chapterRule: JSON.stringify(body.chapterRule ?? {}),
+    charset: (body.charset || 'utf-8').toLowerCase().slice(0, 32),
+    listRule: JSON.stringify(sanitizeRuleInput(body.listRule)),
+    bookRule: JSON.stringify(sanitizeRuleInput(body.bookRule)),
+    chapterRule: JSON.stringify(sanitizeRuleInput(body.chapterRule)),
     notes: (body.notes ?? '').slice(0, 1000),
   }
-  if (body.id) {
-    const updated = await db.scrapeRule.update({ where: { id: body.id }, data })
-    return NextResponse.json({ id: updated.id })
+  try {
+    if (body.id) {
+      const updated = await db.scrapeRule.update({ where: { id: body.id }, data })
+      return NextResponse.json({ id: updated.id })
+    }
+    const created = await db.scrapeRule.create({ data })
+    return NextResponse.json({ id: created.id }, { status: 201 })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'unknown'
+    const conflict = /unique|constraint/i.test(msg)
+    return NextResponse.json(
+      { error: conflict ? '规则名称已存在' : '保存失败', detail: conflict ? undefined : msg },
+      { status: conflict ? 409 : 500 },
+    )
   }
-  const created = await db.scrapeRule.create({ data })
-  return NextResponse.json({ id: created.id }, { status: 201 })
 }
 
 export async function DELETE(req: NextRequest) {
   const id = Number(req.nextUrl.searchParams.get('id'))
-  if (!Number.isFinite(id)) return NextResponse.json({ error: '无效 id' }, { status: 400 })
+  if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: '无效 id' }, { status: 400 })
   await db.scrapeRule.delete({ where: { id } }).catch(() => {})
   return NextResponse.json({ ok: true })
 }

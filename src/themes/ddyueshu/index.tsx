@@ -63,7 +63,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
   }
 
   return (
-    <div className="dd-root">
+    <div className="dd-root flex min-h-screen flex-col">
       {!isChapter && (
         <>
           {/* ① 欢迎条 28px：左功能 / 右内联登录表单（演示站点，仅样式） */}
@@ -219,7 +219,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
       )}
 
       {/* 980px 定宽主体 */}
-      <main className="mx-auto w-full max-w-[980px] px-2 pb-6 pt-2">{children}</main>
+      <main className="mx-auto w-full max-w-[980px] flex-1 px-2 pb-6 pt-2">{children}</main>
       <Footer navigate={navigate} siteName={siteName} />
     </div>
   )

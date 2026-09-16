@@ -7,7 +7,9 @@
  * - 选择器支持 `sel@attr` 后缀取属性（如 `meta[property="og:image"]@content`），纯加法扩展，
  *   不影响主站传来的普通 CSS 选择器；
  * - 规则缺失时使用内置启发式候选，并在 warnings 中明确标注；
- * - 正文清洗：去 script/style/广告链接/站点水印行、段落规范化、去重连续重复行。
+ * - 匹配语义：优先在 scope 内查找（find），scope 自身命中选择器时同样采纳（is）；
+ * - 正文清洗：去 script/style/广告链接/站点水印行、段落规范化、去重连续重复行；
+ * - 链接一律 new URL(href, base) 补全为绝对地址，并按 URL+标题去重。
  */
 import * as cheerio from 'cheerio'
 import type { Cheerio, CheerioAPI } from 'cheerio'
@@ -17,6 +19,8 @@ type Scope = Cheerio<any>
 
 const MAX_LIST_ITEMS = 500
 const MAX_CHAPTER_REFS = 800
+const MAX_DESCRIPTION_CHARS = 2000
+const MAX_TITLE_CHARS = 200
 
 // ==================== 选择器工具 ====================
 
@@ -53,7 +57,7 @@ function collapse(s: string): string {
   return s.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-/** 在 scope 内按备选顺序取第一个非空文本 */
+/** 在 scope 内按备选顺序取第一个非空文本/属性（find 优先，scope 自身命中亦采纳） */
 function pickText(scope: Scope, rawSelectors: string[]): string {
   for (const raw of rawSelectors) {
     const { selector, attr } = parseSel(raw)
@@ -61,7 +65,12 @@ function pickText(scope: Scope, rawSelectors: string[]): string {
     let val = ''
     try {
       const el = scope.find(selector).first()
-      if (el.length) val = attr ? (el.attr(attr) ?? '') : el.text()
+      if (el.length) {
+        val = attr ? (el.attr(attr) ?? '') : el.text()
+      } else if (scope.length && scope.is(selector)) {
+        // scope 自身命中选择器（如 scope 是 <a> 而 selector 为 a@title）
+        val = attr ? (scope.attr(attr) ?? '') : scope.text()
+      }
     } catch {
       continue // 非法选择器直接跳过
     }
@@ -73,11 +82,12 @@ function pickText(scope: Scope, rawSelectors: string[]): string {
 
 function firstMatch(scope: Scope, rawSelectors: string[]): Scope | null {
   for (const raw of rawSelectors) {
-    const { selector, attr } = parseSel(raw)
+    const { selector } = parseSel(raw)
     if (!selector) continue
     try {
       const el = scope.find(selector).first()
       if (el.length) return el
+      if (scope.length && scope.is(selector)) return scope
     } catch {
       continue
     }
@@ -98,15 +108,17 @@ export function toAbs(href: string | undefined | null, base: string): string | n
   }
 }
 
-/** 按备选顺序取第一个可解析为绝对 URL 的链接（支持 @attr） */
+/** 按备选顺序取第一个可解析为绝对 URL 的链接（支持 @attr，默认取 href） */
 function pickHref(scope: Scope, rawSelectors: string[], base: string): string | null {
   for (const raw of rawSelectors) {
     const { selector, attr } = parseSel(raw)
     if (!selector) continue
     try {
       const el = scope.find(selector).first()
-      if (!el.length) continue
-      const href = attr ? (el.attr(attr) ?? '') : (el.attr('href') ?? '')
+      let node: Scope | null = el.length ? el : null
+      if (!node && scope.length && scope.is(selector)) node = scope
+      if (!node) continue
+      const href = attr ? (node.attr(attr) ?? '') : (node.attr('href') ?? '')
       const abs = toAbs(href, base)
       if (abs) return abs
     } catch {
@@ -142,6 +154,8 @@ interface CleanedContent {
 function cleanContainer(el: Scope, $: CheerioAPI): CleanedContent {
   const clone = el.clone()
   clone.find(NOISE_SELECTOR).remove()
+  // 隐藏元素（display:none / hidden 属性）多为广告占位
+  clone.find('[hidden],[style*="display:none"],[style*="display: none"],[style*="display:inherit"][class*="ad"]').remove()
 
   // 1) class/id 命中广告 token 的元素块
   clone.find('[class],[id]').each((_i, node) => {
@@ -334,6 +348,14 @@ const BOOK_FIELD_FALLBACKS: Record<string, string[]> = {
 }
 
 const CHAPTER_TEXT_RE = /^第\s*[0-9〇零一二两三四五六七八九十百千万]+\s*[章节卷回（(]/
+const CHAPTER_URL_RE = /\/\d+[_\d]*\.html?$/i
+
+/** 判断一个链接是否"章节样式"（标题正则或 /123.html 型 URL） */
+function chapterLike($: CheerioAPI, a: any): boolean {
+  const t = collapse($(a).text())
+  if (!t || t.length > 60) return false
+  return CHAPTER_TEXT_RE.test(t) || CHAPTER_URL_RE.test($(a).attr('href') ?? '')
+}
 
 function extractChapterRefs(
   $: CheerioAPI,
@@ -366,6 +388,7 @@ function extractChapterRefs(
     const CONTAINER_SELECTORS = ['#list', '.listmain', '#chapterList', '.chapter-list', '#chapters', '.catalog', '.book-list', 'dl']
     let best: Scope | null = null
     let bestCount = 0
+    let bestSel = ''
     for (const sel of CONTAINER_SELECTORS) {
       try {
         const container = root.find(sel).first()
@@ -373,21 +396,21 @@ function extractChapterRefs(
         const n = container
           .find('a[href]')
           .toArray()
-          .filter((a) => {
-            const t = collapse($(a).text())
-            return t.length > 0 && t.length <= 60 && (CHAPTER_TEXT_RE.test(t) || /\/\d+[_\d]*\.html?$/i.test($(a).attr('href') ?? ''))
-          }).length
+          .filter((a) => chapterLike($, a)).length
         if (n > bestCount) {
           bestCount = n
           best = container
+          bestSel = sel
         }
       } catch {
         continue
       }
     }
     if (best && bestCount > 0) {
-      linkEls = best.find('a[href]')
-      warnings.push(`章节链接由内置启发式获得（容器 "${bestCount}" 条），建议在规则中显式配置 chapterLinkSelector`)
+      // 启发式路径只保留"章节样式"链接，避免容器内导航/推荐链接混入
+      const filtered = best.find('a[href]').toArray().filter((a) => chapterLike($, a))
+      linkEls = $(filtered) as unknown as Scope
+      warnings.push(`章节链接由内置启发式获得（容器 "${bestSel}"，命中 ${bestCount} 条章节样式链接），建议在规则中显式配置 chapterLinkSelector`)
     } else {
       try {
         const global = root
@@ -409,14 +432,21 @@ function extractChapterRefs(
 
   const refs: BookChapterRef[] = []
   const seen = new Set<string>()
+  const selfUrl = toAbs(baseUrl, baseUrl)
   if (linkEls) {
     linkEls.slice(0, MAX_CHAPTER_REFS).each((_i, node) => {
       const a = $(node)
-      const title = collapse(rule.chapterTitleSelector && usedRule ? '' : a.text())
+      // 修复：配置了 chapterTitleSelector 时，应在链接元素内按规则提取标题（支持 @attr 与自匹配），而非直接置空
+      let title = ''
+      if (usedRule && rule.chapterTitleSelector) {
+        title = pickText(a, splitAlternatives(rule.chapterTitleSelector))
+      }
+      if (!title) title = collapse(a.text())
       const url = toAbs(a.attr('href'), baseUrl)
       if (!title && !url) return
       if (title && title.length > 80) return // 明显不是章节链接
-      const key = url ?? title
+      if (url && url === selfUrl) return // 跳过指向当前页的自链接
+      const key = (url ?? title).split('#')[0] // 去重忽略锚点，避免同章多锚点重复
       if (seen.has(key)) return
       seen.add(key)
       refs.push({ title, url })
@@ -448,11 +478,11 @@ export function extractBook(
     return pickText(root, [...ruleSels, ...fallbacks])
   }
 
-  const title = field('titleSelector', BOOK_FIELD_FALLBACKS.title)
-  const author = field('authorSelector', BOOK_FIELD_FALLBACKS.author)
-  const description = field('descriptionSelector', BOOK_FIELD_FALLBACKS.description)
-  const status = field('statusSelector', BOOK_FIELD_FALLBACKS.status)
-  const category = field('categorySelector', BOOK_FIELD_FALLBACKS.category)
+  const title = field('titleSelector', BOOK_FIELD_FALLBACKS.title).slice(0, MAX_TITLE_CHARS)
+  const author = field('authorSelector', BOOK_FIELD_FALLBACKS.author).slice(0, MAX_TITLE_CHARS)
+  const description = field('descriptionSelector', BOOK_FIELD_FALLBACKS.description).slice(0, MAX_DESCRIPTION_CHARS)
+  const status = field('statusSelector', BOOK_FIELD_FALLBACKS.status).slice(0, 50)
+  const category = field('categorySelector', BOOK_FIELD_FALLBACKS.category).slice(0, 50)
 
   const coverSels = [
     ...(rule.coverSelector ? splitAlternatives(rule.coverSelector) : []),
@@ -536,9 +566,9 @@ export function extractChapter(
     ...(rule.titleSelector ? splitAlternatives(rule.titleSelector) : []),
     ...DEFAULT_CHAPTER_TITLE_SELECTORS,
   ]
-  let title = pickText(root, titleSels)
+  let title = pickText(root, titleSels).slice(0, MAX_TITLE_CHARS)
   if (!title) {
-    const t = collapse($('title').first().text())
+    const t = collapse($('title').first().text()).slice(0, MAX_TITLE_CHARS)
     if (t) {
       title = t
       warnings.push('章节标题未命中规则选择器，回退 <title> 标签（可能含站名后缀，建议显式配置 titleSelector）')
@@ -584,6 +614,7 @@ export function extractChapter(
   }
   if (!nextUrl) {
     nextUrl = pickHref(root, HEURISTIC_NEXT_SELECTORS, baseUrl)
+    if (nextUrl && nextUrl === toAbs(baseUrl, baseUrl)) nextUrl = null // 启发式命中自链接视为无下一页
     if (nextUrl) warnings.push('nextUrl 由启发式匹配（"下一页/下一章"链接）获得')
   }
 

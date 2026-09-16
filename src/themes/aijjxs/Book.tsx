@@ -21,8 +21,9 @@ import {
 
 export default function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
   const novel = useNovel(novelId)
-  const rel = useNovels({ categoryId: novel.data?.categoryId, pageSize: 4 })
-  const side = useNovels({ categoryId: novel.data?.categoryId, sort: 'clicks', pageSize: 10 })
+  const hasCategory = novel.data?.categoryId != null
+  const rel = useNovels({ categoryId: novel.data?.categoryId, pageSize: 4, enabled: hasCategory })
+  const side = useNovels({ categoryId: novel.data?.categoryId, sort: 'clicks', pageSize: 10, enabled: hasCategory })
 
   if (novel.isPending) return <BookSkeleton />
   if (novel.isError || !novel.data) {

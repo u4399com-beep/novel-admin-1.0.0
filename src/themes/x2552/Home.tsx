@@ -123,7 +123,7 @@ export default function Home({ navigate }: ViewProps) {
 
       <div className="mt-2 flex items-start justify-between">
         {/* 左：最近更新 760 长列表 */}
-        <div className="w-[760px] shrink-0">
+        <div className="min-w-0 flex-1 lg:w-[760px] lg:max-w-[760px] lg:flex-none">
           <Block
             title="最近更新"
             titleH={40}
@@ -144,11 +144,11 @@ export default function Home({ navigate }: ViewProps) {
                     key={n.id}
                     className="flex h-[30px] items-center border-b border-dotted border-[#F2F2F2] text-[12px] last:border-b-0"
                   >
-                    <span className="w-[250px] shrink-0 truncate pl-1">
+                    <span className="min-w-0 flex-1 truncate pl-1 lg:w-[250px] lg:flex-none">
                       <span className="text-[#999]">[{n.categoryName}]</span>{' '}
                       <XLink onClick={() => navigate({ name: 'book', novelId: n.id })}>《{n.title}》</XLink>
                     </span>
-                    <span className="w-[340px] shrink-0 truncate">
+                    <span className="hidden min-w-0 flex-1 truncate lg:block lg:w-[340px] lg:flex-none">
                       <XLink onClick={() => navigate({ name: 'book', novelId: n.id })}>
                         {n.lastChapterTitle ?? '暂无章节'}
                       </XLink>
@@ -165,7 +165,7 @@ export default function Home({ navigate }: ViewProps) {
         </div>
 
         {/* 右：总推荐榜 + 最新小说 190 */}
-        <div className="w-[190px] shrink-0 space-y-2">
+        <div className="hidden w-[190px] shrink-0 space-y-2 lg:block">
           <Block
             title="总推荐榜"
             titleH={26}
