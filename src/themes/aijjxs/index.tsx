@@ -36,7 +36,7 @@ function TopBar({
           {siteName}
         </button>
         {/* 桌面：横向滚动分类链接 */}
-        <nav className="hidden min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] lg:block" aria-label="分类导航">
+        <nav className="hidden min-w-0 flex-1 overflow-x-auto no-scrollbar lg:block" aria-label="分类导航">
           <div className="flex items-center gap-1 py-3">
             <button
               className="aj-toplink"
@@ -90,7 +90,7 @@ function TopBar({
       </div>
       {/* ≤680px 深色两列抽屉 */}
       {open && (
-        <div className="max-h-[70vh] overflow-y-auto border-t border-white/10 bg-[rgba(52,6,16,0.97)] px-4 py-3 lg:hidden">
+        <div className="no-scrollbar max-h-[70vh] overflow-y-auto border-t border-white/10 bg-[rgba(52,6,16,0.97)] px-4 py-3 lg:hidden">
           <div className="grid grid-cols-2 gap-1.5">
             <button
               className="aj-toplink justify-center"

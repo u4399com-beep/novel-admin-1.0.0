@@ -82,7 +82,7 @@ function FullHeader({ navigate, siteName }: { navigate: Nav; siteName: string })
 
 function NavBar({ navigate, categories }: { navigate: Nav; categories: CategoryDto[] }) {
   return (
-    <nav className="relative mx-auto flex h-[40px] w-full max-w-[960px] items-center overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pr-[110px] [scrollbar-width:none]">
+    <nav className="no-scrollbar relative mx-auto flex h-[40px] w-full max-w-[960px] items-center overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pr-[110px]">
       <XLink onClick={() => navigate({ name: 'home' })} className="px-3 text-[14px] font-bold">
         首页
       </XLink>
@@ -114,7 +114,7 @@ function CompactHeader({ navigate, categories }: { navigate: Nav; categories: Ca
   }
 
   return (
-    <div className="mx-auto flex h-[30px] w-full max-w-[960px] items-center gap-1 overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-1 text-[12px] [scrollbar-width:none]">
+    <div className="no-scrollbar mx-auto flex h-[30px] w-full max-w-[960px] items-center gap-1 overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-1 text-[12px]">
       <XLink onClick={() => navigate({ name: 'home' })} className="px-1.5 text-[#666666]">
         首页
       </XLink>

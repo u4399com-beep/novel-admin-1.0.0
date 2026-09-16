@@ -70,15 +70,38 @@ model PseoKeyword {
 
 // 采集规则（针对目标站点的选择器配置）
 model ScrapeRule {
-  id           Int      @id @default(autoincrement())
-  name         String   @unique
+  id           Int          @id @default(autoincrement())
+  name         String       @unique
   siteUrl      String
-  enabled      Boolean  @default(true)
-  charset      String   @default("utf-8")
-  listRule     String   @default("{}") // JSON: 列表页选择器
-  bookRule     String   @default("{}") // JSON: 书籍页选择器
-  chapterRule  String   @default("{}") // JSON: 正文页选择器
-  notes        String   @default("")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt @default(now())
+  enabled      Boolean      @default(true)
+  charset      String       @default("utf-8")
+  listRule     String       @default("{}") // JSON: 列表页选择器
+  bookRule     String       @default("{}") // JSON: 书籍页选择器
+  chapterRule  String       @default("{}") // JSON: 正文页选择器
+  notes        String       @default("")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt @default(now())
+  tasks        ScrapeTask[]
+}
+
+// 采集任务（单本采集 / 范围采集）
+model ScrapeTask {
+  id        Int         @id @default(autoincrement())
+  ruleId    Int?
+  rule      ScrapeRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  mode      String      @default("single") // single=单本(书页URL) | list=范围(列表页URL批量)
+  targetUrl String
+  pages     Int         @default(1) // list 模式抓取列表页数 1-20
+  status    String      @default("pending") // pending|running|success|partial|failed|canceled
+  total     Int         @default(0)
+  done      Int         @default(0)
+  created   Int         @default(0) // 新建书籍数
+  updated   Int         @default(0) // 更新书籍数
+  chapters  Int         @default(0) // 采集章节数
+  message   String      @default("")
+  log       String      @default("") // 追加式日志，\n 分隔，保留最近 100 行
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([status])
 }

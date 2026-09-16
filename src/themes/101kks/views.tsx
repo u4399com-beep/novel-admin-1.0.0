@@ -260,7 +260,7 @@ export function CategoryView({
       {/* 白卡一：分类 + 筛选 */}
       <MyBox>
         <SectionTitle>小說分類</SectionTitle>
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+        <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1">
           <BlueTag active={!categoryId} onClick={() => navigate({ name: 'category', page: 1 })}>
             全部分類
           </BlueTag>

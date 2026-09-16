@@ -36,7 +36,7 @@ function Board({
       ) : novels.length === 0 ? (
         <p className="py-10 text-center text-[12px] text-[#999]">暂无上榜小说</p>
       ) : (
-        <div className="flex h-[231px] overflow-x-auto px-1 pt-2">
+        <div className="no-scrollbar flex h-[231px] overflow-x-auto px-1 pt-2">
           {novels.map((n) => (
             <div
               key={n.id}

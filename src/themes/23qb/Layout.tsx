@@ -72,7 +72,7 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
           </button>
 
           {/* 横向分类导航（桌面） */}
-          <nav className="hidden min-w-0 flex-1 items-center gap-6 lg:flex xl:gap-7">
+          <nav className="no-scrollbar hidden min-w-0 flex-1 items-center gap-6 overflow-x-auto lg:flex xl:gap-7">
             {navCats.map((c) => {
               const active = activeCatId === c.id
               return (
@@ -174,7 +174,7 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-3">
+            <div className="no-scrollbar flex-1 overflow-y-auto p-3">
               <button
                 type="button"
                 onClick={() => {

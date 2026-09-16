@@ -131,7 +131,7 @@ export default function Layout({ children, navigate, siteName }: ThemeLayoutProp
 
       {/* 主导航条：深灰 41px，hover 上边框高亮红 */}
       <nav className="h-[41px] bg-[#3E3D43] max-[767px]:hidden">
-        <div className="mx-auto flex h-full max-w-[960px] items-stretch overflow-x-auto px-2">
+        <div className="no-scrollbar mx-auto flex h-full max-w-[960px] items-stretch overflow-x-auto px-2">
           <button onClick={() => navigate({ name: 'home' })} className={navLink}>
             首页
           </button>

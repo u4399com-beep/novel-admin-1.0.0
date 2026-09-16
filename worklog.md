@@ -154,3 +154,91 @@ Work Log:
 
 Stage Summary:
 - https://github.com/u4399com-beep/novel-admin-1.0.0 main 分支 = 本次重建版本
+
+---
+Task ID: 13-c
+Agent: nav-scrollbar-fixer
+Task: 10 主题导航条滚动条修复
+
+Work Log:
+- src/app/globals.css：末尾追加 `@utility no-scrollbar`（-ms-overflow-style:none + scrollbar-width:none + &::-webkit-scrollbar{display:none}），Tailwind 4 @utility 嵌套伪元素写法编译通过，未改动原有内容。
+- aijjxs/index.tsx：①桌面分类导航 nav（overflow-x-auto [scrollbar-width:none]）→ 统一为 no-scrollbar；②≤lg 深色两列抽屉（max-h-[70vh] overflow-y-auto）加 no-scrollbar。360px 检查：顶条按钮均 flex-none、导航 hidden ≤lg，HeaderCard/页脚 flex-wrap，不撑破。
+- ddyueshu/index.tsx：③主导航 40px 天蓝横条 [scrollbar-width:none] → no-scrollbar（w-full max-w-[980px] 约束成立，360px 仅内部滚动）。
+- shipsay/Layout.tsx：④主导航条内层（max-w-[960px] overflow-x-auto）加 no-scrollbar；该 nav max-[767px]:hidden，360px 不渲染；页头搜索 min-w-0 flex-1 不溢出。
+- x2552/Layout.tsx：⑤主导航 .m_menu、⑥目录/正文页紧凑顶栏，两处 [scrollbar-width:none] → no-scrollbar（均 w-full max-w-[960px]）；x2552/Home.tsx：⑦首页排行榜封面横条（h-[231px] overflow-x-auto）加 no-scrollbar。
+- trxsw/index.tsx：⑧首页"编辑推荐"封面横条（overflow-x-auto pb-1）加 no-scrollbar；外层 max-w-[960px] px-2，双栏 grid 用 minmax(0,1fr)，360px 安全。
+- 101kks/views.tsx：⑨分类页"小說分類"标签行（overflow-x-auto）加 no-scrollbar；101kks/Layout.tsx：⑩移动端抽屉列表（flex-1 overflow-y-auto）加 no-scrollbar。
+- 23qb/Layout.tsx：⑪桌面横向分类导航（min-w-0 flex-1 + shrink-0 子项，原先溢出时按钮直接外溢盖住右侧控件，~1024–1200px 视口）补 overflow-x-auto + no-scrollbar 收敛溢出；⑫移动端分类抽屉列表加 no-scrollbar。≤lg 导航隐藏，360px 无影响。
+- huangjinwu/index.tsx：⑬移动端左侧抽屉 aside（overflow-y-auto）加 no-scrollbar；桌面导航仅 6 个固定项，无溢出。
+- pilishuwu：审查无改动——主导航为 flex-wrap 换行式（永不横向溢出、无滚动条），其余无横向滚动条。
+- ggd66：审查无改动——导航为 grid / 等分 flex（移动端第二行 w-full 均分），无横向溢出；其余 overflow-hidden 均为封面/文本截断，不属于导航条。
+- 未触碰 src/components/**、src/app/api/**、prisma/**；未改任何主题的颜色/间距/字体；components/admin/AdminConsole.tsx 自带的 [&::-webkit-scrollbar]:hidden 保持原样（不在本任务范围）。
+
+Stage Summary:
+- 修改 9 个文件（globals.css + 8 个主题文件），落地 13 处 no-scrollbar：8 处横向导航/标签/封面横条（其中 4 处由 [scrollbar-width:none] 统一迁移，修复 WebKit 下仍显示系统滚动条的问题），5 处浮层抽屉竖向列表；23qb 桌面导航额外补 overflow 溢出收敛。
+- no-scrollbar 以 Tailwind 4 @utility 实现（支持任意断点/变体组合），编译产物验证：.no-scrollbar{scrollbar-width:none;-ms-overflow-style:none} 与 .no-scrollbar::-webkit-scrollbar{display:none} 均存在于 dev CSS chunk。
+- 验证：bunx tsc --noEmit 0 错误；bun run lint 无错误；PATCH /api/settings 10 主题全部 200；主题客户端 bundle 中 13 处类名字符串全部命中；dev.log 无新增错误。
+
+---
+Task ID: 13-a
+Agent: admin-console-builder
+Task: 管理控制台改独立后台（hash #/admin 全页布局）
+
+Work Log:
+- 通读 worklog、AdminDrawer.tsx（802 行）、page.tsx、ScrapeCenter 桩、ThemeRenderer、eslint/tsconfig（确认 set-state-in-effect 等规则约束与 noUnusedLocals 未开）
+- 新建 src/components/admin/panels.tsx：AdminDrawer 中 AdminTabs/AdminDrawer 之外的全部代码逐行原样搬入（api、ThemesTab、NovelsTab、Field、ChaptersDialog、CategoriesTab、SEO_FIELDS、SeoTab、ScraperTab、PseoTab、SettingsTab、EMPTY_FORM、NovelForm/PseoRow/StrategyInfo/Json 类型），导出 6 个 Tab 组件；仅清理冗余 import（Sheet/Tabs/ScrollArea、Settings/Sparkles 图标、未使用的 QueryClient），面板逻辑/请求/交互零改动
+- 新建 src/components/admin/AdminConsole.tsx：全页后台壳——桌面端 w-52 深色 neutral-900 固定侧边栏（品牌区 + nav[aria-label=管理导航] + aria-current 高亮 + 底部"← 返回站点"，lg:sticky h-screen），右侧浅色主区（顶部标题条显示当前区块名 + max-w-4xl p-4/p-6 内容区）；移动端(<lg)侧边栏收起为顶部横向滚动标签条（overflow-x-auto + 内联 scrollbarWidth:'none' + [&::-webkit-scrollbar]:hidden）；activeSection 惰性初始化读 localStorage('admin-section')（AdminConsole 仅客户端挂载 + typeof window 守卫，SSR 安全）、select 时回写；采集中心区块渲染 ScrapeCenter 默认导出；附加 document.title 同步当前区块
+- useHashAdmin()：useState 初始 false（SSR 安全）+ useEffect 挂载读取 window.location.hash==='#/admin' + hashchange 监听（支持前进/后退/直达/刷新），导出供 page.tsx 复用
+- 改写 src/app/page.tsx：isAdmin ? <AdminConsole/> : <ThemeRenderer/>；齿轮按钮改为内联 AdminLauncher 组件（沿用原 fixed bottom-5 right-5 z-50 圆形样式），点击 location.hash='#/admin'，aria-label="进入站点管理后台"
+- rg 确认 AdminDrawer 仅 page.tsx 引用后删除 src/components/AdminDrawer.tsx
+- 浏览器实测（agent-browser）：齿轮→#/admin 渲染主题卡；切换书籍/采集中心区块正常（采集中心渲染 ScrapeCenter 桩"采集中心加载中…"）；返回站点恢复前台（URL #、标题恢复站点名）；直开 #/admin 刷新正常且恢复上次区块（localStorage admin-section=scraper）；移动端 390px 顶部横向标签条正常；console/page errors 全程为空
+- 验证：bunx tsc --noEmit 0 错误；bun run lint 0 输出；curl / 200 正常 HTML；dev.log 无新增报错；未触碰 ScrapeCenter.tsx/prisma/api/themes/store；未运行 build
+
+Stage Summary:
+- 产出文件：新增 src/components/admin/panels.tsx（7 面板 + api 工具 + 类型/常量，6 个 Tab 具名导出）、src/components/admin/AdminConsole.tsx（AdminConsole + useHashAdmin + NavButton/BackButton/Brand 内部件）；改写 src/app/page.tsx（hash 路由分流 + AdminLauncher）；删除 src/components/AdminDrawer.tsx
+- 结构：#/admin = 独立全页后台（桌面左侧栏/移动顶部标签条 + 区块条件渲染，无 shadcn Tabs 包裹）；前台 = ThemeRenderer + 浮动齿轮；两者经 useHashAdmin 单一数据源切换，浏览器前进/后退/直达/刷新均可用
+- 验证结果：tsc 0 错误、lint 0 错误、curl 200、agent-browser 全链路 0 报错
+
+---
+Task ID: 14
+Agent: scrape-chain-auditor
+Task: 采集链路+后台控制台逐行深度审查修复
+
+Work Log:
+- src/app/api/scrape-rules/route.ts（重大）：
+  - PUT 双重读取请求体流：PUT 先 req.json() 判 seed，非 seed 再调 handleSave(req) 内部第二次 req.json()——body 流只能读一次，第二次必失败 → 所有经 PUT 的规则保存（前端 RuleDialog 保存/开关启停全走 PUT）恒 400「请求体必须是 JSON 对象」。重构 handleSave 签名为接收已解析 body，POST/PUT 各自解析一次后传入；实测 PUT 创建 201 / 编辑路径恢复
+  - 更新不存在的规则 id（P2025）由 500(带 Prisma detail) 改为 404「规则不存在」
+- src/lib/scrape-worker.ts：
+  - isCanceled 把 DB 瞬时错误(.catch→null) 与「记录已删除」混同 → 瞬时错误会被误判为已取消且 finalize 覆写 status=canceled；改为 catch 返回 undefined 时 fail-open（查询失败≠取消），记录不存在(null)仍视为取消
+  - 章节入库唯一冲突后 idx 停滞：create 失败不递增 idx，后续章节全部撞同一 [novelId,idx] 连锁失败；新增 isUniqueConflict(P2002/unique 消息)，冲突时 idx+1 顺延重试一次，其余失败维持原语义
+  - 书籍 upsert 未 trim：title/author 带空白时与既有记录查重不一致、空白标题绕过提取校验；改为 trim→slice(0,200/100)，trim 后空标题直接按失败返回
+  - ENGINE_TIMEOUT_MS 30s 与引擎策略链 55s 预算（CHAIN_BUDGET_MS）/代理层 60s 不对齐，慢站点 31~55s 的合法响应会被提前切断；对齐为 60s
+- src/app/api/scrape-tasks/[id]/route.ts：
+  - PATCH cancel 无条件 update 可覆盖终态（worker 在 findUnique 与 update 间隙 finalize 写入 success/failed 会被改成 canceled）；改为条件 updateMany({status in [pending,running]})，count=0 时回查返回 400/404
+  - DELETE running 任务原先直接删记录（靠 worker 兜底自停）；改为 running 拒绝 409 提示先取消；pending 仍可删（删除后 worker 的 pending→running 条件更新必然 count=0 安全退出）
+- src/components/admin/ScrapeCenter.tsx：
+  - LogDialog refetchInterval 用打开对话框时的 task.status 快照判断轮询，任务终态后仍每 2s 轮询直至手动关闭；改为 refetchInterval 回调内取 query.state.data?.task?.status ?? task.status，终态自动停轮询
+  - 任务列表末页条目删空后停留在空页（page>totalPages 无自愈）；空态在 page>1 时显示「返回第一页」按钮
+- prisma/schema.prisma：ScrapeTask 增加 @@index([status])（GET 按 status 过滤），db:push 同步
+- 审查未改动（确认无问题）：scrape-tasks/route.ts（分页 NaN/负数回退、ruleId 存在性 400、URL 协议白名单、pages 范围校验均正确）；api/scrape/route.ts 代理（子路由白名单、60s 超时对齐、结构化 502）；worker 状态机（pending→running 唯一条件入口防双跑含模块热重载场景、finalize 仅 running 写终态防 canceled 被覆写 failed、日志 100 行/500 字符双截断、正文 5 万字截断、分类创建并发唯一冲突容错、list 翻页 ?page=k 与 /page/k 变体实测命中）；ScrapeCenter 规则对话框 key 重挂载无数据残留、保存/创建防重复提交、日志 pre 无 dangerouslySetInnerHTML（React 转义天然防 XSS）；AdminConsole/panels/page.tsx（localStorage 读写均 try-catch、admin 视图隐藏齿轮、站点视图状态存于 zustand 模块级 store 跨卸载保留、导入经 tsc 全量验证无丢失）；globals.css no-scrollbar 实现正确
+
+Stage Summary:
+- 共修复 8 处确凿 bug：API 级 2（PUT 双读 body 致规则保存全挂、P2025 500→404）、worker 竞态/正确性 4（isCanceled fail-open、idx 冲突顺延、title/author trim、引擎超时对齐）、API 语义 2（cancel 条件更新防覆盖终态、DELETE running 拒绝）、前端 2（日志轮询不停、空页卡住）
+- curl 实测：POST single(ruleId=6) → 终态 failed，updated=1（书籍查重命中 #42）、日志干净（章节「正文为空」为 books.toscrape 演示站无正文内容的环境性结果，与基线一致）；notaurl/mode xxx/ruleId 99999/ftp 协议/pages 99/非法 JSON 全部 400；PUT ghost id → 404、PUT 创建 → 201、seed 幂等 200；DELETE running → 409、PATCH cancel → 200、8s 后状态保持 canceled 未被覆写、再次 cancel → 400、非法 action → 400；?status=failed&pageSize=2 过滤生效、page=abc&pageSize=-5 安全回退；tsc 0 错误、lint 0 错误、dev.log 无新增异常（仅 P2025 预期日志）
+- 遗留风险：① list 模式 done/total 单位混用（total=书数，done 含当前书章节数，进度可瞬时 >100%，UI 已钳制 100%）；② Novel 无 title+author 唯一约束，两任务并发采集同一新书可产生重复书目（需迁移+存量去重才能加约束）；③ 沙箱对外网不可达时任务按引擎错误正常走 failed 状态机；④ PUT seed 循环非事务，部分失败可重入（幂等跳过已存在）
+
+---
+Task ID: 13-15
+Agent: main-orchestrator
+Task: 第三批需求收尾（独立后台/导航滚动条/采集任务）验证与整合
+
+Work Log:
+- 13-b agent 超时但成果完整落地（ScrapeTask 模型+API+worker 658 行+ScrapeCenter 888 行），由主控补全验证：
+  · db push 成功；GET/POST /api/scrape-tasks 正常；single 任务 example.com → failed+详细日志（无规则时引擎仅基础信息，状态机正确）
+  · 端到端：books.toscrape.com + 自建规则（itemSelector=article.product_pod 等）→ 任务 success 路径：书籍 "A Light in the Attic" 入库（new=1，分类自动创建），商店站无章节故章节段按预期失败
+  · UI 冒烟：后台 7 区块渲染、采集中心规则编辑对话框三组选择器字段齐全（19 输入框）、UI 创建任务→列表状态流转→日志对话框（时间戳日志可见）
+- Task 14 审查 agent 修复 8 bug：PUT 双读 body（规则保存恒 400，重大）、isCanceled fail-open、idx 唯一冲突顺延重试、upsert trim、引擎超时对齐 60s、cancel 条件更新防覆写终态、DELETE running 409、日志轮询自停+空页回退；schema 补 @@index([status])
+- 终验：tsc 0 错误、lint 0 错误；后台→采集中心→返回站点全链路浏览器通过；前台 x2552 移动端 0 溢出、齿轮按钮在位、导航条 scrollbar-width:none 生效
+
+Stage Summary:
+- 独立后台（#/admin hash 路由）+ 采集任务系统（单本/范围）+ 规则编辑器 全部上线并经浏览器与 curl 双重验证

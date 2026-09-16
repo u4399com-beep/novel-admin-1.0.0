@@ -139,7 +139,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
           {/* ③ 主导航 40px 天蓝横条 */}
           <div className="bg-[#88c6e5]">
             <nav
-              className="mx-auto flex w-full max-w-[980px] items-stretch overflow-x-auto px-2 [scrollbar-width:none]"
+              className="no-scrollbar mx-auto flex w-full max-w-[980px] items-stretch overflow-x-auto px-2"
               aria-label="主导航"
             >
               <button

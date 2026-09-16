@@ -1,22 +1,25 @@
 'use client'
 
+/**
+ * 管理后台各功能面板（自 AdminDrawer.tsx 原样迁入，逻辑/请求/交互保持不变）：
+ * ThemesTab / NovelsTab / Field / ChaptersDialog / CategoriesTab / SeoTab /
+ * ScraperTab / PseoTab / SettingsTab + api 工具 + 相关类型与常量。
+ */
+
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Settings, RefreshCw, Trash2, Pencil, Plus, BookOpen, Layers, SearchCode, Sparkles } from 'lucide-react'
+import { RefreshCw, Trash2, Pencil, Plus, BookOpen, Layers, SearchCode } from 'lucide-react'
 import { THEME_LIST } from '@/themes/registry'
 import { useAppStore } from '@/lib/store'
 import { useChapters, useNovels, useSettings, qk } from '@/hooks/use-novel-data'
 import type { CategoryDto, NovelListItem, ScrapeRuleDto, SeoConfig } from '@/lib/types'
 import { formatWordCount, timeAgo } from '@/lib/format'
-import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 type Json = Record<string, unknown>
 
@@ -27,64 +30,9 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T
 }
 
-// ==================== 入口 ====================
-
-export function AdminDrawer() {
-  const [open, setOpen] = useState(false)
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <button
-          aria-label="打开管理面板"
-          className="fixed bottom-5 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-900 text-white shadow-lg transition hover:scale-105 hover:bg-neutral-700"
-        >
-          <Settings className="h-5 w-5" />
-        </button>
-      </SheetTrigger>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl">
-        <SheetHeader className="border-b px-5 py-4">
-          <SheetTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="h-4 w-4" /> 站点管理控制台
-          </SheetTitle>
-        </SheetHeader>
-        {open && <AdminTabs />}
-      </SheetContent>
-    </Sheet>
-  )
-}
-
-// ==================== Tabs 容器 ====================
-
-function AdminTabs() {
-  return (
-    <Tabs defaultValue="themes" className="flex min-h-0 flex-1 flex-col gap-0">
-      <TabsList className="flex w-full flex-wrap gap-1 rounded-none border-b bg-neutral-50 px-2 py-2 justify-start h-auto">
-        <TabsTrigger value="themes">主题</TabsTrigger>
-        <TabsTrigger value="novels">书籍</TabsTrigger>
-        <TabsTrigger value="categories">分类</TabsTrigger>
-        <TabsTrigger value="seo">SEO</TabsTrigger>
-        <TabsTrigger value="scraper">采集</TabsTrigger>
-        <TabsTrigger value="pseo">PSEO</TabsTrigger>
-        <TabsTrigger value="settings">设置</TabsTrigger>
-      </TabsList>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="p-4">
-          <TabsContent value="themes" className="mt-0"><ThemesTab /></TabsContent>
-          <TabsContent value="novels" className="mt-0"><NovelsTab /></TabsContent>
-          <TabsContent value="categories" className="mt-0"><CategoriesTab /></TabsContent>
-          <TabsContent value="seo" className="mt-0"><SeoTab /></TabsContent>
-          <TabsContent value="scraper" className="mt-0"><ScraperTab /></TabsContent>
-          <TabsContent value="pseo" className="mt-0"><PseoTab /></TabsContent>
-          <TabsContent value="settings" className="mt-0"><SettingsTab /></TabsContent>
-        </div>
-      </ScrollArea>
-    </Tabs>
-  )
-}
-
 // ==================== 主题管理 ====================
 
-function ThemesTab() {
+export function ThemesTab() {
   const { data: settings, refetch } = useSettings()
   const qc = useQueryClient()
   const [busy, setBusy] = useState<string | null>(null)
@@ -158,7 +106,7 @@ interface NovelForm {
 
 const EMPTY_FORM: NovelForm = { title: '', author: '', description: '', categoryId: 0, status: 'serial', isFeatured: false, isHot: false }
 
-function NovelsTab() {
+export function NovelsTab() {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const { data } = useNovels({ q, page, pageSize: 15 })
@@ -433,7 +381,7 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
 
 // ==================== 分类管理 ====================
 
-function CategoriesTab() {
+export function CategoriesTab() {
   const qc = useQueryClient()
   const { data: categories } = useQuery({ queryKey: qk.categories, queryFn: () => api<CategoryDto[]>('/api/categories') })
   const [name, setName] = useState('')
@@ -516,7 +464,7 @@ const SEO_FIELDS: { key: keyof SeoConfig; label: string; hint?: string; textarea
   { key: 'pseoDescription', label: 'PSEO 描述', textarea: true },
 ]
 
-function SeoTab() {
+export function SeoTab() {
   const { data: settings } = useSettings()
   const qc = useQueryClient()
   const [overrides, setOverrides] = useState<Partial<SeoConfig>>({})
@@ -680,7 +628,7 @@ function ScraperTab() {
 
 interface PseoRow { id: number; keyword: string; source: string; status: string; updatedAt: string }
 
-function PseoTab() {
+export function PseoTab() {
   const qc = useQueryClient()
   const navigate = useAppStore((s) => s.navigate)
   const { data: rows } = useQuery({ queryKey: ['pseo-keywords'], queryFn: () => api<PseoRow[]>('/api/pseo') })
@@ -760,7 +708,7 @@ function PseoTab() {
 
 // ==================== 站点设置 ====================
 
-function SettingsTab() {
+export function SettingsTab() {
   const { data: settings } = useSettings()
   const qc = useQueryClient()
   const [siteNameDraft, setSiteNameDraft] = useState<string | null>(null)

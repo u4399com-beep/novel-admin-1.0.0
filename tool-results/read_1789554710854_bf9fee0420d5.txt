@@ -1,0 +1,889 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→/**
+     4→     4→ * 采集中心面板（契约文件）：
+     5→     5→ * - 默认导出、无 props、自包含（自己发请求/管理状态）
+     6→     6→ * - 由管理控制台的「采集中心」区块渲染
+     7→     7→ * - 后端 API 契约见 /api/scrape-tasks 与 /api/scrape-rules
+     8→     8→ *
+     9→     9→ * 三个子区块：
+    10→    10→ *   1. 采集规则编辑（列表 + 编辑对话框 + 内置模板入库）
+    11→    11→ *   2. 新建采集任务（单本采集 / 范围采集）
+    12→    12→ *   3. 任务列表（状态徽章 / 进度 / 日志查看 / 取消 / 删除）
+    13→    13→ */
+    14→    14→
+    15→    15→import { useEffect, useRef, useState } from 'react'
+    16→    16→import { useQuery, useQueryClient } from '@tanstack/react-query'
+    17→    17→import { toast } from 'sonner'
+    18→    18→import { Badge } from '@/components/ui/badge'
+    19→    19→import { Button } from '@/components/ui/button'
+    20→    20→import {
+    21→    21→  Dialog,
+    22→    22→  DialogContent,
+    23→    23→  DialogDescription,
+    24→    24→  DialogFooter,
+    25→    25→  DialogHeader,
+    26→    26→  DialogTitle,
+    27→    27→} from '@/components/ui/dialog'
+    28→    28→import { Input } from '@/components/ui/input'
+    29→    29→import { Label } from '@/components/ui/label'
+    30→    30→import { Progress } from '@/components/ui/progress'
+    31→    31→import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+    32→    32→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+    33→    33→import { Switch } from '@/components/ui/switch'
+    34→    34→import { Textarea } from '@/components/ui/textarea'
+    35→    35→import {
+    36→    36→  Table,
+    37→    37→  TableBody,
+    38→    38→  TableCell,
+    39→    39→  TableHead,
+    40→    40→  TableHeader,
+    41→    41→  TableRow,
+    42→    42→} from '@/components/ui/table'
+    43→    43→import { BookOpen, ListPlus, Pencil, Plus, ScrollText, Sparkles, Square, Trash2 } from 'lucide-react'
+    44→    44→import { timeAgo } from '@/lib/format'
+    45→    45→import type { BookRule, ChapterRule, ListRule, ScrapeRuleDto } from '@/lib/types'
+    46→    46→
+    47→    47→// ==================== 通用 ====================
+    48→    48→
+    49→    49→async function api<T>(url: string, init?: RequestInit): Promise<T> {
+    50→    50→  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...init })
+    51→    51→  const data = (await res.json().catch(() => ({}))) as { error?: string }
+    52→    52→  if (!res.ok) throw new Error(data.error ?? `请求失败(${res.status})`)
+    53→    53→  return data as T
+    54→    54→}
+    55→    55→
+    56→    56→interface TaskRow {
+    57→    57→  id: number
+    58→    58→  ruleId: number | null
+    59→    59→  mode: string
+    60→    60→  targetUrl: string
+    61→    61→  pages: number
+    62→    62→  status: string
+    63→    63→  total: number
+    64→    64→  done: number
+    65→    65→  created: number
+    66→    66→  updated: number
+    67→    67→  chapters: number
+    68→    68→  message: string
+    69→    69→  createdAt: string
+    70→    70→  updatedAt: string
+    71→    71→}
+    72→    72→
+    73→    73→interface TaskDetail extends TaskRow {
+    74→    74→  log: string
+    75→    75→  rule?: { id: number; name: string; charset: string } | null
+    76→    76→}
+    77→    77→
+    78→    78→/** 仅保留非空字符串字段 */
+    79→    79→function cleanRule(obj: object): Record<string, string> {
+    80→    80→  const out: Record<string, string> = {}
+    81→    81→  for (const [k, v] of Object.entries(obj)) {
+    82→    82→    if (typeof v === 'string' && v.trim()) out[k] = v.trim()
+    83→    83→  }
+    84→    84→  return out
+    85→    85→}
+    86→    86→
+    87→    87→function truncate(s: string, n: number): string {
+    88→    88→  return s.length > n ? `${s.slice(0, n)}…` : s
+    89→    89→}
+    90→    90→
+    91→    91→// ==================== 1. 采集规则编辑 ====================
+    92→    92→
+    93→    93→interface RuleFormState {
+    94→    94→  id: number | null
+    95→    95→  name: string
+    96→    96→  siteUrl: string
+    97→    97→  enabled: boolean
+    98→    98→  charset: string
+    99→    99→  notes: string
+   100→   100→  listRule: ListRule
+   101→   101→  bookRule: BookRule
+   102→   102→  chapterRule: ChapterRule
+   103→   103→}
+   104→   104→
+   105→   105→const EMPTY_RULE_FORM: RuleFormState = {
+   106→   106→  id: null,
+   107→   107→  name: '',
+   108→   108→  siteUrl: '',
+   109→   109→  enabled: true,
+   110→   110→  charset: 'utf-8',
+   111→   111→  notes: '',
+   112→   112→  listRule: {},
+   113→   113→  bookRule: {},
+   114→   114→  chapterRule: {},
+   115→   115→}
+   116→   116→
+   117→   117→const CHARSETS = ['utf-8', 'gbk', 'gb2312', 'big5']
+   118→   118→
+   119→   119→interface FieldDef {
+   120→   120→  key: string
+   121→   121→  label: string
+   122→   122→  ph: string
+   123→   123→}
+   124→   124→
+   125→   125→const LIST_FIELDS: FieldDef[] = [
+   126→   126→  { key: 'itemSelector', label: '列表项 itemSelector', ph: '如 #newscontent li / .book-item' },
+   127→   127→  { key: 'titleSelector', label: '书名 titleSelector', ph: '如 .s2 a' },
+   128→   128→  { key: 'linkSelector', label: '书籍链接 linkSelector', ph: '默认 a[href]' },
+   129→   129→  { key: 'authorSelector', label: '作者 authorSelector', ph: '如 .s5（可选）' },
+   130→   130→  { key: 'categorySelector', label: '分类 categorySelector', ph: '分类选择器（可选）' },
+   131→   131→]
+   132→   132→
+   133→   133→const BOOK_FIELDS: FieldDef[] = [
+   134→   134→  { key: 'titleSelector', label: '书名 titleSelector', ph: '如 #info h1' },
+   135→   135→  { key: 'authorSelector', label: '作者 authorSelector', ph: '如 #info p:first-of-type a' },
+   136→   136→  { key: 'descriptionSelector', label: '简介 descriptionSelector', ph: '如 #intro' },
+   137→   137→  { key: 'coverSelector', label: '封面 coverSelector', ph: '如 #fmimg img@src（可选）' },
+   138→   138→  { key: 'statusSelector', label: '连载状态 statusSelector', ph: '如 .book-status（可选）' },
+   139→   139→  { key: 'categorySelector', label: '分类 categorySelector', ph: '如 .book-cat（可选）' },
+   140→   140→  { key: 'chapterLinkSelector', label: '章节链接 chapterLinkSelector', ph: '如 #list dl dd a' },
+   141→   141→  { key: 'chapterTitleSelector', label: '章节标题 chapterTitleSelector', ph: '链接元素内标题选择器（可选）' },
+   142→   142→]
+   143→   143→
+   144→   144→const CHAPTER_FIELDS: FieldDef[] = [
+   145→   145→  { key: 'titleSelector', label: '章节标题 titleSelector', ph: '如 .bookname h1' },
+   146→   146→  { key: 'contentSelector', label: '正文容器 contentSelector', ph: '如 #content' },
+   147→   147→  { key: 'nextSelector', label: '下一页链接 nextSelector', ph: '如 #link_next（可选）' },
+   148→   148→]
+   149→   149→
+   150→   150→function RuleFieldGroup({
+   151→   151→  title,
+   152→   152→  desc,
+   153→   153→  fields,
+   154→   154→  values,
+   155→   155→  onChange,
+   156→   156→}: {
+   157→   157→  title: string
+   158→   158→  desc: string
+   159→   159→  fields: FieldDef[]
+   160→   160→  values: ListRule | BookRule | ChapterRule
+   161→   161→  onChange: (key: string, value: string) => void
+   162→   162→}) {
+   163→   163→  const rec = values as Record<string, string | undefined>
+   164→   164→  return (
+   165→   165→    <fieldset className="rounded-md border p-3">
+   166→   166→      <legend className="px-1 text-xs font-semibold text-neutral-700">{title}</legend>
+   167→   167→      <p className="mb-2 text-[11px] leading-relaxed text-neutral-400">{desc}</p>
+   168→   168→      <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2">
+   169→   169→        {fields.map((f) => (
+   170→   170→          <div key={f.key} className="space-y-1">
+   171→   171→            <Label className="text-[11px] font-medium text-neutral-500">{f.label}</Label>
+   172→   172→            <Input
+   173→   173→              value={rec[f.key] ?? ''}
+   174→   174→              onChange={(e) => onChange(f.key, e.target.value)}
+   175→   175→              placeholder={f.ph}
+   176→   176→              className="h-8 text-xs"
+   177→   177→            />
+   178→   178→          </div>
+   179→   179→        ))}
+   180→   180→      </div>
+   181→   181→    </fieldset>
+   182→   182→  )
+   183→   183→}
+   184→   184→
+   185→   185→/** 规则编辑/新建对话框（父组件条件渲染 + key 挂载，避免 effect 同步 state） */
+   186→   186→function RuleDialog({
+   187→   187→  initial,
+   188→   188→  onClose,
+   189→   189→  onSaved,
+   190→   190→}: {
+   191→   191→  initial: ScrapeRuleDto | null
+   192→   192→  onClose: () => void
+   193→   193→  onSaved: () => void
+   194→   194→}) {
+   195→   195→  const [form, setForm] = useState<RuleFormState>(
+   196→   196→    initial
+   197→   197→      ? {
+   198→   198→          id: initial.id,
+   199→   199→          name: initial.name,
+   200→   200→          siteUrl: initial.siteUrl,
+   201→   201→          enabled: initial.enabled,
+   202→   202→          charset: initial.charset,
+   203→   203→          notes: initial.notes,
+   204→   204→          listRule: initial.listRule ?? {},
+   205→   205→          bookRule: initial.bookRule ?? {},
+   206→   206→          chapterRule: initial.chapterRule ?? {},
+   207→   207→        }
+   208→   208→      : EMPTY_RULE_FORM,
+   209→   209→  )
+   210→   210→  const [saving, setSaving] = useState(false)
+   211→   211→
+   212→   212→  const setGroup = (group: 'listRule' | 'bookRule' | 'chapterRule', key: string, value: string) =>
+   213→   213→    setForm((f) => ({ ...f, [group]: { ...f[group], [key]: value } }))
+   214→   214→
+   215→   215→  const save = async () => {
+   216→   216→    if (!form.name.trim()) return toast.error('规则名称必填')
+   217→   217→    if (!form.siteUrl.trim()) return toast.error('站点 URL 必填')
+   218→   218→    setSaving(true)
+   219→   219→    try {
+   220→   220→      await api('/api/scrape-rules', {
+   221→   221→        method: 'PUT',
+   222→   222→        body: JSON.stringify({
+   223→   223→          id: form.id ?? undefined,
+   224→   224→          name: form.name.trim(),
+   225→   225→          siteUrl: form.siteUrl.trim(),
+   226→   226→          enabled: form.enabled,
+   227→   227→          charset: form.charset,
+   228→   228→          notes: form.notes,
+   229→   229→          listRule: cleanRule(form.listRule),
+   230→   230→          bookRule: cleanRule(form.bookRule),
+   231→   231→          chapterRule: cleanRule(form.chapterRule),
+   232→   232→        }),
+   233→   233→      })
+   234→   234→      toast.success(form.id ? '规则已保存' : '规则已创建')
+   235→   235→      onSaved()
+   236→   236→      onClose()
+   237→   237→    } catch (e) {
+   238→   238→      toast.error(e instanceof Error ? e.message : '保存失败')
+   239→   239→    } finally {
+   240→   240→      setSaving(false)
+   241→   241→    }
+   242→   242→  }
+   243→   243→
+   244→   244→  return (
+   245→   245→    <Dialog open onOpenChange={(o) => !o && onClose()}>
+   246→   246→      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+   247→   247→        <DialogHeader>
+   248→   248→          <DialogTitle>{form.id ? '编辑采集规则' : '新建采集规则'}</DialogTitle>
+   249→   249→          <DialogDescription>
+   250→   250→            选择器支持逗号分隔的备选与 <code>sel@attr</code> 取属性语法；留空的字段将使用引擎内置启发式。
+   251→   251→          </DialogDescription>
+   252→   252→        </DialogHeader>
+   253→   253→
+   254→   254→        <div className="space-y-3">
+   255→   255→          <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2">
+   256→   256→            <div className="space-y-1">
+   257→   257→              <Label className="text-xs">规则名称 *</Label>
+   258→   258→              <Input
+   259→   259→                value={form.name}
+   260→   260→                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+   261→   261→                placeholder="如：笔趣阁系通用模板"
+   262→   262→                className="h-8 text-xs"
+   263→   263→              />
+   264→   264→            </div>
+   265→   265→            <div className="space-y-1">
+   266→   266→              <Label className="text-xs">站点 URL *</Label>
+   267→   267→              <Input
+   268→   268→                value={form.siteUrl}
+   269→   269→                onChange={(e) => setForm((f) => ({ ...f, siteUrl: e.target.value }))}
+   270→   270→                placeholder="https://www.example.com/"
+   271→   271→                className="h-8 text-xs"
+   272→   272→              />
+   273→   273→            </div>
+   274→   274→            <div className="space-y-1">
+   275→   275→              <Label className="text-xs">编码 charset</Label>
+   276→   276→              <Select value={form.charset} onValueChange={(v) => setForm((f) => ({ ...f, charset: v }))}>
+   277→   277→                <SelectTrigger className="h-8 text-xs">
+   278→   278→                  <SelectValue />
+   279→   279→                </SelectTrigger>
+   280→   280→                <SelectContent>
+   281→   281→                  {CHARSETS.map((c) => (
+   282→   282→                    <SelectItem key={c} value={c}>
+   283→   283→                      {c}
+   284→   284→                    </SelectItem>
+   285→   285→                  ))}
+   286→   286→                </SelectContent>
+   287→   287→              </Select>
+   288→   288→            </div>
+   289→   289→            <div className="flex items-center gap-2 pt-5">
+   290→   290→              <Switch
+   291→   291→                id="rule-enabled"
+   292→   292→                checked={form.enabled}
+   293→   293→                onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
+   294→   294→              />
+   295→   295→              <Label htmlFor="rule-enabled" className="text-xs">
+   296→   296→                启用该规则
+   297→   297→              </Label>
+   298→   298→            </div>
+   299→   299→          </div>
+   300→   300→
+   301→   301→          <RuleFieldGroup
+   302→   302→            title="列表页规则 listRule（范围采集）"
+   303→   303→            desc="用于从列表/分类页批量提取书籍条目。"
+   304→   304→            fields={LIST_FIELDS}
+   305→   305→            values={form.listRule}
+   306→   306→            onChange={(k, v) => setGroup('listRule', k, v)}
+   307→   307→          />
+   308→   308→          <RuleFieldGroup
+   309→   309→            title="书籍页规则 bookRule（单本/范围共用）"
+   310→   310→            desc="用于从书页提取书籍信息与章节链接列表。"
+   311→   311→            fields={BOOK_FIELDS}
+   312→   312→            values={form.bookRule}
+   313→   313→            onChange={(k, v) => setGroup('bookRule', k, v)}
+   314→   314→          />
+   315→   315→          <RuleFieldGroup
+   316→   316→            title="正文页规则 chapterRule"
+   317→   317→            desc="用于抓取单章正文内容。"
+   318→   318→            fields={CHAPTER_FIELDS}
+   319→   319→            values={form.chapterRule}
+   320→   320→            onChange={(k, v) => setGroup('chapterRule', k, v)}
+   321→   321→          />
+   322→   322→
+   323→   323→          <div className="space-y-1">
+   324→   324→            <Label className="text-xs">备注 notes</Label>
+   325→   325→            <Textarea
+   326→   326→              value={form.notes}
+   327→   327→              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+   328→   328→              placeholder="站点结构说明、注意事项等"
+   329→   329→              className="min-h-16 text-xs"
+   330→   330→            />
+   331→   331→          </div>
+   332→   332→        </div>
+   333→   333→
+   334→   334→        <DialogFooter>
+   335→   335→          <Button variant="outline" size="sm" onClick={onClose}>
+   336→   336→            取消
+   337→   337→          </Button>
+   338→   338→          <Button size="sm" onClick={save} disabled={saving}>
+   339→   339→            {saving ? '保存中…' : '保存规则'}
+   340→   340→          </Button>
+   341→   341→        </DialogFooter>
+   342→   342→      </DialogContent>
+   343→   343→    </Dialog>
+   344→   344→  )
+   345→   345→}
+   346→   346→
+   347→   347→function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
+   348→   348→  const qc = useQueryClient()
+   349→   349→  // undefined=关闭 / null=新建 / 规则对象=编辑
+   350→   350→  const [dialogRule, setDialogRule] = useState<ScrapeRuleDto | null | undefined>(undefined)
+   351→   351→
+   352→   352→  const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-rules'] })
+   353→   353→
+   354→   354→  const seed = async () => {
+   355→   355→    try {
+   356→   356→      const res = await api<{ added: number }>('/api/scrape-rules', {
+   357→   357→        method: 'PUT',
+   358→   358→        body: JSON.stringify({ seed: true }),
+   359→   359→      })
+   360→   360→      await refresh()
+   361→   361→      toast.success(`内置模板入库完成：新增 ${res.added} 条`)
+   362→   362→    } catch (e) {
+   363→   363→      toast.error(e instanceof Error ? e.message : '操作失败')
+   364→   364→    }
+   365→   365→  }
+   366→   366→
+   367→   367→  const toggleEnabled = async (r: ScrapeRuleDto, enabled: boolean) => {
+   368→   368→    try {
+   369→   369→      await api('/api/scrape-rules', {
+   370→   370→        method: 'PUT',
+   371→   371→        body: JSON.stringify({
+   372→   372→          id: r.id,
+   373→   373→          name: r.name,
+   374→   374→          siteUrl: r.siteUrl,
+   375→   375→          enabled,
+   376→   376→          charset: r.charset,
+   377→   377→          notes: r.notes,
+   378→   378→          listRule: cleanRule(r.listRule),
+   379→   379→          bookRule: cleanRule(r.bookRule),
+   380→   380→          chapterRule: cleanRule(r.chapterRule),
+   381→   381→        }),
+   382→   382→      })
+   383→   383→      await refresh()
+   384→   384→      toast.success(`规则「${r.name}」已${enabled ? '启用' : '停用'}`)
+   385→   385→    } catch (e) {
+   386→   386→      toast.error(e instanceof Error ? e.message : '操作失败')
+   387→   387→    }
+   388→   388→  }
+   389→   389→
+   390→   390→  const remove = async (r: ScrapeRuleDto) => {
+   391→   391→    try {
+   392→   392→      await api(`/api/scrape-rules?id=${r.id}`, { method: 'DELETE' })
+   393→   393→      await refresh()
+   394→   394→      toast.success('规则已删除')
+   395→   395→    } catch (e) {
+   396→   396→      toast.error(e instanceof Error ? e.message : '删除失败')
+   397→   397→    }
+   398→   398→  }
+   399→   399→
+   400→   400→  return (
+   401→   401→    <section className="rounded-lg border p-4">
+   402→   402→      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+   403→   403→        <h4 className="flex items-center gap-1.5 text-sm font-semibold">
+   404→   404→          <BookOpen className="h-4 w-4" /> 采集规则（{rules?.length ?? 0}）
+   405→   405→        </h4>
+   406→   406→        <div className="flex gap-2">
+   407→   407→          <Button size="sm" variant="outline" onClick={seed}>
+   408→   408→            <Sparkles className="h-3.5 w-3.5" /> 内置模板入库
+   409→   409→          </Button>
+   410→   410→          <Button size="sm" variant="outline" onClick={() => setDialogRule(null)}>
+   411→   411→            <Plus className="h-3.5 w-3.5" /> 新建规则
+   412→   412→          </Button>
+   413→   413→        </div>
+   414→   414→      </div>
+   415→   415→
+   416→   416→      <div className="max-h-72 overflow-y-auto">
+   417→   417→        {rules === undefined ? (
+   418→   418→          <p className="py-6 text-center text-xs text-neutral-400">规则加载中…</p>
+   419→   419→        ) : rules.length === 0 ? (
+   420→   420→          <p className="py-6 text-center text-xs text-neutral-400">
+   421→   421→            暂无规则，点击「内置模板入库」或「新建规则」开始
+   422→   422→          </p>
+   423→   423→        ) : (
+   424→   424→          <div className="space-y-1.5">
+   425→   425→            {rules.map((r) => (
+   426→   426→              <div
+   427→   427→                key={r.id}
+   428→   428→                className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs transition hover:bg-neutral-50"
+   429→   429→              >
+   430→   430→                <span className="min-w-0 flex-1 truncate font-medium" title={r.name}>
+   431→   431→                  {r.name}
+   432→   432→                </span>
+   433→   433→                <span className="hidden max-w-40 truncate text-neutral-400 sm:inline" title={r.siteUrl}>
+   434→   434→                  {truncate(r.siteUrl, 30)}
+   435→   435→                </span>
+   436→   436→                <Badge variant="outline" className="shrink-0 font-normal">
+   437→   437→                  {r.charset}
+   438→   438→                </Badge>
+   439→   439→                <Switch checked={r.enabled} onCheckedChange={(v) => toggleEnabled(r, v)} aria-label={`启用规则 ${r.name}`} />
+   440→   440→                <Button
+   441→   441→                  size="sm"
+   442→   442→                  variant="ghost"
+   443→   443→                  className="h-7 px-2"
+   444→   444→                  onClick={() => setDialogRule(r)}
+   445→   445→                  aria-label={`编辑规则 ${r.name}`}
+   446→   446→                >
+   447→   447→                  <Pencil className="h-3 w-3" /> 编辑
+   448→   448→                </Button>
+   449→   449→                <Button
+   450→   450→                  size="sm"
+   451→   451→                  variant="ghost"
+   452→   452→                  className="h-7 px-2 text-red-500 hover:text-red-600"
+   453→   453→                  onClick={() => remove(r)}
+   454→   454→                  aria-label={`删除规则 ${r.name}`}
+   455→   455→                >
+   456→   456→                  <Trash2 className="h-3 w-3" />
+   457→   457→                </Button>
+   458→   458→              </div>
+   459→   459→            ))}
+   460→   460→          </div>
+   461→   461→        )}
+   462→   462→      </div>
+   463→   463→
+   464→   464→      {dialogRule !== undefined && (
+   465→   465→        <RuleDialog
+   466→   466→          key={dialogRule ? dialogRule.id : 'new'}
+   467→   467→          initial={dialogRule}
+   468→   468→          onClose={() => setDialogRule(undefined)}
+   469→   469→          onSaved={refresh}
+   470→   470→        />
+   471→   471→      )}
+   472→   472→    </section>
+   473→   473→  )
+   474→   474→}
+   475→   475→
+   476→   476→// ==================== 2. 新建采集任务 ====================
+   477→   477→
+   478→   478→function NewTaskSection({
+   479→   479→  rules,
+   480→   480→  onCreated,
+   481→   481→}: {
+   482→   482→  rules: ScrapeRuleDto[]
+   483→   483→  onCreated: () => void
+   484→   484→}) {
+   485→   485→  const [mode, setMode] = useState<'single' | 'list'>('single')
+   486→   486→  const [targetUrl, setTargetUrl] = useState('')
+   487→   487→  const [ruleId, setRuleId] = useState<string>('none')
+   488→   488→  const [pages, setPages] = useState('1')
+   489→   489→  const [creating, setCreating] = useState(false)
+   490→   490→
+   491→   491→  const selectedRule = rules.find((r) => String(r.id) === ruleId)
+   492→   492→
+   493→   493→  const submit = async () => {
+   494→   494→    const url = targetUrl.trim()
+   495→   495→    if (!url) return toast.error('请输入目标 URL')
+   496→   496→    let p = 1
+   497→   497→    if (mode === 'list') {
+   498→   498→      p = Math.floor(Number(pages) || 0)
+   499→   499→      if (p < 1 || p > 20) return toast.error('列表页数需为 1-20 的整数')
+   500→   500→    }
+   501→   501→    setCreating(true)
+   502→   502→    try {
+   503→   503→      await api('/api/scrape-tasks', {
+   504→   504→        method: 'POST',
+   505→   505→        body: JSON.stringify({
+   506→   506→          mode,
+   507→   507→          targetUrl: url,
+   508→   508→          ruleId: ruleId === 'none' ? undefined : Number(ruleId),
+   509→   509→          pages: p,
+   510→   510→        }),
+   511→   511→      })
+   512→   512→      toast.success('采集任务已创建，开始执行')
+   513→   513→      setTargetUrl('')
+   514→   514→      onCreated()
+   515→   515→    } catch (e) {
+   516→   516→      toast.error(e instanceof Error ? e.message : '创建失败')
+   517→   517→    } finally {
+   518→   518→      setCreating(false)
+   519→   519→    }
+   520→   520→  }
+   521→   521→
+   522→   522→  return (
+   523→   523→    <section className="rounded-lg border p-4">
+   524→   524→      <h4 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
+   525→   525→        <ListPlus className="h-4 w-4" /> 新建采集任务
+   526→   526→      </h4>
+   527→   527→
+   528→   528→      <div className="space-y-3">
+   529→   529→        <RadioGroup
+   530→   530→          value={mode}
+   531→   531→          onValueChange={(v) => setMode(v as 'single' | 'list')}
+   532→   532→          className="flex flex-wrap gap-4"
+   533→   533→        >
+   534→   534→          <div className="flex items-center gap-2">
+   535→   535→            <RadioGroupItem value="single" id="mode-single" />
+   536→   536→            <Label htmlFor="mode-single" className="text-xs">
+   537→   537→              单本采集（书页 URL）
+   538→   538→            </Label>
+   539→   539→          </div>
+   540→   540→          <div className="flex items-center gap-2">
+   541→   541→            <RadioGroupItem value="list" id="mode-list" />
+   542→   542→            <Label htmlFor="mode-list" className="text-xs">
+   543→   543→              范围采集（列表页 URL）
+   544→   544→            </Label>
+   545→   545→          </div>
+   546→   546→        </RadioGroup>
+   547→   547→
+   548→   548→        <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+   549→   549→          <div className="space-y-1">
+   550→   550→            <Label className="text-xs">目标 URL</Label>
+   551→   551→            <Input
+   552→   552→              value={targetUrl}
+   553→   553→              onChange={(e) => setTargetUrl(e.target.value)}
+   554→   554→              placeholder={
+   555→   555→                mode === 'single'
+   556→   556→                  ? '书页地址，如 https://www.example.com/book/1.html'
+   557→   557→                  : '列表页地址，如 https://www.example.com/sort/1/'
+   558→   558→              }
+   559→   559→              className="h-8 text-xs"
+   560→   560→            />
+   561→   561→          </div>
+   562→   562→          <div className="space-y-1">
+   563→   563→            <Label className="text-xs">采集规则</Label>
+   564→   564→            <Select value={ruleId} onValueChange={setRuleId}>
+   565→   565→              <SelectTrigger className="h-8 w-44 text-xs">
+   566→   566→                <SelectValue />
+   567→   567→              </SelectTrigger>
+   568→   568→              <SelectContent>
+   569→   569→                <SelectItem value="none">不使用规则</SelectItem>
+   570→   570→                {rules.map((r) => (
+   571→   571→                  <SelectItem key={r.id} value={String(r.id)}>
+   572→   572→                    {r.name}
+   573→   573→                  </SelectItem>
+   574→   574→                ))}
+   575→   575→              </SelectContent>
+   576→   576→            </Select>
+   577→   577→          </div>
+   578→   578→          {mode === 'list' && (
+   579→   579→            <div className="space-y-1">
+   580→   580→              <Label className="text-xs">列表页数（1-20）</Label>
+   581→   581→              <Input
+   582→   582→                type="number"
+   583→   583→                min={1}
+   584→   584→                max={20}
+   585→   585→                value={pages}
+   586→   586→                onChange={(e) => setPages(e.target.value)}
+   587→   587→                className="h-8 w-28 text-xs"
+   588→   588→              />
+   589→   589→            </div>
+   590→   590→          )}
+   591→   591→        </div>
+   592→   592→
+   593→   593→        <div className="flex flex-wrap items-center justify-between gap-2">
+   594→   594→          <p className="text-[11px] text-neutral-400">
+   595→   595→            {selectedRule
+   596→   596→              ? `已选规则「${selectedRule.name}」（charset=${selectedRule.charset}）`
+   597→   597→              : '不使用规则时将依赖引擎内置启发式提取；仅采集公开页面，引擎内置域名限速与 robots 提示。'}
+   598→   598→          </p>
+   599→   599→          <Button size="sm" onClick={submit} disabled={creating}>
+   600→   600→            {creating ? '创建中…' : '创建任务'}
+   601→   601→          </Button>
+   602→   602→        </div>
+   603→   603→      </div>
+   604→   604→    </section>
+   605→   605→  )
+   606→   606→}
+   607→   607→
+   608→   608→// ==================== 3. 任务列表 ====================
+   609→   609→
+   610→   610→const PAGE_SIZE = 20
+   611→   611→
+   612→   612→const STATUS_META: Record<string, { label: string; cls: string }> = {
+   613→   613→  pending: { label: '待执行', cls: 'bg-neutral-200 text-neutral-600' },
+   614→   614→  running: { label: '执行中', cls: 'bg-slate-500 text-white animate-pulse' },
+   615→   615→  success: { label: '成功', cls: 'bg-emerald-600 text-white' },
+   616→   616→  partial: { label: '部分成功', cls: 'bg-amber-500 text-white' },
+   617→   617→  failed: { label: '失败', cls: 'bg-red-600 text-white' },
+   618→   618→  canceled: { label: '已取消', cls: 'bg-neutral-400 text-white' },
+   619→   619→}
+   620→   620→
+   621→   621→function StatusBadge({ status }: { status: string }) {
+   622→   622→  const meta = STATUS_META[status] ?? { label: status, cls: 'bg-neutral-200 text-neutral-600' }
+   623→   623→  return <Badge className={`shrink-0 border-transparent ${meta.cls}`}>{meta.label}</Badge>
+   624→   624→}
+   625→   625→
+   626→   626→function ModeBadge({ mode }: { mode: string }) {
+   627→   627→  return mode === 'list' ? (
+   628→   628→    <Badge variant="secondary" className="shrink-0">
+   629→   629→      范围
+   630→   630→    </Badge>
+   631→   631→  ) : (
+   632→   632→    <Badge variant="outline" className="shrink-0">
+   633→   633→      单本
+   634→   634→    </Badge>
+   635→   635→  )
+   636→   636→}
+   637→   637→
+   638→   638→/** 任务日志对话框（执行中的任务每 2s 刷新并自动滚到底部） */
+   639→   639→function LogDialog({ task, onClose }: { task: TaskRow; onClose: () => void }) {
+   640→   640→  const isActive = task.status === 'pending' || task.status === 'running'
+   641→   641→  const { data, isLoading } = useQuery({
+   642→   642→    queryKey: ['scrape-task', task.id],
+   643→   643→    queryFn: () => api<{ task: TaskDetail }>(`/api/scrape-tasks/${task.id}`),
+   644→   644→    refetchInterval: isActive ? 2000 : false,
+   645→   645→  })
+   646→   646→  const detail = data?.task
+   647→   647→  const preRef = useRef<HTMLPreElement>(null)
+   648→   648→  const log = detail?.log ?? ''
+   649→   649→  // 日志更新后滚动到底部（ref 副作用，无 state 同步）
+   650→   650→  useEffect(() => {
+   651→   651→    if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
+   652→   652→  }, [log])
+   653→   653→
+   654→   654→  return (
+   655→   655→    <Dialog open onOpenChange={(o) => !o && onClose()}>
+   656→   656→      <DialogContent className="sm:max-w-xl">
+   657→   657→        <DialogHeader>
+   658→   658→          <DialogTitle className="flex items-center gap-2 text-sm">
+   659→   659→            任务 #{task.id} 日志 <StatusBadge status={detail?.status ?? task.status} />
+   660→   660→          </DialogTitle>
+   661→   661→          <DialogDescription className="break-all">
+   662→   662→            {truncate(detail?.targetUrl ?? task.targetUrl, 80)}
+   663→   663→            {detail?.message ? ` — ${detail.message}` : ''}
+   664→   664→          </DialogDescription>
+   665→   665→        </DialogHeader>
+   666→   666→        <pre
+   667→   667→          ref={preRef}
+   668→   668→          className="max-h-96 overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-neutral-950 p-3 font-mono text-[11px] leading-relaxed text-emerald-300"
+   669→   669→        >
+   670→   670→          {isLoading ? '日志加载中…' : log || '暂无日志'}
+   671→   671→        </pre>
+   672→   672→        <DialogFooter>
+   673→   673→          <Button variant="outline" size="sm" onClick={onClose}>
+   674→   674→            关闭
+   675→   675→          </Button>
+   676→   676→        </DialogFooter>
+   677→   677→      </DialogContent>
+   678→   678→    </Dialog>
+   679→   679→  )
+   680→   680→}
+   681→   681→
+   682→   682→function TaskListSection() {
+   683→   683→  const qc = useQueryClient()
+   684→   684→  const [page, setPage] = useState(1)
+   685→   685→  const [logTask, setLogTask] = useState<TaskRow | null>(null)
+   686→   686→
+   687→   687→  const { data, isLoading } = useQuery({
+   688→   688→    queryKey: ['scrape-tasks', page],
+   689→   689→    queryFn: () =>
+   690→   690→      api<{ list: TaskRow[]; total: number }>(`/api/scrape-tasks?page=${page}&pageSize=${PAGE_SIZE}`),
+   691→   691→    refetchInterval: (query) => {
+   692→   692→      const list = query.state.data?.list ?? []
+   693→   693→      return list.some((t) => t.status === 'pending' || t.status === 'running') ? 3000 : false
+   694→   694→    },
+   695→   695→  })
+   696→   696→
+   697→   697→  const rows = data?.list ?? []
+   698→   698→  const total = data?.total ?? 0
+   699→   699→  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+   700→   700→
+   701→   701→  const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-tasks'] })
+   702→   702→
+   703→   703→  const cancel = async (t: TaskRow) => {
+   704→   704→    try {
+   705→   705→      await api(`/api/scrape-tasks/${t.id}`, {
+   706→   706→        method: 'PATCH',
+   707→   707→        body: JSON.stringify({ action: 'cancel' }),
+   708→   708→      })
+   709→   709→      await refresh()
+   710→   710→      toast.success(`已发送取消指令（任务 #${t.id}）`)
+   711→   711→    } catch (e) {
+   712→   712→      toast.error(e instanceof Error ? e.message : '取消失败')
+   713→   713→    }
+   714→   714→  }
+   715→   715→
+   716→   716→  const remove = async (t: TaskRow) => {
+   717→   717→    try {
+   718→   718→      await api(`/api/scrape-tasks/${t.id}`, { method: 'DELETE' })
+   719→   719→      await refresh()
+   720→   720→      toast.success('任务已删除')
+   721→   721→    } catch (e) {
+   722→   722→      toast.error(e instanceof Error ? e.message : '删除失败')
+   723→   723→    }
+   724→   724→  }
+   725→   725→
+   726→   726→  return (
+   727→   727→    <section className="rounded-lg border p-4">
+   728→   728→      <div className="mb-3 flex items-center justify-between">
+   729→   729→        <h4 className="text-sm font-semibold">采集任务（{total}）</h4>
+   730→   730→        {totalPages > 1 && (
+   731→   731→          <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+   732→   732→            <Button
+   733→   733→              size="sm"
+   734→   734→              variant="outline"
+   735→   735→              className="h-7"
+   736→   736→              disabled={page <= 1}
+   737→   737→              onClick={() => setPage((p) => Math.max(1, p - 1))}
+   738→   738→            >
+   739→   739→              上一页
+   740→   740→            </Button>
+   741→   741→            <span className="tabular-nums">
+   742→   742→              {page} / {totalPages}
+   743→   743→            </span>
+   744→   744→            <Button
+   745→   745→              size="sm"
+   746→   746→              variant="outline"
+   747→   747→              className="h-7"
+   748→   748→              disabled={page >= totalPages}
+   749→   749→              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+   750→   750→            >
+   751→   751→              下一页
+   752→   752→            </Button>
+   753→   753→          </div>
+   754→   754→        )}
+   755→   755→      </div>
+   756→   756→
+   757→   757→      {isLoading ? (
+   758→   758→        <p className="py-8 text-center text-xs text-neutral-400">任务加载中…</p>
+   759→   759→      ) : rows.length === 0 ? (
+   760→   760→        <p className="py-8 text-center text-xs text-neutral-400">暂无采集任务，请在上方创建</p>
+   761→   761→      ) : (
+   762→   762→        <div className="max-h-[420px] overflow-y-auto">
+   763→   763→          <Table>
+   764→   764→            <TableHeader>
+   765→   765→              <TableRow className="hover:bg-transparent">
+   766→   766→                <TableHead className="h-8 w-10 text-xs">ID</TableHead>
+   767→   767→                <TableHead className="h-8 w-14 text-xs">模式</TableHead>
+   768→   768→                <TableHead className="h-8 text-xs">目标 URL</TableHead>
+   769→   769→                <TableHead className="h-8 w-20 text-xs">状态</TableHead>
+   770→   770→                <TableHead className="h-8 w-32 text-xs">进度</TableHead>
+   771→   771→                <TableHead className="hidden h-8 w-36 text-xs md:table-cell">成果</TableHead>
+   772→   772→                <TableHead className="hidden h-8 w-20 text-xs md:table-cell">时间</TableHead>
+   773→   773→                <TableHead className="h-8 w-24 text-right text-xs">操作</TableHead>
+   774→   774→              </TableRow>
+   775→   775→            </TableHeader>
+   776→   776→            <TableBody>
+   777→   777→              {rows.map((t) => {
+   778→   778→                const pct = t.total > 0 ? Math.min(100, Math.round((t.done / t.total) * 100)) : 0
+   779→   779→                const active = t.status === 'pending' || t.status === 'running'
+   780→   780→                return (
+   781→   781→                  <TableRow key={t.id}>
+   782→   782→                    <TableCell className="p-2 text-xs tabular-nums text-neutral-500">{t.id}</TableCell>
+   783→   783→                    <TableCell className="p-2">
+   784→   784→                      <ModeBadge mode={t.mode} />
+   785→   785→                    </TableCell>
+   786→   786→                    <TableCell className="max-w-0 p-2">
+   787→   787→                      <span className="block truncate text-xs" title={t.targetUrl}>
+   788→   788→                        {truncate(t.targetUrl, 40)}
+   789→   789→                      </span>
+   790→   790→                      {t.message && (
+   791→   791→                        <span className="block truncate text-[11px] text-neutral-400" title={t.message}>
+   792→   792→                          {truncate(t.message, 40)}
+   793→   793→                        </span>
+   794→   794→                      )}
+   795→   795→                    </TableCell>
+   796→   796→                    <TableCell className="p-2">
+   797→   797→                      <StatusBadge status={t.status} />
+   798→   798→                    </TableCell>
+   799→   799→                    <TableCell className="p-2">
+   800→   800→                      <div className="flex items-center gap-1.5">
+   801→   801→                        <span className="w-14 shrink-0 text-[11px] tabular-nums text-neutral-500">
+   802→   802→                          {t.done}/{t.total}
+   803→   803→                        </span>
+   804→   804→                        <Progress value={pct} className="h-1.5 w-16" aria-label={`任务 ${t.id} 进度 ${pct}%`} />
+   805→   805→                      </div>
+   806→   806→                    </TableCell>
+   807→   807→                    <TableCell className="hidden p-2 text-[11px] tabular-nums text-neutral-500 md:table-cell">
+   808→   808→                      新建 {t.created} · 更新 {t.updated} · 章节 {t.chapters}
+   809→   809→                    </TableCell>
+   810→   810→                    <TableCell className="hidden p-2 text-[11px] text-neutral-400 md:table-cell">
+   811→   811→                      {timeAgo(t.updatedAt)}
+   812→   812→                    </TableCell>
+   813→   813→                    <TableCell className="p-2 text-right">
+   814→   814→                      <div className="flex justify-end gap-0.5">
+   815→   815→                        <Button
+   816→   816→                          size="sm"
+   817→   817→                          variant="ghost"
+   818→   818→                          className="h-7 px-1.5"
+   819→   819→                          title="查看日志"
+   820→   820→                          aria-label={`查看任务 ${t.id} 日志`}
+   821→   821→                          onClick={() => setLogTask(t)}
+   822→   822→                        >
+   823→   823→                          <ScrollText className="h-3.5 w-3.5" />
+   824→   824→                        </Button>
+   825→   825→                        {active && (
+   826→   826→                          <Button
+   827→   827→                            size="sm"
+   828→   828→                            variant="ghost"
+   829→   829→                            className="h-7 px-1.5 text-amber-600 hover:text-amber-700"
+   830→   830→                            title="取消任务"
+   831→   831→                            aria-label={`取消任务 ${t.id}`}
+   832→   832→                            onClick={() => cancel(t)}
+   833→   833→                          >
+   834→   834→                            <Square className="h-3.5 w-3.5" />
+   835→   835→                          </Button>
+   836→   836→                        )}
+   837→   837→                        <Button
+   838→   838→                          size="sm"
+   839→   839→                          variant="ghost"
+   840→   840→                          className="h-7 px-1.5 text-red-500 hover:text-red-600"
+   841→   841→                          title="删除任务"
+   842→   842→                          aria-label={`删除任务 ${t.id}`}
+   843→   843→                          onClick={() => remove(t)}
+   844→   844→                        >
+   845→   845→                          <Trash2 className="h-3.5 w-3.5" />
+   846→   846→                        </Button>
+   847→   847→                      </div>
+   848→   848→                    </TableCell>
+   849→   849→                  </TableRow>
+   850→   850→                )
+   851→   851→              })}
+   852→   852→            </TableBody>
+   853→   853→          </Table>
+   854→   854→        </div>
+   855→   855→      )}
+   856→   856→
+   857→   857→      {logTask && <LogDialog task={logTask} onClose={() => setLogTask(null)} />}
+   858→   858→    </section>
+   859→   859→  )
+   860→   860→}
+   861→   861→
+   862→   862→// ==================== 入口 ====================
+   863→   863→
+   864→   864→export default function ScrapeCenter() {
+   865→   865→  const qc = useQueryClient()
+   866→   866→  const { data: rules } = useQuery({
+   867→   867→    queryKey: ['scrape-rules'],
+   868→   868→    queryFn: () => api<ScrapeRuleDto[]>('/api/scrape-rules'),
+   869→   869→  })
+   870→   870→  const taskSectionRef = useRef<HTMLElement>(null)
+   871→   871→  const [taskListKey, setTaskListKey] = useState(0)
+   872→   872→
+   873→   873→  const handleCreated = () => {
+   874→   874→    void qc.invalidateQueries({ queryKey: ['scrape-tasks'] })
+   875→   875→    setTaskListKey((k) => k + 1) // 重挂载任务列表，回到第 1 页
+   876→   876→    taskSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+   877→   877→  }
+   878→   878→
+   879→   879→  return (
+   880→   880→    <div className="space-y-4">
+   881→   881→      <RulesSection rules={rules} />
+   882→   882→      <NewTaskSection rules={rules ?? []} onCreated={handleCreated} />
+   883→   883→      <section ref={taskSectionRef}>
+   884→   884→        <TaskListSection key={taskListKey} />
+   885→   885→      </section>
+   886→   886→    </div>
+   887→   887→  )
+   888→   888→}
+   889→   889→

@@ -62,19 +62,21 @@ export async function GET() {
   )
 }
 
-// 新建/更新采集规则
-export async function POST(req: NextRequest) {
-  const body = (await req.json().catch(() => null)) as {
-    id?: number
-    name?: string
-    siteUrl?: string
-    enabled?: boolean
-    charset?: string
-    listRule?: Record<string, string>
-    bookRule?: Record<string, string>
-    chapterRule?: Record<string, string>
-    notes?: string
-  } | null
+// 新建/更新采集规则（POST 与 PUT 共用保存逻辑；body 由调用方解析一次后传入，
+// Request body 流只能读一次，不能在 handleSave 内重复 req.json()）
+interface SaveBody {
+  id?: number
+  name?: string
+  siteUrl?: string
+  enabled?: boolean
+  charset?: string
+  listRule?: Record<string, string>
+  bookRule?: Record<string, string>
+  chapterRule?: Record<string, string>
+  notes?: string
+}
+
+async function handleSave(body: SaveBody | null): Promise<NextResponse> {
   if (!body) return NextResponse.json({ error: '请求体必须是 JSON 对象' }, { status: 400 })
 
   if (!body.name?.trim()) {
@@ -105,6 +107,9 @@ export async function POST(req: NextRequest) {
     const created = await db.scrapeRule.create({ data })
     return NextResponse.json({ id: created.id }, { status: 201 })
   } catch (e) {
+    // 更新不存在的规则（P2025）应返回 404 而非 500
+    const code = e instanceof Error ? (e as { code?: string }).code : ''
+    if (code === 'P2025') return NextResponse.json({ error: '规则不存在' }, { status: 404 })
     const msg = e instanceof Error ? e.message : 'unknown'
     const conflict = /unique|constraint/i.test(msg)
     return NextResponse.json(
@@ -119,6 +124,12 @@ export async function DELETE(req: NextRequest) {
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: '无效 id' }, { status: 400 })
   await db.scrapeRule.delete({ where: { id } }).catch(() => {})
   return NextResponse.json({ ok: true })
+}
+
+// POST /api/scrape-rules —— 新建（body.id 存在时为更新）
+export async function POST(req: NextRequest) {
+  const body = (await req.json().catch(() => null)) as SaveBody | null
+  return handleSave(body)
 }
 
 // —— 内置规则种子：基于站点分析产出的 CMS 家族通用选择器（可编辑） ——
@@ -161,16 +172,25 @@ const SEED_RULES = [
   },
 ]
 
-// POST /api/scrape-rules?seed=1 或 body.seed === true
+// PUT /api/scrape-rules —— { seed: true } 内置模板入库；否则与 POST 相同的全字段保存
 export async function PUT(req: NextRequest) {
-  const body = (await req.json().catch(() => ({}))) as { seed?: boolean }
-  if (!body.seed) return NextResponse.json({ error: '仅支持 seed 操作' }, { status: 400 })
-  let added = 0
-  for (const r of SEED_RULES) {
-    const exists = await db.scrapeRule.findUnique({ where: { name: r.name } })
-    if (exists) continue
-    await db.scrapeRule.create({ data: { ...r, listRule: JSON.stringify(r.listRule), bookRule: JSON.stringify(r.bookRule), chapterRule: JSON.stringify(r.chapterRule) } })
-    added++
+  const body = (await req.json().catch(() => null)) as (SaveBody & { seed?: boolean }) | null
+  if (body?.seed) {
+    let added = 0
+    for (const r of SEED_RULES) {
+      const exists = await db.scrapeRule.findUnique({ where: { name: r.name } })
+      if (exists) continue
+      await db.scrapeRule.create({
+        data: {
+          ...r,
+          listRule: JSON.stringify(r.listRule),
+          bookRule: JSON.stringify(r.bookRule),
+          chapterRule: JSON.stringify(r.chapterRule),
+        },
+      })
+      added++
+    }
+    return NextResponse.json({ added })
   }
-  return NextResponse.json({ added })
+  return handleSave(body)
 }

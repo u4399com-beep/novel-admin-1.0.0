@@ -198,7 +198,7 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-3">
+            <div className="no-scrollbar flex-1 overflow-y-auto p-3">
               {NAV.map((item) => {
                 const Icon = item.icon
                 return (

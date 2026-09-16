@@ -120,3 +120,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* 全站通用：隐藏滚动条但保留滚动能力（横向导航条 / 标签行 / 浮层抽屉用） */
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -236,7 +236,7 @@ function HomeView({ navigate }: ViewProps) {
     <div className="mx-auto w-full max-w-[960px] px-2 py-3">
       {/* 封面推荐横条（可横向滚动） */}
       <Block title="编辑推荐" extra={<span>每周精选 · 左右滑动查看更多</span>} bodyClass="p-2.5">
-        <div className="flex gap-3 overflow-x-auto pb-1">
+        <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
           {data.featured.slice(0, 8).map((n) => (
             <button
               key={n.id}

@@ -190,7 +190,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
       {drawer && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-[#0f172a]/40" onClick={() => setDrawer(false)} />
-          <aside className="absolute top-0 left-0 h-full w-[270px] overflow-y-auto bg-white p-5 shadow-xl">
+          <aside className="no-scrollbar absolute top-0 left-0 h-full w-[270px] overflow-y-auto bg-white p-5 shadow-xl">
             <div className="flex items-center justify-between">
               <span className="text-[18px] font-semibold text-[#1d4ed8]">{siteName}</span>
               <button
