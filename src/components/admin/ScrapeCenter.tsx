@@ -40,7 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { BookOpen, ListPlus, Pencil, Plus, ScrollText, Sparkles, Square, Trash2 } from 'lucide-react'
+import { BookOpen, Eraser, ListPlus, Pencil, Plus, ScrollText, Sparkles, Square, Trash2 } from 'lucide-react'
 import { timeAgo } from '@/lib/format'
 import type { BookRule, ChapterRule, ListRule, ScrapeRuleDto } from '@/lib/types'
 
@@ -362,6 +362,8 @@ function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
   const [dialogRule, setDialogRule] = useState<ScrapeRuleDto | null | undefined>(undefined)
   // 启停/删除进行中的规则 id（防重复提交）
   const [busyId, setBusyId] = useState<number | null>(null)
+  // 存量章节清洗进行中（防重复点击）
+  const [cleaning, setCleaning] = useState(false)
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-rules'] })
 
@@ -420,6 +422,35 @@ function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
     }
   }
 
+  /** 存量章节噪声清洗：confirm → dryRun 预览 → 正式清洗 → toast 汇报 */
+  const cleanStored = async () => {
+    if (cleaning) return
+    if (
+      !confirm(
+        '将扫描全部已入库章节，清除行首缩进、空行与广告/导航噪声行并重算字数。此操作直接修改数据库，建议先备份。继续？',
+      )
+    )
+      return
+    setCleaning(true)
+    try {
+      const dry = await api<{ checked: number; toClean: number }>('/api/chapters/clean-all?dryRun=1')
+      if (dry.toClean === 0) {
+        toast.success(`预览完成：检查 ${dry.checked} 章，无需要清洗的章节`)
+        return
+      }
+      const res = await api<{ checked: number; cleaned: number }>('/api/chapters/clean-all', {
+        method: 'POST',
+      })
+      toast.success(`检查 ${res.checked} 章，清洗 ${res.cleaned} 章`)
+      // 章节正文已变化，站点侧书籍/章节缓存全部失效
+      void qc.invalidateQueries()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '清洗失败')
+    } finally {
+      setCleaning(false)
+    }
+  }
+
   return (
     <section className="rounded-lg border p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -427,6 +458,9 @@ function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
           <BookOpen className="h-4 w-4" /> 采集规则（{rules?.length ?? 0}）
         </h4>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={cleanStored} disabled={cleaning}>
+            <Eraser className="h-3.5 w-3.5" /> {cleaning ? '清洗中…' : '清洗存量章节'}
+          </Button>
           <Button size="sm" variant="outline" onClick={seed}>
             <Sparkles className="h-3.5 w-3.5" /> 内置模板入库
           </Button>

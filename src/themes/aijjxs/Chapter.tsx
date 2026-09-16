@@ -197,11 +197,15 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
         className="aj-reader-paper mx-auto mt-4 w-[calc(100%-24px)] max-w-[1080px] px-[clamp(24px,4vw,40px)] py-[clamp(24px,4vw,40px)] leading-[1.76] sm:w-[94%]"
         style={{ color: 'var(--r-ink)' }}
       >
-        {paragraphs.map((p, i) => (
-          <p key={i} className="aj-reader-para">
-            {p}
-          </p>
-        ))}
+        {paragraphs.length === 0 ? (
+          <p className="py-8 text-center text-sm opacity-70">本章内容为空，请返回目录选择其他章节。</p>
+        ) : (
+          paragraphs.map((p, i) => (
+            <p key={i} className="aj-reader-para break-words">
+              {p}
+            </p>
+          ))
+        )}
       </article>
 
       {/* 翻页条 */}

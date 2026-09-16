@@ -100,7 +100,7 @@ export default function Chapter({ navigate, siteName, chapterId }: ViewProps & {
         </header>
 
         {/* 正文：19px 衬线 + 字距 0.2em + 行高 150% + 85% 宽居中，\n 分段缩进 2em */}
-        <div className="dd-reader-content mx-auto w-[92%] py-5 text-[19px] leading-[150%] tracking-[0.2em] text-[#444] sm:w-[85%]">
+        <div className="dd-reader-content mx-auto w-[92%] py-5 break-words text-[19px] leading-[150%] tracking-[0.2em] text-[#444] sm:w-[85%]">
           {paragraphs.length === 0 ? (
             <p className="dd-hottext text-center">本章内容为空，请返回目录选择其他章节。</p>
           ) : (

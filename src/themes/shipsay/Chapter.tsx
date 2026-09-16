@@ -142,11 +142,15 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
                   className={cn('mt-5 space-y-1 text-justify', bodyText)}
                   style={{ fontSize, lineHeight: 1.8 }}
                 >
-                  {paragraphs.map((p, i) => (
-                    <p key={i} className="indent-[2em]">
-                      {p}
-                    </p>
-                  ))}
+                  {paragraphs.length === 0 ? (
+                    <p className="py-8 text-center opacity-60">本章内容为空，请返回目录选择其他章节。</p>
+                  ) : (
+                    paragraphs.map((p, i) => (
+                      <p key={i} className="break-words indent-[2em]">
+                        {p}
+                      </p>
+                    ))
+                  )}
                 </article>
               </>
             )}

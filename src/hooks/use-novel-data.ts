@@ -65,21 +65,23 @@ export interface NovelListParams {
 }
 
 export function useNovels(params: NovelListParams) {
+  // enabled 只控制是否发请求，不参与 queryKey（避免 enabled 翻转产生幽灵缓存条目）
+  const { enabled, ...rest } = params
   const sp = new URLSearchParams()
-  if (params.categoryId != null) sp.set('categoryId', String(params.categoryId))
-  if (params.q) sp.set('q', params.q)
-  if (params.page) sp.set('page', String(params.page))
-  if (params.pageSize) sp.set('pageSize', String(params.pageSize))
-  if (params.sort) sp.set('sort', params.sort)
-  if (params.status) sp.set('status', params.status)
+  if (rest.categoryId != null) sp.set('categoryId', String(rest.categoryId))
+  if (rest.q) sp.set('q', rest.q)
+  if (rest.page) sp.set('page', String(rest.page))
+  if (rest.pageSize) sp.set('pageSize', String(rest.pageSize))
+  if (rest.sort) sp.set('sort', rest.sort)
+  if (rest.status) sp.set('status', rest.status)
   return useQuery({
-    queryKey: qk.novels(params as Record<string, string | number | undefined>),
+    queryKey: qk.novels(rest as Record<string, string | number | undefined>),
     queryFn: () =>
       fetchJson<{ list: NovelListItem[]; total: number; page: number; pageSize: number; totalPages: number }>(
         `/api/novels?${sp.toString()}`
       ),
     staleTime: 30_000,
-    enabled: params.enabled ?? true,
+    enabled: enabled ?? true,
   })
 }
 

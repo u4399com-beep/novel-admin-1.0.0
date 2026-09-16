@@ -9,7 +9,8 @@
  * SSRF 防护覆盖（文本层 + DNS 尽力校验）：
  * - IPv4 全部文本形态：点分十进制、短格式(127.1)、八进制(0177.0.0.1)、十六进制(0x7f000001)、纯十进制整数(2130706433)；
  * - IPv6：::1 / ::（未指定）、fc00::/7（ULA）、fe80::/10（链路本地）、::ffff:0:0/96（IPv4-mapped，递归检查内嵌 v4）、64:ff9b::/96（NAT64 内嵌 v4）；
- * - 主机名：node:dns 尽力解析（fail-open：解析失败放行，后续 fetch 自然失败）；
+ *   无法解析的 IPv6 文本（如 zone id fe80::1%eth0）一律 fail-closed 按内网拒绝，防文本层绕过；
+ * - 主机名：node:dns 尽力解析（fail-open：解析失败放行，后续 fetch 自然失败；带 3s 超时防慢速 DNS 拖穿策略预算）；
  * - 重定向：策略层使用 redirect:'manual' 逐跳校验（见 strategies.ts fetchWithRedirectGuard）。
  * 已知局限：DNS 解析与实际连接之间存在 TOCTOU 窗口（DNS rebinding 的完整防护需自定义 socket 层，超出本服务范围）。
  */
@@ -90,6 +91,29 @@ export function isRetryableStatus(status: number): boolean {
 export function backoffDelay(attempt: number): number {
   const base = 500 * 2 ** (attempt - 1)
   return base + Math.round(Math.random() * 250)
+}
+
+// ==================== Retry-After ====================
+
+/**
+ * 解析 Retry-After 头（RFC 7231：秒数或 HTTP-date），返回退避毫秒数；无法解析返回 null。
+ * 上限 30s：防恶意大值直接吃满策略链预算（调用方还会按剩余预算二次收敛）。
+ */
+export function parseRetryAfterMs(raw: string | null | undefined, now = Date.now()): number | null {
+  if (!raw) return null
+  const v = raw.trim()
+  if (!v) return null
+  if (/^\d{1,6}(\.\d+)?$/.test(v)) {
+    const sec = Number(v)
+    if (!Number.isFinite(sec) || sec < 0) return null
+    return Math.min(30_000, Math.round(sec * 1000))
+  }
+  // HTTP-date 必然含字母（星期/月份名）；纯数字/负数/科学计数等非秒数形态直接拒绝
+  // （否则 Date.parse 会把 '-5'、'2024' 之类的值当作日期解析出伪结果）
+  if (!/[a-z]/i.test(v)) return null
+  const t = Date.parse(v)
+  if (Number.isFinite(t)) return Math.min(30_000, Math.max(0, t - now))
+  return null
 }
 
 // ==================== robots.txt ====================
@@ -241,18 +265,26 @@ export async function checkRobots(targetUrl: string, agents: string[] = ['novel-
       info = { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
       warnings.push('robots.txt 重定向超过 3 跳，未做 robots 校验，请自行确认目标站允许抓取')
     } else if (!info && res && !res.ok) {
+      // 错误响应体既不读取也不保留：主动 cancel 释放连接（旧实现直接丢弃 Response，连接悬挂到 GC）
+      res.body?.cancel().catch(() => {})
       info = { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
       if (res.status !== 404) warnings.push(`robots.txt 获取失败（HTTP ${res.status}），未做 robots 校验，请自行确认目标站允许抓取`)
     } else if (!info && res) {
-      const text = await res.text()
-      const groups = parseRobots(text)
-      const group = pickGroup(groups, agents)
-      const disallowed = group ? isPathDisallowed(group, pathname) : false
-      const crawlDelayMs = group?.crawlDelayMs ?? null
-      info = { checked: true, disallowed, crawlDelayMs, warnings: [] }
-      if (disallowed) warnings.push(`robots.txt 禁止抓取该路径 (${pathname})。本服务仅提示不阻断，请自行确认采集授权与合规性`)
-      if (crawlDelayMs && crawlDelayMs > getMinIntervalMs()) {
-        warnings.push(`robots.txt Crawl-delay=${Math.round(crawlDelayMs / 1000)}s 高于当前限速 ${getMinIntervalMs()}ms，建议降低采集频率`)
+      // 限量读取：防恶意超大 robots.txt 撑爆内存（页面响应有 8MB 上限，robots 此前无上限）
+      const read = await readTextCapped(res, ROBOTS_MAX_BYTES)
+      if (read.tooLarge) {
+        info = { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
+        warnings.push(`robots.txt 超过 ${ROBOTS_MAX_BYTES}B 上限，未做 robots 校验，请自行确认目标站允许抓取`)
+      } else {
+        const groups = parseRobots(read.text)
+        const group = pickGroup(groups, agents)
+        const disallowed = group ? isPathDisallowed(group, pathname) : false
+        const crawlDelayMs = group?.crawlDelayMs ?? null
+        info = { checked: true, disallowed, crawlDelayMs, warnings: [] }
+        if (disallowed) warnings.push(`robots.txt 禁止抓取该路径 (${pathname})。本服务仅提示不阻断，请自行确认采集授权与合规性`)
+        if (crawlDelayMs && crawlDelayMs > getMinIntervalMs()) {
+          warnings.push(`robots.txt Crawl-delay=${Math.round(crawlDelayMs / 1000)}s 高于当前限速 ${getMinIntervalMs()}ms，建议降低采集频率`)
+        }
       }
     }
   } catch (e) {
@@ -263,6 +295,36 @@ export async function checkRobots(targetUrl: string, agents: string[] = ['novel-
 
   cacheSetCapped(robotsCache, ROBOTS_CACHE_MAX, origin, { at: Date.now(), info })
   return { ...info, warnings }
+}
+
+/**
+ * 限量读取文本响应体：超过 maxBytes 立即 cancel 连接并标记 tooLarge。
+ * 用于 robots.txt 等第三方可控内容的读取，防止无界响应撑爆内存。
+ */
+async function readTextCapped(res: Response, maxBytes: number): Promise<{ text: string; tooLarge: boolean }> {
+  if (!res.body) return { text: '', tooLarge: false }
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  let tooLarge = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > maxBytes) {
+        tooLarge = true
+        break
+      }
+      chunks.push(value)
+    }
+  } finally {
+    // 无论读满与否都释放底层连接（读完后再 cancel 是无害 no-op）
+    await reader.cancel().catch(() => {})
+  }
+  if (tooLarge) return { text: '', tooLarge: true }
+  return { text: Buffer.concat(chunks).toString('utf8'), tooLarge: false }
 }
 
 // ==================== SSRF 防护 ====================
@@ -395,7 +457,9 @@ export function isPrivateHost(hostname: string): boolean {
   if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true
   if (h.includes(':')) {
     const groups = parseIpv6Text(h)
-    return groups ? ipv6IsPrivate(groups) : false // 无法解析的 IPv6 交由 DNS/fetch 层处理
+    // 解析失败的 IPv6 文本（如 zone id fe80::1%eth0、未来新增地址格式）一律按内网 fail-closed，
+    // 否则此处返回 false 会直接放行（旧实现正是这样被 zone id 绕过文本层的）
+    return groups ? ipv6IsPrivate(groups) : true
   }
   const v4 = parseIpv4Text(h)
   if (v4 !== null) return ipv4IsPrivate(v4)
@@ -406,6 +470,9 @@ export function isPrivateHost(hostname: string): boolean {
 
 const DNS_CACHE_TTL_MS = 5 * 60 * 1000
 const DNS_CACHE_MAX = 512
+/** 单次 DNS 解析上限：防御慢速/挂起的解析器把策略链预算拖穿（超时按 fail-open 处理） */
+const DNS_LOOKUP_TIMEOUT_MS = 3000
+const ROBOTS_MAX_BYTES = 1024 * 1024
 const dnsCache = new Map<string, { at: number; privateHit: boolean; warning?: string }>()
 
 export interface HostCheckResult {
@@ -432,7 +499,9 @@ export async function assertHostPublic(hostname: string): Promise<HostCheckResul
   }
   if (h.includes(':')) {
     const groups = parseIpv6Text(h)
-    if (groups) return ipv6IsPrivate(groups) ? { ok: false, reason: `内网 IPv6 地址被拒绝: ${h}` } : { ok: true }
+    // fail-closed：无法解析的 IPv6（zone id 等）直接拒绝，不落入下方 DNS fail-open 分支
+    if (!groups) return { ok: false, reason: `无法解析的 IPv6 地址被拒绝（fail-closed）: ${h}` }
+    return ipv6IsPrivate(groups) ? { ok: false, reason: `内网 IPv6 地址被拒绝: ${h}` } : { ok: true }
   }
 
   // 主机名：DNS 尽力解析
@@ -441,7 +510,14 @@ export async function assertHostPublic(hostname: string): Promise<HostCheckResul
     return cached.privateHit ? { ok: false, reason: `域名 ${h} 解析到内网地址（DNS 层 SSRF 防护）` } : { ok: true, warning: cached.warning }
   }
   try {
-    const addrs = await lookup(h, { all: true, verbatim: true })
+    // 带超时的 DNS 解析：慢速/挂起的解析器最多占 3s，超时按 fail-open 处理（与解析失败同语义），
+    // 避免 assertHostPublic 本身成为策略链预算的失控点
+    const addrs = await Promise.race([
+      lookup(h, { all: true, verbatim: true }),
+      sleep(DNS_LOOKUP_TIMEOUT_MS).then(() => {
+        throw new Error(`DNS 解析超时（${DNS_LOOKUP_TIMEOUT_MS}ms）`)
+      }),
+    ])
     let privateHit = false
     let hitLabel = ''
     for (const a of addrs) {

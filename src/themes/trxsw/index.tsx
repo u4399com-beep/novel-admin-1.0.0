@@ -997,7 +997,7 @@ function ChapterInner({ navigate, chapterId }: ViewProps & { chapterId: number }
 
         {/* 正文：居中约 85% 宽，缩进 2em */}
         <article className="mt-3 border border-[#D8E8F6] bg-white px-4 py-6 sm:px-10">
-          <div className="mx-auto w-[92%] max-w-[760px] md:w-[85%]">
+          <div className="mx-auto w-[92%] max-w-[760px] break-words md:w-[85%]">
             {paras.length === 0 ? (
               <p className="py-6 text-center text-sm text-[#999]">本章内容为空</p>
             ) : (

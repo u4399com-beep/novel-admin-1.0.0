@@ -6,18 +6,24 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const categoryId = sp.get('categoryId')
-  const q = sp.get('q')?.trim()
+  const q = sp.get('q')?.trim().slice(0, 100)
   const status = sp.get('status')
   const sort = sp.get('sort') ?? 'latest'
   const page = Math.max(1, Number(sp.get('page')) || 1)
   const pageSize = Math.min(60, Math.max(4, Number(sp.get('pageSize')) || 20))
+
+  // 非法 categoryId（abc/1.5/-3）明确 400，而不是静默降级为全库查询（旧行为会把分类页渲染成全站书单）
+  const categoryIdNum = categoryId === null || categoryId === '' ? 0 : Number(categoryId)
+  if (Number.isNaN(categoryIdNum) || !Number.isInteger(categoryIdNum)) {
+    return NextResponse.json({ error: '无效 categoryId' }, { status: 400 })
+  }
 
   const where: {
     categoryId?: number
     status?: string
     OR?: { title?: { contains: string }; author?: { contains: string }; description?: { contains: string } }[]
   } = {}
-  if (categoryId && Number(categoryId) > 0) where.categoryId = Number(categoryId)
+  if (categoryIdNum > 0) where.categoryId = categoryIdNum
   if (status === 'serial' || status === 'finished') where.status = status
   if (q) {
     where.OR = [{ title: { contains: q } }, { author: { contains: q } }, { description: { contains: q } }]
@@ -89,7 +95,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
   }
   if (!body.title?.trim()) return NextResponse.json({ error: '书名不能为空' }, { status: 400 })
-  if (!body.categoryId || !Number.isFinite(body.categoryId)) return NextResponse.json({ error: '请选择分类' }, { status: 400 })
+  if (!body.categoryId || !Number.isInteger(body.categoryId)) return NextResponse.json({ error: '请选择分类' }, { status: 400 })
   const cat = await db.category.findUnique({ where: { id: body.categoryId } })
   if (!cat) return NextResponse.json({ error: '分类不存在' }, { status: 400 })
 

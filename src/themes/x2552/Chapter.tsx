@@ -123,7 +123,7 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
         </header>
 
         {/* 正文：\n 分段、缩进 2em，字号可调 */}
-        <div className="mx-auto w-[92%] py-4 sm:w-[85%]" style={{ fontSize, lineHeight: 1.9 }}>
+        <div className="mx-auto w-[92%] py-4 break-words sm:w-[85%]" style={{ fontSize, lineHeight: 1.9 }}>
           {paragraphs.length === 0 ? (
             <p className="py-6 text-center text-[12px] text-[#999]">本章暂无内容，请返回目录选择其他章节。</p>
           ) : (

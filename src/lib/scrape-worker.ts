@@ -9,11 +9,14 @@
  *   保证任何时刻 done ≤ total
  * - 协作式取消：每个关键步骤前读一次 DB status，canceled 即停（PATCH cancel 置状态）
  * - 任何异常都不外抛到进程级；最终状态 success / partial / failed / canceled
+ * - 正文入库前经 cleanChapterContent 统一清洗（去 \r\n/行首缩进/空行/广告导航噪声行），
+ *   wordCount 基于清洗后文本；清洗日志每本书最多记 3 条防刷屏
  *
  * 合规红线：仅抓取公开页面；robots 提示与域名限速由 scraper-service 引擎层负责；
  * 单本章节上限 100、单任务书籍上限 60、正文 5 万字截断，防止滥用。
  */
 import { db } from '@/lib/db'
+import { cleanChapterContent } from '@/lib/content-clean'
 
 const SCRAPER_BASE = 'http://127.0.0.1:3030'
 // 引擎策略链整体预算 55s（CHAIN_BUDGET_MS），超时须 ≥ 预算否则慢站点会被提前切断；与 /api/scrape 代理的 60s 对齐
@@ -443,6 +446,7 @@ async function processBook(
   let done = 0
   let chaptersStored = 0
   let failedChapters = 0
+  let cleanLogCount = 0 // 清洗日志节流：每本书最多记 3 条，防止日志爆炸
   const alive = async (): Promise<boolean> => !(await isCanceled(run.taskId))
   for (const ref of refs) {
     // 关键步骤前的协作式取消检查
@@ -468,7 +472,10 @@ async function processBook(
       charset: rule.charset,
     })
     const data = ch.ok ? ch.data : null
-    const content = (data?.content ?? '').slice(0, MAX_CONTENT_CHARS)
+
+    // 入库前统一清洗（去 \r\n/行首缩进/空行/噪声行），存储契约：无空行、无行首缩进
+    const cleaned = cleanChapterContent(data?.content ?? '')
+    const content = cleaned.text.slice(0, MAX_CONTENT_CHARS)
 
     if (!data || !content.trim()) {
       failedChapters++
@@ -482,6 +489,10 @@ async function processBook(
     if (ch.warnings.length) run.logWarnings(ch.warnings)
 
     const chTitle = (refTitle || data.title || `第${idx}章`).slice(0, 200)
+    if (cleaned.removedLines > 0 && cleanLogCount < 3) {
+      cleanLogCount++
+      run.log(`章节「${chTitle.slice(0, 30)}」清洗 ${cleaned.removedLines} 行噪声`)
+    }
     const wordCount = content.replace(/\s/g, '').length
     const storeAt = (idxVal: number): Promise<true | Error> =>
       db.chapter

@@ -24,7 +24,8 @@ import { extractBook, extractChapter, extractList } from './src/extract'
 import { isPrivateHost, privateHostAllowed } from './src/rate-limit'
 import type { BookRule, ChapterRule, ListRule } from './src/types'
 
-const PORT = Number(process.env.SCRAPER_PORT ?? 3030)
+const parsedPort = Number(process.env.SCRAPER_PORT)
+const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536 ? parsedPort : 3030
 
 // ==================== 通用工具 ====================
 
@@ -108,7 +109,8 @@ async function handleStrategies(): Promise<Response> {
       robotsCheck: 'warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断',
       ssrfGuard: '文本层（IPv4 全形态/IPv6 内网段）+ DNS 尽力校验 + fetch redirect:manual 逐跳校验',
       maxResponseBytes: 8 * 1024 * 1024,
-      challengeDetection: '响应 <3KB 且含 verify/challenge/captcha/javascript 关键词 → attempts 标记 blocked',
+      challengeDetection:
+        '三层检测：反爬平台强特征（任意体积，扫描前 32KB）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理',
       captchaSolving: '禁止提供',
       loginContent: '禁止采集',
       accountSpoofing: '禁止提供',

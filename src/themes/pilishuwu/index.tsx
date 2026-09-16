@@ -1002,7 +1002,7 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
         </div>
 
         {/* 正文：居中 85% 宽，缩进 2em，行高 2 */}
-        <article className="mx-auto mt-5 w-[92%] max-w-[820px] md:w-[85%]">
+        <article className="mx-auto mt-5 w-[92%] max-w-[820px] break-words md:w-[85%]">
           {paras.length === 0 ? (
             <p className="py-6 text-center text-sm text-[#999]">本章内容为空</p>
           ) : (

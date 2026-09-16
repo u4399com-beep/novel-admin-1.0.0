@@ -8,11 +8,14 @@
  *   不影响主站传来的普通 CSS 选择器；
  * - 规则缺失时使用内置启发式候选，并在 warnings 中明确标注；
  * - 匹配语义：优先在 scope 内查找（find），scope 自身命中选择器时同样采纳（is）；
- * - 正文清洗：去 script/style/广告链接/站点水印行、段落规范化、去重连续重复行；
+ * - 正文清洗：容器级去 script/style/广告链接/站点水印行、段落规范化、去重连续重复行；
+ *   容器文本再经 clean.ts（与主应用同源的行级噪声过滤）统一清洗，
+ *   噪声行占比过高时向 warnings 提示 contentSelector 可能命中了导航/广告容器；
  * - 链接一律 new URL(href, base) 补全为绝对地址，并按 URL+标题去重。
  */
 import * as cheerio from 'cheerio'
 import type { Cheerio, CheerioAPI } from 'cheerio'
+import { cleanChapterText } from './clean'
 import type { BookRule, ChapterRule, ListRule } from './types'
 
 type Scope = Cheerio<any>
@@ -611,6 +614,17 @@ export function extractChapter(
   if (!best || bestLen <= 0) {
     warnings.push('正文提取为空：所有选择器（含内置候选）均未命中或内容为空')
     best = { paragraphs: [], text: '' }
+  }
+
+  // ---- 行级噪声统一清洗（clean.ts 与主应用 src/lib/content-clean.ts 同源）----
+  if (best.text) {
+    const stats = cleanChapterText(best.text)
+    if (stats.removed > 0 && stats.total >= 10 && stats.removed / stats.total > 0.5) {
+      warnings.push(
+        `清洗移除了 ${stats.removed}/${stats.total} 行，请检查 contentSelector 是否命中了导航/广告容器`,
+      )
+    }
+    best = { paragraphs: stats.text ? stats.text.split('\n') : [], text: stats.text }
   }
 
   // ---- 下一页 ----

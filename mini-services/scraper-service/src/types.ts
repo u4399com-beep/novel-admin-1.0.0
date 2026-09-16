@@ -77,7 +77,7 @@ export interface AttemptSummary {
   note?: string
   /** 策略内部子尝试使用的头部画像（UA 轮换/移动端/spider 降级时区分具体画像） */
   profile?: string
-  /** 命中挑战页判定（响应 <3KB 且含 verify/challenge/captcha/javascript 关键词） */
+  /** 命中挑战页判定（反爬平台强特征 / <3KB 挑战关键词（latin1+UTF-8+GB18030 三解码匹配）/ 0 秒 meta-refresh 跳板之一） */
   blocked?: boolean
   /** 响应字节数（调试挑战页/空响应时有用） */
   bytes?: number

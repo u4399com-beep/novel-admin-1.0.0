@@ -556,11 +556,15 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
 
             {/* 正文：18px / 行高 1.6 / 段间距 0.825rem */}
             <article className="mt-8 border-t border-[#f5f5f5] pt-8">
-              {paragraphs.map((p, i) => (
-                <p key={i} className="mb-[0.825rem] text-[18px] leading-[1.6] text-[#282828]">
-                  {p}
-                </p>
-              ))}
+              {paragraphs.length === 0 ? (
+                <p className="py-10 text-sm text-[#999]">本章内容为空，请返回目录选择其他章节。</p>
+              ) : (
+                paragraphs.map((p, i) => (
+                  <p key={i} className="mb-[0.825rem] break-words text-[18px] leading-[1.6] text-[#282828]">
+                    {p}
+                  </p>
+                ))
+              )}
             </article>
           </>
         )}

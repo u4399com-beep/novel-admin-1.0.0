@@ -8,7 +8,7 @@ type Ctx = { params: Promise<{ id: string }> }
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { id } = await params
   const nid = Number(id)
-  if (!Number.isFinite(nid)) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
+  if (!Number.isInteger(nid)) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
 
   const chapters = await db.chapter.findMany({
     where: { novelId: nid },

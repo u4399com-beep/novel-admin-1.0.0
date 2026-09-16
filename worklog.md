@@ -332,3 +332,70 @@ Work Log:
 
 Stage Summary:
 - 第四批全部完成：采集引擎反反爬增强 11 项（含 robots SSRF 安全修复）、worker 进度语义重构、Novel 唯一约束、chapters 竞态修复、后台交互健壮性 10+ 处、主题 bug 约 20 处、仓库清理出库；tsc/lint/browser 三重验证全绿
+
+---
+Task ID: 18-a
+Agent: noise-cleaner
+Task: 正文噪声清洗管线（清洗模块+worker集成+存量清洗+UI）
+
+Work Log:
+- 新建 src/lib/content-clean.ts（主应用规范清洗器）：cleanChapterContent(raw)→{text,removedLines}；步骤 \r\n|\r→\n → 逐行去行首全角空格(\u3000)/NBSP(\u00A0)/BOM/半角空白 → 行内连续空白折叠为单空格 → 丢空行 → 噪声行过滤 → 单 \n 连接（存储契约：无空行、无行首缩进，缩进交给主题 CSS）；导出 NOISE_PATTERNS 常量与 isNoiseLine() 供复用/测试
+- 新建 mini-services/scraper-service/src/clean.ts（引擎侧同源实现）：规则与主应用完全一致，cleanChapterText(raw)→{text,removed,total}（total=进入过滤的非空候选行数）；两文件互相注明「同源实现、改规则需两边同步」（跨 Bun/Next 进程无法共享模块）
+- extract.ts 集成：extractChapter 得到容器文本后调用 cleanChapterText 重建 paragraphs/content；removed/total>0.5 且 total≥10 时向 warnings push「清洗移除了 X/Y 行，请检查 contentSelector 是否命中了导航/广告容器」（引擎容器级清洗 NOISE_SELECTOR/AD_TOKEN/WATERMARK 保留不动，行级规则为其补充层）
+- scrape-worker.ts 集成：入库前 cleanChapterContent，存 cleaned.text.slice(0,5万)；wordCount 基于清洗后文本；removedLines>0 时记「章节「title」清洗 N 行噪声」日志（每本书最多 3 条节流防刷屏）
+- 新建 src/app/api/chapters/clean-all/route.ts：POST 分批（500/批，id 游标）遍历全章节，text 有变化才 update（content+wordCount 重算），并重算受影响书籍字数合计，返回 {checked,cleaned,novels}；GET（?dryRun=1）恒只读预览返回 {checked,toClean,dryRun}；POST 以 globalThis 标志互斥防并发（进行中→409）
+- ScrapeCenter.tsx：规则区块头部新增「清洗存量章节」按钮（Eraser 图标）——confirm 确认 → dryRun 预览（toClean=0 直接 toast 成功并终止）→ POST 正式清洗 → toast「检查 N 章，清洗 M 章」+ qc.invalidateQueries() 全量失效缓存；cleaning 忙态 disabled 防重复点击
+- 单元实测（26 断言全过）：\r\n/\r 归一、全角/NBSP 缩进移除、连续空行压平、16 类脏行（域名/URL/推广/导航/JS/符号）全清除、行内空白折叠、长行含「点击/书签/目录/无弹窗」叙事零误杀、短行非精确匹配保留、引擎侧 total=10/removed=7 统计正确、空串安全
+- E2E 引擎级（fixture /tmp/dirty-site.ts @8899，笔趣阁式脏正文）：SCRAPER_ALLOW_PRIVATE=1 重启引擎后直连 /api/chapter 与经主站 POST /api/scrape?proxy=test 双路径验证——6 行正文全部干净（无缩进/\r/空行/广告/导航/JS），含「点击」的 31 字正常叙事行保留，warnings 出现「清洗移除了 8/14 行…」
+- E2E 全链路：建临时规则（bookRule+chapterRule 选择器）→ single 任务抓 fixture 书页 → 任务 success（3/3 章，日志含 3 条引擎清洗提示）→ 入库《雾隐山门》#42 三章 content 均 6 行干净文本、wordCount=156 与清洗后文本一致 → 清理：删任务/规则/测试书，库恢复 41 书 812 章种子态
+- 存量清洗实测：dryRun BEFORE {checked:812,toClean:812}（与预期一致：812 章种子全部带全角缩进）→ POST {checked:812,cleaned:812,novels:41} → dryRun AFTER {toClean:0}；DB 抽查：行首缩进 0、空行 0、\r 0、wordCount 与 content 重算全量一致（812/812）、书籍级字数同步（novel#1 wordCount=sum(chapters)）；并发双 POST 实测 200+409 互斥生效
+- 浏览器验证：pilishuwu 与 x2552 两主题章节页——段落 textContent 不再以 \u3000 开头，缩进由 CSS text-indent（40px/32px=2em）统一呈现，console/page errors 全空；后台采集中心「清洗存量章节」按钮实点全流程（confirm 文案→预览 toast「检查 812 章，无需要清洗的章节」）通过
+- 收尾：scraper-service 恢复无 SCRAPER_ALLOW_PRIVATE 正常模式重启（SSRF 拒内网实测恢复），删 /tmp 临时脚本与 fixture
+
+Stage Summary:
+- 清洗规则清单（除纯符号行外仅对 ≤30 字符短行生效，防误杀叙事长句）：①URL/域名类：含 www./http、常见 TLD 后缀（.com/.net/.cc/.org/.info/.xyz/.top/.vip）或整行像域名；②站点推广类：笔趣阁|顶点小说|飞卢|起点中文|纵横中文|天才一秒记住|本章未完|点击下一页|继续阅读请|最新章节|手机阅读|无弹窗|全本小说|请记住本书|首发域名|记得收藏|求收藏|求推荐票|求月票|投推荐票|加入书签|书迷交流；③导航/UI 残留（整行精确匹配）：上一章|上一页|下一章|下一页|目录|章节目录|章节列表|返回|返回目录|返回书页|返回列表|返回首页|首页|书页|书签|加入书签|加入收藏|收藏本站|收藏本书|推荐票|点击进入|第一页|末页（规范列表基础上加了同族变体）；④JS/CSS 残留：javascript:|function(|document.|window.|花括号成对短行；⑤纯符号行（无任何字母/数字，不限长度——零误杀风险，文档化偏离）
+- 证据：fixture 章节清洗前后对比（18 行脏文本→6 行干净正文，8/14 行行级噪声移除，引擎 warning 触发）；存量清洗 812→812→0（dryRun 前后归零）；DB 抽查 0 缩进/0 空行/0 CR/812 wordCount 全对齐；单元 26/26 断言；并发 409 互斥；pilishuwu/x2552 双主题 CSS 缩进渲染正常
+- 分层设计说明：引擎侧（提取时）与 worker 侧（入库前）规则同源，正常链路下引擎层先清干净、worker 层 removedLines=0 故日志静默（节流日志仅对绕过引擎清洗的内容触发，为防御性第二层）
+- 遗留风险：①站点推广/导航关键词为中文规则，英文短行（如 "He closed the window."）理论上可被 window. 规则误杀（目标站为中文网文，风险极低）；②≤30 字符含推广词的极短正常句会被整行移除（如「他点击了下一页的按钮」9 字含「点击下一页」）——按任务规格接受；③clean-all POST 为逐章 update（812 章约 2-4s），百万级章节需改批量事务，当前量级无压力
+
+---
+Task ID: 18-c
+Agent: render-auditor
+Task: 正文渲染一致性专项+前端边角逐行审查
+
+Work Log:
+- 专项·10 主题 Chapter 视图逐一核查段落管线（split→trim→filter）：10/10 均已有 `.map(s=>s.trim()).filter(Boolean)`（x2552/ddyueshu/ggd66/huangjinwu/shipsay/101kks/23qb 为 split('\n')，aijjxs/pilishuwu/trxsw 为 split(/\n+/)，配 filter 等价），JS trim() 原生吃 U+3000 全角空格，行首全角缩进在渲染端天然剥离——实测确认 DOM 文本首字无 '　'，缩进完全由 CSS text-indent 提供（x2552 32px=2em、aijjxs 55.2px=2.4em、pilishuwu 40px、ddyueshu 38px 等），无双重缩进
+- 专项·空内容占位补齐 4 处（原先 paragraphs 为空数组时正文卡直接空白页）：aijjxs「本章内容为空，请返回目录选择其他章节。」、shipsay（同文案，夜间模式继承 bodyText 色不写死）、101kks（繁体「本章內容為空，請返回目錄選擇其他章節。」+ night 色切换）、23qb（简体同款）；x2552/ddyueshu/ggd66/huangjinwu/pilishuwu/trxsw 原有占位，核查通过
+- 专项·超长内容溢出加固 10 处：全部正文容器/段落补 `break-words`（overflow-wrap:break-word，仅影响无空格长串的断行，对正常 CJK 排版零视觉变化，不破坏克隆视觉）——aijjxs/shipsay/101kks/23qb 加在段落级，x2552/ddyueshu/ggd66/huangjinwu/pilishuwu/trxsw 加在正文容器级（overflow-wrap 可继承）
+- 专项·段落 key：10 主题均为静态文本数组上的 index key（无重排/增删场景），按任务要求仅报告不改
+- 专项·wordCount 口径核查：POST/PUT /api/chapters 均为 `content.replace(/\s/g,'').length`（\s 含 U+3000），与各主题 fmtWords「约 X 字」显示口径一致；实测 novel1 全 12 章 stored==real 零偏差
+- 边角·API 输入校验 6 文件：
+  · novels/route.ts GET：categoryId=abc 原先静默降级为全库查询（NaN>0 为 false 漏过滤）、categoryId=1.5 靠 SQLite 截断碰巧命中——改为非法值明确 400；q 截断 100 字符
+  · novels/[id]/route.ts：PUT 补 JSON 解析 try/catch（原畸形 JSON 直接 500）+ ID 整数校验 + categoryId 仅接受正整数；GET/DELETE isFinite→isInteger
+  · chapters/[id]/route.ts、novels/[id]/chapters/route.ts、categories/[id]/route.ts：ID 校验统一 isFinite→isInteger（Prisma/SQLite 对 12.5 静默截断取整，语义应为 400）；categories PUT 补 sort 整数校验
+  · chapters/route.ts POST、novels/route.ts POST：novelId/categoryId isFinite→isInteger
+- 边角·SeoSync.tsx：TDK 写入点统一截断（title 120/description 300/keywords 200，truncate 复用 seo.ts），防超长书名撑爆搜索引擎上限；特殊字符安全性核查结论：document.title 与 setAttribute 为 DOM API 天然安全，无需手工转义（已在代码注释说明）
+- 边角·use-novel-data.ts：useNovels 的 queryKey 原样含 enabled 字段，翻转时产生幽灵缓存条目——解构剥离 enabled 后再入 key（请求 URL 构造不变）
+- 边角·审查未改动（确认无问题）：panels.tsx（表单字段均服务端 slice 兜底、对话框重开用 EMPTY_FORM/重挂载无状态残留、列表全 id key、末页自愈已在位）；AdminConsole（未知 hash 回落前台、admin-section 损坏值有 SECTIONS.some 守卫回落 themes、移动端标签条 overflow-x-auto+滚动条隐藏）；suggest.ts（单发+引擎隔离+allSettled+4s 超时为既定语义，pseoKeyword 表本身即持久化缓存，不再叠加内存缓存）；store.ts（history cap 20）、covers.ts/format.ts/registry.ts（getTheme 非法 id 回落 aijjxs）——逐一核查通过
+- 浏览器验证（agent-browser，独立 session）：①10 主题全部实测 stress 章节（4 段：全角缩进段/320 字符无空格 ASCII 段/1200 字超长中文段/短段）——10/10 无横向溢出（scrollWidth==clientWidth、document hOverflow=0）、无空 <p>、行首无全角残留；②空内容占位：raw SQL 临时置空 ch2 实测 aijjxs/x2552/ggd66/23qb 四主题均渲染占位文案非空白页，测毕恢复；③console 全程 0 error/0 warning
+- 数据恢复说明：测试用 ch2/ch3 内容、ch3 wordCount(1097)、novel1 字数聚合(12863=sum)均按新存储契约（无行首缩进）复原，与 18-a 清洗后的库状态一致（期间 18-a 并行清洗实际覆盖了我置入的测试数据，复原脚本按契约先行 trim 再写回）
+
+Stage Summary:
+- 修复清单：①正文渲染 10 主题：空内容占位 4 处（aijjxs/shipsay/101kks/23qb）+ break-words 10 处（全主题，段落级 4/容器级 6）；②API 校验 6 文件 10 处（非法 categoryId 静默降级为全库查询是最实质的一处、PUT novels 畸形 JSON 500、ID isFinite→isInteger 5 文件、q 截断）；③SeoSync TDK 截断 1 处；④hooks queryKey 剥离 enabled 1 处
+- 浏览器证据：10 主题 stress 章节渲染零溢出零空段零双重缩进；4 主题空内容占位实测；console/page errors 全程为空；tsc 0 错误、lint 0 错误、dev.log 无本范围新增报错
+- 遗留风险：①PseoTab 引擎复选框全不选时服务端默认跑全部 5 引擎（服务端既定 default 语义，未改，仅提示）；②novels GET 非整数 ID（如 /api/novels/12.5）现统一 400，比原先「静默截断取整返回」更严格，前端不受影响（id 均来自 API 整数）；③主题/设置由并行 agent 共用，验证期间观察到 activeTheme 被并行改动，最终已复原为 aijjxs
+
+---
+Task ID: 18-b
+Agent: engine-auditor-2 (超时，成果由主控逐行核验补记)
+Task: 采集引擎第二轮逐行审查与反反爬增强
+
+Work Log:
+- strategies.ts 新增第 7 策略 browser：Playwright+Chromium 真实渲染（Node 包缺失自动降级 Python 桥接），对抗 JS 挑战/动态渲染；渲染期每个子请求做 SSRF 校验（私网主机拦截+去重告警）、MAX_BYTES 上限、probe 探测不可用优雅跳过
+- strategies.ts curl-impersonate 策略加固：--max-filesize 在 curl 层中止超大响应（exit 63 单独标记）；HTTP/2 失败降级 --http1.1
+- rate-limit.ts：新增 parseRetryAfterMs（RFC 7231 秒数/HTTP-date，cap 30s 防恶意大值吃满预算，429 时尊重 Retry-After 退避）；IPv6 zone id 等 fail-closed 按内网拒绝；DNS 解析加 3s 超时防慢速拖穿策略预算；错误响应体主动 cancel 释放连接；robots.txt 加体积上限（此前无上限可被撑爆内存）
+- render.py：渲染期 SSRF 守卫（入口+每个子请求/跳转，ipaddress 判定+getaddrinfo 解析，进程内缓存 256 条）；协议白名单（file/ftp/ws 等可达本机的一律拦截）
+- 运维恢复：沙箱会话重置清掉了 curl-impersonate 二进制 → 从官方 release 重装至 ~/.local/bin 并 symlink /usr/local/bin，7 策略全部 available 恢复
+
+Stage Summary:
+- 反反爬矩阵升级为 7 策略（新增真实浏览器渲染）；SSRF 防护扩展到渲染期子请求与 robots 抓取；Retry-After 尊重与连接释放补齐；tsc/lint 0 错误；example.com 实测 fetch-browser 直抓成功

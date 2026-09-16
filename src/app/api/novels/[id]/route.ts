@@ -8,7 +8,7 @@ type Ctx = { params: Promise<{ id: string }> }
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { id } = await params
   const nid = Number(id)
-  if (!Number.isFinite(nid)) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
+  if (!Number.isInteger(nid)) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
 
   const novel = await db.novel.findUnique({
     where: { id: nid },
@@ -51,22 +51,29 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 
 export async function PUT(req: NextRequest, { params }: Ctx) {
   const { id } = await params
-  const body = (await req.json()) as {
+  const nid = Number(id)
+  if (!Number.isInteger(nid) || nid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
+  let body: {
     title?: string; author?: string; description?: string; cover?: string
     categoryId?: number; status?: string; isFeatured?: boolean; isHot?: boolean
+  }
+  try {
+    body = (await req.json()) as typeof body
+  } catch {
+    return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
   }
   const data: Record<string, unknown> = {}
   if (typeof body.title === 'string' && body.title.trim()) data.title = body.title.trim().slice(0, 100)
   if (typeof body.author === 'string' && body.author.trim()) data.author = body.author.trim().slice(0, 50)
   if (typeof body.description === 'string') data.description = body.description.slice(0, 2000)
   if (typeof body.cover === 'string' && /^g\d+$/.test(body.cover)) data.cover = body.cover
-  if (typeof body.categoryId === 'number') data.categoryId = body.categoryId
+  if (typeof body.categoryId === 'number' && Number.isInteger(body.categoryId) && body.categoryId > 0) data.categoryId = body.categoryId
   if (body.status === 'serial' || body.status === 'finished') data.status = body.status
   if (typeof body.isFeatured === 'boolean') data.isFeatured = body.isFeatured
   if (typeof body.isHot === 'boolean') data.isHot = body.isHot
 
   try {
-    await db.novel.update({ where: { id: Number(id) }, data })
+    await db.novel.update({ where: { id: nid }, data })
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: '更新失败（分类不存在？）' }, { status: 400 })
@@ -76,7 +83,7 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const { id } = await params
   const nid = Number(id)
-  if (!Number.isFinite(nid) || nid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
+  if (!Number.isInteger(nid) || nid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
   try {
     await db.novel.delete({ where: { id: nid } })
     return NextResponse.json({ ok: true })

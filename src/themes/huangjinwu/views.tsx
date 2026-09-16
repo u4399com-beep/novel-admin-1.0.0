@@ -553,7 +553,7 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
             第 {ch.idx} 章 · 约 {fmtWan(ch.wordCount)} 字
           </span>
         </h1>
-        <div style={{ fontSize: `${fontSize}px`, lineHeight }}>
+        <div className="break-words" style={{ fontSize: `${fontSize}px`, lineHeight }}>
           {paragraphs.length === 0 ? (
             <p className="mx-auto max-w-[800px] text-[#94a3b8]">本章内容为空</p>
           ) : (

@@ -145,11 +145,13 @@ export function SeoSync() {
     }
 
     if (meta) {
-      document.title = meta.title
-      setMetaTag('name', 'description', meta.description)
-      setMetaTag('name', 'keywords', meta.keywords)
-      setMetaTag('property', 'og:title', meta.title)
-      setMetaTag('property', 'og:description', meta.description)
+      // 特殊字符（< > " 等）由 DOM API（document.title / setAttribute）天然安全写入，无需手工转义；
+      // 超长截断：标题 120 / 描述 300 / 关键词 200，防止超长书名/模板把 TDK 撑爆搜索引擎上限
+      document.title = truncate(meta.title, 120)
+      setMetaTag('name', 'description', truncate(meta.description, 300))
+      setMetaTag('name', 'keywords', truncate(meta.keywords, 200))
+      setMetaTag('property', 'og:title', truncate(meta.title, 120))
+      setMetaTag('property', 'og:description', truncate(meta.description, 300))
       setMetaTag('property', 'og:site_name', siteName)
       setMetaTag('property', 'og:type', 'website')
     }

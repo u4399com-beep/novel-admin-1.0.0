@@ -16,6 +16,7 @@
  *   + 0 秒 meta-refresh 跳板（近空正文）→ 标记 blocked，视为失败并继续下一策略；
  * - 请求头画像内 UA 与 Sec-CH-UA 版本严格一致（同一常量派生），Chrome 主版本进程启动时随机化避免固定指纹；
  * - 429/5xx/网络错误在策略间显式指数退避+jitter（受整体预算约束，硬上限 55s 不可突破）；
+ *   HTTP 429 附带 Retry-After 头时优先按站点要求的时长退避（同样受预算约束）；
  * - 每次网络尝试（含策略内部子尝试）都经过域名限速，并结构化记录到 attempts 明细；
  * - 整体时间预算（默认上限 55s），超预算后停止尝试并给出 budget-exhausted 备注。
  *
@@ -26,8 +27,9 @@ import { access, constants as fsConstants, readFile, readdir, unlink } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { acquireDomainSlot, assertHostPublic, backoffDelay, checkRobots, execP, isRetryableStatus, MAX_ATTEMPTS, sleep } from './rate-limit'
+import { acquireDomainSlot, assertHostPublic, backoffDelay, checkRobots, execP, isRetryableStatus, MAX_ATTEMPTS, parseRetryAfterMs, sleep } from './rate-limit'
 import { charsetFromContentType, decodeHtml } from './charset'
+import iconv from 'iconv-lite'
 import type { AttemptSummary, RobotsSummary, StrategyInfo, SubAttempt } from './types'
 
 const MAX_BYTES = 8 * 1024 * 1024
@@ -57,6 +59,8 @@ export interface AttemptResult {
   note?: string
   /** 策略内部的子尝试明细（UA 轮换画像 / h2→h1 降级等），fetchPage 会摊平进 attempts */
   subAttempts?: SubAttempt[]
+  /** 目标站通过 Retry-After 头给出的退避指引（毫秒，已封顶 30s），供策略链退避时优先采用 */
+  retryAfterMs?: number | null
 }
 
 export interface FetchPageOptions {
@@ -101,7 +105,6 @@ export interface HeaderProfile {
 const ACCEPT_HTML =
   'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
 const ACCEPT_LANG_ZH = 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7'
-const ACCEPT_LANG_BOT = 'en-US,en;q=0.9'
 
 function baseHeaders(url: string, withReferer: boolean, ua: string, extra: Record<string, string>): Record<string, string> {
   const h: Record<string, string> = {
@@ -253,9 +256,14 @@ const googlebotProfile: HeaderProfile = {
       url,
       withReferer,
       `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`,
-      { 'accept-language': ACCEPT_LANG_BOT },
+      {},
     )
     h.accept = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8'
+    // 指纹一致性修正：真实 Googlebot 不发送 Upgrade-Insecure-Requests / Accept-Language
+    // （蜘蛛 UA + 浏览器专属头是可检测矛盾），但会发送标识身份的 From 头
+    delete h['upgrade-insecure-requests']
+    delete h['accept-language']
+    h.from = 'googlebot(at)googlebot.com'
     return h
   },
 }
@@ -270,9 +278,13 @@ const baiduspiderProfile: HeaderProfile = {
       url,
       withReferer,
       'Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)',
-      { 'accept-language': ACCEPT_LANG_ZH },
+      {},
     )
     h.accept = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8'
+    // 指纹一致性修正：真实 Baiduspider 仅发送极简头（UA/Accept/Accept-Encoding），
+    // 去掉浏览器专属的 Upgrade-Insecure-Requests 与 Accept-Language，避免矛盾指纹
+    delete h['upgrade-insecure-requests']
+    delete h['accept-language']
     return h
   },
 }
@@ -295,6 +307,8 @@ export interface RawResponse {
   finalUrl?: string
   note?: string
   warning?: string
+  /** 目标站 Retry-After 头解析结果（毫秒），仅 429/503 时存在 */
+  retryAfterMs?: number | null
 }
 
 /**
@@ -314,14 +328,20 @@ const META_REFRESH_JUMP_RE = /<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]+c
  * 挑战页/拦截页检测（三层）：
  * 1) 反爬平台强特征：前 32KB 内命中即判定（真实挑战页可能超过 3KB，旧实现只看 3KB 会漏检）；
  * 2) 极小页（<3KB）含挑战专用关键词：旧启发式的保留（去除误报率极高的裸词 javascript）；
+ *    关键词按 latin1 + UTF-8 + GB18030 三种解码分别匹配（中文关键词只有后两者能命中，见下）
  * 3) 极小页（<3KB）为 0 秒 meta-refresh 跳板且正文近空：典型的「请等待/跳转中」反爬跳板。
- * （latin1 嗅探即可 —— 这些关键词均为 ASCII，与页面编码无关；中文关键词在 UTF-8/GBK 下字节序列均不含 0x00，latin1 保真）
  */
 export function looksLikeChallenge(bytes: Uint8Array): boolean {
   if (bytes.byteLength === 0) return false
-  const scan = Buffer.from(bytes.subarray(0, 32768)).toString('latin1')
+  const head = Buffer.from(bytes.subarray(0, 32768))
+  const scan = head.toString('latin1')
   if (CHALLENGE_PLATFORM_RE.test(scan)) return true
   if (bytes.byteLength >= 3072) return false
+  // 中文挑战关键词在 latin1 视图下永远无法命中：latin1 是逐字节映射（字节保真），
+  // 但「安全验证」的 UTF-8/GBK 字节序列解出的 Latin 字符串并不包含「安全验证」这四个字符，
+  // 旧实现据此误以为 latin1 嗅探可覆盖中文关键词 —— 实际是死代码。按真实编码再解码一次才能命中。
+  if (CHALLENGE_KEYWORD_RE.test(head.toString('utf8'))) return true
+  if (iconv.encodingExists('gb18030') && CHALLENGE_KEYWORD_RE.test(iconv.decode(head, 'gb18030'))) return true
   if (CHALLENGE_KEYWORD_RE.test(scan)) return true
   if (META_REFRESH_JUMP_RE.test(scan)) {
     const bodyText = scan
@@ -353,18 +373,45 @@ function assess(status: number, bytes: Uint8Array, contentType: string): { ok: b
   return { ok: true, blocked: false, size }
 }
 
+/**
+ * 流式限量读取响应体：超过 MAX_BYTES 立即 cancel 连接并按 too-large 失败。
+ * 旧实现先 arrayBuffer() 全量读进内存再检查长度，对无 Content-Length 的
+ * 恶意流式响应没有任何防护（内存放大攻击面），且 Content-Length 超限分支泄漏 body。
+ */
 async function readBody(res: Response): Promise<{ bytes: Uint8Array; contentType: string; note?: string; warning?: string }> {
   const contentType = res.headers.get('content-type') ?? ''
   const declaredLen = Number(res.headers.get('content-length') ?? 0)
   if (declaredLen > MAX_BYTES) {
+    res.body?.cancel().catch(() => {}) // 主动释放连接
     return { bytes: new Uint8Array(0), contentType, note: 'too-large', warning: `响应过大（Content-Length ${declaredLen}B > 上限 ${MAX_BYTES}B），已放弃` }
   }
-  const buf = await res.arrayBuffer()
-  const bytes = new Uint8Array(buf)
-  if (bytes.byteLength > MAX_BYTES) {
-    return { bytes: new Uint8Array(0), contentType, note: 'too-large', warning: `响应实际大小 ${bytes.byteLength}B 超上限 ${MAX_BYTES}B，已放弃` }
+  if (!res.body) return { bytes: new Uint8Array(0), contentType }
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  let tooLarge = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > MAX_BYTES) {
+        tooLarge = true
+        break
+      }
+      chunks.push(value)
+    }
+  } catch (e) {
+    return { bytes: new Uint8Array(0), contentType, note: 'network-error', warning: `响应体读取中断: ${e instanceof Error ? e.message : 'unknown'}` }
+  } finally {
+    // 无论读满/超限/中断都释放底层连接（读完后再 cancel 是无害 no-op）
+    await reader.cancel().catch(() => {})
   }
-  return { bytes, contentType }
+  if (tooLarge) {
+    return { bytes: new Uint8Array(0), contentType, note: 'too-large', warning: `响应实际大小超过上限 ${MAX_BYTES}B，已中途放弃并断开连接` }
+  }
+  return { bytes: new Uint8Array(Buffer.concat(chunks)), contentType }
 }
 
 /**
@@ -434,7 +481,8 @@ export async function fetchWithRedirectGuard(
           return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', note: 'ssrf-blocked', warning: `SSRF 防护: 重定向终点 ${finalCheck.reason}` }
         }
         const body = await readBody(follow)
-        return { ok: follow.ok, status: follow.status, ...body, finalUrl }
+        const followRetryAfter = follow.status === 429 || follow.status === 503 ? parseRetryAfterMs(follow.headers.get('retry-after')) : null
+        return { ok: follow.ok, status: follow.status, ...body, finalUrl, retryAfterMs: followRetryAfter }
       } catch (e) {
         return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', note: 'network-error', warning: `网络错误: ${e instanceof Error ? e.message : String(e)}` }
       }
@@ -460,8 +508,10 @@ export async function fetchWithRedirectGuard(
       continue
     }
 
+    // Retry-After 尊重：429/503 时解析站点给出的退避指引，供策略链退避时优先采用
+    const retryAfterMs = res.status === 429 || res.status === 503 ? parseRetryAfterMs(res.headers.get('retry-after')) : null
     const body = await readBody(res)
-    return { ok: res.ok, status: res.status, ...body, finalUrl: current }
+    return { ok: res.ok, status: res.status, ...body, finalUrl: current, retryAfterMs }
   }
 }
 
@@ -479,12 +529,13 @@ function makeFetchStrategy(cfg: { name: string; description: string; profiles: H
       let last: AttemptResult | null = null
 
       for (const profile of cfg.profiles) {
+        await acquireDomainSlot(hostOf(url)) // 每个画像的请求同样受域名限速约束
+        // 限速等待可能耗时 >1s：剩余预算必须在等待之后计算，否则超时会穿透策略 deadline（旧实现先算后等）
         const remaining = deadline - Date.now()
         if (remaining < 1000) {
           subAttempts.push({ profile: profile.id, ok: false, status: 0, ms: 0, blocked: false, bytes: 0, note: 'timeout-budget' })
           break
         }
-        await acquireDomainSlot(hostOf(url)) // 每个画像的请求同样受域名限速约束
         const s0 = Date.now()
         const r = await fetchWithRedirectGuard(url, profile.headers(url, profile.referer), remaining, warnings)
         const a = assess(r.status, r.bytes, r.contentType)
@@ -493,9 +544,9 @@ function makeFetchStrategy(cfg: { name: string; description: string; profiles: H
         if (r.warning || a.warning) warnings.push(`[${profile.id}] ${r.warning ?? a.warning}`)
 
         if (a.ok) {
-          return { ok: true, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings, subAttempts }
+          return { ok: true, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings, subAttempts, retryAfterMs: r.retryAfterMs ?? null }
         }
-        last = { ok: false, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings, note: r.note ?? a.note, subAttempts }
+        last = { ok: false, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings, note: r.note ?? a.note, subAttempts, retryAfterMs: r.retryAfterMs ?? null }
       }
       return (
         last ?? {
@@ -601,17 +652,19 @@ const curlImpersonateStrategy: StrategyDef = {
     ]
 
     for (const variant of variants) {
+      await acquireDomainSlot(hostOf(url))
+      // 限速等待后再计算剩余预算（与 makeFetchStrategy 同理，避免超时穿透 deadline）
       const remaining = deadline - Date.now()
       if (remaining < 1000) {
         subAttempts.push({ profile: variant.profile, ok: false, status: 0, ms: 0, blocked: false, bytes: 0, note: 'timeout-budget' })
         break
       }
-      await acquireDomainSlot(hostOf(url))
       const s0 = Date.now()
       const tmpOut = join(tmpdir(), `scraper-${Date.now()}-${Math.random().toString(36).slice(2)}.body`)
       const args: string[] = [
         '--silent', '--show-error', '--location', '--max-redirs', String(MAX_REDIRECT_HOPS),
         '--max-time', String(Math.max(1, Math.ceil(remaining / 1000))),
+        '--max-filesize', String(MAX_BYTES), // 恶意超大响应在 curl 层直接中止（exit 63），不等下载完
         '--compressed',
         '--output', tmpOut,
         '--write-out', '%{http_code}\t%{content_type}\t%{url_effective}',
@@ -622,7 +675,13 @@ const curlImpersonateStrategy: StrategyDef = {
         const { stdout } = await execP(bin, args, { timeout: remaining + 3000, maxBuffer: 1024 * 1024 })
         const [code, ctype, effective] = stdout.trim().split('\t')
         const status = Number.parseInt(code, 10) || 0
-        const bytes = new Uint8Array(await readFile(tmpOut))
+        const raw = await readFile(tmpOut)
+        if (raw.byteLength > MAX_BYTES) {
+          subAttempts.push({ profile: variant.profile, ok: false, status, ms: Date.now() - s0, blocked: false, bytes: raw.byteLength, note: 'too-large' })
+          warnings.push(`curl-impersonate 响应超过 ${MAX_BYTES}B 上限，已放弃`)
+          break
+        }
+        const bytes = new Uint8Array(raw)
         const a = assess(status, bytes, ctype ?? '')
         subAttempts.push({ profile: variant.profile, ok: a.ok, status, ms: Date.now() - s0, blocked: a.blocked, bytes: a.size, note: a.note })
 
@@ -644,7 +703,8 @@ const curlImpersonateStrategy: StrategyDef = {
         }
       } catch (e) {
         const err = e as (Error & { stderr?: string; code?: number | string }) | null
-        subAttempts.push({ profile: variant.profile, ok: false, status: 0, ms: Date.now() - s0, blocked: false, bytes: 0, note: 'exec-error' })
+        // exit code 63 = curl --max-filesize 超限：单独标记，避免被误报为二进制级失败
+        subAttempts.push({ profile: variant.profile, ok: false, status: 0, ms: Date.now() - s0, blocked: false, bytes: 0, note: err?.code === 63 ? 'too-large' : 'exec-error' })
         warnings.push(`curl-impersonate 执行失败: ${err?.message ?? 'unknown'}${err?.stderr ? ` / ${err.stderr.trim().slice(0, 200)}` : ''}`)
         break // 二进制级失败，HTTP/1.1 降级无意义
       } finally {
@@ -691,6 +751,7 @@ const gotScrapingStrategy: StrategyDef = {
     }
     const subAttempts: SubAttempt[] = []
     const deadline = Date.now() + timeoutMs
+    let lastRetryAfterMs: number | null = null
 
     // 子尝试梯子：HTTP/2 → HTTP/1.1（协议指纹差异）
     const variants: Array<{ profile: string; http2: boolean }> = [
@@ -698,74 +759,135 @@ const gotScrapingStrategy: StrategyDef = {
       { profile: 'http1.1', http2: false },
     ]
 
-    for (const variant of variants) {
-      const remaining = deadline - Date.now()
-      if (remaining < 1000) {
-        subAttempts.push({ profile: variant.profile, ok: false, status: 0, ms: 0, blocked: false, bytes: 0, note: 'timeout-budget' })
-        break
-      }
-      await acquireDomainSlot(hostOf(url))
-      const s0 = Date.now()
-      try {
-        const res = await gotScraping({
-          url,
-          method: 'GET',
-          responseType: 'buffer',
-          http2: variant.http2,
-          followRedirect: true,
-          maxRedirects: MAX_REDIRECT_HOPS,
-          retry: { limit: 0 }, // 重试由本服务统一编排，避免双重重试
-          timeout: { request: remaining },
-          headers: { referer: `${new URL(url).origin}/` },
-          context: {
-            headerGeneratorOptions: {
-              browsers: [{ name: 'chrome' }, { name: 'edge' }],
-              devices: ['desktop'],
-              locale: 'zh-CN',
-            },
+    /** 单跳请求：followRedirect:false —— 重定向在本策略内逐跳处理，每一跳都做 SSRF 校验
+     *  （旧实现 followRedirect:true 由 got 内部跟随，仅事后校验最终 URL，中间跳可被诱导对内网发起 GET） */
+    const requestOnce = (target: string, http2: boolean, leftMs: number) =>
+      gotScraping({
+        url: target,
+        method: 'GET',
+        responseType: 'buffer',
+        http2,
+        followRedirect: false,
+        retry: { limit: 0 }, // 重试由本服务统一编排，避免双重重试
+        timeout: { request: leftMs },
+        headers: { referer: `${new URL(url).origin}/` },
+        context: {
+          headerGeneratorOptions: {
+            browsers: [{ name: 'chrome' }, { name: 'edge' }],
+            devices: ['desktop'],
+            locale: 'zh-CN',
           },
-        })
-        const bytes = new Uint8Array(res.body ?? new Uint8Array(0))
-        const status = res.statusCode
-        const contentType = String(Array.isArray(res.headers['content-type']) ? res.headers['content-type'][0] : res.headers['content-type'] ?? '')
-        const a = assess(status, bytes, contentType)
-        subAttempts.push({ profile: variant.profile, ok: a.ok, status, ms: Date.now() - s0, blocked: a.blocked, bytes: a.size, note: a.note })
+        },
+      })
 
-        // 最终 URL SSRF 校验
-        if (res.url) {
-          try {
-            const finalCheck = await assertHostPublic(new URL(res.url).hostname)
-            if (!finalCheck.ok) {
-              warnings.push(`SSRF 防护: 重定向终点 ${finalCheck.reason}`)
-              return { ok: false, status, bytes: new Uint8Array(0), contentType: '', warnings, note: 'ssrf-blocked', subAttempts }
+    const headerValue = (headers: Record<string, string | string[] | undefined> | undefined, key: string): string | null => {
+      const v = headers?.[key]
+      if (v === undefined) return null
+      return Array.isArray(v) ? v[0] ?? null : v
+    }
+
+    const noteAttempt = (profile: string, ok: boolean, status: number, ms: number, blocked: boolean, size: number, note?: string) => {
+      subAttempts.push({ profile, ok, status, ms, blocked, bytes: size, note })
+    }
+
+    for (const variant of variants) {
+      let current = url
+      let hops = 0
+      let stopVariants = false
+      for (;;) {
+        await acquireDomainSlot(hostOf(current)) // 每一跳（跨域后是不同域名）都受限速约束
+        const s0 = Date.now()
+        const remaining = deadline - Date.now()
+        if (remaining < 1000) {
+          noteAttempt(variant.profile, false, 0, 0, false, 0, 'timeout-budget')
+          break
+        }
+        try {
+          const res = await requestOnce(current, variant.http2, remaining)
+          const status = res.statusCode
+
+          // 3xx：解析 Location → 协议白名单 + 逐跳 SSRF 校验 → 限速后请求下一跳
+          if ([301, 302, 303, 307, 308].includes(status)) {
+            const loc = headerValue(res.headers, 'location')
+            if (!loc) {
+              noteAttempt(variant.profile, false, status, Date.now() - s0, false, 0, 'redirect-no-location')
+              break
             }
-          } catch { /* 最终 URL 解析失败忽略 */ }
-        }
-        if (a.warning) warnings.push(`[${variant.profile}] ${a.warning}`)
-        if (status >= 400) warnings.push(`got-scraping 收到 HTTP ${status}`)
+            let next: URL
+            try {
+              next = new URL(loc, current)
+            } catch {
+              noteAttempt(variant.profile, false, status, Date.now() - s0, false, 0, 'redirect-bad-location')
+              warnings.push(`got-scraping 非法 Location 头: ${loc.slice(0, 200)}`)
+              break
+            }
+            if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+              noteAttempt(variant.profile, false, status, Date.now() - s0, false, 0, 'ssrf-blocked')
+              warnings.push(`SSRF 防护: 重定向到非 http/https 协议已拒绝: ${next.protocol}`)
+              break
+            }
+            const check = await assertHostPublic(next.hostname)
+            if (!check.ok) {
+              noteAttempt(variant.profile, false, status, Date.now() - s0, false, 0, 'ssrf-blocked')
+              warnings.push(`SSRF 防护: 重定向终点 ${check.reason}`)
+              break
+            }
+            hops++
+            if (hops > MAX_REDIRECT_HOPS) {
+              noteAttempt(variant.profile, false, status, Date.now() - s0, false, 0, 'too-many-redirects')
+              warnings.push(`got-scraping 重定向超过 ${MAX_REDIRECT_HOPS} 跳，已停止`)
+              break
+            }
+            current = next.toString()
+            continue
+          }
 
-        if (a.ok) {
-          return { ok: true, status, bytes, contentType, warnings, subAttempts }
-        }
-      } catch (rawErr) {
-        const e = rawErr as (Error & { response?: { statusCode: number; body?: Uint8Array; headers?: Record<string, string> }; code?: string }) | null
-        if (e?.response) {
-          const status = e.response.statusCode
-          const bytes = new Uint8Array(e.response.body ?? new Uint8Array(0))
-          const contentType = e.response.headers?.['content-type'] ?? ''
+          const bytes = new Uint8Array(res.body ?? new Uint8Array(0))
+          const contentType = String(Array.isArray(res.headers['content-type']) ? res.headers['content-type'][0] : res.headers['content-type'] ?? '')
+          if (bytes.byteLength > MAX_BYTES) {
+            noteAttempt(variant.profile, false, status, Date.now() - s0, false, bytes.byteLength, 'too-large')
+            warnings.push(`got-scraping 响应超过 ${MAX_BYTES}B 上限，已放弃`)
+            break
+          }
           const a = assess(status, bytes, contentType)
-          subAttempts.push({ profile: variant.profile, ok: false, status, ms: Date.now() - s0, blocked: a.blocked, bytes: a.size, note: a.note ?? `http-${status}` })
-          warnings.push(`got-scraping 收到 HTTP ${status}（got 对非 2xx 抛错，已转为结构化失败）`)
+          noteAttempt(variant.profile, a.ok, status, Date.now() - s0, a.blocked, a.size, a.note)
           if (a.warning) warnings.push(`[${variant.profile}] ${a.warning}`)
-          // got 对网络层错误才需要降级重试，HTTP 状态码失败直接结束
-          if (!isRetryableStatus(status)) break
-        } else {
-          subAttempts.push({ profile: variant.profile, ok: false, status: 0, ms: Date.now() - s0, blocked: false, bytes: 0, note: e?.code ?? 'network-error' })
-          warnings.push(`got-scraping 网络错误（${variant.profile}）: ${e?.code ?? e?.message ?? 'unknown'}`)
+          if (status >= 400) warnings.push(`got-scraping 收到 HTTP ${status}`)
+          if (a.ok) {
+            return { ok: true, status, bytes, contentType, warnings, subAttempts, retryAfterMs: null }
+          }
+          break // 非 2xx 且非 3xx（got 默认对 >=400 抛错，正常到不了这里），按确定性失败处理
+        } catch (rawErr) {
+          const e = rawErr as (Error & { response?: { statusCode: number; body?: Uint8Array; headers?: Record<string, string | string[] | undefined> }; code?: string }) | null
+          if (e?.response) {
+            const status = e.response.statusCode
+            if (status === 429 || status === 503) {
+              const ra = parseRetryAfterMs(headerValue(e.response.headers, 'retry-after'))
+              if (ra !== null) lastRetryAfterMs = ra
+            }
+            const bytes = new Uint8Array(e.response.body ?? new Uint8Array(0))
+            if (bytes.byteLength > MAX_BYTES) {
+              noteAttempt(variant.profile, false, status, Date.now() - s0, false, bytes.byteLength, 'too-large')
+              warnings.push(`got-scraping 响应超过 ${MAX_BYTES}B 上限，已放弃`)
+              break
+            }
+            const contentType = headerValue(e.response.headers, 'content-type') ?? ''
+            const a = assess(status, bytes, contentType)
+            noteAttempt(variant.profile, false, status, Date.now() - s0, a.blocked, a.size, a.note ?? `http-${status}`)
+            warnings.push(`got-scraping 收到 HTTP ${status}（got 对非 2xx 抛错，已转为结构化失败）`)
+            if (a.warning) warnings.push(`[${variant.profile}] ${a.warning}`)
+            // got 对网络层错误才需要降级重试，HTTP 状态码失败直接结束（429/5xx 的退避由策略链统一编排）
+            if (!isRetryableStatus(status)) stopVariants = true
+          } else {
+            noteAttempt(variant.profile, false, 0, Date.now() - s0, false, 0, e?.code ?? 'network-error')
+            warnings.push(`got-scraping 网络错误（${variant.profile}）: ${e?.code ?? e?.message ?? 'unknown'}`)
+          }
+          break
         }
       }
+      if (stopVariants) break
     }
-    return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', warnings, note: 'all-variants-failed', subAttempts }
+    return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', warnings, note: 'all-variants-failed', subAttempts, retryAfterMs: lastRetryAfterMs }
   },
 }
 
@@ -847,6 +969,8 @@ const browserStrategy: StrategyDef = {
     warnings.push('browser 策略为完整浏览器渲染，成本最高（约 1-5s），仅建议前序策略失败时使用')
     const subAttempts: SubAttempt[] = []
     const s0 = Date.now()
+    // 渲染期被拦截的私网主机去重（每个 host 只告警一次）
+    const warnedHosts = new Set<string>()
 
     // 1) Node playwright：模块导入失败才降级到 Python 桥接；
     //    导入成功后的导航/渲染错误属于站点网络问题，直接返回结构化结果（避免无谓的双倍渲染耗时）
@@ -858,24 +982,74 @@ const browserStrategy: StrategyDef = {
         const page = await browser.newPage({ userAgent: CHROME_UA, locale: 'zh-CN', viewport: { width: 1366, height: 900 } })
         page.setDefaultTimeout(timeoutMs)
         try {
-          // 屏蔽重资源，加速渲染（与 render.py 行为一致）。
+          // 屏蔽重资源 + 渲染期 SSRF 守卫（与 render.py 同语义）。
+          // Chromium 内部跟随重定向/页面 JS 发起的子请求、XHR、WebSocket 均经过此拦截器：
+          // 非 http(s) 协议与私网/内网地址一律 abort（旧实现只拦截重资源，渲染路径是整条链路里
+          // 唯一没有逐请求 SSRF 校验的通道）。
           // Node Playwright 的 Request 用 resourceType() 方法，Python 桥接对象才是 resource_type 属性，
           // 两者兼容判断（旧代码只读属性导致 Node 路径拦截永不生效）
-          await page.route('**/*', (route: { request: () => any; abort: () => unknown; continue: () => unknown }) => {
-            const req = route.request()
-            const t = typeof req.resourceType === 'function' ? req.resourceType() : req.resource_type
-            if (t === 'image' || t === 'media' || t === 'font') void route.abort()
-            else void route.continue()
+          await page.route('**/*', async (route: { request: () => any; abort: () => unknown; continue: () => unknown }) => {
+            try {
+              const req = route.request()
+              const t = typeof req.resourceType === 'function' ? req.resourceType() : req.resource_type
+              if (t === 'image' || t === 'media' || t === 'font') {
+                void route.abort()
+                return
+              }
+              let target: URL
+              try {
+                target = new URL(req.url())
+              } catch {
+                void route.abort()
+                return
+              }
+              // 网络可达协议白名单：阻断 file/ftp/ws/wss 等可达本机或内网的协议；
+              // blob:/data:/about: 属于页面内部资源，放行
+              if (!['http:', 'https:', 'blob:', 'data:', 'about:'].includes(target.protocol)) {
+                void route.abort()
+                return
+              }
+              if (target.protocol === 'http:' || target.protocol === 'https:') {
+                const check = await assertHostPublic(target.hostname)
+                if (!check.ok) {
+                  if (!warnedHosts.has(target.host)) {
+                    warnedHosts.add(target.host)
+                    warnings.push(`[browser] SSRF 防护: 已拦截渲染期对 ${target.host} 的请求（${check.reason}）`)
+                  }
+                  void route.abort()
+                  return
+                }
+              }
+              void route.continue()
+            } catch {
+              try {
+                void route.abort()
+              } catch { /* ignore */ }
+            }
           })
         } catch { /* 路由拦截失败不阻塞主流程 */ }
         const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
         // content() 也受默认超时约束，最坏可再等一个 timeoutMs 导致策略链预算超支；加 race 硬上限
-        const html = await Promise.race([
-          page.content() as Promise<string>,
-          new Promise<string>((_, rej) => setTimeout(() => rej(new Error('page content 超时')), Math.min(5000, Math.max(1000, timeoutMs)))),
-        ])
+        let contentTimer: ReturnType<typeof setTimeout> | undefined
+        let html: string
+        try {
+          html = await Promise.race([
+            page.content() as Promise<string>,
+            new Promise<string>((_, rej) => {
+              contentTimer = setTimeout(() => rej(new Error('page content 超时')), Math.min(5000, Math.max(1000, timeoutMs)))
+            }),
+          ])
+        } finally {
+          clearTimeout(contentTimer)
+        }
         const status = res?.status() ?? 0
         const bytes = new Uint8Array(Buffer.from(html, 'utf8'))
+        if (bytes.byteLength > MAX_BYTES) {
+          // 渲染结果超过全链路统一上限：按 too-large 失败（旧实现无上限检查）
+          subAttempts.push({ profile: 'node-playwright', ok: false, status, ms: Date.now() - s0, blocked: false, bytes: bytes.byteLength, note: 'too-large' })
+          warnings.push(`[browser] 渲染结果超过 ${MAX_BYTES}B 上限，已放弃`)
+          return { ok: false, status, bytes: new Uint8Array(0), contentType: '', warnings, note: 'too-large', subAttempts }
+        }
         const a = assess(status, bytes, 'text/html; charset=utf-8')
         subAttempts.push({ profile: 'node-playwright', ok: a.ok, status, ms: Date.now() - s0, blocked: a.blocked, bytes: a.size, note: a.note })
         if (a.warning) warnings.push(a.warning)
@@ -1010,6 +1184,7 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
   const order = await pickOrder(opts.requestedStrategy, warnings)
   let lastStatus = 0
   let lastNote = ''
+  let lastRetryAfterMs: number | null = null
   let sawChallenge = false
 
   for (let si = 0; si < order.length; si++) {
@@ -1079,6 +1254,7 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
 
       lastStatus = res.status
       lastNote = res.note ?? ''
+      lastRetryAfterMs = res.retryAfterMs ?? null
       if (lastNote === 'challenge-page') sawChallenge = true
       // selfRetrying 策略内部已有多画像/多协议重试梯子，外层不再重复重试
       if (!strat.selfRetrying && isRetryableStatus(res.status) && attempt < MAX_ATTEMPTS) {
@@ -1091,14 +1267,19 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
     }
 
     // 策略间退避：429/5xx/网络错误 → 进入下一策略前显式指数退避+jitter。
+    // 站点通过 Retry-After 头明确要求退避时长时优先采用（同样受预算约束）。
     // 剩余预算 <3s 时不再退避（宁可靠限速器自身 1.2s 间隔，也不突破 55s 硬上限）；
     // 最后一个策略后无需退避。
     if (si < order.length - 1 && isRetryableStatus(lastStatus)) {
       const remaining = deadline - Date.now()
       if (remaining > 3000) {
         const cap = remaining - 2500
-        const delay = Math.min(backoffDelay(lastStatus === 429 ? 2 : 1), cap)
-        if (lastStatus === 429) {
+        let delay = Math.min(backoffDelay(lastStatus === 429 ? 2 : 1), cap)
+        if (lastStatus === 429 && lastRetryAfterMs !== null && lastRetryAfterMs > 0) {
+          delay = Math.min(Math.max(delay, lastRetryAfterMs), cap)
+          const w = `HTTP 429 已按站点 Retry-After=${(lastRetryAfterMs / 1000).toFixed(1)}s 退避（受整体预算约束，实际上限 ${(cap / 1000).toFixed(1)}s）`
+          if (!warnings.includes(w)) warnings.push(`[chain] ${w}`)
+        } else if (lastStatus === 429) {
           const w = 'HTTP 429 目标站限流，已按指数退避+jitter 等待后继续后续策略'
           if (!warnings.includes(w)) warnings.push(`[chain] ${w}`)
         } else if (lastStatus >= 500) {

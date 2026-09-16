@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
   }
-  if (!body.novelId || !Number.isFinite(body.novelId)) return NextResponse.json({ error: 'novelId 必填' }, { status: 400 })
+  if (!body.novelId || !Number.isInteger(body.novelId)) return NextResponse.json({ error: 'novelId 必填' }, { status: 400 })
   if (!body.title?.trim()) return NextResponse.json({ error: '章节标题不能为空' }, { status: 400 })
 
   const novel = await db.novel.findUnique({ where: { id: body.novelId } })

@@ -708,7 +708,7 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
         <div className="pb-2 text-center">
           <MarkButton key={`${ch.novelId}-${ch.id}`} novelId={ch.novelId} chapterId={ch.id} />
         </div>
-        <div className="border-t border-[#ccc] px-3 py-2 text-[18px] leading-[180%] tracking-[0.1em] text-[#333] min-[468px]:text-[24px]">
+        <div className="break-words border-t border-[#ccc] px-3 py-2 text-[18px] leading-[180%] tracking-[0.1em] text-[#333] min-[468px]:text-[24px]">
           {paragraphs.length === 0 ? (
             <p className="my-[10px] text-[#999]">本章内容为空</p>
           ) : (

@@ -8,7 +8,7 @@ type Ctx = { params: Promise<{ id: string }> }
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { id } = await params
   const cid = Number(id)
-  if (!Number.isFinite(cid)) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
+  if (!Number.isInteger(cid)) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
 
   const chapter = await db.chapter.findUnique({
     where: { id: cid },
@@ -37,7 +37,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 export async function PUT(req: NextRequest, { params }: Ctx) {
   const { id } = await params
   const cid = Number(id)
-  if (!Number.isFinite(cid) || cid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
+  if (!Number.isInteger(cid) || cid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
   let body: { title?: string; content?: string }
   try {
     body = (await req.json()) as { title?: string; content?: string }
@@ -63,7 +63,7 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const { id } = await params
   const cid = Number(id)
-  if (!Number.isFinite(cid) || cid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
+  if (!Number.isInteger(cid) || cid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
   try {
     const ch = await db.chapter.delete({ where: { id: cid } })
     const agg = await db.chapter.aggregate({ where: { novelId: ch.novelId }, _sum: { wordCount: true } })

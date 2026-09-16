@@ -945,11 +945,17 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
                 className="mt-6"
                 style={{ fontSize, fontFamily: font.stack || undefined, lineHeight: 2, color: night ? 'rgb(153,153,153)' : '#333' }}
               >
-                {paragraphs.map((p, i) => (
-                  <p key={i} style={{ textIndent: '2em' }}>
-                    {p}
+                {paragraphs.length === 0 ? (
+                  <p className="py-10 text-center text-sm" style={{ color: night ? '#8a9199' : '#999' }}>
+                    本章內容為空，請返回目錄選擇其他章節。
                   </p>
-                ))}
+                ) : (
+                  paragraphs.map((p, i) => (
+                    <p key={i} className="break-words" style={{ textIndent: '2em' }}>
+                      {p}
+                    </p>
+                  ))
+                )}
               </article>
 
               {/* 底部翻页条：4 等分按钮 */}
