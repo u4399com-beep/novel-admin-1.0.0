@@ -60,6 +60,5 @@ scripts-tmp/
 .tmp-*
 .verify-*
 
-# local database (created via `bun run db:push` + seed)
-db/*.db
-db/*.db-journal
+# local database journal (transient)
+# NOTE: db/custom.db 必须保持 git 跟踪 —— 沙箱会话边界会清除未跟踪文件，出库导致数据全丢
