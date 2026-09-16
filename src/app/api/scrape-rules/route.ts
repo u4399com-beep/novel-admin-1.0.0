@@ -176,21 +176,32 @@ const SEED_RULES = [
 export async function PUT(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as (SaveBody & { seed?: boolean }) | null
   if (body?.seed) {
-    let added = 0
-    for (const r of SEED_RULES) {
-      const exists = await db.scrapeRule.findUnique({ where: { name: r.name } })
-      if (exists) continue
-      await db.scrapeRule.create({
-        data: {
-          ...r,
-          listRule: JSON.stringify(r.listRule),
-          bookRule: JSON.stringify(r.bookRule),
-          chapterRule: JSON.stringify(r.chapterRule),
-        },
+    // seed 循环仅 4 条内置规则（几条内、纯本地 SQLite 读写，远低于 $transaction 默认 5s 超时），
+    // 包事务保证「要么全部入库要么全部回滚」，避免部分失败留下半套模板（幂等：已存在的按 name 跳过）
+    try {
+      const added = await db.$transaction(async (tx) => {
+        let n = 0
+        for (const r of SEED_RULES) {
+          const exists = await tx.scrapeRule.findUnique({ where: { name: r.name } })
+          if (exists) continue
+          await tx.scrapeRule.create({
+            data: {
+              ...r,
+              listRule: JSON.stringify(r.listRule),
+              bookRule: JSON.stringify(r.bookRule),
+              chapterRule: JSON.stringify(r.chapterRule),
+            },
+          })
+          n++
+        }
+        return n
       })
-      added++
+      return NextResponse.json({ added })
+    } catch (e) {
+      // 并发 seed 撞 name 唯一约束等失败：整体回滚，幂等重试即可
+      const msg = e instanceof Error ? e.message : 'unknown'
+      return NextResponse.json({ error: '内置模板入库失败', detail: msg.slice(0, 200) }, { status: 500 })
     }
-    return NextResponse.json({ added })
   }
   return handleSave(body)
 }

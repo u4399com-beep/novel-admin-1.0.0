@@ -3,17 +3,17 @@
 /**
  * 管理后台各功能面板（自 AdminDrawer.tsx 原样迁入，逻辑/请求/交互保持不变）：
  * ThemesTab / NovelsTab / Field / ChaptersDialog / CategoriesTab / SeoTab /
- * ScraperTab / PseoTab / SettingsTab + api 工具 + 相关类型与常量。
+ * PseoTab / SettingsTab + api 工具 + 相关类型与常量。
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { RefreshCw, Trash2, Pencil, Plus, BookOpen, Layers, SearchCode } from 'lucide-react'
+import { Trash2, Pencil, Plus, BookOpen, Layers } from 'lucide-react'
 import { THEME_LIST } from '@/themes/registry'
 import { useAppStore } from '@/lib/store'
 import { useChapters, useNovels, useSettings, qk } from '@/hooks/use-novel-data'
@@ -21,13 +21,28 @@ import type { CategoryDto, NovelListItem, ScrapeRuleDto, SeoConfig } from '@/lib
 import { formatWordCount, timeAgo } from '@/lib/format'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
-type Json = Record<string, unknown>
-
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...init })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `请求失败(${res.status})`)
   return data as T
+}
+
+/**
+ * 手写模态框的 Esc 关闭。嵌套对话框（章节编辑在章节管理内）的内层用 capture=true：
+ * capture 监听先于 bubble 触发并 stopPropagation，保证 Esc 只关最上层。
+ */
+function useDialogEscape(onClose: () => void, active = true, capture = false) {
+  useEffect(() => {
+    if (!active) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      onClose()
+    }
+    document.addEventListener('keydown', handler, capture)
+    return () => document.removeEventListener('keydown', handler, capture)
+  }, [onClose, active, capture])
 }
 
 // ==================== 主题管理 ====================
@@ -114,11 +129,15 @@ export function NovelsTab() {
   const qc = useQueryClient()
   const [form, setForm] = useState<NovelForm | null>(null)
   const [chapterNovel, setChapterNovel] = useState<NovelListItem | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useDialogEscape(() => setForm(null), form !== null)
 
   const save = async () => {
     if (!form) return
     if (!form.title.trim()) return toast.error('书名不能为空')
     if (!form.categoryId) return toast.error('请选择分类')
+    setSaving(true)
     try {
       if (form.id) {
         await api(`/api/novels/${form.id}`, { method: 'PUT', body: JSON.stringify(form) })
@@ -133,6 +152,8 @@ export function NovelsTab() {
       await qc.invalidateQueries({ queryKey: qk.home })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -141,6 +162,8 @@ export function NovelsTab() {
     try {
       await api(`/api/novels/${n.id}`, { method: 'DELETE' })
       toast.success('已删除')
+      // 末页删空自愈：当前页仅剩这一条且不是第一页时回退一页，避免停留在空页
+      if (data && data.list.length === 1 && page > 1) setPage(page - 1)
       await qc.invalidateQueries({ queryKey: ['novels'] })
       await qc.invalidateQueries({ queryKey: ['novel'] })
       await qc.invalidateQueries({ queryKey: qk.home })
@@ -195,7 +218,16 @@ export function NovelsTab() {
               </tr>
             ))}
             {data?.list.length === 0 && (
-              <tr><td colSpan={5} className="px-3 py-8 text-center text-sm text-neutral-400">暂无数据</td></tr>
+              <tr>
+                <td colSpan={5} className="px-3 py-8 text-center text-sm text-neutral-400">
+                  暂无数据
+                  {page > 1 && (
+                    <Button size="sm" variant="outline" className="ml-3" onClick={() => setPage(1)}>
+                      返回第一页
+                    </Button>
+                  )}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -210,10 +242,16 @@ export function NovelsTab() {
 
       {form && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setForm(null)}>
-          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={form.id ? '编辑小说' : '新增小说'}
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="mb-4 text-base font-semibold">{form.id ? '编辑小说' : '新增小说'}</h3>
             <div className="space-y-3">
-              <Field label="书名"><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+              <Field label="书名"><Input autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
               <Field label="作者"><Input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} /></Field>
               <Field label="分类">
                 <select
@@ -242,8 +280,8 @@ export function NovelsTab() {
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setForm(null)}>取消</Button>
-              <Button onClick={save}>保存</Button>
+              <Button variant="outline" disabled={saving} onClick={() => setForm(null)}>取消</Button>
+              <Button onClick={save} disabled={saving}>{saving ? '保存中…' : '保存'}</Button>
             </div>
           </div>
         </div>
@@ -267,11 +305,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () => void }) {
   const qc = useQueryClient()
-  const { data: chapters, isLoading } = useChapters(novel.id)
+  const { data: chapters, isLoading, isError, refetch } = useChapters(novel.id)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [editing, setEditing] = useState<{ id: number; title: string; content: string } | null>(null)
   const [adding, setAdding] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useDialogEscape(onClose)
+  // 编辑层嵌套在章节管理层之上：capture 监听优先触发，Esc 只关闭编辑层
+  useDialogEscape(() => setEditing(null), editing !== null, true)
 
   const add = async () => {
     if (!title.trim()) return toast.error('标题不能为空')
@@ -293,6 +336,8 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
 
   const saveEdit = async () => {
     if (!editing) return
+    if (!editing.title.trim()) return toast.error('标题不能为空')
+    setSaving(true)
     try {
       await api(`/api/chapters/${editing.id}`, { method: 'PUT', body: JSON.stringify({ title: editing.title, content: editing.content }) })
       toast.success('已保存')
@@ -302,6 +347,8 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
       await qc.invalidateQueries({ queryKey: ['novel'] })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -321,10 +368,16 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`章节管理 ${novel.title}`}
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="border-b px-5 py-4">
           <h3 className="text-base font-semibold">章节管理 · {novel.title}</h3>
-          <p className="mt-0.5 text-xs text-neutral-500">共 {novel.chapterCount} 章</p>
+          <p className="mt-0.5 text-xs text-neutral-500">共 {chapters?.length ?? novel.chapterCount} 章</p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <div className="mb-4 space-y-2 rounded-lg border bg-neutral-50 p-3">
@@ -334,6 +387,15 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
             <Button size="sm" onClick={add} disabled={adding}>{adding ? '添加中…' : <><Plus className="mr-1 h-3.5 w-3.5" />添加</>}</Button>
           </div>
           {isLoading && <p className="py-6 text-center text-sm text-neutral-400">加载中…</p>}
+          {isError && (
+            <p className="flex items-center justify-center gap-2 py-6 text-center text-sm text-neutral-400">
+              章节加载失败
+              <Button size="sm" variant="outline" onClick={() => refetch()}>重试</Button>
+            </p>
+          )}
+          {!isLoading && !isError && chapters?.length === 0 && (
+            <p className="py-6 text-center text-sm text-neutral-400">暂无章节，可在上方添加</p>
+          )}
           <div className="max-h-72 space-y-1 overflow-y-auto">
             {chapters?.map((c) => (
               <div key={c.id} className="flex items-center gap-2 rounded border px-3 py-1.5 text-sm">
@@ -364,13 +426,19 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
 
       {editing && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setEditing(null)}>
-          <div className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="编辑章节"
+            className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-lg bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h4 className="mb-3 text-sm font-semibold">编辑章节</h4>
-            <Input value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} className="mb-2" />
+            <Input autoFocus value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} className="mb-2" />
             <Textarea rows={12} value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="flex-1" />
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setEditing(null)}>取消</Button>
-              <Button onClick={saveEdit}>保存</Button>
+              <Button variant="outline" disabled={saving} onClick={() => setEditing(null)}>取消</Button>
+              <Button onClick={saveEdit} disabled={saving}>{saving ? '保存中…' : '保存'}</Button>
             </div>
           </div>
         </div>
@@ -386,23 +454,42 @@ export function CategoriesTab() {
   const { data: categories } = useQuery({ queryKey: qk.categories, queryFn: () => api<CategoryDto[]>('/api/categories') })
   const [name, setName] = useState('')
   const [editing, setEditing] = useState<{ id: number; name: string } | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+
+  useDialogEscape(() => setEditing(null), editing !== null)
 
   const refresh = async () => { await qc.invalidateQueries({ queryKey: qk.categories }); await qc.invalidateQueries({ queryKey: qk.home }) }
 
   const add = async () => {
+    if (adding) return
     if (!name.trim()) return toast.error('分类名不能为空')
+    setAdding(true)
     try {
       await api('/api/categories', { method: 'POST', body: JSON.stringify({ name }) })
       setName(''); await refresh(); toast.success('已添加')
     } catch (e) { toast.error(e instanceof Error ? e.message : '添加失败') }
+    finally { setAdding(false) }
+  }
+
+  const saveRename = async () => {
+    if (!editing) return
+    if (!editing.name.trim()) return toast.error('分类名不能为空')
+    setRenaming(true)
+    try {
+      await api(`/api/categories/${editing.id}`, { method: 'PUT', body: JSON.stringify({ name: editing.name }) })
+      setEditing(null); await refresh(); toast.success('已保存')
+    } catch (e) { toast.error(e instanceof Error ? e.message : '保存失败') }
+    finally { setRenaming(false) }
   }
 
   return (
     <div>
       <div className="mb-4 flex gap-2">
         <Input placeholder="新分类名称" value={name} onChange={(e) => setName(e.target.value)} className="h-9 max-w-56" onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <Button size="sm" onClick={add}><Plus className="mr-1 h-3.5 w-3.5" />添加</Button>
+        <Button size="sm" onClick={add} disabled={adding}><Plus className="mr-1 h-3.5 w-3.5" />{adding ? '添加中…' : '添加'}</Button>
       </div>
+      {categories === undefined && <p className="py-6 text-center text-sm text-neutral-400">分类加载中…</p>}
       <div className="space-y-1">
         {categories?.map((c) => (
           <div key={c.id} className="flex items-center gap-2 rounded border px-3 py-2 text-sm">
@@ -413,6 +500,7 @@ export function CategoriesTab() {
               <Pencil className="h-3 w-3" />
             </Button>
             <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-500" onClick={async () => {
+              if (!confirm(`确认删除分类「${c.name}」？`)) return
               try { await api(`/api/categories/${c.id}`, { method: 'DELETE' }); await refresh(); toast.success('已删除') }
               catch (e) { toast.error(e instanceof Error ? e.message : '删除失败') }
             }}>
@@ -424,17 +512,24 @@ export function CategoriesTab() {
 
       {editing && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setEditing(null)}>
-          <div className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="重命名分类"
+            className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h4 className="mb-3 text-sm font-semibold">重命名分类</h4>
-            <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className="mb-3" />
+            <Input
+              autoFocus
+              value={editing.name}
+              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveRename() }}
+              className="mb-3"
+            />
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setEditing(null)}>取消</Button>
-              <Button onClick={async () => {
-                try {
-                  await api(`/api/categories/${editing.id}`, { method: 'PUT', body: JSON.stringify({ name: editing.name }) })
-                  setEditing(null); await refresh(); toast.success('已保存')
-                } catch (e) { toast.error(e instanceof Error ? e.message : '保存失败') }
-              }}>保存</Button>
+              <Button variant="outline" disabled={renaming} onClick={() => setEditing(null)}>取消</Button>
+              <Button onClick={saveRename} disabled={renaming}>{renaming ? '保存中…' : '保存'}</Button>
             </div>
           </div>
         </div>
@@ -460,8 +555,10 @@ const SEO_FIELDS: { key: keyof SeoConfig; label: string; hint?: string; textarea
   { key: 'chapterDescription', label: '章节页描述', textarea: true },
   { key: 'chapterKeywords', label: '章节页关键词' },
   { key: 'searchTitle', label: '搜索页标题', hint: '变量 {query}' },
+  { key: 'searchDescription', label: '搜索页描述', hint: '变量 {query}', textarea: true },
   { key: 'pseoTitle', label: 'PSEO 标题', hint: '变量 {keyword} {count}' },
   { key: 'pseoDescription', label: 'PSEO 描述', textarea: true },
+  { key: 'pseoKeywords', label: 'PSEO 关键词', hint: '变量 {keyword}' },
 ]
 
 export function SeoTab() {
@@ -509,117 +606,6 @@ export function SeoTab() {
       <div className="sticky bottom-0 mt-4 flex justify-end gap-2 border-t bg-white py-3">
         <Button onClick={save} disabled={saving}>{saving ? '保存中…' : '保存 SEO 配置'}</Button>
       </div>
-    </div>
-  )
-}
-
-// ==================== 采集中心 ====================
-
-interface StrategyInfo { name: string; description: string; available: boolean }
-
-function ScraperTab() {
-  const qc = useQueryClient()
-  const [testUrl, setTestUrl] = useState('https://example.com/')
-  const [ruleId, setRuleId] = useState<string>('')
-  const [result, setResult] = useState<string>('')
-  const [running, setRunning] = useState(false)
-
-  const { data: strategies, isLoading: sLoading } = useQuery({
-    queryKey: ['scraper-strategies'],
-    queryFn: () => api<{ strategies: StrategyInfo[] }>('/api/scrape?proxy=strategies'),
-    refetchInterval: 30_000,
-  })
-  const { data: rules } = useQuery({ queryKey: ['scrape-rules'], queryFn: () => api<ScrapeRuleDto[]>('/api/scrape-rules') })
-
-  const seed = async () => {
-    try {
-      await api('/api/scrape-rules', { method: 'PUT', body: JSON.stringify({ seed: true }) })
-      await qc.invalidateQueries({ queryKey: ['scrape-rules'] })
-      toast.success('内置规则模板已入库')
-    } catch (e) { toast.error(e instanceof Error ? e.message : '操作失败') }
-  }
-
-  const runTest = async () => {
-    const rule = rules?.find((r) => String(r.id) === ruleId)
-    setRunning(true)
-    setResult('')
-    try {
-      const res = await api<Json>('/api/scrape?proxy=test', {
-        method: 'POST',
-        body: JSON.stringify({
-          url: testUrl,
-          strategy: undefined,
-          rule: rule ? { listRule: rule.listRule, bookRule: rule.bookRule, chapterRule: rule.chapterRule } : {},
-          charset: rule?.charset,
-        }),
-      })
-      setResult(JSON.stringify(res, null, 2).slice(0, 6000))
-    } catch (e) {
-      setResult('测试失败：' + (e instanceof Error ? e.message : '未知错误'))
-    } finally {
-      setRunning(false)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <section className="rounded-lg border p-4">
-        <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><RefreshCw className="h-3.5 w-3.5" />抓取策略（scraper-service :3030）</h4>
-        {sLoading && <p className="text-xs text-neutral-400">检测中…</p>}
-        <div className="space-y-1.5">
-          {strategies?.strategies.map((s) => (
-            <div key={s.name} className="flex items-start gap-2 text-xs">
-              <Badge variant={s.available ? 'default' : 'secondary'} className="shrink-0">{s.available ? '可用' : '未启用'}</Badge>
-              <span className="font-medium">{s.name}</span>
-              <span className="text-neutral-500">{s.description}</span>
-            </div>
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-neutral-400">
-          合规：默认 ≥1.2s/域名限速、robots 提示、仅公开页面；不含验证码破解/登录伪造。技术选型详见 docs/anti-anti-crawl.md
-        </p>
-      </section>
-
-      <section className="rounded-lg border p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <h4 className="text-sm font-semibold">采集规则（{rules?.length ?? 0}）</h4>
-          <Button size="sm" variant="outline" onClick={seed}>一键内置站点模板</Button>
-        </div>
-        <div className="space-y-1">
-          {rules?.map((r) => (
-            <div key={r.id} className="flex items-center gap-2 rounded border px-3 py-1.5 text-xs">
-              <span className="flex-1 truncate font-medium">{r.name}</span>
-              <span className="text-neutral-400">{r.siteUrl}</span>
-              <Badge variant="outline">{r.charset}</Badge>
-              <Button size="sm" variant="ghost" className="h-5 px-1 text-red-500" onClick={async () => {
-                try {
-                  await api(`/api/scrape-rules?id=${r.id}`, { method: 'DELETE' })
-                  await qc.invalidateQueries({ queryKey: ['scrape-rules'] })
-                  toast.success('规则已删除')
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : '删除失败')
-                }
-              }}><Trash2 className="h-3 w-3" /></Button>
-            </div>
-          ))}
-          {rules?.length === 0 && <p className="py-3 text-center text-xs text-neutral-400">暂无规则，点击上方按钮入库模板</p>}
-        </div>
-      </section>
-
-      <section className="rounded-lg border p-4">
-        <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold"><SearchCode className="h-3.5 w-3.5" />规则测试台</h4>
-        <div className="flex flex-wrap gap-2">
-          <Input value={testUrl} onChange={(e) => setTestUrl(e.target.value)} placeholder="目标 URL" className="h-8 min-w-56 flex-1" />
-          <select value={ruleId} onChange={(e) => setRuleId(e.target.value)} className="h-8 rounded-md border border-neutral-200 px-2 text-xs">
-            <option value="">不使用规则（仅基础信息）</option>
-            {rules?.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          <Button size="sm" onClick={runTest} disabled={running}>{running ? '采集中…' : '测试'}</Button>
-        </div>
-        {result && (
-          <pre className="mt-3 max-h-72 overflow-auto rounded bg-neutral-950 p-3 text-[11px] leading-relaxed text-emerald-300">{result}</pre>
-        )}
-      </section>
     </div>
   )
 }
@@ -685,7 +671,17 @@ export function PseoTab() {
               <Badge variant="outline" className="shrink-0">{r.source}</Badge>
               <Badge variant={r.status === 'generated' ? 'default' : 'secondary'} className="shrink-0">{r.status}</Badge>
               <span className="shrink-0 text-neutral-400">{timeAgo(r.updatedAt)}</span>
-              <Button size="sm" variant="ghost" className="h-5 shrink-0 px-1" onClick={() => navigate({ name: 'pseo', keyword: r.keyword })}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-5 shrink-0 px-1"
+                onClick={() => {
+                  // 后台是 hash 路由 #/admin：仅 navigate() 改 store 不会切换渲染，
+                  // 需同时清掉 hash 退回前台，ThemeRenderer 才会渲染该 PSEO 聚合页
+                  navigate({ name: 'pseo', keyword: r.keyword })
+                  window.location.hash = ''
+                }}
+              >
                 预览
               </Button>
               <Button size="sm" variant="ghost" className="h-5 shrink-0 px-1 text-red-500" onClick={async () => {
@@ -721,6 +717,8 @@ export function SettingsTab() {
   const setNotice = setNoticeDraft
 
   const save = async () => {
+    // 站点名是全站页头/TDK 的根变量：留空时服务端会静默忽略导致“已保存”假象，这里前置拦截
+    if (!siteName.trim()) return toast.error('站点名称不能为空')
     setSaving(true)
     try {
       await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ siteName, notice }) })

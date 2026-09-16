@@ -102,7 +102,17 @@ export interface RobotsInfo {
 }
 
 const ROBOTS_TTL_MS = 10 * 60 * 1000
+const ROBOTS_CACHE_MAX = 256 // 缓存条目上限，防止长期运行下无界增长
 const robotsCache = new Map<string, { at: number; info: RobotsInfo }>()
+
+/** 超过上限时淘汰最早的条目（Map 迭代序即插入序） */
+function cacheSetCapped<K, V>(map: Map<K, V>, max: number, key: K, value: V): void {
+  if (map.size >= max) {
+    const oldest = map.keys().next()
+    if (!oldest.done) map.delete(oldest.value)
+  }
+  map.set(key, value)
+}
 
 interface RobotsGroup {
   agents: string[]
@@ -192,18 +202,48 @@ export async function checkRobots(targetUrl: string, agents: string[] = ['novel-
   }
 
   const warnings: string[] = []
-  let info: RobotsInfo
+  let info: RobotsInfo | null = null
   try {
-    await acquireDomainSlot(origin.replace(/^https?:\/\//, ''))
-    const res = await fetch(`${origin}/robots.txt`, {
-      headers: { 'user-agent': 'novel-admin-scraper/1.0 (+robots-check)', accept: 'text/plain,*/*' },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!res.ok) {
+    // 限速槽位 key 与策略层一致（含端口，见 hostOf），避免同源不同 key 绕过限速
+    const slotHost = new URL(targetUrl).host
+    await acquireDomainSlot(slotHost)
+    // robots.txt 请求也必须走 redirect:'manual' + 逐跳 SSRF 校验：
+    // 否则恶意站点可用 robots.txt 302 让本服务对内网地址发起 GET（SSRF）
+    let robotsUrl = `${origin}/robots.txt`
+    let res: Response | null = null
+    for (let hop = 0; hop <= 3; hop++) {
+      const hopCheck = await assertHostPublic(new URL(robotsUrl).hostname)
+      if (!hopCheck.ok) {
+        info = { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
+        warnings.push(`robots.txt 获取目标被 SSRF 防护拒绝（${hopCheck.reason ?? '未知原因'}），未做 robots 校验`)
+        break
+      }
+      const r = await fetch(robotsUrl, {
+        headers: { 'user-agent': 'novel-admin-scraper/1.0 (+robots-check)', accept: 'text/plain,*/*' },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(5000),
+      })
+      if ([301, 302, 303, 307, 308].includes(r.status)) {
+        const loc = r.headers.get('location')
+        r.body?.cancel().catch(() => {})
+        if (!loc) {
+          info = { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
+          warnings.push(`robots.txt 返回 ${r.status} 重定向但无 Location，未做 robots 校验`)
+          break
+        }
+        robotsUrl = new URL(loc, robotsUrl).toString()
+        continue
+      }
+      res = r
+      break
+    }
+    if (!info && !res) {
+      info = { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
+      warnings.push('robots.txt 重定向超过 3 跳，未做 robots 校验，请自行确认目标站允许抓取')
+    } else if (!info && res && !res.ok) {
       info = { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
       if (res.status !== 404) warnings.push(`robots.txt 获取失败（HTTP ${res.status}），未做 robots 校验，请自行确认目标站允许抓取`)
-    } else {
+    } else if (!info && res) {
       const text = await res.text()
       const groups = parseRobots(text)
       const group = pickGroup(groups, agents)
@@ -219,8 +259,9 @@ export async function checkRobots(targetUrl: string, agents: string[] = ['novel-
     info = { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
     warnings.push(`robots.txt 获取异常（${e instanceof Error ? e.message : 'unknown'}），未做 robots 校验，请自行确认目标站允许抓取`)
   }
+  info ??= { checked: false, disallowed: false, crawlDelayMs: null, warnings: [] }
 
-  robotsCache.set(origin, { at: Date.now(), info })
+  cacheSetCapped(robotsCache, ROBOTS_CACHE_MAX, origin, { at: Date.now(), info })
   return { ...info, warnings }
 }
 
@@ -364,6 +405,7 @@ export function isPrivateHost(hostname: string): boolean {
 // ==================== DNS 尽力校验 ====================
 
 const DNS_CACHE_TTL_MS = 5 * 60 * 1000
+const DNS_CACHE_MAX = 512
 const dnsCache = new Map<string, { at: number; privateHit: boolean; warning?: string }>()
 
 export interface HostCheckResult {
@@ -421,16 +463,16 @@ export async function assertHostPublic(hostname: string): Promise<HostCheckResul
     }
     const entry = { at: Date.now(), privateHit, warning: undefined as string | undefined }
     if (privateHit) {
-      dnsCache.set(h, entry)
+      cacheSetCapped(dnsCache, DNS_CACHE_MAX, h, entry)
       return { ok: false, reason: `域名 ${h} 解析到内网地址 ${hitLabel}（DNS 层 SSRF 防护）` }
     }
     if (addrs.length === 0) entry.warning = `域名 ${h} DNS 解析结果为空`
-    dnsCache.set(h, entry)
+    cacheSetCapped(dnsCache, DNS_CACHE_MAX, h, entry)
     return { ok: true, warning: entry.warning }
   } catch (e) {
     // fail-open：DNS 查询失败时放行，后续 fetch 会自然暴露连接错误
     const warning = `DNS 校验失败（${e instanceof Error ? e.message : 'unknown'}），已放行由请求层兜底`
-    dnsCache.set(h, { at: Date.now(), privateHit: false, warning })
+    cacheSetCapped(dnsCache, DNS_CACHE_MAX, h, { at: Date.now(), privateHit: false, warning })
     return { ok: true, warning }
   }
 }

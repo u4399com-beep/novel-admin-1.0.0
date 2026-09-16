@@ -394,7 +394,7 @@ export function CategoryView({
 export function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
   const { data: novel, isLoading, isError, refetch } = useNovel(novelId)
   const sideRank = useNovels({ sort: 'clicks', pageSize: 20 })
-  const [shelf, setShelf] = useState(false)
+  const [shelf, setShelf] = useState(() => loadShelf().includes(novelId))
   const [votes, setVotes] = useState(0)
   const [tab, setTab] = useState<'toc' | 'intro' | 'review'>('toc')
   const [sideTab, setSideTab] = useState<'hot' | 'finished'>('hot')
@@ -709,7 +709,10 @@ export function TocView({ navigate, novelId }: ViewProps & { novelId: number }) 
   const { data: novel, isError, refetch } = useNovel(novelId)
   const { data: chapters, isLoading, isError: chError, refetch: refetchCh } = useChapters(novelId)
   const [asc, setAsc] = useState(true)
-  const [bookmark, setBookmark] = useState<{ chapterId: number; title: string } | null>(null)
+  /* 视图仅客户端挂载，惰性读 storage 恢复已存书签 */
+  const [bookmark, setBookmark] = useState<{ chapterId: number; title: string } | null>(
+    () => loadBookmarks()[String(novelId)] ?? null,
+  )
 
   const [bmNovelId, setBmNovelId] = useState(novelId)
 
@@ -1107,10 +1110,16 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
 // ==================== Search ====================
 
 export function SearchView({ navigate, query }: ViewProps & { query: string }) {
+  /* key=query：关键词变化时重挂载，重置输入框与页码 */
+  return <SearchPanel key={query} navigate={navigate} query={query} />
+}
+
+function SearchPanel({ navigate, query }: { navigate: (v: ThemeView) => void; query: string }) {
   const [input, setInput] = useState(query)
+  const [page, setPage] = useState(1)
   const { data: categories } = useCategories()
   const { data, isLoading, isError, refetch } = useNovels(
-    query ? { q: query, pageSize: 20 } : { sort: 'clicks', pageSize: 12 },
+    query ? { q: query, page, pageSize: 20 } : { sort: 'clicks', pageSize: 12 },
   )
 
   const submit = (q: string) => navigate({ name: 'search', query: q.trim() })
@@ -1153,11 +1162,14 @@ export function SearchView({ navigate, query }: ViewProps & { query: string }) {
           ) : isLoading ? (
             <GridSkeleton count={12} />
           ) : data && data.list.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-              {data.list.map((n) => (
-                <CoverCard key={n.id} novel={n} onClick={() => navigate({ name: 'book', novelId: n.id })} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                {data.list.map((n) => (
+                  <CoverCard key={n.id} novel={n} onClick={() => navigate({ name: 'book', novelId: n.id })} />
+                ))}
+              </div>
+              {query && <Pager page={data.page} totalPages={data.totalPages} onGo={setPage} />}
+            </>
           ) : (
             <div className="py-10 text-center">
               <SearchX className="mx-auto h-9 w-9 text-[#bbb]" />

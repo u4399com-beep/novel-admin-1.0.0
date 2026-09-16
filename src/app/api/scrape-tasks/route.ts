@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { triggerScrapeTask } from '@/lib/scrape-worker'
 
@@ -57,7 +58,29 @@ export async function GET(req: NextRequest) {
       select: LIST_SELECT,
     }),
   ])
-  return NextResponse.json({ list, total, page, pageSize })
+
+  // chaptersDone/chaptersTotal 用原生 SQL 透出：长期运行的进程可能持有 schema 变更前的
+  // Prisma Client（不重启无法刷新），类型化 select 会报 Unknown field；原生查询不依赖 dmmf
+  const progressRows =
+    list.length > 0
+      ? await db
+          .$queryRaw<{ id: number; chaptersDone: number; chaptersTotal: number }[]>`
+            SELECT "id", "chaptersDone", "chaptersTotal" FROM "ScrapeTask" WHERE "id" IN (${Prisma.join(list.map((t) => t.id))})
+          `
+          .catch(() => [] as { id: number; chaptersDone: number; chaptersTotal: number }[])
+      : []
+  const progressById = new Map(progressRows.map((r) => [Number(r.id), r]))
+
+  return NextResponse.json({
+    list: list.map((t) => ({
+      ...t,
+      chaptersDone: progressById.get(t.id)?.chaptersDone ?? 0,
+      chaptersTotal: progressById.get(t.id)?.chaptersTotal ?? 0,
+    })),
+    total,
+    page,
+    pageSize,
+  })
 }
 
 // POST /api/scrape-tasks  { mode: 'single'|'list', targetUrl, ruleId?, pages? }

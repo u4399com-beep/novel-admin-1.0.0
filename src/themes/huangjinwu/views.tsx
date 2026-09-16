@@ -361,7 +361,16 @@ export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
             </button>
           }
         />
-        <ChapterPills chapters={[...novel.chapters].reverse().slice(0, 12)} navigate={navigate} />
+        {chapters.isPending ? (
+          <PillSkeleton count={12} />
+        ) : chapters.isError ? (
+          <ErrorBox msg="章节加载失败" onRetry={() => chapters.refetch()} />
+        ) : fullChapters.length === 0 ? (
+          <EmptyBox text="暂无章节" />
+        ) : (
+          /* 全量章节末 12 条倒序 = 最新 12 章（新→旧）；详情接口 chapters 是最早 12 章，不可直接用 */
+          <ChapterPills chapters={[...fullChapters].slice(-12).reverse()} navigate={navigate} />
+        )}
       </section>
 
       {/* 章节目录（多列胶囊栅格内嵌） */}

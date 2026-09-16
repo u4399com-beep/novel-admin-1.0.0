@@ -4,6 +4,9 @@
  * - 模块级 running Set 防止同一任务并发重复执行
  * - single 模式：书页 URL → 提取书籍信息 + 章节链接 → upsert 书籍 → 逐章抓取入库
  * - list 模式：列表页 URL → 提取书籍条目（支持 ?page=k / /page/k 翻页变体）→ 逐本按 single 流程入库
+ * - 进度语义：single 模式 done/total=章节（唯一一本书的章节进度）；list 模式 done/total=书
+ *   （主口径，done=已完成书数），章节进度单独记录在 chaptersDone/chaptersTotal，
+ *   保证任何时刻 done ≤ total
  * - 协作式取消：每个关键步骤前读一次 DB status，canceled 即停（PATCH cancel 置状态）
  * - 任何异常都不外抛到进程级；最终状态 success / partial / failed / canceled
  *
@@ -117,13 +120,27 @@ class Run {
     return this.lines.join('\n')
   }
 
-  /** 写回日志与进度字段；任务记录被删除时返回 false（调用方应停止执行） */
+  /** 写回日志与进度字段；任务记录被删除时返回 false（调用方应停止执行）
+   *
+   * chaptersDone/chaptersTotal 走 $executeRaw 兜底：长期运行的 dev 进程可能仍持有
+   * schema 变更前生成的 Prisma Client（globalThis 单例 + require 缓存，不重启无法刷新），
+   * 类型化 update 会报 Unknown field；原生 SQL 不依赖 client 的 dmmf，新旧 client 下均正确。
+   * （SQLite 无 @map，列名与字段名一致）
+   */
   async flush(extra?: Record<string, unknown>): Promise<boolean> {
     try {
+      const { chaptersDone, chaptersTotal, ...rest } = extra ?? {}
       await db.scrapeTask.update({
         where: { id: this.taskId },
-        data: { log: this.logText(), ...(extra ?? {}) },
+        data: { log: this.logText(), ...(rest as Record<string, unknown>) },
       })
+      if (chaptersDone !== undefined || chaptersTotal !== undefined) {
+        await db.$executeRaw`
+          UPDATE "ScrapeTask"
+          SET "chaptersDone" = ${Number(chaptersDone ?? 0)}, "chaptersTotal" = ${Number(chaptersTotal ?? 0)}
+          WHERE "id" = ${this.taskId}
+        `
+      }
       return true
     } catch {
       return false
@@ -285,14 +302,16 @@ async function fetchListPage(run: Run, url: string, rule: LoadedRule): Promise<L
  * 抓取一个书页并入库（含逐章抓取）。
  * - 新书 created+1 / 已有书 updated+1（按 title+author 查重，结果记入 run.counters）
  * - 章节 idx 从现有最大值+1 递增，按章节标题去重，单次上限 MAX_CHAPTERS_PER_BOOK
- * - opts.trackTotal=true 时把章节总数写入 task.total（single 模式的进度分母）
- * - opts.doneOffset：任务级已完成的进度单元数（list 模式为前面已处理的书数）
+ * - 进度写入：
+ *   - trackTotal=true（single 模式）：章节总数写入 task.total，done 随章节递增（done/total=章节，主口径）
+ *   - trackTotal=false（list 模式）：done/total 由调用方按「书」维护，本函数不碰；
+ *     章节进度累加进共享的 opts.chapterProgress（chaptersDone/chaptersTotal）并随写盘刷出
  */
 async function processBook(
   run: Run,
   bookUrl: string,
   rule: LoadedRule,
-  opts: { trackTotal: boolean; doneOffset: number },
+  opts: { trackTotal: boolean; chapterProgress?: { done: number; total: number } },
 ): Promise<BookOutcome> {
   const canceledOutcome = (message: string, chapters = 0, failedChapters = 0): BookOutcome => ({
     ok: false,
@@ -325,16 +344,48 @@ async function processBook(
     return { ok: false, canceled: false, chapters: 0, failedChapters: 0, message: msg }
   }
 
-  // ---- 书籍 upsert（title+author 查重，先 trim 规范化再截断）----
+  // ---- 书籍 upsert（title+author 查重，先 trim 规范化再截断；DB 层 @@unique([title,author]) 兜底并发）----
   const title = (book.title || '').trim().slice(0, 200)
   if (!title) {
     return { ok: false, canceled: false, chapters: 0, failedChapters: 0, message: '书籍标题为空，入库中止' }
   }
   const author = ((book.author || '').trim() || '佚名').slice(0, 100)
-  const existing = await db.novel.findFirst({ where: { title, author }, select: { id: true } }).catch(() => null)
+
   let novelId: number
+  let createdNew = false
+  const existing = await db.novel.findFirst({ where: { title, author }, select: { id: true } }).catch(() => null)
   if (existing) {
     novelId = existing.id
+  } else {
+    try {
+      const row = await db.novel.create({
+        data: {
+          title,
+          author,
+          description: book.description.slice(0, 2000),
+          cover: COVER_TOKENS[Math.floor(Math.random() * COVER_TOKENS.length)],
+          categoryId,
+          status: mapNovelStatus(book.status),
+        },
+      })
+      novelId = row.id
+      createdNew = true
+    } catch (e) {
+      if (!isUniqueConflict(e)) {
+        run.log(`书籍入库失败: ${e instanceof Error ? e.message.slice(0, 120) : '未知错误'}`)
+        return canceledOutcome('书籍入库失败')
+      }
+      // 并发另一任务已抢先创建同一本书（撞 @@unique([title,author])）→ 回读命中查重，走更新路径
+      const winner = await db.novel.findFirst({ where: { title, author }, select: { id: true } }).catch(() => null)
+      if (!winner) return canceledOutcome('书籍入库失败（并发冲突后未找到记录）')
+      novelId = winner.id
+      run.log(`并发入库冲突，命中已有书籍 #${novelId}`)
+    }
+  }
+  if (createdNew) {
+    run.counters.created++
+    run.log(`新建书籍 #${novelId}《${title.slice(0, 30)}》`)
+  } else {
     const okUpd = await db.novel
       .update({
         where: { id: novelId },
@@ -349,23 +400,6 @@ async function processBook(
     if (!okUpd) return canceledOutcome('书籍更新失败（记录可能已被删除）')
     run.counters.updated++
     run.log(`书籍已存在，更新信息（#${novelId}）`)
-  } else {
-    const created = await db.novel
-      .create({
-        data: {
-          title,
-          author,
-          description: book.description.slice(0, 2000),
-          cover: COVER_TOKENS[Math.floor(Math.random() * COVER_TOKENS.length)],
-          categoryId,
-          status: mapNovelStatus(book.status),
-        },
-      })
-      .catch(() => null)
-    if (!created) return canceledOutcome('书籍入库失败')
-    novelId = created.id
-    run.counters.created++
-    run.log(`新建书籍 #${novelId}《${title.slice(0, 30)}》`)
   }
 
   // ---- 章节列表准备 ----
@@ -379,7 +413,22 @@ async function processBook(
     refs.length = MAX_CHAPTERS_PER_BOOK
     capped = true
   }
-  if (opts.trackTotal) await run.flush({ total: refs.length })
+  if (opts.trackTotal) {
+    // single 模式：进度主口径=本章节数，total 为分母
+    await run.flush({ total: refs.length })
+  } else if (opts.chapterProgress) {
+    // list 模式：章节进度独立于 done/total（书）累计
+    opts.chapterProgress.total += refs.length
+  }
+
+  /** 每处理完一个章节后要刷出的进度字段（不含任务级成果计数） */
+  const progressFields = (): Record<string, number> =>
+    opts.trackTotal
+      ? { done }
+      : {
+          chaptersDone: opts.chapterProgress?.done ?? 0,
+          chaptersTotal: opts.chapterProgress?.total ?? 0,
+        }
 
   const existingChapters = await db.chapter
     .findMany({ where: { novelId }, select: { title: true } })
@@ -399,15 +448,16 @@ async function processBook(
     // 关键步骤前的协作式取消检查
     if (!(await alive())) {
       run.log('任务已取消，停止章节抓取')
-      await run.flush({ done: opts.doneOffset + done, chapters: run.counters.chapters })
+      await run.flush({ ...progressFields(), chapters: run.counters.chapters })
       return canceledOutcome('任务已取消', chaptersStored, failedChapters)
     }
 
     const refTitle = (ref.title || '').slice(0, 200)
     if (refTitle && existingTitles.has(refTitle)) {
       done++
+      if (opts.chapterProgress) opts.chapterProgress.done++
       run.log(`章节「${refTitle.slice(0, 30)}」已存在，跳过`)
-      if (!(await run.flush({ done: opts.doneOffset + done }))) return canceledOutcome('任务记录已删除')
+      if (!(await run.flush(progressFields()))) return canceledOutcome('任务记录已删除')
       continue
     }
 
@@ -423,8 +473,9 @@ async function processBook(
     if (!data || !content.trim()) {
       failedChapters++
       done++
+      if (opts.chapterProgress) opts.chapterProgress.done++
       run.log(`章节抓取失败: ${ch.ok ? '正文为空' : ch.error}`)
-      if (!(await run.flush({ done: opts.doneOffset + done, chapters: run.counters.chapters })))
+      if (!(await run.flush({ ...progressFields(), chapters: run.counters.chapters })))
         return canceledOutcome('任务记录已删除')
       continue
     }
@@ -455,7 +506,8 @@ async function processBook(
       failedChapters++
     }
     done++
-    if (!(await run.flush({ done: opts.doneOffset + done, chapters: run.counters.chapters })))
+    if (opts.chapterProgress) opts.chapterProgress.done++
+    if (!(await run.flush({ ...progressFields(), chapters: run.counters.chapters })))
       return canceledOutcome('任务记录已删除')
   }
 
@@ -487,7 +539,7 @@ async function processBook(
 // ==================== 两种模式 ====================
 
 async function runSingle(run: Run, task: TaskRecord, rule: LoadedRule): Promise<void> {
-  const outcome = await processBook(run, task.targetUrl, rule, { trackTotal: true, doneOffset: 0 })
+  const outcome = await processBook(run, task.targetUrl, rule, { trackTotal: true })
   if (outcome.canceled) {
     run.log('任务已取消')
     await finalize(run, 'canceled', '任务已取消')
@@ -564,6 +616,8 @@ async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<vo
   let okBooks = 0
   let failBooks = 0
   let canceledRun = false
+  // 任务级章节进度（跨书累计）：list 模式 done/total 主口径是「书」，章节进度走 chaptersDone/chaptersTotal
+  const chapterProgress = { done: 0, total: 0 }
   for (let i = 0; i < total; i++) {
     const item = merged[i]
     if (await isCanceled(run.taskId)) {
@@ -571,7 +625,7 @@ async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<vo
       break
     }
     run.log(`━━ (${i + 1}/${total}) 《${(item.title || '未命名').slice(0, 30)}》`)
-    const outcome = await processBook(run, item.url as string, rule, { trackTotal: false, doneOffset: doneBooks })
+    const outcome = await processBook(run, item.url as string, rule, { trackTotal: false, chapterProgress })
     doneBooks++
     if (outcome.canceled) {
       canceledRun = true
@@ -581,6 +635,8 @@ async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<vo
     else failBooks++
     await run.flush({
       done: doneBooks,
+      chaptersDone: chapterProgress.done,
+      chaptersTotal: chapterProgress.total,
       created: run.counters.created,
       updated: run.counters.updated,
       chapters: run.counters.chapters,

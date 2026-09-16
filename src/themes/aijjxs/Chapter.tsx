@@ -73,9 +73,11 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
     if (ch.data) markRead('aj-read', ch.data.id)
   }, [ch.data])
 
-  /* ← → 键盘翻章 */
+  /* ← → 键盘翻章（焦点在输入框/下拉/按钮上时不触发，避免与表单控件冲突） */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.isContentEditable)) return
       if (e.key === 'ArrowLeft' && ch.data?.prevId) navigate({ name: 'chapter', chapterId: ch.data.prevId })
       if (e.key === 'ArrowRight' && ch.data?.nextId) navigate({ name: 'chapter', chapterId: ch.data.nextId })
     }

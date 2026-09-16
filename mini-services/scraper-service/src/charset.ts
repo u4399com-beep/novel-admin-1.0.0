@@ -1,7 +1,7 @@
 /**
  * 字符集检测与解码。
  * 优先级（对齐 WHATWG 编码嗅探，经审查确认）：
- *   请求强制指定 > BOM 嗅探 > HTTP Content-Type > HTML meta charset > UTF-8 字节嗅探 > GBK 兜底 > latin1 透传。
+ *   请求强制指定 > BOM 嗅探 > HTTP Content-Type > HTML meta charset > UTF-8 字节嗅探 > GB18030 兜底 > latin1 透传。
  * 注：BOM 位于 HTTP 头之前是 WHATWG 标准行为 —— BOM 是文件自身的强证据；
  * 若按"头 → meta → BOM"顺序，服务器误报 charset=gbk 的 UTF-8/UTF-16 页面会先被错误解码成乱码。
  * 中文小说站大量使用 GBK/GB2312/GB18030/BIG5，统一用 iconv-lite 解码。
@@ -40,6 +40,11 @@ const ALIAS: Record<string, string> = {
   chinese: 'gbk',
   gbk2312: 'gbk',
   'x-gbk': 'gbk',
+  // GB18030 是 GBK 的官方超集，iconv-lite 直接支持；显式别名防止被误标准化为 gbk
+  gb18030: 'gb18030',
+  'gb18030-2000': 'gb18030',
+  'gb18030-2005': 'gb18030',
+  'gb18030-2022': 'gb18030',
   cp936: 'gbk',
   ms936: 'gbk',
   cp950: 'big5',
@@ -182,13 +187,15 @@ export function decodeHtml(bytes: Uint8Array, opts: DecodeOptions = {}): DecodeR
     }
   }
 
-  // 6) 兜底：GBK（中文小说站最常见的历史编码）；同样接受乱码守卫的约束
-  const gbkText = tryDecode('gbk', 'GBK 兜底', true)
+  // 6) 兜底：GB18030（中文小说站最常见的历史编码）。
+  // GB18030 是 GBK 的严格超集：GBK 字节序列解码结果完全一致（实测验证），
+  // 且能正确处理 GB18030 四字节字符（GBK 会解出乱码），故用 gb18030 而非 gbk。
+  const gbkText = tryDecode('gb18030', 'GB18030 兜底', true)
   if (gbkText !== null) {
     return {
-      encoding: 'GBK',
+      encoding: 'GB18030',
       text: gbkText,
-      warnings: dedupe([...warnings, '未声明编码且非合法 UTF-8，按 GBK 兜底解码（中文站常见情况）']),
+      warnings: dedupe([...warnings, '未声明编码且非合法 UTF-8，按 GB18030 兜底解码（GB18030 兼容 GBK，中文站常见情况）']),
     }
   }
 

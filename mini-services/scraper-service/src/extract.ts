@@ -98,7 +98,7 @@ function firstMatch(scope: Scope, rawSelectors: string[]): Scope | null {
 export function toAbs(href: string | undefined | null, base: string): string | null {
   if (!href) return null
   const h = href.trim()
-  if (!h || /^javascript:/i.test(h) || h === '#') return null
+  if (!h || /^javascript:/i.test(h) || h.startsWith('#')) return null // 空链接/JS 伪协议/纯锚点（同页跳转）均非可采内容链接
   try {
     const u = new URL(h, base)
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
@@ -273,14 +273,17 @@ export function extractList(
   if (itemEls) {
     itemEls.slice(0, MAX_LIST_ITEMS).each((_i, node) => {
       const it = $(node) as Scope
-      const linkEl = firstMatch(it, rule.linkSelector ? splitAlternatives(rule.linkSelector) : ['a[href]'])
+      const linkSels = rule.linkSelector ? splitAlternatives(rule.linkSelector) : ['a[href]']
+      const linkEl = firstMatch(it, linkSels)
       let title = rule.titleSelector ? pickText(it, splitAlternatives(rule.titleSelector)) : ''
       if (!title && linkEl) title = collapse(linkEl.text())
       if (!title && !rule.titleSelector) {
         const anyA = it.find('a').first()
         if (anyA.length) title = collapse(anyA.text())
       }
-      const url = linkEl ? toAbs(linkEl.attr('href'), baseUrl) : null
+      // 链接统一走 pickHref：支持 linkSelector 的 @attr 后缀（如 a@data-url）与备选语义；
+      // 旧实现只读 href 属性，@attr 配置被静默忽略
+      const url = pickHref(it, linkSels, baseUrl)
       const author = rule.authorSelector ? pickText(it, splitAlternatives(rule.authorSelector)) : ''
       const category = rule.categorySelector ? pickText(it, splitAlternatives(rule.categorySelector)) : ''
       if (!title && !url) return
@@ -433,6 +436,9 @@ function extractChapterRefs(
   const refs: BookChapterRef[] = []
   const seen = new Set<string>()
   const selfUrl = toAbs(baseUrl, baseUrl)
+  /** 去锚点后的 URL，用于识别「同一页面的锚点变体」（如 #top 回顶链接）指向当前页 */
+  const stripHash = (u: string): string => u.split('#')[0]
+  const selfUrlNoHash = selfUrl ? stripHash(selfUrl) : ''
   if (linkEls) {
     linkEls.slice(0, MAX_CHAPTER_REFS).each((_i, node) => {
       const a = $(node)
@@ -443,10 +449,11 @@ function extractChapterRefs(
       }
       if (!title) title = collapse(a.text())
       const url = toAbs(a.attr('href'), baseUrl)
-      if (!title && !url) return
+      // 无 URL 的引用无法被采集（下游 worker 也会过滤），直接跳过，避免混入「纯文本伪章节」
+      if (!url) return
       if (title && title.length > 80) return // 明显不是章节链接
-      if (url && url === selfUrl) return // 跳过指向当前页的自链接
-      const key = (url ?? title).split('#')[0] // 去重忽略锚点，避免同章多锚点重复
+      if (stripHash(url) === selfUrlNoHash) return // 跳过指向当前页的自链接（含锚点变体）
+      const key = stripHash(url) // 去重忽略锚点，避免同章多锚点重复
       if (seen.has(key)) return
       seen.add(key)
       refs.push({ title, url })

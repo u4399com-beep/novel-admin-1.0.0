@@ -11,9 +11,9 @@ type Tab = 'info' | 'catalog'
 export default function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
   const { data: novel, isLoading, isError, refetch } = useNovel(novelId)
   const [tab, setTab] = useState<Tab>('info')
-  const { data: allChapters, isLoading: chLoading, isError: chError, refetch: chRefetch } = useChapters(
-    tab === 'catalog' ? novelId : null,
-  )
+  const { data: allChapters, isLoading: chLoading, isError: chError, refetch: chRefetch } = useChapters(novelId)
+  /* 最新 12 章新→旧（全量章节末 12 条倒序）；详情接口的 chapters 是最早 12 章，不可直接用 */
+  const latestChapters = allChapters ? [...allChapters].slice(-12).reverse() : null
 
   if (isLoading) {
     return (
@@ -44,7 +44,6 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
     )
   }
 
-  const latestChapters = [...(novel.chapters ?? [])].reverse().slice(0, 12)
   const lastId = novel.lastChapterId
 
   return (
@@ -130,16 +129,20 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
                 {novel.description || '（暂无简介）'}
               </p>
             </section>
-            {/* 最新章节卡片：居中标题 + 3 列章节（倒序 12 条） */}
+            {/* 最新章节卡片：居中标题 + 3 列章节（最新 12 条，新→旧） */}
             <section className="bg-white">
               <div className="border-b border-[#DDD] py-2.5 text-center text-[15px] font-bold text-[#3E3D43]">
                 最新章节
               </div>
-              {latestChapters.length === 0 ? (
+              {chLoading ? (
+                <RowsSkeleton rows={6} rowH={50} />
+              ) : chError ? (
+                <ErrorBox onRetry={chRefetch} />
+              ) : !latestChapters || latestChapters.length === 0 ? (
                 <Empty text="暂无章节" />
               ) : (
                 <div className="px-2 py-2">
-                  <ChapterGrid chapters={latestChapters} navigate={navigate} ascending={false} />
+                  <ChapterGrid chapters={latestChapters} navigate={navigate} />
                 </div>
               )}
             </section>

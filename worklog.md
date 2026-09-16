@@ -242,3 +242,93 @@ Work Log:
 
 Stage Summary:
 - 独立后台（#/admin hash 路由）+ 采集任务系统（单本/范围）+ 规则编辑器 全部上线并经浏览器与 curl 双重验证
+
+---
+Task ID: 15-a
+Agent: scraper-engine-auditor (超时，成果由主控逐行核验补记)
+Task: 采集引擎+反反爬逐行深度审查增强
+
+Work Log:
+- strategies.ts：挑战页检测升级三层（①Cloudflare/DDoS-Guard/Incapsula/Sucuri/AWS WAF 平台强特征，任意体积、前 32KB 扫描——旧实现只看 <3KB 会漏检大体积拦截页；②极小页 <3KB 挑战专用关键词，移除误报率高的裸词 javascript；③极小页 0 秒 meta-refresh 跳板且正文近空 <80 字符）
+- strategies.ts：UA 与 Sec-CH-UA 版本一致性修复——CHROME_MAJOR 进程启动时从 [124..133] 随机派生，UA/Sec-CH-UA/Edge 全部同源派生，消除「UA 124 但提示头报别的版本」可检测矛盾 + 固定版本指纹
+- strategies.ts：策略间指数退避+jitter（429/5xx 触发，受 55s 硬预算约束：剩余 <3s 不退避、cap=remaining-2500；末策略不退避）
+- strategies.ts：browser 策略 page.content() 加 race 硬上限（1-5s，防策略链预算超支）；Node Playwright resourceType() 方法与 Python 桥接 resource_type 属性兼容判断（旧代码只读属性致 Node 路径拦截永不生效）；render 桥 execFile 超时 +15s→+4s 收敛
+- extract.ts：toAbs 过滤全部 # 锚点伪链接（旧只过滤纯 "#"）；extractList 链接统一走 pickHref，linkSelector 的 @attr 后缀（如 a@data-url）不再被静默忽略
+- charset.ts：GB18030 别名表补全（gb18030/2000/2005/2022）；UTF-8 失败兜底由 GBK 升级为 GB18030（严格超集，四字节字符不再乱码）
+- rate-limit.ts（安全修复）：robots.txt 抓取改 redirect:'manual' + 最多 3 跳逐跳 SSRF 校验——旧实现 redirect:'follow'，恶意站点可用 robots.txt 302 引擎对内网发起 GET；限速槽位 key 与策略层对齐（含端口）；robotsCache 加 256 条上限防无界增长
+- render.py：看门狗 5s→3s 余量，与上层 execFile timeout+4s 保持余量递减关系，保住 55s 预算
+
+Stage Summary:
+- 引擎增强 9 项（检测/指纹/退避/编码/提取）+ 安全修复 2 项（robots SSRF、限速 key）全部经 git diff 逐行核验；实测 example.com 抓取成功、任务状态机正常；合规红线未动（robots warn-only、限速≥1.2s、禁验证码破解）
+
+---
+Task ID: 15-a2
+Agent: scrape-worker-finisher (超时，成果由主控逐行核验补记)
+Task: 采集 worker 进度语义 + Novel 唯一约束 + chapters 竞态补完
+
+Work Log:
+- schema.prisma：Novel 加 @@unique([title, author])（DB 层防并发重复入库）；ScrapeTask 加 chaptersDone/chaptersTotal（章节级副进度）；db:push 成功，存量无重复数据，UNIQUE INDEX Novel_title_author_key 已确认存在
+- scrape-worker.ts：进度语义重构——single 模式 done/total=章节；list 模式 done/total=书（done=已完成书数），章节进度独立累计进 chaptersDone/chaptersTotal，任何时刻 done≤total；并发 upsert 兜底：create 撞 P2002 时回读 winner 走更新路径（命中查重）而非失败
+- scrape-worker.ts：chaptersDone/chaptersTotal 写入用 $executeRaw 兜底（运行中 dev 进程可能持有 schema 变更前 Prisma Client，类型化 update 报 Unknown field；原生 SQL 不依赖 dmmf）
+- scrape-tasks API：列表/详情响应均用原生 SQL 透出 chaptersDone/chaptersTotal（同上理由）；列表用 Prisma.join 批量 IN 查询
+- chapters POST：P2002 捕获 → 读回最大 idx 重试一次（并发同书加章竞态），再失败才 500
+- novels POST：create 捕获 P2002 → 409「同名同作者的书已存在」（不再 500）
+- scrape-rules PUT seed：循环包 $transaction（仅 4 条、远低于 5s 超时），部分失败整体回滚可幂等重试
+
+Stage Summary:
+- 实测：single 任务 example.com/books.toscrape 状态机正常（无规则 failed+日志、有规则 updated=1 命中查重）；list 任务（books.toscrape travel 分类 2 页 11 本）done/total=书口径、chaptersDone/chaptersTotal 独立累计，进度不再 >100%；tsc 0 错误 lint 0 错误
+
+---
+Task ID: 15-b
+Agent: admin-frontend-auditor (超时，成果由主控逐行核验补记)
+Task: 管理后台前端+数据层逐行深度审查修复
+
+Work Log:
+- panels.tsx：ScraperTab 整体移除（与 ScrapeCenter 采集中心重复，去重收敛）；新增 useDialogEscape hook（Esc 关闭，嵌套对话框 capture=true 保证只关最上层）；小说表单 saving 态防重复提交；列表末页删空自愈（仅剩 1 条且 page>1 回退一页）+ 空态「返回第一页」按钮；对话框补 role=dialog/aria-modal/aria-label
+- ScrapeCenter.tsx：规则 URL 前置校验（http/https + URL 格式，与服务端对齐，免一趟无效请求）；启停/删除 busyId 防重复提交；删除加 confirm 确认；任务行类型补 chaptersDone/chaptersTotal，进度条副文案「已采集 N/M 章」；single/list 进度语义对齐 worker 新口径
+- ThemeRenderer.tsx：PSEO 结果卡补 role=link/tabIndex/aria-label + Enter/Space 键盘导航（无障碍）
+
+Stage Summary:
+- 后台交互健壮性 10+ 处修复（防重复提交/Esc 分层/末页自愈/URL 前校验/键盘可达）；ScraperTab 去重减代码；tsc 0 错误 lint 0 错误
+
+---
+Task ID: 15-c
+Agent: themes-auditor (超时，成果由主控逐行核验补记)
+Task: 10 套主题逐行深度审查修复（不破坏 1:1 克隆视觉）
+
+Work Log:
+- 「最新章节」显示最早章节的错位bug再修 7 处：pilishuwu/ddyueshu/ggd66/huangjinwu/shipsay/101kks/23qb 的 Book/Toc 视图统一改为 useChapters 全量 → slice(-N).reverse()（详情接口 chapters 是最早 12 章，旧 [...novel.chapters].reverse() 仍是早章倒序）
+- 书签/收藏/书架持久化统一修复：pilishuwu 书架（pls-shelf）、ddyueshu 收藏、ggd66 书签（ggd66-marks-按书分组，cap 200 条）等均改 localStorage 惰性初始化 + 事件回调写入，跨视图/跨会话一致；换书 key=novelId 重挂载重读 storage，消除水合不一致
+- 键盘翻章误触防护：pilishuwu/ggd66 等主题 ←/→ 翻章在焦点位于 INPUT/TEXTAREA/SELECT/BUTTON/contentEditable 时不再触发
+- aijjxs Book/Search、23qb、101kks、trxsw 等视图：加载/错误/空三态补齐（章节区骨架+ErrorBox refetch+暂无章节占位）、enabled 短路消除无效请求、章节下拉/跳转序号口径复查
+
+Stage Summary:
+- 13 个主题文件修复约 20 处确凿 bug（数据错位 7、持久化 6、键盘误触 3、三态/请求 4+）；全部为行为修复未动视觉设计；tsc 0 错误 lint 0 错误
+
+---
+Task ID: 16
+Agent: main-orchestrator
+Task: 代码清理整合精简
+
+Work Log:
+- 删除过程产物：.tmp-fake-site.ts、.verify-13b-e2e.sh、.verify-13b.sh、tool-results/（21 个调试转储）、agent-ctx/（2 个子 agent 记录，已并入 worklog）、scripts-tmp/（4 个审查临时脚本）
+- git rm --cached 出库运行时产物：db/custom.db（3.4MB SQLite，fresh clone 走 db:push+seed）、.zscripts/（沙箱运行时脚本，本地保留）
+- .gitignore 追加：.zscripts/、tool-results/、agent-ctx/、scripts-tmp/、.tmp-*、.verify-*、db/*.db、db/*.db-journal
+- 代码去重：panels.tsx 中与 ScrapeCenter 重复的 ScraperTab 整体移除（-276 行级重构含此去重）
+
+Stage Summary:
+- 仓库仅剩项目源码与必要配置；数据库文件与沙箱运行时产物全部出库并加 gitignore 防回归
+
+---
+Task ID: 17
+Agent: main-orchestrator
+Task: 第四批收尾终验 + 推送
+
+Work Log:
+- 终验：bunx tsc --noEmit 0 错误；bun run lint 0 错误；dev.log 无新增运行时报错
+- 浏览器 E2E（agent-browser）：前台渲染/TDK 正确 → 齿轮 → #/admin 七区块 → 采集中心规则列表/新建任务/任务列表（list 任务显示「进度 36% 已采集 39/45 章」双口径）→ 返回站点 → 书页 → 目录 → 第一章（第1章序号正确）→ 键盘 → 翻章（第2章）；console/page errors 全程为空
+- 运行时实测：single 任务章节口径 3/3、list 任务书本口径 6/11 + 章节副进度 54/54；63 本书 0 重复（唯一约束生效）；并发采集防重复入库路径（P2002 回读）已就位
+- 推送 GitHub main（token 仅用于一次性推送 URL，未落盘）
+
+Stage Summary:
+- 第四批全部完成：采集引擎反反爬增强 11 项（含 robots SSRF 安全修复）、worker 进度语义重构、Novel 唯一约束、chapters 竞态修复、后台交互健壮性 10+ 处、主题 bug 约 20 处、仓库清理出库；tsc/lint/browser 三重验证全绿

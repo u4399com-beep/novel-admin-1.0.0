@@ -62,6 +62,8 @@ interface TaskRow {
   status: string
   total: number
   done: number
+  chaptersDone: number
+  chaptersTotal: number
   created: number
   updated: number
   chapters: number
@@ -214,7 +216,17 @@ function RuleDialog({
 
   const save = async () => {
     if (!form.name.trim()) return toast.error('规则名称必填')
-    if (!form.siteUrl.trim()) return toast.error('站点 URL 必填')
+    const url = form.siteUrl.trim()
+    if (!url) return toast.error('站点 URL 必填')
+    // 与服务端 parseSiteUrl 对齐的前置校验：避免明显非法的 URL 走一趟请求才报错
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return toast.error('站点 URL 仅支持 http/https 协议')
+      }
+    } catch {
+      return toast.error('站点 URL 格式不正确')
+    }
     setSaving(true)
     try {
       await api('/api/scrape-rules', {
@@ -348,6 +360,8 @@ function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
   const qc = useQueryClient()
   // undefined=关闭 / null=新建 / 规则对象=编辑
   const [dialogRule, setDialogRule] = useState<ScrapeRuleDto | null | undefined>(undefined)
+  // 启停/删除进行中的规则 id（防重复提交）
+  const [busyId, setBusyId] = useState<number | null>(null)
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-rules'] })
 
@@ -365,6 +379,8 @@ function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
   }
 
   const toggleEnabled = async (r: ScrapeRuleDto, enabled: boolean) => {
+    if (busyId !== null) return
+    setBusyId(r.id)
     try {
       await api('/api/scrape-rules', {
         method: 'PUT',
@@ -384,16 +400,23 @@ function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
       toast.success(`规则「${r.name}」已${enabled ? '启用' : '停用'}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '操作失败')
+    } finally {
+      setBusyId(null)
     }
   }
 
   const remove = async (r: ScrapeRuleDto) => {
+    if (busyId !== null) return
+    if (!confirm(`确认删除规则「${r.name}」？此操作不可恢复。`)) return
+    setBusyId(r.id)
     try {
       await api(`/api/scrape-rules?id=${r.id}`, { method: 'DELETE' })
       await refresh()
       toast.success('规则已删除')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '删除失败')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -436,7 +459,7 @@ function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
                 <Badge variant="outline" className="shrink-0 font-normal">
                   {r.charset}
                 </Badge>
-                <Switch checked={r.enabled} onCheckedChange={(v) => toggleEnabled(r, v)} aria-label={`启用规则 ${r.name}`} />
+                <Switch checked={r.enabled} disabled={busyId === r.id} onCheckedChange={(v) => toggleEnabled(r, v)} aria-label={`启用规则 ${r.name}`} />
                 <Button
                   size="sm"
                   variant="ghost"
@@ -450,6 +473,7 @@ function RulesSection({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
                   size="sm"
                   variant="ghost"
                   className="h-7 px-2 text-red-500 hover:text-red-600"
+                  disabled={busyId === r.id}
                   onClick={() => remove(r)}
                   aria-label={`删除规则 ${r.name}`}
                 >
@@ -686,6 +710,8 @@ function TaskListSection() {
   const qc = useQueryClient()
   const [page, setPage] = useState(1)
   const [logTask, setLogTask] = useState<TaskRow | null>(null)
+  // 取消/删除进行中的任务 id（防重复提交）
+  const [busyId, setBusyId] = useState<number | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['scrape-tasks', page],
@@ -704,6 +730,8 @@ function TaskListSection() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-tasks'] })
 
   const cancel = async (t: TaskRow) => {
+    if (busyId !== null) return
+    setBusyId(t.id)
     try {
       await api(`/api/scrape-tasks/${t.id}`, {
         method: 'PATCH',
@@ -713,16 +741,22 @@ function TaskListSection() {
       toast.success(`已发送取消指令（任务 #${t.id}）`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '取消失败')
+    } finally {
+      setBusyId(null)
     }
   }
 
   const remove = async (t: TaskRow) => {
+    if (busyId !== null) return
+    setBusyId(t.id)
     try {
       await api(`/api/scrape-tasks/${t.id}`, { method: 'DELETE' })
       await refresh()
       toast.success('任务已删除')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '删除失败')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -813,6 +847,12 @@ function TaskListSection() {
                         </span>
                         <Progress value={pct} className="h-1.5 w-16" aria-label={`任务 ${t.id} 进度 ${pct}%`} />
                       </div>
+                      {/* list 模式：主进度按「书」计，章节进度作副标题展示（single 模式主进度即章节，不重复展示） */}
+                      {t.chaptersTotal > 0 && (
+                        <span className="mt-0.5 block text-[10px] tabular-nums text-neutral-400">
+                          已采集 {t.chaptersDone}/{t.chaptersTotal} 章
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden p-2 text-[11px] tabular-nums text-neutral-500 md:table-cell">
                       新建 {t.created} · 更新 {t.updated} · 章节 {t.chapters}
@@ -837,6 +877,7 @@ function TaskListSection() {
                             size="sm"
                             variant="ghost"
                             className="h-7 px-1.5 text-amber-600 hover:text-amber-700"
+                            disabled={busyId === t.id}
                             title="取消任务"
                             aria-label={`取消任务 ${t.id}`}
                             onClick={() => cancel(t)}
@@ -848,6 +889,7 @@ function TaskListSection() {
                           size="sm"
                           variant="ghost"
                           className="h-7 px-1.5 text-red-500 hover:text-red-600"
+                          disabled={busyId === t.id}
                           title="删除任务"
                           aria-label={`删除任务 ${t.id}`}
                           onClick={() => remove(t)}

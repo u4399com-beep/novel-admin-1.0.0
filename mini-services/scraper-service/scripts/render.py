@@ -38,15 +38,16 @@ def main() -> int:
         emit({"status": 0, "html": "", "error": "missing url"})
         return 0
 
-    # 看门狗：timeout + 5s 余量后强制退出并以 JSON 报错，保证上层永不解析失败
+    # 看门狗：timeout + 3s 余量后强制退出并以 JSON 报错，保证上层永不解析失败；
+    # 余量必须小于上层 execFile 超时（timeout + 4s），否则会拖突破策略链 55s 预算
     def _watchdog(_signum, _frame):
-        emit({"status": 0, "html": "", "error": f"render watchdog fired after {timeout_ms + 5000}ms"})
+        emit({"status": 0, "html": "", "error": f"render watchdog fired after {timeout_ms + 3000}ms"})
         sys.stdout.flush()
         sys.exit(0)
 
     try:
         signal.signal(signal.SIGALRM, _watchdog)
-        signal.alarm(max(1, (timeout_ms + 5000) // 1000))
+        signal.alarm(max(1, (timeout_ms + 3000) // 1000))
     except (ValueError, AttributeError, OSError):
         pass  # 非 Unix 环境无 SIGALRM，依赖上层 execFile 超时兜底
 

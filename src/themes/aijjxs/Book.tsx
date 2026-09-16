@@ -43,7 +43,7 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
             {/* 左列：封面 112×148 白底灰边无圆角 */}
             <div>
               <Cover novel={n} className="h-[148px] w-[112px]" rounded="rounded-none" charClass="text-[30px]" />
-              <FavButton novelId={n.id} />
+              <FavButton key={n.id} novelId={n.id} />
             </div>
             {/* 中列：kv 信息 */}
             <div className="min-w-0">
@@ -198,11 +198,37 @@ function Kv({ k, children }: { k: string; children: ReactNode }) {
   )
 }
 
+/* ==================== 收藏（localStorage 持久化） ==================== */
+
+const FAV_KEY = 'aj-favs'
+
+function loadFavs(): number[] {
+  if (typeof window === 'undefined') return []
+  try {
+    return JSON.parse(window.localStorage.getItem(FAV_KEY) ?? '[]') as number[]
+  } catch {
+    return []
+  }
+}
+
+function toggleFav(id: number): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const arr = loadFavs()
+    const has = arr.includes(id)
+    window.localStorage.setItem(FAV_KEY, JSON.stringify(has ? arr.filter((x) => x !== id) : [...arr, id]))
+    return !has
+  } catch {
+    return false
+  }
+}
+
 function FavButton({ novelId }: { novelId: number }) {
-  const [fav, setFav] = useState(false)
+  /* 收藏按书持久化（视图仅客户端挂载，惰性读 storage 无水合风险） */
+  const [fav, setFav] = useState(() => loadFavs().includes(novelId))
   return (
     <button
-      onClick={() => setFav((v) => !v)}
+      onClick={() => setFav(toggleFav(novelId))}
       className={cn(
         'mt-1.5 w-full cursor-pointer rounded-[6px] border py-1 text-center text-xs transition-colors',
         fav

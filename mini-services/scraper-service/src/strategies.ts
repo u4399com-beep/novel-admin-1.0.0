@@ -12,7 +12,10 @@
  *
  * 通用能力：
  * - 所有 fetch 走 redirect:'manual' 逐跳 SSRF 校验（内网/重定向后内网跳转一律拒绝，运行时不支持 manual 时降级为 follow+最终 URL 校验）；
- * - 挑战页检测：响应体 <3KB 且含 verify/challenge/captcha/javascript 关键词 → 标记 blocked，视为失败并继续下一策略；
+ * - 挑战页检测：已知反爬平台强特征（任意体积）+ 极小页启发式（<3KB 且含 verify/challenge/captcha 关键词）
+ *   + 0 秒 meta-refresh 跳板（近空正文）→ 标记 blocked，视为失败并继续下一策略；
+ * - 请求头画像内 UA 与 Sec-CH-UA 版本严格一致（同一常量派生），Chrome 主版本进程启动时随机化避免固定指纹；
+ * - 429/5xx/网络错误在策略间显式指数退避+jitter（受整体预算约束，硬上限 55s 不可突破）；
  * - 每次网络尝试（含策略内部子尝试）都经过域名限速，并结构化记录到 attempts 明细；
  * - 整体时间预算（默认上限 55s），超预算后停止尝试并给出 budget-exhausted 备注。
  *
@@ -30,8 +33,19 @@ import type { AttemptSummary, RobotsSummary, StrategyInfo, SubAttempt } from './
 const MAX_BYTES = 8 * 1024 * 1024
 const MAX_REDIRECT_HOPS = 5
 const CHAIN_BUDGET_MS = 55_000
-const CHROME_UA =
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+/**
+ * Chrome 主版本：进程启动时从近期版本集随机挑选一次，UA 与 Sec-CH-UA 全部由它派生，
+ * 保证两者永远一致（修复「UA 与客户端提示版本不一致」这类可被站点检测的矛盾），
+ * 同时避免所有部署实例共用同一固定版本号形成指纹。进程内保持稳定以保证画像自洽。
+ */
+const CHROME_MAJOR = (() => {
+  const candidates = [124, 125, 126, 127, 128, 129, 130, 131, 132, 133]
+  return candidates[Math.floor(Math.random() * candidates.length)] ?? 124
+})()
+const CHROME_UA = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`
+const CHROME_SEC_CH_UA = `"Chromium";v="${CHROME_MAJOR}", "Google Chrome";v="${CHROME_MAJOR}", "Not-A.Brand";v="99"`
+const EDGE_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36 Edg/${CHROME_MAJOR}.0.0.0`
+const EDGE_SEC_CH_UA = `"Chromium";v="${CHROME_MAJOR}", "Microsoft Edge";v="${CHROME_MAJOR}", "Not-A.Brand";v="99"`
 const RENDER_PY = fileURLToPath(new URL('../scripts/render.py', import.meta.url))
 
 export interface AttemptResult {
@@ -113,7 +127,7 @@ const chromeDesktopProfile: HeaderProfile = {
     return baseHeaders(url, withReferer, CHROME_UA, {
       'cache-control': 'no-cache',
       pragma: 'no-cache',
-      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      'sec-ch-ua': CHROME_SEC_CH_UA,
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"Linux"',
       'sec-fetch-dest': 'document',
@@ -173,9 +187,9 @@ const edgeDesktopProfile: HeaderProfile = {
     return baseHeaders(
       url,
       withReferer,
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+      EDGE_UA,
       {
-        'sec-ch-ua': '"Chromium";v="124", "Microsoft Edge";v="124", "Not-A.Brand";v="99"',
+        'sec-ch-ua': EDGE_SEC_CH_UA,
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"',
         'sec-fetch-dest': 'document',
@@ -196,9 +210,9 @@ const androidChromeProfile: HeaderProfile = {
     return baseHeaders(
       url,
       withReferer,
-      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+      `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Mobile Safari/537.36`,
       {
-        'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        'sec-ch-ua': CHROME_SEC_CH_UA,
         'sec-ch-ua-mobile': '?1',
         'sec-ch-ua-platform': '"Android"',
         'sec-fetch-dest': 'document',
@@ -238,7 +252,7 @@ const googlebotProfile: HeaderProfile = {
     const h = baseHeaders(
       url,
       withReferer,
-      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/124.0.0.0 Safari/537.36',
+      `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`,
       { 'accept-language': ACCEPT_LANG_BOT },
     )
     h.accept = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8'
@@ -284,13 +298,41 @@ export interface RawResponse {
 }
 
 /**
- * 挑战页检测：响应体 <3KB 且含 verify/challenge/captcha/javascript 关键词 → 疑似反爬挑战页。
- * （latin1 嗅探即可 —— 这些关键词均为 ASCII，与页面编码无关）
+ * 已知反爬/拦截平台强特征（任意体积都判定）：
+ * Cloudflare（Just a moment / cf-browser-verification / cf_chl_* / challenge-platform /
+ * Checking your browser / Attention Required）、DDoS-Guard、Incapsula、Sucuri、AWS WAF。
+ * 这些字符串只会出现在拦截页，不会出现在正常章节页，误报风险极低。
+ */
+const CHALLENGE_PLATFORM_RE =
+  /just a moment|cf-browser-verification|cf_chl_|challenge-platform|cdn-cgi\/challenge|checking your browser|attention required|ddos-guard|_Incapsula_Resource|incap_ses_|sucuri_cloudproxy|awswaf|aws waf/i
+/** 极小页启发式关键词（挑战专用词，不含裸词 javascript —— 带 script 标签的合法小页面会误报，实测验证） */
+const CHALLENGE_KEYWORD_RE = /verify|challenge|captcha|安全验证|人机验证|请完成验证/i
+/** 0 秒 meta refresh 跳板（章节页常见的广告跳转/反爬跳板） */
+const META_REFRESH_JUMP_RE = /<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]+content\s*=\s*["']?\s*0(\.0+)?\s*;/i
+
+/**
+ * 挑战页/拦截页检测（三层）：
+ * 1) 反爬平台强特征：前 32KB 内命中即判定（真实挑战页可能超过 3KB，旧实现只看 3KB 会漏检）；
+ * 2) 极小页（<3KB）含挑战专用关键词：旧启发式的保留（去除误报率极高的裸词 javascript）；
+ * 3) 极小页（<3KB）为 0 秒 meta-refresh 跳板且正文近空：典型的「请等待/跳转中」反爬跳板。
+ * （latin1 嗅探即可 —— 这些关键词均为 ASCII，与页面编码无关；中文关键词在 UTF-8/GBK 下字节序列均不含 0x00，latin1 保真）
  */
 export function looksLikeChallenge(bytes: Uint8Array): boolean {
-  if (bytes.byteLength === 0 || bytes.byteLength >= 3072) return false
-  const head = Buffer.from(bytes.subarray(0, 3072)).toString('latin1')
-  return /verify|challenge|captcha|javascript/i.test(head)
+  if (bytes.byteLength === 0) return false
+  const scan = Buffer.from(bytes.subarray(0, 32768)).toString('latin1')
+  if (CHALLENGE_PLATFORM_RE.test(scan)) return true
+  if (bytes.byteLength >= 3072) return false
+  if (CHALLENGE_KEYWORD_RE.test(scan)) return true
+  if (META_REFRESH_JUMP_RE.test(scan)) {
+    const bodyText = scan
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (bodyText.length < 80) return true
+  }
+  return false
 }
 
 /** 统一的响应评估：ok 判定 + 挑战页标记 + 结构化 note，各执行器共用保证一致 */
@@ -302,7 +344,7 @@ function assess(status: number, bytes: Uint8Array, contentType: string): { ok: b
       blocked: true,
       size,
       note: 'challenge-page',
-      warning: `疑似挑战/验证页（响应 ${size}B < 3KB 且含 verify/challenge/captcha/javascript 关键词），已按失败处理`,
+      warning: `疑似挑战/拦截页（命中反爬平台特征/小页挑战关键词/0秒跳板之一，响应 ${size}B），已按失败处理`,
     }
   }
   if (status >= 400) return { ok: false, blocked: false, size, note: `http-${status}` }
@@ -768,11 +810,13 @@ interface RenderPayload {
 }
 
 async function renderViaPython(url: string, timeoutMs: number, warnings: string[]): Promise<AttemptResult> {
-  // 参数经 argv 传递（URL 不含换行；UA 含空格由 execFile 正确转义）
+  // 参数经 argv 传递（URL 不含换行；UA 含空格由 execFile 正确转义）。
+  // render.py 自带 SIGALRM 看门狗（timeout+3s 强制输出 JSON），exec 超时只是兜底；
+  // 余量不能给太大，否则策略链 55s 预算会被单次渲染突破（实测旧值 +15s 最坏可拖到 ~70s）
   const { stdout } = await execP(
     'python3',
     [RENDER_PY, url, String(timeoutMs), CHROME_UA],
-    { timeout: timeoutMs + 15000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PYTHONUNBUFFERED: '1' } },
+    { timeout: timeoutMs + 4000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PYTHONUNBUFFERED: '1' } },
   )
   const payload = JSON.parse(stdout) as RenderPayload
   if (payload.error) {
@@ -814,15 +858,22 @@ const browserStrategy: StrategyDef = {
         const page = await browser.newPage({ userAgent: CHROME_UA, locale: 'zh-CN', viewport: { width: 1366, height: 900 } })
         page.setDefaultTimeout(timeoutMs)
         try {
-          // 屏蔽重资源，加速渲染（与 render.py 行为一致）
-          await page.route('**/*', (route: { request: () => { resource_type?: string }; abort: () => unknown; continue: () => unknown }) => {
-            const t = route.request().resource_type
-            if (t === 'image' || t === 'media' || t === 'font') route.abort()
-            else route.continue()
+          // 屏蔽重资源，加速渲染（与 render.py 行为一致）。
+          // Node Playwright 的 Request 用 resourceType() 方法，Python 桥接对象才是 resource_type 属性，
+          // 两者兼容判断（旧代码只读属性导致 Node 路径拦截永不生效）
+          await page.route('**/*', (route: { request: () => any; abort: () => unknown; continue: () => unknown }) => {
+            const req = route.request()
+            const t = typeof req.resourceType === 'function' ? req.resourceType() : req.resource_type
+            if (t === 'image' || t === 'media' || t === 'font') void route.abort()
+            else void route.continue()
           })
         } catch { /* 路由拦截失败不阻塞主流程 */ }
         const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-        const html = await page.content()
+        // content() 也受默认超时约束，最坏可再等一个 timeoutMs 导致策略链预算超支；加 race 硬上限
+        const html = await Promise.race([
+          page.content() as Promise<string>,
+          new Promise<string>((_, rej) => setTimeout(() => rej(new Error('page content 超时')), Math.min(5000, Math.max(1000, timeoutMs)))),
+        ])
         const status = res?.status() ?? 0
         const bytes = new Uint8Array(Buffer.from(html, 'utf8'))
         const a = assess(status, bytes, 'text/html; charset=utf-8')
@@ -961,7 +1012,8 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
   let lastNote = ''
   let sawChallenge = false
 
-  for (const strat of order) {
+  for (let si = 0; si < order.length; si++) {
+    const strat = order[si]
     if (Date.now() > deadline - 1500) {
       attempts.push({ strategy: strat.name, ok: false, status: 0, ms: 0, note: 'budget-exhausted（整体时间预算耗尽，停止尝试后续策略）' })
       break
@@ -1036,6 +1088,25 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
         continue
       }
       break
+    }
+
+    // 策略间退避：429/5xx/网络错误 → 进入下一策略前显式指数退避+jitter。
+    // 剩余预算 <3s 时不再退避（宁可靠限速器自身 1.2s 间隔，也不突破 55s 硬上限）；
+    // 最后一个策略后无需退避。
+    if (si < order.length - 1 && isRetryableStatus(lastStatus)) {
+      const remaining = deadline - Date.now()
+      if (remaining > 3000) {
+        const cap = remaining - 2500
+        const delay = Math.min(backoffDelay(lastStatus === 429 ? 2 : 1), cap)
+        if (lastStatus === 429) {
+          const w = 'HTTP 429 目标站限流，已按指数退避+jitter 等待后继续后续策略'
+          if (!warnings.includes(w)) warnings.push(`[chain] ${w}`)
+        } else if (lastStatus >= 500) {
+          const w = `HTTP ${lastStatus} 目标站服务器错误，已按指数退避+jitter 等待后继续后续策略`
+          if (!warnings.includes(w)) warnings.push(`[chain] ${w}`)
+        }
+        await sleep(Math.max(0, delay))
+      }
     }
   }
 

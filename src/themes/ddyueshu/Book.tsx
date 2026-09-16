@@ -1,6 +1,6 @@
 'use client'
 
-import { useNovel } from '@/hooks/use-novel-data'
+import { useChapters, useNovel } from '@/hooks/use-novel-data'
 import type { ViewProps } from '../types'
 import { Cover, ErrBlock, Sk, SkRows, fmtDate, fmtNum, fmtWords } from './parts'
 
@@ -8,6 +8,9 @@ import { Cover, ErrBlock, Sk, SkRows, fmtDate, fmtNum, fmtWords } from './parts'
 
 export default function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
   const q = useNovel(novelId)
+  /* 最新章节需从全量章节取末 6 条（详情接口的 chapters 是最早 12 章，不能直接用） */
+  const chaptersQ = useChapters(novelId)
+  const latest6 = chaptersQ.data ? [...chaptersQ.data].slice(-6).reverse() : null
 
   if (q.isPending) return <BookSkeleton />
   if (q.isError || !q.data) {
@@ -126,14 +129,25 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
             完整目录 &gt;&gt;
           </button>
         </div>
-        {n.chapters.length === 0 ? (
+        {chaptersQ.isPending ? (
+          <div className="px-2 pb-2 pt-1">
+            <SkRows rows={6} />
+          </div>
+        ) : chaptersQ.isError ? (
+          <p className="px-3 py-3 text-center text-[12px]">
+            <span className="dd-hottext">章节加载失败</span>
+            <button className="dd-greenlink ml-2" onClick={() => chaptersQ.refetch()}>
+              点击重试
+            </button>
+          </p>
+        ) : !latest6 || latest6.length === 0 ? (
           <p className="dd-hottext px-3 py-3 text-[12px]">本书暂无章节，先去书库看看别的吧。</p>
         ) : (
           <dl className="dd-dd-grid px-2 pb-2 pt-1">
             <dt className="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">
               《{n.title}》最新章节
             </dt>
-            {[...n.chapters].reverse().slice(0, 6).map((c) => (
+            {latest6.map((c) => (
               <dd key={c.id} className="dd-dd-item">
                 <button onClick={() => navigate({ name: 'chapter', chapterId: c.id })}>{c.title}</button>
               </dd>

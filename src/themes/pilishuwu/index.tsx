@@ -546,9 +546,42 @@ function CategoryView({
 /* Book：信息卡（封面左 + 键值行 + 按钮行）+ 简介 + 最新章节               */
 /* ==================================================================== */
 
-function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
+/* ---- 书架（localStorage 持久化，跨视图/跨会话一致） ---- */
+
+const SHELF_KEY = 'pls-shelf'
+
+function loadShelf(): number[] {
+  if (typeof window === 'undefined') return []
+  try {
+    return JSON.parse(window.localStorage.getItem(SHELF_KEY) ?? '[]') as number[]
+  } catch {
+    return []
+  }
+}
+
+function toggleShelf(id: number): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const arr = loadShelf()
+    const has = arr.includes(id)
+    window.localStorage.setItem(SHELF_KEY, JSON.stringify(has ? arr.filter((x) => x !== id) : [...arr, id]))
+    return !has
+  } catch {
+    return false
+  }
+}
+
+function BookView(props: ViewProps & { novelId: number }) {
+  /* key=novelId：换书重挂载，重置书架/投票等本地状态并重新读 storage */
+  return <BookInner key={props.novelId} {...props} />
+}
+
+function BookInner({ navigate, novelId }: ViewProps & { novelId: number }) {
   const { data: n, isLoading, isError, refetch } = useNovel(novelId)
-  const [shelf, setShelf] = useState(false)
+  /* 最近章节需从全量章节取末 12 条（详情接口的 chapters 是最早 12 章，不能直接用） */
+  const chaptersQ = useChapters(novelId)
+  const latest12 = chaptersQ.data ? [...chaptersQ.data].slice(-12).reverse() : null
+  const [shelf, setShelf] = useState(() => loadShelf().includes(novelId))
   const [voted, setVoted] = useState(false)
 
   if (isLoading) {
@@ -632,7 +665,7 @@ function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
               </button>
               <button
                 type="button"
-                onClick={() => setShelf((v) => !v)}
+                onClick={() => setShelf(toggleShelf(novelId))}
                 className={cn(
                   'cursor-pointer border px-4 py-1.5 text-sm transition-colors',
                   shelf
@@ -661,7 +694,7 @@ function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
         </p>
       </Block>
 
-      {/* 最新章节（API 返回按 idx 升序的前 12 章，倒序后即最新 12 章，双栏） */}
+      {/* 最近章节（全量章节末 12 条倒序 = 最新 12 章，新→旧，双栏） */}
       <Block
         className="mt-3"
         title="最新章节"
@@ -677,17 +710,27 @@ function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
         bodyClass="px-3 py-1"
       >
         <div className="grid gap-x-8 md:grid-cols-2">
-          {[...n.chapters].reverse().map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
-              className="flex cursor-pointer items-center justify-between gap-3 border-b border-dotted border-[#D5E6F3] py-[7px] text-xs hover:bg-[#F7FBFF]"
-            >
-              <span className="truncate text-[#3366BB] hover:text-[#FF6600]">{c.title}</span>
-              <span className="shrink-0 text-[10px] text-[#BBB]">{formatWords(c.wordCount)}字</span>
-            </button>
-          ))}
+          {chaptersQ.isPending ? (
+            <SkeletonLines className="py-3" rows={8} />
+          ) : chaptersQ.isError ? (
+            <div className="py-4">
+              <ErrorBox message="章节加载失败" onRetry={() => chaptersQ.refetch()} />
+            </div>
+          ) : !latest12 || latest12.length === 0 ? (
+            <p className="py-10 text-center text-sm text-[#999]">暂无章节</p>
+          ) : (
+            latest12.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+                className="flex cursor-pointer items-center justify-between gap-3 border-b border-dotted border-[#D5E6F3] py-[7px] text-xs hover:bg-[#F7FBFF]"
+              >
+                <span className="truncate text-[#3366BB] hover:text-[#FF6600]">{c.title}</span>
+                <span className="shrink-0 text-[10px] text-[#BBB]">{formatWords(c.wordCount)}字</span>
+              </button>
+            ))
+          )}
         </div>
       </Block>
     </div>
@@ -860,9 +903,11 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
     if (ch?.nextId) navigate({ name: 'chapter', chapterId: ch.nextId })
   }
 
-  /* 键盘 ←/→ 翻章（无依赖数组：每次渲染绑定最新闭包） */
+  /* 键盘 ←/→ 翻章（焦点在输入框/下拉/按钮上时不触发，避免误触与双重导航） */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.isContentEditable)) return
       if (e.key === 'ArrowLeft') goPrev()
       else if (e.key === 'ArrowRight') goNext()
     }

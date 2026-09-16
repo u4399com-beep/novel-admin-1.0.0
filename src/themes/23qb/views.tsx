@@ -24,6 +24,7 @@ import {
   Container,
   CoverCard,
   ErrorRetry,
+  GRADIENT_ACCENT,
   GRADIENT_GREEN,
   GridSkeleton,
   HeroSearch,
@@ -249,6 +250,9 @@ export function CategoryView({
 
 export function BookView({ navigate, novelId }: ViewProps & { novelId: number }) {
   const { data: novel, isLoading, isError, refetch } = useNovel(novelId)
+  /* 最新章节需从全量章节取末 12 条（详情接口的 chapters 是最早 12 章，不能直接用） */
+  const chaptersQ = useChapters(novelId)
+  const latest12 = chaptersQ.data ? [...chaptersQ.data].slice(-12).reverse() : null
   const related = useNovels({ categoryId: novel?.categoryId, pageSize: 12, sort: 'clicks', enabled: novel != null })
   const [onShelf, setOnShelf] = useState(() => loadShelf().includes(novelId))
   const [rec, setRec] = useState(false)
@@ -331,9 +335,31 @@ export function BookView({ navigate, novelId }: ViewProps & { novelId: number })
           <span className="text-xs text-black/40">更新于 {fmtDate(novel.updatedAt)}</span>
         </div>
         <div className="mt-4 flex flex-col">
-          {[...novel.chapters].reverse().map((c) => (
-            <ChapterRow key={c.id} chapter={c} onClick={() => navigate({ name: 'chapter', chapterId: c.id })} />
-          ))}
+          {chaptersQ.isPending ? (
+            <>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="mb-2 h-10 animate-pulse rounded-[10px] bg-[#f0f1f3]" />
+              ))}
+            </>
+          ) : chaptersQ.isError ? (
+            <div className="flex items-center justify-center gap-3 py-8 text-sm text-black/45">
+              章节加载失败
+              <button
+                type="button"
+                onClick={() => chaptersQ.refetch()}
+                className="inline-flex h-9 cursor-pointer items-center rounded-[50px] px-5 text-white transition-opacity hover:opacity-90"
+                style={{ backgroundImage: GRADIENT_ACCENT }}
+              >
+                重新加载
+              </button>
+            </div>
+          ) : !latest12 || latest12.length === 0 ? (
+            <p className="py-8 text-center text-sm text-black/40">本书暂无章节</p>
+          ) : (
+            latest12.map((c) => (
+              <ChapterRow key={c.id} chapter={c} onClick={() => navigate({ name: 'chapter', chapterId: c.id })} />
+            ))
+          )}
         </div>
         <div className="mt-5 border-t border-[#f5f5f5] pt-5 text-center">
           <button
@@ -588,10 +614,16 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
 // ==================== Search ====================
 
 export function SearchView({ navigate, query }: ViewProps & { query: string }) {
+  /* key=query：关键词变化时重挂载，重置输入框与页码 */
+  return <SearchPanel key={query} navigate={navigate} query={query} />
+}
+
+function SearchPanel({ navigate, query }: { navigate: (v: ThemeView) => void; query: string }) {
   const [input, setInput] = useState(query)
+  const [page, setPage] = useState(1)
   const { data: categories } = useCategories()
   const { data, isLoading, isError, refetch } = useNovels(
-    query ? { q: query, pageSize: 20 } : { sort: 'clicks', pageSize: 10 },
+    query ? { q: query, page, pageSize: 20 } : { sort: 'clicks', pageSize: 10 },
   )
 
   const submit = (q: string) => navigate({ name: 'search', query: q.trim() })
@@ -631,11 +663,16 @@ export function SearchView({ navigate, query }: ViewProps & { query: string }) {
         ) : isLoading ? (
           <GridSkeleton count={10} />
         ) : data && data.list.length > 0 ? (
-          <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8">
-            {data.list.map((n) => (
-              <CoverCard key={n.id} novel={n} onClick={() => navigate({ name: 'book', novelId: n.id })} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8">
+              {data.list.map((n) => (
+                <CoverCard key={n.id} novel={n} onClick={() => navigate({ name: 'book', novelId: n.id })} />
+              ))}
+            </div>
+            {query && (
+              <Pager page={data.page} totalPages={data.totalPages} onGo={setPage} />
+            )}
+          </>
         ) : (
           <div className="py-10 text-center">
             <SearchX className="mx-auto h-10 w-10 text-black/25" />

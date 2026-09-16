@@ -62,11 +62,11 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
   const nextId = ch?.nextId ?? null
   const novelId = ch?.novelId ?? null
 
-  /* 键盘翻章（输入框聚焦时不触发） */
+  /* 键盘翻章（焦点在输入框/下拉/按钮上时不触发，避免误触与双重导航） */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.isContentEditable)) return
       if (e.key === 'ArrowLeft' && prevId) navigate({ name: 'chapter', chapterId: prevId })
       else if (e.key === 'ArrowRight' && nextId) navigate({ name: 'chapter', chapterId: nextId })
       else if (e.key === 'Enter' && novelId) navigate({ name: 'toc', novelId })

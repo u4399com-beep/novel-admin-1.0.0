@@ -625,17 +625,17 @@ function RelatedBooks({ categoryId, excludeId, navigate }: { categoryId: number;
 export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number }) {
   const { data: ch, isPending, isError, refetch } = useChapter(chapterId)
   const novel = useNovel(ch?.novelId)
-  /* 书签按章记忆：换章后自动失效（无 effect setState） */
-  const [mark, setMark] = useState<{ id: number; on: boolean }>({ id: 0, on: false })
 
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [chapterId])
 
-  /* 键盘翻页：Enter 返回书目 / ← 上一章 / → 下一章 */
+  /* 键盘翻页：Enter 返回书目 / ← 上一章 / → 下一章（焦点在输入框/下拉/按钮上时不触发，避免误触与双重导航） */
   useEffect(() => {
     if (!ch) return
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || t.isContentEditable)) return
       if (e.key === 'Enter') {
         navigate({ name: 'toc', novelId: ch.novelId })
       } else if (e.key === 'ArrowLeft' && ch.prevId) {
@@ -706,12 +706,7 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
           {ch.title}
         </h1>
         <div className="pb-2 text-center">
-          <button
-            onClick={() => setMark({ id: ch.id, on: !(mark.id === ch.id && mark.on) })}
-            className="cursor-pointer rounded-full border border-[#ffb0b4] bg-white/70 px-4 py-[3px] text-[12px] text-[#bf2c24] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50]"
-          >
-            {mark.id === ch.id && mark.on ? '已加入书签 ✓' : '加入书签'}
-          </button>
+          <MarkButton key={`${ch.novelId}-${ch.id}`} novelId={ch.novelId} chapterId={ch.id} />
         </div>
         <div className="border-t border-[#ccc] px-3 py-2 text-[18px] leading-[180%] tracking-[0.1em] text-[#333] min-[468px]:text-[24px]">
           {paragraphs.length === 0 ? (
@@ -758,6 +753,45 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
         />
       ) : null}
     </Container>
+  )
+}
+
+/* ==================== 书签（localStorage 按书分组持久化，与其他主题行为一致） ==================== */
+
+function loadMarks(novelId: number): number[] {
+  if (typeof window === 'undefined') return []
+  try {
+    return JSON.parse(window.localStorage.getItem(`ggd66-marks-${novelId}`) ?? '[]') as number[]
+  } catch {
+    return []
+  }
+}
+
+function toggleMark(novelId: number, chapterId: number): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const arr = loadMarks(novelId)
+    const has = arr.includes(chapterId)
+    window.localStorage.setItem(
+      `ggd66-marks-${novelId}`,
+      JSON.stringify(has ? arr.filter((x) => x !== chapterId) : [...arr.slice(-199), chapterId]),
+    )
+    return !has
+  } catch {
+    return false
+  }
+}
+
+function MarkButton({ novelId, chapterId }: { novelId: number; chapterId: number }) {
+  /* 视图仅客户端挂载，惰性读 storage 恢复已存书签 */
+  const [marked, setMarked] = useState(() => loadMarks(novelId).includes(chapterId))
+  return (
+    <button
+      onClick={() => setMarked(toggleMark(novelId, chapterId))}
+      className="cursor-pointer rounded-full border border-[#ffb0b4] bg-white/70 px-4 py-[3px] text-[12px] text-[#bf2c24] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50]"
+    >
+      {marked ? '已加入书签 ✓' : '加入书签'}
+    </button>
   )
 }
 

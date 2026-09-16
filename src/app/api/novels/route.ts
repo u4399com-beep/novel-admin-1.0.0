@@ -94,17 +94,25 @@ export async function POST(req: NextRequest) {
   if (!cat) return NextResponse.json({ error: '分类不存在' }, { status: 400 })
 
   const covers = ['g1','g2','g3','g4','g5','g6','g7','g8','g9','g10','g11','g12']
-  const novel = await db.novel.create({
-    data: {
-      title: body.title.trim().slice(0, 100),
-      author: (body.author?.trim() || '佚名').slice(0, 50),
-      description: (body.description ?? '').slice(0, 2000),
-      cover: covers.includes(body.cover ?? '') ? body.cover! : covers[Math.floor(Math.random() * covers.length)],
-      categoryId: body.categoryId,
-      status: body.status === 'finished' ? 'finished' : 'serial',
-      isFeatured: !!body.isFeatured,
-      isHot: !!body.isHot,
-    },
-  })
-  return NextResponse.json({ id: novel.id }, { status: 201 })
+  try {
+    const novel = await db.novel.create({
+      data: {
+        title: body.title.trim().slice(0, 100),
+        author: (body.author?.trim() || '佚名').slice(0, 50),
+        description: (body.description ?? '').slice(0, 2000),
+        cover: covers.includes(body.cover ?? '') ? body.cover! : covers[Math.floor(Math.random() * covers.length)],
+        categoryId: body.categoryId,
+        status: body.status === 'finished' ? 'finished' : 'serial',
+        isFeatured: !!body.isFeatured,
+        isHot: !!body.isHot,
+      },
+    })
+    return NextResponse.json({ id: novel.id }, { status: 201 })
+  } catch (e) {
+    // DB 层 @@unique([title, author])（防并发采集重复入库）被撞 → 409 而非 500
+    if ((e as { code?: string })?.code === 'P2002') {
+      return NextResponse.json({ error: '同名同作者的书已存在' }, { status: 409 })
+    }
+    throw e
+  }
 }

@@ -29,7 +29,21 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     include: { rule: { select: { id: true, name: true, charset: true } } },
   })
   if (!task) return notFound()
-  return NextResponse.json({ task })
+
+  // chaptersDone/chaptersTotal 用原生 SQL 透出（理由同列表接口：运行中进程的 Prisma Client 可能未注册新列）
+  const progress = await db
+    .$queryRaw<{ chaptersDone: number; chaptersTotal: number }[]>`
+      SELECT "chaptersDone", "chaptersTotal" FROM "ScrapeTask" WHERE "id" = ${id}
+    `
+    .catch(() => [] as { chaptersDone: number; chaptersTotal: number }[])
+
+  return NextResponse.json({
+    task: {
+      ...task,
+      chaptersDone: progress[0]?.chaptersDone ?? 0,
+      chaptersTotal: progress[0]?.chaptersTotal ?? 0,
+    },
+  })
 }
 
 // PATCH /api/scrape-tasks/[id]  { action: 'cancel' }

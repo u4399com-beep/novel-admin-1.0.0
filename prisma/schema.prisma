@@ -32,6 +32,9 @@ model Novel {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt @default(now())
   chapters    Chapter[]
+
+  // 同名同作者视为同一本书：防止并发采集任务重复入库同一新书（worker 层有 P2002 回读兜底）
+  @@unique([title, author])
 }
 
 model Chapter {
@@ -93,8 +96,10 @@ model ScrapeTask {
   targetUrl String
   pages     Int         @default(1) // list 模式抓取列表页数 1-20
   status    String      @default("pending") // pending|running|success|partial|failed|canceled
-  total     Int         @default(0)
-  done      Int         @default(0)
+  total     Int         @default(0) // 进度分母：single=章节数，list=书籍数
+  done      Int         @default(0) // 进度分子：与 total 同单位（保证 done ≤ total）
+  chaptersDone  Int     @default(0) // 已采集章节数（list 模式的章节级副进度，跨书累计）
+  chaptersTotal Int     @default(0) // 预计章节总数（list 模式，随书页解析逐步累加）
   created   Int         @default(0) // 新建书籍数
   updated   Int         @default(0) // 更新书籍数
   chapters  Int         @default(0) // 采集章节数

@@ -121,10 +121,11 @@ export default function Chapter({ navigate, siteName, chapterId }: ViewProps & {
   )
 }
 
-/* ==================== 书签按钮（localStorage，按章重挂载） ==================== */
+/* ==================== 书签按钮（localStorage，按章重挂载 + 惰性初始化恢复已存书签） ==================== */
 
 function MarkButton({ novelId, chapterId }: { novelId: number; chapterId: number }) {
-  const [marked, setMarked] = useState(false)
+  /* 视图仅客户端挂载（ThemeRenderer 等 settings 加载后才渲染），惰性读 storage 无水合风险 */
+  const [marked, setMarked] = useState(() => getMarks(String(novelId)).includes(chapterId))
   return (
     <button
       className={marked ? 'dd-hottext cursor-pointer' : 'dd-greenlink'}

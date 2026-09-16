@@ -17,22 +17,37 @@ export async function POST(req: NextRequest) {
   const novel = await db.novel.findUnique({ where: { id: body.novelId } })
   if (!novel) return NextResponse.json({ error: '小说不存在' }, { status: 404 })
 
-  const max = await db.chapter.aggregate({ where: { novelId: body.novelId }, _max: { idx: true } })
-  const idx = (max._max.idx ?? 0) + 1
+  const novelId = body.novelId
+  const chTitle = body.title.trim().slice(0, 120)
+  const max = await db.chapter.aggregate({ where: { novelId }, _max: { idx: true } })
+  let idx = (max._max.idx ?? 0) + 1
   const content = body.content ?? ''
-  const chapter = await db.chapter.create({
-    data: {
-      novelId: body.novelId,
-      idx,
-      title: body.title.trim().slice(0, 120),
-      content,
-      wordCount: content.replace(/\s/g, '').length,
-    },
-  })
+  const createChapter = (idxVal: number) =>
+    db.chapter.create({
+      data: {
+        novelId,
+        idx: idxVal,
+        title: chTitle,
+        content,
+        wordCount: content.replace(/\s/g, '').length,
+      },
+    })
+
+  // 并发竞态兜底：两个请求同时算出同一最大 idx 时，后写者撞 [novelId, idx] 唯一约束（P2002）；
+  // 捕获后读回当前该书最大 idx 重试一次（idx+1），再失败则抛出（500）
+  let chapter
+  try {
+    chapter = await createChapter(idx)
+  } catch (e) {
+    if ((e as { code?: string })?.code !== 'P2002') throw e
+    const retry = await db.chapter.aggregate({ where: { novelId }, _max: { idx: true } })
+    idx = (retry._max.idx ?? 0) + 1
+    chapter = await createChapter(idx)
+  }
   // 同步小说字数与更新时间
-  const agg = await db.chapter.aggregate({ where: { novelId: body.novelId }, _sum: { wordCount: true } })
+  const agg = await db.chapter.aggregate({ where: { novelId }, _sum: { wordCount: true } })
   await db.novel.update({
-    where: { id: body.novelId },
+    where: { id: novelId },
     data: { wordCount: agg._sum.wordCount ?? 0, updatedAt: new Date() },
   })
   return NextResponse.json({ id: chapter.id, idx: chapter.idx }, { status: 201 })

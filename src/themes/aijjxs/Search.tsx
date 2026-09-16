@@ -1,19 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNovels } from '@/hooks/use-novel-data'
-import type { ViewProps } from '../types'
-import { CoverCard, ErrBlock, Panel, SkRows } from './parts'
+import type { ThemeView, ViewProps } from '../types'
+import { CoverCard, ErrBlock, Pager, Panel, SkRows } from './parts'
 
 export default function Search({ navigate, query }: ViewProps & { query: string }) {
+  /* key=query：关键词变化时重挂载，重置输入框与页码 */
+  return <SearchPanel key={query} query={query} navigate={navigate} />
+}
+
+function SearchPanel({ navigate, query }: { query: string; navigate: (v: ThemeView) => void }) {
   const [kw, setKw] = useState(query)
+  const [page, setPage] = useState(1)
 
-  useEffect(() => {
-    setKw(query)
-  }, [query])
-
-  /* 有关键词走搜索，无关键词展示热门榜 */
-  const res = useNovels(query ? { q: query, pageSize: 20 } : { sort: 'clicks', pageSize: 12 })
+  /* 有关键词走搜索（带分页），无关键词展示热门榜 */
+  const res = useNovels(query ? { q: query, page, pageSize: 20 } : { sort: 'clicks', pageSize: 12 })
 
   return (
     <div className="mx-auto w-full max-w-[860px]">
@@ -69,6 +71,10 @@ export default function Search({ navigate, query }: ViewProps & { query: string 
               ))}
             </div>
           </Panel>
+        )}
+        {/* 关键词模式分页（Pager 在 totalPages<=1 时自隐藏） */}
+        {query && res.data && (
+          <Pager page={res.data.page} totalPages={res.data.totalPages} go={setPage} />
         )}
       </div>
     </div>

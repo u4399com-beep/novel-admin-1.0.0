@@ -104,7 +104,16 @@ function PseoView({ keyword, theme, common }: { keyword: string; theme: ThemeMod
         {data.novels.map((n) => (
           <article
             key={n.id}
+            role="link"
+            tabIndex={0}
+            aria-label={`查看小说 ${n.title}`}
             onClick={() => navigate({ name: 'book', novelId: n.id })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                navigate({ name: 'book', novelId: n.id })
+              }
+            }}
             className="flex cursor-pointer gap-3 rounded-lg border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-md"
           >
             <div className={`flex h-24 w-16 shrink-0 items-center justify-center rounded ${coverBgClass(n.cover)}`}>
