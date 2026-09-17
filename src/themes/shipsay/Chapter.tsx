@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Maximize2, Minimize2, Moon, Sun } from 'lucide-react'
 import { useChapter } from '@/hooks/use-novel-data'
+import { READER_LINE_HEIGHTS, readerFontStack, setReaderPrefs, stepFontSize, useReaderPrefs } from '@/hooks/use-reader-prefs'
 import { cn } from '@/lib/utils'
 import type { ViewProps } from '../types'
 import { ErrorBox, fmtWords } from './parts'
@@ -50,13 +51,15 @@ function ReadSkeleton() {
 
 /**
  * 章节正文页：独立米黄纸感皮肤 #E7E1D4 + 纸色卡片 #FBF6EC
- * 字号 A-/A/A+、夜间/极简模式、键盘 ←→ 翻章、回车回目录
+ * 字号 A-/A/A+、行距/字体、夜间/极简模式、键盘 ←→ 翻章、回车回目录
+ * 阅读偏好与其他主题共享同一份（localStorage 持久化，跨主题一致）
  */
 export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number }) {
   const { data: ch, isLoading, isError, refetch } = useChapter(chapterId)
-  const [fontSize, setFontSize] = useState(18)
-  const [night, setNight] = useState(false)
+  const [prefs] = useReaderPrefs()
   const [minimal, setMinimal] = useState(false)
+  const fontSize = prefs.fontSize
+  const night = prefs.scene === 'night'
 
   const prevId = ch?.prevId ?? null
   const nextId = ch?.nextId ?? null
@@ -93,17 +96,45 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
       <div className={cn('mx-auto w-full px-2 pt-4', minimal ? 'max-w-[760px]' : 'max-w-[900px]')}>
         {/* 正文卡片：右上角设置面板（字号 / 夜间 / 极简） */}
         <section className={cn('relative shadow-[0_2px_14px_rgba(0,0,0,0.13)]', cardBg)}>
-          <div className="absolute right-3 top-3 flex gap-1.5">
-            <ToolBtn title="缩小字号" onClick={() => setFontSize((s) => Math.max(14, s - 2))}>
+          <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-1.5">
+            <ToolBtn title="缩小字号" onClick={() => setReaderPrefs({ fontSize: stepFontSize(fontSize, -1) })}>
               A-
             </ToolBtn>
-            <ToolBtn title="默认字号 18px" onClick={() => setFontSize(18)}>
-              A
-            </ToolBtn>
-            <ToolBtn title="放大字号" onClick={() => setFontSize((s) => Math.min(26, s + 2))}>
+            <ToolBtn title="放大字号" onClick={() => setReaderPrefs({ fontSize: stepFontSize(fontSize, 1) })}>
               A+
             </ToolBtn>
-            <ToolBtn title={night ? '日间模式' : '夜间模式'} active={night} onClick={() => setNight((v) => !v)}>
+            <select
+              title="行距"
+              aria-label="行距"
+              value={prefs.lineHeight}
+              onChange={(e) => setReaderPrefs({ lineHeight: Number(e.target.value) })}
+              className={cn(
+                'h-[26px] cursor-pointer rounded-sm border bg-transparent px-0.5 text-[12px] outline-none',
+                night ? 'border-[#4A4A52] bg-[#26262B] text-[#B9B9BF]' : 'border-[#D8D2C2] bg-[#FBF6EC] text-[#969BA3]',
+              )}
+            >
+              {READER_LINE_HEIGHTS.map((lh) => (
+                <option key={lh} value={lh}>
+                  行距 {lh.toFixed(1)}
+                </option>
+              ))}
+            </select>
+            <select
+              title="字体"
+              aria-label="字体"
+              value={prefs.font}
+              onChange={(e) => setReaderPrefs({ font: e.target.value as typeof prefs.font })}
+              className={cn(
+                'h-[26px] cursor-pointer rounded-sm border bg-transparent px-0.5 text-[12px] outline-none',
+                night ? 'border-[#4A4A52] bg-[#26262B] text-[#B9B9BF]' : 'border-[#D8D2C2] bg-[#FBF6EC] text-[#969BA3]',
+              )}
+            >
+              <option value="default">默认</option>
+              <option value="song">宋体</option>
+              <option value="hei">黑体</option>
+              <option value="kai">楷体</option>
+            </select>
+            <ToolBtn title={night ? '日间模式' : '夜间模式'} active={night} onClick={() => setReaderPrefs({ scene: night ? 'day' : 'night' })}>
               {night ? <Sun size={13} /> : <Moon size={13} />}
             </ToolBtn>
             <ToolBtn
@@ -140,7 +171,7 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
                 )}
                 <article
                   className={cn('mt-5 space-y-1 text-justify', bodyText)}
-                  style={{ fontSize, lineHeight: 1.8 }}
+                  style={{ fontSize, lineHeight: prefs.lineHeight, fontFamily: readerFontStack(prefs.font) }}
                 >
                   {paragraphs.length === 0 ? (
                     <p className="py-8 text-center opacity-60">本章内容为空，请返回目录选择其他章节。</p>

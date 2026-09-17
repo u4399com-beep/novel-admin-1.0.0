@@ -17,6 +17,15 @@ import {
   useNovel,
   useNovels,
 } from '@/hooks/use-novel-data'
+import {
+  READER_LINE_HEIGHTS,
+  readerFontStack,
+  readerInk,
+  setReaderPrefs,
+  stepFontSize,
+  useReaderPrefs,
+  type ReaderSceneColors,
+} from '@/hooks/use-reader-prefs'
 import type { ChapterDetail } from '@/lib/types'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
 import {
@@ -798,6 +807,28 @@ function TocView({ navigate, novelId }: ViewProps & { novelId: number }) {
         <SkeletonBlock className="mt-3" rows={2} />
       )}
 
+      {/* 最新章节（全书倒数 12 章，新→旧） */}
+      {sorted.length > 0 && (
+        <Block className="mt-3" title={`最新章节（最近更新 12 章 · 新→旧）`} bodyClass="p-2">
+          <div className="grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[...sorted].slice(-12).reverse().map((c) => (
+              <button
+                key={`latest-${c.id}`}
+                type="button"
+                onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+                title={c.title}
+                className="flex cursor-pointer items-baseline justify-between gap-2 border-b border-dotted border-[#D5E6F3] px-1 py-[7px] text-xs hover:bg-[#F7FBFF]"
+              >
+                <span className="truncate text-[#3366BB] hover:text-[#FF6600] hover:underline">
+                  {c.idx}. {c.title}
+                </span>
+                <span className="shrink-0 text-[10px] text-[#BBB]">{formatWords(c.wordCount)}字</span>
+              </button>
+            ))}
+          </div>
+        </Block>
+      )}
+
       {/* 三栏章节列表 */}
       <Block
         className="mt-3"
@@ -834,10 +865,17 @@ function TocView({ navigate, novelId }: ViewProps & { novelId: number }) {
 }
 
 /* ==================================================================== */
-/* Chapter：面包屑 + 章首/章尾双份上下章导航 + 85% 正文 + 字号/护眼切换    */
+/* Chapter：面包屑 + 章首/章尾双份上下章导航 + 85% 正文 + 阅读设置          */
 /* ==================================================================== */
 
-const FONT_SIZES = [16, 18, 20, 22, 24]
+/* 场景配色（护眼=绿纸面，与其它主题一致） */
+const SCENES: Record<string, ReaderSceneColors> = {
+  day: { page: '', paper: '#ffffff', ink: '#333333', muted: '#999999', line: '#BFD8EA' },
+  paper: { page: '#e6d9bd', paper: '#f8f0da', ink: '#4a3a24', muted: '#a89a80', line: '#d4c5a3' },
+  green: { page: '#dcead8', paper: '#f0f6ec', ink: '#2f4030', muted: '#8fa590', line: '#bcd4bc' },
+  blue: { page: '#d8e4ee', paper: '#eef4fa', ink: '#2d3c46', muted: '#8fa2b0', line: '#b8cede' },
+  night: { page: '#1e2024', paper: '#26262b', ink: '#c0c0c6', muted: '#8a8a92', line: '#3a3a42' },
+}
 
 function ChapterNav({
   ch,
@@ -884,8 +922,7 @@ function ChapterNav({
 function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number }) {
   const { data: ch, isLoading, isError, refetch } = useChapter(chapterId)
   const { data: home } = useHomeData()
-  const [sizeIdx, setSizeIdx] = useState(2)
-  const [eye, setEye] = useState(false)
+  const [prefs] = useReaderPrefs()
 
   const paras = useMemo(
     () =>
@@ -895,6 +932,8 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
         .filter(Boolean),
     [ch?.content],
   )
+
+  const scene = SCENES[prefs.scene] ?? SCENES.day
 
   const goPrev = () => {
     if (ch?.prevId) navigate({ name: 'chapter', chapterId: ch.prevId })
@@ -936,8 +975,8 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
     )
   }
 
-  const font = FONT_SIZES[sizeIdx] ?? 20
   const hot = (home?.rankings.clicks ?? []).slice(0, 6)
+  const eye = prefs.scene === 'green'
 
   return (
     <div className="mx-auto w-full max-w-[980px] px-2 py-3">
@@ -950,7 +989,10 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
         navigate={navigate}
       />
 
-      <div className={cn('mt-3 border border-[#BFD8EA] px-4 py-6 sm:px-8', eye ? 'bg-[#FDFDF8]' : 'bg-white')}>
+      <div
+        className="mt-3 border px-4 py-6 transition-colors sm:px-8"
+        style={{ background: scene.paper, borderColor: scene.line }}
+      >
         <h1 className="text-center text-xl font-bold text-[#333]">{ch.title}</h1>
         <p className="mt-1 text-center text-xs text-[#999]">
           第 {ch.idx} 章 · 约 {formatWords(ch.wordCount)} 字
@@ -959,15 +1001,15 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
         {/* 章首导航 */}
         <ChapterNav ch={ch} navigate={navigate} className="mt-4" />
 
-        {/* 阅读工具条 */}
-        <div className="mt-4 flex items-center justify-center gap-2 text-xs">
+        {/* 阅读工具条：字号 / 行距 / 护眼 / 字体（跨主题共享同一份偏好） */}
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
           <button
             type="button"
-            onClick={() => setSizeIdx((i) => Math.max(0, i - 1))}
-            disabled={sizeIdx === 0}
+            onClick={() => setReaderPrefs({ fontSize: stepFontSize(prefs.fontSize, -1) })}
+            disabled={prefs.fontSize <= 14}
             className={cn(
               'border px-2 py-0.5 transition-colors',
-              sizeIdx === 0
+              prefs.fontSize <= 14
                 ? 'cursor-not-allowed border-[#E3EEF7] text-[#BBB]'
                 : 'cursor-pointer border-[#BFD8EA] text-[#3366BB] hover:border-[#FF6600] hover:text-[#FF6600]',
             )}
@@ -976,20 +1018,36 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
           </button>
           <button
             type="button"
-            onClick={() => setSizeIdx((i) => Math.min(FONT_SIZES.length - 1, i + 1))}
-            disabled={sizeIdx === FONT_SIZES.length - 1}
+            onClick={() => setReaderPrefs({ fontSize: stepFontSize(prefs.fontSize, 1) })}
+            disabled={prefs.fontSize >= 28}
             className={cn(
               'border px-2 py-0.5 transition-colors',
-              sizeIdx === FONT_SIZES.length - 1
+              prefs.fontSize >= 28
                 ? 'cursor-not-allowed border-[#E3EEF7] text-[#BBB]'
                 : 'cursor-pointer border-[#BFD8EA] text-[#3366BB] hover:border-[#FF6600] hover:text-[#FF6600]',
             )}
           >
             A+
           </button>
+          <span className="text-[#999]">{prefs.fontSize}px</span>
+          {READER_LINE_HEIGHTS.map((lh) => (
+            <button
+              key={lh}
+              type="button"
+              onClick={() => setReaderPrefs({ lineHeight: lh })}
+              className={cn(
+                'border px-2 py-0.5 transition-colors',
+                prefs.lineHeight === lh
+                  ? 'border-[#3B76A8] bg-[#EAF3FB] text-[#2F5E8C]'
+                  : 'cursor-pointer border-[#BFD8EA] text-[#3366BB] hover:border-[#FF6600] hover:text-[#FF6600]',
+              )}
+            >
+              行距 {lh.toFixed(1)}
+            </button>
+          ))}
           <button
             type="button"
-            onClick={() => setEye((v) => !v)}
+            onClick={() => setReaderPrefs({ scene: eye ? 'day' : 'green' })}
             className={cn(
               'cursor-pointer border px-2 py-0.5 transition-colors',
               eye
@@ -999,20 +1057,39 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
           >
             {eye ? '恢复白底' : '护眼模式'}
           </button>
+          <select
+            value={prefs.font}
+            onChange={(e) => setReaderPrefs({ font: e.target.value as typeof prefs.font })}
+            className="cursor-pointer border border-[#BFD8EA] bg-white px-1 py-0.5 text-xs text-[#3366BB] outline-none"
+          >
+            <option value="default">默认字体</option>
+            <option value="song">宋体</option>
+            <option value="hei">黑体</option>
+            <option value="kai">楷体</option>
+          </select>
         </div>
 
-        {/* 正文：居中 85% 宽，缩进 2em，行高 2 */}
+        {/* 正文：居中 85% 宽，缩进 2em，字号/行距/字体可调 */}
         <article className="mx-auto mt-5 w-[92%] max-w-[820px] break-words md:w-[85%]">
           {paras.length === 0 ? (
-            <p className="py-6 text-center text-sm text-[#999]">本章内容为空</p>
+            <p className="py-6 text-center text-sm" style={{ color: scene.muted }}>本章内容为空</p>
           ) : (
             paras.map((p, i) => (
-              <p key={i} className="indent-[2em] text-[#333]" style={{ fontSize: font, lineHeight: 2 }}>
+              <p
+                key={i}
+                className="indent-[2em]"
+                style={{
+                  fontSize: prefs.fontSize,
+                  lineHeight: prefs.lineHeight,
+                  fontFamily: readerFontStack(prefs.font),
+                  color: readerInk(prefs, scene),
+                }}
+              >
                 {p}
               </p>
             ))
           )}
-          <p className="mt-6 text-center text-[11px] text-[#C4D6E6]">键盘 ← / → 也可翻章</p>
+          <p className="mt-6 text-center text-[11px]" style={{ color: scene.muted }}>键盘 ← / → 也可翻章</p>
         </article>
 
         {/* 章尾导航 */}

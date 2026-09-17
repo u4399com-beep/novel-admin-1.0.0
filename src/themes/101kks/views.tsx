@@ -31,6 +31,13 @@ import {
   X,
 } from 'lucide-react'
 import { useCategories, useChapter, useChapters, useHomeData, useNovel, useNovels } from '@/hooks/use-novel-data'
+import {
+  READER_LINE_HEIGHTS,
+  readerFontStack,
+  setReaderPrefs,
+  stepFontSize,
+  useReaderPrefs,
+} from '@/hooks/use-reader-prefs'
 import { cn } from '@/lib/utils'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
@@ -773,6 +780,29 @@ export function TocView({ navigate, novelId }: ViewProps & { novelId: number }) 
           </>
         )}
 
+        {/* 最新章節（全書倒數 12 章，新→舊，置頂快達） */}
+        {chapters && chapters.length > 0 && (
+          <>
+            <h3 className="mt-5 flex items-center gap-2 border-l-4 border-[#1f6cb2] bg-[#f5f6f7] px-3 py-2 font-bold text-[#1f6cb2]">
+              最新章節
+              <span className="text-xs font-normal text-[#888]">最近更新 12 章 · 新→舊</span>
+            </h3>
+            <div className="grid gap-x-6 md:grid-cols-2 lg:grid-cols-3">
+              {[...chapters].slice(-12).reverse().map((c) => (
+                <button
+                  key={`latest-${c.id}`}
+                  type="button"
+                  onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+                  className="flex min-w-0 cursor-pointer items-center gap-2 border-b border-black/5 py-[15px] text-left text-base text-[#333] transition-colors hover:text-[#06c]"
+                >
+                  <span className="w-8 shrink-0 text-right text-xs text-[#888]">{c.idx}</span>
+                  <span className="truncate">{c.title}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         {/* 全部章节：蓝竖条节标题 + 三栏列表 */}
         <h3 className="mt-5 flex items-center gap-2 border-l-4 border-[#1f6cb2] bg-[#f5f6f7] px-3 py-2 font-bold text-[#1f6cb2]">
           全部章節（{chapters?.length ?? 0} 章）
@@ -828,11 +858,15 @@ type FontKey = (typeof FONT_OPTIONS)[number]['key']
 
 export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number }) {
   const { data: ch, isLoading, isError, refetch } = useChapter(chapterId)
-  const [fontSize, setFontSize] = useState(16)
-  const [bgKey, setBgKey] = useState<BgKey>('white')
-  const [fontKey, setFontKey] = useState<FontKey>('default')
+  const [prefs] = useReaderPrefs()
   const [panel, setPanel] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
+
+  /* BG_OPTIONS 键 ↔ 场景键映射（white=day，其余同名）；偏好与其他主题共享、持久化 */
+  const bgKey: BgKey = prefs.scene === 'day' ? 'white' : prefs.scene
+  const setBgKey = (k: BgKey) => setReaderPrefs({ scene: k === 'white' ? 'day' : k })
+  const fontSize = prefs.fontSize
+  const fontKey = prefs.font
 
   const night = bgKey === 'night'
 
@@ -864,8 +898,8 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
     )
   }
 
-  const bg = BG_OPTIONS.find((b) => b.key === bgKey)!
-  const font = FONT_OPTIONS.find((f) => f.key === fontKey)!
+  const bg = BG_OPTIONS.find((b) => b.key === bgKey) ?? BG_OPTIONS[0]
+  const font = FONT_OPTIONS.find((f) => f.key === fontKey) ?? FONT_OPTIONS[0]
   const paragraphs = (ch?.content ?? '')
     .split('\n')
     .map((s) => s.trim())
@@ -940,10 +974,15 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
                 {savedFlash ? '✓ 書籤已保存' : '打開章節時自動記錄閱讀進度'}
               </p>
 
-              {/* 正文：行高 2、段首两格缩进、字号可调 */}
+              {/* 正文：行高可调、段首两格缩进、字号/字体可调 */}
               <article
                 className="mt-6"
-                style={{ fontSize, fontFamily: font.stack || undefined, lineHeight: 2, color: night ? 'rgb(153,153,153)' : '#333' }}
+                style={{
+                  fontSize,
+                  fontFamily: font.stack || undefined,
+                  lineHeight: prefs.lineHeight,
+                  color: night ? 'rgb(153,153,153)' : '#333',
+                }}
               >
                 {paragraphs.length === 0 ? (
                   <p className="py-10 text-center text-sm" style={{ color: night ? '#8a9199' : '#999' }}>
@@ -1048,7 +1087,7 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
               <button
                 key={f.key}
                 type="button"
-                onClick={() => setFontKey(f.key)}
+                onClick={() => setReaderPrefs({ font: f.key })}
                 className={cn(
                   'h-8 cursor-pointer rounded-[3px] px-3 text-sm transition-colors',
                   fontKey === f.key ? 'bg-[#1f6cb2] text-white' : 'bg-[#f0f2f4] text-[#333] hover:bg-[#e2e6ea]',
@@ -1059,12 +1098,29 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
               </button>
             ))}
           </div>
+          {/* 行距档位 */}
+          <div className="mt-3 flex items-center gap-2">
+            <span className="w-14 shrink-0 text-sm text-[#666]">行距</span>
+            {READER_LINE_HEIGHTS.map((lh) => (
+              <button
+                key={lh}
+                type="button"
+                onClick={() => setReaderPrefs({ lineHeight: lh })}
+                className={cn(
+                  'h-8 cursor-pointer rounded-[3px] px-3 text-sm transition-colors',
+                  prefs.lineHeight === lh ? 'bg-[#1f6cb2] text-white' : 'bg-[#f0f2f4] text-[#333] hover:bg-[#e2e6ea]',
+                )}
+              >
+                {lh.toFixed(1)}
+              </button>
+            ))}
+          </div>
           {/* 字号加减 */}
           <div className="mt-3 flex items-center gap-2">
             <span className="w-14 shrink-0 text-sm text-[#666]">字號</span>
             <button
               type="button"
-              onClick={() => setFontSize((s) => Math.max(14, s - 1))}
+              onClick={() => setReaderPrefs({ fontSize: stepFontSize(fontSize, -1) })}
               className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[3px] bg-[#f0f2f4] text-[#333] hover:bg-[#e2e6ea]"
             >
               <Minus className="h-4 w-4" />
@@ -1072,7 +1128,7 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
             <span className="w-12 text-center text-sm text-[#333]">{fontSize}px</span>
             <button
               type="button"
-              onClick={() => setFontSize((s) => Math.min(24, s + 1))}
+              onClick={() => setReaderPrefs({ fontSize: stepFontSize(fontSize, 1) })}
               className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[3px] bg-[#f0f2f4] text-[#333] hover:bg-[#e2e6ea]"
             >
               <Plus className="h-4 w-4" />

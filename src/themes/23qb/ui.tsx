@@ -76,8 +76,20 @@ export function Container({ className, children }: { className?: string; childre
 }
 
 /** 白色大圆角卡片（radius 18px + 大投影） */
-export function Card({ className, children }: { className?: string; children: React.ReactNode }) {
-  return <section className={cn('rounded-[18px] bg-white shadow-[0_7px_21px_rgba(149,157,165,.22)]', className)}>{children}</section>
+export function Card({
+  className,
+  children,
+  style,
+}: {
+  className?: string
+  children: React.ReactNode
+  style?: React.CSSProperties
+}) {
+  return (
+    <section className={cn('rounded-[18px] bg-white shadow-[0_7px_21px_rgba(149,157,165,.22)]', className)} style={style}>
+      {children}
+    </section>
+  )
 }
 
 /** 药丸筛选钮（35px 高 / radius 10px / 选中加粗） */

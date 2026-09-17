@@ -74,7 +74,7 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
         </div>
       </section>
 
-      {/* dl 式目录：最新章节（置顶 6 条）+ 正文全量（升序三栏） */}
+      {/* dl 式目录：最新章节（全书倒数 12 章置顶，新→旧）+ 正文全量（升序三栏） */}
       <section className="dd-box dd-box-strong mt-2">
         {sorted.length === 0 ? (
           <p className="dd-hottext px-3 py-4 text-[13px]">本书暂无章节，先去书库看看别的吧。</p>
@@ -83,7 +83,7 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
             <dt className="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">
               最新章节
             </dt>
-            {[...sorted].slice(-6).reverse().map((c) => (
+            {[...sorted].slice(-12).reverse().map((c) => (
               <dd key={`latest-${c.id}`} className="dd-dd-item">
                 <button onClick={() => navigate({ name: 'chapter', chapterId: c.id })}>{c.title}</button>
               </dd>

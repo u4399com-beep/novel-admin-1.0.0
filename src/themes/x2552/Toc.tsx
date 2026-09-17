@@ -109,6 +109,34 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
         </div>
       </div>
 
+      {/* 最新章节（全书倒数 12 章，新→旧，置顶快达） */}
+      {sorted.length > 0 && (
+        <div className="mt-2 border border-[#E4E4E4] bg-white">
+          <div className="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]" />
+          <div className="flex h-[26px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-2 text-[12px] font-bold text-[#333]">
+            <span>最新章节</span>
+            <span className="text-[11px] font-normal text-[#999]">最近更新 12 章 · 新→旧</span>
+          </div>
+          <ul className="grid grid-cols-1 gap-x-6 px-3 py-1 sm:grid-cols-2 lg:grid-cols-4">
+            {[...sorted].slice(-12).reverse().map((c) => (
+              <li
+                key={`latest-${c.id}`}
+                className="flex h-[26px] items-center border-b border-dotted border-[#F2F2F2] text-[12px]"
+              >
+                <span className="w-[42px] shrink-0 text-right text-[#999]">{c.idx}.</span>
+                <XLink
+                  onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+                  className="ml-1 min-w-0 flex-1 truncate"
+                  title={c.title}
+                >
+                  {c.title}
+                </XLink>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* 全量章节目录 */}
       <div className="mt-2 border border-[#E4E4E4] bg-white">
         <div className="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]" />

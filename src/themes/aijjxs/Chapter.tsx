@@ -1,12 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { useChapters, useChapter } from '@/hooks/use-novel-data'
+import {
+  READER_FONTS,
+  READER_LINE_HEIGHTS,
+  READER_SCENES,
+  readerFontStack,
+  setReaderPrefs,
+  useReaderPrefs,
+  type ReaderSceneColors,
+} from '@/hooks/use-reader-prefs'
 import type { ViewProps } from '../types'
 import { ErrBlock, fmtWords, markRead, Sk } from './parts'
 
-/* ---------- 阅读器设置 ---------- */
+/* ---------- 阅读器设置（与其他主题共享同一份偏好，localStorage 持久化、跨主题一致） ---------- */
 
 const SIZES = [
   { k: '小', px: 19 },
@@ -15,21 +24,16 @@ const SIZES = [
   { k: '加大', px: 25 },
   { k: '极大', px: 28 },
 ]
-const BGS = [
-  { k: '纸白', page: '#efe6d8', paper: '#fffcf6', ink: '#3d3327' },
-  { k: '羊皮', page: '#e6d9bd', paper: '#f8f0da', ink: '#4a3a24' },
-  { k: '青竹', page: '#e2ecdf', paper: '#f1f6ee', ink: '#2f4030' },
-  { k: '湖水', page: '#dfe8f0', paper: '#eef3f8', ink: '#2d3c46' },
-  { k: '暖沙', page: '#ecdfce', paper: '#f9f1e4', ink: '#42342a' },
-  { k: '夜间', page: '#26251f', paper: '#31302a', ink: '#c9c2b2' },
-]
-const FONTS = [
-  { k: '默认', v: 'inherit' },
-  { k: '宋体', v: 'SimSun, "宋体", serif' },
-  { k: '雅黑', v: '"Microsoft YaHei", "PingFang SC", sans-serif' },
-  { k: '楷体', v: 'KaiTi, STKaiti, "楷体", serif' },
-  { k: '黑体', v: 'SimHei, "黑体", sans-serif' },
-]
+
+/** 场景配色（与其他主题语义对齐：日间/羊皮/护眼/淡蓝/夜间，暖纸调色板保留） */
+const SCENES: Record<string, ReaderSceneColors> = {
+  day: { page: '#efe6d8', paper: '#fffcf6', ink: '#3d3327', muted: '#8a7a64', line: '#d8c9ae' },
+  paper: { page: '#e6d9bd', paper: '#f8f0da', ink: '#4a3a24', muted: '#a89a80', line: '#d4c5a3' },
+  green: { page: '#e2ecdf', paper: '#f1f6ee', ink: '#2f4030', muted: '#8fa590', line: '#c2d6c2' },
+  blue: { page: '#dfe8f0', paper: '#eef3f8', ink: '#2d3c46', muted: '#8fa2b0', line: '#c2d2e0' },
+  night: { page: '#26251f', paper: '#31302a', ink: '#c9c2b2', muted: '#8f897b', line: '#45443c' },
+}
+
 const INKS = [
   { k: '跟随背景', v: '' },
   { k: '深棕', v: '#5b4636' },
@@ -38,35 +42,10 @@ const INKS = [
   { k: '炭黑', v: '#262626' },
 ]
 
-interface ReaderSetting {
-  size: number
-  bg: number
-  font: number
-  ink: number
-}
-const DEFAULT_SETTING: ReaderSetting = { size: 2, bg: 0, font: 0, ink: 0 }
-const LS_KEY = 'aj-reader-setting'
-
 export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number }) {
   const ch = useChapter(chapterId)
   const all = useChapters(ch.data?.novelId)
-  /* 阅读器设置：惰性初始化（客户端专属视图，无 SSR 水合风险）+ 变更时持久化 */
-  const [setting, setSetting] = useState<ReaderSetting>(() => {
-    try {
-      const raw = window.localStorage.getItem(LS_KEY)
-      if (raw) return { ...DEFAULT_SETTING, ...(JSON.parse(raw) as Partial<ReaderSetting>) }
-    } catch {
-      /* 忽略 */
-    }
-    return DEFAULT_SETTING
-  })
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(LS_KEY, JSON.stringify(setting))
-    } catch {
-      /* 忽略 */
-    }
-  }, [setting])
+  const [prefs] = useReaderPrefs()
 
   /* 记录已读章节 */
   useEffect(() => {
@@ -91,10 +70,13 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
   }
 
   const c = ch.data
-  const bg = BGS[setting.bg] ?? BGS[0]
-  const size = (SIZES[setting.size] ?? SIZES[2]).px
-  const font = (FONTS[setting.font] ?? FONTS[0]).v
-  const ink = (INKS[setting.ink] ?? INKS[0]).v || bg.ink
+  /* 场景配色 + 就近字号档位（偏好可能来自其他主题的自定义字号） */
+  const scene = SCENES[prefs.scene] ?? SCENES.day
+  const sizeIdx = SIZES.reduce(
+    (best, s, i) => (Math.abs(s.px - prefs.fontSize) < Math.abs(SIZES[best].px - prefs.fontSize) ? i : best),
+    0,
+  )
+  const ink = prefs.ink || scene.ink
   const paragraphs = c.content
     .split(/\n+/)
     .map((s) => s.trim())
@@ -103,29 +85,29 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
   const chapters = all.data ?? []
 
   const rootStyle = {
-    '--r-bg': bg.page,
-    '--r-paper': bg.paper,
+    '--r-bg': scene.page,
+    '--r-paper': scene.paper,
     '--r-ink': ink,
-    fontSize: `${size}px`,
-    fontFamily: font,
+    fontSize: `${prefs.fontSize}px`,
+    fontFamily: readerFontStack(prefs.font),
   } as CSSProperties
 
   return (
     <div className="aj-reader pb-10" style={rootStyle}>
-      {/* 阅读工具条：背景色 6 板 / 字号 5 档 / 字体 / 字色 */}
+      {/* 阅读工具条：背景色 5 板 / 字号 5 档 / 行距 / 字体 / 字色（跨主题共享） */}
       <div className="aj-reader-paper mx-auto w-[calc(100%-24px)] max-w-[1080px] px-4 py-3 sm:w-[94%]">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs" style={{ color: 'var(--r-ink)' }}>
           <div className="flex items-center gap-1.5">
             <span className="mr-0.5 opacity-80">背景</span>
-            {BGS.map((b, i) => (
+            {READER_SCENES.map((s) => (
               <button
-                key={b.k}
-                title={b.k}
-                aria-label={`背景：${b.k}`}
-                data-active={i === setting.bg}
+                key={s.key}
+                title={s.label}
+                aria-label={`背景：${s.label}`}
+                data-active={prefs.scene === s.key}
                 className="aj-swatch"
-                style={{ background: b.paper }}
-                onClick={() => setSetting((s) => ({ ...s, bg: i }))}
+                style={{ background: SCENES[s.key].paper }}
+                onClick={() => setReaderPrefs({ scene: s.key })}
               />
             ))}
           </div>
@@ -134,11 +116,24 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
             {SIZES.map((s, i) => (
               <button
                 key={s.k}
-                data-active={i === setting.size}
+                data-active={i === sizeIdx}
                 className="aj-reader-btn"
-                onClick={() => setSetting((v) => ({ ...v, size: i }))}
+                onClick={() => setReaderPrefs({ fontSize: s.px })}
               >
                 {s.k}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="mr-0.5 opacity-80">行距</span>
+            {READER_LINE_HEIGHTS.map((lh) => (
+              <button
+                key={lh}
+                data-active={prefs.lineHeight === lh}
+                className="aj-reader-btn"
+                onClick={() => setReaderPrefs({ lineHeight: lh })}
+              >
+                {lh.toFixed(1)}
               </button>
             ))}
           </div>
@@ -146,12 +141,12 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
             <span className="opacity-80">字体</span>
             <select
               className="aj-reader-select"
-              value={setting.font}
-              onChange={(e) => setSetting((v) => ({ ...v, font: Number(e.target.value) }))}
+              value={prefs.font}
+              onChange={(e) => setReaderPrefs({ font: e.target.value as typeof prefs.font })}
             >
-              {FONTS.map((f, i) => (
-                <option key={f.k} value={i}>
-                  {f.k}
+              {READER_FONTS.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
                 </option>
               ))}
             </select>
@@ -160,11 +155,11 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
             <span className="opacity-80">字色</span>
             <select
               className="aj-reader-select"
-              value={setting.ink}
-              onChange={(e) => setSetting((v) => ({ ...v, ink: Number(e.target.value) }))}
+              value={prefs.ink}
+              onChange={(e) => setReaderPrefs({ ink: e.target.value })}
             >
-              {INKS.map((f, i) => (
-                <option key={f.k} value={i}>
+              {INKS.map((f) => (
+                <option key={f.k} value={f.v}>
                   {f.k}
                 </option>
               ))}
@@ -192,10 +187,10 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
         </div>
       </div>
 
-      {/* 正文卡：23px / 1.76 / 缩进 2.4em */}
+      {/* 正文卡：字号/行距/字体/背景/字色全部可调 */}
       <article
-        className="aj-reader-paper mx-auto mt-4 w-[calc(100%-24px)] max-w-[1080px] px-[clamp(24px,4vw,40px)] py-[clamp(24px,4vw,40px)] leading-[1.76] sm:w-[94%]"
-        style={{ color: 'var(--r-ink)' }}
+        className="aj-reader-paper mx-auto mt-4 w-[calc(100%-24px)] max-w-[1080px] px-[clamp(24px,4vw,40px)] py-[clamp(24px,4vw,40px)] sm:w-[94%]"
+        style={{ color: 'var(--r-ink)', lineHeight: prefs.lineHeight }}
       >
         {paragraphs.length === 0 ? (
           <p className="py-8 text-center text-sm opacity-70">本章内容为空，请返回目录选择其他章节。</p>

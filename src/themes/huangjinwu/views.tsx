@@ -9,6 +9,15 @@ import {
   useNovel,
   useNovels,
 } from '@/hooks/use-novel-data'
+import {
+  READER_FONTS,
+  READER_SCENES,
+  readerFontStack,
+  readerInk,
+  setReaderPrefs,
+  useReaderPrefs,
+  type ReaderSceneColors,
+} from '@/hooks/use-reader-prefs'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
 import {
@@ -406,6 +415,25 @@ export function Toc({ navigate, novelId }: ViewProps & { novelId: number }) {
         ]}
         navigate={navigate}
       />
+      {/* 最新章节（全书倒数 12 章，新→旧） */}
+      {chapters && chapters.length > 0 && (
+        <section className="rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+          <SectionTitle
+            title="最新章节"
+            small="最近更新 12 章 · 新→旧"
+            action={
+              <button
+                onClick={() => navigate({ name: 'book', novelId })}
+                className="shrink-0 cursor-pointer rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-5 py-2 text-[13px] text-[#1e293b] transition-colors duration-200 hover:border-[#2563eb] hover:text-[#2563eb]"
+              >
+                返回书页
+              </button>
+            }
+          />
+          <ChapterPills chapters={[...chapters].slice(-12).reverse()} navigate={navigate} />
+        </section>
+      )}
+
       <section className="rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
         <SectionTitle
           title={novel ? `${novel.title} · 章节目录` : '章节目录'}
@@ -459,11 +487,19 @@ function AuthorWorks({
   )
 }
 
+/* 场景配色：日间沿用蓝灰纸面，其余按语义键换肤 */
+const SCENES: Record<string, ReaderSceneColors> = {
+  day: { page: '', paper: '#f8fafc', ink: '#1e293b', muted: '#94a3b8', line: '#d8e3f0' },
+  paper: { page: '#e6d9bd', paper: '#f8f0da', ink: '#4a3a24', muted: '#a89a80', line: '#d4c5a3' },
+  green: { page: '#dcead8', paper: '#f0f6ec', ink: '#2f4030', muted: '#8fa590', line: '#bcd4bc' },
+  blue: { page: '#d8e4ee', paper: '#eef4fa', ink: '#2d3c46', muted: '#8fa2b0', line: '#b8cede' },
+  night: { page: '#1e2024', paper: '#26262b', ink: '#c0c0c6', muted: '#8a8a92', line: '#3a3a42' },
+}
+
 export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number }) {
   const { data: ch, isPending, isError, refetch } = useChapter(chapterId)
   const novel = useNovel(ch?.novelId)
-  const [fontSize, setFontSize] = useState(20)
-  const [lineHeight, setLineHeight] = useState(1.8)
+  const [prefs] = useReaderPrefs()
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -495,6 +531,7 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
   }
 
   const paragraphs = ch.content.split('\n').map((s) => s.trim()).filter(Boolean)
+  const scene = SCENES[prefs.scene] ?? SCENES.day
 
   return (
     <div className="mx-auto max-w-[900px] space-y-5 px-4 py-6">
@@ -507,60 +544,102 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
         navigate={navigate}
       />
 
-      {/* 阅读器头部卡：书名 + 字号/行距滑杆 */}
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-[10px] border border-[#e6edf7] bg-white p-4 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+      {/* 阅读器头部卡：书名 + 字号/行距滑杆 + 背景/字体（跨主题共享同一份偏好） */}
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-[10px] border p-4 shadow-[0_1px_3px_rgba(37,99,235,0.06)] transition-colors" style={{ background: scene.paper, borderColor: scene.line }}>
         <button
           onClick={() => navigate({ name: 'book', novelId: ch.novelId })}
-          className="cursor-pointer truncate text-[20px] font-semibold text-[#1e293b] transition-colors duration-200 hover:text-[#2563eb]"
+          className="cursor-pointer truncate text-[20px] font-semibold transition-colors duration-200"
+          style={{ color: scene.ink }}
         >
           {ch.novelTitle}
         </button>
-        <div className="hidden items-center gap-6 sm:flex">
-          <label className="flex items-center gap-2 text-[13px] text-[#64748b]">
+        <div className="flex items-center gap-6">
+          <label className="flex items-center gap-2 text-[13px]" style={{ color: scene.muted }}>
             字号
             <input
               type="range"
               min={14}
-              max={30}
+              max={28}
               step={1}
-              value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
+              value={prefs.fontSize}
+              onChange={(e) => setReaderPrefs({ fontSize: Number(e.target.value) })}
               className="w-28 accent-[#2563eb]"
             />
-            <span className="w-9 text-right">{fontSize}px</span>
+            <span className="w-9 text-right">{prefs.fontSize}px</span>
           </label>
-          <label className="flex items-center gap-2 text-[13px] text-[#64748b]">
+          <label className="flex items-center gap-2 text-[13px]" style={{ color: scene.muted }}>
             行距
             <input
               type="range"
               min={1.4}
-              max={3}
+              max={2.6}
               step={0.1}
-              value={lineHeight}
-              onChange={(e) => setLineHeight(Number(e.target.value))}
+              value={prefs.lineHeight}
+              onChange={(e) => setReaderPrefs({ lineHeight: Number(e.target.value) })}
               className="w-28 accent-[#2563eb]"
             />
-            <span className="w-9 text-right">{lineHeight.toFixed(1)}</span>
+            <span className="w-9 text-right">{prefs.lineHeight.toFixed(1)}</span>
+          </label>
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 border-t pt-3 text-[13px] sm:w-auto sm:border-t-0 sm:pt-0" style={{ borderColor: scene.line, color: scene.muted }}>
+          <span className="flex items-center gap-1.5">
+            背景
+            {READER_SCENES.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                title={s.label}
+                aria-label={`背景：${s.label}`}
+                onClick={() => setReaderPrefs({ scene: s.key })}
+                className={`h-5 w-5 cursor-pointer rounded-full border transition-all ${
+                  prefs.scene === s.key ? 'scale-110 border-[#2563eb]' : 'border-black/25'
+                }`}
+                style={{ background: SCENES[s.key].paper }}
+              />
+            ))}
+          </span>
+          <label className="flex items-center gap-1.5">
+            字体
+            <select
+              value={prefs.font}
+              onChange={(e) => setReaderPrefs({ font: e.target.value as typeof prefs.font })}
+              className="cursor-pointer rounded-[6px] border bg-white px-1.5 py-1 text-[13px] text-[#1e293b] outline-none"
+              style={{ borderColor: scene.line }}
+            >
+              {READER_FONTS.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
       </section>
 
       {/* 正文卡 */}
-      <article className="rounded-[10px] border border-[#d8e3f0] bg-[#f8fafc] px-6 py-10 sm:px-10">
-        <h1 className="mb-10 text-center text-[24px] font-semibold text-[#1e293b]">
+      <article className="rounded-[10px] border px-6 py-10 transition-colors sm:px-10" style={{ background: scene.paper, borderColor: scene.line }}>
+        <h1 className="mb-10 text-center text-[24px] font-semibold" style={{ color: scene.ink }}>
           {ch.title}
-          <span className="mt-2 block text-[13px] font-normal text-[#94a3b8]">
+          <span className="mt-2 block text-[13px] font-normal" style={{ color: scene.muted }}>
             第 {ch.idx} 章 · 约 {fmtWan(ch.wordCount)} 字
           </span>
         </h1>
-        <div className="break-words" style={{ fontSize: `${fontSize}px`, lineHeight }}>
+        <div
+          className="break-words"
+          style={{
+            fontSize: `${prefs.fontSize}px`,
+            lineHeight: prefs.lineHeight,
+            fontFamily: readerFontStack(prefs.font),
+          }}
+        >
           {paragraphs.length === 0 ? (
-            <p className="mx-auto max-w-[800px] text-[#94a3b8]">本章内容为空</p>
+            <p className="mx-auto max-w-[800px]" style={{ color: scene.muted }}>本章内容为空</p>
           ) : (
             paragraphs.map((p, i) => (
               <p
                 key={i}
-                className="mx-auto mb-4 max-w-[800px] text-justify tracking-[0.2em] text-[#1e293b] indent-[2em]"
+                className="mx-auto mb-4 max-w-[800px] text-justify tracking-[0.2em] indent-[2em]"
+                style={{ color: readerInk(prefs, scene) }}
               >
                 {p}
               </p>

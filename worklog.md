@@ -505,3 +505,22 @@ Stage Summary:
 - 反反爬增强：按主机策略亲和（成功策略链首优先）+ 任务日志命中策略可观测性
 - 清理：陈旧 raw SQL workaround -117 行、脚手架残留删除、采集 API 去重
 - 运维规程更新：沙箱下常驻服务用 start-stop-daemon --background --make-pidfile 方式启动（nohup/setsid 均会被会话回收）
+
+---
+Task ID: 21-main
+Agent: 主控（Z.ai Code）
+Task: 第七批——完善所有主题「阅读设置」+ 目录页「最新章节」统一为全书倒数 12 章
+
+Work Log:
+- 全量审查 10 主题 × 2 项现状：阅读设置仅 aijjxs 完整（独立 LS 键）、6 家有设置但全部不持久化、23qb/ggd66/ddyueshu/trxsw 完全没有；目录页「最新章节」仅 ddyueshu（置顶 6 条）与 x2552（按钮跳末章）存在，其余 8 家缺失；核验 /api/novels/[id]/chapters 全量按 idx asc 返回（全书倒数 12 = slice(-12) 的正确数据源），Book 详情页各主题均已正确用全量章节取末 12
+- 新建 src/hooks/use-reader-prefs.ts：模块级外部 store + useSyncExternalStore，字号 14-28 / 行距 1.4-2.6 / 字体 4 族 / 背景 5 场景（day/paper/green/blue/night）/ 字色（''=跟随背景），sanitize 白名单+夹取，localStorage key reader-prefs-v1，模块加载时同步读取（首帧无闪烁，主题视图客户端专属挂载无 SSR 风险）；内置 aijjxs 旧键 aj-reader-setting 一次性迁移（size/bg/font/ink 索引→新语义）
+- 10 主题章节页全部接入共享偏好、各保留自身美学：101kks 底部设置面板（背景5板/字體/行距/字號±）、aijjxs 暖纸工具条（背景5板/字号5档/行距/字体/字色，SCENES 保留其调色板）、23qb 圆角设置条+Card 支持 style（夜间整卡换肤）、ddyueshu 复古设置条（蓝描边虚线）、ggd66 米黄卡设置条、huangjinwu 滑杆接 store+新增背景板/字体（行距范围收窄 1.4-2.6）、pilishuwu A±/护眼=green 场景/字体、shipsay A±+行距/字体下拉+极简保留、trxsw 复古设置条+夜间、x2552 单行扩展（字号/行距/字体/背景5板/夜间/恢复）
+- 10 主题目录页统一新增/修正「最新章节」=全书倒数 12 章（新→旧，[...chapters].slice(-12).reverse()）：8 家新增（101kks 繁体最新章節三栏、23qb 卡片双栏 ChapterRow、aijjxs 网格、ggd66 GH2+ChapterDD 4 列、huangjinwu SectionTitle+ChapterPills、pilishuwu Block 三栏带字数、shipsay ChapterGrid 置顶、trxsw Block 4 列、x2552 表头+4 列 ul）；ddyueshu 置顶 6→12
+- E2E（agent-browser 逐主题实测，测试小说 青萍剑歌行 28 章）：10/10 目录页最新章节=idx 28→17 降序（ddyueshu/ggd66/shipsay 用结构化标题比对，其余 idx 前缀解析）；10/10 章节页设置生效——A+/滑杆/档位→localStorage+computed style 双确认，夜间/护眼场景换肤取色确认（如 #26262b/#2f4030），shipsay 行距 2.2（computed 44px/20px）、pilishuwu 宋体、x2552 reload 后重新进章验证持久化（fontSize 20 + scene night 存活）；全程 console/page errors 干净
+- 顺手修复：101kks FONT_OPTIONS.find(...)! 潜在空指针（其他主题设 kai 后崩溃）→ ?? 兜底；23qb Card 增加 style prop；huangjinwu 滑杆 max 30→28/3→2.6 对齐 store 夹取
+- 状态恢复：activeTheme 还原 x2552、reader-prefs 清回默认、视口还原 1280×800；tsc/ESLint 0 错误
+
+Stage Summary:
+- 「阅读设置」从 4/10 主题可用且全部不持久化 → 10/10 主题全量可调（字号/行距/字体/背景/字色）且跨主题共享一份 localStorage 偏好，旧用户数据自动迁移
+- 「最新章节」从 2/10 主题存在且口径不一 → 10/10 目录页统一为全书倒数 12 章（新→旧），与 Book 详情页口径一致，杜绝任何「分页末 12 章」歧义
+- 产物：src/hooks/use-reader-prefs.ts（新）；10 主题 Chapter/Toc 全量接线；23qb ui.tsx Card style 支持

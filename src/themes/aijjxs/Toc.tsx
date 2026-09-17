@@ -71,6 +71,28 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
         <p className="line-clamp-3">{n.description || '暂无简介'}</p>
       </div>
 
+      {/* 最新章节（全书倒数 12 章，新→旧，置顶快达） */}
+      {raw.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-[14px] font-bold text-[#1f2d3d]">
+            最新章节
+            <span className="ml-2 text-[12px] font-normal text-[#8b98a4]">最近更新 12 章 · 新→旧</span>
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {[...raw].slice(-12).reverse().map((c) => (
+              <button
+                key={`latest-${c.id}`}
+                onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+                className="cursor-pointer truncate rounded-[8px] border border-[#d9dfe5] bg-[#f8faf7] px-3 py-2 text-left text-[13px] text-[#1f2d3d] transition-colors hover:border-[#1f8b4c] hover:text-[#1f8b4c]"
+                title={c.title}
+              >
+                {c.idx}. {c.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 章节 3 列网格（≤640px 1 列 / ≥1024px 3 列） */}
       {raw.length === 0 ? (
         <p className="py-10 text-center text-[14px] text-[#8b98a4]">暂无章节，稍后再来看看。</p>

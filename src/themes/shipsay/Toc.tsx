@@ -43,6 +43,17 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
           </span>
         </div>
 
+        {/* 最新章节（全书倒数 12 章，新→旧，置顶快达） */}
+        {chapters && chapters.length > 0 && (
+          <div className="border-b border-[#E6E6E6] px-2 pb-2 pt-3">
+            <p className="px-2 pb-1 text-center text-[15px] font-bold text-[#3E3D43]">
+              最新章节
+              <span className="ml-1 text-[11px] font-normal text-[#969BA3]">最近更新 12 章 · 新→旧</span>
+            </p>
+            <ChapterGrid chapters={[...chapters].slice(-12).reverse()} navigate={navigate} />
+          </div>
+        )}
+
         {chLoading ? (
           <RowsSkeleton rows={10} rowH={50} />
         ) : chError ? (
