@@ -19,7 +19,9 @@ import {
   useSettings,
 } from '@/hooks/use-novel-data'
 import {
+  READER_INKS,
   READER_LINE_HEIGHTS,
+  READER_SCENES,
   readerFontStack,
   readerInk,
   setReaderPrefs,
@@ -1013,7 +1015,7 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
         {/* 章首导航 */}
         <ChapterNav ch={ch} navigate={navigate} className="mt-4" />
 
-        {/* 阅读工具条：字号 / 行距 / 护眼 / 字体（跨主题共享同一份偏好） */}
+        {/* 阅读工具条：字号 / 行距 / 背景 / 护眼 / 字体 / 字色（跨主题共享同一份偏好） */}
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
           <button
             type="button"
@@ -1057,6 +1059,23 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
               行距 {lh.toFixed(1)}
             </button>
           ))}
+          <span className="flex items-center gap-1.5">
+            背景
+            {READER_SCENES.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                title={s.label}
+                aria-label={`背景：${s.label}`}
+                onClick={() => setReaderPrefs({ scene: s.key })}
+                className={cn(
+                  'h-4 w-4 cursor-pointer rounded-full border transition-all',
+                  prefs.scene === s.key ? 'scale-110 border-[#FF6600]' : 'border-black/25',
+                )}
+                style={{ background: SCENES[s.key].paper }}
+              />
+            ))}
+          </span>
           <button
             type="button"
             onClick={() => setReaderPrefs({ scene: eye ? 'day' : 'green' })}
@@ -1078,6 +1097,16 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
             <option value="song">宋体</option>
             <option value="hei">黑体</option>
             <option value="kai">楷体</option>
+          </select>
+          <select
+            value={prefs.ink}
+            onChange={(e) => setReaderPrefs({ ink: e.target.value })}
+            aria-label="字色"
+            className="cursor-pointer border border-[#BFD8EA] bg-white px-1 py-0.5 text-xs text-[#3366BB] outline-none"
+          >
+            {READER_INKS.map((c) => (
+              <option key={c.k} value={c.v}>{c.k}</option>
+            ))}
           </select>
         </div>
 

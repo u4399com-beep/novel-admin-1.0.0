@@ -18,12 +18,8 @@ export function fmtWords(n: number): string {
   return `${fmtWan(n)}字`
 }
 
-export function fmtDate(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (x: number) => String(x).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
+/* 日期格式化与 lib/format.formatDate 完全同实现，直接共享（保持 fmtDate 导出名不变） */
+export { formatDate as fmtDate } from '@/lib/format'
 
 export function statusLabel(s: string): string {
   return s === 'finished' ? '已完本' : '连载中'

@@ -121,7 +121,7 @@ export async function upsertBook(run: Run, book: BookData, categoryId: number): 
         data: {
           title,
           author,
-          description: book.description.slice(0, 2000),
+          description: (book.description || '').slice(0, 2000),
           cover: COVER_TOKENS[Math.floor(Math.random() * COVER_TOKENS.length)],
           categoryId,
           status: mapNovelStatus(book.status),
@@ -149,7 +149,7 @@ export async function upsertBook(run: Run, book: BookData, categoryId: number): 
       .update({
         where: { id: novelId },
         data: {
-          description: book.description.slice(0, 2000),
+          description: (book.description || '').slice(0, 2000),
           categoryId,
           status: mapNovelStatus(book.status),
         },
@@ -172,10 +172,13 @@ export interface ChapterRow {
 }
 
 /**
- * 章节入库。唯一冲突（P2002，如并发任务写同一本书）时顺延 idx 重试一次，
+ * 章节入库。唯一冲突（P2002，如并发任务写同一本书）时顺延 idx 有界重试
+ * （默认 1 次；并发双写同书可能连锁占用多个连续序号，单次重试会漏），
  * 避免序号停滞导致后续所有章节连锁失败。
  * 成功返回实际落库使用的 idx（调用方据此推进下一章序号）；失败返回错误消息。
  */
+const MAX_IDX_BUMPS = 4 // 首次尝试外最多顺延 4 次（共 5 次尝试）
+
 export async function storeChapter(
   run: Run,
   novelId: number,
@@ -189,7 +192,7 @@ export async function storeChapter(
       .catch((e: unknown) => (e instanceof Error ? e : new Error('章节入库失败')))
 
   let stored = await attempt(idx)
-  if (stored !== true && isUniqueConflict(stored)) {
+  for (let bumps = 0; stored !== true && isUniqueConflict(stored) && bumps < MAX_IDX_BUMPS; bumps++) {
     run.log(`章节序号 ${idx} 已被占用，顺延重试`)
     idx++
     stored = await attempt(idx)

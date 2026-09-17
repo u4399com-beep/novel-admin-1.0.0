@@ -1,11 +1,7 @@
 /** 采集中心共享工具（自 ScrapeCenter.tsx 拆分，逻辑保持原样） */
 
-export async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...init })
-  const data = (await res.json().catch(() => ({}))) as { error?: string }
-  if (!res.ok) throw new Error(data.error ?? `请求失败(${res.status})`)
-  return data as T
-}
+// api 实现与后台面板共用同一版本（原 shared 内重复实现收敛至 ui-shared）
+export { api } from '@/components/admin/ui-shared'
 
 /** 仅保留非空字符串字段 */
 export function cleanRule(obj: object): Record<string, string> {

@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useChapters, useChapter } from '@/hooks/use-novel-data'
 import {
   READER_FONTS,
+  READER_INKS,
   READER_LINE_HEIGHTS,
   READER_SCENES,
   readerFontStack,
@@ -34,13 +35,7 @@ const SCENES: Record<string, ReaderSceneColors> = {
   night: { page: '#26251f', paper: '#31302a', ink: '#c9c2b2', muted: '#8f897b', line: '#45443c' },
 }
 
-const INKS = [
-  { k: '跟随背景', v: '' },
-  { k: '深棕', v: '#5b4636' },
-  { k: '墨绿', v: '#234d3f' },
-  { k: '藏蓝', v: '#2c3e5d' },
-  { k: '炭黑', v: '#262626' },
-]
+/* 字色预设共享自 use-reader-prefs（READER_INKS），与其他主题同一份 */
 
 export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number }) {
   const ch = useChapter(chapterId)
@@ -158,7 +153,7 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
               value={prefs.ink}
               onChange={(e) => setReaderPrefs({ ink: e.target.value })}
             >
-              {INKS.map((f) => (
+              {READER_INKS.map((f) => (
                 <option key={f.k} value={f.v}>
                   {f.k}
                 </option>

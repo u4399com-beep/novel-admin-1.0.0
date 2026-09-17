@@ -1,12 +1,15 @@
 'use client'
 
 /**
- * 管理后台各功能面板（自 AdminDrawer.tsx 原样迁入，逻辑/请求/交互保持不变）：
- * ThemesTab / NovelsTab / Field / ChaptersDialog / CategoriesTab / SeoTab /
- * PseoTab / SettingsTab + api 工具 + 相关类型与常量。
+ * 管理后台各功能面板（自 AdminDrawer.tsx 迁入）：
+ * ThemesTab / NovelsTab / ChaptersDialog / CategoriesTab / SeoTab /
+ * PseoTab / SettingsTab + 相关类型与常量。
+ *
+ * 通用能力（api / runBusy / useDialogEscape / Field / Modal / DialogActions）
+ * 收敛至 ./ui-shared，此处只保留各面板差异逻辑；行为与样式与拆分前一致。
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,32 +20,14 @@ import { Trash2, Pencil, Plus, BookOpen, Layers } from 'lucide-react'
 import { THEME_LIST } from '@/themes/registry'
 import { useAppStore } from '@/lib/store'
 import { useChapters, useNovels, useSettings, qk } from '@/hooks/use-novel-data'
-import type { CategoryDto, NovelListItem, ScrapeRuleDto, SeoConfig } from '@/lib/types'
+import type { CategoryDto, NovelListItem, SeoConfig } from '@/lib/types'
 import { formatWordCount, timeAgo } from '@/lib/format'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query'
+import { api, errMsg, runBusy, useDialogEscape, Field, Modal, DialogActions } from './ui-shared'
 
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...init })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `请求失败(${res.status})`)
-  return data as T
-}
-
-/**
- * 手写模态框的 Esc 关闭。嵌套对话框（章节编辑在章节管理内）的内层用 capture=true：
- * capture 监听先于 bubble 触发并 stopPropagation，保证 Esc 只关最上层。
- */
-function useDialogEscape(onClose: () => void, active = true, capture = false) {
-  useEffect(() => {
-    if (!active) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      onClose()
-    }
-    document.addEventListener('keydown', handler, capture)
-    return () => document.removeEventListener('keydown', handler, capture)
-  }, [onClose, active, capture])
+/** 顺序失效多个 query（保持与逐条 await 相同的完成次序） */
+async function invalidate(qc: QueryClient, ...keys: QueryKey[]) {
+  for (const key of keys) await qc.invalidateQueries({ queryKey: key })
 }
 
 // ==================== 主题管理 ====================
@@ -52,19 +37,13 @@ export function ThemesTab() {
   const qc = useQueryClient()
   const [busy, setBusy] = useState<string | null>(null)
 
-  const activate = async (id: string) => {
-    setBusy(id)
-    try {
+  const activate = (id: string) =>
+    runBusy(setBusy, id, null, '切换失败', async () => {
       await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ activeTheme: id }) })
       await qc.invalidateQueries({ queryKey: qk.settings })
       refetch()
       toast.success('主题已切换')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '切换失败')
-    } finally {
-      setBusy(null)
-    }
-  }
+    })
 
   return (
     <div>
@@ -121,6 +100,9 @@ interface NovelForm {
 
 const EMPTY_FORM: NovelForm = { title: '', author: '', description: '', categoryId: 0, status: 'serial', isFeatured: false, isHot: false }
 
+/** 手写 select 与原生控件的统一外观（新增/编辑小说对话框内） */
+const selectCls = 'h-9 w-full rounded-md border border-neutral-200 px-2 text-sm'
+
 export function NovelsTab() {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
@@ -133,12 +115,11 @@ export function NovelsTab() {
 
   useDialogEscape(() => setForm(null), form !== null)
 
-  const save = async () => {
+  const save = () => {
     if (!form) return
     if (!form.title.trim()) return toast.error('书名不能为空')
     if (!form.categoryId) return toast.error('请选择分类')
-    setSaving(true)
-    try {
+    return runBusy(setSaving, true, false, '保存失败', async () => {
       if (form.id) {
         await api(`/api/novels/${form.id}`, { method: 'PUT', body: JSON.stringify(form) })
         toast.success('已保存')
@@ -147,14 +128,8 @@ export function NovelsTab() {
         toast.success('已新增')
       }
       setForm(null)
-      await qc.invalidateQueries({ queryKey: ['novels'] })
-      await qc.invalidateQueries({ queryKey: ['novel'] })
-      await qc.invalidateQueries({ queryKey: qk.home })
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSaving(false)
-    }
+      await invalidate(qc, ['novels'], ['novel'], qk.home)
+    })
   }
 
   const remove = async (n: NovelListItem) => {
@@ -164,11 +139,9 @@ export function NovelsTab() {
       toast.success('已删除')
       // 末页删空自愈：当前页仅剩这一条且不是第一页时回退一页，避免停留在空页
       if (data && data.list.length === 1 && page > 1) setPage(page - 1)
-      await qc.invalidateQueries({ queryKey: ['novels'] })
-      await qc.invalidateQueries({ queryKey: ['novel'] })
-      await qc.invalidateQueries({ queryKey: qk.home })
+      await invalidate(qc, ['novels'], ['novel'], qk.home)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(errMsg(e, '删除失败'))
     }
   }
 
@@ -202,16 +175,16 @@ export function NovelsTab() {
                 <td className="px-3 py-2 text-xs">{n.chapterCount}</td>
                 <td className="hidden px-3 py-2 text-xs text-neutral-500 md:table-cell">{formatWordCount(n.wordCount)}</td>
                 <td className="px-3 py-2 text-right">
-                  <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setChapterNovel(n)}>
+                  <Button size="sm" variant="ghost" className="h-7 px-2" aria-label={`章节管理 ${n.title}`} onClick={() => setChapterNovel(n)}>
                     <BookOpen className="h-3.5 w-3.5" />
                   </Button>
                   <Button
-                    size="sm" variant="ghost" className="h-7 px-2"
+                    size="sm" variant="ghost" className="h-7 px-2" aria-label={`编辑小说 ${n.title}`}
                     onClick={() => setForm({ id: n.id, title: n.title, author: n.author, description: n.description, categoryId: n.categoryId, status: n.status, isFeatured: n.isFeatured, isHot: n.isHot })}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600" onClick={() => remove(n)}>
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600" aria-label={`删除小说 ${n.title}`} onClick={() => remove(n)}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </td>
@@ -241,63 +214,39 @@ export function NovelsTab() {
       )}
 
       {form && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setForm(null)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={form.id ? '编辑小说' : '新增小说'}
-            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-4 text-base font-semibold">{form.id ? '编辑小说' : '新增小说'}</h3>
-            <div className="space-y-3">
-              <Field label="书名"><Input autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
-              <Field label="作者"><Input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} /></Field>
-              <Field label="分类">
-                <select
-                  className="h-9 w-full rounded-md border border-neutral-200 px-2 text-sm"
-                  value={form.categoryId}
-                  onChange={(e) => setForm({ ...form, categoryId: Number(e.target.value) })}
-                >
-                  <option value={0}>请选择…</option>
-                  {categories?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </Field>
-              <Field label="状态">
-                <select
-                  className="h-9 w-full rounded-md border border-neutral-200 px-2 text-sm"
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value as 'serial' | 'finished' })}
-                >
-                  <option value="serial">连载中</option>
-                  <option value="finished">已完本</option>
-                </select>
-              </Field>
-              <Field label="简介"><Textarea rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
-              <div className="flex gap-6">
-                <label className="flex items-center gap-2 text-sm"><Switch checked={form.isFeatured} onCheckedChange={(v) => setForm({ ...form, isFeatured: v })} />推荐</label>
-                <label className="flex items-center gap-2 text-sm"><Switch checked={form.isHot} onCheckedChange={(v) => setForm({ ...form, isHot: v })} />热门</label>
-              </div>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="outline" disabled={saving} onClick={() => setForm(null)}>取消</Button>
-              <Button onClick={save} disabled={saving}>{saving ? '保存中…' : '保存'}</Button>
+        <Modal
+          label={form.id ? '编辑小说' : '新增小说'}
+          onClose={() => setForm(null)}
+          panel="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        >
+          <h3 className="mb-4 text-base font-semibold">{form.id ? '编辑小说' : '新增小说'}</h3>
+          <div className="space-y-3">
+            <Field label="书名"><Input autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+            <Field label="作者"><Input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} /></Field>
+            <Field label="分类">
+              <select className={selectCls} value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: Number(e.target.value) })}>
+                <option value={0}>请选择…</option>
+                {categories?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+            <Field label="状态">
+              <select className={selectCls} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'serial' | 'finished' })}>
+                <option value="serial">连载中</option>
+                <option value="finished">已完本</option>
+              </select>
+            </Field>
+            <Field label="简介"><Textarea rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+            <div className="flex gap-6">
+              <label className="flex items-center gap-2 text-sm"><Switch checked={form.isFeatured} onCheckedChange={(v) => setForm({ ...form, isFeatured: v })} />推荐</label>
+              <label className="flex items-center gap-2 text-sm"><Switch checked={form.isHot} onCheckedChange={(v) => setForm({ ...form, isHot: v })} />热门</label>
             </div>
           </div>
-        </div>
+          <DialogActions className="mt-5 flex justify-end gap-2" busy={saving} onCancel={() => setForm(null)} onSave={save} />
+        </Modal>
       )}
 
       {chapterNovel && <ChaptersDialog novel={chapterNovel} onClose={() => setChapterNovel(null)} />}
     </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-neutral-600">{label}</span>
-      {children}
-    </label>
   )
 }
 
@@ -316,40 +265,25 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
   // 编辑层嵌套在章节管理层之上：capture 监听优先触发，Esc 只关闭编辑层
   useDialogEscape(() => setEditing(null), editing !== null, true)
 
-  const add = async () => {
+  const add = () => {
     if (!title.trim()) return toast.error('标题不能为空')
-    setAdding(true)
-    try {
+    return runBusy(setAdding, true, false, '添加失败', async () => {
       await api('/api/chapters', { method: 'POST', body: JSON.stringify({ novelId: novel.id, title, content }) })
       toast.success('章节已添加')
       setTitle(''); setContent('')
-      await qc.invalidateQueries({ queryKey: qk.chapters(novel.id) })
-      await qc.invalidateQueries({ queryKey: ['novels'] })
-      await qc.invalidateQueries({ queryKey: ['novel'] })
-      await qc.invalidateQueries({ queryKey: qk.home })
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '添加失败')
-    } finally {
-      setAdding(false)
-    }
+      await invalidate(qc, qk.chapters(novel.id), ['novels'], ['novel'], qk.home)
+    })
   }
 
-  const saveEdit = async () => {
+  const saveEdit = () => {
     if (!editing) return
     if (!editing.title.trim()) return toast.error('标题不能为空')
-    setSaving(true)
-    try {
+    return runBusy(setSaving, true, false, '保存失败', async () => {
       await api(`/api/chapters/${editing.id}`, { method: 'PUT', body: JSON.stringify({ title: editing.title, content: editing.content }) })
       toast.success('已保存')
       setEditing(null)
-      await qc.invalidateQueries({ queryKey: qk.chapters(novel.id) })
-      await qc.invalidateQueries({ queryKey: ['chapter'] })
-      await qc.invalidateQueries({ queryKey: ['novel'] })
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSaving(false)
-    }
+      await invalidate(qc, qk.chapters(novel.id), ['chapter'], ['novel'])
+    })
   }
 
   const remove = async (id: number) => {
@@ -357,93 +291,81 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
     try {
       await api(`/api/chapters/${id}`, { method: 'DELETE' })
       toast.success('已删除')
-      await qc.invalidateQueries({ queryKey: qk.chapters(novel.id) })
-      await qc.invalidateQueries({ queryKey: ['novels'] })
-      await qc.invalidateQueries({ queryKey: ['novel'] })
-      await qc.invalidateQueries({ queryKey: ['chapter'] })
+      await invalidate(qc, qk.chapters(novel.id), ['novels'], ['novel'], ['chapter'])
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(errMsg(e, '删除失败'))
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`章节管理 ${novel.title}`}
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="border-b px-5 py-4">
-          <h3 className="text-base font-semibold">章节管理 · {novel.title}</h3>
-          <p className="mt-0.5 text-xs text-neutral-500">共 {chapters?.length ?? novel.chapterCount} 章</p>
+    <Modal
+      label={`章节管理 ${novel.title}`}
+      onClose={onClose}
+      panel="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
+      below={editing && (
+        <Modal
+          top
+          label="编辑章节"
+          onClose={() => setEditing(null)}
+          panel="flex max-h-[85vh] w-full max-w-xl flex-col rounded-lg bg-white p-5 shadow-xl"
+        >
+          <h4 className="mb-3 text-sm font-semibold">编辑章节</h4>
+          <Input autoFocus value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} className="mb-2" />
+          <Textarea rows={12} value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="flex-1" />
+          <DialogActions className="mt-3 flex justify-end gap-2" busy={saving} onCancel={() => setEditing(null)} onSave={saveEdit} />
+        </Modal>
+      )}
+    >
+      <div className="border-b px-5 py-4">
+        <h3 className="text-base font-semibold">章节管理 · {novel.title}</h3>
+        <p className="mt-0.5 text-xs text-neutral-500">共 {chapters?.length ?? novel.chapterCount} 章</p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="mb-4 space-y-2 rounded-lg border bg-neutral-50 p-3">
+          <p className="text-xs font-medium text-neutral-600">新增章节</p>
+          <Input placeholder="章节标题" value={title} onChange={(e) => setTitle(e.target.value)} className="h-8" />
+          <Textarea placeholder="正文（可留空，稍后编辑）" rows={3} value={content} onChange={(e) => setContent(e.target.value)} />
+          <Button size="sm" onClick={add} disabled={adding}>{adding ? '添加中…' : <><Plus className="mr-1 h-3.5 w-3.5" />添加</>}</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <div className="mb-4 space-y-2 rounded-lg border bg-neutral-50 p-3">
-            <p className="text-xs font-medium text-neutral-600">新增章节</p>
-            <Input placeholder="章节标题" value={title} onChange={(e) => setTitle(e.target.value)} className="h-8" />
-            <Textarea placeholder="正文（可留空，稍后编辑）" rows={3} value={content} onChange={(e) => setContent(e.target.value)} />
-            <Button size="sm" onClick={add} disabled={adding}>{adding ? '添加中…' : <><Plus className="mr-1 h-3.5 w-3.5" />添加</>}</Button>
-          </div>
-          {isLoading && <p className="py-6 text-center text-sm text-neutral-400">加载中…</p>}
-          {isError && (
-            <p className="flex items-center justify-center gap-2 py-6 text-center text-sm text-neutral-400">
-              章节加载失败
-              <Button size="sm" variant="outline" onClick={() => refetch()}>重试</Button>
-            </p>
-          )}
-          {!isLoading && !isError && chapters?.length === 0 && (
-            <p className="py-6 text-center text-sm text-neutral-400">暂无章节，可在上方添加</p>
-          )}
-          <div className="max-h-72 space-y-1 overflow-y-auto">
-            {chapters?.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 rounded border px-3 py-1.5 text-sm">
-                <span className="w-10 shrink-0 text-xs text-neutral-400">{c.idx}</span>
-                <span className="min-w-0 flex-1 truncate">{c.title}</span>
-                <span className="shrink-0 text-xs text-neutral-400">{formatWordCount(c.wordCount)}字</span>
-                <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={async () => {
-                  try {
-                    const detail = await api<{ title: string; content: string }>(`/api/chapters/${c.id}`)
-                    setEditing({ id: c.id, title: detail.title, content: detail.content })
-                  } catch (e) {
-                    toast.error(e instanceof Error ? e.message : '加载章节失败')
-                  }
-                }}>
-                  <Pencil className="h-3 w-3" />
-                </Button>
-                <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-500" onClick={() => remove(c.id)}>
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="flex justify-end border-t px-5 py-3">
-          <Button variant="outline" onClick={onClose}>关闭</Button>
+        {isLoading && <p className="py-6 text-center text-sm text-neutral-400">加载中…</p>}
+        {isError && (
+          <p className="flex items-center justify-center gap-2 py-6 text-center text-sm text-neutral-400">
+            章节加载失败
+            <Button size="sm" variant="outline" onClick={() => refetch()}>重试</Button>
+          </p>
+        )}
+        {!isLoading && !isError && chapters?.length === 0 && (
+          <p className="py-6 text-center text-sm text-neutral-400">暂无章节，可在上方添加</p>
+        )}
+        <div className="max-h-72 space-y-1 overflow-y-auto">
+          {chapters?.map((c) => (
+            <div key={c.id} className="flex items-center gap-2 rounded border px-3 py-1.5 text-sm">
+              <span className="w-10 shrink-0 text-xs text-neutral-400">{c.idx}</span>
+              <span className="min-w-0 flex-1 truncate">{c.title}</span>
+              <span className="shrink-0 text-xs text-neutral-400">{formatWordCount(c.wordCount)}字</span>
+              <Button size="sm" variant="ghost" className="h-6 px-1.5" aria-label={`编辑章节 ${c.title}`} onClick={async () => {
+                try {
+                  const detail = await api<{ title: string; content: string }>(`/api/chapters/${c.id}`)
+                  setEditing({ id: c.id, title: detail.title, content: detail.content })
+                } catch (e) {
+                  toast.error(errMsg(e, '加载章节失败'))
+                }
+              }}>
+                <Pencil className="h-3 w-3" />
+              </Button>
+              <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-500" aria-label={`删除章节 ${c.title}`} onClick={() => remove(c.id)}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
         </div>
       </div>
+      <div className="flex justify-end border-t px-5 py-3">
+        <Button variant="outline" onClick={onClose}>关闭</Button>
+      </div>
 
-      {editing && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setEditing(null)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="编辑章节"
-            className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-lg bg-white p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h4 className="mb-3 text-sm font-semibold">编辑章节</h4>
-            <Input autoFocus value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} className="mb-2" />
-            <Textarea rows={12} value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="flex-1" />
-            <div className="mt-3 flex justify-end gap-2">
-              <Button variant="outline" disabled={saving} onClick={() => setEditing(null)}>取消</Button>
-              <Button onClick={saveEdit} disabled={saving}>{saving ? '保存中…' : '保存'}</Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      {/* 编辑层为面板外的兄弟节点（保持原 DOM 层级：其遮罩点击事件冒泡至外层遮罩） */}
+    </Modal>
   )
 }
 
@@ -461,26 +383,22 @@ export function CategoriesTab() {
 
   const refresh = async () => { await qc.invalidateQueries({ queryKey: qk.categories }); await qc.invalidateQueries({ queryKey: qk.home }) }
 
-  const add = async () => {
+  const add = () => {
     if (adding) return
     if (!name.trim()) return toast.error('分类名不能为空')
-    setAdding(true)
-    try {
+    return runBusy(setAdding, true, false, '添加失败', async () => {
       await api('/api/categories', { method: 'POST', body: JSON.stringify({ name }) })
       setName(''); await refresh(); toast.success('已添加')
-    } catch (e) { toast.error(e instanceof Error ? e.message : '添加失败') }
-    finally { setAdding(false) }
+    })
   }
 
-  const saveRename = async () => {
+  const saveRename = () => {
     if (!editing) return
     if (!editing.name.trim()) return toast.error('分类名不能为空')
-    setRenaming(true)
-    try {
+    return runBusy(setRenaming, true, false, '保存失败', async () => {
       await api(`/api/categories/${editing.id}`, { method: 'PUT', body: JSON.stringify({ name: editing.name }) })
       setEditing(null); await refresh(); toast.success('已保存')
-    } catch (e) { toast.error(e instanceof Error ? e.message : '保存失败') }
-    finally { setRenaming(false) }
+    })
   }
 
   return (
@@ -496,13 +414,13 @@ export function CategoriesTab() {
             <Layers className="h-3.5 w-3.5 text-neutral-400" />
             <span className="flex-1">{c.name}</span>
             <span className="text-xs text-neutral-400">{c.novelCount} 本</span>
-            <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={() => setEditing({ id: c.id, name: c.name })}>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5" aria-label={`重命名分类 ${c.name}`} onClick={() => setEditing({ id: c.id, name: c.name })}>
               <Pencil className="h-3 w-3" />
             </Button>
-            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-500" onClick={async () => {
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-red-500" aria-label={`删除分类 ${c.name}`} onClick={async () => {
               if (!confirm(`确认删除分类「${c.name}」？`)) return
               try { await api(`/api/categories/${c.id}`, { method: 'DELETE' }); await refresh(); toast.success('已删除') }
-              catch (e) { toast.error(e instanceof Error ? e.message : '删除失败') }
+              catch (e) { toast.error(errMsg(e, '删除失败')) }
             }}>
               <Trash2 className="h-3 w-3" />
             </Button>
@@ -511,28 +429,21 @@ export function CategoriesTab() {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setEditing(null)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="重命名分类"
-            className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h4 className="mb-3 text-sm font-semibold">重命名分类</h4>
-            <Input
-              autoFocus
-              value={editing.name}
-              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              onKeyDown={(e) => { if (e.key === 'Enter') saveRename() }}
-              className="mb-3"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" disabled={renaming} onClick={() => setEditing(null)}>取消</Button>
-              <Button onClick={saveRename} disabled={renaming}>{renaming ? '保存中…' : '保存'}</Button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          label="重命名分类"
+          onClose={() => setEditing(null)}
+          panel="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl"
+        >
+          <h4 className="mb-3 text-sm font-semibold">重命名分类</h4>
+          <Input
+            autoFocus
+            value={editing.name}
+            onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveRename() }}
+            className="mb-3"
+          />
+          <DialogActions className="flex justify-end gap-2" busy={renaming} onCancel={() => setEditing(null)} onSave={saveRename} />
+        </Modal>
       )}
     </div>
   )
@@ -570,18 +481,12 @@ export function SeoTab() {
   const form: Partial<SeoConfig> = { ...(settings?.seo ?? {}), ...overrides }
   const setForm = (patch: Partial<SeoConfig>) => setOverrides((o) => ({ ...o, ...patch }))
 
-  const save = async () => {
-    setSaving(true)
-    try {
+  const save = () =>
+    runBusy(setSaving, true, false, '保存失败', async () => {
       await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ seo: form }) })
       await qc.invalidateQueries({ queryKey: qk.settings })
       toast.success('SEO 配置已保存，前台即刻生效')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSaving(false)
-    }
-  }
+    })
 
   return (
     <div>
@@ -680,46 +585,34 @@ export function PseoTab() {
   // 故在前端禁用全部执行入口，避免「以为跑 0 个引擎实际跑全量」
   const noEngines = form.sources.length === 0
 
-  const saveConfig = async () => {
-    setSavingCfg(true)
-    try {
+  const saveConfig = () =>
+    runBusy(setSavingCfg, true, false, '保存失败', async () => {
       await api('/api/pseo/config', { method: 'PATCH', body: JSON.stringify({ config: currentConfig() }) })
       await qc.invalidateQueries({ queryKey: ['pseo-config'] })
       clearDrafts()
       toast.success('PSEO 设置已保存')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSavingCfg(false)
-    }
-  }
+    })
 
   // 试取预览：只调 suggest 接口看下拉词，不入库（验证引擎连通性/种子质量）
-  const runPreview = async () => {
+  const runPreview = () => {
     const kw0 = currentConfig().seeds[0]
     if (!kw0) return toast.error('请先在种子关键词中填写至少一个词')
-    setPreviewing(true)
-    setPreview('')
-    try {
+    return runBusy(setPreviewing, true, false, '试取失败', async () => {
+      setPreview('')
       const res = await api<{ results: EngineStat[]; words: { word: string; engine: string }[] }>(
         '/api/pseo/suggest',
         { method: 'POST', body: JSON.stringify({ keyword: kw0, sources: form.sources }) },
       )
       const lines = res.results.map((r) => `${engineLabel(r.engine)}: ${r.ok ? `+${r.count} 词` : `失败${r.error ? `（${r.error}）` : ''}`}`)
       setPreview(`试取「${kw0}」\n${lines.join('\n')}\n下拉词：${res.words.map((w) => w.word).join(' / ') || '（无）'}`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '试取失败')
-    } finally {
-      setPreviewing(false)
-    }
+    })
   }
 
   // 批量应用：携带当前配置（先持久化再执行），种子 × 引擎批量获取下拉词入库
-  const runBatch = async () => {
+  const runBatch = () => {
     if (currentConfig().seeds.length === 0) return toast.error('请先在 PSEO 设置中填写种子关键词')
-    setRunning(true)
-    setBatchReport('')
-    try {
+    return runBusy(setRunning, true, false, '批量获取失败', async () => {
+      setBatchReport('')
       const res = await api<BatchResp>('/api/pseo/batch', { method: 'POST', body: JSON.stringify({ config: currentConfig() }) })
       const lines = res.report.map((r) => {
         const eng = r.engines
@@ -731,46 +624,30 @@ export function PseoTab() {
         res.level2Words ? `；二级挖掘 ${res.level2Seeds} 词 → +${res.level2Words} 词` : ''
       }`
       setBatchReport([head, ...lines].join('\n'))
-      await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
-      await qc.invalidateQueries({ queryKey: ['pseo-config'] })
+      await invalidate(qc, ['pseo-keywords'], ['pseo-config'])
       clearDrafts()
       toast.success(`批量获取完成：新增 ${res.added}`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '批量获取失败')
-    } finally {
-      setRunning(false)
-    }
+    })
   }
 
-  const addKw = async () => {
+  const addKw = () => {
     if (busy) return // Enter 键路径绕过了按钮 disabled，这里补防重复提交
     if (!kw.trim()) return toast.error('请输入关键词')
-    setBusy(true)
-    try {
+    return runBusy(setBusy, true, false, '添加失败', async () => {
       const res = await api<{ added: number }>('/api/pseo', { method: 'POST', body: JSON.stringify({ keywords: [kw.trim()] }) })
       setKw('')
       await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
       toast.success(res.added ? '关键词已添加' : '关键词已存在')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '添加失败')
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
   // 重新生成聚合页：TDK 模板修改后，对 pending/重置过的关键词重跑（不重新抓下拉词）
-  const regen = async () => {
-    setBusy(true)
-    try {
+  const regen = () =>
+    runBusy(setBusy, true, false, '生成失败', async () => {
       const res = await api<{ generated: number }>('/api/pseo/generate', { method: 'POST', body: JSON.stringify({ useSuggest: false, limit: 50 }) })
       await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
       toast.success(`已生成 ${res.generated} 个聚合页`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '生成失败')
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
   return (
     <div className="space-y-4">
@@ -880,13 +757,13 @@ export function PseoTab() {
               >
                 预览
               </Button>
-              <Button size="sm" variant="ghost" className="h-6 shrink-0 px-1.5 text-red-500" onClick={async () => {
+              <Button size="sm" variant="ghost" className="h-6 shrink-0 px-1.5 text-red-500" aria-label={`删除关键词 ${r.keyword}`} onClick={async () => {
                 try {
                   await api(`/api/pseo?id=${r.id}`, { method: 'DELETE' })
                   await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
                   toast.success('关键词已删除')
                 } catch (e) {
-                  toast.error(e instanceof Error ? e.message : '删除失败')
+                  toast.error(errMsg(e, '删除失败'))
                 }
               }}><Trash2 className="h-3 w-3" /></Button>
             </div>
@@ -928,11 +805,10 @@ export function SettingsTab() {
     setFooterLinksDraft(null)
   }
 
-  const save = async () => {
+  const save = () => {
     // 站点名是全站页头/TDK 的根变量：留空时服务端会静默忽略导致“已保存”假象，这里前置拦截
     if (!siteName.trim()) return toast.error('站点名称不能为空')
-    setSaving(true)
-    try {
+    return runBusy(setSaving, true, false, '保存失败', async () => {
       await api('/api/settings', {
         method: 'PATCH',
         body: JSON.stringify({
@@ -944,11 +820,7 @@ export function SettingsTab() {
       })
       await qc.invalidateQueries({ queryKey: qk.settings })
       toast.success('站点设置已保存')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSaving(false)
-    }
+    })
   }
 
   return (

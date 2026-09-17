@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useChapter, useNovel } from '@/hooks/use-novel-data'
 import {
+  READER_INKS,
   READER_LINE_HEIGHTS,
   READER_SCENES,
   readerFontStack,
@@ -47,7 +48,7 @@ function NavRow({ ch, navigate }: { ch: ChapterDetail; navigate: ViewProps['navi
   )
 }
 
-/** 阅读设置：字号 A± / 行距 / 字体 / 背景（跨主题共享同一份偏好，localStorage 持久化） */
+/** 阅读设置：字号 A± / 行距 / 字体 / 字色 / 背景（跨主题共享同一份偏好，localStorage 持久化） */
 function ReaderBar() {
   const [prefs] = useReaderPrefs()
   const btn =
@@ -86,6 +87,18 @@ function ReaderBar() {
         <option value="song">宋体</option>
         <option value="hei">黑体</option>
         <option value="kai">楷体</option>
+      </select>
+      <span className="mx-1 hidden h-[12px] w-px bg-[#E4E4E4] sm:inline-block" />
+      字色
+      <select
+        value={prefs.ink}
+        onChange={(e) => setReaderPrefs({ ink: e.target.value })}
+        aria-label="字色"
+        className="h-[20px] cursor-pointer border border-[#CCCCCC] bg-white px-0.5 text-[11px] text-[#666] outline-none"
+      >
+        {READER_INKS.map((c) => (
+          <option key={c.k} value={c.v}>{c.k}</option>
+        ))}
       </select>
       <span className="mx-1 hidden h-[12px] w-px bg-[#E4E4E4] sm:inline-block" />
       背景

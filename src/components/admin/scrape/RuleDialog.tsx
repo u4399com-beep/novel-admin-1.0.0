@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { BookRule, ChapterRule, ListRule, ScrapeRuleDto } from '@/lib/types'
+import { runBusy } from '../ui-shared'
 import { api, cleanRule } from './shared'
 import type { FieldDef, RuleFormState } from './types'
 
@@ -131,7 +132,7 @@ export function RuleDialog({
   const setGroup = (group: 'listRule' | 'bookRule' | 'chapterRule', key: string, value: string) =>
     setForm((f) => ({ ...f, [group]: { ...f[group], [key]: value } }))
 
-  const save = async () => {
+  const save = () => {
     if (!form.name.trim()) return toast.error('规则名称必填')
     const url = form.siteUrl.trim()
     if (!url) return toast.error('站点 URL 必填')
@@ -144,8 +145,7 @@ export function RuleDialog({
     } catch {
       return toast.error('站点 URL 格式不正确')
     }
-    setSaving(true)
-    try {
+    return runBusy(setSaving, true, false, '保存失败', async () => {
       await api('/api/scrape-rules', {
         method: 'PUT',
         body: JSON.stringify({
@@ -163,11 +163,7 @@ export function RuleDialog({
       toast.success(form.id ? '规则已保存' : '规则已创建')
       onSaved()
       onClose()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSaving(false)
-    }
+    })
   }
 
   return (

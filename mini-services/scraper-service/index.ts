@@ -84,9 +84,11 @@ const server = Bun.serve({
     try {
       return await route(req)
     } catch (e) {
-      // 不向客户端泄漏内部堆栈；完整堆栈只进服务端日志
+      // 不向客户端泄漏内部堆栈/内部路径；完整堆栈只进服务端日志。
+      // detail 中的绝对路径统一抹除（Node/Bun 异常消息常带 ENOENT 全路径，属于内部信息）
       console.error('[scraper-service] unhandled error:', e instanceof Error ? e.stack ?? e.message : String(e))
-      return fail('服务器内部错误', e instanceof Error ? e.message : String(e), 500)
+      const msg = e instanceof Error ? e.message : String(e)
+      return fail('服务器内部错误', msg.replace(/\/(?:home|root|tmp|usr|var|etc|proc)\/[\w.\-/?=,]*/g, '[path]'), 500)
     }
   },
   error(e) {

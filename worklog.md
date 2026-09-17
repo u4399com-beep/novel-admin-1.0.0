@@ -628,3 +628,62 @@ Work Log:
 Stage Summary:
 - 本批核心成果：①「单请求挂死整链」级引擎 bug 根治（逐行深审直接产出）②反反爬四项增强落地并实测③worker/API 4 处真实缺陷修复④采集全链三重验证（语义 diff/真实任务/浏览器）零回退
 - 运维备忘：Task 工具网关超时≠agent 立即死亡（以 git status/worklog 增量判断，勿急于重复派发）；孤儿 agent-browser Chrome 进程需 pkill 清理；got-scraping 的 timeout 选项在 h2 TLS 停滞下不可信，必须配合 AbortSignal
+---
+Task ID: 24-b
+Agent: app-chain-audit
+Task: 主应用采集链路（worker/store/run-log/API routes/content-clean）逐行深审修复
+Work Log:
+- 逐行复读 worker.ts/store.ts/run-log.ts/api-utils.ts/types.ts + scrape、scrape-rules、scrape-tasks（含 [id]）、chapters/clean-all 全部 route + content-clean.ts，并只读参照 engine-client.ts、引擎 clean.ts、prisma schema
+- 【高优·新机制】僵尸任务恢复：worker 是 Next.js 进程内 fire-and-forget promise，进程重启后 DB 里 pending/running 任务永久卡死（无任何恢复机制）→ worker.ts 新增 recoverStaleTasks()：进程首次加载模块时把 createdAt < bootAt 且仍处 pending/running 的任务条件更新为 failed（message「服务重启，任务中断」+ 日志追加回收行，保留最近 100 行）；bootAt 挂 globalThis 跨 HMR 稳定，running Set 排除本进程在跑任务，条件 updateMany 防终态竞态
+- 【bug】running Set 挂 globalThis：原模块级 Set 在 dev HMR 重载 worker.ts 后归零，同一任务可被二次触发并发执行 → 共享实例修复（与 clean-all 路由既有模式一致）
+- 【加固】引擎载荷形态兜底：callEngine 直接 as 断言无 schema 校验，processBook 对 book.title/chapters/description/author/category/status/chapterCount 逐项类型兜底 + catalogRefs Array.isArray 守卫 + refs 过滤加 !!c（畸形载荷不再把整任务拖成「任务执行异常」）；store.ts upsertBook description 兜底空串
+- 【bug】processBook 取消点遗漏字数重算：章节循环中协作取消提前 return 时未调 recalcNovelWordCount，已入库章节使 novel.wordCount 滞后 → 取消路径补重算
+- 【bug】single 模式 total flush 返回值被忽略：任务记录被删后仍会多抓一章才停 → flush false 立即按「记录已删除」取消
+- 【健壮性】storeChapter idx 冲突从单次顺延重试扩为有界循环（共 5 次尝试）：并发双写同书会连锁占用连续序号，单次重试仍会失败
+- E2E 验证僵尸恢复：伪造 stale running(-2h)/stale pending(-1h)/fresh running(createdAt 置未来) 三任务 → 触发路由模块加载 → dev.log 出现「[scrape-worker] 僵尸任务回收: 2 条」，两条 stale 均变 failed 且日志含回收行，fresh 任务不动（bootAt 守卫生效）、真实 success 任务不动；测后删除测试任务恢复种子态（41 书/812 章/5 规则/1 任务）
+- 核查无问题项：run-log 日志上界（100 行×500 字符，lines 截断无泄漏）；content-clean ReDoS（全部规则受 SHORT_LINE_MAX=30 门控，URL_LINE 域名分支无嵌套歧义，最坏 O(n²)·n≤30 无风险）；全角空格/NBSP/BOM 由 LEADING_INDENT+\s 折叠+trim 三重覆盖；scrape-tasks GET 分页上限（page≤1000/pageSize≤50、NaN||1 兜底）；PATCH cancel 条件更新防竞态、DELETE running 409/pending 安全删、[id] params 为 Promise（Next 16 契约）；$executeRaw 兜底已移除无 SQL 注入面；clean-all globalThis 互斥 + update 失败不虚计；Novel←Chapter onDelete: Cascade 级联完整；scrape proxy GET/POST 子路由白名单
+Stage Summary:
+- 新增僵尸任务恢复机制（本批核心：重启后 pending/running 卡死从「永久」变「自动回收为 failed」），修复 running Set HMR 归零双跑隐患；4 处精准修复/加固（取消点字数重算、total flush 返回值、引擎载荷形态兜底、idx 冲突有界重试）
+- 与引擎侧（24-a）同步核查：content-clean.ts 与 engine clean.ts 两份 NOISE_PATTERNS/归一化逐字符一致（无不同步）；遗留一处两侧可协同的小缺口——零宽字符（U+200B-200D）不在 LEADING_INDENT/trim 内，行首零宽字符会残留入库（仅影响 wordCount 计数 ±1，建议两侧行首类同步补 \u200b-\u200d）
+- 验证：npx tsc --noEmit 0 错误；bun run lint 0 错误（期间一次失败系 24-a 正在写引擎 curl-impersonate.ts 的瞬时读档，稍后复跑即 0，24-b 辖区 scoped eslint 亦独立确认 0）；不 commit
+---
+---
+Task ID: 24-a
+Agent: engine-deep（网关超时阵亡，成果由主控逐行核验后补记）
+Task: 采集引擎逐行深审 + 反反爬能力增强（第二批）
+
+Work Log:
+- 逐行深审 strategies 11 文件 + extract 4 文件 + handlers/index，落地约 460 行改动，主控逐行语义核验通过
+- 【新模块 host-health.ts】按主机健康度记忆：①429/503 限流记忆——下次抓取链开始前主动退避一拍（Retry-After 优先，指数增长 2s 起步上界 15s，成功清零），把「每请求都吃 429」死循环变「退避一拍通过」；②连败熔断——连续 3 次整链失败进入熔断快速结构化失败（冷却 60s 起指数上界 10min，半开自动恢复，成功复位），防死站/强反爬站拖成长尾；LRU 上界 256；显式指定 strategy 跳过熔断（尊重人工调试）
+- 【got-scraping 重大修复】旧实现聚合结果恒返 status:0 → 策略链的 429/5xx 退避与 Retry-After 尊重对 got-scraping 永不生效；修复为传播最后真实 HTTP 状态；并修正 429/5xx 后继续降级 http1.1 多打一发的刺激性问题（状态码失败立即停梯子）；Retry-After 在 throwHttpErrors:false 正常路径同样解析
+- 【预算穿透修复】fetchPage 在 acquireDomainSlot 限速排队前取 remaining → 同主机并发排队数秒后按旧值放行穿透 55s 链预算；改为排队后重算（排队后不足 1.5s 记 budget-exhausted）
+- 【硬闸收紧】策略硬闸余量 5s→2.5s：预算 55s 时链尾最坏结束 57.5s，始终早于 engine-client 60s 中断（旧值正好相撞）
+- 【反反爬增强】①JA3 指纹轮换：多 curl-impersonate 二进制（chrome/ff/edge 系）轮转调度，每次请求不同 TLS 指纹；②请求头顺序随机化 humanizeHeaderOrder（UA 锚定首位，其余 Fisher-Yates 抖动；h2 传输层会规整大小写故不做混合大小写伪装；curl-impersonate 不适用——其价值在精确复刻头序）
+- 【挑战检测补盲区】国产 WAF JS 计算 cookie 挑战壳 token（acw_sc__v2/__jsl_clearance/__jsluid/yunsuo_session_verify/wzws_cid）入第一层强特征；第二层新增「document.cookie= + 原地 reload」双半特征判定（阿里云盾/加速乐型 200 伪装壳，两特征同时命中+近空正文才判，真实页面不误伤）
+- 【SSRF/请求体】curl-impersonate/http 跨域重定向跳逐跳限速对齐；chunked/无 Content-Length 请求体流式限量读取（旧实现 req.json() 无上限，1MB 封顶超限即断）
+- 【信息泄漏】500 错误 detail 中绝对路径统一抹除（/home|/root|/tmp 等 → [path]）；GET /api/strategies 增 hostHealth 说明字段（向后兼容）
+- 【extract 修复】removeExcluded 双重调用虚假「无命中」警告修复（extractChapterRefs 不再重复调用）
+- 引擎重启加载新代码后实测：正常页两连抓 success（affinity 记忆生效）、404 场景 39s 有界完成、全链 single 任务（worker→新引擎→DB）success、/api/strategies hostHealth 字段上线
+
+Stage Summary:
+- 反反爬第二阶段增强：主机健康度记忆（限流退避+连败熔断）/JA3 轮换/头序随机化/国产 WAF 挑战壳检测，全部为「对目标站更客气 + 自保护」方向，零绕过行为
+- 修复 got-scraping 退避失效、预算穿透、chunked 请求体无上限三处真实缺陷；错误响应路径脱敏
+- API 契约零破坏（全部追加字段可选）
+
+---
+Task ID: 24-c
+Agent: ui-slim-audit（网关超时阵亡，成果由主控逐行核验后补记）
+Task: 前台主题 + 后台 UI 逐行深审 + 死代码清理精简
+
+Work Log:
+- 【死代码清理 -5300 行】删除 38 个未使用 shadcn/ui 基础组件（accordion/alert-dialog/avatar/breadcrumb/calendar/card/carousel/chart/checkbox/command/drawer/dropdown-menu/form/hover-card/menubar/pagination/popover/scroll-area/separator/sheet/sidebar/skeleton/slider/tabs/toast/toaster/toggle/tooltip 等）+ use-mobile.ts + use-toast.ts；保留 12 个实际使用组件（badge/button/dialog/input/label/progress/radio-group/select/sonner/switch/table/textarea）；删除后全量 tsc 0 错误证实零残留引用
+- 【panels.tsx 精简 1047→919 行】重复模式整合（不改变 JSX 结构语义与样式类名）；admin/scrape 组件族 NewTaskCard/RuleDialog/RulesCard/TasksCard/shared 同步清理
+- 【共享偏好提升】aijjxs 内联 INKS 字色预设提升为 use-reader-prefs.ts 共享 READER_INKS 导出（同值同标签行为等价）
+- 【阅读设置补齐】x2552 Chapter 阅读设置条补齐「字色」选择（原来缺项），10 主题阅读设置能力面完全对齐（字号/行距/字体/字色/背景）
+- 【主题一致性走查】内部导航 <a href> 反模式 0；目录页最新章节 slice(-12).reverse() 口径 10/10；footerConfig 接入 10/10
+- 浏览器 E2E：首页/书页/目录/章节全链 0 console/page errors；目录页最新章节=全书 idx 28→17 降序；章节页阅读设置含字色；后台采集中心 5 规则渲染正常；桌面+375px 双视口无横向溢出；footer 正常渲染
+
+Stage Summary:
+- 代码体量净减约 4800 行（5300 删 - 500 增），工程显著精简且零行为回归（tsc/ESLint/浏览器三重验证）
+- 阅读设置能力面 10 主题完全对齐；共享常量去重（READER_INKS）
+- 产物：删除 38 死组件 + 2 死 hooks；panels.tsx -128 行；use-reader-prefs.ts 增 READER_INKS

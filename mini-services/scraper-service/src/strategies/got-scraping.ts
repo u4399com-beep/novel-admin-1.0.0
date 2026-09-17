@@ -3,7 +3,7 @@
  * followRedirect:false 重定向逐跳 SSRF 校验；依赖未安装则 probe 失败优雅跳过。
  * （自 strategies.ts 巨石拆分而来，代码逐行原样迁移）
  */
-import { acquireDomainSlot, assertHostPublic, isRetryableStatus, parseRetryAfterMs } from '../rate-limit'
+import { acquireDomainSlot, assertHostPublic, parseRetryAfterMs } from '../rate-limit'
 import { cookieHeaderFor, recordHeaderCookies } from './cookies'
 import { assess, hostOf, MAX_BYTES, MAX_REDIRECT_HOPS } from './http'
 import type { StrategyDef, SubAttempt } from './types'
@@ -44,6 +44,9 @@ export const gotScrapingStrategy: StrategyDef = {
     const subAttempts: SubAttempt[] = []
     const deadline = Date.now() + timeoutMs
     let lastRetryAfterMs: number | null = null
+    // 最后一次真实 HTTP 状态码（Task 24-a 修复：旧实现聚合结果恒返 status:0，
+    // 导致策略链的 429/5xx 退避与 Retry-After 尊重逻辑对 got-scraping 永远不生效）
+    let lastHttpStatus = 0
 
     // 子尝试梯子：HTTP/2 → HTTP/1.1（协议指纹差异）
     const variants: Array<{ profile: string; http2: boolean }> = [
@@ -151,23 +154,37 @@ export const gotScrapingStrategy: StrategyDef = {
           const contentType = String(Array.isArray(res.headers['content-type']) ? res.headers['content-type'][0] : res.headers['content-type'] ?? '')
           recordHeaderCookies(hostOf(current), res.headers, hopHttps)
           if (bytes.byteLength > MAX_BYTES) {
+            lastHttpStatus = status
             noteAttempt(variant.profile, false, status, Date.now() - s0, false, bytes.byteLength, 'too-large')
             warnings.push(`got-scraping 响应超过 ${MAX_BYTES}B 上限，已放弃`)
+            stopVariants = true
             break
           }
           const a = assess(status, bytes, contentType)
           noteAttempt(variant.profile, a.ok, status, Date.now() - s0, a.blocked, a.size, a.note)
           if (a.warning) warnings.push(`[${variant.profile}] ${a.warning}`)
           if (status >= 400) warnings.push(`got-scraping 收到 HTTP ${status}`)
+          // got-scraping 默认 throwHttpErrors:false（429/5xx 不抛错、走本正常路径）：
+          // Retry-After 尊重与状态传播都必须在这里处理（Task 24-a 实测修正）
+          if (status === 429 || status === 503) {
+            const ra = parseRetryAfterMs(headerValue(res.headers, 'retry-after'))
+            if (ra !== null) lastRetryAfterMs = ra
+          }
           if (a.ok) {
             return { ok: true, status, bytes, contentType, warnings, subAttempts, retryAfterMs: null }
           }
-          break // 非 2xx 且非 3xx（got 默认对 >=400 抛错，正常到不了这里），按确定性失败处理
+          lastHttpStatus = status
+          // HTTP 状态码失败（含 429/5xx）直接结束梯子：换协议不会改变服务端决策，
+          // 对限流中的站点立刻追加降级请求只会加重刺激；退避由策略链统一编排
+          //（Task 24-a 修复：旧实现对 429/5xx 继续降级 http1.1 多打一发）
+          if (status >= 400) stopVariants = true
+          break
         } catch (rawErr) {
           const e = rawErr as (Error & { response?: { statusCode: number; body?: Uint8Array; headers?: Record<string, string | string[] | undefined> }; code?: string }) | null
           if (e?.response) {
             const status = e.response.statusCode
             const hopHttps = current.startsWith('https:')
+            lastHttpStatus = status
             recordHeaderCookies(hostOf(current), e.response.headers, hopHttps) // 429/5xx 错误页也可能种 cookie
             if (status === 429 || status === 503) {
               const ra = parseRetryAfterMs(headerValue(e.response.headers, 'retry-after'))
@@ -184,8 +201,10 @@ export const gotScrapingStrategy: StrategyDef = {
             noteAttempt(variant.profile, false, status, Date.now() - s0, a.blocked, a.size, a.note ?? `http-${status}`)
             warnings.push(`got-scraping 收到 HTTP ${status}（got 对非 2xx 抛错，已转为结构化失败）`)
             if (a.warning) warnings.push(`[${variant.profile}] ${a.warning}`)
-            // got 对网络层错误才需要降级重试，HTTP 状态码失败直接结束（429/5xx 的退避由策略链统一编排）
-            if (!isRetryableStatus(status)) stopVariants = true
+            // HTTP 状态码失败（含 429/5xx）直接结束梯子：换协议不会改变服务端决策，
+            // 对限流中的站点立刻追加降级请求只会加重刺激；退避由策略链统一编排
+            //（Task 24-a 修复：旧实现仅对非可重试状态停梯子，429/5xx 反而多打一发 http1.1）
+            stopVariants = true
           } else {
             noteAttempt(variant.profile, false, 0, Date.now() - s0, false, 0, e?.code ?? 'network-error')
             warnings.push(`got-scraping 网络错误（${variant.profile}）: ${e?.code ?? e?.message ?? 'unknown'}`)
@@ -195,6 +214,6 @@ export const gotScrapingStrategy: StrategyDef = {
       }
       if (stopVariants) break
     }
-    return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', warnings, note: 'all-variants-failed', subAttempts, retryAfterMs: lastRetryAfterMs }
+    return { ok: false, status: lastHttpStatus, bytes: new Uint8Array(0), contentType: '', warnings, note: 'all-variants-failed', subAttempts, retryAfterMs: lastRetryAfterMs }
   },
 }

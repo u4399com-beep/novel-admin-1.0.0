@@ -27,9 +27,9 @@ function binScore(name: string): number {
   return browser * 10000 + ver
 }
 
-let curlBinPromise: Promise<string | null> | null = null
+let curlBinPromise: Promise<string[] | null> | null = null
 
-function detectCurlImpersonate(): Promise<string | null> {
+function detectCurlImpersonates(): Promise<string[] | null> {
   if (!curlBinPromise) {
     curlBinPromise = (async () => {
       const dirs = (process.env.PATH ?? '').split(':').filter(Boolean)
@@ -53,11 +53,20 @@ function detectCurlImpersonate(): Promise<string | null> {
         }
       }
       candidates.sort((a, b) => binScore(b.name) - binScore(a.name))
-      return candidates[0]?.path ?? null
+      return candidates.map((c) => c.path)
     })().catch(() => null)
   }
   return curlBinPromise
 }
+
+/**
+ * JA3 指纹轮换（Task 24-a 反反爬增强）：同机装有多个 impersonation 二进制
+ * （curl_chrome 系 / curl_ff 系 / curl_edge 系等）时按轮转调度依次使用，
+ * 每次请求携带不同的 TLS/JA3 指纹，避免全站采集始终复现同一指纹；
+ * 只装一个时行为与旧版一致。排序仍是 chrome 最新版优先，轮转从链首开始，
+ * 首次请求与旧版选择一致。
+ */
+let curlBinCursor = 0
 
 /** 从 -D 抓包文本提取响应头（HTTP/2 头为小写，大小写不敏感匹配；同名多头全量返回） */
 function headerLines(hdrText: string, name: string): string[] {
@@ -73,13 +82,18 @@ function headerLines(hdrText: string, name: string): string[] {
 export const curlImpersonateStrategy: StrategyDef = {
   name: 'curl-impersonate',
   description:
-    '调用系统 curl_chrome*/curl-impersonate-* 二进制（TLS/JA3 指纹级浏览器伪装），HTTP/2 失败自动降级 --http1.1；需另行安装二进制，检测不到则不可用',
-  probe: () => detectCurlImpersonate().then((p) => p !== null),
+    '调用系统 curl_chrome*/curl-impersonate-* 二进制（TLS/JA3 指纹级浏览器伪装，多二进制时轮换指纹），HTTP/2 失败自动降级 --http1.1；需另行安装二进制，检测不到则不可用',
+  probe: () => detectCurlImpersonates().then((p) => (p?.length ?? 0) > 0),
   selfRetrying: true,
   async run(url, timeoutMs, warnings, ctx) {
-    const bin = await detectCurlImpersonate()
-    if (!bin) {
+    const bins = await detectCurlImpersonates()
+    if (!bins || bins.length === 0) {
       return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', warnings: ['未找到 curl-impersonate 二进制'], note: 'missing-binary' }
+    }
+    const bin = bins[curlBinCursor % bins.length]
+    curlBinCursor = (curlBinCursor + 1) % bins.length
+    if (bins.length > 1) {
+      warnings.push(`[curl-impersonate] JA3 指纹轮换：本轮使用 ${bin.split('/').pop()}（${bins.length} 个二进制轮转）`)
     }
     const explicitReferer = ctx?.referer ?? null
     const subAttempts: SubAttempt[] = []

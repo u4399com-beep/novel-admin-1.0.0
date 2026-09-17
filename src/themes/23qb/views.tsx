@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { BookOpen, Bookmark, SearchX, ThumbsUp } from 'lucide-react'
 import { useCategories, useChapter, useChapters, useHomeData, useNovel, useNovels } from '@/hooks/use-novel-data'
 import {
+  READER_INKS,
   READER_LINE_HEIGHTS,
   READER_SCENES,
   readerFontStack,
@@ -539,7 +540,7 @@ const SCENES: Record<string, ReaderSceneColors> = {
   night: { page: '#17191d', paper: '#1f2328', ink: '#c0c0c6', muted: '#8a8a92', line: '#32363c' },
 }
 
-/** 阅读设置条：字号 A± / 行距 / 字体 / 背景（跨主题共享同一份偏好，localStorage 持久化） */
+/** 阅读设置条：字号 A± / 行距 / 字体 / 字色 / 背景（跨主题共享同一份偏好，localStorage 持久化） */
 function ReaderBar() {
   const [prefs] = useReaderPrefs()
   const btn =
@@ -576,6 +577,19 @@ function ReaderBar() {
           <option value="song">宋体</option>
           <option value="hei">黑体</option>
           <option value="kai">楷体</option>
+        </select>
+      </span>
+      <span className="flex items-center gap-1">
+        字色
+        <select
+          value={prefs.ink}
+          onChange={(e) => setReaderPrefs({ ink: e.target.value })}
+          aria-label="字色"
+          className="h-7 cursor-pointer rounded-[8px] border-0 bg-[#f3f5f7] px-2 text-xs text-[#282828] outline-none"
+        >
+          {READER_INKS.map((c) => (
+            <option key={c.k} value={c.v}>{c.k}</option>
+          ))}
         </select>
       </span>
       <span className="flex items-center gap-1.5">

@@ -58,7 +58,10 @@ function stripAuthorLabel(t: string): string {
   return t.replace(/^(?:书籍)?作\s*者\s*[:：]?\s*|^(?:author|writer)\s*[:：]?\s*/i, '').trim()
 }
 
-/** 规则级排除：提取前从 DOM 移除命中节点（站标/搜索框等全站样板容器），多备用逗号分隔 */
+/** 规则级排除：提取前从 DOM 移除命中节点（站标/搜索框等全站样板容器），多备用逗号分隔。
+ *  注意：extractBook 与 extractChapter 各自的入口只调一次；extractChapterRefs 不再重复调用
+ *  （Task 24-a 修复：旧实现 extractBook 先移除后，extractChapterRefs 内再调必然 0 命中，
+ *  导致每次带 excludeSelector 的书页提取都多一条误导性的「无命中」警告） */
 function removeExcluded(root: Scope, excludeSel: string | undefined, warnings: string[]): void {
   if (!excludeSel) return
   let removed = 0
@@ -253,7 +256,7 @@ function extractChapterRefs(
     return []
   }
   const root = $.root() as unknown as Scope
-  removeExcluded(root, rule.excludeSelector, warnings)
+  // 排除节点已由 extractBook 入口的 removeExcluded 统一处理（此处不重复调用，避免虚假「无命中」警告）
   let linkEls: Scope | null = null
   let usedRule = false
 

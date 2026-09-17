@@ -49,6 +49,15 @@ export const READER_SCENES: { key: ReaderScene; label: string }[] = [
   { key: 'night', label: '夜间' },
 ]
 
+/** 字色预设（v='' = 跟随背景场景色；各主题按自身美学渲染控件） */
+export const READER_INKS: { k: string; v: string }[] = [
+  { k: '跟随背景', v: '' },
+  { k: '深棕', v: '#5b4636' },
+  { k: '墨绿', v: '#234d3f' },
+  { k: '藏蓝', v: '#2c3e5d' },
+  { k: '炭黑', v: '#262626' },
+]
+
 /** 场景配色：主题按此结构提供自己的色板 */
 export interface ReaderSceneColors {
   /** 页面/外围底色 */

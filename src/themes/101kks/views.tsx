@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { useCategories, useChapter, useChapters, useHomeData, useNovel, useNovels } from '@/hooks/use-novel-data'
 import {
+  READER_INKS,
   READER_LINE_HEIGHTS,
   readerFontStack,
   setReaderPrefs,
@@ -852,9 +853,13 @@ const FONT_OPTIONS = [
   { key: 'default', label: '默認', stack: '' },
   { key: 'song', label: '宋體', stack: '"Songti SC", "SimSun", serif' },
   { key: 'hei', label: '黑體', stack: '"Heiti SC", "SimHei", sans-serif' },
+  { key: 'kai', label: '楷體', stack: 'KaiTi,STKaiti,"楷体",serif' },
 ] as const
 
 type FontKey = (typeof FONT_OPTIONS)[number]['key']
+
+/** 字色繁體標籤（順序/值與共享 READER_INKS 一一對應） */
+const INK_LABELS_TW = ['跟隨背景', '深棕', '墨綠', '藏藍', '炭黑'] as const
 
 export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number }) {
   const { data: ch, isLoading, isError, refetch } = useChapter(chapterId)
@@ -981,7 +986,7 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
                   fontSize,
                   fontFamily: font.stack || undefined,
                   lineHeight: prefs.lineHeight,
-                  color: night ? 'rgb(153,153,153)' : '#333',
+                  color: prefs.ink || (night ? 'rgb(153,153,153)' : '#333'),
                 }}
               >
                 {paragraphs.length === 0 ? (
@@ -1112,6 +1117,23 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
                 )}
               >
                 {lh.toFixed(1)}
+              </button>
+            ))}
+          </div>
+          {/* 字色预设（繁體標籤；值與其他主題共享 READER_INKS） */}
+          <div className="mt-3 flex items-center gap-2">
+            <span className="w-14 shrink-0 text-sm text-[#666]">字色</span>
+            {READER_INKS.map((c, i) => (
+              <button
+                key={c.v}
+                type="button"
+                onClick={() => setReaderPrefs({ ink: c.v })}
+                className={cn(
+                  'h-8 cursor-pointer rounded-[3px] px-3 text-sm transition-colors',
+                  prefs.ink === c.v ? 'bg-[#1f6cb2] text-white' : 'bg-[#f0f2f4] text-[#333] hover:bg-[#e2e6ea]',
+                )}
+              >
+                {INK_LABELS_TW[i]}
               </button>
             ))}
           </div>

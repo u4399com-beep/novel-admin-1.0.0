@@ -17,6 +17,8 @@
  * - 请求头画像内 UA 与 Sec-CH-UA 版本严格一致（同一常量派生），Chrome 主版本进程启动时随机化避免固定指纹；
  * - 429/5xx/网络错误在策略间显式指数退避+jitter（受整体预算约束，硬上限 55s 不可突破）；
  *   HTTP 429 附带 Retry-After 头时优先按站点要求的时长退避（同样受预算约束）；
+ *   且按主机健康度记忆（host-health.ts）：429/503 后的下一次抓取先主动退避、
+ *   连续整链失败达阈值的主机熔断快速失败（半开自动恢复）；
  * - 每次网络尝试（含策略内部子尝试）都经过域名限速，并结构化记录到 attempts 明细；
  * - 整体时间预算（默认上限 55s），超预算后停止尝试并给出 budget-exhausted 备注；
  * - 按主机策略亲和：某主机最近一次成功的策略会被提到链首优先尝试（失败照旧回退全链，见 affinity.ts）。
@@ -32,6 +34,7 @@ import { curlImpersonateStrategy } from './curl-impersonate'
 import { fetchBrowserStrategy, fetchMobileStrategy, fetchSpiderStrategy, fetchUaRotateStrategy } from './fetch-strategies'
 import { gotScrapingStrategy } from './got-scraping'
 import { getPreferredStrategy, recordStrategySuccess } from './affinity'
+import { hostCircuitOpenMs, hostPenaltyMs, noteChainFailure, noteChainSuccess, noteRateLimited } from './host-health'
 import type { AttemptResult, FetchPageOptions, FetchPageResult, StrategyDef } from './types'
 import type { StrategyInfo } from '../types'
 
@@ -120,8 +123,33 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
   }
   if (entryCheck.warning) warnings.push(`[ssrf] ${entryCheck.warning}`)
 
+  // 主机熔断（Task 24-a host-health）：连败达阈值的主机快速结构化失败，不空烧 55s 预算；
+  // 冷却结束自动半开恢复，成功一次即复位。显式指定策略时视为人工调试，跳过熔断。
+  const circuitMs = opts.requestedStrategy ? 0 : hostCircuitOpenMs(host)
+  if (circuitMs > 0) {
+    return {
+      ok: false, html: '', encoding: '', strategy: opts.requestedStrategy ?? '', status: 0, warnings,
+      attempts, robots: { checked: false, disallowed: false, crawlDelayMs: null },
+      elapsedMs: Date.now() - t0,
+      error: '目标主机熔断中（近期连续整链失败，暂停请求以防刺激反爬/空耗预算）',
+      detail: `主机 ${host} 连续整链失败已达熔断阈值，剩余冷却 ${Math.ceil(circuitMs / 1000)}s 后自动恢复尝试（一次成功即复位）`,
+    }
+  }
+
   const robots = await checkRobots(url)
   warnings.push(...robots.warnings)
+
+  // 主机限流记忆（Task 24-a host-health）：最近被 429/503 的主机先主动退避一拍再进链
+  // （Retry-After 优先，见 noteRateLimited），避免以固定限速节奏持续刺激限流中的站点。
+  // 退避时长受剩余预算约束（至少留 3s 给真实尝试），预算不够时跳过退避。
+  const penalty = hostPenaltyMs(host)
+  if (penalty > 0) {
+    const wait = Math.min(penalty, Math.max(0, deadline - Date.now() - 3000))
+    if (wait > 500) {
+      warnings.push(`[host-health] 主机 ${host} 最近被限流（429/503），先主动退避 ${(wait / 1000).toFixed(1)}s 再尝试（健康度记忆，成功后清零）`)
+      await sleep(wait)
+    }
+  }
 
   let order = await pickOrder(opts.requestedStrategy, warnings)
 
@@ -156,20 +184,29 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
       continue
     }
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const remaining = deadline - Date.now()
-      if (remaining < 1500) {
+      if (deadline - Date.now() < 1500) {
         attempts.push({ strategy: strat.name, ok: false, status: 0, ms: 0, note: 'budget-exhausted（整体时间预算耗尽）' })
         break
       }
+      // 限速排队可能耗时较长（同主机并发任务时可达数秒）：剩余预算必须在排队之后
+      // 重新计算，否则 effTimeout/硬闸会按排队前的旧值放行，55s 链预算被穿透
+      //（Task 24-a 修复：旧实现在 acquireDomainSlot 之前取 remaining）
       await acquireDomainSlot(host)
+      const remaining = deadline - Date.now()
+      if (remaining < 1500) {
+        attempts.push({ strategy: strat.name, ok: false, status: 0, ms: 0, note: 'budget-exhausted（限速排队后预算耗尽）' })
+        break
+      }
       const effTimeout = Math.min(timeoutMs, Math.max(1000, remaining - 500))
       const s0 = Date.now()
       let res: AttemptResult
       try {
         // 硬闸（Task 23-a 深审）：任何策略都不得挂死整条链。底层库自身超时可能失效
         // （实测 got-scraping http2 + TLS 握手停滞时 timeout 选项不触发），此处以
-        // 「链剩余预算 + 5s 余量」为硬上限强制放行，超时按普通失败继续后续策略。
+        // 「链剩余预算 + 2.5s 余量」为硬上限强制放行，超时按普通失败继续后续策略。
         let hardTimer: ReturnType<typeof setTimeout> | undefined
+        // 硬闸余量 2.5s（Task 24-a 由 5s 收紧）：保证链尾最坏结束时刻 ≤ 预算+2.5s ≤ 57.5s，
+        // 始终早于消费方 engine-client 的 60s 中断（旧值 5s 在预算 55s 时正好与 60s 相撞）
         res = await Promise.race([
           strat.run(url, effTimeout, [], { referer: opts.referer ?? null }),
           new Promise<AttemptResult>((resolve) => {
@@ -177,10 +214,10 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
               () =>
                 resolve({
                   ok: false, status: 0, bytes: new Uint8Array(0), contentType: '',
-                  warnings: [`策略超过硬性时间闸（${Math.round((remaining + 5000) / 1000)}s），已强制跳过（底层库超时失效保护）`],
+                  warnings: [`策略超过硬性时间闸（${Math.round((remaining + 2500) / 1000)}s），已强制跳过（底层库超时失效保护）`],
                   note: 'hard-timeout',
                 }),
-              remaining + 5000,
+              remaining + 2500,
             )
           }),
         ]).finally(() => clearTimeout(hardTimer))
@@ -207,8 +244,12 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
       }
       for (const w of res.warnings) if (!warnings.includes(w)) warnings.push(`[${strat.name}] ${w}`)
 
+      // 主机健康度记忆：本链内被 429/503 → 记一次限流退避（Retry-After 优先）
+      if (res.status === 429 || res.status === 503) noteRateLimited(host, res.retryAfterMs ?? null)
+
       if (res.ok) {
         recordStrategySuccess(host, strat.name)
+        noteChainSuccess(host)
         const dec = decodeHtml(res.bytes, {
           headerCharset: charsetFromContentType(res.contentType),
           forcedCharset: opts.forcedCharset ?? null,
@@ -265,6 +306,9 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
       }
     }
   }
+
+  // 整链失败 → 记一次连败（达熔断阈值后后续请求快速失败，见 host-health.ts）
+  noteChainFailure(host)
 
   return {
     ok: false,

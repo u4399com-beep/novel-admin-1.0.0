@@ -11,6 +11,7 @@ import {
 } from '@/hooks/use-novel-data'
 import {
   READER_FONTS,
+  READER_INKS,
   READER_SCENES,
   readerFontStack,
   readerInk,
@@ -544,7 +545,7 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
         navigate={navigate}
       />
 
-      {/* 阅读器头部卡：书名 + 字号/行距滑杆 + 背景/字体（跨主题共享同一份偏好） */}
+      {/* 阅读器头部卡：书名 + 字号/行距滑杆 + 背景/字体/字色（跨主题共享同一份偏好） */}
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-[10px] border p-4 shadow-[0_1px_3px_rgba(37,99,235,0.06)] transition-colors" style={{ background: scene.paper, borderColor: scene.line }}>
         <button
           onClick={() => navigate({ name: 'book', novelId: ch.novelId })}
@@ -610,6 +611,20 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
                 <option key={f.key} value={f.key}>
                   {f.label}
                 </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            字色
+            <select
+              value={prefs.ink}
+              onChange={(e) => setReaderPrefs({ ink: e.target.value })}
+              aria-label="字色"
+              className="cursor-pointer rounded-[6px] border bg-white px-1.5 py-1 text-[13px] text-[#1e293b] outline-none"
+              style={{ borderColor: scene.line }}
+            >
+              {READER_INKS.map((c) => (
+                <option key={c.k} value={c.v}>{c.k}</option>
               ))}
             </select>
           </label>

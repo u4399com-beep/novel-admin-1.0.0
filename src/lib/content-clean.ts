@@ -32,8 +32,8 @@ export const NOISE_PATTERNS = {
   /** 噪声行规则的行长度上限（字符数） */
   SHORT_LINE_MAX: 30,
 
-  /** 行首缩进/空白：全角空格、NBSP、BOM、半角空白（不含换行符） */
-  LEADING_INDENT: /^[ \t\u3000\u00a0\ufeff]+/,
+  /** 行首缩进/空白：全角空格、NBSP、BOM、零宽字符（U+200B-200D）、半角空白（不含换行符） */
+  LEADING_INDENT: /^[ \t\u3000\u00a0\ufeff\u200b\u200c\u200d]+/,
 
   /** 是否含文字（字母/数字，含 CJK）——不含任何文字的行视为纯符号行 */
   HAS_TEXT: /[\p{L}\p{N}]/u,

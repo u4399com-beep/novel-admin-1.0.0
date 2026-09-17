@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useChapter, useNovel, useNovels } from '@/hooks/use-novel-data'
 import {
+  READER_INKS,
   READER_LINE_HEIGHTS,
   READER_SCENES,
   readerFontStack,
@@ -27,7 +28,7 @@ const SCENES: Record<string, ReaderSceneColors> = {
   night: { page: '#1e2024', paper: '#26262b', ink: '#c0c0c6', muted: '#8a8a92', line: '#3a3a42' },
 }
 
-/** 阅读设置条：字号 A± / 行距 / 字体 / 背景五板 / 恢复默认（跨主题共享同一份偏好） */
+/** 阅读设置条：字号 A± / 行距 / 字体 / 字色 / 背景五板 / 恢复默认（跨主题共享同一份偏好） */
 function SettingsBar() {
   const [prefs] = useReaderPrefs()
   const btn =
@@ -82,6 +83,19 @@ function SettingsBar() {
           <option value="song">宋体</option>
           <option value="hei">黑体</option>
           <option value="kai">楷体</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-1">
+        字色
+        <select
+          value={prefs.ink}
+          onChange={(e) => setReaderPrefs({ ink: e.target.value })}
+          aria-label="字色"
+          className="h-[22px] cursor-pointer border border-[#c8d4e1] bg-white px-1 text-[11px] text-[#667788] outline-none"
+        >
+          {READER_INKS.map((c) => (
+            <option key={c.k} value={c.v}>{c.k}</option>
+          ))}
         </select>
       </label>
       <span className="flex items-center gap-1.5">

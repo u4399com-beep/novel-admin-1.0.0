@@ -8,6 +8,7 @@
  *   （主口径，done=已完成书数），章节进度单独记录在 chaptersDone/chaptersTotal，
  *   保证任何时刻 done ≤ total
  * - 协作式取消：每个关键步骤前读一次 DB status，canceled 即停（PATCH cancel 置状态）
+ * - 僵尸任务回收：进程重启后首次加载本模块时，把残留的 pending/running 任务标记为 failed
  * - 任何异常都不外抛到进程级；最终状态 success / partial / failed / canceled
  * - 正文入库前经 cleanChapterContent 统一清洗（去 \r\n/行首缩进/空行/广告导航噪声行），
  *   wordCount 基于清洗后文本；清洗日志每本书最多记 3 条防刷屏
@@ -19,7 +20,7 @@
 import { db } from '@/lib/db'
 import { cleanChapterContent } from '@/lib/content-clean'
 import { fetchBookPage, fetchCatalogChapters, fetchChapter, fetchListPage } from './engine-client'
-import { Run } from './run-log'
+import { Run, MAX_LOG_LINES } from './run-log'
 import { ensureCategory, loadRule, recalcNovelWordCount, storeChapter, upsertBook } from './store'
 import type { BookOutcome, LoadedRule, ListItem, TaskFlushFields, TaskRecord } from './types'
 
@@ -27,8 +28,60 @@ const MAX_CHAPTERS_PER_BOOK = 100
 const MAX_BOOKS_PER_TASK = 60
 const MAX_CONTENT_CHARS = 50_000
 
-/** 模块级防并发：同一任务 id 同时只允许一个 worker 实例 */
-const running = new Set<number>()
+/**
+ * 模块级防并发：同一任务 id 同时只允许一个 worker 实例。
+ * 挂在 globalThis 上：dev HMR 重载本模块时新旧实例共享同一 Set，
+ * 否则重载后新实例的 running 为空，同一任务可能被二次触发执行。
+ */
+const gWorker = globalThis as unknown as {
+  __scrapeRunning?: Set<number>
+  __scrapeBootAt?: number
+  __scrapeRecovered?: boolean
+}
+const running: Set<number> = (gWorker.__scrapeRunning ??= new Set<number>())
+/** 本进程启动时刻（首次加载本模块时；跨 HMR 重载稳定） */
+const bootAt: number = (gWorker.__scrapeBootAt ??= Date.now())
+
+/**
+ * 僵尸任务恢复（最小机制）：worker 常驻在 Next.js 进程内存里（fire-and-forget promise），
+ * 进程重启后内存任务丢失，DB 中 status=pending/running 的记录会永久卡死。
+ * 进程首次加载本模块时，把「创建于本进程启动之前」且仍处于 pending/running 的任务标记为
+ * failed——它们只可能属于已消失的旧进程（本进程新建任务 createdAt ≥ bootAt，不会误伤；
+ * 本进程在跑任务再经共享 running Set 二次排除，覆盖 HMR 重载场景）。
+ * 条件更新（status 仍为 pending/running）保证与 worker 终态写入竞态安全。
+ */
+async function recoverStaleTasks(): Promise<void> {
+  if (gWorker.__scrapeRecovered) return
+  try {
+    const stale = await db.scrapeTask.findMany({
+      where: { status: { in: ['pending', 'running'] }, createdAt: { lt: new Date(bootAt) } },
+      select: { id: true, log: true },
+    })
+    let recovered = 0
+    for (const t of stale) {
+      if (running.has(t.id)) continue // 本进程仍有旧模块闭包在执行（HMR 重载未结束）
+      const line = `[${new Date().toTimeString().slice(0, 8)}] 服务重启，任务中断（自动回收）`
+      const log = `${t.log ? `${t.log}\n` : ''}${line}`
+      const res = await db.scrapeTask
+        .updateMany({
+          where: { id: t.id, status: { in: ['pending', 'running'] } },
+          data: {
+            status: 'failed',
+            message: '服务重启，任务中断',
+            // 与 Run 同规约：只保留最近 100 行
+            log: log.split('\n').slice(-MAX_LOG_LINES).join('\n'),
+          },
+        })
+        .catch(() => null)
+      if (res && res.count > 0) recovered++
+    }
+    gWorker.__scrapeRecovered = true
+    if (recovered > 0) console.log(`[scrape-worker] 僵尸任务回收: ${recovered} 条`)
+  } catch {
+    // 回收失败不阻塞模块加载；标志不置位，下次模块加载（HMR/重启）自动重试
+  }
+}
+void recoverStaleTasks()
 
 /** 协作式取消检查：记录不存在视为取消；DB 瞬时错误不误判为取消（fail-open） */
 async function isCanceled(taskId: number): Promise<boolean> {
@@ -90,6 +143,15 @@ async function processBook(
     return { ok: false, canceled: false, chapters: 0, failedChapters: 0, message: page.error }
   }
   const book = page.book
+  // 引擎响应未经 schema 校验（callEngine 直接 as 断言），关键字段做形态兜底，
+  // 防畸形载荷（引擎版本错位等）在任务中途抛 TypeError 把整任务拖成 failed
+  if (typeof book.title !== 'string') book.title = ''
+  if (!Array.isArray(book.chapters)) book.chapters = []
+  if (typeof book.description !== 'string') book.description = ''
+  if (typeof book.author !== 'string') book.author = ''
+  if (typeof book.category !== 'string') book.category = ''
+  if (typeof book.status !== 'string') book.status = ''
+  if (typeof book.chapterCount !== 'number') book.chapterCount = book.chapters.length
   run.log(
     `书页提取成功：《${book.title.slice(0, 40)}》${book.author ? ` / ${book.author.slice(0, 20)}` : ''}，章节链接 ${book.chapterCount} 条`,
   )
@@ -102,7 +164,7 @@ async function processBook(
     if (book.catalogUrl) {
       run.log(`发现完整目录页 ${book.catalogUrl.slice(0, 100)}，尝试整目提取…`)
       const catalogRefs = await fetchCatalogChapters(run, book.catalogUrl, rule, bookUrl)
-      if (catalogRefs.length > allRefs.length) {
+      if (Array.isArray(catalogRefs) && catalogRefs.length > allRefs.length) {
         run.log(`目录页提取到 ${catalogRefs.length} 条章节链接（书页仅 ${allRefs.length} 条），采用目录页结果`)
         allRefs = catalogRefs
       } else {
@@ -135,7 +197,9 @@ async function processBook(
   }
 
   // ---- 章节列表准备 ----
-  const refs = allRefs.filter((c): c is { title: string; url: string } => !!c.url)
+  const refs = allRefs.filter(
+    (c): c is { title: string; url: string } => !!c && typeof c.url === 'string' && !!c.url,
+  )
   if (refs.length === 0) {
     run.log('未提取到任何有效章节链接')
     return { ok: true, canceled: false, chapters: 0, failedChapters: 0, message: '书籍已入库（未提取到章节链接）' }
@@ -146,8 +210,8 @@ async function processBook(
     capped = true
   }
   if (opts.trackTotal) {
-    // single 模式：进度主口径=本章节数，total 为分母
-    await run.flush({ total: refs.length })
+    // single 模式：进度主口径=本章节数，total 为分母（flush false=任务记录已删，立即停）
+    if (!(await run.flush({ total: refs.length }))) return canceledOutcome('任务记录已删除')
   } else if (opts.chapterProgress) {
     // list 模式：章节进度独立于 done/total（书）累计
     opts.chapterProgress.total += refs.length
@@ -181,6 +245,7 @@ async function processBook(
     // 关键步骤前的协作式取消检查
     if (!(await alive())) {
       run.log('任务已取消，停止章节抓取')
+      await recalcNovelWordCount(up.novelId) // 取消点前已入库章节，重算字数保持一致性
       await run.flush({ ...progressFields(), chapters: run.counters.chapters })
       return canceledOutcome('任务已取消', chaptersStored, failedChapters)
     }

@@ -13,6 +13,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ListPlus } from 'lucide-react'
 import type { ScrapeRuleDto } from '@/lib/types'
+import { runBusy } from '../ui-shared'
 import { api } from './shared'
 
 export function NewTaskCard({
@@ -30,7 +31,7 @@ export function NewTaskCard({
 
   const selectedRule = rules.find((r) => String(r.id) === ruleId)
 
-  const submit = async () => {
+  const submit = () => {
     const url = targetUrl.trim()
     if (!url) return toast.error('请输入目标 URL')
     let p = 1
@@ -38,8 +39,7 @@ export function NewTaskCard({
       p = Math.floor(Number(pages) || 0)
       if (p < 1 || p > 20) return toast.error('列表页数需为 1-20 的整数')
     }
-    setCreating(true)
-    try {
+    return runBusy(setCreating, true, false, '创建失败', async () => {
       await api('/api/scrape-tasks', {
         method: 'POST',
         body: JSON.stringify({
@@ -52,11 +52,7 @@ export function NewTaskCard({
       toast.success('采集任务已创建，开始执行')
       setTargetUrl('')
       onCreated()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '创建失败')
-    } finally {
-      setCreating(false)
-    }
+    })
   }
 
   return (

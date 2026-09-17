@@ -10,6 +10,7 @@
 import * as cheerio from 'cheerio'
 import { affinityStats, clampTimeout, fetchPage, listStrategies, STRATEGY_NAMES } from './src/strategies'
 import { cookieStats } from './src/strategies/cookies'
+import { hostHealthStats } from './src/strategies/host-health'
 import { extractBook, extractChapter, extractList } from './src/extract'
 import { isPrivateHost, privateHostAllowed } from './src/rate-limit'
 import type { BookRule, ChapterRule, ListRule } from './src/types'
@@ -101,11 +102,42 @@ export function parseBody(req: Request): Promise<Record<string, unknown> | null>
   // 请求体上限 1MB：现有最大载荷是整目章节列表（数百条 {title,url}），留足余量；
   // 超限直接按「请求体错误」处理，防异常大包拖垮内存
   const declaredLen = Number(req.headers.get('content-length') ?? 0)
-  if (Number.isFinite(declaredLen) && declaredLen > 1_048_576) return Promise.resolve(null)
+  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) return Promise.resolve(null)
+  // chunked / 未声明长度（Task 24-a 修复）：旧实现直接 req.json() 无上限，
+  // 异常大包（无 Content-Length 头）可整体进内存；改为流式限量读取后超限即拒绝
+  if (!Number.isFinite(declaredLen) || declaredLen <= 0) return readJsonCapped(req)
   return req
     .json()
     .then((v) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null))
     .catch(() => null)
+}
+
+const MAX_BODY_BYTES = 1_048_576
+
+/** 流式限量读 JSON 请求体：超过 MAX_BODY_BYTES 立即断开并拒绝（用于无 Content-Length 的 chunked 请求） */
+async function readJsonCapped(req: Request): Promise<Record<string, unknown> | null> {
+  try {
+    if (!req.body) return null
+    const reader = req.body.getReader()
+    const chunks: Uint8Array[] = []
+    let total = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (total > MAX_BODY_BYTES) {
+        await reader.cancel().catch(() => {})
+        return null
+      }
+      chunks.push(value)
+    }
+    await reader.cancel().catch(() => {})
+    const v = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks))) as unknown
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
 }
 
 // ==================== 业务处理 ====================
@@ -129,13 +161,19 @@ export async function handleStrategies(): Promise<Response> {
         '按主机 Cookie 会话持久化：捕获各策略响应的 Set-Cookie 按主机存储（含重定向中间跳），该主机后续请求自动回放，覆盖「首访种 cookie、二访才放行」的站点；仅进程内存不落盘，LRU 上限与 TTL 见下；Secure 属性 cookie 仅在 https 请求回放',
       ...cookieStats(),
     },
+    // Task 24-a 新增（向后兼容的追加字段）：按主机健康度记忆说明
+    hostHealth: {
+      description:
+        '按主机健康度记忆：429/503 后下一次抓取先主动退避（Retry-After 优先，指数增长上界 15s，成功即清零）；连续整链失败达阈值的主机熔断快速失败（冷却 60s 起指数增长上界 10min，半开自动恢复；显式指定 strategy 时跳过熔断）',
+      ...hostHealthStats(),
+    },
     compliance: {
-      rateLimit: '默认每域名 1200ms±300ms（< 1 req/s），环境变量 SCRAPER_MIN_INTERVAL_MS 可调但不允许低于 1000ms',
+      rateLimit: '默认每域名 1200ms±300ms（< 1 req/s），环境变量 SCRAPER_MIN_INTERVAL_MS 可调但不允许低于 1000ms；跨域重定向跳同样逐跳限速',
       robotsCheck: 'warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断',
       ssrfGuard: '文本层（IPv4 全形态/IPv6 内网段）+ DNS 尽力校验 + fetch redirect:manual 逐跳校验',
       maxResponseBytes: 8 * 1024 * 1024,
       challengeDetection:
-        '四层检测：反爬平台强特征（任意体积，扫描前 32KB）→ 近空可见正文（<80 字符）JS 跳板/需启用 JS 壳（任意体积，覆盖 HTTP 200 伪装）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理',
+        '四层检测：反爬平台强特征（任意体积，扫描前 32KB，含国产 WAF JS 挑战壳 token acw_sc__v2/__jsl_clearance/__jsluid/yunsuo/wzws）→ 近空可见正文（<80 字符）JS 跳板/「JS 计算 cookie + 原地 reload」壳/需启用 JS 壳（任意体积，覆盖 HTTP 200 伪装）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理',
       captchaSolving: '禁止提供',
       loginContent: '禁止采集',
       accountSpoofing: '禁止提供',

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { BookOpen, Eraser, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 import type { ScrapeRuleDto } from '@/lib/types'
+import { runBusy } from '../ui-shared'
 import { RuleDialog } from './RuleDialog'
 import { api, cleanRule, truncate } from './shared'
 
@@ -29,27 +30,21 @@ export function RulesCard({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-rules'] })
 
-  const seed = async () => {
+  const seed = () => {
     if (seeding) return
-    setSeeding(true)
-    try {
+    return runBusy(setSeeding, true, false, '操作失败', async () => {
       const res = await api<{ added: number }>('/api/scrape-rules', {
         method: 'PUT',
         body: JSON.stringify({ seed: true }),
       })
       await refresh()
       toast.success(`内置模板入库完成：新增 ${res.added} 条`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
-    } finally {
-      setSeeding(false)
-    }
+    })
   }
 
-  const toggleEnabled = async (r: ScrapeRuleDto, enabled: boolean) => {
+  const toggleEnabled = (r: ScrapeRuleDto, enabled: boolean) => {
     if (busyId !== null) return
-    setBusyId(r.id)
-    try {
+    return runBusy(setBusyId, r.id, null, '操作失败', async () => {
       await api('/api/scrape-rules', {
         method: 'PUT',
         body: JSON.stringify({
@@ -66,30 +61,21 @@ export function RulesCard({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
       })
       await refresh()
       toast.success(`规则「${r.name}」已${enabled ? '启用' : '停用'}`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
-    } finally {
-      setBusyId(null)
-    }
+    })
   }
 
-  const remove = async (r: ScrapeRuleDto) => {
+  const remove = (r: ScrapeRuleDto) => {
     if (busyId !== null) return
     if (!confirm(`确认删除规则「${r.name}」？此操作不可恢复。`)) return
-    setBusyId(r.id)
-    try {
+    return runBusy(setBusyId, r.id, null, '删除失败', async () => {
       await api(`/api/scrape-rules?id=${r.id}`, { method: 'DELETE' })
       await refresh()
       toast.success('规则已删除')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
-    } finally {
-      setBusyId(null)
-    }
+    })
   }
 
   /** 存量章节噪声清洗：confirm → dryRun 预览 → 正式清洗 → toast 汇报 */
-  const cleanStored = async () => {
+  const cleanStored = () => {
     if (cleaning) return
     if (
       !confirm(
@@ -97,8 +83,7 @@ export function RulesCard({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
       )
     )
       return
-    setCleaning(true)
-    try {
+    return runBusy(setCleaning, true, false, '清洗失败', async () => {
       const dry = await api<{ checked: number; toClean: number }>('/api/chapters/clean-all?dryRun=1')
       if (dry.toClean === 0) {
         toast.success(`预览完成：检查 ${dry.checked} 章，无需要清洗的章节`)
@@ -110,11 +95,7 @@ export function RulesCard({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
       toast.success(`检查 ${res.checked} 章，清洗 ${res.cleaned} 章`)
       // 章节正文已变化，站点侧书籍/章节缓存全部失效
       void qc.invalidateQueries()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '清洗失败')
-    } finally {
-      setCleaning(false)
-    }
+    })
   }
 
   return (

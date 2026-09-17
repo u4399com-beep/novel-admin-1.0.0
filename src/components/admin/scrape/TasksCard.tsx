@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/table'
 import { ScrollText, Square, Trash2 } from 'lucide-react'
 import { timeAgo } from '@/lib/format'
+import { runBusy } from '../ui-shared'
 import { api, truncate } from './shared'
 import type { TaskDetail, TaskRow } from './types'
 
@@ -130,37 +131,27 @@ export function TasksCard() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-tasks'] })
 
-  const cancel = async (t: TaskRow) => {
+  const cancel = (t: TaskRow) => {
     if (busyId !== null) return
-    setBusyId(t.id)
-    try {
+    return runBusy(setBusyId, t.id, null, '取消失败', async () => {
       await api(`/api/scrape-tasks/${t.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ action: 'cancel' }),
       })
       await refresh()
       toast.success(`已发送取消指令（任务 #${t.id}）`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '取消失败')
-    } finally {
-      setBusyId(null)
-    }
+    })
   }
 
-  const remove = async (t: TaskRow) => {
+  const remove = (t: TaskRow) => {
     if (busyId !== null) return
-    setBusyId(t.id)
-    try {
+    return runBusy(setBusyId, t.id, null, '删除失败', async () => {
       await api(`/api/scrape-tasks/${t.id}`, { method: 'DELETE' })
       // 末页删空自愈：当前页仅剩这一条且不是第一页时回退一页（与书籍列表口径一致）
       if (rows.length === 1 && page > 1) setPage(page - 1)
       await refresh()
       toast.success('任务已删除')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
-    } finally {
-      setBusyId(null)
-    }
+    })
   }
 
   return (

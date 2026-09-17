@@ -5,7 +5,7 @@
  *   每一跳的协议白名单、SSRF 拒绝、降级 follow + 终点校验逻辑一行语义都不能变。
  * （自 strategies.ts 巨石拆分而来，代码逐行原样迁移）
  */
-import { assertHostPublic, parseRetryAfterMs } from '../rate-limit'
+import { acquireDomainSlot, assertHostPublic, parseRetryAfterMs } from '../rate-limit'
 import { cookieHeaderFor, recordResponseCookies } from './cookies'
 import { looksLikeChallenge } from './challenge'
 import type { RawResponse } from './types'
@@ -119,6 +119,10 @@ export async function fetchWithRedirectGuard(
       return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', note: 'ssrf-blocked', warning: `SSRF 防护: ${check.reason}` }
     }
     if (check.warning) warnings.push(`[ssrf] ${check.warning}`)
+
+    // 跨域重定向跳也必须受限速约束（Task 24-a：与 got-scraping 的逐跳限速对齐；
+    // 首跳由策略层已排队，跳过避免同一 host 双重等待）
+    if (current !== url) await acquireDomainSlot(hostOf(current))
 
     // Cookie 会话回放：合并该 host 的 cookie（调用方自身不设置 cookie 头，直接覆盖安全）
     const https = target.protocol === 'https:'

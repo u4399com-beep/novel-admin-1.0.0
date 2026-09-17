@@ -29,6 +29,30 @@ export const CHROME_SEC_CH_UA = `"Chromium";v="${CHROME_MAJOR}", "Google Chrome"
 export const EDGE_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36 Edg/${CHROME_MAJOR}.0.0.0`
 export const EDGE_SEC_CH_UA = `"Chromium";v="${CHROME_MAJOR}", "Microsoft Edge";v="${CHROME_MAJOR}", "Not-A.Brand";v="99"`
 
+/**
+ * 请求头顺序随机化（Task 24-a 反反爬增强，fetch 系策略专用）：
+ * - user-agent 保持首位（多数 WAF 探测以 UA 开头的头序为锚点），其余键每次请求随机抖动；
+ * - 对抗按「固定头序」识别脚本流量的 WAF 规则（Python requests/httpx 等库的头序是静态可指纹化的）；
+ * - 说明：现代运行时（Bun/undici、HTTP/2）会把头部名统一小写化，故不做人造大小写伪装——
+ *   混合大小写在 h2 传输层会被规整，反而可能与声明的浏览器画像矛盾；
+ * - curl-impersonate 不使用本函数（其价值在精确复刻目标浏览器的头序，打乱等于自毁指纹）。
+ */
+export function humanizeHeaderOrder(h: Record<string, string>): Record<string, string> {
+  const keys = Object.keys(h)
+  if (keys.length <= 2) return h
+  const first = keys.filter((k) => k === 'user-agent')
+  const rest = keys.filter((k) => k !== 'user-agent')
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const ti = rest[i]
+    rest[i] = rest[j]
+    rest[j] = ti
+  }
+  const out: Record<string, string> = {}
+  for (const k of [...first, ...rest]) out[k] = h[k]
+  return out
+}
+
 const ACCEPT_HTML =
   'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
 const ACCEPT_LANG_ZH = 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7'
