@@ -1,0 +1,315 @@
+'use client'
+
+/**
+ * 采集任务列表区块：状态徽章 / 双口径进度 / 日志查看 / 取消 / 删除 / 分页。
+ * 自 ScrapeCenter.tsx 原样拆分（执行中任务列表 3s 轮询、终态自停等行为不变）。
+ */
+
+import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Progress } from '@/components/ui/progress'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { ScrollText, Square, Trash2 } from 'lucide-react'
+import { timeAgo } from '@/lib/format'
+import { api, truncate } from './shared'
+import type { TaskDetail, TaskRow } from './types'
+
+const PAGE_SIZE = 20
+
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  pending: { label: '待执行', cls: 'bg-neutral-200 text-neutral-600' },
+  running: { label: '执行中', cls: 'bg-slate-500 text-white animate-pulse' },
+  success: { label: '成功', cls: 'bg-emerald-600 text-white' },
+  partial: { label: '部分成功', cls: 'bg-amber-500 text-white' },
+  failed: { label: '失败', cls: 'bg-red-600 text-white' },
+  canceled: { label: '已取消', cls: 'bg-neutral-400 text-white' },
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const meta = STATUS_META[status] ?? { label: status, cls: 'bg-neutral-200 text-neutral-600' }
+  return <Badge className={`shrink-0 border-transparent ${meta.cls}`}>{meta.label}</Badge>
+}
+
+function ModeBadge({ mode }: { mode: string }) {
+  return mode === 'list' ? (
+    <Badge variant="secondary" className="shrink-0">
+      范围
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="shrink-0">
+      单本
+    </Badge>
+  )
+}
+
+/** 任务日志对话框（执行中的任务每 2s 刷新并自动滚到底部） */
+function LogDialog({ task, onClose }: { task: TaskRow; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['scrape-task', task.id],
+    queryFn: () => api<{ task: TaskDetail }>(`/api/scrape-tasks/${task.id}`),
+    // 轮询开关跟随最新状态（而非打开时的快照），任务结束后自动停止
+    refetchInterval: (query) => {
+      const s = query.state.data?.task?.status ?? task.status
+      return s === 'pending' || s === 'running' ? 2000 : false
+    },
+  })
+  const detail = data?.task
+  const preRef = useRef<HTMLPreElement>(null)
+  const log = detail?.log ?? ''
+  // 日志更新后滚动到底部（ref 副作用，无 state 同步）
+  useEffect(() => {
+    if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
+  }, [log])
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-sm">
+            任务 #{task.id} 日志 <StatusBadge status={detail?.status ?? task.status} />
+          </DialogTitle>
+          <DialogDescription className="break-all">
+            {truncate(detail?.targetUrl ?? task.targetUrl, 80)}
+            {detail?.message ? ` — ${detail.message}` : ''}
+          </DialogDescription>
+        </DialogHeader>
+        <pre
+          ref={preRef}
+          className="max-h-96 overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-neutral-950 p-3 font-mono text-[11px] leading-relaxed text-emerald-300"
+        >
+          {isLoading ? '日志加载中…' : log || '暂无日志'}
+        </pre>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            关闭
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function TasksCard() {
+  const qc = useQueryClient()
+  const [page, setPage] = useState(1)
+  const [logTask, setLogTask] = useState<TaskRow | null>(null)
+  // 取消/删除进行中的任务 id（防重复提交）
+  const [busyId, setBusyId] = useState<number | null>(null)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['scrape-tasks', page],
+    queryFn: () =>
+      api<{ list: TaskRow[]; total: number }>(`/api/scrape-tasks?page=${page}&pageSize=${PAGE_SIZE}`),
+    refetchInterval: (query) => {
+      const list = query.state.data?.list ?? []
+      return list.some((t) => t.status === 'pending' || t.status === 'running') ? 3000 : false
+    },
+  })
+
+  const rows = data?.list ?? []
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-tasks'] })
+
+  const cancel = async (t: TaskRow) => {
+    if (busyId !== null) return
+    setBusyId(t.id)
+    try {
+      await api(`/api/scrape-tasks/${t.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'cancel' }),
+      })
+      await refresh()
+      toast.success(`已发送取消指令（任务 #${t.id}）`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '取消失败')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const remove = async (t: TaskRow) => {
+    if (busyId !== null) return
+    setBusyId(t.id)
+    try {
+      await api(`/api/scrape-tasks/${t.id}`, { method: 'DELETE' })
+      // 末页删空自愈：当前页仅剩这一条且不是第一页时回退一页（与书籍列表口径一致）
+      if (rows.length === 1 && page > 1) setPage(page - 1)
+      await refresh()
+      toast.success('任务已删除')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '删除失败')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <section className="rounded-lg border p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h4 className="text-sm font-semibold">采集任务（{total}）</h4>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              上一页
+            </Button>
+            <span className="tabular-nums">
+              {page} / {totalPages}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              下一页
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="py-8 text-center text-xs text-neutral-400">任务加载中…</p>
+      ) : rows.length === 0 ? (
+        <p className="flex flex-wrap items-center justify-center gap-2 py-8 text-xs text-neutral-400">
+          {page > 1 ? '当前页无任务' : '暂无采集任务，请在上方创建'}
+          {page > 1 && (
+            <Button size="sm" variant="outline" className="h-7" onClick={() => setPage(1)}>
+              返回第一页
+            </Button>
+          )}
+        </p>
+      ) : (
+        <div className="max-h-[420px] overflow-y-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-8 w-10 text-xs">ID</TableHead>
+                <TableHead className="h-8 w-14 text-xs">模式</TableHead>
+                <TableHead className="h-8 text-xs">目标 URL</TableHead>
+                <TableHead className="h-8 w-20 text-xs">状态</TableHead>
+                <TableHead className="h-8 w-32 text-xs">进度</TableHead>
+                <TableHead className="hidden h-8 w-36 text-xs md:table-cell">成果</TableHead>
+                <TableHead className="hidden h-8 w-20 text-xs md:table-cell">时间</TableHead>
+                <TableHead className="h-8 w-24 text-right text-xs">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((t) => {
+                const pct = t.total > 0 ? Math.min(100, Math.round((t.done / t.total) * 100)) : 0
+                const active = t.status === 'pending' || t.status === 'running'
+                return (
+                  <TableRow key={t.id}>
+                    <TableCell className="p-2 text-xs tabular-nums text-neutral-500">{t.id}</TableCell>
+                    <TableCell className="p-2">
+                      <ModeBadge mode={t.mode} />
+                    </TableCell>
+                    <TableCell className="max-w-0 p-2">
+                      <span className="block truncate text-xs" title={t.targetUrl}>
+                        {truncate(t.targetUrl, 40)}
+                      </span>
+                      {t.message && (
+                        <span className="block truncate text-[11px] text-neutral-400" title={t.message}>
+                          {truncate(t.message, 40)}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="p-2">
+                      <StatusBadge status={t.status} />
+                    </TableCell>
+                    <TableCell className="p-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-14 shrink-0 text-[11px] tabular-nums text-neutral-500">
+                          {t.done}/{t.total}
+                        </span>
+                        <Progress value={pct} className="h-1.5 w-16" aria-label={`任务 ${t.id} 进度 ${pct}%`} />
+                      </div>
+                      {/* list 模式：主进度按「书」计，章节进度作副标题展示（single 模式主进度即章节，不重复展示） */}
+                      {t.chaptersTotal > 0 && (
+                        <span className="mt-0.5 block text-[10px] tabular-nums text-neutral-400">
+                          已采集 {t.chaptersDone}/{t.chaptersTotal} 章
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden p-2 text-[11px] tabular-nums text-neutral-500 md:table-cell">
+                      新建 {t.created} · 更新 {t.updated} · 章节 {t.chapters}
+                    </TableCell>
+                    <TableCell className="hidden p-2 text-[11px] text-neutral-400 md:table-cell">
+                      {timeAgo(t.updatedAt)}
+                    </TableCell>
+                    <TableCell className="p-2 text-right">
+                      <div className="flex justify-end gap-0.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-1.5"
+                          title="查看日志"
+                          aria-label={`查看任务 ${t.id} 日志`}
+                          onClick={() => setLogTask(t)}
+                        >
+                          <ScrollText className="h-3.5 w-3.5" />
+                        </Button>
+                        {active && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5 text-amber-600 hover:text-amber-700"
+                            disabled={busyId === t.id}
+                            title="取消任务"
+                            aria-label={`取消任务 ${t.id}`}
+                            onClick={() => cancel(t)}
+                          >
+                            <Square className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-1.5 text-red-500 hover:text-red-600"
+                          disabled={busyId === t.id}
+                          title="删除任务"
+                          aria-label={`删除任务 ${t.id}`}
+                          onClick={() => remove(t)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {logTask && <LogDialog task={logTask} onClose={() => setLogTask(null)} />}
+    </section>
+  )
+}

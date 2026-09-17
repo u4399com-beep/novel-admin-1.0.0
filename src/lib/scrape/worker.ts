@@ -11,147 +11,24 @@
  * - 任何异常都不外抛到进程级；最终状态 success / partial / failed / canceled
  * - 正文入库前经 cleanChapterContent 统一清洗（去 \r\n/行首缩进/空行/广告导航噪声行），
  *   wordCount 基于清洗后文本；清洗日志每本书最多记 3 条防刷屏
+ * - 可观测性：每本书的书页抓取成功后记录一次「书页命中策略 X（尝试 N 次）」
  *
  * 合规红线：仅抓取公开页面；robots 提示与域名限速由 scraper-service 引擎层负责；
  * 单本章节上限 100、单任务书籍上限 60、正文 5 万字截断，防止滥用。
  */
 import { db } from '@/lib/db'
 import { cleanChapterContent } from '@/lib/content-clean'
+import { fetchBookPage, fetchChapter, fetchListPage } from './engine-client'
+import { Run } from './run-log'
+import { ensureCategory, loadRule, recalcNovelWordCount, storeChapter, upsertBook } from './store'
+import type { BookOutcome, LoadedRule, ListItem, TaskFlushFields, TaskRecord } from './types'
 
-const SCRAPER_BASE = 'http://127.0.0.1:3030'
-// 引擎策略链整体预算 55s（CHAIN_BUDGET_MS），超时须 ≥ 预算否则慢站点会被提前切断；与 /api/scrape 代理的 60s 对齐
-const ENGINE_TIMEOUT_MS = 60_000
 const MAX_CHAPTERS_PER_BOOK = 100
 const MAX_BOOKS_PER_TASK = 60
 const MAX_CONTENT_CHARS = 50_000
-const MAX_LOG_LINES = 100
-const MAX_WARNINGS_LOGGED = 3
 
 /** 模块级防并发：同一任务 id 同时只允许一个 worker 实例 */
 const running = new Set<number>()
-
-// ==================== 类型 ====================
-
-type RuleMap = Record<string, string>
-
-interface LoadedRule {
-  name?: string
-  charset?: string
-  listRule: RuleMap
-  bookRule: RuleMap
-  chapterRule: RuleMap
-}
-
-interface ChapterRef {
-  title: string
-  url: string | null
-}
-
-interface BookData {
-  title: string
-  author: string
-  description: string
-  cover: string | null
-  status: string
-  category: string
-  chapterCount: number
-  chapters: ChapterRef[]
-}
-
-interface ListItem {
-  title: string
-  url: string | null
-  author: string
-  category: string
-}
-
-interface ChapterData {
-  title: string
-  content: string
-  wordCount: number
-  nextUrl: string | null
-}
-
-interface TaskRecord {
-  id: number
-  mode: string
-  targetUrl: string
-  pages: number
-  ruleId: number | null
-}
-
-interface BookOutcome {
-  ok: boolean // 书籍是否成功入库（含"已入库但无章节链接"）
-  canceled: boolean // 任务被取消/记录被删除
-  chapters: number // 本次入库章节数
-  failedChapters: number
-  message: string
-}
-
-type EngineResult<T> =
-  | { ok: true; data: T; warnings: string[] }
-  | { ok: false; error: string; warnings: string[] }
-
-// ==================== 运行日志 ====================
-
-function ts(): string {
-  const d = new Date()
-  const p = (x: number) => String(x).padStart(2, '0')
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
-
-class Run {
-  readonly taskId: number
-  private lines: string[] = []
-  /** 任务级成果计数（跨多本书累积） */
-  counters = { created: 0, updated: 0, chapters: 0 }
-
-  constructor(taskId: number) {
-    this.taskId = taskId
-  }
-
-  log(msg: string): void {
-    this.lines.push(`[${ts()}] ${msg}`.slice(0, 500))
-    if (this.lines.length > MAX_LOG_LINES) this.lines = this.lines.slice(-MAX_LOG_LINES)
-  }
-
-  logWarnings(warnings: unknown[]): void {
-    for (const w of warnings.slice(0, MAX_WARNINGS_LOGGED)) this.log(`引擎提示: ${String(w).slice(0, 200)}`)
-  }
-
-  logText(): string {
-    return this.lines.join('\n')
-  }
-
-  /** 写回日志与进度字段；任务记录被删除时返回 false（调用方应停止执行）
-   *
-   * chaptersDone/chaptersTotal 走 $executeRaw 兜底：长期运行的 dev 进程可能仍持有
-   * schema 变更前生成的 Prisma Client（globalThis 单例 + require 缓存，不重启无法刷新），
-   * 类型化 update 会报 Unknown field；原生 SQL 不依赖 client 的 dmmf，新旧 client 下均正确。
-   * （SQLite 无 @map，列名与字段名一致）
-   */
-  async flush(extra?: Record<string, unknown>): Promise<boolean> {
-    try {
-      const { chaptersDone, chaptersTotal, ...rest } = extra ?? {}
-      await db.scrapeTask.update({
-        where: { id: this.taskId },
-        data: { log: this.logText(), ...(rest as Record<string, unknown>) },
-      })
-      if (chaptersDone !== undefined || chaptersTotal !== undefined) {
-        await db.$executeRaw`
-          UPDATE "ScrapeTask"
-          SET "chaptersDone" = ${Number(chaptersDone ?? 0)}, "chaptersTotal" = ${Number(chaptersTotal ?? 0)}
-          WHERE "id" = ${this.taskId}
-        `
-      }
-      return true
-    } catch {
-      return false
-    }
-  }
-}
-
-// ==================== 基础工具 ====================
 
 /** 协作式取消检查：记录不存在视为取消；DB 瞬时错误不误判为取消（fail-open） */
 async function isCanceled(taskId: number): Promise<boolean> {
@@ -162,94 +39,8 @@ async function isCanceled(taskId: number): Promise<boolean> {
   return !t || t.status === 'canceled'
 }
 
-/** 调用 scraper-service；网络异常/超时/非 2xx 一律返回结构化失败，绝不 throw */
-async function callEngine<T>(path: string, body: Record<string, unknown>): Promise<EngineResult<T>> {
-  try {
-    const res = await fetch(`${SCRAPER_BASE}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(ENGINE_TIMEOUT_MS),
-    })
-    const json = (await res.json().catch(() => null)) as Record<string, unknown> | null
-    if (!json) return { ok: false, error: `引擎响应解析失败(HTTP ${res.status})`, warnings: [] }
-    const warnings = Array.isArray(json.warnings) ? json.warnings.map(String) : []
-    if (!res.ok || json.ok === false) {
-      const base = String(json.error ?? `HTTP ${res.status}`)
-      const detail = json.detail ? String(json.detail).slice(0, 200) : ''
-      return { ok: false, error: detail ? `${base}（${detail}）` : base, warnings }
-    }
-    return { ok: true, data: json.data as T, warnings }
-  } catch (e) {
-    const timedOut =
-      e instanceof Error && (/timeout|abort/i.test(e.message) || (e as { name?: string }).name === 'TimeoutError')
-    return {
-      ok: false,
-      error: timedOut ? `引擎请求超时(${ENGINE_TIMEOUT_MS / 1000}s)` : '采集引擎不可达(3030)',
-      warnings: [],
-    }
-  }
-}
-
-function safeParseRule(json: string | null | undefined): RuleMap {
-  if (!json) return {}
-  try {
-    const v = JSON.parse(json) as unknown
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      const out: RuleMap = {}
-      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-        if (typeof val === 'string' && val.trim()) out[k] = val.trim().slice(0, 300)
-      }
-      return out
-    }
-    return {}
-  } catch {
-    return {}
-  }
-}
-
-async function loadRule(ruleId: number | null): Promise<LoadedRule> {
-  if (!ruleId) return { listRule: {}, bookRule: {}, chapterRule: {} }
-  const r = await db.scrapeRule.findUnique({ where: { id: ruleId } }).catch(() => null)
-  if (!r) return { listRule: {}, bookRule: {}, chapterRule: {} }
-  return {
-    name: r.name,
-    charset: r.charset ? r.charset.toLowerCase() : undefined,
-    listRule: safeParseRule(r.listRule),
-    bookRule: safeParseRule(r.bookRule),
-    chapterRule: safeParseRule(r.chapterRule),
-  }
-}
-
-async function ensureCategory(name: string): Promise<number> {
-  const clean = (name || '').replace(/\s+/g, ' ').trim().slice(0, 50) || '未分类'
-  const found = await db.category.findUnique({ where: { name: clean } }).catch(() => null)
-  if (found) return found.id
-  try {
-    const created = await db.category.create({ data: { name: clean } })
-    return created.id
-  } catch {
-    // 并发创建撞唯一约束 → 重查
-    const again = await db.category.findUnique({ where: { name: clean } }).catch(() => null)
-    if (!again) throw new Error(`分类「${clean}」创建失败`)
-    return again.id
-  }
-}
-
-/** Prisma 唯一约束冲突（P2002）或 SQLite unique 错误 */
-function isUniqueConflict(e: unknown): boolean {
-  if (!(e instanceof Error)) return false
-  return (e as { code?: string }).code === 'P2002' || /unique|constraint/i.test(e.message)
-}
-
-function mapNovelStatus(raw: string): 'serial' | 'finished' {
-  return /完|fin/i.test(raw) ? 'finished' : 'serial'
-}
-
-const COVER_TOKENS = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8', 'g9', 'g10', 'g11', 'g12']
-
 /** 生成第 k 页候选 URL：?page=k（已有 query 则 &page=k）与 /page/k 两种变体 */
-export function pageVariants(url: string, k: number): string[] {
+function pageVariants(url: string, k: number): string[] {
   const out: string[] = []
   try {
     const u = new URL(url)
@@ -264,39 +55,6 @@ export function pageVariants(url: string, k: number): string[] {
     out.push(`${url.replace(/\/+$/, '')}/page/${k}`)
   }
   return [...new Set(out)]
-}
-
-// ==================== 引擎调用封装 ====================
-
-async function fetchBookPage(
-  run: Run,
-  url: string,
-  rule: LoadedRule,
-): Promise<{ ok: true; book: BookData } | { ok: false; error: string }> {
-  const res = await callEngine<{ book?: BookData }>('/api/test', {
-    url,
-    rule: { bookRule: rule.bookRule },
-    charset: rule.charset,
-  })
-  if (!res.ok) return { ok: false, error: res.error }
-  if (res.warnings.length) run.logWarnings(res.warnings)
-  const book = res.data.book
-  if (!book || !book.title) return { ok: false, error: '未提取到书籍标题（规则与内置回退均未命中）' }
-  return { ok: true, book }
-}
-
-async function fetchListPage(run: Run, url: string, rule: LoadedRule): Promise<ListItem[]> {
-  const res = await callEngine<{ list?: { items?: ListItem[] } }>('/api/test', {
-    url,
-    rule: { listRule: rule.listRule },
-    charset: rule.charset,
-  })
-  if (!res.ok) {
-    run.log(`列表页抓取失败(${url.slice(0, 100)}): ${res.error}`)
-    return []
-  }
-  if (res.warnings.length) run.logWarnings(res.warnings)
-  return (res.data.list?.items ?? []).filter((it) => !!it.url)
 }
 
 // ==================== 单本书处理（single 与 list 共用） ====================
@@ -347,63 +105,9 @@ async function processBook(
     return { ok: false, canceled: false, chapters: 0, failedChapters: 0, message: msg }
   }
 
-  // ---- 书籍 upsert（title+author 查重，先 trim 规范化再截断；DB 层 @@unique([title,author]) 兜底并发）----
-  const title = (book.title || '').trim().slice(0, 200)
-  if (!title) {
-    return { ok: false, canceled: false, chapters: 0, failedChapters: 0, message: '书籍标题为空，入库中止' }
-  }
-  const author = ((book.author || '').trim() || '佚名').slice(0, 100)
-
-  let novelId: number
-  let createdNew = false
-  const existing = await db.novel.findFirst({ where: { title, author }, select: { id: true } }).catch(() => null)
-  if (existing) {
-    novelId = existing.id
-  } else {
-    try {
-      const row = await db.novel.create({
-        data: {
-          title,
-          author,
-          description: book.description.slice(0, 2000),
-          cover: COVER_TOKENS[Math.floor(Math.random() * COVER_TOKENS.length)],
-          categoryId,
-          status: mapNovelStatus(book.status),
-        },
-      })
-      novelId = row.id
-      createdNew = true
-    } catch (e) {
-      if (!isUniqueConflict(e)) {
-        run.log(`书籍入库失败: ${e instanceof Error ? e.message.slice(0, 120) : '未知错误'}`)
-        return canceledOutcome('书籍入库失败')
-      }
-      // 并发另一任务已抢先创建同一本书（撞 @@unique([title,author])）→ 回读命中查重，走更新路径
-      const winner = await db.novel.findFirst({ where: { title, author }, select: { id: true } }).catch(() => null)
-      if (!winner) return canceledOutcome('书籍入库失败（并发冲突后未找到记录）')
-      novelId = winner.id
-      run.log(`并发入库冲突，命中已有书籍 #${novelId}`)
-    }
-  }
-  if (createdNew) {
-    run.counters.created++
-    run.log(`新建书籍 #${novelId}《${title.slice(0, 30)}》`)
-  } else {
-    const okUpd = await db.novel
-      .update({
-        where: { id: novelId },
-        data: {
-          description: book.description.slice(0, 2000),
-          categoryId,
-          status: mapNovelStatus(book.status),
-        },
-      })
-      .then(() => true)
-      .catch(() => false)
-    if (!okUpd) return canceledOutcome('书籍更新失败（记录可能已被删除）')
-    run.counters.updated++
-    run.log(`书籍已存在，更新信息（#${novelId}）`)
-  }
+  // ---- 书籍 upsert（title+author 查重；DB 层 @@unique([title,author]) 兜底并发）----
+  const up = await upsertBook(run, book, categoryId)
+  if (!up.ok) return canceledOutcome(up.message)
 
   // ---- 章节列表准备 ----
   const refs = book.chapters.filter((c): c is { title: string; url: string } => !!c.url)
@@ -425,7 +129,7 @@ async function processBook(
   }
 
   /** 每处理完一个章节后要刷出的进度字段（不含任务级成果计数） */
-  const progressFields = (): Record<string, number> =>
+  const progressFields = (): TaskFlushFields =>
     opts.trackTotal
       ? { done }
       : {
@@ -434,11 +138,11 @@ async function processBook(
         }
 
   const existingChapters = await db.chapter
-    .findMany({ where: { novelId }, select: { title: true } })
+    .findMany({ where: { novelId: up.novelId }, select: { title: true } })
     .catch(() => [] as { title: string }[])
   const existingTitles = new Set(existingChapters.map((c) => c.title))
   const maxAgg = await db.chapter
-    .aggregate({ where: { novelId }, _max: { idx: true } })
+    .aggregate({ where: { novelId: up.novelId }, _max: { idx: true } })
     .catch(() => ({ _max: { idx: null as number | null } }))
   let idx = (maxAgg._max.idx ?? 0) + 1
 
@@ -465,12 +169,8 @@ async function processBook(
       continue
     }
 
-    run.log(`(${done + 1}/${refs.length}) 抓取章节「${(refTitle || ref.url!).slice(0, 36)}」`)
-    const ch = await callEngine<ChapterData>('/api/chapter', {
-      url: ref.url,
-      rule: rule.chapterRule,
-      charset: rule.charset,
-    })
+    run.log(`(${done + 1}/${refs.length}) 抓取章节「${(refTitle || ref.url).slice(0, 36)}」`)
+    const ch = await fetchChapter(ref.url, rule)
     const data = ch.ok ? ch.data : null
 
     // 入库前统一清洗（去 \r\n/行首缩进/空行/噪声行），存储契约：无空行、无行首缩进
@@ -494,22 +194,11 @@ async function processBook(
       run.log(`章节「${chTitle.slice(0, 30)}」清洗 ${cleaned.removedLines} 行噪声`)
     }
     const wordCount = content.replace(/\s/g, '').length
-    const storeAt = (idxVal: number): Promise<true | Error> =>
-      db.chapter
-        .create({ data: { novelId, idx: idxVal, title: chTitle, content, wordCount } })
-        .then(() => true as const)
-        .catch((e: unknown) => (e instanceof Error ? e : new Error('章节入库失败')))
-    // 唯一冲突（P2002，如并发任务写同一本书）时跳过被占用的 idx 重试一次，
-    // 避免序号停滞导致后续所有章节连锁失败
-    let stored = await storeAt(idx)
-    if (stored !== true && isUniqueConflict(stored)) {
-      run.log(`章节序号 ${idx} 已被占用，顺延重试`)
-      idx++
-      stored = await storeAt(idx)
-    }
-    if (stored === true) {
+    // storeChapter 内部处理 idx 唯一冲突顺延重试；成功返回实际落库 idx，下一章从其后开始
+    const stored = await storeChapter(run, up.novelId, idx, { title: chTitle, content, wordCount })
+    if (stored.ok) {
+      idx = stored.idx + 1
       existingTitles.add(chTitle)
-      idx++
       chaptersStored++
       run.counters.chapters++
     } else {
@@ -525,12 +214,7 @@ async function processBook(
   if (capped) run.log(`已达单本上限（${MAX_CHAPTERS_PER_BOOK} 章），超出部分未采集`)
 
   // ---- 重算书籍字数 ----
-  const sum = await db.chapter
-    .aggregate({ where: { novelId }, _sum: { wordCount: true } })
-    .catch(() => ({ _sum: { wordCount: null as number | null } }))
-  await db.novel
-    .update({ where: { id: novelId }, data: { wordCount: sum._sum.wordCount ?? 0 } })
-    .catch(() => {})
+  await recalcNovelWordCount(up.novelId)
 
   run.log(`本书完成：入库 ${chaptersStored} 章，失败 ${failedChapters} 章`)
   return {

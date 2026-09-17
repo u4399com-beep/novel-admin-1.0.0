@@ -419,3 +419,89 @@ Stage Summary:
 - 用户诉求落地：「PSEO设置」= 持久化运行配置（引擎/种子/词数/上限/二级挖掘/自动生成）+「应用 multi-search-engine 获取下拉词」= 试取预览（只看不入库）与批量获取（种子×引擎→去重入库→可选自动生成聚合页）两条路径，单种子 generate 接口保留兼容
 - 架构要点：配置寄生 seoConfig JSON（pseo 子字段）零迁移；共享逻辑收敛到 lib/pseo.ts 三路由复用；批量单飞锁+幂等去重+P2002 容错；失败引擎逐项如实报告不阻塞
 - 环境备注：沙箱内 bing/duckduckgo 稳定可用，baidu 服务端返回空（直连 curl 有数据，疑服务端出口指纹差异）、sogou/so360 网络受限——均被引擎隔离设计如实呈现，不影响功能
+
+---
+Task ID: 20-c
+Agent: ui-refactor-auditor
+Task: ScrapeCenter 组件化拆分 + PseoTab 引擎守卫 + 全局走查修复
+
+Work Log:
+- 通读 worklog（Task 13-a/14/15-b/16/17/18/19 的 UI 约定与既往修复）后开工；全程只改 src/components/**，未触碰 src/lib/scrape-worker.ts、src/app/api/scrape*、mini-services（并行引擎 agent 范围）
+- 任务一·拆分：src/components/admin/ScrapeCenter.tsx（975 行）逐行原样迁移至 src/components/admin/scrape/ 目录：
+  · types.ts（TaskRow/TaskDetail/StrategyInfo/RuleFormState/FieldDef）+ shared.ts（api/cleanRule/truncate，原样搬运）
+  · RuleDialog.tsx（对话框 + 三组选择器字段常量 + RuleFieldGroup，URL 前置校验/saving 防重/key 挂载等原样保留）
+  · RulesCard.tsx（规则列表启停 busyId/删除 confirm/模板入库/存量清洗 dryRun→POST 全链路原样）
+  · NewTaskCard.tsx（单本/范围单选、规则下拉、页数校验、creating 防重原样）
+  · TasksCard.tsx（3s 轮询终态自停、双口径进度、LogDialog 2s 轮询自停+自动滚底、取消/删除 busyId、分页与空态「返回第一页」原样）
+  · ScrapeCenter.tsx 保留原路径作薄组合层（46 行，默认导出名与 import 路径不变，AdminConsole.tsx 零改动兼容）
+- 重要发现：任务描述称 ScrapeCenter 原含「引擎状态」区块，实测拆分前文件并无此区块（引擎策略卡在旧 AdminDrawer 的 ScraperTab 中，Task 15-b 去重时一并移除）。按任务规格（建议文件名 EngineCard.tsx + 验收标准「引擎状态显示 7 策略」）新建 scrape/EngineCard.tsx：GET /api/scrape?proxy=strategies 沿用旧 query key 'scraper-strategies' + 30s 重询，UI 复刻旧策略卡（可用/未启用 Badge + 名称 + 描述），并补加载中/引擎降级（502）提示行，置于组合层首位（与旧 ScraperTab 排布一致）
+- 逐行过手就地修复 3 处（均为拆分中发现的实际缺陷，行为增强已记录）：
+  ① RulesCard「内置模板入库」无防重复点击（服务端幂等但会重复请求+重复 toast）→ 补 seeding 忙态 + 按钮 disabled，与 busyId/cleaning 模式对齐
+  ② RulesCard 头部按钮行（清洗存量章节/内置模板入库/新建规则 三按钮 ≈328px）在 375px 视口超出容器 ≈311px 造成横向溢出 → 按钮行加 flex-wrap（375px 实测溢出归零，桌面端视觉不变）
+  ③ TasksCard 删除任务补末页删空自愈（rows.length===1 && page>1 → 回退一页），与 NovelsTab 既有口径一致（Task 14 的手动「返回第一页」按钮保留）
+- 既往修复回退核查：对话框 Esc、防重复提交（saving/creating/busyId/cleaning）、列表 id key、LogDialog/列表轮询自停、URL 前置校验、删除 confirm、taskListKey 重挂载回第一页——全部保留，零回退
+- 任务二·PseoTab 守卫（panels.tsx）：noEngines = form.sources.length===0 时①引擎区下方显示红字提示「至少选择一个搜索引擎」②禁用「保存设置」「试取预览（首个种子）」「开始批量获取」三按钮；该状态下不发任何请求，服务端 sanitizePseoConfig 语义未动。附带两处微修：addKw 补 busy 守卫（Enter 键路径绕过按钮 disabled）；关键词行「预览/删除」按钮 h-5 px-1 → h-6 px-1.5（最小交互目标放大一档）
+- 任务三·全局走查：AdminConsole.tsx hash 路由/SECTIONS.some 守卫/移动端标签条滚动条隐藏/localStorage try-catch/document.title 同步逐项核查无回退；panels.tsx 其余 Tab（Themes/Novels/Categories/Seo/Settings）走查输入校验、loading 态、防重复提交、list key、对话框 Esc/aria——均已在位，未发现实际 bug，未做改动（不臆造问题）
+- 验证：bunx tsc --noEmit 0 错误；eslint src/components/admin/ 0 错误（仓库级 bun run lint 当前有 1 个解析错误位于 mini-services/scraper-service/src/strategies/curl-impersonate.ts，系并行引擎 agent 重构 strategies 目录的在途产物，非本任务范围）；agent-browser 全流程：#/admin 直开 → 采集中心渲染引擎 7 策略（6 可用 + curl-impersonate 未启用）+ 4 条 seed 规则 + 规则对话框打开/Esc 关闭/新建对话框正常 + 任务列表空态；PSEO 标签页全不选引擎 → DOM eval 确认提示行出现且三按钮 disabled=true，勾回后恢复（勾选态与测试前一致，配置未被持久化改动）；375px 视口采集中心与 PSEO 两页 document/main 溢出均 0；返回站点/区块记忆（admin-section）正常；全程 console/page errors 为空；dev.log 无新增报错；新 建/改文件一律 chmod 644
+
+Stage Summary:
+- 新文件 7 个：src/components/admin/scrape/{types.ts 59 行, shared.ts 21 行, RuleDialog.tsx 272 行, RulesCard.tsx 199 行, NewTaskCard.tsx 146 行, TasksCard.tsx 315 行, EngineCard.tsx 47 行}（全部 ≤450 行）；修改 2 个：ScrapeCenter.tsx（975→46 薄组合层，路径与默认导出不变）、panels.tsx（PseoTab 守卫 + 2 微修）。所有请求/状态/交互/文案除上列 3+3 处记录的修复外与拆分前逐行一致
+- 走查结论：AdminConsole 七区块路由与移动端标签条无回退；panels 其余 5 Tab 未发现实际 bug（零改动）；拆分文件 375px 无横向溢出
+- 遗留建议：①src/components/AdminDrawer.tsx 为未跟踪孤儿文件（沙箱重置复原的历史残留，零 import 引用，与 Task 13-a 的删除决定冲突）建议主控删除；②仓库级 lint 的唯一错误在并行 agent 的 mini-services 在途文件，待其收尾后自愈；③引擎 curl-impersonate 策略当前检测为未启用（二进制探测失败），属引擎侧环境问题，与前端无关
+---
+Task ID: 20-a
+Agent: engine-refactor（超时，成果由主控逐行核验后补记）
+Task: 采集引擎模块化重构 + 按主机策略亲和
+
+Work Log:
+- strategies.ts（1309 行巨石）拆为 src/strategies/ 10 文件：types.ts(61, 共享类型)/profiles.ts(217, UA与Sec-CH-UA同源派生+8套header画像)/challenge.ts(49, 三层挑战页检测)/http.ts(182, readBody流式限量+assess+fetchWithRedirectGuard逐跳SSRF守卫)/fetch-strategies.ts(88, makeFetchStrategy工厂+fetch-browser/ua-rotate/mobile/spider)/curl-impersonate.ts(138)/got-scraping.ts(182)/browser.ts(221, Node Playwright探测+Python桥接)/affinity.ts(34, 新增按主机策略亲和)/index.ts(267, 策略注册表+pickOrder+fetchPage编排+预算退避)
+- extract.ts（651 行）拆为 src/extract/ 4 文件：selectors.ts(118, 选择器工具层)/content.ts(79, 正文容器清洗)/extract.ts(472, 三个提取器)/index.ts(6, 门面)
+- index.ts（309→99 行）瘦身：业务 handler 迁至服务根 handlers.ts（230 行），入口只留启动+路由分发+CORS+错误兜底
+- 新增按主机策略亲和：Map<host,strategy> 容量 256 LRU 语义（重新插入刷新淘汰序），成功策略下次提至链首，显式指定策略时不生效，命中失败照旧全链回退；/api/strategies 响应追加 affinity 说明字段（向后兼容）
+- RENDER_PY 路径随文件层级修正 ../../scripts/render.py；修复一处过期声明（fetch-strategies 内 remaining 在限速等待后计算，与原版一致）
+
+主控核验（逐行）：
+- 规范化语义 diff：extract 新旧 15 行差异全部为 function→export function 可见性标记，零逻辑变化；strategies 新旧 91 行差异全部可解释（可见性导出+亲和新增+路径深度修正）
+- http.ts SSRF 守卫逐跳校验/opaque-redirect 降级/MAX_BYTES/Retry-After 解析与原版逐行一致；readBody 本就流式（18-b 已改），已修正新文件中不实的「旧实现全量读」注释
+- 自愈记录：agent 写文件中途半成品语法错误曾致 --hot 崩溃（curl-impersonate.ts:2），agent 已自行修复；进程被沙箱会话回收，主控以 start-stop-daemon 双 fork（ppid=1）方式重启并确认跨调用存活——新规程已记入 20-main
+- 验证：引擎 tsc 0 错误；/api/health、/api/strategies（7 策略+affinity）、/api/test 真实抓取 example.com 与 books.toscrape 书页提取全部成功；二次抓取 first-attempt=fetch-browser 证实亲和生效；主站代理 strategies 正常
+
+Stage Summary:
+- 引擎由 4 文件 3136 行重构为 16 文件单文件≤472 行，对外 API 契约（端点/响应字段/错误结构/CORS）零变化；反反爬新增按主机策略亲和（唯一行为新增）
+- 遗留：①curl-impersonate 二进制在当前沙箱缺失（探测为不可用，属环境问题非代码）；②handlers.ts 位于服务根而非 src/（import 正常、tsc 通过，保持现状减少无谓重启）
+
+---
+Task ID: 20-b
+Agent: worker-refactor（超时，成果由主控逐行核验后补记）
+Task: 采集 worker/API 模块化重构 + 陈旧 workaround 清理 + 可观测性
+
+Work Log:
+- scrape-worker.ts（743 行）拆为 src/lib/scrape/ 6 文件：types.ts(64, 引擎载荷/任务记录/进度字段)/engine-client.ts(106, callEngine+三类页面封装)/run-log.ts(66, Run日志与flush)/store.ts(203, 规则加载/分类/书籍upsert(P2002回读)/章节入库(idx竞态顺延)/字数重算)/worker.ts(428, processBook/runSingle/runList/finalize/triggerScrapeTask)/api-utils.ts(28, URL与正整数校验工具)
+- 删除旧 scrape-worker.ts，scrape-tasks 路由 import 改指 '@/lib/scrape/worker'；pageVariants 转模块私有
+- 移除陈旧 workaround：Run.flush 的 $executeRaw 与 scrape-tasks 两路由的 $queryRaw 兜底全部替换为类型化 Prisma（-117 行）；dev.log 无 Unknown field 报错
+- 可观测性：callEngine 透出响应顶层 strategy/attempts，任务日志新增「书页命中策略 fetch-browser（尝试 N 次）」（每本书一条）
+- 三个采集 API 路由去重（重复的 URL/ID 校验收敛进 api-utils），PUT/DELETE 边界实测：不存在 id → 404、非法 id → 400
+- 主控核验：upsertBook 的 canceled 语义（空标题=canceled=false 走 failed）、storeChapter 返回实际 idx 推进下一章序号，均与原实现等价；进度双口径/状态机/取消协作逐段比对无变化
+
+Stage Summary:
+- worker 层由 2 文件 843 行重构为 7 文件单文件≤428 行；类型化进度写入经真实任务实证（single 任务 6/6 章 done 2→5→6、total=6、chaptersDone/chaptersTotal 语义正确、状态 success）
+- 遗留：无（回退方案：若未来 schema 变更且不重启 dev，flush 可能 Unknown field——届时按 run-log.ts 注释恢复 raw SQL 并重启）
+
+---
+Task ID: 20-main
+Agent: 主控（Z.ai Code）
+Task: 第六批收尾——集成核验 + UI 验证 + 清理 + 推送
+
+Work Log:
+- 并行派发 20-a/20-b/20-c 三 agent；20-c 正常完成，20-a/20-b 超时但成果落地，主控逐行核验（规范化语义 diff + 行为实测）后补记
+- 引擎抢救：agent 半成品崩溃+沙箱会话回收致 3030 下线，定位 /start.sh 启动机制后改用 start-stop-daemon --background 双 fork 重启（ppid=1 跨 Bash 调用存活）——记为新规程；验证 health/strategies/亲和/真实抓取
+- E2E 实测：single 采集任务（rule 6, books.toscrape）success 6/6 章、命中策略日志、类型化进度写入实证；测试任务/书籍全清理恢复种子态（41→42 书已删回 41）
+- UI 浏览器验证（agent-browser）：采集中心引擎卡 7 策略渲染（6 可用+curl-impersonate 未启用如实显示）、规则 5 条、任务卡/规则对话框 Esc 正常；PSEO 全不选引擎→三按钮禁用+提示、勾回恢复；全程 console/page errors 为空
+- 清理：删除 src/app/api/route.ts（初版脚手架 Hello world 残留）、AdminDrawer.tsx（沙箱复原孤儿，与 Task 13-a 决定一致）；public/robots.txt 核实为初版既有文件复原，保留入库；权限位全量归一 644
+- 终验：root tsc / engine tsc / ESLint 全 0 错误；dev.log 无新增运行时报错（仅 agent 边界测试触发的预期 404 噪音）
+
+Stage Summary:
+- 重构采集系统完成：引擎 4→16 模块、worker 2→7 模块、ScrapeCenter 975 行单文件→8 组件，全部行为兼容经语义 diff + 真实任务 + 浏览器三重验证
+- 反反爬增强：按主机策略亲和（成功策略链首优先）+ 任务日志命中策略可观测性
+- 清理：陈旧 raw SQL workaround -117 行、脚手架残留删除、采集 API 去重
+- 运维规程更新：沙箱下常驻服务用 start-stop-daemon --background --make-pidfile 方式启动（nohup/setsid 均会被会话回收）

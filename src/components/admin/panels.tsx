@@ -676,6 +676,9 @@ export function PseoTab() {
   const [batchReport, setBatchReport] = useState('')
   const [kw, setKw] = useState('')
   const [busy, setBusy] = useState(false)
+  // 引擎全不选守卫：服务端 sanitizePseoConfig 会把空 sources 回退为全部引擎（语义误导），
+  // 故在前端禁用全部执行入口，避免「以为跑 0 个引擎实际跑全量」
+  const noEngines = form.sources.length === 0
 
   const saveConfig = async () => {
     setSavingCfg(true)
@@ -740,6 +743,7 @@ export function PseoTab() {
   }
 
   const addKw = async () => {
+    if (busy) return // Enter 键路径绕过了按钮 disabled，这里补防重复提交
     if (!kw.trim()) return toast.error('请输入关键词')
     setBusy(true)
     try {
@@ -791,6 +795,7 @@ export function PseoTab() {
                 </label>
               ))}
             </div>
+            {noEngines && <p className="mt-1 text-[11px] text-red-500">至少选择一个搜索引擎</p>}
           </div>
           <Field label="种子关键词（每行一个，最多 20 个）">
             <Textarea rows={3} value={seedsText} onChange={(e) => setSeedsDraft(e.target.value)} placeholder={'玄幻\n都市重生\n修仙'} />
@@ -821,10 +826,10 @@ export function PseoTab() {
           </label>
         </div>
         <div className="mt-3 flex gap-2">
-          <Button size="sm" variant="outline" onClick={saveConfig} disabled={savingCfg || running}>
+          <Button size="sm" variant="outline" onClick={saveConfig} disabled={savingCfg || running || noEngines}>
             {savingCfg ? '保存中…' : '保存设置'}
           </Button>
-          <Button size="sm" variant="outline" onClick={runPreview} disabled={previewing || running}>
+          <Button size="sm" variant="outline" onClick={runPreview} disabled={previewing || running || noEngines}>
             {previewing ? '试取中…' : '试取预览（首个种子）'}
           </Button>
         </div>
@@ -836,7 +841,7 @@ export function PseoTab() {
         <p className="mb-3 text-[11px] text-neutral-400">
           按上方当前配置（含未保存的修改，执行前自动持久化）运行；跨种子/跨引擎自动去重，失败引擎如实报告。
         </p>
-        <Button size="sm" onClick={runBatch} disabled={running || savingCfg}>
+        <Button size="sm" onClick={runBatch} disabled={running || savingCfg || noEngines}>
           {running ? '获取中…（种子较多约需 1-2 分钟）' : '开始批量获取'}
         </Button>
         {batchReport && <pre className="mt-2 whitespace-pre-wrap rounded bg-neutral-100 p-2 text-[11px] text-neutral-600">{batchReport}</pre>}
@@ -865,7 +870,7 @@ export function PseoTab() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-5 shrink-0 px-1"
+                className="h-6 shrink-0 px-1.5"
                 onClick={() => {
                   // 后台是 hash 路由 #/admin：仅 navigate() 改 store 不会切换渲染，
                   // 需同时清掉 hash 退回前台，ThemeRenderer 才会渲染该 PSEO 聚合页
@@ -875,7 +880,7 @@ export function PseoTab() {
               >
                 预览
               </Button>
-              <Button size="sm" variant="ghost" className="h-5 shrink-0 px-1 text-red-500" onClick={async () => {
+              <Button size="sm" variant="ghost" className="h-6 shrink-0 px-1.5 text-red-500" onClick={async () => {
                 try {
                   await api(`/api/pseo?id=${r.id}`, { method: 'DELETE' })
                   await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })

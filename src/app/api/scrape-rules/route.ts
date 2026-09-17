@@ -1,48 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { parseHttpUrl, parsePositiveInt } from '@/lib/scrape/api-utils'
+import { safeParseRule, sanitizeRuleMap } from '@/lib/scrape/store'
 
 export const dynamic = 'force-dynamic'
-
-/** 安全解析 DB 中的规则 JSON（历史数据可能损坏） */
-function safeParseRule(json: string | null | undefined): Record<string, string> {
-  if (!json) return {}
-  try {
-    const v = JSON.parse(json) as unknown
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      const out: Record<string, string> = {}
-      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-        if (typeof val === 'string' && val.trim()) out[k] = val.trim().slice(0, 300)
-      }
-      return out
-    }
-    return {}
-  } catch {
-    return {}
-  }
-}
-
-/** 运行时清洗选择器规则：仅保留字符串值并限长 */
-function sanitizeRuleInput(raw: unknown): Record<string, string> {
-  const out: Record<string, string> = {}
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 300)
-    }
-  }
-  return out
-}
-
-/** 校验站点 URL：必须是合法 http/https 地址 */
-function parseSiteUrl(raw: unknown): { ok: true; url: string } | { ok: false; message: string } {
-  if (typeof raw !== 'string' || !raw.trim()) return { ok: false, message: 'siteUrl 必填' }
-  try {
-    const u = new URL(raw.trim())
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, message: 'siteUrl 仅支持 http/https' }
-    return { ok: true, url: u.toString().slice(0, 200) }
-  } catch {
-    return { ok: false, message: `siteUrl 无法解析: ${raw.slice(0, 100)}` }
-  }
-}
 
 // GET 采集规则列表
 export async function GET() {
@@ -82,21 +43,21 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
   if (!body.name?.trim()) {
     return NextResponse.json({ error: 'name 必填' }, { status: 400 })
   }
-  const site = parseSiteUrl(body.siteUrl)
+  const site = parseHttpUrl(body.siteUrl, 'siteUrl', 200)
   if (!site.ok) return NextResponse.json({ error: site.message }, { status: 400 })
 
-  if (body.id !== undefined && (!Number.isInteger(body.id) || body.id <= 0)) {
+  if (body.id !== undefined && (typeof body.id !== 'number' || !Number.isInteger(body.id) || body.id <= 0)) {
     return NextResponse.json({ error: '无效 id' }, { status: 400 })
   }
 
   const data = {
     name: body.name.trim().slice(0, 80),
-    siteUrl: site.url,
+    siteUrl: site.value,
     enabled: body.enabled ?? true,
     charset: (body.charset || 'utf-8').toLowerCase().slice(0, 32),
-    listRule: JSON.stringify(sanitizeRuleInput(body.listRule)),
-    bookRule: JSON.stringify(sanitizeRuleInput(body.bookRule)),
-    chapterRule: JSON.stringify(sanitizeRuleInput(body.chapterRule)),
+    listRule: JSON.stringify(sanitizeRuleMap(body.listRule)),
+    bookRule: JSON.stringify(sanitizeRuleMap(body.bookRule)),
+    chapterRule: JSON.stringify(sanitizeRuleMap(body.chapterRule)),
     notes: (body.notes ?? '').slice(0, 1000),
   }
   try {
@@ -120,8 +81,8 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
 }
 
 export async function DELETE(req: NextRequest) {
-  const id = Number(req.nextUrl.searchParams.get('id'))
-  if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: '无效 id' }, { status: 400 })
+  const id = parsePositiveInt(req.nextUrl.searchParams.get('id'))
+  if (id === null) return NextResponse.json({ error: '无效 id' }, { status: 400 })
   await db.scrapeRule.delete({ where: { id } }).catch(() => {})
   return NextResponse.json({ ok: true })
 }

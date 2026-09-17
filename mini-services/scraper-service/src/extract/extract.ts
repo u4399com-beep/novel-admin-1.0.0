@@ -2,204 +2,25 @@
  * cheerio 规则提取器：把 ListRule / BookRule / ChapterRule 应用到已解码的 HTML 上。
  *
  * 约定：
- * - 所有选择器字符串支持逗号分隔的"备选"，从左到右取第一个非空结果；
- *   （CSS 原生逗号是并集语义，这里按备选语义逐个尝试，且能容忍单个选择器非法）
- * - 选择器支持 `sel@attr` 后缀取属性（如 `meta[property="og:image"]@content`），纯加法扩展，
- *   不影响主站传来的普通 CSS 选择器；
  * - 规则缺失时使用内置启发式候选，并在 warnings 中明确标注；
- * - 匹配语义：优先在 scope 内查找（find），scope 自身命中选择器时同样采纳（is）；
- * - 正文清洗：容器级去 script/style/广告链接/站点水印行、段落规范化、去重连续重复行；
- *   容器文本再经 clean.ts（与主应用同源的行级噪声过滤）统一清洗，
+ * - 正文清洗：容器级去 script/style/广告链接/站点水印行（content.ts）、
+ *   行级噪声统一清洗走 clean.ts（与主应用 src/lib/content-clean.ts 同源实现，改规则需两边同步），
  *   噪声行占比过高时向 warnings 提示 contentSelector 可能命中了导航/广告容器；
- * - 链接一律 new URL(href, base) 补全为绝对地址，并按 URL+标题去重。
+ * - 链接按 URL+标题去重（去重忽略锚点）。
+ * （自 extract.ts 巨石拆分而来，代码逐行原样迁移）
  */
-import * as cheerio from 'cheerio'
-import type { Cheerio, CheerioAPI } from 'cheerio'
-import { cleanChapterText } from './clean'
-import type { BookRule, ChapterRule, ListRule } from './types'
-
-type Scope = Cheerio<any>
+import type { CheerioAPI } from 'cheerio'
+import { cleanChapterText } from '../clean'
+import type { BookRule, ChapterRule, ListRule } from '../types'
+import { cleanContainer } from './content'
+import type { CleanedContent } from './content'
+import { collapse, firstMatch, parseSel, pickHref, pickText, splitAlternatives, toAbs } from './selectors'
+import type { Scope } from './selectors'
 
 const MAX_LIST_ITEMS = 500
 const MAX_CHAPTER_REFS = 800
 const MAX_DESCRIPTION_CHARS = 2000
 const MAX_TITLE_CHARS = 200
-
-// ==================== 选择器工具 ====================
-
-/** 逗号拆分备选选择器（跳过括号/属性选择器内部的逗号） */
-export function splitAlternatives(sel: string): string[] {
-  const out: string[] = []
-  let depth = 0
-  let cur = ''
-  for (const ch of sel) {
-    if (ch === '(' || ch === '[') depth++
-    else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1)
-    if (ch === ',' && depth === 0) {
-      if (cur.trim()) out.push(cur.trim())
-      cur = ''
-    } else {
-      cur += ch
-    }
-  }
-  if (cur.trim()) out.push(cur.trim())
-  return out
-}
-
-/** 解析 `sel@attr` 语法 */
-function parseSel(raw: string): { selector: string; attr: string | null } {
-  const m = /@([a-zA-Z][\w:-]*)$/.exec(raw)
-  if (m && m.index !== undefined) {
-    return { selector: raw.slice(0, m.index).trim(), attr: m[1] }
-  }
-  return { selector: raw.trim(), attr: null }
-}
-
-/** 单行文本规范化 */
-function collapse(s: string): string {
-  return s.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim()
-}
-
-/** 在 scope 内按备选顺序取第一个非空文本/属性（find 优先，scope 自身命中亦采纳） */
-function pickText(scope: Scope, rawSelectors: string[]): string {
-  for (const raw of rawSelectors) {
-    const { selector, attr } = parseSel(raw)
-    if (!selector) continue
-    let val = ''
-    try {
-      const el = scope.find(selector).first()
-      if (el.length) {
-        val = attr ? (el.attr(attr) ?? '') : el.text()
-      } else if (scope.length && scope.is(selector)) {
-        // scope 自身命中选择器（如 scope 是 <a> 而 selector 为 a@title）
-        val = attr ? (scope.attr(attr) ?? '') : scope.text()
-      }
-    } catch {
-      continue // 非法选择器直接跳过
-    }
-    const t = collapse(val)
-    if (t) return t
-  }
-  return ''
-}
-
-function firstMatch(scope: Scope, rawSelectors: string[]): Scope | null {
-  for (const raw of rawSelectors) {
-    const { selector } = parseSel(raw)
-    if (!selector) continue
-    try {
-      const el = scope.find(selector).first()
-      if (el.length) return el
-      if (scope.length && scope.is(selector)) return scope
-    } catch {
-      continue
-    }
-  }
-  return null
-}
-
-export function toAbs(href: string | undefined | null, base: string): string | null {
-  if (!href) return null
-  const h = href.trim()
-  if (!h || /^javascript:/i.test(h) || h.startsWith('#')) return null // 空链接/JS 伪协议/纯锚点（同页跳转）均非可采内容链接
-  try {
-    const u = new URL(h, base)
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
-    return u.toString()
-  } catch {
-    return null
-  }
-}
-
-/** 按备选顺序取第一个可解析为绝对 URL 的链接（支持 @attr，默认取 href） */
-function pickHref(scope: Scope, rawSelectors: string[], base: string): string | null {
-  for (const raw of rawSelectors) {
-    const { selector, attr } = parseSel(raw)
-    if (!selector) continue
-    try {
-      const el = scope.find(selector).first()
-      let node: Scope | null = el.length ? el : null
-      if (!node && scope.length && scope.is(selector)) node = scope
-      if (!node) continue
-      const href = attr ? (node.attr(attr) ?? '') : (node.attr('href') ?? '')
-      const abs = toAbs(href, base)
-      if (abs) return abs
-    } catch {
-      continue
-    }
-  }
-  return null
-}
-
-// ==================== 正文清洗 ====================
-
-const NOISE_SELECTOR =
-  'script,style,noscript,iframe,svg,template,ins,object,embed,form,button,input,select,textarea,link,meta,video,audio'
-
-/** class/id 白名单级广告/导航标记（整词匹配，避免误伤 egg/class 这类普通词） */
-const AD_TOKEN_RE =
-  /^(ad|ads|adv|adsid|adsbygoogle|advert|advertisement|banner|gg|gg2|ggx|ggxx|ggtop|baidu-?ad|google-?ads?|推广|广告|promotion|promo|popup|mask|modal|download-?app|app-?guide|copyright|recommend|related|comment|comments|rating|score|share|sidebar|side-?nav|crumb|breadcrumb|footer-?nav|header-?nav|toc|catalog|bookshelf|notice|tip|tips|announce)$/i
-
-/** 纯导航/运营链接文本 */
-const AD_LINK_TEXT_RE =
-  /^(加入书架|加入收藏|收藏本书|收藏|书架|推荐本书|求收藏|求月票|求推荐票?|求订阅|上一页|上一章|返回目录|返回书页|返回列表|目录|章节目录|书签|举报|分享|点击举报|继续阅读|阅读全部章节|查看全部章节|下载本书|下载txt|手机阅读|手机版|app阅读|展开全部|收起|点击下一页|广告|关闭广告|登录|注册|充值|打赏)$/i
-
-/** 站点水印/SEO 垃圾行（整行匹配才剔除，且限短行） */
-const WATERMARK_LINE_RE =
-  /本书来自|首发(?:网址|域名|时间)|天才一?秒?记(?:住|得)|请记住本书|记住本站|最新章节|章节错误|点此举报|求收藏|求推荐票?|求月票|无弹窗|手机(?:版|用户)?(?:阅读|访问|看)|app下载|下载app|笔趣阁|顶点小说|吾爱文学|(?:www|wap|m|mip)\.[a-z0-9-]{2,}\.(?:com|net|cc|org|la|info|xyz|top|vip|site|icu|club)|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/i
-
-interface CleanedContent {
-  paragraphs: string[]
-  text: string
-}
-
-/** 清洗单个正文容器并收割段落 */
-function cleanContainer(el: Scope, $: CheerioAPI): CleanedContent {
-  const clone = el.clone()
-  clone.find(NOISE_SELECTOR).remove()
-  // 隐藏元素（display:none / hidden 属性）多为广告占位
-  clone.find('[hidden],[style*="display:none"],[style*="display: none"],[style*="display:inherit"][class*="ad"]').remove()
-
-  // 1) class/id 命中广告 token 的元素块
-  clone.find('[class],[id]').each((_i, node) => {
-    const $n = $(node)
-    const tokens = `${$n.attr('class') ?? ''} ${$n.attr('id') ?? ''}`.trim().split(/\s+/)
-    if (tokens.some((t) => t && AD_TOKEN_RE.test(t))) $n.remove()
-  })
-
-  // 2) 广告/导航/空锚点链接
-  clone.find('a').each((_i, node) => {
-    const $a = $(node)
-    const txt = collapse($a.text())
-    const href = $a.attr('href') ?? ''
-    if (AD_LINK_TEXT_RE.test(txt) || /^javascript:/i.test(href) || href === '#') $a.remove()
-  })
-
-  // 3) 短小的水印文本节点
-  clone.find('div,p,span,font,center,strong,em,b').each((_i, node) => {
-    const $n = $(node)
-    if ($n.children().length === 0) {
-      const t = collapse($n.text())
-      if (t && t.length <= 80 && WATERMARK_LINE_RE.test(t)) $n.remove()
-    }
-  })
-
-  // 4) 段落收割：<br> 与块级元素边界 → \n
-  clone.find('br').replaceWith('\n')
-  clone.find('p,div,dd,li,section,article,h1,h2,h3,h4').after('\n')
-  const raw = clone.text()
-
-  const paragraphs: string[] = []
-  for (const line0 of raw.split('\n')) {
-    const line = line0.replace(/\u3000/g, ' ').replace(/\s+/g, ' ').trim()
-    if (!line) continue
-    if (!/[\p{L}\p{N}]/u.test(line)) continue // 纯符号/装饰线
-    if (line.length <= 100 && WATERMARK_LINE_RE.test(line)) continue
-    if (paragraphs.length > 0 && paragraphs[paragraphs.length - 1] === line) continue // 连续重复
-    paragraphs.push(line)
-  }
-  return { paragraphs, text: paragraphs.join('\n') }
-}
 
 // ==================== List 提取 ====================
 

@@ -1,28 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
-import { triggerScrapeTask } from '@/lib/scrape-worker'
+import { parseHttpUrl, parsePositiveInt } from '@/lib/scrape/api-utils'
+import { triggerScrapeTask } from '@/lib/scrape/worker'
 
 export const dynamic = 'force-dynamic'
 
 const MODES = new Set(['single', 'list'])
 const STATUSES = new Set(['pending', 'running', 'success', 'partial', 'failed', 'canceled'])
 
-/** 校验目标 URL：必须是合法 http/https 地址 */
-function parseTargetUrl(raw: unknown): { ok: true; url: string } | { ok: false; message: string } {
-  if (typeof raw !== 'string' || !raw.trim()) return { ok: false, message: 'targetUrl 必填' }
-  try {
-    const u = new URL(raw.trim())
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-      return { ok: false, message: `targetUrl 仅支持 http/https（收到 ${u.protocol}）` }
-    }
-    return { ok: true, url: u.toString().slice(0, 500) }
-  } catch {
-    return { ok: false, message: `targetUrl 无法解析: ${String(raw).slice(0, 100)}` }
-  }
-}
-
-/** 任务列表字段（不含 log，列表接口保持轻量） */
+/** 任务列表字段（不含 log，列表接口保持轻量；chaptersDone/chaptersTotal 为类型化直查） */
 const LIST_SELECT = {
   id: true,
   ruleId: true,
@@ -38,6 +24,8 @@ const LIST_SELECT = {
   message: true,
   createdAt: true,
   updatedAt: true,
+  chaptersDone: true,
+  chaptersTotal: true,
 } as const
 
 // GET /api/scrape-tasks?page=1&pageSize=20&status=running
@@ -59,28 +47,7 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  // chaptersDone/chaptersTotal 用原生 SQL 透出：长期运行的进程可能持有 schema 变更前的
-  // Prisma Client（不重启无法刷新），类型化 select 会报 Unknown field；原生查询不依赖 dmmf
-  const progressRows =
-    list.length > 0
-      ? await db
-          .$queryRaw<{ id: number; chaptersDone: number; chaptersTotal: number }[]>`
-            SELECT "id", "chaptersDone", "chaptersTotal" FROM "ScrapeTask" WHERE "id" IN (${Prisma.join(list.map((t) => t.id))})
-          `
-          .catch(() => [] as { id: number; chaptersDone: number; chaptersTotal: number }[])
-      : []
-  const progressById = new Map(progressRows.map((r) => [Number(r.id), r]))
-
-  return NextResponse.json({
-    list: list.map((t) => ({
-      ...t,
-      chaptersDone: progressById.get(t.id)?.chaptersDone ?? 0,
-      chaptersTotal: progressById.get(t.id)?.chaptersTotal ?? 0,
-    })),
-    total,
-    page,
-    pageSize,
-  })
+  return NextResponse.json({ list, total, page, pageSize })
 }
 
 // POST /api/scrape-tasks  { mode: 'single'|'list', targetUrl, ruleId?, pages? }
@@ -95,13 +62,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'mode 必须是 single 或 list' }, { status: 400 })
   }
 
-  const target = parseTargetUrl(body.targetUrl)
+  const target = parseHttpUrl(body.targetUrl, 'targetUrl', 500)
   if (!target.ok) return NextResponse.json({ error: target.message }, { status: 400 })
 
   let ruleId: number | null = null
   if (body.ruleId !== undefined && body.ruleId !== null && body.ruleId !== '') {
-    const rid = Number(body.ruleId)
-    if (!Number.isInteger(rid) || rid <= 0) {
+    const rid = parsePositiveInt(body.ruleId)
+    if (rid === null) {
       return NextResponse.json({ error: '无效 ruleId' }, { status: 400 })
     }
     const exists = await db.scrapeRule.findUnique({ where: { id: rid }, select: { id: true } })
@@ -111,14 +78,15 @@ export async function POST(req: NextRequest) {
 
   let pages = 1
   if (body.pages !== undefined && body.pages !== null && body.pages !== '') {
-    pages = Number(body.pages)
-    if (!Number.isInteger(pages) || pages < 1 || pages > 20) {
+    const p = parsePositiveInt(body.pages)
+    if (p === null || p > 20) {
       return NextResponse.json({ error: 'pages 需为 1-20 的整数' }, { status: 400 })
     }
+    pages = p
   }
 
   const task = await db.scrapeTask.create({
-    data: { mode, targetUrl: target.url, ruleId, pages },
+    data: { mode, targetUrl: target.value, ruleId, pages },
     select: LIST_SELECT,
   })
 

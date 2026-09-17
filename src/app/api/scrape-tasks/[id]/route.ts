@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { parsePositiveInt } from '@/lib/scrape/api-utils'
 
 export const dynamic = 'force-dynamic'
 
 type Ctx = { params: Promise<{ id: string }> }
-
-function parseId(raw: string): number | null {
-  const id = Number(raw)
-  return Number.isInteger(id) && id > 0 ? id : null
-}
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -18,10 +14,10 @@ function notFound(message = '任务不存在') {
   return NextResponse.json({ error: message }, { status: 404 })
 }
 
-// GET /api/scrape-tasks/[id] —— 详情（含完整日志）
+// GET /api/scrape-tasks/[id] —— 详情（含完整日志；chaptersDone/chaptersTotal 类型化直查）
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id: raw } = await ctx.params
-  const id = parseId(raw)
+  const id = parsePositiveInt(raw)
   if (!id) return badRequest('无效任务 ID')
 
   const task = await db.scrapeTask.findUnique({
@@ -30,26 +26,13 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   })
   if (!task) return notFound()
 
-  // chaptersDone/chaptersTotal 用原生 SQL 透出（理由同列表接口：运行中进程的 Prisma Client 可能未注册新列）
-  const progress = await db
-    .$queryRaw<{ chaptersDone: number; chaptersTotal: number }[]>`
-      SELECT "chaptersDone", "chaptersTotal" FROM "ScrapeTask" WHERE "id" = ${id}
-    `
-    .catch(() => [] as { chaptersDone: number; chaptersTotal: number }[])
-
-  return NextResponse.json({
-    task: {
-      ...task,
-      chaptersDone: progress[0]?.chaptersDone ?? 0,
-      chaptersTotal: progress[0]?.chaptersTotal ?? 0,
-    },
-  })
+  return NextResponse.json({ task })
 }
 
 // PATCH /api/scrape-tasks/[id]  { action: 'cancel' }
 export async function PATCH(req: NextRequest, ctx: Ctx) {
   const { id: raw } = await ctx.params
-  const id = parseId(raw)
+  const id = parsePositiveInt(raw)
   if (!id) return badRequest('无效任务 ID')
 
   const body = (await req.json().catch(() => null)) as { action?: unknown } | null
@@ -86,7 +69,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 // DELETE /api/scrape-tasks/[id]
 export async function DELETE(_req: NextRequest, ctx: Ctx) {
   const { id: raw } = await ctx.params
-  const id = parseId(raw)
+  const id = parsePositiveInt(raw)
   if (!id) return badRequest('无效任务 ID')
 
   const task = await db.scrapeTask
