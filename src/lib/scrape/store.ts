@@ -8,12 +8,19 @@ import type { BookData, LoadedRule, RuleMap } from './types'
 
 // ==================== 规则 ====================
 
+/** 单条规则映射的键数与键长上限（引擎只读取固定键名，防止畸形输入撑爆规则 JSON 存储） */
+const MAX_RULE_KEYS = 60
+const MAX_RULE_KEY_LEN = 100
+
 /** 运行时清洗规则对象：仅保留非空字符串值并限长（API 输入与 DB 读出共用） */
 export function sanitizeRuleMap(raw: unknown): RuleMap {
   const out: RuleMap = {}
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 300)
+      if (typeof v === 'string' && v.trim()) {
+        out[k.slice(0, MAX_RULE_KEY_LEN)] = v.trim().slice(0, 300)
+        if (Object.keys(out).length >= MAX_RULE_KEYS) break
+      }
     }
   }
   return out

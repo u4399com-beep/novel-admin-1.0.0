@@ -40,16 +40,27 @@ export class Run {
     return this.lines.join('\n')
   }
 
-  /** 写回日志与进度字段；任务记录被删除或写入失败时返回 false（调用方应停止执行） */
+  /**
+   * 写回日志与进度字段；任务记录被删除时返回 false（调用方应停止执行）。
+   * 与 isCanceled 的 fail-open 哲学一致：P2025（记录不存在）才判定「已删除」；
+   * 其他错误（如 SQLite 瞬时锁）短暂退避后重试一次，仍失败不视为删除——
+   * 日志行留驻内存，由下一次成功的 flush 一并落盘。
+   */
   async flush(extra?: TaskFlushFields): Promise<boolean> {
+    const write = (): Promise<unknown> =>
+      db.scrapeTask.update({ where: { id: this.taskId }, data: { log: this.logText(), ...extra } })
     try {
-      await db.scrapeTask.update({
-        where: { id: this.taskId },
-        data: { log: this.logText(), ...extra },
-      })
+      await write()
       return true
-    } catch {
-      return false
+    } catch (e) {
+      if ((e as { code?: string }).code === 'P2025') return false
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      try {
+        await write()
+        return true
+      } catch (e2) {
+        return (e2 as { code?: string }).code !== 'P2025'
+      }
     }
   }
 }

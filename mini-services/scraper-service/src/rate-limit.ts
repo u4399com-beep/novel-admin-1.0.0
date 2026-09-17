@@ -393,6 +393,10 @@ function ipv4IsPrivate(n: number): boolean {
     if (second >= 64 && second <= 127) return true
   }
   if ((n >>> 16) === 0xc612 || (n >>> 16) === 0xc613) return true // 198.18.0.0/15
+  // 224.0.0.0/4（组播）与 240.0.0.0/4（保留/广播）：公网单播服务不可能位于这些段，
+  // 作为抓取目标只可能是 SSRF/滥用尝试，一并拒绝（注意 JS 位运算是 int32，需 >>> 0 归一）
+  const top = (n & 0xf0000000) >>> 0
+  if (top === 0xe0000000 || top === 0xf0000000) return true
   return false
 }
 
@@ -436,6 +440,12 @@ function ipv6IsPrivate(groups: number[]): boolean {
   if ((groups[0] & 0xffc0) === 0xfe80) return true
   // ::ffff:0:0/96 IPv4-mapped → 递归检查内嵌 IPv4
   if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) {
+    const v4 = ((groups[6] << 16) | groups[7]) >>> 0
+    return ipv4IsPrivate(v4)
+  }
+  // ::/96（IPv4-compatible，已废弃但仍可能被内核按内嵌 IPv4 处理）→ 递归检查内嵌 IPv4。
+  // 修复：旧实现只认 ::ffff:0:0/96 映射形态，http://[::192.168.1.1]/ 这类文本会漏判放行
+  if (groups.slice(0, 6).every((g) => g === 0) && (groups[6] !== 0 || groups[7] !== 0)) {
     const v4 = ((groups[6] << 16) | groups[7]) >>> 0
     return ipv4IsPrivate(v4)
   }
@@ -502,6 +512,14 @@ export async function assertHostPublic(hostname: string): Promise<HostCheckResul
     // fail-closed：无法解析的 IPv6（zone id 等）直接拒绝，不落入下方 DNS fail-open 分支
     if (!groups) return { ok: false, reason: `无法解析的 IPv6 地址被拒绝（fail-closed）: ${h}` }
     return ipv6IsPrivate(groups) ? { ok: false, reason: `内网 IPv6 地址被拒绝: ${h}` } : { ok: true }
+  }
+
+  // 主机名文本层检查（必须在 DNS 之前）：localhost/.localhost/.local/.internal 等内网域名
+  // 的 DNS 查询通常会 NXDOMAIN 失败而走 fail-open 放行，
+  // 但 systemd-resolved 会把 *.localhost 解析到 127.0.0.1、mDNS 会把 *.local 解析到局域网设备
+  // —— 纯靠 DNS fail-open 是可被绕过的 SSRF 口（与入口 parseTarget 的文本层保持同源判定）
+  if (isPrivateHost(h)) {
+    return { ok: false, reason: `主机名命中内网文本层规则（SSRF 防护）: ${h}` }
   }
 
   // 主机名：DNS 尽力解析

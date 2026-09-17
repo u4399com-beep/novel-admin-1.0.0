@@ -475,7 +475,9 @@ export function extractChapter(
   let title = pickTitle(root, titleSels).slice(0, MAX_TITLE_CHARS)
   if (!title) {
     const t = collapse($('title').first().text()).slice(0, MAX_TITLE_CHARS)
-    if (t) {
+    // <title> 兜底同样要过站标样板过滤：pickTitle 把命中的候选全部跳过后才走到这里，
+    // 若 <title> 本身就是站标（如「站内搜索 - 站名」），不加过滤会把刚排除的样板重新引入
+    if (t && !BOILERPLATE_TITLE_RE.test(t)) {
       title = t
       warnings.push('章节标题未命中规则选择器，回退 <title> 标签（可能含站名后缀，建议显式配置 titleSelector）')
     }

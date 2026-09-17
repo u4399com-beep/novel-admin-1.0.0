@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { assertHostPublic, execP } from '../rate-limit'
 import { assess, MAX_BYTES } from './http'
 import { CHROME_UA } from './profiles'
+import { cookieHeaderFor, cookiesForPlaywright, recordPlaywrightCookies } from './cookies'
 import type { AttemptResult, StrategyDef, SubAttempt } from './types'
 
 let browserProbePromise: Promise<boolean> | null = null
@@ -51,22 +52,33 @@ interface RenderPayload {
   status: number
   html: string
   error?: string
+  /** Task 23-a：渲染会话 cookie 回传（{name,value,expires,secure} 子集），供引擎 jar 回存 */
+  cookies?: Array<{ name?: unknown; value?: unknown; expires?: unknown; secure?: unknown }>
 }
 
-async function renderViaPython(url: string, timeoutMs: number, warnings: string[]): Promise<AttemptResult> {
-  // 参数经 argv 传递（URL 不含换行；UA 含空格由 execFile 正确转义）。
+async function renderViaPython(url: string, timeoutMs: number, warnings: string[], explicitReferer: string | null, cookieEnv: string | null): Promise<AttemptResult> {
+  // 参数经 argv 传递（URL 不含换行；UA 含空格由 execFile 正确转义）；
+  // cookie/referer 走环境变量（cookie 头值可能较长，不适合 argv）。
   // render.py 自带 SIGALRM 看门狗（timeout+3s 强制输出 JSON），exec 超时只是兜底；
   // 余量不能给太大，否则策略链 55s 预算会被单次渲染突破（实测旧值 +15s 最坏可拖到 ~70s）
+  const env: Record<string, string | undefined> = { ...process.env, PYTHONUNBUFFERED: '1' }
+  if (cookieEnv) env.SCRAPER_COOKIES = cookieEnv
+  if (explicitReferer) env.SCRAPER_REFERER = explicitReferer
   const { stdout } = await execP(
     'python3',
     [RENDER_PY, url, String(timeoutMs), CHROME_UA],
-    { timeout: timeoutMs + 4000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PYTHONUNBUFFERED: '1' } },
+    { timeout: timeoutMs + 4000, maxBuffer: 64 * 1024 * 1024, env },
   )
   const payload = JSON.parse(stdout) as RenderPayload
   if (payload.error) {
     warnings.push(`Python Playwright 渲染失败: ${payload.error}`)
     return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', warnings, note: 'render-error' }
   }
+  // 渲染会话 cookie 回存（浏览器自己收到的新 cookie 也进入引擎 jar）
+  try {
+    const target = new URL(url)
+    if (payload.cookies?.length) recordPlaywrightCookies(target.host, payload.cookies)
+  } catch { /* url 解析失败忽略 */ }
   const bytes = new Uint8Array(Buffer.from(payload.html ?? '', 'utf8'))
   const a = assess(payload.status, bytes, 'text/html; charset=utf-8')
   if (a.warning) warnings.push(a.warning)
@@ -87,21 +99,42 @@ export const browserStrategy: StrategyDef = {
     'Playwright + Chromium 真实渲染（Node 包缺失时自动经 Python Playwright 桥接），对抗 JS 挑战/动态渲染；环境不可用时优雅跳过',
   probe: probeBrowser,
   selfRetrying: true,
-  async run(url, timeoutMs, warnings) {
+  async run(url, timeoutMs, warnings, ctx) {
     warnings.push('browser 策略为完整浏览器渲染，成本最高（约 1-5s），仅建议前序策略失败时使用')
+    const explicitReferer = ctx?.referer ?? null
     const subAttempts: SubAttempt[] = []
     const s0 = Date.now()
     // 渲染期被拦截的私网主机去重（每个 host 只告警一次）
     const warnedHosts = new Set<string>()
+
+    // Cookie 会话：渲染前注入引擎 jar 中该主机的 cookie，渲染后把浏览器上下文 cookie 回存。
+    // 命中「首访种 cookie、二访放行」的站点时，前序 fetch 策略种下的会话在这里直接生效。
+    let targetUrl: URL | null = null
+    try {
+      targetUrl = new URL(url)
+    } catch { /* fetchPage 已校验过，防御性容错 */ }
+    const https = targetUrl?.protocol === 'https:'
+    const injectedCookies = targetUrl ? cookiesForPlaywright(targetUrl.host, https) : []
+    const cookieEnv = targetUrl ? cookieHeaderFor(targetUrl.host, https) : null
 
     // 1) Node playwright：模块导入失败才降级到 Python 桥接；
     //    导入成功后的导航/渲染错误属于站点网络问题，直接返回结构化结果（避免无谓的双倍渲染耗时）
     const pw = await importNodePlaywright()
     if (pw) {
       let browser: any = null
+      let context: any = null
       try {
         browser = await pw.chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] })
-        const page = await browser.newPage({ userAgent: CHROME_UA, locale: 'zh-CN', viewport: { width: 1366, height: 900 } })
+        // 显式 context：支持 addCookies 注入引擎 cookie 会话（newPage 直开是隐式 context，无法注入）
+        context = await browser.newContext({ userAgent: CHROME_UA, locale: 'zh-CN', viewport: { width: 1366, height: 900 } })
+        if (injectedCookies.length) {
+          try {
+            await context.addCookies(injectedCookies)
+          } catch (cookieErr) {
+            warnings.push(`[browser] cookie 会话注入失败（不阻塞渲染）: ${cookieErr instanceof Error ? cookieErr.message : 'unknown'}`)
+          }
+        }
+        const page = await context.newPage()
         page.setDefaultTimeout(timeoutMs)
         try {
           // 屏蔽重资源 + 渲染期 SSRF 守卫（与 render.py 同语义）。
@@ -150,13 +183,20 @@ export const browserStrategy: StrategyDef = {
             }
           })
         } catch { /* 路由拦截失败不阻塞主流程 */ }
-        const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
-        // content() 也受默认超时约束，最坏可再等一个 timeoutMs 导致策略链预算超支；加 race 硬上限
+        const res = await page.goto(url, {
+          waitUntil: 'domcontentloaded',
+          timeout: timeoutMs,
+          ...(explicitReferer ? { referer: explicitReferer } : {}),
+        })
+        // content() 也受默认超时约束，最坏可再等一个 timeoutMs 导致策略链预算超支；加 race 硬上限。
+        // race 超时后 content() 仍在后台执行：先挂上 catch 防未处理 rejection（错误处理：未捕获 promise）
         let contentTimer: ReturnType<typeof setTimeout> | undefined
         let html: string
+        const contentPromise = page.content() as Promise<string>
+        contentPromise.catch(() => {})
         try {
           html = await Promise.race([
-            page.content() as Promise<string>,
+            contentPromise,
             new Promise<string>((_, rej) => {
               contentTimer = setTimeout(() => rej(new Error('page content 超时')), Math.min(5000, Math.max(1000, timeoutMs)))
             }),
@@ -184,6 +224,11 @@ export const browserStrategy: StrategyDef = {
             return { ok: false, status, bytes: new Uint8Array(0), contentType: '', warnings, note: 'ssrf-blocked', subAttempts }
           }
         } catch { /* 忽略解析失败 */ }
+        // 浏览器上下文 cookie 回存引擎 jar（含站点渲染期间新种下的 cookie）
+        try {
+          const stored = (await context.cookies()) as Array<{ name?: unknown; value?: unknown; expires?: unknown; secure?: unknown }>
+          if (targetUrl && Array.isArray(stored) && stored.length) recordPlaywrightCookies(targetUrl.host, stored)
+        } catch { /* 回存失败不影响抓取结果 */ }
         return { ok: a.ok, status, bytes, contentType: 'text/html; charset=utf-8', warnings, note: a.note, subAttempts }
       } catch (nodeErr) {
         subAttempts.push({ profile: 'node-playwright', ok: false, status: 0, ms: Date.now() - s0, blocked: false, bytes: 0, note: 'render-error' })
@@ -202,9 +247,9 @@ export const browserStrategy: StrategyDef = {
     }
 
     warnings.push('Node Playwright 模块不可用，尝试 Python Playwright 桥接')
-    // 2) Python Playwright 桥接
+    // 2) Python Playwright 桥接（cookie/referer 经环境变量透传）
     try {
-      return await renderViaPython(url, timeoutMs, warnings)
+      return await renderViaPython(url, timeoutMs, warnings, explicitReferer, cookieEnv)
     } catch (pyErr) {
       subAttempts.push({ profile: 'python-playwright', ok: false, status: 0, ms: Date.now() - s0, blocked: false, bytes: 0, note: 'bridge-error' })
       return {

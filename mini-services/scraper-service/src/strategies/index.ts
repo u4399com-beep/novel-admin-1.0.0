@@ -166,7 +166,24 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
       const s0 = Date.now()
       let res: AttemptResult
       try {
-        res = await strat.run(url, effTimeout, [])
+        // 硬闸（Task 23-a 深审）：任何策略都不得挂死整条链。底层库自身超时可能失效
+        // （实测 got-scraping http2 + TLS 握手停滞时 timeout 选项不触发），此处以
+        // 「链剩余预算 + 5s 余量」为硬上限强制放行，超时按普通失败继续后续策略。
+        let hardTimer: ReturnType<typeof setTimeout> | undefined
+        res = await Promise.race([
+          strat.run(url, effTimeout, [], { referer: opts.referer ?? null }),
+          new Promise<AttemptResult>((resolve) => {
+            hardTimer = setTimeout(
+              () =>
+                resolve({
+                  ok: false, status: 0, bytes: new Uint8Array(0), contentType: '',
+                  warnings: [`策略超过硬性时间闸（${Math.round((remaining + 5000) / 1000)}s），已强制跳过（底层库超时失效保护）`],
+                  note: 'hard-timeout',
+                }),
+              remaining + 5000,
+            )
+          }),
+        ]).finally(() => clearTimeout(hardTimer))
       } catch (e) {
         res = {
           ok: false, status: 0, bytes: new Uint8Array(0), contentType: '',

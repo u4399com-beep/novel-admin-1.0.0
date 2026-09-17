@@ -9,6 +9,7 @@
  */
 import * as cheerio from 'cheerio'
 import { affinityStats, clampTimeout, fetchPage, listStrategies, STRATEGY_NAMES } from './src/strategies'
+import { cookieStats } from './src/strategies/cookies'
 import { extractBook, extractChapter, extractList } from './src/extract'
 import { isPrivateHost, privateHostAllowed } from './src/rate-limit'
 import type { BookRule, ChapterRule, ListRule } from './src/types'
@@ -76,7 +77,31 @@ function strField(v: unknown, maxLen = 64): string | null {
   return v.trim().slice(0, maxLen)
 }
 
+/**
+ * 可选 referer 参数解析：仅接受合法 http(s) URL（≤2048 字符），
+ * 非法/缺失返回 null（保持与「不传时行为不变」完全一致）。
+ */
+function parseReferer(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const s = raw.trim()
+  if (!s || s.length > 2048) return null
+  try {
+    const u = new URL(s)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+    return u.toString()
+  } catch {
+    return null
+  }
+}
+
+/** 软 404/空壳标题特征（配合「HTTP 200 + 正文为空」判定；不用裸 404 数字防「第404章」误伤由调用处另行排除） */
+const SOFT404_TITLE_RE = /404|not\s*found|不存在|找不到|已删除|无法访问|访问出错|页面出错|加载失败/i
+
 export function parseBody(req: Request): Promise<Record<string, unknown> | null> {
+  // 请求体上限 1MB：现有最大载荷是整目章节列表（数百条 {title,url}），留足余量；
+  // 超限直接按「请求体错误」处理，防异常大包拖垮内存
+  const declaredLen = Number(req.headers.get('content-length') ?? 0)
+  if (Number.isFinite(declaredLen) && declaredLen > 1_048_576) return Promise.resolve(null)
   return req
     .json()
     .then((v) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null))
@@ -98,13 +123,19 @@ export async function handleStrategies(): Promise<Response> {
       maxEntries: affinityStats().maxEntries,
       trackedHosts: affinityStats().trackedHosts,
     },
+    // Task 23-a 新增（向后兼容的追加字段）：按主机 Cookie 会话持久化说明
+    cookieSession: {
+      description:
+        '按主机 Cookie 会话持久化：捕获各策略响应的 Set-Cookie 按主机存储（含重定向中间跳），该主机后续请求自动回放，覆盖「首访种 cookie、二访才放行」的站点；仅进程内存不落盘，LRU 上限与 TTL 见下；Secure 属性 cookie 仅在 https 请求回放',
+      ...cookieStats(),
+    },
     compliance: {
       rateLimit: '默认每域名 1200ms±300ms（< 1 req/s），环境变量 SCRAPER_MIN_INTERVAL_MS 可调但不允许低于 1000ms',
       robotsCheck: 'warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断',
       ssrfGuard: '文本层（IPv4 全形态/IPv6 内网段）+ DNS 尽力校验 + fetch redirect:manual 逐跳校验',
       maxResponseBytes: 8 * 1024 * 1024,
       challengeDetection:
-        '三层检测：反爬平台强特征（任意体积，扫描前 32KB）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理',
+        '四层检测：反爬平台强特征（任意体积，扫描前 32KB）→ 近空可见正文（<80 字符）JS 跳板/需启用 JS 壳（任意体积，覆盖 HTTP 200 伪装）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理',
       captchaSolving: '禁止提供',
       loginContent: '禁止采集',
       accountSpoofing: '禁止提供',
@@ -127,10 +158,13 @@ async function fetchAndPrepare(body: Record<string, unknown>): Promise<PageFetch
   if (strategy && !STRATEGY_NAMES.includes(strategy)) {
     return { response: fail('参数错误', `未知策略 "${strategy}"（可选: ${STRATEGY_NAMES.join(', ')}）`, 400) }
   }
+  // 可选 referer 链（Task 23-a 新增，向后兼容：不传时为 null，策略层维持原行为）
+  const referer = parseReferer(body.referer)
   const page = await fetchPage(t.url.toString(), {
     requestedStrategy: strategy,
     forcedCharset: charset,
     timeoutMs,
+    referer,
   })
   return { page, target: t.url }
 }
@@ -214,6 +248,19 @@ export async function handleChapter(body: Record<string, unknown>): Promise<Resp
   const warnings = [...page.warnings]
   const $ = cheerio.load(page.html)
   const data = extractChapter($, rule, baseUrl, warnings)
+
+  // 软 404/空壳质量哨兵（Task 23-a）：HTTP 200 但正文为空的伪装页。
+  // 纯提示（ok 仍为 true，不改变既有成功语义），把「200 伪装」暴露给调用方可观测。
+  if (page.status === 200 && !data.content) {
+    // 标题呈 404/空壳特征时更明确；排除「第404章」这类标题里的数字巧合
+    const soft404Title =
+      SOFT404_TITLE_RE.test(data.title) && !/^第\s*[0-9〇零一二两三四五六七八九十百千万]/.test(data.title)
+    warnings.push(
+      soft404Title
+        ? 'HTTP 200 但正文为空且标题呈 404/空壳特征，疑似软 404（目标站用 200 状态码伪装错误页）'
+        : 'HTTP 200 但正文提取为空：疑似 JS 渲染空壳或软 404，建议用 browser 策略复核该 URL',
+    )
+  }
 
   return json({
     ok: true,

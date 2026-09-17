@@ -45,12 +45,15 @@ async function scanChapters(write: boolean): Promise<ScanResult> {
       const res = cleanChapterContent(ch.content)
       if (res.text === ch.content) continue // 无变化不写库
       if (write) {
-        await db.chapter
+        // 更新失败（瞬时锁等）不计入 cleaned，避免虚报清洗数量；下轮 dryRun 可复查
+        const ok = await db.chapter
           .update({
             where: { id: ch.id },
             data: { content: res.text, wordCount: res.text.replace(/\s/g, '').length },
           })
-          .catch(() => null)
+          .then(() => true)
+          .catch(() => false)
+        if (!ok) continue
       }
       changed++
       touchedNovels.add(ch.novelId)

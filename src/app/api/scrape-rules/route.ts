@@ -40,8 +40,18 @@ interface SaveBody {
 async function handleSave(body: SaveBody | null): Promise<NextResponse> {
   if (!body) return NextResponse.json({ error: '请求体必须是 JSON 对象' }, { status: 400 })
 
-  if (!body.name?.trim()) {
+  // 字段类型守卫：非字符串 name/charset/notes 会在此前触发 TypeError（500），应显式 400
+  if (typeof body.name !== 'string' || !body.name.trim()) {
     return NextResponse.json({ error: 'name 必填' }, { status: 400 })
+  }
+  if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
+    return NextResponse.json({ error: 'enabled 必须是布尔值' }, { status: 400 })
+  }
+  if (body.charset !== undefined && body.charset !== null && typeof body.charset !== 'string') {
+    return NextResponse.json({ error: 'charset 必须是字符串' }, { status: 400 })
+  }
+  if (body.notes !== undefined && body.notes !== null && typeof body.notes !== 'string') {
+    return NextResponse.json({ error: 'notes 必须是字符串' }, { status: 400 })
   }
   const site = parseHttpUrl(body.siteUrl, 'siteUrl', 200)
   if (!site.ok) return NextResponse.json({ error: site.message }, { status: 400 })
@@ -54,11 +64,13 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
     name: body.name.trim().slice(0, 80),
     siteUrl: site.value,
     enabled: body.enabled ?? true,
-    charset: (body.charset || 'utf-8').toLowerCase().slice(0, 32),
+    charset: (typeof body.charset === 'string' && body.charset.trim() ? body.charset : 'utf-8')
+      .toLowerCase()
+      .slice(0, 32),
     listRule: JSON.stringify(sanitizeRuleMap(body.listRule)),
     bookRule: JSON.stringify(sanitizeRuleMap(body.bookRule)),
     chapterRule: JSON.stringify(sanitizeRuleMap(body.chapterRule)),
-    notes: (body.notes ?? '').slice(0, 1000),
+    notes: (typeof body.notes === 'string' ? body.notes : '').slice(0, 1000),
   }
   try {
     if (body.id) {
@@ -83,7 +95,17 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
 export async function DELETE(req: NextRequest) {
   const id = parsePositiveInt(req.nextUrl.searchParams.get('id'))
   if (id === null) return NextResponse.json({ error: '无效 id' }, { status: 400 })
-  await db.scrapeRule.delete({ where: { id } }).catch(() => {})
+  try {
+    await db.scrapeRule.delete({ where: { id } })
+  } catch (e) {
+    // 规则不存在视为删除成功（幂等）；其他真实 DB 错误如实 500 而非虚报成功
+    if ((e as { code?: string })?.code !== 'P2025') {
+      return NextResponse.json(
+        { error: '删除规则失败', detail: e instanceof Error ? e.message.slice(0, 200) : 'unknown' },
+        { status: 500 },
+      )
+    }
+  }
   return NextResponse.json({ ok: true })
 }
 

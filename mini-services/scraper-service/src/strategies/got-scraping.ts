@@ -4,6 +4,7 @@
  * （自 strategies.ts 巨石拆分而来，代码逐行原样迁移）
  */
 import { acquireDomainSlot, assertHostPublic, isRetryableStatus, parseRetryAfterMs } from '../rate-limit'
+import { cookieHeaderFor, recordHeaderCookies } from './cookies'
 import { assess, hostOf, MAX_BYTES, MAX_REDIRECT_HOPS } from './http'
 import type { StrategyDef, SubAttempt } from './types'
 
@@ -34,11 +35,12 @@ export const gotScrapingStrategy: StrategyDef = {
     'got-scraping（header-generator 生成真实浏览器头）HTTP/2 失败自动降级 HTTP/1.1，对抗请求头/协议指纹拦截；依赖未安装则不可用',
   probe: () => loadGotScraping().then((f) => f !== null),
   selfRetrying: true,
-  async run(url, timeoutMs, warnings) {
+  async run(url, timeoutMs, warnings, ctx) {
     const gotScraping = await loadGotScraping()
     if (!gotScraping) {
       return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', warnings: ['got-scraping 模块不可用'], note: 'module-missing' }
     }
+    const explicitReferer = ctx?.referer ?? null
     const subAttempts: SubAttempt[] = []
     const deadline = Date.now() + timeoutMs
     let lastRetryAfterMs: number | null = null
@@ -50,9 +52,12 @@ export const gotScrapingStrategy: StrategyDef = {
     ]
 
     /** 单跳请求：followRedirect:false —— 重定向在本策略内逐跳处理，每一跳都做 SSRF 校验
-     *  （旧实现 followRedirect:true 由 got 内部跟随，仅事后校验最终 URL，中间跳可被诱导对内网发起 GET） */
-    const requestOnce = (target: string, http2: boolean, leftMs: number) =>
-      gotScraping({
+     *  （旧实现 followRedirect:true 由 got 内部跟随，仅事后校验最终 URL，中间跳可被诱导对内网发起 GET）。
+     *  每跳按目标 host 回放引擎 cookie 会话；Referer 优先用调用方显式来路，缺省用目标站首页 */
+    const requestOnce = (target: string, http2: boolean, leftMs: number) => {
+      const https = target.startsWith('https:')
+      const cookie = cookieHeaderFor(hostOf(target), https)
+      return gotScraping({
         url: target,
         method: 'GET',
         responseType: 'buffer',
@@ -60,7 +65,14 @@ export const gotScrapingStrategy: StrategyDef = {
         followRedirect: false,
         retry: { limit: 0 }, // 重试由本服务统一编排，避免双重重试
         timeout: { request: leftMs },
-        headers: { referer: `${new URL(url).origin}/` },
+        // 硬闸（Task 23-a 深审实测）：got 的 timeout 选项在 http2 + TLS 握手停滞时不触发
+        // （/books.toscrape 复现：h2 请求无限挂起、无 http2 时 0.5s 即抛 ERR_SSL_NO_CIPHER_MATCH）。
+        // AbortSignal 真正中断底层 socket，杜绝策略被单个请求永久卡死。
+        signal: AbortSignal.timeout(Math.max(1000, leftMs)),
+        headers: {
+          referer: explicitReferer ?? `${new URL(url).origin}/`,
+          ...(cookie ? { cookie } : {}),
+        },
         context: {
           headerGeneratorOptions: {
             browsers: [{ name: 'chrome' }, { name: 'edge' }],
@@ -69,6 +81,7 @@ export const gotScrapingStrategy: StrategyDef = {
           },
         },
       })
+    }
 
     const headerValue = (headers: Record<string, string | string[] | undefined> | undefined, key: string): string | null => {
       const v = headers?.[key]
@@ -95,9 +108,11 @@ export const gotScrapingStrategy: StrategyDef = {
         try {
           const res = await requestOnce(current, variant.http2, remaining)
           const status = res.statusCode
+          const hopHttps = current.startsWith('https:')
 
           // 3xx：解析 Location → 协议白名单 + 逐跳 SSRF 校验 → 限速后请求下一跳
           if ([301, 302, 303, 307, 308].includes(status)) {
+            recordHeaderCookies(hostOf(current), res.headers, hopHttps) // 中间跳下发的 Set-Cookie 也要入会话
             const loc = headerValue(res.headers, 'location')
             if (!loc) {
               noteAttempt(variant.profile, false, status, Date.now() - s0, false, 0, 'redirect-no-location')
@@ -134,6 +149,7 @@ export const gotScrapingStrategy: StrategyDef = {
 
           const bytes = new Uint8Array(res.body ?? new Uint8Array(0))
           const contentType = String(Array.isArray(res.headers['content-type']) ? res.headers['content-type'][0] : res.headers['content-type'] ?? '')
+          recordHeaderCookies(hostOf(current), res.headers, hopHttps)
           if (bytes.byteLength > MAX_BYTES) {
             noteAttempt(variant.profile, false, status, Date.now() - s0, false, bytes.byteLength, 'too-large')
             warnings.push(`got-scraping 响应超过 ${MAX_BYTES}B 上限，已放弃`)
@@ -151,6 +167,8 @@ export const gotScrapingStrategy: StrategyDef = {
           const e = rawErr as (Error & { response?: { statusCode: number; body?: Uint8Array; headers?: Record<string, string | string[] | undefined> }; code?: string }) | null
           if (e?.response) {
             const status = e.response.statusCode
+            const hopHttps = current.startsWith('https:')
+            recordHeaderCookies(hostOf(current), e.response.headers, hopHttps) // 429/5xx 错误页也可能种 cookie
             if (status === 429 || status === 503) {
               const ra = parseRetryAfterMs(headerValue(e.response.headers, 'retry-after'))
               if (ra !== null) lastRetryAfterMs = ra

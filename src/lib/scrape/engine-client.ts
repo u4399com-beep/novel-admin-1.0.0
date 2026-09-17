@@ -55,16 +55,21 @@ async function callEngine<T>(path: string, body: Record<string, unknown>): Promi
 /**
  * 抓取并提取一个书页。每次调用（即每本书一次）在成功命中后记录一行
  * 「书页命中策略 fetch-browser（尝试 N 次）」级别的可观测性日志。
+ *
+ * Task 23-a 新增可选 referer（向后兼容：不传时请求体与原先完全一致）：
+ * 列表页场景可把站点首页/上一页作为来路传入，配合引擎策略层的 Referer 链。
  */
 export async function fetchBookPage(
   run: Run,
   url: string,
   rule: LoadedRule,
+  referer?: string,
 ): Promise<{ ok: true; book: BookData } | { ok: false; error: string }> {
   const res = await callEngine<{ book?: BookData }>('/api/test', {
     url,
     rule: { bookRule: rule.bookRule },
     charset: rule.charset,
+    ...(referer ? { referer } : {}),
   })
   if (!res.ok) return { ok: false, error: res.error }
   if (res.warnings.length) run.logWarnings(res.warnings)
@@ -80,12 +85,13 @@ export async function fetchBookPage(
   return { ok: true, book }
 }
 
-/** 抓取并提取一个列表页；失败时记录日志并返回空数组（翻页场景失败可跳过） */
-export async function fetchListPage(run: Run, url: string, rule: LoadedRule): Promise<ListItem[]> {
+/** 抓取并提取一个列表页；失败时记录日志并返回空数组（翻页场景失败可跳过）。referer 可选，同上向后兼容 */
+export async function fetchListPage(run: Run, url: string, rule: LoadedRule, referer?: string): Promise<ListItem[]> {
   const res = await callEngine<{ list?: { items?: ListItem[] } }>('/api/test', {
     url,
     rule: { listRule: rule.listRule },
     charset: rule.charset,
+    ...(referer ? { referer } : {}),
   })
   if (!res.ok) {
     run.log(`列表页抓取失败(${url.slice(0, 100)}): ${res.error}`)
@@ -99,8 +105,9 @@ export async function fetchListPage(run: Run, url: string, rule: LoadedRule): Pr
  * 抓取完整目录页并提取章节链接（配合 bookRule.catalogLinkSelector）。
  * 目录页只需 chapterLinkSelector/excludeSelector，其余书籍字段选择器不参与；
  * 失败时记录日志并返回空数组（调用方回退书页章节链接，不视为致命错误）。
+ * referer 可选（Task 23-a，向后兼容）：常传书页 URL 作为来路。
  */
-export async function fetchCatalogChapters(run: Run, url: string, rule: LoadedRule): Promise<ChapterRef[]> {
+export async function fetchCatalogChapters(run: Run, url: string, rule: LoadedRule, referer?: string): Promise<ChapterRef[]> {
   const bookRule: Record<string, string> = {}
   for (const key of ['chapterLinkSelector', 'excludeSelector'] as const) {
     const v = rule.bookRule[key]
@@ -110,6 +117,7 @@ export async function fetchCatalogChapters(run: Run, url: string, rule: LoadedRu
     url,
     rule: { bookRule },
     charset: rule.charset,
+    ...(referer ? { referer } : {}),
   })
   if (!res.ok) {
     run.log(`目录页抓取失败(${url.slice(0, 100)}): ${res.error}`)
@@ -119,11 +127,13 @@ export async function fetchCatalogChapters(run: Run, url: string, rule: LoadedRu
   return res.data.book?.chapters ?? []
 }
 
-/** 抓取并提取一个章节；warnings 由调用方按存储成败决定是否记录（沿用原时序） */
-export function fetchChapter(url: string, rule: LoadedRule): Promise<EngineResult<ChapterData>> {
+/** 抓取并提取一个章节；warnings 由调用方按存储成败决定是否记录（沿用原时序）。
+ *  referer 可选（Task 23-a，向后兼容）：章节页常校验来路，传书页 URL 可提升通过率 */
+export function fetchChapter(url: string, rule: LoadedRule, referer?: string): Promise<EngineResult<ChapterData>> {
   return callEngine<ChapterData>('/api/chapter', {
     url,
     rule: rule.chapterRule,
     charset: rule.charset,
+    ...(referer ? { referer } : {}),
   })
 }

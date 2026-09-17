@@ -11,7 +11,7 @@ export interface HeaderProfile {
   label: string
   /** 是否携带 Referer（覆盖"带 Referer/无 Referer"变体） */
   referer: boolean
-  headers(url: string, withReferer: boolean): Record<string, string>
+  headers(url: string, withReferer: boolean, explicitReferer?: string | null): Record<string, string>
 }
 
 /**
@@ -33,7 +33,7 @@ const ACCEPT_HTML =
   'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
 const ACCEPT_LANG_ZH = 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7'
 
-function baseHeaders(url: string, withReferer: boolean, ua: string, extra: Record<string, string>): Record<string, string> {
+function baseHeaders(url: string, withReferer: boolean, ua: string, extra: Record<string, string>, explicitReferer?: string | null): Record<string, string> {
   const h: Record<string, string> = {
     'user-agent': ua,
     accept: ACCEPT_HTML,
@@ -42,8 +42,9 @@ function baseHeaders(url: string, withReferer: boolean, ua: string, extra: Recor
     ...extra,
   }
   if (withReferer) {
-    // Referer 链：以目标站自身首页为来源，模拟从站内导航进入
-    h.referer = `${new URL(url).origin}/`
+    // Referer 链：优先使用调用方显式提供的来路（如书页 URL，书页→章节页的站内导航校验场景），
+    // 未提供时以目标站自身首页为来源，模拟从站内导航进入
+    h.referer = explicitReferer || `${new URL(url).origin}/`
   }
   return h
 }
@@ -53,18 +54,24 @@ export const chromeDesktopProfile: HeaderProfile = {
   id: 'chrome-desktop',
   label: 'Chrome 桌面（完整 Sec-Fetch/客户端提示 + Referer）',
   referer: true,
-  headers(url, withReferer) {
-    return baseHeaders(url, withReferer, CHROME_UA, {
-      'cache-control': 'no-cache',
-      pragma: 'no-cache',
-      'sec-ch-ua': CHROME_SEC_CH_UA,
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Linux"',
-      'sec-fetch-dest': 'document',
-      'sec-fetch-mode': 'navigate',
-      'sec-fetch-site': 'same-origin',
-      'sec-fetch-user': '?1',
-    })
+  headers(url, withReferer, explicitReferer) {
+    return baseHeaders(
+      url,
+      withReferer,
+      CHROME_UA,
+      {
+        'cache-control': 'no-cache',
+        pragma: 'no-cache',
+        'sec-ch-ua': CHROME_SEC_CH_UA,
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Linux"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+      },
+      explicitReferer,
+    )
   },
 }
 
@@ -73,7 +80,7 @@ export const firefoxDesktopProfile: HeaderProfile = {
   id: 'firefox-desktop',
   label: 'Firefox 桌面（无客户端提示 + Referer）',
   referer: true,
-  headers(url, withReferer) {
+  headers(url, withReferer, explicitReferer) {
     return baseHeaders(
       url,
       withReferer,
@@ -85,6 +92,7 @@ export const firefoxDesktopProfile: HeaderProfile = {
         'sec-fetch-user': '?1',
         'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
       },
+      explicitReferer,
     )
   },
 }
@@ -94,7 +102,7 @@ export const safariDesktopProfile: HeaderProfile = {
   id: 'safari-desktop',
   label: 'Safari 桌面（无客户端提示、无 Referer）',
   referer: false,
-  headers(url, withReferer) {
+  headers(url, withReferer, explicitReferer) {
     return baseHeaders(
       url,
       withReferer,
@@ -104,6 +112,7 @@ export const safariDesktopProfile: HeaderProfile = {
         'sec-fetch-mode': 'navigate',
         'sec-fetch-site': 'none',
       },
+      explicitReferer,
     )
   },
 }
@@ -113,7 +122,7 @@ export const edgeDesktopProfile: HeaderProfile = {
   id: 'edge-desktop',
   label: 'Edge 桌面（Chromium 内核 + Edge 品牌 + Referer）',
   referer: true,
-  headers(url, withReferer) {
+  headers(url, withReferer, explicitReferer) {
     return baseHeaders(
       url,
       withReferer,
@@ -127,6 +136,7 @@ export const edgeDesktopProfile: HeaderProfile = {
         'sec-fetch-site': 'same-origin',
         'sec-fetch-user': '?1',
       },
+      explicitReferer,
     )
   },
 }
@@ -136,7 +146,7 @@ export const androidChromeProfile: HeaderProfile = {
   id: 'android-chrome',
   label: 'Android Chrome 移动端（sec-ch-ua-mobile=?1 + Referer）',
   referer: true,
-  headers(url, withReferer) {
+  headers(url, withReferer, explicitReferer) {
     return baseHeaders(
       url,
       withReferer,
@@ -150,6 +160,7 @@ export const androidChromeProfile: HeaderProfile = {
         'sec-fetch-site': 'same-origin',
         'sec-fetch-user': '?1',
       },
+      explicitReferer,
     )
   },
 }
@@ -159,7 +170,7 @@ export const iphoneSafariProfile: HeaderProfile = {
   id: 'iphone-safari',
   label: 'iPhone Safari 移动端（无 Referer）',
   referer: false,
-  headers(url, withReferer) {
+  headers(url, withReferer, explicitReferer) {
     return baseHeaders(
       url,
       withReferer,
@@ -169,6 +180,7 @@ export const iphoneSafariProfile: HeaderProfile = {
         'sec-fetch-mode': 'navigate',
         'sec-fetch-site': 'none',
       },
+      explicitReferer,
     )
   },
 }
@@ -178,12 +190,13 @@ export const googlebotProfile: HeaderProfile = {
   id: 'googlebot',
   label: 'Googlebot 桌面降级（无 Referer）',
   referer: false,
-  headers(url, withReferer) {
+  headers(url, withReferer, explicitReferer) {
     const h = baseHeaders(
       url,
       withReferer,
       `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`,
       {},
+      explicitReferer,
     )
     h.accept = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8'
     // 指纹一致性修正：真实 Googlebot 不发送 Upgrade-Insecure-Requests / Accept-Language
@@ -200,12 +213,13 @@ export const baiduspiderProfile: HeaderProfile = {
   id: 'baiduspider',
   label: 'Baiduspider 降级（无 Referer）',
   referer: false,
-  headers(url, withReferer) {
+  headers(url, withReferer, explicitReferer) {
     const h = baseHeaders(
       url,
       withReferer,
       'Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)',
       {},
+      explicitReferer,
     )
     h.accept = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8'
     // 指纹一致性修正：真实 Baiduspider 仅发送极简头（UA/Accept/Accept-Encoding），

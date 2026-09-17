@@ -6,6 +6,7 @@
  * （自 strategies.ts 巨石拆分而来，代码逐行原样迁移）
  */
 import { assertHostPublic, parseRetryAfterMs } from '../rate-limit'
+import { cookieHeaderFor, recordResponseCookies } from './cookies'
 import { looksLikeChallenge } from './challenge'
 import type { RawResponse } from './types'
 
@@ -85,6 +86,8 @@ async function readBody(res: Response): Promise<{ bytes: Uint8Array; contentType
  * 带逐跳 SSRF 校验的 fetch：redirect:'manual' 手动跟随重定向，每一跳都做
  * 文本层 + DNS 尽力校验；运行时把 manual 实现为 opaque（status 0）时自动降级
  * 为 follow + 最终 URL 校验。
+ * 每一跳按目标 host 回放引擎 cookie 会话，并把响应的 Set-Cookie 写回 jar
+ * （含 3xx 中间跳——「首访种 cookie、二访放行」的种子正是种在这些跳上）。
  */
 export async function fetchWithRedirectGuard(
   url: string,
@@ -117,9 +120,14 @@ export async function fetchWithRedirectGuard(
     }
     if (check.warning) warnings.push(`[ssrf] ${check.warning}`)
 
+    // Cookie 会话回放：合并该 host 的 cookie（调用方自身不设置 cookie 头，直接覆盖安全）
+    const https = target.protocol === 'https:'
+    const hopCookie = cookieHeaderFor(target.host, https)
+    const hopHeaders = hopCookie ? { ...headers, cookie: hopCookie } : headers
+
     let res: Response
     try {
-      res = await fetch(current, { headers, redirect: 'manual', signal: AbortSignal.timeout(remaining) })
+      res = await fetch(current, { headers: hopHeaders, redirect: 'manual', signal: AbortSignal.timeout(remaining) })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       return {
@@ -131,16 +139,19 @@ export async function fetchWithRedirectGuard(
         warning: `网络错误: ${msg}`,
       }
     }
+    recordResponseCookies(target.host, res, https)
 
     // 运行时把 redirect:'manual' 实现为 opaque-redirect（status 0）→ 降级为 follow + 最终 URL 校验
     if (res.status === 0 && (res as Response & { type?: string }).type === 'opaqueredirect') {
       warnings.push('运行时未暴露 manual 重定向详情，降级为 follow 模式 + 最终 URL 校验')
       try {
+        const followCookie = cookieHeaderFor(target.host, https)
         const follow = await fetch(current, {
-          headers,
+          headers: followCookie ? { ...headers, cookie: followCookie } : headers,
           redirect: 'follow',
           signal: AbortSignal.timeout(Math.max(500, deadline - Date.now())),
         })
+        recordResponseCookies(target.host, follow, https)
         const finalUrl = follow.url || current
         const finalCheck = await assertHostPublic(new URL(finalUrl).hostname)
         if (!finalCheck.ok) {

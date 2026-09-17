@@ -59,6 +59,8 @@ export interface TestRequestBody {
   strategy?: string
   charset?: string
   timeoutMs?: number
+  /** 可选 Referer 链（Task 23-a）：合法 http(s) URL，策略层注入请求头；不传时行为与原先一致 */
+  referer?: string
 }
 
 export interface ChapterRequestBody {
@@ -67,6 +69,8 @@ export interface ChapterRequestBody {
   charset?: string
   strategy?: string
   timeoutMs?: number
+  /** 可选 Referer 链（Task 23-a）：合法 http(s) URL，策略层注入请求头；不传时行为与原先一致 */
+  referer?: string
 }
 
 export interface StrategyInfo {

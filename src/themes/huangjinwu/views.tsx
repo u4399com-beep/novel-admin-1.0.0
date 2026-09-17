@@ -553,7 +553,7 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
         >
           {ch.novelTitle}
         </button>
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <label className="flex items-center gap-2 text-[13px]" style={{ color: scene.muted }}>
             字号
             <input

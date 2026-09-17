@@ -2,10 +2,12 @@
 """browser 策略渲染助手（scraper-service 专用）。
 
 用法: python3 render.py <url> <timeoutMs> <userAgent>
-输出: stdout 单行 JSON {status, html, error?}
+环境变量（可选，Task 23-a）: SCRAPER_COOKIES="k=v; k2=v2" 引擎 cookie 会话注入、SCRAPER_REFERER=<url> 来路
+输出: stdout 单行 JSON {status, html, cookies?, error?}
 
 仅做通用渲染取 HTML：
-- 不注入任何登录态/Cookie，不处理任何验证码；
+- 不注入任何登录态/凭证，只回放引擎 cookie 会话中目标站自己下发的公开访问 cookie，
+  不处理任何验证码；
 - 屏蔽图片/媒体/字体资源以降低带宽与耗时；
 - 渲染期 SSRF 守卫：入口 URL 与页面发起的每个子请求/跳转都做内网地址校验
   （尽力而为：IP 字面量直接判定 + 主机名经 getaddrinfo 解析后判定，结果缓存）；
@@ -100,6 +102,25 @@ def _url_blocked(req_url: str) -> bool:
     return _guarded(host)
 
 
+def _env_cookies(url: str):
+    """引擎 cookie 会话（SCRAPER_COOKIES="k=v; k2=v2"）→ Playwright add_cookies 入参；无则返回 None。"""
+    raw = os.environ.get("SCRAPER_COOKIES", "").strip()
+    if not raw:
+        return None
+    cookies = []
+    for pair in raw.split(";"):
+        pair = pair.strip()
+        if "=" not in pair:
+            continue
+        name, _, value = pair.partition("=")
+        name = name.strip()
+        value = value.strip()
+        if not name or len(name) > 128 or len(value) > 2048:
+            continue
+        cookies.append({"name": name, "value": value, "url": url, "expires": -1})
+    return cookies or None
+
+
 def main() -> int:
     url = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
@@ -160,6 +181,13 @@ def main() -> int:
                     locale="zh-CN",
                     viewport={"width": 1366, "height": 900},
                 )
+                # 引擎 cookie 会话注入（仅目标站自己下发的 cookie；失败不阻塞渲染）
+                cookies = _env_cookies(url)
+                if cookies:
+                    try:
+                        context.add_cookies(cookies)
+                    except Exception:
+                        pass
                 page = context.new_page()
                 page.on("dialog", lambda d: d.dismiss())
 
@@ -180,7 +208,11 @@ def main() -> int:
                 except Exception:
                     pass
 
-                resp = page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                referer = os.environ.get("SCRAPER_REFERER", "").strip() or None
+                if referer:
+                    resp = page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded", referer=referer)
+                else:
+                    resp = page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
                 try:
                     page.wait_for_timeout(400)  # 让首屏 XHR 有机会落 DOM
                 except Exception:
@@ -189,7 +221,20 @@ def main() -> int:
                 status = resp.status if resp else 0
                 if len(html.encode("utf-8", errors="ignore")) > MAX_HTML_BYTES:
                     html = html[: MAX_HTML_BYTES // 3]  # 防止超大 DOM 撑爆 stdout 管道
-                emit({"status": status, "html": html})
+                # 渲染会话 cookie 回传引擎 jar（仅精简字段，防 payload 过大）
+                try:
+                    back = [
+                        {
+                            "name": c.get("name"),
+                            "value": c.get("value"),
+                            "expires": c.get("expires", -1),
+                            "secure": c.get("secure", False),
+                        }
+                        for c in context.cookies()[:50]
+                    ]
+                except Exception:
+                    back = []
+                emit({"status": status, "html": html, "cookies": back})
             finally:
                 try:
                     browser.close()

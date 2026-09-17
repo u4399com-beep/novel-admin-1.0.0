@@ -72,7 +72,7 @@ async function processBook(
   run: Run,
   bookUrl: string,
   rule: LoadedRule,
-  opts: { trackTotal: boolean; chapterProgress?: { done: number; total: number } },
+  opts: { trackTotal: boolean; chapterProgress?: { done: number; total: number }; referer?: string | null },
 ): Promise<BookOutcome> {
   const canceledOutcome = (message: string, chapters = 0, failedChapters = 0): BookOutcome => ({
     ok: false,
@@ -83,7 +83,8 @@ async function processBook(
   })
 
   run.log(`抓取书页 ${bookUrl.slice(0, 120)}…`)
-  const page = await fetchBookPage(run, bookUrl, rule)
+  // Referer 链：list 模式传「发现本书的列表页」作来路；single 模式缺省由引擎回落站内首页
+  const page = await fetchBookPage(run, bookUrl, rule, opts.referer ?? undefined)
   if (!page.ok) {
     run.log(`书页提取失败: ${page.error}`)
     return { ok: false, canceled: false, chapters: 0, failedChapters: 0, message: page.error }
@@ -100,7 +101,7 @@ async function processBook(
     if (await isCanceled(run.taskId)) return canceledOutcome('任务已取消')
     if (book.catalogUrl) {
       run.log(`发现完整目录页 ${book.catalogUrl.slice(0, 100)}，尝试整目提取…`)
-      const catalogRefs = await fetchCatalogChapters(run, book.catalogUrl, rule)
+      const catalogRefs = await fetchCatalogChapters(run, book.catalogUrl, rule, bookUrl)
       if (catalogRefs.length > allRefs.length) {
         run.log(`目录页提取到 ${catalogRefs.length} 条章节链接（书页仅 ${allRefs.length} 条），采用目录页结果`)
         allRefs = catalogRefs
@@ -126,7 +127,12 @@ async function processBook(
 
   // ---- 书籍 upsert（title+author 查重；DB 层 @@unique([title,author]) 兜底并发）----
   const up = await upsertBook(run, book, categoryId)
-  if (!up.ok) return canceledOutcome(up.message)
+  if (!up.ok) {
+    // 记录级失败（up.canceled=true：入库/更新失败、并发冲突后找不到记录）沿用取消通道停整个任务；
+    // 书籍级失败（up.canceled=false，如空标题）只算本书失败：single 按 failed 收尾，list 继续下一本
+    if (up.canceled) return canceledOutcome(up.message)
+    return { ok: false, canceled: false, chapters: 0, failedChapters: 0, message: up.message }
+  }
 
   // ---- 章节列表准备 ----
   const refs = allRefs.filter((c): c is { title: string; url: string } => !!c.url)
@@ -189,7 +195,8 @@ async function processBook(
     }
 
     run.log(`(${done + 1}/${refs.length}) 抓取章节「${(refTitle || ref.url).slice(0, 36)}」`)
-    const ch = await fetchChapter(ref.url, rule)
+    // Referer 链：章节页带书页来路（站点常见「书页→章节」导航校验）
+    const ch = await fetchChapter(ref.url, rule, bookUrl)
     const data = ch.ok ? ch.data : null
 
     // 入库前统一清洗（去 \r\n/行首缩进/空行/噪声行），存储契约：无空行、无行首缩进
@@ -290,6 +297,8 @@ async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<vo
   run.log(`第 1 页提取 ${first.length} 条`)
 
   const items = [...first]
+  // 当前生效的列表页 URL（含翻页命中页）：作为后续书页抓取的 Referer 来路
+  let currentListUrl = task.targetUrl
   for (let k = 2; k <= task.pages; k++) {
     if (await isCanceled(run.taskId)) break
     let got: ListItem[] | null = null
@@ -297,6 +306,7 @@ async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<vo
       const pageItems = await fetchListPage(run, v, rule)
       if (pageItems.length > 0) {
         got = pageItems
+        currentListUrl = v
         run.log(`第 ${k} 页命中: ${v.slice(0, 100)}`)
         break
       }
@@ -339,7 +349,7 @@ async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<vo
       break
     }
     run.log(`━━ (${i + 1}/${total}) 《${(item.title || '未命名').slice(0, 30)}》`)
-    const outcome = await processBook(run, item.url as string, rule, { trackTotal: false, chapterProgress })
+    const outcome = await processBook(run, item.url as string, rule, { trackTotal: false, chapterProgress, referer: currentListUrl })
     doneBooks++
     if (outcome.canceled) {
       canceledRun = true

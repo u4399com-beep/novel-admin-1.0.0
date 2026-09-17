@@ -70,10 +70,10 @@ export function normalizeCharset(raw?: string | null): string | null {
   return ALIAS[s] ?? s
 }
 
-/** 从 Content-Type 头提取 charset */
+/** 从 Content-Type 头提取 charset（单/双引号均可，个别服务器输出 charset='gbk'） */
 export function charsetFromContentType(contentType?: string | null): string | null {
   if (!contentType) return null
-  const m = /charset\s*=\s*"?([\w-]+)"?/i.exec(contentType)
+  const m = /charset\s*=\s*["']?([\w-]+)/i.exec(contentType)
   return m ? m[1] : null
 }
 

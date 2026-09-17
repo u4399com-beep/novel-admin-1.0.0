@@ -23,6 +23,14 @@ export interface FetchPageOptions {
   requestedStrategy?: string | null
   forcedCharset?: string | null
   timeoutMs?: number
+  /** 可选 Referer 链：调用方显式提供的来路（如书页 URL），策略层注入请求头；缺省时维持原行为（站内首页/无 Referer 变体） */
+  referer?: string | null
+}
+
+/** 策略 run 的可选上下文（新增字段必须可选+默认值，保证既有策略实现兼容） */
+export interface StrategyRunCtx {
+  /** 显式 Referer：非空时覆盖「目标站首页」自动 Referer（仅对 referer:true 的画像生效；无 Referer 变体仍保持无 Referer 以保留链内多样性） */
+  referer?: string | null
 }
 
 export interface FetchPageResult {
@@ -43,7 +51,7 @@ export interface StrategyDef {
   name: string
   description: string
   probe(): Promise<boolean>
-  run(url: string, timeoutMs: number, warnings: string[]): Promise<AttemptResult>
+  run(url: string, timeoutMs: number, warnings: string[], ctx?: StrategyRunCtx): Promise<AttemptResult>
   /** true = 策略内部已自带多画像/多协议重试梯子，外层不再按 MAX_ATTEMPTS 重试 */
   selfRetrying?: boolean
 }

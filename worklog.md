@@ -546,3 +546,85 @@ Stage Summary:
 - 新增 catalogLinkSelector 整目提取（23qb 类书页仅含最新几章的模板从「只能采 9 章」变为全目录），配 RuleDialog 编辑字段与任务日志可观测
 - 页面底部全面可编辑：文案两行 + 自定义链接，10 主题统一生效、留空回落默认，恶意 href 清洗
 - 运维：dev server 与引擎均已迁移至 start-stop-daemon 常驻（pidfile /tmp/next-dev.pid、/tmp/scraper-engine.pid，日志 dev.log / mini-services/scraper-service/engine.log）
+
+---
+Task ID: 23-a
+Agent: engine-audit（网关超时阵亡，成果由主控逐行核验后补记）
+Task: 采集引擎逐行深审 + 反反爬能力增强
+
+Work Log:
+- strategies 10 文件 + extract 4 文件 + handlers/index/types + engine-client 逐行深审，落地 462 行改动
+- 新增 src/strategies/cookies.ts：按主机 Cookie 会话持久化（RFC6265 Set-Cookie 解析/Max-Age+Expires 过期删除/LRU 上界 128 host×50/Secure 仅 https 回放/getSetCookie 缺失兜底拆分/Playwright 注入+回存双向同步/cookieStats 观测）
+- Referer 链：FetchPageOptions.referer + StrategyRunCtx 可选上下文，仅覆盖「带 Referer」画像（无 Referer 变体保留链内多样性）；render.py 增 SCRAPER_COOKIES/SCRAPER_REFERER 环境变量透传
+- 挑战检测升级四层：新增第 4 层「近空可见正文(<80 字符)+JS 跳转脚本/需启用 JS 壳」（latin1/utf8/gb18030 三解码视图），覆盖 HTTP 200 状态码伪装的 JS 跳板与 SPA 空壳
+- curl-impersonate SSRF 加固：--location 内部跟随（仅事后校验终点，中间跳可被诱导打内网）→ 手动逐跳（每跳 assertHostPublic + 协议白名单 + 限速 + cookie 回放/捕获，-D 抓包解析 Status/Location/Set-Cookie，-- 防 URL 解析为选项）
+- got-scraping：每跳 cookie 回放/捕获覆盖成功/3xx 中间跳/429+5xx 错误页三条路径；Referer 优先显式来路
+- handleChapter 软 404 哨兵（HTTP 200+正文空+标题 404 特征，排除「第404章」数字巧合）；parseBody 1MB 请求体上限；/api/strategies 增 cookieSession 说明字段（向后兼容）
+- engine-client.ts 四封装（fetchBookPage/fetchListPage/fetchCatalogChapters/fetchChapter）增可选 referer 参数
+- 自验：单元级（cookies 边界/挑战检测/SSRF/字符集）+ 全链 E2E（:3031 临时实例 + fixture：cookie 门禁站二访放行/Referer 回显/软 404 识别）
+
+主控核验补充（23-main）：
+- 规范化语义 diff 逐行过目：SSRF 逐跳校验完整（含 curl 首跳）、cookie 边界严密、向后兼容零破坏
+- 实测揪出潜伏挂死 bug：got-scraping http2+TLS 握手停滞时 got 自身 timeout 选项失效 → 策略无限挂起（books.toscrape 404 页复现 >120s 无响应；历史测试全为 200 场景从未触发该路径）
+- 双层修复：①requestOnce 增 AbortSignal.timeout 真正中断底层 socket；②fetchPage 策略级硬闸 Promise.race（remaining+5s），任何策略不得挂死整链；修复后全链 23.67s 有界完成
+- worker 调用点接线（agent 报告建议、主控执行）：processBook 增 opts.referer（list 模式=当前列表页含翻页命中页）、fetchCatalogChapters/fetchChapter 传 bookUrl 作来路
+
+Stage Summary:
+- 反反爬四项增强：按主机 Cookie 会话（「首访种 cookie 二访放行」站点可过）/显式 Referer 链/挑战检测第 4 层（200 伪装）/软 404 质量哨兵
+- 引擎健壮性根治「单请求挂死整链」级 bug（got h2 timeout 失效场景），策略链时间预算重新变得可信
+- curl-impersonate SSRF 从「终点校验」升级为「逐跳校验」，与 fetch/got 同级对齐
+- API 契约零破坏（全部新参数可选+默认值），engine tsc 0 错误
+
+---
+Task ID: 23-b
+Agent: worker-audit（网关超时阵亡，成果由主控逐行核验后补记）
+Task: worker/API/规则/清洗链路逐行深审修复
+
+Work Log:
+- worker.ts：修复书级失败语义——upsertBook 失败且 canceled=false（如空标题书）此前误走 canceledOutcome 停整任务 → 改为本书 failed、list 模式继续下一本；主控核验 runSingle（finalize failed）与 runList（failBooks++ 继续）对新失败形态消费正确
+- scrape-rules route：name/charset/enabled/notes 类型守卫（原非字符串输入触发 TypeError 500 → 显式 400）；charset 空串回退 utf-8；DELETE P2025 幂等成功 + 真实 DB 错误如实 500（不再虚报 ok）
+- clean-all route：章节 update 失败（瞬时锁）不再虚计入 cleaned 数量，下轮 dryRun 可复查
+- store.ts：sanitizeRuleMap 增 MAX_RULE_KEYS=60 / MAX_RULE_KEY_LEN=100 上界（防畸形输入撑爆规则 JSON）
+- 引擎侧 extract.ts（跨界写入已与 23-a 协调）：章节标题 <title> 兜底补 BOILERPLATE_TITLE_RE 过滤，防站标经 <title> 重新引入
+- content-clean.ts/clean.ts 核验：pattern 库经 22 批扩充后无新缺口
+- 全链实测：single 任务 success（书籍入库、失败语义正确），测试任务/书籍清理恢复种子态 41 书 812 章
+
+Stage Summary:
+- 修复 4 处真实缺陷：单本书拖垮整个 list 任务 / 非法输入 500 误报 / 删除失败虚报成功 / 规则 JSON 无键数上界
+- tsc/ESLint 0 错误，DB 种子态保持
+
+---
+Task ID: 23-c
+Agent: ui-audit（网关超时阵亡，仅落地 1 处修复，剩余辖区由主控接管完成）
+Task: 前台主题 + 后台 UI 逐行深审修复
+
+Work Log:
+- agent 落地（主控核验确认）：huangjinwu Chapter 阅读设置条 flex-wrap + gap-x/gap-y（375px 视口溢出修复）
+- 主控接管完成走查：
+  - 反模式扫描：内部 <a href> 0；new Date()/Math.random() 仅限客户端主题组件（getFullYear 无年界水合风险）；localStorage 全部位于 effect/handler/模块级 store
+  - admin scrape 组件族：轮询 TanStack refetchInterval 且 LogDialog 跟随实时状态自停（非打开时快照）、useDialogEscape 统一 Esc、saving/creating/busyId/cleaning/seeding 防重守卫齐整
+  - use-novel-data：queryKey 集中 qk.* 管理、enabled 不参与 key（无幽灵缓存）；use-reader-prefs：useSyncExternalStore + 服务端快照规范
+  - pilishuwu 日期 useEffect 直写 DOM（规避 setState-in-effect lint 规则）；aijjxs todayStr 纯函数
+- 浏览器 E2E（主控执行）：首页/书页/目录/章节全链渲染 0 console/page errors；目录页最新 12 章=全书 idx 28→17 降序（卷重编号书《勇者辞职之后》逐条比对吻合）；章节页夜间场景 → reader-prefs-v1 写入+纸面取色 #26262b；reload 持久化 ✓（测后清键恢复）；后台采集中心 5 规则+引擎卡渲染、规则对话框新字段（catalogLinkSelector/excludeSelector）与 aijjxs 备注回显正确；前台+后台+对话框 375px 无横向溢出；页脚编辑卡在位
+
+Stage Summary:
+- UI 层经 4 轮专项（20-c/21/22/23-c）后仅剩 1 处 375px 溢出已修复；反模式扫描+浏览器实测双重确认无新缺陷
+- E2E 现场已还原（reader-prefs 清除、视口 1280×800、activeTheme=huangjinwu）
+
+---
+Task ID: 23-main
+Agent: 主控（Z.ai Code）
+Task: 第九批（用户指令：继续待办+全面审查 / 多 agent 采集+反反爬逐行抓 bug / 清理精简）收尾
+
+Work Log:
+- 现场甄别：工作树 47 文件纯权限位噪声（644→755，沙箱会话恢复产物，git diff 0 ins/0 del），git checkout 归一；DB 种子态 41 书/812 章/4 启用规则确认；:3000/:3030 存活
+- 派发 23-a/b/c 三并行深审 agent（辖区互斥：引擎/worker+API/主题+UI）；Task 工具网关超时三 agent 全部阵亡——23-a/23-b 代码完整落地、23-c 落地 1 处；主控逐行核验全部 diff 并接管收尾（含代记 worklog）
+- 根治引擎级挂死 bug（got-scraping http2+TLS 停滞、got timeout 失效 → 全链无限挂起）：AbortSignal 硬中断 + fetchPage 策略硬闸双层防御；books.toscrape 404 全链实测 23.67s 有界完成（修复前 >120s 无响应）；诊断过程经 5 轮二分（raw fetch/guard/challenge/单策略/逐策略+插桩）
+- worker referer 链接线执行；引擎 start-stop-daemon 规程重启两次成功（注意 --startas 需 /usr/local/bin/bun 绝对路径）；/api/strategies cookieSession 字段生效确认
+- 全链 E2E：API 建 single 任务 → worker（referer 接线）→ 引擎（新代码）→ DB 入库 success；测试产物清理恢复种子态
+- dev.log「readonly database」定位为沙箱会话恢复期 db 文件短暂只读导致的浏览计数 fire-and-forget 噪音（GET 200 正常返回），当前写库全部正常，非应用缺陷
+- 终验：root+engine tsc、ESLint 全 0；浏览器全链 0 console/page errors；375px 无溢出
+
+Stage Summary:
+- 本批核心成果：①「单请求挂死整链」级引擎 bug 根治（逐行深审直接产出）②反反爬四项增强落地并实测③worker/API 4 处真实缺陷修复④采集全链三重验证（语义 diff/真实任务/浏览器）零回退
+- 运维备忘：Task 工具网关超时≠agent 立即死亡（以 git status/worklog 增量判断，勿急于重复派发）；孤儿 agent-browser Chrome 进程需 pkill 清理；got-scraping 的 timeout 选项在 h2 TLS 停滞下不可信，必须配合 AbortSignal
