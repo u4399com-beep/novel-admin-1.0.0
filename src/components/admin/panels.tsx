@@ -610,60 +610,251 @@ export function SeoTab() {
   )
 }
 
-// ==================== PSEO 管理 ====================
+// ==================== PSEO 管理（设置 + multi-search-engine 下拉词） ====================
 
 interface PseoRow { id: number; keyword: string; source: string; status: string; updatedAt: string }
+interface EngineStat { engine: string; ok: boolean; count: number; error?: string }
+interface PseoConfigDto {
+  sources: string[] // 启用的搜索引擎
+  seeds: string[] // 种子关键词
+  perSeedLimit: number
+  maxKeywords: number
+  expand: boolean
+  autoGenerate: boolean
+}
+interface BatchResp {
+  added: number
+  generated: number
+  level2Seeds: number
+  level2Words: number
+  report: { seed: string; level: 1 | 2; engines: EngineStat[]; words: number }[]
+}
+
+const PSEO_ENGINES: { id: string; label: string }[] = [
+  { id: 'baidu', label: '百度' },
+  { id: 'bing', label: '必应' },
+  { id: 'duckduckgo', label: 'DuckDuckGo' },
+  { id: 'sogou', label: '搜狗' },
+  { id: 'so360', label: '360搜索' },
+]
+const EMPTY_PSEO_CFG: PseoConfigDto = {
+  sources: PSEO_ENGINES.map((e) => e.id),
+  seeds: [],
+  perSeedLimit: 12,
+  maxKeywords: 200,
+  expand: false,
+  autoGenerate: true,
+}
+const engineLabel = (id: string) => PSEO_ENGINES.find((e) => e.id === id)?.label ?? id
 
 export function PseoTab() {
   const qc = useQueryClient()
   const navigate = useAppStore((s) => s.navigate)
+  const { data: config } = useQuery({ queryKey: ['pseo-config'], queryFn: () => api<PseoConfigDto>('/api/pseo/config') })
   const { data: rows } = useQuery({ queryKey: ['pseo-keywords'], queryFn: () => api<PseoRow[]>('/api/pseo') })
-  const [kw, setKw] = useState('')
-  const [engines, setEngines] = useState<string[]>(['baidu', 'bing', 'duckduckgo', 'sogou', 'so360'])
-  const [running, setRunning] = useState(false)
-  const [report, setReport] = useState<string>('')
 
-  const generate = async () => {
-    if (!kw.trim()) return toast.error('请输入种子关键词')
-    setRunning(true); setReport('')
+  // 设置草稿：overrides 合并模式（与 SeoTab 一致）；seeds 走独立文本草稿，避免逐键拆行打断输入
+  const [overrides, setOverrides] = useState<Partial<PseoConfigDto>>({})
+  const [seedsDraft, setSeedsDraft] = useState<string | null>(null)
+  const form: PseoConfigDto = { ...(config ?? EMPTY_PSEO_CFG), ...overrides }
+  const seedsText = seedsDraft ?? (config?.seeds ?? []).join('\n')
+  const setForm = (patch: Partial<PseoConfigDto>) => setOverrides((o) => ({ ...o, ...patch }))
+  // 当前完整配置（含未保存修改；seeds 按行拆分）
+  const currentConfig = (): PseoConfigDto => ({
+    ...form,
+    seeds: seedsText.split('\n').map((s) => s.trim()).filter(Boolean),
+  })
+  const clearDrafts = () => {
+    setOverrides({})
+    setSeedsDraft(null)
+  }
+
+  const [savingCfg, setSavingCfg] = useState(false)
+  const [preview, setPreview] = useState('')
+  const [previewing, setPreviewing] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [batchReport, setBatchReport] = useState('')
+  const [kw, setKw] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const saveConfig = async () => {
+    setSavingCfg(true)
     try {
-      const res = await api<{ added: number; generated: number; suggestions: { engine: string; ok: boolean; count: number; error?: string }[] }>(
-        '/api/pseo/generate',
-        { method: 'POST', body: JSON.stringify({ keyword: kw.trim(), sources: engines, limit: 30 }) }
+      await api('/api/pseo/config', { method: 'PATCH', body: JSON.stringify({ config: currentConfig() }) })
+      await qc.invalidateQueries({ queryKey: ['pseo-config'] })
+      clearDrafts()
+      toast.success('PSEO 设置已保存')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setSavingCfg(false)
+    }
+  }
+
+  // 试取预览：只调 suggest 接口看下拉词，不入库（验证引擎连通性/种子质量）
+  const runPreview = async () => {
+    const kw0 = currentConfig().seeds[0]
+    if (!kw0) return toast.error('请先在种子关键词中填写至少一个词')
+    setPreviewing(true)
+    setPreview('')
+    try {
+      const res = await api<{ results: EngineStat[]; words: { word: string; engine: string }[] }>(
+        '/api/pseo/suggest',
+        { method: 'POST', body: JSON.stringify({ keyword: kw0, sources: form.sources }) },
       )
-      const lines = res.suggestions.map((s) => `${s.engine}: ${s.ok ? `+${s.count} 词` : `失败${s.error ? '（' + s.error + '）' : ''}`}`)
-      setReport(`新增 ${res.added} 个关键词，生成 ${res.generated} 个聚合页\n${lines.join('\n')}`)
+      const lines = res.results.map((r) => `${engineLabel(r.engine)}: ${r.ok ? `+${r.count} 词` : `失败${r.error ? `（${r.error}）` : ''}`}`)
+      setPreview(`试取「${kw0}」\n${lines.join('\n')}\n下拉词：${res.words.map((w) => w.word).join(' / ') || '（无）'}`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '试取失败')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  // 批量应用：携带当前配置（先持久化再执行），种子 × 引擎批量获取下拉词入库
+  const runBatch = async () => {
+    if (currentConfig().seeds.length === 0) return toast.error('请先在 PSEO 设置中填写种子关键词')
+    setRunning(true)
+    setBatchReport('')
+    try {
+      const res = await api<BatchResp>('/api/pseo/batch', { method: 'POST', body: JSON.stringify({ config: currentConfig() }) })
+      const lines = res.report.map((r) => {
+        const eng = r.engines
+          .map((e) => `${engineLabel(e.engine)} ${e.ok ? `+${e.count}` : `失败${e.error ? `（${e.error}）` : ''}`}`)
+          .join(' · ')
+        return `${r.level === 2 ? '└ 二级' : '「'}${r.seed}${r.level === 2 ? '' : '」'} ${eng} → ${r.words} 词`
+      })
+      const head = `新增 ${res.added} 个关键词${res.generated ? `，生成 ${res.generated} 个聚合页` : ''}${
+        res.level2Words ? `；二级挖掘 ${res.level2Seeds} 词 → +${res.level2Words} 词` : ''
+      }`
+      setBatchReport([head, ...lines].join('\n'))
       await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
-      toast.success(`下拉词获取完成：新增 ${res.added}`)
+      await qc.invalidateQueries({ queryKey: ['pseo-config'] })
+      clearDrafts()
+      toast.success(`批量获取完成：新增 ${res.added}`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '批量获取失败')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const addKw = async () => {
+    if (!kw.trim()) return toast.error('请输入关键词')
+    setBusy(true)
+    try {
+      const res = await api<{ added: number }>('/api/pseo', { method: 'POST', body: JSON.stringify({ keywords: [kw.trim()] }) })
+      setKw('')
+      await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
+      toast.success(res.added ? '关键词已添加' : '关键词已存在')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '添加失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 重新生成聚合页：TDK 模板修改后，对 pending/重置过的关键词重跑（不重新抓下拉词）
+  const regen = async () => {
+    setBusy(true)
+    try {
+      const res = await api<{ generated: number }>('/api/pseo/generate', { method: 'POST', body: JSON.stringify({ useSuggest: false, limit: 50 }) })
+      await qc.invalidateQueries({ queryKey: ['pseo-keywords'] })
+      toast.success(`已生成 ${res.generated} 个聚合页`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '生成失败')
     } finally {
-      setRunning(false)
+      setBusy(false)
     }
   }
 
   return (
     <div className="space-y-4">
       <section className="rounded-lg border p-4">
-        <h4 className="mb-2 text-sm font-semibold">多搜索引擎下拉词 → PSEO 聚合页</h4>
-        <div className="flex flex-wrap gap-2">
-          <Input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="种子关键词，如：玄幻" className="h-8 max-w-52" />
-          {['baidu', 'bing', 'duckduckgo', 'sogou', 'so360'].map((e) => (
-            <label key={e} className="flex items-center gap-1 text-xs">
-              <input
-                type="checkbox" checked={engines.includes(e)}
-                onChange={(ev) => setEngines(ev.target.checked ? [...engines, e] : engines.filter((x) => x !== e))}
-              />{e}
-            </label>
-          ))}
-          <Button size="sm" onClick={generate} disabled={running}>{running ? '获取中…' : '获取下拉词并生成'}</Button>
+        <h4 className="mb-1 text-sm font-semibold">PSEO 设置 · multi-search-engine 下拉词</h4>
+        <p className="mb-3 text-[11px] text-neutral-400">
+          种子关键词 × 搜索引擎 suggest 接口批量获取下拉词入库；配置持久化保存，可反复一键应用。
+        </p>
+        <div className="space-y-3">
+          <div>
+            <p className="mb-1 text-xs font-medium text-neutral-600">搜索引擎</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {PSEO_ENGINES.map((e) => (
+                <label key={e.id} className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={form.sources.includes(e.id)}
+                    onChange={(ev) =>
+                      setForm({ sources: ev.target.checked ? [...form.sources, e.id] : form.sources.filter((x) => x !== e.id) })
+                    }
+                  />{e.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <Field label="种子关键词（每行一个，最多 20 个）">
+            <Textarea rows={3} value={seedsText} onChange={(e) => setSeedsDraft(e.target.value)} placeholder={'玄幻\n都市重生\n修仙'} />
+          </Field>
+          <div className="flex flex-wrap gap-4">
+            <Field label="每种子保留词数（3-20）">
+              <Input
+                type="number" min={3} max={20} value={String(form.perSeedLimit)}
+                onChange={(e) => setForm({ perSeedLimit: Number(e.target.value) || 12 })}
+                className="h-8 w-24 text-sm"
+              />
+            </Field>
+            <Field label="单次入库上限（10-500）">
+              <Input
+                type="number" min={10} max={500} value={String(form.maxKeywords)}
+                onChange={(e) => setForm({ maxKeywords: Number(e.target.value) || 200 })}
+                className="h-8 w-24 text-sm"
+              />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={form.autoGenerate} onCheckedChange={(v) => setForm({ autoGenerate: v })} />
+            获取后自动生成 PSEO 聚合页
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={form.expand} onCheckedChange={(v) => setForm({ expand: v })} />
+            二级挖掘（以下拉词为新种子再获取一轮）
+          </label>
         </div>
-        {report && <pre className="mt-2 whitespace-pre-wrap rounded bg-neutral-100 p-2 text-[11px] text-neutral-600">{report}</pre>}
-        <p className="mt-2 text-[11px] text-neutral-400">沙箱网络可能限制部分引擎，失败的引擎会如实报告；也可在下方手工添加关键词。</p>
+        <div className="mt-3 flex gap-2">
+          <Button size="sm" variant="outline" onClick={saveConfig} disabled={savingCfg || running}>
+            {savingCfg ? '保存中…' : '保存设置'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={runPreview} disabled={previewing || running}>
+            {previewing ? '试取中…' : '试取预览（首个种子）'}
+          </Button>
+        </div>
+        {preview && <pre className="mt-2 whitespace-pre-wrap rounded bg-neutral-100 p-2 text-[11px] text-neutral-600">{preview}</pre>}
       </section>
 
       <section className="rounded-lg border p-4">
-        <h4 className="mb-2 text-sm font-semibold">关键词库（{rows?.length ?? 0}）</h4>
+        <h4 className="mb-1 text-sm font-semibold">应用设置 · 批量获取下拉词</h4>
+        <p className="mb-3 text-[11px] text-neutral-400">
+          按上方当前配置（含未保存的修改，执行前自动持久化）运行；跨种子/跨引擎自动去重，失败引擎如实报告。
+        </p>
+        <Button size="sm" onClick={runBatch} disabled={running || savingCfg}>
+          {running ? '获取中…（种子较多约需 1-2 分钟）' : '开始批量获取'}
+        </Button>
+        {batchReport && <pre className="mt-2 whitespace-pre-wrap rounded bg-neutral-100 p-2 text-[11px] text-neutral-600">{batchReport}</pre>}
+      </section>
+
+      <section className="rounded-lg border p-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold">关键词库（{rows?.length ?? 0}）</h4>
+          <div className="flex gap-2">
+            <Input
+              value={kw} onChange={(e) => setKw(e.target.value)}
+              placeholder="手工添加关键词" className="h-7 w-40 text-xs"
+              onKeyDown={(e) => { if (e.key === 'Enter') addKw() }}
+            />
+            <Button size="sm" variant="outline" className="h-7" onClick={addKw} disabled={busy}><Plus className="h-3 w-3" /></Button>
+            <Button size="sm" variant="outline" className="h-7" onClick={regen} disabled={busy}>重新生成聚合页</Button>
+          </div>
+        </div>
         <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
           {rows?.map((r) => (
             <div key={r.id} className="flex items-center gap-2 rounded border px-3 py-1.5 text-xs">

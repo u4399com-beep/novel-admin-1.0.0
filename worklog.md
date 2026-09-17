@@ -399,3 +399,23 @@ Work Log:
 
 Stage Summary:
 - 反反爬矩阵升级为 7 策略（新增真实浏览器渲染）；SSRF 防护扩展到渲染期子请求与 robots 抓取；Retry-After 尊重与连接释放补齐；tsc/lint 0 错误；example.com 实测 fetch-browser 直抓成功
+---
+Task ID: 19
+Agent: 主控（Z.ai Code）
+Task: PSEO 设置——应用 multi-search-engine 获取搜索引擎下拉词（持久化配置 + 批量应用 + 试取预览）
+
+Work Log:
+- 盘点现状：suggest.ts 已有 5 引擎下拉词聚合（baidu/bing/duckduckgo/sogou/so360，allSettled+限并发3+跨引擎去重），但 PseoTab 引擎选择是临时本地态不持久化、只有单种子即时流、无种子词库/批量入口
+- 设计决策：PseoRunnerConfig 存入现有 SiteSetting.seoConfig JSON 的 pseo 子字段（零 schema 变更、免 db:push、免重启 dev server）；新增 src/lib/pseo.ts 承载定义/校验/读写/共享逻辑
+- 新建 src/lib/pseo.ts：DEFAULT_PSEO_CONFIG、sanitizePseoConfig（引擎白名单+sanitizeKeyword 清洗种子限20+数值夹取 perSeedLimit 3-20/maxKeywords 10-500+布尔归一）、getPseoConfig/savePseoConfig（服务端读改写 seoConfig JSON 只动 pseo 字段，TDK 模板零影响）、insertKeywords（批内去重+按首现标记 source+P2002 竞态容错，修复原 generate 里种子词可能同时出现在下拉词中导致二次 create 撞 UNIQUE 的隐患）、generatePendingPages+matchNovels（自 generate 路由迁入共享）
+- 新建路由：GET/PATCH /api/pseo/config（读取/保存配置）；POST /api/pseo/suggest（试取预览，不入库不生成，输出 per-engine 统计+聚合词表 cap40）；POST /api/pseo/batch（应用设置批量获取：种子×引擎→入库→可选二级挖掘→可选自动生成聚合页；globalThis 单飞锁 TTL 180s 防僵尸+409；种子限并发 2、批量场景引擎超时放宽 6s；body.config 提供时先持久化再执行=「保存+应用」一步）
+- 重构 /api/pseo/generate 复用 lib（insertKeywords/generatePendingPages），API 契约不变，useSuggest=false 语义保留为「重新生成聚合页」入口
+- PseoTab 重写（panels.tsx）：①「PSEO 设置」卡——5 引擎中文复选框（百度/必应/DuckDuckGo/搜狗/360搜索）、种子关键词多行 Textarea（独立文本草稿避免逐键拆行）、每种子保留词数/单次入库上限数值框、自动生成聚合页与二级挖掘 Switch、保存设置+试取预览按钮（overrides 合并模式与 SeoTab 一致，保存后清草稿回读）；②「应用设置·批量获取」卡——单按钮运行（自动持久化当前配置），报告区逐种子×逐引擎渲染（含失败原因与词数）；③关键词库——保留预览(hash 清空回前台)/删除，新增手工添加输入框(Enter/按钮)与「重新生成聚合页」按钮（TDK 模板变更后重跑）
+- 实测（curl）：config GET/PATCH 回读闭环 ✓；settings GET 确认 TDK 模板与 pseo 共存 ✓；suggest 玄幻→bing+10/duckduckgo+8、失败引擎如实上报 ✓；batch（2 种子+二级挖掘）added 44/generated 44/level2 8 种子 45 词 ✓；并发第二请求 409 ✓；重复运行 added=0 幂等去重 ✓；非法引擎 400 带可用列表 ✓；空种子 400 ✓；超限数值静默夹取 ✓
+- 实测（agent-browser E2E）：#/admin→PSEO——设置卡引擎勾选态=持久化值 ✓；试取预览渲染引擎状态+下拉词 ✓；批量获取→报告「新增 5 个关键词，生成 5 个聚合页」逐种子引擎明细 ✓ 关键词库 70→75 ✓；关键词「预览」→ hash 清空回前台渲染 PSEO 聚合页（title/H1 按模板、12 本命中书）✓；手工添加 76 ✓ toast 双确认 ✓；保存设置 perSeedLimit=7 落库 ✓；console/page errors 全程为空；375px 视口无横向溢出
+- 收尾：清测试词/恢复合理配置（seeds=科幻末日+无限流副本, perSeedLimit 10, maxKeywords 200）；误跟踪的 __pycache__ 出库+.gitignore 补规则；3 个文件误变的执行位还原；tsc/ESLint 0 错误；dev.log 无新增报错
+
+Stage Summary:
+- 用户诉求落地：「PSEO设置」= 持久化运行配置（引擎/种子/词数/上限/二级挖掘/自动生成）+「应用 multi-search-engine 获取下拉词」= 试取预览（只看不入库）与批量获取（种子×引擎→去重入库→可选自动生成聚合页）两条路径，单种子 generate 接口保留兼容
+- 架构要点：配置寄生 seoConfig JSON（pseo 子字段）零迁移；共享逻辑收敛到 lib/pseo.ts 三路由复用；批量单飞锁+幂等去重+P2002 容错；失败引擎逐项如实报告不阻塞
+- 环境备注：沙箱内 bing/duckduckgo 稳定可用，baidu 服务端返回空（直连 curl 有数据，疑服务端出口指纹差异）、sogou/so360 网络受限——均被引擎隔离设计如实呈现，不影响功能

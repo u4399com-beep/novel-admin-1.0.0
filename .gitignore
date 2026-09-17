@@ -62,3 +62,7 @@ scripts-tmp/
 
 # local database journal (transient)
 # NOTE: db/custom.db 必须保持 git 跟踪 —— 沙箱会话边界会清除未跟踪文件，出库导致数据全丢
+
+# Python 运行产物
+__pycache__/
+*.pyc

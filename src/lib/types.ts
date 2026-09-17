@@ -93,6 +93,18 @@ export interface SeoConfig {
   pseoDescription: string
   pseoKeywords: string
   autoFromContent: boolean // 是否从内容自动提取补充关键词
+  pseo?: PseoRunnerConfig // PSEO 批量获取运行配置（multi-search-engine），存储于 seoConfig JSON
+}
+
+// ==================== PSEO 运行配置 ====================
+
+export interface PseoRunnerConfig {
+  sources: string[] // 启用的搜索引擎（SUPPORTED_ENGINES 白名单子集）
+  seeds: string[] // 种子关键词（批量获取的输入，每行一个，≤20）
+  perSeedLimit: number // 每个种子最多保留的下拉词数（3-20）
+  maxKeywords: number // 单次批量运行入库上限（10-500）
+  expand: boolean // 二级挖掘：以一级下拉词为新种子再获取一轮
+  autoGenerate: boolean // 获取完成后自动为 pending 关键词生成聚合页
 }
 
 export interface SettingsDto {
