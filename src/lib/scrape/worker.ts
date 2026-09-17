@@ -18,7 +18,7 @@
  */
 import { db } from '@/lib/db'
 import { cleanChapterContent } from '@/lib/content-clean'
-import { fetchBookPage, fetchChapter, fetchListPage } from './engine-client'
+import { fetchBookPage, fetchCatalogChapters, fetchChapter, fetchListPage } from './engine-client'
 import { Run } from './run-log'
 import { ensureCategory, loadRule, recalcNovelWordCount, storeChapter, upsertBook } from './store'
 import type { BookOutcome, LoadedRule, ListItem, TaskFlushFields, TaskRecord } from './types'
@@ -93,6 +93,25 @@ async function processBook(
     `书页提取成功：《${book.title.slice(0, 40)}》${book.author ? ` / ${book.author.slice(0, 20)}` : ''}，章节链接 ${book.chapterCount} 条`,
   )
 
+  // ---- 完整目录页二次提取（bookRule.catalogLinkSelector，如 23qb 新模板书页仅含最新几章）----
+  let allRefs = book.chapters
+  const catalogSel = rule.bookRule.catalogLinkSelector
+  if (typeof catalogSel === 'string' && catalogSel) {
+    if (await isCanceled(run.taskId)) return canceledOutcome('任务已取消')
+    if (book.catalogUrl) {
+      run.log(`发现完整目录页 ${book.catalogUrl.slice(0, 100)}，尝试整目提取…`)
+      const catalogRefs = await fetchCatalogChapters(run, book.catalogUrl, rule)
+      if (catalogRefs.length > allRefs.length) {
+        run.log(`目录页提取到 ${catalogRefs.length} 条章节链接（书页仅 ${allRefs.length} 条），采用目录页结果`)
+        allRefs = catalogRefs
+      } else {
+        run.log(`目录页提取 ${catalogRefs.length} 条不多于书页 ${allRefs.length} 条，维持书页结果`)
+      }
+    } else {
+      run.log(`catalogLinkSelector "${catalogSel.slice(0, 60)}" 在书页无命中，仅用书页章节链接`)
+    }
+  }
+
   if (await isCanceled(run.taskId)) return canceledOutcome('任务已取消')
 
   // ---- 分类 ----
@@ -110,7 +129,7 @@ async function processBook(
   if (!up.ok) return canceledOutcome(up.message)
 
   // ---- 章节列表准备 ----
-  const refs = book.chapters.filter((c): c is { title: string; url: string } => !!c.url)
+  const refs = allRefs.filter((c): c is { title: string; url: string } => !!c.url)
   if (refs.length === 0) {
     run.log('未提取到任何有效章节链接')
     return { ok: true, canceled: false, chapters: 0, failedChapters: 0, message: '书籍已入库（未提取到章节链接）' }

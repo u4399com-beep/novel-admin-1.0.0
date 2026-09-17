@@ -22,6 +22,60 @@ const MAX_CHAPTER_REFS = 800
 const MAX_DESCRIPTION_CHARS = 2000
 const MAX_TITLE_CHARS = 200
 
+/**
+ * 站标/全站样板文本：出现在标题候选中即视为命中站标而非真实标题。
+ * 典型：aijjxs（帝国 CMS）全站每页 h1.logo = 「站内搜索快速找到你想要的TXT电子书」。
+ */
+const BOILERPLATE_TITLE_RE =
+  /站内搜索|快速找到你想要的|TXT电子书|TXT下载|全本TXT|电子书免费下载|电子书下载地址/
+
+/** 标题选择器逐个尝试，跳过命中站标样板的候选（pickText 是取首个非空，无法表达跳过语义） */
+function pickTitle(scope: Scope, selectors: string[]): string {
+  for (const raw of selectors) {
+    const t = pickText(scope, [raw])
+    if (t && !BOILERPLATE_TITLE_RE.test(t)) return t
+  }
+  return ''
+}
+
+/** 清理书籍标题：剥《》书名号，<title> 兜底时拆「书名txt下载_作者_分类_站名」取首段并去下载站后缀 */
+function cleanBookTitle(t: string): string {
+  let s = t.trim()
+  if (!s) return ''
+  if (/txt下载|全本txt|电子书下载/i.test(s)) {
+    // 仅当存在下载站样板词时才按分隔符拆段，避免误伤含「_/-」的正常书名
+    const seg = s.split(/[_|｜]/)[0]?.trim() ?? ''
+    if (seg) s = seg
+    s = s.replace(/txt下载|全本txt|电子书下载|最新章节/gi, '').trim()
+  }
+  const m = /^《(.+?)》$/.exec(s)
+  if (m) s = m[1]
+  return s
+}
+
+/** 作者字段清理：剥「作者：/作 者：/书籍作者：」等标签前缀（老模板把标签与值放在同一文本节点） */
+function stripAuthorLabel(t: string): string {
+  return t.replace(/^(?:书籍)?作\s*者\s*[:：]?\s*|^(?:author|writer)\s*[:：]?\s*/i, '').trim()
+}
+
+/** 规则级排除：提取前从 DOM 移除命中节点（站标/搜索框等全站样板容器），多备用逗号分隔 */
+function removeExcluded(root: Scope, excludeSel: string | undefined, warnings: string[]): void {
+  if (!excludeSel) return
+  let removed = 0
+  for (const sel of splitAlternatives(excludeSel)) {
+    try {
+      const hit = root.find(sel)
+      if (hit.length) {
+        removed += hit.length
+        hit.remove()
+      }
+    } catch {
+      warnings.push(`excludeSelector 含非法选择器已跳过: "${sel}"`)
+    }
+  }
+  if (!removed) warnings.push(`excludeSelector 无命中: "${excludeSel}"`)
+}
+
 // ==================== List 提取 ====================
 
 export interface ListItem {
@@ -138,6 +192,8 @@ export interface BookData {
   category: string
   chapterCount: number
   chapters: BookChapterRef[]
+  /** rule.catalogLinkSelector 命中的完整目录页绝对地址（未配置/未命中时为 null） */
+  catalogUrl: string | null
 }
 
 /** 杰奇 CMS 等老牌小说站普遍输出 og:novel:* meta，是高价值的默认回退 */
@@ -190,7 +246,14 @@ function extractChapterRefs(
   baseUrl: string,
   warnings: string[],
 ): BookChapterRef[] {
+  // chapterLinkSelector=none：显式跳过章节列表提取（元数据站/下载站，避免启发式把
+  // 「/txt/123.html」式的其他书籍链接误判为章节链接造成串书）
+  if (rule.chapterLinkSelector && rule.chapterLinkSelector.trim().toLowerCase() === 'none') {
+    warnings.push('chapterLinkSelector=none：按配置跳过章节列表提取（元数据/下载站）')
+    return []
+  }
   const root = $.root() as unknown as Scope
+  removeExcluded(root, rule.excludeSelector, warnings)
   let linkEls: Scope | null = null
   let usedRule = false
 
@@ -303,14 +366,19 @@ export function extractBook(
   warnings: string[],
 ): BookData {
   const root = $.root() as unknown as Scope
+  removeExcluded(root, rule.excludeSelector, warnings)
 
   const field = (name: keyof BookRule, fallbacks: string[]): string => {
     const ruleSels = rule[name] && typeof rule[name] === 'string' ? splitAlternatives(rule[name] as string) : []
     return pickText(root, [...ruleSels, ...fallbacks])
   }
 
-  const title = field('titleSelector', BOOK_FIELD_FALLBACKS.title).slice(0, MAX_TITLE_CHARS)
-  const author = field('authorSelector', BOOK_FIELD_FALLBACKS.author).slice(0, MAX_TITLE_CHARS)
+  const titleSels = [
+    ...(rule.titleSelector ? splitAlternatives(rule.titleSelector) : []),
+    ...BOOK_FIELD_FALLBACKS.title,
+  ]
+  const title = cleanBookTitle(pickTitle(root, titleSels).slice(0, MAX_TITLE_CHARS))
+  const author = stripAuthorLabel(field('authorSelector', BOOK_FIELD_FALLBACKS.author).slice(0, MAX_TITLE_CHARS))
   const description = field('descriptionSelector', BOOK_FIELD_FALLBACKS.description).slice(0, MAX_DESCRIPTION_CHARS)
   const status = field('statusSelector', BOOK_FIELD_FALLBACKS.status).slice(0, 50)
   const category = field('categorySelector', BOOK_FIELD_FALLBACKS.category).slice(0, 50)
@@ -322,6 +390,11 @@ export function extractBook(
   const cover = pickHref(root, coverSels, baseUrl)
 
   const chapters = extractChapterRefs($, rule, baseUrl, warnings)
+
+  // 目录页链接（可选）：书页仅含最新几章时指向完整目录页，供 worker 二次抓取
+  const catalogUrl = rule.catalogLinkSelector
+    ? pickHref(root, splitAlternatives(rule.catalogLinkSelector), baseUrl)
+    : null
 
   if (!title) warnings.push('书籍标题未提取到（规则与内置回退均未命中）')
 
@@ -335,6 +408,7 @@ export function extractBook(
     category,
     chapterCount: chapters.length,
     chapters,
+    catalogUrl,
   }
 }
 
@@ -391,13 +465,14 @@ export function extractChapter(
   warnings: string[],
 ): ChapterData {
   const root = $.root() as unknown as Scope
+  removeExcluded(root, rule.excludeSelector, warnings)
 
   // ---- 标题 ----
   const titleSels = [
     ...(rule.titleSelector ? splitAlternatives(rule.titleSelector) : []),
     ...DEFAULT_CHAPTER_TITLE_SELECTORS,
   ]
-  let title = pickText(root, titleSels).slice(0, MAX_TITLE_CHARS)
+  let title = pickTitle(root, titleSels).slice(0, MAX_TITLE_CHARS)
   if (!title) {
     const t = collapse($('title').first().text()).slice(0, MAX_TITLE_CHARS)
     if (t) {

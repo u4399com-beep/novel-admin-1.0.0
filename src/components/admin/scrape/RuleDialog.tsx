@@ -54,14 +54,17 @@ const BOOK_FIELDS: FieldDef[] = [
   { key: 'coverSelector', label: '封面 coverSelector', ph: '如 #fmimg img@src（可选）' },
   { key: 'statusSelector', label: '连载状态 statusSelector', ph: '如 .book-status（可选）' },
   { key: 'categorySelector', label: '分类 categorySelector', ph: '如 .book-cat（可选）' },
-  { key: 'chapterLinkSelector', label: '章节链接 chapterLinkSelector', ph: '如 #list dl dd a' },
+  { key: 'chapterLinkSelector', label: '章节链接 chapterLinkSelector', ph: '如 #list dl dd a；填 none 表示仅采书籍信息' },
+  { key: 'catalogLinkSelector', label: '目录页链接 catalogLinkSelector', ph: '如 a.catalog-more（书页仅最新几章时用）' },
   { key: 'chapterTitleSelector', label: '章节标题 chapterTitleSelector', ph: '链接元素内标题选择器（可选）' },
+  { key: 'excludeSelector', label: '排除选择器 excludeSelector', ph: '提取前移除的节点，如 h1.logo, .search' },
 ]
 
 const CHAPTER_FIELDS: FieldDef[] = [
   { key: 'titleSelector', label: '章节标题 titleSelector', ph: '如 .bookname h1' },
   { key: 'contentSelector', label: '正文容器 contentSelector', ph: '如 #content' },
   { key: 'nextSelector', label: '下一页链接 nextSelector', ph: '如 #link_next（可选）' },
+  { key: 'excludeSelector', label: '排除选择器 excludeSelector', ph: '提取前移除的节点，如 h1.logo, .search' },
 ]
 
 function RuleFieldGroup({

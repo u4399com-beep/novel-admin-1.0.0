@@ -18,7 +18,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { useCategories } from '@/hooks/use-novel-data'
+import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import { cn } from '@/lib/utils'
 import type { ThemeLayoutProps, ThemeView } from '../types'
 import { Container, setCategoryIntent } from './ui'
@@ -70,6 +70,8 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
   const [q, setQ] = useState('')
   const [drawer, setDrawer] = useState(false)
   const { data: categories } = useCategories()
+  const { data: settings } = useSettings()
+  const footerCfg = settings?.footer
   const drawerRef = useRef<HTMLDivElement>(null)
 
   const [lastView, setLastView] = useState(view)
@@ -267,14 +269,29 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
           <button type="button" onClick={() => navigate({ name: 'home' })} className="cursor-pointer hover:text-[#06c]">
             首頁
           </button>
+          {(footerCfg?.links ?? []).map((lk) => (
+            <a
+              key={`${lk.label}-${lk.href}`}
+              href={lk.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="cursor-pointer hover:text-[#06c]"
+            >
+              {lk.label}
+            </a>
+          ))}
         </div>
         <p className="mt-1 text-xs text-[#888]" style={{ lineHeight: 2 }}>
-          © {new Date().getFullYear()} {siteName} · 界面结构级主题模板（仿 101kks 布局 / 原创实现）
+          {footerCfg?.text || `© ${new Date().getFullYear()} ${siteName} · 界面结构级主题模板（仿 101kks 布局 / 原创实现）`}
         </p>
         <p className="mt-1 text-xs text-[#888]" style={{ lineHeight: 2 }}>
-          友情連結
-          <span className="mx-2 text-black/20">|</span>使用條款
-          <span className="mx-2 text-black/20">|</span>隱私政策
+          {footerCfg?.extra || (
+            <>
+              友情連結
+              <span className="mx-2 text-black/20">|</span>使用條款
+              <span className="mx-2 text-black/20">|</span>隱私政策
+            </>
+          )}
         </p>
       </footer>
     </div>

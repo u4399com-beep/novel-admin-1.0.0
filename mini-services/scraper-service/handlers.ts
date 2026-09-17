@@ -56,8 +56,9 @@ const LIST_KEYS = ['itemSelector', 'titleSelector', 'linkSelector', 'authorSelec
 const BOOK_KEYS = [
   'titleSelector', 'authorSelector', 'descriptionSelector', 'coverSelector',
   'statusSelector', 'categorySelector', 'chapterLinkSelector', 'chapterTitleSelector',
+  'catalogLinkSelector', 'excludeSelector',
 ] as const
-const CHAPTER_KEYS = ['titleSelector', 'contentSelector', 'nextSelector'] as const
+const CHAPTER_KEYS = ['titleSelector', 'contentSelector', 'nextSelector', 'excludeSelector'] as const
 
 function sanitizeRule<T extends object>(keys: readonly string[], raw: unknown): T {
   const out: Record<string, string> = {}

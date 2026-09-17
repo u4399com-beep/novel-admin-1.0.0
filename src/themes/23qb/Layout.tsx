@@ -5,9 +5,9 @@
 // 横向分类导航（选中项 35% 宽 4px 红橙渐变短条）+ 右侧「全部分类」下拉网格；
 // 页脚浅灰 #f3f5f7、12px 次要色。正文页框架正常渲染。
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { ChevronDown, LayoutGrid, Menu, X } from 'lucide-react'
-import { useCategories } from '@/hooks/use-novel-data'
+import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import { cn } from '@/lib/utils'
 import type { ThemeLayoutProps } from '../types'
 import { Container } from './ui'
@@ -17,6 +17,8 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
   const [allOpen, setAllOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const { data: categories } = useCategories()
+  const { data: settings } = useSettings()
+  const footerCfg = settings?.footer
   const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -212,10 +214,16 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
 
       <footer className="mt-12 bg-[#f3f5f7]">
         <Container className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-4 text-xs text-black/50">
-          <p>
-            © {new Date().getFullYear()} {siteName} · 界面结构级主题模板（仿 23qb 布局 / 原创实现）
-          </p>
-          <p className="flex items-center gap-3">
+          <p>{footerCfg?.text || `© ${new Date().getFullYear()} ${siteName} · 界面结构级主题模板（仿 23qb 布局 / 原创实现）`}</p>
+          <p className="flex flex-wrap items-center gap-3">
+            {footerCfg?.links?.map((lk) => (
+              <Fragment key={`${lk.label}-${lk.href}`}>
+                <a href={lk.href} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-[#ff2a14]">
+                  {lk.label}
+                </a>
+                <span className="text-black/20">|</span>
+              </Fragment>
+            ))}
             <span>RSS</span>
             <span className="text-black/20">|</span>
             <span>Google</span>
@@ -223,6 +231,11 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
             <span>Bing</span>
           </p>
         </Container>
+        {footerCfg?.extra && (
+          <Container className="border-t border-black/5 py-2 text-center text-[11px] text-black/40">
+            {footerCfg.extra}
+          </Container>
+        )}
       </footer>
     </div>
   )

@@ -524,3 +524,25 @@ Stage Summary:
 - 「阅读设置」从 4/10 主题可用且全部不持久化 → 10/10 主题全量可调（字号/行距/字体/背景/字色）且跨主题共享一份 localStorage 偏好，旧用户数据自动迁移
 - 「最新章节」从 2/10 主题存在且口径不一 → 10/10 目录页统一为全书倒数 12 章（新→旧），与 Book 详情页口径一致，杜绝任何「分页末 12 章」歧义
 - 产物：src/hooks/use-reader-prefs.ts（新）；10 主题 Chapter/Toc 全量接线；23qb ui.tsx Card style 支持
+
+---
+Task ID: 22-main
+Agent: 主控（Z.ai Code）
+Task: 第八批——① aijjxs 采集规则「站内搜索快速找到你想要的TXT电子书」噪声修复 + 全部规则体检；② 页面底部（页脚）编辑功能
+
+Work Log:
+- 定位噪声根因：www.aijjxs.com（帝国CMS TXT下载站「久久小说下载网」）全站每页有 <h1 class="logo">站内搜索<small>快速找到你想要的TXT电子书</small></h1>，旧规则（h1.novel-title/.chapter-heading 等）全部落空后回退 h1 → 书名/章节名被站标污染（DB 实锤 novel#45「站内搜索快速找到你想要的TXT电子书」/作者「书籍作者：纯洁滴小龙」，已删）
+- 引擎五层加固（mini-services/scraper-service）：① ChapterRule/BookRule 新增 excludeSelector（提取前按备选从 DOM 移除命中节点，handlers 白名单同步）；② pickTitle 标题防污染（BOILERPLATE_TITLE_RE 跳过站标候选）+ cleanBookTitle（剥《》/txt下载站 <title> 首段拆解）+ stripAuthorLabel（剥「作者：/作 者：/书籍作者：」前缀）；③ chapterLinkSelector=none 语义（元数据/下载站显式跳过章节列表，防启发式把 /txt/123.html 式他书链接误判成章节串书）；④ content.ts AD_TOKEN_RE 增 logo/site-logo/site-name/brand/search 等 token + WATERMARK_LINE_RE 增 站内搜索/快速找到你想要的/TXT电子书/全本TXT 等；⑤ clean.ts 行级噪声库 SITE_PROMO/NAV_EXACT 扩充（与主应用 content-clean.ts 同源同步）
+- worker 新能力 catalogLinkSelector：书页仅最新几章的模板（23qb 新模板书页仅 9 条）→ 引擎 BookData 返回 catalogUrl，worker 二次抓取完整目录页提取全部章节（多于书页时采用，日志留痕）；engine-client 新增 fetchCatalogChapters
+- 全部规则体检 + 实测对齐（列表→书页→章节 三跳 + 噪声扫描）：rule5 aijjxs 重建（h3 书名/.kv 作者/.desc 简介/.pic 封面/chapterLinkSelector=none/excludeSelector 排除站标，试取《惹皇兄》作者谢朝朝零噪声）；rule2 23qb 重建（站点已改版「铅笔小说」module 系：.module-item/.module-row-text + catalogLinkSelector=a.catalog-more，书页问鼎/何常在/目录页 768 条全目/章节页 2561 字干净）；rule3 顶点重建（回潮杰奇结构 #info/#intro/#list dl dd，注意该站 href="…" 等号前带空格反爬写法；作者前缀引擎剥离后『纲门翩佐』干净；GBK+直连重置需 fetch-browser）；rule4 ShipSay 演示站已下线 502 → 停用保留并备注；rule6 books.toscrape 正常
+- E2E 双任务验证：临时规则 A（aijjxs 元数据）single 任务 success「书籍已入库（未提取到章节链接）」；临时规则 B（23qb 整目）success 9/9 章，日志完整走「发现完整目录页→整目提取→比较→保守回退」路径；测试产物（novel 46/47、task 5/6、temp rule 7/8）与污染 novel 45 全部清理，恢复种子态 41 书 812 章；clean-all 重跑 812 章 0 需清洗
+- 页脚编辑功能：SiteSetting 新增 footerConfig JSON 列（db:push，需重启 dev 使 Prisma client 生效——按 nohup 规程重启被会话回收，改用 start-stop-daemon --background 成功，两常驻服务 pidfile 现均在 /tmp）；FooterConfig{text,extra,links} + src/lib/footer.ts 清洗器（长度夹取/去重/javascript: 伪协议与空 label 过滤）；settings GET/PATCH 接入；SettingsTab 新增「页面底部」编辑卡（主/副文案行 + 最多 10 条自定义链接增删 + 撤销修改 + 仅 dirty 时提交）
+- 10 主题 Footer 全接入（useSettings 共享偏好，各保留自身美学，text/extra 留空=主题默认）：aijjxs 暖纸居中/ddyueshu 蓝线绿链/23qb 灰底右列竖线分隔+extra 独立条/ggd66 绿底白字/huangjinwu 蓝灰居中竖线/pilishuwu 杰奇蓝白/trxsw 网站地图 [标签] 式/shipsay 深灰·分隔/101kks 繁体白底/x2552 双页脚（SiteFooter+AFooter）；自定义链接一律 <a target="_blank" rel="noopener noreferrer">
+- 浏览器 E2E：huangjinwu 前台渲染配置文案+友链 ✓ → 后台设置页编辑主行+添加「备案信息」链接保存（toast 确认+API 回读一致）→ 前台实时生效 ✓ → 切 x2552 主题页脚同样生效（含中括号风格链接）✓；规则对话框确认「目录页链接/排除选择器」字段与 23qb 规则值回显 ✓；console/page errors 零；footer 几何验证 naturalPush=true、overflowX=false
+- 现场恢复：footer 配置清空（主题回落默认文案）、activeTheme 还原 huangjinwu；引擎两轮重启加载新代码（bun --hot 在沙箱不触发热重载，start-stop-daemon 规程重启）；main/engine tsc + ESLint 全 0 错误
+
+Stage Summary:
+- 「站内搜索」类站标噪声从机制上根治：规则级（excludeSelector/none/选择器对齐真实站）+ 提取级（标题防污染/作者前缀剥离）+ 清洗级（容器/行级噪声库扩充）三层防御，5 条规则全部实测对齐 2026-09 现网结构
+- 新增 catalogLinkSelector 整目提取（23qb 类书页仅含最新几章的模板从「只能采 9 章」变为全目录），配 RuleDialog 编辑字段与任务日志可观测
+- 页面底部全面可编辑：文案两行 + 自定义链接，10 主题统一生效、留空回落默认，恶意 href 清洗
+- 运维：dev server 与引擎均已迁移至 start-stop-daemon 常驻（pidfile /tmp/next-dev.pid、/tmp/scraper-engine.pid，日志 dev.log / mini-services/scraper-service/engine.log）

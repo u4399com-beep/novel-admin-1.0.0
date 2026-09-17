@@ -99,19 +99,45 @@ const SEED_RULES = [
     name: '笔趣阁系通用模板',
     siteUrl: 'https://www.23qb.net/',
     charset: 'utf-8',
-    listRule: { itemSelector: '#hotcontent li, #newscontent li', titleSelector: '.s2 a', authorSelector: '.s5' },
-    bookRule: { titleSelector: '#info h1', authorSelector: '#info p:first-of-type a', descriptionSelector: '#intro', chapterLinkSelector: '#list dl dd a' },
-    chapterRule: { titleSelector: '.bookname h1', contentSelector: '#content', nextSelector: '#link_next' },
-    notes: '杰奇/笔趣阁系结构：列表 li 分列，正文 #content。',
+    listRule: {
+      itemSelector: '.module-item',
+      titleSelector: '.module-item-title',
+      linkSelector: '.module-item-title',
+      authorSelector: '.module-item-text',
+    },
+    bookRule: {
+      titleSelector: 'h1.page-title',
+      authorSelector: 'a[href*="/author/"]@title',
+      descriptionSelector: '.novel-info-content',
+      coverSelector: '.novel-cover img@data-src, .novel-cover img@src',
+      chapterLinkSelector: '.module-row-text',
+      catalogLinkSelector: 'a.catalog-more',
+    },
+    chapterRule: { titleSelector: 'h1', contentSelector: '.article-content' },
+    notes:
+      '2026-09 实测对齐「铅笔小说」（原 23qb）module 系新模板：书页仅含最新 9 章，' +
+      'catalogLinkSelector=a.catalog-more 指向完整目录 /book/{id}/catalog 由 worker 整目提取；章节单页无分页。',
   },
   {
     name: '顶点系通用模板',
     siteUrl: 'https://www.ddyueshu.cc/',
     charset: 'gbk',
-    listRule: { itemSelector: '#main .novellist li', titleSelector: 'a', authorSelector: '' },
-    bookRule: { titleSelector: '#title h1', authorSelector: '#title span', descriptionSelector: '#intro', chapterLinkSelector: '.chapterlist a' },
-    chapterRule: { titleSelector: 'h1', contentSelector: '#content', nextSelector: '#link_next' },
-    notes: 'GBK 编码站代表，需 charset=gbk。',
+    listRule: {
+      itemSelector: '#hotcontent .item, #newscontent .l ul li',
+      titleSelector: 'dt a, .s2 a',
+      authorSelector: 'dt span, .s4',
+    },
+    bookRule: {
+      titleSelector: '#info h1',
+      authorSelector: '#info p:first-of-type',
+      descriptionSelector: '#intro',
+      coverSelector: '#fmimg img@src',
+      chapterLinkSelector: '#list dl dd a',
+    },
+    chapterRule: { titleSelector: 'h1', contentSelector: '#content' },
+    notes:
+      '2026-09 实测对齐顶点（杰奇结构）：书页 #info/#intro/#list dl dd 全目录（注意该站 href="…" 等号前带空格的反爬写法，cheerio 可正常解析）；' +
+      '作者「作 者：」前缀由引擎自动剥离；章节单页无 link_next。charset=gbk（直连会被重置，需引擎 fetch-browser 策略）。',
   },
   {
     name: 'ShipSay CMS 模板',
@@ -120,16 +146,37 @@ const SEED_RULES = [
     listRule: { itemSelector: '.book-list .book', titleSelector: '.title a', authorSelector: '.author' },
     bookRule: { titleSelector: 'h1.book-title', authorSelector: '.book-author', descriptionSelector: '.book-intro', chapterLinkSelector: '.chapter-list a' },
     chapterRule: { titleSelector: 'h1.chapter-title', contentSelector: '.chapter-content', nextSelector: 'a.next-chapter' },
-    notes: 'ShipSay 演示模板，类名结构化清晰。',
+    notes: 'ShipSay CMS 模板（原演示站 demo.shipsay.com 已下线 502，规则保留供同结构站点复用）。',
   },
   {
     name: '爱尚系现代模板',
     siteUrl: 'https://www.aijjxs.com/',
     charset: 'utf-8',
-    listRule: { itemSelector: '.book-item, .rank-item', titleSelector: '.book-title a', authorSelector: '.book-author' },
-    bookRule: { titleSelector: 'h1.novel-title', authorSelector: '.author-name', descriptionSelector: '.novel-desc', chapterLinkSelector: '.chapter-grid a' },
-    chapterRule: { titleSelector: 'h1.chapter-heading', contentSelector: '.chapter-body', nextSelector: 'a[rel="next"]' },
-    notes: '现代卡片式布局站点。',
+    listRule: {
+      itemSelector: '.catalog .listbg, .listbg',
+      titleSelector: '.title a',
+      linkSelector: '.title a',
+      authorSelector: '.mainGreen a',
+    },
+    bookRule: {
+      titleSelector: 'h3',
+      authorSelector: '.kv a, .author-name',
+      descriptionSelector: '.intro-panel .desc, .novel-desc',
+      coverSelector: '.pic img@src',
+      statusSelector: '.kv .sfwj',
+      chapterLinkSelector: 'none',
+      excludeSelector: 'h1.logo, .top, .search',
+    },
+    chapterRule: {
+      titleSelector: 'h1.chapter-heading',
+      contentSelector: '.chapter-body',
+      nextSelector: 'a[rel="next"]',
+      excludeSelector: 'h1.logo, .top, .search',
+    },
+    notes:
+      '帝国CMS TXT下载站（久久小说下载网）实测对齐：全站 h1.logo 为站标「站内搜索…」需排除；' +
+      '书页 h3 书名/.kv 作者/.desc 简介；chapterLinkSelector=none 表示仅采书籍信息（下载站无章节列表，' +
+      '避免启发式把其他书籍链接误判为章节）。',
   },
 ]
 

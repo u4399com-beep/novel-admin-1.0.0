@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useCategories } from '@/hooks/use-novel-data'
+import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import type { ThemeLayoutProps, ThemeModule, ThemeView } from '../types'
 import Home from './Home'
 import Category from './Category'
@@ -197,6 +197,8 @@ function HeaderCard({
 
 function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; siteName: string }) {
   const cats = useCategories()
+  const { data: settings } = useSettings()
+  const cfg = settings?.footer
   return (
     <footer className="border-t border-[#e5dccd] bg-[#efe9dc]/60 py-6">
       <div className="mx-auto max-w-[1220px] px-4 text-center">
@@ -219,11 +221,24 @@ function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; site
               {c.name}
             </button>
           ))}
+          {(cfg?.links ?? []).map((lk) => (
+            <a
+              key={`${lk.label}-${lk.href}`}
+              className="transition-colors hover:text-[#0f766e] hover:underline"
+              href={lk.href}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {lk.label}
+            </a>
+          ))}
         </div>
         <p className="mt-3 text-xs leading-5 text-[#9aa1a9]">
-          Copyright © {new Date().getFullYear()} {siteName} · 本站为小说系统演示站点，所有内容仅用于技术学习交流。
+          {cfg?.text || `Copyright © ${new Date().getFullYear()} ${siteName} · 本站为小说系统演示站点，所有内容仅用于技术学习交流。`}
         </p>
-        <p className="text-xs leading-5 text-[#9aa1a9]">免责声明：本站书籍均来自网络收集，版权归原作者所有，如有侵权请联系删除。</p>
+        <p className="text-xs leading-5 text-[#9aa1a9]">
+          {cfg?.extra || '免责声明：本站书籍均来自网络收集，版权归原作者所有，如有侵权请联系删除。'}
+        </p>
       </div>
     </footer>
   )

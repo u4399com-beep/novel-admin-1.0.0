@@ -16,6 +16,7 @@ import {
   useHomeData,
   useNovel,
   useNovels,
+  useSettings,
 } from '@/hooks/use-novel-data'
 import {
   READER_LINE_HEIGHTS,
@@ -50,6 +51,8 @@ import {
 
 function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const { data: cats } = useCategories()
+  const { data: settings } = useSettings()
+  const footerCfg = settings?.footer
   const [kw, setKw] = useState('')
   const dateRef = useRef<HTMLElement>(null)
 
@@ -212,11 +215,20 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
             >
               回到顶部
             </button>
+            {(footerCfg?.links ?? []).map((lk) => (
+              <a
+                key={`${lk.label}-${lk.href}`}
+                href={lk.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#666] hover:text-[#FF6600]"
+              >
+                {lk.label}
+              </a>
+            ))}
           </p>
-          <p>本站为小说 CMS 结构级主题演示，界面按经典杰奇蓝白风格重建，内容均来自演示数据，仅供学习交流。</p>
-          <p>
-            {siteName} · 源站 pilishuwu.com（重建模板）
-          </p>
+          <p>{footerCfg?.extra || '本站为小说 CMS 结构级主题演示，界面按经典杰奇蓝白风格重建，内容均来自演示数据，仅供学习交流。'}</p>
+          <p>{footerCfg?.text || `${siteName} · 源站 pilishuwu.com（重建模板）`}</p>
         </div>
       </footer>
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import {
   ChevronDown,
   ChevronUp,
@@ -10,7 +10,7 @@ import {
   Home as HomeIcon,
   Search,
 } from 'lucide-react'
-import { useCategories } from '@/hooks/use-novel-data'
+import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import type { ThemeLayoutProps } from '../types'
 
 const FONT = '"Microsoft Yahei", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", Arial, sans-serif'
@@ -66,6 +66,8 @@ function ScrollButtons() {
  */
 export default function Layout({ children, navigate, siteName }: ThemeLayoutProps) {
   const { data: categories } = useCategories()
+  const { data: settings } = useSettings()
+  const footerCfg = settings?.footer
   const [kw, setKw] = useState('')
 
   const submitSearch = () => {
@@ -160,7 +162,7 @@ export default function Layout({ children, navigate, siteName }: ThemeLayoutProp
       {/* 页脚：深灰两行 */}
       <footer className="bg-[#3E3D43] text-[#FBFBFB]">
         <div className="mx-auto w-full max-w-[960px] px-2 py-5 text-center text-[12px] leading-[22px]">
-          <p>{siteName} · 找书读书一站直达，每日更新不断档</p>
+          <p>{footerCfg?.text || `${siteName} · 找书读书一站直达，每日更新不断档`}</p>
           <p className="mt-1">
             <span className="font-medium">简体版</span>
             <span className="mx-2 text-[#FBFBFB]/40">·</span>
@@ -170,6 +172,20 @@ export default function Layout({ children, navigate, siteName }: ThemeLayoutProp
             >
               繁體版
             </span>
+            {footerCfg?.extra && (
+              <>
+                <span className="mx-2 text-[#FBFBFB]/40">·</span>
+                <span className="text-[#FBFBFB]/60">{footerCfg.extra}</span>
+              </>
+            )}
+            {(footerCfg?.links ?? []).map((lk) => (
+              <Fragment key={`${lk.label}-${lk.href}`}>
+                <span className="mx-2 text-[#FBFBFB]/40">·</span>
+                <a href={lk.href} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-[#ED4259]">
+                  {lk.label}
+                </a>
+              </Fragment>
+            ))}
             <span className="ml-3 text-[#FBFBFB]/40">© demo.shipsay.com</span>
           </p>
         </div>

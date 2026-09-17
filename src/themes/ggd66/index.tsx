@@ -1,6 +1,6 @@
 'use client'
 
-import { useCategories } from '@/hooks/use-novel-data'
+import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
 import { Book, Category, Chapter, Home, Search, Toc } from './views'
 
@@ -8,6 +8,8 @@ import { Book, Category, Chapter, Home, Search, Toc } from './views'
 
 function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const { data: cats } = useCategories()
+  const { data: settings } = useSettings()
+  const footerCfg = settings?.footer
 
   const items: { label: string; view: ThemeView; active: boolean }[] = [
     { label: '首页', view: { name: 'home' }, active: view.name === 'home' },
@@ -88,10 +90,19 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
 
       {/* 绿底页脚 */}
       <footer className="mt-5 bg-[#56ccb5] py-[10px] text-center text-[14px] leading-[22px] text-white shadow-[0_-1px_1px_rgba(0,0,0,0.06)]">
-        <p className="hidden sm:block">本站为结构级主题模板演示，页面布局风格仿 ggd66.com，内容均为演示数据</p>
+        <p className="hidden sm:block">{footerCfg?.extra || '本站为结构级主题模板演示，页面布局风格仿 ggd66.com，内容均为演示数据'}</p>
         <p className="hidden sm:block">
-          © {new Date().getFullYear()} {siteName} · 仅用于前端学习与技术交流
+          {footerCfg?.text || `© ${new Date().getFullYear()} ${siteName} · 仅用于前端学习与技术交流`}
         </p>
+        {(footerCfg?.links?.length ?? 0) > 0 && (
+          <p className="flex flex-wrap items-center justify-center gap-x-3 px-4">
+            {footerCfg?.links?.map((lk) => (
+              <a key={`${lk.label}-${lk.href}`} href={lk.href} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+                {lk.label}
+              </a>
+            ))}
+          </p>
+        )}
       </footer>
     </div>
   )

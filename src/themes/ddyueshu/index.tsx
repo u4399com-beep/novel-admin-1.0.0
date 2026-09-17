@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useCategories } from '@/hooks/use-novel-data'
+import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import type { ThemeLayoutProps, ThemeModule, ThemeView } from '../types'
 import Home from './Home'
 import Category from './Category'
@@ -15,6 +15,8 @@ import './ddyueshu.css'
 
 function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; siteName: string }) {
   const cats = useCategories()
+  const { data: settings } = useSettings()
+  const cfg = settings?.footer
   return (
     <footer className="bg-white pb-10 pt-3">
       <div className="mx-auto w-[92%] border-b-2 border-[#88c6e5] pb-2">
@@ -37,13 +39,18 @@ function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; site
               {c.name}小说
             </button>
           ))}
+          {(cfg?.links ?? []).map((lk) => (
+            <a key={`${lk.label}-${lk.href}`} className="dd-greenlink" href={lk.href} target="_blank" rel="noopener noreferrer">
+              {lk.label}
+            </a>
+          ))}
         </div>
       </div>
       <p className="mt-3 px-4 text-center text-[12px] leading-[20px] text-[#b2b2b2]">
-        本站为小说站主题演示项目，全部书籍与章节内容仅用于技术学习与界面还原测试。
+        {cfg?.extra || '本站为小说站主题演示项目，全部书籍与章节内容仅用于技术学习与界面还原测试。'}
       </p>
       <p className="px-4 text-center text-[12px] leading-[20px] text-[#b2b2b2]">
-        Copyright © {new Date().getFullYear()} {siteName} · 主题版式致敬经典笔趣阁
+        {cfg?.text || `Copyright © ${new Date().getFullYear()} ${siteName} · 主题版式致敬经典笔趣阁`}
       </p>
     </footer>
   )

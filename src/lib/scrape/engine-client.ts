@@ -4,7 +4,7 @@
  * 引擎并行重构不影响本模块。
  */
 import type { Run } from './run-log'
-import type { BookData, ChapterData, LoadedRule, ListItem } from './types'
+import type { BookData, ChapterData, ChapterRef, LoadedRule, ListItem } from './types'
 
 export const SCRAPER_BASE = 'http://127.0.0.1:3030'
 // 引擎策略链整体预算 55s（CHAIN_BUDGET_MS），超时须 ≥ 预算否则慢站点会被提前切断；与 /api/scrape 代理的 60s 对齐
@@ -93,6 +93,30 @@ export async function fetchListPage(run: Run, url: string, rule: LoadedRule): Pr
   }
   if (res.warnings.length) run.logWarnings(res.warnings)
   return (res.data.list?.items ?? []).filter((it) => !!it.url)
+}
+
+/**
+ * 抓取完整目录页并提取章节链接（配合 bookRule.catalogLinkSelector）。
+ * 目录页只需 chapterLinkSelector/excludeSelector，其余书籍字段选择器不参与；
+ * 失败时记录日志并返回空数组（调用方回退书页章节链接，不视为致命错误）。
+ */
+export async function fetchCatalogChapters(run: Run, url: string, rule: LoadedRule): Promise<ChapterRef[]> {
+  const bookRule: Record<string, string> = {}
+  for (const key of ['chapterLinkSelector', 'excludeSelector'] as const) {
+    const v = rule.bookRule[key]
+    if (typeof v === 'string' && v) bookRule[key] = v
+  }
+  const res = await callEngine<{ book?: BookData }>('/api/test', {
+    url,
+    rule: { bookRule },
+    charset: rule.charset,
+  })
+  if (!res.ok) {
+    run.log(`目录页抓取失败(${url.slice(0, 100)}): ${res.error}`)
+    return []
+  }
+  if (res.warnings.length) run.logWarnings(res.warnings)
+  return res.data.book?.chapters ?? []
 }
 
 /** 抓取并提取一个章节；warnings 由调用方按存储成败决定是否记录（沿用原时序） */

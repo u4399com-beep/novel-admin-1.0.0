@@ -905,19 +905,43 @@ export function SettingsTab() {
   const qc = useQueryClient()
   const [siteNameDraft, setSiteNameDraft] = useState<string | null>(null)
   const [noticeDraft, setNoticeDraft] = useState<string | null>(null)
+  // 页脚草稿（null = 未动过，跟随服务端值；links 为受控数组）
+  const [footerTextDraft, setFooterTextDraft] = useState<string | null>(null)
+  const [footerExtraDraft, setFooterExtraDraft] = useState<string | null>(null)
+  const [footerLinksDraft, setFooterLinksDraft] = useState<{ label: string; href: string }[] | null>(null)
   const [saving, setSaving] = useState(false)
 
   const siteName = siteNameDraft ?? settings?.siteName ?? ''
   const notice = noticeDraft ?? settings?.notice ?? ''
+  const footerText = footerTextDraft ?? settings?.footer?.text ?? ''
+  const footerExtra = footerExtraDraft ?? settings?.footer?.extra ?? ''
+  const footerLinks = footerLinksDraft ?? settings?.footer?.links ?? []
   const setSiteName = setSiteNameDraft
   const setNotice = setNoticeDraft
+
+  const footerDirty =
+    footerTextDraft !== null || footerExtraDraft !== null || footerLinksDraft !== null
+
+  const resetFooter = () => {
+    setFooterTextDraft(null)
+    setFooterExtraDraft(null)
+    setFooterLinksDraft(null)
+  }
 
   const save = async () => {
     // 站点名是全站页头/TDK 的根变量：留空时服务端会静默忽略导致“已保存”假象，这里前置拦截
     if (!siteName.trim()) return toast.error('站点名称不能为空')
     setSaving(true)
     try {
-      await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ siteName, notice }) })
+      await api('/api/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          siteName,
+          notice,
+          // 仅当页脚被编辑过才提交，避免未触碰的表单覆盖他人保存的页脚配置
+          ...(footerDirty ? { footer: { text: footerText, extra: footerExtra, links: footerLinks } } : {}),
+        }),
+      })
       await qc.invalidateQueries({ queryKey: qk.settings })
       toast.success('站点设置已保存')
     } catch (e) {
@@ -935,6 +959,86 @@ export function SettingsTab() {
       <Field label="站点公告（部分主题在首页展示）">
         <Textarea rows={3} value={notice} onChange={(e) => setNotice(e.target.value)} />
       </Field>
+
+      {/* 页面底部（页脚）编辑：text/extra 留空 = 主题默认文案；links 追加为页脚链接 */}
+      <fieldset className="space-y-3 rounded-md border p-3">
+        <legend className="px-1 text-xs font-semibold text-neutral-700">页面底部（页脚）</legend>
+        <Field label="主文案行（版权行，留空使用主题默认）">
+          <Input
+            value={footerText}
+            onChange={(e) => setFooterTextDraft(e.target.value)}
+            placeholder={`如：Copyright © ${new Date().getFullYear()} ${siteName || '青阅文学'}`}
+          />
+        </Field>
+        <Field label="副文案行（免责声明等，留空使用主题默认）">
+          <Textarea
+            rows={2}
+            value={footerExtra}
+            onChange={(e) => setFooterExtraDraft(e.target.value)}
+            placeholder="如：本站书籍均来自网络收集，版权归原作者所有。"
+          />
+        </Field>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-neutral-500">自定义链接（友链/备案号等，最多 10 条）</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              disabled={footerLinks.length >= 10}
+              onClick={() => setFooterLinksDraft([...footerLinks, { label: '', href: '' }])}
+            >
+              <Plus className="mr-1 h-3 w-3" />添加链接
+            </Button>
+          </div>
+          {footerLinks.map((lk, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <Input
+                value={lk.label}
+                onChange={(e) => {
+                  const next = [...footerLinks]
+                  next[i] = { ...next[i], label: e.target.value }
+                  setFooterLinksDraft(next)
+                }}
+                placeholder="名称"
+                className="h-8 w-24 shrink-0 text-xs sm:w-28"
+                aria-label={`链接 ${i + 1} 名称`}
+              />
+              <Input
+                value={lk.href}
+                onChange={(e) => {
+                  const next = [...footerLinks]
+                  next[i] = { ...next[i], href: e.target.value }
+                  setFooterLinksDraft(next)
+                }}
+                placeholder="地址（https:// 或 / 开头）"
+                className="h-8 min-w-0 flex-1 text-xs"
+                aria-label={`链接 ${i + 1} 地址`}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 shrink-0 px-0 text-red-500"
+                aria-label={`删除链接 ${i + 1}`}
+                onClick={() => setFooterLinksDraft(footerLinks.filter((_, j) => j !== i))}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+          {footerLinks.length === 0 && (
+            <p className="text-[11px] text-neutral-400">暂无自定义链接，主题页脚仅显示导航与文案行。</p>
+          )}
+        </div>
+        {footerDirty && (
+          <div className="flex justify-end">
+            <Button size="sm" variant="ghost" className="h-7" onClick={resetFooter}>
+              撤销页脚修改
+            </Button>
+          </div>
+        )}
+      </fieldset>
+
       <div className="flex justify-end">
         <Button onClick={save} disabled={saving}>{saving ? '保存中…' : '保存'}</Button>
       </div>

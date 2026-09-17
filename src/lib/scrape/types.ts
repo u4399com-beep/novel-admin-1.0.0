@@ -27,6 +27,8 @@ export interface BookData {
   category: string
   chapterCount: number
   chapters: ChapterRef[]
+  /** 规则 catalogLinkSelector 命中的完整目录页绝对地址（未配置/未命中时为 null） */
+  catalogUrl?: string | null
 }
 
 export interface ListItem {

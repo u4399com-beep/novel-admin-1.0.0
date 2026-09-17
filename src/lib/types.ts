@@ -107,11 +107,31 @@ export interface PseoRunnerConfig {
   autoGenerate: boolean // 获取完成后自动为 pending 关键词生成聚合页
 }
 
+/** 页脚自定义链接（后台「页面底部」编辑产生） */
+export interface FooterLink {
+  label: string
+  href: string
+}
+
+/**
+ * 页面底部（页脚）配置。text/extra 留空 = 沿用主题默认文案；
+ * links 为自定义链接列表（友链/备案号等），追加在主题页脚导航后。
+ */
+export interface FooterConfig {
+  /** 主文案行（版权行）；空 = 主题默认 */
+  text?: string
+  /** 副文案行（免责声明等）；空 = 主题默认 */
+  extra?: string
+  /** 自定义链接（追加在主题页脚导航后，最多 10 条） */
+  links?: FooterLink[]
+}
+
 export interface SettingsDto {
   siteName: string
   activeTheme: string
   notice: string
   seo: SeoConfig
+  footer: FooterConfig
 }
 
 // ==================== PSEO ====================
@@ -143,12 +163,18 @@ export interface BookRule {
   categorySelector?: string
   chapterLinkSelector?: string
   chapterTitleSelector?: string
+  /** 目录页链接选择器：书页仅含最新几章时指向完整目录页（如 a.catalog-more），worker 会二次抓取提取全部章节 */
+  catalogLinkSelector?: string
+  /** 排除选择器：提取前从 DOM 移除命中节点（如全站站标 h1.logo），多备用逗号分隔；'none' 用于 chapterLinkSelector 时表示跳过章节列表 */
+  excludeSelector?: string
 }
 
 export interface ChapterRule {
   titleSelector?: string
   contentSelector?: string
   nextSelector?: string
+  /** 排除选择器：提取前从 DOM 移除命中节点（如全站站标 h1.logo、搜索框），多备用逗号分隔 */
+  excludeSelector?: string
 }
 
 export interface ScrapeRuleDto {

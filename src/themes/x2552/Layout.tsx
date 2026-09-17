@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Search as SearchIcon } from 'lucide-react'
-import { useCategories } from '@/hooks/use-novel-data'
+import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import type { CategoryDto } from '@/lib/types'
 import type { Nav } from './parts'
 import { XLink } from './parts'
@@ -152,18 +152,37 @@ function CompactHeader({ navigate, categories }: { navigate: Nav; categories: Ca
 /* ---------- 页脚：频道页 .footer（浅蓝顶条 + 白渐变） / 书页 #a_footer（顶线 + 网站地图） ---------- */
 
 function SiteFooter({ siteName }: { siteName: string }) {
+  const { data: settings } = useSettings()
+  const cfg = settings?.footer
   return (
     <footer className="mx-auto mt-2 w-full max-w-[960px]">
       <div className="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]" />
       <div className="bg-gradient-to-b from-white to-[#EDEDED] py-3 text-center text-[12px] leading-[20px] text-[#666666]">
-        <p>{siteName}（x2552.com）—— 杰奇 CMS 经典结构主题演示</p>
-        <p>本页面为前端结构级主题模板演示，所有数据均来自本地演示库</p>
+        <p>{cfg?.text || `${siteName}（x2552.com）—— 杰奇 CMS 经典结构主题演示`}</p>
+        <p>{cfg?.extra || '本页面为前端结构级主题模板演示，所有数据均来自本地演示库'}</p>
+        {(cfg?.links?.length ?? 0) > 0 && (
+          <p>
+            {cfg?.links?.map((lk) => (
+              <a
+                key={`${lk.label}-${lk.href}`}
+                href={lk.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mx-1 text-[#666666] hover:text-[#FF6600] hover:underline"
+              >
+                [{lk.label}]
+              </a>
+            ))}
+          </p>
+        )}
       </div>
     </footer>
   )
 }
 
 function AFooter({ navigate, siteName }: { navigate: Nav; siteName: string }) {
+  const { data: settings } = useSettings()
+  const cfg = settings?.footer
   return (
     <footer className="mx-auto mt-3 w-full max-w-[960px] border-t border-[#E4E4E4] py-3 text-center text-[12px] text-[#666666]">
       <p>
@@ -173,8 +192,19 @@ function AFooter({ navigate, siteName }: { navigate: Nav; siteName: string }) {
             [{i + 1}]
           </XLink>
         ))}
+        {(cfg?.links ?? []).map((lk) => (
+          <a
+            key={`${lk.label}-${lk.href}`}
+            href={lk.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mx-0.5 hover:text-[#FF6600] hover:underline"
+          >
+            [{lk.label}]
+          </a>
+        ))}
       </p>
-      <p className="mt-1">© {siteName}（x2552.com）· 目录/正文页精简页脚</p>
+      <p className="mt-1">{cfg?.text || `© ${siteName}（x2552.com）· 目录/正文页精简页脚`}</p>
     </footer>
   )
 }

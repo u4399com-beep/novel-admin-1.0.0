@@ -15,7 +15,7 @@ const NOISE_SELECTOR =
 
 /** class/id 白名单级广告/导航标记（整词匹配，避免误伤 egg/class 这类普通词） */
 const AD_TOKEN_RE =
-  /^(ad|ads|adv|adsid|adsbygoogle|advert|advertisement|banner|gg|gg2|ggx|ggxx|ggtop|baidu-?ad|google-?ads?|推广|广告|promotion|promo|popup|mask|modal|download-?app|app-?guide|copyright|recommend|related|comment|comments|rating|score|share|sidebar|side-?nav|crumb|breadcrumb|footer-?nav|header-?nav|toc|catalog|bookshelf|notice|tip|tips|announce)$/i
+  /^(ad|ads|adv|adsid|adsbygoogle|advert|advertisement|banner|gg|gg2|ggx|ggxx|ggtop|baidu-?ad|google-?ads?|推广|广告|promotion|promo|popup|mask|modal|download-?app|app-?guide|copyright|recommend|related|comment|comments|rating|score|share|sidebar|side-?nav|crumb|breadcrumb|footer-?nav|header-?nav|toc|catalog|bookshelf|notice|tip|tips|announce|logo|site-?logo|site-?name|brand|top-?links|top-?float|search|search-?box|searchbar)$/i
 
 /** 纯导航/运营链接文本 */
 const AD_LINK_TEXT_RE =
@@ -23,7 +23,7 @@ const AD_LINK_TEXT_RE =
 
 /** 站点水印/SEO 垃圾行（整行匹配才剔除，且限短行） */
 const WATERMARK_LINE_RE =
-  /本书来自|首发(?:网址|域名|时间)|天才一?秒?记(?:住|得)|请记住本书|记住本站|最新章节|章节错误|点此举报|求收藏|求推荐票?|求月票|无弹窗|手机(?:版|用户)?(?:阅读|访问|看)|app下载|下载app|笔趣阁|顶点小说|吾爱文学|(?:www|wap|m|mip)\.[a-z0-9-]{2,}\.(?:com|net|cc|org|la|info|xyz|top|vip|site|icu|club)|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/i
+  /本书来自|首发(?:网址|域名|时间)|天才一?秒?记(?:住|得)|请记住本书|记住本站|最新章节|章节错误|点此举报|求收藏|求推荐票?|求月票|无弹窗|手机(?:版|用户)?(?:阅读|访问|看)|app下载|下载app|笔趣阁|顶点小说|吾爱文学|站内搜索|快速找到你想要的|TXT(?:电子书|下载|全集|全本|免费下载)|全本TXT|电子书免费下载|(?:www|wap|m|mip)\.[a-z0-9-]{2,}\.(?:com|net|cc|org|la|info|xyz|top|vip|site|icu|club)|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/i
 
 export interface CleanedContent {
   paragraphs: string[]

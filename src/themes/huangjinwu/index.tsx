@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ChevronLeft, Menu, Search as SearchIcon, X } from 'lucide-react'
-import { useCategories } from '@/hooks/use-novel-data'
+import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import { cn } from '@/lib/utils'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
 import { Category, Book, Chapter, Home, Search, Toc } from './views'
@@ -103,6 +103,8 @@ function SearchForm({
 function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const [drawer, setDrawer] = useState(false)
   const menu = useMenuItems(view)
+  const { data: settings } = useSettings()
+  const footerCfg = settings?.footer
   const isHome = view.name === 'home'
 
   return (
@@ -180,9 +182,17 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
                 </button>
               </span>
             ))}
+            {(footerCfg?.links ?? []).map((lk) => (
+              <span key={`${lk.label}-${lk.href}`} className="flex items-center gap-2">
+                <span className="text-[#94a3b8]">|</span>
+                <a href={lk.href} target="_blank" rel="noopener noreferrer" className="transition-colors duration-200 hover:text-[#2563eb]">
+                  {lk.label}
+                </a>
+              </span>
+            ))}
           </div>
-          <p>© {new Date().getFullYear()} {siteName} · 结构级主题模板演示，布局风格仿 huangjinwu.org</p>
-          <p>本站所有小说与章节均为演示数据，仅用于前端效果展示。</p>
+          <p>{footerCfg?.text || `© ${new Date().getFullYear()} ${siteName} · 结构级主题模板演示，布局风格仿 huangjinwu.org`}</p>
+          <p>{footerCfg?.extra || '本站所有小说与章节均为演示数据，仅用于前端效果展示。'}</p>
         </div>
       </footer>
 
