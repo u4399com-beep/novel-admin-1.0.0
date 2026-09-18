@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 小说站核心模型 ====================
+
+model Category {
+  id     Int    @id @default(autoincrement())
+  name   String @unique
+  sort   Int    @default(0)
+  novels Novel[]
+}
+
+model Novel {
+  id          Int      @id @default(autoincrement())
+  title       String
+  author      String
+  description String   @default("")
+  cover       String   @default("g1") // 渐变封面 token: g1-g12
+  categoryId  Int
+  category    Category @relation(fields: [categoryId], references: [id])
+  status      String   @default("serial") // serial=连载中 finished=已完本
+  isFeatured  Boolean  @default(false)
+  isHot       Boolean  @default(false)
+  wordCount   Int      @default(0)
+  clicks      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @default(now())
+  chapters    Chapter[]
+
+  // 同名同作者视为同一本书：防止并发采集任务重复入库同一新书（worker 层有 P2002 回读兜底）
+  @@unique([title, author])
+  // 分类页/首页按 categoryId 过滤列表：避免随书量增长退化为全表扫
+  @@index([categoryId])
+}
+
+model Chapter {
+  id        Int      @id @default(autoincrement())
+  novelId   Int
+  novel     Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  idx       Int
+  title     String
+  content   String
+  wordCount Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([novelId, idx])
+  @@index([novelId])
+}
+
+// 站点设置（单例行 id=1）
+model SiteSetting {
+  id           Int    @id @default(1)
+  siteName     String @default("青阅文学")
+  activeTheme  String @default("aijjxs")
+  notice       String @default("本站所有小说仅供学习演示使用，请支持正版。")
+  seoConfig    String @default("{}") // JSON: SEO TDK 模板配置
+  footerConfig String @default("{}") // JSON: 页面底部（页脚）配置 {text,extra,links}
+}
+
+// PSEO 关键词（来自搜索引擎下拉词）
+model PseoKeyword {
+  id        Int      @id @default(autoincrement())
+  keyword   String   @unique
+  source    String   @default("manual") // manual | baidu | bing | duckduckgo | sogou | 360
+  status    String   @default("pending") // pending | generated | failed
+  pageData  String?  // JSON: 生成的聚合页数据（命中书籍、生成的TDK等）
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
+}
+
+// 采集规则（针对目标站点的选择器配置）
+model ScrapeRule {
+  id           Int          @id @default(autoincrement())
+  name         String       @unique
+  siteUrl      String
+  enabled      Boolean      @default(true)
+  charset      String       @default("utf-8")
+  listRule     String       @default("{}") // JSON: 列表页选择器
+  bookRule     String       @default("{}") // JSON: 书籍页选择器
+  chapterRule  String       @default("{}") // JSON: 正文页选择器
+  notes        String       @default("")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt @default(now())
+  tasks        ScrapeTask[]
+}
+
+// 采集任务（单本采集 / 范围采集）
+model ScrapeTask {
+  id        Int         @id @default(autoincrement())
+  ruleId    Int?
+  rule      ScrapeRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  mode      String      @default("single") // single=单本(书页URL) | list=范围(列表页URL批量)
+  targetUrl String
+  pages     Int         @default(1) // list 模式抓取列表页数 1-20
+  status    String      @default("pending") // pending|running|success|partial|failed|canceled
+  total     Int         @default(0) // 进度分母：single=章节数，list=书籍数
+  done      Int         @default(0) // 进度分子：与 total 同单位（保证 done ≤ total）
+  chaptersDone  Int     @default(0) // 已采集章节数（list 模式的章节级副进度，跨书累计）
+  chaptersTotal Int     @default(0) // 预计章节总数（list 模式，随书页解析逐步累加）
+  created   Int         @default(0) // 新建书籍数
+  updated   Int         @default(0) // 更新书籍数
+  chapters  Int         @default(0) // 采集章节数
+  message   String      @default("")
+  log       String      @default("") // 追加式日志，\n 分隔，保留最近 100 行
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([status])
+}

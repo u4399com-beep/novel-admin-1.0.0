@@ -1,0 +1,304 @@
+/* ============================================================
+   aijjxs —— 「奶油纸感 + 青绿/琥珀」现代扁平卡片风
+   令牌与 /home/z/site-analysis/specs/aijjxs.md 保持一致
+   ============================================================ */
+.aj-root {
+  --aj-bg: #f3efe7;
+  --aj-paper: #fffdf8;
+  --aj-ink: #1f2937;
+  --aj-muted: #6b7280;
+  --aj-line: #e5dccd;
+  --aj-brand: #0f766e;
+  --aj-brand-dark: #115e59;
+  --aj-accent: #b45309;
+  --aj-rank: #9a3412;
+  --aj-chip-bg: #e8f7f4;
+  --aj-chip-ink: #0f766e;
+
+  min-height: 100vh;
+  color: var(--aj-ink);
+  background-color: var(--aj-bg);
+  background-image:
+    radial-gradient(ellipse 640px 420px at 6% -2%, rgba(224, 242, 254, 0.9), transparent 62%),
+    radial-gradient(ellipse 680px 460px at 98% 6%, rgba(255, 237, 213, 0.95), transparent 60%);
+  background-attachment: fixed;
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ---------- 卡片 ---------- */
+.aj-card {
+  background: var(--aj-paper);
+  border: 1px solid var(--aj-line);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px -22px rgba(31, 41, 55, 0.35);
+}
+.aj-card-cream {
+  background: #fff5e6;
+}
+
+/* ---------- 面板标题：左 4px 渐变竖条 + 深青标题 + 底线 ---------- */
+.aj-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 18px 11px;
+  border-bottom: 1px solid var(--aj-line);
+}
+.aj-panel-bar {
+  flex: none;
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--aj-brand), var(--aj-accent));
+}
+.aj-panel-title {
+  font-size: 18px;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #1f3f3a;
+}
+
+/* ---------- 文字行列表（虚线分隔） ---------- */
+.aj-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 2px;
+  border-bottom: 1px dashed var(--aj-line);
+  cursor: pointer;
+  text-align: left;
+}
+.aj-row:last-child {
+  border-bottom: 0;
+}
+.aj-row:hover .aj-row-title {
+  color: var(--aj-brand);
+  text-decoration: underline;
+}
+.aj-row-title {
+  font-size: 14px;
+  color: var(--aj-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 胶囊 / 徽标 ---------- */
+.aj-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  border-radius: 999px;
+  background: var(--aj-chip-bg);
+  color: var(--aj-chip-ink);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+.aj-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  border-radius: 6px;
+  background: var(--aj-accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
+}
+.aj-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+}
+.aj-pill-done {
+  background: var(--aj-brand);
+  color: #fff;
+}
+.aj-pill-serial {
+  background: var(--aj-accent);
+  color: #fff;
+}
+
+/* ---------- 按钮 ---------- */
+.aj-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.aj-btn:hover {
+  filter: brightness(1.1);
+}
+.aj-btn:active {
+  transform: translateY(1px);
+}
+.aj-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+.aj-btn-teal {
+  background: linear-gradient(135deg, #0f766e, #115e59);
+}
+.aj-btn-fire {
+  background: linear-gradient(135deg, #da5627, #b13e18);
+}
+
+/* ---------- 分页 ---------- */
+.aj-pager-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--aj-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--aj-ink);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.aj-pager-btn:hover:not(:disabled) {
+  border-color: var(--aj-brand);
+  color: var(--aj-brand);
+}
+.aj-pager-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.aj-pager-btn[aria-current='true'] {
+  background: var(--aj-brand);
+  border-color: var(--aj-brand);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* ---------- 固定顶条：深酒红毛玻璃 ---------- */
+.aj-topbar {
+  background: rgba(52, 6, 16, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 214, 224, 0.28);
+}
+.aj-toplink {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.aj-toplink:hover {
+  background: rgba(255, 214, 226, 0.28);
+}
+.aj-toplink[data-active='true'] {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+/* ---------- 站名标题（琥珀渐变下划线） ---------- */
+.aj-logo {
+  font-weight: 800;
+  color: #7c2d12;
+  letter-spacing: 0.02em;
+}
+.aj-logo-underline {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #b45309, #da5627 45%, transparent 100%);
+}
+
+/* ---------- 暖纸阅读器 ---------- */
+.aj-reader {
+  --r-bg: #efe6d8;
+  --r-paper: #fffcf6;
+  --r-accent: #a85a2a;
+  --r-ink: #3d3327;
+  min-height: 88vh;
+  background: var(--r-bg);
+  padding-top: 12px;
+}
+.aj-reader-paper {
+  background: var(--r-paper);
+  border: 1px solid rgba(168, 90, 42, 0.16);
+  border-radius: 16px;
+  box-shadow: 0 10px 28px -20px rgba(93, 64, 28, 0.5);
+}
+.aj-reader-para {
+  margin: 0 0 1em;
+  text-indent: 2.4em;
+}
+.aj-swatch {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(168, 90, 42, 0.35);
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.aj-swatch:hover {
+  transform: scale(1.12);
+}
+.aj-swatch[data-active='true'] {
+  border-color: var(--r-accent);
+  box-shadow: 0 0 0 2px rgba(168, 90, 42, 0.25);
+}
+.aj-reader-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(168, 90, 42, 0.3);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--r-accent);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.aj-reader-btn:hover:not(:disabled) {
+  background: rgba(168, 90, 42, 0.1);
+}
+.aj-reader-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.aj-reader-btn[data-active='true'] {
+  background: var(--r-accent);
+  border-color: var(--r-accent);
+  color: #fff;
+}
+.aj-reader-select {
+  height: 28px;
+  max-width: 280px;
+  border: 1px solid rgba(168, 90, 42, 0.3);
+  border-radius: 8px;
+  background: var(--r-paper);
+  color: var(--r-ink);
+  font-size: 12px;
+  padding: 0 6px;
+  cursor: pointer;
+}
