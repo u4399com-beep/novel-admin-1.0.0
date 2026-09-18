@@ -221,7 +221,7 @@ export function UpdateRow({
   return (
     <div
       onClick={() => navigate({ name: 'book', novelId: novel.id })}
-      className="grid cursor-pointer grid-cols-[1fr_auto] items-baseline gap-x-3 border-b border-dotted border-[#D5E6F3] px-1 py-2 text-xs hover:bg-[#F7FBFF] md:grid-cols-[70px_1fr_1.3fr_76px_64px] md:items-center md:py-[7px]"
+      className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 border-b border-dotted border-[#D5E6F3] px-1 py-2 text-xs hover:bg-[#F7FBFF] md:grid-cols-[70px_minmax(0,1fr)_minmax(0,1.3fr)_76px_64px] md:items-center md:py-[7px]"
     >
       <span className="hidden truncate text-[#999] md:block">[{novel.categoryName}]</span>
       <span className="truncate font-medium text-[#3366BB]">{novel.title}</span>
@@ -246,7 +246,7 @@ export function ResultRow({
   return (
     <div
       onClick={() => navigate({ name: 'book', novelId: novel.id })}
-      className="grid cursor-pointer grid-cols-[1fr_auto] items-baseline gap-x-3 border-b border-dotted border-[#D5E6F3] px-1 py-2 text-xs hover:bg-[#F7FBFF] md:grid-cols-[1.1fr_1.3fr_74px_56px_66px_38px] md:items-center md:py-[7px]"
+      className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 border-b border-dotted border-[#D5E6F3] px-1 py-2 text-xs hover:bg-[#F7FBFF] md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_74px_56px_66px_38px] md:items-center md:py-[7px]"
     >
       <span className="truncate font-medium text-[#3366BB]">{novel.title}</span>
       <span className="hidden truncate text-[#888] md:block">{novel.lastChapterTitle ?? '—'}</span>

@@ -530,7 +530,7 @@ function CategoryView({
           </div>
 
           {/* 表头（灰底） */}
-          <div className="hidden bg-[#F2F2F2] px-2 py-1.5 text-xs font-bold text-[#666] md:grid md:grid-cols-[18%_46%_13%_8%_9%_6%]">
+          <div className="hidden bg-[#F2F2F2] px-2 py-1.5 text-xs font-bold text-[#666] md:grid md:grid-cols-[minmax(0,18fr)_minmax(0,46fr)_minmax(0,13fr)_minmax(0,8fr)_minmax(0,9fr)_minmax(0,6fr)] md:gap-x-3">
             <span>书名</span>
             <span>最新章节</span>
             <span>作者</span>
@@ -1247,7 +1247,7 @@ function SearchInner({ navigate, query }: ViewProps & { query: string }) {
 
       <Block className="mt-2" title="搜索结果" bodyClass="px-2 py-1">
         {/* 表头 */}
-        <div className="hidden bg-[#F2F2F2] px-2 py-1.5 text-xs font-bold text-[#666] md:grid md:grid-cols-[18%_46%_13%_8%_9%_6%]">
+        <div className="hidden bg-[#F2F2F2] px-2 py-1.5 text-xs font-bold text-[#666] md:grid md:grid-cols-[minmax(0,18fr)_minmax(0,46fr)_minmax(0,13fr)_minmax(0,8fr)_minmax(0,9fr)_minmax(0,6fr)] md:gap-x-3">
           <span>书名</span>
           <span>最新章节</span>
           <span>作者</span>

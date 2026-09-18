@@ -103,7 +103,7 @@ function RankRow({ novel, navigate }: { novel: NovelListItem; navigate: Nav }) {
 /** 最近更新五列字段行：分类 75px / 书名 165px / 最新章节 / 时间 90px / 作者 90px */
 function UpdateRow({ novel, navigate }: { novel: NovelListItem; navigate: Nav }) {
   return (
-    <div className="grid h-[28px] items-center border-b border-dashed border-[#ccc] text-[13px] grid-cols-[72px_1fr_80px] md:grid-cols-[75px_165px_1fr_85px] lg:grid-cols-[75px_165px_1fr_85px_85px]">
+    <div className="grid h-[28px] items-center border-b border-dashed border-[#ccc] text-[13px] grid-cols-[72px_minmax(0,1fr)_80px] md:grid-cols-[75px_165px_minmax(0,1fr)_85px] lg:grid-cols-[75px_165px_minmax(0,1fr)_85px_85px]">
       <button
         onClick={() => navigate({ name: 'category', categoryId: novel.categoryId, page: 1 })}
         className="cursor-pointer truncate pr-1 text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
@@ -217,7 +217,7 @@ export function Home({ navigate }: ViewProps) {
   if (home.isPending || updates.isPending) {
     return (
       <Container className="mt-2">
-        <div className="grid gap-4 md:grid-cols-[73%_1fr]">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,73%)_minmax(0,1fr)]">
           <div>
             <GSkel className="mb-2 h-6 w-40" />
             <GCoverSkeleton count={4} />
@@ -258,7 +258,7 @@ export function Home({ navigate }: ViewProps) {
 
   return (
     <Container className="mt-1">
-      <div className="grid gap-5 md:grid-cols-[73%_1fr] md:gap-[2%]">
+      <div className="grid gap-5 md:grid-cols-[minmax(0,73%)_minmax(0,1fr)] md:gap-[2%]">
         {/* 第一行左：热门小说推荐（2 列封面简介卡） */}
         <section>
           <GH2>热门小说推荐</GH2>

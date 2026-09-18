@@ -687,3 +687,19 @@ Stage Summary:
 - 代码体量净减约 4800 行（5300 删 - 500 增），工程显著精简且零行为回归（tsc/ESLint/浏览器三重验证）
 - 阅读设置能力面 10 主题完全对齐；共享常量去重（READER_INKS）
 - 产物：删除 38 死组件 + 2 死 hooks；panels.tsx -128 行；use-reader-prefs.ts 增 READER_INKS
+---
+Task ID: 25
+Agent: 主控（Z.ai Code）
+Task: 用户报告——trxsw 主题分类页文字溢出修复
+
+Work Log:
+- 浏览器实测定位（PATCH activeTheme=trxsw 临时切换）：桌面 1280px 分类页 BookRow 六列数据行 scrollWidth 776 > clientWidth 724，溢出 52px 戳出 Block 边框；375px 移动端 clean
+- 根因：BookRow 桌面列定义 md:grid-cols-[18%_46%_13%_8%_9%_6%] 百分比总和恰为 100%，叠加 gap-x-3（5×12px=60px）总宽必超容器；且表头（无 gap）与数据行（有 gap）列位错开 60px，六列表格整体错位
+- 修复（ui.tsx BookRow + index.tsx 分类/搜索两处表头）：列定义改 minmax(0,18fr)_minmax(0,46fr)_minmax(0,13fr)_minmax(0,8fr)_minmax(0,9fr)_minmax(0,6fr)——fr 按比例分配减去 gap 后的剩余空间，任意宽度零溢出且比例与原 18/46/13/8/9/6 完全一致；表头补 md:gap-x-3 与数据行列位精确对齐；minmax(0,·) 同时根治 fr 的 auto-min 撑破问题（超长 CJK 标题下 truncate 生效）
+- 顺手加固同类隐患（其余 9 主题全量扫描「百分比/fr 列+gap」反模式，无溢出 bug 但存在 1fr auto-min 风险）：ggd66 UpdateRow 72px/75px/165px 系列与 73%+1fr 双栏、pilishuwu UpdateRow/BookRow（70px_1fr_1.3fr_76px_64px 与 1.1fr_1.3fr_74px_56px_66px_38px）全部改 minmax(0,·)
+- 浏览器三档复测：1280/768/375 真实溢出 0（唯一检出为设计意图的分类横滑条 overflow-x-auto）；表头与数据行六列起点像素级一致（387,516,826,922,986,1056，右缘均 1103）；桌面截图视觉确认六列表格整齐；0 console/page errors
+- 现场恢复：activeTheme 还原 ggd66；tsc/ESLint 0 错误
+
+Stage Summary:
+- trxsw 分类/搜索两处六列表格溢出从机制上根治（fr 弹性分配替代百分比总和+gap 的必然溢出），表头/数据行列位像素级对齐
+- 其余主题 5 处 1fr auto-min 隐患同步加固，全站 grid 列定义再无「百分比总和 100%+gap」与裸 fr 反模式
