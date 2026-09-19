@@ -24,6 +24,7 @@
 import { db } from '@/lib/db'
 import { cleanChapterContent } from '@/lib/content-clean'
 import { cleanTextField, cleanDescriptionField } from '@/lib/text-clean'
+import { circuitWaitMs, hostOf, withCircuitRetry } from './circuit'
 import { fetchBookPage, fetchCatalogChapters, fetchChapterPaged, fetchListPage } from './engine-client'
 import { reorderChapterRefs } from './ordering'
 import { Run, MAX_LOG_LINES } from './run-log'
@@ -38,6 +39,17 @@ const MAX_CONTENT_CHARS = 200_000
 function clampConcurrency(n: unknown, fallback = 3): number {
   const v = Math.round(Number(n))
   return Number.isFinite(v) && v >= 1 ? Math.min(16, v) : fallback
+}
+
+const sleep = (ms: number): Promise<void> => new Promise<void>((r) => setTimeout(r, ms))
+
+/**
+ * 瞬时引擎失败识别：预算耗尽/硬闸超时/引擎超时类错误——多为高并发下的限速排队压力
+ * 或网络抖动，稍候重试有较大成功概率；与站点明确拒绝（HTTP 4xx/挑战页/正文为空）相区分。
+ */
+function isTransientEngineError(error: string | undefined | null): boolean {
+  if (!error) return false
+  return /预算耗尽|budget-exhausted|超时|timeout|不可达/i.test(error)
 }
 
 /**
@@ -173,8 +185,14 @@ async function processBook(
   })
 
   run.log(`抓取书页 ${bookUrl.slice(0, 120)}…`)
-  // Referer 链：list 模式传「发现本书的列表页」作来路；single 模式缺省由引擎回落站内首页
-  const page = await fetchBookPage(run, bookUrl, rule, opts.referer ?? undefined)
+  // Referer 链：list 模式传「发现本书的列表页」作来路；single 模式缺省由引擎回落站内首页。
+  // 熔断感知：书页撞上熔断（站点临时限流封禁）时等待冷却后自动重试，而非立即把本书记失败
+  const page = await withCircuitRetry(hostOf(bookUrl), () => fetchBookPage(run, bookUrl, rule, opts.referer ?? undefined), {
+    detect: (r) => (r.ok ? null : circuitWaitMs(r.error, r.circuitRetryAfterMs)),
+    isAlive: async () => !(await isCanceled(run.taskId)),
+    onWait: (ms, cycle, max) =>
+      run.log(`目标主机熔断冷却中，暂停 ${Math.round(ms / 1000)}s 后自动重试书页（第 ${cycle}/${max} 轮，等待期间不向源站发请求）`),
+  })
   if (!page.ok) {
     run.log(`书页提取失败: ${page.error}`)
     return { ok: false, canceled: false, chapters: 0, failedChapters: 0, message: page.error }
@@ -207,11 +225,24 @@ async function processBook(
     if (await isCanceled(run.taskId)) return canceledOutcome('任务已取消')
     if (book.catalogUrl) {
       run.log(`发现完整目录页 ${book.catalogUrl.slice(0, 100)}，尝试整目提取…`)
-      const catalogRefs = await fetchCatalogChapters(run, book.catalogUrl, rule, bookUrl)
-      if (Array.isArray(catalogRefs) && catalogRefs.length > allRefs.length) {
+      const catalogUrl = book.catalogUrl // 闭包捕获需局部常量（TS 收窄不跨回调）
+      // 熔断感知：目录页撞熔断时等待冷却后自动重试（超限时按旧语义回退书页章节链接）
+      const catalog = await withCircuitRetry(
+        hostOf(catalogUrl),
+        () => fetchCatalogChapters(run, catalogUrl, rule, bookUrl),
+        {
+          detect: (r) => (r.error ? circuitWaitMs(r.error) : null),
+          isSuccess: (r) => r.error === null,
+          isAlive: async () => !(await isCanceled(run.taskId)),
+          onWait: (ms, cycle, max) =>
+            run.log(`目标主机熔断冷却中，暂停 ${Math.round(ms / 1000)}s 后自动重试目录页（第 ${cycle}/${max} 轮）`),
+        },
+      )
+      const catalogRefs = catalog.refs
+      if (catalogRefs.length > allRefs.length) {
         run.log(`目录页提取到 ${catalogRefs.length} 条章节链接（书页仅 ${allRefs.length} 条），采用目录页结果`)
         allRefs = catalogRefs
-      } else {
+      } else if (catalogRefs.length > 0) {
         run.log(`目录页提取 ${catalogRefs.length} 条不多于书页 ${allRefs.length} 条，维持书页结果`)
       }
     } else {
@@ -357,8 +388,25 @@ async function processBook(
     }
     run.log(`抓取章节「${(refTitle || ref.url).slice(0, 36)}」`)
     // Referer 链：章节页带书页来路（站点常见「书页→章节」导航校验）；
-    // fetchChapterPaged：同章分页（…_2.html / …/2.html）自动翻页拼接，避免长章只存半页
-    const ch = await fetchChapterPaged(ref.url, rule, bookUrl)
+    // fetchChapterPaged：同章分页（…_2.html / …/2.html）自动翻页拼接，避免长章只存半页。
+    // 熔断感知：章节撞熔断（站点临时限流封禁）时同主机并发 worker 合流等待冷却后自动重试，
+    // 而非把剩余章节全部烧成失败（Task 36 复盘：ggd66 一次临时封禁曾致 232 章被永久记失败）
+    const circuitFetch = (): ReturnType<typeof fetchChapterPaged> =>
+      withCircuitRetry(hostOf(ref.url), () => fetchChapterPaged(ref.url, rule, bookUrl), {
+        detect: (r) => (r.ok ? null : circuitWaitMs(r.error, r.circuitRetryAfterMs)),
+        isAlive: alive,
+        onWait: (ms, cycle, max) =>
+          run.log(`目标主机熔断冷却中，暂停 ${Math.round(ms / 1000)}s 后自动重试章节（第 ${cycle}/${max} 轮，等待期间不向源站发请求）`),
+      })
+    let ch = await circuitFetch()
+    // 瞬时失败单次重试（预算耗尽/超时类）：高并发下域名限速排队可吃光引擎 55s 链预算，
+    // 属暂时性压力而非站点拒绝——稍候片刻让队列排空后重试一次，减少无谓的永久失败章节
+    if (!ch.ok && isTransientEngineError(ch.error)) {
+      run.log(`章节「${(refTitle || ref.url).slice(0, 30)}」因引擎预算耗尽/超时失败，稍候重试一次`)
+      await sleep(3_000 + Math.random() * 5_000)
+      if (stopRun || !(await alive())) return
+      ch = await circuitFetch()
+    }
     if (stopRun || !(await alive())) return // 取消：抓取结果直接丢弃，尽快退出
     const data = ch.ok ? ch.data : null
 
@@ -475,9 +523,22 @@ async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<vo
   const startPage = Math.max(1, Math.floor(task.startPage) || 1)
   const endPage = startPage + Math.max(1, task.pages) - 1
   run.log(`抓取列表页第 ${startPage} 页…`)
-  const first = await fetchListPage(run, task.targetUrl, rule)
+  // 熔断感知：起始列表页撞熔断时等待冷却后自动重试；抓取失败（超限）与「空列表页」自此可区分
+  const firstPage = await withCircuitRetry(hostOf(task.targetUrl), () => fetchListPage(run, task.targetUrl, rule), {
+    detect: (r) => (r.error ? circuitWaitMs(r.error) : null),
+    isSuccess: (r) => r.error === null,
+    isAlive: async () => !(await isCanceled(run.taskId)),
+    onWait: (ms, cycle, max) =>
+      run.log(`目标主机熔断冷却中，暂停 ${Math.round(ms / 1000)}s 后自动重试列表页（第 ${cycle}/${max} 轮，等待期间不向源站发请求）`),
+  })
+  const first = firstPage.items
   if (await isCanceled(run.taskId)) {
     await finalize(run, 'canceled', '任务已取消')
+    return
+  }
+  if (firstPage.error) {
+    run.log('起始列表页持续抓取失败（熔断等待轮数耗尽或持续失败），任务终止')
+    await finalize(run, 'failed', `列表页抓取失败: ${firstPage.error.slice(0, 180)}`)
     return
   }
   if (first.length === 0) {
@@ -494,9 +555,17 @@ async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<vo
     if (await isCanceled(run.taskId)) break
     let got: ListItem[] | null = null
     for (const v of pageVariants(task.targetUrl, k)) {
-      const pageItems = await fetchListPage(run, v, rule)
-      if (pageItems.length > 0) {
-        got = pageItems
+      // 熔断感知：翻页变体撞熔断时等待冷却后自动重试；变体持续失败 → 尝试下一变体
+      const pv = await withCircuitRetry(hostOf(v), () => fetchListPage(run, v, rule), {
+        detect: (r) => (r.error ? circuitWaitMs(r.error) : null),
+        isSuccess: (r) => r.error === null,
+        isAlive: async () => !(await isCanceled(run.taskId)),
+        onWait: (ms, cycle, max) =>
+          run.log(`目标主机熔断冷却中，暂停 ${Math.round(ms / 1000)}s 后自动重试列表页（第 ${cycle}/${max} 轮）`),
+      })
+      if (pv.error) continue
+      if (pv.items.length > 0) {
+        got = pv.items
         currentListUrl = v
         run.log(`第 ${k} 页命中: ${v.slice(0, 100)}`)
         break

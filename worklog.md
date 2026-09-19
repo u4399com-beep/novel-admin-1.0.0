@@ -447,3 +447,31 @@ Work Log:
 
 Stage Summary:
 - 本轮 5 项用户要求全部落地：① 采集限制全部取消（1955 章实证）② 任务可编辑+重跑+起始页 ③ 多任务/多书/多章三级并行（3 任务同时运行实证）④ 反反爬工具链评估+stealth 加固落地 ⑤ 采集时 multi-search-engine 取词→绑定书籍→PSEO 书籍页全链路（10 词页实证）
+
+---
+Task ID: 11（主控直做，本轮用户消息：ggd66 熔断事件响应）
+Agent: main (Z.ai Code)
+Task: 诊断 ggd66 熔断连败根因并补齐「熔断感知等待重试」弹性，杜绝站点临时限流导致的章节/书籍永久性丢失
+
+Work Log:
+- 根因诊断（DB 任务记录 + 引擎探针 + 存活连通性三路交叉）：
+  ① task36（ggd66 list）日志滚буфер只剩熔断行：1 本书 491 章成功后，站点因 ~500 次/6min 的高频抓取触发临时限流封禁，整链开始失败 → 引擎 host-health 连败熔断（60s→600s 指数冷却）；
+  ② worker 侧 processRef/processItem 收到「熔断中」快速失败后**直接记章节失败并继续派发**，无等待无重试 → 冷却 600s 内几秒内烧光剩余 127+105 章、9 本书（12:39:11→12:39:36）；
+  ③ 实测站点 30s~几分钟即自愈（fetch-browser 直连 200/0.78s），属「弹性缺口」而非死站；
+  ④ 附带发现：task28「列表页未提取到书籍条目」实为同因（列表页撞熔断被误报为空列表）。
+- 引擎侧（mini-services/scraper-service）：FetchPageResult 新增 circuitOpen/retryAfterMs 结构化字段（index.ts 熔断快速失败分支 + handlers.ts pageFailureResponse 透传），采集端可凭剩余冷却毫秒安排等待，不再依赖文案解析。
+- 采集端新增 src/lib/scrape/circuit.ts（按主机共享熔断等待门，globalThis 挂载防 Turbopack 多实例）：
+  withCircuitRetry——熔断失败→同主机多 worker（章节并发/书籍并发/多任务）合流到同一次冷却等待（轮数只按发起者计，搭车不消耗预算）→ 冷却结束一起重试；成功即复位；单轮等待分片 ≤4min（< 僵尸回收阈值 5min）；自上次成功最多 6 轮（≈24min）超限放行失败（exhaustedAt 5min 后重置，新任务不继承历史放弃）；等待期间零真实请求。
+- engine-client.ts：EngineResult 失败分支带 circuitRetryAfterMs（callEngine 读 circuitOpen/retryAfterMs）；fetchListPage/fetchCatalogChapters 由「失败吞成空数组」改为结构化 {items|refs, error} 返回——抓取失败与真空列表自此可区分（task28 类误报根治）。
+- worker.ts 四处抓取接入熔断感知：书页/目录页/章节/列表页（含翻页变体）；列表页失败消息透传真实错误；章节另加瞬时失败单次重试（isTransientEngineError：预算耗尽/超时/引擎超时类——高并发限速排队吃光 55s 链预算的暂时性压力，稍候 3-8s 队列排空后重试一次，ggd66 实测 11/11 失败均属此类）。
+- 【自测抓 bug】exhaustedAt 初值 0 导致 epoch 差值恒大于重置阈值 → waits 每轮清零、永不放行（无限等待循环）：加 exhaustedAt>0 守卫修复；自测脚本 15 断言全过（识别三形态/合流等待/轮数上限/延时重置/非熔断直通）。
+- 端到端验证：
+  ① 引擎实测：example.com 连败 3 次触发熔断 → 第 4 次调用 circuitOpen:true + retryAfterMs:59982 + attempts:0（零真实请求）；
+  ② worker 门实测（真实熔断激活态）：两路并发合流为一次 35s 等待（waits=1 非搭车计数）→ 冷却后各自重试 → 非熔断失败直通；
+  ③ task36 重跑恢复：熔断等待数轮后自动恢复采集，42/471 章入库且「已存在，跳过」去重生效，旧运行存量章节不重复抓；tsc 0 错误 / eslint 0 错误 / 双服务日志无错误。
+- 清理：临时调试脚本全删；worklog 本节追加。
+
+Stage Summary:
+- 「站点临时限流封禁 → 熔断 → 剩余章节秒烧成永久失败」的弹性缺口补齐：引擎结构化熔断标记 + 采集端按主机合流等待重试 + 瞬时预算类失败单次重试 + 列表页失败/空列表语义分离
+- 设计取舍：等待分片 4min（心跳安全）、6 轮上限（≈24min 放行）、搭车不计数、成功即复位——宁可多等不烧数据，也不无限挂起
+- task36 已在后台以新代码续采（10 本 ≈4700 章按站点限速渐进恢复）；后续同类事件任务将自愈，无需人工重跑

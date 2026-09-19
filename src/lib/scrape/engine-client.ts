@@ -12,7 +12,13 @@ export const ENGINE_TIMEOUT_MS = 60_000
 
 export type EngineResult<T> =
   | { ok: true; data: T; warnings: string[]; strategy?: string; attempts?: number }
-  | { ok: false; error: string; warnings: string[] }
+  | {
+      ok: false
+      error: string
+      warnings: string[]
+      /** 目标主机熔断中（引擎结构化标记）：调用方可等待 retryAfterMs 后自动重试，而非立即记失败 */
+      circuitRetryAfterMs?: number
+    }
 
 /**
  * 调用引擎；网络异常/超时/非 2xx 一律返回结构化失败，绝不 throw。
@@ -32,7 +38,16 @@ async function callEngine<T>(path: string, body: Record<string, unknown>): Promi
     if (!res.ok || json.ok === false) {
       const base = String(json.error ?? `HTTP ${res.status}`)
       const detail = json.detail ? String(json.detail).slice(0, 200) : ''
-      return { ok: false, error: detail ? `${base}（${detail}）` : base, warnings }
+      const retryAfterMs = json.retryAfterMs
+      return {
+        ok: false,
+        error: detail ? `${base}（${detail}）` : base,
+        warnings,
+        // 引擎熔断快速失败时带回的剩余冷却毫秒（结构化，供 circuit.ts 等待后重试；旧引擎无此字段）
+        ...(json.circuitOpen === true && typeof retryAfterMs === 'number'
+          ? { circuitRetryAfterMs: retryAfterMs }
+          : {}),
+      }
     }
     return {
       ok: true,
@@ -64,7 +79,7 @@ export async function fetchBookPage(
   url: string,
   rule: LoadedRule,
   referer?: string,
-): Promise<{ ok: true; book: BookData } | { ok: false; error: string }> {
+): Promise<{ ok: true; book: BookData } | { ok: false; error: string; circuitRetryAfterMs?: number }> {
   const res = await callEngine<{ book?: BookData }>('/api/test', {
     url,
     rule: { bookRule: rule.bookRule },
@@ -72,7 +87,7 @@ export async function fetchBookPage(
     ...(rule.proxy ? { proxy: rule.proxy } : {}),
     ...(referer ? { referer } : {}),
   })
-  if (!res.ok) return { ok: false, error: res.error }
+  if (!res.ok) return { ok: false, error: res.error, circuitRetryAfterMs: res.circuitRetryAfterMs }
   if (res.warnings.length) run.logWarnings(res.warnings)
   if (res.strategy) {
     run.log(
@@ -86,8 +101,17 @@ export async function fetchBookPage(
   return { ok: true, book }
 }
 
-/** 抓取并提取一个列表页；失败时记录日志并返回空数组（翻页场景失败可跳过）。referer 可选，同上向后兼容 */
-export async function fetchListPage(run: Run, url: string, rule: LoadedRule, referer?: string): Promise<ListItem[]> {
+/**
+ * 抓取并提取一个列表页。返回结构化 { items, error }：error 非空 = 抓取失败（含熔断，
+ * 调用方可凭 circuitWaitMs 识别并等待后重试）；error 空 = 抓取成功（items 可能为空，
+ * 空列表页与抓取失败自此可区分）。referer 可选，同上向后兼容。
+ */
+export async function fetchListPage(
+  run: Run,
+  url: string,
+  rule: LoadedRule,
+  referer?: string,
+): Promise<{ items: ListItem[]; error: string | null }> {
   const res = await callEngine<{ list?: { items?: ListItem[] } }>('/api/test', {
     url,
     rule: { listRule: rule.listRule },
@@ -97,19 +121,24 @@ export async function fetchListPage(run: Run, url: string, rule: LoadedRule, ref
   })
   if (!res.ok) {
     run.log(`列表页抓取失败(${url.slice(0, 100)}): ${res.error}`)
-    return []
+    return { items: [], error: res.error }
   }
   if (res.warnings.length) run.logWarnings(res.warnings)
-  return (res.data.list?.items ?? []).filter((it) => !!it.url)
+  return { items: (res.data.list?.items ?? []).filter((it) => !!it.url), error: null }
 }
 
 /**
  * 抓取完整目录页并提取章节链接（配合 bookRule.catalogLinkSelector）。
- * 目录页只需 chapterLinkSelector/excludeSelector，其余书籍字段选择器不参与；
- * 失败时记录日志并返回空数组（调用方回退书页章节链接，不视为致命错误）。
- * referer 可选（Task 23-a，向后兼容）：常传书页 URL 作为来路。
+ * 目录页只需 chapterLinkSelector/excludeSelector，其余书籍字段选择器不参与。
+ * 返回结构化 { refs, error }：error 非空 = 抓取失败（含熔断，调用方可等待重试），
+ * 调用方在失败时回退书页章节链接（不视为致命错误）。referer 可选（Task 23-a）：常传书页 URL 作来路。
  */
-export async function fetchCatalogChapters(run: Run, url: string, rule: LoadedRule, referer?: string): Promise<ChapterRef[]> {
+export async function fetchCatalogChapters(
+  run: Run,
+  url: string,
+  rule: LoadedRule,
+  referer?: string,
+): Promise<{ refs: ChapterRef[]; error: string | null }> {
   const bookRule: Record<string, string> = {}
   // volumeSelector 必须透传：目录页卷头提取（分卷归组/乱序重排分卷依据）依赖该选择器
   for (const key of ['chapterLinkSelector', 'chapterTitleSelector', 'volumeSelector', 'excludeSelector'] as const) {
@@ -125,10 +154,10 @@ export async function fetchCatalogChapters(run: Run, url: string, rule: LoadedRu
   })
   if (!res.ok) {
     run.log(`目录页抓取失败(${url.slice(0, 100)}): ${res.error}`)
-    return []
+    return { refs: [], error: res.error }
   }
   if (res.warnings.length) run.logWarnings(res.warnings)
-  return res.data.book?.chapters ?? []
+  return { refs: res.data.book?.chapters ?? [], error: null }
 }
 
 /** 抓取并提取一个章节；warnings 由调用方按存储成败决定是否记录（沿用原时序）。

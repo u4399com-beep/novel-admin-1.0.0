@@ -244,6 +244,8 @@ function pageFailureResponse(page: NonNullable<Awaited<ReturnType<typeof fetchPa
       error: page.error,
       detail: page.detail,
       challengeSuspected,
+      // 熔断结构化透传：采集端（worker）据此暂停等待冷却后自动重试，而非立即记失败
+      ...(page.circuitOpen ? { circuitOpen: true, retryAfterMs: page.retryAfterMs } : {}),
       attempts: page.attempts,
       robots: page.robots,
       warnings: page.warnings,

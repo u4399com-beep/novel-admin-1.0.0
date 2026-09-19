@@ -134,6 +134,9 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
       ok: false, html: '', encoding: '', strategy: opts.requestedStrategy ?? '', status: 0, warnings,
       attempts, robots: { checked: false, disallowed: false, crawlDelayMs: null },
       elapsedMs: Date.now() - t0,
+      // 结构化熔断标记：采集端（worker）据此「等待冷却后自动重试」，而不是把章节直接记为失败
+      circuitOpen: true,
+      retryAfterMs: circuitMs,
       error: '目标主机熔断中（近期连续整链失败，暂停请求以防刺激反爬/空耗预算）',
       detail: `主机 ${host} 连续整链失败已达熔断阈值，剩余冷却 ${Math.ceil(circuitMs / 1000)}s 后自动恢复尝试（一次成功即复位）`,
     }

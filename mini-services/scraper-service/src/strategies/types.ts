@@ -53,6 +53,10 @@ export interface FetchPageResult {
   elapsedMs: number
   error?: string
   detail?: string
+  /** 主机熔断快速失败（本次未发起任何真实网络请求，attempts 为空） */
+  circuitOpen?: boolean
+  /** 熔断剩余冷却毫秒（circuitOpen=true 时有值，调用方可据此安排等待后重试） */
+  retryAfterMs?: number
 }
 
 export interface StrategyDef {
