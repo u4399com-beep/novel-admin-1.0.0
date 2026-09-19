@@ -43,6 +43,9 @@ export { affinityStats } from './affinity'
 
 const CHAIN_BUDGET_MS = 55_000
 
+/** 站点级代理池轮换游标（模块级：跨请求轮换出口） */
+let proxyCursor = 0
+
 // ==================== 策略编排 ====================
 
 const STRATEGIES: StrategyDef[] = [
@@ -172,6 +175,12 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
   let lastRetryAfterMs: number | null = null
   let sawChallenge = false
 
+  // 站点级代理池（规则可配多个逗号分隔）：每次 fetchPage 调用轮换一个出口，
+  // 失效代理由后续请求自然绕过（免费公共代理单点易失效的多出口容错）
+  const proxyPool = opts.proxy ? opts.proxy.split(',').map((p) => p.trim()).filter(Boolean) : []
+  const pickProxy = (): string | null =>
+    proxyPool.length === 0 ? null : (proxyPool[proxyCursor++ % proxyPool.length] ?? null)
+
   for (let si = 0; si < order.length; si++) {
     const strat = order[si]
     if (Date.now() > deadline - 1500) {
@@ -208,7 +217,7 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
         // 硬闸余量 2.5s（Task 24-a 由 5s 收紧）：保证链尾最坏结束时刻 ≤ 预算+2.5s ≤ 57.5s，
         // 始终早于消费方 engine-client 的 60s 中断（旧值 5s 在预算 55s 时正好与 60s 相撞）
         res = await Promise.race([
-          strat.run(url, effTimeout, [], { referer: opts.referer ?? null }),
+          strat.run(url, effTimeout, [], { referer: opts.referer ?? null, proxy: pickProxy() }),
           new Promise<AttemptResult>((resolve) => {
             hardTimer = setTimeout(
               () =>

@@ -20,6 +20,7 @@ export async function GET() {
       siteUrl: r.siteUrl,
       enabled: r.enabled,
       charset: r.charset,
+      proxy: r.proxy,
       listRule: safeParseRule(r.listRule),
       bookRule: safeParseRule(r.bookRule),
       chapterRule: safeParseRule(r.chapterRule),
@@ -36,10 +37,33 @@ interface SaveBody {
   siteUrl?: string
   enabled?: boolean
   charset?: string
+  proxy?: string
   listRule?: Record<string, string>
   bookRule?: Record<string, string>
   chapterRule?: Record<string, string>
   notes?: string
+}
+
+/** 站点级出口代理解析：空串/null/undefined → ''（直连）；支持逗号分隔多个（故障轮换）；非法形态 → error */
+function parseProxyField(raw: unknown): { value: string } | { error: string } {
+  if (raw === undefined || raw === null || raw === '') return { value: '' }
+  if (typeof raw !== 'string') return { error: 'proxy 必须是字符串' }
+  const s = raw.trim()
+  if (!s) return { value: '' }
+  if (s.length > 1024) return { error: 'proxy 过长（上限 1024 字符）' }
+  const parts = s.split(',').map((p) => p.trim()).filter(Boolean)
+  for (const p of parts) {
+    try {
+      const u = new URL(p)
+      if (!['http:', 'https:', 'socks5:', 'socks5h:', 'socks4:'].includes(u.protocol)) {
+        return { error: 'proxy 仅支持 http/https/socks5/socks5h/socks4 形态（如 socks5h://127.0.0.1:1080）' }
+      }
+      if (!u.host) return { error: 'proxy 缺少主机地址' }
+    } catch {
+      return { error: `proxy 形态非法（${p.slice(0, 40)}；示例：socks5h://user:pass@host:port，多个用英文逗号分隔）` }
+    }
+  }
+  return { value: parts.join(',') }
 }
 
 async function handleSave(body: SaveBody | null): Promise<NextResponse> {
@@ -60,6 +84,8 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
   }
   const site = parseHttpUrl(body.siteUrl, 'siteUrl', 200)
   if (!site.ok) return NextResponse.json({ error: site.message }, { status: 400 })
+  const proxy = parseProxyField(body.proxy)
+  if ('error' in proxy) return NextResponse.json({ error: proxy.error }, { status: 400 })
 
   if (body.id !== undefined && (typeof body.id !== 'number' || !Number.isInteger(body.id) || body.id <= 0)) {
     return NextResponse.json({ error: '无效 id' }, { status: 400 })
@@ -72,6 +98,7 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
     charset: (typeof body.charset === 'string' && body.charset.trim() ? body.charset : 'utf-8')
       .toLowerCase()
       .slice(0, 32),
+    proxy: proxy.value,
     listRule: JSON.stringify(sanitizeRuleMap(body.listRule)),
     bookRule: JSON.stringify(sanitizeRuleMap(body.bookRule)),
     chapterRule: JSON.stringify(sanitizeRuleMap(body.chapterRule)),

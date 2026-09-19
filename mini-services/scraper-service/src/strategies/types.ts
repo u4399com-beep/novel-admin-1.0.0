@@ -25,12 +25,20 @@ export interface FetchPageOptions {
   timeoutMs?: number
   /** 可选 Referer 链：调用方显式提供的来路（如书页 URL），策略层注入请求头；缺省时维持原行为（站内首页/无 Referer 变体） */
   referer?: string | null
+  /**
+   * 站点级出口代理（规则配置，如 http://host:port、socks5h://host:port）。
+   * 配置后策略链按各策略能力走代理出口（fetch 系/curl-impersonate/got-scraping/browser）；
+   * 代理失败按普通失败继续后续策略。未配置时维持直连行为不变。
+   */
+  proxy?: string | null
 }
 
 /** 策略 run 的可选上下文（新增字段必须可选+默认值，保证既有策略实现兼容） */
 export interface StrategyRunCtx {
   /** 显式 Referer：非空时覆盖「目标站首页」自动 Referer（仅对 referer:true 的画像生效；无 Referer 变体仍保持无 Referer 以保留链内多样性） */
   referer?: string | null
+  /** 站点级出口代理（规则配置）：仅对支持代理的策略生效，见 FetchPageOptions.proxy */
+  proxy?: string | null
 }
 
 export interface FetchPageResult {

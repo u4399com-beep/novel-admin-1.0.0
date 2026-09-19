@@ -81,6 +81,7 @@ model ScrapeRule {
   siteUrl      String
   enabled      Boolean      @default(true)
   charset      String       @default("utf-8")
+  proxy        String       @default("") // 站点级出口代理（空=直连；http(s)/socks5(h)://host:port，反爬 IP 信誉突破）
   listRule     String       @default("{}") // JSON: 列表页选择器
   bookRule     String       @default("{}") // JSON: 书籍页选择器
   chapterRule  String       @default("{}") // JSON: 正文页选择器

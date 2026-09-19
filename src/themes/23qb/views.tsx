@@ -24,6 +24,7 @@ import {
   type ReaderSceneColors,
 } from '@/hooks/use-reader-prefs'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { cn } from '@/lib/utils'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
@@ -410,18 +411,21 @@ export function BookView({ navigate, novelId }: ViewProps & { novelId: number })
   )
 }
 
-/** 封面渐变体：coverBgClass + 书名首字（禁止外链图片） */
+/** 封面渐变体：coverBgClass + 书名首字；采集到本地 webp 封面时渲染图片 */
 function CoverBox({ novel, big }: { novel: { title: string; cover: string }; big?: boolean }) {
   return (
     <div
       className={cn(
-        'flex aspect-[5/7] items-center justify-center overflow-hidden rounded-[10px] shadow-[0_10px_26px_rgba(149,157,165,.4)]',
+        'relative flex aspect-[5/7] items-center justify-center overflow-hidden rounded-[10px] shadow-[0_10px_26px_rgba(149,157,165,.4)]',
         coverBgClass(novel.cover),
       )}
     >
-      <span className={cn('font-bold text-white/90 drop-shadow-md', big ? 'text-6xl' : 'text-5xl')}>
-        {novel.title.slice(0, 1)}
-      </span>
+      <NovelCoverImg novel={novel} />
+      {!isLocalCover(novel.cover) && (
+        <span className={cn('font-bold text-white/90 drop-shadow-md', big ? 'text-6xl' : 'text-5xl')}>
+          {novel.title.slice(0, 1)}
+        </span>
+      )}
     </div>
   )
 }

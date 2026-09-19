@@ -55,9 +55,22 @@ function cleanBookTitle(t: string): string {
     '',
   ).trim()
   if (stripped && stripped.length >= 2) s = stripped
+  // 新模板 h1 内嵌作者行（如 trxsw：h1.f21h 文本 = 「书名作者:某某」）→ 剥「作者:某某」尾巴
+  const noAuthor = s.replace(/作者[:：][^《》]{1,30}$/i, '').trim()
+  if (noAuthor && noAuthor.length >= 2) s = noAuthor
   const m = /^《(.+?)》$/.exec(s)
   if (m) s = m[1]
   return s
+}
+
+/** 简介清洗：剥模板前缀「关于《书名》：/关于书名：」（书页 intro 常以书名回显开头）与首尾空白 */
+function cleanDescription(t: string): string {
+  return t.replace(/^关于[《〈]?.{1,40}?[》〉]?[:：]\s*/u, '').trim()
+}
+
+/** 分类/状态字段清洗：剥「小说分类：/分类：/类型：/频道：」等标签前缀（老模板把标签与值放同一文本节点） */
+function stripFieldLabel(t: string): string {
+  return t.replace(/^(?:小说)?(?:分类|类型|频道|状态)[:：]\s*/, '').trim()
 }
 
 /** 作者字段清理：剥「作者：/作 者：/书籍作者：」等标签前缀（老模板把标签与值放在同一文本节点） */
@@ -389,9 +402,9 @@ export function extractBook(
   ]
   const title = cleanBookTitle(pickTitle(root, titleSels).slice(0, MAX_TITLE_CHARS))
   const author = stripAuthorLabel(field('authorSelector', BOOK_FIELD_FALLBACKS.author).slice(0, MAX_TITLE_CHARS))
-  const description = field('descriptionSelector', BOOK_FIELD_FALLBACKS.description).slice(0, MAX_DESCRIPTION_CHARS)
-  const status = field('statusSelector', BOOK_FIELD_FALLBACKS.status).slice(0, 50)
-  const category = field('categorySelector', BOOK_FIELD_FALLBACKS.category).slice(0, 50)
+  const description = cleanDescription(field('descriptionSelector', BOOK_FIELD_FALLBACKS.description).slice(0, MAX_DESCRIPTION_CHARS))
+  const status = stripFieldLabel(field('statusSelector', BOOK_FIELD_FALLBACKS.status).slice(0, 50))
+  const category = stripFieldLabel(field('categorySelector', BOOK_FIELD_FALLBACKS.category).slice(0, 50))
 
   const coverSels = [
     ...(rule.coverSelector ? splitAlternatives(rule.coverSelector) : []),

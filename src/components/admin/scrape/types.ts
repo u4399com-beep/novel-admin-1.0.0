@@ -45,6 +45,7 @@ export interface RuleFormState {
   siteUrl: string
   enabled: boolean
   charset: string
+  proxy: string
   notes: string
   listRule: ListRule
   bookRule: BookRule

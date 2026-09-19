@@ -6,6 +6,7 @@ import { useAppStore } from '@/lib/store'
 import { usePseo, useSettings } from '@/hooks/use-novel-data'
 import { coverBgClass } from '@/lib/covers'
 import { formatWordCount } from '@/lib/format'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { SeoSync } from '@/components/SeoSync'
 import { SiteToolsProvider } from '@/components/theme-tools/SiteToolsProvider'
 
@@ -117,8 +118,9 @@ function PseoView({ keyword, theme, common }: { keyword: string; theme: ThemeMod
             }}
             className="flex cursor-pointer gap-3 rounded-lg border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-md"
           >
-            <div className={`flex h-24 w-16 shrink-0 items-center justify-center rounded ${coverBgClass(n.cover)}`}>
-              <span className="text-xl font-bold text-white">{n.title.slice(0, 1)}</span>
+            <div className={`relative flex h-24 w-16 shrink-0 items-center justify-center overflow-hidden rounded ${coverBgClass(n.cover)}`}>
+              <NovelCoverImg novel={n} />
+              {!isLocalCover(n.cover) && <span className="text-xl font-bold text-white">{n.title.slice(0, 1)}</span>}
             </div>
             <div className="min-w-0 flex-1">
               <h3 className="truncate font-semibold text-neutral-900">{n.title}</h3>

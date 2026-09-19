@@ -94,10 +94,13 @@ export async function fetchWithRedirectGuard(
   headers: Record<string, string>,
   timeoutMs: number,
   warnings: string[],
+  proxy?: string | null,
 ): Promise<RawResponse> {
   const deadline = Date.now() + timeoutMs
   let current = url
   let hops = 0
+  // 站点级出口代理（规则配置）：仅首次请求时提示一次，逐跳复用
+  if (proxy && hops === 0) warnings.push(`[proxy] 经配置代理出口访问（${proxy.replace(/\/\/[^@]*@/, '//***@')}）`)
 
   for (;;) {
     const remaining = deadline - Date.now()
@@ -131,7 +134,13 @@ export async function fetchWithRedirectGuard(
 
     let res: Response
     try {
-      res = await fetch(current, { headers: hopHeaders, redirect: 'manual', signal: AbortSignal.timeout(remaining) })
+      // Bun fetch 原生支持 proxy 选项（http/https/socks5/socks5h）；Node 运行时无此选项时自动忽略（仅直连）
+      res = await fetch(current, {
+        headers: hopHeaders,
+        redirect: 'manual',
+        signal: AbortSignal.timeout(remaining),
+        ...(proxy ? { proxy } : {}),
+      } as RequestInit & { proxy?: string })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       return {
@@ -154,7 +163,8 @@ export async function fetchWithRedirectGuard(
           headers: followCookie ? { ...headers, cookie: followCookie } : headers,
           redirect: 'follow',
           signal: AbortSignal.timeout(Math.max(500, deadline - Date.now())),
-        })
+          ...(proxy ? { proxy } : {}),
+        } as RequestInit & { proxy?: string })
         recordResponseCookies(target.host, follow, https)
         const finalUrl = follow.url || current
         const finalCheck = await assertHostPublic(new URL(finalUrl).hostname)

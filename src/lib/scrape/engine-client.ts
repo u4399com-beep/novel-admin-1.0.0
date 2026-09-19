@@ -69,6 +69,7 @@ export async function fetchBookPage(
     url,
     rule: { bookRule: rule.bookRule },
     charset: rule.charset,
+    ...(rule.proxy ? { proxy: rule.proxy } : {}),
     ...(referer ? { referer } : {}),
   })
   if (!res.ok) return { ok: false, error: res.error }
@@ -91,6 +92,7 @@ export async function fetchListPage(run: Run, url: string, rule: LoadedRule, ref
     url,
     rule: { listRule: rule.listRule },
     charset: rule.charset,
+    ...(rule.proxy ? { proxy: rule.proxy } : {}),
     ...(referer ? { referer } : {}),
   })
   if (!res.ok) {
@@ -117,6 +119,7 @@ export async function fetchCatalogChapters(run: Run, url: string, rule: LoadedRu
     url,
     rule: { bookRule },
     charset: rule.charset,
+    ...(rule.proxy ? { proxy: rule.proxy } : {}),
     ...(referer ? { referer } : {}),
   })
   if (!res.ok) {
@@ -134,6 +137,7 @@ export function fetchChapter(url: string, rule: LoadedRule, referer?: string): P
     url,
     rule: rule.chapterRule,
     charset: rule.charset,
+    ...(rule.proxy ? { proxy: rule.proxy } : {}),
     ...(referer ? { referer } : {}),
   })
 }

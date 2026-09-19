@@ -95,14 +95,15 @@ interface RenderPayload {
   cookies?: Array<{ name?: unknown; value?: unknown; expires?: unknown; secure?: unknown }>
 }
 
-async function renderViaPython(url: string, timeoutMs: number, warnings: string[], explicitReferer: string | null, cookieEnv: string | null): Promise<AttemptResult> {
+async function renderViaPython(url: string, timeoutMs: number, warnings: string[], explicitReferer: string | null, cookieEnv: string | null, proxy: string | null): Promise<AttemptResult> {
   // 参数经 argv 传递（URL 不含换行；UA 含空格由 execFile 正确转义）；
-  // cookie/referer 走环境变量（cookie 头值可能较长，不适合 argv）。
+  // cookie/referer/proxy 走环境变量（cookie 头值可能较长，不适合 argv）。
   // render.py 自带 SIGALRM 看门狗（timeout+3s 强制输出 JSON），exec 超时只是兜底；
   // 余量不能给太大，否则策略链 55s 预算会被单次渲染突破（实测旧值 +15s 最坏可拖到 ~70s）
   const env: Record<string, string | undefined> = { ...process.env, PYTHONUNBUFFERED: '1' }
   if (cookieEnv) env.SCRAPER_COOKIES = cookieEnv
   if (explicitReferer) env.SCRAPER_REFERER = explicitReferer
+  if (proxy) env.SCRAPER_PROXY = proxy
   const { stdout } = await execP(
     'python3',
     [RENDER_PY, url, String(timeoutMs), CHROME_UA],
@@ -164,7 +165,12 @@ export const browserStrategy: StrategyDef = {
       let browser: any = null
       let context: any = null
       try {
-        browser = await pw.chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] })
+        browser = await pw.chromium.launch({
+          headless: true,
+          args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+          // 站点级出口代理（规则配置）：http/socks5 均由 Chromium 处理；代理失效走导航失败自然降级
+          ...(ctx?.proxy ? { proxy: { server: ctx.proxy } } : {}),
+        })
         // 显式 context：支持 addCookies 注入引擎 cookie 会话（newPage 直开是隐式 context，无法注入）
         context = await browser.newContext({ userAgent: CHROME_UA, locale: 'zh-CN', viewport: { width: 1366, height: 900 } })
         if (injectedCookies.length) {
@@ -292,7 +298,7 @@ export const browserStrategy: StrategyDef = {
     warnings.push('Node Playwright 模块不可用，尝试 Python Playwright 桥接')
     // 2) Python Playwright 桥接（cookie/referer 经环境变量透传）
     try {
-      return await renderViaPython(url, timeoutMs, warnings, explicitReferer, cookieEnv)
+      return await renderViaPython(url, timeoutMs, warnings, explicitReferer, cookieEnv, ctx?.proxy ?? null)
     } catch (pyErr) {
       subAttempts.push({ profile: 'python-playwright', ok: false, status: 0, ms: Date.now() - s0, blocked: false, bytes: 0, note: 'bridge-error' })
       return {

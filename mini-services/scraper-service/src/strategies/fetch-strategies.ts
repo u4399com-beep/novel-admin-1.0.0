@@ -40,7 +40,7 @@ function makeFetchStrategy(cfg: { name: string; description: string; profiles: H
         const s0 = Date.now()
         // 显式 Referer（ctx.referer）只覆盖「带 Referer」画像的来路；无 Referer 变体保持无 Referer（链内多样性保留）
         // 头序随机化（Task 24-a）：每次请求抖动非核心头顺序，对抗固定头序指纹（user-agent 保持首位）
-        const r = await fetchWithRedirectGuard(url, humanizeHeaderOrder(profile.headers(url, profile.referer, ctx?.referer ?? null)), remaining, warnings)
+        const r = await fetchWithRedirectGuard(url, humanizeHeaderOrder(profile.headers(url, profile.referer, ctx?.referer ?? null)), remaining, warnings, ctx?.proxy ?? null)
         const a = assess(r.status, r.bytes, r.contentType)
         const ms = Date.now() - s0
         subAttempts.push({ profile: profile.id, ok: a.ok, status: r.status, ms, blocked: a.blocked, bytes: a.size, note: r.note ?? a.note })

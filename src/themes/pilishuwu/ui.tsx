@@ -9,6 +9,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
 
@@ -49,14 +50,17 @@ export function Cover({
     <div
       aria-hidden
       className={cn(
-        'flex shrink-0 select-none items-center justify-center overflow-hidden',
+        'relative flex shrink-0 select-none items-center justify-center overflow-hidden',
         coverBgClass(novel.cover),
         className,
       )}
     >
-      <span className={cn('font-serif font-bold text-white/90 drop-shadow-sm', charClass)}>
-        {novel.title.trim().charAt(0) || '书'}
-      </span>
+      <NovelCoverImg novel={novel} />
+      {!isLocalCover(novel.cover) && (
+        <span className={cn('font-serif font-bold text-white/90 drop-shadow-sm', charClass)}>
+          {novel.title.trim().charAt(0) || '书'}
+        </span>
+      )}
     </div>
   )
 }

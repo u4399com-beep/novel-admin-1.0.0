@@ -3,6 +3,7 @@
  * （并发 P2002 回读）、章节入库（idx 竞态顺延重试）、字数重算。
  */
 import { db } from '@/lib/db'
+import { fetchAndStoreCover, gradientTokenFor, isLocalCoverPath } from '@/lib/covers-store'
 import type { Run } from './run-log'
 import type { BookData, LoadedRule, RuleMap } from './types'
 
@@ -43,6 +44,7 @@ export async function loadRule(ruleId: number | null): Promise<LoadedRule> {
   return {
     name: r.name,
     charset: r.charset ? r.charset.toLowerCase() : undefined,
+    proxy: r.proxy?.trim() || undefined,
     listRule: safeParseRule(r.listRule),
     bookRule: safeParseRule(r.bookRule),
     chapterRule: safeParseRule(r.chapterRule),
@@ -76,7 +78,7 @@ export function mapNovelStatus(raw: string): 'serial' | 'finished' {
   return /完|fin/i.test(raw) ? 'finished' : 'serial'
 }
 
-const COVER_TOKENS = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7', 'g8', 'g9', 'g10', 'g11', 'g12']
+// COVER_TOKENS 已由 covers-store.gradientTokenFor 的确定性 hash 分配取代（同名书同 token）
 
 // ==================== 书籍 upsert ====================
 
@@ -96,7 +98,12 @@ export interface UpsertOutcome {
  * canceled 仅对「记录级失败」（入库/更新失败、并发冲突后找不到记录）为 true，
  * 与原实现一致：空标题返回 canceled=false（任务按 failed 收尾，而非 canceled）。
  */
-export async function upsertBook(run: Run, book: BookData, categoryId: number): Promise<UpsertOutcome> {
+export async function upsertBook(
+  run: Run,
+  book: BookData,
+  categoryId: number,
+  proxy?: string,
+): Promise<UpsertOutcome> {
   const fail = (message: string, canceled: boolean): UpsertOutcome => ({
     ok: false,
     canceled,
@@ -112,7 +119,7 @@ export async function upsertBook(run: Run, book: BookData, categoryId: number): 
 
   let novelId: number
   let createdNew = false
-  const existing = await db.novel.findFirst({ where: { title, author }, select: { id: true } }).catch(() => null)
+  const existing = await db.novel.findFirst({ where: { title, author }, select: { id: true, cover: true } }).catch(() => null)
   if (existing) {
     novelId = existing.id
   } else {
@@ -122,7 +129,7 @@ export async function upsertBook(run: Run, book: BookData, categoryId: number): 
           title,
           author,
           description: (book.description || '').slice(0, 2000),
-          cover: COVER_TOKENS[Math.floor(Math.random() * COVER_TOKENS.length)],
+          cover: gradientTokenFor(title, author), // 无封面时的确定性渐变 token；抓到封面后立即覆写为 /covers/*.webp
           categoryId,
           status: mapNovelStatus(book.status),
         },
@@ -135,12 +142,27 @@ export async function upsertBook(run: Run, book: BookData, categoryId: number): 
         return fail('书籍入库失败', true)
       }
       // 并发另一任务已抢先创建同一本书（撞 @@unique([title,author])）→ 回读命中查重，走更新路径
-      const winner = await db.novel.findFirst({ where: { title, author }, select: { id: true } }).catch(() => null)
+      const winner = await db.novel.findFirst({ where: { title, author }, select: { id: true, cover: true } }).catch(() => null)
       if (!winner) return fail('书籍入库失败（并发冲突后未找到记录）', true)
       novelId = winner.id
       run.log(`并发入库冲突，命中已有书籍 #${novelId}`)
     }
   }
+
+  // ---- 封面采集落盘（下载远程封面 → webp → public/covers/{id}.webp）----
+  // 触发条件：引擎提取到远程封面 URL，且（新书 或 已有书仍是渐变 token 可升级）；已是本地 webp 则跳过
+  const remoteCover = typeof book.cover === 'string' && /^https?:\/\//.test(book.cover) ? book.cover : ''
+  if (remoteCover && (createdNew || (existing && !isLocalCoverPath(existing.cover)))) {
+    // 封面与目标站常同域同封锁策略：经规则代理出口下载（图床直连不可达时必须走代理）
+    const stored = await fetchAndStoreCover(novelId, remoteCover, proxy)
+    if (stored) {
+      await db.novel.update({ where: { id: novelId }, data: { cover: stored } }).catch(() => null)
+      run.log(`封面已保存 ${stored.slice(0, 40)}（webp）`)
+    } else {
+      run.log(`封面下载失败，保留渐变封面（${remoteCover.slice(0, 80)}）`)
+    }
+  }
+
   if (createdNew) {
     run.counters.created++
     run.log(`新建书籍 #${novelId}《${title.slice(0, 30)}》`)

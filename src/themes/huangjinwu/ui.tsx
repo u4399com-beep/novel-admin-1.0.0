@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView } from '../types'
 
@@ -106,14 +107,17 @@ export function Cover({
   return (
     <div
       className={cn(
-        'flex shrink-0 select-none items-center justify-center bg-gradient-to-br',
+        'relative flex shrink-0 select-none items-center justify-center overflow-hidden bg-gradient-to-br',
         coverBgClass(token),
         className,
       )}
     >
-      <span className={cn('font-bold text-white/90', charClassName ?? 'text-[40px]')}>
-        {title.slice(0, 1)}
-      </span>
+      <NovelCoverImg novel={{ title, cover: token }} />
+      {!isLocalCover(token) && (
+        <span className={cn('font-bold text-white/90', charClassName ?? 'text-[40px]')}>
+          {title.slice(0, 1)}
+        </span>
+      )}
     </div>
   )
 }

@@ -95,6 +95,30 @@ function parseReferer(raw: unknown): string | null {
   }
 }
 
+/**
+ * 站点级出口代理解析（规则配置）：支持逗号分隔多个代理（故障轮换），
+ * 每个仅接受 http/https/socks5/socks5h/socks4 形态 URL（≤512 字符），
+ * 非法/缺失返回 null（直连，与不传时行为一致）。代理地址含凭证时原样透传（不回显到日志）。
+ */
+function parseProxy(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const s = raw.trim()
+  if (!s || s.length > 1024) return null
+  const parts = s.split(',').map((p) => p.trim()).filter(Boolean)
+  const ok: string[] = []
+  for (const p of parts) {
+    try {
+      const u = new URL(p)
+      if (!['http:', 'https:', 'socks5:', 'socks5h:', 'socks4:'].includes(u.protocol)) return null
+      if (!u.host) return null
+      ok.push(p)
+    } catch {
+      return null
+    }
+  }
+  return ok.length ? ok.join(',') : null
+}
+
 /** 软 404/空壳标题特征（配合「HTTP 200 + 正文为空」判定；不用裸 404 数字防「第404章」误伤由调用处另行排除） */
 const SOFT404_TITLE_RE = /404|not\s*found|不存在|找不到|已删除|无法访问|访问出错|页面出错|加载失败/i
 
@@ -198,11 +222,14 @@ async function fetchAndPrepare(body: Record<string, unknown>): Promise<PageFetch
   }
   // 可选 referer 链（Task 23-a 新增，向后兼容：不传时为 null，策略层维持原行为）
   const referer = parseReferer(body.referer)
+  // 站点级出口代理（规则配置，向后兼容：不传/非法时为 null → 直连）
+  const proxy = parseProxy(body.proxy)
   const page = await fetchPage(t.url.toString(), {
     requestedStrategy: strategy,
     forcedCharset: charset,
     timeoutMs,
     referer,
+    proxy,
   })
   return { page, target: t.url }
 }

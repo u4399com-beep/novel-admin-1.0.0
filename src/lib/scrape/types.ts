@@ -8,6 +8,8 @@ export type RuleMap = Record<string, string>
 export interface LoadedRule {
   name?: string
   charset?: string
+  /** 站点级出口代理（空/未配置 = 直连）；引擎各策略按能力走代理出口 */
+  proxy?: string
   listRule: RuleMap
   bookRule: RuleMap
   chapterRule: RuleMap

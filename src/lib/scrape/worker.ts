@@ -188,7 +188,7 @@ async function processBook(
   }
 
   // ---- 书籍 upsert（title+author 查重；DB 层 @@unique([title,author]) 兜底并发）----
-  const up = await upsertBook(run, book, categoryId)
+  const up = await upsertBook(run, book, categoryId, rule.proxy)
   if (!up.ok) {
     // 记录级失败（up.canceled=true：入库/更新失败、并发冲突后找不到记录）沿用取消通道停整个任务；
     // 书籍级失败（up.canceled=false，如空标题）只算本书失败：single 按 failed 收尾，list 继续下一本

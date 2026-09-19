@@ -183,6 +183,8 @@ export interface ScrapeRuleDto {
   siteUrl: string
   enabled: boolean
   charset: string
+  /** 站点级出口代理（空 = 直连） */
+  proxy: string
   listRule: ListRule
   bookRule: BookRule
   chapterRule: ChapterRule

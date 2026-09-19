@@ -165,16 +165,22 @@ def main() -> int:
     try:
         from playwright.sync_api import sync_playwright
 
+        # 站点级出口代理（规则配置，SCRAPER_PROXY=http://host:port 或 socks5://host:port）
+        proxy_server = os.environ.get("SCRAPER_PROXY", "").strip() or None
+        launch_kwargs = dict(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ],
+        )
+        if proxy_server:
+            launch_kwargs["proxy"] = {"server": proxy_server}
+
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                ],
-            )
+            browser = p.chromium.launch(**launch_kwargs)
             try:
                 context = browser.new_context(
                     user_agent=ua,
