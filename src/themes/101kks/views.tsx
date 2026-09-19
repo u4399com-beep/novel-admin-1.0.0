@@ -9,6 +9,7 @@
 // Search：门户式搜索 + 结果网格
 
 import { useEffect, useMemo, useState } from 'react'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import {
   AlignLeft,
   ArrowDownWideNarrow,
@@ -31,6 +32,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCategories, useChapter, useChapters, useHomeData, useNovel, useNovels } from '@/hooks/use-novel-data'
+import { TocChapters } from '@/components/toc-chapters'
 import {
   READER_INKS,
   READER_LINE_HEIGHTS,
@@ -592,6 +594,8 @@ export function BookView({ navigate, novelId }: ViewProps & { novelId: number })
                 <p className="mt-4 whitespace-pre-line text-[15px] leading-relaxed text-[#333]">
                   {novel.description || '（作者還未填寫簡介）'}
                 </p>
+                {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+                <BookSuggestLinks keywords={novel.suggestKeywords} className="mt-4 border-t border-black/10 pt-3" />
               </div>
             )}
 
@@ -804,7 +808,7 @@ export function TocView({ navigate, novelId }: ViewProps & { novelId: number }) 
           </>
         )}
 
-        {/* 全部章节：蓝竖条节标题 + 三栏列表 */}
+        {/* 全部章节：蓝竖条节标题 + 三栏列优先流式分栏（阅读顺序自上而下；有分卷数据时按卷分组） */}
         <h3 className="mt-5 flex items-center gap-2 border-l-4 border-[#1f6cb2] bg-[#f5f6f7] px-3 py-2 font-bold text-[#1f6cb2]">
           全部章節（{chapters?.length ?? 0} 章）
         </h3>
@@ -815,21 +819,26 @@ export function TocView({ navigate, novelId }: ViewProps & { novelId: number }) 
             ))}
           </div>
         ) : (
-          <div className="grid gap-x-6 md:grid-cols-2 lg:grid-cols-3">
-            {list.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
-                className={cn(
-                  'flex min-w-0 cursor-pointer items-center gap-2 border-b border-black/5 py-[15px] text-left text-base transition-colors hover:text-[#06c]',
+          <div className="mt-2">
+            <TocChapters
+              chapters={list}
+              navigate={navigate}
+              columnsClassName="columns-1 gap-x-6 md:columns-2 lg:columns-3"
+              itemClassName={(c) =>
+                cn(
+                  'flex min-w-0 items-center gap-2 border-b border-black/5 py-[15px] text-left text-base transition-colors hover:text-[#06c]',
                   bookmark?.chapterId === c.id ? 'font-bold text-[#1f6cb2]' : 'text-[#333]',
-                )}
-              >
-                <span className="w-8 shrink-0 text-right text-xs text-[#888]">{c.idx}</span>
-                <span className="truncate">{c.title}</span>
-              </button>
-            ))}
+                )
+              }
+              renderItem={(c) => (
+                <>
+                  <span className="w-8 shrink-0 text-right text-xs text-[#888]">{c.idx}</span>
+                  <span className="truncate">{c.title}</span>
+                </>
+              )}
+              volumeClassName="mb-1 border-l-4 border-[#1f6cb2] bg-[#f5f6f7] px-3 py-2 font-bold text-[#1f6cb2]"
+              countClassName="text-xs text-[#888]"
+            />
           </div>
         )}
       </MyBox>

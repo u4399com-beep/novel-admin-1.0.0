@@ -2,6 +2,7 @@
 
 import { ArrowLeft } from 'lucide-react'
 import { useChapters, useNovel } from '@/hooks/use-novel-data'
+import { TocChapters } from '@/components/toc-chapters'
 import type { ViewProps } from '../types'
 import { ChapterGrid, ErrorBox, RowsSkeleton, fmtWords, statusText } from './parts'
 
@@ -60,7 +61,23 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
           <ErrorBox onRetry={() => chRefetch()} />
         ) : chapters && chapters.length > 0 ? (
           <div className="px-2 py-3">
-            <ChapterGrid chapters={chapters} navigate={navigate} />
+            {/* 列优先分栏（columns）：阅读顺序自上而下；有分卷数据时按卷分组 */}
+            <TocChapters
+              chapters={chapters}
+              navigate={navigate}
+              columnsClassName="columns-1 gap-x-6 sm:columns-2 lg:columns-3"
+              itemClassName="flex h-[50px] items-center gap-2 border-b border-dotted border-[#E6E6E6] px-2"
+              renderItem={(c) => (
+                <>
+                  <span className="w-8 shrink-0 text-right text-[11px] text-[#C0C4CC]">{c.idx}</span>
+                  <span className="min-w-0 flex-1 truncate text-[14px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]">
+                    {c.title}
+                  </span>
+                </>
+              )}
+              volumeClassName="h-[40px] border-b-2 border-[#BF2C24]/25 px-2 text-[14px] font-bold text-[#3E3D43]"
+              countClassName="text-[11px] text-[#969BA3]"
+            />
           </div>
         ) : (
           <p className="py-10 text-center text-[13px] text-[#969BA3]">暂无章节</p>

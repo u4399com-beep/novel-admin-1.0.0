@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 // 管理端：新增章节
 export async function POST(req: NextRequest) {
-  let body: { novelId?: number; title?: string; content?: string }
+  let body: { novelId?: number; title?: string; content?: string; volume?: string }
   try {
     body = (await req.json()) as typeof body
   } catch {
@@ -19,9 +19,12 @@ export async function POST(req: NextRequest) {
 
   const novelId = body.novelId
   const chTitle = body.title.trim().slice(0, 120)
+  // 分卷名可选：非字符串（含缺省）按无卷处理，限长 50
+  const volume = typeof body.volume === 'string' ? body.volume.trim().slice(0, 50) : ''
   const max = await db.chapter.aggregate({ where: { novelId }, _max: { idx: true } })
   let idx = (max._max.idx ?? 0) + 1
-  const content = body.content ?? ''
+  // 非字符串 content（数字/对象等）按空正文处理（与 PUT 语义一致），否则 content.replace 抛 TypeError → 500
+  const content = typeof body.content === 'string' ? body.content : ''
   const createChapter = (idxVal: number) =>
     db.chapter.create({
       data: {
@@ -29,6 +32,7 @@ export async function POST(req: NextRequest) {
         idx: idxVal,
         title: chTitle,
         content,
+        volume,
         wordCount: content.replace(/\s/g, '').length,
       },
     })

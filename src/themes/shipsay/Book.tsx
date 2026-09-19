@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useChapters, useNovel } from '@/hooks/use-novel-data'
+import { TocChapters } from '@/components/toc-chapters'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import type { ViewProps } from '../types'
 import { ChapterGrid, Cover, Empty, ErrorBox, RowsSkeleton, Tag, fmtDate, fmtWords, statusText } from './parts'
 
@@ -128,6 +130,8 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
               <p className="indent-[2em] text-[14px] leading-[1.8] text-[#666]">
                 {novel.description || '（暂无简介）'}
               </p>
+              {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+              <BookSuggestLinks keywords={novel.suggestKeywords} className="mt-3 border-t border-dotted border-[#E6E6E6] pt-3" />
             </section>
             {/* 最新章节卡片：居中标题 + 3 列章节（最新 12 条，新→旧） */}
             <section className="bg-white">
@@ -148,7 +152,7 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
             </section>
           </>
         ) : (
-          /* 完整目录：升序 3 列 */
+          /* 完整目录：升序 + 列优先分栏（columns，阅读顺序自上而下；有分卷数据时按卷分组） */
           <section className="bg-white">
             <div className="border-b border-[#DDD] py-2.5 text-center text-[15px] font-bold text-[#3E3D43]">
               完整目录（升序）
@@ -159,7 +163,22 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
               <ErrorBox onRetry={() => chRefetch()} />
             ) : allChapters && allChapters.length > 0 ? (
               <div className="px-2 py-2">
-                <ChapterGrid chapters={allChapters} navigate={navigate} />
+                <TocChapters
+                  chapters={allChapters}
+                  navigate={navigate}
+                  columnsClassName="columns-1 gap-x-6 sm:columns-2 lg:columns-3"
+                  itemClassName="flex h-[50px] items-center gap-2 border-b border-dotted border-[#E6E6E6] px-2"
+                  renderItem={(c) => (
+                    <>
+                      <span className="w-8 shrink-0 text-right text-[11px] text-[#C0C4CC]">{c.idx}</span>
+                      <span className="min-w-0 flex-1 truncate text-[14px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]">
+                        {c.title}
+                      </span>
+                    </>
+                  )}
+                  volumeClassName="h-[40px] border-b-2 border-[#BF2C24]/25 px-2 text-[14px] font-bold text-[#3E3D43]"
+                  countClassName="text-[11px] text-[#969BA3]"
+                />
               </div>
             ) : (
               <Empty text="暂无章节" />

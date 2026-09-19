@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from 'react'
 import { useChapters, useNovel } from '@/hooks/use-novel-data'
+import { TocChapters } from '@/components/toc-chapters'
 import type { ViewProps } from '../types'
 import { BtnGray, BtnMain, ErrorBox, RowsSkeleton, XLink, fmtWords, statusText } from './parts'
 
@@ -137,7 +138,7 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
         </div>
       )}
 
-      {/* 全量章节目录 */}
+      {/* 全量章节目录：列优先分栏（columns，阅读顺序自上而下；有分卷数据时按卷分组） */}
       <div className="mt-2 border border-[#E4E4E4] bg-white">
         <div className="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]" />
         <div className="flex h-[26px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-2 text-[12px] font-bold text-[#333]">
@@ -147,23 +148,22 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
         {sorted.length === 0 ? (
           <p className="py-10 text-center text-[12px] text-[#999]">本书暂无章节记录</p>
         ) : (
-          <ul className="grid grid-cols-1 gap-x-6 px-3 py-1 sm:grid-cols-2 lg:grid-cols-4">
-            {sorted.map((c) => (
-              <li
-                key={c.id}
-                className="flex h-[26px] items-center border-b border-dotted border-[#F2F2F2] text-[12px]"
-              >
+          <TocChapters
+            chapters={sorted}
+            navigate={navigate}
+            columnsClassName="columns-1 gap-x-6 px-3 py-1 sm:columns-2 lg:columns-4"
+            itemClassName="flex h-[26px] items-center border-b border-dotted border-[#F2F2F2] text-[12px]"
+            renderItem={(c) => (
+              <>
                 <span className="w-[42px] shrink-0 text-right text-[#999]">{c.idx}.</span>
-                <XLink
-                  onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
-                  className="ml-1 min-w-0 flex-1 truncate"
-                  title={c.title}
-                >
+                <span className="ml-1 min-w-0 flex-1 truncate text-[#2F468F] transition-colors hover:text-[#FF6600]">
                   {c.title}
-                </XLink>
-              </li>
-            ))}
-          </ul>
+                </span>
+              </>
+            )}
+            volumeClassName="h-[26px] border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-2 text-[12px] font-bold text-[#333]"
+            countClassName="text-[11px] text-[#999]"
+          />
         )}
       </div>
     </div>

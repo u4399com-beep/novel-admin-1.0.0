@@ -12,6 +12,10 @@ export interface TaskRow {
   mode: string
   targetUrl: string
   pages: number
+  /** 范围采集起始页码（默认 1，list 模式生效） */
+  startPage: number
+  /** 任务内并发度（1-16，默认 3：list=同时处理书本数，single=同时抓取章节数） */
+  concurrency: number
   status: string
   total: number
   done: number
@@ -45,6 +49,7 @@ export interface RuleFormState {
   siteUrl: string
   enabled: boolean
   charset: string
+  proxy: string
   notes: string
   listRule: ListRule
   bookRule: BookRule

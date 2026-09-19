@@ -43,6 +43,9 @@ export { affinityStats } from './affinity'
 
 const CHAIN_BUDGET_MS = 55_000
 
+/** 站点级代理池轮换游标（模块级：跨请求轮换出口） */
+let proxyCursor = 0
+
 // ==================== 策略编排 ====================
 
 const STRATEGIES: StrategyDef[] = [
@@ -172,7 +175,34 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
   let lastRetryAfterMs: number | null = null
   let sawChallenge = false
 
-  for (let si = 0; si < order.length; si++) {
+  // 站点级代理池（规则可配多个逗号分隔）：每次 fetchPage 调用轮换一个出口，
+  // 失效代理由后续请求自然绕过（免费公共代理单点易失效的多出口容错）
+  const proxyPool = opts.proxy ? opts.proxy.split(',').map((p) => p.trim()).filter(Boolean) : []
+  const pickProxy = (): string | null =>
+    proxyPool.length === 0 ? null : (proxyPool[proxyCursor++ % proxyPool.length] ?? null)
+
+  // 代理 http 降级回退（第二轮）：免费/廉价 http 代理普遍不支持 https CONNECT 隧道
+  // （表现为 https 目标快速 400/502，而 http 目标正常）。https 经代理整链失败时，
+  // 若所有失败尝试都发生在代理侧特征（400/502/网络错误），自动降级 http 方案重走一遍
+  // 策略链（同一预算内，不额外拉长总耗时；目标站对 http/https 同站同内容，小说站普遍兼容）。
+  const canDowngradeScheme = (): boolean => {
+    if (!opts.proxy || !url.startsWith('https://')) return false
+    if (attempts.length === 0) return false
+    return attempts.every((a) => a.status === 400 || a.status === 502 || a.status === 0)
+  }
+
+  // 两轮循环：第一轮原 URL；若命中降级条件第二轮换 http 方案重走全链
+  let targetUrl = url
+  for (let pass = 0; pass < 2; pass++) {
+  if (pass === 1) {
+    if (!canDowngradeScheme()) break
+    targetUrl = url.replace(/^https:\/\//, 'http://')
+    warnings.push(
+      `[proxy] https 经代理整链失败（CONNECT 隧道疑被代理拒绝），自动降级 http 重试: ${targetUrl.slice(0, 80)}`,
+    )
+  }
+
+  chain: for (let si = 0; si < order.length; si++) {
     const strat = order[si]
     if (Date.now() > deadline - 1500) {
       attempts.push({ strategy: strat.name, ok: false, status: 0, ms: 0, note: 'budget-exhausted（整体时间预算耗尽，停止尝试后续策略）' })
@@ -208,7 +238,7 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
         // 硬闸余量 2.5s（Task 24-a 由 5s 收紧）：保证链尾最坏结束时刻 ≤ 预算+2.5s ≤ 57.5s，
         // 始终早于消费方 engine-client 的 60s 中断（旧值 5s 在预算 55s 时正好与 60s 相撞）
         res = await Promise.race([
-          strat.run(url, effTimeout, [], { referer: opts.referer ?? null }),
+          strat.run(targetUrl, effTimeout, [], { referer: opts.referer ?? null, proxy: pickProxy() }),
           new Promise<AttemptResult>((resolve) => {
             hardTimer = setTimeout(
               () =>
@@ -246,7 +276,6 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
 
       // 主机健康度记忆：本链内被 429/503 → 记一次限流退避（Retry-After 优先）
       if (res.status === 429 || res.status === 503) noteRateLimited(host, res.retryAfterMs ?? null)
-
       if (res.ok) {
         recordStrategySuccess(host, strat.name)
         noteChainSuccess(host)
@@ -272,6 +301,21 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
       lastNote = res.note ?? ''
       lastRetryAfterMs = res.retryAfterMs ?? null
       if (lastNote === 'challenge-page') sawChallenge = true
+
+      // 代理侧快速失败直通（仅 https+代理第一轮）：免费 http 代理普遍不支持 https CONNECT 隧道，
+      // 表现为全部请求快速 400（~300ms）。连续 ≥3 次 400 且无任何成功时，剩余策略（got-scraping/browser
+      // 等慢策略）大概率同样被代理拒绝，为降级轮 http 重试保留预算，直接跳出本轮链。
+      if (
+        pass === 0 &&
+        proxyPool.length > 0 &&
+        targetUrl.startsWith('https://') &&
+        attempts.filter((a) => a.status === 400).length >= 3 &&
+        attempts.every((a) => !a.ok)
+      ) {
+        warnings.push('[proxy] 连续多次快速 400（疑代理拒绝 https CONNECT），跳过剩余策略直接尝试 http 降级')
+        break chain
+      }
+
       // selfRetrying 策略内部已有多画像/多协议重试梯子，外层不再重复重试
       if (!strat.selfRetrying && isRetryableStatus(res.status) && attempt < MAX_ATTEMPTS) {
         const delay = backoffDelay(attempt)
@@ -306,6 +350,7 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
       }
     }
   }
+  } // pass 循环结束：第二轮仅在 https+代理且第一轮全为代理侧失败（400/502/网络错误）时进入
 
   // 整链失败 → 记一次连败（达熔断阈值后后续请求快速失败，见 host-health.ts）
   noteChainFailure(host)

@@ -5,17 +5,22 @@
  * 以单个 \n 连接；段落缩进完全交给主题 CSS（text-indent: 2em）呈现。
  *
  * 清洗步骤：
- *   1. \r\n|\r → \n
+ *   1. \r\n|\r → \n；字面转义序列（\n 反斜杠+n 字符）还原为真实换行
  *   2. 逐行去行首全角空格(\u3000)/NBSP(\u00A0)/半角空白
  *   3. 行内连续空白折叠为单空格
  *   4. 丢弃空行
- *   5. 噪声行过滤（见 isNoiseLine）
- *   6. 剩余行以单个 \n 连接
+ *   5. 噪声行过滤（见 isNoiseLine，实体预解码 + 残缺标签检测）
+ *   6. 保留行以「实体解码后」的净化版输出（如 &amp;………… → &…………）
+ *   7. 剩余行以单个 \n 连接
  *
  * ⚠ mini-services/scraper-service/src/clean.ts 是本文件的同源实现
  *   （scraper-service 是独立 Bun 进程，跨进程无法共享模块）。
  *   修改 NOISE_PATTERNS / isNoiseLine 规则时必须两边同步！
+ *
+ * 实体解码逻辑统一由 text-clean.ts（同源：引擎侧 text-clean.ts）提供。
  */
+
+import { decodeHtmlEntities } from './text-clean'
 
 export interface CleanResult {
   /** 清洗后的正文（无空行、无行首缩进，行间单个 \n） */
@@ -44,43 +49,83 @@ export const NOISE_PATTERNS = {
 
   /** 站点推广/SEO 水印类（短行含任一关键词即判噪声） */
   SITE_PROMO:
-    /笔趣阁|顶点小说|飞卢|起点中文|纵横中文|天才一秒记住|本章未完|点击下一页|继续阅读请|最新章节|手机阅读|无弹窗|全本小说|请记住本书|首发域名|记得收藏|求收藏|求推荐票|求月票|投推荐票|加入书签|书迷交流|站内搜索|快速找到你想要的|TXT电子书|电子书下载|全本TXT|TXT全集|TXT下载/,
+    /笔趣阁|顶点小说|飞卢|起点中文|纵横中文|天才一?秒?记住|一秒记住|本章未完|点击下一页|继续阅读请|最新章节|手机阅读|无弹窗|全本小说|请记住本书|首发域名|记得收藏|请收藏本站|收藏网址|求收藏|求推荐票|求月票|投推荐票|加入书签|书迷交流|站内搜索|快速找到你想要的|TXT电子书|电子书下载|全本TXT|TXT全集|TXT下载|最快更新|第一时间更新|本站网址|备用域名|备用网址|看书神器|阅读神器|免费阅读网|小说网址|提供无错|精校版|无错版/,
 
   /** 导航/UI 残留：整行基本等于这些词（精确匹配，避免误伤叙事） */
   NAV_EXACT:
-    /^(?:上一章|上一页|下一章|下一页|上一頁|下一頁|目录|章节目录|章节列表|返回|返回目录|返回书页|返回列表|返回首页|首页|书页|书签|加入书签|加入收藏|收藏本站|收藏本书|推荐票|点击进入|第一页|末页|搜索|搜索全站)$/,
+    /^(?:上一章|上一页|下一章|下一页|上一頁|下一頁|目录|章节目录|章节列表|返回|返回目录|返回书页|返回列表|返回首页|返回书架|回到书架|返回顶部|回顶部|去底部|首页|书页|书签|加入书签|加入收藏|加入书架|放到书架|收藏本站|收藏本书|收藏|推荐票|点击进入|点击收藏|第一页|末页|搜索|搜索全站|正文|封面|书评|打卡|签到|赞|踩|分享)$/,
+
+  /** 页码残留行：纯 1-4 位数字（分页标记），章正文中不可能单独成段 */
+  PAGE_NUMBER: /^[0-9]{1,4}$/,
+
+  /** 「本章未完」类断章提示：CMS 分页尾部样板（「本章未完/未完待续」为元信息，不会出现在叙事中） */
+  TAIL_HINT:
+    /本章未完|未完待续|本章完|请点击下一[页章頁]继续阅读|转载请注明(?:来源|出处)|章节错误.{0,6}点此举报|手机用户请(?:浏览|阅读|访问)|关注公众号|微信公众号|(?:天才|一秒)记住本站最新网址|章节内容(?:错误|缺失)|看不到(?:结尾|结局)|正在手打|请稍等片刻|重新刷新页面|即可获取最新更新|请等待片刻/,
+
+  /** TAIL_HINT 的行长度上限（断章提示句常超 SHORT_LINE_MAX，单独放宽） */
+  TAIL_LINE_MAX: 80,
 
   /** JS/CSS 残留：伪协议/函数定义/DOM 访问/花括号成对出现的短行 */
   JS_RESIDUE: /javascript:|function\s*\(|document\.|window\.|\{.*\}/i,
+
+  /**
+   * HTML 标签残留：行内含标签样形态（<ins class=...>、</p> 等）。
+   * 允许无闭合 > 的残缺形态（实测 ddyueshu 广告碎片 &lt;canvas class=&quot;… 解码后
+   * 行尾无 >，旧规则要求闭合导致漏网）；首字符须为字母，避免误伤「a < b」类符号文本。
+   * 站点双重转义的广告/DOM 碎片（&amp;lt;ins ...）在实体预解码后以本规则捕获；
+   * 叙事正文不可能含原始 HTML 标签，不限行长度。
+   */
+  HTML_TAG_RESIDUE: /<\/?[a-z][^>]*>?/i,
+
+  /**
+   * 章首标题行：正文首行即「第X章 标题」形态（CMS 把章题渲染进正文容器）。
+   * 章题已由 titleSelector 单独提取，正文内的重复属样板；仅对首行生效，避免误杀叙事。
+   */
+  LEADING_HEADING:
+    /^第[0-9〇零一二两三四五六七八九十百千]{1,7}章(?:\s{1,4}|[:：·•\-—~*，,])\s*\S{0,30}$/,
+  /** 章首标题行的长度上限（标题行很短；超过则更可能是叙事） */
+  HEADING_LINE_MAX: 45,
 } as const
 
 /**
  * 判断一行（已规范化：trim 后）是否为噪声行。
  * 空字符串返回 false——空行由调用方直接丢弃，不计入噪声统计。
+ * 实体预解码（含全角分号/缺分号变体与多重转义）后再查标签残留。
  */
 export function isNoiseLine(line: string): boolean {
   const t = line.trim()
   if (!t) return false
   // 纯符号行（仅标点/符号/装饰线，无任何文字）——不含文字不可能是叙事，不限长度
   if (!NOISE_PATTERNS.HAS_TEXT.test(t)) return true
+  // 实体预解码后再查标签残留（站点把 DOM 碎片当文本渲染的广告残留）
+  if (NOISE_PATTERNS.HTML_TAG_RESIDUE.test(decodeHtmlEntities(t, 2))) return true
   // 以下规则仅对短行生效，避免误杀含关键词的正常叙事长句
-  if (t.length > NOISE_PATTERNS.SHORT_LINE_MAX) return false
+  if (t.length > NOISE_PATTERNS.SHORT_LINE_MAX) {
+    // 断章提示例外：句式固定且属元信息，放宽到 TAIL_LINE_MAX（不在此列的长句照旧放行）
+    if (t.length > NOISE_PATTERNS.TAIL_LINE_MAX) return false
+    return NOISE_PATTERNS.TAIL_HINT.test(t)
+  }
   if (NOISE_PATTERNS.URL_LINE.test(t)) return true
   if (NOISE_PATTERNS.SITE_PROMO.test(t)) return true
   if (NOISE_PATTERNS.NAV_EXACT.test(t)) return true
+  if (NOISE_PATTERNS.PAGE_NUMBER.test(t)) return true
+  // 断章/水印提示同样适用于短行（「（本章完）」「章节错误(点此举报)」常在 30 字内）
+  if (NOISE_PATTERNS.TAIL_HINT.test(t)) return true
   if (NOISE_PATTERNS.JS_RESIDUE.test(t)) return true
   return false
 }
 
 /**
  * 清洗一章正文：
- * - 归一化换行符与空白（\r\n|\r → \n、去行首缩进、行内空白折叠、去空行）
- * - 过滤噪声行（URL/推广/导航/JS 残留/纯符号，详见 NOISE_PATTERNS）
+ * - 归一化换行符与空白（\r\n|\r → \n、字面 \n 转义序列还原、去行首缩进、行内空白折叠、去空行）
+ * - 过滤噪声行（URL/推广/导航/JS 残留/HTML 标签残留/纯符号，详见 NOISE_PATTERNS）
+ * - 保留行输出实体解码后的净化版（&amp;………… → &…………），解码后再次校验防漏网噪声
+ * - 首行若为「第X章」标题样形态则丢弃（章题已由 titleSelector 单独提取，正文内重复属样板）
  * - 输出满足存储契约：无空行、无行首缩进，行间单个 \n
  */
 export function cleanChapterContent(raw: string): CleanResult {
   if (!raw) return { text: '', removedLines: 0 }
-  const normalized = raw.replace(/\r\n?/g, '\n')
+  const normalized = raw.replace(/\r\n?/g, '\n').replace(/\\r\\n|\\n|\\r/g, '\n')
   const kept: string[] = []
   let removed = 0
   for (const rawLine of normalized.split('\n')) {
@@ -94,7 +139,22 @@ export function cleanChapterContent(raw: string): CleanResult {
       removed++
       continue
     }
-    kept.push(line)
+    // 输出实体解码后的净化版；解码可能暴露残缺标签/广告碎片，二次校验防漏网
+    let out = line
+    const decoded = decodeHtmlEntities(line, 2)
+    if (decoded !== line) {
+      if (isNoiseLine(decoded)) {
+        removed++
+        continue
+      }
+      out = decoded.replace(/\s+/g, ' ').trim()
+    }
+    // 章首标题行：仅当尚未保留任何行时检查（首行即「第X章」样板）
+    if (kept.length === 0 && out.length <= NOISE_PATTERNS.HEADING_LINE_MAX && NOISE_PATTERNS.LEADING_HEADING.test(out)) {
+      removed++
+      continue
+    }
+    kept.push(out)
   }
   return { text: kept.join('\n'), removedLines: removed }
 }

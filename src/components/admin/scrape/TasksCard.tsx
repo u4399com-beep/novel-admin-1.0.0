@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 采集任务列表区块：状态徽章 / 双口径进度 / 日志查看 / 取消 / 删除 / 分页。
+ * 采集任务列表区块：状态徽章 / 双口径进度 / 日志查看 / 编辑 / 重新采集 / 取消 / 删除 / 分页。
  * 自 ScrapeCenter.tsx 原样拆分（执行中任务列表 3s 轮询、终态自停等行为不变）。
  */
 
@@ -27,10 +27,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ScrollText, Square, Trash2 } from 'lucide-react'
+import { Pencil, RotateCcw, ScrollText, Square, Trash2 } from 'lucide-react'
 import { timeAgo } from '@/lib/format'
+import type { ScrapeRuleDto } from '@/lib/types'
 import { runBusy } from '../ui-shared'
 import { api, truncate } from './shared'
+import { TaskFormFields, parseTaskForm, taskFormFromRow, type TaskFormState } from './TaskFormFields'
 import type { TaskDetail, TaskRow } from './types'
 
 const PAGE_SIZE = 20
@@ -48,6 +50,9 @@ function StatusBadge({ status }: { status: string }) {
   const meta = STATUS_META[status] ?? { label: status, cls: 'bg-neutral-200 text-neutral-600' }
   return <Badge className={`shrink-0 border-transparent ${meta.cls}`}>{meta.label}</Badge>
 }
+
+/** 终态集合（与后端一致）：可重新采集 */
+const TERMINAL_STATUSES = new Set(['success', 'partial', 'failed', 'canceled'])
 
 function ModeBadge({ mode }: { mode: string }) {
   return mode === 'list' ? (
@@ -108,10 +113,79 @@ function LogDialog({ task, onClose }: { task: TaskRow; onClose: () => void }) {
   )
 }
 
+/**
+ * 任务编辑对话框：复用新建表单的控件与校验（TaskFormFields），预填当前任务值，
+ * 保存走 PATCH action:'edit'（执行中任务后端返回 409，由 api/runBusy 统一 toast 后端文案）。
+ */
+function EditTaskDialog({
+  task,
+  onClose,
+  onSaved,
+}: {
+  task: TaskRow
+  onClose: () => void
+  onSaved: () => void
+}) {
+  // 规则下拉复用 ScrapeCenter 的规则列表缓存（同 queryKey，无额外请求）
+  const { data: rules = [] } = useQuery({
+    queryKey: ['scrape-rules'],
+    queryFn: () => api<ScrapeRuleDto[]>('/api/scrape-rules'),
+  })
+  const [form, setForm] = useState<TaskFormState>(() => taskFormFromRow(task))
+  const [saving, setSaving] = useState(false)
+
+  const save = () => {
+    const parsed = parseTaskForm(form)
+    if (!parsed.ok) return toast.error(parsed.error)
+    return runBusy(setSaving, true, false, '保存失败', async () => {
+      await api(`/api/scrape-tasks/${task.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'edit',
+          mode: parsed.mode,
+          targetUrl: parsed.targetUrl,
+          ruleId: parsed.ruleId,
+          pages: parsed.pages,
+          startPage: parsed.startPage,
+          concurrency: parsed.concurrency,
+        }),
+      })
+      toast.success(`任务 #${task.id} 已更新`)
+      onSaved()
+    })
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-sm">编辑任务 #{task.id}</DialogTitle>
+          <DialogDescription>修改任务配置后保存生效；执行中任务需先取消才能编辑。</DialogDescription>
+        </DialogHeader>
+        <TaskFormFields
+          form={form}
+          rules={rules}
+          onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+          idPrefix="edit-task"
+        />
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>
+            取消
+          </Button>
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving ? '保存中…' : '保存'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function TasksCard() {
   const qc = useQueryClient()
   const [page, setPage] = useState(1)
   const [logTask, setLogTask] = useState<TaskRow | null>(null)
+  const [editTask, setEditTask] = useState<TaskRow | null>(null)
   // 取消/删除进行中的任务 id（防重复提交）
   const [busyId, setBusyId] = useState<number | null>(null)
 
@@ -140,6 +214,18 @@ export function TasksCard() {
       })
       await refresh()
       toast.success(`已发送取消指令（任务 #${t.id}）`)
+    })
+  }
+
+  const rerun = (t: TaskRow) => {
+    if (busyId !== null) return
+    return runBusy(setBusyId, t.id, null, '重新采集失败', async () => {
+      await api(`/api/scrape-tasks/${t.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'rerun' }),
+      })
+      await refresh()
+      toast.success('任务已重新排队')
     })
   }
 
@@ -208,13 +294,15 @@ export function TasksCard() {
                 <TableHead className="h-8 w-32 text-xs">进度</TableHead>
                 <TableHead className="hidden h-8 w-36 text-xs md:table-cell">成果</TableHead>
                 <TableHead className="hidden h-8 w-20 text-xs md:table-cell">时间</TableHead>
-                <TableHead className="h-8 w-24 text-right text-xs">操作</TableHead>
+                <TableHead className="h-8 w-28 text-right text-xs">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((t) => {
                 const pct = t.total > 0 ? Math.min(100, Math.round((t.done / t.total) * 100)) : 0
-                const active = t.status === 'pending' || t.status === 'running'
+                const running = t.status === 'running'
+                const active = t.status === 'pending' || running
+                const terminal = TERMINAL_STATUSES.has(t.status)
                 return (
                   <TableRow key={t.id}>
                     <TableCell className="p-2 text-xs tabular-nums text-neutral-500">{t.id}</TableCell>
@@ -255,7 +343,7 @@ export function TasksCard() {
                       {timeAgo(t.updatedAt)}
                     </TableCell>
                     <TableCell className="p-2 text-right">
-                      <div className="flex justify-end gap-0.5">
+                      <div className="flex flex-wrap justify-end gap-0.5">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -266,6 +354,32 @@ export function TasksCard() {
                         >
                           <ScrollText className="h-3.5 w-3.5" />
                         </Button>
+                        {!running && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5"
+                            disabled={busyId === t.id}
+                            title="编辑任务"
+                            aria-label={`编辑任务 ${t.id}`}
+                            onClick={() => setEditTask(t)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {terminal && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5 text-emerald-600 hover:text-emerald-700"
+                            disabled={busyId === t.id}
+                            title="重新采集（重置进度并重新排队执行）"
+                            aria-label={`重新采集任务 ${t.id}`}
+                            onClick={() => rerun(t)}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         {active && (
                           <Button
                             size="sm"
@@ -301,6 +415,16 @@ export function TasksCard() {
       )}
 
       {logTask && <LogDialog task={logTask} onClose={() => setLogTask(null)} />}
+      {editTask && (
+        <EditTaskDialog
+          task={editTask}
+          onClose={() => setEditTask(null)}
+          onSaved={() => {
+            setEditTask(null)
+            refresh()
+          }}
+        />
+      )}
     </section>
   )
 }

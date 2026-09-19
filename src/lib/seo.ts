@@ -28,9 +28,34 @@ export const DEFAULT_SEO: SeoConfig = {
   autoFromContent: true,
 }
 
-/** 模板变量替换 */
+/**
+ * 模板变量替换。命中变量替换为值；未命中的 {xxx} 替换为空串。
+ * tpl 兜底为字符串：历史脏数据可能存入非字符串模板，replace 会抛 TypeError 拖垮渲染链。
+ */
 export function renderTpl(tpl: string, vars: Record<string, string | number>): string {
-  return tpl.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''))
+  return String(tpl ?? '').replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''))
+}
+
+/**
+ * TDK 模板字段白名单清洗：非字符串值丢弃回落默认，超长截断。
+ * pseo 字段（PseoRunnerConfig）原样透传（读取方 sanitizePseoConfig 会再清洗），
+ * 其余未知键一律丢弃，防止任意 JSON 注入 TDK 渲染链。
+ */
+export function sanitizeSeoConfig(raw: unknown): SeoConfig {
+  const out: SeoConfig = { ...DEFAULT_SEO }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  const r = raw as Record<string, unknown>
+  for (const key of Object.keys(DEFAULT_SEO) as (keyof SeoConfig)[]) {
+    if (key === 'autoFromContent') {
+      if (typeof r.autoFromContent === 'boolean') out.autoFromContent = r.autoFromContent
+    } else if (typeof r[key] === 'string') {
+      ;(out as unknown as Record<string, unknown>)[key] = (r[key] as string).slice(0, 1000)
+    }
+  }
+  if (r.pseo && typeof r.pseo === 'object' && !Array.isArray(r.pseo)) {
+    out.pseo = r.pseo as SeoConfig['pseo']
+  }
+  return out
 }
 
 /** 自动从正文提取补充关键词（高频 2 字词简化实现，避免引入分词依赖） */

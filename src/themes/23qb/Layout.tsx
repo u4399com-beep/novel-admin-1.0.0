@@ -6,8 +6,11 @@
 // 页脚浅灰 #f3f5f7、12px 次要色。正文页框架正常渲染。
 
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { ChevronDown, LayoutGrid, Menu, X } from 'lucide-react'
+import { ChevronDown, History, LayoutGrid, Menu, Star, X } from 'lucide-react'
 import { useCategories, useSettings } from '@/hooks/use-novel-data'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+import { TradToggle } from '@/components/theme-tools/TradToggle'
 import { cn } from '@/lib/utils'
 import type { ThemeLayoutProps } from '../types'
 import { Container } from './ui'
@@ -16,8 +19,10 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
   const [scrolled, setScrolled] = useState(false)
   const [allOpen, setAllOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [histOpen, setHistOpen] = useState(false)
   const { data: categories } = useCategories()
   const { data: settings } = useSettings()
+  const { promptFavorite } = useFavoriteSite()
   const footerCfg = settings?.footer
   const boxRef = useRef<HTMLDivElement>(null)
 
@@ -100,6 +105,16 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
           </nav>
 
           <div className="ml-auto flex items-center gap-2 lg:ml-0">
+            {/* 阅读记录（全端） */}
+            <button
+              type="button"
+              aria-label="阅读记录"
+              title="阅读记录：查看最近阅读过的章节"
+              onClick={() => setHistOpen(true)}
+              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] text-[#282828] transition-colors hover:bg-white/70 hover:text-[#ff2a14]"
+            >
+              <History className="h-[18px] w-[18px]" />
+            </button>
             {/* 全部分类下拉 */}
             <div className="relative" ref={boxRef}>
               <button
@@ -205,6 +220,32 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
                 </button>
               ))}
             </div>
+            {/* 站点工具 */}
+            <div className="mt-3 border-t border-[#eaedf1] p-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false)
+                  setHistOpen(true)
+                }}
+                className="flex h-11 w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-3 text-sm text-[#282828] transition-colors hover:bg-[#f3f5f7] hover:text-[#ff2a14]"
+              >
+                <History className="h-4 w-4 text-[#ff2a14]" />
+                阅读记录
+              </button>
+              <button
+                type="button"
+                onClick={promptFavorite}
+                className="flex h-11 w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-3 text-sm text-[#282828] transition-colors hover:bg-[#f3f5f7] hover:text-[#ff2a14]"
+              >
+                <Star className="h-4 w-4 text-[#ff2a14]" />
+                收藏本站
+              </button>
+              <div className="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm text-[#282828] transition-colors hover:bg-[#f3f5f7] hover:text-[#ff2a14]">
+                <span className="flex h-4 w-4 items-center justify-center text-[13px] font-bold text-[#ff2a14]">繁</span>
+                <TradToggle />
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -216,6 +257,24 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
         <Container className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-4 text-xs text-black/50">
           <p>{footerCfg?.text || `© ${new Date().getFullYear()} ${siteName} · 界面结构级主题模板（仿 23qb 布局 / 原创实现）`}</p>
           <p className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setHistOpen(true)}
+              className="cursor-pointer transition-colors hover:text-[#ff2a14]"
+            >
+              阅读记录
+            </button>
+            <span className="text-black/20">|</span>
+            <button
+              type="button"
+              onClick={promptFavorite}
+              className="cursor-pointer transition-colors hover:text-[#ff2a14]"
+            >
+              收藏本站
+            </button>
+            <span className="text-black/20">|</span>
+            <TradToggle className="hover:text-[#ff2a14]" />
+            <span className="text-black/20">|</span>
             {footerCfg?.links?.map((lk) => (
               <Fragment key={`${lk.label}-${lk.href}`}>
                 <a href={lk.href} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-[#ff2a14]">
@@ -237,6 +296,13 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
           </Container>
         )}
       </footer>
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#ff2a14"
+      />
     </div>
   )
 }

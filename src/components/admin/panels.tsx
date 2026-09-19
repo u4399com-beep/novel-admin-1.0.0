@@ -128,7 +128,8 @@ export function NovelsTab() {
         toast.success('已新增')
       }
       setForm(null)
-      await invalidate(qc, ['novels'], ['novel'], qk.home)
+      // categories 也失效：列表页的 novelCount 随新增/更新（换分类）变化
+      await invalidate(qc, ['novels'], ['novel'], qk.home, qk.categories)
     })
   }
 
@@ -139,7 +140,7 @@ export function NovelsTab() {
       toast.success('已删除')
       // 末页删空自愈：当前页仅剩这一条且不是第一页时回退一页，避免停留在空页
       if (data && data.list.length === 1 && page > 1) setPage(page - 1)
-      await invalidate(qc, ['novels'], ['novel'], qk.home)
+      await invalidate(qc, ['novels'], ['novel'], qk.home, qk.categories)
     } catch (e) {
       toast.error(errMsg(e, '删除失败'))
     }
@@ -256,8 +257,9 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
   const qc = useQueryClient()
   const { data: chapters, isLoading, isError, refetch } = useChapters(novel.id)
   const [title, setTitle] = useState('')
+  const [volume, setVolume] = useState('')
   const [content, setContent] = useState('')
-  const [editing, setEditing] = useState<{ id: number; title: string; content: string } | null>(null)
+  const [editing, setEditing] = useState<{ id: number; title: string; volume: string; content: string } | null>(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -268,9 +270,9 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
   const add = () => {
     if (!title.trim()) return toast.error('标题不能为空')
     return runBusy(setAdding, true, false, '添加失败', async () => {
-      await api('/api/chapters', { method: 'POST', body: JSON.stringify({ novelId: novel.id, title, content }) })
+      await api('/api/chapters', { method: 'POST', body: JSON.stringify({ novelId: novel.id, title, volume, content }) })
       toast.success('章节已添加')
-      setTitle(''); setContent('')
+      setTitle(''); setVolume(''); setContent('')
       await invalidate(qc, qk.chapters(novel.id), ['novels'], ['novel'], qk.home)
     })
   }
@@ -279,10 +281,12 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
     if (!editing) return
     if (!editing.title.trim()) return toast.error('标题不能为空')
     return runBusy(setSaving, true, false, '保存失败', async () => {
-      await api(`/api/chapters/${editing.id}`, { method: 'PUT', body: JSON.stringify({ title: editing.title, content: editing.content }) })
+      // volume 始终携带（可为空串 = 清空卷名；PUT 只在字段为字符串时更新）
+      await api(`/api/chapters/${editing.id}`, { method: 'PUT', body: JSON.stringify({ title: editing.title, volume: editing.volume, content: editing.content }) })
       toast.success('已保存')
       setEditing(null)
-      await invalidate(qc, qk.chapters(novel.id), ['chapter'], ['novel'])
+      // novels/home 也失效：列表与首页展示的书级字数随章节正文变化（原遗漏导致 30s 内展示旧字数）
+      await invalidate(qc, qk.chapters(novel.id), ['chapter'], ['novel'], ['novels'], qk.home)
     })
   }
 
@@ -311,6 +315,13 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
         >
           <h4 className="mb-3 text-sm font-semibold">编辑章节</h4>
           <Input autoFocus value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} className="mb-2" />
+          <Input
+            value={editing.volume}
+            onChange={(e) => setEditing({ ...editing, volume: e.target.value })}
+            placeholder="分卷名（可选，留空=无卷）"
+            maxLength={50}
+            className="mb-2"
+          />
           <Textarea rows={12} value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="flex-1" />
           <DialogActions className="mt-3 flex justify-end gap-2" busy={saving} onCancel={() => setEditing(null)} onSave={saveEdit} />
         </Modal>
@@ -323,7 +334,16 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="mb-4 space-y-2 rounded-lg border bg-neutral-50 p-3">
           <p className="text-xs font-medium text-neutral-600">新增章节</p>
-          <Input placeholder="章节标题" value={title} onChange={(e) => setTitle(e.target.value)} className="h-8" />
+          <div className="flex gap-2">
+            <Input placeholder="章节标题" value={title} onChange={(e) => setTitle(e.target.value)} className="h-8" />
+            <Input
+              placeholder="分卷名（可选）"
+              value={volume}
+              onChange={(e) => setVolume(e.target.value)}
+              maxLength={50}
+              className="h-8 w-36 shrink-0"
+            />
+          </div>
           <Textarea placeholder="正文（可留空，稍后编辑）" rows={3} value={content} onChange={(e) => setContent(e.target.value)} />
           <Button size="sm" onClick={add} disabled={adding}>{adding ? '添加中…' : <><Plus className="mr-1 h-3.5 w-3.5" />添加</>}</Button>
         </div>
@@ -341,12 +361,17 @@ function ChaptersDialog({ novel, onClose }: { novel: NovelListItem; onClose: () 
           {chapters?.map((c) => (
             <div key={c.id} className="flex items-center gap-2 rounded border px-3 py-1.5 text-sm">
               <span className="w-10 shrink-0 text-xs text-neutral-400">{c.idx}</span>
+              {c.volume && (
+                <Badge variant="outline" className="max-w-24 shrink-0 truncate font-normal text-neutral-500" title={c.volume}>
+                  {c.volume}
+                </Badge>
+              )}
               <span className="min-w-0 flex-1 truncate">{c.title}</span>
               <span className="shrink-0 text-xs text-neutral-400">{formatWordCount(c.wordCount)}字</span>
               <Button size="sm" variant="ghost" className="h-6 px-1.5" aria-label={`编辑章节 ${c.title}`} onClick={async () => {
                 try {
-                  const detail = await api<{ title: string; content: string }>(`/api/chapters/${c.id}`)
-                  setEditing({ id: c.id, title: detail.title, content: detail.content })
+                  const detail = await api<{ title: string; volume: string; content: string }>(`/api/chapters/${c.id}`)
+                  setEditing({ id: c.id, title: detail.title, volume: detail.volume ?? '', content: detail.content })
                 } catch (e) {
                   toast.error(errMsg(e, '加载章节失败'))
                 }
@@ -517,7 +542,15 @@ export function SeoTab() {
 
 // ==================== PSEO 管理（设置 + multi-search-engine 下拉词） ====================
 
-interface PseoRow { id: number; keyword: string; source: string; status: string; updatedAt: string }
+interface PseoRow {
+  id: number
+  keyword: string
+  source: string
+  status: string
+  novelId: number | null // 绑定书 id（采集自动取词时写入）
+  novelTitle: string | null // 绑定书标题（书已删除为 null）
+  updatedAt: string
+}
 interface EngineStat { engine: string; ok: boolean; count: number; error?: string }
 interface PseoConfigDto {
   sources: string[] // 启用的搜索引擎
@@ -526,6 +559,7 @@ interface PseoConfigDto {
   maxKeywords: number
   expand: boolean
   autoGenerate: boolean
+  collectBind: boolean // 采集时自动为书籍取下拉词并绑定书生成 PSEO 书籍页
 }
 interface BatchResp {
   added: number
@@ -549,6 +583,7 @@ const EMPTY_PSEO_CFG: PseoConfigDto = {
   maxKeywords: 200,
   expand: false,
   autoGenerate: true,
+  collectBind: true,
 }
 const engineLabel = (id: string) => PSEO_ENGINES.find((e) => e.id === id)?.label ?? id
 
@@ -698,6 +733,10 @@ export function PseoTab() {
             获取后自动生成 PSEO 聚合页
           </label>
           <label className="flex items-center gap-2 text-sm">
+            <Switch checked={form.collectBind} onCheckedChange={(v) => setForm({ collectBind: v })} />
+            采集时自动绑定下拉词（书籍入库后取书名下拉词，写入书页「相关搜索」并生成绑定该书的 PSEO 书籍页）
+          </label>
+          <label className="flex items-center gap-2 text-sm">
             <Switch checked={form.expand} onCheckedChange={(v) => setForm({ expand: v })} />
             二级挖掘（以下拉词为新种子再获取一轮）
           </label>
@@ -741,6 +780,21 @@ export function PseoTab() {
           {rows?.map((r) => (
             <div key={r.id} className="flex items-center gap-2 rounded border px-3 py-1.5 text-xs">
               <span className="min-w-0 flex-1 truncate font-medium">{r.keyword}</span>
+              {r.novelId != null && (
+                <button
+                  type="button"
+                  title={`绑定书：${r.novelTitle ?? `#${r.novelId}`}，点击前往书页`}
+                  className="flex h-5 min-w-0 max-w-[10rem] shrink-0 cursor-pointer items-center gap-0.5 rounded bg-neutral-100 px-1.5 text-[11px] text-neutral-600 transition-colors hover:bg-neutral-200 hover:text-neutral-900"
+                  onClick={() => {
+                    // 同「预览」：后台为 hash 路由 #/admin，仅 navigate() 不切渲染，需清 hash 退回前台
+                    navigate({ name: 'book', novelId: r.novelId! })
+                    window.location.hash = ''
+                  }}
+                >
+                  <BookOpen className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{r.novelTitle ?? `#${r.novelId}`}</span>
+                </button>
+              )}
               <Badge variant="outline" className="shrink-0">{r.source}</Badge>
               <Badge variant={r.status === 'generated' ? 'default' : 'secondary'} className="shrink-0">{r.status}</Badge>
               <span className="shrink-0 text-neutral-400">{timeAgo(r.updatedAt)}</span>

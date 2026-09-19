@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { cn } from '@/lib/utils'
 import type { ChapterListItem, NovelListItem } from '@/lib/types'
 import type { ThemeView } from '../types'
@@ -46,15 +47,18 @@ export function Cover({
 }) {
   return (
     <div className={cn('relative shrink-0 overflow-hidden', className)}>
+      <NovelCoverImg novel={novel} />
       <div
         className={cn(
           'flex h-full w-full items-center justify-center transition-transform duration-300 group-hover:scale-110',
           coverBgClass(novel.cover),
         )}
       >
-        <span className={cn('select-none font-bold text-white/90 drop-shadow', charClass)}>
-          {firstChar(novel.title)}
-        </span>
+        {!isLocalCover(novel.cover) && (
+          <span className={cn('select-none font-bold text-white/90 drop-shadow', charClass)}>
+            {firstChar(novel.title)}
+          </span>
+        )}
       </div>
       {overlay && (
         <span className="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">

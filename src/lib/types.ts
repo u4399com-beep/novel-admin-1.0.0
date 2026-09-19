@@ -30,6 +30,8 @@ export interface NovelDetail extends NovelListItem {
   totalChapters: number
   firstChapterId: number | null
   lastChapterId: number | null
+  /** 搜索引擎下拉词（采集时绑定，逗号分隔；书页「相关搜索」内链数据源） */
+  suggestKeywords: string
 }
 
 export interface ChapterListItem {
@@ -37,6 +39,8 @@ export interface ChapterListItem {
   idx: number
   title: string
   wordCount: number
+  /** 分卷名（源站目录自带卷头时非空；无卷结构为空串） */
+  volume: string
 }
 
 export interface ChapterDetail {
@@ -47,6 +51,8 @@ export interface ChapterDetail {
   title: string
   content: string
   wordCount: number
+  /** 本章所属分卷名（无卷结构为空串） */
+  volume: string
   prevId: number | null
   nextId: number | null
 }
@@ -105,6 +111,7 @@ export interface PseoRunnerConfig {
   maxKeywords: number // 单次批量运行入库上限（10-500）
   expand: boolean // 二级挖掘：以一级下拉词为新种子再获取一轮
   autoGenerate: boolean // 获取完成后自动为 pending 关键词生成聚合页
+  collectBind: boolean // 采集时自动为书籍取下拉词并绑定书籍生成 PSEO 书籍页（默认开启）
 }
 
 /** 页脚自定义链接（后台「页面底部」编辑产生） */
@@ -163,6 +170,8 @@ export interface BookRule {
   categorySelector?: string
   chapterLinkSelector?: string
   chapterTitleSelector?: string
+  /** 分卷标题选择器：目录容器内卷头元素（如 #list dl dt）；未配置时用内置启发式（dt/卷名模式） */
+  volumeSelector?: string
   /** 目录页链接选择器：书页仅含最新几章时指向完整目录页（如 a.catalog-more），worker 会二次抓取提取全部章节 */
   catalogLinkSelector?: string
   /** 排除选择器：提取前从 DOM 移除命中节点（如全站站标 h1.logo），多备用逗号分隔；'none' 用于 chapterLinkSelector 时表示跳过章节列表 */
@@ -183,6 +192,8 @@ export interface ScrapeRuleDto {
   siteUrl: string
   enabled: boolean
   charset: string
+  /** 站点级出口代理（空 = 直连） */
+  proxy: string
   listRule: ListRule
   bookRule: BookRule
   chapterRule: ChapterRule

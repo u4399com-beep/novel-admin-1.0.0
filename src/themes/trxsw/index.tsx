@@ -9,6 +9,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { TocChapters } from '@/components/toc-chapters'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import { cn } from '@/lib/utils'
 import {
   useCategories,
@@ -19,6 +21,9 @@ import {
   useNovels,
   useSettings,
 } from '@/hooks/use-novel-data'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+import { TradToggle } from '@/components/theme-tools/TradToggle'
 import {
   READER_INKS,
   READER_LINE_HEIGHTS,
@@ -59,6 +64,8 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
   const { data: settings } = useSettings()
   const footerCfg = settings?.footer
   const [kw, setKw] = useState('')
+  const [histOpen, setHistOpen] = useState(false)
+  const { promptFavorite, shortcut } = useFavoriteSite()
 
   const submitSearch = () => {
     const t = kw.trim()
@@ -77,12 +84,28 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
     <div className="flex min-h-screen flex-col bg-[#F7F7F7] text-[#333]">
       {/* 右上工具行 */}
       <div className="border-b border-[#E4E4E4] bg-[#FAFAFA]">
-        <div className="mx-auto flex h-7 max-w-[960px] items-center justify-end gap-3 px-3 text-[11px] text-[#999]">
-          <span>收藏本站（Ctrl+D）</span>
+        <div className="mx-auto flex h-7 max-w-[960px] flex-wrap items-center justify-end gap-x-3 gap-y-1 px-3 py-0.5 text-[11px] text-[#999]">
+          <button
+            type="button"
+            onClick={promptFavorite}
+            title={`按 ${shortcut} 也可收藏本站`}
+            className="cursor-pointer transition-colors hover:text-[#C00]"
+          >
+            收藏本站（{shortcut}）
+          </button>
           <span className="text-[#DDD]">|</span>
-          <span>阅读记录</span>
+          <button
+            type="button"
+            onClick={() => setHistOpen(true)}
+            title="查看最近阅读过的章节"
+            className="cursor-pointer transition-colors hover:text-[#C00]"
+          >
+            阅读记录
+          </button>
           <span className="text-[#DDD]">|</span>
-          <span>简单 · 快速 · 纯净阅读</span>
+          <TradToggle className="hover:text-[#C00]" />
+          <span className="hidden text-[#DDD] sm:inline">|</span>
+          <span className="hidden sm:inline">简单 · 快速 · 纯净阅读</span>
         </div>
       </div>
 
@@ -220,6 +243,13 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
           <p>{footerCfg?.text || `${siteName} · 源站 trxsw.com（重建模板）`}</p>
         </div>
       </footer>
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#CC0000"
+      />
     </div>
   )
 }
@@ -727,6 +757,8 @@ function BookInner({ navigate, novelId }: ViewProps & { novelId: number }) {
         <p className="indent-[2em] text-sm leading-7 text-[#666]">
           {n.description || '作者尚未填写简介。'}
         </p>
+        {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+        <BookSuggestLinks keywords={n.suggestKeywords} className="mt-3 border-t border-dotted border-[#E4E4E4] pt-3" />
       </Block>
 
       {/* 最近章节（全量章节末 12 条倒序 = 最新 12 章，新→旧，双栏） */}
@@ -854,7 +886,7 @@ function TocView({ navigate, novelId }: ViewProps & { novelId: number }) {
         </Block>
       )}
 
-      {/* 4 列章节表 */}
+      {/* 4 列章节表（columns 列优先流式分栏，阅读顺序自上而下；有分卷数据时按卷分组） */}
       <Block
         className="mt-3"
         title={`章节目录（${sorted.length} 章 · 正序）`}
@@ -867,19 +899,15 @@ function TocView({ navigate, novelId }: ViewProps & { novelId: number }) {
         ) : sorted.length === 0 ? (
           <p className="py-10 text-center text-sm text-[#999]">暂无章节数据</p>
         ) : (
-          <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2 md:grid-cols-4">
-            {sorted.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
-                title={c.title}
-                className="cursor-pointer truncate border-b border-dotted border-[#E4E4E4] px-1 py-[7px] text-left text-xs text-[#2F468F] transition-colors hover:bg-[#FFF7F0] hover:text-[#FF6600]"
-              >
-                {c.idx}. {c.title}
-              </button>
-            ))}
-          </div>
+          <TocChapters
+            chapters={sorted}
+            navigate={navigate}
+            columnsClassName="columns-1 gap-x-4 sm:columns-2 md:columns-4"
+            itemClassName="border-b border-dotted border-[#E4E4E4] px-1 py-[7px] text-xs text-[#2F468F] transition-colors hover:bg-[#FFF7F0] hover:text-[#FF6600]"
+            renderItem={(c) => `${c.idx}. ${c.title}`}
+            volumeClassName="border-b-2 border-[#FF6600]/25 px-1 py-1.5 text-[13px] font-bold text-[#2F468F]"
+            countClassName="text-[11px] text-[#999]"
+          />
         )}
       </Block>
     </div>

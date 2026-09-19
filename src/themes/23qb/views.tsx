@@ -9,8 +9,10 @@
 // Search：同款搜索框 + 封面结果网格
 
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Bookmark, SearchX, ThumbsUp } from 'lucide-react'
+import { BookOpen, Bookmark, FileText, SearchX, ThumbsUp } from 'lucide-react'
 import { useCategories, useChapter, useChapters, useHomeData, useNovel, useNovels } from '@/hooks/use-novel-data'
+import { TocChapters } from '@/components/toc-chapters'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import {
   READER_INKS,
   READER_LINE_HEIGHTS,
@@ -24,6 +26,7 @@ import {
   type ReaderSceneColors,
 } from '@/hooks/use-reader-prefs'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { cn } from '@/lib/utils'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
@@ -313,6 +316,8 @@ export function BookView({ navigate, novelId }: ViewProps & { novelId: number })
             <p className="mt-5 whitespace-pre-line text-[15px] leading-7 text-black/68">
               {novel.description || '（作者还未填写简介）'}
             </p>
+            {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+            <BookSuggestLinks keywords={novel.suggestKeywords} className="mt-5 border-t border-[#f5f5f5] pt-4" />
             {/* 按钮行 */}
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <BigBtn
@@ -410,18 +415,21 @@ export function BookView({ navigate, novelId }: ViewProps & { novelId: number })
   )
 }
 
-/** 封面渐变体：coverBgClass + 书名首字（禁止外链图片） */
+/** 封面渐变体：coverBgClass + 书名首字；采集到本地 webp 封面时渲染图片 */
 function CoverBox({ novel, big }: { novel: { title: string; cover: string }; big?: boolean }) {
   return (
     <div
       className={cn(
-        'flex aspect-[5/7] items-center justify-center overflow-hidden rounded-[10px] shadow-[0_10px_26px_rgba(149,157,165,.4)]',
+        'relative flex aspect-[5/7] items-center justify-center overflow-hidden rounded-[10px] shadow-[0_10px_26px_rgba(149,157,165,.4)]',
         coverBgClass(novel.cover),
       )}
     >
-      <span className={cn('font-bold text-white/90 drop-shadow-md', big ? 'text-6xl' : 'text-5xl')}>
-        {novel.title.slice(0, 1)}
-      </span>
+      <NovelCoverImg novel={novel} />
+      {!isLocalCover(novel.cover) && (
+        <span className={cn('font-bold text-white/90 drop-shadow-md', big ? 'text-6xl' : 'text-5xl')}>
+          {novel.title.slice(0, 1)}
+        </span>
+      )}
     </div>
   )
 }
@@ -513,15 +521,30 @@ export function TocView({ navigate, novelId }: ViewProps & { novelId: number }) 
             ))}
           </div>
         ) : (
-          <div className="mt-4 flex flex-col">
-            {(chapters ?? []).map((c) => (
-              <ChapterRow
-                key={c.id}
-                chapter={c}
-                active={bookmark?.chapterId === c.id}
-                onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
-              />
-            ))}
+          <div className="mt-4">
+            {/* 列优先分栏（columns，阅读顺序自上而下；有分卷数据时按卷分组），条目沿用 ChapterRow 视觉 */}
+            <TocChapters
+              chapters={chapters ?? []}
+              navigate={navigate}
+              columnsClassName="columns-1 gap-x-8 md:columns-2 xl:columns-3"
+              itemClassName={(c) =>
+                cn(
+                  'mb-1 flex h-10 items-center gap-2 rounded-[10px] px-3 text-left text-sm transition-colors even:bg-[#f7f8f9] hover:text-[#ff2a14]',
+                  bookmark?.chapterId === c.id
+                    ? 'bg-[#ecf9f0] text-[#34a853] hover:text-[#34a853]'
+                    : 'text-[#282828]',
+                )
+              }
+              renderItem={(c) => (
+                <>
+                  <FileText className="h-4 w-4 shrink-0 text-[#34a853]" />
+                  <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                  <span className="shrink-0 text-xs text-black/35">{fmtWords(c.wordCount)}</span>
+                </>
+              )}
+              volumeClassName="mb-2 border-l-4 border-[#34a853] pl-2 text-[16px] font-bold text-[#282828]"
+              countClassName="text-xs text-black/35"
+            />
           </div>
         )}
       </Card>
@@ -684,7 +707,7 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
                 paragraphs.map((p, i) => (
                   <p
                     key={i}
-                    className="mb-[0.825rem] break-words"
+                    className="mb-[0.825rem] break-words indent-[2em]"
                     style={{
                       fontSize: prefs.fontSize,
                       lineHeight: prefs.lineHeight,

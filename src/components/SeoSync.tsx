@@ -22,6 +22,23 @@ function setMetaTag(attr: 'name' | 'property', key: string, content: string) {
   el.setAttribute('content', content)
 }
 
+/** JSON-LD 节点 id 固定复用（防视图切换重复堆积）；data=null 时移除（非 home/book 视图不携带结构化数据） */
+function setJsonLd(data: Record<string, unknown> | null) {
+  let el = document.head.querySelector<HTMLScriptElement>('script#ld-json')
+  if (!data) {
+    el?.remove()
+    return
+  }
+  if (!el) {
+    el = document.createElement('script')
+    el.id = 'ld-json'
+    el.type = 'application/ld+json'
+    document.head.appendChild(el)
+  }
+  // textContent 写入本身安全（不解析 HTML）；替换 </ 为 <\/ 双保险防闭合标签逃逸
+  el.textContent = JSON.stringify(data).replace(/<\//g, '<\\/')
+}
+
 /**
  * 自动 SEO/TDK：根据当前视图 + 数据 + SEO 模板配置，
  * 自动写入 document.title 与 description/keywords/OG meta。
@@ -45,6 +62,7 @@ export function SeoSync() {
     const seo: SeoConfig = settings.seo ?? DEFAULT_SEO
     const siteName = settings.siteName
     let meta: Meta | null = null
+    let ld: Record<string, unknown> | null = null
 
     switch (view.name) {
       case 'home': {
@@ -53,6 +71,22 @@ export function SeoSync() {
           title: renderTpl(seo.homeTitle, vars),
           description: renderTpl(seo.homeDescription, vars),
           keywords: renderTpl(seo.homeKeywords, vars),
+        }
+        // WebSite + SearchAction：站点无独立搜索路由（SPA 内部跳转），
+        // target 写相对路径 /?query={search_term_string} 供搜索引擎识别站内搜索入口
+        ld = {
+          '@context': 'https://schema.org',
+          '@type': 'WebSite',
+          name: siteName,
+          url: `${window.location.origin}/`,
+          potentialAction: {
+            '@type': 'SearchAction',
+            target: {
+              '@type': 'EntryPoint',
+              urlTemplate: '/?query={search_term_string}',
+            },
+            'query-input': 'required name=search_term_string',
+          },
         }
         break
       }
@@ -82,6 +116,16 @@ export function SeoSync() {
           title: renderTpl(seo.bookTitle, vars),
           description: renderTpl(seo.bookDescription, vars),
           keywords: renderTpl(seo.bookKeywords, vars),
+        }
+        // Book schema（genre=分类名；空简介/分类的字段由 undefined 序列化时自动剔除）
+        ld = {
+          '@context': 'https://schema.org',
+          '@type': 'Book',
+          name: novel.title,
+          author: { '@type': 'Person', name: novel.author },
+          description: novel.description || undefined,
+          genre: novel.categoryName || undefined,
+          inLanguage: 'zh-CN',
         }
         break
       }
@@ -155,6 +199,8 @@ export function SeoSync() {
       setMetaTag('property', 'og:site_name', siteName)
       setMetaTag('property', 'og:type', 'website')
     }
+    // JSON-LD 随视图切换更新/移除（章节/分类/目录/搜索/PSEO 视图无 Book/WebSite 上下文收益，置空移除）
+    setJsonLd(ld)
   }, [view, settings, categories, novel, chapter, chapterNovel, pseo])
 
   return null

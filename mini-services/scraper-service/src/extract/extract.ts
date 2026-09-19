@@ -12,13 +12,14 @@
 import type { CheerioAPI } from 'cheerio'
 import { cleanChapterText } from '../clean'
 import type { BookRule, ChapterRule, ListRule } from '../types'
+import { cleanTextField, cleanDescriptionField } from '../text-clean'
 import { cleanContainer } from './content'
 import type { CleanedContent } from './content'
 import { collapse, firstMatch, parseSel, pickHref, pickText, splitAlternatives, toAbs } from './selectors'
 import type { Scope } from './selectors'
 
 const MAX_LIST_ITEMS = 500
-const MAX_CHAPTER_REFS = 800
+// 章节链接不设数量上限（用户要求取消全部分页/条目截断；目录页 DOM 本身即自然边界）
 const MAX_DESCRIPTION_CHARS = 2000
 const MAX_TITLE_CHARS = 200
 
@@ -38,9 +39,9 @@ function pickTitle(scope: Scope, selectors: string[]): string {
   return ''
 }
 
-/** 清理书籍标题：剥《》书名号，<title> 兜底时拆「书名txt下载_作者_分类_站名」取首段并去下载站后缀 */
+/** 清理书籍标题：实体解码/标签剥除先行，再剥《》书名号、<title> 兜底拆段与下载站后缀 */
 function cleanBookTitle(t: string): string {
-  let s = t.trim()
+  let s = cleanTextField(t)
   if (!s) return ''
   if (/txt下载|全本txt|电子书下载/i.test(s)) {
     // 仅当存在下载站样板词时才按分隔符拆段，避免误伤含「_/-」的正常书名
@@ -48,14 +49,34 @@ function cleanBookTitle(t: string): string {
     if (seg) s = seg
     s = s.replace(/txt下载|全本txt|电子书下载|最新章节/gi, '').trim()
   }
+  // Task 3（本地实测）新增：剥离杰奇系 h1 常见的样板后缀（如「葬神棺全文阅读」「XX最新章节列表」）。
+  // 仅剥「整词后缀」且剥后仍非空才生效；这些词组由 SEO 模板拼接，正常书名不会以它们结尾。
+  const stripped = s.replace(
+    /(?:\s*(?:最新章节(?:列表)?|全文阅读|全本阅读|免费阅读|无弹窗(?:广告)?(?:全文|免费)?阅读|无广告阅读|笔趣阁|顶点小说|无错小说|txt下载|全本txt))+$/gi,
+    '',
+  ).trim()
+  if (stripped && stripped.length >= 2) s = stripped
+  // 新模板 h1 内嵌作者行（如 trxsw：h1.f21h 文本 = 「书名作者:某某」）→ 剥「作者:某某」尾巴
+  const noAuthor = s.replace(/作者[:：][^《》]{1,30}$/i, '').trim()
+  if (noAuthor && noAuthor.length >= 2) s = noAuthor
   const m = /^《(.+?)》$/.exec(s)
   if (m) s = m[1]
   return s
 }
 
-/** 作者字段清理：剥「作者：/作 者：/书籍作者：」等标签前缀（老模板把标签与值放在同一文本节点） */
+/** 简介清洗：全字段净化（实体/标签/样板尾段/SEO 伪简介置空/噪声行/关于《书名》：前缀） */
+function cleanDescription(t: string): string {
+  return cleanDescriptionField(t)
+}
+
+/** 分类/状态字段清洗：剥「小说分类：/分类：/类型：/频道：」等标签前缀（老模板把标签与值放同一文本节点） */
+function stripFieldLabel(t: string): string {
+  return cleanTextField(t).replace(/^(?:小说)?(?:分类|类型|频道|状态)[:：]\s*/, '').trim()
+}
+
+/** 作者字段清理：实体解码/标签剥除后剥「作者：/作 者：/书籍作者：」等标签前缀 */
 function stripAuthorLabel(t: string): string {
-  return t.replace(/^(?:书籍)?作\s*者\s*[:：]?\s*|^(?:author|writer)\s*[:：]?\s*/i, '').trim()
+  return cleanTextField(t).replace(/^(?:书籍)?作\s*者\s*[:：]?\s*|^(?:author|writer)\s*[:：]?\s*/i, '').trim()
 }
 
 /** 规则级排除：提取前从 DOM 移除命中节点（站标/搜索框等全站样板容器），多备用逗号分隔。
@@ -162,11 +183,13 @@ export function extractList(
         const anyA = it.find('a').first()
         if (anyA.length) title = collapse(anyA.text())
       }
+      title = cleanTextField(title)
       // 链接统一走 pickHref：支持 linkSelector 的 @attr 后缀（如 a@data-url）与备选语义；
       // 旧实现只读 href 属性，@attr 配置被静默忽略
       const url = pickHref(it, linkSels, baseUrl)
-      const author = rule.authorSelector ? pickText(it, splitAlternatives(rule.authorSelector)) : ''
-      const category = rule.categorySelector ? pickText(it, splitAlternatives(rule.categorySelector)) : ''
+      // 列表条目字段同样过全字段清洗（列表标题常含实体/样板残留）
+      const author = rule.authorSelector ? cleanTextField(pickText(it, splitAlternatives(rule.authorSelector))) : ''
+      const category = rule.categorySelector ? cleanTextField(pickText(it, splitAlternatives(rule.categorySelector))) : ''
       if (!title && !url) return
       const key = `${title}|${url ?? ''}`
       if (seen.has(key)) return
@@ -183,6 +206,8 @@ export function extractList(
 export interface BookChapterRef {
   title: string
   url: string | null
+  /** 分卷名（目录卷头提取；无卷结构/未命中时缺省） */
+  volume?: string
 }
 
 export interface BookData {
@@ -241,6 +266,100 @@ function chapterLike($: CheerioAPI, a: any): boolean {
   const t = collapse($(a).text())
   if (!t || t.length > 60) return false
   return CHAPTER_TEXT_RE.test(t) || CHAPTER_URL_RE.test($(a).attr('href') ?? '')
+}
+
+// ==================== 分卷提取 ====================
+
+/**
+ * 卷名模式：第X卷/部/篇（X≤12字）、正文卷、VIP卷、作品相关、终卷、番外、外传等。
+ * 长度与锚定约束防误伤导航/区块标题（如「最新章节」「全部章节目录」不命中）。
+ */
+const VOLUME_TEXT_RE =
+  /^(?:第\s*[^卷部篇\s]{1,12}\s*[卷部篇]|正文卷?|VIP卷|作品相关|终卷|番外|外传)/i
+
+/** 默认卷头候选：杰奇 dl>dt、杰奇表格 colspan 卷行、通用 volume class、标题元素（须命中 VOLUME_TEXT_RE，如 23qb「h2.module-title 第一卷 …」） */
+const DEFAULT_VOLUME_SELECTORS = ['dt', 'td[colspan]', '.volume', '.volumn', '.volume-title', '.vol-title', 'h2', 'h3']
+
+/**
+ * 目录卷头提取（为 refEntries 的 ref 原地补 volume 字段）：
+ * - rule.volumeSelector 显式配置 → 仅采信规则选择器（管理员意图优先，不做模式过滤）；
+ * - 未配置 → 内置候选（dt/td[colspan]/.volume*），且文本必须命中 VOLUME_TEXT_RE（防区块标题误判）；
+ * - 按文档顺序单趟扫描：遇到卷头更新 currentVolume，遇到章节链接（含同 URL 重复出现）记录当前卷；
+ * - 卷头文本过全字段清洗，默认启发式限 30 字、规则配置限 50 字。
+ */
+function attachVolumes(
+  $: CheerioAPI,
+  refEntries: { ref: BookChapterRef; node: unknown }[],
+  rule: BookRule,
+  warnings: string[],
+): void {
+  if (refEntries.length === 0) return
+  const root = $.root() as unknown as Scope
+  const linkSet = new Set<unknown>(refEntries.map((e) => e.node))
+
+  const ruleSels = rule.volumeSelector ? splitAlternatives(rule.volumeSelector) : []
+  const usedRule = ruleSels.length > 0
+  const candidates = usedRule ? ruleSels : DEFAULT_VOLUME_SELECTORS
+
+  // 收集卷头元素（多候选择器并集，全部进入同一趟文档序扫描）
+  const headerSet = new Set<unknown>()
+  let ruleHit = 0
+  for (const sel of candidates) {
+    try {
+      const found = root.find(sel)
+      found.each((_i, el) => {
+        headerSet.add(el)
+      })
+      if (usedRule) ruleHit += found.length
+    } catch {
+      if (usedRule) warnings.push(`volumeSelector 含非法选择器已跳过: "${sel}"`)
+    }
+  }
+  if (usedRule && ruleHit === 0) {
+    warnings.push(`volumeSelector 在页面中无命中: "${rule.volumeSelector}"（分卷信息缺失）`)
+    return
+  }
+
+  // 文档顺序单趟扫描：记录每个章节链接所属卷
+  const volumeOf = new Map<unknown, string>()
+  let currentVolume = ''
+  try {
+    const all = root.find('*').toArray()
+    for (const el of all) {
+      if (headerSet.has(el)) {
+        const t = cleanTextField(collapse($(el).text()))
+        if (t && (usedRule ? t.length <= 50 : t.length <= 30 && VOLUME_TEXT_RE.test(t))) currentVolume = t
+        continue
+      }
+      if (linkSet.has(el)) volumeOf.set(el, currentVolume)
+    }
+  } catch {
+    return // 卷提取失败不影响章节链接本身
+  }
+
+  if (volumeOf.size === 0) return
+  // 回填：同 ref 多节点（重复出现）时任一命中即可补卷；首次出现的卷名优先
+  let filled = 0
+  for (const { ref, node } of refEntries) {
+    if (ref.volume) continue
+    const v = volumeOf.get(node)
+    if (v) {
+      ref.volume = v
+      filled++
+    }
+  }
+  if (filled > 0) {
+    const vols = [...new Set(refsVolumes(refEntries))]
+    warnings.push(
+      `提取到分卷信息：${filled} 章归属 ${vols.length} 个分卷（${vols.slice(0, 3).join(' / ')}${vols.length > 3 ? ' …' : ''}）`,
+    )
+  }
+}
+
+function refsVolumes(refEntries: { ref: BookChapterRef; node: unknown }[]): string[] {
+  const out = new Set<string>()
+  for (const { ref } of refEntries) if (ref.volume) out.add(ref.volume)
+  return [...out]
 }
 
 function extractChapterRefs(
@@ -324,13 +443,16 @@ function extractChapterRefs(
   }
 
   const refs: BookChapterRef[] = []
-  const seen = new Set<string>()
+  /** 每条 ref 对应的原始链接节点（含同 URL 重复出现，供卷提取按文档序回填卷名） */
+  const refEntries: { ref: BookChapterRef; node: unknown }[] = []
+  /** key → refs 下标：同 URL 重复出现时位置以首次为准，卷名可由后续出现回填（最新章节块先于完整目录场景） */
+  const seen = new Map<string, number>()
   const selfUrl = toAbs(baseUrl, baseUrl)
   /** 去锚点后的 URL，用于识别「同一页面的锚点变体」（如 #top 回顶链接）指向当前页 */
   const stripHash = (u: string): string => u.split('#')[0]
   const selfUrlNoHash = selfUrl ? stripHash(selfUrl) : ''
   if (linkEls) {
-    linkEls.slice(0, MAX_CHAPTER_REFS).each((_i, node) => {
+    linkEls.each((_i, node) => {
       const a = $(node)
       // 修复：配置了 chapterTitleSelector 时，应在链接元素内按规则提取标题（支持 @attr 与自匹配），而非直接置空
       let title = ''
@@ -344,11 +466,21 @@ function extractChapterRefs(
       if (title && title.length > 80) return // 明显不是章节链接
       if (stripHash(url) === selfUrlNoHash) return // 跳过指向当前页的自链接（含锚点变体）
       const key = stripHash(url) // 去重忽略锚点，避免同章多锚点重复
-      if (seen.has(key)) return
-      seen.add(key)
-      refs.push({ title, url })
+      const existed = seen.get(key)
+      if (existed !== undefined) {
+        // 重复章节：新增同 ref 的节点映射（仅用于卷名回填），不改首次出现位置（乱序重排负责最终排序）
+        refEntries.push({ ref: refs[existed], node })
+        return
+      }
+      seen.set(key, refs.length)
+      const ref: BookChapterRef = { title, url }
+      refs.push(ref)
+      refEntries.push({ ref, node })
     })
   }
+
+  // 分卷提取（失败/无命中不影响章节链接本身）
+  attachVolumes($, refEntries, rule, warnings)
 
   // 最后兜底：杰奇 meta 最新章
   if (refs.length === 0) {
@@ -382,9 +514,9 @@ export function extractBook(
   ]
   const title = cleanBookTitle(pickTitle(root, titleSels).slice(0, MAX_TITLE_CHARS))
   const author = stripAuthorLabel(field('authorSelector', BOOK_FIELD_FALLBACKS.author).slice(0, MAX_TITLE_CHARS))
-  const description = field('descriptionSelector', BOOK_FIELD_FALLBACKS.description).slice(0, MAX_DESCRIPTION_CHARS)
-  const status = field('statusSelector', BOOK_FIELD_FALLBACKS.status).slice(0, 50)
-  const category = field('categorySelector', BOOK_FIELD_FALLBACKS.category).slice(0, 50)
+  const description = cleanDescription(field('descriptionSelector', BOOK_FIELD_FALLBACKS.description).slice(0, MAX_DESCRIPTION_CHARS))
+  const status = stripFieldLabel(field('statusSelector', BOOK_FIELD_FALLBACKS.status).slice(0, 50))
+  const category = stripFieldLabel(field('categorySelector', BOOK_FIELD_FALLBACKS.category).slice(0, 50))
 
   const coverSels = [
     ...(rule.coverSelector ? splitAlternatives(rule.coverSelector) : []),
@@ -461,6 +593,35 @@ const HEURISTIC_NEXT_SELECTORS = [
   'a:contains(下页)',
 ]
 
+/** 上一页/上一章链接文本：部分站点把上一章锚点误标 rel="next"（实测 huangjinwu.org），
+ *  启发式若不校验文本会把 prev 当 next 返回，导致分页/下一章判定倒退 */
+const PREV_LINK_TEXT_RE = /上一[页章頁]|前一[页章頁]|^prev$/i
+
+/**
+ * 内联脚本翻页变量兜底：部分站点把翻页地址藏进脚本变量、可见锚点是 javascript:;
+ * （实测 xinjianpan：const next_page = "/txt/xx/yy_2.html"）。从 <script> 文本中
+ * 按「next_page/next_url 类变量名 = '字面量'」提取第一个可解析为绝对 URL 的值。
+ * 只认显式变量赋值/对象字面量，不扫描任意字符串（避免把广告/统计脚本里的 URL 误当翻页）。
+ */
+const NEXT_PAGE_VAR_RE =
+  /(?:var|const|let)\s+(?:next_?page|next_?url|nextChapterUrl|nextChapter)\s*=\s*["']([^"']+)["']|["']?(?:next_?page|next_?url)["']?\s*:\s*["']([^"']+)["']/gi
+
+function nextUrlFromScripts($: CheerioAPI, baseUrl: string): string | null {
+  const texts: string[] = []
+  $('script').each((_i, el) => {
+    const t = $(el).text()
+    if (t && t.length < 20_000) texts.push(t)
+  })
+  for (const text of texts) {
+    NEXT_PAGE_VAR_RE.lastIndex = 0
+    for (let m = NEXT_PAGE_VAR_RE.exec(text); m; m = NEXT_PAGE_VAR_RE.exec(text)) {
+      const abs = toAbs(m[1] || m[2], baseUrl)
+      if (abs) return abs
+    }
+  }
+  return null
+}
+
 export function extractChapter(
   $: CheerioAPI,
   rule: ChapterRule,
@@ -470,14 +631,20 @@ export function extractChapter(
   const root = $.root() as unknown as Scope
   removeExcluded(root, rule.excludeSelector, warnings)
 
-  // ---- 标题 ----
+  // ---- 标题（全字段清洗：实体解码/标签剥除，再剥 CMS 分页后缀）----
   const titleSels = [
     ...(rule.titleSelector ? splitAlternatives(rule.titleSelector) : []),
     ...DEFAULT_CHAPTER_TITLE_SELECTORS,
   ]
-  let title = pickTitle(root, titleSels).slice(0, MAX_TITLE_CHARS)
+  let title = cleanTextField(pickTitle(root, titleSels)).slice(0, MAX_TITLE_CHARS)
+  if (title) {
+    // Task 3（本地实测）：剥离 CMS 分页样式后缀（如「第1章 合欢宗(第1/2页)」「（3/5）」）。
+    // 分页信息属元数据，翻页由 nextSelector/worker 负责，不应留在入库标题里。
+    const dePaged = title.replace(/\s*[（(]\s*第?\s*\d+\s*\/\s*\d+\s*[页頁]?\s*[)）]\s*$/g, '').trim()
+    if (dePaged && dePaged.length >= 2) title = dePaged
+  }
   if (!title) {
-    const t = collapse($('title').first().text()).slice(0, MAX_TITLE_CHARS)
+    const t = cleanTextField(collapse($('title').first().text())).slice(0, MAX_TITLE_CHARS)
     // <title> 兜底同样要过站标样板过滤：pickTitle 把命中的候选全部跳过后才走到这里，
     // 若 <title> 本身就是站标（如「站内搜索 - 站名」），不加过滤会把刚排除的样板重新引入
     if (t && !BOILERPLATE_TITLE_RE.test(t)) {
@@ -535,9 +702,33 @@ export function extractChapter(
     if (!nextUrl) warnings.push(`nextSelector 无命中: "${rule.nextSelector}"`)
   }
   if (!nextUrl) {
-    nextUrl = pickHref(root, HEURISTIC_NEXT_SELECTORS, baseUrl)
+    // 启发式逐个候选尝试：跳过文本呈「上一页/上一章」的锚点（站点误标 rel="next" 场景）
+    for (const raw of HEURISTIC_NEXT_SELECTORS) {
+      const { selector } = parseSel(raw)
+      if (!selector) continue
+      let el: Scope | null = null
+      try {
+        const found = root.find(selector).first()
+        if (found.length) el = found
+      } catch {
+        continue
+      }
+      if (!el) continue
+      if (PREV_LINK_TEXT_RE.test(collapse(el.text()))) continue
+      const abs = toAbs(el.attr('href'), baseUrl)
+      if (abs) {
+        nextUrl = abs
+        break
+      }
+    }
     if (nextUrl && nextUrl === toAbs(baseUrl, baseUrl)) nextUrl = null // 启发式命中自链接视为无下一页
     if (nextUrl) warnings.push('nextUrl 由启发式匹配（"下一页/下一章"链接）获得')
+  }
+  if (!nextUrl) {
+    // 锚点启发式全部落空：尝试内联脚本翻页变量（锚点为 javascript:; 的站点）
+    nextUrl = nextUrlFromScripts($, baseUrl)
+    if (nextUrl && nextUrl === toAbs(baseUrl, baseUrl)) nextUrl = null
+    if (nextUrl) warnings.push('nextUrl 由内联脚本翻页变量兜底获得（可见锚点为 JS 跳转）')
   }
 
   const wordCount = best.text.replace(/\s/g, '').length

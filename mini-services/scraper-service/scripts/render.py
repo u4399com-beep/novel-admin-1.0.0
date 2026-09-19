@@ -23,6 +23,67 @@ from urllib.parse import urlparse
 
 MAX_HTML_BYTES = 8 * 1024 * 1024  # 与主服务 MAX_BYTES 一致
 
+# Task 10-d 渲染层 stealth 加固：context 级 init script（每次导航、页面脚本执行前注入）。
+# 对齐 playwright-stealth/puppeteer-extra-stealth 最小有效子集：webdriver 摘除、window.chrome 伪造、
+# permissions.query 修复、plugins/languages 伪造、WebGL vendor/renderer 伪装。
+# 每段独立 try/catch：单项失败不影响其余项，更不影响渲染主流程。与 argv/stdin/输出协议无关。
+STEALTH_INIT_SCRIPT = """
+try {
+  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+} catch (e) {}
+try {
+  if (!window.chrome) {
+    window.chrome = {
+      runtime: {},
+      loadTimes: function () {},
+      csi: function () {},
+      app: { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } },
+    };
+  }
+} catch (e) {}
+try {
+  const origQuery = window.navigator.permissions && window.navigator.permissions.query;
+  if (origQuery) {
+    window.navigator.permissions.query = function (p) {
+      if (p && p.name === 'notifications') {
+        return Promise.resolve({ state: Notification.permission, onchange: null });
+      }
+      return origQuery(p);
+    };
+  }
+} catch (e) {}
+try {
+  Object.defineProperty(navigator, 'plugins', {
+    get: function () {
+      const arr = [
+        { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
+        { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
+      ];
+      arr.item = function (i) { return this[i] || null; };
+      arr.namedItem = function (n) { for (const p of this) { if (p.name === n) return p; } return null; };
+      arr.refresh = function () {};
+      return arr;
+    },
+  });
+} catch (e) {}
+try {
+  Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+} catch (e) {}
+try {
+  const patchWebGL = (proto) => {
+    if (!proto || !proto.getParameter) return;
+    const orig = proto.getParameter;
+    proto.getParameter = function (param) {
+      if (param === 37445) return 'Google Inc. (Intel)';  // UNMASKED_VENDOR_WEBGL
+      if (param === 37446) return 'ANGLE (Intel, Mesa Intel(R) UHD Graphics (CML GT2), OpenGL 4.6)';  // UNMASKED_RENDERER_WEBGL
+      return orig.call(this, param);
+    };
+  };
+  if (window.WebGLRenderingContext) patchWebGL(WebGLRenderingContext.prototype);
+  if (window.WebGL2RenderingContext) patchWebGL(WebGL2RenderingContext.prototype);
+} catch (e) {}
+"""
+
 DEFAULT_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -165,22 +226,37 @@ def main() -> int:
     try:
         from playwright.sync_api import sync_playwright
 
+        # 站点级出口代理（规则配置，SCRAPER_PROXY=http://host:port 或 socks5://host:port）
+        proxy_server = os.environ.get("SCRAPER_PROXY", "").strip() or None
+        launch_kwargs = dict(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ],
+            # Task 10-d stealth：不注入 Playwright 默认追加的 --enable-automation
+            # （该开关会暴露 navigator.automation 相关 CDP 行为特征，真实用户浏览器不带它）
+            ignore_default_args=["--enable-automation"],
+        )
+        if proxy_server:
+            launch_kwargs["proxy"] = {"server": proxy_server}
+
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                ],
-            )
+            browser = p.chromium.launch(**launch_kwargs)
             try:
                 context = browser.new_context(
                     user_agent=ua,
                     locale="zh-CN",
                     viewport={"width": 1366, "height": 900},
                 )
+                # Task 10-d stealth 脚本注入：注册在 context 上（覆盖其后创建的所有页面），
+                # 每次导航在页面脚本前执行；失败不阻塞渲染
+                try:
+                    context.add_init_script(STEALTH_INIT_SCRIPT)
+                except Exception:
+                    pass
                 # 引擎 cookie 会话注入（仅目标站自己下发的 cookie；失败不阻塞渲染）
                 cookies = _env_cookies(url)
                 if cookies:

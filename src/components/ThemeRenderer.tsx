@@ -1,18 +1,37 @@
 'use client'
 
-import type { ThemeModule, ViewProps } from '@/themes/types'
+import { useEffect } from 'react'
+import type { ThemeModule, ThemeView, ViewProps } from '@/themes/types'
 import { getTheme } from '@/themes/registry'
 import { useAppStore } from '@/lib/store'
 import { usePseo, useSettings } from '@/hooks/use-novel-data'
 import { coverBgClass } from '@/lib/covers'
 import { formatWordCount } from '@/lib/format'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { SeoSync } from '@/components/SeoSync'
+import { SiteToolsProvider } from '@/components/theme-tools/SiteToolsProvider'
+
+/**
+ * 书籍视图深链（约定 /?book={novelId}）：
+ * SPA 视图为内存导航（无 /book/{id} 真实路由），服务器落地页（/pseo/[kw] 等）
+ * 与后台需要真实 URL 跳到书页，挂载后一次性解析该参数切入书籍视图并清理 URL。
+ */
+function useBookDeepLink(navigate: (view: ThemeView) => void) {
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get('book'))
+    if (!Number.isInteger(id) || id <= 0) return
+    navigate({ name: 'book', novelId: id })
+    // 清理查询参数：刷新/回退不再重复深链，URL 与当前视图保持一致
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [navigate])
+}
 
 /** 根据激活主题渲染当前视图（含 Layout 框架 + 自动 SEO） */
 export function ThemeRenderer() {
   const { data: settings, isLoading } = useSettings()
   const view = useAppStore((s) => s.view)
   const navigate = useAppStore((s) => s.navigate)
+  useBookDeepLink(navigate)
 
   if (isLoading || !settings) {
     return (
@@ -56,12 +75,12 @@ export function ThemeRenderer() {
   }
 
   return (
-    <>
+    <SiteToolsProvider view={view}>
       <SeoSync />
       <theme.Layout {...common} view={view}>
         {content}
       </theme.Layout>
-    </>
+    </SiteToolsProvider>
   )
 }
 
@@ -116,8 +135,9 @@ function PseoView({ keyword, theme, common }: { keyword: string; theme: ThemeMod
             }}
             className="flex cursor-pointer gap-3 rounded-lg border border-neutral-200 bg-white p-4 transition-shadow hover:shadow-md"
           >
-            <div className={`flex h-24 w-16 shrink-0 items-center justify-center rounded ${coverBgClass(n.cover)}`}>
-              <span className="text-xl font-bold text-white">{n.title.slice(0, 1)}</span>
+            <div className={`relative flex h-24 w-16 shrink-0 items-center justify-center overflow-hidden rounded ${coverBgClass(n.cover)}`}>
+              <NovelCoverImg novel={n} />
+              {!isLocalCover(n.cover) && <span className="text-xl font-bold text-white">{n.title.slice(0, 1)}</span>}
             </div>
             <div className="min-w-0 flex-1">
               <h3 className="truncate font-semibold text-neutral-900">{n.title}</h3>

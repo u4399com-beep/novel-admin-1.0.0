@@ -2,6 +2,9 @@
 
 import { useState } from 'react'
 import { useCategories, useSettings } from '@/hooks/use-novel-data'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+import { TradToggle } from '@/components/theme-tools/TradToggle'
 import type { ThemeLayoutProps, ThemeModule, ThemeView } from '../types'
 import Home from './Home'
 import Category from './Category'
@@ -17,13 +20,16 @@ function TopBar({
   view,
   navigate,
   siteName,
+  onOpenHistory,
 }: {
   view: ThemeView
   navigate: (v: ThemeView) => void
   siteName: string
+  onOpenHistory: () => void
 }) {
   const cats = useCategories()
   const [open, setOpen] = useState(false)
+  const { promptFavorite } = useFavoriteSite()
   const curCat = view.name === 'category' ? view.categoryId : undefined
 
   return (
@@ -87,6 +93,14 @@ function TopBar({
         >
           搜索
         </button>
+        <button
+          onClick={onOpenHistory}
+          className="aj-toplink hidden flex-none lg:inline-flex"
+          title="查看最近阅读过的章节"
+        >
+          阅读记录
+        </button>
+        <TradToggle className="aj-toplink hidden flex-none lg:inline-flex" />
       </div>
       {/* ≤680px 深色两列抽屉 */}
       {open && (
@@ -131,6 +145,19 @@ function TopBar({
             >
               搜索全站
             </button>
+            <button
+              className="aj-toplink justify-center"
+              onClick={() => {
+                setOpen(false)
+                onOpenHistory()
+              }}
+            >
+              阅读记录
+            </button>
+            <button className="aj-toplink justify-center" onClick={promptFavorite}>
+              收藏本站
+            </button>
+            <TradToggle className="aj-toplink justify-center" />
           </div>
         </div>
       )}
@@ -195,9 +222,10 @@ function HeaderCard({
 
 /* ==================== 页脚 ==================== */
 
-function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; siteName: string }) {
+function Footer({ navigate, siteName, onOpenHistory }: { navigate: (v: ThemeView) => void; siteName: string; onOpenHistory: () => void }) {
   const cats = useCategories()
   const { data: settings } = useSettings()
+  const { promptFavorite } = useFavoriteSite()
   const cfg = settings?.footer
   return (
     <footer className="border-t border-[#e5dccd] bg-[#efe9dc]/60 py-6">
@@ -212,6 +240,21 @@ function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; site
           <button className="transition-colors hover:text-[#0f766e] hover:underline" onClick={() => navigate({ name: 'search', query: '' })}>
             站内搜索
           </button>
+          <button
+            className="transition-colors hover:text-[#0f766e] hover:underline"
+            onClick={onOpenHistory}
+            title="查看最近阅读过的章节"
+          >
+            阅读记录
+          </button>
+          <button
+            className="transition-colors hover:text-[#0f766e] hover:underline"
+            onClick={promptFavorite}
+            title="把本站加入浏览器收藏夹"
+          >
+            收藏本站
+          </button>
+          <TradToggle className="hover:text-[#0f766e] hover:underline" />
           {cats.data?.slice(0, 6).map((c) => (
             <button
               key={c.id}
@@ -248,9 +291,10 @@ function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; site
 
 function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const isChapter = view.name === 'chapter'
+  const [histOpen, setHistOpen] = useState(false)
   return (
     <div className="aj-root flex min-h-screen flex-col">
-      <TopBar view={view} navigate={navigate} siteName={siteName} />
+      <TopBar view={view} navigate={navigate} siteName={siteName} onOpenHistory={() => setHistOpen(true)} />
       <div className="flex min-w-0 flex-1 flex-col pt-[58px]">
         {/* 正文页收起头部卡片与公告，仅保留顶条 */}
         {!isChapter && (
@@ -262,9 +306,16 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
           {children}
         </main>
         <div className="mt-auto">
-          <Footer navigate={navigate} siteName={siteName} />
+          <Footer navigate={navigate} siteName={siteName} onOpenHistory={() => setHistOpen(true)} />
         </div>
       </div>
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#0f766e"
+      />
     </div>
   )
 }

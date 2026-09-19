@@ -8,6 +8,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { TocChapters } from '@/components/toc-chapters'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import { cn } from '@/lib/utils'
 import {
   useCategories,
@@ -31,6 +33,9 @@ import {
 } from '@/hooks/use-reader-prefs'
 import type { ChapterDetail } from '@/lib/types'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite, showSetHomepageHint } from '@/components/theme-tools/FavoriteSite'
+import { TradToggle } from '@/components/theme-tools/TradToggle'
 import {
   Block,
   Cover,
@@ -56,6 +61,8 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
   const { data: settings } = useSettings()
   const footerCfg = settings?.footer
   const [kw, setKw] = useState('')
+  const [histOpen, setHistOpen] = useState(false)
+  const { promptFavorite, shortcut } = useFavoriteSite()
   const dateRef = useRef<HTMLElement>(null)
 
   /* 日期仅客户端填充（直接写 DOM，避免 effect 内 setState） */
@@ -91,18 +98,29 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() => navigate({ name: 'home' })}
+              onClick={() => showSetHomepageHint(siteName)}
+              title="如何在浏览器中把本站设为主页"
               className="cursor-pointer hover:text-[#FF6600]"
             >
               设为首页
             </button>
             <button
               type="button"
-              onClick={() => navigate({ name: 'home' })}
+              onClick={promptFavorite}
+              title={`按 ${shortcut} 也可收藏本站`}
               className="cursor-pointer hover:text-[#FF6600]"
             >
               收藏本站
             </button>
+            <button
+              type="button"
+              onClick={() => setHistOpen(true)}
+              title="查看最近阅读过的章节"
+              className="cursor-pointer hover:text-[#FF6600]"
+            >
+              阅读记录
+            </button>
+            <TradToggle className="hover:text-[#FF6600]" />
             <span className="text-[#8AA6C0]">简洁阅读 · 全站无弹窗</span>
           </div>
           <span ref={dateRef} className="text-[#8AA6C0]">
@@ -212,6 +230,21 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
             </button>
             <button
               type="button"
+              onClick={() => setHistOpen(true)}
+              className="cursor-pointer text-[#666] hover:text-[#FF6600]"
+            >
+              阅读记录
+            </button>
+            <button
+              type="button"
+              onClick={promptFavorite}
+              className="cursor-pointer text-[#666] hover:text-[#FF6600]"
+            >
+              收藏本站
+            </button>
+            <TradToggle className="text-[#666] hover:text-[#FF6600]" />
+            <button
+              type="button"
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
               className="cursor-pointer text-[#666] hover:text-[#FF6600]"
             >
@@ -233,6 +266,13 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
           <p>{footerCfg?.text || `${siteName} · 源站 pilishuwu.com（重建模板）`}</p>
         </div>
       </footer>
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#3B76A8"
+      />
     </div>
   )
 }
@@ -715,6 +755,8 @@ function BookInner({ navigate, novelId }: ViewProps & { novelId: number }) {
         <p className="indent-[2em] text-sm leading-7 text-[#666]">
           {n.description || '作者尚未填写简介。'}
         </p>
+        {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+        <BookSuggestLinks keywords={n.suggestKeywords} className="mt-3 border-t border-dotted border-[#D5E6F3] pt-3" />
       </Block>
 
       {/* 最近章节（全量章节末 12 条倒序 = 最新 12 章，新→旧，双栏） */}
@@ -843,7 +885,7 @@ function TocView({ navigate, novelId }: ViewProps & { novelId: number }) {
         </Block>
       )}
 
-      {/* 三栏章节列表 */}
+      {/* 三栏章节列表（columns 列优先流式分栏，阅读顺序自上而下；有分卷数据时按卷分组） */}
       <Block
         className="mt-3"
         title={`章节目录（${sorted.length} 章 · 正序）`}
@@ -856,22 +898,22 @@ function TocView({ navigate, novelId }: ViewProps & { novelId: number }) {
         ) : sorted.length === 0 ? (
           <p className="py-10 text-center text-sm text-[#999]">暂无章节数据</p>
         ) : (
-          <div className="grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3">
-            {sorted.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
-                title={c.title}
-                className="flex cursor-pointer items-baseline justify-between gap-2 border-b border-dotted border-[#D5E6F3] px-1 py-[7px] text-xs hover:bg-[#F7FBFF]"
-              >
-                <span className="truncate text-[#3366BB] hover:text-[#FF6600] hover:underline">
+          <TocChapters
+            chapters={sorted}
+            navigate={navigate}
+            columnsClassName="columns-1 gap-x-5 sm:columns-2 lg:columns-3"
+            itemClassName="flex items-baseline justify-between gap-2 border-b border-dotted border-[#D5E6F3] px-1 py-[7px] text-xs hover:bg-[#F7FBFF]"
+            renderItem={(c) => (
+              <>
+                <span className="min-w-0 truncate text-[#3366BB] transition-colors hover:text-[#FF6600] hover:underline">
                   {c.idx}. {c.title}
                 </span>
                 <span className="shrink-0 text-[10px] text-[#BBB]">{formatWords(c.wordCount)}字</span>
-              </button>
-            ))}
-          </div>
+              </>
+            )}
+            volumeClassName="items-baseline border-b-2 border-[#3B76A8]/30 px-1 py-1.5 text-[13px] font-bold text-[#3366BB]"
+            countClassName="text-[10px] text-[#BBB]"
+          />
         )}
       </Block>
     </div>

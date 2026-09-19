@@ -29,6 +29,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     title: chapter.title,
     content: chapter.content,
     wordCount: chapter.wordCount,
+    volume: chapter.volume,
     prevId: prev?.id ?? null,
     nextId: next?.id ?? null,
   })
@@ -38,18 +39,20 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
   const { id } = await params
   const cid = Number(id)
   if (!Number.isInteger(cid) || cid <= 0) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
-  let body: { title?: string; content?: string }
+  let body: { title?: string; content?: string; volume?: string }
   try {
-    body = (await req.json()) as { title?: string; content?: string }
+    body = (await req.json()) as { title?: string; content?: string; volume?: string }
   } catch {
     return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
   }
-  const data: { title?: string; content?: string; wordCount?: number } = {}
+  const data: { title?: string; content?: string; wordCount?: number; volume?: string } = {}
   if (typeof body.title === 'string' && body.title.trim()) data.title = body.title.trim().slice(0, 120)
   if (typeof body.content === 'string') {
     data.content = body.content
     data.wordCount = body.content.replace(/\s/g, '').length
   }
+  // 分卷名可选：字符串（含空串 = 清空卷名）才更新，限长 50
+  if (typeof body.volume === 'string') data.volume = body.volume.trim().slice(0, 50)
   try {
     const ch = await db.chapter.update({ where: { id: cid }, data })
     const agg = await db.chapter.aggregate({ where: { novelId: ch.novelId }, _sum: { wordCount: true } })
@@ -67,7 +70,8 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   try {
     const ch = await db.chapter.delete({ where: { id: cid } })
     const agg = await db.chapter.aggregate({ where: { novelId: ch.novelId }, _sum: { wordCount: true } })
-    await db.novel.update({ where: { id: ch.novelId }, data: { wordCount: agg._sum.wordCount ?? 0 } })
+    // 与 PUT/POST 对齐：内容变化同时触碰 updatedAt，让「最近更新」排序如实反映删章
+    await db.novel.update({ where: { id: ch.novelId }, data: { wordCount: agg._sum.wordCount ?? 0, updatedAt: new Date() } })
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: '章节不存在' }, { status: 404 })

@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { TocChapters } from '@/components/toc-chapters'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import {
   useCategories,
   useChapter,
@@ -355,6 +357,8 @@ export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
           <SoftBadge>{statusLabel(novel.status)}</SoftBadge>
           <GhostBadge>{fmtWords(novel.wordCount)}</GhostBadge>
         </div>
+        {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+        <BookSuggestLinks keywords={novel.suggestKeywords} className="mt-4 border-t border-[#e6edf7] pt-4" />
       </section>
 
       {/* 最新章节（胶囊栅格） */}
@@ -393,7 +397,21 @@ export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
         ) : fullChapters.length === 0 ? (
           <EmptyBox text="暂无章节" />
         ) : (
-          <ChapterPills chapters={fullChapters} navigate={navigate} />
+          /* 列优先分栏（columns）：阅读顺序自上而下；有分卷数据时按卷分组 */
+          <TocChapters
+            chapters={fullChapters}
+            navigate={navigate}
+            columnsClassName="columns-1 gap-x-3 sm:columns-2 md:columns-3 xl:columns-4"
+            itemClassName="mb-3 rounded-[10px] border border-[#e6edf7] bg-white px-4 py-2.5 text-left text-[14px] text-[#1e293b] shadow-[0_1px_2px_rgba(37,99,235,0.05)] transition-colors duration-200 hover:border-[#2563eb]/40 hover:bg-[#e8f1ff] hover:text-[#2563eb]"
+            renderItem={(c) => (
+              <>
+                <span className="mr-1 text-[#94a3b8]">{c.idx}.</span>
+                {c.title}
+              </>
+            )}
+            volumeClassName="mb-3 rounded-[10px] bg-[#e8f1ff] px-4 py-2 text-[14px] font-bold text-[#2563eb]"
+            countClassName="text-[12px] text-[#94a3b8]"
+          />
         )}
       </section>
     </div>
@@ -455,7 +473,21 @@ export function Toc({ navigate, novelId }: ViewProps & { novelId: number }) {
         ) : (chapters?.length ?? 0) === 0 ? (
           <EmptyBox text="暂无章节" />
         ) : (
-          <ChapterPills chapters={chapters!} navigate={navigate} />
+          /* 列优先分栏（columns）：阅读顺序自上而下；有分卷数据时按卷分组 */
+          <TocChapters
+            chapters={chapters!}
+            navigate={navigate}
+            columnsClassName="columns-1 gap-x-3 sm:columns-2 md:columns-3 xl:columns-4"
+            itemClassName="mb-3 rounded-[10px] border border-[#e6edf7] bg-white px-4 py-2.5 text-left text-[14px] text-[#1e293b] shadow-[0_1px_2px_rgba(37,99,235,0.05)] transition-colors duration-200 hover:border-[#2563eb]/40 hover:bg-[#e8f1ff] hover:text-[#2563eb]"
+            renderItem={(c) => (
+              <>
+                <span className="mr-1 text-[#94a3b8]">{c.idx}.</span>
+                {c.title}
+              </>
+            )}
+            volumeClassName="mb-3 rounded-[10px] bg-[#e8f1ff] px-4 py-2 text-[14px] font-bold text-[#2563eb]"
+            countClassName="text-[12px] text-[#94a3b8]"
+          />
         )}
       </section>
     </div>

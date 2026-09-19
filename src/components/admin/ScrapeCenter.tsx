@@ -12,6 +12,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ScrapeRuleDto } from '@/lib/types'
+import { CoversCard } from './scrape/CoversCard'
 import { EngineCard } from './scrape/EngineCard'
 import { NewTaskCard } from './scrape/NewTaskCard'
 import { RulesCard } from './scrape/RulesCard'
@@ -36,6 +37,7 @@ export default function ScrapeCenter() {
   return (
     <div className="space-y-4">
       <EngineCard />
+      <CoversCard />
       <RulesCard rules={rules} />
       <NewTaskCard rules={rules ?? []} onCreated={handleCreated} />
       <section ref={taskSectionRef}>

@@ -7,6 +7,7 @@
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import type { NovelListItem } from '@/lib/types'
 
 // ---------- 常量 ----------
@@ -204,7 +205,10 @@ export function CoverFace({
 }) {
   return (
     <div className={cn('relative flex items-center justify-center overflow-hidden', coverBgClass(cover), className)}>
-      <span className={cn('font-bold text-white/90 drop-shadow', charClass)}>{title.slice(0, 1)}</span>
+      <NovelCoverImg novel={{ title, cover }} />
+      {!isLocalCover(cover) && (
+        <span className={cn('font-bold text-white/90 drop-shadow', charClass)}>{title.slice(0, 1)}</span>
+      )}
     </div>
   )
 }

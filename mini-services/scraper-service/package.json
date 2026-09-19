@@ -10,7 +10,9 @@
   "dependencies": {
     "cheerio": "^1.0.0",
     "got-scraping": "^4.2.1",
-    "iconv-lite": "^0.6.3"
+    "hpagent": "^1.2.0",
+    "iconv-lite": "^0.6.3",
+    "socks-proxy-agent": "^10.1.0"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2"

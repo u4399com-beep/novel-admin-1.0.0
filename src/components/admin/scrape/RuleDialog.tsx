@@ -32,6 +32,7 @@ const EMPTY_RULE_FORM: RuleFormState = {
   siteUrl: '',
   enabled: true,
   charset: 'utf-8',
+  proxy: '',
   notes: '',
   listRule: {},
   bookRule: {},
@@ -58,6 +59,7 @@ const BOOK_FIELDS: FieldDef[] = [
   { key: 'chapterLinkSelector', label: '章节链接 chapterLinkSelector', ph: '如 #list dl dd a；填 none 表示仅采书籍信息' },
   { key: 'catalogLinkSelector', label: '目录页链接 catalogLinkSelector', ph: '如 a.catalog-more（书页仅最新几章时用）' },
   { key: 'chapterTitleSelector', label: '章节标题 chapterTitleSelector', ph: '链接元素内标题选择器（可选）' },
+  { key: 'volumeSelector', label: '分卷标题 volumeSelector', ph: '如 #list dl dt 或 h2.module-title（留空=内置启发式）' },
   { key: 'excludeSelector', label: '排除选择器 excludeSelector', ph: '提取前移除的节点，如 h1.logo, .search' },
 ]
 
@@ -120,6 +122,7 @@ export function RuleDialog({
           siteUrl: initial.siteUrl,
           enabled: initial.enabled,
           charset: initial.charset,
+          proxy: initial.proxy ?? '',
           notes: initial.notes,
           listRule: initial.listRule ?? {},
           bookRule: initial.bookRule ?? {},
@@ -145,6 +148,19 @@ export function RuleDialog({
     } catch {
       return toast.error('站点 URL 格式不正确')
     }
+    const proxy = form.proxy.trim()
+    if (proxy) {
+      for (const part of proxy.split(',').map((p) => p.trim()).filter(Boolean)) {
+        try {
+          const p = new URL(part)
+          if (!['http:', 'https:', 'socks5:', 'socks5h:', 'socks4:'].includes(p.protocol) || !p.host) {
+            return toast.error('代理仅支持 http/https/socks5/socks5h 形态（如 socks5h://host:port）')
+          }
+        } catch {
+          return toast.error(`代理格式不正确：${part.slice(0, 50)}（示例：socks5h://host:port，多个用英文逗号分隔）`)
+        }
+      }
+    }
     return runBusy(setSaving, true, false, '保存失败', async () => {
       await api('/api/scrape-rules', {
         method: 'PUT',
@@ -154,6 +170,7 @@ export function RuleDialog({
           siteUrl: form.siteUrl.trim(),
           enabled: form.enabled,
           charset: form.charset,
+          proxy,
           notes: form.notes,
           listRule: cleanRule(form.listRule),
           bookRule: cleanRule(form.bookRule),
@@ -210,6 +227,18 @@ export function RuleDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">出口代理 proxy（空 = 直连）</Label>
+              <Input
+                value={form.proxy}
+                onChange={(e) => setForm((f) => ({ ...f, proxy: e.target.value }))}
+                placeholder="如 socks5h://user:pass@host:1080（反爬 IP 信誉突破）"
+                className="h-8 text-xs"
+              />
+              <p className="text-[10px] leading-tight text-neutral-400">
+                配置后策略链经该出口访问本站（美国/国内代理均可，用于绕过 IP 封锁）
+              </p>
             </div>
             <div className="flex items-center gap-2 pt-5">
               <Switch

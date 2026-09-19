@@ -29,12 +29,19 @@ model Novel {
   isHot       Boolean  @default(false)
   wordCount   Int      @default(0)
   clicks      Int      @default(0)
+  // 封面回填链路：采集到远程封面但落盘失败（图床限流/代理瞬断）时保留来源，
+  // POST /api/scrape/covers-backfill 可凭 remoteCoverUrl + sourceRuleId 的代理出口重试下载
+  remoteCoverUrl String @default("") // 最近一次采集到的远程封面 URL（空=未采集到）
+  sourceRuleId   Int?   // 采集来源规则 id（回填时解析站点级代理出口；手动建书为 null）
+  suggestKeywords String @default("") // 搜索引擎下拉词（采集时 multi-search-engine 获取，逗号分隔；关联 PSEO 书籍页与书页相关搜索）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt @default(now())
   chapters    Chapter[]
 
   // 同名同作者视为同一本书：防止并发采集任务重复入库同一新书（worker 层有 P2002 回读兜底）
   @@unique([title, author])
+  // 分类页/首页按 categoryId 过滤列表：避免随书量增长退化为全表扫
+  @@index([categoryId])
 }
 
 model Chapter {
@@ -45,6 +52,9 @@ model Chapter {
   title     String
   content   String
   wordCount Int      @default(0)
+  // 分卷名（采集源站目录自带卷头时写入；无卷结构为空串）。目录页按此分组渲染，
+  // 乱序重排时作为分组依据（同号不同卷的章节不会跨卷错排）
+  volume    String   @default("")
   createdAt DateTime @default(now())
 
   @@unique([novelId, idx])
@@ -66,6 +76,7 @@ model PseoKeyword {
   id        Int      @id @default(autoincrement())
   keyword   String   @unique
   source    String   @default("manual") // manual | baidu | bing | duckduckgo | sogou | 360
+  novelId   Int?     // 绑定书籍 id（采集时自动取词绑定；null=通用聚合页）。绑定词的落地页以该书置顶
   status    String   @default("pending") // pending | generated | failed
   pageData  String?  // JSON: 生成的聚合页数据（命中书籍、生成的TDK等）
   createdAt DateTime @default(now())
@@ -79,6 +90,7 @@ model ScrapeRule {
   siteUrl      String
   enabled      Boolean      @default(true)
   charset      String       @default("utf-8")
+  proxy        String       @default("") // 站点级出口代理（空=直连；http(s)/socks5(h)://host:port，反爬 IP 信誉突破）
   listRule     String       @default("{}") // JSON: 列表页选择器
   bookRule     String       @default("{}") // JSON: 书籍页选择器
   chapterRule  String       @default("{}") // JSON: 正文页选择器
@@ -95,7 +107,9 @@ model ScrapeTask {
   rule      ScrapeRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
   mode      String      @default("single") // single=单本(书页URL) | list=范围(列表页URL批量)
   targetUrl String
-  pages     Int         @default(1) // list 模式抓取列表页数 1-20
+  pages     Int         @default(1) // list 模式抓取列表页数（从 startPage 起连续取 pages 页，无上限）
+  startPage Int         @default(1) // list 模式起始页码（范围采集可从任意页开始）
+  concurrency Int       @default(3) // 任务内并发度（1-16）：list=同时处理的书籍数，single=同时抓取的章节数
   status    String      @default("pending") // pending|running|success|partial|failed|canceled
   total     Int         @default(0) // 进度分母：single=章节数，list=书籍数
   done      Int         @default(0) // 进度分子：与 total 同单位（保证 done ≤ total）

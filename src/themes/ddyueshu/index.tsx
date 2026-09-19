@@ -2,6 +2,9 @@
 
 import { useState } from 'react'
 import { useCategories, useSettings } from '@/hooks/use-novel-data'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite, showSetHomepageHint } from '@/components/theme-tools/FavoriteSite'
+import { TradToggle } from '@/components/theme-tools/TradToggle'
 import type { ThemeLayoutProps, ThemeModule, ThemeView } from '../types'
 import Home from './Home'
 import Category from './Category'
@@ -13,9 +16,10 @@ import './ddyueshu.css'
 
 /* ==================== 页脚 ==================== */
 
-function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; siteName: string }) {
+function Footer({ navigate, siteName, onOpenHistory }: { navigate: (v: ThemeView) => void; siteName: string; onOpenHistory: () => void }) {
   const cats = useCategories()
   const { data: settings } = useSettings()
+  const { promptFavorite } = useFavoriteSite()
   const cfg = settings?.footer
   return (
     <footer className="bg-white pb-10 pt-3">
@@ -39,6 +43,13 @@ function Footer({ navigate, siteName }: { navigate: (v: ThemeView) => void; site
               {c.name}小说
             </button>
           ))}
+          <button className="dd-greenlink" onClick={onOpenHistory} title="查看最近阅读过的章节">
+            阅读记录
+          </button>
+          <button className="dd-greenlink" onClick={promptFavorite} title="把本站加入浏览器收藏夹">
+            收藏本站
+          </button>
+          <TradToggle className="dd-greenlink" />
           {(cfg?.links ?? []).map((lk) => (
             <a key={`${lk.label}-${lk.href}`} className="dd-greenlink" href={lk.href} target="_blank" rel="noopener noreferrer">
               {lk.label}
@@ -63,6 +74,8 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
   const isChapter = view.name === 'chapter'
   const [kw, setKw] = useState('')
   const [loginMsg, setLoginMsg] = useState('')
+  const [histOpen, setHistOpen] = useState(false)
+  const { promptFavorite } = useFavoriteSite()
   const curCat = view.name === 'category' ? view.categoryId : undefined
   const goSearch = () => {
     const q = kw.trim()
@@ -75,15 +88,33 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
         <>
           {/* ① 欢迎条 28px：左功能 / 右内联登录表单（演示站点，仅样式） */}
           <div className="border-b border-[#a6d3e8] bg-[#e1eced]">
-            <div className="mx-auto flex h-[28px] w-full max-w-[980px] items-center justify-between gap-2 px-2 text-[12px] text-[#777]">
+            <div className="mx-auto flex min-h-[28px] w-full max-w-[980px] flex-wrap items-center justify-between gap-x-2 gap-y-1 px-2 py-0.5 text-[12px] text-[#777]">
               <div className="flex flex-none items-center gap-2">
-                <button className="cursor-pointer hover:text-[#459df5] hover:underline" title="演示站点，功能未开放">
+                <button
+                  className="hidden cursor-pointer hover:text-[#459df5] hover:underline min-[480px]:inline"
+                  onClick={() => showSetHomepageHint(siteName)}
+                  title="如何在浏览器中把本站设为主页"
+                >
                   设为首页
                 </button>
-                <span className="text-[#ccc]">|</span>
-                <button className="cursor-pointer hover:text-[#459df5] hover:underline" title="演示站点，功能未开放">
+                <span className="hidden text-[#ccc] min-[480px]:inline">|</span>
+                <button
+                  className="cursor-pointer hover:text-[#459df5] hover:underline"
+                  onClick={promptFavorite}
+                  title="把本站加入浏览器收藏夹"
+                >
                   收藏本站
                 </button>
+                <span className="text-[#ccc]">|</span>
+                <button
+                  className="cursor-pointer hover:text-[#459df5] hover:underline"
+                  onClick={() => setHistOpen(true)}
+                  title="查看最近阅读过的章节"
+                >
+                  阅读记录
+                </button>
+                <span className="text-[#ccc]">|</span>
+                <TradToggle className="hover:text-[#459df5] hover:underline" />
                 <span className="hidden text-[#b3b3b3] sm:inline">欢迎光临，本站每日更新小说！</span>
               </div>
               <div className="flex min-w-0 items-center gap-1">
@@ -227,7 +258,14 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
 
       {/* 980px 定宽主体 */}
       <main className="mx-auto w-full max-w-[980px] flex-1 px-2 pb-6 pt-2">{children}</main>
-      <Footer navigate={navigate} siteName={siteName} />
+      <Footer navigate={navigate} siteName={siteName} onOpenHistory={() => setHistOpen(true)} />
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#2f6f9f"
+      />
     </div>
   )
 }

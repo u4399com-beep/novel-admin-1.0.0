@@ -9,8 +9,12 @@ import {
   Footprints,
   Home as HomeIcon,
   Search,
+  Star,
 } from 'lucide-react'
 import { useCategories, useSettings } from '@/hooks/use-novel-data'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+import { useTrad } from '@/components/theme-tools/TradProvider'
 import type { ThemeLayoutProps } from '../types'
 
 const FONT = '"Microsoft Yahei", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", Arial, sans-serif'
@@ -64,11 +68,14 @@ function ScrollButtons() {
  * 全站框架：白/透明页头（文字 Logo + 搜索框 + 快捷入口）
  * + 深灰 #3E3D43 导航条 + 内容区 + 深灰页脚
  */
-export default function Layout({ children, navigate, siteName }: ThemeLayoutProps) {
+export default function Layout({ view, children, navigate, siteName }: ThemeLayoutProps) {
   const { data: categories } = useCategories()
   const { data: settings } = useSettings()
   const footerCfg = settings?.footer
   const [kw, setKw] = useState('')
+  const [histOpen, setHistOpen] = useState(false)
+  const { promptFavorite } = useFavoriteSite()
+  const { mode, setMode } = useTrad()
 
   const submitSearch = () => {
     const q = kw.trim()
@@ -124,8 +131,14 @@ export default function Layout({ children, navigate, siteName }: ThemeLayoutProp
             <QuickEntry
               icon={<Footprints size={18} />}
               label="足迹"
-              title="演示模板：阅读足迹未实现"
-              onClick={() => undefined}
+              title="查看最近阅读过的章节"
+              onClick={() => setHistOpen(true)}
+            />
+            <QuickEntry
+              icon={<Star size={18} />}
+              label="收藏"
+              title="把本站加入浏览器收藏夹"
+              onClick={promptFavorite}
             />
           </div>
         </div>
@@ -164,14 +177,31 @@ export default function Layout({ children, navigate, siteName }: ThemeLayoutProp
         <div className="mx-auto w-full max-w-[960px] px-2 py-5 text-center text-[12px] leading-[22px]">
           <p>{footerCfg?.text || `${siteName} · 找书读书一站直达，每日更新不断档`}</p>
           <p className="mt-1">
-            <span className="font-medium">简体版</span>
+            {mode === 'trad' ? (
+              <button
+                type="button"
+                onClick={() => setMode('origin')}
+                title="切換回简体显示"
+                className="cursor-pointer font-medium transition-colors hover:text-[#ED4259]"
+              >
+                简体版
+              </button>
+            ) : (
+              <span className="font-medium">简体版</span>
+            )}
             <span className="mx-2 text-[#FBFBFB]/40">·</span>
-            <span
-              className="cursor-pointer text-[#FBFBFB]/60 transition-colors hover:text-[#ED4259]"
-              title="演示模板：繁体切换未实现"
-            >
-              繁體版
-            </span>
+            {mode !== 'trad' ? (
+              <button
+                type="button"
+                onClick={() => setMode('trad')}
+                title="全站簡繁切換"
+                className="cursor-pointer text-[#FBFBFB]/60 transition-colors hover:text-[#ED4259]"
+              >
+                繁體版
+              </button>
+            ) : (
+              <span className="text-[#FBFBFB]">繁體版</span>
+            )}
             {footerCfg?.extra && (
               <>
                 <span className="mx-2 text-[#FBFBFB]/40">·</span>
@@ -192,6 +222,13 @@ export default function Layout({ children, navigate, siteName }: ThemeLayoutProp
       </footer>
 
       <ScrollButtons />
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#BF2C24"
+      />
     </div>
   )
 }

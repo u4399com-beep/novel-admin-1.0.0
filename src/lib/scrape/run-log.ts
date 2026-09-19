@@ -19,6 +19,9 @@ function ts(): string {
 
 export class Run {
   readonly taskId: number
+  /** 任务关联规则 id（书籍入库时记入 Novel.sourceRuleId，封面回填用）；无规则任务为 null。
+   *  加载任务记录后由 runTask 赋值（构造时任务尚未读取）。 */
+  ruleId: number | null = null
   private lines: string[] = []
   /** 任务级成果计数（跨多本书累积） */
   counters = { created: 0, updated: 0, chapters: 0 }

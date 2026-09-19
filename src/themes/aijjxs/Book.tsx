@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNovel, useNovels } from '@/hooks/use-novel-data'
 import { cn } from '@/lib/utils'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import type { ThemeView, ViewProps } from '../types'
 import {
   Cover,
@@ -116,6 +117,8 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
         {/* ② 内容简介（超长折叠） */}
         <Panel title="内容简介">
           <FoldText text={n.description || '暂无简介'} />
+          {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+          <BookSuggestLinks keywords={n.suggestKeywords} className="mt-3 border-t border-dashed border-[#e5dccd] pt-3" />
         </Panel>
 
         {/* ③ 下载与说明（双主按钮 + TIP 提示框） */}

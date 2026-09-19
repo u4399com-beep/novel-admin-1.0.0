@@ -6,8 +6,12 @@
 export type RuleMap = Record<string, string>
 
 export interface LoadedRule {
+  /** 规则 id（书籍入库时记入 Novel.sourceRuleId，封面回填据此解析站点代理出口） */
+  id?: number
   name?: string
   charset?: string
+  /** 站点级出口代理（空/未配置 = 直连）；引擎各策略按能力走代理出口 */
+  proxy?: string
   listRule: RuleMap
   bookRule: RuleMap
   chapterRule: RuleMap
@@ -16,6 +20,8 @@ export interface LoadedRule {
 export interface ChapterRef {
   title: string
   url: string | null
+  /** 分卷名（引擎从源站目录卷头提取；无卷结构为 undefined/空） */
+  volume?: string
 }
 
 export interface BookData {
@@ -41,6 +47,8 @@ export interface ListItem {
 export interface ChapterData {
   title: string
   content: string
+  /** 引擎返回的分段正文（content 以 \n 连接的分段数组）；fetchChapterPaged 分页合并时同步续接 */
+  paragraphs?: string[]
   wordCount: number
   nextUrl: string | null
 }
@@ -49,7 +57,12 @@ export interface TaskRecord {
   id: number
   mode: string
   targetUrl: string
+  /** list 模式：连续抓取的列表页数（从 startPage 起，无上限） */
   pages: number
+  /** list 模式：起始页码（≥1） */
+  startPage: number
+  /** 任务内并发度（1-16）：list=同时处理的书本数，single=同时抓取的章节数 */
+  concurrency: number
   ruleId: number | null
 }
 

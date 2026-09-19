@@ -6,14 +6,19 @@ import { useCategories, useSettings } from '@/hooks/use-novel-data'
 import type { CategoryDto } from '@/lib/types'
 import type { Nav } from './parts'
 import { XLink } from './parts'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+import { useTrad } from '@/components/theme-tools/TradProvider'
 import type { ThemeLayoutProps } from '../types'
 
 const FONT = '"Microsoft Yahei", "SimSun", "PingFang SC", "Hiragino Sans GB", sans-serif'
 
 /* ---------- 完整页头 .m_head：左 Logo 180 + 右工具行/搜索组 ---------- */
 
-function FullHeader({ navigate, siteName }: { navigate: Nav; siteName: string }) {
+function FullHeader({ navigate, siteName, onOpenHistory }: { navigate: Nav; siteName: string; onOpenHistory: () => void }) {
   const [kw, setKw] = useState('')
+  const { promptFavorite, shortcut } = useFavoriteSite()
+  const { mode, setMode } = useTrad()
   const submit = () => {
     const q = kw.trim()
     if (q) navigate({ name: 'search', query: q })
@@ -30,17 +35,55 @@ function FullHeader({ navigate, siteName }: { navigate: Nav; siteName: string })
       </button>
       <div className="flex min-w-0 flex-1 flex-col items-end gap-[6px]">
         <div className="flex flex-wrap items-center justify-end gap-2 text-[12px] text-[#999]">
-          <span className="cursor-pointer hover:text-[#FF6600]" title="演示模板：语言切换未实现">
-            简体中文
+          {mode === 'simp' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setMode('origin')}
+                title="切換回繁體顯示"
+                className="cursor-pointer text-[#2F468F] transition-colors hover:text-[#FF6600]"
+              >
+                繁體版
+              </button>
+              <span className="text-[#DDD]">|</span>
+              <span>简体中文</span>
+            </>
+          ) : (
+            <>
+              <span>繁體版</span>
+              <span className="text-[#DDD]">|</span>
+              <button
+                type="button"
+                onClick={() => setMode('simp')}
+                title="全站簡繁切換"
+                className="cursor-pointer text-[#2F468F] transition-colors hover:text-[#FF6600]"
+              >
+                简体中文
+              </button>
+            </>
+          )}
+          <span className="text-[#DDD]">|</span>
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            title="查看最近阅读过的章节"
+            className="cursor-pointer text-[#2F468F] transition-colors hover:text-[#FF6600]"
+          >
+            阅读记录
+          </button>
+          <span className="text-[#DDD]">|</span>
+          <button
+            type="button"
+            onClick={promptFavorite}
+            title={`按 ${shortcut} 也可收藏`}
+            className="cursor-pointer text-[#2F468F] transition-colors hover:text-[#FF6600]"
+          >
+            加入收藏
+          </button>
+          <span className="text-[#DDD]">|</span>
+          <span className="cursor-pointer text-[#2F468F] transition-colors hover:text-[#FF6600]" title="演示模板">
+            联系我们
           </span>
-          <span className="text-[#DDD]">|</span>
-          <span className="cursor-pointer hover:text-[#FF6600]" title="演示模板：语言切换未实现">
-            繁體版
-          </span>
-          <span className="text-[#DDD]">|</span>
-          <span className="cursor-pointer hover:text-[#FF6600]" title="演示模板">加入收藏</span>
-          <span className="text-[#DDD]">|</span>
-          <span className="cursor-pointer hover:text-[#FF6600]" title="演示模板">联系我们</span>
         </div>
         <div className="hidden items-center gap-1 min-[720px]:flex">
           <SearchIcon size={13} className="text-[#999]" />
@@ -80,7 +123,7 @@ function FullHeader({ navigate, siteName }: { navigate: Nav; siteName: string })
 
 /* ---------- 主导航 .m_menu：浅灰渐变 40px，右绝对定位书架按钮 ---------- */
 
-function NavBar({ navigate, categories }: { navigate: Nav; categories: CategoryDto[] }) {
+function NavBar({ navigate, categories, onOpenHistory }: { navigate: Nav; categories: CategoryDto[]; onOpenHistory: () => void }) {
   return (
     <nav className="no-scrollbar relative mx-auto flex h-[40px] w-full max-w-[960px] items-center overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pr-[110px]">
       <XLink onClick={() => navigate({ name: 'home' })} className="px-3 text-[14px] font-bold">
@@ -95,10 +138,12 @@ function NavBar({ navigate, categories }: { navigate: Nav; categories: CategoryD
         全本
       </XLink>
       <button
-        title="演示模板：书架未实现"
+        type="button"
+        onClick={onOpenHistory}
+        title="查看最近阅读过的章节"
         className="absolute right-2 top-[5px] h-[30px] w-[100px] cursor-pointer bg-[#666666] text-[12px] font-bold text-white transition-colors hover:bg-[#FF6600]"
       >
-        我的书架
+        阅读记录
       </button>
     </nav>
   )
@@ -218,6 +263,7 @@ function AFooter({ navigate, siteName }: { navigate: Nav; siteName: string }) {
 export default function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const { data: categories } = useCategories()
   const compact = view.name === 'toc' || view.name === 'chapter'
+  const [histOpen, setHistOpen] = useState(false)
 
   return (
     <div
@@ -234,8 +280,8 @@ export default function Layout({ view, children, navigate, siteName, notice }: T
         </div>
       ) : (
         <>
-          <FullHeader navigate={navigate} siteName={siteName} />
-          <NavBar navigate={navigate} categories={categories ?? []} />
+          <FullHeader navigate={navigate} siteName={siteName} onOpenHistory={() => setHistOpen(true)} />
+          <NavBar navigate={navigate} categories={categories ?? []} onOpenHistory={() => setHistOpen(true)} />
           {notice && (
             <div className="mx-auto w-full max-w-[960px]">
               <div className="mt-2 border border-[#E4E4E4] bg-white px-2 text-[12px] leading-[25px] text-[#FF3300]">
@@ -253,6 +299,13 @@ export default function Layout({ view, children, navigate, siteName, notice }: T
       ) : (
         <SiteFooter siteName={siteName} />
       )}
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#FF6600"
+      />
     </div>
   )
 }

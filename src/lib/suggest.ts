@@ -5,6 +5,8 @@
  * 说明：仅抓取搜索引擎公开的 suggest 接口，用于关键词研究，遵守低频调用原则。
  */
 
+import { decodeHtmlEntities } from '@/lib/text-clean'
+
 export interface SuggestResult {
   engine: string
   ok: boolean
@@ -56,64 +58,72 @@ export async function fetchSuggestions(engine: string, keyword: string, timeoutM
         signal: ctrl.signal,
         headers: { 'User-Agent': UA },
       })
-      if (res.ok) {
-        const j = (await res.json()) as { g?: { k?: string }[] }
-        words = (j.g ?? []).map((x) => x.k ?? '').filter(Boolean)
-      }
+      if (!res.ok) return { engine, ok: false, words: [], error: `HTTP ${res.status}` }
+      // 百度 sugrec 响应字段已从 g[].k 变为 g[].q（2024 实测）；保留 k 兼容回退防再次变更
+      const j = (await res.json()) as { g?: { q?: string; k?: string }[] }
+      words = (j.g ?? []).map((x) => x.q ?? x.k ?? '').filter(Boolean)
     } else if (engine === 'bing') {
-      const res = await fetch(`https://api.bing.com/osjson.aspx?query=${encodeURIComponent(keyword)}`, {
-        signal: ctrl.signal,
-        headers: { 'User-Agent': UA },
-      })
-      if (res.ok) {
-        const j = (await res.json()) as [string, string[]]
-        words = (j[1] ?? []).filter(Boolean)
+      // 旧接口 api.bing.com/osjson.aspx 已下线（200 但空体）；改用 cn.bing.com AS 页面接口：
+      // 必须带 Referer 与浏览器 UA 才返回建议，响应为 HTML，从 <li class="sa_sg" query="词"> 提取
+      const res = await fetch(
+        `https://cn.bing.com/AS/Suggestions?mkt=zh-CN&qry=${encodeURIComponent(keyword)}&cp=1&cvid=abc123`,
+        {
+          signal: ctrl.signal,
+          headers: { 'User-Agent': UA, Referer: 'https://cn.bing.com/' },
+        },
+      )
+      if (!res.ok) return { engine, ok: false, words: [], error: `HTTP ${res.status}` }
+      const html = await res.text()
+      const lis = html.match(/<li\b[^>]*>/g) ?? []
+      for (const li of lis) {
+        if (!li.includes('sa_sg')) continue
+        const m = li.match(/\bquery="([^"]*)"/)
+        if (m?.[1]) words.push(decodeHtmlEntities(m[1])) // 属性值含 &amp; 等实体，先解码再清洗
       }
     } else if (engine === 'duckduckgo') {
       const res = await fetch(`https://duckduckgo.com/ac/?q=${encodeURIComponent(keyword)}&type=list`, {
         signal: ctrl.signal,
         headers: { 'User-Agent': UA },
       })
-      if (res.ok) {
-        const j = (await res.json()) as [string, string[]]
-        words = (j[1] ?? []).filter(Boolean)
-      }
+      if (!res.ok) return { engine, ok: false, words: [], error: `HTTP ${res.status}` }
+      const j = (await res.json()) as [string, string[]]
+      words = (j[1] ?? []).filter(Boolean)
     } else if (engine === 'sogou') {
       const res = await fetch(`https://www.sogou.com/sugproxy?p=1&ie=utf8&from=pc&wd=${encodeURIComponent(keyword)}`, {
         signal: ctrl.signal,
         headers: { 'User-Agent': UA },
       })
-      if (res.ok) {
-        const text = await res.text()
-        // 容错解析 JSON/JSONP 混合返回
-        const arrMatch = text.match(/\[([\s\S]*)\]/)
-        if (arrMatch) {
-          try {
-            const arr = JSON.parse(arrMatch[1]) as unknown
-            if (Array.isArray(arr)) {
-              words = arr.filter((x): x is string => typeof x === 'string')
-            }
-          } catch { /* 忽略解析失败 */ }
-        }
+      if (!res.ok) return { engine, ok: false, words: [], error: `HTTP ${res.status}` }
+      const text = await res.text()
+      // 容错解析 JSON/JSONP 混合返回
+      const arrMatch = text.match(/\[([\s\S]*)\]/)
+      if (arrMatch) {
+        try {
+          const arr = JSON.parse(arrMatch[1]) as unknown
+          if (Array.isArray(arr)) {
+            words = arr.filter((x): x is string => typeof x === 'string')
+          }
+        } catch { /* 忽略解析失败 */ }
       }
     } else if (engine === 'so360') {
       const res = await fetch(`https://sug.so.360.cn/suggest?word=${encodeURIComponent(keyword)}&ie=utf-8`, {
         signal: ctrl.signal,
         headers: { 'User-Agent': UA },
       })
-      if (res.ok) {
-        const text = await res.text()
-        try {
-          const j = JSON.parse(text) as { data?: string[] }
-          words = (j.data ?? []).filter(Boolean)
-        } catch {
-          const m = text.match(/\[([\s\S]*)\]/)
-          if (m) {
-            try {
-              const arr = JSON.parse(m[1]) as unknown
-              if (Array.isArray(arr)) words = arr.filter((x): x is string => typeof x === 'string')
-            } catch { /* 忽略 */ }
-          }
+      if (!res.ok) return { engine, ok: false, words: [], error: `HTTP ${res.status}` }
+      const text = await res.text()
+      try {
+        // 360 响应字段已从 data[] 变为 result[{word}]（实测）；保留 data 兼容回退
+        const j = JSON.parse(text) as { result?: { word?: string }[]; data?: string[] }
+        words = (j.result ?? []).map((x) => x.word ?? '').filter(Boolean)
+        if (words.length === 0 && Array.isArray(j.data)) words = j.data.filter(Boolean)
+      } catch {
+        const m = text.match(/\[([\s\S]*)\]/)
+        if (m) {
+          try {
+            const arr = JSON.parse(m[1]) as unknown
+            if (Array.isArray(arr)) words = arr.filter((x): x is string => typeof x === 'string')
+          } catch { /* 忽略 */ }
         }
       }
     } else {

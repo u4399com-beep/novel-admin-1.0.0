@@ -1,18 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sanitizeKeyword } from '@/lib/suggest'
+import { insertKeywords } from '@/lib/pseo'
 
 export const dynamic = 'force-dynamic'
 
 // PSEO 关键词列表（管理端）
 export async function GET() {
   const rows = await db.pseoKeyword.findMany({ orderBy: { updatedAt: 'desc' }, take: 200 })
+  // 绑定书标题批量查一次（in 查询 + Map 回填，避免逐行 N+1）
+  const novelIds = [...new Set(rows.map((r) => r.novelId).filter((id): id is number => id != null))]
+  const novels = novelIds.length
+    ? await db.novel.findMany({ where: { id: { in: novelIds } }, select: { id: true, title: true } })
+    : []
+  const titleOf = new Map(novels.map((n) => [n.id, n.title]))
   return NextResponse.json(
     rows.map((r) => ({
       id: r.id,
       keyword: r.keyword,
       source: r.source,
       status: r.status,
+      // 绑定书（采集自动取词时写入；书已删除则 title 回退 null，前端显示 #id）
+      novelId: r.novelId,
+      novelTitle: r.novelId != null ? (titleOf.get(r.novelId) ?? null) : null,
       updatedAt: r.updatedAt.toISOString(),
     }))
   )
@@ -37,14 +47,8 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const existing = await db.pseoKeyword.findMany({ where: { keyword: { in: cleaned } }, select: { keyword: true } })
-  const existingSet = new Set(existing.map((r) => r.keyword))
-  let added = 0
-  for (const kw of cleaned) {
-    if (existingSet.has(kw)) continue
-    await db.pseoKeyword.create({ data: { keyword: kw, source: 'manual' } })
-    added++
-  }
+  // 复用 insertKeywords：批内去重 + 存在跳过 + P2002 竞态容错（原逐条 create 无容错，并发下撞唯一约束 → 500）
+  const added = await insertKeywords(cleaned.map((kw) => ({ word: kw, engine: 'manual' })), 500)
   return NextResponse.json({ added })
 }
 

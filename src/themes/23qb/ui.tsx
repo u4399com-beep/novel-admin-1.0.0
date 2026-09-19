@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { ChevronLeft, ChevronRight, FileText, Flame, RotateCcw, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import type { ChapterListItem, NovelListItem } from '@/lib/types'
 import type { ThemeView } from '../types'
 
@@ -152,9 +153,12 @@ export function BigBtn({
 function CoverFace({ novel, rounded }: { novel: NovelListItem; rounded: string }) {
   return (
     <div className={cn('relative overflow-hidden', rounded, coverBgClass(novel.cover))}>
-      <div className="flex aspect-[5/7] items-center justify-center">
-        <span className="text-5xl font-bold text-white/90 drop-shadow-md">{novel.title.slice(0, 1)}</span>
-      </div>
+      <NovelCoverImg novel={novel} />
+      {!isLocalCover(novel.cover) && (
+        <div className="flex aspect-[5/7] items-center justify-center">
+          <span className="text-5xl font-bold text-white/90 drop-shadow-md">{novel.title.slice(0, 1)}</span>
+        </div>
+      )}
       {/* 封面底部黑色渐变字幕条 */}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-6">
         <p className="truncate text-[11px] text-white/85">

@@ -1,705 +1,449 @@
 # Worklog
 
 ---
-Task ID: 0
+Task ID: 1
 Agent: main (Z.ai Code)
-Task: 项目初始化：审查 novel-admin-1.0.0、准备站点分析
+Task: 移植 novel-admin-1.0.0 到沙箱并恢复运行环境
 
 Work Log:
-- 克隆 https://github.com/u4399com-beep/novel-admin-1.0.0 到 /home/z/review-novel-admin 并完成初步审查
-- 下载 10 个目标站点首页 HTML 到 /home/z/site-analysis/（9/10 成功）
-- 当前沙箱项目 /home/z/my-project 为全新 Next.js 16 脚手架
+- 克隆 https://github.com/u4399com-beep/novel-admin-1.0.0 到 /tmp/novel-admin-review 并全面审查（含原仓库 worklog Task 0-25 记录）
+- 移植 src/prisma/db/mini-services/public/docs/tests 至 /home/z/my-project；package.json 与脚手架完全一致无需变更
+- 删除 public/robots.txt（与 src/app/robots.ts 元数据路由冲突，会 500）
+- prisma generate + db:push（schema 已同步，41 本书数据完好）；重启 dev server 后 /api/settings、/api/novels 恢复 200
+- 启动 mini-services/scraper-service（bun install + bun --hot，端口 3030），/api/strategies 返回 6 策略全 available
+- 环境重要发现：IM 网关传输层会吞掉 bash 输出中 `[h...]` 类方括号模式（如 `history[history.length - 1]` 显示为 `historyistory...`），属显示假象而非代码损坏；判断文件内容一律以 Read 工具 + tsc/bun 编译结果为准
 
 Stage Summary:
-- 仓库核心：小说后台管理系统（Novel/Chapter/Category/Theme/ScrapeTask 等模型 + scraper mini-service）
-- 原仓库主题系统缺陷：Theme 模型仅存配色参数（colors/layout/typography JSON），并非真正的"页面结构级主题模版"；仅 1 套半成品布局主题（guichuideng）；公开站点页面结构固定，与主题脱节
-- 计划：在沙箱重建精简版 novel-admin（数据层+API+管理端+阅读端 SPA），删除旧主题，重建 10 套结构级主题模版
+- 项目已完整恢复运行：Next.js :3000（ggd66 主题激活，41 本书）、采集引擎 :3030（6 策略链）
+- 10 套主题就绪：aijjxs/ddyueshu/pilishuwu/23qb/101kks/huangjinwu/ggd66/shipsay/x2552/trxsw
+- 待办：①收藏本站(Ctrl+D)/阅读记录/繁体版 全主题实装（当前多为占位 span/title 提示）②11 站点采集规则编写+实测 ③深度抓 bug ④代码精简
 
 ---
-Task ID: 7-c
-Agent: theme-builder-c
-Task: 实现 huangjinwu/ggd66 两套主题
+Task ID: 4
+Agent: auditor
+Task: 小说站系统逐行深度代码审查 + 抓 bug + 修复（辖区：src/app/api/**、src/lib/**、src/hooks/use-novel-data.ts、src/components/admin/**、SeoSync/ThemeRenderer/page/layout/robots/sitemap）
 
 Work Log:
-- 通读 types.ts / use-novel-data.ts / types(DTO) / covers.ts / 两份设计规格 / 现有占位主题与 registry
-- 重写 src/themes/huangjinwu/：拆分 index.tsx（Layout+模块定义）、views.tsx（6 视图）、ui.tsx（共享件）
-- 重写 src/themes/ggd66/：同样三文件结构
-- 修复 tsc 报错（漏 import useCategories）；按 react-hooks/set-state-in-effect 规则重构两处 Search（改为 key=query 重挂载的 SearchPanel）与 ggd66 书签复位（按章记忆的 state），消除自目录 lint 错误
-- 验证：bunx tsc --noEmit 两目录 0 错误；bun run lint 两目录 0 错误（剩余 4 个错误均在 101kks/23qb 等他人目录，未触碰）
+
+## 已修复 bug 清单（文件:行号 → 问题 → 根因 → 修复 → 验证）
+
+1. **src/app/api/settings/route.ts(PATCH) + src/lib/seo.ts → TDK 配置可被注入非字符串值，前台白屏**
+   - 问题：PATCH `{"seo":{"homeTitle":{"evil":"<script>"}}}` 后 GET 回读 homeTitle 为 object；SeoSync 的 renderTpl 对非字符串调 `.replace` 抛 TypeError，且发生在 useEffect 内 → React 卸载整树、全站白屏。实测复现（PATCH 200 → GET typeof object）。
+   - 根因：旧 PATCH 将 `body.seo` 原样 spread 进 seoConfig 入库，零类型校验；GET 读回也只 spread 不过滤。
+   - 修复：①seo.ts 新增 `sanitizeSeoConfig`（DEFAULT_SEO 白名单键、非字符串回落默认、autoFromContent 布尔归一、截断 1000；`pseo` 子对象透传，防保存 TDK 时误删 PSEO 运行配置）；②GET 读回同过白名单（防历史脏数据行）；③renderTpl 加 `String(tpl ?? '')` 兜底；④pseo.ts generatePendingPages 改用 sanitizeSeoConfig 读模板（原裸 JSON.parse spread）。
+   - 验证：PATCH 脏对象 → GET 返回默认字符串、自定义字符串 bookTitle 生效、`pseo.seeds:["科幻末日","无限流副本"]` 完整保留；测试后配置已还原原值。
+
+2. **src/app/api/chapters/route.ts:24 → POST content 非字符串 500**
+   - 问题：`content: 123` 时 `content.replace` 抛 TypeError → 500（实测）。
+   - 根因：`body.content ?? ''` 只防 null/undefined 不防类型错。
+   - 修复：`typeof body.content === 'string' ? body.content : ''`（与 PUT「非字符串忽略」语义一致）。
+   - 验证：`content:123` → 201（wordCount=0），测试章节已删除、书 36 字数恢复 12873。
+
+3. **src/app/api/novels/route.ts:17 → 负 categoryId 静默降级为全库查询**
+   - 问题：注释承诺 `abc/1.5/-3 → 400`，但 `-3` 是合法整数且后续 `>0` 判断使其等价 0（分类页渲染成全站书单）。
+   - 修复：校验追加 `|| categoryIdNum < 0` → 400。grep 全部主题确认只传真实分类 id，无回归。
+   - 验证：`?categoryId=-3` → 400。
+
+4. **src/app/api/novels/[id]/route.ts:78、src/app/api/categories/[id]/route.ts:22 → P2025 语义混乱**
+   - 问题：PUT 不存在的书返回 400「更新失败（分类不存在？）」（误导）；categories PUT 不存在/重名一律 400。dev.log 有对应 prisma:error 记录。
+   - 修复：novels PUT P2025→404；categories PUT P2025→404、P2002→409「分类名称已存在」。
+   - 验证：curl 实测 404/404/409 三态正确。
+
+5. **src/app/api/novels/[id]/route.ts:13(GET) → 书详情页全量加载章节（性能）**
+   - 问题：include 全量 chapters（数千章书每次浏览拉上千行）只为取首/尾章和 totalChapters。
+   - 修复：`take:12`（首页 12 章）+ `findFirst orderBy idx desc`（尾章）+ `_count.chapters`（totalChapters，与旧值恒等）。响应契约逐字段不变。
+   - 验证：28 章书 GET → chapters 12 条、firstChapterId=73(idx1)、lastChapterId=100(idx28) 与旧行为一致。
+
+6. **src/lib/db.ts + settings GET/PATCH + lib/pseo.ts(savePseoConfig) → 单例读改写竞态**
+   - 问题：①SiteSetting 首次并发 GET 双 create 撞 id 唯一约束 → 500；②seoConfig JSON「读旧→合并→写回」并发 PATCH 丢更新（TDK 与 PSEO 配置共用一行存储）。
+   - 修复：db.ts 新增 `serializeSettingsWrite`（globalThis Promise 链进程内串行写，HMR 重载共享不失效）；GET/PATCH/savePseoConfig 全部改 upsert（`update:{}, create:{id:1}`）并置于锁内。
+   - 取舍：进程内锁覆盖本应用全部写路径（均在此 Next 进程），SQLite 无跨进程写者；不引入 raw SQL/可串行化事务的复杂度。
+   - 验证：pseo/config PATCH 保存/回读/还原 200，TDK PATCH 与 PSEO PATCH 互不丢字段。
+
+7. **src/app/api/pseo/route.ts(POST) → 手工关键词入库无 P2002 容错**
+   - 问题：逐条 `create` 前先查 existing，并发窗口内撞 keyword 唯一约束 → 500；且逻辑与 lib/pseo.insertKeywords 重复。
+   - 修复：复用 `insertKeywords(cleaned.map(k=>({word:k,engine:'manual'})), 500)`，响应 `{added}` 形状不变。
+   - 验证：新增 added=1 / 重复 added=0 / 模拟竞态（外部先入库同名）added=0，全部 200。
+
+8. **500 响应 detail 泄露服务器内部路径（chapters/clean-all、scrape-rules 共 5 处）**
+   - 问题：Prisma 错误 message 含 `/home/z/my-project/src/...` 调用点路径，原样返回客户端。
+   - 修复：统一 `firstLine(e)`（取首行 + 200 字截断，首行不含路径）。
+   - 验证：lint/tsc 通过；detail 生成路径静态可达。
+
+9. **src/app/api/novels/route.ts:12 → 分页参数小数不确定**
+   - 问题：page/pageSize 未取整，`page=1.3` 产生小数 skip（SQLite 静默截断，行为依赖实现）。
+   - 修复：Math.floor 钳制。验证：`page=1.3&pageSize=4` 与 `page=1&pageSize=4` 返回完全一致（scrape-tasks GET 原本已有 floor，无此问题）。
+
+10. **src/components/admin/panels.tsx → react-query 缓存失效遗漏**
+    - 问题：①NovelsTab save/remove 未失效 qk.categories（分类列表 novelCount 陈旧至 staleTime 60s 过期）；②ChaptersDialog saveEdit 未失效 ['novels']/qk.home（书级字数陈旧 30s，add/remove 有而 saveEdit 漏）。
+    - 修复：invalidate 列表分别补 qk.categories / ['novels'], qk.home。
+
+11. **src/app/api/chapters/[id]/route.ts(DELETE) → 删章不触碰 novel.updatedAt**
+    - 问题：PUT/POST 同步字数时触碰 updatedAt，DELETE 不碰 → 「最近更新」排序不反映删章，三处语义不一致。
+    - 修复：DELETE 同步 wordCount 时一并 `updatedAt: new Date()`。
+
+12. **prisma/schema.prisma → Novel.categoryId 无索引**
+    - 问题：分类页/首页按 categoryId 过滤，随采集书量增长全表扫。修复：`@@index([categoryId])` + db:push（sqlite_master 确认 Novel_categoryId_idx 落库，数据无损）。Chapter 的 `@@index([novelId])` 与 `@@unique([novelId, idx])` 前缀重复属冗余，删除无收益，保留。
+
+## 评估后不修（重要取舍）
+- **contains 大小写（历史遗留项）**：实测本栈不成立——Prisma/SQLite `contains` 编译为 LIKE，对 ASCII 大小写不敏感（`author contains 'm'` 命中「追星少女M」，count 均为 1），CJK 无大小写概念。无需 lower/raw COLLATE 改造。
+- **chapters POST 同书并发 idx 冲突（历史遗留项）**：代码已有 P2002 catch + 回读重试 1 次；采集路径 storeChapter 更有 5 次顺延重试（MAX_IDX_BUMPS=4）。评估维持现状（追加并发概率极低且二次失败才 500）。
+- **PUT novels 无法清空 author（空串静默忽略）**：前端表单无清空作者场景，POST 空作者默认「佚名」；改动收益低于契约风险，记录不改。
+- **insertKeywords cap 截断先于去重**：极端重复批实际入库 < cap，语义无害。
+- **activeTheme 无服务端白名单**：getTheme 有 aijjxs 兜底不会崩；server 引入 'use client' 的 registry 代价大于收益。
+- **admin 全 API 无鉴权**：本工具定位即本地单管理员（浮动齿轮入口），加鉴权超出本次审查范围，如需公网部署必须补。
+
+## 深审未发现问题（覆盖面记录）
+home route（每书 take:1 相关子查询无 N+1）、scrape worker/store/run-log/engine-client（取消协作/僵尸回收/条件更新竞态防护完备）、suggest.ts（限并发/超时隔离/白名单）、footer.ts（href 白名单防 javascript: 伪协议）、content-clean.ts、format.ts/covers.ts、use-novel-data.ts（queryKey 参数完备、enabled 翻转不入 key、staleTime 合理）、admin scrape 组件族/ui-shared（runBusy 防重提交统一）、SeoSync（TDK 边界：未命中 {var}→空串、超长截断 120/300/200、DOM API 写 meta 天然防注入）、ThemeRenderer/page/layout/robots/sitemap。全 src 无 dangerouslySetInnerHTML、无 $queryRaw（无 XSS/注入面）；JSON spread 均走 CreateDataProperty，无原型污染路径。
+
+## 基线与验证
+- `bunx tsc --noEmit`：src 内 0 错误；全项目 11 错误全部位于 src 外（examples/websocket、mini-services/scraper-service、scripts-t3、skills/**，改动前即存在，属环境基线非本次引入）。
+- `bun run lint`：0 错误。
+- curl 回归：settings PATCH/GET、novels GET/PUT/DELETE、categories PUT、chapters POST/GET/DELETE、pseo POST/DELETE/config、home、scrape-rules、strategies 全部语义正确；测试数据（临时章节 831、临时关键词）已清理，seoConfig/footerConfig/activeTheme 均还原原值。
+- dev.log 无新运行时错误（唯一 unique constraint 日志为 409 测试的预期 Prisma log）。
+
+## 转交问题清单（非本辖区，不修只记录）
+1. **themes/**（Task 2）：大量裸 `JSON.parse(window.localStorage.getItem(...) ?? '[]'|'{}')` 无 try/catch —— 101kks/ui.tsx:62,80、23qb/ui.tsx:50、23qb/views.tsx:61、trxsw/index.tsx:586、aijjxs/parts.tsx:40、aijjxs/Book.tsx:208、ggd66/views.tsx:886、pilishuwu/index.tsx:579、ddyueshu/parts.tsx:33。localStorage 值损坏时书架/书签渲染抛错白屏；建议统一 safeParse。src/hooks/use-reader-prefs.ts:130 的 `JSON.parse(raw)` 同样裸 parse（158 行有 sanitize 但 130 行先崩）。
+2. **mini-services/scraper-service**（Task 3）：src/clean.ts 与 src/lib/content-clean.ts 为同源双实现（跨进程无法共享模块），改 NOISE_PATTERNS/isNoiseLine 时两边必须同步（clean-all 存量清洗只覆盖主应用侧规则）。
+3. **环境基线**：mini-services/examples 的 tsc 报错（缺 @types/bun、socket.io 类型）与运行无关，如需收紧可在 tsconfig exclude 处理（不影响 Next 构建）。
 
 Stage Summary:
-- 产出文件：
-  - src/themes/huangjinwu/index.tsx / views.tsx / ui.tsx（ThemeModule id=huangjinwu，swatch ['#2563eb','#f0f4fb']）
-  - src/themes/ggd66/index.tsx / views.tsx / ui.tsx（ThemeModule id=ggd66，swatch ['#1abc9c','#56ccb5']）
-- huangjinwu 要点：1180px 居中单列、#f0f4fb 底 + 白色 10px 圆角卡 + 蓝竖条区块标题；毛玻璃白 sticky 导航（logo+横排菜单+250px 搜索框+移动端左抽屉）；首页=热门推荐 3×2 文字卡（分类实心/状态浅底/字数描边三态徽章）+ 分类排行榜 3×2 榜单模块（每榜 10 行，取 clicks/updates/finished/hot/featured/latest 六组）+ 最新更新卡流 + 胶囊栅格电子书区；详情页 180×250 渐变封面左置 + 简介展开/收起 + 最新章节胶囊 + 全量目录多列胶囊内嵌（useChapters）；正文页独立 900px 容器、字号/行距双滑杆（默认 20px/1.8）、#f8fafc 正文卡、缩进 2em/字距 0.2em、上一章|目录|下一章三段式、同作者作品推荐
-- ggd66 要点：90%/1200px 容器、#f9f9f9 底、#1abc9c 顶栏 50px（桌面单行 60px 项，移动端第二行等分导航）；首页 73%/25% 双栏两行（封面+dl 简介卡 2 列 / 侧栏搜索+虚线排行榜；五列字段更新表 75/165/auto/85/85px 用 useNovels({sort:'latest',pageSize:30}) 拉满 30 行，<lg 隐作者列 <md 隐章节列 / 最新小说两字段榜单由 home 数据去重合并）；分类页分类导航条 + 3 列虚线盒（序号徽章 hover 橙 + 阅读 描边钮）+ 35px 方块数字分页；详情页 #cdf3eb 面包屑、22px 绿书名、红/蓝胶囊标签、最新章节 4 列 + 全部章节 4/3/2/1 列（移动端默认折叠按钮展开）；正文页 #FBF4EC 米黄卡、24px/180%/字距 0.1em 大字、46%/46%/94%（桌面 30%×3）三按钮翻页、Enter/←/→ 键盘翻页、相关阅读盒
-- 通用约束落实：全部内部跳转走 navigate(ThemeView)，无 <a href>；封面一律 coverBgClass 渐变 + 书名首字，无 <img>；加载态同风格骨架屏、错误态 refetch 重试按钮；所有可点元素 cursor-pointer + hover 过渡
-- 数据对接：Home=useHomeData（ggd66 另加一条 useNovels 拉取 30 行更新表）；Category=useNovels({categoryId,page,pageSize:20})+useCategories；Book=useNovel+useChapters；Toc=useNovel+useChapters；Chapter=useChapter(.content 按 \n 分段、prevId/nextId 翻章)；Search=本地输入+useNovels({q})
+- 辖区逐文件审查完成：12 处修复（1 个可致全站白屏的配置注入、2 个 500、2 个状态码语义、1 个静默降级、1 个竞态锁、1 个性能全量加载、1 个索引、2 个缓存失效、1 个字数一致性）、6 项评估后不修并记录取舍、3 项跨辖区问题转交。
+- 两个历史遗留项经实证关闭：contains 大小写在本栈（Prisma/SQLite→LIKE）不成立；chapters POST 并发 idx 冲突已有 P2002 重试兜底。
+- 验证闭环：tsc src 0 错误 + lint 0 错误 + curl 全端点回归 + dev.log 无新错误；DB 终态与审查前一致（仅新增 Novel_categoryId_idx 索引）。
 
 ---
-Task ID: 7-a2
-Agent: theme-finisher-ddyueshu
-Task: 补齐 ddyueshu 主题缺失视图
+Task ID: 3
+Agent: scrape-rules（第三轮由主控直接接管完成）
+Task: 11 站点采集规则编写 + 实测 + 反反爬突破
 
 Work Log:
-- 通读 types.ts（ThemeView/ViewProps/ThemeModule 契约）、use-novel-data.ts、lib/types.ts、covers.ts、specs/ddyueshu.md，以及 ddyueshu 现有 index.tsx / Home.tsx / parts.tsx / ddyueshu.css，确认组件签名与视觉令牌
-- 修复 Home.tsx 第 5 行错误 import：CategoryDto 改从 '@/lib/types' 导入（themes/types 并不导出该类型）
-- 新建 Category.tsx：分类切换条（全部+useCategories，激活态天蓝底白字）+ 全宽强推区（dd-box-c8 #C8D4E1 描边、CoverItem 三列封面卡）+ 695px/自适应两栏（左 TableHead+UpdateRow 20 行"好看的XX小说最近更新列表"+DdPager；右 SimpleRow×30 相关推荐）；数据 useNovels({categoryId,page,pageSize:20}) + featured 强推 + clicks 推荐三条查询
-- 新建 Book.tsx：#E1ECED 面包屑条 + dd-box-strong 信息区（Cover 152×195 渐变首字封面、isFeatured 天蓝角标、黑体 28px 书名、作者/分类可点、状态/字数/点击/章节统计、最后更新可跳 lastChapterId、开始阅读 firstChapterId / 进入目录按钮）+ 虚线上边简介(text-indent 2em) + 最新章节 dl（#C3DFEA 卷头 dt + dd 三栏 6 条 + 完整目录入口）
-- 新建 Toc.tsx：面包屑 + 信息头（返回书页/开始阅读）+ dd-box-strong 内 dl 式目录："最新章节"置顶一组（novel.chapters 前 6 条，key 加 latest- 前缀防重）+ "《书名》正文"全量组按 idx 升序（useMemo 排序），dd 33% 三栏（dd-dd-grid 响应式 3/2/1 列）
-- 新建 Chapter.tsx：面包屑（含分类名，useNovel 补充）+ 米黄 dd-box-strong 阅读盒：25px 黑体章名 + 章首/章尾双份"上一章←/章节目录/→下一章/加入书签"导航（MarkButton 复用 parts 的 getMarks/toggleMark，按章 key 重挂载、不读初始 localStorage 防水合不一致）+ 热门推荐行（clicks 榜前 10）+ 正文 dd-reader-content（19px/letter-spacing 0.2em/line-height 150%/宽 85% 居中/\n 分段缩进 2em）+ 章尾 SEO 行；chapterId 变更 window.scrollTo(0,0)
-- 新建 Search.tsx：key=query 重挂载 SearchPanel（规避 set-state-in-effect），本地 input/page state + useNovels({q,page,pageSize:20})，空 query 显示全库列表；结果区 TableHead+UpdateRow 高密度行 + DdPager 本地翻页
-- 全部骨架屏复用 parts 的 Sk/SkRows，视图级错误用 ErrBlock(refetch)，区块级错误用内联"点击重试"；跳转全走 navigate(view)，无 <a href>；可点元素均带 cursor-pointer/hover
+- 前两轮 agent 超时，交接产物：6 条规则（aijjxs/ddyueshu/23qb/huangjinwu/ggd66/xinjianpan）+ scripts-t3 诊断脚本
+- 反反爬突破（核心）：
+  ① 安装 curl-impersonate 二进制 21 个（curl_chrome/ff/edge/safari 系，BoringSSL）至 ~/.local/bin，curl-impersonate 策略从不可用变可用（此前 status:0 缺二进制）
+  ② 修复挑战检测器误报（challenge.ts）：challenge-platform/cdn-cgi/challenge 降级为「近空正文才判定」弱特征——101kks 开启 CF Bot Fight Mode 后全站正常页均注入 challenge-platform 前置脚本，原强特征把真实书页整体误杀（28KB 真实页被判挑战）；修复后 101kks 全链恢复
+  ③ cleanBookTitle 增强（extract.ts）：剥离杰奇系 h1「全文阅读/最新章节列表/无弹窗阅读/笔趣阁」等 SEO 样板后缀（x2552 书名「葬神棺全文阅读」→「葬神棺」实测生效）
+  ④ extractChapter 增强：剥离 CMS 分页标题后缀「(第1/2页)」（xinjianpan 实测）
+- 8 站点三段实测全通过（列表 items>0 + 书页 title/author + 章节 wordCount 合理）：
+  aijjxs 62 items/170 章/3240 字；ddyueshu 4/800 章/4570 字（失效章为站点自身空壳，非规则问题）；23qb 16/9+整目/26003 字；101kks 10/36 章/2504 字（curl-impersonate 突破）；huangjinwu 24/112 章/2107 字；ggd66 10/202 章/1116 字（注意列表页是 /sort/{cid}/{page}/ 非首页）；xinjianpan 30/100 章/420 字；x2552 30/30 条每页+全目/2136 字
+- 3 站网络层不可达，建诚实标注的草稿规则（notes 写明拦截形态与依据）：pilishuwu=CF 数据中心 IP 信誉封锁（全指纹 403 + Playwright 403 + 边缘 520）；trxsw=TCP 重置；77shuku=TCP 超时疑似关停。trxsw/pilishuwu 按已验证的杰奇族模板反推，77shuku 按经典笔趣阁模板
+- 端到端入库验证：x2552 list 任务（pages=1）30 本书被发现、逐章稳定入库（1 本新书 89 章后取消，PATCH cancel 协作停止正常），novel id=51 真实入库
+- 清理：删除 5 条旧种子规则（books.toscrape/ShipSay demo/笔趣阁系/顶点系/爱尚系，与现规则重复或非目标站），规则表精确 11 条；删除 scripts-t3/ 诊断脚本（结论沉淀至 docs/scrape-rules.md）
+- 顺带修复：src/lib/scrape/types.ts ChapterData 补 paragraphs 可选字段（与引擎真实契约对齐，修 tsc 报错）；browser.ts execFile env 断言修 NODE_ENV 必填报错；根 tsconfig 排除 mini-services/examples/skills（独立项目不应进根 tsc，且 examples 因缺 socket.io 依赖报错）
 
 Stage Summary:
-- 产出文件：src/themes/ddyueshu/ 下修复 Home.tsx import；新增 Category.tsx / Book.tsx / Toc.tsx / Chapter.tsx / Search.tsx（均默认导出、签名与 index.tsx 引用一致）
-- 验证：bunx tsc --noEmit 2>&1 | grep ddyueshu 为空；bun run lint 2>&1 | grep -i ddyueshu 为空（残余错误均在 mini-services/、skills/、themes/shipsay 等他人目录，未触碰）
+- 规则集：11 条（8 条三段实测通过 + 3 条诚实草稿），全部落库可从管理后台使用
+- 反反爬能力净增：curl-impersonate JA3 指纹伪装上线 + CF BFM 注入误报修复 + 标题清洗 2 项增强
+- 文档：docs/scrape-rules.md（站点×结果表 + 选择器速查 + 维护提示）
+- 验证：根 tsc 0 错误、eslint 0 错误、引擎 tsc 0 错误、引擎重启后 /api/strategies 全策略 available、端到端任务实测通过
 
 ---
-Task ID: 8-a
-Agent: theme-finisher-x2552
-Task: 完成 x2552 主题（接线 index + 补 Toc/Chapter/Search）
+Task ID: 2（验证补记）
+Agent: main (Z.ai Code)
+Task: Task 2 agent 超时后的浏览器端到端验证与崩溃修复
 
 Work Log:
-- 通读 x2552 现有全部文件（parts/Layout/Home/Book/Category/Sidebar/index）+ types.ts + use-novel-data.ts + covers.ts + worklog；设计规格 /home/z/site-analysis/specs/x2552.md 已不存在（site-analysis 目录缺失），按任务约定改以现有 x2552 文件已确立的视觉语言（杰奇经典蓝白 + 橙点缀、960px 定宽、Block 渐变标题条）为重建依据
-- 确认 API 已返回 ChapterDetail.prevId/nextId（src/app/api/chapters/[id]/route.ts），Chapter 视图直接消费，无需自行推导
-- 新建 Toc.tsx：当前位置面包屑（首页>分类>书名>目录）→ 书籍信息头（2px 天蓝亮条白盒：书名 h1、作者/分类/状态/字数/点击/章数点线分隔 meta 行、开始阅读 BtnMain + 返回书页/最新章节 BtnGray）→ 全量目录盒（useChapters 按 idx 升序 useMemo 排序，1/2/4 列响应式网格，序号+XLink 章题，26px 行点线分隔）；useNovel+useChapters 双查询，错误态 ErrorBox 双 refetch，加载态面包屑/信息头/列表三级同风格骨架
-- 新建 Chapter.tsx：面包屑（useNovel 补分类名）→ 白色正文盒（淡蓝页面底 #E6F3FF 上）：章名 20px 居中 + 第 N 章·字数 meta + 章首/章尾双份 NavRow（上一章|目录|下一章，prevId/nextId 为 null 时置灰不可点）+ 字号设置行（A-/A/A+，14–24px 步进 2，默认 16px）+ 正文 \n 分段缩进 2em（85% 宽居中、行高 1.9）；chapterId 变更 window.scrollTo(0,0)；同风格 ChapterSkeleton
-- 新建 Search.tsx：外层 Search 以 key=query 重挂载 SearchPanel（规避 set-state-in-effect，输入框随 query 同步）；左 Sidebar 190 + 右 760（与 Category/Book 同构）；站内搜索 Block（输入框 + 橙渐变按钮）→ query 为空显示 EmptyHint 提示盒（返回首页/浏览全部分类），非空才挂载 ResultPanel（useNovels({q,page,pageSize:20})，Category 同款 h2 结果头 + NovelTable 6 列表 + Pager 本地翻页）
-- 重写 index.tsx：ThemeModule 全量接线 Layout/Home/Category/Book/Toc/Chapter/Search（全部真实组件），name=杰奇经典、source=x2552.com、swatch=['#2F468F','#FF6600']（主题深蓝链接 + 橙点缀双主色），description 概述 960px 定宽/渐变标题条/紧凑顶栏/多列目录/淡蓝阅读器等布局特点
-- 浏览器实测（agent-browser）：Home→Book→Toc→Chapter→Search 全链路点击通过；Toc 12 章升序、开始阅读跳第一章；Chapter 章首/章尾导航与 A+ 字号（16→18px）生效、段落 text-indent 32px(2em)、翻章回顶；Search "剑"4 条/"的"33 条分页翻页正常、输入框随 query 回填；页面 0 报错
-- 验证：bunx tsc --noEmit 全项目 0 错误；bun run lint 0 输出（src/themes/x2552 无任何错误/警告）；未运行 build、未触碰其他主题与 registry.ts
+- 发现并修复关键崩溃：shipsay/x2552 在 Layout 顶层调用 useTrad()，而 TradProvider 在同一组件 JSX 内才挂载（provider 包不住自身的 hook 调用）→ context 为 null 直接 throw，整页白屏。修复：ThemeRenderer 层统一挂载 SiteToolsProvider（ThemeRenderer.tsx），任何主题的任何层级都能安全消费
+- 10 主题遍历浏览器验证：0 崩溃（修复前 shipsay 100% 白屏）；三件套入口全部在位（101kks 为繁体站故为「简体版」反向切换、shipsay 阅读记录入口主题化为「足迹」、trxsw 顶部工具行由死 span 变为真实按钮）
+- 功能实测：繁体切换（热门→熱門，localStorage 持久化，整页翻译含站名/菜单/正文）；收藏本站（toast 引导 Ctrl/⌘+D）；阅读记录（章节视图自动写入→面板展示→点条目跳回章节，跨主题共享）
+- 移动端 375px：横向溢出 0；footer 贴底（gap=1px）
 
 Stage Summary:
-- 产出文件：src/themes/x2552/ 下重写 index.tsx（占位符→真实 ThemeModule 接线）；新增 Toc.tsx / Chapter.tsx / Search.tsx（至此 6 视图 + Layout 全部为真实实现）
-- x2552 主题要点：杰奇 CMS 经典蓝白模板重建——960px 定宽（min-w 760）、深蓝 #2F468F 链接 hover 橙 #FF6600 + 1px 按压位移（XLink）、Block 渐变标题条 + 2px #33CCFF/#D9EDFF 亮线；首页封面排行横条 + 760 最近更新长列表 + 190 双榜 + 竖排友情链接；分类/详情/搜索 = 左 190 排行侧栏 + 右 760 表格；目录/正文页自动切换 30px 紧凑顶栏 + #a_footer 网站地图页脚、正文页底色 #E6F3FF；全量目录 4 列网格、正文双导航 + 字号 A±设置、\n 分段缩进 2em
-- 复用约束落实：全部复用 parts.tsx 的 XLink/Block/NovelTable/Pager/BtnMain/BtnGray/ErrorBox/RowsSkeleton/TableSkeleton 与封面渐变（无 <img>）；内部跳转全走 navigate(view)（无 <a href>）；加载/错误态与可点元素 cursor-pointer+hover 均符合既有规范
-
+- 主题工具链组件：SiteToolsProvider/TradProvider/TradToggle/trad-engine/HistoryPanel/ReadingHistoryRecorder/FavoriteSite/site-tools/reading-history/s2t（Task 2 agent 产出）+ ThemeRenderer 级全局挂载（本验证修复）
+- 全部 10 主题生产可用
 
 ---
-Task ID: 8-c
-Agent: code-auditor
-Task: 全站代码逐行深度审查+修复（API/hooks/lib/components/9 主题）
+Task ID: 5
+Agent: main (Z.ai Code)
+Task: 代码清理整合优化精简
 
 Work Log:
-- API 健壮性：
-  - src/app/api/novels/route.ts：删除 route.ts 中非法导出的 parseId（Next.js Route 不允许未知导出，会导致 next build 类型报错；该函数本身也未被使用）；POST 补 req.json() 非法 JSON → 400（原先 500）
-  - src/app/api/novels/[id]/route.ts：DELETE 不存在/非法 ID 由未捕获 P2025→500 改为校验+catch→400/404
-  - src/app/api/chapters/route.ts：POST 补 JSON 解析 400
-  - src/app/api/chapters/[id]/route.ts：PUT/DELETE 补 ID 校验、JSON 解析 400、update/delete catch→404（原先非法 ID 或不存在的章节直接 500 泄栈）
-  - src/app/api/categories/route.ts、categories/[id]/route.ts：POST/PUT 补 JSON 解析 400；DELETE 补非法 ID 校验 + catch→404
-  - src/app/api/settings/route.ts：PATCH 修复 row.seoConfig 损坏时 JSON.parse 抛错导致 PATCH 永久 500（try/catch 回退 {}，与 GET 行为对齐）；补 JSON 解析 400
-- 静态文件冲突：删除 public/robots.txt——它与 src/app/robots.ts 元数据路由冲突，导致 /robots.txt 直接 500（"conflicting public file and page file"），删后 /robots.txt 200 并输出 Sitemap 行
-- robots/sitemap：sitemap.ts 的 url 原为相对路径 "/"（sitemap 协议要求绝对 URL，产出 <loc>/</loc> 非法），改为 NEXT_PUBLIC_SITE_URL（回退 http://localhost:3000）拼接绝对地址；robots.ts 同基准输出 sitemap 指向
-- hooks（use-novel-data.ts）：useNovels 新增可选 enabled 透传（向后兼容，默认 true）
-- 章节序号 off-by-one（DB 实测 idx 从 1 起，SQLite groupBy _min=1）：aijjxs/Chapter.tsx「第 {idx+1} 章」与章节下拉/跳转标签、aijjxs/Toc.tsx 章节前缀均改为直接用 idx（原先第一章显示"第 2 章"）
-- "最新章节"区块数据错误（API /api/novels/[id] 的 chapters 按 idx 升序取前 12，多主题直接当"最新章节"渲染，实际展示的是最早章节，novel>12 章时全部错位）：倒序修复 aijjxs/Toc.tsx、ddyueshu/Book.tsx、ddyueshu/Toc.tsx、huangjinwu/views.tsx(Book)、23qb/views.tsx(BookView)、pilishuwu/index.tsx(BookView)、trxsw/index.tsx(BookView)（shipsay/ddyueshu-Book/ggd66 原本已正确反转，未动）
-- 无效/多余请求：aijjxs/Book.tsx、23qb/views.tsx(BookView) 的相关推荐 useNovels({categoryId: novel.data?.categoryId}) 在 novel 未加载时以 categoryId=undefined 打全库查询，接 enabled=novel 已加载，消除每次进书页的浪费请求
-- AdminDrawer.tsx：
-  - 章节编辑按钮 async onClick 无错误处理（失败即 unhandled rejection 且无提示）→ try/catch + toast
-  - 新增章节按钮加 adding 忙态防重复提交
-  - 缓存失效补全：小说增/改/删后补失效 ['novel']（书页详情/章节预览陈旧）；章节增/删后补失效 ['novel']+home；章节编辑后补失效 ['chapter']+['novel']（阅读器正文陈旧）
-  - ScraperTab/PseoTab 删除按钮 async onClick 无错误处理 → try/catch + toast + 成功提示
-- SeoSync.tsx：search 视图空关键词落地页原先生成「“”的搜索结果 - 站名」畸形 TDK，改为退回首页 TDK 模板
-- 审查未改动（确认无问题/不属确凿 bug）：lib/format.ts、lib/covers.ts、lib/store.ts、lib/utils.ts、lib/db.ts、ThemeRenderer.tsx、layout.tsx、api/home、api/novels/[id]/chapters、store navigate/goBack；主题中 key={i} 均用于静态骨架/静态分段，不存在重排列表用 index key 的问题；各分页器越界/禁用态完备；aijjxs Chapter 阅读器 localStorage 惰性初始化因视图仅客户端挂载而安全
-- 验证：bunx tsc --noEmit 0 错误；bun run lint 基线 0 错误，当前全仓 1 错误位于 mini-services/scraper-service/src/strategies.ts（并行 agent 编辑中的文件，非本任务范围），对本人改动文件跑 eslint 全部 0 错误；dev.log 无本范围文件运行时报错；curl 实测 DELETE 不存在资源 404、非法 JSON 400、非法 ID 400、/robots.txt 与 /sitemap.xml 200
+- Provider 整合：删除 10 个主题内的冗余 SiteToolsProvider 包装（11 处 import+开闭标签），全局仅 ThemeRenderer 一处挂载——消除双层 TradProvider 重复 applyTradMode、章节视图双份 ReadingHistoryRecorder
+- 删除污染源：scripts-t3/ 诊断脚本（污染根 tsc）、tool-results/、public/robots.txt（与 app/robots.ts 路由冲突）、5 条旧种子采集规则
+- tsconfig 排除独立项目（mini-services/examples/skills/download/upload）——根 tsc 从 11 错误降到 0，且排除 examples（缺 socket.io 依赖的参考 demo）
+- 修复类型债：engine-client ChapterData 补 paragraphs 可选字段（对齐引擎真实契约）；scraper browser.ts execFile env 类型断言（next-env NODE_ENV 增强）
+- DB VACUUM；activeTheme 还原 ggd66
 
 Stage Summary:
-- 共修复 24 处确凿 bug：API 健壮性 8（非法导出致 build 失败、6 处 500→400/404、PATCH 永久 500）、SEO 基础设施 3（robots.txt 冲突 500、sitemap 相对 URL、空搜索畸形 TDK）、数据展示错位 9（章节序号 off-by-one 3 处 + "最新章节"显示最早章节 6 处）、请求浪费/缓存陈旧 4（enabled 短路 2、失效缺失 2 类）、交互健壮性 5（unhandled rejection 3、防重复提交 1、忙态 1，部分同文件合并计）
-- 遗留风险：① GET /api/novels 的 q 用 SQLite contains 区分大小写（Prisma/SQLite 不支持 mode:insensitive，需迁移或自定义 COLLATE 才能改）；② chapters POST 并发同书添加存在 [novelId,idx] 唯一冲突→500 的理论竞态；③ sort 白名单外取值回退 updatedAt desc 属既定行为；④ mini-services/scraper-service/src/strategies.ts 存在解析级 lint 错误，属并行 agent 范围未触碰；⑤ 主题 Footer 的 new Date().getFullYear() 存在跨年瞬时水合偏差（业界惯例，未改）
+- 根 tsc 0 错误 / eslint 0 错误 / 引擎 tsc 0 错误；DB 终态 42 书 901 章 11 规则
+- 全站单 Provider 架构，主题零样板接入站点工具
 
 ---
-Task ID: 8-b2
-Agent: main-orchestrator
-Task: 8-b（采集反反爬增强）成果验证与收尾（原 agent 超时，但代码已落地）
+Task ID: 6
+Agent: main (Z.ai Code)
+Task: Agent Browser 最终端到端验证
 
 Work Log:
-- 核验 strategies.ts（1057 行）：6 组策略链 fetch-browser（Chrome 全套 Sec-Fetch/客户端提示头）→ fetch-ua-rotate（Firefox/Safari/Edge 无 Referer 变体）→ fetch-mobile（Android/iPhone）→ fetch-spider（Googlebot/Baiduspider）→ curl-impersonate（二进制探测 binScore）→ got-scraping；全部带逐跳 redirect:'manual' SSRF 校验 + opaqueredirect 降级
-- 核验 suggest.ts：Promise.allSettled + 限并发 3 + 跨引擎 Set 去重 + 4s 超时中断
-- 核验 pseo generate：sources 引擎白名单校验（不支持的引擎返回 400 明细）
-- 运行时验证：/api/health 200；/api/strategies 返回 6 策略全 available；POST /api/test 抓 example.com 成功（status 200、attempts 明细、robots 检查、charset 嗅探警告、正文提取 wordCount 正确）；SSRF 测试 127.0.0.1 被正确拒绝
-- 服务以 bun --hot 常驻（自动重启），kill 掉临时的 bun run index.ts 实例避免双实例
+- 桌面 1280px：ggd66 首页→书页→章节→下一章全链路点击通过；章节正文渲染、阅读记录随翻章更新（第一章→第二章）
+- 管理后台：进入站点管理后台→采集中心，11 条站点规则渲染 ✓、任务中心 ✓、引擎/策略信息 ✓
+- 移动端 375px：横向溢出 0px；页脚贴底（窗口底部 gap=1px）
+- 控制台：0 page errors；dev.log 无新增运行时错误（历史报错均为修复前旧日志）
+- 服务终态：站点 :3000 200、采集引擎 :3030 200
 
 Stage Summary:
-- 采集引擎反反爬策略链完备且运行时验证通过；tsc 0 错误；scraper 目录 eslint 干净
+- 全部用户诉求交付完毕，端到端验证通过
 
 ---
-Task ID: 9-11
-Agent: main-orchestrator
-Task: 汇总修复 + 代码精简 + Agent Browser 端到端验证
+Task ID: 7（本轮新增三项要求落实）
+Agent: main (Z.ai Code)
+Task: ①章节内容段落规范+噪声清洗强化 ②封面图本地化+webp 转换全链路 ③trxsw 美国代理 / 77shuku 国内代理
 
 Work Log:
-- Task 10 清理：删除脚手架残留 src/app/api/route.ts（Hello World）；next.config 增加 allowedDevOrigins 消除预览跨域警告；确认旧主题机制文件（prebuilt-themes/use-layout-theme）已不存在；shadcn ui 组件集按项目约定保留（tree-shake 零成本）
-- Task 11 浏览器验证（agent-browser）：
-  · 10 套主题遍历渲染：全部正常、无"构建中"占位残留、TDK 自动生成（书页 TDK 含书名/作者）
-  · x2552 全链路：首页→书页→全文阅读→目录→第一章→下一章（翻章回顶）→目录→搜索，控制台 0 错误
-  · aijjxs 全链路：首页→书页（TDK 正确）→章节（首章"上一章"正确置灰）；ggd66：书页→开始阅读
-  · 发现并修复 x2552 移动端横向溢出 570px：Layout 头部 w-[960px]→w-full max-w-[960px]、根 min-w-[760px]→min-w-0、主导航/快捷条 overflow-x-auto；四视图 w-[760px]→min-w-0 flex-1 lg:flex-none；Sidebar/排行榜 190px→lg 以下隐藏；更新行 250/340px 单元格→flex 响应式；头部搜索行 min-[720px] 以下隐藏（与真实站移动端一致）→ 复测 0px
-  · 发现并修复 4 套主题 footer 未贴底：aijjxs（root 加 flex min-h-screen flex-col + 内层 flex-1 + Footer 包 mt-auto）、ddyueshu（root flex-col + main flex-1）、ggd66（同上）、x2552（root flex min-h-screen flex-col + 内容区 flex-1）；aijjxs/ddyueshu/ggd66/x2552 四主题短页 footer距底=0px ✓，长页 footer 自然下推 ✓
-- 终验：bunx tsc --noEmit 0 错误；bun run lint 0 错误；agent-browser errors/console/network 全干净
+
+## ① 代理 IP 策略（用户要求 #3）
+- 实测出口国别：旧 trxsw/101kks 共用代理 103.237.102.191 为德国出口（❌ 违背 trxsw 须美国的要求）；77shuku 池中 115.231.181.40 已死、另两个为国内联通/网通出口 ✓
+- 抓取 proxyscrape/TheSpeedX/monosans 共 2770 个候选 → ip-api batch 批量_geo_ 筛出 452 个美国 IP → Bun fetch 并发实测对 trxsw.com 可达性 → 4 个存活，确认 3 个洛杉矶出口（geo=United States/Los Angeles，homepage/book 页 200）
+- **trxsw 规则代理池更新为 3 个美国出口轮换**；**77shuku 移除死代理保留 2 个国内出口**；三段实测（list 50 条 → 书页+封面 → 章节 2054 字）双双全通——两站此前「网络层不可达/关停」的结论改写：经代理完全可采
+- 引擎新增两项反反爬能力（strategies/index.ts）：
+  1. **https→http 代理降级回退**：https 经代理整链失败且全为代理侧特征（400/502/网络错误）时，自动降级 http 方案重走策略链（免费 http 代理普遍不支持 CONNECT 隧道；目标站同站双协议可达）
+  2. **代理侧快速失败直通**：https+代理第一轮连续 ≥3 次快速 400 且无成功 → 跳过剩余慢策略（got-scraping/browser）直接进降级轮，为 http 重试保留预算
+
+## ② 封面本地化 + webp（用户要求 #2）
+- 8 个可达站点书页封面提取逐一实测：10/11 规则已配 coverSelector 且全部提取成功（pilishuwu 补 meta[property="og:image"]@content 兜底）
+- **修复 covers-store 两处 SSRF 层 bug**（原实现误杀 Cloudflare 双栈图床）：
+  1. isPrivateIp 把所有 IPv6 一律拒绝 → img.trxsw.com（有 AAAA 记录）被 DNS 层误杀；重构为精确判定：环回/未指定/ULA(fc/fd)/链路本地(fe8-feb)/映射 IPv4（::ffff:x 按四段规则复检），公网 v6 放行
+  2. 重构引入回归：域名主机名被路由进 v4 点分正则的「非匹配保守拒绝」→ 域名全部被拒；修正为非点分形态交回调用方（域名字面量放行，DNS 结果层校验实际 IP，安全性不变）
+- **封面下载代理池轮试**：原实现只取池中第一个代理（免费代理抖动即整体失败）；重构 downloadCoverBytes 逐个出口轮试，全部失败才回落渐变
+- **封面回填链路（新）**：Novel 表新增 remoteCoverUrl/sourceRuleId 字段；upsertBook 新建/更新两路径持久化封面来源与规则 id；worker 将 task.ruleId 记入 Run；新增 POST/GET /api/scrape/covers-backfill（渐变封面+有远程来源的书籍按来源规则代理出口并发重试下载落盘，GET 返回覆盖统计）；管理后台采集中心新增「封面本地化」卡（实时统计 + 一键回填，CoversCard.tsx）
+- 端到端验证：trxsw 单本任务（美国代理）入库《弃女荣嫁》100 章 + 封面落盘 /covers/64.webp（72KB jpg → 31KB webp，300×400）；3 个列表模式重采集任务为存量书升级封面（local 7→15 且持续增长）；回填 API 实测 upgraded=1；封面页 image/webp 200
+- 存量 47 本渐变书（字段诞生前采集、无远程来源记录）由列表重采集自然升级（title+author 查重命中更新路径触发封面下载，章节按标题去重成本低）；后续采集失败的书全部可经回填按钮重试
+
+## ③ 章节内容段落规范 + 噪声清洗（用户要求 #1）
+- 排版规范核查：10 主题章节正文统一「按 \n 拆段 + text-indent: 2em」——发现 23qb/ggd66 缺缩进，已补 indent-[2em]（浏览器实测 36px=2em 生效）；存储契约不变（无空行/无行首缩进/单 \n，缩进交给主题 CSS）
+- 内容质检发现三类漏网噪声（ddyueshu/trxsw 实测样本）：①站点双重转义的 HTML 广告碎片（&lt;ins class=&quot;pubadx-slot&quot;…）②章首「第X章」标题行重复（CMS 把章题渲染进正文容器）③「正在手打中，请稍等片刻…」占位文本
+- 行级清洗器增强（src/lib/content-clean.ts 与 mini-services/scraper-service/src/clean.ts 两份同源同步）：
+  1. ENTITY_DECODE 实体预解码（&lt;/&gt;/&quot;/&#39;/&nbsp; 还原字面字符）+ HTML_TAG_RESIDUE 标签残留检测（不限行长，叙事不可能含原始标签）
+  2. LEADING_HEADING 章首标题行丢弃（仅首行生效 + 显式分隔符要求 + 45 字上限，避免误杀「第二章的约定…」类叙事）
+  3. TAIL_HINT 新增 正在手打/请稍等片刻/重新刷新页面/即可获取最新更新/请等待片刻
+- 单元级验证 3 场景（广告+标题+占位全清、叙事不误杀、章题行丢弃）；引擎热加载实测（trxsw 第604章：首行即叙事、无标题重复、无 HTML 残留）
+- 存量重刷：POST /api/chapters/clean-all → 2236 章扫描、99 章清洗（全部为 </di> 断裂 HTML 残片与章首重复标题）、字数同步重算；dryRun 复检 toClean=0
+
+## 验证闭环
+- 主应用 tsc 0 错误 / eslint 0 错误 / 引擎 tsc 0 错误；dev.log 无运行时错误
+- Agent Browser 端到端：trxsw 主题首页三件套在位 → 弃女荣嫁书页（webp 封面真图渲染）→ 章节页 60 段全部 2em 缩进；ggd66 主题切换后章节缩进同样生效；移动端 375px 横向溢出 0；短页页脚自然贴底/长页下推无遮挡
+- 管理后台：采集中心「封面本地化」卡渲染（62 书/15 webp/47 渐变/0 可回填实时统计）+ 回填按钮
+- activeTheme 还原 trxsw；临时脚本全部清理
 
 Stage Summary:
-- 10 套主题全部达到生产可用：渲染 ✓ / 交互 ✓ / TDK ✓ / 移动端无溢出 ✓ / footer 贴底 ✓
-- 修复文件：x2552（Layout/Home/Category/Search/Book/Sidebar 7 文件响应式）、aijjxs/ddyueshu/ggd66（index.tsx 贴底）、next.config.ts、删除 api/route.ts
+- 三个新增要求全部落地并有实测证据：代理策略（trxsw=洛杉矶美国出口池 ✓ / 77shuku=国内联通网通出口池 ✓，两站三段全通）、封面（10/11 规则提取 + 代理池轮试下载 + SSRF 修复 + webp 落盘 + remoteCoverUrl 回填链路 + 管理后台统计卡）、内容（2 主题缩进补齐 + 3 类新噪声清洗 + 存量 99 章重刷归零）
+- 反反爬净增：https→http 代理降级、代理侧快速失败直通、封面代理池轮试（均源于免费 http 代理不支持 CONNECT 的真实约束）
+- 未竟事项：pilishuwu 仍被 CF 数据中心 IP 信誉封锁（草稿规则已补 og:image 封面选择器，需住宅代理出口才能恢复，与代理池配置兼容）；101kks 维持德国出口（用户未指定国别，实测可用）
 
 ---
-Task ID: 12
-Agent: main-orchestrator
-Task: GitHub 推送
+Task ID: 8（本轮新增两项要求）
+Agent: main (Z.ai Code)
+Task: ①全字段噪声清洗（书名/章节名/简介等所有采集数据，&#091；#093；\n 还原）②字数统计修复完善
 
 Work Log:
-- 提交全部变更（commit 747c55e，含完整重建说明）
-- 远端 main 为旧版 novel-admin 1.0.0（与本任务"删除重建"要求冲突），采用 force push 覆盖：1b6b07c → 747c55e
-- token 仅用于一次性推送 URL，未写入任何代码/配置文件
+
+## ① 全字段噪声清洗（用户要求 #1）
+- 数据画像（sqlite 实测）：80 书中 1 本简介含全角分号实体（novel#88 `&#091；…&#093；`）、64 章正文残留单层实体广告（`&lt;canvas class=&quot;…` 无闭合 `>` 逃过旧标签正则）、`&amp;` 54 处未在旧解码表、14 本简介含站点推广样板（#55 整段 SEO 元描述、#79 尾部「《X》是…精心创作…不代表…观点」）
+- 新建同源双实现 `src/lib/text-clean.ts` ↔ `mini-services/scraper-service/src/text-clean.ts`：
+  1. `decodeHtmlEntities`：命名实体 + 数字/十六进制实体全量解码，**支持全角分号（；）与缺分号变体**，循环解码至稳定（解 `&amp;lt;` 双重转义）；**上下文补全**——存在完整实体时，被截断「&」的残体（`&#091;#093;` 中的 `#093;`）一并还原（实测 novel#88 场景）；未知实体/孤立 `#093;`（无实体上下文）保留原文防误杀
+  2. `cleanTextField`（书名/作者/章节标题/分类/状态）：解码 → 字面 `\n\r` 转义还原为空格 → 残缺标签剥除（允许无闭合 `>`）→ 控制字符/零宽清除 → 空白折叠
+  3. `cleanDescriptionField`（简介）：多段版清洗 + 字面 `\n` 还原为真换行 + 标签转行边界 + 复用 isNoiseLine 行过滤 + 「关于《X》：」前缀剥除 + **尾部样板句剥除**（《X》是…精心创作 / 书友所发表…并不代表…观点 / 实时更新…无弹窗 / 转载请注明 / 相关小说：SEO 词串，共 7 类）+ **SEO 伪简介判定置空**（按句读切分后每句均含 SEO 词 → 整段非叙事，宁缺毋滥）
+- 正文行级清洗器增强（content-clean.ts ↔ clean.ts 同步）：HTML_TAG_RESIDUE 支持无闭合 `>` 残缺标签；保留行输出实体解码净化版（`&amp;` 叙事行还原），解码后二次噪声校验防漏网；normalize 增加字面 `\n` 转义还原拆段
+- 接入链路：引擎 extract.ts（书名 cleanBookTitle 前置解码、作者/分类/状态、简介、章节标题、<title> 兜底、列表条目 title/author/category）→ 主应用 worker.ts 全字段兜底清洗（防旧引擎版本错位）→ **章节去重标题与入库标题共用 cleanTextField 规约**（存量脏标题与净标题可命中比对，防规约升级后同章两种写法重复入库）
+- 存量刷新：clean-all 扩展为「数据清洗维护」（章节正文 + 章节标题 + 书籍 title/author/description 三路扫描；书名/作者变更撞 `@@unique([title,author])` 时逐级降级去 title → 去 author → 仅简介，防历史重复书被清洗合并破坏）；POST 实测 **正文 174 章、书籍字段 12 本 → 22 本**（追加「相关小说：」尾剥后 +10）修正，dryRun 复检三路全部归零
+- 验证：novel#88 简介实测 `&#091；…&#093；` → `[亮剑+黄埔+无系统+军阀混战+二战+手搓+楚总长]`（浏览器渲染确认）；#55 伪简介置空；#79 保留真简介剥样板尾；全库实体/样板残留复扫 0；43 场景单元自测全过（含 AT&T、数学式 a<b、叙事含推广词不误杀）
+
+## ② 字数统计修复完善（用户要求 #2）
+- 缺陷定位：novel#89（当时采集中）wordCount=0 暴露「整本书采完才重算」的实时性缺陷；历史中断/取消路径可留下书级字数与章节合计不符
+- `storeChapter` 入库成功后同步 `wordCount: { increment }`（原子、并发安全）——采集进行中字数实时增长；跳过/失败不增量；任务收尾 recalcNovelWordCount 全量校准兜底（保留）
+- 新增 `GET/POST /api/novels/recalc-words`：GET 只读审计（groupBy 一次聚合无 N+1，返回不符清单与全站总量）；POST 仅对不符书 update（防写放大）。POST 实测修正 1 本，复审 84 书 0 差异
+- `formatWordCount` 完善：NaN/负数/Infinity 防御、非整数取整、千分位（3,200）、整万去尾 .0（250.0万 → 250万）
+- 管理后台采集中心：新增「字数审计」按钮（GET 预览不符清单 → confirm 样例展示 → POST 重算 → toast 汇报）+「清洗存量章节」升级为「数据清洗维护」（dryRun 预览三路计数，toast 分项汇报含冲突跳过数）；浏览器实测按钮在位、审计链路精确发现运行中任务中间态并执行重算
+- 说明：运行中旧任务（task#29，改动前启动）闭包无增量逻辑，其采集中间态字数短暂漂移属预期，书完成即收敛；此后新任务全程实时
+
+## 验证闭环
+- 主应用 tsc 0 / eslint 0 / 引擎 tsc 0；dev.log 无运行时错误；两服务 200
+- Agent Browser 端到端：首页三件套在位 → novel#88 书页（实体还原后的简介渲染）→ 章节页 38 段全部 2em 缩进、无实体无噪声；管理台「数据清洗维护」+「字数审计」按钮实测（审计确认框展示样例 `《开局见神不坏…》24947→67316`，接受后重算成功）；移动端 375px 横向溢出 0；长页页脚自然下推
+- 临时脚本清理；DB 终态 84 书 4910 章
 
 Stage Summary:
-- https://github.com/u4399com-beep/novel-admin-1.0.0 main 分支 = 本次重建版本
+- 清洗范围从「章节正文」扩展到「所有采集获得的文本字段」，同源双实现三处（text-clean ×2 + content-clean/clean 行级），43 单元场景全绿
+- 用户点名的 `&#091；#093；` 全角分号实体与截断残体（`&` 丢失）均已还原；字面 `\n` 转义在正文（拆段）与字段（折叠）双语义处理
+- 字数统计双修复：增量实时更新（采集体验）+ 全站审计重算 API + 管理台一键校准（数据正确性兜底）
 
 ---
-Task ID: 13-c
-Agent: nav-scrollbar-fixer
-Task: 10 主题导航条滚动条修复
+Task ID: 9-b
+Agent: frontend-styling-expert
+Task: 章节目录分栏显示调整 + 10 主题分卷分组渲染
 
 Work Log:
-- src/app/globals.css：末尾追加 `@utility no-scrollbar`（-ms-overflow-style:none + scrollbar-width:none + &::-webkit-scrollbar{display:none}），Tailwind 4 @utility 嵌套伪元素写法编译通过，未改动原有内容。
-- aijjxs/index.tsx：①桌面分类导航 nav（overflow-x-auto [scrollbar-width:none]）→ 统一为 no-scrollbar；②≤lg 深色两列抽屉（max-h-[70vh] overflow-y-auto）加 no-scrollbar。360px 检查：顶条按钮均 flex-none、导航 hidden ≤lg，HeaderCard/页脚 flex-wrap，不撑破。
-- ddyueshu/index.tsx：③主导航 40px 天蓝横条 [scrollbar-width:none] → no-scrollbar（w-full max-w-[980px] 约束成立，360px 仅内部滚动）。
-- shipsay/Layout.tsx：④主导航条内层（max-w-[960px] overflow-x-auto）加 no-scrollbar；该 nav max-[767px]:hidden，360px 不渲染；页头搜索 min-w-0 flex-1 不溢出。
-- x2552/Layout.tsx：⑤主导航 .m_menu、⑥目录/正文页紧凑顶栏，两处 [scrollbar-width:none] → no-scrollbar（均 w-full max-w-[960px]）；x2552/Home.tsx：⑦首页排行榜封面横条（h-[231px] overflow-x-auto）加 no-scrollbar。
-- trxsw/index.tsx：⑧首页"编辑推荐"封面横条（overflow-x-auto pb-1）加 no-scrollbar；外层 max-w-[960px] px-2，双栏 grid 用 minmax(0,1fr)，360px 安全。
-- 101kks/views.tsx：⑨分类页"小說分類"标签行（overflow-x-auto）加 no-scrollbar；101kks/Layout.tsx：⑩移动端抽屉列表（flex-1 overflow-y-auto）加 no-scrollbar。
-- 23qb/Layout.tsx：⑪桌面横向分类导航（min-w-0 flex-1 + shrink-0 子项，原先溢出时按钮直接外溢盖住右侧控件，~1024–1200px 视口）补 overflow-x-auto + no-scrollbar 收敛溢出；⑫移动端分类抽屉列表加 no-scrollbar。≤lg 导航隐藏，360px 无影响。
-- huangjinwu/index.tsx：⑬移动端左侧抽屉 aside（overflow-y-auto）加 no-scrollbar；桌面导航仅 6 个固定项，无溢出。
-- pilishuwu：审查无改动——主导航为 flex-wrap 换行式（永不横向溢出、无滚动条），其余无横向滚动条。
-- ggd66：审查无改动——导航为 grid / 等分 flex（移动端第二行 w-full 均分），无横向溢出；其余 overflow-hidden 均为封面/文本截断，不属于导航条。
-- 未触碰 src/components/**、src/app/api/**、prisma/**；未改任何主题的颜色/间距/字体；components/admin/AdminConsole.tsx 自带的 [&::-webkit-scrollbar]:hidden 保持原样（不在本任务范围）。
+- 新建共享组件 src/components/toc-chapters.tsx（主题无关「章节目录列表」）：①CSS 多列流式布局 columns-* + break-inside-avoid 列优先排列（1,2,3 竖排完再排第二列，替代 grid 行优先阅读顺序错乱）；②分卷分组：检测存在非空 volume 时按「连续相同 volume」分段，每段独立 section，卷头在列外（名称 + 卷内章数徽标），卷内章节再分栏；全部 volume 为空时退化为单层 columns 容器，零多余 DOM；③中性基础样式（block/w-full/truncate/break-inside-avoid/text-left/button 键盘可达），颜色字号全部交给主题注入；④props：itemClassName（string | 按条目函数，支持已读灰/书签高亮等逐条状态）、volumeClassName、countClassName、columnsClassName（整体覆盖默认 columns-1 sm:2 lg:3 xl:4）、renderItem（自定义条目内部内容，外层 button/截断/点击仍由组件负责）；⑤800+ 章直接 map 渲染，与现状一致未引入虚拟滚动
+- ggd66/views.tsx：Toc 主列表与 Book「全部章节目录」区块改用 TocChapters（虚线行、#00886d 链接色/hover #f50、min-[468px]/md/lg 2/3/4 列沿用原断点、gap-x-3）；最新 12 章小区块保留 ChapterDD 行优先
+- aijjxs/Toc.tsx：主列表改 TocChapters（圆角卡条目、绿色 hover、已读灰#9aa4ad/未读#1f2d3d 经函数式 itemClassName、`idx. title` 经 renderItem、mb-2 补列内行距）；倒序切换语义保留（分组在传入顺序上进行）；最新 12 章保留原 grid
+- ddyueshu/Toc.tsx：dl 拆为「最新 12 章 dl（保留 dd-dd-grid 行优先）+ 静态《书名》正文头 + TocChapters 全量列表」；条目 25px 行高虚线、#444/hover #cc0000；卷头 dd-hei 米蓝底居中（justify-center 覆盖默认左右分布）+ 章数徽标
+- pilishuwu/index.tsx：TocView 三栏列表改 TocChapters（flex 条目保留 idx+字数右对齐 renderItem、#3366BB/hover #FF6600、点线分隔）；卷头深蓝下边线粗条；sorted 正序语义保留
+- shipsay/Toc.tsx + Book.tsx：目录页主列表与 Book Tab「完整目录（升序）」均改 TocChapters（50px 行高、idx 灰色列 + 标题列 renderItem、hover #ED4259）；卷头 #BF2C24 主题红下边线；ChapterGrid 保留给两处最新 12 章小区块
+- x2552/Toc.tsx：「正文目录」区块改 TocChapters（26px 行高、42px idx 列 + #2F468F 链接色/hover #FF6600、sm:2/lg:4 列沿用原断点）；卷头沿用主题灰渐变标题条样式；最新 12 章 ul 保留
+- trxsw/index.tsx：TocView 4 列章节表改 TocChapters（`idx. title` renderItem、#2F468F/hover #FF6600/#FFF7F0 底、sm:2/md:4 列）；卷头 #FF6600/25% 下边线；sorted 语义保留
+- 23qb/views.tsx：Toc「正文 · 全部章节」单列斑马行改 TocChapters（columns-1 md:2 xl:3 适当分栏，条目沿用 ChapterRow 视觉：FileText 图标 + 标题 + 字数 renderItem、even 斑马/书签绿高亮经函数式 itemClassName）；卷头绿色左边条（#34a853）
+- 101kks/views.tsx：Toc「全部章節」三栏改 TocChapters（15px 行距点线行、idx 灰色列 renderItem、书签 bold #1f6cb2 高亮经函数式 itemClassName）；正/倒序切换语义保留；卷头沿用蓝竖条节标题风格
+- huangjinwu/views.tsx：Toc 主列表与 Book 内嵌「章节目录」区块均改 TocChapters（胶囊条目 border+shadow+hover 蓝底、`idx.` 前缀 renderItem、mb-3 补列内行距）；卷头 #e8f1ff 蓝底圆角条；ChapterPills 保留给两处最新 12 章小区块
 
 Stage Summary:
-- 修改 9 个文件（globals.css + 8 个主题文件），落地 13 处 no-scrollbar：8 处横向导航/标签/封面横条（其中 4 处由 [scrollbar-width:none] 统一迁移，修复 WebKit 下仍显示系统滚动条的问题），5 处浮层抽屉竖向列表；23qb 桌面导航额外补 overflow 溢出收敛。
-- no-scrollbar 以 Tailwind 4 @utility 实现（支持任意断点/变体组合），编译产物验证：.no-scrollbar{scrollbar-width:none;-ms-overflow-style:none} 与 .no-scrollbar::-webkit-scrollbar{display:none} 均存在于 dev CSS chunk。
-- 验证：bunx tsc --noEmit 0 错误；bun run lint 无错误；PATCH /api/settings 10 主题全部 200；主题客户端 bundle 中 13 处类名字符串全部命中；dev.log 无新增错误。
+- 10 主题目录页主列表 + 3 处 Book 内嵌全量目录（ggd66/shipsay/huangjinwu）全部切换为共享 TocChapters：分栏由 grid 行优先改 columns 列优先（阅读顺序自上而下），主题视觉（配色/hover/字号/行高/断点）经 className props 原样保留；「最新 12 章」短块按约定保留原样
+- 分卷分组就绪：有 volume 数据时按连续分段渲染卷头（名称+章数）且卷头不跨列；存量书 volume 全空时与原展示一致仅流方向变化，零多余 DOM（SSR 冒烟实测：2 卷数据→2 卷头+2 徽标+5 按钮，无卷数据→无任何卷头/space-y DOM）
+- 验证：bunx tsc --noEmit 全项目 0 错误；bun run lint 0 错误；curl 数据链路——/api/novels/88/chapters 当前 500，根因为 dev server 进程（06:48 启动）持有 9-a 于 10:00 重新 generate 之前的旧 Prisma Client 内存副本（schema.prisma volume 字段 ✓、生成 client ✓、SQLite Chapter.volume 列 ✓、route select ✓ 均已就位，只读 PRAGMA 实证），重启 dev server 即恢复，辖区约束禁重启故仅记录；全库 5360 章暂 0 章有分卷（待新一轮采集/回填，符合预期）；首页 200
 
 ---
-Task ID: 13-a
-Agent: admin-console-builder
-Task: 管理控制台改独立后台（hash #/admin 全页布局）
+Task ID: 9-c
+Agent: general-purpose
+Task: 智能TDK/SEO/分类/完结/下拉词/PSEO 检查修复完善 + 管理后台配套
 
 Work Log:
-- 通读 worklog、AdminDrawer.tsx（802 行）、page.tsx、ScrapeCenter 桩、ThemeRenderer、eslint/tsconfig（确认 set-state-in-effect 等规则约束与 noUnusedLocals 未开）
-- 新建 src/components/admin/panels.tsx：AdminDrawer 中 AdminTabs/AdminDrawer 之外的全部代码逐行原样搬入（api、ThemesTab、NovelsTab、Field、ChaptersDialog、CategoriesTab、SEO_FIELDS、SeoTab、ScraperTab、PseoTab、SettingsTab、EMPTY_FORM、NovelForm/PseoRow/StrategyInfo/Json 类型），导出 6 个 Tab 组件；仅清理冗余 import（Sheet/Tabs/ScrollArea、Settings/Sparkles 图标、未使用的 QueryClient），面板逻辑/请求/交互零改动
-- 新建 src/components/admin/AdminConsole.tsx：全页后台壳——桌面端 w-52 深色 neutral-900 固定侧边栏（品牌区 + nav[aria-label=管理导航] + aria-current 高亮 + 底部"← 返回站点"，lg:sticky h-screen），右侧浅色主区（顶部标题条显示当前区块名 + max-w-4xl p-4/p-6 内容区）；移动端(<lg)侧边栏收起为顶部横向滚动标签条（overflow-x-auto + 内联 scrollbarWidth:'none' + [&::-webkit-scrollbar]:hidden）；activeSection 惰性初始化读 localStorage('admin-section')（AdminConsole 仅客户端挂载 + typeof window 守卫，SSR 安全）、select 时回写；采集中心区块渲染 ScrapeCenter 默认导出；附加 document.title 同步当前区块
-- useHashAdmin()：useState 初始 false（SSR 安全）+ useEffect 挂载读取 window.location.hash==='#/admin' + hashchange 监听（支持前进/后退/直达/刷新），导出供 page.tsx 复用
-- 改写 src/app/page.tsx：isAdmin ? <AdminConsole/> : <ThemeRenderer/>；齿轮按钮改为内联 AdminLauncher 组件（沿用原 fixed bottom-5 right-5 z-50 圆形样式），点击 location.hash='#/admin'，aria-label="进入站点管理后台"
-- rg 确认 AdminDrawer 仅 page.tsx 引用后删除 src/components/AdminDrawer.tsx
-- 浏览器实测（agent-browser）：齿轮→#/admin 渲染主题卡；切换书籍/采集中心区块正常（采集中心渲染 ScrapeCenter 桩"采集中心加载中…"）；返回站点恢复前台（URL #、标题恢复站点名）；直开 #/admin 刷新正常且恢复上次区块（localStorage admin-section=scraper）；移动端 390px 顶部横向标签条正常；console/page errors 全程为空
-- 验证：bunx tsc --noEmit 0 错误；bun run lint 0 输出；curl / 200 正常 HTML；dev.log 无新增报错；未触碰 ScrapeCenter.tsx/prisma/api/themes/store；未运行 build
+- 起点盘点：工作树已有前一会话（未写 worklog 即中断）的未提交改动，逐文件对照任务清单审计，确认大体落地后补齐三处缺口；未改动 src/themes/**、ordering.ts、worker.ts、prisma schema、toc-chapters.tsx。
+- ① 搜索引擎下拉词 src/lib/suggest.ts：审计确认 baidu 已读 `g[].q`（保留 `g[].k` 兼容回退）、bing 已切 cn.bing.com/AS/Suggestions（mkt=zh-CN + Referer + 浏览器 UA，`<li class="sa_sg" query="…">` HTML 正则提取，4s 超时失败隔离）；duckduckgo/sogou 沙箱网络层不可达（abort/404）保留实现并如实透出错误；360 不动。本轮增强：bing 提取的 query 属性值先经 text-clean.decodeHtmlEntities 解码（`&amp;` 等），不再靠 sanitizeKeyword 剥成残词。
+- ② 智能完结 store.ts mapNovelStatus：已为「连载词优先（连载/连載/正在更新/新书/未完结族）→ 完结词（完本/已完结/完结/完稿/全本/已完/finished/finale/completed）→ 默认 serial」；grep 调用点仅 upsertBook create/update 两处，DB 存 'serial'|'finished'，语义兼容，无需再改。
+- ③ 智能分类 store.ts ensureCategory：归一层（全角→半角/去空白/剥「小说|类|频道」尾缀且保护「轻小说」）+ CATEGORY_SYNONYMS 已在位；本轮补齐任务清单要求的 4 个缺失条目：魔幻→玄幻、修仙→仙侠、灵异→悬疑、推理悬疑→推理（映射发生在尾缀剥离之后，如「灵异小说」→灵异→悬疑）。
+- ④ 智能TDK/SEO：SeoSync.tsx 已含 setJsonLd（id=ld-json 单节点复用防堆积、null 时移除、textContent 写入 + `</`→`<\/` 防闭合逃逸）；home=WebSite+SearchAction（urlTemplate 相对路径 `/?query={search_term_string}`）、book=Book schema（name/author Person/description/genre=categoryName/inLanguage zh-CN）。sitemap.ts 已列 PSEO 已生成页——以真实形态为准核实：SPA pseo 视图不产生 URL（store.navigate 纯内存），真实可收录形态是服务端落地路由 /pseo/{encodeURIComponent(keyword)}（src/app/pseo/[kw]/page.tsx，仅 generated 可访问，未生成 404），sitemap 与之完全一致。
+- ⑤ 智能PSEO：generate 路由 `useSuggest !== false` 语义正确处理 PseoTab 的 `{useSuggest:false, limit:50}`（跳过下拉词、仅重跑 pending/failed 聚合页，limit 钳 1-50）；/api/pseo/[kw] 优先读已生成 pageData、损坏/未生成回退 matchNovels 实时计算（命中<3 本热门书垫底补位，永不空窗）；状态机无卡死——generatePendingPages 同时处理 pending+failed（failed 重试即恢复路径），落地页/接口双通道均有兜底。
+- ⑥ 管理后台：RulesCard「目录重排」按钮已在「字数审计」旁（GET 审计→无候选 toast、有候选 confirm 错乱样例→POST 重排→invalidateQueries→toast 汇报）；RuleDialog bookRule 已有 volumeSelector 输入（占位 `#list dl dt` / `h2.module-title`，留空=内置启发式）；panels.tsx ChaptersDialog 章节行非空 volume Badge 展示 + 新增/编辑表单「分卷名」输入（限长 50）；chapters POST/PUT 均支持可选 volume（非字符串缺省 ''，字符串含空串=清空，trim 限长 50）。
+- ⑦ 文档：docs/scrape-rules.md 已含「分卷（bookRule.volumeSelector）与目录重排」小节（字段用途/示例/留空行为/重排机制一句话）。
+- 清理：删除前会话残留 tool-results/ 缓存文件；无临时脚本遗留。
 
 Stage Summary:
-- 产出文件：新增 src/components/admin/panels.tsx（7 面板 + api 工具 + 类型/常量，6 个 Tab 具名导出）、src/components/admin/AdminConsole.tsx（AdminConsole + useHashAdmin + NavButton/BackButton/Brand 内部件）；改写 src/app/page.tsx（hash 路由分流 + AdminLauncher）；删除 src/components/AdminDrawer.tsx
-- 结构：#/admin = 独立全页后台（桌面左侧栏/移动顶部标签条 + 区块条件渲染，无 shadcn Tabs 包裹）；前台 = ThemeRenderer + 浮动齿轮；两者经 useHashAdmin 单一数据源切换，浏览器前进/后退/直达/刷新均可用
-- 验证结果：tsc 0 错误、lint 0 错误、curl 200、agent-browser 全链路 0 报错
-
+- 本会话净改动：store.ts 同义词表补 4 条、suggest.ts bing 实体解码、tool-results 清理；其余清单项经逐行审计确认前会话已正确落地，未重复改动。
+- 验证闭环：`bunx tsc --noEmit` 0 错误、`bun run lint` 0 错误；curl 实测——/api/pseo/suggest（玄幻）baidu +10 / bing +11 / so360 +10 全 ok:true，duckduckgo（超时）与 sogou（404）为沙箱网络限制如实报错；/api/novels/resort-chapters GET 89 书 0 候选（9-a 重排后干净）；chapter#4325 PUT volume「测试卷A」回读一致后还原空串；规则 10 PUT volumeSelector 回读一致后还原；/api/pseo/config GET 正常；sitemap.xml 70 条含 /pseo/ 编码词、已生成落地页 200 / 未生成 404 / api [kw] 实时兜底 200。
+- 浏览器实测（agent-browser）：首页 #ld-json=WebSite+SearchAction → 点进《仙门快递员》变 Book schema 且 ldCount=1（节点复用无堆积）→ 分类页 ldCount=0（正确移除）；dev.log 无新增运行时错误。
 ---
-Task ID: 14
-Agent: scrape-chain-auditor
-Task: 采集链路+后台控制台逐行深度审查修复
+Task ID: 9-a / 9-a2（主控直做）
+Agent: main (Z.ai Code)
+Task: 分卷支持（采集→存储→API）+ 章节乱序重排（分卷感知）+ 存量目录重排 API
 
 Work Log:
-- src/app/api/scrape-rules/route.ts（重大）：
-  - PUT 双重读取请求体流：PUT 先 req.json() 判 seed，非 seed 再调 handleSave(req) 内部第二次 req.json()——body 流只能读一次，第二次必失败 → 所有经 PUT 的规则保存（前端 RuleDialog 保存/开关启停全走 PUT）恒 400「请求体必须是 JSON 对象」。重构 handleSave 签名为接收已解析 body，POST/PUT 各自解析一次后传入；实测 PUT 创建 201 / 编辑路径恢复
-  - 更新不存在的规则 id（P2025）由 500(带 Prisma detail) 改为 404「规则不存在」
-- src/lib/scrape-worker.ts：
-  - isCanceled 把 DB 瞬时错误(.catch→null) 与「记录已删除」混同 → 瞬时错误会被误判为已取消且 finalize 覆写 status=canceled；改为 catch 返回 undefined 时 fail-open（查询失败≠取消），记录不存在(null)仍视为取消
-  - 章节入库唯一冲突后 idx 停滞：create 失败不递增 idx，后续章节全部撞同一 [novelId,idx] 连锁失败；新增 isUniqueConflict(P2002/unique 消息)，冲突时 idx+1 顺延重试一次，其余失败维持原语义
-  - 书籍 upsert 未 trim：title/author 带空白时与既有记录查重不一致、空白标题绕过提取校验；改为 trim→slice(0,200/100)，trim 后空标题直接按失败返回
-  - ENGINE_TIMEOUT_MS 30s 与引擎策略链 55s 预算（CHAIN_BUDGET_MS）/代理层 60s 不对齐，慢站点 31~55s 的合法响应会被提前切断；对齐为 60s
-- src/app/api/scrape-tasks/[id]/route.ts：
-  - PATCH cancel 无条件 update 可覆盖终态（worker 在 findUnique 与 update 间隙 finalize 写入 success/failed 会被改成 canceled）；改为条件 updateMany({status in [pending,running]})，count=0 时回查返回 400/404
-  - DELETE running 任务原先直接删记录（靠 worker 兜底自停）；改为 running 拒绝 409 提示先取消；pending 仍可删（删除后 worker 的 pending→running 条件更新必然 count=0 安全退出）
-- src/components/admin/ScrapeCenter.tsx：
-  - LogDialog refetchInterval 用打开对话框时的 task.status 快照判断轮询，任务终态后仍每 2s 轮询直至手动关闭；改为 refetchInterval 回调内取 query.state.data?.task?.status ?? task.status，终态自动停轮询
-  - 任务列表末页条目删空后停留在空页（page>totalPages 无自愈）；空态在 page>1 时显示「返回第一页」按钮
-- prisma/schema.prisma：ScrapeTask 增加 @@index([status])（GET 按 status 过滤），db:push 同步
-- 审查未改动（确认无问题）：scrape-tasks/route.ts（分页 NaN/负数回退、ruleId 存在性 400、URL 协议白名单、pages 范围校验均正确）；api/scrape/route.ts 代理（子路由白名单、60s 超时对齐、结构化 502）；worker 状态机（pending→running 唯一条件入口防双跑含模块热重载场景、finalize 仅 running 写终态防 canceled 被覆写 failed、日志 100 行/500 字符双截断、正文 5 万字截断、分类创建并发唯一冲突容错、list 翻页 ?page=k 与 /page/k 变体实测命中）；ScrapeCenter 规则对话框 key 重挂载无数据残留、保存/创建防重复提交、日志 pre 无 dangerouslySetInnerHTML（React 转义天然防 XSS）；AdminConsole/panels/page.tsx（localStorage 读写均 try-catch、admin 视图隐藏齿轮、站点视图状态存于 zustand 模块级 store 跨卸载保留、导入经 tsc 全量验证无丢失）；globals.css no-scrollbar 实现正确
+- DB：Chapter 新增 volume 字段（@default("")），db:push 落库（PRAGMA 确认列存在）
+- 引擎（mini-services/scraper-service）：
+  ① BookRule 新增 volumeSelector 字段（规则显式卷头选择器，管理员意图优先、不做模式过滤）
+  ② extract.ts 新增 attachVolumes：文档序单趟扫描，遇卷头更新 currentVolume、遇章节链接记录所属卷；
+     默认候选 dt/td[colspan]/.volume*/h2/h3 且必须命中 VOLUME_TEXT_RE（第X卷部篇/正文卷/VIP卷/作品相关等，防「最新章节」区块误判）；
+     同 URL 重复出现（最新块先于完整目录）时由后出现的卷名回填首次记录
+  ③ BookChapterRef/主站 ChapterRef 增加 volume 可选字段；fetchCatalogChapters 透传补齐
+     chapterTitleSelector/volumeSelector（此前目录页提取漏传选择器）
+- 主站 worker：processBook 在书页/目录页合并后对 allRefs 先做形态兜底再乱序重排（reorderChapterRefs），
+  重排说明写入任务日志；storeChapter 落库 volume；已存在章节在唯一标题且存量空卷时回填卷名（updateMany）
+- 新建 src/lib/scrape/ordering.ts（乱序重排核心）：
+  ① parseChapterNo：第N章/节/回/话（阿拉伯+中文数字零〇一二两三四五六七八九十百千万亿）、纯数字前缀
+  ② 无重复序号：位置错乱占比 >20% → 按序号稳定重排（未编号章节锚定前一编号章节之后）
+  ③ 有重复序号（分卷各自重新编号）：连续同卷分段、段内检测重排；头部无卷「最新块」按序号区间并入所属卷段
+     （超出全部卷段上限并入最后卷段）；无卷信息时仅保守修复「头部严格倒序块」（≤60 条）后移
+  ④ 15 个场景自测全过（有序不动/最新块/整本倒序/分卷同号不跨卷/分卷+最新块并入/中文数字/小书不重排/未编号锚定）
+- 新建 /api/novels/resort-chapters：GET 只读审计（逐书检测乱序，返回候选清单+错乱占比）、
+  POST 两阶段事务改号（先移入负数区再写回正数 idx，规避 @@unique([novelId, idx]) 冲突），重排后触碰 updatedAt
+- API：/api/novels/[id]/chapters、/api/novels/[id]（前12章）、/api/chapters/[id] 均返回 volume；types.ts 同步
+- 实测：
+  ① 引擎 fixture（杰奇 dl>dt）卷提取正确、重复章卷名回填正确
+  ② 23qb 实测：768 章/7 卷全部带卷名提取（h2.module-title 卷头）
+  ③ 存量审计：89 书中 33 本乱序（「最新块+正文块」形态，disorder=1.0），POST 全部重排成功，
+     novel#88 重排后 idx1-5 = 第1章→第5章、单调性校验通过
+  ④ 真实采集端到端：single 任务采 23qb《仙逆》100 章入库，两卷分段（第一卷 54 章/第二卷 46 章），
+     idx 严格阅读顺序（任务 32 success）
 
 Stage Summary:
-- 共修复 8 处确凿 bug：API 级 2（PUT 双读 body 致规则保存全挂、P2025 500→404）、worker 竞态/正确性 4（isCanceled fail-open、idx 冲突顺延、title/author trim、引擎超时对齐）、API 语义 2（cancel 条件更新防覆盖终态、DELETE running 拒绝）、前端 2（日志轮询不停、空页卡住）
-- curl 实测：POST single(ruleId=6) → 终态 failed，updated=1（书籍查重命中 #42）、日志干净（章节「正文为空」为 books.toscrape 演示站无正文内容的环境性结果，与基线一致）；notaurl/mode xxx/ruleId 99999/ftp 协议/pages 99/非法 JSON 全部 400；PUT ghost id → 404、PUT 创建 → 201、seed 幂等 200；DELETE running → 409、PATCH cancel → 200、8s 后状态保持 canceled 未被覆写、再次 cancel → 400、非法 action → 400；?status=failed&pageSize=2 过滤生效、page=abc&pageSize=-5 安全回退；tsc 0 错误、lint 0 错误、dev.log 无新增异常（仅 P2025 预期日志）
-- 遗留风险：① list 模式 done/total 单位混用（total=书数，done 含当前书章节数，进度可瞬时 >100%，UI 已钳制 100%）；② Novel 无 title+author 唯一约束，两任务并发采集同一新书可产生重复书目（需迁移+存量去重才能加约束）；③ 沙箱对外网不可达时任务按引擎错误正常走 failed 状态机；④ PUT seed 循环非事务，部分失败可重入（幂等跳过已存在）
-
+- 分卷端到端打通：规则可配 volumeSelector → 引擎卷头提取 → 乱序重排（分卷感知）→ 入库 volume →
+  API 返回 → 前台目录按卷分组；存量乱序书一键重排（33/89 本修复）
+- 注意：scraper-service 曾长时间 99% CPU（原因疑为陈旧请求的重试循环卡死），重启后 0.7% 稳定，后续观察
 ---
-Task ID: 13-15
-Agent: main-orchestrator
-Task: 第三批需求收尾（独立后台/导航滚动条/采集任务）验证与整合
+Task ID: 9-d（主控直做）
+Agent: main (Z.ai Code)
+Task: 集成验证（tsc/lint/浏览器端到端）+ 服务恢复
 
 Work Log:
-- 13-b agent 超时但成果完整落地（ScrapeTask 模型+API+worker 658 行+ScrapeCenter 888 行），由主控补全验证：
-  · db push 成功；GET/POST /api/scrape-tasks 正常；single 任务 example.com → failed+详细日志（无规则时引擎仅基础信息，状态机正确）
-  · 端到端：books.toscrape.com + 自建规则（itemSelector=article.product_pod 等）→ 任务 success 路径：书籍 "A Light in the Attic" 入库（new=1，分类自动创建），商店站无章节故章节段按预期失败
-  · UI 冒烟：后台 7 区块渲染、采集中心规则编辑对话框三组选择器字段齐全（19 输入框）、UI 创建任务→列表状态流转→日志对话框（时间戳日志可见）
-- Task 14 审查 agent 修复 8 bug：PUT 双读 body（规则保存恒 400，重大）、isCanceled fail-open、idx 唯一冲突顺延重试、upsert trim、引擎超时对齐 60s、cancel 条件更新防覆写终态、DELETE running 409、日志轮询自停+空页回退；schema 补 @@index([status])
-- 终验：tsc 0 错误、lint 0 错误；后台→采集中心→返回站点全链路浏览器通过；前台 x2552 移动端 0 溢出、齿轮按钮在位、导航条 scrollbar-width:none 生效
+- 重启 Next dev server（加载新 Prisma Client，9-b 报告的 /api/novels/88/chapters 500 恢复 200）；
+  重启 scraper-service（此前 pkill 误杀）后任务链路正常
+- 全项目 tsc 0 错误 / eslint 0 错误
+- Agent Browser 端到端（pilishuwu + ggd66 双主题、桌面 1280 + 移动 375）：
+  ① 首页 title TDK 正常 + WebSite/SearchAction JSON-LD 在位
+  ② 仙逆目录页（真实分卷数据）：pilishuwu 3 列 / ggd66 4 列 CSS columns 列优先排布
+    （1,2,3 竖排完再第二列），第一卷 54 章 → 第二卷 46 章 卷头分段正确渲染，章节顺序第1章起
+  ③ 无分卷书（亮剑）向后兼容：不渲染卷头、分栏流正常
+  ④ 管理后台：目录重排按钮实测（审计 toast「90 本书目录顺序全部正常，无需重排」）；
+    RuleDialog volumeSelector 字段在位；ChaptersDialog 章节行分卷 Badge + 新增/编辑分卷名输入在位
+  ⑤ 移动端 375px 无横向溢出，分栏退化单列
+  ⑥ 智能功能实测：/api/pseo/suggest baidu +10 / bing +11 / so360 +10（ddg/sogou 沙箱网络限制如实报错）；
+    书页 TDK（仙逆最新章节列表_耳根小说）+ Book JSON-LD 正确；PSEO Tab 渲染（69 关键词/5 引擎）
+- 收尾：activeTheme 还原 pilishuwu；临时脚本/截图清理
 
 Stage Summary:
-- 独立后台（#/admin hash 路由）+ 采集任务系统（单本/范围）+ 规则编辑器 全部上线并经浏览器与 curl 双重验证
+- 本轮三项用户要求全部落地并端到端验证：分卷设置（采集/存储/展示/重排全链路）、
+  目录分栏列优先调整（10 主题 + 共享组件 TocChapters）、智能功能族（TDK/SEO/分类/完结/下拉词/PSEO）修复完善
+- 服务终态：站点 :3000 200、引擎 :3030 200；dev.log 无运行时错误
 
 ---
-Task ID: 15-a
-Agent: scraper-engine-auditor (超时，成果由主控逐行核验补记)
-Task: 采集引擎+反反爬逐行深度审查增强
+Task ID: 10-b
+Agent: general-purpose (10-b)
+Task: 采集任务 UI——任务编辑对话框 + 重新采集 + 起始页/并发数表单
 
 Work Log:
-- strategies.ts：挑战页检测升级三层（①Cloudflare/DDoS-Guard/Incapsula/Sucuri/AWS WAF 平台强特征，任意体积、前 32KB 扫描——旧实现只看 <3KB 会漏检大体积拦截页；②极小页 <3KB 挑战专用关键词，移除误报率高的裸词 javascript；③极小页 0 秒 meta-refresh 跳板且正文近空 <80 字符）
-- strategies.ts：UA 与 Sec-CH-UA 版本一致性修复——CHROME_MAJOR 进程启动时从 [124..133] 随机派生，UA/Sec-CH-UA/Edge 全部同源派生，消除「UA 124 但提示头报别的版本」可检测矛盾 + 固定版本指纹
-- strategies.ts：策略间指数退避+jitter（429/5xx 触发，受 55s 硬预算约束：剩余 <3s 不退避、cap=remaining-2500；末策略不退避）
-- strategies.ts：browser 策略 page.content() 加 race 硬上限（1-5s，防策略链预算超支）；Node Playwright resourceType() 方法与 Python 桥接 resource_type 属性兼容判断（旧代码只读属性致 Node 路径拦截永不生效）；render 桥 execFile 超时 +15s→+4s 收敛
-- extract.ts：toAbs 过滤全部 # 锚点伪链接（旧只过滤纯 "#"）；extractList 链接统一走 pickHref，linkSelector 的 @attr 后缀（如 a@data-url）不再被静默忽略
-- charset.ts：GB18030 别名表补全（gb18030/2000/2005/2022）；UTF-8 失败兜底由 GBK 升级为 GB18030（严格超集，四字节字符不再乱码）
-- rate-limit.ts（安全修复）：robots.txt 抓取改 redirect:'manual' + 最多 3 跳逐跳 SSRF 校验——旧实现 redirect:'follow'，恶意站点可用 robots.txt 302 引擎对内网发起 GET；限速槽位 key 与策略层对齐（含端口）；robotsCache 加 256 条上限防无界增长
-- render.py：看门狗 5s→3s 余量，与上层 execFile timeout+4s 保持余量递减关系，保住 55s 预算
+- types.ts：TaskRow 新增 startPage / concurrency 字段（带注释说明语义与默认值）；TaskDetail extends TaskRow 自动继承（GET /api/scrape-tasks/[id] 返回完整 task 含新字段，无需另改）
+- 新建 TaskFormFields.tsx（新建/编辑共用表单公共件）：①TaskFormState 表单值类型（数值保持字符串态，ruleId 以 'none' 表示不用规则）+ emptyTaskForm 默认值（pages '1' / startPage '1' / concurrency '3'）+ taskFormFromRow 预填；②parseTaskForm 与后端同口径校验（URL 必填；list 模式 pages 1-2000、startPage 正整数；两模式 concurrency 1-16；single 模式 pages/startPage 恒提交 1 与后端默认一致）返回可提交字段或错误文案；③TaskFormFields 控件：模式 RadioGroup（idPrefix 防新建/编辑同页 id 冲突）/ 目标 URL（min-w-0 防 grid 内 input 撑破）/ 规则 Select / list 模式并排「列表页数（1-2000，max=2000）+ 起始页（title 提示）」/ 两模式通用「并发数（1-16）」title 提示（list=同时采集书本数，single=同时抓取章节数）；grid 列数随 mode 增减（sm:grid-cols-[1fr_auto_auto_auto(_auto)]），移动端单列堆叠不横向溢出
+- NewTaskCard.tsx：表单状态收敛为 TaskFormState，控件与校验改用 TaskFormFields/parseTaskForm；POST payload 增加 startPage / concurrency（ruleId null→undefined 保持原语义）；创建成功仅清空 URL（保留模式与规则，便于连续创建多任务并行）；底部说明新增一行「任务间天然并行：可连续创建多个任务同时采集；任务内并发度可调。」
+- TasksCard.tsx：①新增 EditTaskDialog（shadcn Dialog，max-h-[85vh] sm:max-w-2xl，复用 TaskFormFields 样式与校验，taskFormFromRow 预填 mode/targetUrl/ruleId/pages/startPage/concurrency，保存 PATCH action:'edit' 全量字段；409 由 api→runBusy 链路 toast 后端消息「任务执行中，请先取消再编辑」；成功 toast「任务 #N 已更新」+ invalidate 刷新并关闭）；规则下拉经 useQuery(['scrape-rules']) 复用 ScrapeCenter 缓存无额外请求；②操作列新增「编辑」Pencil 按钮（非 running 显示，pending 亦可编辑，与后端口径一致）与「重新采集」RotateCcw 按钮（仅终态 success/partial/failed/canceled，TERMINAL_STATUSES 集合对齐后端；成功 toast「任务已重新排队」+ 刷新）；均带 title + aria-label、h-7 px-1.5、busyId 守卫防重复提交；③操作列宽 w-24→w-28 并 flex-wrap 兜底（终态行最多 4 个图标按钮不溢出）；进度/成果/时间列保持现状
+- 约束遵守：仅改 src/components/admin/scrape/ 下文件（新增 TaskFormFields.tsx 共享件放该目录）；未动 API 路由/prisma/worker；未运行 tsc/lint、未启停服务、无 git 操作
 
 Stage Summary:
-- 引擎增强 9 项（检测/指纹/退避/编码/提取）+ 安全修复 2 项（robots SSRF、限速 key）全部经 git diff 逐行核验；实测 example.com 抓取成功、任务状态机正常；合规红线未动（robots warn-only、限速≥1.2s、禁验证码破解）
-
+- 采集任务 UI 三件套落地：新建表单支持起始页（1-2000 页放宽 + 正整数起始页）与并发数（1-16，双模式语义提示）；任务行新增编辑对话框（预填+PATCH edit，409 透传后端文案）与终态重新采集（rerun 重置进度重新排队）；表单控件与校验抽为 TaskFormFields 单一来源，新建/编辑零重复
+- 风险点：①list 模式单行 5 列在 640-768px 视口下 URL 列较窄（min-w-0 已保证不溢出，md+ 宽裕）；②编辑对话框打开期间任务若恰好进入 running，保存会收 409（按钮已按状态隐藏，属极端竞态，toast 可见）；③旧缓存列表行若无 startPage/concurrency（理论上不会，后端已返回）taskFormFromRow 已做 ?? 默认兜底
 ---
-Task ID: 15-a2
-Agent: scrape-worker-finisher (超时，成果由主控逐行核验补记)
-Task: 采集 worker 进度语义 + Novel 唯一约束 + chapters 竞态补完
+Task ID: 10-d
+Agent: general-purpose (10-d)
+Task: 反反爬工具链调研评估 + 渲染层 stealth 加固 + 文档更新
 
 Work Log:
-- schema.prisma：Novel 加 @@unique([title, author])（DB 层防并发重复入库）；ScrapeTask 加 chaptersDone/chaptersTotal（章节级副进度）；db:push 成功，存量无重复数据，UNIQUE INDEX Novel_title_author_key 已确认存在
-- scrape-worker.ts：进度语义重构——single 模式 done/total=章节；list 模式 done/total=书（done=已完成书数），章节进度独立累计进 chaptersDone/chaptersTotal，任何时刻 done≤total；并发 upsert 兜底：create 撞 P2002 时回读 winner 走更新路径（命中查重）而非失败
-- scrape-worker.ts：chaptersDone/chaptersTotal 写入用 $executeRaw 兜底（运行中 dev 进程可能持有 schema 变更前 Prisma Client，类型化 update 报 Unknown field；原生 SQL 不依赖 dmmf）
-- scrape-tasks API：列表/详情响应均用原生 SQL 透出 chaptersDone/chaptersTotal（同上理由）；列表用 Prisma.join 批量 IN 查询
-- chapters POST：P2002 捕获 → 读回最大 idx 重试一次（并发同书加章竞态），再失败才 500
-- novels POST：create 捕获 P2002 → 409「同名同作者的书已存在」（不再 500）
-- scrape-rules PUT seed：循环包 $transaction（仅 4 条、远低于 5s 超时），部分失败整体回滚可幂等重试
+- 环境前置核查：①Python Playwright ✅ /home/z/.venv（`python3 -c "import playwright"` 通过，sync_api 可导入），Chromium 内核 ~/.cache/ms-playwright（chromium-1200/1243 + headless_shell）；②Node playwright ✅ 全局包 /home/z/.npm-global/lib/node_modules/playwright（`import('playwright')` 可解析 → 引擎 browser 策略走 Node 路径优先，render.py 为 Python 桥接兜底）；③curl-impersonate 二进制 ❌ 未安装：PATH 全部 10 个目录逐一 ls/which 无 curl_chrome*/curl_ff*/curl_edge*/curl_safari*/curl-impersonate-* 命中，~/.local/bin 不存在，系统 curl 8.14.1 为 Debian 标准版（curl-impersonate 策略 probe=false 自动优雅跳过，装好即免改码启用）
+- 工具链调研（联网检索交叉验证 + 公开资料）：11 工具逐一评估（原理/四维反反爬能力/集成成本/性价比），重点甄别——curl_cffi=curl-impersonate 的 Python 绑定（同 TLS 引擎，TS 侧调二进制等效，属重复投资）；got-scraping 只做头生成+HTTP/2 不伪装 JA3 → TLS 指纹层唯一覆盖是 curl-impersonate（唯一真实缺口=二进制未部署）；Dokobot 两轮检索无独立仓库/文档→如实标「信息不足不引入」；cloakBrowser 检索确认为 CloakHQ 桌面 profile 制 stealth Chromium（闭源/形态不符）；Obscura 检索确认为 Rust 轻量 headless browser（内建反检测但项目新缺审计→观察）；invisible_playwright 为 Python+patched Firefox 引擎级 stealth（与本引擎 Node+Chromium 主路径不符→观察+思想落地）
+- 文档：docs/anti-anti-crawl.md 追加「六、工具链选型评估（Task 10-d）」7 小节——6.1 能力维度速览表（11 工具×TLS指纹/IP信誉/JS挑战/行为模拟/集成成本/结论）、6.2 重复投资 vs 增量价值、6.3 信息不足工具诚实说明、6.4 最终工具链决策表、6.5 部署依赖清单（沙箱实测：curl-impersonate ❌ / Python Playwright ✅ / Node playwright ✅ / got-scraping+hpagent+socks-proxy-agent ✅ / Bun fetch proxy ✅）、6.6 代理配置格式（规则级 proxy 字段：http/https/socks5/socks5h/socks4+user:pass，≤1024 字符，逗号多出口池轮换，https 经代理失败自动降级 http；各策略代理支持矩阵；trxsw 美国出口 / 77shuku 国内出口按站点规则配置示例）、6.7 渲染层 stealth 加固落地说明
+- render.py stealth 加固（保守，接口协议/超时/看门狗/输出格式零改动）：①launch_kwargs 增 ignore_default_args=["--enable-automation"]（原 --disable-blink-features=AutomationControlled 保留）；②新增 STEALTH_INIT_SCRIPT 常量（每段独立 try/catch），context 创建后 add_init_script 注册（覆盖其后所有页面，页面脚本执行前运行）：navigator.webdriver→undefined、window.chrome 伪造（runtime/app/loadTimes/csi/InstallState/RunningState）、permissions.query 修复（notifications 返回真实 Notification.permission，其余走原实现）、navigator.plugins 伪造（Chrome/Chromium PDF Viewer + item/namedItem/refresh）、navigator.languages→zh-CN,zh,en-US,en、WebGL UNMASKED_VENDOR(37445)/RENDERER(37446) 伪装（GL1+GL2 双原型，真实 Intel/Mesa 形态）
+- browser.ts Node 主路径仅动 stealth 启动参数行（改动范围内）：args 补 --disable-blink-features=AutomationControlled + 新增 ignoreDefaultArgs: ['--enable-automation']（与 render.py 同语义）；该路径 init-script 注入对称落地受本轮改动范围约束留作后续增强，已在文档 6.7 说明
+- 验证：①py_compile 语法通过；②stealth 注入生效对照实测（临时脚本同参数启动 Chromium，data: URL 探针）：webdriver undefined（基线 false）、window.chrome object+runtime（基线 undefined）、plugins 2 项（基线 0）、languages zh-CN,zh,en-US,en（基线 en-US）、WebGL vendor "Google Inc. (Intel)"（基线 null——headless 下 null 本身即指纹特征，本项实测有真实增量）；③端到端 python3 scripts/render.py https://www.baidu.com 15000：exit=0、status=200、html 804KB、cookies 回传 8 条、无 error、单行 JSON 协议不变
+- 清理：临时验证脚本与检索缓存（/home/z/tool-results/test_stealth_10d.py、render_e2e.*、/tmp/ws_*.json）全部删除
 
 Stage Summary:
-- 实测：single 任务 example.com/books.toscrape 状态机正常（无规则 failed+日志、有规则 updated=1 命中查重）；list 任务（books.toscrape travel 分类 2 页 11 本）done/total=书口径、chaptersDone/chaptersTotal 独立累计，进度不再 >100%；tsc 0 错误 lint 0 错误
+- 11 工具决策：curl-impersonate 已集成可复用（唯一待办=部署二进制，装好免改码启用）；invisible_playwright/Obscura 观察（前者 stealth 思路已落地 render.py，后者 Rust 轻量渲染备选）；scrapling/cloakBrowser/BrowserAct/MediaCrawler/aiohttp/Dokobot/Trafilatura/browser-use 明确不引入（重复投资/形态或合规不符/信息不足/思想已自研），全部写入 docs/anti-anti-crawl.md 第六章
+- 渲染层 stealth 加固成功：render.py（init-script 五件套 + ignore_default_args）+ browser.ts Node 路径（启动参数同语义），端到端实测协议零破坏，headless WebGL null 指纹缺口修复
+- curl-impersonate 二进制核查：沙箱未安装（PATH 全目录扫描无命中），策略优雅降级；部署指引沿用文档第三节，装好即自动生效
+- 合规边界不变：stealth 仅消除自动化痕迹，无验证码破解/登录态伪造逻辑
 
 ---
-Task ID: 15-b
-Agent: admin-frontend-auditor (超时，成果由主控逐行核验补记)
-Task: 管理后台前端+数据层逐行深度审查修复
+Task ID: 10-c
+Agent: general-purpose (10-c)
+Task: 下拉词关联书籍页——PSEO 书籍页展示 + 书页相关搜索词 + 后台配置
 
 Work Log:
-- panels.tsx：ScraperTab 整体移除（与 ScrapeCenter 采集中心重复，去重收敛）；新增 useDialogEscape hook（Esc 关闭，嵌套对话框 capture=true 保证只关最上层）；小说表单 saving 态防重复提交；列表末页删空自愈（仅剩 1 条且 page>1 回退一页）+ 空态「返回第一页」按钮；对话框补 role=dialog/aria-modal/aria-label
-- ScrapeCenter.tsx：规则 URL 前置校验（http/https + URL 格式，与服务端对齐，免一趟无效请求）；启停/删除 busyId 防重复提交；删除加 confirm 确认；任务行类型补 chaptersDone/chaptersTotal，进度条副文案「已采集 N/M 章」；single/list 进度语义对齐 worker 新口径
-- ThemeRenderer.tsx：PSEO 结果卡补 role=link/tabIndex/aria-label + Enter/Space 键盘导航（无障碍）
+- 路由结论：前台为纯内存 SPA（registry.ts 的 book 视图 = { name:'book', novelId }，全部主题经 navigate() 跳书页，无 /book/{id} 真实 URL）。为满足落地页「继续阅读」链到书详情页，新增深链约定 /?book={novelId}：ThemeRenderer 挂载时一次性解析该参数切入书籍视图并 history.replaceState 清参（防刷新重复触发/URL 与视图一致）；落地页与后台跳书页均用此约定/该模式
+- src/lib/pseo.ts：getGeneratedPseoPage 改为严格按 pageData.novelIds 保存顺序返回（绑定书第一，不再被 findMany orderBy clicks 打乱；matchNovels 未动）；行上 novelId 有值但 novelIds 缺失/乱序的历史数据防御性置顶（putFirst + byId Map 还原顺序，已删除书自然剔除）；新增导出 getNovelRowById（MATCH_SELECT 同构单书查询）
+- /api/pseo/[kw] 实时兜底：PseoKeyword.novelId 存在但 status≠generated/pageData 损坏时，matchNovels 后把绑定书强制排第一（列表已有则移首位，否则 findUnique 补插），聚合页永不空窗语义保留
+- /pseo/[kw] 落地页：书单首位渲染「最佳匹配」高亮卡（大封面 + 「与"{keyword}"最相关」徽标 + 书名/作者/分类/字数/状态 + 简介 line-clamp-2 + 最新章节行 + 「继续阅读」按钮 → /?book={id}），其余书进原 3 列网格；TDK 沿用已生成值未动
+- 新建 src/components/book-suggest-links.tsx（共享组件，主题/服务器两端可用）：props { keywords, className? }；逗号/中文逗号/顿号分隔→去空白去重→渲染「相关搜索」标签 + flex flex-wrap gap-2 小链接组（text-xs neutral 色，/pseo/{encodeURIComponent(词)}，prefetch=false 防 force-dynamic 批量预取）；空串/无有效词 return null 零 DOM
+- 数据流通：types.ts NovelDetail 增加 suggestKeywords: string；/api/novels/[id] GET 响应透传 suggestKeywords（include 已带出，?? '' 兜底旧 Prisma Client 过渡期）；use-novel-data 无需改（类型即达）
+- 10 套主题书籍页插桩 BookSuggestLinks（均放在简介区块之后，样式随主题：虚线/点线分隔或独立卡片，组件自带 mt/pt 由 className 注入）：shipsay（作品信息 Tab 简介卡内）、aijjxs（内容简介 Panel 内）、ddyueshu（简介 p 后同款蓝虚线分隔）、x2552（内容简介盒内「关键字」行后）、pilishuwu（内容简介 Block 内）、huangjinwu（作品简介 section 标签行后）、trxsw（内容简介 Block 内）、23qb（信息白盒简介 p 后、按钮行前）、101kks（简介 Tab 简介段后）、ggd66（头部卡与最新章节间独立白卡）；空词时全部不渲染不留空壳
+- /api/pseo GET 列表：返回 novelId + novelTitle（收集非空 novelIds 一次 in 查询 + Map 回填，无 N+1；书已删除 title=null）
+- 后台 panels.tsx PseoTab：PseoConfigDto/EMPTY 增加 collectBind，设置区新增「采集时自动绑定下拉词」Switch（保存走既有 PATCH /api/pseo/config，服务端 sanitizePseoConfig 10-a 已支持该字段，无需改路由）；PseoRow 增加 novelId/novelTitle，关键词行 novelId 非空时显示绑定书胶囊（BookOpen 图标 + 书名 truncate，点击 navigate book 视图 + 清 #/admin hash，与「预览」按钮同模式；书已删除回退 #id）
+- 实测：curl /pseo/{词} 200 且 SSR 含「最相关」徽标/book=链接/继续阅读；/api/pseo/{词} 200；/api/novels/41 200 且响应含 suggestKeywords:""；/api/pseo 200 69 行含 novelTitle 字段；/api/pseo/config 返回 collectBind:true；绑定置顶逻辑用独立脚本按新代码逐行复现验证（绑定书 40 置顶 + 不在列表补插两例均正确）；临时写入的 novelId/status 已回滚；375px 下高亮卡封面 96px+min-w-0 文本列无横向溢出风险
+- 辖区遵守：未动 prisma/schema.prisma、worker.ts、suggest-bind.ts、scrape-tasks 路由；未运行 lint/tsc（主控统一验证）；未重启服务/未 git 提交
 
 Stage Summary:
-- 后台交互健壮性 10+ 处修复（防重复提交/Esc 分层/末页自愈/URL 前校验/键盘可达）；ScraperTab 去重减代码；tsc 0 错误 lint 0 错误
-
+- PSEO 书籍页三件套打通：落地页高亮绑定书（真实可收录 + 深链 /?book= 进 SPA 书页）、API 实时兜底绑定书强制第一、书单顺序以 pageData.novelIds 为准（绑定词页绑定书恒第一）
+- 全部 10 套主题书籍页新增「相关搜索」内链块（suggestKeywords → /pseo/{词} 真实 URL），空数据零 DOM；数据链路 types+API 已透传
+- 后台可配 collectBind 开关、关键词库可视化绑定书并一键跳书页（列表接口一次 in 查询防 N+1）
+- 已知限制：dev server（10:52 启动）内存 Prisma Client 早于 novelId/suggestKeywords 字段生成，绑定词数据出现前需重启 dev server 才能在运行时读到新字段（与 9-b 记录现象同源，本辖区禁重启故记录待主控处理）；重启前旧 client 下 novelId 读为 undefined→接口字段缺省、页面按无绑定词渲染，均安全降级
 ---
-Task ID: 15-c
-Agent: themes-auditor (超时，成果由主控逐行核验补记)
-Task: 10 套主题逐行深度审查修复（不破坏 1:1 克隆视觉）
+Task ID: 10-a / verify（主控直做）
+Agent: main (Z.ai Code)
+Task: 取消全部采集限制 + 任务可编辑/重跑 + 起始页 + 多级并发 + 采集时下拉词绑定PSEO + 集成验证
 
 Work Log:
-- 「最新章节」显示最早章节的错位bug再修 7 处：pilishuwu/ddyueshu/ggd66/huangjinwu/shipsay/101kks/23qb 的 Book/Toc 视图统一改为 useChapters 全量 → slice(-N).reverse()（详情接口 chapters 是最早 12 章，旧 [...novel.chapters].reverse() 仍是早章倒序）
-- 书签/收藏/书架持久化统一修复：pilishuwu 书架（pls-shelf）、ddyueshu 收藏、ggd66 书签（ggd66-marks-按书分组，cap 200 条）等均改 localStorage 惰性初始化 + 事件回调写入，跨视图/跨会话一致；换书 key=novelId 重挂载重读 storage，消除水合不一致
-- 键盘翻章误触防护：pilishuwu/ggd66 等主题 ←/→ 翻章在焦点位于 INPUT/TEXTAREA/SELECT/BUTTON/contentEditable 时不再触发
-- aijjxs Book/Search、23qb、101kks、trxsw 等视图：加载/错误/空三态补齐（章节区骨架+ErrorBox refetch+暂无章节占位）、enabled 短路消除无效请求、章节下拉/跳转序号口径复查
+- DB：ScrapeTask 新增 startPage/concurrency；Novel 新增 suggestKeywords；PseoKeyword 新增 novelId（db:push 落库）
+- 取消全部采集限制：worker MAX_CHAPTERS_PER_BOOK=100 与 MAX_BOOKS_PER_TASK=60 删除；引擎 extract.ts MAX_CHAPTER_REFS=800 删除；pages 上限 20→2000；同章分页 5→20 页；正文截断仅保留 20 万字符内存保护
+- 并发模型：runPool 抢占式并行池 + flush 串行链；single=concurrency 路章节并行（idx 按目录位次预分配槽位保序）、list=concurrency 路书籍并行（书内章节再并行）；任务间天然并行；目录内预去重防同批重复入库
+- 任务可再编辑：PATCH /api/scrape-tasks/[id] 新增 action edit（running 409）/rerun（终态重跑清进度重排队）；UI 编辑对话框 + 重新采集按钮（10-b）
+- 范围采集起始页：startPage 起连续取 pages 页，pageVariants 复用（实测 ggd66 startPage=2 命中第 2 页 10 条）
+- 下拉词联动：suggest-bind.ts 采集入库成功即 fire-and-forget 取词（5 引擎、3.5s/引擎、collectBind 可配）→ Novel.suggestKeywords + PseoKeyword(novelId 绑定, status=generated, pageData 绑定书置顶)；/pseo/[kw] 最佳匹配高亮卡 + 10 主题书页相关搜索内链 + 后台 collectBind 开关/绑定书胶囊（10-c）
+- 反反爬：11 工具选型评估入 docs/anti-anti-crawl.md；render.py + browser.ts stealth 加固（webdriver/chrome/plugins/WebGL 伪装）；curl-impersonate 二进制待部署（零改码自动启用）（10-d）
+- 【实测抓 bug 修复】僵尸任务回收误杀重跑任务：Turbopack 按路由分包导致 worker 模块多实例，晚加载实例按 createdAt<bootAt 把活任务判僵尸。改为心跳判定（updatedAt 停摆>5min 才回收）+ 防重入标志同步置位
+- 端到端实测：task33 采 23qb 仙逆 total=1955 章（旧上限 100，解除实证）、并发 4 路 ~3.2 章/s；10 个百度下拉词实时绑定 + PSEO 词页全生成；agent-browser 验证管理后台编辑对话框/重跑按钮/起始页/并发数字段、/pseo/仙逆全文阅读 置顶卡、/?book=99 相关搜索；375px 无横向溢出；tsc/lint 0 错误；dev.log 无运行时错误
 
 Stage Summary:
-- 13 个主题文件修复约 20 处确凿 bug（数据错位 7、持久化 6、键盘误触 3、三态/请求 4+）；全部为行为修复未动视觉设计；tsc 0 错误 lint 0 错误
-
----
-Task ID: 16
-Agent: main-orchestrator
-Task: 代码清理整合精简
-
-Work Log:
-- 删除过程产物：.tmp-fake-site.ts、.verify-13b-e2e.sh、.verify-13b.sh、tool-results/（21 个调试转储）、agent-ctx/（2 个子 agent 记录，已并入 worklog）、scripts-tmp/（4 个审查临时脚本）
-- git rm --cached 出库运行时产物：db/custom.db（3.4MB SQLite，fresh clone 走 db:push+seed）、.zscripts/（沙箱运行时脚本，本地保留）
-- .gitignore 追加：.zscripts/、tool-results/、agent-ctx/、scripts-tmp/、.tmp-*、.verify-*、db/*.db、db/*.db-journal
-- 代码去重：panels.tsx 中与 ScrapeCenter 重复的 ScraperTab 整体移除（-276 行级重构含此去重）
-
-Stage Summary:
-- 仓库仅剩项目源码与必要配置；数据库文件与沙箱运行时产物全部出库并加 gitignore 防回归
-
----
-Task ID: 17
-Agent: main-orchestrator
-Task: 第四批收尾终验 + 推送
-
-Work Log:
-- 终验：bunx tsc --noEmit 0 错误；bun run lint 0 错误；dev.log 无新增运行时报错
-- 浏览器 E2E（agent-browser）：前台渲染/TDK 正确 → 齿轮 → #/admin 七区块 → 采集中心规则列表/新建任务/任务列表（list 任务显示「进度 36% 已采集 39/45 章」双口径）→ 返回站点 → 书页 → 目录 → 第一章（第1章序号正确）→ 键盘 → 翻章（第2章）；console/page errors 全程为空
-- 运行时实测：single 任务章节口径 3/3、list 任务书本口径 6/11 + 章节副进度 54/54；63 本书 0 重复（唯一约束生效）；并发采集防重复入库路径（P2002 回读）已就位
-- 推送 GitHub main（token 仅用于一次性推送 URL，未落盘）
-
-Stage Summary:
-- 第四批全部完成：采集引擎反反爬增强 11 项（含 robots SSRF 安全修复）、worker 进度语义重构、Novel 唯一约束、chapters 竞态修复、后台交互健壮性 10+ 处、主题 bug 约 20 处、仓库清理出库；tsc/lint/browser 三重验证全绿
-
----
-Task ID: 18-a
-Agent: noise-cleaner
-Task: 正文噪声清洗管线（清洗模块+worker集成+存量清洗+UI）
-
-Work Log:
-- 新建 src/lib/content-clean.ts（主应用规范清洗器）：cleanChapterContent(raw)→{text,removedLines}；步骤 \r\n|\r→\n → 逐行去行首全角空格(\u3000)/NBSP(\u00A0)/BOM/半角空白 → 行内连续空白折叠为单空格 → 丢空行 → 噪声行过滤 → 单 \n 连接（存储契约：无空行、无行首缩进，缩进交给主题 CSS）；导出 NOISE_PATTERNS 常量与 isNoiseLine() 供复用/测试
-- 新建 mini-services/scraper-service/src/clean.ts（引擎侧同源实现）：规则与主应用完全一致，cleanChapterText(raw)→{text,removed,total}（total=进入过滤的非空候选行数）；两文件互相注明「同源实现、改规则需两边同步」（跨 Bun/Next 进程无法共享模块）
-- extract.ts 集成：extractChapter 得到容器文本后调用 cleanChapterText 重建 paragraphs/content；removed/total>0.5 且 total≥10 时向 warnings push「清洗移除了 X/Y 行，请检查 contentSelector 是否命中了导航/广告容器」（引擎容器级清洗 NOISE_SELECTOR/AD_TOKEN/WATERMARK 保留不动，行级规则为其补充层）
-- scrape-worker.ts 集成：入库前 cleanChapterContent，存 cleaned.text.slice(0,5万)；wordCount 基于清洗后文本；removedLines>0 时记「章节「title」清洗 N 行噪声」日志（每本书最多 3 条节流防刷屏）
-- 新建 src/app/api/chapters/clean-all/route.ts：POST 分批（500/批，id 游标）遍历全章节，text 有变化才 update（content+wordCount 重算），并重算受影响书籍字数合计，返回 {checked,cleaned,novels}；GET（?dryRun=1）恒只读预览返回 {checked,toClean,dryRun}；POST 以 globalThis 标志互斥防并发（进行中→409）
-- ScrapeCenter.tsx：规则区块头部新增「清洗存量章节」按钮（Eraser 图标）——confirm 确认 → dryRun 预览（toClean=0 直接 toast 成功并终止）→ POST 正式清洗 → toast「检查 N 章，清洗 M 章」+ qc.invalidateQueries() 全量失效缓存；cleaning 忙态 disabled 防重复点击
-- 单元实测（26 断言全过）：\r\n/\r 归一、全角/NBSP 缩进移除、连续空行压平、16 类脏行（域名/URL/推广/导航/JS/符号）全清除、行内空白折叠、长行含「点击/书签/目录/无弹窗」叙事零误杀、短行非精确匹配保留、引擎侧 total=10/removed=7 统计正确、空串安全
-- E2E 引擎级（fixture /tmp/dirty-site.ts @8899，笔趣阁式脏正文）：SCRAPER_ALLOW_PRIVATE=1 重启引擎后直连 /api/chapter 与经主站 POST /api/scrape?proxy=test 双路径验证——6 行正文全部干净（无缩进/\r/空行/广告/导航/JS），含「点击」的 31 字正常叙事行保留，warnings 出现「清洗移除了 8/14 行…」
-- E2E 全链路：建临时规则（bookRule+chapterRule 选择器）→ single 任务抓 fixture 书页 → 任务 success（3/3 章，日志含 3 条引擎清洗提示）→ 入库《雾隐山门》#42 三章 content 均 6 行干净文本、wordCount=156 与清洗后文本一致 → 清理：删任务/规则/测试书，库恢复 41 书 812 章种子态
-- 存量清洗实测：dryRun BEFORE {checked:812,toClean:812}（与预期一致：812 章种子全部带全角缩进）→ POST {checked:812,cleaned:812,novels:41} → dryRun AFTER {toClean:0}；DB 抽查：行首缩进 0、空行 0、\r 0、wordCount 与 content 重算全量一致（812/812）、书籍级字数同步（novel#1 wordCount=sum(chapters)）；并发双 POST 实测 200+409 互斥生效
-- 浏览器验证：pilishuwu 与 x2552 两主题章节页——段落 textContent 不再以 \u3000 开头，缩进由 CSS text-indent（40px/32px=2em）统一呈现，console/page errors 全空；后台采集中心「清洗存量章节」按钮实点全流程（confirm 文案→预览 toast「检查 812 章，无需要清洗的章节」）通过
-- 收尾：scraper-service 恢复无 SCRAPER_ALLOW_PRIVATE 正常模式重启（SSRF 拒内网实测恢复），删 /tmp 临时脚本与 fixture
-
-Stage Summary:
-- 清洗规则清单（除纯符号行外仅对 ≤30 字符短行生效，防误杀叙事长句）：①URL/域名类：含 www./http、常见 TLD 后缀（.com/.net/.cc/.org/.info/.xyz/.top/.vip）或整行像域名；②站点推广类：笔趣阁|顶点小说|飞卢|起点中文|纵横中文|天才一秒记住|本章未完|点击下一页|继续阅读请|最新章节|手机阅读|无弹窗|全本小说|请记住本书|首发域名|记得收藏|求收藏|求推荐票|求月票|投推荐票|加入书签|书迷交流；③导航/UI 残留（整行精确匹配）：上一章|上一页|下一章|下一页|目录|章节目录|章节列表|返回|返回目录|返回书页|返回列表|返回首页|首页|书页|书签|加入书签|加入收藏|收藏本站|收藏本书|推荐票|点击进入|第一页|末页（规范列表基础上加了同族变体）；④JS/CSS 残留：javascript:|function(|document.|window.|花括号成对短行；⑤纯符号行（无任何字母/数字，不限长度——零误杀风险，文档化偏离）
-- 证据：fixture 章节清洗前后对比（18 行脏文本→6 行干净正文，8/14 行行级噪声移除，引擎 warning 触发）；存量清洗 812→812→0（dryRun 前后归零）；DB 抽查 0 缩进/0 空行/0 CR/812 wordCount 全对齐；单元 26/26 断言；并发 409 互斥；pilishuwu/x2552 双主题 CSS 缩进渲染正常
-- 分层设计说明：引擎侧（提取时）与 worker 侧（入库前）规则同源，正常链路下引擎层先清干净、worker 层 removedLines=0 故日志静默（节流日志仅对绕过引擎清洗的内容触发，为防御性第二层）
-- 遗留风险：①站点推广/导航关键词为中文规则，英文短行（如 "He closed the window."）理论上可被 window. 规则误杀（目标站为中文网文，风险极低）；②≤30 字符含推广词的极短正常句会被整行移除（如「他点击了下一页的按钮」9 字含「点击下一页」）——按任务规格接受；③clean-all POST 为逐章 update（812 章约 2-4s），百万级章节需改批量事务，当前量级无压力
-
----
-Task ID: 18-c
-Agent: render-auditor
-Task: 正文渲染一致性专项+前端边角逐行审查
-
-Work Log:
-- 专项·10 主题 Chapter 视图逐一核查段落管线（split→trim→filter）：10/10 均已有 `.map(s=>s.trim()).filter(Boolean)`（x2552/ddyueshu/ggd66/huangjinwu/shipsay/101kks/23qb 为 split('\n')，aijjxs/pilishuwu/trxsw 为 split(/\n+/)，配 filter 等价），JS trim() 原生吃 U+3000 全角空格，行首全角缩进在渲染端天然剥离——实测确认 DOM 文本首字无 '　'，缩进完全由 CSS text-indent 提供（x2552 32px=2em、aijjxs 55.2px=2.4em、pilishuwu 40px、ddyueshu 38px 等），无双重缩进
-- 专项·空内容占位补齐 4 处（原先 paragraphs 为空数组时正文卡直接空白页）：aijjxs「本章内容为空，请返回目录选择其他章节。」、shipsay（同文案，夜间模式继承 bodyText 色不写死）、101kks（繁体「本章內容為空，請返回目錄選擇其他章節。」+ night 色切换）、23qb（简体同款）；x2552/ddyueshu/ggd66/huangjinwu/pilishuwu/trxsw 原有占位，核查通过
-- 专项·超长内容溢出加固 10 处：全部正文容器/段落补 `break-words`（overflow-wrap:break-word，仅影响无空格长串的断行，对正常 CJK 排版零视觉变化，不破坏克隆视觉）——aijjxs/shipsay/101kks/23qb 加在段落级，x2552/ddyueshu/ggd66/huangjinwu/pilishuwu/trxsw 加在正文容器级（overflow-wrap 可继承）
-- 专项·段落 key：10 主题均为静态文本数组上的 index key（无重排/增删场景），按任务要求仅报告不改
-- 专项·wordCount 口径核查：POST/PUT /api/chapters 均为 `content.replace(/\s/g,'').length`（\s 含 U+3000），与各主题 fmtWords「约 X 字」显示口径一致；实测 novel1 全 12 章 stored==real 零偏差
-- 边角·API 输入校验 6 文件：
-  · novels/route.ts GET：categoryId=abc 原先静默降级为全库查询（NaN>0 为 false 漏过滤）、categoryId=1.5 靠 SQLite 截断碰巧命中——改为非法值明确 400；q 截断 100 字符
-  · novels/[id]/route.ts：PUT 补 JSON 解析 try/catch（原畸形 JSON 直接 500）+ ID 整数校验 + categoryId 仅接受正整数；GET/DELETE isFinite→isInteger
-  · chapters/[id]/route.ts、novels/[id]/chapters/route.ts、categories/[id]/route.ts：ID 校验统一 isFinite→isInteger（Prisma/SQLite 对 12.5 静默截断取整，语义应为 400）；categories PUT 补 sort 整数校验
-  · chapters/route.ts POST、novels/route.ts POST：novelId/categoryId isFinite→isInteger
-- 边角·SeoSync.tsx：TDK 写入点统一截断（title 120/description 300/keywords 200，truncate 复用 seo.ts），防超长书名撑爆搜索引擎上限；特殊字符安全性核查结论：document.title 与 setAttribute 为 DOM API 天然安全，无需手工转义（已在代码注释说明）
-- 边角·use-novel-data.ts：useNovels 的 queryKey 原样含 enabled 字段，翻转时产生幽灵缓存条目——解构剥离 enabled 后再入 key（请求 URL 构造不变）
-- 边角·审查未改动（确认无问题）：panels.tsx（表单字段均服务端 slice 兜底、对话框重开用 EMPTY_FORM/重挂载无状态残留、列表全 id key、末页自愈已在位）；AdminConsole（未知 hash 回落前台、admin-section 损坏值有 SECTIONS.some 守卫回落 themes、移动端标签条 overflow-x-auto+滚动条隐藏）；suggest.ts（单发+引擎隔离+allSettled+4s 超时为既定语义，pseoKeyword 表本身即持久化缓存，不再叠加内存缓存）；store.ts（history cap 20）、covers.ts/format.ts/registry.ts（getTheme 非法 id 回落 aijjxs）——逐一核查通过
-- 浏览器验证（agent-browser，独立 session）：①10 主题全部实测 stress 章节（4 段：全角缩进段/320 字符无空格 ASCII 段/1200 字超长中文段/短段）——10/10 无横向溢出（scrollWidth==clientWidth、document hOverflow=0）、无空 <p>、行首无全角残留；②空内容占位：raw SQL 临时置空 ch2 实测 aijjxs/x2552/ggd66/23qb 四主题均渲染占位文案非空白页，测毕恢复；③console 全程 0 error/0 warning
-- 数据恢复说明：测试用 ch2/ch3 内容、ch3 wordCount(1097)、novel1 字数聚合(12863=sum)均按新存储契约（无行首缩进）复原，与 18-a 清洗后的库状态一致（期间 18-a 并行清洗实际覆盖了我置入的测试数据，复原脚本按契约先行 trim 再写回）
-
-Stage Summary:
-- 修复清单：①正文渲染 10 主题：空内容占位 4 处（aijjxs/shipsay/101kks/23qb）+ break-words 10 处（全主题，段落级 4/容器级 6）；②API 校验 6 文件 10 处（非法 categoryId 静默降级为全库查询是最实质的一处、PUT novels 畸形 JSON 500、ID isFinite→isInteger 5 文件、q 截断）；③SeoSync TDK 截断 1 处；④hooks queryKey 剥离 enabled 1 处
-- 浏览器证据：10 主题 stress 章节渲染零溢出零空段零双重缩进；4 主题空内容占位实测；console/page errors 全程为空；tsc 0 错误、lint 0 错误、dev.log 无本范围新增报错
-- 遗留风险：①PseoTab 引擎复选框全不选时服务端默认跑全部 5 引擎（服务端既定 default 语义，未改，仅提示）；②novels GET 非整数 ID（如 /api/novels/12.5）现统一 400，比原先「静默截断取整返回」更严格，前端不受影响（id 均来自 API 整数）；③主题/设置由并行 agent 共用，验证期间观察到 activeTheme 被并行改动，最终已复原为 aijjxs
-
----
-Task ID: 18-b
-Agent: engine-auditor-2 (超时，成果由主控逐行核验补记)
-Task: 采集引擎第二轮逐行审查与反反爬增强
-
-Work Log:
-- strategies.ts 新增第 7 策略 browser：Playwright+Chromium 真实渲染（Node 包缺失自动降级 Python 桥接），对抗 JS 挑战/动态渲染；渲染期每个子请求做 SSRF 校验（私网主机拦截+去重告警）、MAX_BYTES 上限、probe 探测不可用优雅跳过
-- strategies.ts curl-impersonate 策略加固：--max-filesize 在 curl 层中止超大响应（exit 63 单独标记）；HTTP/2 失败降级 --http1.1
-- rate-limit.ts：新增 parseRetryAfterMs（RFC 7231 秒数/HTTP-date，cap 30s 防恶意大值吃满预算，429 时尊重 Retry-After 退避）；IPv6 zone id 等 fail-closed 按内网拒绝；DNS 解析加 3s 超时防慢速拖穿策略预算；错误响应体主动 cancel 释放连接；robots.txt 加体积上限（此前无上限可被撑爆内存）
-- render.py：渲染期 SSRF 守卫（入口+每个子请求/跳转，ipaddress 判定+getaddrinfo 解析，进程内缓存 256 条）；协议白名单（file/ftp/ws 等可达本机的一律拦截）
-- 运维恢复：沙箱会话重置清掉了 curl-impersonate 二进制 → 从官方 release 重装至 ~/.local/bin 并 symlink /usr/local/bin，7 策略全部 available 恢复
-
-Stage Summary:
-- 反反爬矩阵升级为 7 策略（新增真实浏览器渲染）；SSRF 防护扩展到渲染期子请求与 robots 抓取；Retry-After 尊重与连接释放补齐；tsc/lint 0 错误；example.com 实测 fetch-browser 直抓成功
----
-Task ID: 19
-Agent: 主控（Z.ai Code）
-Task: PSEO 设置——应用 multi-search-engine 获取搜索引擎下拉词（持久化配置 + 批量应用 + 试取预览）
-
-Work Log:
-- 盘点现状：suggest.ts 已有 5 引擎下拉词聚合（baidu/bing/duckduckgo/sogou/so360，allSettled+限并发3+跨引擎去重），但 PseoTab 引擎选择是临时本地态不持久化、只有单种子即时流、无种子词库/批量入口
-- 设计决策：PseoRunnerConfig 存入现有 SiteSetting.seoConfig JSON 的 pseo 子字段（零 schema 变更、免 db:push、免重启 dev server）；新增 src/lib/pseo.ts 承载定义/校验/读写/共享逻辑
-- 新建 src/lib/pseo.ts：DEFAULT_PSEO_CONFIG、sanitizePseoConfig（引擎白名单+sanitizeKeyword 清洗种子限20+数值夹取 perSeedLimit 3-20/maxKeywords 10-500+布尔归一）、getPseoConfig/savePseoConfig（服务端读改写 seoConfig JSON 只动 pseo 字段，TDK 模板零影响）、insertKeywords（批内去重+按首现标记 source+P2002 竞态容错，修复原 generate 里种子词可能同时出现在下拉词中导致二次 create 撞 UNIQUE 的隐患）、generatePendingPages+matchNovels（自 generate 路由迁入共享）
-- 新建路由：GET/PATCH /api/pseo/config（读取/保存配置）；POST /api/pseo/suggest（试取预览，不入库不生成，输出 per-engine 统计+聚合词表 cap40）；POST /api/pseo/batch（应用设置批量获取：种子×引擎→入库→可选二级挖掘→可选自动生成聚合页；globalThis 单飞锁 TTL 180s 防僵尸+409；种子限并发 2、批量场景引擎超时放宽 6s；body.config 提供时先持久化再执行=「保存+应用」一步）
-- 重构 /api/pseo/generate 复用 lib（insertKeywords/generatePendingPages），API 契约不变，useSuggest=false 语义保留为「重新生成聚合页」入口
-- PseoTab 重写（panels.tsx）：①「PSEO 设置」卡——5 引擎中文复选框（百度/必应/DuckDuckGo/搜狗/360搜索）、种子关键词多行 Textarea（独立文本草稿避免逐键拆行）、每种子保留词数/单次入库上限数值框、自动生成聚合页与二级挖掘 Switch、保存设置+试取预览按钮（overrides 合并模式与 SeoTab 一致，保存后清草稿回读）；②「应用设置·批量获取」卡——单按钮运行（自动持久化当前配置），报告区逐种子×逐引擎渲染（含失败原因与词数）；③关键词库——保留预览(hash 清空回前台)/删除，新增手工添加输入框(Enter/按钮)与「重新生成聚合页」按钮（TDK 模板变更后重跑）
-- 实测（curl）：config GET/PATCH 回读闭环 ✓；settings GET 确认 TDK 模板与 pseo 共存 ✓；suggest 玄幻→bing+10/duckduckgo+8、失败引擎如实上报 ✓；batch（2 种子+二级挖掘）added 44/generated 44/level2 8 种子 45 词 ✓；并发第二请求 409 ✓；重复运行 added=0 幂等去重 ✓；非法引擎 400 带可用列表 ✓；空种子 400 ✓；超限数值静默夹取 ✓
-- 实测（agent-browser E2E）：#/admin→PSEO——设置卡引擎勾选态=持久化值 ✓；试取预览渲染引擎状态+下拉词 ✓；批量获取→报告「新增 5 个关键词，生成 5 个聚合页」逐种子引擎明细 ✓ 关键词库 70→75 ✓；关键词「预览」→ hash 清空回前台渲染 PSEO 聚合页（title/H1 按模板、12 本命中书）✓；手工添加 76 ✓ toast 双确认 ✓；保存设置 perSeedLimit=7 落库 ✓；console/page errors 全程为空；375px 视口无横向溢出
-- 收尾：清测试词/恢复合理配置（seeds=科幻末日+无限流副本, perSeedLimit 10, maxKeywords 200）；误跟踪的 __pycache__ 出库+.gitignore 补规则；3 个文件误变的执行位还原；tsc/ESLint 0 错误；dev.log 无新增报错
-
-Stage Summary:
-- 用户诉求落地：「PSEO设置」= 持久化运行配置（引擎/种子/词数/上限/二级挖掘/自动生成）+「应用 multi-search-engine 获取下拉词」= 试取预览（只看不入库）与批量获取（种子×引擎→去重入库→可选自动生成聚合页）两条路径，单种子 generate 接口保留兼容
-- 架构要点：配置寄生 seoConfig JSON（pseo 子字段）零迁移；共享逻辑收敛到 lib/pseo.ts 三路由复用；批量单飞锁+幂等去重+P2002 容错；失败引擎逐项如实报告不阻塞
-- 环境备注：沙箱内 bing/duckduckgo 稳定可用，baidu 服务端返回空（直连 curl 有数据，疑服务端出口指纹差异）、sogou/so360 网络受限——均被引擎隔离设计如实呈现，不影响功能
-
----
-Task ID: 20-c
-Agent: ui-refactor-auditor
-Task: ScrapeCenter 组件化拆分 + PseoTab 引擎守卫 + 全局走查修复
-
-Work Log:
-- 通读 worklog（Task 13-a/14/15-b/16/17/18/19 的 UI 约定与既往修复）后开工；全程只改 src/components/**，未触碰 src/lib/scrape-worker.ts、src/app/api/scrape*、mini-services（并行引擎 agent 范围）
-- 任务一·拆分：src/components/admin/ScrapeCenter.tsx（975 行）逐行原样迁移至 src/components/admin/scrape/ 目录：
-  · types.ts（TaskRow/TaskDetail/StrategyInfo/RuleFormState/FieldDef）+ shared.ts（api/cleanRule/truncate，原样搬运）
-  · RuleDialog.tsx（对话框 + 三组选择器字段常量 + RuleFieldGroup，URL 前置校验/saving 防重/key 挂载等原样保留）
-  · RulesCard.tsx（规则列表启停 busyId/删除 confirm/模板入库/存量清洗 dryRun→POST 全链路原样）
-  · NewTaskCard.tsx（单本/范围单选、规则下拉、页数校验、creating 防重原样）
-  · TasksCard.tsx（3s 轮询终态自停、双口径进度、LogDialog 2s 轮询自停+自动滚底、取消/删除 busyId、分页与空态「返回第一页」原样）
-  · ScrapeCenter.tsx 保留原路径作薄组合层（46 行，默认导出名与 import 路径不变，AdminConsole.tsx 零改动兼容）
-- 重要发现：任务描述称 ScrapeCenter 原含「引擎状态」区块，实测拆分前文件并无此区块（引擎策略卡在旧 AdminDrawer 的 ScraperTab 中，Task 15-b 去重时一并移除）。按任务规格（建议文件名 EngineCard.tsx + 验收标准「引擎状态显示 7 策略」）新建 scrape/EngineCard.tsx：GET /api/scrape?proxy=strategies 沿用旧 query key 'scraper-strategies' + 30s 重询，UI 复刻旧策略卡（可用/未启用 Badge + 名称 + 描述），并补加载中/引擎降级（502）提示行，置于组合层首位（与旧 ScraperTab 排布一致）
-- 逐行过手就地修复 3 处（均为拆分中发现的实际缺陷，行为增强已记录）：
-  ① RulesCard「内置模板入库」无防重复点击（服务端幂等但会重复请求+重复 toast）→ 补 seeding 忙态 + 按钮 disabled，与 busyId/cleaning 模式对齐
-  ② RulesCard 头部按钮行（清洗存量章节/内置模板入库/新建规则 三按钮 ≈328px）在 375px 视口超出容器 ≈311px 造成横向溢出 → 按钮行加 flex-wrap（375px 实测溢出归零，桌面端视觉不变）
-  ③ TasksCard 删除任务补末页删空自愈（rows.length===1 && page>1 → 回退一页），与 NovelsTab 既有口径一致（Task 14 的手动「返回第一页」按钮保留）
-- 既往修复回退核查：对话框 Esc、防重复提交（saving/creating/busyId/cleaning）、列表 id key、LogDialog/列表轮询自停、URL 前置校验、删除 confirm、taskListKey 重挂载回第一页——全部保留，零回退
-- 任务二·PseoTab 守卫（panels.tsx）：noEngines = form.sources.length===0 时①引擎区下方显示红字提示「至少选择一个搜索引擎」②禁用「保存设置」「试取预览（首个种子）」「开始批量获取」三按钮；该状态下不发任何请求，服务端 sanitizePseoConfig 语义未动。附带两处微修：addKw 补 busy 守卫（Enter 键路径绕过按钮 disabled）；关键词行「预览/删除」按钮 h-5 px-1 → h-6 px-1.5（最小交互目标放大一档）
-- 任务三·全局走查：AdminConsole.tsx hash 路由/SECTIONS.some 守卫/移动端标签条滚动条隐藏/localStorage try-catch/document.title 同步逐项核查无回退；panels.tsx 其余 Tab（Themes/Novels/Categories/Seo/Settings）走查输入校验、loading 态、防重复提交、list key、对话框 Esc/aria——均已在位，未发现实际 bug，未做改动（不臆造问题）
-- 验证：bunx tsc --noEmit 0 错误；eslint src/components/admin/ 0 错误（仓库级 bun run lint 当前有 1 个解析错误位于 mini-services/scraper-service/src/strategies/curl-impersonate.ts，系并行引擎 agent 重构 strategies 目录的在途产物，非本任务范围）；agent-browser 全流程：#/admin 直开 → 采集中心渲染引擎 7 策略（6 可用 + curl-impersonate 未启用）+ 4 条 seed 规则 + 规则对话框打开/Esc 关闭/新建对话框正常 + 任务列表空态；PSEO 标签页全不选引擎 → DOM eval 确认提示行出现且三按钮 disabled=true，勾回后恢复（勾选态与测试前一致，配置未被持久化改动）；375px 视口采集中心与 PSEO 两页 document/main 溢出均 0；返回站点/区块记忆（admin-section）正常；全程 console/page errors 为空；dev.log 无新增报错；新 建/改文件一律 chmod 644
-
-Stage Summary:
-- 新文件 7 个：src/components/admin/scrape/{types.ts 59 行, shared.ts 21 行, RuleDialog.tsx 272 行, RulesCard.tsx 199 行, NewTaskCard.tsx 146 行, TasksCard.tsx 315 行, EngineCard.tsx 47 行}（全部 ≤450 行）；修改 2 个：ScrapeCenter.tsx（975→46 薄组合层，路径与默认导出不变）、panels.tsx（PseoTab 守卫 + 2 微修）。所有请求/状态/交互/文案除上列 3+3 处记录的修复外与拆分前逐行一致
-- 走查结论：AdminConsole 七区块路由与移动端标签条无回退；panels 其余 5 Tab 未发现实际 bug（零改动）；拆分文件 375px 无横向溢出
-- 遗留建议：①src/components/AdminDrawer.tsx 为未跟踪孤儿文件（沙箱重置复原的历史残留，零 import 引用，与 Task 13-a 的删除决定冲突）建议主控删除；②仓库级 lint 的唯一错误在并行 agent 的 mini-services 在途文件，待其收尾后自愈；③引擎 curl-impersonate 策略当前检测为未启用（二进制探测失败），属引擎侧环境问题，与前端无关
----
-Task ID: 20-a
-Agent: engine-refactor（超时，成果由主控逐行核验后补记）
-Task: 采集引擎模块化重构 + 按主机策略亲和
-
-Work Log:
-- strategies.ts（1309 行巨石）拆为 src/strategies/ 10 文件：types.ts(61, 共享类型)/profiles.ts(217, UA与Sec-CH-UA同源派生+8套header画像)/challenge.ts(49, 三层挑战页检测)/http.ts(182, readBody流式限量+assess+fetchWithRedirectGuard逐跳SSRF守卫)/fetch-strategies.ts(88, makeFetchStrategy工厂+fetch-browser/ua-rotate/mobile/spider)/curl-impersonate.ts(138)/got-scraping.ts(182)/browser.ts(221, Node Playwright探测+Python桥接)/affinity.ts(34, 新增按主机策略亲和)/index.ts(267, 策略注册表+pickOrder+fetchPage编排+预算退避)
-- extract.ts（651 行）拆为 src/extract/ 4 文件：selectors.ts(118, 选择器工具层)/content.ts(79, 正文容器清洗)/extract.ts(472, 三个提取器)/index.ts(6, 门面)
-- index.ts（309→99 行）瘦身：业务 handler 迁至服务根 handlers.ts（230 行），入口只留启动+路由分发+CORS+错误兜底
-- 新增按主机策略亲和：Map<host,strategy> 容量 256 LRU 语义（重新插入刷新淘汰序），成功策略下次提至链首，显式指定策略时不生效，命中失败照旧全链回退；/api/strategies 响应追加 affinity 说明字段（向后兼容）
-- RENDER_PY 路径随文件层级修正 ../../scripts/render.py；修复一处过期声明（fetch-strategies 内 remaining 在限速等待后计算，与原版一致）
-
-主控核验（逐行）：
-- 规范化语义 diff：extract 新旧 15 行差异全部为 function→export function 可见性标记，零逻辑变化；strategies 新旧 91 行差异全部可解释（可见性导出+亲和新增+路径深度修正）
-- http.ts SSRF 守卫逐跳校验/opaque-redirect 降级/MAX_BYTES/Retry-After 解析与原版逐行一致；readBody 本就流式（18-b 已改），已修正新文件中不实的「旧实现全量读」注释
-- 自愈记录：agent 写文件中途半成品语法错误曾致 --hot 崩溃（curl-impersonate.ts:2），agent 已自行修复；进程被沙箱会话回收，主控以 start-stop-daemon 双 fork（ppid=1）方式重启并确认跨调用存活——新规程已记入 20-main
-- 验证：引擎 tsc 0 错误；/api/health、/api/strategies（7 策略+affinity）、/api/test 真实抓取 example.com 与 books.toscrape 书页提取全部成功；二次抓取 first-attempt=fetch-browser 证实亲和生效；主站代理 strategies 正常
-
-Stage Summary:
-- 引擎由 4 文件 3136 行重构为 16 文件单文件≤472 行，对外 API 契约（端点/响应字段/错误结构/CORS）零变化；反反爬新增按主机策略亲和（唯一行为新增）
-- 遗留：①curl-impersonate 二进制在当前沙箱缺失（探测为不可用，属环境问题非代码）；②handlers.ts 位于服务根而非 src/（import 正常、tsc 通过，保持现状减少无谓重启）
-
----
-Task ID: 20-b
-Agent: worker-refactor（超时，成果由主控逐行核验后补记）
-Task: 采集 worker/API 模块化重构 + 陈旧 workaround 清理 + 可观测性
-
-Work Log:
-- scrape-worker.ts（743 行）拆为 src/lib/scrape/ 6 文件：types.ts(64, 引擎载荷/任务记录/进度字段)/engine-client.ts(106, callEngine+三类页面封装)/run-log.ts(66, Run日志与flush)/store.ts(203, 规则加载/分类/书籍upsert(P2002回读)/章节入库(idx竞态顺延)/字数重算)/worker.ts(428, processBook/runSingle/runList/finalize/triggerScrapeTask)/api-utils.ts(28, URL与正整数校验工具)
-- 删除旧 scrape-worker.ts，scrape-tasks 路由 import 改指 '@/lib/scrape/worker'；pageVariants 转模块私有
-- 移除陈旧 workaround：Run.flush 的 $executeRaw 与 scrape-tasks 两路由的 $queryRaw 兜底全部替换为类型化 Prisma（-117 行）；dev.log 无 Unknown field 报错
-- 可观测性：callEngine 透出响应顶层 strategy/attempts，任务日志新增「书页命中策略 fetch-browser（尝试 N 次）」（每本书一条）
-- 三个采集 API 路由去重（重复的 URL/ID 校验收敛进 api-utils），PUT/DELETE 边界实测：不存在 id → 404、非法 id → 400
-- 主控核验：upsertBook 的 canceled 语义（空标题=canceled=false 走 failed）、storeChapter 返回实际 idx 推进下一章序号，均与原实现等价；进度双口径/状态机/取消协作逐段比对无变化
-
-Stage Summary:
-- worker 层由 2 文件 843 行重构为 7 文件单文件≤428 行；类型化进度写入经真实任务实证（single 任务 6/6 章 done 2→5→6、total=6、chaptersDone/chaptersTotal 语义正确、状态 success）
-- 遗留：无（回退方案：若未来 schema 变更且不重启 dev，flush 可能 Unknown field——届时按 run-log.ts 注释恢复 raw SQL 并重启）
-
----
-Task ID: 20-main
-Agent: 主控（Z.ai Code）
-Task: 第六批收尾——集成核验 + UI 验证 + 清理 + 推送
-
-Work Log:
-- 并行派发 20-a/20-b/20-c 三 agent；20-c 正常完成，20-a/20-b 超时但成果落地，主控逐行核验（规范化语义 diff + 行为实测）后补记
-- 引擎抢救：agent 半成品崩溃+沙箱会话回收致 3030 下线，定位 /start.sh 启动机制后改用 start-stop-daemon --background 双 fork 重启（ppid=1 跨 Bash 调用存活）——记为新规程；验证 health/strategies/亲和/真实抓取
-- E2E 实测：single 采集任务（rule 6, books.toscrape）success 6/6 章、命中策略日志、类型化进度写入实证；测试任务/书籍全清理恢复种子态（41→42 书已删回 41）
-- UI 浏览器验证（agent-browser）：采集中心引擎卡 7 策略渲染（6 可用+curl-impersonate 未启用如实显示）、规则 5 条、任务卡/规则对话框 Esc 正常；PSEO 全不选引擎→三按钮禁用+提示、勾回恢复；全程 console/page errors 为空
-- 清理：删除 src/app/api/route.ts（初版脚手架 Hello world 残留）、AdminDrawer.tsx（沙箱复原孤儿，与 Task 13-a 决定一致）；public/robots.txt 核实为初版既有文件复原，保留入库；权限位全量归一 644
-- 终验：root tsc / engine tsc / ESLint 全 0 错误；dev.log 无新增运行时报错（仅 agent 边界测试触发的预期 404 噪音）
-
-Stage Summary:
-- 重构采集系统完成：引擎 4→16 模块、worker 2→7 模块、ScrapeCenter 975 行单文件→8 组件，全部行为兼容经语义 diff + 真实任务 + 浏览器三重验证
-- 反反爬增强：按主机策略亲和（成功策略链首优先）+ 任务日志命中策略可观测性
-- 清理：陈旧 raw SQL workaround -117 行、脚手架残留删除、采集 API 去重
-- 运维规程更新：沙箱下常驻服务用 start-stop-daemon --background --make-pidfile 方式启动（nohup/setsid 均会被会话回收）
-
----
-Task ID: 21-main
-Agent: 主控（Z.ai Code）
-Task: 第七批——完善所有主题「阅读设置」+ 目录页「最新章节」统一为全书倒数 12 章
-
-Work Log:
-- 全量审查 10 主题 × 2 项现状：阅读设置仅 aijjxs 完整（独立 LS 键）、6 家有设置但全部不持久化、23qb/ggd66/ddyueshu/trxsw 完全没有；目录页「最新章节」仅 ddyueshu（置顶 6 条）与 x2552（按钮跳末章）存在，其余 8 家缺失；核验 /api/novels/[id]/chapters 全量按 idx asc 返回（全书倒数 12 = slice(-12) 的正确数据源），Book 详情页各主题均已正确用全量章节取末 12
-- 新建 src/hooks/use-reader-prefs.ts：模块级外部 store + useSyncExternalStore，字号 14-28 / 行距 1.4-2.6 / 字体 4 族 / 背景 5 场景（day/paper/green/blue/night）/ 字色（''=跟随背景），sanitize 白名单+夹取，localStorage key reader-prefs-v1，模块加载时同步读取（首帧无闪烁，主题视图客户端专属挂载无 SSR 风险）；内置 aijjxs 旧键 aj-reader-setting 一次性迁移（size/bg/font/ink 索引→新语义）
-- 10 主题章节页全部接入共享偏好、各保留自身美学：101kks 底部设置面板（背景5板/字體/行距/字號±）、aijjxs 暖纸工具条（背景5板/字号5档/行距/字体/字色，SCENES 保留其调色板）、23qb 圆角设置条+Card 支持 style（夜间整卡换肤）、ddyueshu 复古设置条（蓝描边虚线）、ggd66 米黄卡设置条、huangjinwu 滑杆接 store+新增背景板/字体（行距范围收窄 1.4-2.6）、pilishuwu A±/护眼=green 场景/字体、shipsay A±+行距/字体下拉+极简保留、trxsw 复古设置条+夜间、x2552 单行扩展（字号/行距/字体/背景5板/夜间/恢复）
-- 10 主题目录页统一新增/修正「最新章节」=全书倒数 12 章（新→旧，[...chapters].slice(-12).reverse()）：8 家新增（101kks 繁体最新章節三栏、23qb 卡片双栏 ChapterRow、aijjxs 网格、ggd66 GH2+ChapterDD 4 列、huangjinwu SectionTitle+ChapterPills、pilishuwu Block 三栏带字数、shipsay ChapterGrid 置顶、trxsw Block 4 列、x2552 表头+4 列 ul）；ddyueshu 置顶 6→12
-- E2E（agent-browser 逐主题实测，测试小说 青萍剑歌行 28 章）：10/10 目录页最新章节=idx 28→17 降序（ddyueshu/ggd66/shipsay 用结构化标题比对，其余 idx 前缀解析）；10/10 章节页设置生效——A+/滑杆/档位→localStorage+computed style 双确认，夜间/护眼场景换肤取色确认（如 #26262b/#2f4030），shipsay 行距 2.2（computed 44px/20px）、pilishuwu 宋体、x2552 reload 后重新进章验证持久化（fontSize 20 + scene night 存活）；全程 console/page errors 干净
-- 顺手修复：101kks FONT_OPTIONS.find(...)! 潜在空指针（其他主题设 kai 后崩溃）→ ?? 兜底；23qb Card 增加 style prop；huangjinwu 滑杆 max 30→28/3→2.6 对齐 store 夹取
-- 状态恢复：activeTheme 还原 x2552、reader-prefs 清回默认、视口还原 1280×800；tsc/ESLint 0 错误
-
-Stage Summary:
-- 「阅读设置」从 4/10 主题可用且全部不持久化 → 10/10 主题全量可调（字号/行距/字体/背景/字色）且跨主题共享一份 localStorage 偏好，旧用户数据自动迁移
-- 「最新章节」从 2/10 主题存在且口径不一 → 10/10 目录页统一为全书倒数 12 章（新→旧），与 Book 详情页口径一致，杜绝任何「分页末 12 章」歧义
-- 产物：src/hooks/use-reader-prefs.ts（新）；10 主题 Chapter/Toc 全量接线；23qb ui.tsx Card style 支持
-
----
-Task ID: 22-main
-Agent: 主控（Z.ai Code）
-Task: 第八批——① aijjxs 采集规则「站内搜索快速找到你想要的TXT电子书」噪声修复 + 全部规则体检；② 页面底部（页脚）编辑功能
-
-Work Log:
-- 定位噪声根因：www.aijjxs.com（帝国CMS TXT下载站「久久小说下载网」）全站每页有 <h1 class="logo">站内搜索<small>快速找到你想要的TXT电子书</small></h1>，旧规则（h1.novel-title/.chapter-heading 等）全部落空后回退 h1 → 书名/章节名被站标污染（DB 实锤 novel#45「站内搜索快速找到你想要的TXT电子书」/作者「书籍作者：纯洁滴小龙」，已删）
-- 引擎五层加固（mini-services/scraper-service）：① ChapterRule/BookRule 新增 excludeSelector（提取前按备选从 DOM 移除命中节点，handlers 白名单同步）；② pickTitle 标题防污染（BOILERPLATE_TITLE_RE 跳过站标候选）+ cleanBookTitle（剥《》/txt下载站 <title> 首段拆解）+ stripAuthorLabel（剥「作者：/作 者：/书籍作者：」前缀）；③ chapterLinkSelector=none 语义（元数据/下载站显式跳过章节列表，防启发式把 /txt/123.html 式他书链接误判成章节串书）；④ content.ts AD_TOKEN_RE 增 logo/site-logo/site-name/brand/search 等 token + WATERMARK_LINE_RE 增 站内搜索/快速找到你想要的/TXT电子书/全本TXT 等；⑤ clean.ts 行级噪声库 SITE_PROMO/NAV_EXACT 扩充（与主应用 content-clean.ts 同源同步）
-- worker 新能力 catalogLinkSelector：书页仅最新几章的模板（23qb 新模板书页仅 9 条）→ 引擎 BookData 返回 catalogUrl，worker 二次抓取完整目录页提取全部章节（多于书页时采用，日志留痕）；engine-client 新增 fetchCatalogChapters
-- 全部规则体检 + 实测对齐（列表→书页→章节 三跳 + 噪声扫描）：rule5 aijjxs 重建（h3 书名/.kv 作者/.desc 简介/.pic 封面/chapterLinkSelector=none/excludeSelector 排除站标，试取《惹皇兄》作者谢朝朝零噪声）；rule2 23qb 重建（站点已改版「铅笔小说」module 系：.module-item/.module-row-text + catalogLinkSelector=a.catalog-more，书页问鼎/何常在/目录页 768 条全目/章节页 2561 字干净）；rule3 顶点重建（回潮杰奇结构 #info/#intro/#list dl dd，注意该站 href="…" 等号前带空格反爬写法；作者前缀引擎剥离后『纲门翩佐』干净；GBK+直连重置需 fetch-browser）；rule4 ShipSay 演示站已下线 502 → 停用保留并备注；rule6 books.toscrape 正常
-- E2E 双任务验证：临时规则 A（aijjxs 元数据）single 任务 success「书籍已入库（未提取到章节链接）」；临时规则 B（23qb 整目）success 9/9 章，日志完整走「发现完整目录页→整目提取→比较→保守回退」路径；测试产物（novel 46/47、task 5/6、temp rule 7/8）与污染 novel 45 全部清理，恢复种子态 41 书 812 章；clean-all 重跑 812 章 0 需清洗
-- 页脚编辑功能：SiteSetting 新增 footerConfig JSON 列（db:push，需重启 dev 使 Prisma client 生效——按 nohup 规程重启被会话回收，改用 start-stop-daemon --background 成功，两常驻服务 pidfile 现均在 /tmp）；FooterConfig{text,extra,links} + src/lib/footer.ts 清洗器（长度夹取/去重/javascript: 伪协议与空 label 过滤）；settings GET/PATCH 接入；SettingsTab 新增「页面底部」编辑卡（主/副文案行 + 最多 10 条自定义链接增删 + 撤销修改 + 仅 dirty 时提交）
-- 10 主题 Footer 全接入（useSettings 共享偏好，各保留自身美学，text/extra 留空=主题默认）：aijjxs 暖纸居中/ddyueshu 蓝线绿链/23qb 灰底右列竖线分隔+extra 独立条/ggd66 绿底白字/huangjinwu 蓝灰居中竖线/pilishuwu 杰奇蓝白/trxsw 网站地图 [标签] 式/shipsay 深灰·分隔/101kks 繁体白底/x2552 双页脚（SiteFooter+AFooter）；自定义链接一律 <a target="_blank" rel="noopener noreferrer">
-- 浏览器 E2E：huangjinwu 前台渲染配置文案+友链 ✓ → 后台设置页编辑主行+添加「备案信息」链接保存（toast 确认+API 回读一致）→ 前台实时生效 ✓ → 切 x2552 主题页脚同样生效（含中括号风格链接）✓；规则对话框确认「目录页链接/排除选择器」字段与 23qb 规则值回显 ✓；console/page errors 零；footer 几何验证 naturalPush=true、overflowX=false
-- 现场恢复：footer 配置清空（主题回落默认文案）、activeTheme 还原 huangjinwu；引擎两轮重启加载新代码（bun --hot 在沙箱不触发热重载，start-stop-daemon 规程重启）；main/engine tsc + ESLint 全 0 错误
-
-Stage Summary:
-- 「站内搜索」类站标噪声从机制上根治：规则级（excludeSelector/none/选择器对齐真实站）+ 提取级（标题防污染/作者前缀剥离）+ 清洗级（容器/行级噪声库扩充）三层防御，5 条规则全部实测对齐 2026-09 现网结构
-- 新增 catalogLinkSelector 整目提取（23qb 类书页仅含最新几章的模板从「只能采 9 章」变为全目录），配 RuleDialog 编辑字段与任务日志可观测
-- 页面底部全面可编辑：文案两行 + 自定义链接，10 主题统一生效、留空回落默认，恶意 href 清洗
-- 运维：dev server 与引擎均已迁移至 start-stop-daemon 常驻（pidfile /tmp/next-dev.pid、/tmp/scraper-engine.pid，日志 dev.log / mini-services/scraper-service/engine.log）
-
----
-Task ID: 23-a
-Agent: engine-audit（网关超时阵亡，成果由主控逐行核验后补记）
-Task: 采集引擎逐行深审 + 反反爬能力增强
-
-Work Log:
-- strategies 10 文件 + extract 4 文件 + handlers/index/types + engine-client 逐行深审，落地 462 行改动
-- 新增 src/strategies/cookies.ts：按主机 Cookie 会话持久化（RFC6265 Set-Cookie 解析/Max-Age+Expires 过期删除/LRU 上界 128 host×50/Secure 仅 https 回放/getSetCookie 缺失兜底拆分/Playwright 注入+回存双向同步/cookieStats 观测）
-- Referer 链：FetchPageOptions.referer + StrategyRunCtx 可选上下文，仅覆盖「带 Referer」画像（无 Referer 变体保留链内多样性）；render.py 增 SCRAPER_COOKIES/SCRAPER_REFERER 环境变量透传
-- 挑战检测升级四层：新增第 4 层「近空可见正文(<80 字符)+JS 跳转脚本/需启用 JS 壳」（latin1/utf8/gb18030 三解码视图），覆盖 HTTP 200 状态码伪装的 JS 跳板与 SPA 空壳
-- curl-impersonate SSRF 加固：--location 内部跟随（仅事后校验终点，中间跳可被诱导打内网）→ 手动逐跳（每跳 assertHostPublic + 协议白名单 + 限速 + cookie 回放/捕获，-D 抓包解析 Status/Location/Set-Cookie，-- 防 URL 解析为选项）
-- got-scraping：每跳 cookie 回放/捕获覆盖成功/3xx 中间跳/429+5xx 错误页三条路径；Referer 优先显式来路
-- handleChapter 软 404 哨兵（HTTP 200+正文空+标题 404 特征，排除「第404章」数字巧合）；parseBody 1MB 请求体上限；/api/strategies 增 cookieSession 说明字段（向后兼容）
-- engine-client.ts 四封装（fetchBookPage/fetchListPage/fetchCatalogChapters/fetchChapter）增可选 referer 参数
-- 自验：单元级（cookies 边界/挑战检测/SSRF/字符集）+ 全链 E2E（:3031 临时实例 + fixture：cookie 门禁站二访放行/Referer 回显/软 404 识别）
-
-主控核验补充（23-main）：
-- 规范化语义 diff 逐行过目：SSRF 逐跳校验完整（含 curl 首跳）、cookie 边界严密、向后兼容零破坏
-- 实测揪出潜伏挂死 bug：got-scraping http2+TLS 握手停滞时 got 自身 timeout 选项失效 → 策略无限挂起（books.toscrape 404 页复现 >120s 无响应；历史测试全为 200 场景从未触发该路径）
-- 双层修复：①requestOnce 增 AbortSignal.timeout 真正中断底层 socket；②fetchPage 策略级硬闸 Promise.race（remaining+5s），任何策略不得挂死整链；修复后全链 23.67s 有界完成
-- worker 调用点接线（agent 报告建议、主控执行）：processBook 增 opts.referer（list 模式=当前列表页含翻页命中页）、fetchCatalogChapters/fetchChapter 传 bookUrl 作来路
-
-Stage Summary:
-- 反反爬四项增强：按主机 Cookie 会话（「首访种 cookie 二访放行」站点可过）/显式 Referer 链/挑战检测第 4 层（200 伪装）/软 404 质量哨兵
-- 引擎健壮性根治「单请求挂死整链」级 bug（got h2 timeout 失效场景），策略链时间预算重新变得可信
-- curl-impersonate SSRF 从「终点校验」升级为「逐跳校验」，与 fetch/got 同级对齐
-- API 契约零破坏（全部新参数可选+默认值），engine tsc 0 错误
-
----
-Task ID: 23-b
-Agent: worker-audit（网关超时阵亡，成果由主控逐行核验后补记）
-Task: worker/API/规则/清洗链路逐行深审修复
-
-Work Log:
-- worker.ts：修复书级失败语义——upsertBook 失败且 canceled=false（如空标题书）此前误走 canceledOutcome 停整任务 → 改为本书 failed、list 模式继续下一本；主控核验 runSingle（finalize failed）与 runList（failBooks++ 继续）对新失败形态消费正确
-- scrape-rules route：name/charset/enabled/notes 类型守卫（原非字符串输入触发 TypeError 500 → 显式 400）；charset 空串回退 utf-8；DELETE P2025 幂等成功 + 真实 DB 错误如实 500（不再虚报 ok）
-- clean-all route：章节 update 失败（瞬时锁）不再虚计入 cleaned 数量，下轮 dryRun 可复查
-- store.ts：sanitizeRuleMap 增 MAX_RULE_KEYS=60 / MAX_RULE_KEY_LEN=100 上界（防畸形输入撑爆规则 JSON）
-- 引擎侧 extract.ts（跨界写入已与 23-a 协调）：章节标题 <title> 兜底补 BOILERPLATE_TITLE_RE 过滤，防站标经 <title> 重新引入
-- content-clean.ts/clean.ts 核验：pattern 库经 22 批扩充后无新缺口
-- 全链实测：single 任务 success（书籍入库、失败语义正确），测试任务/书籍清理恢复种子态 41 书 812 章
-
-Stage Summary:
-- 修复 4 处真实缺陷：单本书拖垮整个 list 任务 / 非法输入 500 误报 / 删除失败虚报成功 / 规则 JSON 无键数上界
-- tsc/ESLint 0 错误，DB 种子态保持
-
----
-Task ID: 23-c
-Agent: ui-audit（网关超时阵亡，仅落地 1 处修复，剩余辖区由主控接管完成）
-Task: 前台主题 + 后台 UI 逐行深审修复
-
-Work Log:
-- agent 落地（主控核验确认）：huangjinwu Chapter 阅读设置条 flex-wrap + gap-x/gap-y（375px 视口溢出修复）
-- 主控接管完成走查：
-  - 反模式扫描：内部 <a href> 0；new Date()/Math.random() 仅限客户端主题组件（getFullYear 无年界水合风险）；localStorage 全部位于 effect/handler/模块级 store
-  - admin scrape 组件族：轮询 TanStack refetchInterval 且 LogDialog 跟随实时状态自停（非打开时快照）、useDialogEscape 统一 Esc、saving/creating/busyId/cleaning/seeding 防重守卫齐整
-  - use-novel-data：queryKey 集中 qk.* 管理、enabled 不参与 key（无幽灵缓存）；use-reader-prefs：useSyncExternalStore + 服务端快照规范
-  - pilishuwu 日期 useEffect 直写 DOM（规避 setState-in-effect lint 规则）；aijjxs todayStr 纯函数
-- 浏览器 E2E（主控执行）：首页/书页/目录/章节全链渲染 0 console/page errors；目录页最新 12 章=全书 idx 28→17 降序（卷重编号书《勇者辞职之后》逐条比对吻合）；章节页夜间场景 → reader-prefs-v1 写入+纸面取色 #26262b；reload 持久化 ✓（测后清键恢复）；后台采集中心 5 规则+引擎卡渲染、规则对话框新字段（catalogLinkSelector/excludeSelector）与 aijjxs 备注回显正确；前台+后台+对话框 375px 无横向溢出；页脚编辑卡在位
-
-Stage Summary:
-- UI 层经 4 轮专项（20-c/21/22/23-c）后仅剩 1 处 375px 溢出已修复；反模式扫描+浏览器实测双重确认无新缺陷
-- E2E 现场已还原（reader-prefs 清除、视口 1280×800、activeTheme=huangjinwu）
-
----
-Task ID: 23-main
-Agent: 主控（Z.ai Code）
-Task: 第九批（用户指令：继续待办+全面审查 / 多 agent 采集+反反爬逐行抓 bug / 清理精简）收尾
-
-Work Log:
-- 现场甄别：工作树 47 文件纯权限位噪声（644→755，沙箱会话恢复产物，git diff 0 ins/0 del），git checkout 归一；DB 种子态 41 书/812 章/4 启用规则确认；:3000/:3030 存活
-- 派发 23-a/b/c 三并行深审 agent（辖区互斥：引擎/worker+API/主题+UI）；Task 工具网关超时三 agent 全部阵亡——23-a/23-b 代码完整落地、23-c 落地 1 处；主控逐行核验全部 diff 并接管收尾（含代记 worklog）
-- 根治引擎级挂死 bug（got-scraping http2+TLS 停滞、got timeout 失效 → 全链无限挂起）：AbortSignal 硬中断 + fetchPage 策略硬闸双层防御；books.toscrape 404 全链实测 23.67s 有界完成（修复前 >120s 无响应）；诊断过程经 5 轮二分（raw fetch/guard/challenge/单策略/逐策略+插桩）
-- worker referer 链接线执行；引擎 start-stop-daemon 规程重启两次成功（注意 --startas 需 /usr/local/bin/bun 绝对路径）；/api/strategies cookieSession 字段生效确认
-- 全链 E2E：API 建 single 任务 → worker（referer 接线）→ 引擎（新代码）→ DB 入库 success；测试产物清理恢复种子态
-- dev.log「readonly database」定位为沙箱会话恢复期 db 文件短暂只读导致的浏览计数 fire-and-forget 噪音（GET 200 正常返回），当前写库全部正常，非应用缺陷
-- 终验：root+engine tsc、ESLint 全 0；浏览器全链 0 console/page errors；375px 无溢出
-
-Stage Summary:
-- 本批核心成果：①「单请求挂死整链」级引擎 bug 根治（逐行深审直接产出）②反反爬四项增强落地并实测③worker/API 4 处真实缺陷修复④采集全链三重验证（语义 diff/真实任务/浏览器）零回退
-- 运维备忘：Task 工具网关超时≠agent 立即死亡（以 git status/worklog 增量判断，勿急于重复派发）；孤儿 agent-browser Chrome 进程需 pkill 清理；got-scraping 的 timeout 选项在 h2 TLS 停滞下不可信，必须配合 AbortSignal
----
-Task ID: 24-b
-Agent: app-chain-audit
-Task: 主应用采集链路（worker/store/run-log/API routes/content-clean）逐行深审修复
-Work Log:
-- 逐行复读 worker.ts/store.ts/run-log.ts/api-utils.ts/types.ts + scrape、scrape-rules、scrape-tasks（含 [id]）、chapters/clean-all 全部 route + content-clean.ts，并只读参照 engine-client.ts、引擎 clean.ts、prisma schema
-- 【高优·新机制】僵尸任务恢复：worker 是 Next.js 进程内 fire-and-forget promise，进程重启后 DB 里 pending/running 任务永久卡死（无任何恢复机制）→ worker.ts 新增 recoverStaleTasks()：进程首次加载模块时把 createdAt < bootAt 且仍处 pending/running 的任务条件更新为 failed（message「服务重启，任务中断」+ 日志追加回收行，保留最近 100 行）；bootAt 挂 globalThis 跨 HMR 稳定，running Set 排除本进程在跑任务，条件 updateMany 防终态竞态
-- 【bug】running Set 挂 globalThis：原模块级 Set 在 dev HMR 重载 worker.ts 后归零，同一任务可被二次触发并发执行 → 共享实例修复（与 clean-all 路由既有模式一致）
-- 【加固】引擎载荷形态兜底：callEngine 直接 as 断言无 schema 校验，processBook 对 book.title/chapters/description/author/category/status/chapterCount 逐项类型兜底 + catalogRefs Array.isArray 守卫 + refs 过滤加 !!c（畸形载荷不再把整任务拖成「任务执行异常」）；store.ts upsertBook description 兜底空串
-- 【bug】processBook 取消点遗漏字数重算：章节循环中协作取消提前 return 时未调 recalcNovelWordCount，已入库章节使 novel.wordCount 滞后 → 取消路径补重算
-- 【bug】single 模式 total flush 返回值被忽略：任务记录被删后仍会多抓一章才停 → flush false 立即按「记录已删除」取消
-- 【健壮性】storeChapter idx 冲突从单次顺延重试扩为有界循环（共 5 次尝试）：并发双写同书会连锁占用连续序号，单次重试仍会失败
-- E2E 验证僵尸恢复：伪造 stale running(-2h)/stale pending(-1h)/fresh running(createdAt 置未来) 三任务 → 触发路由模块加载 → dev.log 出现「[scrape-worker] 僵尸任务回收: 2 条」，两条 stale 均变 failed 且日志含回收行，fresh 任务不动（bootAt 守卫生效）、真实 success 任务不动；测后删除测试任务恢复种子态（41 书/812 章/5 规则/1 任务）
-- 核查无问题项：run-log 日志上界（100 行×500 字符，lines 截断无泄漏）；content-clean ReDoS（全部规则受 SHORT_LINE_MAX=30 门控，URL_LINE 域名分支无嵌套歧义，最坏 O(n²)·n≤30 无风险）；全角空格/NBSP/BOM 由 LEADING_INDENT+\s 折叠+trim 三重覆盖；scrape-tasks GET 分页上限（page≤1000/pageSize≤50、NaN||1 兜底）；PATCH cancel 条件更新防竞态、DELETE running 409/pending 安全删、[id] params 为 Promise（Next 16 契约）；$executeRaw 兜底已移除无 SQL 注入面；clean-all globalThis 互斥 + update 失败不虚计；Novel←Chapter onDelete: Cascade 级联完整；scrape proxy GET/POST 子路由白名单
-Stage Summary:
-- 新增僵尸任务恢复机制（本批核心：重启后 pending/running 卡死从「永久」变「自动回收为 failed」），修复 running Set HMR 归零双跑隐患；4 处精准修复/加固（取消点字数重算、total flush 返回值、引擎载荷形态兜底、idx 冲突有界重试）
-- 与引擎侧（24-a）同步核查：content-clean.ts 与 engine clean.ts 两份 NOISE_PATTERNS/归一化逐字符一致（无不同步）；遗留一处两侧可协同的小缺口——零宽字符（U+200B-200D）不在 LEADING_INDENT/trim 内，行首零宽字符会残留入库（仅影响 wordCount 计数 ±1，建议两侧行首类同步补 \u200b-\u200d）
-- 验证：npx tsc --noEmit 0 错误；bun run lint 0 错误（期间一次失败系 24-a 正在写引擎 curl-impersonate.ts 的瞬时读档，稍后复跑即 0，24-b 辖区 scoped eslint 亦独立确认 0）；不 commit
----
----
-Task ID: 24-a
-Agent: engine-deep（网关超时阵亡，成果由主控逐行核验后补记）
-Task: 采集引擎逐行深审 + 反反爬能力增强（第二批）
-
-Work Log:
-- 逐行深审 strategies 11 文件 + extract 4 文件 + handlers/index，落地约 460 行改动，主控逐行语义核验通过
-- 【新模块 host-health.ts】按主机健康度记忆：①429/503 限流记忆——下次抓取链开始前主动退避一拍（Retry-After 优先，指数增长 2s 起步上界 15s，成功清零），把「每请求都吃 429」死循环变「退避一拍通过」；②连败熔断——连续 3 次整链失败进入熔断快速结构化失败（冷却 60s 起指数上界 10min，半开自动恢复，成功复位），防死站/强反爬站拖成长尾；LRU 上界 256；显式指定 strategy 跳过熔断（尊重人工调试）
-- 【got-scraping 重大修复】旧实现聚合结果恒返 status:0 → 策略链的 429/5xx 退避与 Retry-After 尊重对 got-scraping 永不生效；修复为传播最后真实 HTTP 状态；并修正 429/5xx 后继续降级 http1.1 多打一发的刺激性问题（状态码失败立即停梯子）；Retry-After 在 throwHttpErrors:false 正常路径同样解析
-- 【预算穿透修复】fetchPage 在 acquireDomainSlot 限速排队前取 remaining → 同主机并发排队数秒后按旧值放行穿透 55s 链预算；改为排队后重算（排队后不足 1.5s 记 budget-exhausted）
-- 【硬闸收紧】策略硬闸余量 5s→2.5s：预算 55s 时链尾最坏结束 57.5s，始终早于 engine-client 60s 中断（旧值正好相撞）
-- 【反反爬增强】①JA3 指纹轮换：多 curl-impersonate 二进制（chrome/ff/edge 系）轮转调度，每次请求不同 TLS 指纹；②请求头顺序随机化 humanizeHeaderOrder（UA 锚定首位，其余 Fisher-Yates 抖动；h2 传输层会规整大小写故不做混合大小写伪装；curl-impersonate 不适用——其价值在精确复刻头序）
-- 【挑战检测补盲区】国产 WAF JS 计算 cookie 挑战壳 token（acw_sc__v2/__jsl_clearance/__jsluid/yunsuo_session_verify/wzws_cid）入第一层强特征；第二层新增「document.cookie= + 原地 reload」双半特征判定（阿里云盾/加速乐型 200 伪装壳，两特征同时命中+近空正文才判，真实页面不误伤）
-- 【SSRF/请求体】curl-impersonate/http 跨域重定向跳逐跳限速对齐；chunked/无 Content-Length 请求体流式限量读取（旧实现 req.json() 无上限，1MB 封顶超限即断）
-- 【信息泄漏】500 错误 detail 中绝对路径统一抹除（/home|/root|/tmp 等 → [path]）；GET /api/strategies 增 hostHealth 说明字段（向后兼容）
-- 【extract 修复】removeExcluded 双重调用虚假「无命中」警告修复（extractChapterRefs 不再重复调用）
-- 引擎重启加载新代码后实测：正常页两连抓 success（affinity 记忆生效）、404 场景 39s 有界完成、全链 single 任务（worker→新引擎→DB）success、/api/strategies hostHealth 字段上线
-
-Stage Summary:
-- 反反爬第二阶段增强：主机健康度记忆（限流退避+连败熔断）/JA3 轮换/头序随机化/国产 WAF 挑战壳检测，全部为「对目标站更客气 + 自保护」方向，零绕过行为
-- 修复 got-scraping 退避失效、预算穿透、chunked 请求体无上限三处真实缺陷；错误响应路径脱敏
-- API 契约零破坏（全部追加字段可选）
-
----
-Task ID: 24-c
-Agent: ui-slim-audit（网关超时阵亡，成果由主控逐行核验后补记）
-Task: 前台主题 + 后台 UI 逐行深审 + 死代码清理精简
-
-Work Log:
-- 【死代码清理 -5300 行】删除 38 个未使用 shadcn/ui 基础组件（accordion/alert-dialog/avatar/breadcrumb/calendar/card/carousel/chart/checkbox/command/drawer/dropdown-menu/form/hover-card/menubar/pagination/popover/scroll-area/separator/sheet/sidebar/skeleton/slider/tabs/toast/toaster/toggle/tooltip 等）+ use-mobile.ts + use-toast.ts；保留 12 个实际使用组件（badge/button/dialog/input/label/progress/radio-group/select/sonner/switch/table/textarea）；删除后全量 tsc 0 错误证实零残留引用
-- 【panels.tsx 精简 1047→919 行】重复模式整合（不改变 JSX 结构语义与样式类名）；admin/scrape 组件族 NewTaskCard/RuleDialog/RulesCard/TasksCard/shared 同步清理
-- 【共享偏好提升】aijjxs 内联 INKS 字色预设提升为 use-reader-prefs.ts 共享 READER_INKS 导出（同值同标签行为等价）
-- 【阅读设置补齐】x2552 Chapter 阅读设置条补齐「字色」选择（原来缺项），10 主题阅读设置能力面完全对齐（字号/行距/字体/字色/背景）
-- 【主题一致性走查】内部导航 <a href> 反模式 0；目录页最新章节 slice(-12).reverse() 口径 10/10；footerConfig 接入 10/10
-- 浏览器 E2E：首页/书页/目录/章节全链 0 console/page errors；目录页最新章节=全书 idx 28→17 降序；章节页阅读设置含字色；后台采集中心 5 规则渲染正常；桌面+375px 双视口无横向溢出；footer 正常渲染
-
-Stage Summary:
-- 代码体量净减约 4800 行（5300 删 - 500 增），工程显著精简且零行为回归（tsc/ESLint/浏览器三重验证）
-- 阅读设置能力面 10 主题完全对齐；共享常量去重（READER_INKS）
-- 产物：删除 38 死组件 + 2 死 hooks；panels.tsx -128 行；use-reader-prefs.ts 增 READER_INKS
----
-Task ID: 25
-Agent: 主控（Z.ai Code）
-Task: 用户报告——trxsw 主题分类页文字溢出修复
-
-Work Log:
-- 浏览器实测定位（PATCH activeTheme=trxsw 临时切换）：桌面 1280px 分类页 BookRow 六列数据行 scrollWidth 776 > clientWidth 724，溢出 52px 戳出 Block 边框；375px 移动端 clean
-- 根因：BookRow 桌面列定义 md:grid-cols-[18%_46%_13%_8%_9%_6%] 百分比总和恰为 100%，叠加 gap-x-3（5×12px=60px）总宽必超容器；且表头（无 gap）与数据行（有 gap）列位错开 60px，六列表格整体错位
-- 修复（ui.tsx BookRow + index.tsx 分类/搜索两处表头）：列定义改 minmax(0,18fr)_minmax(0,46fr)_minmax(0,13fr)_minmax(0,8fr)_minmax(0,9fr)_minmax(0,6fr)——fr 按比例分配减去 gap 后的剩余空间，任意宽度零溢出且比例与原 18/46/13/8/9/6 完全一致；表头补 md:gap-x-3 与数据行列位精确对齐；minmax(0,·) 同时根治 fr 的 auto-min 撑破问题（超长 CJK 标题下 truncate 生效）
-- 顺手加固同类隐患（其余 9 主题全量扫描「百分比/fr 列+gap」反模式，无溢出 bug 但存在 1fr auto-min 风险）：ggd66 UpdateRow 72px/75px/165px 系列与 73%+1fr 双栏、pilishuwu UpdateRow/BookRow（70px_1fr_1.3fr_76px_64px 与 1.1fr_1.3fr_74px_56px_66px_38px）全部改 minmax(0,·)
-- 浏览器三档复测：1280/768/375 真实溢出 0（唯一检出为设计意图的分类横滑条 overflow-x-auto）；表头与数据行六列起点像素级一致（387,516,826,922,986,1056，右缘均 1103）；桌面截图视觉确认六列表格整齐；0 console/page errors
-- 现场恢复：activeTheme 还原 ggd66；tsc/ESLint 0 错误
-
-Stage Summary:
-- trxsw 分类/搜索两处六列表格溢出从机制上根治（fr 弹性分配替代百分比总和+gap 的必然溢出），表头/数据行列位像素级对齐
-- 其余主题 5 处 1fr auto-min 隐患同步加固，全站 grid 列定义再无「百分比总和 100%+gap」与裸 fr 反模式
+- 本轮 5 项用户要求全部落地：① 采集限制全部取消（1955 章实证）② 任务可编辑+重跑+起始页 ③ 多任务/多书/多章三级并行（3 任务同时运行实证）④ 反反爬工具链评估+stealth 加固落地 ⑤ 采集时 multi-search-engine 取词→绑定书籍→PSEO 书籍页全链路（10 词页实证）

@@ -1,6 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import { useCategories, useSettings } from '@/hooks/use-novel-data'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+import { TradToggle } from '@/components/theme-tools/TradToggle'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
 import { Book, Category, Chapter, Home, Search, Toc } from './views'
 
@@ -9,6 +13,8 @@ import { Book, Category, Chapter, Home, Search, Toc } from './views'
 function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const { data: cats } = useCategories()
   const { data: settings } = useSettings()
+  const [histOpen, setHistOpen] = useState(false)
+  const { promptFavorite, shortcut } = useFavoriteSite()
   const footerCfg = settings?.footer
 
   const items: { label: string; view: ThemeView; active: boolean }[] = [
@@ -58,9 +64,25 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
             ))}
           </nav>
           <div className="hidden items-center gap-2 text-[13px] text-white/85 md:flex">
-            <span>手机版</span>
+            <button
+              type="button"
+              onClick={() => setHistOpen(true)}
+              title="查看最近读过的章节"
+              className="cursor-pointer transition-colors duration-200 hover:text-white"
+            >
+              阅读记录
+            </button>
             <span className="opacity-50">|</span>
-            <span>电脑版</span>
+            <button
+              type="button"
+              onClick={promptFavorite}
+              title={`按 ${shortcut} 也可收藏本站`}
+              className="cursor-pointer transition-colors duration-200 hover:text-white"
+            >
+              收藏本站
+            </button>
+            <span className="opacity-50">|</span>
+            <TradToggle className="hover:text-white" />
           </div>
         </div>
         {/* 移动端第二行导航 */}
@@ -90,6 +112,27 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
 
       {/* 绿底页脚 */}
       <footer className="mt-5 bg-[#56ccb5] py-[10px] text-center text-[14px] leading-[22px] text-white shadow-[0_-1px_1px_rgba(0,0,0,0.06)]">
+        <p className="flex flex-wrap items-center justify-center gap-x-3 px-4">
+          <button
+            type="button"
+            onClick={() => setHistOpen(true)}
+            className="cursor-pointer underline-offset-2 transition-colors hover:underline"
+            title="查看最近读过的章节"
+          >
+            阅读记录
+          </button>
+          <span className="opacity-60">|</span>
+          <button
+            type="button"
+            onClick={promptFavorite}
+            className="cursor-pointer underline-offset-2 transition-colors hover:underline"
+            title="把本站加入浏览器收藏夹"
+          >
+            收藏本站
+          </button>
+          <span className="opacity-60">|</span>
+          <TradToggle className="underline-offset-2 hover:underline" />
+        </p>
         <p className="hidden sm:block">{footerCfg?.extra || '本站为结构级主题模板演示，页面布局风格仿 ggd66.com，内容均为演示数据'}</p>
         <p className="hidden sm:block">
           {footerCfg?.text || `© ${new Date().getFullYear()} ${siteName} · 仅用于前端学习与技术交流`}
@@ -104,6 +147,13 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
           </p>
         )}
       </footer>
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#1abc9c"
+      />
     </div>
   )
 }

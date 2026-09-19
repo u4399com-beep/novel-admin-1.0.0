@@ -1,35 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { sanitizeKeyword } from '@/lib/suggest'
-import type { PseoPageData, NovelListItem } from '@/lib/types'
+import { getGeneratedPseoPage, getNovelRowById, matchNovels, toListItem } from '@/lib/pseo'
+import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 type Ctx = { params: Promise<{ kw: string }> }
-
-function toItem(r: {
-  id: number; title: string; author: string; description: string; cover: string; categoryId: number
-  category: { name: string } | null; status: string; isFeatured: boolean; isHot: boolean
-  wordCount: number; clicks: number; updatedAt: Date
-  _count: { chapters: number }; chapters: { title: string }[]
-}): NovelListItem {
-  return {
-    id: r.id, title: r.title, author: r.author, description: r.description, cover: r.cover,
-    categoryId: r.categoryId, categoryName: r.category?.name ?? '未分类',
-    status: r.status === 'finished' ? 'finished' : 'serial',
-    isFeatured: r.isFeatured, isHot: r.isHot, wordCount: r.wordCount, clicks: r.clicks,
-    chapterCount: r._count.chapters, lastChapterTitle: r.chapters[0]?.title ?? null,
-    updatedAt: r.updatedAt.toISOString(),
-  }
-}
-
-const fullSelect = {
-  id: true, title: true, author: true, description: true, cover: true, categoryId: true,
-  category: { select: { name: true } }, status: true, isFeatured: true, isHot: true,
-  wordCount: true, clicks: true, updatedAt: true,
-  _count: { select: { chapters: true } },
-  chapters: { orderBy: { idx: 'desc' as const }, take: 1, select: { title: true } },
-} as const
 
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { kw: rawKw } = await params
@@ -43,45 +19,28 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   const keyword = sanitizeKeyword(decoded)
   if (!keyword) return NextResponse.json({ error: '关键词不能为空' }, { status: 400 })
 
-  const row = await db.pseoKeyword.findUnique({ where: { keyword } })
+  // 优先使用已生成的聚合数据（pageData 损坏/未生成时返回 null → 实时计算）
+  const page = await getGeneratedPseoPage(keyword)
+  if (page) return NextResponse.json(page)
 
-  // 优先使用已生成的聚合数据
-  if (row?.status === 'generated' && row.pageData) {
-    try {
-      const saved = JSON.parse(row.pageData) as { novelIds: number[]; title: string; description: string; keywords: string }
-      const novels = await db.novel.findMany({
-        where: { id: { in: saved.novelIds } },
-        orderBy: { clicks: 'desc' },
-        select: fullSelect,
-      })
-      const data: PseoPageData = {
-        keyword,
-        novels: novels.map(toItem),
-        generatedTitle: saved.title,
-        generatedDescription: saved.description,
-        generatedKeywords: saved.keywords,
-      }
-      return NextResponse.json(data)
-    } catch { /* 落入实时计算 */ }
-  }
-
-  // 实时计算
-  const parts = keyword.split(/\s+/).filter(Boolean)
-  const or = parts.flatMap((p) => [
-    { title: { contains: p } },
-    { author: { contains: p } },
-    { description: { contains: p } },
-    { category: { is: { name: { contains: p } } } },
-  ])
-  let novels = await db.novel.findMany({ where: { OR: or }, orderBy: { clicks: 'desc' }, take: 12, select: fullSelect })
-  if (novels.length < 3) {
-    novels = await db.novel.findMany({ orderBy: { clicks: 'desc' }, take: 12, select: fullSelect })
+  // 实时计算（命中不足 3 本由 matchNovels 用热门书垫底补位，聚合页永不空窗）
+  const kwRow = await db.pseoKeyword.findUnique({ where: { keyword }, select: { novelId: true } })
+  const novels = await matchNovels(keyword)
+  // 关键词绑定了书籍但页面未生成/pageData 损坏：绑定书强制排第一（列表已有则移到首位，否则补插）
+  const boundId = kwRow?.novelId
+  if (boundId != null) {
+    const at = novels.findIndex((n) => n.id === boundId)
+    if (at > 0) novels.unshift(...novels.splice(at, 1))
+    else if (at === -1) {
+      const bound = await getNovelRowById(boundId)
+      if (bound) novels.unshift(bound)
+    }
   }
   const setting = await db.siteSetting.findUnique({ where: { id: 1 } })
   const siteName = setting?.siteName ?? '青阅文学'
-  const data: PseoPageData = {
+  const data = {
     keyword,
-    novels: novels.map(toItem),
+    novels: novels.map(toListItem),
     generatedTitle: `${keyword}小说推荐_关于${keyword}的小说 - ${siteName}`,
     generatedDescription: `${siteName}为您精选与“${keyword}”相关的小说合集，包含 ${novels.length} 本热门作品，在线免费阅读。`,
     generatedKeywords: `${keyword},${keyword}小说,${keyword}推荐`,

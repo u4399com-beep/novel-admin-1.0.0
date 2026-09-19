@@ -20,6 +20,8 @@ export interface BookRule {
   categorySelector?: string
   chapterLinkSelector?: string
   chapterTitleSelector?: string
+  /** 分卷标题选择器：目录容器内卷头元素（如 #list dl dt）；未配置时用内置启发式（dt/卷名模式） */
+  volumeSelector?: string
   /** 目录页链接选择器：书页仅含最新几章时，指向完整目录页（如 a.catalog-more）；命中后 worker 会二次抓取目录页提取全部章节 */
   catalogLinkSelector?: string
   /** 排除选择器：提取前先从 DOM 移除命中节点（如全站站标 h1.logo、搜索框），多备用逗号分隔 */

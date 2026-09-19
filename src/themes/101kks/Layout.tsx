@@ -11,14 +11,19 @@ import {
   CheckCircle2,
   Clock3,
   Flame,
+  History,
   Home,
   Library,
   Menu,
   Search,
+  Star,
   UserRound,
   X,
 } from 'lucide-react'
 import { useCategories, useSettings } from '@/hooks/use-novel-data'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+import { TradToggle } from '@/components/theme-tools/TradToggle'
 import { cn } from '@/lib/utils'
 import type { ThemeLayoutProps, ThemeView } from '../types'
 import { Container, setCategoryIntent } from './ui'
@@ -69,8 +74,10 @@ const NAV: NavItem[] = [
 export function KksLayout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const [q, setQ] = useState('')
   const [drawer, setDrawer] = useState(false)
+  const [histOpen, setHistOpen] = useState(false)
   const { data: categories } = useCategories()
   const { data: settings } = useSettings()
+  const { promptFavorite } = useFavoriteSite()
   const footerCfg = settings?.footer
   const drawerRef = useRef<HTMLDivElement>(null)
 
@@ -90,8 +97,11 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
     return () => document.removeEventListener('mousedown', onDown)
   }, [drawer])
 
-  // 正文页：独立沉浸式阅读容器（隐藏顶栏 / 公告条 / 页脚）
-  if (view.name === 'chapter') return <>{children}</>
+  // 正文页：独立沉浸式阅读容器（隐藏顶栏 / 公告条 / 页脚）；仍保留阅读记录写入
+  if (view.name === 'chapter')
+    return (
+        <>{children}</>
+    )
 
   const goCategory = (intent: Parameters<typeof setCategoryIntent>[0]) => {
     setCategoryIntent(intent)
@@ -167,6 +177,16 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
                 </button>
               )
             })}
+            {/* 足跡（阅读记录） */}
+            <button
+              type="button"
+              title="閱讀足跡：查看最近讀過的章節"
+              onClick={() => setHistOpen(true)}
+              className="flex cursor-pointer items-center gap-1.5 px-3.5 text-[15px] transition-colors hover:bg-white hover:text-[#1f6cb2]"
+            >
+              <History className="h-4 w-4" />
+              足跡
+            </button>
           </nav>
 
           {/* 头像 */}
@@ -232,6 +252,32 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
                   </button>
                 ))}
               </div>
+              <div className="mt-3 border-t border-black/10 pt-3">
+                <p className="px-3 pb-1 text-xs text-[#888]">站點工具</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrawer(false)
+                    setHistOpen(true)
+                  }}
+                  className="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-[3px] px-3 text-sm text-[#333] transition-colors hover:bg-[#e8f4ff] hover:text-[#1f6cb2]"
+                >
+                  <History className="h-4 w-4 text-[#1f6cb2]" />
+                  閱讀記錄
+                </button>
+                <button
+                  type="button"
+                  onClick={promptFavorite}
+                  className="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-[3px] px-3 text-sm text-[#333] transition-colors hover:bg-[#e8f4ff] hover:text-[#1f6cb2]"
+                >
+                  <Star className="h-4 w-4 text-[#1f6cb2]" />
+                  收藏本站
+                </button>
+                <div className="flex h-10 w-full items-center gap-2.5 rounded-[3px] px-3 text-sm text-[#333] transition-colors hover:bg-[#e8f4ff] hover:text-[#1f6cb2]">
+                  <span className="flex h-4 w-4 items-center justify-center text-[13px] font-bold text-[#1f6cb2]">繁</span>
+                  <TradToggle native="t" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -269,6 +315,18 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
           <button type="button" onClick={() => navigate({ name: 'home' })} className="cursor-pointer hover:text-[#06c]">
             首頁
           </button>
+          <button
+            type="button"
+            onClick={() => setHistOpen(true)}
+            className="cursor-pointer hover:text-[#06c]"
+            title="查看最近讀過的章節"
+          >
+            閱讀記錄
+          </button>
+          <button type="button" onClick={promptFavorite} className="cursor-pointer hover:text-[#06c]">
+            收藏本站
+          </button>
+          <TradToggle native="t" className="hover:text-[#06c]" />
           {(footerCfg?.links ?? []).map((lk) => (
             <a
               key={`${lk.label}-${lk.href}`}
@@ -294,6 +352,13 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
           )}
         </p>
       </footer>
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#1f6cb2"
+      />
     </div>
   )
 }

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { cn } from '@/lib/utils'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView } from '../types'
@@ -70,9 +71,12 @@ export function Cover({
   charClass?: string
 }) {
   return (
-    <div className={cn('flex shrink-0 items-center justify-center overflow-hidden', className)}>
+    <div className={cn('relative flex shrink-0 items-center justify-center overflow-hidden', className)}>
+      <NovelCoverImg novel={novel} />
       <div className={cn('flex h-full w-full items-center justify-center', coverBgClass(novel.cover))}>
-        <span className={cn('select-none font-bold text-white/90', charClass)}>{firstChar(novel.title)}</span>
+        {!isLocalCover(novel.cover) && (
+          <span className={cn('select-none font-bold text-white/90', charClass)}>{firstChar(novel.title)}</span>
+        )}
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useChapters, useNovel } from '@/hooks/use-novel-data'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import type { ViewProps } from '../types'
 import { Cover, ErrBlock, Sk, SkRows, fmtDate, fmtNum, fmtWords } from './parts'
 
@@ -119,6 +120,8 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
         <p className="mx-3 border-t border-dashed border-[#a6d3e8] py-2 text-[13px] leading-[22px] text-[#555] [text-indent:2em]">
           {n.description || '暂无简介'}
         </p>
+        {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+        <BookSuggestLinks keywords={n.suggestKeywords} className="mx-3 border-t border-dashed border-[#a6d3e8] py-2" />
       </section>
 
       {/* 最新章节：dl 卷头 + dd 三栏（33%） */}

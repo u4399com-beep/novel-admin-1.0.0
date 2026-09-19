@@ -1,8 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronLeft, Menu, Search as SearchIcon, X } from 'lucide-react'
+import { ChevronLeft, History, Languages, Menu, Search as SearchIcon, Star, X } from 'lucide-react'
 import { useCategories, useSettings } from '@/hooks/use-novel-data'
+import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+import { TradToggle } from '@/components/theme-tools/TradToggle'
 import { cn } from '@/lib/utils'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
 import { Category, Book, Chapter, Home, Search, Toc } from './views'
@@ -102,8 +105,10 @@ function SearchForm({
 
 function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
   const [drawer, setDrawer] = useState(false)
+  const [histOpen, setHistOpen] = useState(false)
   const menu = useMenuItems(view)
   const { data: settings } = useSettings()
+  const { promptFavorite } = useFavoriteSite()
   const footerCfg = settings?.footer
   const isHome = view.name === 'home'
 
@@ -146,6 +151,33 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
             <SearchForm navigate={navigate} className="w-[220px] lg:w-[250px]" />
           </div>
 
+          {/* 站点工具（阅读/收藏/简繁） */}
+          <div className="hidden items-center gap-0.5 md:flex">
+            <button
+              aria-label="阅读记录"
+              title="阅读记录：查看最近读过的章节"
+              onClick={() => setHistOpen(true)}
+              className="cursor-pointer rounded-lg p-2 text-[#64748b] transition-colors duration-200 hover:bg-[#e8f1ff] hover:text-[#2563eb]"
+            >
+              <History size={19} />
+            </button>
+            <button
+              aria-label="收藏本站"
+              title="把本站加入浏览器收藏夹"
+              onClick={promptFavorite}
+              className="cursor-pointer rounded-lg p-2 text-[#64748b] transition-colors duration-200 hover:bg-[#e8f1ff] hover:text-[#2563eb]"
+            >
+              <Star size={19} />
+            </button>
+            <div
+              title="全站简繁切换"
+              className="flex cursor-pointer items-center rounded-lg p-2 text-[13px] text-[#64748b] transition-colors duration-200 hover:bg-[#e8f1ff] hover:text-[#2563eb]"
+            >
+              <Languages size={19} />
+              <TradToggle className="ml-1" />
+            </div>
+          </div>
+
           {/* 移动端汉堡 */}
           <button
             aria-label="打开菜单"
@@ -182,6 +214,30 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
                 </button>
               </span>
             ))}
+            <span className="flex items-center gap-2">
+              <span className="text-[#94a3b8]">|</span>
+              <button
+                onClick={() => setHistOpen(true)}
+                className="cursor-pointer transition-colors duration-200 hover:text-[#2563eb]"
+                title="查看最近读过的章节"
+              >
+                阅读记录
+              </button>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-[#94a3b8]">|</span>
+              <button
+                onClick={promptFavorite}
+                className="cursor-pointer transition-colors duration-200 hover:text-[#2563eb]"
+                title="把本站加入浏览器收藏夹"
+              >
+                收藏本站
+              </button>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-[#94a3b8]">|</span>
+              <TradToggle className="hover:text-[#2563eb]" />
+            </span>
             {(footerCfg?.links ?? []).map((lk) => (
               <span key={`${lk.label}-${lk.href}`} className="flex items-center gap-2">
                 <span className="text-[#94a3b8]">|</span>
@@ -224,10 +280,43 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
                   className="w-full text-left"
                 />
               ))}
+              <div className="mt-2 flex flex-col gap-1 border-t border-[#dbe4f0] pt-2">
+                <button
+                  onClick={() => {
+                    setDrawer(false)
+                    setHistOpen(true)
+                  }}
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[15px] text-[#1e293b] transition-colors duration-200 hover:bg-[#e8f1ff] hover:text-[#2563eb]"
+                >
+                  <History size={18} className="text-[#2563eb]" />
+                  阅读记录
+                </button>
+                <button
+                  onClick={() => {
+                    setDrawer(false)
+                    promptFavorite()
+                  }}
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-[15px] text-[#1e293b] transition-colors duration-200 hover:bg-[#e8f1ff] hover:text-[#2563eb]"
+                >
+                  <Star size={18} className="text-[#2563eb]" />
+                  收藏本站
+                </button>
+                <div className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[15px] text-[#1e293b] transition-colors duration-200 hover:bg-[#e8f1ff] hover:text-[#2563eb]">
+                  <Languages size={18} className="text-[#2563eb]" />
+                  <TradToggle />
+                </div>
+              </div>
             </nav>
           </aside>
         </div>
       )}
+
+      <HistoryPanel
+        open={histOpen}
+        onClose={() => setHistOpen(false)}
+        navigate={navigate}
+        accent="#2563eb"
+      />
     </div>
   )
 }

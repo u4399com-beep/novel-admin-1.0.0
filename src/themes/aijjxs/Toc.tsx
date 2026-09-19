@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useChapters, useNovel } from '@/hooks/use-novel-data'
+import { TocChapters } from '@/components/toc-chapters'
 import { cn } from '@/lib/utils'
 import type { ViewProps } from '../types'
 import { ErrBlock, fmtDate, fmtWords, readMarkGet, SkRows } from './parts'
@@ -93,24 +94,25 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
         </div>
       )}
 
-      {/* 章节 3 列网格（≤640px 1 列 / ≥1024px 3 列） */}
+      {/* 章节 3 列流式分栏（columns 列优先：阅读顺序自上而下；≤640px 1 列 / ≥1024px 3 列） */}
       {raw.length === 0 ? (
         <p className="py-10 text-center text-[14px] text-[#8b98a4]">暂无章节，稍后再来看看。</p>
       ) : (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
-              className={cn(
-                'cursor-pointer truncate rounded-[8px] border border-[#d9dfe5] bg-white px-3 py-2 text-left text-[13px] transition-colors hover:border-[#1f8b4c] hover:text-[#1f8b4c]',
-                readSet.has(c.id) ? 'text-[#9aa4ad]' : 'text-[#1f2d3d]'
-              )}
-              title={c.title}
-            >
-              {c.idx}. {c.title}
-            </button>
-          ))}
+        <div className="mt-4">
+          <TocChapters
+            chapters={list}
+            navigate={navigate}
+            columnsClassName="columns-1 gap-x-2 sm:columns-2 lg:columns-3"
+            itemClassName={(c) =>
+              cn(
+                'mb-2 rounded-[8px] border border-[#d9dfe5] bg-white px-3 py-2 text-[13px] transition-colors hover:border-[#1f8b4c] hover:text-[#1f8b4c]',
+                readSet.has(c.id) ? 'text-[#9aa4ad]' : 'text-[#1f2d3d]',
+              )
+            }
+            renderItem={(c) => `${c.idx}. ${c.title}`}
+            volumeClassName="mb-2 rounded-[8px] bg-[#eef7f0] px-3 py-2 text-[14px] font-bold text-[#1f8b4c]"
+            countClassName="text-[12px] text-[#8b98a4]"
+          />
         </div>
       )}
 

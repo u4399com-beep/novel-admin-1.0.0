@@ -1,9 +1,21 @@
 /** 字数/时间等展示格式化工具 */
 
+/** 一位小数并去掉无意义的 .0（250.0 → 250，123.4 保留） */
+function trim1(n: number): string {
+  return n.toFixed(1).replace(/\.0$/, '')
+}
+
+/**
+ * 字数展示格式化：
+ * - 防御非法输入（NaN/负数/Infinity → "0"），非整数向下取整；
+ * - ≥1亿 → x.x亿、≥1万 → x.x万（去尾 .0）、其余千分位（3,200）。
+ */
 export function formatWordCount(n: number): string {
-  if (n >= 10000_0000) return (n / 10000_0000).toFixed(1) + '亿'
-  if (n >= 10000) return (n / 10000).toFixed(1) + '万'
-  return String(n)
+  if (!Number.isFinite(n) || n <= 0) return '0'
+  const v = Math.floor(n)
+  if (v >= 10000_0000) return trim1(v / 10000_0000) + '亿'
+  if (v >= 10000) return trim1(v / 10000) + '万'
+  return v.toLocaleString('en-US')
 }
 
 export function formatDate(iso: string): string {

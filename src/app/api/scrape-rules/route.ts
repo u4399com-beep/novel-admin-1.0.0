@@ -5,6 +5,11 @@ import { safeParseRule, sanitizeRuleMap } from '@/lib/scrape/store'
 
 export const dynamic = 'force-dynamic'
 
+/** Prisma 错误消息首行（不含调用点源码路径，避免泄露服务器内部路径） */
+function firstLine(e: unknown): string {
+  return (e instanceof Error ? e.message : String(e)).split('\n')[0].slice(0, 200)
+}
+
 // GET 采集规则列表
 export async function GET() {
   const rows = await db.scrapeRule.findMany({ orderBy: { id: 'asc' } })
@@ -15,6 +20,7 @@ export async function GET() {
       siteUrl: r.siteUrl,
       enabled: r.enabled,
       charset: r.charset,
+      proxy: r.proxy,
       listRule: safeParseRule(r.listRule),
       bookRule: safeParseRule(r.bookRule),
       chapterRule: safeParseRule(r.chapterRule),
@@ -31,10 +37,33 @@ interface SaveBody {
   siteUrl?: string
   enabled?: boolean
   charset?: string
+  proxy?: string
   listRule?: Record<string, string>
   bookRule?: Record<string, string>
   chapterRule?: Record<string, string>
   notes?: string
+}
+
+/** 站点级出口代理解析：空串/null/undefined → ''（直连）；支持逗号分隔多个（故障轮换）；非法形态 → error */
+function parseProxyField(raw: unknown): { value: string } | { error: string } {
+  if (raw === undefined || raw === null || raw === '') return { value: '' }
+  if (typeof raw !== 'string') return { error: 'proxy 必须是字符串' }
+  const s = raw.trim()
+  if (!s) return { value: '' }
+  if (s.length > 1024) return { error: 'proxy 过长（上限 1024 字符）' }
+  const parts = s.split(',').map((p) => p.trim()).filter(Boolean)
+  for (const p of parts) {
+    try {
+      const u = new URL(p)
+      if (!['http:', 'https:', 'socks5:', 'socks5h:', 'socks4:'].includes(u.protocol)) {
+        return { error: 'proxy 仅支持 http/https/socks5/socks5h/socks4 形态（如 socks5h://127.0.0.1:1080）' }
+      }
+      if (!u.host) return { error: 'proxy 缺少主机地址' }
+    } catch {
+      return { error: `proxy 形态非法（${p.slice(0, 40)}；示例：socks5h://user:pass@host:port，多个用英文逗号分隔）` }
+    }
+  }
+  return { value: parts.join(',') }
 }
 
 async function handleSave(body: SaveBody | null): Promise<NextResponse> {
@@ -55,6 +84,8 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
   }
   const site = parseHttpUrl(body.siteUrl, 'siteUrl', 200)
   if (!site.ok) return NextResponse.json({ error: site.message }, { status: 400 })
+  const proxy = parseProxyField(body.proxy)
+  if ('error' in proxy) return NextResponse.json({ error: proxy.error }, { status: 400 })
 
   if (body.id !== undefined && (typeof body.id !== 'number' || !Number.isInteger(body.id) || body.id <= 0)) {
     return NextResponse.json({ error: '无效 id' }, { status: 400 })
@@ -67,6 +98,7 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
     charset: (typeof body.charset === 'string' && body.charset.trim() ? body.charset : 'utf-8')
       .toLowerCase()
       .slice(0, 32),
+    proxy: proxy.value,
     listRule: JSON.stringify(sanitizeRuleMap(body.listRule)),
     bookRule: JSON.stringify(sanitizeRuleMap(body.bookRule)),
     chapterRule: JSON.stringify(sanitizeRuleMap(body.chapterRule)),
@@ -83,7 +115,7 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
     // 更新不存在的规则（P2025）应返回 404 而非 500
     const code = e instanceof Error ? (e as { code?: string }).code : ''
     if (code === 'P2025') return NextResponse.json({ error: '规则不存在' }, { status: 404 })
-    const msg = e instanceof Error ? e.message : 'unknown'
+    const msg = firstLine(e)
     const conflict = /unique|constraint/i.test(msg)
     return NextResponse.json(
       { error: conflict ? '规则名称已存在' : '保存失败', detail: conflict ? undefined : msg },
@@ -101,7 +133,7 @@ export async function DELETE(req: NextRequest) {
     // 规则不存在视为删除成功（幂等）；其他真实 DB 错误如实 500 而非虚报成功
     if ((e as { code?: string })?.code !== 'P2025') {
       return NextResponse.json(
-        { error: '删除规则失败', detail: e instanceof Error ? e.message.slice(0, 200) : 'unknown' },
+        { error: '删除规则失败', detail: firstLine(e) },
         { status: 500 },
       )
     }
@@ -229,8 +261,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ added })
     } catch (e) {
       // 并发 seed 撞 name 唯一约束等失败：整体回滚，幂等重试即可
-      const msg = e instanceof Error ? e.message : 'unknown'
-      return NextResponse.json({ error: '内置模板入库失败', detail: msg.slice(0, 200) }, { status: 500 })
+      return NextResponse.json({ error: '内置模板入库失败', detail: firstLine(e) }, { status: 500 })
     }
   }
   return handleSave(body)

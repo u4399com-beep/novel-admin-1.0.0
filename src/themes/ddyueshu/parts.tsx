@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from 'react'
 import { coverBgClass } from '@/lib/covers'
+import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { cn } from '@/lib/utils'
 import type { ChapterListItem, NovelListItem } from '@/lib/types'
 import type { ThemeView } from '../types'
@@ -63,14 +64,17 @@ export function Cover({
     <div
       aria-hidden
       className={cn(
-        'flex flex-none select-none items-center justify-center overflow-hidden border border-[#a6d3e8] text-white',
+        'relative flex flex-none select-none items-center justify-center overflow-hidden border border-[#a6d3e8] text-white',
         coverBgClass(novel.cover),
         className
       )}
     >
-      <span className={cn('dd-hei font-bold tracking-[0.15em] [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]', charClass)}>
-        {(novel.title || '书').slice(0, 1)}
-      </span>
+      <NovelCoverImg novel={novel} />
+      {!isLocalCover(novel.cover) && (
+        <span className={cn('dd-hei font-bold tracking-[0.15em] [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]', charClass)}>
+          {(novel.title || '书').slice(0, 1)}
+        </span>
+      )}
     </div>
   )
 }

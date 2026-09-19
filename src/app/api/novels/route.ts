@@ -9,12 +9,12 @@ export async function GET(req: NextRequest) {
   const q = sp.get('q')?.trim().slice(0, 100)
   const status = sp.get('status')
   const sort = sp.get('sort') ?? 'latest'
-  const page = Math.max(1, Number(sp.get('page')) || 1)
-  const pageSize = Math.min(60, Math.max(4, Number(sp.get('pageSize')) || 20))
+  const page = Math.max(1, Math.floor(Number(sp.get('page')) || 1))
+  const pageSize = Math.min(60, Math.max(4, Math.floor(Number(sp.get('pageSize')) || 20)))
 
   // 非法 categoryId（abc/1.5/-3）明确 400，而不是静默降级为全库查询（旧行为会把分类页渲染成全站书单）
   const categoryIdNum = categoryId === null || categoryId === '' ? 0 : Number(categoryId)
-  if (Number.isNaN(categoryIdNum) || !Number.isInteger(categoryIdNum)) {
+  if (Number.isNaN(categoryIdNum) || !Number.isInteger(categoryIdNum) || categoryIdNum < 0) {
     return NextResponse.json({ error: '无效 categoryId' }, { status: 400 })
   }
 

@@ -8,6 +8,28 @@ import { cookieHeaderFor, recordHeaderCookies } from './cookies'
 import { assess, hostOf, MAX_BYTES, MAX_REDIRECT_HOPS } from './http'
 import type { StrategyDef, SubAttempt } from './types'
 
+/**
+ * 站点级出口代理（规则配置）→ got 的 agent 选项：
+ * http(s) 代理用 hpagent，socks5(h) 用 socks-proxy-agent；依赖缺失时返回 undefined（直连）。
+ */
+async function proxyAgentFor(proxy: string | null | undefined): Promise<Record<string, unknown> | undefined> {
+  if (!proxy) return undefined
+  const targetHttpsAgentKey = 'https'
+  try {
+    if (proxy.startsWith('socks5h://') || proxy.startsWith('socks5://') || proxy.startsWith('socks4://')) {
+      const { SocksProxyAgent } = await import('socks-proxy-agent' as string)
+      const agent = new SocksProxyAgent(proxy)
+      return { http: agent, https: agent }
+    }
+    const { HttpsProxyAgent, HttpProxyAgent } = await import('hpagent' as string)
+    const httpsAgent = new HttpsProxyAgent({ proxy })
+    const httpAgent = new HttpProxyAgent({ proxy })
+    return { http: httpAgent, [targetHttpsAgentKey]: httpsAgent }
+  } catch {
+    return undefined
+  }
+}
+
 type GotScrapingFn = (options: Record<string, unknown>) => Promise<{
   statusCode: number
   body: Uint8Array
@@ -41,6 +63,10 @@ export const gotScrapingStrategy: StrategyDef = {
       return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', warnings: ['got-scraping 模块不可用'], note: 'module-missing' }
     }
     const explicitReferer = ctx?.referer ?? null
+    const proxyAgent = await proxyAgentFor(ctx?.proxy)
+    if (ctx?.proxy && !proxyAgent) {
+      warnings.push('[got-scraping] 代理 agent 依赖缺失（hpagent/socks-proxy-agent），本策略降级直连')
+    }
     const subAttempts: SubAttempt[] = []
     const deadline = Date.now() + timeoutMs
     let lastRetryAfterMs: number | null = null
@@ -68,6 +94,7 @@ export const gotScrapingStrategy: StrategyDef = {
         followRedirect: false,
         retry: { limit: 0 }, // 重试由本服务统一编排，避免双重重试
         timeout: { request: leftMs },
+        ...(proxyAgent ? { agent: proxyAgent } : {}),
         // 硬闸（Task 23-a 深审实测）：got 的 timeout 选项在 http2 + TLS 握手停滞时不触发
         // （/books.toscrape 复现：h2 请求无限挂起、无 http2 时 0.5s 即抛 ERR_SSL_NO_CIPHER_MATCH）。
         // AbortSignal 真正中断底层 socket，杜绝策略被单个请求永久卡死。

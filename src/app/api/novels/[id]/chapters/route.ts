@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   const chapters = await db.chapter.findMany({
     where: { novelId: nid },
     orderBy: { idx: 'asc' },
-    select: { id: true, idx: true, title: true, wordCount: true },
+    select: { id: true, idx: true, title: true, wordCount: true, volume: true },
   })
   return NextResponse.json(chapters)
 }

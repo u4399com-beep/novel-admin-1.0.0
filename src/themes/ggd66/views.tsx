@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { TocChapters } from '@/components/toc-chapters'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import {
   useCategories,
   useChapter,
@@ -512,6 +514,9 @@ export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
         </div>
       </section>
 
+      {/* 相关搜索：绑定下拉词 → PSEO 落地页内链（无词时组件不渲染，不留空卡） */}
+      <BookSuggestLinks keywords={novel.suggestKeywords} className="mt-3 rounded-[4px] border border-[#ccc] bg-white p-3" />
+
       {/* 最新章节（4 列虚线行） */}
       <section className="mt-3 rounded-[4px] border border-[#ccc] bg-white p-3">
         <GH2>最新章节</GH2>
@@ -548,10 +553,14 @@ export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
         ) : full.length === 0 ? (
           <GEmptyBox text="暂无章节" />
         ) : (
-          <ChapterDD
+          /* 列优先分栏（columns）：阅读顺序自上而下；有分卷数据时按卷分组渲染 */
+          <TocChapters
             chapters={full}
             navigate={navigate}
-            cols="grid-cols-1 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+            columnsClassName="columns-1 gap-x-3 min-[468px]:columns-2 md:columns-3 lg:columns-4"
+            itemClassName="h-[28px] border-b border-dashed border-[#ccc] px-1 text-[13px] text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
+            volumeClassName="border-b border-[#56ccb5]/60 bg-[#eafaf6] px-1 py-1.5 text-[13px] font-bold text-[#00886d]"
+            countClassName="text-[11px] text-[#999]"
           />
         )}
       </section>
@@ -612,10 +621,14 @@ export function Toc({ navigate, novelId }: ViewProps & { novelId: number }) {
           ) : (chapters?.length ?? 0) === 0 ? (
             <GEmptyBox text="暂无章节" />
           ) : (
-            <ChapterDD
+            /* 列优先分栏（columns）：阅读顺序自上而下；有分卷数据时按卷分组渲染 */
+            <TocChapters
               chapters={chapters!}
               navigate={navigate}
-              cols="grid-cols-1 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+              columnsClassName="columns-1 gap-x-3 min-[468px]:columns-2 md:columns-3 lg:columns-4"
+              itemClassName="h-[28px] border-b border-dashed border-[#ccc] px-1 text-[13px] text-[#00886d] transition-colors duration-200 hover:text-[#f50]"
+              volumeClassName="border-b border-[#56ccb5]/60 bg-[#eafaf6] px-1 py-1.5 text-[13px] font-bold text-[#00886d]"
+              countClassName="text-[11px] text-[#999]"
             />
           )}
         </div>
@@ -834,7 +847,11 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
           {paragraphs.length === 0 ? (
             <p className="my-[10px]" style={{ color: scene.muted }}>本章内容为空</p>
           ) : (
-            paragraphs.map((p, i) => <p key={i} className="my-[10px]">{p}</p>)
+            paragraphs.map((p, i) => (
+              <p key={i} className="my-[10px] indent-[2em]">
+                {p}
+              </p>
+            ))
           )}
         </div>
 

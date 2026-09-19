@@ -10,21 +10,28 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   const nid = Number(id)
   if (!Number.isInteger(nid)) return NextResponse.json({ error: '无效 ID' }, { status: 400 })
 
+  // 只取首 12 章与末 1 章（旧实现 findMany 全量章节只为取首/尾，千章书每次浏览多拉上千行）
   const novel = await db.novel.findUnique({
     where: { id: nid },
     include: {
       category: { select: { name: true } },
       _count: { select: { chapters: true } },
-      chapters: { orderBy: { idx: 'asc' }, select: { id: true, idx: true, title: true, wordCount: true } },
+      chapters: { orderBy: { idx: 'asc' }, take: 12, select: { id: true, idx: true, title: true, wordCount: true, volume: true } },
     },
   })
   if (!novel) return NextResponse.json({ error: '小说不存在' }, { status: 404 })
 
-  // 浏览计数（fire-and-forget）
-  db.novel.update({ where: { id: nid }, data: { clicks: { increment: 1 } } }).catch(() => {})
+  const [lastChapter] = await Promise.all([
+    db.chapter.findFirst({
+      where: { novelId: nid },
+      orderBy: { idx: 'desc' },
+      select: { id: true, title: true },
+    }),
+    // 浏览计数（fire-and-forget）
+    db.novel.update({ where: { id: nid }, data: { clicks: { increment: 1 } } }).catch(() => undefined),
+  ])
 
   const first = novel.chapters[0]
-  const last = novel.chapters[novel.chapters.length - 1]
 
   return NextResponse.json({
     id: novel.id,
@@ -40,12 +47,13 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     wordCount: novel.wordCount,
     clicks: novel.clicks,
     chapterCount: novel._count.chapters,
-    lastChapterTitle: last?.title ?? null,
+    lastChapterTitle: lastChapter?.title ?? null,
     updatedAt: novel.updatedAt.toISOString(),
-    totalChapters: novel.chapters.length,
+    totalChapters: novel._count.chapters,
     firstChapterId: first?.id ?? null,
-    lastChapterId: last?.id ?? null,
-    chapters: novel.chapters.slice(0, 12),
+    lastChapterId: lastChapter?.id ?? null,
+    suggestKeywords: novel.suggestKeywords ?? '',
+    chapters: novel.chapters,
   })
 }
 
@@ -75,7 +83,11 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
   try {
     await db.novel.update({ where: { id: nid }, data })
     return NextResponse.json({ ok: true })
-  } catch {
+  } catch (e) {
+    // P2025 = 目标书不存在 → 404（与 GET/DELETE 语义对齐）；其余（如分类外键不存在）→ 400
+    if ((e as { code?: string })?.code === 'P2025') {
+      return NextResponse.json({ error: '小说不存在' }, { status: 404 })
+    }
     return NextResponse.json({ error: '更新失败（分类不存在？）' }, { status: 400 })
   }
 }

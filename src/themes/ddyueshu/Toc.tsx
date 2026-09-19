@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import { useChapters, useNovel } from '@/hooks/use-novel-data'
+import { TocChapters } from '@/components/toc-chapters'
 import type { ViewProps } from '../types'
 import { ErrBlock, Sk, SkRows, fmtWords } from './parts'
 
@@ -74,29 +75,36 @@ export default function Toc({ navigate, novelId }: ViewProps & { novelId: number
         </div>
       </section>
 
-      {/* dl 式目录：最新章节（全书倒数 12 章置顶，新→旧）+ 正文全量（升序三栏） */}
+      {/* dl 式目录：最新章节（全书倒数 12 章置顶，新→旧）+ 正文全量（columns 列优先三栏，有分卷数据时按卷分组） */}
       <section className="dd-box dd-box-strong mt-2">
         {sorted.length === 0 ? (
           <p className="dd-hottext px-3 py-4 text-[13px]">本书暂无章节，先去书库看看别的吧。</p>
         ) : (
-          <dl className="dd-dd-grid px-2 py-2">
-            <dt className="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">
-              最新章节
-            </dt>
-            {[...sorted].slice(-12).reverse().map((c) => (
-              <dd key={`latest-${c.id}`} className="dd-dd-item">
-                <button onClick={() => navigate({ name: 'chapter', chapterId: c.id })}>{c.title}</button>
-              </dd>
-            ))}
-            <dt className="dd-hei col-span-full mt-2 bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">
+          <div className="px-2 py-2">
+            {/* 最新章节小区块（仅 12 条，保持原 dl 行优先栅格） */}
+            <dl className="dd-dd-grid">
+              <dt className="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">
+                最新章节
+              </dt>
+              {[...sorted].slice(-12).reverse().map((c) => (
+                <dd key={`latest-${c.id}`} className="dd-dd-item">
+                  <button onClick={() => navigate({ name: 'chapter', chapterId: c.id })}>{c.title}</button>
+                </dd>
+              ))}
+            </dl>
+            {/* 正文全量：列优先分栏（阅读顺序自上而下） */}
+            <div className="dd-hei mt-2 bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">
               《{n?.title ?? '本书'}》正文
-            </dt>
-            {sorted.map((c) => (
-              <dd key={c.id} className="dd-dd-item">
-                <button onClick={() => navigate({ name: 'chapter', chapterId: c.id })}>{c.title}</button>
-              </dd>
-            ))}
-          </dl>
+            </div>
+            <TocChapters
+              chapters={sorted}
+              navigate={navigate}
+              columnsClassName="columns-1 gap-x-3 md:columns-2 lg:columns-3"
+              itemClassName="h-[25px] leading-[25px] border-b border-dashed border-[#ccc] text-[#444] transition-colors hover:text-[#cc0000]"
+              volumeClassName="mt-2 justify-center bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333] dd-hei"
+              countClassName="ml-2 text-[12px] font-normal text-[#667788]"
+            />
+          </div>
         )}
       </section>
     </div>

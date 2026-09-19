@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useNovel } from '@/hooks/use-novel-data'
+import { BookSuggestLinks } from '@/components/book-suggest-links'
 import type { ViewProps } from '../types'
 import { BtnGray, BtnMain, Cover, ErrorBox, XLink, fmtDateFull, fmtWords, statusText } from './parts'
 import Sidebar from './Sidebar'
@@ -150,6 +151,8 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
               <span>{novel.lastChapterTitle ?? '暂无'}</span>
             )}
           </div>
+          {/* 相关搜索：绑定下拉词 → PSEO 落地页内链 */}
+          <BookSuggestLinks keywords={novel.suggestKeywords} className="border-t border-dotted border-[#E4E4E4] px-3 py-2" />
         </div>
 
         {/* 书评区：评论链接行 + 发表评论表单（textarea 380px） */}

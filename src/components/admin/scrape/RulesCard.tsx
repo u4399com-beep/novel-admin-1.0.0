@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { BookOpen, Eraser, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { BookOpen, ChartLine, Eraser, ListOrdered, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 import type { ScrapeRuleDto } from '@/lib/types'
 import { runBusy } from '../ui-shared'
 import { RuleDialog } from './RuleDialog'
@@ -27,6 +27,10 @@ export function RulesCard({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
   const [seeding, setSeeding] = useState(false)
   // 存量章节清洗进行中（防重复点击）
   const [cleaning, setCleaning] = useState(false)
+  // 字数审计进行中（防重复点击）
+  const [auditing, setAuditing] = useState(false)
+  // 目录重排进行中（防重复点击）
+  const [resorting, setResorting] = useState(false)
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['scrape-rules'] })
 
@@ -74,26 +78,107 @@ export function RulesCard({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
     })
   }
 
-  /** 存量章节噪声清洗：confirm → dryRun 预览 → 正式清洗 → toast 汇报 */
+  /** 存量数据噪声清洗（章节正文+标题+书籍字段）：confirm → dryRun 预览 → 正式清洗 → toast 汇报 */
   const cleanStored = () => {
     if (cleaning) return
     if (
       !confirm(
-        '将扫描全部已入库章节，清除行首缩进、空行与广告/导航噪声行并重算字数。此操作直接修改数据库，建议先备份。继续？',
+        '将扫描全部已入库数据：清除章节正文的行首缩进、空行与广告/导航噪声行，解码实体残留（&#091；类），剥除书名/作者/简介的样板文案并重算字数。此操作直接修改数据库，建议先备份。继续？',
       )
     )
       return
     return runBusy(setCleaning, true, false, '清洗失败', async () => {
-      const dry = await api<{ checked: number; toClean: number }>('/api/chapters/clean-all?dryRun=1')
-      if (dry.toClean === 0) {
-        toast.success(`预览完成：检查 ${dry.checked} 章，无需要清洗的章节`)
+      const dry = await api<{
+        checked: number
+        toClean: number
+        booksChecked: number
+        booksToFix: number
+        chapterTitlesToFix: number
+      }>('/api/chapters/clean-all?dryRun=1')
+      if (dry.toClean === 0 && dry.booksToFix === 0 && dry.chapterTitlesToFix === 0) {
+        toast.success(
+          `预览完成：检查 ${dry.checked} 章 / ${dry.booksChecked} 本书，无需要清洗的数据`,
+        )
         return
       }
-      const res = await api<{ checked: number; cleaned: number }>('/api/chapters/clean-all', {
+      const res = await api<{
+        checked: number
+        cleaned: number
+        booksFixed: number
+        booksSkipped: number
+        chapterTitlesFixed: number
+      }>('/api/chapters/clean-all', {
         method: 'POST',
       })
-      toast.success(`检查 ${res.checked} 章，清洗 ${res.cleaned} 章`)
-      // 章节正文已变化，站点侧书籍/章节缓存全部失效
+      toast.success(
+        `清洗完成：正文 ${res.cleaned} 章、标题 ${res.chapterTitlesFixed} 章、书籍字段 ${res.booksFixed} 本` +
+          (res.booksSkipped > 0 ? `（${res.booksSkipped} 项变更因同名同作者冲突被跳过）` : ''),
+      )
+      // 章节正文/书籍字段已变化，站点侧缓存全部失效
+      void qc.invalidateQueries()
+    })
+  }
+
+  /** 全站字数审计：GET 预览不符清单 → 有差异时 confirm → POST 重算 → toast 汇报 */
+  const auditWords = () => {
+    if (auditing) return
+    return runBusy(setAuditing, true, false, '字数审计失败', async () => {
+      const res = await api<{
+        books: number
+        mismatches: { id: number; title: string; stored: number; actual: number }[]
+        totalStored: number
+        totalActual: number
+      }>('/api/novels/recalc-words')
+      if (res.mismatches.length === 0) {
+        toast.success(`审计完成：${res.books} 本书字数与章节合计全部一致`)
+        return
+      }
+      const sample = res.mismatches
+        .slice(0, 3)
+        .map((m) => `《${m.title.slice(0, 16)}》${m.stored}→${m.actual}`)
+        .join('、')
+      if (
+        !confirm(
+          `发现 ${res.mismatches.length} 本书字数与章节合计不符（${sample}...），立即全站重算？`,
+        )
+      )
+        return
+      const r2 = await api<{ books: number; mismatched: number; fixed: number }>(
+        '/api/novels/recalc-words',
+        { method: 'POST' },
+      )
+      toast.success(`重算完成：核对 ${r2.books} 本，修正 ${r2.fixed} 本`)
+      // 书级字数变化，列表/首页缓存失效
+      void qc.invalidateQueries()
+    })
+  }
+
+  /** 全站目录重排：GET 只读审计 → 无候选 toast；有候选 confirm 样例 → POST 重排 → toast 汇报。
+   * 沿用字数审计模式；后端 /api/novels/resort-chapters（GET 审计 / POST 执行）。 */
+  const resortChapters = () => {
+    if (resorting) return
+    return runBusy(setResorting, true, false, '目录重排失败', async () => {
+      const res = await api<{
+        books: number
+        candidates: { id: number; title: string; chapters: number; numbered: number; disorder: number }[]
+      }>('/api/novels/resort-chapters')
+      if (res.candidates.length === 0) {
+        toast.success(`审计完成：${res.books} 本书目录顺序全部正常，无需重排`)
+        return
+      }
+      const sample = res.candidates
+        .slice(0, 3)
+        .map((c) => `《${c.title.slice(0, 16)}》错乱 ${Math.round(c.disorder * 100)}%`)
+        .join('、')
+      if (!confirm(`发现 ${res.candidates.length} 本书目录疑似乱序（${sample}...），立即全站重排？重排只改阅读顺序不动内容。`)) return
+      const r2 = await api<{
+        scanned: number
+        reordered: number
+        results: { id: number; title: string; moved: number }[]
+      }>('/api/novels/resort-chapters', { method: 'POST' })
+      const moved = r2.results.reduce((s, x) => s + x.moved, 0)
+      toast.success(`重排完成：审计 ${r2.scanned} 本，重排 ${r2.reordered} 本（涉及 ${moved} 章）`)
+      // 章节 idx 与 updatedAt 变化，站点侧缓存全部失效
       void qc.invalidateQueries()
     })
   }
@@ -107,7 +192,13 @@ export function RulesCard({ rules }: { rules: ScrapeRuleDto[] | undefined }) {
         {/* flex-wrap：375px 视口下三个按钮放不下一行时换行，避免撑出横向滚动 */}
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={cleanStored} disabled={cleaning}>
-            <Eraser className="h-3.5 w-3.5" /> {cleaning ? '清洗中…' : '清洗存量章节'}
+            <Eraser className="h-3.5 w-3.5" /> {cleaning ? '清洗中…' : '数据清洗维护'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={auditWords} disabled={auditing}>
+            <ChartLine className="h-3.5 w-3.5" /> {auditing ? '审计中…' : '字数审计'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={resortChapters} disabled={resorting}>
+            <ListOrdered className="h-3.5 w-3.5" /> {resorting ? '重排中…' : '目录重排'}
           </Button>
           <Button size="sm" variant="outline" onClick={seed} disabled={seeding}>
             <Sparkles className="h-3.5 w-3.5" /> 内置模板入库

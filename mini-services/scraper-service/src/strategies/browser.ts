@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertHostPublic, execP } from '../rate-limit'
 import { assess, MAX_BYTES } from './http'
+import { looksLikeChallenge } from './challenge'
 import { CHROME_UA } from './profiles'
 import { cookieHeaderFor, cookiesForPlaywright, recordPlaywrightCookies } from './cookies'
 import type { AttemptResult, StrategyDef, SubAttempt } from './types'
@@ -48,6 +49,44 @@ function probeBrowser(): Promise<boolean> {
 // Python 桥接脚本路径（src/strategies/ → ../../scripts/render.py）
 const RENDER_PY = fileURLToPath(new URL('../../scripts/render.py', import.meta.url))
 
+/** 渲染后挑战自动通过的等待上限：Cloudflare 托管挑战等在真实浏览器上通常 3-8s 内自解 */
+const CHALLENGE_WAIT_MS = 10_000
+/** 挑战等待轮询间隔 */
+const CHALLENGE_POLL_MS = 1_500
+
+/**
+ * 渲染后挑战等待（反反爬增强）：真实浏览器导航到带托管挑战（Cloudflare "Just a moment" 等）
+ * 的页面时，挑战页先返回、自解后跳到真实内容。旧实现在 domcontentloaded 后立即抓 content，
+ * 会把 38KB 的挑战页当渲染结果交回 → 被挑战检测判死，browser 策略形同虚设。
+ * 现在渲染结果命中挑战特征时，在剩余预算内轮询等待其自动通过，通过后取真实内容返回；
+ * 等待不改变任何合规语义（仍是单次导航 + 真实渲染，不破解任何交互式验证码）。
+ */
+async function captureAfterChallengeResolve(
+  page: { content: () => Promise<string> },
+  initialHtml: string,
+  budgetMs: number,
+  warnings: string[],
+): Promise<string> {
+  if (!looksLikeChallenge(Buffer.from(initialHtml, 'utf8'))) return initialHtml
+  const deadline = Date.now() + Math.min(CHALLENGE_WAIT_MS, Math.max(2000, budgetMs))
+  warnings.push(
+    `[browser] 渲染捕获到挑战/拦截页，等待其自动通过（最多 ${Math.max(1, Math.round((deadline - Date.now()) / 1000))}s；不适用于交互式验证码）`,
+  )
+  for (;;) {
+    await new Promise((r) => setTimeout(r, CHALLENGE_POLL_MS))
+    if (Date.now() >= deadline) return initialHtml
+    try {
+      const html = await Promise.race([
+        page.content(),
+        new Promise<string>((_, rej) => setTimeout(() => rej(new Error('content 轮询超时')), 3000)),
+      ])
+      if (!looksLikeChallenge(Buffer.from(html, 'utf8'))) return html
+    } catch {
+      // content 偶发超时（挑战跳转中 document 正在替换）→ 继续轮询
+    }
+  }
+}
+
 interface RenderPayload {
   status: number
   html: string
@@ -56,18 +95,20 @@ interface RenderPayload {
   cookies?: Array<{ name?: unknown; value?: unknown; expires?: unknown; secure?: unknown }>
 }
 
-async function renderViaPython(url: string, timeoutMs: number, warnings: string[], explicitReferer: string | null, cookieEnv: string | null): Promise<AttemptResult> {
+async function renderViaPython(url: string, timeoutMs: number, warnings: string[], explicitReferer: string | null, cookieEnv: string | null, proxy: string | null): Promise<AttemptResult> {
   // 参数经 argv 传递（URL 不含换行；UA 含空格由 execFile 正确转义）；
-  // cookie/referer 走环境变量（cookie 头值可能较长，不适合 argv）。
+  // cookie/referer/proxy 走环境变量（cookie 头值可能较长，不适合 argv）。
   // render.py 自带 SIGALRM 看门狗（timeout+3s 强制输出 JSON），exec 超时只是兜底；
   // 余量不能给太大，否则策略链 55s 预算会被单次渲染突破（实测旧值 +15s 最坏可拖到 ~70s）
   const env: Record<string, string | undefined> = { ...process.env, PYTHONUNBUFFERED: '1' }
   if (cookieEnv) env.SCRAPER_COOKIES = cookieEnv
   if (explicitReferer) env.SCRAPER_REFERER = explicitReferer
+  if (proxy) env.SCRAPER_PROXY = proxy
   const { stdout } = await execP(
     'python3',
     [RENDER_PY, url, String(timeoutMs), CHROME_UA],
-    { timeout: timeoutMs + 4000, maxBuffer: 64 * 1024 * 1024, env },
+    // next-env.d.ts 对 ProcessEnv 增强了必填 NODE_ENV；运行时经 ...process.env 必然携带，此处断言对齐
+    { timeout: timeoutMs + 4000, maxBuffer: 64 * 1024 * 1024, env: env as NodeJS.ProcessEnv },
   )
   const payload = JSON.parse(stdout) as RenderPayload
   if (payload.error) {
@@ -124,7 +165,16 @@ export const browserStrategy: StrategyDef = {
       let browser: any = null
       let context: any = null
       try {
-        browser = await pw.chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] })
+        browser = await pw.chromium.launch({
+          headless: true,
+          // stealth 启动参数（Task 10-d，与 render.py Python 桥接路径同语义）：
+          // --disable-blink-features=AutomationControlled 去除 Blink 自动化特征；
+          // ignoreDefaultArgs 不注入 Playwright 默认追加的 --enable-automation（真实用户浏览器不带）
+          args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--disable-gpu'],
+          ignoreDefaultArgs: ['--enable-automation'],
+          // 站点级出口代理（规则配置）：http/socks5 均由 Chromium 处理；代理失效走导航失败自然降级
+          ...(ctx?.proxy ? { proxy: { server: ctx.proxy } } : {}),
+        })
         // 显式 context：支持 addCookies 注入引擎 cookie 会话（newPage 直开是隐式 context，无法注入）
         context = await browser.newContext({ userAgent: CHROME_UA, locale: 'zh-CN', viewport: { width: 1366, height: 900 } })
         if (injectedCookies.length) {
@@ -204,6 +254,9 @@ export const browserStrategy: StrategyDef = {
         } finally {
           clearTimeout(contentTimer)
         }
+        // 挑战自动通过等待（Task 3-a 反反爬增强）：渲染结果命中挑战特征（Cloudflare 托管挑战等）
+        // 时轮询等待其自解，取真实内容；等待消耗本策略剩余预算（不超过 challenge-wait 上限）
+        html = await captureAfterChallengeResolve(page, html, timeoutMs - (Date.now() - s0), warnings)
         const status = res?.status() ?? 0
         const bytes = new Uint8Array(Buffer.from(html, 'utf8'))
         if (bytes.byteLength > MAX_BYTES) {
@@ -249,7 +302,7 @@ export const browserStrategy: StrategyDef = {
     warnings.push('Node Playwright 模块不可用，尝试 Python Playwright 桥接')
     // 2) Python Playwright 桥接（cookie/referer 经环境变量透传）
     try {
-      return await renderViaPython(url, timeoutMs, warnings, explicitReferer, cookieEnv)
+      return await renderViaPython(url, timeoutMs, warnings, explicitReferer, cookieEnv, ctx?.proxy ?? null)
     } catch (pyErr) {
       subAttempts.push({ profile: 'python-playwright', ok: false, status: 0, ms: Date.now() - s0, blocked: false, bytes: 0, note: 'bridge-error' })
       return {
