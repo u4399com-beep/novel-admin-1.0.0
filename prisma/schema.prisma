@@ -37,6 +37,9 @@ model Novel {
   @@unique([title, author])
   // 分类页/首页按 categoryId 过滤列表：避免随书量增长退化为全表扫
   @@index([categoryId])
+  // 后台列表默认按最近更新排序；热门榜按点击排序
+  @@index([updatedAt])
+  @@index([clicks])
 }
 
 model Chapter {

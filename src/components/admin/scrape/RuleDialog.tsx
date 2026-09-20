@@ -138,7 +138,7 @@ export function RuleDialog({
     if (!form.name.trim()) return toast.error('规则名称必填')
     const url = form.siteUrl.trim()
     if (!url) return toast.error('站点 URL 必填')
-    // 与服务端 parseSiteUrl 对齐的前置校验：避免明显非法的 URL 走一趟请求才报错
+    // 与服务端 parseHttpUrl（lib/scrape/api-utils.ts）对齐的前置校验：避免明显非法的 URL 走一趟请求才报错
     try {
       const parsed = new URL(url)
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {

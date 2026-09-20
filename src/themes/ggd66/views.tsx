@@ -832,7 +832,19 @@ export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number
           }}
         >
           {paragraphs.length === 0 ? (
-            <p className="my-[10px]" style={{ color: scene.muted }}>本章内容为空</p>
+            /* 两阶段采集占位：骨架先入库、正文异步回填，空内容时给刷新入口 */
+            <div className="flex flex-col items-center gap-3 py-10 text-center">
+              <p className="text-[14px]" style={{ color: scene.muted }}>
+                章节内容正在采集中，请稍后刷新重试
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="cursor-pointer rounded-[4px] border border-[#ccc] bg-white px-5 py-1.5 text-[13px] text-[#333] transition-colors duration-200 hover:border-[#56ccb5] hover:text-[#00886d]"
+              >
+                刷新重试
+              </button>
+            </div>
           ) : (
             paragraphs.map((p, i) => <p key={i} className="my-[10px]">{p}</p>)
           )}

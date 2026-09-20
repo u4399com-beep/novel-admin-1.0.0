@@ -113,7 +113,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
   const isHome = view.name === 'home'
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#f5f8ff] to-[#eef3fb] text-[16px] text-[#1e293b]">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-[#f5f8ff] to-[#eef3fb] text-[16px] text-[#1e293b]">
       {/* 顶部毛玻璃导航条 */}
       <header className="sticky top-0 z-40 border-b border-[#dbe4f0] bg-white/90 backdrop-blur-[12px]">
         <div className="mx-auto flex h-16 max-w-[1180px] items-center gap-3 px-4">
@@ -197,7 +197,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
         ) : null}
       </header>
 
-      <main>{children}</main>
+      <main className="min-w-0 flex-1">{children}</main>
 
       {/* 页脚 */}
       <footer className="mt-12 border-t border-[#dbe4f0] bg-[#e2eaf5] py-10 text-[14px] text-[#64748b]">

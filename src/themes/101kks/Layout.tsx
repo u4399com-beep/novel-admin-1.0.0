@@ -109,7 +109,7 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
   }
 
   return (
-    <div className="min-h-screen bg-[#f2f3f4] text-[#333]">
+    <div className="flex min-h-screen flex-col bg-[#f2f3f4] text-[#333]">
       {/* 固定宝蓝顶栏 */}
       <header className="fixed inset-x-0 top-0 z-50 h-[50px] bg-[#1f6cb2] text-white lg:h-[75px]">
         <div className="mx-auto flex h-full max-w-[1250px] items-center gap-2 px-3 sm:gap-3 lg:gap-5">
@@ -283,8 +283,8 @@ export function KksLayout({ view, children, navigate, siteName, notice }: ThemeL
         </div>
       )}
 
-      {/* 域名公告条：浅米黄通栏（位于固定顶栏下方、文档流内） */}
-      <div className="pt-[50px] lg:pt-[75px]">
+      {/* 域名公告条：浅米黄通栏（位于固定顶栏下方、文档流内）；flex-1 使短页时页脚仍贴底 */}
+      <div className="flex-1 pt-[50px] lg:pt-[75px]">
         {notice ? (
           <div className="flex h-[30px] items-center justify-center overflow-hidden bg-[#fff2df] px-3 text-xs text-[#8a6d3b] lg:h-[40px] lg:text-[13px]">
             <p className="truncate">

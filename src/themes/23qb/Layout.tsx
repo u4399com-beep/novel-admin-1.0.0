@@ -50,7 +50,7 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
   const solid = scrolled || !isHome
 
   return (
-    <div className="min-h-screen bg-[#f8f9f9] text-[#282828]">
+    <div className="flex min-h-screen flex-col bg-[#f8f9f9] text-[#282828]">
       <header
         className={cn(
           'fixed inset-x-0 top-0 z-50 transition-[background-color,box-shadow] duration-300',
@@ -250,8 +250,8 @@ export function QBLayout({ view, children, navigate, siteName }: ThemeLayoutProp
         </div>
       )}
 
-      {/* 首页顶栏悬浮在头图上：无占位 padding */}
-      <main className={cn(!isHome && 'pt-[70px]')}>{children}</main>
+      {/* 首页顶栏悬浮在头图上：无占位 padding；flex-1 使短页时页脚仍贴底 */}
+      <main className={cn('flex-1', !isHome && 'pt-[70px]')}>{children}</main>
 
       <footer className="mt-12 bg-[#f3f5f7]">
         <Container className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-4 text-xs text-black/50">

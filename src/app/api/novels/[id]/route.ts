@@ -70,8 +70,9 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: '请求体不是合法 JSON' }, { status: 400 })
   }
   const data: Record<string, unknown> = {}
-  if (typeof body.title === 'string' && body.title.trim()) data.title = body.title.trim().slice(0, 100)
-  if (typeof body.author === 'string' && body.author.trim()) data.author = body.author.trim().slice(0, 50)
+  // 截断上限与采集入库路径（lib/scrape/store.ts upsertBook）对齐：title 200 / author 100 / description 2000
+  if (typeof body.title === 'string' && body.title.trim()) data.title = body.title.trim().slice(0, 200)
+  if (typeof body.author === 'string' && body.author.trim()) data.author = body.author.trim().slice(0, 100)
   if (typeof body.description === 'string') data.description = body.description.slice(0, 2000)
   if (typeof body.cover === 'string' && /^g\d+$/.test(body.cover)) data.cover = body.cover
   if (typeof body.categoryId === 'number' && Number.isInteger(body.categoryId) && body.categoryId > 0) data.categoryId = body.categoryId

@@ -683,7 +683,23 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
             {/* 正文：字号/行距/字体/背景可调 */}
             <article className="mt-6 border-t pt-8" style={{ borderColor: scene.line }}>
               {paragraphs.length === 0 ? (
-                <p className="py-10 text-sm" style={{ color: scene.muted }}>本章内容为空，请返回目录选择其他章节。</p>
+                /* 两阶段采集：章节骨架先入库、正文异步回填——content 为空/纯空白时渲染占位 */
+                <div className="py-12 text-center">
+                  <p className="text-[15px] font-bold" style={{ color: scene.ink }}>
+                    章节内容正在采集中，请稍后刷新重试。
+                  </p>
+                  <p className="mt-2 text-sm" style={{ color: scene.muted }}>
+                    正文回填需要一点时间；也可以先返回目录阅读其他章节。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="mt-5 inline-flex h-10 cursor-pointer items-center gap-2 rounded-[50px] px-8 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                    style={{ backgroundImage: GRADIENT_ACCENT }}
+                  >
+                    刷新重试
+                  </button>
+                </div>
               ) : (
                 paragraphs.map((p, i) => (
                   <p

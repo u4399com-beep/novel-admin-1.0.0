@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { COVER_TOKENS } from '@/lib/covers'
+import { novelListSelect, toNovelListItem } from '@/lib/novel-list'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,34 +44,12 @@ export async function GET(req: NextRequest) {
       orderBy,
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: {
-        id: true, title: true, author: true, description: true, cover: true, categoryId: true,
-        category: { select: { name: true } }, status: true, isFeatured: true, isHot: true,
-        wordCount: true, clicks: true, updatedAt: true,
-        _count: { select: { chapters: true } },
-        chapters: { orderBy: { idx: 'desc' }, take: 1, select: { title: true } },
-      },
+      select: novelListSelect,
     }),
   ])
 
   return NextResponse.json({
-    list: rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      author: r.author,
-      description: r.description,
-      cover: r.cover,
-      categoryId: r.categoryId,
-      categoryName: r.category?.name ?? '未分类',
-      status: r.status === 'finished' ? 'finished' : 'serial',
-      isFeatured: r.isFeatured,
-      isHot: r.isHot,
-      wordCount: r.wordCount,
-      clicks: r.clicks,
-      chapterCount: r._count.chapters,
-      lastChapterTitle: r.chapters[0]?.title ?? null,
-      updatedAt: r.updatedAt.toISOString(),
-    })),
+    list: rows.map(toNovelListItem),
     total,
     page,
     pageSize,
@@ -99,12 +79,13 @@ export async function POST(req: NextRequest) {
   const cat = await db.category.findUnique({ where: { id: body.categoryId } })
   if (!cat) return NextResponse.json({ error: '分类不存在' }, { status: 400 })
 
-  const covers = ['g1','g2','g3','g4','g5','g6','g7','g8','g9','g10','g11','g12']
+  const covers = COVER_TOKENS // 合法渐变 token 清单（g1-g12）与渲染层共用同一来源
   try {
     const novel = await db.novel.create({
       data: {
-        title: body.title.trim().slice(0, 100),
-        author: (body.author?.trim() || '佚名').slice(0, 50),
+        // 截断上限与采集入库路径（lib/scrape/store.ts upsertBook）对齐：title 200 / author 100 / description 2000
+        title: body.title.trim().slice(0, 200),
+        author: (body.author?.trim() || '佚名').slice(0, 100),
         description: (body.description ?? '').slice(0, 2000),
         cover: covers.includes(body.cover ?? '') ? body.cover! : covers[Math.floor(Math.random() * covers.length)],
         categoryId: body.categoryId,

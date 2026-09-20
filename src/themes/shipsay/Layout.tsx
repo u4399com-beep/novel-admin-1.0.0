@@ -86,7 +86,7 @@ export default function Layout({ view, children, navigate, siteName }: ThemeLayo
     'flex h-full cursor-pointer items-center whitespace-nowrap border-t-2 border-transparent px-5 text-[14px] text-[#FBFBFB] transition-colors hover:border-[#ED4259] hover:bg-[#252428]'
 
   return (
-    <div className="min-h-screen bg-[#F4F4F4] text-[#333]" style={{ fontFamily: FONT }}>
+    <div className="flex min-h-screen flex-col bg-[#F4F4F4] text-[#333]" style={{ fontFamily: FONT }}>
       {/* 页头 */}
       <header className="mx-auto w-full max-w-[960px] px-2">
         <div className="flex items-center gap-4 py-4">
@@ -170,7 +170,7 @@ export default function Layout({ view, children, navigate, siteName }: ThemeLayo
         </div>
       </nav>
 
-      <main>{children}</main>
+      <main className="min-w-0 flex-1">{children}</main>
 
       {/* 页脚：深灰两行 */}
       <footer className="bg-[#3E3D43] text-[#FBFBFB]">

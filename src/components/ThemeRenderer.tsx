@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { ThemeModule, ViewProps } from '@/themes/types'
 import { getTheme } from '@/themes/registry'
 import { useAppStore } from '@/lib/store'
@@ -15,6 +16,11 @@ export function ThemeRenderer() {
   const { data: settings, isLoading } = useSettings()
   const view = useAppStore((s) => s.view)
   const navigate = useAppStore((s) => s.navigate)
+  // ?theme=xxx 预览覆盖（仅浏览器端读取一次）：主题开发/校准时免改全局 activeTheme，
+  // 多主题并行调试互不干扰；非法值由 getTheme 兑底回落默认主题
+  const [themeOverride] = useState(() =>
+    typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('theme')?.trim() || '',
+  )
 
   if (isLoading || !settings) {
     return (
@@ -27,7 +33,7 @@ export function ThemeRenderer() {
     )
   }
 
-  const theme = getTheme(settings.activeTheme)
+  const theme = getTheme(themeOverride || settings.activeTheme)
   const common = { navigate, siteName: settings.siteName, notice: settings.notice }
 
   let content: React.ReactNode

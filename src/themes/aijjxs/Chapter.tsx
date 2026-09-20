@@ -72,7 +72,8 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
     0,
   )
   const ink = prefs.ink || scene.ink
-  const paragraphs = c.content
+  /* 两阶段采集：章节骨架先入库、正文异步回填——content 为空/纯空白时渲染占位 */
+  const paragraphs = (c.content ?? '')
     .split(/\n+/)
     .map((s) => s.trim())
     .filter(Boolean)
@@ -188,7 +189,19 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
         style={{ color: 'var(--r-ink)', lineHeight: prefs.lineHeight }}
       >
         {paragraphs.length === 0 ? (
-          <p className="py-8 text-center text-sm opacity-70">本章内容为空，请返回目录选择其他章节。</p>
+          <div className="py-10 text-center">
+            <p className="text-[15px] font-bold" style={{ color: 'var(--r-accent)' }}>
+              章节内容正在采集中
+            </p>
+            <p className="mt-2 text-sm opacity-75">
+              正文回填需要一点时间，请稍后刷新重试；也可以先返回目录阅读其他章节。
+            </p>
+            <div className="mt-4">
+              <button className="aj-reader-btn" onClick={() => window.location.reload()}>
+                刷新重试
+              </button>
+            </div>
+          </div>
         ) : (
           paragraphs.map((p, i) => (
             <p key={i} className="aj-reader-para break-words">

@@ -53,20 +53,11 @@ export async function loadRule(ruleId: number | null): Promise<LoadedRule> {
 
 // ==================== 基础工具 ====================
 
-export async function ensureCategory(name: string): Promise<number> {
-  const clean = (name || '').replace(/\s+/g, ' ').trim().slice(0, 50) || '未分类'
-  const found = await db.category.findUnique({ where: { name: clean } }).catch(() => null)
-  if (found) return found.id
-  try {
-    const created = await db.category.create({ data: { name: clean } })
-    return created.id
-  } catch {
-    // 并发创建撞唯一约束 → 重查
-    const again = await db.category.findUnique({ where: { name: clean } }).catch(() => null)
-    if (!again) throw new Error(`分类「${clean}」创建失败`)
-    return again.id
-  }
-}
+/**
+ * 分类归一/创建已迁移至 ./category.ts（规范集+同义词+LLM 兜底三级归并）。
+ * 此处 re-export 保持既有 import 路径兼容。
+ */
+export { ensureCategory } from './category'
 
 /** Prisma 唯一约束冲突（P2002）或 SQLite unique 错误 */
 export function isUniqueConflict(e: unknown): boolean {
@@ -191,6 +182,8 @@ export interface ChapterRow {
   title: string
   content: string
   wordCount: number
+  /** 源站章节页 URL（两阶段采集骨架行必填；用于内容回填与断点续采） */
+  url?: string | null
 }
 
 /**
@@ -209,7 +202,16 @@ export async function storeChapter(
 ): Promise<{ ok: true; idx: number } | { ok: false; message: string }> {
   const attempt = (idxVal: number): Promise<true | Error> =>
     db.chapter
-      .create({ data: { novelId, idx: idxVal, title: row.title, content: row.content, wordCount: row.wordCount } })
+      .create({
+        data: {
+          novelId,
+          idx: idxVal,
+          title: row.title,
+          content: row.content,
+          wordCount: row.wordCount,
+          ...(row.url ? { url: row.url } : {}),
+        },
+      })
       .then(() => true as const)
       .catch((e: unknown) => (e instanceof Error ? e : new Error('章节入库失败')))
 

@@ -16,6 +16,9 @@ export const GRADIENT_CLASSES: Record<string, string> = {
   g12: 'from-lime-600 to-green-400',
 }
 
+/** 合法渐变 token 列表（g1-g12；入库校验/随机兜底与渲染层共用同一来源，防止两处清单漂移） */
+export const COVER_TOKENS = Object.keys(GRADIENT_CLASSES)
+
 export function gradientClass(token: string): string {
   return GRADIENT_CLASSES[token] ?? GRADIENT_CLASSES.g1
 }

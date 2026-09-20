@@ -206,7 +206,19 @@ export default function Chapter({ navigate, chapterId }: ViewProps & { chapterId
           }}
         >
           {paragraphs.length === 0 ? (
-            <p className="py-6 text-center text-[12px]" style={{ color: scene.muted }}>本章暂无内容，请返回目录选择其他章节。</p>
+            /* 两阶段采集占位：骨架先入库、正文异步回填，空内容时给刷新入口 */
+            <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <p className="text-[12px]" style={{ color: scene.muted }}>
+                章节内容正在采集中，请稍后刷新重试
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="h-[28px] cursor-pointer border border-[#E88B00] bg-gradient-to-b from-[#FFEAD3] to-[#FFD8AB] px-5 text-[12px] font-bold text-[#FF6600] transition-colors hover:text-[#333]"
+              >
+                刷新重试
+              </button>
+            </div>
           ) : (
             paragraphs.map((p, i) => (
               <p key={i} className="indent-[2em]">

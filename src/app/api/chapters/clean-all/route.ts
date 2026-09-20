@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { firstLine } from '@/lib/api-error'
 import { cleanChapterContent } from '@/lib/content-clean'
 
 export const dynamic = 'force-dynamic'
@@ -75,11 +76,6 @@ async function scanChapters(write: boolean): Promise<ScanResult> {
   return { checked, changed, novels: touchedNovels.size }
 }
 
-/** Prisma 错误消息首行（首行不含调用点源码路径，避免把服务器内部路径泄露给客户端） */
-function firstLine(e: unknown): string {
-  return (e instanceof Error ? e.message : String(e)).split('\n')[0].slice(0, 200)
-}
-
 export async function GET(req: NextRequest) {
   const dryRun = req.nextUrl.searchParams.get('dryRun') === '1'
   try {
@@ -97,6 +93,18 @@ export async function GET(req: NextRequest) {
 export async function POST() {
   if (g.__chapterCleanRunning) {
     return NextResponse.json({ error: '存量清洗正在进行中，请稍后再试' }, { status: 409 })
+  }
+  // 运行中/待执行任务防护：存量清洗是全表分批写（章节 content/wordCount + 书籍字数合计），
+  // 与采集 worker 的章节骨架/回填写入并行会争抢 SQLite 写锁并互相拖慢，还可能把
+  // 采集刚回填的正文再清洗一遍导致字数统计竞态 —— 存在 pending/running 任务时拒绝执行
+  const activeTask = await db.scrapeTask
+    .findFirst({ where: { status: { in: ['pending', 'running'] } }, select: { id: true } })
+    .catch(() => null)
+  if (activeTask) {
+    return NextResponse.json(
+      { error: `存在进行中的采集任务（#${activeTask.id}），请先取消任务再执行存量清洗` },
+      { status: 409 },
+    )
   }
   g.__chapterCleanRunning = true
   try {

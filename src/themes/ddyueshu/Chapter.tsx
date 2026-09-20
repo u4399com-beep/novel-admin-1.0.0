@@ -138,7 +138,8 @@ export default function Chapter({ navigate, siteName, chapterId }: ViewProps & {
 
   const ch = q.data
   const nv = novel.data
-  const paragraphs = ch.content
+  /* 两阶段采集：章节骨架先入库、正文异步回填——content 为空/纯空白时渲染占位 */
+  const paragraphs = (ch.content ?? '')
     .split('\n')
     .map((s) => s.trim())
     .filter(Boolean)
@@ -229,7 +230,17 @@ export default function Chapter({ navigate, siteName, chapterId }: ViewProps & {
           }}
         >
           {paragraphs.length === 0 ? (
-            <p className="dd-hottext text-center">本章内容为空，请返回目录选择其他章节。</p>
+            <div className="py-10 text-center">
+              <p className="dd-hottext text-[14px] font-bold">章节内容正在采集中，请稍后刷新重试。</p>
+              <p className="mt-1.5 text-[12px] text-[#999]">正文回填需要一点时间；也可以先返回目录阅读其他章节。</p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="mt-4 h-[28px] cursor-pointer border border-[#88c6e5] bg-white px-4 text-[13px] text-[#2f6f9f] transition-colors hover:bg-[#e1eced]"
+              >
+                刷新本页
+              </button>
+            </div>
           ) : (
             paragraphs.map((p, i) => <p key={i}>{p}</p>)
           )}

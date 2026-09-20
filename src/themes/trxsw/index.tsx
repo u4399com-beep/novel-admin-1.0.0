@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import {
   useCategories,
@@ -34,7 +35,7 @@ import {
   useReaderPrefs,
   type ReaderSceneColors,
 } from '@/hooks/use-reader-prefs'
-import type { ChapterDetail } from '@/lib/types'
+import type { ChapterDetail, NovelListItem } from '@/lib/types'
 import type { ThemeLayoutProps, ThemeModule, ViewProps } from '../types'
 import {
   Block,
@@ -65,9 +66,11 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
   const [histOpen, setHistOpen] = useState(false)
   const { promptFavorite, shortcut } = useFavoriteSite()
 
-  const submitSearch = () => {
+  /* 搜索模式约定（与 Search 视图一致）：'@关键词' = 按作者搜索；无前缀 = 按书名搜索 */
+  const submitSearch = (mode: 'title' | 'author' = 'title') => {
     const t = kw.trim()
-    if (t) navigate({ name: 'search', query: t })
+    if (!t) return
+    navigate({ name: 'search', query: mode === 'author' ? `@${t}` : t })
   }
 
   const activeCategoryId = view.name === 'category' ? view.categoryId : undefined
@@ -139,16 +142,16 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
             />
             <button
               type="button"
-              onClick={submitSearch}
-              title="本站搜索同时匹配书名与作者"
+              onClick={() => submitSearch('title')}
+              title="按书名关键词搜索"
               className="h-8 shrink-0 cursor-pointer bg-[#C00] px-3 text-xs text-white transition-colors hover:bg-[#A80000]"
             >
               搜书名
             </button>
             <button
               type="button"
-              onClick={submitSearch}
-              title="本站搜索同时匹配书名与作者"
+              onClick={() => submitSearch('author')}
+              title="按作者名搜索"
               className="h-8 shrink-0 cursor-pointer border border-l-0 border-[#C00] px-3 text-xs text-[#C00] transition-colors hover:bg-[#FFF3F0]"
             >
               搜作者
@@ -1160,7 +1163,19 @@ function ChapterInner({ navigate, chapterId }: ViewProps & { chapterId: number }
         >
           <div className="mx-auto w-[92%] max-w-[760px] break-words md:w-[85%]">
             {paras.length === 0 ? (
-              <p className="py-6 text-center text-sm" style={{ color: scene.muted }}>本章内容为空</p>
+              /* 两阶段采集占位：骨架先入库、正文异步回填，空内容时给刷新入口 */
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <p className="text-sm" style={{ color: scene.muted }}>
+                  章节内容正在采集中，请稍后刷新重试
+                </p>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="cursor-pointer border border-[#CBE0F2] bg-white px-4 py-1.5 text-xs text-[#2F468F] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]"
+                >
+                  刷新重试
+                </button>
+              </div>
             ) : (
               paras.map((p, i) => (
                 <p
@@ -1220,23 +1235,76 @@ function ChapterInner({ navigate, chapterId }: ViewProps & { chapterId: number }
 }
 
 /* ==================================================================== */
-/* Search：本地输入 + 双按钮 + 六列结果表 + 本地分页                      */
+/* Search：搜书名/搜作者双模式（主题内字段过滤）+ 六列结果表 + 分页        */
 /* ==================================================================== */
 
+/* 查询串约定：'@关键词' = 按作者搜索；其余 = 按书名搜索（Layout 与搜索页双按钮写入） */
+const AUTHOR_QUERY_PREFIX = '@'
+type SearchMode = 'title' | 'author'
+
+function parseSearchQuery(raw: string): { mode: SearchMode; kw: string } {
+  const s = raw.trim()
+  if (s.startsWith(AUTHOR_QUERY_PREFIX)) return { mode: 'author', kw: s.slice(1).trim() }
+  return { mode: 'title', kw: s }
+}
+
+/**
+ * 服务端 q 命中书名/作者/简介三字段 → 分批取全量命中集（pageSize=60，上限 10 批），
+ * 再在主题内按单一字段过滤，实现杰奇式「搜书名 / 搜作者」精确语义（不改 /api/novels）。
+ */
+async function fetchAllMatched(kw: string): Promise<NovelListItem[]> {
+  const all: NovelListItem[] = []
+  let total = Number.POSITIVE_INFINITY
+  for (let p = 1; all.length < total && p <= 10; p++) {
+    const res = await fetch(`/api/novels?q=${encodeURIComponent(kw)}&page=${p}&pageSize=60`)
+    if (!res.ok) throw new Error(`搜索请求失败（${res.status}）`)
+    const data = (await res.json()) as { list: NovelListItem[]; total: number }
+    total = typeof data.total === 'number' ? data.total : 0
+    all.push(...data.list)
+    if (data.list.length === 0) break
+  }
+  return all
+}
+
+/** 取回的命中集按模式过滤后做主题内分页（20 条/页） */
+function useFieldSearch(kw: string, mode: SearchMode, page: number) {
+  const pageSize = 20
+  return useQuery({
+    queryKey: ['trxsw-field-search', mode, kw, page],
+    queryFn: async () => {
+      const matched = await fetchAllMatched(kw)
+      const needle = kw.toLowerCase()
+      const filtered = matched.filter((n) =>
+        mode === 'author' ? n.author.toLowerCase().includes(needle) : n.title.toLowerCase().includes(needle),
+      )
+      return {
+        list: filtered.slice((page - 1) * pageSize, page * pageSize),
+        total: filtered.length,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)),
+      }
+    },
+    enabled: !!kw,
+    staleTime: 30_000,
+  })
+}
+
 /* 外层按 query 重挂载内层：query 变化时自动重置草稿与页码（无需 effect） */
-function SearchView({ navigate, siteName, query }: ViewProps & { query: string }) {
-  return <SearchInner key={query} navigate={navigate} siteName={siteName} query={query} />
+function SearchView(props: ViewProps & { query: string }) {
+  return <SearchInner key={props.query} {...props} />
 }
 
 function SearchInner({ navigate, query }: ViewProps & { query: string }) {
-  const [kw, setKw] = useState(query)
+  const { mode, kw: initialKw } = parseSearchQuery(query)
+  const [kw, setKw] = useState(initialKw)
   const [page, setPage] = useState(1)
 
-  const { data, isLoading, isError, refetch } = useNovels({ q: query || undefined, page, pageSize: 20 })
+  const { data, isLoading, isError, refetch } = useFieldSearch(initialKw, mode, page)
 
-  const submit = () => {
+  const submit = (m: SearchMode = 'title') => {
     const t = kw.trim()
-    if (t) navigate({ name: 'search', query: t })
+    if (t) navigate({ name: 'search', query: m === 'author' ? `${AUTHOR_QUERY_PREFIX}${t}` : t })
   }
 
   return (
@@ -1247,21 +1315,23 @@ function SearchInner({ navigate, query }: ViewProps & { query: string }) {
           value={kw}
           onChange={(e) => setKw(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') submit()
+            if (e.key === 'Enter') submit('title')
           }}
           placeholder="输入书名或作者关键词"
           className="h-8 min-w-0 flex-1 border border-[#E4E4E4] px-2 text-sm outline-none focus:border-[#33CCFF]"
         />
         <button
           type="button"
-          onClick={submit}
+          onClick={() => submit('title')}
+          title="按书名关键词搜索"
           className="h-8 shrink-0 cursor-pointer bg-[#C00] px-4 text-xs text-white transition-colors hover:bg-[#A80000]"
         >
           搜书名
         </button>
         <button
           type="button"
-          onClick={submit}
+          onClick={() => submit('author')}
+          title="按作者名搜索"
           className="h-8 shrink-0 cursor-pointer border border-l-0 border-[#C00] px-4 text-xs text-[#C00] transition-colors hover:bg-[#FFF3F0]"
         >
           搜作者
@@ -1269,8 +1339,14 @@ function SearchInner({ navigate, query }: ViewProps & { query: string }) {
       </div>
 
       <p className="mt-2 text-xs text-[#999]">
-        搜索“<span className="text-[#FF3300]">{query || '…'}</span>”
-        {data ? `，共找到 ${data.total} 条结果` : ''}
+        {initialKw ? (
+          <>
+            按{mode === 'author' ? '作者' : '书名'}搜索“<span className="text-[#FF3300]">{initialKw}</span>”
+            {data ? `，共找到 ${data.total} 条结果` : ''}
+          </>
+        ) : (
+          '输入关键词后点击搜书名 / 搜作者'
+        )}
       </p>
 
       <Block className="mt-2" title="搜索结果" bodyClass="px-2 py-1">

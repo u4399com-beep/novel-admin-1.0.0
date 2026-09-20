@@ -65,6 +65,39 @@ export interface BookOutcome {
   message: string
 }
 
+// ==================== 两阶段采集（阶段1 书籍+目录骨架 / 阶段2 章节内容批量回填） ====================
+
+/** 阶段2 待回填章节：content='' 的骨架行 + 其源站 URL（URL 映射驻留任务内存，重跑任务时由阶段1重建） */
+export interface PendingChapter {
+  chapterId: number
+  novelId: number
+  url: string
+  /** 书页 URL（章节抓取 Referer 来路，站点常校验 书页→章节 导航） */
+  bookUrl: string
+  bookTitle: string
+}
+
+/** 阶段1 单本书处理结果：书籍 upsert + 章节骨架入库 + 待回填清单 */
+export interface MetaOutcome {
+  ok: boolean
+  canceled: boolean
+  novelId: number
+  title: string
+  /** 过滤/去重/截断后的章节引用数（含已存在章节） */
+  chapterRefs: number
+  pending: PendingChapter[]
+  message: string
+}
+
+/** 阶段2 批量回填结果 */
+export interface FillOutcome {
+  stored: number
+  failed: number
+  /** 并发另一任务已填充同章（内容守卫命中），不计成败 */
+  skipped: number
+  canceled: boolean
+}
+
 /** Run.flush 可写回的任务字段（全部为 ScrapeTask 标量列，类型化 update 直接支持） */
 export interface TaskFlushFields {
   done?: number

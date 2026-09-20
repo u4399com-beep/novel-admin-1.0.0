@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { firstLine } from '@/lib/api-error'
 import { parseHttpUrl, parsePositiveInt } from '@/lib/scrape/api-utils'
 import { safeParseRule, sanitizeRuleMap } from '@/lib/scrape/store'
 
 export const dynamic = 'force-dynamic'
-
-/** Prisma 错误消息首行（不含调用点源码路径，避免泄露服务器内部路径） */
-function firstLine(e: unknown): string {
-  return (e instanceof Error ? e.message : String(e)).split('\n')[0].slice(0, 200)
-}
 
 // GET 采集规则列表
 export async function GET() {

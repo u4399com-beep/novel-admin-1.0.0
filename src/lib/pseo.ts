@@ -5,6 +5,7 @@
  * - 供 /api/pseo/generate、/api/pseo/batch、/api/pseo/config 三个路由复用
  */
 import { db, serializeSettingsWrite } from '@/lib/db'
+import { novelListSelect } from '@/lib/novel-list'
 import { renderTpl, sanitizeSeoConfig } from '@/lib/seo'
 import { SUPPORTED_ENGINES, sanitizeKeyword } from '@/lib/suggest'
 import type { PseoRunnerConfig } from '@/lib/types'
@@ -116,16 +117,9 @@ async function matchNovels(keyword: string) {
     { description: { contains: p } },
     { category: { is: { name: { contains: p } } } },
   ])
-  const select = {
-    id: true, title: true, author: true, description: true, cover: true, categoryId: true,
-    category: { select: { name: true } }, status: true, isFeatured: true, isHot: true,
-    wordCount: true, clicks: true, updatedAt: true,
-    _count: { select: { chapters: true } },
-    chapters: { orderBy: { idx: 'desc' as const }, take: 1, select: { title: true } },
-  }
-  let novels = await db.novel.findMany({ where: { OR: or }, orderBy: { clicks: 'desc' }, take: 12, select })
+  let novels = await db.novel.findMany({ where: { OR: or }, orderBy: { clicks: 'desc' }, take: 12, select: novelListSelect })
   if (novels.length < 3) {
-    novels = await db.novel.findMany({ orderBy: { clicks: 'desc' }, take: 12, select })
+    novels = await db.novel.findMany({ orderBy: { clicks: 'desc' }, take: 12, select: novelListSelect })
   }
   return novels
 }

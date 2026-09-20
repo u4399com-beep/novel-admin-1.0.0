@@ -182,3 +182,107 @@ Work Log:
 
 Stage Summary:
 - 全部用户诉求交付完毕，端到端验证通过
+
+---
+Task ID: 12-f
+Agent: theme-calibrator-2
+Task: 主题校准组2（huangjinwu/ggd66/x2552/trxsw/shipsay）
+
+Work Log:
+- 源站探测（agent-browser + curl，每站 ≤5 次、间隔 ≥2s）：
+  ① huangjinwu.org 可达：nav=首页/排行榜/书库/标签/作者/电子书，首页模块顺序=热门推荐→分类排行榜→最新更新→最新电子书；computed style 实测 body #F0F4FB、正文 #1E293B、accent #1D4ED8、容器 1180px——与本地主题完全一致（本地即按源站配色构建），确认无需改色
+  ② ggd66.com 可达：顶栏 #1ABC9C、页脚/主按钮 #56CCB5、body #F9F9F9、容器 1200px、书页按钮 bg #56CCB5 白字、h2 18px #333——本地主题逐项吻合，确认无需改色
+  ③ x2552.com 已失效：首页仅剩「恭喜，站点创建成功！」默认占位页（http 200 / https refused），原杰奇站内容已清空 → 按杰奇模板族（Task 3 实测过的同构规则）做主题内部一致性校准
+  ④ trxsw.com 网络层不可达（TCP reset，与 Task 3 记录一致）→ 同上按杰奇族内部一致性校准
+  ⑤ shipsay：registry.ts 无源站说明，theme.source=demo.shipsay.com；curl 实测 demo.shipsay.com 超时不可达、www.shipsay.com 为船说 CMS 官方博客（Typecho，非小说站）→ 按任务规定的「繁体书站」兜底口径做主题内部一致性校准（导航/配色/排版自洽检查通过）
+- 代码修改（仅限 5 个辖区目录）：
+  ① 五主题 Chapter 视图空内容占位：content 为空/纯空白（paragraphs.length===0）时渲染居中「章节内容正在采集中，请稍后刷新重试」+「刷新重试」按钮 window.location.reload()，按钮样式各自取主题色板（huangjinwu 蓝圆角 / ggd66 描边 hover 青 / x2552 橙渐变 / trxsw 蓝白橙 hover / shipsay 深红）
+  ② trxsw 搜书名/搜作者专项修复：Layout 与 Search 页双按钮原共用同一 submit 行为相同 → 约定查询串前缀 '@' 表示按作者（无前缀=按书名），服务端 q 命中书名/作者/简介三字段 → 主题内 fetchAllMatched 分批取全量命中（pageSize=60，上限 10 批）再按单字段过滤 + 主题内分页（20 条/页），未改 /api/novels；结果提示语区分「按书名/按作者搜索」
+  ③ footer 贴底修复：huangjinwu、shipsay 根容器缺 flex flex-col（短页面 footer 悬空）→ min-h-screen flex flex-col + main flex-1；ggd66/x2552/trxsw 原本已是该模式，抽查确认
+- 验证（bunx tsc --noEmit = 0 错误；bun run lint = 0 错误；dev.log 无新错误；agent-browser errors/console 干净）：
+  - 五主题逐一手测（1280px + 375px）：首页渲染 ✓、书页 ✓、正常章节正文渲染 ✓（novel 28 ch 14331）、空章节占位+刷新按钮 ✓（novel 591 ch 139619，100/100 空章）
+  - trxsw 搜索实测：搜作者「铁凝」=3 条（汉城的事/午后悬崖/铁凝短篇小说、散文随笔），搜书名「铁凝」=1 条（仅标题命中）——双按钮语义正确分离，与 /api/novels? q=铁凝 total=3 交叉核对一致
+  - 375px：五主题首页+章节页 scrollWidth=375 无横向溢出；短页面（0 结果搜索页）footer bottom 与视口差 ≤2px 贴底通过
+
+Stage Summary:
+- huangjinwu：与源站 computed style 逐项核对（底色/正文色/强调色/1180px 容器/首页四模块顺序）已对齐，未改配色；补空内容占位 + footer 贴底（flex flex-col + main flex-1）
+- ggd66：源站 #1ABC9C/#56CCB5/#F9F9F9/1200px/虚线列表逐项吻合，未改配色；补空内容占位
+- x2552：源站已关站（默认占位页），按杰奇族内部一致性核查通过；补空内容占位
+- trxsw：源站 TCP 不可达，按杰奇族内部一致性核查通过；补空内容占位 + 完成搜书名/搜作者字段级搜索修复（'@' 前缀约定 + 主题内全量命中集过滤，API 零改动）
+- shipsay：demo.shipsay.com 不可达，按「繁体书站」兜底口径做内部一致性校准（色板 #BF2C24/#ED4259/#3E3D43 全视图自洽）；补空内容占位 + footer 贴底修复
+- 必做项全部落地：5/5 主题空内容占位生效（浏览器实测）；阅读器设置面板/相关搜索/收藏本站/阅读记录/繁体切换/渐变封面全部保留未动；未改 registry/types/API/DB/activeTheme
+- 验证结论：tsc 0 错误、lint 0 错误、五主题桌面+375px 浏览器实测通过、无控制台错误
+
+---
+Task ID: 12-e
+Agent: theme-calibrator-1
+Task: 主题校准组1（aijjxs/ddyueshu/pilishuwu/23qb/101kks）
+
+Work Log:
+- 源站探测（agent-browser，每站 ≤5 次访问、间隔 ≥2s；eval 脚本经临时文件注入以规避终端传输层吞 [h...] 方括号模式）：
+  ① aijjxs.com 可达：品牌色实测为青绿/土耳其玉系（导航链接 #00886D、搜索按钮 #56CCB5、品牌底 #1ABC9C），白面板近白底、微软雅黑；首页结构=顶部导航(首页+15 分类)+搜索横幅+「最新上传/封面推荐/小说分类/专题书单」+侧栏(作者签到/24小时热榜/一周热榜/热门作者)+数据统计+页脚——与本地主题结构逐块吻合，主色族一致，无需改色
+  ② ddyueshu.cc 可达：computed style 逐项核对与本地令牌完全一致——body #E9FAFF、导航条 #88C6E5、区块 3px 描边 #C3DFEA/#A6D3E8/#88C6E5、米黄底 #FEF9EF、链接 #6F78A7、友链绿 #548161、宋体；书页（面包屑+封面信息区+《书名》最新章节 dl）结构一致，确认无需改色
+  ③ pilishuwu.com：CF「Just a moment...」挑战拦截（等待后仍拦截）→ 按任务规定跳过实测，维持经典杰奇蓝白重建模板
+  ④ 23qb.net 可达：body #F8F9F9、正文 #282828、白卡 radius 18px + shadow rgba(149,157,165,.22) 0 7px 21px、榜单序号 #FC4274、强调 #FF2A14、首页=搜索 Hero→16 封面榜→分类 01-10 文字榜——与本地主题逐项一致，确认无需改色
+  ⑤ 101kks.com：CF「Just a moment...」挑战拦截（等待后仍拦截）→ 按任务规定跳过实测，维持蓝白工具风重建模板
+- 代码修改（仅限 5 个辖区目录）：
+  ① aijjxs/Toc.tsx 配色校准：目录页整页使用离题色板（绿 #1f8b4c + 灰蓝 #dfe6ec/#d9dfe5/#f4f6f8/#1f2d3d 系），与主题令牌（青绿 #0f766e + 奶油纸 #e5dccd/#fbf7ee/#f6f1e6）冲突 → 容器改 aj-card、全部离题色替换为主题色板（hover/排序/简介框/最新章节卡/已读灰 #b7ac97/骨架屏），桌面实测旧色 0 残留、主题青绿令牌 66 处
+  ② 五主题 Chapter 视图空内容占位：content 为空/纯空白（paragraphs.length===0）时渲染居中「章节内容正在采集中，请稍后刷新重试」+ 刷新按钮 window.location.reload()，按钮样式各取主题色板（aijjxs 暖纸 reader-btn / ddyueshu 天蓝描边 / pilishuwu 深蓝实底 / 23qb 红橙渐变胶囊 / 101kks 宝蓝实底+繁体文案「章節內容正在採集中…重新整理」）；aijjxs/ddyueshu 顺带把 content 读取改为 (content ?? '') 防御
+  ③ footer 贴底修复：23qb（根容器缺 flex + main 缺 flex-1）、101kks（同）→ min-h-screen flex flex-col + main/wrapper flex-1；aijjxs/ddyueshu/pilishuwu 原已是该模式，抽查确认
+- 验证（bunx tsc --noEmit = 0 错误；bun run lint = 0 错误；agent-browser 独立 session 逐主题手测，控制台 0 page errors）：
+  - 空章节占位实测：novel 36「恐怖时代，从成为守墓人开始」（两阶段采集骨架章 wordCount=0）五主题全部命中占位 + 刷新按钮；正常章节（novel 28 首章）五主题均渲染 11 段正文无占位
+  - 375px：五主题首页/书页/章节页 scrollWidth=clientWidth 零横向溢出；短页（无结果搜索页 375×1400 视口）footer bottom 与视口差 = 0px 贴底通过（含本次修复的 23qb/101kks）
+  - 保留项确认：阅读器设置面板、相关搜索、收藏本站/阅读记录/繁体切换、渐变封面逻辑均未触碰；未改 registry/types/API/DB/activeTheme
+
+Stage Summary:
+- aijjxs：源站结构逐块吻合、主色同族（源站亮青绿 vs 本地深青绿，保留主题自有奶油纸气质）；校准 Toc 页离题色板→主题令牌；空内容占位 ✓；375/贴底 ✓
+- ddyueshu：源站配色与本地令牌逐项完全一致（#E9FAFF/#88C6E5/三档描边/#FEF9EF/#6F78A7/宋体），零改色；空内容占位 ✓
+- pilishuwu：CF 拦截无法对比（诚实记录），维持杰奇蓝白模板；空内容占位 ✓
+- 23qb：源站配色逐项完全一致（#F8F9F9/#282828/18px 卡/#FC4274/#FF2A14），零改色；空内容占位 ✓；footer 贴底修复 ✓
+- 101kks：CF 拦截无法对比（诚实记录），维持蓝白工具风模板；空内容占位（繁体）✓；footer 贴底修复 ✓
+- 验证结论：tsc 0 错误、lint 0 错误、五主题浏览器全链路实测通过、无控制台错误、无横向溢出
+
+---
+Task ID: 12-g
+Agent: auditor-fixer
+Task: 审查修复 + 代码清理（辖区：api/** 与 lib 非 scrape 文件）
+
+Work Log:
+- A1 categories POST 并发 500 → 根因：exists 预检与 create 之间有并发窗口，撞 name 唯一约束（P2002）未捕获直接 500 → 修复：create 包 try/catch，P2002 时回读胜者按 409「分类已存在」返回（与预检语义一致；回读为 null 的极端态返回 500「分类创建失败」），顺带把 name.trim().slice(0,30) 提为 trimmed 消除重复截断 → 验证：6 连发并发同名 POST = 1×201 + 5×409、0 个 500，顺序重复 409，测试分类已删
+- A2 firstLine 重复实现去重 → 根因：scrape-rules/route.ts 与 chapters/clean-all/route.ts 各内联一份相同的「错误首行+200 截断」（防 Prisma message 泄露服务器路径）→ 修复：新建 src/lib/api-error.ts 作为唯一权威实现（未动禁区 api-utils.ts 已有函数，采用任务允许的「另建文件」方案），两路由删本地实现改 import → 验证：tsc/lint 通过，两路由 curl 200
+- A3 书名/作者截断统一 → 根因：API 路径 novels POST/PUT title 截 100、author 截 50，与采集入库路径 lib/scrape/store.ts upsertBook（title 200 / author 100）不一致，同一本书两条入库路径长度语义不同 → 修复：novels POST/PUT 统一为 title 200 / author 100 并注释对齐说明（只改 API 路由）→ 验证：POST 250 字书名+150 字作者 → 201，回读 title_len=200/author_len=100；PUT 同样实测 200/100；临时书已删
+- A4 清理类 API 运行中任务防护 → 排查：全 API 无章节 reorder 端点（chapters 仅单章 POST/PUT/DELETE），需防护的批量写只有 chapters/clean-all POST（全表分批清洗章节+重算书籍字数，与 worker 骨架/回填写入争 SQLite 写锁、还可能把刚回填正文再清洗造成字数竞态；原防护仅自身重入 409）→ 修复：POST 执行前查 status in (pending,running) 的 ScrapeTask，存在则 409 提示先取消任务（GET ?dryRun=1 只读不加防护；pending 由 worker 触发即转 running + 僵尸回收，防护不会被永久卡死）→ 验证：当前恰有 9 个 running 任务，POST 实测 409「存在进行中的采集任务（#1）…」、GET dryRun 200（checked=139718, toClean=0）
+- A5 TAG_RE/注释/死代码 → TAG_RE 全项目 grep 0 命中（任务所指标识符不存在，记录关闭）；修正 RuleDialog.tsx 误导注释「与服务端 parseSiteUrl 对齐」→ 实际为 parseHttpUrl（lib/scrape/api-utils.ts）；ts-prune 式核查 src/lib+src/hooks 全部导出符号引用，无未使用导出、无 TODO/FIXME 残留；评估不动：scrape-rules 内 SEED_RULES 4 条模板（PUT {seed:true} 可达非死代码）、settings.safeParse 与 pseo.parseSeoConfigBlob（语义域不同合并收益低）、shared.ts truncate 与 seo.ts truncate（截断总长口径 n+1 vs n 不同，合并会改输出）
+- A6 Run.log 写放大复核（只读，未改 scrape/**）→ worker 新版 800ms 节流在位（worker.ts:367 `now - lastFlush < 800` 跳过，flush 单条类型化 update）；API 侧无任何路由写 scrapeTask.log，列表 GET 的 LIST_SELECT 不含 log（详情 GET 返回全量 log 属预期契约）→ 结论：无写放大，零改动
+- B 治理（行为/契约不变）→ ①新建 src/lib/novel-list.ts（novelListSelect + NovelListRow + toNovelListItem），合并四处逐字重复的「列表 select + NovelListItem 映射」：home/route.ts（原 listSelect/Row/toListItem）、novels/route.ts GET（内联版）、pseo/[kw]/route.ts（原 fullSelect/toItem）、pseo.ts matchNovels（内联 select），响应 JSON 逐字段不变；②novels POST 内联 covers ['g1'..'g12'] 数组 → lib/covers.ts 新增 COVER_TOKENS=Object.keys(GRADIENT_CLASSES) 共用（入库校验与渲染层同源防漂移）；评估不动：covers-store.ts gradientTokenFor 的 % 12（位于采集调用链，收益低于触碰风险）
+
+Stage Summary:
+- 修复 4 项：categories POST P2002 并发 500→409 回读语义；firstLine 双实现收敛到 src/lib/api-error.ts；novels POST/PUT 截断统一 title 200/author 100（与采集入库对齐）；clean-all POST 增加运行中/待执行采集任务 409 防护
+- 清理/整合 3 项：novelListSelect+toNovelListItem 四处合并（home/novels/pseo/[kw]/pseo.ts）；COVER_TOKENS 替代 novels POST 内联 token 数组；RuleDialog 误导注释纠偏（parseSiteUrl→parseHttpUrl）
+- 明确不修项与理由：TAG_RE 不存在（全项目 0 命中）；Run.log 无 API 侧写放大（worker 800ms 节流在位，零改动）；SEED_RULES 非死代码；两处 truncate 与 safeParse 语义不同不合并；covers-store % 12 在采集调用链不动；无章节 reorder API 故防护范围仅 clean-all
+- 验证闭环：bunx tsc --noEmit 0 错误；bun run lint 0 错误；curl 实测通过（categories 顺序/6 并发 409·201 无 500→测试数据已删、novels 超长 POST/PUT 截断 200/100→临时书已删、clean-all POST 409+GET dryRun 200、home/novels/pseo/[kw]/scrape-rules 回归 200 且响应形状不变）；dev.log 881→920 行 error 计数 21→21 无新增；禁区（scrape/**、themes/**、mini-services/**、prisma/**、content-clean.ts）本轮零编辑，测试数据全部清理
+
+---
+Task ID: 12-main
+Agent: main (Z.ai Code)
+Task: 用户指令「所有小说数据删除重新采集，数据库从1开始计数」+ 历史任务 0-7 落地（两阶段并发采集/智能分类/分页模板/主题校准编排/代码治理编排）
+
+Work Log:
+- 会话状态校正：核实发现上一会话摘要失实——12-a~12-d 的产物（category.ts/pagination.ts/circuit.ts/两阶段 worker）实际全部不存在，worklog 仅到 Task 6；本轮按真实状态从零实施任务 0/2/3/4
+- 任务0+3 智能分类（src/lib/scrape/category.ts 新建）：三级归并（同义词表→关键词计分→LLM 兜底）；规范集锁定 9 分类（玄幻奇幻/武侠仙侠/都市言情/历史军事/科幻未来/游戏竞技/悬疑灵异/轻小说/其他），DB 中不可能再出现新分类名；空分类/失败一律落「其他」，根除「未分类」；LLM（z-ai-web-dev-sdk 仅服务端）带 8s 超时+进程缓存+in-flight 去重；store.ts ensureCategory 改 re-export 保兼容
+- 任务4 分页模板（src/lib/scrape/pagination.ts 新建）：listRule.pagination 支持 {k}/{url} 占位（相对路径基于目标 URL 解析），未配置回退 ?page=k 与 /page/k 猜测；经引擎实测后落库 ggd66=/sort/1/{k}/、xinjianpan=?page={k} 两模板
+- 任务2 两阶段并发采集（worker.ts 整文件重写）：阶段1 并发池(META=3)书页+目录页→分类→书籍upsert→章节骨架批量入库（createMany，撞 (novelId,idx) 逐行容错顺延；按标题 FIFO 匹配空骨架复用=重跑续采）；阶段2 跨书平铺空骨架并发池(CONTENT=4)抓正文回填，UPDATE WHERE content='' 守卫防并发覆盖，800ms 节流 flush，每本书最后一章完成即重算书香分；取消协作/僵尸回收/finalize 语义全保留；上限放宽 100→2000 章/本、60→300 书/任务；single 模式同样两阶段化
+- 架构决策：放弃 Chapter.url 加列方案——dev server 不可重启且 Prisma Client 单例挂 globalThis，运行中进程无法感知新列；改为「标题匹配回填」（阶段1必重取书页重建 URL 映射），schema 仅追加 Novel @@index([updatedAt])([clicks])（不影响客户端 API）
+- 源站探测（经引擎，逐站候选实测）：aijjxs 首页63条/ddyueshu 4/23qb 16/huangjinwu 24/ggd66 sort翻页命中/x2552 list 30/trxsw lastupdate 50/77shuku 6/xinjianpan 已知；101kks 升级为主动拦截（挑战页，引擎策略链全挡，如实建任务记录）；pilishuwu CF 拦截维持跳过
+- 清库重置：删 1960章/54书/15分类/12任务 → sqlite_sequence 重置（Novel/Chapter/Category/ScrapeTask 下一 id=1）→ 种子 9 规范分类（恰好 id 1-9）→ 封面文件清理 → VACUUM
+- 重建任务：经 API（触发进程内 worker）创建 10 任务 id=1-10 错峰启动；阶段1 实测 591 书全部入库、542 本地 webp 封面、骨架 139,718 章、零未分类零多余分类
+- LLM 兜底实战修正：阶段1 突刺期 429 限流+短形回答导致 30% 落「其他」→ parseLLMCategory 先走 matchCanonical 同义词链（容忍「都市/玄幻」短形）+ 失败退避重试一次 + 存量批处理重分类 scripts/reclassify-others.ts（10 本/次批量调用+退避重试，幂等可重跑）：159/174 本成功归类，「其他」占比 30%→2.5%
+- 主题预览基建：ThemeRenderer 支持 ?theme= 查询参数覆盖（仅浏览器端读取一次），使 12-e/12-f 两 Agent 并行预览互不干扰全局 activeTheme
+- Agent 编排：12-e（主题组1：aijjxs 实测改色+ddyueshu/23qb/101kks footer+pilishuwu 占位，全部含空内容占位）、12-f（主题组2：huangjinwu/ggd66/x2552/trxsw/shipsay + trxsw 搜书名/搜作者分流修复）、12-g（api 层 4 修复+2 整合）全部成功，tsc/lint 双 0
+- 集成验证：tsc 0 错误/lint 0 错误；agent-browser E2E（首页渲染→分类导航→书页，375px scrollWidth=375 无溢出）；数据抽查（《龙藏》正文完整/书香分 230 万字/68 章书 idx 1→68 零断档/重复书=0）；dev.log 无新增运行时错误
+
+Stage Summary:
+- 用户指令完成：全部小说数据已删除重采，Novel/Chapter/Category/ScrapeTask 自增从 1 重新计数（分类种子恰好 1-9、任务 1-10）
+- 新采集体系：两阶段并发（先书目+目录骨架立即可见，后跨书并发回填正文），9 任务运行中，139,718 章待回填按 ~133 章/分钟推进（预计十余小时，数据前台实时可见，重跑任务可续采残留骨架）
+- 分类体系：9 规范分类锁定，未分类根因（空名直建+无归并+LLM 限流/短形）全部修复，存量已重分类
+- 已知限制（诚实记录）：101kks 站点反爬升级当前不可采（任务#10 failed 留档）；pilishuwu CF 拦截未建任务；ddyueshu/77shuku 首页条目少（4/6 本）；阶段2 全量回填需较长时间
