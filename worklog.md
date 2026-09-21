@@ -393,3 +393,23 @@ Stage Summary:
 - 数据终态：448 书/约 26.9 万章骨架/填充进行中（后台 runner 持续）；「未分类」77 本由 runner 慢速循环消化
 - 质量闸门：根 tsc 0 错误、引擎 tsc 0 错误、lint 0 错误
 - 遗留交接：①101kks 任务限流冷却后重发续传 ②填充完成后的全量 audit 复检 ③git 推送（本轮末执行）
+
+---
+Task ID: 16-b（事件补记）
+Agent: main (Z.ai Code)
+Task: 沙箱文件系统回滚事件的应急处置
+
+Work Log:
+- 事件：02:37 沙箱将 /home/z/my-project 回滚至 ~23:57 快照（db 回到 337 书/150MB、本轮全部新增脚本/worklog 补记/代码修改从磁盘消失、~/.local/bin 二进制第 3 次被清的同类机制）
+- 关键发现：Next（boot 孵化）与 runner/engine（01:57 孤儿化）三个进程仍持有回滚前 db 文件的打开 fd（deleted inode，208MB，含 448 书/38.9 万章/18735 填充/任务 51-60 全量状态）→ 线上系统内部一致、填充持续；磁盘路径文件成孤儿
+- 处置：
+  1. 代码零损失：dc56172 已推 GitHub（回滚前 20 分钟），git fetch + reset --hard origin/main 全量恢复（含 worklog Task 16/新脚本/全部修复）
+  2. ghost inode 抢救：/proc/1076/fd 定位主库 fd → cp 出 /tmp/db-snapshots/custom-snap1.db（208MB）→ 恢复至 db/custom.db（448 书/389337 章/18735 填充/立即阅读=0 验证通过）
+  3. 踩坑记录：git reset --hard 把旧 index 中被跟踪的 db/covers 文件删除（目标提交已 gitignore）→ db/ 目录短暂缺失致 runner journal 创建失败（"attempt to write a readonly database" 瞬时故障）；目录重建后写入自愈，受影响章节保持 wordCount=0 由任务重发续传
+  4. public/covers 部分封面文件随 reset 丢失（book 引用 /covers/6x-7x.webp 404）——前端 NovelCoverImg 为渐变层上的绝对定位 img，404 时渐变兜底显示，属可接受降级；重采任务新建书时会重新下载
+- 现状：runner/engine/Next 继续在 ghost inode 上一致工作（填充推进中）；path 库为快照副本（随填充推进会逐渐滞后，会话末做最终再同步）
+- 经验沉淀：①本环境 /home 可能被周期性回滚——重要产物必须尽早 push、DB 必须定期快照到 /tmp ②孤儿化技术（bun -e 瞬退使子进程 reparent PID 1）是后台进程跨调用存活的唯一可靠手段 ③bun --hot 禁用于常驻 runner（热重载重跑 main() + 清理 spawn 子进程）
+
+Stage Summary:
+- 代码与数据双恢复闭环：代码经 GitHub、数据经 /proc fd 抢救；线上填充未中断
+- 防再损失：本轮末将做 ghost→path 最终再同步 + /tmp 快照；后续会话建议开机先核对 db 是否为回滚版本
