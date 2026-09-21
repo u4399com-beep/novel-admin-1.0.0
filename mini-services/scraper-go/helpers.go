@@ -4,12 +4,12 @@
 package main
 
 import (
-        "context"
-        "log"
-        "os"
-        "os/exec"
-        "sync"
-        "time"
+	"context"
+	"log"
+	"os"
+	"os/exec"
+	"sync"
+	"time"
 )
 
 // execCommand 包装 exec.Command
@@ -18,7 +18,7 @@ func execCommand(name string, args ...string) *exec.Cmd { return exec.Command(na
 func getenv(name string) string { return os.Getenv(name) }
 
 type syncMutex struct {
-        sync.RWMutex
+	sync.RWMutex
 }
 
 func (m *syncMutex) Lock()    { m.RWMutex.Lock() }
@@ -30,7 +30,7 @@ func sleepMs(ms int64) { time.Sleep(time.Duration(ms) * time.Millisecond) }
 
 // contextWithTimeout 包装 context.WithTimeout
 func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
-        return context.WithTimeout(context.Background(), d)
+	return context.WithTimeout(context.Background(), d)
 }
 
 func nowMs() int64 { return time.Now().UnixMilli() }

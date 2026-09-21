@@ -191,7 +191,7 @@ func handlePseoSuggest(w http.ResponseWriter, r *http.Request, _ map[string]stri
 	if len(sources) == 0 {
 		sources = supportedEngines
 	}
-	agg := fetchSuggestionsMulti(keyword, sources, 4000)
+	agg := fetchSuggestionsMulti(keyword, sources, 8000)
 	writeJSON(w, 200, map[string]any{
 		"results": suggestResultsDTO(agg.Results),
 		"words":   aggWordsDTO(agg.Words, 40),
@@ -256,7 +256,7 @@ func handlePseoGenerate(w http.ResponseWriter, r *http.Request, _ map[string]str
 	// 1) 搜索引擎下拉词（失败隔离 + 限并发 3 + 跨引擎去重）
 	agg := suggestionsAggregate{}
 	if useSuggest {
-		agg = fetchSuggestionsMulti(keyword, sources, 4000)
+		agg = fetchSuggestionsMulti(keyword, sources, 8000)
 	}
 
 	// 2) 关键词入库（基础词最优先，来源标记 manual；去重与竞态容错在 lib 内）
@@ -362,7 +362,7 @@ func runSeedBatch(seeds []string, cfg pseoRunnerConfig, level int) []seedOutcome
 				}
 				seed := seeds[i]
 				// 批量场景种子/引擎叠加并发更高，引擎超时放宽到 6s（单发 suggest 仍为 4s）
-				agg := fetchSuggestionsMulti(seed, cfg.Sources, 6000)
+				agg := fetchSuggestionsMulti(seed, cfg.Sources, 8000)
 				words := agg.Words
 				if len(words) > cfg.PerSeedLimit {
 					words = words[:cfg.PerSeedLimit]

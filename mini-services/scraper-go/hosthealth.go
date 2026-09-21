@@ -56,22 +56,24 @@ func touchHealth(host string) *hostHealth {
 	return h
 }
 
-// hostPenaltyMs 当前限流退避剩余毫秒（0 = 无需退避）
+// hostPenaltyMs 当前限流退避剩余毫秒（0 = 无需退避）。
+// 字段读取必须在锁内：h.penaltyUntil 会被 noteRateLimited 在并发请求下写入，
+// 锁外读是无同步的数据竞争（go race detector 实证点，int64 撕裂读在 32 位平台为真风险）。
 func hostPenaltyMs(host string) int64 {
 	healthMu.Lock()
+	defer healthMu.Unlock()
 	h, ok := healthMap[host]
-	healthMu.Unlock()
 	if !ok || h.penaltyUntil <= nowMs() {
 		return 0
 	}
 	return h.penaltyUntil - nowMs()
 }
 
-// hostCircuitOpenMs 当前熔断剩余毫秒（0 = 未熔断/已到半开时刻）
+// hostCircuitOpenMs 当前熔断剩余毫秒（0 = 未熔断/已到半开时刻）。字段读取必须在锁内（同上）。
 func hostCircuitOpenMs(host string) int64 {
 	healthMu.Lock()
+	defer healthMu.Unlock()
 	h, ok := healthMap[host]
-	healthMu.Unlock()
 	if !ok || h.openUntil <= nowMs() {
 		return 0
 	}

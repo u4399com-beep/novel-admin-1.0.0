@@ -41,9 +41,9 @@ func binScore(name string) int {
 }
 
 var (
-	curlBinMu          sync.Mutex
-	curlBins           []string
-	curlBinsEmptyAt    int64 // 上次探测结果为空的时间戳（0=非空）：空结果仅缓存 60s
+	curlBinMu       sync.Mutex
+	curlBins        []string
+	curlBinsEmptyAt int64 // 上次探测结果为空的时间戳（0=非空）：空结果仅缓存 60s
 )
 
 // detectCurlImpersonates 检测目录 = PATH 目录 + ~/.local/bin 兜底（引擎 PATH 常不含用户级 bin）
@@ -107,7 +107,7 @@ func detectCurlImpersonates() []string {
 }
 
 var (
-	curlCursorMu sync.Mutex
+	curlCursorMu  sync.Mutex
 	curlBinCursor int
 )
 
@@ -124,8 +124,8 @@ func headerLines(hdrText, name string) []string {
 }
 
 var curlImpersonateStrategy = strategyDef{
-	name: "curl-impersonate",
-	description: "调用系统 curl_chrome*/curl-impersonate-* 二进制（TLS/JA3 指纹级浏览器伪装，多二进制时轮换指纹），HTTP/2 失败自动降级 --http1.1；需另行安装二进制，检测不到则不可用",
+	name:         "curl-impersonate",
+	description:  "调用系统 curl_chrome*/curl-impersonate-* 二进制（TLS/JA3 指纹级浏览器伪装，多二进制时轮换指纹），HTTP/2 失败自动降级 --http1.1；需另行安装二进制，检测不到则不可用",
 	probe:        func() bool { return len(detectCurlImpersonates()) > 0 },
 	selfRetrying: true,
 	run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
@@ -144,6 +144,7 @@ var curlImpersonateStrategy = strategyDef{
 		}
 		explicitReferer := ctx.referer
 		deadline := nowMs() + timeoutMs
+		var lastRetryAfter *int64
 
 		// 子尝试梯子：默认（HTTP/2）→ --http1.1（覆盖协议指纹差异）
 		variants := []struct {
@@ -304,15 +305,23 @@ var curlImpersonateStrategy = strategyDef{
 				if status >= 400 {
 					warnings = append(warnings, "curl-impersonate 收到 HTTP "+itoa(status))
 				}
-				if a.ok {
-					return attemptResult{ok: true, status: status, bytes: raw, contentType: ctype, warnings: warnings, subAttempts: subAttempts}
+				// Retry-After 解析：与 fetch/got 系策略对齐（429/503 时供链层做退避记忆）
+				if status == 429 || status == 503 {
+					if ras := headerLines(hdrText, "Retry-After"); len(ras) > 0 {
+						if ra := parseRetryAfterMs(ras[0]); ra != nil {
+							lastRetryAfter = ra
+						}
+					}
 				}
-				break // 非重定向且非 2xx：换 HTTP/1.1 画像重试（由外层 variants 循环继续）
+				if a.ok {
+					return attemptResult{ok: true, status: status, bytes: raw, contentType: ctype, warnings: warnings, subAttempts: subAttempts, retryAfter: lastRetryAfter}
+				}
+				break // 非重定向且非 2xx：换 HTTP/1.1 画像重试（由外层 variants 循环继续；lastRetryAfter 保留供最终结果）
 			}
 			if stopVariants {
 				break
 			}
 		}
-		return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts}
+		return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: lastRetryAfter}
 	},
 }

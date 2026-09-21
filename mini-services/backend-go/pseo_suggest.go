@@ -15,13 +15,22 @@
  * 3. JS e.message 错误文案 → Go err.Error()（截断 200 字；超时错误文本与 V8 不同，
  *    仅出现在 results[].error 字段，不影响契约结构）
  * 4. 引擎响应解析失败（非法 JSON）在 TS 为 throw→catch→error 字段；Go 等价处理
+ * 5. duckduckgo 直连在 Go TLS 栈下会被 Cloudflare JA3 指纹识别并掐死连接导致超时
+ *    （worklog Task 18 已知差异①）→ 其下拉词请求改经 scraper-go 引擎
+ *    （127.0.0.1:3030，见 suggestFetchViaEngine）反指纹策略链代理发出；经引擎的
+ *    新路径失败时在 results[].error 如实报告（TS 版 duckduckgo 从未真正成功过，
+ *    无历史语义可破坏）；其余引擎（baidu/bing/sogou/so360）保持 Go 直连不动
  */
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -130,6 +139,11 @@ type suggestionsAggregate struct {
 
 var suggestHTTPClient = &http.Client{}
 
+// suggestEngineClient suggest 专用引擎客户端（不复用 engineclient.go 的 engineHTTPClient：
+// 那是 60s 超时，对齐引擎 55s 策略链整体预算；suggest 预算是秒级——单发/生成均 8s，
+// 硬闸由 ctx 控制，client 不设全局 Timeout 以免双重预算打架）。
+var suggestEngineClient = &http.Client{}
+
 // fetchSuggestions 单引擎下拉词（独立超时；失败隔离：仅 error 字段，绝不 panic/抛出）。
 // HTTP 非 2xx 时 TS 不抛错（words 留空、无 error 字段）→ Go 同语义。
 func fetchSuggestions(engine, keyword string, timeoutMs int) suggestResult {
@@ -142,23 +156,7 @@ func fetchSuggestions(engine, keyword string, timeoutMs int) suggestResult {
 
 	switch engine {
 	case "baidu":
-		words, fetchErr = suggestFetchJSON(ctx, "https://www.baidu.com/sugrec?prod=pc&wd="+q, func(body []byte) []string {
-			var j struct {
-				G []struct {
-					K *string `json:"k"`
-				} `json:"g"`
-			}
-			if json.Unmarshal(body, &j) != nil {
-				return nil
-			}
-			out := make([]string, 0, len(j.G))
-			for _, x := range j.G {
-				if x.K != nil && *x.K != "" {
-					out = append(out, *x.K)
-				}
-			}
-			return out
-		})
+		words, fetchErr = suggestFetchJSON(ctx, "https://www.baidu.com/sugrec?prod=pc&wd="+q, suggestParseBaidu)
 	case "bing":
 		words, fetchErr = suggestFetchJSON(ctx, "https://api.bing.com/osjson.aspx?query="+q, func(body []byte) []string {
 			var j [2]json.RawMessage
@@ -172,30 +170,14 @@ func fetchSuggestions(engine, keyword string, timeoutMs int) suggestResult {
 			return filterNonEmpty(arr)
 		})
 	case "duckduckgo":
-		words, fetchErr = suggestFetchJSON(ctx, "https://duckduckgo.com/ac/?q="+q+"&type=list", func(body []byte) []string {
-			var j [2]json.RawMessage
-			if json.Unmarshal(body, &j) != nil {
-				return nil
-			}
-			var arr []string
-			if len(j) > 1 {
-				_ = json.Unmarshal(j[1], &arr)
-			}
-			return filterNonEmpty(arr)
-		})
+		// 经 scraper-go 引擎代理（Go TLS 被 Cloudflare JA3 指纹掐死 → 直连超时），
+		// 见 suggestFetchViaEngine；响应仍为 ["查询词",[...]]，解析逻辑不变
+		words, fetchErr = suggestFetchDuckDuckGo(ctx, "https://duckduckgo.com/ac/?q="+q+"&type=list")
 	case "sogou":
 		// 容错解析 JSON/JSONP 混合返回
 		words, fetchErr = suggestFetchText(ctx, "https://www.sogou.com/sugproxy?p=1&ie=utf8&from=pc&wd="+q, suggestBracketParse)
 	case "so360":
-		words, fetchErr = suggestFetchText(ctx, "https://sug.so.360.cn/suggest?word="+q+"&ie=utf-8", func(text string) []string {
-			var j struct {
-				Data []string `json:"data"`
-			}
-			if err := json.Unmarshal([]byte(text), &j); err == nil {
-				return filterNonEmpty(j.Data)
-			}
-			return suggestBracketParse(text)
-		})
+		words, fetchErr = suggestFetchText(ctx, "https://sug.so.360.cn/suggest?word="+q+"&ie=utf-8", suggestParseSO360)
 	default:
 		return suggestResult{Engine: engine, OK: false, Words: []string{}, Error: "不支持的引擎: " + engine}
 	}
@@ -205,6 +187,59 @@ func fetchSuggestions(engine, keyword string, timeoutMs int) suggestResult {
 	}
 	clean := normalizeWords(words)
 	return suggestResult{Engine: engine, OK: len(clean) > 0, Words: clean}
+}
+
+// suggestParseBaidu 百度 sugrec 解析：词条字段历史上有 k（旧版）/ q（现行）两种形态，
+// 两者兼容（2026-09 实测响应为 g[].q；k 形态保留兼容旧接口变体——19-a 曾误诊为
+// TLS 指纹问题，实为解析字段过时致 0 词）。
+func suggestParseBaidu(body []byte) []string {
+	var j struct {
+		G []struct {
+			K *string `json:"k"`
+			Q *string `json:"q"`
+		} `json:"g"`
+	}
+	if json.Unmarshal(body, &j) != nil {
+		return nil
+	}
+	out := make([]string, 0, len(j.G))
+	for _, x := range j.G {
+		v := ""
+		if x.K != nil {
+			v = *x.K
+		}
+		if v == "" && x.Q != nil {
+			v = *x.Q
+		}
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// suggestParseSO360 360 下拉词解析：现行响应为 {"result":[{"word":...}]}（2026-09 实测），
+// 旧版为 {"data":["..."]}，两者兼容；非 JSON/杂形态回落索引首个 [...] 内字符串数组。
+func suggestParseSO360(text string) []string {
+	var j struct {
+		Data   []string `json:"data"`
+		Result []struct {
+			Word *string `json:"word"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(text), &j) == nil {
+		out := make([]string, 0, len(j.Data)+len(j.Result))
+		out = append(out, filterNonEmpty(j.Data)...)
+		for _, x := range j.Result {
+			if x.Word != nil && *x.Word != "" {
+				out = append(out, *x.Word)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return suggestBracketParse(text)
 }
 
 func filterNonEmpty(in []string) []string {
@@ -288,6 +323,153 @@ func suggestFetchText(ctx context.Context, url string, parse func(string) []stri
 		return nil, err
 	}
 	return parse(string(body)), nil
+}
+
+// suggestFetchViaEngine 经 scraper-go 引擎（127.0.0.1:3030 /api/test）代理抓取 targetURL，
+// 返回上游原始响应体字节。strategy 非空时作为首选策略传给引擎（链语义：该策略不可用
+// → 引擎自动回退全链；可用但请求失败 → 调用方自行无策略重试一次（见 suggestFetchDuckDuckGo）。
+//
+// 背景（worklog Task 18 已知差异①）：duckduckgo.com 在 Cloudflare 后面，会指纹识别
+// Go 标准库 net/http 的 TLS 栈（JA3）并掐死连接导致超时；引擎策略链具备完整反指纹
+// 能力（curl-impersonate TLS 伪造 / got-scraping 等价 / browser 兜底），实测可正常
+// 取得 duckduckgo 响应。仅 duckduckgo 走此路径，其余引擎直连不受影响。
+//
+// 引擎契约：POST {"url","includeHtml":true,"timeoutMs"} →
+//
+//	成功 200 {"ok":true,"html":"<上游原始响应体>","htmlTruncated":bool,...}
+//	失败 502 {"ok":false,"error","detail","attempts":[...]}
+//
+// timeoutMs 按 ctx 剩余预算估算（略小于剩余，给引擎响应回传留余量；引擎侧钳制
+// 2s~60s）；请求挂 ctx——外层 suggest 超时预算（单发/生成均 8s）继续作为最终硬闸。
+func suggestFetchViaEngine(ctx context.Context, targetURL string) ([]byte, error) {
+	return suggestFetchViaEngineStrategy(ctx, targetURL, "")
+}
+
+func suggestFetchViaEngineStrategy(ctx context.Context, targetURL, strategy string) ([]byte, error) {
+	timeoutMs := 3000
+	if deadline, ok := ctx.Deadline(); ok {
+		if remain := int(time.Until(deadline).Milliseconds()) - 300; remain > 0 {
+			timeoutMs = remain
+		}
+	}
+	payload := map[string]any{
+		"url":         targetURL,
+		"includeHtml": true,
+		"timeoutMs":   timeoutMs,
+	}
+	if strategy != "" {
+		payload["strategy"] = strategy
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("采集引擎请求体序列化失败: %s", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, SCRAPER_BASE+"/api/test", bytes.NewReader(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("采集引擎请求构造失败: %s", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	t0 := time.Now()
+	res, err := suggestEngineClient.Do(req)
+	log.Printf("[pseo-suggest] 引擎调用 strategy=%q elapsed=%dms err=%v target=%s",
+		strategy, time.Since(t0).Milliseconds(), err, truncateRunes(targetURL, 80))
+	if err != nil {
+		if engineIsTimeout(err) {
+			return nil, errors.New("采集引擎请求超时(3030)")
+		}
+		return nil, fmt.Errorf("采集引擎不可达(3030)（%s）", truncateRunes(err.Error(), 120))
+	}
+	defer res.Body.Close()
+	body, err := readAllLimited(res.Body, 4<<20)
+	if err != nil {
+		return nil, err
+	}
+	var env struct {
+		OK            *bool   `json:"ok"`
+		Error         *string `json:"error"`
+		Detail        *string `json:"detail"`
+		HTML          *string `json:"html"`
+		HTMLTruncated bool    `json:"htmlTruncated"`
+		Attempts      []any   `json:"attempts"`
+	}
+	if json.Unmarshal(body, &env) != nil {
+		return nil, fmt.Errorf("引擎响应解析失败(HTTP %d)", res.StatusCode)
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 || env.OK == nil || !*env.OK {
+		msg := fmt.Sprintf("HTTP %d", res.StatusCode)
+		if env.Error != nil && *env.Error != "" {
+			msg = *env.Error
+		}
+		if env.Detail != nil && *env.Detail != "" {
+			msg += "（" + truncateRunes(*env.Detail, 120) + "）"
+		}
+		return nil, fmt.Errorf("引擎抓取失败: %s（attempts=%d）", msg, len(env.Attempts))
+	}
+	if env.HTML == nil {
+		return nil, fmt.Errorf("引擎响应缺少 html 字段(HTTP %d)", res.StatusCode)
+	}
+	if env.HTMLTruncated {
+		return nil, errors.New("响应被引擎截断(htmlTruncated)")
+	}
+	return []byte(*env.HTML), nil
+}
+
+// suggestFetchDuckDuckGo duckduckgo 下拉词（经引擎代理，见 suggestFetchViaEngineStrategy）。
+// ac 接口返回 ["查询词",["词1","词2",...]]，取第二元素字符串数组。
+// 两段式策略（实测偶发 curl-impersonate 慢响应会吃光整体预算，必须子死线隔离）：
+//  1. 首选 curl-impersonate（Chrome TLS 伪造，实测 /ac/ 206ms；子死线 3.5s 封顶，
+//     覆盖引擎 1.5~1.9s 开销+一次 1.2~1.5s 域名限速等待）——该策略不可用时引擎自动回退全链；
+//  2. 首选失败/超时且剩余预算充足时，无策略重试一次（全链+亲和，Playwright 兜底 1.5~3s）。
+//
+// 与直连引擎「HTTP 非 2xx 静默留空」不同：经引擎的新路径失败时如实报错
+// （fetchSuggestions 会把 fetchErr 写入 results[].error；TS 版 duckduckgo 从未
+// 真正成功过，无历史语义可破坏，以诚实报错优先）。
+func suggestFetchDuckDuckGo(ctx context.Context, url string) ([]string, error) {
+	body, err := func() ([]byte, error) {
+		// 子死线：首选策略最多 3.5s（且给全链兜底留 ≥1.5s），防慢响应吃光整体预算
+		sub := ctx
+		if remain := suggestCtxRemainMs(ctx); remain >= 4200 {
+			capMs := 3500
+			if remain-1500 < capMs {
+				capMs = remain - 1500
+			}
+			var cancel context.CancelFunc
+			sub, cancel = context.WithTimeout(ctx, time.Duration(capMs)*time.Millisecond)
+			defer cancel()
+		}
+		return suggestFetchViaEngineStrategy(sub, url, "curl-impersonate")
+	}()
+	if err != nil {
+		if suggestCtxRemainMs(ctx) >= 1200 {
+			if body2, err2 := suggestFetchViaEngineStrategy(ctx, url, ""); err2 == nil {
+				body, err = body2, nil
+			}
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	var j [2]json.RawMessage
+	if json.Unmarshal(body, &j) != nil {
+		return nil, errors.New("duckduckgo 响应解析失败（非 [\"查询词\",[...]] 形态）")
+	}
+	if len(j[1]) == 0 {
+		return nil, errors.New("duckduckgo 响应缺少下拉词数组")
+	}
+	var arr []string
+	if json.Unmarshal(j[1], &arr) != nil {
+		return nil, errors.New("duckduckgo 下拉词数组解析失败")
+	}
+	return filterNonEmpty(arr), nil
+}
+
+// suggestCtxRemainMs 剩余预算毫秒数（无 deadline 返回极大值）
+func suggestCtxRemainMs(ctx context.Context) int {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return 1 << 30
+	}
+	return int(time.Until(deadline).Milliseconds())
 }
 
 // runSuggestWithConcurrency 限并发执行器：按索引取件、结果保持输入顺序（TS runWithConcurrency 移植）。

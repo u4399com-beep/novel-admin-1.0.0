@@ -15,27 +15,33 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
-var browserProbeOnce bool
-var browserProbeResult bool
+// probeBrowserOnce/probeBrowserResult 探测结果进程级缓存。/api/strategies 与链内 probe()
+// 会被多请求并发调用，裸 bool 双写是无同步数据竞争 → sync.Once 一次性初始化。
+var (
+	browserProbeOnce   sync.Once
+	browserProbeResult bool
+)
 
 // probeBrowser 1) Python Playwright 可导入 2) ~/.cache/ms-playwright 存在 chromium 目录
 func probeBrowser() bool {
-	if browserProbeOnce {
-		return browserProbeResult
-	}
-	browserProbeOnce = true
-	browserProbeResult = false
+	browserProbeOnce.Do(func() {
+		browserProbeResult = probeBrowserUncached()
+	})
+	return browserProbeResult
+}
+
+func probeBrowserUncached() bool {
 	// python3 -c 'import playwright'
 	ctx, cancel := contextWithTimeout(10 * time.Second)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, "python3", "-c", "import playwright")
 	if err := cmd.Run(); err != nil {
-		cancel()
 		return false
 	}
-	cancel()
 	home, _ := os.UserHomeDir()
 	if home == "" {
 		home = "/root"
@@ -46,7 +52,6 @@ func probeBrowser() bool {
 	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "chromium") {
-			browserProbeResult = true
 			return true
 		}
 	}
@@ -142,8 +147,8 @@ func resolveRenderPy() string {
 }
 
 var browserStrategy = strategyDef{
-	name: "browser",
-	description: "Playwright + Chromium 真实渲染（经 Python Playwright 桥接），对抗 JS 挑战/动态渲染；环境不可用时优雅跳过",
+	name:         "browser",
+	description:  "Playwright + Chromium 真实渲染（经 Python Playwright 桥接），对抗 JS 挑战/动态渲染；环境不可用时优雅跳过",
 	probe:        probeBrowser,
 	selfRetrying: true,
 	run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {

@@ -25,6 +25,18 @@
 import { statSync, utimesSync, writeFileSync } from 'node:fs'
 import { fail, handleChapter, handleStrategies, handleTest, json, parseBody } from './handlers'
 
+// ==================== 防误启动护栏（Task 19-d） ====================
+// Go 引擎（mini-services/scraper-go）已接管 3030 成为生产引擎，本 TS 版仅作回滚备份。
+// 默认拒绝启动：本文件底部的互监护会在运行期拉起 scripts/worker-runner.ts（TS 采集
+// runner），与 backend-go 内置 runner 并存时将双写 ScrapeTask（已有实际双写事故）。
+// 确需回滚 TS 引擎时：先停 backend-go 与 scraper-go，再以 ALLOW_TS_ENGINE=1 显式启动。
+if (process.env.ALLOW_TS_ENGINE !== '1') {
+  console.error('[scraper-service] ⛔ 拒绝启动：Go 引擎（mini-services/scraper-go）已接管 3030，本 TS 引擎仅作回滚备份。')
+  console.error('[scraper-service] ⛔ 且本进程互监护会拉起 TS runner（scripts/worker-runner.ts），在 backend-go 运行时会双写 ScrapeTask。')
+  console.error('[scraper-service] 回滚方法：先停 backend-go 与 scraper-go，再以 ALLOW_TS_ENGINE=1 bun index.ts 显式启动。')
+  process.exit(1)
+}
+
 const parsedPort = Number(process.env.SCRAPER_PORT)
 const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536 ? parsedPort : 3030
 

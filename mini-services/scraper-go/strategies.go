@@ -133,7 +133,7 @@ func headerGeneratorHeaders(firstURL string) map[string]string {
 
 // gotStrategyRun 单变体（h2 → http1.1）执行：手动逐跳重定向 + SSRF + Cookie 会话。
 // 语义对齐 TS got-scraping.ts：followRedirect:false 逐跳处理；429/5xx 直接结束梯子
-//（换协议不会改变服务端决策，对限流中的站点追加降级请求只会加重刺激）。
+// （换协议不会改变服务端决策，对限流中的站点追加降级请求只会加重刺激）。
 func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
 	warnings := []string{}
 	subAttempts := []SubAttempt{}
@@ -275,8 +275,8 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 }
 
 var gotScrapingStrategy = strategyDef{
-	name: "got-scraping",
-	description: "随机真实浏览器头 + Go 原生 HTTP/2，失败自动降级 HTTP/1.1（got-scraping 策略的 Go 等价实现），对抗请求头/协议指纹拦截",
+	name:         "got-scraping",
+	description:  "随机真实浏览器头 + Go 原生 HTTP/2，失败自动降级 HTTP/1.1（got-scraping 策略的 Go 等价实现），对抗请求头/协议指纹拦截",
 	probe:        func() bool { return true },
 	selfRetrying: true,
 	run:          gotStrategyRun,
@@ -293,7 +293,7 @@ func urlParseHost(raw string) string {
 
 // runWithHardGate 策略硬时间闸：任何策略都不得挂死整条链。底层库自身超时可能失效，
 // 以「链剩余预算 + 2.5s 余量」为硬上限强制放行。超时后策略 goroutine 继续在后台收尾
-//（仅写自己的局部状态，无共享竞争），结果被丢弃。
+// （仅写自己的局部状态，无共享竞争），结果被丢弃。
 func runWithHardGate(f func() attemptResult, hardMs int64, budgetNoteMs int64) (attemptResult, bool) {
 	type out struct {
 		res attemptResult

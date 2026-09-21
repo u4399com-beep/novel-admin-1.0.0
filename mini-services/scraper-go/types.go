@@ -37,7 +37,7 @@
  *   extract.go    List/Book/Chapter 规则提取器
  *   jsontoc.go    JSON 目录接口（chapterListApi）
  *   handlers.go   /api/strategies、/api/test、/api/chapter 业务处理
- *   main.go       HTTP 服务/路由/CORS/心跳/runner 互监护
+ *   main.go       HTTP 服务/路由/CORS/心跳/runner 心跳观测（不拉起 runner）
  */
 package main
 
@@ -56,13 +56,13 @@ type ListRule struct {
 
 // BookRule 书页规则
 type BookRule struct {
-	TitleSelector       string `json:"titleSelector,omitempty"`
-	AuthorSelector      string `json:"authorSelector,omitempty"`
-	DescriptionSelector string `json:"descriptionSelector,omitempty"`
-	CoverSelector       string `json:"coverSelector,omitempty"`
-	StatusSelector      string `json:"statusSelector,omitempty"`
-	CategorySelector    string `json:"categorySelector,omitempty"`
-	ChapterLinkSelector string `json:"chapterLinkSelector,omitempty"`
+	TitleSelector        string `json:"titleSelector,omitempty"`
+	AuthorSelector       string `json:"authorSelector,omitempty"`
+	DescriptionSelector  string `json:"descriptionSelector,omitempty"`
+	CoverSelector        string `json:"coverSelector,omitempty"`
+	StatusSelector       string `json:"statusSelector,omitempty"`
+	CategorySelector     string `json:"categorySelector,omitempty"`
+	ChapterLinkSelector  string `json:"chapterLinkSelector,omitempty"`
 	ChapterTitleSelector string `json:"chapterTitleSelector,omitempty"`
 	// CatalogLinkSelector 目录页链接选择器：书页仅含最新几章时指向完整目录页
 	CatalogLinkSelector string `json:"catalogLinkSelector,omitempty"`
@@ -143,16 +143,16 @@ type BookChapterRef struct {
 
 // BookData 书页提取结果
 type BookData struct {
-	Type         string          `json:"type"`
-	Title        string          `json:"title"`
-	Author       string          `json:"author"`
-	Description  string          `json:"description"`
-	Cover        *string         `json:"cover"`
-	Status       string          `json:"status"`
-	Category     string          `json:"category"`
-	ChapterCount int             `json:"chapterCount"`
+	Type         string           `json:"type"`
+	Title        string           `json:"title"`
+	Author       string           `json:"author"`
+	Description  string           `json:"description"`
+	Cover        *string          `json:"cover"`
+	Status       string           `json:"status"`
+	Category     string           `json:"category"`
+	ChapterCount int              `json:"chapterCount"`
 	Chapters     []BookChapterRef `json:"chapters"`
-	CatalogUrl   *string         `json:"catalogUrl"`
+	CatalogUrl   *string          `json:"catalogUrl"`
 }
 
 // ChapterData 章节提取结果

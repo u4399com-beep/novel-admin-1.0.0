@@ -24,10 +24,10 @@ import (
 )
 
 const (
-	cookieMaxHosts         = 128
-	cookieMaxPerHost       = 50
-	cookieSessionTTLMS     = 30 * 60 * 1000
-	cookieMaxTTLMS         = 7 * 24 * 60 * 60 * 1000
+	cookieMaxHosts     = 128
+	cookieMaxPerHost   = 50
+	cookieSessionTTLMS = 30 * 60 * 1000
+	cookieMaxTTLMS     = 7 * 24 * 60 * 60 * 1000
 )
 
 type storedCookie struct {
@@ -37,7 +37,7 @@ type storedCookie struct {
 }
 
 type cookieBucket struct {
-	m    map[string]storedCookie
+	m     map[string]storedCookie
 	order []string // 插入序（LRU 淘汰用）
 }
 

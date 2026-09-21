@@ -3,7 +3,7 @@
  * 覆盖：取证发现的真实源站分类名 + 规范名直通 + 兜底 + LLM 未知类
  * 运行：bun scripts/test-category.ts
  */
-import { canonicalCategory } from '../src/lib/scrape/category'
+import { canonicalCategory } from '../../src/lib/scrape/category'
 
 const CASES = [
   // 取证实测出现过的源站原始分类名

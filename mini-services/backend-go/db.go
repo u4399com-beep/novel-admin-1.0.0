@@ -61,13 +61,15 @@ func getDB() (*sql.DB, error) {
 	return gDB, gDBError
 }
 
-// isUniqueConflict SQLite unique 冲突（modernc 驱动错误消息含 UNIQUE constraint failed）
+// isUniqueConflict SQLite unique 冲突（modernc 驱动错误消息含 UNIQUE constraint failed）。
+// ⚠ 只认 "unique"：宽泛匹配 "constraint" 会把 FOREIGN KEY constraint failed / CHECK constraint
+// failed 误判为唯一冲突，触发错误的并发回读/顺延 idx 语义（如 upsertBook 把分类外键失败
+// 报成「并发入库冲突」、骨架入库把外键失败误入逐条顺延路径）。
 func isUniqueConflict(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
-	return containsFoldStr(msg, "unique") || containsFoldStr(msg, "constraint")
+	return containsFoldStr(err.Error(), "unique")
 }
 
 // containsFoldStr 大小写不敏感包含

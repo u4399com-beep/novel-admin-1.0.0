@@ -317,7 +317,7 @@ const skeletonChunk = 500
 
 // storeChapterSkeletons Phase 1 骨架批量入库：按标题去重（批内 + 与既有章节），
 // idx 从现有最大值连续分配。
-// - 全新标题 → 建骨架（content=''、wordCount=0），title 为空用「第{idx}章」占位
+// - 全新标题 → 建骨架（content=”、wordCount=0），title 为空用「第{idx}章」占位
 // - 同名但 wordCount=0（历史中断遗留的空骨架） → 不重建，其 title/URL 计入 fillRows 续传
 // - 同名且 wordCount>0 → 跳过
 // 并发同书建骨架撞 (novelId,idx) 唯一约束时退化为逐条顺延重试（复用 storeChapter）；

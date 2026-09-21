@@ -11,8 +11,8 @@ import "sync"
 const maxAffinityEntries = 256
 
 var (
-	affinityMu    sync.Mutex
-	affinityOrder []string
+	affinityMu     sync.Mutex
+	affinityOrder  []string
 	affinityByHost = map[string]string{}
 )
 

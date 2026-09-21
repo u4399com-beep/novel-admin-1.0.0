@@ -523,3 +523,114 @@ Stage Summary:
 - 架构：浏览器 → Next(3000, UI+代理) → backend-go(3005, API+runner) → scraper-go(3030, 引擎)；backend-go 是唯一业务库写入方（Prisma 在 Next 侧已无引用），SQLite WAL 跨进程安全
 - 数据与任务零损迁移：既有 DB/规则/任务/封面全部复用；采集任务 #2 续传验证通过（跨代任务语义兼容）
 - 自愈体系三层：Next 代理 502 重拉（秒级）→ ensure-services.sh 兜底（分钟级）→ runner 内引擎互监护（30s 级）
+---
+Task ID: 19-c
+Agent: deployment-doc-writer
+Task: 重写详细安装部署图文教程 docs/deployment.md（含真实截图）
+
+Work Log:
+- 读 worklog 末尾 ~200 行（Task 13/16/17/18 为架构事实来源），通读 package.json / 两个 go.mod / .env / prisma/schema.prisma / Caddyfile / src/app/api/[...path]/route.ts / backend-supervisor.ts / ensure-services.sh / install-curl-impersonate.sh / pseo_suggest.go / db.go（DB_PATH 缺省路径）/ pagination.go（{k}/{url} 占位）/ coversx.go（public/covers/{id}.jpg），逐项核实教程事实
+- 验证性执行（零副作用）：①两条 go build 到 /tmp/deploy-doc-test 实测编译通过（backend-go.bin 15MB / scraper-go.bin 10MB，验证后删除）②三条健康检查 curl 实跑贴真实输出（3000=200；3005 /api/health 返回 backend-go ok+db 路径；3030 /api/health 返回 ok）③bun 1.3.14 / node v24.21.0 / go1.22.5（/home/z/go-sdk/go/bin，不在默认 PATH）版本核实
+- 只读读库：ScrapeRule 全表 summary（8 条规则）+ 规则 #5（5165）与 #8（ixdzs8）完整 listRule/bookRule/chapterRule 原样摘入教程（含 chapterListApi JSON 目录接口真实配置）
+- 真实截图（agent-browser，viewport 1280×900，仅访问 localhost:3000）：home.png（前台首页）、admin-overview.png（/#/admin 主题页概览）、admin-scrape.png（采集中心：引擎状态+8 规则卡+新建任务+任务表含运行中任务）、admin-rules.png（「大悟读书网(5165)」编辑弹窗，含 charset/proxy/insecureTLS 开关与三段选择器回显）、admin-pseo.png（PSEO：5 引擎下拉词+种子词+关键词库）；全部 1280×900 PNG 存 docs/images/，浏览器已 close
+- 撰写 docs/deployment.md（761 行）：架构 mermaid 图+组件职责表 → 环境要求（含各平台安装命令与沙箱 Go PATH 特例）→ 8 步安装流程 → 5 张截图图文 → 采集规则配置指南（字段表/选择器语法/{k}{url} 分页/chapterListApi）→ 日常使用（任务状态机/编辑取消/进度字段/日志）→ PSEO 引擎 → 反反爬与合规 → 三层自愈与运维（心跳/日志/严禁 TS runner 双写）→ 10 行故障排查表 → 生产部署（systemd 三单元全文+Caddy/Nginx 反代）→ 目录结构 → 验证状态附录
+- 诚实标注：未重放 bun install / db:push / dev / build&&start / setsid nohup 后台化（服务在跑，避免双开与数据改动），命令与 package.json 及 ensure-services.sh 逐字核对；Caddy 段落与仓库 Caddyfile 逐字一致
+
+Stage Summary:
+- 产出 docs/deployment.md（761 行，中文图文教程，mermaid GitHub 可渲染）+ docs/images/ 5 张真实截图（home / admin-overview / admin-scrape / admin-rules / admin-pseo，均 1280×900 PNG，88K-152K）
+- 已验证命令：go build ×2（backend-go/scraper-go 编译通过）、健康检查 curl ×3（真实输出入文档）、版本核实 bun/node/go/python
+- 未验证/占位项：bun install、db:push、dev/build/start、后台化 setsid 命令、systemd/Nginx 模板（均标注 ⚠️ 未在本环境验证 + 依据来源）；旧部署文档不存在（docs/ 原仅 anti-anti-crawl.md 与 scrape-rules.md，均保留并已在新教程中链接）
+- 辖区合规：仅新建 docs/deployment.md 与 docs/images/*.png；零源码改动、零服务重启、零 DB 写操作、零 git 操作；/tmp/deploy-doc-test 编译产物已清理
+
+---
+Task ID: 19-d
+Agent: ts-code-cleaner
+Task: TS 侧死代码盘点与精简清理 + scraper-service 防误启动护栏
+
+Work Log:
+- 盘点方法：src/lib 全部 27 文件逐一 rg 四重验证（'@/lib/x'、相对路径、动态 import、字符串引用），scripts/ 22 文件逐一读头注释判用途，根目录散落物逐个判定；全程零进程操作
+- src/lib 删除 5 文件（449 行，全部零引用确认）：pseo.ts(168)/suggest.ts(173，被死文件 pseo 引用成死环一并删)/footer.ts(67)/errors.ts(12)/scrape/api-utils.ts(29)；与提示词猜测清单的偏差：footer.ts/errors.ts 实测零引用（footer 清洗逻辑已在 backend-go/api_settings.go 逐行移植，Go 头注指向不受影响），按「以实际引用关系为准」执行
+- src/lib 关键保留决策：scrape/ 8/9 文件（worker/store/category/engine-client/run-log/pool/pagination/types，约 1900 行）业务已死但被 scripts/worker-runner.ts（明令原样保留的回滚备份，仅许加注释）的动态 import 静态类型检查所引用，其传递闭包连带 db.ts/content-clean.ts/limits.ts/covers-store.ts 均必须保留——删除需改 worker-runner（超授权）或改 tsconfig exclude（不在辖区），按实际引用关系保留并在此交接；types/utils/covers/format/s2t/store/seo/site-tools/reading-history/backend-supervisor 均有前端/代理实引用
+- scripts/ 归档 15 文件至 scripts/archive/：fix-toc-pollution、add-new-rules、recategorize、preclear-audit、db-evidence、forensic-*×3、dump-rules、rule-config-dump、rule-probe-targeted、test-worker、test-category、watchdog(TS 版，Go 时代由 ensure-services.sh 兼任看护)、根目录 .12f-validate.sh；归档后 tsc 硬闸暴露 4 文件 '../src/lib' 相对深度失效，已修正为 '../../src/lib'（归档区仍可 bun 直跑）
+- scripts/ 活跃区保留 8 项：ensure-services.sh/install-curl-impersonate.sh/dev-supervisor.sh（在用）、worker-runner.ts（文件头加「⛔已退役：Go 化后禁止直接运行，会与 backend-go 内置 runner 双写 ScrapeTask」横幅）、rule-probe.ts+engine-rule-test.mjs（可复用规则诊断，新增规则工作流仍需）、reset-db.ts（清库重采维护工具，dry-run 默认）、port-forward.ts（沙箱杀 3000 进程的应急转发器，未在运行链但属基础设施预案）
+- package.json scripts 无指向已删/已移文件的项 → 未动；tests/ 3 个 .sh 判定为平台部署管线自测（测 .zscripts build，与小说业务无关但非废弃产物）→ 保留并记录；download/（仅脚手架 README）与 upload/（空）保留；tool-results/ 清空 41 个 Read 工具临时产物（保留目录）
+- 防误启动护栏（mini-services/scraper-service/index.ts，最小改动 +12 行）：模块加载即判定 ALLOW_TS_ENGINE≠1 → console.error 三行告警（Go 引擎已接管 3030/本进程互监护会拉起 TS runner 双写 ScrapeTask/回滚方法）+ process.exit(1)，位置在 Bun.serve 与自心跳/互监护两个 setInterval 之前；实测：默认启动 exit=1 并打印告警，ALLOW_TS_ENGINE=1 SCRAPER_PORT=3999 正常监听（3s timeout 杀掉，未触碰生产端口）；scraper-service 自身 tsc 0 错误
+- 验证：根 npx tsc --noEmit 0 错误；bun run lint 0 错误；curl 3000/=200、3000/api/health=200、3005/api/health=200、3030/api/strategies=200、3000/api/scrape-rules 返回规则 JSON；dev.log 无新增异常（期间一过性 502 系并行 agent 16:11 重启 backend-go 所致，代理 502 自愈按设计恢复，backend-go 现健康）
+- 拿不准未动：tests/（平台管线自测）、examples/websocket/（辖区外脚手架示例）、backend-go/scraper-go 的 Go 源与 .bin 改动（并行 agent 辖区）
+
+Stage Summary:
+- 删除 5 个零引用 lib 文件共 449 行 + 清空 tool-results/ 41 个临时产物；15 个一次性脚本归档至 scripts/archive/（活跃 scripts 22→8 项）；src/lib 27→22 文件
+- 关键保留：src/lib/scrape/ 编排层 8 文件因 worker-runner.ts 回滚备份的动态 import 类型检查引用链而保留（彻底删除的唯一路径=改 worker-runner 或 tsconfig，均超出本任务授权，已记录交接）；Prisma db.ts 因多脚本引用保留
+- TS runner 两条复活路径均已封堵：TS 引擎启动即拒（仅 ALLOW_TS_ENGINE=1 放行）+ worker-runner.ts 退役横幅
+- 质量闸门：tsc 0 错误 / lint 0 错误 / 全链路 curl 200 / 零进程操作 / 零 git 操作，全部改动可经 git 整体回滚
+
+---
+Task ID: 19-a
+Agent: pseo-duckduckgo-fixer
+Task: 修复 pseo duckduckgo 引擎在 Go TLS 栈下超时（经 scraper-go 引擎链路绕过 Cloudflare 指纹）
+
+Work Log:
+- 基线核查：backend-go(3005)/scraper-go(3030) 健康；直接 POST 3030/api/test 抓 duckduckgo.com/ac 实测 ok:true（html=["玄幻",[8 词]]，htmlTruncated:false，2.8s，含 robots 检查与域内 1200ms 限速）；复跑旧直连路径发现 duckduckgo 当前时段 CF 未拦截（间歇性封锁，与 Task 18 记录一致——封锁期直连必超时，故修复仍必要且为稳健性净增）
+- 仅改 mini-services/backend-go/pseo_suggest.go（engineclient.go 未动）：
+  ① 新增 suggestEngineClient（suggest 专用无全局超时 client，不复用 60s engineHTTPClient，硬闸由 ctx 控制）
+  ② 新增 suggestFetchViaEngine(ctx, targetURL)：POST SCRAPER_BASE/api/test {url, includeHtml:true, timeoutMs=ctx剩余-300ms}，请求挂 ctx；HTTP 非 2xx 或 ok!=true → 报错（error+detail(120字)+attempts 摘要）；缺 html → 报错；htmlTruncated → 报错「响应被引擎截断」；连接失败 → 「采集引擎不可达(3030)」；超时复用 engineIsTimeout → 「采集引擎请求超时(3030)」
+  ③ 新增 suggestFetchDuckDuckGo：引擎 body 解析 ["q",[...]] 取第二元素（原 [2]json.RawMessage 逻辑保留），解析失败如实报错（区别于直连「非 2xx 静默留空」，按任务要求诚实报错优先）
+  ④ case "duckduckgo" 改走上述函数；baidu/bing/sogou/so360 直连分支零改动；suggestResult 契约、200 字截断、fetchSuggestionsMulti/pseo_gen 批量路径均不变
+  ⑤ 文件头移植语义差异补第 5 条
+- gofmt -w pseo_suggest.go（该文件工作区此前已被整体转成空格缩进，HEAD 版本为 tab；gofmt 后仅存 6 个 HEAD 即已非格式化的历史文件，辖区外未动）；go vet 0 错误；go build -o backend-go.bin 全绿
+- 重启：查 DB 有 running 任务 #3（万古神帝 Phase 2 填充 4132/4232）→ 按纪律轮询等待 40s 至其自然结束（终态 partial 4231/4232，1 章源站级失败）→ pkill backend-[g]o.bin + setsid nohup 重拉（本会话派生进程随即被沙箱回收，符合 worklog 16 记录）→ 经 3000 catch-all 触发 Next backend-supervisor 502 自愈拉起（PID 2801，跨调用存活，符合 Task 18 终局架构）
+
+Stage Summary:
+- duckduckgo 下拉词已切换为经 scraper-go 引擎反指纹策略链代理，修复 Task 18 已知差异①；其余引擎直连零改动
+- E2E 全过：①字面任务命令 {"keyword":"玄幻小说","engines":["duckduckgo"]} → duckduckgo ok:true count:8（engines 键非契约参数回落全 5 引擎，bing ok:true，baidu/sogou/so360 ok:false 系既有环境问题见下）②sources:[duckduckgo] → ok:true 8 词 1.49s ③sources:[baidu,bing,duckduckgo] 聚合 → duckduckgo ok:true+bing ok:true+跨引擎去重正常 ④经 3000 catch-all 同样 ok:true（3000→3005→3030 全链通）⑤稳定性 3 连发全 ok:true ⑥回归 sources:[baidu,sogou,so360] 与修复前基线逐字节一致（未引入回归）⑦GET /api/pseo、/api/pseo/config 只读回归正常
+- 契约保持：suggestResult{engine,ok,count,error?} 结构不变、错误 200 字截断不变、直连引擎「非 2xx 静默留空」语义不变；仅经引擎新路径失败时 error 字段如实报告（任务要求）
+- 转交发现（只记录不动手）：①baidu/sugrec 对 curl 直连 200 但 Go 客户端 0 词（疑似同为 TLS/头指纹问题，本任务辖区外）②sogou/sugproxy 上游已 404（curl 直连亦 404，接口疑变更/下线）③so360 同报 ok:false——三者为「直连引擎当前环境不可用」的独立问题，与本次改动无关，建议后续任务评估是否同样改走引擎链路
+---
+Task ID: 19-b
+Agent: go-scrape-deep-reviewer
+Task: 逐行深度审查 backend-go + scraper-go 采集链路，抓 bug 全修复 + TS runner 防复活护栏
+
+Work Log:
+- 【P0 复活源拆除】scraper-go/main.go runnerWatchdogLoop（L162-194）每 30s 心跳缺失即拉起 `bun scripts/worker-runner.ts`——Go 迁移后这就是 TS runner 的活体复活源（本次双 runner 双写事故的最可能源头）：改为 runnerObserveLoop 只观测告警（10 分钟节流）绝不拉起；文件头与 types.go 同步更名「互监护→心跳观测」
+- 【P0 防复活护栏】backend-go/runner.go 新增 killTSScrapeRunner（pkill -f 'worker-[r]unner.ts'，[r] 字符类防自匹配；模式不含 backend-go.bin/scraper-go.bin 字样绝不误杀），启动时 + 每 150 轮（≈5 分钟）各执行一次，命中即写 stdout 日志；pattern 安全性实测：含 worker-runner.ts 的 decoy 进程被精确击杀，backend-go/scraper-go/bun run dev 三进程完好
+- 【P1 僵尸进程】runner.go runBash 只 Start 不 Wait——每条 bash -c（ensureEngine 30s×2 条+新护栏）退出后成为 zombie 永久驻留进程表，长跑数日累积数万条；修复：go c.Wait() 后台回收
+- 【P1 数据竞争×3（race detector 实证）】①hosthealth.go hostPenaltyMs/hostCircuitOpenMs 锁外读 h.penaltyUntil/openUntil（noteRateLimited 并发写）→ 改锁内读；②chain.go proxyCursor 裸 int 并发 ++ → atomic.Int64；③ratelimit.go hostSlot.lastUsedAt 被 getHostSlot(hostSlotsMu) 与 acquireDomainSlot(slot.mu) 两把不同锁写同一字段——race 引擎并发 8 请求实证 DATA RACE → 改 atomic.Int64（lastUsedNano）；④browser.go probeBrowser 裸 bool 双写 → sync.Once。race 复测（8 并发同站 + 跨站/strategies 混合并发）= 0 race
+- 【P1 SSRF 逐跳缺口×3（重定向变体）】①ratelimit.go robotsClient 未设 CheckRedirect——默认客户端自动跟随 302，下方手动逐跳 SSRF 校验形同虚设，恶意站 /robots.txt 302 可打内网 → ErrUseLastResponse + 跳协议白名单；②jsontoc.go tocHTTPClient 同病——chapterListApi 同源校验只护首跳 → ErrUseLastResponse + 3xx 显式拒绝 + 跳协议检查；③backend-go coversx.go 封面下载默认跟随重定向绕过 assertPublicHttpURL → CheckRedirect 逐跳校验 + 5 跳上限
+- 【P1 Retry-After 缺口】curlimp.go 429/503 不解析 Retry-After（fetch/got 系均解析）→ hosthealth 退避错失站点指引；修复：从 -D 抓包头解析并随 attemptResult 透传链层
+- 【P2 jsontoc POST 无 Content-Length】req.Body 手工赋值丢长度发 chunked，严格 PHP/宝塔后端 $_POST 解析为空 → strings.NewReader 让 NewRequest 自动设长度；顺带补 chapterListApi 请求的 acquireDomainSlot（此前绕过域名限速，合规缺口）
+- 【P2 isUniqueConflict 误判】db.go 宽泛匹配 "constraint" 会把 FOREIGN KEY/CHECK constraint failed 误判唯一冲突（upsertBook 报「并发冲突」、骨架入库误入顺延 idx 路径）→ 收窄为只认 "unique"
+- 【P2 续跑误报 failed】worker.go runList/runSingle：重发已全部填充的任务时 FillTotal=0 且 Filled=0 → 旧版报「正文采集全部失败(failed)」误导重跑（TS 同款行为，判为缺陷）→ 改报 success「已全部有正文无需续采」；FillTotal>0 且全败的失败语义不变
+- 【P2 PUT 任务竞态】api_scrape_tasks.go handleScrapeTaskUpdate 预检 status 后无条件 UPDATE，与 runner 的 pending→running 条件更新存在窗口，可改写执行中任务配置 → WHERE 加 AND status='pending'，count=0 回读如实 409/404
+- 【P3 记录未修】①ssrf.go dnsCache 满容量随机淘汰（非真 LRU）；②jsontoc jsonStr 大 float64（>2^53 非整数）转字符串可能溢出（order 字段实际不触发）；③curlimp 临时文件进程崩溃时残留 /tmp；④fetch 系请求头 Go 按字典序发送（types.go 已声明的移植差异）；⑤DNS TOCTOU（TS 同款局限，文件头已声明需 socket 层改造）
+- 【环境修复】~/.local/bin 第 4 次被清空致 curl-impersonate available:false → bash scripts/install-curl-impersonate.sh 重装 21 个二进制，60s 重探逻辑自动恢复 available:true（无需重启，逻辑实证有效）
+- 【验证】双服务 gofmt -l 干净（存量未格式化文件一并 gofmt -w，pseo 三件原本干净未触碰）、go vet 0 错误、go build 全绿；scraper-go 已重启（孤儿化 spawn，跨工具调用存活实证）+/api/health 200 + /api/strategies 7/7 available + books.toscrape 提取 20/20；GBK 实测 ddyueshu.cc 书页（encoding=GBK/书名作者中文正常/189 章）+ 章节（wordCount=2110/51 段无乱码）——charsetx 七级解码链路完好；23uswx.la（UTF-8 站）列表 30 条/书页 638 章/章节 2632 字全通；race 引擎（3031 端口临时）并发压测后已停止
+- backend-go 二进制已更新（mv 原子替换 backend-go.bin，含护栏/竞态/SSRF/语义全部修复），**待主 Agent 集成阶段重启 backend-go 生效**（重启前运行中的旧二进制不含上述修复）
+
+Stage Summary:
+- 逐行审查 backend-go 17 文件 + scraper-go 22 文件：P0×2（TS runner 复活源拆除 + Go runner 防复活护栏）、P1×7（僵尸进程、3 处数据竞争、3 处 SSRF 重定向变体缺口、Retry-After 缺口——其中数据竞争经 race detector 实证复现并复测清零）、P2×4、P3×5 记录
+- 采集语义红线复核结论：同章分页 isSameChapterPagination 前缀续写判断、Phase 1/2 边界（空列表/0 章/上限截断/续传 fillRows）、zombie 回收条件更新、进度 done/total/chaptersDone 口径、log 100 行滚动+500 截断、55s 预算+硬时间闸、熔断 3 strikes 指数冷却半开恢复、cookie 会话逐跳回放——均无缺陷（P2 仅续跑终态误报一处，已修）
+- 关键决策：scraper-go 不再拉起任何 runner（观测告警只留可观测性），runner 生命周期归属 backend-go（Next supervisor + ensure-services.sh 兜底链路不变）
+- 待主 Agent：①重启 backend-go（二进制已就位）②重启后可观测验证项：runner 启动日志出现护栏执行、5 分钟周期护栏运行、PUT pending 任务条件更新语义
+---
+Task ID: 19
+Agent: main (Z.ai Code)
+Task: 五项指令集成：待办续办+全面审查 / 多 Agent 深度抓 bug / 代码清理 / 部署图文教程 / pseo duckduckgo Go TLS 超时根治
+
+Work Log:
+- 现场取证：TS worker-runner 进程复活运行中（与 backend-go 内置 runner 双写 ScrapeTask 风险）→ 立即击杀；DB 终态 1 书（万古神帝 4231/4232 partial，19-a 重启窗口期自然续跑至 4231 成功）
+- 4 Agent 并行（19-a pseo 修复 / 19-b 逐行深审 / 19-c 部署教程 / 19-d TS 清理），全部完成并经主 Agent 收编集成
+- 【19-b 关键发现（P0）】TS runner 复活根因 = scraper-go main.go runnerWatchdogLoop：心跳缺失即 spawn bun worker-runner.ts（Go 迁移遗留的活体复活源）→ 改为只观测不拉起（runnerObserveLoop）；Go runner 增加启动+每 5 分钟 pkill -f 'worker-[r]unner.ts' 双保险护栏（decoy 进程实测精确击杀、三服务无误伤）
+- 【19-b 其余修复 11 处】P1×7：runBash 无 Wait 僵尸进程累积、hosthealth 锁外读、ratelimit 双锁写同字段（race detector 实证复现→修复后 0 race）、proxyCursor 裸 int 并发、probeBrowser 裸 bool、robots 客户端无 CheckRedirect（SSRF 重定向绕过）、jsontoc/coversx 同款 SSRF 绕过、curlimp 不解析 Retry-After；P2×4：jsontoc POST 无 Content-Length+绕过域名限速、isUniqueConflict 宽泛误判 FK 失败、全填充任务重发误报 failed、PUT 任务与 runner pending→running 竞态窗口。P3×5 记录 worklog
+- 【19-a+主 Agent pseo 修复链】①duckduckgo 经引擎代理（19-a）②主 Agent 复核发现 19-a「baidu/so360 同为 TLS 指纹」实为误诊——curl/bun fetch 直连均 200，真因是解析器字段过时（baidu 现行 g[].q vs 旧 g[].k；so360 现行 result[].word vs 旧 data[]）→ 修复解析器新旧双形态兼容，直连恢复③duckduckgo 两段式策略：首选 curl-impersonate（实测 206ms）+子死线 3.5s 防慢响应吃光预算，失败后无策略全链兜底重试④suggest 预算 4s→8s（引擎单次开销 1.5~1.9s + 域名限速 1.2~1.5s 等待的实测需要）⑤引擎调用计时日志永久化
+- 【观测性根治】backend-supervisor.ts spawn stdio:'ignore'（Task 18 已知差异④）→ 改为追加写 /tmp/backend-go-api.log：runner/护栏/引擎互监护/pseo 计时日志全部可见（tsc 类型修正）
+- 压力实测：1s 间隔连发 12 次 duckduckgo（故意违反合规限速）11/12 OK（两段式自愈清晰：首选超时→兜底 1.6s 成功），唯一失败为背靠背请求挤占限速槽的极端时序，真实人工节奏不复现；五引擎终态 baidu/bing/duckduckgo/so360 全通，sogou 系上游接口 404 已死（多路径探测证实，如实报错保留）
+- 【19-c 交付】docs/deployment.md 761 行图文教程（mermaid 架构图/12 章节/go build 命令实测/健康检查真实输出）+ docs/images/ 5 张真实截图（agent-browser 1280×900：home/admin-overview/admin-scrape/admin-rules/admin-pseo）
+- 【19-d 交付】删 5 个零引用死文件 449 行（pseo/suggest/footer/errors/api-utils）；15 个一次性脚本归档 scripts/archive/（活跃 22→8，归档相对路径修正）；scraper-service 加 ALLOW_TS_ENGINE=1 启动闸（默认 exit(1) 实测通过）+ worker-runner.ts 退役横幅；src/lib/scrape 因 runner 回滚备份的 tsc 静态依赖保留（~1900 行，交接项）
+- 【19-e 书库重填充】8 规则建 7 个 list 任务：23qb 16 书/1.8 万章、ddyueshu 4 书/7726 章、23uswx 30 书/2.18 万章、5165 首发触发自家挑战（熔断按设计保护，冷却后 #15 重发）、ixdzs8 首发瞬时失败（引擎复测 20 条目提取正常，#14 重发跑通 40 书）、shipsay demo 首页无列表元素（演示站留单本模式）、aijjxs 域名已变身「久久小说下载网」TXT 下载站（规则 4 停用+notes 记录）
+- audit 复检：87 本/51 健康，问题样本均为源站自身编号混乱（续作重启类，按 Task 16 结论不盲目 reindex）；Phase 2 后台持续填充中
+- 集成验证：tsc 0 错误/lint 0 错误/dev.log 无异常/3000→3005→3030 全链通/agent-browser E2E（前台主题+采集中心 8 规则+PSEO UI 实测「DuckDuckGo: +8 词」+ 0 page error）/backend-go 单实例确认
+
+Stage Summary:
+- 交付 5/5：①遗留续办（TS runner 清除+书库重填充 75 本起步+audit 复检）②多 Agent 深审修复 12+ 处（P0 复活源/P1 SSRF 绕过×3/data race×4/僵尸进程等）③清理 449 行删除+15 项归档+防复活双闸④761 行图文教程+5 真实截图⑤pseo 五引擎 4/5 稳定可用（sogou 上游死亡除外）
+- 用户任务 5 的完整答案：duckduckgo 超时根因两层——Go TLS 指纹被 CF 掐（真）+ baidu/so360 系解析器字段过时（19-a 误诊修正）；终态 duckduckgo 经引擎 curl-impersonate 快路径 + 两段式兜底，压测 11/12、真实节奏 100%
+- 已知边界：bing 偶发间歇失败（直连 CF 波动，隔离良好不拖累聚合）；5165 需站点放行后靠熔断半开自动恢复

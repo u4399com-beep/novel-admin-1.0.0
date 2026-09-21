@@ -12,12 +12,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 const chainBudgetMS = 55_000
 
-// proxyCursor 站点级代理池轮换游标（跨请求轮换出口）
-var proxyCursor int
+// proxyCursor 站点级代理池轮换游标（跨请求轮换出口）。fetchPage 会被多请求并发调用，
+// 游标必须原子递增（Go race detector 实证竞态点）；原子递增取模语义与 TS 版一致。
+var proxyCursor atomic.Int64
 
 var allStrategies = []strategyDef{
 	fetchBrowserStrategy,
@@ -227,9 +229,8 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 		if len(proxyPool) == 0 {
 			return ""
 		}
-		p := proxyPool[proxyCursor%len(proxyPool)]
-		proxyCursor++
-		return p
+		idx := int(proxyCursor.Add(1))
+		return proxyPool[(idx+len(proxyPool)-1)%len(proxyPool)]
 	}
 
 	for si := 0; si < len(order); si++ {

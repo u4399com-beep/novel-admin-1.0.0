@@ -1,4 +1,10 @@
 /**
+ * ⛔ 已退役（Go 化迁移完成后）：禁止直接运行，会与 backend-go 内置 runner 双写 ScrapeTask。
+ * 采集编排已由 mini-services/backend-go（3005，API+runner 同进程）全量接管；
+ * 本文件仅作回滚备份保留，确需回滚时必须先停 backend-go，并连同 src/lib/scrape/ 依赖一起
+ * 从 git 历史恢复（部分依赖已在 Task 19-d 清理中删除）。
+ */
+/**
  * 采集 Worker 常驻 Runner（独立 bun 进程，与 Next 进程解耦）
  *
  * 背景与动机：

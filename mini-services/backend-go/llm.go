@@ -49,10 +49,10 @@ var (
 	gZaiOnce    sync.Once
 	gZai        *zaiConfig
 	gZaiErr     error
-	gLLMMutex   sync.Mutex                       // 全局串行链
-	gLLMCoolDo  sync.Once                        // 冷却截止时间戳的原子替换由 cooldownUntil 互斥保护
-	coolMu      sync.Mutex                       // 保护 cooldownUntil
-	cooldownAt  int64                            // 冷却截止（ms）；0 = 无冷却
+	gLLMMutex   sync.Mutex // 全局串行链
+	gLLMCoolDo  sync.Once  // 冷却截止时间戳的原子替换由 cooldownUntil 互斥保护
+	coolMu      sync.Mutex // 保护 cooldownUntil
+	cooldownAt  int64      // 冷却截止（ms）；0 = 无冷却
 	gHTTPClient = &http.Client{Timeout: 5 * time.Second}
 )
 

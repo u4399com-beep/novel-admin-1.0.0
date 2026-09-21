@@ -16,12 +16,12 @@ func init() {
 func handleHealth(w http.ResponseWriter, r *http.Request, _ map[string]string) {
 	_, dbErr := getDB()
 	writeJSON(w, 200, map[string]any{
-		"ok":       dbErr == nil,
-		"service":  "backend-go",
-		"version":  "1.0.0",
-		"runtime":  "go1.22",
-		"db":       dbPath(),
-		"dbOk":     dbErr == nil,
-		"time":     time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		"ok":      dbErr == nil,
+		"service": "backend-go",
+		"version": "1.0.0",
+		"runtime": "go1.22",
+		"db":      dbPath(),
+		"dbOk":    dbErr == nil,
+		"time":    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 	})
 }

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -48,9 +49,12 @@ func getMinIntervalMs() int64 {
 }
 
 type hostSlot struct {
-	mu         sync.Mutex
-	nextAt     time.Time
-	lastUsedAt time.Time
+	mu     sync.Mutex
+	nextAt time.Time
+	// lastUsedNano lastUsedAt 的原子形态（UnixNano）。原实现里 getHostSlot 在 hostSlotsMu
+	// 下写、acquireDomainSlot 在 slot.mu 下写同一字段 —— 两把不同的锁保护同一变量，
+	// go race detector 实证 DATA RACE（同主机两请求并发即触发）。统一改原子读写。
+	lastUsedNano atomic.Int64
 }
 
 var (
@@ -61,16 +65,17 @@ var (
 func getHostSlot(host string) *hostSlot {
 	hostSlotsMu.Lock()
 	defer hostSlotsMu.Unlock()
+	now := time.Now()
 	slot, ok := hostSlots[host]
 	if !ok {
-		slot = &hostSlot{lastUsedAt: time.Now()}
+		slot = &hostSlot{}
+		slot.lastUsedNano.Store(now.UnixNano())
 		hostSlots[host] = slot
 	}
-	slot.lastUsedAt = time.Now()
+	slot.lastUsedNano.Store(now.UnixNano())
 	if len(hostSlots) >= hostSlotGCThreshold {
-		now := time.Now()
 		for k, s := range hostSlots {
-			if now.Sub(s.lastUsedAt) > time.Duration(hostSlotIdleMS)*time.Millisecond {
+			if now.UnixNano()-s.lastUsedNano.Load() > hostSlotIdleMS*int64(time.Millisecond) {
 				delete(hostSlots, k)
 			}
 		}
@@ -91,7 +96,7 @@ func acquireDomainSlot(host string) {
 	}
 	wait := base.Sub(now)
 	slot.nextAt = base.Add(time.Duration(getMinIntervalMs())*time.Millisecond + time.Duration(rand.Intn(jitterMS))*time.Millisecond)
-	slot.lastUsedAt = time.Now()
+	slot.lastUsedNano.Store(now.UnixNano())
 	slot.mu.Unlock()
 	if wait > 0 {
 		time.Sleep(wait)
@@ -160,7 +165,7 @@ func parseRetryAfterMs(raw string) *int64 {
 // ==================== robots.txt ====================
 
 const (
-	robotsTTLMS   = 10 * 60 * 1000
+	robotsTTLMS    = 10 * 60 * 1000
 	robotsCacheMax = 256
 	robotsMaxBytes = 1024 * 1024
 )
@@ -271,6 +276,11 @@ type robotsResult struct {
 
 var robotsClient = &http.Client{
 	Timeout: 6 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		// 关键：禁用客户端自动跟随重定向。否则下方手动逐跳 SSRF 校验形同虚设——
+		// 恶意站点可用 /robots.txt 302 让默认客户端自动请求任意内网地址（SSRF）。
+		return http.ErrUseLastResponse
+	},
 	Transport: &http.Transport{
 		// robots 检查专用客户端：无代理直连（与 TS 版 fetch 一致）
 		Proxy:                 http.ProxyFromEnvironment,
@@ -320,6 +330,12 @@ func checkRobots(targetURL string) robotsResult {
 	for hop := 0; hop <= 3; hop++ {
 		hu, err := url.Parse(robotsURL)
 		if err != nil {
+			break
+		}
+		// 协议白名单：重定向到 ftp:/file: 等非 http(s) 形态直接拒绝（重定向变体 SSRF）
+		if hu.Scheme != "http" && hu.Scheme != "https" {
+			info = &robotsInfo{}
+			warnings = append(warnings, "robots.txt 重定向到非 http/https 协议已拒绝（"+hu.Scheme+"），未做 robots 校验")
 			break
 		}
 		hopCheck := assertHostPublic(hu.Hostname())

@@ -96,11 +96,11 @@ func handleStrategies(w http.ResponseWriter, _ *http.Request) {
 		// 按主机 Cookie 会话持久化说明
 		"cookieSession": func() map[string]any {
 			return map[string]any{
-				"description":        "按主机 Cookie 会话持久化：捕获各策略响应的 Set-Cookie 按主机存储（含重定向中间跳），该主机后续请求自动回放，覆盖「首访种 cookie、二访才放行」的站点；仅进程内存不落盘，LRU 上限与 TTL 见下；Secure 属性 cookie 仅在 https 请求回放",
-				"trackedHosts":       ckHosts,
-				"maxHosts":           ckMax,
-				"maxCookiesPerHost":  ckPerHost,
-				"ttlMs":              ckTTL,
+				"description":       "按主机 Cookie 会话持久化：捕获各策略响应的 Set-Cookie 按主机存储（含重定向中间跳），该主机后续请求自动回放，覆盖「首访种 cookie、二访才放行」的站点；仅进程内存不落盘，LRU 上限与 TTL 见下；Secure 属性 cookie 仅在 https 请求回放",
+				"trackedHosts":      ckHosts,
+				"maxHosts":          ckMax,
+				"maxCookiesPerHost": ckPerHost,
+				"ttlMs":             ckTTL,
 			}
 		}(),
 		// 按主机健康度记忆说明
@@ -118,19 +118,19 @@ func handleStrategies(w http.ResponseWriter, _ *http.Request) {
 		}(),
 		// browser 策略说明（Go 版：Python Playwright 桥接，独立子进程渲染）
 		"browserSession": map[string]any{
-			"description": "browser 策略经 Python Playwright 桥接（scripts/render.py）渲染：每请求独立子进程浏览器（cookie/会话隔离），自带 SIGALRM 看门狗与渲染期 SSRF 拦截；子进程模式天然无长跑内存膨胀",
+			"description":  "browser 策略经 Python Playwright 桥接（scripts/render.py）渲染：每请求独立子进程浏览器（cookie/会话隔离），自带 SIGALRM 看门狗与渲染期 SSRF 拦截；子进程模式天然无长跑内存膨胀",
 			"reuseEnabled": false,
 			"bridge":       "python-playwright",
 		},
 		"compliance": map[string]any{
-			"rateLimit":     "默认每域名 1200ms±300ms（< 1 req/s），环境变量 SCRAPER_MIN_INTERVAL_MS 可调但不允许低于 1000ms；跨域重定向跳同样逐跳限速",
-			"robotsCheck":   "warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断",
-			"ssrfGuard":     "文本层（IPv4 全形态/IPv6 内网段）+ DNS 尽力校验 + redirect manual 逐跳校验",
-			"maxResponseBytes": maxBytes,
+			"rateLimit":          "默认每域名 1200ms±300ms（< 1 req/s），环境变量 SCRAPER_MIN_INTERVAL_MS 可调但不允许低于 1000ms；跨域重定向跳同样逐跳限速",
+			"robotsCheck":        "warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断",
+			"ssrfGuard":          "文本层（IPv4 全形态/IPv6 内网段）+ DNS 尽力校验 + redirect manual 逐跳校验",
+			"maxResponseBytes":   maxBytes,
 			"challengeDetection": "四层检测：反爬平台强特征（任意体积，扫描前 32KB，含国产 WAF JS 挑战壳 token acw_sc__v2/__jsl_clearance/__jsluid/yunsuo/wzws）→ 近空可见正文（<80 字符）JS 跳板/「JS 计算 cookie + 原地 reload」壳/需启用 JS 壳（任意体积，覆盖 HTTP 200 伪装）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理",
-			"captchaSolving":  "禁止提供",
-			"loginContent":    "禁止采集",
-			"accountSpoofing": "禁止提供",
+			"captchaSolving":     "禁止提供",
+			"loginContent":       "禁止采集",
+			"accountSpoofing":    "禁止提供",
 		},
 	}
 	writeJSON(w, 200, resp)

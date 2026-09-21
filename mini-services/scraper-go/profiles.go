@@ -44,9 +44,9 @@ const acceptLangZH = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7"
 // baseHeaders 公共头构造；withReferer 时优先显式来路，缺省以目标站自身首页为来源
 func baseHeaders(targetURL string, withReferer bool, ua string, extra map[string]string, explicitReferer string) map[string]string {
 	h := map[string]string{
-		"user-agent":               ua,
-		"accept":                   acceptHTML,
-		"accept-language":          acceptLangZH,
+		"user-agent":                ua,
+		"accept":                    acceptHTML,
+		"accept-language":           acceptLangZH,
 		"upgrade-insecure-requests": "1",
 	}
 	for k, v := range extra {
@@ -75,15 +75,15 @@ var chromeDesktopProfile = headerProfile{
 	withReferer: true,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer, chromeUA, map[string]string{
-			"cache-control":         "no-cache",
-			"pragma":                "no-cache",
-			"sec-ch-ua":             chromeSecCHUA,
-			"sec-ch-ua-mobile":      "?0",
-			"sec-ch-ua-platform":    `"Linux"`,
-			"sec-fetch-dest":        "document",
-			"sec-fetch-mode":        "navigate",
-			"sec-fetch-site":        "same-origin",
-			"sec-fetch-user":        "?1",
+			"cache-control":      "no-cache",
+			"pragma":             "no-cache",
+			"sec-ch-ua":          chromeSecCHUA,
+			"sec-ch-ua-mobile":   "?0",
+			"sec-ch-ua-platform": `"Linux"`,
+			"sec-fetch-dest":     "document",
+			"sec-fetch-mode":     "navigate",
+			"sec-fetch-site":     "same-origin",
+			"sec-fetch-user":     "?1",
 		}, explicitReferer)
 	},
 }

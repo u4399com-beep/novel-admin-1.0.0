@@ -465,17 +465,31 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 		writeJSON(w, 400, map[string]string{"error": "没有可更新的字段"})
 		return
 	}
-	// Prisma update 自动触碰 @updatedAt → 显式 set
+	// Prisma update 自动触碰 @updatedAt → 显式 set。
+	// ⚠ 条件更新（AND status='pending'）：预检与 UPDATE 之间存在窗口，runner 可能恰在此
+	// 间隔把任务置为 running（runTask 的 pending→running 条件更新）；无条件 UPDATE 会改写
+	// 执行中任务的配置（执行读的是启动时快照，DB 展示与实际执行不一致）。count=0 回读如实反馈。
 	sets = append(sets, `"updatedAt" = ?`)
 	args = append(args, nowMillis())
 
-	res, err := exec(`UPDATE "ScrapeTask" SET `+strings.Join(sets, ", ")+` WHERE "id" = ?`, append(args, id)...)
+	res, err := exec(`UPDATE "ScrapeTask" SET `+strings.Join(sets, ", ")+` WHERE "id" = ? AND "status" = 'pending'`, append(args, id)...)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		var fresh string
+		if qerr := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&fresh}, id); qerr != nil {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+			return
+		}
+		if fresh == "running" {
+			writeJSON(w, 409, map[string]string{"error": "任务执行中不可编辑，请先取消"})
+		} else if fresh != "pending" {
+			writeJSON(w, 409, map[string]string{"error": "任务已结束（" + fresh + "），请新建任务"})
+		} else {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		}
 		return
 	}
 

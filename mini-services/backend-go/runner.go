@@ -25,8 +25,30 @@ const (
 	runnerHeartbeatFile = "/tmp/scrape-runner-heartbeat"
 	runnerPollInterval  = 2 * time.Second
 	runnerEngineEvery   = 15
-	engineBaseURL       = "http://127.0.0.1:3030"
+	// runnerTSKillEvery TS runner 防复活护栏的低频执行周期（轮数）：15 轮×2s=30s 探引擎，
+	// 150 轮≈5 分钟清一次 TS runner（残余复活窗口 ≤5 分钟，与引擎互监护同数量级）
+	runnerTSKillEvery = 150
+	engineBaseURL     = "http://127.0.0.1:3030"
 )
+
+// tsRunnerPkillPattern TS 版采集 runner（scripts/worker-runner.ts，bun 进程）的 pkill 模式。
+// [r] 字符类防 pkill 自匹配（pkill 自身命令行含该字面量，正则 [r] 不匹配 [r] 字面文本）。
+// 绝不误杀自身：模式只匹配 worker-runner.ts 字样，backend-go.bin / scraper-go.bin 均不含。
+const tsRunnerPkillPattern = "worker-[r]unner.ts"
+
+// killTSScrapeRunner 防复活护栏：Go 迁移后 TS runner（bun worker-runner.ts）是已退役的
+// 双写源——它与 Go runner 双写 ScrapeTask 会重复执行同一任务（防重集合是进程内的，
+// 跨进程失效，实证事故见 worklog Task 19-b）。历史复活源包括 ensure-services.sh 旧版、
+// scraper-go 旧版互监护、手工误启。此处在 Go runner 启动时与心跳循环低频执行 pkill，
+// 确保任何环境以任何方式拉起的 TS runner 都会被清除。
+func killTSScrapeRunner() {
+	out, err := osexec.Command("pkill", "-f", tsRunnerPkillPattern).CombinedOutput()
+	if err == nil {
+		// pkill 命中至少一个进程时 exit 0：记一行日志到 stdout（进程日志）与任务无关
+		log.Printf("[backend-go-runner] TS runner 防复活护栏：已清除残留 worker-runner.ts 进程（pkill 输出 %d 字节）", len(out))
+	}
+	// exit 1 = 无匹配进程（常态），静默
+}
 
 var runnerHTTPClient = &http.Client{Timeout: 8 * time.Second}
 
@@ -88,13 +110,20 @@ func ensureEngine() {
 	_ = runBash("cd /home/z/my-project/mini-services/scraper-go && setsid nohup ./scraper-go.bin >> /tmp/engine.log 2>&1 < /dev/null &")
 }
 
-// runBash 执行一条 bash 命令（不等待长任务；失败仅忽略）
+// runBash 执行一条 bash 命令（不等待长任务；失败仅忽略）。
+// Start 后必须 Wait：bash -c 内的 setsid & 立即返回使 bash 退出，若父进程不 Wait，
+// 每次 runBash 都会在本进程表里留下一个 zombie（ensureEngine 30s 一次 ×2 条命令，
+// 长跑数日累积数万僵尸条目）。Wait 放后台 goroutine，不阻塞调用方。
 func runBash(cmd string) error {
 	c := osexec.Command("bash", "-c", cmd)
 	c.Stdin = nil
 	c.Stdout = nil
 	c.Stderr = nil
-	return c.Start()
+	if err := c.Start(); err != nil {
+		return err
+	}
+	go func() { _ = c.Wait() }() // 回收子进程，防 zombie 累积
+	return nil
 }
 
 // startRunner runner 主循环入口（main.go 在 runner/all 模式下 go 调用）
@@ -104,6 +133,9 @@ func startRunner() {
 	// 僵尸任务回收（worker.ts recoverStaleTasks 语义：Go runner 是唯一任务执行方，
 	// 启动时把遗留 pending/running 一次性标 failed）
 	recoverStaleTasks()
+
+	// TS runner 防复活护栏：启动即清一次，之后每 runnerTSKillEvery 轮（≈5 分钟）再清
+	killTSScrapeRunner()
 
 	tick := 0
 	for {
@@ -125,6 +157,10 @@ func startRunner() {
 
 			if tick%runnerEngineEvery == 0 {
 				ensureEngine()
+			}
+
+			if tick%runnerTSKillEvery == 0 {
+				killTSScrapeRunner() // TS runner 防复活护栏（低频）
 			}
 
 			// 轮询 pending 任务

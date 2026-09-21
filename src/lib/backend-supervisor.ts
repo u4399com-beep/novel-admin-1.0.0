@@ -14,7 +14,7 @@
  * 注意：本文件只在服务端运行（route handler 内调用），不会进入客户端 bundle。
  */
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, openSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 
 const gSup = globalThis as unknown as {
   __backendGoPid?: number
@@ -64,13 +64,24 @@ function spawnBackendGo(): number {
     if (existsSync(HEARTBEAT_FILE)) utimesSync(HEARTBEAT_FILE, now, now)
     else writeFileSync(HEARTBEAT_FILE, now.toISOString())
 
+    // 日志落盘（Task 19 修复 Task 18 已知差异④：原先 stdio:'ignore' 丢弃全部 stdout，
+    // runner 启动/护栏/引擎互监护/pseo 引擎调用计时等运维关键日志无处可看）。
+    // 追加写 /tmp/backend-go-api.log，与 ensure-services.sh 手动拉起路径一致。
+    let stdio: 'ignore' | ['ignore', number, number] = 'ignore'
+    try {
+      const logFd = openSync('/tmp/backend-go-api.log', 'a')
+      stdio = ['ignore', logFd, logFd]
+    } catch {
+      /* 日志文件打不开时回退 ignore，不影响拉起 */
+    }
+
     const child = spawn(
       'bash',
       ['-c', `cd ${BACKEND_DIR} && exec ./backend-go.bin`],
       {
         env: { ...process.env, BACKEND_PORT: '3005', BACKEND_MODE: 'all' },
         detached: true,
-        stdio: 'ignore',
+        stdio,
       },
     )
     child.unref()
