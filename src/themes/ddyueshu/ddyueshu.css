@@ -1,0 +1,167 @@
+/* ============================================================
+   ddyueshu —— 经典笔趣阁风：天蓝 #88C6E5 + 米黄 #FEF9EF
+   980px 定宽 / 直角粗描边 / 宋体 / 高密度文字列表
+   令牌与 /home/z/site-analysis/specs/ddyueshu.md 保持一致
+   ============================================================ */
+.dd-root {
+  --dd-blue: #88c6e5;
+  --dd-blue-mid: #a6d3e8;
+  --dd-blue-light: #c3dfea;
+  --dd-cream: #fef9ef;
+  --dd-block: #e1eced;
+  --dd-titlebar: #f6f8fe;
+  --dd-link: #6f78a7;
+  --dd-ink: #555;
+  --dd-title: #333;
+  --dd-gray: #b3b3b3;
+  --dd-green: #085308;
+  --dd-friend: #548161;
+
+  min-height: 100vh;
+  background: #e9faff;
+  color: var(--dd-ink);
+  font-family: SimSun, '宋体', 'Songti SC', STSong, serif;
+  font-size: 12px;
+}
+
+/* 标题用黑体 */
+.dd-root h1,
+.dd-hei {
+  font-family: SimHei, '黑体', 'Heiti SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* ---------- 链接 / 按钮 ---------- */
+.dd-link {
+  color: var(--dd-link);
+  cursor: pointer;
+}
+.dd-link:hover {
+  text-decoration: underline;
+}
+.dd-greenlink {
+  color: var(--dd-green);
+  cursor: pointer;
+}
+.dd-greenlink:hover {
+  text-decoration: underline;
+}
+.dd-greenlink:disabled {
+  color: #9db4a0;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+.dd-hottext {
+  color: red;
+}
+.dd-input {
+  height: 20px;
+  border: 1px solid #a6d3e8;
+  background: #fff;
+  padding: 0 4px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #444;
+  outline: none;
+}
+.dd-input:focus {
+  border-color: #459df5;
+}
+
+/* ---------- 导航 ---------- */
+.dd-nav-item {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 15px;
+  font-weight: bold;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.dd-nav-item:hover,
+.dd-nav-item[data-active='true'] {
+  background: #459df5;
+}
+
+/* ---------- 区块盒子（三档蓝描边 + 米黄底，直角） ---------- */
+.dd-box {
+  border: 3px solid var(--dd-blue-light);
+  background: var(--dd-cream);
+}
+.dd-box-mid {
+  border-color: var(--dd-blue-mid);
+}
+.dd-box-strong {
+  border-color: var(--dd-blue);
+}
+.dd-box-c8 {
+  border-color: #c8d4e1;
+}
+.dd-box-title {
+  height: 30px;
+  line-height: 30px;
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--dd-title);
+}
+
+/* ---------- 列表行 ---------- */
+.dd-row25 {
+  height: 25px;
+  line-height: 25px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ---------- 章节目录 dl/dd（33% 三栏） ---------- */
+.dd-dd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  column-gap: 12px;
+}
+@media (max-width: 767px) {
+  .dd-dd-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 479px) {
+  .dd-dd-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.dd-dd-item {
+  height: 25px;
+  line-height: 25px;
+  border-bottom: 1px dashed #ccc;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dd-dd-item > button {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: #444;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+}
+.dd-dd-item > button:hover {
+  color: #cc0000;
+}
+
+/* ---------- 正文阅读区 ---------- */
+.dd-reader-content p {
+  margin: 0;
+  text-indent: 2em;
+}

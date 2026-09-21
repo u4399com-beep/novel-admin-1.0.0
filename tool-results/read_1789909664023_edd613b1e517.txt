@@ -1,0 +1,961 @@
+     1→     1→/**
+     2→     2→ * 采集任务 Worker（服务端专用，勿在客户端 import）
+     3→     3→ *
+     4→     4→ * 两阶段并发架构（Task 13-a，取代旧「逐本串行」）：
+     5→     5→ *
+     6→     6→ *   list 模式：
+     7→     7→ *     [列表页翻页采集条目]（分页模板或 ?page/k 猜测变体；连续 3 页空提取即提前终止翻页）
+     8→     8→ *       → 按 URL 去重 → 截断到单任务书籍上限 →
+     9→     9→ *     Phase 1 书目骨架：有界并发（默认 5）抓书页 + 完整目录 → upsert 书籍 +
+    10→    10→ *       章节骨架入库（content=''、wordCount=0，title/idx 来自目录；按 (novelId,title) 去重）；
+    11→    11→ *       进度 done/total=书
+    12→    12→ *     Phase 2 正文填充：从 DB 分页拉取（每批 200，orderBy id）wordCount=0 的骨架章节，
+    13→    13→ *       跨书平铺有界并发（默认 8）抓正文 → update 填充 content/wordCount；
+    14→    14→ *       进度 chaptersDone/chaptersTotal
+    15→    15→ *
+    16→    16→ *   single 模式：书页 + 目录 → upsert → 章节有界并发（默认 8）抓正文直接入库
+    17→    17→ *     （done/total=章节；同名章节已有行时：wordCount>0 跳过、wordCount=0 骨架就地填充）
+    18→    18→ *
+    19→    19→ * - 内存治理：章节正文抓到即清洗即落库，不在内存积压整本书内容；
+    20→    20→ *   Phase 2 骨架分页拉取（绝不 loadAll）；列表条目合并去重后即截断到任务上限；
+    21→    21→ *   章节 URL 不常驻内存 —— Phase 2 按需重取书页目录（LRU 32 本 + 负缓存），
+    22→    22→ *   目录标题 → 章节 URL 的映射只在单本书抓取瞬间存在
+    23→    23→ * - 可续跑：Phase 2 只处理 wordCount=0 的骨架章节（任务中断后重新发起任务即可续传，
+    24→    24→ *   已填充章节按标题去重天然跳过）；Phase 1 重跑对已有书只补骨架不重建
+    25→    25→ * - 协作式取消贯穿两阶段（isCanceled；池派发前节流检查 + 抓取前检查）
+    26→    26→ * - 引擎侧每域名 ≥1.2s 串行限速（合规红线）：并发只提升流水线/多站点吞吐，
+    27→    27→ *   不突破单站点 1 req/s 访问纪律
+    28→    28→ * - 僵尸任务回收 / pending→running 条件更新竞态防护 / 终态只写一次 语义与旧版一致
+    29→    29→ * - 正文入库前经 cleanChapterContent 统一清洗（去 \r\n/行首缩进/空行/广告噪声行），
+    30→    30→ *   wordCount 基于清洗后文本；清洗日志每任务最多 3 条防刷屏
+    31→    31→ * - 可观测性：书目阶段逐本一行 + 每 25 本汇总；正文阶段每 50 章汇总；
+    32→    32→ *   不逐章输出（run 日志 100 行滚动 + console 静默）
+    33→    33→ *
+    34→    34→ * 合规红线：仅抓取公开页面；robots 提示与域名限速由 scraper-service 引擎层负责；
+    35→    35→ * 单本章节上限默认 2000、单任务书籍上限默认 500（环境变量可配，防滥用意图不变），
+    36→    36→ * 正文 5 万字截断。
+    37→    37→ */
+    38→    38→import { db } from '@/lib/db'
+    39→    39→import { cleanChapterContent } from '@/lib/content-clean'
+    40→    40→import { fetchBookPage, fetchCatalogChapters, fetchChapterPaged, fetchListPage } from './engine-client'
+    41→    41→import { Run, MAX_LOG_LINES } from './run-log'
+    42→    42→import { runPool } from './pool'
+    43→    43→import { buildPageUrlsFromTemplate, parsePaginationTemplate } from './pagination'
+    44→    44→import {
+    45→    45→  createChapterSkeletons,
+    46→    46→  ensureCategory,
+    47→    47→  loadExistingChapters,
+    48→    48→  loadRule,
+    49→    49→  normalizeChapterTitle,
+    50→    50→  recalcNovelWordCount,
+    51→    51→  storeChapter,
+    52→    52→  upsertBook,
+    53→    53→} from './store'
+    54→    54→import type { BookData, LoadedRule, ListItem, TaskFlushFields, TaskRecord } from './types'
+    55→    55→
+    56→    56→// ==================== 可配置上限与并发参数（防滥用，环境变量可调） ====================
+    57→    57→
+    58→    58→/** 环境变量整数解析：未配置/非法回落默认值，并钳制到 [min,max]（上限不可被配置成无界） */
+    59→    59→function envInt(name: string, fallback: number, min: number, max: number): number {
+    60→    60→  const n = Number(process.env[name])
+    61→    61→  if (!Number.isFinite(n) || n <= 0) return fallback
+    62→    62→  return Math.min(max, Math.max(min, Math.floor(n)))
+    63→    63→}
+    64→    64→
+    65→    65→/**
+    66→    66→ * 单本书章节上限（防滥用；默认 2000。SCRAPE_MAX_CHAPTERS_PER_BOOK 可调，硬上限 50000）
+    67→    67→ * 注意：引擎侧 MAX_CHAPTER_REFS 需 ≥ 本值，否则目录在引擎层先被截断。
+    68→    68→ */
+    69→    69→export const MAX_CHAPTERS_PER_BOOK = envInt('SCRAPE_MAX_CHAPTERS_PER_BOOK', 2000, 1, 50_000)
+    70→    70→/** 单任务书籍上限（防滥用；默认 500。SCRAPE_MAX_BOOKS_PER_TASK 可调，硬上限 10000） */
+    71→    71→export const MAX_BOOKS_PER_TASK = envInt('SCRAPE_MAX_BOOKS_PER_TASK', 500, 1, 10_000)
+    72→    72→/** 单章正文存储上限（字符） */
+    73→    73→const MAX_CONTENT_CHARS = 50_000
+    74→    74→
+    75→    75→/** Phase 1 书目骨架并发（默认 5；SCRAPE_CONCURRENCY_BOOKS 可调） */
+    76→    76→const CONCURRENCY_BOOKS = envInt('SCRAPE_CONCURRENCY_BOOKS', 5, 1, 12)
+    77→    77→/** Phase 2 正文填充并发 / single 模式章节并发（默认 8；SCRAPE_CONCURRENCY_CHAPTERS 可调） */
+    78→    78→const CONCURRENCY_CHAPTERS = envInt('SCRAPE_CONCURRENCY_CHAPTERS', 8, 1, 16)
+    79→    79→/** Phase 2 骨架 DB 分页拉取批量（每批 200，orderBy id，绝不 loadAll） */
+    80→    80→const SKELETON_BATCH = 200
+    81→    81→/** 进度 flush 节流间隔（并发下按时间节流写盘，批次边界强制落盘） */
+    82→    82→const FLUSH_INTERVAL_MS = 600
+    83→    83→/** 协作式取消检查节流间隔（Phase 2 每章检查走此节流，Phase 1/关键步骤仍逐次直查） */
+    84→    84→const CANCEL_CHECK_INTERVAL_MS = 1200
+    85→    85→/** 列表页连续空提取提前终止阈值（防对封锁站点空转烧完 20 页） */
+    86→    86→const MAX_EMPTY_PAGES = 3
+    87→    87→/** Phase 2 目录缓存上限（LRU；只缓存 title→url 映射，单本最多 2000 条 ≈ 数百 KB） */
+    88→    88→const CATALOG_CACHE_MAX = 32
+    89→    89→
+    90→    90→/**
+    91→    91→ * 模块级防并发：同一任务 id 同时只允许一个 worker 实例。
+    92→    92→ * 挂在 globalThis 上：dev HMR 重载本模块时新旧实例共享同一 Set，
+    93→    93→ * 否则重载后新实例的 running 为空，同一任务可能被二次触发执行。
+    94→    94→ */
+    95→    95→const gWorker = globalThis as unknown as {
+    96→    96→  __scrapeRunning?: Set<number>
+    97→    97→  __scrapeBootAt?: number
+    98→    98→  __scrapeRecovered?: boolean
+    99→    99→}
+   100→   100→const running: Set<number> = (gWorker.__scrapeRunning ??= new Set<number>())
+   101→   101→/** 本进程启动时刻（首次加载本模块时；跨 HMR 重载稳定） */
+   102→   102→const bootAt: number = (gWorker.__scrapeBootAt ??= Date.now())
+   103→   103→
+   104→   104→/**
+   105→   105→ * 僵尸任务恢复（最小机制）：worker 常驻在 Next.js 进程内存里（fire-and-forget promise），
+   106→   106→ * 进程重启后内存任务丢失，DB 中 status=pending/running 的记录会永久卡死。
+   107→   107→ * 进程首次加载本模块时，把「创建于本进程启动之前」且仍处于 pending/running 的任务标记为
+   108→   108→ * failed——它们只可能属于已消失的旧进程（本进程新建任务 createdAt ≥ bootAt，不会误伤；
+   109→   109→ * 本进程在跑任务再经共享 running Set 二次排除，覆盖 HMR 重载场景）。
+   110→   110→ * 条件更新（status 仍为 pending/running）保证与 worker 终态写入竞态安全。
+   111→   111→ */
+   112→   112→async function recoverStaleTasks(): Promise<void> {
+   113→   113→  if (gWorker.__scrapeRecovered) return
+   114→   114→  try {
+   115→   115→    const stale = await db.scrapeTask.findMany({
+   116→   116→      where: { status: { in: ['pending', 'running'] }, createdAt: { lt: new Date(bootAt) } },
+   117→   117→      select: { id: true, log: true },
+   118→   118→    })
+   119→   119→    let recovered = 0
+   120→   120→    for (const t of stale) {
+   121→   121→      if (running.has(t.id)) continue // 本进程仍有旧模块闭包在执行（HMR 重载未结束）
+   122→   122→      const line = `[${new Date().toTimeString().slice(0, 8)}] 服务重启，任务中断（自动回收）`
+   123→   123→      const log = `${t.log ? `${t.log}\n` : ''}${line}`
+   124→   124→      const res = await db.scrapeTask
+   125→   125→        .updateMany({
+   126→   126→          where: { id: t.id, status: { in: ['pending', 'running'] } },
+   127→   127→          data: {
+   128→   128→            status: 'failed',
+   129→   129→            message: '服务重启，任务中断',
+   130→   130→            // 与 Run 同规约：只保留最近 100 行
+   131→   131→            log: log.split('\n').slice(-MAX_LOG_LINES).join('\n'),
+   132→   132→          },
+   133→   133→        })
+   134→   134→        .catch(() => null)
+   135→   135→      if (res && res.count > 0) recovered++
+   136→   136→    }
+   137→   137→    gWorker.__scrapeRecovered = true
+   138→   138→    if (recovered > 0) console.log(`[scrape-worker] 僵尸任务回收: ${recovered} 条`)
+   139→   139→  } catch {
+   140→   140→    // 回收失败不阻塞模块加载；标志不置位，下次模块加载（HMR/重启）自动重试
+   141→   141→  }
+   142→   142→}
+   143→   143→void recoverStaleTasks()
+   144→   144→
+   145→   145→/** 协作式取消检查：记录不存在视为取消；DB 瞬时错误不误判为取消（fail-open） */
+   146→   146→async function isCanceled(taskId: number): Promise<boolean> {
+   147→   147→  const t = await db.scrapeTask
+   148→   148→    .findUnique({ where: { id: taskId }, select: { status: true } })
+   149→   149→    .catch(() => undefined)
+   150→   150→  if (t === undefined) return false // 查询失败 ≠ 被取消，避免瞬时 DB 错误误停任务
+   151→   151→  return !t || t.status === 'canceled'
+   152→   152→}
+   153→   153→
+   154→   154→/** 节流版取消检查（高频循环用；低频关键步骤仍直接调 isCanceled） */
+   155→   155→function makeThrottledCancel(taskId: number): () => Promise<boolean> {
+   156→   156→  let lastAt = 0
+   157→   157→  let lastVal = false
+   158→   158→  return async () => {
+   159→   159→    const now = Date.now()
+   160→   160→    if (now - lastAt < CANCEL_CHECK_INTERVAL_MS) return lastVal
+   161→   161→    lastAt = now
+   162→   162→    lastVal = await isCanceled(taskId)
+   163→   163→    return lastVal
+   164→   164→  }
+   165→   165→}
+   166→   166→
+   167→   167→/** 进度 flush 节流器：fields 取调用时刻快照；force=true 跳过节流（批次边界收尾） */
+   168→   168→type FlushFn = (fields: TaskFlushFields, force?: boolean) => Promise<boolean>
+   169→   169→function makeFlusher(run: Run): FlushFn {
+   170→   170→  let lastAt = 0
+   171→   171→  return async (fields: TaskFlushFields, force = false) => {
+   172→   172→    const now = Date.now()
+   173→   173→    if (!force && now - lastAt < FLUSH_INTERVAL_MS) return true
+   174→   174→    lastAt = now
+   175→   175→    return run.flush(fields)
+   176→   176→  }
+   177→   177→}
+   178→   178→
+   179→   179→/** 生成第 k 页候选 URL：?page=k（已有 query 则 &page=k）与 /page/k 两种变体（无模板时的猜测回落） */
+   180→   180→function pageVariants(url: string, k: number): string[] {
+   181→   181→  const out: string[] = []
+   182→   182→  try {
+   183→   183→    const u = new URL(url)
+   184→   184→    u.searchParams.set('page', String(k))
+   185→   185→    out.push(u.toString())
+   186→   186→    const p = new URL(url)
+   187→   187→    p.pathname = `${p.pathname.replace(/\/+$/, '')}/page/${k}`
+   188→   188→    p.search = ''
+   189→   189→    if (p.toString() !== u.toString()) out.push(p.toString())
+   190→   190→  } catch {
+   191→   191→    out.push(url.includes('?') ? `${url}&page=${k}` : `${url}?page=${k}`)
+   192→   192→    out.push(`${url.replace(/\/+$/, '')}/page/${k}`)
+   193→   193→  }
+   194→   194→  return [...new Set(out)]
+   195→   195→}
+   196→   196→
+   197→   197→// ==================== 书页 + 目录解析（list Phase 1 与 single 共用） ====================
+   198→   198→
+   199→   199→type ResolvedBook =
+   200→   200→  | { ok: true; book: BookData; refs: NarrowRef[]; capped: boolean }
+   201→   201→  | { ok: false; canceled: boolean; message: string }
+   202→   202→
+   203→   203→/** 目录引用（url 已过滤非空，区别于 ChapterRef 的可空 url） */
+   204→   204→interface NarrowRef {
+   205→   205→  title: string
+   206→   206→  url: string
+   207→   207→}
+   208→   208→
+   209→   209→/**
+   210→   210→ * 抓取书页并提取章节引用（含完整目录页二次提取与标题规范化/上限截断）。
+   211→   211→ * quiet=true（Phase 2 目录重取场景）不输出逐本日志，避免冲刷 100 行滚动日志。
+   212→   212→ * canceled 仅来自协作式取消检查（record 级失败由调用方按各自语义处理）。
+   213→   213→ */
+   214→   214→async function resolveBook(
+   215→   215→  run: Run,
+   216→   216→  bookUrl: string,
+   217→   217→  rule: LoadedRule,
+   218→   218→  referer?: string,
+   219→   219→  opts: { quiet?: boolean } = {},
+   220→   220→): Promise<ResolvedBook> {
+   221→   221→  const quiet = opts.quiet === true
+   222→   222→  if (!quiet) run.log(`抓取书页 ${bookUrl.slice(0, 120)}…`)
+   223→   223→  // Referer 链：list 模式传「发现本书的列表页」、章节填充传书页来路；缺省由引擎回落站内首页
+   224→   224→  const page = await fetchBookPage(run, bookUrl, rule, referer, { quiet })
+   225→   225→  if (!page.ok) {
+   226→   226→    if (!quiet) run.log(`书页提取失败: ${page.error}`)
+   227→   227→    return { ok: false, canceled: false, message: page.error }
+   228→   228→  }
+   229→   229→  const book = page.book
+   230→   230→  // 引擎响应未经 schema 校验（callEngine 直接 as 断言），关键字段做形态兜底，
+   231→   231→  // 防畸形载荷（引擎版本错位等）在任务中途抛 TypeError 把整任务拖成 failed
+   232→   232→  if (typeof book.title !== 'string') book.title = ''
+   233→   233→  if (!Array.isArray(book.chapters)) book.chapters = []
+   234→   234→  if (typeof book.description !== 'string') book.description = ''
+   235→   235→  if (typeof book.author !== 'string') book.author = ''
+   236→   236→  if (typeof book.category !== 'string') book.category = ''
+   237→   237→  if (typeof book.status !== 'string') book.status = ''
+   238→   238→  if (typeof book.chapterCount !== 'number') book.chapterCount = book.chapters.length
+   239→   239→  if (!quiet) {
+   240→   240→    run.log(
+   241→   241→      `书页提取成功：《${book.title.slice(0, 40)}》${book.author ? ` / ${book.author.slice(0, 20)}` : ''}，章节链接 ${book.chapterCount} 条`,
+   242→   242→    )
+   243→   243→  }
+   244→   244→
+   245→   245→  // ---- 完整目录页二次提取（bookRule.catalogLinkSelector，如 23qb 新模板书页仅含最新几章）----
+   246→   246→  let allRefs = book.chapters
+   247→   247→  const catalogSel = rule.bookRule.catalogLinkSelector
+   248→   248→  if (typeof catalogSel === 'string' && catalogSel) {
+   249→   249→    if (book.catalogUrl) {
+   250→   250→      const catalogRefs = await fetchCatalogChapters(run, book.catalogUrl, rule, bookUrl)
+   251→   251→      if (Array.isArray(catalogRefs) && catalogRefs.length > allRefs.length) {
+   252→   252→        if (!quiet) run.log(`目录页提取到 ${catalogRefs.length} 条章节链接（书页仅 ${allRefs.length} 条），采用目录页结果`)
+   253→   253→        allRefs = catalogRefs
+   254→   254→      } else if (!quiet) {
+   255→   255→        run.log(`目录页提取 ${catalogRefs.length} 条不多于书页 ${allRefs.length} 条，维持书页结果`)
+   256→   256→      }
+   257→   257→    } else if (!quiet) {
+   258→   258→      run.log(`catalogLinkSelector "${catalogSel.slice(0, 60)}" 在书页无命中，仅用书页章节链接`)
+   259→   259→    }
+   260→   260→  }
+   261→   261→  if (!Array.isArray(allRefs)) allRefs = []
+   262→   262→
+   263→   263→  // 章节引用规范化：过滤无 URL 引用 + 标题统一 trim/200 截断 + 截断到单本上限
+   264→   264→  const rawRefs = (Array.isArray(allRefs) ? allRefs : []).filter(
+   265→   265→    (c): c is { title: string; url: string } => !!c && typeof c.url === 'string' && !!c.url,
+   266→   266→  )
+   267→   267→  const refs: NarrowRef[] = []
+   268→   268→  const seenUrl = new Set<string>()
+   269→   269→  for (const c of rawRefs) {
+   270→   270→    if (seenUrl.has(c.url)) continue
+   271→   271→    seenUrl.add(c.url)
+   272→   272→    refs.push({ title: normalizeChapterTitle(c.title), url: c.url })
+   273→   273→  }
+   274→   274→  let capped = false
+   275→   275→  if (refs.length > MAX_CHAPTERS_PER_BOOK) {
+   276→   276→    refs.length = MAX_CHAPTERS_PER_BOOK
+   277→   277→    capped = true
+   278→   278→  }
+   279→   279→  return { ok: true, book, refs, capped }
+   280→   280→}
+   281→   281→
+   282→   282→// ==================== Phase 1：书目骨架（list 模式） ====================
+   283→   283→
+   284→   284→interface SkeletonOutcome {
+   285→   285→  ok: boolean
+   286→   286→  canceled: boolean
+   287→   287→  skeletonsAdded: number
+   288→   288→  novelId: number
+   289→   289→}
+   290→   290→
+   291→   291→/**
+   292→   292→ * 抓一个列表条目对应的书页 + 目录，upsert 书籍并把章节骨架入库
+   293→   293→ * （content=''、wordCount=0；按 (novelId,title) 去重，重跑只补骨架不重建）。
+   294→   294→ */
+   295→   295→async function processBookSkeleton(
+   296→   296→  run: Run,
+   297→   297→  item: ListItem,
+   298→   298→  rule: LoadedRule,
+   299→   299→  referer: string | undefined,
+   300→   300→  chapterProgress: { total: number },
+   301→   301→): Promise<SkeletonOutcome> {
+   302→   302→  const canceledOutcome = (): SkeletonOutcome => ({ ok: false, canceled: true, skeletonsAdded: 0, novelId: 0 })
+   303→   303→  run.log(`━━ 《${(item.title || '未命名').slice(0, 30)}》`)
+   304→   304→  const res = await resolveBook(run, item.url as string, rule, referer)
+   305→   305→  if (!res.ok) {
+   306→   306→    return { ok: false, canceled: false, skeletonsAdded: 0, novelId: 0 }
+   307→   307→  }
+   308→   308→  if (await isCanceled(run.taskId)) return canceledOutcome()
+   309→   309→
+   310→   310→  // ---- 分类（category.ts 智能归并：同义词→关键词→LLM 兜底，并发安全） ----
+   311→   311→  let categoryId: number
+   312→   312→  try {
+   313→   313→    categoryId = await ensureCategory(res.book.category)
+   314→   314→  } catch (e) {
+   315→   315→    run.log(`分类处理失败: ${e instanceof Error ? e.message.slice(0, 120) : '未知错误'}`)
+   316→   316→    return { ok: false, canceled: false, skeletonsAdded: 0, novelId: 0 }
+   317→   317→  }
+   318→   318→
+   319→   319→  // ---- 书籍 upsert（title+author 查重；DB 层 @@unique([title,author]) 兜底并发）----
+   320→   320→  const up = await upsertBook(run, res.book, categoryId, rule.proxy)
+   321→   321→  if (!up.ok) {
+   322→   322→    // canceled=true：记录级失败沿用取消通道停整个任务（沿用原语义）；否则只算本书失败
+   323→   323→    return { ok: false, canceled: up.canceled, skeletonsAdded: 0, novelId: 0 }
+   324→   324→  }
+   325→   325→  if (res.refs.length === 0) {
+   326→   326→    run.log(`《${up.title.slice(0, 24)}》未提取到有效章节链接，仅入书籍信息`)
+   327→   327→    return { ok: true, canceled: false, skeletonsAdded: 0, novelId: up.novelId }
+   328→   328→  }
+   329→   329→
+   330→   330→  // ---- 章节骨架入库：(novelId, title) 去重（防同书同名章重复/重跑重复） ----
+   331→   331→  const existing = await loadExistingChapters(up.novelId)
+   332→   332→  const seen = new Set(existing.map((c) => c.title))
+   333→   333→  let idx = existing.reduce((m, c) => Math.max(m, c.idx), 0) + 1
+   334→   334→  const rows: Array<{ idx: number; title: string }> = []
+   335→   335→  for (const ref of res.refs) {
+   336→   336→    // 空标题回退「第N章」占位（idx 即落库序号，天然不与本批其他行冲突）
+   337→   337→    const title = ref.title || `第${idx}章`
+   338→   338→    if (seen.has(title)) continue
+   339→   339→    seen.add(title)
+   340→   340→    rows.push({ idx, title })
+   341→   341→    idx++
+   342→   342→  }
+   343→   343→  const created = await createChapterSkeletons(run, up.novelId, rows)
+   344→   344→  chapterProgress.total += created.added
+   345→   345→  run.log(
+   346→   346→    `《${up.title.slice(0, 24)}》骨架 ${created.added} 章` +
+   347→   347→      `${res.capped ? `（目录达单本上限 ${MAX_CHAPTERS_PER_BOOK} 已截断）` : ''}` +
+   348→   348→      `${created.added < res.refs.length ? `，已有同名章 ${res.refs.length - created.added} 跳过` : ''}`,
+   349→   349→  )
+   350→   350→  return { ok: true, canceled: false, skeletonsAdded: created.added, novelId: up.novelId }
+   351→   351→}
+   352→   352→
+   353→   353→// ==================== Phase 2：正文填充（list 模式） ====================
+   354→   354→
+   355→   355→/** 目录缓存值：title → 章节 URL（单本书瞬时构建，LRU 上限内复用） */
+   356→   356→interface NovelCatalog {
+   357→   357→  titles: Map<string, string>
+   358→   358→}
+   359→   359→
+   360→   360→/**
+   361→   361→ * Phase 2 目录提供器：按需重取书页并构建 title→url 映射（LRU 32 本 + 失败负缓存）。
+   362→   362→ * 为什么重取而不是常驻内存：500 本 × 2000 章 × URL/标题 ≈ 150MB+ 常驻 ——
+   363→   363→ * 正是「堆内存堆崩服务器」的形态；重取代价是每本书一次书页请求（引擎限速下可忽略）。
+   364→   364→ * 好处：目录以最新为准（自愈），旧任务遗留骨架若对应书页可解析也能被续采。
+   365→   365→ */
+   366→   366→function makeCatalogProvider(
+   367→   367→  run: Run,
+   368→   368→  rule: LoadedRule,
+   369→   369→  bookUrlByNovel: Map<number, string>,
+   370→   370→): (novelId: number) => Promise<NovelCatalog | null> {
+   371→   371→  const cache = new Map<number, NovelCatalog | null>()
+   372→   372→  return async (novelId: number): Promise<NovelCatalog | null> => {
+   373→   373→    const hit = cache.get(novelId)
+   374→   374→    if (hit !== undefined) {
+   375→   375→      // LRU 刷新（Map 迭代按插入序）
+   376→   376→      cache.delete(novelId)
+   377→   377→      cache.set(novelId, hit)
+   378→   378→      return hit
+   379→   379→    }
+   380→   380→    let result: NovelCatalog | null = null
+   381→   381→    const bookUrl = bookUrlByNovel.get(novelId)
+   382→   382→    if (bookUrl) {
+   383→   383→      const res = await resolveBook(run, bookUrl, rule, undefined, { quiet: true })
+   384→   384→      if (res.ok) {
+   385→   385→        const titles = new Map<string, string>()
+   386→   386→        for (const ref of res.refs) {
+   387→   387→          if (ref.title && !titles.has(ref.title)) titles.set(ref.title, ref.url)
+   388→   388→        }
+   389→   389→        result = { titles }
+   390→   390→      }
+   391→   391→    }
+   392→   392→    if (cache.size >= CATALOG_CACHE_MAX) {
+   393→   393→      const oldest = cache.keys().next()
+   394→   394→      if (!oldest.done) cache.delete(oldest.value)
+   395→   395→    }
+   396→   396→    cache.set(novelId, result)
+   397→   397→    return result
+   398→   398→  }
+   399→   399→}
+   400→   400→
+   401→   401→interface FillPhaseResult {
+   402→   402→  filled: number
+   403→   403→  failed: number
+   404→   404→  skipped: number
+   405→   405→  /** 已处理的骨架章节数（填充+失败+未匹配，即 chaptersDone 口径） */
+   406→   406→  processed: number
+   407→   407→  chaptersTotal: number
+   408→   408→  canceled: boolean
+   409→   409→}
+   410→   410→
+   411→   411→/**
+   412→   412→ * Phase 2 正文填充：DB 分页拉取 wordCount=0 的骨架章节（每批 200，orderBy id），
+   413→   413→ * 跨书平铺有界并发抓正文 → update 填充 content/wordCount。
+   414→   414→ * 只处理本次运行已知书页来路（bookUrlByNovel）的书；其余骨架留给对应站点任务续采。
+   415→   415→ */
+   416→   416→async function fillSkeletonsPhase(
+   417→   417→  run: Run,
+   418→   418→  rule: LoadedRule,
+   419→   419→  flush: FlushFn,
+   420→   420→  cancelCheck: () => Promise<boolean>,
+   421→   421→  bookUrlByNovel: Map<number, string>,
+   422→   422→): Promise<FillPhaseResult> {
+   423→   423→  const result: FillPhaseResult = { filled: 0, failed: 0, skipped: 0, processed: 0, chaptersTotal: 0, canceled: false }
+   424→   424→  const novelIds = [...bookUrlByNovel.keys()]
+   425→   425→  if (novelIds.length === 0) return result
+   426→   426→
+   427→   427→  result.chaptersTotal = await db.chapter
+   428→   428→    .count({ where: { wordCount: 0, novelId: { in: novelIds } } })
+   429→   429→    .catch(() => 0)
+   430→   430→  if (result.chaptersTotal === 0) {
+   431→   431→    await flush({ chaptersDone: 0, chaptersTotal: 0 }, true)
+   432→   432→    return result
+   433→   433→  }
+   434→   434→  run.log(`Phase 2 正文填充：待填充骨架章节 ${result.chaptersTotal} 条（并发 ${CONCURRENCY_CHAPTERS}，批量 ${SKELETON_BATCH}）`)
+   435→   435→
+   436→   436→  const catalog = makeCatalogProvider(run, rule, bookUrlByNovel)
+   437→   437→  const touched = new Set<number>()
+   438→   438→  const recalcTouched = async (): Promise<void> => {
+   439→   439→    for (const novelId of touched) await recalcNovelWordCount(novelId)
+   440→   440→    touched.clear()
+   441→   441→  }
+   442→   442→
+   443→   443→  let chaptersDone = 0
+   444→   444→  let cursorId = 0
+   445→   445→  let sinceLog = 0
+   446→   446→  let broken = false // 任务记录被删（flush false）→ 停止批次循环
+   447→   447→  for (;;) {
+   448→   448→    if (await cancelCheck()) {
+   449→   449→      result.canceled = true
+   450→   450→      break
+   451→   451→    }
+   452→   452→    // 骨架分页拉取：每批 200、orderBy id、id 游标翻页（绝不一次性 loadAll）
+   453→   453→    const batch = await db.chapter
+   454→   454→      .findMany({
+   455→   455→        where: { wordCount: 0, novelId: { in: novelIds }, id: { gt: cursorId } },
+   456→   456→        orderBy: { id: 'asc' },
+   457→   457→        take: SKELETON_BATCH,
+   458→   458→        select: { id: true, novelId: true, title: true },
+   459→   459→      })
+   460→   460→      .catch(() => [])
+   461→   461→    if (batch.length === 0) break
+   462→   462→    cursorId = (batch[batch.length - 1] ?? { id: cursorId }).id
+   463→   463→
+   464→   464→    await runPool(
+   465→   465→      batch,
+   466→   466→      CONCURRENCY_CHAPTERS,
+   467→   467→      async (row) => {
+   468→   468→        if (await cancelCheck()) return
+   469→   469→        const cat = await catalog(row.novelId)
+   470→   470→        if (!cat) {
+   471→   471→          result.skipped++
+   472→   472→          return
+   473→   473→        }
+   474→   474→        const url = cat.titles.get(row.title)
+   475→   475→        if (!url) {
+   476→   476→          result.skipped++ // 目录标题对不上（目录已变化/空标题占位），骨架保留待后续任务
+   477→   477→          return
+   478→   478→        }
+   479→   479→        const ch = await fetchChapterPaged(url, rule, bookUrlByNovel.get(row.novelId))
+   480→   480→        const data = ch.ok ? ch.data : null
+   481→   481→        // 入库前统一清洗（去 \r\n/行首缩进/空行/噪声行），存储契约：无空行、无行首缩进
+   482→   482→        const cleaned = cleanChapterContent(data?.content ?? '')
+   483→   483→        const content = cleaned.text.slice(0, MAX_CONTENT_CHARS)
+   484→   484→        chaptersDone++
+   485→   485→        result.processed++
+   486→   486→        if (!data || !content.trim()) {
+   487→   487→          result.failed++
+   488→   488→        } else {
+   489→   489→          const wordCount = content.replace(/\s/g, '').length
+   490→   490→          const ok = await db.chapter
+   491→   491→            .update({ where: { id: row.id }, data: { content, wordCount } })
+   492→   492→            .then(() => true)
+   493→   493→            .catch(() => false)
+   494→   494→          if (ok) {
+   495→   495→            result.filled++
+   496→   496→            run.counters.chapters++
+   497→   497→            touched.add(row.novelId)
+   498→   498→          } else {
+   499→   499→            result.failed++
+   500→   500→          }
+   501→   501→        }
+   502→   502→        sinceLog++
+   503→   503→        if (sinceLog >= 50) {
+   504→   504→          sinceLog = 0
+   505→   505→          run.log(`正文填充进度 ${chaptersDone}/${result.chaptersTotal}（成功 ${result.filled} / 失败 ${result.failed}）`)
+   506→   506→        }
+   507→   507→        await flush({ chaptersDone, chaptersTotal: result.chaptersTotal, chapters: run.counters.chapters })
+   508→   508→      },
+   509→   509→      {
+   510→   510→        shouldStop: cancelCheck,
+   511→   511→        retries: 1,
+   512→   512→        onItemError: (e) => run.log(`正文填充异常: ${e instanceof Error ? e.message.slice(0, 120) : '未知错误'}`),
+   513→   513→      },
+   514→   514→    )
+   515→   515→
+   516→   516→    // 批次收尾：进度强制落盘 + 触及书籍字数重算（骨架平铺后字数按批次收敛）
+   517→   517→    if (!(await flush({ chaptersDone, chaptersTotal: result.chaptersTotal, chapters: run.counters.chapters }, true))) {
+   518→   518→      broken = true
+   519→   519→      break
+   520→   520→    }
+   521→   521→    await recalcTouched()
+   522→   522→    if (await cancelCheck()) {
+   523→   523→      result.canceled = true
+   524→   524→      break
+   525→   525→    }
+   526→   526→  }
+   527→   527→  if (broken) result.canceled = true // 任务记录已删除，按中止处理（finalize 对已删记录为 no-op）
+   528→   528→  await recalcTouched()
+   529→   529→  if (result.skipped > 0) run.log(`正文填充结束：成功 ${result.filled} / 失败 ${result.failed} / 未匹配目录 ${result.skipped}（骨架保留，待续采）`)
+   530→   530→  else run.log(`正文填充结束：成功 ${result.filled} / 失败 ${result.failed}`)
+   531→   531→  return result
+   532→   532→}
+   533→   533→
+   534→   534→// ==================== 两种模式 ====================
+   535→   535→
+   536→   536→async function runList(run: Run, task: TaskRecord, rule: LoadedRule): Promise<void> {
+   537→   537→  const flush = makeFlusher(run)
+   538→   538→  const cancelCheck = makeThrottledCancel(run.taskId)
+   539→   539→
+   540→   540→  // ---- 列表页抓取（第 1 页 + 分页模板/猜测变体翻页） ----
+   541→   541→  const template = parsePaginationTemplate(rule.listRule)
+   542→   542→  if (template) run.log(`分页模板生效: ${template.slice(0, 100)}`)
+   543→   543→  run.log('抓取列表页第 1 页…')
+   544→   544→  const first = await fetchListPage(run, task.targetUrl, rule)
+   545→   545→  if (await isCanceled(run.taskId)) {
+   546→   546→    await finalize(run, 'canceled', '任务已取消')
+   547→   547→    return
+   548→   548→  }
+   549→   549→  if (first.length === 0) {
+   550→   550→    run.log('列表页未提取到书籍条目')
+   551→   551→    await finalize(run, 'failed', '列表页未提取到书籍条目')
+   552→   552→    return
+   553→   553→  }
+   554→   554→  run.log(`第 1 页提取 ${first.length} 条`)
+   555→   555→
+   556→   556→  const items = [...first]
+   557→   557→  // 当前生效的列表页 URL（含翻页命中页）：作为后续书页抓取的 Referer 来路
+   558→   558→  let currentListUrl = task.targetUrl
+   559→   559→  let consecutiveEmpty = 0
+   560→   560→  let paginationAborted = false
+   561→   561→  for (let k = 2; k <= task.pages; k++) {
+   562→   562→    if (await isCanceled(run.taskId)) break
+   563→   563→    // 有模板：只按模板生成（第 1 页即 targetUrl 本身，此处生成 2..pages）；无模板：猜测变体
+   564→   564→    const candidates = template
+   565→   565→      ? buildPageUrlsFromTemplate(template, task.targetUrl, k, k)
+   566→   566→      : pageVariants(task.targetUrl, k)
+   567→   567→    let got: ListItem[] | null = null
+   568→   568→    for (const v of candidates) {
+   569→   569→      const pageItems = await fetchListPage(run, v, rule)
+   570→   570→      if (pageItems.length > 0) {
+   571→   571→        got = pageItems
+   572→   572→        currentListUrl = v
+   573→   573→        run.log(`第 ${k} 页命中: ${v.slice(0, 100)}`)
+   574→   574→        break
+   575→   575→      }
+   576→   576→    }
+   577→   577→    if (!got || got.length === 0) {
+   578→   578→      consecutiveEmpty++
+   579→   579→      run.log(`第 ${k} 页无结果（连续空页 ${consecutiveEmpty}/${MAX_EMPTY_PAGES}）`)
+   580→   580→      // 快速终止：连续 3 页全部提取失败 → 停止翻页（0 本书时按失败收尾，防封锁站点空转）
+   581→   581→      if (consecutiveEmpty >= MAX_EMPTY_PAGES) {
+   582→   582→        paginationAborted = true
+   583→   583→        break
+   584→   584→      }
+   585→   585→      continue
+   586→   586→    }
+   587→   587→    consecutiveEmpty = 0
+   588→   588→    run.log(`第 ${k} 页提取 ${got.length} 条`)
+   589→   589→    items.push(...got)
+   590→   590→  }
+   591→   591→  if (paginationAborted) run.log(`连续 ${MAX_EMPTY_PAGES} 页提取失败，提前终止翻页`)
+   592→   592→
+   593→   593→  // 合并去重（按 URL，缺 URL 按标题）→ 立即截断到任务上限（避免超大任务常驻内存）
+   594→   594→  const seen = new Set<string>()
+   595→   595→  const merged: ListItem[] = []
+   596→   596→  for (const it of items) {
+   597→   597→    const key = it.url ?? `t:${it.title}`
+   598→   598→    if (seen.has(key)) continue
+   599→   599→    seen.add(key)
+   600→   600→    merged.push(it)
+   601→   601→  }
+   602→   602→  if (merged.length > MAX_BOOKS_PER_TASK) {
+   603→   603→    merged.length = MAX_BOOKS_PER_TASK
+   604→   604→    run.log(`条目数超出单任务上限（${MAX_BOOKS_PER_TASK}，环境变量 SCRAPE_MAX_BOOKS_PER_TASK 可调），已截断`)
+   605→   605→  }
+   606→   606→  const total = merged.length
+   607→   607→  await run.flush({ total, done: 0 })
+   608→   608→  if (total === 0) {
+   609→   609→    await finalize(run, 'failed', '列表页未提取到有效书籍条目')
+   610→   610→    return
+   611→   611→  }
+   612→   612→  run.log(`去重后共 ${total} 本书待采集，Phase 1 书目骨架开始（并发 ${CONCURRENCY_BOOKS}）`)
+   613→   613→
+   614→   614→  // ---- Phase 1：书目骨架（有界并发） ----
+   615→   615→  const chapterProgress = { total: 0 }
+   616→   616→  const bookUrlByNovel = new Map<number, string>()
+   617→   617→  let doneBooks = 0
+   618→   618→  let okBooks = 0
+   619→   619→  let failBooks = 0
+   620→   620→  let recordFailed = false // 记录级失败（up.canceled 通道，沿用原语义：停整个任务）
+   621→   621→  let bookLogCount = 0
+   622→   622→  const phase1 = await runPool(
+   623→   623→    merged,
+   624→   624→    CONCURRENCY_BOOKS,
+   625→   625→    async (item) => {
+   626→   626→      if (await isCanceled(run.taskId)) return
+   627→   627→      const outcome = await processBookSkeleton(run, item, rule, currentListUrl, chapterProgress)
+   628→   628→      doneBooks++
+   629→   629→      if (outcome.canceled) {
+   630→   630→        recordFailed = true
+   631→   631→        return
+   632→   632→      }
+   633→   633→      if (outcome.ok) {
+   634→   634→        okBooks++
+   635→   635→        if (outcome.novelId > 0) bookUrlByNovel.set(outcome.novelId, item.url as string)
+   636→   636→      } else {
+   637→   637→        failBooks++
+   638→   638→      }
+   639→   639→      if (++bookLogCount % 25 === 0) {
+   640→   640→        run.log(`骨架进度 ${doneBooks}/${total} 本（新建 ${run.counters.created} / 已有 ${run.counters.updated} / 失败 ${failBooks}）`)
+   641→   641→      }
+   642→   642→      await flush({
+   643→   643→        done: doneBooks,
+   644→   644→        chaptersTotal: chapterProgress.total,
+   645→   645→        created: run.counters.created,
+   646→   646→        updated: run.counters.updated,
+   647→   647→      })
+   648→   648→    },
+   649→   649→    {
+   650→   650→      shouldStop: cancelCheck,
+   651→   651→      retries: 1,
+   652→   652→      onItemError: (e) => run.log(`书目处理异常: ${e instanceof Error ? e.message.slice(0, 120) : '未知错误'}`),
+   653→   653→    },
+   654→   654→  )
+   655→   655→  await flush(
+   656→   656→    {
+   657→   657→      done: doneBooks,
+   658→   658→      total,
+   659→   659→      chaptersTotal: chapterProgress.total,
+   660→   660→      created: run.counters.created,
+   661→   661→      updated: run.counters.updated,
+   662→   662→    },
+   663→   663→    true,
+   664→   664→  )
+   665→   665→
+   666→   666→  // ---- 阶段间终止检查（协作式取消 / 记录级失败 / 一本书都没成功） ----
+   667→   667→  if (recordFailed || phase1.stopped || (await isCanceled(run.taskId))) {
+   668→   668→    run.log('任务已取消（Phase 1 中止）')
+   669→   669→    await finalize(run, 'canceled', `已取消（完成书目 ${doneBooks}/${total}）`)
+   670→   670→    return
+   671→   671→  }
+   672→   672→  if (okBooks === 0) {
+   673→   673→    const msg = paginationAborted
+   674→   674→      ? `连续 ${MAX_EMPTY_PAGES} 页提取失败且无书籍入库（疑似站点封锁或规则失效）`
+   675→   675→      : '无书籍采集成功'
+   676→   676→    await finalize(run, 'failed', msg)
+   677→   677→    return
+   678→   678→  }
+   679→   679→
+   680→   680→  // ---- Phase 2：正文填充 ----
+   681→   681→  const p2 = await fillSkeletonsPhase(run, rule, flush, cancelCheck, bookUrlByNovel)
+   682→   682→  await flush(
+   683→   683→    {
+   684→   684→      done: doneBooks,
+   685→   685→      total,
+   686→   686→      chaptersDone: p2.processed,
+   687→   687→      chaptersTotal: p2.chaptersTotal,
+   688→   688→      created: run.counters.created,
+   689→   689→      updated: run.counters.updated,
+   690→   690→      chapters: run.counters.chapters,
+   691→   691→    },
+   692→   692→    true,
+   693→   693→  )
+   694→   694→
+   695→   695→  if (p2.canceled) {
+   696→   696→    run.log('任务已取消（Phase 2 中止）')
+   697→   697→    await finalize(run, 'canceled', `已取消（书目 ${doneBooks}/${total}，正文 ${p2.filled}/${p2.chaptersTotal}）`)
+   698→   698→    return
+   699→   699→  }
+   700→   700→
+   701→   701→  // ---- 终态 ----
+   702→   702→  if (failBooks > 0) {
+   703→   703→    await finalize(
+   704→   704→      run,
+   705→   705→      'partial',
+   706→   706→      `${okBooks} 本成功 / ${failBooks} 本失败；正文 ${p2.filled} 章（失败 ${p2.failed}）`,
+   707→   707→    )
+   708→   708→    return
+   709→   709→  }
+   710→   710→  if (p2.failed > 0) {
+   711→   711→    await finalize(run, 'partial', `范围采集完成：${total} 本；正文 ${p2.filled} 章（失败 ${p2.failed}）`)
+   712→   712→    return
+   713→   713→  }
+   714→   714→  await finalize(run, 'success', `范围采集完成：共 ${total} 本，正文 ${p2.filled} 章`)
+   715→   715→}
+   716→   716→
+   717→   717→async function runSingle(run: Run, task: TaskRecord, rule: LoadedRule): Promise<void> {
+   718→   718→  const flush = makeFlusher(run)
+   719→   719→  const cancelCheck = makeThrottledCancel(run.taskId)
+   720→   720→  const res = await resolveBook(run, task.targetUrl, rule)
+   721→   721→  if (await isCanceled(run.taskId)) {
+   722→   722→    await finalize(run, 'canceled', '任务已取消')
+   723→   723→    return
+   724→   724→  }
+   725→   725→  if (!res.ok) {
+   726→   726→    await finalize(run, 'failed', res.message || '书页提取失败')
+   727→   727→    return
+   728→   728→  }
+   729→   729→  const book = res.book
+   730→   730→
+   731→   731→  // ---- 分类 ----
+   732→   732→  let categoryId: number
+   733→   733→  try {
+   734→   734→    categoryId = await ensureCategory(book.category)
+   735→   735→  } catch (e) {
+   736→   736→    const msg = e instanceof Error ? e.message : '分类处理失败'
+   737→   737→    run.log(msg)
+   738→   738→    await finalize(run, 'failed', msg)
+   739→   739→    return
+   740→   740→  }
+   741→   741→
+   742→   742→  // ---- 书籍 upsert ----
+   743→   743→  const up = await upsertBook(run, book, categoryId, rule.proxy)
+   744→   744→  if (!up.ok) {
+   745→   745→    // 记录级失败沿用取消通道；书籍级失败（如空标题）按 failed 收尾（沿用原语义）
+   746→   746→    await finalize(run, up.canceled ? 'canceled' : 'failed', up.message)
+   747→   747→    return
+   748→   748→  }
+   749→   749→  if (res.refs.length === 0) {
+   750→   750→    await finalize(run, 'success', '书籍已入库（未提取到章节链接）')
+   751→   751→    return
+   752→   752→  }
+   753→   753→  if (res.capped) run.log(`已达单本上限（${MAX_CHAPTERS_PER_BOOK} 章，环境变量 SCRAPE_MAX_CHAPTERS_PER_BOOK 可调），超出部分未采集`)
+   754→   754→
+   755→   755→  // ---- 填充计划：已有行按标题匹配（wordCount>0 跳过 / wordCount=0 骨架就地填充），其余新建 ----
+   756→   756→  const existing = await loadExistingChapters(up.novelId)
+   757→   757→  const byTitle = new Map(existing.map((c) => [c.title, c]))
+   758→   758→  const planSeen = new Set<string>()
+   759→   759→  let nextIdx = existing.reduce((m, c) => Math.max(m, c.idx), 0) + 1
+   760→   760→  interface FillPlan {
+   761→   761→    /** 目录标题（可能为空 → 占位，抓到正文后允许升级为引擎提取标题） */
+   762→   762→    title: string
+   763→   763→    allowTitleUpgrade: boolean
+   764→   764→    url: string
+   765→   765→    /** 已有章节行 id（null=新建） */
+   766→   766→    rowId: number | null
+   767→   767→    idx: number
+   768→   768→  }
+   769→   769→  const plan: FillPlan[] = []
+   770→   770→  let skippedFilled = 0
+   771→   771→  for (const ref of res.refs) {
+   772→   772→    const row = ref.title ? byTitle.get(ref.title) : undefined
+   773→   773→    if (row) {
+   774→   774→      if (row.wordCount > 0) {
+   775→   775→        skippedFilled++
+   776→   776→        continue
+   777→   777→      }
+   778→   778→      plan.push({ title: ref.title, allowTitleUpgrade: false, url: ref.url, rowId: row.id, idx: row.idx })
+   779→   779→      planSeen.add(ref.title)
+   780→   780→      continue
+   781→   781→    }
+   782→   782→    const title = ref.title || `第${nextIdx}章`
+   783→   783→    if (planSeen.has(title) || byTitle.has(title)) continue // (novelId,title) 去重
+   784→   784→    plan.push({ title, allowTitleUpgrade: !ref.title, url: ref.url, rowId: null, idx: nextIdx })
+   785→   785→    planSeen.add(title)
+   786→   786→    nextIdx++
+   787→   787→  }
+   788→   788→  await run.flush({ total: res.refs.length })
+   789→   789→  if (skippedFilled > 0) run.log(`${skippedFilled} 章已有正文，跳过`)
+   790→   790→
+   791→   791→  // ---- 章节并发抓取（有界并发，默认 8） ----
+   792→   792→  let done = skippedFilled
+   793→   793→  let chaptersStored = 0
+   794→   794→  let failedChapters = 0
+   795→   795→  let cleanLogCount = 0
+   796→   796→  const phase = await runPool(
+   797→   797→    plan,
+   798→   798→    CONCURRENCY_CHAPTERS,
+   799→   799→    async (p) => {
+   800→   800→      if (await cancelCheck()) return
+   801→   801→      // Referer 链：章节页带书页来路（站点常见「书页→章节」导航校验）；
+   802→   802→      // fetchChapterPaged：同章分页（…_2.html / …/2.html）自动翻页拼接，避免长章只存半页
+   803→   803→      const ch = await fetchChapterPaged(p.url, rule, task.targetUrl)
+   804→   804→      const data = ch.ok ? ch.data : null
+   805→   805→      const cleaned = cleanChapterContent(data?.content ?? '')
+   806→   806→      const content = cleaned.text.slice(0, MAX_CONTENT_CHARS)
+   807→   807→      done++
+   808→   808→      if (!data || !content.trim()) {
+   809→   809→        failedChapters++
+   810→   810→        run.log(`章节抓取失败: ${ch.ok ? '正文为空' : ch.error}`)
+   811→   811→        await flush({ done, chapters: run.counters.chapters })
+   812→   812→        return
+   813→   813→      }
+   814→   814→      // 标题升级：目录空标题占位的章节，抓到正文后优先用引擎提取标题（不与既有标题冲突时）
+   815→   815→      let title = p.title
+   816→   816→      if (p.allowTitleUpgrade && data.title) {
+   817→   817→        const t = normalizeChapterTitle(data.title)
+   818→   818→        if (t && !planSeen.has(t) && !byTitle.has(t)) {
+   819→   819→          title = t
+   820→   820→          planSeen.add(t)
+   821→   821→        }
+   822→   822→      }
+   823→   823→      if (cleaned.removedLines > 0 && cleanLogCount < 3) {
+   824→   824→        cleanLogCount++
+   825→   825→        run.log(`章节「${title.slice(0, 30)}」清洗 ${cleaned.removedLines} 行噪声`)
+   826→   826→      }
+   827→   827→      const wordCount = content.replace(/\s/g, '').length
+   828→   828→      if (p.rowId !== null) {
+   829→   829→        // 就地填充骨架行（idx 保持不变）
+   830→   830→        const ok = await db.chapter
+   831→   831→          .update({ where: { id: p.rowId }, data: { content, wordCount } })
+   832→   832→          .then(() => true)
+   833→   833→          .catch(() => false)
+   834→   834→        if (ok) {
+   835→   835→          chaptersStored++
+   836→   836→          run.counters.chapters++
+   837→   837→        } else {
+   838→   838→          failedChapters++
+   839→   839→          run.log('章节填充失败（记录可能已被删除）')
+   840→   840→        }
+   841→   841→      } else {
+   842→   842→        // storeChapter 内部处理 idx 唯一冲突顺延重试
+   843→   843→        const stored = await storeChapter(run, up.novelId, p.idx, { title, content, wordCount })
+   844→   844→        if (stored.ok) {
+   845→   845→          chaptersStored++
+   846→   846→          run.counters.chapters++
+   847→   847→        } else {
+   848→   848→          run.log(`章节入库失败: ${stored.message.slice(0, 120)}`)
+   849→   849→          failedChapters++
+   850→   850→        }
+   851→   851→      }
+   852→   852→      await flush({ done, chapters: run.counters.chapters })
+   853→   853→    },
+   854→   854→    {
+   855→   855→      shouldStop: cancelCheck,
+   856→   856→      retries: 1,
+   857→   857→      onItemError: (e) => run.log(`章节处理异常: ${e instanceof Error ? e.message.slice(0, 120) : '未知错误'}`),
+   858→   858→    },
+   859→   859→  )
+   860→   860→
+   861→   861→  // ---- 取消 / 收尾 ----
+   862→   862→  if (phase.stopped || (await isCanceled(run.taskId))) {
+   863→   863→    run.log('任务已取消，停止章节抓取')
+   864→   864→    await recalcNovelWordCount(up.novelId) // 取消点前已入库章节，重算字数保持一致性
+   865→   865→    await flush({ done, chapters: run.counters.chapters }, true)
+   866→   866→    await finalize(run, 'canceled', '任务已取消')
+   867→   867→    return
+   868→   868→  }
+   869→   869→  if (!(await flush({ done, chapters: run.counters.chapters }, true))) {
+   870→   870→    await finalize(run, 'canceled', '任务记录已删除')
+   871→   871→    return
+   872→   872→  }
+   873→   873→
+   874→   874→  // ---- 重算书籍字数 ----
+   875→   875→  await recalcNovelWordCount(up.novelId)
+   876→   876→  await flush({ created: run.counters.created, updated: run.counters.updated, chapters: run.counters.chapters }, true)
+   877→   877→
+   878→   878→  run.log(`本书完成：入库 ${chaptersStored} 章，失败 ${failedChapters} 章`)
+   879→   879→  if (failedChapters === 0) {
+   880→   880→    await finalize(run, 'success', chaptersStored > 0 ? `采集完成：${chaptersStored} 章` : '无新增章节（章节均已存在）')
+   881→   881→    return
+   882→   882→  }
+   883→   883→  if (chaptersStored > 0) {
+   884→   884→    await finalize(run, 'partial', `${chaptersStored} 章成功 / ${failedChapters} 章失败`)
+   885→   885→    return
+   886→   886→  }
+   887→   887→  await finalize(run, 'failed', '章节采集全部失败')
+   888→   888→}
+   889→   889→
+   890→   890→// ==================== 收尾与入口 ====================
+   891→   891→
+   892→   892→/** 终态写入：仅当仍处于 running 时写终态；已被取消/删除则只保留日志 */
+   893→   893→async function finalize(run: Run, status: string, message: string): Promise<void> {
+   894→   894→  const cur = await db.scrapeTask
+   895→   895→    .findUnique({ where: { id: run.taskId }, select: { status: true } })
+   896→   896→    .catch(() => null)
+   897→   897→  if (!cur) return
+   898→   898→  if (cur.status === 'running') {
+   899→   899→    await db.scrapeTask
+   900→   900→      .updateMany({
+   901→   901→        where: { id: run.taskId, status: 'running' },
+   902→   902→        data: { status, message: message.slice(0, 500), log: run.logText() },
+   903→   903→      })
+   904→   904→      .catch(() => {})
+   905→   905→  } else {
+   906→   906→    await db.scrapeTask
+   907→   907→      .updateMany({ where: { id: run.taskId }, data: { log: run.logText() } })
+   908→   908→      .catch(() => {})
+   909→   909→  }
+   910→   910→}
+   911→   911→
+   912→   912→async function runTask(taskId: number): Promise<void> {
+   913→   913→  const run = new Run(taskId)
+   914→   914→  try {
+   915→   915→    // pending → running 条件更新：pending 阶段已被取消/删除的任务不再启动
+   916→   916→    const started = await db.scrapeTask
+   917→   917→      .updateMany({ where: { id: taskId, status: 'pending' }, data: { status: 'running' } })
+   918→   918→      .catch(() => ({ count: 0 }))
+   919→   919→    if (started.count === 0) return
+   920→   920→    const task = await db.scrapeTask.findUnique({ where: { id: taskId } }).catch(() => null)
+   921→   921→    if (!task) return
+   922→   922→    const record: TaskRecord = {
+   923→   923→      id: task.id,
+   924→   924→      mode: task.mode,
+   925→   925→      targetUrl: task.targetUrl,
+   926→   926→      pages: task.pages,
+   927→   927→      ruleId: task.ruleId,
+   928→   928→    }
+   929→   929→    const rule = await loadRule(record.ruleId)
+   930→   930→    run.log(
+   931→   931→      record.mode === 'list'
+   932→   932→        ? `任务开始（范围采集·两阶段）目标: ${record.targetUrl}，页数上限: ${record.pages}`
+   933→   933→        : `任务开始（单本采集）目标: ${record.targetUrl}`,
+   934→   934→    )
+   935→   935→    run.log(
+   936→   936→      record.ruleId
+   937→   937→        ? `使用规则「${rule.name ?? record.ruleId}」（charset=${rule.charset ?? 'auto'}）`
+   938→   938→        : '未使用规则，依赖引擎内置启发式提取',
+   939→   939→    )
+   940→   940→    await run.flush()
+   941→   941→    if (record.mode === 'list') await runList(run, record, rule)
+   942→   942→    else await runSingle(run, record, rule)
+   943→   943→  } catch (e) {
+   944→   944→    run.log(`发生未预期错误: ${e instanceof Error ? e.message.slice(0, 200) : String(e).slice(0, 200)}`)
+   945→   945→    await finalize(run, 'failed', '任务执行异常')
+   946→   946→  }
+   947→   947→}
+   948→   948→
+   949→   949→/** fire-and-forget 入口：API 路由创建任务后调用，不 await */
+   950→   950→export function triggerScrapeTask(taskId: number): void {
+   951→   951→  if (running.has(taskId)) return
+   952→   952→  running.add(taskId)
+   953→   953→  void runTask(taskId)
+   954→   954→    .catch((e: unknown) => {
+   955→   955→      console.error(`[scrape-worker] task ${taskId} 兜底异常:`, e instanceof Error ? e.message : e)
+   956→   956→    })
+   957→   957→    .finally(() => {
+   958→   958→      running.delete(taskId)
+   959→   959→    })
+   960→   960→}
+   961→   961→

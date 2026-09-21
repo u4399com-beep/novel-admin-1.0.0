@@ -1,0 +1,137 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useChapters, useNovel } from '@/hooks/use-novel-data'
+import { cn } from '@/lib/utils'
+import type { ViewProps } from '../types'
+import { ErrBlock, fmtDate, fmtWords, readMarkGet, SkRows } from './parts'
+
+export default function Toc({ navigate, novelId }: ViewProps & { novelId: number }) {
+  const novel = useNovel(novelId)
+  const chapters = useChapters(novelId)
+  const [asc, setAsc] = useState(true)
+  const [read, setRead] = useState<number[]>(() => readMarkGet('aj-read'))
+
+  if (novel.isPending || chapters.isPending) return <TocSkeleton />
+  if (novel.isError || !novel.data) {
+    return <ErrBlock msg={novel.error instanceof Error ? novel.error.message : ''} onRetry={() => novel.refetch()} />
+  }
+  if (chapters.isError) {
+    return (
+      <ErrBlock
+        msg={chapters.error instanceof Error ? chapters.error.message : ''}
+        onRetry={() => chapters.refetch()}
+      />
+    )
+  }
+
+  const n = novel.data
+  const raw = chapters.data ?? []
+  const readSet = new Set(read)
+  const list = [...raw]
+  if (!asc) list.reverse()
+
+  return (
+    <div className="mx-auto w-full max-w-[1200px] rounded-[12px] border border-[#e5dccd] bg-[#fffdf8] p-4 shadow-[0_12px_32px_-22px_rgba(31,41,55,0.35)] sm:p-6">
+      {/* 标题行 */}
+      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-[#e5dccd] pb-3">
+        <h1 className="text-[24px] font-bold leading-tight text-[#1f3f3a] sm:text-[28px]">{n.title} · 全文阅读</h1>
+        <div className="flex items-center gap-3 text-[13px]">
+          <button onClick={() => setAsc((v) => !v)} className="cursor-pointer text-[#0f766e] hover:underline">
+            {asc ? '倒序排列 ↓' : '正序排列 ↑'}
+          </button>
+          <button
+            onClick={() => navigate({ name: 'book', novelId: n.id })}
+            className="cursor-pointer text-[#0f766e] hover:underline"
+          >
+            书籍详情
+          </button>
+        </div>
+      </div>
+
+      {/* meta 行 */}
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-[#6b7280]">
+        <span>
+          作者：
+          <button
+            onClick={() => navigate({ name: 'search', query: n.author })}
+            className="cursor-pointer text-[#0f766e] hover:underline"
+          >
+            {n.author}
+          </button>
+        </span>
+        <span>分类：{n.categoryName}</span>
+        <span>共 {raw.length} 章</span>
+        <span>{fmtWords(n.wordCount)}</span>
+        <span>更新：{fmtDate(n.updatedAt)}</span>
+      </div>
+
+      {/* 简介框（米灰） */}
+      <div className="mt-3 rounded-[8px] bg-[#f4efe2] p-3 text-[13px] leading-[1.8] text-[#6b7280]">
+        <p className="line-clamp-3">{n.description || '暂无简介'}</p>
+      </div>
+
+      {/* 最新章节（全书倒数 12 章，新→旧，置顶快达） */}
+      {raw.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-[14px] font-bold text-[#1f3f3a]">
+            最新章节
+            <span className="ml-2 text-[12px] font-normal text-[#9ca3af]">最近更新 12 章 · 新→旧</span>
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {[...raw].slice(-12).reverse().map((c) => (
+              <button
+                key={`latest-${c.id}`}
+                onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+                className="cursor-pointer truncate rounded-[8px] border border-[#e5dccd] bg-[#fbf7ee] px-3 py-2 text-left text-[13px] text-[#1f2937] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]"
+                title={c.title}
+              >
+                {c.idx}. {c.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 章节 3 列网格（≤640px 1 列 / ≥1024px 3 列） */}
+      {raw.length === 0 ? (
+        <p className="py-10 text-center text-[14px] text-[#9ca3af]">暂无章节，稍后再来看看。</p>
+      ) : (
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+              className={cn(
+                'cursor-pointer truncate rounded-[8px] border border-[#e5dccd] bg-white px-3 py-2 text-left text-[13px] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]',
+                readSet.has(c.id) ? 'text-[#b7ac97]' : 'text-[#1f2937]'
+              )}
+              title={c.title}
+            >
+              {c.idx}. {c.title}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="mt-4 border-t border-[#e5dccd] pt-3 text-center text-xs text-[#9aa1a9]">
+        共 {raw.length} 章 · 点击章节进入暖纸阅读器 · 已读章节显示为灰色
+      </p>
+    </div>
+  )
+}
+
+/* ==================== 骨架屏 ==================== */
+
+function TocSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-[1200px] rounded-[12px] border border-[#e5dccd] bg-[#fffdf8] p-4 shadow-[0_12px_32px_-22px_rgba(31,41,55,0.35)] sm:p-6">
+      <SkRows rows={2} className="mb-4" />
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 9 }).map((_, i) => (
+          <div key={i} className="h-[38px] animate-pulse rounded-[8px] bg-[#1f2937]/[0.07]" />
+        ))}
+      </div>
+    </div>
+  )
+}

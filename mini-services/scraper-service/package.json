@@ -1,0 +1,20 @@
+{
+  "name": "scraper-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "小说管理系统可插拔网页采集引擎 mini-service（Bun + TypeScript，端口 3030）",
+  "scripts": {
+    "dev": "bun --hot index.ts",
+    "start": "bun index.ts"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "got-scraping": "^4.2.1",
+    "hpagent": "^1.2.0",
+    "iconv-lite": "^0.6.3",
+    "socks-proxy-agent": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2"
+  }
+}

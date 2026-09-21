@@ -1,0 +1,770 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useEffect, useState } from 'react'
+     4→     4→import {
+     5→     5→  useCategories,
+     6→     6→  useChapter,
+     7→     7→  useChapters,
+     8→     8→  useHomeData,
+     9→     9→  useNovel,
+    10→    10→  useNovels,
+    11→    11→} from '@/hooks/use-novel-data'
+    12→    12→import {
+    13→    13→  READER_FONTS,
+    14→    14→  READER_INKS,
+    15→    15→  READER_SCENES,
+    16→    16→  readerFontStack,
+    17→    17→  readerInk,
+    18→    18→  setReaderPrefs,
+    19→    19→  useReaderPrefs,
+    20→    20→  type ReaderSceneColors,
+    21→    21→} from '@/hooks/use-reader-prefs'
+    22→    22→import type { NovelListItem } from '@/lib/types'
+    23→    23→import type { ThemeView, ViewProps } from '../types'
+    24→    24→import {
+    25→    25→  BookTextCard,
+    26→    26→  CardGridSkeleton,
+    27→    27→  CatBadge,
+    28→    28→  Cover,
+    29→    29→  Crumb,
+    30→    30→  EmptyBox,
+    31→    31→  ErrorBox,
+    32→    32→  GhostBadge,
+    33→    33→  Pager,
+    34→    34→  PillSkeleton,
+    35→    35→  RankSkeleton,
+    36→    36→  RankingModule,
+    37→    37→  SectionTitle,
+    38→    38→  Skel,
+    39→    39→  SoftBadge,
+    40→    40→  dedupMerge,
+    41→    41→  fmtDate,
+    42→    42→  fmtWords,
+    43→    43→  fmtWan,
+    44→    44→  statusLabel,
+    45→    45→} from './ui'
+    46→    46→
+    47→    47→type Nav = (v: ThemeView) => void
+    48→    48→
+    49→    49→/* ==================== 首页 ==================== */
+    50→    50→
+    51→    51→export function Home({ navigate }: ViewProps) {
+    52→    52→  const { data, isPending, isError, refetch } = useHomeData()
+    53→    53→
+    54→    54→  if (isPending) {
+    55→    55→    return (
+    56→    56→      <div className="mx-auto max-w-[1180px] space-y-10 px-4 py-8">
+    57→    57→        {[0, 1, 2].map((s) => (
+    58→    58→          <section key={s}>
+    59→    59→            <Skel className="mb-5 h-7 w-40" />
+    60→    60→            <CardGridSkeleton />
+    61→    61→          </section>
+    62→    62→        ))}
+    63→    63→        <section>
+    64→    64→          <Skel className="mb-5 h-7 w-40" />
+    65→    65→          <PillSkeleton count={12} />
+    66→    66→        </section>
+    67→    67→      </div>
+    68→    68→    )
+    69→    69→  }
+    70→    70→
+    71→    71→  if (isError || !data) {
+    72→    72→    return (
+    73→    73→      <div className="mx-auto max-w-[1180px] px-4 py-10">
+    74→    74→        <ErrorBox onRetry={() => refetch()} />
+    75→    75→      </div>
+    76→    76→    )
+    77→    77→  }
+    78→    78→
+    79→    79→  const rankModules = [
+    80→    80→    { title: '点击排行榜', rows: data.rankings.clicks },
+    81→    81→    { title: '更新速度榜', rows: data.rankings.updates },
+    82→    82→    { title: '完本精选榜', rows: data.rankings.finished },
+    83→    83→    { title: '人气热门榜', rows: data.hot },
+    84→    84→    { title: '编辑精选榜', rows: data.featured },
+    85→    85→    { title: '最新上架榜', rows: data.latest },
+    86→    86→  ]
+    87→    87→  const pillNovels = dedupMerge(
+    88→    88→    [data.latest, data.featured, data.hot, data.rankings.clicks],
+    89→    89→    24,
+    90→    90→  )
+    91→    91→
+    92→    92→  return (
+    93→    93→    <div className="mx-auto max-w-[1180px] space-y-10 px-4 py-8">
+    94→    94→      {/* 热门推荐 3×2 文字卡 */}
+    95→    95→      <section>
+    96→    96→        <SectionTitle title="热门推荐" />
+    97→    97→        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    98→    98→          {data.hot.slice(0, 6).map((n) => (
+    99→    99→            <BookTextCard key={n.id} novel={n} navigate={navigate} />
+   100→   100→          ))}
+   101→   101→        </div>
+   102→   102→      </section>
+   103→   103→
+   104→   104→      {/* 分类排行榜 3×2 榜单模块 */}
+   105→   105→      <section>
+   106→   106→        <SectionTitle title="分类排行榜" />
+   107→   107→        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+   108→   108→          {rankModules.map((m) => (
+   109→   109→            <RankingModule key={m.title} title={m.title} novels={m.rows} navigate={navigate} />
+   110→   110→          ))}
+   111→   111→        </div>
+   112→   112→      </section>
+   113→   113→
+   114→   114→      {/* 最新更新 文字卡流 */}
+   115→   115→      <section>
+   116→   116→        <SectionTitle title="最新更新" small="每日持续更新中" />
+   117→   117→        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+   118→   118→          {data.latest.slice(0, 18).map((n) => (
+   119→   119→            <BookTextCard key={n.id} novel={n} navigate={navigate} />
+   120→   120→          ))}
+   121→   121→        </div>
+   122→   122→      </section>
+   123→   123→
+   124→   124→      {/* 最新电子书 胶囊栅格 */}
+   125→   125→      <section>
+   126→   126→        <SectionTitle title="最新电子书" />
+   127→   127→        <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+   128→   128→          {pillNovels.map((n) => (
+   129→   129→            <button
+   130→   130→              key={n.id}
+   131→   131→              onClick={() => navigate({ name: 'book', novelId: n.id })}
+   132→   132→              className="cursor-pointer truncate rounded-full border border-[#e6edf7] bg-white px-5 py-3 text-[14px] text-[#1e293b] shadow-[0_1px_3px_rgba(37,99,235,0.06)] transition-all duration-200 hover:border-[#2563eb]/40 hover:text-[#2563eb] hover:shadow-[0_4px_12px_rgba(37,99,235,0.12)]"
+   133→   133→            >
+   134→   134→              《{n.title}》
+   135→   135→            </button>
+   136→   136→          ))}
+   137→   137→        </div>
+   138→   138→      </section>
+   139→   139→    </div>
+   140→   140→  )
+   141→   141→}
+   142→   142→
+   143→   143→/* ==================== 分类 / 书库页 ==================== */
+   144→   144→
+   145→   145→export function Category({
+   146→   146→  navigate,
+   147→   147→  categoryId,
+   148→   148→  page = 1,
+   149→   149→}: ViewProps & { categoryId?: number; page?: number }) {
+   150→   150→  const cats = useCategories()
+   151→   151→  const list = useNovels({ categoryId, page, pageSize: 20 })
+   152→   152→
+   153→   153→  const catName = cats.data?.find((c) => c.id === categoryId)?.name
+   154→   154→
+   155→   155→  return (
+   156→   156→    <div className="mx-auto max-w-[1180px] space-y-5 px-4 py-6">
+   157→   157→      <Crumb items={[{ label: '首页', view: { name: 'home' } }, { label: '小说书库' }]} navigate={navigate} />
+   158→   158→      <h1 className="border-l-4 border-[#2563eb] pl-4 text-[24px] leading-8 font-semibold text-[#1e293b]">
+   159→   159→        {catName ?? '小说书库'}
+   160→   160→        {cats.data ? (
+   161→   161→          <span className="ml-3 text-[13px] font-normal text-[#94a3b8]">
+   162→   162→            {cats.data.find((c) => c.id === categoryId)?.novelCount ?? list.data?.total ?? ''}
+   163→   163→          </span>
+   164→   164→        ) : null}
+   165→   165→      </h1>
+   166→   166→
+   167→   167→      {/* 筛选条 */}
+   168→   168→      <div className="flex flex-wrap gap-2 rounded-[10px] border border-[#e6edf7] bg-white p-4 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+   169→   169→        <button
+   170→   170→          onClick={() => navigate({ name: 'category', page: 1 })}
+   171→   171→          className={
+   172→   172→            categoryId == null
+   173→   173→              ? 'cursor-pointer rounded-full bg-[#2563eb] px-4 py-1.5 text-[13px] text-white transition-colors duration-200'
+   174→   174→              : 'cursor-pointer rounded-full bg-[#f0f4fb] px-4 py-1.5 text-[13px] text-[#1e293b] transition-colors duration-200 hover:bg-[#e8f1ff] hover:text-[#2563eb]'
+   175→   175→          }
+   176→   176→        >
+   177→   177→          全部
+   178→   178→        </button>
+   179→   179→        {(cats.data ?? []).map((c) => (
+   180→   180→          <button
+   181→   181→            key={c.id}
+   182→   182→            onClick={() => navigate({ name: 'category', categoryId: c.id, page: 1 })}
+   183→   183→            className={
+   184→   184→              categoryId === c.id
+   185→   185→                ? 'cursor-pointer rounded-full bg-[#2563eb] px-4 py-1.5 text-[13px] text-white transition-colors duration-200'
+   186→   186→                : 'cursor-pointer rounded-full bg-[#f0f4fb] px-4 py-1.5 text-[13px] text-[#1e293b] transition-colors duration-200 hover:bg-[#e8f1ff] hover:text-[#2563eb]'
+   187→   187→            }
+   188→   188→          >
+   189→   189→            {c.name}
+   190→   190→          </button>
+   191→   191→        ))}
+   192→   192→      </div>
+   193→   193→
+   194→   194→      {list.isPending ? (
+   195→   195→        <CardGridSkeleton count={6} />
+   196→   196→      ) : list.isError ? (
+   197→   197→        <ErrorBox onRetry={() => list.refetch()} />
+   198→   198→      ) : (list.data?.list.length ?? 0) === 0 ? (
+   199→   199→        <EmptyBox text="该分类下暂无收录小说" />
+   200→   200→      ) : (
+   201→   201→        <>
+   202→   202→          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+   203→   203→            {list.data!.list.map((n) => (
+   204→   204→              <BookTextCard key={n.id} novel={n} navigate={navigate} />
+   205→   205→            ))}
+   206→   206→          </div>
+   207→   207→          <Pager
+   208→   208→            page={list.data!.page}
+   209→   209→            totalPages={list.data!.totalPages}
+   210→   210→            onGo={(p) => navigate({ name: 'category', categoryId, page: p })}
+   211→   211→          />
+   212→   212→        </>
+   213→   213→      )}
+   214→   214→    </div>
+   215→   215→  )
+   216→   216→}
+   217→   217→
+   218→   218→/* ==================== 书籍详情页（目录内嵌） ==================== */
+   219→   219→
+   220→   220→function ChapterPills({
+   221→   221→  chapters,
+   222→   222→  navigate,
+   223→   223→  showIndex = true,
+   224→   224→}: {
+   225→   225→  chapters: { id: number; idx: number; title: string }[]
+   226→   226→  navigate: Nav
+   227→   227→  showIndex?: boolean
+   228→   228→}) {
+   229→   229→  return (
+   230→   230→    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+   231→   231→      {chapters.map((c) => (
+   232→   232→        <button
+   233→   233→          key={c.id}
+   234→   234→          onClick={() => navigate({ name: 'chapter', chapterId: c.id })}
+   235→   235→          className="cursor-pointer truncate rounded-[10px] border border-[#e6edf7] bg-white px-4 py-2.5 text-left text-[14px] text-[#1e293b] shadow-[0_1px_2px_rgba(37,99,235,0.05)] transition-colors duration-200 hover:border-[#2563eb]/40 hover:bg-[#e8f1ff] hover:text-[#2563eb]"
+   236→   236→        >
+   237→   237→          {showIndex ? <span className="mr-1 text-[#94a3b8]">{c.idx}.</span> : null}
+   238→   238→          {c.title}
+   239→   239→        </button>
+   240→   240→      ))}
+   241→   241→    </div>
+   242→   242→  )
+   243→   243→}
+   244→   244→
+   245→   245→export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
+   246→   246→  const { data: novel, isPending, isError, refetch } = useNovel(novelId)
+   247→   247→  const chapters = useChapters(novelId)
+   248→   248→  const [expanded, setExpanded] = useState(false)
+   249→   249→
+   250→   250→  if (isPending) {
+   251→   251→    return (
+   252→   252→      <div className="mx-auto max-w-[1180px] space-y-5 px-4 py-6">
+   253→   253→        <Skel className="h-4 w-64" />
+   254→   254→        <div className="flex flex-col gap-6 rounded-[10px] border border-[#e6edf7] bg-white p-6 sm:flex-row">
+   255→   255→          <Skel className="h-[250px] w-[180px] rounded-[10px]" />
+   256→   256→          <div className="flex-1 space-y-4 py-2">
+   257→   257→            <Skel className="h-8 w-1/2" />
+   258→   258→            <Skel className="h-4 w-3/4" />
+   259→   259→            <Skel className="h-4 w-2/3" />
+   260→   260→            <Skel className="h-10 w-56 rounded-[10px]" />
+   261→   261→          </div>
+   262→   262→        </div>
+   263→   263→        <CardGridSkeleton count={3} />
+   264→   264→      </div>
+   265→   265→    )
+   266→   266→  }
+   267→   267→
+   268→   268→  if (isError || !novel) {
+   269→   269→    return (
+   270→   270→      <div className="mx-auto max-w-[1180px] px-4 py-10">
+   271→   271→        <ErrorBox onRetry={() => refetch()} />
+   272→   272→      </div>
+   273→   273→    )
+   274→   274→  }
+   275→   275→
+   276→   276→  const fullChapters = chapters.data ?? []
+   277→   277→
+   278→   278→  return (
+   279→   279→    <div className="mx-auto max-w-[1180px] space-y-5 px-4 py-6">
+   280→   280→      <Crumb
+   281→   281→        items={[
+   282→   282→          { label: '首页', view: { name: 'home' } },
+   283→   283→          { label: novel.categoryName, view: { name: 'category', categoryId: novel.categoryId } },
+   284→   284→          { label: novel.title },
+   285→   285→        ]}
+   286→   286→        navigate={navigate}
+   287→   287→      />
+   288→   288→
+   289→   289→      {/* 头部卡：封面 180×250 左置 */}
+   290→   290→      <section className="flex flex-col gap-6 rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)] sm:flex-row">
+   291→   291→        <Cover
+   292→   292→          token={novel.cover}
+   293→   293→          title={novel.title}
+   294→   294→          className="h-[250px] w-[180px] rounded-[10px]"
+   295→   295→          charClassName="text-[56px]"
+   296→   296→        />
+   297→   297→        <div className="min-w-0 flex-1">
+   298→   298→          <h1 className="text-[28px] leading-9 font-semibold text-[#1e293b]">{novel.title}</h1>
+   299→   299→          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[14px] text-[#64748b]">
+   300→   300→            <span>作者：{novel.author}</span>
+   301→   301→            <button
+   302→   302→              onClick={() => navigate({ name: 'category', categoryId: novel.categoryId })}
+   303→   303→              className="cursor-pointer transition-colors duration-200 hover:text-[#2563eb]"
+   304→   304→            >
+   305→   305→              分类：{novel.categoryName}
+   306→   306→            </button>
+   307→   307→            <span>状态：{statusLabel(novel.status)}</span>
+   308→   308→            <span>字数：{fmtWords(novel.wordCount)}</span>
+   309→   309→            <span>点击：{fmtWan(novel.clicks)}</span>
+   310→   310→            <span>共 {novel.totalChapters} 章</span>
+   311→   311→          </div>
+   312→   312→          <div className="mt-5 flex flex-wrap gap-3">
+   313→   313→            <button
+   314→   314→              disabled={!novel.firstChapterId}
+   315→   315→              onClick={() =>
+   316→   316→                novel.firstChapterId && navigate({ name: 'chapter', chapterId: novel.firstChapterId })
+   317→   317→              }
+   318→   318→              className="min-w-[128px] cursor-pointer rounded-[10px] bg-[#2563eb] px-6 py-2.5 text-[14px] text-white transition-colors duration-200 hover:bg-[#1d4ed8] disabled:pointer-events-none disabled:opacity-40"
+   319→   319→            >
+   320→   320→              开始阅读
+   321→   321→            </button>
+   322→   322→            <button
+   323→   323→              onClick={() => navigate({ name: 'toc', novelId: novel.id })}
+   324→   324→              className="min-w-[128px] cursor-pointer rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-6 py-2.5 text-[14px] text-[#1e293b] transition-colors duration-200 hover:border-[#2563eb] hover:text-[#2563eb]"
+   325→   325→            >
+   326→   326→              章节目录
+   327→   327→            </button>
+   328→   328→          </div>
+   329→   329→        </div>
+   330→   330→      </section>
+   331→   331→
+   332→   332→      {/* 作品简介 */}
+   333→   333→      <section className="rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+   334→   334→        <SectionTitle title="作品简介" />
+   335→   335→        <p
+   336→   336→          className={
+   337→   337→            expanded
+   338→   338→              ? 'text-[15px] leading-[1.8] text-[#1e293b]'
+   339→   339→              : 'line-clamp-4 text-[15px] leading-[1.8] text-[#1e293b]'
+   340→   340→          }
+   341→   341→        >
+   342→   342→          {novel.description || '暂无简介'}
+   343→   343→        </p>
+   344→   344→        <button
+   345→   345→          onClick={() => setExpanded((v) => !v)}
+   346→   346→          className="mt-2 cursor-pointer text-[13px] text-[#2563eb] transition-colors duration-200 hover:text-[#1d4ed8]"
+   347→   347→        >
+   348→   348→          {expanded ? '收起' : '展开'}
+   349→   349→        </button>
+   350→   350→        <div className="mt-4 flex flex-wrap items-center gap-2">
+   351→   351→          <span className="text-[13px] text-[#94a3b8]">小说标签：</span>
+   352→   352→          <CatBadge onClick={() => navigate({ name: 'category', categoryId: novel.categoryId })}>
+   353→   353→            {novel.categoryName}
+   354→   354→          </CatBadge>
+   355→   355→          <SoftBadge>{statusLabel(novel.status)}</SoftBadge>
+   356→   356→          <GhostBadge>{fmtWords(novel.wordCount)}</GhostBadge>
+   357→   357→        </div>
+   358→   358→      </section>
+   359→   359→
+   360→   360→      {/* 最新章节（胶囊栅格） */}
+   361→   361→      <section className="rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+   362→   362→        <SectionTitle
+   363→   363→          title="最新章节"
+   364→   364→          small={`共 ${novel.totalChapters} 章`}
+   365→   365→          action={
+   366→   366→            <button
+   367→   367→              onClick={() => navigate({ name: 'toc', novelId: novel.id })}
+   368→   368→              className="shrink-0 cursor-pointer text-[13px] text-[#2563eb] transition-colors duration-200 hover:text-[#1d4ed8]"
+   369→   369→            >
+   370→   370→              完整目录页 →
+   371→   371→            </button>
+   372→   372→          }
+   373→   373→        />
+   374→   374→        {chapters.isPending ? (
+   375→   375→          <PillSkeleton count={12} />
+   376→   376→        ) : chapters.isError ? (
+   377→   377→          <ErrorBox msg="章节加载失败" onRetry={() => chapters.refetch()} />
+   378→   378→        ) : fullChapters.length === 0 ? (
+   379→   379→          <EmptyBox text="暂无章节" />
+   380→   380→        ) : (
+   381→   381→          /* 全量章节末 12 条倒序 = 最新 12 章（新→旧）；详情接口 chapters 是最早 12 章，不可直接用 */
+   382→   382→          <ChapterPills chapters={[...fullChapters].slice(-12).reverse()} navigate={navigate} />
+   383→   383→        )}
+   384→   384→      </section>
+   385→   385→
+   386→   386→      {/* 章节目录（多列胶囊栅格内嵌） */}
+   387→   387→      <section className="rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+   388→   388→        <SectionTitle title="章节目录" small={fullChapters.length ? `${fullChapters.length} 章` : undefined} />
+   389→   389→        {chapters.isPending ? (
+   390→   390→          <PillSkeleton count={12} />
+   391→   391→        ) : chapters.isError ? (
+   392→   392→          <ErrorBox msg="章节目录加载失败" onRetry={() => chapters.refetch()} />
+   393→   393→        ) : fullChapters.length === 0 ? (
+   394→   394→          <EmptyBox text="暂无章节" />
+   395→   395→        ) : (
+   396→   396→          <ChapterPills chapters={fullChapters} navigate={navigate} />
+   397→   397→        )}
+   398→   398→      </section>
+   399→   399→    </div>
+   400→   400→  )
+   401→   401→}
+   402→   402→
+   403→   403→/* ==================== 目录页（同风格完整列表） ==================== */
+   404→   404→
+   405→   405→export function Toc({ navigate, novelId }: ViewProps & { novelId: number }) {
+   406→   406→  const { data: novel } = useNovel(novelId)
+   407→   407→  const { data: chapters, isPending, isError, refetch } = useChapters(novelId)
+   408→   408→
+   409→   409→  return (
+   410→   410→    <div className="mx-auto max-w-[1180px] space-y-5 px-4 py-6">
+   411→   411→      <Crumb
+   412→   412→        items={[
+   413→   413→          { label: '首页', view: { name: 'home' } },
+   414→   414→          { label: novel?.title ?? '…', view: { name: 'book', novelId } },
+   415→   415→          { label: '章节目录' },
+   416→   416→        ]}
+   417→   417→        navigate={navigate}
+   418→   418→      />
+   419→   419→      {/* 最新章节（全书倒数 12 章，新→旧） */}
+   420→   420→      {chapters && chapters.length > 0 && (
+   421→   421→        <section className="rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+   422→   422→          <SectionTitle
+   423→   423→            title="最新章节"
+   424→   424→            small="最近更新 12 章 · 新→旧"
+   425→   425→            action={
+   426→   426→              <button
+   427→   427→                onClick={() => navigate({ name: 'book', novelId })}
+   428→   428→                className="shrink-0 cursor-pointer rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-5 py-2 text-[13px] text-[#1e293b] transition-colors duration-200 hover:border-[#2563eb] hover:text-[#2563eb]"
+   429→   429→              >
+   430→   430→                返回书页
+   431→   431→              </button>
+   432→   432→            }
+   433→   433→          />
+   434→   434→          <ChapterPills chapters={[...chapters].slice(-12).reverse()} navigate={navigate} />
+   435→   435→        </section>
+   436→   436→      )}
+   437→   437→
+   438→   438→      <section className="rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+   439→   439→        <SectionTitle
+   440→   440→          title={novel ? `${novel.title} · 章节目录` : '章节目录'}
+   441→   441→          small={chapters ? `共 ${chapters.length} 章` : undefined}
+   442→   442→          action={
+   443→   443→            <button
+   444→   444→              onClick={() => navigate({ name: 'book', novelId })}
+   445→   445→              className="shrink-0 cursor-pointer rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-5 py-2 text-[13px] text-[#1e293b] transition-colors duration-200 hover:border-[#2563eb] hover:text-[#2563eb]"
+   446→   446→            >
+   447→   447→              返回书页
+   448→   448→            </button>
+   449→   449→          }
+   450→   450→        />
+   451→   451→        {isPending ? (
+   452→   452→          <PillSkeleton count={16} />
+   453→   453→        ) : isError ? (
+   454→   454→          <ErrorBox onRetry={() => refetch()} />
+   455→   455→        ) : (chapters?.length ?? 0) === 0 ? (
+   456→   456→          <EmptyBox text="暂无章节" />
+   457→   457→        ) : (
+   458→   458→          <ChapterPills chapters={chapters!} navigate={navigate} />
+   459→   459→        )}
+   460→   460→      </section>
+   461→   461→    </div>
+   462→   462→  )
+   463→   463→}
+   464→   464→
+   465→   465→/* ==================== 章节正文页（900px 阅读容器） ==================== */
+   466→   466→
+   467→   467→function AuthorWorks({
+   468→   468→  author,
+   469→   469→  excludeId,
+   470→   470→  navigate,
+   471→   471→}: {
+   472→   472→  author: string
+   473→   473→  excludeId: number
+   474→   474→  navigate: Nav
+   475→   475→}) {
+   476→   476→  const q = useNovels({ q: author, pageSize: 6 })
+   477→   477→  const rows: NovelListItem[] = (q.data?.list ?? []).filter((n) => n.id !== excludeId).slice(0, 3)
+   478→   478→  if (rows.length === 0) return null
+   479→   479→  return (
+   480→   480→    <section>
+   481→   481→      <SectionTitle title={`「${author}」的其他作品`} />
+   482→   482→      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+   483→   483→        {rows.map((n) => (
+   484→   484→          <BookTextCard key={n.id} novel={n} navigate={navigate} />
+   485→   485→        ))}
+   486→   486→      </div>
+   487→   487→    </section>
+   488→   488→  )
+   489→   489→}
+   490→   490→
+   491→   491→/* 场景配色：日间沿用蓝灰纸面，其余按语义键换肤 */
+   492→   492→const SCENES: Record<string, ReaderSceneColors> = {
+   493→   493→  day: { page: '', paper: '#f8fafc', ink: '#1e293b', muted: '#94a3b8', line: '#d8e3f0' },
+   494→   494→  paper: { page: '#e6d9bd', paper: '#f8f0da', ink: '#4a3a24', muted: '#a89a80', line: '#d4c5a3' },
+   495→   495→  green: { page: '#dcead8', paper: '#f0f6ec', ink: '#2f4030', muted: '#8fa590', line: '#bcd4bc' },
+   496→   496→  blue: { page: '#d8e4ee', paper: '#eef4fa', ink: '#2d3c46', muted: '#8fa2b0', line: '#b8cede' },
+   497→   497→  night: { page: '#1e2024', paper: '#26262b', ink: '#c0c0c6', muted: '#8a8a92', line: '#3a3a42' },
+   498→   498→}
+   499→   499→
+   500→   500→export function Chapter({ navigate, chapterId }: ViewProps & { chapterId: number }) {
+   501→   501→  const { data: ch, isPending, isError, refetch } = useChapter(chapterId)
+   502→   502→  const novel = useNovel(ch?.novelId)
+   503→   503→  const [prefs] = useReaderPrefs()
+   504→   504→
+   505→   505→  useEffect(() => {
+   506→   506→    window.scrollTo(0, 0)
+   507→   507→  }, [chapterId])
+   508→   508→
+   509→   509→  if (isPending) {
+   510→   510→    return (
+   511→   511→      <div className="mx-auto max-w-[900px] space-y-5 px-4 py-6">
+   512→   512→        <Skel className="h-4 w-72" />
+   513→   513→        <Skel className="h-16 rounded-[10px]" />
+   514→   514→        <div className="rounded-[10px] border border-[#d8e3f0] bg-[#f8fafc] px-8 py-12">
+   515→   515→          <Skel className="mx-auto h-6 w-1/2" />
+   516→   516→          <div className="mx-auto mt-8 max-w-[800px] space-y-4">
+   517→   517→            {Array.from({ length: 8 }, (_, i) => (
+   518→   518→              <Skel key={i} className="h-4 w-full" />
+   519→   519→            ))}
+   520→   520→          </div>
+   521→   521→        </div>
+   522→   522→      </div>
+   523→   523→    )
+   524→   524→  }
+   525→   525→
+   526→   526→  if (isError || !ch) {
+   527→   527→    return (
+   528→   528→      <div className="mx-auto max-w-[900px] px-4 py-10">
+   529→   529→        <ErrorBox onRetry={() => refetch()} />
+   530→   530→      </div>
+   531→   531→    )
+   532→   532→  }
+   533→   533→
+   534→   534→  const paragraphs = ch.content.split('\n').map((s) => s.trim()).filter(Boolean)
+   535→   535→  const scene = SCENES[prefs.scene] ?? SCENES.day
+   536→   536→
+   537→   537→  return (
+   538→   538→    <div className="mx-auto max-w-[900px] space-y-5 px-4 py-6">
+   539→   539→      <Crumb
+   540→   540→        items={[
+   541→   541→          { label: '首页', view: { name: 'home' } },
+   542→   542→          { label: ch.novelTitle, view: { name: 'book', novelId: ch.novelId } },
+   543→   543→          { label: ch.title },
+   544→   544→        ]}
+   545→   545→        navigate={navigate}
+   546→   546→      />
+   547→   547→
+   548→   548→      {/* 阅读器头部卡：书名 + 字号/行距滑杆 + 背景/字体/字色（跨主题共享同一份偏好） */}
+   549→   549→      <section className="flex flex-wrap items-center justify-between gap-4 rounded-[10px] border p-4 shadow-[0_1px_3px_rgba(37,99,235,0.06)] transition-colors" style={{ background: scene.paper, borderColor: scene.line }}>
+   550→   550→        <button
+   551→   551→          onClick={() => navigate({ name: 'book', novelId: ch.novelId })}
+   552→   552→          className="cursor-pointer truncate text-[20px] font-semibold transition-colors duration-200"
+   553→   553→          style={{ color: scene.ink }}
+   554→   554→        >
+   555→   555→          {ch.novelTitle}
+   556→   556→        </button>
+   557→   557→        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+   558→   558→          <label className="flex items-center gap-2 text-[13px]" style={{ color: scene.muted }}>
+   559→   559→            字号
+   560→   560→            <input
+   561→   561→              type="range"
+   562→   562→              min={14}
+   563→   563→              max={28}
+   564→   564→              step={1}
+   565→   565→              value={prefs.fontSize}
+   566→   566→              onChange={(e) => setReaderPrefs({ fontSize: Number(e.target.value) })}
+   567→   567→              className="w-28 accent-[#2563eb]"
+   568→   568→            />
+   569→   569→            <span className="w-9 text-right">{prefs.fontSize}px</span>
+   570→   570→          </label>
+   571→   571→          <label className="flex items-center gap-2 text-[13px]" style={{ color: scene.muted }}>
+   572→   572→            行距
+   573→   573→            <input
+   574→   574→              type="range"
+   575→   575→              min={1.4}
+   576→   576→              max={2.6}
+   577→   577→              step={0.1}
+   578→   578→              value={prefs.lineHeight}
+   579→   579→              onChange={(e) => setReaderPrefs({ lineHeight: Number(e.target.value) })}
+   580→   580→              className="w-28 accent-[#2563eb]"
+   581→   581→            />
+   582→   582→            <span className="w-9 text-right">{prefs.lineHeight.toFixed(1)}</span>
+   583→   583→          </label>
+   584→   584→        </div>
+   585→   585→        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 border-t pt-3 text-[13px] sm:w-auto sm:border-t-0 sm:pt-0" style={{ borderColor: scene.line, color: scene.muted }}>
+   586→   586→          <span className="flex items-center gap-1.5">
+   587→   587→            背景
+   588→   588→            {READER_SCENES.map((s) => (
+   589→   589→              <button
+   590→   590→                key={s.key}
+   591→   591→                type="button"
+   592→   592→                title={s.label}
+   593→   593→                aria-label={`背景：${s.label}`}
+   594→   594→                onClick={() => setReaderPrefs({ scene: s.key })}
+   595→   595→                className={`h-5 w-5 cursor-pointer rounded-full border transition-all ${
+   596→   596→                  prefs.scene === s.key ? 'scale-110 border-[#2563eb]' : 'border-black/25'
+   597→   597→                }`}
+   598→   598→                style={{ background: SCENES[s.key].paper }}
+   599→   599→              />
+   600→   600→            ))}
+   601→   601→          </span>
+   602→   602→          <label className="flex items-center gap-1.5">
+   603→   603→            字体
+   604→   604→            <select
+   605→   605→              value={prefs.font}
+   606→   606→              onChange={(e) => setReaderPrefs({ font: e.target.value as typeof prefs.font })}
+   607→   607→              className="cursor-pointer rounded-[6px] border bg-white px-1.5 py-1 text-[13px] text-[#1e293b] outline-none"
+   608→   608→              style={{ borderColor: scene.line }}
+   609→   609→            >
+   610→   610→              {READER_FONTS.map((f) => (
+   611→   611→                <option key={f.key} value={f.key}>
+   612→   612→                  {f.label}
+   613→   613→                </option>
+   614→   614→              ))}
+   615→   615→            </select>
+   616→   616→          </label>
+   617→   617→          <label className="flex items-center gap-1.5">
+   618→   618→            字色
+   619→   619→            <select
+   620→   620→              value={prefs.ink}
+   621→   621→              onChange={(e) => setReaderPrefs({ ink: e.target.value })}
+   622→   622→              aria-label="字色"
+   623→   623→              className="cursor-pointer rounded-[6px] border bg-white px-1.5 py-1 text-[13px] text-[#1e293b] outline-none"
+   624→   624→              style={{ borderColor: scene.line }}
+   625→   625→            >
+   626→   626→              {READER_INKS.map((c) => (
+   627→   627→                <option key={c.k} value={c.v}>{c.k}</option>
+   628→   628→              ))}
+   629→   629→            </select>
+   630→   630→          </label>
+   631→   631→        </div>
+   632→   632→      </section>
+   633→   633→
+   634→   634→      {/* 正文卡 */}
+   635→   635→      <article className="rounded-[10px] border px-6 py-10 transition-colors sm:px-10" style={{ background: scene.paper, borderColor: scene.line }}>
+   636→   636→        <h1 className="mb-10 text-center text-[24px] font-semibold" style={{ color: scene.ink }}>
+   637→   637→          {ch.title}
+   638→   638→          <span className="mt-2 block text-[13px] font-normal" style={{ color: scene.muted }}>
+   639→   639→            第 {ch.idx} 章 · 约 {fmtWan(ch.wordCount)} 字
+   640→   640→          </span>
+   641→   641→        </h1>
+   642→   642→        <div
+   643→   643→          className="break-words"
+   644→   644→          style={{
+   645→   645→            fontSize: `${prefs.fontSize}px`,
+   646→   646→            lineHeight: prefs.lineHeight,
+   647→   647→            fontFamily: readerFontStack(prefs.font),
+   648→   648→          }}
+   649→   649→        >
+   650→   650→          {paragraphs.length === 0 ? (
+   651→   651→            <p className="mx-auto max-w-[800px]" style={{ color: scene.muted }}>本章内容为空</p>
+   652→   652→          ) : (
+   653→   653→            paragraphs.map((p, i) => (
+   654→   654→              <p
+   655→   655→                key={i}
+   656→   656→                className="mx-auto mb-4 max-w-[800px] text-justify tracking-[0.2em] indent-[2em]"
+   657→   657→                style={{ color: readerInk(prefs, scene) }}
+   658→   658→              >
+   659→   659→                {p}
+   660→   660→              </p>
+   661→   661→            ))
+   662→   662→          )}
+   663→   663→        </div>
+   664→   664→      </article>
+   665→   665→
+   666→   666→      {/* 三段式章节导航：上一章 | 目录 | 下一章 */}
+   667→   667→      <nav className="mx-auto flex max-w-[800px] flex-wrap items-center justify-between gap-3">
+   668→   668→        <button
+   669→   669→          disabled={!ch.prevId}
+   670→   670→          onClick={() => ch.prevId && navigate({ name: 'chapter', chapterId: ch.prevId })}
+   671→   671→          className="min-w-[128px] cursor-pointer rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-6 py-2.5 text-[14px] text-[#1e293b] transition-colors duration-200 hover:border-[#2563eb] hover:text-[#2563eb] disabled:pointer-events-none disabled:opacity-40"
+   672→   672→        >
+   673→   673→          上一章
+   674→   674→        </button>
+   675→   675→        <button
+   676→   676→          onClick={() => navigate({ name: 'toc', novelId: ch.novelId })}
+   677→   677→          className="min-w-[128px] cursor-pointer rounded-[10px] bg-[#2563eb] px-6 py-2.5 text-[14px] text-white transition-colors duration-200 hover:bg-[#1d4ed8]"
+   678→   678→        >
+   679→   679→          目录
+   680→   680→        </button>
+   681→   681→        <button
+   682→   682→          disabled={!ch.nextId}
+   683→   683→          onClick={() => ch.nextId && navigate({ name: 'chapter', chapterId: ch.nextId })}
+   684→   684→          className="min-w-[128px] cursor-pointer rounded-[10px] bg-[#2563eb] px-6 py-2.5 text-[14px] text-white transition-colors duration-200 hover:bg-[#1d4ed8] disabled:pointer-events-none disabled:opacity-40"
+   685→   685→        >
+   686→   686→          下一章
+   687→   687→        </button>
+   688→   688→      </nav>
+   689→   689→
+   690→   690→      {/* 同作者作品 */}
+   691→   691→      {novel.data?.author ? (
+   692→   692→        <AuthorWorks author={novel.data.author} excludeId={ch.novelId} navigate={navigate} />
+   693→   693→      ) : null}
+   694→   694→
+   695→   695→      <div className="pt-2 text-center text-[13px] text-[#94a3b8]">
+   696→   696→        更新于 {fmtDate(novel.data?.updatedAt ?? '')} · 内容为演示数据
+   697→   697→      </div>
+   698→   698→    </div>
+   699→   699→  )
+   700→   700→}
+   701→   701→
+   702→   702→/* ==================== 搜索页 ==================== */
+   703→   703→
+   704→   704→export function Search({ navigate, query }: ViewProps & { query: string }) {
+   705→   705→  return (
+   706→   706→    <div className="mx-auto max-w-[1180px] space-y-5 px-4 py-6">
+   707→   707→      <Crumb items={[{ label: '首页', view: { name: 'home' } }, { label: '搜索' }]} navigate={navigate} />
+   708→   708→      {/* key=query：关键词变化时重挂载，重置输入框与分页 */}
+   709→   709→      <SearchPanel key={query} query={query} navigate={navigate} />
+   710→   710→    </div>
+   711→   711→  )
+   712→   712→}
+   713→   713→
+   714→   714→function SearchPanel({ query, navigate }: { query: string; navigate: Nav }) {
+   715→   715→  const [input, setInput] = useState(query)
+   716→   716→  const [page, setPage] = useState(1)
+   717→   717→  const list = useNovels({ q: query || undefined, page, pageSize: 20 })
+   718→   718→
+   719→   719→  const submit = () => {
+   720→   720→    const kw = input.trim()
+   721→   721→    if (kw) navigate({ name: 'search', query: kw })
+   722→   722→  }
+   723→   723→
+   724→   724→  return (
+   725→   725→    <div className="space-y-5">
+   726→   726→      <div className="flex gap-3 rounded-[10px] border border-[#e6edf7] bg-white p-4 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+   727→   727→        <input
+   728→   728→          value={input}
+   729→   729→          onChange={(e) => setInput(e.target.value)}
+   730→   730→          onKeyDown={(e) => e.key === 'Enter' && submit()}
+   731→   731→          placeholder="输入书名 / 作者关键词"
+   732→   732→          className="h-10 min-w-0 flex-1 rounded-[10px] border border-[#dbe4f0] bg-[#f0f4fb] px-4 text-[14px] text-[#1e293b] outline-none transition-colors duration-200 placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:bg-white"
+   733→   733→        />
+   734→   734→        <button
+   735→   735→          onClick={submit}
+   736→   736→          className="cursor-pointer rounded-[10px] bg-[#2563eb] px-8 text-[14px] text-white transition-colors duration-200 hover:bg-[#1d4ed8]"
+   737→   737→        >
+   738→   738→          搜索
+   739→   739→        </button>
+   740→   740→      </div>
+   741→   741→
+   742→   742→      <SectionTitle
+   743→   743→        title="搜索结果"
+   744→   744→        small={query ? `“${query}” · ${list.data?.total ?? 0} 条` : '请输入关键词'}
+   745→   745→      />
+   746→   746→
+   747→   747→      {list.isPending ? (
+   748→   748→        <CardGridSkeleton count={6} />
+   749→   749→      ) : list.isError ? (
+   750→   750→        <ErrorBox onRetry={() => list.refetch()} />
+   751→   751→      ) : (list.data?.list.length ?? 0) === 0 ? (
+   752→   752→        <EmptyBox text={`没有找到与“${query}”相关的小说，换个关键词试试`} />
+   753→   753→      ) : (
+   754→   754→        <>
+   755→   755→          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+   756→   756→            {list.data!.list.map((n) => (
+   757→   757→              <BookTextCard key={n.id} novel={n} navigate={navigate} />
+   758→   758→            ))}
+   759→   759→          </div>
+   760→   760→          <Pager
+   761→   761→            page={list.data!.page}
+   762→   762→            totalPages={list.data!.totalPages}
+   763→   763→            onGo={(p) => setPage(p)}
+   764→   764→          />
+   765→   765→        </>
+   766→   766→      )}
+   767→   767→    </div>
+   768→   768→  )
+   769→   769→}
+   770→   770→
