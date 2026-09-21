@@ -30,6 +30,8 @@ export interface NovelDetail extends NovelListItem {
   totalChapters: number
   firstChapterId: number | null
   lastChapterId: number | null
+  /** PSEO 相关标签（书名词/作者词/已生成含书名长尾词），书籍页简介下方 chips */
+  tags: string[]
 }
 
 export interface ChapterListItem {

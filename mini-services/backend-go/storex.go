@@ -243,6 +243,9 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy string) UpsertOut
 		run.IncUpdated()
 		run.Log(fmt.Sprintf("书籍已存在，更新信息（#%d）", novelID))
 	}
+	// PSEO 书名种子：每本书入库（新建或更新）即登记书名关键词（source=book，pending），
+	// runner 的 pseoEnrichLoop 异步取下拉词并生成聚合页（网络调用不阻塞采集热路径）
+	enqueuePseoBookSeed(title)
 	return UpsertOutcome{OK: true, Canceled: false, NovelID: int(novelID), CreatedNew: createdNew, Title: title}
 }
 

@@ -634,3 +634,45 @@ Stage Summary:
 - 交付 5/5：①遗留续办（TS runner 清除+书库重填充 75 本起步+audit 复检）②多 Agent 深审修复 12+ 处（P0 复活源/P1 SSRF 绕过×3/data race×4/僵尸进程等）③清理 449 行删除+15 项归档+防复活双闸④761 行图文教程+5 真实截图⑤pseo 五引擎 4/5 稳定可用（sogou 上游死亡除外）
 - 用户任务 5 的完整答案：duckduckgo 超时根因两层——Go TLS 指纹被 CF 掐（真）+ baidu/so360 系解析器字段过时（19-a 误诊修正）；终态 duckduckgo 经引擎 curl-impersonate 快路径 + 两段式兜底，压测 11/12、真实节奏 100%
 - 已知边界：bing 偶发间歇失败（直连 CF 波动，隔离良好不拖累聚合）；5165 需站点放行后靠熔断半开自动恢复
+---
+Task ID: 21-b
+Agent: theme-tags-inserter
+Task: 10 主题书籍页简介下插入 NovelTagsRow（PSEO 相关标签）
+
+Work Log:
+- aijjxs/Book.tsx：「内容简介」Panel 内 FoldText 之后插入（className="mt-3"，变量 n）
+- ddyueshu/Book.tsx：信息区 dd-box-strong 内简介 <p>（蓝虚线分隔）之后插入（className="mx-3 pb-2" 对齐简介缩进并补底部内边距，变量 n）
+- shipsay/Book.tsx：「作品简介」白卡内简介 <p> 之后插入（className="mt-3"，变量 novel）
+- x2552/Book.tsx：「内容简介」.pl 卡内简介 <p> 与「关键字」底栏之间插入（className="px-3 pb-2" 与卡内水平内边距对齐，变量 novel）
+- 101kks/views.tsx：BookView「簡介」选项卡内简介 <p> 之后插入（className="mt-3"，变量 novel；该主题简介位于 intro tab 内，默认 tab 为目录，故标签行随简介同显隐）
+- 23qb/views.tsx：信息白盒 Card 内简介 <p> 之后、按钮行之前插入（className="mt-3"，变量 novel）
+- ggd66/views.tsx：Book 头部信息卡内简介 <p>（h-[110px] 截断块）之后、最新章节行之前插入（className="mt-2"；已避开 Home 视图 3 处同名 description 渲染，变量 novel）
+- huangjinwu/views.tsx：「作品简介」section 内展开/收起按钮之后、「小说标签」徽章行之前插入（className="mt-3"，变量 novel；未触碰 ui.tsx 的 BookTextCard——那是首页/分类页共用文字卡）
+- pilishuwu/index.tsx：「内容简介」Block 内简介 <p> 之后插入（className="mt-3"，变量 n）
+- trxsw/index.tsx：「内容简介」Block 内简介 <p> 之后插入（className="mt-3"，变量 n）
+- 类型适配说明：NovelDetail（src/lib/types.ts）尚无 tags 字段且本任务辖区禁改该文件，故统一使用 (n as { tags?: string[] }).tags ?? [] —— 运行时 ?? [] 兜底旧缓存无 tags 字段，类型断言在 types.ts 补上 tags 后可平移替换，不产生行为差异
+
+Stage Summary:
+- 10/10 主题书籍页简介下方均插入 NovelTagsRow（共享组件 @/components/novel-tags，点击跳 {name:'pseo', keyword} 聚合页；tags 为空整行不渲染），每文件仅 +2 行（1 行 import + 1 行组件），零逻辑/样式重构，Book 视图以外零改动
+- 验证全过：npx tsc --noEmit 0 错误；bun run lint exit 0（无新增错误与警告）；rg -l "NovelTagsRow" src/themes/ 命中 10 个文件（每文件 2 处 = import+使用）；git status 确认改动仅限 10 个主题文件
+
+---
+Task ID: 20/21-a
+Agent: main (Z.ai Code)
+Task: 两项指令：①采集任务可编辑+随时暂停/重启 ②pseo 种子=每本书书名、入库自动构造聚合页、书籍页简介下加标签
+
+Work Log:
+- 取证：ScrapeTask 状态机（pending/running/success/partial/failed/canceled）、worker 协作式取消（isCanceled→stopState）、pseo 全链路（PseoKeyword 空表 + api_pseo/pseo_gen/pseo_suggest）、10 主题 Book 视图分布
+- 【暂停/恢复·后端】worker.go：isCanceled 升级为 stopState（返回 canceled/paused/""，fail-open 语义不变）；三阶段全部停止检查点改用 stopState；finalize 新增暂停确认分支（cur=paused && status=paused → 仅刷新 message/log，绝不覆盖 paused 状态/进度字段）；finalizeStopped 按停止原因分流文案（「已暂停（书目完成 X/Y 本，进度保留，可恢复继续）」）；recoverStaleTasks 语义升级：重启时遗留 running→paused（进度保留可恢复，不再误标 failed）、pending 保持不动（新 runner 2s 自动领取）
+- 【暂停/恢复·API】api_scrape_tasks.go：PATCH action 扩展 cancel/pause/resume（pause: pending/running→paused 条件更新；resume: paused→pending+日志追加恢复记录）；PUT 编辑放开 paused（WHERE status IN pending/paused，running→409 提示先暂停）；scrapeTaskStatuses 加 paused
+- 【暂停/恢复·前端】TasksCard.tsx：paused 徽章（violet）、暂停/恢复按钮（Pause/Play）、编辑按钮放开 pending|paused、文案与轮询适配
+- 【pseo 书名种子·后端】新文件 pseo_book.go：enqueuePseoBookSeed（INSERT OR IGNORE source=book，upsertBook 成功路径挂载，采集热路径零网络调用）+ startPseoEnrichLoop/enrichOneBookSeed（runner 侧独立 goroutine 12s/种子：下拉词长尾→入库→generatePendingPages(20)，引擎全挂时书名词仍生成聚合页）+ novelPseoTags（书名词+作者词+已生成含书名长尾词≤10）；main.go runner/all 模式启动富集循环；api_novels.go 详情响应加 tags 字段
+- 【pseo·前端】新建共享组件 src/components/novel-tags.tsx（NovelTagsRow 中性 chips，空 tags 不渲染）；types.ts NovelDetail 加 tags: string[]；子代理 21-b 插入全部 10 套主题书籍页简介下方（每主题 1 import + 1 组件，位置随各自排版微调）；PseoTab 来源徽标 book→书籍种子
+- 【存量回填】95 本既有书籍按 sanitizeKeyword 同源规则一次性回填书名种子（新功能前入库的书不漏）
+- 验证：go vet/build/gofmt 全绿、tsc/lint 0 错误；重启 backend-go 实证「服务重启 running→paused」（#7/#12 自动暂停）；E2E：resume→running（编辑 409）→pause→worker 安全点确认「已暂停（书目完成 12/30 本）」→paused 状态 PUT 编辑 200（pages 30→31）→重复 pause 400→resume→running 续采；novel tags=['书名','作者']；点击标签跳转 PseoView 聚合页正常；admin 任务表徽章/按钮/编辑弹窗全验；agent-browser 0 page error
+- pseo 实证：95 种子+长尾词共 232 关键词全部 generated（约 3 分钟全量富集），两段式 duckduckgo 兜底日志正常（首选超时→兜底 1.6s），107 书↔107 book 种子精确同步（恢复任务重采新建书自动登记）
+
+Stage Summary:
+- 交付 2/2：①任务生命周期补全——pending/running 可暂停（协作式安全停手、进度保留）、paused 可编辑可恢复（改参数再恢复按新参数续传）、重启自动暂停不再毁任务；②pseo 全自动闭环——书名即种子、入库即登记、后台 12s/种子富集生成聚合页、10 主题书籍页简介下方「相关标签」直达聚合页
+- 关键决策：暂停=可编辑的非执行态（与 pending 同级权限）；恢复=重新入队而非进程内唤醒（复用骨架续传语义，零新增状态机复杂度）；种子登记与富集解耦（采集热路径零网络调用，引擎故障不影响功能）
+- 已知边界：恢复瞬间旧 worker 若尚未退场，任务短暂呈现 pending 而实际仍在跑（gRunning 防双跑，终态写入安全，最多重复少量工作）；富集循环 sogou 引擎上游死亡与既有认知一致（多引擎聚合不受影响）

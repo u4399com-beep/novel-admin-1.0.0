@@ -743,7 +743,7 @@ export function PseoTab() {
           {rows?.map((r) => (
             <div key={r.id} className="flex items-center gap-2 rounded border px-3 py-1.5 text-xs">
               <span className="min-w-0 flex-1 truncate font-medium">{r.keyword}</span>
-              <Badge variant="outline" className="shrink-0">{r.source}</Badge>
+              <Badge variant="outline" className="shrink-0">{r.source === 'book' ? '书籍种子' : r.source}</Badge>
               <Badge variant={r.status === 'generated' ? 'default' : 'secondary'} className="shrink-0">{r.status}</Badge>
               <span className="shrink-0 text-neutral-400">{timeAgo(r.updatedAt)}</span>
               <Button

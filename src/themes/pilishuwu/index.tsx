@@ -31,6 +31,7 @@ import {
 } from '@/hooks/use-reader-prefs'
 import type { ChapterDetail } from '@/lib/types'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
+import { NovelTagsRow } from '@/components/novel-tags'
 import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
 import { useFavoriteSite, showSetHomepageHint } from '@/components/theme-tools/FavoriteSite'
 import { TradToggle } from '@/components/theme-tools/TradToggle'
@@ -763,6 +764,7 @@ function BookInner({ navigate, novelId }: ViewProps & { novelId: number }) {
         <p className="indent-[2em] text-sm leading-7 text-[#666]">
           {n.description || '作者尚未填写简介。'}
         </p>
+        <NovelTagsRow tags={n.tags ?? []} navigate={navigate} className="mt-3" />
       </Block>
 
       {/* 最近章节（全量章节末 12 条倒序 = 最新 12 章，新→旧，双栏） */}

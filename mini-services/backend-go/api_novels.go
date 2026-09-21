@@ -605,6 +605,8 @@ func handleNovelDetail(w http.ResponseWriter, r *http.Request, ps map[string]str
 	if hasFirst {
 		firstChapterID = firstID
 	}
+	// PSEO 相关标签（书籍页简介下方 chips，点击进入聚合页；见 pseo_book.go novelPseoTags）
+	tags := novelPseoTags(title, author)
 	writeJSON(w, 200, map[string]any{
 		"id":               id,
 		"title":            title,
@@ -625,6 +627,7 @@ func handleNovelDetail(w http.ResponseWriter, r *http.Request, ps map[string]str
 		"firstChapterId":   firstChapterID,
 		"lastChapterId":    lastChapterID,
 		"chapters":         chapters,
+		"tags":             tags,
 	})
 }
 

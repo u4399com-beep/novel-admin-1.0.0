@@ -1,8 +1,10 @@
 'use client'
 
 /**
- * 采集任务列表区块：状态徽章 / 双口径进度 / 日志查看 / 取消 / 删除 / 分页。
+ * 采集任务列表区块：状态徽章 / 双口径进度 / 日志查看 / 暂停 / 恢复 / 取消 / 删除 / 分页。
  * 自 ScrapeCenter.tsx 原样拆分（执行中任务列表 3s 轮询、终态自停等行为不变）。
+ * 用户指令「任务可编辑，可随时暂停/重启」：执行中/待执行可暂停（协作式安全停手、进度
+ * 保留），已暂停可恢复（重新入队续传）或直接编辑参数后再恢复。
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -30,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Pencil, ScrollText, Square, Trash2 } from 'lucide-react'
+import { Pencil, Pause, Play, ScrollText, Square, Trash2 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { ScrapeRuleDto } from '@/lib/types'
 import { timeAgo } from '@/lib/format'
@@ -43,6 +45,7 @@ const PAGE_SIZE = 20
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   pending: { label: '待执行', cls: 'bg-neutral-200 text-neutral-600' },
   running: { label: '执行中', cls: 'bg-slate-500 text-white animate-pulse' },
+  paused: { label: '已暂停', cls: 'bg-violet-600 text-white' },
   success: { label: '成功', cls: 'bg-emerald-600 text-white' },
   partial: { label: '部分成功', cls: 'bg-amber-500 text-white' },
   failed: { label: '失败', cls: 'bg-red-600 text-white' },
@@ -114,8 +117,9 @@ function LogDialog({ task, onClose }: { task: TaskRow; onClose: () => void }) {
 }
 
 /**
- * 编辑待执行任务对话框（用户指令「采集任务要可编辑」）：
- * 仅 pending 任务开放入口；running/终态由 API 409 拒绝，前端也不展示按钮。
+ * 编辑待执行/已暂停任务对话框（用户指令「采集任务要可编辑」）：
+ * pending/paused 任务开放入口；running/终态由 API 409 拒绝，前端也不展示按钮。
+ * paused 编辑的意义：暂停 → 改参数（换规则/换目标/扩页数）→ 恢复，按新参数续采。
  * 字段与新建任务同口径：mode/targetUrl/ruleId/pages，局部提交（只传修改过的字段）。
  */
 function EditTaskDialog({
@@ -168,7 +172,7 @@ function EditTaskDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-sm">编辑任务 #{task.id}</DialogTitle>
-          <DialogDescription>仅待执行状态的任务可修改参数</DialogDescription>
+          <DialogDescription>仅待执行 / 已暂停状态的任务可修改参数（暂停中改完再恢复即按新参数续采）</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <RadioGroup
@@ -247,7 +251,7 @@ export function TasksCard({ rules = [] }: { rules?: ScrapeRuleDto[] }) {
   const [page, setPage] = useState(1)
   const [logTask, setLogTask] = useState<TaskRow | null>(null)
   const [editTask, setEditTask] = useState<TaskRow | null>(null)
-  // 取消/删除/编辑进行中的任务 id（防重复提交）
+  // 暂停/恢复/取消/删除/编辑进行中的任务 id（防重复提交）
   const [busyId, setBusyId] = useState<number | null>(null)
 
   const { data, isLoading } = useQuery({
@@ -275,6 +279,32 @@ export function TasksCard({ rules = [] }: { rules?: ScrapeRuleDto[] }) {
       })
       await refresh()
       toast.success(`已发送取消指令（任务 #${t.id}）`)
+    })
+  }
+
+  /** 暂停：执行中任务由 worker 协作式感知，数秒内在安全点停手（进度保留） */
+  const pause = (t: TaskRow) => {
+    if (busyId !== null) return
+    return runBusy(setBusyId, t.id, null, '暂停失败', async () => {
+      await api(`/api/scrape-tasks/${t.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'pause' }),
+      })
+      await refresh()
+      toast.success(`已发送暂停指令（任务 #${t.id}），执行中任务会在数秒内安全停手`)
+    })
+  }
+
+  /** 恢复：重新入队 pending，runner 领取后按已采进度自动续传 */
+  const resume = (t: TaskRow) => {
+    if (busyId !== null) return
+    return runBusy(setBusyId, t.id, null, '恢复失败', async () => {
+      await api(`/api/scrape-tasks/${t.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'resume' }),
+      })
+      await refresh()
+      toast.success(`任务 #${t.id} 已恢复，等待 runner 领取继续采集`)
     })
   }
 
@@ -343,7 +373,7 @@ export function TasksCard({ rules = [] }: { rules?: ScrapeRuleDto[] }) {
                 <TableHead className="h-8 w-32 text-xs">进度</TableHead>
                 <TableHead className="hidden h-8 w-36 text-xs md:table-cell">成果</TableHead>
                 <TableHead className="hidden h-8 w-20 text-xs md:table-cell">时间</TableHead>
-                <TableHead className="h-8 w-24 text-right text-xs">操作</TableHead>
+                <TableHead className="h-8 w-28 text-right text-xs">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -401,17 +431,43 @@ export function TasksCard({ rules = [] }: { rules?: ScrapeRuleDto[] }) {
                         >
                           <ScrollText className="h-3.5 w-3.5" />
                         </Button>
-                        {t.status === 'pending' && (
+                        {(t.status === 'pending' || t.status === 'paused') && (
                           <Button
                             size="sm"
                             variant="ghost"
                             className="h-7 px-1.5"
                             disabled={busyId === t.id}
-                            title="编辑任务（仅待执行状态）"
+                            title="编辑任务（待执行/已暂停）"
                             aria-label={`编辑任务 ${t.id}`}
                             onClick={() => setEditTask(t)}
                           >
                             <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {active && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5 text-violet-600 hover:text-violet-700"
+                            disabled={busyId === t.id}
+                            title="暂停任务（进度保留，可恢复）"
+                            aria-label={`暂停任务 ${t.id}`}
+                            onClick={() => pause(t)}
+                          >
+                            <Pause className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {t.status === 'paused' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5 text-emerald-600 hover:text-emerald-700"
+                            disabled={busyId === t.id}
+                            title="恢复任务（重新入队续采）"
+                            aria-label={`恢复任务 ${t.id}`}
+                            onClick={() => resume(t)}
+                          >
+                            <Play className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         {active && (

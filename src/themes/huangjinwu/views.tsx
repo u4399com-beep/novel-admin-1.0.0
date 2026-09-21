@@ -19,6 +19,7 @@ import {
   useReaderPrefs,
   type ReaderSceneColors,
 } from '@/hooks/use-reader-prefs'
+import { NovelTagsRow } from '@/components/novel-tags'
 import type { NovelDetail, NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
 import {
@@ -417,6 +418,7 @@ export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
         >
           {expanded ? '收起' : '展开'}
         </button>
+        <NovelTagsRow tags={novel.tags ?? []} navigate={navigate} className="mt-3" />
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className="text-[13px] text-[#94a3b8]">小说标签：</span>
           <CatBadge onClick={() => navigate({ name: 'category', categoryId: novel.categoryId })}>

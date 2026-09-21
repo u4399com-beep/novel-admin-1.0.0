@@ -8,10 +8,12 @@
  *   Phase 1 书目骨架：有界并发抓书页+目录 → upsert 书籍 + 章节骨架入库（content=''、wordCount=0）
  *   Phase 2 正文填充：跨书平铺所有空骨架，有界并发抓正文 → update 填充
  *
- * 语义与可靠性（与 TS 对齐）：
+ * 语义与可靠性（与 TS 对齐 + 暂停/恢复扩展）：
  * - 进度：list 模式 done/total=书、chaptersDone/chaptersTotal=章节；single 模式 done/total=章节
- * - 协作式取消贯穿三阶段（throttledCheck 250ms 节流查 DB，canceled/记录删除即停）
- * - 可续跑：Phase 2 只填充 wordCount=0 的骨架；任务中断后重发即续传
+ * - 协作式停止贯穿三阶段（throttledCheck 250ms 节流查 DB，canceled/paused/记录删除即停）
+ * - 暂停（paused）：用户指令「任务可随时暂停/重启」——API 置 paused 后 worker 在安全点
+ *   停手且不覆盖该状态（进度字段保留），恢复=重新入队 pending，Phase 1/2 依骨架自动续传
+ * - 可续跑：Phase 2 只填充 wordCount=0 的骨架；任务中断/暂停后重发或恢复即续传
  * - 快速终止：列表连续 3 页全败、或书页连续 5 本全败且 0 成功 → 提前中止
  * - finalize 终态条件更新（仅 status=running 时写终态）
  * - 合规红线：仅抓取公开页面；robots 提示与域名限速由 scraper-go 引擎层负责（runner 不额外加抓取间隔）
@@ -110,9 +112,11 @@ func lastLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// recoverStaleTasks 僵尸任务回收：进程首次启动时，把「创建于本进程启动之前」且仍处于
-// pending/running 的任务标记为 failed——它们只可能属于已消失的旧进程。条件更新
-// （status 仍为 pending/running）保证与 worker 终态写入竞态安全。
+// recoverStaleTasks 服务重启恢复：进程首次启动时处理「创建于本进程启动之前」且仍处于
+// running 的任务——它们只可能属于已消失的旧进程，自动转为 paused（已采进度保留，
+// 可手动恢复续传）；pending 任务保持不动，新 runner 2s 内会重新领取。配合
+// 「任务可随时暂停/重启」指令，重启不再把长任务（数万章 Phase 2）破坏成 failed。
+// 条件更新（status 仍为 running）保证与 worker 终态写入竞态安全。
 func recoverStaleTasks() {
 	type staleRow struct {
 		id   int
@@ -120,7 +124,7 @@ func recoverStaleTasks() {
 	}
 	var stale []staleRow
 	err := queryList(
-		"SELECT id, log FROM ScrapeTask WHERE status IN ('pending','running') AND createdAt < ? ORDER BY id ASC",
+		"SELECT id, log FROM ScrapeTask WHERE status = 'running' AND createdAt < ? ORDER BY id ASC",
 		func(rows *sql.Rows) error {
 			var r staleRow
 			if err := rows.Scan(&r.id, &r.logv); err != nil {
@@ -130,44 +134,55 @@ func recoverStaleTasks() {
 			return nil
 		}, gBootAt)
 	if err != nil {
-		return // 回收失败不阻塞启动
+		return // 恢复失败不阻塞启动
 	}
-	recovered := 0
+	paused := 0
 	for _, t := range stale {
 		if runningHas(t.id) { // 本进程仍在执行（防御性；启动时刻 running 恒为空）
 			continue
 		}
-		line := "[" + time.Now().Format("15:04:05") + "] 服务重启，任务中断（自动回收）"
+		line := "[" + time.Now().Format("15:04:05") + "] 服务重启，任务中断自动暂停（已采进度保留，可恢复继续采集）"
 		logv := t.logv
 		if logv != "" {
 			logv += "\n"
 		}
 		logv = lastLines(logv+line, MAX_LOG_LINES)
 		res, err := execRetry(
-			"UPDATE ScrapeTask SET status = 'failed', message = '服务重启，任务中断', log = ? WHERE id = ? AND status IN ('pending','running')",
+			"UPDATE ScrapeTask SET status = 'paused', message = '服务重启，任务自动暂停（可恢复继续采集）', log = ? WHERE id = ? AND status = 'running'",
 			logv, t.id)
 		if err == nil && rowCountOf(res) > 0 {
-			recovered++
+			paused++
 		}
 	}
-	if recovered > 0 {
-		log.Printf("[scrape-worker] 僵尸任务回收: %d 条", recovered)
+	if paused > 0 {
+		log.Printf("[scrape-worker] 服务重启恢复: %d 条运行中任务已自动暂停（可恢复续传）", paused)
 	}
 }
 
-// ==================== 协作式取消 ====================
+// ==================== 协作式取消与暂停 ====================
 
-// isCanceled 协作式取消检查：记录不存在视为取消；DB 瞬时错误不误判为取消（fail-open）
-func isCanceled(taskID int) bool {
+// stopState 协作式停止检查（isCanceled 的暂停/恢复扩展版）：
+//   - "canceled"：记录被取消或已删除（删除视为取消，沿用 TS 语义）
+//   - "paused"  ：用户手动暂停（API 已置 paused，worker 在安全点停手且不覆盖该状态）
+//   - ""        ：继续执行
+//
+// DB 瞬时错误不误判为停止（fail-open，避免瞬时 DB 错误误停任务）
+func stopState(taskID int) string {
 	var status string
 	err := queryOne("SELECT status FROM ScrapeTask WHERE id = ?", []any{&status}, taskID)
 	if err != nil {
 		if isNoRows(err) {
-			return true
+			return "canceled" // 记录删除视为取消
 		}
-		return false // 查询失败 ≠ 被取消，避免瞬时 DB 错误误停任务
+		return "" // 查询失败 ≠ 被停止，避免瞬时 DB 错误误停任务
 	}
-	return status == "canceled"
+	if status == "canceled" {
+		return "canceled"
+	}
+	if status == "paused" {
+		return "paused"
+	}
+	return ""
 }
 
 // ==================== 共用工具 ====================
@@ -276,9 +291,9 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 		}
 	}
 
-	// 取消 + 快速终止（连续多本全败且 0 成功 → 判定站点不可达，中止防空转）
+	// 取消/暂停 + 快速终止（连续多本全败且 0 成功 → 判定站点不可达，中止防空转）
 	shouldStop := throttledCheck(func() bool {
-		if isCanceled(run.TaskID) {
+		if stopState(run.TaskID) != "" {
 			return true
 		}
 		mu.Lock()
@@ -407,7 +422,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 	var filledCtr, failedCtr atomic.Int64
 	var warnLogged atomic.Int64
 	stoppedEarly := false
-	isStopped := throttledCheck(func() bool { return isCanceled(run.TaskID) })
+	isStopped := throttledCheck(func() bool { return stopState(run.TaskID) != "" })
 
 	// TS Map 迭代=插入序（Phase 1 并发完成序）；Go map 无序 → 按 novelId 升序确定性处理
 	ids := make([]int, 0, len(fillMap))
@@ -579,7 +594,7 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
 	}
 
 	for k := 2; k <= task.Pages; k++ {
-		if isCanceled(run.TaskID) {
+		if stopState(run.TaskID) != "" {
 			break
 		}
 		got := 0
@@ -634,8 +649,8 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
 func runList(run *Run, task TaskRecord, rule LoadedRule) {
 	// ---- Phase 0：列表页 ----
 	collected, currentListURL := collectListItems(run, task, rule)
-	if isCanceled(run.TaskID) {
-		finalize(run, "canceled", "任务已取消")
+	if reason := stopState(run.TaskID); reason != "" {
+		finalizeStopped(run, reason, "任务已取消", "已暂停（列表阶段中断，进度保留，可恢复继续）")
 		return
 	}
 	if len(collected) == 0 {
@@ -655,9 +670,11 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 		finalize(run, "failed", "任务执行异常")
 		return
 	}
-	if isCanceled(run.TaskID) {
+	if reason := stopState(run.TaskID); reason != "" {
 		recalcWordCountsFor(p1.NovelIDs)
-		finalize(run, "canceled", fmt.Sprintf("已取消（书目完成 %d/%d 本）", p1.OKBooks, total))
+		finalizeStopped(run, reason,
+			fmt.Sprintf("已取消（书目完成 %d/%d 本）", p1.OKBooks, total),
+			fmt.Sprintf("已暂停（书目完成 %d/%d 本，进度保留，可恢复继续）", p1.OKBooks, total))
 		return
 	}
 	created, updated, _ := run.Snapshot()
@@ -689,7 +706,13 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 	run.Flush(&TaskFlushFields{ChaptersDone: &p2.Filled, Chapters: &chapters, Created: &created, Updated: &updated})
 
 	if p2.StoppedEarly {
-		finalize(run, "canceled", fmt.Sprintf("已取消（正文填充 %d/%d 章）", p2.Filled, p1.FillTotal))
+		reason := stopState(run.TaskID)
+		if reason == "" {
+			reason = "canceled" // 兑底（记录删除等异常路径）
+		}
+		finalizeStopped(run, reason,
+			fmt.Sprintf("已取消（正文填充 %d/%d 章）", p2.Filled, p1.FillTotal),
+			fmt.Sprintf("已暂停（正文填充 %d/%d 章，进度保留，可恢复继续）", p2.Filled, p1.FillTotal))
 		return
 	}
 	if p2.Filled == 0 && p1.FillTotal == 0 {
@@ -728,9 +751,9 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 		finalize(run, "failed", msg)
 		return
 	}
-	if isCanceled(run.TaskID) {
+	if reason := stopState(run.TaskID); reason != "" {
 		recalcWordCountsFor(p1.NovelIDs)
-		finalize(run, "canceled", "任务已取消")
+		finalizeStopped(run, reason, "任务已取消", "已暂停（进度保留，可恢复继续）")
 		return
 	}
 	totalChapters := p1.TotalRefs
@@ -758,7 +781,11 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 	run.Flush(&TaskFlushFields{Done: &done, ChaptersDone: &done, Chapters: &chapters})
 
 	if p2.StoppedEarly {
-		finalize(run, "canceled", "任务已取消")
+		reason := stopState(run.TaskID)
+		if reason == "" {
+			reason = "canceled" // 兑底（记录删除等异常路径）
+		}
+		finalizeStopped(run, reason, "任务已取消", "已暂停（进度保留，可恢复继续）")
 		return
 	}
 	if p2.Filled == 0 && p1.FillTotal == 0 {
@@ -779,17 +806,34 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 
 // ==================== 收尾与入口 ====================
 
-// finalize 终态写入：仅当仍处于 running 时写终态；已被取消/删除则只保留日志
+// finalizeStopped 按停止原因收尾：paused → 走 finalize 的暂停确认分支（保持 paused
+// 状态、仅刷新 message/log，进度字段由最后一次 Flush 保留）；canceled/其他 → 取消
+// 语义（API 已置 canceled 时 finalize 仅补日志，状态保持 API 写入值）。
+func finalizeStopped(run *Run, reason, canceledMsg, pausedMsg string) {
+	if reason == "paused" {
+		finalize(run, "paused", pausedMsg)
+		return
+	}
+	finalize(run, "canceled", canceledMsg)
+}
+
+// finalize 终态写入：running → 写终态；paused + paused → 暂停确认（保状态刷新 message/log）；
+// 已被取消/暂停/删除的其他情况只保留日志（绝不复活或改写 API 已写入的状态）
 func finalize(run *Run, status, message string) {
 	var cur string
 	if err := queryOne("SELECT status FROM ScrapeTask WHERE id = ?", []any{&cur}, run.TaskID); err != nil {
 		return
 	}
 	msg := truncateRunes(message, 500)
-	if cur == "running" {
+	switch {
+	case cur == "running":
 		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ? WHERE id = ? AND status = 'running'",
 			status, msg, run.LogText(), run.TaskID)
-	} else {
+	case cur == "paused" && status == "paused":
+		// 暂停确认：不触碰 status/进度字段 → 恢复后 Phase 1/2 依骨架自动续传
+		_, _ = execRetry("UPDATE ScrapeTask SET message = ?, log = ? WHERE id = ? AND status = 'paused'",
+			msg, run.LogText(), run.TaskID)
+	default:
 		_, _ = execRetry("UPDATE ScrapeTask SET log = ? WHERE id = ?", run.LogText(), run.TaskID)
 	}
 }

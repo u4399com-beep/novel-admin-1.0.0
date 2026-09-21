@@ -57,6 +57,7 @@ func main() {
 
 	if mode == "runner" || mode == "all" {
 		go startRunner()
+		go startPseoEnrichLoop() // PSEO 书名种子后台富集（12s/种子，见 pseo_book.go）
 	}
 	if mode == "api" || mode == "all" {
 		srv := &http.Server{

@@ -30,6 +30,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
+import { NovelTagsRow } from '@/components/novel-tags'
 import { useCategories, useChapter, useChapters, useHomeData, useNovel, useNovels } from '@/hooks/use-novel-data'
 import {
   READER_INKS,
@@ -597,6 +598,7 @@ export function BookView({ navigate, novelId }: ViewProps & { novelId: number })
                 <p className="mt-4 whitespace-pre-line text-[15px] leading-relaxed text-[#333]">
                   {novel.description || '（作者還未填寫簡介）'}
                 </p>
+                <NovelTagsRow tags={novel.tags ?? []} navigate={navigate} className="mt-3" />
               </div>
             )}
 

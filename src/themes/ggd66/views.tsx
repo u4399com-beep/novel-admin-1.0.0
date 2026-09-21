@@ -21,6 +21,7 @@ import {
   useReaderPrefs,
   type ReaderSceneColors,
 } from '@/hooks/use-reader-prefs'
+import { NovelTagsRow } from '@/components/novel-tags'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
 import {
@@ -502,6 +503,7 @@ export function Book({ navigate, novelId }: ViewProps & { novelId: number }) {
             <p className="mt-3 h-[110px] overflow-hidden text-[14px] leading-[1.7] text-[#888]">
               {novel.description || '暂无简介'}
             </p>
+            <NovelTagsRow tags={novel.tags ?? []} navigate={navigate} className="mt-2" />
             <p className="mt-2 text-[13px] text-[#888]">
               最新章节：
               {novel.lastChapterId ? (

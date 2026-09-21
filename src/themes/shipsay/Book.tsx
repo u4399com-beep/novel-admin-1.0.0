@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { NovelTagsRow } from '@/components/novel-tags'
 import { useChapters, useNovel } from '@/hooks/use-novel-data'
 import type { ViewProps } from '../types'
 import { ChapterGrid, Cover, Empty, ErrorBox, RowsSkeleton, Tag, fmtDate, fmtWords, statusText } from './parts'
@@ -128,6 +129,7 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
               <p className="indent-[2em] text-[14px] leading-[1.8] text-[#666]">
                 {novel.description || '（暂无简介）'}
               </p>
+              <NovelTagsRow tags={novel.tags ?? []} navigate={navigate} className="mt-3" />
             </section>
             {/* 最新章节卡片：居中标题 + 3 列章节（最新 12 条，新→旧） */}
             <section className="bg-white">

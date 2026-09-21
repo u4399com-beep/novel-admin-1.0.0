@@ -1,5 +1,6 @@
 'use client'
 
+import { NovelTagsRow } from '@/components/novel-tags'
 import { useChapters, useNovel, useNovels } from '@/hooks/use-novel-data'
 import type { ViewProps } from '../types'
 import { Cover, ErrBlock, Sk, SkRows, fmtDate, fmtNum, fmtWords } from './parts'
@@ -122,6 +123,7 @@ export default function Book({ navigate, novelId }: ViewProps & { novelId: numbe
         <p className="mx-3 border-t border-dashed border-[#a6d3e8] py-2 text-[13px] leading-[22px] text-[#555] [text-indent:2em]">
           {n.description || '暂无简介'}
         </p>
+        <NovelTagsRow tags={n.tags ?? []} navigate={navigate} className="mx-3 pb-2" />
       </section>
 
       {/* 推荐阅读行（源站书页同款：信息区下方的热门书链接行） */}

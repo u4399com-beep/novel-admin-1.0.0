@@ -25,6 +25,7 @@ import {
 } from '@/hooks/use-reader-prefs'
 import { coverBgClass } from '@/lib/covers'
 import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
+import { NovelTagsRow } from '@/components/novel-tags'
 import { cn } from '@/lib/utils'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
@@ -318,6 +319,7 @@ export function BookView({ navigate, novelId }: ViewProps & { novelId: number })
             <p className="mt-5 whitespace-pre-line text-[15px] leading-7 text-black/68">
               {novel.description || '（作者还未填写简介）'}
             </p>
+            <NovelTagsRow tags={novel.tags ?? []} navigate={navigate} className="mt-3" />
             {/* 按钮行 */}
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <BigBtn

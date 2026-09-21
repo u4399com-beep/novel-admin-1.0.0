@@ -13,7 +13,9 @@
  * - 详情含完整 log 与嵌套 rule:{id,name,charset}（ruleId 为空 → rule:null）
  * - POST 创建后不做 inline 执行（runner 2s 轮询领取），返回 runner 心跳状态
  *   /tmp/scrape-runner-heartbeat（10s 内视为存活；不在线附 note 文案）
- * - PUT 仅 pending 可编辑；PATCH 仅支持 action=cancel 的条件更新（与 worker 竞态安全）
+ * - PUT pending/paused 可编辑（用户指令「任务可编辑+随时暂停/重启」：paused 视为
+ *   非执行态，改完再恢复即可按新参数续采）；PATCH 条件更新支持 action=cancel/pause/resume
+ *   （pause 置 paused 由 worker 协作式感知停手；resume 置 pending 由 runner 重新领取）
  *
  * 移植语义差异：
  * 1. Prisma @updatedAt：UPDATE（含 updateMany/PATCH 取消）显式 set updatedAt=nowMillis()
@@ -36,7 +38,7 @@ const runnerHeartbeatPath = "/tmp/scrape-runner-heartbeat"
 
 var (
 	scrapeTaskModes    = map[string]bool{"single": true, "list": true}
-	scrapeTaskStatuses = map[string]bool{"pending": true, "running": true, "success": true, "partial": true, "failed": true, "canceled": true}
+	scrapeTaskStatuses = map[string]bool{"pending": true, "running": true, "paused": true, "success": true, "partial": true, "failed": true, "canceled": true}
 )
 
 func init() {
@@ -381,7 +383,7 @@ func handleScrapeTaskDetail(w http.ResponseWriter, r *http.Request, ps map[strin
 	})
 }
 
-// ==================== PUT /api/scrape-tasks/{id}（编辑待执行任务） ====================
+// ==================== PUT /api/scrape-tasks/{id}（编辑待执行/已暂停任务） ====================
 
 func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[string]string) {
 	id, okID := parsePositiveInt(ps["id"])
@@ -402,10 +404,10 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 		return
 	}
 	if status == "running" {
-		writeJSON(w, 409, map[string]string{"error": "任务执行中不可编辑，请先取消"})
+		writeJSON(w, 409, map[string]string{"error": "任务执行中不可编辑，请先暂停"})
 		return
 	}
-	if status != "pending" {
+	if status != "pending" && status != "paused" {
 		writeJSON(w, 409, map[string]string{"error": "任务已结束（" + status + "），请新建任务"})
 		return
 	}
@@ -466,13 +468,13 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 		return
 	}
 	// Prisma update 自动触碰 @updatedAt → 显式 set。
-	// ⚠ 条件更新（AND status='pending'）：预检与 UPDATE 之间存在窗口，runner 可能恰在此
-	// 间隔把任务置为 running（runTask 的 pending→running 条件更新）；无条件 UPDATE 会改写
-	// 执行中任务的配置（执行读的是启动时快照，DB 展示与实际执行不一致）。count=0 回读如实反馈。
+	// ⚠ 条件更新（AND status IN pending/paused）：预检与 UPDATE 之间存在窗口，runner 可能
+	// 恰在此间隔把任务置为 running（runTask 的 pending→running 条件更新）；无条件 UPDATE 会
+	// 改写执行中任务的配置（执行读的是启动时快照，DB 展示与实际执行不一致）。count=0 回读如实反馈。
 	sets = append(sets, `"updatedAt" = ?`)
 	args = append(args, nowMillis())
 
-	res, err := exec(`UPDATE "ScrapeTask" SET `+strings.Join(sets, ", ")+` WHERE "id" = ? AND "status" = 'pending'`, append(args, id)...)
+	res, err := exec(`UPDATE "ScrapeTask" SET `+strings.Join(sets, ", ")+` WHERE "id" = ? AND "status" IN ('pending','paused')`, append(args, id)...)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -484,8 +486,8 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 			return
 		}
 		if fresh == "running" {
-			writeJSON(w, 409, map[string]string{"error": "任务执行中不可编辑，请先取消"})
-		} else if fresh != "pending" {
+			writeJSON(w, 409, map[string]string{"error": "任务执行中不可编辑，请先暂停"})
+		} else if fresh != "pending" && fresh != "paused" {
 			writeJSON(w, 409, map[string]string{"error": "任务已结束（" + fresh + "），请新建任务"})
 		} else {
 			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
@@ -512,7 +514,7 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 	})
 }
 
-// ==================== PATCH /api/scrape-tasks/{id}（取消） ====================
+// ==================== PATCH /api/scrape-tasks/{id}（取消/暂停/恢复） ====================
 
 func handleScrapeTaskCancel(w http.ResponseWriter, r *http.Request, ps map[string]string) {
 	id, okID := parsePositiveInt(ps["id"])
@@ -522,11 +524,24 @@ func handleScrapeTaskCancel(w http.ResponseWriter, r *http.Request, ps map[strin
 	}
 	v, ok := readBodyValue(r)
 	m := bodyMap(v)
-	if !ok || m == nil || strField(m["action"], 0) != "cancel" {
-		writeJSON(w, 400, map[string]string{"error": "action 必须为 'cancel'"})
+	if !ok || m == nil {
+		writeJSON(w, 400, map[string]string{"error": "action 必须为 cancel/pause/resume"})
 		return
 	}
+	switch strField(m["action"], 0) {
+	case "cancel":
+		scrapeTaskCancel(w, id)
+	case "pause":
+		scrapeTaskPause(w, id)
+	case "resume":
+		scrapeTaskResume(w, id)
+	default:
+		writeJSON(w, 400, map[string]string{"error": "action 必须为 cancel/pause/resume"})
+	}
+}
 
+// scrapeTaskCancel 取消（pending/running → canceled 终态）
+func scrapeTaskCancel(w http.ResponseWriter, id int64) {
 	var status string
 	if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status}, id); err != nil {
 		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
@@ -558,6 +573,76 @@ func handleScrapeTaskCancel(w http.ResponseWriter, r *http.Request, ps map[strin
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
+// scrapeTaskPause 暂停（pending/running → paused，进度保留可恢复）。
+// running → paused 由 worker stopState 协作式感知（≤秒级在安全点停手，finalize 暂停确认
+// 分支保持 paused 状态）；pending → paused 直接脱离 runner 轮询池。
+func scrapeTaskPause(w http.ResponseWriter, id int64) {
+	var status string
+	if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status}, id); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		return
+	}
+	if status != "pending" && status != "running" {
+		writeJSON(w, 400, map[string]string{"error": "当前状态 " + status + " 不可暂停（仅待执行/执行中可暂停）"})
+		return
+	}
+	res, err := exec(
+		`UPDATE "ScrapeTask" SET "status" = 'paused', "message" = '已手动暂停（进度保留，可恢复继续采集）', "updatedAt" = ? WHERE "id" = ? AND "status" IN ('pending','running')`,
+		nowMillis(), id,
+	)
+	if err != nil {
+		failJSON(w, "服务器错误", firstLineErr(err), 500)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		var fresh string
+		if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&fresh}, id); err != nil {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+			return
+		}
+		writeJSON(w, 400, map[string]string{"error": "当前状态 " + fresh + " 不可暂停"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// scrapeTaskResume 恢复（paused → pending，runner 2s 内重新领取；Phase 1/2 依骨架自动续传）。
+// 日志追加一行恢复记录（100 行滚动口径与 Run 一致）。
+func scrapeTaskResume(w http.ResponseWriter, id int64) {
+	var status, logv string
+	if err := queryOne(`SELECT "status","log" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status, &logv}, id); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		return
+	}
+	if status != "paused" {
+		writeJSON(w, 400, map[string]string{"error": "当前状态 " + status + " 不可恢复（仅已暂停可恢复）"})
+		return
+	}
+	line := "[" + runTs() + "] 手动恢复，任务重新入队（已采进度保留，缺失正文自动续传）"
+	if logv != "" {
+		logv += "\n"
+	}
+	logv = lastLines(logv+line, MAX_LOG_LINES)
+	res, err := exec(
+		`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '手动恢复，等待 runner 领取继续采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+		logv, nowMillis(), id,
+	)
+	if err != nil {
+		failJSON(w, "服务器错误", firstLineErr(err), 500)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		var fresh string
+		if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&fresh}, id); err != nil {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+			return
+		}
+		writeJSON(w, 400, map[string]string{"error": "当前状态 " + fresh + " 不可恢复"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
 // ==================== DELETE /api/scrape-tasks/{id} ====================
 
 func handleScrapeTaskDelete(w http.ResponseWriter, r *http.Request, ps map[string]string) {
@@ -575,7 +660,7 @@ func handleScrapeTaskDelete(w http.ResponseWriter, r *http.Request, ps map[strin
 		writeJSON(w, 409, map[string]string{"error": "任务执行中，请先取消再删除"})
 		return
 	}
-	// pending 允许删：即便 worker 恰在启动，其 pending→running 条件更新必然 count=0，安全退出
+	// pending/paused 允许删：即便 worker 恰在启动，其 pending→running 条件更新必然 count=0，安全退出
 	res, err := exec(`DELETE FROM "ScrapeTask" WHERE "id" = ?`, id)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
