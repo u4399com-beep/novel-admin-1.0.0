@@ -67,6 +67,8 @@ export const gotScrapingStrategy: StrategyDef = {
     if (ctx?.proxy && !proxyAgent) {
       warnings.push('[got-scraping] 代理 agent 依赖缺失（hpagent/socks-proxy-agent），本策略降级直连')
     }
+    // 自签/裸 IP 站点（规则 insecureTLS）：got 的 https.tls.rejectUnauthorized 选项跳过证书校验
+    const tlsOpts = ctx?.insecureTLS ? { https: { rejectUnauthorized: false } } : {}
     const subAttempts: SubAttempt[] = []
     const deadline = Date.now() + timeoutMs
     let lastRetryAfterMs: number | null = null
@@ -95,6 +97,7 @@ export const gotScrapingStrategy: StrategyDef = {
         retry: { limit: 0 }, // 重试由本服务统一编排，避免双重重试
         timeout: { request: leftMs },
         ...(proxyAgent ? { agent: proxyAgent } : {}),
+        ...tlsOpts,
         // 硬闸（Task 23-a 深审实测）：got 的 timeout 选项在 http2 + TLS 握手停滞时不触发
         // （/books.toscrape 复现：h2 请求无限挂起、无 http2 时 0.5s 即抛 ERR_SSL_NO_CIPHER_MATCH）。
         // AbortSignal 真正中断底层 socket，杜绝策略被单个请求永久卡死。

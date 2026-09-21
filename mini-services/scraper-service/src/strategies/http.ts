@@ -13,6 +13,111 @@ import type { RawResponse } from './types'
 export const MAX_BYTES = 8 * 1024 * 1024
 export const MAX_REDIRECT_HOPS = 5
 
+/**
+ * JS token 重定向挑战（轻量级自建防护，实测 ixdzs8.com）：响应为 200 但近空 HTML，
+ * 内嵌 `let token = "字面量"` + `window.location.href = location.pathname + "?challenge=" + encodeURIComponent(token)`，
+ * 服务端在带 challenge 参数回跳时升级会话 cookie，之后同 URL 直取即得真内容。
+ * 此处解析「字面量变量赋值 + location 拼接」表达式还原目标 URL（不执行 JS，仅常量折叠），
+ * 重定向跳复用同一 cookie 会话（升级 cookie 种在回跳响应上）。
+ */
+const JS_REDIRECT_ASSIGN_RE =
+  /(?:window\.)?location(?:\.href|\.replace\s*\(|\s*=)\s*=?\s*([^;\n]{5,300})[;\n]?/gi
+
+/**
+ * 从近空 HTML 中解析 JS 重定向目标：支持字面量、简单变量（let/const/var 赋值）、
+ * encodeURIComponent() 包装与 + 拼接（含 location.pathname/origin/search/hash 自引用）。
+ * 解析失败/目标与当前 URL 相同/非 http(s) 时返回 null。
+ */
+export function resolveJsRedirect(html: string, currentUrl: string): string | null {
+  if (!html || html.length > 100_000) return null // 仅小挑战页；大页面不做正则扫描
+  const assigns = new Map<string, string>()
+  for (const m of html.matchAll(/(?:var|const|let)\s+([\w$]+)\s*=\s*["']([^"']*)["']/g)) {
+    assigns.set(m[1], m[2])
+  }
+  for (const m of html.matchAll(JS_REDIRECT_ASSIGN_RE)) {
+    const expr = m[1]?.trim()
+    if (!expr) continue
+    const resolved = evalConcat(expr, assigns, currentUrl)
+    if (!resolved || resolved === currentUrl) continue
+    try {
+      const u = new URL(resolved, currentUrl)
+      if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+/** 常量折叠拼接表达式：字符串字面量 + 已知变量 + encodeURIComponent(x) + location.pathname/origin/search/hash */
+function evalConcat(expr: string, assigns: Map<string, string>, currentUrl: string): string | null {
+  // 按顶层 + 拆段（不处理括号嵌套拼接；挑战页表达式均为平铺拼接）
+  const parts = splitTopLevelPlus(expr)
+  let out = ''
+  for (const raw of parts) {
+    let p = raw.trim()
+    if (!p) continue
+    const enc = /^encodeURIComponent\s*\(\s*([\w$.]+)?\s*\)$/i.exec(p)
+    if (enc && enc[1]) p = enc[1]
+    const lit = /^["']([^"']*)["']$/.exec(p)
+    if (lit) {
+      out += lit[1]
+      continue
+    }
+    const locProp = /^location\.(pathname|search|hash|origin|host|href)$/i.exec(p)
+    if (locProp) {
+      try {
+        const u = new URL(currentUrl)
+        const key = locProp[1].toLowerCase()
+        out += key === 'pathname' ? u.pathname
+          : key === 'search' ? u.search
+          : key === 'hash' ? u.hash
+          : key === 'origin' ? u.origin
+          : key === 'host' ? u.host
+          : u.toString()
+        continue
+      } catch {
+        return null
+      }
+    }
+    const variable = assigns.get(p)
+    if (variable !== undefined) {
+      out += variable
+      continue
+    }
+    return null // 未知标识符（函数调用/计算表达式）：放弃（不硬编码任何站点专用逻辑）
+  }
+  return out || null
+}
+
+/** 按顶层 + 拆分（忽略括号内逗号差异；字符串字面量内的 + 不拆） */
+function splitTopLevelPlus(expr: string): string[] {
+  const out: string[] = []
+  let cur = ''
+  let quote: string | null = null
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i]
+    if (quote) {
+      cur += ch
+      if (ch === quote) quote = null
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      cur += ch
+      continue
+    }
+    if (ch === '+') {
+      out.push(cur)
+      cur = ''
+      continue
+    }
+    cur += ch
+  }
+  out.push(cur)
+  return out
+}
+
 /** 取 URL 的 host（解析失败时原样返回，供限速 key 使用） */
 export function hostOf(url: string): string {
   try {
@@ -95,6 +200,7 @@ export async function fetchWithRedirectGuard(
   timeoutMs: number,
   warnings: string[],
   proxy?: string | null,
+  insecureTLS?: boolean,
 ): Promise<RawResponse> {
   const deadline = Date.now() + timeoutMs
   let current = url
@@ -134,13 +240,15 @@ export async function fetchWithRedirectGuard(
 
     let res: Response
     try {
-      // Bun fetch 原生支持 proxy 选项（http/https/socks5/socks5h）；Node 运行时无此选项时自动忽略（仅直连）
+      // Bun fetch 原生支持 proxy 选项（http/https/socks5/socks5h）；Node 运行时无此选项时自动忽略（仅直连）。
+      // tls.rejectUnauthorized：自签/裸 IP 站点（规则 insecureTLS=true）跳过证书校验，仅传输层生效
       res = await fetch(current, {
         headers: hopHeaders,
         redirect: 'manual',
         signal: AbortSignal.timeout(remaining),
         ...(proxy ? { proxy } : {}),
-      } as RequestInit & { proxy?: string })
+        ...(insecureTLS ? { tls: { rejectUnauthorized: false } } : {}),
+      } as RequestInit & { proxy?: string; tls?: { rejectUnauthorized: boolean } })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       return {
@@ -164,7 +272,8 @@ export async function fetchWithRedirectGuard(
           redirect: 'follow',
           signal: AbortSignal.timeout(Math.max(500, deadline - Date.now())),
           ...(proxy ? { proxy } : {}),
-        } as RequestInit & { proxy?: string })
+          ...(insecureTLS ? { tls: { rejectUnauthorized: false } } : {}),
+        } as RequestInit & { proxy?: string; tls?: { rejectUnauthorized: boolean } })
         recordResponseCookies(target.host, follow, https)
         const finalUrl = follow.url || current
         const finalCheck = await assertHostPublic(new URL(finalUrl).hostname)
@@ -203,6 +312,37 @@ export async function fetchWithRedirectGuard(
     // Retry-After 尊重：429/503 时解析站点给出的退避指引，供策略链退避时优先采用
     const retryAfterMs = res.status === 429 || res.status === 503 ? parseRetryAfterMs(res.headers.get('retry-after')) : null
     const body = await readBody(res)
+
+    // JS token 重定向挑战：200 + 近空 JS 页（window.location.href 拼接跳转）——
+    // 还原目标 URL 后按重定向跳处理（共享跳数预算与 cookie 会话；跳回可能升级会话 cookie）。
+    // 仅在非 3xx 路径上检查（挑战页不会同时是重定向），且只信任字面量常量折叠结果。
+    if (body.bytes.byteLength > 0 && body.bytes.byteLength < 8192) {
+      const jsNext = resolveJsRedirect(new TextDecoder('utf-8', { fatal: false }).decode(body.bytes), current)
+      if (jsNext) {
+        res.body?.cancel().catch(() => {})
+        let next: URL
+        try {
+          next = new URL(jsNext)
+        } catch {
+          return { ok: false, status: res.status, bytes: new Uint8Array(0), contentType: '', note: 'bad-js-redirect' }
+        }
+        if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+          return { ok: false, status: res.status, bytes: new Uint8Array(0), contentType: '', note: 'bad-scheme', warning: `JS 重定向到非 http/https 协议已拒绝: ${next.protocol}` }
+        }
+        const jsCheck = await assertHostPublic(next.hostname)
+        if (!jsCheck.ok) {
+          return { ok: false, status: 0, bytes: new Uint8Array(0), contentType: '', note: 'ssrf-blocked', warning: `SSRF 防护: JS 重定向终点 ${jsCheck.reason}` }
+        }
+        hops++
+        if (hops > MAX_REDIRECT_HOPS) {
+          return { ok: false, status: res.status, bytes: new Uint8Array(0), contentType: '', note: 'too-many-redirects', warning: `重定向（含 JS token 跳转）超过 ${MAX_REDIRECT_HOPS} 跳，已停止` }
+        }
+        warnings.push('JS token 重定向挑战页：已解析 location 拼接目标并跟随（会话 cookie 持续回放）')
+        current = next.toString()
+        continue
+      }
+    }
+
     return { ok: res.ok, status: res.status, ...body, finalUrl: current, retryAfterMs }
   }
 }

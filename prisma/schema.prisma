@@ -85,8 +85,9 @@ model ScrapeRule {
   enabled      Boolean      @default(true)
   charset      String       @default("utf-8")
   proxy        String       @default("") // 站点级出口代理（空=直连；http(s)/socks5(h)://host:port，反爬 IP 信誉突破）
+  insecureTLS  Boolean      @default(false) // 跳过目标站 TLS 证书校验（自签/裸 IP 站点，如 https://38.34.172.127）
   listRule     String       @default("{}") // JSON: 列表页选择器
-  bookRule     String       @default("{}") // JSON: 书籍页选择器
+  bookRule     String       @default("{}") // JSON: 书籍页选择器（可含 chapterListApi=JSON 目录接口配置）
   chapterRule  String       @default("{}") // JSON: 正文页选择器
   notes        String       @default("")
   createdAt    DateTime     @default(now())

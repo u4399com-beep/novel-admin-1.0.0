@@ -277,8 +277,9 @@ export const browserStrategy: StrategyDef = {
           browser = await acquireSharedBrowser(pw)
           shared = true
         }
-        // 显式 context：支持 addCookies 注入引擎 cookie 会话（newPage 直开是隐式 context，无法注入）
-        context = await browser.newContext({ userAgent: CHROME_UA, locale: 'zh-CN', viewport: { width: 1366, height: 900 } })
+        // 显式 context：支持 addCookies 注入引擎 cookie 会话（newPage 直开是隐式 context，无法注入）；
+        // ignoreHTTPSErrors：自签/裸 IP 站点（规则 insecureTLS）跳过证书错误（context 级，不影响共享实例）
+        context = await browser.newContext({ userAgent: CHROME_UA, locale: 'zh-CN', viewport: { width: 1366, height: 900 }, ...(ctx?.insecureTLS ? { ignoreHTTPSErrors: true } : {}) })
         if (injectedCookies.length) {
           try {
             await context.addCookies(injectedCookies)

@@ -20,7 +20,9 @@ export function sanitizeRuleMap(raw: unknown): RuleMap {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
       if (typeof v === 'string' && v.trim()) {
-        out[k.slice(0, MAX_RULE_KEY_LEN)] = v.trim().slice(0, 300)
+        // chapterListApi 为 JSON 目录接口配置字符串（与引擎白名单同步：普通选择器 300、配置串 1200）
+        const cap = k === 'chapterListApi' ? 1200 : 300
+        out[k.slice(0, MAX_RULE_KEY_LEN)] = v.trim().slice(0, cap)
         if (Object.keys(out).length >= MAX_RULE_KEYS) break
       }
     }
@@ -46,6 +48,7 @@ export async function loadRule(ruleId: number | null): Promise<LoadedRule> {
     name: r.name,
     charset: r.charset ? r.charset.toLowerCase() : undefined,
     proxy: r.proxy?.trim() || undefined,
+    insecureTLS: r.insecureTLS === true ? true : undefined,
     listRule: safeParseRule(r.listRule),
     bookRule: safeParseRule(r.bookRule),
     chapterRule: safeParseRule(r.chapterRule),

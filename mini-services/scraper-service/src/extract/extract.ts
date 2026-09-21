@@ -16,6 +16,7 @@ import { cleanContainer } from './content'
 import type { CleanedContent } from './content'
 import { collapse, firstMatch, parseSel, pickHref, pickText, splitAlternatives, toAbs } from './selectors'
 import type { Scope } from './selectors'
+import { extractJsonToc, parseChapterListApi } from './json-toc'
 
 const MAX_LIST_ITEMS = 500
 /**
@@ -86,9 +87,9 @@ function cleanBookTitle(t: string): string {
   return s
 }
 
-/** 简介清洗：剥模板前缀「关于《书名》：/关于书名：」（书页 intro 常以书名回显开头）与首尾空白 */
+/** 简介清洗：剥模板前缀「关于《书名》：/关于书名：/内容简介：/简介：」（书页 intro 常以书名或栏目名回显开头）与首尾空白 */
 function cleanDescription(t: string): string {
-  return t.replace(/^关于[《〈]?.{1,40}?[》〉]?[:：]\s*/u, '').trim()
+  return t.replace(/^(?:关于[《〈]?.{1,40}?[》〉]?|内容简介|内容提要|作品简介|简介)[:：]\s*/u, '').trim()
 }
 
 /** 分类/状态字段清洗：剥「小说分类：/分类：/类型：/频道：」等标签前缀（老模板把标签与值放同一文本节点） */
@@ -417,12 +418,12 @@ function extractChapterRefs(
   return refs
 }
 
-export function extractBook(
+export async function extractBook(
   $: CheerioAPI,
   rule: BookRule,
   baseUrl: string,
   warnings: string[],
-): BookData {
+): Promise<BookData> {
   const root = $.root() as unknown as Scope
   removeExcluded(root, rule.excludeSelector, warnings)
 
@@ -448,6 +449,23 @@ export function extractBook(
   const cover = pickHref(root, coverSels, baseUrl)
 
   const chapters = extractChapterRefs($, rule, baseUrl, warnings)
+
+  // JSON 目录接口（bookRule.chapterListApi，JSON 字符串配置）：书页无完整 HTML 目录、
+  // 完整目录由同源 AJAX 端点提供的现代 CMS（实测 ixdzs8.com POST /novel/clist/）。
+  // 仅当解析出的条目多于书页 HTML 内嵌章节时才采用（避免接口异常时反而丢失已有目录）。
+  if (rule.chapterListApi && typeof rule.chapterListApi === 'string') {
+    const parsed = parseChapterListApi(rule.chapterListApi)
+    if ('error' in parsed) {
+      warnings.push(`chapterListApi 配置无效：${parsed.error}`)
+    } else {
+      const apiRefs = await extractJsonToc(root, parsed.cfg, baseUrl, warnings)
+      if (apiRefs.length > chapters.length) {
+        warnings.push(`chapterListApi：JSON 目录 ${apiRefs.length} 条优于书页内嵌 ${chapters.length} 条，已采用`)
+        chapters.length = 0
+        chapters.push(...apiRefs)
+      }
+    }
+  }
 
   // 目录页链接（可选）：书页仅含最新几章时指向完整目录页，供 worker 二次抓取
   const catalogUrl = rule.catalogLinkSelector

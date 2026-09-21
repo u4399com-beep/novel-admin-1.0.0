@@ -217,7 +217,7 @@ export async function fetchPage(url: string, opts: FetchPageOptions = {}): Promi
         // 硬闸余量 2.5s（Task 24-a 由 5s 收紧）：保证链尾最坏结束时刻 ≤ 预算+2.5s ≤ 57.5s，
         // 始终早于消费方 engine-client 的 60s 中断（旧值 5s 在预算 55s 时正好与 60s 相撞）
         res = await Promise.race([
-          strat.run(url, effTimeout, [], { referer: opts.referer ?? null, proxy: pickProxy() }),
+          strat.run(url, effTimeout, [], { referer: opts.referer ?? null, proxy: pickProxy(), insecureTLS: opts.insecureTLS === true }),
           new Promise<AttemptResult>((resolve) => {
             hardTimer = setTimeout(
               () =>

@@ -17,6 +17,7 @@ export async function GET() {
       enabled: r.enabled,
       charset: r.charset,
       proxy: r.proxy,
+      insecureTLS: r.insecureTLS,
       listRule: safeParseRule(r.listRule),
       bookRule: safeParseRule(r.bookRule),
       chapterRule: safeParseRule(r.chapterRule),
@@ -34,6 +35,7 @@ interface SaveBody {
   enabled?: boolean
   charset?: string
   proxy?: string
+  insecureTLS?: boolean
   listRule?: Record<string, string>
   bookRule?: Record<string, string>
   chapterRule?: Record<string, string>
@@ -72,6 +74,9 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
   if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
     return NextResponse.json({ error: 'enabled 必须是布尔值' }, { status: 400 })
   }
+  if (body.insecureTLS !== undefined && typeof body.insecureTLS !== 'boolean') {
+    return NextResponse.json({ error: 'insecureTLS 必须是布尔值' }, { status: 400 })
+  }
   if (body.charset !== undefined && body.charset !== null && typeof body.charset !== 'string') {
     return NextResponse.json({ error: 'charset 必须是字符串' }, { status: 400 })
   }
@@ -95,6 +100,7 @@ async function handleSave(body: SaveBody | null): Promise<NextResponse> {
       .toLowerCase()
       .slice(0, 32),
     proxy: proxy.value,
+    insecureTLS: body.insecureTLS === true,
     listRule: JSON.stringify(sanitizeRuleMap(body.listRule)),
     bookRule: JSON.stringify(sanitizeRuleMap(body.bookRule)),
     chapterRule: JSON.stringify(sanitizeRuleMap(body.chapterRule)),

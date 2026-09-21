@@ -59,7 +59,7 @@ const LIST_KEYS = ['itemSelector', 'titleSelector', 'linkSelector', 'authorSelec
 const BOOK_KEYS = [
   'titleSelector', 'authorSelector', 'descriptionSelector', 'coverSelector',
   'statusSelector', 'categorySelector', 'chapterLinkSelector', 'chapterTitleSelector',
-  'catalogLinkSelector', 'excludeSelector',
+  'catalogLinkSelector', 'excludeSelector', 'chapterListApi',
 ] as const
 const CHAPTER_KEYS = ['titleSelector', 'contentSelector', 'nextSelector', 'excludeSelector'] as const
 
@@ -68,7 +68,11 @@ function sanitizeRule<T extends object>(keys: readonly string[], raw: unknown): 
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     for (const k of keys) {
       const v = (raw as Record<string, unknown>)[k]
-      if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 300)
+      if (typeof v === 'string' && v.trim()) {
+        // chapterListApi 为 JSON 配置字符串（url/字段名/模板等十几字段），普通选择器 300 字符不够用
+        const cap = k === 'chapterListApi' ? 1200 : 300
+        out[k] = v.trim().slice(0, cap)
+      }
     }
   }
   return out as T
@@ -231,12 +235,15 @@ async function fetchAndPrepare(body: Record<string, unknown>): Promise<PageFetch
   const referer = parseReferer(body.referer)
   // 站点级出口代理（规则配置，向后兼容：不传/非法时为 null → 直连）
   const proxy = parseProxy(body.proxy)
+  // 自签/裸 IP 站点 TLS 旁路（规则配置，向后兼容：不传时 false，各策略维持证书校验）
+  const insecureTLS = body.insecureTLS === true
   const page = await fetchPage(t.url.toString(), {
     requestedStrategy: strategy,
     forcedCharset: charset,
     timeoutMs,
     referer,
     proxy,
+    insecureTLS,
   })
   return { page, target: t.url }
 }
@@ -284,7 +291,7 @@ export async function handleTest(body: Record<string, unknown>): Promise<Respons
   const data: Record<string, unknown> = {}
 
   if (Object.keys(listRule).length) data.list = extractList($, listRule, baseUrl, warnings)
-  if (Object.keys(bookRule).length) data.book = extractBook($, bookRule, baseUrl, warnings)
+  if (Object.keys(bookRule).length) data.book = await extractBook($, bookRule, baseUrl, warnings)
   if (Object.keys(chapterRule).length) data.chapter = extractChapter($, chapterRule, baseUrl, warnings)
   if (!hasRule) {
     data.page = {

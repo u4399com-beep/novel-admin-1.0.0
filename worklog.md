@@ -413,3 +413,34 @@ Work Log:
 Stage Summary:
 - 代码与数据双恢复闭环：代码经 GitHub、数据经 /proc fd 抢救；线上填充未中断
 - 防再损失：本轮末将做 ghost→path 最终再同步 + /tmp 快照；后续会话建议开机先核对 db 是否为回滚版本
+
+---
+Task ID: 17
+Agent: main (Z.ai Code)
+Task: 新增 4 站采集规则（5165.org / 23uswx.la / 38.34.172.127 / ixdzs8.com，以首页最近更新模块为基础）+ 反反爬能力三项增强
+
+Work Log:
+- 环境核实：沙箱回滚后 DB 为早期快照（4 条模板规则/0 本书），dev server 与引擎存活；工作区为 Task 16-b 恢复态（git b77adb0）
+- 四站结构探测（curl+浏览器，请求预算克制）：
+  · 5165.org（大悟读书网）：WordPress 结构，UTF-8 直连；首页=置顶推荐+热门小说+13 分类板块（li>a+span.text-muted），书页 #category-description-* 三件套+全量目录 a[rel=contents]（151 章实测），章节正文 .entry-content；首页为静态 front page（/page/2/ 404）无翻页
+  · 23uswx.la（顶点小说）：杰奇结构 UTF-8 直连（响应强制 gzip）；#newscontent .l 最新更新小说五段式列表；书页 og:novel:* meta+#intro+#fmimg+#list dl dd 全目录（703 章实测）；章节页 h1+#content
+  · 38.34.172.127（夜伴书屋）：裸 IP 自签证书（https 忽略证书后可达，http:80 为宝塔空主机头）；首页「最新入库」模块可采（.col-md-12.item）；/book/* 与 /list/* 源站一律 403（curl/真实浏览器/bun fetch 复测一致），规范域名 www.ybswo.com 全站在 Cloudflare 挑战后（引擎 browser 策略 2 次探测均未通过）；sitemap 证实 URL 形态 /book/{id}/{chid}.html 与帝国 CMS 结构
+  · ixdzs8.com（爱下电子书）：自建现代 CMS 直连；首页最近更新模块 panel>ul.u-line；专页 /new/ 双形态列表（ul.u-list li.burl，?page={k} 翻页）；书页 og meta+.pintro+隐藏全目录（POST /novel/clist/ JSON，bid 参数，/read/{bid}/p{ordernum}.html URL 规律，985 章实测）；章节页有轻量 JS token 挑战（let token=字面量 + location.href 拼接 ?challenge= 回跳升级 PHPSESSID 会话）
+- 引擎反反爬能力三项增强（mini-services/scraper-service）：
+  · 【insecureTLS 全链路】自签/裸 IP 站点 TLS 旁路：strategies/types.ts（FetchPageOptions+StrategyRunCtx）→ http.ts（Bun fetch tls.rejectUnauthorized 选项）→ got-scraping（https.rejectUnauthorized）→ curl-impersonate（--insecure）→ browser（context ignoreHTTPSErrors）→ index.ts（ctx 透传）→ handlers.ts（body.insecureTLS 解析）；主站侧 LoadedRule.insecureTLS + engine-client 四调用点 + ScrapeRule.insecureTLS 列（schema push）+ 规则 CRUD API + RuleDialog Switch 开关
+  · 【JS token 重定向求解器】http.ts fetchWithRedirectGuard 内：200+近空页（<8KB）时解析 window.location.href 拼接表达式（字面量变量赋值常量折叠，支持 encodeURIComponent/location.pathname 包装，不执行 JS），按重定向跳处理（共享跳数预算+cookie 会话回放+SSRF 逐跳校验）；ixdzs 章节页实测一次通过
+  · 【chapterListApi JSON 目录接口】bookRule.chapterListApi（JSON 字符串配置，RuleMap 值恒为字符串）：extractBook 异步化后调 extract/json-toc.ts，同源强制校验（协议+主机一致才发起，SSRF 防护）、POST 表单 {bookId} 占位、JSON 数组路径映射（listPath/titleField/orderField/urlTemplate/skipField 卷标跳过）、条目上限 10000；仅当接口条目多于书页内嵌时采用；ixdzs 985 章实测命中
+- 规则入库（scripts/add-new-rules.ts，按 name 幂等 upsert）：id5 大悟读书网(5165)/id6 顶点小说(23uswx)/id7 夜伴书屋(38.34.172.127)(enabled=false 草稿，notes 记录 403 结论)/id8 爱下电子书(ixdzs8)（chapterListApi+双形态列表+分页模板 https://ixdzs8.com/new/?page={k}）
+- 引擎逐规则端到端验证（scripts/engine-rule-test.mjs 三段实测）：
+  · 5165：list 262 项 ✓ / book 元数据+151 章 ✓ / chapter 2629 字 ✓
+  · 23uswx：list 30 项（含分类/作者）✓ / book 703 章 ✓ / chapter 8269 字（「最新网址」广告行被 URL_LINE 短行规则清除）✓
+  · ixdzs8：list 15 项 ✓ / book 985 章全目录（chapterListApi）✓ / chapter 2106 字（JS 挑战自动求解）✓ / /new/?page=2 翻页 20 项 ✓
+  · 夜伴书屋：list 13 项（insecureTLS 生效）✓；书页/章节段因源站 403 无法验证（规则停用并如实记录）
+- 过程修复：①JS_REDIRECT_ASSIGN_RE 缺 /g 标志致 matchAll 抛错（fetch-browser 策略降级，备选策略兜底未影响结果）——补 /g 后 fetch-browser 恢复 ②cleanDescription 扩充「内容简介/内容提要/作品简介/简介」前缀剥离 ③引擎 bun --hot 双实例 EADDRINUSE 竞争卡死——清理后单实例重启 ④dev server 旧 Prisma Client（db push 前启动）致 API 丢 insecureTLS 字段——孤儿化重启加载新客户端
+- 质量闸门：引擎 tsc 0 错误；根 tsc 0 错误；lint 0 错误；dev.log 无错误；agent-browser 实测首页渲染/管理后台采集中心 8 规则展示/夜伴书屋编辑框 TLS 开关 checked=true/ixdzs 编辑框 chapterListApi 配置完整回显
+
+Stage Summary:
+- 交付 4 条新采集规则（3 条可用+1 条草稿停用并记录结论），全部经引擎三段实测验证
+- 引擎新增三项通用反反爬能力：insecureTLS TLS 旁路、JS token 重定向求解、chapterListApi JSON 目录接口；均按「可选+向后兼容+SSRF 不降级」设计，既有规则行为不变
+- admin 规则编辑器同步支持 insecureTLS 开关与 chapterListApi 字段，避免 UI 保存静默丢配置
+- 遗留：夜伴书屋待站点恢复深页访问后启用规则即可；ixdzs 章节挑战若升级为计算型（非字面量拼接）需评估 browser 策略路径

@@ -10,6 +10,8 @@ export interface LoadedRule {
   charset?: string
   /** 站点级出口代理（空/未配置 = 直连）；引擎各策略按能力走代理出口 */
   proxy?: string
+  /** 跳过目标站 TLS 证书校验（自签/裸 IP 站点，如 https://38.34.172.127）；引擎各策略按能力旁路 */
+  insecureTLS?: boolean
   listRule: RuleMap
   bookRule: RuleMap
   chapterRule: RuleMap

@@ -31,6 +31,12 @@ export interface FetchPageOptions {
    * 代理失败按普通失败继续后续策略。未配置时维持直连行为不变。
    */
   proxy?: string | null
+  /**
+   * 跳过目标站 TLS 证书校验（规则配置 insecureTLS）。
+   * 适用：以裸 IP 提供服务的自签证书站点（如 https://38.34.172.127）——证书 CN 与 IP 不匹配，
+   * 默认校验下所有策略必然握手失败。仅影响传输层证书校验，其余 SSRF/限速/挑战检测不变。
+   */
+  insecureTLS?: boolean
 }
 
 /** 策略 run 的可选上下文（新增字段必须可选+默认值，保证既有策略实现兼容） */
@@ -39,6 +45,8 @@ export interface StrategyRunCtx {
   referer?: string | null
   /** 站点级出口代理（规则配置）：仅对支持代理的策略生效，见 FetchPageOptions.proxy */
   proxy?: string | null
+  /** 跳过 TLS 证书校验（自签/裸 IP 站点）：仅对支持的策略生效，见 FetchPageOptions.insecureTLS */
+  insecureTLS?: boolean
 }
 
 export interface FetchPageResult {

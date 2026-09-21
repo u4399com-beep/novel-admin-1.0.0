@@ -24,6 +24,12 @@ export interface BookRule {
   catalogLinkSelector?: string
   /** 排除选择器：提取前先从 DOM 移除命中节点（如全站站标 h1.logo、搜索框），多备用逗号分隔 */
   excludeSelector?: string
+  /**
+   * JSON 目录接口配置（JSON 字符串）：书页无完整 HTML 目录、完整目录由同源 AJAX 端点提供的
+   * 现代 CMS（实测 ixdzs8.com POST /novel/clist/）。命中时 extractBook 直接以接口结果为全量目录。
+   * 配置字段与安全约束见 extract/json-toc.ts 模块头注。
+   */
+  chapterListApi?: string
 }
 
 export interface ChapterRule {

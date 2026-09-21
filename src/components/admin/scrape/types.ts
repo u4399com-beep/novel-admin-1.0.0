@@ -46,6 +46,8 @@ export interface RuleFormState {
   enabled: boolean
   charset: string
   proxy: string
+  /** 跳过目标站 TLS 证书校验（自签/裸 IP 站点） */
+  insecureTLS: boolean
   notes: string
   listRule: ListRule
   bookRule: BookRule

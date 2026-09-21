@@ -33,6 +33,7 @@ const EMPTY_RULE_FORM: RuleFormState = {
   enabled: true,
   charset: 'utf-8',
   proxy: '',
+  insecureTLS: false,
   notes: '',
   listRule: {},
   bookRule: {},
@@ -66,6 +67,12 @@ const BOOK_FIELDS: FieldDef[] = [
   { key: 'catalogLinkSelector', label: '目录页链接 catalogLinkSelector', ph: '如 a.catalog-more（书页仅最新几章时用）' },
   { key: 'chapterTitleSelector', label: '章节标题 chapterTitleSelector', ph: '链接元素内标题选择器（可选）' },
   { key: 'excludeSelector', label: '排除选择器 excludeSelector', ph: '提取前移除的节点，如 h1.logo, .search' },
+  // JSON 目录接口（同源 AJAX 端点提供全量目录的现代 CMS，实测 ixdzs8.com POST /novel/clist/）
+  {
+    key: 'chapterListApi',
+    label: 'JSON 目录接口 chapterListApi（可选）',
+    ph: '{"url":"/novel/clist/","bookIdSelector":"#bid@value","listPath":"data","titleField":"title","orderField":"ordernum","urlTemplate":"/read/{bookId}/p{order}.html"}',
+  },
 ]
 
 const CHAPTER_FIELDS: FieldDef[] = [
@@ -128,6 +135,7 @@ export function RuleDialog({
           enabled: initial.enabled,
           charset: initial.charset,
           proxy: initial.proxy ?? '',
+          insecureTLS: initial.insecureTLS === true,
           notes: initial.notes,
           listRule: initial.listRule ?? {},
           bookRule: initial.bookRule ?? {},
@@ -176,6 +184,7 @@ export function RuleDialog({
           enabled: form.enabled,
           charset: form.charset,
           proxy,
+          insecureTLS: form.insecureTLS,
           notes: form.notes,
           listRule: cleanRule(form.listRule),
           bookRule: cleanRule(form.bookRule),
@@ -255,6 +264,19 @@ export function RuleDialog({
                 启用该规则
               </Label>
             </div>
+            <div className="flex items-center gap-2 pt-5">
+              <Switch
+                id="rule-insecure-tls"
+                checked={form.insecureTLS}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, insecureTLS: v }))}
+              />
+              <Label htmlFor="rule-insecure-tls" className="text-xs">
+                跳过 TLS 证书校验
+              </Label>
+            </div>
+            <p className="text-[10px] leading-tight text-neutral-400 sm:col-span-2">
+              跳过 TLS 证书校验仅用于自签证书/裸 IP 站点（如 https://38.34.172.127）；其余 SSRF/限速/挑战检测不变，非必要勿开。
+            </p>
           </div>
 
           <RuleFieldGroup

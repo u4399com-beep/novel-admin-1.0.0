@@ -176,6 +176,8 @@ export const curlImpersonateStrategy: StrategyDef = {
         ]
         // 站点级出口代理（规则配置）：socks5h 由 curl 远端解析 DNS，覆盖被污染/本地不可达场景
         if (ctx?.proxy) args.push('--proxy', ctx.proxy)
+        // 自签/裸 IP 站点（规则 insecureTLS）：跳过证书校验（仅传输层，逐跳 SSRF 校验不变）
+        if (ctx?.insecureTLS) args.push('--insecure')
         for (const [k, v] of Object.entries(chromeDesktopProfile.headers(url, true, explicitReferer))) args.push('--header', `${k}: ${v}`)
         // Cookie 会话回放（逐跳按目标 host）
         const https = target.protocol === 'https:'

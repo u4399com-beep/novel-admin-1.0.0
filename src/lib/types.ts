@@ -173,6 +173,11 @@ export interface BookRule {
   catalogLinkSelector?: string
   /** 排除选择器：提取前从 DOM 移除命中节点（如全站站标 h1.logo），多备用逗号分隔；'none' 用于 chapterLinkSelector 时表示跳过章节列表 */
   excludeSelector?: string
+  /**
+   * JSON 目录接口配置（JSON 字符串）：书页无完整 HTML 目录、完整目录由同源 AJAX 端点提供的
+   * 现代 CMS（实测 ixdzs8.com POST /novel/clist/）。字段说明见引擎 extract/json-toc.ts。
+   */
+  chapterListApi?: string
 }
 
 export interface ChapterRule {
@@ -191,6 +196,8 @@ export interface ScrapeRuleDto {
   charset: string
   /** 站点级出口代理（空 = 直连） */
   proxy: string
+  /** 跳过目标站 TLS 证书校验（自签/裸 IP 站点） */
+  insecureTLS?: boolean
   listRule: ListRule
   bookRule: BookRule
   chapterRule: ChapterRule
