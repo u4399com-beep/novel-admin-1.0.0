@@ -1,0 +1,11 @@
+{
+  "name": "scraper-go",
+  "version": "2.0.0",
+  "private": true,
+  "description": "novel-admin 采集引擎（Golang 版，scraper-service 的等价移植，端口 3030，API 契约与 TS 版完全一致）",
+  "scripts": {
+    "dev": "bash run.sh",
+    "build": "bash -c 'export PATH=$PATH:/home/z/go-sdk/go/bin GOPATH=/home/z/go; go build -o scraper-go.bin .'",
+    "start": "./scraper-go.bin"
+  }
+}

@@ -444,3 +444,42 @@ Stage Summary:
 - 引擎新增三项通用反反爬能力：insecureTLS TLS 旁路、JS token 重定向求解、chapterListApi JSON 目录接口；均按「可选+向后兼容+SSRF 不降级」设计，既有规则行为不变
 - admin 规则编辑器同步支持 insecureTLS 开关与 chapterListApi 字段，避免 UI 保存静默丢配置
 - 遗留：夜伴书屋待站点恢复深页访问后启用规则即可；ixdzs 章节挑战若升级为计算型（非字面量拼接）需评估 browser 策略路径
+
+---
+Task ID: 13
+Agent: main (Z.ai Code)
+Task: 尝试把编程语言改成 Golang——将采集引擎 mini-service 从 TypeScript (Bun) 完整移植为 Go，API 契约不变，主站零改动切换
+
+Work Log:
+- 安装 Go 1.22.5（sudo 需密码 → 装至 /home/z/go-sdk/go；GOPATH=/home/z/go；go mod proxy 网络可达，goquery/cascadia/x/net/x/text 均可拉取）
+- 通读 scraper-service 全部 26 文件（~4700 行 TS），固化 API 契约：/api/strategies|health|test|chapter 的字段名/错误结构 {error,detail}/CORS/attempts 明细/attempts 摊平语义/502 结构化失败；engine-client.ts 只依赖该契约
+- 新建 mini-services/scraper-go（独立 Go module，package main 多文件 ~4600 行，逐文件头注标明与 TS 版的对应关系与移植语义）：
+  - types/util/helpers/jstext：DTO（字段名与 TS 完全一致）+ JSON 响应（SetEscapeHTML(false) 对齐 JSON.stringify）+ 1MB 请求体上限 + JS 空白语义工具（\u00a0/\u3000/\ufeff 全集，Go \s 与 JS \s 集合不同的差异点全部对齐）
+  - ssrf.go：IPv4 全文本形态（短格式/八进制/十六进制/纯整数）/IPv6（::1、ULA、fe80、IPv4-mapped、::/96、NAT64 递归）/主机名文本层 + DNS 3s 超时缓存校验，fail-closed/fail-open 语义逐行对齐
+  - ratelimit.go：域名限速 1200ms±300ms（合规下限 1000ms）+ robots.txt warn-only（TTL 10min、1MB 上限、手动重定向逐跳 SSRF）+ Retry-After（30s 封顶）
+  - charsetx.go：BOM>头>meta>UTF-8 嗅探>GB18030 兜底>latin1 透传 七级解码 + U+FFFD 占比守卫；iso-8859-1 特判绕过 WHATWG→windows-1252 映射保持纯 latin1 语义
+  - cookies/affinity/hosthealth：LRU jar（128 host×50 cookie、Secure 回放）/策略亲和（256）/限流退避+连败熔断（3 strikes、60s→10min），全部加互斥锁（TS 单线程假设 → Go 显式并发安全）
+  - challenge.go：四层挑战检测（强特征 32KB 扫描/近空 JS 壳/3KB 关键词三解码/0 秒 meta 跳板）
+  - httpguard.go：手动逐跳重定向（CheckRedirect: ErrUseLastResponse）+ 每跳 SSRF + cookie 回放/捕获 + 8MB 流式限量读 + JS token 重定向常量折叠解析 + Transport 按 (proxy|insecureTLS|h2) 组合缓存；socks5(h) 原生支持、socks4 不支持（Go 限制，结构化告警降级直连）
+  - strategies/chain：7 策略链顺序与 TS 一致（fetch-browser/ua-rotate/mobile/spider→curl-impersonate→got-scraping→browser）；硬时间闸 runWithHardGate（剩余预算+2.5s）；整体 55s 预算/指数退避/亲和提位/Retry-After 优先；panic recover 兜底
+  - extract/selectors/content/jsontoc（goquery）：备选语义/`sel@attr`/同 URL 保留后位去重/启发式容器/杰奇 meta 兜底/JSON 目录（同源校验、chapterListApi）/容器级清洗；非法选择器经 cascadia.Compile 校验替代 cheerio try/catch
+  - browser.go：统一走 Python Playwright 桥接（render.py 子进程，复制至 scraper-go/scripts/），cookie 会话经环境变量注入/回存
+- 移植差异（诚实标注于文件头 + /api/strategies description）：①Go net/http 头按字典序发送，头序随机抖动不可实现 ②got-scraping 以 Go 原生 HTTP/2 + 随机真实头等价实现 ③browser 无 Node 共享 Chromium 池（子进程天然无泄漏）④socks4 不支持
+- 修复移植期 bug：goquery .Slice 超长 panic（cheerio 自动截断语义 → sliceSel 封装）；\uXXXX 转义 Go regexp 不识别 → \x{XXXX}；charset.Lookup 双返回值；SubAttempt 字段大小写；latin1View 命名
+- 修复 TS 版潜伏 bug（连带发现）：runner 互监护 RUNNER_SPAWN 把 pkill 与 spawn 放同一 bash -c，spawn 段明文含 runner 路径 → pkill -f 必然自杀（实证 exit 143，setsid 永不执行）→ Go 版拆两步 + [r] 字符类防自匹配，修复后 watchdog 实证成功拉起 runner（pid 11477 轮询任务）
+- 切换：杀 TS 引擎（bun --hot index.ts, pid 4705）→ Go 二进制接管 3030；主站 engine-client/代理路由零改动
+- 验证（TS vs Go 双引擎对比 + 全链路）：
+  - /api/strategies 7 策略可用性完全一致
+  - books.toscrape 列表提取：20/20 条目一致（标题/URL 逐条同）
+  - ddyueshu GBK 书页：标题/作者/封面/4232 章数/首章完全一致
+  - ddyueshu GBK 章节：wordCount=3554、87 段、正文逐字一致、nextUrl 一致（GBK 解码完美）
+  - 主站 → /api/scrape 代理 → Go 引擎：strategies/chapter 均通
+  - UI E2E（agent-browser）：前台主题渲染正常 → #/admin 采集中心显示引擎状态与 8 规则 → 新建单本采集任务（顶点系模板 × 万古神帝）→ runner 领取 → Go 引擎抓取 → Novel id=1 入库 4232 章 → Phase 2 并发采正文 50+ 章 wordCount>0（id 从 1 计数符合重采预期）
+  - 内存实证：TS 引擎空闲 RSS 176MB → Go 引擎空闲 14MB、持续采集负载 19MB（~1/10）
+
+Stage Summary:
+- 采集引擎已完成 Golang 移植并接管 3030 端口，主站零改动；mini-services/scraper-service（TS）保留作为回滚备份（不再运行）
+- API 契约/策略链/反反爬/合规红线与 TS 版行为等价；发现并修复 TS 版 runner 互监护自杀 bug
+- 内存占用降至 ~1/10（176MB→19MB），直接根治"堆内存堆到服务器崩溃"的引擎侧风险；goroutine 并发为后续 Phase 2 提速留出空间
+- 已验证：双引擎输出对比一致 + UI 全链路真实采集入库成功；task#1 仍在后台继续采集中
+- 后续可选（未实施）：采集编排层 worker/runner 的 Go 化（需 raw SQL 替代 Prisma，工程量大，当前引擎已是内存瓶颈的唯一关键点，建议观望）
