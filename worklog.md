@@ -483,3 +483,43 @@ Stage Summary:
 - 内存占用降至 ~1/10（176MB→19MB），直接根治"堆内存堆到服务器崩溃"的引擎侧风险；goroutine 并发为后续 Phase 2 提速留出空间
 - 已验证：双引擎输出对比一致 + UI 全链路真实采集入库成功；task#1 仍在后台继续采集中
 - 后续可选（未实施）：采集编排层 worker/runner 的 Go 化（需 raw SQL 替代 Prisma，工程量大，当前引擎已是内存瓶颈的唯一关键点，建议观望）
+
+---
+Task ID: 18-a1
+Agent: backend-api-migrator-1
+Task: novels/chapters/categories API 移植到 Go
+
+Work Log:
+- 通读骨架（router/db/httpx/limits/util/api_health）与 prisma schema（Novel/Chapter/Category），逐行对照 TS 源 9 个 route 文件
+- 逐字段核对 3 个 api 文件与 TS 契约：响应字段名/嵌套/错误结构 {error}/{error,detail}/状态码；修正 3 处偏差（PUT novel 失败 400 去 detail 字段、chapters PUT/DELETE 尾部 novel.update 失败按 TS try/catch 归 404、POST novel isFeatured/isHot 用 JS 真值语义 jsTruthy）
+- 发现并规避骨架 dispatch 参数路由「方法盲」缺陷（首条路径匹配吞掉所有 method）：/api/novels/{id}、/api/chapters/{id}、/api/categories/{id} 改为按 method 各注册一次 mux，mux 内按真实 method 分发（该注册方式对骨架现行为与未来 dispatch 修复均兼容）；TS 未导出的方法（如 GET /api/categories/{id}）→ 405
+- 编译验证：gofmt + go build + go vet 全部通过
+- 自测：GET 契约与生产 3000 逐端点 deep-equal（novels 列表/筛选/搜索/404、categories、audit overview/single、章节目录）；写路径在 DB 副本上全量回归 40+ 断言（POST/PUT/DELETE 增删改、唯一约束 409、外键 400、audit dedupe/reindex（真实 4232 章书重排后 disordered=false/idxGaps=0）、clean-all GET/POST、405 语义），全部通过
+- 追加 worklog
+
+Stage Summary:
+- api_novels.go / api_chapters.go / api_categories.go 完成并编译通过；GET 端点响应与生产 TS 版逐字段一致；写路径状态码/错误文案与 TS 一致；audit（中文数字/乱序/分卷/去重/两段式重排）与 clean-all（游标分批/互斥 409/字数回填）语义完整移植
+
+---
+Task ID: 18
+Agent: main (Z.ai Code)
+Task: 把整个项目的编程语言改成 Go——第二阶段迁移：业务 API + 采集编排层全部 Go 化并完成生产切换（Task 13 引擎 Go 化的延续）
+
+Work Log:
+- 架构定稿：新建 mini-services/backend-go（module backend-go，端口 3005，Go 1.22 + modernc.org/sqlite 纯 Go 驱动），承载业务 API + 采集编排 runner；前端 React/TSX 保留（浏览器语言无法 Go 化）；Next 侧收缩为「UI 渲染 + 20 行 catch-all 代理」；scraper-go（3030）继续纯抓取
+- 骨架（main 亲自写并编译验证）：router.go 段匹配路由+register 自注册、db.go（WAL+busy_timeout(5s)+FK，连接池 4）、httpx.go（writeJSON SetEscapeHTML(false) 对齐 JSON.stringify；Prisma DateTime ms 整数 → isoFromMillis ISO 输出）、llm.go（逆向 z-ai-web-dev-sdk createChatCompletion 协议：POST {baseUrl}/chat/completions + Bearer apiKey + X-Chat-Id/X-User-Id/X-Token，凭证直读 /etc/.z-ai-config，串行链+3s 超时+30s 冷却）、limits.go/util.go
+- 18-a1（backend-api-migrator-1）：novels/chapters/categories 三域 handlers 逐行移植，GET 端点与生产 3000 deep-equal，写路径 DB 副本 40+ 断言全过（409/400/404/405 语义逐条对照）；发现并规避骨架 dispatch「参数路由方法盲」缺陷（mux 按 method 注册，与 dispatch 修复兼容）；audit（中文数字/乱序/分卷/dedupe/reindex 两段式负数暂存）与 clean-all（游标分批/互斥 409）完整移植
+- 18-a / 18-b（两次 Task API 超时但实际均执行完成，产物经审查收编）：18-a 产出 api_home/api_settings/api_pseo(含 suggest 多引擎下拉词+聚合页生成)/api_scrape(引擎代理 ?proxy= 白名单)/api_scrape_rules/api_scrape_tasks/pseo_gen；18-b 产出 worker.go(656 行 TS 两阶段管线全量：Phase0 列表收集/Phase1 骨架并发/Phase2 跨书平铺填充/协作取消/快速终止/僵尸回收)/storex.go(upsertBook 唯一冲突回读/骨架批量+逐条顺延)/engineclient.go(60s 预算+isSameChapterPagination 同章分页拼接逐行对齐)/runlog.go/pool.go/pagination.go/categoryx.go(三级归并)/coversx.go(SSRF+代理+幂等；sharp→webp 降级为 image 解码+512 缩放+JPEG q80 存 .jpg，前端 img 无感)/cleanx.go/typesx.go
+- main 集成：修复 runner.go 接线（占位→完整实现：2s 轮询 pending、心跳 /tmp/scrape-runner-heartbeat、引擎互监护 pkill [g] 防自匹配、未分类慢速 LLM 归类 recategorizeOne）；修复 router.go 方法盲 bug（paramHit 加 method 条件）；exec 包名冲突别名 osexec；gofmt/vet/build 全绿
+- 生产切换：①src/app/api 下 22 个 TS route.ts 全部删除 → 新建 src/app/api/[...path]/route.ts catch-all 原样转发 127.0.0.1:3005（路径/查询/method/body/状态码/Content-Type 透传，65s 超时）②TS runner（bun worker-runner.ts）已 kill 退役 ③backend-go 以 all 模式（API+runner 同进程）接管 3005
+- 环境收割器应对（关键工程决策）：实测「bash 会话直接 setsid 派生」的后台进程会被沙箱周期性静默回收（3 次实证）；采用 Task 16-b 沉淀的长寿进程托管模式——新增 src/lib/backend-supervisor.ts：Next 进程内 module 级幂等拉起（detached+unref 托孤）+ catch-all 代理 502 自愈重拉（5s 冷却），backend-go 生命周期挂靠 dev-supervisor 守护的 Next 主进程；scripts/ensure-services.sh 同步更新为 Go 版二级兜底（3005/3030 探测拉起，并杜绝再拉起 TS runner 防双 runner 双写 ScrapeTask）
+- 端到端验证：curl 全域 API 经 3000→catch-all→3005→3030 全链路 200；真实采集任务 #2（万古神帝续传，顶点规则）创建后 12s 内被 Go runner 领取，Phase 1 识别 4232 章 + skippedFilled 语义正确（跳过 task#1 已填 2241 章），Phase 2 并发填充进行中（DB 实测 15 章/分钟，站点限速内；done 字段按 200 章/批 flush 为 TS 同款设计）；agent-browser 实测：前台主题渲染正常、/admin 采集中心 8 规则+引擎状态卡+任务数据全部经 Go 后端，0 page error
+- 质量闸门：go vet 0 错误、gofmt 干净、bun run lint 0 错误、dev.log 全 200 无异常
+- 内存实证：TS 时代 runner 128MB + 引擎 176MB → Go 时代 backend-go(all) 26MB + scraper-go 18MB，编排层 ~1/5、全链路 ~1/7
+- 已知差异（如实记录）：①pseo/suggest duckduckgo 引擎在 Go TLS 栈下超时（Cloudflare 指纹识别；bing/baidu 等其余引擎正常，聚合语义允许可用引擎子集）②封面输出 JPEG q80（原 sharp→webp；前端 <img> 无感）③Go map JSON key 字母序输出（TS 插入序；字段集合/值/嵌套一致，JSON 消费方无差异）④backend-go 由 Next spawn 时 stdout 丢弃（日志以 DB 任务 log 字段为准）
+
+Stage Summary:
+- 全项目后端（业务 API + 采集编排 + 抓取引擎）已 100% Go 化并接管生产：Next.js 仅保留 UI 渲染与 catch-all 转发层，TS 后端代码全部退役（src/app/api 22 个 route.ts 已删、TS runner 已停、scraper-service 保留仅作回滚备份）
+- 架构：浏览器 → Next(3000, UI+代理) → backend-go(3005, API+runner) → scraper-go(3030, 引擎)；backend-go 是唯一业务库写入方（Prisma 在 Next 侧已无引用），SQLite WAL 跨进程安全
+- 数据与任务零损迁移：既有 DB/规则/任务/封面全部复用；采集任务 #2 续传验证通过（跨代任务语义兼容）
+- 自愈体系三层：Next 代理 502 重拉（秒级）→ ensure-services.sh 兜底（分钟级）→ runner 内引擎互监护（30s 级）

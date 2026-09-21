@@ -1,0 +1,11 @@
+{
+  "name": "backend-go",
+  "version": "1.0.0",
+  "private": true,
+  "description": "novel-admin 业务后端（Golang 版）：业务 API + 采集编排 runner，端口 3005，API 契约与 Next src/app/api/* 完全一致",
+  "scripts": {
+    "dev": "bash run.sh",
+    "build": "bash -c 'export PATH=$PATH:/home/z/go-sdk/go/bin GOPATH=/home/z/go; go build -o backend-go.bin .'",
+    "start": "./backend-go.bin"
+  }
+}
