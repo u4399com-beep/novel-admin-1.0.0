@@ -1,10 +1,12 @@
 'use client'
 
 /**
- * 采集任务列表区块：状态徽章 / 双口径进度 / 日志查看 / 暂停 / 恢复 / 取消 / 删除 / 分页。
+ * 采集任务列表区块：状态徽章 / 双口径进度 / 日志查看 / 编辑 / 暂停 / 恢复 / 取消 / 重启 / 删除 / 分页。
  * 自 ScrapeCenter.tsx 原样拆分（执行中任务列表 3s 轮询、终态自停等行为不变）。
- * 用户指令「任务可编辑，可随时暂停/重启」：执行中/待执行可暂停（协作式安全停手、进度
- * 保留），已暂停可恢复（重新入队续传）或直接编辑参数后再恢复。
+ * 用户指令「失败/部分成功等需要可以重新编辑、开始、暂停、停止、重启」：
+ * - pending/running 可暂停（协作式安全停手、进度保留），paused 可恢复（重新入队续传）或取消；
+ * - 除 running 外全部可编辑参数（终态改完可重启）；
+ * - 终态（failed/partial/canceled/success）可重启：进度清零重新入队 pending 重采。
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -32,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Pencil, Pause, Play, ScrollText, Square, Trash2 } from 'lucide-react'
+import { Pencil, Pause, Play, RotateCcw, ScrollText, Square, Trash2 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { ScrapeRuleDto } from '@/lib/types'
 import { timeAgo } from '@/lib/format'
@@ -41,6 +43,13 @@ import { api, truncate } from './shared'
 import type { TaskDetail, TaskRow } from './types'
 
 const PAGE_SIZE = 20
+
+/** 可编辑状态：除执行中（running）外全部可改参数；终态改完可点「重启」按新参数重采 */
+const EDITABLE_STATUSES = new Set(['pending', 'paused', 'failed', 'partial', 'canceled', 'success'])
+/** 可取消状态：待执行 / 执行中 / 已暂停（后端 action=cancel 同口径） */
+const CANCELABLE_STATUSES = new Set(['pending', 'running', 'paused'])
+/** 可重启状态：终态（失败/部分成功/已取消/成功）→ 进度清零重新入队 pending */
+const RESTARTABLE_STATUSES = new Set(['failed', 'partial', 'canceled', 'success'])
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   pending: { label: '待执行', cls: 'bg-neutral-200 text-neutral-600' },
@@ -117,9 +126,10 @@ function LogDialog({ task, onClose }: { task: TaskRow; onClose: () => void }) {
 }
 
 /**
- * 编辑待执行/已暂停任务对话框（用户指令「采集任务要可编辑」）：
- * pending/paused 任务开放入口；running/终态由 API 409 拒绝，前端也不展示按钮。
- * paused 编辑的意义：暂停 → 改参数（换规则/换目标/扩页数）→ 恢复，按新参数续采。
+ * 编辑任务参数对话框（用户指令「采集任务要可编辑」）：
+ * pending/paused/failed/partial/canceled/success 均开放入口（running 由 API 409 拒绝，前端不展示按钮）。
+ * paused 编辑的意义：暂停 → 改参数（换规则/换目标/扩页数）→ 恢复，按新参数续采；
+ * 终态编辑的意义：失败/部分成功/已取消/成功改完参数后点「重启」，进度清零按新参数重采。
  * 字段与新建任务同口径：mode/targetUrl/ruleId/pages，局部提交（只传修改过的字段）。
  */
 function EditTaskDialog({
@@ -172,7 +182,9 @@ function EditTaskDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-sm">编辑任务 #{task.id}</DialogTitle>
-          <DialogDescription>仅待执行 / 已暂停状态的任务可修改参数（暂停中改完再恢复即按新参数续采）</DialogDescription>
+          <DialogDescription>
+            待执行/已暂停/失败/部分成功/已取消/成功状态均可修改参数（执行中除外）；终态任务改完参数后点「重启」即清零进度按新参数重新采集
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <RadioGroup
@@ -308,6 +320,19 @@ export function TasksCard({ rules = [] }: { rules?: ScrapeRuleDto[] }) {
     })
   }
 
+  /** 重启：终态任务（失败/部分成功/已取消/成功）清零进度重新入队 pending，按当前参数重新采集 */
+  const restart = (t: TaskRow) => {
+    if (busyId !== null) return
+    return runBusy(setBusyId, t.id, null, '重启失败', async () => {
+      await api(`/api/scrape-tasks/${t.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'restart' }),
+      })
+      await refresh()
+      toast.success(`任务 #${t.id} 已重启，等待 runner 领取重新采集`)
+    })
+  }
+
   const remove = (t: TaskRow) => {
     if (busyId !== null) return
     return runBusy(setBusyId, t.id, null, '删除失败', async () => {
@@ -373,7 +398,7 @@ export function TasksCard({ rules = [] }: { rules?: ScrapeRuleDto[] }) {
                 <TableHead className="h-8 w-32 text-xs">进度</TableHead>
                 <TableHead className="hidden h-8 w-36 text-xs md:table-cell">成果</TableHead>
                 <TableHead className="hidden h-8 w-20 text-xs md:table-cell">时间</TableHead>
-                <TableHead className="h-8 w-28 text-right text-xs">操作</TableHead>
+                <TableHead className="h-8 w-32 text-right text-xs">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -431,17 +456,30 @@ export function TasksCard({ rules = [] }: { rules?: ScrapeRuleDto[] }) {
                         >
                           <ScrollText className="h-3.5 w-3.5" />
                         </Button>
-                        {(t.status === 'pending' || t.status === 'paused') && (
+                        {EDITABLE_STATUSES.has(t.status) && (
                           <Button
                             size="sm"
                             variant="ghost"
                             className="h-7 px-1.5"
                             disabled={busyId === t.id}
-                            title="编辑任务（待执行/已暂停）"
+                            title="编辑任务参数（执行中除外；终态改完可重启重采）"
                             aria-label={`编辑任务 ${t.id}`}
                             onClick={() => setEditTask(t)}
                           >
                             <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {RESTARTABLE_STATUSES.has(t.status) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5 text-emerald-600 hover:text-emerald-700"
+                            disabled={busyId === t.id}
+                            title="重启任务（进度清零，按当前参数重新采集）"
+                            aria-label={`重启任务 ${t.id}`}
+                            onClick={() => restart(t)}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         {active && (
@@ -470,13 +508,13 @@ export function TasksCard({ rules = [] }: { rules?: ScrapeRuleDto[] }) {
                             <Play className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {active && (
+                        {CANCELABLE_STATUSES.has(t.status) && (
                           <Button
                             size="sm"
                             variant="ghost"
                             className="h-7 px-1.5 text-amber-600 hover:text-amber-700"
                             disabled={busyId === t.id}
-                            title="取消任务"
+                            title="取消任务（待执行/执行中/已暂停可取消）"
                             aria-label={`取消任务 ${t.id}`}
                             onClick={() => cancel(t)}
                           >

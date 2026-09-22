@@ -41,6 +41,8 @@ export default function Home({ navigate }: ViewProps) {
         <div className="min-w-0 space-y-4">
           <LatestPanel novels={d.latest} navigate={navigate} />
           <FeaturedPanel novels={d.featured} navigate={navigate} />
+          {/* 后台可配置的首页自定义图文区块：置于「小说分类」板块上方（无配置时渲染 null） */}
+          <HomeCustomBlocks navigate={navigate} />
           <CategoryGroupsPanel categories={d.categories} navigate={navigate} />
           <TopicPanel novels={d.rankings.finished} navigate={navigate} />
         </div>
@@ -61,8 +63,6 @@ export default function Home({ navigate }: ViewProps) {
         </aside>
       </div>
       <StatsHero stats={d.stats} />
-      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-      <HomeCustomBlocks navigate={navigate} />
     </div>
   )
 }

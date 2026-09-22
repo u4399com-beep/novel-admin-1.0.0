@@ -157,6 +157,9 @@ export function HomeView({ navigate, siteName }: ViewProps) {
         </div>
       </MyBox>
 
+      {/* 後台可配置的首頁自定義圖文區塊：首頁無獨立分類板塊，置於首個主體內容區（熱門書單）之前（無配置時渲染 null） */}
+      <HomeCustomBlocks navigate={navigate} />
+
       {/* 熱門書單推薦 */}
       <MyBox>
         <SectionTitle>熱門書單推薦</SectionTitle>
@@ -186,9 +189,6 @@ export function HomeView({ navigate, siteName }: ViewProps) {
           ))}
         </div>
       </MyBox>
-
-      {/* 後台可配置的首頁自定義圖文區塊（無配置時渲染 null） */}
-      <HomeCustomBlocks navigate={navigate} />
     </Container>
   )
 }

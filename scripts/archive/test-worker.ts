@@ -2,8 +2,8 @@
  * worker 真实路径诊断：bun 进程内创建任务并触发两阶段采集，观察是否 native crash。
  * 用法：bun scripts/test-worker.ts create <ruleId> <targetUrl> [pages]
  */
-import { db } from '../../src/lib/db'
-import { triggerScrapeTask } from '../../src/lib/scrape/worker'
+import { db } from '../src/lib/db'
+import { triggerScrapeTask } from '../src/lib/scrape/worker'
 
 async function main(): Promise<void> {
   const ruleId = Number(process.argv[3] ?? 13)

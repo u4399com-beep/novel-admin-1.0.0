@@ -18,10 +18,13 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 func init() {
@@ -233,9 +236,9 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]stri
 		return
 	}
 	var siteName, activeTheme, notice string
-	var seoConfig, footerConfig sql.NullString
-	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig" FROM "SiteSetting" WHERE "id" = 1`,
-		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig})
+	var seoConfig, footerConfig, homeConfig sql.NullString
+	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig" FROM "SiteSetting" WHERE "id" = 1`,
+		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig})
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -243,12 +246,14 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]stri
 	// 读回也过白名单：历史行可能已存入非字符串 TDK（旧版 PATCH 不设防）
 	seo := sanitizeSeoConfig(safeParseJSONBlob(seoConfig))
 	footer := parseFooterConfig(footerConfig)
+	home := parseHomeConfig(homeConfig)
 	writeJSON(w, 200, map[string]any{
 		"siteName":    siteName,
 		"activeTheme": activeTheme,
 		"notice":      notice,
 		"seo":         seo,
 		"footer":      footer,
+		"home":        home,
 	})
 }
 
@@ -279,6 +284,16 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 	if s, ok2 := body["notice"].(string); ok2 {
 		sets = append(sets, `"notice" = ?`)
 		args = append(args, truncateRunes(s, 500))
+	}
+	if h, exists := body["home"]; exists {
+		if _, isObj := h.(map[string]any); isObj {
+			sets = append(sets, `"homeConfig" = ?`)
+			args = append(args, marshalCompact(sanitizeHomeConfig(h)))
+		} else {
+			// 病理输入（数组/标量）：TS 版 sanitize 返回 {blocks:[]}，行为一致
+			sets = append(sets, `"homeConfig" = ?`)
+			args = append(args, marshalCompact(map[string]any{"blocks": []any{}}))
+		}
 	}
 	if f, exists := body["footer"]; exists {
 		if _, isObj := f.(map[string]any); isObj {
@@ -333,4 +348,92 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "siteName": siteName, "activeTheme": activeTheme})
+}
+
+// ==================== homeConfig（首页自定义图文区块，Task 23 对齐 src/lib/home-blocks.ts） ====================
+
+var catSourceRe = regexp.MustCompile(`^cat:\d{1,6}$`)
+
+// isHomeBlockSource 数据来源白名单：latest / hot / featured / cat:<正整数>
+func isHomeBlockSource(v any) (string, bool) {
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	if s == "latest" || s == "hot" || s == "featured" {
+		return s, true
+	}
+	if catSourceRe.MatchString(s) {
+		return s, true
+	}
+	return "", false
+}
+
+// sanitizeHomeBlock 单区块白名单（title 1-30 字、count 4-24、id ≤40 字符）
+func sanitizeHomeBlock(raw any) map[string]any {
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	title, _ := obj["title"].(string)
+	title = trimSpaceStr(title)
+	if title == "" || runeLen(title) > 30 {
+		return nil
+	}
+	source, ok := isHomeBlockSource(obj["source"])
+	if !ok {
+		return nil
+	}
+	count := 8
+	if f, ok2 := obj["count"].(float64); ok2 && !math.IsNaN(f) && !math.IsInf(f, 0) {
+		c := int(math.Floor(f))
+		if c < 4 {
+			c = 4
+		}
+		if c > 24 {
+			c = 24
+		}
+		count = c
+	}
+	id, _ := obj["id"].(string)
+	if id == "" || runeLen(id) > 40 {
+		id = "blk" + strconv.FormatInt(time.Now().UnixNano()%1e12, 36)
+	}
+	return map[string]any{"id": id, "title": title, "source": source, "count": count}
+}
+
+// sanitizeHomeConfig 区块数组白名单（上限 8 个区块，防止配置爆炸）
+func sanitizeHomeConfig(raw any) map[string]any {
+	out := map[string]any{"blocks": []any{}}
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return out
+	}
+	arr, ok := obj["blocks"].([]any)
+	if !ok {
+		return out
+	}
+	blocks := []any{}
+	for i, b := range arr {
+		if i >= 8 {
+			break
+		}
+		if s := sanitizeHomeBlock(b); s != nil {
+			blocks = append(blocks, s)
+		}
+	}
+	out["blocks"] = blocks
+	return out
+}
+
+// parseHomeConfig 读回白名单过滤（历史行可能存非法结构，渲染链不抛错）
+func parseHomeConfig(blob sql.NullString) map[string]any {
+	if !blob.Valid || blob.String == "" {
+		return map[string]any{"blocks": []any{}}
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(blob.String), &parsed); err != nil {
+		return map[string]any{"blocks": []any{}}
+	}
+	return sanitizeHomeConfig(parsed)
 }

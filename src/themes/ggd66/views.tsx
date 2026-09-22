@@ -268,6 +268,11 @@ export function Home({ navigate }: ViewProps) {
 
   return (
     <Container className="mt-1">
+      {/* 后台可配置的首页自定义图文区块：首页无独立分类板块，置于首个主体内容区（热门推荐/排行榜双栏）之前（无配置时渲染 null） */}
+      <div className="mt-3">
+        <HomeCustomBlocks navigate={navigate} />
+      </div>
+
       <div className="grid gap-5 md:grid-cols-[minmax(0,73%)_minmax(0,1fr)] md:gap-[2%]">
         {/* 第一行左：热门小说推荐（2 列封面简介卡） */}
         <section>
@@ -310,9 +315,6 @@ export function Home({ navigate }: ViewProps) {
           </div>
         </aside>
       </div>
-
-      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-      <HomeCustomBlocks navigate={navigate} />
 
       {/* 友情链接（源站首页底部同款单行文字链；无外站可交换，用站内书页入口填充） */}
       <section className="rounded-[4px] border border-[#ccc] bg-white p-3">

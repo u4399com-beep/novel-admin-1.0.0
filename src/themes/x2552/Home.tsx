@@ -122,6 +122,11 @@ export default function Home({ navigate }: ViewProps) {
 
   return (
     <div className="pb-1">
+      {/* 后台可配置的首页自定义图文区块：首页无独立分类板块，置于首个主体内容区（排行榜）之前（无配置时渲染 null） */}
+      <div className="mt-2">
+        <HomeCustomBlocks navigate={navigate} />
+      </div>
+
       <div className="mt-2">
         <Board novels={board} navigate={navigate} isLoading={isLoading} />
       </div>
@@ -202,11 +207,6 @@ export default function Home({ navigate }: ViewProps) {
             )}
           </Block>
         </div>
-      </div>
-
-      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-      <div className="mt-2">
-        <HomeCustomBlocks navigate={navigate} />
       </div>
 
       <Links categories={cats} navigate={navigate} />

@@ -180,7 +180,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
           >
             首页
           </button>
-          {(cats ?? []).slice(0, 8).map((c) => (
+          {(cats ?? []).slice(0, 9).map((c) => (
             <button
               key={c.id}
               type="button"
@@ -411,6 +411,11 @@ function HomeView({ navigate }: ViewProps) {
         </aside>
       </div>
 
+      {/* 后台可配置的首页自定义图文区块：置于「分类导航 + 双榜」上方（无配置时渲染 null） */}
+      <div className="mt-3">
+        <HomeCustomBlocks navigate={navigate} />
+      </div>
+
       {/* 分类导航 + 双榜 */}
       <div className="mt-3 grid gap-3 md:grid-cols-3">
         <Block title="分类导航" bodyClass="p-2">
@@ -436,15 +441,10 @@ function HomeView({ navigate }: ViewProps) {
         </Block>
       </div>
 
-      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-      <div className="mt-3">
-        <HomeCustomBlocks navigate={navigate} />
-      </div>
-
       {/* 友情链接（真实数据驱动：站内分类入口 + 全部书库，杰奇首页底部惯例） */}
       <Block title="友情链接" className="mt-3" bodyClass="p-2.5">
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-[#6f78a7]">
-          {(data.categories ?? []).slice(0, 8).map((c) => (
+          {(data.categories ?? []).slice(0, 9).map((c) => (
             <button
               key={c.id}
               type="button"

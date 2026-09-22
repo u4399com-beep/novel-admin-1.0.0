@@ -7,7 +7,7 @@
  *  L1 归一化 + 同义词精确映射 —— 零成本，覆盖绝大多数常见源站分类名
  *  L2 规范关键词包含匹配 —— 「玄幻魔法」含「玄幻」→ 玄幻奇幻（按表序命中即返回）
  *  L3 LLM 兜底 —— llmChat（骨架已实现 3s 超时/全局串行链/30s 冷却窗，与 TS 治理等价），
- *     失败/超时/非法输出一律静默归「未分类」，绝不阻塞采集主流程
+ *     失败/超时/非法输出一律静默归「其他」（兜底类，导航/分类 ID 均在最后），绝不阻塞采集主流程
  *
  * 移植差异：
  * - TS 的 LLM 串行链/冷却由 category.ts 自治；Go 版收敛进 llm.go（gLLMMutex+cooldown），
@@ -25,8 +25,9 @@ import (
 	"sync"
 )
 
-// FALLBACK_CATEGORY 唯一兜底类
-const FALLBACK_CATEGORY = "未分类"
+// FALLBACK_CATEGORY 唯一兜底类（用户指令：不要出现「未分类」，实在没有分类归「其他」，
+// 导航排序最后、分类 ID 最后 —— 排序由 ensureCategory 的 sort=9999 与迁移脚本保证）
+const FALLBACK_CATEGORY = "其他"
 
 // CANONICAL_CATEGORIES 规范分类集（与首页/分类页种子体系一致；清库重采后全站只会出现这些类目）
 var CANONICAL_CATEGORIES = []string{
@@ -81,7 +82,7 @@ var CATEGORY_SYNONYMS = map[string]string{
 	// 轻小说
 	"轻小说": "轻小说", "二次元": "轻小说", "同人": "轻小说", "同人小说": "轻小说",
 	"同人衍生": "轻小说", "衍生": "轻小说", "日轻": "轻小说", "动漫": "轻小说",
-	// 兜底类名直接命中
+	// 兜底类名直接命中（「未分类」历史输入也归到「其他」，消灭「未分类」残留）
 	"未分类": FALLBACK_CATEGORY, "其他": FALLBACK_CATEGORY, "其他小说": FALLBACK_CATEGORY,
 	"unknown": FALLBACK_CATEGORY,
 }
@@ -291,7 +292,15 @@ func ensureCategory(name, hintTitle, hintDescription string) (int, error) {
 	if !isNoRows(err) {
 		return 0, err
 	}
-	newID, ierr := execRetryReturningID("INSERT INTO Category (name) VALUES (?)", canon)
+	// 兜底类「其他」sort=9999 保证导航/列表排序最后（api_categories 列表 ORDER BY sort,id；
+	// 配合迁移脚本取最大 id，双保险满足「分类 ID 为最后」）；普通分类默认 sort 0 不变
+	var newID int64
+	var ierr error
+	if canon == FALLBACK_CATEGORY {
+		newID, ierr = execRetryReturningID("INSERT INTO Category (name, sort) VALUES (?, 9999)", canon)
+	} else {
+		newID, ierr = execRetryReturningID("INSERT INTO Category (name) VALUES (?)", canon)
+	}
 	if ierr != nil {
 		// 并发创建撞唯一约束 → 重查
 		var again int

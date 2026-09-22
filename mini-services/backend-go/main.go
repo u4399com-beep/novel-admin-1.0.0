@@ -59,6 +59,7 @@ func main() {
 		go startRunner()
 		go startPseoEnrichLoop() // PSEO 书名种子后台富集（12s/种子，见 pseo_book.go）
 	}
+	startDevWatcher() // dev server 看护（BACKEND_WATCH_DEV=1 时启用，见 devwatch.go）
 	if mode == "api" || mode == "all" {
 		srv := &http.Server{
 			Addr:              ":" + itoa(port),

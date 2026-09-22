@@ -70,13 +70,15 @@ func recategorizeOne() bool {
 	if canon == FALLBACK_CATEGORY || canon == "" {
 		return false // LLM 冷却中/推断未果：本轮跳过
 	}
-	// 分类 upsert（唯一冲突回读）
+	// 分类 upsert（唯一冲突回读）。
+	// 【23-a 修复死代码 Bug】原 INSERT 写了不存在的 createdAt/updatedAt 列（Category 表只有
+	// id/name/sort 三列），导致此 INSERT 一直失败、慢速 LLM 重归类从未生效 → 改为 (name, sort)。
 	var catID int64
 	rowErr := queryOne(`SELECT id FROM Category WHERE name = ?`, []any{&catID}, canon)
 	if rowErr != nil {
-		id, insErr := execReturningID(
-			`INSERT INTO Category (name, sort, createdAt, updatedAt) VALUES (?, 0, ?, ?)`,
-			canon, nowMillis(), nowMillis(),
+		id, insErr := execRetryReturningID(
+			`INSERT INTO Category (name, sort) VALUES (?, 0)`,
+			canon,
 		)
 		if insErr != nil {
 			// 并发竞态：回读

@@ -13,9 +13,11 @@
  * - 详情含完整 log 与嵌套 rule:{id,name,charset}（ruleId 为空 → rule:null）
  * - POST 创建后不做 inline 执行（runner 2s 轮询领取），返回 runner 心跳状态
  *   /tmp/scrape-runner-heartbeat（10s 内视为存活；不在线附 note 文案）
- * - PUT pending/paused 可编辑（用户指令「任务可编辑+随时暂停/重启」：paused 视为
- *   非执行态，改完再恢复即可按新参数续采）；PATCH 条件更新支持 action=cancel/pause/resume
- *   （pause 置 paused 由 worker 协作式感知停手；resume 置 pending 由 runner 重新领取）
+ * - PUT pending/paused/终态（failed/partial/canceled/success）均可编辑（用户指令
+ *   「任务可编辑+随时暂停/重启」：paused 视为非执行态改完即续；终态编辑语义=改参数
+ *   等待重启）；running 仍 409 提示先暂停；PATCH 条件更新支持
+ *   action=cancel/pause/resume/restart（pause 置 paused 由 worker 协作式感知停手；
+ *   resume 置 pending 由 runner 重新领取；restart 将终态任务重置 pending 并清零进度）
  *
  * 移植语义差异：
  * 1. Prisma @updatedAt：UPDATE（含 updateMany/PATCH 取消）显式 set updatedAt=nowMillis()
@@ -407,10 +409,10 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 		writeJSON(w, 409, map[string]string{"error": "任务执行中不可编辑，请先暂停"})
 		return
 	}
-	if status != "pending" && status != "paused" {
-		writeJSON(w, 409, map[string]string{"error": "任务已结束（" + status + "），请新建任务"})
-		return
-	}
+	// 用户指令「失败/部分成功等终态任务需要可以重新编辑、重启」：终态（failed/partial/
+	// canceled/success）放开编辑，编辑语义=改参数等待重启（PATCH action=restart 重新入队）；
+	// 只有执行中（running）不可编辑。
+	// 条件更新 WHERE 同步覆盖全部非 running 状态。
 
 	sets := []string{}
 	args := []any{}
@@ -468,13 +470,13 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 		return
 	}
 	// Prisma update 自动触碰 @updatedAt → 显式 set。
-	// ⚠ 条件更新（AND status IN pending/paused）：预检与 UPDATE 之间存在窗口，runner 可能
+	// ⚠ 条件更新（AND status != 'running'）：预检与 UPDATE 之间存在窗口，runner 可能
 	// 恰在此间隔把任务置为 running（runTask 的 pending→running 条件更新）；无条件 UPDATE 会
 	// 改写执行中任务的配置（执行读的是启动时快照，DB 展示与实际执行不一致）。count=0 回读如实反馈。
 	sets = append(sets, `"updatedAt" = ?`)
 	args = append(args, nowMillis())
 
-	res, err := exec(`UPDATE "ScrapeTask" SET `+strings.Join(sets, ", ")+` WHERE "id" = ? AND "status" IN ('pending','paused')`, append(args, id)...)
+	res, err := exec(`UPDATE "ScrapeTask" SET `+strings.Join(sets, ", ")+` WHERE "id" = ? AND "status" != 'running'`, append(args, id)...)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -485,10 +487,9 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
 			return
 		}
+		// WHERE 已覆盖全部非 running 状态：count=0 只可能 running（预检后竞态）或已删除
 		if fresh == "running" {
 			writeJSON(w, 409, map[string]string{"error": "任务执行中不可编辑，请先暂停"})
-		} else if fresh != "pending" && fresh != "paused" {
-			writeJSON(w, 409, map[string]string{"error": "任务已结束（" + fresh + "），请新建任务"})
 		} else {
 			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
 		}
@@ -514,7 +515,7 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 	})
 }
 
-// ==================== PATCH /api/scrape-tasks/{id}（取消/暂停/恢复） ====================
+// ==================== PATCH /api/scrape-tasks/{id}（取消/暂停/恢复/重启） ====================
 
 func handleScrapeTaskCancel(w http.ResponseWriter, r *http.Request, ps map[string]string) {
 	id, okID := parsePositiveInt(ps["id"])
@@ -525,7 +526,7 @@ func handleScrapeTaskCancel(w http.ResponseWriter, r *http.Request, ps map[strin
 	v, ok := readBodyValue(r)
 	m := bodyMap(v)
 	if !ok || m == nil {
-		writeJSON(w, 400, map[string]string{"error": "action 必须为 cancel/pause/resume"})
+		writeJSON(w, 400, map[string]string{"error": "action 必须为 cancel/pause/resume/restart"})
 		return
 	}
 	switch strField(m["action"], 0) {
@@ -535,26 +536,30 @@ func handleScrapeTaskCancel(w http.ResponseWriter, r *http.Request, ps map[strin
 		scrapeTaskPause(w, id)
 	case "resume":
 		scrapeTaskResume(w, id)
+	case "restart":
+		scrapeTaskRestart(w, id)
 	default:
-		writeJSON(w, 400, map[string]string{"error": "action 必须为 cancel/pause/resume"})
+		writeJSON(w, 400, map[string]string{"error": "action 必须为 cancel/pause/resume/restart"})
 	}
 }
 
-// scrapeTaskCancel 取消（pending/running → canceled 终态）
+// scrapeTaskCancel 取消（pending/running/paused → canceled 终态）。
+// 用户指令「已暂停任务也能停止」：paused 也允许取消（paused 无 worker 执行中，
+// 唯一竞态窗口是暂停确认前的旧 worker 尾巴，finalize 绝不覆盖 API 已写入的状态，安全）。
 func scrapeTaskCancel(w http.ResponseWriter, id int64) {
 	var status string
 	if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status}, id); err != nil {
 		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
 		return
 	}
-	if status != "pending" && status != "running" {
+	if status != "pending" && status != "running" && status != "paused" {
 		writeJSON(w, 400, map[string]string{"error": "当前状态 " + status + " 不可取消"})
 		return
 	}
 
 	// 条件更新防与 worker 终态写入竞态：count=0 时回读如实反馈（Prisma updateMany 触碰 @updatedAt）
 	res, err := exec(
-		`UPDATE "ScrapeTask" SET "status" = 'canceled', "message" = '已手动取消', "updatedAt" = ? WHERE "id" = ? AND "status" IN ('pending','running')`,
+		`UPDATE "ScrapeTask" SET "status" = 'canceled', "message" = '已手动取消', "updatedAt" = ? WHERE "id" = ? AND "status" IN ('pending','running','paused')`,
 		nowMillis(), id,
 	)
 	if err != nil {
@@ -638,6 +643,49 @@ func scrapeTaskResume(w http.ResponseWriter, id int64) {
 			return
 		}
 		writeJSON(w, 400, map[string]string{"error": "当前状态 " + fresh + " 不可恢复"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// scrapeTaskRestart 重启（failed/partial/canceled/success 终态 → pending，进度字段清零）。
+// 用户指令「失败、部分成功等需要可以重新开始/重启」：重启=重新入队而非进程内唤醒
+// （与 resume 同哲学，复用既有两阶段续传语义，零新增状态机复杂度）：
+// - Phase 1 重新提取书目（upsertBook 幂等，既有书直接复用）；
+// - Phase 2 骨架续传自动跳过已采章节，只补缺正文；
+// - 进度字段（total/done/chaptersDone/chaptersTotal/chapters）清零，由新一轮执行重新累计；
+// - log 追加重启记录；runner 2s 轮询领取（pending 不受 recoverStaleTasks 影响，见 worker.go）。
+func scrapeTaskRestart(w http.ResponseWriter, id int64) {
+	var status, logv string
+	if err := queryOne(`SELECT "status","log" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status, &logv}, id); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		return
+	}
+	if status != "failed" && status != "partial" && status != "canceled" && status != "success" {
+		writeJSON(w, 400, map[string]string{"error": "当前状态 " + status + " 不可重启（仅已结束任务可重启；执行中请先暂停）"})
+		return
+	}
+	line := "[" + runTs() + "] 手动重启，任务重新入队（进度已清零，书目与缺失正文将重新采集；已入库章节骨架自动续传）"
+	if logv != "" {
+		logv += "\n"
+	}
+	logv = lastLines(logv+line, MAX_LOG_LINES)
+	// 条件更新：仅终态可重启；count=0 时回读如实反馈（防与 worker 终态写入竞态）
+	res, err := exec(
+		`UPDATE "ScrapeTask" SET "status" = 'pending', "total" = 0, "done" = 0, "chaptersDone" = 0, "chaptersTotal" = 0, "chapters" = 0, "message" = '手动重启，等待 runner 领取重新采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" IN ('failed','partial','canceled','success')`,
+		logv, nowMillis(), id,
+	)
+	if err != nil {
+		failJSON(w, "服务器错误", firstLineErr(err), 500)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		var fresh string
+		if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&fresh}, id); err != nil {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+			return
+		}
+		writeJSON(w, 400, map[string]string{"error": "当前状态 " + fresh + " 不可重启"})
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})

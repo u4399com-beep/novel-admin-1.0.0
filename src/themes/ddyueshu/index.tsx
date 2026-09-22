@@ -35,7 +35,7 @@ function Footer({ navigate, siteName, onOpenHistory }: { navigate: (v: ThemeView
           <button className="dd-greenlink" onClick={() => navigate({ name: 'search', query: '' })}>
             站内搜索
           </button>
-          {(cats.data ?? []).slice(0, 8).map((c) => (
+          {(cats.data ?? []).slice(0, 9).map((c) => (
             <button
               key={c.id}
               className="dd-greenlink"
@@ -188,7 +188,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
               >
                 首页
               </button>
-              {(cats.data ?? []).slice(0, 8).map((c) => (
+              {(cats.data ?? []).slice(0, 9).map((c) => (
                 <button
                   key={c.id}
                   className="dd-nav-item"

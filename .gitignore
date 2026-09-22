@@ -55,3 +55,4 @@ server.log
 # runtime artifacts (scraped data, too large for git)
 db/custom.db
 public/covers/
+tool-results/

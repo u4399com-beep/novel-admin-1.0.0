@@ -49,6 +49,11 @@ export default function Home({ navigate, siteName }: ViewProps) {
         </div>
       </section>
 
+      {/* ①.5 后台可配置的首页自定义图文区块：置于分类导流区上方（无配置时渲染 null） */}
+      <div className="mt-2">
+        <HomeCustomBlocks navigate={navigate} />
+      </div>
+
       {/* ② 分类导流区：每行 3 列分类专栏 */}
       <CategoryBlocks categories={d.categories} navigate={navigate} />
 
@@ -73,16 +78,13 @@ export default function Home({ navigate, siteName }: ViewProps) {
         </div>
       </section>
 
-      {/* ③.5 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-      <HomeCustomBlocks navigate={navigate} />
-
       {/* ④ 友情链接 */}
       <section className="mt-2 border border-[#ddd] bg-white px-3 py-2 text-[13px]">
         <span className="mr-2 font-bold text-[#333]">友情链接：</span>
         <button className="mr-3 text-[#548161] hover:underline" onClick={() => navigate({ name: 'home' })}>
           {siteName}
         </button>
-        {(d.categories ?? []).slice(0, 8).map((c) => (
+        {(d.categories ?? []).slice(0, 9).map((c) => (
           <button
             key={c.id}
             className="mr-3 text-[#548161] hover:underline"

@@ -178,7 +178,7 @@ function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps
           <button type="button" onClick={() => navigate({ name: 'home' })} className={navLink(view.name === 'home')}>
             首 页
           </button>
-          {(cats ?? []).slice(0, 8).map((c) => (
+          {(cats ?? []).slice(0, 9).map((c) => (
             <button
               key={c.id}
               type="button"
@@ -321,6 +321,9 @@ function HomeView({ navigate }: ViewProps) {
 
   return (
     <div className="mx-auto w-full max-w-[980px] px-2 py-4">
+      {/* 后台可配置的首页自定义图文区块：首页无独立分类板块，置于首个主体内容区（强推/热门榜）之前（无配置时渲染 null） */}
+      <HomeCustomBlocks navigate={navigate} />
+
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_260px]">
         {/* ============ 左主栏 ============ */}
         <div className="min-w-0 space-y-3">
@@ -471,7 +474,7 @@ function HomeView({ navigate }: ViewProps) {
           {/* 友情链接（真实数据驱动：站内分类导航位，杰奇首页底部惯例） */}
           <Block title="友情链接" bodyClass="p-2.5">
             <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5">
-              {(data.categories ?? []).slice(0, 8).map((c) => (
+              {(data.categories ?? []).slice(0, 9).map((c) => (
                 <button
                   key={c.id}
                   type="button"
@@ -491,11 +494,6 @@ function HomeView({ navigate }: ViewProps) {
             </p>
           </Block>
         </aside>
-      </div>
-
-      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-      <div className="mt-3">
-        <HomeCustomBlocks navigate={navigate} />
       </div>
     </div>
   )

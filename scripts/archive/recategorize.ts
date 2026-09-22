@@ -5,8 +5,8 @@
  * 默认 dry-run 只打印归类计划；--apply 才更新 DB。
  * 运行：bun scripts/recategorize.ts [--apply] [--limit 30]
  */
-import { db } from '../../src/lib/db'
-import { canonicalCategoryWithHint, FALLBACK_CATEGORY } from '../../src/lib/scrape/category'
+import { db } from '../src/lib/db'
+import { canonicalCategoryWithHint, FALLBACK_CATEGORY } from '../src/lib/scrape/category'
 
 async function main(): Promise<void> {
   const apply = process.argv.includes('--apply')

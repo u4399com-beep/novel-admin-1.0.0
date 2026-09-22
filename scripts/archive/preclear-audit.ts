@@ -10,7 +10,7 @@
  *
  * 运行：bun scripts/preclear-audit.ts
  */
-import { db } from '../../src/lib/db'
+import { db } from '../src/lib/db'
 
 async function main(): Promise<void> {
   const [novels, chapters, categories, rules, tasks, pseo, site] = await Promise.all([

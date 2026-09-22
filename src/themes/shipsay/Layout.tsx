@@ -116,7 +116,8 @@ export default function Layout({ view, children, navigate, siteName }: ThemeLayo
               </button>
             </div>
           </div>
-          <div className="flex shrink-0 items-start gap-4">
+          {/* 快捷入口：≤639px Logo 隐藏后搜索框收窄，收小间距给搜索留宽 */}
+          <div className="flex shrink-0 items-start gap-3 min-[640px]:gap-4">
             <QuickEntry icon={<HomeIcon size={18} />} label="首页" onClick={() => navigate({ name: 'home' })} />
             <QuickEntry
               icon={<Compass size={18} />}
@@ -157,7 +158,7 @@ export default function Layout({ view, children, navigate, siteName }: ThemeLayo
           <button onClick={() => navigate({ name: 'home' })} className={navLink}>
             首页
           </button>
-          {(categories ?? []).slice(0, 8).map((c) => (
+          {(categories ?? []).slice(0, 9).map((c) => (
             <button key={c.id} onClick={() => navigate({ name: 'category', categoryId: c.id })} className={navLink}>
               {c.name}
             </button>

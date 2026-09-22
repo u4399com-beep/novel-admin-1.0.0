@@ -146,14 +146,18 @@ export function HomeView({ navigate, siteName }: ViewProps) {
           </div>
         </Card>
 
+        {/* 后台可配置的首页自定义图文区块：置于「分类热度榜单」上方（无配置时渲染 null）；
+            解除区块自带 max-w-6xl 限制，与主题 1240-1740px 宽容器对齐 */}
+        <div className="mt-7 [&>div]:max-w-none [&>div]:px-0">
+          <HomeCustomBlocks navigate={navigate} />
+        </div>
+
         {/* 分类热度榜单（源站 1280px 实测 4 列 260px 卡片；≤899 两列 / 中屏三列近似） */}
         <div className="mt-7 grid gap-7 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {rankCards.map((c) => (
             <TextRankCard key={c.id} title={c.name} items={c.items} onPick={pick} />
           ))}
         </div>
-        {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-        <HomeCustomBlocks navigate={navigate} />
       </Container>
     </div>
   )
@@ -807,7 +811,7 @@ function SearchPanel({ navigate, query }: { navigate: (v: ThemeView) => void; qu
             <SearchX className="mx-auto h-10 w-10 text-black/25" />
             <p className="mt-3 text-sm text-black/45">没有找到与「{query}」相关的小说</p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-              {(categories ?? []).slice(0, 8).map((c) => (
+              {(categories ?? []).slice(0, 9).map((c) => (
                 <Pill key={c.id} onClick={() => navigate({ name: 'category', categoryId: c.id, page: 1 })}>
                   {c.name}
                 </Pill>

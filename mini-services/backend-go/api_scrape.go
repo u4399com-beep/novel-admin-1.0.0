@@ -37,6 +37,34 @@ var (
 func init() {
 	register("GET", "/api/scrape", handleScrapeProxyGet)
 	register("POST", "/api/scrape", handleScrapeProxyPost)
+	register("GET", "/api/scrape/covers-backfill", handleCoversBackfillGone)
+	register("POST", "/api/scrape/covers-backfill", handleCoversBackfillGone)
+}
+
+// handleCoversBackfillGone 封面回填端点（已退役 410 Gone，对齐原 TS 路由契约）。
+// 历史：曾凭 Novel.remoteCoverUrl + sourceRuleId 对封面落盘失败的书籍批量重试下载；
+// 两字段已随 schema 演进移除，采集入库时改为即时下载封面，无法凭现存字段反推远程
+// 封面来源 → 端点退役。GET 仍返回封面本地化统计（backfillable 恒 0，后台按钮禁用）。
+func handleCoversBackfillGone(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	if r.Method == http.MethodGet {
+		var total, local int64
+		_ = queryOne(`SELECT COUNT(*) FROM "Novel"`, []any{&total})
+		_ = queryOne(`SELECT COUNT(*) FROM "Novel" WHERE "cover" LIKE '/covers/%'`, []any{&local})
+		writeJSON(w, 200, map[string]any{
+			"total":        total,
+			"local":        local,
+			"gradient":     total - local,
+			"backfillable": 0, // remoteCoverUrl 字段链已移除，无远程来源可回填
+			"available":    false,
+		})
+		return
+	}
+	writeJSON(w, 410, map[string]any{
+		"error": "封面回填已退役：远程封面来源（remoteCoverUrl/sourceRuleId）字段已随 schema 演进移除，" +
+			"采集入库时会即时下载封面落盘（/covers/{id}.webp），失败书籍保留渐变 token；" +
+			"如需修复个别封面，请对对应书籍重新采集。",
+		"available": false,
+	})
 }
 
 func handleScrapeProxyGet(w http.ResponseWriter, r *http.Request, _ map[string]string) {

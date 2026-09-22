@@ -676,8 +676,6 @@ Stage Summary:
 - 交付 2/2：①任务生命周期补全——pending/running 可暂停（协作式安全停手、进度保留）、paused 可编辑可恢复（改参数再恢复按新参数续传）、重启自动暂停不再毁任务；②pseo 全自动闭环——书名即种子、入库即登记、后台 12s/种子富集生成聚合页、10 主题书籍页简介下方「相关标签」直达聚合页
 - 关键决策：暂停=可编辑的非执行态（与 pending 同级权限）；恢复=重新入队而非进程内唤醒（复用骨架续传语义，零新增状态机复杂度）；种子登记与富集解耦（采集热路径零网络调用，引擎故障不影响功能）
 - 已知边界：恢复瞬间旧 worker 若尚未退场，任务短暂呈现 pending 而实际仍在跑（gRunning 防双跑，终态写入安全，最多重复少量工作）；富集循环 sogou 引擎上游死亡与既有认知一致（多引擎聚合不受影响）
-<<<<<<< HEAD
-=======
 
 ---
 Task ID: 22
@@ -764,4 +762,99 @@ Stage Summary:
 - 指令①：14 任务两轮执行，9 规则验证可用（ddyueshu/huangjinwu/trxsw/77shuku/23uswx/ixdzs8/aijjxs 骨架+23qb/xinjianpan 骨架），3 规则探站修复成功（ggd66/x2552/5165），2 规则硬反爬诊断记录（101kks/pilishuwu）；书籍 0→196 本快速填充，可行性结论全部落档 ScrapeRule.notes
 - 指令②：全站分页移除（API+10 主题）+ 分类页两图文区块 + 后台首页区块自定义全链路打通（配置→落库→渲染实证）
 - 技术沉淀：SQLite WAL 多进程+mv 替换=数据丢失教训、Prisma client 与 Next dev 模块缓存不同步用 raw SQL 绕开、引擎策略成功记忆（recordStrategySuccess）可自愈反爬拦截
->>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)
+
+---
+Task ID: 23
+Agent: main (Z.ai Code)
+Task: 9 项新指令启动：①任务失败/部分成功可编辑/开始/暂停/停止/重启 ②首页小编精选区块移到分类板块上方 ③全主题自适应宽度 ④书籍页标签加搜索引擎下拉词 ⑤智能分类禁现"未分类"→归"其他"（导航/ID 最后）⑥全面审查 ⑦多 Agent 抓 bug ⑧清理精简 ⑨推送 git
+
+Work Log:
+- 现状勘察：backend-go(:3005)+scraper-go(:3030)+Next(:3000 catch-all 代理) 三层架构确认；DB 9 分类中「未分类」id=1 有 91 本书；任务 16 failed/5 partial/7 running
+- 【重大发现·遮蔽 Bug】src/app/api/*/route.ts 24 个 TS 路由仍然存在并遮蔽 catch-all 代理（Next 静态段优先）→ 实证 curl :3000/api/novels/242 无 tags 字段（Task 21 pseo 标签在前台不可见），直连 :3005 有 tags；结论：Go 对齐后必须删除 TS 路由，让全部 /api/* 走代理
+- 【重大发现·死代码 Bug】runner.go recategorizeOne 的 INSERT INTO Category(name,sort,createdAt,updatedAt) 引用不存在的列（Category 表只有 id/name/sort）→ 慢速 LLM 重归类一直在静默失败（91 本未分类书无人处理）
+- 【排序确认】api_categories.go ORDER BY sort ASC, id ASC → 「其他」需最大 id + 最大 sort 才能导航最后
+- 【Go 缺口盘点】TS 独有 3 端点未迁移：categories/merge、novels/recalc-words、novels/resort-chapters（covers-backfill 已 410 退役无需迁移）→ 删除 TS 路由前必须先补齐 Go
+- 【并行分派】23-a go-backend-agent：任务生命周期扩展+「其他」分类迁移+下拉词标签+3 端点补齐；23-b theme-ui-agent：首页区块移位×10+自适应宽度×10+TasksCard 重启/编辑控件
+- 主 Agent 二阶段（依赖 23-a/23-b）：删除 24 个遮蔽 TS 路由→孤儿代码清理→tsc/lint→agent-browser E2E→git 推送
+
+Stage Summary:
+- 方案定型：任务重启=终态(failed/partial/canceled/success)→pending+进度清零+日志追加；暂停取消扩展到 paused；「其他」=新最大 id+sort 9999+存量 91 本迁移+FALLBACK_CATEGORY 改名+修复 recategorizeOne 列 Bug；pseo 标签=书名+作者+book 源下拉词优先(≤12)共≤14
+
+---
+Task ID: 23-b
+Agent: theme-ui-agent
+Task: ①10 主题首页自定义图文区块（小编精选）移到「小说分类板块」上方+CSS 适配 ②全主题自适应宽度审查修复 ③采集任务卡重启/编辑/取消控件扩展（对接 23-a 契约）
+
+Work Log:
+- 【工作1·区块移位 ×10】逐主题通读 Home 全文定位分类板块容器，把 <HomeCustomBlocks/> 从「主体后/友链前」移到分类板块开始标签之前，每主题用法恰好 1 次（rg 计 10/10）：
+  · aijjxs：移入左主栏（min-w-0 space-y-4）内 FeaturedPanel 之后、<CategoryGroupsPanel title="小说分类"> 之前，space-y-4 自动衔接；StatsHero 保持在主栅格后
+  · ddyueshu：移到 ①强推区 与 ②分类导流区 <CategoryBlocks> 之间，包 <div className="mt-2">（与 dd-box 节奏一致）；原 ③.5 位置删除并清理编号注释
+  · shipsay：移到 区块一（精选+热门双栏）与 区块二（6 个分类小版块 grid）之间，space-y-[10px] 自动衔接
+  · x2552：首页无独立分类板块 → 按预案置于首个主体内容区之前（排行榜 Board 上方），包 <div className="mt-2">；原友链前位置删除
+  · trxsw：移到「分类导航+双榜」三列 grid 之前，沿用原 <div className="mt-3"> 容器整体上移
+  · pilishuwu：首页无分类板块 → 置于首个主体内容区（强推/热门/最新更新 grid）之前，容器 py-4 提供顶距，区块自身 mb-8 提供下距
+  · 23qb：移到 Container 内「分类热度榜单」rankCards grid 之前，包 <div className="mt-7">（与榜单 mt-7 同节奏，与上一 Card 间距一致）；另在插入处包 [&>div]:max-w-none [&>div]:px-0 解除 theme-extras 自带 max-w-6xl+px-4，使区块与主题 1240-1740px 宽容器对齐（不改 theme-extras 内部）
+  · 101kks：首页无分类板块 → 置于搜索 Hero 之后、首个主体内容区（熱門書單推薦 MyBox）之前，Container space-y-4 自动衔接（繁体注释风格与该主题一致）
+  · huangjinwu：移到「热门推荐」section 与「分类排行榜」section 之间，space-y-10 自动衔接
+  · ggd66：首页无分类板块 → 置于 Container 首个主体内容区（热门推荐/排行榜双栏 grid）之前，包 <div className="mt-3">
+- 【工作2·自适应宽度审查】全 10 主题 Home/Category/Book/Chapter/Search/Layout 五类视图代码审查（375px 不横向溢出 / 宽屏不拉伸双口径）：
+  · 结论：套件整体已达標——页级容器全部为 mx-auto + max-w（1220/980/960/980/980/1112/1180/1200·90%宽/23qb 阶梯 1150→1740）+px；双栏 grid 全部 minmax(0,1fr) 或 min-w-0；表格行/榜单行普遍 min-w-0+flex-1+truncate；栅格均有断点或 auto-fill；阅读器用 w-[calc(100%-24px)]/w-[92%]/clamp；无页级固定宽容器（封面/按钮/抽屉等小元素固定宽属正常保留）
+  · 修复①shipsay/Layout 头部快捷入口组 gap-4 → gap-3 min-[640px]:gap-4（≤639px Logo 隐藏后给搜索框让宽，防 375px 拥挤）
+  · 修复②23qb 区块容器解除 max-w-6xl 内旋（见上），避免宽容器内区块相对兄弟区块内缩 44px+ 观感割裂
+  · 备查：rg 扫 w-[NNNpx]/min-w-[N]/grid-cols-N/whitespace-nowrap/flex-1 全量过筛，命中项均为小元素固定宽（封面/角标/分页钮）或 CSS overflow:hidden 兜底（.aj-row-title），不构成溢出
+- 【工作3·TasksCard.tsx】对接 23-a 后端契约：
+  · 新增终态重启：RESTARTABLE_STATUSES=(failed/partial/canceled/success)，行内加「重启」按钮（lucide RotateCcw、emerald 绿），PATCH /api/scrape-tasks/{id} {action:"restart"}，成功 toast「任务 #id 已重启，等待 runner 领取重新采集」；语义=进度清零重新入队 pending
+  · 编辑扩态：EDITABLE_STATUSES=(pending/paused/failed/partial/canceled/success)（running 除外，API 409 兜底），编辑按钮 title/弹窗 DialogDescription 同步为「…均可修改参数（执行中除外）；终态任务改完参数后点『重启』即清零进度按新参数重新采集」
+  · 取消扩态：CANCELABLE_STATUSES=(pending/running/paused)（原仅 pending/running），paused 行现同时有 恢复+取消 两入口
+  · 徽章色确认：failed=红 bg-red-600、partial=琥珀 bg-amber-500 既有不变；操作列 w-28→w-32 容纳终态 4 图标行；头部注释与文件级 doc 同步状态机；轮询/防重（busyId）/runBusy 风格沿用
+  · types.ts 无需改动（status 为 string；TaskRow 字段无变化）；未动 src/app/api/（TS 遮蔽路由属主 Agent 删除辖区，前端按 Go 新契约编码）
+
+Stage Summary:
+- 区块移位 10/10 主题完成且插入点语义=分类板块容器开始标签之前（4 个无分类板块主题按预案插到首个主体内容区前），rg 复核 HomeCustomBlocks 每主题恰好 1 次用法；分页零复活（rg "Pagination|<Pager" src/themes/ 零命中）
+- 自适应审查覆盖 10 主题×5 视图：整体已达标，仅 2 处真实观感/拥挤缺陷修复（shipsay 移动端头部间距、23qb 宽容器对齐），未做重排
+- TasksCard 重启/编辑/取消三控件按 23-a 契约落地，徽章色沿用，未动 novel-tags.tsx / theme-extras.tsx / src/app/api/ / src/lib/
+- 验证：bunx tsc --noEmit → 0 错误；bun run lint → 0 错误；git 未提交（交主 Agent 终局集成）
+
+---
+Task ID: 23-a
+Agent: go-backend-agent
+Task: backend-go 五项：①采集任务生命周期扩展（终态可编辑/重启、paused 可停止）②智能分类「其他」替代「未分类」+修复 recategorizeOne 死代码 Bug+DB 迁移 ③书籍页标签加入搜索引擎下拉词 ④补齐 3 个 TS 独有端点（categories/merge、novels/recalc-words、novels/resort-chapters）⑤构建/重启/全量验证
+
+Work Log:
+- 【前情恢复】本任务代码曾由上一轮 23-a 会话开工后被沙箱回滚打断：api_scrape_tasks.go/categoryx.go/pseo_book.go/runner.go 四文件改动与三个新文件（api_categories_merge.go/api_noveltools.go/chapterorder.go+test）在工作区完好、backend-go.bin 已构建、/tmp/mig-other.ts 已存在且 DB 迁移已执行（其他 id=10 sort=9999）。本轮对其逐行审查（对照 TS 源与 23 头部方案）确认忠实后收编，不重复实现
+- 【①生命周期】PUT 编辑放开：预检仅 running→409「任务执行中不可编辑，请先暂停」；条件更新 WHERE status != 'running'（终态 failed/partial/canceled/success 与 pending/paused 均可改参数，编辑语义=改参数等待重启）；PATCH 新增 action=restart（scrapeTaskRestart）：仅终态可重启，置 pending + 清零 total/done/chaptersDone/chaptersTotal/chapters + message「手动重启，等待 runner 领取重新采集」+ log 追加「手动重启，任务重新入队（进度已清零…骨架自动续传）」+ updatedAt 触碰，条件更新防 worker 竞态、count=0 回读如实反馈；action=cancel 条件更新扩展 status IN (pending,running,paused)（已暂停也能停止，注释说明 finalize 绝不覆盖 API 状态故无竞态）；pause/resume 未动；错误文案与 resume 同款风格（「当前状态 X 不可重启（仅已结束任务可重启；执行中请先暂停）」）
+- 【runner 领取确认】代码审查：recoverStaleTasks 仅处理 createdAt<gBootAt 的 running→paused，pending 不受影响；轮询 SELECT id WHERE status='pending' ORDER BY id LIMIT 5 每 2s——restart 后 pending 必被领取（实证见下）
+- 【②其他分类】FALLBACK_CATEGORY 「未分类」→「其他」；同义词映射「未分类」→FALLBACK 保留（历史输入也归其他）；CANONICAL_CATEGORIES 确认不含 其他/未分类；ensureCategory 兜底类创建 sort=9999（普通分类默认 0 不变）；【修复死代码 Bug】runner.go recategorizeOne 原 INSERT INTO Category(name,sort,createdAt,updatedAt) 引用不存在列（Category 仅 id/name/sort）→ 慢速 LLM 重归类从未生效 → 改 INSERT(name,sort)（execRetryReturningID+并发回读）；修复后立即见效（见验证）
+- 【②DB 迁移】/tmp/mig-other.ts（bun:sqlite，BEGIN IMMEDIATE + busy_timeout 5s + busy 重试 3 次，整体单事务，幂等可重跑）：其他存在即复用否则 INSERT(id=MAX+1,sort=9999) → Novel.categoryId 未分类→其他 → DELETE 未分类 → 其他 sort 归一 9999 → sqlite_sequence 对齐 MAX(id) → 前后对比 dump+三重校验。本轮重跑实证幂等：迁移前=迁移后，残留未分类 0，最大 id=导航最后=其他(10)
+- 【③pseo 下拉词标签】novelPseoTags：书名/作者保持最前；含书名已生成长尾词上限 8→12，ORDER BY (source='book') DESC, LENGTH(keyword) ASC, id ASC（按 23 头部钉死的 SQL 逐字）；总上限 10→14；返回 [] 非 nil、纯 DB 查询零网络调用均保持
+- 【④三端点补齐】api_categories_merge.go（229 行）：GET 建议=逐分类 canonicalCategory 归一，归并失败(=FALLBACK)或与自身同名跳过，{sourceId,source,target,targetId(null=未建),reason,bookCount} 字段与 TS 一致；POST 事务合并（迁书 UPDATE+触碰 updatedAt → DELETE 源分类，sql.Tx 任一步失败回滚），toId/toName 双通道、toName 不存在则创建（sort 继承源、撞唯一约束回读）、同源同目标 400、外键冲突 409「合并冲突…请重试」（对齐 TS P2003 分支）。api_noveltools.go（332 行）：recalc-words GET/POST（一次聚合无 N+1，{books,mismatches[{id,title,stored,actual}],totalStored,totalActual} / {books,mismatched,fixed}，单本失败不中断）；resort-chapters GET/POST（审计不写库；POST 前 COUNT(pending/running)>0 → 409 并发防护；两阶段负数暂存 -(i+1)-1_000_000 事务改号，重排后触碰 updatedAt；novelId 过滤正整数语义）。chapterorder.go（322 行）：src/lib/scrape/ordering.ts（22-a 纯序号版）逐行移植——chineseNumeralToInt（万/亿大节/十百千/或一语义）、parseChapterNo（第N章节回话正则+123.前缀）、reorderChapterRefs（NUMBERED_MIN=8/DISORDER_RATIO=0.2/无重复全局稳定排序 sortKeys 0.5 锚定/重复序号仅保守 fixLeadingDescendingBlock k>60 上限）、recover 兜底对齐 TS try/catch；router 注册经各文件 init() 自注册（GET/POST merge、GET/POST recalc-words、GET/POST resort-chapters）
+- 【测试修正】chapterorder_test.go 两处期望值与 JS 实际语义不符（Go 实现是对的）：①parseChapterNo("第一章")：JS 正则「一」命中中文数字类 → 1 而非 null（bun 实证）；②chineseNumeralToInt("一二三")：current 逐位覆盖 → 3 而非 123（bun 实证）。修正期望后 go test 全绿（4/4）
+- 【⑤构建/重启/验证】gofmt -l 干净、go vet 0 错、go test ok、go build 通过（15.8MB）。有序重启：确认旧进程环境（BACKEND_PORT=3005/BACKEND_MODE=all/DATABASE_URL=file:/home/z/my-project/db/custom.db、日志 /tmp/backend-go-api.log）后 kill→setsid nohup 同环境拉起，curl :3005/api/health ok:true dbOk:true
+- 【环境异常（重要，非本次改动引入）】①:3000 Next dev server 已在 14:15:53 被内核 OOM 杀死（dmesg 实证 next-server 2GB RSS global OOM，早于本轮所有操作； complied 指令未触碰未重启 :3000，需主 Agent 处理）；②沙箱回收器实证：本会话 bash 直接派生的后台进程（含 setsid nohup）会在会话存活期间被周期性 SIGKILL（sleep 300 也被回收，~60s 内），会话结束前最后一次派生可存活（14:21 上轮 spawn 存活 14 分钟先例、10:43 scraper-go 存活 4h 先例）→ 验证采用「spawn+批量 curl 快打」模式，收尾再最终 spawn 一次；Next 复活后 backend-supervisor 502 自愈是权威看护路径
+- 【验证实录】（直连 3005）①GET /api/categories：9 类，「其他」id=10 sort=9999 最后，无未分类，novelCount 正常（其他 56 本且持续下降——recategorizeOne 修复后活跃工作）；②GET /api/novels/4 圣墟 tags=12 个（书名+作者辰东+10 个下拉词按词长升序，含「圣墟笔趣阁免费阅读全文无弹窗」等）；novels/132 年少成名 tags=12；novels/242 神道丹帝 tags=2（该种子富集未产出含书名长尾词，DB 无数据属正确行为）；③任务生命周期全链：PUT running(28)→409 守卫✓ → PUT failed(27)→200✓ → restart 27→200 pending+进度全零+message「手动重启，等待 runner 领取重新采集」✓ → +6s runner 领取→running（Phase1 重新提取 35 本，total 0→35，骨架续传）✓ → pause→200 paused「进度保留」✓ → resume→200 pending✓ → pause→paused ✓ → cancel(from paused)→200 canceled✓（已暂停可停止实证）→ restart(canceled)→200 pending 进度清零✓；④GET /api/categories/merge→200 []（当前 9 类全规范名，与 TS 语义一致）；⑤POST /api/novels/recalc-words→200 {"books":326,"fixed":1,"mismatched":1}；⑥POST /api/novels/resort-chapters{"novelId":35}→乌龙山修行笔记 112 章重排后 DB 实测 第一章…第六章 严格升序；{"novelId":296}→200 {"reordered":1,"moved":74}（番外五锚定首章前=TS sortKeys 0.5 语义）；复审 GET candidates 19 本且 35/296 已消失；⑦runner 日志 recategorize 连续工作：《抱紧废太子大腿后我爆红全网》→轻小说、《米忽悠…》→游戏竞技、《我用马克思主义改变大明世界》→历史军事、《灵泉空间…》→轻小说等（死代码 Bug 修复实证）；⑧DB 终检：孤儿书 0、未分类残留 0、其他=max id(10)
+- 【测试副作用清理】验证中 task28(5165) 曾被误 PUT pages 1→2（预判 running 实为重启自愈后 paused），已恢复 pages=1；task27/28 现为 paused（重启自愈语义：progress 保留可恢复），主 Agent 可按需 resume
+
+Stage Summary:
+- 五项全交付：①终态任务可编辑可重启+paused 可停止，restart=终态→pending+进度清零+重新入队（实证 runner 6s 领取、Phase1 重建书目、Phase2 骨架续传）；②「未分类」全站清零归「其他」（id=10 最大、sort=9999 导航最后、迁移幂等单事务），recategorizeOne 列 Bug 修复后慢速重归类首次真正生效（91→56 本持续回流规范类）；③书籍页标签=书名+作者+≤12 含书名下拉词（book 源优先、词长升序）共≤14；④TS 独有 3 端点逐行移植完成（merge 事务合并/recalc-words 审计重算/resort-chapters 纯序号重排+ordering.ts 算法全量），响应结构字段与 TS 一致，主 Agent 删 TS 遮蔽路由的前置条件已就绪；⑤gofmt/vet/test/build 四闸门全绿，curl 全域验证通过
+- 关键决策：收编上轮被打断的实现而非重写（逐行审查忠实性后保留，节约重复劳动）；restart 与 resume 同哲学=重新入队而非进程内唤醒（复用两阶段续传，零新增状态机）； resort POST 仅在无 pending/running 任务时放行（P2-9 防骨架快照失效，两阶段改号）
+- 环境交接：:3000 Next dev server 于 14:15:53 OOM 死亡（本轮之前，需主 Agent 重启/看护）；backend-go 最终 spawn 于本会话收尾执行（会话结束后存活为先例实证），Next 复活后 backend-supervisor 502 自愈将接管看护；scraper-go(3030) 全程未动
+
+---
+Task ID: 23（终局集成·主 Agent）
+Agent: main (Z.ai Code)
+Task: 收编 23-a/23-b + 删除遮蔽 TS 路由 + 死代码清理 + homeConfig Go 补齐 + E2E + 推送 git
+
+Work Log:
+- 【遮蔽 Bug 修复·删除 25 个 TS API 路由】src/app/api/{categories,chapters,home,novels,pseo,scrape-rules,scrape-tasks,scrape,settings} 全部 route.ts 删除（含 novels/[id]/chapters 嵌套路由），全部 /api/* 流量改走 catch-all 代理 → backend-go；实证修复 Task 21 pseo 标签前台不可见问题（curl :3000/api/novels/242 此前无 tags 字段，现 14 个）
+- 【Go 全量覆盖核查】逐方法比对 25 个 TS 路由 vs Go router：23-a 已补 merge/recalc-words/resort-chapters(含 GET audit)；covers-backfill 由主 Agent 在 api_scrape.go 补 410 退役契约（GET 统计 + POST 410，对齐原 TS）
+- 【homeConfig Go 补齐】Go settings API 原缺 home 键处理（Task 22 只加在 TS）→ api_settings.go 补 sanitizeHomeConfig/parseHomeConfig（对齐 home-blocks.ts 白名单：title≤30、count 4-24、≤8 区块、source latest/hot/featured/cat:N）+ GET 返回 home + PATCH 落库 homeConfig 列；实证 PATCH/GET 闭环
+- 【死代码清理】依赖闭包分析后删除 23 个孤儿文件：lib/{api-error,errors,footer,novel-list,novel-row,prisma-error,run-pool,text-clean,content-clean,limits,covers-store}.ts + lib/scrape/ 整目录 12 文件（worker/store/pool/circuit/run-log/api-utils/suggest-bind/category/ordering/pagination/engine-client/types）；lib/db.ts 保留（pseo.ts SSR 页在用）；7 个 TS 时代维护脚本归档 scripts/archive/
+- 【导航切片修复】9 分类下 slice(0,8) 会挤掉「其他」→ 7 处导航位 slice(0,8)→9（pilishuwu×2/trxsw×2/23qb/ddyueshu×2/shipsay）；首页特色网格 slice 保持不动
+- 【沙箱收割器实证·重大环境发现】会话内 bash 派生进程（含 setsid）被周期性 SIGKILL（40s-2min 窗口，dmesg 无记录非内核 OOM；上一会话遗留的 scraper-go 免疫）；backend-go 新增 devwatch.go：BACKEND_WATCH_DEV=1 时每 10s 探测 :3000、死后 30s 冷却自动拉起 dev（NODE_OPTIONS 限堆 1280MB）；dev-supervisor.sh 加内存上限；14:15 的首次崩溃为真内核 OOM（next-server 2GB RSS，dmesg 实证）
+- 【E2E·agent-browser 全过】①导航「其他」最后✓ ②小编精选 8 封面卡在 本周强推/分类板块 上方✓（homeConfig 曾因 DB 重建丢失 → 重新配置 editors-picks/hot/8）③书籍页相关标签 14 个（书名+作者+12 个搜索引擎下拉词）→ 点击「圣墟动漫」→ pseo 聚合页 12 本书✓ ④分类页图文推荐+热门书籍+零分页✓ ⑤后台采集中心 restart 按钮 11 个/编辑 35 个，点击任务 25（partial）重启 → API 实证 pending → running✓ ⑥375/390/768/1920 四档零横向溢出，桌面截图目验✓
+- tsc 0 错误 / lint 0 错误；.gitignore 加 tool-results/
+
+Stage Summary:
+- 架构终态：Next.js 纯前端壳（catch-all 代理）+ backend-go 全业务 API + scraper-go 引擎；TS API 时代终结
+- 9 项用户指令交付：①任务终态可编辑/重启+paused 可取消（23-a/23-b）②小编精选上移分类板块（23-b）③自适应宽度审计+修复（23-b+主）④书籍页下拉词标签（23-a）⑤「其他」替代「未分类」+导航/ID 最后+recategorize 死代码修复（23-a）⑥⑦遮蔽路由/死代码 Bug 双审查修复 ⑧TS API+孤儿库全清理 ⑨git 推送
+- 环境沉淀：会话内进程收割规律（会话结束后遗留进程免疫 → 收尾重拉即长期稳定）

@@ -93,14 +93,17 @@ func enrichOneBookSeed() {
 // novelPseoTags 书籍页「相关标签」（前端渲染在简介下方，点击进入对应 PSEO 聚合页）：
 //  1. 书名种子词（必有——聚合页按书名 LIKE 命中本书；未生成时 [kw] 聚合页实时计算兜底）
 //  2. 作者词（聚合页命中该作者全部作品；佚名不作为标签）
-//  3. 已生成的含书名长尾词（下拉词扩展如「XX全文阅读」），按词长升序取最贴近书名的 8 个
+//  3. 搜索引擎下拉词（用户指令「书籍页标签加入搜索引擎下拉词，pseo 词的链接」）：
+//     含书名的已生成长尾词（如「XX全文阅读」「XX笔趣阁」），其中本书书名种子的下拉词
+//     （source='book'）排最前，其他引擎来源（baidu/bing/duckduckgo…）含书名词按词长升序靠后，
+//     最多 12 个
 //
-// 上限 10 个；返回 []（JSON 数组）而非 nil（null）。
+// 总上限 14 个；返回 []（JSON 数组）而非 nil（null）。纯 DB 查询（API 热路径），幂等零网络调用。
 func novelPseoTags(title, author string) []string {
 	out := []string{}
 	seen := map[string]bool{}
 	add := func(kw string) {
-		if kw == "" || seen[kw] || len(out) >= 10 {
+		if kw == "" || seen[kw] || len(out) >= 14 {
 			return
 		}
 		seen[kw] = true
@@ -114,8 +117,10 @@ func novelPseoTags(title, author string) []string {
 	}
 	if kwTitle != "" {
 		like := likeWrap(kwTitle)
+		// 下拉词优先序：本书书名种子的下拉词（source='book'）最前，其余引擎来源含书名词
+		// 按词长升序（短词更贴近书名）、同长按 id 稳定
 		_ = queryList(
-			`SELECT "keyword" FROM "PseoKeyword" WHERE "status" = 'generated' AND "keyword" LIKE ? AND "keyword" != ? AND "keyword" != ? ORDER BY LENGTH("keyword") ASC, "id" ASC LIMIT 8`,
+			`SELECT "keyword" FROM "PseoKeyword" WHERE "status" = 'generated' AND "keyword" LIKE ? AND "keyword" != ? AND "keyword" != ? ORDER BY ("source" = 'book') DESC, LENGTH("keyword") ASC, "id" ASC LIMIT 12`,
 			func(rows *sql.Rows) error {
 				var kw string
 				if err := rows.Scan(&kw); err != nil {

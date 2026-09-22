@@ -192,6 +192,9 @@ export default function Home({ navigate, siteName, notice }: ViewProps) {
           </aside>
         </div>
 
+        {/* 区块一.5：后台可配置的首页自定义图文区块：置于分类小版块上方（无配置时渲染 null） */}
+        <HomeCustomBlocks navigate={navigate} />
+
         {/* 区块二：6 个分类小版块，一行 3 块 */}
         <div className="grid grid-cols-3 gap-[10px] max-[959px]:grid-cols-2 max-[639px]:grid-cols-1">
           {cats.map((c) => (
@@ -253,9 +256,6 @@ export default function Home({ navigate, siteName, notice }: ViewProps) {
             </div>
           </aside>
         </div>
-
-        {/* 区块三.5：后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-        <HomeCustomBlocks navigate={navigate} />
 
         {/* 区块四：友情链接 */}
         <section className="bg-white">

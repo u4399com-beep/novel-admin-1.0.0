@@ -99,6 +99,9 @@ export function Home({ navigate }: ViewProps) {
         </div>
       </section>
 
+      {/* 后台可配置的首页自定义图文区块：置于「分类排行榜」上方（无配置时渲染 null） */}
+      <HomeCustomBlocks navigate={navigate} />
+
       {/* 分类排行榜：源站为 6 个 ranking-module 卡片（3 列网格，榜内 10 条编号行，前三名蓝系徽章） */}
       <section>
         <SectionTitle title="分类排行榜" />
@@ -145,9 +148,6 @@ export function Home({ navigate }: ViewProps) {
           ))}
         </div>
       </section>
-
-      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
-      <HomeCustomBlocks navigate={navigate} />
     </div>
   )
 }
