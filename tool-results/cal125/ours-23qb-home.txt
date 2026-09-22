@@ -1,0 +1,218 @@
+- banner
+  - button "笔 青阅文学结构演示主题" [ref=e3724]
+  - navigation
+    - button "未分类" [ref=e3730]
+    - button "玄幻" [ref=e3731]
+    - button "科幻" [ref=e3732]
+    - button "其他" [ref=e3733]
+    - button "网游" [ref=e3734]
+    - button "都市" [ref=e3735]
+    - button "言情" [ref=e3736]
+    - button "同人" [ref=e3737]
+    - button "武侠" [ref=e3738]
+    - button "历史" [ref=e3739]
+  - button "阅读记录" [ref=e3725]
+  - button "全部分类" [ref=e3740]
+- main
+  - heading "青阅文学好书一找即达" [level=1, ref=e3726]
+    - StaticText "青阅文学好书一找即达"
+  - textbox "搜索书名 / 作者 / 简介" [ref=e3741]
+  - button "书库" [ref=e3742]
+  - button "搜索" [ref=e3743]
+  - paragraph
+    - StaticText "收录 190 部小说 · 49707 章 · 今日更新 48895 章"
+  - generic [ref=e3744] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "1"
+    - paragraph
+      - StaticText "勇者辞职之后"
+    - paragraph
+      - StaticText "休息一下"
+  - generic [ref=e3745] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "2"
+    - paragraph
+      - StaticText "大唐不良人手记"
+    - paragraph
+      - StaticText "坊间闲人"
+  - generic [ref=e3746] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "3"
+    - paragraph
+      - StaticText "北境王座之影"
+    - paragraph
+      - StaticText "黑曜石"
+  - generic [ref=e3747] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "4"
+    - paragraph
+      - StaticText "我的同桌是龙女"
+    - paragraph
+      - StaticText "西瓜太郎"
+  - generic [ref=e3748] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "5"
+    - paragraph
+      - StaticText "魔女学院的旁听生"
+    - paragraph
+      - StaticText "猫头鹰书店"
+  - generic [ref=e3749] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "6"
+    - paragraph
+      - StaticText "雾锁青川镇"
+    - paragraph
+      - StaticText "南巷说书人"
+  - generic [ref=e3750] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "7"
+    - paragraph
+      - StaticText "午夜档案室"
+    - paragraph
+      - StaticText "守夜人老周"
+  - generic [ref=e3751] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "8"
+    - paragraph
+      - StaticText "我的副本能存档"
+    - paragraph
+      - StaticText "读档青年"
+  - generic [ref=e3752] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "9"
+    - paragraph
+      - StaticText "全境电竞家"
+    - paragraph
+      - StaticText "峡谷指挥官"
+  - generic [ref=e3753] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "10"
+    - paragraph
+      - StaticText "硅基觉醒"
+    - paragraph
+      - StaticText "图灵的猫"
+  - generic [ref=e3754] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "11"
+    - paragraph
+      - StaticText "深空回收员"
+    - paragraph
+      - StaticText "零号观察者"
+  - generic [ref=e3755] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "12"
+    - paragraph
+      - StaticText "第十三层宿舍"
+    - paragraph
+      - StaticText "楼梯间的猫"
+  - generic [ref=e3756] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "13"
+    - paragraph
+      - StaticText "时间胶囊商店"
+    - paragraph
+      - StaticText "四维口袋"
+  - generic [ref=e3757] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "14"
+    - paragraph
+      - StaticText "长风渡北境"
+    - paragraph
+      - StaticText "燕然未勒"
+  - generic [ref=e3758] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "15"
+    - paragraph
+      - StaticText "离婚后我成了顶流"
+    - paragraph
+      - StaticText "追星少女M"
+  - generic [ref=e3759] clickable [cursor:pointer, onclick]
+    - generic
+      - generic
+      - StaticText "16"
+    - paragraph
+      - StaticText "隔壁班的月亮"
+    - paragraph
+      - StaticText "夏栀"
+  - generic
+    - heading "未分类" [level=3, ref=e3760]
+    - list
+      - listitem [level=1]
+        - button "01 大宣武圣 未分类" [ref=e3773]
+      - listitem [level=1]
+        - button "02 仙逆 未分类" [ref=e3774]
+      - listitem [level=1]
+        - button "03 蛊真人 未分类" [ref=e3775]
+      - listitem [level=1]
+        - button "04 希腊带恶人 未分类" [ref=e3776]
+      - listitem [level=1]
+        - button "05 退下，让朕来 未分类" [ref=e3777]
+      - listitem [level=1]
+        - button "06 我曝光前世惊炸全网 未分类" [ref=e3778]
+      - listitem [level=1]
+        - button "07 我在东京制作怪谈 未分类" [ref=e3779]
+      - listitem [level=1]
+        - button "08 娱乐：哥，没你我早走出来了 未分类" [ref=e3780]
+      - listitem [level=1]
+        - button "09 星际领主：打劫异族就有百倍收获 未分类" [ref=e3781]
+      - listitem [level=1]
+        - button "10 武道独尊：从虎啸金钟罩开始 未分类" [ref=e3782]
+  - generic
+    - heading "玄幻" [level=3, ref=e3761]
+    - list
+      - listitem [level=1]
+        - button "01 伏天氏 玄幻" [ref=e3783]
+      - listitem [level=1]
+        - button "02 元尊 玄幻" [ref=e3784]
+      - listitem [level=1]
+        - button "03 圣墟 玄幻" [ref=e3785]
+      - listitem [level=1]
+        - button "04 我是至尊 玄幻" [ref=e3786]
+  - generic
+    - heading "科幻" [level=3, ref=e3762]
+    - list
+  - generic
+    - heading "其他" [level=3, ref=e3763]
+    - list
+      - listitem [level=1]
+        - button "01 我是夏始之 其他" [ref=e3787]
+  - generic
+    - heading "网游" [level=3, ref=e3764]
+  - generic
+    - heading "都市" [level=3, ref=e3765]
+  - generic
+    - heading "言情" [level=3, ref=e3766]
+  - generic
+    - heading "同人" [level=3, ref=e3767]
+  - generic
+    - heading "武侠" [level=3, ref=e3768]
+  - generic
+    - heading "历史" [level=3, ref=e3769]
+  - generic
+    - heading "游戏" [level=3, ref=e3770]
+  - generic
+    - heading "悬疑" [level=3, ref=e3771]
+  - generic
+    - heading "轻小说" [level=3, ref=e3772]
+- contentinfo
+  - button "阅读记录" [ref=e3727]
+  - button "收藏本站" [ref=e3728]
+  - button "繁體版" [ref=e3729]
+- button "进入站点管理后台" [ref=e3722]
+- region "Notifications alt+T" [ref=e3723]
+- button "Open Next.js Dev Tools" [expanded=false, ref=e3788]

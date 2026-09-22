@@ -3,14 +3,14 @@
 import { useState } from 'react'
 import { useNovels } from '@/hooks/use-novel-data'
 import type { ThemeView, ViewProps } from '../types'
-import { DdPager, ErrBlock, SkRows, TableHead, UpdateRow } from './parts'
+import { ErrBlock, SkRows, TableHead, UpdateRow } from './parts'
 
 /* ==================== 搜索页（本地输入 state + useNovels({ q }) 高密度结果列表） ==================== */
 
 export default function Search({ navigate, query }: ViewProps & { query: string }) {
   return (
     <div>
-      {/* key=query：关键词变化时重挂载，重置输入框与页码 */}
+      {/* key=query：关键词变化时重挂载，重置输入框 */}
       <SearchPanel key={query} query={query} navigate={navigate} />
     </div>
   )
@@ -18,8 +18,7 @@ export default function Search({ navigate, query }: ViewProps & { query: string 
 
 function SearchPanel({ query, navigate }: { query: string; navigate: (v: ThemeView) => void }) {
   const [input, setInput] = useState(query)
-  const [page, setPage] = useState(1)
-  const list = useNovels({ q: query || undefined, page, pageSize: 20 })
+  const list = useNovels({ q: query || undefined, pageSize: 500 })
 
   const submit = () => {
     const kw = input.trim()
@@ -78,7 +77,6 @@ function SearchPanel({ query, navigate }: { query: string; navigate: (v: ThemeVi
               {list.data.list.map((n) => (
                 <UpdateRow key={n.id} novel={n} navigate={navigate} />
               ))}
-              <DdPager page={list.data.page} totalPages={list.data.totalPages} go={(p) => setPage(p)} />
             </>
           )}
         </div>

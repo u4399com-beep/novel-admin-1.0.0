@@ -20,6 +20,10 @@ import {
   type ReaderSceneColors,
 } from '@/hooks/use-reader-prefs'
 import { NovelTagsRow } from '@/components/novel-tags'
+<<<<<<< HEAD
+=======
+import { CategoryFeaturedBlock, CategoryHotBlock, HomeCustomBlocks } from '@/components/theme-extras'
+>>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)
 import type { NovelDetail, NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
 import {
@@ -31,7 +35,6 @@ import {
   EmptyBox,
   ErrorBox,
   GhostBadge,
-  Pager,
   PillSkeleton,
   RankRow,
   SectionTitle,
@@ -142,6 +145,9 @@ export function Home({ navigate }: ViewProps) {
           ))}
         </div>
       </section>
+
+      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+      <HomeCustomBlocks navigate={navigate} />
     </div>
   )
 }
@@ -186,13 +192,9 @@ function RankModule({
 
 /* ==================== 分类 / 书库页 ==================== */
 
-export function Category({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+export function Category({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const cats = useCategories()
-  const list = useNovels({ categoryId, page, pageSize: 20 })
+  const list = useNovels({ categoryId, pageSize: 500 })
 
   const catName = cats.data?.find((c) => c.id === categoryId)?.name
 
@@ -235,6 +237,10 @@ export function Category({
         ))}
       </div>
 
+      {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+      <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+      <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
+
       {list.isPending ? (
         <CardGridSkeleton count={6} />
       ) : list.isError ? (
@@ -242,18 +248,11 @@ export function Category({
       ) : (list.data?.list.length ?? 0) === 0 ? (
         <EmptyBox text="该分类下暂无收录小说" />
       ) : (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {list.data!.list.map((n) => (
-              <BookTextCard key={n.id} novel={n} navigate={navigate} />
-            ))}
-          </div>
-          <Pager
-            page={list.data!.page}
-            totalPages={list.data!.totalPages}
-            onGo={(p) => navigate({ name: 'category', categoryId, page: p })}
-          />
-        </>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {list.data!.list.map((n) => (
+            <BookTextCard key={n.id} novel={n} navigate={navigate} />
+          ))}
+        </div>
       )}
     </div>
   )
@@ -863,7 +862,7 @@ export function Search({ navigate, query }: ViewProps & { query: string }) {
   return (
     <div className="mx-auto max-w-[1180px] space-y-5 px-4 py-6">
       <Crumb items={[{ label: '首页', view: { name: 'home' } }, { label: '搜索' }]} navigate={navigate} />
-      {/* key=query：关键词变化时重挂载，重置输入框与分页 */}
+      {/* key=query：关键词变化时重挂载，重置输入框 */}
       <SearchPanel key={query} query={query} navigate={navigate} />
     </div>
   )
@@ -871,8 +870,7 @@ export function Search({ navigate, query }: ViewProps & { query: string }) {
 
 function SearchPanel({ query, navigate }: { query: string; navigate: Nav }) {
   const [input, setInput] = useState(query)
-  const [page, setPage] = useState(1)
-  const list = useNovels({ q: query || undefined, page, pageSize: 20 })
+  const list = useNovels({ q: query || undefined, pageSize: 500 })
 
   const submit = () => {
     const kw = input.trim()
@@ -909,18 +907,11 @@ function SearchPanel({ query, navigate }: { query: string; navigate: Nav }) {
       ) : (list.data?.list.length ?? 0) === 0 ? (
         <EmptyBox text={`没有找到与“${query}”相关的小说，换个关键词试试`} />
       ) : (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {list.data!.list.map((n) => (
-              <BookTextCard key={n.id} novel={n} navigate={navigate} />
-            ))}
-          </div>
-          <Pager
-            page={list.data!.page}
-            totalPages={list.data!.totalPages}
-            onGo={(p) => setPage(p)}
-          />
-        </>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {list.data!.list.map((n) => (
+            <BookTextCard key={n.id} novel={n} navigate={navigate} />
+          ))}
+        </div>
       )}
     </div>
   )

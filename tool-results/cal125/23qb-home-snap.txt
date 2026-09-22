@@ -1,0 +1,260 @@
+- generic
+  - banner
+    - generic
+      - heading "铅笔小说" [level=1, ref=e3469]
+      - link "铅笔小说" [ref=e3602]
+        - image "铅笔小说"
+      - form
+      - list
+        - listitem [level=1]
+          - link "首页" [ref=e3603]
+        - listitem [level=1]
+          - link "言情" [ref=e3604]
+        - listitem [level=1]
+          - link "都市" [ref=e3605]
+        - listitem [level=1]
+          - link "唯美" [ref=e3606]
+        - listitem [level=1]
+          - link "穿越" [ref=e3607]
+        - listitem [level=1]
+          - link "青春" [ref=e3608]
+        - listitem [level=1]
+          - link "玄幻" [ref=e3609]
+        - listitem [level=1]
+          - link "武侠" [ref=e3610]
+        - listitem [level=1]
+          - link "军事" [ref=e3611]
+        - listitem [level=1]
+          - link "竞技" [ref=e3612]
+        - listitem [level=1]
+          - link "科幻" [ref=e3613]
+        - listitem [level=1]
+          - link "悬疑" [ref=e3614]
+        - listitem [level=1]
+          - link "同人" [ref=e3615]
+        - listitem [level=1]
+          - link "职场" [ref=e3616]
+      - list
+        - listitem [level=1]
+        - listitem [level=1]
+          - link "" [ref=e3632]
+    - generic
+      - image "铅笔小说"
+      - form
+        - generic
+          - searchbox "搜索喜欢的小说、作者、标签" [ref=e3617]
+          - link "书库" [ref=e3618]
+          - button "" [ref=e3619]
+  - main
+    - generic
+      - generic
+        - generic
+          - generic
+            - link "问鼎" [ref=e3633]
+          - link "问鼎" [ref=e3620]
+          - StaticText "何常在"
+        - generic
+          - generic
+            - link "朕和她" [ref=e3634]
+          - link "朕和她" [ref=e3621]
+          - StaticText "她与灯"
+        - generic
+          - generic
+            - link "麒麟" [ref=e3635]
+          - link "麒麟" [ref=e3622]
+          - StaticText "桔子树"
+        - generic
+          - generic
+            - link "大小姐她总是不求上进" [ref=e3636]
+          - link "大小姐她总是不求上进" [ref=e3623]
+          - StaticText "燕小陌"
+        - generic
+          - generic
+            - link "一不小心成了白月光" [ref=e3637]
+          - link "一不小心成了白月光" [ref=e3624]
+          - StaticText "纪婴"
+        - generic
+          - generic
+            - link "年少成名" [ref=e3638]
+          - link "年少成名" [ref=e3625]
+          - StaticText "图南鲸"
+        - generic
+          - generic
+            - link "仙逆" [ref=e3639]
+          - link "仙逆" [ref=e3626]
+          - StaticText "耳根"
+        - generic
+          - generic
+            - link "不老泉" [ref=e3640]
+          - link "不老泉" [ref=e3627]
+          - StaticText "朵朵舞"
+        - generic
+          - generic
+            - link "蛊真人" [ref=e3641]
+          - link "蛊真人" [ref=e3628]
+          - StaticText "蛊真人"
+        - generic
+          - generic
+            - link "强制沦陷" [ref=e3642]
+          - link "强制沦陷" [ref=e3629]
+          - StaticText "白羽摘雕弓"
+        - generic
+          - generic
+            - link "夫人她马甲又轰动全城了" [ref=e3643]
+          - link "夫人她马甲又轰动全城了" [ref=e3630]
+          - StaticText "灵小哥"
+        - generic
+          - generic
+            - link "凡人修仙传" [ref=e3644]
+          - link "凡人修仙传" [ref=e3631]
+      - generic
+        - heading " 言情小说" [level=5, ref=e3470]
+        - link "01 朕和她" [ref=e3471]
+        - link "02 大小姐她总是不求上进" [ref=e3472]
+        - link "03 不老泉" [ref=e3473]
+        - link "04 强制沦陷" [ref=e3474]
+        - link "05 夫人她马甲又轰动全城了" [ref=e3475]
+        - link "06 那村那人那傻瓜" [ref=e3476]
+        - link "07 白夜恋人" [ref=e3477]
+        - link "08 江海不渡" [ref=e3478]
+        - link "09 著迷" [ref=e3479]
+        - link "10 与狐说" [ref=e3480]
+      - generic
+        - heading " 都市小说" [level=5, ref=e3481]
+        - link "01 问鼎" [ref=e3482]
+        - link "02 我在精神病院学斩神" [ref=e3483]
+        - link "03 妹妹爱人" [ref=e3484]
+        - link "04 我是大玩家" [ref=e3485]
+        - link "05 第一序列" [ref=e3486]
+        - link "06 从1983开始" [ref=e3487]
+        - link "07 我的1979" [ref=e3488]
+        - link "08 养个女鬼当老婆" [ref=e3489]
+        - link "09 妇科男医师" [ref=e3490]
+        - link "10 别拿爱情说事儿" [ref=e3491]
+      - generic
+        - heading " 纯爱唯美" [level=5, ref=e3492]
+        - link "01 麒麟" [ref=e3493]
+        - link "02 年少成名" [ref=e3494]
+        - link "03 有种你再撞一下" [ref=e3495]
+        - link "04 浮光" [ref=e3496]
+        - link "05 天官赐福" [ref=e3497]
+        - link "06 早点睡觉" [ref=e3498]
+        - link "07 奢侈品男人" [ref=e3499]
+        - link "08 撒野" [ref=e3500]
+        - link "09 镇魂" [ref=e3501]
+        - link "10 上瘾" [ref=e3502]
+      - generic
+        - heading " 穿越转生" [level=5, ref=e3503]
+        - link "01 极品家丁" [ref=e3504]
+        - link "02 国医高手" [ref=e3505]
+        - link "03 兰香缘" [ref=e3506]
+        - link "04 富二代被迫从头再来[种田]" [ref=e3507]
+        - link "05 桃源农家日常" [ref=e3508]
+        - link "06 都重生了谁谈恋爱啊" [ref=e3509]
+        - link "07 富贵逼人" [ref=e3510]
+        - link "08 红楼之挽天倾" [ref=e3511]
+        - link "09 回到明朝当王爷" [ref=e3512]
+        - link "10 咸鱼一家的穿书生活" [ref=e3513]
+      - generic
+        - heading " 青春校园" [level=5, ref=e3514]
+        - link "01 季听日记" [ref=e3515]
+        - link "02 国民校草是女生" [ref=e3516]
+        - link "03 绝顶牛人" [ref=e3517]
+        - link "04 我见银河" [ref=e3518]
+        - link "05 我只想自力更生" [ref=e3519]
+        - link "06 他的小仙女" [ref=e3520]
+        - link "07 恋爱要在模拟后" [ref=e3521]
+        - link "08 有生之年" [ref=e3522]
+        - link "09 你是我学生又怎样" [ref=e3523]
+        - link "10 你是我的怦然心动" [ref=e3524]
+      - generic
+        - heading " 玄幻魔法" [level=5, ref=e3525]
+        - link "01 蛊真人" [ref=e3526]
+        - link "02 牧神记" [ref=e3527]
+        - link "03 斗破苍穹" [ref=e3528]
+        - link "04 神农道君" [ref=e3529]
+        - link "05 魔道祖师" [ref=e3530]
+        - link "06 我只想安静地打游戏" [ref=e3531]
+        - link "07 完美世界" [ref=e3532]
+        - link "08 道诡异仙" [ref=e3533]
+        - link "09 无限血核" [ref=e3534]
+        - link "10 诡秘地海" [ref=e3535]
+      - generic
+        - heading " 修真武侠" [level=5, ref=e3536]
+        - link "01 一不小心成了白月光" [ref=e3537]
+        - link "02 仙逆" [ref=e3538]
+        - link "03 凡人修仙传" [ref=e3539]
+        - link "04 阵问长生" [ref=e3540]
+        - link "05 凡人修仙之仙界篇" [ref=e3541]
+        - link "06 一念永恒" [ref=e3542]
+        - link "07 从赘婿开始建立长生家族" [ref=e3543]
+        - link "08 洪主" [ref=e3544]
+        - link "09 光阴之外" [ref=e3545]
+        - link "10 择日飞升" [ref=e3546]
+      - generic
+        - heading " 历史军事" [level=5, ref=e3547]
+        - link "01 特战先驱" [ref=e3548]
+        - link "02 三国之召唤猛将" [ref=e3549]
+        - link "03 我的东北军" [ref=e3550]
+        - link "04 覆汉" [ref=e3551]
+        - link "05 秦吏" [ref=e3552]
+        - link "06 清末之雄霸天下" [ref=e3553]
+        - link "07 赘婿" [ref=e3554]
+        - link "08 辛亥大英雄" [ref=e3555]
+        - link "09 大宋第一状元郎" [ref=e3556]
+        - link "10 重生之大科学家" [ref=e3557]
+      - generic
+        - heading " 游戏竞技" [level=5, ref=e3558]
+        - link "01 伊塔之柱" [ref=e3559]
+        - link "02 密室困游鱼" [ref=e3560]
+        - link "03 流氓高手II" [ref=e3561]
+        - link "04 第一玩家" [ref=e3562]
+        - link "05 熊学派的阿斯塔特" [ref=e3563]
+        - link "06 重生之最强剑神" [ref=e3564]
+        - link "07 超神机械师" [ref=e3565]
+        - link "08 这个外援强到离谱" [ref=e3566]
+        - link "09 一发入魂的深渊领主" [ref=e3567]
+        - link "10 网游之野蛮之王" [ref=e3568]
+      - generic
+        - heading " 科幻空间" [level=5, ref=e3569]
+        - link "01 黄泉逆行" [ref=e3570]
+        - link "02 一觉醒来成了神二代" [ref=e3571]
+        - link "03 末世之黑暗召唤师" [ref=e3572]
+        - link "04 人族训练场" [ref=e3573]
+        - link "05 从机械师开始无限转职" [ref=e3574]
+        - link "06 穿进赛博游戏后干掉BOSS成功上位" [ref=e3575]
+        - link "07 灵境行者" [ref=e3576]
+        - link "08 直死无限" [ref=e3577]
+        - link "09 幻想降临现实" [ref=e3578]
+        - link "10 小兵传奇" [ref=e3579]
+      - generic
+        - heading " 悬疑惊悚" [level=5, ref=e3580]
+        - link "01 深夜书屋" [ref=e3581]
+        - link "02 我有一座冒险屋" [ref=e3582]
+        - link "03 宜昌鬼事" [ref=e3583]
+        - link "04 一世兵王" [ref=e3584]
+        - link "05 极乐小尸妹" [ref=e3585]
+        - link "06 画怖" [ref=e3586]
+        - link "07 巡阴人" [ref=e3587]
+        - link "08 超级惊悚直播" [ref=e3588]
+        - link "09 三线轮回" [ref=e3589]
+        - link "10 青囊尸衣" [ref=e3590]
+      - generic
+        - heading " 同人小说" [level=5, ref=e3591]
+        - link "01 龙族：重启人生" [ref=e3592]
+        - link "02 柯南之我不是蛇精病" [ref=e3593]
+        - link "03 神雕群芳谱" [ref=e3594]
+        - link "04 我在火影成立夸夸教" [ref=e3595]
+        - link "05 柯南里的捡尸人" [ref=e3596]
+        - link "06 海贼王之母巢果实" [ref=e3597]
+        - link "07 心之怪盗！但柯南" [ref=e3598]
+        - link "08 魔法与万象卡牌系统" [ref=e3599]
+        - link "09 只想偷懒的我被迫成了火影" [ref=e3600]
+        - link "10 斗罗：我的写轮眼不太正经" [ref=e3601]
+  - heading "友情链接：" [level=2, ref=e3465]
+  - contentinfo
+    - paragraph
+      - link "RSS" [ref=e3466]
+      - link "Google" [ref=e3467]
+      - link "Bing" [ref=e3468]
+  - generic [ref=e3464] clickable [cursor:pointer, onclick]

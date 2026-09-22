@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useHomeData, useNovels } from '@/hooks/use-novel-data'
+import { HomeCustomBlocks } from '@/components/theme-extras'
 import { gradientClass } from '@/lib/covers'
 import { cn } from '@/lib/utils'
 import type { CategoryDto, HomeData, NovelListItem } from '@/lib/types'
@@ -60,6 +61,8 @@ export default function Home({ navigate }: ViewProps) {
         </aside>
       </div>
       <StatsHero stats={d.stats} />
+      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+      <HomeCustomBlocks navigate={navigate} />
     </div>
   )
 }

@@ -32,6 +32,17 @@ export class Run {
     if (this.lines.length > MAX_LOG_LINES) this.lines = this.lines.slice(-MAX_LOG_LINES)
   }
 
+  /** 当前缓冲日志行数（供调用方快照起点，配合 linesSince 取增量） */
+  get lineCount(): number {
+    return this.lines.length
+  }
+
+  /** 快照起点之后的增量日志行（suggest-bind 完成后补写落盘用；截断后计数可能小于快照差，无害） */
+  linesSince(count: number): string[] {
+    if (count < 0 || count >= this.lines.length) return []
+    return this.lines.slice(count)
+  }
+
   logWarnings(warnings: unknown[]): void {
     for (const w of warnings.slice(0, MAX_WARNINGS_LOGGED)) this.log(`引擎提示: ${String(w).slice(0, 200)}`)
   }

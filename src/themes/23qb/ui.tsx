@@ -5,7 +5,7 @@
 // 浅灰底 #f8f9f9 + 白色 18px 大圆角卡片 + 红橙渐变强调 + 大扩散投影
 
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, FileText, Flame, RotateCcw, Search } from 'lucide-react'
+import { FileText, Flame, RotateCcw, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { coverBgClass } from '@/lib/covers'
 import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
@@ -372,60 +372,6 @@ export function HeroSearch({
         </div>
       )}
     </div>
-  )
-}
-
-// ---------- 分页 ----------
-
-/** 药丸分页条：当前页红橙渐变 */
-export function Pager({ page, totalPages, onGo }: { page: number; totalPages: number; onGo: (p: number) => void }) {
-  if (totalPages <= 1) return null
-  const nums: (number | '…')[] = []
-  const push = (v: number | '…') => nums[nums.length - 1] !== v && nums.push(v)
-  for (let p = 1; p <= totalPages; p++) {
-    if (p === 1 || p === totalPages || Math.abs(p - page) <= 1) push(p)
-    else if (nums[nums.length - 1] !== '…') push('…')
-  }
-  const cls =
-    'inline-flex h-[35px] cursor-pointer items-center rounded-[10px] px-4 text-sm transition-colors'
-  return (
-    <nav className="flex flex-wrap items-center justify-center gap-2 py-2">
-      <button
-        type="button"
-        disabled={page <= 1}
-        onClick={() => onGo(page - 1)}
-        className={cn(cls, 'bg-[#f3f5f7] text-black/55 hover:text-[#ff2a14] disabled:cursor-not-allowed disabled:opacity-40')}
-      >
-        <ChevronLeft className="h-4 w-4" />
-        上一页
-      </button>
-      {nums.map((n, i) =>
-        n === '…' ? (
-          <span key={`e${i}`} className="px-1 text-black/35">
-            …
-          </span>
-        ) : (
-          <button
-            key={n}
-            type="button"
-            onClick={() => onGo(n)}
-            className={cn(cls, n === page ? 'font-bold text-white' : 'bg-[#f3f5f7] text-black/55 hover:text-[#ff2a14]')}
-            style={n === page ? { backgroundImage: GRADIENT_ACCENT } : undefined}
-          >
-            {n}
-          </button>
-        ),
-      )}
-      <button
-        type="button"
-        disabled={page >= totalPages}
-        onClick={() => onGo(page + 1)}
-        className={cn(cls, 'bg-[#f3f5f7] text-black/55 hover:text-[#ff2a14] disabled:cursor-not-allowed disabled:opacity-40')}
-      >
-        下一页
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </nav>
   )
 }
 

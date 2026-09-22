@@ -1,0 +1,702 @@
+     1→'use client'
+     2→
+     3→/**
+     4→ * trxsw（天天中文风）—— 结构级主题模版
+     5→ * 规格要点：杰奇经典 960px 定宽；页头（Logo + 书名/作者双按钮搜索 + 工具行）+
+     6→ * 亮条导航（#FDFDFD→#E4E4E4 渐变，顶 2px #33CCFF）；首页封面推荐横条 + 内容 760 + 侧栏 190
+     7→ * 双栏（五段式更新表 / 总推荐榜·最新入库）+ 分类导航·双榜 + 友链；分类页左 190 侧栏 + 右
+     8→ * 760 六列数据表（表头灰底、行点线分隔）；目录页 4 列；正文页淡蓝底 #E6F3FF + 键盘翻章。
+     9→ */
+    10→
+    11→import { useEffect, useMemo, useState } from 'react'
+    12→import { TocChapters } from '@/components/toc-chapters'
+    13→import { BookSuggestLinks } from '@/components/book-suggest-links'
+    14→import { cn } from '@/lib/utils'
+    15→import {
+    16→  useCategories,
+    17→  useChapter,
+    18→  useChapters,
+    19→  useHomeData,
+    20→  useNovel,
+    21→  useNovels,
+    22→  useSettings,
+    23→} from '@/hooks/use-novel-data'
+    24→import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
+    25→import { useFavoriteSite } from '@/components/theme-tools/FavoriteSite'
+    26→import { TradToggle } from '@/components/theme-tools/TradToggle'
+    27→import {
+    28→  READER_INKS,
+    29→  READER_LINE_HEIGHTS,
+    30→  READER_SCENES,
+    31→  readerFontStack,
+    32→  readerInk,
+    33→  resetReaderPrefs,
+    34→  setReaderPrefs,
+    35→  stepFontSize,
+    36→  useReaderPrefs,
+    37→  type ReaderSceneColors,
+    38→} from '@/hooks/use-reader-prefs'
+    39→import type { ChapterDetail } from '@/lib/types'
+    40→import type { ThemeLayoutProps, ThemeModule, ViewProps } from '../types'
+    41→import {
+    42→  Block,
+    43→  BookRow,
+    44→  Cover,
+    45→  Crumbs,
+    46→  ErrorBox,
+    47→  Pager,
+    48→  RankRows,
+    49→  SkeletonBlock,
+    50→  SkeletonLines,
+    51→  UpdateRow,
+    52→  formatWords,
+    53→  fullDate,
+    54→  shortDate,
+    55→  statusText,
+    56→} from './ui'
+    57→
+    58→/* ==================================================================== */
+    59→/* Layout：工具行 + Logo/搜索 + 渐变亮条导航 + 公告 + 页脚                */
+    60→/* ==================================================================== */
+    61→
+    62→function Layout({ view, children, navigate, siteName, notice }: ThemeLayoutProps) {
+    63→  const { data: cats } = useCategories()
+    64→  const { data: settings } = useSettings()
+    65→  const footerCfg = settings?.footer
+    66→  const [kw, setKw] = useState('')
+    67→  const [histOpen, setHistOpen] = useState(false)
+    68→  const { promptFavorite, shortcut } = useFavoriteSite()
+    69→
+    70→  const submitSearch = () => {
+    71→    const t = kw.trim()
+    72→    if (t) navigate({ name: 'search', query: t })
+    73→  }
+    74→
+    75→  const activeCategoryId = view.name === 'category' ? view.categoryId : undefined
+    76→
+    77→  const navLink = (active: boolean) =>
+    78→    cn(
+    79→      'shrink-0 cursor-pointer border-r border-[#E4E4E4] px-4 py-2.5 text-[13px] transition-colors',
+    80→      active ? 'bg-white font-bold text-[#C00]' : 'text-[#2F468F] hover:bg-white hover:text-[#FF6600]',
+    81→    )
+    82→
+    83→  return (
+    84→    <div className="flex min-h-screen flex-col bg-[#F7F7F7] text-[#333]">
+    85→      {/* 右上工具行 */}
+    86→      <div className="border-b border-[#E4E4E4] bg-[#FAFAFA]">
+    87→        <div className="mx-auto flex h-7 max-w-[960px] flex-wrap items-center justify-end gap-x-3 gap-y-1 px-3 py-0.5 text-[11px] text-[#999]">
+    88→          <button
+    89→            type="button"
+    90→            onClick={promptFavorite}
+    91→            title={`按 ${shortcut} 也可收藏本站`}
+    92→            className="cursor-pointer transition-colors hover:text-[#C00]"
+    93→          >
+    94→            收藏本站（{shortcut}）
+    95→          </button>
+    96→          <span className="text-[#DDD]">|</span>
+    97→          <button
+    98→            type="button"
+    99→            onClick={() => setHistOpen(true)}
+   100→            title="查看最近阅读过的章节"
+   101→            className="cursor-pointer transition-colors hover:text-[#C00]"
+   102→          >
+   103→            阅读记录
+   104→          </button>
+   105→          <span className="text-[#DDD]">|</span>
+   106→          <TradToggle className="hover:text-[#C00]" />
+   107→          <span className="hidden text-[#DDD] sm:inline">|</span>
+   108→          <span className="hidden sm:inline">简单 · 快速 · 纯净阅读</span>
+   109→        </div>
+   110→      </div>
+   111→
+   112→      {/* Logo + 双按钮搜索 */}
+   113→      <header className="bg-white">
+   114→        <div className="mx-auto flex max-w-[960px] flex-wrap items-center gap-x-5 gap-y-3 px-3 py-3.5">
+   115→          <button
+   116→            type="button"
+   117→            onClick={() => navigate({ name: 'home' })}
+   118→            className="flex cursor-pointer select-none items-center gap-2 text-left"
+   119→          >
+   120→            <span className="flex h-11 w-11 items-center justify-center bg-[#C00] text-xl font-black text-white">
+   121→              天
+   122→            </span>
+   123→            <span>
+   124→              <span className="block text-[22px] font-black leading-none tracking-wide text-[#C00]">
+   125→                {siteName}
+   126→              </span>
+   127→              <span className="mt-1 block text-[10px] tracking-[0.3em] text-[#B0B0B0]">
+   128→                TRXSW · 杰奇经典风
+   129→              </span>
+   130→            </span>
+   131→          </button>
+   132→          <div className="ml-auto flex w-full items-center sm:w-auto">
+   133→            <input
+   134→              value={kw}
+   135→              onChange={(e) => setKw(e.target.value)}
+   136→              onKeyDown={(e) => {
+   137→                if (e.key === 'Enter') submitSearch()
+   138→              }}
+   139→              placeholder="输入书名或作者"
+   140→              className="h-8 w-full min-w-0 border border-[#E4E4E4] bg-white px-2 text-sm text-[#333] outline-none placeholder:text-[#C8C8C8] focus:border-[#33CCFF] sm:w-[240px]"
+   141→            />
+   142→            <button
+   143→              type="button"
+   144→              onClick={submitSearch}
+   145→              title="本站搜索同时匹配书名与作者"
+   146→              className="h-8 shrink-0 cursor-pointer bg-[#C00] px-3 text-xs text-white transition-colors hover:bg-[#A80000]"
+   147→            >
+   148→              搜书名
+   149→            </button>
+   150→            <button
+   151→              type="button"
+   152→              onClick={submitSearch}
+   153→              title="本站搜索同时匹配书名与作者"
+   154→              className="h-8 shrink-0 cursor-pointer border border-l-0 border-[#C00] px-3 text-xs text-[#C00] transition-colors hover:bg-[#FFF3F0]"
+   155→            >
+   156→              搜作者
+   157→            </button>
+   158→          </div>
+   159→        </div>
+   160→      </header>
+   161→
+   162→      {/* 主导航：浅灰渐变 + 顶部亮条 */}
+   163→      <nav className="border-b border-[#E4E4E4] border-t-2 border-t-[#33CCFF] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4]">
+   164→        <div className="mx-auto flex max-w-[960px] flex-wrap items-stretch px-3">
+   165→          <button
+   166→            type="button"
+   167→            onClick={() => navigate({ name: 'home' })}
+   168→            className={cn(navLink(view.name === 'home'), 'border-l border-[#E4E4E4]')}
+   169→          >
+   170→            首页
+   171→          </button>
+   172→          {(cats ?? []).slice(0, 8).map((c) => (
+   173→            <button
+   174→              key={c.id}
+   175→              type="button"
+   176→              onClick={() => navigate({ name: 'category', categoryId: c.id })}
+   177→              className={navLink(activeCategoryId === c.id)}
+   178→            >
+   179→              {c.name}
+   180→            </button>
+   181→          ))}
+   182→          <button
+   183→            type="button"
+   184→            onClick={() => navigate({ name: 'category' })}
+   185→            className={navLink(view.name === 'category' && activeCategoryId === undefined)}
+   186→          >
+   187→            全部小说
+   188→          </button>
+   189→        </div>
+   190→      </nav>
+   191→
+   192→      {/* 公告条 */}
+   193→      {notice ? (
+   194→        <div className="border-b border-[#F2E3CC] bg-[#FFF8EF]">
+   195→          <div className="mx-auto max-w-[960px] px-3 py-2 text-xs leading-5 text-[#8A6D3B]">
+   196→            <span className="mr-2 inline-block bg-[#FF6600] px-1.5 py-0.5 align-[1px] text-[10px] text-white">
+   197→              通知
+   198→            </span>
+   199→            {notice}
+   200→          </div>
+   201→        </div>
+   202→      ) : null}
+   203→
+   204→      <main className="flex-1">{children}</main>
+   205→
+   206→      {/* 页脚：网站地图分页链接 + 版权 */}
+   207→      <footer className="mt-8 border-t border-[#E4E4E4] bg-[#FAFAFA]">
+   208→        <div className="mx-auto max-w-[960px] px-3 py-6 text-center text-xs leading-6 text-[#999]">
+   209→          <p className="flex flex-wrap items-center justify-center gap-x-1 gap-y-1">
+   210→            <span className="mr-1 text-[#666]">网站地图：</span>
+   211→            {(cats ?? []).slice(0, 10).map((c, i) => (
+   212→              <button
+   213→                key={c.id}
+   214→                type="button"
+   215→                onClick={() => navigate({ name: 'category', categoryId: c.id })}
+   216→                className="cursor-pointer text-[#2F468F] hover:text-[#FF6600] hover:underline"
+   217→              >
+   218→                [{i + 1}]{c.name}
+   219→              </button>
+   220→            ))}
+   221→            <button
+   222→              type="button"
+   223→              onClick={() => navigate({ name: 'category' })}
+   224→              className="cursor-pointer text-[#2F468F] hover:text-[#FF6600] hover:underline"
+   225→            >
+   226→              [{Math.min((cats ?? []).length, 10) + 1}]全部
+   227→            </button>
+   228→            {(footerCfg?.links ?? []).map((lk) => (
+   229→              <a
+   230→                key={`${lk.label}-${lk.href}`}
+   231→                href={lk.href}
+   232→                target="_blank"
+   233→                rel="noopener noreferrer"
+   234→                className="cursor-pointer text-[#2F468F] hover:text-[#FF6600] hover:underline"
+   235→              >
+   236→                [{lk.label}]
+   237→              </a>
+   238→            ))}
+   239→          </p>
+   240→          <p className="mt-2">
+   241→            {footerCfg?.extra || '本站为小说 CMS 结构级主题演示，界面按经典杰奇 CMS 风格重建，全部内容来自演示数据，仅供学习交流，请勿用于商业用途。'}
+   242→          </p>
+   243→          <p>{footerCfg?.text || `${siteName} · 源站 trxsw.com（重建模板）`}</p>
+   244→        </div>
+   245→      </footer>
+   246→
+   247→      <HistoryPanel
+   248→        open={histOpen}
+   249→        onClose={() => setHistOpen(false)}
+   250→        navigate={navigate}
+   251→        accent="#CC0000"
+   252→      />
+   253→    </div>
+   254→  )
+   255→}
+   256→
+   257→/* ==================================================================== */
+   258→/* Home：封面推荐横条 + 760/190 双栏 + 三块榜单 + 友链                    */
+   259→/* ==================================================================== */
+   260→
+   261→function HomeView({ navigate }: ViewProps) {
+   262→  const { data, isLoading, isError, refetch } = useHomeData()
+   263→
+   264→  if (isLoading) {
+   265→    return (
+   266→      <div className="mx-auto max-w-[960px] px-2 py-3">
+   267→        <SkeletonBlock rows={4} className="h-auto" />
+   268→        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_190px]">
+   269→          <div className="min-w-0 space-y-3">
+   270→            <SkeletonBlock rows={12} />
+   271→            <SkeletonBlock rows={6} />
+   272→          </div>
+   273→          <div className="min-w-0 space-y-3">
+   274→            <SkeletonBlock rows={10} />
+   275→            <SkeletonBlock rows={8} />
+   276→          </div>
+   277→        </div>
+   278→      </div>
+   279→    )
+   280→  }
+   281→  if (isError || !data) {
+   282→    return (
+   283→      <div className="mx-auto max-w-[960px] px-2 py-6">
+   284→        <ErrorBox onRetry={() => refetch()} />
+   285→      </div>
+   286→    )
+   287→  }
+   288→
+   289→  return (
+   290→    <div className="mx-auto w-full max-w-[960px] px-2 py-3">
+   291→      {/* 封面推荐横条（可横向滚动） */}
+   292→      <Block title="编辑推荐" extra={<span>每周精选 · 左右滑动查看更多</span>} bodyClass="p-2.5">
+   293→        <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+   294→          {data.featured.slice(0, 8).map((n) => (
+   295→            <button
+   296→              key={n.id}
+   297→              type="button"
+   298→              onClick={() => navigate({ name: 'book', novelId: n.id })}
+   299→              className="group w-[100px] shrink-0 cursor-pointer text-left"
+   300→            >
+   301→              <Cover
+   302→                novel={n}
+   303→                className="h-[133px] w-full transition-transform group-hover:-translate-y-0.5"
+   304→              />
+   305→              <span className="mt-1 block truncate text-xs text-[#2F468F] group-hover:text-[#FF6600]">
+   306→                {n.title}
+   307→              </span>
+   308→              <span className="block truncate text-[10px] text-[#999]">{n.author}</span>
+   309→            </button>
+   310→          ))}
+   311→        </div>
+   312→      </Block>
+   313→
+   314→      {/* 中部双栏：内容 760 + 侧栏 190 */}
+   315→      <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_190px]">
+   316→        <div className="min-w-0 space-y-3">
+   317→          <Block
+   318→            title="最新更新"
+   319→            extra={<span>今日更新 {data.stats.todayUpdates} 章</span>}
+   320→            bodyClass="px-2 py-1"
+   321→          >
+   322→            {data.latest.slice(0, 30).map((n) => (
+   323→              <UpdateRow key={n.id} novel={n} navigate={navigate} />
+   324→            ))}
+   325→          </Block>
+   326→
+   327→          <Block title="热门小说" extra={<span>全站点击 TOP12</span>} bodyClass="px-3 py-2">
+   328→            <div className="grid gap-x-6 sm:grid-cols-2">
+   329→              {data.hot.slice(0, 12).map((n, i) => (
+   330→                <div
+   331→                  key={n.id}
+   332→                  className="flex items-baseline gap-2 border-b border-dotted border-[#E4E4E4] py-[6px] text-xs last:border-b-0 sm:last:border-b"
+   333→                >
+   334→                  <span
+   335→                    className={cn(
+   336→                      'w-4 shrink-0 text-center font-bold',
+   337→                      i < 3 ? 'text-[#FF3300]' : 'text-[#BBB]',
+   338→                    )}
+   339→                  >
+   340→                    {i + 1}
+   341→                  </span>
+   342→                  <button
+   343→                    type="button"
+   344→                    onClick={() => navigate({ name: 'book', novelId: n.id })}
+   345→                    className="min-w-0 flex-1 cursor-pointer truncate text-left text-[#2F468F] hover:text-[#FF6600] hover:underline"
+   346→                  >
+   347→                    {n.title}
+   348→                  </button>
+   349→                  <span className="shrink-0 text-[10px] text-[#999]">{n.categoryName}</span>
+   350→                </div>
+   351→              ))}
+   352→            </div>
+   353→          </Block>
+   354→        </div>
+   355→
+   356→        <aside className="min-w-0 space-y-3">
+   357→          <Block title="总推荐榜" bodyClass="px-2 py-1">
+   358→            <RankRows novels={data.rankings.clicks} navigate={navigate} limit={15} value="clicks" />
+   359→          </Block>
+   360→          <Block title="最新入库" bodyClass="px-2 py-1">
+   361→            {data.latest.slice(0, 12).map((n) => (
+   362→              <div
+   363→                key={n.id}
+   364→                className="flex items-center justify-between gap-2 border-b border-dotted border-[#E4E4E4] py-[4px] text-xs last:border-b-0"
+   365→              >
+   366→                <button
+   367→                  type="button"
+   368→                  onClick={() => navigate({ name: 'book', novelId: n.id })}
+   369→                  className="min-w-0 flex-1 cursor-pointer truncate text-left text-[#2F468F] hover:text-[#FF6600] hover:underline"
+   370→                >
+   371→                  {n.title}
+   372→                </button>
+   373→                <span className="shrink-0 text-[10px] text-[#BBB]">{shortDate(n.updatedAt)}</span>
+   374→              </div>
+   375→            ))}
+   376→          </Block>
+   377→        </aside>
+   378→      </div>
+   379→
+   380→      {/* 分类导航 + 双榜 */}
+   381→      <div className="mt-3 grid gap-3 md:grid-cols-3">
+   382→        <Block title="分类导航" bodyClass="p-2">
+   383→          <div className="grid grid-cols-2 gap-1.5">
+   384→            {data.categories.map((c) => (
+   385→              <button
+   386→                key={c.id}
+   387→                type="button"
+   388→                onClick={() => navigate({ name: 'category', categoryId: c.id })}
+   389→                className="flex cursor-pointer items-center justify-between border border-[#E4E4E4] bg-[#FAFAFA] px-2 py-1.5 text-xs text-[#2F468F] transition-colors hover:border-[#33CCFF] hover:text-[#FF6600]"
+   390→              >
+   391→                <span className="truncate">{c.name}</span>
+   392→                <span className="shrink-0 text-[10px] text-[#999]">{c.novelCount}部</span>
+   393→              </button>
+   394→            ))}
+   395→          </div>
+   396→        </Block>
+   397→        <Block title="更新榜" bodyClass="px-2 py-1">
+   398→          <RankRows novels={data.rankings.updates} navigate={navigate} limit={10} value="words" />
+   399→        </Block>
+   400→        <Block title="完本榜" bodyClass="px-2 py-1">
+   401→          <RankRows novels={data.rankings.finished} navigate={navigate} limit={10} value="words" />
+   402→        </Block>
+   403→      </div>
+   404→
+   405→      {/* 友情链接（静态文字位） */}
+   406→      <Block title="友情链接" className="mt-3" bodyClass="p-2.5">
+   407→        <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-[#A5A5A5]">
+   408→          <span>中文网文聚合</span>
+   409→          <span>|</span>
+   410→          <span>经典阅读导航</span>
+   411→          <span>|</span>
+   412→          <span>书友交流社区</span>
+   413→          <span>|</span>
+   414→          <span>精品完本库</span>
+   415→          <span>|</span>
+   416→          <span>每日更新站</span>
+   417→        </p>
+   418→      </Block>
+   419→    </div>
+   420→  )
+   421→}
+   422→
+   423→/* ==================================================================== */
+   424→/* Category：左 190 榜单侧栏 + 右 760 六列数据表 + 翻页                   */
+   425→/* ==================================================================== */
+   426→
+   427→type SortKey = 'latest' | 'clicks' | 'words'
+   428→type StatusKey = 'all' | 'serial' | 'finished'
+   429→type PresetKey = 'clicks' | 'latest' | 'finished' | 'words'
+   430→
+   431→function CategoryView({
+   432→  navigate,
+   433→  categoryId,
+   434→  page = 1,
+   435→}: ViewProps & { categoryId?: number; page?: number }) {
+   436→  const { data: cats } = useCategories()
+   437→  const { data: home } = useHomeData()
+   438→  const [sort, setSort] = useState<SortKey>('latest')
+   439→  const [status, setStatus] = useState<StatusKey>('all')
+   440→  const cur = page > 0 ? page : 1
+   441→
+   442→  const { data, isLoading, isError, refetch } = useNovels({
+   443→    categoryId,
+   444→    page: cur,
+   445→    pageSize: 20,
+   446→    sort,
+   447→    status: status === 'all' ? undefined : status,
+   448→  })
+   449→
+   450→  const catName =
+   451→    categoryId != null ? (cats ?? []).find((c) => c.id === categoryId)?.name : undefined
+   452→  const goPage = (p: number) => navigate({ name: 'category', categoryId, page: p })
+   453→  const applySort = (s: SortKey) => {
+   454→    setSort(s)
+   455→    setStatus('all')
+   456→    if (cur !== 1) goPage(1)
+   457→  }
+   458→  const applyStatus = (s: StatusKey) => {
+   459→    setStatus(s)
+   460→    if (cur !== 1) goPage(1)
+   461→  }
+   462→  const applyPreset = (p: PresetKey) => {
+   463→    if (p === 'finished') {
+   464→      setSort('latest')
+   465→      setStatus('finished')
+   466→    } else {
+   467→      setSort(p)
+   468→      setStatus('all')
+   469→    }
+   470→    if (cur !== 1) goPage(1)
+   471→  }
+   472→
+   473→  return (
+   474→    <div className="mx-auto w-full max-w-[960px] px-2 py-3">
+   475→      <Crumbs
+   476→        items={[{ label: '首页', view: { name: 'home' } }, { label: catName ?? '全部小说' }]}
+   477→        navigate={navigate}
+   478→      />
+   479→
+   480→      <div className="mt-3 grid gap-3 md:grid-cols-[190px_minmax(0,1fr)]">
+   481→        {/* 左侧栏 190：推荐榜 + 榜单直达 */}
+   482→        <aside className="order-2 min-w-0 space-y-3 md:order-1">
+   483→          <Block title="会员推荐榜" bodyClass="px-2 py-1">
+   484→            <RankRows novels={(home?.rankings.clicks ?? []).slice(0, 10)} navigate={navigate} limit={10} />
+   485→          </Block>
+   486→          <Block title="榜单直达" bodyClass="p-2">
+   487→            <div className="grid grid-cols-2 gap-1.5">
+   488→              {(
+   489→                [
+   490→                  ['clicks', '点击榜'],
+   491→                  ['latest', '更新榜'],
+   492→                  ['finished', '完本榜'],
+   493→                  ['words', '字数榜'],
+   494→                ] as const
+   495→              ).map(([k, label]) => (
+   496→                <button
+   497→                  key={k}
+   498→                  type="button"
+   499→                  onClick={() => applyPreset(k)}
+   500→                  className="cursor-pointer border border-[#E4E4E4] bg-[#FAFAFA] py-1.5 text-xs text-[#2F468F] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]"
+   501→                >
+   502→                  {label}
+   503→                </button>
+   504→              ))}
+   505→            </div>
+   506→          </Block>
+   507→        </aside>
+   508→
+   509→        {/* 右侧数据表 760 */}
+   510→        <Block
+   511→          className="order-1 min-w-0 md:order-2"
+   512→          title={`${catName ?? '全部小说'}列表`}
+   513→          extra={<span>共 {data?.total ?? '—'} 部</span>}
+   514→          bodyClass="px-2 py-1"
+   515→        >
+   516→          {/* 排序筛选行 */}
+   517→          <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#E4E4E4] bg-[#F7F7F7] px-2 py-1.5 text-xs">
+   518→            <span className="text-[#999]">排序</span>
+   519→            {(
+   520→              [
+   521→                ['latest', '最近更新'],
+   522→                ['clicks', '点击最多'],
+   523→                ['words', '字数最多'],
+   524→              ] as const
+   525→            ).map(([k, label]) => (
+   526→              <button
+   527→                key={k}
+   528→                type="button"
+   529→                onClick={() => applySort(k)}
+   530→                className={cn(
+   531→                  'cursor-pointer',
+   532→                  sort === k && status !== 'finished'
+   533→                    ? 'font-bold text-[#FF6600]'
+   534→                    : 'text-[#2F468F] hover:text-[#FF6600]',
+   535→                )}
+   536→              >
+   537→                {label}
+   538→              </button>
+   539→            ))}
+   540→            <span className="ml-2 text-[#999]">状态</span>
+   541→            {(
+   542→              [
+   543→                ['all', '全部'],
+   544→                ['serial', '连载'],
+   545→                ['finished', '完本'],
+   546→              ] as const
+   547→            ).map(([k, label]) => (
+   548→              <button
+   549→                key={k}
+   550→                type="button"
+   551→                onClick={() => applyStatus(k)}
+   552→                className={cn(
+   553→                  'cursor-pointer',
+   554→                  status === k ? 'font-bold text-[#FF6600]' : 'text-[#2F468F] hover:text-[#FF6600]',
+   555→                )}
+   556→              >
+   557→                {label}
+   558→              </button>
+   559→            ))}
+   560→          </div>
+   561→
+   562→          {/* 表头（灰底） */}
+   563→          <div className="hidden bg-[#F2F2F2] px-2 py-1.5 text-xs font-bold text-[#666] md:grid md:grid-cols-[minmax(0,18fr)_minmax(0,46fr)_minmax(0,13fr)_minmax(0,8fr)_minmax(0,9fr)_minmax(0,6fr)] md:gap-x-3">
+   564→            <span>书名</span>
+   565→            <span>最新章节</span>
+   566→            <span>作者</span>
+   567→            <span className="text-right">字数</span>
+   568→            <span>更新</span>
+   569→            <span className="text-center">状态</span>
+   570→          </div>
+   571→
+   572→          {isLoading ? (
+   573→            <SkeletonLines className="py-4" rows={10} />
+   574→          ) : isError ? (
+   575→            <div className="py-6">
+   576→              <ErrorBox onRetry={() => refetch()} />
+   577→            </div>
+   578→          ) : data && data.list.length > 0 ? (
+   579→            <>
+   580→              {data.list.map((n) => (
+   581→                <BookRow key={n.id} novel={n} navigate={navigate} />
+   582→              ))}
+   583→              <Pager page={cur} totalPages={data.totalPages} onPage={goPage} className="pt-2" />
+   584→            </>
+   585→          ) : (
+   586→            <p className="py-10 text-center text-sm text-[#999]">该分类下暂无小说，换个条件试试～</p>
+   587→          )}
+   588→        </Block>
+   589→      </div>
+   590→    </div>
+   591→  )
+   592→}
+   593→
+   594→/* ==================================================================== */
+   595→/* Book：居中标题 + 封面浮左属性表 + 橙色主按钮 + 简介 + 最近章节          */
+   596→/* ==================================================================== */
+   597→
+   598→function Meta({ k, v }: { k: string; v: string }) {
+   599→  return (
+   600→    <div className="flex gap-1">
+   601→      <dt className="shrink-0 text-[#999]">{k}：</dt>
+   602→      <dd className="truncate text-[#666]" title={v}>
+   603→        {v}
+   604→      </dd>
+   605→    </div>
+   606→  )
+   607→}
+   608→
+   609→/* ---- 书架（localStorage 持久化，跨视图/跨会话一致） ---- */
+   610→
+   611→const SHELF_KEY = 'trxsw-shelf'
+   612→
+   613→function loadShelf(): number[] {
+   614→  if (typeof window === 'undefined') return []
+   615→  try {
+   616→    return JSON.parse(window.localStorage.getItem(SHELF_KEY) ?? '[]') as number[]
+   617→  } catch {
+   618→    return []
+   619→  }
+   620→}
+   621→
+   622→function toggleShelf(id: number): boolean {
+   623→  if (typeof window === 'undefined') return false
+   624→  try {
+   625→    const arr = loadShelf()
+   626→    const has = arr.includes(id)
+   627→    window.localStorage.setItem(SHELF_KEY, JSON.stringify(has ? arr.filter((x) => x !== id) : [...arr, id]))
+   628→    return !has
+   629→  } catch {
+   630→    return false
+   631→  }
+   632→}
+   633→
+   634→function BookView(props: ViewProps & { novelId: number }) {
+   635→  /* key=novelId：换书重挂载，重置书架/投票等本地状态并重新读 storage */
+   636→  return <BookInner key={props.novelId} {...props} />
+   637→}
+   638→
+   639→function BookInner({ navigate, novelId }: ViewProps & { novelId: number }) {
+   640→  const { data: n, isLoading, isError, refetch } = useNovel(novelId)
+   641→  /* 最近章节需从全量章节取末 12 条（详情接口的 chapters 是最早 12 章，不能直接用） */
+   642→  const chaptersQ = useChapters(novelId)
+   643→  const latest12 = chaptersQ.data ? [...chaptersQ.data].slice(-12).reverse() : null
+   644→  const [shelf, setShelf] = useState(() => loadShelf().includes(novelId))
+   645→  const [voted, setVoted] = useState(false)
+   646→
+   647→  if (isLoading) {
+   648→    return (
+   649→      <div className="mx-auto w-full max-w-[960px] px-2 py-3">
+   650→        <div aria-hidden className="animate-pulse border border-[#E4E4E4] bg-white p-4">
+   651→          <div className="mx-auto h-5 w-1/3 bg-[#F0F0F0]" />
+   652→          <div className="mx-auto mt-2 h-3 w-1/2 bg-[#F0F0F0]" />
+   653→          <div className="mt-4 flex flex-col gap-4 sm:flex-row">
+   654→            <div className="h-[150px] w-[120px] shrink-0 self-center bg-[#F0F0F0] sm:self-start" />
+   655→            <div className="flex-1 space-y-2.5 pt-1">
+   656→              <div className="h-3 w-2/3 bg-[#F0F0F0]" />
+   657→              <div className="h-3 w-1/2 bg-[#F0F0F0]" />
+   658→              <div className="h-3 w-3/5 bg-[#F0F0F0]" />
+   659→              <div className="h-8 w-56 bg-[#F0F0F0]" />
+   660→            </div>
+   661→          </div>
+   662→        </div>
+   663→        <SkeletonBlock className="mt-3" rows={5} />
+   664→      </div>
+   665→    )
+   666→  }
+   667→  if (isError || !n) {
+   668→    return (
+   669→      <div className="mx-auto max-w-[960px] px-2 py-6">
+   670→        <ErrorBox onRetry={() => refetch()} />
+   671→      </div>
+   672→    )
+   673→  }
+   674→
+   675→  return (
+   676→    <div className="mx-auto w-full max-w-[960px] px-2 py-3">
+   677→      {/* 居中大标题 */}
+   678→      <h1 className="text-center text-xl font-bold text-[#333]">{n.title}</h1>
+   679→      <p className="mt-1 text-center text-xs text-[#999]">
+   680→        {n.categoryName} · {n.author} · {statusText(n.status)} · {formatWords(n.wordCount)}字
+   681→      </p>
+   682→
+   683→      {/* 封面浮左 + 属性表 + 按钮行 */}
+   684→      <div className="mt-3 border border-[#E4E4E4] bg-white p-4">
+   685→        <div className="flex flex-col gap-4 sm:flex-row">
+   686→          <Cover novel={n} className="h-[150px] w-[120px] self-center text-5xl sm:self-start" charClass="text-5xl" />
+   687→          <div className="min-w-0 flex-1">
+   688→            <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs sm:grid-cols-3">
+   689→              <Meta k="类别" v={n.categoryName} />
+   690→              <Meta k="作者" v={n.author} />
+   691→              <Meta k="状态" v={statusText(n.status)} />
+   692→              <Meta k="字数" v={`${formatWords(n.wordCount)} 字`} />
+   693→              <Meta k="更新时间" v={fullDate(n.updatedAt)} />
+   694→              <Meta k="总点击" v={formatWords(n.clicks)} />
+   695→            </dl>
+   696→            <p className="mt-2 truncate text-xs text-[#666]">
+   697→              最新章节：
+   698→              {n.lastChapterId ? (
+   699→                <button
+   700→                  type="button"
+
+[showing lines 1-700 of 1337; use offset=701 with limit to continue reading]

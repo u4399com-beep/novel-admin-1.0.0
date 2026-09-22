@@ -5,6 +5,7 @@ import { useCategories, useNovels } from '@/hooks/use-novel-data'
 import type { NovelListParams } from '@/hooks/use-novel-data'
 import { cn } from '@/lib/utils'
 import type { NovelListItem } from '@/lib/types'
+import { CategoryFeaturedBlock, CategoryHotBlock } from '@/components/theme-extras'
 import type { ThemeView, ViewProps } from '../types'
 import {
   AuthorCloud,
@@ -13,7 +14,6 @@ import {
   ErrBlock,
   fmtDate,
   fmtWords,
-  Pager,
   Panel,
   RankList,
   Sk,
@@ -35,33 +35,21 @@ const STATUS: { k: StatusKey; label: string }[] = [
   { k: 'finished', label: '已完结' },
 ]
 
-export default function Category({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+export default function Category({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const cats = useCategories()
   const [sort, setSort] = useState<SortKey>('latest')
   const [status, setStatus] = useState<StatusKey>('all')
   const list = useNovels({
     categoryId,
-    page,
-    pageSize: 12,
+    pageSize: 500,
     sort,
     status: status === 'all' ? undefined : status,
   })
   const side = useNovels({ categoryId, sort: 'clicks', pageSize: 10 })
 
   const catName = cats.data?.find((c) => c.id === categoryId)?.name
-  const go = (p: number) => navigate({ name: 'category', categoryId, page: p })
-  const pickSort = (s: SortKey) => {
-    setSort(s)
-    if (page !== 1) go(1)
-  }
-  const pickStatus = (k: StatusKey) => {
-    setStatus(k)
-    if (page !== 1) go(1)
-  }
+  const pickSort = (s: SortKey) => setSort(s)
+  const pickStatus = (k: StatusKey) => setStatus(k)
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
@@ -76,6 +64,9 @@ export default function Category({
             <FilterRow label="排序" options={SORTS} active={sort} onPick={pickSort} />
             <FilterRow label="状态" options={STATUS} active={status} onPick={pickStatus} />
           </div>
+          {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+          <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+          <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
           {/* 列表 */}
           <div className="space-y-3 p-3 sm:p-4">
             {list.isPending ? (
@@ -88,7 +79,6 @@ export default function Category({
               list.data.list.map((n) => <ListCard key={n.id} novel={n} navigate={navigate} />)
             )}
           </div>
-          <Pager page={page} totalPages={list.data?.totalPages ?? 0} go={go} />
         </section>
       </div>
 

@@ -1,26 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Search as SearchIcon } from 'lucide-react'
 import { useNovels } from '@/hooks/use-novel-data'
 import type { ViewProps } from '../types'
-import { BookCard, CardListSkeleton, Empty, ErrorBox, Pagination, SectionTitle } from './parts'
+import { BookCard, CardListSkeleton, Empty, ErrorBox, SectionTitle } from './parts'
 
 /** 搜索页：本地输入 state + useNovels({ q })，结果为双列图书卡 */
 export default function Search({ navigate, query }: ViewProps & { query: string }) {
   const [kw, setKw] = useState(query)
-  const [page, setPage] = useState(1)
   const [lastQuery, setLastQuery] = useState(query)
 
   /* query 变化时在渲染期重置（React 官方推荐模式，替代 effect） */
   if (lastQuery !== query) {
     setLastQuery(query)
     setKw(query)
-    setPage(1)
   }
 
-  /* 只按已提交的 query 拉数据，避免边输边查 */
-  const { data, isLoading, isError, refetch } = useNovels({ q: query || undefined, page, pageSize: 20 })
+  /* 只按已提交的 query 拉数据，避免边输边查（一次拉全，无分页） */
+  const { data, isLoading, isError, refetch } = useNovels({ q: query || undefined, pageSize: 500 })
 
   const submit = () => {
     const next = kw.trim()
@@ -69,11 +67,6 @@ export default function Search({ navigate, query }: ViewProps & { query: string 
                 <BookCard key={n.id} novel={n} navigate={navigate} />
               ))}
             </div>
-            {data.totalPages > 1 && (
-              <div className="border-t border-[#F0F0F0]">
-                <Pagination page={data.page} totalPages={data.totalPages} onGo={(p) => setPage(p)} />
-              </div>
-            )}
           </>
         ) : (
           <Empty text={`未找到与“${query}”相关的小说，换个关键词试试`} />

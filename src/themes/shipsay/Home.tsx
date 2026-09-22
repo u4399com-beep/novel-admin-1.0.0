@@ -2,6 +2,7 @@
 
 import { Clock3, Flame, LayoutGrid, Link2 } from 'lucide-react'
 import { useHomeData, useNovels } from '@/hooks/use-novel-data'
+import { HomeCustomBlocks } from '@/components/theme-extras'
 import type { CategoryDto, NovelListItem } from '@/lib/types'
 import type { ViewProps } from '../types'
 import {
@@ -252,6 +253,9 @@ export default function Home({ navigate, siteName, notice }: ViewProps) {
             </div>
           </aside>
         </div>
+
+        {/* 区块三.5：后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+        <HomeCustomBlocks navigate={navigate} />
 
         {/* 区块四：友情链接 */}
         <section className="bg-white">

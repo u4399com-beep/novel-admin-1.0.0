@@ -1,0 +1,24 @@
+dev server UP
+{"bookId": 0}
+
+WARN: no chapter found, chapter-page test will be skipped/limited
+=== THEME: huangjinwu ===
+✗ Auto-launch failed: CDP WebSocket connect failed: IO error: Connection refused (os error 111)
+✗ Auto-launch failed: CDP WebSocket connect failed: IO error: Connection refused (os error 111)
+[huangjinwu] home pageErrors: ✗ Auto-launch failed: Chrome exited early (exit code: unknown) without writing DevToolsActivePort
+(also tried parsing stderr) Chrome exited before providing DevTools URL
+Chrome stderr:
+  [4653:4668:0920/162613.581339:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+  [4653:4668:0920/162613.581494:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix") | consoleErrors:   [4764:4779:0920/162615.300468:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+  [4764:4779:0920/162615.300558:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+  [4764:4779:0920/162615.307754:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+  [4764:4779:0920/162615.307794:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+  [4764:4779:0920/162615.307803:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[huangjinwu] home 375px overflow:   [0920/162617.373351:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq: No such file or directory (2)
+✗ Auto-launch failed: CDP WebSocket connect failed: IO error: Connection reset by peer (os error 104)
+✗ Auto-launch failed: CDP WebSocket connect failed: WebSocket protocol error: Handshake not finished
+[huangjinwu] book pageErrors: none
+[huangjinwu] book 375px overflow: 0
+=== THEME: ggd66 ===
+✗ CDP command timed out: Page.navigate
+✓ Done

@@ -221,65 +221,6 @@ export function NovelTable({
   )
 }
 
-/* ================= 翻页条 .pagelink：#F2F2F2 底，当前页橙字 ================= */
-
-function PgBtn({
-  children,
-  onClick,
-  disabled,
-  current,
-}: {
-  children: ReactNode
-  onClick: () => void
-  disabled?: boolean
-  current?: boolean
-}) {
-  if (current) {
-    return <span className="px-1 font-bold text-[#FF6600]">{children}</span>
-  }
-  return (
-    <button
-      disabled={disabled}
-      onClick={onClick}
-      className="cursor-pointer px-1 text-[#2F468F] transition-colors hover:text-[#FF6600] disabled:cursor-not-allowed disabled:text-[#BBB] disabled:hover:text-[#BBB]"
-    >
-      {children}
-    </button>
-  )
-}
-
-export function Pager({
-  page,
-  totalPages,
-  onGo,
-}: {
-  page: number
-  totalPages: number
-  onGo: (p: number) => void
-}) {
-  if (totalPages <= 1) return null
-  const start = Math.max(1, Math.min(page - 4, totalPages - 9))
-  const end = Math.min(totalPages, start + 9)
-  const pages: number[] = []
-  for (let p = start; p <= end; p++) pages.push(p)
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-1 border border-[#E4E4E4] bg-[#F2F2F2] px-1 py-[5px] text-[12px]">
-      <PgBtn disabled={page <= 1} onClick={() => onGo(page - 1)}>
-        上一页
-      </PgBtn>
-      {pages.map((p) => (
-        <PgBtn key={p} current={p === page} onClick={() => onGo(p)}>
-          {p}
-        </PgBtn>
-      ))}
-      <PgBtn disabled={page >= totalPages} onClick={() => onGo(page + 1)}>
-        下一页
-      </PgBtn>
-      <span className="ml-1 text-[#999]">共 {totalPages} 页</span>
-    </div>
-  )
-}
-
 /* ================= 骨架屏（同风格灰条） ================= */
 
 export function RowsSkeleton({ rows = 8, rowH = 28 }: { rows?: number; rowH?: number }) {

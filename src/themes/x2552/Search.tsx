@@ -3,7 +3,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useNovels } from '@/hooks/use-novel-data'
 import type { ThemeView, ViewProps } from '../types'
-import { Block, ErrorBox, NovelTable, Pager, SqIcon, TableSkeleton, XLink, type Nav } from './parts'
+import { Block, ErrorBox, NovelTable, SqIcon, TableSkeleton, XLink, type Nav } from './parts'
 import Sidebar from './Sidebar'
 import { useSearchField, type SearchField } from './search-field'
 
@@ -14,7 +14,7 @@ import { useSearchField, type SearchField } from './search-field'
  */
 export default function Search({ navigate, query }: ViewProps & { query: string }) {
   const field = useSearchField((s) => s.field)
-  // key=query|field：关键词或检索字段变化时重挂载，重置输入框与页码
+  // key=query|field：关键词或检索字段变化时重挂载，重置输入框
   return <SearchPanel key={`${query}|${field}`} query={query} navigate={navigate} field={field} />
 }
 
@@ -84,32 +84,21 @@ function SearchPanel({ query, navigate, field }: { query: string; navigate: Nav;
 /* ==================== 结果区（query 非空才挂载，避免空词请求） ==================== */
 
 function ResultPanel({ query, navigate, field }: { query: string; navigate: Nav; field: SearchField }) {
-  const [page, setPage] = useState(1)
+  /* all → 服务端检索；title/author → 一次拉全后按字段本地过滤（均无分页） */
+  const serverQ = useNovels({ q: query, pageSize: 500, enabled: field === 'all' })
+  const poolQ = useNovels({ q: query, pageSize: 500, enabled: field !== 'all' })
 
-  /* all → 服务端分页检索；title/author → 一次拉取 60 条（API 上限）后按字段本地过滤 + 本地分页 */
-  const serverQ = useNovels({ q: query, page: 1, pageSize: 20, enabled: field === 'all' })
-  const poolQ = useNovels({ q: query, page: 1, pageSize: 60, enabled: field !== 'all' })
-
-  const FILTERED_PAGE_SIZE = 20
   const filtered = useMemo(() => {
     if (field === 'all' || !poolQ.data) return null
     const rows = poolQ.data.list.filter((n) => (field === 'title' ? n.title : n.author).includes(query))
-    return {
-      rows,
-      total: rows.length,
-      totalPages: Math.max(1, Math.ceil(rows.length / FILTERED_PAGE_SIZE)),
-    }
+    return { rows, total: rows.length }
   }, [field, poolQ.data, query])
 
   const isLoading = field === 'all' ? serverQ.isPending : poolQ.isPending
   const isError = field === 'all' ? serverQ.isError : poolQ.isError
   const refetch = () => (field === 'all' ? serverQ.refetch() : poolQ.refetch())
-  const rows =
-    field === 'all'
-      ? (serverQ.data?.list ?? [])
-      : (filtered?.rows.slice((page - 1) * FILTERED_PAGE_SIZE, page * FILTERED_PAGE_SIZE) ?? [])
+  const rows = field === 'all' ? (serverQ.data?.list ?? []) : (filtered?.rows ?? [])
   const total = field === 'all' ? (serverQ.data?.total ?? 0) : (filtered?.total ?? 0)
-  const totalPages = field === 'all' ? (serverQ.data?.totalPages ?? 0) : (filtered?.totalPages ?? 0)
   const fieldLabel = field === 'title' ? '按书名' : field === 'author' ? '按作者' : '综合检索'
 
   return (
@@ -131,18 +120,13 @@ function ResultPanel({ query, navigate, field }: { query: string; navigate: Nav;
           <TableSkeleton rows={10} />
         </div>
       ) : (
-        <>
-          <div className="mt-1">
-            <NovelTable
-              novels={rows}
-              navigate={navigate}
-              emptyText={`没有找到与“${query}”相关的小说，换个关键词试试`}
-            />
-          </div>
-          <div className="mt-1">
-            <Pager page={page} totalPages={totalPages} onGo={setPage} />
-          </div>
-        </>
+        <div className="mt-1">
+          <NovelTable
+            novels={rows}
+            navigate={navigate}
+            emptyText={`没有找到与“${query}”相关的小说，换个关键词试试`}
+          />
+        </div>
       )}
     </div>
   )

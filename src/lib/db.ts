@@ -1,16 +1,28 @@
 import { PrismaClient } from '@prisma/client'
 
+// 缓存 key 带 epoch：db 文件曾被原子替换（mv 新 inode），旧 client 的 fd 指向
+// 已删除的旧文件 → 间歇性 "database disk image is malformed"（500）。
+// 递增 epoch 强制 HMR 后新建 client（fd 指向当前 db 文件），旧实例断开废弃。
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+  // key 写死：epoch 递增时同步改此 key（罕见操作，显式最清晰）
+  __prismaV2?: PrismaClient
+  __prismaPrev?: PrismaClient
 }
 
 export const db =
-  globalForPrisma.prisma ??
+  globalForPrisma.__prismaV2 ??
   new PrismaClient({
     log: ['error', 'warn'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+if (process.env.NODE_ENV !== 'production') {
+  if (!globalForPrisma.__prismaV2 && globalForPrisma.__prismaPrev && globalForPrisma.__prismaPrev !== db) {
+    // 旧 epoch 实例（可能持旧 inode fd）：后台断开释放，不阻塞当前请求
+    void globalForPrisma.__prismaPrev.$disconnect().catch(() => {})
+  }
+  globalForPrisma.__prismaV2 = db
+  globalForPrisma.__prismaPrev = db
+}
 
 /**
  * SiteSetting 单例（seoConfig JSON）读-改-写的进程内串行锁：

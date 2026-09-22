@@ -134,6 +134,26 @@ export interface SettingsDto {
   notice: string
   seo: SeoConfig
   footer: FooterConfig
+  home: HomeConfig
+}
+
+/**
+ * 首页自定义图文区块（后台「设置 → 首页区块」编辑产生）。
+ * 区块 = 标题 + 数据来源（最新/最热/精选/指定分类）+ 数量；前台按配置顺序渲染图文卡。
+ */
+export interface HomeBlockConfig {
+  /** 稳定 id（编辑器生成，nanoid 语义即可，仅用于 React key） */
+  id: string
+  /** 区块标题（1-30 字） */
+  title: string
+  /** 数据来源：latest=最近更新 | hot=点击最多 | featured=精选 | `cat:<分类id>`=指定分类 */
+  source: string
+  /** 展示数量（4-24） */
+  count: number
+}
+
+export interface HomeConfig {
+  blocks: HomeBlockConfig[]
 }
 
 // ==================== PSEO ====================

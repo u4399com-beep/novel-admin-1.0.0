@@ -2,18 +2,15 @@
 
 import { useCategories, useNovels } from '@/hooks/use-novel-data'
 import { cn } from '@/lib/utils'
+import { CategoryFeaturedBlock, CategoryHotBlock } from '@/components/theme-extras'
 import type { ViewProps } from '../types'
-import { CoverItem, DdPager, ErrBlock, SimpleRow, Sk, SkRows, TableHead, UpdateRow, catLabel } from './parts'
+import { CoverItem, ErrBlock, SimpleRow, Sk, SkRows, TableHead, UpdateRow, catLabel } from './parts'
 
 /* ==================== 分类页（specs：全宽强推 + 更新列表/相关推荐两栏） ==================== */
 
-export default function Category({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+export default function Category({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const cats = useCategories()
-  const list = useNovels({ categoryId, page, pageSize: 20 })
+  const list = useNovels({ categoryId, pageSize: 500 })
   const hot = useNovels({ categoryId, sort: 'featured', pageSize: 6 })
   const related = useNovels({ categoryId, sort: 'clicks', pageSize: 30 })
 
@@ -49,6 +46,10 @@ export default function Category({
           </button>
         ))}
       </nav>
+
+      {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+      <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+      <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
 
       {/* ② 全宽强推区（#C8D4E1 描边 + 封面卡三列） */}
       <section className="dd-box dd-box-c8 mt-2">
@@ -106,11 +107,6 @@ export default function Category({
                 {list.data.list.map((n) => (
                   <UpdateRow key={n.id} novel={n} navigate={navigate} />
                 ))}
-                <DdPager
-                  page={list.data.page}
-                  totalPages={list.data.totalPages}
-                  go={(p) => navigate({ name: 'category', categoryId, page: p })}
-                />
               </>
             )}
           </div>

@@ -1,0 +1,183 @@
+- button "青阅文学" [ref=e739]
+- navigation "分类导航" [ref=e740]
+  - button "首页" [ref=e759]
+  - button "未分类" [ref=e760]
+  - button "玄幻" [ref=e761]
+  - button "科幻" [ref=e762]
+  - button "其他" [ref=e763]
+  - button "网游" [ref=e764]
+  - button "都市" [ref=e765]
+  - button "言情" [ref=e766]
+  - button "同人" [ref=e767]
+  - button "武侠" [ref=e768]
+  - button "历史" [ref=e769]
+  - button "游戏" [ref=e770]
+  - button "悬疑" [ref=e771]
+  - button "轻小说" [ref=e772]
+  - button "全部小说" [ref=e773]
+- button "搜索" [ref=e741]
+- button "菜单" [ref=e742]
+- button "搜索" [ref=e743]
+- button "阅读记录" [ref=e744]
+- button "繁體版" [ref=e745]
+- banner
+  - button "青阅文学" [ref=e746]
+  - paragraph
+  - form
+    - textbox "搜索书名 / 作者，回车直达" [ref=e774]
+    - button "搜索全站" [ref=e775]
+- main
+  - generic
+    - sectionheader
+      - heading "我是夏始之" [level=2, ref=e787]
+      - StaticText "已完结"
+    - button "收藏书籍 124" [ref=e776]
+      - StaticText "加入收藏"
+    - DescriptionList
+      - term "作者"
+      - definition
+        - button "余耕" [ref=e800]
+      - term "分类"
+      - definition
+        - button "其他" [ref=e801]
+      - term "写作进度"
+      - definition
+        - StaticText "已完结"
+      - term "总字数"
+      - definition
+        - StaticText "1.6万字"
+      - term "总点击"
+      - definition
+        - StaticText "1"
+      - term "章节"
+      - definition
+        - StaticText "6 章"
+      - term "更新时间"
+      - definition
+        - StaticText "2026-09-19"
+      - term "下载方式"
+      - definition
+        - StaticText "在线阅读 / TXT下载（演示）"
+    - StaticText "余"
+    - paragraph
+      - StaticText "余耕"
+    - paragraph
+      - StaticText "TA 在本站的全部作品"
+    - paragraph
+      - StaticText "已收录作品（4 部）"
+    - button "我是夏始之" [ref=e777]
+      - StaticText "我是夏始之"
+    - button "我是余未来" [ref=e778]
+      - StaticText "我是余未来"
+    - button "以爱之名" [ref=e779]
+      - StaticText "以爱之名"
+    - button "临摹" [ref=e780]
+      - StaticText "临摹"
+    - button "搜索该作者全部作品 →" [ref=e781]
+  - generic
+    - sectionheader
+      - heading "内容简介" [level=2, ref=e788]
+    - generic
+      - paragraph
+        - StaticText "女主夏始之自幼被遗弃、在福利院长大，婚后倾尽全部心思照料家庭与孩子，不料丈夫婚内出轨，昔日交好的闺蜜还暗中与其勾结，接连的背叛打碎她安稳的生活，她从沉溺伤痛慢慢冷静，四处搜集证据和丈夫周旋拉扯，在婚变、职场受挫的多重磨难里不断自省蜕变，全书另外收录六篇聚焦市井小人物的中篇，分别围绕亲情裂痕、畸形婚恋、底层求生等现实议题落笔，延续作者描摹普通人悲欢的文风，用细碎日常折射当代人的生存困境，凭借细腻的女性视角斩获百花文学奖，被称作女版《我是余欢水》。"
+      - button "展开全部 ↓" [ref=e789]
+    - StaticText "相关搜索"
+    - list
+      - listitem [level=1]
+        - link "我是夏始之 余耕" [ref=e802]
+      - listitem [level=1]
+        - link "我是夏始之内容介绍" [ref=e803]
+      - listitem [level=1]
+        - link "我是夏始之读后感" [ref=e804]
+      - listitem [level=1]
+        - link "我是夏始之几个故事" [ref=e805]
+      - listitem [level=1]
+        - link "我是夏始之书评" [ref=e806]
+      - listitem [level=1]
+        - link "我是夏始之以爱之名" [ref=e807]
+      - listitem [level=1]
+        - link "我是夏始之小说免费阅读" [ref=e808]
+      - listitem [level=1]
+        - link "我是夏始之 epub" [ref=e809]
+      - listitem [level=1]
+        - link "我是夏始之简介50字" [ref=e810]
+      - listitem [level=1]
+        - link "我是夏始之小说" [ref=e811]
+  - generic
+    - sectionheader
+      - heading "下载与在线阅读" [level=2, ref=e790]
+    - button "在线阅读全文" [ref=e782]
+    - button "章节目录 / TXT下载" [ref=e783]
+    - StaticText "TIP"
+    - StaticText "本站为演示站点，TXT 下载未开放；点击「在线阅读全文」直接进入第一章，或前往「章节目录」挑选任意章节阅读。"
+  - generic
+    - sectionheader
+      - heading "猜您喜欢" [level=2, ref=e791]
+    - article [ref=e784] clickable [cursor:pointer, onclick]
+      - heading "四合院：从修复身体开始无敌" [level=3, ref=e792]
+        - StaticText "四合院：从修复身体开始无敌"
+      - paragraph
+        - StaticText "其他 · 阳春景行 · 15.9万字"
+      - paragraph
+        - StaticText "小说简介：关于四合院：从修复身体开始无敌：许小茂穿越了，成了被傻柱一脚废掉的倒霉蛋。合成系统激活，一堆补药合成神丹，身体恢复巅峰，力量翻三倍。他揣着诊断报告出院，准备找傻柱算总账。这一世，他不再是绝户，不再是窝囊废。四合院的禽兽们，准备好承受他的怒火了吗？"
+    - article [ref=e785] clickable [cursor:pointer, onclick]
+      - heading "雪豹：靠着抢劫打造最强精锐团" [level=3, ref=e793]
+        - StaticText "雪豹：靠着抢劫打造最强精锐团"
+      - paragraph
+        - StaticText "其他 · 教头本尊 · 2.6万字"
+      - paragraph
+        - StaticText "小说简介：关于雪豹：靠着抢劫打造最强精锐团：穿越到了雪豹世界成为了周卫国，柏林军事学校相邀，周卫国不去，有那个时间，我多去宰几个小鬼子他不香嘛。汉奸走狗那么多，杀几个抢点钱他难道不必去那边强，至于竹下俊。竹下俊成立了小分队，惺惺相惜，剿灭不如同化，不同意，宰了他一家再说而萧雅，前世遗憾，这一生。周卫国：“我会护你一生平安。谁碰你，我就杀谁。”对于朱子明，陈怡等人；”咱们都是一家人，联合起来，干死他们小日子。"
+    - article [ref=e786] clickable [cursor:pointer, onclick]
+      - heading "重生七零：拒当望门寡，转身高嫁" [level=3, ref=e794]
+        - StaticText "重生七零：拒当望门寡，转身高嫁"
+      - paragraph
+        - StaticText "其他 · 列无暇 · 21.9万字"
+      - paragraph
+        - StaticText "拒当望门寡，转身高嫁： 如果救一个人的法子是办个假结婚证，你办吗？重生归来，秦愿看着病床上男人那张俊美无双的脸，毫不犹豫：“办！”这辈子她是来报仇的。她不再相信全村人的话，给所谓的救命恩人当望门寡。她坚定认为，病床上的陌生男人才是真正救了她的人。为了这事，她把整个生产队翻了天。假救命恩人的娘哭上门威逼利诱，她给来个屎倒临头，让你有苦说不出；所有村民团结一致道德绑架她，她揭发出了公粮大案，队长都被抓走了；幕后黑手竟然还联合亲戚卖掉了她弟弟，那她干脆端掉了整个地下赌场，假闺蜜谋算大学生名额，那就叫你名声尽毁，再生个天生坏种磋磨至死！一切跟上辈子不同了，但秦愿觉得，一切尽在掌握。可当病床上的男人悠悠醒转，亮出军中大佬身份，她发现，自己掌握不了了。怎么办，心跳得不属于自己。那张"
+  - complementary
+    - generic
+      - sectionheader
+        - heading "同类热门榜" [level=2, ref=e812]
+      - list
+        - listitem [level=1]
+          - generic [ref=e815] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e816] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e817] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e818] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e819] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e820] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e821] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e822] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e823] clickable [cursor:pointer, onclick]
+    - generic
+      - sectionheader
+        - heading "本书导航" [level=2, ref=e813]
+      - generic [ref=e795] clickable [cursor:pointer, onclick]
+      - generic [ref=e796] clickable [cursor:pointer, onclick]
+      - generic [ref=e797] clickable [cursor:pointer, onclick]
+      - generic [ref=e798] clickable [cursor:pointer, onclick]
+      - generic [ref=e799] clickable [cursor:pointer, onclick]
+- contentinfo
+  - button "网站首页" [ref=e747]
+  - button "全部小说" [ref=e748]
+  - button "站内搜索" [ref=e749]
+  - button "阅读记录" [ref=e750]
+  - button "收藏本站" [ref=e751]
+  - button "繁體版" [ref=e752]
+  - button "未分类" [ref=e753]
+  - button "玄幻" [ref=e754]
+  - button "科幻" [ref=e755]
+  - button "其他" [ref=e756]
+  - button "网游" [ref=e757]
+  - button "都市" [ref=e758]
+- button "进入站点管理后台" [ref=e737]
+- region "Notifications alt+T" [ref=e738]
+- button "Open Next.js Dev Tools" [expanded=false, ref=e814]

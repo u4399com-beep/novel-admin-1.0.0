@@ -1,0 +1,61 @@
+- button "设为首页" [ref=e3402]
+- button "收藏本站" [ref=e3403]
+- button "阅读记录" [ref=e3404]
+- button "繁體版" [ref=e3405]
+- banner
+  - button "飞 青阅文学 PILISHUWU · 经典蓝白风" [ref=e3356]
+  - textbox "输入书名 / 作者，回车搜索" [ref=e3357]
+  - button "搜 索" [ref=e3358]
+- navigation
+  - button "首 页" [ref=e3359]
+  - button "未分类" [ref=e3360]
+  - button "玄幻" [ref=e3361]
+  - button "科幻" [ref=e3362]
+  - button "其他" [ref=e3363]
+  - button "网游" [ref=e3364]
+  - button "都市" [ref=e3365]
+  - button "言情" [ref=e3366]
+  - button "同人" [ref=e3367]
+  - button "全部书库" [ref=e3368]
+- main
+  - navigation
+    - button "首页" [ref=e3408]
+    - StaticText "›"
+    - button "我是夏始之" [ref=e3409]
+    - StaticText "›"
+    - StaticText "目录"
+  - button "《我是夏始之》" [ref=e3406]
+    - StaticText "《我是夏始之》"
+  - paragraph
+    - StaticText "作者：余耕 · 其他 · 完本"
+  - paragraph
+    - StaticText "共 6 章 · 1.6万字 · 更新于 2026-09-19"
+  - button "开始阅读" [ref=e3407]
+  - generic
+    - sectionheader
+      - heading "最新章节（最近更新 12 章 · 新→旧）" [level=2, ref=e3422]
+    - button "6. 第六章 2358字" [ref=e3410]
+    - button "5. 第五章 2584字" [ref=e3411]
+    - button "4. 第四章 2229字" [ref=e3412]
+    - button "3. 第三章 2480字" [ref=e3413]
+    - button "2. 第二章 1867字" [ref=e3414]
+    - button "1. 第一章 3993字" [ref=e3415]
+  - generic
+    - sectionheader
+      - heading "章节目录（6 章 · 正序）" [level=2, ref=e3423]
+    - button "1. 第一章 3993字" [ref=e3416]
+    - button "2. 第二章 1867字" [ref=e3417]
+    - button "3. 第三章 2480字" [ref=e3418]
+    - button "4. 第四章 2229字" [ref=e3419]
+    - button "5. 第五章 2584字" [ref=e3420]
+    - button "6. 第六章 2358字" [ref=e3421]
+- contentinfo
+  - button "返回首页" [ref=e3373]
+  - button "全部小说" [ref=e3374]
+  - button "阅读记录" [ref=e3375]
+  - button "收藏本站" [ref=e3376]
+  - button "繁體版" [ref=e3377]
+  - button "回到顶部" [ref=e3378]
+- button "进入站点管理后台" [ref=e3354]
+- region "Notifications alt+T" [ref=e3355]
+- button "Open Next.js Dev Tools" [expanded=false, ref=e3401]

@@ -2,7 +2,7 @@
 
 // ==================== 101kks 六视图 ====================
 // Home：搜索门户（Hero 搜索 + 4 蓝按钮 + 热门书单卡 3 列 + 标签云）
-// Category：分类药丸 + 封面网格 + 点击排行行列表 + 分页
+// Category：分类药丸 + 封面网格 + 点击排行行列表
 // Book：66/32 两列（信息盒 + 选项卡盒 | 本周最強排行）
 // Toc：单列白卡 + 蓝竖条节标题 + 三栏章节列表 + 正序/倒序
 // Chapter：独立沉浸式阅读器（工具行 + 设置面板 + 4 等分翻页条 + 夜间）
@@ -31,6 +31,10 @@ import {
   X,
 } from 'lucide-react'
 import { NovelTagsRow } from '@/components/novel-tags'
+<<<<<<< HEAD
+=======
+import { CategoryFeaturedBlock, CategoryHotBlock, HomeCustomBlocks } from '@/components/theme-extras'
+>>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)
 import { useCategories, useChapter, useChapters, useHomeData, useNovel, useNovels } from '@/hooks/use-novel-data'
 import {
   READER_INKS,
@@ -55,7 +59,6 @@ import {
   ErrorRetry,
   GridSkeleton,
   MyBox,
-  Pager,
   SectionTitle,
   fmtDate,
   fmtWords,
@@ -183,6 +186,9 @@ export function HomeView({ navigate, siteName }: ViewProps) {
           ))}
         </div>
       </MyBox>
+
+      {/* 後台可配置的首頁自定義圖文區塊（無配置時渲染 null） */}
+      <HomeCustomBlocks navigate={navigate} />
     </Container>
   )
 }
@@ -243,18 +249,14 @@ function BooklistCard({ novel, onClick }: { novel: NovelListItem; onClick: () =>
 
 // ==================== Category ====================
 
-export function CategoryView({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+export function CategoryView({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const { data: categories } = useCategories()
   const [sort, setSort] = useState<'latest' | 'clicks' | 'words'>('latest')
   const [status, setStatus] = useState<'serial' | 'finished' | undefined>(undefined)
 
   // 消费首页快捷按钮 / 导航注入的初始筛选意图（渲染期一次性消费，替代 effect）
   const [intentKey, setIntentKey] = useState<string | null>(null)
-  const curIntentKey = `${String(categoryId)}:${String(page)}`
+  const curIntentKey = String(categoryId)
   if (intentKey !== curIntentKey) {
     setIntentKey(curIntentKey)
     const intent = takeCategoryIntent()
@@ -264,8 +266,8 @@ export function CategoryView({
     }
   }
 
-  const { data, isLoading, isError, refetch } = useNovels({ categoryId, page, pageSize: 20, sort, status })
-  const rank = useNovels({ categoryId, page: 1, pageSize: 10, sort: 'clicks' })
+  const { data, isLoading, isError, refetch } = useNovels({ categoryId, pageSize: 500, sort, status })
+  const rank = useNovels({ categoryId, pageSize: 10, sort: 'clicks' })
 
   const catName = categories?.find((c) => c.id === categoryId)?.name ?? '全部分類'
 
@@ -300,10 +302,7 @@ export function CategoryView({
             <button
               key={o.key}
               type="button"
-              onClick={() => {
-                setSort(o.key)
-                if (page !== 1) navigate({ name: 'category', categoryId, page: 1 })
-              }}
+              onClick={() => setSort(o.key)}
               className={cn(
                 'cursor-pointer rounded-[3px] px-2 py-1 text-[13px] transition-colors hover:text-[#06c]',
                 sort === o.key ? 'bg-[#e8f4ff] font-bold text-[#1f6cb2]' : 'text-[#666]',
@@ -323,10 +322,7 @@ export function CategoryView({
             <button
               key={o.label}
               type="button"
-              onClick={() => {
-                setStatus(o.key)
-                if (page !== 1) navigate({ name: 'category', categoryId, page: 1 })
-              }}
+              onClick={() => setStatus(o.key)}
               className={cn(
                 'cursor-pointer rounded-[3px] px-2 py-1 text-[13px] transition-colors hover:text-[#06c]',
                 status === o.key ? 'bg-[#e8f4ff] font-bold text-[#1f6cb2]' : 'text-[#666]',
@@ -340,6 +336,10 @@ export function CategoryView({
           </span>
         </div>
       </MyBox>
+
+      {/* 圖文推薦 / 熱門書籍區塊（無數據時自渲染 null） */}
+      <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+      <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
 
       {/* 封面卡网格 */}
       <MyBox>
@@ -358,9 +358,6 @@ export function CategoryView({
             <SearchX className="h-9 w-9" />
             <p className="mt-3 text-sm">該篩選條件下暫無收錄</p>
           </div>
-        )}
-        {data && data.list.length > 0 && (
-          <Pager page={data.page} totalPages={data.totalPages} onGo={(p) => navigate({ name: 'category', categoryId, page: p })} />
         )}
       </MyBox>
 
@@ -1201,16 +1198,15 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
 // ==================== Search ====================
 
 export function SearchView({ navigate, query }: ViewProps & { query: string }) {
-  /* key=query：关键词变化时重挂载，重置输入框与页码 */
+  /* key=query：关键词变化时重挂载，重置输入框 */
   return <SearchPanel key={query} navigate={navigate} query={query} />
 }
 
 function SearchPanel({ navigate, query }: { navigate: (v: ThemeView) => void; query: string }) {
   const [input, setInput] = useState(query)
-  const [page, setPage] = useState(1)
   const { data: categories } = useCategories()
   const { data, isLoading, isError, refetch } = useNovels(
-    query ? { q: query, page, pageSize: 20 } : { sort: 'clicks', pageSize: 12 },
+    query ? { q: query, pageSize: 500 } : { sort: 'clicks', pageSize: 12 },
   )
 
   const submit = (q: string) => navigate({ name: 'search', query: q.trim() })
@@ -1253,14 +1249,11 @@ function SearchPanel({ navigate, query }: { navigate: (v: ThemeView) => void; qu
           ) : isLoading ? (
             <GridSkeleton count={12} />
           ) : data && data.list.length > 0 ? (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                {data.list.map((n) => (
-                  <CoverCard key={n.id} novel={n} onClick={() => navigate({ name: 'book', novelId: n.id })} />
-                ))}
-              </div>
-              {query && <Pager page={data.page} totalPages={data.totalPages} onGo={setPage} />}
-            </>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+              {data.list.map((n) => (
+                <CoverCard key={n.id} novel={n} onClick={() => navigate({ name: 'book', novelId: n.id })} />
+              ))}
+            </div>
           ) : (
             <div className="py-10 text-center">
               <SearchX className="mx-auto h-9 w-9 text-[#bbb]" />

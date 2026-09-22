@@ -64,6 +64,7 @@ model SiteSetting {
   notice       String @default("本站所有小说仅供学习演示使用，请支持正版。")
   seoConfig    String @default("{}") // JSON: SEO TDK 模板配置
   footerConfig String @default("{}") // JSON: 页面底部（页脚）配置 {text,extra,links}
+  homeConfig   String @default("{}") // JSON: 首页自定义图文区块配置 {blocks:[{id,title,source,count}]}
 }
 
 // PSEO 关键词（来自搜索引擎下拉词）

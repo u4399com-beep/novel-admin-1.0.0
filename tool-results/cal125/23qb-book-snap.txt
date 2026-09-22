@@ -1,0 +1,187 @@
+- generic
+  - banner
+    - link "铅笔小说" [ref=e3651]
+      - image "铅笔小说"
+    - form
+      - generic
+        - searchbox "搜索喜欢的小说、作者、标签" [ref=e3669]
+        - link "" [ref=e3670]
+        - button "" [ref=e3671]
+    - list
+      - listitem [level=1]
+        - link "首页" [ref=e3672]
+      - listitem [level=1]
+        - link "言情" [ref=e3673]
+      - listitem [level=1]
+        - link "都市" [ref=e3674]
+      - listitem [level=1]
+        - link "唯美" [ref=e3675]
+      - listitem [level=1]
+        - link "穿越" [ref=e3676]
+      - listitem [level=1]
+        - link "青春" [ref=e3677]
+      - listitem [level=1]
+        - link "玄幻" [ref=e3678]
+      - listitem [level=1]
+        - link "武侠" [ref=e3679]
+      - listitem [level=1]
+        - link "军事" [ref=e3680]
+      - listitem [level=1]
+        - link "竞技" [ref=e3681]
+      - listitem [level=1]
+        - link "科幻" [ref=e3682]
+      - listitem [level=1]
+        - link "悬疑" [ref=e3683]
+      - listitem [level=1]
+        - link "同人" [ref=e3684]
+      - listitem [level=1]
+        - link "职场" [ref=e3685]
+    - list
+      - listitem [level=1]
+      - listitem [level=1]
+        - link "" [ref=e3703]
+  - main
+    - generic
+      - image "仙逆"
+      - heading "仙逆" [level=1, ref=e3646]
+      - generic
+        - link "作者：耳根" [ref=e3652]
+        - link "修真武侠" [ref=e3653]
+        - link ".耳根.仙逆.奇幻.修真.仙侠" [ref=e3686]
+        - StaticText "726.5 万字"
+        - link "完结" [ref=e3654]
+      - generic
+        - StaticText "顺为凡，逆则仙，只在心中一念间……修真，到底是修的什么？修真，修仙，修道。吞魂，神通，霸气。且看一少年，几经转折，以平庸的资质踏入仙途，历经坎坷，凭着其聪睿的心智，迈向崎岖仙路。夺基大法、杀人夺宝、尸阴秘宗、域外战场、古神之地……如何一步一步走向巅峰，凭一己之力，扬名修真界的故事。"
+        - LineBreak "\n"
+        - StaticText "凡人王林在机缘巧合之下投身仙门，因其资质平平叉执拗内敛，刚开始在门派内常被嘲讽，这使他明白了“修真界，就是弱肉强食，只有自己变强才不会被欺负”，于是凭藉自己坚韧不拔的毅力和偶然问得到的天逆珠子的帮助，开始了漫长的修仙之路……离开恒岳派后，他无意中救下旧识，却遣藤厉追杀，逃亡过程中他凭藉自己的谨慎和司徒南的帮忙终于反败为胜，却因此反遭藤化元灭门。"
+        - LineBreak "\n"
+        - StaticText "为了更快地增长修为，他不惜忍受各种痛苦，开始修炼司徒南传授的“黄泉升窍诀”，井被诱入尸阴宗，差点做了被夺身的“炉鼎”……"
+      - generic
+        - button "分享 " [ref=e3687]
+          - link "分享" [ref=e3704]
+        - link " 收藏" [ref=e3655]
+        - link " 推荐" [ref=e3656]
+    - generic
+      - heading "最新章节" [level=2, ref=e3657]
+      - time
+        - StaticText "更新时间：2023-08-31"
+    - link " 第2038章 蓦然回首(结局)" [ref=e3658]
+      - StaticText ""
+      - StaticText "第2038章 蓦然回首(结局)"
+    - link " 第2037章 婉儿，醒来吧" [ref=e3659]
+      - StaticText ""
+      - StaticText "第2037章 婉儿，醒来吧"
+    - link " 第2036章 轮回就在那里" [ref=e3660]
+      - StaticText ""
+      - StaticText "第2036章 轮回就在那里"
+    - link " 第2035章 缺的一个" [ref=e3661]
+      - StaticText ""
+      - StaticText "第2035章 缺的一个"
+    - link " 第2034章 那女子，东梅" [ref=e3662]
+      - StaticText ""
+      - StaticText "第2034章 那女子，东梅"
+    - link " 第2033章 踏入的资格" [ref=e3663]
+      - StaticText ""
+      - StaticText "第2033章 踏入的资格"
+    - link " 第2032章 惊变" [ref=e3664]
+      - StaticText ""
+      - StaticText "第2032章 惊变"
+    - link " 第2031章 临海" [ref=e3665]
+      - StaticText ""
+      - StaticText "第2031章 临海"
+    - link " 第2030章 什么是真相" [ref=e3666]
+      - StaticText ""
+      - StaticText "第2030章 什么是真相"
+    - link "完整目录" [ref=e3647]
+    - heading "书评感想" [level=2, ref=e3667]
+    - generic
+      - textbox "寫下感想……" [ref=e3688]
+      - list
+        - listitem [level=1, ref=e3689] clickable [cursor:pointer, onclick]
+        - listitem [level=1, ref=e3690] clickable [cursor:pointer]
+          - button "發 布" [ref=e3705]
+    - generic
+      - emphasis
+        - StaticText "1"
+      - StaticText "人參與，"
+      - emphasis
+        - StaticText "1"
+      - StaticText "條評論"
+    - generic
+      - image
+      - generic
+        - StaticText "kuybfgd 2026年09月07日 15:01"
+      - generic
+        - LabelText [ref=e3706] clickable [cursor:pointer]
+        - paragraph
+      - generic
+        - link "0" [ref=e3707]
+        - link "1" [ref=e3708]
+        - link "" [ref=e3709]
+    - heading "相关作品" [level=2, ref=e3668]
+    - generic
+      - generic
+        - generic
+          - link "仙逆" [ref=e3710]
+        - link "仙逆" [ref=e3691]
+        - StaticText "耳根"
+      - generic
+        - generic
+          - link "一不小心成了白月光" [ref=e3711]
+        - link "一不小心成了白月光" [ref=e3692]
+        - StaticText "纪婴"
+      - generic
+        - generic
+          - link "凡人修仙传" [ref=e3712]
+        - link "凡人修仙传" [ref=e3693]
+        - StaticText "忘语"
+      - generic
+        - generic
+          - link "阵问长生" [ref=e3713]
+        - link "阵问长生" [ref=e3694]
+        - StaticText "观虚"
+      - generic
+        - generic
+          - link "凡人修仙之仙界篇" [ref=e3714]
+        - link "凡人修仙之仙界篇" [ref=e3695]
+        - StaticText "忘语"
+      - generic
+        - generic
+          - link "从赘婿开始建立长生家族" [ref=e3715]
+        - link "从赘婿开始建立长生家族" [ref=e3696]
+        - StaticText "天弦画柱"
+      - generic
+        - generic
+          - link "洪主" [ref=e3716]
+        - link "洪主" [ref=e3697]
+        - StaticText "烽仙"
+      - generic
+        - generic
+          - link "一念永恒" [ref=e3717]
+        - link "一念永恒" [ref=e3698]
+        - StaticText "耳根"
+      - generic
+        - generic
+          - link "幽冥仙途" [ref=e3718]
+        - link "幽冥仙途" [ref=e3699]
+        - StaticText "减肥专家"
+      - generic
+        - generic
+          - link "择日飞升" [ref=e3719]
+        - link "择日飞升" [ref=e3700]
+        - StaticText "宅猪"
+      - generic
+        - generic
+          - link "光阴之外" [ref=e3720]
+        - link "光阴之外" [ref=e3701]
+        - StaticText "耳根"
+      - generic
+        - generic
+          - link "苍玄路" [ref=e3721]
+        - link "苍玄路" [ref=e3702]
+  - contentinfo
+    - paragraph
+      - link "RSS" [ref=e3648]
+      - link "Google" [ref=e3649]
+      - link "Bing" [ref=e3650]
+  - generic [ref=e3645] clickable [cursor:pointer, onclick]

@@ -4,7 +4,7 @@
 // 设计事实来源：/home/z/site-analysis/specs/101kks.md
 // 蓝白扁平工具风：宝蓝 #1f6cb2 单一主色 + 浅灰底白色 3px 小圆角轻投影卡片
 
-import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { coverBgClass } from '@/lib/covers'
 import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
@@ -311,64 +311,5 @@ export function ChapterSkeleton() {
         ))}
       </div>
     </div>
-  )
-}
-
-// ---------- 分页（.page1 同构药丸条） ----------
-
-export function Pager({ page, totalPages, onGo }: { page: number; totalPages: number; onGo: (p: number) => void }) {
-  if (totalPages <= 1) return null
-  const nums: (number | '…')[] = []
-  for (let p = 1; p <= totalPages; p++) {
-    if (p === 1 || p === totalPages || Math.abs(p - page) <= 1) {
-      if (nums[nums.length - 1] !== p) nums.push(p)
-    } else if (nums[nums.length - 1] !== '…') {
-      nums.push('…')
-    }
-  }
-  const base =
-    'inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-[3px] border px-2 text-sm transition-colors'
-  return (
-    <nav className="flex flex-wrap items-center justify-center gap-1.5 py-2">
-      <button
-        type="button"
-        disabled={page <= 1}
-        onClick={() => onGo(page - 1)}
-        className={cn(base, 'border-[#cfd8e0] bg-[#fafbfc] text-[#333] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40')}
-      >
-        <ChevronLeft className="h-4 w-4" />
-        上一頁
-      </button>
-      {nums.map((n, i) =>
-        n === '…' ? (
-          <span key={`e${i}`} className="px-1 text-[#888]">
-            …
-          </span>
-        ) : (
-          <button
-            key={n}
-            type="button"
-            onClick={() => onGo(n)}
-            className={cn(
-              base,
-              n === page
-                ? 'border-[#1f6cb2] bg-[#1f6cb2] font-bold text-white'
-                : 'border-[#cfd8e0] bg-[#fafbfc] text-[#333] hover:bg-white hover:text-[#06c]',
-            )}
-          >
-            {n}
-          </button>
-        ),
-      )}
-      <button
-        type="button"
-        disabled={page >= totalPages}
-        onClick={() => onGo(page + 1)}
-        className={cn(base, 'border-[#cfd8e0] bg-[#fafbfc] text-[#333] hover:bg-white disabled:cursor-not-allowed disabled:opacity-40')}
-      >
-        下一頁
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </nav>
   )
 }

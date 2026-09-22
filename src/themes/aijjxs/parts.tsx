@@ -278,44 +278,6 @@ export function CoverCard({
   )
 }
 
-/* ==================== 分页器 ==================== */
-
-export function Pager({
-  page,
-  totalPages,
-  go,
-}: {
-  page: number
-  totalPages: number
-  go: (p: number) => void
-}) {
-  if (totalPages <= 1) return null
-  const nums: number[] = []
-  const start = Math.max(1, Math.min(page - 3, totalPages - 6))
-  for (let p = start; p <= Math.min(totalPages, start + 6); p++) nums.push(p)
-  return (
-    <nav className="flex flex-wrap items-center justify-center gap-1.5 py-4" aria-label="分页">
-      <button className="aj-pager-btn" disabled={page <= 1} onClick={() => go(1)}>
-        首页
-      </button>
-      <button className="aj-pager-btn" disabled={page <= 1} onClick={() => go(page - 1)}>
-        上一页
-      </button>
-      {nums.map((p) => (
-        <button key={p} className="aj-pager-btn" aria-current={p === page} onClick={() => go(p)}>
-          {p}
-        </button>
-      ))}
-      <button className="aj-pager-btn" disabled={page >= totalPages} onClick={() => go(page + 1)}>
-        下一页
-      </button>
-      <button className="aj-pager-btn" disabled={page >= totalPages} onClick={() => go(totalPages)}>
-        尾页
-      </button>
-    </nav>
-  )
-}
-
 /* ==================== 头像渐变令牌 ==================== */
 
 export function avatarGradient(i: number): string {

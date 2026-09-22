@@ -1,0 +1,594 @@
+- button "青阅文学" [ref=e498]
+- navigation "分类导航" [ref=e499]
+  - button "首页" [ref=e518]
+  - button "未分类" [ref=e519]
+  - button "玄幻" [ref=e520]
+  - button "科幻" [ref=e521]
+  - button "其他" [ref=e522]
+  - button "网游" [ref=e523]
+  - button "都市" [ref=e524]
+  - button "言情" [ref=e525]
+  - button "同人" [ref=e526]
+  - button "武侠" [ref=e527]
+  - button "历史" [ref=e528]
+  - button "游戏" [ref=e529]
+  - button "悬疑" [ref=e530]
+  - button "轻小说" [ref=e531]
+  - button "全部小说" [ref=e532]
+- button "搜索" [ref=e500]
+- button "菜单" [ref=e501]
+- button "搜索" [ref=e502]
+- button "阅读记录" [ref=e503]
+- button "繁體版" [ref=e504]
+- banner
+  - button "青阅文学" [ref=e505]
+  - paragraph
+  - form
+    - textbox "搜索书名 / 作者，回车直达" [ref=e533]
+    - button "搜索全站" [ref=e534]
+- main
+  - generic
+    - sectionheader
+      - heading "最新上传" [level=2, ref=e665]
+      - StaticText "每日实时更新"
+    - generic [ref=e535] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "我曝光前世惊炸全网"
+      - StaticText "卿浅"
+      - StaticText "2026-09-19"
+    - generic [ref=e536] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "大宣武圣"
+      - StaticText "夜南听风"
+      - StaticText "2026-09-19"
+    - generic [ref=e537] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "我在东京制作怪谈"
+      - StaticText "无色方块"
+      - StaticText "2026-09-19"
+    - generic [ref=e538] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "娱乐：哥，没你我早走出来了"
+      - StaticText "浮水之子狗"
+      - StaticText "2026-09-19"
+    - generic [ref=e539] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "星际领主：打劫异族就有百倍收获"
+      - StaticText "谁家的天使"
+      - StaticText "2026-09-19"
+    - generic [ref=e540] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "退下，让朕来"
+      - StaticText "油爆香菇"
+      - StaticText "2026-09-19"
+    - generic [ref=e541] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "希腊带恶人"
+      - StaticText "紫夜弦歌"
+      - StaticText "2026-09-19"
+    - generic [ref=e542] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "武道独尊：从虎啸金钟罩开始"
+      - StaticText "文述生"
+      - StaticText "2026-09-19"
+    - generic [ref=e543] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "科学修仙：从许愿开始"
+      - StaticText "夜半听潮"
+      - StaticText "2026-09-19"
+    - generic [ref=e544] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "红龙：无限词条"
+      - StaticText "龙亖"
+      - StaticText "2026-09-19"
+    - generic [ref=e545] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "夫人她马甲又轰动全城了"
+      - StaticText "灵小哥"
+      - StaticText "2026-09-19"
+    - generic [ref=e546] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "非洲创业实录"
+      - StaticText "恶的呃呃呃"
+      - StaticText "2026-09-19"
+    - generic [ref=e547] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "剧透历史：从三国开始"
+      - StaticText "冷泡茶加冰"
+      - StaticText "2026-09-19"
+    - generic [ref=e548] clickable [cursor:pointer, onclick]
+      - StaticText "未分类"
+      - StaticText "牧者密续"
+      - StaticText "不祈十弦"
+      - StaticText "2026-09-19"
+  - generic
+    - sectionheader
+      - heading "封面推荐" [level=2, ref=e666]
+      - StaticText "编推精选"
+    - article [ref=e549] clickable [cursor:pointer, onclick]
+      - heading "全境电竞家 新" [level=3, ref=e667]
+        - StaticText "全境电竞家"
+        - StaticText "新"
+      - paragraph
+        - StaticText "游戏 · 峡谷指挥官 · 1.3万字"
+      - paragraph
+        - StaticText "退役三年的冠军中单，在游戏全面进化为\"第二人生\"的时代，从网吧赛重新打回世界之巅。"
+    - article [ref=e550] clickable [cursor:pointer, onclick]
+      - heading "深空回收员 新" [level=3, ref=e668]
+        - StaticText "深空回收员"
+        - StaticText "新"
+      - paragraph
+        - StaticText "科幻 · 零号观察者 · 1.7万字"
+      - paragraph
+        - StaticText "公元2847年，人类文明散落在猎户旋臂。他的工作是驾驶回收船，打捞那些失踪的殖民舰——直到他接到了来自地球的求救信号。"
+    - article [ref=e551] clickable [cursor:pointer, onclick]
+      - heading "午夜档案室 新" [level=3, ref=e669]
+        - StaticText "午夜档案室"
+        - StaticText "新"
+      - paragraph
+        - StaticText "悬疑 · 守夜人老周 · 3.1万字"
+      - paragraph
+        - StaticText "市档案馆地下三层，有一间只在午夜开放的档案室。新来的管理员发现，每份卷宗的死者，都会在第七天向他讲述自己的故事。"
+    - article [ref=e552] clickable [cursor:pointer, onclick]
+      - heading "第十三层宿舍" [level=3, ref=e670]
+        - StaticText "第十三层宿舍"
+      - paragraph
+        - StaticText "悬疑 · 楼梯间的猫 · 1.7万字"
+      - paragraph
+        - StaticText "这栋宿舍楼只有十二层，但电梯里，偶尔会亮起\"13\"的按钮。"
+    - article [ref=e553] clickable [cursor:pointer, onclick]
+      - heading "时间胶囊商店" [level=3, ref=e671]
+        - StaticText "时间胶囊商店"
+      - paragraph
+        - StaticText "科幻 · 四维口袋 · 2.6万字"
+      - paragraph
+        - StaticText "这家小店可以寄存\"时间\"：一天的快乐、一周的悲伤、一整年的等待。店主收集这些时间，究竟要做什么？"
+    - article [ref=e554] clickable [cursor:pointer, onclick]
+      - heading "长风渡北境" [level=3, ref=e672]
+        - StaticText "长风渡北境"
+      - paragraph
+        - StaticText "历史 · 燕然未勒 · 2.2万字"
+      - paragraph
+        - StaticText "北境孤城被围三月，援军不至。一个小小守备拿起父辈的旧刀，在粮尽援绝之际，做出了他的选择。"
+  - generic
+    - sectionheader
+      - heading "小说分类" [level=2, ref=e673]
+    - button "未分类" [ref=e555]
+      - StaticText "未分类"
+    - button "更多>>" [ref=e556]
+    - generic [ref=e557] clickable [cursor:pointer, onclick]
+      - StaticText "我曝光前世惊炸全网"
+      - StaticText "卿浅"
+    - generic [ref=e558] clickable [cursor:pointer, onclick]
+      - StaticText "大宣武圣"
+      - StaticText "夜南听风"
+    - generic [ref=e559] clickable [cursor:pointer, onclick]
+      - StaticText "我在东京制作怪谈"
+      - StaticText "无色方块"
+    - generic [ref=e560] clickable [cursor:pointer, onclick]
+      - StaticText "娱乐：哥，没你我早走出来了"
+      - StaticText "浮水之子狗"
+    - generic [ref=e561] clickable [cursor:pointer, onclick]
+      - StaticText "星际领主：打劫异族就有百倍收获"
+      - StaticText "谁家的天使"
+    - generic [ref=e562] clickable [cursor:pointer, onclick]
+      - StaticText "退下，让朕来"
+      - StaticText "油爆香菇"
+    - generic [ref=e563] clickable [cursor:pointer, onclick]
+      - StaticText "希腊带恶人"
+      - StaticText "紫夜弦歌"
+    - generic [ref=e564] clickable [cursor:pointer, onclick]
+      - StaticText "武道独尊：从虎啸金钟罩开始"
+      - StaticText "文述生"
+    - generic [ref=e565] clickable [cursor:pointer, onclick]
+      - StaticText "科学修仙：从许愿开始"
+      - StaticText "夜半听潮"
+    - generic [ref=e566] clickable [cursor:pointer, onclick]
+      - StaticText "红龙：无限词条"
+      - StaticText "龙亖"
+    - button "玄幻" [ref=e567]
+      - StaticText "玄幻"
+    - button "更多>>" [ref=e568]
+    - generic [ref=e569] clickable [cursor:pointer, onclick]
+      - StaticText "我有一剑"
+      - StaticText "青鸾峰上"
+    - generic [ref=e570] clickable [cursor:pointer, onclick]
+      - StaticText "万相之王"
+      - StaticText "天蚕土豆"
+    - generic [ref=e571] clickable [cursor:pointer, onclick]
+      - StaticText "伏天氏"
+      - StaticText "净无痕"
+    - generic [ref=e572] clickable [cursor:pointer, onclick]
+      - StaticText "开局签到荒古圣体"
+      - StaticText "J神"
+    - generic [ref=e573] clickable [cursor:pointer, onclick]
+      - StaticText "陆逢时"
+      - StaticText "悠然南菊"
+    - generic [ref=e574] clickable [cursor:pointer, onclick]
+      - StaticText "混沌造化石"
+      - StaticText "君子如珩长风万里"
+    - generic [ref=e575] clickable [cursor:pointer, onclick]
+      - StaticText "横推从养生拳大成开始"
+      - StaticText "瑶有上进心"
+    - generic [ref=e576] clickable [cursor:pointer, onclick]
+      - StaticText "异世战歌"
+      - StaticText "醉御风烟"
+    - generic [ref=e577] clickable [cursor:pointer, onclick]
+      - StaticText "邪眼天君"
+      - StaticText "浪子q"
+    - generic [ref=e578] clickable [cursor:pointer, onclick]
+      - StaticText "女主本就是我的，截胡系统什么鬼"
+      - StaticText "羊飏羊"
+    - button "科幻" [ref=e579]
+      - StaticText "科幻"
+    - button "更多>>" [ref=e580]
+    - generic [ref=e581] clickable [cursor:pointer, onclick]
+      - StaticText "深空回收员"
+      - StaticText "零号观察者"
+    - generic [ref=e582] clickable [cursor:pointer, onclick]
+      - StaticText "硅基觉醒"
+      - StaticText "图灵的猫"
+    - generic [ref=e583] clickable [cursor:pointer, onclick]
+      - StaticText "时间胶囊商店"
+      - StaticText "四维口袋"
+    - generic [ref=e584] clickable [cursor:pointer, onclick]
+      - StaticText "火星种植园"
+      - StaticText "土豆星人"
+    - generic [ref=e585] clickable [cursor:pointer, onclick]
+      - StaticText "量子图书馆"
+      - StaticText "薛定谔的鱼"
+    - generic [ref=e586] clickable [cursor:pointer, onclick]
+      - StaticText "天灾第十年跟我去种田"
+      - StaticText "南极蓝"
+    - generic [ref=e587] clickable [cursor:pointer, onclick]
+      - StaticText "灵境行者"
+      - StaticText "卖报小郎君"
+    - generic [ref=e588] clickable [cursor:pointer, onclick]
+      - StaticText "异度旅社"
+      - StaticText "远瞳"
+    - button "其他" [ref=e589]
+      - StaticText "其他"
+    - button "更多>>" [ref=e590]
+    - generic [ref=e591] clickable [cursor:pointer, onclick]
+      - StaticText "四合院：从修复身体开始无敌"
+      - StaticText "阳春景行"
+    - generic [ref=e592] clickable [cursor:pointer, onclick]
+      - StaticText "雪豹：靠着抢劫打造最强精锐团"
+      - StaticText "教头本尊"
+    - generic [ref=e593] clickable [cursor:pointer, onclick]
+      - StaticText "重生七零：拒当望门寡，转身高嫁"
+      - StaticText "列无暇"
+    - generic [ref=e594] clickable [cursor:pointer, onclick]
+      - StaticText "巫界术士"
+      - StaticText "文抄公"
+    - generic [ref=e595] clickable [cursor:pointer, onclick]
+      - StaticText "修仙学院恶毒女配？众天骄跪求宠"
+      - StaticText "昭月翎"
+    - generic [ref=e596] clickable [cursor:pointer, onclick]
+      - StaticText "轻风修仙记"
+      - StaticText "听风的机器猫"
+    - generic [ref=e597] clickable [cursor:pointer, onclick]
+      - StaticText "40k：午夜之刃"
+      - StaticText "拿刀划墙纸"
+    - generic [ref=e598] clickable [cursor:pointer, onclick]
+      - StaticText "溺水的鱼"
+      - StaticText "少鸿"
+    - generic [ref=e599] clickable [cursor:pointer, onclick]
+      - StaticText "我是夏始之"
+      - StaticText "余耕"
+    - generic [ref=e600] clickable [cursor:pointer, onclick]
+      - StaticText "中国式饭局"
+      - StaticText "高和"
+    - button "网游" [ref=e601]
+      - StaticText "网游"
+    - button "更多>>" [ref=e602]
+    - generic [ref=e603] clickable [cursor:pointer, onclick]
+      - StaticText "无敌从我看见BOSS血条开始"
+      - StaticText "我也很绝望"
+    - generic [ref=e604] clickable [cursor:pointer, onclick]
+      - StaticText "神的模仿犯"
+      - StaticText "青衫取醉"
+    - button "都市" [ref=e605]
+      - StaticText "都市"
+    - button "更多>>" [ref=e606]
+    - generic [ref=e607] clickable [cursor:pointer, onclick]
+      - StaticText "重生之都市医仙"
+      - StaticText "南山北望"
+    - generic [ref=e608] clickable [cursor:pointer, onclick]
+      - StaticText "隔壁班的月亮"
+      - StaticText "夏栀"
+    - generic [ref=e609] clickable [cursor:pointer, onclick]
+      - StaticText "总裁办的猫"
+      - StaticText "奶油不吃鱼"
+    - generic [ref=e610] clickable [cursor:pointer, onclick]
+      - StaticText "晚风与灯火"
+      - StaticText "陈默然"
+    - generic [ref=e611] clickable [cursor:pointer, onclick]
+      - StaticText "离婚后我成了顶流"
+      - StaticText "追星少女M"
+    - generic [ref=e612] clickable [cursor:pointer, onclick]
+      - StaticText "以神通之名"
+      - StaticText "猪心虾仁"
+    - generic [ref=e613] clickable [cursor:pointer, onclick]
+      - StaticText "我的1995小农庄"
+      - StaticText "叶公好龙A"
+    - generic [ref=e614] clickable [cursor:pointer, onclick]
+      - StaticText "亮剑：李云龙十四岁入黄埔一期"
+      - StaticText "楚云飞在此"
+    - generic [ref=e615] clickable [cursor:pointer, onclick]
+      - StaticText "重生后：带着小青梅赶山在兴安岭"
+      - StaticText "龙都老乡亲"
+    - generic [ref=e616] clickable [cursor:pointer, onclick]
+      - StaticText "开局见神不坏，横推诡异八万里"
+      - StaticText "拳王阿李"
+    - button "言情" [ref=e617]
+      - StaticText "言情"
+    - button "更多>>" [ref=e618]
+    - generic [ref=e619] clickable [cursor:pointer, onclick]
+      - StaticText "沈浪苏若雪"
+      - StaticText "花幽山月"
+    - button "同人" [ref=e620]
+      - StaticText "同人"
+    - button "更多>>" [ref=e621]
+    - generic [ref=e622] clickable [cursor:pointer, onclick]
+      - StaticText "弃女荣嫁"
+      - StaticText "柠檬笑"
+    - button "武侠" [ref=e623]
+      - StaticText "武侠"
+    - button "更多>>" [ref=e624]
+    - generic [ref=e625] clickable [cursor:pointer, onclick]
+      - StaticText "青萍剑歌行"
+      - StaticText "听雨楼主"
+    - generic [ref=e626] clickable [cursor:pointer, onclick]
+      - StaticText "我在昆仑修长生"
+      - StaticText "松下问道"
+    - generic [ref=e627] clickable [cursor:pointer, onclick]
+      - StaticText "谪仙酒馆"
+      - StaticText "半盏流年"
+    - generic [ref=e628] clickable [cursor:pointer, onclick]
+      - StaticText "剑来南浦"
+      - StaticText "白鹭洲"
+    - generic [ref=e629] clickable [cursor:pointer, onclick]
+      - StaticText "仙门快递员"
+      - StaticText "御剑同城送"
+    - button "历史" [ref=e630]
+      - StaticText "历史"
+    - button "更多>>" [ref=e631]
+    - generic [ref=e632] clickable [cursor:pointer, onclick]
+      - StaticText "长风渡北境"
+      - StaticText "燕然未勒"
+    - generic [ref=e633] clickable [cursor:pointer, onclick]
+      - StaticText "大明第一账房"
+      - StaticText "算盘先生"
+    - generic [ref=e634] clickable [cursor:pointer, onclick]
+      - StaticText "铁马冰河录"
+      - StaticText "塞上牧马人"
+    - generic [ref=e635] clickable [cursor:pointer, onclick]
+      - StaticText "运河桨声里"
+      - StaticText "南塘旧事"
+    - generic [ref=e636] clickable [cursor:pointer, onclick]
+      - StaticText "大唐不良人手记"
+      - StaticText "坊间闲人"
+    - button "游戏" [ref=e637]
+      - StaticText "游戏"
+    - button "更多>>" [ref=e638]
+    - generic [ref=e639] clickable [cursor:pointer, onclick]
+      - StaticText "全境电竞家"
+      - StaticText "峡谷指挥官"
+    - generic [ref=e640] clickable [cursor:pointer, onclick]
+      - StaticText "我的副本能存档"
+      - StaticText "读档青年"
+    - generic [ref=e641] clickable [cursor:pointer, onclick]
+      - StaticText "王者退役日"
+      - StaticText "老将不死"
+    - generic [ref=e642] clickable [cursor:pointer, onclick]
+      - StaticText "虚拟王座"
+      - StaticText "键盘侠客"
+    - generic [ref=e643] clickable [cursor:pointer, onclick]
+      - StaticText "重生之金牌教练"
+      - StaticText "战术板"
+    - button "悬疑" [ref=e644]
+      - StaticText "悬疑"
+    - button "更多>>" [ref=e645]
+    - generic [ref=e646] clickable [cursor:pointer, onclick]
+      - StaticText "午夜档案室"
+      - StaticText "守夜人老周"
+    - generic [ref=e647] clickable [cursor:pointer, onclick]
+      - StaticText "雾锁青川镇"
+      - StaticText "南巷说书人"
+    - generic [ref=e648] clickable [cursor:pointer, onclick]
+      - StaticText "第十三层宿舍"
+      - StaticText "楼梯间的猫"
+    - generic [ref=e649] clickable [cursor:pointer, onclick]
+      - StaticText "谜案直播间"
+      - StaticText "弹幕破案"
+    - generic [ref=e650] clickable [cursor:pointer, onclick]
+      - StaticText "深海七十米"
+      - StaticText "潜水员日记"
+    - button "轻小说" [ref=e651]
+      - StaticText "轻小说"
+    - button "更多>>" [ref=e652]
+    - generic [ref=e653] clickable [cursor:pointer, onclick]
+      - StaticText "魔女学院的旁听生"
+      - StaticText "猫头鹰书店"
+    - generic [ref=e654] clickable [cursor:pointer, onclick]
+      - StaticText "勇者辞职之后"
+      - StaticText "休息一下"
+    - generic [ref=e655] clickable [cursor:pointer, onclick]
+      - StaticText "便利店与猫神大人"
+      - StaticText "关东煮之神"
+    - generic [ref=e656] clickable [cursor:pointer, onclick]
+      - StaticText "星海航线图"
+      - StaticText "灯塔守望"
+    - generic [ref=e657] clickable [cursor:pointer, onclick]
+      - StaticText "我的同桌是龙女"
+      - StaticText "西瓜太郎"
+  - generic
+    - sectionheader
+      - heading "专题书单 · 完结精选" [level=2, ref=e674]
+      - StaticText "全部已完结"
+    - article [ref=e658] clickable [cursor:pointer, onclick]
+      - heading "荐 仙门快递员" [level=3, ref=e675]
+        - StaticText "荐"
+        - StaticText "仙门快递员"
+      - paragraph
+        - StaticText "御剑同城送 · 1.3万字"
+      - paragraph
+        - StaticText "修真界推行\"宗门数字化改革\"，他被分配去送快递。一柄飞剑，包裹四海，顺便卷起一场行业革命。"
+    - article [ref=e659] clickable [cursor:pointer, onclick]
+      - heading "荐 符文工厂物语" [level=3, ref=e676]
+        - StaticText "荐"
+        - StaticText "符文工厂物语"
+      - paragraph
+        - StaticText "打铁匠 · 2.6万字"
+      - paragraph
+        - StaticText "穿越到异世界成为一名符文工匠，不擅长战斗，但每一件出自他手的装备，都会改写一场战争的结局。"
+    - article [ref=e660] clickable [cursor:pointer, onclick]
+      - heading "荐 便利店与猫神大人" [level=3, ref=e677]
+        - StaticText "荐"
+        - StaticText "便利店与猫神大人"
+      - paragraph
+        - StaticText "关东煮之神 · 1.3万字"
+      - paragraph
+        - StaticText "深夜便利店打工的普通人，捡到一只会说话的三花猫。作为报酬，它承诺实现店主一个愿望——可惜它记错了自己的神格。"
+    - article [ref=e661] clickable [cursor:pointer, onclick]
+      - heading "荐 第十三层宿舍" [level=3, ref=e678]
+        - StaticText "荐"
+        - StaticText "第十三层宿舍"
+      - paragraph
+        - StaticText "楼梯间的猫 · 1.7万字"
+      - paragraph
+        - StaticText "这栋宿舍楼只有十二层，但电梯里，偶尔会亮起\"13\"的按钮。"
+    - article [ref=e662] clickable [cursor:pointer, onclick]
+      - heading "荐 王者退役日" [level=3, ref=e679]
+        - StaticText "荐"
+        - StaticText "王者退役日"
+      - paragraph
+        - StaticText "老将不死 · 2.2万字"
+      - paragraph
+        - StaticText "三十二岁，职业生涯最后一场比赛。没有奇迹，只有对自己二十年热爱的交代。"
+    - article [ref=e663] clickable [cursor:pointer, onclick]
+      - heading "荐 时间胶囊商店" [level=3, ref=e680]
+        - StaticText "荐"
+        - StaticText "时间胶囊商店"
+      - paragraph
+        - StaticText "四维口袋 · 2.6万字"
+      - paragraph
+        - StaticText "这家小店可以寄存\"时间\"：一天的快乐、一周的悲伤、一整年的等待。店主收集这些时间，究竟要做什么？"
+  - complementary
+    - generic
+      - sectionheader
+        - heading "人气作者" [level=2, ref=e711]
+        - StaticText "今日已签到"
+      - button "休 休息一下" [ref=e681]
+        - StaticText "休"
+        - StaticText "休息一下"
+      - button "坊 坊间闲人" [ref=e682]
+        - StaticText "坊"
+        - StaticText "坊间闲人"
+      - button "黑 黑曜石" [ref=e683]
+        - StaticText "黑"
+        - StaticText "黑曜石"
+      - button "西 西瓜太郎" [ref=e684]
+        - StaticText "西"
+        - StaticText "西瓜太郎"
+      - button "猫 猫头鹰书店" [ref=e685]
+        - StaticText "猫"
+        - StaticText "猫头鹰书店"
+    - generic
+      - sectionheader
+        - heading "24小时热榜" [level=2, ref=e712]
+      - generic [ref=e686] clickable [cursor:pointer, onclick]
+        - paragraph
+        - paragraph
+        - paragraph
+      - list
+        - listitem [level=1]
+          - generic [ref=e716] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e717] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e718] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e719] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e720] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e721] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e722] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e723] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e724] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e725] clickable [cursor:pointer, onclick]
+    - generic
+      - sectionheader
+        - heading "人气总榜" [level=2, ref=e713]
+      - list
+        - listitem [level=1]
+          - generic [ref=e726] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e727] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e728] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e729] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e730] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e731] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e732] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e733] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e734] clickable [cursor:pointer, onclick]
+        - listitem [level=1]
+          - generic [ref=e735] clickable [cursor:pointer, onclick]
+    - generic
+      - sectionheader
+        - heading "作者标签云" [level=2, ref=e714]
+      - button "休息一下" [ref=e687]
+      - button "坊间闲人" [ref=e688]
+      - button "黑曜石" [ref=e689]
+      - button "西瓜太郎" [ref=e690]
+      - button "猫头鹰书店" [ref=e691]
+      - button "南巷说书人" [ref=e692]
+      - button "守夜人老周" [ref=e693]
+      - button "读档青年" [ref=e694]
+      - button "峡谷指挥官" [ref=e695]
+      - button "图灵的猫" [ref=e696]
+      - button "御剑同城送" [ref=e697]
+      - button "潜水员日记" [ref=e698]
+      - button "战术板" [ref=e699]
+      - button "薛定谔的鱼" [ref=e700]
+      - button "追星少女M" [ref=e701]
+      - button "打铁匠" [ref=e702]
+      - button "灯塔守望" [ref=e703]
+      - button "卿浅" [ref=e704]
+      - button "夜南听风" [ref=e705]
+      - button "无色方块" [ref=e706]
+      - button "浮水之子狗" [ref=e707]
+      - button "谁家的天使" [ref=e708]
+      - button "油爆香菇" [ref=e709]
+      - button "紫夜弦歌" [ref=e710]
+  - generic
+    - heading "站点数据一览" [level=2, ref=e664]
+- contentinfo
+  - button "网站首页" [ref=e506]
+  - button "全部小说" [ref=e507]
+  - button "站内搜索" [ref=e508]
+  - button "阅读记录" [ref=e509]
+  - button "收藏本站" [ref=e510]
+  - button "繁體版" [ref=e511]
+  - button "未分类" [ref=e512]
+  - button "玄幻" [ref=e513]
+  - button "科幻" [ref=e514]
+  - button "其他" [ref=e515]
+  - button "网游" [ref=e516]
+  - button "都市" [ref=e517]
+- button "进入站点管理后台" [ref=e496]
+- region "Notifications alt+T" [ref=e497]
+- button "Open Next.js Dev Tools" [expanded=false, ref=e715]

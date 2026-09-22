@@ -38,6 +38,7 @@ import {
   type ReaderSceneColors,
 } from '@/hooks/use-reader-prefs'
 import type { ChapterDetail } from '@/lib/types'
+import { CategoryFeaturedBlock, CategoryHotBlock, HomeCustomBlocks } from '@/components/theme-extras'
 import type { ThemeLayoutProps, ThemeModule, ViewProps } from '../types'
 import { useSearchField, type SearchField } from './search-field'
 import {
@@ -46,7 +47,6 @@ import {
   Cover,
   Crumbs,
   ErrorBox,
-  Pager,
   RankRows,
   SkeletonBlock,
   SkeletonLines,
@@ -436,6 +436,11 @@ function HomeView({ navigate }: ViewProps) {
         </Block>
       </div>
 
+      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+      <div className="mt-3">
+        <HomeCustomBlocks navigate={navigate} />
+      </div>
+
       {/* 友情链接（真实数据驱动：站内分类入口 + 全部书库，杰奇首页底部惯例） */}
       <Block title="友情链接" className="mt-3" bodyClass="p-2.5">
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-[#6f78a7]">
@@ -470,43 +475,34 @@ function HomeView({ navigate }: ViewProps) {
 }
 
 /* ==================================================================== */
-/* Category：左 190 榜单侧栏 + 右 760 六列数据表 + 翻页                   */
+/* Category：左 190 榜单侧栏 + 右 760 六列数据表                           */
 /* ==================================================================== */
 
 type SortKey = 'latest' | 'clicks' | 'words'
 type StatusKey = 'all' | 'serial' | 'finished'
 type PresetKey = 'clicks' | 'latest' | 'finished' | 'words'
 
-function CategoryView({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+function CategoryView({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const { data: cats } = useCategories()
   const { data: home } = useHomeData()
   const [sort, setSort] = useState<SortKey>('latest')
   const [status, setStatus] = useState<StatusKey>('all')
-  const cur = page > 0 ? page : 1
 
   const { data, isLoading, isError, refetch } = useNovels({
     categoryId,
-    page: cur,
-    pageSize: 20,
+    pageSize: 500,
     sort,
     status: status === 'all' ? undefined : status,
   })
 
   const catName =
     categoryId != null ? (cats ?? []).find((c) => c.id === categoryId)?.name : undefined
-  const goPage = (p: number) => navigate({ name: 'category', categoryId, page: p })
   const applySort = (s: SortKey) => {
     setSort(s)
     setStatus('all')
-    if (cur !== 1) goPage(1)
   }
   const applyStatus = (s: StatusKey) => {
     setStatus(s)
-    if (cur !== 1) goPage(1)
   }
   const applyPreset = (p: PresetKey) => {
     if (p === 'finished') {
@@ -516,7 +512,6 @@ function CategoryView({
       setSort(p)
       setStatus('all')
     }
-    if (cur !== 1) goPage(1)
   }
 
   return (
@@ -608,6 +603,10 @@ function CategoryView({
             ))}
           </div>
 
+          {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+          <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+          <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
+
           {/* 表头（灰底） */}
           <div className="hidden bg-[#e1eced] px-2 py-1.5 text-xs font-bold text-[#666] md:grid md:grid-cols-[minmax(0,18fr)_minmax(0,46fr)_minmax(0,13fr)_minmax(0,8fr)_minmax(0,9fr)_minmax(0,6fr)] md:gap-x-3">
             <span>书名</span>
@@ -625,12 +624,7 @@ function CategoryView({
               <ErrorBox onRetry={() => refetch()} />
             </div>
           ) : data && data.list.length > 0 ? (
-            <>
-              {data.list.map((n) => (
-                <BookRow key={n.id} novel={n} navigate={navigate} />
-              ))}
-              <Pager page={cur} totalPages={data.totalPages} onPage={goPage} className="pt-2" />
-            </>
+            data.list.map((n) => <BookRow key={n.id} novel={n} navigate={navigate} />)
           ) : (
             <p className="py-10 text-center text-sm text-[#999]">该分类下暂无小说，换个条件试试～</p>
           )}
@@ -1283,34 +1277,24 @@ function SearchView({ navigate, siteName, query }: ViewProps & { query: string }
 
 function SearchInner({ navigate, query, field }: ViewProps & { query: string; field: SearchField }) {
   const [kw, setKw] = useState(query)
-  const [page, setPage] = useState(1)
   const setField = useSearchField((s) => s.setField)
 
-  /* all → 服务端分页检索；title/author → 一次拉取 60 条（API 上限）后按字段本地过滤 + 本地分页 */
-  const serverQ = useNovels({ q: query || undefined, page: 1, pageSize: 20, enabled: field === 'all' })
-  const poolQ = useNovels({ q: query || undefined, page: 1, pageSize: 60, enabled: field !== 'all' })
+  /* all → 服务端检索；title/author → 一次拉全后按字段本地过滤（均无分页） */
+  const serverQ = useNovels({ q: query || undefined, pageSize: 500, enabled: field === 'all' })
+  const poolQ = useNovels({ q: query || undefined, pageSize: 500, enabled: field !== 'all' })
 
-  const FILTERED_PAGE_SIZE = 20
   const filtered = useMemo(() => {
     if (field === 'all' || !poolQ.data) return null
     const kwT = query.trim()
     const rows = poolQ.data.list.filter((n) => (field === 'title' ? n.title : n.author).includes(kwT))
-    return {
-      rows,
-      total: rows.length,
-      totalPages: Math.max(1, Math.ceil(rows.length / FILTERED_PAGE_SIZE)),
-    }
+    return { rows, total: rows.length }
   }, [field, poolQ.data, query])
 
   const isLoading = field === 'all' ? serverQ.isPending : poolQ.isPending
   const isError = field === 'all' ? serverQ.isError : poolQ.isError
   const refetch = () => (field === 'all' ? serverQ.refetch() : poolQ.refetch())
-  const rows =
-    field === 'all'
-      ? (serverQ.data?.list ?? [])
-      : (filtered?.rows.slice((page - 1) * FILTERED_PAGE_SIZE, page * FILTERED_PAGE_SIZE) ?? [])
+  const rows = field === 'all' ? (serverQ.data?.list ?? []) : (filtered?.rows ?? [])
   const total = field === 'all' ? (serverQ.data?.total ?? 0) : (filtered?.total ?? 0)
-  const totalPages = field === 'all' ? (serverQ.data?.totalPages ?? 0) : (filtered?.totalPages ?? 0)
 
   /* 回车 = 综合检索（书名/作者/简介）；双按钮 = 分别按书名字段 / 作者字段检索 */
   const submit = () => {
@@ -1384,12 +1368,7 @@ function SearchInner({ navigate, query, field }: ViewProps & { query: string; fi
             <ErrorBox onRetry={refetch} />
           </div>
         ) : rows.length > 0 ? (
-          <>
-            {rows.map((n) => (
-              <BookRow key={n.id} novel={n} navigate={navigate} />
-            ))}
-            <Pager page={page} totalPages={totalPages} onPage={setPage} className="pt-2" />
-          </>
+          rows.map((n) => <BookRow key={n.id} novel={n} navigate={navigate} />)
         ) : (
           <p className="py-10 text-center text-sm text-[#999]">未找到相关小说，换个关键词试试～</p>
         )}

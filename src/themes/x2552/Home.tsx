@@ -1,6 +1,7 @@
 'use client'
 
 import { useHomeData } from '@/hooks/use-novel-data'
+import { HomeCustomBlocks } from '@/components/theme-extras'
 import type { CategoryDto, NovelListItem } from '@/lib/types'
 import type { ViewProps } from '../types'
 import { Block, Cover, ErrorBox, RankList, RowsSkeleton, XLink } from './parts'
@@ -201,6 +202,11 @@ export default function Home({ navigate }: ViewProps) {
             )}
           </Block>
         </div>
+      </div>
+
+      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+      <div className="mt-2">
+        <HomeCustomBlocks navigate={navigate} />
       </div>
 
       <Links categories={cats} navigate={navigate} />

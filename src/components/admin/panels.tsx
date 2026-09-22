@@ -16,11 +16,11 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Trash2, Pencil, Plus, BookOpen, Layers } from 'lucide-react'
+import { Trash2, Pencil, Plus, BookOpen, Layers, ChevronUp, ChevronDown, LayoutGrid } from 'lucide-react'
 import { THEME_LIST } from '@/themes/registry'
 import { useAppStore } from '@/lib/store'
-import { useChapters, useNovels, useSettings, qk } from '@/hooks/use-novel-data'
-import type { CategoryDto, NovelListItem, SeoConfig } from '@/lib/types'
+import { useChapters, useNovels, useSettings, useCategories, qk } from '@/hooks/use-novel-data'
+import type { CategoryDto, HomeBlockConfig, NovelListItem, SeoConfig } from '@/lib/types'
 import { formatWordCount, timeAgo } from '@/lib/format'
 import { useQuery, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query'
 import { api, errMsg, runBusy, useDialogEscape, Field, Modal, DialogActions } from './ui-shared'
@@ -782,12 +782,15 @@ export function PseoTab() {
 export function SettingsTab() {
   const { data: settings } = useSettings()
   const qc = useQueryClient()
+  const { data: categories } = useCategories()
   const [siteNameDraft, setSiteNameDraft] = useState<string | null>(null)
   const [noticeDraft, setNoticeDraft] = useState<string | null>(null)
   // 页脚草稿（null = 未动过，跟随服务端值；links 为受控数组）
   const [footerTextDraft, setFooterTextDraft] = useState<string | null>(null)
   const [footerExtraDraft, setFooterExtraDraft] = useState<string | null>(null)
   const [footerLinksDraft, setFooterLinksDraft] = useState<{ label: string; href: string }[] | null>(null)
+  // 首页图文区块草稿（null = 未动过）
+  const [homeBlocksDraft, setHomeBlocksDraft] = useState<HomeBlockConfig[] | null>(null)
   const [saving, setSaving] = useState(false)
 
   const siteName = siteNameDraft ?? settings?.siteName ?? ''
@@ -795,17 +798,21 @@ export function SettingsTab() {
   const footerText = footerTextDraft ?? settings?.footer?.text ?? ''
   const footerExtra = footerExtraDraft ?? settings?.footer?.extra ?? ''
   const footerLinks = footerLinksDraft ?? settings?.footer?.links ?? []
+  const homeBlocks = homeBlocksDraft ?? settings?.home?.blocks ?? []
   const setSiteName = setSiteNameDraft
   const setNotice = setNoticeDraft
 
   const footerDirty =
     footerTextDraft !== null || footerExtraDraft !== null || footerLinksDraft !== null
+  const homeDirty = homeBlocksDraft !== null
 
   const resetFooter = () => {
     setFooterTextDraft(null)
     setFooterExtraDraft(null)
     setFooterLinksDraft(null)
   }
+
+  const resetHome = () => setHomeBlocksDraft(null)
 
   const save = () => {
     // 站点名是全站页头/TDK 的根变量：留空时服务端会静默忽略导致“已保存”假象，这里前置拦截
@@ -818,6 +825,7 @@ export function SettingsTab() {
           notice,
           // 仅当页脚被编辑过才提交，避免未触碰的表单覆盖他人保存的页脚配置
           ...(footerDirty ? { footer: { text: footerText, extra: footerExtra, links: footerLinks } } : {}),
+          ...(homeDirty ? { home: { blocks: homeBlocks } } : {}),
         }),
       })
       await qc.invalidateQueries({ queryKey: qk.settings })
@@ -908,6 +916,129 @@ export function SettingsTab() {
           <div className="flex justify-end">
             <Button size="sm" variant="ghost" className="h-7" onClick={resetFooter}>
               撤销页脚修改
+            </Button>
+          </div>
+        )}
+      </fieldset>
+
+      {/* 首页图文区块：每块 = 标题 + 数据来源 + 数量；前台按顺序渲染图文卡，无区块时主题首页保持默认 */}
+      <fieldset className="space-y-3 rounded-md border p-3">
+        <legend className="flex items-center gap-1.5 px-1 text-xs font-semibold text-neutral-700">
+          <LayoutGrid className="h-3.5 w-3.5" />首页图文区块
+        </legend>
+        <p className="text-[11px] leading-relaxed text-neutral-400">
+          自定义首页的图文推荐区块（封面 + 书名 + 简介），按下方顺序渲染；留空则首页保持主题默认。每本书的封面来自采集或渐变兜底。
+        </p>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-neutral-500">区块列表（最多 8 个）</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            disabled={homeBlocks.length >= 8}
+            onClick={() => {
+              if (!homeDirty) setHomeBlocksDraft([...homeBlocks]) // 先拷贝进入编辑态
+              setHomeBlocksDraft([
+                ...homeBlocks,
+                { id: `blk${Date.now().toString(36)}`, title: '推荐阅读', source: 'latest', count: 8 },
+              ])
+            }}
+          >
+            <Plus className="mr-1 h-3 w-3" />添加区块
+          </Button>
+        </div>
+        {homeBlocks.map((blk, i) => (
+          <div key={blk.id} className="space-y-1.5 rounded-md border bg-neutral-50/60 p-2">
+            <div className="flex items-center gap-1.5">
+              <Input
+                value={blk.title}
+                onChange={(e) => {
+                  const next = [...homeBlocks]
+                  next[i] = { ...blk, title: e.target.value }
+                  setHomeBlocksDraft(next)
+                }}
+                placeholder="区块标题"
+                className="h-8 min-w-0 flex-1 text-xs"
+                aria-label={`区块 ${i + 1} 标题`}
+              />
+              <select
+                value={blk.source}
+                onChange={(e) => {
+                  const next = [...homeBlocks]
+                  next[i] = { ...blk, source: e.target.value }
+                  setHomeBlocksDraft(next)
+                }}
+                className="h-8 shrink-0 rounded-md border border-input bg-white px-1.5 text-xs"
+                aria-label={`区块 ${i + 1} 数据来源`}
+              >
+                <option value="latest">最近更新</option>
+                <option value="hot">点击最多</option>
+                <option value="featured">精选推荐</option>
+                {(categories ?? []).map((c: CategoryDto) => (
+                  <option key={c.id} value={`cat:${c.id}`}>{c.name}</option>
+                ))}
+              </select>
+              <Input
+                type="number"
+                min={4}
+                max={24}
+                value={blk.count}
+                onChange={(e) => {
+                  const n = Math.min(24, Math.max(4, Math.floor(Number(e.target.value) || 8)))
+                  const next = [...homeBlocks]
+                  next[i] = { ...blk, count: n }
+                  setHomeBlocksDraft(next)
+                }}
+                className="h-8 w-16 shrink-0 text-xs"
+                aria-label={`区块 ${i + 1} 展示数量`}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-7 shrink-0 px-0"
+                aria-label={`区块 ${i + 1} 上移`}
+                disabled={i === 0}
+                onClick={() => {
+                  const next = [...homeBlocks]
+                  ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
+                  setHomeBlocksDraft(next)
+                }}
+              >
+                <ChevronUp className="h-3 w-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-7 shrink-0 px-0"
+                aria-label={`区块 ${i + 1} 下移`}
+                disabled={i === homeBlocks.length - 1}
+                onClick={() => {
+                  const next = [...homeBlocks]
+                  ;[next[i], next[i + 1]] = [next[i + 1], next[i]]
+                  setHomeBlocksDraft(next)
+                }}
+              >
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 shrink-0 px-0 text-red-500"
+                aria-label={`删除区块 ${i + 1}`}
+                onClick={() => setHomeBlocksDraft(homeBlocks.filter((_, j) => j !== i))}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        ))}
+        {homeBlocks.length === 0 && (
+          <p className="text-[11px] text-neutral-400">暂无自定义区块，首页仅显示主题默认内容。点击「添加区块」创建第一个图文区块。</p>
+        )}
+        {homeDirty && (
+          <div className="flex justify-end">
+            <Button size="sm" variant="ghost" className="h-7" onClick={resetHome}>
+              撤销区块修改
             </Button>
           </div>
         )}

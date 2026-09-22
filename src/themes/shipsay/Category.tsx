@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { Compass, Menu } from 'lucide-react'
 import { useCategories, useNovels } from '@/hooks/use-novel-data'
 import { cn } from '@/lib/utils'
+import { CategoryFeaturedBlock, CategoryHotBlock } from '@/components/theme-extras'
 import type { ViewProps } from '../types'
-import { BookCard, CardListSkeleton, Empty, ErrorBox, Pagination, SectionTitle } from './parts'
+import { BookCard, CardListSkeleton, Empty, ErrorBox, SectionTitle } from './parts'
 
 /* 书库筛选侧栏（190px）：全部分类入口 + 分类导航（当前项深红底白字）+ 只看全本 */
 function FilterPanel({
@@ -56,30 +57,20 @@ function FilterPanel({
   )
 }
 
-/** 书库页：左 760 内容（2 列图书卡 + 分页） + 右 190 筛选侧栏 */
-export default function Category({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+/** 书库页：左 760 内容（2 列图书卡） + 右 190 筛选侧栏 */
+export default function Category({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const { data: categories } = useCategories()
   const [onlyFinished, setOnlyFinished] = useState(false)
   const [mobileFilter, setMobileFilter] = useState(false)
-  const curPage = page ?? 1
 
   const { data, isLoading, isError, refetch } = useNovels({
     categoryId,
-    page: curPage,
-    pageSize: 20,
+    pageSize: 500,
     status: onlyFinished ? 'finished' : undefined,
   })
 
   const categoryName = categories?.find((c) => c.id === categoryId)?.name
-  const go = (p: number) => navigate({ name: 'category', categoryId, page: p })
-  const toggleFinished = (v: boolean) => {
-    setOnlyFinished(v)
-    if (curPage !== 1) go(1)
-  }
+  const toggleFinished = (v: boolean) => setOnlyFinished(v)
 
   return (
     <div className="mx-auto w-full max-w-[960px] px-2 pb-6 pt-[10px]">
@@ -92,9 +83,7 @@ export default function Category({
               title={categoryName ?? '全部小说'}
               extra={
                 data ? (
-                  <span className="text-[12px] font-normal text-[#969BA3]">
-                    共 {data.total} 本 · 第 {data.page}/{data.totalPages} 页
-                  </span>
+                  <span className="text-[12px] font-normal text-[#969BA3]">共 {data.total} 本</span>
                 ) : undefined
               }
             />
@@ -112,11 +101,9 @@ export default function Category({
               <Empty text={onlyFinished ? '该分类暂无完本小说' : '该分类暂无小说'} />
             )}
           </section>
-          {data && data.totalPages > 1 && (
-            <div className="bg-white">
-              <Pagination page={data.page} totalPages={data.totalPages} onGo={go} />
-            </div>
-          )}
+          {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+          <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+          <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
         </div>
 
         {/* 右：筛选侧栏（767px 以下隐藏） */}

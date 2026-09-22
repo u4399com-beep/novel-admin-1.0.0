@@ -31,6 +31,10 @@ import {
 } from '@/hooks/use-reader-prefs'
 import type { ChapterDetail } from '@/lib/types'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
+<<<<<<< HEAD
+=======
+import { CategoryFeaturedBlock, CategoryHotBlock, HomeCustomBlocks } from '@/components/theme-extras'
+>>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)
 import { NovelTagsRow } from '@/components/novel-tags'
 import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
 import { useFavoriteSite, showSetHomepageHint } from '@/components/theme-tools/FavoriteSite'
@@ -40,7 +44,6 @@ import {
   Cover,
   Crumbs,
   ErrorBox,
-  Pager,
   RankList,
   ResultRow,
   SkeletonBlock,
@@ -489,46 +492,38 @@ function HomeView({ navigate }: ViewProps) {
           </Block>
         </aside>
       </div>
+
+      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+      <div className="mt-3">
+        <HomeCustomBlocks navigate={navigate} />
+      </div>
     </div>
   )
 }
 
 /* ==================================================================== */
-/* Category：面包屑 + 排序筛选 + 六段式列表 + 分页                        */
+/* Category：面包屑 + 排序筛选 + 六段式列表                               */
 /* ==================================================================== */
 
 type SortKey = 'latest' | 'clicks' | 'words'
 type StatusKey = 'all' | 'serial' | 'finished'
 
-function CategoryView({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+function CategoryView({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const { data: cats } = useCategories()
   const [sort, setSort] = useState<SortKey>('latest')
   const [status, setStatus] = useState<StatusKey>('all')
-  const cur = page > 0 ? page : 1
 
   const { data, isLoading, isError, refetch } = useNovels({
     categoryId,
-    page: cur,
-    pageSize: 20,
+    pageSize: 500,
     sort,
     status: status === 'all' ? undefined : status,
   })
 
   const catName =
     categoryId != null ? (cats ?? []).find((c) => c.id === categoryId)?.name : undefined
-  const goPage = (p: number) => navigate({ name: 'category', categoryId, page: p })
-  const changeSort = (s: SortKey) => {
-    setSort(s)
-    if (cur !== 1) goPage(1)
-  }
-  const changeStatus = (s: StatusKey) => {
-    setStatus(s)
-    if (cur !== 1) goPage(1)
-  }
+  const changeSort = (s: SortKey) => setSort(s)
+  const changeStatus = (s: StatusKey) => setStatus(s)
 
   return (
     <div className="mx-auto w-full max-w-[980px] px-2 py-3">
@@ -542,11 +537,7 @@ function CategoryView({
       <Block
         className="mt-3"
         title={`${catName ?? '全部小说'}列表`}
-        extra={
-          <span>
-            共 {data?.total ?? '—'} 部 · 第 {cur}/{data?.totalPages ?? 1} 页
-          </span>
-        }
+        extra={<span>共 {data?.total ?? '—'} 部</span>}
         bodyClass="px-2 py-1"
       >
         {/* 排序 / 状态筛选行 */}
@@ -593,6 +584,10 @@ function CategoryView({
           ))}
         </div>
 
+        {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+        <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+        <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
+
         {isLoading ? (
           <SkeletonLines className="py-4" rows={10} />
         ) : isError ? (
@@ -600,12 +595,7 @@ function CategoryView({
             <ErrorBox onRetry={() => refetch()} />
           </div>
         ) : data && data.list.length > 0 ? (
-          <>
-            {data.list.map((n) => (
-              <ResultRow key={n.id} novel={n} navigate={navigate} />
-            ))}
-            <Pager page={cur} totalPages={data.totalPages} onPage={goPage} />
-          </>
+          data.list.map((n) => <ResultRow key={n.id} novel={n} navigate={navigate} />)
         ) : (
           <p className="py-10 text-center text-sm text-[#999]">该分类下暂无小说，换个条件试试～</p>
         )}
@@ -1220,19 +1210,18 @@ function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: number })
 }
 
 /* ==================================================================== */
-/* Search：本地输入 + 结果列表 + 本地分页                                 */
+/* Search：本地输入 + 结果列表                                            */
 /* ==================================================================== */
 
-/* 外层按 query 重挂载内层：query 变化时自动重置草稿与页码（无需 effect） */
+/* 外层按 query 重挂载内层：query 变化时自动重置草稿（无需 effect） */
 function SearchView({ navigate, siteName, query }: ViewProps & { query: string }) {
   return <SearchInner key={query} navigate={navigate} siteName={siteName} query={query} />
 }
 
 function SearchInner({ navigate, query }: ViewProps & { query: string }) {
   const [kw, setKw] = useState(query)
-  const [page, setPage] = useState(1)
 
-  const { data, isLoading, isError, refetch } = useNovels({ q: query || undefined, page, pageSize: 20 })
+  const { data, isLoading, isError, refetch } = useNovels({ q: query || undefined, pageSize: 500 })
 
   const submit = () => {
     const t = kw.trim()
@@ -1274,12 +1263,7 @@ function SearchInner({ navigate, query }: ViewProps & { query: string }) {
             <ErrorBox onRetry={() => refetch()} />
           </div>
         ) : data && data.list.length > 0 ? (
-          <>
-            {data.list.map((n) => (
-              <ResultRow key={n.id} novel={n} navigate={navigate} />
-            ))}
-            <Pager page={page} totalPages={data.totalPages} onPage={setPage} />
-          </>
+          data.list.map((n) => <ResultRow key={n.id} novel={n} navigate={navigate} />)
         ) : (
           <p className="py-10 text-center text-sm text-[#999]">未找到相关小说，换个关键词试试～</p>
         )}

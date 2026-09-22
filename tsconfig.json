@@ -42,6 +42,7 @@
     "examples",
     "skills",
     "download",
-    "upload"
+    "upload",
+    "scripts/archive"
   ]
 }

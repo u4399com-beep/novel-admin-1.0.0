@@ -2,7 +2,7 @@
 
 // ==================== 23qb 六视图 ====================
 // Home：搜索 Hero + 热门封面榜 + 分类热度文字榜单（通栏单列卡流）
-// Category：药丸筛选 + 封面网格 + 分页
+// Category：药丸筛选 + 封面网格
 // Book：白盒左右分区（封面在右）+ 最新章节盒 + 相关作品
 // Toc：白盒头部 + 阅读进度 + 单列斑马章节行
 // Chapter：680px 阅读栏 + 18px/1.6 正文 + 底部胶囊翻页条
@@ -26,6 +26,10 @@ import {
 import { coverBgClass } from '@/lib/covers'
 import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { NovelTagsRow } from '@/components/novel-tags'
+<<<<<<< HEAD
+=======
+import { CategoryFeaturedBlock, CategoryHotBlock, HomeCustomBlocks } from '@/components/theme-extras'
+>>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)
 import { cn } from '@/lib/utils'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
@@ -43,7 +47,6 @@ import {
   GridSkeleton,
   HeroSearch,
   HomeSkeleton,
-  Pager,
   Pill,
   RankCover,
   TextRankCard,
@@ -79,8 +82,8 @@ function toggleShelf(id: number): boolean {
 
 export function HomeView({ navigate, siteName }: ViewProps) {
   const { data, isLoading, isError, refetch } = useHomeData()
-  // 宽口径列表：用于按分类聚合出「分类热度榜单」
-  const broad = useNovels({ page: 1, pageSize: 60 })
+  // 宽口径列表：用于按分类聚合出「分类热度榜单」（一次拉全）
+  const broad = useNovels({ pageSize: 500 })
 
   const hotCovers = useMemo(() => {
     if (!data) return []
@@ -149,6 +152,8 @@ export function HomeView({ navigate, siteName }: ViewProps) {
             <TextRankCard key={c.id} title={c.name} items={c.items} onPick={pick} />
           ))}
         </div>
+        {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+        <HomeCustomBlocks navigate={navigate} />
       </Container>
     </div>
   )
@@ -165,27 +170,19 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'featured', label: '编辑推荐' },
 ]
 
-export function CategoryView({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+export function CategoryView({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const { data: categories } = useCategories()
   const [sort, setSort] = useState<SortKey>('latest')
   const [status, setStatus] = useState<'serial' | 'finished' | undefined>(undefined)
   const { data, isLoading, isError, refetch } = useNovels({
     categoryId,
-    page,
-    pageSize: 20,
+    pageSize: 500,
     sort,
     status,
   })
 
   const catName = categories?.find((c) => c.id === categoryId)?.name ?? '全部'
-  const applyFilter = (fn: () => void) => {
-    fn()
-    if (page !== 1) navigate({ name: 'category', categoryId, page: 1 })
-  }
+  const applyFilter = (fn: () => void) => fn()
 
   return (
     <Container className="space-y-6 py-6">
@@ -229,10 +226,14 @@ export function CategoryView({
         <h1 className="pt-1 text-lg font-bold text-[#282828]">
           {catName}小说
           <span className="ml-2 text-sm font-medium text-black/40">
-            {data ? `共 ${data.total} 部 · 第 ${data.page}/${data.totalPages} 页` : '加载中…'}
+            {data ? `共 ${data.total} 部` : '加载中…'}
           </span>
         </h1>
       </Card>
+
+      {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+      <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+      <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
 
       {/* 书籍网格 */}
       <Card className="p-5 md:p-7">
@@ -255,9 +256,6 @@ export function CategoryView({
             <SearchX className="h-10 w-10" />
             <p className="mt-3 text-sm">该筛选条件下暂无收录，换个条件试试</p>
           </div>
-        )}
-        {data && data.list.length > 0 && (
-          <Pager page={data.page} totalPages={data.totalPages} onGo={(p) => navigate({ name: 'category', categoryId, page: p })} />
         )}
       </Card>
     </Container>
@@ -751,16 +749,15 @@ export function ChapterView({ navigate, chapterId }: ViewProps & { chapterId: nu
 // ==================== Search ====================
 
 export function SearchView({ navigate, query }: ViewProps & { query: string }) {
-  /* key=query：关键词变化时重挂载，重置输入框与页码 */
+  /* key=query：关键词变化时重挂载，重置输入框 */
   return <SearchPanel key={query} navigate={navigate} query={query} />
 }
 
 function SearchPanel({ navigate, query }: { navigate: (v: ThemeView) => void; query: string }) {
   const [input, setInput] = useState(query)
-  const [page, setPage] = useState(1)
   const { data: categories } = useCategories()
   const { data, isLoading, isError, refetch } = useNovels(
-    query ? { q: query, page, pageSize: 20 } : { sort: 'clicks', pageSize: 10 },
+    query ? { q: query, pageSize: 500 } : { sort: 'clicks', pageSize: 10 },
   )
 
   const submit = (q: string) => navigate({ name: 'search', query: q.trim() })
@@ -800,16 +797,11 @@ function SearchPanel({ navigate, query }: { navigate: (v: ThemeView) => void; qu
         ) : isLoading ? (
           <GridSkeleton count={10} />
         ) : data && data.list.length > 0 ? (
-          <>
-            <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8">
-              {data.list.map((n) => (
-                <CoverCard key={n.id} novel={n} onClick={() => navigate({ name: 'book', novelId: n.id })} />
-              ))}
-            </div>
-            {query && (
-              <Pager page={data.page} totalPages={data.totalPages} onGo={setPage} />
-            )}
-          </>
+          <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8">
+            {data.list.map((n) => (
+              <CoverCard key={n.id} novel={n} onClick={() => navigate({ name: 'book', novelId: n.id })} />
+            ))}
+          </div>
         ) : (
           <div className="py-10 text-center">
             <SearchX className="mx-auto h-10 w-10 text-black/25" />

@@ -22,6 +22,10 @@ import {
   type ReaderSceneColors,
 } from '@/hooks/use-reader-prefs'
 import { NovelTagsRow } from '@/components/novel-tags'
+<<<<<<< HEAD
+=======
+import { CategoryFeaturedBlock, CategoryHotBlock, HomeCustomBlocks } from '@/components/theme-extras'
+>>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
 import {
@@ -30,7 +34,6 @@ import {
   GCover,
   GEmptyBox,
   GErrorBox,
-  GPager,
   GBoxSkeleton,
   GCoverSkeleton,
   GRowSkeleton,
@@ -308,6 +311,9 @@ export function Home({ navigate }: ViewProps) {
         </aside>
       </div>
 
+      {/* 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+      <HomeCustomBlocks navigate={navigate} />
+
       {/* 友情链接（源站首页底部同款单行文字链；无外站可交换，用站内书页入口填充） */}
       <section className="rounded-[4px] border border-[#ccc] bg-white p-3">
         <strong className="text-[13px] text-[#333]">友情链接：</strong>
@@ -330,15 +336,11 @@ export function Home({ navigate }: ViewProps) {
   )
 }
 
-/* ==================== 分类页（分类导航条 + 3 列虚线盒 + 数字分页） ==================== */
+/* ==================== 分类页（分类导航条 + 3 列虚线盒） ==================== */
 
-export function Category({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+export function Category({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const cats = useCategories()
-  const list = useNovels({ categoryId, page, pageSize: 20 })
+  const list = useNovels({ categoryId, pageSize: 500 })
   const catName = cats.data?.find((c) => c.id === categoryId)?.name
 
   const navCls = (active: boolean) =>
@@ -367,6 +369,10 @@ export function Category({
         ))}
       </nav>
 
+      {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+      <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+      <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
+
       {/* 书籍列表 */}
       <section className="rounded-[4px] border border-[#ccc] bg-white p-3">
         <GH2 className="text-center">
@@ -387,16 +393,11 @@ export function Category({
                 <BookBoxItem
                   key={n.id}
                   novel={n}
-                  index={(list.data!.page - 1) * (list.data!.pageSize ?? 20) + i + 1}
+                  index={i + 1}
                   navigate={navigate}
                 />
               ))}
             </div>
-            <GPager
-              page={list.data!.page}
-              totalPages={list.data!.totalPages}
-              onGo={(p) => navigate({ name: 'category', categoryId, page: p })}
-            />
           </>
         )}
       </section>
@@ -973,7 +974,7 @@ export function Search({ navigate, query }: ViewProps & { query: string }) {
         navigate={navigate}
       />
       <section className="rounded-[4px] border border-[#ccc] bg-white p-3">
-        {/* key=query：关键词变化时重挂载，重置输入框与分页 */}
+        {/* key=query：关键词变化时重挂载，重置输入框 */}
         <SearchPanel key={query} query={query} navigate={navigate} />
       </section>
     </Container>
@@ -982,8 +983,7 @@ export function Search({ navigate, query }: ViewProps & { query: string }) {
 
 function SearchPanel({ query, navigate }: { query: string; navigate: Nav }) {
   const [input, setInput] = useState(query)
-  const [page, setPage] = useState(1)
-  const list = useNovels({ q: query || undefined, page, pageSize: 20 })
+  const list = useNovels({ q: query || undefined, pageSize: 500 })
 
   return (
     <>
@@ -1014,16 +1014,11 @@ function SearchPanel({ query, navigate }: { query: string; navigate: Nav }) {
               <BookBoxItem
                 key={n.id}
                 novel={n}
-                index={(list.data!.page - 1) * (list.data!.pageSize ?? 20) + i + 1}
+                index={i + 1}
                 navigate={navigate}
               />
             ))}
           </div>
-          <GPager
-            page={list.data!.page}
-            totalPages={list.data!.totalPages}
-            onGo={(p) => setPage(p)}
-          />
         </>
       )}
     </>

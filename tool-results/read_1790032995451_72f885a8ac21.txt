@@ -1,0 +1,870 @@
+     1→/**
+     2→ * backend-go —— 采集任务 Worker（两阶段并发架构）。
+     3→ *
+     4→ * TS 源：src/lib/scrape/worker.ts（逐行移植）
+     5→ *
+     6→ * 数据流（list 范围模式）：
+     7→ *   Phase 0 列表页翻页收集条目（模板优先，猜测回退）
+     8→ *   Phase 1 书目骨架：有界并发抓书页+目录 → upsert 书籍 + 章节骨架入库（content=''、wordCount=0）
+     9→ *   Phase 2 正文填充：跨书平铺所有空骨架，有界并发抓正文 → update 填充
+    10→ *
+    11→ * 语义与可靠性（与 TS 对齐）：
+    12→ * - 进度：list 模式 done/total=书、chaptersDone/chaptersTotal=章节；single 模式 done/total=章节
+    13→ * - 协作式取消贯穿三阶段（throttledCheck 250ms 节流查 DB，canceled/记录删除即停）
+    14→ * - 可续跑：Phase 2 只填充 wordCount=0 的骨架；任务中断后重发即续传
+    15→ * - 快速终止：列表连续 3 页全败、或书页连续 5 本全败且 0 成功 → 提前中止
+    16→ * - finalize 终态条件更新（仅 status=running 时写终态）
+    17→ * - 合规红线：仅抓取公开页面；robots 提示与域名限速由 scraper-go 引擎层负责（runner 不额外加抓取间隔）
+    18→ *
+    19→ * 移植差异：
+    20→ * - TS 单线程事件循环 → Go 显式并发安全：Phase 1 共享状态经互斥锁保护；Phase 2 计数
+    21→ *   用原子变量；Run 日志缓冲内部自带锁
+    22→ * - running Set（防同任务并发）→ map[int]bool + 互斥锁；同一任务同时只允许一个 worker
+    23→ * - 僵尸任务回收 recoverStaleTasks：TS 在模块加载时异步执行；Go 在 startRunner 启动时
+    24→ *   同步执行一次（Go runner 是独立进程，天然只有 runner 写任务状态，语义等价更直接）
+    25→ * - Phase 2 遍历 fillMap：TS Map 为插入序；Go map 无序 → 按 novelId 升序确定性处理
+    26→ * - wordCount 计算：content.replace(/\s/g,'').length → 逐 rune 统计非 unicode.IsSpace 字符
+    27→ * - TS storeChapterSkeletons 抛出的非唯一冲突错误沿 runPool→runTask 冒泡 → Go 经
+    28→ *   Phase1Outcome.Fatal 通道传递，runList/runSingle 收到后按「任务执行异常」收尾
+    29→ * - 限长常量来自 limits.go（novelTitleMax 等，与 limits.ts 同口径）
+    30→ */
+    31→package main
+    32→
+    33→import (
+    34→        "database/sql"
+    35→        "fmt"
+    36→        "log"
+    37→        "net/url"
+    38→        "os"
+    39→        "sort"
+    40→        "strconv"
+    41→        "strings"
+    42→        "sync"
+    43→        "sync/atomic"
+    44→        "time"
+    45→        "unicode"
+    46→)
+    47→
+    48→// ==================== 可配置参数（环境变量 > 默认值） ====================
+    49→
+    50→// envInt 读取正整数环境变量（非法/缺省用默认值）
+    51→func envInt(name string, def int) int {
+    52→        v := strings.TrimSpace(os.Getenv(name))
+    53→        if v == "" {
+    54→                return def
+    55→        }
+    56→        if n, err := strconv.Atoi(v); err == nil && n > 0 {
+    57→                return n
+    58→        }
+    59→        return def
+    60→}
+    61→
+    62→var (
+    63→        // MAX_CHAPTERS_PER_BOOK 单本书章节数上限（用户指令「取消采集数量的限制」：默认放宽至
+    64→        // 10000，仍保留 env 应急阀避免失控任务堆内存）
+    65→        MAX_CHAPTERS_PER_BOOK = envInt("SCRAPE_MAX_CHAPTERS_PER_BOOK", 10_000)
+    66→        // MAX_BOOKS_PER_TASK 单任务书籍数上限（同上，默认 5000）
+    67→        MAX_BOOKS_PER_TASK = envInt("SCRAPE_MAX_BOOKS_PER_TASK", 5_000)
+    68→        // MAX_CONTENT_CHARS 正文单章最大字符数（防异常超长页撑爆内存与存储）
+    69→        MAX_CONTENT_CHARS = 50_000
+    70→        // BOOK_CONCURRENCY Phase 1 书页并发
+    71→        BOOK_CONCURRENCY = envInt("SCRAPE_BOOK_CONCURRENCY", 4)
+    72→        // CHAPTER_CONCURRENCY Phase 2 章节正文并发（过高易触发站点限速；限速由引擎层负责）
+    73→        CHAPTER_CONCURRENCY = envInt("SCRAPE_CHAPTER_CONCURRENCY", 12)
+    74→        // SKELETON_BATCH Phase 2 骨架分批大小
+    75→        SKELETON_BATCH = 200
+    76→        // FLUSH_INTERVAL_MS 进度 flush 最小间隔（防 SQLite 写放大）
+    77→        FLUSH_INTERVAL_MS = 800
+    78→        // MAX_CONSECUTIVE_PAGE_FAILS 列表页连续失败快速终止阈值
+    79→        MAX_CONSECUTIVE_PAGE_FAILS = 3
+    80→        // MAX_CONSECUTIVE_BOOK_FAILS 书页连续失败快速终止阈值（且 0 本成功）
+    81→        MAX_CONSECUTIVE_BOOK_FAILS = 5
+    82→)
+    83→
+    84→// ==================== 进程级防重与僵尸回收 ====================
+    85→
+    86→var (
+    87→        gRunningMu sync.Mutex
+    88→        gRunning   = map[int]bool{} // 同一任务 id 同时只允许一个 worker 实例（TS running Set）
+    89→        gBootAt    = nowMillis()    // 本进程启动时刻（包初始化时定值）
+    90→)
+    91→
+    92→func runningHas(taskID int) bool {
+    93→        gRunningMu.Lock()
+    94→        defer gRunningMu.Unlock()
+    95→        return gRunning[taskID]
+    96→}
+    97→
+    98→func runningDelete(taskID int) {
+    99→        gRunningMu.Lock()
+   100→        delete(gRunning, taskID)
+   101→        gRunningMu.Unlock()
+   102→}
+   103→
+   104→// lastLines 保留最后 n 行（与 Run 同规约：只保留最近 MAX_LOG_LINES 行）
+   105→func lastLines(s string, n int) string {
+   106→        lines := strings.Split(s, "\n")
+   107→        if len(lines) > n {
+   108→                lines = lines[len(lines)-n:]
+   109→        }
+   110→        return strings.Join(lines, "\n")
+   111→}
+   112→
+   113→// recoverStaleTasks 僵尸任务回收：进程首次启动时，把「创建于本进程启动之前」且仍处于
+   114→// pending/running 的任务标记为 failed——它们只可能属于已消失的旧进程。条件更新
+   115→// （status 仍为 pending/running）保证与 worker 终态写入竞态安全。
+   116→func recoverStaleTasks() {
+   117→        type staleRow struct {
+   118→                id   int
+   119→                logv string
+   120→        }
+   121→        var stale []staleRow
+   122→        err := queryList(
+   123→                "SELECT id, log FROM ScrapeTask WHERE status IN ('pending','running') AND createdAt < ? ORDER BY id ASC",
+   124→                func(rows *sql.Rows) error {
+   125→                        var r staleRow
+   126→                        if err := rows.Scan(&r.id, &r.logv); err != nil {
+   127→                                return err
+   128→                        }
+   129→                        stale = append(stale, r)
+   130→                        return nil
+   131→                }, gBootAt)
+   132→        if err != nil {
+   133→                return // 回收失败不阻塞启动
+   134→        }
+   135→        recovered := 0
+   136→        for _, t := range stale {
+   137→                if runningHas(t.id) { // 本进程仍在执行（防御性；启动时刻 running 恒为空）
+   138→                        continue
+   139→                }
+   140→                line := "[" + time.Now().Format("15:04:05") + "] 服务重启，任务中断（自动回收）"
+   141→                logv := t.logv
+   142→                if logv != "" {
+   143→                        logv += "\n"
+   144→                }
+   145→                logv = lastLines(logv+line, MAX_LOG_LINES)
+   146→                res, err := execRetry(
+   147→                        "UPDATE ScrapeTask SET status = 'failed', message = '服务重启，任务中断', log = ? WHERE id = ? AND status IN ('pending','running')",
+   148→                        logv, t.id)
+   149→                if err == nil && rowCountOf(res) > 0 {
+   150→                        recovered++
+   151→                }
+   152→        }
+   153→        if recovered > 0 {
+   154→                log.Printf("[scrape-worker] 僵尸任务回收: %d 条", recovered)
+   155→        }
+   156→}
+   157→
+   158→// ==================== 协作式取消 ====================
+   159→
+   160→// isCanceled 协作式取消检查：记录不存在视为取消；DB 瞬时错误不误判为取消（fail-open）
+   161→func isCanceled(taskID int) bool {
+   162→        var status string
+   163→        err := queryOne("SELECT status FROM ScrapeTask WHERE id = ?", []any{&status}, taskID)
+   164→        if err != nil {
+   165→                if isNoRows(err) {
+   166→                        return true
+   167→                }
+   168→                return false // 查询失败 ≠ 被取消，避免瞬时 DB 错误误停任务
+   169→        }
+   170→        return status == "canceled"
+   171→}
+   172→
+   173→// ==================== 共用工具 ====================
+   174→
+   175→// shapeBook 引擎响应未经 schema 校验，关键字段做形态兜底（Go 反序列化已兜底字符串/null，
+   176→// 这里补 chapterCount 缺省 → len(chapters)）
+   177→func shapeBook(book BookData) BookData {
+   178→        if book.ChapterCount == nil {
+   179→                n := len(book.Chapters)
+   180→                book.ChapterCount = &n
+   181→        }
+   182→        return book
+   183→}
+   184→
+   185→// noiseTOCTitles 目录页噪声按钮/导航文案（与引擎 NOISE_TOC_TITLES 同步，
+   186→// 双保险：引擎已滤，此处兜底）
+   187→var noiseTOCTitles = map[string]bool{
+   188→        "立即阅读": true, "开始阅读": true, "点击阅读": true, "进入阅读": true, "继续阅读": true,
+   189→        "全文阅读": true, "免费阅读": true, "无弹窗阅读": true, "最新章节": true, "最新章节列表": true,
+   190→        "查看目录": true, "章节目录": true, "全部目录": true, "目录": true,
+   191→        "书签": true, "加入书签": true, "上一章": true, "下一章": true, "上一页": true, "下一页": true,
+   192→        "推荐票": true, "投推荐票": true,
+   193→}
+   194→
+   195→// normalizeRefs 章节链接规范化：过滤无 URL、噪声按钮文案、trim、URL 去重（同 URL 不同标题视为同章）
+   196→func normalizeRefs(refs []ChapterRef) []refPair {
+   197→        seen := map[string]bool{}
+   198→        out := []refPair{}
+   199→        for _, r := range refs {
+   200→                u := trimSpaceStr(r.URL)
+   201→                if u == "" {
+   202→                        continue
+   203→                }
+   204→                title := trimSpaceStr(r.Title)
+   205→                if noiseTOCTitles[title] {
+   206→                        continue
+   207→                }
+   208→                if seen[u] {
+   209→                        continue
+   210→                }
+   211→                seen[u] = true
+   212→                out = append(out, refPair{Title: truncateRunes(title, chapterTitleMax), URL: u})
+   213→        }
+   214→        return out
+   215→}
+   216→
+   217→// safeOrigin 从章节 URL 提取同源 origin 作 referer 兜底（续跑场景 referer 缺失时用）
+   218→func safeOrigin(u string) string {
+   219→        p, err := url.Parse(u)
+   220→        if err != nil || p.Scheme == "" || p.Host == "" {
+   221→                return ""
+   222→        }
+   223→        return p.Scheme + "://" + p.Host
+   224→}
+   225→
+   226→// countNonSpaceRunes 对齐 TS content.replace(/\s/g,”).length（逐 rune、unicode.IsSpace 判定）
+   227→func countNonSpaceRunes(s string) int {
+   228→        n := 0
+   229→        for _, r := range s {
+   230→                if !unicode.IsSpace(r) {
+   231→                        n++
+   232→                }
+   233→        }
+   234→        return n
+   235→}
+   236→
+   237→// sqlPlaceholders "?,?,..." × n
+   238→func sqlPlaceholders(n int) string {
+   239→        if n <= 0 {
+   240→                return "NULL"
+   241→        }
+   242→        return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+   243→}
+   244→
+   245→// ==================== Phase 1：书目骨架（并发） ====================
+   246→
+   247→// Phase1Outcome Phase 1 结果
+   248→type Phase1Outcome struct {
+   249→        OKBooks       int
+   250→        FailBooks     int
+   251→        StoppedEarly  bool
+   252→        FirstError    string
+   253→        NovelIDs      []int
+   254→        FillMap       map[int]fillPlan // novelId → 填充计划：书页 referer + 待填充 (title,url) 行
+   255→        TotalRefs     int              // 全部有效章节链接数（含已填充跳过）——single 模式进度分母
+   256→        SkippedFilled int              // 其中已有正文而跳过的数量——single 模式进度初值
+   257→        FillTotal     int              // 待填充总行数——list 模式 chaptersTotal 的来源
+   258→        Fatal         error            // TS 语义：store 层非唯一冲突错误向上抛 → 任务按 failed 收尾
+   259→}
+   260→
+   261→// phase1Skeletons 书目骨架（BOOK_CONCURRENCY 有界并发）：抓书页 → 目录二次提取 →
+   262→// 分类保障 → upsert 书籍 → 骨架入库，产出 Phase 2 填充计划。
+   263→func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string) Phase1Outcome {
+   264→        var mu sync.Mutex
+   265→        fillMap := map[int]fillPlan{}
+   266→        var novelIDs []int
+   267→        okBooks, failBooks, failStreak := 0, 0, 0
+   268→        firstError := ""
+   269→        totalRefs, skippedFilled, fillTotal := 0, 0, 0
+   270→        sawCatalog := 0
+   271→        var fatal error
+   272→
+   273→        setFirstError := func(msg string) {
+   274→                if firstError == "" {
+   275→                        firstError = msg
+   276→                }
+   277→        }
+   278→
+   279→        // 取消 + 快速终止（连续多本全败且 0 成功 → 判定站点不可达，中止防空转）
+   280→        shouldStop := throttledCheck(func() bool {
+   281→                if isCanceled(run.TaskID) {
+   282→                        return true
+   283→                }
+   284→                mu.Lock()
+   285→                defer mu.Unlock()
+   286→                if fatal != nil {
+   287→                        return true
+   288→                }
+   289→                return failStreak >= MAX_CONSECUTIVE_BOOK_FAILS && okBooks == 0
+   290→        })
+   291→
+   292→        runPool(items, BOOK_CONCURRENCY, func(item ListItem, _ int) {
+   293→                bookURL := item.URL
+   294→                page := fetchBookPage(run, bookURL, rule, listURL, false)
+   295→                if !page.OK {
+   296→                        mu.Lock()
+   297→                        setFirstError(page.Err)
+   298→                        failBooks++
+   299→                        failStreak++
+   300→                        mu.Unlock()
+   301→                        run.Log(fmt.Sprintf("书页失败(%s): %s", truncateRunes(bookURL, 90), truncateRunes(page.Err, 120)))
+   302→                        return
+   303→                }
+   304→                book := shapeBook(page.Book)
+   305→                authorPart := ""
+   306→                if a := truncateRunes(book.Author, 20); a != "" {
+   307→                        authorPart = " / " + a
+   308→                }
+   309→                run.Log(fmt.Sprintf("书页命中《%s》%s，章节链接 %d 条",
+   310→                        truncateRunes(book.Title, 40), authorPart, *book.ChapterCount))
+   311→
+   312→                // 完整目录页二次提取（书页仅含最新几章时）
+   313→                allRefs := book.Chapters
+   314→                catalogSel := rule.BookRule["catalogLinkSelector"]
+   315→                if catalogSel != "" && book.CatalogURL != "" {
+   316→                        catalogRefs := fetchCatalogChapters(run, book.CatalogURL, rule, bookURL, false)
+   317→                        if len(catalogRefs) > len(allRefs) {
+   318→                                mu.Lock()
+   319→                                sawCatalog++
+   320→                                mu.Unlock()
+   321→                                allRefs = catalogRefs
+   322→                        }
+   323→                }
+   324→                refs := normalizeRefs(allRefs)
+   325→                // refs 为空：仍入库书籍（原语义「书籍已入库（未提取到章节链接）」），不计失败
+   326→
+   327→                // 源站分类名归并失败时用书名+简介 LLM 推断（防「未分类」堆积）
+   328→                categoryID, cerr := ensureCategory(book.Category, book.Title, book.Description)
+   329→                if cerr != nil {
+   330→                        msg := cerr.Error()
+   331→                        mu.Lock()
+   332→                        setFirstError(msg)
+   333→                        failBooks++
+   334→                        failStreak++
+   335→                        mu.Unlock()
+   336→                        run.Log(fmt.Sprintf("《%s》%s", truncateRunes(book.Title, 24), msg))
+   337→                        return
+   338→                }
+   339→
+   340→                up := upsertBook(run, book, categoryID, rule.Proxy)
+   341→                if !up.OK {
+   342→                        mu.Lock()
+   343→                        setFirstError(up.Message)
+   344→                        failBooks++
+   345→                        failStreak++
+   346→                        mu.Unlock()
+   347→                        run.Log(fmt.Sprintf("《%s》入库失败: %s", truncateRunes(book.Title, 24), up.Message))
+   348→                        return
+   349→                }
+   350→
+   351→                sk, skerr := storeChapterSkeletons(run, up.NovelID, refs, MAX_CHAPTERS_PER_BOOK)
+   352→                if skerr != nil {
+   353→                        mu.Lock()
+   354→                        setFirstError(skerr.Error())
+   355→                        failBooks++
+   356→                        failStreak++
+   357→                        fatal = skerr
+   358→                        mu.Unlock()
+   359→                        run.Log(fmt.Sprintf("《%s》骨架入库异常: %s", truncateRunes(up.Title, 24), truncateRunes(skerr.Error(), 120)))
+   360→                        return
+   361→                }
+   362→                if sk.Capped {
+   363→                        run.Log(fmt.Sprintf("《%s》已达单本上限（%d 章），超出部分未采集", truncateRunes(up.Title, 24), MAX_CHAPTERS_PER_BOOK))
+   364→                }
+   365→                mu.Lock()
+   366→                novelIDs = append(novelIDs, up.NovelID)
+   367→                okBooks++
+   368→                failStreak = 0
+   369→                totalRefs += sk.Total
+   370→                skippedFilled += sk.SkippedFilled
+   371→                fillTotal += len(sk.FillRows)
+   372→                if len(sk.FillRows) > 0 {
+   373→                        fillMap[up.NovelID] = fillPlan{Referer: bookURL, Rows: sk.FillRows}
+   374→                }
+   375→                mu.Unlock()
+   376→                run.Log(fmt.Sprintf("《%s》骨架入库 %d 章（已有正文跳过 %d，待填充 %d）",
+   377→                        truncateRunes(up.Title, 24), sk.Stored, sk.SkippedFilled, len(sk.FillRows)))
+   378→        }, shouldStop)
+   379→
+   380→        if sawCatalog > 0 {
+   381→                run.Log(fmt.Sprintf("目录页二次提取生效 %d 本", sawCatalog))
+   382→        }
+   383→        mu.Lock()
+   384→        defer mu.Unlock()
+   385→        return Phase1Outcome{
+   386→                OKBooks: okBooks, FailBooks: failBooks, FirstError: firstError,
+   387→                NovelIDs: novelIDs, FillMap: fillMap,
+   388→                TotalRefs: totalRefs, SkippedFilled: skippedFilled, FillTotal: fillTotal,
+   389→                Fatal: fatal,
+   390→        }
+   391→}
+   392→
+   393→// ==================== Phase 2：正文填充（跨书平铺并发） ====================
+   394→
+   395→// Phase2Outcome Phase 2 结果
+   396→type Phase2Outcome struct {
+   397→        Filled       int
+   398→        Failed       int
+   399→        StoppedEarly bool
+   400→}
+   401→
+   402→// phase2Fill 消费 Phase 1 的填充计划：逐书分批（200/批）拉取 DB 空骨架行（wordCount=0，
+   403→// 含历史中断遗留的同名重复行），书内有界并发抓正文并 update 填充；处理完一本书即从
+   404→// fillMap 释放其 rows（内存渐减）。章节抓取失败保留骨架（wordCount=0），重发任务自动续传。
+   405→// onProgress(doneSoFar) 由调用方节流落库进度；返回 false 表示任务记录已删除，立即停止。
+   406→func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress func(doneSoFar int) bool) Phase2Outcome {
+   407→        var filledCtr, failedCtr atomic.Int64
+   408→        var warnLogged atomic.Int64
+   409→        stoppedEarly := false
+   410→        isStopped := throttledCheck(func() bool { return isCanceled(run.TaskID) })
+   411→
+   412→        // TS Map 迭代=插入序（Phase 1 并发完成序）；Go map 无序 → 按 novelId 升序确定性处理
+   413→        ids := make([]int, 0, len(fillMap))
+   414→        for id := range fillMap {
+   415→                ids = append(ids, id)
+   416→        }
+   417→        sort.Ints(ids)
+   418→
+   419→        for _, novelID := range ids {
+   420→                if stoppedEarly {
+   421→                        break
+   422→                }
+   423→                if isStopped() {
+   424→                        stoppedEarly = true
+   425→                        break
+   426→                }
+   427→                plan := fillMap[novelID]
+   428→                var bookFilled, bookFailed atomic.Int64
+   429→                for off := 0; off < len(plan.Rows); off += SKELETON_BATCH {
+   430→                        end := min(off+SKELETON_BATCH, len(plan.Rows))
+   431→                        slice := plan.Rows[off:end]
+   432→                        titles := make([]string, len(slice))
+   433→                        for i, r := range slice {
+   434→                                titles[i] = r.Title
+   435→                        }
+   436→                        // 同名行可能有多条（历史遗留重复）：一起拉出来填同一内容，后续由目录体检工具去重
+   437→                        type dbRow struct {
+   438→                                id    int
+   439→                                title string
+   440→                        }
+   441→                        var dbRows []dbRow
+   442→                        q := "SELECT id, title FROM Chapter WHERE novelId = ? AND wordCount = 0 AND title IN (" +
+   443→                                sqlPlaceholders(len(titles)) + ")"
+   444→                        args := make([]any, 0, len(titles)+1)
+   445→                        args = append(args, novelID)
+   446→                        for _, t := range titles {
+   447→                                args = append(args, t)
+   448→                        }
+   449→                        _ = queryList(q, func(rows *sql.Rows) error { // 失败 → 空数组（与 TS catch 一致）
+   450→                                var r dbRow
+   451→                                if err := rows.Scan(&r.id, &r.title); err != nil {
+   452→                                        return err
+   453→                                }
+   454→                                dbRows = append(dbRows, r)
+   455→                                return nil
+   456→                        }, args...)
+   457→                        if len(dbRows) == 0 {
+   458→                                continue
+   459→                        }
+   460→                        urlByTitle := map[string]string{}
+   461→                        for _, r := range slice {
+   462→                                urlByTitle[r.Title] = r.URL
+   463→                        }
+   464→                        runPool(dbRows, CHAPTER_CONCURRENCY, func(row dbRow, _ int) {
+   465→                                u, ok := urlByTitle[row.title]
+   466→                                if !ok {
+   467→                                        return
+   468→                                }
+   469→                                referer := plan.Referer
+   470→                                if referer == "" {
+   471→                                        referer = safeOrigin(u)
+   472→                                }
+   473→                                res := fetchChapterPaged(u, rule, referer)
+   474→                                if !res.OK {
+   475→                                        failedCtr.Add(1)
+   476→                                        bookFailed.Add(1)
+   477→                                        return
+   478→                                }
+   479→                                cleaned := cleanChapterContent(res.Data.Content)
+   480→                                content := truncateRunes(cleaned.Text, MAX_CONTENT_CHARS)
+   481→                                if trimSpaceStr(content) == "" {
+   482→                                        failedCtr.Add(1) // 源站空壳章：保留骨架，重发任务自动重试
+   483→                                        bookFailed.Add(1)
+   484→                                        return
+   485→                                }
+   486→                                if len(res.Warnings) > 0 && warnLogged.Load() < 10 {
+   487→                                        warnLogged.Add(1)
+   488→                                        run.LogWarnings(res.Warnings)
+   489→                                }
+   490→                                wordCount := countNonSpaceRunes(content)
+   491→                                title := trimSpaceStr(row.title)
+   492→                                if title == "" {
+   493→                                        title = trimSpaceStr(res.Data.Title)
+   494→                                }
+   495→                                if title == "" {
+   496→                                        title = "第" + itoa(row.id) + "章"
+   497→                                }
+   498→                                title = truncateRunes(title, chapterTitleMax)
+   499→                                res2, uerr := execRetry("UPDATE Chapter SET title = ?, content = ?, wordCount = ? WHERE id = ?",
+   500→                                        title, content, wordCount, row.id)
+   501→                                if uerr == nil && rowCountOf(res2) > 0 {
+   502→                                        filledCtr.Add(1)
+   503→                                        bookFilled.Add(1)
+   504→                                        run.IncChapters()
+   505→                                } else {
+   506→                                        failedCtr.Add(1)
+   507→                                        bookFailed.Add(1)
+   508→                                }
+   509→                        }, isStopped)
+   510→                        if !onProgress(int(filledCtr.Load())) {
+   511→                                stoppedEarly = true
+   512→                                break
+   513→                        }
+   514→                        if isStopped() {
+   515→                                stoppedEarly = true
+   516→                                break
+   517→                        }
+   518→                }
+   519→                run.Log(fmt.Sprintf("书籍 #%d 正文填充完成：成功 %d / 失败 %d", novelID, bookFilled.Load(), bookFailed.Load()))
+   520→                delete(fillMap, novelID) // 处理完即释放，长任务内存渐减
+   521→        }
+   522→        return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly}
+   523→}
+   524→
+   525→// ==================== 字数汇总 ====================
+   526→
+   527→// recalcWordCountsFor 任务收尾：对涉及的书籍统一重算字数（GROUP BY 汇总，避免逐书聚合）
+   528→func recalcWordCountsFor(novelIDs []int) {
+   529→        if len(novelIDs) == 0 {
+   530→                return
+   531→        }
+   532→        const chunk = 500
+   533→        for i := 0; i < len(novelIDs); i += chunk {
+   534→                part := novelIDs[i:min(i+chunk, len(novelIDs))]
+   535→                args := make([]any, 0, len(part))
+   536→                for _, id := range part {
+   537→                        args = append(args, id)
+   538→                }
+   539→                type sumRow struct {
+   540→                        novelID int
+   541→                        total   int64
+   542→                }
+   543→                var sums []sumRow
+   544→                q := "SELECT novelId, SUM(wordCount) FROM Chapter WHERE novelId IN (" + sqlPlaceholders(len(part)) + ") GROUP BY novelId"
+   545→                if err := queryList(q, func(rows *sql.Rows) error {
+   546→                        var s sumRow
+   547→                        if err := rows.Scan(&s.novelID, &s.total); err != nil {
+   548→                                return err
+   549→                        }
+   550→                        sums = append(sums, s)
+   551→                        return nil
+   552→                }, args...); err != nil {
+   553→                        continue
+   554→                }
+   555→                for _, s := range sums {
+   556→                        _, _ = execRetry("UPDATE Novel SET wordCount = ?, updatedAt = ? WHERE id = ?", int(s.total), nowMillis(), s.novelID)
+   557→                }
+   558→        }
+   559→}
+   560→
+   561→// ==================== Phase 0：列表页条目收集 ====================
+   562→
+   563→// collectListItems 列表页翻页收集（模板优先、连续失败快速终止、合并去重、任务上限截断）。
+   564→// 返回 (条目, 最后命中的列表页 URL 作 referer)。
+   565→func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, string) {
+   566→        run.Log("抓取列表页第 1 页…")
+   567→        first := fetchListPage(run, task.TargetURL, rule, "")
+   568→        if len(first) == 0 {
+   569→                run.Log("列表页未提取到书籍条目")
+   570→                return nil, task.TargetURL
+   571→        }
+   572→        run.Log(fmt.Sprintf("第 1 页提取 %d 条", len(first)))
+   573→
+   574→        items := append([]ListItem(nil), first...)
+   575→        currentListURL := task.TargetURL
+   576→        consecutiveFails := 0
+   577→        if hasPaginationTemplate(rule.ListRule) {
+   578→                run.Log("分页模板生效: " + truncateRunes(rule.ListRule["paginationTemplate"], 120))
+   579→        }
+   580→
+   581→        for k := 2; k <= task.Pages; k++ {
+   582→                if isCanceled(run.TaskID) {
+   583→                        break
+   584→                }
+   585→                got := 0
+   586→                hit := false
+   587→                for _, v := range buildPageVariants(rule.ListRule, task.TargetURL, k) {
+   588→                        pageItems := fetchListPage(run, v, rule, "")
+   589→                        if len(pageItems) > 0 {
+   590→                                got = len(pageItems)
+   591→                                hit = true
+   592→                                currentListURL = v
+   593→                                items = append(items, pageItems...)
+   594→                                break
+   595→                        }
+   596→                }
+   597→                if !hit {
+   598→                        consecutiveFails++
+   599→                        run.Log(fmt.Sprintf("第 %d 页无结果（连续失败 %d）", k, consecutiveFails))
+   600→                        if consecutiveFails >= MAX_CONSECUTIVE_PAGE_FAILS {
+   601→                                run.Log(fmt.Sprintf("连续 %d 页翻页失败，提前终止翻页", MAX_CONSECUTIVE_PAGE_FAILS))
+   602→                                break
+   603→                        }
+   604→                        continue
+   605→                }
+   606→                consecutiveFails = 0
+   607→                run.Log(fmt.Sprintf("第 %d 页命中: %s，提取 %d 条", k, truncateRunes(currentListURL, 100), got))
+   608→        }
+   609→
+   610→        // 合并去重（按 URL，缺 URL 按标题）
+   611→        seen := map[string]bool{}
+   612→        merged := []ListItem{}
+   613→        for _, it := range items {
+   614→                key := it.URL
+   615→                if key == "" {
+   616→                        key = "t:" + it.Title
+   617→                }
+   618→                if seen[key] {
+   619→                        continue
+   620→                }
+   621→                seen[key] = true
+   622→                merged = append(merged, it)
+   623→        }
+   624→        if len(merged) > MAX_BOOKS_PER_TASK {
+   625→                merged = merged[:MAX_BOOKS_PER_TASK]
+   626→                run.Log(fmt.Sprintf("条目数超出单任务上限（%d），已截断", MAX_BOOKS_PER_TASK))
+   627→        }
+   628→        return merged, currentListURL
+   629→}
+   630→
+   631→// ==================== 两种模式 ====================
+   632→
+   633→// runList list 范围模式：Phase 0 列表 → Phase 1 骨架 → Phase 2 填充
+   634→func runList(run *Run, task TaskRecord, rule LoadedRule) {
+   635→        // ---- Phase 0：列表页 ----
+   636→        collected, currentListURL := collectListItems(run, task, rule)
+   637→        if isCanceled(run.TaskID) {
+   638→                finalize(run, "canceled", "任务已取消")
+   639→                return
+   640→        }
+   641→        if len(collected) == 0 {
+   642→                finalize(run, "failed", "列表页未提取到书籍条目")
+   643→                return
+   644→        }
+   645→        total := len(collected)
+   646→        zero := 0
+   647→        run.Flush(&TaskFlushFields{Total: &total, Done: &zero})
+   648→        run.Log(fmt.Sprintf("去重后共 %d 本书待采集", total))
+   649→
+   650→        // ---- Phase 1：书目骨架 ----
+   651→        run.Log(fmt.Sprintf("━━ 阶段 1/2 书目骨架（并发 %d）", BOOK_CONCURRENCY))
+   652→        p1 := phase1Skeletons(run, rule, collected, currentListURL)
+   653→        if p1.Fatal != nil { // TS：store 层非唯一冲突错误沿 promise 链冒泡 → catch 收尾
+   654→                run.Log("发生未预期错误: " + truncateRunes(p1.Fatal.Error(), 200))
+   655→                finalize(run, "failed", "任务执行异常")
+   656→                return
+   657→        }
+   658→        if isCanceled(run.TaskID) {
+   659→                recalcWordCountsFor(p1.NovelIDs)
+   660→                finalize(run, "canceled", fmt.Sprintf("已取消（书目完成 %d/%d 本）", p1.OKBooks, total))
+   661→                return
+   662→        }
+   663→        created, updated, _ := run.Snapshot()
+   664→        run.Flush(&TaskFlushFields{Done: &p1.OKBooks, ChaptersTotal: &p1.FillTotal, ChaptersDone: &zero, Created: &created, Updated: &updated})
+   665→
+   666→        if p1.OKBooks == 0 {
+   667→                msg := p1.FirstError
+   668→                if msg == "" {
+   669→                        msg = "无书籍采集成功"
+   670→                }
+   671→                finalize(run, "failed", msg)
+   672→                return
+   673→        }
+   674→
+   675→        // ---- Phase 2：正文填充 ----
+   676→        run.Log(fmt.Sprintf("━━ 阶段 2/2 正文填充（并发 %d，待填充 %d 章）", CHAPTER_CONCURRENCY, p1.FillTotal))
+   677→        var lastFlush int64
+   678→        p2 := phase2Fill(run, rule, p1.FillMap, func(doneSoFar int) bool {
+   679→                now := nowMillis()
+   680→                if now-lastFlush < int64(FLUSH_INTERVAL_MS) {
+   681→                        return true
+   682→                }
+   683→                lastFlush = now
+   684→                c2, u2, ch := run.Snapshot()
+   685→                return run.Flush(&TaskFlushFields{ChaptersDone: &doneSoFar, Chapters: &ch, Created: &c2, Updated: &u2})
+   686→        })
+   687→        recalcWordCountsFor(p1.NovelIDs)
+   688→        created, updated, chapters := run.Snapshot()
+   689→        run.Flush(&TaskFlushFields{ChaptersDone: &p2.Filled, Chapters: &chapters, Created: &created, Updated: &updated})
+   690→
+   691→        if p2.StoppedEarly {
+   692→                finalize(run, "canceled", fmt.Sprintf("已取消（正文填充 %d/%d 章）", p2.Filled, p1.FillTotal))
+   693→                return
+   694→        }
+   695→        if p2.Filled == 0 && p1.FillTotal == 0 {
+   696→                // 可续跑语义：重发已完成任务时骨架全部已有正文（FillTotal=0），Phase 2 无事可做
+   697→                // 应报成功而非「正文采集全部失败」（旧版误报 failed 会诱导用户无意义重跑；
+   698→                // FillTotal>0 且全败的失败语义保持不变）
+   699→                finalize(run, "success", fmt.Sprintf("书目 %d 本已全部有正文，无需续采", p1.OKBooks))
+   700→                return
+   701→        }
+   702→        if p2.Filled == 0 {
+   703→                finalize(run, "failed", fmt.Sprintf("书目 %d 本入库，但正文采集全部失败", p1.OKBooks))
+   704→                return
+   705→        }
+   706→        if p2.Failed > 0 {
+   707→                finalize(run, "partial", fmt.Sprintf("%d 本书 / 正文 %d 章成功，%d 章失败", p1.OKBooks, p2.Filled, p2.Failed))
+   708→                return
+   709→        }
+   710→        finalize(run, "success", fmt.Sprintf("范围采集完成：%d 本书，正文 %d 章", p1.OKBooks, p2.Filled))
+   711→}
+   712→
+   713→// runSingle single 单本模式：复用两阶段管线，一个条目 → 骨架 → 填充；done/total 主口径=章节
+   714→func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
+   715→        items := []ListItem{{Title: "", URL: task.TargetURL}}
+   716→        run.Log(fmt.Sprintf("━━ 阶段 1/2 书目骨架（并发 %d）", BOOK_CONCURRENCY))
+   717→        p1 := phase1Skeletons(run, rule, items, "")
+   718→        if p1.Fatal != nil {
+   719→                run.Log("发生未预期错误: " + truncateRunes(p1.Fatal.Error(), 200))
+   720→                finalize(run, "failed", "任务执行异常")
+   721→                return
+   722→        }
+   723→        if p1.OKBooks == 0 {
+   724→                msg := p1.FirstError
+   725→                if msg == "" {
+   726→                        msg = "书页提取失败"
+   727→                }
+   728→                finalize(run, "failed", msg)
+   729→                return
+   730→        }
+   731→        if isCanceled(run.TaskID) {
+   732→                recalcWordCountsFor(p1.NovelIDs)
+   733→                finalize(run, "canceled", "任务已取消")
+   734→                return
+   735→        }
+   736→        totalChapters := p1.TotalRefs
+   737→        run.Flush(&TaskFlushFields{Total: &totalChapters, Done: &p1.SkippedFilled, ChaptersTotal: &totalChapters, ChaptersDone: &p1.SkippedFilled})
+   738→        if totalChapters == 0 {
+   739→                finalize(run, "success", "书籍已入库（未提取到章节链接）")
+   740→                return
+   741→        }
+   742→
+   743→        run.Log(fmt.Sprintf("━━ 阶段 2/2 正文填充（并发 %d，待填充 %d 章）", CHAPTER_CONCURRENCY, p1.FillTotal))
+   744→        var lastFlush int64
+   745→        p2 := phase2Fill(run, rule, p1.FillMap, func(doneSoFar int) bool {
+   746→                now := nowMillis()
+   747→                if now-lastFlush < int64(FLUSH_INTERVAL_MS) {
+   748→                        return true
+   749→                }
+   750→                lastFlush = now
+   751→                done := p1.SkippedFilled + doneSoFar
+   752→                return run.Flush(&TaskFlushFields{Done: &done, ChaptersDone: &done})
+   753→        })
+   754→
+   755→        recalcWordCountsFor(p1.NovelIDs)
+   756→        done := p1.SkippedFilled + p2.Filled
+   757→        _, _, chapters := run.Snapshot()
+   758→        run.Flush(&TaskFlushFields{Done: &done, ChaptersDone: &done, Chapters: &chapters})
+   759→
+   760→        if p2.StoppedEarly {
+   761→                finalize(run, "canceled", "任务已取消")
+   762→                return
+   763→        }
+   764→        if p2.Filled == 0 && p1.FillTotal == 0 {
+   765→                // 同 runList：骨架已全部有正文的可续跑重发报成功（旧版误报 failed）
+   766→                finalize(run, "success", fmt.Sprintf("书籍已入库且正文齐全（%d 章，续跑无待填充章节）", p1.SkippedFilled))
+   767→                return
+   768→        }
+   769→        if p2.Filled == 0 {
+   770→                finalize(run, "failed", "章节采集全部失败")
+   771→                return
+   772→        }
+   773→        if p2.Failed > 0 {
+   774→                finalize(run, "partial", fmt.Sprintf("%d 章成功 / %d 章失败", p2.Filled, p2.Failed))
+   775→                return
+   776→        }
+   777→        finalize(run, "success", fmt.Sprintf("采集完成：%d 章", p2.Filled))
+   778→}
+   779→
+   780→// ==================== 收尾与入口 ====================
+   781→
+   782→// finalize 终态写入：仅当仍处于 running 时写终态；已被取消/删除则只保留日志
+   783→func finalize(run *Run, status, message string) {
+   784→        var cur string
+   785→        if err := queryOne("SELECT status FROM ScrapeTask WHERE id = ?", []any{&cur}, run.TaskID); err != nil {
+   786→                return
+   787→        }
+   788→        msg := truncateRunes(message, 500)
+   789→        if cur == "running" {
+   790→                _, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ? WHERE id = ? AND status = 'running'",
+   791→                        status, msg, run.LogText(), run.TaskID)
+   792→        } else {
+   793→                _, _ = execRetry("UPDATE ScrapeTask SET log = ? WHERE id = ?", run.LogText(), run.TaskID)
+   794→        }
+   795→}
+   796→
+   797→// runTask 任务执行主链路（pending → running 条件更新 → 分模式执行 → 终态）
+   798→func runTask(taskID int) {
+   799→        run := NewRun(taskID)
+   800→        defer func() {
+   801→                if r := recover(); r != nil {
+   802→                        run.Log("发生未预期错误: " + truncateRunes(fmt.Sprintf("%v", r), 200))
+   803→                        finalize(run, "failed", "任务执行异常")
+   804→                }
+   805→        }()
+   806→
+   807→        // pending → running 条件更新：pending 阶段已被取消/删除的任务不再启动
+   808→        res, err := execRetry("UPDATE ScrapeTask SET status = 'running' WHERE id = ? AND status = 'pending'", taskID)
+   809→        if err != nil || rowCountOf(res) == 0 {
+   810→                return
+   811→        }
+   812→        var mode, targetURL string
+   813→        var pages int
+   814→        var ruleID sql.NullInt64
+   815→        if err := queryOne("SELECT mode, targetUrl, pages, ruleId FROM ScrapeTask WHERE id = ?",
+   816→                []any{&mode, &targetURL, &pages, &ruleID}, taskID); err != nil {
+   817→                return
+   818→        }
+   819→        task := TaskRecord{ID: taskID, Mode: mode, TargetURL: targetURL, Pages: pages}
+   820→        if ruleID.Valid {
+   821→                v := int(ruleID.Int64)
+   822→                task.RuleID = &v
+   823→        }
+   824→        rule := loadRule(task.RuleID)
+   825→        if task.Mode == "list" {
+   826→                run.Log(fmt.Sprintf("任务开始（范围采集·两阶段并发）目标: %s，页数上限: %d", task.TargetURL, task.Pages))
+   827→        } else {
+   828→                run.Log(fmt.Sprintf("任务开始（单本采集·两阶段并发）目标: %s", task.TargetURL))
+   829→        }
+   830→        if task.RuleID != nil {
+   831→                name := rule.Name
+   832→                if name == "" {
+   833→                        name = itoa(*task.RuleID)
+   834→                }
+   835→                charset := rule.Charset
+   836→                if charset == "" {
+   837→                        charset = "auto"
+   838→                }
+   839→                run.Log(fmt.Sprintf("使用规则「%s」（charset=%s）", name, charset))
+   840→        } else {
+   841→                run.Log("未使用规则，依赖引擎内置启发式提取")
+   842→        }
+   843→        run.Flush(nil)
+   844→        if task.Mode == "list" {
+   845→                runList(run, task, rule)
+   846→        } else {
+   847→                runSingle(run, task, rule)
+   848→        }
+   849→}
+   850→
+   851→// triggerScrapeTask fire-and-forget 入口：runner 轮询与任务创建 API 共用，不阻塞调用方
+   852→func triggerScrapeTask(taskID int) {
+   853→        gRunningMu.Lock()
+   854→        if gRunning[taskID] {
+   855→                gRunningMu.Unlock()
+   856→                return
+   857→        }
+   858→        gRunning[taskID] = true
+   859→        gRunningMu.Unlock()
+   860→        go func() {
+   861→                defer runningDelete(taskID)
+   862→                defer func() {
+   863→                        if r := recover(); r != nil {
+   864→                                log.Printf("[scrape-worker] task %d 兜底异常: %v", taskID, r)
+   865→                        }
+   866→                }()
+   867→                runTask(taskID)
+   868→        }()
+   869→}
+   870→

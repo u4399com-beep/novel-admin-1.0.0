@@ -23,6 +23,12 @@ export interface TaskRow {
   message: string
   createdAt: string
   updatedAt: string
+  /**
+   * 起始页/并发数（可选）：当前 API 响应不含这两个字段（ScrapeTask 无对应列），
+   * 编辑表单预填时以 undefined 兜底为默认值 1/3（见 TaskFormFields.taskFormFromRow）。
+   */
+  startPage?: number
+  concurrency?: number
 }
 
 /** 任务详情（GET /api/scrape-tasks/[id] 响应，含日志） */

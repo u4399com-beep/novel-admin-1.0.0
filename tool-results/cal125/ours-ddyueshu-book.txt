@@ -1,0 +1,113 @@
+- button "设为首页" [ref=e3123]
+- button "收藏本站" [ref=e3124]
+- button "阅读记录" [ref=e3125]
+- button "繁體版" [ref=e3126]
+- textbox "账号" [ref=e3127]
+- textbox "密码" [ref=e3128]
+- button "登陆" [ref=e3129]
+- button "用户注册" [ref=e3130]
+- button "青阅文学" [ref=e3131]
+- form
+  - textbox "搜书名 / 搜作者" [ref=e3135]
+  - button "搜 索" [ref=e3136]
+- generic
+  - button "新浪" [ref=e3137]
+  - button "QQ" [ref=e3138]
+  - button "微信" [ref=e3139]
+  - button "豆瓣" [ref=e3140]
+- navigation "主导航" [ref=e3132]
+  - button "首页" [ref=e3141]
+  - button "未分类" [ref=e3142]
+  - button "玄幻" [ref=e3143]
+  - button "科幻" [ref=e3144]
+  - button "其他" [ref=e3145]
+  - button "网游" [ref=e3146]
+  - button "都市" [ref=e3147]
+  - button "言情" [ref=e3148]
+  - button "同人" [ref=e3149]
+  - button "全部小说" [ref=e3150]
+- main
+  - button "首页" [ref=e3151]
+  - StaticText ">"
+  - button "其他" [ref=e3152]
+  - StaticText ">"
+  - StaticText "我是夏始之"
+  - StaticText "最新章节列表"
+  - StaticText "字数 "
+  - StaticText "1.6万字"
+  - StaticText " · 点击 "
+  - StaticText "5"
+  - generic
+    - heading "我是夏始之" [level=1, ref=e3167]
+    - paragraph
+      - StaticText "作者："
+      - button "余耕" [ref=e3171]
+      - StaticText "分类："
+      - button "其他" [ref=e3172]
+    - paragraph
+      - StaticText "状态：已完本字数：1.6万字点击：5章节：共 6 章"
+    - paragraph
+      - StaticText "最后更新：2026-09-19〔"
+      - button "第六章" [ref=e3173]
+      - StaticText "〕"
+    - button "开始阅读" [ref=e3168]
+    - button "进入目录" [ref=e3169]
+    - paragraph
+      - StaticText "女主夏始之自幼被遗弃、在福利院长大，婚后倾尽全部心思照料家庭与孩子，不料丈夫婚内出轨，昔日交好的闺蜜还暗中与其勾结，接连的背叛打碎她安稳的生活，她从沉溺伤痛慢慢冷静，四处搜集证据和丈夫周旋拉扯，在婚变、职场受挫的多重磨难里不断自省蜕变，全书另外收录六篇聚焦市井小人物的中篇，分别围绕亲情裂痕、畸形婚恋、底层求生等现实议题落笔，延续作者描摹普通人悲欢的文风，用细碎日常折射当代人的生存困境，凭借细腻的女性视角斩获百花文学奖，被称作女版《我是余欢水》。"
+    - StaticText "相关搜索"
+    - list
+      - listitem [level=1]
+        - link "我是夏始之 余耕" [ref=e3174]
+      - listitem [level=1]
+        - link "我是夏始之内容介绍" [ref=e3175]
+      - listitem [level=1]
+        - link "我是夏始之读后感" [ref=e3176]
+      - listitem [level=1]
+        - link "我是夏始之几个故事" [ref=e3177]
+      - listitem [level=1]
+        - link "我是夏始之书评" [ref=e3178]
+      - listitem [level=1]
+        - link "我是夏始之以爱之名" [ref=e3179]
+      - listitem [level=1]
+        - link "我是夏始之小说免费阅读" [ref=e3180]
+      - listitem [level=1]
+        - link "我是夏始之 epub" [ref=e3181]
+      - listitem [level=1]
+        - link "我是夏始之简介50字" [ref=e3182]
+      - listitem [level=1]
+        - link "我是夏始之小说" [ref=e3183]
+  - generic
+    - StaticText "最新章节"
+    - button "完整目录 >>" [ref=e3170]
+    - DescriptionList
+      - term "《我是夏始之》最新章节"
+      - definition
+        - button "第六章" [ref=e3184]
+      - definition
+        - button "第五章" [ref=e3185]
+      - definition
+        - button "第四章" [ref=e3186]
+      - definition
+        - button "第三章" [ref=e3187]
+      - definition
+        - button "第二章" [ref=e3188]
+      - definition
+        - button "第一章" [ref=e3189]
+- contentinfo
+  - button "网站首页" [ref=e3153]
+  - button "全部小说" [ref=e3154]
+  - button "站内搜索" [ref=e3155]
+  - button "未分类小说" [ref=e3156]
+  - button "玄幻小说" [ref=e3157]
+  - button "科幻小说" [ref=e3158]
+  - button "其他小说" [ref=e3159]
+  - button "网游小说" [ref=e3160]
+  - button "都市小说" [ref=e3161]
+  - button "言情小说" [ref=e3162]
+  - button "同人小说" [ref=e3163]
+  - button "阅读记录" [ref=e3164]
+  - button "收藏本站" [ref=e3165]
+  - button "繁體版" [ref=e3166]
+- button "进入站点管理后台" [ref=e3133]
+- region "Notifications alt+T" [ref=e3134]
+- button "Open Next.js Dev Tools" [expanded=false, ref=e3190]

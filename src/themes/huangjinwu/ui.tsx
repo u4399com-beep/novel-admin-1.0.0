@@ -224,56 +224,6 @@ export function Crumb({
   )
 }
 
-/* ==================== 分页（白色胶囊 1.5px 边框） ==================== */
-
-function PageBtn({
-  children,
-  disabled,
-  onClick,
-}: {
-  children: ReactNode
-  disabled?: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      disabled={disabled}
-      onClick={onClick}
-      className="cursor-pointer rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-5 py-2 text-[14px] text-[#1e293b] transition-colors duration-200 hover:border-[#2563eb] hover:text-[#2563eb] disabled:pointer-events-none disabled:opacity-40"
-    >
-      {children}
-    </button>
-  )
-}
-
-export function Pager({
-  page,
-  totalPages,
-  onGo,
-}: {
-  page: number
-  totalPages: number
-  onGo: (p: number) => void
-}) {
-  if (!totalPages || totalPages <= 1) return null
-  return (
-    <nav className="mt-8 flex flex-wrap items-center justify-center gap-3">
-      <span className="text-[14px] text-[#64748b]">
-        第 {page} / {totalPages} 页
-      </span>
-      <PageBtn disabled={page <= 1} onClick={() => onGo(page - 1)}>
-        上一页
-      </PageBtn>
-      <PageBtn disabled={page >= totalPages} onClick={() => onGo(page + 1)}>
-        下一页
-      </PageBtn>
-      <PageBtn disabled={page >= totalPages} onClick={() => onGo(totalPages)}>
-        末页
-      </PageBtn>
-    </nav>
-  )
-}
-
 /* ==================== 骨架屏 ==================== */
 
 export function Skel({ className }: { className?: string }) {

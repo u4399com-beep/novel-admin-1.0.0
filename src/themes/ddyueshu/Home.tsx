@@ -1,6 +1,7 @@
 'use client'
 
 import { useHomeData, useNovels } from '@/hooks/use-novel-data'
+import { HomeCustomBlocks } from '@/components/theme-extras'
 import { cn } from '@/lib/utils'
 import type { CategoryDto } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'
@@ -71,6 +72,9 @@ export default function Home({ navigate, siteName }: ViewProps) {
           </div>
         </div>
       </section>
+
+      {/* ③.5 后台可配置的首页自定义图文区块（无配置时渲染 null） */}
+      <HomeCustomBlocks navigate={navigate} />
 
       {/* ④ 友情链接 */}
       <section className="mt-2 border border-[#ddd] bg-white px-3 py-2 text-[13px]">

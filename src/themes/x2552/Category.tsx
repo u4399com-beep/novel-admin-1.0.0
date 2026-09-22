@@ -1,22 +1,17 @@
 'use client'
 
 import { useCategories, useNovels } from '@/hooks/use-novel-data'
+import { CategoryFeaturedBlock, CategoryHotBlock } from '@/components/theme-extras'
 import type { ViewProps } from '../types'
-import { ErrorBox, NovelTable, Pager, SqIcon, TableSkeleton } from './parts'
+import { ErrorBox, NovelTable, SqIcon, TableSkeleton } from './parts'
 import Sidebar from './Sidebar'
 
-/** 分类页：左 190 侧栏（会员推荐+排行榜） + 右 760 数据表（6 列） + 翻页条 */
-export default function Category({
-  navigate,
-  categoryId,
-  page = 1,
-}: ViewProps & { categoryId?: number; page?: number }) {
+/** 分类页：左 190 侧栏（会员推荐+排行榜） + 右 760 数据表（6 列） */
+export default function Category({ navigate, categoryId }: ViewProps & { categoryId?: number }) {
   const { data: categories } = useCategories()
-  const curPage = page ?? 1
-  const { data, isLoading, isError, refetch } = useNovels({ categoryId, page: curPage, pageSize: 20 })
+  const { data, isLoading, isError, refetch } = useNovels({ categoryId, pageSize: 500 })
 
   const categoryName = categories?.find((c) => c.id === categoryId)?.name
-  const go = (p: number) => navigate({ name: 'category', categoryId, page: p })
 
   return (
     <div className="mt-2 flex items-start justify-between">
@@ -28,6 +23,12 @@ export default function Category({
           {categoryName ?? '全部分类'} - 文章列表
         </h2>
 
+        {/* 图文推荐 / 热门书籍区块（无数据时自渲染 null） */}
+        <div className="mt-1">
+          <CategoryFeaturedBlock navigate={navigate} categoryId={categoryId} />
+          <CategoryHotBlock navigate={navigate} categoryId={categoryId} />
+        </div>
+
         {isError ? (
           <div className="mt-1">
             <ErrorBox onRetry={() => refetch()} />
@@ -37,12 +38,9 @@ export default function Category({
             <TableSkeleton rows={10} />
           </div>
         ) : (
-          <>
+          <div className="mt-1">
             <NovelTable novels={data?.list ?? []} navigate={navigate} />
-            <div className="mt-1">
-              <Pager page={data?.page ?? curPage} totalPages={data?.totalPages ?? 0} onGo={go} />
-            </div>
-          </>
+          </div>
         )}
       </div>
     </div>

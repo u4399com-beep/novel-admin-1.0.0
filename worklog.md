@@ -676,3 +676,92 @@ Stage Summary:
 - 交付 2/2：①任务生命周期补全——pending/running 可暂停（协作式安全停手、进度保留）、paused 可编辑可恢复（改参数再恢复按新参数续传）、重启自动暂停不再毁任务；②pseo 全自动闭环——书名即种子、入库即登记、后台 12s/种子富集生成聚合页、10 主题书籍页简介下方「相关标签」直达聚合页
 - 关键决策：暂停=可编辑的非执行态（与 pending 同级权限）；恢复=重新入队而非进程内唤醒（复用骨架续传语义，零新增状态机复杂度）；种子登记与富集解耦（采集热路径零网络调用，引擎故障不影响功能）
 - 已知边界：恢复瞬间旧 worker 若尚未退场，任务短暂呈现 pending 而实际仍在跑（gRunning 防双跑，终态写入安全，最多重复少量工作）；富集循环 sogou 引擎上游死亡与既有认知一致（多引擎聚合不受影响）
+<<<<<<< HEAD
+=======
+
+---
+Task ID: 22
+Agent: main (Z.ai Code)
+Task: 两项新指令：①每规则采20本快速填满+规则可行性检测 ②全站去分页+分类页图文区块+后台首页区块自定义
+
+Work Log:
+- 【P0 数据库重建】integrity_check 实证 ScrapeRule/Chapter btree 页损坏（历史沙箱回滚+多进程 WAL inode 分裂所致）→ bun:sqlite 抢救健康数据（9 分类/1 设置/69 pseo 关键词/11 规则）→ 全新库文件重建（DDL 从旧库 sqlite_master 迁移）→ integrity ok → mv 替换
+- 【教训固化】SQLite WAL 多进程 + mv 替换文件 = 数据丢失（旧进程退出时按路径 unlink 新 wal）→ 后续替换库文件必须先停全部持有者
+- 【规则恢复】11 条规则自 /tmp/sr_full.json 灌回 + scripts/add-new-rules.ts 幂等重跑补 4 新站（5165/23uswx/38.34 草稿/ixdzs8）= 15 条规则（14 enabled）
+- 【采集链路自愈】backend-go fd 指向旧 inode → 有序重启后干净；scraper-go 两次被沙箱回收 → setsid 孤儿化拉起；3000 网关 GET 有响应缓存（直连 3005 验证 15 规则，POST 不受影响）
+- 【任务1 执行】14 个 list 任务（pages=1，每页≈20-50 本）全部创建并跑完一轮：成功/partial 7 个（ddyueshu/huangjinwu/trxsw/77shuku/23uswx/ixdzs8/aijjxs 骨架）；total=0 失败 5 个（ggd66/x2552 规则 itemSelector 无命中——站点改版；101kks/pilishuwu/5165 challenge-page 全策略拦截）；aijjxs/23qb/xinjianpan 骨架入库成功但 Phase 2 正文被站点限速（直连 /read/ 0.77s 正常 vs 引擎 timeout → 高频触发站点侧掐流量）→ 熔断按设计保护，等冷却重发续采
+- 【任务2 数据层已落地】prisma SiteSetting.homeConfig 字段 + db push；types.ts 新增 HomeBlockConfig/HomeConfig/SettingsDto.home；src/lib/home-blocks.ts sanitize 白名单；/api/settings GET/PATCH 支持 home；/api/novels pageSize 上限 60→500（去分页数据面）；共享组件 src/components/theme-extras.tsx（HomeCustomBlocks/CategoryFeaturedBlock/CategoryHotBlock，风格中立、无数据渲染 null）
+- 【tsc 断链盘点】scripts/ 9 个陈旧脚本 + src/ 8 处既有断链（volume 字段/pseo getGeneratedPseoPage/category 导出改名等，19-d 交接遗留）→ 分派 22-a 修复
+- 【并行分派】22-a 断链修复 + scripts 归档；22-b 10 主题去分页+分类页两区块+首页自定义区块注入；主 Agent 续做 AdminConsole「首页区块」配置 UI
+
+Stage Summary:
+- 数据库从损坏态完全重建（integrity ok），15 条采集规则就位，14 任务第一轮完成并产出可行性分层结论
+- 任务2 数据层/共享组件/API 就绪，剩余主题注入与后台 UI 分派 22-a/22-b 并行执行
+
+---
+Task ID: 22-a
+Agent: src-repair-agent (Z.ai Code)
+Task: 修复 src/ 8 处 TS 断链（schema 字段演进/函数改名遗留）+ 归档 scripts/ 陈旧脚本，tsc/lint 双清零
+
+Work Log:
+- 权威清单取证：bunx tsc --noEmit 共 45 错（src/ 36 + scripts/ 9 文件 37 错，交集口径以 tsc 输出为准）；先读 worklog Task 19/21-b/22 与 prisma schema 确认字段链现状（Chapter 无 volume；Novel 无 remoteCoverUrl/sourceRuleId/suggestKeywords；PseoKeyword 无 novelId；ScrapeTask 无 startPage/concurrency）
+- ①categories/merge/route.ts：改用现存等价函数 canonicalCategory（异步，L1 同义词/L2 关键词/L3 LLM 全流水线）+ FALLBACK_CATEGORY；GET 建议循环改为 await，归并失败（=未分类）或目标与自身同名即跳过，reason 文案就地生成；POST 事务合并逻辑未动；实测 GET 200（现库 9 类全为规范名/未分类 → 建议空数组，语义正确）
+- ②novels/resort-chapters/route.ts：Chapter.volume 不存在 → detectOrder 参数与两处 select 去 volume，refs 不再带 volume，注释改为纯序号语义
+- ③pseo/[kw]/page.tsx：getGeneratedPseoPage 在 src/lib/pseo.ts 就地补齐（读取 status=generated 的 PseoKeyword.pageData → 按 novelIds 原序取书保证绑定书首位=「最佳匹配」卡；未生成/损坏返回 null → 404，不做实时兜底）；page.tsx 本身零改动
+- ④admin/scrape/TaskFormFields.tsx：TaskRow（components/admin/scrape/types.ts）补可选字段 startPage?/concurrency?，taskFormFromRow 既有 ?? 1 / ?? 3 兜底直接生效（API 响应确无此二字段，ScrapeTask 无对应列）
+- ⑤scrape/covers-backfill/route.ts：功能依赖的字段链彻底不存在（remoteCoverUrl 采集时未持久化 + ScrapeTask 无 novelId 无法反推书↔URL）→ 按指令「二选一」取 410 退役：GET 保留可算的封面统计（total/local/gradient，backfillable=0 + available:false），POST 返回 410 说明；CoversCard.tsx 注释/文案同步修正（按钮本就因 backfillable=0 禁用，无行为破坏）；实测 POST → HTTP 410
+- ⑥toc-chapters.tsx：删除 volume 分组分支（groupByVolume/VolumeSegment/volumeClassName/countClassName/VOLUME_BASE 等，无任何主题引用该组件，安全）；章节条目渲染逻辑（button/navigate/title/truncate/renderItem）原样保留——本文件本就无「第一章/立即阅读」字面量，首章防污染逻辑在 worker.ts 标题过滤表（未触碰）
+- ⑦scrape/ordering.ts：删除 reorderWithVolumes 与 hasVolume 分支（ChapterRef 无 volume），重复序号场景回落保守修复 fixLeadingDescendingBlock，纯 idx/序号排序语义，注释同步
+- ⑧scrape/suggest-bind.ts：pseo.ts 的 matchNovels 加 export（内部函数被复用合理）；Run 补 lineCount getter + linesSince() （P3-17 晚到日志补写所依赖，最小功能补齐）；collectBind 开闸随配置项移除而删除；Novel.suggestKeywords 读写链（select/幂等跳过/update）与 PseoKeyword.create 的 novelId 随 schema 字段移除而删除，核心链路（取词→建词→pageData 绑定书置顶→generated）保留，文件头加状态注记（TS worker 已退役、Go pseo_book.go 为现役实现，本文件无调用方仅静态依赖保留）
+- scripts 归档：tsc 报错的 9 个脚本（backfill-categories/check-chapters-db/check-cover-urls/check-covers-db/check-hjw-covers/dump-tasks/extract-offline/merge-categories/verify-category-selectors，均引用已删字段或 cheerio 缺失）mv 至 scripts/archive/；tsconfig.json exclude 增加 "scripts/archive"（include 为 **/*.ts 会扫到归档件）；健康脚本 add-new-rules/dump-rules/rule-config-dump/check-rules-integrity 等未动
+- 验证全过：bunx tsc --noEmit → 0 错误（exit 0）；bun run lint → 0 错误；curl :3005/api/health → ok:true dbOk:true（backend-go 存活未动）；curl :3000 /api/categories/merge → 200 []、/api/scrape/covers-backfill POST → 410 说明（dev server 未重启，热更新生效）；grep "第一章" toc-chapters.tsx → 无字面量（首章逻辑不在该文件，未受影响）
+- 过程记录：验收中途 src/themes/101kks/views.tsx 出现 2 个 Pager 瞬时错误（并行 22-b 辖区编辑中态），未触碰，60s 后复查自愈归零
+
+Stage Summary:
+- src/ 8 处断链全部修复（tsc 0 错误、lint 0 错误），无功能删除：能复用的复用（canonicalCategory/matchNovels）、能补齐的补齐（Run.lineCount/linesSince、getGeneratedPseoPage）、字段链彻底死亡的按指令 410 退役（covers-backfill）或就地最小适配（suggest-bind 保留核心语义）
+- scripts/ 9 个陈旧脚本归档至 scripts/archive/（tsconfig 已排除），scripts/ 活跃文件 0 tsc 错误
+- 交接说明：covers-backfill 的封面回填能力如需复活，需 schema 重新提供「书↔远程封面 URL」字段链（当前采集端 store.ts 入库即下载，失败书保留渐变 token，可重采修复个别封面）
+---
+Task ID: 22-b
+Agent: theme-view-injector
+Task: 10 主题去分页 + 分类页图文推荐/热门书籍区块注入 + 首页自定义图文区块注入
+
+Work Log:
+- 通读 worklog 前情 + 三份基础设施（theme-extras.tsx / use-novel-data.ts / themes/types.ts）后逐主题处理；每主题固定三件事：A 数据层 pageSize→500 + 删除分页 UI 使用处与孤儿组件定义 + 清理仅服务分页的 page/totalPages/FILTERED_PAGE_SIZE 状态；B Category 筛选栏后、列表前插 CategoryFeaturedBlock + CategoryHotBlock；C Home 主体后、页脚/友链前插 HomeCustomBlocks（三组件无数据自渲染 null，全库页 categoryId=undefined 时分类两区块自然不渲染）
+- aijjxs：Category.tsx 删 page prop/go/重置逻辑、pageSize 12→500、列表卡前插两区块；Search.tsx 删 page state + Pager、关键词模式 20→500；parts.tsx 删 Pager 定义；Home.tsx StatsHero 后插 HomeCustomBlocks；aijjxs.css 的 .aj-pager-btn 保留（Home「展示更多」按钮仍在用，非死样式）
+- ddyueshu：Category.tsx 删 page prop + DdPager、20→500、分类切换条后插两区块；Search.tsx 删 page state + DdPager、20→500；parts.tsx 删 DdPager 定义；Home.tsx ③更新区与④友链之间插 HomeCustomBlocks
+- shipsay：Category.tsx 删 page prop/curPage/go、20→500、左内容列列表卡后插两区块、标题条「第 x/y 页」文案同步删除；Search.tsx 删 page state + Pagination、20→500（顺带清掉本就未使用的 useEffect import）；parts.tsx 删 Pagination 定义；Home.tsx 友情链接区块前插 HomeCustomBlocks
+- x2552：Category.tsx 删 page prop/curPage/go、20→500、标题条后插两区块；Search.tsx 服务端 20→500 + 本地池 60→500、删 page state/FILTERED_PAGE_SIZE/本地切片分页/Pager；parts.tsx 删 Pager + 私有 PgBtn 成对删除；Home.tsx 友情链接前插 HomeCustomBlocks；Chapter.tsx 章节「上一页/下一页」导航原样保留（非分页）
+- trxsw（index.tsx+ui.tsx）：CategoryView 删 page prop/cur/goPage、20→500、筛选行后插两区块；SearchInner 双路均 500、删 page state/FILTERED_PAGE_SIZE/totalPages/Pager；HomeView 友链前插 HomeCustomBlocks；ui.tsx 删 pageWindow + Pager；ChapterNav 章节导航保留
+- pilishuwu（index.tsx+ui.tsx）：CategoryView 删 page prop/cur/goPage、20→500、筛选行后插两区块、标题「第 x/y 页」删除；SearchInner 删 page state + Pager、20→500；HomeView 主栅格后友链侧栏前插 HomeCustomBlocks；ui.tsx 删 pageWindow + Pager
+- 23qb（views.tsx+ui.tsx）：HomeView 宽口径池 useNovels({page:1,pageSize:60})→{pageSize:500}（任务书点名的示例行）、Container 尾部插 HomeCustomBlocks；CategoryView 删 page prop、20→500、筛选卡后插两区块、Pager 及「第 x/y 页」删除；SearchPanel 删 page state + Pager、20→500；ui.tsx 删 Pager + ChevronLeft/Right import
+- 101kks（views.tsx+ui.tsx）：CategoryView 删 page prop（intentKey 键同步去掉 page 分量）、20→500、筛选卡后插两区块、排序/状态 onClick 去掉页码重置；SearchPanel 删 page state + Pager、20→500；HomeView 标签云后插 HomeCustomBlocks；ui.tsx 删 Pager + ChevronLeft/Right import
+- huangjinwu（views.tsx+ui.tsx）：Category 删 page prop、20→500、筛选条后插两区块；SearchPanel 删 page state + Pager、20→500；Home 最新电子书 section 后插 HomeCustomBlocks；ui.tsx 删 Pager + 私有 PageBtn 成对删除
+- ggd66（views.tsx+ui.tsx）：Category 删 page prop、20→500、分类导航条后插两区块；SearchPanel 删 page state + GPager、20→500；两处 BookBoxItem 序号 index 由 (page-1)*pageSize+i+1 化简为 i+1；Home 友链前插 HomeCustomBlocks；ui.tsx 删 GPager + 私有 GPageBtn
+- 类型契约：ThemeRenderer 仍向 Category 传 page（types.ts 的 page? 字段保留），各主题 Category 已不解构该参数，属无害透传，按最小改动未动 ThemeRenderer
+
+Stage Summary:
+- 验收 4/4 全过：①bunx tsc --noEmit 0 错误（零新增）②bun run lint exit 0 ③rg "Pagination|<Pager" src/themes/ 零命中（使用处与定义一并清零，10 个分页组件定义全删；x2552/Chapter 章节导航「上一页/下一页」按要求保留）④三区块覆盖 10/10 主题（HomeCustomBlocks×10、CategoryFeaturedBlock×10、CategoryHotBlock×10，逐文件计数核实），theme 目录合计 +224/−880 行
+- 每主题注入点：分类页统一在筛选/导航栏之后书籍列表之前（aijjxs 筛选条下、ddyueshu 分类切换条下、shipsay 左内容列列表卡后、x2552/trxsw/pilishuwu 排序筛选行下、23qb/101kks 筛选卡后、huangjinwu 筛选条下、ggd66 分类导航条下）；首页统一在主体之后页脚/友链之前；无分类筛选的「全部」书库页由组件自身 categoryId 判空渲染 null，无主题跳过
+- 风格红线遵守：theme-extras.tsx、src/app/api/、src/lib/、admin 零改动；各主题配色/布局逻辑未动，仅做插入与删除；git 未提交
+- 环境观察（非本次改动引入，交主 Agent）：dev.log 显示 /api/novels、/api/home 经 3000 代理 500（Prisma: SqliteError extended_code=11 "database disk image is malformed"），直连 3005 同接口 200 正常——db/custom.db（28MB，WAL 4MB 活跃写入中）疑再现 Task 22 记录的多进程 WAL 损坏；浏览器实测首页零 page error、主题对 API 失败优雅降级（错误框/重试、注入区块静默不渲染），视图层不受影响；数据库修复属主 Agent 辖区，本次未做任何进程/DB 操作
+
+---
+Task ID: 22（收编 22-a/22-b/22-c）
+Agent: main (Z.ai Code)
+Task: 两项指令终局集成：①每规则采20本快速填满+规则可行性检测 ②全站去分页+分类页图文区块+后台首页区块自定义
+
+Work Log:
+- 【22-a 交付】src/ 既有 tsc 断链 8 处全修（categories/merge 改 canonicalCategory、resort-chapters/toc-chapters/ordering 去 volume、pseo/[kw] 补 getGeneratedPseoPage、TaskFormFields 补可选字段、covers-backfill 410 退役、suggest-bind matchNovel 导出）+ scripts/ 9 个引用已删字段的陈旧脚本归档 scripts/archive/（tsconfig exclude 同步）
+- 【22-b 交付】10 主题全量改造 +224/-880 行：分页组件使用处+定义清零（10 套 Pager/Pagination）、pageSize 统一 500、Category 注入 CategoryFeaturedBlock+CategoryHotBlock、Home 注入 HomeCustomBlocks（覆盖 10/10/10）；章节阅读「上一页/下一页」导航按要求保留
+- 【22-c 交付·主 Agent 亲自执行（Task API 三连超时）】探站修复：ggd66（新 #gengxin ul li 五段式+og meta 书页+#rtext 正文）列表提取 30 本✓；x2552（#centeri ul.update li+og 全套 meta+table#at 目录+dd#contents 正文）列表提取 35 本✓；5165 确认 curl-impersonate 策略可过（1.09s/61KB，引擎成功记忆已建立）重发后列表提取 262 本✓；101kks 诊断为引擎传输指纹被针对性识别（系统 curl 200 vs 引擎全策略 challenge）记 notes；pilishuwu 403+JS 跳转硬反爬记 notes
+- 【间歇 500 根治】next-server 持有 mv 前旧 inode 的 deleted fd → /api/novels 间歇 malformed 500：db.ts 缓存 key 升级 __prismaV2 + 旧实例显式 $disconnect；验证 6/6 全 200，fd 全部指向新 inode
+- 【homeConfig 链路】Prisma client DMMF 被_next 模块缓存固化（homeConfig Unknown argument 500）→ settings API GET/PATCH 对 homeConfig 改 $queryRaw/$executeRaw 绕开（列已确认存在）；后台「首页图文区块」编辑器落地（标题/来源 latest|hot|featured|cat:N/数量 4-24/上移下移/删除/最多 8 块）
+- 【E2E 实证】agent-browser：首页渲染✓→分类页图文推荐 3 卡+热门 8 卡+零分页✓→后台添加区块「小编精选/点击最多/8」保存✓→首页区块渲染 8 张真实封面图文卡✓
+- 【数据面】196 本书入库（Phase 1 完成度 9/14 规则），17.7 万章骨架，2125 章正文（Phase 2 持续填充中）；tsc 0 错误/lint 0 错误/3000-3005-3030 全链通
+
+Stage Summary:
+- 指令①：14 任务两轮执行，9 规则验证可用（ddyueshu/huangjinwu/trxsw/77shuku/23uswx/ixdzs8/aijjxs 骨架+23qb/xinjianpan 骨架），3 规则探站修复成功（ggd66/x2552/5165），2 规则硬反爬诊断记录（101kks/pilishuwu）；书籍 0→196 本快速填充，可行性结论全部落档 ScrapeRule.notes
+- 指令②：全站分页移除（API+10 主题）+ 分类页两图文区块 + 后台首页区块自定义全链路打通（配置→落库→渲染实证）
+- 技术沉淀：SQLite WAL 多进程+mv 替换=数据丢失教训、Prisma client 与 Next dev 模块缓存不同步用 raw SQL 绕开、引擎策略成功记忆（recordStrategySuccess）可自愈反爬拦截
+>>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)

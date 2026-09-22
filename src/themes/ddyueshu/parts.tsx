@@ -215,51 +215,6 @@ export function CoverItem({
   )
 }
 
-/* ==================== 分页器（笔趣阁样式） ==================== */
-
-export function DdPager({
-  page,
-  totalPages,
-  go,
-}: {
-  page: number
-  totalPages: number
-  go: (p: number) => void
-}) {
-  if (totalPages <= 1) return null
-  const nums: number[] = []
-  const start = Math.max(1, Math.min(page - 2, totalPages - 4))
-  for (let p = start; p <= Math.min(totalPages, start + 4); p++) nums.push(p)
-  const cls = 'dd-greenlink px-1'
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-2 border-t border-dashed border-[#ccc] py-2 text-[13px]">
-      <button className={cls} disabled={page <= 1} onClick={() => go(1)}>
-        首页
-      </button>
-      <button className={cls} disabled={page <= 1} onClick={() => go(page - 1)}>
-        上一页
-      </button>
-      {nums.map((p) =>
-        p === page ? (
-          <span key={p} className="bg-[#88c6e5] px-2 leading-[22px] text-white">
-            {p}
-          </span>
-        ) : (
-          <button key={p} className={cls} onClick={() => go(p)}>
-            {p}
-          </button>
-        )
-      )}
-      <button className={cls} disabled={page >= totalPages} onClick={() => go(page + 1)}>
-        下一页
-      </button>
-      <button className={cls} disabled={page >= totalPages} onClick={() => go(totalPages)}>
-        尾页
-      </button>
-    </div>
-  )
-}
-
 /* ==================== 表头行（分类/书名/最新章节/作者/日期） ==================== */
 
 export function TableHead({ showChapter = true }: { showChapter?: boolean }) {
