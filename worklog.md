@@ -858,3 +858,18 @@ Stage Summary:
 - 架构终态：Next.js 纯前端壳（catch-all 代理）+ backend-go 全业务 API + scraper-go 引擎；TS API 时代终结
 - 9 项用户指令交付：①任务终态可编辑/重启+paused 可取消（23-a/23-b）②小编精选上移分类板块（23-b）③自适应宽度审计+修复（23-b+主）④书籍页下拉词标签（23-a）⑤「其他」替代「未分类」+导航/ID 最后+recategorize 死代码修复（23-a）⑥⑦遮蔽路由/死代码 Bug 双审查修复 ⑧TS API+孤儿库全清理 ⑨git 推送
 - 环境沉淀：会话内进程收割规律（会话结束后遗留进程免疫 → 收尾重拉即长期稳定）
+
+---
+Task ID: 23（rebase 事故与修复·主 Agent 补记）
+Agent: main (Z.ai Code)
+Task: git 推送时 rebase 远程 main；快照提交回放误覆盖 5 主题文件冲突标记 + 83 个文件被回退；全量恢复
+
+Work Log:
+- 推送被拒（远端有并行会话的 Task 21 提交）→ stash + wal checkpoint(TRUNCATE 无损) + pull --rebase
+- 3 个本地提交回放：worklog 冲突（远端 25 段为本地 14 段超集，取远端+保留本地 Task 23 追加段）；b28bcb0 旧快照提交与远端冲突，误以 git add -A 吞并 → 冲突标记进库（5 主题文件）+ 83 文件被回退（src/lib/suggest.ts 等）
+- 修复：5 主题文件从 a4d89c0 恢复（0 标记）；src/mini-services/scripts/docs/prisma 全量 checkout a4d89c0；tsc/lint 双绿
+- 三次提交全部推送成功：4a23893..8417cba..02bd1e0..aae0c25 main→main
+- 环境补记：会话活跃期收割窗口收紧至 ~1min，服务稳定依赖会话结束后免疫（scraper-go 先例）；devwatch（BACKEND_WATCH_DEV=1）作为 backend-go 侧 next 自动拉起的兜底层持续生效
+
+Stage Summary:
+- 远端 main 现为 Task 23 权威状态（Go 全业务 API + 10 主题 + admin UI）；db 运行时文件（含 homeConfig/其他分类迁移/926 pseo 词）随提交同步
