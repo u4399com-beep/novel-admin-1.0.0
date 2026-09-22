@@ -26,10 +26,7 @@ import {
 import { coverBgClass } from '@/lib/covers'
 import { NovelCoverImg, isLocalCover } from '@/components/novel-cover'
 import { NovelTagsRow } from '@/components/novel-tags'
-<<<<<<< HEAD
-=======
 import { CategoryFeaturedBlock, CategoryHotBlock, HomeCustomBlocks } from '@/components/theme-extras'
->>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)
 import { cn } from '@/lib/utils'
 import type { NovelListItem } from '@/lib/types'
 import type { ThemeView, ViewProps } from '../types'

@@ -31,10 +31,7 @@ import {
 } from '@/hooks/use-reader-prefs'
 import type { ChapterDetail } from '@/lib/types'
 import type { ThemeLayoutProps, ThemeModule, ThemeView, ViewProps } from '../types'
-<<<<<<< HEAD
-=======
 import { CategoryFeaturedBlock, CategoryHotBlock, HomeCustomBlocks } from '@/components/theme-extras'
->>>>>>> b28bcb0 (e932611f-570d-4ee3-8bd8-b483d845a525)
 import { NovelTagsRow } from '@/components/novel-tags'
 import { HistoryPanel } from '@/components/theme-tools/HistoryPanel'
 import { useFavoriteSite, showSetHomepageHint } from '@/components/theme-tools/FavoriteSite'
